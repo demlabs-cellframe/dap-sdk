@@ -1321,6 +1321,17 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                             l_cur->buf_out_size = 0;
                         }
+#ifndef DAP_OS_WINDOWS
+                        else if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+                            // VPN diagnostic: log EAGAIN with buffer state
+                            time_t l_inactive_sec = l_cur_time - l_cur->last_time_active;
+                            if (l_inactive_sec > 10 || l_cur->buf_out_size > 65536) {
+                                log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" (%s): EAGAIN, buf_out_size=%zu, inactive %ld sec",
+                                       l_cur->socket, l_cur->remote_addr_str ? l_cur->remote_addr_str : "unknown",
+                                       l_cur->buf_out_size, l_inactive_sec);
+                            }
+                        }
+#endif
 #ifndef DAP_NET_CLIENT_NO_SSL
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_errno != SSL_ERROR_WANT_READ && l_errno != SSL_ERROR_WANT_WRITE) {
                             char l_err_str[80];

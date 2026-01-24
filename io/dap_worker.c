@@ -431,9 +431,16 @@ static bool s_socket_all_check_activity(void * a_arg)
     }
     DL_FOREACH_SAFE(l_del_list, l_cur, l_tmp_list) {
         l_es = (dap_events_socket_t*)l_cur->data;
-        log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
-                    l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
-            
+        // VPN diagnostic: include buf_out state in timeout log
+        if (l_es->buf_out_size > 0) {
+            log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" (%s) timeout with %zu bytes in buf_out! "
+                   "(%"DAP_UINT64_FORMAT_U" sec since last activity), DATA LOSS!",
+                   l_es->socket, l_es->remote_addr_str ? l_es->remote_addr_str : "unknown",
+                   l_es->buf_out_size, l_curtime - (time_t)l_es->last_time_active);
+        } else {
+            log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
+                   l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
+        }
         // Call error callback if set
         if (l_es->callbacks.error_callback)
             l_es->callbacks.error_callback(l_es, ETIMEDOUT);

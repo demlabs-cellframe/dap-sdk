@@ -922,6 +922,13 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             l_stream->is_active = false;
             return true;
         }
+        // VPN diagnostic: warn if sending keepalive while data is pending in buffer
+        if (l_es->buf_out_size > 0) {
+            time_t l_inactive_sec = time(NULL) - l_es->last_time_active;
+            log_it(L_WARNING, "Keepalive while buf_out has %zu bytes pending, sock %"DAP_FORMAT_SOCKET" (%s), inactive %ld sec",
+                   l_es->buf_out_size, l_es->socket,
+                   l_es->remote_addr_str ? l_es->remote_addr_str : "unknown", l_inactive_sec);
+        }
         if(s_debug)
             log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
         dap_stream_pkt_hdr_t l_pkt = {};
