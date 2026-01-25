@@ -733,67 +733,62 @@ static void s_process_flow_packet_common(
         return;
     }
     
+    // CRITICAL FIX: Double-checked locking to prevent TOCTOU race condition
+    // WITHOUT eBPF, kernel SO_REUSEPORT distributes packets from SAME client to DIFFERENT workers!
+    // This causes multiple workers to create duplicate flows for same client.
+    // Solution: hold write lock on target_worker during entire find-or-create operation.
     
-    // Find or create flow
-    dap_io_flow_t *l_flow = dap_io_flow_find(a_server, a_remote_addr);
+    // Step 1: Determine target worker (same hash logic as before)
+    uint32_t l_target_worker_id = l_worker->id;  // Default: create locally
     
-    
-    debug_if(s_debug_more, L_DEBUG, "packet_common: worker=%u, flow=%p, remote=%s",
-             l_worker->id, l_flow, dap_io_flow_socket_addr_to_string(a_remote_addr));
-    
-    if (!l_flow) {
-        // Application-Level Load Balancing (Tier 1):
-        // If no BPF, manually distribute new flows across workers
-        uint32_t l_target_worker_id = l_worker->id;  // Default: create locally
+    if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+        // Application-Level Load Balancing: hash (src_ip, src_port) to determine target worker
+        const struct sockaddr *l_sa = (const struct sockaddr *)a_remote_addr;
+        uint32_t l_hash = 0;
         
-        if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
-            // Hash (src_ip, src_port) to determine target worker
-            // Use DAP FNV-1a hash on ONLY IP address + port (NOT entire sockaddr with padding!)
-            
-            // Cast to sockaddr to access sa_family
-            const struct sockaddr *l_sa = (const struct sockaddr *)a_remote_addr;
-            
-            uint32_t l_hash = 0;
-            
-            if (l_sa->sa_family == AF_INET) {
-                // IPv4: hash sin_addr (4 bytes) + sin_port (2 bytes)
-                struct sockaddr_in *l_sin = (struct sockaddr_in *)a_remote_addr;
-                
-                // Prepare buffer: [IP (4 bytes)][Port (2 bytes)]
-                uint8_t l_hash_input[6];
-                memcpy(l_hash_input, &l_sin->sin_addr.s_addr, 4);
-                memcpy(l_hash_input + 4, &l_sin->sin_port, 2);
-                
-                // Compute FNV-1a hash
-                l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
-                
-            } else if (l_sa->sa_family == AF_INET6) {
-                // IPv6: hash sin6_addr (16 bytes) + sin6_port (2 bytes)
-                struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6 *)a_remote_addr;
-                
-                // Prepare buffer: [IPv6 (16 bytes)][Port (2 bytes)]
-                uint8_t l_hash_input[18];
-                memcpy(l_hash_input, &l_sin6->sin6_addr, 16);
-                memcpy(l_hash_input + 16, &l_sin6->sin6_port, 2);
-                
-                // Compute FNV-1a hash
-                l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
-                
-            } else {
-                log_it(L_WARNING, "Application LB: unknown address family %d, using local worker",
-                       l_sa->sa_family);
-                l_hash = l_worker->id;  // Fallback: stay local
-            }
-            
-            l_target_worker_id = l_hash % dap_proc_thread_get_count();
-            
-            debug_if(s_debug_more, L_DEBUG,
-                     "Application LB: hash=%u (family=%d), target_worker=%u",
-                     l_hash, l_sa->sa_family, l_target_worker_id);
+        if (l_sa->sa_family == AF_INET) {
+            struct sockaddr_in *l_sin = (struct sockaddr_in *)a_remote_addr;
+            uint8_t l_hash_input[6];
+            memcpy(l_hash_input, &l_sin->sin_addr.s_addr, 4);
+            memcpy(l_hash_input + 4, &l_sin->sin_port, 2);
+            l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
+        } else if (l_sa->sa_family == AF_INET6) {
+            struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6 *)a_remote_addr;
+            uint8_t l_hash_input[18];
+            memcpy(l_hash_input, &l_sin6->sin6_addr, 16);
+            memcpy(l_hash_input + 16, &l_sin6->sin6_port, 2);
+            l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
+        } else {
+            log_it(L_WARNING, "Application LB: unknown address family %d, using local worker",
+                   l_sa->sa_family);
+            l_hash = l_worker->id;
         }
         
-        // If target worker is different, forward packet BEFORE creating flow
+        l_target_worker_id = l_hash % dap_proc_thread_get_count();
+        
+        debug_if(s_debug_more, L_DEBUG,
+                 "Application LB: hash=%u (family=%d), target_worker=%u",
+                 l_hash, l_sa->sa_family, l_target_worker_id);
+    }
+    
+    // Step 2: ATOMIC find-or-create with write lock on target worker
+    // This prevents race: if 2 packets from same client arrive at different workers,
+    // only ONE will create the flow (the one that gets write lock first).
+    
+    pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_target_worker_id]);
+    
+    // Double-check: maybe someone created flow while we waited for lock
+    dap_io_flow_t *l_flow = NULL;
+    HASH_FIND(hh, a_server->flows_per_worker[l_target_worker_id], a_remote_addr,
+              sizeof(struct sockaddr_storage), l_flow);
+    
+    if (!l_flow) {
+        // Flow still doesn't exist - create it NOW (under lock)
+        
+        // If we're NOT on target worker, must forward packet for processing
         if (l_target_worker_id != l_worker->id) {
+            pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_target_worker_id]);
+            
             debug_if(s_debug_more, L_DEBUG,
                      "Application LB: forwarding new flow packet to worker %u",
                      l_target_worker_id);
@@ -801,83 +796,89 @@ static void s_process_flow_packet_common(
             // Get refcounted cross-worker arena
             dap_arena_t *l_arena = s_get_cross_worker_arena();
             if (!l_arena) {
-                log_it(L_ERROR, "Cross-worker arena not available - creating locally");
-                goto create_local;
+                log_it(L_ERROR, "Cross-worker arena not available - dropping packet");
+                return;
             }
             
-            // Allocate packet structure (with page handle for refcounting)
+            // Allocate packet structure
             dap_arena_alloc_ex_t l_packet_alloc;
             if (!dap_arena_alloc_ex(l_arena, sizeof(struct flow_cross_worker_packet), &l_packet_alloc)) {
-                log_it(L_ERROR, "Arena allocation failed for packet struct - creating locally");
-                goto create_local;
+                log_it(L_ERROR, "Arena allocation failed for packet struct - dropping packet");
+                return;
             }
             struct flow_cross_worker_packet *l_packet = l_packet_alloc.ptr;
             
-            // Allocate data buffer (same page, so same page_handle)
+            // Allocate data buffer
             dap_arena_alloc_ex_t l_data_alloc;
             if (!dap_arena_alloc_ex(l_arena, a_data_size, &l_data_alloc)) {
-                log_it(L_ERROR, "Arena allocation failed for data buffer - creating locally");
-                goto create_local;
+                log_it(L_ERROR, "Arena allocation failed for data buffer - dropping packet");
+                return;
             }
             uint8_t *l_data_copy = l_data_alloc.ptr;
             
-            // Fill packet (flow = NULL since not created yet)
+            // Fill packet
             memcpy(l_data_copy, a_data, a_data_size);
-            l_packet->server = a_server;  // Always set server
+            l_packet->server = a_server;
             l_packet->data = l_data_copy;
             l_packet->size = a_data_size;
             l_packet->flow = NULL;  // Will be created on target worker
             memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
             l_packet->remote_addr_len = a_remote_addr_len;
-            l_packet->page_handle = l_packet_alloc.page_handle;  // Store page handle for unref
+            l_packet->page_handle = l_packet_alloc.page_handle;
             
-            // Increment refcount before forwarding (thread-safe atomic operation)
+            // Increment refcount before forwarding
             dap_arena_page_ref(l_packet->page_handle);
             
             debug_if(s_debug_more, L_DEBUG,
-                     "Allocated packet from refcounted arena (page_handle=%p, data=%p, size=%zu)",
-                     l_packet->page_handle, l_data_copy, a_data_size);
+                     "Forwarding to target worker %u (packet from arena page_handle=%p)",
+                     l_target_worker_id, l_packet->page_handle);
             
             // Forward to target worker
             int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
                                                     l_target_worker_id, l_packet);
             
-            if (l_ret == 0) {
-                // Forwarded successfully - receiver worker will unref when done
-                return;
+            if (l_ret != 0) {
+                log_it(L_WARNING, "Forward failed, releasing page reference");
+                dap_arena_page_unref(l_packet->page_handle);
             }
-            
-            // Forward failed - decrement refcount to free page
-            log_it(L_WARNING, "Forward failed, releasing page reference");
-            dap_arena_page_unref(l_packet->page_handle);
-            // Fall through to create_local on forward failure
+            return;
         }
         
-create_local:
-        // Create new flow locally
+        // We ARE on target worker - create flow locally (still under lock)
         l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
         
         if (l_flow) {
-            // Add to local worker's hash table
+            // Add to hash table (still under lock - prevents duplicates!)
             memcpy(&l_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
             l_flow->remote_addr_len = a_remote_addr_len;
-            l_flow->owner_worker_id = l_worker->id;
-            l_flow->server = a_server;  // Back-reference for cross-worker forwarding
+            l_flow->owner_worker_id = l_target_worker_id;
+            l_flow->server = a_server;
             l_flow->last_activity = time(NULL);
             l_flow->boundary_type = a_server->boundary_type;
             
-            pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_worker->id]);
-            HASH_ADD(hh, a_server->flows_per_worker[l_worker->id], remote_addr,
+            HASH_ADD(hh, a_server->flows_per_worker[l_target_worker_id], remote_addr,
                      sizeof(struct sockaddr_storage), l_flow);
-            pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_worker->id]);
             
-            debug_if(s_debug_more, L_DEBUG, "Created new flow for %s in worker %u",
-                     dap_io_flow_socket_addr_to_string(a_remote_addr), l_worker->id);
+            debug_if(s_debug_more, L_DEBUG, "Created new flow for %s in worker %u (ATOMIC)",
+                     dap_io_flow_socket_addr_to_string(a_remote_addr), l_target_worker_id);
         }
+    } else {
+        debug_if(s_debug_more, L_DEBUG, "Flow already exists for %s in worker %u (double-check prevented duplicate)",
+                 dap_io_flow_socket_addr_to_string(a_remote_addr), l_target_worker_id);
     }
     
-    // Check if flow is on another worker - forward if needed
-    if (l_flow && l_worker && l_flow->owner_worker_id != l_worker->id) {
+    pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_target_worker_id]);
+    
+    // If flow creation failed, drop packet
+    if (!l_flow) {
+        log_it(L_WARNING, "Failed to create flow for %s - dropping packet",
+               dap_io_flow_socket_addr_to_string(a_remote_addr));
+        return;
+    }
+    
+    // After releasing lock, check if we need to forward packet
+    // (flow exists but on different worker than current)
+    if (l_flow->owner_worker_id != l_worker->id) {
         // Flow exists on different worker - must forward packet
         debug_if(s_debug_more, L_DEBUG,
                  "Flow on worker %u, current worker %u - forwarding packet size=%zu",
