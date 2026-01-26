@@ -32,7 +32,15 @@
 #include "dap_json.h"
 #include "dap_json_rpc_response.h"
 
-typedef int (*dap_cli_server_cmd_callback_ex_func_json_t)(dap_json_rpc_response_t* response, char ** cmd_param, int cmd_cnt);
+/**
+ * @brief Callback type for post-processing command results (func_rpc)
+ * @param a_json_input Input JSON from command handler (result of func/func_ex)
+ * @param a_json_output Output JSON array to write formatted result
+ * @param a_cmd_param Command parameters array
+ * @param a_cmd_cnt Count of command parameters
+ * @return 0 on success (result written to a_json_output), non-zero to use original a_json_input
+ */
+typedef int (*dap_cli_server_cmd_callback_ex_func_json_t)(dap_json_t *a_json_input, dap_json_t *a_json_output, char **a_cmd_param, int a_cmd_cnt);
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, dap_json_t *a_json_arr_reply, int a_version);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, dap_json_t *a_json_arr_reply, int a_version);
 typedef void (*dap_cli_server_cmd_stat_callback_t)(int16_t a_cmd_num, int64_t a_call_time);  // use to statistic collect
