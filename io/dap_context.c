@@ -979,6 +979,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #else
                         l_errno = errno;
 #endif
+                        // VPN diagnostic: log recv results for client sockets
+                        debug_if(g_debug_reactor, L_DEBUG, "recv() fd=%d (%s): bytes=%zd, errno=%d, buf_in=%zu",
+                                 l_cur->fd, l_cur->remote_addr_str ? l_cur->remote_addr_str : "?",
+                                 l_bytes_read, l_bytes_read < 0 ? l_errno : 0, l_cur->buf_in_size);
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                         l_must_read_smth = true;

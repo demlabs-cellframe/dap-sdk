@@ -1468,12 +1468,14 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
 {
     if( a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_READ))
         return;
-    // VPN diagnostic: log when socket read state changes to false for client sockets
-    if(!a_is_ready && (a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || 
-                        a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL)) {
-        log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" (%s) read DISABLED, buf_out=%zu, buf_in=%zu",
+    // VPN diagnostic: log when socket read state changes for client sockets
+    if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || 
+       a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL) {
+        log_it(a_is_ready ? L_INFO : L_WARNING, 
+               "Socket %"DAP_FORMAT_SOCKET" (%s) read %s, buf_out=%zu, buf_in=%zu",
                a_esocket->socket,
                a_esocket->remote_addr_str ? a_esocket->remote_addr_str : "unknown",
+               a_is_ready ? "ENABLED" : "DISABLED",
                a_esocket->buf_out_size, a_esocket->buf_in_size);
     }
     if ( a_is_ready ){
