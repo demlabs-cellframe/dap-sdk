@@ -323,7 +323,14 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
 void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_ready)
 {
     if( a_ch->ready_to_read != a_is_ready){
-        //log_it(L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
+        // VPN diagnostic: log when channel read state changes
+        if(!a_is_ready && a_ch->stream && a_ch->stream->esocket) {
+            log_it(L_WARNING, "Channel '%c' disabling read on socket %"DAP_FORMAT_SOCKET" (%s), buf_out=%zu",
+                   a_ch->proc ? (char)a_ch->proc->id : '?',
+                   a_ch->stream->esocket->socket,
+                   a_ch->stream->esocket->remote_addr_str ? a_ch->stream->esocket->remote_addr_str : "unknown",
+                   a_ch->stream->esocket->buf_out_size);
+        }
         a_ch->ready_to_read=a_is_ready;
         dap_events_socket_set_readable_unsafe(a_ch->stream->esocket, a_is_ready);
     }

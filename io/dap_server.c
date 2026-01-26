@@ -380,6 +380,18 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         int one = 1;
         if ( setsockopt(a_remote_socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
             log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
+        // Enable TCP keepalive to prevent NAT timeout on mobile networks (iOS hotspot, etc.)
+        if ( setsockopt(a_remote_socket, SOL_SOCKET, SO_KEEPALIVE, (const char*)&one, sizeof(one)) < 0 )
+            log_it(L_WARNING, "Can't enable TCP keepalive, error %d: %s", errno, dap_strerror(errno));
+#ifdef DAP_OS_LINUX
+        // Set keepalive parameters: start after 10 sec, probe every 10 sec, 3 probes before drop
+        int keepidle = 10;
+        int keepintvl = 10;
+        int keepcnt = 3;
+        setsockopt(a_remote_socket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+        setsockopt(a_remote_socket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+        setsockopt(a_remote_socket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
+#endif
         break;
     default:
         closesocket(a_remote_socket);
