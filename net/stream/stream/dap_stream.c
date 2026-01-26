@@ -488,7 +488,8 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     size_t count_channels = strlen(l_ss->active_channels);
                     for(size_t i = 0; i < count_channels; i++) {
                         dap_stream_ch_t * l_ch = dap_stream_ch_new(l_stream, l_ss->active_channels[i]);
-                        l_ch->ready_to_read = true;
+                        // Note: ready_to_read is now managed by new_callback of each channel.
+                        // Do NOT override here - it was causing VPN channel to stay disabled.
                         //l_stream->channel[i]->ready_to_write = true;
                     }
 
