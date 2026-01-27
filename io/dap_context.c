@@ -1468,6 +1468,13 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
     if( a_esocket->flags & DAP_SOCK_READY_TO_WRITE || a_esocket->flags &DAP_SOCK_CONNECTING )
         events |= EPOLLOUT;
 
+    // VPN diagnostic: log poll_update for client sockets
+    if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT && a_esocket->context) {
+        log_it(L_ATT, "=== poll_update fd=%d flags=0x%x -> epoll_events=0x%x (IN=%d OUT=%d) ===",
+               a_esocket->socket, a_esocket->flags, events,
+               (events & EPOLLIN) ? 1 : 0, (events & EPOLLOUT) ? 1 : 0);
+    }
+
     a_esocket->ev.events = events;
 
     if( a_esocket->context){
