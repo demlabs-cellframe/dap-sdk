@@ -322,6 +322,11 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
  */
 void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_ready)
 {
+    // VPN_FIX_TEST: Always log entry
+    log_it(L_ATT, "=== set_ready_to_read: ch=%p ready=%d->%d stream=%p esocket=%p ===",
+           (void*)a_ch, a_ch->ready_to_read, a_is_ready,
+           (void*)a_ch->stream, a_ch->stream ? (void*)a_ch->stream->esocket : NULL);
+    
     if( a_ch->ready_to_read != a_is_ready){
         // VPN diagnostic: log when channel read state changes
         if(a_ch->stream && a_ch->stream->esocket) {
@@ -332,9 +337,12 @@ void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_rea
                    a_ch->stream->esocket->socket,
                    a_ch->stream->esocket->remote_addr_str ? a_ch->stream->esocket->remote_addr_str : "unknown",
                    a_ch->stream->esocket->buf_out_size);
+        } else {
+            log_it(L_ERROR, "=== set_ready_to_read: stream or esocket is NULL! Cannot set readable ===");
         }
         a_ch->ready_to_read=a_is_ready;
-        dap_events_socket_set_readable_unsafe(a_ch->stream->esocket, a_is_ready);
+        if(a_ch->stream && a_ch->stream->esocket)
+            dap_events_socket_set_readable_unsafe(a_ch->stream->esocket, a_is_ready);
     }
 }
 
