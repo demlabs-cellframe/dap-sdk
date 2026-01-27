@@ -378,8 +378,10 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
                                             l_remote_addr_str, l_port_str, a_remote_socket);
         int one = 1;
-        if ( setsockopt(a_remote_socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
-            log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
+        // TCP_NODELAY disabled - Nagle algorithm helps reduce packet count for mobile networks
+        // Without Nagle, too many small packets can overwhelm iOS hotspot NAT
+        // if ( setsockopt(a_remote_socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
+        //     log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
         // Enable TCP keepalive to prevent NAT timeout on mobile networks (iOS hotspot, etc.)
         if ( setsockopt(a_remote_socket, SOL_SOCKET, SO_KEEPALIVE, (const char*)&one, sizeof(one)) < 0 )
             log_it(L_WARNING, "Can't enable TCP keepalive, error %d: %s", errno, dap_strerror(errno));
