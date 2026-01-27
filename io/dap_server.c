@@ -377,24 +377,8 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
                 
         debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
                                             l_remote_addr_str, l_port_str, a_remote_socket);
-        int one = 1;
-        // TCP_NODELAY disabled - Nagle algorithm helps reduce packet count for mobile networks
-        // Without Nagle, too many small packets can overwhelm iOS hotspot NAT
-        // if ( setsockopt(a_remote_socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
-        //     log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
-        // Enable TCP keepalive to prevent NAT timeout on mobile networks (iOS hotspot, etc.)
-        if ( setsockopt(a_remote_socket, SOL_SOCKET, SO_KEEPALIVE, (const char*)&one, sizeof(one)) < 0 )
-            log_it(L_WARNING, "Can't enable TCP keepalive, error %d: %s", errno, dap_strerror(errno));
-#ifdef DAP_OS_LINUX
-        // Set keepalive parameters for mobile networks (iOS hotspot NAT timeout ~5-10 sec)
-        // Start after 3 sec, probe every 3 sec, 3 probes before drop
-        int keepidle = 3;
-        int keepintvl = 3;
-        int keepcnt = 3;
-        setsockopt(a_remote_socket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
-        setsockopt(a_remote_socket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
-        setsockopt(a_remote_socket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
-#endif
+        // TCP_NODELAY and TCP Keepalive disabled - matching old server behavior
+        // Old server worked without these settings on iOS hotspot
         break;
     default:
         closesocket(a_remote_socket);
