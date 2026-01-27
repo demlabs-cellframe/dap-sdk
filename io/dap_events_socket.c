@@ -1471,8 +1471,8 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
     // VPN diagnostic: log when socket read state changes for client sockets
     if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || 
        a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL) {
-        log_it(a_is_ready ? L_INFO : L_WARNING, 
-               "Socket %"DAP_FORMAT_SOCKET" (%s) read %s, buf_out=%zu, buf_in=%zu",
+        log_it(L_ATT, 
+               "=== Socket %"DAP_FORMAT_SOCKET" (%s) read %s, buf_out=%zu, buf_in=%zu ===",
                a_esocket->socket,
                a_esocket->remote_addr_str ? a_esocket->remote_addr_str : "unknown",
                a_is_ready ? "ENABLED" : "DISABLED",

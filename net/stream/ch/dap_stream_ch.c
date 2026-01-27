@@ -330,15 +330,15 @@ void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_rea
     if( a_ch->ready_to_read != a_is_ready){
         // VPN diagnostic: log when channel read state changes
         if(a_ch->stream && a_ch->stream->esocket) {
-            log_it(a_is_ready ? L_INFO : L_WARNING, 
-                   "Channel '%c' %s read on socket %"DAP_FORMAT_SOCKET" (%s), buf_out=%zu",
+            log_it(L_ATT, 
+                   "=== Channel '%c' %s read on socket %"DAP_FORMAT_SOCKET" (%s), buf_out=%zu ===",
                    a_ch->proc ? (char)a_ch->proc->id : '?',
                    a_is_ready ? "ENABLING" : "disabling",
                    a_ch->stream->esocket->socket,
                    a_ch->stream->esocket->remote_addr_str ? a_ch->stream->esocket->remote_addr_str : "unknown",
                    a_ch->stream->esocket->buf_out_size);
         } else {
-            log_it(L_ERROR, "=== set_ready_to_read: stream or esocket is NULL! Cannot set readable ===");
+            log_it(L_ATT, "=== set_ready_to_read: stream or esocket is NULL! Cannot set readable ===");
         }
         a_ch->ready_to_read=a_is_ready;
         if(a_ch->stream && a_ch->stream->esocket)
