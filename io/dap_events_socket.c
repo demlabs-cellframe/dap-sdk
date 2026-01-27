@@ -1466,18 +1466,18 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_es, bool a
  */
 void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool a_is_ready )
 {
-    if( a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_READ))
-        return;
-    // VPN diagnostic: log when socket read state changes for client sockets
+    // VPN diagnostic: log ALL calls to this function for client sockets
     if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || 
        a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL) {
+        bool l_current = (bool)(a_esocket->flags & DAP_SOCK_READY_TO_READ);
         log_it(L_ATT, 
-               "=== Socket %"DAP_FORMAT_SOCKET" (%s) read %s, buf_out=%zu, buf_in=%zu ===",
+               "=== set_readable fd=%"DAP_FORMAT_SOCKET" (%s): %d->%d, flags=0x%x ===",
                a_esocket->socket,
                a_esocket->remote_addr_str ? a_esocket->remote_addr_str : "unknown",
-               a_is_ready ? "ENABLED" : "DISABLED",
-               a_esocket->buf_out_size, a_esocket->buf_in_size);
+               l_current ? 1 : 0, a_is_ready ? 1 : 0, a_esocket->flags);
     }
+    if( a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_READ))
+        return;
     if ( a_is_ready ){
         a_esocket->flags |= DAP_SOCK_READY_TO_READ;
     }else{
