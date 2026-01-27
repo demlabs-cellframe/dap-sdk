@@ -1477,6 +1477,15 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 
     a_esocket->ev.events = events;
 
+    // VPN CRITICAL: Log every epoll_ctl for client sockets
+    if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT) {
+        log_it(L_ATT, "=== EPOLL_MOD fd=%"DAP_FORMAT_SOCKET" (%s): esocket_flags=0x%x -> epoll_events=0x%x (IN=%d OUT=%d) ===",
+               a_esocket->socket,
+               a_esocket->remote_addr_str ? a_esocket->remote_addr_str : "?",
+               a_esocket->flags, events,
+               (events & EPOLLIN) ? 1 : 0, (events & EPOLLOUT) ? 1 : 0);
+    }
+
     if( a_esocket->context){
         if ( epoll_ctl(a_esocket->context->epoll_fd, EPOLL_CTL_MOD, a_esocket->socket, &a_esocket->ev) ){
 #ifdef DAP_OS_WINDOWS
