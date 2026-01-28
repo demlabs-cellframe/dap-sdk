@@ -262,19 +262,20 @@ int dap_io_flow_classic_bpf_attach_socket(int socket_fd)
  */
 dap_io_flow_lb_tier_t dap_io_flow_detect_lb_tier(void)
 {
-    // Try eBPF first (SO_ATTACH_REUSEPORT_EBPF - best option)
+    // TEMPORARY: Force Classic BPF for debugging
+    // eBPF attach fails on this kernel with "Invalid argument"
+    // Classic BPF works (verified in standalone tests)
+    
+#ifdef SO_ATTACH_REUSEPORT_CBPF
+    log_it(L_NOTICE, "🔧 Load balancing: Tier 2 (Classic BPF) - Kernel sticky sessions");
+    return DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
+#endif
+    
+    // Try eBPF (SO_ATTACH_REUSEPORT_EBPF)
     if (dap_io_flow_ebpf_is_available()) {
         log_it(L_NOTICE, "🚀 Load balancing: Tier 3 (eBPF) - Kernel sticky sessions with hash-based distribution");
         return DAP_IO_FLOW_LB_TIER_EBPF;
     }
-    
-    // Try classic BPF (SO_ATTACH_REUSEPORT_CBPF - good fallback)
-    bool cbpf_available = false;
-#ifdef SO_ATTACH_REUSEPORT_CBPF
-    cbpf_available = true;
-    log_it(L_NOTICE, "🔧 Load balancing: Tier 2 (Classic BPF) - Kernel sticky sessions");
-    return DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
-#endif
     
     // Fallback to application-level
     log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based distribution");

@@ -257,11 +257,17 @@ int dap_io_flow_server_listen(
         return l_ret;
     }
     
-    // Initialize inter-worker queues
-    l_ret = s_init_inter_worker_queues(a_server);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Failed to initialize inter-worker queues: %d", l_ret);
-        return l_ret;
+    // Initialize inter-worker queues ONLY for Application-level LB (Tier 1)
+    // For BPF tiers (Tier 2/3), kernel distributes packets directly - no forwarding needed!
+    if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+        l_ret = s_init_inter_worker_queues(a_server);
+        if (l_ret != 0) {
+            log_it(L_ERROR, "Failed to initialize inter-worker queues: %d", l_ret);
+            return l_ret;
+        }
+        log_it(L_NOTICE, "Inter-worker queues initialized for Application-level LB");
+    } else {
+        log_it(L_NOTICE, "Skipping inter-worker queues (BPF tier - kernel handles distribution)");
     }
     
     a_server->is_running = true;
@@ -733,12 +739,63 @@ static void s_process_flow_packet_common(
         return;
     }
     
+    // === FAST PATH for BPF tiers (Tier 2/3): NO forwarding needed! ===
+    // Kernel SO_REUSEPORT + BPF already distributed packet to correct worker.
+    // Simply create flow locally without any cross-worker logic.
+    if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_EBPF ||
+        a_server->lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
+        
+        // Find or create flow on LOCAL worker only
+        pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_worker->id]);
+        
+        dap_io_flow_t *l_flow = NULL;
+        HASH_FIND(hh, a_server->flows_per_worker[l_worker->id], a_remote_addr,
+                  sizeof(struct sockaddr_storage), l_flow);
+        
+        if (!l_flow) {
+            // Create flow locally (kernel already routed packet to correct worker!)
+            l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
+            
+            if (l_flow) {
+                memcpy(&l_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
+                l_flow->remote_addr_len = a_remote_addr_len;
+                l_flow->owner_worker_id = l_worker->id;
+                l_flow->server = a_server;
+                l_flow->last_activity = time(NULL);
+                l_flow->boundary_type = a_server->boundary_type;
+                
+                HASH_ADD(hh, a_server->flows_per_worker[l_worker->id], remote_addr,
+                         sizeof(struct sockaddr_storage), l_flow);
+                
+                debug_if(s_debug_more, L_DEBUG, "BPF tier: created flow locally on worker %u",
+                         l_worker->id);
+            }
+        }
+        
+        pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_worker->id]);
+        
+        if (!l_flow) {
+            log_it(L_WARNING, "Failed to create flow - dropping packet");
+            return;
+        }
+        
+        // Process packet directly (no forwarding!)
+        if (a_server->ops->packet_received) {
+            a_server->ops->packet_received(a_server, l_flow, a_data, a_data_size,
+                                           a_remote_addr, a_listener_es);
+        }
+        
+        return;  // BPF tier processing complete
+    }
+    
+    // === SLOW PATH for Application-level LB (Tier 1): manual forwarding === 
+    
     // CRITICAL FIX: Double-checked locking to prevent TOCTOU race condition
-    // WITHOUT eBPF, kernel SO_REUSEPORT distributes packets from SAME client to DIFFERENT workers!
+    // WITHOUT BPF, kernel SO_REUSEPORT distributes packets from SAME client to DIFFERENT workers!
     // This causes multiple workers to create duplicate flows for same client.
     // Solution: hold write lock on target_worker during entire find-or-create operation.
     
-    // Step 1: Determine target worker (same hash logic as before)
+    // Step 1: Determine target worker (hash-based)
     uint32_t l_target_worker_id = l_worker->id;  // Default: create locally
     
     if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
