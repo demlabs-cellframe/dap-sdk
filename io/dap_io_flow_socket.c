@@ -28,9 +28,11 @@
 #include "dap_config.h"
 #include "dap_list.h"
 #include "dap_io_flow_socket.h"
-#include "dap_io_flow_ebpf.h"
-#include "dap_io_flow_cbpf.h"
 #include "dap_worker.h"
+#ifdef __linux__
+#include "linux/dap_io_flow_ebpf.h"
+#include "linux/dap_io_flow_cbpf.h"
+#endif
 #include "dap_server.h"
 #include "dap_proc_thread.h"
 
@@ -255,10 +257,27 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     uint32_t l_worker_count = dap_proc_thread_get_count();
     bool l_is_udp = (a_socket_type == SOCK_DGRAM);
     
-    // Detect best available load balancing tier
+    // Detect best available load balancing tier (eBPF → Classic BPF → Application)
     dap_io_flow_lb_tier_t l_lb_tier = DAP_IO_FLOW_LB_TIER_NONE;
     if (l_is_udp && l_worker_count > 1) {
-        l_lb_tier = dap_io_flow_detect_lb_tier();
+#ifdef __linux__
+        // Try eBPF (Tier 3) - Linux only
+        if (dap_io_flow_ebpf_is_available()) {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_EBPF;
+            log_it(L_NOTICE, "🚀 Load balancing: Tier 3 (eBPF) - Kernel sticky sessions");
+        }
+        // Try Classic BPF (Tier 2) if eBPF not available - Linux only
+        else if (dap_io_flow_cbpf_is_available()) {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
+            log_it(L_NOTICE, "🔧 Load balancing: Tier 2 (Classic BPF) - Kernel sticky sessions");
+        }
+        // Fallback to Application-level (Tier 1)
+        else
+#endif
+        {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based distribution");
+        }
     }
     
     // Return tier to caller
@@ -361,30 +380,28 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
 #endif
         }
         
-        // CRITICAL: Attach BPF on FIRST socket BEFORE bind!
+        // CRITICAL: Attach BPF on FIRST socket BEFORE bind! (Linux only)
         // Kernel requires: sk_unhashed() sockets can attach if sk->sk_reuseport set
         // For bound sockets, attach only works if sk_reuseport_cb exists (2nd+ socket)
+#ifdef __linux__
         if (i == 0 && l_enable_reuseport) {
             int attach_ret = -1;
             
             if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
                 attach_ret = dap_io_flow_ebpf_attach_socket(l_socket);
-                if (attach_ret != 0) {
-                    log_it(L_WARNING, "eBPF attach failed before bind, trying Classic BPF...");
-                    attach_ret = dap_io_flow_cbpf_attach_socket(l_socket);
-                }
             } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
                 attach_ret = dap_io_flow_cbpf_attach_socket(l_socket);
             }
             
             if (attach_ret != 0) {
-                log_it(L_CRITICAL, "BPF attach failed before bind");
+                log_it(L_CRITICAL, "BPF attach failed before bind (tier=%d)", l_lb_tier);
                 close(l_socket);
                 return -98;
             }
             
             log_it(L_NOTICE, "✅ BPF attached to first socket BEFORE bind");
         }
+#endif
         
         // Bind socket
         struct sockaddr_storage l_bind_addr = {0};
