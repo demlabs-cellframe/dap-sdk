@@ -361,6 +361,31 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
 #endif
         }
         
+        // CRITICAL: Attach BPF on FIRST socket BEFORE bind!
+        // Kernel requires: sk_unhashed() sockets can attach if sk->sk_reuseport set
+        // For bound sockets, attach only works if sk_reuseport_cb exists (2nd+ socket)
+        if (i == 0 && l_enable_reuseport) {
+            int attach_ret = -1;
+            
+            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
+                attach_ret = dap_io_flow_ebpf_attach_socket(l_socket);
+                if (attach_ret != 0) {
+                    log_it(L_WARNING, "eBPF attach failed before bind, trying Classic BPF...");
+                    attach_ret = dap_io_flow_cbpf_attach_socket(l_socket);
+                }
+            } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
+                attach_ret = dap_io_flow_cbpf_attach_socket(l_socket);
+            }
+            
+            if (attach_ret != 0) {
+                log_it(L_CRITICAL, "BPF attach failed before bind");
+                close(l_socket);
+                return -98;
+            }
+            
+            log_it(L_NOTICE, "✅ BPF attached to first socket BEFORE bind");
+        }
+        
         // Bind socket
         struct sockaddr_storage l_bind_addr = {0};
         socklen_t l_addr_len;
@@ -421,40 +446,6 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
-    }
-    
-    // Attach BPF program AFTER all sockets created and bound to REUSEPORT group
-    if (l_enable_reuseport && a_server->es_listeners) {
-        dap_events_socket_t *l_first_listener = (dap_events_socket_t *)a_server->es_listeners->data;
-        if (!l_first_listener) {
-            log_it(L_ERROR, "No listeners in list for BPF attach");
-            return -97;
-        }
-        
-        log_it(L_NOTICE, "Attaching BPF program to SO_REUSEPORT group (%u sockets)...",
-               l_num_listeners);
-        
-        int attach_result = -1;
-        
-        if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
-            // Try eBPF attach (Tier 3)
-            attach_result = dap_io_flow_ebpf_attach_socket(l_first_listener->fd);
-            if (attach_result != 0) {
-                log_it(L_WARNING, "eBPF attach failed, trying classic BPF fallback...");
-                attach_result = dap_io_flow_cbpf_attach_socket(l_first_listener->fd);
-            }
-        } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
-            // Use classic BPF (Tier 2)
-            attach_result = dap_io_flow_cbpf_attach_socket(l_first_listener->fd);
-        }
-        
-        if (attach_result != 0) {
-            log_it(L_CRITICAL, "FATAL: BPF attach failed for all available methods");
-            return -98;
-        }
-        
-        log_it(L_NOTICE, "✅ BPF attached: all %u sockets now use kernel hash distribution",
-               l_num_listeners);
     }
     
     // Final summary
