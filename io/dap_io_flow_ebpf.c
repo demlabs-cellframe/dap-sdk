@@ -128,6 +128,9 @@ static int dap_io_flow_ebpf_load_prog(void)
 
 /**
  * @brief Check if eBPF is available on this system
+ * 
+ * Tests BOTH program loading AND SO_ATTACH_REUSEPORT_EBPF support.
+ * Some kernels support BPF syscall but NOT SO_ATTACH_REUSEPORT_EBPF.
  */
 bool dap_io_flow_ebpf_is_available(void)
 {
@@ -137,20 +140,64 @@ bool dap_io_flow_ebpf_is_available(void)
     
     s_ebpf_checked = true;
     
-    // Try to load eBPF program to test availability
+    // Step 1: Try to load eBPF program
     int prog_fd = dap_io_flow_ebpf_load_prog();
-    
-    if (prog_fd >= 0) {
-        close(prog_fd);
-        s_ebpf_available = true;
-        log_it(L_NOTICE, "✅ eBPF sticky sessions: AVAILABLE (kernel 4.15+, CAP_BPF)");
-    } else {
+    if (prog_fd < 0) {
         s_ebpf_available = false;
-        log_it(L_CRITICAL, "❌ eBPF sticky sessions: NOT AVAILABLE");
-        log_it(L_NOTICE, "Falling back to Application-level load balancing (Tier 1)");
+        log_it(L_WARNING, "❌ eBPF program load failed");
+        return false;
     }
     
-    return s_ebpf_available;
+    // Step 2: Test SO_ATTACH_REUSEPORT_EBPF support with dummy socket
+    int test_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (test_sock < 0) {
+        close(prog_fd);
+        s_ebpf_available = false;
+        return false;
+    }
+    
+    int opt = 1;
+    setsockopt(test_sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+    
+    struct sockaddr_in test_addr = {
+        .sin_family = AF_INET,
+        .sin_port = 0,  // Kernel picks port
+        .sin_addr.s_addr = htonl(INADDR_LOOPBACK)  // CRITICAL: network byte order!
+    };
+    
+    if (bind(test_sock, (struct sockaddr*)&test_addr, sizeof(test_addr)) < 0) {
+        log_it(L_WARNING, "Test socket bind failed: %s", strerror(errno));
+        close(test_sock);
+        close(prog_fd);
+        s_ebpf_available = false;
+        return false;
+    }
+    
+    // Try SO_ATTACH_REUSEPORT_EBPF
+    int attach_ret = setsockopt(test_sock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF,
+                                 &prog_fd, sizeof(prog_fd));
+    
+    close(test_sock);
+    close(prog_fd);
+    
+    if (attach_ret < 0) {
+        s_ebpf_available = false;
+        log_it(L_WARNING, "❌ SO_ATTACH_REUSEPORT_EBPF not supported: %s (errno=%d)",
+               strerror(errno), errno);
+        log_it(L_NOTICE, "Kernel supports BPF syscall but NOT SO_ATTACH_REUSEPORT_EBPF");
+        log_it(L_NOTICE, "This is common for Debian/custom kernels - using Classic BPF instead");
+        return false;
+    }
+    
+    // CRITICAL: setsockopt can return 0 but still not work!
+    // Empirical testing shows SO_ATTACH_REUSEPORT_EBPF fails on this kernel
+    // even when setsockopt returns success. Disable eBPF completely.
+    //
+    // TODO: Remove this once we identify kernel version/config that actually supports it
+    s_ebpf_available = false;
+    log_it(L_WARNING, "❌ SO_ATTACH_REUSEPORT_EBPF: kernel reports success but empirically fails");
+    log_it(L_NOTICE, "Disabling eBPF tier - using Classic BPF (Tier 2) which works reliably");
+    return false;
 }
 
 /**
@@ -262,20 +309,17 @@ int dap_io_flow_classic_bpf_attach_socket(int socket_fd)
  */
 dap_io_flow_lb_tier_t dap_io_flow_detect_lb_tier(void)
 {
-    // TEMPORARY: Force Classic BPF for debugging
-    // eBPF attach fails on this kernel with "Invalid argument"
-    // Classic BPF works (verified in standalone tests)
+    // Try eBPF first (SO_ATTACH_REUSEPORT_EBPF - best option)
+    if (dap_io_flow_ebpf_is_available()) {
+        log_it(L_NOTICE, "🚀 Load balancing: Tier 3 (eBPF) - Kernel sticky sessions");
+        return DAP_IO_FLOW_LB_TIER_EBPF;
+    }
     
+    // Try classic BPF (SO_ATTACH_REUSEPORT_CBPF - good fallback)
 #ifdef SO_ATTACH_REUSEPORT_CBPF
     log_it(L_NOTICE, "🔧 Load balancing: Tier 2 (Classic BPF) - Kernel sticky sessions");
     return DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
 #endif
-    
-    // Try eBPF (SO_ATTACH_REUSEPORT_EBPF)
-    if (dap_io_flow_ebpf_is_available()) {
-        log_it(L_NOTICE, "🚀 Load balancing: Tier 3 (eBPF) - Kernel sticky sessions with hash-based distribution");
-        return DAP_IO_FLOW_LB_TIER_EBPF;
-    }
     
     // Fallback to application-level
     log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based distribution");
