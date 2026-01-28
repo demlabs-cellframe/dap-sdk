@@ -43,13 +43,12 @@ bool dap_io_flow_classic_bpf_is_available(void);
 dap_io_flow_lb_tier_t dap_io_flow_detect_lb_tier(void);
 
 /**
- * @brief Attach eBPF sticky session program to SO_REUSEPORT socket
+ * @brief Attach eBPF sticky session program to SO_REUSEPORT socket group
  * 
- * Loads and attaches eBPF program that implements consistent hashing
- * based on (src_ip, src_port) to ensure packets from the same client
- * always arrive on the same worker thread.
+ * Loads and attaches eBPF program that returns kernel-computed hash.
+ * Kernel distributes packets ensuring sticky sessions: same client → same worker.
  * 
- * @param socket_fd One of the SO_REUSEPORT sockets (any from the group)
+ * @param socket_fd One of the SO_REUSEPORT sockets (program attaches to entire group)
  * @return 0 on success, -1 on error
  */
 int dap_io_flow_ebpf_attach_socket(int socket_fd);

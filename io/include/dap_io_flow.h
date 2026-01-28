@@ -85,8 +85,9 @@ typedef struct dap_context_queue dap_context_queue_t;
  */
 typedef enum {
     DAP_IO_FLOW_LB_TIER_NONE = 0,        // No load balancing (single socket)
-    DAP_IO_FLOW_LB_TIER_APPLICATION = 1, // Application-level via queues
-    DAP_IO_FLOW_LB_TIER_EBPF = 2         // eBPF with SO_ATTACH_REUSEPORT_EBPF
+    DAP_IO_FLOW_LB_TIER_APPLICATION = 1, // Application-level via queues (fallback)
+    DAP_IO_FLOW_LB_TIER_CLASSIC_BPF = 2, // Classic BPF with SO_ATTACH_REUSEPORT_CBPF (good)
+    DAP_IO_FLOW_LB_TIER_EBPF = 3         // eBPF with SO_ATTACH_REUSEPORT_EBPF (best)
 } dap_io_flow_lb_tier_t;
 
 /**

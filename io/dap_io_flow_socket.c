@@ -29,6 +29,7 @@
 #include "dap_list.h"
 #include "dap_io_flow_socket.h"
 #include "dap_io_flow_ebpf.h"
+#include "dap_io_flow_cbpf.h"
 #include "dap_worker.h"
 #include "dap_server.h"
 #include "dap_proc_thread.h"
@@ -265,8 +266,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         *a_lb_tier_out = l_lb_tier;
     }
     
-    // Determine if we need SO_REUSEPORT (Tier 2: eBPF only)
-    bool l_enable_reuseport = (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF);
+    // Determine if we need SO_REUSEPORT (Tier 2 and Tier 3: BPF-based)
+    bool l_enable_reuseport = (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF || 
+                                l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF);
     
     // Determine number of listeners to create
     uint32_t l_num_listeners = 1;
@@ -393,18 +395,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             return -4;
         }
         
-        // Attach load balancing mechanism (first socket only, eBPF only)
-        if (i == 0 && l_is_udp && l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
-            // Tier 2: eBPF with SO_ATTACH_REUSEPORT_EBPF
-            if (dap_io_flow_ebpf_attach_socket(l_socket) != 0) {
-                log_it(L_CRITICAL, "FATAL: eBPF attach failed");
-                close(l_socket);
-                return -98;
-            }
-        }
-        // Tier 1: Application-level - no kernel attachment needed
-        
-        // Wrap socket in esocket
+        // Wrap socket in esocket (attach eBPF AFTER creating all sockets)
         dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_socket, a_callbacks);
         if (!l_es) {
             log_it(L_ERROR, "Failed to wrap socket for worker %u", i);
@@ -432,14 +423,51 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
     }
     
+    // Attach BPF program AFTER all sockets created and bound to REUSEPORT group
+    if (l_enable_reuseport && a_server->es_listeners) {
+        dap_events_socket_t *l_first_listener = (dap_events_socket_t *)a_server->es_listeners->data;
+        if (!l_first_listener) {
+            log_it(L_ERROR, "No listeners in list for BPF attach");
+            return -97;
+        }
+        
+        log_it(L_NOTICE, "Attaching BPF program to SO_REUSEPORT group (%u sockets)...",
+               l_num_listeners);
+        
+        int attach_result = -1;
+        
+        if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
+            // Try eBPF attach (Tier 3)
+            attach_result = dap_io_flow_ebpf_attach_socket(l_first_listener->fd);
+            if (attach_result != 0) {
+                log_it(L_WARNING, "eBPF attach failed, trying classic BPF fallback...");
+                attach_result = dap_io_flow_cbpf_attach_socket(l_first_listener->fd);
+            }
+        } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
+            // Use classic BPF (Tier 2)
+            attach_result = dap_io_flow_cbpf_attach_socket(l_first_listener->fd);
+        }
+        
+        if (attach_result != 0) {
+            log_it(L_CRITICAL, "FATAL: BPF attach failed for all available methods");
+            return -98;
+        }
+        
+        log_it(L_NOTICE, "✅ BPF attached: all %u sockets now use kernel hash distribution",
+               l_num_listeners);
+    }
+    
     // Final summary
     const char *l_tier_desc = "unknown";
     switch (l_lb_tier) {
         case DAP_IO_FLOW_LB_TIER_EBPF:
-            l_tier_desc = "eBPF (kernel sticky sessions with FNV-1a)";
+            l_tier_desc = "eBPF (Tier 3 - kernel hash-based sticky sessions)";
+            break;
+        case DAP_IO_FLOW_LB_TIER_CLASSIC_BPF:
+            l_tier_desc = "Classic BPF (Tier 2 - kernel hash-based sticky sessions)";
             break;
         case DAP_IO_FLOW_LB_TIER_APPLICATION:
-            l_tier_desc = "Application-level (queue-based distribution)";
+            l_tier_desc = "Application-level (Tier 1 - queue-based distribution)";
             break;
         default:
             l_tier_desc = "None (single listener)";
