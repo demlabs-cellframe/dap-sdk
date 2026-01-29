@@ -339,7 +339,7 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
         return log_it(L_ERROR, "Failed to generate JSON for params"), NULL;
 
     char *l_str = dap_strdup_printf(
-        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%" DAP_UINT64_FORMAT_U "\", \"version\":\"%d\" }",
+        "{\"method\":\"%s\", \"params\":%s, \"id\":%" DAP_UINT64_FORMAT_U ", \"version\":%d }",
         a_request->method, params_json, a_request->id, a_request->version);
     DAP_DELETE(params_json);
     return l_str;
