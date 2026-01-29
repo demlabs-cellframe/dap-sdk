@@ -85,9 +85,20 @@ typedef struct dap_context_queue dap_context_queue_t;
  */
 typedef enum {
     DAP_IO_FLOW_LB_TIER_NONE = 0,        // No load balancing (single socket)
-    DAP_IO_FLOW_LB_TIER_APPLICATION = 1, // Application-level via queues (fallback)
-    DAP_IO_FLOW_LB_TIER_CLASSIC_BPF = 2, // Classic BPF with SO_ATTACH_REUSEPORT_CBPF (good)
-    DAP_IO_FLOW_LB_TIER_EBPF = 3         // eBPF with SO_ATTACH_REUSEPORT_EBPF (best)
+    DAP_IO_FLOW_LB_TIER_APPLICATION = 1, // Application-level via queues (universal fallback)
+#if defined(__linux__) || defined(ANDROID)
+    DAP_IO_FLOW_LB_TIER_CLASSIC_BPF , // Linux: Classic BPF with SO_ATTACH_REUSEPORT_CBPF
+    DAP_IO_FLOW_LB_TIER_EBPF ,        // Linux: eBPF with SO_ATTACH_REUSEPORT_EBPF
+#endif
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+    DAP_IO_FLOW_LB_TIER_BSD_LB,      // FreeBSD: SO_REUSEPORT_LB kernel load balancing
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+    DAP_IO_FLOW_LB_TIER_DARWIN_GCD ,  // macOS/iOS: GCD with SO_REUSEPORT (app-level)
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+    DAP_IO_FLOW_LB_TIER_WIN_RIO       // Windows: RIO + IOCP (app-level)
+#endif
 } dap_io_flow_lb_tier_t;
 
 /**

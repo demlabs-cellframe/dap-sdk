@@ -272,6 +272,45 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     uint64_t l_cleanup_start = dap_test_get_time_ms();
     
     // ============================================================================
+    // PHASE 0: IMMEDIATELY delete all server flows to prevent address reuse conflicts
+    // ============================================================================
+    // CRITICAL: This must be done FIRST, before any client cleanup!
+    // Old flows with recv_seq_expected from previous test can intercept packets
+    // from new clients with same addresses (e.g., 127.0.0.1:33537).
+    // By deleting flows immediately, we ensure hash tables are cleared before
+    // the next test starts.
+    if (a_ctx->servers) {
+        log_it(L_DEBUG, "Phase 0: Immediately deleting all server flows to prevent address reuse...");
+        for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
+            if (a_ctx->servers[i] && a_ctx->servers[i]->trans_specific) {
+                // Get UDP-specific server
+                dap_net_trans_udp_server_t *l_udp_server = 
+                    (dap_net_trans_udp_server_t*)a_ctx->servers[i]->trans_specific;
+                
+                // Mark all flow servers as deleting (stops accepting new packets)
+                if (l_udp_server->flow_servers) {
+                    for (size_t j = 0; j < l_udp_server->flow_servers_count; j++) {
+                        if (l_udp_server->flow_servers[j]) {
+                            atomic_store(&l_udp_server->flow_servers[j]->is_deleting, true);
+                        }
+                    }
+                }
+                
+                // IMMEDIATELY delete all flows (synchronous, removes from hash tables)
+                if (l_udp_server->flow_servers) {
+                    for (size_t j = 0; j < l_udp_server->flow_servers_count; j++) {
+                        if (l_udp_server->flow_servers[j]) {
+                            int l_deleted = dap_io_flow_delete_all_flows(l_udp_server->flow_servers[j]);
+                            log_it(L_DEBUG, "Phase 0: Server #%zu flow_server[%zu] - deleted %d flows", i, j, l_deleted);
+                        }
+                    }
+                }
+            }
+        }
+        log_it(L_DEBUG, "Phase 0 complete: all server flows deleted, hash tables cleared");
+    }
+    
+    // ============================================================================
     // PHASE 1: Prepare for client shutdown
     // ============================================================================
     if (a_ctx->clients) {
@@ -1292,6 +1331,8 @@ int main(void)
                                 "debug_more=true\n"
                                 "debug_dump_stream_headers=false\n"
                                 "debug_channels=false\n"
+                                "[stream_pkt]\n"
+                                "debug_more=true\n"
                                 "[stream_udp]\n"
                                 "debug_more=true\n"
                                 "[io_flow]\n"

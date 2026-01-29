@@ -258,16 +258,26 @@ int dap_io_flow_server_listen(
     }
     
     // Initialize inter-worker queues ONLY for Application-level LB (Tier 1)
-    // For BPF tiers (Tier 2/3), kernel distributes packets directly - no forwarding needed!
-    if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+    // Kernel-level tiers (BPF, BSD LB, etc.) distribute packets directly - no forwarding needed!
+    // macOS GCD and Windows RIO also use Application tier internally but with platform optimizations
+    bool needs_queues = (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION
+#ifdef DAP_IO_FLOW_LB_TIER_DARWIN_GCD
+                         || a_server->lb_tier == DAP_IO_FLOW_LB_TIER_DARWIN_GCD
+#endif
+#ifdef DAP_IO_FLOW_LB_TIER_WIN_RIO
+                         || a_server->lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO
+#endif
+                        );
+    
+    if (needs_queues) {
         l_ret = s_init_inter_worker_queues(a_server);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to initialize inter-worker queues: %d", l_ret);
             return l_ret;
         }
-        log_it(L_NOTICE, "Inter-worker queues initialized for Application-level LB");
+        log_it(L_NOTICE, "Inter-worker queues initialized for application-level distribution");
     } else {
-        log_it(L_NOTICE, "Skipping inter-worker queues (BPF tier - kernel handles distribution)");
+        log_it(L_NOTICE, "Skipping inter-worker queues (kernel-level tier handles distribution)");
     }
     
     a_server->is_running = true;
@@ -1310,7 +1320,7 @@ static void s_queue_ptr_callback(void *a_ptr)
     pthread_mutex_unlock(&l_server->cross_worker_mutex);
     
     debug_if(s_debug_more, L_DEBUG, 
-             "Queue callback: packet processed, cross_worker_packets now: %lu",
+             "Queue callback: packet processed, cross_worker_packets now: %u",
              atomic_load(&l_server->cross_worker_packets));
 }
 

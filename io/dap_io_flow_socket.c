@@ -29,9 +29,17 @@
 #include "dap_list.h"
 #include "dap_io_flow_socket.h"
 #include "dap_worker.h"
-#ifdef __linux__
+
+// Platform-specific load balancing implementations
+#if defined(__linux__) || defined(ANDROID)
 #include "linux/dap_io_flow_ebpf.h"
 #include "linux/dap_io_flow_cbpf.h"
+#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#include "bsd/dap_io_flow_bsd_lb.h"
+#elif defined(__APPLE__) && defined(__MACH__)
+#include "darwin/dap_io_flow_darwin_gcd.h"
+#elif defined(_WIN32) || defined(_WIN64)
+#include "windows/dap_io_flow_win_rio.h"
 #endif
 #include "dap_server.h"
 #include "dap_proc_thread.h"
@@ -257,27 +265,53 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     uint32_t l_worker_count = dap_proc_thread_get_count();
     bool l_is_udp = (a_socket_type == SOCK_DGRAM);
     
-    // Detect best available load balancing tier (eBPF → Classic BPF → Application)
+    // Detect best available load balancing tier (platform-specific)
     dap_io_flow_lb_tier_t l_lb_tier = DAP_IO_FLOW_LB_TIER_NONE;
     if (l_is_udp && l_worker_count > 1) {
-#ifdef __linux__
-        // Try eBPF (Tier 3) - Linux only
+#if defined(__linux__) || defined(ANDROID)
+        // Linux/Android: eBPF → Classic BPF → Application
         if (dap_io_flow_ebpf_is_available()) {
             l_lb_tier = DAP_IO_FLOW_LB_TIER_EBPF;
             log_it(L_NOTICE, "🚀 Load balancing: Tier 3 (eBPF) - Kernel sticky sessions");
-        }
-        // Try Classic BPF (Tier 2) if eBPF not available - Linux only
-        else if (dap_io_flow_cbpf_is_available()) {
+        } else if (dap_io_flow_cbpf_is_available()) {
             l_lb_tier = DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
             log_it(L_NOTICE, "🔧 Load balancing: Tier 2 (Classic BPF) - Kernel sticky sessions");
-        }
-        // Fallback to Application-level (Tier 1)
-        else
-#endif
-        {
+        } else {
             l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
-            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based distribution");
+            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
         }
+#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+        // BSD: SO_REUSEPORT_LB (FreeBSD/DragonFly) → Application
+        if (dap_io_flow_bsd_lb_is_available()) {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_BSD_LB;
+            log_it(L_NOTICE, "🔧 Load balancing: Tier 4 (BSD SO_REUSEPORT_LB) - Kernel distribution");
+        } else {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+        }
+#elif defined(__APPLE__) && defined(__MACH__)
+        // macOS/iOS: GCD with SO_REUSEPORT (application-level, but optimized)
+        if (dap_io_flow_darwin_gcd_is_available()) {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_DARWIN_GCD;
+            log_it(L_NOTICE, "🍎 Load balancing: Tier 5 (macOS GCD) - SO_REUSEPORT + kqueue");
+        } else {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+        }
+#elif defined(_WIN32) || defined(_WIN64)
+        // Windows: RIO + IOCP (application-level)
+        if (dap_io_flow_win_rio_is_available()) {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_WIN_RIO;
+            log_it(L_NOTICE, "🪟 Load balancing: Tier 6 (Windows RIO) - IOCP + app distribution");
+        } else {
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+        }
+#else
+        // Unknown platform: use universal application-level
+        l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+        log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Universal fallback");
+#endif
     }
     
     // Return tier to caller
@@ -285,9 +319,10 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         *a_lb_tier_out = l_lb_tier;
     }
     
-    // Determine if we need SO_REUSEPORT (Tier 2 and Tier 3: BPF-based)
-    bool l_enable_reuseport = (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF || 
-                                l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF);
+    // Determine if we need SO_REUSEPORT or equivalent
+    // All tiers except NONE and APPLICATION require multiple sockets
+    bool l_enable_reuseport = (l_lb_tier != DAP_IO_FLOW_LB_TIER_NONE &&
+                                l_lb_tier != DAP_IO_FLOW_LB_TIER_APPLICATION);
     
     // Determine number of listeners to create
     uint32_t l_num_listeners = 1;
@@ -380,28 +415,62 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
 #endif
         }
         
-        // CRITICAL: Attach BPF on FIRST socket BEFORE bind! (Linux only)
-        // Kernel requires: sk_unhashed() sockets can attach if sk->sk_reuseport set
-        // For bound sockets, attach only works if sk_reuseport_cb exists (2nd+ socket)
-#ifdef __linux__
+        // CRITICAL: Platform-specific configuration BEFORE bind
         if (i == 0 && l_enable_reuseport) {
-            int attach_ret = -1;
+            int config_ret = -1;
             
+#if defined(__linux__) || defined(ANDROID)
+            // Linux/Android: BPF attach before bind (kernel requirement)
             if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
-                attach_ret = dap_io_flow_ebpf_attach_socket(l_socket);
+                config_ret = dap_io_flow_ebpf_attach_socket(l_socket);
             } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
-                attach_ret = dap_io_flow_cbpf_attach_socket(l_socket);
+                config_ret = dap_io_flow_cbpf_attach_socket(l_socket);
             }
             
-            if (attach_ret != 0) {
+            if (config_ret != 0) {
                 log_it(L_CRITICAL, "BPF attach failed before bind (tier=%d)", l_lb_tier);
                 close(l_socket);
                 return -98;
             }
-            
             log_it(L_NOTICE, "✅ BPF attached to first socket BEFORE bind");
-        }
+            
+#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+            // BSD: Enable SO_REUSEPORT_LB before bind
+            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_BSD_LB) {
+                config_ret = dap_io_flow_bsd_lb_enable(l_socket);
+                if (config_ret != 0) {
+                    log_it(L_CRITICAL, "BSD SO_REUSEPORT_LB failed before bind");
+                    close(l_socket);
+                    return -98;
+                }
+                log_it(L_NOTICE, "✅ BSD SO_REUSEPORT_LB enabled BEFORE bind");
+            }
+            
+#elif defined(__APPLE__) && defined(__MACH__)
+            // macOS/iOS: Configure GCD (SO_REUSEPORT + SO_REUSEADDR)
+            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_DARWIN_GCD) {
+                config_ret = dap_io_flow_darwin_gcd_configure(l_socket);
+                if (config_ret != 0) {
+                    log_it(L_CRITICAL, "macOS GCD configuration failed");
+                    close(l_socket);
+                    return -98;
+                }
+                log_it(L_NOTICE, "✅ macOS GCD configured (SO_REUSEPORT + SO_REUSEADDR)");
+            }
+            
+#elif defined(_WIN32) || defined(_WIN64)
+            // Windows: Configure RIO/IOCP
+            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
+                config_ret = dap_io_flow_win_rio_configure(l_socket);
+                if (config_ret != 0) {
+                    log_it(L_CRITICAL, "Windows RIO configuration failed");
+                    close(l_socket);
+                    return -98;
+                }
+                log_it(L_NOTICE, "✅ Windows RIO configured (SO_REUSEADDR)");
+            }
 #endif
+        }
         
         // Bind socket
         struct sockaddr_storage l_bind_addr = {0};
@@ -465,17 +534,34 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
     }
     
-    // Final summary
+    // Final summary with platform-specific descriptions
     const char *l_tier_desc = "unknown";
     switch (l_lb_tier) {
+#if defined(__linux__) || defined(ANDROID)
         case DAP_IO_FLOW_LB_TIER_EBPF:
-            l_tier_desc = "eBPF (Tier 3 - kernel hash-based sticky sessions)";
+            l_tier_desc = "eBPF (Tier 3 - Linux kernel sticky sessions)";
             break;
         case DAP_IO_FLOW_LB_TIER_CLASSIC_BPF:
-            l_tier_desc = "Classic BPF (Tier 2 - kernel hash-based sticky sessions)";
+            l_tier_desc = "Classic BPF (Tier 2 - Linux kernel sticky sessions)";
             break;
+#endif
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+        case DAP_IO_FLOW_LB_TIER_BSD_LB:
+            l_tier_desc = "BSD SO_REUSEPORT_LB (Tier 4 - FreeBSD kernel distribution)";
+            break;
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+        case DAP_IO_FLOW_LB_TIER_DARWIN_GCD:
+            l_tier_desc = "macOS GCD (Tier 5 - kqueue + SO_REUSEPORT)";
+            break;
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+        case DAP_IO_FLOW_LB_TIER_WIN_RIO:
+            l_tier_desc = "Windows RIO (Tier 6 - IOCP + app distribution)";
+            break;
+#endif
         case DAP_IO_FLOW_LB_TIER_APPLICATION:
-            l_tier_desc = "Application-level (Tier 1 - queue-based distribution)";
+            l_tier_desc = "Application-level (Tier 1 - universal queue-based)";
             break;
         default:
             l_tier_desc = "None (single listener)";

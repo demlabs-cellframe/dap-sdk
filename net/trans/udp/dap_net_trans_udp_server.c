@@ -994,6 +994,9 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     l_session->session = l_stream_session;
     l_session->base.base.session_context = l_stream_session;
     
+    // NOTE: Do NOT copy encryption_key here! It will be set later after session key derivation
+    // to avoid dangling pointer when handshake key is deleted.
+    
     // CRITICAL: Link session to stream for dap_stream_data_proc_read_ext!
     // dap_stream.c relies on stream->session->key for packet decryption
     if (l_session->stream) {
@@ -1885,11 +1888,24 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
         return -6;
     }
     
+    // CRITICAL: Set session key in stream->session IMMEDIATELY after derivation!
+    // This must be done BEFORE sending SESSION_CREATE response, because client
+    // may start sending data immediately after receiving the response.
+    // We can safely set the new key here because incoming data packets will use session key,
+    // while SESSION_CREATE response is encrypted with handshake key (still in a_session->encryption_key).
+    if (a_session->stream && a_session->stream->session) {
+        a_session->stream->session->key = l_session_key;
+        debug_if(s_debug_more, L_DEBUG, "SERVER: Set session key in stream->session->key (stream=%p, session=%p, session key=%p)",
+               a_session->stream, a_session->stream->session, l_session_key);
+    } else {
+        log_it(L_ERROR, "SERVER: Cannot set stream->session->key! stream=%p, session=%p",
+               a_session->stream, a_session->stream ? a_session->stream->session : NULL);
+    }
     
     log_it(L_INFO, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
     
-    // CRITICAL: Send SESSION_CREATE response BEFORE replacing handshake key!
-    // Client still uses handshake key for decryption, session key will be derived after receiving counter
+    // CRITICAL: Send SESSION_CREATE response using HANDSHAKE key (still in a_session->encryption_key)!
+    // Client will derive session key after receiving this counter, so response must use handshake key
     uint64_t l_counter_be = htobe64(l_kdf_counter);
     
     int l_ret = s_send_udp_packet(a_session,
@@ -1898,26 +1914,19 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to send SESSION_CREATE response: %d", l_ret);
+        // Rollback: remove session key from stream->session before deleting it
+        if (a_session->stream && a_session->stream->session) {
+            a_session->stream->session->key = a_session->encryption_key; // Restore handshake key
+        }
         dap_enc_key_delete(l_session_key);
         return l_ret;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE response sent (ret=%d), now replacing keys", l_ret);
+    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE response sent (ret=%d), now replacing handshake key in a_session", l_ret);
     
-    // NOW replace handshake key with session key (after sending response)
+    // NOW delete old handshake key and replace it in a_session (session key already set in stream->session)
     dap_enc_key_delete(a_session->encryption_key);
     a_session->encryption_key = l_session_key;
-    
-    // CRITICAL: Set session key in stream->session for dap_stream packet processing!
-    // dap_stream.c relies on stream->session->key for FRAGMENT_PACKET decryption
-    if (a_session->stream && a_session->stream->session) {
-        a_session->stream->session->key = l_session_key;
-        debug_if(s_debug_more, L_DEBUG, "SERVER: Set session key in stream->session->key (stream=%p, session=%p, key=%p)",
-               a_session->stream, a_session->stream->session, l_session_key);
-    } else {
-        log_it(L_ERROR, "SERVER: Cannot set stream->session->key! stream=%p, session=%p",
-               a_session->stream, a_session->stream ? a_session->stream->session : NULL);
-    }
     
     return l_ret;
 }
