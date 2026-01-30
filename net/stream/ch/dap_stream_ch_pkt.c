@@ -375,7 +375,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
             memcpy(l_fragment->data, l_src, l_fragment_size);
             
             debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
-                     "Fragment[%zu]: size=%zu, mem_shift=%zu, remaining=%zu",
+                     "Fragment[%zu]: size=%zu, mem_shift=%u, remaining=%zu",
                      l_iteration, l_fragment_size, l_fragment->mem_shift, l_remaining);
             
             l_ret += dap_stream_pkt_write_unsafe(a_ch->stream, STREAM_PKT_TYPE_FRAGMENT_PACKET, l_fragment,

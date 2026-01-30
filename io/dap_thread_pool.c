@@ -152,7 +152,7 @@ dap_thread_pool_t* dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
         }
         
         // Set thread name for debugging
-        char l_name[16];
+        char l_name[32];  // Increased to fit "kem_worker_" + 10 digits + null terminator
         snprintf(l_name, sizeof(l_name), "kem_worker_%u", i);
         dap_thread_set_name(l_pool->threads[i], l_name);
         
