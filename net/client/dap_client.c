@@ -30,8 +30,11 @@
 #include "dap_config.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_http_stream.h"
+#include "dap_uuid.h"
 
 #define LOG_TAG "dap_client"
+
+static bool s_debug_more = false;
 
 // FSM realization: thats callback executes after the every stage is done
 // and have to select the next one stage
@@ -48,6 +51,13 @@ int dap_client_init()
     if (s_is_first_time ) {
         int err = 0;
         log_it(L_INFO, "Init DAP client module");
+        
+        // Initialize debug flag from config (use global g_config)
+        extern dap_config_t *g_config;
+        if (g_config) {
+            s_debug_more = dap_config_get_item_bool_default(g_config, "dap_client", "debug_more", false);
+        }
+        
         dap_http_client_init();
         err = dap_client_http_init();
         if (err)
@@ -98,6 +108,10 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
     l_client->trans_type = s_get_default_transport_from_config(); // Load from config or default to legacy HTTP protocol
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    
+    // Assign unique UUID (CRITICAL: must be done first for safety)
+    l_client_pvt->uuid = dap_uuid_generate_uint64();
+    
     l_client_pvt->client = l_client;
     l_client_pvt->worker = dap_events_worker_get_auto();
     
@@ -116,6 +130,10 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
     l_client_pvt->tried_transports[l_client_pvt->tried_transport_count++] = l_client->trans_type;
     
     dap_client_pvt_new(l_client_pvt);
+    
+    debug_if(s_debug_more, L_DEBUG, "Created client %p (uuid=0x%016"PRIx64", pvt=%p)", 
+             l_client, l_client_pvt->uuid, l_client_pvt);
+    
     return l_client;
 }
 
@@ -253,14 +271,46 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
 
 void s_client_delete_on_worker(void *a_arg)
 {
-    dap_client_delete_unsafe(a_arg);
+    dap_client_t *l_client = (dap_client_t*)a_arg;
+    if (!l_client) {
+        return;
+    }
+    
+    dap_client_pvt_t *l_pvt = DAP_CLIENT_PVT(l_client);
+    if (!l_pvt) {
+        debug_if(s_debug_more, L_DEBUG, "Client %p already deleted (pvt is NULL)", l_client);
+        return;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Deleting client %p (uuid=0x%016"PRIx64", pvt=%p) on worker", 
+             l_client, l_pvt->uuid, l_pvt);
+    
+    dap_client_delete_unsafe(l_client);
 }
 
 void dap_client_delete_mt(dap_client_t *a_client)
 {
-    DAP_CLIENT_PVT(a_client)->is_removing = true;
-    dap_worker_t *l_worker = DAP_CLIENT_PVT(a_client)->worker;
-    dap_worker_exec_callback_on(l_worker, s_client_delete_on_worker, a_client);
+    if (!a_client) {
+        return;
+    }
+    
+    dap_client_pvt_t *l_pvt = DAP_CLIENT_PVT(a_client);
+    if (!l_pvt) {
+        return;
+    }
+    
+    debug_if(s_debug_more, L_DEBUG, "Deleting client %p (uuid=0x%016"PRIx64", pvt=%p) synchronously", 
+             a_client, l_pvt->uuid, l_pvt);
+    
+    l_pvt->is_removing = true;
+    dap_worker_t *l_worker = l_pvt->worker;
+    
+    // CRITICAL: Use SYNCHRONOUS deletion to prevent race conditions
+    // This ensures the client is fully deleted before returning,
+    // preventing memory reuse conflicts and use-after-free bugs
+    dap_worker_exec_callback_on_sync(l_worker, s_client_delete_on_worker, a_client);
+    
+    debug_if(s_debug_more, L_DEBUG, "Client %p deleted synchronously", a_client);
 }
 
 struct go_stage_arg {

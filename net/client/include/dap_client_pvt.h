@@ -33,6 +33,7 @@
 typedef struct dap_enc_key dap_enc_key_t;
 
 typedef struct dap_client_pvt {
+    uint64_t uuid;               // Unique UUID for this client instance (MUST be first for fast validation)
     dap_client_t *client;
 
     dap_stream_t *stream;

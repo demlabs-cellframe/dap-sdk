@@ -118,7 +118,7 @@ static int dap_io_flow_ebpf_load_prog(void)
             log_it(L_ERROR, "BPF syscall not available - kernel too old (need 4.15+)");
         }
     } else {
-        log_it(L_NOTICE, "✅ eBPF program loaded successfully (fd=%d, %zu instructions)",
+        log_it(L_NOTICE, "✅ eBPF program loaded successfully (fd=%d, %u instructions)",
                prog_fd, attr.insn_cnt);
         log_it(L_NOTICE, "Kernel hash-based sticky sessions enabled (same client → same worker)");
     }

@@ -336,29 +336,22 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     }
     
     // ============================================================================
-    // PHASE 3: Delete clients (async with wait)
+    // PHASE 3: Delete clients (now synchronous, but parallelized per client)
     // ============================================================================
     if (a_ctx->clients) {
-        log_it(L_DEBUG, "Phase 3: Deleting %zu clients (async)...", a_ctx->scenario.num_clients);
+        log_it(L_DEBUG, "Phase 3: Deleting %zu clients (synchronous per-client)...", a_ctx->scenario.num_clients);
         uint64_t l_phase3_start = dap_test_get_time_ms();
         
-        // Start all async deletions first
-        for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
-            if (a_ctx->clients[i]) {
-                dap_client_delete_mt(a_ctx->clients[i]);
-            }
-        }
-        
-        // Wait for all deletions to complete
+        // Start all deletions in parallel
+        // Since dap_client_delete_mt() is now synchronous, we need to call it from each client's worker
+        // This is already done inside delete_mt via dap_worker_exec_callback_on_sync()
+        // So we can safely call them sequentially from this thread
         size_t l_deleted_count = 0;
         for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
             if (a_ctx->clients[i]) {
-                if (test_wait_for_client_deleted(&a_ctx->clients[i], 3000)) {
-                    a_ctx->clients[i] = NULL;
-                    l_deleted_count++;
-                } else {
-                    log_it(L_WARNING, "Client #%zu deletion timeout", i);
-                }
+                dap_client_delete_mt(a_ctx->clients[i]);
+                a_ctx->clients[i] = NULL;
+                l_deleted_count++;
             }
         }
         
@@ -944,6 +937,8 @@ static void *test_trans_worker(void *a_arg)
     // Start handshake for all clients
     log_it(L_INFO, "Starting handshake for all %zu clients...", l_ctx->scenario.num_clients);
     for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
+        log_it(L_DEBUG, "TEST: client[%zu] = %p, client->_internal = %p", 
+               i, l_ctx->clients[i], l_ctx->clients[i] ? l_ctx->clients[i]->_internal : NULL);
         dap_client_go_stage(l_ctx->clients[i], STAGE_STREAM_STREAMING, NULL);
         
         if (i % 100 == 0 && i > 0) {
@@ -1170,7 +1165,7 @@ static void test_02_sequential_trans_testing(void)
             if (l_tier == 1 && g_scenarios[scenario_idx].num_clients > TIER1_MAX_CLIENTS) {
                 printf("\n--- Scenario %zu/%zu: %s ---\n", 
                        scenario_idx + 1, SCENARIO_COUNT, g_scenarios[scenario_idx].name);
-                printf("⏭️  SKIPPED: Tier 1 limited to %u concurrent clients (scenario has %u)\n",
+                printf("⏭️  SKIPPED: Tier 1 limited to %u concurrent clients (scenario has %zu)\n",
                        TIER1_MAX_CLIENTS, g_scenarios[scenario_idx].num_clients);
                 printf("   To enable: run as root or grant CAP_BPF capability for eBPF support\n");
                 continue;
@@ -1344,6 +1339,8 @@ int main(void)
                                 "[net_trans]\n"
                                 "debug_more=true\n"
                                 "[dap_net_trans_udp_server]\n"
+                                "debug_more=true\n"
+                                "[dap_client]\n"
                                 "debug_more=true\n"
                                 "[test_trans_helpers]\n"
                                 "debug_more=true\n";

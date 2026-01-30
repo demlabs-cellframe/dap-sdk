@@ -182,12 +182,58 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
 int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 {
     dap_return_val_if_fail(a_context && a_arg, -1);
-    //TODO add deinit code for queues and others
+    
+    dap_worker_t *l_worker = a_arg;
+    assert(l_worker);
+    
+    log_it(L_NOTICE,"Stopping thread #%u, cleaning up queues...", l_worker->id);
+    
+    // Clean up worker queues
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_worker->queue_es_new) {
+        dap_context_queue_delete(l_worker->queue_es_new);
+        l_worker->queue_es_new = NULL;
+    }
+    if (l_worker->queue_es_delete) {
+        dap_context_queue_delete(l_worker->queue_es_delete);
+        l_worker->queue_es_delete = NULL;
+    }
+    if (l_worker->queue_es_reassign) {
+        dap_context_queue_delete(l_worker->queue_es_reassign);
+        l_worker->queue_es_reassign = NULL;
+    }
+    if (l_worker->queue_es_io) {
+        dap_context_queue_delete(l_worker->queue_es_io);
+        l_worker->queue_es_io = NULL;
+    }
+    
+    // Clean up input queue arrays
+    if (l_worker->queue_es_new_input) {
+        DAP_DELETE(l_worker->queue_es_new_input);
+        l_worker->queue_es_new_input = NULL;
+    }
+    if (l_worker->queue_es_delete_input) {
+        DAP_DELETE(l_worker->queue_es_delete_input);
+        l_worker->queue_es_delete_input = NULL;
+    }
+    if (l_worker->queue_es_reassign_input) {
+        DAP_DELETE(l_worker->queue_es_reassign_input);
+        l_worker->queue_es_reassign_input = NULL;
+    }
+    if (l_worker->queue_es_io_input) {
+        DAP_DELETE(l_worker->queue_es_io_input);
+        l_worker->queue_es_io_input = NULL;
+    }
+#endif
+    
+    if (l_worker->queue_callback) {
+        dap_context_queue_delete(l_worker->queue_callback);
+        l_worker->queue_callback = NULL;
+    }
+    
     dap_context_remove(a_context->event_exit);
     dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
 
-    dap_worker_t *l_worker = a_arg;
-    assert(l_worker);
     log_it(L_NOTICE,"Exiting thread #%u", l_worker->id);
     return 0;
 }
@@ -567,15 +613,18 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
  */
 void dap_worker_add_events_socket_inter(dap_events_socket_t *a_es_input, dap_events_socket_t *a_events_socket)
 {
-    dap_return_if_fail(a_es_input && a_events_socket);
+    dap_return_if_fail(a_events_socket);
     
-    // Old API compatibility: a_es_input is from pipe-based queue system
-    // We need to find the corresponding worker_queue from the queue socket
-    // For now, log error - this needs proper migration
-    log_it(L_ERROR, "DEPRECATED: dap_worker_add_events_socket_inter called with old pipe-based API. "
-           "This function needs migration to new worker_queue API");
+    // Migrate from old pipe-based API to new queue-based API
+    // a_es_input parameter is legacy and ignored - use auto worker assignment
+    dap_worker_t *l_target_worker = dap_events_worker_get_auto();
+    if (!l_target_worker) {
+        log_it(L_ERROR, "Failed to get target worker for inter-worker socket assignment");
+        return;
+    }
     
-    // TODO: Remove this function or update callers to use new API
+    // Use new direct assignment API
+    dap_worker_add_events_socket(l_target_worker, a_events_socket);
 }
 
 /**
@@ -586,13 +635,18 @@ void dap_worker_add_events_socket_inter(dap_events_socket_t *a_es_input, dap_eve
  */
 void dap_worker_exec_callback_inter(dap_events_socket_t *a_es_input, dap_worker_callback_t a_callback, void *a_arg)
 {
-    dap_return_if_fail(a_es_input && a_callback);
+    dap_return_if_fail(a_callback);
     
-    // Old API compatibility - needs migration
-    log_it(L_ERROR, "DEPRECATED: dap_worker_exec_callback_inter called with old pipe-based API. "
-           "This function needs migration to new worker_queue API");
+    // Migrate from old pipe-based API to new queue-based API
+    // a_es_input parameter is legacy and ignored - use auto worker assignment
+    dap_worker_t *l_target_worker = dap_events_worker_get_auto();
+    if (!l_target_worker) {
+        log_it(L_ERROR, "Failed to get target worker for inter-worker callback");
+        return;
+    }
     
-    // TODO: Remove this function or update callers to use new API
+    // Use new direct callback API
+    dap_worker_exec_callback_on(l_target_worker, a_callback, a_arg);
 }
 #endif
 
@@ -613,6 +667,78 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
         log_it(L_ERROR, "Failed to push callback to worker queue (queue full)");
         DAP_DELETE(l_msg);
     }
+}
+
+// Helper structure for synchronous callback execution
+typedef struct {
+    dap_worker_callback_t callback;
+    void *arg;
+    pthread_mutex_t *mutex;
+    pthread_cond_t *cond;
+    bool *completed;
+} dap_worker_sync_wrapper_t;
+
+// Global wrapper callback for synchronous execution
+static void s_worker_sync_wrapper_callback(void *a_wrapper_arg) {
+    dap_worker_sync_wrapper_t *l_data = (dap_worker_sync_wrapper_t*)a_wrapper_arg;
+    
+    // Execute actual callback
+    l_data->callback(l_data->arg);
+    
+    // Signal completion
+    pthread_mutex_lock(l_data->mutex);
+    *l_data->completed = true;
+    pthread_cond_signal(l_data->cond);
+    pthread_mutex_unlock(l_data->mutex);
+}
+
+/**
+ * @brief dap_worker_exec_callback_on_sync - Synchronous callback execution
+ * @param a_worker Worker to execute callback on
+ * @param a_callback Callback function
+ * @param a_arg Callback argument
+ * 
+ * This function executes a callback on a worker thread and waits for completion.
+ * If called from the target worker thread, executes immediately (avoiding deadlock).
+ * Otherwise, schedules the callback and blocks until it completes.
+ */
+void dap_worker_exec_callback_on_sync(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
+{
+    dap_return_if_fail(a_worker && a_callback);
+    
+    // Check if we're already on the target worker - execute immediately
+    dap_worker_t *l_current_worker = dap_worker_get_current();
+    if (l_current_worker == a_worker) {
+        a_callback(a_arg);
+        return;
+    }
+    
+    // Need cross-worker synchronization
+    pthread_mutex_t l_mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t l_cond = PTHREAD_COND_INITIALIZER;
+    bool l_completed = false;
+    
+    // Wrapper data
+    dap_worker_sync_wrapper_t l_wrapper_data = {
+        .callback = a_callback,
+        .arg = a_arg,
+        .mutex = &l_mutex,
+        .cond = &l_cond,
+        .completed = &l_completed
+    };
+    
+    // Schedule wrapper
+    dap_worker_exec_callback_on(a_worker, s_worker_sync_wrapper_callback, &l_wrapper_data);
+    
+    // Wait for completion
+    pthread_mutex_lock(&l_mutex);
+    while (!l_completed) {
+        pthread_cond_wait(&l_cond, &l_mutex);
+    }
+    pthread_mutex_unlock(&l_mutex);
+    
+    pthread_mutex_destroy(&l_mutex);
+    pthread_cond_destroy(&l_cond);
 }
 
 /**

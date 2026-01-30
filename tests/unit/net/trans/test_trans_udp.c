@@ -1460,8 +1460,8 @@ static void test_17_replay_protection(void)
         uint64_t l_sess_id = l_hdr.session_id;
         
         TEST_ASSERT(l_seq_num == l_expected_seq_nums[i],
-                    "Packet %d seq_num should be %u (got %u)",
-                    i + 1, l_expected_seq_nums[i], l_seq_num);
+                    "Packet %d seq_num should be %lu (got %lu)",
+                    i + 1, (unsigned long)l_expected_seq_nums[i], (unsigned long)l_seq_num);
         
         DAP_DELETE(l_decrypted);
     }

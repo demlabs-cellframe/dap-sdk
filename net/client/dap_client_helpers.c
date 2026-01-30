@@ -144,39 +144,8 @@ bool dap_client_wait_for_deletion(dap_client_t **a_client_ptr, uint32_t a_timeou
         return true; // Already deleted or NULL
     }
     
-    uint32_t l_elapsed = 0;
-    const uint32_t l_poll_interval_ms = 50;
-    
-    // Check if client is marked as removing
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(*a_client_ptr);
-    if (!l_client_pvt) {
-        *a_client_ptr = NULL;
-        return true;
-    }
-    
-    while (l_elapsed < a_timeout_ms) {
-        // Check if client is marked as removing (deletion in progress)
-        if (l_client_pvt->is_removing) {
-            // Client deletion started, wait a bit more for completion
-            struct timespec l_ts = { .tv_sec = 0, .tv_nsec = 200000000 }; // 200ms
-            nanosleep(&l_ts, NULL);
-            *a_client_ptr = NULL;
-            return true;
-        }
-        
-        // Sleep and re-check
-        struct timespec l_ts = { .tv_sec = l_poll_interval_ms / 1000, .tv_nsec = (l_poll_interval_ms % 1000) * 1000000 };
-        nanosleep(&l_ts, NULL);
-        l_elapsed += l_poll_interval_ms;
-        
-        // Re-check client_pvt (might be freed)
-        if (!DAP_CLIENT_PVT(*a_client_ptr)) {
-            *a_client_ptr = NULL;
-            return true;
-        }
-    }
-    
-    // Timeout - assume deleted anyway
+    // Since dap_client_delete_mt() is now SYNCHRONOUS, the client is already deleted
+    // by the time we reach here. Just clear the pointer and return.
     *a_client_ptr = NULL;
     return true;
 }
