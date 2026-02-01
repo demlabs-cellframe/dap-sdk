@@ -2594,6 +2594,12 @@ bool dap_json_is_int(dap_json_t* a_json)
         return false;
     }
     
+    // For IMMUTABLE mode, check tape
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_INT;
+    }
+    
+    // For MUTABLE mode, check value
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_INT;
 }
@@ -2607,6 +2613,12 @@ bool dap_json_is_string(dap_json_t* a_json)
         return false;
     }
     
+    // For IMMUTABLE mode, check tape
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_STRING;
+    }
+    
+    // For MUTABLE mode, check value
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_STRING;
 }
@@ -2620,6 +2632,12 @@ bool dap_json_is_double(dap_json_t* a_json)
         return false;
     }
     
+    // For IMMUTABLE mode, check tape
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_DOUBLE;
+    }
+    
+    // For MUTABLE mode, check value
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_DOUBLE;
 }
@@ -2633,6 +2651,12 @@ bool dap_json_is_bool(dap_json_t* a_json)
         return false;
     }
     
+    // For IMMUTABLE mode, check tape
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_BOOLEAN;
+    }
+    
+    // For MUTABLE mode, check value
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_BOOLEAN;
 }
@@ -2646,6 +2670,12 @@ bool dap_json_is_null(dap_json_t* a_json)
         return true; // NULL pointer treated as JSON null
     }
     
+    // For IMMUTABLE mode, check tape
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_NULL;
+    }
+    
+    // For MUTABLE mode, check value
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_NULL;
 }

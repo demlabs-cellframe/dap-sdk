@@ -152,7 +152,6 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(dap_json_t *a
             dap_json_rpc_params_add_data(params, NULL, TYPE_PARAM_NULL);
             continue;
         }
-
         if (dap_json_is_string(jobj)) {
             const char *l_str = dap_json_get_string(jobj);
             if (l_str) {

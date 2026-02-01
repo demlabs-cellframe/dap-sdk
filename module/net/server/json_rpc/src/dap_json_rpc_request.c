@@ -303,7 +303,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
             }
 
             // Parse params/subcommand/arguments
-            dap_json_t *jobj_params = dap_json_object_get_object(jobj, "params");
+            dap_json_t *jobj_params = dap_json_object_get_array(jobj, "params");
             if (!jobj_params) {
                 dap_json_t *jobj_subcmd = dap_json_object_get_object(jobj, "subcommand");
                 dap_json_t *l_arguments_obj = dap_json_object_get_object(jobj, "arguments");

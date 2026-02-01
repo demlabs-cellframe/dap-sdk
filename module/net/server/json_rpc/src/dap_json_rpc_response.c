@@ -173,8 +173,11 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     // Parse type (direct int64 read)
     response->type = (int)dap_json_object_get_int64(jobj, "type");
     
-    // Parse result (this is an object/array, so use get_object)
+    // Parse result (can be object or array)
     dap_json_t *result_obj = dap_json_object_get_object(jobj, "result");
+    if (!result_obj) {
+        result_obj = dap_json_object_get_array(jobj, "result");
+    }
     if (result_obj) {
         switch (response->type) {
             case TYPE_RESPONSE_STRING: {
