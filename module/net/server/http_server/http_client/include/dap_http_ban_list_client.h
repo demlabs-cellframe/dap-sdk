@@ -4,7 +4,7 @@
 #include "dap_hash.h"
 #include "dap_time.h"
 #include "dap_string.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
 #include <in6addr.h>

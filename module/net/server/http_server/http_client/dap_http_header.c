@@ -36,7 +36,7 @@
 #endif
 
 #include <pthread.h>
-#include <utlist.h>
+#include "dap_dl.h"
 #include <ctype.h>
 
 #include "dap_common.h"

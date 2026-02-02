@@ -53,7 +53,7 @@
 #include "dap_stream_worker.h"
 #include "dap_client_pvt.h"
 #include "dap_strfuncs.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_enc.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"

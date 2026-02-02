@@ -1,11 +1,12 @@
 #include "dap_http_ban_list_client.h"
 #include "dap_hash.h"
+#include "dap_ht.h"
 #include "../../json_rpc/include/dap_json_rpc_errors.h"
 
 typedef struct ban_record {
     dap_hash_sha3_256_t decree_hash;
     dap_time_t ts_created;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
     char addr[];
 } ban_record_t;
 
@@ -15,7 +16,7 @@ ban_record_t *s_ban_list;
 bool dap_http_ban_list_client_check(const char *a_addr, dap_hash_sha3_256_t *a_decree_hash, dap_time_t *a_ts) {
     ban_record_t *l_rec = NULL;
     pthread_rwlock_rdlock(&s_ban_list_lock);
-    HASH_FIND_STR(s_ban_list, a_addr, l_rec);
+    dap_ht_find_str(s_ban_list, a_addr, l_rec);
     pthread_rwlock_unlock(&s_ban_list_lock);
     if (l_rec) {
         if (a_decree_hash) *a_decree_hash = l_rec->decree_hash;
@@ -35,7 +36,7 @@ int dap_http_ban_list_client_add(const char *a_addr, dap_hash_sha3_256_t a_decre
     };
     strcpy(l_rec->addr, a_addr);
     pthread_rwlock_wrlock(&s_ban_list_lock);
-    HASH_ADD_STR(s_ban_list, addr, l_rec);
+    dap_ht_add_str(s_ban_list, addr, l_rec);
     pthread_rwlock_unlock(&s_ban_list_lock);
     return 0;
 }
@@ -44,9 +45,9 @@ int dap_http_ban_list_client_remove(const char *a_addr) {
     ban_record_t *l_rec = NULL;
     int l_ret = 0;
     pthread_rwlock_wrlock(&s_ban_list_lock);
-    HASH_FIND_STR(s_ban_list, a_addr, l_rec);
+    dap_ht_find_str(s_ban_list, a_addr, l_rec);
     if (l_rec) {
-        HASH_DEL(s_ban_list, l_rec);
+        dap_ht_del(s_ban_list, l_rec);
         DAP_DELETE(l_rec);
     } else
         l_ret = -1;
@@ -71,7 +72,7 @@ dap_json_t *dap_http_ban_list_client_dump(const char *a_addr) {
     if (!l_jobj_out) return NULL;
     pthread_rwlock_rdlock(&s_ban_list_lock);
     if (a_addr) {
-        HASH_FIND_STR(s_ban_list, a_addr, l_rec);
+        dap_ht_find_str(s_ban_list, a_addr, l_rec);
         if (l_rec)
             s_dap_http_ban_list_client_dump_single(l_rec, l_jobj_out);
         else
@@ -83,7 +84,7 @@ dap_json_t *dap_http_ban_list_client_dump(const char *a_addr) {
             return NULL;
         }
         dap_json_object_add_array(l_jobj_out, "banlist", l_jobj_array);
-        HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
+        dap_ht_foreach(s_ban_list, l_rec, l_tmp) {
             dap_json_t *l_jobj_addr = dap_json_object_new();
             if (!l_jobj_addr) {
                 dap_json_object_free(l_jobj_out);
@@ -105,8 +106,8 @@ int dap_http_ban_list_client_init() {
 void dap_http_ban_list_client_deinit() {
     ban_record_t *l_rec = NULL, *l_tmp = NULL;
     pthread_rwlock_wrlock(&s_ban_list_lock);
-    HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
-        HASH_DEL(s_ban_list, l_rec);
+    dap_ht_foreach(s_ban_list, l_rec, l_tmp) {
+        dap_ht_del(s_ban_list, l_rec);
         DAP_DELETE(l_rec);
     }
     pthread_rwlock_unlock(&s_ban_list_lock);
