@@ -29,7 +29,7 @@
 #include <ctype.h>
 
 #include "uthash.h"
-#include "../../../3rdparty/uthash/src/utlist.h"
+#include "dap_list.h"
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_file_utils.h"
@@ -42,13 +42,6 @@
 #define LOG_TAG "dap_cert"
 
 
-typedef struct dap_sign_item
-{
-    dap_sign_t * sign;
-    struct dap_sign_item * next;
-    struct dap_sign_item * prev;
-} dap_sign_item_t;
-
 typedef struct dap_cert_item
 {
     char name[DAP_CERT_ITEM_NAME_MAX];
@@ -58,7 +51,7 @@ typedef struct dap_cert_item
 
 typedef struct dap_cert_pvt
 {
-    dap_sign_item_t *signs;
+    dap_list_t *signs;  // list of dap_sign_t*
 } dap_cert_pvt_t;
 
 
@@ -203,13 +196,12 @@ dap_sign_t *dap_cert_sign_with_hash_type(dap_cert_t *a_cert, const void *a_data,
 int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer)
 {
     if (a_cert->enc_key->pub_key_size && a_cert->enc_key->pub_key_data) {
-        dap_sign_item_t * l_sign_item = DAP_NEW_Z(dap_sign_item_t);
-        if (!l_sign_item) {
+        dap_sign_t *l_sign = dap_cert_sign(a_cert_signer, a_cert->enc_key->pub_key_data, a_cert->enc_key->pub_key_size);
+        if (!l_sign) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
-        l_sign_item->sign = dap_cert_sign(a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_size);
-        DL_APPEND ( PVT(a_cert)->signs, l_sign_item );
+        PVT(a_cert)->signs = dap_list_append(PVT(a_cert)->signs, l_sign);
         return 0;
     } else {
         log_it (L_ERROR, "No public key in cert \"%s\" that we are trying to sign with \"%s\"", a_cert->name,a_cert_signer->name);
@@ -507,10 +499,7 @@ int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign)
  */
 size_t dap_cert_count_cert_sign(dap_cert_t * a_cert)
 {
-    size_t ret;
-    dap_sign_item_t * l_cert_item = NULL;
-    DL_COUNT(  PVT(a_cert)->signs,l_cert_item,ret);
-    return ret > 0 ? ret : 0 ;
+    return dap_list_length(PVT(a_cert)->signs);
 }
 
 

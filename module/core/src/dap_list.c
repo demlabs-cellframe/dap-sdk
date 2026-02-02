@@ -1,12 +1,14 @@
 /*
  * Doubly-Linked Lists — linked lists that can be iterated over in both directions
+ *
+ * Native DAP SDK implementation without external dependencies
  */
 
 #include <stddef.h>
+#include <stdlib.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_list.h"
-
 
 #define LOG_TAG "dap_list"
 
@@ -19,10 +21,11 @@
  */
 void dap_list_free(dap_list_t *a_list)
 {
-    dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
-        DL_DELETE(a_list, l_el);
+    dap_list_t *l_el = a_list;
+    while (l_el) {
+        dap_list_t *l_next = l_el->next;
         DAP_DELETE(l_el);
+        l_el = l_next;
     }
 }
 
@@ -36,12 +39,72 @@ void dap_list_free(dap_list_t *a_list)
  */
 void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func)
 {
-    dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
-        DL_DELETE(a_list, l_el);
+    dap_list_t *l_el = a_list;
+    while (l_el) {
+        dap_list_t *l_next = l_el->next;
         if (l_el->data)
             a_free_func ? a_free_func(l_el->data) : DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
+        l_el = l_next;
+    }
+}
+
+/**
+ * Internal: append element to doubly-linked list (O(1) operation)
+ * Uses prev pointer of head to track tail for O(1) append
+ */
+static inline void s_dl_append(dap_list_t **a_head, dap_list_t *a_add)
+{
+    if (*a_head) {
+        a_add->prev = (*a_head)->prev;
+        (*a_head)->prev->next = a_add;
+        (*a_head)->prev = a_add;
+        a_add->next = NULL;
+    } else {
+        *a_head = a_add;
+        (*a_head)->prev = *a_head;
+        (*a_head)->next = NULL;
+    }
+}
+
+/**
+ * Internal: prepend element to doubly-linked list
+ */
+static inline void s_dl_prepend(dap_list_t **a_head, dap_list_t *a_add)
+{
+    a_add->next = *a_head;
+    if (*a_head) {
+        a_add->prev = (*a_head)->prev;
+        (*a_head)->prev = a_add;
+    } else {
+        a_add->prev = a_add;
+    }
+    *a_head = a_add;
+}
+
+/**
+ * Internal: delete element from doubly-linked list
+ */
+static inline void s_dl_delete(dap_list_t **a_head, dap_list_t *a_del)
+{
+    if (!*a_head || !a_del || !a_del->prev)
+        return;
+    
+    if (a_del->prev == a_del) {
+        // Single element
+        *a_head = NULL;
+    } else if (a_del == *a_head) {
+        // Deleting head
+        a_del->next->prev = a_del->prev;
+        *a_head = a_del->next;
+    } else {
+        // Deleting middle or tail
+        a_del->prev->next = a_del->next;
+        if (a_del->next) {
+            a_del->next->prev = a_del->prev;
+        } else {
+            (*a_head)->prev = a_del->prev;
+        }
     }
 }
 
@@ -54,28 +117,17 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  *
  * Note that the return value is the new start of the list,
  * if @list was empty; make sure you store the new value.
- * |[<!-- language="C" -->
- * // Notice that these are initialized to the empty list.
- * DapList *string_list = NULL, *number_list = NULL;
- *
- * // This is a list of strings.
- * string_list = dap_list_append (string_list, "first");
- * string_list = dap_list_append (string_list, "second");
- *
- * // This is a list of integers.
- * number_list = dap_list_append (number_list, INT_TO_POINTER (27));
- * number_list = dap_list_append (number_list, INT_TO_POINTER (14));
- * ]|
  *
  * Returns: either @list or the new start of the DapList if @list was %NULL
  */
 dap_list_t *dap_list_append(dap_list_t *a_list, void *a_data)
 {
-    if(!a_data)
+    if (!a_data)
         return a_list;
     dap_list_t *l_el = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_list_t, a_list);
     l_el->data = a_data;
-    return ({ DL_APPEND(a_list, l_el); a_list; });
+    s_dl_append(&a_list, l_el);
+    return a_list;
 }
 
 /**
@@ -88,17 +140,6 @@ dap_list_t *dap_list_append(dap_list_t *a_list, void *a_data)
  * Note that the return value is the new start of the list,
  * which will have changed, so make sure you store the new value.
  *
- * |[<!-- language="C" -->
- * // Notice that it is initialized to the empty list.
- * DapList *list = NULL;
- *
- * list = dap_list_prepend (list, "last");
- * list = dap_list_prepend (list, "first");
- * ]|
- *
- * Do not use this function to prepend a new element to a different
- * element than the start of the list. Use dap_list_insert_before() instead.
- *
  * Returns: a pointer to the newly prepended element, which is the new
  *     start of the DapList
  */
@@ -107,7 +148,8 @@ dap_list_t *dap_list_prepend(dap_list_t *a_list, void *a_data)
     dap_return_val_if_pass(!a_data, a_list);
     dap_list_t *l_el = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_list_t, a_list);
     l_el->data = a_data;
-    return ({ DL_PREPEND(a_list, l_el); a_list; });
+    s_dl_prepend(&a_list, l_el);
+    return a_list;
 }
 
 /**
@@ -126,10 +168,26 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
 {
     if (!a_position)
         return dap_list_prepend(a_list, a_data);
+    
     dap_list_t *l_el = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_list_t, a_list);
     dap_list_t *l_pos = dap_list_nth(a_list, a_position);
     l_el->data = a_data;
-    return ({ DL_PREPEND_ELEM(a_list, l_pos, l_el); a_list; });
+    
+    // Insert before l_pos (DL_PREPEND_ELEM logic)
+    if (l_pos) {
+        l_el->next = l_pos;
+        l_el->prev = l_pos->prev;
+        l_pos->prev = l_el;
+        if (a_list == l_pos) {
+            a_list = l_el;
+        } else {
+            l_el->prev->next = l_el;
+        }
+    } else {
+        // Position beyond list, append
+        s_dl_append(&a_list, l_el);
+    }
+    return a_list;
 }
 
 /**
@@ -142,18 +200,22 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
  * Note that the elements of the second DapList are not copied.
  * They are used directly.
  *
- * This function is for example used to move an element in the list.
- * The following example moves an element to the top of the list:
- * |[<!-- language="C" -->
- * list = dap_list_remove_link (list, llink);
- * list = dap_list_concat (llink, list);
- * ]|
- *
  * Returns: the start of the new DapList, which equals @list1 if not %NULL
  */
 dap_list_t *dap_list_concat(dap_list_t *a_list1, dap_list_t *a_list2)
 {
-    return ({ DL_CONCAT(a_list1, a_list2); a_list1; });
+    if (!a_list2)
+        return a_list1;
+    
+    if (a_list1) {
+        dap_list_t *l_tmp = a_list2->prev;
+        a_list2->prev = a_list1->prev;
+        a_list1->prev->next = a_list2;
+        a_list1->prev = l_tmp;
+    } else {
+        a_list1 = a_list2;
+    }
+    return a_list1;
 }
 
 /**
@@ -169,10 +231,9 @@ dap_list_t *dap_list_concat(dap_list_t *a_list1, dap_list_t *a_list2)
  */
 dap_list_t *dap_list_remove(dap_list_t *a_list, const void *a_data)
 {
-    dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+    for (dap_list_t *l_el = a_list; l_el; l_el = l_el->next) {
         if (l_el->data == a_data) {
-            DL_DELETE(a_list, l_el);
+            s_dl_delete(&a_list, l_el);
             DAP_DELETE(l_el);
             break;
         }
@@ -194,12 +255,14 @@ dap_list_t *dap_list_remove(dap_list_t *a_list, const void *a_data)
  */
 dap_list_t *dap_list_remove_all(dap_list_t *a_list, const void *a_data)
 {
-    dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+    dap_list_t *l_el = a_list;
+    while (l_el) {
+        dap_list_t *l_next = l_el->next;
         if (l_el->data == a_data) {
-            DL_DELETE(a_list, l_el);
+            s_dl_delete(&a_list, l_el);
             DAP_DELETE(l_el);
         }
+        l_el = l_next;
     }
     return a_list;
 }
@@ -213,20 +276,16 @@ dap_list_t *dap_list_remove_all(dap_list_t *a_list, const void *a_data)
  * The removed element's prev and next links are set to %NULL, so
  * that it becomes a self-contained list with one element.
  *
- * This function is for example used to move an element in the list
- * (see the example for dap_list_concat()) or to remove an element in
- * the list before freeing its data:
- * |[<!-- language="C" -->
- * list = dap_list_remove_link (list, llink);
- * free_some_data_that_may_access_the_list_again (llink->data);
- * dap_list_free (llink);
- * ]|
- *
  * Returns: the (possibly changed) start of the DapList
  */
 inline dap_list_t *dap_list_remove_link(dap_list_t *a_list, dap_list_t *a_link)
 {
-    return ({ DL_DELETE(a_list, a_link); a_list; });
+    s_dl_delete(&a_list, a_link);
+    if (a_link) {
+        a_link->next = NULL;
+        a_link->prev = NULL;
+    }
+    return a_list;
 }
 
 /**
@@ -242,7 +301,9 @@ inline dap_list_t *dap_list_remove_link(dap_list_t *a_list, dap_list_t *a_link)
  */
 dap_list_t *dap_list_delete_link(dap_list_t *a_list, dap_list_t *a_link)
 {
-    return ({ DL_DELETE(a_list, a_link); DAP_DELETE(a_link); a_list; });
+    s_dl_delete(&a_list, a_link);
+    DAP_DELETE(a_link);
+    return a_list;
 }
 
 /**
@@ -271,31 +332,13 @@ dap_list_t *dap_list_copy(dap_list_t *a_list)
  *
  * Makes a full (deep) copy of a DapList.
  *
- * In contrast with dap_list_copy(), this function uses @func to make
- * a copy of each list element, in addition to copying the list
- * container itself.
- *
- * @func, as a #DapCopyFunc, takes two arguments, the data to be copied
- * and a @user_data pointer. It's safe to pass %NULL as user_data,
- * if the copy function takes only one argument.
- *
- * For instance,
- * |[<!-- language="C" -->
- * another_list = dap_list_copy_deep (list, (DapCopyFunc) dap_object_ref, NULL);
- * ]|
- *
- * And, to entirely free the new list, you could do:
- * |[<!-- language="C" -->
- * dap_list_free_full (another_list, dap_object_unref);
- * ]|
- *
  * Returns: the start of the new list that holds a full copy of @list,
  *     use dap_list_free_full() to free it
  */
 dap_list_t *dap_list_copy_deep(dap_list_t *a_list, dap_callback_copy_t a_func, void *a_user_data)
 {
-    dap_list_t *l_deep_copy = NULL, *l_el;
-    DL_FOREACH(a_list, l_el)
+    dap_list_t *l_deep_copy = NULL;
+    for (dap_list_t *l_el = a_list; l_el; l_el = l_el->next)
         l_deep_copy = dap_list_append(l_deep_copy, a_func ? a_func(l_el->data, a_user_data) : l_el->data);
     return l_deep_copy;
 }
@@ -312,9 +355,8 @@ dap_list_t *dap_list_copy_deep(dap_list_t *a_list, dap_callback_copy_t a_func, v
  */
 dap_list_t *dap_list_nth(dap_list_t *a_list, uint64_t n)
 {
-    while((n-- > 0) && a_list)
+    while ((n-- > 0) && a_list)
         a_list = a_list->next;
-
     return a_list;
 }
 
@@ -322,6 +364,7 @@ dap_list_t *dap_list_nth(dap_list_t *a_list, uint64_t n)
  * dap_list_find:
  * @list: a DapList, this must point to the top of the list
  * @data: the element data to find
+ * @cmp: optional comparison function (can be NULL for pointer comparison)
  *
  * Finds the element in a DapList which contains the given data.
  *
@@ -329,10 +372,21 @@ dap_list_t *dap_list_nth(dap_list_t *a_list, uint64_t n)
  */
 dap_list_t *dap_list_find(dap_list_t *a_list, const void *a_data, dap_callback_compare_t a_cmp)
 {
-    dap_list_t *l_el = NULL;
-    return a_cmp
-            ? ({ dap_list_t l_sought = { .data = (void*)a_data }; DL_SEARCH(a_list, l_el, &l_sought, a_cmp); l_el; })
-            : ({ DL_SEARCH_SCALAR(a_list, l_el, data, a_data); l_el; });
+    if (a_cmp) {
+        // Search with comparison function
+        dap_list_t l_sought = { .data = (void*)a_data };
+        for (dap_list_t *l_el = a_list; l_el; l_el = l_el->next) {
+            if (a_cmp(l_el, &l_sought) == 0)
+                return l_el;
+        }
+    } else {
+        // Search by pointer equality
+        for (dap_list_t *l_el = a_list; l_el; l_el = l_el->next) {
+            if (l_el->data == a_data)
+                return l_el;
+        }
+    }
+    return NULL;
 }
 
 /**
@@ -349,11 +403,9 @@ dap_list_t *dap_list_find(dap_list_t *a_list, const void *a_data, dap_callback_c
 int dap_list_position(dap_list_t *a_list, dap_list_t *a_link)
 {
     int i = 0;
-    dap_list_t *l_el;
-    DL_FOREACH(a_list, l_el) {
+    for (dap_list_t *l_el = a_list; l_el; l_el = l_el->next, ++i) {
         if (l_el == a_link)
             return i;
-        ++i;
     }
     return -1;
 }
@@ -372,11 +424,9 @@ int dap_list_position(dap_list_t *a_list, dap_list_t *a_link)
 int dap_list_index(dap_list_t *a_list, const void *a_data)
 {
     int i = 0;
-    dap_list_t *l_el;
-    DL_FOREACH(a_list, l_el) {
+    for (dap_list_t *l_el = a_list; l_el; l_el = l_el->next, ++i) {
         if (l_el->data == a_data)
             return i;
-        ++i;
     }
     return -1;
 }
@@ -390,7 +440,7 @@ int dap_list_index(dap_list_t *a_list, const void *a_data)
  * Returns: the last element in the DapList,
  *     or %NULL if the DapList has no elements
  */
-dap_list_t * dap_list_last(dap_list_t *a_list)
+dap_list_t *dap_list_last(dap_list_t *a_list)
 {
     return a_list ? dap_list_first(a_list)->prev : NULL;
 }
@@ -427,9 +477,10 @@ dap_list_t *dap_list_first(dap_list_t *a_list)
  */
 uint64_t dap_list_length(dap_list_t *a_list)
 {
-    dap_list_t *l_el;
-    uint64_t l_len;
-    return ({ DL_COUNT(a_list, l_el, l_len); l_len; });
+    uint64_t l_len = 0;
+    for (dap_list_t *l_el = a_list; l_el; l_el = l_el->next)
+        ++l_len;
+    return l_len;
 }
 
 /**
@@ -444,50 +495,127 @@ uint64_t dap_list_length(dap_list_t *a_list)
  * Inserts a new element into the list, using the given comparison
  * function to determine its position.
  *
- * If you are adding many new elements to a list, and the number of
- * new elements is much larger than the length of the list, use
- * dap_list_prepend() to add the new items and sort the list afterwards
- * with dap_list_sort().
- *
  * Returns: the (possibly changed) start of the DapList
  */
 dap_list_t *dap_list_insert_sorted(dap_list_t *a_list, void *a_data, dap_callback_compare_t a_func)
 {
     dap_list_t *l_new_el = DAP_NEW_Z(dap_list_t);
     l_new_el->data = a_data;
-    return ({ DL_INSERT_INORDER(a_list, l_new_el, a_func); a_list; });
+    
+    if (!a_list) {
+        l_new_el->prev = l_new_el;
+        l_new_el->next = NULL;
+        return l_new_el;
+    }
+    
+    // Find insertion position (DL_LOWER_BOUND logic)
+    dap_list_t *l_pos = NULL;
+    if (a_func(a_list, l_new_el) < 0) {
+        for (l_pos = a_list; l_pos->next; l_pos = l_pos->next) {
+            if (a_func(l_pos->next, l_new_el) >= 0)
+                break;
+        }
+    }
+    
+    // Insert after l_pos (DL_APPEND_ELEM logic)
+    if (l_pos) {
+        l_new_el->next = l_pos->next;
+        l_new_el->prev = l_pos;
+        l_pos->next = l_new_el;
+        if (l_new_el->next) {
+            l_new_el->next->prev = l_new_el;
+        } else {
+            a_list->prev = l_new_el;
+        }
+    } else {
+        // Insert at head
+        s_dl_prepend(&a_list, l_new_el);
+    }
+    return a_list;
 }
 
 /**
  * dap_list_sort:
  * @list: a DapList, this must point to the top of the list
  * @compare_func: the comparison function used to sort the DapList.
- *     This function is passed the data from 2 elements of the DapList
- *     and should return 0 if they are equal, a negative value if the
- *     first element comes before the second, or a positive value if
- *     the first element comes after the second.
  *
  * Sorts a DapList using the given comparison function. The algorithm
- * used is a stable sort.
+ * used is a stable sort (merge sort).
  *
  * Returns: the (possibly changed) start of the DapList
  */
-/**
- * DapCompareFunc:
- * @a: a value
- * @b: a value to compare with
- *
- * Specifies the type of a comparison function used to compare two
- * values.  The function should return a negative integer if the first
- * value comes before the second, 0 if they are equal, or a positive
- * integer if the first value comes after the second.
- *
- * Returns: negative value if @a < @b; zero if @a = @b; positive
- *          value if @a > @b
- */
 dap_list_t *dap_list_sort(dap_list_t *a_list, dap_callback_compare_t a_cmp)
 {
-    return ({ DL_SORT(a_list, a_cmp); a_list; });
+    if (!a_list)
+        return NULL;
+    
+    // Merge sort implementation (O(n log n))
+    int l_insize = 1;
+    int l_looping = 1;
+    
+    while (l_looping) {
+        dap_list_t *l_p = a_list;
+        a_list = NULL;
+        dap_list_t *l_tail = NULL;
+        int l_nmerges = 0;
+        
+        while (l_p) {
+            l_nmerges++;
+            dap_list_t *l_q = l_p;
+            int l_psize = 0;
+            
+            for (int i = 0; i < l_insize; i++) {
+                l_psize++;
+                l_q = l_q->next;
+                if (!l_q) break;
+            }
+            
+            int l_qsize = l_insize;
+            
+            while (l_psize > 0 || (l_qsize > 0 && l_q)) {
+                dap_list_t *l_e;
+                if (l_psize == 0) {
+                    l_e = l_q;
+                    l_q = l_q->next;
+                    l_qsize--;
+                } else if (l_qsize == 0 || !l_q) {
+                    l_e = l_p;
+                    l_p = l_p->next;
+                    l_psize--;
+                } else if (a_cmp(l_p, l_q) <= 0) {
+                    l_e = l_p;
+                    l_p = l_p->next;
+                    l_psize--;
+                } else {
+                    l_e = l_q;
+                    l_q = l_q->next;
+                    l_qsize--;
+                }
+                
+                if (l_tail) {
+                    l_tail->next = l_e;
+                } else {
+                    a_list = l_e;
+                }
+                l_e->prev = l_tail;
+                l_tail = l_e;
+            }
+            l_p = l_q;
+        }
+        
+        if (a_list) {
+            a_list->prev = l_tail;
+        }
+        if (l_tail) {
+            l_tail->next = NULL;
+        }
+        
+        if (l_nmerges <= 1) {
+            l_looping = 0;
+        }
+        l_insize *= 2;
+    }
+    return a_list;
 }
 
 static int s_random_compare(dap_list_t UNUSED_ARG *a_list1, dap_list_t UNUSED_ARG *a_list2)

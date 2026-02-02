@@ -22,7 +22,7 @@
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <stdbool.h>
-#include "../../../3rdparty/uthash/src/utlist.h"
+#include "dap_list.h"
 #include <dirent.h>
 
 #include "dap_common.h"
@@ -56,11 +56,6 @@
 #define DAP_SEARCHPATH_SEPARATOR_S ":"
 
 #endif
-
-typedef struct dap_list_name_directories{
-    char *name_directory;
-    struct dap_list_name_directories *next;
-}dap_list_name_directories_t;
 
 /**
  * Check the directory path for unsupported symbols
@@ -121,10 +116,10 @@ const char* dap_path_get_ext(const char *a_filename);
  * Get list of subdirectories
  *
  * @a_path_name directory path.
- * @return dap_list_t type variable that contains a list of subdirectories.
+ * @return dap_list_t of directory name strings (char*). Free with dap_subs_free().
  */
-dap_list_name_directories_t *dap_get_subs(const char *a_path_name);
-void dap_subs_free(dap_list_name_directories_t *subs_list);
+dap_list_t *dap_get_subs(const char *a_path_name);
+void dap_subs_free(dap_list_t *a_subs_list);
 
 /*
  * Reads an entire file into allocated memory, with error checking.

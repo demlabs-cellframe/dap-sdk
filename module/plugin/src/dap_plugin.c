@@ -84,17 +84,18 @@ int dap_plugin_init(const char * a_root_path)
 
 
     //Get list files
-    dap_list_name_directories_t *l_list_plugins_name = dap_get_subs(s_plugins_root_path);
-    dap_list_name_directories_t *l_element;
+    dap_list_t *l_list_plugins_name = dap_get_subs(s_plugins_root_path);
     // Register manifests
     log_it(L_DEBUG, "Start registration of manifests");
 
     char *l_name_file = NULL;
-    LL_FOREACH(l_list_plugins_name, l_element){
-        log_it(L_NOTICE, "Registration of \"%s\" manifest", l_element->name_directory);
-        l_name_file = dap_strjoin("",s_plugins_root_path, "/", l_element->name_directory, "/manifest.json", NULL);
-        if (!dap_plugin_manifest_add_from_file(l_name_file)){
-            log_it(L_ERROR, "Registration of \"%s\" manifest is failed", l_element->name_directory);
+    dap_list_t *l_element;
+    dap_list_foreach(l_list_plugins_name, l_element) {
+        const char *l_dir_name = (const char *)l_element->data;
+        log_it(L_NOTICE, "Registration of \"%s\" manifest", l_dir_name);
+        l_name_file = dap_strjoin("", s_plugins_root_path, "/", l_dir_name, "/manifest.json", NULL);
+        if (!dap_plugin_manifest_add_from_file(l_name_file)) {
+            log_it(L_ERROR, "Registration of \"%s\" manifest is failed", l_dir_name);
         }
         DAP_FREE(l_name_file);
     }

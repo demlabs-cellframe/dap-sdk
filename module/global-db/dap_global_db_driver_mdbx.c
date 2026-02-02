@@ -375,10 +375,10 @@ size_t     l_upper_limit_of_db_size = 16;
 
     /* Run over the list and create/open group/tables and DB context ... */
     dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(l_slist, l_el, l_tmp) {
+    dap_list_foreach_safe(l_slist, l_el, l_tmp) {
         l_data_iov.iov_base = l_el->data;
         s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
-        DL_DELETE(l_slist, l_el);
+        l_slist = dap_list_remove_link(l_slist, l_el);
         DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
     }
