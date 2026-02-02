@@ -3335,7 +3335,226 @@ int dap_json_to_file(const char* a_file_path, dap_json_t* a_json)
 }
 
 /**
- * @brief Print JSON object to stream (debug)
+ * @brief Context for YAML-like printing callback
+ */
+typedef struct {
+    FILE *stream;
+    int indent_level;
+} s_print_ctx_t;
+
+/**
+ * @brief Print a single JSON value in YAML-like format (recursive helper)
+ * @param a_json JSON value to print
+ * @param a_stream Output stream
+ * @param a_indent Current indentation level
+ * @param a_newline_before Whether to print newline before value (for nested objects/arrays)
+ */
+static void s_print_yaml_value(dap_json_t *a_json, FILE *a_stream, int a_indent, bool a_newline_before)
+{
+    if (!a_json || !a_stream) {
+        return;
+    }
+    
+    dap_json_type_t l_type = dap_json_get_type(a_json);
+    
+    switch (l_type) {
+        case DAP_JSON_TYPE_NULL:
+            fprintf(a_stream, "null\n");
+            break;
+            
+        case DAP_JSON_TYPE_BOOLEAN: {
+            bool l_val = dap_json_get_bool(a_json);
+            fprintf(a_stream, "%s\n", l_val ? "true" : "false");
+            break;
+        }
+        
+        case DAP_JSON_TYPE_INT: {
+            int64_t l_val = dap_json_get_int64(a_json);
+            fprintf(a_stream, "%"DAP_INT64_FORMAT"\n", l_val);
+            break;
+        }
+        
+        case DAP_JSON_TYPE_DOUBLE: {
+            double l_val = dap_json_get_double(a_json);
+            fprintf(a_stream, "%g\n", l_val);
+            break;
+        }
+        
+        case DAP_JSON_TYPE_STRING: {
+            const char *l_val = dap_json_get_string(a_json);
+            fprintf(a_stream, "%s\n", l_val ? l_val : "");
+            break;
+        }
+        
+        case DAP_JSON_TYPE_ARRAY: {
+            size_t l_len = dap_json_array_length(a_json);
+            if (l_len == 0) {
+                fprintf(a_stream, "[]\n");
+            } else {
+                if (a_newline_before) {
+                    fprintf(a_stream, "\n");
+                }
+                for (size_t i = 0; i < l_len; i++) {
+                    dap_json_t *l_elem = dap_json_array_get_idx(a_json, i);
+                    if (l_elem) {
+                        dap_json_type_t l_elem_type = dap_json_get_type(l_elem);
+                        // For objects in array, print object content directly (skip "- " prefix for cleaner output)
+                        if (l_elem_type == DAP_JSON_TYPE_OBJECT) {
+                            s_print_yaml_value(l_elem, a_stream, a_indent, false);
+                            if (i < l_len - 1) {
+                                fprintf(a_stream, "\n");  // Separator between array objects
+                            }
+                        } else if (l_elem_type == DAP_JSON_TYPE_ARRAY) {
+                            fprintf(a_stream, "%*s- ", a_indent * 4, "");
+                            s_print_yaml_value(l_elem, a_stream, a_indent + 1, true);
+                        } else {
+                            fprintf(a_stream, "%*s- ", a_indent * 4, "");
+                            s_print_yaml_value(l_elem, a_stream, a_indent + 1, false);
+                        }
+                        dap_json_object_free(l_elem);
+                    }
+                }
+            }
+            break;
+        }
+        
+        case DAP_JSON_TYPE_OBJECT: {
+            // Use foreach to iterate object keys
+            if (a_newline_before) {
+                fprintf(a_stream, "\n");
+            }
+            
+            // We need to manually iterate since foreach uses callback
+            // Get all keys first via the existing API
+            dap_json_value_t *l_value = NULL;
+            
+            // Check if object is empty by trying to get any key
+            bool l_has_content = false;
+            
+            // For IMMUTABLE mode - use iterator approach
+            if (dap_json_is_immutable(a_json)) {
+                // Use the serialization approach - iterate manually
+                dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
+                if (l_iter && dap_json_iterator_type(l_iter) == DAP_JSON_TYPE_OBJECT) {
+                    dap_json_iterator_enter(l_iter);
+                    while (!dap_json_iterator_at_end(l_iter)) {
+                        l_has_content = true;
+                        // Get key
+                        char *l_key = dap_json_iterator_get_string_dup(l_iter);
+                        if (l_key) {
+                            fprintf(a_stream, "%*s%s: ", a_indent * 4, "", l_key);
+                        }
+                        // Move to value
+                        if (!dap_json_iterator_next(l_iter)) {
+                            DAP_DEL_Z(l_key);
+                            break;
+                        }
+                        
+                        // Get value and print it
+                        dap_json_type_t l_val_type = dap_json_iterator_type(l_iter);
+                        if (l_val_type == DAP_JSON_TYPE_OBJECT || l_val_type == DAP_JSON_TYPE_ARRAY) {
+                            // Create sub-wrapper from current iterator position
+                            dap_json_t *l_sub = s_create_immutable_sub_wrapper(a_json, dap_json_iterator_get_position(l_iter));
+                            if (l_sub) {
+                                s_print_yaml_value(l_sub, a_stream, a_indent + 1, true);
+                                dap_json_object_free(l_sub);
+                            } else {
+                                fprintf(a_stream, "<error>\n");
+                            }
+                        } else if (l_val_type == DAP_JSON_TYPE_STRING) {
+                            char *l_str = dap_json_iterator_get_string_dup(l_iter);
+                            fprintf(a_stream, "%s\n", l_str ? l_str : "");
+                            DAP_DELETE(l_str);
+                        } else if (l_val_type == DAP_JSON_TYPE_INT) {
+                            int64_t l_int;
+                            if (dap_json_iterator_get_int64(l_iter, &l_int)) {
+                                fprintf(a_stream, "%"DAP_INT64_FORMAT"\n", l_int);
+                            }
+                        } else if (l_val_type == DAP_JSON_TYPE_DOUBLE) {
+                            double l_dbl;
+                            if (dap_json_iterator_get_double(l_iter, &l_dbl)) {
+                                fprintf(a_stream, "%g\n", l_dbl);
+                            }
+                        } else if (l_val_type == DAP_JSON_TYPE_BOOLEAN) {
+                            bool l_bool;
+                            if (dap_json_iterator_get_bool(l_iter, &l_bool)) {
+                                fprintf(a_stream, "%s\n", l_bool ? "true" : "false");
+                            }
+                        } else if (l_val_type == DAP_JSON_TYPE_NULL) {
+                            fprintf(a_stream, "null\n");
+                        }
+                        
+                        DAP_DEL_Z(l_key);
+                        // Move to next key
+                        if (!dap_json_iterator_next(l_iter)) break;
+                    }
+                }
+                if (l_iter) dap_json_iterator_free(l_iter);
+            } else {
+                // MUTABLE mode - use object storage iteration
+                dap_json_value_t *l_val = s_unwrap_value(a_json);
+                if (l_val && l_val->type == DAP_JSON_TYPE_OBJECT) {
+                    dap_json_object_storage_t *l_storage = s_get_object_storage(l_val);
+                    if (l_storage) {
+                        for (size_t i = 0; i < l_storage->count; i++) {
+                            l_has_content = true;
+                            const char *l_key = l_storage->keys[i];
+                            dap_json_value_t *l_pair_value = l_storage->values[i];
+                            
+                            fprintf(a_stream, "%*s%s: ", a_indent * 4, "", l_key);
+                            
+                            // Wrap value for type-safe access via public API
+                            dap_json_t *l_wrapped = s_wrap_value_borrowed(l_pair_value, a_json);
+                            if (l_wrapped) {
+                                dap_json_type_t l_vtype = dap_json_get_type(l_wrapped);
+                                if (l_vtype == DAP_JSON_TYPE_OBJECT || l_vtype == DAP_JSON_TYPE_ARRAY) {
+                                    s_print_yaml_value(l_wrapped, a_stream, a_indent + 1, true);
+                                } else if (l_vtype == DAP_JSON_TYPE_STRING) {
+                                    const char *l_str = dap_json_get_string(l_wrapped);
+                                    fprintf(a_stream, "%s\n", l_str ? l_str : "");
+                                } else if (l_vtype == DAP_JSON_TYPE_INT) {
+                                    fprintf(a_stream, "%"DAP_INT64_FORMAT"\n", dap_json_get_int64(l_wrapped));
+                                } else if (l_vtype == DAP_JSON_TYPE_DOUBLE) {
+                                    fprintf(a_stream, "%g\n", dap_json_get_double(l_wrapped));
+                                } else if (l_vtype == DAP_JSON_TYPE_BOOLEAN) {
+                                    fprintf(a_stream, "%s\n", dap_json_get_bool(l_wrapped) ? "true" : "false");
+                                } else if (l_vtype == DAP_JSON_TYPE_NULL) {
+                                    fprintf(a_stream, "null\n");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (!l_has_content) {
+                fprintf(a_stream, "{}\n");
+            }
+            break;
+        }
+        
+        default:
+            fprintf(a_stream, "<unknown type>\n");
+            break;
+    }
+}
+
+/**
+ * @brief Print JSON object to stream in human-readable YAML-like format
+ * @param a_json JSON object to print
+ * @param a_stream Output stream (e.g., stdout)
+ * @param a_indent_level Initial indentation level (use 0 for root)
+ * 
+ * @details Outputs JSON in a clean, readable format similar to YAML:
+ * @code
+ * status: 
+ *     net: raiden
+ *     current_addr: F9E4::9CFD::9E3A::A0D9
+ *     processed: 
+ *         zerochain: 
+ *             status: idle
+ *             current: 970
+ * @endcode
  */
 void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_level)
 {
@@ -3343,15 +3562,12 @@ void dap_json_print_object(dap_json_t *a_json, FILE *a_stream, int a_indent_leve
         return;
     }
     
-    // Use compact format for now (pretty-print not yet implemented)
-    char *l_str = dap_json_to_string(a_json);
-    
-    if (l_str) {
-        fprintf(a_stream, "%*s%s\n", a_indent_level * 2, "", l_str);
-        DAP_DELETE(l_str); // dap_json_to_string returns malloc'd string
-    } else {
-        fprintf(a_stream, "%*s<JSON stringify failed>\n", a_indent_level * 2, "");
+    // Handle negative indent (used for special formatting modes)
+    if (a_indent_level < 0) {
+        a_indent_level = 0;
     }
+    
+    s_print_yaml_value(a_json, a_stream, a_indent_level, false);
 }
 
 /* ========================================================================== */
