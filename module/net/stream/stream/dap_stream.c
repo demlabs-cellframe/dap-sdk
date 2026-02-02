@@ -36,6 +36,7 @@
 #endif
 
 #include "dap_common.h"
+#include "utlist.h"  // TODO: Remove after uthash elimination
 #include "dap_timerfd.h"
 #include "dap_context.h"
 #include "dap_stream.h"

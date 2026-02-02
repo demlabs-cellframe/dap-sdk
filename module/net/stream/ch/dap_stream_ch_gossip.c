@@ -22,6 +22,7 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <string.h>
+#include "utlist.h"  // TODO: Remove after uthash elimination
 #include "dap_events.h"
 #include "dap_strfuncs.h"
 #include "dap_stream.h"

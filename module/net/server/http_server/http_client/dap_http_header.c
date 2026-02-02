@@ -36,7 +36,6 @@
 #endif
 
 #include <pthread.h>
-#include <utlist.h>
 #include <ctype.h>
 
 #include "dap_common.h"
@@ -44,6 +43,39 @@
 #include "dap_events_socket.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
+
+// Inline doubly-linked list operations for dap_http_header_t
+static inline void s_header_append(dap_http_header_t **a_head, dap_http_header_t *a_add)
+{
+    if (*a_head) {
+        a_add->prev = (*a_head)->prev;
+        (*a_head)->prev->next = a_add;
+        (*a_head)->prev = a_add;
+        a_add->next = NULL;
+    } else {
+        *a_head = a_add;
+        (*a_head)->prev = *a_head;
+        (*a_head)->next = NULL;
+    }
+}
+
+static inline void s_header_delete(dap_http_header_t **a_head, dap_http_header_t *a_del)
+{
+    if (!*a_head || !a_del || !a_del->prev)
+        return;
+    if (a_del->prev == a_del) {
+        *a_head = NULL;
+    } else if (a_del == *a_head) {
+        a_del->next->prev = a_del->prev;
+        *a_head = a_del->next;
+    } else {
+        a_del->prev->next = a_del->next;
+        if (a_del->next)
+            a_del->next->prev = a_del->prev;
+        else
+            (*a_head)->prev = a_del->prev;
+    }
+}
 
 #define LOG_TAG "http_header"
 
@@ -185,7 +217,7 @@ dap_http_header_t *l_new_header;
     memcpy(l_new_header->value, l_pval, l_new_header->valuesz = l_valuelen);
     l_new_header->value[l_new_header->valuesz] = '\0';
 
-    DL_APPEND(cl_ht->in_headers, l_new_header);
+    s_header_append(&cl_ht->in_headers, l_new_header);
 
     return 0;
 }
@@ -209,7 +241,7 @@ inline dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const c
     l_new_header->valuesz = strnlen(a_value, DAP_HTTP$SZ_FIELD_VALUE);
     memcpy(l_new_header->value, a_value, l_new_header->valuesz);
 
-    DL_APPEND(*a_top, l_new_header);
+    s_header_append(a_top, l_new_header);
 
     return l_new_header;
 }
@@ -244,7 +276,7 @@ void dap_http_header_remove(dap_http_header_t **a_top, dap_http_header_t *a_hdr)
 {
     if (!a_top)
         return;
-    DL_DELETE(*a_top, a_hdr);
+    s_header_delete(a_top, a_hdr);
     DAP_DELETE(a_hdr);
 
 }
@@ -281,11 +313,11 @@ dap_http_header_t * dap_http_headers_dup(dap_http_header_t * a_top)
 {
     dap_http_header_t *l_hdr = NULL, *l_ret = NULL;
 
-    DL_FOREACH(a_top, l_hdr) {
+    for (l_hdr = a_top; l_hdr; l_hdr = l_hdr->next) {
         dap_http_header_t * l_hdr_copy = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_header_t, l_ret);
         memcpy(l_hdr_copy->name, l_hdr->name, l_hdr_copy->namesz = l_hdr->namesz);
         memcpy(l_hdr_copy->value, l_hdr->value, l_hdr_copy->valuesz = l_hdr->valuesz);
-        DL_APPEND(l_ret, l_hdr_copy);
+        s_header_append(&l_ret, l_hdr_copy);
     }
 
     return l_ret;
