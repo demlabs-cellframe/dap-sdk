@@ -513,7 +513,7 @@ int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
     }
     
     // Хешируем комбинированные данные в HVC полином
-    dap_hash_t hash_result;
+    dap_hash_sha3_256_t hash_result;
     dap_hash_sha3_256(combined_input, offset, &hash_result);
     
     // Используем hash для генерации HVC polynomial коэффициентов

@@ -43,7 +43,7 @@ typedef struct dap_json_rpc_url_handler_item {
 static dap_json_rpc_url_handler_item_t *s_url_handlers = NULL;
 static pthread_rwlock_t s_url_handlers_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 typedef struct dap_exec_cmd_pkey {
-    dap_hash_t pkey;
+    dap_hash_sha3_256_t pkey;
     UT_hash_handle hh;
 } dap_exec_cmd_pkey_t;
 static dap_exec_cmd_pkey_t *s_exec_cmd_map;
@@ -54,8 +54,8 @@ static int dap_json_rpc_map_init(dap_config_t *a_config) {
     uint16_t  l_array_length = 0;
     const char ** l_pkeys = dap_config_get_array_str(a_config, "server", "exec_cmd", &l_array_length);
     for (size_t i = 0; i < l_array_length; i++) {
-        dap_hash_t l_pkey = {0};
-        dap_hash_from_str(l_pkeys[i], &l_pkey);
+        dap_hash_sha3_256_t l_pkey = {0};
+        dap_hash_sha3_256_from_str(l_pkeys[i], &l_pkey);
         dap_exec_cmd_pkey_t* l_exec_cmd_pkey = DAP_NEW_Z(dap_exec_cmd_pkey_t);
         l_exec_cmd_pkey->pkey = l_pkey;
         HASH_ADD(hh, s_exec_cmd_map, pkey, sizeof(dap_exec_cmd_pkey_t), l_exec_cmd_pkey);
@@ -72,10 +72,10 @@ static int dap_json_rpc_map_deinit() {
     return 0;
 }
 
-bool dap_check_node_pkey_in_map(dap_hash_t *a_pkey){
+bool dap_check_node_pkey_in_map(dap_hash_sha3_256_t *a_pkey){
     dap_exec_cmd_pkey_t* l_exec_cmd_pkey = NULL, *tmp = NULL;
     HASH_ITER(hh, s_exec_cmd_map, l_exec_cmd_pkey, tmp) {
-        if (dap_hash_compare(&l_exec_cmd_pkey->pkey, a_pkey))
+        if (dap_hash_sha3_256_compare(&l_exec_cmd_pkey->pkey, a_pkey))
             return true;
     }
     return false;

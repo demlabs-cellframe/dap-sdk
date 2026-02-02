@@ -235,7 +235,7 @@ dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_k
         dap_cert_t * l_cert = dap_cert_new(a_cert_name);
         l_cert->enc_key = l_enc_key;
         if (a_seed && a_seed_size)
-            log_it(L_DEBUG, "Certificate generated with seed hash %s", dap_hash_data_to_str(a_seed, a_seed_size).s);
+            log_it(L_DEBUG, "Certificate generated with seed hash %s", dap_hash_sha3_256_data_to_str(a_seed, a_seed_size).s);
         return l_cert;
     } else {
         log_it(L_ERROR,"Can't generate key in memory!");
@@ -468,11 +468,11 @@ dap_pkey_t *dap_cert_to_pkey(dap_cert_t *a_cert)
     return a_cert && a_cert->enc_key ? dap_pkey_from_enc_key(a_cert->enc_key) : NULL;
 }
 
-int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_t *a_out_hash)
+int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_type_t a_hash_type, byte_t *a_out_hash, size_t a_out_hash_size)
 {
     dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->pub_key_data &&
-                           a_cert->enc_key->pub_key_size && a_out_hash , -1);
-    return dap_enc_key_get_pkey_hash(a_cert->enc_key, a_out_hash);
+                           a_cert->enc_key->pub_key_size && a_out_hash, -1);
+    return dap_enc_key_get_pkey_hash(a_cert->enc_key, a_hash_type, a_out_hash, a_out_hash_size);
 }
 
 /**

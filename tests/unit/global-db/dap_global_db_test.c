@@ -68,7 +68,7 @@ static uint64_t    s_get_groups_by_mask = 0;
 
 
 typedef struct __dap_test_record__ {
-    dap_hash_t   csum;                                           /* CRC32 , cover <len> and <data> fields */
+    dap_hash_sha3_256_t   csum;                                           /* CRC32 , cover <len> and <data> fields */
     unsigned    len;                                                        /* Length of the <data> field */
     char        data[];                                                     /* Place holder for data area */
 } dap_db_test_record_t;
@@ -190,7 +190,7 @@ static int s_test_read(size_t a_count, bool a_bench)
     dap_assert_PIF(l_read_count == a_count, "All records count not equal writed");
     dap_store_obj_free(l_store_obj, l_read_count);
     for (size_t i = 0; i < a_count; ++i ) {
-        dap_hash_t csum = { 0 };;
+        dap_hash_sha3_256_t csum = { 0 };;
         dap_db_test_record_t *prec = NULL;
         char l_key[64] = { 0 };
         snprintf(l_key, sizeof(l_key), "KEY$%08zx", i);           /* Generate a key of record */
@@ -212,7 +212,7 @@ static int s_test_read(size_t a_count, bool a_bench)
             log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
             dap_hash_sha3_256(prec->data, prec->len,
                         &csum);                       /* Compute a hash of the payload part of the record */
-            dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_hash_t)) == 0,
+            dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_hash_sha3_256_t)) == 0,
                         "Record check sum"); /* Integriry checking ... */
         }
         dap_store_obj_free_one(l_store_obj);
@@ -243,14 +243,14 @@ static int s_test_read_all(size_t a_count)
         dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Check key name");
 
         if (l_store_obj->value) {
-            dap_hash_t csum = { 0 };
+            dap_hash_sha3_256_t csum = { 0 };
             dap_db_test_record_t *prec = (dap_db_test_record_t *) l_store_obj->value;
             log_it(L_DEBUG, "Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
                         l_store_obj->value_len);
             log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
             dap_hash_sha3_256(prec->data, prec->len,
                         &csum);                       /* Compute a hash of the payload part of the record */
-            dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_hash_t)) == 0,
+            dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_hash_sha3_256_t)) == 0,
                         "Record check sum"); /* Integriry checking ... */
         }
     }
@@ -265,7 +265,7 @@ static int s_test_read_all(size_t a_count)
     dap_assert_PIF(l_count == a_count - a_count / DAP_DB$SZ_HOLES, "Count of all read records without holes not equal count of write records");
     for (size_t i = 0, j = 0; i < a_count; ++i ) {
         if (a_count % DAP_DB$SZ_HOLES) {
-            dap_hash_t csum = { 0 };
+            dap_hash_sha3_256_t csum = { 0 };
             dap_db_test_record_t *prec = NULL;
             dap_store_obj_t *l_store_obj = l_store_obj_all + j;
             char l_key[64] = { 0 };
@@ -283,7 +283,7 @@ static int s_test_read_all(size_t a_count)
             log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
             dap_hash_sha3_256(prec->data, prec->len,
                         &csum);                       /* Compute a hash of the payload part of the record */
-            dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_hash_t)) == 0,
+            dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_hash_sha3_256_t)) == 0,
                         "Record check sum"); /* Integriry checking ... */
             ++j;
         }

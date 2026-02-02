@@ -49,10 +49,10 @@ void dap_stream_test_run(const char *a_ip_addr_str, uint16_t a_port, size_t a_da
     for (int i = 0; i < a_pkt_count; i++) {
         byte_t *l_test_data = DAP_NEW_SIZE(byte_t, a_data_size);
         randombytes(l_test_data, a_data_size);
-        char l_data_hash_str[DAP_CHAIN_HASH_FAST_STR_SIZE];
-        dap_hash_t l_data_hash;
+        char l_data_hash_str[DAP_HASH_SHA3_256_STR_SIZE];
+        dap_hash_sha3_256_t l_data_hash;
         dap_hash_sha3_256(l_test_data, a_data_size, &l_data_hash); \
-        dap_chain_hash_fast_to_str(&l_data_hash, l_data_hash_str, DAP_CHAIN_HASH_FAST_STR_SIZE);
+        dap_hash_sha3_256_to_str(&l_data_hash, l_data_hash_str, DAP_HASH_SHA3_256_STR_SIZE);
         log_it(L_ATT, "Prepare test data packet with size %zu and hash %s", a_data_size, l_data_hash_str);
         dap_client_write_mt(l_client, 'N', DAP_STREAM_CH_CHAIN_NET_PKT_TYPE_TEST, l_test_data, a_data_size);
         DAP_DELETE(l_test_data);

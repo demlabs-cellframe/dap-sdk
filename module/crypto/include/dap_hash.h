@@ -28,45 +28,152 @@
 #include "dap_hash_sha3.h"
 
 // =============================================================================
-// Hash Dispatcher - High-level API
+// Hash Dispatcher - Universal API for multiple hash algorithms
 // =============================================================================
 
 /**
  * @brief Available hash algorithms
  */
 typedef enum dap_hash_type {
-    DAP_HASH_TYPE_SHA3_256 = 0,     // Default, SHA3-256
+    DAP_HASH_TYPE_SHA3_256 = 0,     // SHA3-256 (default)
     DAP_HASH_TYPE_KECCAK_256,       // Keccak-256 (Ethereum style)
     DAP_HASH_TYPE_SHA2_256,         // SHA2-256
     DAP_HASH_TYPE_SLOW_0 = 0x100    // Slow hash (for PoW etc)
 } dap_hash_type_t;
-
-// =============================================================================
-// Type aliases - dap_hash_t is SHA3-256
-// =============================================================================
-
-typedef dap_hash_sha3_256_t         dap_hash_t;
-typedef dap_hash_sha3_256_str_t     dap_hash_str_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 // =============================================================================
-// High-level Hash API (dispatcher)
+// Universal Hash API (type-agnostic)
 // =============================================================================
+
+/**
+ * @brief Get hash size for specified algorithm
+ * @param a_type Hash algorithm
+ * @return Size in bytes, or 0 for unknown type
+ */
+DAP_STATIC_INLINE size_t dap_hash_size(dap_hash_type_t a_type)
+{
+    switch (a_type) {
+        case DAP_HASH_TYPE_SHA3_256:
+        case DAP_HASH_TYPE_KECCAK_256:
+        case DAP_HASH_TYPE_SHA2_256:
+            return 32;
+        case DAP_HASH_TYPE_SLOW_0:
+            return 32; // TODO: verify slow hash size
+        default:
+            return 0;
+    }
+}
+
+/**
+ * @brief Get hex string size for specified algorithm (including 0x prefix and null terminator)
+ * @param a_type Hash algorithm
+ * @return String size, or 0 for unknown type
+ */
+DAP_STATIC_INLINE size_t dap_hash_str_size(dap_hash_type_t a_type)
+{
+    size_t l_hash_size = dap_hash_size(a_type);
+    return l_hash_size ? (l_hash_size * 2 + 2 /* 0x */ + 1 /* \0 */) : 0;
+}
 
 /**
  * @brief Compute hash of data using specified algorithm
  * @param a_type Hash algorithm
  * @param a_data_in Input data
  * @param a_data_in_size Size of input data
- * @param a_hash_out Output buffer (size depends on algorithm)
+ * @param a_hash_out Output buffer (must be at least dap_hash_size(a_type) bytes)
  * @param a_hash_out_size Size of output buffer
  * @return true on success, false on error
  */
 bool dap_hash(dap_hash_type_t a_type, const void *a_data_in, size_t a_data_in_size,
               void *a_hash_out, size_t a_hash_out_size);
+
+/**
+ * @brief Compare two hashes of specified type
+ * @param a_type Hash algorithm
+ * @param a_hash1 First hash
+ * @param a_hash2 Second hash
+ * @return true if equal, false otherwise
+ */
+DAP_STATIC_INLINE bool dap_hash_compare_type(dap_hash_type_t a_type, const void *a_hash1, const void *a_hash2)
+{
+    if (!a_hash1 || !a_hash2)
+        return false;
+    size_t l_size = dap_hash_size(a_type);
+    return l_size ? !memcmp(a_hash1, a_hash2, l_size) : false;
+}
+
+/**
+ * @brief Check if hash is blank (all zeros)
+ * @param a_type Hash algorithm
+ * @param a_hash Hash to check
+ * @return true if blank, false otherwise
+ */
+DAP_STATIC_INLINE bool dap_hash_is_blank_type(dap_hash_type_t a_type, const void *a_hash)
+{
+    if (!a_hash)
+        return true;
+    size_t l_size = dap_hash_size(a_type);
+    const byte_t *l_bytes = (const byte_t *)a_hash;
+    for (size_t i = 0; i < l_size; i++) {
+        if (l_bytes[i] != 0)
+            return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Convert hash to hex string (with 0x prefix)
+ * @param a_type Hash algorithm
+ * @param a_hash Input hash
+ * @param a_str Output string buffer
+ * @param a_str_max Size of output buffer
+ * @return String length on success, negative on error
+ */
+DAP_STATIC_INLINE int dap_hash_to_str_type(dap_hash_type_t a_type, const void *a_hash, char *a_str, size_t a_str_max)
+{
+    if (!a_hash)
+        return -1;
+    if (!a_str)
+        return -2;
+    size_t l_hash_size = dap_hash_size(a_type);
+    size_t l_str_size = dap_hash_str_size(a_type);
+    if (!l_hash_size || a_str_max < l_str_size)
+        return -3;
+    a_str[0] = '0';
+    a_str[1] = 'x';
+    dap_htoa64((a_str + 2), (const byte_t *)a_hash, l_hash_size);
+    a_str[l_str_size - 1] = '\0';
+    return (int)l_str_size;
+}
+
+/**
+ * @brief Convert hash to newly allocated hex string
+ * @param a_type Hash algorithm
+ * @param a_hash Input hash
+ * @return Newly allocated string (caller must free), or NULL on error
+ */
+DAP_STATIC_INLINE char *dap_hash_to_str_new_type(dap_hash_type_t a_type, const void *a_hash)
+{
+    if (!a_hash)
+        return NULL;
+    size_t l_str_size = dap_hash_str_size(a_type);
+    if (!l_str_size)
+        return NULL;
+    char *l_ret = DAP_NEW_Z_SIZE(char, l_str_size);
+    if (dap_hash_to_str_type(a_type, a_hash, l_ret, l_str_size) < 0) {
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+    return l_ret;
+}
+
+// =============================================================================
+// SHA2-256 specific
+// =============================================================================
 
 /**
  * @brief Compute SHA2-256 hash
@@ -77,93 +184,6 @@ bool dap_hash(dap_hash_type_t a_type, const void *a_data_in, size_t a_data_in_si
  */
 int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen);
 
-// =============================================================================
-// Hash utility functions (using SHA3-256 as dap_hash_t)
-// =============================================================================
-
-/**
- * @brief Compare two default hashes
- */
-DAP_STATIC_INLINE bool dap_hash_compare(const dap_hash_t *a_hash1, const dap_hash_t *a_hash2)
-{
-    return dap_hash_sha3_256_compare(a_hash1, a_hash2);
-}
-
-/**
- * @brief Check if hash is blank
- */
-DAP_STATIC_INLINE bool dap_hash_is_blank(const dap_hash_t *a_hash)
-{
-    return dap_hash_sha3_256_is_blank(a_hash);
-}
-
-/**
- * @brief Convert hash to hex string
- */
-DAP_STATIC_INLINE int dap_hash_to_str(const dap_hash_t *a_hash, char *a_str, size_t a_str_max)
-{
-    return dap_hash_sha3_256_to_str(a_hash, a_str, a_str_max);
-}
-
-/**
- * @brief Convert hash to string struct
- */
-DAP_STATIC_INLINE dap_hash_str_t dap_hash_to_str_struct(const dap_hash_t *a_hash)
-{
-    return dap_hash_sha3_256_to_str_struct(a_hash);
-}
-
-#define dap_hash_to_str_static(hash) dap_hash_sha3_256_to_str_static(hash)
-
-/**
- * @brief Convert hash to newly allocated string
- */
-DAP_STATIC_INLINE char *dap_hash_to_str_new(const dap_hash_t *a_hash)
-{
-    return dap_hash_sha3_256_to_str_new(a_hash);
-}
-
-/**
- * @brief Parse hash from string
- */
-DAP_STATIC_INLINE int dap_hash_from_str(const char *a_hash_str, dap_hash_t *a_hash)
-{
-    return dap_hash_sha3_256_from_str(a_hash_str, a_hash);
-}
-
-/**
- * @brief Parse hash from hex string
- */
-DAP_STATIC_INLINE int dap_hash_from_hex_str(const char *a_hex_str, dap_hash_t *a_hash)
-{
-    return dap_hash_sha3_256_from_hex_str(a_hex_str, a_hash);
-}
-
-/**
- * @brief Parse hash from base58 string
- */
-DAP_STATIC_INLINE int dap_hash_from_base58_str(const char *a_base58_str, dap_hash_t *a_hash)
-{
-    return dap_hash_sha3_256_from_base58_str(a_base58_str, a_hash);
-}
-
-/**
- * @brief Compute hash and return as newly allocated string
- */
-DAP_STATIC_INLINE char *dap_hash_str_new(const void *a_data, size_t a_data_size)
-{
-    return dap_hash_sha3_256_str_new(a_data, a_data_size);
-}
-
-/**
- * @brief Compute hash and return as string struct
- */
-DAP_STATIC_INLINE dap_hash_str_t dap_hash_data_to_str(const void *a_data, size_t a_data_size)
-{
-    return dap_hash_sha3_256_data_to_str(a_data, a_data_size);
-}
-
 #ifdef __cplusplus
 }
 #endif
-

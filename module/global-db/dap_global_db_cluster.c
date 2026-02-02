@@ -86,7 +86,7 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
 {
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
     union hash_convert {
-        dap_hash_t gossip_hash;
+        dap_hash_sha3_256_t gossip_hash;
         dap_global_db_driver_hash_t gdb_hash;
     } l_hash_cvt = {};
     l_hash_cvt.gdb_hash = dap_global_db_driver_hash_get(a_store_obj);

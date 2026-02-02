@@ -250,8 +250,8 @@ char* dap_enc_base58_to_hex_str_from_str(const char *a_in_str)
     return l_out_str;
 }
 
-dap_enc_b58_hash_str_t dap_enc_base58_encode_hash_to_str_static_(const dap_hash_t *a_in_hash)
+dap_enc_b58_hash_str_t dap_enc_base58_encode_hash_to_str_static_(const dap_hash_sha3_256_t *a_in_hash)
 {
     dap_enc_b58_hash_str_t l_ret = { };
-    return dap_enc_base58_encode(a_in_hash, sizeof(dap_hash_t), (char*)&l_ret), l_ret;
+    return dap_enc_base58_encode(a_in_hash, sizeof(dap_hash_sha3_256_t), (char*)&l_ret), l_ret;
 }

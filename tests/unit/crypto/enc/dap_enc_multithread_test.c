@@ -40,7 +40,7 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i]);
         else {
-            dap_hash_t l_hash;
+            dap_hash_sha3_256_t l_hash;
             dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash));
         }
@@ -55,7 +55,7 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
        if (dap_sign_type_to_key_type(l_signs[i]->header.type) == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_verified = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
         else {
-            dap_hash_t l_hash;
+            dap_hash_sha3_256_t l_hash;
             dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             l_verified = dap_sign_verify(l_signs[i], &l_hash, sizeof(l_hash));
         }

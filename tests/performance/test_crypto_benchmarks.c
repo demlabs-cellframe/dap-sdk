@@ -44,7 +44,7 @@ static bool s_benchmark_hash_performance(void) {
     
     const char* l_test_data = "DAP SDK performance test data for hashing benchmarks";
     size_t l_data_size = strlen(l_test_data);
-    dap_hash_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     
     dap_test_timer_t l_timer;
     dap_test_timer_start(&l_timer);

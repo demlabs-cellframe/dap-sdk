@@ -48,7 +48,7 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
     char * l_data_str = DAP_NEW_Z_COUNT(char, l_http_request->header.data_size);
     dap_mempcpy(l_data_str, l_http_request->request_n_signs, l_http_request->header.data_size);
 
-    dap_hash_t l_sign_pkey_hash;
+    dap_hash_sha3_256_t l_sign_pkey_hash;
     bool l_sign_correct = false;
     dap_sign_t * l_sign = (dap_sign_t*)DAP_DUP_SIZE(l_http_request->request_n_signs + l_http_request->header.data_size, l_http_request->header.signs_size);
     dap_sign_get_pkey_hash(l_sign, &l_sign_pkey_hash);

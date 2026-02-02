@@ -1069,7 +1069,7 @@ dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign)
     dap_stream_node_addr_t l_ret = { };
     dap_return_val_if_pass(!a_sign, l_ret);
 
-    dap_hash_t l_node_addr_hash;
+    dap_hash_sha3_256_t l_node_addr_hash;
     if ( dap_sign_get_pkey_hash(a_sign, &l_node_addr_hash) )
         dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
     return l_ret;
@@ -1081,8 +1081,8 @@ dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert)
     dap_return_val_if_pass(!a_cert, l_ret);
 
     // Get certificate public key hash
-    dap_hash_t l_node_addr_hash;
-    if ( !dap_cert_get_pkey_hash(a_cert, &l_node_addr_hash) )
+    dap_hash_sha3_256_t l_node_addr_hash;
+    if (!dap_cert_get_pkey_hash(a_cert, DAP_HASH_TYPE_SHA3_256, (byte_t *)&l_node_addr_hash, sizeof(l_node_addr_hash)))
         dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
     return l_ret;
 }
@@ -1093,7 +1093,7 @@ dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey)
     dap_return_val_if_pass(!a_pkey, l_ret);
 
     // Get certificate public key hash
-    dap_hash_t l_node_addr_hash;
+    dap_hash_sha3_256_t l_node_addr_hash;
     if ( dap_pkey_get_hash(a_pkey, &l_node_addr_hash) )
         dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
     return l_ret;

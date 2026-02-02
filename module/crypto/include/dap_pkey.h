@@ -189,7 +189,7 @@ DAP_STATIC_INLINE size_t dap_pkey_get_size(const dap_pkey_t *a_pkey) { return a_
 
 dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key);
 
-bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_hash_t *a_out_hash);
+bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_hash_sha3_256_t *a_out_hash);
 
 DAP_STATIC_INLINE bool dap_pkey_compare_with_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)
 {

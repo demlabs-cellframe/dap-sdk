@@ -112,7 +112,7 @@ static bool s_test_crypto_input_validation(void) {
     log_it(L_INFO, "Testing crypto input validation");
     
     // Test 1: NULL pointer handling
-    dap_hash_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     
     // Hash with NULL input should fail gracefully
     bool l_ret1 = dap_hash_sha3_256(NULL, 100, &l_hash);
@@ -182,7 +182,7 @@ static bool s_test_crypto_memory_leaks(void) {
         dap_enc_key_delete(l_key);
         
         // Test hash operations
-        dap_hash_t l_hash = {0};
+        dap_hash_sha3_256_t l_hash = {0};
         dap_hash_sha3_256(l_data, strlen(l_data), &l_hash);
     }
     
@@ -285,7 +285,7 @@ static bool s_test_sensitive_data_wiping(void) {
     }
     
     // Test 2: Hash context wiping (conceptual)
-    dap_hash_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     const char* l_sensitive_input = "Secret message that should not remain in memory";
     
     dap_hash_sha3_256(l_sensitive_input, strlen(l_sensitive_input), &l_hash);
