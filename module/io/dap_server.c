@@ -54,7 +54,6 @@
 #include <stddef.h>
 #include <errno.h>
 #include <signal.h>
-#include <utlist.h>
 #if ! defined(_GNU_SOURCE)
 #define _GNU_SOURCE
 #endif

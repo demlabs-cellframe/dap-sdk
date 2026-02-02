@@ -29,7 +29,6 @@
 #include "dap_list.h"
 #include "dap_file_utils.h"
 #include "dap_time.h"
-#include "../../../3rdparty/uthash/src/utlist.h"
 #include "uthash.h"
 
 #ifdef DAP_OS_ANDROID

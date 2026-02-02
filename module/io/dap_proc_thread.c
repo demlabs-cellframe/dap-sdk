@@ -22,7 +22,6 @@
 */
 #include <errno.h>
 #include <pthread.h>
-#include <utlist.h>
 #include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
