@@ -45,9 +45,9 @@
   #include <processthreadsapi.h>
   #include <process.h>
   #include "win32/dap_console_manager.h"
-  // strptime is not available in MinGW - use 3rdparty implementation
-  extern char* strptime(const char* s, const char* format, struct tm* tm);
 #endif
+
+#include "dap_strptime.h"
 
 
 #define DAP_LOG_USE_SPINLOCK    0
@@ -774,7 +774,7 @@ char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
     long l_start_pos = -1, l_end_pos = 0;
     struct tm l_tm = { };
     while ( fgets(l_line, l_len, fp) ) {
-        if ( strptime(l_line, /* "[%x-%X" */ "[%m/%d/%Y-%H:%M:%S]", &l_tm) ) {
+        if ( dap_strptime(l_line, /* "[%x-%X" */ "[%m/%d/%Y-%H:%M:%S]", &l_tm) ) {
             l_tm.tm_year += 2000;
             time_t l_tm_sec = mktime(&l_tm);
             if (l_tm_sec >= a_start_time) {

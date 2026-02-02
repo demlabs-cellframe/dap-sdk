@@ -227,9 +227,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_DUP_SIZE(a, s)    memcpy(s_vm_get(__func__, __LINE__, s), a, s)
 
 #else
-#ifdef DAP_USE_RPMALLOC
-#include "rpmalloc.h"
-#endif
+// Standard allocator (rpmalloc removed - was optional, never used)
 #define DAP_TYPE_SIZE(p)      (intmax_t)sizeof( *(__typeof__(p)){ 0 } )
 #define DAP_MALLOC(s)         ({ intmax_t _s = (intmax_t)(s); _s > 0 ? malloc(_s) : NULL; })
 #define DAP_FREE(p)           free((void*)(p))

@@ -214,33 +214,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     LABELS "unit;core;string_pool;memory"
 )
 
-# ============================================================================
-# RPMalloc Test (from release-6.0)
-# ============================================================================
-if (DAP_USE_RPMALLOC)
-    add_executable(rpmalloc_test
-      ../../3rdparty/rpmalloc/test/test.h
-      ../../3rdparty/rpmalloc/test/thread.h 
-      ../../3rdparty/rpmalloc/test/thread.c
-      ../../3rdparty/rpmalloc/test/main.c
-    )
-    target_link_libraries(rpmalloc_test dap_core)
-    # Platform-specific system libraries
-    if(UNIX AND NOT ANDROID)
-        target_link_libraries(rpmalloc_test m pthread dl)
-    elseif(WIN32)
-        # Windows doesn't need explicit dl/pthread
-    endif()
-    target_include_directories(rpmalloc_test PRIVATE ../../3rdparty/rpmalloc/test)
-    if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
-        add_test(
-            NAME rpm-test
-            COMMAND rpmalloc_test
-        )
-    else()
-        message("[-] Disable rpm test")
-    endif()
-endif(DAP_USE_RPMALLOC)
+# rpmalloc tests removed - library was optional and never used
 
 # uint256_t test suite (converted from GoogleTest/Boost to dap_test)
 add_subdirectory(uint256_t)

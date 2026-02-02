@@ -97,11 +97,8 @@ typedef struct queue_entry {
 } queue_entry_t;
 #endif
 
-#if defined(DAP_EVENTS_CAPS_WEPOLL)
-#define DAP_EVENTS_CAPS_EPOLL
-#define EPOLL_HANDLE HANDLE
-#include "wepoll.h"
-#elif defined (DAP_EVENTS_CAPS_IOCP)
+// wepoll support removed - using native IOCP on Windows
+#if defined (DAP_EVENTS_CAPS_IOCP)
 #include <mswsock.h>
 #define MAX_IOCP_ENTRIES 255 // Maximum count of IOCP entries to fetch at once
 #elif defined (DAP_EVENTS_CAPS_EPOLL)
