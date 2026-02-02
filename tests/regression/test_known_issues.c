@@ -86,18 +86,18 @@ static bool s_test_hash_consistency_regression(void) {
     
     // Test with specific input that previously showed inconsistency
     const char* l_test_input = "DAP SDK cross-platform test string";
-    dap_hash_fast_t l_hash1 = {0};
-    dap_hash_fast_t l_hash2 = {0};
+    dap_hash_t l_hash1 = {0};
+    dap_hash_t l_hash2 = {0};
     
     // Calculate hash twice to ensure consistency
-    bool l_ret1 = dap_hash_fast(l_test_input, strlen(l_test_input), &l_hash1);
-    bool l_ret2 = dap_hash_fast(l_test_input, strlen(l_test_input), &l_hash2);
+    bool l_ret1 = dap_hash_sha3_256(l_test_input, strlen(l_test_input), &l_hash1);
+    bool l_ret2 = dap_hash_sha3_256(l_test_input, strlen(l_test_input), &l_hash2);
     
     DAP_TEST_ASSERT(l_ret1 == true, "First hash calculation should succeed");
     DAP_TEST_ASSERT(l_ret2 == true, "Second hash calculation should succeed");
     
     // Hashes should be identical
-    int l_compare = memcmp(&l_hash1, &l_hash2, sizeof(dap_hash_fast_t));
+    int l_compare = memcmp(&l_hash1, &l_hash2, sizeof(dap_hash_t));
     DAP_TEST_ASSERT(l_compare == 0, "Hash results should be consistent");
     
     // Test with edge cases that previously caused issues
@@ -112,18 +112,18 @@ static bool s_test_hash_consistency_regression(void) {
     size_t l_num_cases = sizeof(l_edge_cases) / sizeof(l_edge_cases[0]);
     
     for (size_t i = 0; i < l_num_cases; i++) {
-        dap_hash_fast_t l_hash_a = {0};
-        dap_hash_fast_t l_hash_b = {0};
+        dap_hash_t l_hash_a = {0};
+        dap_hash_t l_hash_b = {0};
         
         size_t l_input_len = (i == 3) ? 4 : strlen(l_edge_cases[i]); // Binary data case
         
-        bool l_ret_a = dap_hash_fast(l_edge_cases[i], l_input_len, &l_hash_a);
-        bool l_ret_b = dap_hash_fast(l_edge_cases[i], l_input_len, &l_hash_b);
+        bool l_ret_a = dap_hash_sha3_256(l_edge_cases[i], l_input_len, &l_hash_a);
+        bool l_ret_b = dap_hash_sha3_256(l_edge_cases[i], l_input_len, &l_hash_b);
         
         DAP_TEST_ASSERT(l_ret_a == l_ret_b, "Hash return codes should match");
         
         if (l_ret_a == true) {
-            int l_edge_compare = memcmp(&l_hash_a, &l_hash_b, sizeof(dap_hash_fast_t));
+            int l_edge_compare = memcmp(&l_hash_a, &l_hash_b, sizeof(dap_hash_t));
             DAP_TEST_ASSERT(l_edge_compare == 0, "Edge case hash should be consistent");
         }
     }

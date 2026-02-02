@@ -3,7 +3,7 @@
 #include "../../json_rpc/include/dap_json_rpc_errors.h"
 
 typedef struct ban_record {
-    dap_hash_fast_t decree_hash;
+    dap_hash_t decree_hash;
     dap_time_t ts_created;
     UT_hash_handle hh;
     char addr[];
@@ -12,7 +12,7 @@ typedef struct ban_record {
 pthread_rwlock_t s_ban_list_lock = PTHREAD_RWLOCK_INITIALIZER;
 ban_record_t *s_ban_list;
 
-bool dap_http_ban_list_client_check(const char *a_addr, dap_hash_fast_t *a_decree_hash, dap_time_t *a_ts) {
+bool dap_http_ban_list_client_check(const char *a_addr, dap_hash_t *a_decree_hash, dap_time_t *a_ts) {
     ban_record_t *l_rec = NULL;
     pthread_rwlock_rdlock(&s_ban_list_lock);
     HASH_FIND_STR(s_ban_list, a_addr, l_rec);
@@ -25,7 +25,7 @@ bool dap_http_ban_list_client_check(const char *a_addr, dap_hash_fast_t *a_decre
     return false;
 }
 
-int dap_http_ban_list_client_add(const char *a_addr, dap_hash_fast_t a_decree_hash, dap_time_t a_ts) {
+int dap_http_ban_list_client_add(const char *a_addr, dap_hash_t a_decree_hash, dap_time_t a_ts) {
     if ( dap_http_ban_list_client_check(a_addr, NULL, NULL) )
         return -1;
     ban_record_t *l_rec = DAP_NEW_Z_SIZE( ban_record_t, sizeof(ban_record_t) + strlen(a_addr) + 1);
@@ -55,7 +55,7 @@ int dap_http_ban_list_client_remove(const char *a_addr) {
 }
 
 static void s_dap_http_ban_list_client_dump_single(ban_record_t *a_rec, dap_json_t *a_jobj_out) {
-    const char *l_decree_hash_str = dap_hash_fast_to_str_static(&a_rec->decree_hash);
+    const char *l_decree_hash_str = dap_hash_to_str_static(&a_rec->decree_hash);
     char l_ts[DAP_TIME_STR_SIZE] = { '\0' };
     dap_time_to_str_rfc822(l_ts, sizeof(l_ts), a_rec->ts_created);
     dap_json_object_add_string(a_jobj_out, "decree_hash", l_decree_hash_str);

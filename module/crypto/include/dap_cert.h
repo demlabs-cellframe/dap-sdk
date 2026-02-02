@@ -84,7 +84,7 @@ const char *dap_cert_get_folder(int a_n_folder_path);
 void dap_cert_add_folder(const char *a_folder_path);
 char *dap_cert_dump(dap_cert_t *a_cert);
 dap_pkey_t *dap_cert_to_pkey(dap_cert_t *a_cert);
-int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash);
+int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_t *a_out_hash);
 
 dap_cert_t *dap_cert_find_by_name(const char *a_cert_name);
 dap_list_t *dap_cert_get_all_mem();

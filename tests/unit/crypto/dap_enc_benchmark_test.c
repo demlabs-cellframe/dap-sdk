@@ -140,7 +140,7 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
             l_signed = l_keys[i]->sign_get(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
         else {
             dap_chain_hash_fast_t l_hash;
-            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             l_signed = l_keys[i]->sign_get(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
         }
         *a_sig_time += get_cur_time_msec() - l_t1;
@@ -154,7 +154,7 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
             l_verified = l_keys[i]->sign_verify(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
         else {
             dap_chain_hash_fast_t l_hash;
-            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             l_verified = l_keys[i]->sign_verify(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
         }
         dap_assert_PIF(!l_verified, "Verifying signature");
@@ -200,7 +200,7 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_signs[i] = dap_sign_create_with_hash_type(key, l_source[i], l_source_size[i], l_hash_type);
         else {
-            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             l_signs[i] = dap_sign_create_with_hash_type(key, &l_hash, sizeof(l_hash), l_hash_type);
         }
         if (i % 2) {
@@ -225,7 +225,7 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         int l_verified = 0;
         if (dap_sign_type_to_key_type(l_signs[i]->header.type) == DAP_ENC_KEY_TYPE_SIG_ECDSA) {
             if (dap_sign_is_use_pkey_hash(l_signs[i])) {
-                dap_hash_fast_t l_sign_pkey_hash = {};
+                dap_hash_t l_sign_pkey_hash = {};
                 dap_sign_get_pkey_hash(l_signs[i], &l_sign_pkey_hash);
                 l_verified = dap_sign_verify_by_pkey(l_signs[i], l_source[i], l_source_size[i], s_get_pkey_by_hash_callback( (const uint8_t *)&l_sign_pkey_hash));
             } else {
@@ -233,9 +233,9 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
             }
         } else {
             dap_chain_hash_fast_t l_hash;
-            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             if (dap_sign_is_use_pkey_hash(l_signs[i])) {
-                dap_hash_fast_t l_sign_pkey_hash = {};
+                dap_hash_t l_sign_pkey_hash = {};
                 dap_sign_get_pkey_hash(l_signs[i], &l_sign_pkey_hash);
                 l_verified = dap_sign_verify_by_pkey(l_signs[i], &l_hash, sizeof(l_hash), s_get_pkey_by_hash_callback( (const uint8_t *)&l_sign_pkey_hash));
             } else {

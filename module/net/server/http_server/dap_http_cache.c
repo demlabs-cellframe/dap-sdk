@@ -20,6 +20,7 @@
     You should have received a copy of the GNU General Public License
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
+#include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_http_server.h"
 #include "dap_http_cache.h"
 
@@ -74,14 +75,13 @@ void dap_http_cache_delete(dap_http_cache_t * a_http_cache)
    if (a_http_cache){
        if(a_http_cache->body)
            DAP_DELETE(a_http_cache->body);
-       // Free headers list
-       dap_http_header_t *l_hdr = a_http_cache->headers;
-       while (l_hdr) {
-           dap_http_header_t *l_next = l_hdr->next;
+       dap_http_header_t *l_hdr=NULL, *l_tmp=NULL;
+
+       DL_FOREACH_SAFE(a_http_cache->headers,l_hdr,l_tmp){
+           DL_DELETE(a_http_cache->headers,l_hdr);
+
            DAP_DELETE(l_hdr);
-           l_hdr = l_next;
        }
-       a_http_cache->headers = NULL;
        DAP_DELETE(a_http_cache);
    }
 }

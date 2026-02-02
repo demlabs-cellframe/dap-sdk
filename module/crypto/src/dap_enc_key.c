@@ -1371,7 +1371,7 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_
     return l_ret;
 }
 
-int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
+int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_t *a_hash_out)
 {
     dap_return_val_if_fail(a_key && a_key->pub_key_data && a_key->pub_key_data_size && a_hash_out, -1);
     size_t l_pub_key_size = 0;
@@ -1389,7 +1389,7 @@ int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
             break;
 #endif
         default:
-            l_ret = !dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
+            l_ret = !dap_hash_sha3_256(l_pub_key, l_pub_key_size, a_hash_out);
             break;
     }
     DAP_DELETE(l_pub_key);

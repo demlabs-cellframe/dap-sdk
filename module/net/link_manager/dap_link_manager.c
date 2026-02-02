@@ -25,7 +25,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #include "dap_link_manager.h"
 #include "dap_common.h"
-#include "utlist.h"  // TODO: Remove after uthash elimination
 #include "dap_net_common.h"
 #include "dap_stream_cluster.h"
 #include "dap_worker.h"

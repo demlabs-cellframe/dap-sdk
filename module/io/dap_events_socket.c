@@ -159,7 +159,7 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
     l_es->uuid = dap_new_es_id();
 #ifdef DAP_SYS_DEBUG
     pthread_rwlock_wrlock(&s_evsocks_lock);                             /* Add new record into the hash table */
-    HASH_ADD(hh2, s_esockets, uuid, sizeof(l_es->uuid), l_es);
+    dap_ht_add_hh(hh2, s_esockets, uuid, l_es);
     pthread_rwlock_unlock(&s_evsocks_lock);
 #endif
     debug_if(g_debug_reactor, L_DEBUG, "Created blank es %p, uuid " DAP_FORMAT_ESOCKET_UUID,
@@ -249,9 +249,9 @@ static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
 #ifdef DAP_SYS_DEBUG
     pthread_rwlock_wrlock(&s_evsocks_lock);
     dap_events_socket_t *l_es = NULL;
-    HASH_FIND(hh2, s_esockets, &a_es->uuid, sizeof(l_es->uuid), l_es);
+    dap_ht_find_hh(hh2, s_esockets, &a_es->uuid, sizeof(a_es->uuid), l_es);
     if (l_es)
-        HASH_DELETE(hh2, s_esockets, l_es); /* Remove record from the table */
+        dap_ht_del_hh(hh2, s_esockets, l_es); /* Remove record from the table */
     pthread_rwlock_unlock(&s_evsocks_lock);
     if (!l_es)
         log_it(L_ERROR, "dap_events_socket:%p - uuid %zu not found", a_es, a_es->uuid);

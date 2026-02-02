@@ -216,5 +216,71 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 
 # rpmalloc tests removed - library was optional and never used
 
+# ============================================================================
+# Test: DAP Doubly-Linked List (dap_dl)
+# ============================================================================
+project(test_dap_dl)
+
+add_executable(${PROJECT_NAME}
+    test_dap_dl.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;dap_dl;list"
+)
+
+# ============================================================================
+# Test: DAP Hash Table (dap_ht)
+# ============================================================================
+project(test_dap_ht)
+
+add_executable(${PROJECT_NAME}
+    test_dap_ht.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;dap_ht;hash_table"
+)
+
+# ============================================================================
+# Test: DAP Fast Hash Functions (dap_hash_fast)
+# ============================================================================
+project(test_dap_hash_fast)
+
+add_executable(${PROJECT_NAME}
+    test_dap_hash_fast.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;dap_hash_fast;hash"
+)
+
 # uint256_t test suite (converted from GoogleTest/Boost to dap_test)
 add_subdirectory(uint256_t)

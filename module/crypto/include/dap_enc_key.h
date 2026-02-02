@@ -344,7 +344,7 @@ void dap_enc_key_delete(dap_enc_key_t *a_key);
 
 dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_t a_count);
 
-int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out);
+int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_t *a_hash_out);
 
 /**
  * @brief check if this key type use insign hashing

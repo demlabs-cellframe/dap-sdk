@@ -33,7 +33,7 @@ typedef int SOCKET;
 #endif
 
 #include <pthread.h>
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_common.h"
 #include "dap_math_ops.h"
 #include "dap_time.h"
@@ -335,7 +335,7 @@ typedef struct dap_events_socket {
 
     void *_inheritor; // Inheritor data to specific client type, usualy states for state machine
     void *_pvt; //Private section, different for different types
-    UT_hash_handle hh, hh2; // Handle for local CPU storage on worker or proc_thread AND for total amount
+    dap_ht_handle_t hh, hh2; // Handle for local CPU storage on worker or proc_thread AND for total amount
 } dap_events_socket_t; // Node of bidirectional list of clients
 typedef dap_events_socket_t dap_esocket_t;
 
@@ -355,7 +355,7 @@ typedef struct dap_events_socket_handler_hh{
     dap_events_socket_t * esocket;
     dap_events_socket_uuid_t uuid;
     uint32_t worker_id;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_events_socket_handler_hh_t;
 
 #ifdef DAP_EVENTS_CAPS_IOCP

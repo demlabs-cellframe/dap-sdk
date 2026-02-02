@@ -515,8 +515,8 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     
     // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: точно следуем оригинальному Rust коду!
     // 1. Hash message with SHA256
-    dap_hash_fast_t l_hash_out;
-    dap_hash_fast(a_message, a_message_len, &l_hash_out);
+    dap_hash_t l_hash_out;
+    dap_hash_sha3_256(a_message, a_message_len, &l_hash_out);
     
     uint8_t l_seed[32];
     memcpy(l_seed, &l_hash_out, 32);

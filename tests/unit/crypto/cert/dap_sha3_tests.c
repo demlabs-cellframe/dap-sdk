@@ -80,7 +80,7 @@ static inline double gettimefloat( void )
 
 typedef union dap_chain_hash_fast{
     uint8_t raw[DAP_CHAIN_HASH_FAST_SIZE];
-} dap_chain_hash_fast_t;
+} dap_hash_t;
 
 typedef enum dap_hash_type {
     DAP_HASH_TYPE_KECCAK = 0,
@@ -107,7 +107,7 @@ static inline void dap_hash(const void * a_data_in, size_t a_data_in_size,
     }
 }
 
-int dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_chain_hash_fast_t *a_hash_out )
+int dap_hash_sha3_256( const void *a_data_in, size_t a_data_in_size, dap_hash_t *a_hash_out )
 {
     if(!a_data_in || !a_data_in_size || !a_hash_out)
         return -1;
@@ -133,7 +133,7 @@ Keccak_HashInstance ki0;
 
 void dap_sha3_tests_run(void)
 {
-  dap_chain_hash_fast_t hash0;
+  dap_hash_t hash0;
   uint64_t start;
   double t;
 
@@ -141,7 +141,7 @@ void dap_sha3_tests_run(void)
 
   dap_print_module_name("dap_sha3_tests_run( )");
 
-//  printf("dap_hash_fast( ) of %u data x %u ...\n", DATA_SIZE, 65536 );
+//  printf("dap_hash_sha3_256( ) of %u data x %u ...\n", DATA_SIZE, 65536 );
 
   for (int i = 0; i < DATA_SIZE; ++ i ) {
     data[i] = zRAND( ) & 255;
@@ -151,7 +151,7 @@ void dap_sha3_tests_run(void)
   start = gettime64( );
 
   for (int h = 0; h < 65536; h ++ ) {
-    dap_hash_fast( &data[0], DATA_SIZE, &hash0 );
+    dap_hash_sha3_256( &data[0], DATA_SIZE, &hash0 );
   }
 
   t = (double)(gettime64( ) - start) / 1000000000.0;

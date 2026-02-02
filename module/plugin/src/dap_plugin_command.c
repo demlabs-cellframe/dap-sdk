@@ -4,7 +4,7 @@
 #include "dap_cli_server.h"
 #include "dap_plugin_manifest.h"
 #include "dap_plugin.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_plugin_command.h"
 #include "dap_json_rpc.h"
 
@@ -71,10 +71,9 @@ static int s_command_handler(int a_argc, char **a_argv, dap_json_t *a_json_arr_r
         case CMD_LIST:{
             char *l_str = NULL;
             l_str = dap_strdup("|\tName plugin\t|\tVersion\t|\tAuthor(s)\t|\n");
-            HASH_ITER(hh,dap_plugin_manifest_all(), l_manifest, l_tmp){
+            dap_ht_foreach(dap_plugin_manifest_all(), l_manifest, l_tmp) {
                 l_str = dap_strjoin(NULL,
                                   l_str, "|\t",l_manifest->name, "\t|\t", l_manifest->version, "\t|\t", l_manifest->author, "\t|\n", NULL);
-
             }
             dap_json_rpc_error_add(a_json_arr_reply, 0, l_str);
             DAP_DELETE(l_str);
@@ -83,7 +82,7 @@ static int s_command_handler(int a_argc, char **a_argv, dap_json_t *a_json_arr_r
             if(!l_cmd_arg){
                 dap_json_rpc_error_add(a_json_arr_reply, -1, "Need argument for this command");
             }
-            HASH_FIND_STR(dap_plugin_manifest_all(), l_cmd_arg, l_manifest);
+            dap_ht_find_str(dap_plugin_manifest_all(), l_cmd_arg, l_manifest);
             if(l_manifest){
                 char *l_deps = dap_plugin_manifests_get_list_dependencies(l_manifest);
                 char *l_reply_str = dap_strdup_printf(" Name: %s\n Version: %s\n Author: %s\n"

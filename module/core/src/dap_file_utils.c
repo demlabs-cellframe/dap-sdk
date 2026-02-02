@@ -478,19 +478,21 @@ char* dap_path_get_dirname(const char *a_file_name)
     return l_base;
 }
 
-static void s_free_string(void *a_data)
-{
-    DAP_FREE(a_data);
+void dap_subs_free(dap_list_name_directories_t *subs_list){
+
+    dap_list_name_directories_t *l_element;
+    dap_list_name_directories_t *l_tmp;
+    
+    dap_sl_foreach_safe(subs_list, l_element, l_tmp) {
+        dap_sl_delete(subs_list, l_element);
+        DAP_FREE(l_element->name_directory);
+        DAP_DELETE(l_element);
+    }
 }
 
-void dap_subs_free(dap_list_t *a_subs_list)
-{
-    dap_list_free_full(a_subs_list, s_free_string);
-}
-
-dap_list_t *dap_get_subs(const char *a_path_dir)
-{
-    dap_list_t *l_list = NULL;
+dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
+    dap_list_name_directories_t *list = NULL;
+    dap_list_name_directories_t *element;
 #ifdef DAP_OS_WINDOWS
     size_t m_size = strlen(a_path_dir);
     char *m_path = DAP_NEW_SIZE(char, m_size + 2);
@@ -499,10 +501,12 @@ dap_list_t *dap_get_subs(const char *a_path_dir)
     m_path[m_size + 1] = '\0';
     WIN32_FIND_DATA info_file;
     HANDLE h_find_file = FindFirstFileA(m_path, &info_file);
-    while (FindNextFileA(h_find_file, &info_file)) {
+    while (FindNextFileA(h_find_file, &info_file)){
         if (info_file.dwFileAttributes == FILE_ATTRIBUTE_DIRECTORY &&
-            strcmp(info_file.cFileName, "..") && strcmp(info_file.cFileName, ".")) {
-            l_list = dap_list_append(l_list, dap_strdup(info_file.cFileName));
+            strcmp(info_file.cFileName, "..") && strcmp(info_file.cFileName, ".")){
+            element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
+            element->name_directory = dap_strdup(info_file.cFileName);
+            dap_sl_append(list, element);
         }
     }
     FindClose(h_find_file);
@@ -510,15 +514,23 @@ dap_list_t *dap_get_subs(const char *a_path_dir)
 #else
     DIR *dir = opendir(a_path_dir);
     struct dirent *entry = readdir(dir);
-    while (entry != NULL) {
-        if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0 && entry->d_type == DT_DIR) {
-            l_list = dap_list_append(l_list, dap_strdup(entry->d_name));
+    while (entry != NULL){
+        if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0 && entry->d_type == DT_DIR){
+            element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
+            if (!element) {
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                closedir(dir);
+                DAP_DEL_Z(list);
+                return NULL;
+            }
+            element->name_directory = dap_strdup(entry->d_name);
+            dap_sl_append(list, element);
         }
         entry = readdir(dir);
     }
     closedir(dir);
 #endif
-    return l_list;
+    return list;
 }
 
 

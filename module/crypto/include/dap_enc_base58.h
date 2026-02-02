@@ -43,16 +43,16 @@ size_t dap_enc_base58_decode(const char * a_in, void * a_out);
 
 char* dap_enc_base58_encode_to_str(const void * a_in, size_t a_in_size);
 
-DAP_INLINE char *dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_hash)
+DAP_INLINE char *dap_enc_base58_encode_hash_to_str(dap_hash_t *a_in_hash)
 {
-    return dap_enc_base58_encode_to_str(a_in_hash->raw, sizeof(dap_chain_hash_fast_t));
+    return dap_enc_base58_encode_to_str(a_in_hash->raw, sizeof(dap_hash_t));
 }
 
 typedef union dap_enc_b58_hash_str {
-    const char s[ DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_chain_hash_fast_t)) ];
+    const char s[ DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_hash_t)) ];
 } dap_enc_b58_hash_str_t;
 
-dap_enc_b58_hash_str_t dap_enc_base58_encode_hash_to_str_static_(const dap_chain_hash_fast_t *a_in_hash);
+dap_enc_b58_hash_str_t dap_enc_base58_encode_hash_to_str_static_(const dap_hash_t *a_in_hash);
 #define dap_enc_base58_encode_hash_to_str_static(hash) dap_enc_base58_encode_hash_to_str_static_(hash).s
 
 // convert from "0xA21F1E865B6740A28E8708798ECF25D2C0AA596DF5EB1FD724186B6AD7FF2199" to "Bura1HFrKsqbdytEXQVrxpbovtvLhR1VbrJs65JBx3gc"

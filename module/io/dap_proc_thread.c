@@ -22,6 +22,7 @@
 */
 #include <errno.h>
 #include <pthread.h>
+#include "dap_dl.h"
 #include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
@@ -156,7 +157,7 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
                                        .callback_arg = a_callback_arg };
     debug_if(g_debug_reactor, L_DEBUG, "Add callback %p with arg %p to thread %p", a_callback, a_callback_arg, l_thread);
     pthread_mutex_lock(&l_thread->queue_lock);
-    l_thread->queue[a_priority] = dap_list_append(l_thread->queue[a_priority], l_item);
+    dap_dl_append(l_thread->queue[a_priority], l_item);
     l_thread->proc_queue_size++;
     pthread_cond_signal(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
@@ -169,15 +170,11 @@ static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int
         return NULL;
     dap_proc_queue_item_t *l_item = NULL;
     int i = DAP_QUEUE_MSG_PRIORITY_MAX;
-    for (; !l_item && i >= 0; i--) {
-        dap_list_t *l_first = a_thread->queue[i];
-        if (l_first) {
-            l_item = (dap_proc_queue_item_t *)l_first->data;
-            a_thread->queue[i] = dap_list_delete_link(a_thread->queue[i], l_first);
+    for (; !l_item && i >= 0; i--)
+        if ((l_item = a_thread->queue[i]))
             break;
-        }
-    }
     if (l_item) {
+        dap_dl_delete(a_thread->queue[i], l_item);
         a_thread->proc_queue_size--;
         if (a_priority)
             *a_priority = i;

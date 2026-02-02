@@ -97,4 +97,4 @@ DAP_STATIC_INLINE uint64_t dap_store_obj_checksum(dap_store_obj_t *a_obj)
 }
 
 bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj);
-void *dap_gossip_pkt_read(dap_hash_fast_t *a_route, size_t *a_route_len);
+void *dap_gossip_pkt_read(dap_hash_t *a_route, size_t *a_route_len);

@@ -55,5 +55,5 @@ DAP_STATIC_INLINE uint64_t dap_gossip_msg_get_size(dap_gossip_msg_t *a_msg) { re
                                                                                     ? 0 : sizeof(dap_gossip_msg_t) + (uint64_t)a_msg->trace_len + a_msg->payload_len; }
 int dap_stream_ch_gossip_init();
 void dap_stream_ch_gossip_deinit();
-void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_fast_t *a_payload_hash);
+void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_t *a_payload_hash);
 int dap_stream_ch_gossip_callback_add(const char a_ch_id, dap_gossip_callback_payload_t a_callback);

@@ -296,24 +296,25 @@ static inline uint32_t dap_hash_xxh32(const void *key, size_t len, uint32_t seed
 // ============================================================================
 
 /**
- * @brief Default fast hash function
+ * @brief Default fast non-cryptographic hash function for hash tables
  * Uses xxHash32 which is the fastest for general use
+ * Note: Named _ht to avoid conflict with cryptographic dap_hash_fast in crypto module
  */
-static inline uint32_t dap_hash_fast(const void *key, size_t len) {
+static inline uint32_t dap_hash_fast_ht(const void *key, size_t len) {
     return dap_hash_xxh32(key, len, 0);
 }
 
 /**
- * @brief Fast hash for null-terminated strings
+ * @brief Fast hash for null-terminated strings (for hash tables)
  */
-static inline uint32_t dap_hash_fast_str(const char *str) {
-    return dap_hash_fast(str, strlen(str));
+static inline uint32_t dap_hash_fast_str_ht(const char *str) {
+    return dap_hash_fast_ht(str, strlen(str));
 }
 
 /**
- * @brief Fast hash for integers (32-bit)
+ * @brief Fast hash for integers (32-bit) (for hash tables)
  */
-static inline uint32_t dap_hash_fast_int(int32_t value) {
+static inline uint32_t dap_hash_fast_int_ht(int32_t value) {
     // Use finalizer from MurmurHash3 for integers
     uint32_t h = (uint32_t)value;
     h ^= h >> 16;
@@ -325,9 +326,9 @@ static inline uint32_t dap_hash_fast_int(int32_t value) {
 }
 
 /**
- * @brief Fast hash for pointers
+ * @brief Fast hash for pointers (for hash tables)
  */
-static inline uint32_t dap_hash_fast_ptr(const void *ptr) {
+static inline uint32_t dap_hash_fast_ptr_ht(const void *ptr) {
     uintptr_t p = (uintptr_t)ptr;
 #if UINTPTR_MAX == UINT64_MAX
     // 64-bit pointer - mix both halves

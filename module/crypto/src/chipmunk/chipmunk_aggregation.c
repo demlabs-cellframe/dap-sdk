@@ -59,20 +59,20 @@ int chipmunk_randomizers_from_pks(const chipmunk_hvc_poly_t *roots,
     
     memcpy(hash_input, roots, input_size);
     
-    // Generate randomizers using dap_hash_fast expansion
+    // Generate randomizers using dap_hash_sha3_256 expansion
     for (size_t i = 0; i < count; i++) {
         // Add counter to input for domain separation
         uint32_t counter = (uint32_t)i;
         memcpy(hash_input + input_size, &counter, sizeof(counter));
         
         // Hash to get random bits
-        dap_hash_fast_t hash;
-        dap_hash_fast(hash_input, input_size + sizeof(uint32_t), &hash);
+        dap_hash_t hash;
+        dap_hash_sha3_256(hash_input, input_size + sizeof(uint32_t), &hash);
         
         // Convert hash bits to ternary coefficients
-        for (size_t j = 0; j < CHIPMUNK_N && j < DAP_HASH_FAST_SIZE * 4; j++) {
-            uint8_t byte_idx = (j * 2) % DAP_HASH_FAST_SIZE;
-            uint8_t bit_idx = (j * 2) / DAP_HASH_FAST_SIZE;
+        for (size_t j = 0; j < CHIPMUNK_N && j < DAP_HASH_SHA3_256_SIZE * 4; j++) {
+            uint8_t byte_idx = (j * 2) % DAP_HASH_SHA3_256_SIZE;
+            uint8_t bit_idx = (j * 2) / DAP_HASH_SHA3_256_SIZE;
             
             // Use 2 bits per coefficient to get 4 values, map to {-1, 0, 1}
             uint8_t bits = (hash.raw[byte_idx] >> (bit_idx * 2)) & 0x03;
@@ -273,9 +273,9 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
     multi_sig->signer_count = count;
 
     // Hash the message
-    dap_hash_fast_t message_hash;
-    dap_hash_fast(message, message_len, &message_hash);
-    memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_FAST_SIZE);
+    dap_hash_t message_hash;
+    dap_hash_sha3_256(message, message_len, &message_hash);
+    memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_SHA3_256_SIZE);
 
     // Extract HOTS signatures and create randomizers
     chipmunk_hots_signature_t *hots_sigs = calloc(count, sizeof(chipmunk_hots_signature_t));
@@ -357,9 +357,9 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
     memcpy(&multi_sig->tree_root, tree_root, sizeof(chipmunk_hvc_poly_t));
 
     // Hash the message
-    dap_hash_fast_t message_hash;
-    dap_hash_fast(message, message_len, &message_hash);
-    memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_FAST_SIZE);
+    dap_hash_t message_hash;
+    dap_hash_sha3_256(message, message_len, &message_hash);
+    memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_SHA3_256_SIZE);
 
     // Extract HOTS signatures and create randomizers
     chipmunk_hots_signature_t *hots_sigs = calloc(count, sizeof(chipmunk_hots_signature_t));
@@ -418,9 +418,9 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
     }
 
     // Verify message hash
-    dap_hash_fast_t computed_hash;
-    dap_hash_fast(message, message_len, &computed_hash);
-    if (memcmp(computed_hash.raw, multi_sig->message_hash, DAP_HASH_FAST_SIZE) != 0) {
+    dap_hash_t computed_hash;
+    dap_hash_sha3_256(message, message_len, &computed_hash);
+    if (memcmp(computed_hash.raw, multi_sig->message_hash, DAP_HASH_SHA3_256_SIZE) != 0) {
         return 0;  // Message mismatch
     }
 
@@ -487,9 +487,9 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
     
     // Create a challenge polynomial from the message to check message dependency
     chipmunk_poly_t challenge_poly;
-    dap_hash_fast_t msg_hash;
-    dap_hash_fast(message, message_len, &msg_hash);
-    ret = chipmunk_poly_challenge(&challenge_poly, msg_hash.raw, DAP_HASH_FAST_SIZE);
+    dap_hash_t msg_hash;
+    dap_hash_sha3_256(message, message_len, &msg_hash);
+    ret = chipmunk_poly_challenge(&challenge_poly, msg_hash.raw, DAP_HASH_SHA3_256_SIZE);
     if (ret != 0) {
         chipmunk_randomizers_free(&randomizers);
         return 0;  // Failed to create challenge
@@ -560,9 +560,9 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
     // 2. Verify: Σ(a_i * σ_i) == H(m) * v0_agg + v1_agg
     // Генерируем challenge polynomial из сообщения
     chipmunk_poly_t challenge_poly_verify;
-    dap_hash_fast_t msg_hash_verify;
-    dap_hash_fast(message, message_len, &msg_hash_verify);
-    int challenge_ret = chipmunk_poly_challenge(&challenge_poly_verify, msg_hash_verify.raw, DAP_HASH_FAST_SIZE);
+    dap_hash_t msg_hash_verify;
+    dap_hash_sha3_256(message, message_len, &msg_hash_verify);
+    int challenge_ret = chipmunk_poly_challenge(&challenge_poly_verify, msg_hash_verify.raw, DAP_HASH_SHA3_256_SIZE);
     if (challenge_ret != 0) {
         log_it(L_ERROR, "Failed to generate challenge polynomial for verification");
         chipmunk_randomizers_free(&verify_randomizers);
@@ -753,9 +753,9 @@ int chipmunk_batch_verify(const chipmunk_batch_context_t *context) {
         // Вычисляем правую часть для этой подписи: batch_coeff * (H(m) * v0_agg + v1_agg)
         // Генерируем challenge polynomial
         chipmunk_poly_t challenge_poly;
-        dap_hash_fast_t msg_hash;
-        dap_hash_fast(message, message_len, &msg_hash);
-        int challenge_ret = chipmunk_poly_challenge(&challenge_poly, msg_hash.raw, DAP_HASH_FAST_SIZE);
+        dap_hash_t msg_hash;
+        dap_hash_sha3_256(message, message_len, &msg_hash);
+        int challenge_ret = chipmunk_poly_challenge(&challenge_poly, msg_hash.raw, DAP_HASH_SHA3_256_SIZE);
         if (challenge_ret != 0) {
             log_it(L_WARNING, "Failed to generate challenge for signature %zu", sig_idx);
             continue;

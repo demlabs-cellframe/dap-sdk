@@ -38,7 +38,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #endif
 
 #include <pthread.h>
-#include "dap_list.h"
+#include "../../../3rdparty/uthash/src/utlist.h"
 #include "dap_json.h"
 #include "dap_common.h"
 #include "dap_context.h"
@@ -71,8 +71,12 @@ typedef struct dap_http_simple_url_proc {
 } dap_http_simple_url_proc_t;
 
 
-// user_agents_list is dap_list_t of dap_http_user_agent_ptr_t
-static dap_list_t *user_agents_list = NULL;
+typedef struct user_agents_item {
+  dap_http_user_agent_ptr_t user_agent;
+  struct user_agents_item *next;
+} user_agents_item_t;
+
+static user_agents_item_t *user_agents_list = NULL;
 static int is_unknown_user_agents_pass = 0;
 
 #define DAP_HTTP_SIMPLE_URL_PROC(a) ((dap_http_simple_url_proc_t*) (a)->_inheritor)
@@ -118,8 +122,14 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *a_http, 
 
 static void s_free_user_agents_list()
 {
-    dap_list_free_full(user_agents_list, (dap_callback_destroyed_t)dap_http_user_agent_delete);
-    user_agents_list = NULL;
+user_agents_item_t *elt, *tmp;
+
+    LL_FOREACH_SAFE( user_agents_list, elt, tmp )
+    {
+        LL_DELETE( user_agents_list, elt );
+        dap_http_user_agent_delete( elt->user_agent );
+        free( elt );
+    }
 }
 
 static int s_is_user_agent_supported( const char *user_agent )
@@ -132,13 +142,13 @@ static int s_is_user_agent_supported( const char *user_agent )
 
   const char* find_agent_name = dap_http_user_agent_get_name( find_agent );
 
-  dap_list_t *l_el;
-  dap_list_foreach( user_agents_list, l_el ) {
-    dap_http_user_agent_ptr_t l_user_agent = (dap_http_user_agent_ptr_t)l_el->data;
-    const char* user_agent_name = dap_http_user_agent_get_name( l_user_agent );
+  user_agents_item_t *elt;
+  LL_FOREACH( user_agents_list, elt ) {
+
+    const char* user_agent_name = dap_http_user_agent_get_name( elt->user_agent );
 
     if ( strcmp(find_agent_name, user_agent_name) == 0) {
-      if(dap_http_user_agent_versions_compare(find_agent, l_user_agent) >= 0) {
+      if(dap_http_user_agent_versions_compare(find_agent, elt->user_agent) >= 0) {
         result = true;
         goto END;
       }
@@ -176,7 +186,16 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
        return 0;
     }
 
-    user_agents_list = dap_list_append( user_agents_list, user_agent );
+    user_agents_item_t *item = calloc( 1, sizeof (user_agents_item_t) );
+    if (!item) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        va_end(argptr);
+        s_free_user_agents_list();
+        return 0;
+    }
+
+    item->user_agent = user_agent;
+    LL_APPEND( user_agents_list, item );
 
     str = va_arg( argptr, const char * );
   }
@@ -314,7 +333,9 @@ static bool s_proc_queue_callback(void *a_arg)
     }
     dap_http_status_code_t return_code = (dap_http_status_code_t)0;
 
-    uint64_t l_cnt = dap_list_length(user_agents_list);
+    user_agents_item_t *l_tmp;
+    int l_cnt = 0;
+    LL_COUNT(user_agents_list, l_tmp, l_cnt);
     if (l_cnt) {
         dap_http_header_t *l_header = dap_http_header_find(l_http_simple->http_client->in_headers, "User-Agent");
         if (!l_header && !is_unknown_user_agents_pass) {

@@ -29,7 +29,8 @@
 #include "dap_list.h"
 #include "dap_file_utils.h"
 #include "dap_time.h"
-#include "uthash.h"
+#include "dap_dl.h"
+#include "dap_ht.h"
 
 #ifdef DAP_OS_ANDROID
   #include <android/log.h>
@@ -1364,7 +1365,7 @@ typedef struct dap_timer_interface {
 #endif
     dap_timer_callback_t callback;
     void *param;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_timer_interface_t;
 static dap_timer_interface_t *s_timers_map;
 static pthread_rwlock_t s_timers_rwlock;
@@ -1378,8 +1379,8 @@ void dap_interval_timer_init()
 void dap_interval_timer_deinit() {
     pthread_rwlock_wrlock(&s_timers_rwlock);
     dap_timer_interface_t *l_cur_timer = NULL, *l_tmp;
-    HASH_ITER(hh, s_timers_map, l_cur_timer, l_tmp) {
-        HASH_DEL(s_timers_map, l_cur_timer);
+    dap_ht_foreach(s_timers_map, l_cur_timer, l_tmp) {
+        dap_ht_del(s_timers_map, l_cur_timer);
         dap_interval_timer_disable(l_cur_timer->timer);
         DAP_FREE(l_cur_timer);
     }
@@ -1409,7 +1410,7 @@ static void s_bsd_callback(void *a_arg)
     }
     pthread_rwlock_rdlock(&s_timers_rwlock);
     dap_timer_interface_t *l_timer = NULL;
-    HASH_FIND_PTR(s_timers_map, l_timer_ptr, l_timer);
+    dap_ht_find_ptr(s_timers_map, l_timer_ptr, l_timer);
     pthread_rwlock_unlock(&s_timers_rwlock);
     if (l_timer && l_timer->callback) {
         //log_it(L_INFO, "Fire %p", l_timer_ptr);
@@ -1459,7 +1460,7 @@ dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_ca
     timer_settime(l_timer_obj->timer, 0, &l_period, NULL);
 #endif
     pthread_rwlock_wrlock(&s_timers_rwlock);
-    HASH_ADD_PTR(s_timers_map, timer, l_timer_obj);
+    dap_ht_add_ptr(s_timers_map, timer, l_timer_obj);
     pthread_rwlock_unlock(&s_timers_rwlock);
     log_it(L_DEBUG, "Interval timer %p created", &l_timer_obj->timer);
     return (dap_interval_timer_t)l_timer_obj->timer;
@@ -1479,9 +1480,9 @@ int dap_interval_timer_disable(dap_interval_timer_t a_timer) {
 void dap_interval_timer_delete(dap_interval_timer_t a_timer) {
     pthread_rwlock_wrlock(&s_timers_rwlock);
     dap_timer_interface_t *l_timer = NULL;
-    HASH_FIND_PTR(s_timers_map, &a_timer, l_timer);
+    dap_ht_find_ptr(s_timers_map, a_timer, l_timer);
     if (l_timer) {
-        HASH_DEL(s_timers_map, l_timer);
+        dap_ht_del(s_timers_map, l_timer);
         dap_interval_timer_disable(l_timer->timer);
         DAP_FREE(l_timer);
     }

@@ -16,6 +16,7 @@
 #include    <errno.h>                                                       /* <errno> codes */
 
 #include "dap_common.h"                                                  /* DAP_ALLOC, DAP_FREE */
+#include "dap_dl.h"                                                      /* Intrusive doubly-linked lists */
 
 #ifdef __cplusplus
 extern "C" {
@@ -88,28 +89,6 @@ dap_list_t *dap_list_shuffle(dap_list_t *a_list);
 
 #define dap_list_prev(list) ((dap_list_t*)(list))->prev
 #define dap_list_next(list)	((dap_list_t*)(list))->next
-
-/**
- * dap_list_foreach:
- * @list: a DapList
- * @el: iterator variable (dap_list_t*)
- *
- * Iterates over a DapList. Use this for read-only iteration.
- * For deletion during iteration, use dap_list_foreach_safe.
- */
-#define dap_list_foreach(list, el) \
-    for ((el) = (list); (el); (el) = (el)->next)
-
-/**
- * dap_list_foreach_safe:
- * @list: a DapList
- * @el: iterator variable (dap_list_t*)
- * @tmp: temporary variable for safe deletion (dap_list_t*)
- *
- * Iterates over a DapList safely, allowing element deletion during iteration.
- */
-#define dap_list_foreach_safe(list, el, tmp) \
-    for ((el) = (list); (el) && ((tmp) = (el)->next, 1); (el) = (tmp))
 
 #ifdef __cplusplus
 }

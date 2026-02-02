@@ -45,7 +45,8 @@
 #include <pthread.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include <uthash.h>
+#include "dap_dl.h"
+#include "dap_ht.h"
 #include <stdatomic.h>
 
 #define _GNU_SOURCE
@@ -69,7 +70,7 @@ typedef struct __db_ctx__ {
         size_t  namelen;                                                    /* Group name length */
         char name[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 1];                   /* Group's name */
         MDBX_dbi    dbi;                                                    /* MDBX's internal context id */
-        UT_hash_handle hh;
+        dap_ht_handle_t hh;
 } dap_db_ctx_t;
 
 /*
@@ -375,10 +376,10 @@ size_t     l_upper_limit_of_db_size = 16;
 
     /* Run over the list and create/open group/tables and DB context ... */
     dap_list_t *l_el, *l_tmp;
-    dap_list_foreach_safe(l_slist, l_el, l_tmp) {
+    dap_dl_foreach_safe(l_slist, l_el, l_tmp) {
         l_data_iov.iov_base = l_el->data;
         s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
-        l_slist = dap_list_remove_link(l_slist, l_el);
+        dap_dl_delete(l_slist, l_el);
         DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
     }

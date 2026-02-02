@@ -25,7 +25,6 @@
 
 #include <pthread.h>
 #include "dap_common.h"
-#include "dap_list.h"
 
 typedef struct dap_proc_thread dap_proc_thread_t;
 typedef struct dap_context dap_context_t;
@@ -48,12 +47,14 @@ typedef enum dap_queue_msg_priority {
 typedef struct dap_proc_queue_item {
      dap_proc_queue_callback_t  callback;                                   /* An address of the action routine */
                           void *callback_arg;                               /* Address of the action routine argument */
+    struct dap_proc_queue_item *prev;
+    struct dap_proc_queue_item *next;
 } dap_proc_queue_item_t;
 
 typedef struct dap_proc_thread {
     pthread_mutex_t queue_lock;                                             /* To coordinate access to the queuee's entries */
     pthread_cond_t queue_event;                                             /* Conditional variable for waiting thread event queue */
-    dap_list_t *queue[DAP_QUEUE_MSG_PRIORITY_COUNT];                        /* List of dap_proc_queue_item_t* per priority */
+    dap_proc_queue_item_t *queue[DAP_QUEUE_MSG_PRIORITY_COUNT];             /* List of the queue' entries in array of list according of priority numbers */
     uint64_t proc_queue_size;                                               /* Thread's load factor */
     dap_context_t *context;
 } dap_proc_thread_t;
