@@ -1712,10 +1712,13 @@ static void s_kem_task_callback(dap_thread_pool_t *a_pool,
     l_reactor_arg->session = l_ctx->session;
     l_reactor_arg->result = l_result;
     
-    // Get session's worker
+    // Get session's OWNER worker (NOT listener's worker!)
+    // CRITICAL FIX: For Application-level LB, listener is on worker 0 but flow
+    // may be on any worker (determined by hash). Must use flow's owner_worker_id
+    // to avoid data race when modifying session fields.
     stream_udp_session_t *l_session = l_ctx->session;
-    if (!l_session || !l_session->base.listener_es || !l_session->base.listener_es->worker) {
-        log_it(L_ERROR, "[KEM Callback] Session or worker invalid");
+    if (!l_session) {
+        log_it(L_ERROR, "[KEM Callback] Session invalid");
         DAP_DELETE(l_result->bob_ciphertext);
         DAP_DELETE(l_result);
         DAP_DELETE(l_reactor_arg);
@@ -1724,9 +1727,28 @@ static void s_kem_task_callback(dap_thread_pool_t *a_pool,
         return;
     }
     
-    dap_worker_t *l_worker = l_session->base.listener_es->worker;
+    // Use flow's owner_worker_id instead of listener_es->worker
+    uint32_t l_owner_worker_id = l_session->base.base.owner_worker_id;
+    dap_worker_t *l_worker = dap_events_worker_get(l_owner_worker_id);
     
-    // Schedule reactor callback
+    // Fallback to listener's worker if owner worker not available (shouldn't happen)
+    if (!l_worker && l_session->base.listener_es && l_session->base.listener_es->worker) {
+        log_it(L_WARNING, "[KEM Callback] Owner worker %u not found, falling back to listener's worker",
+               l_owner_worker_id);
+        l_worker = l_session->base.listener_es->worker;
+    }
+    
+    if (!l_worker) {
+        log_it(L_ERROR, "[KEM Callback] No valid worker found for session");
+        DAP_DELETE(l_result->bob_ciphertext);
+        DAP_DELETE(l_result);
+        DAP_DELETE(l_reactor_arg);
+        DAP_DELETE(l_ctx->alice_pub_key);
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    
+    // Schedule reactor callback on OWNER worker (thread-safe session modification)
     dap_worker_exec_callback_on(l_worker, s_kem_reactor_callback, l_reactor_arg);
     
     debug_if(s_debug_more, L_DEBUG,

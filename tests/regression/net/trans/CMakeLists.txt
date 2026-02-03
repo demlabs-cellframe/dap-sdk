@@ -5,8 +5,8 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
 
 # =======================================================================================
 # UDP Multi-Client Regression Test
-# Reproduces handshake timeout bug with multiple UDP clients
-# STATUS: EXPECTED TO FAIL - demonstrates bug in UDP transport handshake
+# Tests multi-client UDP handshake (previously reproduced handshake timeout bug)
+# STATUS: FIXED - KEM callback now uses owner_worker_id instead of listener_es->worker
 # =======================================================================================
 
 project(test_udp_multiclient_regression)
@@ -35,11 +35,10 @@ add_test(
     COMMAND ${PROJECT_NAME}
 )
 
-# Mark as expected to fail - this test reproduces a known bug
+# Test properties
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 120
-    LABELS "regression;net;trans;udp;EXPECTED_FAIL"
-    WILL_FAIL TRUE
+    LABELS "regression;net;trans;udp"
 )
 
-message("[+] UDP Multi-Client Regression Test - EXPECTED TO FAIL (reproduces handshake bug)")
+message("[+] UDP Multi-Client Regression Test - tests multi-client handshake (bug FIXED)")
