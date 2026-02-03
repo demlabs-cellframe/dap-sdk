@@ -274,7 +274,13 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
             );
             if (!l_ctrl->retransmit_timer) {
                 log_it(L_WARNING, "Failed to start retransmission timer");
+            } else {
+                log_it(L_INFO, "FC: Retransmit timer started on worker %u (interval=%ums)",
+                       l_worker->id, l_ctrl->config.retransmit_timeout_ms / 2);
             }
+        } else {
+            log_it(L_ERROR, "FC CREATE WARNING: No worker context! Retransmit timer NOT created. "
+                   "Packets will NOT be retransmitted on loss!");
         }
     }
     
