@@ -28,6 +28,9 @@ add_subdirectory(unit)
 # Add integration tests subdirectory
 add_subdirectory(integration)
 
+# Add regression tests subdirectory (tests that reproduce known bugs)
+add_subdirectory(regression)
+
 # ============================================================================
 # Test-Framework Tests (AWK/Shell tests)
 # ============================================================================

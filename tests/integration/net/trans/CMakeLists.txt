@@ -77,4 +77,3 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 600
     LABELS "integration;net;trans;parallel;client-server"
 )
-
