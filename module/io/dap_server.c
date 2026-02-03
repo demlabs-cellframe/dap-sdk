@@ -22,9 +22,7 @@
 */
 
 #if defined(DAP_OS_WINDOWS)
-#ifdef DAP_EVENTS_CAPS_WEPOLL
-#include "wepoll.h"
-#endif
+// wepoll removed - using native IOCP
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
@@ -56,7 +54,6 @@
 #include <stddef.h>
 #include <errno.h>
 #include <signal.h>
-#include <utlist.h>
 #if ! defined(_GNU_SOURCE)
 #define _GNU_SOURCE
 #endif

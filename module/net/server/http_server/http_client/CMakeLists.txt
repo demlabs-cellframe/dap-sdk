@@ -6,8 +6,6 @@ set(HTTP_HDRS FILES include/*.h)
 
 if(WIN32)
   include_directories(../../../../os/win32/)
-  include_directories(../../../../3rdparty/wepoll/)
-  include_directories(../../../../3rdparty/uthash/src/)
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${HTTP_SRCS} ${HTTP_HDRS})

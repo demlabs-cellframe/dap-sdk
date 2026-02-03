@@ -22,7 +22,7 @@
 #define _ENC_KS_H_
 #include <time.h>
 #include <pthread.h>
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_common.h"
 #include "dap_net_common.h"
 #include "dap_enc_key.h"
@@ -42,7 +42,7 @@ typedef struct dap_enc_ks_key{
     pthread_mutex_t mutex;
     uint8_t *acl_list;
     dap_stream_node_addr_t node_addr;
-    UT_hash_handle hh; // makes this structure hashable with UTHASH library
+    dap_ht_handle_t hh; // makes this structure hashable with UTHASH library
 } dap_enc_ks_key_t;
 
 void dap_enc_ks_deinit();

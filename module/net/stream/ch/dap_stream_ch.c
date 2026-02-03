@@ -31,6 +31,7 @@
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_ch_gossip.h"
 #include "dap_stream_worker.h"
+#include "dap_ht.h"
 #include <pthread.h>
 
 #define LOG_TAG "dap_stream_ch"
@@ -81,7 +82,7 @@ void dap_stream_ch_deinit()
 #ifdef  DAP_SYS_DEBUG
 typedef struct __dap_stm_ch_rec__ {
     dap_stream_ch_t     *stm_ch;
-    UT_hash_handle          hh;
+    dap_ht_handle_t     hh;
 } dap_stm_ch_rec_t;
 
 static dap_stm_ch_rec_t     *s_stm_chs = NULL;                          /* @RRL:  A has table to track using of events sockets context */
@@ -125,7 +126,7 @@ dap_stm_ch_rec_t    *l_rec;
                                                                             /* Add new record into the hash table */
     l_rc = pthread_rwlock_wrlock(&s_stm_ch_lock);
     assert(!l_rc);
-    HASH_ADD_PTR(s_stm_chs, stm_ch, l_rec);
+    dap_ht_add_ptr(s_stm_chs, stm_ch, l_rec);
 
     s_memstat[MEMSTAT$K_STM_CH].alloc_nr += 1;
     l_rc = pthread_rwlock_unlock(&s_stm_ch_lock);
@@ -167,9 +168,9 @@ dap_stm_ch_rec_t    *l_rec = NULL;
 
     l_rc = pthread_rwlock_wrlock(&s_stm_ch_lock);
     assert(!l_rc);
-    HASH_FIND_PTR(s_stm_chs, &a_stm_ch, l_rec);
+    dap_ht_find_ptr(s_stm_chs, a_stm_ch, l_rec);
     if ( l_rec && (l_rec->stm_ch == a_stm_ch) )
-        HASH_DEL(s_stm_chs, l_rec);                           /* Remove record from the table */
+        dap_ht_del(s_stm_chs, l_rec);                           /* Remove record from the table */
 
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM_CH].free_nr, 1);
 
@@ -224,7 +225,7 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         l_ch_new->stream_worker = l_stream_worker;
 
         pthread_rwlock_wrlock(&l_stream_worker->channels_rwlock);
-        HASH_ADD_BYHASHVALUE(hh_worker,l_stream_worker->channels, uuid, sizeof (l_ch_new->uuid), l_ch_new->uuid, l_ch_new);
+        dap_ht_add_by_hashvalue_hh(hh_worker, l_stream_worker->channels, uuid, sizeof(l_ch_new->uuid), l_ch_new->uuid, l_ch_new);
         pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
 
 
@@ -251,7 +252,7 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
 
     if(l_stream_worker){
         pthread_rwlock_wrlock(&l_stream_worker->channels_rwlock);
-        HASH_DELETE(hh_worker,l_stream_worker->channels, a_ch);
+        dap_ht_del_hh(hh_worker, l_stream_worker->channels, a_ch);
         pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
     }
 
@@ -294,7 +295,7 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
 
     pthread_rwlock_rdlock(&a_worker->channels_rwlock);
     if ( a_worker->channels)
-        HASH_FIND_BYHASHVALUE(hh_worker,a_worker->channels, &a_uuid, sizeof(a_uuid), a_uuid, l_ch);
+        dap_ht_find_by_hashvalue_hh(hh_worker, a_worker->channels, &a_uuid, sizeof(a_uuid), a_uuid, l_ch);
     pthread_rwlock_unlock(&a_worker->channels_rwlock);
 
     return l_ch;
@@ -356,7 +357,7 @@ static void s_print_workers_channels()
         }
         dap_stream_worker_t* l_stream_worker = DAP_STREAM_WORKER(l_worker);
         if (l_stream_worker->channels)
-            HASH_ITER(hh_worker, l_stream_worker->channels, l_msg_ch, l_msg_ch_tmp) {
+            dap_ht_foreach_hh(hh_worker, l_stream_worker->channels, l_msg_ch, l_msg_ch_tmp) {
                 //log_it(L_DEBUG, "Worker id = %d, channel uuid = 0x%llx", l_worker->id, l_msg_ch->uuid);
                 l_channel_count += 1;
         }

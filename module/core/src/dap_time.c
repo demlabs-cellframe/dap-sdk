@@ -137,7 +137,7 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 {
     dap_return_val_if_fail(a_time_str, 0);
     struct tm l_tm = { };
-    char *ret = strptime(a_time_str, "%d %b %Y %T"
+    char *ret = dap_strptime(a_time_str, "%d %b %Y %T"
         #ifndef DAP_OS_WINDOWS
                                     " %z"
         #endif
@@ -176,7 +176,7 @@ dap_time_t dap_time_from_str_simplified(const char *a_time_str)
 {
     dap_return_val_if_fail(a_time_str, 0);
     struct tm l_tm = {};
-    char *ret = strptime(a_time_str, "%y%m%d", &l_tm);
+    char *ret = dap_strptime(a_time_str, "%y%m%d", &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected simplified string \"yy\"mm\"dd", a_time_str), 0;
     l_tm.tm_sec++;
@@ -207,7 +207,7 @@ dap_time_t dap_time_from_str_custom(const char *a_time_str, const char *a_format
 {
     dap_return_val_if_pass(!a_time_str || !a_format_str, 0);
     struct tm l_tm = {};
-    char *ret = strptime(a_time_str, a_format_str, &l_tm);
+    char *ret = dap_strptime(a_time_str, a_format_str, &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\" by format \"%s\"", a_time_str, a_format_str), 0;
     time_t tmp = mktime(&l_tm);

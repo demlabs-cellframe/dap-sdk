@@ -114,7 +114,7 @@ size_t dap_stream_ch_pkt_write_f(dap_stream_worker_t * a_worker , dap_stream_ch_
     if (a_worker->worker == dap_worker_get_current()) {
         dap_stream_ch_t *l_ch = NULL;
         pthread_rwlock_rdlock(&a_worker->channels_rwlock);
-        HASH_FIND(hh_worker, a_worker->channels , &a_ch_uuid , sizeof(a_ch_uuid), l_ch);
+        dap_ht_find_hh(hh_worker, a_worker->channels, &a_ch_uuid, sizeof(a_ch_uuid), l_ch);
         pthread_rwlock_unlock(&a_worker->channels_rwlock);
         if (!l_ch) {
             log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " for channel %c doesn't exists in worker %u", a_worker->worker->id, (unsigned char)a_type);
@@ -150,7 +150,7 @@ size_t dap_stream_ch_pkt_write(dap_stream_worker_t *a_worker , dap_stream_ch_uui
     if (a_worker->worker == dap_worker_get_current()) {
         dap_stream_ch_t *l_ch = NULL;
         pthread_rwlock_rdlock(&a_worker->channels_rwlock);
-        HASH_FIND(hh_worker, a_worker->channels , &a_ch_uuid , sizeof(a_ch_uuid), l_ch);
+        dap_ht_find_hh(hh_worker, a_worker->channels, &a_ch_uuid, sizeof(a_ch_uuid), l_ch);
         pthread_rwlock_unlock(&a_worker->channels_rwlock);
         if (!l_ch) {
             log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " for channel %c doesn't exists in worker %u", a_worker->worker->id, (unsigned char)a_type);

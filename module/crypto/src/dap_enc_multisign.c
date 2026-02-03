@@ -80,7 +80,7 @@ static uint64_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint64_t 
 
     uint64_t l_meta_data_size = sizeof(dap_sign_type_t) + 2 * sizeof(uint8_t) +
             a_sign->sign_count * (sizeof(uint8_t) + sizeof(dap_multi_sign_meta_t));
-    uint64_t l_pkeys_hashes_size = a_sign->key_count * sizeof(dap_chain_hash_fast_t);
+    uint64_t l_pkeys_hashes_size = a_sign->key_count * sizeof(dap_hash_sha3_256_t);
     uint64_t l_signes_size = 0;
     for (int i = 0; i < a_sign->sign_count; i++) {
         l_signes_size += a_sign->meta[i].sign_header.sign_size;
@@ -207,7 +207,7 @@ void *dap_enc_sig_multisign_read_signature(const uint8_t *a_sign, size_t a_sign_
 // addtional allocation memory
     l_sign->key_seq = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sign->sign_count, NULL, l_sign);
     l_sign->meta = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_multi_sign_meta_t, l_sign->sign_count, NULL, l_sign->key_seq, l_sign);
-    l_sign->key_hashes = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_hash_fast_t, l_pkeys_hashes_size, NULL, l_sign->meta, l_sign->key_seq, l_sign);
+    l_sign->key_hashes = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_hash_sha3_256_t, l_pkeys_hashes_size, NULL, l_sign->meta, l_sign->key_seq, l_sign);
     l_sign->sign_data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_signes_size, NULL, l_sign->key_hashes, l_sign->meta, l_sign->key_seq, l_sign);
 // get data
     l_res_des = DAP_VA_DESERIALIZE(a_sign + l_mem_shift, l_sign_len - l_mem_shift,
@@ -280,21 +280,21 @@ void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params)
  * @param a_hash OUT Pointer to calculated hash
  * @return True if success, overwise return false
  */
-bool dap_multi_sign_hash_data(dap_multi_sign_t *a_sign, const void *a_data, const size_t a_data_size, dap_chain_hash_fast_t *a_hash)
+bool dap_multi_sign_hash_data(dap_multi_sign_t *a_sign, const void *a_data, const size_t a_data_size, dap_hash_sha3_256_t *a_hash)
 {
     dap_return_val_if_pass(!a_sign, false);
     uint32_t l_meta_data_size = sizeof(dap_sign_type_t) + 2 * sizeof(uint8_t) + a_sign->sign_count * sizeof(uint8_t);
-    uint8_t l_meta_data[l_meta_data_size], l_concatenated_hash[ 3 * sizeof(dap_chain_hash_fast_t) ] = { };
+    uint8_t l_meta_data[l_meta_data_size], l_concatenated_hash[ 3 * sizeof(dap_hash_sha3_256_t) ] = { };
     
     bool l_ret = !!DAP_VA_SERIALIZE(l_meta_data, l_meta_data_size,
                                        &a_sign->type, (uint64_t)sizeof(dap_sign_type_t),
                                        &a_sign->key_count, (uint64_t)sizeof(uint8_t),
                                        &a_sign->sign_count, (uint64_t)sizeof(uint8_t),
                                        a_sign->key_seq, (uint64_t)(a_sign->sign_count * sizeof(uint8_t)));
-    l_ret ? l_ret &= dap_hash_fast(a_data, a_data_size, (dap_chain_hash_fast_t *)l_concatenated_hash) : 0;  // get data hash
-    l_ret ? l_ret &= dap_hash_fast(l_meta_data, l_meta_data_size, (dap_chain_hash_fast_t*)(l_concatenated_hash + sizeof(dap_chain_hash_fast_t))) : 0;  // get metadata hash
-    l_ret ? l_ret &= dap_hash_fast(a_sign->key_hashes, a_sign->key_count * sizeof(dap_chain_hash_fast_t), (dap_chain_hash_fast_t *)(l_concatenated_hash + 2 * sizeof(dap_chain_hash_fast_t))) : 0;   // get key_hashes hash
-    l_ret ? l_ret &= dap_hash_fast(l_concatenated_hash, 3 * sizeof(dap_chain_hash_fast_t), a_hash) : 0;  // get out hash of calculated hashes
+    l_ret ? l_ret &= dap_hash_sha3_256(a_data, a_data_size, (dap_hash_sha3_256_t *)l_concatenated_hash) : 0;  // get data hash
+    l_ret ? l_ret &= dap_hash_sha3_256(l_meta_data, l_meta_data_size, (dap_hash_sha3_256_t*)(l_concatenated_hash + sizeof(dap_hash_sha3_256_t))) : 0;  // get metadata hash
+    l_ret ? l_ret &= dap_hash_sha3_256(a_sign->key_hashes, a_sign->key_count * sizeof(dap_hash_sha3_256_t), (dap_hash_sha3_256_t *)(l_concatenated_hash + 2 * sizeof(dap_hash_sha3_256_t))) : 0;   // get key_hashes hash
+    l_ret ? l_ret &= dap_hash_sha3_256(l_concatenated_hash, 3 * sizeof(dap_hash_sha3_256_t), a_hash) : 0;  // get out hash of calculated hashes
     return l_ret;
 }
 
@@ -314,7 +314,7 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
                           (l_params->type.type != SIG_TYPE_MULTI_CHAINED && l_params->type.type != SIG_TYPE_MULTI_ECDSA_DILITHIUM), -1);
 // memory alloc
     dap_multi_sign_t *l_sign = a_sign_out;
-    l_sign->key_hashes = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_chain_hash_fast_t, l_params->key_count, -6);
+    l_sign->key_hashes = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_hash_sha3_256_t, l_params->key_count, -6);
     l_sign->key_seq = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_params->sign_count, -4, l_sign->key_hashes);
     l_sign->meta = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_multi_sign_meta_t, l_params->sign_count, -5, l_sign->key_seq, l_sign->key_hashes);
 // data prepare
@@ -323,7 +323,7 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
     l_sign->sign_count = l_params->sign_count;
 
     for (int i = 0; i < l_params->key_count; i++) {
-        if (!dap_hash_fast(l_params->keys[i]->pub_key_data, l_params->keys[i]->pub_key_data_size, &l_sign->key_hashes[i])) {
+        if (!dap_hash_sha3_256(l_params->keys[i]->pub_key_data, l_params->keys[i]->pub_key_data_size, &l_sign->key_hashes[i])) {
             log_it (L_ERROR, "Can't create multi-signature hash");
             DAP_DEL_MULTY(l_sign->key_hashes, l_sign->key_seq, l_sign->meta);
             return -3;
@@ -337,11 +337,11 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
     size_t l_sign_size = 0;
     for (uint8_t i = 0; i < l_params->sign_count; ++i) {
         bool l_hashed = false;
-        dap_chain_hash_fast_t l_data_hash;
+        dap_hash_sha3_256_t l_data_hash;
         if (i == 0) {
              l_hashed = dap_multi_sign_hash_data(l_sign, a_msg_in, a_msg_size, &l_data_hash);
         } else {
-             l_hashed = dap_hash_fast(&l_sign->sign_data[l_signs_mem_shift], l_sign_size, &l_data_hash);
+             l_hashed = dap_hash_sha3_256(&l_sign->sign_data[l_signs_mem_shift], l_sign_size, &l_data_hash);
              l_signs_mem_shift += l_sign_size;
         }
         if (!l_hashed) {
@@ -350,7 +350,7 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
             return -4;
         }
         int l_num = l_sign->key_seq[i];
-        dap_sign_t *l_dap_sign_step = dap_sign_create(l_params->keys[l_num], &l_data_hash, sizeof(dap_chain_hash_fast_t));
+        dap_sign_t *l_dap_sign_step = dap_sign_create(l_params->keys[l_num], &l_data_hash, sizeof(dap_hash_sha3_256_t));
         if (!l_dap_sign_step) {
             log_it (L_ERROR, "Can't create multi-signature step signature");
             DAP_DEL_MULTY(l_sign->key_hashes, l_sign->key_seq, l_sign->meta, l_sign->sign_data);
@@ -393,7 +393,7 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
 
     uint32_t l_pkeys_mem_shift = 0, l_signs_mem_shift = 0;
     for (uint8_t i = 0; i < l_sign->sign_count; ++i) {
-        dap_chain_hash_fast_t l_data_hash;
+        dap_hash_sha3_256_t l_data_hash;
         dap_multisign_public_key_t *l_pkeys = a_key->pub_key_data;
         if (!l_pkeys) {
             log_it(L_ERROR, "Invalid multisign public key data at step %d", i);
@@ -416,14 +416,14 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
         l_step_sign->header = l_sign->meta[i].sign_header;
         memcpy(l_step_sign->pkey_n_sign, l_pkeys->data + l_pkeys_mem_shift, l_pkey_size);
         memcpy(l_step_sign->pkey_n_sign + l_pkey_size, l_sign->sign_data + l_signs_mem_shift, l_sign_size);
-        l_verified = dap_sign_verify(l_step_sign, &l_data_hash, sizeof(dap_chain_hash_fast_t));
+        l_verified = dap_sign_verify(l_step_sign, &l_data_hash, sizeof(dap_hash_sha3_256_t));
         DAP_DELETE(l_step_sign);
         // verify check
         if (l_verified) {
             return l_verified;
         }
         // get past hash
-        if (!dap_hash_fast(l_sign->sign_data + l_signs_mem_shift, l_sign_size, &l_data_hash)) {
+        if (!dap_hash_sha3_256(l_sign->sign_data + l_signs_mem_shift, l_sign_size, &l_data_hash)) {
             log_it (L_ERROR, "Can't create multi-signature hash");
             return -4;
         }

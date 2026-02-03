@@ -38,7 +38,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #endif
 
 #include <pthread.h>
-#include "../../../3rdparty/uthash/src/utlist.h"
+#include "dap_dl.h"
+#include "dap_sl.h"
 #include "dap_json.h"
 #include "dap_common.h"
 #include "dap_context.h"
@@ -124,9 +125,9 @@ static void s_free_user_agents_list()
 {
 user_agents_item_t *elt, *tmp;
 
-    LL_FOREACH_SAFE( user_agents_list, elt, tmp )
+    dap_sl_foreach_safe(user_agents_list, elt, tmp)
     {
-        LL_DELETE( user_agents_list, elt );
+        dap_sl_delete(user_agents_list, elt);
         dap_http_user_agent_delete( elt->user_agent );
         free( elt );
     }
@@ -143,7 +144,7 @@ static int s_is_user_agent_supported( const char *user_agent )
   const char* find_agent_name = dap_http_user_agent_get_name( find_agent );
 
   user_agents_item_t *elt;
-  LL_FOREACH( user_agents_list, elt ) {
+  dap_sl_foreach(user_agents_list, elt) {
 
     const char* user_agent_name = dap_http_user_agent_get_name( elt->user_agent );
 
@@ -195,7 +196,7 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
     }
 
     item->user_agent = user_agent;
-    LL_APPEND( user_agents_list, item );
+    dap_sl_append(user_agents_list, item);
 
     str = va_arg( argptr, const char * );
   }
@@ -335,7 +336,7 @@ static bool s_proc_queue_callback(void *a_arg)
 
     user_agents_item_t *l_tmp;
     int l_cnt = 0;
-    LL_COUNT(user_agents_list, l_tmp, l_cnt);
+    dap_sl_count(user_agents_list, l_cnt);
     if (l_cnt) {
         dap_http_header_t *l_header = dap_http_header_find(l_http_simple->http_client->in_headers, "User-Agent");
         if (!l_header && !is_unknown_user_agents_pass) {

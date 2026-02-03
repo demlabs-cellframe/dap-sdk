@@ -91,3 +91,6 @@ slc
 # Downloaded/temporary files
 *.tmp
 *.download
+
+# Downloaded competitor libraries for benchmarks
+tests/performance/hashtable/competitors/

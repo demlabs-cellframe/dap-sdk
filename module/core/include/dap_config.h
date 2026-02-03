@@ -2,7 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_common.h"
 
 // Forward declarations
@@ -58,7 +58,7 @@ typedef enum {
 typedef struct dap_conf {
     char *path;
     dap_config_item_t *items;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_config_t;
 
 #ifdef __cplusplus

@@ -23,7 +23,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <stdint.h>
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_math_ops.h"
 #include "dap_stream.h"
 #include "dap_stream_ch_pkt.h"
@@ -67,7 +67,7 @@ typedef struct dap_stream_ch {
     dap_dap_stream_ch_proc_t * proc;
     void * internal;
     struct dap_stream_ch *me;
-    UT_hash_handle hh_worker;
+    dap_ht_handle_t hh_worker;
 } dap_stream_ch_t;
 
 typedef struct dap_stream_ch_cachet {

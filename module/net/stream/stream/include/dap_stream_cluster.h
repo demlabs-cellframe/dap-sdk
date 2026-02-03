@@ -26,7 +26,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_net_common.h"
 #include <stdint.h>
 #include <pthread.h>
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_list.h"
 #include "dap_guuid.h"
 #include <dap_json_rpc_errors.h>
@@ -43,7 +43,7 @@ typedef struct dap_cluster_member {
     bool persistent;                // Persistent members won't be removed with its links
     void *info;                     // Member info pointer
     dap_cluster_t *cluster;         // Cluster pointer
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_cluster_member_t;
 
 typedef void (*dap_cluster_change_callback_t)(dap_cluster_member_t *a_member, void *a_arg);
@@ -59,7 +59,7 @@ typedef struct dap_cluster {
     dap_cluster_change_callback_t members_delete_callback;
     void *callbacks_arg;
     void *_inheritor;
-    UT_hash_handle hh, hh_str;      // Handles for uuid and mnemonim storages
+    dap_ht_handle_t hh, hh_str;      // Handles for uuid and mnemonim storages
 } dap_cluster_t;
 
 // Cluster common funcs

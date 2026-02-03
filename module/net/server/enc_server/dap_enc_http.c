@@ -143,7 +143,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         uint8_t alice_msg[l_decode_len + 1];
         l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
         alice_msg[l_decode_len] = '\0';
-        dap_chain_hash_fast_t l_sign_hash = {0};
+        dap_hash_sha3_256_t l_sign_hash = {0};
         if (!l_protocol_version && !l_sign_count) {
             if (l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t)) {
                 l_sign_count = 1;

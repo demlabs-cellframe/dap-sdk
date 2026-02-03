@@ -281,7 +281,7 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
     dap_return_val_if_fail(a_key && a_key->priv_key_data && a_key->priv_key_data_size, NULL);
     const void *l_sign_data = NULL;
     size_t l_sign_data_size = 0;
-    dap_chain_hash_fast_t l_sign_data_hash = {};
+    dap_hash_sha3_256_t l_sign_data_hash = {};
     uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_hash_type);
     bool l_use_pkey_hash = DAP_SIGN_GET_PKEY_HASHING_FLAG(a_hash_type);
     if (dap_enc_key_is_insign_hashing(a_key->type)) {
@@ -305,7 +305,7 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
         l_sign_data = &l_sign_data_hash;
         l_sign_data_size = sizeof(l_sign_data_hash);
         switch(l_hash_type){
-            case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_fast(a_data,a_data_size,&l_sign_data_hash); break;
+            case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_sha3_256(a_data,a_data_size,&l_sign_data_hash); break;
             default: log_it(L_CRITICAL, "We can't hash with hash type 0x%02x", l_hash_type);
         }
     }
@@ -317,9 +317,9 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
         uint8_t *l_sign_unserialized = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sign_unserialized_size, NULL),
                 *l_pub_key = NULL;   
         if (l_use_pkey_hash) {
-            l_pub_key = DAP_NEW_Z(dap_hash_fast_t);
-            dap_enc_key_get_pkey_hash(a_key, (dap_hash_fast_t*)l_pub_key);
-            l_pub_key_size = DAP_HASH_FAST_SIZE;
+            l_pub_key_size = DAP_HASH_SHA3_256_SIZE;
+            l_pub_key = DAP_NEW_Z_SIZE(uint8_t, l_pub_key_size);
+            dap_enc_key_get_pkey_hash(a_key, DAP_HASH_TYPE_SHA3_256, l_pub_key, l_pub_key_size);
         } else {
             l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
         }
@@ -392,17 +392,17 @@ uint8_t *dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
  * @return true 
  * @return false 
  */
-bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash)
+bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_hash_sha3_256_t *a_sign_hash)
 {
     dap_return_val_if_fail(a_sign && a_sign->header.sign_pkey_size, false);
     if (DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type)) {
-        if (a_sign->header.sign_pkey_size > DAP_HASH_FAST_SIZE) {
-            log_it(L_ERROR, "Error in pkey size check, expected <= %zu, in sign %u", sizeof(dap_chain_hash_fast_t), a_sign->header.sign_pkey_size);
+        if (a_sign->header.sign_pkey_size > DAP_HASH_SHA3_256_SIZE) {
+            log_it(L_ERROR, "Error in pkey size check, expected <= %zu, in sign %u", sizeof(dap_hash_sha3_256_t), a_sign->header.sign_pkey_size);
             return false;
         }
         return memcpy(a_sign_hash, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size) ? true : false;
     }
-    return  dap_hash_fast(a_sign->pkey_n_sign, a_sign->header.sign_pkey_size, a_sign_hash);
+    return  dap_hash_sha3_256(a_sign->pkey_n_sign, a_sign->header.sign_pkey_size, a_sign_hash);
 }
 
 /**
@@ -489,7 +489,7 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
     int l_ret = 0;
     const void *l_verify_data;
     size_t l_verify_data_size;
-    dap_chain_hash_fast_t l_verify_data_hash;
+    dap_hash_sha3_256_t l_verify_data_hash;
     uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
     if(l_hash_type == DAP_SIGN_HASH_TYPE_DEFAULT)
         log_it(L_WARNING, "Detected DAP_SIGN_HASH_TYPE_DEFAULT (0x%02x) hash type in sign ", DAP_SIGN_HASH_TYPE_DEFAULT);
@@ -499,9 +499,9 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
         l_verify_data_size = a_data_size;
     } else {
         l_verify_data = &l_verify_data_hash;
-        l_verify_data_size = DAP_CHAIN_HASH_FAST_SIZE;
+        l_verify_data_size = DAP_HASH_SHA3_256_SIZE;
         switch(l_hash_type){
-            case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_fast(a_data,a_data_size,&l_verify_data_hash); break;
+            case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_sha3_256(a_data,a_data_size,&l_verify_data_hash); break;
             default: log_it(L_CRITICAL, "Incorrect signature: we can't check hash with hash type 0x%02x", s_sign_hash_type_default);
             dap_enc_key_signature_delete(l_key->type, l_sign_data);
             dap_enc_key_delete(l_key);
@@ -601,13 +601,13 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
         dap_string_append_printf(a_str_out, "! Corrupted signature data\n");
         return;
     }
-    dap_chain_hash_fast_t l_hash_pkey;
+    dap_hash_sha3_256_t l_hash_pkey;
     dap_string_append_printf(a_str_out, "\tType: %s\n",
                              dap_sign_type_to_str(a_sign->header.type));
     if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
         const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
              ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-             : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
+             : dap_hash_sha3_256_to_str_static(&l_hash_pkey);
              dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_str);
     }
     dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
@@ -1228,8 +1228,8 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
             memcpy(multi_sigs[i].message_hash, a_ctx->messages[i], 32);
         } else {
             // Хешируем короткое сообщение
-            dap_hash_fast_t msg_hash;
-            dap_hash_fast(a_ctx->messages[i], a_ctx->message_sizes[i], &msg_hash);
+            dap_hash_sha3_256_t msg_hash;
+            dap_hash_sha3_256(a_ctx->messages[i], a_ctx->message_sizes[i], &msg_hash);
             memcpy(multi_sigs[i].message_hash, &msg_hash, 32);
         }
         
@@ -1514,11 +1514,11 @@ int dap_sign_get_information_json(dap_sign_t* a_sign, dap_json_t *a_json_out, co
     }
     
     // Get public key hash
-    dap_hash_fast_t l_pkey_hash = {0};
+    dap_hash_sha3_256_t l_pkey_hash = {0};
     if (dap_sign_get_pkey_hash(a_sign, &l_pkey_hash)) {
         char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
                                ? dap_enc_base58_encode_hash_to_str(&l_pkey_hash)
-                               : dap_hash_fast_to_str_new(&l_pkey_hash);
+                               : dap_hash_sha3_256_to_str_new(&l_pkey_hash);
         dap_json_object_add_object(a_json_out, a_version == 1 ? "pkey_hash" : "sig_pkey_hash", 
                                    dap_json_object_new_string(l_hash_str));
         DAP_DELETE(l_hash_str);

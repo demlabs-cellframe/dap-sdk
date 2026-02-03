@@ -53,7 +53,7 @@ typedef struct aggregated_signature {
     dap_sign_t** signatures;
     uint32_t* node_ids;
     size_t count;
-    dap_hash_fast_t message_hash;
+    dap_hash_sha3_256_t message_hash;
 } aggregated_signature_t;
 
 // Multithreaded node context for I/O integration testing
@@ -68,7 +68,7 @@ typedef struct mt_node_context {
     uint64_t last_seen;
     
     // Consensus data
-    dap_hash_fast_t* current_message_hash;
+    dap_hash_sha3_256_t* current_message_hash;
     dap_sign_t* signature;
     bool signature_ready;
     pthread_mutex_t signature_mutex;
@@ -82,7 +82,7 @@ typedef struct mt_node_context {
 // Global state for multithreaded test
 static mt_node_context_t* g_mt_nodes = NULL;
 static uint32_t g_mt_nodes_count = 0;
-static dap_hash_fast_t g_current_consensus_hash = {0};
+static dap_hash_sha3_256_t g_current_consensus_hash = {0};
 static uint32_t g_signatures_completed = 0;
 static pthread_mutex_t g_consensus_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -114,8 +114,8 @@ static void* s_mt_node_process_consensus(void* a_arg) {
     if (l_node->is_byzantine) {
         log_it(L_WARNING, "[Thread] Node %u is Byzantine, creating invalid signature", l_node->node_id);
         const char* l_fake_data = "byzantine_fake_multithreaded_data";
-        dap_hash_fast_t l_fake_hash = {0};
-        dap_hash_fast(l_fake_data, strlen(l_fake_data), &l_fake_hash);
+        dap_hash_sha3_256_t l_fake_hash = {0};
+        dap_hash_sha3_256(l_fake_data, strlen(l_fake_data), &l_fake_hash);
         l_node->signature = dap_sign_create(l_key_to_use, &l_fake_hash, sizeof(l_fake_hash));
     } else {
         // Create valid signature
@@ -195,8 +195,8 @@ static bool s_test_distributed_consensus_workflow(void) {
     log_it(L_DEBUG, "Created consensus proposal: %s", l_proposal_json);
     
     // Step 3: Hash the proposal for signing
-    dap_hash_fast_t l_proposal_hash = {0};
-    bool l_hash_ret = dap_hash_fast(l_proposal_json, strlen(l_proposal_json), &l_proposal_hash);
+    dap_hash_sha3_256_t l_proposal_hash = {0};
+    bool l_hash_ret = dap_hash_sha3_256(l_proposal_json, strlen(l_proposal_json), &l_proposal_hash);
     DAP_TEST_ASSERT(l_hash_ret == true, "Proposal hashing");
     
     // Step 4: Simulate network broadcast and signature collection with aggregation
@@ -395,7 +395,7 @@ static bool s_test_network_fault_tolerance(void) {
     
     // Step 3: Create critical message requiring consensus
     const char* l_critical_message = "CRITICAL: System requires emergency consensus for security update";
-    dap_hash_fast(l_critical_message, strlen(l_critical_message), &g_current_consensus_hash);
+    dap_hash_sha3_256(l_critical_message, strlen(l_critical_message), &g_current_consensus_hash);
     
     // Step 4: Simulate node failures
     g_mt_nodes[1].is_online = false; // Node 2 offline
