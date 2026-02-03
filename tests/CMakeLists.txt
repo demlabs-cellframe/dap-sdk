@@ -194,8 +194,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/json/CMakeLists.txt)
 endif()
 
 # Performance benchmarks options
-option(BUILD_BENCHMARKS "Build performance benchmarks with competitor implementations" ON)
-option(BENCHMARK_COMPETITORS "Include competitor hash table implementations in benchmark" ON)
+option(BUILD_BENCHMARKS "Build performance benchmarks with competitor implementations" OFF)
+option(BENCHMARK_COMPETITORS "Include competitor hash table implementations in benchmark" OFF)
 
 # Hash Table performance benchmarks (dap_ht vs competitors)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/hashtable/CMakeLists.txt)

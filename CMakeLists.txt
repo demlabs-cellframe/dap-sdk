@@ -196,11 +196,6 @@ if(BUILD_DAP_SDK_TESTS)
     message("[+] Tests enabled with new structure")
 endif()
 
-# Benchmarks (optional)
-if(EXISTS "${CMAKE_SOURCE_DIR}/benchmarks/CMakeLists.txt")
-    add_subdirectory(benchmarks)
-endif()
-
 # Create final combined DAP SDK library
 dap_create_final_library()
 
