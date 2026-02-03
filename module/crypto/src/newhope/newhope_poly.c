@@ -1,7 +1,9 @@
 #include "newhope_poly.h"
 #include "newhope_ntt.h"
 #include "newhope_reduce.h"
-#include "sha3/fips202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 /*************************************************
 * Name:        coeff_freeze
@@ -224,7 +226,7 @@ void poly_newhope_uniform(poly_newhope *a, const unsigned char *seed)
   unsigned int ctr=0;
   uint16_t val;
   uint64_t state[25];
-  uint8_t buf[SHAKE128_RATE];
+  uint8_t buf[DAP_SHAKE128_RATE];
   uint8_t extseed[NEWHOPE_SYMBYTES+1];
   int i,j;
 
@@ -237,11 +239,11 @@ void poly_newhope_uniform(poly_newhope *a, const unsigned char *seed)
     extseed[NEWHOPE_SYMBYTES] = i; /* domain-separate the 16 independent calls */
     for(int ii = 0; ii < 25; ++ii)
         state[ii] = 0;
-    shake128_absorb(state, extseed, NEWHOPE_SYMBYTES+1);
+    dap_hash_shake128_absorb(state, extseed, NEWHOPE_SYMBYTES+1);
     while(ctr < 64) /* Very unlikely to run more than once */
     {
-      shake128_squeezeblocks(buf,1,state);
-      for(j=0;j<SHAKE128_RATE && ctr < 64;j+=2)
+      dap_hash_shake128_squeezeblocks(buf,1,state);
+      for(j=0;j<DAP_SHAKE128_RATE && ctr < 64;j+=2)
       {
         val = (buf[j] | ((uint16_t) buf[j+1] << 8));
         if(val < 5*NEWHOPE_Q)
@@ -298,7 +300,7 @@ void poly_newhope_sample(poly_newhope *r, const unsigned char *seed, unsigned ch
   for(i=0;i<NEWHOPE_N/64;i++) /* Generate noise in blocks of 64 coefficients */
   {
     extseed[NEWHOPE_SYMBYTES+1] = i;
-    shake256(buf,128,extseed,NEWHOPE_SYMBYTES+2);
+    dap_hash_shake256(buf,128,extseed,NEWHOPE_SYMBYTES+2);
     for(j=0;j<64;j++)
     {
       a = buf[2*j];

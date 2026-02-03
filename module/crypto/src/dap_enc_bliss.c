@@ -6,7 +6,9 @@
 #include "dap_enc_bliss.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "SimpleFIPS202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 #define LOG_TAG "dap_enc_sig_bliss"
 
@@ -62,7 +64,7 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
     entropy_t entropy;
     if(seed && seed_size>0){
         assert(SHA3_512_DIGEST_LENGTH==64);
-        SHA3_512((unsigned char *)seed_tmp, (const unsigned char *)seed, seed_size);
+        dap_hash_sha3_512((unsigned char *)seed_tmp, (const unsigned char *)seed, seed_size);
     }
     else
         randombytes(&seed_tmp, 64);

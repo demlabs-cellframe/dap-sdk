@@ -1,11 +1,11 @@
 #include "dap_enc_sphincsplus.h"
-// XKCP includes moved here from header for encapsulation
-#include "SimpleFIPS202.h"
 //#include "sphincsplus/randombytes.h"
 #include "api.h"
 #include "dap_hash.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 #include "dap_rand.h"
-#include "fips202.h"
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
@@ -40,7 +40,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
     size_t l_seed_buf_size = dap_enc_sig_sphincsplus_crypto_sign_seedbytes();
     unsigned char *l_seed_buf = DAP_NEW_Z_SIZE_RET_IF_FAIL(unsigned char, l_seed_buf_size, NULL);
     if(a_seed && a_seed_size > 0) {
-        shake256(l_seed_buf, l_seed_buf_size, (const unsigned char *) a_seed, a_seed_size);
+        dap_hash_shake256(l_seed_buf, l_seed_buf_size, (const unsigned char *) a_seed, a_seed_size);
     } else {
         randombytes(l_seed_buf, l_seed_buf_size);
     }

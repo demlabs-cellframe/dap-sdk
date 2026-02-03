@@ -1,9 +1,12 @@
 #include "dap_enc_shipovnik.h"
-// XKCP includes moved here from header for encapsulation
-#include "SimpleFIPS202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "fips202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 #include "sig_shipovnik/shipovnik_params.h"
 
 #define LOG_TAG "dap_enc_sig_shipovnik"

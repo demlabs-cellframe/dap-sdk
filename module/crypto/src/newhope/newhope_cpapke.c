@@ -2,7 +2,9 @@
 #include "newhope_api.h"
 #include "newhope_poly.h"
 #include "rand/dap_rand.h"
-#include "sha3/fips202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 /*************************************************
 * Name:        encode_pk
@@ -106,7 +108,7 @@ void cpapke_keypair(unsigned char *pk,
 
   z[0] = 0x01;
   randombytes(z+1, NEWHOPE_SYMBYTES);
-  shake256(z, 2*NEWHOPE_SYMBYTES, z, NEWHOPE_SYMBYTES + 1);
+  dap_hash_shake256(z, 2*NEWHOPE_SYMBYTES, z, NEWHOPE_SYMBYTES + 1);
 
   gen_a(&ahat, publicseed);
 

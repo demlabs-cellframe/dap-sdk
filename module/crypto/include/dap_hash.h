@@ -1,10 +1,10 @@
 /*
  * Authors:
- * Dmitriy A. Gearasimov <gerasimov.dmitriy@demlabs.net>
+ * Dmitriy A. Gerasimov <gerasimov.dmitriy@demlabs.net>
  * DeM Labs Inc.   https://demlabs.net
  * CellFrame       https://cellframe.net
  * Sources         https://gitlab.demlabs.net/cellframe
- * Copyright  (c) 2017-2019
+ * Copyright  (c) 2025
  * All rights reserved.
 
  This file is part of CellFrame SDK the open source project

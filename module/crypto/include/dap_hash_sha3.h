@@ -1,38 +1,75 @@
 /*
  * Authors:
- * Dmitriy A. Gearasimov <gerasimov.dmitriy@demlabs.net>
+ * Dmitriy A. Gerasimov <gerasimov.dmitriy@demlabs.net>
  * DeM Labs Inc.   https://demlabs.net
- * CellFrame       https://cellframe.net
- * Sources         https://gitlab.demlabs.net/cellframe
- * Copyright  (c) 2017-2019
+ * Copyright  (c) 2017-2026
  * All rights reserved.
 
- This file is part of CellFrame SDK the open source project
+ This file is part of DAP SDK the open source project
 
-    CellFrame SDK is free software: you can redistribute it and/or modify
+    DAP SDK is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    CellFrame SDK is distributed in the hope that it will be useful,
+    DAP SDK is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with any CellFrame SDK based project.  If not, see <http://www.gnu.org/licenses/>.
+    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
+
+/**
+ * @file dap_hash_sha3.h
+ * @brief SHA3 hash functions (FIPS 202)
+ * @details Native DAP implementation based on Keccak-p[1600] permutation.
+ *
+ * Supported algorithms:
+ *   - SHA3-224, SHA3-256, SHA3-384, SHA3-512 (fixed output)
+ *
+ * For SHAKE XOF functions see:
+ *   - dap_hash_shake128.h
+ *   - dap_hash_shake256.h
+ *
+ * @note Uses native DAP Keccak implementation with SIMD dispatch.
+ */
+
 #pragma once
 
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <string.h>
+
 #include "dap_common.h"
+#include "dap_hash_keccak.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // =============================================================================
-// SHA3-256 Hash (Cryptographic)
+// Constants
 // =============================================================================
 
+// SHA3 output sizes (bytes)
+#define DAP_HASH_SHA3_224_SIZE      28
 #define DAP_HASH_SHA3_256_SIZE      32
-#define DAP_HASH_SHA3_256_STR_LEN   (DAP_HASH_SHA3_256_SIZE * 2 + 2 /* heading 0x */)
-#define DAP_HASH_SHA3_256_STR_SIZE  (DAP_HASH_SHA3_256_STR_LEN + 1 /* trailing zero */)
+#define DAP_HASH_SHA3_384_SIZE      48
+#define DAP_HASH_SHA3_512_SIZE      64
+
+// Alternate names
+#define SHA3_512_DIGEST_LENGTH      DAP_HASH_SHA3_512_SIZE
+
+// SHA3-256 string format
+#define DAP_HASH_SHA3_256_STR_LEN   (DAP_HASH_SHA3_256_SIZE * 2 + 2)  // 0x + hex
+#define DAP_HASH_SHA3_256_STR_SIZE  (DAP_HASH_SHA3_256_STR_LEN + 1)   // + null
+
+// =============================================================================
+// Types
+// =============================================================================
 
 /**
  * @brief SHA3-256 hash type (32 bytes)
@@ -48,52 +85,96 @@ typedef struct dap_hash_sha3_256_str {
     char s[DAP_HASH_SHA3_256_STR_SIZE];
 } dap_hash_sha3_256_str_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// =============================================================================
+// SHA3 One-shot Functions
+// =============================================================================
+
+/**
+ * @brief Compute SHA3-224 hash
+ * @param a_output Output buffer (28 bytes)
+ * @param a_input Input data
+ * @param a_inlen Input length in bytes
+ */
+DAP_STATIC_INLINE void dap_hash_sha3_224(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen)
+{
+    dap_hash_keccak_ctx_t l_ctx;
+    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_224_RATE, DAP_KECCAK_SHA3_SUFFIX);
+    dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
+    dap_hash_keccak_sponge_squeeze(&l_ctx, a_output, DAP_HASH_SHA3_224_SIZE);
+}
+
+/**
+ * @brief Compute SHA3-256 hash (typed version)
+ * @param a_data_in Input data
+ * @param a_data_in_size Size of input data
+ * @param a_hash_out Output hash struct
+ * @return true on success
+ */
+bool dap_hash_sha3_256(const void *a_data_in, size_t a_data_in_size, dap_hash_sha3_256_t *a_hash_out);
+
+/**
+ * @brief Compute SHA3-256 hash (raw version)
+ * @param a_output Output buffer (32 bytes)
+ * @param a_input Input data
+ * @param a_inlen Input length in bytes
+ */
+DAP_STATIC_INLINE void dap_hash_sha3_256_raw(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen)
+{
+    dap_hash_keccak_ctx_t l_ctx;
+    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_256_RATE, DAP_KECCAK_SHA3_SUFFIX);
+    dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
+    dap_hash_keccak_sponge_squeeze(&l_ctx, a_output, DAP_HASH_SHA3_256_SIZE);
+}
+
+/**
+ * @brief Compute SHA3-384 hash
+ * @param a_output Output buffer (48 bytes)
+ * @param a_input Input data
+ * @param a_inlen Input length in bytes
+ */
+DAP_STATIC_INLINE void dap_hash_sha3_384(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen)
+{
+    dap_hash_keccak_ctx_t l_ctx;
+    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_384_RATE, DAP_KECCAK_SHA3_SUFFIX);
+    dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
+    dap_hash_keccak_sponge_squeeze(&l_ctx, a_output, DAP_HASH_SHA3_384_SIZE);
+}
+
+/**
+ * @brief Compute SHA3-512 hash
+ * @param a_output Output buffer (64 bytes)
+ * @param a_input Input data
+ * @param a_inlen Input length in bytes
+ */
+DAP_STATIC_INLINE void dap_hash_sha3_512(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen)
+{
+    dap_hash_keccak_ctx_t l_ctx;
+    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_512_RATE, DAP_KECCAK_SHA3_SUFFIX);
+    dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
+    dap_hash_keccak_sponge_squeeze(&l_ctx, a_output, DAP_HASH_SHA3_512_SIZE);
+}
 
 // =============================================================================
-// SHA3 Core Functions
+// SHA3-256 String Conversion Functions
 // =============================================================================
 
 /**
  * @brief Parse SHA3 hash from string (auto-detect format: hex or base58)
- * @param a_hash_str Input string (hex with 0x prefix, or base58)
- * @param a_hash Output hash
- * @return 0 on success, negative on error
  */
 int dap_hash_sha3_256_from_str(const char *a_hash_str, dap_hash_sha3_256_t *a_hash);
 
 /**
  * @brief Parse SHA3 hash from hex string
- * @param a_hex_str Input hex string (with 0x prefix)
- * @param a_hash Output hash
- * @return 0 on success, negative on error
  */
 int dap_hash_sha3_256_from_hex_str(const char *a_hex_str, dap_hash_sha3_256_t *a_hash);
 
 /**
  * @brief Parse SHA3 hash from base58 string
- * @param a_base58_str Input base58 string
- * @param a_hash Output hash
- * @return 0 on success, negative on error
  */
 int dap_hash_sha3_256_from_base58_str(const char *a_base58_str, dap_hash_sha3_256_t *a_hash);
 
 /**
- * @brief Compute SHA3-256 hash of data
- * @param a_data_in Input data
- * @param a_data_in_size Size of input data
- * @param a_hash_out Output hash (32 bytes)
- * @return true on success, false on error
- */
-bool dap_hash_sha3_256(const void *a_data_in, size_t a_data_in_size, dap_hash_sha3_256_t *a_hash_out);
-
-/**
  * @brief Compare two SHA3 hashes
- * @param a_hash1 First hash
- * @param a_hash2 Second hash
- * @return true if equal, false otherwise
  */
 DAP_STATIC_INLINE bool dap_hash_sha3_256_compare(const dap_hash_sha3_256_t *a_hash1, const dap_hash_sha3_256_t *a_hash2)
 {
@@ -104,8 +185,6 @@ DAP_STATIC_INLINE bool dap_hash_sha3_256_compare(const dap_hash_sha3_256_t *a_ha
 
 /**
  * @brief Check if SHA3 hash is blank (all zeros)
- * @param a_hash Hash to check
- * @return true if blank, false otherwise
  */
 DAP_STATIC_INLINE bool dap_hash_sha3_256_is_blank(const dap_hash_sha3_256_t *a_hash)
 {
@@ -126,19 +205,12 @@ DAP_STATIC_INLINE void dap_hash_sha3_256_to_str_do(const dap_hash_sha3_256_t *a_
 
 /**
  * @brief Convert SHA3 hash to hex string
- * @param a_hash Input hash
- * @param a_str Output string buffer
- * @param a_str_max Size of output buffer
- * @return String length on success, negative on error
  */
 DAP_STATIC_INLINE int dap_hash_sha3_256_to_str(const dap_hash_sha3_256_t *a_hash, char *a_str, size_t a_str_max)
 {
-    if (!a_hash)
-        return -1;
-    if (!a_str)
-        return -2;
-    if (a_str_max < DAP_HASH_SHA3_256_STR_SIZE)
-        return -3;
+    if (!a_hash) return -1;
+    if (!a_str) return -2;
+    if (a_str_max < DAP_HASH_SHA3_256_STR_SIZE) return -3;
     dap_hash_sha3_256_to_str_do(a_hash, a_str);
     return DAP_HASH_SHA3_256_STR_SIZE;
 }
@@ -157,13 +229,10 @@ DAP_STATIC_INLINE dap_hash_sha3_256_str_t dap_hash_sha3_256_to_str_struct(const 
 
 /**
  * @brief Convert SHA3 hash to newly allocated hex string
- * @param a_hash Input hash
- * @return Newly allocated string (caller must free), or NULL on error
  */
 DAP_STATIC_INLINE char *dap_hash_sha3_256_to_str_new(const dap_hash_sha3_256_t *a_hash)
 {
-    if (!a_hash)
-        return NULL;
+    if (!a_hash) return NULL;
     char *l_ret = DAP_NEW_Z_SIZE(char, DAP_HASH_SHA3_256_STR_SIZE);
     dap_hash_sha3_256_to_str_do(a_hash, l_ret);
     return l_ret;
@@ -171,15 +240,10 @@ DAP_STATIC_INLINE char *dap_hash_sha3_256_to_str_new(const dap_hash_sha3_256_t *
 
 /**
  * @brief Compute SHA3-256 hash and return as newly allocated string
- * @param a_data Input data
- * @param a_data_size Size of input data
- * @return Newly allocated hex string, or NULL on error
  */
 DAP_STATIC_INLINE char *dap_hash_sha3_256_str_new(const void *a_data, size_t a_data_size)
 {
-    if (!a_data || !a_data_size)
-        return NULL;
-
+    if (!a_data || !a_data_size) return NULL;
     dap_hash_sha3_256_t l_hash = { };
     dap_hash_sha3_256(a_data, a_data_size, &l_hash);
     char *a_str = DAP_NEW_Z_SIZE(char, DAP_HASH_SHA3_256_STR_SIZE);
@@ -200,6 +264,7 @@ DAP_STATIC_INLINE dap_hash_sha3_256_str_t dap_hash_sha3_256_data_to_str(const vo
     dap_hash_sha3_256_to_str(&l_hash, l_ret.s, DAP_HASH_SHA3_256_STR_SIZE);
     return l_ret;
 }
+
 
 #ifdef __cplusplus
 }
