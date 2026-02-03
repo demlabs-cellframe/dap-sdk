@@ -143,6 +143,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
 endif()
 
+# Keccak/SHA3 Known Answer Tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keccak/test_sha3_kat.c)
+    add_dap_test(test_unit_crypto_sha3_kat unit/crypto/keccak/test_sha3_kat.c)
+    register_dap_test(test_unit_crypto_sha3_kat "unit;crypto;sha3;keccak")
+endif()
+
 
 # test framework async unit tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_async.c)
@@ -187,11 +193,19 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/json/CMakeLists.txt)
     message("[+] JSON performance benchmarks configured")
 endif()
 
-# Hash Table performance benchmarks (dap_ht vs competitors)
-option(BENCHMARK_COMPETITORS "Include competitor hash table implementations in benchmark" ON)
+# Performance benchmarks options
+option(BUILD_BENCHMARKS "Build performance benchmarks with competitor implementations" OFF)
+option(BENCHMARK_COMPETITORS "Include competitor hash table implementations in benchmark" OFF)
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/hashtable/CMakeLists.txt)
     add_subdirectory(performance/hashtable)
     message("[+] Hash Table performance benchmarks configured")
+endif()
+
+# Keccak/SHA3 performance benchmarks (dap_keccak vs XKCP, tiny_sha3)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/keccak/CMakeLists.txt)
+    add_subdirectory(performance/keccak)
+    message("[+] Keccak/SHA3 performance benchmarks configured")
 endif()
 
 # Build Regression Tests  

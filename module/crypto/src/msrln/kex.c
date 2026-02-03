@@ -2,8 +2,10 @@
 #include <stdlib.h>
 #include "msrln_priv.h"
 
-//#include "KeccakHash.h"
-#include "fips202.h"
+//#include "dap_hash_keccak.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 
 // N^-1 * prime_scale^-8
@@ -458,38 +460,27 @@ CRYPTO_MSRLN_STATUS get_error(int32_t* e, unsigned char* seed, unsigned int nonc
 
 
 CRYPTO_MSRLN_STATUS generate_a(uint32_t* a, const unsigned char* seed, ExtendableOutput ExtendableOutputFunction)
-{ // Generation of parameter a
+{
+    // Generation of parameter a using SHAKE128
     (void)ExtendableOutputFunction;
     unsigned int pos = 0, ctr = 0;
     uint16_t val;
     unsigned int nblocks = 16;
-    uint8_t buf[SHAKE128_RATE * 16]; // was * nblocks, but VS doesn't like this buf init
-    //Keccak_HashInstance ks;
+    uint8_t buf[DAP_SHAKE128_RATE * 16];
 
-    uint64_t state[SHA3_STATESIZE] = {0};
-    shake128_absorb(state, seed, SEED_BYTES);
-    shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
+    uint64_t state[25] = {0};
+    dap_hash_shake128_absorb(state, seed, SEED_BYTES);
+    dap_hash_shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
 
-    /*#ifdef _WIN32
-        SHAKE128_InitAbsorb( &ks, seed, SEED_BYTES );
-        KECCAK_HashSqueeze( &ks, (unsigned char *) buf, nblocks * 8 );
-    #else 
-        Keccak_HashInitialize_SHAKE128(&ks);
-        Keccak_HashUpdate( &ks, seed, SEED_BYTES * 8 );
-        Keccak_HashFinal( &ks, seed );
-        Keccak_HashSqueeze( &ks, (unsigned char *) buf, nblocks * 8 * 8 );
-    //#endif
-    */
     while (ctr < PARAMETER_N) {
         val = (buf[pos] | ((uint16_t) buf[pos + 1] << 8)) & 0x3fff;
         if (val < PARAMETER_Q) {
             a[ctr++] = val;
         }
         pos += 2;
-        if (pos > SHAKE128_RATE * nblocks - 2) {
+        if (pos > DAP_SHAKE128_RATE * nblocks - 2) {
             nblocks = 1;
-          shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
-//            Keccak_HashSqueeze( &ks, (unsigned char *) buf, nblocks * 8 * 8 );
+            dap_hash_shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
             pos = 0;
         }
     }

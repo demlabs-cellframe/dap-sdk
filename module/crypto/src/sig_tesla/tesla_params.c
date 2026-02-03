@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <string.h>
 #include "tesla_params.h"
-#include "fips202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 static const tesla_param_t tesla_params[] = {
 
@@ -332,17 +334,17 @@ void poly_uniform(poly_k *a, const unsigned char *seed, tesla_param_t *p) {
     unsigned int pos = 0, i = 0, nbytes = (p->PARAM_Q_LOG + 7) / 8;
     unsigned int nblocks = p->PARAM_GEN_A;
     uint32_t val1, val2, val3, val4, mask = (uint32_t)(1 << p->PARAM_Q_LOG) - 1;
-    unsigned char *buf = malloc(SHAKE128_RATE * nblocks * sizeof(unsigned char));
+    unsigned char *buf = malloc(DAP_SHAKE128_RATE * nblocks * sizeof(unsigned char));
     uint16_t dmsp = 0;
 
-    cshake128_simple( buf, SHAKE128_RATE * nblocks, dmsp++, seed, CRYPTO_RANDOMBYTES);
-//  cSHAKE128( seed, CRYPTO_RANDOMBYTES * 8, buf, SHAKE128_RATE * nblocks * 8, NULL, 0, &dmsp, 16 );
+    dap_hash_cshake128_simple( buf, DAP_SHAKE128_RATE * nblocks, dmsp++, seed, CRYPTO_RANDOMBYTES);
+//  cSHAKE128( seed, CRYPTO_RANDOMBYTES * 8, buf, DAP_SHAKE128_RATE * nblocks * 8, NULL, 0, &dmsp, 16 );
 //  ++ dmsp;
     while (i < p->PARAM_K * p->PARAM_N) {
-        if (pos > SHAKE128_RATE * nblocks - 4 * nbytes) {
+        if (pos > DAP_SHAKE128_RATE * nblocks - 4 * nbytes) {
             nblocks = 1;
-            cshake128_simple(buf, SHAKE128_RATE * nblocks, dmsp++, seed, CRYPTO_RANDOMBYTES);
-//          cSHAKE128( seed, CRYPTO_RANDOMBYTES * 8, buf, SHAKE128_RATE * nblocks * 8, NULL, 0, &dmsp, 16 );
+            dap_hash_cshake128_simple(buf, DAP_SHAKE128_RATE * nblocks, dmsp++, seed, CRYPTO_RANDOMBYTES);
+//          cSHAKE128( seed, CRYPTO_RANDOMBYTES * 8, buf, DAP_SHAKE128_RATE * nblocks * 8, NULL, 0, &dmsp, 16 );
 //          ++ dmsp;
             pos = 0;
         }

@@ -1,27 +1,22 @@
 #include "msrln_priv.h"
 
-//#include "KeccakHash.h"
-#include "fips202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 #define LOG_TAG "RANDOM"
 
 CRYPTO_MSRLN_STATUS MSRLN_generate_a(const unsigned char* seed, unsigned int seed_nbytes, unsigned int array_ndigits, uint32_t* a)
 {
-    // Generation of parameter a
+    // Generation of parameter a using SHAKE128
     unsigned int pos = 0, ctr = 0;
     uint16_t val;
     unsigned int nblocks = 16;
-    uint8_t buf[SHAKE128_RATE * 16]; // was * nblocks, but VS doesn't like this buf init
-    //Keccak_HashInstance ks;
+    uint8_t buf[DAP_SHAKE128_RATE * 16];
 
-    uint64_t state[SHA3_STATESIZE];
-    shake128_absorb(state, seed, seed_nbytes);
-    shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
-
-    /*Keccak_HashInitialize_SHAKE128(&ks);
-    Keccak_HashUpdate( &ks, seed, seed_nbytes * 8 );
-    Keccak_HashFinal( &ks, seed );
-    Keccak_HashSqueeze( &ks, (unsigned char *) buf, nblocks * 8 * 8 );*/
+    uint64_t state[25] = {0};
+    dap_hash_shake128_absorb(state, seed, seed_nbytes);
+    dap_hash_shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
 
     while (ctr < array_ndigits) {
         val = (buf[pos] | ((uint16_t) buf[pos + 1] << 8)) & 0x3fff;
@@ -29,10 +24,9 @@ CRYPTO_MSRLN_STATUS MSRLN_generate_a(const unsigned char* seed, unsigned int see
             a[ctr++] = val;
         }
         pos += 2;
-        if (pos > SHAKE128_RATE * nblocks - 2) {
+        if (pos > DAP_SHAKE128_RATE * nblocks - 2) {
             nblocks = 1;
-          shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
-//            Keccak_HashSqueeze( &ks, (unsigned char *) buf, nblocks * 8 * 8 );
+            dap_hash_shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
             pos = 0;
         }
     }

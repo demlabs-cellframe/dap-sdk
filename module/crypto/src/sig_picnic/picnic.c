@@ -17,7 +17,9 @@
 #include "picnic_types.h"
 #include "lowmc_constants.h"
 #include "platform.h"
-#include "SimpleFIPS202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 static int is_valid_params(picnic_params_t params)
 {
@@ -396,23 +398,23 @@ int picnic_keys_gen(picnic_privatekey_t *sk, picnic_publickey_t *pk, picnic_para
         pk->params = param;
         switch (paramset.stateSizeBytes) {
         case 16:
-            SHAKE128((unsigned char *) sk->data, 16, (const unsigned char *) seed, seed_size);
+            dap_hash_shake128((unsigned char *) sk->data, 16, (const unsigned char *) seed, seed_size);
             //Generate a random plaintext block
-            SHAKE128((unsigned char *) pk->plaintext, 16, (const unsigned char *) seed, seed_size);
+            dap_hash_shake128((unsigned char *) pk->plaintext, 16, (const unsigned char *) seed, seed_size);
             break;
         case 24:
 //            SHA3_192((unsigned char *) sk->data, (const unsigned char *) seed, seed_size);
 //            //Generate a random plaintext block
 //            SHA3_192((unsigned char *) pk->plaintext, (const unsigned char *) seed, seed_size);
 //            break;
-            SHAKE128((unsigned char *) sk->data, 24, (const unsigned char *) seed, seed_size);
+            dap_hash_shake128((unsigned char *) sk->data, 24, (const unsigned char *) seed, seed_size);
             //Generate a random plaintext block
-            SHAKE128((unsigned char *) pk->plaintext, 24, (const unsigned char *) seed, seed_size);
+            dap_hash_shake128((unsigned char *) pk->plaintext, 24, (const unsigned char *) seed, seed_size);
             break;
         case 32:
-            SHA3_256((unsigned char *) sk->data, (const unsigned char *) seed, seed_size);
+            dap_hash_sha3_256_raw((unsigned char *) sk->data, (const unsigned char *) seed, seed_size);
             //Generate a random plaintext block
-            SHA3_256((unsigned char *) pk->plaintext, (const unsigned char *) seed, seed_size);
+            dap_hash_sha3_256_raw((unsigned char *) pk->plaintext, (const unsigned char *) seed, seed_size);
             break;
         default:
             return -1;
