@@ -356,14 +356,20 @@ recurse:
                     continue;
                 }
 
+                // Parse digits with overflow protection
+                // Use a separate variable to avoid platform-specific time_t size issues
+                uint64_t sse_check = 0;
                 do {
+                    sse_check = (uint64_t)sse * 10;
+                    if (sse_check > (uint64_t)INT64_MAX / 10) {
+                        break;  // Would overflow
+                    }
                     sse *= 10;
                     sse += *bp++ - '0';
                     rulim /= 10;
-                } while ((sse * 10 <= INT64_MAX) &&
-                         rulim && *bp >= '0' && *bp <= '9');
+                } while (rulim && *bp >= '0' && *bp <= '9');
 
-                if (sse < 0 || (uint64_t)sse > INT64_MAX) {
+                if (sse < 0) {
                     bp = NULL;
                     continue;
                 }
@@ -439,8 +445,7 @@ recurse:
                 bp += 3;
             } else {
 #ifdef DAP_OS_WINDOWS
-                // Windows has _tzname instead of tzname
-                extern char *_tzname[2];
+                // Windows has _tzname instead of tzname (already declared in <time.h>)
                 const char *const tzn[2] = { _tzname[0], _tzname[1] };
 #else
                 extern char *tzname[2];
