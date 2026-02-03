@@ -292,7 +292,6 @@ target_include_directories(dap_crypto PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 
 
 

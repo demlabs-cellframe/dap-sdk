@@ -49,10 +49,6 @@ win32 {
     QMAKE_CFLAGS_DEBUG += -Wall -ggdb -g3
 }
 
-# 3rd party
-HEADERS += $$PWD/../3rdparty/uthash/src/utlist.h \
-           $$PWD/../3rdparty/uthash/src/uthash.h
-
 #if(DAPSDK_MODULES MATCHES "ssl-support")
 #    include($$PWD/../../3rdparty/wolfssl/wolfssl.pri)
 #endif()
@@ -90,5 +86,4 @@ SOURCES += $$PWD/src/dap_common.c \
 
 
 
-INCLUDEPATH += $$PWD/include \
-    $$PWD/../3rdparty/uthash/src/
+INCLUDEPATH += $$PWD/include

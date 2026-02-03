@@ -29,6 +29,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_gossip.h"
 #include "dap_stream_cluster.h"
+#include "dap_ht.h"
+#include "dap_dl.h"
 
 #define LOG_TAG "dap_stream_ch_gossip"
 
@@ -43,7 +45,7 @@ static struct gossip_msg_item {
     dap_hash_sha3_256_t payload_hash;
     dap_nanotime_t timestamp;
     bool with_payload;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
     byte_t message[];
 } *s_gossip_last_msgs = NULL;
 dap_timerfd_t *s_gossip_timer = NULL;
@@ -70,8 +72,8 @@ void dap_stream_ch_gossip_deinit()
         dap_timerfd_delete(s_gossip_timer->worker, s_gossip_timer->esocket_uuid);
     pthread_rwlock_wrlock(&s_gossip_lock);
     struct gossip_msg_item *it, *tmp;
-    HASH_ITER(hh, s_gossip_last_msgs, it, tmp) {
-        HASH_DEL(s_gossip_last_msgs, it);
+    dap_ht_foreach(s_gossip_last_msgs, it, tmp) {
+        dap_ht_del(s_gossip_last_msgs, it);
         DAP_DELETE(it);
     }
     pthread_rwlock_unlock(&s_gossip_lock);
@@ -80,7 +82,7 @@ void dap_stream_ch_gossip_deinit()
 static struct gossip_callback *s_get_callbacks_by_ch_id(const char a_ch_id)
 {
     struct gossip_callback *l_callback;
-    DL_FOREACH(s_gossip_callbacks_list, l_callback)
+    dap_dl_foreach(s_gossip_callbacks_list, l_callback)
         if (l_callback->ch_id == a_ch_id)
             return l_callback;
     return NULL;
@@ -99,7 +101,7 @@ int dap_stream_ch_gossip_callback_add(const char a_ch_id, dap_gossip_callback_pa
     }
     l_callback_new->ch_id = a_ch_id;
     l_callback_new->callback_payload = a_callback;
-    DL_APPEND(s_gossip_callbacks_list, l_callback_new);
+    dap_dl_append(s_gossip_callbacks_list, l_callback_new);
     log_it(L_INFO, "Successfully added gossip callback for channel '%c'", a_ch_id);
     return 0;
 }
@@ -109,9 +111,9 @@ static bool s_callback_hashtable_maintenance(void UNUSED_ARG *a_arg)
     pthread_rwlock_wrlock(&s_gossip_lock);
     dap_nanotime_t l_time_now = dap_nanotime_now();
     struct gossip_msg_item *it, *tmp;
-    HASH_ITER(hh, s_gossip_last_msgs, it, tmp) {
+    dap_ht_foreach(s_gossip_last_msgs, it, tmp) {
         if (l_time_now - it->timestamp > DAP_GOSSIP_LIFETIME * 1000000000UL) {
-            HASH_DEL(s_gossip_last_msgs, it);
+            dap_ht_del(s_gossip_last_msgs, it);
             DAP_DELETE(it);
         }
     }
@@ -126,9 +128,8 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
         return;
     struct gossip_msg_item *l_msg_item = NULL;
     pthread_rwlock_wrlock(&s_gossip_lock);
-    unsigned l_hash_value = 0;
-    HASH_VALUE(a_payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value);
-    HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, a_payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
+    uint32_t l_hash_value = dap_ht_hash_value(a_payload_hash, sizeof(dap_hash_sha3_256_t));
+    dap_ht_find_by_hashvalue(s_gossip_last_msgs, a_payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
     if (l_msg_item) {
         pthread_rwlock_unlock(&s_gossip_lock);
         log_it(L_ERROR, "Hash %s already exist", dap_hash_sha3_256_to_str_static(a_payload_hash)); 
@@ -153,7 +154,7 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
     l_msg->payload_hash = *a_payload_hash;
     *(dap_stream_node_addr_t *)l_msg->trace_n_payload = g_node_addr;
     memcpy(l_msg->trace_n_payload + l_msg->trace_len, a_payload, a_payload_size);
-    HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
+    dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
     pthread_rwlock_unlock(&s_gossip_lock);
     debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_HASH packet for hash %s", dap_hash_sha3_256_to_str_static(a_payload_hash));
     dap_cluster_broadcast(a_cluster, DAP_STREAM_CH_GOSSIP_ID,
@@ -179,14 +180,13 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         debug_if(s_debug_more, L_INFO, "IN: %s packet for hash %s", l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH
                                                                     ? "GOSSIP_HASH" : "GOSSIP_REQUEST",
                                                                     dap_hash_sha3_256_to_str_static(l_payload_hash));
-        unsigned l_hash_value = 0;
-        HASH_VALUE(l_payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value);
+        uint32_t l_hash_value = dap_ht_hash_value(l_payload_hash, sizeof(dap_hash_sha3_256_t));
         pthread_rwlock_wrlock(&s_gossip_lock);
-        HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, l_ch_pkt->data, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
+        dap_ht_find_by_hashvalue(s_gossip_last_msgs, l_ch_pkt->data, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
         if (l_msg_item) {
             if (l_msg_item->timestamp < dap_nanotime_now() - DAP_GOSSIP_LIFETIME * 1000000000UL) {
                 debug_if(s_debug_more, L_INFO, "Packet for hash %s is derelict", dap_hash_sha3_256_to_str_static(l_payload_hash));
-                HASH_DEL(s_gossip_last_msgs, l_msg_item);
+                dap_ht_del(s_gossip_last_msgs, l_msg_item);
                 DAP_DELETE(l_msg_item);
             } else if (l_msg_item->with_payload && l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST) {
                 debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_DATA packet for hash %s", dap_hash_sha3_256_to_str_static((dap_hash_sha3_256_t *)&l_ch_pkt->data));
@@ -203,7 +203,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             }
             l_item_new->payload_hash = *l_payload_hash;
             l_item_new->timestamp = dap_nanotime_now();
-            HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_item_new);
+            dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_item_new);
             debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_REQUEST packet for hash %s", dap_hash_sha3_256_to_str_static(l_payload_hash));
             // Send request for data associated with this hash
             dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST, l_payload_hash, sizeof(dap_hash_sha3_256_t));
@@ -237,18 +237,17 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             return false;
         }
         debug_if(s_debug_more, L_INFO, "IN: GOSSIP_DATA packet for hash %s", dap_hash_sha3_256_to_str_static(&l_msg->payload_hash));
-        unsigned l_hash_value = 0;
-        HASH_VALUE(&l_msg->payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value);
+        uint32_t l_hash_value = dap_ht_hash_value(&l_msg->payload_hash, sizeof(dap_hash_sha3_256_t));
         struct gossip_msg_item *l_payload_item = NULL, *l_payload_item_new;
         pthread_rwlock_wrlock(&s_gossip_lock);
-        HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_payload_item);
+        dap_ht_find_by_hashvalue(s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_payload_item);
         if (!l_payload_item || l_payload_item->with_payload) {
             // Get data for non requested hash or double data. Drop it
             pthread_rwlock_unlock(&s_gossip_lock);
             break;
         }
         if (l_payload_item->timestamp < dap_nanotime_now() - DAP_GOSSIP_LIFETIME * 1000000000UL) {
-            HASH_DEL(s_gossip_last_msgs, l_payload_item);
+            dap_ht_del(s_gossip_last_msgs, l_payload_item);
             DAP_DELETE(l_payload_item);
             pthread_rwlock_unlock(&s_gossip_lock);
             break;
@@ -279,7 +278,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         }
         size_t l_payload_item_size = dap_gossip_msg_get_size(l_msg) + sizeof(g_node_addr) + sizeof(struct gossip_msg_item);
-        HASH_DEL(s_gossip_last_msgs, l_payload_item);
+        dap_ht_del(s_gossip_last_msgs, l_payload_item);
         l_payload_item_new = DAP_REALLOC(l_payload_item, l_payload_item_size);
         if (!l_payload_item_new) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -287,7 +286,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         }
         l_payload_item = l_payload_item_new;
-        HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_payload_item);
+        dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_payload_item);
         l_payload_item->with_payload = true;
         // Copy message and append g_node_addr to pathtrace
         dap_gossip_msg_t *l_msg_new = (dap_gossip_msg_t *)l_payload_item->message;

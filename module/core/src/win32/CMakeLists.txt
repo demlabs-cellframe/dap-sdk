@@ -21,8 +21,6 @@ if(INSTALL_DAP_SDK)
             PUBLIC_HEADER DESTINATION include/dap/core/win32
     )
 
-
-    INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #if (DAP_OS_LINUX)
     #INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")

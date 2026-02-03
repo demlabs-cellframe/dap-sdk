@@ -29,6 +29,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_common.h"
 #include "dap_client.h"
 #include "dap_stream_cluster.h"
+#include "dap_ht.h"
 
 #define DAP_NET_ID_INVALID UINT64_C(~0)
 
@@ -75,7 +76,7 @@ typedef struct dap_link {
     dap_list_t *static_clusters;
     dap_link_manager_t *link_manager;
     bool stream_is_destroyed;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_link_t;
 
 typedef struct dap_link_manager {

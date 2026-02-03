@@ -54,6 +54,7 @@
 #include "dap_client_pvt.h"
 #include "dap_strfuncs.h"
 #include "dap_ht.h"
+#include "dap_dl.h"
 #include "dap_enc.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
@@ -71,7 +72,7 @@ typedef struct authorized_stream {
         void *pointer;
     } id;
     dap_stream_node_addr_t node;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } authorized_stream_t;
 
 static dap_cluster_t        *s_global_links_cluster = NULL;
@@ -942,13 +943,13 @@ static bool s_callback_server_keepalive(void *a_arg)
 int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 {
     dap_stream_t *l_double = NULL;
-    HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
+    dap_ht_find(s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
         log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
         return -1;
     }
     a_stream->primary = true;
-    HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
+    dap_ht_add(s_authorized_streams, node, a_stream);
     dap_cluster_member_add(s_global_links_cluster, &a_stream->node, 0, NULL); // Used own rwlock for this cluster members
     // Notify via callback instead of direct call (breaks stream → link_manager dependency)
     dap_stream_event_notify_add(&a_stream->node, a_stream->is_client_to_uplink);
@@ -965,14 +966,14 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
 
     dap_stream_t *l_stream = NULL;
     if (a_stream->prev) {
-        DL_DELETE(s_streams, a_stream);
+        dap_dl_delete(s_streams, a_stream);
         --s_streams_count;
     }
     if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
         if (a_stream->primary)
-            HASH_DEL(s_authorized_streams, a_stream);
-        DL_FOREACH(s_streams, l_stream)
+            dap_ht_del(s_authorized_streams, a_stream);
+        dap_dl_foreach(s_streams, l_stream)
             if (l_stream->node.uint64 == a_stream->node.uint64)
                 break;
         if (l_stream) {
@@ -996,7 +997,7 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
     assert(lock != EDEADLK);
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), -666;
-    DL_APPEND(s_streams, a_stream);
+    dap_dl_append(s_streams, a_stream);
     ++s_streams_count;
     if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
@@ -1020,7 +1021,7 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr,
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), 0;
 
-    HASH_FIND(hh, s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
+    dap_ht_find(s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
     if (l_auth_stream) {
         if (a_worker)
             *a_worker = l_auth_stream->stream_worker->worker;
@@ -1042,7 +1043,7 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), NULL;
 
-    DL_FOREACH(s_streams, l_stream) {
+    dap_dl_foreach(s_streams, l_stream) {
         if (!l_stream->authorized || a_addr->uint64 != l_stream->node.uint64)
             continue;
         dap_events_socket_uuid_ctrl_t *l_ret_item = DAP_NEW(dap_events_socket_uuid_ctrl_t);
@@ -1123,9 +1124,9 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
     size_t l_streams_count = 0, i = 0;
     if (a_cluster) {
         pthread_rwlock_rdlock(&a_cluster->members_lock);
-        l_streams_count = HASH_COUNT(a_cluster->members);
+        l_streams_count = dap_ht_count(a_cluster->members);
     } else
-        DL_COUNT(s_streams, it, l_streams_count);
+        dap_dl_count(s_streams, l_streams_count);
     if (!l_streams_count) {
         if(a_cluster)
             pthread_rwlock_unlock(&a_cluster->members_lock);
@@ -1141,8 +1142,8 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
         return NULL;
     }
     if (a_cluster) {
-        for (dap_cluster_member_t *l_member = a_cluster->members; l_member; l_member = l_member->hh.next) {
-            HASH_FIND(hh, s_authorized_streams, &l_member->addr, sizeof(l_member->addr), it);
+        for (dap_cluster_member_t *l_member = a_cluster->members; l_member; l_member = (dap_cluster_member_t *)l_member->hh.next) {
+            dap_ht_find(s_authorized_streams, &l_member->addr, sizeof(l_member->addr), it);
             if (!it) {
                 log_it(L_ERROR, "Link cluster contains member " NODE_ADDR_FP_STR " not found in streams HT", NODE_ADDR_FP_ARGS_S(l_member->addr));
                 continue;
@@ -1152,7 +1153,7 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
         }
         pthread_rwlock_unlock(&a_cluster->members_lock);
     } else {
-        DL_FOREACH(s_streams, it)
+        dap_dl_foreach(s_streams, it)
             s_stream_fill_info(it, l_ret + i++);
     }
     pthread_rwlock_unlock(&s_streams_lock);

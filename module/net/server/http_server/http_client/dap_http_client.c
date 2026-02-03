@@ -386,7 +386,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                                                                             /* url_path = '/p1/p2/p3/target' */
                 l_ret = z_dirname( l_http_client->url_path, l_http_client->url_path_len );
                                                                             /* url_path = '/p1/p2/p3/ */
-                HASH_FIND_STR( l_http_client->http->url_proc, l_http_client->url_path, url_proc );
+                dap_ht_find_str( l_http_client->http->url_proc, l_http_client->url_path, url_proc );
                 l_http_client->proc = url_proc;
 
                 if ( l_ret )

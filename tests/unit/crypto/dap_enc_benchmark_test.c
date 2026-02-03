@@ -4,13 +4,13 @@
 #include "dap_test.h"
 #include "dap_enc_test.h"
 #include "rand/dap_rand.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #define LOG_TAG "dap_crypto_benchmark_tests"
 
 typedef struct pkey_hash_table {
     uint8_t *pkey_hash;
     dap_pkey_t *pkey;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } pkey_hash_table_t;
 
 static pkey_hash_table_t *s_pkey_hash_table = NULL;
@@ -20,7 +20,7 @@ static dap_pkey_t *s_get_pkey_by_hash_callback(const uint8_t *a_hash)
     pkey_hash_table_t *l_finded = NULL;
 
     pkey_hash_table_t *l_temp, *l_current = NULL;
-    HASH_ITER(hh, s_pkey_hash_table, l_current, l_temp){
+    dap_ht_foreach(s_pkey_hash_table, l_current, l_temp) {
         if (!memcmp(l_current->pkey_hash, a_hash, DAP_HASH_SHA3_256_SIZE))
             l_finded = l_current;
     }
@@ -212,7 +212,7 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
             dap_assert_PIF(!memcmp(l_item->pkey_hash, &l_hash, DAP_HASH_SHA3_256_SIZE), "pkey hash in enc_key and sign equal")
 
             l_item->pkey = dap_pkey_from_enc_key (key);
-            HASH_ADD(hh, s_pkey_hash_table, pkey_hash, DAP_HASH_SHA3_256_SIZE, l_item);
+            dap_ht_add_keyptr(s_pkey_hash_table, l_item->pkey_hash, DAP_HASH_SHA3_256_SIZE, l_item);
         }
         *a_sig_time += get_cur_time_msec() - l_t1;
         
@@ -250,8 +250,8 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         DAP_DEL_MULTY(l_signs[i], l_source[i]);
     }
     pkey_hash_table_t *l_temp, *l_current = NULL;
-    HASH_ITER(hh, s_pkey_hash_table, l_current, l_temp){
-        HASH_DEL(s_pkey_hash_table, l_current);
+    dap_ht_foreach(s_pkey_hash_table, l_current, l_temp) {
+        dap_ht_del(s_pkey_hash_table, l_current);
         DAP_DEL_MULTY(l_current->pkey, l_current->pkey_hash, l_current);
     }
 }

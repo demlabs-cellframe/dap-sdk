@@ -42,9 +42,7 @@ register_module_headers(DIRECTORIES include)
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Platform-specific include directories
 if(UNIX)
@@ -97,8 +95,6 @@ if(INSTALL_DAP_SDK)
             PUBLIC_HEADER DESTINATION include/dap/core/
     )
 
-
-    INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #if (DAP_OS_LINUX)
     #INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")

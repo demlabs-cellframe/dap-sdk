@@ -29,8 +29,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
+#include "dap_common.h"
 #include "dap_hash_fast.h"
 
 #ifdef __cplusplus
@@ -47,14 +47,6 @@ extern "C" {
 
 #ifndef DAP_HT_LOAD_FACTOR
 #define DAP_HT_LOAD_FACTOR 75
-#endif
-
-#ifndef dap_ht_malloc
-#define dap_ht_malloc(sz) malloc(sz)
-#endif
-
-#ifndef dap_ht_free
-#define dap_ht_free(ptr, sz) free(ptr)
 #endif
 
 // Default hash function - xxHash (fastest)
@@ -109,12 +101,10 @@ typedef struct dap_ht_table {
 // ============================================================================
 
 static inline dap_ht_table_t* dap_ht_new_tbl(ptrdiff_t hho) {
-    dap_ht_table_t *tbl = (dap_ht_table_t*)dap_ht_malloc(sizeof(*tbl));
+    dap_ht_table_t *tbl = DAP_NEW_Z(dap_ht_table_t);
     if (!tbl) return NULL;
-    memset(tbl, 0, sizeof(*tbl));
-    tbl->buckets = (dap_ht_bucket_t*)dap_ht_malloc(DAP_HT_INITIAL_BUCKETS * sizeof(dap_ht_bucket_t));
-    if (!tbl->buckets) { dap_ht_free(tbl, sizeof(*tbl)); return NULL; }
-    memset(tbl->buckets, 0, DAP_HT_INITIAL_BUCKETS * sizeof(dap_ht_bucket_t));
+    tbl->buckets = DAP_NEW_Z_COUNT(dap_ht_bucket_t, DAP_HT_INITIAL_BUCKETS);
+    if (!tbl->buckets) { DAP_DELETE(tbl); return NULL; }
     tbl->num_buckets = DAP_HT_INITIAL_BUCKETS;
     tbl->hho = hho;
     return tbl;
@@ -122,9 +112,8 @@ static inline dap_ht_table_t* dap_ht_new_tbl(ptrdiff_t hho) {
 
 static inline void dap_ht_expand(dap_ht_table_t *tbl) {
     unsigned new_num = tbl->num_buckets * 2;
-    dap_ht_bucket_t *new_bkts = (dap_ht_bucket_t*)dap_ht_malloc(new_num * sizeof(dap_ht_bucket_t));
+    dap_ht_bucket_t *new_bkts = DAP_NEW_Z_COUNT(dap_ht_bucket_t, new_num);
     if (!new_bkts) return;
-    memset(new_bkts, 0, new_num * sizeof(dap_ht_bucket_t));
     
     for (unsigned i = 0; i < tbl->num_buckets; i++) {
         dap_ht_handle_t *hh = tbl->buckets[i].head;
@@ -139,7 +128,7 @@ static inline void dap_ht_expand(dap_ht_table_t *tbl) {
             hh = next;
         }
     }
-    dap_ht_free(tbl->buckets, tbl->num_buckets * sizeof(dap_ht_bucket_t));
+    DAP_DELETE(tbl->buckets);
     tbl->buckets = new_bkts;
     tbl->num_buckets = new_num;
 }
@@ -225,8 +214,8 @@ static inline void dap_ht_del_impl(void **head, void *del, dap_ht_handle_t *del_
     tbl->num_items--;
     if (tbl->num_items == 0) {
         ptrdiff_t hho = tbl->hho;  // Save before freeing
-        dap_ht_free(tbl->buckets, tbl->num_buckets * sizeof(dap_ht_bucket_t));
-        dap_ht_free(tbl, sizeof(*tbl));
+        DAP_DELETE(tbl->buckets);
+        DAP_DELETE(tbl);
         if (*head) ((dap_ht_handle_t*)((char*)*head + hho))->tbl = NULL;
     }
 }
@@ -305,8 +294,8 @@ static inline void dap_ht_del_impl(void **head, void *del, dap_ht_handle_t *del_
  */
 #define dap_ht_clear(head) do { \
     if ((head) && (head)->hh.tbl) { \
-        dap_ht_free((head)->hh.tbl->buckets, (head)->hh.tbl->num_buckets * sizeof(dap_ht_bucket_t)); \
-        dap_ht_free((head)->hh.tbl, sizeof(dap_ht_table_t)); \
+        DAP_DELETE((head)->hh.tbl->buckets); \
+        DAP_DELETE((head)->hh.tbl); \
     } \
     (head) = NULL; \
 } while (0)
@@ -326,6 +315,93 @@ static inline void dap_ht_del_impl(void **head, void *del, dap_ht_handle_t *del_
     void *_ptr = (void*)(findptr); \
     dap_ht_find(head, &_ptr, sizeof(_ptr), out); \
 } while (0)
+
+/**
+ * @brief Add item with integer key
+ */
+#define dap_ht_add_int(head, field, add) \
+    dap_ht_add_impl((void**)&(head), (add), &((add)->hh), \
+        &((add)->field), sizeof((add)->field), \
+        (ptrdiff_t)((char*)&((add)->hh) - (char*)(add)))
+
+/**
+ * @brief Compute hash value for key (for use with _by_hashvalue functions)
+ */
+#define dap_ht_hash_value(key, keylen) DAP_HT_HASH((key), (keylen))
+
+// ============================================================================
+// By-hashvalue functions (pre-computed hash for performance)
+// ============================================================================
+
+static inline void dap_ht_add_by_hashvalue_impl(void **head, void *add, dap_ht_handle_t *add_hh,
+                                                 const void *key, unsigned keylen, uint32_t hashv,
+                                                 ptrdiff_t hho) {
+    add_hh->key = key;
+    add_hh->keylen = keylen;
+    add_hh->hashv = hashv;
+    add_hh->prev = NULL;
+    add_hh->next = NULL;
+    add_hh->hh_prev = NULL;
+    add_hh->hh_next = NULL;
+    
+    if (!*head) {
+        add_hh->tbl = dap_ht_new_tbl(hho);
+        if (!add_hh->tbl) return;
+        *head = add;
+        add_hh->tbl->tail = add;
+    } else {
+        dap_ht_handle_t *head_hh = (dap_ht_handle_t*)((char*)*head + hho);
+        add_hh->tbl = head_hh->tbl;
+    }
+    
+    dap_ht_table_t *tbl = add_hh->tbl;
+    
+    if (tbl->num_items >= tbl->num_buckets * DAP_HT_LOAD_FACTOR / 100)
+        dap_ht_expand(tbl);
+    
+    unsigned bkt = DAP_HT_TO_BKT(hashv, tbl->num_buckets);
+    add_hh->hh_next = tbl->buckets[bkt].head;
+    if (tbl->buckets[bkt].head) tbl->buckets[bkt].head->hh_prev = add_hh;
+    tbl->buckets[bkt].head = add_hh;
+    tbl->buckets[bkt].count++;
+    
+    if (tbl->tail && tbl->tail != add) {
+        dap_ht_handle_t *tail_hh = (dap_ht_handle_t*)((char*)tbl->tail + hho);
+        tail_hh->next = add;
+        add_hh->prev = tbl->tail;
+    }
+    tbl->tail = add;
+    tbl->num_items++;
+}
+
+static inline void* dap_ht_find_by_hashvalue_impl(dap_ht_table_t *tbl, const void *key, unsigned keylen, uint32_t hashv) {
+    if (!tbl) return NULL;
+    unsigned bkt = DAP_HT_TO_BKT(hashv, tbl->num_buckets);
+    for (dap_ht_handle_t *hh = tbl->buckets[bkt].head; hh; hh = hh->hh_next) {
+        if (hh->keylen == keylen && memcmp(hh->key, key, keylen) == 0)
+            return DAP_HT_FROM_HH(tbl, hh);
+    }
+    return NULL;
+}
+
+/**
+ * @brief Add item with pre-computed hash value
+ */
+#define dap_ht_add_by_hashvalue(head, field, keylen, hashv, add) \
+    dap_ht_add_by_hashvalue_impl((void**)&(head), (add), &((add)->hh), \
+        &((add)->field), (unsigned)(keylen), (hashv), \
+        (ptrdiff_t)((char*)&((add)->hh) - (char*)(add)))
+
+/**
+ * @brief Find item with pre-computed hash value
+ */
+#define dap_ht_find_by_hashvalue(head, keyptr, keylen, hashv, out) \
+    (out) = (head) ? (DAP_HT_TYPEOF(head))dap_ht_find_by_hashvalue_impl((head)->hh.tbl, (keyptr), (unsigned)(keylen), (hashv)) : NULL
+
+/**
+ * @brief Delete item (same as dap_ht_del, hash value not needed for deletion)
+ */
+#define dap_ht_del_by_hashvalue(head, del) dap_ht_del(head, del)
 
 // ============================================================================
 // Named Handle Versions (for multiple hash tables per item)
@@ -365,6 +441,25 @@ static inline void dap_ht_del_impl(void **head, void *del, dap_ht_handle_t *del_
     for ((el) = (head), (tmp) = (el) ? (DAP_HT_TYPEOF(el))((el)->hhname.next) : NULL; \
          (el); \
          (el) = (tmp), (tmp) = (el) ? (DAP_HT_TYPEOF(el))((el)->hhname.next) : NULL)
+
+/**
+ * @brief Add item with explicit handle name and pre-computed hash
+ */
+#define dap_ht_add_by_hashvalue_hh(hhname, head, field, keylen, hashv, add) \
+    dap_ht_add_by_hashvalue_impl((void**)&(head), (add), &((add)->hhname), \
+        &((add)->field), (unsigned)(keylen), (hashv), \
+        (ptrdiff_t)((char*)&((add)->hhname) - (char*)(add)))
+
+/**
+ * @brief Find item with explicit handle name and pre-computed hash
+ */
+#define dap_ht_find_by_hashvalue_hh(hhname, head, keyptr, keylen, hashv, out) \
+    (out) = (head) ? (DAP_HT_TYPEOF(head))dap_ht_find_by_hashvalue_impl((head)->hhname.tbl, (keyptr), (unsigned)(keylen), (hashv)) : NULL
+
+/**
+ * @brief Delete item with explicit handle name
+ */
+#define dap_ht_del_by_hashvalue_hh(hhname, head, del) dap_ht_del_hh(hhname, head, del)
 
 #ifdef __cplusplus
 }

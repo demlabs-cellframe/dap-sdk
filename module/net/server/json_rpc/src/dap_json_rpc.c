@@ -13,6 +13,7 @@
 #include "dap_enc_msrln.h"
 #include "dap_enc_ks.h"
 #include "dap_enc_key.h"
+#include "dap_ht.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
 #define DAP_EXEC_CMD_URL "/exec_cmd"
@@ -26,7 +27,7 @@ typedef struct dap_json_rpc_method_handler_item {
     char *method_name;
     dap_json_rpc_method_handler_t handler;
     void *user_data;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_json_rpc_method_handler_item_t;
 
 static dap_json_rpc_method_handler_item_t *s_method_handlers = NULL;
@@ -37,14 +38,14 @@ typedef struct dap_json_rpc_url_handler_item {
     char *url;
     dap_json_rpc_url_handler_t handler;
     void *user_data;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_json_rpc_url_handler_item_t;
 
 static dap_json_rpc_url_handler_item_t *s_url_handlers = NULL;
 static pthread_rwlock_t s_url_handlers_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 typedef struct dap_exec_cmd_pkey {
     dap_hash_sha3_256_t pkey;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_exec_cmd_pkey_t;
 static dap_exec_cmd_pkey_t *s_exec_cmd_map;
 static pthread_rwlock_t s_exec_cmd_rwlock;
@@ -58,15 +59,15 @@ static int dap_json_rpc_map_init(dap_config_t *a_config) {
         dap_hash_sha3_256_from_str(l_pkeys[i], &l_pkey);
         dap_exec_cmd_pkey_t* l_exec_cmd_pkey = DAP_NEW_Z(dap_exec_cmd_pkey_t);
         l_exec_cmd_pkey->pkey = l_pkey;
-        HASH_ADD(hh, s_exec_cmd_map, pkey, sizeof(dap_exec_cmd_pkey_t), l_exec_cmd_pkey);
+        dap_ht_add(s_exec_cmd_map, pkey, l_exec_cmd_pkey);
     }
     return 0;
 }
 
 static int dap_json_rpc_map_deinit() {
     dap_exec_cmd_pkey_t* l_pkey = NULL, *tmp = NULL;
-    HASH_ITER(hh, s_exec_cmd_map, l_pkey, tmp) {
-        HASH_DEL(s_exec_cmd_map, l_pkey);
+    dap_ht_foreach(s_exec_cmd_map, l_pkey, tmp) {
+        dap_ht_del(s_exec_cmd_map, l_pkey);
         DAP_DELETE(l_pkey);
     }
     return 0;
@@ -74,7 +75,7 @@ static int dap_json_rpc_map_deinit() {
 
 bool dap_check_node_pkey_in_map(dap_hash_sha3_256_t *a_pkey){
     dap_exec_cmd_pkey_t* l_exec_cmd_pkey = NULL, *tmp = NULL;
-    HASH_ITER(hh, s_exec_cmd_map, l_exec_cmd_pkey, tmp) {
+    dap_ht_foreach(s_exec_cmd_map, l_exec_cmd_pkey, tmp) {
         if (dap_hash_sha3_256_compare(&l_exec_cmd_pkey->pkey, a_pkey))
             return true;
     }
@@ -115,8 +116,8 @@ void dap_json_rpc_deinit()
     // Cleanup method handlers
     pthread_rwlock_wrlock(&s_method_handlers_rwlock);
     dap_json_rpc_method_handler_item_t *method_item, *method_tmp;
-    HASH_ITER(hh, s_method_handlers, method_item, method_tmp) {
-        HASH_DEL(s_method_handlers, method_item);
+    dap_ht_foreach(s_method_handlers, method_item, method_tmp) {
+        dap_ht_del(s_method_handlers, method_item);
         DAP_DELETE(method_item->method_name);
         DAP_DELETE(method_item);
     }
@@ -125,8 +126,8 @@ void dap_json_rpc_deinit()
     // Cleanup URL handlers
     pthread_rwlock_wrlock(&s_url_handlers_rwlock);
     dap_json_rpc_url_handler_item_t *url_item, *url_tmp;
-    HASH_ITER(hh, s_url_handlers, url_item, url_tmp) {
-        HASH_DEL(s_url_handlers, url_item);
+    dap_ht_foreach(s_url_handlers, url_item, url_tmp) {
+        dap_ht_del(s_url_handlers, url_item);
         DAP_DELETE(url_item->url);
         DAP_DELETE(url_item);
     }
@@ -150,7 +151,7 @@ int dap_json_rpc_register_method_handler(const char *a_method_name, dap_json_rpc
     
     // Check if already exists
     dap_json_rpc_method_handler_item_t *existing = NULL;
-    HASH_FIND_STR(s_method_handlers, a_method_name, existing);
+    dap_ht_find_str(s_method_handlers, a_method_name, existing);
     if (existing) {
         log_it(L_WARNING, "JSON-RPC: replacing existing handler for method '%s'", a_method_name);
         existing->handler = a_handler;
@@ -171,7 +172,7 @@ int dap_json_rpc_register_method_handler(const char *a_method_name, dap_json_rpc
     item->handler = a_handler;
     item->user_data = a_user_data;
     
-    HASH_ADD_STR(s_method_handlers, method_name, item);
+    dap_ht_add_str(s_method_handlers, method_name, item);
     pthread_rwlock_unlock(&s_method_handlers_rwlock);
     
     log_it(L_INFO, "JSON-RPC: registered method handler for '%s'", a_method_name);
@@ -195,7 +196,7 @@ int dap_json_rpc_register_url_handler(const char *a_url, dap_json_rpc_url_handle
     
     // Check if already exists
     dap_json_rpc_url_handler_item_t *existing = NULL;
-    HASH_FIND_STR(s_url_handlers, a_url, existing);
+    dap_ht_find_str(s_url_handlers, a_url, existing);
     if (existing) {
         log_it(L_WARNING, "JSON-RPC: replacing existing handler for URL '%s'", a_url);
         existing->handler = a_handler;
@@ -216,7 +217,7 @@ int dap_json_rpc_register_url_handler(const char *a_url, dap_json_rpc_url_handle
     item->handler = a_handler;
     item->user_data = a_user_data;
     
-    HASH_ADD_STR(s_url_handlers, url, item);
+    dap_ht_add_str(s_url_handlers, url, item);
     pthread_rwlock_unlock(&s_url_handlers_rwlock);
     
     log_it(L_INFO, "JSON-RPC: registered URL handler for '%s'", a_url);
@@ -232,9 +233,9 @@ void dap_json_rpc_unregister_method_handler(const char *a_method_name) {
     
     pthread_rwlock_wrlock(&s_method_handlers_rwlock);
     dap_json_rpc_method_handler_item_t *item = NULL;
-    HASH_FIND_STR(s_method_handlers, a_method_name, item);
+    dap_ht_find_str(s_method_handlers, a_method_name, item);
     if (item) {
-        HASH_DEL(s_method_handlers, item);
+        dap_ht_del(s_method_handlers, item);
         DAP_DELETE(item->method_name);
         DAP_DELETE(item);
         log_it(L_INFO, "JSON-RPC: unregistered method handler for '%s'", a_method_name);
@@ -251,9 +252,9 @@ void dap_json_rpc_unregister_url_handler(const char *a_url) {
     
     pthread_rwlock_wrlock(&s_url_handlers_rwlock);
     dap_json_rpc_url_handler_item_t *item = NULL;
-    HASH_FIND_STR(s_url_handlers, a_url, item);
+    dap_ht_find_str(s_url_handlers, a_url, item);
     if (item) {
-        HASH_DEL(s_url_handlers, item);
+        dap_ht_del(s_url_handlers, item);
         DAP_DELETE(item->url);
         DAP_DELETE(item);
         log_it(L_INFO, "JSON-RPC: unregistered URL handler for '%s'", a_url);
@@ -277,7 +278,7 @@ char *dap_json_rpc_process_request(const char *a_request_str, const char *a_url)
     if (a_url) {
         pthread_rwlock_rdlock(&s_url_handlers_rwlock);
         dap_json_rpc_url_handler_item_t *url_handler = NULL;
-        HASH_FIND_STR(s_url_handlers, a_url, url_handler);
+        dap_ht_find_str(s_url_handlers, a_url, url_handler);
         if (url_handler) {
             dap_json_rpc_url_handler_t handler = url_handler->handler;
             void *user_data = url_handler->user_data;
@@ -301,7 +302,7 @@ char *dap_json_rpc_process_request(const char *a_request_str, const char *a_url)
     // Find method handler
     pthread_rwlock_rdlock(&s_method_handlers_rwlock);
     dap_json_rpc_method_handler_item_t *method_handler = NULL;
-    HASH_FIND_STR(s_method_handlers, request->method, method_handler);
+    dap_ht_find_str(s_method_handlers, request->method, method_handler);
     
     if (!method_handler) {
         pthread_rwlock_unlock(&s_method_handlers_rwlock);
