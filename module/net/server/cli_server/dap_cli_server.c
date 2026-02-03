@@ -231,7 +231,7 @@ DAP_STATIC_INLINE dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_serve
     l_cmd_item->func_rpc = a_func_rpc;
     // Initialize flags with default values
     memset(&l_cmd_item->flags, 0, sizeof(l_cmd_item->flags));
-    HASH_ADD_STR(cli_commands,name,l_cmd_item);
+    dap_ht_add_str(cli_commands, name, l_cmd_item);
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
     return l_cmd_item;
 }
@@ -271,7 +271,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_add_ext(const dap_cli_server_cmd_params_t *a_p
     l_cmd_item->overrides = a_params->overrides;
     l_cmd_item->flags = a_params->flags;
 
-    HASH_ADD_STR(cli_commands, name, l_cmd_item);
+    dap_ht_add_str(cli_commands, name, l_cmd_item);
     log_it(L_DEBUG, "Added extended command %s (JSON-RPC: %s)", 
            l_cmd_item->name, l_cmd_item->flags.is_json_rpc ? "yes" : "no");
     
@@ -403,7 +403,7 @@ dap_cli_cmd_t* dap_cli_server_cmd_get_first()
 dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name)
 {
     dap_cli_cmd_t *l_cmd_item = NULL;
-    HASH_FIND_STR(cli_commands,a_name,l_cmd_item);
+    dap_ht_find_str(cli_commands, a_name, l_cmd_item);
     return l_cmd_item;
 }
 
@@ -419,14 +419,14 @@ dap_cli_cmd_aliases_t *dap_cli_server_alias_add(dap_cli_cmd_t *a_cmd, const char
         memcpy(l_alias->addition, a_pre_cmd, l_addition_size);
     }
     l_alias->standard_command = a_cmd;
-    HASH_ADD_STR(s_command_alias, alias, l_alias);
+    dap_ht_add_str(s_command_alias, alias, l_alias);
     return l_alias;
 }
 
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_append, char **a_ncmd)
 {
     dap_cli_cmd_aliases_t *l_alias = NULL;
-    HASH_FIND_STR(s_command_alias, a_alias, l_alias);
+    dap_ht_find_str(s_command_alias, a_alias, l_alias);
     if (!l_alias)
         return NULL;
     *a_append = l_alias->addition[0] ? dap_strdup(l_alias->addition) : NULL;

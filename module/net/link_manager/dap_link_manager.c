@@ -32,6 +32,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_strfuncs.h"
 #include "dap_client_pvt.h"
 #include "dap_net.h"
+#include "dap_ht.h"
+#include "dap_dl.h"
 
 #define LOG_TAG "dap_link_manager"
 
@@ -46,7 +48,7 @@ static const uint64_t s_cooling_period = 900 /*sec*/ * 1000000000LLU;
 typedef struct dap_hot_node {
     dap_stream_node_addr_t addr;    // Node address
     dap_nanotime_t timestamp;        // Time when added to hot list
-    UT_hash_handle hh;               // Hash handle for uthash
+    dap_ht_handle_t hh;              // Hash handle for dap_ht
 } dap_hot_node_t;
 
 typedef struct dap_managed_net {
@@ -90,7 +92,7 @@ static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
     assert(lock != EDEADLK);
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire nets lock recursively !"), NULL;
-    DL_FOREACH(s_link_manager->nets, l_item)
+    dap_dl_foreach(s_link_manager->nets, l_item)
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id)
             break;
     pthread_rwlock_unlock(&s_link_manager->nets_lock);
@@ -129,12 +131,12 @@ static int s_update_hot_list(uint64_t a_net_id)
     
     dap_nanotime_t l_time_now = dap_nanotime_now();
     size_t l_deleted = 0;
-    size_t l_initial_count = HASH_COUNT(l_net->hot_nodes);
+    size_t l_initial_count = dap_ht_count(l_net->hot_nodes);
     
     dap_hot_node_t *l_hot_node, *l_tmp;
-    HASH_ITER(hh, l_net->hot_nodes, l_hot_node, l_tmp) {
+    dap_ht_foreach(l_net->hot_nodes, l_hot_node, l_tmp) {
         if (l_time_now > l_hot_node->timestamp + s_cooling_period) {
-            HASH_DEL(l_net->hot_nodes, l_hot_node);
+            dap_ht_del(l_net->hot_nodes, l_hot_node);
             DAP_DELETE(l_hot_node);
             ++l_deleted;
         }
@@ -167,7 +169,7 @@ static void s_node_hot_list_add(dap_stream_node_addr_t a_node_addr, uint64_t a_a
     
     // Check if already exists
     dap_hot_node_t *l_existing = NULL;
-    HASH_FIND(hh, l_net->hot_nodes, &a_node_addr, sizeof(a_node_addr), l_existing);
+    dap_ht_find(l_net->hot_nodes, &a_node_addr, sizeof(a_node_addr), l_existing);
     
     if (l_existing) {
         // Update timestamp
@@ -182,7 +184,7 @@ static void s_node_hot_list_add(dap_stream_node_addr_t a_node_addr, uint64_t a_a
         }
         l_hot_node->addr = a_node_addr;
         l_hot_node->timestamp = dap_nanotime_now();
-        HASH_ADD(hh, l_net->hot_nodes, addr, sizeof(l_hot_node->addr), l_hot_node);
+        dap_ht_add(l_net->hot_nodes, addr, l_hot_node);
         
         debug_if(s_debug_more, L_DEBUG, "Added node " NODE_ADDR_FP_STR " to hot list for net 0x%016" DAP_UINT64_FORMAT_x,
                  NODE_ADDR_FP_ARGS_S(a_node_addr), a_associated_net_id);
@@ -214,7 +216,7 @@ DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_lin
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     dap_string_t *l_report = dap_string_new("\n| Uplink |\tNode addr\t|Active Clusters|Static clusters|\tNet IDs\t\n"
             "-----------------------------------------------------------------\n");
-    HASH_ITER(hh, a_link_manager->links, l_link, l_tmp) {
+    dap_ht_foreach(a_link_manager->links, l_link, l_tmp) {
         dap_string_append_printf(l_report, "| %5s  |"NODE_ADDR_FP_STR"|\t%"DAP_UINT64_FORMAT_U
                                             "\t|\t%"DAP_UINT64_FORMAT_U"\t| ",
                                  l_link->is_uplink ? "True" : "False",
@@ -222,7 +224,7 @@ DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_lin
                                  dap_list_length(l_link->active_clusters),
                                  dap_list_length(l_link->static_clusters));
         dap_list_t *it, *tmp;
-        DL_FOREACH_SAFE(l_link->uplink.associated_nets, it, tmp) {
+        dap_dl_foreach_safe(l_link->uplink.associated_nets, it, tmp) {
             dap_managed_net_t *l_net = it->data;
             dap_string_append_printf(l_report, " %"DAP_UINT64_FORMAT_x, l_net->id);
         }
@@ -314,12 +316,12 @@ void dap_link_manager_deinit()
     dap_link_manager_set_condition(false);
     dap_link_t *l_link = NULL, *l_link_tmp;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
-    HASH_ITER(hh, s_link_manager->links, l_link, l_link_tmp)
+    dap_ht_foreach(s_link_manager->links, l_link, l_link_tmp)
         s_link_delete(&l_link, true, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     dap_list_t *it = NULL, *tmp;
     pthread_rwlock_wrlock(&s_link_manager->nets_lock);
-    DL_FOREACH_SAFE(s_link_manager->nets, it, tmp)
+    dap_dl_foreach_safe(s_link_manager->nets, it, tmp)
         dap_link_manager_remove_net(((dap_managed_net_t *)it->data)->id);
     pthread_rwlock_unlock(&s_link_manager->nets_lock);
     pthread_rwlock_destroy(&s_link_manager->links_lock);
@@ -412,7 +414,7 @@ int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster, u
     dap_return_val_if_pass(!s_link_manager || !a_net_id || !a_link_cluster, -2);
     dap_list_t *l_item = NULL;
     pthread_rwlock_wrlock(&s_link_manager->nets_lock);
-    DL_FOREACH(s_link_manager->nets, l_item) {
+    dap_dl_foreach(s_link_manager->nets, l_item) {
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
             log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " already managed", a_net_id);
             pthread_rwlock_unlock(&s_link_manager->nets_lock);
@@ -468,8 +470,8 @@ void dap_link_manager_remove_net(uint64_t a_net_id)
     // Clean up hot nodes hash table
     pthread_rwlock_wrlock(&l_net->hot_nodes_lock);
     dap_hot_node_t *l_hot_node, *l_tmp;
-    HASH_ITER(hh, l_net->hot_nodes, l_hot_node, l_tmp) {
-        HASH_DEL(l_net->hot_nodes, l_hot_node);
+    dap_ht_foreach(l_net->hot_nodes, l_hot_node, l_tmp) {
+        dap_ht_del(l_net->hot_nodes, l_hot_node);
         DAP_DELETE(l_hot_node);
     }
     pthread_rwlock_unlock(&l_net->hot_nodes_lock);
@@ -505,9 +507,9 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
         return;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link_it, *l_link_tmp;
-    HASH_ITER(hh, s_link_manager->links, l_link_it, l_link_tmp) {
+    dap_ht_foreach(s_link_manager->links, l_link_it, l_link_tmp) {
         dap_list_t *l_net_it, *l_net_tmp;
-        DL_FOREACH_SAFE(l_link_it->uplink.associated_nets, l_net_it, l_net_tmp) {
+        dap_dl_foreach_safe(l_link_it->uplink.associated_nets, l_net_it, l_net_tmp) {
             if (l_net_it->data == l_net) {
                 l_link_it->uplink.associated_nets = dap_list_delete_link(l_link_it->uplink.associated_nets, l_net_it);
                 if (!l_link_it->uplink.associated_nets)
@@ -532,7 +534,7 @@ static dap_link_t *s_link_manager_link_find(dap_stream_node_addr_t *a_node_addr)
     dap_return_val_if_pass_err(!s_link_manager, NULL, "%s", s_init_error);
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, NULL);
     dap_link_t *ret = NULL;
-    HASH_FIND(hh, s_link_manager->links, a_node_addr, sizeof(*a_node_addr), ret);
+    dap_ht_find(s_link_manager->links, a_node_addr, sizeof(*a_node_addr), ret);
     return ret;
 }
 
@@ -606,21 +608,21 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
             return;
         }
         if (a_link->link_manager->callbacks.disconnected) {
-            dap_list_t *it, *tmp;
-            DL_FOREACH_SAFE(a_link->uplink.associated_nets, it, tmp) {
-                dap_managed_net_t *l_net = it->data;
-                if (!l_net->active) {
-                    debug_if(s_debug_more, L_ERROR, "Link " NODE_ADDR_FP_STR " have associated net ID 0x%016" DAP_UINT64_FORMAT_x " have inactive state",
-                                                                NODE_ADDR_FP_ARGS_S(a_link->addr), l_net->id);
-                    DL_DELETE(a_link->uplink.associated_nets, it);
-                    continue;
-                }
-                bool l_is_permanent_link = a_link->link_manager->callbacks.disconnected(
-                            a_link, l_net->id, dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
-                if (l_is_permanent_link)
-                    continue;
-                DL_DELETE(a_link->uplink.associated_nets, it);
+        dap_list_t *it, *tmp;
+        dap_dl_foreach_safe(a_link->uplink.associated_nets, it, tmp) {
+            dap_managed_net_t *l_net = it->data;
+            if (!l_net->active) {
+                debug_if(s_debug_more, L_ERROR, "Link " NODE_ADDR_FP_STR " have associated net ID 0x%016" DAP_UINT64_FORMAT_x " have inactive state",
+                                                            NODE_ADDR_FP_ARGS_S(a_link->addr), l_net->id);
+                dap_dl_delete(a_link->uplink.associated_nets, it);
+                continue;
             }
+            bool l_is_permanent_link = a_link->link_manager->callbacks.disconnected(
+                        a_link, l_net->id, dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
+            if (l_is_permanent_link)
+                continue;
+            dap_dl_delete(a_link->uplink.associated_nets, it);
+        }
         }
         if (!a_link->active_clusters && !a_link->uplink.associated_nets && !a_link->static_clusters) {
             s_link_delete(&a_link, false, false);
@@ -737,7 +739,7 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
 
     dap_list_free(l_link->uplink.associated_nets);
     dap_list_free(l_link->static_clusters);
-    HASH_DEL(s_link_manager->links, l_link);
+    dap_ht_del(s_link_manager->links, l_link);
     DAP_DEL_Z(*a_link);
     if (s_debug_more)
         s_link_manager_print_links_info(s_link_manager);
@@ -767,7 +769,7 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
     dap_time_t l_now = dap_time_now();
     pthread_rwlock_wrlock(&a_link_manager->links_lock);
     dap_link_t *it, *tmp;
-    HASH_ITER(hh, a_link_manager->links, it, tmp) {
+    dap_ht_foreach(a_link_manager->links, it, tmp) {
         if (!it->uplink.client)
             continue;
         if (a_link_manager->callbacks.connected &&
@@ -819,7 +821,7 @@ void s_links_request(dap_link_manager_t *a_link_manager)
 {
     // dynamic link work
     dap_list_t *l_item = NULL;
-    DL_FOREACH(a_link_manager->nets, l_item) {
+    dap_dl_foreach(a_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
         if (l_net->active && l_net->uplinks < l_net->min_links_num && a_link_manager->callbacks.link_request)
             a_link_manager->callbacks.link_request(l_net->id);
@@ -866,7 +868,7 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
         debug_if(s_debug_more, L_NOTICE, "Create new link to node " NODE_ADDR_FP_STR "", NODE_ADDR_FP_ARGS(a_node_addr));
         l_link->addr.uint64 = a_node_addr->uint64;
         l_link->link_manager = s_link_manager;
-        HASH_ADD(hh, s_link_manager->links, addr, sizeof(*a_node_addr), l_link);
+        dap_ht_add(s_link_manager->links, addr, l_link);
     }   
     if (s_debug_more)
         s_link_manager_print_links_info(s_link_manager);
@@ -1020,7 +1022,7 @@ bool dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr, uint64_t a_
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, NULL);
     dap_link_t *l_link = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
-    HASH_FIND(hh, s_link_manager->links, a_node_addr, sizeof(*a_node_addr), l_link);
+    dap_ht_find(s_link_manager->links, a_node_addr, sizeof(*a_node_addr), l_link);
     if (l_link) {
         for (dap_list_t *it = l_link->uplink.associated_nets; it; it = it->next) {
             dap_managed_net_t *l_net = it->data;
@@ -1059,7 +1061,7 @@ static bool s_stream_add_callback(void *a_arg)
         return false;
     }
     dap_list_t *l_item = NULL;
-    DL_FOREACH(l_link->static_clusters, l_item) {
+    dap_dl_foreach(l_link->static_clusters, l_item) {
         dap_cluster_t *l_cluster = l_item->data;
         if (l_cluster->status == DAP_CLUSTER_STATUS_ENABLED){
             dap_cluster_member_add(l_cluster, l_node_addr, 0, NULL);       
@@ -1322,7 +1324,7 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
         l_ret = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_stream_node_addr_t, l_cur_count, NULL);
         for (i = 0; i < l_cur_count; ++i) {
             dap_link_t *l_link = NULL;
-            HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
+            dap_ht_find(s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
             if (!l_link || (l_link->is_uplink && a_established_only && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
                 continue;
             } else if (l_link->is_uplink) {  // first uplinks, second downlinks
@@ -1364,7 +1366,7 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     
     pthread_rwlock_rdlock(&l_net->hot_nodes_lock);
     
-    size_t l_node_count = HASH_COUNT(l_net->hot_nodes);
+    size_t l_node_count = dap_ht_count(l_net->hot_nodes);
     if (!l_node_count) {
         pthread_rwlock_unlock(&l_net->hot_nodes_lock);
         log_it(L_DEBUG, "Hot list is empty");
@@ -1382,7 +1384,7 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     // Copy addresses from hash table to array
     size_t i = 0;
     dap_hot_node_t *l_hot_node, *l_tmp;
-    HASH_ITER(hh, l_net->hot_nodes, l_hot_node, l_tmp) {
+    dap_ht_foreach(l_net->hot_nodes, l_hot_node, l_tmp) {
         l_ret[i++] = l_hot_node->addr;
     }
     

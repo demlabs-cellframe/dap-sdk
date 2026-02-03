@@ -47,10 +47,6 @@ function(dap_test_add_includes TARGET_NAME)
         
         # Global DB
         ${DAP_SDK_ROOT}/module/global-db/include
-        
-        # 3rd party
-        ${DAP_SDK_ROOT}/3rdparty/uthash/src
-        ${DAP_SDK_ROOT}/3rdparty
     )
     
     # Get XKCP include directory from dap_crypto_XKCP (if available)

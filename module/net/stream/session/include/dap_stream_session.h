@@ -28,7 +28,7 @@
 #include <netinet/in.h>
 #endif
 
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_enc_key.h"
 #include "dap_hash.h"
 #include "dap_list.h"
@@ -62,7 +62,7 @@ struct dap_stream_session {
     stream_session_type_t type;
     uint8_t *acl;
     dap_stream_node_addr_t node;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
     struct in_addr tun_client_addr;
 
     void * _inheritor;

@@ -5,7 +5,7 @@
 #include "dap_json.h"
 
 #include "dap_plugin_manifest.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #include <string.h>
 
 #define LOG_TAG "dap_plugin_manifest"
@@ -29,8 +29,8 @@ int dap_plugin_manifest_init()
 void dap_plugin_manifest_deinit()
 {
     dap_plugin_manifest_t *l_manifest, * l_tmp;
-    HASH_ITER(hh,s_manifests,l_manifest,l_tmp){
-        HASH_DELETE(hh, s_manifests, l_manifest);
+    dap_ht_foreach(s_manifests, l_manifest, l_tmp) {
+        dap_ht_del(s_manifests, l_manifest);
         s_manifest_delete(l_manifest);
     }
 }
@@ -55,7 +55,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_builtin(const char *a_name, const
                                                             size_t a_dependencies_count, char ** a_params, size_t a_params_count)
 {
     dap_plugin_manifest_t *l_manifest = NULL;
-    HASH_FIND_STR(s_manifests, a_name, l_manifest);
+    dap_ht_find_str(s_manifests, a_name, l_manifest);
     if(l_manifest){
         log_it(L_ERROR, "Plugin name \"%s\" is already present", a_name);
         return NULL;
@@ -83,7 +83,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_builtin(const char *a_name, const
     for(size_t i = 0; i < a_params_count; i++){
         l_manifest->params[i] = dap_strdup (a_params[i]);
     }
-    HASH_ADD_STR(s_manifests,name,l_manifest);
+    dap_ht_add_str(s_manifests, name, l_manifest);
     return l_manifest;
 }
 
@@ -135,7 +135,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     }
 
     dap_plugin_manifest_t *l_manifest = NULL;
-    HASH_FIND_STR(s_manifests, l_name, l_manifest);
+    dap_ht_find_str(s_manifests, l_name, l_manifest);
     if (l_manifest) {
         // All j_* are borrowed - freed automatically with l_json
         dap_json_object_free(l_json);
@@ -211,7 +211,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     if(dap_file_test(l_config_path_test)) // If present custom config
         l_manifest->config = dap_config_open(l_config_path);
     DAP_DEL_MULTY(l_config_path, l_config_path_test);
-    HASH_ADD_STR(s_manifests, name, l_manifest);
+    dap_ht_add_str(s_manifests, name, l_manifest);
     
     dap_json_object_free(l_json);
     
@@ -235,7 +235,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_all()
 dap_plugin_manifest_t *dap_plugin_manifest_find(const char *a_name)
 {
     dap_plugin_manifest_t *l_ret = NULL;
-    HASH_FIND_STR(s_manifests,a_name,l_ret);
+    dap_ht_find_str(s_manifests, a_name, l_ret);
     return l_ret;
 }
 
@@ -251,9 +251,9 @@ char* dap_plugin_manifests_get_list_dependencies(dap_plugin_manifest_t *a_elemen
     } else {
         char *l_result = "";
         dap_plugin_manifest_dependence_t * l_dep, *l_tmp;
-        HASH_ITER(hh,a_element->dependencies,l_dep,l_tmp){
+        dap_ht_foreach(a_element->dependencies, l_dep, l_tmp) {
             dap_plugin_manifest_t * l_dep_manifest = l_dep->manifest;
-            if (l_dep->hh.hh_next )
+            if (l_dep->hh.next)
                 l_result = dap_strjoin(NULL, l_result, l_dep_manifest->name, ", ", NULL);
             else
                 l_result = dap_strjoin(NULL, l_result, l_dep_manifest->name, NULL);
@@ -273,8 +273,8 @@ static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
     DAP_DEL_MULTY(a_manifest->name, a_manifest->version, a_manifest->author, a_manifest->description,
                   a_manifest->type, (char*)a_manifest->path, a_manifest->dependencies_names, a_manifest->params);
     dap_plugin_manifest_dependence_t * l_dep, *l_tmp;
-    HASH_ITER(hh,a_manifest->dependencies,l_dep,l_tmp){
-        HASH_DELETE(hh, a_manifest->dependencies, l_dep);
+    dap_ht_foreach(a_manifest->dependencies, l_dep, l_tmp) {
+        dap_ht_del(a_manifest->dependencies, l_dep);
         DAP_DELETE(l_dep);
     }
     if (a_manifest->params) {
@@ -293,9 +293,9 @@ static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
 bool dap_plugins_manifest_remove(const char *a_name)
 {
     dap_plugin_manifest_t *l_manifest = NULL;
-    HASH_FIND_STR(s_manifests, a_name,l_manifest);
+    dap_ht_find_str(s_manifests, a_name, l_manifest);
     if(l_manifest)
-        HASH_DEL(s_manifests, l_manifest);
+        dap_ht_del(s_manifests, l_manifest);
     else
         return false;
 

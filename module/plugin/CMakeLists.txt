@@ -22,7 +22,6 @@ set(DAP_PLUGIN_DEPS "${PLUGIN_LIBS}" CACHE INTERNAL "dap_plugin external depende
 target_include_directories(${PROJECT_NAME} PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../net/server/cli_server/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../io/include
 )

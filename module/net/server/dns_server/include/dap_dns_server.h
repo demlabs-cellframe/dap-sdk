@@ -29,7 +29,7 @@
 #include <pthread.h>
 #endif
 #include "dap_server.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_client.h"
 
 #define DNS_TIME_TO_LIVE 600    // Seconds
@@ -107,7 +107,7 @@ typedef dap_link_info_t *(*dap_dns_zone_callback_t) (const char *zonename); // C
 typedef struct _dap_dns_zone_hash_t {
     char *zone;
     dap_dns_zone_callback_t callback;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_dns_zone_hash_t;
 
 typedef struct _dap_dns_server_t {

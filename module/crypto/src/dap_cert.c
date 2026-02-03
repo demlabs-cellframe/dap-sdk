@@ -28,8 +28,8 @@
 #include <unistd.h>
 #include <ctype.h>
 
-#include "uthash.h"
-#include "../../../3rdparty/uthash/src/utlist.h"
+#include "dap_ht.h"
+#include "dap_dl.h"
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_file_utils.h"
@@ -37,7 +37,6 @@
 #include "dap_strfuncs.h"
 #include "dap_cert.h"
 #include "dap_cert_file.h"
-#include "utarray.h"
 //#include "dap_hash.h"
 #define LOG_TAG "dap_cert"
 
@@ -53,7 +52,7 @@ typedef struct dap_cert_item
 {
     char name[DAP_CERT_ITEM_NAME_MAX];
     dap_cert_t * cert;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_cert_item_t;
 
 typedef struct dap_cert_pvt
@@ -65,7 +64,9 @@ typedef struct dap_cert_pvt
 #define PVT(a) ( ( dap_cert_pvt_t *)((a)->_pvt) )
 
 static dap_cert_item_t * s_certs = NULL;
-static UT_array *s_cert_folders = NULL;
+static char **s_cert_folders = NULL;
+static size_t s_cert_folders_count = 0;
+static size_t s_cert_folders_capacity = 0;
 
 /**
  * @brief dap_cert_init empty stub for certificate init
@@ -75,9 +76,11 @@ int dap_cert_init() // TODO deinit too
 {
     uint16_t l_ca_folders_size = 0;
     char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);
-    utarray_new(s_cert_folders, &ut_str_icd);
-    utarray_reserve(s_cert_folders, l_ca_folders_size);
-    for (uint16_t i=0; i < l_ca_folders_size; i++) {
+    if (l_ca_folders_size) {
+        s_cert_folders_capacity = l_ca_folders_size;
+        s_cert_folders = DAP_NEW_Z_SIZE(char *, s_cert_folders_capacity * sizeof(char *));
+    }
+    for (uint16_t i = 0; i < l_ca_folders_size; i++) {
         dap_cert_add_folder(l_ca_folders[i]);
     }
     dap_config_get_item_str_path_array_free(l_ca_folders, l_ca_folders_size);
@@ -209,7 +212,7 @@ int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer)
             return -1;
         }
         l_sign_item->sign = dap_cert_sign(a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_size);
-        DL_APPEND ( PVT(a_cert)->signs, l_sign_item );
+        dap_dl_append(PVT(a_cert)->signs, l_sign_item);
         return 0;
     } else {
         log_it (L_ERROR, "No public key in cert \"%s\" that we are trying to sign with \"%s\"", a_cert->name,a_cert_signer->name);
@@ -235,7 +238,7 @@ dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_k
         dap_cert_t * l_cert = dap_cert_new(a_cert_name);
         l_cert->enc_key = l_enc_key;
         if (a_seed && a_seed_size)
-            log_it(L_DEBUG, "Certificate generated with seed hash %s", dap_get_data_hash_str(a_seed, a_seed_size).s);
+            log_it(L_DEBUG, "Certificate generated with seed hash %s", dap_hash_sha3_256_data_to_str(a_seed, a_seed_size).s);
         return l_cert;
     } else {
         log_it(L_ERROR,"Can't generate key in memory!");
@@ -326,7 +329,7 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
         l_ret = dap_cert_file_load(l_cert_path);
         DAP_DELETE(l_cert_path);
     } else {
-        HASH_FIND_STR(s_certs, a_cert_name, l_cert_item);
+        dap_ht_find_str(s_certs, a_cert_name, l_cert_item);
         if (l_cert_item ) {
             l_ret = l_cert_item->cert ;
         } else {
@@ -352,7 +355,7 @@ dap_list_t *dap_cert_get_all_mem()
 {
     dap_list_t *l_ret = NULL;
     dap_cert_item_t *l_cert_item = NULL, *l_cert_tmp;
-    HASH_ITER(hh, s_certs, l_cert_item, l_cert_tmp) {
+    dap_ht_foreach(s_certs, l_cert_item, l_cert_tmp) {
         l_ret = dap_list_append(l_ret, l_cert_item->cert);
     }
     return l_ret;
@@ -376,13 +379,13 @@ int dap_cert_add(dap_cert_t *a_cert)
 {
     dap_return_val_if_fail(a_cert, -1);
     dap_cert_item_t *l_cert_item = NULL;
-    HASH_FIND_STR(s_certs, a_cert->name, l_cert_item);
+    dap_ht_find_str(s_certs, a_cert->name, l_cert_item);
     if (l_cert_item)
         return log_it(L_WARNING, "Certificate with name %s already present in memory", a_cert->name), -2;
     l_cert_item = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cert_item_t, -3);
     dap_strncpy(l_cert_item->name, a_cert->name, sizeof(l_cert_item->name));
     l_cert_item->cert = a_cert;
-    HASH_ADD_STR(s_certs, name, l_cert_item);
+    dap_ht_add_str(s_certs, name, l_cert_item);
     return 0;
 }
 
@@ -396,10 +399,10 @@ void dap_cert_delete(dap_cert_t * a_cert)
     if (!a_cert)
         return;
     dap_cert_item_t * l_cert_item = NULL;
-    HASH_FIND_STR(s_certs, a_cert->name, l_cert_item);
-    if ( l_cert_item ){
-         HASH_DEL(s_certs,l_cert_item);
-         DAP_DELETE (l_cert_item);
+    dap_ht_find_str(s_certs, a_cert->name, l_cert_item);
+    if (l_cert_item) {
+        dap_ht_del(s_certs, l_cert_item);
+        DAP_DELETE(l_cert_item);
     }
 
     if( a_cert->enc_key )
@@ -468,11 +471,11 @@ dap_pkey_t *dap_cert_to_pkey(dap_cert_t *a_cert)
     return a_cert && a_cert->enc_key ? dap_pkey_from_enc_key(a_cert->enc_key) : NULL;
 }
 
-int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash)
+int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_type_t a_hash_type, byte_t *a_out_hash, size_t a_out_hash_size)
 {
     dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->pub_key_data &&
-                           a_cert->enc_key->pub_key_size && a_out_hash , -1);
-    return dap_enc_key_get_pkey_hash(a_cert->enc_key, a_out_hash);
+                           a_cert->enc_key->pub_key_size && a_out_hash, -1);
+    return dap_enc_key_get_pkey_hash(a_cert->enc_key, a_hash_type, a_out_hash, a_out_hash_size);
 }
 
 /**
@@ -509,7 +512,8 @@ size_t dap_cert_count_cert_sign(dap_cert_t * a_cert)
 {
     size_t ret;
     dap_sign_item_t * l_cert_item = NULL;
-    DL_COUNT(  PVT(a_cert)->signs,l_cert_item,ret);
+    (void)l_cert_item; // unused
+    dap_dl_count(PVT(a_cert)->signs, ret);
     return ret > 0 ? ret : 0 ;
 }
 
@@ -572,8 +576,9 @@ char *dap_cert_dump(dap_cert_t *a_cert)
  */
 const char *dap_cert_get_folder(int a_n_folder_path)
 {
-    char **l_p = utarray_eltptr(s_cert_folders, (u_int)a_n_folder_path);
-    return l_p ? *l_p : ( log_it(L_ERROR, "No default cert path, check \"ca_folders\" in cellframe-node.cfg"), NULL );
+    if (a_n_folder_path < 0 || (size_t)a_n_folder_path >= s_cert_folders_count)
+        return (log_it(L_ERROR, "No default cert path, check \"ca_folders\" in cellframe-node.cfg"), NULL);
+    return s_cert_folders[a_n_folder_path];
 }
 
 
@@ -584,7 +589,11 @@ const char *dap_cert_get_folder(int a_n_folder_path)
  */
 void dap_cert_add_folder(const char *a_folder_path)
 {
-    utarray_push_back(s_cert_folders, &a_folder_path);
+    if (s_cert_folders_count >= s_cert_folders_capacity) {
+        s_cert_folders_capacity = s_cert_folders_capacity ? s_cert_folders_capacity * 2 : 4;
+        s_cert_folders = DAP_REALLOC(s_cert_folders, s_cert_folders_capacity * sizeof(char *));
+    }
+    s_cert_folders[s_cert_folders_count++] = dap_strdup(a_folder_path);
     dap_mkdir_with_parents(a_folder_path);
     DIR *l_dir = opendir(a_folder_path);
     if( l_dir ) {
@@ -878,10 +887,10 @@ void *dap_cert_get_meta_custom(dap_cert_t *a_cert, const char *a_field, size_t *
 void dap_cert_deinit()
 {
     dap_cert_item_t *l_cert_item = NULL, *l_cert_tmp;
-    HASH_ITER(hh, s_certs, l_cert_item, l_cert_tmp) {
-         HASH_DEL(s_certs, l_cert_item);
-         dap_cert_delete(l_cert_item->cert);
-         DAP_DELETE (l_cert_item);
+    dap_ht_foreach(s_certs, l_cert_item, l_cert_tmp) {
+        dap_ht_del(s_certs, l_cert_item);
+        dap_cert_delete(l_cert_item->cert);
+        DAP_DELETE(l_cert_item);
     }
 }
 

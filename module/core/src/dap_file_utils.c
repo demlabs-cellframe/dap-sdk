@@ -483,8 +483,8 @@ void dap_subs_free(dap_list_name_directories_t *subs_list){
     dap_list_name_directories_t *l_element;
     dap_list_name_directories_t *l_tmp;
     
-    LL_FOREACH_SAFE(subs_list, l_element, l_tmp){
-        LL_DELETE(subs_list, l_element);
+    dap_sl_foreach_safe(subs_list, l_element, l_tmp) {
+        dap_sl_delete(subs_list, l_element);
         DAP_FREE(l_element->name_directory);
         DAP_DELETE(l_element);
     }
@@ -506,7 +506,7 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
             strcmp(info_file.cFileName, "..") && strcmp(info_file.cFileName, ".")){
             element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
             element->name_directory = dap_strdup(info_file.cFileName);
-            LL_APPEND(list, element);
+            dap_sl_append(list, element);
         }
     }
     FindClose(h_find_file);
@@ -524,7 +524,7 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
                 return NULL;
             }
             element->name_directory = dap_strdup(entry->d_name);
-            LL_APPEND(list, element);
+            dap_sl_append(list, element);
         }
         entry = readdir(dir);
     }

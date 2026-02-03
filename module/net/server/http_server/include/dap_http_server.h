@@ -27,7 +27,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_http_header.h"
 #include "dap_http_client.h"
 #include "dap_http_cache.h"
-#include "uthash.h"
+#include "dap_ht.h"
 
 struct dap_http_server;
 struct dap_http_url_processor;
@@ -54,7 +54,7 @@ typedef struct dap_http_url_proc{
     dap_http_client_callback_t access_callback;
 
     void *_inheritor; // Internal data specific to the current URL processor
-    UT_hash_handle hh; // makes this structure hashable with UTHASH library
+    dap_ht_handle_t hh; // makes this structure hashable with UTHASH library
 } dap_http_url_proc_t;
 
 // Internal server structure for HTTP server

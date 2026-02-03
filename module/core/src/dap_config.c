@@ -2,7 +2,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include "dap_config.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #ifdef DAP_OS_WINDOWS
@@ -20,7 +20,7 @@
 typedef struct dap_config_parser_registry {
     char *parser_name;
     dap_config_custom_parser_t parser;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_config_parser_registry_t;
 
 static dap_config_parser_registry_t *s_parser_registry = NULL;
@@ -33,7 +33,7 @@ typedef struct dap_config_item {
         char        **val_arr;
         int64_t     val_int;
     } val;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_config_item_t;
 
 static char *s_configs_path = NULL;
@@ -116,7 +116,7 @@ DAP_STATIC_INLINE void s_config_item_dump(dap_config_item_t *a_item)
 void dap_config_dump(dap_config_t *a_conf) {
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
     log_it(L_DEBUG, " Config %s", a_conf->path);
-    HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
+    dap_ht_foreach(a_conf->items, l_item, l_tmp) {
         s_config_item_dump(l_item);
     }
 }
@@ -274,7 +274,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
             if (*c == '-')
                 *c = '_';
         }
-        HASH_FIND_STR((*a_conf)->items, l_name, l_item);
+        dap_ht_find_str((*a_conf)->items, l_name, l_item);
         
         bool l_replace = false;
         switch (l_type) {
@@ -282,7 +282,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         case 'r':
             DAP_DELETE(l_name);
             if (l_item) {
-                HASH_DEL((*a_conf)->items, l_item);
+                dap_ht_del((*a_conf)->items, l_item);
                 dap_config_item_del(l_item, true);
             }
             dap_strfreev(l_values_arr);
@@ -295,7 +295,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
             if (!l_item) {
                 l_item = DAP_NEW_Z(dap_config_item_t);
                 l_item->name = l_name;
-                HASH_ADD_KEYPTR(hh, (*a_conf)->items, l_item->name, strlen(l_item->name), l_item);
+                dap_ht_add_keyptr((*a_conf)->items, l_item->name, strlen(l_item->name), l_item);
             } else {
                 log_it(L_WARNING, "Config item %s from %s.cfg already exist and will be replace", l_item->name, (*a_conf)->path);
                 s_config_item_dump(l_item);
@@ -348,14 +348,14 @@ void dap_config_set_item_str(dap_config_t *a_config, const char *a_section, cons
     }
     
     dap_config_item_t *l_item = NULL;
-    HASH_FIND_STR(a_config->items, l_name, l_item);
+    dap_ht_find_str(a_config->items, l_name, l_item);
     
     if (l_item) {
         dap_config_item_del(l_item, false);
     } else {
         l_item = DAP_NEW_Z(dap_config_item_t);
         l_item->name = l_name;
-        HASH_ADD_KEYPTR(hh, a_config->items, l_item->name, strlen(l_item->name), l_item);
+        dap_ht_add_keyptr(a_config->items, l_item->name, strlen(l_item->name), l_item);
     }
     
     l_item->type = DAP_CONFIG_ITEM_STRING;
@@ -377,14 +377,14 @@ void dap_config_set_item_str_array(dap_config_t *a_config, const char *a_section
     }
 
     dap_config_item_t *l_item = NULL;
-    HASH_FIND_STR(a_config->items, l_name, l_item);
+    dap_ht_find_str(a_config->items, l_name, l_item);
 
     if (l_item) {
         dap_config_item_del(l_item, false);
     } else {
         l_item = DAP_NEW_Z(dap_config_item_t);
         l_item->name = l_name;
-        HASH_ADD_KEYPTR(hh, a_config->items, l_item->name, strlen(l_item->name), l_item);
+        dap_ht_add_keyptr(a_config->items, l_item->name, strlen(l_item->name), l_item);
     }
 
     l_item->type = DAP_CONFIG_ITEM_ARRAY;
@@ -425,11 +425,11 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     char *l_basic_name = dap_strdup_printf("%.*s", l_basic_len, l_path);
 #if 0
     dap_config_t *l_conf = NULL;
-    HASH_FIND_STR(g_configs_table, l_basic_name, l_conf);
+    dap_ht_find_str(g_configs_table, l_basic_name, l_conf);
     if (!l_conf) {
         l_conf = DAP_NEW_Z(dap_config_t);
         l_conf->path = l_basic_name;
-        HASH_ADD_KEYPTR(hh, g_configs_table, l_conf->path, l_basic_len, l_conf);
+        dap_ht_add_keyptr(g_configs_table, l_conf->path, l_basic_len, l_conf);
     } else {
         DAP_DELETE(l_basic_name);
     }
@@ -500,7 +500,7 @@ dap_config_item_t *dap_config_get_item(dap_config_t *a_config, const char *a_sec
             *c = '_';
     }
     dap_config_item_t *l_item = NULL;
-    HASH_FIND_STR(a_config->items, l_key, l_item);
+    dap_ht_find_str(a_config->items, l_key, l_item);
     if (!l_item) {
         debug_if(debug_config, L_DEBUG, "Not found param \"%s\"", l_key);
     }
@@ -639,12 +639,12 @@ void dap_config_close(dap_config_t *a_conf) {
         return;
     DAP_DELETE(a_conf->path);
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
-    HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
-        HASH_DEL(a_conf->items, l_item);
+    dap_ht_foreach(a_conf->items, l_item, l_tmp) {
+        dap_ht_del(a_conf->items, l_item);
         dap_config_item_del(l_item, true);
     }
 #if 0
-    HASH_DEL(g_configs_table, a_conf);
+    dap_ht_del(g_configs_table, a_conf);
 #endif
     DAP_DELETE(a_conf);
 }
@@ -668,7 +668,7 @@ int dap_config_register_parser(const char *a_parser_name, dap_config_custom_pars
 
     // Check if already registered
     dap_config_parser_registry_t *l_existing = NULL;
-    HASH_FIND_STR(s_parser_registry, a_parser_name, l_existing);
+    dap_ht_find_str(s_parser_registry, a_parser_name, l_existing);
     if (l_existing) {
         log_it(L_WARNING, "Parser '%s' already registered, replacing", a_parser_name);
         l_existing->parser = a_parser;
@@ -684,7 +684,7 @@ int dap_config_register_parser(const char *a_parser_name, dap_config_custom_pars
 
     l_entry->parser_name = dap_strdup(a_parser_name);
     l_entry->parser = a_parser;
-    HASH_ADD_STR(s_parser_registry, parser_name, l_entry);
+    dap_ht_add_str(s_parser_registry, parser_name, l_entry);
 
     log_it(L_INFO, "Registered custom config parser '%s'", a_parser_name);
     return 0;
@@ -709,7 +709,7 @@ int dap_config_call_parser(const char *a_parser_name, struct dap_conf *a_cfg, co
     }
 
     dap_config_parser_registry_t *l_entry = NULL;
-    HASH_FIND_STR(s_parser_registry, a_parser_name, l_entry);
+    dap_ht_find_str(s_parser_registry, a_parser_name, l_entry);
     if (!l_entry) {
         log_it(L_ERROR, "Parser '%s' not registered", a_parser_name);
         return -2;
@@ -721,8 +721,8 @@ int dap_config_call_parser(const char *a_parser_name, struct dap_conf *a_cfg, co
 void dap_config_deinit() {
     // Clean up parser registry
     dap_config_parser_registry_t *l_entry, *l_tmp;
-    HASH_ITER(hh, s_parser_registry, l_entry, l_tmp) {
-        HASH_DEL(s_parser_registry, l_entry);
+    dap_ht_foreach(s_parser_registry, l_entry, l_tmp) {
+        dap_ht_del(s_parser_registry, l_entry);
         DAP_DELETE(l_entry->parser_name);
         DAP_DELETE(l_entry);
     }

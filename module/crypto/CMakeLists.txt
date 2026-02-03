@@ -292,7 +292,6 @@ target_include_directories(dap_crypto PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 
 
 
@@ -320,7 +319,8 @@ endif()
 # Export dependencies for main SDK build
 set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external dependencies")
 
-target_include_directories(dap_crypto PUBLIC ../../3rdparty/shishua)
+# shishua moved from 3rdparty to src/rand/shishua (native implementation)
+target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/rand/shishua)
 target_include_directories(dap_crypto PUBLIC src/Kyber/crypto_kem/kyber512/optimized)
 if (BUILD_WITH_ECDSA)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/include)

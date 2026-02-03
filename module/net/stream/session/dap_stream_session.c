@@ -59,12 +59,12 @@ void dap_stream_session_deinit()
     dap_stream_session_t *current, *tmp;
     log_it(L_INFO,"Destroy all the sessions");
     pthread_mutex_lock(&s_sessions_mutex);
-      HASH_ITER(hh, s_sessions, current, tmp) {
+      dap_ht_foreach(s_sessions, current, tmp) {
           // Clang bug at this, current should change at every loop cycle
-          HASH_DEL(s_sessions,current);
+          dap_ht_del(s_sessions, current);
           if (current->callback_delete)
               current->callback_delete(current, NULL);
-          if (current->_inheritor )
+          if (current->_inheritor)
               DAP_DELETE(current->_inheritor);
           DAP_DELETE(current);
       }
@@ -81,7 +81,7 @@ dap_list_t* dap_stream_session_get_list_sessions(void)
     dap_stream_session_t *current, *tmp;
 
     pthread_mutex_lock(&s_sessions_mutex);
-    HASH_ITER(hh, s_sessions, current, tmp)
+    dap_ht_foreach(s_sessions, current, tmp)
         l_list = dap_list_append(l_list, current);
 
     /* pthread_mutex_lock(&s_sessions_mutex); Don't forget do it some out-of-here !!! */
@@ -112,11 +112,11 @@ uint32_t session_id = 0;
 
        do {
            session_id = random_uint32_t(RAND_MAX);
-           HASH_FIND(hh, s_sessions, &session_id, sizeof(uint32_t), l_stm_tmp);
+           dap_ht_find_int(s_sessions, session_id, l_stm_tmp);
        } while(l_stm_tmp);
 
        l_stm_sess->id = session_id;
-       HASH_ADD(hh, s_sessions, id, sizeof(uint32_t), l_stm_sess);
+       dap_ht_add(s_sessions, id, l_stm_sess);
        pthread_mutex_unlock(&s_sessions_mutex);                            /* Unlock ASAP ! */
 
        /* Prefill session context with data ... */
@@ -148,7 +148,7 @@ dap_stream_session_t *dap_stream_session_by_id(uint32_t a_id)
 {
     dap_stream_session_t *l_ret = NULL;
     pthread_mutex_lock(&s_sessions_mutex);
-    HASH_FIND(hh, s_sessions, &a_id, sizeof(uint32_t), l_ret);
+    dap_ht_find_int(s_sessions, a_id, l_ret);
     pthread_mutex_unlock(&s_sessions_mutex);
     return l_ret;
 }
@@ -158,13 +158,13 @@ int dap_stream_session_close(uint32_t a_id)
     dap_stream_session_t *l_stm_sess = NULL;
     log_it(L_INFO, "Close session id %u ...", a_id);
     pthread_mutex_lock(&s_sessions_mutex);
-    HASH_FIND(hh, s_sessions, &a_id, sizeof(uint32_t), l_stm_sess);
+    dap_ht_find_int(s_sessions, a_id, l_stm_sess);
     if (!l_stm_sess) {
         pthread_mutex_unlock(&s_sessions_mutex);
         log_it(L_WARNING, "Session id %u not found", a_id);
         return -1;
     }
-    HASH_DEL(s_sessions, l_stm_sess);
+    dap_ht_del(s_sessions, l_stm_sess);
     pthread_mutex_unlock(&s_sessions_mutex);
     log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 

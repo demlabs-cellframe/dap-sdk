@@ -5,9 +5,8 @@ project (dap_core_win32 C)
 file(GLOB CORE_SRCS *.c)
 file(GLOB CORE_HEADERS *.h)
 
-# Add strptime implementation for Windows (POSIX function not available in MinGW)
-# This ensures the symbol is always available when linking with dap-sdk on Windows
-list(APPEND CORE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty/strptime.c")
+# dap_strptime.c is now in module/core/src/ and is always compiled (cross-platform)
+# No need to add anything here - it's included via parent CMakeLists.txt glob
 
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
 
@@ -22,8 +21,6 @@ if(INSTALL_DAP_SDK)
             PUBLIC_HEADER DESTINATION include/dap/core/win32
     )
 
-
-    INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #if (DAP_OS_LINUX)
     #INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")

@@ -73,6 +73,7 @@ SOURCES += $$PWD/src/dap_enc.c \
     $$PWD/src/dap_pkey.c \
     $$PWD/src/dap_sign.c \
     $$PWD/src/dap_hash.c \
+    $$PWD/src/dap_hash_sha3.c \
     $$PWD/src/dap_uuid.c \
     $$PWD/src/dap_hash_fusion.c \
     $$PWD/src/dap_hash_keccak.c \

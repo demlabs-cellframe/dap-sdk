@@ -16,7 +16,7 @@
 #include    <errno.h>                                                       /* <errno> codes */
 
 #include "dap_common.h"                                                  /* DAP_ALLOC, DAP_FREE */
-#include "utlist.h"
+#include "dap_dl.h"                                                      /* Intrusive doubly-linked lists */
 
 #ifdef __cplusplus
 extern "C" {

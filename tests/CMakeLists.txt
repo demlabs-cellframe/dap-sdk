@@ -11,13 +11,11 @@ add_compile_options(-Wall -Wextra -Werror)
 # Include directories for DAP SDK
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../dap-sdk/module/core/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/core/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/io/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/net/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/global-db/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/utilities
 )
@@ -43,8 +41,6 @@ if(FIXTURES_SOURCES)
     target_link_libraries(dap_test_fixtures dap_sdk)
     target_include_directories(dap_test_fixtures PRIVATE
         ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/..
-        ${CMAKE_SOURCE_DIR}/../../dap-sdk/module/core/include
         ${CMAKE_SOURCE_DIR}/module/core/include
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/utilities
     )
@@ -63,13 +59,10 @@ function(add_dap_test TEST_NAME TEST_SOURCE)
     # Include DAP SDK headers
     target_include_directories(${TEST_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/..
-        ${CMAKE_SOURCE_DIR}/../../dap-sdk/module/core/include
         ${CMAKE_SOURCE_DIR}/module/core/include
         ${CMAKE_SOURCE_DIR}/module/crypto/include
         ${CMAKE_SOURCE_DIR}/module/io/include
         ${CMAKE_SOURCE_DIR}/module/global-db/include
-        ${CMAKE_SOURCE_DIR}/3rdparty/uthash/src
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
     )
     
@@ -192,6 +185,13 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/json/CMakeLists.txt)
     add_subdirectory(performance/json)
     message("[+] JSON performance benchmarks configured")
+endif()
+
+# Hash Table performance benchmarks (dap_ht vs competitors)
+option(BENCHMARK_COMPETITORS "Include competitor hash table implementations in benchmark" ON)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/hashtable/CMakeLists.txt)
+    add_subdirectory(performance/hashtable)
+    message("[+] Hash Table performance benchmarks configured")
 endif()
 
 # Build Regression Tests  

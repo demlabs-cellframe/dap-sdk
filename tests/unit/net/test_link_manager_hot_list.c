@@ -21,6 +21,7 @@
 #include "dap_config.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
+#include "dap_dl.h"
 #include <pthread.h>
 #include <string.h>
 #include <unistd.h>
@@ -167,7 +168,7 @@ static bool s_create_test_net(uint64_t a_net_id)
 static void s_cleanup_test_nets(void)
 {
     dap_list_t *l_item, *l_tmp;
-    DL_FOREACH_SAFE(s_test_clusters, l_item, l_tmp) {
+    dap_dl_foreach_safe(s_test_clusters, l_item, l_tmp) {
         test_cluster_info_t *l_info = (test_cluster_info_t *)l_item->data;
         if (l_info) {
             // Remove from link manager first

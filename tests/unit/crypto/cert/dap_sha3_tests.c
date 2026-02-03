@@ -76,16 +76,16 @@ static inline double gettimefloat( void )
 #include "fips202.h"
 #include "SimpleFIPS202.h"
 /*
-#define DAP_CHAIN_HASH_FAST_SIZE    32
+#define DAP_HASH_SHA3_256_SIZE    32
 
 typedef union dap_chain_hash_fast{
-    uint8_t raw[DAP_CHAIN_HASH_FAST_SIZE];
-} dap_chain_hash_fast_t;
+    uint8_t raw[DAP_HASH_SHA3_256_SIZE];
+} dap_hash_sha3_256_t;
 
-typedef enum dap_hash_type {
+typedef enum dap_hash_sha3_256_type {
     DAP_HASH_TYPE_KECCAK = 0,
     DAP_HASH_TYPE_SLOW_0 = 1,
-} dap_hash_type_t;
+} dap_hash_sha3_256_type_t;
 
 static inline void dap_hash_keccak( const void * a_in, size_t a_in_size, void *a_out, size_t a_out_size )
 {
@@ -94,7 +94,7 @@ static inline void dap_hash_keccak( const void * a_in, size_t a_in_size, void *a
 
 static inline void dap_hash(const void * a_data_in, size_t a_data_in_size,
                      void * a_data_out, size_t a_data_out_size,
-                     dap_hash_type_t a_type ){
+                     dap_hash_sha3_256_type_t a_type ){
     switch (a_type){
         case DAP_HASH_TYPE_KECCAK:
             dap_hash_keccak(a_data_in,a_data_in_size, a_data_out,a_data_out_size);
@@ -107,7 +107,7 @@ static inline void dap_hash(const void * a_data_in, size_t a_data_in_size,
     }
 }
 
-int dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_chain_hash_fast_t *a_hash_out )
+int dap_hash_sha3_256( const void *a_data_in, size_t a_data_in_size, dap_hash_sha3_256_t *a_hash_out )
 {
     if(!a_data_in || !a_data_in_size || !a_hash_out)
         return -1;
@@ -133,7 +133,7 @@ Keccak_HashInstance ki0;
 
 void dap_sha3_tests_run(void)
 {
-  dap_chain_hash_fast_t hash0;
+  dap_hash_sha3_256_t hash0;
   uint64_t start;
   double t;
 
@@ -141,7 +141,7 @@ void dap_sha3_tests_run(void)
 
   dap_print_module_name("dap_sha3_tests_run( )");
 
-//  printf("dap_hash_fast( ) of %u data x %u ...\n", DATA_SIZE, 65536 );
+//  printf("dap_hash_sha3_256( ) of %u data x %u ...\n", DATA_SIZE, 65536 );
 
   for (int i = 0; i < DATA_SIZE; ++ i ) {
     data[i] = zRAND( ) & 255;
@@ -151,7 +151,7 @@ void dap_sha3_tests_run(void)
   start = gettime64( );
 
   for (int h = 0; h < 65536; h ++ ) {
-    dap_hash_fast( &data[0], DATA_SIZE, &hash0 );
+    dap_hash_sha3_256( &data[0], DATA_SIZE, &hash0 );
   }
 
   t = (double)(gettime64( ) - start) / 1000000000.0;

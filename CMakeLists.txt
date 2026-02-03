@@ -96,7 +96,6 @@ target_include_directories(dap_sdk_interface PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/module/io/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/global-db/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/net/common/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src
 )
 
 # Optional modules with UPDATED PATHS
@@ -228,11 +227,6 @@ if(INSTALL_DAP_SDK)
         OS_SUFFIX "${DAP_PACKAGE_OS_SUFFIX}"
     )
 
-    # Register 3rd party headers required by public API
-    register_3rdparty_headers(
-        DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src"
-        DESTINATION "uthash"
-    )
 
     # Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
 
