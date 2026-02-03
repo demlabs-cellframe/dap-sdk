@@ -59,6 +59,30 @@ extern "C" {
  */
 int dap_io_flow_socket_init(void);
 
+// =============================================================================
+// TIER CONTROL (for testing)
+// =============================================================================
+
+/**
+ * @brief Force a specific load balancing tier (for testing)
+ * @param a_tier Tier to force (DAP_IO_FLOW_LB_TIER_*), or -1 to auto-detect
+ * @note This affects all subsequent server creations until reset
+ */
+void dap_io_flow_set_forced_tier(int a_tier);
+
+/**
+ * @brief Get current forced tier setting
+ * @return Forced tier or -1 if auto-detect
+ */
+int dap_io_flow_get_forced_tier(void);
+
+/**
+ * @brief Get human-readable tier name
+ * @param a_tier Tier enum value
+ * @return Tier name string
+ */
+const char* dap_io_flow_tier_name(dap_io_flow_lb_tier_t a_tier);
+
 /**
  * @brief Deinitialize dap_io_flow_socket module
  */

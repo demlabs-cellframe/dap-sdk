@@ -243,3 +243,35 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     
     message("[+] eBPF tier test (Linux) - tests dap_io_flow_ebpf_* API")
 endif()
+
+# ============================================================================
+# Test: IO Flow Control Unit Test (REGRESSION)
+# Tests dap_io_flow_ctrl - retransmission and ACK handling
+# ============================================================================
+project(test_io_flow_ctrl)
+
+add_executable(${PROJECT_NAME}
+    test_io_flow_ctrl.c
+)
+
+# Link fixtures and dependencies
+target_link_libraries(${PROJECT_NAME} PRIVATE io_flow_test_fixtures)
+dap_test_link_libraries(${PROJECT_NAME})
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
+
+# Enable automatic mock wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# Add to CTest
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 120
+    LABELS "unit;io;flow;ctrl;regression"
+)
+
+message("[+] IO Flow Control test - regression test for retransmission bug")

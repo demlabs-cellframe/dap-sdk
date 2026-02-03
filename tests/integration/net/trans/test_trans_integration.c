@@ -30,7 +30,11 @@
 #include "dap_client_helpers.h"
 #include "dap_stream.h"
 #include "dap_io_flow.h"
+#include "dap_io_flow_socket.h"
+#ifdef DAP_OS_LINUX
 #include "dap_io_flow_ebpf.h"
+#include "dap_io_flow_cbpf.h"
+#endif
 #include "dap_net_trans_udp_server.h"
 #include "dap_stream_ctl.h"
 #include "dap_net_trans.h"
@@ -103,6 +107,27 @@ const trans_test_config_t g_trans_configs[] = {
 #define TRANS_CONFIG_COUNT (sizeof(g_trans_configs) / sizeof(g_trans_configs[0]))
 // Also export as runtime variable for use in other files
 const size_t g_trans_config_count = TRANS_CONFIG_COUNT;
+
+// ============================================================================
+// Load Balancing Tier Configuration for Datagram Testing
+// ============================================================================
+
+typedef struct tier_test_config {
+    dap_io_flow_lb_tier_t tier;
+    const char *name;
+    bool (*is_available)(void);  // NULL = always available
+} tier_test_config_t;
+
+static bool s_tier_application_available(void) { return true; }
+
+static const tier_test_config_t g_tier_configs[] = {
+    {DAP_IO_FLOW_LB_TIER_APPLICATION, "Application", s_tier_application_available},
+#ifdef DAP_OS_LINUX
+    {DAP_IO_FLOW_LB_TIER_CLASSIC_BPF, "CBPF", dap_io_flow_cbpf_is_available},
+    {DAP_IO_FLOW_LB_TIER_EBPF, "eBPF", dap_io_flow_ebpf_is_available},
+#endif
+};
+#define TIER_CONFIG_COUNT (sizeof(g_tier_configs) / sizeof(g_tier_configs[0]))
 
 // Per-trans test ctx with dynamic arrays for scenario support
 typedef struct trans_test_ctx {
@@ -1129,8 +1154,14 @@ static void test_01_init_all_transs(void)
 }
 
 /**
- * @brief Test 2: Sequential trans testing with all scenarios
- * @details Tests each transport protocol with progressively complex scenarios:
+ * @brief Test 2: Sequential trans testing with all scenarios and all tiers
+ * @details Tests each transport protocol with progressively complex scenarios,
+ *          and for datagram protocols (UDP), tests on each available LB tier:
+ *          - Tier 1: Application-level (queue-based)
+ *          - Tier 2: Classic BPF (kernel sticky sessions)
+ *          - Tier 3: eBPF (kernel sticky sessions with maps)
+ *          
+ *          Scenarios:
  *          1. Basic: 1 server, 1 client
  *          2. Scale: 1 server, 10 clients
  *          3. Heavy: 1 server, 1000 clients
@@ -1139,139 +1170,169 @@ static void test_01_init_all_transs(void)
  */
 static void test_02_sequential_trans_testing(void)
 {
-    TEST_INFO("Test 2: Sequential trans testing with all scenarios");
+    TEST_INFO("Test 2: Sequential trans testing with all scenarios and all tiers");
     
     bool l_all_passed = true;
+    size_t l_total_tests = 0;
+    size_t l_passed_tests = 0;
+    size_t l_failed_tests = 0;
+    size_t l_skipped_tests = 0;
     
     // Test each transport protocol
     for (size_t trans_idx = 0; trans_idx < TRANS_CONFIG_COUNT; trans_idx++) {
-        printf("\n");
-        printf("╔════════════════════════════════════════════════════════╗\n");
-        printf("║  Testing transport: %-35s║\n", g_trans_configs[trans_idx].name);
-        printf("╚════════════════════════════════════════════════════════╝\n");
+        const trans_test_config_t *l_trans = &g_trans_configs[trans_idx];
+        bool l_is_datagram = (l_trans->trans_type == DAP_NET_TRANS_UDP_BASIC);
         
-        // Check if eBPF/BPF is available (determines tier)
-        bool l_has_bpf = dap_io_flow_ebpf_is_available();
-        int l_tier = l_has_bpf ? 3 : 1;  // Tier 3 (eBPF) or Tier 1 (application queue)
-        const uint32_t TIER1_MAX_CLIENTS = 20;  // Tier 1 limitation
+        // For datagram protocols, test each available tier
+        size_t l_tier_count = l_is_datagram ? TIER_CONFIG_COUNT : 1;
         
-        log_it(L_NOTICE, "UDP Load Balancing: Tier %d (%s), max clients: %u", 
-               l_tier, l_has_bpf ? "eBPF/BPF kernel sharding" : "application queue forwarding",
-               l_has_bpf ? 1000 : TIER1_MAX_CLIENTS);
-        
-        // Test each scenario for this transport
-        for (size_t scenario_idx = 0; scenario_idx < SCENARIO_COUNT; scenario_idx++) {
-            // CRITICAL: Tier 1 limitation - skip scenarios >20 clients
-            if (l_tier == 1 && g_scenarios[scenario_idx].num_clients > TIER1_MAX_CLIENTS) {
-                printf("\n--- Scenario %zu/%zu: %s ---\n", 
-                       scenario_idx + 1, SCENARIO_COUNT, g_scenarios[scenario_idx].name);
-                printf("⏭️  SKIPPED: Tier 1 limited to %u concurrent clients (scenario has %zu)\n",
-                       TIER1_MAX_CLIENTS, g_scenarios[scenario_idx].num_clients);
-                printf("   To enable: run as root or grant CAP_BPF capability for eBPF support\n");
+        for (size_t tier_idx = 0; tier_idx < l_tier_count; tier_idx++) {
+            const tier_test_config_t *l_tier_cfg = l_is_datagram ? &g_tier_configs[tier_idx] : NULL;
+            
+            // Check tier availability
+            if (l_tier_cfg && l_tier_cfg->is_available && !l_tier_cfg->is_available()) {
+                printf("\n");
+                printf("╔════════════════════════════════════════════════════════╗\n");
+                printf("║  %-54s  ║\n", "");
+                printf("║  Testing: %-15s @ %-25s  ║\n", 
+                       l_trans->name, l_tier_cfg->name);
+                printf("║  %-54s  ║\n", "⏭️  SKIPPED: Tier not available on this system");
+                printf("╚════════════════════════════════════════════════════════╝\n");
                 continue;
             }
             
-            printf("\n--- Scenario %zu/%zu: %s ---\n", 
-                   scenario_idx + 1, SCENARIO_COUNT, g_scenarios[scenario_idx].name);
-            
-            // Allocate context for this scenario
-            trans_test_ctx_t *l_ctx = test_trans_ctx_alloc(&g_trans_configs[trans_idx],
-                                                             &g_scenarios[scenario_idx]);
-            if (!l_ctx) {
-                TEST_ERROR("Failed to allocate context for scenario '%s'", 
-                          g_scenarios[scenario_idx].name);
-                l_all_passed = false;
-                break;
-            }
-            
-            // Run test for this scenario
-            uint64_t scenario_start = dap_nanotime_now() / 1000000;
-            test_trans_worker(l_ctx);
-            uint64_t scenario_end = dap_nanotime_now() / 1000000;
-            
-            // Collect statistics
-            size_t bytes_sent = 0, bytes_recv = 0;
-            for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
-                bytes_sent += l_ctx->stream_ctxs[i].sent_data_size;
-                bytes_recv += l_ctx->stream_ctxs[i].received_data_size;
-            }
-            
-            // Check result and update stats
-            if (l_ctx->result == 0) {
-                s_test_stats.scenarios_passed[trans_idx]++;
-                s_test_stats.total_scenarios_passed++;
-                s_test_stats.total_clients_processed[trans_idx] += l_ctx->scenario.num_clients;
-                s_test_stats.total_bytes_sent[trans_idx] += bytes_sent;
-                s_test_stats.total_bytes_received[trans_idx] += bytes_recv;
-                s_test_stats.total_duration_ms[trans_idx] += (scenario_end - scenario_start);
-                
-                printf("✅ %s - %s: PASSED (%.1f MB in %.2f sec)\n", 
-                       g_trans_configs[trans_idx].name, g_scenarios[scenario_idx].name,
-                       (bytes_sent + bytes_recv) / (1024.0 * 1024.0),
-                       (scenario_end - scenario_start) / 1000.0);
+            // Set forced tier for datagram protocols
+            if (l_tier_cfg) {
+                dap_io_flow_set_forced_tier(l_tier_cfg->tier);
+                printf("\n");
+                printf("╔════════════════════════════════════════════════════════╗\n");
+                printf("║  Testing: %-15s @ %-25s  ║\n", l_trans->name, l_tier_cfg->name);
+                printf("╚════════════════════════════════════════════════════════╝\n");
             } else {
-                s_test_stats.scenarios_failed[trans_idx]++;
-                s_test_stats.total_scenarios_failed++;
+                dap_io_flow_set_forced_tier(-1);  // Auto-detect
+                printf("\n");
+                printf("╔════════════════════════════════════════════════════════╗\n");
+                printf("║  Testing transport: %-35s║\n", l_trans->name);
+                printf("╚════════════════════════════════════════════════════════╝\n");
+            }
+            
+            // Tier-specific client limits
+            const uint32_t TIER1_MAX_CLIENTS = 20;  // Application tier limitation
+            uint32_t l_max_clients = (l_tier_cfg && l_tier_cfg->tier == DAP_IO_FLOW_LB_TIER_APPLICATION) 
+                                     ? TIER1_MAX_CLIENTS : 1000;
+            
+            log_it(L_NOTICE, "Testing %s with tier %s, max clients: %u", 
+                   l_trans->name, 
+                   l_tier_cfg ? l_tier_cfg->name : "auto",
+                   l_max_clients);
+            
+            bool l_tier_passed = true;
+            
+            // Test each scenario for this transport+tier combination
+            for (size_t scenario_idx = 0; scenario_idx < SCENARIO_COUNT; scenario_idx++) {
+                const test_scenario_t *l_scenario = &g_scenarios[scenario_idx];
+                l_total_tests++;
                 
-                printf("❌ %s - %s: FAILED (code %d)\n", 
-                       g_trans_configs[trans_idx].name, g_scenarios[scenario_idx].name, 
-                       l_ctx->result);
-                l_all_passed = false;
+                // Skip scenarios that exceed tier client limit
+                if (l_scenario->num_clients > l_max_clients) {
+                    printf("\n--- Scenario %zu/%zu: %s ---\n", 
+                           scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
+                    printf("⏭️  SKIPPED: %s tier limited to %u clients (scenario has %zu)\n",
+                           l_tier_cfg ? l_tier_cfg->name : "auto", l_max_clients, l_scenario->num_clients);
+                    l_skipped_tests++;
+                    continue;
+                }
                 
-                // Cleanup and continue to next scenario
+                printf("\n--- Scenario %zu/%zu: %s ---\n", 
+                       scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
+                
+                // Allocate context for this scenario
+                trans_test_ctx_t *l_ctx = test_trans_ctx_alloc(l_trans, l_scenario);
+                if (!l_ctx) {
+                    TEST_ERROR("Failed to allocate context for scenario '%s'", l_scenario->name);
+                    l_all_passed = false;
+                    l_tier_passed = false;
+                    l_failed_tests++;
+                    break;
+                }
+                
+                // Run test for this scenario
+                uint64_t scenario_start = dap_nanotime_now() / 1000000;
+                test_trans_worker(l_ctx);
+                uint64_t scenario_end = dap_nanotime_now() / 1000000;
+                
+                // Collect statistics
+                size_t bytes_sent = 0, bytes_recv = 0;
+                for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
+                    bytes_sent += l_ctx->stream_ctxs[i].sent_data_size;
+                    bytes_recv += l_ctx->stream_ctxs[i].received_data_size;
+                }
+                
+                // Check result
+                if (l_ctx->result == 0) {
+                    s_test_stats.scenarios_passed[trans_idx]++;
+                    s_test_stats.total_scenarios_passed++;
+                    s_test_stats.total_clients_processed[trans_idx] += l_ctx->scenario.num_clients;
+                    s_test_stats.total_bytes_sent[trans_idx] += bytes_sent;
+                    s_test_stats.total_bytes_received[trans_idx] += bytes_recv;
+                    s_test_stats.total_duration_ms[trans_idx] += (scenario_end - scenario_start);
+                    l_passed_tests++;
+                    
+                    printf("✅ %s@%s - %s: PASSED (%.1f MB in %.2f sec)\n", 
+                           l_trans->name, l_tier_cfg ? l_tier_cfg->name : "auto",
+                           l_scenario->name,
+                           (bytes_sent + bytes_recv) / (1024.0 * 1024.0),
+                           (scenario_end - scenario_start) / 1000.0);
+                } else {
+                    s_test_stats.scenarios_failed[trans_idx]++;
+                    s_test_stats.total_scenarios_failed++;
+                    l_failed_tests++;
+                    
+                    printf("❌ %s@%s - %s: FAILED (code %d)\n", 
+                           l_trans->name, l_tier_cfg ? l_tier_cfg->name : "auto",
+                           l_scenario->name, l_ctx->result);
+                    l_all_passed = false;
+                    l_tier_passed = false;
+                    
+                    // Cleanup and continue to next tier
+                    test_trans_ctx_free(l_ctx);
+                    test_wait_for_cleanup_complete(10000);
+                    break;  // Stop testing this tier on first failure
+                }
+                
+                // Cleanup after each scenario
                 test_trans_ctx_free(l_ctx);
                 
-                // Wait for cleanup to complete with intelligent polling
-                test_wait_for_cleanup_complete(10000);  // Wait for delayed deletion + HUP processing
+                // Wait for cleanup
+                uint32_t l_cleanup_timeout = (l_scenario->num_clients > 100) ? 30000 : 20000;
+                if (!test_wait_for_cleanup_complete(l_cleanup_timeout)) {
+                    log_it(L_ERROR, "Cleanup did not complete for scenario '%s'", l_scenario->name);
+                }
                 
-                break;  // Stop testing this transport on first failure
+                printf("\n");
             }
             
-            // Cleanup after each scenario
-            test_trans_ctx_free(l_ctx);
-            
-            // Wait for cleanup to complete with intelligent polling
-            // For scenarios with many clients, need MORE time for async cleanup
-            // CRITICAL: UDP Flow Control needs time to flush packets and close flows
-            uint32_t l_cleanup_timeout = (g_scenarios[scenario_idx].num_clients > 100) ? 30000 : 20000;
-            if (!test_wait_for_cleanup_complete(l_cleanup_timeout)) {
-                log_it(L_ERROR, "Cleanup did not complete for scenario '%s'", 
-                       g_scenarios[scenario_idx].name);
-            }
-            
-            printf("\n");
+            // Report tier result
+            printf("\n  %s@%s: %s\n", l_trans->name, 
+                   l_tier_cfg ? l_tier_cfg->name : "auto",
+                   l_tier_passed ? "✅ ALL PASSED" : "❌ FAILED");
         }
         
-        printf("\n");
+        // Reset forced tier for next transport
+        dap_io_flow_set_forced_tier(-1);
     }
     
     // Print final summary
     printf("\n");
-    printf("╔════════════════════════════════════════════════════════╗\n");
-    printf("║                     TEST SUMMARY                       ║\n");
-    printf("╚════════════════════════════════════════════════════════╝\n");
+    printf("╔════════════════════════════════════════════════════════════════╗\n");
+    printf("║                        TEST SUMMARY                            ║\n");
+    printf("╠════════════════════════════════════════════════════════════════╣\n");
+    printf("║  Total tests:   %-6zu                                         ║\n", l_total_tests);
+    printf("║  Passed:        %-6zu ✅                                       ║\n", l_passed_tests);
+    printf("║  Failed:        %-6zu ❌                                       ║\n", l_failed_tests);
+    printf("║  Skipped:       %-6zu ⏭️                                        ║\n", l_skipped_tests);
+    printf("╚════════════════════════════════════════════════════════════════╝\n");
     printf("\n");
-    
-    for (size_t trans_idx = 0; trans_idx < TRANS_CONFIG_COUNT; trans_idx++) {
-        printf("  %s:\n", g_trans_configs[trans_idx].name);
-        size_t l_passed = s_test_stats.scenarios_passed[trans_idx];
-        size_t l_failed = s_test_stats.scenarios_failed[trans_idx];
-        size_t l_tested = l_passed + l_failed;
-        for (size_t scenario_idx = 0; scenario_idx < SCENARIO_COUNT; scenario_idx++) {
-            const char *l_status;
-            if (scenario_idx < l_passed) {
-                l_status = "✅ PASSED";
-            } else if (scenario_idx < l_tested) {
-                l_status = "❌ FAILED";
-            } else {
-                l_status = "⏭️ SKIPPED";
-            }
-            printf("    - %s: %s\n", g_scenarios[scenario_idx].name, l_status);
-        }
-    }
-    
-    printf("\n");
-    printf("========================================\n");
     
     TEST_ASSERT(l_all_passed, "All trans tests should pass");
     

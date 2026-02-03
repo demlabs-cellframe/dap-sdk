@@ -64,7 +64,6 @@ dap_test_add_includes(${PROJECT_NAME})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${TRANS_TEST_INCLUDE_DIRS}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../net/trans/include
 )
 
 dap_mock_autowrap(${PROJECT_NAME})

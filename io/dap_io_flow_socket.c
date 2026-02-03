@@ -49,6 +49,55 @@
 // Debug flag for verbose logging
 static bool s_debug_more = false;
 
+// Forced tier for testing (negative = auto-detect, positive = force specific tier)
+static int s_forced_lb_tier = -1;
+
+/**
+ * @brief Force a specific load balancing tier (for testing)
+ * @param a_tier Tier to force, or -1 to auto-detect
+ */
+void dap_io_flow_set_forced_tier(int a_tier)
+{
+    s_forced_lb_tier = a_tier;
+    log_it(L_NOTICE, "IO Flow: Forced tier set to %d", a_tier);
+}
+
+/**
+ * @brief Get current forced tier setting
+ * @return Forced tier or -1 if auto-detect
+ */
+int dap_io_flow_get_forced_tier(void)
+{
+    return s_forced_lb_tier;
+}
+
+/**
+ * @brief Get tier name string
+ * @param a_tier Tier enum value
+ * @return Human-readable tier name
+ */
+const char* dap_io_flow_tier_name(dap_io_flow_lb_tier_t a_tier)
+{
+    switch (a_tier) {
+        case DAP_IO_FLOW_LB_TIER_NONE: return "NONE";
+        case DAP_IO_FLOW_LB_TIER_APPLICATION: return "APPLICATION";
+#if defined(__linux__) || defined(ANDROID)
+        case DAP_IO_FLOW_LB_TIER_CLASSIC_BPF: return "CBPF";
+        case DAP_IO_FLOW_LB_TIER_EBPF: return "eBPF";
+#endif
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+        case DAP_IO_FLOW_LB_TIER_BSD_LB: return "BSD_LB";
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+        case DAP_IO_FLOW_LB_TIER_DARWIN_GCD: return "DARWIN_GCD";
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+        case DAP_IO_FLOW_LB_TIER_WIN_RIO: return "WIN_RIO";
+#endif
+        default: return "UNKNOWN";
+    }
+}
+
 // Thread-local buffer for address formatting
 static __thread char s_addr_str_buf[INET6_ADDRSTRLEN + 8];
 
@@ -268,50 +317,98 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     // Detect best available load balancing tier (platform-specific)
     dap_io_flow_lb_tier_t l_lb_tier = DAP_IO_FLOW_LB_TIER_NONE;
     if (l_is_udp && l_worker_count > 1) {
+        // Check for forced tier (for testing)
+        if (s_forced_lb_tier >= 0) {
+            l_lb_tier = (dap_io_flow_lb_tier_t)s_forced_lb_tier;
+            
+            // Validate forced tier is available
+            bool l_tier_available = false;
+            switch (l_lb_tier) {
+                case DAP_IO_FLOW_LB_TIER_NONE:
+                case DAP_IO_FLOW_LB_TIER_APPLICATION:
+                    l_tier_available = true;
+                    break;
 #if defined(__linux__) || defined(ANDROID)
-        // Linux/Android: eBPF → Classic BPF → Application
-        if (dap_io_flow_ebpf_is_available()) {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_EBPF;
-            log_it(L_NOTICE, "🚀 Load balancing: Tier 3 (eBPF) - Kernel sticky sessions");
-        } else if (dap_io_flow_cbpf_is_available()) {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
-            log_it(L_NOTICE, "🔧 Load balancing: Tier 2 (Classic BPF) - Kernel sticky sessions");
-        } else {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
-            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
-        }
-#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
-        // BSD: SO_REUSEPORT_LB (FreeBSD/DragonFly) → Application
-        if (dap_io_flow_bsd_lb_is_available()) {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_BSD_LB;
-            log_it(L_NOTICE, "🔧 Load balancing: Tier 4 (BSD SO_REUSEPORT_LB) - Kernel distribution");
-        } else {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
-            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
-        }
-#elif defined(__APPLE__) && defined(__MACH__)
-        // macOS/iOS: GCD with SO_REUSEPORT (application-level, but optimized)
-        if (dap_io_flow_darwin_gcd_is_available()) {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_DARWIN_GCD;
-            log_it(L_NOTICE, "🍎 Load balancing: Tier 5 (macOS GCD) - SO_REUSEPORT + kqueue");
-        } else {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
-            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
-        }
-#elif defined(_WIN32) || defined(_WIN64)
-        // Windows: RIO + IOCP (application-level)
-        if (dap_io_flow_win_rio_is_available()) {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_WIN_RIO;
-            log_it(L_NOTICE, "🪟 Load balancing: Tier 6 (Windows RIO) - IOCP + app distribution");
-        } else {
-            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
-            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
-        }
-#else
-        // Unknown platform: use universal application-level
-        l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
-        log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Universal fallback");
+                case DAP_IO_FLOW_LB_TIER_EBPF:
+                    l_tier_available = dap_io_flow_ebpf_is_available();
+                    break;
+                case DAP_IO_FLOW_LB_TIER_CLASSIC_BPF:
+                    l_tier_available = dap_io_flow_cbpf_is_available();
+                    break;
 #endif
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+                case DAP_IO_FLOW_LB_TIER_BSD_LB:
+                    l_tier_available = dap_io_flow_bsd_lb_is_available();
+                    break;
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+                case DAP_IO_FLOW_LB_TIER_DARWIN_GCD:
+                    l_tier_available = dap_io_flow_darwin_gcd_is_available();
+                    break;
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+                case DAP_IO_FLOW_LB_TIER_WIN_RIO:
+                    l_tier_available = dap_io_flow_win_rio_is_available();
+                    break;
+#endif
+                default:
+                    l_tier_available = false;
+            }
+            
+            if (l_tier_available) {
+                log_it(L_NOTICE, "⚙️  Load balancing: FORCED to %s", dap_io_flow_tier_name(l_lb_tier));
+            } else {
+                log_it(L_WARNING, "⚠️  Forced tier %s not available, falling back to APPLICATION", 
+                       dap_io_flow_tier_name(l_lb_tier));
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+            }
+        } else {
+            // Auto-detect best available tier
+#if defined(__linux__) || defined(ANDROID)
+            // Linux/Android: eBPF → Classic BPF → Application
+            if (dap_io_flow_ebpf_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_EBPF;
+                log_it(L_NOTICE, "🚀 Load balancing: Tier 3 (eBPF) - Kernel sticky sessions");
+            } else if (dap_io_flow_cbpf_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
+                log_it(L_NOTICE, "🔧 Load balancing: Tier 2 (Classic BPF) - Kernel sticky sessions");
+            } else {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+            }
+#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+            // BSD: SO_REUSEPORT_LB (FreeBSD/DragonFly) → Application
+            if (dap_io_flow_bsd_lb_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_BSD_LB;
+                log_it(L_NOTICE, "🔧 Load balancing: Tier 4 (BSD SO_REUSEPORT_LB) - Kernel distribution");
+            } else {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+            }
+#elif defined(__APPLE__) && defined(__MACH__)
+            // macOS/iOS: GCD with SO_REUSEPORT (application-level, but optimized)
+            if (dap_io_flow_darwin_gcd_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_DARWIN_GCD;
+                log_it(L_NOTICE, "🍎 Load balancing: Tier 5 (macOS GCD) - SO_REUSEPORT + kqueue");
+            } else {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+            }
+#elif defined(_WIN32) || defined(_WIN64)
+            // Windows: RIO + IOCP (application-level)
+            if (dap_io_flow_win_rio_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_WIN_RIO;
+                log_it(L_NOTICE, "🪟 Load balancing: Tier 6 (Windows RIO) - IOCP + app distribution");
+            } else {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+            }
+#else
+            // Unknown platform: use universal application-level
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Universal fallback");
+#endif
+        }
     }
     
     // Return tier to caller
