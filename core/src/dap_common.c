@@ -1547,16 +1547,20 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 }
 
 static void s_dap_common_log_cleanner_interval(void *a_max_size) {
-    size_t  l_max_size = DAP_POINTER_TO_SIZE(a_max_size),
-            l_log_size = ftello(s_log_file);
-    switch (l_log_size) {
-        case -1:    return log_it(L_ERROR, "Can't tell log file size, error %d :\"%s\"", errno, dap_strerror(errno));
-        case 0:     return log_it(L_ERROR, "Log file is empty");
-        default:
-            if ( l_log_size / 1048576 > l_max_size && s_dap_log_open(s_log_file_path, true) )
-                return log_it(L_ERROR, "Can't reopen log file \"%s\"", s_log_file_path);
-    }
+    size_t l_max_size = DAP_POINTER_TO_SIZE(a_max_size);
+    off_t l_log_size = ftello(s_log_file);
     
+    if (l_log_size == -1)
+        return log_it(L_ERROR, "Can't tell log file size, error %d: \"%s\"", errno, dap_strerror(errno));
+    if (l_log_size == 0)
+        return;
+    
+    if ((size_t)(l_log_size / 1048576) > l_max_size) {
+        if (s_dap_log_open(s_log_file_path, true))
+            log_it(L_ERROR, "Can't reopen log file \"%s\"", s_log_file_path);
+        else
+            log_it(L_NOTICE, "Log file rotated: \"%s\"", s_log_file_path);
+    }
 }
 void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
     dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
