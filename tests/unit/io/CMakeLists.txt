@@ -275,3 +275,35 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 message("[+] IO Flow Control test - regression test for retransmission bug")
+
+# ============================================================================
+# Test: IO Flow Multi-Client Regression Test
+# Tests packet routing, ordering, and client isolation
+# ============================================================================
+project(test_io_flow_multiclient)
+
+add_executable(${PROJECT_NAME}
+    test_io_flow_multiclient.c
+)
+
+# Link fixtures and dependencies
+target_link_libraries(${PROJECT_NAME} PRIVATE io_flow_test_fixtures)
+dap_test_link_libraries(${PROJECT_NAME})
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
+
+# Enable automatic mock wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# Add to CTest
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 120
+    LABELS "unit;io;flow;multiclient;regression"
+)
+
+message("[+] IO Flow Multi-Client test - packet routing and ordering regression")
