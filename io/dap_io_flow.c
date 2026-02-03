@@ -383,43 +383,30 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     }
     debug_if(s_debug_more, L_DEBUG, "Flows cleanup complete");
     
-    // Step 2: Delete inter_worker_queues references
-    // Note: inter_worker_queues[i][j] just references queue_inputs[j]
-    // So we only need to free the array pointers, not the queues themselves
-    debug_if(s_debug_more, L_DEBUG, "Freeing inter-worker queue references");
-    if (a_server->inter_worker_queues) {
-        for (uint32_t i = 0; i < l_worker_count; i++) {
-            DAP_DELETE(a_server->inter_worker_queues[i]);
-        }
-        DAP_DELETE(a_server->inter_worker_queues);
-    }
-    debug_if(s_debug_more, L_DEBUG, "Inter-worker queue references freed");
-    
-    // Step 3: Intelligent drain - wait for natural completion of all operations
-    // IMPORTANT: Do NOT delete queues - they belong to worker threads lifecycle
-    // Wait for all cross-worker packets to drain with state pruning
+    // Step 2: Intelligent drain - wait for natural completion of all queued operations
+    // Must complete BEFORE deleting queues to avoid use-after-free
     debug_if(s_debug_more, L_INFO, "Waiting for natural drain of cross-worker packets...");
     
     uint64_t l_drain_start = dap_nanotime_now();
-    uint64_t l_max_drain_time_ns = 10 * 60 * 1000000000ULL;  // 10 minutes max
+    uint64_t l_max_drain_time_ns = 5 * 1000000000ULL;  // 5 seconds max (reduced for faster cleanup)
     uint32_t l_last_count = atomic_load(&a_server->cross_worker_packets);
     uint32_t l_no_progress_cycles = 0;
-    const uint32_t MAX_NO_PROGRESS = 100;  // 10 seconds of no progress
+    const uint32_t MAX_NO_PROGRESS = 20;  // 2 seconds of no progress
     
     while (atomic_load(&a_server->cross_worker_packets) > 0) {
         uint32_t l_current = atomic_load(&a_server->cross_worker_packets);
         
-        // Check progress (pruning - удаление отработанных)
+        // Check progress
         if (l_current < l_last_count) {
-            l_no_progress_cycles = 0;  // Progress made - reset stuck counter
+            l_no_progress_cycles = 0;  // Progress made
             debug_if(s_debug_more, L_DEBUG, "Drain progress: %u -> %u packets", 
                      l_last_count, l_current);
         } else {
             l_no_progress_cycles++;
             if (l_no_progress_cycles >= MAX_NO_PROGRESS) {
-                log_it(L_WARNING, "Drain stuck at %u packets for %u cycles - continuing anyway",
+                log_it(L_WARNING, "Drain stuck at %u packets for %u cycles - continuing",
                        l_current, l_no_progress_cycles);
-                break;  // Stuck - give up
+                break;
             }
         }
         l_last_count = l_current;
@@ -427,8 +414,8 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         // Timeout check
         uint64_t l_elapsed_ns = dap_nanotime_now() - l_drain_start;
         if (l_elapsed_ns > l_max_drain_time_ns) {
-            log_it(L_WARNING, "Drain timeout after %lu sec, %u packets remaining",
-                   l_elapsed_ns / 1000000000, l_current);
+            log_it(L_WARNING, "Drain timeout after %lu ms, %u packets remaining",
+                   l_elapsed_ns / 1000000, l_current);
             break;
         }
         
@@ -438,15 +425,39 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     uint64_t l_drain_time_ms = (dap_nanotime_now() - l_drain_start) / 1000000;
     uint32_t l_final_count = atomic_load(&a_server->cross_worker_packets);
     if (l_final_count == 0) {
-        log_it(L_INFO, "Natural drain complete: all packets processed in %lu ms", l_drain_time_ms);
+        log_it(L_INFO, "Natural drain complete in %lu ms", l_drain_time_ms);
     } else {
         log_it(L_WARNING, "Drain finished with %u packets remaining after %lu ms", 
                l_final_count, l_drain_time_ms);
     }
     
-    // Step 4: Free queue_inputs array
-    // Queues themselves NOT deleted - they belong to worker threads
+    // Step 3: Delete inter_worker_queues references (just pointer arrays, not actual queues)
+    debug_if(s_debug_more, L_DEBUG, "Freeing inter-worker queue reference arrays");
+    if (a_server->inter_worker_queues) {
+        for (uint32_t i = 0; i < l_worker_count; i++) {
+            DAP_DELETE(a_server->inter_worker_queues[i]);
+        }
+        DAP_DELETE(a_server->inter_worker_queues);
+        a_server->inter_worker_queues = NULL;
+    }
+    
+    // Step 4: Delete queue_inputs synchronously on each worker thread
+    // Each queue was created on a specific worker's context and must be deleted
+    // from that worker's thread to avoid race conditions
+    debug_if(s_debug_more, L_DEBUG, "Deleting queue_inputs on worker threads");
     if (a_server->queue_inputs) {
+        for (uint32_t i = 0; i < l_worker_count; i++) {
+            if (a_server->queue_inputs[i]) {
+                dap_worker_t *l_worker = dap_events_worker_get(i);
+                if (l_worker) {
+                    // Use sync callback to delete queue on owning worker
+                    dap_worker_exec_callback_on_sync(l_worker, 
+                        (dap_worker_callback_t)dap_context_queue_delete, 
+                        a_server->queue_inputs[i]);
+                }
+                a_server->queue_inputs[i] = NULL;
+            }
+        }
         DAP_DELETE(a_server->queue_inputs);
         a_server->queue_inputs = NULL;
     }
@@ -468,11 +479,13 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     pthread_cond_destroy(&a_server->cross_worker_cond);
     
     // Step 6: Stop and delete dap_server (listeners)
-    // After drain, listeners can be deleted safely
+    // Use async delete and wait for completion
     debug_if(s_debug_more, L_DEBUG, "Deleting dap_server (listeners)");
     if (a_server->dap_server) {
         dap_server_delete(a_server->dap_server);
         a_server->dap_server = NULL;
+        // Give workers time to process delete requests
+        usleep(100000);  // 100ms
     }
     
     // Step 7: Final cleanup

@@ -11,10 +11,52 @@ set(IO_TEST_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/core/include/unix
     ${CMAKE_SOURCE_DIR}/test-framework
     ${CMAKE_SOURCE_DIR}/3rdparty/uthash/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
 )
 
+# Linux-specific include directories
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND IO_TEST_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/io/linux)
+endif()
+
 # ============================================================================
-# Test: IO Flow Load Balancing Tiers
+# Test Fixtures Library (shared code for tier tests)
+# ============================================================================
+project(io_flow_test_fixtures)
+
+add_library(${PROJECT_NAME} STATIC
+    fixtures/dap_io_flow_test_fixtures.c
+    fixtures/dap_io_flow_test_fixtures.h
+)
+
+# Link dependencies
+dap_test_link_libraries(${PROJECT_NAME})
+
+# Include directories
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PUBLIC 
+    ${IO_TEST_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
+)
+
+# Link libcap for capability checking (optional)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_library(LIBCAP_LIBRARY cap)
+    if(LIBCAP_LIBRARY)
+        target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBCAP_LIBRARY})
+        target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_LIBCAP=1)
+    endif()
+endif()
+
+# Enable automatic mock wrapping for fixtures
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# ============================================================================
+# Test: IO Flow Tier Detection (cross-platform)
 # ============================================================================
 project(test_io_flow_tiers)
 
@@ -22,10 +64,8 @@ add_executable(${PROJECT_NAME}
     test_io_flow_tiers.c
 )
 
-# Link dependencies using helper
+# Link dependencies
 dap_test_link_libraries(${PROJECT_NAME})
-
-# Include directories
 dap_test_add_includes(${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
 
@@ -43,3 +83,163 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     LABELS "unit;io;flow;tier"
 )
 
+# ============================================================================
+# Test: Thread Pool Unit Test
+# ============================================================================
+project(test_thread_pool)
+
+add_executable(${PROJECT_NAME}
+    test_thread_pool.c
+)
+
+# Link dependencies
+dap_test_link_libraries(${PROJECT_NAME})
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
+
+# Enable automatic mock wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# Add to CTest
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 120
+    LABELS "unit;io;thread_pool"
+)
+
+# ============================================================================
+# Test: Thread Unit Test
+# ============================================================================
+project(test_thread)
+
+add_executable(${PROJECT_NAME}
+    test_thread.c
+)
+
+# Link dependencies
+dap_test_link_libraries(${PROJECT_NAME})
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
+
+# Enable automatic mock wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# Add to CTest
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 120
+    LABELS "unit;io;thread"
+)
+
+# ============================================================================
+# Test: Application Tier (all platforms)
+# ============================================================================
+project(test_io_flow_tier_application)
+
+add_executable(${PROJECT_NAME}
+    test_io_flow_tier_application.c
+)
+
+# Link fixtures and dependencies
+target_link_libraries(${PROJECT_NAME} PRIVATE io_flow_test_fixtures)
+dap_test_link_libraries(${PROJECT_NAME})
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
+
+# Enable automatic mock wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# Add to CTest
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 120
+    LABELS "unit;io;flow;tier;application"
+)
+
+# ============================================================================
+# Test: Classic BPF Tier (Linux only)
+# Tests dap_io_flow_cbpf_* API functions
+# ============================================================================
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    project(test_io_flow_tier_cbpf)
+    
+    add_executable(${PROJECT_NAME}
+        test_io_flow_tier_cbpf.c
+    )
+    
+    # Link fixtures and dependencies
+    # Note: dap_io is linked via dap_test_link_libraries which includes it
+    target_link_libraries(${PROJECT_NAME} PRIVATE io_flow_test_fixtures)
+    dap_test_link_libraries(${PROJECT_NAME})
+    dap_test_add_includes(${PROJECT_NAME})
+    target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
+    
+    # Enable automatic mock wrapping
+    dap_mock_autowrap(${PROJECT_NAME})
+    
+    if(NOT ANDROID)
+        target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+    endif()
+    
+    # Add to CTest
+    add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+    set_tests_properties(${PROJECT_NAME} PROPERTIES
+        TIMEOUT 120
+        LABELS "unit;io;flow;tier;cbpf;linux"
+    )
+    
+    message("[+] Classic BPF tier test (Linux) - tests dap_io_flow_cbpf_* API")
+endif()
+
+# ============================================================================
+# Test: eBPF Tier (Linux only)
+# Tests dap_io_flow_ebpf_* API functions
+# ============================================================================
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    project(test_io_flow_tier_ebpf)
+    
+    add_executable(${PROJECT_NAME}
+        test_io_flow_tier_ebpf.c
+    )
+    
+    # Link fixtures and dependencies
+    # Note: dap_io is linked via dap_test_link_libraries which includes it
+    target_link_libraries(${PROJECT_NAME} PRIVATE io_flow_test_fixtures)
+    dap_test_link_libraries(${PROJECT_NAME})
+    dap_test_add_includes(${PROJECT_NAME})
+    target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
+    
+    # Link libcap for capability checking (optional)
+    if(LIBCAP_LIBRARY)
+        target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBCAP_LIBRARY})
+        target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_LIBCAP=1)
+    endif()
+    
+    # Enable automatic mock wrapping
+    dap_mock_autowrap(${PROJECT_NAME})
+    
+    if(NOT ANDROID)
+        target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+    endif()
+    
+    # Add to CTest
+    add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+    set_tests_properties(${PROJECT_NAME} PROPERTIES
+        TIMEOUT 120
+        LABELS "unit;io;flow;tier;ebpf;linux"
+    )
+    
+    message("[+] eBPF tier test (Linux) - tests dap_io_flow_ebpf_* API")
+endif()

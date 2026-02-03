@@ -71,3 +71,4 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
                                dap_events_desc_type_t a_type, dap_events_socket_callbacks_t *a_callbacks);
 int dap_server_callbacks_set(dap_server_t*, dap_events_socket_callbacks_t*, dap_events_socket_callbacks_t*);
 void dap_server_delete(dap_server_t *a_server);
+void dap_server_delete_sync(dap_server_t *a_server);  // Synchronous delete - waits for all listeners to be removed

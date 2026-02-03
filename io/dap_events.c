@@ -313,13 +313,31 @@ void dap_events_deinit( )
         return;
     }
     
-    // Stop all workers FIRST, before deinitializing anything
-    // This sends exit signal to event_exit sockets which must still exist
+    // IMPORTANT: Save thread IDs BEFORE stopping workers!
+    // Worker threads free their context during shutdown (s_context_thread -> DAP_DELETE(l_context))
+    // so we must save thread_id before context becomes invalid
+    pthread_t *l_thread_ids = DAP_NEW_Z_SIZE(pthread_t, s_threads_count * sizeof(pthread_t));
+    if (l_thread_ids) {
+        for (uint32_t i = 0; i < s_threads_count; i++) {
+            if (s_workers[i] && s_workers[i]->context) {
+                l_thread_ids[i] = s_workers[i]->context->thread_id;
+            }
+        }
+    }
+    
+    // Stop all workers - this sends exit signal
     dap_events_stop_all();
     
-    // Wait for worker threads to finish BEFORE stopping proc threads
-    // This ensures we don't have race conditions with thread joining
-    dap_events_wait();
+    // Wait for worker threads using pre-saved thread IDs
+    if (l_thread_ids) {
+        usleep(50000); // 50ms for threads to start exiting
+        for (uint32_t i = 0; i < s_threads_count; i++) {
+            if (l_thread_ids[i] != 0) {
+                pthread_join(l_thread_ids[i], NULL);
+            }
+        }
+        DAP_DELETE(l_thread_ids);
+    }
     
     // Stop proc threads (they use different mechanism)
     dap_proc_thread_deinit();
@@ -333,15 +351,9 @@ void dap_events_deinit( )
     if ( s_workers ) {
         // Free individual worker structures
         // Note: dap_context_t is freed by worker thread itself before pthread_exit
+        // Note: queue_es_*_input arrays are already freed in dap_worker_context_callback_stopped
         for (uint32_t i = 0; i < s_threads_count; i++) {
             if (s_workers[i]) {
-#ifndef DAP_EVENTS_CAPS_IOCP
-                // Free inter-context message queue inputs
-                DAP_DEL_Z(s_workers[i]->queue_es_new_input);
-                DAP_DEL_Z(s_workers[i]->queue_es_delete_input);
-                DAP_DEL_Z(s_workers[i]->queue_es_io_input);
-                DAP_DEL_Z(s_workers[i]->queue_es_reassign_input);
-#endif
                 DAP_DELETE(s_workers[i]);
                 s_workers[i] = NULL;
             }

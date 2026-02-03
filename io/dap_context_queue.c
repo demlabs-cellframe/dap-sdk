@@ -113,27 +113,29 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue) {
         return;
     }
     
-    // Get stats before deletion
-    uint64_t l_pushes, l_pops, l_full, l_empty;
-    dap_ring_buffer_get_stats(a_queue->ring_buffer, &l_pushes, &l_pops, &l_full, &l_empty);
-    
-    log_it(L_INFO, "Deleting context queue: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
-           l_pushes, l_pops, l_full, l_empty);
-    
-    if (l_full > 0) {
-        log_it(L_WARNING, "Context queue was full %"PRIu64" times - consider increasing capacity", l_full);
+    // Get stats before deletion (only if ring_buffer is valid)
+    if (a_queue->ring_buffer) {
+        uint64_t l_pushes, l_pops, l_full, l_empty;
+        dap_ring_buffer_get_stats(a_queue->ring_buffer, &l_pushes, &l_pops, &l_full, &l_empty);
+        
+        log_it(L_INFO, "Deleting context queue %p: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
+               a_queue, l_pushes, l_pops, l_full, l_empty);
+        
+        if (l_full > 0) {
+            log_it(L_WARNING, "Context queue was full %"PRIu64" times - consider increasing capacity", l_full);
+        }
+        
+        // Delete ring buffer
+        dap_ring_buffer_delete(a_queue->ring_buffer);
+        a_queue->ring_buffer = NULL;
     }
     
     // Remove event socket from reactor and delete
+    // IMPORTANT: preserve_inheritor = true because _inheritor points to this queue itself!
+    // We will free the queue at the end of this function with DAP_DELETE(a_queue)
     if (a_queue->event_socket) {
-        dap_events_socket_remove_and_delete_unsafe(a_queue->event_socket, false);
+        dap_events_socket_remove_and_delete_unsafe(a_queue->event_socket, true);
         a_queue->event_socket = NULL;
-    }
-    
-    // Delete ring buffer
-    if (a_queue->ring_buffer) {
-        dap_ring_buffer_delete(a_queue->ring_buffer);
-        a_queue->ring_buffer = NULL;
     }
     
     DAP_DELETE(a_queue);

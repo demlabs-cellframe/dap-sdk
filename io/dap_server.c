@@ -562,3 +562,105 @@ void dap_server_delete(dap_server_t *a_server)
     //DAP_DELETE(a_server->_inheritor);
     DAP_DELETE(a_server);
 }
+
+/**
+ * @brief Callback for synchronous listener deletion
+ */
+typedef struct {
+    dap_events_socket_uuid_t uuid;
+    pthread_mutex_t *mutex;
+    pthread_cond_t *cond;
+    bool *completed;
+} s_delete_listener_sync_ctx_t;
+
+static void s_delete_listener_sync_callback(void *a_arg)
+{
+    s_delete_listener_sync_ctx_t *l_ctx = (s_delete_listener_sync_ctx_t *)a_arg;
+    if (!l_ctx) return;
+    
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (l_worker && l_worker->context) {
+        dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
+        if (l_es) {
+            dap_events_socket_remove_and_delete_unsafe(l_es, false);
+        }
+    }
+    
+    // Signal completion
+    pthread_mutex_lock(l_ctx->mutex);
+    *l_ctx->completed = true;
+    pthread_cond_signal(l_ctx->cond);
+    pthread_mutex_unlock(l_ctx->mutex);
+}
+
+/**
+ * @brief Synchronous server delete - waits for all listeners to be removed
+ * 
+ * This function removes all listener sockets synchronously, waiting for each
+ * deletion to complete on its owning worker thread before proceeding.
+ * Use this when you need to ensure all sockets are fully cleaned up before
+ * continuing (e.g., before dap_events_deinit).
+ * 
+ * @param a_server Server to delete
+ */
+void dap_server_delete_sync(dap_server_t *a_server)
+{
+    dap_return_if_pass(!a_server);
+    
+    // Delete each listener synchronously
+    while (a_server->es_listeners) {
+        dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
+        
+        if (l_es && l_es->worker) {
+            // Check if we're on the same worker thread
+            dap_worker_t *l_current = dap_worker_get_current();
+            if (l_current == l_es->worker) {
+                // Same thread - delete directly
+                dap_events_socket_remove_and_delete_unsafe(l_es, false);
+            } else {
+                // Different thread - use sync callback
+                pthread_mutex_t l_mutex = PTHREAD_MUTEX_INITIALIZER;
+                pthread_cond_t l_cond = PTHREAD_COND_INITIALIZER;
+                bool l_completed = false;
+                
+                s_delete_listener_sync_ctx_t l_ctx = {
+                    .uuid = l_es->uuid,
+                    .mutex = &l_mutex,
+                    .cond = &l_cond,
+                    .completed = &l_completed
+                };
+                
+                // Schedule deletion on worker
+                dap_worker_exec_callback_on(l_es->worker, s_delete_listener_sync_callback, &l_ctx);
+                
+                // Wait for completion with timeout (5 seconds max)
+                struct timespec l_timeout;
+                clock_gettime(CLOCK_REALTIME, &l_timeout);
+                l_timeout.tv_sec += 5;
+                
+                pthread_mutex_lock(&l_mutex);
+                while (!l_completed) {
+                    int l_ret = pthread_cond_timedwait(&l_cond, &l_mutex, &l_timeout);
+                    if (l_ret == ETIMEDOUT) {
+                        log_it(L_WARNING, "Timeout waiting for listener deletion on worker %u", l_es->worker->id);
+                        break;
+                    }
+                }
+                pthread_mutex_unlock(&l_mutex);
+                
+                pthread_mutex_destroy(&l_mutex);
+                pthread_cond_destroy(&l_cond);
+            }
+        }
+        
+        // Remove from list
+        dap_list_t *l_tmp = a_server->es_listeners;
+        a_server->es_listeners = l_tmp->next;
+        DAP_DELETE(l_tmp);
+    }
+    
+    if (a_server->delete_callback)
+        a_server->delete_callback(a_server, NULL);
+
+    DAP_DELETE(a_server);
+}

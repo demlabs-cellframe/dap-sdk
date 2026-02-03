@@ -137,9 +137,11 @@ static void test_thread_pool_pending_count(void)
     dap_thread_pool_t *l_pool = dap_thread_pool_create(1, 100);  // Single worker
     dap_assert(l_pool != NULL, "Thread pool creation should succeed");
     
-    // Submit multiple tasks quickly
+    // Submit multiple tasks quickly - use array to ensure args survive
+    static int l_pending_args[5];
     for (int i = 0; i < 5; i++) {
-        dap_thread_pool_submit(l_pool, s_simple_task, &(int){i}, NULL, NULL);
+        l_pending_args[i] = i;
+        dap_thread_pool_submit(l_pool, s_simple_task, &l_pending_args[i], NULL, NULL);
     }
     
     // Check pending count (should be > 0 initially)
@@ -168,12 +170,13 @@ static void test_thread_pool_queue_overflow(void)
     dap_thread_pool_t *l_pool = dap_thread_pool_create(1, 2);
     dap_assert(l_pool != NULL, "Thread pool creation should succeed");
     
-    // Submit tasks until queue is full
+    // Submit tasks until queue is full - use static to ensure arg survives
+    static int l_overflow_arg = 1;
     int l_success = 0;
     int l_failed = 0;
     
     for (int i = 0; i < 10; i++) {
-        int l_ret = dap_thread_pool_submit(l_pool, s_simple_task, &(int){1}, NULL, NULL);
+        int l_ret = dap_thread_pool_submit(l_pool, s_simple_task, &l_overflow_arg, NULL, NULL);
         if (l_ret == 0) {
             l_success++;
         } else if (l_ret == -3) {  // Queue full
@@ -204,9 +207,11 @@ static void test_thread_pool_shutdown(void)
     dap_thread_pool_t *l_pool = dap_thread_pool_create(2, 100);
     dap_assert(l_pool != NULL, "Thread pool creation should succeed");
     
-    // Submit tasks
+    // Submit tasks - use array to ensure args survive until task execution
+    static int l_shutdown_args[5];
     for (int i = 0; i < 5; i++) {
-        dap_thread_pool_submit(l_pool, s_simple_task, &(int){i + 1}, NULL, NULL);
+        l_shutdown_args[i] = i + 1;
+        dap_thread_pool_submit(l_pool, s_simple_task, &l_shutdown_args[i], NULL, NULL);
     }
     
     // Shutdown with timeout
@@ -234,12 +239,13 @@ static void test_thread_pool_stress(void)
     dap_thread_pool_t *l_pool = dap_thread_pool_create(4, 200);
     dap_assert(l_pool != NULL, "Thread pool creation should succeed");
     
-    // Submit 100 tasks
+    // Submit 100 tasks - use static to ensure args survive until execution
     #define STRESS_TASKS 100
+    static int l_stress_arg = 1;
     
     for (int i = 0; i < STRESS_TASKS; i++) {
-        int l_ret = dap_thread_pool_submit(l_pool, s_simple_task, &(int){1},
-                                          s_task_callback, &(int){1});
+        int l_ret = dap_thread_pool_submit(l_pool, s_simple_task, &l_stress_arg,
+                                          s_task_callback, &l_stress_arg);
         dap_assert(l_ret == 0, "Task submission should succeed");
     }
     
