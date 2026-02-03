@@ -265,7 +265,6 @@ DAP_STATIC_INLINE dap_hash_sha3_256_str_t dap_hash_sha3_256_data_to_str(const vo
     return l_ret;
 }
 
-
 #ifdef __cplusplus
 }
 #endif
