@@ -249,3 +249,47 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     LABELS "unit;net;trans;dns"
 )
 
+# ============================================================================
+# Test: UDP Trans Multi-Client Regression Test
+# Tests handshake + encryption with multiple concurrent clients
+# ============================================================================
+project(test_trans_udp_multiclient)
+
+add_executable(${PROJECT_NAME}
+    test_trans_udp_multiclient.c
+)
+
+# Link dependencies
+dap_test_link_libraries(${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+    dap_http_client 
+    dap_http_server 
+    dap_http_common 
+    dap_enc_server 
+    dap_json-c
+)
+
+# Include directories
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${TRANSPORT_TEST_INCLUDE_DIRS})
+
+# Enable automatic mock wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# Add to CTest
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 120
+    LABELS "unit;net;trans;udp;multiclient;regression"
+)
+
+message("[+] UDP Trans Multi-Client test - regression test for handshake + encryption")
+
