@@ -24,7 +24,8 @@ typedef svuint64_t VTYPE;
 #define LOAD_RC(i)      svld1_u64(svwhilelt_b64(0, 1), s_round_constants + (i))
 
 // Rotation - SVE2 provides variable rotation
-#define ROL1(x)         svlsl_n_u64_z(svptrue_b64(), x, 1) | svshr_n_u64_z(svptrue_b64(), x, 63)
+// Use svorr for OR operation (not C operator |), svlsr for logical shift right
+#define ROL1(x)         svorr_u64_z(svptrue_b64(), svlsl_n_u64_z(svptrue_b64(), x, 1), svlsr_n_u64_z(svptrue_b64(), x, 63))
 
 // Theta permutation indices
 static const uint64_t s_theta_prev_idx[8] = {4, 0, 1, 2, 3, 5, 6, 7};
