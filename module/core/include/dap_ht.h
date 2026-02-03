@@ -45,8 +45,9 @@ extern "C" {
 #define DAP_HT_INITIAL_BUCKETS 32
 #endif
 
+// Lower load factor = shorter chains = faster lookup
 #ifndef DAP_HT_LOAD_FACTOR
-#define DAP_HT_LOAD_FACTOR 75
+#define DAP_HT_LOAD_FACTOR 50
 #endif
 
 // Default hash function - xxHash (fastest)
@@ -177,12 +178,28 @@ static inline void dap_ht_add_impl(void **head, void *add, dap_ht_handle_t *add_
     tbl->num_items++;
 }
 
+// Prefetch hint for better cache performance
+#if defined(__GNUC__) || defined(__clang__)
+#define DAP_HT_PREFETCH(addr) __builtin_prefetch(addr, 0, 1)
+#else
+#define DAP_HT_PREFETCH(addr) (void)(addr)
+#endif
+
+/**
+ * OPTIMIZED find:
+ * - Compare hash first (fast integer comparison for rejection)
+ * - Prefetch next element to hide memory latency
+ */
 static inline void* dap_ht_find_impl(dap_ht_table_t *tbl, const void *key, unsigned keylen) {
     if (!tbl) return NULL;
     uint32_t hashv = DAP_HT_HASH(key, keylen);
     unsigned bkt = DAP_HT_TO_BKT(hashv, tbl->num_buckets);
     for (dap_ht_handle_t *hh = tbl->buckets[bkt].head; hh; hh = hh->hh_next) {
-        if (hh->keylen == keylen && memcmp(hh->key, key, keylen) == 0)
+        // Prefetch next element while comparing current
+        if (hh->hh_next) DAP_HT_PREFETCH(hh->hh_next);
+        // Fast path: compare hash first (single 32-bit comparison)
+        // Then keylen, then full key - avoids expensive memcmp on misses
+        if (hh->hashv == hashv && hh->keylen == keylen && memcmp(hh->key, key, keylen) == 0)
             return DAP_HT_FROM_HH(tbl, hh);
     }
     return NULL;
@@ -378,7 +395,9 @@ static inline void* dap_ht_find_by_hashvalue_impl(dap_ht_table_t *tbl, const voi
     if (!tbl) return NULL;
     unsigned bkt = DAP_HT_TO_BKT(hashv, tbl->num_buckets);
     for (dap_ht_handle_t *hh = tbl->buckets[bkt].head; hh; hh = hh->hh_next) {
-        if (hh->keylen == keylen && memcmp(hh->key, key, keylen) == 0)
+        if (hh->hh_next) DAP_HT_PREFETCH(hh->hh_next);
+        // Hash already matches (pre-computed), just check keylen and content
+        if (hh->hashv == hashv && hh->keylen == keylen && memcmp(hh->key, key, keylen) == 0)
             return DAP_HT_FROM_HH(tbl, hh);
     }
     return NULL;
