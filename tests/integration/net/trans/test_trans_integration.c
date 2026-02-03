@@ -1254,10 +1254,19 @@ static void test_02_sequential_trans_testing(void)
     
     for (size_t trans_idx = 0; trans_idx < TRANS_CONFIG_COUNT; trans_idx++) {
         printf("  %s:\n", g_trans_configs[trans_idx].name);
+        size_t l_passed = s_test_stats.scenarios_passed[trans_idx];
+        size_t l_failed = s_test_stats.scenarios_failed[trans_idx];
+        size_t l_tested = l_passed + l_failed;
         for (size_t scenario_idx = 0; scenario_idx < SCENARIO_COUNT; scenario_idx++) {
-            printf("    - %s: %s\n", 
-                   g_scenarios[scenario_idx].name,
-                   l_all_passed ? "✅ PASSED" : "❌ FAILED");
+            const char *l_status;
+            if (scenario_idx < l_passed) {
+                l_status = "✅ PASSED";
+            } else if (scenario_idx < l_tested) {
+                l_status = "❌ FAILED";
+            } else {
+                l_status = "⏭️ SKIPPED";
+            }
+            printf("    - %s: %s\n", g_scenarios[scenario_idx].name, l_status);
         }
     }
     
