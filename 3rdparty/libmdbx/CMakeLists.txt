@@ -311,8 +311,8 @@ if(NOT DEFINED THREADS_PREFER_PTHREAD_FLAG)
   set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 endif()
 
-# Android: threads are built into libc (bionic), no separate pthread library
-if(NOT ANDROID)
+# Android/macOS: threads are built into libc, no separate pthread library needed
+if(NOT ANDROID AND NOT APPLE)
   find_package(Threads REQUIRED)
 endif()
 
