@@ -1,7 +1,7 @@
 /*
- * secp256k1 ECDSA Performance Benchmark
+ * ECDSA secp256k1 Performance Benchmark
  * 
- * Compares DAP native implementation with:
+ * Compares DAP native implementation (dap_sig_ecdsa) with:
  *   - bitcoin-core/secp256k1 (reference)
  *   - OpenSSL ECDSA
  * 
@@ -24,11 +24,9 @@
 
 #include "dap_common.h"
 #include "rand/dap_rand.h"
+#include "dap_sig_ecdsa.h"
 
-// DAP secp256k1 (when implemented)
-// #include "dap_secp256k1.h"
-
-// Current 3rdparty secp256k1 (baseline until DAP implementation is ready)
+// Current 3rdparty secp256k1 (baseline until DAP native implementation is complete)
 #include "secp256k1.h"
 
 #ifdef BENCHMARK_SECP256K1_BITCOIN_CORE
