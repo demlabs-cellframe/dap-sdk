@@ -16,7 +16,6 @@
 #include <string.h>
 #include <pthread.h>
 #include <errno.h>
-#include <time.h>
 #include "dap_common.h"
 #include "dap_time.h"
 #include "dap_io_flow_ctrl.h"
@@ -399,9 +398,12 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     pthread_mutex_lock(&a_ctrl->lifecycle_mutex);
     while (atomic_load_explicit(&a_ctrl->active_ops, memory_order_acquire) > 0) {
         // Use timed wait to detect stuck operations (debug aid)
-        struct timespec l_timeout;
-        clock_gettime(CLOCK_REALTIME, &l_timeout);
-        l_timeout.tv_sec += 5;  // 5 second timeout for debug
+        dap_nanotime_t l_now = dap_nanotime_now();
+        dap_nanotime_t l_deadline = l_now + dap_nanotime_from_sec(5);  // 5 second timeout
+        struct timespec l_timeout = {
+            .tv_sec = (time_t)(l_deadline / DAP_NSEC_PER_SEC),
+            .tv_nsec = (long)(l_deadline % DAP_NSEC_PER_SEC)
+        };
         
         int l_ret = pthread_cond_timedwait(&a_ctrl->lifecycle_cond, 
                                             &a_ctrl->lifecycle_mutex, 
