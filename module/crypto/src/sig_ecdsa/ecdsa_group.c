@@ -1,0 +1,502 @@
+/*
+ * Internal ECDSA group operations implementation
+ * 
+ * secp256k1 curve: y² = x³ + 7 (mod p)
+ * Generator point G and operations on curve points.
+ */
+
+#include "ecdsa_group.h"
+#include <string.h>
+
+// =============================================================================
+// secp256k1 Generator Point G
+// Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+// Gy = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+// =============================================================================
+
+// These are set in ecdsa_ecmult_gen_init()
+static ecdsa_ge_t s_generator;
+static bool s_generator_initialized = false;
+
+const ecdsa_ge_t ECDSA_GENERATOR = {
+    .infinity = false
+    // x and y are set during init
+};
+
+// =============================================================================
+// Affine Point Operations
+// =============================================================================
+
+void ecdsa_ge_set_infinity(ecdsa_ge_t *r) {
+    ecdsa_field_clear(&r->x);
+    ecdsa_field_clear(&r->y);
+    r->infinity = true;
+}
+
+bool ecdsa_ge_is_infinity(const ecdsa_ge_t *a) {
+    return a->infinity;
+}
+
+// Check if point is on curve: y² = x³ + 7
+bool ecdsa_ge_is_valid(const ecdsa_ge_t *a) {
+    if (a->infinity) return true;
+    
+    ecdsa_field_t y2, x3, x3_7;
+    
+    // y²
+    ecdsa_field_sqr(&y2, &a->y);
+    ecdsa_field_normalize(&y2);
+    
+    // x³
+    ecdsa_field_sqr(&x3, &a->x);
+    ecdsa_field_mul(&x3, &x3, &a->x);
+    
+    // x³ + 7
+    ecdsa_field_t seven;
+    ecdsa_field_set_int(&seven, 7);
+    ecdsa_field_add(&x3_7, &x3, &seven);
+    ecdsa_field_normalize(&x3_7);
+    
+    return ecdsa_field_equal(&y2, &x3_7);
+}
+
+bool ecdsa_ge_set_xy(ecdsa_ge_t *r, const ecdsa_field_t *x, const ecdsa_field_t *y) {
+    r->infinity = false;
+    ecdsa_field_copy(&r->x, x);
+    ecdsa_field_copy(&r->y, y);
+    return ecdsa_ge_is_valid(r);
+}
+
+// Set point from x-coordinate and odd/even flag
+bool ecdsa_ge_set_xo(ecdsa_ge_t *r, const ecdsa_field_t *x, bool odd) {
+    ecdsa_field_t x3, y2, y;
+    
+    // y² = x³ + 7
+    ecdsa_field_sqr(&x3, x);
+    ecdsa_field_mul(&x3, &x3, x);
+    
+    ecdsa_field_t seven;
+    ecdsa_field_set_int(&seven, 7);
+    ecdsa_field_add(&y2, &x3, &seven);
+    
+    // y = sqrt(y²)
+    if (!ecdsa_field_sqrt(&y, &y2)) {
+        return false;  // No square root exists
+    }
+    
+    ecdsa_field_normalize(&y);
+    
+    // Choose correct root based on odd flag
+    if (ecdsa_field_is_odd(&y) != odd) {
+        ecdsa_field_negate(&y, &y, 1);
+        ecdsa_field_normalize(&y);
+    }
+    
+    r->infinity = false;
+    ecdsa_field_copy(&r->x, x);
+    ecdsa_field_copy(&r->y, &y);
+    
+    return true;
+}
+
+void ecdsa_ge_neg(ecdsa_ge_t *r, const ecdsa_ge_t *a) {
+    *r = *a;
+    if (!a->infinity) {
+        ecdsa_field_negate(&r->y, &a->y, 1);
+        ecdsa_field_normalize(&r->y);
+    }
+}
+
+// =============================================================================
+// Jacobian Point Operations
+// =============================================================================
+
+void ecdsa_gej_set_infinity(ecdsa_gej_t *r) {
+    ecdsa_field_clear(&r->x);
+    ecdsa_field_clear(&r->y);
+    ecdsa_field_clear(&r->z);
+    r->infinity = true;
+}
+
+bool ecdsa_gej_is_infinity(const ecdsa_gej_t *a) {
+    return a->infinity;
+}
+
+void ecdsa_gej_set_ge(ecdsa_gej_t *r, const ecdsa_ge_t *a) {
+    r->infinity = a->infinity;
+    ecdsa_field_copy(&r->x, &a->x);
+    ecdsa_field_copy(&r->y, &a->y);
+    ecdsa_field_set_int(&r->z, 1);
+}
+
+// Convert Jacobian to affine: (X, Y, Z) -> (X/Z², Y/Z³)
+void ecdsa_ge_set_gej(ecdsa_ge_t *r, const ecdsa_gej_t *a) {
+    if (a->infinity) {
+        ecdsa_ge_set_infinity(r);
+        return;
+    }
+    
+    ecdsa_field_t z2, z3, z_inv;
+    
+    // z_inv = 1/Z
+    ecdsa_field_inv(&z_inv, &a->z);
+    
+    // z2 = 1/Z²
+    ecdsa_field_sqr(&z2, &z_inv);
+    
+    // z3 = 1/Z³
+    ecdsa_field_mul(&z3, &z2, &z_inv);
+    
+    // x = X/Z²
+    ecdsa_field_mul(&r->x, &a->x, &z2);
+    ecdsa_field_normalize(&r->x);
+    
+    // y = Y/Z³
+    ecdsa_field_mul(&r->y, &a->y, &z3);
+    ecdsa_field_normalize(&r->y);
+    
+    r->infinity = false;
+}
+
+void ecdsa_gej_neg(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
+    r->infinity = a->infinity;
+    ecdsa_field_copy(&r->x, &a->x);
+    ecdsa_field_copy(&r->z, &a->z);
+    ecdsa_field_negate(&r->y, &a->y, 1);
+    ecdsa_field_normalize(&r->y);
+}
+
+// =============================================================================
+// Point Arithmetic
+// =============================================================================
+
+// Point doubling: r = 2*a
+// Using formulas for Jacobian coordinates
+void ecdsa_gej_double(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
+    if (a->infinity) {
+        ecdsa_gej_set_infinity(r);
+        return;
+    }
+    
+    ecdsa_field_t t1, t2, t3, t4, t5;
+    
+    // For secp256k1 (a=0): simplified doubling formulas
+    // t1 = X²
+    ecdsa_field_sqr(&t1, &a->x);
+    
+    // t2 = Y²
+    ecdsa_field_sqr(&t2, &a->y);
+    
+    // t3 = Y⁴
+    ecdsa_field_sqr(&t3, &t2);
+    
+    // t4 = 2*((X+Y²)² - X² - Y⁴) = 4*X*Y²
+    ecdsa_field_add(&t4, &a->x, &t2);
+    ecdsa_field_sqr(&t4, &t4);
+    ecdsa_field_negate(&t5, &t1, 1);
+    ecdsa_field_add(&t4, &t4, &t5);
+    ecdsa_field_negate(&t5, &t3, 1);
+    ecdsa_field_add(&t4, &t4, &t5);
+    ecdsa_field_add(&t4, &t4, &t4);  // 2*S where S = 2*X*Y²
+    
+    // t5 = 3*X² (= M, since a=0)
+    ecdsa_field_add(&t5, &t1, &t1);
+    ecdsa_field_add(&t5, &t5, &t1);
+    
+    // X' = M² - 2*S
+    ecdsa_field_sqr(&r->x, &t5);
+    ecdsa_field_negate(&t1, &t4, 1);
+    ecdsa_field_add(&r->x, &r->x, &t1);
+    ecdsa_field_add(&r->x, &r->x, &t1);
+    
+    // Z' = 2*Y*Z
+    ecdsa_field_mul(&r->z, &a->y, &a->z);
+    ecdsa_field_add(&r->z, &r->z, &r->z);
+    
+    // Y' = M*(S-X') - 8*Y⁴
+    ecdsa_field_negate(&t1, &r->x, 1);
+    ecdsa_field_add(&t4, &t4, &t1);
+    ecdsa_field_mul(&t4, &t4, &t5);
+    ecdsa_field_add(&t3, &t3, &t3);  // 2*Y⁴
+    ecdsa_field_add(&t3, &t3, &t3);  // 4*Y⁴
+    ecdsa_field_add(&t3, &t3, &t3);  // 8*Y⁴
+    ecdsa_field_negate(&t3, &t3, 1);
+    ecdsa_field_add(&r->y, &t4, &t3);
+    
+    ecdsa_field_normalize(&r->x);
+    ecdsa_field_normalize(&r->y);
+    ecdsa_field_normalize(&r->z);
+    
+    r->infinity = false;
+}
+
+// Point addition: r = a + b (Jacobian + affine)
+void ecdsa_gej_add_ge(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_ge_t *b) {
+    if (a->infinity) {
+        ecdsa_gej_set_ge(r, b);
+        return;
+    }
+    if (b->infinity) {
+        *r = *a;
+        return;
+    }
+    
+    ecdsa_field_t z12, u1, u2, s1, s2, h, i, j, rr, v, t;
+    
+    // Z1² 
+    ecdsa_field_sqr(&z12, &a->z);
+    
+    // U1 = X1 (already in Jacobian form relative to Z1)
+    ecdsa_field_copy(&u1, &a->x);
+    
+    // U2 = X2 * Z1²
+    ecdsa_field_mul(&u2, &b->x, &z12);
+    
+    // S1 = Y1
+    ecdsa_field_copy(&s1, &a->y);
+    
+    // S2 = Y2 * Z1³
+    ecdsa_field_mul(&s2, &z12, &a->z);
+    ecdsa_field_mul(&s2, &s2, &b->y);
+    
+    // H = U2 - U1
+    ecdsa_field_negate(&t, &u1, 1);
+    ecdsa_field_add(&h, &u2, &t);
+    ecdsa_field_normalize(&h);
+    
+    // Check if H = 0 (same x-coordinate)
+    if (ecdsa_field_is_zero(&h)) {
+        ecdsa_field_negate(&t, &s1, 1);
+        ecdsa_field_add(&t, &s2, &t);
+        ecdsa_field_normalize(&t);
+        
+        if (ecdsa_field_is_zero(&t)) {
+            // Points are equal, double
+            ecdsa_gej_double(r, a);
+            return;
+        } else {
+            // Points are negatives, result is infinity
+            ecdsa_gej_set_infinity(r);
+            return;
+        }
+    }
+    
+    // I = (2*H)²
+    ecdsa_field_add(&i, &h, &h);
+    ecdsa_field_sqr(&i, &i);
+    
+    // J = H * I
+    ecdsa_field_mul(&j, &h, &i);
+    
+    // rr = 2*(S2 - S1)
+    ecdsa_field_negate(&t, &s1, 1);
+    ecdsa_field_add(&rr, &s2, &t);
+    ecdsa_field_add(&rr, &rr, &rr);
+    
+    // V = U1 * I
+    ecdsa_field_mul(&v, &u1, &i);
+    
+    // X3 = rr² - J - 2*V
+    ecdsa_field_sqr(&r->x, &rr);
+    ecdsa_field_negate(&t, &j, 1);
+    ecdsa_field_add(&r->x, &r->x, &t);
+    ecdsa_field_negate(&t, &v, 1);
+    ecdsa_field_add(&r->x, &r->x, &t);
+    ecdsa_field_add(&r->x, &r->x, &t);
+    
+    // Y3 = rr*(V - X3) - 2*S1*J
+    ecdsa_field_negate(&t, &r->x, 1);
+    ecdsa_field_add(&t, &v, &t);
+    ecdsa_field_mul(&r->y, &rr, &t);
+    ecdsa_field_mul(&t, &s1, &j);
+    ecdsa_field_add(&t, &t, &t);
+    ecdsa_field_negate(&t, &t, 1);
+    ecdsa_field_add(&r->y, &r->y, &t);
+    
+    // Z3 = 2*Z1*H
+    ecdsa_field_mul(&r->z, &a->z, &h);
+    ecdsa_field_add(&r->z, &r->z, &r->z);
+    
+    ecdsa_field_normalize(&r->x);
+    ecdsa_field_normalize(&r->y);
+    ecdsa_field_normalize(&r->z);
+    
+    r->infinity = false;
+}
+
+// Point addition: r = a + b (both Jacobian)
+void ecdsa_gej_add(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_gej_t *b) {
+    if (a->infinity) {
+        *r = *b;
+        return;
+    }
+    if (b->infinity) {
+        *r = *a;
+        return;
+    }
+    
+    // Convert b to affine for simplicity (slower but correct)
+    ecdsa_ge_t b_affine;
+    ecdsa_ge_set_gej(&b_affine, b);
+    ecdsa_gej_add_ge(r, a, &b_affine);
+}
+
+// =============================================================================
+// Scalar Multiplication
+// =============================================================================
+
+// Generator multiplication: r = n*G
+void ecdsa_ecmult_gen(ecdsa_gej_t *r, const ecdsa_scalar_t *n) {
+    if (!s_generator_initialized) {
+        ecdsa_ecmult_gen_init();
+    }
+    
+    // Simple double-and-add
+    ecdsa_gej_set_infinity(r);
+    
+    // Get scalar bytes
+    uint8_t nb[32];
+    ecdsa_scalar_get_b32(nb, n);
+    
+    ecdsa_gej_t tmp;
+    ecdsa_gej_set_ge(&tmp, &s_generator);
+    
+    for (int i = 31; i >= 0; i--) {
+        for (int j = 0; j < 8; j++) {
+            if (!ecdsa_gej_is_infinity(r)) {
+                ecdsa_gej_double(r, r);
+            }
+            if ((nb[31-i] >> (7-j)) & 1) {
+                if (ecdsa_gej_is_infinity(r)) {
+                    *r = tmp;
+                } else {
+                    ecdsa_gej_add_ge(r, r, &s_generator);
+                }
+            }
+        }
+    }
+}
+
+// General scalar multiplication: r = na*a + ng*G
+void ecdsa_ecmult(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_scalar_t *na, const ecdsa_scalar_t *ng) {
+    ecdsa_gej_t ra, rg;
+    
+    // Compute na*a
+    if (a && na && !ecdsa_scalar_is_zero(na)) {
+        ecdsa_ge_t a_affine;
+        ecdsa_ge_set_gej(&a_affine, a);
+        ecdsa_ecmult_const(&ra, &a_affine, na);
+    } else {
+        ecdsa_gej_set_infinity(&ra);
+    }
+    
+    // Compute ng*G
+    if (ng && !ecdsa_scalar_is_zero(ng)) {
+        ecdsa_ecmult_gen(&rg, ng);
+    } else {
+        ecdsa_gej_set_infinity(&rg);
+    }
+    
+    // r = ra + rg
+    ecdsa_gej_add(r, &ra, &rg);
+}
+
+// Constant-time scalar multiplication: r = n*a
+void ecdsa_ecmult_const(ecdsa_gej_t *r, const ecdsa_ge_t *a, const ecdsa_scalar_t *n) {
+    // Simple double-and-add (not constant-time, TODO: implement constant-time version)
+    ecdsa_gej_set_infinity(r);
+    
+    uint8_t nb[32];
+    ecdsa_scalar_get_b32(nb, n);
+    
+    for (int i = 0; i < 32; i++) {
+        for (int j = 7; j >= 0; j--) {
+            ecdsa_gej_double(r, r);
+            if ((nb[i] >> j) & 1) {
+                ecdsa_gej_add_ge(r, r, a);
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Serialization
+// =============================================================================
+
+bool ecdsa_ge_serialize(const ecdsa_ge_t *a, bool compressed, uint8_t *output, size_t *outputlen) {
+    if (a->infinity) {
+        return false;
+    }
+    
+    uint8_t x[32], y[32];
+    ecdsa_field_get_b32(x, &a->x);
+    ecdsa_field_get_b32(y, &a->y);
+    
+    if (compressed) {
+        if (*outputlen < 33) return false;
+        output[0] = ecdsa_field_is_odd(&a->y) ? 0x03 : 0x02;
+        memcpy(output + 1, x, 32);
+        *outputlen = 33;
+    } else {
+        if (*outputlen < 65) return false;
+        output[0] = 0x04;
+        memcpy(output + 1, x, 32);
+        memcpy(output + 33, y, 32);
+        *outputlen = 65;
+    }
+    
+    return true;
+}
+
+bool ecdsa_ge_parse(ecdsa_ge_t *r, const uint8_t *input, size_t inputlen) {
+    if (inputlen == 0) return false;
+    
+    uint8_t prefix = input[0];
+    
+    if (prefix == 0x04 && inputlen == 65) {
+        // Uncompressed
+        ecdsa_field_t x, y;
+        if (!ecdsa_field_set_b32(&x, input + 1)) return false;
+        if (!ecdsa_field_set_b32(&y, input + 33)) return false;
+        return ecdsa_ge_set_xy(r, &x, &y);
+    } else if ((prefix == 0x02 || prefix == 0x03) && inputlen == 33) {
+        // Compressed
+        ecdsa_field_t x;
+        if (!ecdsa_field_set_b32(&x, input + 1)) return false;
+        return ecdsa_ge_set_xo(r, &x, prefix == 0x03);
+    }
+    
+    return false;
+}
+
+// =============================================================================
+// Initialization
+// =============================================================================
+
+void ecdsa_ecmult_gen_init(void) {
+    if (s_generator_initialized) return;
+    
+    // Generator point coordinates
+    const uint8_t gx[32] = {
+        0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC,
+        0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B, 0x07,
+        0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9,
+        0x59, 0xF2, 0x81, 0x5B, 0x16, 0xF8, 0x17, 0x98
+    };
+    const uint8_t gy[32] = {
+        0x48, 0x3A, 0xDA, 0x77, 0x26, 0xA3, 0xC4, 0x65,
+        0x5D, 0xA4, 0xFB, 0xFC, 0x0E, 0x11, 0x08, 0xA8,
+        0xFD, 0x17, 0xB4, 0x48, 0xA6, 0x85, 0x54, 0x19,
+        0x9C, 0x47, 0xD0, 0x8F, 0xFB, 0x10, 0xD4, 0xB8
+    };
+    
+    ecdsa_field_set_b32(&s_generator.x, gx);
+    ecdsa_field_set_b32(&s_generator.y, gy);
+    s_generator.infinity = false;
+    
+    s_generator_initialized = true;
+}
+
+void ecdsa_ecmult_gen_deinit(void) {
+    s_generator_initialized = false;
+}
