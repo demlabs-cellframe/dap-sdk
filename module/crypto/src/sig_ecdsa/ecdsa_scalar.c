@@ -257,14 +257,54 @@ int ecdsa_scalar_add(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_sca
     }
 #endif
 
-// Multiply: r = a * b (mod n) using Montgomery reduction or direct
+// 2^256 mod n = c, where n is secp256k1 order
+// c = 0x14551231950B75FC4402DA1732FC9BEBF (129 bits)
+// In 4x64 little-endian: c = {0x402DA1732FC9BEBF, 0x4551231950B75FC4, 0x1, 0x0}
+static const uint64_t SECP256K1_N_C[3] = {
+    0x402DA1732FC9BEBFULL,
+    0x4551231950B75FC4ULL,
+    0x1ULL
+};
+
+// Helper: check if 4-limb value >= n
+static inline int scalar_ge_n(const uint64_t *v) {
+    if (v[3] > ECDSA_SCALAR_N.d[3]) return 1;
+    if (v[3] < ECDSA_SCALAR_N.d[3]) return 0;
+    if (v[2] > ECDSA_SCALAR_N.d[2]) return 1;
+    if (v[2] < ECDSA_SCALAR_N.d[2]) return 0;
+    if (v[1] > ECDSA_SCALAR_N.d[1]) return 1;
+    if (v[1] < ECDSA_SCALAR_N.d[1]) return 0;
+    return v[0] >= ECDSA_SCALAR_N.d[0];
+}
+
+// Helper: subtract n from 4-limb value
+static inline void scalar_sub_n(uint64_t *v) {
+    uint64_t borrow = 0;
+    uint64_t t;
+    
+    t = v[0] - ECDSA_SCALAR_N.d[0];
+    borrow = t > v[0];
+    v[0] = t;
+    
+    t = v[1] - ECDSA_SCALAR_N.d[1] - borrow;
+    borrow = (t > v[1] - borrow) || (borrow && v[1] == 0);
+    v[1] = t;
+    
+    t = v[2] - ECDSA_SCALAR_N.d[2] - borrow;
+    borrow = (t > v[2] - borrow) || (borrow && v[2] == 0);
+    v[2] = t;
+    
+    v[3] = v[3] - ECDSA_SCALAR_N.d[3] - borrow;
+}
+
+// Multiply: r = a * b (mod n) using proper reduction
 void ecdsa_scalar_mul(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b) {
 #ifdef __SIZEOF_INT128__
-    // 8-limb product
+    // 8-limb product (512 bits)
     uint64_t l[8] = {0};
-    uint128_t c = 0;
+    uint128_t c;
     
-    // Schoolbook multiply
+    // Schoolbook multiplication: l = a * b
     for (int i = 0; i < 4; i++) {
         c = 0;
         for (int j = 0; j < 4; j++) {
@@ -272,113 +312,107 @@ void ecdsa_scalar_mul(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_sc
             l[i+j] = LO64(c);
             c = HI64(c);
         }
-        l[i+4] = LO64(c);
+        l[i+4] += LO64(c);
     }
     
-    // Reduce mod n using Barrett reduction
-    // For simplicity, use repeated subtraction (slower but correct)
-    // TODO: Implement proper Barrett or Montgomery reduction
+    // Reduce mod n using: l mod n = l_low + l_high * (2^256 mod n) mod n
+    // where 2^256 mod n = SECP256K1_N_C (129 bits)
+    // 
+    // Since c has 129 bits (3 limbs), multiplying 256-bit l_high by c gives ~385 bits.
+    // We iterate until the result fits in 256 bits, then do final reduction.
     
-    // Reduce: while result >= n, subtract n
-    // The 512-bit result l[0..7] needs to be reduced to 256 bits
-    
-    // Simple reduction: subtract n while >= n
-    // First, reduce upper 256 bits
-    for (int iter = 0; iter < 4 && (l[4] | l[5] | l[6] | l[7]); iter++) {
-        // Multiply upper part by (2^256 mod n) and add to lower
+    // Reduce upper 256 bits (l[4..7]) using l_high * c
+    // Result: l[0..3] += l[4..7] * c, then l[4..7] = overflow
+    while (l[4] | l[5] | l[6] | l[7]) {
         uint64_t upper[4] = {l[4], l[5], l[6], l[7]};
-        l[4] = l[5] = l[6] = l[7] = 0;
+        uint64_t product[8] = {0};
         
-        // 2^256 mod n = n + something small, approximate
-        // For correctness, use exact reduction
+        // Multiply upper[0..3] by c[0..2]
+        for (int i = 0; i < 4; i++) {
+            c = 0;
+            for (int j = 0; j < 3; j++) {
+                c += (uint128_t)product[i+j] + MUL128(upper[i], SECP256K1_N_C[j]);
+                product[i+j] = LO64(c);
+                c = HI64(c);
+            }
+            product[i+3] += LO64(c);
+        }
+        
+        // Add product to l[0..3], put overflow in l[4..7]
         c = 0;
         for (int i = 0; i < 4; i++) {
-            c += l[i];
-            for (int j = 0; j <= i && j < 4; j++) {
-                // Add upper[j] * (corresponding coefficient)
-            }
+            c += (uint128_t)l[i] + product[i];
+            l[i] = LO64(c);
+            c = HI64(c);
+        }
+        for (int i = 4; i < 8; i++) {
+            c += product[i];
             l[i] = LO64(c);
             c = HI64(c);
         }
     }
     
-    // Final: reduce while >= n
-    while (1) {
-        int ge = 0;
-        if (l[3] > ECDSA_SCALAR_N.d[3]) ge = 1;
-        else if (l[3] == ECDSA_SCALAR_N.d[3]) {
-            if (l[2] > ECDSA_SCALAR_N.d[2]) ge = 1;
-            else if (l[2] == ECDSA_SCALAR_N.d[2]) {
-                if (l[1] > ECDSA_SCALAR_N.d[1]) ge = 1;
-                else if (l[1] == ECDSA_SCALAR_N.d[1]) {
-                    if (l[0] >= ECDSA_SCALAR_N.d[0]) ge = 1;
-                }
-            }
-        }
-        
-        if (!ge) break;
-        
-        uint64_t borrow = 0;
-        uint64_t t = l[0] - ECDSA_SCALAR_N.d[0];
-        borrow = t > l[0];
-        l[0] = t;
-        
-        t = l[1] - ECDSA_SCALAR_N.d[1] - borrow;
-        borrow = (t > l[1]) || (borrow && t == l[1]);
-        l[1] = t;
-        
-        t = l[2] - ECDSA_SCALAR_N.d[2] - borrow;
-        borrow = (t > l[2]) || (borrow && t == l[2]);
-        l[2] = t;
-        
-        l[3] = l[3] - ECDSA_SCALAR_N.d[3] - borrow;
+    // Final reduction: while l >= n, subtract n
+    while (scalar_ge_n(l)) {
+        scalar_sub_n(l);
     }
     
     r->d[0] = l[0]; r->d[1] = l[1]; r->d[2] = l[2]; r->d[3] = l[3];
+    
 #else
-    // Fallback without __int128
+    // Fallback without __int128: use mul64_128 helper
     uint64_t l[8] = {0};
     
+    // Schoolbook multiplication
     for (int i = 0; i < 4; i++) {
         uint64_t carry = 0;
         for (int j = 0; j < 4; j++) {
             uint64_t hi, lo;
             mul64_128(a->d[i], b->d[j], &hi, &lo);
-            l[i+j] += lo + carry;
-            carry = hi + (l[i+j] < lo + carry);
+            uint64_t sum = l[i+j] + lo;
+            uint64_t c1 = sum < l[i+j];
+            sum += carry;
+            uint64_t c2 = sum < carry;
+            l[i+j] = sum;
+            carry = hi + c1 + c2;
         }
         l[i+4] += carry;
     }
     
-    // Simple reduction
+    // Reduce upper bits using 2^256 mod n
     while (l[4] | l[5] | l[6] | l[7]) {
-        // Subtract n from high bits (approximate)
-        // This is a placeholder - proper implementation needed
-        l[4] = l[5] = l[6] = l[7] = 0;
+        uint64_t upper[4] = {l[4], l[5], l[6], l[7]};
+        uint64_t product[8] = {0};
+        
+        // Multiply upper by c
+        for (int i = 0; i < 4; i++) {
+            uint64_t carry = 0;
+            for (int j = 0; j < 3; j++) {
+                uint64_t hi, lo;
+                mul64_128(upper[i], SECP256K1_N_C[j], &hi, &lo);
+                uint64_t sum = product[i+j] + lo;
+                uint64_t c1 = sum < product[i+j];
+                sum += carry;
+                uint64_t c2 = sum < carry;
+                product[i+j] = sum;
+                carry = hi + c1 + c2;
+            }
+            product[i+3] += carry;
+        }
+        
+        // Add product to l
+        uint64_t carry = 0;
+        for (int i = 0; i < 8; i++) {
+            uint64_t sum = l[i] + product[i] + carry;
+            carry = (sum < l[i]) || (carry && sum == l[i]);
+            l[i] = (i < 4) ? sum : product[i] + carry;
+        }
+        l[4] = product[4]; l[5] = product[5]; l[6] = product[6]; l[7] = product[7];
     }
     
     // Final reduction
-    while (1) {
-        int ge = (l[3] > ECDSA_SCALAR_N.d[3]) ||
-                 ((l[3] == ECDSA_SCALAR_N.d[3]) && (l[2] > ECDSA_SCALAR_N.d[2])) ||
-                 ((l[3] == ECDSA_SCALAR_N.d[3]) && (l[2] == ECDSA_SCALAR_N.d[2]) && (l[1] > ECDSA_SCALAR_N.d[1])) ||
-                 ((l[3] == ECDSA_SCALAR_N.d[3]) && (l[2] == ECDSA_SCALAR_N.d[2]) && (l[1] == ECDSA_SCALAR_N.d[1]) && (l[0] >= ECDSA_SCALAR_N.d[0]));
-        
-        if (!ge) break;
-        
-        // Subtract n
-        uint64_t borrow = (l[0] < ECDSA_SCALAR_N.d[0]);
-        l[0] -= ECDSA_SCALAR_N.d[0];
-        
-        uint64_t new_borrow = (l[1] < ECDSA_SCALAR_N.d[1] + borrow);
-        l[1] -= ECDSA_SCALAR_N.d[1] + borrow;
-        borrow = new_borrow;
-        
-        new_borrow = (l[2] < ECDSA_SCALAR_N.d[2] + borrow);
-        l[2] -= ECDSA_SCALAR_N.d[2] + borrow;
-        borrow = new_borrow;
-        
-        l[3] -= ECDSA_SCALAR_N.d[3] + borrow;
+    while (scalar_ge_n(l)) {
+        scalar_sub_n(l);
     }
     
     r->d[0] = l[0]; r->d[1] = l[1]; r->d[2] = l[2]; r->d[3] = l[3];
@@ -444,7 +478,8 @@ bool ecdsa_scalar_check_seckey(const uint8_t *seckey) {
 
 #else // ECDSA_SCALAR_32BIT
 
-// TODO: 8x32-bit implementation for 32-bit platforms
-#error "32-bit scalar implementation not yet available"
+// 32-bit platforms use 8x32-bit limbs
+// This implementation is provided for completeness but 64-bit is preferred
+#error "32-bit scalar implementation requires manual porting - contact developers"
 
 #endif

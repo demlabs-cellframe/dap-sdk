@@ -401,22 +401,61 @@ void ecdsa_ecmult(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_scalar_t *na
     ecdsa_gej_add(r, &ra, &rg);
 }
 
-// Constant-time scalar multiplication: r = n*a
+// Constant-time conditional swap
+static void gej_cmov(ecdsa_gej_t *r, const ecdsa_gej_t *a, int flag) {
+    // flag must be 0 or 1
+    uint64_t mask = (uint64_t)0 - (uint64_t)flag;
+    
+    for (int i = 0; i < ECDSA_FIELD_LIMBS; i++) {
+        r->x.n[i] ^= mask & (r->x.n[i] ^ a->x.n[i]);
+        r->y.n[i] ^= mask & (r->y.n[i] ^ a->y.n[i]);
+        r->z.n[i] ^= mask & (r->z.n[i] ^ a->z.n[i]);
+    }
+    r->infinity = (r->infinity & ~flag) | (a->infinity & flag);
+}
+
+// Constant-time scalar multiplication using Montgomery ladder: r = n*a
+// This implementation has constant-time execution regardless of scalar bits
 void ecdsa_ecmult_const(ecdsa_gej_t *r, const ecdsa_ge_t *a, const ecdsa_scalar_t *n) {
-    // Simple double-and-add (not constant-time, TODO: implement constant-time version)
-    ecdsa_gej_set_infinity(r);
+    // Montgomery ladder: R0 = infinity, R1 = a
+    // For each bit b of n (from MSB to LSB):
+    //   if b == 0: R1 = R0 + R1, R0 = 2*R0
+    //   if b == 1: R0 = R0 + R1, R1 = 2*R1
+    // Result is R0
+    
+    ecdsa_gej_t r0, r1, tmp;
+    ecdsa_gej_set_infinity(&r0);
+    ecdsa_gej_set_ge(&r1, a);
     
     uint8_t nb[32];
     ecdsa_scalar_get_b32(nb, n);
     
     for (int i = 0; i < 32; i++) {
         for (int j = 7; j >= 0; j--) {
-            ecdsa_gej_double(r, r);
-            if ((nb[i] >> j) & 1) {
-                ecdsa_gej_add_ge(r, r, a);
-            }
+            int bit = (nb[i] >> j) & 1;
+            
+            // Constant-time: always compute both branches, select result
+            // When bit=0: R1 = R0+R1, R0 = 2*R0
+            // When bit=1: R0 = R0+R1, R1 = 2*R1
+            
+            // Swap R0 and R1 if bit is set (constant-time)
+            gej_cmov(&tmp, &r0, 1);
+            gej_cmov(&r0, &r1, bit);
+            gej_cmov(&r1, &tmp, bit);
+            
+            // Now always do: R1 = R0 + R1, R0 = 2*R0
+            ecdsa_gej_add(&tmp, &r0, &r1);
+            ecdsa_gej_double(&r0, &r0);
+            r1 = tmp;
+            
+            // Swap back if bit was set
+            gej_cmov(&tmp, &r0, 1);
+            gej_cmov(&r0, &r1, bit);
+            gej_cmov(&r1, &tmp, bit);
         }
     }
+    
+    *r = r0;
 }
 
 // =============================================================================

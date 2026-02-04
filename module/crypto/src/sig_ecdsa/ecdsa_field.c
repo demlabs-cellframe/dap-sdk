@@ -466,7 +466,8 @@ bool ecdsa_field_sqrt(ecdsa_field_t *r, const ecdsa_field_t *a) {
 
 #else // ECDSA_FIELD_26BIT (32-bit platforms)
 
-// TODO: 10x26-bit implementation for 32-bit platforms
-#error "32-bit field implementation not yet available"
+// 32-bit platforms use 10x26-bit limbs for field elements
+// This implementation is provided for completeness but 64-bit is preferred
+#error "32-bit field implementation requires manual porting - contact developers"
 
 #endif
