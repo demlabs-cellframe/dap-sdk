@@ -40,6 +40,9 @@ endif()
 # Create benchmark executable
 add_executable(benchmark_secp256k1 ${SECP256K1_BENCHMARK_SOURCES})
 
+# Suppress warn_unused_result for benchmark (we intentionally ignore some returns)
+target_compile_options(benchmark_secp256k1 PRIVATE -Wno-unused-result)
+
 # Link with DAP SDK
 target_link_libraries(benchmark_secp256k1 PRIVATE
     dap_crypto

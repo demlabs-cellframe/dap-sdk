@@ -91,7 +91,8 @@ static void generate_test_data(void) {
     // Randomize context
     uint8_t seed[32];
     randombytes(seed, sizeof(seed));
-    secp256k1_context_randomize(g_ctx, seed);
+    int ret = secp256k1_context_randomize(g_ctx, seed);
+    (void)ret;
     
     // Generate valid private keys
     for (int i = 0; i < NUM_TEST_KEYS; i++) {
@@ -131,13 +132,13 @@ static void benchmark_keygen_baseline(benchmark_result_t *result) {
     
     // Warmup
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-        secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
+        (void)secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
     }
     
     // Benchmark
     start = get_time_ns();
     for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-        secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
+        (void)secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
     }
     end = get_time_ns();
     
@@ -173,22 +174,22 @@ static void benchmark_verify_baseline(benchmark_result_t *result) {
     secp256k1_pubkey pubkeys[NUM_TEST_KEYS];
     
     for (int i = 0; i < NUM_TEST_KEYS; i++) {
-        secp256k1_ec_pubkey_create(g_ctx, &pubkeys[i], g_privkeys[i]);
-        secp256k1_ecdsa_sign(g_ctx, &sigs[i], g_messages[i], g_privkeys[i], NULL, NULL);
+        (void)secp256k1_ec_pubkey_create(g_ctx, &pubkeys[i], g_privkeys[i]);
+        (void)secp256k1_ecdsa_sign(g_ctx, &sigs[i], g_messages[i], g_privkeys[i], NULL, NULL);
     }
     
     uint64_t start, end;
     
     // Warmup
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-        secp256k1_ecdsa_verify(g_ctx, &sigs[i % NUM_TEST_KEYS], 
+        (void)secp256k1_ecdsa_verify(g_ctx, &sigs[i % NUM_TEST_KEYS], 
                               g_messages[i % NUM_TEST_KEYS], &pubkeys[i % NUM_TEST_KEYS]);
     }
     
     // Benchmark
     start = get_time_ns();
     for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-        secp256k1_ecdsa_verify(g_ctx, &sigs[i % NUM_TEST_KEYS], 
+        (void)secp256k1_ecdsa_verify(g_ctx, &sigs[i % NUM_TEST_KEYS], 
                               g_messages[i % NUM_TEST_KEYS], &pubkeys[i % NUM_TEST_KEYS]);
     }
     end = get_time_ns();
@@ -263,7 +264,7 @@ static bool verify_signatures(void) {
     
     // Test sign and verify
     for (int i = 0; i < 10; i++) {
-        secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i]);
+        (void)secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i]);
         
         if (secp256k1_ecdsa_sign(g_ctx, &sig, g_messages[i], g_privkeys[i], NULL, NULL) != 1) {
             printf("FAIL: Sign failed for key %d\n", i);
@@ -379,7 +380,7 @@ int main(int argc, char **argv) {
     printf("\n");
     
     // Initialize
-    dap_common_init("benchmark_secp256k1", NULL, NULL);
+    dap_common_init("benchmark_secp256k1", NULL);
     generate_test_data();
     
     // Run verification tests
