@@ -63,6 +63,13 @@ static void s_context_destructor(UNUSED_ARG void *a_context)
     }
 }
 
+static pthread_key_t s_context_key;
+static pthread_once_t s_key_once = PTHREAD_ONCE_INIT;
+
+static void s_key_init(void) {
+    pthread_key_create(&s_context_key, s_context_destructor);
+}
+
 static secp256k1_context *s_context_get(void) 
 {
     if (!s_context) {
@@ -72,11 +79,8 @@ static secp256k1_context *s_context_get(void)
             return NULL;
         }
         // Register destructor for thread cleanup
-        static pthread_key_t s_key;
-        static pthread_once_t s_key_once = PTHREAD_ONCE_INIT;
-        pthread_once(&s_key_once, (void(*)(void)){0}); // Dummy init
-        pthread_key_create(&s_key, s_context_destructor);
-        pthread_setspecific(s_key, s_context);
+        pthread_once(&s_key_once, s_key_init);
+        pthread_setspecific(s_context_key, s_context);
         log_it(L_DEBUG, "ECDSA context created @%p", s_context);
     }
     // Randomize on each use for side-channel protection

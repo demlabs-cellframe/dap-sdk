@@ -12,6 +12,7 @@
 #ifndef ECDSA_GROUP_H
 #define ECDSA_GROUP_H
 
+#include <stddef.h>
 #include "ecdsa_field.h"
 #include "ecdsa_scalar.h"
 

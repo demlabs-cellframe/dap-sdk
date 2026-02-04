@@ -282,16 +282,6 @@ void ecdsa_scalar_mul(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_sc
     // Reduce: while result >= n, subtract n
     // The 512-bit result l[0..7] needs to be reduced to 256 bits
     
-    // Using the fact that 2^256 ≡ (2^256 - n) (mod n)
-    // 2^256 - n = 0x14551231950B75FC4402DA1732FC9BEBF
-    const uint64_t mu[4] = {
-        0x4402DA1732FC9BEBFULL & 0xFFFFFFFFFFFFFFFFULL,
-        0x14551231950B75FC4ULL,
-        0x1ULL,
-        0x0ULL
-    };
-    (void)mu;
-    
     // Simple reduction: subtract n while >= n
     // First, reduce upper 256 bits
     for (int iter = 0; iter < 4 && (l[4] | l[5] | l[6] | l[7]); iter++) {

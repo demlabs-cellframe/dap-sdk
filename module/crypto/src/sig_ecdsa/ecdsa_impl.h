@@ -9,12 +9,13 @@
 #ifndef ECDSA_IMPL_H
 #define ECDSA_IMPL_H
 
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+
 #include "ecdsa_field.h"
 #include "ecdsa_scalar.h"
 #include "ecdsa_group.h"
-
-#include <stdint.h>
-#include <stdbool.h>
 
 // =============================================================================
 // ECDSA Signature
