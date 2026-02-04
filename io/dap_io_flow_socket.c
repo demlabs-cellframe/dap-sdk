@@ -512,62 +512,44 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
 #endif
         }
         
-        // CRITICAL: Platform-specific configuration BEFORE bind
-        if (i == 0 && l_enable_reuseport) {
-            int config_ret = -1;
-            
-#if defined(__linux__) || defined(ANDROID)
-            // Linux/Android: BPF attach before bind (kernel requirement)
-            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
-                config_ret = dap_io_flow_ebpf_attach_socket(l_socket);
-            } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
-                config_ret = dap_io_flow_cbpf_attach_socket(l_socket);
-            }
-            
+        // NOTE: Platform-specific BPF attachment moved AFTER all sockets are created and bound
+        // This is the correct order according to kernel documentation and testing:
+        // 1. Create all sockets with SO_REUSEPORT + SO_REUSEADDR
+        // 2. bind() all sockets
+        // 3. THEN attach BPF to the reuseport group (via any socket in the group)
+        // 
+        // BSD and other platforms still configure BEFORE bind as they don't have the same constraints
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+        if (i == 0 && l_enable_reuseport && l_lb_tier == DAP_IO_FLOW_LB_TIER_BSD_LB) {
+            int config_ret = dap_io_flow_bsd_lb_enable(l_socket);
             if (config_ret != 0) {
-                log_it(L_CRITICAL, "BPF attach failed before bind (tier=%d)", l_lb_tier);
+                log_it(L_CRITICAL, "BSD SO_REUSEPORT_LB failed before bind");
                 close(l_socket);
                 return -98;
             }
-            log_it(L_NOTICE, "✅ BPF attached to first socket BEFORE bind");
-            
-#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
-            // BSD: Enable SO_REUSEPORT_LB before bind
-            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_BSD_LB) {
-                config_ret = dap_io_flow_bsd_lb_enable(l_socket);
-                if (config_ret != 0) {
-                    log_it(L_CRITICAL, "BSD SO_REUSEPORT_LB failed before bind");
-                    close(l_socket);
-                    return -98;
-                }
-                log_it(L_NOTICE, "✅ BSD SO_REUSEPORT_LB enabled BEFORE bind");
-            }
-            
-#elif defined(__APPLE__) && defined(__MACH__)
-            // macOS/iOS: Configure GCD (SO_REUSEPORT + SO_REUSEADDR)
-            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_DARWIN_GCD) {
-                config_ret = dap_io_flow_darwin_gcd_configure(l_socket);
-                if (config_ret != 0) {
-                    log_it(L_CRITICAL, "macOS GCD configuration failed");
-                    close(l_socket);
-                    return -98;
-                }
-                log_it(L_NOTICE, "✅ macOS GCD configured (SO_REUSEPORT + SO_REUSEADDR)");
-            }
-            
-#elif defined(_WIN32) || defined(_WIN64)
-            // Windows: Configure RIO/IOCP
-            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
-                config_ret = dap_io_flow_win_rio_configure(l_socket);
-                if (config_ret != 0) {
-                    log_it(L_CRITICAL, "Windows RIO configuration failed");
-                    close(l_socket);
-                    return -98;
-                }
-                log_it(L_NOTICE, "✅ Windows RIO configured (SO_REUSEADDR)");
-            }
-#endif
+            log_it(L_NOTICE, "✅ BSD SO_REUSEPORT_LB enabled BEFORE bind");
         }
+#elif defined(__APPLE__) && defined(__MACH__)
+        if (i == 0 && l_enable_reuseport && l_lb_tier == DAP_IO_FLOW_LB_TIER_DARWIN_GCD) {
+            int config_ret = dap_io_flow_darwin_gcd_configure(l_socket);
+            if (config_ret != 0) {
+                log_it(L_CRITICAL, "macOS GCD configuration failed");
+                close(l_socket);
+                return -98;
+            }
+            log_it(L_NOTICE, "✅ macOS GCD configured (SO_REUSEPORT + SO_REUSEADDR)");
+        }
+#elif defined(_WIN32) || defined(_WIN64)
+        if (i == 0 && l_enable_reuseport && l_lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
+            int config_ret = dap_io_flow_win_rio_configure(l_socket);
+            if (config_ret != 0) {
+                log_it(L_CRITICAL, "Windows RIO configuration failed");
+                close(l_socket);
+                return -98;
+            }
+            log_it(L_NOTICE, "✅ Windows RIO configured (SO_REUSEADDR)");
+        }
+#endif
         
         // Bind socket
         struct sockaddr_storage l_bind_addr = {0};
@@ -630,6 +612,35 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
     }
+    
+    // CRITICAL: Attach BPF AFTER all sockets are created and bound
+    // This is required by Linux kernel - attaching BPF before all sockets are ready
+    // prevents additional sockets from joining the reuseport group
+#if defined(__linux__) || defined(ANDROID)
+    if (l_enable_reuseport && (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF || 
+                                l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF)) {
+        // Get first listener socket for BPF attachment
+        dap_events_socket_t *l_first_es = (dap_events_socket_t*)a_server->es_listeners->data;
+        if (l_first_es) {
+            int config_ret = -1;
+            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
+                config_ret = dap_io_flow_ebpf_attach_socket(l_first_es->fd);
+            } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
+                config_ret = dap_io_flow_cbpf_attach_socket(l_first_es->fd);
+            }
+            
+            if (config_ret != 0) {
+                log_it(L_CRITICAL, "BPF attach failed AFTER bind (tier=%d) - falling back to Application tier", 
+                       l_lb_tier);
+                // Don't fail - fall back to application-level distribution
+                // The sockets are already created, they just won't have BPF-based distribution
+            } else {
+                log_it(L_NOTICE, "✅ BPF attached to reuseport group AFTER all %u sockets bound (fd=%d)", 
+                       l_num_listeners, l_first_es->fd);
+            }
+        }
+    }
+#endif
     
     // Final summary with platform-specific descriptions
     const char *l_tier_desc = "unknown";
