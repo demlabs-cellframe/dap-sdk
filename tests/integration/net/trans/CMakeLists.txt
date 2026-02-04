@@ -68,12 +68,24 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 dap_mock_autowrap(${PROJECT_NAME})
 
+# Default test runs in --quick mode (fast CI), full test via separate command
 add_test(
     NAME ${PROJECT_NAME}
-    COMMAND ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME} --quick
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 600
+    TIMEOUT 120
     LABELS "integration;net;trans;parallel;client-server"
+)
+
+# Full test (needs --stress flag to run 1000+ client scenarios)
+add_test(
+    NAME ${PROJECT_NAME}_full
+    COMMAND ${PROJECT_NAME} --max-clients=100
+)
+
+set_tests_properties(${PROJECT_NAME}_full PROPERTIES
+    TIMEOUT 600
+    LABELS "integration;net;trans;parallel;client-server;stress"
 )
