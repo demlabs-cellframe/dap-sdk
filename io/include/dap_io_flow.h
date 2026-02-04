@@ -71,6 +71,7 @@ typedef struct dap_io_flow dap_io_flow_t;
 typedef struct dap_io_flow_server dap_io_flow_server_t;
 typedef struct dap_io_flow_ops dap_io_flow_ops_t;
 typedef struct dap_context_queue dap_context_queue_t;
+typedef struct dap_io_flow_ctrl dap_io_flow_ctrl_t;
 
 /**
  * @brief Load balancing tier enum
@@ -138,6 +139,10 @@ struct dap_io_flow {
     uint32_t owner_worker_id;               ///< Owner worker ID
     _Atomic size_t remote_access_count;     ///< Cross-worker access counter
     dap_io_flow_server_t *server;           ///< Back-reference to server (for cross-worker forwarding)
+    
+    // Flow Control (reliable delivery layer)
+    // Owned by flow, created/destroyed with flow lifecycle
+    dap_io_flow_ctrl_t *flow_ctrl;          ///< Flow control handle (NULL if disabled)
     
     // Protocol configuration
     dap_io_flow_boundary_type_t boundary_type;  ///< Data boundary type

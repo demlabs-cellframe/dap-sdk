@@ -399,4 +399,3 @@ void dap_io_flow_ctrl_get_stats(
  * @param[out] a_config Configuration structure to fill
  */
 void dap_io_flow_ctrl_get_default_config(dap_io_flow_ctrl_config_t *a_config);
-
