@@ -208,6 +208,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/keccak/CMakeLists.txt)
     message("[+] Keccak/SHA3 performance benchmarks configured")
 endif()
 
+# secp256k1/ECDSA performance benchmarks (dap_secp256k1 vs bitcoin-core, OpenSSL)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/secp256k1/CMakeLists.txt)
+    add_subdirectory(performance/secp256k1)
+    message("[+] secp256k1/ECDSA performance benchmarks configured")
+endif()
+
 # Build Regression Tests  
 message("[+] Configuring Regression Tests")
 

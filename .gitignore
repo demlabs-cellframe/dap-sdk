@@ -95,3 +95,4 @@ slc
 # Downloaded competitor libraries for benchmarks
 tests/performance/hashtable/competitors/
 tests/performance/keccak/competitors/
+tests/performance/secp256k1/competitors/
