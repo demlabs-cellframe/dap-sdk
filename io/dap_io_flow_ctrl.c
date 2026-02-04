@@ -15,6 +15,8 @@
 
 #include <string.h>
 #include <pthread.h>
+#include <errno.h>
+#include <time.h>
 #include "dap_common.h"
 #include "dap_time.h"
 #include "dap_io_flow_ctrl.h"
@@ -105,6 +107,12 @@ struct dap_io_flow_ctrl {
     dap_io_flow_ctrl_config_t config; // Configuration
     dap_io_flow_ctrl_callbacks_t callbacks; // Transport callbacks
     
+    // Lifecycle management (prevents use-after-free in multithreaded scenarios)
+    _Atomic(int32_t) active_ops;        // Count of active operations (send/recv)
+    _Atomic(bool) deleting;             // Flag: deletion in progress
+    pthread_mutex_t lifecycle_mutex;    // Mutex for lifecycle synchronization
+    pthread_cond_t lifecycle_cond;      // Condition: wait for operations to complete
+    
     // Send window (retransmission)
     send_window_entry_t *send_window;
     size_t send_window_size;
@@ -139,6 +147,63 @@ static bool s_inited = false;
 // Forward declarations
 static bool s_retransmit_timer_callback(void *a_arg);
 static bool s_keepalive_timer_callback(void *a_arg);
+
+//===================================================================
+// LIFECYCLE MANAGEMENT (prevents use-after-free in multithreaded code)
+//===================================================================
+
+/**
+ * @brief Begin an operation on flow control
+ * 
+ * Must be called at the start of any public API function that accesses FC data.
+ * Returns true if operation can proceed, false if FC is being deleted.
+ * If returns true, MUST call dap_io_flow_ctrl_op_end() when done.
+ * 
+ * Thread-safe: uses atomic operations with proper ordering.
+ */
+static inline bool s_op_begin(dap_io_flow_ctrl_t *a_ctrl)
+{
+    // Fast path: check if already deleting
+    if (atomic_load_explicit(&a_ctrl->deleting, memory_order_acquire)) {
+        return false;
+    }
+    
+    // Increment active operations counter
+    atomic_fetch_add_explicit(&a_ctrl->active_ops, 1, memory_order_acq_rel);
+    
+    // Double-check after increment (handles race with delete starting)
+    if (atomic_load_explicit(&a_ctrl->deleting, memory_order_acquire)) {
+        // Delete started while we were incrementing - abort
+        int32_t l_ops = atomic_fetch_sub_explicit(&a_ctrl->active_ops, 1, memory_order_acq_rel);
+        if (l_ops == 1) {
+            // We were the last one, signal delete can proceed
+            pthread_mutex_lock(&a_ctrl->lifecycle_mutex);
+            pthread_cond_signal(&a_ctrl->lifecycle_cond);
+            pthread_mutex_unlock(&a_ctrl->lifecycle_mutex);
+        }
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * @brief End an operation on flow control
+ * 
+ * Must be called after s_op_begin() returned true.
+ * Signals deletion thread if this was the last active operation.
+ */
+static inline void s_op_end(dap_io_flow_ctrl_t *a_ctrl)
+{
+    int32_t l_ops = atomic_fetch_sub_explicit(&a_ctrl->active_ops, 1, memory_order_acq_rel);
+    
+    // If we were the last operation AND deletion is in progress, signal
+    if (l_ops == 1 && atomic_load_explicit(&a_ctrl->deleting, memory_order_acquire)) {
+        pthread_mutex_lock(&a_ctrl->lifecycle_mutex);
+        pthread_cond_signal(&a_ctrl->lifecycle_cond);
+        pthread_mutex_unlock(&a_ctrl->lifecycle_mutex);
+    }
+}
 
 //===================================================================
 // PUBLIC API
@@ -205,6 +270,12 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
     
     // Set magic number for validation (detect use-after-free in timer callbacks)
     l_ctrl->magic = DAP_IO_FLOW_CTRL_MAGIC;
+    
+    // Initialize lifecycle management
+    atomic_init(&l_ctrl->active_ops, 0);
+    atomic_init(&l_ctrl->deleting, false);
+    pthread_mutex_init(&l_ctrl->lifecycle_mutex, NULL);
+    pthread_cond_init(&l_ctrl->lifecycle_cond, NULL);
     
     debug_if(s_debug_more, L_DEBUG, "FC CREATE: l_ctrl=%p, a_flow=%p, payload_deliver=%p, arg=%p",
              l_ctrl, a_flow, a_callbacks->payload_deliver, a_callbacks->arg);
@@ -308,6 +379,10 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
 
 /**
  * @brief Destroy flow control
+ * 
+ * This function is SYNCHRONOUS - it waits for all active operations (send/recv)
+ * to complete before freeing resources. This prevents use-after-free in
+ * multithreaded scenarios where multiple workers may be using the same flow control.
  */
 void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
 {
@@ -315,19 +390,40 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         return;
     }
     
-    // CRITICAL: Use send_mutex to synchronize with timer callbacks
-    // Timer callbacks ALWAYS lock send_mutex before accessing FC data
-    // By locking here, we prevent callbacks from starting new work
-    pthread_mutex_lock(&a_ctrl->send_mutex);
+    // STEP 1: Signal that deletion is in progress
+    // This will cause new operations to fail fast via s_op_begin()
+    atomic_store_explicit(&a_ctrl->deleting, true, memory_order_release);
     
-    // Clear magic under mutex lock - timer callbacks will see this and exit
-    a_ctrl->magic = 0;
+    // STEP 2: Wait for all active operations to complete
+    // Any thread currently inside send/recv will finish and call s_op_end()
+    pthread_mutex_lock(&a_ctrl->lifecycle_mutex);
+    while (atomic_load_explicit(&a_ctrl->active_ops, memory_order_acquire) > 0) {
+        // Use timed wait to detect stuck operations (debug aid)
+        struct timespec l_timeout;
+        clock_gettime(CLOCK_REALTIME, &l_timeout);
+        l_timeout.tv_sec += 5;  // 5 second timeout for debug
+        
+        int l_ret = pthread_cond_timedwait(&a_ctrl->lifecycle_cond, 
+                                            &a_ctrl->lifecycle_mutex, 
+                                            &l_timeout);
+        if (l_ret == ETIMEDOUT) {
+            int32_t l_ops = atomic_load_explicit(&a_ctrl->active_ops, memory_order_acquire);
+            log_it(L_WARNING, "FC delete: waiting for %d active operations to complete...", l_ops);
+        }
+    }
+    pthread_mutex_unlock(&a_ctrl->lifecycle_mutex);
     
-    // Unlock mutex - timer callbacks can now check magic and bail out safely
-    pthread_mutex_unlock(&a_ctrl->send_mutex);
+    // STEP 3: Clear magic under send_mutex to synchronize with timer callbacks
+    // Timer callbacks check magic before accessing FC data
+    if (a_ctrl->send_window) {
+        pthread_mutex_lock(&a_ctrl->send_mutex);
+        a_ctrl->magic = 0;
+        pthread_mutex_unlock(&a_ctrl->send_mutex);
+    } else {
+        a_ctrl->magic = 0;
+    }
     
-    // Stop timers (any running callbacks will exit due to magic=0)
-    // dap_timerfd_delete_unsafe is async, but callbacks won't access FC anymore
+    // STEP 4: Stop timers (any running callbacks will exit due to magic=0)
     if (a_ctrl->retransmit_timer) {
         dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
         a_ctrl->retransmit_timer = NULL;
@@ -337,7 +433,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         a_ctrl->keepalive_timer = NULL;
     }
     
-    // Clean send window
+    // STEP 5: Clean send window
     if (a_ctrl->send_window) {
         for (size_t i = 0; i < a_ctrl->send_window_size; i++) {
             if (a_ctrl->send_window[i].packet) {
@@ -348,7 +444,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         DAP_DEL_Z(a_ctrl->send_window);
     }
     
-    // Clean receive window
+    // STEP 6: Clean receive window
     if (a_ctrl->recv_window) {
         for (size_t i = 0; i < a_ctrl->recv_window_size; i++) {
             DAP_DEL_Z(a_ctrl->recv_window[i].payload);
@@ -359,6 +455,10 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         pthread_mutex_destroy(&a_ctrl->recv_mutex);
         DAP_DEL_Z(a_ctrl->recv_window);
     }
+    
+    // STEP 7: Destroy lifecycle synchronization primitives
+    pthread_cond_destroy(&a_ctrl->lifecycle_cond);
+    pthread_mutex_destroy(&a_ctrl->lifecycle_mutex);
     
     log_it(L_DEBUG, "Flow Control deleted: sent=%lu, retrans=%lu, recv=%lu, lost=%lu",
            atomic_load(&a_ctrl->stats_sent), atomic_load(&a_ctrl->stats_retransmitted),
@@ -463,12 +563,11 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         return -1;
     }
     
-    // Validate magic number to detect use-after-free
-    if (a_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
-        log_it(L_ERROR, "FC send: CRITICAL - invalid magic 0x%08x (expected 0x%08x). "
-               "Use-after-free or memory corruption detected!",
-               a_ctrl->magic, DAP_IO_FLOW_CTRL_MAGIC);
-        return -5;
+    // LIFECYCLE: Begin operation (prevents deletion during send)
+    if (!s_op_begin(a_ctrl)) {
+        // Flow control is being deleted - fail fast
+        debug_if(s_debug_more, L_DEBUG, "FC send: rejected - FC is being deleted");
+        return -10;  // Distinct error code for "deleted"
     }
     
     // Assign sequence number
@@ -513,6 +612,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
                                                   &l_packet, &l_packet_size, a_ctrl->callbacks.arg);
     if (l_ret != 0 || !l_packet) {
         log_it(L_ERROR, "Failed to prepare packet: ret=%d", l_ret);
+        s_op_end(a_ctrl);  // LIFECYCLE: End operation
         return -2;
     }
     
@@ -521,6 +621,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
     if (l_ret != 0) {
         log_it(L_WARNING, "Failed to send packet: ret=%d", l_ret);
         a_ctrl->callbacks.packet_free(l_packet, a_ctrl->callbacks.arg);
+        s_op_end(a_ctrl);  // LIFECYCLE: End operation
         return -3;
     }
     
@@ -535,6 +636,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
                    a_ctrl->send_window, a_ctrl->send_window_size, a_ctrl->flags);
             // Still free the packet to avoid memory leak
             a_ctrl->callbacks.packet_free(l_packet, a_ctrl->callbacks.arg);
+            s_op_end(a_ctrl);  // LIFECYCLE: End operation
             return -4;
         }
         
@@ -562,6 +664,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
     atomic_fetch_add(&a_ctrl->stats_sent, 1);
     a_ctrl->last_activity_ns = dap_nanotime_now();
     
+    s_op_end(a_ctrl);  // LIFECYCLE: End operation
     return 0;
 }
 
@@ -574,6 +677,13 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     
     if (!a_ctrl || !a_packet || a_packet_size == 0) {
         return -1;
+    }
+    
+    // LIFECYCLE: Begin operation (prevents deletion during recv)
+    if (!s_op_begin(a_ctrl)) {
+        // Flow control is being deleted - fail fast
+        debug_if(s_debug_more, L_DEBUG, "FC recv: rejected - FC is being deleted");
+        return -10;  // Distinct error code for "deleted"
     }
     
     // Parse packet
@@ -590,6 +700,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     
     if (l_ret != 0) {
         debug_if(s_debug_more, L_WARNING, "Failed to parse packet: ret=%d", l_ret);
+        s_op_end(a_ctrl);  // LIFECYCLE: End operation
         return -2;
     }
     
@@ -630,6 +741,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     // Handle keep-alive packet
     if (l_metadata.is_keepalive) {
         debug_if(true, L_DEBUG, "Received keep-alive packet");
+        s_op_end(a_ctrl);  // LIFECYCLE: End operation
         return 0;
     }
     
@@ -822,6 +934,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
         }
     }
     
+    s_op_end(a_ctrl);  // LIFECYCLE: End operation
     return 0;
 }
 

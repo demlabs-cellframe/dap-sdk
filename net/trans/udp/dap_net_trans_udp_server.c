@@ -147,9 +147,8 @@ typedef struct stream_udp_session {
     uint64_t session_id;                 // Session ID from handshake
     dap_enc_key_t *encryption_key;       // Session encryption key
     
-    // Flow control (reliable delivery)
-    // ATOMIC: accessed from multiple workers, may be deleted during cleanup
-    _Atomic(dap_io_flow_ctrl_t*) flow_ctrl;  // Flow control handle (NULL if disabled)
+    // NOTE: Flow Control is now in base.base.flow_ctrl (dap_io_flow_t)
+    // This ensures FC lifecycle is tied to flow, not session
     
     // Packet type tracking (for FC callbacks)
     _Atomic uint8_t last_send_type;     // Last packet type sent (for packet_prepare_cb)
@@ -781,8 +780,8 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
     // If Flow Control is enabled: pass to flow control for retransmission/reordering
     // Otherwise: decrypt + dispatch directly
     
-    // ATOMIC load - flow_ctrl may be NULLed by another thread during cleanup
-    dap_io_flow_ctrl_t *l_flow_ctrl = atomic_load(&l_session->flow_ctrl);
+    // Flow control from base flow structure (lifecycle tied to flow)
+    dap_io_flow_ctrl_t *l_flow_ctrl = l_session->base.base.flow_ctrl;
     
     if (l_flow_ctrl) {
         // FLOW CONTROL ENABLED: Pass packet to flow control layer
@@ -948,10 +947,10 @@ static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow)
     
     // CRITICAL: Delete Flow Control FIRST to stop retransmits!
     // This prevents use-after-free when FC tries to send after flow is deleted.
-    // Use atomic exchange to safely NULL the pointer before deletion
-    dap_io_flow_ctrl_t *l_flow_ctrl = atomic_exchange(&l_session->flow_ctrl, NULL);
-    if (l_flow_ctrl) {
-        dap_io_flow_ctrl_delete(l_flow_ctrl);
+    // Flow control is in base flow structure now
+    if (l_session->base.base.flow_ctrl) {
+        dap_io_flow_ctrl_delete(l_session->base.base.flow_ctrl);
+        l_session->base.base.flow_ctrl = NULL;
     }
     
     if (l_session->stream) {
@@ -1057,7 +1056,8 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     );
     
     // Use atomic store for thread safety (flow_ctrl accessed from multiple workers)
-    atomic_store(&l_session->flow_ctrl, l_flow_ctrl);
+    // NOTE: flow_ctrl is in base.base (dap_io_flow_t), not directly in session
+    l_session->base.base.flow_ctrl = l_flow_ctrl;
     
     if (!l_flow_ctrl) {
         log_it(L_ERROR, "Failed to create Flow Control for session");
@@ -1078,10 +1078,13 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     dap_stream_session_t *l_stream_session = (dap_stream_session_t*)a_session_context;
     
-    // Delete Flow Control - use atomic exchange to safely NULL before deletion
-    dap_io_flow_ctrl_t *l_flow_ctrl = atomic_exchange(&l_session->flow_ctrl, NULL);
+    // Delete Flow Control
+    // NOTE: flow_ctrl is in base.base (dap_io_flow_t), not directly in session
+    // dap_io_flow_ctrl_delete is now synchronous - waits for all active operations
+    dap_io_flow_ctrl_t *l_flow_ctrl = l_session->base.base.flow_ctrl;
     if (l_flow_ctrl) {
-        dap_io_flow_ctrl_delete(l_flow_ctrl);
+        l_session->base.base.flow_ctrl = NULL;  // Clear pointer first
+        dap_io_flow_ctrl_delete(l_flow_ctrl);   // Then delete (waits for operations)
         log_it(L_DEBUG, "Flow Control deleted for session");
     }
     
@@ -1216,8 +1219,9 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     
     // ALL OTHER PACKETS: ВСЕГДА используем новую схему (FC+UDP full_header)!
     
-    // ATOMIC load of flow_ctrl - may be NULL if session is closing
-    dap_io_flow_ctrl_t *l_flow_ctrl = atomic_load(&a_session->flow_ctrl);
+    // Get flow_ctrl - may be NULL if session is closing
+    // NOTE: flow_ctrl is in base.base (dap_io_flow_t), not directly in session
+    dap_io_flow_ctrl_t *l_flow_ctrl = a_session->base.base.flow_ctrl;
     
     if (!a_session->encryption_key && !l_flow_ctrl) {
         log_it(L_ERROR, "No encryption key and no Flow Control for sending packet (type=%u)", a_type);
@@ -1437,7 +1441,8 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     // REPLAY PROTECTION: Validate sequence number
     // NOTE: If Flow Control is enabled, replay protection is handled by flow control layer
     // This is legacy protection for when Flow Control is disabled
-    if (!atomic_load(&a_session->flow_ctrl)) {
+    // NOTE: flow_ctrl is in base.base (dap_io_flow_t), not directly in session
+    if (!a_session->base.base.flow_ctrl) {
         uint64_t l_last_seq = atomic_load(&a_session->base.last_seq_num_in);
         
         // Check for sequence number advance (handle wraparound)
