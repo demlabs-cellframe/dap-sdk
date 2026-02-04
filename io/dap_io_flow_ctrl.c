@@ -463,6 +463,14 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         return -1;
     }
     
+    // Validate magic number to detect use-after-free
+    if (a_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
+        log_it(L_ERROR, "FC send: CRITICAL - invalid magic 0x%08x (expected 0x%08x). "
+               "Use-after-free or memory corruption detected!",
+               a_ctrl->magic, DAP_IO_FLOW_CTRL_MAGIC);
+        return -5;
+    }
+    
     // Assign sequence number
     uint64_t l_seq_num = 0;
     if (a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) {
@@ -518,6 +526,18 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
     
     // Track for retransmission if enabled
     if (a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) {
+        // CRITICAL: Validate send_window exists
+        // This can fail if FC was created without proper initialization
+        // or if there's a race condition with deletion
+        if (!a_ctrl->send_window || a_ctrl->send_window_size == 0) {
+            log_it(L_ERROR, "FC send: CRITICAL - send_window=%p, send_window_size=%zu (flags=0x%02x). "
+                   "FC not properly initialized or already deleted!",
+                   a_ctrl->send_window, a_ctrl->send_window_size, a_ctrl->flags);
+            // Still free the packet to avoid memory leak
+            a_ctrl->callbacks.packet_free(l_packet, a_ctrl->callbacks.arg);
+            return -4;
+        }
+        
         pthread_mutex_lock(&a_ctrl->send_mutex);
         size_t l_idx = (l_seq_num - 1) % a_ctrl->send_window_size;
         
