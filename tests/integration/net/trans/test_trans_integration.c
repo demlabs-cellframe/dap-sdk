@@ -76,21 +76,27 @@ typedef struct test_scenario {
     size_t num_clients;
     size_t data_size;  // bytes to send/receive per client
     uint32_t timeout_ms;  // Timeout for this scenario
+    bool stress_only;  // Only run with --stress flag
 } test_scenario_t;
 
+// Test mode flags (set via command line)
+static bool s_stress_mode = false;      // --stress: Enable 1000+ client scenarios
+static bool s_quick_mode = false;       // --quick: Only 1 client scenario per tier
+static size_t s_max_clients = 100;      // Default max clients (override with --max-clients=N)
+
 static const test_scenario_t g_scenarios[] = {
-    // Basic scenarios - verify functionality
-    {"1 server, 1 client",      1,    1,    10*1024*1024, CALC_TIMEOUT(1)},     // 13 sec
-    {"1 server, 10 clients",    1,   10,    10*1024*1024, CALC_TIMEOUT(10)},    // 40 sec
+    // Basic scenarios - always run
+    {"1 server, 1 client",      1,    1,    10*1024*1024, CALC_TIMEOUT(1), false},
+    {"1 server, 10 clients",    1,   10,    10*1024*1024, CALC_TIMEOUT(10), false},
     
-    // Scaling scenarios - test concurrency
-    {"1 server, 100 clients",   1,  100,     5*1024*1024, CALC_TIMEOUT(100)},   // 310 sec
-    {"10 servers, 10 clients", 10,   10,    10*1024*1024, CALC_TIMEOUT(10)},
-    {"10 servers, 100 clients", 10, 100,     5*1024*1024, CALC_TIMEOUT(100)},
+    // Scaling scenarios - run by default (up to 100 clients)
+    {"1 server, 100 clients",   1,  100,     5*1024*1024, CALC_TIMEOUT(100), false},
+    {"10 servers, 10 clients", 10,   10,    10*1024*1024, CALC_TIMEOUT(10), false},
+    {"10 servers, 100 clients", 10, 100,     5*1024*1024, CALC_TIMEOUT(100), false},
     
-    // Stress scenarios - test system limits
-    {"1 server, 1000 clients",  1, 1000,     1*1024*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3},
-    {"10 servers, 1000 clients", 10, 1000,   1*1024*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3},
+    // Stress scenarios - only with --stress flag
+    {"1 server, 1000 clients",  1, 1000,     1*1024*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3, true},
+    {"10 servers, 1000 clients", 10, 1000,   1*1024*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3, true},
 };
 #define SCENARIO_COUNT (sizeof(g_scenarios) / sizeof(g_scenarios[0]))
 
@@ -1217,14 +1223,19 @@ static void test_02_sequential_trans_testing(void)
             }
             
             // Tier-specific client limits
+            // Application tier has kernel limitation of ~20 clients (queue bottleneck)
+            // Other tiers can handle more, but limited by s_max_clients from command line
             const uint32_t TIER1_MAX_CLIENTS = 20;  // Application tier limitation
-            uint32_t l_max_clients = (l_tier_cfg && l_tier_cfg->tier == DAP_IO_FLOW_LB_TIER_APPLICATION) 
-                                     ? TIER1_MAX_CLIENTS : 1000;
+            uint32_t l_tier_max = (l_tier_cfg && l_tier_cfg->tier == DAP_IO_FLOW_LB_TIER_APPLICATION) 
+                                  ? TIER1_MAX_CLIENTS : 10000;
+            // Apply command-line limit (s_max_clients is typically 100 by default)
+            uint32_t l_max_clients = (s_max_clients < l_tier_max) ? (uint32_t)s_max_clients : l_tier_max;
             
-            log_it(L_NOTICE, "Testing %s with tier %s, max clients: %u", 
+            log_it(L_NOTICE, "Testing %s with tier %s, max clients: %u (mode: %s)", 
                    l_trans->name, 
                    l_tier_cfg ? l_tier_cfg->name : "auto",
-                   l_max_clients);
+                   l_max_clients,
+                   s_stress_mode ? "stress" : (s_quick_mode ? "quick" : "normal"));
             
             bool l_tier_passed = true;
             
@@ -1233,12 +1244,27 @@ static void test_02_sequential_trans_testing(void)
                 const test_scenario_t *l_scenario = &g_scenarios[scenario_idx];
                 l_total_tests++;
                 
-                // Skip scenarios that exceed tier client limit
+                // Skip stress-only scenarios unless --stress flag is set
+                if (l_scenario->stress_only && !s_stress_mode) {
+                    printf("\n--- Scenario %zu/%zu: %s ---\n", 
+                           scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
+                    printf("⏭️  SKIPPED: Stress scenario (use --stress to enable)\n");
+                    l_skipped_tests++;
+                    continue;
+                }
+                
+                // Skip scenarios that exceed client limit
                 if (l_scenario->num_clients > l_max_clients) {
                     printf("\n--- Scenario %zu/%zu: %s ---\n", 
                            scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
                     printf("⏭️  SKIPPED: %s tier limited to %u clients (scenario has %zu)\n",
                            l_tier_cfg ? l_tier_cfg->name : "auto", l_max_clients, l_scenario->num_clients);
+                    l_skipped_tests++;
+                    continue;
+                }
+                
+                // In quick mode, only run the first scenario per tier
+                if (s_quick_mode && scenario_idx > 0) {
                     l_skipped_tests++;
                     continue;
                 }
@@ -1377,11 +1403,55 @@ static void test_03_cleanup_all_resources(void)
 }
 
 // =======================================================================================
+// COMMAND LINE PARSING
+// =======================================================================================
+
+static void s_print_usage(const char *prog_name)
+{
+    printf("Usage: %s [OPTIONS]\n", prog_name);
+    printf("\nOptions:\n");
+    printf("  --stress          Enable stress tests (1000+ clients)\n");
+    printf("  --quick           Quick mode: only 1 client scenario per tier\n");
+    printf("  --max-clients=N   Set max clients limit (default: 100)\n");
+    printf("  --help            Show this help\n");
+    printf("\nExamples:\n");
+    printf("  %s                 Run default tests (up to 100 clients)\n", prog_name);
+    printf("  %s --quick         Quick smoke test (1 client only)\n", prog_name);
+    printf("  %s --stress        Full stress test (up to 1000 clients)\n", prog_name);
+}
+
+static void s_parse_args(int argc, char **argv)
+{
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--stress") == 0) {
+            s_stress_mode = true;
+            s_max_clients = 10000;  // Allow stress scenarios
+            printf("  ℹ️  Stress mode enabled (max clients: %zu)\n", s_max_clients);
+        } else if (strcmp(argv[i], "--quick") == 0) {
+            s_quick_mode = true;
+            s_max_clients = 1;
+            printf("  ℹ️  Quick mode enabled (max clients: 1)\n");
+        } else if (strncmp(argv[i], "--max-clients=", 14) == 0) {
+            s_max_clients = (size_t)atoi(argv[i] + 14);
+            printf("  ℹ️  Max clients set to: %zu\n", s_max_clients);
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            s_print_usage(argv[0]);
+            exit(0);
+        } else {
+            printf("  ⚠️  Unknown option: %s\n", argv[i]);
+        }
+    }
+}
+
+// =======================================================================================
 // MAIN TEST SUITE
 // =======================================================================================
 
-int main(void)
+int main(int argc, char **argv)
 {
+    // Parse command line arguments
+    s_parse_args(argc, argv);
+    
     // Create minimal config file for tests
     const char *config_content = "[resources]\n"
                                  "ca_folders=[./test_ca]\n"
@@ -1390,30 +1460,30 @@ int main(void)
                                 "[dap_client]\n"
                                 "max_tries=5\n"
                                 "timeout=60\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "timeout_active_after_connect=60\n"
                                "[stream]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "debug_dump_stream_headers=false\n"
                                 "debug_channels=false\n"
                                 "[stream_pkt]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[stream_udp]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[io_flow]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[io_flow_datagram]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[dap_io_flow_socket]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[net_trans]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[dap_net_trans_udp_server]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[dap_client]\n"
-                                "debug_more=true\n"
+                                "debug_more=false\n"
                                 "[test_trans_helpers]\n"
-                                "debug_more=true\n";
+                                "debug_more=false\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
@@ -1422,7 +1492,7 @@ int main(void)
     
     // Set logging output to stdout and level to DEBUG for detailed diagnostics
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    dap_log_level_set(L_DEBUG);
+    dap_log_level_set(L_NOTICE);
     
     // Initialize config system first
     dap_config_init(".");
