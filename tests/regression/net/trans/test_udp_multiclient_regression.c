@@ -34,6 +34,7 @@
 #include "dap_net_trans_server.h"
 #include "dap_net_trans_udp_server.h"
 #include "dap_io_flow.h"
+#include "dap_io_flow_socket.h"
 #include "dap_stream_ctl.h"
 #include "dap_link_manager.h"
 #include "dap_global_db.h"
@@ -85,8 +86,7 @@ static int s_init_all(void)
 {
     // Force CBPF tier for reliable testing
     // Application tier has race conditions with multiple clients
-    extern void dap_io_flow_set_forced_tier(int);
-    dap_io_flow_set_forced_tier(2);  // DAP_IO_FLOW_LB_TIER_CLASSIC_BPF = 2
+    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_CLASSIC_BPF);
     
     log_it(L_INFO, "Init: events_init...");
     int ret = dap_events_init(0, 0);
