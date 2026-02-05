@@ -7,10 +7,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "dap_common.h"
+
 // Include internal headers directly for testing
 #include "ecdsa_field.h"
 #include "ecdsa_scalar.h"
 #include "ecdsa_group.h"
+
+#define LOG_TAG "test_ecdsa_debug"
 
 static void print_field(const char *label, const ecdsa_field_t *f) {
     uint8_t b[32];
@@ -265,7 +269,126 @@ static bool test_ecmult_gen(void) {
     return true;
 }
 
-int main(void) {
+// Test point addition: 2*G + G = 3*G
+static bool test_point_add(void) {
+    printf("\n=== Test: Point Addition (2*G + G = 3*G) ===\n");
+    
+    // Enable debug logging for ecdsa_group
+    ecdsa_group_set_debug(true);
+    
+    ecdsa_ecmult_gen_init();
+    
+    // Expected 3*G.x
+    const uint8_t expected_3g_x[32] = {
+        0xf9, 0x30, 0x8a, 0x01, 0x92, 0x58, 0xc3, 0x10,
+        0x49, 0x34, 0x4f, 0x85, 0xf8, 0x9d, 0x52, 0x29,
+        0xb5, 0x31, 0xc8, 0x45, 0x83, 0x6f, 0x99, 0xb0,
+        0x86, 0x01, 0xf1, 0x13, 0xbc, 0xe0, 0x36, 0xf9
+    };
+    
+    // Get G from ECDSA_GENERATOR
+    printf("\n--- Step 1: Check ECDSA_GENERATOR ---\n");
+    print_point("ECDSA_GENERATOR", &ECDSA_GENERATOR);
+    if (!ecdsa_ge_is_valid(&ECDSA_GENERATOR)) {
+        printf("FAIL: ECDSA_GENERATOR is not on curve!\n");
+        ecdsa_group_set_debug(false);
+        return false;
+    }
+    printf("PASS: ECDSA_GENERATOR is on curve\n");
+    
+    // Get 1*G via ecmult_gen
+    printf("\n--- Step 2: Get 1*G via ecmult_gen ---\n");
+    ecdsa_scalar_t one;
+    ecdsa_scalar_set_int(&one, 1);
+    
+    ecdsa_gej_t g1_jac;
+    ecdsa_ecmult_gen(&g1_jac, &one);
+    
+    ecdsa_ge_t g1_aff;
+    ecdsa_ge_set_gej(&g1_aff, &g1_jac);
+    print_point("1*G", &g1_aff);
+    
+    if (!ecdsa_ge_is_valid(&g1_aff)) {
+        printf("FAIL: 1*G is not on curve!\n");
+        ecdsa_group_set_debug(false);
+        return false;
+    }
+    printf("PASS: 1*G is on curve\n");
+    
+    // Double G to get 2*G
+    printf("\n--- Step 3: Double G to get 2*G ---\n");
+    ecdsa_gej_t g2_jac;
+    ecdsa_gej_double(&g2_jac, &g1_jac);
+    
+    ecdsa_ge_t g2_aff;
+    ecdsa_ge_set_gej(&g2_aff, &g2_jac);
+    print_point("2*G", &g2_aff);
+    
+    if (!ecdsa_ge_is_valid(&g2_aff)) {
+        printf("FAIL: 2*G is not on curve!\n");
+        ecdsa_group_set_debug(false);
+        return false;
+    }
+    printf("PASS: 2*G is on curve\n");
+    
+    // Add G to 2*G: should get 3*G
+    printf("\n--- Step 4: Add 2*G + G = 3*G (this is where the bug is) ---\n");
+    ecdsa_gej_t g3_jac;
+    ecdsa_gej_add_ge(&g3_jac, &g2_jac, &ECDSA_GENERATOR);
+    
+    ecdsa_ge_t g3_aff;
+    ecdsa_ge_set_gej(&g3_aff, &g3_jac);
+    print_point("2*G + G", &g3_aff);
+    
+    // Check if result is on curve
+    if (!ecdsa_ge_is_valid(&g3_aff)) {
+        printf("FAIL: 2*G + G is NOT on curve!\n");
+        
+        // Also get 3*G via ecmult_gen for comparison
+        printf("\n--- Comparison: 3*G via ecmult_gen ---\n");
+        ecdsa_scalar_t three;
+        ecdsa_scalar_set_int(&three, 3);
+        
+        ecdsa_gej_t g3_expected_jac;
+        ecdsa_ecmult_gen(&g3_expected_jac, &three);
+        
+        ecdsa_ge_t g3_expected_aff;
+        ecdsa_ge_set_gej(&g3_expected_aff, &g3_expected_jac);
+        print_point("3*G via ecmult_gen", &g3_expected_aff);
+        printf("ecmult_gen(3) is_valid: %s\n", ecdsa_ge_is_valid(&g3_expected_aff) ? "YES" : "NO");
+        
+        ecdsa_group_set_debug(false);
+        return false;
+    }
+    
+    // Check if X coordinate matches expected
+    uint8_t got_x[32];
+    ecdsa_field_get_b32(got_x, &g3_aff.x);
+    
+    printf("\nExpected 3*G.x: ");
+    for (int i = 0; i < 32; i++) printf("%02x", expected_3g_x[i]);
+    printf("\nGot      3*G.x: ");
+    for (int i = 0; i < 32; i++) printf("%02x", got_x[i]);
+    printf("\n");
+    
+    if (memcmp(got_x, expected_3g_x, 32) != 0) {
+        printf("FAIL: 3*G.x mismatch\n");
+        ecdsa_group_set_debug(false);
+        return false;
+    }
+    
+    printf("PASS: 2*G + G = 3*G computed correctly!\n");
+    ecdsa_group_set_debug(false);
+    return true;
+}
+
+int main(int argc, char **argv) {
+    (void)argc; (void)argv;
+    
+    // Initialize DAP logging
+    dap_common_init("test_ecdsa_debug", NULL);
+    dap_log_level_set(L_DEBUG);  // Enable debug logging
+    
     printf("====================================\n");
     printf("ECDSA Debug Tests\n");
     printf("====================================\n");
@@ -275,10 +398,14 @@ int main(void) {
     if (test_field_basic()) passed++; else failed++;
     if (test_point_double()) passed++; else failed++;
     if (test_ecmult_gen()) passed++; else failed++;
+    if (test_point_add()) passed++; else failed++;  // The bug we're hunting
     
     printf("\n====================================\n");
     printf("Results: %d passed, %d failed\n", passed, failed);
     printf("====================================\n");
+    
+    // Cleanup
+    dap_common_deinit();
     
     return failed > 0 ? 1 : 0;
 }

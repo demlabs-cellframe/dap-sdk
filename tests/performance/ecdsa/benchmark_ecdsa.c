@@ -28,9 +28,17 @@
 #include "dap_sig_ecdsa.h"
 #include "dap_hash_sha2.h"
 
+// Internal headers for debugging
+#include "sig_ecdsa/ecdsa_field.h"
+#include "sig_ecdsa/ecdsa_group.h"
+#include "sig_ecdsa/ecdsa_scalar.h"
+#include "sig_ecdsa/ecdsa_impl.h"
+#include "sig_ecdsa/arch/ecdsa_field_arch.h"  // For dispatch control
+
 // Architecture-specific scalar implementations
 #ifdef BENCHMARK_SCALAR_ARCH
-#include "sig_ecdsa/ecdsa_scalar_mul_arch.h"
+#include "sig_ecdsa/arch/ecdsa_scalar_mul_arch.h"
+#include "sig_ecdsa/arch/ecdsa_field_arch.h"
 #endif
 
 // Competitor: bitcoin-core/secp256k1 (downloaded via download_competitors.sh)
@@ -772,15 +780,340 @@ static void benchmark_scalar_arch(void) {
         }
     }
 }
+
+// =============================================================================
+// Field Arithmetic Architecture Benchmark
+// =============================================================================
+
+static void benchmark_field_arch(void) {
+    printf("\n====================================================\n");
+    printf("Field Arithmetic Architecture Benchmark\n");
+    printf("====================================================\n\n");
+    
+    typedef struct {
+        const char *name;
+        const char *description;
+        double mul_time_us;
+        double sqr_time_us;
+        double mul_ops_per_sec;
+        double sqr_ops_per_sec;
+        bool available;
+    } field_bench_result_t;
+    
+    field_bench_result_t results[16];
+    int result_count = 0;
+    
+    const int FIELD_ITERATIONS = 100000;
+    
+    // Initialize dispatcher
+    ecdsa_field_dispatch_init();
+    
+    // Get all implementations
+    size_t num_impls;
+    const ecdsa_field_impl_info_t *impls = ecdsa_field_get_all_impls(&num_impls);
+    
+    printf("Available field implementations:\n");
+    for (size_t i = 0; i < num_impls; i++) {
+        if (impls[i].name) {
+            printf("  [%s] %s: %s\n", 
+                   impls[i].available ? "OK" : "--",
+                   impls[i].name, 
+                   impls[i].description ? impls[i].description : "N/A");
+        }
+    }
+    printf("\n");
+    
+    // Create test field elements
+    ecdsa_field_t a, b, r;
+    memset(&a, 0, sizeof(a));
+    memset(&b, 0, sizeof(b));
+    
+    // Initialize with random data (masked to 52-bit limbs)
+    for (int i = 0; i < 5; i++) {
+        a.n[i] = ((uint64_t)rand() << 20) ^ rand();
+        a.n[i] &= 0xFFFFFFFFFFFFFULL;
+        b.n[i] = ((uint64_t)rand() << 20) ^ rand();
+        b.n[i] &= 0xFFFFFFFFFFFFFULL;
+    }
+    
+    uint64_t start, elapsed;
+    
+    // Benchmark each implementation
+    for (size_t i = 0; i < num_impls && result_count < 16; i++) {
+        if (!impls[i].available || !impls[i].mul || !impls[i].name) continue;
+        
+        // Warmup mul
+        for (int w = 0; w < 1000; w++) {
+            impls[i].mul(&r, &a, &b);
+        }
+        
+        // Benchmark mul
+        start = get_time_ns();
+        for (int j = 0; j < FIELD_ITERATIONS; j++) {
+            impls[i].mul(&r, &a, &b);
+        }
+        elapsed = get_time_ns() - start;
+        double mul_time_us = ns_to_us(elapsed);
+        
+        // Warmup sqr
+        for (int w = 0; w < 1000; w++) {
+            impls[i].sqr(&r, &a);
+        }
+        
+        // Benchmark sqr
+        start = get_time_ns();
+        for (int j = 0; j < FIELD_ITERATIONS; j++) {
+            impls[i].sqr(&r, &a);
+        }
+        elapsed = get_time_ns() - start;
+        double sqr_time_us = ns_to_us(elapsed);
+        
+        char name_buf[64];
+        snprintf(name_buf, sizeof(name_buf), "DAP %s", impls[i].name);
+        
+        results[result_count].name = strdup(name_buf);
+        results[result_count].description = impls[i].description;
+        results[result_count].mul_time_us = mul_time_us;
+        results[result_count].sqr_time_us = sqr_time_us;
+        results[result_count].mul_ops_per_sec = (double)FIELD_ITERATIONS / (mul_time_us / 1e6);
+        results[result_count].sqr_ops_per_sec = (double)FIELD_ITERATIONS / (sqr_time_us / 1e6);
+        results[result_count].available = true;
+        result_count++;
+    }
+    
+    // Results table
+    printf("====================================================\n");
+    printf("Field Multiplication/Squaring Benchmark Results\n");
+    printf("(%d iterations each)\n", FIELD_ITERATIONS);
+    printf("====================================================\n\n");
+    
+    printf("%-20s %-30s %12s %12s %12s %12s\n", 
+           "Implementation", "Description", "Mul(µs)", "Sqr(µs)", "Mul ops/s", "Sqr ops/s");
+    printf("%-20s %-30s %12s %12s %12s %12s\n", 
+           "--------------------", "------------------------------", 
+           "------------", "------------", "------------", "------------");
+    
+    double generic_mul = 0, generic_sqr = 0;
+    double best_mul = 0, best_sqr = 0;
+    const char *best_mul_name = NULL, *best_sqr_name = NULL;
+    
+    for (int i = 0; i < result_count; i++) {
+        if (!results[i].available) continue;
+        
+        // Track generic
+        if (strstr(results[i].name, "generic")) {
+            generic_mul = results[i].mul_time_us;
+            generic_sqr = results[i].sqr_time_us;
+        }
+        
+        // Track best
+        if (best_mul == 0 || results[i].mul_time_us < best_mul) {
+            best_mul = results[i].mul_time_us;
+            best_mul_name = results[i].name;
+        }
+        if (best_sqr == 0 || results[i].sqr_time_us < best_sqr) {
+            best_sqr = results[i].sqr_time_us;
+            best_sqr_name = results[i].name;
+        }
+        
+        printf("%-20s %-30s %12.2f %12.2f %12.0f %12.0f\n",
+               results[i].name,
+               results[i].description ? results[i].description : "N/A",
+               results[i].mul_time_us,
+               results[i].sqr_time_us,
+               results[i].mul_ops_per_sec,
+               results[i].sqr_ops_per_sec);
+    }
+    printf("\n");
+    
+    // Speedup analysis
+    if (generic_mul > 0 && best_mul > 0) {
+        printf("=== Field Speedup Analysis ===\n\n");
+        printf("%-20s %15s %15s\n", "Implementation", "Mul speedup", "Sqr speedup");
+        printf("%-20s %15s %15s\n", "--------------------", "---------------", "---------------");
+        
+        for (int i = 0; i < result_count; i++) {
+            if (!results[i].available) continue;
+            printf("%-20s %14.2fx %14.2fx\n",
+                   results[i].name,
+                   generic_mul / results[i].mul_time_us,
+                   generic_sqr / results[i].sqr_time_us);
+        }
+        printf("\n");
+        
+        printf("Best multiplication: %s (%.2fx faster than generic)\n", 
+               best_mul_name, generic_mul / best_mul);
+        printf("Best squaring: %s (%.2fx faster than generic)\n", 
+               best_sqr_name, generic_sqr / best_sqr);
+    }
+    
+    // Show current active implementation
+    ecdsa_field_impl_t current = ecdsa_field_get_impl();
+    const ecdsa_field_impl_info_t *current_info = ecdsa_field_get_impl_info(current);
+    if (current_info && current_info->name) {
+        printf("\nActive DAP field implementation: %s\n", current_info->name);
+    }
+    printf("\n");
+    
+    // Free allocated names
+    for (int i = 0; i < result_count; i++) {
+        if (results[i].name) {
+            free((void*)results[i].name);
+        }
+    }
+}
 #endif
 
 // =============================================================================
 // Main
 // =============================================================================
 
+// Debug function to test ecmult operations
+static void debug_ecmult_test(void) {
+    // Report which field implementation is being used
+    const ecdsa_field_impl_info_t *impl_info = ecdsa_field_get_impl_info(ecdsa_field_get_impl());
+    printf("Field implementation: %s (%s)\n", impl_info->name, impl_info->description);
+    
+    // Disable verbose debug logging for normal operation
+    ecdsa_group_set_debug(false);
+    
+    printf("=== DEBUG: Testing ecmult_gen ===\n");
+    
+    // Test ecmult_gen(1)
+    ecdsa_scalar_t one, two;
+    ecdsa_scalar_set_int(&one, 1);
+    ecdsa_scalar_set_int(&two, 2);
+    
+    ecdsa_gej_t g1_jac, g2_jac;
+    ecdsa_ecmult_gen(&g1_jac, &one);
+    ecdsa_ecmult_gen(&g2_jac, &two);
+    
+    ecdsa_ge_t g1_aff, g2_aff;
+    ecdsa_ge_set_gej(&g1_aff, &g1_jac);
+    ecdsa_ge_set_gej(&g2_aff, &g2_jac);
+    
+    // Print G
+    uint8_t buf[32];
+    ecdsa_field_t tmp;
+    
+    tmp = g1_aff.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("1*G.x: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("Expected: 79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\n");
+    printf("1*G is_valid: %s\n\n", ecdsa_ge_is_valid(&g1_aff) ? "YES" : "NO");
+    
+    tmp = g2_aff.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("2*G.x: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("Expected: c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\n");
+    printf("2*G is_valid: %s\n\n", ecdsa_ge_is_valid(&g2_aff) ? "YES" : "NO");
+    
+    // Test ecdsa_pubkey_create with simple key (scalar = 3)
+    ecdsa_scalar_t seckey;
+    ecdsa_scalar_set_int(&seckey, 3);
+    
+    ecdsa_ge_t pubkey;
+    bool ok = ecdsa_pubkey_create(&pubkey, &seckey);
+    printf("ecdsa_pubkey_create(3): %s\n", ok ? "OK" : "FAILED");
+    printf("pubkey is_valid: %s\n", ecdsa_ge_is_valid(&pubkey) ? "YES" : "NO");
+    
+    tmp = pubkey.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("pubkey.x (3*G): "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("Expected 3*G.x: f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9\n");
+    
+    // Also test via ecmult_gen directly
+    ecdsa_scalar_t three;
+    ecdsa_scalar_set_int(&three, 3);
+    
+    ecdsa_gej_t g3_jac;
+    ecdsa_ecmult_gen(&g3_jac, &three);
+    
+    ecdsa_ge_t g3_aff;
+    ecdsa_ge_set_gej(&g3_aff, &g3_jac);
+    
+    tmp = g3_aff.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("ecmult_gen(3).x: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("ecmult_gen(3) is_valid: %s\n", ecdsa_ge_is_valid(&g3_aff) ? "YES" : "NO");
+    
+    // Compute 3*G manually: 2*G + G
+    printf("\n--- Manual 3*G = 2*G + G ---\n");
+    
+    // Get 2*G as Jacobian
+    ecdsa_gej_t g2_manual_jac;
+    ecdsa_gej_double(&g2_manual_jac, &g1_jac);  // g2_manual_jac = 2 * g1_jac = 2*G
+    
+    // Verify 2*G before addition
+    ecdsa_ge_t g2_check;
+    ecdsa_ge_set_gej(&g2_check, &g2_manual_jac);
+    tmp = g2_check.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("double(G).x before add: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("double(G) is_valid: %s\n", ecdsa_ge_is_valid(&g2_check) ? "YES" : "NO");
+    
+    // Check g1_jac Z coordinate
+    tmp = g1_jac.z; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("g1_jac.z: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    
+    // Check g2_manual_jac Z coordinate
+    tmp = g2_manual_jac.z; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("g2_manual_jac.z: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    
+    // Verify G (affine) before addition
+    tmp = g1_aff.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("G.x before add: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    
+    // Also test using ECDSA_GENERATOR directly
+    printf("\n--- Using ECDSA_GENERATOR constant ---\n");
+    tmp = ECDSA_GENERATOR.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("ECDSA_GENERATOR.x: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("ECDSA_GENERATOR is_valid: %s\n", ecdsa_ge_is_valid(&ECDSA_GENERATOR) ? "YES" : "NO");
+    
+    ecdsa_gej_t g3_via_const;
+    ecdsa_gej_add_ge(&g3_via_const, &g2_manual_jac, &ECDSA_GENERATOR);
+    ecdsa_ge_t g3_via_const_aff;
+    ecdsa_ge_set_gej(&g3_via_const_aff, &g3_via_const);
+    tmp = g3_via_const_aff.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("(2G + ECDSA_GENERATOR).x: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("(2G + ECDSA_GENERATOR) is_valid: %s\n", ecdsa_ge_is_valid(&g3_via_const_aff) ? "YES" : "NO");
+    
+    // Add G (affine) to 2*G (Jacobian)
+    ecdsa_gej_t g3_manual_jac;
+    ecdsa_gej_add_ge(&g3_manual_jac, &g2_manual_jac, &g1_aff);  // g3 = 2*G + G
+    
+    ecdsa_ge_t g3_manual_aff;
+    ecdsa_ge_set_gej(&g3_manual_aff, &g3_manual_jac);
+    
+    tmp = g3_manual_aff.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("manual 3*G.x: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("manual 3*G is_valid: %s\n", ecdsa_ge_is_valid(&g3_manual_aff) ? "YES" : "NO");
+    
+    // Test field_add correctness
+    printf("\n--- Testing field operations ---\n");
+    ecdsa_field_t fa, fb, fc;
+    ecdsa_field_set_int(&fa, 5);
+    ecdsa_field_set_int(&fb, 3);
+    ecdsa_field_add(&fc, &fa, &fb);
+    ecdsa_field_normalize(&fc);
+    printf("5 + 3 = %llu (expected 8)\n", (unsigned long long)fc.n[0]);
+    
+    // Test negate
+    ecdsa_field_negate(&fc, &fa, 1);
+    ecdsa_field_normalize(&fc);
+    ecdsa_field_get_b32(buf, &fc);
+    printf("-5 mod p = "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    
+    // Test add negative
+    ecdsa_field_add(&fc, &fb, &fc);  // fc = 3 + (-5) = -2 mod p
+    ecdsa_field_normalize(&fc);
+    ecdsa_field_get_b32(buf, &fc);
+    printf("3 + (-5) mod p = "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    
+    printf("=== END DEBUG ===\n\n");
+}
+
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
+    
+    // DEBUG: Test ecmult_gen
+    debug_ecmult_test();
     
     printf("====================================================\n");
     printf("ECDSA Performance Benchmark\n");
@@ -847,6 +1180,7 @@ int main(int argc, char **argv) {
 #ifdef BENCHMARK_SCALAR_ARCH
     // Benchmark architecture-specific implementations
     benchmark_scalar_arch();
+    benchmark_field_arch();
 #endif
     
     // Cleanup

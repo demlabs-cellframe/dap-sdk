@@ -9,6 +9,34 @@
 #include "ecdsa_precompute.h"
 #include "ecdsa_endomorphism.h"
 #include <string.h>
+#include "dap_common.h"
+
+#define LOG_TAG "ecdsa_group"
+
+// Debug flag for detailed logging
+static bool s_debug_more = false;
+
+/**
+ * @brief Enable/disable debug output for ECDSA group operations
+ */
+void ecdsa_group_set_debug(bool a_enable) {
+    s_debug_more = a_enable;
+    debug_if(true, L_DEBUG, "ECDSA group debug logs %s", a_enable ? "ENABLED" : "DISABLED");
+}
+
+// Helper for debug field printing
+static void s_debug_field_print(const char *a_name, const ecdsa_field_t *a_field) {
+    if (!s_debug_more) return;
+    ecdsa_field_t l_tmp = *a_field;
+    ecdsa_field_normalize(&l_tmp);
+    uint8_t l_buf[32];
+    ecdsa_field_get_b32(l_buf, &l_tmp);
+    char l_hex[65];
+    for (int i = 0; i < 32; i++) {
+        snprintf(l_hex + i*2, 3, "%02x", l_buf[i]);
+    }
+    log_it(L_DEBUG, "  %s: %s", a_name, l_hex);
+}
 
 // =============================================================================
 // secp256k1 Generator Point G
@@ -16,14 +44,31 @@
 // Gy = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
 // =============================================================================
 
-// These are set in ecdsa_ecmult_gen_init()
+// Runtime generator (set during init from bytes for consistency)
 static ecdsa_ge_t s_generator;
 static bool s_generator_initialized = false;
 
+#ifdef ECDSA_FIELD_52BIT
+// 5x52-bit limb representation
 const ecdsa_ge_t ECDSA_GENERATOR = {
+    .x = {{ 0x2815B16F81798ULL, 0xDB2DCE28D959FULL, 0xE870B07029BFCULL, 
+            0xBBAC55A06295CULL, 0x79BE667EF9DCULL }},
+    .y = {{ 0x7D08FFB10D4B8ULL, 0x48A68554199C4ULL, 0xE1108A8FD17B4ULL,
+            0xC4655DA4FBFC0ULL, 0x483ADA7726A3ULL }},
     .infinity = false
-    // x and y are set during init
 };
+#else
+// 10x26-bit limb representation (32-bit platforms)
+const ecdsa_ge_t ECDSA_GENERATOR = {
+    .x = {{ 0x16F81798UL, 0x0059F281UL, 0x2DCE28D9UL, 0x029BFCDBUL, 
+            0x0CE870B0UL, 0x055A0629UL, 0x0F9DCBBAUL, 0x079BE667UL,
+            0x00000000UL, 0x00000000UL }},
+    .y = {{ 0x0FB10D4BUL, 0x009C47D0UL, 0x0A685541UL, 0x0FD17B44UL,
+            0x00E1108AUL, 0x05DA4FBFUL, 0x026A3C46UL, 0x0483ADA7UL,
+            0x00000000UL, 0x00000000UL }},
+    .infinity = false
+};
+#endif
 
 // =============================================================================
 // Affine Point Operations
@@ -138,26 +183,37 @@ void ecdsa_ge_set_gej(ecdsa_ge_t *r, const ecdsa_gej_t *a) {
         return;
     }
     
+    debug_if(s_debug_more, L_DEBUG, "ecdsa_ge_set_gej: converting Jacobian to Affine");
+    s_debug_field_print("input X", &a->x);
+    s_debug_field_print("input Y", &a->y);
+    s_debug_field_print("input Z", &a->z);
+    
     ecdsa_field_t z2, z3, z_inv;
     
     // z_inv = 1/Z
     ecdsa_field_inv(&z_inv, &a->z);
+    s_debug_field_print("z_inv = 1/Z", &z_inv);
     
     // z2 = 1/Z²
     ecdsa_field_sqr(&z2, &z_inv);
+    s_debug_field_print("z2 = 1/Z²", &z2);
     
     // z3 = 1/Z³
     ecdsa_field_mul(&z3, &z2, &z_inv);
+    s_debug_field_print("z3 = 1/Z³", &z3);
     
     // x = X/Z²
     ecdsa_field_mul(&r->x, &a->x, &z2);
     ecdsa_field_normalize(&r->x);
+    s_debug_field_print("result x = X*z2", &r->x);
     
     // y = Y/Z³
     ecdsa_field_mul(&r->y, &a->y, &z3);
     ecdsa_field_normalize(&r->y);
+    s_debug_field_print("result y = Y*z3", &r->y);
     
     r->infinity = false;
+    debug_if(s_debug_more, L_DEBUG, "ecdsa_ge_set_gej: done");
 }
 
 void ecdsa_gej_neg(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
@@ -234,48 +290,71 @@ void ecdsa_gej_double(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
 
 // Point addition: r = a + b (Jacobian + affine)
 void ecdsa_gej_add_ge(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_ge_t *b) {
+    debug_if(s_debug_more, L_DEBUG, "ecdsa_gej_add_ge: start");
+    
     if (a->infinity) {
+        debug_if(s_debug_more, L_DEBUG, "  a is infinity, returning b");
         ecdsa_gej_set_ge(r, b);
         return;
     }
     if (b->infinity) {
+        debug_if(s_debug_more, L_DEBUG, "  b is infinity, returning a");
         *r = *a;
         return;
+    }
+    
+    if (s_debug_more) {
+        debug_if(s_debug_more, L_DEBUG, "  Input a (Jacobian):");
+        s_debug_field_print("a.x", &a->x);
+        s_debug_field_print("a.y", &a->y);
+        s_debug_field_print("a.z", &a->z);
+        debug_if(s_debug_more, L_DEBUG, "  Input b (Affine):");
+        s_debug_field_print("b.x", &b->x);
+        s_debug_field_print("b.y", &b->y);
     }
     
     ecdsa_field_t z12, u1, u2, s1, s2, h, i, j, rr, v, t;
     
     // Z1² 
     ecdsa_field_sqr(&z12, &a->z);
+    s_debug_field_print("z12 = a.z²", &z12);
     
     // U1 = X1 (already in Jacobian form relative to Z1)
     ecdsa_field_copy(&u1, &a->x);
+    s_debug_field_print("u1 = a.x", &u1);
     
     // U2 = X2 * Z1²
     ecdsa_field_mul(&u2, &b->x, &z12);
+    s_debug_field_print("u2 = b.x * z12", &u2);
     
     // S1 = Y1
     ecdsa_field_copy(&s1, &a->y);
+    s_debug_field_print("s1 = a.y", &s1);
     
     // S2 = Y2 * Z1³
     ecdsa_field_mul(&s2, &z12, &a->z);
     ecdsa_field_mul(&s2, &s2, &b->y);
+    s_debug_field_print("s2 = b.y * z13", &s2);
     
     // H = U2 - U1
     ecdsa_field_negate(&t, &u1, 1);
     ecdsa_field_add(&h, &u2, &t);
+    s_debug_field_print("h = u2 - u1", &h);
     
     // Check if H = 0 (same x-coordinate)
     if (ecdsa_field_normalizes_to_zero(&h)) {
+        debug_if(s_debug_more, L_DEBUG, "  H normalizes to zero - checking S values");
         ecdsa_field_negate(&t, &s1, 1);
         ecdsa_field_add(&t, &s2, &t);
         
         if (ecdsa_field_normalizes_to_zero(&t)) {
             // Points are equal, double
+            debug_if(s_debug_more, L_DEBUG, "  Points equal - calling double");
             ecdsa_gej_double(r, a);
             return;
         } else {
             // Points are negatives, result is infinity
+            debug_if(s_debug_more, L_DEBUG, "  Points are negatives - returning infinity");
             ecdsa_gej_set_infinity(r);
             return;
         }
@@ -284,40 +363,53 @@ void ecdsa_gej_add_ge(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_ge_t *b)
     // I = (2*H)²
     ecdsa_field_add(&i, &h, &h);
     ecdsa_field_sqr(&i, &i);
+    s_debug_field_print("i = (2h)²", &i);
     
     // J = H * I
     ecdsa_field_mul(&j, &h, &i);
+    s_debug_field_print("j = h * i", &j);
     
     // rr = 2*(S2 - S1)
     ecdsa_field_negate(&t, &s1, 1);
     ecdsa_field_add(&rr, &s2, &t);
     ecdsa_field_add(&rr, &rr, &rr);
+    s_debug_field_print("rr = 2*(s2-s1)", &rr);
     
     // V = U1 * I
     ecdsa_field_mul(&v, &u1, &i);
+    s_debug_field_print("v = u1 * i", &v);
     
     // X3 = rr² - J - 2*V
     ecdsa_field_sqr(&r->x, &rr);
+    s_debug_field_print("rr²", &r->x);
     ecdsa_field_negate(&t, &j, 1);
     ecdsa_field_add(&r->x, &r->x, &t);
+    s_debug_field_print("rr² - j", &r->x);
     ecdsa_field_negate(&t, &v, 1);
     ecdsa_field_add(&r->x, &r->x, &t);
     ecdsa_field_add(&r->x, &r->x, &t);
+    s_debug_field_print("X3 = rr² - j - 2v", &r->x);
     
     // Y3 = rr*(V - X3) - 2*S1*J
     ecdsa_field_negate(&t, &r->x, 1);
     ecdsa_field_add(&t, &v, &t);
+    s_debug_field_print("v - X3", &t);
     ecdsa_field_mul(&r->y, &rr, &t);
+    s_debug_field_print("rr*(v-X3)", &r->y);
     ecdsa_field_mul(&t, &s1, &j);
     ecdsa_field_add(&t, &t, &t);
     ecdsa_field_negate(&t, &t, 1);
+    s_debug_field_print("-2*s1*j", &t);
     ecdsa_field_add(&r->y, &r->y, &t);
+    s_debug_field_print("Y3", &r->y);
     
     // Z3 = 2*Z1*H
     ecdsa_field_mul(&r->z, &a->z, &h);
     ecdsa_field_add(&r->z, &r->z, &r->z);
+    s_debug_field_print("Z3 = 2*z1*h", &r->z);
     
     r->infinity = false;
+    debug_if(s_debug_more, L_DEBUG, "ecdsa_gej_add_ge: done");
 }
 
 // Point addition: r = a + b (both Jacobian)

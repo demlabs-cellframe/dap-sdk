@@ -3,12 +3,6 @@
 
 cmake_minimum_required(VERSION 3.10)
 
-# Option to include competitor implementations
-option(BENCHMARK_ECDSA_COMPETITORS "Include competitor ECDSA implementations in benchmark" ON)
-
-# Option to benchmark architecture-specific scalar implementations
-option(BENCHMARK_SCALAR_ARCH "Benchmark architecture-specific scalar implementations" ON)
-
 set(ECDSA_BENCHMARK_SOURCES
     benchmark_ecdsa.c
 )
@@ -17,19 +11,19 @@ set(ECDSA_BENCHMARK_SOURCES
 set(COMPETITORS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/competitors)
 
 # Check if competitors are available
-if(BENCHMARK_ECDSA_COMPETITORS AND EXISTS "${COMPETITORS_DIR}/secp256k1_lib/libsecp256k1.a")
+if(BUILD_BENCHMARKS AND EXISTS "${COMPETITORS_DIR}/secp256k1_lib/libsecp256k1.a")
     set(HAVE_SECP256K1_COMPETITOR TRUE)
     message(STATUS "[ECDSA benchmark] bitcoin-core/secp256k1 competitor: FOUND")
 else()
     set(HAVE_SECP256K1_COMPETITOR FALSE)
-    if(BENCHMARK_ECDSA_COMPETITORS)
+    if(BUILD_BENCHMARKS)
         message(STATUS "[ECDSA benchmark] bitcoin-core/secp256k1 competitor: NOT FOUND")
         message(STATUS "[ECDSA benchmark] Run ./download_competitors.sh to download competitors")
     endif()
 endif()
 
 # Check for OpenSSL
-if(BENCHMARK_ECDSA_COMPETITORS)
+if(BUILD_BENCHMARKS)
     find_package(OpenSSL QUIET)
     if(OpenSSL_FOUND)
         set(HAVE_OPENSSL_COMPETITOR TRUE)
@@ -60,7 +54,7 @@ target_include_directories(benchmark_ecdsa PRIVATE
 )
 
 # Architecture-specific scalar benchmarks
-if(BENCHMARK_SCALAR_ARCH)
+if(BUILD_BENCHMARKS)
     target_compile_definitions(benchmark_ecdsa PRIVATE BENCHMARK_SCALAR_ARCH)
     
     # Include internal ECDSA headers
@@ -70,7 +64,7 @@ if(BENCHMARK_SCALAR_ARCH)
 endif()
 
 # Add competitor implementations
-if(HAVE_SECP256K1_COMPETITOR)
+if(HAVE_SECP256K1_COMPETITOR )
     target_compile_definitions(benchmark_ecdsa PRIVATE HAVE_SECP256K1_COMPETITOR)
     target_include_directories(benchmark_ecdsa PRIVATE
         ${COMPETITORS_DIR}/secp256k1_lib/include

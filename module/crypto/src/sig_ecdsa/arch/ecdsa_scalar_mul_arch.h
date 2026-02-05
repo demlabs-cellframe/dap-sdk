@@ -23,10 +23,10 @@ extern "C" {
 
 typedef enum {
     ECDSA_SCALAR_IMPL_GENERIC = 0,     // Portable C with __uint128_t
-    ECDSA_SCALAR_IMPL_X86_64_ASM,      // x86-64 inline assembly
+    ECDSA_SCALAR_IMPL_X86_64_ASM,      // x86-64 inline assembly (MULQ)
     ECDSA_SCALAR_IMPL_AVX2_BMI2,       // AVX2 + BMI2 (MULX/ADCX/ADOX)
-    ECDSA_SCALAR_IMPL_AVX512,          // AVX-512 (future)
-    ECDSA_SCALAR_IMPL_ARM64_NEON,      // ARM64 NEON
+    ECDSA_SCALAR_IMPL_AVX512,          // AVX-512 IFMA
+    ECDSA_SCALAR_IMPL_ARM64_NEON,      // ARM64 NEON (MUL/UMULH)
     ECDSA_SCALAR_IMPL_ARM64_SVE,       // ARM64 SVE (future)
     ECDSA_SCALAR_IMPL_ARM32_NEON,      // ARM32 NEON (future)
     ECDSA_SCALAR_IMPL_COUNT
@@ -140,6 +140,12 @@ void ecdsa_scalar_mul_512_avx2_bmi2(uint64_t l[8], const ecdsa_scalar_t *a, cons
 void ecdsa_scalar_mul_shift_384_avx2_bmi2(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_reduce_512_avx2_bmi2(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_avx2_bmi2(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
+
+// AVX-512 IFMA
+void ecdsa_scalar_mul_512_avx512(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
+void ecdsa_scalar_mul_shift_384_avx512(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
+void ecdsa_scalar_reduce_512_avx512(ecdsa_scalar_t *r, const uint64_t l[8]);
+void ecdsa_scalar_mul_avx512(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 #endif
 
 #if defined(__aarch64__)
@@ -148,6 +154,12 @@ void ecdsa_scalar_mul_512_neon(uint64_t l[8], const ecdsa_scalar_t *a, const ecd
 void ecdsa_scalar_mul_shift_384_neon(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_reduce_512_neon(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_neon(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
+
+// ARM64 SVE (servers: Graviton3, Neoverse, Ampere)
+void ecdsa_scalar_mul_512_sve(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
+void ecdsa_scalar_mul_shift_384_sve(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
+void ecdsa_scalar_reduce_512_sve(ecdsa_scalar_t *r, const uint64_t l[8]);
+void ecdsa_scalar_mul_sve(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 #endif
 
 #ifdef __cplusplus

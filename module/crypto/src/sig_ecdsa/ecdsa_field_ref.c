@@ -18,14 +18,11 @@
 
 // -----------------------------------------------------------------------------
 // 64-bit: 5x52-bit limb representation
+// Constants defined in ecdsa_field.h: ECDSA_M52, ECDSA_M48, ECDSA_P_LIMB*, ECDSA_R
 // -----------------------------------------------------------------------------
 
-#define ECDSA_M52 0xFFFFFFFFFFFFFULL
-#define ECDSA_M48 0xFFFFFFFFFFFFULL
-
 const ecdsa_field_t ECDSA_FIELD_P = {{
-    0xFFFFEFFFFFC2FULL, 0xFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFULL,
-    0xFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFULL
+    ECDSA_P_LIMB0, ECDSA_P_LIMB1, ECDSA_P_LIMB2, ECDSA_P_LIMB3, ECDSA_P_LIMB4
 }};
 const ecdsa_field_t ECDSA_FIELD_ZERO = {{0, 0, 0, 0, 0}};
 const ecdsa_field_t ECDSA_FIELD_ONE = {{1, 0, 0, 0, 0}};
@@ -34,28 +31,32 @@ void ecdsa_field_normalize(ecdsa_field_t *r) {
     uint64_t t0 = r->n[0], t1 = r->n[1], t2 = r->n[2], t3 = r->n[3], t4 = r->n[4];
     uint64_t m;
     
+    // Propagate carries
     t1 += t0 >> 52; t0 &= ECDSA_M52;
     t2 += t1 >> 52; t1 &= ECDSA_M52;
     t3 += t2 >> 52; t2 &= ECDSA_M52;
     t4 += t3 >> 52; t3 &= ECDSA_M52;
     
+    // Reduce overflow: multiply by R = 2^256 mod p
     m = t4 >> 48;
     t4 &= ECDSA_M48;
-    t0 += m * 0x1000003D1ULL;
+    t0 += m * ECDSA_R;
     
+    // Propagate carries again
     t1 += t0 >> 52; t0 &= ECDSA_M52;
     t2 += t1 >> 52; t1 &= ECDSA_M52;
     t3 += t2 >> 52; t2 &= ECDSA_M52;
     t4 += t3 >> 52; t3 &= ECDSA_M52;
     
-    m = (t4 == ECDSA_M48) & (t3 == ECDSA_M52) & (t2 == ECDSA_M52) & 
-        (t1 == ECDSA_M52) & (t0 >= 0xFFFFEFFFFFC2FULL);
+    // Final reduction: subtract p if >= p
+    m = (t4 == ECDSA_P_LIMB4) & (t3 == ECDSA_P_LIMB3) & (t2 == ECDSA_P_LIMB2) & 
+        (t1 == ECDSA_P_LIMB1) & (t0 >= ECDSA_P_LIMB0);
     if (m) {
-        t0 -= 0xFFFFEFFFFFC2FULL;
-        t1 -= ECDSA_M52 + (t0 >> 63); t0 &= ECDSA_M52;
-        t2 -= ECDSA_M52 + (t1 >> 63); t1 &= ECDSA_M52;
-        t3 -= ECDSA_M52 + (t2 >> 63); t2 &= ECDSA_M52;
-        t4 -= ECDSA_M48 + (t3 >> 63); t3 &= ECDSA_M52;
+        t0 -= ECDSA_P_LIMB0;
+        t1 -= ECDSA_P_LIMB1 + (t0 >> 63); t0 &= ECDSA_M52;
+        t2 -= ECDSA_P_LIMB2 + (t1 >> 63); t1 &= ECDSA_M52;
+        t3 -= ECDSA_P_LIMB3 + (t2 >> 63); t2 &= ECDSA_M52;
+        t4 -= ECDSA_P_LIMB4 + (t3 >> 63); t3 &= ECDSA_M52;
     }
     
     r->n[0] = t0; r->n[1] = t1; r->n[2] = t2; r->n[3] = t3; r->n[4] = t4;
@@ -64,15 +65,18 @@ void ecdsa_field_normalize(ecdsa_field_t *r) {
 void ecdsa_field_normalize_weak(ecdsa_field_t *r) {
     uint64_t t0 = r->n[0], t1 = r->n[1], t2 = r->n[2], t3 = r->n[3], t4 = r->n[4];
     
+    // Propagate carries
     t1 += t0 >> 52; t0 &= ECDSA_M52;
     t2 += t1 >> 52; t1 &= ECDSA_M52;
     t3 += t2 >> 52; t2 &= ECDSA_M52;
     t4 += t3 >> 52; t3 &= ECDSA_M52;
     
+    // Reduce overflow
     uint64_t m = t4 >> 48;
     t4 &= ECDSA_M48;
-    t0 += m * 0x1000003D1ULL;
+    t0 += m * ECDSA_R;
     
+    // Propagate carries again
     t1 += t0 >> 52; t0 &= ECDSA_M52;
     t2 += t1 >> 52; t1 &= ECDSA_M52;
     t3 += t2 >> 52; t2 &= ECDSA_M52;
@@ -97,9 +101,9 @@ bool ecdsa_field_set_b32(ecdsa_field_t *r, const uint8_t *a) {
     r->n[4] = (uint64_t)a[5] | ((uint64_t)a[4] << 8) | ((uint64_t)a[3] << 16) |
               ((uint64_t)a[2] << 24) | ((uint64_t)a[1] << 32) | ((uint64_t)a[0] << 40);
     
-    bool overflow = (r->n[4] > ECDSA_M48) ||
-                    ((r->n[4] == ECDSA_M48) && (r->n[3] == ECDSA_M52) && (r->n[2] == ECDSA_M52) && 
-                     (r->n[1] == ECDSA_M52) && (r->n[0] >= 0xFFFFFEFFFFFC2FULL));
+    bool overflow = (r->n[4] > ECDSA_P_LIMB4) ||
+                    ((r->n[4] == ECDSA_P_LIMB4) && (r->n[3] == ECDSA_P_LIMB3) && (r->n[2] == ECDSA_P_LIMB2) && 
+                     (r->n[1] == ECDSA_P_LIMB1) && (r->n[0] >= ECDSA_P_LIMB0));
     ecdsa_field_normalize(r);
     return !overflow;
 }
@@ -153,13 +157,15 @@ void ecdsa_field_get_b32(uint8_t *r, const ecdsa_field_t *a) {
 }
 
 void ecdsa_field_negate(ecdsa_field_t *r, const ecdsa_field_t *a, int m) {
-    (void)m;
-    uint64_t t0 = 0xFFFFFEFFFFFC2FULL - a->n[0];
-    uint64_t t1 = ECDSA_M52 - a->n[1] - (t0 >> 63); t0 &= ECDSA_M52;
-    uint64_t t2 = ECDSA_M52 - a->n[2] - (t1 >> 63); t1 &= ECDSA_M52;
-    uint64_t t3 = ECDSA_M52 - a->n[3] - (t2 >> 63); t2 &= ECDSA_M52;
-    uint64_t t4 = ECDSA_M48 - a->n[4] - (t3 >> 63); t3 &= ECDSA_M52;
-    r->n[0] = t0; r->n[1] = t1; r->n[2] = t2; r->n[3] = t3; r->n[4] = t4;
+    // Compute r = (m+1)*2*p - a
+    // This ensures result is positive even if a has magnitude up to m
+    // Using 2*p per limb (bitcoin-core style) to handle magnitude properly
+    uint64_t scale = 2ULL * (uint64_t)(m + 1);
+    r->n[0] = ECDSA_P_LIMB0 * scale - a->n[0];
+    r->n[1] = ECDSA_P_LIMB1 * scale - a->n[1];
+    r->n[2] = ECDSA_P_LIMB2 * scale - a->n[2];
+    r->n[3] = ECDSA_P_LIMB3 * scale - a->n[3];
+    r->n[4] = ECDSA_P_LIMB4 * scale - a->n[4];
 }
 
 void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
@@ -225,7 +231,7 @@ bool ecdsa_field_normalizes_to_zero(const ecdsa_field_t *a) {
            tmp.n[3] == 0 && tmp.n[4] == 0;
 }
 
-void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
+void ecdsa_field_mul_ref(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
 #ifdef __SIZEOF_INT128__
     __uint128_t t[10] = {0};
     __uint128_t c;
@@ -309,7 +315,7 @@ void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field
 #endif
 }
 
-void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a) {
+void ecdsa_field_sqr_ref(ecdsa_field_t *r, const ecdsa_field_t *a) {
 #ifdef __SIZEOF_INT128__
     const uint64_t R = 0x1000003D1ULL;
     uint64_t an[5] = {a->n[0], a->n[1], a->n[2], a->n[3], a->n[4]};
@@ -376,13 +382,12 @@ void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a) {
 
 // -----------------------------------------------------------------------------
 // 32-bit: 10x26-bit limb representation
+// Constants defined in ecdsa_field.h: ECDSA_M26, ECDSA_M22, ECDSA_P_LIMB*, ECDSA_R_LO/HI
 // -----------------------------------------------------------------------------
 
-#define ECDSA_M26 0x3FFFFFFUL
-
 const ecdsa_field_t ECDSA_FIELD_P = {{
-    0x3FFFC2FUL, 0x3FFFFBFUL, 0x3FFFFFFUL, 0x3FFFFFFUL, 0x3FFFFFFUL,
-    0x3FFFFFFUL, 0x3FFFFFFUL, 0x3FFFFFFUL, 0x3FFFFFFUL, 0x03FFFFFUL
+    ECDSA_P_LIMB0, ECDSA_P_LIMB1, ECDSA_P_LIMB2, ECDSA_P_LIMB3, ECDSA_P_LIMB4,
+    ECDSA_P_LIMB5, ECDSA_P_LIMB6, ECDSA_P_LIMB7, ECDSA_P_LIMB8, ECDSA_P_LIMB9
 }};
 const ecdsa_field_t ECDSA_FIELD_ZERO = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
 const ecdsa_field_t ECDSA_FIELD_ONE = {{1, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
@@ -392,6 +397,7 @@ void ecdsa_field_normalize(ecdsa_field_t *r) {
     uint32_t t5 = r->n[5], t6 = r->n[6], t7 = r->n[7], t8 = r->n[8], t9 = r->n[9];
     uint32_t m;
     
+    // Propagate carries
     t1 += t0 >> 26; t0 &= ECDSA_M26;
     t2 += t1 >> 26; t1 &= ECDSA_M26;
     t3 += t2 >> 26; t2 &= ECDSA_M26;
@@ -402,11 +408,13 @@ void ecdsa_field_normalize(ecdsa_field_t *r) {
     t8 += t7 >> 26; t7 &= ECDSA_M26;
     t9 += t8 >> 26; t8 &= ECDSA_M26;
     
+    // Reduce overflow: R = 2^256 mod p = 2^32 + 977 = 0x40 * 2^26 + 0x3D1
     m = t9 >> 22;
-    t9 &= 0x3FFFFFUL;
-    t0 += m * 0x3D1UL;
-    t1 += m * 0x40UL;
+    t9 &= ECDSA_M22;
+    t0 += m * ECDSA_R_LO;
+    t1 += m * ECDSA_R_HI;
     
+    // Propagate carries again
     t1 += t0 >> 26; t0 &= ECDSA_M26;
     t2 += t1 >> 26; t1 &= ECDSA_M26;
     t3 += t2 >> 26; t2 &= ECDSA_M26;
@@ -417,21 +425,22 @@ void ecdsa_field_normalize(ecdsa_field_t *r) {
     t8 += t7 >> 26; t7 &= ECDSA_M26;
     t9 += t8 >> 26; t8 &= ECDSA_M26;
     
-    m = (t9 == 0x3FFFFFUL) & (t8 == ECDSA_M26) & (t7 == ECDSA_M26) & (t6 == ECDSA_M26) &
-        (t5 == ECDSA_M26) & (t4 == ECDSA_M26) & (t3 == ECDSA_M26) & (t2 == ECDSA_M26) &
-        (t1 >= 0x3FFFFBFUL) & (t0 >= 0x3FFFC2FUL);
+    // Final reduction: subtract p if >= p
+    m = (t9 == ECDSA_P_LIMB9) & (t8 == ECDSA_P_LIMB8) & (t7 == ECDSA_P_LIMB7) & (t6 == ECDSA_P_LIMB6) &
+        (t5 == ECDSA_P_LIMB5) & (t4 == ECDSA_P_LIMB4) & (t3 == ECDSA_P_LIMB3) & (t2 == ECDSA_P_LIMB2) &
+        (t1 >= ECDSA_P_LIMB1) & (t0 >= ECDSA_P_LIMB0);
     
     if (m) {
-        t0 -= 0x3FFFC2FUL;
-        t1 -= 0x3FFFFBFUL + (t0 >> 31); t0 &= ECDSA_M26;
-        t2 -= ECDSA_M26 + (t1 >> 31); t1 &= ECDSA_M26;
-        t3 -= ECDSA_M26 + (t2 >> 31); t2 &= ECDSA_M26;
-        t4 -= ECDSA_M26 + (t3 >> 31); t3 &= ECDSA_M26;
-        t5 -= ECDSA_M26 + (t4 >> 31); t4 &= ECDSA_M26;
-        t6 -= ECDSA_M26 + (t5 >> 31); t5 &= ECDSA_M26;
-        t7 -= ECDSA_M26 + (t6 >> 31); t6 &= ECDSA_M26;
-        t8 -= ECDSA_M26 + (t7 >> 31); t7 &= ECDSA_M26;
-        t9 -= 0x3FFFFFUL + (t8 >> 31); t8 &= ECDSA_M26;
+        t0 -= ECDSA_P_LIMB0;
+        t1 -= ECDSA_P_LIMB1 + (t0 >> 31); t0 &= ECDSA_M26;
+        t2 -= ECDSA_P_LIMB2 + (t1 >> 31); t1 &= ECDSA_M26;
+        t3 -= ECDSA_P_LIMB3 + (t2 >> 31); t2 &= ECDSA_M26;
+        t4 -= ECDSA_P_LIMB4 + (t3 >> 31); t3 &= ECDSA_M26;
+        t5 -= ECDSA_P_LIMB5 + (t4 >> 31); t4 &= ECDSA_M26;
+        t6 -= ECDSA_P_LIMB6 + (t5 >> 31); t5 &= ECDSA_M26;
+        t7 -= ECDSA_P_LIMB7 + (t6 >> 31); t6 &= ECDSA_M26;
+        t8 -= ECDSA_P_LIMB8 + (t7 >> 31); t7 &= ECDSA_M26;
+        t9 -= ECDSA_P_LIMB9 + (t8 >> 31); t8 &= ECDSA_M26;
     }
     
     r->n[0] = t0; r->n[1] = t1; r->n[2] = t2; r->n[3] = t3; r->n[4] = t4;
@@ -442,6 +451,7 @@ void ecdsa_field_normalize_weak(ecdsa_field_t *r) {
     uint32_t t0 = r->n[0], t1 = r->n[1], t2 = r->n[2], t3 = r->n[3], t4 = r->n[4];
     uint32_t t5 = r->n[5], t6 = r->n[6], t7 = r->n[7], t8 = r->n[8], t9 = r->n[9];
     
+    // Propagate carries
     t1 += t0 >> 26; t0 &= ECDSA_M26;
     t2 += t1 >> 26; t1 &= ECDSA_M26;
     t3 += t2 >> 26; t2 &= ECDSA_M26;
@@ -452,11 +462,13 @@ void ecdsa_field_normalize_weak(ecdsa_field_t *r) {
     t8 += t7 >> 26; t7 &= ECDSA_M26;
     t9 += t8 >> 26; t8 &= ECDSA_M26;
     
+    // Reduce overflow
     uint32_t m = t9 >> 22;
-    t9 &= 0x3FFFFFUL;
-    t0 += m * 0x3D1UL;
-    t1 += m * 0x40UL;
+    t9 &= ECDSA_M22;
+    t0 += m * ECDSA_R_LO;
+    t1 += m * ECDSA_R_HI;
     
+    // Propagate carries again
     t1 += t0 >> 26; t0 &= ECDSA_M26;
     t2 += t1 >> 26; t1 &= ECDSA_M26;
     t3 += t2 >> 26; t2 &= ECDSA_M26;
@@ -540,17 +552,19 @@ void ecdsa_field_get_b32(uint8_t *r, const ecdsa_field_t *a) {
 }
 
 void ecdsa_field_negate(ecdsa_field_t *r, const ecdsa_field_t *a, int m) {
-    (void)m;
-    r->n[0] = 0x3FFFC2FUL * 2 - a->n[0];
-    r->n[1] = 0x3FFFFBFUL * 2 - a->n[1];
-    r->n[2] = ECDSA_M26 * 2 - a->n[2];
-    r->n[3] = ECDSA_M26 * 2 - a->n[3];
-    r->n[4] = ECDSA_M26 * 2 - a->n[4];
-    r->n[5] = ECDSA_M26 * 2 - a->n[5];
-    r->n[6] = ECDSA_M26 * 2 - a->n[6];
-    r->n[7] = ECDSA_M26 * 2 - a->n[7];
-    r->n[8] = ECDSA_M26 * 2 - a->n[8];
-    r->n[9] = 0x3FFFFFUL * 2 - a->n[9];
+    // Compute r = (m+1)*2*p - a
+    // This ensures result is positive even if a has magnitude up to m
+    uint32_t scale = 2U * (uint32_t)(m + 1);
+    r->n[0] = ECDSA_P_LIMB0 * scale - a->n[0];
+    r->n[1] = ECDSA_P_LIMB1 * scale - a->n[1];
+    r->n[2] = ECDSA_P_LIMB2 * scale - a->n[2];
+    r->n[3] = ECDSA_P_LIMB3 * scale - a->n[3];
+    r->n[4] = ECDSA_P_LIMB4 * scale - a->n[4];
+    r->n[5] = ECDSA_P_LIMB5 * scale - a->n[5];
+    r->n[6] = ECDSA_P_LIMB6 * scale - a->n[6];
+    r->n[7] = ECDSA_P_LIMB7 * scale - a->n[7];
+    r->n[8] = ECDSA_P_LIMB8 * scale - a->n[8];
+    r->n[9] = ECDSA_P_LIMB9 * scale - a->n[9];
 }
 
 void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
@@ -559,7 +573,7 @@ void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field
     ecdsa_field_normalize_weak(r);
 }
 
-void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
+void ecdsa_field_mul_ref(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
     uint64_t c;
     uint64_t t[19] = {0};
     uint32_t an[10], bn[10];
@@ -605,7 +619,7 @@ void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field
     ecdsa_field_normalize_weak(r);
 }
 
-void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a) {
+void ecdsa_field_sqr_ref(ecdsa_field_t *r, const ecdsa_field_t *a) {
     ecdsa_field_mul(r, a, a);
 }
 
@@ -810,3 +824,6 @@ void ecdsa_field_inv_batch(ecdsa_field_t *r, const ecdsa_field_t *a, size_t n) {
     }
     r[0] = inv;
 }
+
+// NOTE: Public ecdsa_field_mul/ecdsa_field_sqr are in ecdsa_field_dispatch.c
+// This file contains only reference implementations (_ref functions)

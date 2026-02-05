@@ -13,8 +13,19 @@
 #define ECDSA_GROUP_H
 
 #include <stddef.h>
+#include <stdbool.h>
 #include "ecdsa_field.h"
 #include "ecdsa_scalar.h"
+
+// =============================================================================
+// Debug Control
+// =============================================================================
+
+/**
+ * @brief Enable/disable debug output for ECDSA group operations
+ * @param a_enable true to enable, false to disable
+ */
+void ecdsa_group_set_debug(bool a_enable);
 
 // =============================================================================
 // Point Representations

@@ -51,6 +51,18 @@ static ecdsa_scalar_impl_info_t s_implementations[] = {
         .reduce_512 = ecdsa_scalar_reduce_512_avx2_bmi2,
         .mul = ecdsa_scalar_mul_avx2_bmi2,
     },
+    
+    // AVX-512 IFMA
+    {
+        .name = "avx512",
+        .description = "AVX-512 IFMA",
+        .id = ECDSA_SCALAR_IMPL_AVX512,
+        .available = false,  // Set at runtime
+        .mul_512 = ecdsa_scalar_mul_512_avx512,
+        .mul_shift_384 = ecdsa_scalar_mul_shift_384_avx512,
+        .reduce_512 = ecdsa_scalar_reduce_512_avx512,
+        .mul = ecdsa_scalar_mul_avx512,
+    },
 #endif
 
 #if defined(__aarch64__)
@@ -64,6 +76,18 @@ static ecdsa_scalar_impl_info_t s_implementations[] = {
         .mul_shift_384 = ecdsa_scalar_mul_shift_384_neon,
         .reduce_512 = ecdsa_scalar_reduce_512_neon,
         .mul = ecdsa_scalar_mul_neon,
+    },
+    
+    // ARM64 SVE (servers: Graviton3, Neoverse, Ampere)
+    {
+        .name = "arm64_sve",
+        .description = "ARM64 SVE (scalable vectors)",
+        .id = ECDSA_SCALAR_IMPL_ARM64_SVE,
+        .available = false,  // Set at runtime
+        .mul_512 = ecdsa_scalar_mul_512_sve,
+        .mul_shift_384 = ecdsa_scalar_mul_shift_384_sve,
+        .reduce_512 = ecdsa_scalar_reduce_512_sve,
+        .mul = ecdsa_scalar_mul_sve,
     },
 #endif
 };
@@ -113,6 +137,14 @@ void ecdsa_scalar_dispatch_init(void) {
             case ECDSA_SCALAR_IMPL_AVX2_BMI2:
                 s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX2);
                 break;
+            case ECDSA_SCALAR_IMPL_AVX512:
+                s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX512);
+                break;
+#endif
+#if defined(__aarch64__)
+            case ECDSA_SCALAR_IMPL_ARM64_SVE:
+                s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_SVE);
+                break;
 #endif
             default:
                 break;  // Keep compile-time availability
@@ -123,6 +155,8 @@ void ecdsa_scalar_dispatch_init(void) {
     switch (best) {
 #if defined(__x86_64__) || defined(_M_X64)
         case DAP_CPU_ARCH_AVX512:
+            s_current_impl = ECDSA_SCALAR_IMPL_AVX512;
+            break;
         case DAP_CPU_ARCH_AVX2:
             s_current_impl = ECDSA_SCALAR_IMPL_AVX2_BMI2;
             break;
@@ -133,6 +167,8 @@ void ecdsa_scalar_dispatch_init(void) {
 #if defined(__aarch64__)
         case DAP_CPU_ARCH_SVE2:
         case DAP_CPU_ARCH_SVE:
+            s_current_impl = ECDSA_SCALAR_IMPL_ARM64_SVE;
+            break;
         case DAP_CPU_ARCH_NEON:
             s_current_impl = ECDSA_SCALAR_IMPL_ARM64_NEON;
             break;

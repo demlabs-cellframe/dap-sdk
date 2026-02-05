@@ -37,7 +37,54 @@ typedef struct {
 } ecdsa_field_t;
 
 // =============================================================================
-// Constants
+// Numeric Constants
+// =============================================================================
+
+// secp256k1 prime: p = 2^256 - 2^32 - 977
+// In 5x52-bit limbs: [0xFFFFEFFFFFC2F, 0xFFFFFFFFFFFFF, 0xFFFFFFFFFFFFF, 0xFFFFFFFFFFFFF, 0x0FFFFFFFFFFFF]
+// In 10x26-bit limbs: [0x3FFFC2F, 0x3FFFFBF, 0x3FFFFFF, 0x3FFFFFF, 0x3FFFFFF, 
+//                      0x3FFFFFF, 0x3FFFFFF, 0x3FFFFFF, 0x3FFFFFF, 0x3FFFFF]
+
+#ifdef ECDSA_FIELD_52BIT
+    // 52-bit limb mask (for limbs 0-3)
+    #define ECDSA_M52           0xFFFFFFFFFFFFFULL
+    // 48-bit limb mask (for limb 4)
+    #define ECDSA_M48           0xFFFFFFFFFFFFULL
+    
+    // p limbs (for normalization, negate, overflow checks)
+    #define ECDSA_P_LIMB0       0xFFFFEFFFFFC2FULL
+    #define ECDSA_P_LIMB1       ECDSA_M52
+    #define ECDSA_P_LIMB2       ECDSA_M52
+    #define ECDSA_P_LIMB3       ECDSA_M52
+    #define ECDSA_P_LIMB4       ECDSA_M48
+    
+    // Reduction constant R = 2^256 mod p = 2^32 + 977 = 0x1000003D1
+    #define ECDSA_R             0x1000003D1ULL
+#else
+    // 26-bit limb mask
+    #define ECDSA_M26           0x3FFFFFFUL
+    // 22-bit mask for limb 9
+    #define ECDSA_M22           0x3FFFFFUL
+    
+    // p limbs for 10x26-bit representation
+    #define ECDSA_P_LIMB0       0x3FFFC2FUL
+    #define ECDSA_P_LIMB1       0x3FFFFBFUL
+    #define ECDSA_P_LIMB2       ECDSA_M26
+    #define ECDSA_P_LIMB3       ECDSA_M26
+    #define ECDSA_P_LIMB4       ECDSA_M26
+    #define ECDSA_P_LIMB5       ECDSA_M26
+    #define ECDSA_P_LIMB6       ECDSA_M26
+    #define ECDSA_P_LIMB7       ECDSA_M26
+    #define ECDSA_P_LIMB8       ECDSA_M26
+    #define ECDSA_P_LIMB9       ECDSA_M22
+    
+    // Reduction constant for 32-bit
+    #define ECDSA_R_LO          0x3D1UL
+    #define ECDSA_R_HI          0x40UL
+#endif
+
+// =============================================================================
+// Field Element Constants (extern)
 // =============================================================================
 
 extern const ecdsa_field_t ECDSA_FIELD_P;
@@ -66,10 +113,16 @@ void ecdsa_field_normalize(ecdsa_field_t *r);       // Full normalize to [0, p)
 void ecdsa_field_normalize_weak(ecdsa_field_t *r);  // Just propagate carries
 void ecdsa_field_negate(ecdsa_field_t *r, const ecdsa_field_t *a, int m);
 void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);  // Lazy, no normalize
-void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
-void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a);
 void ecdsa_field_inv(ecdsa_field_t *r, const ecdsa_field_t *a);
 bool ecdsa_field_sqrt(ecdsa_field_t *r, const ecdsa_field_t *a);
+
+// =============================================================================
+// Optimized mul/sqr with architecture dispatch
+// These are the main entry points - they dispatch to the best available impl
+// =============================================================================
+
+void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
+void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a);
 
 // Optimized operations (avoid expensive normalize)
 void ecdsa_field_mul_int(ecdsa_field_t *r, int a);  // r = r * a (small constant)
