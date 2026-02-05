@@ -1,7 +1,7 @@
 /*
- * ECDSA secp256k1 Performance Benchmark
+ * ECDSA Performance Benchmark
  * 
- * Benchmarks DAP native implementation (dap_sig_ecdsa).
+ * Benchmarks DAP native ECDSA implementation (dap_sig_ecdsa).
  * Optionally compares with competitors:
  *   - bitcoin-core/secp256k1 (if downloaded)
  *   - OpenSSL ECDSA (if available)
@@ -10,8 +10,9 @@
  *   - Key generation (pubkey from privkey)
  *   - ECDSA signing
  *   - ECDSA verification
+ *   - Scalar arithmetic (architecture-specific optimizations)
  * 
- * Build with -DBENCHMARK_SECP256K1_COMPETITORS=ON to include competitors.
+ * Build with -DBENCHMARK_ECDSA_COMPETITORS=ON to include competitors.
  * Run ./download_competitors.sh first to download competitor libraries.
  */
 
@@ -36,6 +37,12 @@
 #ifdef HAVE_SECP256K1_COMPETITOR
 #include "secp256k1.h"
 static secp256k1_context *g_secp_ctx = NULL;
+
+// External functions from secp256k1_scalar_bench.c for internal scalar benchmarking
+extern void secp256k1_bench_scalar_set_b32(void *r, const unsigned char *b32);
+extern void secp256k1_bench_scalar_mul(void *r, const void *a, const void *b);
+extern void secp256k1_bench_scalar_mul_shift_var(void *r, const void *a, const void *b, unsigned int shift);
+extern size_t secp256k1_bench_scalar_size(void);
 #endif
 
 #ifdef HAVE_OPENSSL_COMPETITOR
@@ -521,6 +528,73 @@ static void benchmark_scalar_arch(void) {
     }
     
     // =========================================================================
+    // bitcoin-core/secp256k1 Internal Scalar Operations
+    // =========================================================================
+    
+#ifdef HAVE_SECP256K1_COMPETITOR
+    printf("--- bitcoin-core/secp256k1 Scalar Operations ---\n\n");
+    
+    // Verify scalar size matches
+    size_t bc_scalar_size = secp256k1_bench_scalar_size();
+    printf("  bitcoin-core scalar size: %zu bytes\n", bc_scalar_size);
+    printf("  DAP scalar size: %zu bytes\n", sizeof(ecdsa_scalar_t));
+    
+    // Create bitcoin-core scalars (same layout as DAP: uint64_t[4])
+    uint64_t bc_a[4], bc_b[4], bc_r[4];
+    secp256k1_bench_scalar_set_b32(bc_a, a_bytes);
+    secp256k1_bench_scalar_set_b32(bc_b, b_bytes);
+    
+    // Benchmark secp256k1_scalar_mul (full modular multiplication)
+    // Warmup
+    for (int w = 0; w < 1000; w++) {
+        secp256k1_bench_scalar_mul(bc_r, bc_a, bc_b);
+    }
+    
+    uint64_t start = get_time_ns();
+    for (int j = 0; j < SCALAR_ITERATIONS; j++) {
+        secp256k1_bench_scalar_mul(bc_r, bc_a, bc_b);
+    }
+    uint64_t elapsed = get_time_ns() - start;
+    
+    double bc_mul_time_us = ns_to_us(elapsed);
+    double bc_mul_ops = (double)SCALAR_ITERATIONS / (bc_mul_time_us / 1e6);
+    
+    results[result_count].name = "bitcoin-core scalar_mul";
+    results[result_count].description = "secp256k1 modular multiplication";
+    results[result_count].time_us = bc_mul_time_us;
+    results[result_count].ops_per_sec = bc_mul_ops;
+    results[result_count].available = true;
+    result_count++;
+    
+    // Benchmark secp256k1_scalar_mul_shift_var (GLV helper - shift 384)
+    // Warmup
+    for (int w = 0; w < 1000; w++) {
+        secp256k1_bench_scalar_mul_shift_var(bc_r, bc_a, bc_b, 384);
+    }
+    
+    start = get_time_ns();
+    for (int j = 0; j < SCALAR_ITERATIONS; j++) {
+        secp256k1_bench_scalar_mul_shift_var(bc_r, bc_a, bc_b, 384);
+    }
+    elapsed = get_time_ns() - start;
+    
+    double bc_shift_time_us = ns_to_us(elapsed);
+    double bc_shift_ops = (double)SCALAR_ITERATIONS / (bc_shift_time_us / 1e6);
+    
+    results[result_count].name = "bitcoin-core mul_shift_384";
+    results[result_count].description = "secp256k1 GLV mul_shift (shift=384)";
+    results[result_count].time_us = bc_shift_time_us;
+    results[result_count].ops_per_sec = bc_shift_ops;
+    results[result_count].available = true;
+    result_count++;
+    
+    printf("  secp256k1_scalar_mul: available\n");
+    printf("  secp256k1_scalar_mul_shift_var: available\n\n");
+#else
+    printf("--- bitcoin-core/secp256k1: NOT AVAILABLE ---\n\n");
+#endif
+    
+    // =========================================================================
     // OpenSSL BN_mod_mul (Competitor scalar multiplication)
     // =========================================================================
     
@@ -547,11 +621,11 @@ static void benchmark_scalar_arch(void) {
     }
     
     // Benchmark OpenSSL BN_mod_mul
-    uint64_t start = get_time_ns();
+    start = get_time_ns();
     for (int j = 0; j < SCALAR_ITERATIONS; j++) {
         BN_mod_mul(bn_r, bn_a, bn_b, bn_n, bn_ctx);
     }
-    uint64_t elapsed = get_time_ns() - start;
+    elapsed = get_time_ns() - start;
     
     double ossl_time_us = ns_to_us(elapsed);
     double ossl_ops_per_sec = (double)SCALAR_ITERATIONS / (ossl_time_us / 1e6);
@@ -709,7 +783,7 @@ int main(int argc, char **argv) {
     (void)argv;
     
     printf("====================================================\n");
-    printf("secp256k1 ECDSA Performance Benchmark\n");
+    printf("ECDSA Performance Benchmark\n");
     printf("====================================================\n\n");
     
     printf("Configuration:\n");
@@ -733,7 +807,7 @@ int main(int argc, char **argv) {
     printf("\n");
     
     // Initialize
-    dap_common_init("benchmark_secp256k1", NULL);
+    dap_common_init("benchmark_ecdsa", NULL);
     generate_test_data();
     
     // Run verification tests
