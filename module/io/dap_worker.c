@@ -1232,7 +1232,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_bytes_read = dap_recvfrom(l_cur->socket, NULL, 0);
 #elif defined(DAP_OS_LINUX)
                         uint64_t val;
-                        read( l_cur->fd, &val, 8);
+                        if (read(l_cur->fd, &val, sizeof(val)) < 0)
+                            log_it(L_ERROR, "Timer fd read failed: %s", dap_strerror(errno));
 #endif
                         if (l_cur->callbacks.timer_callback)
                             l_cur->callbacks.timer_callback(l_cur);
