@@ -36,25 +36,37 @@ mkdir -p build
 cd build
 cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
     -DSECP256K1_BUILD_TESTS=OFF \
     -DSECP256K1_BUILD_EXHAUSTIVE_TESTS=OFF \
     -DSECP256K1_BUILD_BENCHMARK=OFF \
     -DSECP256K1_BUILD_EXAMPLES=OFF \
+    -DSECP256K1_BUILD_CTIME_TESTS=OFF \
     -DSECP256K1_ENABLE_MODULE_RECOVERY=OFF \
     -DSECP256K1_ENABLE_MODULE_ECDH=OFF \
     -DSECP256K1_ENABLE_MODULE_SCHNORRSIG=OFF \
     -DSECP256K1_ENABLE_MODULE_EXTRAKEYS=OFF \
     -DSECP256K1_ENABLE_MODULE_ELLSWIFT=OFF \
-    > /dev/null 2>&1
-cmake --build . --config Release -j$(nproc) > /dev/null 2>&1
+    -DSECP256K1_ENABLE_MODULE_MUSIG=OFF \
+    > /dev/null 2>&1 || { echo "  -> CMake configure failed!"; exit 1; }
+cmake --build . --config Release -j$(nproc) > /dev/null 2>&1 || { echo "  -> Build failed!"; exit 1; }
 
 # Copy library and headers for easy access
 cd "${COMPETITORS_DIR}"
 mkdir -p secp256k1_lib/include
 cp secp256k1/include/*.h secp256k1_lib/include/
+# Library can be in different locations depending on cmake version
+cp secp256k1/build/lib/libsecp256k1.a secp256k1_lib/ 2>/dev/null || \
 cp secp256k1/build/libsecp256k1.a secp256k1_lib/ 2>/dev/null || \
+cp secp256k1/build/src/libsecp256k1.a secp256k1_lib/ 2>/dev/null || \
 cp secp256k1/build/Release/secp256k1.lib secp256k1_lib/ 2>/dev/null || \
-cp secp256k1/build/src/libsecp256k1.a secp256k1_lib/ 2>/dev/null || true
+{ echo "  -> Failed to find compiled library!"; exit 1; }
+
+# Verify library exists
+if [ ! -f "secp256k1_lib/libsecp256k1.a" ] && [ ! -f "secp256k1_lib/secp256k1.lib" ]; then
+    echo "  -> ERROR: Library not found after copy!"
+    exit 1
+fi
 
 echo "  -> Done"
 

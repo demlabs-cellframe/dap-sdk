@@ -130,6 +130,9 @@ file( GLOB CRYPTO_SRCS
       ${SPHINCS_SRCS}
 ) 
 
+# ECDSA is now native implementation, enable by default
+option(BUILD_WITH_ECDSA "Build with native secp256k1/ECDSA support" ON)
+
 if (BUILD_WITH_TPS_TEST)
     set (BUILD_WITH_ECDSA ON)
 endif()
