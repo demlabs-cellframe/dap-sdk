@@ -27,6 +27,11 @@
 #include "dap_sig_ecdsa.h"
 #include "dap_hash_sha2.h"
 
+// Architecture-specific scalar implementations
+#ifdef BENCHMARK_SCALAR_ARCH
+#include "sig_ecdsa/ecdsa_scalar_mul_arch.h"
+#endif
+
 // Competitor: bitcoin-core/secp256k1 (downloaded via download_competitors.sh)
 #ifdef HAVE_SECP256K1_COMPETITOR
 #include "secp256k1.h"
@@ -426,6 +431,89 @@ static void print_results(benchmark_result_t *results, int count) {
 }
 
 // =============================================================================
+// Architecture-specific Scalar Multiplication Benchmark
+// =============================================================================
+
+#ifdef BENCHMARK_SCALAR_ARCH
+static void benchmark_scalar_arch(void) {
+    printf("\n====================================================\n");
+    printf("Scalar Multiplication Architecture Benchmark\n");
+    printf("====================================================\n\n");
+    
+    // Initialize dispatcher
+    ecdsa_scalar_dispatch_init();
+    
+    // Get all implementations
+    size_t num_impls;
+    const ecdsa_scalar_impl_info_t *impls = ecdsa_scalar_get_all_impls(&num_impls);
+    
+    printf("Available implementations:\n");
+    for (size_t i = 0; i < num_impls; i++) {
+        printf("  [%s] %s: %s\n", 
+               impls[i].available ? "OK" : "--",
+               impls[i].name, 
+               impls[i].description);
+    }
+    printf("\n");
+    
+    // Create test scalars
+    ecdsa_scalar_t a, b, r;
+    uint8_t a_bytes[32], b_bytes[32];
+    randombytes(a_bytes, 32);
+    randombytes(b_bytes, 32);
+    
+    // Note: we need access to internal functions here
+    extern void ecdsa_scalar_set_b32(ecdsa_scalar_t *r, const uint8_t *b32, int *overflow);
+    ecdsa_scalar_set_b32(&a, a_bytes, NULL);
+    ecdsa_scalar_set_b32(&b, b_bytes, NULL);
+    
+    const int SCALAR_ITERATIONS = 100000;
+    
+    printf("Benchmark: %d iterations of mul_shift_384\n\n", SCALAR_ITERATIONS);
+    printf("%-20s %15s %15s\n", "Implementation", "Time (µs)", "Ops/sec");
+    printf("%-20s %15s %15s\n", "--------------------", "---------------", "---------------");
+    
+    double baseline_time = 0;
+    
+    for (size_t i = 0; i < num_impls; i++) {
+        if (!impls[i].available || !impls[i].mul_shift_384) continue;
+        
+        // Warmup
+        for (int w = 0; w < 1000; w++) {
+            impls[i].mul_shift_384(&r, &a, &b);
+        }
+        
+        // Benchmark
+        uint64_t start = get_time_ns();
+        for (int j = 0; j < SCALAR_ITERATIONS; j++) {
+            impls[i].mul_shift_384(&r, &a, &b);
+        }
+        uint64_t elapsed = get_time_ns() - start;
+        
+        double time_us = ns_to_us(elapsed);
+        double ops_per_sec = (double)SCALAR_ITERATIONS / (time_us / 1e6);
+        
+        if (i == 0) baseline_time = time_us;
+        
+        printf("%-20s %15.2f %15.0f", impls[i].name, time_us, ops_per_sec);
+        if (i > 0 && baseline_time > 0) {
+            printf(" (%.2fx)", baseline_time / time_us);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    
+    // Show current active implementation
+    ecdsa_scalar_impl_t current = ecdsa_scalar_get_impl();
+    const ecdsa_scalar_impl_info_t *current_info = ecdsa_scalar_get_impl_info(current);
+    if (current_info) {
+        printf("Active implementation: %s\n", current_info->name);
+    }
+    printf("\n");
+}
+#endif
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -494,6 +582,11 @@ int main(int argc, char **argv) {
     
     // Display results
     print_results(results, result_count);
+    
+#ifdef BENCHMARK_SCALAR_ARCH
+    // Benchmark architecture-specific implementations
+    benchmark_scalar_arch();
+#endif
     
     // Cleanup
     cleanup_test_data();

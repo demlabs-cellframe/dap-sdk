@@ -6,6 +6,9 @@ cmake_minimum_required(VERSION 3.10)
 # Option to include competitor implementations
 option(BENCHMARK_SECP256K1_COMPETITORS "Include competitor secp256k1 implementations in benchmark" ON)
 
+# Option to benchmark architecture-specific scalar implementations
+option(BENCHMARK_SCALAR_ARCH "Benchmark architecture-specific scalar implementations" ON)
+
 set(SECP256K1_BENCHMARK_SOURCES
     benchmark_secp256k1.c
 )
@@ -53,7 +56,18 @@ target_link_libraries(benchmark_secp256k1 PRIVATE
 target_include_directories(benchmark_secp256k1 PRIVATE
     ${CMAKE_SOURCE_DIR}/module/crypto/include
     ${CMAKE_SOURCE_DIR}/module/core/include
+    ${CMAKE_SOURCE_DIR}/module/crypto/src  # For internal ecdsa headers
 )
+
+# Architecture-specific scalar benchmarks
+if(BENCHMARK_SCALAR_ARCH)
+    target_compile_definitions(benchmark_secp256k1 PRIVATE BENCHMARK_SCALAR_ARCH)
+    
+    # Include internal ECDSA headers
+    target_include_directories(benchmark_secp256k1 PRIVATE
+        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig_ecdsa
+    )
+endif()
 
 # Add competitor implementations
 if(HAVE_SECP256K1_COMPETITOR)
