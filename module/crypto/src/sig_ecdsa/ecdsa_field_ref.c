@@ -177,13 +177,30 @@ void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field
     ecdsa_field_normalize_weak(r);
 }
 
-// Multiply by small integer constant (lazy, no normalize)
+// Multiply by small integer constant
+// For small a (<=8), we need to handle potential overflow
+// Max safe value per limb before mul: ~2^55 / 8 = ~2^52
+// After sqr/mul, limbs are ~52 bits, so mul_int(8) can overflow to ~55 bits
+// We propagate carries to keep limbs in reasonable range
 void ecdsa_field_mul_int(ecdsa_field_t *r, int a) {
-    r->n[0] *= a;
-    r->n[1] *= a;
-    r->n[2] *= a;
-    r->n[3] *= a;
-    r->n[4] *= a;
+    uint64_t t0 = (uint64_t)r->n[0] * a;
+    uint64_t t1 = (uint64_t)r->n[1] * a;
+    uint64_t t2 = (uint64_t)r->n[2] * a;
+    uint64_t t3 = (uint64_t)r->n[3] * a;
+    uint64_t t4 = (uint64_t)r->n[4] * a;
+    
+    // Propagate carries (lazy - just prevent overflow, not full normalize)
+    t1 += t0 >> 52; t0 &= ECDSA_M52;
+    t2 += t1 >> 52; t1 &= ECDSA_M52;
+    t3 += t2 >> 52; t2 &= ECDSA_M52;
+    t4 += t3 >> 52; t3 &= ECDSA_M52;
+    // t4 may exceed 52 bits - that's ok for lazy representation
+    
+    r->n[0] = t0;
+    r->n[1] = t1;
+    r->n[2] = t2;
+    r->n[3] = t3;
+    r->n[4] = t4;
 }
 
 // Add small integer (lazy, no normalize)  
@@ -192,34 +209,33 @@ void ecdsa_field_add_int(ecdsa_field_t *r, int a) {
 }
 
 // Divide by 2: r = r/2 mod p
-// For secp256k1: p = 2^256 - 2^32 - 977
-// If r is even: r/2 = r >> 1
-// If r is odd: r/2 = (r + p) >> 1 = (r >> 1) + ((p + 1) >> 1)
-// (p+1)/2 = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7FFFFE18
+// Algorithm from bitcoin-core:
+// If r is odd: add p to make it even, then divide by 2
+// If r is even: just divide by 2
+// This works because (r + p) / 2 ≡ r/2 (mod p) when r is odd
 void ecdsa_field_half(ecdsa_field_t *r) {
-    uint64_t mask = -(r->n[0] & 1);  // 0 if even, all-1s if odd
+    uint64_t t0 = r->n[0], t1 = r->n[1], t2 = r->n[2], t3 = r->n[3], t4 = r->n[4];
+    uint64_t one = 1ULL;
     
-    // Add (p+1)/2 if odd
-    // (p+1)/2 in 5x52-bit: stored as constants
-    static const uint64_t half_p_plus_1[5] = {
-        0x7FFFFE18ULL,               // bits 0-51
-        0xFFFFFFFFFFFFFULL,          // bits 52-103  
-        0xFFFFFFFFFFFFFULL,          // bits 104-155
-        0xFFFFFFFFFFFFFULL,          // bits 156-207
-        0x7FFFFFFFFFFFULL            // bits 208-255 (48 bits)
-    };
+    // Create 52-bit mask: 0xFFFFFFFFFFFFF if odd, 0 if even
+    uint64_t mask = -(t0 & one) >> 12;
     
-    uint64_t t0 = r->n[0] + (mask & half_p_plus_1[0]);
-    uint64_t t1 = r->n[1] + (mask & half_p_plus_1[1]) + (t0 >> 52); t0 &= ECDSA_M52;
-    uint64_t t2 = r->n[2] + (mask & half_p_plus_1[2]) + (t1 >> 52); t1 &= ECDSA_M52;
-    uint64_t t3 = r->n[3] + (mask & half_p_plus_1[3]) + (t2 >> 52); t2 &= ECDSA_M52;
-    uint64_t t4 = r->n[4] + (mask & half_p_plus_1[4]) + (t3 >> 52); t3 &= ECDSA_M52;
+    // Add p if odd (p in 5x52-bit limbs):
+    // p[0] = 0xFFFFEFFFFFC2F, p[1..3] = 0xFFFFFFFFFFFFF, p[4] = 0x0FFFFFFFFFFFF
+    t0 += 0xFFFFEFFFFFC2FULL & mask;
+    t1 += mask;  // 0xFFFFFFFFFFFFF when masked
+    t2 += mask;
+    t3 += mask;
+    t4 += mask >> 4;  // 0x0FFFFFFFFFFFF (48 bits)
     
-    // Now divide by 2 (right shift by 1)
-    r->n[0] = (t0 >> 1) | ((t1 & 1) << 51);
-    r->n[1] = (t1 >> 1) | ((t2 & 1) << 51);
-    r->n[2] = (t2 >> 1) | ((t3 & 1) << 51);
-    r->n[3] = (t3 >> 1) | ((t4 & 1) << 51);
+    // After addition, t0 must be even
+    // (original was odd + p (odd) = even, or even + 0 = even)
+    
+    // Divide by 2 with carry propagation (shift bits between limbs)
+    r->n[0] = (t0 >> 1) + ((t1 & one) << 51);
+    r->n[1] = (t1 >> 1) + ((t2 & one) << 51);
+    r->n[2] = (t2 >> 1) + ((t3 & one) << 51);
+    r->n[3] = (t3 >> 1) + ((t4 & one) << 51);
     r->n[4] = t4 >> 1;
 }
 
@@ -229,6 +245,20 @@ bool ecdsa_field_normalizes_to_zero(const ecdsa_field_t *a) {
     ecdsa_field_normalize(&tmp);
     return tmp.n[0] == 0 && tmp.n[1] == 0 && tmp.n[2] == 0 && 
            tmp.n[3] == 0 && tmp.n[4] == 0;
+}
+
+// Constant-time conditional move: r = flag ? a : r
+// flag MUST be 0 or 1
+void ecdsa_field_cmov(ecdsa_field_t *r, const ecdsa_field_t *a, int flag) {
+    volatile int vflag = flag;  // Prevent compiler optimization
+    uint64_t mask0 = vflag + ~((uint64_t)0);  // 0xFFFF...FFFF if flag=0, 0 if flag=1
+    uint64_t mask1 = ~mask0;                    // 0 if flag=0, 0xFFFF...FFFF if flag=1
+    
+    r->n[0] = (r->n[0] & mask0) | (a->n[0] & mask1);
+    r->n[1] = (r->n[1] & mask0) | (a->n[1] & mask1);
+    r->n[2] = (r->n[2] & mask0) | (a->n[2] & mask1);
+    r->n[3] = (r->n[3] & mask0) | (a->n[3] & mask1);
+    r->n[4] = (r->n[4] & mask0) | (a->n[4] & mask1);
 }
 
 void ecdsa_field_mul_ref(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {

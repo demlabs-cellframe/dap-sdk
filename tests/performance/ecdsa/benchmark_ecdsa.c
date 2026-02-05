@@ -1004,6 +1004,9 @@ static void debug_ecmult_test(void) {
     tmp = g2_aff.x; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
     printf("2*G.x: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
     printf("Expected: c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5\n");
+    tmp = g2_aff.y; ecdsa_field_normalize(&tmp); ecdsa_field_get_b32(buf, &tmp);
+    printf("2*G.y: "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("Expected: 1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a\n");
     printf("2*G is_valid: %s\n\n", ecdsa_ge_is_valid(&g2_aff) ? "YES" : "NO");
     
     // Test ecdsa_pubkey_create with simple key (scalar = 3)
@@ -1104,6 +1107,38 @@ static void debug_ecmult_test(void) {
     ecdsa_field_normalize(&fc);
     ecdsa_field_get_b32(buf, &fc);
     printf("3 + (-5) mod p = "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    
+    // Test field_half
+    printf("\n--- Testing field_half ---\n");
+    ecdsa_field_set_int(&fa, 10);
+    ecdsa_field_half(&fa);
+    ecdsa_field_normalize(&fa);
+    printf("10/2 = %llu (expected 5)\n", (unsigned long long)fa.n[0]);
+    
+    ecdsa_field_set_int(&fa, 11);
+    ecdsa_field_half(&fa);
+    ecdsa_field_normalize(&fa);
+    // Verify: 2*(11/2) should equal 11
+    ecdsa_field_add(&fb, &fa, &fa);
+    ecdsa_field_normalize(&fb);
+    printf("2*(11/2) = %llu (expected 11)\n", (unsigned long long)fb.n[0]);
+    
+    // Test with G.x
+    const uint8_t gx[32] = {
+        0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC,
+        0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B, 0x07,
+        0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9,
+        0x59, 0xF2, 0x81, 0x5B, 0x16, 0xF8, 0x17, 0x98
+    };
+    ecdsa_field_set_b32(&fa, gx);
+    ecdsa_field_half(&fa);
+    ecdsa_field_normalize(&fa);
+    ecdsa_field_add(&fb, &fa, &fa);
+    ecdsa_field_normalize(&fb);
+    ecdsa_field_get_b32(buf, &fb);
+    printf("2*(Gx/2) = "); for(int i=0;i<32;i++) printf("%02x", buf[i]); printf("\n");
+    printf("Expected = "); for(int i=0;i<32;i++) printf("%02x", gx[i]); printf("\n");
+    printf("field_half test: %s\n", memcmp(buf, gx, 32) == 0 ? "PASS" : "FAIL");
     
     printf("=== END DEBUG ===\n\n");
 }

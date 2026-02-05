@@ -130,6 +130,9 @@ void ecdsa_field_half(ecdsa_field_t *r);             // r = r / 2 (mod p)
 void ecdsa_field_add_int(ecdsa_field_t *r, int a);   // r = r + a
 bool ecdsa_field_normalizes_to_zero(const ecdsa_field_t *a);  // Check if a ≡ 0 (mod p)
 
+// Constant-time conditional move: r = flag ? a : r
+void ecdsa_field_cmov(ecdsa_field_t *r, const ecdsa_field_t *a, int flag);
+
 // =============================================================================
 // Batch Operations (Montgomery's trick)
 // =============================================================================

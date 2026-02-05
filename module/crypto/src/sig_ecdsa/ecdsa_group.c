@@ -229,60 +229,53 @@ void ecdsa_gej_neg(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
 // =============================================================================
 
 // Point doubling: r = 2*a
-// Optimized Jacobian doubling for secp256k1 (curve parameter a=0)
-// Uses dbl-2009-l formula from EFD: 2M + 5S + 1*a + 7add + 2*2 + 1*3 + 1*8
-// Since a=0 for secp256k1, we save one multiplication
+// Jacobian doubling for secp256k1 (curve parameter a=0)
+// Uses dbl-2009-l formula: 2M + 5S (but optimized with mul_int)
+// Formula:
+//   M = 3*X1^2  (since a=0)
+//   S = 4*X1*Y1^2
+//   X3 = M^2 - 2*S
+//   Y3 = M*(S - X3) - 8*Y1^4
+//   Z3 = 2*Y1*Z1
 void ecdsa_gej_double(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
     if (a->infinity) {
         ecdsa_gej_set_infinity(r);
         return;
     }
     
-    ecdsa_field_t xx, yy, yyyy, s, m, t;
+    ecdsa_field_t m, s, t, yy, yyyy;
     
-    // XX = X1²
-    ecdsa_field_sqr(&xx, &a->x);
-    
-    // YY = Y1²
+    // YY = Y1^2
     ecdsa_field_sqr(&yy, &a->y);
     
-    // YYYY = YY²
+    // YYYY = YY^2 = Y1^4
     ecdsa_field_sqr(&yyyy, &yy);
     
-    // S = 2*((X1+YY)² - XX - YYYY) = 4*X1*YY
-    ecdsa_field_add(&s, &a->x, &yy);
-    ecdsa_field_sqr(&s, &s);
-    ecdsa_field_negate(&t, &xx, 1);
-    ecdsa_field_add(&s, &s, &t);
-    ecdsa_field_negate(&t, &yyyy, 1);
-    ecdsa_field_add(&s, &s, &t);
-    ecdsa_field_add(&s, &s, &s);  // S = 4*X1*YY
+    // S = 4*X1*YY
+    ecdsa_field_mul(&s, &a->x, &yy);
+    ecdsa_field_mul_int(&s, 4);
     
-    // M = 3*XX (since a=0 for secp256k1)
-    ecdsa_field_add(&m, &xx, &xx);
-    ecdsa_field_add(&m, &m, &xx);  // M = 3*XX
+    // M = 3*X1^2
+    ecdsa_field_sqr(&m, &a->x);
+    ecdsa_field_mul_int(&m, 3);
     
-    // T = M² - 2*S
-    ecdsa_field_sqr(&t, &m);
-    ecdsa_field_negate(&r->x, &s, 1);
-    ecdsa_field_add(&t, &t, &r->x);
-    ecdsa_field_add(&t, &t, &r->x);
+    // X3 = M^2 - 2*S
+    ecdsa_field_sqr(&r->x, &m);
+    ecdsa_field_negate(&t, &s, 1);
+    ecdsa_field_add(&r->x, &r->x, &t);
+    ecdsa_field_add(&r->x, &r->x, &t);  // -2*S
     
-    // X3 = T
-    r->x = t;
-    
-    // Z3 = 2*Y1*Z1 (using (Y1+Z1)² - YY - ZZ formula is slower here)
+    // Z3 = 2*Y1*Z1
     ecdsa_field_mul(&r->z, &a->y, &a->z);
     ecdsa_field_add(&r->z, &r->z, &r->z);
     
-    // Y3 = M*(S-T) - 8*YYYY
-    ecdsa_field_negate(&t, &r->x, 1);
-    ecdsa_field_add(&s, &s, &t);
-    ecdsa_field_mul(&r->y, &m, &s);
-    ecdsa_field_add(&yyyy, &yyyy, &yyyy);  // 2*YYYY
-    ecdsa_field_add(&yyyy, &yyyy, &yyyy);  // 4*YYYY
-    ecdsa_field_add(&yyyy, &yyyy, &yyyy);  // 8*YYYY
-    ecdsa_field_negate(&yyyy, &yyyy, 1);
+    // Y3 = M*(S - X3) - 8*YYYY
+    ecdsa_field_negate(&t, &r->x, 1);   // t = -X3
+    ecdsa_field_add(&t, &s, &t);        // t = S - X3
+    ecdsa_field_mul(&r->y, &m, &t);     // r->y = M*(S - X3)
+    ecdsa_field_mul_int(&yyyy, 8);      // 8*YYYY, magnitude now 8
+    // IMPORTANT: magnitude after mul_int(8) is 8, so negate needs m=8
+    ecdsa_field_negate(&yyyy, &yyyy, 8);  // -8*YYYY
     ecdsa_field_add(&r->y, &r->y, &yyyy);
     
     r->infinity = false;
