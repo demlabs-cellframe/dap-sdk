@@ -44,6 +44,7 @@ static secp256k1_context *g_secp_ctx = NULL;
 #include <openssl/ec.h>
 #include <openssl/bn.h>
 #include <openssl/rand.h>
+#include <openssl/crypto.h>
 #endif
 
 // =============================================================================
@@ -435,19 +436,42 @@ static void print_results(benchmark_result_t *results, int count) {
 // =============================================================================
 
 #ifdef BENCHMARK_SCALAR_ARCH
+
+// Scalar benchmark result
+typedef struct {
+    const char *name;
+    const char *description;
+    double time_us;
+    double ops_per_sec;
+    bool available;
+} scalar_bench_result_t;
+
+#define MAX_SCALAR_RESULTS 16
+
 static void benchmark_scalar_arch(void) {
     printf("\n====================================================\n");
     printf("Scalar Multiplication Architecture Benchmark\n");
     printf("====================================================\n\n");
     
+    scalar_bench_result_t results[MAX_SCALAR_RESULTS];
+    int result_count = 0;
+    
+    const int SCALAR_ITERATIONS = 100000;
+    
+    // =========================================================================
+    // DAP Native Implementations
+    // =========================================================================
+    
+    printf("--- DAP Native Scalar Implementations ---\n\n");
+    
     // Initialize dispatcher
     ecdsa_scalar_dispatch_init();
     
-    // Get all implementations
+    // Get all DAP implementations
     size_t num_impls;
     const ecdsa_scalar_impl_info_t *impls = ecdsa_scalar_get_all_impls(&num_impls);
     
-    printf("Available implementations:\n");
+    printf("Available DAP implementations:\n");
     for (size_t i = 0; i < num_impls; i++) {
         printf("  [%s] %s: %s\n", 
                impls[i].available ? "OK" : "--",
@@ -456,26 +480,18 @@ static void benchmark_scalar_arch(void) {
     }
     printf("\n");
     
-    // Create test scalars
+    // Create test scalars for DAP
     ecdsa_scalar_t a, b, r;
     uint8_t a_bytes[32], b_bytes[32];
     randombytes(a_bytes, 32);
     randombytes(b_bytes, 32);
     
-    // Note: we need access to internal functions here
     extern void ecdsa_scalar_set_b32(ecdsa_scalar_t *r, const uint8_t *b32, int *overflow);
     ecdsa_scalar_set_b32(&a, a_bytes, NULL);
     ecdsa_scalar_set_b32(&b, b_bytes, NULL);
     
-    const int SCALAR_ITERATIONS = 100000;
-    
-    printf("Benchmark: %d iterations of mul_shift_384\n\n", SCALAR_ITERATIONS);
-    printf("%-20s %15s %15s\n", "Implementation", "Time (µs)", "Ops/sec");
-    printf("%-20s %15s %15s\n", "--------------------", "---------------", "---------------");
-    
-    double baseline_time = 0;
-    
-    for (size_t i = 0; i < num_impls; i++) {
+    // Benchmark each DAP implementation
+    for (size_t i = 0; i < num_impls && result_count < MAX_SCALAR_RESULTS; i++) {
         if (!impls[i].available || !impls[i].mul_shift_384) continue;
         
         // Warmup
@@ -493,23 +509,194 @@ static void benchmark_scalar_arch(void) {
         double time_us = ns_to_us(elapsed);
         double ops_per_sec = (double)SCALAR_ITERATIONS / (time_us / 1e6);
         
-        if (i == 0) baseline_time = time_us;
+        char name_buf[64];
+        snprintf(name_buf, sizeof(name_buf), "DAP %s", impls[i].name);
         
-        printf("%-20s %15.2f %15.0f", impls[i].name, time_us, ops_per_sec);
-        if (i > 0 && baseline_time > 0) {
-            printf(" (%.2fx)", baseline_time / time_us);
+        results[result_count].name = strdup(name_buf);
+        results[result_count].description = impls[i].description;
+        results[result_count].time_us = time_us;
+        results[result_count].ops_per_sec = ops_per_sec;
+        results[result_count].available = true;
+        result_count++;
+    }
+    
+    // =========================================================================
+    // OpenSSL BN_mod_mul (Competitor scalar multiplication)
+    // =========================================================================
+    
+#ifdef HAVE_OPENSSL_COMPETITOR
+    printf("--- OpenSSL BN Scalar Multiplication ---\n\n");
+    
+    // secp256k1 order n
+    static const char *secp256k1_n_hex = 
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141";
+    
+    BN_CTX *bn_ctx = BN_CTX_new();
+    BIGNUM *bn_a = BN_new();
+    BIGNUM *bn_b = BN_new();
+    BIGNUM *bn_r = BN_new();
+    BIGNUM *bn_n = BN_new();
+    
+    BN_hex2bn(&bn_n, secp256k1_n_hex);
+    BN_bin2bn(a_bytes, 32, bn_a);
+    BN_bin2bn(b_bytes, 32, bn_b);
+    
+    // Warmup
+    for (int w = 0; w < 1000; w++) {
+        BN_mod_mul(bn_r, bn_a, bn_b, bn_n, bn_ctx);
+    }
+    
+    // Benchmark OpenSSL BN_mod_mul
+    uint64_t start = get_time_ns();
+    for (int j = 0; j < SCALAR_ITERATIONS; j++) {
+        BN_mod_mul(bn_r, bn_a, bn_b, bn_n, bn_ctx);
+    }
+    uint64_t elapsed = get_time_ns() - start;
+    
+    double ossl_time_us = ns_to_us(elapsed);
+    double ossl_ops_per_sec = (double)SCALAR_ITERATIONS / (ossl_time_us / 1e6);
+    
+    results[result_count].name = "OpenSSL BN_mod_mul";
+    results[result_count].description = "OpenSSL BIGNUM modular multiplication";
+    results[result_count].time_us = ossl_time_us;
+    results[result_count].ops_per_sec = ossl_ops_per_sec;
+    results[result_count].available = true;
+    result_count++;
+    
+    printf("  OpenSSL BN_mod_mul: available\n\n");
+    
+    BN_free(bn_a);
+    BN_free(bn_b);
+    BN_free(bn_r);
+    BN_free(bn_n);
+    BN_CTX_free(bn_ctx);
+#else
+    printf("--- OpenSSL BN: NOT AVAILABLE ---\n\n");
+#endif
+    
+    // =========================================================================
+    // Results Table
+    // =========================================================================
+    
+    printf("====================================================\n");
+    printf("Scalar Multiplication Benchmark Results\n");
+    printf("(%d iterations of 256-bit modular multiplication)\n", SCALAR_ITERATIONS);
+    printf("====================================================\n\n");
+    
+    printf("%-25s %-35s %12s %15s\n", 
+           "Implementation", "Description", "Time(µs)", "Ops/sec");
+    printf("%-25s %-35s %12s %15s\n", 
+           "-------------------------", "-----------------------------------", 
+           "------------", "---------------");
+    
+    double dap_generic_time = 0;
+    double dap_best_time = 0;
+    const char *dap_best_name = NULL;
+    
+    for (int i = 0; i < result_count; i++) {
+        if (!results[i].available) continue;
+        
+        // Track DAP implementations
+        if (strncmp(results[i].name, "DAP ", 4) == 0) {
+            if (strstr(results[i].name, "generic")) {
+                dap_generic_time = results[i].time_us;
+            }
+            if (dap_best_time == 0 || results[i].time_us < dap_best_time) {
+                dap_best_time = results[i].time_us;
+                dap_best_name = results[i].name;
+            }
+        }
+        
+        printf("%-25s %-35s %12.2f %15.0f\n",
+               results[i].name,
+               results[i].description,
+               results[i].time_us,
+               results[i].ops_per_sec);
+    }
+    printf("\n");
+    
+    // =========================================================================
+    // Speedup Analysis
+    // =========================================================================
+    
+    printf("=== Speedup Analysis ===\n\n");
+    
+    if (dap_generic_time > 0) {
+        printf("Baseline: DAP generic (%.2f µs)\n\n", dap_generic_time);
+        
+        printf("%-25s %15s %15s\n", "Implementation", "vs Generic", "vs Best DAP");
+        printf("%-25s %15s %15s\n", 
+               "-------------------------", "---------------", "---------------");
+        
+        for (int i = 0; i < result_count; i++) {
+            if (!results[i].available) continue;
+            
+            double vs_generic = dap_generic_time / results[i].time_us;
+            double vs_best = dap_best_time / results[i].time_us;
+            
+            printf("%-25s %14.2fx %14.2fx\n",
+                   results[i].name,
+                   vs_generic,
+                   vs_best);
         }
         printf("\n");
     }
+    
+    // =========================================================================
+    // Summary
+    // =========================================================================
+    
+    printf("=== Summary ===\n\n");
+    
+    if (dap_best_name) {
+        printf("Best DAP implementation: %s (%.2f µs, %.0f ops/sec)\n",
+               dap_best_name, dap_best_time, 
+               (double)SCALAR_ITERATIONS / (dap_best_time / 1e6));
+    }
+    
+    if (dap_generic_time > 0 && dap_best_time > 0) {
+        printf("DAP optimization speedup: %.2fx (generic -> best)\n",
+               dap_generic_time / dap_best_time);
+    }
+    
+#ifdef HAVE_OPENSSL_COMPETITOR
+    // Find OpenSSL result
+    for (int i = 0; i < result_count; i++) {
+        if (strcmp(results[i].name, "OpenSSL BN_mod_mul") == 0) {
+            double ossl_time = results[i].time_us;
+            printf("\nOpenSSL BN_mod_mul: %.2f µs (%.0f ops/sec)\n",
+                   ossl_time, results[i].ops_per_sec);
+            
+            if (dap_best_time > 0) {
+                if (dap_best_time < ossl_time) {
+                    printf("DAP best is %.2fx FASTER than OpenSSL BN\n",
+                           ossl_time / dap_best_time);
+                } else {
+                    printf("DAP best is %.2fx slower than OpenSSL BN\n",
+                           dap_best_time / ossl_time);
+                }
+            }
+            break;
+        }
+    }
+#endif
+    
     printf("\n");
     
     // Show current active implementation
     ecdsa_scalar_impl_t current = ecdsa_scalar_get_impl();
     const ecdsa_scalar_impl_info_t *current_info = ecdsa_scalar_get_impl_info(current);
     if (current_info) {
-        printf("Active implementation: %s\n", current_info->name);
+        printf("Active DAP scalar implementation: %s\n", current_info->name);
     }
     printf("\n");
+    
+    // Free allocated names
+    for (int i = 0; i < result_count; i++) {
+        if (results[i].name && strncmp(results[i].name, "DAP ", 4) == 0) {
+            free((void*)results[i].name);
+        }
+    }
 }
 #endif
 
