@@ -23,7 +23,7 @@
 
 /**
  * @file dap_sig_ecdsa.c
- * @brief ECDSA signature implementation using secp256k1 curve
+ * @brief ECDSA signature implementation using native secp256k1 code
  */
 
 #include <assert.h>
@@ -37,62 +37,28 @@
 #include "rand/dap_rand.h"
 #include "dap_hash_sha3.h"
 
-// Currently using 3rdparty secp256k1, will be replaced with native implementation
-#include "secp256k1.h"
-#include "secp256k1_preallocated.h"
+// Native ECDSA implementation
+#include "sig_ecdsa/ecdsa_impl.h"
 
 #define LOG_TAG "dap_sig_ecdsa"
 
 // =============================================================================
-// Internal types (will be replaced with native ecdsa_* types)
+// Context Management (native implementation needs no context)
 // =============================================================================
 
-// Thread-local context for side-channel protection
-static _Thread_local secp256k1_context *s_context = NULL;
+// For compatibility: context is just a marker that native impl is initialized
+typedef struct dap_sig_ecdsa_context {
+    uint8_t initialized;
+    uint8_t randomness[32];
+} dap_sig_ecdsa_context_impl_t;
 
-// =============================================================================
-// Context Management
-// =============================================================================
+static _Thread_local bool s_initialized = false;
 
-static void s_context_destructor(UNUSED_ARG void *a_context) 
-{
-    if (s_context) {
-        secp256k1_context_destroy(s_context);
-        log_it(L_DEBUG, "ECDSA context destroyed @%p", s_context);
-        s_context = NULL;
+static void s_ensure_init(void) {
+    if (!s_initialized) {
+        ecdsa_ecmult_gen_init();
+        s_initialized = true;
     }
-}
-
-static pthread_key_t s_context_key;
-static pthread_once_t s_key_once = PTHREAD_ONCE_INIT;
-
-static void s_key_init(void) {
-    pthread_key_create(&s_context_key, s_context_destructor);
-}
-
-static secp256k1_context *s_context_get(void) 
-{
-    if (!s_context) {
-        s_context = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
-        if (!s_context) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return NULL;
-        }
-        // Register destructor for thread cleanup
-        pthread_once(&s_key_once, s_key_init);
-        pthread_setspecific(s_context_key, s_context);
-        log_it(L_DEBUG, "ECDSA context created @%p", s_context);
-    }
-    // Randomize on each use for side-channel protection
-    uint8_t l_seed[32];
-    randombytes(l_seed, sizeof(l_seed));
-    if (secp256k1_context_randomize(s_context, l_seed) != 1) {
-        log_it(L_ERROR, "Failed to randomize ECDSA context");
-        secp256k1_context_destroy(s_context);
-        s_context = NULL;
-        return NULL;
-    }
-    return s_context;
 }
 
 // =============================================================================
@@ -102,21 +68,30 @@ static secp256k1_context *s_context_get(void)
 dap_sig_ecdsa_context_t *dap_sig_ecdsa_context_create(unsigned int a_flags)
 {
     (void)a_flags;
-    secp256k1_context *l_ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    s_ensure_init();
+    
+    dap_sig_ecdsa_context_impl_t *l_ctx = DAP_NEW_Z(dap_sig_ecdsa_context_impl_t);
+    if (l_ctx) {
+        l_ctx->initialized = 1;
+        randombytes(l_ctx->randomness, 32);
+    }
     return (dap_sig_ecdsa_context_t *)l_ctx;
 }
 
 void dap_sig_ecdsa_context_destroy(dap_sig_ecdsa_context_t *a_ctx)
 {
     if (a_ctx) {
-        secp256k1_context_destroy((secp256k1_context *)a_ctx);
+        memset_safe(a_ctx, 0, sizeof(dap_sig_ecdsa_context_impl_t));
+        DAP_DELETE(a_ctx);
     }
 }
 
 int dap_sig_ecdsa_context_randomize(dap_sig_ecdsa_context_t *a_ctx, const uint8_t *a_seed32)
 {
-    if (!a_ctx) return 0;
-    return secp256k1_context_randomize((secp256k1_context *)a_ctx, a_seed32);
+    if (!a_ctx || !a_seed32) return 0;
+    dap_sig_ecdsa_context_impl_t *l_ctx = (dap_sig_ecdsa_context_impl_t *)a_ctx;
+    memcpy(l_ctx->randomness, a_seed32, 32);
+    return 1;
 }
 
 // =============================================================================
@@ -125,9 +100,11 @@ int dap_sig_ecdsa_context_randomize(dap_sig_ecdsa_context_t *a_ctx, const uint8_
 
 int dap_sig_ecdsa_seckey_verify(const dap_sig_ecdsa_context_t *a_ctx, const uint8_t *a_seckey)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_seckey) return 0;
-    return secp256k1_ec_seckey_verify(l_ctx, a_seckey);
+    (void)a_ctx;
+    s_ensure_init();
+    
+    if (!a_seckey) return 0;
+    return ecdsa_scalar_check_seckey(a_seckey) ? 1 : 0;
 }
 
 int dap_sig_ecdsa_pubkey_create(
@@ -135,9 +112,35 @@ int dap_sig_ecdsa_pubkey_create(
     dap_sig_ecdsa_pubkey_t *a_pubkey,
     const uint8_t *a_seckey)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_pubkey || !a_seckey) return 0;
-    return secp256k1_ec_pubkey_create(l_ctx, (secp256k1_pubkey *)a_pubkey, a_seckey);
+    (void)a_ctx;
+    s_ensure_init();
+    
+    if (!a_pubkey || !a_seckey) return 0;
+    
+    // Parse private key as scalar
+    ecdsa_scalar_t l_seckey;
+    int overflow = 0;
+    ecdsa_scalar_set_b32(&l_seckey, a_seckey, &overflow);
+    if (overflow || ecdsa_scalar_is_zero(&l_seckey)) {
+        return 0;
+    }
+    
+    // Generate public key: P = seckey * G
+    ecdsa_ge_t l_pubkey;
+    if (!ecdsa_pubkey_create(&l_pubkey, &l_seckey)) {
+        return 0;
+    }
+    
+    // Store as x || y (64 bytes)
+    ecdsa_field_normalize(&l_pubkey.x);
+    ecdsa_field_normalize(&l_pubkey.y);
+    ecdsa_field_get_b32(a_pubkey->data, &l_pubkey.x);
+    ecdsa_field_get_b32(a_pubkey->data + 32, &l_pubkey.y);
+    
+    // Clear sensitive data
+    ecdsa_scalar_clear(&l_seckey);
+    
+    return 1;
 }
 
 int dap_sig_ecdsa_pubkey_serialize(
@@ -147,15 +150,23 @@ int dap_sig_ecdsa_pubkey_serialize(
     const dap_sig_ecdsa_pubkey_t *a_pubkey,
     unsigned int a_flags)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_output || !a_outputlen || !a_pubkey) return 0;
+    (void)a_ctx;
+    s_ensure_init();
     
-    unsigned int l_flags = (a_flags & DAP_SIG_ECDSA_EC_COMPRESSED) 
-        ? SECP256K1_EC_COMPRESSED 
-        : SECP256K1_EC_UNCOMPRESSED;
+    if (!a_output || !a_outputlen || !a_pubkey) return 0;
     
-    return secp256k1_ec_pubkey_serialize(l_ctx, a_output, a_outputlen, 
-                                         (const secp256k1_pubkey *)a_pubkey, l_flags);
+    // Reconstruct point from stored x || y
+    ecdsa_field_t x, y;
+    ecdsa_field_set_b32(&x, a_pubkey->data);
+    ecdsa_field_set_b32(&y, a_pubkey->data + 32);
+    
+    ecdsa_ge_t l_point;
+    l_point.infinity = false;
+    l_point.x = x;
+    l_point.y = y;
+    
+    bool compressed = (a_flags & DAP_SIG_ECDSA_EC_COMPRESSED) != 0;
+    return ecdsa_ge_serialize(&l_point, compressed, a_output, a_outputlen) ? 1 : 0;
 }
 
 int dap_sig_ecdsa_pubkey_parse(
@@ -164,9 +175,23 @@ int dap_sig_ecdsa_pubkey_parse(
     const uint8_t *a_input,
     size_t a_inputlen)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_pubkey || !a_input) return 0;
-    return secp256k1_ec_pubkey_parse(l_ctx, (secp256k1_pubkey *)a_pubkey, a_input, a_inputlen);
+    (void)a_ctx;
+    s_ensure_init();
+    
+    if (!a_pubkey || !a_input) return 0;
+    
+    ecdsa_ge_t l_point;
+    if (!ecdsa_ge_parse(&l_point, a_input, a_inputlen)) {
+        return 0;
+    }
+    
+    // Store as x || y (64 bytes)
+    ecdsa_field_normalize(&l_point.x);
+    ecdsa_field_normalize(&l_point.y);
+    ecdsa_field_get_b32(a_pubkey->data, &l_point.x);
+    ecdsa_field_get_b32(a_pubkey->data + 32, &l_point.y);
+    
+    return 1;
 }
 
 // =============================================================================
@@ -181,11 +206,48 @@ int dap_sig_ecdsa_sign(
     dap_sig_ecdsa_nonce_func_t a_noncefp,
     const void *a_ndata)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_sig || !a_msghash32 || !a_seckey) return 0;
-    return secp256k1_ecdsa_sign(l_ctx, (secp256k1_ecdsa_signature *)a_sig, 
-                                a_msghash32, a_seckey,
-                                (secp256k1_nonce_function)a_noncefp, a_ndata);
+    (void)a_ctx;
+    (void)a_noncefp;
+    (void)a_ndata;
+    s_ensure_init();
+    
+    if (!a_sig || !a_msghash32 || !a_seckey) return 0;
+    
+    // Parse private key
+    ecdsa_scalar_t l_seckey;
+    int overflow = 0;
+    ecdsa_scalar_set_b32(&l_seckey, a_seckey, &overflow);
+    if (overflow || ecdsa_scalar_is_zero(&l_seckey)) {
+        return 0;
+    }
+    
+    // Generate nonce using RFC6979
+    ecdsa_scalar_t l_nonce;
+    unsigned int counter = 0;
+    while (!ecdsa_nonce_rfc6979(&l_nonce, a_msghash32, a_seckey, NULL, NULL, 0, counter)) {
+        counter++;
+        if (counter > 100) {
+            ecdsa_scalar_clear(&l_seckey);
+            return 0;  // Should never happen
+        }
+    }
+    
+    // Sign
+    ecdsa_sig_t l_sig;
+    if (!ecdsa_sign_inner(&l_sig, a_msghash32, &l_seckey, &l_nonce)) {
+        ecdsa_scalar_clear(&l_seckey);
+        ecdsa_scalar_clear(&l_nonce);
+        return 0;
+    }
+    
+    // Serialize to compact format
+    ecdsa_sig_serialize(a_sig->data, &l_sig);
+    
+    // Clear sensitive data
+    ecdsa_scalar_clear(&l_seckey);
+    ecdsa_scalar_clear(&l_nonce);
+    
+    return 1;
 }
 
 int dap_sig_ecdsa_verify(
@@ -194,10 +256,34 @@ int dap_sig_ecdsa_verify(
     const uint8_t *a_msghash32,
     const dap_sig_ecdsa_pubkey_t *a_pubkey)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_sig || !a_msghash32 || !a_pubkey) return 0;
-    return secp256k1_ecdsa_verify(l_ctx, (const secp256k1_ecdsa_signature *)a_sig,
-                                  a_msghash32, (const secp256k1_pubkey *)a_pubkey);
+    (void)a_ctx;
+    s_ensure_init();
+    
+    if (!a_sig || !a_msghash32 || !a_pubkey) return 0;
+    
+    // Parse signature
+    ecdsa_sig_t l_sig;
+    if (!ecdsa_sig_parse(&l_sig, a_sig->data)) {
+        return 0;
+    }
+    
+    // Reconstruct public key point from stored x || y
+    ecdsa_field_t x, y;
+    ecdsa_field_set_b32(&x, a_pubkey->data);
+    ecdsa_field_set_b32(&y, a_pubkey->data + 32);
+    
+    ecdsa_ge_t l_pubkey;
+    l_pubkey.infinity = false;
+    l_pubkey.x = x;
+    l_pubkey.y = y;
+    
+    // Verify point is on curve
+    if (!ecdsa_ge_is_valid(&l_pubkey)) {
+        return 0;
+    }
+    
+    // Verify signature
+    return ecdsa_verify_inner(&l_sig, a_msghash32, &l_pubkey) ? 1 : 0;
 }
 
 int dap_sig_ecdsa_signature_serialize(
@@ -205,10 +291,12 @@ int dap_sig_ecdsa_signature_serialize(
     uint8_t *a_output64,
     const dap_sig_ecdsa_signature_t *a_sig)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_output64 || !a_sig) return 0;
-    return secp256k1_ecdsa_signature_serialize_compact(l_ctx, a_output64,
-                                                       (const secp256k1_ecdsa_signature *)a_sig);
+    (void)a_ctx;
+    if (!a_output64 || !a_sig) return 0;
+    
+    // Already in compact format
+    memcpy(a_output64, a_sig->data, 64);
+    return 1;
 }
 
 int dap_sig_ecdsa_signature_parse(
@@ -216,9 +304,19 @@ int dap_sig_ecdsa_signature_parse(
     dap_sig_ecdsa_signature_t *a_sig,
     const uint8_t *a_input64)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_sig || !a_input64) return 0;
-    return secp256k1_ecdsa_signature_parse_compact(l_ctx, (secp256k1_ecdsa_signature *)a_sig, a_input64);
+    (void)a_ctx;
+    s_ensure_init();
+    
+    if (!a_sig || !a_input64) return 0;
+    
+    // Validate by parsing
+    ecdsa_sig_t l_sig;
+    if (!ecdsa_sig_parse(&l_sig, a_input64)) {
+        return 0;
+    }
+    
+    memcpy(a_sig->data, a_input64, 64);
+    return 1;
 }
 
 int dap_sig_ecdsa_signature_normalize(
@@ -226,11 +324,23 @@ int dap_sig_ecdsa_signature_normalize(
     dap_sig_ecdsa_signature_t *a_sigout,
     const dap_sig_ecdsa_signature_t *a_sigin)
 {
-    secp256k1_context *l_ctx = a_ctx ? (secp256k1_context *)a_ctx : s_context_get();
-    if (!l_ctx || !a_sigin) return 0;
-    return secp256k1_ecdsa_signature_normalize(l_ctx, 
-                                               (secp256k1_ecdsa_signature *)a_sigout,
-                                               (const secp256k1_ecdsa_signature *)a_sigin);
+    (void)a_ctx;
+    s_ensure_init();
+    
+    if (!a_sigin) return 0;
+    
+    ecdsa_sig_t l_sig;
+    if (!ecdsa_sig_parse(&l_sig, a_sigin->data)) {
+        return 0;
+    }
+    
+    int was_high = ecdsa_sig_normalize(&l_sig);
+    
+    if (a_sigout) {
+        ecdsa_sig_serialize(a_sigout->data, &l_sig);
+    }
+    
+    return was_high ? 1 : 0;
 }
 
 // =============================================================================
@@ -247,6 +357,8 @@ const dap_sig_ecdsa_nonce_func_t dap_sig_ecdsa_nonce_default = NULL;
 void dap_sig_ecdsa_key_new(dap_enc_key_t *a_key) 
 {
     if (!a_key) return;
+    s_ensure_init();
+    
     *a_key = (dap_enc_key_t) {
         .type = DAP_ENC_KEY_TYPE_SIG_ECDSA,
         .sign_get = dap_sig_ecdsa_get_sign,
@@ -263,18 +375,11 @@ void dap_sig_ecdsa_key_new_generate(
     UNUSED_ARG size_t a_key_size)
 {
     dap_return_if_pass(!a_key);
+    s_ensure_init();
     
     // Allocate key storage
     a_key->priv_key_data = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, DAP_SIG_ECDSA_PRIVKEY_SIZE);
     a_key->pub_key_data = DAP_NEW_Z_RET_IF_FAIL(dap_sig_ecdsa_pubkey_t, a_key->priv_key_data);
-    
-    secp256k1_context *l_ctx = s_context_get();
-    if (!l_ctx) {
-        log_it(L_ERROR, "Failed to get ECDSA context");
-        DAP_DEL_Z(a_key->priv_key_data);
-        DAP_DEL_Z(a_key->pub_key_data);
-        return;
-    }
     
     // Generate private key
     if (a_seed && a_seed_size > 0) {
@@ -454,5 +559,8 @@ void dap_sig_ecdsa_private_and_public_keys_delete(dap_enc_key_t *a_key)
 
 void dap_sig_ecdsa_deinit(void)
 {
-    s_context_destructor(NULL);
+    if (s_initialized) {
+        ecdsa_ecmult_gen_deinit();
+        s_initialized = false;
+    }
 }

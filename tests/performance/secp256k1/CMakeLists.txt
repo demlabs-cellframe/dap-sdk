@@ -57,7 +57,7 @@ target_include_directories(benchmark_secp256k1 PRIVATE
 
 # Add competitor implementations
 if(HAVE_SECP256K1_COMPETITOR)
-    target_compile_definitions(benchmark_secp256k1 PRIVATE BENCHMARK_SECP256K1_BITCOIN_CORE)
+    target_compile_definitions(benchmark_secp256k1 PRIVATE HAVE_SECP256K1_COMPETITOR)
     target_include_directories(benchmark_secp256k1 PRIVATE
         ${COMPETITORS_DIR}/secp256k1_lib/include
     )
@@ -67,7 +67,7 @@ if(HAVE_SECP256K1_COMPETITOR)
 endif()
 
 if(HAVE_OPENSSL_COMPETITOR)
-    target_compile_definitions(benchmark_secp256k1 PRIVATE BENCHMARK_OPENSSL_ECDSA)
+    target_compile_definitions(benchmark_secp256k1 PRIVATE HAVE_OPENSSL_COMPETITOR)
     target_include_directories(benchmark_secp256k1 PRIVATE ${OPENSSL_INCLUDE_DIR})
     target_link_libraries(benchmark_secp256k1 PRIVATE OpenSSL::Crypto)
 endif()

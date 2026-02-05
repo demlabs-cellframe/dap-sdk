@@ -17,10 +17,12 @@
 
 #ifdef ECDSA_FIELD_52BIT
 
-// 5x52-bit representation of p
+// 5x52-bit representation of p = 2^256 - 2^32 - 977
 // p = n[0] + n[1]*2^52 + n[2]*2^104 + n[3]*2^156 + n[4]*2^208
+// p in hex: FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+// Limb 0 = p & ((1<<52)-1) = 0xFFFFEFFFFFC2F (52 bits)
 const ecdsa_field_t ECDSA_FIELD_P = {{
-    0xFFFFFEFFFFFC2FULL,  // bits 0-51
+    0xFFFFEFFFFFC2FULL,   // bits 0-51: p & M52
     0xFFFFFFFFFFFFFULL,   // bits 52-103
     0xFFFFFFFFFFFFFULL,   // bits 104-155
     0xFFFFFFFFFFFFFULL,   // bits 156-207
@@ -72,9 +74,10 @@ void ecdsa_field_normalize(ecdsa_field_t *r) {
     
     // Final reduction: if >= p, subtract p
     // Check if result >= p
-    m = (t4 == M48) & (t3 == M52) & (t2 == M52) & (t1 == M52) & (t0 >= 0xFFFFFEFFFFFC2FULL);
+    // p.n[0] = 0xFFFFEFFFFFC2F (52 bits)
+    m = (t4 == M48) & (t3 == M52) & (t2 == M52) & (t1 == M52) & (t0 >= 0xFFFFEFFFFFC2FULL);
     if (m) {
-        t0 -= 0xFFFFFEFFFFFC2FULL;
+        t0 -= 0xFFFFEFFFFFC2FULL;
         t1 -= M52 + (t0 >> 63);
         t0 &= M52;
         t2 -= M52 + (t1 >> 63);
@@ -221,79 +224,87 @@ static inline void mul64(uint64_t a, uint64_t b, uint64_t *hi, uint64_t *lo) {
 // Uses schoolbook multiplication with reduction
 void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
 #ifdef __SIZEOF_INT128__
-    __uint128_t c, d;
-    uint64_t t0, t1, t2, t3, t4, tx;
+    __uint128_t t[10] = {0};
+    __uint128_t c;
     
-    // c accumulates the product, then we reduce
-    const uint64_t R = 0x1000003D1ULL; // 2^256 mod p = 2^32 + 977
+    // Copy inputs in case r aliases a or b
+    uint64_t an[5] = {a->n[0], a->n[1], a->n[2], a->n[3], a->n[4]};
+    uint64_t bn[5] = {b->n[0], b->n[1], b->n[2], b->n[3], b->n[4]};
     
-    // a*b produces a 512-bit number, we reduce as we go
-    // Using the fact that 2^256 ≡ R (mod p)
+    // Step 1: Full 10-limb multiplication
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+            t[i+j] += (__uint128_t)an[i] * bn[j];
+        }
+    }
     
-    d = (__uint128_t)a->n[0] * b->n[0];
-    t0 = (uint64_t)d & M52; d >>= 52;
+    // Step 2: Normalize intermediate result (propagate carries)
+    for (int i = 0; i < 9; i++) {
+        t[i+1] += t[i] >> 52;
+        t[i] &= M52;
+    }
     
-    d += (__uint128_t)a->n[0] * b->n[1] +
-         (__uint128_t)a->n[1] * b->n[0];
-    t1 = (uint64_t)d & M52; d >>= 52;
+    // Step 3: Reduce mod p
+    // 2^256 ≡ R (mod p) where R = 0x1000003D1
+    // We have a 520-bit number in t[0..9], need to reduce to 256 bits
+    const uint64_t R = 0x1000003D1ULL;
     
-    d += (__uint128_t)a->n[0] * b->n[2] +
-         (__uint128_t)a->n[1] * b->n[1] +
-         (__uint128_t)a->n[2] * b->n[0];
-    t2 = (uint64_t)d & M52; d >>= 52;
+    // First, reduce t[5..9] into t[0..4]
+    // t[i] * 2^(52*i) for i >= 5 needs to be reduced
+    // 2^(52*5) = 2^260 = 2^256 * 2^4 = R * 16 (mod p)
+    // So t[5] contributes t[5] * R * 16 to limb 0 onwards
+    // t[6] contributes t[6] * R * 16 to limb 1 onwards (since 2^312 = R * 2^56 = R * 16 * 2^52)
+    // etc.
     
-    d += (__uint128_t)a->n[0] * b->n[3] +
-         (__uint128_t)a->n[1] * b->n[2] +
-         (__uint128_t)a->n[2] * b->n[1] +
-         (__uint128_t)a->n[3] * b->n[0];
-    t3 = (uint64_t)d & M52; d >>= 52;
+    // t[5] * R * 16 goes to limb 0+
+    c = t[5] * R * 16;
+    t[0] += c & M52; c >>= 52;
+    t[1] += c & M52; c >>= 52;
+    t[2] += c;
     
-    d += (__uint128_t)a->n[0] * b->n[4] +
-         (__uint128_t)a->n[1] * b->n[3] +
-         (__uint128_t)a->n[2] * b->n[2] +
-         (__uint128_t)a->n[3] * b->n[1] +
-         (__uint128_t)a->n[4] * b->n[0];
-    t4 = (uint64_t)d & M52; d >>= 52;
+    // t[6] * R * 16 goes to limb 1+
+    c = t[6] * R * 16;
+    t[1] += c & M52; c >>= 52;
+    t[2] += c & M52; c >>= 52;
+    t[3] += c;
     
-    // Upper part (needs reduction)
-    c = d;
-    d = (__uint128_t)a->n[1] * b->n[4] +
-        (__uint128_t)a->n[2] * b->n[3] +
-        (__uint128_t)a->n[3] * b->n[2] +
-        (__uint128_t)a->n[4] * b->n[1];
-    c += d;
-    tx = (uint64_t)c & M52; c >>= 52;
+    // t[7] * R * 16 goes to limb 2+
+    c = t[7] * R * 16;
+    t[2] += c & M52; c >>= 52;
+    t[3] += c & M52; c >>= 52;
+    t[4] += c;
     
-    d = (__uint128_t)a->n[2] * b->n[4] +
-        (__uint128_t)a->n[3] * b->n[3] +
-        (__uint128_t)a->n[4] * b->n[2];
-    c += d;
+    // t[8] * R * 16 goes to limb 3+
+    c = t[8] * R * 16;
+    t[3] += c & M52; c >>= 52;
+    t[4] += c;
     
-    // Reduce: multiply upper part by R and add to lower
-    c = (__uint128_t)tx * R + t0;
-    t0 = (uint64_t)c & M52; c >>= 52;
+    // t[9] * R * 16 goes to limb 4
+    t[4] += t[9] * R * 16;
     
-    c += t1;
-    d = (__uint128_t)a->n[3] * b->n[4] +
-        (__uint128_t)a->n[4] * b->n[3];
-    c += (__uint128_t)((uint64_t)d & M52) * R;
-    t1 = (uint64_t)c & M52; c >>= 52;
+    // Propagate carries through t[0..4] - multiple passes may be needed
+    for (int pass = 0; pass < 3; pass++) {
+        c = 0;
+        for (int i = 0; i < 4; i++) {
+            c += t[i];
+            t[i] = c & M52;
+            c >>= 52;
+        }
+        t[4] += c;
+        
+        // If t[4] overflows 48 bits, reduce again
+        if (t[4] >> 48) {
+            __uint128_t overflow = t[4] >> 48;
+            t[4] &= M48;
+            t[0] += overflow * R;
+        }
+    }
     
-    c += t2;
-    d >>= 52;
-    d += (__uint128_t)a->n[4] * b->n[4];
-    c += (__uint128_t)((uint64_t)d & M52) * R;
-    t2 = (uint64_t)c & M52; c >>= 52;
-    
-    c += t3;
-    d >>= 52;
-    c += (__uint128_t)((uint64_t)d) * R;
-    t3 = (uint64_t)c & M52; c >>= 52;
-    
-    c += t4;
-    t4 = (uint64_t)c;
-    
-    r->n[0] = t0; r->n[1] = t1; r->n[2] = t2; r->n[3] = t3; r->n[4] = t4;
+    r->n[0] = (uint64_t)t[0]; 
+    r->n[1] = (uint64_t)t[1]; 
+    r->n[2] = (uint64_t)t[2]; 
+    r->n[3] = (uint64_t)t[3]; 
+    r->n[4] = (uint64_t)t[4];
     ecdsa_field_normalize(r);
 #else
     // Fallback for no __int128
@@ -336,63 +347,32 @@ void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a) {
 }
 
 // Modular inverse using Fermat's little theorem: a^(-1) = a^(p-2) mod p
+// Uses binary exponentiation with p-2 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2D
 void ecdsa_field_inv(ecdsa_field_t *r, const ecdsa_field_t *a) {
-    ecdsa_field_t x2, x3, x6, x9, x11, x22, x44, x88, x176, x220, x223, t1;
+    // p - 2 in big-endian bytes
+    static const uint8_t p_minus_2[32] = {
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFC, 0x2D
+    };
     
-    // Addition chain for p-2
-    ecdsa_field_sqr(&x2, a);
-    ecdsa_field_mul(&x2, &x2, a);        // x2 = a^3
+    ecdsa_field_t x = *a;
+    ecdsa_field_t result;
+    ecdsa_field_set_int(&result, 1);
     
-    ecdsa_field_sqr(&x3, &x2);
-    ecdsa_field_mul(&x3, &x3, a);        // x3 = a^7
+    // Binary exponentiation (square-and-multiply)
+    for (int i = 0; i < 32; i++) {
+        for (int j = 7; j >= 0; j--) {
+            ecdsa_field_sqr(&result, &result);
+            if ((p_minus_2[i] >> j) & 1) {
+                ecdsa_field_mul(&result, &result, &x);
+            }
+        }
+    }
     
-    ecdsa_field_sqr(&t1, &x3);
-    for (int i = 0; i < 2; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x6, &t1, &x3);      // x6 = a^63
-    
-    ecdsa_field_sqr(&t1, &x6);
-    for (int i = 0; i < 2; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x9, &t1, &x3);
-    
-    ecdsa_field_sqr(&t1, &x9);
-    ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x11, &t1, &x2);
-    
-    ecdsa_field_sqr(&t1, &x11);
-    for (int i = 0; i < 10; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x22, &t1, &x11);
-    
-    ecdsa_field_sqr(&t1, &x22);
-    for (int i = 0; i < 21; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x44, &t1, &x22);
-    
-    ecdsa_field_sqr(&t1, &x44);
-    for (int i = 0; i < 43; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x88, &t1, &x44);
-    
-    ecdsa_field_sqr(&t1, &x88);
-    for (int i = 0; i < 87; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x176, &t1, &x88);
-    
-    ecdsa_field_sqr(&t1, &x176);
-    for (int i = 0; i < 43; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x220, &t1, &x44);
-    
-    ecdsa_field_sqr(&t1, &x220);
-    for (int i = 0; i < 2; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&x223, &t1, &x3);
-    
-    // Final steps
-    ecdsa_field_sqr(&t1, &x223);
-    for (int i = 0; i < 22; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&t1, &t1, &x22);
-    
-    for (int i = 0; i < 6; i++) ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(&t1, &t1, &x2);
-    
-    ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_sqr(&t1, &t1);
-    ecdsa_field_mul(r, &t1, a);
+    *r = result;
+    ecdsa_field_normalize(r);
 }
 
 // Square root using Tonelli-Shanks (secp256k1: p ≡ 3 mod 4, so sqrt(a) = a^((p+1)/4))

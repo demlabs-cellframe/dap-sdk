@@ -53,7 +53,8 @@ bool dap_hash(dap_hash_type_t a_type, const void *a_data_in, size_t a_data_in_si
         case DAP_HASH_TYPE_SHA2_256:
             if (a_hash_out_size < 32)
                 return false;
-            return dap_hash_sha2_256((uint8_t *)a_hash_out, (const uint8_t *)a_data_in, a_data_in_size) == 0;
+            dap_hash_sha2_256((uint8_t *)a_hash_out, (const uint8_t *)a_data_in, a_data_in_size);
+            return true;
 
         case DAP_HASH_TYPE_KECCAK_256:
             // TODO: Implement Keccak-256
@@ -71,14 +72,4 @@ bool dap_hash(dap_hash_type_t a_type, const void *a_data_in, size_t a_data_in_si
     }
 }
 
-/**
- * @brief Compute SHA2-256 hash
- * @param[out] a_output Output buffer (must be 32 bytes)
- * @param[in] a_input Input data
- * @param[in] a_inlen Input length
- * @return 0 on success, negative error code on failure
- */
-int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen)
-{
-    return dap_sha2_256(a_output, a_input, a_inlen);
-}
+// Note: dap_hash_sha2_256() is now provided by dap_hash_sha2.h/c

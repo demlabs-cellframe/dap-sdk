@@ -3,51 +3,14 @@
  */
 
 #include "ecdsa_impl.h"
-#include "dap_hash_sha3.h"
+#include "dap_hash_sha2.h"
 #include <string.h>
 
 // =============================================================================
 // RFC6979 Deterministic Nonce
 // =============================================================================
 
-// HMAC-SHA256 for RFC6979
-static void hmac_sha256(uint8_t *out, const uint8_t *key, size_t keylen,
-                        const uint8_t *msg, size_t msglen) {
-    uint8_t k_ipad[64], k_opad[64];
-    uint8_t tk[32];
-    
-    // If key > 64 bytes, hash it
-    if (keylen > 64) {
-        dap_hash_sha3_256_raw(tk, key, keylen);
-        key = tk;
-        keylen = 32;
-    }
-    
-    // Pad key
-    memset(k_ipad, 0x36, 64);
-    memset(k_opad, 0x5c, 64);
-    for (size_t i = 0; i < keylen; i++) {
-        k_ipad[i] ^= key[i];
-        k_opad[i] ^= key[i];
-    }
-    
-    // Inner hash: H(k_ipad || msg)
-    uint8_t inner[64 + 256];  // Max msg size we support
-    memcpy(inner, k_ipad, 64);
-    size_t total = 64;
-    if (msglen <= 256) {
-        memcpy(inner + 64, msg, msglen);
-        total += msglen;
-    }
-    uint8_t inner_hash[32];
-    dap_hash_sha3_256_raw(inner_hash, inner, total);
-    
-    // Outer hash: H(k_opad || inner_hash)
-    uint8_t outer[64 + 32];
-    memcpy(outer, k_opad, 64);
-    memcpy(outer + 64, inner_hash, 32);
-    dap_hash_sha3_256_raw(out, outer, 96);
-}
+// Note: RFC6979 uses HMAC-SHA256 (not SHA3!) for nonce generation
 
 bool ecdsa_nonce_rfc6979(
     ecdsa_scalar_t *k,
@@ -81,10 +44,10 @@ bool ecdsa_nonce_rfc6979(
     if (data && datalen > 0 && datalen <= 256) {
         memcpy(buf + buflen, data, datalen); buflen += datalen;
     }
-    hmac_sha256(key, key, 32, buf, buflen);
+    dap_hash_hmac_sha2_256(key, key, 32, buf, buflen);
     
     // Step e: V = HMAC(K, V)
-    hmac_sha256(v, key, 32, v, 32);
+    dap_hash_hmac_sha2_256(v, key, 32, v, 32);
     
     // Step f: K = HMAC(K, V || 0x01 || x || h [|| algo || data])
     buflen = 0;
@@ -98,15 +61,15 @@ bool ecdsa_nonce_rfc6979(
     if (data && datalen > 0 && datalen <= 256) {
         memcpy(buf + buflen, data, datalen); buflen += datalen;
     }
-    hmac_sha256(key, key, 32, buf, buflen);
+    dap_hash_hmac_sha2_256(key, key, 32, buf, buflen);
     
     // Step g: V = HMAC(K, V)
-    hmac_sha256(v, key, 32, v, 32);
+    dap_hash_hmac_sha2_256(v, key, 32, v, 32);
     
     // Step h: Generate candidates
     for (unsigned int i = 0; i <= counter; i++) {
         // V = HMAC(K, V)
-        hmac_sha256(v, key, 32, v, 32);
+        dap_hash_hmac_sha2_256(v, key, 32, v, 32);
         
         // Try to use V as nonce
         int overflow = 0;
@@ -123,8 +86,8 @@ bool ecdsa_nonce_rfc6979(
             buflen = 0;
             memcpy(buf + buflen, v, 32); buflen += 32;
             buf[buflen++] = 0x00;
-            hmac_sha256(key, key, 32, buf, buflen);
-            hmac_sha256(v, key, 32, v, 32);
+            dap_hash_hmac_sha2_256(key, key, 32, buf, buflen);
+            dap_hash_hmac_sha2_256(v, key, 32, v, 32);
         }
     }
     

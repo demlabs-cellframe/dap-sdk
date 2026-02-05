@@ -23,25 +23,20 @@
 */
 
 #include "dap_sha2_256.h"
-#include "hash.h"
-#include "hash_impl.h"
+#include "dap_hash_sha2.h"
 
 /**
- * @brief Compute SHA2-256 hash
+ * @brief Compute SHA2-256 hash (legacy wrapper)
  * @param[out] a_output Output buffer (must be 32 bytes)
  * @param[in] a_input Input data
  * @param[in] a_inlen Input length
  * @return Returns 0 on success, negative error code on failure
  */
 int dap_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen) {
-    if (!a_output || !a_input) {
+    if (!a_output) {
         return -1;  // NULL parameter error
     }
     
-    secp256k1_sha256 l_hasher;
-    secp256k1_sha256_initialize(&l_hasher);
-    secp256k1_sha256_write(&l_hasher, a_input, a_inlen);
-    secp256k1_sha256_finalize(&l_hasher, a_output);
-    
+    dap_hash_sha2_256(a_output, a_input, a_inlen);
     return 0;  // Success
-} 
+}

@@ -207,10 +207,7 @@ enable_language(ASM)
 set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/keccak src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src/chipmunk src/hash/sha2-256 src include)
 
 # XKCP removed - using native DAP Keccak implementation
-
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
-endif()
+# secp256k1 removed - using native DAP ECDSA implementation (sig_ecdsa/)
 
 
 option (DAP_PQLR "PQRL Intergration" OFF)
@@ -409,18 +406,12 @@ target_include_directories(dap_crypto PUBLIC
 
 # Store dependencies for final library - no linking of OBJECT targets  
 set(CRYPTO_LIBS "dap_crypto_kyber512")
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    list(APPEND CRYPTO_LIBS "secp256k1")
-endif()
+# secp256k1 removed - using native DAP ECDSA implementation
 if(UNIX)
     list(APPEND CRYPTO_LIBS "m")
 endif()
 
 target_link_libraries(dap_crypto dap_core dap_json)
-
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    target_link_libraries(dap_crypto secp256k1)
-endif()
 
 if(UNIX)
   target_link_libraries(dap_crypto m)
@@ -432,10 +423,7 @@ set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external depende
 # shishua moved from 3rdparty to src/rand/shishua (native implementation)
 target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/rand/shishua)
 target_include_directories(dap_crypto PUBLIC src/Kyber/crypto_kem/kyber512/optimized)
-if (BUILD_WITH_ECDSA)
-    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/include)
-    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/src)
-endif()
+# Native ECDSA implementation in sig_ecdsa/ - no external includes needed
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()

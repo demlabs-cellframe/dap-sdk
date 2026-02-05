@@ -26,6 +26,7 @@
 
 #include "dap_common.h"
 #include "dap_hash_sha3.h"
+#include "dap_hash_sha2.h"
 
 // =============================================================================
 // Hash Dispatcher - Universal API for multiple hash algorithms
@@ -172,17 +173,12 @@ DAP_STATIC_INLINE char *dap_hash_to_str_new_type(dap_hash_type_t a_type, const v
 }
 
 // =============================================================================
-// SHA2-256 specific
+// SHA2-256 specific (implemented in dap_hash_sha2.h)
 // =============================================================================
 
-/**
- * @brief Compute SHA2-256 hash
- * @param[out] a_output Output buffer (must be 32 bytes)
- * @param[in] a_input Input data
- * @param[in] a_inlen Input length
- * @return 0 on success, negative error code on failure
- */
-int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen);
+// dap_hash_sha2_256() is provided by dap_hash_sha2.h with full API:
+// - dap_hash_sha2_256_init/update/final for incremental hashing
+// - dap_hash_hmac_sha2_256 for HMAC
 
 #ifdef __cplusplus
 }

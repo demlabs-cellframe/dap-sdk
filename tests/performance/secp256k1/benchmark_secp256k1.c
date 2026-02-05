@@ -1,15 +1,15 @@
 /*
  * ECDSA secp256k1 Performance Benchmark
  * 
- * Compares DAP native implementation (dap_sig_ecdsa) with:
- *   - bitcoin-core/secp256k1 (reference)
- *   - OpenSSL ECDSA
+ * Benchmarks DAP native implementation (dap_sig_ecdsa).
+ * Optionally compares with competitors:
+ *   - bitcoin-core/secp256k1 (if downloaded)
+ *   - OpenSSL ECDSA (if available)
  * 
  * Tests:
  *   - Key generation (pubkey from privkey)
  *   - ECDSA signing
  *   - ECDSA verification
- *   - Signature serialization/parsing
  * 
  * Build with -DBENCHMARK_SECP256K1_COMPETITORS=ON to include competitors.
  * Run ./download_competitors.sh first to download competitor libraries.
@@ -25,23 +25,20 @@
 #include "dap_common.h"
 #include "rand/dap_rand.h"
 #include "dap_sig_ecdsa.h"
+#include "dap_hash_sha2.h"
 
-// Current 3rdparty secp256k1 (baseline until DAP native implementation is complete)
+// Competitor: bitcoin-core/secp256k1 (downloaded via download_competitors.sh)
+#ifdef HAVE_SECP256K1_COMPETITOR
 #include "secp256k1.h"
-
-#ifdef BENCHMARK_SECP256K1_BITCOIN_CORE
-// bitcoin-core/secp256k1 competitor
-// Already included above as baseline
-#define HAVE_BITCOIN_CORE_COMPETITOR 1
+static secp256k1_context *g_secp_ctx = NULL;
 #endif
 
-#ifdef BENCHMARK_OPENSSL_ECDSA
+#ifdef HAVE_OPENSSL_COMPETITOR
 #include <openssl/ecdsa.h>
 #include <openssl/obj_mac.h>
 #include <openssl/ec.h>
 #include <openssl/bn.h>
 #include <openssl/rand.h>
-#define HAVE_OPENSSL_COMPETITOR 1
 #endif
 
 // =============================================================================
@@ -55,7 +52,6 @@
 // Test data
 static uint8_t g_privkeys[NUM_TEST_KEYS][32];
 static uint8_t g_messages[NUM_TEST_KEYS][32];
-static secp256k1_context *g_ctx = NULL;
 
 // =============================================================================
 // Timing Utilities
@@ -71,10 +67,6 @@ static inline double ns_to_us(uint64_t ns) {
     return (double)ns / 1000.0;
 }
 
-static inline double ops_per_sec(int count, uint64_t ns) {
-    return (double)count / ((double)ns / 1000000000.0);
-}
-
 // =============================================================================
 // Test Data Generation
 // =============================================================================
@@ -82,40 +74,39 @@ static inline double ops_per_sec(int count, uint64_t ns) {
 static void generate_test_data(void) {
     printf("Generating test data (%d keys, %d messages)...\n", NUM_TEST_KEYS, NUM_TEST_KEYS);
     
-    g_ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
-    if (!g_ctx) {
-        fprintf(stderr, "Failed to create secp256k1 context\n");
-        exit(1);
-    }
-    
-    // Randomize context
-    uint8_t seed[32];
-    randombytes(seed, sizeof(seed));
-    int ret = secp256k1_context_randomize(g_ctx, seed);
-    (void)ret;
-    
-    // Generate valid private keys
+    // Generate valid private keys using DAP native
     for (int i = 0; i < NUM_TEST_KEYS; i++) {
         do {
             randombytes(g_privkeys[i], 32);
-        } while (!secp256k1_ec_seckey_verify(g_ctx, g_privkeys[i]));
+        } while (!dap_sig_ecdsa_seckey_verify(NULL, g_privkeys[i]));
         
         // Generate random message hashes
         randombytes(g_messages[i], 32);
     }
     
+#ifdef HAVE_SECP256K1_COMPETITOR
+    g_secp_ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    if (g_secp_ctx) {
+        uint8_t seed[32];
+        randombytes(seed, sizeof(seed));
+        (void)secp256k1_context_randomize(g_secp_ctx, seed);
+    }
+#endif
+    
     printf("Test data generated.\n\n");
 }
 
 static void cleanup_test_data(void) {
-    if (g_ctx) {
-        secp256k1_context_destroy(g_ctx);
-        g_ctx = NULL;
+#ifdef HAVE_SECP256K1_COMPETITOR
+    if (g_secp_ctx) {
+        secp256k1_context_destroy(g_secp_ctx);
+        g_secp_ctx = NULL;
     }
+#endif
 }
 
 // =============================================================================
-// Benchmark: Key Generation (pubkey from privkey)
+// Benchmark Results
 // =============================================================================
 
 typedef struct {
@@ -126,82 +117,165 @@ typedef struct {
     int ops_count;
 } benchmark_result_t;
 
-static void benchmark_keygen_baseline(benchmark_result_t *result) {
-    secp256k1_pubkey pubkey;
+// =============================================================================
+// DAP Native Benchmarks
+// =============================================================================
+
+static void benchmark_dap_keygen(benchmark_result_t *result) {
+    dap_sig_ecdsa_pubkey_t pubkey;
     uint64_t start, end;
     
     // Warmup
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-        (void)secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
+        dap_sig_ecdsa_pubkey_create(NULL, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
     }
     
     // Benchmark
     start = get_time_ns();
     for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-        (void)secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
+        dap_sig_ecdsa_pubkey_create(NULL, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
     }
     end = get_time_ns();
     
-    result->name = "secp256k1 (3rdparty)";
+    result->name = "DAP Native";
     result->keygen_us = ns_to_us(end - start) / BENCHMARK_ITERATIONS;
     result->ops_count = BENCHMARK_ITERATIONS;
 }
 
-static void benchmark_sign_baseline(benchmark_result_t *result) {
-    secp256k1_ecdsa_signature sig;
+static void benchmark_dap_sign(benchmark_result_t *result) {
+    dap_sig_ecdsa_signature_t sig;
     uint64_t start, end;
     
     // Warmup
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-        secp256k1_ecdsa_sign(g_ctx, &sig, g_messages[i % NUM_TEST_KEYS], 
-                            g_privkeys[i % NUM_TEST_KEYS], NULL, NULL);
+        dap_sig_ecdsa_sign(NULL, &sig, g_messages[i % NUM_TEST_KEYS], 
+                          g_privkeys[i % NUM_TEST_KEYS], NULL, NULL);
     }
     
     // Benchmark
     start = get_time_ns();
     for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-        secp256k1_ecdsa_sign(g_ctx, &sig, g_messages[i % NUM_TEST_KEYS], 
-                            g_privkeys[i % NUM_TEST_KEYS], NULL, NULL);
+        dap_sig_ecdsa_sign(NULL, &sig, g_messages[i % NUM_TEST_KEYS], 
+                          g_privkeys[i % NUM_TEST_KEYS], NULL, NULL);
     }
     end = get_time_ns();
     
     result->sign_us = ns_to_us(end - start) / BENCHMARK_ITERATIONS;
 }
 
-static void benchmark_verify_baseline(benchmark_result_t *result) {
+static void benchmark_dap_verify(benchmark_result_t *result) {
     // Pre-generate signatures and pubkeys
-    secp256k1_ecdsa_signature sigs[NUM_TEST_KEYS];
-    secp256k1_pubkey pubkeys[NUM_TEST_KEYS];
+    dap_sig_ecdsa_signature_t sigs[NUM_TEST_KEYS];
+    dap_sig_ecdsa_pubkey_t pubkeys[NUM_TEST_KEYS];
     
     for (int i = 0; i < NUM_TEST_KEYS; i++) {
-        (void)secp256k1_ec_pubkey_create(g_ctx, &pubkeys[i], g_privkeys[i]);
-        (void)secp256k1_ecdsa_sign(g_ctx, &sigs[i], g_messages[i], g_privkeys[i], NULL, NULL);
+        dap_sig_ecdsa_pubkey_create(NULL, &pubkeys[i], g_privkeys[i]);
+        dap_sig_ecdsa_sign(NULL, &sigs[i], g_messages[i], g_privkeys[i], NULL, NULL);
     }
     
     uint64_t start, end;
     
     // Warmup
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-        (void)secp256k1_ecdsa_verify(g_ctx, &sigs[i % NUM_TEST_KEYS], 
-                              g_messages[i % NUM_TEST_KEYS], &pubkeys[i % NUM_TEST_KEYS]);
+        dap_sig_ecdsa_verify(NULL, &sigs[i % NUM_TEST_KEYS], 
+                            g_messages[i % NUM_TEST_KEYS], &pubkeys[i % NUM_TEST_KEYS]);
     }
     
     // Benchmark
     start = get_time_ns();
     for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-        (void)secp256k1_ecdsa_verify(g_ctx, &sigs[i % NUM_TEST_KEYS], 
-                              g_messages[i % NUM_TEST_KEYS], &pubkeys[i % NUM_TEST_KEYS]);
+        dap_sig_ecdsa_verify(NULL, &sigs[i % NUM_TEST_KEYS], 
+                            g_messages[i % NUM_TEST_KEYS], &pubkeys[i % NUM_TEST_KEYS]);
     }
     end = get_time_ns();
     
     result->verify_us = ns_to_us(end - start) / BENCHMARK_ITERATIONS;
 }
 
+// =============================================================================
+// Competitor Benchmarks: bitcoin-core/secp256k1
+// =============================================================================
+
+#ifdef HAVE_SECP256K1_COMPETITOR
+static void benchmark_secp256k1_keygen(benchmark_result_t *result) {
+    secp256k1_pubkey pubkey;
+    uint64_t start, end;
+    
+    // Warmup
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        (void)secp256k1_ec_pubkey_create(g_secp_ctx, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
+    }
+    
+    // Benchmark
+    start = get_time_ns();
+    for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        (void)secp256k1_ec_pubkey_create(g_secp_ctx, &pubkey, g_privkeys[i % NUM_TEST_KEYS]);
+    }
+    end = get_time_ns();
+    
+    result->name = "bitcoin-core/secp256k1";
+    result->keygen_us = ns_to_us(end - start) / BENCHMARK_ITERATIONS;
+    result->ops_count = BENCHMARK_ITERATIONS;
+}
+
+static void benchmark_secp256k1_sign(benchmark_result_t *result) {
+    secp256k1_ecdsa_signature sig;
+    uint64_t start, end;
+    
+    // Warmup
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        (void)secp256k1_ecdsa_sign(g_secp_ctx, &sig, g_messages[i % NUM_TEST_KEYS], 
+                                   g_privkeys[i % NUM_TEST_KEYS], NULL, NULL);
+    }
+    
+    // Benchmark
+    start = get_time_ns();
+    for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        (void)secp256k1_ecdsa_sign(g_secp_ctx, &sig, g_messages[i % NUM_TEST_KEYS], 
+                                   g_privkeys[i % NUM_TEST_KEYS], NULL, NULL);
+    }
+    end = get_time_ns();
+    
+    result->sign_us = ns_to_us(end - start) / BENCHMARK_ITERATIONS;
+}
+
+static void benchmark_secp256k1_verify(benchmark_result_t *result) {
+    secp256k1_ecdsa_signature sigs[NUM_TEST_KEYS];
+    secp256k1_pubkey pubkeys[NUM_TEST_KEYS];
+    
+    for (int i = 0; i < NUM_TEST_KEYS; i++) {
+        (void)secp256k1_ec_pubkey_create(g_secp_ctx, &pubkeys[i], g_privkeys[i]);
+        (void)secp256k1_ecdsa_sign(g_secp_ctx, &sigs[i], g_messages[i], g_privkeys[i], NULL, NULL);
+    }
+    
+    uint64_t start, end;
+    
+    // Warmup
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        (void)secp256k1_ecdsa_verify(g_secp_ctx, &sigs[i % NUM_TEST_KEYS], 
+                                     g_messages[i % NUM_TEST_KEYS], &pubkeys[i % NUM_TEST_KEYS]);
+    }
+    
+    // Benchmark
+    start = get_time_ns();
+    for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+        (void)secp256k1_ecdsa_verify(g_secp_ctx, &sigs[i % NUM_TEST_KEYS], 
+                                     g_messages[i % NUM_TEST_KEYS], &pubkeys[i % NUM_TEST_KEYS]);
+    }
+    end = get_time_ns();
+    
+    result->verify_us = ns_to_us(end - start) / BENCHMARK_ITERATIONS;
+}
+#endif
+
+// =============================================================================
+// Competitor Benchmarks: OpenSSL
+// =============================================================================
+
 #ifdef HAVE_OPENSSL_COMPETITOR
 static void benchmark_openssl(benchmark_result_t *result) {
     result->name = "OpenSSL ECDSA";
     
-    // Create EC_KEY
     EC_KEY *eckey = EC_KEY_new_by_curve_name(NID_secp256k1);
     if (!eckey) {
         fprintf(stderr, "OpenSSL: Failed to create EC_KEY\n");
@@ -255,24 +329,28 @@ static void benchmark_openssl(benchmark_result_t *result) {
 // Verification Tests
 // =============================================================================
 
-static bool verify_signatures(void) {
-    printf("=== Signature Verification Tests ===\n\n");
+static bool verify_correctness(void) {
+    printf("=== Correctness Verification ===\n\n");
     
-    secp256k1_pubkey pubkey;
-    secp256k1_ecdsa_signature sig;
+    dap_sig_ecdsa_pubkey_t pubkey;
+    dap_sig_ecdsa_signature_t sig;
     int passed = 0, failed = 0;
     
     // Test sign and verify
     for (int i = 0; i < 10; i++) {
-        (void)secp256k1_ec_pubkey_create(g_ctx, &pubkey, g_privkeys[i]);
+        if (!dap_sig_ecdsa_pubkey_create(NULL, &pubkey, g_privkeys[i])) {
+            printf("FAIL: Pubkey create failed for key %d\n", i);
+            failed++;
+            continue;
+        }
         
-        if (secp256k1_ecdsa_sign(g_ctx, &sig, g_messages[i], g_privkeys[i], NULL, NULL) != 1) {
+        if (!dap_sig_ecdsa_sign(NULL, &sig, g_messages[i], g_privkeys[i], NULL, NULL)) {
             printf("FAIL: Sign failed for key %d\n", i);
             failed++;
             continue;
         }
         
-        if (secp256k1_ecdsa_verify(g_ctx, &sig, g_messages[i], &pubkey) != 1) {
+        if (!dap_sig_ecdsa_verify(NULL, &sig, g_messages[i], &pubkey)) {
             printf("FAIL: Verify failed for key %d\n", i);
             failed++;
             continue;
@@ -283,7 +361,7 @@ static bool verify_signatures(void) {
         memcpy(wrong_msg, g_messages[i], 32);
         wrong_msg[0] ^= 0xFF;
         
-        if (secp256k1_ecdsa_verify(g_ctx, &sig, wrong_msg, &pubkey) == 1) {
+        if (dap_sig_ecdsa_verify(NULL, &sig, wrong_msg, &pubkey)) {
             printf("FAIL: Verify should fail for wrong message %d\n", i);
             failed++;
             continue;
@@ -292,7 +370,7 @@ static bool verify_signatures(void) {
         passed++;
     }
     
-    printf("Verification tests: %d passed, %d failed\n\n", passed, failed);
+    printf("Correctness tests: %d passed, %d failed\n\n", passed, failed);
     return failed == 0;
 }
 
@@ -330,9 +408,9 @@ static void print_results(benchmark_result_t *results, int count) {
     
     printf("\n");
     
-    // Speedup vs baseline
+    // Speedup vs DAP Native
     if (count > 1) {
-        printf("=== Speedup vs secp256k1 (3rdparty) ===\n\n");
+        printf("=== Speedup vs DAP Native ===\n\n");
         printf("%-25s %12s %12s %12s\n", "Implementation", "KeyGen", "Sign", "Verify");
         printf("%-25s %12s %12s %12s\n", "-------------------------", "------------", "------------", "------------");
         
@@ -365,17 +443,17 @@ int main(int argc, char **argv) {
     printf("  Test keys:            %d\n", NUM_TEST_KEYS);
     printf("\n");
     
-    printf("Competitors:\n");
-    printf("  secp256k1 (3rdparty): YES (baseline)\n");
-#ifdef HAVE_BITCOIN_CORE_COMPETITOR
-    printf("  bitcoin-core/secp256k1: YES\n");
+    printf("Implementations:\n");
+    printf("  DAP Native (dap_sig_ecdsa): YES\n");
+#ifdef HAVE_SECP256K1_COMPETITOR
+    printf("  bitcoin-core/secp256k1:     YES\n");
 #else
-    printf("  bitcoin-core/secp256k1: NO (run ./download_competitors.sh)\n");
+    printf("  bitcoin-core/secp256k1:     NO (run ./download_competitors.sh)\n");
 #endif
 #ifdef HAVE_OPENSSL_COMPETITOR
-    printf("  OpenSSL ECDSA:        YES\n");
+    printf("  OpenSSL ECDSA:              YES\n");
 #else
-    printf("  OpenSSL ECDSA:        NO\n");
+    printf("  OpenSSL ECDSA:              NO\n");
 #endif
     printf("\n");
     
@@ -384,8 +462,8 @@ int main(int argc, char **argv) {
     generate_test_data();
     
     // Run verification tests
-    if (!verify_signatures()) {
-        fprintf(stderr, "Verification tests failed!\n");
+    if (!verify_correctness()) {
+        fprintf(stderr, "Correctness tests failed!\n");
         cleanup_test_data();
         return 1;
     }
@@ -396,15 +474,18 @@ int main(int argc, char **argv) {
     
     printf("Running benchmarks...\n\n");
     
-    // Baseline (current 3rdparty secp256k1)
-    benchmark_keygen_baseline(&results[result_count]);
-    benchmark_sign_baseline(&results[result_count]);
-    benchmark_verify_baseline(&results[result_count]);
+    // DAP Native
+    benchmark_dap_keygen(&results[result_count]);
+    benchmark_dap_sign(&results[result_count]);
+    benchmark_dap_verify(&results[result_count]);
     result_count++;
     
-    // TODO: DAP native implementation benchmark
-    // benchmark_dap_secp256k1(&results[result_count]);
-    // result_count++;
+#ifdef HAVE_SECP256K1_COMPETITOR
+    benchmark_secp256k1_keygen(&results[result_count]);
+    benchmark_secp256k1_sign(&results[result_count]);
+    benchmark_secp256k1_verify(&results[result_count]);
+    result_count++;
+#endif
     
 #ifdef HAVE_OPENSSL_COMPETITOR
     benchmark_openssl(&results[result_count]);
