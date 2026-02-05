@@ -282,127 +282,90 @@ void ecdsa_gej_double(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
 }
 
 // Point addition: r = a + b (Jacobian + affine)
+// Optimized formula: 8 mul, 3 sqr (vs bitcoin-core's unified 7 mul, 5 sqr)
+// Uses branch for edge cases (faster when not constant-time required)
 void ecdsa_gej_add_ge(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_ge_t *b) {
-    debug_if(s_debug_more, L_DEBUG, "ecdsa_gej_add_ge: start");
-    
+    // Handle infinity cases with branches (faster than cmov for non-CT code)
     if (a->infinity) {
-        debug_if(s_debug_more, L_DEBUG, "  a is infinity, returning b");
         ecdsa_gej_set_ge(r, b);
         return;
     }
     if (b->infinity) {
-        debug_if(s_debug_more, L_DEBUG, "  b is infinity, returning a");
         *r = *a;
         return;
-    }
-    
-    if (s_debug_more) {
-        debug_if(s_debug_more, L_DEBUG, "  Input a (Jacobian):");
-        s_debug_field_print("a.x", &a->x);
-        s_debug_field_print("a.y", &a->y);
-        s_debug_field_print("a.z", &a->z);
-        debug_if(s_debug_more, L_DEBUG, "  Input b (Affine):");
-        s_debug_field_print("b.x", &b->x);
-        s_debug_field_print("b.y", &b->y);
     }
     
     ecdsa_field_t z12, u1, u2, s1, s2, h, i, j, rr, v, t;
     
     // Z1² 
     ecdsa_field_sqr(&z12, &a->z);
-    s_debug_field_print("z12 = a.z²", &z12);
     
-    // U1 = X1 (already in Jacobian form relative to Z1)
-    ecdsa_field_copy(&u1, &a->x);
-    s_debug_field_print("u1 = a.x", &u1);
-    
-    // U2 = X2 * Z1²
+    // U1 = X1, U2 = X2 * Z1²
+    u1 = a->x;
     ecdsa_field_mul(&u2, &b->x, &z12);
-    s_debug_field_print("u2 = b.x * z12", &u2);
     
-    // S1 = Y1
-    ecdsa_field_copy(&s1, &a->y);
-    s_debug_field_print("s1 = a.y", &s1);
-    
-    // S2 = Y2 * Z1³
+    // S1 = Y1, S2 = Y2 * Z1³
+    s1 = a->y;
     ecdsa_field_mul(&s2, &z12, &a->z);
     ecdsa_field_mul(&s2, &s2, &b->y);
-    s_debug_field_print("s2 = b.y * z13", &s2);
     
     // H = U2 - U1
-    ecdsa_field_negate(&t, &u1, 1);
-    ecdsa_field_add(&h, &u2, &t);
-    s_debug_field_print("h = u2 - u1", &h);
+    ecdsa_field_negate(&h, &u1, 1);
+    ecdsa_field_add(&h, &u2, &h);
     
     // Check if H = 0 (same x-coordinate)
     if (ecdsa_field_normalizes_to_zero(&h)) {
-        debug_if(s_debug_more, L_DEBUG, "  H normalizes to zero - checking S values");
+        // rr = S2 - S1
         ecdsa_field_negate(&t, &s1, 1);
         ecdsa_field_add(&t, &s2, &t);
         
         if (ecdsa_field_normalizes_to_zero(&t)) {
-            // Points are equal, double
-            debug_if(s_debug_more, L_DEBUG, "  Points equal - calling double");
+            // Points equal, double
             ecdsa_gej_double(r, a);
-            return;
         } else {
             // Points are negatives, result is infinity
-            debug_if(s_debug_more, L_DEBUG, "  Points are negatives - returning infinity");
             ecdsa_gej_set_infinity(r);
-            return;
         }
+        return;
     }
     
     // I = (2*H)²
     ecdsa_field_add(&i, &h, &h);
     ecdsa_field_sqr(&i, &i);
-    s_debug_field_print("i = (2h)²", &i);
     
     // J = H * I
     ecdsa_field_mul(&j, &h, &i);
-    s_debug_field_print("j = h * i", &j);
     
     // rr = 2*(S2 - S1)
     ecdsa_field_negate(&t, &s1, 1);
     ecdsa_field_add(&rr, &s2, &t);
     ecdsa_field_add(&rr, &rr, &rr);
-    s_debug_field_print("rr = 2*(s2-s1)", &rr);
     
     // V = U1 * I
     ecdsa_field_mul(&v, &u1, &i);
-    s_debug_field_print("v = u1 * i", &v);
     
     // X3 = rr² - J - 2*V
     ecdsa_field_sqr(&r->x, &rr);
-    s_debug_field_print("rr²", &r->x);
     ecdsa_field_negate(&t, &j, 1);
     ecdsa_field_add(&r->x, &r->x, &t);
-    s_debug_field_print("rr² - j", &r->x);
     ecdsa_field_negate(&t, &v, 1);
     ecdsa_field_add(&r->x, &r->x, &t);
     ecdsa_field_add(&r->x, &r->x, &t);
-    s_debug_field_print("X3 = rr² - j - 2v", &r->x);
     
     // Y3 = rr*(V - X3) - 2*S1*J
     ecdsa_field_negate(&t, &r->x, 1);
     ecdsa_field_add(&t, &v, &t);
-    s_debug_field_print("v - X3", &t);
     ecdsa_field_mul(&r->y, &rr, &t);
-    s_debug_field_print("rr*(v-X3)", &r->y);
     ecdsa_field_mul(&t, &s1, &j);
-    ecdsa_field_add(&t, &t, &t);
-    ecdsa_field_negate(&t, &t, 1);
-    s_debug_field_print("-2*s1*j", &t);
+    ecdsa_field_add(&t, &t, &t);         // t = 2*s1*j, magnitude=2
+    ecdsa_field_negate(&t, &t, 2);
     ecdsa_field_add(&r->y, &r->y, &t);
-    s_debug_field_print("Y3", &r->y);
     
     // Z3 = 2*Z1*H
     ecdsa_field_mul(&r->z, &a->z, &h);
     ecdsa_field_add(&r->z, &r->z, &r->z);
-    s_debug_field_print("Z3 = 2*z1*h", &r->z);
     
     r->infinity = false;
-    debug_if(s_debug_more, L_DEBUG, "ecdsa_gej_add_ge: done");
 }
 
 // Point addition: r = a + b (both Jacobian)
@@ -489,8 +452,8 @@ void ecdsa_gej_add(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_gej_t *b) {
     ecdsa_field_add(&t, &v, &t);
     ecdsa_field_mul(&r->y, &rr, &t);
     ecdsa_field_mul(&t, &s1, &j);
-    ecdsa_field_add(&t, &t, &t);
-    ecdsa_field_negate(&t, &t, 1);
+    ecdsa_field_add(&t, &t, &t);         // t = 2*s1*j, magnitude=2
+    ecdsa_field_negate(&t, &t, 2);       // FIXED: magnitude=2
     ecdsa_field_add(&r->y, &r->y, &t);
     
     // Z3 = ((Z1+Z2)² - Z1Z1 - Z2Z2) * H
