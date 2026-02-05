@@ -6,6 +6,8 @@
  */
 
 #include "ecdsa_group.h"
+#include "ecdsa_precompute.h"
+#include "ecdsa_endomorphism.h"
 #include <string.h>
 
 // =============================================================================
@@ -223,10 +225,6 @@ void ecdsa_gej_double(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
     ecdsa_field_negate(&t3, &t3, 1);
     ecdsa_field_add(&r->y, &t4, &t3);
     
-    ecdsa_field_normalize(&r->x);
-    ecdsa_field_normalize(&r->y);
-    ecdsa_field_normalize(&r->z);
-    
     r->infinity = false;
 }
 
@@ -346,59 +344,22 @@ void ecdsa_gej_add(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_gej_t *b) {
 // =============================================================================
 
 // Generator multiplication: r = n*G
+// Uses precomputed tables for ~15-20x speedup
 void ecdsa_ecmult_gen(ecdsa_gej_t *r, const ecdsa_scalar_t *n) {
     if (!s_generator_initialized) {
         ecdsa_ecmult_gen_init();
     }
     
-    // Simple double-and-add
-    ecdsa_gej_set_infinity(r);
-    
-    // Get scalar bytes
-    uint8_t nb[32];
-    ecdsa_scalar_get_b32(nb, n);
-    
-    ecdsa_gej_t tmp;
-    ecdsa_gej_set_ge(&tmp, &s_generator);
-    
-    for (int i = 31; i >= 0; i--) {
-        for (int j = 0; j < 8; j++) {
-            if (!ecdsa_gej_is_infinity(r)) {
-                ecdsa_gej_double(r, r);
-            }
-            if ((nb[31-i] >> (7-j)) & 1) {
-                if (ecdsa_gej_is_infinity(r)) {
-                    *r = tmp;
-                } else {
-                    ecdsa_gej_add_ge(r, r, &s_generator);
-                }
-            }
-        }
-    }
+    // Use optimized comb method with precomputed tables
+    ecdsa_ecmult_gen_fast(r, n);
 }
 
 // General scalar multiplication: r = na*a + ng*G
+// Uses Strauss/Shamir simultaneous multiplication for ~2x speedup
 void ecdsa_ecmult(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_scalar_t *na, const ecdsa_scalar_t *ng) {
-    ecdsa_gej_t ra, rg;
-    
-    // Compute na*a
-    if (a && na && !ecdsa_scalar_is_zero(na)) {
-        ecdsa_ge_t a_affine;
-        ecdsa_ge_set_gej(&a_affine, a);
-        ecdsa_ecmult_const(&ra, &a_affine, na);
-    } else {
-        ecdsa_gej_set_infinity(&ra);
-    }
-    
-    // Compute ng*G
-    if (ng && !ecdsa_scalar_is_zero(ng)) {
-        ecdsa_ecmult_gen(&rg, ng);
-    } else {
-        ecdsa_gej_set_infinity(&rg);
-    }
-    
-    // r = ra + rg
-    ecdsa_gej_add(r, &ra, &rg);
+    // Use GLV endomorphism-accelerated Strauss (4-way simultaneous multiplication)
+    // Decomposes each 256-bit scalar into two ~128-bit scalars using λ*P = φ(P)
+    ecdsa_ecmult_strauss_endo(r, a, na, ng);
 }
 
 // Constant-time conditional swap

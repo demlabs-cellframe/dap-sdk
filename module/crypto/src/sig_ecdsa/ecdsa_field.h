@@ -60,9 +60,10 @@ bool ecdsa_field_equal(const ecdsa_field_t *a, const ecdsa_field_t *b);
 // Arithmetic
 // =============================================================================
 
-void ecdsa_field_normalize(ecdsa_field_t *r);
+void ecdsa_field_normalize(ecdsa_field_t *r);       // Full normalize to [0, p)
+void ecdsa_field_normalize_weak(ecdsa_field_t *r);  // Just propagate carries
 void ecdsa_field_negate(ecdsa_field_t *r, const ecdsa_field_t *a, int m);
-void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
+void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);  // Lazy, no normalize
 void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
 void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a);
 void ecdsa_field_inv(ecdsa_field_t *r, const ecdsa_field_t *a);

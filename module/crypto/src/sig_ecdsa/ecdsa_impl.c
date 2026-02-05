@@ -196,17 +196,29 @@ bool ecdsa_verify_inner(
         return false;
     }
     
-    // Convert to affine and check x-coordinate
-    ecdsa_ge_t r_affine;
-    ecdsa_ge_set_gej(&r_affine, &r_point);
+    // Optimization: verify r*Z² == X without converting to affine
+    // This avoids one expensive field inversion (~260 squarings)
+    // If R = (X, Y, Z) in Jacobian, then x_affine = X/Z²
+    // We check: sig->r * Z² == X (mod p)
     
-    uint8_t rx[32];
-    ecdsa_field_get_b32(rx, &r_affine.x);
+    // Get r as field element  
+    uint8_t r_bytes[32];
+    ecdsa_scalar_get_b32(r_bytes, &sig->r);
+    ecdsa_field_t r_field;
+    ecdsa_field_set_b32(&r_field, r_bytes);
     
-    ecdsa_scalar_t rx_scalar;
-    ecdsa_scalar_set_b32(&rx_scalar, rx, &overflow);
+    // Compute Z² and r * Z²
+    ecdsa_field_t z2, rz2;
+    ecdsa_field_sqr(&z2, &r_point.z);
+    ecdsa_field_mul(&rz2, &r_field, &z2);
     
-    return ecdsa_scalar_equal(&rx_scalar, &sig->r);
+    // Normalize for comparison
+    ecdsa_field_normalize(&rz2);
+    ecdsa_field_t x_norm;
+    ecdsa_field_copy(&x_norm, &r_point.x);
+    ecdsa_field_normalize(&x_norm);
+    
+    return ecdsa_field_equal(&rz2, &x_norm);
 }
 
 // =============================================================================
