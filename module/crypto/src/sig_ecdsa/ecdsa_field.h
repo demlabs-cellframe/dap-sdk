@@ -50,7 +50,8 @@ extern const ecdsa_field_t ECDSA_FIELD_ONE;
 
 void ecdsa_field_clear(ecdsa_field_t *r);
 void ecdsa_field_set_int(ecdsa_field_t *r, int a);
-bool ecdsa_field_set_b32(ecdsa_field_t *r, const uint8_t *a);
+bool ecdsa_field_set_b32(ecdsa_field_t *r, const uint8_t *a);  // From big-endian bytes
+void ecdsa_field_set_b32_raw(ecdsa_field_t *r, const uint8_t *a);  // From 4x64-bit LE storage
 void ecdsa_field_get_b32(uint8_t *r, const ecdsa_field_t *a);
 void ecdsa_field_copy(ecdsa_field_t *r, const ecdsa_field_t *a);
 bool ecdsa_field_is_zero(const ecdsa_field_t *a);

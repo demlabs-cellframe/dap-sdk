@@ -182,7 +182,7 @@ void ecdsa_ecmult_gen_ctx_init(ecdsa_ecmult_gen_ctx_t *a_ctx) {
         
         // Build 2, 3, ..., 16 multiples
         ecdsa_gej_t l_accum = l_base;
-        for (int j = 1; j < ECDSA_ECMULT_GEN_TABLE_SIZE; j++) {
+        for (int j = 1; j < ECDSA_ECMULT_GEN_COMB_SIZE; j++) {
             ecdsa_gej_add_ge(&l_accum, &l_accum, &a_ctx->comb_table[i][0]);
             ecdsa_ge_set_gej(&a_ctx->comb_table[i][j], &l_accum);
         }
@@ -345,8 +345,58 @@ void ecdsa_ecmult_wnaf(ecdsa_gej_t *a_result, const ecdsa_ge_t *a_point, const e
 }
 
 // =============================================================================
-// Strauss/Shamir Simultaneous Multiplication
+// Strauss/Shamir Simultaneous Multiplication with Split-128 Optimization
 // =============================================================================
+
+// Helper: add point from wNAF table
+static inline void s_add_from_wnaf_table(ecdsa_gej_t *r, const ecdsa_wnaf_table_t *table, int digit) {
+    if (digit == 0) return;
+    
+    int idx = (digit > 0 ? digit : -digit) >> 1;
+    
+    if (ecdsa_gej_is_infinity(r)) {
+        ecdsa_gej_set_ge(r, &table->table[idx]);
+        if (digit < 0) {
+            ecdsa_gej_neg(r, r);
+        }
+    } else {
+        if (digit > 0) {
+            ecdsa_gej_add_ge(r, r, &table->table[idx]);
+        } else {
+            ecdsa_ge_t neg;
+            ecdsa_ge_neg(&neg, &table->table[idx]);
+            ecdsa_gej_add_ge(r, r, &neg);
+        }
+    }
+}
+
+// Helper: add point from static precomputed table (for G)
+static inline void s_add_from_pre_g(ecdsa_gej_t *r, int digit) {
+    if (digit == 0) return;
+    
+    ecdsa_ge_t point;
+    ecdsa_ecmult_table_get_ge(&point, digit);
+    
+    if (ecdsa_gej_is_infinity(r)) {
+        ecdsa_gej_set_ge(r, &point);
+    } else {
+        ecdsa_gej_add_ge(r, r, &point);
+    }
+}
+
+// Helper: add point from static precomputed table (for G*2^128)
+static inline void s_add_from_pre_g_128(ecdsa_gej_t *r, int digit) {
+    if (digit == 0) return;
+    
+    ecdsa_ge_t point;
+    ecdsa_ecmult_table_get_ge_128(&point, digit);
+    
+    if (ecdsa_gej_is_infinity(r)) {
+        ecdsa_gej_set_ge(r, &point);
+    } else {
+        ecdsa_gej_add_ge(r, r, &point);
+    }
+}
 
 /**
  * @brief Simultaneous scalar multiplication using Strauss/Shamir algorithm
@@ -355,102 +405,79 @@ void ecdsa_ecmult_wnaf(ecdsa_gej_t *a_result, const ecdsa_ge_t *a_point, const e
  * @param[in] a_scalar_a Scalar multiplier for A
  * @param[in] a_scalar_g Scalar multiplier for generator G
  * 
- * Uses Shamir's trick with precomputed wNAF table for G
+ * OPTIMIZATIONS (like bitcoin-core):
+ * 1. Split ng into ng_1 + ng_128 * 2^128 (reduces iterations from 256 to 129)
+ * 2. Use WINDOW_G=15 precomputed tables (8192 points instead of 16)
+ * 3. Use static precomputed tables (no runtime computation)
  */
 void ecdsa_ecmult_strauss(ecdsa_gej_t *a_result, const ecdsa_gej_t *a_point, 
                           const ecdsa_scalar_t *a_scalar_a, const ecdsa_scalar_t *a_scalar_g) {
     dap_return_if_fail(a_result);
     
-    // Get generator context with precomputed wNAF table for G
-    ecdsa_ecmult_gen_ctx_t *l_ctx = ecdsa_ecmult_gen_ctx_get();
+    // =========================================================================
+    // Split ng into ng_1 + ng_128 * 2^128 (each ~128 bits)
+    // This halves the number of loop iterations!
+    // =========================================================================
+    ecdsa_scalar_t ng_1, ng_128;
+    int wnaf_ng_1[129] = {0}, wnaf_ng_128[129] = {0};
+    int bits_ng_1 = 0, bits_ng_128 = 0;
     
-    // Convert scalars to wNAF
-    ecdsa_wnaf_t l_wnaf_a[ECDSA_WNAF_MAX_LEN] = {0};
-    ecdsa_wnaf_t l_wnaf_g[ECDSA_WNAF_MAX_LEN] = {0};
-    int l_len_a = 0, l_len_g = 0;
-    
-    if (a_scalar_a && !ecdsa_scalar_is_zero(a_scalar_a)) {
-        l_len_a = ecdsa_scalar_to_wnaf(l_wnaf_a, a_scalar_a, ECDSA_WNAF_WINDOW);
-    }
     if (a_scalar_g && !ecdsa_scalar_is_zero(a_scalar_g)) {
-        l_len_g = ecdsa_scalar_to_wnaf(l_wnaf_g, a_scalar_g, ECDSA_WNAF_WINDOW);
+        ecdsa_scalar_split_128(&ng_1, &ng_128, a_scalar_g);
+        
+        // Build wNAF for both halves (using WINDOW_G for large precomputed tables)
+        bits_ng_1 = ecdsa_scalar_to_wnaf((ecdsa_wnaf_t*)wnaf_ng_1, &ng_1, ECDSA_WINDOW_G);
+        bits_ng_128 = ecdsa_scalar_to_wnaf((ecdsa_wnaf_t*)wnaf_ng_128, &ng_128, ECDSA_WINDOW_G);
     }
     
-    int l_max_len = l_len_a > l_len_g ? l_len_a : l_len_g;
+    // =========================================================================
+    // Build wNAF for arbitrary point A (uses small runtime table, WINDOW=5)
+    // =========================================================================
+    ecdsa_wnaf_t wnaf_a[ECDSA_WNAF_MAX_LEN] = {0};
+    int bits_a = 0;
+    ecdsa_wnaf_table_t table_a;
     
-    // Build wNAF table for point A
-    // Optimization: check if Z=1 (already affine), avoid expensive inversion
-    ecdsa_wnaf_table_t l_table_a;
-    if (a_point && l_len_a > 0) {
-        ecdsa_ge_t l_affine;
+    if (a_point && a_scalar_a && !ecdsa_scalar_is_zero(a_scalar_a)) {
+        bits_a = ecdsa_scalar_to_wnaf(wnaf_a, a_scalar_a, ECDSA_WNAF_WINDOW);
         
-        // Fast path: if Z coordinate is 1 (normalized Jacobian = affine)
-        ecdsa_field_t z_copy;
-        ecdsa_field_copy(&z_copy, &a_point->z);
-        ecdsa_field_normalize(&z_copy);
-        
-        if (z_copy.n[0] == 1 && z_copy.n[1] == 0 && z_copy.n[2] == 0 && 
-            z_copy.n[3] == 0 && z_copy.n[4] == 0) {
-            // Already effectively affine, just copy x,y
-            ecdsa_field_copy(&l_affine.x, &a_point->x);
-            ecdsa_field_copy(&l_affine.y, &a_point->y);
-            l_affine.infinity = a_point->infinity;
-            ecdsa_field_normalize(&l_affine.x);
-            ecdsa_field_normalize(&l_affine.y);
-        } else {
-            // Need actual conversion (expensive)
-            ecdsa_ge_set_gej(&l_affine, a_point);
-        }
-        ecdsa_wnaf_table_build(&l_table_a, &l_affine, ECDSA_WNAF_WINDOW);
+        // Convert Jacobian to affine for table construction
+        ecdsa_ge_t affine;
+        ecdsa_ge_set_gej(&affine, a_point);
+        ecdsa_wnaf_table_build(&table_a, &affine, ECDSA_WNAF_WINDOW);
     }
     
-    // Use precomputed wNAF table for G
-    const ecdsa_ge_t *l_table_g = l_ctx->wnaf_table;
+    // =========================================================================
+    // Find maximum bit length to process
+    // =========================================================================
+    int bits = bits_a;
+    if (bits_ng_1 > bits) bits = bits_ng_1;
+    if (bits_ng_128 > bits) bits = bits_ng_128;
     
-    // Simultaneous double-and-add
+    // =========================================================================
+    // Main loop: simultaneous double-and-add
+    // Much faster because we only iterate ~129 times (not ~256)
+    // =========================================================================
     ecdsa_gej_set_infinity(a_result);
     
-    for (int i = l_max_len - 1; i >= 0; i--) {
+    for (int i = bits - 1; i >= 0; i--) {
+        // Double
         if (!ecdsa_gej_is_infinity(a_result)) {
             ecdsa_gej_double(a_result, a_result);
         }
         
-        // Process digit from scalar_a
-        if (i < l_len_a && l_wnaf_a[i] != 0) {
-            int l_idx = (l_wnaf_a[i] > 0 ? l_wnaf_a[i] : -l_wnaf_a[i]) >> 1;
-            if (ecdsa_gej_is_infinity(a_result)) {
-                ecdsa_gej_set_ge(a_result, &l_table_a.table[l_idx]);
-                if (l_wnaf_a[i] < 0) {
-                    ecdsa_gej_neg(a_result, a_result);
-                }
-            } else {
-                if (l_wnaf_a[i] > 0) {
-                    ecdsa_gej_add_ge(a_result, a_result, &l_table_a.table[l_idx]);
-                } else {
-                    ecdsa_ge_t l_neg;
-                    ecdsa_ge_neg(&l_neg, &l_table_a.table[l_idx]);
-                    ecdsa_gej_add_ge(a_result, a_result, &l_neg);
-                }
-            }
+        // Add from scalar_a (arbitrary point, small table)
+        if (i < bits_a && wnaf_a[i] != 0) {
+            s_add_from_wnaf_table(a_result, &table_a, wnaf_a[i]);
         }
         
-        // Process digit from scalar_g (using precomputed table)
-        if (i < l_len_g && l_wnaf_g[i] != 0) {
-            int l_idx = (l_wnaf_g[i] > 0 ? l_wnaf_g[i] : -l_wnaf_g[i]) >> 1;
-            if (ecdsa_gej_is_infinity(a_result)) {
-                ecdsa_gej_set_ge(a_result, &l_table_g[l_idx]);
-                if (l_wnaf_g[i] < 0) {
-                    ecdsa_gej_neg(a_result, a_result);
-                }
-            } else {
-                if (l_wnaf_g[i] > 0) {
-                    ecdsa_gej_add_ge(a_result, a_result, &l_table_g[l_idx]);
-                } else {
-                    ecdsa_ge_t l_neg;
-                    ecdsa_ge_neg(&l_neg, &l_table_g[l_idx]);
-                    ecdsa_gej_add_ge(a_result, a_result, &l_neg);
-                }
-            }
+        // Add from ng_1 (uses pre_g static table - huge, fast)
+        if (i < bits_ng_1 && wnaf_ng_1[i] != 0) {
+            s_add_from_pre_g(a_result, wnaf_ng_1[i]);
+        }
+        
+        // Add from ng_128 (uses pre_g_128 static table - huge, fast)
+        if (i < bits_ng_128 && wnaf_ng_128[i] != 0) {
+            s_add_from_pre_g_128(a_result, wnaf_ng_128[i]);
         }
     }
 }

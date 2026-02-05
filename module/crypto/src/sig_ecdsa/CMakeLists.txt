@@ -122,6 +122,7 @@ set(ECDSA_STATIC_SOURCES
     ${ECDSA_SRC_DIR}/ecdsa_scalar.c
     ${ECDSA_SRC_DIR}/ecdsa_group.c
     ${ECDSA_SRC_DIR}/ecdsa_precompute.c
+    ${ECDSA_SRC_DIR}/ecdsa_precomputed_ecmult.c
     ${ECDSA_SRC_DIR}/ecdsa_endomorphism.c
     ${ECDSA_SRC_DIR}/ecdsa_impl.c
 )

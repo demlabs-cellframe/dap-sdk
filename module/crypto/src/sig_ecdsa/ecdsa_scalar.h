@@ -65,6 +65,16 @@ void ecdsa_scalar_mul(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_sc
 void ecdsa_scalar_inv(ecdsa_scalar_t *r, const ecdsa_scalar_t *a);
 
 // =============================================================================
+// Split Operations (for optimized scalar multiplication)
+// =============================================================================
+
+// Split k into k1 + k2 * 2^128 (for 128-bit wNAF optimization)
+void ecdsa_scalar_split_128(ecdsa_scalar_t *k1, ecdsa_scalar_t *k2, const ecdsa_scalar_t *k);
+
+// Get bits from scalar at position 'offset', 'count' bits (max 32)
+unsigned int ecdsa_scalar_get_bits(const ecdsa_scalar_t *a, unsigned int offset, unsigned int count);
+
+// =============================================================================
 // Utility
 // =============================================================================
 

@@ -447,3 +447,72 @@ bool ecdsa_scalar_check_seckey(const uint8_t *seckey) {
     
     return true;
 }
+
+// =============================================================================
+// Split Operations
+// =============================================================================
+
+// Split k into k1 + k2 * 2^128: k1 = lower 128 bits, k2 = upper 128 bits
+void ecdsa_scalar_split_128(ecdsa_scalar_t *k1, ecdsa_scalar_t *k2, const ecdsa_scalar_t *k) {
+#ifdef ECDSA_SCALAR_64BIT
+    // 64-bit: d[0..1] = lower 128 bits, d[2..3] = upper 128 bits
+    k1->d[0] = k->d[0];
+    k1->d[1] = k->d[1];
+    k1->d[2] = 0;
+    k1->d[3] = 0;
+    
+    k2->d[0] = k->d[2];
+    k2->d[1] = k->d[3];
+    k2->d[2] = 0;
+    k2->d[3] = 0;
+#else
+    // 32-bit: d[0..3] = lower 128 bits, d[4..7] = upper 128 bits
+    k1->d[0] = k->d[0];
+    k1->d[1] = k->d[1];
+    k1->d[2] = k->d[2];
+    k1->d[3] = k->d[3];
+    k1->d[4] = 0;
+    k1->d[5] = 0;
+    k1->d[6] = 0;
+    k1->d[7] = 0;
+    
+    k2->d[0] = k->d[4];
+    k2->d[1] = k->d[5];
+    k2->d[2] = k->d[6];
+    k2->d[3] = k->d[7];
+    k2->d[4] = 0;
+    k2->d[5] = 0;
+    k2->d[6] = 0;
+    k2->d[7] = 0;
+#endif
+}
+
+// Get bits from scalar at position 'offset', 'count' bits (max 32)
+unsigned int ecdsa_scalar_get_bits(const ecdsa_scalar_t *a, unsigned int offset, unsigned int count) {
+    if (count == 0 || offset >= 256) return 0;
+    if (count > 32) count = 32;
+    
+#ifdef ECDSA_SCALAR_64BIT
+    unsigned int limb_idx = offset / 64;
+    unsigned int bit_idx = offset % 64;
+    
+    if (limb_idx >= 4) return 0;
+    
+    uint64_t val = a->d[limb_idx] >> bit_idx;
+    if (bit_idx + count > 64 && limb_idx + 1 < 4) {
+        val |= a->d[limb_idx + 1] << (64 - bit_idx);
+    }
+    return (unsigned int)(val & ((1ULL << count) - 1));
+#else
+    unsigned int limb_idx = offset / 32;
+    unsigned int bit_idx = offset % 32;
+    
+    if (limb_idx >= 8) return 0;
+    
+    uint32_t val = a->d[limb_idx] >> bit_idx;
+    if (bit_idx + count > 32 && limb_idx + 1 < 8) {
+        val |= a->d[limb_idx + 1] << (32 - bit_idx);
+    }
+    return val & ((1U << count) - 1);
+#endif
+}

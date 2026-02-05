@@ -104,6 +104,19 @@ bool ecdsa_field_set_b32(ecdsa_field_t *r, const uint8_t *a) {
     return !overflow;
 }
 
+// Set from 4x64-bit storage format (little-endian limb order)
+// Input: 4 uint64_t values where s[0] = lower 64 bits, s[3] = upper 64 bits
+void ecdsa_field_set_b32_raw(ecdsa_field_t *r, const uint8_t *a) {
+    const uint64_t *s = (const uint64_t *)a;
+    // Convert from 4x64-bit to 5x52-bit
+    // s[0..3] contains 256 bits in little-endian uint64_t order
+    r->n[0] = s[0] & ECDSA_M52;                              // bits 0-51
+    r->n[1] = (s[0] >> 52) | ((s[1] & 0xFFFFFFFFFFULL) << 12);  // bits 52-103
+    r->n[2] = (s[1] >> 40) | ((s[2] & 0xFFFFFFFULL) << 24);     // bits 104-155
+    r->n[3] = (s[2] >> 28) | ((s[3] & 0xFFFFULL) << 36);        // bits 156-207
+    r->n[4] = s[3] >> 16;                                       // bits 208-255
+}
+
 void ecdsa_field_get_b32(uint8_t *r, const ecdsa_field_t *a) {
     r[31] = a->n[0] & 0xFF;
     r[30] = (a->n[0] >> 8) & 0xFF;
@@ -417,6 +430,24 @@ bool ecdsa_field_set_b32(ecdsa_field_t *r, const uint8_t *a) {
     r->n[9] = (uint32_t)(a[2] >> 2) | ((uint32_t)a[1] << 6) | ((uint32_t)a[0] << 14);
     ecdsa_field_normalize(r);
     return true;
+}
+
+// Set from 4x64-bit storage format (little-endian limb order)
+// Convert from 4x64-bit storage to 10x26-bit field representation
+void ecdsa_field_set_b32_raw(ecdsa_field_t *r, const uint8_t *a) {
+    const uint64_t *s = (const uint64_t *)a;
+    // 256 bits in 4x64-bit: s[0]=bits 0-63, s[1]=64-127, s[2]=128-191, s[3]=192-255
+    // Need to split into 10x26-bit limbs
+    r->n[0] = (uint32_t)(s[0] & 0x3FFFFFF);                                    // bits 0-25
+    r->n[1] = (uint32_t)((s[0] >> 26) & 0x3FFFFFF);                            // bits 26-51
+    r->n[2] = (uint32_t)(((s[0] >> 52) | (s[1] << 12)) & 0x3FFFFFF);           // bits 52-77
+    r->n[3] = (uint32_t)((s[1] >> 14) & 0x3FFFFFF);                            // bits 78-103
+    r->n[4] = (uint32_t)(((s[1] >> 40) | (s[2] << 24)) & 0x3FFFFFF);           // bits 104-129
+    r->n[5] = (uint32_t)((s[2] >> 2) & 0x3FFFFFF);                             // bits 130-155
+    r->n[6] = (uint32_t)((s[2] >> 28) & 0x3FFFFFF);                            // bits 156-181
+    r->n[7] = (uint32_t)(((s[2] >> 54) | (s[3] << 10)) & 0x3FFFFFF);           // bits 182-207
+    r->n[8] = (uint32_t)((s[3] >> 16) & 0x3FFFFFF);                            // bits 208-233
+    r->n[9] = (uint32_t)(s[3] >> 42);                                          // bits 234-255 (22 bits)
 }
 
 void ecdsa_field_get_b32(uint8_t *r, const ecdsa_field_t *a) {
