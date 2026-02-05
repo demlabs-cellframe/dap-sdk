@@ -171,6 +171,60 @@ void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field
     ecdsa_field_normalize_weak(r);
 }
 
+// Multiply by small integer constant (lazy, no normalize)
+void ecdsa_field_mul_int(ecdsa_field_t *r, int a) {
+    r->n[0] *= a;
+    r->n[1] *= a;
+    r->n[2] *= a;
+    r->n[3] *= a;
+    r->n[4] *= a;
+}
+
+// Add small integer (lazy, no normalize)  
+void ecdsa_field_add_int(ecdsa_field_t *r, int a) {
+    r->n[0] += a;
+}
+
+// Divide by 2: r = r/2 mod p
+// For secp256k1: p = 2^256 - 2^32 - 977
+// If r is even: r/2 = r >> 1
+// If r is odd: r/2 = (r + p) >> 1 = (r >> 1) + ((p + 1) >> 1)
+// (p+1)/2 = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7FFFFE18
+void ecdsa_field_half(ecdsa_field_t *r) {
+    uint64_t mask = -(r->n[0] & 1);  // 0 if even, all-1s if odd
+    
+    // Add (p+1)/2 if odd
+    // (p+1)/2 in 5x52-bit: stored as constants
+    static const uint64_t half_p_plus_1[5] = {
+        0x7FFFFE18ULL,               // bits 0-51
+        0xFFFFFFFFFFFFFULL,          // bits 52-103  
+        0xFFFFFFFFFFFFFULL,          // bits 104-155
+        0xFFFFFFFFFFFFFULL,          // bits 156-207
+        0x7FFFFFFFFFFFULL            // bits 208-255 (48 bits)
+    };
+    
+    uint64_t t0 = r->n[0] + (mask & half_p_plus_1[0]);
+    uint64_t t1 = r->n[1] + (mask & half_p_plus_1[1]) + (t0 >> 52); t0 &= ECDSA_M52;
+    uint64_t t2 = r->n[2] + (mask & half_p_plus_1[2]) + (t1 >> 52); t1 &= ECDSA_M52;
+    uint64_t t3 = r->n[3] + (mask & half_p_plus_1[3]) + (t2 >> 52); t2 &= ECDSA_M52;
+    uint64_t t4 = r->n[4] + (mask & half_p_plus_1[4]) + (t3 >> 52); t3 &= ECDSA_M52;
+    
+    // Now divide by 2 (right shift by 1)
+    r->n[0] = (t0 >> 1) | ((t1 & 1) << 51);
+    r->n[1] = (t1 >> 1) | ((t2 & 1) << 51);
+    r->n[2] = (t2 >> 1) | ((t3 & 1) << 51);
+    r->n[3] = (t3 >> 1) | ((t4 & 1) << 51);
+    r->n[4] = t4 >> 1;
+}
+
+// Check if field element normalizes to zero
+bool ecdsa_field_normalizes_to_zero(const ecdsa_field_t *a) {
+    ecdsa_field_t tmp = *a;
+    ecdsa_field_normalize(&tmp);
+    return tmp.n[0] == 0 && tmp.n[1] == 0 && tmp.n[2] == 0 && 
+           tmp.n[3] == 0 && tmp.n[4] == 0;
+}
+
 void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
 #ifdef __SIZEOF_INT128__
     __uint128_t t[10] = {0};

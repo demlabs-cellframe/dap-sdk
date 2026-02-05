@@ -264,15 +264,13 @@ void ecdsa_gej_add_ge(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_ge_t *b)
     // H = U2 - U1
     ecdsa_field_negate(&t, &u1, 1);
     ecdsa_field_add(&h, &u2, &t);
-    ecdsa_field_normalize(&h);
     
     // Check if H = 0 (same x-coordinate)
-    if (ecdsa_field_is_zero(&h)) {
+    if (ecdsa_field_normalizes_to_zero(&h)) {
         ecdsa_field_negate(&t, &s1, 1);
         ecdsa_field_add(&t, &s2, &t);
-        ecdsa_field_normalize(&t);
         
-        if (ecdsa_field_is_zero(&t)) {
+        if (ecdsa_field_normalizes_to_zero(&t)) {
             // Points are equal, double
             ecdsa_gej_double(r, a);
             return;
@@ -319,16 +317,13 @@ void ecdsa_gej_add_ge(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_ge_t *b)
     ecdsa_field_mul(&r->z, &a->z, &h);
     ecdsa_field_add(&r->z, &r->z, &r->z);
     
-    ecdsa_field_normalize(&r->x);
-    ecdsa_field_normalize(&r->y);
-    ecdsa_field_normalize(&r->z);
-    
     r->infinity = false;
 }
 
 // Point addition: r = a + b (both Jacobian)
 // Full Jacobian formula - NO field inversion needed (critical for performance!)
 // Uses standard add-1998-cmo-2 formula from EFD (Explicit-Formulas Database)
+// Jacobian + Jacobian addition: r = a + b
 void ecdsa_gej_add(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_gej_t *b) {
     if (a->infinity) {
         *r = *b;
@@ -366,13 +361,11 @@ void ecdsa_gej_add(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_gej_t *b) {
     ecdsa_field_add(&h, &u2, &t);
     
     // Check if H = 0 (same x-coordinate)
-    ecdsa_field_normalize(&h);
-    if (ecdsa_field_is_zero(&h)) {
+    if (ecdsa_field_normalizes_to_zero(&h)) {
         ecdsa_field_negate(&t, &s1, 1);
         ecdsa_field_add(&t, &s2, &t);
-        ecdsa_field_normalize(&t);
         
-        if (ecdsa_field_is_zero(&t)) {
+        if (ecdsa_field_normalizes_to_zero(&t)) {
             // Points are equal, double
             ecdsa_gej_double(r, a);
             return;

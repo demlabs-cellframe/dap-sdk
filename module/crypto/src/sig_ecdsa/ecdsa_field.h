@@ -71,6 +71,12 @@ void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a);
 void ecdsa_field_inv(ecdsa_field_t *r, const ecdsa_field_t *a);
 bool ecdsa_field_sqrt(ecdsa_field_t *r, const ecdsa_field_t *a);
 
+// Optimized operations (avoid expensive normalize)
+void ecdsa_field_mul_int(ecdsa_field_t *r, int a);  // r = r * a (small constant)
+void ecdsa_field_half(ecdsa_field_t *r);             // r = r / 2 (mod p)
+void ecdsa_field_add_int(ecdsa_field_t *r, int a);   // r = r + a
+bool ecdsa_field_normalizes_to_zero(const ecdsa_field_t *a);  // Check if a ≡ 0 (mod p)
+
 // =============================================================================
 // Batch Operations (Montgomery's trick)
 // =============================================================================
