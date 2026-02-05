@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 // =============================================================================
 // Field Element Representation
@@ -68,5 +69,12 @@ void ecdsa_field_mul(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field
 void ecdsa_field_sqr(ecdsa_field_t *r, const ecdsa_field_t *a);
 void ecdsa_field_inv(ecdsa_field_t *r, const ecdsa_field_t *a);
 bool ecdsa_field_sqrt(ecdsa_field_t *r, const ecdsa_field_t *a);
+
+// =============================================================================
+// Batch Operations (Montgomery's trick)
+// =============================================================================
+
+// Batch inversion: inverts n field elements using only 1 field inversion + 3*(n-1) multiplications
+void ecdsa_field_inv_batch(ecdsa_field_t *r, const ecdsa_field_t *a, size_t n);
 
 #endif // ECDSA_FIELD_H

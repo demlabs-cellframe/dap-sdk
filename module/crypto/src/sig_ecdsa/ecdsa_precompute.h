@@ -107,15 +107,4 @@ void ecdsa_field_inv_batch(ecdsa_field_t *r, const ecdsa_field_t *a, size_t n);
 // Convert multiple Jacobian points to affine in batch
 void ecdsa_ge_set_gej_batch(ecdsa_ge_t *r, const ecdsa_gej_t *a, size_t n);
 
-// =============================================================================
-// Addition Chains for Fast Inversion
-// =============================================================================
-
-// Optimized field inversion using addition chain
-// ~256 squarings + ~15 multiplications (vs ~256 + ~128 for naive)
-void ecdsa_field_inv_fast(ecdsa_field_t *r, const ecdsa_field_t *a);
-
-// Optimized scalar inversion using addition chain
-void ecdsa_scalar_inv_fast(ecdsa_scalar_t *r, const ecdsa_scalar_t *a);
-
 #endif // ECDSA_PRECOMPUTE_H

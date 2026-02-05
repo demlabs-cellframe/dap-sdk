@@ -279,19 +279,23 @@ void ecdsa_wnaf_table_build(ecdsa_wnaf_table_t *a_table, const ecdsa_ge_t *a_poi
     dap_return_if_fail(a_table && a_point);
     (void)a_window;  // Table size is fixed at compile time
     
+    // Use batch conversion to avoid 15+ field inversions
+    // Build table in Jacobian coordinates first, then batch-convert to affine
+    
     ecdsa_gej_t l_pj, l_p2;
     ecdsa_gej_set_ge(&l_pj, a_point);
     ecdsa_gej_double(&l_p2, &l_pj);
     
-    // table[0] = 1*P
-    ecdsa_ge_set_gej(&a_table->table[0], &l_pj);
+    // Build 1*P, 3*P, 5*P, ..., (2*TABLE_SIZE-1)*P in Jacobian coordinates
+    ecdsa_gej_t l_table_jac[ECDSA_WNAF_TABLE_SIZE];
+    l_table_jac[0] = l_pj;
     
-    // Build 3P, 5P, ..., (2*TABLE_SIZE-1)*P
-    ecdsa_gej_t l_accum = l_pj;
     for (int i = 1; i < ECDSA_WNAF_TABLE_SIZE; i++) {
-        ecdsa_gej_add(&l_accum, &l_accum, &l_p2);
-        ecdsa_ge_set_gej(&a_table->table[i], &l_accum);
+        ecdsa_gej_add(&l_table_jac[i], &l_table_jac[i-1], &l_p2);
     }
+    
+    // Batch convert all points from Jacobian to affine (only 1 field inversion!)
+    ecdsa_ge_set_gej_batch(a_table->table, l_table_jac, ECDSA_WNAF_TABLE_SIZE);
 }
 
 /**
@@ -452,146 +456,8 @@ void ecdsa_ecmult_strauss(ecdsa_gej_t *a_result, const ecdsa_gej_t *a_point,
 }
 
 // =============================================================================
-// Fast Field Inversion (Addition Chain)
-// =============================================================================
-
-/**
- * @brief Optimized field inversion using addition chain
- * @param[out] a_result Result: a^(-1) mod p
- * @param[in] a_value Input value to invert
- * 
- * Uses addition chain for p-2 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2D
- * ~258 squarings + ~15 multiplications (vs ~256 + ~128 for naive)
- */
-void ecdsa_field_inv_fast(ecdsa_field_t *a_result, const ecdsa_field_t *a_value) {
-    dap_return_if_fail(a_result && a_value);
-    
-    ecdsa_field_t l_x2, l_x3, l_x6, l_x9, l_x11, l_x22, l_x44, l_x88, l_x176, l_x220, l_x223, l_t;
-    
-    // l_x2 = a^(2^2 - 1) = a^3
-    ecdsa_field_sqr(&l_x2, a_value);
-    ecdsa_field_mul(&l_x2, &l_x2, a_value);
-    
-    // l_x3 = a^(2^3 - 1) = a^7
-    ecdsa_field_sqr(&l_x3, &l_x2);
-    ecdsa_field_mul(&l_x3, &l_x3, a_value);
-    
-    // l_x6 = a^(2^6 - 1) = a^63
-    ecdsa_field_sqr(&l_t, &l_x3);
-    for (int i = 1; i < 3; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x6, &l_t, &l_x3);
-    
-    // l_x9 = a^(2^9 - 1)
-    ecdsa_field_sqr(&l_t, &l_x6);
-    for (int i = 1; i < 3; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x9, &l_t, &l_x3);
-    
-    // l_x11 = a^(2^11 - 1)
-    ecdsa_field_sqr(&l_t, &l_x9);
-    ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x11, &l_t, &l_x2);
-    
-    // l_x22 = a^(2^22 - 1)
-    ecdsa_field_sqr(&l_t, &l_x11);
-    for (int i = 1; i < 11; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x22, &l_t, &l_x11);
-    
-    // l_x44 = a^(2^44 - 1)
-    ecdsa_field_sqr(&l_t, &l_x22);
-    for (int i = 1; i < 22; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x44, &l_t, &l_x22);
-    
-    // l_x88 = a^(2^88 - 1)
-    ecdsa_field_sqr(&l_t, &l_x44);
-    for (int i = 1; i < 44; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x88, &l_t, &l_x44);
-    
-    // l_x176 = a^(2^176 - 1)
-    ecdsa_field_sqr(&l_t, &l_x88);
-    for (int i = 1; i < 88; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x176, &l_t, &l_x88);
-    
-    // l_x220 = a^(2^220 - 1)
-    ecdsa_field_sqr(&l_t, &l_x176);
-    for (int i = 1; i < 44; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x220, &l_t, &l_x44);
-    
-    // l_x223 = a^(2^223 - 1)
-    ecdsa_field_sqr(&l_t, &l_x220);
-    for (int i = 1; i < 3; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_x223, &l_t, &l_x3);
-    
-    // Final computation: a^(p-2)
-    // l_t = l_x223^(2^23) * l_x22
-    ecdsa_field_sqr(&l_t, &l_x223);
-    for (int i = 1; i < 23; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_t, &l_t, &l_x22);
-    
-    // l_t = l_t^(2^5) * a
-    for (int i = 0; i < 5; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_t, &l_t, a_value);
-    
-    // l_t = l_t^(2^3) * l_x2
-    for (int i = 0; i < 3; i++) 
-        ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(&l_t, &l_t, &l_x2);
-    
-    // l_t = l_t^(2^2) * a
-    ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_sqr(&l_t, &l_t);
-    ecdsa_field_mul(a_result, &l_t, a_value);
-    
-    ecdsa_field_normalize(a_result);
-}
-
-// =============================================================================
-// Batch Inversion (Montgomery's Trick)
-// =============================================================================
-
-// Invert n field elements using only 1 inversion + 3*(n-1) multiplications
-void ecdsa_field_inv_batch(ecdsa_field_t *r, const ecdsa_field_t *a, size_t n) {
-    if (n == 0) return;
-    if (n == 1) {
-        ecdsa_field_inv_fast(r, a);
-        return;
-    }
-    
-    // Step 1: Compute running products
-    // r[0] = a[0]
-    // r[i] = a[0] * a[1] * ... * a[i]
-    r[0] = a[0];
-    for (size_t i = 1; i < n; i++) {
-        ecdsa_field_mul(&r[i], &r[i-1], &a[i]);
-    }
-    
-    // Step 2: Invert the final product
-    ecdsa_field_t inv;
-    ecdsa_field_inv_fast(&inv, &r[n-1]);
-    
-    // Step 3: Compute individual inverses
-    ecdsa_field_t tmp;
-    for (size_t i = n - 1; i > 0; i--) {
-        // r[i] = inv * r[i-1]
-        ecdsa_field_mul(&tmp, &inv, &r[i-1]);
-        // inv = inv * a[i]
-        ecdsa_field_mul(&inv, &inv, &a[i]);
-        r[i] = tmp;
-    }
-    r[0] = inv;
-}
-
-// =============================================================================
 // Batch Jacobian to Affine Conversion
+// Uses ecdsa_field_inv_batch from ecdsa_field.c (Montgomery's trick)
 // =============================================================================
 
 void ecdsa_ge_set_gej_batch(ecdsa_ge_t *r, const ecdsa_gej_t *a, size_t n) {

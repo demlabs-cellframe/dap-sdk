@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include "ecdsa_scalar.h"
+#include "../ecdsa_scalar.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,11 +78,45 @@ const ecdsa_scalar_impl_info_t* ecdsa_scalar_get_all_impls(size_t *count);
 bool ecdsa_scalar_set_impl(ecdsa_scalar_impl_t impl);
 
 // ============================================================================
-// Dispatched Functions (call these - they use best available implementation)
+// Global dispatch function pointers (set by ecdsa_scalar_dispatch_init)
 // ============================================================================
 
-void ecdsa_scalar_mul_512_dispatch(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
-void ecdsa_scalar_mul_shift_384_dispatch(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
+extern ecdsa_scalar_mul_512_fn ecdsa_scalar_mul_512_ptr;
+extern ecdsa_scalar_mul_shift_384_fn ecdsa_scalar_mul_shift_384_ptr;
+extern ecdsa_scalar_reduce_512_fn ecdsa_scalar_reduce_512_ptr;
+extern ecdsa_scalar_mul_fn ecdsa_scalar_mul_arch_ptr;
+
+// ============================================================================
+// Dispatched Functions (static inline for zero overhead)
+// ============================================================================
+
+static inline void ecdsa_scalar_mul_512_dispatch(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b) {
+    if (__builtin_expect(!ecdsa_scalar_mul_512_ptr, 0)) {
+        ecdsa_scalar_dispatch_init();
+    }
+    ecdsa_scalar_mul_512_ptr(l, a, b);
+}
+
+static inline void ecdsa_scalar_mul_shift_384_dispatch(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b) {
+    if (__builtin_expect(!ecdsa_scalar_mul_shift_384_ptr, 0)) {
+        ecdsa_scalar_dispatch_init();
+    }
+    ecdsa_scalar_mul_shift_384_ptr(r, a, b);
+}
+
+static inline void ecdsa_scalar_reduce_512_dispatch(ecdsa_scalar_t *r, const uint64_t l[8]) {
+    if (__builtin_expect(!ecdsa_scalar_reduce_512_ptr, 0)) {
+        ecdsa_scalar_dispatch_init();
+    }
+    ecdsa_scalar_reduce_512_ptr(r, l);
+}
+
+static inline void ecdsa_scalar_mul_arch_dispatch(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b) {
+    if (__builtin_expect(!ecdsa_scalar_mul_arch_ptr, 0)) {
+        ecdsa_scalar_dispatch_init();
+    }
+    ecdsa_scalar_mul_arch_ptr(r, a, b);
+}
 
 // ============================================================================
 // Individual Implementation Declarations

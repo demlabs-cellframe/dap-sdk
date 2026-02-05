@@ -173,57 +173,61 @@ void ecdsa_gej_neg(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
 // =============================================================================
 
 // Point doubling: r = 2*a
-// Using formulas for Jacobian coordinates
+// Optimized Jacobian doubling for secp256k1 (curve parameter a=0)
+// Uses dbl-2009-l formula from EFD: 2M + 5S + 1*a + 7add + 2*2 + 1*3 + 1*8
+// Since a=0 for secp256k1, we save one multiplication
 void ecdsa_gej_double(ecdsa_gej_t *r, const ecdsa_gej_t *a) {
     if (a->infinity) {
         ecdsa_gej_set_infinity(r);
         return;
     }
     
-    ecdsa_field_t t1, t2, t3, t4, t5;
+    ecdsa_field_t xx, yy, yyyy, s, m, t;
     
-    // For secp256k1 (a=0): simplified doubling formulas
-    // t1 = X²
-    ecdsa_field_sqr(&t1, &a->x);
+    // XX = X1²
+    ecdsa_field_sqr(&xx, &a->x);
     
-    // t2 = Y²
-    ecdsa_field_sqr(&t2, &a->y);
+    // YY = Y1²
+    ecdsa_field_sqr(&yy, &a->y);
     
-    // t3 = Y⁴
-    ecdsa_field_sqr(&t3, &t2);
+    // YYYY = YY²
+    ecdsa_field_sqr(&yyyy, &yy);
     
-    // t4 = 2*((X+Y²)² - X² - Y⁴) = 4*X*Y²
-    ecdsa_field_add(&t4, &a->x, &t2);
-    ecdsa_field_sqr(&t4, &t4);
-    ecdsa_field_negate(&t5, &t1, 1);
-    ecdsa_field_add(&t4, &t4, &t5);
-    ecdsa_field_negate(&t5, &t3, 1);
-    ecdsa_field_add(&t4, &t4, &t5);
-    ecdsa_field_add(&t4, &t4, &t4);  // 2*S where S = 2*X*Y²
+    // S = 2*((X1+YY)² - XX - YYYY) = 4*X1*YY
+    ecdsa_field_add(&s, &a->x, &yy);
+    ecdsa_field_sqr(&s, &s);
+    ecdsa_field_negate(&t, &xx, 1);
+    ecdsa_field_add(&s, &s, &t);
+    ecdsa_field_negate(&t, &yyyy, 1);
+    ecdsa_field_add(&s, &s, &t);
+    ecdsa_field_add(&s, &s, &s);  // S = 4*X1*YY
     
-    // t5 = 3*X² (= M, since a=0)
-    ecdsa_field_add(&t5, &t1, &t1);
-    ecdsa_field_add(&t5, &t5, &t1);
+    // M = 3*XX (since a=0 for secp256k1)
+    ecdsa_field_add(&m, &xx, &xx);
+    ecdsa_field_add(&m, &m, &xx);  // M = 3*XX
     
-    // X' = M² - 2*S
-    ecdsa_field_sqr(&r->x, &t5);
-    ecdsa_field_negate(&t1, &t4, 1);
-    ecdsa_field_add(&r->x, &r->x, &t1);
-    ecdsa_field_add(&r->x, &r->x, &t1);
+    // T = M² - 2*S
+    ecdsa_field_sqr(&t, &m);
+    ecdsa_field_negate(&r->x, &s, 1);
+    ecdsa_field_add(&t, &t, &r->x);
+    ecdsa_field_add(&t, &t, &r->x);
     
-    // Z' = 2*Y*Z
+    // X3 = T
+    r->x = t;
+    
+    // Z3 = 2*Y1*Z1 (using (Y1+Z1)² - YY - ZZ formula is slower here)
     ecdsa_field_mul(&r->z, &a->y, &a->z);
     ecdsa_field_add(&r->z, &r->z, &r->z);
     
-    // Y' = M*(S-X') - 8*Y⁴
-    ecdsa_field_negate(&t1, &r->x, 1);
-    ecdsa_field_add(&t4, &t4, &t1);
-    ecdsa_field_mul(&t4, &t4, &t5);
-    ecdsa_field_add(&t3, &t3, &t3);  // 2*Y⁴
-    ecdsa_field_add(&t3, &t3, &t3);  // 4*Y⁴
-    ecdsa_field_add(&t3, &t3, &t3);  // 8*Y⁴
-    ecdsa_field_negate(&t3, &t3, 1);
-    ecdsa_field_add(&r->y, &t4, &t3);
+    // Y3 = M*(S-T) - 8*YYYY
+    ecdsa_field_negate(&t, &r->x, 1);
+    ecdsa_field_add(&s, &s, &t);
+    ecdsa_field_mul(&r->y, &m, &s);
+    ecdsa_field_add(&yyyy, &yyyy, &yyyy);  // 2*YYYY
+    ecdsa_field_add(&yyyy, &yyyy, &yyyy);  // 4*YYYY
+    ecdsa_field_add(&yyyy, &yyyy, &yyyy);  // 8*YYYY
+    ecdsa_field_negate(&yyyy, &yyyy, 1);
+    ecdsa_field_add(&r->y, &r->y, &yyyy);
     
     r->infinity = false;
 }
@@ -323,6 +327,8 @@ void ecdsa_gej_add_ge(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_ge_t *b)
 }
 
 // Point addition: r = a + b (both Jacobian)
+// Full Jacobian formula - NO field inversion needed (critical for performance!)
+// Uses standard add-1998-cmo-2 formula from EFD (Explicit-Formulas Database)
 void ecdsa_gej_add(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_gej_t *b) {
     if (a->infinity) {
         *r = *b;
@@ -333,10 +339,92 @@ void ecdsa_gej_add(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_gej_t *b) {
         return;
     }
     
-    // Convert b to affine for simplicity (slower but correct)
-    ecdsa_ge_t b_affine;
-    ecdsa_ge_set_gej(&b_affine, b);
-    ecdsa_gej_add_ge(r, a, &b_affine);
+    ecdsa_field_t z1z1, z2z2, u1, u2, s1, s2, h, i, j, rr, v, t;
+    
+    // Z1Z1 = Z1²
+    ecdsa_field_sqr(&z1z1, &a->z);
+    
+    // Z2Z2 = Z2²
+    ecdsa_field_sqr(&z2z2, &b->z);
+    
+    // U1 = X1 * Z2Z2
+    ecdsa_field_mul(&u1, &a->x, &z2z2);
+    
+    // U2 = X2 * Z1Z1
+    ecdsa_field_mul(&u2, &b->x, &z1z1);
+    
+    // S1 = Y1 * Z2 * Z2Z2
+    ecdsa_field_mul(&s1, &a->y, &b->z);
+    ecdsa_field_mul(&s1, &s1, &z2z2);
+    
+    // S2 = Y2 * Z1 * Z1Z1
+    ecdsa_field_mul(&s2, &b->y, &a->z);
+    ecdsa_field_mul(&s2, &s2, &z1z1);
+    
+    // H = U2 - U1
+    ecdsa_field_negate(&t, &u1, 1);
+    ecdsa_field_add(&h, &u2, &t);
+    
+    // Check if H = 0 (same x-coordinate)
+    ecdsa_field_normalize(&h);
+    if (ecdsa_field_is_zero(&h)) {
+        ecdsa_field_negate(&t, &s1, 1);
+        ecdsa_field_add(&t, &s2, &t);
+        ecdsa_field_normalize(&t);
+        
+        if (ecdsa_field_is_zero(&t)) {
+            // Points are equal, double
+            ecdsa_gej_double(r, a);
+            return;
+        } else {
+            // Points are negatives, result is infinity
+            ecdsa_gej_set_infinity(r);
+            return;
+        }
+    }
+    
+    // I = (2*H)²
+    ecdsa_field_add(&i, &h, &h);
+    ecdsa_field_sqr(&i, &i);
+    
+    // J = H * I
+    ecdsa_field_mul(&j, &h, &i);
+    
+    // rr = 2*(S2 - S1)
+    ecdsa_field_negate(&t, &s1, 1);
+    ecdsa_field_add(&rr, &s2, &t);
+    ecdsa_field_add(&rr, &rr, &rr);
+    
+    // V = U1 * I
+    ecdsa_field_mul(&v, &u1, &i);
+    
+    // X3 = rr² - J - 2*V
+    ecdsa_field_sqr(&r->x, &rr);
+    ecdsa_field_negate(&t, &j, 1);
+    ecdsa_field_add(&r->x, &r->x, &t);
+    ecdsa_field_negate(&t, &v, 1);
+    ecdsa_field_add(&r->x, &r->x, &t);
+    ecdsa_field_add(&r->x, &r->x, &t);
+    
+    // Y3 = rr*(V - X3) - 2*S1*J
+    ecdsa_field_negate(&t, &r->x, 1);
+    ecdsa_field_add(&t, &v, &t);
+    ecdsa_field_mul(&r->y, &rr, &t);
+    ecdsa_field_mul(&t, &s1, &j);
+    ecdsa_field_add(&t, &t, &t);
+    ecdsa_field_negate(&t, &t, 1);
+    ecdsa_field_add(&r->y, &r->y, &t);
+    
+    // Z3 = ((Z1+Z2)² - Z1Z1 - Z2Z2) * H
+    ecdsa_field_add(&r->z, &a->z, &b->z);
+    ecdsa_field_sqr(&r->z, &r->z);
+    ecdsa_field_negate(&t, &z1z1, 1);
+    ecdsa_field_add(&r->z, &r->z, &t);
+    ecdsa_field_negate(&t, &z2z2, 1);
+    ecdsa_field_add(&r->z, &r->z, &t);
+    ecdsa_field_mul(&r->z, &r->z, &h);
+    
+    r->infinity = false;
 }
 
 // =============================================================================

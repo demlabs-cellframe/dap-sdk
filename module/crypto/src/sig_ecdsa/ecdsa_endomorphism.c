@@ -63,99 +63,259 @@ const ecdsa_scalar_t *ecdsa_get_lambda(void) {
 }
 
 // =============================================================================
-// Lattice basis for scalar decomposition (precomputed)
+// GLV Decomposition Constants (from bitcoin-core/secp256k1)
 // =============================================================================
 
-// Basis vectors for GLV decomposition:
-// b1 = (a1, -b1) where a1 = 0x3086d221a7d46bcde86c90e49284eb15
-// b2 = (-a2, a2) where a2 = 0xe4437ed6010e88286f547fa90abfe4c3
+// g1 and g2 are 256-bit constants for scalar decomposition
+// g1 = round(2^384 * b2 / n) where b2 = a1
+// g2 = round(2^384 * (-b1) / n)
+//
+// From bitcoin-core scalar_impl.h:
+// g1 = 0x3086D221A7D46BCDE86C90E49284EB153DAA8A1471E8CA7FE893209A45DBB031
+// g2 = 0xE4437ED6010E88286F547FA90ABFE4C4221208AC9DF506C61571B4AE8AC47F71
 
-// g1 = 0x3086d221a7d46bcde86c90e49284eb153dba...
-// g2 = 0xe4437ed6010e88286f547fa90abfe4c3
-
-// Minus b1 (for decomposition)
-static const uint8_t s_minus_b1[16] = {
-    0x30, 0x86, 0xd2, 0x21, 0xa7, 0xd4, 0x6b, 0xcd,
-    0xe8, 0x6c, 0x90, 0xe4, 0x92, 0x84, 0xeb, 0x15
+static const uint8_t GLV_G1_BYTES[32] = {
+    0x30, 0x86, 0xD2, 0x21, 0xA7, 0xD4, 0x6B, 0xCD,
+    0xE8, 0x6C, 0x90, 0xE4, 0x92, 0x84, 0xEB, 0x15,
+    0x3D, 0xAA, 0x8A, 0x14, 0x71, 0xE8, 0xCA, 0x7F,
+    0xE8, 0x93, 0x20, 0x9A, 0x45, 0xDB, 0xB0, 0x31
 };
 
-// Minus b2
-static const uint8_t s_minus_b2[16] = {
-    0xe4, 0x43, 0x7e, 0xd6, 0x01, 0x0e, 0x88, 0x28,
-    0x6f, 0x54, 0x7f, 0xa9, 0x0a, 0xbf, 0xe4, 0xc3
+static const uint8_t GLV_G2_BYTES[32] = {
+    0xE4, 0x43, 0x7E, 0xD6, 0x01, 0x0E, 0x88, 0x28,
+    0x6F, 0x54, 0x7F, 0xA9, 0x0A, 0xBF, 0xE4, 0xC4,
+    0x22, 0x12, 0x08, 0xAC, 0x9D, 0xF5, 0x06, 0xC6,
+    0x15, 0x71, 0xB4, 0xAE, 0x8A, 0xC4, 0x7F, 0x71
 };
 
-// g1 for decomposition (divided by 2^384)
-static const uint8_t s_g1[16] = {
-    0x30, 0x86, 0xd2, 0x21, 0xa7, 0xd4, 0x6b, 0xcd,
-    0xe8, 0x6c, 0x90, 0xe4, 0x92, 0x84, 0xeb, 0x15
+// minus_b1 = 0x00000000000000000000000000000000E4437ED6010E88286F547FA90ABFE4C3
+static const uint8_t GLV_MINUS_B1_BYTES[32] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xE4, 0x43, 0x7E, 0xD6, 0x01, 0x0E, 0x88, 0x28,
+    0x6F, 0x54, 0x7F, 0xA9, 0x0A, 0xBF, 0xE4, 0xC3
 };
 
-// g2 for decomposition
-static const uint8_t s_g2[16] = {
-    0xe4, 0x43, 0x7e, 0xd6, 0x01, 0x0e, 0x88, 0x28,
-    0x6f, 0x54, 0x7f, 0xa9, 0x0a, 0xbf, 0xe4, 0xc4
+// minus_b2 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE8A280AC50774346DD765CDA83DB1562C
+static const uint8_t GLV_MINUS_B2_BYTES[32] = {
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
+    0x8A, 0x28, 0x0A, 0xC5, 0x07, 0x74, 0x34, 0x6D,
+    0xD7, 0x65, 0xCD, 0xA8, 0x3D, 0xB1, 0x56, 0x2C
 };
 
-// =============================================================================
-// 128-bit arithmetic helpers for decomposition
-// =============================================================================
+// Lazy-initialized scalar versions
+static ecdsa_scalar_t s_g1_scalar;
+static ecdsa_scalar_t s_g2_scalar;
+static ecdsa_scalar_t s_minus_b1_scalar;
+static ecdsa_scalar_t s_minus_b2_scalar;
+static bool s_glv_scalars_initialized = false;
 
-typedef struct {
-    uint64_t lo;
-    uint64_t hi;
-} uint128_split_t;
-
-// Multiply 256-bit by 128-bit, return top 128 bits (approximately)
-static void mul256x128_hi(uint128_split_t *r, const ecdsa_scalar_t *a, const uint8_t *b) {
-    // Simplified: we need k * g1 >> 256 and k * g2 >> 256
-    // This gives us the approximate coefficients for decomposition
-    
-    uint8_t a_bytes[32];
-    ecdsa_scalar_get_b32(a_bytes, a);
-    
-    // Read b as 128-bit big-endian
-    uint64_t b_hi = ((uint64_t)b[0] << 56) | ((uint64_t)b[1] << 48) | 
-                    ((uint64_t)b[2] << 40) | ((uint64_t)b[3] << 32) |
-                    ((uint64_t)b[4] << 24) | ((uint64_t)b[5] << 16) |
-                    ((uint64_t)b[6] << 8) | (uint64_t)b[7];
-    uint64_t b_lo = ((uint64_t)b[8] << 56) | ((uint64_t)b[9] << 48) | 
-                    ((uint64_t)b[10] << 40) | ((uint64_t)b[11] << 32) |
-                    ((uint64_t)b[12] << 24) | ((uint64_t)b[13] << 16) |
-                    ((uint64_t)b[14] << 8) | (uint64_t)b[15];
-    
-    // Read high 128 bits of a
-    uint64_t a_hi = ((uint64_t)a_bytes[0] << 56) | ((uint64_t)a_bytes[1] << 48) |
-                    ((uint64_t)a_bytes[2] << 40) | ((uint64_t)a_bytes[3] << 32) |
-                    ((uint64_t)a_bytes[4] << 24) | ((uint64_t)a_bytes[5] << 16) |
-                    ((uint64_t)a_bytes[6] << 8) | (uint64_t)a_bytes[7];
-    uint64_t a_lo = ((uint64_t)a_bytes[8] << 56) | ((uint64_t)a_bytes[9] << 48) |
-                    ((uint64_t)a_bytes[10] << 40) | ((uint64_t)a_bytes[11] << 32) |
-                    ((uint64_t)a_bytes[12] << 24) | ((uint64_t)a_bytes[13] << 16) |
-                    ((uint64_t)a_bytes[14] << 8) | (uint64_t)a_bytes[15];
-
-    // Approximate: (a_hi:a_lo) * (b_hi:b_lo) >> 128
-    // We only need the high 128 bits of a 384-bit product, shifted right by 256
-    // Simplified approximation using high parts
-    
-#ifdef __SIZEOF_INT128__
-    __uint128_t prod_hh = (__uint128_t)a_hi * b_hi;
-    __uint128_t prod_hl = (__uint128_t)a_hi * b_lo;
-    __uint128_t prod_lh = (__uint128_t)a_lo * b_hi;
-    
-    // Add with carry
-    __uint128_t sum = prod_hh + (prod_hl >> 64) + (prod_lh >> 64);
-    r->hi = (uint64_t)(sum >> 64);
-    r->lo = (uint64_t)sum;
-#else
-    // Fallback without __int128
-    r->hi = (a_hi >> 32) * (b_hi >> 32);
-    r->lo = a_hi * b_hi;
-#endif
+static void s_init_glv_scalars(void) {
+    if (s_glv_scalars_initialized) return;
+    ecdsa_scalar_set_b32(&s_g1_scalar, GLV_G1_BYTES, NULL);
+    ecdsa_scalar_set_b32(&s_g2_scalar, GLV_G2_BYTES, NULL);
+    ecdsa_scalar_set_b32(&s_minus_b1_scalar, GLV_MINUS_B1_BYTES, NULL);
+    ecdsa_scalar_set_b32(&s_minus_b2_scalar, GLV_MINUS_B2_BYTES, NULL);
+    s_glv_scalars_initialized = true;
 }
 
 // =============================================================================
-// GLV Scalar Decomposition
+// 256x256 -> high 128 bits multiplication (shift by 384)
+// Direct limb access for maximum performance (no byte conversion)
+// =============================================================================
+
+#ifdef ECDSA_SCALAR_64BIT
+
+// Compute (a * b) >> 384, where a and b are 256-bit scalars
+// Result is ~128-bit (fits in scalar limbs d[0], d[1])
+// Works directly with limbs for maximum performance
+static void scalar_mul_shift_384(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b) {
+#ifdef __SIZEOF_INT128__
+    // 160-bit accumulator (c0, c1, c2)
+    uint64_t c0 = 0, c1 = 0;
+    uint32_t c2 = 0;
+    uint64_t l[8];  // 512-bit product
+    
+    // Schoolbook multiplication into l[0..7]
+    // Using accumulator technique from bitcoin-core
+    
+    // l[0] = a0*b0
+    {
+        __uint128_t t = (__uint128_t)a->d[0] * b->d[0];
+        l[0] = (uint64_t)t;
+        c0 = (uint64_t)(t >> 64);
+    }
+    
+    // l[1] = a0*b1 + a1*b0
+    {
+        __uint128_t t = (__uint128_t)a->d[0] * b->d[1];
+        uint64_t th = (uint64_t)(t >> 64);
+        uint64_t tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl);
+        c1 = th;
+        
+        t = (__uint128_t)a->d[1] * b->d[0];
+        th = (uint64_t)(t >> 64);
+        tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl);
+        c1 += th; c2 = (c1 < th);
+        
+        l[1] = c0; c0 = c1; c1 = c2; c2 = 0;
+    }
+    
+    // l[2] = a0*b2 + a1*b1 + a2*b0
+    {
+        __uint128_t t = (__uint128_t)a->d[0] * b->d[2];
+        uint64_t th = (uint64_t)(t >> 64), tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        t = (__uint128_t)a->d[1] * b->d[1];
+        th = (uint64_t)(t >> 64); tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        t = (__uint128_t)a->d[2] * b->d[0];
+        th = (uint64_t)(t >> 64); tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        l[2] = c0; c0 = c1; c1 = c2; c2 = 0;
+    }
+    
+    // l[3] = a0*b3 + a1*b2 + a2*b1 + a3*b0
+    {
+        __uint128_t t = (__uint128_t)a->d[0] * b->d[3];
+        uint64_t th = (uint64_t)(t >> 64), tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        t = (__uint128_t)a->d[1] * b->d[2];
+        th = (uint64_t)(t >> 64); tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        t = (__uint128_t)a->d[2] * b->d[1];
+        th = (uint64_t)(t >> 64); tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        t = (__uint128_t)a->d[3] * b->d[0];
+        th = (uint64_t)(t >> 64); tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        l[3] = c0; c0 = c1; c1 = c2; c2 = 0;
+    }
+    
+    // l[4] = a1*b3 + a2*b2 + a3*b1
+    {
+        __uint128_t t = (__uint128_t)a->d[1] * b->d[3];
+        uint64_t th = (uint64_t)(t >> 64), tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        t = (__uint128_t)a->d[2] * b->d[2];
+        th = (uint64_t)(t >> 64); tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        t = (__uint128_t)a->d[3] * b->d[1];
+        th = (uint64_t)(t >> 64); tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th; c2 += (c1 < th);
+        
+        l[4] = c0; c0 = c1; c1 = c2; c2 = 0;
+    }
+    
+    // l[5] = a2*b3 + a3*b2
+    {
+        __uint128_t t = (__uint128_t)a->d[2] * b->d[3];
+        uint64_t th = (uint64_t)(t >> 64), tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th;
+        
+        t = (__uint128_t)a->d[3] * b->d[2];
+        th = (uint64_t)(t >> 64); tl = (uint64_t)t;
+        c0 += tl; th += (c0 < tl); c1 += th;
+        
+        l[5] = c0; c0 = c1; c1 = 0;
+    }
+    
+    // l[6] = a3*b3
+    {
+        __uint128_t t = (__uint128_t)a->d[3] * b->d[3];
+        c0 += (uint64_t)t;
+        c1 = (uint64_t)(t >> 64) + (c0 < (uint64_t)t);
+        l[6] = c0;
+        l[7] = c1;
+    }
+    
+    // Result is (l >> 384) with rounding
+    // shift=384 means: shiftlimbs=6, shiftlow=0
+    // r->d[0] = l[6], r->d[1] = l[7]
+    // Add rounding bit from l[5] bit 63
+    uint64_t round_bit = (l[5] >> 63) & 1;
+    r->d[0] = l[6] + round_bit;
+    r->d[1] = l[7] + (r->d[0] < round_bit);
+    r->d[2] = 0;
+    r->d[3] = 0;
+    
+#else
+    // Fallback without __uint128_t - less precise but functional
+    // Use 32-bit multiplication
+    uint32_t a32[8], b32[8];
+    for (int i = 0; i < 4; i++) {
+        a32[2*i] = (uint32_t)a->d[i];
+        a32[2*i+1] = (uint32_t)(a->d[i] >> 32);
+        b32[2*i] = (uint32_t)b->d[i];
+        b32[2*i+1] = (uint32_t)(b->d[i] >> 32);
+    }
+    
+    uint64_t acc = 0;
+    uint32_t l32[16] = {0};
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (i + j >= 12) {  // Only compute high part
+                acc += (uint64_t)a32[i] * b32[j];
+            }
+        }
+        if (i >= 4) {
+            l32[i + 8 - 4] = (uint32_t)acc;
+            acc >>= 32;
+        }
+    }
+    
+    r->d[0] = ((uint64_t)l32[13] << 32) | l32[12];
+    r->d[1] = ((uint64_t)l32[15] << 32) | l32[14];
+    r->d[2] = 0;
+    r->d[3] = 0;
+#endif
+}
+
+#else  // 32-bit platform
+
+static void scalar_mul_shift_384(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b) {
+    // 32-bit implementation using 8x32-bit limbs
+    uint64_t acc[16] = {0};
+    
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            acc[i+j] += (uint64_t)a->d[i] * b->d[j];
+        }
+    }
+    
+    // Propagate carries
+    for (int i = 0; i < 15; i++) {
+        acc[i+1] += acc[i] >> 32;
+        acc[i] &= 0xFFFFFFFF;
+    }
+    
+    // Result is bits 384-511 = acc[12..15]
+    r->d[0] = (uint32_t)acc[12];
+    r->d[1] = (uint32_t)acc[13];
+    r->d[2] = (uint32_t)acc[14];
+    r->d[3] = (uint32_t)acc[15];
+    r->d[4] = 0;
+    r->d[5] = 0;
+    r->d[6] = 0;
+    r->d[7] = 0;
+}
+
+#endif // ECDSA_SCALAR_64BIT
+
+// =============================================================================
+// GLV Scalar Decomposition (Bitcoin-core algorithm)
 // =============================================================================
 
 void ecdsa_scalar_split_lambda(
@@ -165,69 +325,40 @@ void ecdsa_scalar_split_lambda(
 {
     dap_return_if_fail(a_k1 && a_k1_neg && a_k2 && a_k2_neg && a_k);
     
-    // Use Babai's nearest plane algorithm with precomputed lattice basis
-    // c1 = round(k * g1 / 2^384)
-    // c2 = round(k * g2 / 2^384)
-    // k1 = k - c1*a1 - c2*a2
-    // k2 = -c1*b1 - c2*b2
+    // Initialize GLV constants
+    s_init_glv_scalars();
     
-    uint128_split_t c1, c2;
-    mul256x128_hi(&c1, a_k, s_g1);
-    mul256x128_hi(&c2, a_k, s_g2);
+    // GLV decomposition: k = k1 + k2*λ (mod n)
+    // Bitcoin-core algorithm:
+    //   c1 = round(k * g1 / 2^384)
+    //   c2 = round(k * g2 / 2^384)
+    //   r2 = c1 * minus_b1 + c2 * minus_b2
+    //   r1 = k - r2 * lambda
     
-    // Simplified decomposition: approximate values
-    // For production, need full precision arithmetic
+    // Step 1: c1 = (k * g1) >> 384 (with rounding)
+    ecdsa_scalar_t c1, c2;
+    scalar_mul_shift_384(&c1, a_k, &s_g1_scalar);
+    scalar_mul_shift_384(&c2, a_k, &s_g2_scalar);
     
-    // k1 = k - c1*a1 - c2*a2 (mod n)
-    // k2 = -c1*b1 - c2*b2 (mod n)
+    // Step 2: r2 = c1 * minus_b1 + c2 * minus_b2
+    ecdsa_scalar_t tmp1, tmp2;
+    ecdsa_scalar_mul(&tmp1, &c1, &s_minus_b1_scalar);
+    ecdsa_scalar_mul(&tmp2, &c2, &s_minus_b2_scalar);
+    ecdsa_scalar_add(a_k2, &tmp1, &tmp2);
     
-    // Start with k1 = k
-    ecdsa_scalar_copy(a_k1, a_k);
+    // Step 3: r1 = k - r2 * lambda
+    ecdsa_scalar_t r2_lambda;
+    ecdsa_scalar_mul(&r2_lambda, a_k2, ecdsa_get_lambda());
+    ecdsa_scalar_negate(&r2_lambda, &r2_lambda);
+    ecdsa_scalar_add(a_k1, a_k, &r2_lambda);
     
-    // Build c1 * λ and subtract from k
-    ecdsa_scalar_t c1_scalar, c2_scalar, tmp;
-    
-    // c1 as scalar (128-bit)
-    uint8_t c1_bytes[32] = {0};
-    c1_bytes[16] = (c1.hi >> 56) & 0xFF;
-    c1_bytes[17] = (c1.hi >> 48) & 0xFF;
-    c1_bytes[18] = (c1.hi >> 40) & 0xFF;
-    c1_bytes[19] = (c1.hi >> 32) & 0xFF;
-    c1_bytes[20] = (c1.hi >> 24) & 0xFF;
-    c1_bytes[21] = (c1.hi >> 16) & 0xFF;
-    c1_bytes[22] = (c1.hi >> 8) & 0xFF;
-    c1_bytes[23] = c1.hi & 0xFF;
-    c1_bytes[24] = (c1.lo >> 56) & 0xFF;
-    c1_bytes[25] = (c1.lo >> 48) & 0xFF;
-    c1_bytes[26] = (c1.lo >> 40) & 0xFF;
-    c1_bytes[27] = (c1.lo >> 32) & 0xFF;
-    c1_bytes[28] = (c1.lo >> 24) & 0xFF;
-    c1_bytes[29] = (c1.lo >> 16) & 0xFF;
-    c1_bytes[30] = (c1.lo >> 8) & 0xFF;
-    c1_bytes[31] = c1.lo & 0xFF;
-    ecdsa_scalar_set_b32(&c1_scalar, c1_bytes, NULL);
-    
-    // k2 = c1 (approximately, for GLV this becomes the second scalar)
-    ecdsa_scalar_copy(a_k2, &c1_scalar);
-    
-    // k1 = k - k2 * λ (mod n)
-    ecdsa_scalar_mul(&tmp, a_k2, ecdsa_get_lambda());
-    ecdsa_scalar_negate(&tmp, &tmp);
-    ecdsa_scalar_add(a_k1, a_k, &tmp);
-    
-    // Determine signs - if k1 or k2 > n/2, negate
-    // For simplicity, check high bit
-    uint8_t k1_bytes[32], k2_bytes[32];
-    ecdsa_scalar_get_b32(k1_bytes, a_k1);
-    ecdsa_scalar_get_b32(k2_bytes, a_k2);
-    
-    // If high bit is set, value is > n/2, so negate
-    *a_k1_neg = (k1_bytes[0] & 0x80) != 0;
-    *a_k2_neg = (k2_bytes[0] & 0x80) != 0;
-    
+    // Determine signs: if scalar > n/2, negate and set flag
+    *a_k1_neg = ecdsa_scalar_is_high(a_k1);
     if (*a_k1_neg) {
         ecdsa_scalar_negate(a_k1, a_k1);
     }
+    
+    *a_k2_neg = ecdsa_scalar_is_high(a_k2);
     if (*a_k2_neg) {
         ecdsa_scalar_negate(a_k2, a_k2);
     }
