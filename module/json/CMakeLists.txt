@@ -6,52 +6,6 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/PackageComponents.cmake)
 
 add_definitions("-D_GNU_SOURCE")
 
-# =============================================================================
-# Check for required tools for SIMD code generation
-# =============================================================================
-# SIMD code generation requires AWK with systime() support (gawk extension)
-# mawk and BSD awk (macOS default) do not support systime()
-
-# Find gawk first, then test systime() support
-find_program(GAWK_EXECUTABLE gawk)
-if(NOT GAWK_EXECUTABLE)
-    message(FATAL_ERROR 
-        "\n"
-        "========================================================================\n"
-        " MISSING REQUIRED TOOL: gawk (GNU AWK)\n"
-        "========================================================================\n"
-        " SIMD code generation requires 'gawk' which was not found in PATH.\n"
-        "\n"
-        " Please install gawk:\n"
-        "   macOS:   brew install gawk\n"
-        "   Ubuntu:  sudo apt install gawk\n"
-        "   Fedora:  sudo dnf install gawk\n"
-        "   Arch:    sudo pacman -S gawk\n"
-        "\n"
-        " After installation, re-run cmake.\n"
-        "========================================================================\n"
-    )
-endif()
-
-# Verify gawk supports systime() (sanity check)
-execute_process(
-    COMMAND ${GAWK_EXECUTABLE} "BEGIN { print systime() }"
-    RESULT_VARIABLE GAWK_SYSTIME_RESULT
-    OUTPUT_QUIET ERROR_QUIET
-)
-if(NOT GAWK_SYSTIME_RESULT EQUAL 0)
-    message(FATAL_ERROR 
-        "\n"
-        "========================================================================\n"
-        " INCOMPATIBLE AWK: ${GAWK_EXECUTABLE}\n"
-        "========================================================================\n"
-        " Found gawk but it does not support systime() function.\n"
-        " This is unexpected. Please reinstall gawk or check your PATH.\n"
-        "========================================================================\n"
-    )
-endif()
-message(STATUS "[dap_json] Found gawk with systime() support: ${GAWK_EXECUTABLE}")
-
 # Collect JSON module sources and headers
 file(GLOB JSON_HEADERS include/*.h)
 file(GLOB JSON_INTERNAL_HEADERS include/internal/*.h)
