@@ -299,32 +299,39 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686|i386")
     
     message(STATUS "[dap_crypto] Keccak SIMD: AVX-512, AVX2, SSE2 enabled (generated)")
     
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
-    # ARM64: NEON, SVE, SVE2 implementations (generated)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    # ARM64: NEON implementation (always available on ARM64)
+    # Note: arm64 is used by Apple, aarch64 by Linux
     set(KECCAK_NEON_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_neon.c)
-    set(KECCAK_SVE_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve.c)
-    set(KECCAK_SVE2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve2.c)
     
     if(EXISTS ${KECCAK_NEON_SRC})
         list(APPEND KECCAK_SIMD_SRCS ${KECCAK_NEON_SRC})
         set_source_files_properties(${KECCAK_NEON_SRC} PROPERTIES GENERATED TRUE)
     endif()
     
-    if(EXISTS ${KECCAK_SVE_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE_SRC})
-        set_source_files_properties(${KECCAK_SVE_SRC} PROPERTIES 
-            COMPILE_FLAGS "-march=armv8.2-a+sve"
-            GENERATED TRUE)
+    # SVE/SVE2 only on Linux ARM64 servers (AWS Graviton etc), not on Apple Silicon
+    if(NOT APPLE)
+        set(KECCAK_SVE_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve.c)
+        set(KECCAK_SVE2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve2.c)
+        
+        if(EXISTS ${KECCAK_SVE_SRC})
+            list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE_SRC})
+            set_source_files_properties(${KECCAK_SVE_SRC} PROPERTIES 
+                COMPILE_FLAGS "-march=armv8.2-a+sve"
+                GENERATED TRUE)
+        endif()
+        
+        if(EXISTS ${KECCAK_SVE2_SRC})
+            list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE2_SRC})
+            set_source_files_properties(${KECCAK_SVE2_SRC} PROPERTIES 
+                COMPILE_FLAGS "-march=armv8.2-a+sve2"
+                GENERATED TRUE)
+        endif()
+        
+        message(STATUS "[dap_crypto] Keccak SIMD: NEON, SVE, SVE2 enabled (generated)")
+    else()
+        message(STATUS "[dap_crypto] Keccak SIMD: NEON enabled (SVE/SVE2 disabled on Apple Silicon)")
     endif()
-    
-    if(EXISTS ${KECCAK_SVE2_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE2_SRC})
-        set_source_files_properties(${KECCAK_SVE2_SRC} PROPERTIES 
-            COMPILE_FLAGS "-march=armv8.2-a+sve2"
-            GENERATED TRUE)
-    endif()
-    
-    message(STATUS "[dap_crypto] Keccak SIMD: NEON, SVE, SVE2 enabled (generated)")
     
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
     # ARM32: NEON implementation (generated)

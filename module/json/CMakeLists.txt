@@ -9,9 +9,10 @@ add_definitions("-D_GNU_SOURCE")
 # =============================================================================
 # Check for required tools for SIMD code generation
 # =============================================================================
-# SIMD code generation requires gawk (GNU AWK) because:
-# - systime() function is used in templates (gawk extension, not in POSIX awk)
-# - mawk and BSD awk (macOS default) do not support systime()
+# SIMD code generation requires AWK with systime() support (gawk extension)
+# mawk and BSD awk (macOS default) do not support systime()
+
+# Find gawk first, then test systime() support
 find_program(GAWK_EXECUTABLE gawk)
 if(NOT GAWK_EXECUTABLE)
     message(FATAL_ERROR 
@@ -31,7 +32,25 @@ if(NOT GAWK_EXECUTABLE)
         "========================================================================\n"
     )
 endif()
-message(STATUS "[dap_json] Found gawk: ${GAWK_EXECUTABLE}")
+
+# Verify gawk supports systime() (sanity check)
+execute_process(
+    COMMAND ${GAWK_EXECUTABLE} "BEGIN { print systime() }"
+    RESULT_VARIABLE GAWK_SYSTIME_RESULT
+    OUTPUT_QUIET ERROR_QUIET
+)
+if(NOT GAWK_SYSTIME_RESULT EQUAL 0)
+    message(FATAL_ERROR 
+        "\n"
+        "========================================================================\n"
+        " INCOMPATIBLE AWK: ${GAWK_EXECUTABLE}\n"
+        "========================================================================\n"
+        " Found gawk but it does not support systime() function.\n"
+        " This is unexpected. Please reinstall gawk or check your PATH.\n"
+        "========================================================================\n"
+    )
+endif()
+message(STATUS "[dap_json] Found gawk with systime() support: ${GAWK_EXECUTABLE}")
 
 # Collect JSON module sources and headers
 file(GLOB JSON_HEADERS include/*.h)
@@ -104,16 +123,22 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
         ${SIMD_GEN_DIR}/dap_json_string_simd_sse2.c
         ${SIMD_GEN_DIR}/dap_json_string_simd_avx512.c
     )
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    # ARM64: Add NEON, SVE, SVE2 implementations
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    # ARM64: Add NEON implementation (always available on ARM64)
+    # Note: arm64 is used by Apple, aarch64 by Linux
     list(APPEND JSON_ARCH_SRCS 
         ${SIMD_GEN_DIR}/dap_json_stage1_neon.c
-        ${SIMD_GEN_DIR}/dap_json_stage1_sve.c
-        ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c
         ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c
-        ${SIMD_GEN_DIR}/dap_json_string_simd_sve.c
-        ${SIMD_GEN_DIR}/dap_json_string_simd_sve2.c
     )
+    # SVE/SVE2 only on Linux ARM64 servers (AWS Graviton etc), not on Apple Silicon
+    if(NOT APPLE)
+        list(APPEND JSON_ARCH_SRCS 
+            ${SIMD_GEN_DIR}/dap_json_stage1_sve.c
+            ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c
+            ${SIMD_GEN_DIR}/dap_json_string_simd_sve.c
+            ${SIMD_GEN_DIR}/dap_json_string_simd_sve2.c
+        )
+    endif()
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
     # ARM32: ONLY NEON (no SVE/SVE2)
     # Note: Stage 2 String Scanner SIMD not yet implemented for ARM32
@@ -144,20 +169,27 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
     message(STATUS "[dap_json] SSE2 implementation enabled: ${SSE2_SRCS}")
     message(STATUS "[dap_json] AVX-512 implementation enabled: ${AVX512_SRCS}")
     
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    # ARM64 architecture
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    # ARM64 architecture (aarch64 on Linux, arm64 on Apple)
     set(NEON_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_neon.c ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c)
-    set(SVE_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve.c)
-    set(SVE2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve2.c)
     
-    # ARM64 - NEON is always available (no extra flags)
+    # ARM64 - NEON is always available (no extra flags needed)
     set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "")
-    set_source_files_properties(${SVE_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
-    set_source_files_properties(${SVE2_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve2")
-    
     message(STATUS "[dap_json] NEON implementation enabled: ${NEON_SRCS}")
-    message(STATUS "[dap_json] SVE implementation enabled: ${SVE_SRCS}")
-    message(STATUS "[dap_json] SVE2 implementation enabled: ${SVE2_SRCS}")
+    
+    # SVE/SVE2 only on Linux ARM64 servers (AWS Graviton etc), not on Apple Silicon
+    if(NOT APPLE)
+        set(SVE_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve.c)
+        set(SVE2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve2.c)
+        
+        set_source_files_properties(${SVE_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
+        set_source_files_properties(${SVE2_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve2")
+        
+        message(STATUS "[dap_json] SVE implementation enabled: ${SVE_SRCS}")
+        message(STATUS "[dap_json] SVE2 implementation enabled: ${SVE2_SRCS}")
+    else()
+        message(STATUS "[dap_json] SVE/SVE2 disabled (Apple Silicon does not support SVE)")
+    endif()
     
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
     # ARM32 architecture (ARMv7)
