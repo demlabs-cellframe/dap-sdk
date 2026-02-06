@@ -335,8 +335,9 @@ if(NOT APPLE
 endif()
 
 check_function_exists(pow NOT_NEED_LIBM)
-if(NOT_NEED_LIBM OR ANDROID)
+if(NOT_NEED_LIBM OR ANDROID OR APPLE)
   # Android: math functions (pow, etc.) are built into bionic libc, no separate libm
+  # Apple: math functions are built into libSystem, no separate libm
   set(LIB_MATH "")
 else()
   set(CMAKE_REQUIRED_LIBRARIES m)
@@ -899,8 +900,8 @@ macro(target_setup_options TARGET)
 endmacro()
 
 macro(libmdbx_setup_libs TARGET MODE)
-  # Android: pthread is built into bionic, no separate Threads target
-  if(NOT ANDROID)
+  # Android/Apple: pthread is built into system libc, no separate Threads target
+  if(NOT ANDROID AND NOT APPLE)
     if(CMAKE_VERSION VERSION_LESS 3.1)
       target_link_libraries(${TARGET} ${MODE} ${CMAKE_THREAD_LIBS_INIT})
     else()
