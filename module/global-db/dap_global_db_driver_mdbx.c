@@ -364,6 +364,7 @@ size_t     l_upper_limit_of_db_size = 16;
             debug_if(g_dap_global_db_debug_more, L_DEBUG, "MDBX SubDB #%03d [0:%zu]: '%.*s' = [0:%zu]: '%.*s'", i,
                     l_key_iov.iov_len, (int) l_key_iov.iov_len, (char *) l_key_iov.iov_base,
                     l_data_iov.iov_len, (int) l_data_iov.iov_len, (char *) l_data_iov.iov_base);
+            (void)i;  // Used in debug_if above
 
             /* Form a simple list of the group/table name to be used after */
             l_cp = dap_strdup(l_data_iov.iov_base);                         /* We expect an ASCIZ string as the table name */
@@ -1025,7 +1026,7 @@ static dap_list_t  *s_db_mdbx_get_groups_by_mask(const char *a_group_mask)
         return NULL;
     }
 
-    for ( int i = 0; !(rc = mdbx_cursor_get (l_cursor, &l_key_iov, &l_data_iov, MDBX_NEXT )); i++ ) {
+    while (!(rc = mdbx_cursor_get(l_cursor, &l_key_iov, &l_data_iov, MDBX_NEXT))) {
         const char *l_group_name = l_data_iov.iov_base;
         if (dap_global_db_group_match_mask(l_group_name, a_group_mask))
             l_ret_list = dap_list_append(l_ret_list, dap_strdup(l_group_name));
