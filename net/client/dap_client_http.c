@@ -504,12 +504,7 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         l_headers_size += sizeof(HDR_COOKIE) - 1 + strlen(a_client_http->cookie);
     l_headers_size += 1; // null terminator
 
-    char *l_request_headers = DAP_NEW_SIZE(char, l_headers_size);
-    if(!l_request_headers) {
-        log_it(L_ERROR, "Failed to allocate headers buffer (%zu bytes)", l_headers_size);
-        return -1;
-    }
-    *l_request_headers = '\0';
+    char *l_request_headers = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(char, l_headers_size, -1);
     int l_headers_offset = 0;
     size_t l_headers_remain = l_headers_size;
 
