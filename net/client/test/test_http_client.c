@@ -82,6 +82,9 @@ static bool g_test15_completed = false; // Added for HEAD method test (308 redir
 static bool g_test16_completed = false; // Added for HEAD method test (Connection: close)
 static bool g_test17_completed = false; // Added for HEAD method test (404 error)
 static bool g_test18_completed = false; // Added for HEAD method test (with headers)
+static bool g_test19_completed = false; // Regression: GET with large custom headers
+static bool g_test20_completed = false; // Regression: POST with large custom headers
+static bool g_test21_completed = false; // Regression: GET with multiple custom headers
 
 // Helper function to wait for test completion
 static void wait_for_test_completion(bool *completion_flag, int timeout_seconds)
@@ -913,6 +916,91 @@ static void test18_error_callback(int a_error_code, void *a_arg)
     g_test18_completed = true;
 }
 
+// Test 19: Regression - GET with large custom headers (dynamic header buffer)
+static bool g_test19_success = false;
+static int g_test19_status = 0;
+static bool g_test19_large_header_echoed = false;
+
+static void test19_response_callback(void *a_body, size_t a_body_size,
+                                    struct dap_http_header *a_headers,
+                                    void *a_arg, http_status_code_t a_status_code)
+{
+    g_test19_status = a_status_code;
+    TEST_INFO("Large header GET response: status=%d, size=%zu", a_status_code, a_body_size);
+
+    if(a_status_code == 200) {
+        g_test19_success = true;
+        if(a_body_size > 0 && a_body) {
+            char *body_str = (char*)a_body;
+            if(strstr(body_str, "X-Large-Signature")) {
+                g_test19_large_header_echoed = true;
+                TEST_INFO("Large custom header echoed in response");
+            }
+        }
+    }
+    g_test19_completed = true;
+}
+
+static void test19_error_callback(int a_error_code, void *a_arg)
+{
+    TEST_INFO("Large header GET error: code=%d", a_error_code);
+    g_test19_completed = true;
+}
+
+// Test 20: Regression - POST with large custom headers
+static bool g_test20_success = false;
+static int g_test20_status = 0;
+
+static void test20_response_callback(void *a_body, size_t a_body_size,
+                                    struct dap_http_header *a_headers,
+                                    void *a_arg, http_status_code_t a_status_code)
+{
+    g_test20_status = a_status_code;
+    TEST_INFO("Large header POST response: status=%d, size=%zu", a_status_code, a_body_size);
+
+    if(a_status_code == 200) {
+        g_test20_success = true;
+    }
+    g_test20_completed = true;
+}
+
+static void test20_error_callback(int a_error_code, void *a_arg)
+{
+    TEST_INFO("Large header POST error: code=%d", a_error_code);
+    g_test20_completed = true;
+}
+
+// Test 21: Regression - GET with multiple custom headers
+static bool g_test21_success = false;
+static int g_test21_status = 0;
+static bool g_test21_headers_echoed = false;
+
+static void test21_response_callback(void *a_body, size_t a_body_size,
+                                    struct dap_http_header *a_headers,
+                                    void *a_arg, http_status_code_t a_status_code)
+{
+    g_test21_status = a_status_code;
+    TEST_INFO("Multiple headers GET response: status=%d, size=%zu", a_status_code, a_body_size);
+
+    if(a_status_code == 200) {
+        g_test21_success = true;
+        if(a_body_size > 0 && a_body) {
+            char *body_str = (char*)a_body;
+            if(strstr(body_str, "X-Header-First") && strstr(body_str, "X-Header-Last")) {
+                g_test21_headers_echoed = true;
+                TEST_INFO("All multiple custom headers echoed in response");
+            }
+        }
+    }
+    g_test21_completed = true;
+}
+
+static void test21_error_callback(int a_error_code, void *a_arg)
+{
+    TEST_INFO("Multiple headers GET error: code=%d", a_error_code);
+    g_test21_completed = true;
+}
+
 void run_test_suite()
 {
     printf("=== HTTP Client Test Suite ===\n");
@@ -1502,6 +1590,105 @@ void run_test_suite()
     TEST_EXPECT(g_test18_success, "HEAD request with custom headers successful");
     TEST_EXPECT(g_test18_status == 200, "Status is 200 OK");
     TEST_END();
+
+    // Test 19: Regression - GET with large custom headers (~5KB, simulates X-Signature)
+    TEST_START("Regression: GET with Large Custom Headers (dynamic buffer)");
+    printf("Testing: GET with ~5KB custom header (X-Large-Signature)\n");
+    printf("Expected: 200 OK, no header buffer overflow\n");
+
+    g_test19_completed = false;
+    g_test19_success = false;
+    g_test19_status = 0;
+    g_test19_large_header_echoed = false;
+
+    // Build a large header value (~5000 chars) simulating a Base64 signature
+    #define LARGE_HEADER_VALUE_SIZE 5000
+    char large_header[LARGE_HEADER_VALUE_SIZE + 64];
+    {
+        char large_value[LARGE_HEADER_VALUE_SIZE + 1];
+        for(int i = 0; i < LARGE_HEADER_VALUE_SIZE; i++)
+            large_value[i] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i % 64];
+        large_value[LARGE_HEADER_VALUE_SIZE] = '\0';
+        snprintf(large_header, sizeof(large_header), "X-Large-Signature: %s\r\n", large_value);
+    }
+
+    TEST_INFO("Custom header size: %zu bytes", strlen(large_header));
+
+    dap_client_http_request_simple_async(
+        NULL, "internal-pub.cellframe.net", 80, "GET", NULL,
+        "/httpbin/headers", NULL, 0, NULL,
+        test19_response_callback, test19_error_callback,
+        NULL, large_header, true
+    );
+
+    wait_for_test_completion(&g_test19_completed, 15);
+    TEST_EXPECT(g_test19_success, "GET with large custom header completed (no overflow)");
+    TEST_EXPECT(g_test19_status == 200, "Status is 200 OK");
+    TEST_EXPECT(g_test19_large_header_echoed, "Large header echoed in response");
+    TEST_END();
+
+    // Test 20: Regression - POST with large custom headers + content-type
+    TEST_START("Regression: POST with Large Custom Headers (dynamic buffer)");
+    printf("Testing: POST with JSON body + ~5KB custom header\n");
+    printf("Expected: 200 OK, dynamic buffer handles content-type + custom headers\n");
+
+    g_test20_completed = false;
+    g_test20_success = false;
+    g_test20_status = 0;
+
+    const char *test20_json = "{\"test\": \"post_with_large_headers\"}";
+    size_t test20_json_size = strlen(test20_json);
+
+    TEST_INFO("POST body: %zu bytes, custom header: %zu bytes", test20_json_size, strlen(large_header));
+
+    dap_client_http_request_simple_async(
+        NULL, "internal-pub.cellframe.net", 80, "POST",
+        "application/json",
+        "/httpbin/post", test20_json, test20_json_size, NULL,
+        test20_response_callback, test20_error_callback,
+        NULL, large_header, true
+    );
+
+    wait_for_test_completion(&g_test20_completed, 15);
+    TEST_EXPECT(g_test20_success, "POST with large custom header completed (no overflow)");
+    TEST_EXPECT(g_test20_status == 200, "Status is 200 OK");
+    TEST_END();
+
+    // Test 21: Regression - GET with multiple accumulated custom headers
+    TEST_START("Regression: GET with Multiple Custom Headers (accumulated size)");
+    printf("Testing: GET with 20 custom headers (~1KB total)\n");
+    printf("Expected: 200 OK, all headers properly sent\n");
+
+    g_test21_completed = false;
+    g_test21_success = false;
+    g_test21_status = 0;
+    g_test21_headers_echoed = false;
+
+    // Build multiple headers totaling ~1KB
+    char multi_headers[2048];
+    int offset = 0;
+    offset += snprintf(multi_headers + offset, sizeof(multi_headers) - offset,
+                       "X-Header-First: value-first\r\n");
+    for(int i = 1; i <= 18; i++)
+        offset += snprintf(multi_headers + offset, sizeof(multi_headers) - offset,
+                           "X-Header-%02d: value-padding-%02d-abcdefghij\r\n", i, i);
+    offset += snprintf(multi_headers + offset, sizeof(multi_headers) - offset,
+                       "X-Header-Last: value-last\r\n");
+
+    TEST_INFO("Total custom headers size: %d bytes (%d headers)", offset, 20);
+
+    dap_client_http_request_simple_async(
+        NULL, "internal-pub.cellframe.net", 80, "GET", NULL,
+        "/httpbin/headers", NULL, 0, NULL,
+        test21_response_callback, test21_error_callback,
+        NULL, multi_headers, true
+    );
+
+    wait_for_test_completion(&g_test21_completed, 10);
+    TEST_EXPECT(g_test21_success, "GET with multiple custom headers completed");
+    TEST_EXPECT(g_test21_status == 200, "Status is 200 OK");
+    TEST_EXPECT(g_test21_headers_echoed, "First and last headers echoed in response");
+    TEST_END();
 }
 
 void print_test_summary()
@@ -1549,6 +1736,9 @@ void print_test_summary()
     printf("✓ HEAD method - Connection: close handling\n");
     printf("✓ HEAD method - 404 Not Found handling\n");
     printf("✓ HEAD method - Custom headers support\n");
+    printf("✓ Regression - GET with large custom headers (dynamic buffer)\n");
+    printf("✓ Regression - POST with large custom headers (dynamic buffer)\n");
+    printf("✓ Regression - GET with multiple accumulated custom headers\n");
     
     // Show info about saved file if available
     if (g_test9_filename[0] != 0 && g_test9_total_written > 0) {
