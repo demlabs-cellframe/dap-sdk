@@ -32,6 +32,7 @@
 // HELPER: Load JSON file from fixtures/
 // =============================================================================
 
+static char *s_load_json_file(const char *filename) UNUSED_ARG;
 static char *s_load_json_file(const char *filename) {
     char path[512];
     snprintf(path, sizeof(path), "../../fixtures/json/real_world/%s", filename);
