@@ -115,7 +115,19 @@ endif()
 
 # Add Clang-specific flags only when using Clang
 if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument -Wno-unused-but-set-variable")
+    set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument")
+
+    # Add only if supported to avoid -Werror failures on older Clang
+    include(CheckCCompilerFlag)
+    set(_DAP_CMAKE_REQUIRED_FLAGS_SAVE "${CMAKE_REQUIRED_FLAGS}")
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -Werror=unknown-warning-option")
+    check_c_compiler_flag("-Wno-unused-but-set-variable" DAP_HAS_WNO_UNUSED_BUT_SET_VARIABLE)
+    set(CMAKE_REQUIRED_FLAGS "${_DAP_CMAKE_REQUIRED_FLAGS_SAVE}")
+    unset(_DAP_CMAKE_REQUIRED_FLAGS_SAVE)
+
+    if (DAP_HAS_WNO_UNUSED_BUT_SET_VARIABLE)
+        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-but-set-variable")
+    endif()
 endif()
 
 if(UNIX)
