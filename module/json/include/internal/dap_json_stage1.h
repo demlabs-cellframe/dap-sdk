@@ -519,19 +519,33 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 
 // Include architecture-specific implementations for static inline dispatch
 // These must be included AFTER all typedefs are complete
+// SIMD implementations are only included if they were successfully generated
+// (controlled by DAP_JSON_HAS_* defines set by CMake)
 #include "dap_json_stage1_ref.h"
 
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#ifdef DAP_JSON_HAS_SSE2
 #include "dap_json_stage1_sse2.h"
+#endif
+#ifdef DAP_JSON_HAS_AVX2
 #include "dap_json_stage1_avx2.h"
+#endif
+#ifdef DAP_JSON_HAS_AVX512
 #include "dap_json_stage1_avx512.h"
+#endif
 
 #elif defined(__arm__) || defined(__aarch64__)
+#ifdef DAP_JSON_HAS_NEON
 #include "dap_json_stage1_neon.h"
+#endif
 // SVE/SVE2 are ARM64-only (ARMv8-A 64-bit)
 #ifdef __aarch64__
+#ifdef DAP_JSON_HAS_SVE
 #include "dap_json_stage1_sve.h"
+#endif
+#ifdef DAP_JSON_HAS_SVE2
 #include "dap_json_stage1_sve2.h"
+#endif
 #endif
 #endif
 
@@ -583,28 +597,37 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     
     int result;
     switch (arch) {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+// x86/x64 SIMD implementations (only if generated)
+#ifdef DAP_JSON_HAS_SSE2
         case DAP_CPU_ARCH_SSE2:
             result = dap_json_stage1_run_sse2(a_stage1);
             break;
+#endif
+#ifdef DAP_JSON_HAS_AVX2
         case DAP_CPU_ARCH_AVX2:
             result = dap_json_stage1_run_avx2(a_stage1);
             break;
+#endif
+#ifdef DAP_JSON_HAS_AVX512
         case DAP_CPU_ARCH_AVX512:
             result = dap_json_stage1_run_avx512(a_stage1);
             break;
-#elif defined(__arm__) || defined(__aarch64__)
+#endif
+// ARM SIMD implementations (only if generated)
+#ifdef DAP_JSON_HAS_NEON
         case DAP_CPU_ARCH_NEON:
             result = dap_json_stage1_run_neon(a_stage1);
             break;
-#ifdef __aarch64__
+#endif
+#ifdef DAP_JSON_HAS_SVE
         case DAP_CPU_ARCH_SVE:
             result = dap_json_stage1_run_sve(a_stage1);
             break;
+#endif
+#ifdef DAP_JSON_HAS_SVE2
         case DAP_CPU_ARCH_SVE2:
             result = dap_json_stage1_run_sve2(a_stage1);
             break;
-#endif
 #endif
         case DAP_CPU_ARCH_REFERENCE:
         case DAP_CPU_ARCH_AUTO:

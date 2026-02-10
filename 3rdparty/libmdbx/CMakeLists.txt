@@ -312,8 +312,25 @@ if(NOT DEFINED THREADS_PREFER_PTHREAD_FLAG)
 endif()
 
 # Android: threads are built into libc (bionic), no separate pthread library
+# Apple/macOS: pthreads is built into the system, set variables directly if FindThreads fails
 if(NOT ANDROID)
-  find_package(Threads REQUIRED)
+  if(APPLE)
+    # On macOS, pthreads is part of the system - set directly to avoid FindThreads issues
+    set(CMAKE_THREAD_LIBS_INIT "-lpthread")
+    set(CMAKE_HAVE_THREADS_LIBRARY 1)
+    set(CMAKE_USE_PTHREADS_INIT 1)
+    set(Threads_FOUND TRUE)
+    # Create Threads::Threads imported target manually (normally created by find_package(Threads))
+    if(NOT TARGET Threads::Threads)
+      add_library(Threads::Threads INTERFACE IMPORTED)
+      set_target_properties(Threads::Threads PROPERTIES
+        INTERFACE_COMPILE_OPTIONS "-pthread"
+        INTERFACE_LINK_LIBRARIES "-pthread"
+      )
+    endif()
+  else()
+    find_package(Threads REQUIRED)
+  endif()
 endif()
 
 include(cmake/compiler.cmake)
@@ -335,8 +352,9 @@ if(NOT APPLE
 endif()
 
 check_function_exists(pow NOT_NEED_LIBM)
-if(NOT_NEED_LIBM OR ANDROID)
+if(NOT_NEED_LIBM OR ANDROID OR APPLE)
   # Android: math functions (pow, etc.) are built into bionic libc, no separate libm
+  # Apple/macOS: math functions are built into libSystem, no separate libm needed
   set(LIB_MATH "")
 else()
   set(CMAKE_REQUIRED_LIBRARIES m)
