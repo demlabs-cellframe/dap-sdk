@@ -373,12 +373,40 @@ typedef int dap_errnum_t;
 ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
 ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
 
+/* Returns non-zero only for valid non-zero power-of-two alignments. */
+DAP_STATIC_INLINE int _dap_alignment_is_power_of_two( uintptr_t alignment )
+{
+    return alignment && !( alignment & ( alignment - 1 ) );
+}
+
+/*
+ * Validates aligned allocation size math and computes total block size:
+ * user size + extra space for alignment padding and hidden base pointer.
+ */
+DAP_STATIC_INLINE int _dap_aligned_block_size_ok( uintptr_t alignment, uintptr_t size, uintptr_t *total_size )
+{
+    if ( alignment > ( UINTPTR_MAX - sizeof(void *) ) / 2 )
+        return 0;
+
+    uintptr_t l_extra = ( alignment * 2 ) + sizeof(void *);
+    if ( size > UINTPTR_MAX - l_extra )
+        return 0;
+
+    *total_size = size + l_extra;
+    return 1;
+}
+
 DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size )
 {
-    uintptr_t ptr = (uintptr_t) DAP_MALLOC( size + (alignment * 2) + sizeof(void *) );
+    uintptr_t l_total_size = 0;
+    if ( !_dap_alignment_is_power_of_two( alignment ) ||
+         !_dap_aligned_block_size_ok( alignment, size, &l_total_size ) )
+        return NULL;
+
+    uintptr_t ptr = (uintptr_t) DAP_MALLOC( l_total_size );
 
     if ( !ptr )
-        return (void *)ptr;
+        return NULL;
 
     uintptr_t al_ptr = ( ptr + sizeof(void *) + alignment) & ~(alignment - 1 );
     ((uintptr_t *)al_ptr)[-1] = ptr;
@@ -388,10 +416,22 @@ DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size 
 
 DAP_STATIC_INLINE void *_dap_aligned_realloc( uintptr_t alignment, void *bptr, uintptr_t size )
 {
-    uintptr_t ptr = (uintptr_t) DAP_REALLOC((uint8_t*)bptr, size + (alignment * 2) + sizeof(void *) );
+    uintptr_t l_total_size = 0;
+    if ( !_dap_alignment_is_power_of_two( alignment ) ||
+         !_dap_aligned_block_size_ok( alignment, size, &l_total_size ) )
+        return NULL;
+
+    if ( !bptr )
+        return _dap_aligned_alloc( alignment, size );
+
+    uintptr_t l_base_ptr = ((uintptr_t *)bptr)[-1];
+    if ( !l_base_ptr )
+        return NULL;
+
+    uintptr_t ptr = (uintptr_t) DAP_REALLOC( (uint8_t*)l_base_ptr, l_total_size );
 
     if ( !ptr )
-        return (void *)ptr;
+        return NULL;
 
     uintptr_t al_ptr = ( ptr + sizeof(void *) + alignment) & ~(alignment - 1 );
     ((uintptr_t *)al_ptr)[-1] = ptr;
