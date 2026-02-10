@@ -528,8 +528,8 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 
 #elif defined(__arm__) || defined(__aarch64__)
 #include "dap_json_stage1_neon.h"
-// SVE/SVE2 are ARM64-only (ARMv8-A 64-bit)
-#ifdef __aarch64__
+// SVE/SVE2 are ARM64-only (ARMv8-A 64-bit) and NOT supported on Apple Silicon
+#if defined(__aarch64__) && !defined(__APPLE__)
 #include "dap_json_stage1_sve.h"
 #include "dap_json_stage1_sve2.h"
 #endif
@@ -597,7 +597,7 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
         case DAP_CPU_ARCH_NEON:
             result = dap_json_stage1_run_neon(a_stage1);
             break;
-#ifdef __aarch64__
+#if defined(__aarch64__) && !defined(__APPLE__)
         case DAP_CPU_ARCH_SVE:
             result = dap_json_stage1_run_sve(a_stage1);
             break;

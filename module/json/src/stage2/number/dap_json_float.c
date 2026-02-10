@@ -41,6 +41,10 @@
 #include <math.h>
 #include <errno.h>
 #include <limits.h>
+#include <locale.h>
+#ifdef __APPLE__
+#include <xlocale.h>  // macOS: strtod_l, newlocale, freelocale
+#endif
 
 #define LOG_TAG "dap_json_float"
 
@@ -261,7 +265,8 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     
     if (l_binary_exp >= 2047) {
         // Overflow to infinity
-        *a_out_value = INFINITY;
+        // Use __builtin_inf() to avoid -ffast-math issues with INFINITY macro
+        *a_out_value = __builtin_inf();
         return true;
     }
     
@@ -386,7 +391,8 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
     uint64_t l_mantissa = 0;
     int l_exponent = 0;
     bool l_has_digits = false;
-    int l_digit_count = 0;  // Track total digits (used in debug logs)
+    int l_digit_count = 0;  // Track total digits (reserved for debug)
+    (void)l_digit_count;  // Suppress unused warning
     int l_significant_digits = 0;  // Digits actually stored in mantissa (max 19)
     
     while (l_pos < a_len && a_str[l_pos] >= '0' && a_str[l_pos] <= '9') {
@@ -499,7 +505,14 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
     
     char *l_endptr = NULL;
     errno = 0;
-    double l_value = strtod(l_buffer, &l_endptr);
+    // Use locale-independent parsing (JSON always uses '.' as decimal separator)
+    #if defined(__GLIBC__) || defined(__FreeBSD__) || defined(__APPLE__)
+        locale_t l_c_locale = newlocale(LC_NUMERIC_MASK, "C", NULL);
+        double l_value = strtod_l(l_buffer, &l_endptr, l_c_locale);
+        freelocale(l_c_locale);
+    #else
+        double l_value = strtod(l_buffer, &l_endptr);
+    #endif
     
     if (l_endptr == l_buffer || l_endptr != l_buffer + a_len) {
         return false;

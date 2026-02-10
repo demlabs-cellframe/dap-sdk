@@ -1677,6 +1677,31 @@ union tar_buffer {
     struct tar_header header;
 };
 
+static bool s_write_all(int a_outfile, const void *a_buf, size_t a_len)
+{
+    if (a_len == 0)
+        return true;
+
+    const uint8_t *l_ptr = a_buf;
+    size_t l_left = a_len;
+    while (l_left > 0) {
+        ssize_t l_written = write(a_outfile, l_ptr, l_left);
+        if (l_written < 0) {
+            if (errno == EINTR)
+                continue;
+            log_it(L_ERROR, "Failed to write file: %s", strerror(errno));
+            return false;
+        }
+        if (l_written == 0) {
+            log_it(L_ERROR, "Write returned 0 bytes");
+            return false;
+        }
+        l_left -= (size_t)l_written;
+        l_ptr += (size_t)l_written;
+    }
+    return true;
+}
+
 /*
  * Pack a directory with contents into a TAR archive
  *
@@ -1720,7 +1745,8 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
     }
 
     // add header
-    write(a_outfile, &l_buffer, BLOCKSIZE);
+    if (!s_write_all(a_outfile, &l_buffer, BLOCKSIZE))
+        return false;
 
     return true;
 }
@@ -1767,18 +1793,27 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
         }
 
         // add header
-        write(a_outfile, &l_buffer, BLOCKSIZE);
+        if (!s_write_all(a_outfile, &l_buffer, BLOCKSIZE)) {
+            DAP_DELETE(l_filebuf);
+            return false;
+        }
         // add file body
         while(remaining)
         {
             unsigned int bytes = (remaining > BLOCKSIZE) ? BLOCKSIZE : remaining;
             memcpy(&l_buffer, l_filebuf + l_filelen - remaining, bytes);
-            write(a_outfile, &l_buffer, bytes);
+            if (!s_write_all(a_outfile, &l_buffer, bytes)) {
+                DAP_DELETE(l_filebuf);
+                return false;
+            }
             remaining -= bytes;
             // the file is already written, but not aligned to the BLOCKSIZE boundary
             if(bytes != BLOCKSIZE && !remaining) {
                 memset(&l_buffer, 0, BLOCKSIZE - bytes);
-                write(a_outfile, &l_buffer, BLOCKSIZE - bytes);
+                if (!s_write_all(a_outfile, &l_buffer, BLOCKSIZE - bytes)) {
+                    DAP_DELETE(l_filebuf);
+                    return false;
+                }
             }
         }
         DAP_DELETE(l_filebuf);
@@ -1880,8 +1915,8 @@ bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename
     // Write two empty blocks to the end
     union tar_buffer buffer;
     memset(&buffer, 0, BLOCKSIZE);
-    write(l_outfile, &buffer, BLOCKSIZE);
-    write(l_outfile, &buffer, BLOCKSIZE);
+    if (!s_write_all(l_outfile, &buffer, BLOCKSIZE) || !s_write_all(l_outfile, &buffer, BLOCKSIZE))
+        l_ret = false;
     close(l_outfile);
     return l_ret;
 }

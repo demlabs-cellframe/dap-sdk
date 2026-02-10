@@ -18,16 +18,16 @@ function process_params(params_str) {
     
     # Extract all PARAM(...) entries
     result = ""
-    while (match(params_str, /PARAM\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/)) {
+    while (match(params_str, /PARAM[ \t]*\([ \t]*[^,]+[ \t]*,[ \t]*[^)]+[ \t]*\)/)) {
         # Extract type and name from PARAM(type, name)
         param_content = substr(params_str, RSTART, RLENGTH)
         
         # Extract the captured groups manually
-        if (match(param_content, /PARAM\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/)) {
+        if (match(param_content, /PARAM[ \t]*\([ \t]*[^,]+[ \t]*,[ \t]*[^)]+[ \t]*\)/)) {
             # Get everything inside PARAM(...)
             inner = param_content
-            gsub(/^PARAM\s*\(\s*/, "", inner)
-            gsub(/\s*\)\s*$/, "", inner)
+            gsub(/^PARAM[ \t]*\([ \t]*/, "", inner)
+            gsub(/[ \t]*\)[ \t]*$/, "", inner)
             
             # Split by comma to get type and name
             comma_pos = index(inner, ",")

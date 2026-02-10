@@ -205,7 +205,7 @@ static inline void* dap_ht_find_impl(dap_ht_table_t *tbl, const void *key, unsig
     return NULL;
 }
 
-static inline void dap_ht_del_impl(void **head, void *del, dap_ht_handle_t *del_hh) {
+static inline void dap_ht_del_impl(void **head, void *del UNUSED_ARG, dap_ht_handle_t *del_hh) {
     dap_ht_table_t *tbl = del_hh->tbl;
     if (!tbl) return;
     

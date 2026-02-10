@@ -96,8 +96,17 @@ dap_cpu_stats_t dap_cpu_get_stats()
     proc_stat_line_t l_stat = {0};
 
     /** get summary cpu stat **/
-    size_t mem_size;
-    getline(&line, &mem_size, _proc_stat);
+    size_t mem_size = 0;
+    ssize_t l_line_len = getline(&line, &mem_size, _proc_stat);
+    if (l_line_len < 0) {
+        log_it(L_ERROR, "Failed to read /proc/stat");
+        fclose(_proc_stat);
+        if (line) {
+            DAP_FREE(line);
+            line = NULL;
+        }
+        return (dap_cpu_stats_t){0};
+    }
     _deserialize_proc_stat(line, &l_stat);
 
     _cpu_stats.cpu_summary.idle_time = l_stat.idle;
@@ -105,7 +114,16 @@ dap_cpu_stats_t dap_cpu_get_stats()
     /*********************************************/
 
     for(unsigned i = 0; i < _cpu_stats.cpu_cores_count; i++) {
-        getline(&line, &mem_size, _proc_stat);
+        l_line_len = getline(&line, &mem_size, _proc_stat);
+        if (l_line_len < 0) {
+            log_it(L_ERROR, "Failed to read /proc/stat cpu line");
+            fclose(_proc_stat);
+            if (line) {
+                DAP_FREE(line);
+                line = NULL;
+            }
+            return (dap_cpu_stats_t){0};
+        }
         _deserialize_proc_stat(line, &l_stat);
         _cpu_stats.cpus[i].idle_time = l_stat.idle;
         _cpu_stats.cpus[i].total_time = l_stat.total;
@@ -128,6 +146,10 @@ dap_cpu_stats_t dap_cpu_get_stats()
            sizeof (dap_cpu_t) * _cpu_stats.cpu_cores_count);
 
     fclose(_proc_stat);
+    if (line) {
+        DAP_FREE(line);
+        line = NULL;
+    }
 
     return _cpu_stats;
 }
