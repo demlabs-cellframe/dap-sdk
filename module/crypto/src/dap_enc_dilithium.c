@@ -16,6 +16,10 @@ static enum DAP_DILITHIUM_SIGN_SECURITY _dilithium_type = DILITHIUM_MIN_SIZE; //
 
 void dap_enc_sig_dilithium_set_type(enum DAP_DILITHIUM_SIGN_SECURITY type)
 {
+    if (type < DILITHIUM_TOY || type > DILITHIUM_MAX_SECURITY) {
+        log_it(L_ERROR, "Invalid Dilithium security type %d", type);
+        return;
+    }
     _dilithium_type = type;
 }
 
@@ -39,16 +43,24 @@ void dap_enc_sig_dilithium_key_new_generate(dap_enc_key_t * key, const void *kex
     (void) kex_buf;
     (void) kex_size;
     (void) key_size;
+    dap_return_if_pass(!key);
 
     int32_t retcode;
+    if (key->priv_key_data || key->pub_key_data)
+        dap_enc_sig_dilithium_key_delete(key);
 
+    // Keep historical behavior for backward compatibility.
     dap_enc_sig_dilithium_set_type(DILITHIUM_MAX_SPEED);
 
-    //int32_t type = 2;
     key->priv_key_data_size = sizeof(dilithium_private_key_t);
     key->pub_key_size = sizeof(dilithium_public_key_t);
-    key->priv_key_data = malloc(key->priv_key_data_size);
-    key->pub_key_data = malloc(key->pub_key_size);
+    key->priv_key_data = DAP_NEW_Z(dilithium_private_key_t);
+    key->pub_key_data = DAP_NEW_Z(dilithium_public_key_t);
+    if (!key->priv_key_data || !key->pub_key_data) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        dap_enc_sig_dilithium_key_delete(key);
+        return;
+    }
 
     retcode = dilithium_crypto_sign_keypair(
             (dilithium_public_key_t *) key->pub_key_data,
@@ -255,6 +267,11 @@ void *dap_enc_sig_dilithium_read_private_key(const uint8_t *a_buf, size_t a_bufl
     l_private_key->kind = kind;
 
     l_private_key->data = DAP_NEW_SIZE(uint8_t, p.CRYPTO_SECRETKEYBYTES);
+    if (!l_private_key->data) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        DAP_DELETE(l_private_key);
+        return NULL;
+    }
     memcpy(l_private_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_SECRETKEYBYTES);
     return l_private_key;
 }
@@ -272,6 +289,7 @@ void *dap_enc_sig_dilithium_read_public_key(const uint8_t *a_buf, size_t a_bufle
     }
 
     uint32_t kind = 0;
+    size_t l_shift_mem = sizeof(uint64_t);
     uint64_t l_buflen = 0;
     memcpy(&l_buflen, a_buf, sizeof(uint64_t));
     if (l_buflen != a_buflen) {
@@ -279,21 +297,26 @@ void *dap_enc_sig_dilithium_read_public_key(const uint8_t *a_buf, size_t a_bufle
             log_it(L_ERROR,"::read_public_key() Buflen field inside buffer is %"DAP_UINT64_FORMAT_U" when expected to be %"DAP_UINT64_FORMAT_U,
                    l_buflen, (uint64_t)a_buflen);
             return NULL;
-        }else {
-            memcpy(&kind, a_buf + sizeof(uint32_t), sizeof(uint32_t));
+        } else {
+            l_shift_mem = sizeof(uint32_t);
         }
-    } else {
-        memcpy(&kind, a_buf + sizeof(uint64_t), sizeof(uint32_t));
     }
+    memcpy(&kind, a_buf + l_shift_mem, sizeof(uint32_t));
+    l_shift_mem += sizeof(uint32_t);
     dilithium_param_t p;
     if(!dilithium_params_init(&p, kind)){
         log_it(L_ERROR,"::read_public_key() Can't find params for signature kind %d", kind);
         return NULL;
     }
 
-    if(a_buflen < (sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES ) ){
+    if ((size_t)p.CRYPTO_PUBLICKEYBYTES > SIZE_MAX - l_shift_mem) {
+        log_it(L_ERROR, "::read_public_key() Invalid key size overflow");
+        return NULL;
+    }
+    size_t l_required_size = l_shift_mem + (size_t)p.CRYPTO_PUBLICKEYBYTES;
+    if(a_buflen < l_required_size){
         log_it(L_ERROR,"::read_public_key() Buflen %zd is smaller than all fields together(%zd)", a_buflen,
-               sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES  );
+               l_required_size);
         return NULL;
     }
 
@@ -311,6 +334,6 @@ void *dap_enc_sig_dilithium_read_public_key(const uint8_t *a_buf, size_t a_bufle
         return NULL;
     }
 
-    memcpy(l_public_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_PUBLICKEYBYTES);
+    memcpy(l_public_key->data, a_buf + l_shift_mem, p.CRYPTO_PUBLICKEYBYTES);
     return l_public_key;
 }
