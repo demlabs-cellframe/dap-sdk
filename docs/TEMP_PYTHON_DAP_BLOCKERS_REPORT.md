@@ -320,3 +320,40 @@ Copy this template:
   - This closes:
     - `BLK_core_dap_common_wdap_common_init__guard_name_mismatch`
     - `BLK_core_dap_common_dap_gettid__non_debug_unavailable`
+
+## BLK-0013 - `dap_strptime` `%G` branch performs out-of-bounds read on short input
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_strptime.c`
+- Repro:
+  - ASan/UBSan minimal C-level repro:
+    - `cc -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -I dap-sdk/module/core/include /tmp/repro_dap_strptime_g.c dap-sdk/module/core/src/dap_strptime.c -o /tmp/repro_dap_strptime_g && /tmp/repro_dap_strptime_g`
+  - Wrapper-level symptom before fix:
+    - `DAP_PY_SKIP_AUTO_INIT=1 .venv-tests/bin/python - <<'PY'`
+    - `import sys; sys.path.insert(0, "src"); import python_dap`
+    - `print(python_dap.py_dap_strptime("", "%G"))`
+    - `PY`
+- Root cause:
+  - `%G` parsing branch incremented `bp` before validating input:
+    - `do { bp++; } while (isdigit(*bp));`
+  - For `""` + `"%G"`, parser advanced one byte past NUL terminator and then dereferenced `*bp`, causing UB/OOB read.
+- Fix:
+  - Added pre-check in `%G` branch:
+    - `if (!isdigit(*bp)) return NULL;`
+  - Kept existing digit-scan loop for valid numeric input.
+- Validation:
+  - ASan/UBSan repro no longer reports OOB read; empty input now returns `NULL`.
+  - Rebuilt wrapper target:
+    - `cmake --build build --target python_dap -j8`
+  - Wrapper behavior after rebuild:
+    - `py_dap_strptime("", "%G") -> None`
+    - `py_dap_strptime("a", "%G") -> None`
+    - `py_dap_strptime("x2024", "%G") -> None`
+    - valid numeric `%G` inputs still parse and return tuple.
+  - Regression smoke:
+    - `.venv-tests/bin/pytest -q tests/unit/core/test_dap_strptime_bindings.py -q` (passes; existing `%G` case still marked xfail in tests/doc and can be unblocked separately).
+- Notes:
+  - This closes `BLK_core_dap_strptime_dap_strptime__percent_g_out_of_bounds_read` at SDK level.
+  - Follow-up cleanup: remove `%G` blocker xfail marker from wrapper tests/docs after policy decision.
