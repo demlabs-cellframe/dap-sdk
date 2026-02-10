@@ -183,7 +183,7 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...);
 #if   DAP_SYS_DEBUG
 #include    <assert.h>
 
-#define     MEMSTAT$SZ_NAME     63            dap_global_db_del_sync(l_gdb_group, l_objs[i].key);
+#define     MEMSTAT$SZ_NAME     63
 #define     MEMSTAT$K_MAXNR     8192
 #define     MEMSTAT$K_MINTOLOG  (32*1024)
 
@@ -212,9 +212,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 
     #define DAP_MALLOC(a)       s_vm_get(__func__, __LINE__, a)
     #define DAP_CALLOC(a, b)    s_vm_get_z(__func__, __LINE__, a, b)
-    #define DAP_ALMALLOC(a, b)    _dap_aligned_alloc(a, b)
-    #define DAP_ALREALLOC(a, b)   _dap_aligned_realloc(a, b)
-    #define DAP_ALFREE(a)         _dap_aligned_free(a, b)
+    #define DAP_ALMALLOC(a, b)      _dap_aligned_alloc(a, b)
+    #define DAP_ALREALLOC(a, p, s)  _dap_aligned_realloc(a, p, s)
+    #define DAP_ALFREE(a)           _dap_aligned_free(a)
     #define DAP_NEW( a )          DAP_CAST_REINT(a, s_vm_get(__func__, __LINE__, sizeof(a)) )
     #define DAP_NEW_SIZE(a, b)    DAP_CAST_REINT(a, s_vm_get(__func__, __LINE__, b) )
     #define DAP_NEW_STACK( a )        DAP_CAST_REINT(a, alloca(sizeof(a)) )
@@ -234,7 +234,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); _s > 0 && _n > 0 ? calloc(_n, _s) : NULL; })
 #define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? realloc(p, _s) : NULL; })
 #define DAP_ALMALLOC(a, s)    ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s > 0 && _a >= 0 ? _dap_aligned_alloc(_a, _s) : NULL; })
-#define DAP_ALREALLOC(p, s)   ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? _dap_aligned_realloc(p, _s) : NULL; })
+#define DAP_ALREALLOC(a, p, s) ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s >= DAP_TYPE_SIZE(p) && _a > 0 ? _dap_aligned_realloc(_a, p, _s) : NULL; })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
@@ -939,7 +939,9 @@ extern char *g_sys_dir_path;
 
 //int dap_common_init( const char * a_log_file );
 int dap_common_init( const char *console_title, const char *a_log_file );
+#ifdef DAP_OS_WINDOWS
 int wdap_common_init( const char *console_title, const wchar_t *a_wlog_file );
+#endif
 
 typedef enum 
 {
@@ -1115,7 +1117,9 @@ dap_maxint_str_t dap_utoa_(unsigned long long i);
 #define dap_itoa(i) (char*)dap_itoa_(i).s
 #define dap_utoa(i) (char*)dap_utoa_(i).s
 
+#ifdef DAP_SYS_DEBUG
 unsigned dap_gettid();
+#endif
 
 int get_select_breaker(void);
 int send_select_break(void);
@@ -1195,9 +1199,7 @@ static inline const char *dap_get_arch()
     #endif
 }
 
-#ifdef __MINGW32__
 int exec_silent(const char *a_cmd);
-#endif
 
 #ifdef __cplusplus
 }
