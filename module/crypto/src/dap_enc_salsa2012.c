@@ -119,7 +119,7 @@ size_t dap_enc_salsa2012_decrypt(struct dap_enc_key *a_key, const void * a_in, s
         return 0;
     }
     if ( a_in_size <= SALSA20_NONCE_SIZE ) {
-        log_it(L_ERROR, "salsa2012 decryption ct with iv must be more than kBlockLen89 bytes");
+        log_it(L_ERROR, "salsa2012 decryption input must be larger than SALSA20_NONCE_SIZE");
         return 0;
     }
     size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
@@ -153,7 +153,7 @@ size_t dap_enc_salsa2012_encrypt(struct dap_enc_key * a_key, const void * a_in, 
         return 0;
     }
     if(a_in_size <= 0) {
-        log_it(L_ERROR, "gost ofb encryption pt cannot be 0 bytes");
+        log_it(L_ERROR, "salsa2012 encryption plaintext cannot be empty");
         return 0;
     }
     size_t l_out_size = a_in_size + SALSA20_NONCE_SIZE;
@@ -188,7 +188,7 @@ size_t dap_enc_salsa2012_calc_encode_size(const size_t size_in)
 size_t dap_enc_salsa2012_calc_decode_size(const size_t size_in)
 {
     if(size_in <= SALSA20_NONCE_SIZE) {
-        log_it(L_ERROR, "salsa2012 decryption size_in ct with iv must be more than kBlockLen89 bytes");
+        log_it(L_ERROR, "salsa2012 decode size requires input larger than SALSA20_NONCE_SIZE");
         return 0;
     }
     return size_in - SALSA20_NONCE_SIZE;
@@ -214,7 +214,7 @@ size_t dap_enc_salsa2012_decrypt_fast(struct dap_enc_key *a_key, const void * a_
         return 0;
     }
     if ( a_in_size <= SALSA20_NONCE_SIZE ) {
-        log_it( L_ERROR, "salsa2012 fast_decryption ct with iv must be more than kBlockLen89 bytes" );
+        log_it( L_ERROR, "salsa2012 fast_decryption input must be larger than SALSA20_NONCE_SIZE" );
         return 0;
     }
     size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
