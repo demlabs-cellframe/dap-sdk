@@ -57,7 +57,7 @@
 #include <stdlib.h>
 
 // Sample JSON for testing (based on canonical JSONPath examples)
-static const char *s_bookstore_json = 
+static const char *s_bookstore_json UNUSED_ARG = 
     "{"
     "  \"store\": {"
     "    \"book\": ["

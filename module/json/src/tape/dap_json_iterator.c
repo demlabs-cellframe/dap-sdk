@@ -25,6 +25,9 @@
 #include <ctype.h>
 #include <inttypes.h>  // For PRIu64
 #include <locale.h>  // For strtod_l
+#ifdef __APPLE__
+#include <xlocale.h>  // macOS: strtod_l declaration
+#endif
 #include "dap_common.h"
 #include <stdlib.h>
 #include <string.h>
@@ -608,7 +611,7 @@ bool dap_json_iterator_get_double(const dap_json_iterator_t *a_iter, double *out
     errno = 0;
     
     // Use locale-independent parsing (C locale always uses '.')
-    #if defined(__GLIBC__) || defined(__FreeBSD__)
+    #if defined(__GLIBC__) || defined(__FreeBSD__) || defined(__APPLE__)
         // Use strtod_l with C locale for locale-independent parsing
         locale_t c_locale = newlocale(LC_NUMERIC_MASK, "C", NULL);
         double l_value = strtod_l(l_num_str, &l_endptr, c_locale);

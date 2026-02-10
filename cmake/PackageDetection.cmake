@@ -21,7 +21,21 @@ else()
 endif()
 
 # Detect OS distribution and version
-if(EXISTS "/etc/os-release")
+if(APPLE)
+    # macOS / Darwin
+    set(DAP_OS_NAME "macos")
+    # Get macOS version (e.g., 14.2.1)
+    execute_process(
+        COMMAND sw_vers -productVersion
+        OUTPUT_VARIABLE DAP_OS_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(NOT DAP_OS_VERSION)
+        set(DAP_OS_VERSION "unknown")
+    endif()
+    
+elseif(EXISTS "/etc/os-release")
     file(READ "/etc/os-release" OS_RELEASE)
     
     # Extract ID (distribution name)
@@ -46,7 +60,12 @@ else()
 endif()
 
 # Special handling for specific distributions
-if(DAP_OS_NAME STREQUAL "ubuntu")
+if(DAP_OS_NAME STREQUAL "macos")
+    # macOS: use major version only (14, 13, etc)
+    string(REGEX MATCH "^([0-9]+)" DAP_OS_VERSION_MAJOR "${DAP_OS_VERSION}")
+    set(DAP_PACKAGE_SUFFIX "macos${DAP_OS_VERSION_MAJOR}")
+    
+elseif(DAP_OS_NAME STREQUAL "ubuntu")
     # Ubuntu: use full version (22.04, 20.04, etc)
     set(DAP_PACKAGE_SUFFIX "ubuntu${DAP_OS_VERSION}")
     

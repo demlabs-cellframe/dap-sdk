@@ -81,7 +81,8 @@ void dap_hash_keccak_permute_avx512(dap_hash_keccak_state_t *state);
 
 #if defined(__arm__) || defined(__aarch64__)
 void dap_hash_keccak_permute_neon(dap_hash_keccak_state_t *state);
-#ifdef __aarch64__
+// SVE/SVE2 are NOT supported on Apple Silicon
+#if defined(__aarch64__) && !defined(__APPLE__)
 void dap_hash_keccak_permute_sve(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_sve2(dap_hash_keccak_state_t *state);
 #endif
@@ -128,7 +129,7 @@ static inline void dap_hash_keccak_permute(dap_hash_keccak_state_t *state)
         case DAP_CPU_ARCH_NEON:
             dap_hash_keccak_permute_neon(state);
             break;
-#ifdef __aarch64__
+#if defined(__aarch64__) && !defined(__APPLE__)
         case DAP_CPU_ARCH_SVE:
             dap_hash_keccak_permute_sve(state);
             break;

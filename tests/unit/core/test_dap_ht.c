@@ -57,7 +57,7 @@ typedef struct ptr_item {
 
 static str_item_t *s_str_table = NULL;
 static int_item_t *s_int_table = NULL;
-static ptr_item_t *s_ptr_table = NULL;
+static ptr_item_t *s_ptr_table UNUSED_ARG = NULL;
 
 // ============================================================================
 // Helper Functions

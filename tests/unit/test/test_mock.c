@@ -409,8 +409,8 @@ static void test_mock_thread_safety(void)
     
     reset_all_test_mocks();
     
-    const int THREAD_COUNT = 5;
-    const int CALLS_PER_THREAD = 15;
+    #define THREAD_COUNT 5
+    #define CALLS_PER_THREAD 15
     pthread_t l_threads[THREAD_COUNT];
     
     log_it(L_DEBUG, "Starting %d threads, %d calls each (total: %d)...",
