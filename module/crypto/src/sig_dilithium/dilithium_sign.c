@@ -132,7 +132,10 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
 
     if (!p) return -1;
 
-    if (! dilithium_params_init( p, kind)) return -1;
+    if (!dilithium_params_init(p, kind)) {
+        free(p);
+        return -1;
+    }
 
     assert(private_key != NULL);
 
