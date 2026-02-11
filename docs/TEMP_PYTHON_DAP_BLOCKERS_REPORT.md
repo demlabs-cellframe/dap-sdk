@@ -635,3 +635,44 @@ Copy this template:
     - wrapper regression rerun from venv:
       - `.venv/bin/pytest -q tests/unit/core/test_dap_math_ops_bindings.py` -> pass (expected skips only).
       - `.venv/bin/pytest -q --import-mode=importlib tests/integration/core/test_dap_math_ops_bindings.py` -> pass (expected skips only).
+
+## BLK-0021 - `dap_math_convert` NULL-deref and OOM-deref chain in decimal scanners/converters
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_math_convert.c`
+  - `tests/unit/core/uint256_t/uint256_tests.c`
+- Scope:
+  - `dap_uint256_scan_decimal(NULL)` (`strnlen`/`memcpy` path)
+  - `dap_uint128_scan_uninteger(NULL)` (`strlen` path)
+  - `dap_uint128_scan_decimal(NULL)` (`strlen`/`strcpy` path)
+  - `dap_uint256_decimal_to_round_char()` OOM path (`dap_uint256_decimal_to_char()` unchecked return)
+  - `dap_uint128_decimal_to_char()` OOM path (`dap_uint128_uninteger_to_char()` unchecked return)
+- Root cause:
+  - Public scanner APIs dereferenced nullable input pointers without guards.
+  - Conversion APIs assumed allocation success and dereferenced nullable intermediate pointers.
+- Fix:
+  - Added explicit `NULL` guards with safe return contracts:
+    - `dap_uint256_scan_decimal(NULL)` -> `uint256_0`.
+    - `dap_uint128_scan_uninteger(NULL)` -> `uint128_0`.
+    - `dap_uint128_scan_decimal(NULL)` -> `uint128_0`.
+  - Added OOM/null checks:
+    - `dap_uint256_decimal_to_round_char()` now checks `dap_uint256_decimal_to_char()` result and returns `NULL` on allocation failure.
+    - `dap_uint128_decimal_to_char()` now checks `dap_uint128_uninteger_to_char()` result before `strlen`.
+  - Added defensive `NULL` guard in `dap_uint256_char_to_round_char()` to avoid secondary null-deref chains.
+  - Added regression tests in SDK unit binary (`uint256_tests.c`) for new null-safe behavior.
+- Validation:
+  - Build:
+    - `cmake --build build-dap-sdk-tests-on -j6` -> success.
+  - SDK unit binary:
+    - `build-dap-sdk-tests-on/tests/unit/core/uint256_t/uint256_test` -> pass (`32 core tests` after added null-safety regressions).
+  - Direct C repro (post-fix):
+    - `/tmp/repro_math_convert_null u256_scan_decimal_null` -> `exit=0` (`returned`), no crash.
+    - `/tmp/repro_math_convert_null u128_scan_uninteger_null` -> `exit=0` (`returned`), no crash.
+    - `/tmp/repro_math_convert_null u128_scan_decimal_null` -> `exit=0` (`returned`), no crash.
+  - Fault-injection OOM repro (post-fix):
+    - `FI_MODE=strdup_u256 LD_PRELOAD=/tmp/libfault_inject_math_convert.so /tmp/repro_math_convert_oom u256_round_oom` -> `exit=0`, output `null`.
+    - `FI_MODE=calloc_u128 LD_PRELOAD=/tmp/libfault_inject_math_convert.so /tmp/repro_math_convert_oom u128_decimal_to_char_oom` -> `exit=0`, output `null`.
+- Notes:
+  - API compatibility preserved (signatures unchanged); behavior changed only from UB/crash to deterministic safe returns on invalid/OOM inputs.
