@@ -202,22 +202,27 @@ int dap_cbuf_write_in_socket(dap_cbuf_t cBuf, int sockfd)
             cBuf->data_size -= countBytesToEnd;
             cBuf->offset_head = 0;
             cBuf->offset_tail = cBuf->data_size - 1;
+            size_t l_second_chunk_size = cBuf->data_size;
 
             ssize_t rdLen2 = send(sockfd,
                          cBuf->buffer,
-                         cBuf->data_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+                         l_second_chunk_size, MSG_DONTWAIT | MSG_NOSIGNAL);
 
             if(rdLen2 < 0) {
                 log_it(L_ERROR, "Can't write data in socket. %s", strerror(errno));
                 return rdLen;
             }
 
-            cBuf->offset_head = rdLen2;
-            if(cBuf->offset_head > cBuf->offset_tail)
+            cBuf->offset_head = (size_t)rdLen2;
+            if((size_t)rdLen2 >= l_second_chunk_size)
             {
                 cBuf->offset_head = -1;
                 cBuf->offset_tail = -1;
                 cBuf->data_size = 0;
+            }
+            else
+            {
+                cBuf->data_size = l_second_chunk_size - (size_t)rdLen2;
             }
             return countBytesToEnd + rdLen2;
         }
@@ -314,7 +319,12 @@ void dap_cbuf_print(dap_cbuf_t cBuf, bool hex)
 {
     uint8_t *b = cBuf->buffer;
     size_t cSize = dap_cbuf_get_size(cBuf);
-    char *str = malloc(2*cSize+1);
+    size_t l_item_width = hex ? 3 : 2;
+    char *str = malloc(cSize * l_item_width + 1);
+    if (!str) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
 
     char c;
 
@@ -339,9 +349,9 @@ void dap_cbuf_print(dap_cbuf_t cBuf, bool hex)
                 c = b[i];
         }
         if(hex)
-            sprintf(str+i*2, "%02X|",c);
+            snprintf(str + i * l_item_width, l_item_width + 1, "%02X|", (uint8_t)c);
         else
-            sprintf(str+i*2, "%c|",c);
+            snprintf(str + i * l_item_width, l_item_width + 1, "%c|", c);
     }
 
     printf("CircularBuffer: %s <size %zu dataSize:%zu>\n",

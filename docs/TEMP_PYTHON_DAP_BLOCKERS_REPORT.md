@@ -766,3 +766,60 @@ Copy this template:
     - `EXIT:0`, no leak report.
 - Notes:
   - This closes `BLK_core_dap_arena_dap_arena_reset__page_chain_overwrite_after_reset_growth` at SDK C implementation level.
+
+## BLK-0024 - `dap_cbuf_print()` heap overflow and sign-extension risk in `hex=true` branch
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_cbuf.c`
+- Repro:
+  - Pre-fix ASan repro:
+    - `cc -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -DDAP_OS_UNIX -I dap-sdk/module/core/include /tmp/repro_cbuf_print_hex_asan.c dap-sdk/module/core/src/dap_cbuf.c -o /tmp/repro_cbuf_print_hex_asan && /tmp/repro_cbuf_print_hex_asan`
+  - Observed pre-fix:
+    - `AddressSanitizer: heap-buffer-overflow` in `dap_cbuf_print` (`sprintf(... "%02X|", c)`).
+- Root cause:
+  - Temporary output buffer size was hardcoded as `2*cSize + 1` for both ASCII and HEX modes.
+  - HEX format path wrote more data per item and used unbounded `sprintf`.
+  - `%02X` consumed promoted signed `char`; bytes `>= 0x80` could print as extended values on signed-char platforms.
+- Fix:
+  - Reworked print buffer sizing to mode-dependent item width:
+    - ASCII: `2` chars per item (`%c|`)
+    - HEX: `3` chars per item (`%02X|`)
+  - Replaced `sprintf` with bounded `snprintf`.
+  - Cast HEX payload byte to `uint8_t` before formatting to prevent sign-extension artifacts.
+  - Added allocation-failure guard with existing SDK logging contract.
+- Validation:
+  - ASan post-fix repro:
+    - same command as repro with updated source -> `rc=0`, no sanitizer diagnostics.
+- Notes:
+  - Public API and wrapper signatures unchanged (`dap_cbuf_print`, `py_dap_cbuf_print`).
+  - Repository C regression test for this case was intentionally not kept (removed by request); verification is retained via sanitizer repro.
+
+## BLK-0025 - `dap_cbuf_write_in_socket()` state desync after partial second send
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_cbuf.c`
+- Repro:
+  - Deterministic wrapped-send repro:
+    - compile with `-Wl,--wrap=send` and force second `send()` to return partial length.
+    - pre-fix observed:
+      - `before=6 written=4 after=3 expected_after=2`
+      - stale byte remained readable after first write.
+- Root cause:
+  - In wrapped two-send branch, `data_size` was decreased after first chunk but not decreased after successful partial second `send` (`rdLen2`), unless buffer became fully empty.
+- Fix:
+  - Captured second-chunk size before second `send`.
+  - On second-send success:
+    - if full second chunk sent: clear buffer state (`head/tail = -1`, `data_size = 0`);
+    - if partial second chunk sent: decrement `data_size` by `rdLen2` and preserve correct wrapped offsets.
+- Validation:
+  - ASan/UBSan repro after fix:
+    - `before=6 written=4 after=2 expected_after=2`
+    - remaining data now `BC`, no stale byte, `rc=0`.
+- Notes:
+  - Public API and return contract of `dap_cbuf_write_in_socket()` preserved.
+  - Repository C regression test for this case was intentionally not kept (removed by request); verification is retained via wrapped-send repro.
+  - Python wrapper marker tests still contain historical `xfail` notes and can be synchronized separately.
