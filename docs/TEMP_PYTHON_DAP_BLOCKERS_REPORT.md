@@ -395,3 +395,53 @@ Copy this template:
     - `BLK_core_dap_strfuncs__strsplit_max_tokens_semantics_mismatch`
     - `BLK_core_dap_strfuncs__strsplit_empty_delimiter_nonterminating`
     - `BLK_core_dap_strfuncs__strndup_malloc_unchecked`
+
+## BLK-0015 - `dap_string` OOM/fallback safety defects (`maybe_expand`, `append_vprintf`)
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_string.c`
+  - `tests/unit/core/test_dap_strfuncs.c`
+- Repro:
+  - OOB on realloc-failure path (pre-fix):
+    - ASan fault-injection harness with `DAP_REALLOC` forced to return `NULL` on mutators (`append_len`, `set_size`, `insert_c`, `insert_unichar`, `overwrite_len`, self-substring `insert_len`).
+    - Crashes reported as `heap-buffer-overflow` at corresponding write points in `dap_string.c`.
+  - Leak on early return (pre-fix):
+    - LSan run of `dap_string_append_vprintf()` with forced realloc-failure and large `vasprintf` payload reported direct leak from `vasprintf` buffer.
+  - Fallback inconsistency (pre-fix):
+    - `snprintf(l_buf, sizeof(buf), ...)` used pointer-size limit; fallback path did not restore `len/allocated_len` invariants.
+- Root cause:
+  - `dap_string_maybe_expand()` returned `void`; callers could not distinguish success/failure and continued writes after failed reallocation.
+  - `dap_string_append_vprintf()` had an early `return` branch that bypassed `DAP_DELETE(buf)`.
+  - `append_vprintf` fallback used wrong `sizeof` operand and did not normalize descriptor state.
+- Fix:
+  - Converted internal helper to status-returning API:
+    - `static bool dap_string_maybe_expand(...)` with overflow checks and descriptor consistency guard (`allocated_len != 0 && str == NULL` -> fail).
+  - Updated mutating call sites to check expand status and fail safely without writing:
+    - `dap_string_set_size`, `dap_string_insert_len` (both branches), `dap_string_insert_c`, `dap_string_insert_unichar`, `dap_string_overwrite_len`.
+  - Hardened null-storage handling in mutators used by wrappers/printf flows:
+    - `dap_string_truncate`, `dap_string_erase`, `dap_string_down`, `dap_string_up` now safely return on missing storage.
+  - `dap_string_append_vprintf()` reworked to single cleanup path:
+    - always frees `vasprintf` buffer via `goto cleanup` path;
+    - fixed fallback formatting to `sizeof(l_buf)`;
+    - fallback allocates zeroed storage and updates `str/len/allocated_len` consistently.
+  - Added small OOM-related safety guards in constructors:
+    - `dap_string_new`, `dap_string_new_len` now handle `dap_string_sized_new()` failure explicitly.
+  - Added regression test case:
+    - `dap_string_invalid_descriptor_regression_test()` in `tests/unit/core/test_dap_strfuncs.c`.
+- Validation:
+  - Build sanity in workspace tree:
+    - `cmake --build build --target dap_core -j4` (passes).
+  - Python wrapper smoke related to strfuncs:
+    - `.venv-tests/bin/python -m pytest tests/unit/core/test_dap_strfuncs_bindings.py -q` (passes; expected skips unchanged).
+  - SDK unit test with full SDK test build:
+    - `cmake -S dap-sdk -B /tmp/dap-sdk-build-full -DBUILD_DAP_SDK_TESTS=ON -DCMAKE_BUILD_TYPE=Debug`.
+    - `cmake --build /tmp/dap-sdk-build-full --target test_dap_strfuncs -j4` (passes).
+    - `ctest --test-dir /tmp/dap-sdk-build-full --output-on-failure -R test_dap_strfuncs` (1/1 passed).
+  - ASan/LSan post-fix fault-injection harness:
+    - all previous crash/leak scenarios complete without sanitizer findings;
+    - operations now fail safely with unchanged string state under forced realloc failure.
+- Notes:
+  - Public API signatures preserved; behavior on OOM changed from memory-unsafe write/leak to safe no-op/fail-safe return.
+  - Root `ctest --test-dir build -R python_dap_unit_tests` remains externally broken due missing `tests/run_pytests.py` in this tree (unrelated to this fix).
