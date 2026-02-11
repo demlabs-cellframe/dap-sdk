@@ -563,3 +563,75 @@ Copy this template:
     - Result: pass with existing xfail markers (wrapper-level marker semantics).
 - Notes:
   - This closes `BLK_core_dap_crc64_pointer_precondition__null_pointer_ub` at SDK C API level.
+
+## BLK-0020 - `dap_math_ops` UB and 512-bit correctness blockers
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/include/dap_math_ops.h`
+  - `tests/unit/core/uint256_t/256_tests.cc`
+  - `tests/unit/core/test_dap_math_ops_bindings.py`
+  - `tests/integration/core/test_dap_math_ops_bindings.py`
+- Scope:
+  - `BLK_core_dap_math_ops_shift_128__int128_width_ub`
+  - `BLK_core_dap_math_ops_overflow_mult_64_64__divide_by_zero_ub`
+  - `BLK_core_dap_math_ops_mult_128_128__divide_by_zero_ub_int128_branch`
+  - `BLK_core_dap_math_ops_mult_256_512__known_512bit_correctness_gap`
+  - zero-divisor crash path in `divmod_impl_256` (`assert`/`SIGFPE`) and `DIV_128` int128 path
+- Root cause:
+  - `LEFT_SHIFT_128` / `RIGHT_SHIFT_128` allowed `n == 128` and executed native `__int128 << 128` / `>> 128` (UB).
+  - `OVERFLOW_MULT_64_64` did `MAX_U64 / b` without zero guard.
+  - `MULT_128_128` int128 overflow check did `MAX_U128 / b` without zero guard.
+  - `MULT_256_512` used partial carry logic and ignored overflow/carry markers (`UNUSED`), producing wrong 512-bit output.
+  - `divmod_impl_256` raised process-fatal behavior on zero divisor (`assert` and `raise(SIGFPE)`), while `DIV_128` native int128 division had direct divide-by-zero UB.
+- Fix:
+  - `LEFT_SHIFT_128` / `RIGHT_SHIFT_128`:
+    - strengthened bounds assert to `0 <= n <= 128`;
+    - added explicit `n == 128 => 0` branch in int128 path.
+  - `OVERFLOW_MULT_64_64`:
+    - added zero-multiplier fast path (`overflow = 0`).
+  - `MULT_128_128` (int128 path):
+    - added zero-operand short-circuit (`out = 0`, `overflow = 0`) before overflow division.
+  - `MULT_256_512`:
+    - replaced implementation with deterministic schoolbook accumulation in base `2^128`;
+    - added `ADD_128_TO_512_AT_LIMB()` carry-propagation helper;
+    - addressed packed-struct pointer constraints by operating on local limb copies (no address-of-packed-member UB/werror).
+  - `divmod_impl_256` / `divmod_impl_128`:
+    - removed abort/signal path on zero divisor;
+    - now logs and returns zeroed quotient/remainder deterministically.
+  - `DIV_128`:
+    - added zero-divisor guard in public helper (`out = 0`, log, return) to eliminate direct SDK UB in int128 build.
+  - SDK tests:
+    - added `check_equality512(...)` helper in `256_tests.cc`;
+    - enabled and implemented real assertions for `MULT_256_512` random path and `Mult256MaxMaxRet512`.
+  - Python wrapper tests:
+    - removed `xfail` for shift-width boundary and `MULT_256_512`;
+    - added concrete boundary checks (`n == 128 -> 0`) and real 512-bit value checks.
+- Validation:
+  - Build:
+    - `cmake --build build -j4` -> success.
+  - Python unit/integration:
+    - `.venv/bin/python -m pytest -q tests/unit/core/test_dap_math_ops_bindings.py -ra` -> pass (no xfail in math_ops; only conditional skips for non-exported `!DAP_GLOBAL_IS_INT128` wrappers).
+    - `.venv/bin/python -m pytest -q tests/integration/core/test_dap_math_ops_bindings.py -ra` -> pass (same conditional skips).
+  - Direct C UB-smoke (UBSan):
+    - combined repro covering:
+      - `LEFT_SHIFT_128(...,128)`,
+      - `RIGHT_SHIFT_128(...,128)`,
+      - `OVERFLOW_MULT_64_64(...,0)`,
+      - `MULT_128_128(...,0,...)`,
+      - `DIV_128(...,0,...)`,
+      - `divmod_impl_256(...,0,...)`
+    - result: `ok`, no UBSan runtime errors.
+  - `MULT_256_512` correctness:
+    - direct C `max256 * max256` repro -> `match=1`;
+    - python-backed randomized check (`2000` random vectors) -> `ok: 2000/2000`.
+- Notes:
+  - `ctest --test-dir build -N` in this tree currently exposes only `python_dap_unit_tests`; SDK gtest binaries are not registered in this active build config, so validation used direct repro + wrapper-path assertions.
+  - Additional confidence pass (2026-02-11, late run):
+    - standalone SDK test binary executed directly:
+      - `/home/andriyshkoy/work/python-dap/build-dap-sdk-tests-on/tests/unit/core/uint256_t/uint256_test`
+      - result: pass (`UINT256 TEST SUITE COMPLETE: 28 core tests`).
+    - wrapper regression rerun from venv:
+      - `.venv/bin/pytest -q tests/unit/core/test_dap_math_ops_bindings.py` -> pass (expected skips only).
+      - `.venv/bin/pytest -q --import-mode=importlib tests/integration/core/test_dap_math_ops_bindings.py` -> pass (expected skips only).
