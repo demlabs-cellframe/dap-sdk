@@ -445,3 +445,83 @@ Copy this template:
 - Notes:
   - Public API signatures preserved; behavior on OOM changed from memory-unsafe write/leak to safe no-op/fail-safe return.
   - Root `ctest --test-dir build -R python_dap_unit_tests` remains externally broken due missing `tests/run_pytests.py` in this tree (unrelated to this fix).
+
+## BLK-0016 - `dap_path_get_ext()` returns `NULL` for dotfiles and has empty-string UB path
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_file_utils.c`
+  - `tests/unit/core/test_dap_file_utils_bindings.py`
+- Repro:
+  - Direct SDK repro:
+    - `/tmp/dap_sdk_repro ext`
+  - Wrapper repro:
+    - `.venv/bin/pytest -q tests/unit/core/test_dap_file_utils_bindings.py -k "dap_path_get_ext__dotfile"`
+- Root cause:
+  - Loop condition `while(l_p > a_filename)` skipped index `0`, so leading-dot names like `.env` were treated as no extension.
+  - Pointer `a_filename + l_len - 1` was computed before `l_len < 2` check, creating UB for empty string inputs.
+- Fix:
+  - Added `NULL` guard for input.
+  - Moved length guard before pointer arithmetic.
+  - Reworked reverse scan to include index `0` safely (`l_p` starts at end and decrements inside loop).
+- Validation:
+  - `/tmp/dap_sdk_repro ext` now prints `dap_path_get_ext('.env') => env`.
+  - `.venv/bin/pytest -q tests/unit/core/test_dap_file_utils_bindings.py -k "dap_path_get_ext__dotfile"` passes.
+  - Empty-string smoke (`/tmp/repro_ext_empty`) returns `NULL` without crash.
+- Notes:
+  - Existing behavior for trailing dot (`"a."` -> empty string) and path-separator handling is preserved.
+
+## BLK-0017 - `dap_get_subs()` null-deref on `opendir()` failure (POSIX)
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_file_utils.c`
+  - `src/python_dap/core/python_dap_file_utils.c`
+- Repro:
+  - Direct SDK repro (pre-fix crashed with SIGSEGV):
+    - `/tmp/dap_sdk_repro subs`
+  - Wrapper subprocess check on unreadable directory:
+    - temporary `chmod 000` dir + `python_dap.py_dap_get_subs(path)` in child process.
+- Root cause:
+  - POSIX branch called `readdir(dir)` immediately after `opendir(a_path_dir)` without checking `dir != NULL`.
+  - Function also had no top-level `a_path_dir == NULL` guard.
+- Fix:
+  - Added early `NULL` guard for `a_path_dir`.
+  - Added `if (!dir) return NULL;` before first `readdir()` in POSIX branch.
+  - Added Windows invalid-handle guard for `FindFirstFileA`.
+- Validation:
+  - `/tmp/dap_sdk_repro subs` now returns `(nil)` and exits `0`.
+  - Wrapper unreadable-dir subprocess now exits `0` (no SIGSEGV), result `None`.
+  - Unit selection still passes:
+    - `.venv/bin/pytest -q tests/unit/core/test_dap_file_utils_bindings.py -k "dap_get_subs__non_directory"`
+- Notes:
+  - This removes SDK crash behavior for invalid/inaccessible directory inputs.
+
+## BLK-0018 - `dap_canonicalize_filename()` nullable contract mismatch (`%s` with `NULL`)
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/include/dap_file_utils.h`
+  - `module/core/src/dap_file_utils.c`
+  - `tests/unit/core/test_dap_file_utils_bindings.py`
+- Repro:
+  - Direct SDK repro:
+    - `/tmp/dap_sdk_repro canon_null`
+  - Wrapper contract check:
+    - `.venv/bin/pytest -q tests/unit/core/test_dap_file_utils_bindings.py -k "dap_canonicalize_filename__none_relative_to_uses_cwd"`
+- Root cause:
+  - Implementation used `snprintf("%s/%s", relative_to, filename)` directly with nullable `relative_to`, which is UB by C standard and does not match header contract.
+- Fix:
+  - Added input validation (`filename != NULL`).
+  - Added absolute-path fast path (`dap_path_is_absolute(filename)` -> `realpath(filename, NULL)`).
+  - For `relative_to == NULL`, resolves current directory via `dap_get_current_dir()` and uses it as base.
+  - Added `snprintf` truncation/error check before `realpath`.
+- Validation:
+  - Direct C smoke with cwd fixture now resolves via cwd (`out=/tmp/file.txt` in repro harness).
+  - Unit selection passes:
+    - `.venv/bin/pytest -q tests/unit/core/test_dap_file_utils_bindings.py -k "dap_canonicalize_filename__none_relative_to_uses_cwd or dap_canonicalize_filename__existing_target or dap_canonicalize_filename__dotdot_resolution"`
+- Notes:
+  - Header contract and implementation behavior are now aligned for nullable `relative_to`.
