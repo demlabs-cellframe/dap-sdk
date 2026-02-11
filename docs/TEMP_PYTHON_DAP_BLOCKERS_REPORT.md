@@ -676,3 +676,48 @@ Copy this template:
     - `FI_MODE=calloc_u128 LD_PRELOAD=/tmp/libfault_inject_math_convert.so /tmp/repro_math_convert_oom u128_decimal_to_char_oom` -> `exit=0`, output `null`.
 - Notes:
   - API compatibility preserved (signatures unchanged); behavior changed only from UB/crash to deterministic safe returns on invalid/OOM inputs.
+
+## BLK-0022 - `dap_binary_tree` memory-safety and NULL-input UB chain
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/include/dap_binary_tree.h`
+  - `module/core/src/dap_binary_tree.c`
+- Scope:
+  - `BLK_core_dap_binary_tree_dap_binary_tree_delete__two_children_data_dangling`
+  - `BLK_core_dap_binary_tree_dap_binary_tree_minimum_maximum__null_root_ub`
+  - `BLK_core_dap_binary_tree_key_based_apis__null_key_ub`
+- Repro:
+  - Direct SDK reproducer binary (ASAN/UBSAN), pre-fix:
+    - `clang -g -O0 -fsanitize=address,undefined ... /tmp/bt_poc.c .../dap_binary_tree.c ...`
+    - `/tmp/bt_poc uaf` -> `heap-use-after-free`
+    - `/tmp/bt_poc min_null` / `/tmp/bt_poc max_null` -> null-deref crash
+    - `/tmp/bt_poc search_null_key|insert_null_key|delete_null_key` -> `strcmp(NULL, ...)` UB/crash
+- Root cause:
+  - Two-children delete path copied successor `data` pointer to surviving node and then deleted successor node, freeing the same pointer.
+  - `s_tree_minimum()` / `s_tree_maximum()` dereferenced `a_elm` without null guard.
+  - Key comparators were raw `strcmp` macros with no `NULL` handling, used by public key-based APIs.
+- Fix:
+  - Added null-safe key comparator in header:
+    - `dap_binary_tree_key_cmp()` + `KEY_LS/KEY_GT/KEY_EQ` wrappers.
+  - Added public API guards:
+    - `dap_binary_tree_search(..., NULL)` -> `NULL`
+    - `dap_binary_tree_insert(root, NULL, data)` -> no-op, returns `root`
+    - `dap_binary_tree_delete(root, NULL)` -> no-op, returns `root`
+    - `dap_binary_tree_minimum(NULL)` / `dap_binary_tree_maximum(NULL)` -> `NULL`
+  - Added helper-level null guards in `s_tree_minimum()` / `s_tree_maximum()`.
+  - Fixed two-children delete ownership transfer:
+    - save old node data;
+    - move successor key/data into current node;
+    - set successor `data = NULL` before recursive delete;
+    - free old data exactly once.
+- Validation:
+  - ASAN/UBSAN repro binaries rebuilt and rerun:
+    - `/tmp/bt_poc uaf|min_null|max_null|search_null_key|insert_null_key|delete_null_key` -> all `rc=0`, no sanitizer diagnostics.
+    - `/tmp/bt_poc_double_free` -> `rc=0`, no double-free.
+  - Additional behavioral smoke with assertions:
+    - `/tmp/bt_regression_smoke` validates insert/search/min/max/count/delete and null-input no-op contracts, exits `0`.
+- Notes:
+  - Public C API signatures are unchanged; patch only hardens invalid-input and memory-safety behavior.
+  - Python extension must be rebuilt to consume updated SDK objects if an older prebuilt `python_dap` binary is currently loaded.
