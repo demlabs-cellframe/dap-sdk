@@ -357,3 +357,41 @@ Copy this template:
 - Notes:
   - This closes `BLK_core_dap_strptime_dap_strptime__percent_g_out_of_bounds_read` at SDK level.
   - Follow-up cleanup: remove `%G` blocker xfail marker from wrapper tests/docs after policy decision.
+
+## BLK-0014 - `dap_strsplit` contract mismatch/empty-delimiter defect and Win32 `_strndup` OOM unsafe path
+- Date: 2026-02-10
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_strfuncs.c`
+  - `tests/unit/core/test_dap_strfuncs_bindings.py`
+- Repro:
+  - SDK-level (`ctypes`) max tokens mismatch:
+    - `dap_strsplit("a:b:c", ":", 2)` produced `a|b|c` (expected `a|b:c`).
+  - SDK-level (`ctypes`) empty delimiter pathological behavior:
+    - `dap_strsplit("a:b:c", "", 2)` produced malformed `||a:b:c`.
+    - `dap_strsplit("a:b:c", "", -1)` did not finish under `timeout 1s` (effective non-terminating/OOM-prone loop).
+  - Win32 static review:
+    - `_strndup()` called `memcpy()` right after `malloc()` without `NULL` check.
+- Root cause:
+  - `dap_strsplit()` used `while(--a_max_tokens && l_s)`, which allows one extra split and violates documented max-token semantics.
+  - No guard for empty delimiter (`strstr(s, "")` + zero-length advance), causing non-progress loop behavior.
+  - `_strndup()` missed allocation-failure handling before `memcpy()`.
+- Fix:
+  - Added empty-delimiter guard in `dap_strsplit()` with deterministic safe return (single unsplit token array).
+  - Reworked split loop to enforce max-token contract: split only while `l_s && a_max_tokens > 1`, then append remainder as last token.
+  - Added Win32 `_strndup()` check: `if (!buf) return NULL;` before `memcpy()`.
+  - Unblocked wrapper contract test by removing xfail from `UT_core_dap_strfuncs_dap_strsplit__max_tokens_limit`.
+  - Added regression test `UT_core_dap_strfuncs_dap_strsplit__max_tokens_one_keeps_source`.
+- Validation:
+  - Rebuilt wrapper: `cmake --build build --target python_dap -j8`.
+  - SDK-level checks now return deterministic expected results:
+    - `dap_strsplit("a:b:c", ":", 2)` -> `a|b:c`.
+    - `dap_strsplit("a:b:c", "", -1)` returns promptly with one token (`a:b:c`).
+  - Python unit selection passes:
+    - `.venv-tests/bin/pytest -q tests/unit/core/test_dap_strfuncs_bindings.py -k "dap_strsplit__max_tokens_limit or dap_strsplit__max_tokens_one_keeps_source or dap_strsplit__empty_delimiter_blocked or strndup__oom_blocked"`.
+- Notes:
+  - This closes:
+    - `BLK_core_dap_strfuncs__strsplit_max_tokens_semantics_mismatch`
+    - `BLK_core_dap_strfuncs__strsplit_empty_delimiter_nonterminating`
+    - `BLK_core_dap_strfuncs__strndup_malloc_unchecked`
