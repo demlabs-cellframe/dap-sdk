@@ -525,3 +525,41 @@ Copy this template:
     - `.venv/bin/pytest -q tests/unit/core/test_dap_file_utils_bindings.py -k "dap_canonicalize_filename__none_relative_to_uses_cwd or dap_canonicalize_filename__existing_target or dap_canonicalize_filename__dotdot_resolution"`
 - Notes:
   - Header contract and implementation behavior are now aligned for nullable `relative_to`.
+
+## BLK-0019 - `crc64()` / `crc64_update()` NULL-pointer UB on non-zero length
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/include/dap_crc64.h`
+  - `module/core/src/dap_crc64.c`
+- Repro:
+  - Pre-fix direct C repro (`a_ptr=NULL`, `a_count=1`) produced `SIGSEGV`:
+    - `crc64_update(0xffffffffffffffffULL, NULL, 1)`
+    - `crc64(NULL, 1)`
+  - Sanitizer repro (pre-fix) reported:
+    - `runtime error: load of null pointer of type 'const uint8_t'`
+    - in `module/core/src/dap_crc64.c` (`s_crc64_reflected_update`).
+- Root cause:
+  - Internal update helpers used pointer arithmetic and dereference without pointer validation:
+    - `const uint8_t *const c_endptr = a_ptr + a_count;`
+    - `*a_ptr++` inside update loop.
+  - Public API (`crc64_update`, `crc64`) forwarded arguments without guarding `NULL`.
+- Fix:
+  - Added API guard in `crc64_update()`:
+    - if `a_ptr == NULL`, return input seed (`a_crc`) as deterministic no-op.
+  - Reworked internal update loops to index by `size_t i` and removed `a_ptr + a_count` end-pointer arithmetic.
+  - Documented nullable handling in public header:
+    - `crc64_update`: `NULL` pointer => no update.
+    - `crc64`: `NULL` pointer => treated as empty payload.
+- Validation:
+  - Direct C repro after fix:
+    - `update-null-1` returns seed (`0xffffffffffffffff`), no crash.
+    - `crc64-null-1` returns deterministic value (`0x0000000000000000` for current ISO params), no crash.
+  - ASan/UBSan smoke after fix:
+    - `update-null-1` and `crc64-null-1` complete with `rc=0`, no sanitizer diagnostics.
+  - Python CRC64 wrapper regression unchanged for valid paths:
+    - `.venv-tests/bin/python -m pytest -q tests/unit/core/test_dap_crc64_bindings.py`
+    - Result: pass with existing xfail markers (wrapper-level marker semantics).
+- Notes:
+  - This closes `BLK_core_dap_crc64_pointer_precondition__null_pointer_ub` at SDK C API level.
