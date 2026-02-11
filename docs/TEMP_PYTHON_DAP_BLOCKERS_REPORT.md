@@ -721,3 +721,48 @@ Copy this template:
 - Notes:
   - Public C API signatures are unchanged; patch only hardens invalid-input and memory-safety behavior.
   - Python extension must be rebuilt to consume updated SDK objects if an older prebuilt `python_dap` binary is currently loaded.
+
+## BLK-0023 - `dap_arena_reset()` can orphan page chain on post-reset growth
+- Date: 2026-02-11
+- Status: `verified`
+- Reporter: python-dap wrapper testing
+- Components:
+  - `module/core/src/dap_arena.c`
+  - `tests/unit/core/test_dap_arena.c`
+  - `tests/unit/core/test_arena_refcount.c`
+- Repro:
+  - Direct C repro (pre-fix):
+    - grow arena to multiple pages -> `dap_arena_reset()` -> force growth again from first page.
+    - observed: `page_count` dropped (`5 -> 2`), `total_allocated` increased after reset-regrow despite reusable pages.
+  - Sanitizer repro (pre-fix):
+    - `ASAN_OPTIONS=detect_leaks=1 /tmp/dap_arena_repro_asan`
+    - observed leak summary from `s_arena_page_new` allocations (orphaned pages unreachable from `first_page`).
+- Root cause:
+  - Growth path in `s_arena_alloc_internal()` always linked new page via `current_page->next = new_page`.
+  - After `dap_arena_reset()` sets `current_page = first_page`, next growth could overwrite existing `first_page->next`, disconnecting old tail pages.
+- Fix:
+  - Reworked page growth logic in `s_arena_alloc_internal()`:
+    - when current page is full, first traverse/reuse existing `next` pages;
+    - append a new page only when the chain tail is reached;
+    - keep `current_page` synchronized with the reused/appended page.
+  - Added C regression tests:
+    - `test_arena_reset_preserves_page_chain()` in `tests/unit/core/test_dap_arena.c`
+      - validates page count and total allocated are stable after `reset+regrow`;
+      - validates first and second page pointers are reused.
+    - `s_test_reset_chain_refcount()` in `tests/unit/core/test_arena_refcount.c`
+      - validates same invariant for refcount-enabled arena path.
+- Validation:
+  - Build:
+    - `cmake --build build-dap-sdk-tests-on -j6 --target test_dap_arena test_arena_refcount`
+    - `cmake --build build-dap-sdk-tests-on -j6`
+  - C unit tests:
+    - `build-dap-sdk-tests-on/tests/unit/core/test_dap_arena` -> `EXIT:0`
+    - `build-dap-sdk-tests-on/tests/unit/core/test_arena_refcount` -> `EXIT:0`
+  - Direct repro after fix:
+    - `/tmp/dap_arena_repro_default`
+    - result: `after reset+regrow pages=3 ... total=28768` (no page-chain drop, no new allocation).
+  - ASan smoke after fix:
+    - `ASAN_OPTIONS=detect_leaks=1:abort_on_error=0 /tmp/dap_arena_repro_asan`
+    - `EXIT:0`, no leak report.
+- Notes:
+  - This closes `BLK_core_dap_arena_dap_arena_reset__page_chain_overwrite_after_reset_growth` at SDK C implementation level.
