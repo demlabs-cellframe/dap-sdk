@@ -128,10 +128,18 @@ static void s_hot_leaf_flush(dap_global_db_btree_t *a_tree);
 // Key Comparison
 // ============================================================================
 
+// Internal inline version — used on every hot path (traversal, search, insert).
+// Eliminates function call overhead (~5ns per call × thousands of calls per insert batch).
+static inline int s_key_cmp(const dap_global_db_btree_key_t *a_key1,
+                            const dap_global_db_btree_key_t *a_key2)
+{
+    return memcmp(a_key1, a_key2, sizeof(dap_global_db_btree_key_t));
+}
+
+// Public API wrapper (for external callers)
 int dap_global_db_btree_key_compare(const dap_global_db_btree_key_t *a_key1, const dap_global_db_btree_key_t *a_key2)
 {
-    // Keys are stored in big-endian, so memcmp gives correct ordering
-    int l_ret = memcmp(a_key1, a_key2, sizeof(dap_global_db_btree_key_t));
+    int l_ret = s_key_cmp(a_key1, a_key2);
     return l_ret < 0 ? -1 : (l_ret > 0 ? 1 : 0);
 }
 
@@ -263,10 +271,10 @@ static void s_page_free(dap_global_db_btree_page_t *a_page)
  * @brief Ensure page data is in a private (writable) buffer, not an mmap reference.
  *
  * Writable mmap refs (is_mmap_writable=true) are already safe to modify
- * in-place — COW is skipped for them. When a_arena is provided, the copy
- * goes into arena (O(1) bump); otherwise into heap.
+ * in-place — COW is skipped for them. Inlined because the writable-mmap
+ * fast path (just a branch-and-return) is hit on every leaf insert/update.
  */
-static void s_page_cow(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena)
+static inline void s_page_cow(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena)
 {
     if (!a_page || !a_page->is_mmap_ref || a_page->is_mmap_writable)
         return;
@@ -648,33 +656,40 @@ static dap_global_db_btree_leaf_entry_t *s_leaf_entry_at(dap_global_db_btree_pag
 }
 
 /**
- * @brief Find entry in leaf page by key
+ * @brief Find entry in leaf page by key (optimized: inline offset access, no checks)
+ *
+ * Hot path for both random and sequential inserts. Eliminated per-iteration overhead:
+ *   - No s_leaf_entry_at call (saves function call + flags check + bounds check)
+ *   - Direct offset array access + pointer arithmetic
+ *   - s_key_cmp is static inline memcmp
+ *
  * @return 0 if found, 1 if not found (a_out_index = insertion point)
  */
 static int s_leaf_find_entry(dap_global_db_btree_page_t *a_page, const dap_global_db_btree_key_t *a_key, int *a_out_index)
 {
     int l_count = a_page->header.entries_count;
-    
-    // Binary search
+    const uint16_t *l_offsets = (const uint16_t *)(a_page->data + LEAF_HEADER_SIZE);
+    const uint8_t *l_data = a_page->data;
+
     int l_low = 0, l_high = l_count - 1;
-    
+
     while (l_low <= l_high) {
-        int l_mid = (l_low + l_high) / 2;
-        dap_global_db_btree_leaf_entry_t *l_entry = s_leaf_entry_at(a_page, l_mid, NULL, NULL);
-        
-        int l_cmp = dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash);
+        int l_mid = (l_low + l_high) >> 1;  // unsigned shift = branchless div2
+        const dap_global_db_btree_leaf_entry_t *l_entry =
+            (const dap_global_db_btree_leaf_entry_t *)(l_data + l_offsets[l_mid]);
+        int l_cmp = s_key_cmp(a_key, &l_entry->driver_hash);
         if (l_cmp == 0) {
             *a_out_index = l_mid;
-            return 0;  // Found
-        } else if (l_cmp < 0) {
-            l_high = l_mid - 1;
-        } else {
-            l_low = l_mid + 1;
+            return 0;
         }
+        if (l_cmp < 0)
+            l_high = l_mid - 1;
+        else
+            l_low = l_mid + 1;
     }
-    
+
     *a_out_index = l_low;
-    return 1;  // Not found
+    return 1;
 }
 
 /**
@@ -966,7 +981,7 @@ static int s_search_in_page(dap_global_db_btree_page_t *a_page, const dap_global
         int l_mid = (l_low + l_high) / 2;
         dap_global_db_btree_branch_entry_t *l_entry = s_branch_entry_at(a_page, l_mid);
         
-        int l_cmp = dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash);
+        int l_cmp = s_key_cmp(a_key, &l_entry->driver_hash);
         if (l_cmp == 0) {
             return l_mid + 1;  // Go to right child on exact match
         } else if (l_cmp < 0) {
@@ -1049,28 +1064,40 @@ static int s_split_child(dap_global_db_btree_t *a_tree, dap_global_db_btree_page
     dap_global_db_btree_key_t l_median_key;
 
     if (l_child->header.flags & DAP_GLOBAL_DB_PAGE_LEAF) {
+        // ---- Bulk copy: direct entry packing into sibling ----
+        // Instead of N/2 × s_leaf_insert_entry (each: COW check + space calc +
+        // offset shift + 3× memcpy + memset reserved), we do:
+        //   - 1× memcpy per entry (header + key + value + sign as contiguous block)
+        //   - 0× COW checks (sibling is fresh page)
+        //   - 0× space checks (sibling has PAGE_DATA_SIZE free)
+        //   - 0× offset shifts (writing offsets sequentially)
+        uint16_t *l_child_offsets = (uint16_t *)(l_child->data + LEAF_HEADER_SIZE);
+        uint16_t *l_sib_offsets = (uint16_t *)(l_sibling->data + LEAF_HEADER_SIZE);
+        uint16_t l_sib_write_pos = PAGE_DATA_SIZE;
+        int l_sib_count = l_count - l_mid;
         size_t l_freed_space = 0;
 
         for (int i = l_mid; i < l_count; i++) {
-            uint8_t *l_data;
-            size_t l_entry_total_size;
-            dap_global_db_btree_leaf_entry_t *l_entry = s_leaf_entry_at(l_child, i, &l_data, &l_entry_total_size);
-
-            char *l_text_key = (char *)l_data;
-            uint8_t *l_value = l_data + l_entry->key_len;
-            uint8_t *l_sign = l_value + l_entry->value_len;
-
-            s_leaf_insert_entry(l_sibling, i - l_mid, &l_entry->driver_hash,
-                               l_text_key, l_entry->key_len,
-                               l_value, l_entry->value_len,
-                               l_sign, l_entry->sign_len,
-                               l_entry->flags, l_arena);
+            dap_global_db_btree_leaf_entry_t *l_entry =
+                (dap_global_db_btree_leaf_entry_t *)(l_child->data + l_child_offsets[i]);
+            size_t l_entry_size = s_leaf_entry_total_size(
+                l_entry->key_len, l_entry->value_len, l_entry->sign_len);
 
             if (i == l_mid)
                 l_median_key = l_entry->driver_hash;
 
-            l_freed_space += l_entry_total_size + LEAF_OFFSET_SIZE;
+            // Pack contiguously from end: single memcpy of entire entry block
+            l_sib_write_pos -= (uint16_t)l_entry_size;
+            memcpy(l_sibling->data + l_sib_write_pos, l_entry, l_entry_size);
+            l_sib_offsets[i - l_mid] = l_sib_write_pos;
+
+            l_freed_space += l_entry_size + LEAF_OFFSET_SIZE;
         }
+
+        l_sibling->header.entries_count = l_sib_count;
+        l_sibling->header.free_space =
+            l_sib_write_pos - (LEAF_HEADER_SIZE + l_sib_count * LEAF_OFFSET_SIZE);
+        LEAF_LOWEST_OFFSET(l_sibling->data) = l_sib_write_pos;
 
         l_child->header.entries_count = l_mid;
         l_child->header.free_space += l_freed_space;
@@ -1113,6 +1140,10 @@ static int s_insert_non_full(dap_global_db_btree_t *a_tree, dap_global_db_btree_
     // Track the path (page_id + child_index) for hot_leaf caching.
     struct { uint64_t page_id; int child_index; } l_path[DAP_GLOBAL_DB_BTREE_PATH_MAX];
     int l_depth = 0;
+
+    // Stack-allocated writable mmap page refs — eliminates 4KB memcpy per tree level.
+    // Each level uses one slot; all slots survive for the full function lifetime.
+    dap_global_db_btree_page_t l_mmap_bufs[DAP_GLOBAL_DB_BTREE_PATH_MAX + 1];
     dap_global_db_btree_page_t *l_page = a_page;
 
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
@@ -1120,21 +1151,40 @@ static int s_insert_non_full(dap_global_db_btree_t *a_tree, dap_global_db_btree_
         int l_index = s_search_in_page(l_page, a_key, &l_found);
 
         uint64_t l_child_id = s_branch_get_child(l_page, l_index);
-        dap_global_db_btree_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
+
+        // Read child as writable mmap ref: 32B header copy instead of 4KB+32B+memset.
+        // Falls back to arena copy when mmap is unavailable.
+        dap_global_db_btree_page_t *l_child;
+        if (a_tree->mmap && l_depth < DAP_GLOBAL_DB_BTREE_PATH_MAX
+            && s_page_read_writable(a_tree, l_child_id, &l_mmap_bufs[l_depth])) {
+            l_child = &l_mmap_bufs[l_depth];
+        } else {
+            l_child = s_page_read(a_tree, l_child_id, l_arena);
+        }
         if (!l_child)
             return -1;
 
         // Preemptive split: if child is full, split before descending
         if (s_page_needs_split(l_child, a_text_key_len, a_value_len, a_sign_len)) {
+            // s_split_child may mremap — re-resolve parent's mmap pointer after split
             if (s_split_child(a_tree, l_page, l_index) != 0)
                 return -1;
+            if (l_page->is_mmap_writable)
+                s_page_resolve_mmap(a_tree, l_page);
 
             dap_global_db_btree_branch_entry_t *l_entry = s_branch_entry_at(l_page, l_index);
-            if (dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash) > 0)
+            if (s_key_cmp(a_key, &l_entry->driver_hash) > 0)
                 l_index++;
 
             l_child_id = s_branch_get_child(l_page, l_index);
-            l_child = s_page_read(a_tree, l_child_id, l_arena);
+
+            // Re-read child after split (may be newly created page)
+            if (a_tree->mmap && l_depth < DAP_GLOBAL_DB_BTREE_PATH_MAX
+                && s_page_read_writable(a_tree, l_child_id, &l_mmap_bufs[l_depth])) {
+                l_child = &l_mmap_bufs[l_depth];
+            } else {
+                l_child = s_page_read(a_tree, l_child_id, l_arena);
+            }
             if (!l_child)
                 return -1;
         }
@@ -1170,16 +1220,14 @@ static int s_insert_non_full(dap_global_db_btree_t *a_tree, dap_global_db_btree_
     s_page_write(a_tree, l_page);
 
     // Promote leaf to hot_leaf with writable mmap data pointer.
-    // Save the traversal path for fast split-on-full without re-traversal.
-    if (a_tree->hot_leaf && a_tree->hot_leaf != l_page)
+    // Always heap-allocate the struct (l_page may point to stack buffer l_mmap_bufs).
+    if (a_tree->hot_leaf)
         s_page_free(a_tree->hot_leaf);
 
-    if (l_page->is_mmap_writable && !l_page->is_arena) {
-        a_tree->hot_leaf = l_page;
-    } else {
-        dap_global_db_btree_page_t *l_hl = DAP_NEW(dap_global_db_btree_page_t);
+    dap_global_db_btree_page_t *l_hl = DAP_NEW(dap_global_db_btree_page_t);
+    if (l_hl) {
         *l_hl = *l_page;
-        if (a_tree->mmap) {
+        if (a_tree->mmap && !l_hl->is_mmap_writable) {
             uint64_t l_offset = s_page_offset(l_hl->header.page_id);
             l_hl->data = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
                          + l_offset + sizeof(dap_global_db_btree_page_header_t);
@@ -1188,13 +1236,16 @@ static int s_insert_non_full(dap_global_db_btree_t *a_tree, dap_global_db_btree_
         }
         l_hl->is_arena = false;
         a_tree->hot_leaf = l_hl;
-    }
 
-    // Cache the path to hot_leaf for fast inline split
-    a_tree->hot_path_depth = l_depth;
-    for (int i = 0; i < l_depth; i++) {
-        a_tree->hot_path[i].page_id = l_path[i].page_id;
-        a_tree->hot_path[i].child_index = l_path[i].child_index;
+        // Cache the path to hot_leaf for fast inline split
+        a_tree->hot_path_depth = l_depth;
+        for (int i = 0; i < l_depth; i++) {
+            a_tree->hot_path[i].page_id = l_path[i].page_id;
+            a_tree->hot_path[i].child_index = l_path[i].child_index;
+        }
+    } else {
+        a_tree->hot_leaf = NULL;
+        a_tree->hot_path_depth = 0;
     }
 
     return 0;
@@ -1258,9 +1309,9 @@ dap_global_db_btree_t *dap_global_db_btree_create(const char *a_filepath)
         l_initial_mmap = BTREE_DATA_OFFSET;
     l_tree->mmap = dap_mmap_open(a_filepath,
         DAP_MMAP_RDWR | DAP_MMAP_CREATE | DAP_MMAP_SHARED, l_initial_mmap);
-    if (l_tree->mmap) {
-        dap_mmap_advise(l_tree->mmap, DAP_MMAP_ADVISE_RANDOM);
-    }
+    // No madvise on create: Linux MADV_NORMAL (default) gives moderate readahead
+    // which benefits sequential bulk inserts that follow. MADV_RANDOM would
+    // disable readahead, hurting sequential write by ~10-15%.
 
     // Arena for temporary allocations during write path (page reads, split
     // buffers, compact temp buffers). Sized for worst-case split with several
@@ -1558,9 +1609,34 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
             s_branch_insert_entry(l_parent, l_child_idx, &l_separator, l_sibling_id, NULL);
             s_page_write(a_tree, l_parent);  // 32B header writeback
 
-            // 7. Insert new key into empty sibling — trivially O(1), always succeeds
-            s_leaf_insert_entry(l_sib, 0, a_key, a_text_key, a_text_key_len,
-                                a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL);
+            // 7. Insert new key into empty sibling — fully inlined O(1)
+            //    Sibling is empty: no COW, no space check, no offset shift, no function call.
+            {
+                size_t l_esz = sizeof(dap_global_db_btree_leaf_entry_t)
+                               + a_text_key_len + a_value_len + a_sign_len;
+                uint16_t l_eoff = LEAF_LOWEST_OFFSET(l_sib->data) - (uint16_t)l_esz;
+                uint16_t *l_sib_offsets = (uint16_t *)(l_sib->data + LEAF_HEADER_SIZE);
+                l_sib_offsets[0] = l_eoff;
+
+                dap_global_db_btree_leaf_entry_t *l_ent =
+                    (dap_global_db_btree_leaf_entry_t *)(l_sib->data + l_eoff);
+                l_ent->driver_hash = *a_key;
+                l_ent->key_len = a_text_key_len;
+                l_ent->value_len = a_value_len;
+                l_ent->sign_len = a_sign_len;
+                l_ent->flags = a_flags;
+
+                uint8_t *l_edst = (uint8_t *)l_ent + sizeof(dap_global_db_btree_leaf_entry_t);
+                memcpy(l_edst, a_text_key, a_text_key_len);
+                if (a_value_len > 0)
+                    memcpy(l_edst + a_text_key_len, a_value, a_value_len);
+                if (a_sign_len > 0)
+                    memcpy(l_edst + a_text_key_len + a_value_len, a_sign, a_sign_len);
+
+                l_sib->header.entries_count = 1;
+                l_sib->header.free_space -= (l_esz + LEAF_OFFSET_SIZE);
+                LEAF_LOWEST_OFFSET(l_sib->data) = l_eoff;
+            }
             a_tree->header.items_count++;
             s_page_write(a_tree, l_sib);  // 32B header writeback
 
@@ -1627,9 +1703,16 @@ normal_path:
         return 0;
     }
 
-    // Read root via arena — root struct is transient, leaf promotion to
-    // hot_leaf creates a new heap struct in s_insert_non_full.
-    dap_global_db_btree_page_t *l_root = s_page_read(a_tree, a_tree->header.root_page, l_arena);
+    // Read root via writable mmap ref when possible — eliminates 4KB memcpy + 4KB memset
+    // per insert. Root struct is transient; leaf promotion to hot_leaf creates a new
+    // heap struct in s_insert_non_full.
+    dap_global_db_btree_page_t l_root_buf;
+    dap_global_db_btree_page_t *l_root;
+    if (a_tree->mmap && s_page_read_writable(a_tree, a_tree->header.root_page, &l_root_buf)) {
+        l_root = &l_root_buf;
+    } else {
+        l_root = s_page_read(a_tree, a_tree->header.root_page, l_arena);
+    }
     if (!l_root)
         return -1;
 
@@ -2130,7 +2213,7 @@ int dap_global_db_btree_get_ref(dap_global_db_btree_t *a_tree,
                     int l_mid = (l_low + l_high) / 2;
                     const dap_global_db_btree_leaf_entry_t *l_entry =
                         (const dap_global_db_btree_leaf_entry_t *)(l_data + l_offsets[l_mid]);
-                    int l_cmp = dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash);
+                    int l_cmp = s_key_cmp(a_key, &l_entry->driver_hash);
                     if (l_cmp == 0) {
                         // Found — extract refs
                         const uint8_t *l_edata = (const uint8_t *)l_entry
@@ -2171,7 +2254,7 @@ int dap_global_db_btree_get_ref(dap_global_db_btree_t *a_tree,
             int l_idx = l_count;  // Default: rightmost child
             while (l_low <= l_high) {
                 int l_mid = (l_low + l_high) / 2;
-                int l_cmp = dap_global_db_btree_key_compare(a_key, &l_entries[l_mid].driver_hash);
+                int l_cmp = s_key_cmp(a_key, &l_entries[l_mid].driver_hash);
                 if (l_cmp == 0) {
                     l_idx = l_mid + 1;
                     break;
