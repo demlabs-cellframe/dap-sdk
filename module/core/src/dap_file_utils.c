@@ -235,7 +235,9 @@ char* dap_path_get_basename(const char *a_file_name)
 {
     ssize_t l_base;
     ssize_t l_last_nonslash;
+    ssize_t l_len;
     const char *l_retval;
+    char *l_result;
 
     dap_return_val_if_fail(a_file_name != NULL, NULL);
 
@@ -270,10 +272,14 @@ char* dap_path_get_basename(const char *a_file_name)
     l_base = 1;
 #endif
 
-    //size_t l_len = l_last_nonslash - l_base;
+    l_len = l_last_nonslash - l_base;
     l_retval = a_file_name + l_base + 1;
+    l_result = DAP_NEW_Z_SIZE(char, (size_t)l_len + 1);
+    if (!l_result)
+        return NULL;
+    memcpy(l_result, l_retval, (size_t)l_len);
 
-    return dap_strdup(l_retval);
+    return l_result;
 }
 
 /**
@@ -564,6 +570,8 @@ const char* dap_path_get_ext(const char *a_filename)
     while(l_p != a_filename)
     {
         l_p--;
+        if (DAP_IS_DIR_SEPARATOR(*l_p))
+            break;
         if(*l_p == '.') {
             return l_p + 1;
         }
