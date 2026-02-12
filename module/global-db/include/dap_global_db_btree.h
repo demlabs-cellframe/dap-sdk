@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include "dap_common.h"
 #include "dap_mmap.h"
+#include "dap_arena.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -116,9 +117,9 @@ typedef struct dap_global_db_btree_page {
     dap_global_db_btree_page_header_t header;
     bool is_dirty;                       // Page has been modified
     bool is_mmap_ref;                    // Data points into mmap region (don't free)
+    bool is_mmap_writable;               // Writable mmap ref (skip COW, header-only writeback)
+    bool is_arena;                       // Allocated from arena (don't individually free)
     uint8_t *data;                       // Page data (entries area)
-    // For branch pages: array of branch entries
-    // For leaf pages: variable-size leaf entries
 } dap_global_db_btree_page_t;
 
 /**
@@ -133,6 +134,7 @@ typedef struct dap_global_db_btree {
     bool read_only;                      // Read-only mode
     uint64_t txn_id;                     // Current transaction ID
     dap_mmap_t *mmap;                    // Memory-mapped file handle (NULL = legacy I/O)
+    dap_arena_t *arena;                  // Bump allocator for temporary page allocations
 } dap_global_db_btree_t;
 
 /**
@@ -313,6 +315,59 @@ int dap_global_db_btree_cursor_get(dap_global_db_btree_cursor_t *a_cursor,
  * @return true if valid, false otherwise
  */
 bool dap_global_db_btree_cursor_valid(dap_global_db_btree_cursor_t *a_cursor);
+
+// ============================================================================
+// Zero-Copy Read API
+// ============================================================================
+
+/**
+ * @brief Zero-copy data reference.
+ *
+ * Points directly into the mmap region — no malloc, no memcpy.
+ * The reference is valid until the next mutating operation on the tree
+ * (insert, delete, clear) or until the tree is closed.
+ * Callers MUST NOT free or modify the data.
+ */
+typedef struct dap_global_db_btree_ref {
+    const void *data;    // Pointer into mmap region (NULL if field absent)
+    uint32_t len;        // Data length in bytes
+} dap_global_db_btree_ref_t;
+
+/**
+ * @brief Zero-copy get: returns pointers directly into mmap.
+ *
+ * Analogous to LMDB's mdb_get() — no memory allocation, no copying.
+ * Returned references are valid until the next write operation or close.
+ *
+ * @param a_tree      Tree handle
+ * @param a_key       Driver hash key to look up
+ * @param a_out_text_key  Output: text key reference (can be NULL)
+ * @param a_out_value     Output: value reference (can be NULL)
+ * @param a_out_sign      Output: signature reference (can be NULL)
+ * @param a_out_flags     Output: record flags (can be NULL)
+ * @return 0 on success, 1 if not found, negative on error
+ */
+int dap_global_db_btree_get_ref(dap_global_db_btree_t *a_tree,
+                                const dap_global_db_btree_key_t *a_key,
+                                dap_global_db_btree_ref_t *a_out_text_key,
+                                dap_global_db_btree_ref_t *a_out_value,
+                                dap_global_db_btree_ref_t *a_out_sign,
+                                uint8_t *a_out_flags);
+
+/**
+ * @brief Zero-copy cursor get: returns pointers directly into mmap.
+ *
+ * Like dap_global_db_btree_cursor_get(), but avoids all allocation.
+ * Returned refs are valid until cursor_move or any write operation.
+ *
+ * @return 0 on success, 1 if cursor invalid, negative on error
+ */
+int dap_global_db_btree_cursor_get_ref(dap_global_db_btree_cursor_t *a_cursor,
+                                       dap_global_db_btree_key_t *a_out_key,
+                                       dap_global_db_btree_ref_t *a_out_text_key,
+                                       dap_global_db_btree_ref_t *a_out_value,
+                                       dap_global_db_btree_ref_t *a_out_sign,
+                                       uint8_t *a_out_flags);
 
 // ============================================================================
 // Utility Functions

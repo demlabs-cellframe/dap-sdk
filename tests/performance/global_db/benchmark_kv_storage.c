@@ -276,13 +276,12 @@ static benchmark_result_t s_bench_dap_sequential_read(const benchmark_config_t *
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
         
-        void *read_value = NULL;
-        uint32_t read_len = 0;
+        dap_global_db_btree_ref_t val_ref;
         
-        if (dap_global_db_btree_get(btree, &btree_key, NULL, &read_value, &read_len,
-                                     NULL, NULL, NULL) == 0) {
+        if (dap_global_db_btree_get_ref(btree, &btree_key, NULL, &val_ref,
+                                         NULL, NULL) == 0) {
             read_count++;
-            DAP_DELETE(read_value);
+            // Zero-copy: val_ref.data points into mmap, no free needed
         }
     }
     
@@ -344,13 +343,11 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
         
-        void *read_value = NULL;
-        uint32_t read_len = 0;
+        dap_global_db_btree_ref_t val_ref;
         
-        if (dap_global_db_btree_get(btree, &btree_key, NULL, &read_value, &read_len,
-                                     NULL, NULL, NULL) == 0) {
+        if (dap_global_db_btree_get_ref(btree, &btree_key, NULL, &val_ref,
+                                         NULL, NULL) == 0) {
             read_count++;
-            DAP_DELETE(read_value);
         }
     }
     
@@ -414,6 +411,7 @@ static benchmark_result_t s_bench_mdbx_sequential_write(const benchmark_config_t
     }
     
     mdbx_txn_commit(txn);
+    txn = NULL;
     
     byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
     byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
@@ -454,7 +452,150 @@ static benchmark_result_t s_bench_mdbx_sequential_write(const benchmark_config_t
     return result;
 }
 
-// Add more MDBX benchmarks here...
+// Helper: open MDBX env+dbi, populate with sequential data, return open env+dbi
+static int s_mdbx_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
+                                     MDBX_env **out_env, MDBX_dbi *out_dbi)
+{
+    if (mdbx_env_create(out_env) != MDBX_SUCCESS)
+        return -1;
+    mdbx_env_set_geometry(*out_env, 0, 0, 1024ULL * 1024 * 1024, -1, -1, -1);
+    if (mdbx_env_open(*out_env, db_path, MDBX_NOSUBDIR | MDBX_WRITEMAP, 0644) != MDBX_SUCCESS) {
+        mdbx_env_close(*out_env);
+        return -1;
+    }
+    MDBX_txn *txn = NULL;
+    if (mdbx_txn_begin(*out_env, NULL, 0, &txn) != MDBX_SUCCESS) {
+        mdbx_env_close(*out_env);
+        return -1;
+    }
+    if (mdbx_dbi_open(txn, NULL, MDBX_CREATE, out_dbi) != MDBX_SUCCESS) {
+        mdbx_txn_abort(txn);
+        mdbx_env_close(*out_env);
+        return -1;
+    }
+    mdbx_txn_commit(txn);
+    txn = NULL;
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        if (i % cfg->batch_size == 0) {
+            if (txn) mdbx_txn_commit(txn);
+            mdbx_txn_begin(*out_env, NULL, 0, &txn);
+        }
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        MDBX_val mk = { .iov_base = key, .iov_len = cfg->key_size };
+        MDBX_val mv = { .iov_base = value, .iov_len = cfg->value_size };
+        mdbx_put(txn, *out_dbi, &mk, &mv, 0);
+    }
+    if (txn) mdbx_txn_commit(txn);
+    DAP_DELETE(key);
+    DAP_DELETE(value);
+    return 0;
+}
+
+static benchmark_result_t s_bench_mdbx_random_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "MDBX", .operation = "random write" };
+    char *db_path = dap_strdup_printf("%s/mdbx_bench_rw", cfg->db_path);
+    mkdir(db_path, 0755);
+    MDBX_env *env = NULL;
+    MDBX_dbi dbi;
+    MDBX_txn *txn = NULL;
+    if (mdbx_env_create(&env) != MDBX_SUCCESS) { DAP_DELETE(db_path); return result; }
+    mdbx_env_set_geometry(env, 0, 0, 1024ULL * 1024 * 1024, -1, -1, -1);
+    if (mdbx_env_open(env, db_path, MDBX_NOSUBDIR | MDBX_WRITEMAP, 0644) != MDBX_SUCCESS) {
+        mdbx_env_close(env); DAP_DELETE(db_path); return result;
+    }
+    if (mdbx_txn_begin(env, NULL, 0, &txn) != MDBX_SUCCESS) {
+        mdbx_env_close(env); DAP_DELETE(db_path); return result;
+    }
+    if (mdbx_dbi_open(txn, NULL, MDBX_CREATE, &dbi) != MDBX_SUCCESS) {
+        mdbx_txn_abort(txn); mdbx_env_close(env); DAP_DELETE(db_path); return result;
+    }
+    mdbx_txn_commit(txn); txn = NULL;
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        if (i % cfg->batch_size == 0) {
+            if (txn) mdbx_txn_commit(txn);
+            mdbx_txn_begin(env, NULL, 0, &txn);
+        }
+        s_generate_key(key, cfg->key_size, indices[i]);
+        s_generate_value(value, cfg->value_size, indices[i]);
+        MDBX_val mk = { .iov_base = key, .iov_len = cfg->key_size };
+        MDBX_val mv = { .iov_base = value, .iov_len = cfg->value_size };
+        mdbx_put(txn, dbi, &mk, &mv, 0);
+    }
+    if (txn) mdbx_txn_commit(txn);
+    double elapsed = s_get_time_sec() - start;
+    DAP_DELETE(key); DAP_DELETE(value); DAP_DELETE(indices);
+    mdbx_env_close(env); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_mdbx_sequential_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "MDBX", .operation = "seq read" };
+    char *db_path = dap_strdup_printf("%s/mdbx_bench_sr", cfg->db_path);
+    mkdir(db_path, 0755);
+    MDBX_env *env; MDBX_dbi dbi;
+    if (s_mdbx_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    MDBX_txn *txn = NULL;
+    mdbx_txn_begin(env, NULL, MDBX_TXN_RDONLY, &txn);
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        MDBX_val mk = { .iov_base = key, .iov_len = cfg->key_size };
+        MDBX_val mv;
+        if (mdbx_get(txn, dbi, &mk, &mv) == MDBX_SUCCESS) read_count++;
+    }
+    double elapsed = s_get_time_sec() - start;
+    mdbx_txn_abort(txn);
+    DAP_DELETE(key); mdbx_env_close(env); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_mdbx_random_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "MDBX", .operation = "random read" };
+    char *db_path = dap_strdup_printf("%s/mdbx_bench_rr", cfg->db_path);
+    mkdir(db_path, 0755);
+    MDBX_env *env; MDBX_dbi dbi;
+    if (s_mdbx_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MDBX_txn *txn = NULL;
+    mdbx_txn_begin(env, NULL, MDBX_TXN_RDONLY, &txn);
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        MDBX_val mk = { .iov_base = key, .iov_len = cfg->key_size };
+        MDBX_val mv;
+        if (mdbx_get(txn, dbi, &mk, &mv) == MDBX_SUCCESS) read_count++;
+    }
+    double elapsed = s_get_time_sec() - start;
+    mdbx_txn_abort(txn);
+    DAP_DELETE(key); DAP_DELETE(indices); mdbx_env_close(env); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
 
 #endif // WITH_MDBX
 
@@ -502,6 +643,7 @@ static benchmark_result_t s_bench_lmdb_sequential_write(const benchmark_config_t
     }
     
     mdb_txn_commit(txn);
+    txn = NULL;
     
     byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
     byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
@@ -539,6 +681,142 @@ static benchmark_result_t s_bench_lmdb_sequential_write(const benchmark_config_t
     result.ops_per_sec = cfg->num_records / elapsed;
     result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
     
+    return result;
+}
+
+// Helper: open LMDB env+dbi, populate with sequential data
+static int s_lmdb_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
+                                     MDB_env **out_env, MDB_dbi *out_dbi)
+{
+    if (mdb_env_create(out_env) != 0) return -1;
+    mdb_env_set_mapsize(*out_env, 1024ULL * 1024 * 1024);
+    if (mdb_env_open(*out_env, db_path, MDB_WRITEMAP | MDB_MAPASYNC, 0644) != 0) {
+        mdb_env_close(*out_env); return -1;
+    }
+    MDB_txn *txn = NULL;
+    if (mdb_txn_begin(*out_env, NULL, 0, &txn) != 0) {
+        mdb_env_close(*out_env); return -1;
+    }
+    if (mdb_dbi_open(txn, NULL, 0, out_dbi) != 0) {
+        mdb_txn_abort(txn); mdb_env_close(*out_env); return -1;
+    }
+    mdb_txn_commit(txn); txn = NULL;
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        if (i % cfg->batch_size == 0) {
+            if (txn) mdb_txn_commit(txn);
+            mdb_txn_begin(*out_env, NULL, 0, &txn);
+        }
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        MDB_val mk = { .mv_data = key, .mv_size = cfg->key_size };
+        MDB_val mv = { .mv_data = value, .mv_size = cfg->value_size };
+        mdb_put(txn, *out_dbi, &mk, &mv, 0);
+    }
+    if (txn) mdb_txn_commit(txn);
+    DAP_DELETE(key); DAP_DELETE(value);
+    return 0;
+}
+
+static benchmark_result_t s_bench_lmdb_random_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "LMDB", .operation = "random write" };
+    char *db_path = dap_strdup_printf("%s/lmdb_bench_rw", cfg->db_path);
+    mkdir(db_path, 0755);
+    MDB_env *env = NULL; MDB_dbi dbi; MDB_txn *txn = NULL;
+    if (mdb_env_create(&env) != 0) { DAP_DELETE(db_path); return result; }
+    mdb_env_set_mapsize(env, 1024ULL * 1024 * 1024);
+    if (mdb_env_open(env, db_path, MDB_WRITEMAP | MDB_MAPASYNC, 0644) != 0) {
+        mdb_env_close(env); DAP_DELETE(db_path); return result;
+    }
+    if (mdb_txn_begin(env, NULL, 0, &txn) != 0) {
+        mdb_env_close(env); DAP_DELETE(db_path); return result;
+    }
+    if (mdb_dbi_open(txn, NULL, 0, &dbi) != 0) {
+        mdb_txn_abort(txn); mdb_env_close(env); DAP_DELETE(db_path); return result;
+    }
+    mdb_txn_commit(txn); txn = NULL;
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        if (i % cfg->batch_size == 0) {
+            if (txn) mdb_txn_commit(txn);
+            mdb_txn_begin(env, NULL, 0, &txn);
+        }
+        s_generate_key(key, cfg->key_size, indices[i]);
+        s_generate_value(value, cfg->value_size, indices[i]);
+        MDB_val mk = { .mv_data = key, .mv_size = cfg->key_size };
+        MDB_val mv = { .mv_data = value, .mv_size = cfg->value_size };
+        mdb_put(txn, dbi, &mk, &mv, 0);
+    }
+    if (txn) mdb_txn_commit(txn);
+    double elapsed = s_get_time_sec() - start;
+    DAP_DELETE(key); DAP_DELETE(value); DAP_DELETE(indices);
+    mdb_env_close(env); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_lmdb_sequential_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "LMDB", .operation = "seq read" };
+    char *db_path = dap_strdup_printf("%s/lmdb_bench_sr", cfg->db_path);
+    mkdir(db_path, 0755);
+    MDB_env *env; MDB_dbi dbi;
+    if (s_lmdb_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    MDB_txn *txn = NULL;
+    mdb_txn_begin(env, NULL, MDB_RDONLY, &txn);
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        MDB_val mk = { .mv_data = key, .mv_size = cfg->key_size };
+        MDB_val mv;
+        if (mdb_get(txn, dbi, &mk, &mv) == 0) read_count++;
+    }
+    double elapsed = s_get_time_sec() - start;
+    mdb_txn_abort(txn);
+    DAP_DELETE(key); mdb_env_close(env); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_lmdb_random_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "LMDB", .operation = "random read" };
+    char *db_path = dap_strdup_printf("%s/lmdb_bench_rr", cfg->db_path);
+    mkdir(db_path, 0755);
+    MDB_env *env; MDB_dbi dbi;
+    if (s_lmdb_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MDB_txn *txn = NULL;
+    mdb_txn_begin(env, NULL, MDB_RDONLY, &txn);
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        MDB_val mk = { .mv_data = key, .mv_size = cfg->key_size };
+        MDB_val mv;
+        if (mdb_get(txn, dbi, &mk, &mv) == 0) read_count++;
+    }
+    double elapsed = s_get_time_sec() - start;
+    mdb_txn_abort(txn);
+    DAP_DELETE(key); DAP_DELETE(indices); mdb_env_close(env); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
     return result;
 }
 
@@ -607,6 +885,122 @@ static benchmark_result_t s_bench_rocksdb_sequential_write(const benchmark_confi
     return result;
 }
 
+// Helper: open RocksDB, populate with sequential data
+static rocksdb_t *s_rocksdb_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
+                                               rocksdb_options_t **out_opts)
+{
+    *out_opts = rocksdb_options_create();
+    rocksdb_options_set_create_if_missing(*out_opts, 1);
+    char *err = NULL;
+    rocksdb_t *db = rocksdb_open(*out_opts, db_path, &err);
+    if (err) { free(err); rocksdb_options_destroy(*out_opts); return NULL; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    rocksdb_writeoptions_t *wo = rocksdb_writeoptions_create();
+    rocksdb_writeoptions_disable_WAL(wo, 1);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        rocksdb_put(db, wo, (char *)key, cfg->key_size, (char *)value, cfg->value_size, &err);
+        if (err) { free(err); err = NULL; }
+    }
+    rocksdb_writeoptions_destroy(wo);
+    DAP_DELETE(key); DAP_DELETE(value);
+    return db;
+}
+
+static benchmark_result_t s_bench_rocksdb_random_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "RocksDB", .operation = "random write" };
+    char *db_path = dap_strdup_printf("%s/rocksdb_bench_rw", cfg->db_path);
+    char *err = NULL;
+    rocksdb_options_t *options = rocksdb_options_create();
+    rocksdb_options_set_create_if_missing(options, 1);
+    rocksdb_t *db = rocksdb_open(options, db_path, &err);
+    if (err) { free(err); rocksdb_options_destroy(options); DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    rocksdb_writeoptions_t *wo = rocksdb_writeoptions_create();
+    if (!cfg->sync_writes) rocksdb_writeoptions_disable_WAL(wo, 1);
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        s_generate_value(value, cfg->value_size, indices[i]);
+        rocksdb_put(db, wo, (char *)key, cfg->key_size, (char *)value, cfg->value_size, &err);
+        if (err) { free(err); err = NULL; }
+    }
+    double elapsed = s_get_time_sec() - start;
+    rocksdb_writeoptions_destroy(wo);
+    DAP_DELETE(key); DAP_DELETE(value); DAP_DELETE(indices);
+    rocksdb_close(db); rocksdb_options_destroy(options); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_rocksdb_sequential_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "RocksDB", .operation = "seq read" };
+    char *db_path = dap_strdup_printf("%s/rocksdb_bench_sr", cfg->db_path);
+    rocksdb_options_t *options;
+    rocksdb_t *db = s_rocksdb_open_and_populate(cfg, db_path, &options);
+    if (!db) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    rocksdb_readoptions_t *ro = rocksdb_readoptions_create();
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        size_t vlen = 0;
+        char *err = NULL;
+        char *val = rocksdb_get(db, ro, (char *)key, cfg->key_size, &vlen, &err);
+        if (val) { read_count++; free(val); }
+        if (err) free(err);
+    }
+    double elapsed = s_get_time_sec() - start;
+    rocksdb_readoptions_destroy(ro);
+    DAP_DELETE(key); rocksdb_close(db); rocksdb_options_destroy(options); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_rocksdb_random_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "RocksDB", .operation = "random read" };
+    char *db_path = dap_strdup_printf("%s/rocksdb_bench_rr", cfg->db_path);
+    rocksdb_options_t *options;
+    rocksdb_t *db = s_rocksdb_open_and_populate(cfg, db_path, &options);
+    if (!db) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    rocksdb_readoptions_t *ro = rocksdb_readoptions_create();
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        size_t vlen = 0;
+        char *err = NULL;
+        char *val = rocksdb_get(db, ro, (char *)key, cfg->key_size, &vlen, &err);
+        if (val) { read_count++; free(val); }
+        if (err) free(err);
+    }
+    double elapsed = s_get_time_sec() - start;
+    rocksdb_readoptions_destroy(ro);
+    DAP_DELETE(key); DAP_DELETE(indices); rocksdb_close(db); rocksdb_options_destroy(options); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
 #endif // WITH_ROCKSDB
 
 // ============================================================================
@@ -658,6 +1052,15 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     s_cleanup_db_dir(cfg->db_path);
     results[result_count] = s_bench_mdbx_sequential_write(cfg);
     s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_mdbx_random_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_mdbx_sequential_read(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_mdbx_random_read(cfg);
+    s_print_result(&results[result_count++]);
 #endif
     
 #ifdef WITH_LMDB
@@ -665,12 +1068,30 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     s_cleanup_db_dir(cfg->db_path);
     results[result_count] = s_bench_lmdb_sequential_write(cfg);
     s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_lmdb_random_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_lmdb_sequential_read(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_lmdb_random_read(cfg);
+    s_print_result(&results[result_count++]);
 #endif
     
 #ifdef WITH_ROCKSDB
     printf("\nRocksDB:\n");
     s_cleanup_db_dir(cfg->db_path);
     results[result_count] = s_bench_rocksdb_sequential_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_rocksdb_random_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_rocksdb_sequential_read(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_rocksdb_random_read(cfg);
     s_print_result(&results[result_count++]);
 #endif
     

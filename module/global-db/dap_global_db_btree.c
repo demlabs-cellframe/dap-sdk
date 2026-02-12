@@ -48,53 +48,67 @@
 
 static bool s_debug_more = false;
 
-// Forward declarations needed early
-static dap_global_db_btree_page_t *s_page_alloc(void);
-static void s_page_free(dap_global_db_btree_page_t *a_page);
-
 // ============================================================================
 // Forward Declarations
 // ============================================================================
 
+// Header I/O
 static int s_header_read(dap_global_db_btree_t *a_tree);
 static int s_header_write(dap_global_db_btree_t *a_tree);
 static uint64_t s_header_checksum(dap_global_db_btree_header_t *a_header);
 
-static dap_global_db_btree_page_t *s_page_alloc(void);
+// Page lifecycle — arena-aware: when a_arena is non-NULL, allocations use the
+// bump allocator (O(1) pointer arithmetic) instead of malloc. Arena pages
+// are freed in bulk via dap_arena_reset(), not individually.
+static dap_global_db_btree_page_t *s_page_alloc(dap_arena_t *a_arena);
 static void s_page_free(dap_global_db_btree_page_t *a_page);
-static dap_global_db_btree_page_t *s_page_read(dap_global_db_btree_t *a_tree, uint64_t a_page_id);
+static dap_global_db_btree_page_t *s_page_read(dap_global_db_btree_t *a_tree, uint64_t a_page_id, dap_arena_t *a_arena);
 static int s_page_write(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_t *a_page);
 static uint64_t s_page_allocate_new(dap_global_db_btree_t *a_tree);
 
+// COW — detach mmap ref into a private buffer (arena or heap)
+static void s_page_cow(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena);
+
+// B-tree navigation (read-only, no arena needed)
 static int s_search_in_page(dap_global_db_btree_page_t *a_page, const dap_global_db_btree_key_t *a_key, bool *a_found);
-static int s_insert_into_leaf(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_t *a_page, int a_index,
-                              const dap_global_db_btree_key_t *a_key, const char *a_text_key, uint32_t a_text_key_len,
-                              const void *a_value, uint32_t a_value_len, const void *a_sign, uint32_t a_sign_len,
-                              uint8_t a_flags);
+
+// Branch page entry access — all mutations, tree needed for arena
+static dap_global_db_btree_branch_entry_t *s_branch_entry_at(dap_global_db_btree_page_t *a_page, int a_index);
+static void s_branch_set_child(dap_global_db_btree_page_t *a_page, int a_index, uint64_t a_child, dap_arena_t *a_arena);
+static void s_branch_set_entry(dap_global_db_btree_page_t *a_page, int a_index, const dap_global_db_btree_key_t *a_key, uint64_t a_child, dap_arena_t *a_arena);
+static void s_branch_insert_entry(dap_global_db_btree_page_t *a_page, int a_index, const dap_global_db_btree_key_t *a_key, uint64_t a_child, dap_arena_t *a_arena);
+static void s_branch_remove_entry(dap_global_db_btree_page_t *a_page, int a_index, dap_arena_t *a_arena);
+
+// Leaf page entry access
+static int s_leaf_entry_count(dap_global_db_btree_page_t *a_page);
+static dap_global_db_btree_leaf_entry_t *s_leaf_entry_at(dap_global_db_btree_page_t *a_page, int a_index,
+                                                    uint8_t **a_out_data, size_t *a_out_total_size);
+static int s_leaf_find_entry(dap_global_db_btree_page_t *a_page, const dap_global_db_btree_key_t *a_key, int *a_out_index);
+static size_t s_leaf_entry_total_size(uint32_t a_key_len, uint32_t a_value_len, uint32_t a_sign_len);
+
+// Leaf mutations — arena-aware
+static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
+                               const dap_global_db_btree_key_t *a_key, const char *a_text_key, uint32_t a_text_key_len,
+                               const void *a_value, uint32_t a_value_len, const void *a_sign, uint32_t a_sign_len,
+                               uint8_t a_flags, dap_arena_t *a_arena);
+static int s_leaf_delete_entry(dap_global_db_btree_page_t *a_page, int a_index, dap_arena_t *a_arena);
+static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
+                               const char *a_text_key, uint32_t a_text_key_len,
+                               const void *a_value, uint32_t a_value_len,
+                               const void *a_sign, uint32_t a_sign_len,
+                               uint8_t a_flags, dap_arena_t *a_arena);
+static void s_leaf_compact(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena);
+
+// Page checks
+static bool s_page_needs_split(dap_global_db_btree_page_t *a_page, uint32_t a_text_key_len,
+                               uint32_t a_value_len, uint32_t a_sign_len);
+
+// Split & insert
 static int s_split_child(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_t *a_parent, int a_index);
 static int s_insert_non_full(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_t *a_page,
                              const dap_global_db_btree_key_t *a_key, const char *a_text_key, uint32_t a_text_key_len,
                              const void *a_value, uint32_t a_value_len, const void *a_sign, uint32_t a_sign_len,
                              uint8_t a_flags);
-
-// Branch page entry access
-static dap_global_db_btree_branch_entry_t *s_branch_entry_at(dap_global_db_btree_page_t *a_page, int a_index);
-static void s_branch_set_entry(dap_global_db_btree_page_t *a_page, int a_index, const dap_global_db_btree_key_t *a_key, uint64_t a_child);
-static void s_branch_insert_entry(dap_global_db_btree_page_t *a_page, int a_index, const dap_global_db_btree_key_t *a_key, uint64_t a_child);
-
-// Leaf page entry access - uses offset-based variable-length storage
-static int s_leaf_entry_count(dap_global_db_btree_page_t *a_page);
-static dap_global_db_btree_leaf_entry_t *s_leaf_entry_at(dap_global_db_btree_page_t *a_page, int a_index, 
-                                                    uint8_t **a_out_data, size_t *a_out_total_size);
-static int s_leaf_find_entry(dap_global_db_btree_page_t *a_page, const dap_global_db_btree_key_t *a_key, int *a_out_index);
-static size_t s_leaf_entry_total_size(uint32_t a_key_len, uint32_t a_value_len, uint32_t a_sign_len);
-
-// Check if page needs split for given entry size
-static bool s_page_needs_split(dap_global_db_btree_page_t *a_page, uint32_t a_text_key_len, 
-                               uint32_t a_value_len, uint32_t a_sign_len);
-
-// Leaf entry deletion (with compaction)
-static int s_leaf_delete_entry(dap_global_db_btree_page_t *a_page, int a_index);
 
 // Hot leaf management
 static void s_hot_leaf_flush(dap_global_db_btree_t *a_tree);
@@ -200,26 +214,32 @@ static int s_header_write(dap_global_db_btree_t *a_tree)
 // Page Operations
 // ============================================================================
 
-static dap_global_db_btree_page_t *s_page_alloc(void)
+static dap_global_db_btree_page_t *s_page_alloc(dap_arena_t *a_arena)
 {
-    dap_global_db_btree_page_t *l_page = DAP_NEW_Z(dap_global_db_btree_page_t);
-    if (!l_page)
-        return NULL;
-    
-    l_page->data = DAP_NEW_Z_SIZE(uint8_t, PAGE_DATA_SIZE);
-    if (!l_page->data) {
-        DAP_DELETE(l_page);
-        return NULL;
+    dap_global_db_btree_page_t *l_page;
+    if (a_arena) {
+        l_page = dap_arena_alloc_zero(a_arena, sizeof(*l_page));
+        l_page->data = dap_arena_alloc(a_arena, PAGE_DATA_SIZE);
+        memset(l_page->data, 0, PAGE_DATA_SIZE);
+        l_page->is_arena = true;
+    } else {
+        l_page = DAP_NEW_Z(dap_global_db_btree_page_t);
+        if (!l_page)
+            return NULL;
+        l_page->data = DAP_NEW_Z_SIZE(uint8_t, PAGE_DATA_SIZE);
+        if (!l_page->data) {
+            DAP_DELETE(l_page);
+            return NULL;
+        }
     }
-    
     l_page->header.free_space = PAGE_DATA_SIZE;
     return l_page;
 }
 
 static void s_page_free(dap_global_db_btree_page_t *a_page)
 {
-    if (!a_page)
-        return;
+    if (!a_page || a_page->is_arena)
+        return;  // Arena handles lifetime via dap_arena_reset()
     if (!a_page->is_mmap_ref)
         DAP_DEL_Z(a_page->data);
     DAP_DELETE(a_page);
@@ -227,13 +247,22 @@ static void s_page_free(dap_global_db_btree_page_t *a_page)
 
 /**
  * @brief Ensure page data is in a private (writable) buffer, not an mmap reference.
- * Call before any mutation of page->data.
+ *
+ * Writable mmap refs (is_mmap_writable=true) are already safe to modify
+ * in-place — COW is skipped for them. When a_arena is provided, the copy
+ * goes into arena (O(1) bump); otherwise into heap.
  */
-static void s_page_cow(dap_global_db_btree_page_t *a_page)
+static void s_page_cow(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena)
 {
-    if (!a_page || !a_page->is_mmap_ref)
+    if (!a_page || !a_page->is_mmap_ref || a_page->is_mmap_writable)
         return;
-    uint8_t *l_copy = DAP_NEW_SIZE(uint8_t, PAGE_DATA_SIZE);
+    uint8_t *l_copy;
+    if (a_arena) {
+        l_copy = dap_arena_alloc(a_arena, PAGE_DATA_SIZE);
+        a_page->is_arena = true;
+    } else {
+        l_copy = DAP_NEW_SIZE(uint8_t, PAGE_DATA_SIZE);
+    }
     memcpy(l_copy, a_page->data, PAGE_DATA_SIZE);
     a_page->data = l_copy;
     a_page->is_mmap_ref = false;
@@ -245,21 +274,18 @@ static uint64_t s_page_offset(uint64_t a_page_id)
     return BTREE_DATA_OFFSET + (a_page_id - 1) * DAP_GLOBAL_DB_BTREE_PAGE_SIZE;
 }
 
-static dap_global_db_btree_page_t *s_page_read(dap_global_db_btree_t *a_tree, uint64_t a_page_id)
+static dap_global_db_btree_page_t *s_page_read(dap_global_db_btree_t *a_tree, uint64_t a_page_id, dap_arena_t *a_arena)
 {
     if (a_page_id == 0)
         return NULL;
 
     // mmap fast path: memcpy from mapped region (no syscalls, no lseek)
-    // NOTE: zero-copy refs are unsafe because mremap() can relocate the mapping
-    // base address, invalidating all outstanding pointers. memcpy from mmap is
-    // still significantly faster than read()/lseek() syscalls.
     if (a_tree->mmap) {
         uint64_t l_offset = s_page_offset(a_page_id);
         if (l_offset + DAP_GLOBAL_DB_BTREE_PAGE_SIZE > dap_mmap_get_size(a_tree->mmap))
             return NULL;
         uint8_t *l_src = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap) + l_offset;
-        dap_global_db_btree_page_t *l_page = s_page_alloc();
+        dap_global_db_btree_page_t *l_page = s_page_alloc(a_arena);
         if (!l_page)
             return NULL;
         memcpy(&l_page->header, l_src, sizeof(dap_global_db_btree_page_header_t));
@@ -269,7 +295,7 @@ static dap_global_db_btree_page_t *s_page_read(dap_global_db_btree_t *a_tree, ui
     }
 
     // Legacy fallback: read()/lseek()
-    dap_global_db_btree_page_t *l_page = s_page_alloc();
+    dap_global_db_btree_page_t *l_page = s_page_alloc(a_arena);
     if (!l_page)
         return NULL;
     
@@ -336,6 +362,55 @@ static bool s_page_read_ref(dap_global_db_btree_t *a_tree, uint64_t a_page_id,
     return false;
 }
 
+/**
+ * @brief Get a writable mmap-backed page for direct in-place modification.
+ *
+ * Like s_page_read_ref, but sets is_mmap_writable=true so that:
+ *   1. s_page_cow() is a no-op (modifications go directly into mmap)
+ *   2. s_page_write() only writes the 32-byte header (data is already in mmap)
+ *   3. s_page_free() doesn't free the data pointer
+ *
+ * This is the LMDB WRITEMAP approach: zero data copies for page modifications.
+ *
+ * SAFETY: The caller MUST NOT call s_page_allocate_new() while holding writable
+ * refs, because mremap may relocate the mapping base. Use s_page_resolve_mmap()
+ * to re-resolve pointers after a potential mremap.
+ *
+ * @return true on success, false if mmap not available or page out of range
+ */
+static bool s_page_read_writable(dap_global_db_btree_t *a_tree, uint64_t a_page_id,
+                                 dap_global_db_btree_page_t *a_out)
+{
+    if (a_page_id == 0 || !a_out || !a_tree->mmap || a_tree->read_only)
+        return false;
+
+    uint64_t l_offset = s_page_offset(a_page_id);
+    if (l_offset + DAP_GLOBAL_DB_BTREE_PAGE_SIZE > dap_mmap_get_size(a_tree->mmap))
+        return false;
+    uint8_t *l_ptr = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap) + l_offset;
+    memcpy(&a_out->header, l_ptr, sizeof(dap_global_db_btree_page_header_t));
+    a_out->data = l_ptr + sizeof(dap_global_db_btree_page_header_t);
+    a_out->is_mmap_ref = true;
+    a_out->is_mmap_writable = true;
+    a_out->is_dirty = false;
+    return true;
+}
+
+/**
+ * @brief Re-resolve a writable mmap page's data pointer after a potential mremap.
+ *
+ * Called after s_page_allocate_new() which may call dap_mmap_resize(), invalidating
+ * all outstanding mmap pointers.
+ */
+static void s_page_resolve_mmap(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_t *a_page)
+{
+    if (!a_page || !a_page->is_mmap_writable || !a_tree->mmap)
+        return;
+    uint64_t l_offset = s_page_offset(a_page->header.page_id);
+    uint8_t *l_ptr = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap) + l_offset;
+    a_page->data = l_ptr + sizeof(dap_global_db_btree_page_header_t);
+}
+
 static int s_page_write(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_t *a_page)
 {
     if (!a_page || a_tree->read_only)
@@ -343,15 +418,25 @@ static int s_page_write(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_
 
     uint64_t l_offset = s_page_offset(a_page->header.page_id);
 
-    // mmap fast path: memcpy into mapped region
+    // mmap fast path
     if (a_tree->mmap) {
         if (l_offset + DAP_GLOBAL_DB_BTREE_PAGE_SIZE > dap_mmap_get_size(a_tree->mmap)) {
             log_it(L_ERROR, "Page %lu offset beyond mmap size", (unsigned long)a_page->header.page_id);
             return -1;
         }
         uint8_t *l_dst = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap) + l_offset;
+
+        // Writable mmap ref: data was modified in-place inside the mmap region,
+        // only the 32-byte header (which lives on the stack/struct) needs writeback.
+        // This is the LMDB WRITEMAP approach — zero data copies.
+        if (a_page->is_mmap_writable) {
+            memcpy(l_dst, &a_page->header, sizeof(dap_global_db_btree_page_header_t));
+            a_page->is_dirty = false;
+            return 0;
+        }
+
+        // Heap-backed page: write header + data
         memcpy(l_dst, &a_page->header, sizeof(dap_global_db_btree_page_header_t));
-        // If data is already an mmap ref to this exact location, skip copy
         uint8_t *l_dst_data = l_dst + sizeof(dap_global_db_btree_page_header_t);
         if (a_page->data != l_dst_data)
             memcpy(l_dst_data, a_page->data, PAGE_DATA_SIZE);
@@ -388,11 +473,10 @@ static uint64_t s_page_allocate_new(dap_global_db_btree_t *a_tree)
     // Check free list first
     if (a_tree->header.free_list_head != 0) {
         uint64_t l_page_id = a_tree->header.free_list_head;
-        dap_global_db_btree_page_t *l_free_page = s_page_read(a_tree, l_page_id);
+        dap_global_db_btree_page_t *l_free_page = s_page_read(a_tree, l_page_id, a_tree->arena);
         if (l_free_page) {
-            // Free list stores next pointer in first 8 bytes of data
             a_tree->header.free_list_head = *(uint64_t *)l_free_page->data;
-            s_page_free(l_free_page);
+            // l_free_page freed by arena_reset
             return l_page_id;
         }
     }
@@ -415,6 +499,8 @@ static uint64_t s_page_allocate_new(dap_global_db_btree_t *a_tree)
                 a_tree->header.total_pages--;
                 return 0;
             }
+            // mremap may relocate base address — re-resolve any writable mmap refs
+            s_page_resolve_mmap(a_tree, a_tree->hot_leaf);
         }
     }
 
@@ -453,11 +539,11 @@ static uint64_t s_branch_get_child(dap_global_db_btree_page_t *a_page, int a_ind
     return l_entry ? l_entry->child_page : 0;
 }
 
-static void s_branch_set_child(dap_global_db_btree_page_t *a_page, int a_index, uint64_t a_child)
+static void s_branch_set_child(dap_global_db_btree_page_t *a_page, int a_index, uint64_t a_child, dap_arena_t *a_arena)
 {
     if (!(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
         return;
-    s_page_cow(a_page);
+    s_page_cow(a_page, a_arena);
     if (a_index == 0) {
         *(uint64_t *)a_page->data = a_child;
     } else {
@@ -468,9 +554,9 @@ static void s_branch_set_child(dap_global_db_btree_page_t *a_page, int a_index, 
     a_page->is_dirty = true;
 }
 
-static void s_branch_set_entry(dap_global_db_btree_page_t *a_page, int a_index, const dap_global_db_btree_key_t *a_key, uint64_t a_child)
+static void s_branch_set_entry(dap_global_db_btree_page_t *a_page, int a_index, const dap_global_db_btree_key_t *a_key, uint64_t a_child, dap_arena_t *a_arena)
 {
-    s_page_cow(a_page);
+    s_page_cow(a_page, a_arena);
     dap_global_db_btree_branch_entry_t *l_entry = s_branch_entry_at(a_page, a_index);
     if (l_entry) {
         l_entry->driver_hash = *a_key;
@@ -479,9 +565,9 @@ static void s_branch_set_entry(dap_global_db_btree_page_t *a_page, int a_index, 
     }
 }
 
-static void s_branch_insert_entry(dap_global_db_btree_page_t *a_page, int a_index, const dap_global_db_btree_key_t *a_key, uint64_t a_child)
+static void s_branch_insert_entry(dap_global_db_btree_page_t *a_page, int a_index, const dap_global_db_btree_key_t *a_key, uint64_t a_child, dap_arena_t *a_arena)
 {
-    s_page_cow(a_page);
+    s_page_cow(a_page, a_arena);
     // Shift entries from index to the right
     int l_count = a_page->header.entries_count;
     dap_global_db_btree_branch_entry_t *l_entries = (dap_global_db_btree_branch_entry_t *)(a_page->data + sizeof(uint64_t));
@@ -593,9 +679,9 @@ static int s_leaf_find_entry(dap_global_db_btree_page_t *a_page, const dap_globa
 static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
                                const dap_global_db_btree_key_t *a_key, const char *a_text_key, uint32_t a_text_key_len,
                                const void *a_value, uint32_t a_value_len, const void *a_sign, uint32_t a_sign_len,
-                               uint8_t a_flags)
+                               uint8_t a_flags, dap_arena_t *a_arena)
 {
-    s_page_cow(a_page);
+    s_page_cow(a_page, a_arena);
     int l_count = a_page->header.entries_count;
     size_t l_entry_size = s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
     
@@ -671,12 +757,12 @@ static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
  * This function re-packs the remaining entries contiguously from PAGE_DATA_SIZE
  * downward and updates the offsets array accordingly.
  */
-static void s_leaf_compact(dap_global_db_btree_page_t *a_page)
+static void s_leaf_compact(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena)
 {
     int l_count = a_page->header.entries_count;
     if (l_count == 0)
         return;
-    s_page_cow(a_page);
+    s_page_cow(a_page, a_arena);
 
     uint16_t *l_offsets = (uint16_t *)(a_page->data + LEAF_HEADER_SIZE);
 
@@ -704,12 +790,11 @@ static void s_leaf_compact(dap_global_db_btree_page_t *a_page)
     // and the highest-offset entries are already near the end, we use memmove.
     uint16_t l_write_offset = PAGE_DATA_SIZE;
 
-    // We need to be careful: entries could overlap during compaction if an entry
-    // is being moved to a lower address that overlaps with another entry's
-    // current position. Using a temporary buffer eliminates this risk.
-    uint8_t *l_tmp = DAP_NEW_Z_SIZE(uint8_t, l_total_entry_data);
-    if (!l_tmp)
-        return;  // Out of memory, page stays fragmented (safe but suboptimal)
+    // Use arena for temp buffer: O(1) bump allocation, freed in bulk with arena_reset.
+    // l_total_entry_data <= PAGE_DATA_SIZE (~4KB).
+    uint8_t *l_tmp = a_arena
+        ? dap_arena_alloc(a_arena, l_total_entry_data)
+        : DAP_NEW_SIZE(uint8_t, l_total_entry_data);
 
     // Copy all entry data to temp buffer
     uint8_t *l_dst = l_tmp;
@@ -727,13 +812,14 @@ static void s_leaf_compact(dap_global_db_btree_page_t *a_page)
         l_dst += l_entries[i].size;
     }
 
-    DAP_DELETE(l_tmp);
-
     // Recalculate free_space precisely: gap between end of offsets array and
     // first entry (lowest offset)
     size_t l_offsets_end = LEAF_HEADER_SIZE + l_count * LEAF_OFFSET_SIZE;
     a_page->header.free_space = l_write_offset - l_offsets_end;
     a_page->is_dirty = true;
+
+    if (!a_arena)
+        DAP_DELETE(l_tmp);
 }
 
 /**
@@ -761,28 +847,27 @@ static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
                                const char *a_text_key, uint32_t a_text_key_len,
                                const void *a_value, uint32_t a_value_len,
                                const void *a_sign, uint32_t a_sign_len,
-                               uint8_t a_flags)
+                               uint8_t a_flags, dap_arena_t *a_arena)
 {
-    s_page_cow(a_page);
-    
+    s_page_cow(a_page, a_arena);
+
     uint8_t *l_old_data;
     size_t l_old_size;
     dap_global_db_btree_leaf_entry_t *l_old_entry = s_leaf_entry_at(a_page, a_index, &l_old_data, &l_old_size);
     if (!l_old_entry)
         return -1;
-    
+
     dap_global_db_btree_key_t l_key = l_old_entry->driver_hash;
-    
-    // Check if new size fits
+
     size_t l_new_size = s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
-    
+
     if (l_new_size <= l_old_size) {
-        // Update in place — new data fits within existing allocation
+        // Update in place
         l_old_entry->key_len = a_text_key_len;
         l_old_entry->value_len = a_value_len;
         l_old_entry->sign_len = a_sign_len;
         l_old_entry->flags = a_flags;
-        
+
         uint8_t *l_data = l_old_data;
         if (a_text_key && a_text_key_len > 0) {
             memcpy(l_data, a_text_key, a_text_key_len);
@@ -795,38 +880,26 @@ static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
         if (a_sign && a_sign_len > 0) {
             memcpy(l_data, a_sign, a_sign_len);
         }
-        
+
         a_page->is_dirty = true;
         return 0;
     }
-    
-    // Entry grew: delete old entry, compact to reclaim space, re-insert.
-    // If the page still has enough space after compaction, the re-insert
-    // succeeds in-place. Otherwise we return -1 to signal that the caller
-    // must handle a page split.
-    if (s_leaf_delete_entry(a_page, a_index) != 0)
+
+    // Entry grew: delete old, compact, re-insert
+    if (s_leaf_delete_entry(a_page, a_index, a_arena) != 0)
         return -1;
 
-    // After delete + compact, check if the new entry fits
     int l_count_after = a_page->header.entries_count;
     size_t l_header_after = LEAF_HEADER_SIZE + (l_count_after + 1) * LEAF_OFFSET_SIZE;
     if (l_header_after + l_new_size > a_page->header.free_space) {
-        // Not enough space even after compaction — re-insert old entry to restore
-        // state, then return -1 so the caller knows a split is needed.
-        // We must re-insert at the correct position (binary search for the key).
-        int l_restore_idx;
-        s_leaf_find_entry(a_page, &l_key, &l_restore_idx);
-        // Restore with old data — extract from the still-valid pointers
-        // (l_old_data is invalid after delete+compact, so we can't restore
-        // the original entry). Return -1 and let the caller handle it.
+        // Not enough space even after compaction — signal split needed
         return -1;
     }
 
-    // Re-insert at the correct sorted position
     int l_new_index;
     s_leaf_find_entry(a_page, &l_key, &l_new_index);
     return s_leaf_insert_entry(a_page, l_new_index, &l_key, a_text_key, a_text_key_len,
-                               a_value, a_value_len, a_sign, a_sign_len, a_flags);
+                               a_value, a_value_len, a_sign, a_sign_len, a_flags, a_arena);
 }
 
 /**
@@ -836,34 +909,31 @@ static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
  * the page to reclaim physical space. This keeps free_space accurate and
  * prevents fragmentation from accumulating after repeated delete/insert cycles.
  */
-static int s_leaf_delete_entry(dap_global_db_btree_page_t *a_page, int a_index)
+static int s_leaf_delete_entry(dap_global_db_btree_page_t *a_page, int a_index, dap_arena_t *a_arena)
 {
     int l_count = a_page->header.entries_count;
     if (a_index < 0 || a_index >= l_count)
         return -1;
-    
-    s_page_cow(a_page);
+
+    s_page_cow(a_page, a_arena);
 
     // Get entry size for free_space accounting
     size_t l_entry_size;
     s_leaf_entry_at(a_page, a_index, NULL, &l_entry_size);
-    
+
     // Shift offsets to close the gap
     uint16_t *l_offsets = (uint16_t *)(a_page->data + LEAF_HEADER_SIZE);
     for (int i = a_index; i < l_count - 1; i++) {
         l_offsets[i] = l_offsets[i + 1];
     }
-    
+
     a_page->header.entries_count--;
-    // Tentatively restore space (entry data + its offset slot)
     a_page->header.free_space += l_entry_size + LEAF_OFFSET_SIZE;
     a_page->is_dirty = true;
 
-    // Compact page: re-pack entries contiguously from the end of the page.
-    // This reclaims the physical gap left by the deleted entry and ensures
-    // free_space is precisely recalculated.
-    s_leaf_compact(a_page);
-    
+    // Compact: reclaim physical space
+    s_leaf_compact(a_page, a_arena);
+
     return 0;
 }
 
@@ -910,108 +980,102 @@ static int s_search_in_page(dap_global_db_btree_page_t *a_page, const dap_global
 
 static int s_split_child(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_t *a_parent, int a_index)
 {
+    dap_arena_t *l_arena = a_tree->arena;
     uint64_t l_child_id = s_branch_get_child(a_parent, a_index);
-    dap_global_db_btree_page_t *l_child = s_page_read(a_tree, l_child_id);
+    dap_global_db_btree_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
     if (!l_child)
         return -1;
-    
-    // Allocate new sibling
+
+    // Allocate new sibling page on disk. NOTE: s_page_allocate_new may call
+    // dap_mmap_resize → mremap, which relocates the mmap base. After this call
+    // ALL outstanding mmap pointers (including a_parent->data if it was a writable
+    // mmap ref) are potentially invalid. We re-resolve a_parent below.
     uint64_t l_sibling_id = s_page_allocate_new(a_tree);
-    dap_global_db_btree_page_t *l_sibling = s_page_alloc();
-    if (!l_sibling) {
-        s_page_free(l_child);
-        return -1;
+
+    // Re-resolve parent's mmap pointer if it was a writable mmap ref — mremap
+    // may have invalidated it.
+    if (a_parent->is_mmap_writable && a_tree->mmap) {
+        uint64_t l_parent_offset = s_page_offset(a_parent->header.page_id);
+        a_parent->data = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
+                         + l_parent_offset + sizeof(dap_global_db_btree_page_header_t);
     }
-    
+
+    dap_global_db_btree_page_t *l_sibling = s_page_alloc(l_arena);
+    if (!l_sibling)
+        return -1;
+
     l_sibling->header.page_id = l_sibling_id;
-    l_sibling->header.flags = l_child->header.flags;  // Same type (leaf/branch)
+    l_sibling->header.flags = l_child->header.flags;
     l_sibling->header.right_sibling = l_child->header.right_sibling;
     l_sibling->header.left_sibling = l_child_id;
     l_child->header.right_sibling = l_sibling_id;
 
-    // Update the old right sibling's left_sibling to point to new sibling
+    // Update old right sibling's left_sibling
     if (l_sibling->header.right_sibling != 0) {
-        dap_global_db_btree_page_t *l_old_right = s_page_read(a_tree, l_sibling->header.right_sibling);
+        dap_global_db_btree_page_t *l_old_right = s_page_read(a_tree, l_sibling->header.right_sibling, l_arena);
         if (l_old_right) {
             l_old_right->header.left_sibling = l_sibling_id;
             s_page_write(a_tree, l_old_right);
-            s_page_free(l_old_right);
+            // l_old_right freed by arena_reset
         }
     }
-    
+
     int l_count = l_child->header.entries_count;
     int l_mid = l_count / 2;
-    
+
     dap_global_db_btree_key_t l_median_key;
-    
+
     if (l_child->header.flags & DAP_GLOBAL_DB_PAGE_LEAF) {
-        // Split leaf: copy upper half to sibling
-        // Median key is promoted (copied) to parent
-        
-        // Calculate how much space will be freed from child
         size_t l_freed_space = 0;
-        
+
         for (int i = l_mid; i < l_count; i++) {
             uint8_t *l_data;
             size_t l_entry_total_size;
             dap_global_db_btree_leaf_entry_t *l_entry = s_leaf_entry_at(l_child, i, &l_data, &l_entry_total_size);
-            
+
             char *l_text_key = (char *)l_data;
             uint8_t *l_value = l_data + l_entry->key_len;
             uint8_t *l_sign = l_value + l_entry->value_len;
-            
+
             s_leaf_insert_entry(l_sibling, i - l_mid, &l_entry->driver_hash,
                                l_text_key, l_entry->key_len,
                                l_value, l_entry->value_len,
                                l_sign, l_entry->sign_len,
-                               l_entry->flags);
-            
-            if (i == l_mid) {
+                               l_entry->flags, l_arena);
+
+            if (i == l_mid)
                 l_median_key = l_entry->driver_hash;
-            }
-            
-            // Track freed space (entry + offset)
+
             l_freed_space += l_entry_total_size + LEAF_OFFSET_SIZE;
         }
-        
-        // Truncate child and compact: entries remain scattered after removing
-        // the upper half, so re-pack them contiguously from the end of the page.
-        // Without this, subsequent inserts can compute a negative offset (uint16_t
-        // underflow) and write outside the page buffer.
+
         l_child->header.entries_count = l_mid;
         l_child->header.free_space += l_freed_space;
-        s_leaf_compact(l_child);
+        s_leaf_compact(l_child, l_arena);
     } else {
-        // Split branch: median key moves to parent, not copied
         dap_global_db_btree_branch_entry_t *l_median = s_branch_entry_at(l_child, l_mid);
         l_median_key = l_median->driver_hash;
-        
-        // Copy keys and children after median to sibling
-        // First child of sibling is the right child of median
-        s_branch_set_child(l_sibling, 0, l_median->child_page);
-        
+
+        s_branch_set_child(l_sibling, 0, l_median->child_page, l_arena);
+
         for (int i = l_mid + 1; i < l_count; i++) {
             dap_global_db_btree_branch_entry_t *l_entry = s_branch_entry_at(l_child, i);
-            s_branch_insert_entry(l_sibling, i - l_mid - 1, &l_entry->driver_hash, l_entry->child_page);
+            s_branch_insert_entry(l_sibling, i - l_mid - 1, &l_entry->driver_hash, l_entry->child_page, l_arena);
         }
-        
-        // Truncate child (remove median and upper half)
+
         l_child->header.entries_count = l_mid;
     }
-    
+
     l_child->is_dirty = true;
-    
-    // Insert median key and sibling pointer into parent
-    s_branch_insert_entry(a_parent, a_index, &l_median_key, l_sibling_id);
-    
-    // Write pages
+
+    // Insert median into parent — parent data pointer is valid (re-resolved above)
+    s_branch_insert_entry(a_parent, a_index, &l_median_key, l_sibling_id, l_arena);
+
     s_page_write(a_tree, l_child);
     s_page_write(a_tree, l_sibling);
     s_page_write(a_tree, a_parent);
-    
-    s_page_free(l_child);
-    s_page_free(l_sibling);
-    
+
+    // Arena pages — no individual free needed
     return 0;
 }
 
@@ -1020,76 +1084,93 @@ static int s_insert_non_full(dap_global_db_btree_t *a_tree, dap_global_db_btree_
                              const void *a_value, uint32_t a_value_len, const void *a_sign, uint32_t a_sign_len,
                              uint8_t a_flags)
 {
+    dap_arena_t *l_arena = a_tree->arena;
+
     if (a_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF) {
         // Insert into leaf
         int l_index;
         if (s_leaf_find_entry(a_page, a_key, &l_index) == 0) {
             if (s_leaf_update_entry(a_page, l_index, a_text_key, a_text_key_len,
-                                   a_value, a_value_len, a_sign, a_sign_len, a_flags) != 0) {
-                // Update failed — entry grew beyond page capacity after compact.
-                // The old entry was already deleted by s_leaf_update_entry. 
-                // The page has space reclaimed but the new value doesn't fit.
-                // Write current page state (old entry removed), signal that the
-                // caller must re-insert via the normal split path.
+                                   a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
+                // Update failed — entry grew beyond page capacity. Old entry
+                // already deleted. Write state, signal re-insert from root.
                 s_page_write(a_tree, a_page);
-                a_tree->header.items_count--;  // Will be re-incremented by re-insert
-                // Re-do: the key is no longer in the tree; fall through to a fresh
-                // insert which will go through the split machinery.
-                // We return a special code to trigger re-insert from the top.
-                return 1;  // Signal: need re-insert from root (key was removed)
+                a_tree->header.items_count--;
+                return 1;
             }
         } else {
             if (s_leaf_insert_entry(a_page, l_index, a_key, a_text_key, a_text_key_len,
-                                   a_value, a_value_len, a_sign, a_sign_len, a_flags) != 0) {
+                                   a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
                 log_it(L_ERROR, "Failed to insert into leaf - no space");
                 return -1;
             }
             a_tree->header.items_count++;
         }
-        
+
         s_page_write(a_tree, a_page);
 
-        // Capture leaf as hot_leaf: transfer ownership from caller.
-        // The caller (branch handler) checks hot_leaf to skip s_page_free().
+        // Capture leaf as hot_leaf for subsequent fast-path inserts.
+        // Hot leaf must be heap-allocated (survives arena_reset) with a writable
+        // mmap data pointer (direct mmap writes, header-only writeback).
         if (a_tree->hot_leaf && a_tree->hot_leaf != a_page)
             s_page_free(a_tree->hot_leaf);
-        a_tree->hot_leaf = a_page;
+
+        if (a_page->is_mmap_writable && !a_page->is_arena) {
+            // Already writable mmap on heap — keep as-is
+            a_tree->hot_leaf = a_page;
+        } else {
+            // Promote to heap struct with writable mmap data pointer
+            dap_global_db_btree_page_t *l_hl = DAP_NEW(dap_global_db_btree_page_t);
+            *l_hl = *a_page;
+            if (a_tree->mmap) {
+                uint64_t l_offset = s_page_offset(l_hl->header.page_id);
+                l_hl->data = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
+                             + l_offset + sizeof(dap_global_db_btree_page_header_t);
+                l_hl->is_mmap_ref = true;
+                l_hl->is_mmap_writable = true;
+            }
+            l_hl->is_arena = false;
+            a_tree->hot_leaf = l_hl;
+        }
         return 0;
     }
-    
-    // Branch page - find child and recurse
+
+    // Branch page — find child and recurse.
+    // Children are read via arena (freed in bulk after top-level operation).
+    // We do NOT use writable mmap refs for branch traversal because:
+    // 1. Branch pages are only transiently needed for navigation
+    // 2. s_split_child → s_page_allocate_new can trigger mremap, invalidating
+    //    all mmap pointers up the recursion stack
     bool l_found;
     int l_index = s_search_in_page(a_page, a_key, &l_found);
-    
+
     uint64_t l_child_id = s_branch_get_child(a_page, l_index);
-    dap_global_db_btree_page_t *l_child = s_page_read(a_tree, l_child_id);
+    dap_global_db_btree_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
     if (!l_child)
         return -1;
-    
+
     // Check if child needs split
     if (s_page_needs_split(l_child, a_text_key_len, a_value_len, a_sign_len)) {
-        s_page_free(l_child);
-        
+        // l_child is arena-allocated — no explicit free needed
+
         if (s_split_child(a_tree, a_page, l_index) != 0)
             return -1;
-        
+
+        // After split, a_page might have been re-resolved inside s_split_child
+        // (if writable mmap). Re-read the branch entry to pick the right child.
         dap_global_db_btree_branch_entry_t *l_entry = s_branch_entry_at(a_page, l_index);
-        if (dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash) > 0) {
+        if (dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash) > 0)
             l_index++;
-        }
-        
+
         l_child_id = s_branch_get_child(a_page, l_index);
-        l_child = s_page_read(a_tree, l_child_id);
+        l_child = s_page_read(a_tree, l_child_id, l_arena);
         if (!l_child)
             return -1;
     }
-    
+
     int l_ret = s_insert_non_full(a_tree, l_child, a_key, a_text_key, a_text_key_len,
                                   a_value, a_value_len, a_sign, a_sign_len, a_flags);
-    
-    // If the leaf was captured as hot_leaf, don't free it
-    if (a_tree->hot_leaf != l_child)
-        s_page_free(l_child);
+    // l_child is arena-allocated or captured as hot_leaf — no explicit free
     return l_ret;
 }
 
@@ -1151,6 +1232,11 @@ dap_global_db_btree_t *dap_global_db_btree_create(const char *a_filepath)
         dap_mmap_advise(l_tree->mmap, DAP_MMAP_ADVISE_RANDOM);
     }
 
+    // Arena for temporary allocations during write path (page reads, split
+    // buffers, compact temp buffers). Sized for worst-case split with several
+    // levels of recursion: each level uses ~1 page + overhead.
+    l_tree->arena = dap_arena_new(DAP_GLOBAL_DB_BTREE_PAGE_SIZE * 32);
+
     debug_if(s_debug_more, L_INFO, "Created B-tree file: %s", a_filepath);
     return l_tree;
 }
@@ -1194,6 +1280,9 @@ dap_global_db_btree_t *dap_global_db_btree_open(const char *a_filepath, bool a_r
         return NULL;
     }
 
+    // Arena for temporary allocations during write path
+    l_tree->arena = dap_arena_new(DAP_GLOBAL_DB_BTREE_PAGE_SIZE * 32);
+
     log_it(L_INFO, "Opened B-tree file: %s (items: %lu, pages: %lu, mmap: %s)",
            a_filepath, (unsigned long)l_tree->header.items_count,
            (unsigned long)l_tree->header.total_pages,
@@ -1214,6 +1303,11 @@ void dap_global_db_btree_close(dap_global_db_btree_t *a_tree)
     
     if (a_tree->root)
         s_page_free(a_tree->root);
+
+    if (a_tree->arena) {
+        dap_arena_free(a_tree->arena);
+        a_tree->arena = NULL;
+    }
 
     if (a_tree->mmap) {
         dap_mmap_close(a_tree->mmap);
@@ -1278,9 +1372,11 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
 {
     dap_return_val_if_fail(a_tree && a_key && !a_tree->read_only, -1);
 
+    dap_arena_t *l_arena = a_tree->arena;
+
     // ---- Hot leaf fast path ------------------------------------------------
-    // For sequential inserts, the same leaf is hit repeatedly. Keeping the last
-    // written leaf in memory eliminates tree traversal (root + branch reads).
+    // For sequential inserts, the same leaf is hit repeatedly. The hot_leaf is
+    // a heap-allocated struct with writable mmap data — no arena involvement.
     if (a_tree->hot_leaf && a_tree->hot_leaf->header.entries_count > 0) {
         dap_global_db_btree_page_t *hl = a_tree->hot_leaf;
         dap_global_db_btree_leaf_entry_t *l_last =
@@ -1289,10 +1385,9 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
 
         bool l_in_range = false;
         if (l_cmp > 0) {
-            // Key > last entry → only valid for rightmost leaf
             l_in_range = (hl->header.right_sibling == 0);
         } else if (l_cmp == 0) {
-            l_in_range = true;  // Update existing
+            l_in_range = true;
         } else {
             dap_global_db_btree_leaf_entry_t *l_first = s_leaf_entry_at(hl, 0, NULL, NULL);
             l_in_range = (dap_global_db_btree_key_compare(a_key, &l_first->driver_hash) >= 0);
@@ -1301,23 +1396,21 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
         if (l_in_range && !s_page_needs_split(hl, a_text_key_len, a_value_len, a_sign_len)) {
             int l_idx;
             if (s_leaf_find_entry(hl, a_key, &l_idx) == 0) {
+                // Hot leaf is writable mmap — no arena needed for in-place update
                 if (s_leaf_update_entry(hl, l_idx, a_text_key, a_text_key_len,
-                                        a_value, a_value_len, a_sign, a_sign_len, a_flags) == 0) {
+                                        a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
                     hl->is_dirty = true;
-                    // Page write deferred — flushed on eviction or sync
                     return 0;
                 }
             } else {
                 if (s_leaf_insert_entry(hl, l_idx, a_key, a_text_key, a_text_key_len,
-                                        a_value, a_value_len, a_sign, a_sign_len, a_flags) == 0) {
+                                        a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
                     a_tree->header.items_count++;
                     hl->is_dirty = true;
-                    // Page write deferred — flushed on eviction or sync
                     return 0;
                 }
             }
         }
-        // Miss — flush hot leaf, proceed normally
         s_hot_leaf_flush(a_tree);
     }
 
@@ -1325,88 +1418,88 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
     // Empty tree - create root
     if (a_tree->header.root_page == 0) {
         uint64_t l_root_id = s_page_allocate_new(a_tree);
-        dap_global_db_btree_page_t *l_root = s_page_alloc();
+        // Root page allocated on heap (not arena) — survives as hot_leaf
+        dap_global_db_btree_page_t *l_root = s_page_alloc(NULL);
         if (!l_root)
             return -1;
-        
+
         l_root->header.page_id = l_root_id;
         l_root->header.flags = DAP_GLOBAL_DB_PAGE_LEAF | DAP_GLOBAL_DB_PAGE_ROOT;
         l_root->header.left_sibling = 0;
-        
-        // Insert first entry
+
         if (s_leaf_insert_entry(l_root, 0, a_key, a_text_key, a_text_key_len,
-                               a_value, a_value_len, a_sign, a_sign_len, a_flags) != 0) {
+                               a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) != 0) {
             s_page_free(l_root);
             return -1;
         }
-        
+
         a_tree->header.root_page = l_root_id;
         a_tree->header.items_count = 1;
         a_tree->header.tree_height = 1;
-        
-        s_page_write(a_tree, l_root);
-        // Capture as hot leaf
-        a_tree->hot_leaf = l_root;
 
+        s_page_write(a_tree, l_root);
+        a_tree->hot_leaf = l_root;
         s_header_write(a_tree);
         return 0;
     }
-    
-    // Read root
-    dap_global_db_btree_page_t *l_root = s_page_read(a_tree, a_tree->header.root_page);
+
+    // Read root via arena — root struct is transient, leaf promotion to
+    // hot_leaf creates a new heap struct in s_insert_non_full.
+    dap_global_db_btree_page_t *l_root = s_page_read(a_tree, a_tree->header.root_page, l_arena);
     if (!l_root)
         return -1;
-    
+
     // Check if root needs split
     if (s_page_needs_split(l_root, a_text_key_len, a_value_len, a_sign_len)) {
         uint64_t l_new_root_id = s_page_allocate_new(a_tree);
-        dap_global_db_btree_page_t *l_new_root = s_page_alloc();
-        if (!l_new_root) {
-            s_page_free(l_root);
+        dap_global_db_btree_page_t *l_new_root = s_page_alloc(l_arena);
+        if (!l_new_root)
             return -1;
-        }
-        
+
         l_new_root->header.page_id = l_new_root_id;
         l_new_root->header.flags = DAP_GLOBAL_DB_PAGE_BRANCH | DAP_GLOBAL_DB_PAGE_ROOT;
         l_new_root->header.entries_count = 0;
-        
+
         l_root->header.flags &= ~DAP_GLOBAL_DB_PAGE_ROOT;
-        s_branch_set_child(l_new_root, 0, a_tree->header.root_page);
-        
+        s_branch_set_child(l_new_root, 0, a_tree->header.root_page, l_arena);
+
         s_page_write(a_tree, l_root);
-        s_page_free(l_root);
-        
-        if (s_split_child(a_tree, l_new_root, 0) != 0) {
-            s_page_free(l_new_root);
+        // l_root is arena — no explicit free
+
+        if (s_split_child(a_tree, l_new_root, 0) != 0)
             return -1;
-        }
-        
+
         a_tree->header.root_page = l_new_root_id;
         a_tree->header.tree_height++;
-        
+
         int l_ret = s_insert_non_full(a_tree, l_new_root, a_key, a_text_key, a_text_key_len,
                                       a_value, a_value_len, a_sign, a_sign_len, a_flags);
-        // Don't free if captured as hot_leaf
-        if (a_tree->hot_leaf != l_new_root)
-            s_page_free(l_new_root);
+        // l_new_root is arena — freed by arena_reset
         s_header_write(a_tree);
+
+        // Bulk-free all transient arena allocations from this insert
+        if (l_arena)
+            dap_arena_reset(l_arena);
         return l_ret;
     }
-    
+
     int l_ret = s_insert_non_full(a_tree, l_root, a_key, a_text_key, a_text_key_len,
                                   a_value, a_value_len, a_sign, a_sign_len, a_flags);
-    if (a_tree->hot_leaf != l_root)
-        s_page_free(l_root);
+    // l_root is arena — freed by reset
 
-    // Return code 1 from s_insert_non_full means: an existing entry was deleted
-    // because it grew beyond page capacity, and now the key needs to be re-inserted
-    // from the root (will go through the normal split path). Recurse once.
+    // Code 1: entry deleted+needs re-insert via split path
     if (l_ret == 1) {
         s_hot_leaf_flush(a_tree);
+        if (l_arena)
+            dap_arena_reset(l_arena);
         return dap_global_db_btree_insert(a_tree, a_key, a_text_key, a_text_key_len,
                                            a_value, a_value_len, a_sign, a_sign_len, a_flags);
     }
-    
+
+    // Bulk-free all transient arena allocations from this insert
+    if (l_arena)
+        dap_arena_reset(l_arena);
+
     return l_ret;
 }
 
@@ -1415,15 +1508,14 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
  */
 static void s_page_add_to_free_list(dap_global_db_btree_t *a_tree, uint64_t a_page_id)
 {
-    // Free list: page data starts with a uint64_t "next" pointer.
-    dap_global_db_btree_page_t *l_page = s_page_alloc();
+    dap_global_db_btree_page_t *l_page = s_page_alloc(a_tree->arena);
     if (!l_page) return;
     l_page->header.page_id = a_page_id;
     l_page->header.flags = 0;
     l_page->header.entries_count = 0;
     *(uint64_t *)l_page->data = a_tree->header.free_list_head;
     s_page_write(a_tree, l_page);
-    s_page_free(l_page);
+    // l_page freed by arena_reset
     a_tree->header.free_list_head = a_page_id;
 }
 
@@ -1434,9 +1526,9 @@ static void s_page_add_to_free_list(dap_global_db_btree_t *a_tree, uint64_t a_pa
  * After removal, the child at (a_index + 1) is removed (the right side
  * of the separator). The child at a_index is preserved.
  */
-static void s_branch_remove_entry(dap_global_db_btree_page_t *a_page, int a_index)
+static void s_branch_remove_entry(dap_global_db_btree_page_t *a_page, int a_index, dap_arena_t *a_arena)
 {
-    s_page_cow(a_page);
+    s_page_cow(a_page, a_arena);
     int l_count = a_page->header.entries_count;
     dap_global_db_btree_branch_entry_t *l_entries =
         (dap_global_db_btree_branch_entry_t *)(a_page->data + sizeof(uint64_t));
@@ -1458,7 +1550,8 @@ static void s_branch_remove_entry(dap_global_db_btree_page_t *a_page, int a_inde
  * @return 0 on success, -1 if space insufficient.
  */
 static int s_leaf_merge_into(dap_global_db_btree_page_t *a_dst,
-                             dap_global_db_btree_page_t *a_src)
+                             dap_global_db_btree_page_t *a_src,
+                             dap_arena_t *a_arena)
 {
     int l_src_count = a_src->header.entries_count;
     for (int i = 0; i < l_src_count; i++) {
@@ -1473,8 +1566,8 @@ static int s_leaf_merge_into(dap_global_db_btree_page_t *a_dst,
                                 (char *)l_data, l_entry->key_len,
                                 l_data + l_entry->key_len, l_entry->value_len,
                                 l_data + l_entry->key_len + l_entry->value_len,
-                                l_entry->sign_len, l_entry->flags) != 0) {
-            return -1;  // No space
+                                l_entry->sign_len, l_entry->flags, a_arena) != 0) {
+            return -1;
         }
     }
     return 0;
@@ -1507,20 +1600,21 @@ int dap_global_db_btree_delete(dap_global_db_btree_t *a_tree, const dap_global_d
 {
     dap_return_val_if_fail(a_tree && a_key && !a_tree->read_only, -1);
 
-    // Invalidate hot leaf — delete may affect its page
     s_hot_leaf_flush(a_tree);
-    
+
     if (a_tree->header.root_page == 0)
-        return 1;  // Not found - empty tree
-    
-    // Navigate to leaf, recording the parent path for rebalancing
+        return 1;
+
+    dap_arena_t *l_arena = a_tree->arena;
+
+    // Navigate to leaf, recording path for rebalancing
     s_path_entry_t l_path[BTREE_PATH_MAX_DEPTH];
     int l_depth = 0;
 
-    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page);
+    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page, l_arena);
     if (!l_page)
         return -1;
-    
+
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
         bool l_found;
         int l_index = s_search_in_page(l_page, a_key, &l_found);
@@ -1530,155 +1624,127 @@ int dap_global_db_btree_delete(dap_global_db_btree_t *a_tree, const dap_global_d
             l_depth++;
         }
         uint64_t l_child_id = s_branch_get_child(l_page, l_index);
-        s_page_free(l_page);
-        
-        l_page = s_page_read(a_tree, l_child_id);
-        if (!l_page)
+        // l_page is arena — no explicit free
+
+        l_page = s_page_read(a_tree, l_child_id, l_arena);
+        if (!l_page) {
+            if (l_arena) dap_arena_reset(l_arena);
             return -1;
+        }
     }
-    
+
     // Find entry in leaf
     int l_index;
     if (s_leaf_find_entry(l_page, a_key, &l_index) != 0) {
-        s_page_free(l_page);
+        if (l_arena) dap_arena_reset(l_arena);
         return 1;  // Not found
     }
-    
-    // Delete entry (compacts page and reclaims space)
-    if (s_leaf_delete_entry(l_page, l_index) != 0) {
-        s_page_free(l_page);
+
+    if (s_leaf_delete_entry(l_page, l_index, l_arena) != 0) {
+        if (l_arena) dap_arena_reset(l_arena);
         return -1;
     }
-    
+
     a_tree->header.items_count--;
 
     // ---- Leaf rebalancing after deletion ------------------------------------
-    // If the leaf is empty (or critically underflowing) and is not the root,
-    // try to merge it with a sibling to reclaim the page and keep the tree
-    // compact. This prevents unbounded growth of nearly-empty pages after
-    // repeated delete operations.
     bool l_is_root = (l_page->header.flags & DAP_GLOBAL_DB_PAGE_ROOT) != 0;
 
     if (!l_is_root && l_page->header.entries_count < DAP_GLOBAL_DB_BTREE_MIN_KEYS && l_depth > 0) {
-        // Determine available siblings and whether merging is feasible
         uint64_t l_right_id = l_page->header.right_sibling;
         uint64_t l_left_id  = l_page->header.left_sibling;
 
-        // Compute how much space our entries consume
         size_t l_our_bytes = s_leaf_total_entry_bytes(l_page);
         int l_our_count = l_page->header.entries_count;
 
-        // Read parent for separator management
         s_path_entry_t *l_parent_path = &l_path[l_depth - 1];
-        dap_global_db_btree_page_t *l_parent = s_page_read(a_tree, l_parent_path->page_id);
+        dap_global_db_btree_page_t *l_parent = s_page_read(a_tree, l_parent_path->page_id, l_arena);
 
         bool l_merged = false;
 
-        // Try merge with right sibling first
+        // Try merge with right sibling
         if (!l_merged && l_right_id != 0 && l_parent) {
-            dap_global_db_btree_page_t *l_right = s_page_read(a_tree, l_right_id);
+            dap_global_db_btree_page_t *l_right = s_page_read(a_tree, l_right_id, l_arena);
             if (l_right) {
                 size_t l_right_bytes = s_leaf_total_entry_bytes(l_right);
                 size_t l_combined = l_our_bytes + l_right_bytes;
-                // Check if combined entries fit in one page
                 size_t l_offsets_space = LEAF_HEADER_SIZE +
                     (l_our_count + l_right->header.entries_count) * LEAF_OFFSET_SIZE;
                 if (l_offsets_space + l_combined <= PAGE_DATA_SIZE) {
-                    // Merge: move our entries into right sibling, then remove our page
-                    if (s_leaf_merge_into(l_right, l_page) == 0) {
-                        // Update sibling chain
+                    if (s_leaf_merge_into(l_right, l_page, l_arena) == 0) {
                         l_right->header.left_sibling = l_page->header.left_sibling;
                         s_page_write(a_tree, l_right);
 
-                        // Update left neighbor's right_sibling
                         if (l_left_id != 0) {
-                            dap_global_db_btree_page_t *l_left = s_page_read(a_tree, l_left_id);
+                            dap_global_db_btree_page_t *l_left = s_page_read(a_tree, l_left_id, l_arena);
                             if (l_left) {
                                 l_left->header.right_sibling = l_right_id;
                                 s_page_write(a_tree, l_left);
-                                s_page_free(l_left);
                             }
                         }
 
-                        // Remove separator from parent
                         int l_sep_idx = l_parent_path->child_index;
-                        // We're the left child; the separator at sep_idx points to right child.
-                        // After removing, the right child inherits our slot.
                         if (l_sep_idx < l_parent->header.entries_count) {
-                            // Replace the child pointer: child[sep_idx] now points to right
-                            s_branch_set_child(l_parent, l_sep_idx, l_right_id);
-                            s_branch_remove_entry(l_parent, l_sep_idx);
+                            s_branch_set_child(l_parent, l_sep_idx, l_right_id, l_arena);
+                            s_branch_remove_entry(l_parent, l_sep_idx, l_arena);
                         } else if (l_sep_idx > 0) {
-                            // We're the rightmost child; remove the last separator
-                            s_branch_remove_entry(l_parent, l_sep_idx - 1);
+                            s_branch_remove_entry(l_parent, l_sep_idx - 1, l_arena);
                         }
                         s_page_write(a_tree, l_parent);
 
-                        // Free our page
                         s_page_add_to_free_list(a_tree, l_page->header.page_id);
                         l_merged = true;
                     }
                 }
-                s_page_free(l_right);
             }
         }
 
         // Try merge with left sibling
         if (!l_merged && l_left_id != 0 && l_parent) {
-            dap_global_db_btree_page_t *l_left = s_page_read(a_tree, l_left_id);
+            dap_global_db_btree_page_t *l_left = s_page_read(a_tree, l_left_id, l_arena);
             if (l_left) {
                 size_t l_left_bytes = s_leaf_total_entry_bytes(l_left);
                 size_t l_combined = l_our_bytes + l_left_bytes;
                 size_t l_offsets_space = LEAF_HEADER_SIZE +
                     (l_our_count + l_left->header.entries_count) * LEAF_OFFSET_SIZE;
                 if (l_offsets_space + l_combined <= PAGE_DATA_SIZE) {
-                    // Merge: move our entries into left sibling, then remove our page
-                    if (s_leaf_merge_into(l_left, l_page) == 0) {
-                        // Update sibling chain
+                    if (s_leaf_merge_into(l_left, l_page, l_arena) == 0) {
                         l_left->header.right_sibling = l_page->header.right_sibling;
                         s_page_write(a_tree, l_left);
 
-                        // Update right neighbor's left_sibling
                         if (l_right_id != 0) {
-                            dap_global_db_btree_page_t *l_right = s_page_read(a_tree, l_right_id);
+                            dap_global_db_btree_page_t *l_right = s_page_read(a_tree, l_right_id, l_arena);
                             if (l_right) {
                                 l_right->header.left_sibling = l_left_id;
                                 s_page_write(a_tree, l_right);
-                                s_page_free(l_right);
                             }
                         }
 
-                        // Remove separator from parent
                         int l_sep_idx = l_parent_path->child_index;
                         if (l_sep_idx > 0) {
-                            s_branch_remove_entry(l_parent, l_sep_idx - 1);
+                            s_branch_remove_entry(l_parent, l_sep_idx - 1, l_arena);
                         } else if (l_parent->header.entries_count > 0) {
-                            // We're child[0]; after removing, child[0] = left sibling
-                            s_branch_set_child(l_parent, 0, l_left_id);
-                            s_branch_remove_entry(l_parent, 0);
+                            s_branch_set_child(l_parent, 0, l_left_id, l_arena);
+                            s_branch_remove_entry(l_parent, 0, l_arena);
                         }
                         s_page_write(a_tree, l_parent);
 
-                        // Free our page
                         s_page_add_to_free_list(a_tree, l_page->header.page_id);
                         l_merged = true;
                     }
                 }
-                s_page_free(l_left);
             }
         }
 
-        // Collapse root if it became empty (single child remaining)
+        // Collapse root if empty
         if (l_parent && (l_parent->header.flags & DAP_GLOBAL_DB_PAGE_ROOT) &&
             l_parent->header.entries_count == 0) {
-            // Root has no separators, just one child — that child becomes new root
             uint64_t l_new_root_id = s_branch_get_child(l_parent, 0);
             if (l_new_root_id != 0) {
-                dap_global_db_btree_page_t *l_new_root = s_page_read(a_tree, l_new_root_id);
+                dap_global_db_btree_page_t *l_new_root = s_page_read(a_tree, l_new_root_id, l_arena);
                 if (l_new_root) {
                     l_new_root->header.flags |= DAP_GLOBAL_DB_PAGE_ROOT;
                     s_page_write(a_tree, l_new_root);
-                    s_page_free(l_new_root);
                 }
                 s_page_add_to_free_list(a_tree, l_parent->header.page_id);
                 a_tree->header.root_page = l_new_root_id;
@@ -1686,31 +1752,27 @@ int dap_global_db_btree_delete(dap_global_db_btree_t *a_tree, const dap_global_d
             }
         }
 
-        if (l_parent)
-            s_page_free(l_parent);
-
         if (l_merged) {
-            // Page was freed, don't write/free it again
-            s_page_free(l_page);
             s_header_write(a_tree);
+            if (l_arena) dap_arena_reset(l_arena);
             return 0;
         }
     }
 
-    // If the root leaf became empty, reset the tree
+    // Root leaf became empty
     if (l_is_root && l_page->header.entries_count == 0) {
         s_page_add_to_free_list(a_tree, l_page->header.page_id);
-        s_page_free(l_page);
         a_tree->header.root_page = 0;
         a_tree->header.tree_height = 0;
         s_header_write(a_tree);
+        if (l_arena) dap_arena_reset(l_arena);
         return 0;
     }
-    
+
     s_page_write(a_tree, l_page);
-    s_page_free(l_page);
     s_header_write(a_tree);
-    
+
+    if (l_arena) dap_arena_reset(l_arena);
     return 0;
 }
 
@@ -1783,18 +1845,18 @@ int dap_global_db_btree_get(dap_global_db_btree_t *a_tree,
         return 0;
     }
 
-    // Fallback: heap-allocated page read (no mmap)
-    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page);
+    // Fallback: heap-allocated page read (no mmap, no arena — read path)
+    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page, NULL);
     if (!l_page)
         return -1;
-    
+
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
         bool l_found;
         int l_index = s_search_in_page(l_page, a_key, &l_found);
         uint64_t l_child_id = s_branch_get_child(l_page, l_index);
         s_page_free(l_page);
-        
-        l_page = s_page_read(a_tree, l_child_id);
+
+        l_page = s_page_read(a_tree, l_child_id, NULL);
         if (!l_page)
             return -1;
     }
@@ -1842,6 +1904,64 @@ int dap_global_db_btree_get(dap_global_db_btree_t *a_tree,
     return 0;
 }
 
+int dap_global_db_btree_get_ref(dap_global_db_btree_t *a_tree,
+                                const dap_global_db_btree_key_t *a_key,
+                                dap_global_db_btree_ref_t *a_out_text_key,
+                                dap_global_db_btree_ref_t *a_out_value,
+                                dap_global_db_btree_ref_t *a_out_sign,
+                                uint8_t *a_out_flags)
+{
+    dap_return_val_if_fail(a_tree && a_key, -1);
+
+    if (a_tree->header.root_page == 0)
+        return 1;
+
+    // Flush dirty hot leaf so mmap reads see current data
+    if (a_tree->hot_leaf && a_tree->hot_leaf->is_dirty)
+        s_hot_leaf_flush(a_tree);
+
+    // Zero-copy path via mmap — no malloc, no memcpy
+    dap_global_db_btree_page_t l_page_buf;
+    if (s_page_read_ref(a_tree, a_tree->header.root_page, &l_page_buf)) {
+        dap_global_db_btree_page_t *l_page = &l_page_buf;
+        while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+            bool l_found;
+            int l_index = s_search_in_page(l_page, a_key, &l_found);
+            uint64_t l_child_id = s_branch_get_child(l_page, l_index);
+            if (!s_page_read_ref(a_tree, l_child_id, &l_page_buf))
+                return -1;
+        }
+
+        int l_index;
+        if (s_leaf_find_entry(l_page, a_key, &l_index) != 0)
+            return 1;
+
+        uint8_t *l_data = NULL;
+        dap_global_db_btree_leaf_entry_t *l_entry = s_leaf_entry_at(l_page, l_index, &l_data, NULL);
+
+        if (a_out_text_key) {
+            a_out_text_key->data = l_entry->key_len > 0 ? l_data : NULL;
+            a_out_text_key->len  = l_entry->key_len;
+        }
+        if (a_out_value) {
+            a_out_value->data = l_entry->value_len > 0 ? l_data + l_entry->key_len : NULL;
+            a_out_value->len  = l_entry->value_len;
+        }
+        if (a_out_sign) {
+            a_out_sign->data = l_entry->sign_len > 0
+                ? l_data + l_entry->key_len + l_entry->value_len : NULL;
+            a_out_sign->len  = l_entry->sign_len;
+        }
+        if (a_out_flags)
+            *a_out_flags = l_entry->flags;
+
+        return 0;
+    }
+
+    // Fallback: no mmap available — use allocating get
+    return -1;
+}
+
 bool dap_global_db_btree_exists(dap_global_db_btree_t *a_tree, const dap_global_db_btree_key_t *a_key)
 {
     dap_return_val_if_fail(a_tree && a_key, false);
@@ -1868,7 +1988,7 @@ bool dap_global_db_btree_exists(dap_global_db_btree_t *a_tree, const dap_global_
     }
 
     // Fallback
-    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page);
+    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page, NULL);
     if (!l_page)
         return false;
     
@@ -1878,7 +1998,7 @@ bool dap_global_db_btree_exists(dap_global_db_btree_t *a_tree, const dap_global_
         uint64_t l_child_id = s_branch_get_child(l_page, l_index);
         s_page_free(l_page);
         
-        l_page = s_page_read(a_tree, l_child_id);
+        l_page = s_page_read(a_tree, l_child_id, NULL);
         if (!l_page)
             return false;
     }
@@ -1969,7 +2089,7 @@ static dap_global_db_btree_page_t *s_find_leftmost_leaf(dap_global_db_btree_t *a
     if (a_tree->header.root_page == 0)
         return NULL;
     
-    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page);
+    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page, NULL);
     if (!l_page)
         return NULL;
     
@@ -1977,7 +2097,7 @@ static dap_global_db_btree_page_t *s_find_leftmost_leaf(dap_global_db_btree_t *a
         uint64_t l_child_id = s_branch_get_child(l_page, 0);
         s_page_free(l_page);
         
-        l_page = s_page_read(a_tree, l_child_id);
+        l_page = s_page_read(a_tree, l_child_id, NULL);
         if (!l_page)
             return NULL;
     }
@@ -1993,7 +2113,7 @@ static dap_global_db_btree_page_t *s_find_rightmost_leaf(dap_global_db_btree_t *
     if (a_tree->header.root_page == 0)
         return NULL;
     
-    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page);
+    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page, NULL);
     if (!l_page)
         return NULL;
     
@@ -2002,7 +2122,7 @@ static dap_global_db_btree_page_t *s_find_rightmost_leaf(dap_global_db_btree_t *
         uint64_t l_child_id = s_branch_get_child(l_page, l_count);
         s_page_free(l_page);
         
-        l_page = s_page_read(a_tree, l_child_id);
+        l_page = s_page_read(a_tree, l_child_id, NULL);
         if (!l_page)
             return NULL;
     }
@@ -2018,7 +2138,7 @@ static dap_global_db_btree_page_t *s_find_leaf_for_key(dap_global_db_btree_t *a_
     if (a_tree->header.root_page == 0)
         return NULL;
     
-    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page);
+    dap_global_db_btree_page_t *l_page = s_page_read(a_tree, a_tree->header.root_page, NULL);
     if (!l_page)
         return NULL;
     
@@ -2028,7 +2148,7 @@ static dap_global_db_btree_page_t *s_find_leaf_for_key(dap_global_db_btree_t *a_
         uint64_t l_child_id = s_branch_get_child(l_page, l_index);
         s_page_free(l_page);
         
-        l_page = s_page_read(a_tree, l_child_id);
+        l_page = s_page_read(a_tree, l_child_id, NULL);
         if (!l_page)
             return NULL;
     }
@@ -2088,7 +2208,7 @@ int dap_global_db_btree_cursor_move(dap_global_db_btree_cursor_t *a_cursor,
             }
             // Fallback: free + alloc
             s_page_free(a_cursor->current_page);
-            a_cursor->current_page = s_page_read(l_tree, l_next_id);
+            a_cursor->current_page = s_page_read(l_tree, l_next_id, NULL);
             if (!a_cursor->current_page || a_cursor->current_page->header.entries_count == 0) {
                 a_cursor->valid = false;
                 a_cursor->at_end = true;
@@ -2131,7 +2251,7 @@ int dap_global_db_btree_cursor_move(dap_global_db_btree_cursor_t *a_cursor,
             }
             // Fallback: free + alloc
             s_page_free(a_cursor->current_page);
-            a_cursor->current_page = s_page_read(l_tree, l_prev_id);
+            a_cursor->current_page = s_page_read(l_tree, l_prev_id, NULL);
             if (!a_cursor->current_page || a_cursor->current_page->header.entries_count == 0) {
                 a_cursor->valid = false;
                 a_cursor->at_end = true;
@@ -2207,7 +2327,7 @@ int dap_global_db_btree_cursor_move(dap_global_db_btree_cursor_t *a_cursor,
                 if (a_cursor->current_page->header.right_sibling) {
                     uint64_t l_next_id = a_cursor->current_page->header.right_sibling;
                     s_page_free(a_cursor->current_page);
-                    a_cursor->current_page = s_page_read(l_tree, l_next_id);
+                    a_cursor->current_page = s_page_read(l_tree, l_next_id, NULL);
                     if (a_cursor->current_page && a_cursor->current_page->header.entries_count > 0) {
                         a_cursor->current_index = 0;
                         a_cursor->valid = true;
@@ -2238,7 +2358,7 @@ int dap_global_db_btree_cursor_move(dap_global_db_btree_cursor_t *a_cursor,
                 if (a_cursor->current_page->header.right_sibling) {
                     uint64_t l_next_id = a_cursor->current_page->header.right_sibling;
                     s_page_free(a_cursor->current_page);
-                    a_cursor->current_page = s_page_read(l_tree, l_next_id);
+                    a_cursor->current_page = s_page_read(l_tree, l_next_id, NULL);
                     if (a_cursor->current_page && a_cursor->current_page->header.entries_count > 0) {
                         a_cursor->current_index = 0;
                         a_cursor->valid = true;
@@ -2310,6 +2430,46 @@ int dap_global_db_btree_cursor_get(dap_global_db_btree_cursor_t *a_cursor,
     if (a_out_flags)
         *a_out_flags = l_entry->flags;
     
+    return 0;
+}
+
+int dap_global_db_btree_cursor_get_ref(dap_global_db_btree_cursor_t *a_cursor,
+                                       dap_global_db_btree_key_t *a_out_key,
+                                       dap_global_db_btree_ref_t *a_out_text_key,
+                                       dap_global_db_btree_ref_t *a_out_value,
+                                       dap_global_db_btree_ref_t *a_out_sign,
+                                       uint8_t *a_out_flags)
+{
+    dap_return_val_if_fail(a_cursor, -1);
+
+    if (!a_cursor->valid || !a_cursor->current_page)
+        return 1;
+
+    uint8_t *l_data;
+    dap_global_db_btree_leaf_entry_t *l_entry = s_leaf_entry_at(a_cursor->current_page,
+                                                          a_cursor->current_index, &l_data, NULL);
+    if (!l_entry)
+        return -1;
+
+    if (a_out_key)
+        *a_out_key = l_entry->driver_hash;
+
+    if (a_out_text_key) {
+        a_out_text_key->data = l_entry->key_len > 0 ? l_data : NULL;
+        a_out_text_key->len  = l_entry->key_len;
+    }
+    if (a_out_value) {
+        a_out_value->data = l_entry->value_len > 0 ? l_data + l_entry->key_len : NULL;
+        a_out_value->len  = l_entry->value_len;
+    }
+    if (a_out_sign) {
+        a_out_sign->data = l_entry->sign_len > 0
+            ? l_data + l_entry->key_len + l_entry->value_len : NULL;
+        a_out_sign->len  = l_entry->sign_len;
+    }
+    if (a_out_flags)
+        *a_out_flags = l_entry->flags;
+
     return 0;
 }
 
