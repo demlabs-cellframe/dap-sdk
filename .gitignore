@@ -96,3 +96,4 @@ slc
 tests/performance/hashtable/competitors/
 tests/performance/keccak/competitors/
 tests/performance/secp256k1/competitors/
+tests/performance/global_db/competitors/

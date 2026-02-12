@@ -22,6 +22,8 @@
 */
 #include <stddef.h>
 #include <string.h>
+#include <fnmatch.h>
+
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"
@@ -33,12 +35,15 @@
 #include "dap_enc_ks.h"
 #include "dap_proc_thread.h"
 #include "dap_global_db.h"
-#include "dap_global_db_driver.h"
+#include "dap_global_db_storage.h"
 #include "dap_global_db_cluster.h"
 #include "dap_global_db_pkt.h"
 #include "dap_stream.h"
 
 #define LOG_TAG "dap_global_db"
+
+// NOTE: Group management moved to dap_global_db_storage.c
+// NOTE: Store object utilities moved to dap_global_db_obj.c
 
 int g_dap_global_db_debug_more = false;                                         /* Enable extensible debug output */
 
@@ -76,13 +81,13 @@ struct queue_io_msg{
     void *callback_arg;
     union {
         struct { // Get all request
-            dap_global_db_driver_hash_t last_hash;
+            dap_global_db_hash_t last_hash;
             uint64_t values_page_size;
             uint64_t total_records;
             uint64_t processed_records;
         };
         struct { // Raw set request
-            dap_store_obj_t *values_raw;
+            dap_global_db_store_obj_t *values_raw;
             uint64_t values_raw_total;
         };
         struct { // Set multiply zero-copy
@@ -127,7 +132,7 @@ static void s_gdb_clean_deinit();
 static void s_check_pinned_db_objs_deinit();
 
 static int s_pinned_objs_group_init();
-static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs);
+static int s_add_pinned_obj_in_pinned_group(dap_global_db_store_obj_t * a_objs);
 static void s_del_pinned_obj_from_pinned_group_by_source_group(const char * a_group, const char* a_key);
 static bool s_check_is_obj_pinned(const char * a_group, const char * a_key);
 DAP_STATIC_INLINE char *dap_get_local_pinned_groups_mask(const char *a_group);
@@ -157,8 +162,8 @@ static void s_msg_opcode_flush(struct queue_io_msg * a_msg);
 // Free memor for queue i/o message
 static void s_queue_io_msg_delete( struct queue_io_msg * a_msg);
 
-// convert dap_store_obj_t to dap_global_db_obj_t
-static dap_global_db_obj_t* s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_t a_values_count);
+// convert dap_global_db_store_obj_t to dap_global_db_obj_t
+static dap_global_db_obj_t* s_objs_from_store_objs(dap_global_db_store_obj_t *a_store_objs, size_t a_values_count);
 
 /**
  * @brief dap_global_db_init
@@ -188,7 +193,7 @@ int dap_global_db_init()
         char *l_gdb_path_cfg = dap_config_get_item_str_path_default(g_config, "global_db", "path", NULL);
         s_dbi->storage_path = l_gdb_path_cfg ? l_gdb_path_cfg : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
         const char *l_driver_name = dap_config_get_item_str(g_config, "global_db", "driver");
-        s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name : "mdbx");
+        s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name : "native");
         
         dap_cert_t *l_signing_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
         if (l_signing_cert)
@@ -209,10 +214,10 @@ int dap_global_db_init()
         s_dbi->sync_idle_time = dap_config_get_item_uint32_default(g_config, "global_db", "sync_idle_time", 30);
     }
 
-    // Driver initalization
-    if ( (l_rc = dap_global_db_driver_init(s_dbi->driver_name, s_dbi->storage_path)) )
-        return log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
-                       s_dbi->driver_name, s_dbi->storage_path, l_rc), l_rc;
+    // Native storage initialization
+    if ( (l_rc = dap_global_db_storage_init(s_dbi->storage_path)) )
+        return log_it(L_CRITICAL, "Hadn't initialized native storage on path \"%s\", code: %d",
+                       s_dbi->storage_path, l_rc), l_rc;
 
     // Clusters initialization
     if ( (l_rc = dap_global_db_cluster_init()) )
@@ -271,7 +276,7 @@ inline dap_global_db_instance_t *dap_global_db_instance_get_default()
 void dap_global_db_deinit() {
     dap_global_db_clean_deinit();
     dap_global_db_cluster_deinit();
-    dap_global_db_driver_deinit();
+    dap_global_db_storage_deinit();
     dap_global_db_instance_deinit();
 }
 
@@ -291,23 +296,24 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
     return true;
 }
 
-static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_instance_t *a_dbi, dap_nanotime_t a_new_timestamp)
+static void s_store_obj_update_timestamp(dap_global_db_store_obj_t *a_obj, dap_global_db_instance_t *a_dbi, dap_nanotime_t a_new_timestamp)
 {
     a_obj->timestamp = a_new_timestamp;
     DAP_DEL_Z(a_obj->sign);
     a_obj->crc = 0;
-    a_obj->sign = dap_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
+    a_obj->sign = dap_global_db_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
 }
 
-static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj)
+static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_global_db_store_obj_t *a_obj)
 {
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, a_obj->group);
     if (!l_cluster) {
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any cluster", a_obj->group);
         return -11;
     }
-    dap_global_db_driver_hash_t a_obj_drv_hash = dap_global_db_driver_hash_get(a_obj);
-    if (dap_global_db_driver_is_hash(a_obj->group, a_obj_drv_hash)) {
+    dap_global_db_hash_t a_obj_drv_hash = dap_global_db_hash_get(a_obj);
+    // Check if hash exists in storage
+    if (dap_global_db_storage_exists_hash(a_obj->group, a_obj_drv_hash)) {
         debug_if(g_dap_global_db_debug_more, L_NOTICE, "Rejected duplicate object with group %s and key %s",
                                             a_obj->group, a_obj->key);
         return -12;
@@ -352,22 +358,16 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     }
 
     dap_global_db_role_t l_required_role = DAP_GDB_MEMBER_ROLE_USER;
-    dap_global_db_optype_t l_obj_type = dap_store_obj_get_type(a_obj);
-    dap_store_obj_t *l_read_obj = NULL;
+    dap_global_db_optype_t l_obj_type = dap_global_db_store_obj_get_type(a_obj);
+    dap_global_db_store_obj_t *l_read_obj = NULL;
     bool l_existed_obj_pinned = false;
     int l_ret = 0;
-    if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
-        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL, true);
-        if (l_read_obj) { // Need to rewrite existed value
-            l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
-            if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
-                l_existed_obj_pinned = true;
-            }
-        } else {
-            log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
-                                                        a_obj->group, a_obj->key);
-            dap_store_obj_t l_to_delete = (dap_store_obj_t) { .group = a_obj->group, .key = a_obj->key };
-            dap_global_db_driver_delete(&l_to_delete, 1);
+    // Search for existing record by text key using storage API
+    l_read_obj = dap_global_db_storage_read_by_key(a_obj->group, a_obj->key, true);
+    if (l_read_obj) { // Need to rewrite existed value
+        l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
+        if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
+            l_existed_obj_pinned = true;
         }
     }
     UNUSED(l_existed_obj_pinned);
@@ -384,7 +384,7 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         l_ret = -16;
         goto free_n_exit;
     }
-    switch (dap_store_obj_driver_hash_compare(l_read_obj, a_obj)) {
+    switch (dap_global_db_store_obj_hash_compare(l_read_obj, a_obj)) {
     case 1:         // Received object is older
         if (a_obj->key && (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)) {
             dap_nanotime_t l_time_diff = l_read_obj->timestamp - a_obj->timestamp;
@@ -416,8 +416,8 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         break;
     }
     if (!l_ret) {
-        // Only the condition to apply new object
-        l_ret = dap_global_db_driver_apply(a_obj, 1);
+        // Apply new object via storage API
+        l_ret = dap_global_db_storage_write(a_obj);
 
         // if global_db obj is pinned
         if (a_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
@@ -439,7 +439,7 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     }
 free_n_exit:
     if (l_read_obj)
-        dap_store_obj_free_one(l_read_obj);
+        dap_global_db_store_obj_free_one(l_read_obj);
     return l_ret;
 }
 
@@ -451,10 +451,7 @@ byte_t *dap_global_db_get_sync(const char *a_group,
 {
     dap_return_val_if_fail(s_dbi && a_group && a_key, NULL);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get call executes for group \"%s\" and key \"%s\"", a_group, a_key);
-    size_t l_count_records = 0;
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read(a_group, a_key, &l_count_records, false);
-    if (l_count_records > 1)
-        log_it(L_ERROR, "Get more than one global DB object by one key is unexpected");
+    dap_global_db_store_obj_t *l_store_obj = dap_global_db_storage_read_by_key(a_group, a_key, false);
     if (!l_store_obj)
         return NULL;
     if (a_data_size)
@@ -465,7 +462,7 @@ byte_t *dap_global_db_get_sync(const char *a_group,
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = l_store_obj->value;
     l_store_obj->value = NULL;
-    dap_store_obj_free_one(l_store_obj);
+    dap_global_db_store_obj_free_one(l_store_obj);
     return l_res;
 }
 
@@ -533,14 +530,10 @@ static void s_msg_opcode_get(struct queue_io_msg * a_msg)
 
 /* *** Get raw functions group *** */
 
-dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_key)
+dap_global_db_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_key)
 {
     dap_return_val_if_fail(s_dbi && a_group && a_key, NULL);
-    size_t l_count_records = 0;
-    dap_store_obj_t *l_res = dap_global_db_driver_read(a_group, a_key, &l_count_records, true);
-    if (l_count_records > 1)
-        log_it(L_WARNING, "Get more than one global DB object by one key is unexpected");
-    return l_res;
+    return dap_global_db_storage_read_by_key(a_group, a_key, true);
 }
 
 /**
@@ -589,13 +582,13 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
  */
 static void s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
 {
-    dap_store_obj_t *l_store_obj = dap_global_db_get_raw_sync(a_msg->group, a_msg->key);
+    dap_global_db_store_obj_t *l_store_obj = dap_global_db_get_raw_sync(a_msg->group, a_msg->key);
 
     if(a_msg->callback_result_raw)
         a_msg->callback_result_raw(a_msg->dbi, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS:
                                                                       DAP_GLOBAL_DB_RC_NO_RESULTS,
                                                         l_store_obj, a_msg->callback_arg );
-    dap_store_obj_free_one(l_store_obj);
+    dap_global_db_store_obj_free_one(l_store_obj);
 }
 
 /* *** Get_del_ts functions group *** */
@@ -603,12 +596,12 @@ static void s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
 dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_key)
 {
     dap_return_val_if_fail(s_dbi && a_group && a_key, 0);
-    dap_store_obj_t *l_store_obj_del = dap_global_db_get_raw_sync(a_group, a_key);
+    dap_global_db_store_obj_t *l_store_obj_del = dap_global_db_get_raw_sync(a_group, a_key);
     dap_nanotime_t l_timestamp = 0;
     if (l_store_obj_del) {
         if (l_store_obj_del->flags & DAP_GLOBAL_DB_RECORD_DEL)
             l_timestamp = l_store_obj_del->timestamp;
-        dap_store_obj_free_one(l_store_obj_del);
+        dap_global_db_store_obj_free_one(l_store_obj_del);
     }
     return l_timestamp;
 }
@@ -676,7 +669,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
                                       bool *a_is_pinned, dap_nanotime_t *a_ts)
 {
     dap_return_val_if_fail(s_dbi && a_group, NULL);
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read_last(a_group, false);
+    dap_global_db_store_obj_t *l_store_obj = dap_global_db_storage_read_last(a_group, false);
     if (!l_store_obj)
         return NULL;
 
@@ -684,7 +677,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
         *a_key = dap_strdup(l_store_obj->key);
         if (!*a_key) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            dap_store_obj_free_one(l_store_obj);
+            dap_global_db_store_obj_free_one(l_store_obj);
             return NULL;
         }
     }
@@ -696,7 +689,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = l_store_obj->value;
     l_store_obj->value = NULL;
-    dap_store_obj_free_one(l_store_obj);
+    dap_global_db_store_obj_free_one(l_store_obj);
     return l_res;
 }
 
@@ -758,10 +751,10 @@ static void s_msg_opcode_get_last(struct queue_io_msg * a_msg)
 
 /* *** Get_last_raw functions group *** */
 
-dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
+dap_global_db_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
 {
     dap_return_val_if_fail(s_dbi && a_group, NULL);
-    dap_store_obj_t *l_ret = dap_global_db_driver_read_last(a_group, true);
+    dap_global_db_store_obj_t *l_ret = dap_global_db_storage_read_last(a_group, true);
     return l_ret;
 }
 
@@ -804,10 +797,10 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
  */
 static void s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 {
-    dap_store_obj_t *l_store_obj = dap_global_db_get_last_raw_sync(a_msg->group);
+    dap_global_db_store_obj_t *l_store_obj = dap_global_db_get_last_raw_sync(a_msg->group);
     if(a_msg->callback_result)
         a_msg->callback_result_raw(a_msg->dbi, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS, l_store_obj, a_msg->callback_arg);
-    dap_store_obj_free(l_store_obj, 1);
+    dap_global_db_store_obj_free(l_store_obj, 1);
 }
 
 /* *** Get_all functions group *** */
@@ -816,7 +809,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 {
     dap_return_val_if_fail(s_dbi && a_group, NULL);
     size_t l_values_count = 0;
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count, false);
+    dap_global_db_store_obj_t *l_store_objs = dap_global_db_storage_read_all(a_group, &l_values_count, false);
     debug_if(g_dap_global_db_debug_more, L_DEBUG,
              "Get all request from group %s recieved %zu values", a_group, l_values_count);
     dap_global_db_obj_t *l_objs = l_store_objs ? s_objs_from_store_objs(l_store_objs, l_values_count) : NULL;
@@ -848,7 +841,7 @@ int dap_global_db_get_all(const char *a_group, size_t a_results_page_size, dap_g
     l_msg->callback_arg = a_arg;
     l_msg->callback_results = a_callback;
     l_msg->values_page_size = a_results_page_size;
-    l_msg->last_hash = c_dap_global_db_driver_hash_blank;
+    l_msg->last_hash = c_dap_global_db_hash_blank;
 
     int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
 
@@ -873,7 +866,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
 
     size_t l_values_count = a_msg->values_page_size;
     dap_global_db_obj_t *l_objs = NULL;
-    dap_store_obj_t *l_store_objs = NULL;
+    dap_global_db_store_obj_t *l_store_objs = NULL;
     if (!a_msg->values_page_size) {
         l_objs = dap_global_db_get_all_sync(a_msg->group, &l_values_count);
         if (a_msg->callback_results)
@@ -886,13 +879,13 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
         return false;
     }
     if (!a_msg->total_records)
-        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank, false);
+        a_msg->total_records = dap_global_db_storage_group_count(a_msg->group, false);
     if (a_msg->total_records)
-        l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, false);
+        l_store_objs = dap_global_db_storage_read_cond(a_msg->group, a_msg->last_hash, 0, &l_values_count, false);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
     if (l_store_objs && l_values_count) {
-        a_msg->last_hash = dap_global_db_driver_hash_get(l_store_objs + l_values_count - 1);
-        if (dap_global_db_driver_hash_is_blank(&a_msg->last_hash)) {
+        a_msg->last_hash = dap_global_db_hash_get(l_store_objs + l_values_count - 1);
+        if (dap_global_db_hash_is_blank(&a_msg->last_hash)) {
             l_rc = DAP_GLOBAL_DB_RC_SUCCESS;
             l_values_count--;
         } else
@@ -912,12 +905,12 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
 
 /* *** Get_all_raw functions group *** */
 
-dap_store_obj_t *dap_global_db_get_all_raw_sync(const char* a_group, size_t *a_objs_count)
+dap_global_db_store_obj_t *dap_global_db_get_all_raw_sync(const char* a_group, size_t *a_objs_count)
 {
     dap_return_val_if_fail(a_group, NULL);
     
     size_t l_values_count = 0;
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count, true);
+    dap_global_db_store_obj_t *l_store_objs = dap_global_db_storage_read_all(a_group, &l_values_count, true);
     if (a_objs_count)
         *a_objs_count = l_values_count;
     return l_store_objs;
@@ -947,7 +940,7 @@ int dap_global_db_get_all_raw(const char *a_group, size_t a_results_page_size, d
     l_msg->values_page_size = a_results_page_size;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
-    l_msg->last_hash = c_dap_global_db_driver_hash_blank;
+    l_msg->last_hash = c_dap_global_db_hash_blank;
 
     int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
     if (l_ret != 0) {
@@ -968,7 +961,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     dap_return_val_if_pass(!a_msg, false);
 
     size_t l_values_count = a_msg->values_page_size;
-    dap_store_obj_t *l_store_objs = NULL;
+    dap_global_db_store_obj_t *l_store_objs = NULL;
     if (!a_msg->values_page_size) {
         l_store_objs = dap_global_db_get_all_raw_sync(a_msg->group, &l_values_count);
         if (a_msg->callback_results)
@@ -976,18 +969,18 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
                                 l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, a_msg->total_records, l_values_count,
                                 l_store_objs, a_msg->callback_arg);
-        dap_store_obj_free(l_store_objs, l_values_count);
+        dap_global_db_store_obj_free(l_store_objs, l_values_count);
         // All values are sent
        return false;
     }
     if (!a_msg->total_records)
-        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank, true);
+        a_msg->total_records = dap_global_db_storage_group_count(a_msg->group, true);
     if (a_msg->total_records)
-        l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, true);
+        l_store_objs = dap_global_db_storage_read_cond(a_msg->group, a_msg->last_hash, 0, &l_values_count, true);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
     if (l_store_objs && l_values_count) {
-        a_msg->last_hash = dap_global_db_driver_hash_get(l_store_objs + l_values_count - 1);
-        if (dap_global_db_driver_hash_is_blank(&a_msg->last_hash)) {
+        a_msg->last_hash = dap_global_db_hash_get(l_store_objs + l_values_count - 1);
+        if (dap_global_db_hash_is_blank(&a_msg->last_hash)) {
             l_rc = DAP_GLOBAL_DB_RC_SUCCESS;
             l_values_count--;
         } else
@@ -1000,14 +993,14 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
         l_ret = a_msg->callback_results_raw(a_msg->dbi, l_rc,
                         a_msg->group, a_msg->total_records, l_values_count,
                         l_store_objs, a_msg->callback_arg);
-    dap_store_obj_free(l_store_objs, l_values_count);
+    dap_global_db_store_obj_free(l_store_objs, l_values_count);
     return l_rc == DAP_GLOBAL_DB_RC_PROGRESS && l_ret;
 }
 
 static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_group, const char *a_key, const void *a_value,
                               const size_t a_value_length, bool a_pin_value, dap_nanotime_t a_timestamp)
 {
-    dap_store_obj_t l_store_data = {
+    dap_global_db_store_obj_t l_store_data = {
         .timestamp  = a_timestamp,
         .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0),
         .group      = (char *)a_group,
@@ -1015,7 +1008,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         .value      = (byte_t *)a_value,
         .value_len  = a_value_length
     };
-    l_store_data.sign = dap_store_obj_sign(&l_store_data, a_dbi->signing_key, &l_store_data.crc);
+    l_store_data.sign = dap_global_db_store_obj_sign(&l_store_data, a_dbi->signing_key, &l_store_data.crc);
     if (!l_store_data.sign) {
         log_it(L_ERROR, "Can't sign new global DB object group %s key %s", a_group, a_key);
         return DAP_GLOBAL_DB_RC_ERROR;
@@ -1113,11 +1106,9 @@ static void s_msg_opcode_set(struct queue_io_msg * a_msg)
 
 /* *** Set_raw functions group *** */
 
-int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
+int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_global_db_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
     int l_ret = DAP_GLOBAL_DB_RC_ERROR;
-    if (a_store_objs_count > 1)
-        dap_global_db_driver_txn_start();
     for (size_t i = 0; i < a_store_objs_count; i++) {
         l_ret = s_store_obj_apply(a_dbi, a_store_objs + i);
         if (l_ret)
@@ -1125,12 +1116,10 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
     }
     if (a_store_objs->flags & DAP_GLOBAL_DB_RECORD_PINNED)
         s_add_pinned_obj_in_pinned_group(a_store_objs);
-    if (a_store_objs_count > 1)
-        dap_global_db_driver_txn_end(!l_ret);
     return l_ret;
 }
 
-int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
+int dap_global_db_set_raw_sync(dap_global_db_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
     return s_db_set_raw_sync(s_dbi, a_store_objs, a_store_objs_count);
@@ -1144,7 +1133,7 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
  * @param a_arg
  * @return
  */
-int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+int dap_global_db_set_raw(dap_global_db_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
     struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
@@ -1153,7 +1142,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
 
-    l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count);
+    l_msg->values_raw = dap_global_db_store_obj_copy(a_store_objs, a_store_objs_count);
     if (!l_msg->values_raw) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
@@ -1239,7 +1228,7 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
     size_t i=0;
     // DAP_TPS_TEST removed: test-only file marker and logging
     if(a_msg->values_count>0) {
-        dap_store_obj_t l_store_obj = {};
+        dap_global_db_store_obj_t l_store_obj = {};
         for(;  i < a_msg->values_count && l_ret == 0  ; i++ ) {
             l_ret = s_set_sync_with_ts(a_msg->dbi, a_msg->group, a_msg->values[i].key, a_msg->values[i].value, a_msg->values[i].value_len, a_msg->value_is_pinned, a_msg->values[i].timestamp);
         }
@@ -1259,7 +1248,7 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
 int s_db_object_pin_sync(dap_global_db_instance_t *a_dbi, const char *a_group, const char *a_key, bool a_pin)
 {
     int l_res = DAP_GLOBAL_DB_RC_NO_RESULTS;
-    dap_store_obj_t *l_store_obj = dap_global_db_get_raw_sync(a_group, a_key);
+    dap_global_db_store_obj_t *l_store_obj = dap_global_db_get_raw_sync(a_group, a_key);
     if (l_store_obj) {
         l_res = dap_global_db_set_sync(l_store_obj->group, l_store_obj->key, l_store_obj->value, l_store_obj->value_len, a_pin);
         if (l_res) {
@@ -1273,7 +1262,7 @@ int s_db_object_pin_sync(dap_global_db_instance_t *a_dbi, const char *a_group, c
             
         }
     }
-    dap_store_obj_free_one(l_store_obj);
+    dap_global_db_store_obj_free_one(l_store_obj);
     return l_res;
 }
 
@@ -1372,7 +1361,7 @@ int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_ca
  */
 static int s_del_sync_with_dbi_ex(dap_global_db_instance_t *a_dbi, const char *a_group, const char *a_key, const char * a_value, size_t a_value_len)
 {
-    dap_store_obj_t l_store_obj = {
+    dap_global_db_store_obj_t l_store_obj = {
         .key        = (char*)a_key,
         .group      = (char*)a_group,
         .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_key ? DAP_GLOBAL_DB_RECORD_DEL : DAP_GLOBAL_DB_RECORD_ERASE),
@@ -1385,7 +1374,7 @@ static int s_del_sync_with_dbi_ex(dap_global_db_instance_t *a_dbi, const char *a
     }
 
     if (a_key)
-        l_store_obj.sign = dap_store_obj_sign(&l_store_obj, a_dbi->signing_key, &l_store_obj.crc);
+        l_store_obj.sign = dap_global_db_store_obj_sign(&l_store_obj, a_dbi->signing_key, &l_store_obj.crc);
 
     int l_res = -1;
     if (a_key) {
@@ -1396,7 +1385,7 @@ static int s_del_sync_with_dbi_ex(dap_global_db_instance_t *a_dbi, const char *a
     } else {
         // Drop the whole table
         l_store_obj.flags |= DAP_GLOBAL_DB_RECORD_ERASE;
-        l_res = dap_global_db_driver_apply(&l_store_obj, 1);
+        l_res = dap_global_db_storage_write(&l_store_obj);
         if (l_res && l_res != DAP_GLOBAL_DB_RC_NOT_FOUND)
             log_it(L_ERROR, "Can't delete group %s", l_store_obj.group);
     }    
@@ -1510,7 +1499,7 @@ static void s_msg_opcode_delete(struct queue_io_msg * a_msg)
  */
 int dap_global_db_flush_sync()
 {
-    return dap_global_db_driver_flush();
+    return dap_global_db_storage_flush();
 }
 
 /**
@@ -1689,7 +1678,7 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
         DAP_DEL_Z(a_msg->group);
         break;
     case MSG_OPCODE_SET_RAW:
-        dap_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
+        dap_global_db_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
     default:;
     }
     DAP_DEL_Z(a_msg);
@@ -1716,10 +1705,10 @@ static int s_check_db_version()
 
 static void s_clean_old_obj_gdb_callback(void UNUSED_ARG *a_arg) {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Start clean old objs in global_db callback");
-    dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*");
+    dap_list_t *l_group_list = dap_global_db_storage_get_groups_by_mask("*");
     size_t l_count = 0;
     for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
-        size_t l_count_obj = dap_global_db_driver_count((char*)l_list->data, c_dap_global_db_driver_hash_blank, true);
+        size_t l_count_obj = dap_global_db_storage_group_count((char*)l_list->data, true);
         if (!l_count_obj) {
             debug_if(g_dap_global_db_debug_more, L_INFO, "Empty group %s, delete it", (char*)l_list->data);
             dap_global_db_del_sync((char*)l_list->data, NULL);
@@ -1732,7 +1721,7 @@ static void s_clean_old_obj_gdb_callback(void UNUSED_ARG *a_arg) {
         dap_nanotime_t l_time_now = dap_nanotime_now();
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         size_t l_ret_count = 0;
-        dap_store_obj_t *l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
+        dap_global_db_store_obj_t *l_ret = dap_global_db_storage_read_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
         log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", (char*)l_list->data, l_ret_count);
         while (l_ret_count > 0 && l_ret && l_ret->group) {
             for(size_t i = 0; i < l_ret_count; i++) {
@@ -1741,19 +1730,19 @@ static void s_clean_old_obj_gdb_callback(void UNUSED_ARG *a_arg) {
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Try to delete from global_db the obj %s group, %s key", l_ret[i].group, l_ret[i].key);
                         if (l_cluster->del_callback)
                             l_cluster->del_callback(l_ret+i, l_cluster->del_arg);
-                        else dap_global_db_driver_delete(l_ret + i, 1);
+                        else dap_global_db_storage_erase(l_ret[i].group, dap_global_db_hash_get(l_ret + i));
                     } else if ( l_ret[i].flags & DAP_GLOBAL_DB_RECORD_DEL && dap_global_db_group_match_mask(l_ret->group, "local.*")) {       
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from empty local global_db obj %s group, %s key", l_ret[i].group, l_ret[i].key);
-                        dap_global_db_driver_delete(l_ret + i, 1);
+                        dap_global_db_storage_erase(l_ret[i].group, dap_global_db_hash_get(l_ret + i));
                     }
                 } 
             }
-            dap_store_obj_free(l_ret, l_ret_count);
+            dap_global_db_store_obj_free(l_ret, l_ret_count);
             // filter for local groups
             if (l_ttl == 0)
                 break;
             l_ret_count = 0;
-            l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
+            l_ret = dap_global_db_storage_read_below_timestamp((char*)l_list->data, l_time_now - l_ttl, &l_ret_count);
         }
     }
     dap_list_free(l_group_list);
@@ -1776,7 +1765,7 @@ static bool s_check_is_obj_pinned(const char * a_group, const char * a_key) {
         l_ret = true;
     } else {
         char * l_pinned_mask = dap_get_local_pinned_groups_mask(a_group);
-        l_ret = dap_global_db_driver_is(l_pinned_mask, a_key);
+        l_ret = dap_global_db_storage_exists_key(l_pinned_mask, a_key);
         DAP_DELETE(l_pinned_mask);
     }
     return l_ret;
@@ -1786,8 +1775,8 @@ static bool s_check_is_obj_pinned(const char * a_group, const char * a_key) {
 /// @param a_pinned_obj 
 /// @return 0 restore obj
 ///         -1 obj is the hole, delete them
-static int s_is_require_restore_del_pin_obj(dap_store_obj_t * a_pinned_obj) {
-    if (dap_store_obj_get_type(a_pinned_obj) == DAP_GLOBAL_DB_OPTYPE_DEL)
+static int s_is_require_restore_del_pin_obj(dap_global_db_store_obj_t * a_pinned_obj) {
+    if (dap_global_db_store_obj_get_type(a_pinned_obj) == DAP_GLOBAL_DB_OPTYPE_DEL)
         return -1;
     return 0;
 }
@@ -1796,7 +1785,7 @@ static bool s_check_pinned_db_objs_callback(void UNUSED_ARG *a_arg)
 {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Start check pinned objs callback");
     dap_nanotime_t l_time_now = dap_nanotime_now();
-    dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*.pinned");
+    dap_list_t *l_group_list = dap_global_db_storage_get_groups_by_mask("*.pinned");
     size_t l_count = 0;
     for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
         size_t l_ret_count = 0;
@@ -1816,11 +1805,11 @@ static bool s_check_pinned_db_objs_callback(void UNUSED_ARG *a_arg)
             DAP_DELETE(l_group_name);
             continue;
         }
-        dap_store_obj_t *l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl + s_minimal_ttl + 100, &l_ret_count);
+        dap_global_db_store_obj_t *l_ret = dap_global_db_storage_read_below_timestamp((char*)l_list->data, l_time_now - l_ttl + s_minimal_ttl + 100, &l_ret_count);
         while (l_ret_count > 0 && l_ret && l_ret->group) {
             for(size_t i = 0; i < l_ret_count; i++) {
                 if (l_ret[i].timestamp + l_ttl <= l_time_now + s_minimal_ttl) {
-                    dap_store_obj_t * l_gdb_rec =  dap_global_db_get_raw_sync(l_group_name, l_ret[i].key);
+                    dap_global_db_store_obj_t * l_gdb_rec =  dap_global_db_get_raw_sync(l_group_name, l_ret[i].key);
                     if (!l_gdb_rec) {
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Can't find source gdb obj %s group, %s key restore them", l_group_name, l_ret[i].key);
                         dap_global_db_set_sync(l_group_name, l_ret[i].key, l_ret[i].value, l_ret[i].value_len, true);
@@ -1842,11 +1831,11 @@ static bool s_check_pinned_db_objs_callback(void UNUSED_ARG *a_arg)
                             debug_if(g_dap_global_db_debug_more, L_INFO, "Unrecognized pinned gdb obj %s group, %s key", l_gdb_rec->group, l_gdb_rec->key);
                             break;
                     }
-                    dap_store_obj_free(l_gdb_rec, 1);
+                    dap_global_db_store_obj_free(l_gdb_rec, 1);
                 }
             }
-            dap_store_obj_free(l_ret, l_ret_count);
-            l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl + s_minimal_ttl + 100, &l_ret_count);
+            dap_global_db_store_obj_free(l_ret, l_ret_count);
+            l_ret = dap_global_db_storage_read_below_timestamp((char*)l_list->data, l_time_now - l_ttl + s_minimal_ttl + 100, &l_ret_count);
         }
     }
     dap_list_free_full(l_group_list, NULL);
@@ -1901,20 +1890,20 @@ static void s_set_pinned_timer(const char *a_group)
     }
 }
 
-static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs){
+static int s_add_pinned_obj_in_pinned_group(dap_global_db_store_obj_t * a_objs){
     if (!dap_global_db_group_match_mask(a_objs->group, "*pinned")) {
         char * l_pinned_mask = dap_get_local_pinned_groups_mask(a_objs->group);
-        dap_store_obj_t * l_ret_check = dap_global_db_get_raw_sync(l_pinned_mask, a_objs->key);
+        dap_global_db_store_obj_t * l_ret_check = dap_global_db_get_raw_sync(l_pinned_mask, a_objs->key);
         if (!l_ret_check) {
             if (!dap_global_db_set_sync(l_pinned_mask, a_objs->key, a_objs->value, a_objs->value_len, false)) {
                 debug_if(g_dap_global_db_debug_more, L_INFO, "Pinned objs was added in pinned group %s, %s key", l_pinned_mask, a_objs->key);
                 s_store_obj_update_timestamp(a_objs, NULL, dap_nanotime_now());
-                dap_global_db_driver_apply(a_objs, 1);
+                dap_global_db_storage_write(a_objs);
             } else
                 debug_if(g_dap_global_db_debug_more, L_ERROR, "Adding error in pinned group %s", a_objs->group);
         }
         s_set_pinned_timer(a_objs->group);
-        dap_store_obj_free_one(l_ret_check);
+        dap_global_db_store_obj_free_one(l_ret_check);
         DAP_DELETE(l_pinned_mask);
     }
     return 0;
@@ -1923,12 +1912,12 @@ static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs){
 static void s_del_pinned_obj_from_pinned_group_by_source_group(const char * a_group, const char * a_key) {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Delete pinned group by source group %s, %s key", a_group, a_key);
     char * l_pinned_group = dap_get_local_pinned_groups_mask(a_group);
-    dap_store_obj_t * l_pin_del_obj = dap_global_db_get_raw_sync(l_pinned_group, a_key);
+    dap_global_db_store_obj_t * l_pin_del_obj = dap_global_db_get_raw_sync(l_pinned_group, a_key);
     if (l_pin_del_obj)
-        dap_global_db_driver_delete(l_pin_del_obj, 1);
+        dap_global_db_storage_erase(l_pin_del_obj->group, dap_global_db_hash_get(l_pin_del_obj));
 }
 
-static void s_get_all_pinned_objs_in_group(dap_store_obj_t * a_objs, size_t a_objs_count) {
+static void s_get_all_pinned_objs_in_group(dap_global_db_store_obj_t * a_objs, size_t a_objs_count) {
     for(size_t i = 0; i < a_objs_count; i++) {
         if (a_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED)
             s_add_pinned_obj_in_pinned_group(a_objs + i);
@@ -1942,17 +1931,17 @@ static void s_check_pinned_db_objs_timer_callback(void *a_arg) {
 static int s_pinned_objs_group_init() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Check pinned db objs init");
     dap_nanotime_t l_time_now = dap_nanotime_now();
-    dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*");
+    dap_list_t *l_group_list = dap_global_db_storage_get_groups_by_mask("*");
     size_t l_count = 0;
     for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
         size_t l_ret_count = 0;
-        dap_store_obj_t  * l_ret = dap_global_db_get_all_raw_sync((char*)l_list->data, &l_ret_count);
+        dap_global_db_store_obj_t  * l_ret = dap_global_db_get_all_raw_sync((char*)l_list->data, &l_ret_count);
         if (!l_ret) {
-            dap_store_obj_free(l_ret, l_ret_count);
+            dap_global_db_store_obj_free(l_ret, l_ret_count);
             continue;
         }
         s_get_all_pinned_objs_in_group(l_ret, l_ret_count);
-        dap_store_obj_free(l_ret, l_ret_count);
+        dap_global_db_store_obj_free(l_ret, l_ret_count);
     }
     dap_list_free_full(l_group_list, NULL);
     dap_proc_thread_timer_add_pri(NULL, s_check_pinned_db_objs_timer_callback, NULL, 300000, true, DAP_QUEUE_MSG_PRIORITY_NORMAL);  // 5 min wait before repin
@@ -2000,7 +1989,7 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
     if( a_dbi->version < DAP_GLOBAL_DB_VERSION) {
         log_it(L_NOTICE, "Current GlobalDB version is %u, but %u is required. The current database will be recreated",
                a_dbi->version, DAP_GLOBAL_DB_VERSION);
-        dap_global_db_driver_deinit();
+        dap_global_db_storage_deinit();
         // Database path
         const char *l_storage_path = a_dbi->storage_path;
         // Delete database
@@ -2037,7 +2026,7 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
             DAP_DELETE(l_output_file_path);
         }
         // Reinitialize database
-        res = dap_global_db_driver_init(s_dbi->driver_name, s_dbi->storage_path);
+        res = dap_global_db_storage_init(s_dbi->storage_path);
         // Save current db version
         if(!res) {
             a_dbi->version = DAP_GLOBAL_DB_VERSION;
@@ -2094,13 +2083,13 @@ static void s_check_db_version_callback_set (dap_global_db_instance_t *a_dbi,int
 
 /**
  * @brief s_objs_from_store_objs
- * @details convert dap_store_obj_t to dap_global_db_obj_t
- * @param a_store_objs src dap_store_obj_t pointer
+ * @details convert dap_global_db_store_obj_t to dap_global_db_obj_t
+ * @param a_store_objs src dap_global_db_store_obj_t pointer
  * @param a_values_count count records inarray
  * @return pointer if not error, else NULL
  */
 
-dap_global_db_obj_t *s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_t a_values_count)
+dap_global_db_obj_t *s_objs_from_store_objs(dap_global_db_store_obj_t *a_store_objs, size_t a_values_count)
 {
     dap_return_val_if_pass(!a_store_objs, NULL);
     
@@ -2129,7 +2118,7 @@ dap_global_db_obj_t *s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_
     return l_objs;
 }
 
-bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key)
+bool dap_global_db_isalnum_group_key(const dap_global_db_store_obj_t *a_obj, bool a_not_null_key)
 {
     dap_return_val_if_fail(a_obj && a_obj->group, false);
 
@@ -2175,15 +2164,15 @@ size_t dap_global_db_group_clear(const char *a_group, bool a_pinned)
     size_t
         l_obj_count = 0,
         l_ret = 0;
-    dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(a_group, &l_obj_count);
+    dap_global_db_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(a_group, &l_obj_count);
     log_it(L_DEBUG, "Start clean gdb group %s, %zu records will check", a_group, l_obj_count);
     for(size_t i = 0; i < l_obj_count; ++i) {
         if (l_objs[i].flags & DAP_GLOBAL_DB_RECORD_DEL && (a_pinned || !(l_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED))) {       
             debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from empty local global_db obj %s group, %s key", l_objs[i].group, l_objs[i].key);
-            dap_global_db_driver_delete(l_objs + i, 1);
+            dap_global_db_storage_erase(l_objs[i].group, dap_global_db_hash_get(l_objs + i));
             l_ret++;
         }
     }
-    dap_store_obj_free(l_objs, l_obj_count);
+    dap_global_db_store_obj_free(l_objs, l_obj_count);
     return l_ret;
 }

@@ -42,13 +42,12 @@ static ecdsa_field_impl_info_t s_impls[ECDSA_FIELD_IMPL_COUNT] = {
     },
     [ECDSA_FIELD_IMPL_AVX2_BMI2] = {
         .name = "avx2_bmi2",
-        .description = "AVX2 + BMI2 (MULX/ADCX/ADOX)",
+        .description = "AVX2 + BMI2 (MULX with uint128 accum)",
         .id = ECDSA_FIELD_IMPL_AVX2_BMI2,
         .available = false,  // Set at runtime
         .mul = ecdsa_field_mul_avx2_bmi2,
         .sqr = ecdsa_field_sqr_avx2_bmi2
     },
-    // NOTE: AVX-512 IFMA removed - doesn't benefit interleaved reduction
 #endif
 #if defined(__aarch64__)
     [ECDSA_FIELD_IMPL_ARM64_NEON] = {
@@ -94,12 +93,10 @@ static void detect_x86_features(void) {
         // ADX:  bit 19 of EBX
         bool has_avx2 = (ebx >> 5) & 1;
         bool has_bmi2 = (ebx >> 8) & 1;
-        bool has_adx  = (ebx >> 19) & 1;
         
-        s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available = has_avx2 && has_bmi2 && has_adx;
-        
-        // NOTE: AVX-512 IFMA removed - doesn't benefit interleaved reduction pattern
-        (void)ebx;  // Unused now
+        // AVX2+BMI2 version uses MULX with __uint128_t accumulation
+        // ADX not required since we don't use ADCX/ADOX anymore
+        s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available = has_avx2 && has_bmi2;
     }
 }
 #endif
@@ -139,15 +136,10 @@ void ecdsa_field_dispatch_init(void) {
     s_current_impl = ECDSA_FIELD_IMPL_GENERIC;
     
 #if defined(__x86_64__) || defined(_M_X64)
-    // NOTE: x86_64_asm and avx2_bmi2 have bugs in 128-bit shift emulation
-    // TODO: Fix the interleaved reduction logic in these implementations
-    // For now, stick with generic (which uses __uint128_t correctly)
-    // if (s_impls[ECDSA_FIELD_IMPL_X86_64_ASM].available) {
-    //     s_current_impl = ECDSA_FIELD_IMPL_X86_64_ASM;
-    // }
-    // if (s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available) {
-    //     s_current_impl = ECDSA_FIELD_IMPL_AVX2_BMI2;
-    // }
+    // AVX2+BMI2 uses MULX for fast multiplication with __uint128_t accumulation
+    if (s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available) {
+        s_current_impl = ECDSA_FIELD_IMPL_AVX2_BMI2;
+    }
 #endif
 
 #if defined(__aarch64__)

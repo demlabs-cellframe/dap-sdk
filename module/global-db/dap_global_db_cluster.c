@@ -25,6 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_common.h"
 #include "dap_global_db.h"
 #include "dap_global_db_cluster.h"
+#include "dap_global_db_storage.h"
 #include "dap_global_db_pkt.h"
 #include "dap_global_db_ch.h"
 #include "dap_link_manager.h"
@@ -83,14 +84,14 @@ dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t
     return NULL;
 }
 
-void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
+void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_t *a_store_obj)
 {
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
     union hash_convert {
         dap_hash_sha3_256_t gossip_hash;
-        dap_global_db_driver_hash_t gdb_hash;
+        dap_global_db_hash_t gdb_hash;
     } l_hash_cvt = {};
-    l_hash_cvt.gdb_hash = dap_global_db_driver_hash_get(a_store_obj);
+    l_hash_cvt.gdb_hash = dap_global_db_hash_get(a_store_obj);
     dap_gossip_msg_issue(a_cluster->links_cluster, DAP_STREAM_CH_GDB_ID, l_pkt, dap_global_db_pkt_get_size(l_pkt), &l_hash_cvt.gossip_hash);
     DAP_DELETE(l_pkt);
 }
@@ -182,24 +183,24 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 
 static bool s_db_cluster_notify_on_proc_thread(void *a_arg)
 {
-    dap_store_obj_t *l_store_obj = a_arg;
+    dap_global_db_store_obj_t *l_store_obj = a_arg;
     dap_global_db_notifier_t l_notifier = *(dap_global_db_notifier_t *)l_store_obj->ext;
     l_notifier.callback_notify(l_store_obj, l_notifier.callback_arg);
-    dap_store_obj_free_one(l_store_obj);
+    dap_global_db_store_obj_free_one(l_store_obj);
     return false;
 }
 
-void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
+void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_t *a_store_obj)
 {
     dap_global_db_notifier_t *l_notifier;
     dap_dl_foreach(a_cluster->notifiers, l_notifier) {
         assert(l_notifier->callback_notify);
-        dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, l_notifier, sizeof(*l_notifier));
+        dap_global_db_store_obj_t *l_store_obj = dap_global_db_store_obj_copy_ext(a_store_obj, l_notifier, sizeof(*l_notifier));
         dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj, DAP_QUEUE_MSG_PRIORITY_LOW);
     }
 }
 
-int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster, dap_store_obj_callback_notify_t a_callback, void *a_callback_arg)
+int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_callback_notify_t a_callback, void *a_callback_arg)
 {
     dap_return_val_if_fail(a_cluster && a_callback, -1);
     dap_global_db_notifier_t *l_notifier = DAP_NEW_Z(dap_global_db_notifier_t);
@@ -244,7 +245,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         dap_stream_node_addr_t l_current_link = dap_cluster_get_random_link(l_cluster->links_cluster);
         if (dap_stream_node_addr_is_blank(&l_current_link))
             break;
-        dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask(l_cluster->groups_mask);
+        dap_list_t *l_groups = dap_global_db_storage_get_groups_by_mask(l_cluster->groups_mask);
         if (!l_groups) {    // Nothing to sync
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
             l_cluster->sync_context.stage_last_activity = dap_time_now();
@@ -253,11 +254,11 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         l_cluster->sync_context.current_link = l_current_link;
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
-            if (!dap_global_db_driver_count(it->data, c_dap_global_db_driver_hash_blank, true))
+            if (!dap_global_db_storage_group_count(it->data, true))
                 continue;   // Don't send request for empty group, if any
             size_t l_group_len = dap_strlen(it->data) + 1;
             dap_global_db_start_pkt_t *l_msg = DAP_NEW_STACK_SIZE(dap_global_db_start_pkt_t, sizeof(dap_global_db_start_pkt_t) + l_group_len);
-            l_msg->last_hash = c_dap_global_db_driver_hash_blank; //dap_db_get_last_hash_remote(l_req->link, l_req->group);
+            l_msg->last_hash = c_dap_global_db_hash_blank; //dap_db_get_last_hash_remote(l_req->link, l_req->group);
             l_msg->group_len = l_group_len;
             memcpy(l_msg->group, it->data, l_group_len);
             debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_SYNC_START packet for group %s from first record", l_msg->group);

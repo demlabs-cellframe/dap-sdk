@@ -139,17 +139,23 @@ endif()
 
 if (BUILD_WITH_ECDSA)
     # =========================================================================
-    # ECDSA with architecture-optimized scalar implementations
-    # Files are hand-written for maximum control and performance:
+    # ECDSA - Native secp256k1 implementation
+    # Scalar multiplication implementations generated from template:
     #   - ecdsa_scalar_mul_generic.c     - Portable C (__uint128_t)
     #   - ecdsa_scalar_mul_x86_64_asm.c  - x86-64 inline assembly (MULQ)
     #   - ecdsa_scalar_mul_avx2_bmi2.c   - AVX2+BMI2 (MULX/ADCX/ADOX)
     #   - ecdsa_scalar_mul_neon.c        - ARM64 NEON (MUL/UMULH)
-    #   - ecdsa_scalar_dispatch.c        - Runtime CPU feature dispatcher
     # =========================================================================
-    file (GLOB ECDSA_SRC src/sig_ecdsa/*.c)
-    set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SRC})
+    
+    # Generate arch-specific implementations and collect all ECDSA sources
+    add_subdirectory(src/sig_ecdsa)
+    
+    # Add all ECDSA sources (static + generated)
+    set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SOURCES})
     add_definitions("-DDAP_ECDSA")
+    
+    # Include directories for generated files
+    include_directories(${ECDSA_GEN_INCLUDE_DIR})
     
     message(STATUS "[ECDSA] Native secp256k1 with arch-optimized scalar arithmetic")
 else()

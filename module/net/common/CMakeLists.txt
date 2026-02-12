@@ -11,9 +11,9 @@ dap_add_library(${PROJECT_NAME}
     HEADERS ${NET_COMMON_HEADERS}
 )
 
-# dap_net_common depends on dap_core (for dap_common.h)
+# dap_net_common depends on dap_core and dap_config
 # target_link_libraries automatically propagates includes for OBJECT libraries (see main CMakeLists.txt)
-target_link_libraries(${PROJECT_NAME} PUBLIC dap_core)
+target_link_libraries(${PROJECT_NAME} PUBLIC dap_core dap_config)
 
 # Export include directory
 target_include_directories(${PROJECT_NAME} PUBLIC 

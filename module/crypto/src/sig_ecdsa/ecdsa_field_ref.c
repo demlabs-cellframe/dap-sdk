@@ -263,65 +263,101 @@ void ecdsa_field_cmov(ecdsa_field_t *r, const ecdsa_field_t *a, int flag) {
 
 void ecdsa_field_mul_ref(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
 #ifdef __SIZEOF_INT128__
-    __uint128_t t[10] = {0};
-    __uint128_t c;
+    // Bitcoin-core style interleaved multiplication and reduction
+    // Uses only 2 accumulators instead of 10-element array
+    __uint128_t c, d;
+    uint64_t t3, t4, tx, u0;
+    uint64_t a0 = a->n[0], a1 = a->n[1], a2 = a->n[2], a3 = a->n[3], a4 = a->n[4];
+    const uint64_t M = ECDSA_M52, R = 0x1000003D10ULL;
     
-    uint64_t an[5] = {a->n[0], a->n[1], a->n[2], a->n[3], a->n[4]};
-    uint64_t bn[5] = {b->n[0], b->n[1], b->n[2], b->n[3], b->n[4]};
+    // [d 0 0 0] = [p3 0 0 0]
+    d = (__uint128_t)a0 * b->n[3];
+    d += (__uint128_t)a1 * b->n[2];
+    d += (__uint128_t)a2 * b->n[1];
+    d += (__uint128_t)a3 * b->n[0];
     
-    for (int i = 0; i < 5; i++)
-        for (int j = 0; j < 5; j++)
-            t[i+j] += (__uint128_t)an[i] * bn[j];
+    // [c 0 0 0 0 d 0 0 0] = [p8 0 0 0 0 p3 0 0 0]
+    c = (__uint128_t)a4 * b->n[4];
     
-    for (int i = 0; i < 9; i++) {
-        t[i+1] += t[i] >> 52;
-        t[i] &= ECDSA_M52;
-    }
+    // Reduce p8: d += (p8 mod 2^64) * R
+    d += (uint64_t)c * R; c >>= 64;
+    // [(c<<12) 0 0 0 0 0 d 0 0 0]
+    t3 = (uint64_t)d & M; d >>= 52;
+    // [(c<<12) 0 0 0 0 d t3 0 0 0]
     
-    const uint64_t R = 0x1000003D1ULL;
+    // Compute p4 = a0*b4 + a1*b3 + a2*b2 + a3*b1 + a4*b0
+    d += (__uint128_t)a0 * b->n[4];
+    d += (__uint128_t)a1 * b->n[3];
+    d += (__uint128_t)a2 * b->n[2];
+    d += (__uint128_t)a3 * b->n[1];
+    d += (__uint128_t)a4 * b->n[0];
+    // Add remaining high bits: (c<<12) * R
+    d += (__uint128_t)(uint64_t)c * (R << 12);
+    // [d t3 0 0 0]
+    t4 = (uint64_t)d & M; d >>= 52;
+    // [d t4 t3 0 0 0]
+    tx = t4 >> 48; t4 &= (M >> 4);
+    // [d t4+(tx<<48) t3 0 0 0]
     
-    c = t[5] * R * 16;
-    t[0] += c & ECDSA_M52; c >>= 52;
-    t[1] += c & ECDSA_M52; c >>= 52;
-    t[2] += c;
+    // [d t4+(tx<<48) t3 0 0 c] = start computing p0
+    c = (__uint128_t)a0 * b->n[0];
     
-    c = t[6] * R * 16;
-    t[1] += c & ECDSA_M52; c >>= 52;
-    t[2] += c & ECDSA_M52; c >>= 52;
-    t[3] += c;
+    // Compute p5 = a1*b4 + a2*b3 + a3*b2 + a4*b1
+    d += (__uint128_t)a1 * b->n[4];
+    d += (__uint128_t)a2 * b->n[3];
+    d += (__uint128_t)a3 * b->n[2];
+    d += (__uint128_t)a4 * b->n[1];
+    // [d t4+(tx<<48) t3 0 0 c]
+    u0 = (uint64_t)d & M; d >>= 52;
+    // [d u0 t4+(tx<<48) t3 0 0 c]
+    u0 = (u0 << 4) | tx;
+    // [d 0 t4+(u0<<48) t3 0 0 c]
+    // Reduce: c += u0 * (R >> 4)
+    c += (__uint128_t)u0 * (R >> 4);
+    // [d 0 t4 t3 0 0 c]
+    r->n[0] = (uint64_t)c & M; c >>= 52;
+    // [d 0 t4 t3 0 c r0]
     
-    c = t[7] * R * 16;
-    t[2] += c & ECDSA_M52; c >>= 52;
-    t[3] += c & ECDSA_M52; c >>= 52;
-    t[4] += c;
+    // Compute p1 = a0*b1 + a1*b0
+    c += (__uint128_t)a0 * b->n[1];
+    c += (__uint128_t)a1 * b->n[0];
+    // [d 0 t4 t3 0 c r0]
     
-    c = t[8] * R * 16;
-    t[3] += c & ECDSA_M52; c >>= 52;
-    t[4] += c;
+    // Compute p6 = a2*b4 + a3*b3 + a4*b2
+    d += (__uint128_t)a2 * b->n[4];
+    d += (__uint128_t)a3 * b->n[3];
+    d += (__uint128_t)a4 * b->n[2];
+    // [d 0 t4 t3 0 c r0]
+    // Reduce p6: c += (d mod M) * R
+    c += ((uint64_t)d & M) * R; d >>= 52;
+    // [d 0 0 t4 t3 0 c r0]
+    r->n[1] = (uint64_t)c & M; c >>= 52;
+    // [d 0 0 t4 t3 c r1 r0]
     
-    t[4] += t[9] * R * 16;
+    // Compute p2 = a0*b2 + a1*b1 + a2*b0
+    c += (__uint128_t)a0 * b->n[2];
+    c += (__uint128_t)a1 * b->n[1];
+    c += (__uint128_t)a2 * b->n[0];
+    // [d 0 0 t4 t3 c r1 r0]
     
-    for (int pass = 0; pass < 3; pass++) {
-        c = 0;
-        for (int i = 0; i < 4; i++) {
-            c += t[i];
-            t[i] = c & ECDSA_M52;
-            c >>= 52;
-        }
-        t[4] += c;
-        if (t[4] >> 48) {
-            __uint128_t overflow = t[4] >> 48;
-            t[4] &= ECDSA_M48;
-            t[0] += overflow * R;
-        }
-    }
+    // Compute p7 = a3*b4 + a4*b3
+    d += (__uint128_t)a3 * b->n[4];
+    d += (__uint128_t)a4 * b->n[3];
+    // [d 0 0 t4 t3 c r1 r0]
+    // Reduce p7: c += (d mod 2^64) * R
+    c += (uint64_t)d * R; d >>= 64;
+    // [(d<<12) 0 0 0 t4 t3 c r1 r0]
+    r->n[2] = (uint64_t)c & M; c >>= 52;
+    // [(d<<12) 0 0 0 t4 t3+c r2 r1 r0]
     
-    r->n[0] = (uint64_t)t[0]; 
-    r->n[1] = (uint64_t)t[1]; 
-    r->n[2] = (uint64_t)t[2]; 
-    r->n[3] = (uint64_t)t[3]; 
-    r->n[4] = (uint64_t)t[4];
-    ecdsa_field_normalize_weak(r);
+    // Final: add remaining high bits and t3
+    c += (__uint128_t)(uint64_t)d * (R << 12);
+    c += t3;
+    // [t4 c r2 r1 r0]
+    r->n[3] = (uint64_t)c & M; c >>= 52;
+    // [t4+c r3 r2 r1 r0]
+    r->n[4] = (uint64_t)c + t4;
+    // [r4 r3 r2 r1 r0]
 #else
     // Fallback without __int128
     uint64_t t[10] = {0};

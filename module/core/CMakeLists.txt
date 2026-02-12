@@ -7,12 +7,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/PackageComponents.cmake)
 add_definitions("-D_GNU_SOURCE") 
 
 file (GLOB CORE_HEADERS include/*.h)
-# Exclude dap_json.h - moved to module/json
-list(FILTER CORE_HEADERS EXCLUDE REGEX ".*dap_json\\.h$")
-
 file (GLOB CORE_SRCS src/*.c src/etc/*.c)
-# Exclude dap_json.c - moved to module/json
-list(FILTER CORE_SRCS EXCLUDE REGEX ".*dap_json\\.c$")
 
 if(UNIX)
     file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h)

@@ -25,8 +25,131 @@
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "dap_time.h"
-#include "dap_global_db_driver.h"
+#include "dap_list.h"
+#include "dap_sign.h"
+#include "dap_guuid.h"
 
+// ============================================================================
+// Storage limits and defaults
+// ============================================================================
+#define DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX   128UL   /* Maximum size of group name */
+#define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL  /* Maximum number of groups */
+#define DAP_GLOBAL_DB_KEY_SIZE_MAX          512UL   /* Maximum key length */
+
+#define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL /* Default count of records for conditional read */
+#define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL /* Default count of keys for conditional read */
+
+// ============================================================================
+// Record flags
+// ============================================================================
+// Flags stored in DB
+#define DAP_GLOBAL_DB_RECORD_DEL        BIT(0)      /* Record deletion marker (propagated over sync) */
+#define DAP_GLOBAL_DB_RECORD_PINNED     BIT(1)      /* Record protected from TTL cleanup */
+// Auxiliary flags (not stored in DB)
+#define DAP_GLOBAL_DB_RECORD_NEW        BIT(6)      /* Record is newly generated locally */
+#define DAP_GLOBAL_DB_RECORD_ERASE      BIT(7)      /* Record will be permanently erased */
+
+// ============================================================================
+// Core types
+// ============================================================================
+
+/**
+ * @brief Hash key for GlobalDB records (16 bytes, big-endian sorted)
+ */
+typedef struct dap_global_db_hash {
+    dap_nanotime_t bets;    // Timestamp in big-endian
+    uint64_t becrc;         // CRC in big-endian
+} DAP_ALIGN_PACKED dap_global_db_hash_t;
+
+/**
+ * @brief Store object - main data record structure
+ */
+typedef struct dap_global_db_store_obj {
+    char *group;                // Group name (table analogue)
+    char *key;                  // Unique key within group
+    byte_t *value;              // Value data
+    size_t value_len;           // Value length
+    uint8_t flags;              // Record flags
+    dap_sign_t *sign;           // Cryptographic signature
+    dap_nanotime_t timestamp;   // Creation timestamp (nanoseconds since EPOCH)
+    uint64_t crc;               // Integrity checksum
+    byte_t ext[];               // Extra data for sync callbacks
+} dap_global_db_store_obj_t;
+
+/**
+ * @brief Operation type for notifications
+ */
+typedef enum dap_global_db_optype {
+    DAP_GLOBAL_DB_OPTYPE_ADD = 0x61,    /* 'a' - INSERT / OVERWRITE */
+    DAP_GLOBAL_DB_OPTYPE_DEL = 0x64,    /* 'd' - DELETE */
+} dap_global_db_optype_t;
+
+// Forward declarations for packet types
+typedef struct dap_global_db_hash_pkt dap_global_db_hash_pkt_t;
+typedef struct dap_global_db_pkt_pack dap_global_db_pkt_pack_t;
+
+// Blank hash constant - defined in dap_global_db_obj.c
+extern const dap_global_db_hash_t c_dap_global_db_hash_blank;
+
+// ============================================================================
+// Inline utility functions for hash operations
+// ============================================================================
+
+DAP_STATIC_INLINE dap_global_db_optype_t dap_global_db_store_obj_get_type(dap_global_db_store_obj_t *a_obj)
+{
+    return a_obj->flags & DAP_GLOBAL_DB_RECORD_DEL ? DAP_GLOBAL_DB_OPTYPE_DEL : DAP_GLOBAL_DB_OPTYPE_ADD;
+}
+
+DAP_STATIC_INLINE dap_global_db_hash_t dap_global_db_hash_get(dap_global_db_store_obj_t *a_obj)
+{
+    dap_global_db_hash_t l_ret = { .bets = htobe64(a_obj->timestamp), .becrc = htobe64(a_obj->crc) };
+    return l_ret;
+}
+
+DAP_STATIC_INLINE int dap_global_db_hash_compare(dap_global_db_hash_t *a_hash1, dap_global_db_hash_t *a_hash2)
+{
+    int l_ret = memcmp(a_hash1, a_hash2, sizeof(dap_global_db_hash_t));
+    return l_ret < 0 ? -1 : (l_ret > 0 ? 1 : 0);
+}
+
+DAP_STATIC_INLINE int dap_global_db_store_obj_hash_compare(dap_global_db_store_obj_t *a_obj1, dap_global_db_store_obj_t *a_obj2)
+{
+    if (!a_obj1)
+        return a_obj2 ? -1 : 0;
+    if (!a_obj2)
+        return 1;
+    dap_global_db_hash_t l_hash1 = dap_global_db_hash_get(a_obj1),
+                   l_hash2 = dap_global_db_hash_get(a_obj2);
+    return dap_global_db_hash_compare(&l_hash1, &l_hash2);
+}
+
+DAP_STATIC_INLINE bool dap_global_db_store_obj_compare(dap_global_db_store_obj_t *a_obj1, dap_global_db_store_obj_t *a_obj2)
+{
+    return dap_global_db_store_obj_hash_compare(a_obj1, a_obj2) || a_obj1->flags != a_obj2->flags ||
+        a_obj1->value_len != a_obj2->value_len || memcmp(a_obj1->value, a_obj2->value, a_obj1->value_len) ||
+        dap_sign_get_size(a_obj1->sign) != dap_sign_get_size(a_obj2->sign) || 
+        memcmp(a_obj1->sign, a_obj2->sign, dap_sign_get_size(a_obj1->sign)) ||
+        strcmp(a_obj1->key, a_obj2->key) || strcmp(a_obj1->group, a_obj2->group);
+}
+
+DAP_STATIC_INLINE const char *dap_global_db_hash_print(dap_global_db_hash_t a_hash)
+{
+    return dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc));
+}
+
+DAP_STATIC_INLINE bool dap_global_db_hash_is_blank(dap_global_db_hash_t *a_blank_candidate)
+{
+    return !memcmp(a_blank_candidate, &c_dap_global_db_hash_blank, sizeof(dap_global_db_hash_t));
+}
+
+// ============================================================================
+// Store object management - see dap_global_db_obj.h
+// ============================================================================
+#include "dap_global_db_obj.h"
+
+// ============================================================================
+// GlobalDB configuration
+// ============================================================================
 #define DAP_GLOBAL_DB_VERSION               3
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
 #define DAP_GLOBAL_DB_LOCAL_LAST_HASH       "local.lasthash"
@@ -72,7 +195,7 @@ typedef void (*dap_global_db_callback_result_t)(dap_global_db_instance_t *a_dbi,
  *  @arg a_rc DAP_GLOBAL_DB_RC_SUCCESS if success others if not
  *  @return none.
  */
-typedef void (*dap_global_db_callback_result_raw_t)(dap_global_db_instance_t *a_dbi, int a_rc, dap_store_obj_t * a_store_obj, void * a_arg);
+typedef void (*dap_global_db_callback_result_raw_t)(dap_global_db_instance_t *a_dbi, int a_rc, dap_global_db_store_obj_t * a_store_obj, void * a_arg);
 
 
 /**
@@ -101,7 +224,7 @@ typedef bool (*dap_global_db_callback_results_t)(dap_global_db_instance_t *a_dbi
 typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_instance_t *a_dbi,
                                                       int a_rc, const char *a_group,
                                                       const size_t a_values_current, const size_t a_values_count,
-                                                      dap_store_obj_t *a_values, void *a_arg);
+                                                      dap_global_db_store_obj_t *a_values, void *a_arg);
 // Return codes
 #define DAP_GLOBAL_DB_RC_SUCCESS     0
 #define DAP_GLOBAL_DB_RC_NOT_FOUND   1
@@ -140,14 +263,14 @@ int dap_global_db_get_all(const char *a_group, size_t l_results_page_size, dap_g
 int dap_global_db_get_all_raw(const char *a_group, size_t l_results_page_size, dap_global_db_callback_results_raw_t a_callback, void *a_arg);
 
 int dap_global_db_set(const char *a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void *a_arg);
-int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg);
+int dap_global_db_set_raw(dap_global_db_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg);
 
 int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_del(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_len,
                                                               dap_global_db_callback_result_t a_callback, void *a_arg);
-int dap_del_global_db_obj_by_ttl(dap_store_obj_t* a_obj);
+int dap_del_global_db_obj_by_ttl(dap_global_db_store_obj_t* a_obj);
 int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void *a_arg);
 
 // Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well
@@ -155,17 +278,17 @@ int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t * a_v
 
 // === Sync functions ===
 byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts);
-dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_key);
+dap_global_db_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_key);
 
 dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_key);
 byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts);
-dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group);
+dap_global_db_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group);
 dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count);
-dap_store_obj_t *dap_global_db_get_all_raw_sync(const char *a_group, size_t *a_objs_count);
+dap_global_db_store_obj_t *dap_global_db_get_all_raw_sync(const char *a_group, size_t *a_objs_count);
 
 int dap_global_db_set_sync(const char *a_group, const char *a_key, const void *a_value, const size_t a_value_length, bool a_pin_value);
 // set raw with cluster roles and rights checks
-int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count);
+int dap_global_db_set_raw_sync(dap_global_db_store_obj_t *a_store_objs, size_t a_store_objs_count);
 
 int dap_global_db_pin_sync(const char *a_group, const char *a_key);
 int dap_global_db_unpin_sync(const char *a_group, const char *a_key);
@@ -173,7 +296,7 @@ int dap_global_db_del_sync(const char *a_group, const char *a_key);
 int dap_global_db_del_sync_ex(const char *a_group, const char *a_key, const char * a_value, size_t a_value_size);
 int dap_global_db_flush_sync();
 
-bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key);
+bool dap_global_db_isalnum_group_key(const dap_global_db_store_obj_t *a_obj, bool a_not_null_key);
 bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask);
 
 int dap_global_db_erase_table_sync(const char *a_group);
