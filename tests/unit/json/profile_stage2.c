@@ -31,9 +31,23 @@ static char *read_file(const char *path, size_t *out_size) {
         return NULL;
     }
     
-    fseek(f, 0, SEEK_END);
-    size_t size = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    if (fseek(f, 0, SEEK_END) != 0) {
+        log_it(L_ERROR, "Failed to seek end of %s", path);
+        fclose(f);
+        return NULL;
+    }
+    long file_size = ftell(f);
+    if (file_size < 0) {
+        log_it(L_ERROR, "Failed to get size of %s", path);
+        fclose(f);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        log_it(L_ERROR, "Failed to seek start of %s", path);
+        fclose(f);
+        return NULL;
+    }
+    size_t size = (size_t)file_size;
     
     char *buffer = malloc(size + 1);
     if (!buffer) {
@@ -41,7 +55,13 @@ static char *read_file(const char *path, size_t *out_size) {
         return NULL;
     }
     
-    fread(buffer, 1, size, f);
+    size_t bytes_read = fread(buffer, 1, size, f);
+    if (bytes_read != size) {
+        log_it(L_ERROR, "Failed to read %s: expected %zu bytes, got %zu", path, size, bytes_read);
+        free(buffer);
+        fclose(f);
+        return NULL;
+    }
     buffer[size] = '\0';
     fclose(f);
     
