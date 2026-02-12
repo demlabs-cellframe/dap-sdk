@@ -471,6 +471,14 @@ static int s_parse_response_header(dap_client_http_t *a_client_http, const char 
     return 0;
 }
 
+// Header templates for size calculation
+#define HDR_USER_AGENT      "User-Agent: Mozilla\r\n"
+#define HDR_CONTENT_TYPE    "Content-Type: \r\n"
+#define HDR_CONTENT_LENGTH  "Content-Length: \r\n"
+#define HDR_COOKIE          "Cookie: \r\n"
+#define MAX_SIZE_T_DIGITS   20
+#define HDR_EXTRA_MARGIN    4
+
 /**
  * @brief Send HTTP request with properly formatted headers
  * @param a_es Event socket to send request on
@@ -484,14 +492,27 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         return -1;
     }
 
-    char l_request_headers[1024] = {0};
+    size_t l_headers_size = sizeof(HDR_USER_AGENT) - 1;
+    if(a_client_http->method == HTTP_POST) {
+        if(a_client_http->request_content_type)
+            l_headers_size += sizeof(HDR_CONTENT_TYPE) - 1 + strlen(a_client_http->request_content_type);
+        l_headers_size += sizeof(HDR_CONTENT_LENGTH) - 1 + MAX_SIZE_T_DIGITS;
+    }
+    if(a_client_http->request_custom_headers)
+        l_headers_size += strlen(a_client_http->request_custom_headers) + HDR_EXTRA_MARGIN;
+    if(a_client_http->cookie)
+        l_headers_size += sizeof(HDR_COOKIE) - 1 + strlen(a_client_http->cookie);
+    l_headers_size += 1; // null terminator
+
+    char *l_request_headers = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(char, l_headers_size, -1);
     int l_headers_offset = 0;
-    size_t l_headers_remain = sizeof(l_request_headers) - 1;
-    
+    size_t l_headers_remain = l_headers_size;
+
     #define ADD_HEADER(format, ...) do { \
         int l_written = snprintf(l_request_headers + l_headers_offset, l_headers_remain, format, ##__VA_ARGS__); \
         if (l_written < 0 || (size_t)l_written >= l_headers_remain) { \
             log_it(L_ERROR, "Header buffer overflow in s_send_http_request"); \
+            DAP_DELETE(l_request_headers); \
             return -1; \
         } \
         l_headers_offset += l_written; \
@@ -499,10 +520,10 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
     } while(0)
     switch (a_client_http->method) {
     case HTTP_GET:
-        ADD_HEADER("User-Agent: Mozilla\r\n");
+        ADD_HEADER(HDR_USER_AGENT);
         break;
     case HTTP_HEAD:
-        ADD_HEADER("User-Agent: Mozilla\r\n");
+        ADD_HEADER(HDR_USER_AGENT);
         break;
     case HTTP_POST:
         if (a_client_http->request_content_type)
@@ -510,6 +531,7 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         ADD_HEADER("Content-Length: %zu\r\n", a_client_http->request_size);
         break;
     default:
+        DAP_DELETE(l_request_headers);
         return log_it(L_ERROR, "Invalid request type! Probably yet unimplemented"), -1;
     }
 
@@ -535,6 +557,7 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         // Sanity check - since we're dealing with binary data, ensure request is valid
         if (!a_client_http->request) {
             log_it(L_ERROR, "Invalid binary request: request is NULL but l_req_enc is true");
+            DAP_DELETE(l_request_headers);
             return -1;
         }
         
@@ -551,6 +574,7 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
         char *l_data = DAP_NEW_Z_SIZE(char, l_size);
         if (!l_data) {
             log_it(L_ERROR, "Failed to allocate buffer for encrypted request");
+            DAP_DELETE(l_request_headers);
             return -1;
         }
         
@@ -559,6 +583,7 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
             if ((result) < 0 || (result) >= (max_size)) { \
                 log_it(L_ERROR, "%s", error_msg); \
                 DAP_DELETE(l_data); \
+                DAP_DELETE(l_request_headers); \
                 return -1; \
             } \
         } while(0)
@@ -621,7 +646,8 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
             l_request_headers,
             (a_client_http->method == HTTP_POST && a_client_http->request && a_client_http->request_size > 0) ? (char*)a_client_http->request : "");
     }
-    
+
+    DAP_DELETE(l_request_headers);
     return 0;
 }
 
