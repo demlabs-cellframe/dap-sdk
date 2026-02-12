@@ -26,6 +26,14 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 int dap_crc64_init();
 
+/**
+ * Updates CRC64 with the next data chunk.
+ * If a_ptr is NULL, the function performs no update and returns a_crc unchanged.
+ */
 uint64_t crc64_update(uint64_t a_crc, const uint8_t *a_ptr, const size_t a_count);
 
+/**
+ * Computes CRC64 for a buffer.
+ * If a_ptr is NULL, the function treats input as empty payload.
+ */
 uint64_t crc64(const uint8_t *a_ptr, const size_t a_count);
