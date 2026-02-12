@@ -191,6 +191,55 @@ static void test_arena_reset(void)
 }
 
 /**
+ * @brief Regression: reset must preserve existing page chain for reuse
+ */
+static void test_arena_reset_preserves_page_chain(void)
+{
+    dap_print_module_name("Reset preserves page chain");
+    
+    dap_arena_t *arena = dap_arena_new_opt((dap_arena_opt_t){
+        .initial_size = 512,
+        .allow_small_pages = true,
+        .page_growth_factor = 1.0
+    });
+    dap_assert(arena != NULL, "Arena creation");
+    
+    void *ptr_before[5] = { 0 };
+    for (int i = 0; i < 5; i++) {
+        ptr_before[i] = dap_arena_alloc(arena, 400);
+        dap_assert(ptr_before[i] != NULL, "Initial multi-page allocation");
+    }
+    
+    dap_arena_stats_t stats_before;
+    dap_arena_get_stats(arena, &stats_before);
+    dap_assert(stats_before.page_count == 5, "Five pages created before reset");
+    size_t total_allocated_before = stats_before.total_allocated;
+    
+    dap_arena_reset(arena);
+    
+    dap_arena_stats_t stats_after_reset;
+    dap_arena_get_stats(arena, &stats_after_reset);
+    dap_assert(stats_after_reset.page_count == stats_before.page_count,
+               "Reset preserves page chain");
+    
+    void *ptr_after_first = dap_arena_alloc(arena, 400);
+    void *ptr_after_second = dap_arena_alloc(arena, 400);
+    dap_assert(ptr_after_first != NULL, "First allocation after reset");
+    dap_assert(ptr_after_second != NULL, "Second allocation after reset");
+    
+    dap_arena_stats_t stats_after_regrow;
+    dap_arena_get_stats(arena, &stats_after_regrow);
+    dap_assert(stats_after_regrow.page_count == stats_before.page_count,
+               "Regrowth reuses existing chain without dropping pages");
+    dap_assert(stats_after_regrow.total_allocated == total_allocated_before,
+               "Regrowth after reset does not allocate new pages");
+    dap_assert(ptr_after_first == ptr_before[0], "First page memory reused");
+    dap_assert(ptr_after_second == ptr_before[1], "Second page memory reused");
+    
+    dap_arena_free(arena);
+}
+
+/**
  * @brief Test page growth
  */
 static void test_arena_page_growth(void)
@@ -314,6 +363,7 @@ int main(void)
     TEST_RUN(test_arena_alloc_aligned);
     TEST_RUN(test_arena_strdup);
     TEST_RUN(test_arena_reset);
+    TEST_RUN(test_arena_reset_preserves_page_chain);
     TEST_RUN(test_arena_page_growth);
     TEST_RUN(test_arena_large_alloc);
     TEST_RUN(test_arena_many_small_allocs);
@@ -324,4 +374,3 @@ int main(void)
     
     return 0;
 }
-

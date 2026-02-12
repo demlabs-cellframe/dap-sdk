@@ -29,23 +29,39 @@ static inline size_t nearest_power(size_t a_base, size_t a_num)
     }
 }
 
-static void dap_string_maybe_expand(dap_string_t *a_string, size_t a_len)
+static bool dap_string_maybe_expand(dap_string_t *a_string, size_t a_len)
 {
-size_t  l_len;
+size_t  l_len, l_needed_len;
 void    *l_str;
 
-    if ( !(a_string->len + a_len >= a_string->allocated_len) )              /* Is there free space in the current area */
-        return;                                                             /* Nothing to do - just return */
+    if (!a_string)
+        return false;
 
-    l_len = nearest_power(1, a_string->len + a_len + 1);                    /* Compute a size of the new memory area */
+    /* Defensive guard: valid descriptor must always have backing storage when capacity is non-zero. */
+    if (a_string->allocated_len && !a_string->str)
+        return false;
+
+    if (a_len > MY_MAXSIZE - 1)
+        return false;
+    if (a_string->len > (MY_MAXSIZE - 1) - a_len)
+        return false;
+
+    l_needed_len = a_string->len + a_len + 1;
+    if (l_needed_len <= a_string->allocated_len)                             /* Is there free space in the current area */
+        return true;                                                         /* Nothing to do */
+
+    l_len = nearest_power(1, l_needed_len);                                  /* Compute a size of the new memory area */
+    if (l_len < l_needed_len)
+        return false;
     l_str = DAP_REALLOC(a_string->str, l_len );                             /* Try to realloc" */
 
     if ( !l_str )                                                           /* In case of error - don't touch an original descriptor */
-        return;
+        return false;
 
     a_string->str = l_str;                                                  /* Update <string> descriptor with actual data */
     a_string->allocated_len = l_len;
 
+    return true;
 }
 
 /**
@@ -99,6 +115,8 @@ dap_string_t* dap_string_new(const char *a_init)
 
         len = strlen(a_init);
         l_string = dap_string_sized_new(len + 2);
+        if (!l_string)
+            return NULL;
 
         dap_string_append_len(l_string, a_init, len);
     }
@@ -130,6 +148,8 @@ dap_string_t* dap_string_new_len(const char *a_init, ssize_t a_len)
     else
     {
         l_string = dap_string_sized_new(a_len);
+        if (!l_string)
+            return NULL;
 
         if(a_init)
             dap_string_append_len(l_string, a_init, a_len);
@@ -271,6 +291,8 @@ dap_string_t* dap_string_assign(dap_string_t *a_string, const char *a_rval)
 dap_string_t* dap_string_truncate(dap_string_t *string, size_t len)
 {
     dap_return_val_if_fail(string != NULL, NULL);
+    if (!string->str)
+        return string;
 
     string->len = dap_min(len, string->len);
     string->str[string->len] = 0;
@@ -295,8 +317,13 @@ dap_string_t* dap_string_set_size(dap_string_t *string, size_t len)
 {
     dap_return_val_if_fail(string != NULL, NULL);
 
-    if(len >= string->allocated_len)
-        dap_string_maybe_expand(string, len - string->len);
+    if (len >= string->allocated_len) {
+        size_t l_expand_len = len > string->len ? len - string->len : 0;
+        if (!dap_string_maybe_expand(string, l_expand_len))
+            return string;
+    }
+    if (!string->str)
+        return string;
 
     string->len = len;
     string->str[len] = 0;
@@ -334,6 +361,11 @@ dap_string_t* dap_string_insert_len(dap_string_t *string, ssize_t pos, const cha
     if(len < 0)
         len = strlen(val);
 
+    if (!string->str && !dap_string_maybe_expand(string, (size_t)len))
+        return string;
+    if (!string->str)
+        return string;
+
     if(pos < 0)
         pos = string->len;
     else
@@ -349,7 +381,8 @@ dap_string_t* dap_string_insert_len(dap_string_t *string, ssize_t pos, const cha
         size_t offset = val - string->str;
         size_t precount = 0;
 
-        dap_string_maybe_expand(string, len);
+        if (!dap_string_maybe_expand(string, (size_t)len))
+            return string;
         val = string->str + offset;
         /* At this point, val is valid again.  */
 
@@ -371,7 +404,8 @@ dap_string_t* dap_string_insert_len(dap_string_t *string, ssize_t pos, const cha
     }
     else
     {
-        dap_string_maybe_expand(string, len);
+        if (!dap_string_maybe_expand(string, (size_t)len))
+            return string;
 
         /* If we aren't appending at the end, move a hunk
          * of the old string to the end, opening up space
@@ -564,7 +598,10 @@ dap_string_t* dap_string_insert_c(dap_string_t *string, ssize_t pos, char c)
 {
     dap_return_val_if_fail(string != NULL, NULL);
 
-    dap_string_maybe_expand(string, 1);
+    if (!dap_string_maybe_expand(string, 1))
+        return string;
+    if (!string->str)
+        return string;
 
     if(pos < 0)
         pos = string->len;
@@ -636,7 +673,10 @@ dap_string_t* dap_string_insert_unichar(dap_string_t *string, ssize_t pos, uint3
     }
     /* End of copied code */
 
-    dap_string_maybe_expand(string, charlen);
+    if (!dap_string_maybe_expand(string, (size_t)charlen))
+        return string;
+    if (!string->str)
+        return string;
 
     if(pos < 0)
         pos = string->len;
@@ -709,8 +749,10 @@ dap_string_t* dap_string_overwrite_len(dap_string_t *string, size_t pos, const c
 
     end = pos + len;
 
-    if(end > string->len)
-        dap_string_maybe_expand(string, end - string->len);
+    if(end > string->len && !dap_string_maybe_expand(string, end - string->len))
+        return string;
+    if (!string->str)
+        return string;
 
     memcpy(string->str + pos, val, len);
 
@@ -738,6 +780,8 @@ dap_string_t* dap_string_overwrite_len(dap_string_t *string, size_t pos, const c
 dap_string_t* dap_string_erase(dap_string_t *string, ssize_t pos, ssize_t len)
 {
     dap_return_val_if_fail(string != NULL, NULL);
+    if (!string->str)
+        return string;
     dap_return_val_if_fail(pos >= 0, string);
     dap_return_val_if_fail((size_t )pos <= string->len, string);
 
@@ -776,6 +820,8 @@ dap_string_t* dap_string_down(dap_string_t *string)
     long n;
 
     dap_return_val_if_fail(string != NULL, NULL);
+    if (!string->str)
+        return string;
 
     n = string->len;
     s = (uint8_t *) string->str;
@@ -809,6 +855,8 @@ dap_string_t* dap_string_up(dap_string_t *string)
     long n;
 
     dap_return_val_if_fail(string != NULL, NULL);
+    if (!string->str)
+        return string;
 
     n = string->len;
     s = (uint8_t *) string->str;
@@ -838,30 +886,39 @@ dap_string_t* dap_string_up(dap_string_t *string)
 void dap_string_append_vprintf(dap_string_t *string, const char *format, va_list args)
 {
     const char l_oom [] = { "Out of memory@%s!" };
-    char *buf, l_buf[128];
+    char *buf = NULL, l_buf[128];
+    int l_fmt_len;
     size_t len;
 
     dap_return_if_fail(string != NULL);
     dap_return_if_fail(format != NULL);
 
-    len = vasprintf(&buf, format, args);
-    if ( (ssize_t)len < 0 )                    /* Got negative/error ? Return to caller */
+    l_fmt_len = vasprintf(&buf, format, args);
+    if ( l_fmt_len < 0 || !buf )               /* Got negative/error ? Return to caller */
         return;
+    len = (size_t)l_fmt_len;
 
-    dap_string_maybe_expand(string, len);                                   /* Try to expand an area for new append */
+    if (!dap_string_maybe_expand(string, len))
+        goto cleanup;
 
-    if ( (string->allocated_len - string->len) < len )                      /* Is there real space for new append ? */
-        return;
-
-    if (string->str) {
+    if (string->str && string->allocated_len >= string->len
+            && (string->allocated_len - string->len) >= len) {
         memcpy(string->str + string->len, buf, len + 1);
         string->len += len;
     } else {
-        len = snprintf(l_buf, sizeof(buf), l_oom, __func__ );
-        if ( (string->str = DAP_NEW_SIZE(char, sizeof(l_buf ))) )
-            memcpy(string->str, l_buf , len);
+        int l_msg_len = snprintf(l_buf, sizeof(l_buf), l_oom, __func__ );
+        if (l_msg_len > 0) {
+            size_t l_copy_len = dap_min((size_t)l_msg_len, sizeof(l_buf) - 1);
+            if ( (string->str = DAP_NEW_Z_SIZE(char, sizeof(l_buf))) ) {
+                memcpy(string->str, l_buf, l_copy_len);
+                string->str[l_copy_len] = '\0';
+                string->len = l_copy_len;
+                string->allocated_len = sizeof(l_buf);
+            }
+        }
     }
 
+cleanup:
     DAP_DELETE(buf);
 }
 

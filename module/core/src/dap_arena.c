@@ -243,11 +243,18 @@ static inline void *s_arena_alloc_internal(dap_arena_t *a_arena, size_t a_size, 
     // Align size
     size_t l_aligned_size = ALIGN_UP(a_size, DAP_ARENA_ALIGNMENT);
     
-    // Check if current page has enough space
+    // Check if current page has enough space. If full, try existing next pages first,
+    // then append a new page at the tail. This preserves chain reuse after reset().
     dap_arena_page_t *l_page = a_arena->current_page;
     
-    if (l_page->used + l_aligned_size > l_page->size) {
-        // Need new page
+    while (l_page->used + l_aligned_size > l_page->size) {
+        if (l_page->next) {
+            l_page = l_page->next;
+            a_arena->current_page = l_page;
+            continue;
+        }
+        
+        // Need new tail page
         // Apply growth factor to page size
         size_t l_new_page_size = (size_t)(a_arena->page_size * a_arena->page_growth_factor);
         
@@ -266,13 +273,12 @@ static inline void *s_arena_alloc_internal(dap_arena_t *a_arena, size_t a_size, 
             return NULL;
         }
         
-        // Link new page to end of list
+        // Append to list tail
         l_page->next = l_new_page;
+        l_page = l_new_page;
         a_arena->current_page = l_new_page;
         a_arena->page_size = l_new_page_size; // Update for next growth
         a_arena->total_allocated += sizeof(dap_arena_page_t) + l_new_page_size;
-        
-        l_page = l_new_page;
         
         debug_if(s_debug_more, L_DEBUG, "Arena: new page allocated (%zu bytes, total pages: %zu)", 
                l_new_page_size, a_arena->total_allocated / (sizeof(dap_arena_page_t) + a_arena->page_size));
@@ -659,4 +665,3 @@ void dap_arena_free(dap_arena_t *a_arena)
     
     debug_if(s_debug_more, L_DEBUG, "Arena freed");
 }
-

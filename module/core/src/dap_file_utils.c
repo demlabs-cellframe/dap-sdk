@@ -235,7 +235,9 @@ char* dap_path_get_basename(const char *a_file_name)
 {
     ssize_t l_base;
     ssize_t l_last_nonslash;
+    ssize_t l_len;
     const char *l_retval;
+    char *l_result;
 
     dap_return_val_if_fail(a_file_name != NULL, NULL);
 
@@ -270,10 +272,14 @@ char* dap_path_get_basename(const char *a_file_name)
     l_base = 1;
 #endif
 
-    //size_t l_len = l_last_nonslash - l_base;
+    l_len = l_last_nonslash - l_base;
     l_retval = a_file_name + l_base + 1;
+    l_result = DAP_NEW_Z_SIZE(char, (size_t)l_len + 1);
+    if (!l_result)
+        return NULL;
+    memcpy(l_result, l_retval, (size_t)l_len);
 
-    return dap_strdup(l_retval);
+    return l_result;
 }
 
 /**
@@ -493,6 +499,8 @@ void dap_subs_free(dap_list_name_directories_t *subs_list){
 dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     dap_list_name_directories_t *list = NULL;
     dap_list_name_directories_t *element;
+    if (!a_path_dir)
+        return NULL;
 #ifdef DAP_OS_WINDOWS
     size_t m_size = strlen(a_path_dir);
     char *m_path = DAP_NEW_SIZE(char, m_size + 2);
@@ -501,6 +509,10 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     m_path[m_size + 1] = '\0';
     WIN32_FIND_DATA info_file;
     HANDLE h_find_file = FindFirstFileA(m_path, &info_file);
+    if (h_find_file == INVALID_HANDLE_VALUE){
+        DAP_FREE(m_path);
+        return NULL;
+    }
     while (FindNextFileA(h_find_file, &info_file)){
         if (info_file.dwFileAttributes == FILE_ATTRIBUTE_DIRECTORY &&
             strcmp(info_file.cFileName, "..") && strcmp(info_file.cFileName, ".")){
@@ -513,6 +525,8 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     DAP_FREE(m_path);
 #else
     DIR *dir = opendir(a_path_dir);
+    if (!dir)
+        return NULL;
     struct dirent *entry = readdir(dir);
     while (entry != NULL){
         if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0 && entry->d_type == DT_DIR){
@@ -546,17 +560,21 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
  */
 const char* dap_path_get_ext(const char *a_filename)
 {
+    if(!a_filename)
+        return NULL;
     size_t l_len = dap_strlen(a_filename);
-    const char *l_p = a_filename + l_len - 1;
     if(l_len < 2)
         return NULL ;
 
-    while(l_p > a_filename)
+    const char *l_p = a_filename + l_len;
+    while(l_p != a_filename)
     {
-        if(*l_p == '.') {
-            return ++l_p;
-        }
         l_p--;
+        if (DAP_IS_DIR_SEPARATOR(*l_p))
+            break;
+        if(*l_p == '.') {
+            return l_p + 1;
+        }
     }
     return NULL ;
 }
@@ -1262,8 +1280,25 @@ char* dap_canonicalize_path(const char *a_filename, const char *a_path) {
 
 char* dap_canonicalize_filename(const char *filename, const char *relative_to)
 {
+    if (!filename)
+        return NULL;
+
+    if (dap_path_is_absolute(filename))
+        return realpath(filename, NULL);
+
+    char *l_cwd = NULL;
+    if (!relative_to) {
+        l_cwd = dap_get_current_dir();
+        if (!l_cwd)
+            return NULL;
+        relative_to = l_cwd;
+    }
+
     char buf[MAX_PATH + 1];
-    snprintf(buf, sizeof(buf), "%s/%s", relative_to, filename);
+    int l_written = snprintf(buf, sizeof(buf), "%s/%s", relative_to, filename);
+    DAP_DELETE(l_cwd);
+    if (l_written < 0 || (size_t)l_written >= sizeof(buf))
+        return NULL;
     return realpath(buf, NULL);
 #if 0
     char *canon, *input, *output, *after_root, *output_start;
