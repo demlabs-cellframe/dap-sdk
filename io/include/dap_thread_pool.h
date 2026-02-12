@@ -57,13 +57,13 @@ typedef void (*dap_thread_pool_callback_t)(dap_thread_pool_t *a_pool,
 /**
  * @brief Create thread pool
  * @param a_num_threads Number of worker threads (0 = auto-detect CPU count)
- * @param a_queue_size Max task queue size (0 = unlimited)
+ * @param a_queue_size Max task queue size per thread (0 = unlimited)
  * @return Thread pool handle, or NULL on error
  */
 dap_thread_pool_t* dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_queue_size);
 
 /**
- * @brief Submit task to thread pool
+ * @brief Submit task to thread pool (round-robin distribution)
  * @param a_pool Thread pool handle
  * @param a_task_func Task function to execute
  * @param a_task_arg Task argument
@@ -78,7 +78,36 @@ int dap_thread_pool_submit(dap_thread_pool_t *a_pool,
                            void *a_callback_arg);
 
 /**
- * @brief Get number of pending tasks
+ * @brief Submit task to a specific worker thread (sticky binding)
+ *
+ * Guarantees that all tasks submitted with the same a_thread_idx
+ * are executed sequentially on the same thread.
+ * Typical usage: a_thread_idx = object_id % dap_thread_pool_get_thread_count(pool)
+ *
+ * @param a_pool Thread pool handle
+ * @param a_thread_idx Worker thread index (0 .. get_thread_count()-1)
+ * @param a_task_func Task function to execute
+ * @param a_task_arg Task argument
+ * @param a_callback Completion callback (called from worker thread, can be NULL)
+ * @param a_callback_arg Callback argument
+ * @return 0 on success, negative on error (-1 invalid args, -2 shutdown, -3 queue full)
+ */
+int dap_thread_pool_submit_to(dap_thread_pool_t *a_pool,
+                              uint32_t a_thread_idx,
+                              dap_thread_pool_task_func_t a_task_func,
+                              void *a_task_arg,
+                              dap_thread_pool_callback_t a_callback,
+                              void *a_callback_arg);
+
+/**
+ * @brief Get number of worker threads in the pool
+ * @param a_pool Thread pool handle
+ * @return Number of worker threads
+ */
+uint32_t dap_thread_pool_get_thread_count(dap_thread_pool_t *a_pool);
+
+/**
+ * @brief Get total number of pending tasks across all workers
  * @param a_pool Thread pool handle
  * @return Number of pending tasks
  */

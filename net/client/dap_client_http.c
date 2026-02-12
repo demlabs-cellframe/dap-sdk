@@ -1713,7 +1713,9 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
     dap_return_if_fail(a_client_http);
     debug_if(s_debug_more, L_DEBUG, "HTTP client delete");
     if (a_client_http->timer_uuid) {
-        DAP_DEL_Z(a_client_http->timer->callback_arg);
+        if (a_client_http->timer) {
+            DAP_DEL_Z(a_client_http->timer->callback_arg);
+        }
         
         // Use cached UUID for MT-safe deletion
         dap_worker_t *l_timer_worker = a_client_http->timer ? a_client_http->timer->events_socket->worker : NULL;

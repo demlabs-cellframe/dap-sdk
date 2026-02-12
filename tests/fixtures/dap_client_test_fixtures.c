@@ -139,15 +139,19 @@ bool dap_test_client_check_initialized(void *a_user_data) {
         return false;
     }
     
-    dap_client_pvt_t *client_pvt = DAP_CLIENT_PVT(client);
+    dap_client_fsm_t *client_fsm = DAP_CLIENT_FSM(client);
+    if (!client_fsm) {
+        return false;
+    }
+    dap_client_pvt_t *client_pvt = client_fsm->esocket;
     if (!client_pvt) {
         return false;
     }
     
     // Check that internal structure is initialized
     return (client_pvt->worker != NULL && 
-            client_pvt->stage == STAGE_BEGIN &&
-            client_pvt->stage_status == STAGE_STATUS_COMPLETE);
+            client_fsm->stage == STAGE_BEGIN &&
+            client_fsm->stage_status == STAGE_STATUS_COMPLETE);
 }
 
 bool dap_test_client_check_ready_for_deletion(void *a_user_data) {
@@ -163,8 +167,7 @@ bool dap_test_client_check_ready_for_deletion(void *a_user_data) {
     
     // Check that all resources are cleaned up
     return (client_pvt->stream == NULL && 
-            client_pvt->stream_es == NULL &&
-            client_pvt->reconnect_timer == NULL);
+            client_pvt->stream_es == NULL);
 }
 
 // ============================================================================

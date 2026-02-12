@@ -21,7 +21,8 @@
 */
 
 #include "dap_client_helpers.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_esocket.h"
 #include "dap_worker.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"

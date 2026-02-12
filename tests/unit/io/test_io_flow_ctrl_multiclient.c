@@ -619,11 +619,11 @@ int main(int argc, char **argv)
         "[general]\n"
         "debug_mode=true\n"
         "[dap_io_flow_socket]\n"
-        "debug_more=true\n"
+        "debug_more=false\n"
         "[dap_stream]\n"
-        "debug_more=true\n"
+        "debug_more=false\n"
         "[dap_client]\n"
-        "debug_more=true\n";
+        "debug_more=false\n";
     FILE *f = fopen("test_fc_multiclient.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
