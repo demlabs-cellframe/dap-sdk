@@ -111,7 +111,7 @@ static inline void accum_mul(__uint128_t *acc, uint64_t a, uint64_t b) {
     d += (__uint128_t)a4 * b2; \
     /* [d 0 t4 t3 0 c r0] = [p8 0 p6 p5 p4 p3 0 p1 p0] */ \
     /* Reduce p6: c += (d mod M) * R */ \
-    c += ((uint64_t)d & M) * R; d >>= 52; \
+    c += (__uint128_t)((uint64_t)d & M) * R; d >>= 52; \
     /* [d 0 0 t4 t3 0 c r0] */ \
     (r)[1] = (uint64_t)c & M; c >>= 52; \
     /* [d 0 0 t4 t3 c r1 r0] */ \
@@ -206,7 +206,7 @@ static inline void accum_mul(__uint128_t *acc, uint64_t a, uint64_t b) {
     d += (__uint128_t)a2 * a4; \
     d += (__uint128_t)a3 * a3; \
     /* [d 0 t4 t3 0 c r0] = [p8 0 p6 p5 p4 p3 0 p1 p0] */ \
-    c += ((uint64_t)d & M) * R; d >>= 52; \
+    c += (__uint128_t)((uint64_t)d & M) * R; d >>= 52; \
     /* [d 0 0 t4 t3 0 c r0] */ \
     (r)[1] = (uint64_t)c & M; c >>= 52; \
     /* [d 0 0 t4 t3 c r1 r0] */ \
