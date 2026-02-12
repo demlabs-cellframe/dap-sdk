@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "dap_common.h"
+#include "dap_mmap.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,8 +79,8 @@ typedef struct dap_global_db_btree_page_header {
     uint16_t entries_count;     // Number of entries in page
     uint32_t free_space;        // Free space in page
     uint64_t page_id;           // This page's ID/offset
-    uint64_t right_sibling;     // Right sibling page (for sequential scan)
-    uint64_t parent;            // Parent page (0 for root)
+    uint64_t right_sibling;     // Right sibling page (for forward scan, 0 = rightmost)
+    uint64_t left_sibling;      // Left sibling page (for reverse scan, 0 = leftmost)
 } DAP_ALIGN_PACKED dap_global_db_btree_page_header_t;
 
 _Static_assert(sizeof(dap_global_db_btree_page_header_t) == 32, "Page header must be 32 bytes");
@@ -114,6 +115,7 @@ _Static_assert(sizeof(dap_global_db_btree_branch_entry_t) == 24, "Branch entry m
 typedef struct dap_global_db_btree_page {
     dap_global_db_btree_page_header_t header;
     bool is_dirty;                       // Page has been modified
+    bool is_mmap_ref;                    // Data points into mmap region (don't free)
     uint8_t *data;                       // Page data (entries area)
     // For branch pages: array of branch entries
     // For leaf pages: variable-size leaf entries
@@ -123,12 +125,14 @@ typedef struct dap_global_db_btree_page {
  * @brief B-tree handle
  */
 typedef struct dap_global_db_btree {
-    int fd;                              // File descriptor
+    int fd;                              // File descriptor (kept for header I/O fallback)
     char *filepath;                      // File path
     dap_global_db_btree_header_t header;       // Cached header
     dap_global_db_btree_page_t *root;          // Cached root page (may be NULL)
+    dap_global_db_btree_page_t *hot_leaf;      // Cached last-written leaf (write-back, avoid navigation)
     bool read_only;                      // Read-only mode
     uint64_t txn_id;                     // Current transaction ID
+    dap_mmap_t *mmap;                    // Memory-mapped file handle (NULL = legacy I/O)
 } dap_global_db_btree_t;
 
 /**
