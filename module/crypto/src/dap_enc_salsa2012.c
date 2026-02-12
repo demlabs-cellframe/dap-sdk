@@ -30,15 +30,28 @@
 void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size, size_t key_size)
 {
+    if ( !a_key ) {
+        return;
+    }
     if(key_size < SALSA20_KEY_SIZE)
     {
         log_it(L_ERROR, "SALSA20 key cannot be less than 32 bytes but got %zd",key_size);
     }
     a_key->last_used_timestamp = dap_time_now();
 
+    if (a_key->priv_key_data) {
+        randombytes(a_key->priv_key_data, a_key->priv_key_data_size);
+        DAP_DEL_Z(a_key->priv_key_data);
+        a_key->priv_key_data_size = 0;
+    }
 
     a_key->priv_key_data_size = SALSA20_KEY_SIZE;
     a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);
+    if ( !a_key->priv_key_data ) {
+        log_it( L_ERROR, "can't allocate memory for SALSA20 key" );
+        a_key->priv_key_data_size = 0;
+        return;
+    }
 
     // Use SHA3-256 sponge construction for key derivation
     dap_hash_keccak_ctx_t l_ctx;
@@ -56,6 +69,9 @@ void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_
  */
 void dap_enc_salsa2012_key_delete(struct dap_enc_key *a_key)
 {
+    if ( !a_key ) {
+        return;
+    }
     if(a_key->priv_key_data)
     {
         randombytes(a_key->priv_key_data,a_key->priv_key_data_size);
@@ -72,6 +88,9 @@ void dap_enc_salsa2012_key_delete(struct dap_enc_key *a_key)
  */
 void dap_enc_salsa2012_key_new(struct dap_enc_key * a_key)
 {
+    if ( !a_key ) {
+        return;
+    }
     a_key->_inheritor = NULL;
     a_key->_inheritor_size = 0;
     a_key->type = DAP_ENC_KEY_TYPE_SALSA2012;
@@ -92,12 +111,23 @@ void dap_enc_salsa2012_key_new(struct dap_enc_key * a_key)
  */
 size_t dap_enc_salsa2012_decrypt(struct dap_enc_key *a_key, const void * a_in, size_t a_in_size, void ** a_out)
 {
-    size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
-    if(l_out_size <= 0) {
-        log_it(L_ERROR, "salsa2012 decryption ct with iv must be more than kBlockLen89 bytes");
+    if ( !a_key || !a_out || !a_in ) {
         return 0;
     }
-    *a_out = DAP_NEW_SIZE(uint8_t, a_in_size - SALSA20_NONCE_SIZE);
+    if ( !a_key->priv_key_data || a_key->priv_key_data_size < SALSA20_KEY_SIZE ) {
+        log_it( L_ERROR, "salsa2012 key is not initialized" );
+        return 0;
+    }
+    if ( a_in_size <= SALSA20_NONCE_SIZE ) {
+        log_it(L_ERROR, "salsa2012 decryption input must be larger than SALSA20_NONCE_SIZE");
+        return 0;
+    }
+    size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
+    *a_out = DAP_NEW_SIZE(uint8_t, l_out_size);
+    if ( !*a_out ) {
+        log_it( L_ERROR, "can't allocate memory for salsa2012 decryption output" );
+        return 0;
+    }
     l_out_size = dap_enc_salsa2012_decrypt_fast(a_key, a_in, a_in_size, *a_out, l_out_size);
     if(l_out_size == 0)
         DAP_DEL_Z(*a_out);
@@ -115,12 +145,23 @@ size_t dap_enc_salsa2012_decrypt(struct dap_enc_key *a_key, const void * a_in, s
  */
 size_t dap_enc_salsa2012_encrypt(struct dap_enc_key * a_key, const void * a_in, size_t a_in_size, void ** a_out)
 {
+    if ( !a_key || !a_out || !a_in ) {
+        return 0;
+    }
+    if ( !a_key->priv_key_data || a_key->priv_key_data_size < SALSA20_KEY_SIZE ) {
+        log_it( L_ERROR, "salsa2012 key is not initialized" );
+        return 0;
+    }
     if(a_in_size <= 0) {
-        log_it(L_ERROR, "gost ofb encryption pt cannot be 0 bytes");
+        log_it(L_ERROR, "salsa2012 encryption plaintext cannot be empty");
         return 0;
     }
     size_t l_out_size = a_in_size + SALSA20_NONCE_SIZE;
     *a_out = DAP_NEW_SIZE(uint8_t, l_out_size);
+    if ( !*a_out ) {
+        log_it( L_ERROR, "can't allocate memory for salsa2012 encryption output" );
+        return 0;
+    }
     l_out_size = dap_enc_salsa2012_encrypt_fast(a_key, a_in, a_in_size, *a_out, l_out_size);
     if(l_out_size == 0)
         DAP_DEL_Z(*a_out);
@@ -147,7 +188,7 @@ size_t dap_enc_salsa2012_calc_encode_size(const size_t size_in)
 size_t dap_enc_salsa2012_calc_decode_size(const size_t size_in)
 {
     if(size_in <= SALSA20_NONCE_SIZE) {
-        log_it(L_ERROR, "salsa2012 decryption size_in ct with iv must be more than kBlockLen89 bytes");
+        log_it(L_ERROR, "salsa2012 decode size requires input larger than SALSA20_NONCE_SIZE");
         return 0;
     }
     return size_in - SALSA20_NONCE_SIZE;
@@ -165,6 +206,17 @@ size_t dap_enc_salsa2012_calc_decode_size(const size_t size_in)
  */
 size_t dap_enc_salsa2012_decrypt_fast(struct dap_enc_key *a_key, const void * a_in,
         size_t a_in_size, void * a_out, size_t buf_out_size) {
+    if ( !a_key || !a_in || !a_out ) {
+        return 0;
+    }
+    if ( !a_key->priv_key_data || a_key->priv_key_data_size < SALSA20_KEY_SIZE ) {
+        log_it( L_ERROR, "salsa2012 key is not initialized" );
+        return 0;
+    }
+    if ( a_in_size <= SALSA20_NONCE_SIZE ) {
+        log_it( L_ERROR, "salsa2012 fast_decryption input must be larger than SALSA20_NONCE_SIZE" );
+        return 0;
+    }
     size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
     if(l_out_size > buf_out_size) {
         log_it(L_ERROR, "salsa2012 fast_decryption too small buf_out_size");
@@ -188,6 +240,13 @@ size_t dap_enc_salsa2012_decrypt_fast(struct dap_enc_key *a_key, const void * a_
  */
 size_t dap_enc_salsa2012_encrypt_fast(struct dap_enc_key * a_key, const void * a_in, size_t a_in_size, void * a_out,size_t buf_out_size)
 {
+    if ( !a_key || !a_in || !a_out ) {
+        return 0;
+    }
+    if ( !a_key->priv_key_data || a_key->priv_key_data_size < SALSA20_KEY_SIZE ) {
+        log_it( L_ERROR, "salsa2012 key is not initialized" );
+        return 0;
+    }
     size_t l_out_size = a_in_size + SALSA20_NONCE_SIZE;
     if(l_out_size > buf_out_size) {
         log_it(L_ERROR, "salsa2012 fast_encryption too small buf_out_size");
@@ -203,4 +262,3 @@ size_t dap_enc_salsa2012_encrypt_fast(struct dap_enc_key * a_key, const void * a
     crypto_stream_salsa2012_xor(a_out + SALSA20_NONCE_SIZE, a_in, a_in_size, a_out, a_key->priv_key_data);
     return l_out_size;
  }
-
