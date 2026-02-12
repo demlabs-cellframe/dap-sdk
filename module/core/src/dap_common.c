@@ -804,7 +804,21 @@ char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
     // Finaly read required data from file to buf
     l_len = l_end_pos - l_start_pos - 1;
     char *l_buf = DAP_NEW_Z_SIZE(char, l_len + 1);
-    fread(l_buf, l_len, 1, fp);
+    if (!l_buf) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        fclose(fp);
+        return NULL;
+    }
+    if (l_len > 0) {
+        size_t l_read = fread(l_buf, 1, l_len, fp);
+        if (l_read != l_len && ferror(fp)) {
+            log_it(L_ERROR, "Failed to read log file chunk");
+            DAP_DELETE(l_buf);
+            l_buf = NULL;
+            fclose(fp);
+            return NULL;
+        }
+    }
 	fclose(fp);
     //log_it(L_DEBUG, "Chunk is %s", l_buf); 
     return l_buf;
@@ -861,8 +875,22 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
 
     long l_read_size = l_end_pos - l_n_line_pos - 1;
     char * l_res = DAP_NEW_Z_SIZE(char, l_read_size + 1);
+    if (!l_res) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        fclose(file);
+        return NULL;
+    }
     fseek(file, l_n_line_pos, SEEK_SET);
-    fread(l_res, l_read_size, 1, file);
+    if (l_read_size > 0) {
+        size_t l_read = fread(l_res, 1, l_read_size, file);
+        if (l_read != (size_t)l_read_size && ferror(file)) {
+            log_it(L_ERROR, "Failed to read log file tail");
+            DAP_DELETE(l_res);
+            l_res = NULL;
+            fclose(file);
+            return NULL;
+        }
+    }
 	fclose(file);
 
     return l_res;
@@ -1038,11 +1066,12 @@ int exec_with_ret(char** repl, const char * a_cmd) {
         return(255);
     }
     memset(buf, 0, sizeof(buf));
-    fgets(buf, sizeof(buf) - 1, fp);
+    if (fgets(buf, sizeof(buf) - 1, fp) == NULL)
+        buf[0] = '\0';
     buf_len = strlen(buf);
     if(repl) {
-        if(buf[buf_len - 1] == '\n')
-            buf[buf_len - 1] ='\0';
+        if (buf_len > 0 && buf[buf_len - 1] == '\n')
+            buf[buf_len - 1] = '\0';
         *repl = strdup(buf);
     }
     return pclose(fp);

@@ -836,9 +836,15 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     FILE* l_sys_max_pipe_size_fd = fopen("/proc/sys/fs/pipe-max-size", "r");
     if (l_sys_max_pipe_size_fd) {
         char l_file_buf[64] = "";
-        fread(l_file_buf, sizeof(l_file_buf), 1, l_sys_max_pipe_size_fd);
-        uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
-        fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
+        size_t l_read = fread(l_file_buf, 1, sizeof(l_file_buf) - 1, l_sys_max_pipe_size_fd);
+        if (l_read > 0) {
+            l_file_buf[l_read] = '\0';
+            uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
+            if (l_sys_max_pipe_size > 0)
+                fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
+        } else if (ferror(l_sys_max_pipe_size_fd)) {
+            log_it(L_WARNING, "Failed to read /proc/sys/fs/pipe-max-size");
+        }
         fclose(l_sys_max_pipe_size_fd);
     }
 #endif

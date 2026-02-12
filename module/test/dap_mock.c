@@ -384,7 +384,7 @@ static uint64_t s_random_range(uint64_t a_min, uint64_t a_max)
     // Use thread-safe random with seed
     static __thread unsigned int l_seed = 0;
     if (l_seed == 0)
-        l_seed = (unsigned int)dap_time_now() ^ (unsigned int)pthread_self();
+        l_seed = (unsigned int)dap_time_now() ^ (unsigned int)(uintptr_t)pthread_self();
     
     uint64_t l_range = a_max - a_min;
 #ifdef _WIN32

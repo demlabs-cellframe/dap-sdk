@@ -101,9 +101,9 @@ if(UNIX)
 endif()
 
 # ============================================================================
-# Test: DAP CPU Monitor (Unix-specific)
+# Test: DAP CPU Monitor (Linux-only, requires /proc/stat)
 # ============================================================================
-if(UNIX)
+if(UNIX AND NOT APPLE)
     project(test_dap_cpu_monitor)
 
     add_executable(${PROJECT_NAME}
@@ -125,9 +125,9 @@ if(UNIX)
 endif()
 
 # ============================================================================
-# Test: DAP Process Memory (Unix-specific)
+# Test: DAP Process Memory (Linux-only, requires /proc/self/status)
 # ============================================================================
-if(UNIX)
+if(UNIX AND NOT APPLE)
     project(test_dap_process_memory)
 
     add_executable(${PROJECT_NAME}

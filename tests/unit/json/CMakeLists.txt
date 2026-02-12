@@ -45,6 +45,9 @@ add_executable(${PROJECT_NAME}
     test_numeric_edge_cases.c
 )
 
+# Disable -ffast-math for this test: it tests NaN/Infinity round-trip which requires IEEE 754 compliance
+target_compile_options(${PROJECT_NAME} PRIVATE -fno-fast-math -fno-finite-math-only)
+
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 

@@ -213,6 +213,7 @@ static bool s_test_simd_impl(
     return l_passed == l_total;
 }
 
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 /**
  * @brief Test AVX2 correctness
  */
@@ -220,7 +221,6 @@ static bool s_test_avx2_correctness(void)
 {
     log_it(L_DEBUG, "Testing AVX2 correctness");
     
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     // Check if AVX2 is available at RUNTIME (not compile time)
     if (dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX2)) {
         log_it(L_INFO, "Testing AVX2 correctness...");
@@ -231,10 +231,6 @@ static bool s_test_avx2_correctness(void)
         log_it(L_INFO, "AVX2 not available on this CPU, skipping");
         return true;  // Skip is not a failure
     }
-#else
-    log_it(L_INFO, "AVX2 not supported on this architecture");
-    return true;  // Skip on non-x86
-#endif
 }
 
 /**
@@ -244,7 +240,6 @@ static bool s_test_sse2_correctness(void)
 {
     log_it(L_DEBUG, "Testing SSE2 correctness");
     
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     if (dap_cpu_arch_is_available(DAP_CPU_ARCH_SSE2)) {
         log_it(L_INFO, "Testing SSE2 correctness...");
         bool l_result = s_test_simd_impl(dap_json_stage1_run_sse2, "SSE2");
@@ -254,12 +249,10 @@ static bool s_test_sse2_correctness(void)
         log_it(L_INFO, "SSE2 not available on this CPU, skipping");
         return true;
     }
-#else
-    log_it(L_INFO, "SSE2 not supported on this architecture");
-    return true;  // Skip on non-x86
-#endif
 }
+#endif
 
+#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
 /**
  * @brief Test NEON correctness
  */
@@ -267,7 +260,6 @@ static bool s_test_neon_correctness(void)
 {
     log_it(L_DEBUG, "Testing NEON correctness");
     
-#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
     if (dap_cpu_arch_is_available(DAP_CPU_ARCH_NEON)) {
         log_it(L_INFO, "Testing NEON correctness...");
         bool l_result = s_test_simd_impl(dap_json_stage1_run_neon, "NEON");
@@ -277,12 +269,10 @@ static bool s_test_neon_correctness(void)
         log_it(L_INFO, "NEON not available on this CPU, skipping");
         return true;
     }
-#else
-    log_it(L_INFO, "NEON not available on this architecture (x86/x64), skipping");
-    return true;
-#endif
 }
+#endif
 
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 /**
  * @brief Test AVX-512 correctness
  */
@@ -290,7 +280,6 @@ static bool s_test_avx512_correctness(void)
 {
     log_it(L_DEBUG, "Testing AVX-512 correctness");
     
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     if (dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX512)) {
         log_it(L_INFO, "Testing AVX-512 correctness...");
         bool l_result = s_test_simd_impl(dap_json_stage1_run_avx512, "AVX-512");
@@ -300,11 +289,8 @@ static bool s_test_avx512_correctness(void)
         log_it(L_INFO, "AVX-512 not available on this CPU, skipping");
         return true;
     }
-#else
-    log_it(L_INFO, "AVX-512 not supported on this architecture");
-    return true;  // Skip on non-x86
-#endif
 }
+#endif
 
 int main(void)
 {

@@ -71,6 +71,14 @@ if (BUILD_WITH_ZIP)
 endif()
 # json-c is now part of module/json - no longer included here
 
+# Link macOS system frameworks (required by dap_network_monitor.c compiled into dap_core)
+if(APPLE)
+    target_link_libraries(${PROJECT_NAME} INTERFACE
+        "-framework CoreFoundation"
+        "-framework SystemConfiguration"
+    )
+endif()
+
 # Store dependencies for final library - no linking of OBJECT targets
 set(DAP_CORE_DEPS "${CORE_LIBRARIES}" CACHE INTERNAL "dap_core external dependencies")
 

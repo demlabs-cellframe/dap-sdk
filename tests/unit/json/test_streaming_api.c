@@ -51,6 +51,7 @@ static bool s_test_incremental_feed(void) {
     const char *json_part1 = "{\"key\":";
     const char *json_part2 = "\"value\",";
     const char *json_part3 = "\"number\":42}";
+    UNUSED(json_part1); UNUSED(json_part2); UNUSED(json_part3);
     
     // Check if streaming API exists
     // Assuming hypothetical API: dap_json_stream_create, dap_json_stream_feed, dap_json_stream_finish
