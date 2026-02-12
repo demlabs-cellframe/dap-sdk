@@ -31,6 +31,7 @@
 #include "dap_net_trans.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
+#include "dap_timerfd.h"  // For handshake retransmission timer
 #include "dap_net.h"
 #include "dap_enc_kyber.h"  // For Kyber512 KEM functions
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
@@ -76,6 +77,12 @@ static bool s_debug_more = false;  // Extra verbose debugging
 // Default configuration values
 #define DAP_STREAM_UDP_DEFAULT_MAX_PACKET_SIZE  1400
 #define DAP_STREAM_UDP_DEFAULT_KEEPALIVE_MS     30000
+
+// HANDSHAKE RETRANSMISSION configuration
+// (separate from Flow Control because HANDSHAKE uses obfuscation, not FC headers)
+#define HANDSHAKE_RETRANSMIT_TIMEOUT_MS     500     // Initial timeout: 500ms
+#define HANDSHAKE_RETRANSMIT_MAX_RETRIES    10      // Max retries before giving up
+#define HANDSHAKE_RETRANSMIT_BACKOFF_FACTOR 1.5     // Exponential backoff factor
 
 // Trans operations forward declarations
 static int s_udp_init(dap_net_trans_t *a_trans, dap_config_t *a_config);
@@ -135,6 +142,9 @@ static const dap_net_trans_ops_t s_udp_ops = {
 // Helper functions
 static dap_stream_trans_udp_private_t *s_get_private(dap_net_trans_t *a_trans);
 static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream);
+
+// Handshake retransmission timer callback
+static bool s_handshake_retransmit_timer_cb(void *a_arg);
 // Made non-static for server.c to create UDP context for server-side streams
 dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream);
 static int s_udp_handshake_response(dap_stream_t *a_stream, const void *a_data, size_t a_data_size);
@@ -173,6 +183,9 @@ static int s_client_flow_ctrl_packet_prepare_cb(
         log_it(L_ERROR, "CLIENT FC prepare: invalid arguments");
         return -1;
     }
+    
+    // NOTE: HANDSHAKE packets are NOT sent through Flow Control
+    // They use obfuscation format which is incompatible with FC protocol
     
     // Build full UDP header (FC + UDP fields)
     dap_stream_trans_udp_full_header_t l_hdr = {
@@ -614,13 +627,216 @@ static void s_client_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void 
 }
 
 /**
- * @brief UDP write callback for client esockets
+ * @brief Ensure Flow Control is created for client UDP context
  * 
- * Sends data from buf_out via send() on the connected UDP socket.
- * For UDP clients, the socket is already connected (via connect()) to the server.
+ * This function creates flow_ctrl if it doesn't exist yet.
+ * Can be called from multiple places (handshake_init, session_start) safely.
  * 
- * UDP has MTU limitation (~1500 bytes), so we send data in chunks.
+ * @param a_udp_ctx UDP context
+ * @return 0 on success (or already created), negative on error
  */
+static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
+{
+    if (!a_udp_ctx) {
+        log_it(L_ERROR, "s_ensure_client_flow_ctrl: NULL udp_ctx");
+        return -1;
+    }
+    
+    // Already created?
+    if (a_udp_ctx->flow_ctrl) {
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: flow_ctrl already exists");
+        return 0;
+    }
+    
+    // Ensure base flow is allocated for client
+    if (!a_udp_ctx->base) {
+        a_udp_ctx->base = DAP_NEW_Z(dap_io_flow_t);
+        if (!a_udp_ctx->base) {
+            log_it(L_ERROR, "Failed to allocate base flow for client UDP");
+            return -2;
+        }
+        log_it(L_DEBUG, "CLIENT: Created base flow for Flow Control");
+    }
+    
+    // Initialize base flow fields (for Flow Control)
+    memcpy(&a_udp_ctx->base->remote_addr, &a_udp_ctx->remote_addr, 
+           sizeof(a_udp_ctx->remote_addr));
+    a_udp_ctx->base->remote_addr_len = a_udp_ctx->remote_addr_len;
+    a_udp_ctx->base->last_activity = time(NULL);
+    a_udp_ctx->base->boundary_type = DAP_IO_FLOW_BOUNDARY_DATAGRAM;
+    
+    dap_io_flow_ctrl_config_t l_fc_config = {
+        .retransmit_timeout_ms = 100,   // 100ms for localhost (was 1000ms - TOO SLOW!)
+        .max_retransmit_count = 20,     // Increased for large transfers
+        .send_window_size = 65536,      // 64K packets in-flight (~64MB for 1KB packets)
+        .recv_window_size = 65536,      // 64K packets reorder buffer
+        .max_out_of_order_delay_ms = 10000,  // 10 seconds out-of-order window
+        .keepalive_interval_ms = 0,     // Not used (dap_stream has own keepalive)
+        .keepalive_timeout_ms = 0,      // Not used
+    };
+    
+    dap_io_flow_ctrl_callbacks_t l_fc_callbacks = {
+        .packet_prepare = s_client_flow_ctrl_packet_prepare_cb,
+        .packet_parse = s_client_flow_ctrl_packet_parse_cb,
+        .packet_send = s_client_flow_ctrl_packet_send_cb,
+        .payload_deliver = s_client_flow_ctrl_payload_deliver_cb,
+        .packet_free = s_client_flow_ctrl_packet_free_cb,
+        .keepalive_timeout = s_client_flow_ctrl_keepalive_timeout_cb,
+        .arg = a_udp_ctx,
+    };
+    
+    dap_io_flow_ctrl_flags_t l_fc_flags = DAP_IO_FLOW_CTRL_RETRANSMIT | 
+                                           DAP_IO_FLOW_CTRL_REORDER;
+    // NOTE: No KEEPALIVE flag - dap_stream has its own keep-alive!
+    
+    a_udp_ctx->flow_ctrl = dap_io_flow_ctrl_create(
+        a_udp_ctx->base,  // Client flow = allocated base dap_io_flow_t
+        l_fc_flags,
+        &l_fc_config,
+        &l_fc_callbacks
+    );
+    
+    if (!a_udp_ctx->flow_ctrl) {
+        log_it(L_ERROR, "Failed to create Flow Control for client UDP");
+        return -3;
+    }
+    
+    log_it(L_NOTICE, "Client-side Flow Control created: retransmit=%dms, max_retries=%d",
+           l_fc_config.retransmit_timeout_ms, l_fc_config.max_retransmit_count);
+    
+    return 0;
+}
+
+/**
+ * @brief Handshake retransmission timer callback
+ * 
+ * This callback is called periodically to retransmit HANDSHAKE packets
+ * that haven't received a response yet. Uses exponential backoff.
+ * 
+ * @param a_arg Pointer to dap_net_trans_udp_ctx_t
+ * @return true to continue timer, false to stop
+ */
+static bool s_handshake_retransmit_timer_cb(void *a_arg)
+{
+    dap_net_trans_udp_ctx_t *l_udp_ctx = (dap_net_trans_udp_ctx_t *)a_arg;
+    
+    if (!l_udp_ctx) {
+        log_it(L_ERROR, "HANDSHAKE RETRANS: NULL udp_ctx in timer callback");
+        return false;  // Stop timer
+    }
+    
+    // Check if handshake completed or context is being destroyed
+    if (l_udp_ctx->handshake_complete) {
+        log_it(L_DEBUG, "HANDSHAKE RETRANS: handshake completed, stopping timer");
+        // Clear saved payload
+        if (l_udp_ctx->handshake_payload) {
+            DAP_DELETE(l_udp_ctx->handshake_payload);
+            l_udp_ctx->handshake_payload = NULL;
+            l_udp_ctx->handshake_payload_size = 0;
+        }
+        l_udp_ctx->handshake_timer = NULL;  // Timer is being deleted
+        return false;  // Stop timer
+    }
+    
+    // Check if we have saved payload to retransmit
+    if (!l_udp_ctx->handshake_payload || l_udp_ctx->handshake_payload_size == 0) {
+        log_it(L_WARNING, "HANDSHAKE RETRANS: no payload to retransmit");
+        l_udp_ctx->handshake_timer = NULL;
+        return false;  // Stop timer
+    }
+    
+    // Check max retries
+    if (l_udp_ctx->handshake_retries >= HANDSHAKE_RETRANSMIT_MAX_RETRIES) {
+        log_it(L_ERROR, "HANDSHAKE RETRANS: max retries (%d) exceeded, giving up",
+               HANDSHAKE_RETRANSMIT_MAX_RETRIES);
+        // Clear saved payload
+        DAP_DELETE(l_udp_ctx->handshake_payload);
+        l_udp_ctx->handshake_payload = NULL;
+        l_udp_ctx->handshake_payload_size = 0;
+        l_udp_ctx->handshake_timer = NULL;
+        return false;  // Stop timer
+    }
+    
+    // Increment retry counter
+    l_udp_ctx->handshake_retries++;
+    
+    log_it(L_INFO, "HANDSHAKE RETRANS: retransmitting (attempt %u/%d)",
+           l_udp_ctx->handshake_retries, HANDSHAKE_RETRANSMIT_MAX_RETRIES);
+    
+    // Get trans_ctx and esocket
+    if (!l_udp_ctx->stream || !l_udp_ctx->stream->trans_ctx) {
+        log_it(L_ERROR, "HANDSHAKE RETRANS: no stream or trans_ctx");
+        l_udp_ctx->handshake_timer = NULL;
+        return false;
+    }
+    
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_udp_ctx->stream->trans_ctx;
+    if (!l_trans_ctx->esocket) {
+        log_it(L_ERROR, "HANDSHAKE RETRANS: no esocket");
+        l_udp_ctx->handshake_timer = NULL;
+        return false;
+    }
+    
+    // Obfuscate handshake (same as initial send)
+    uint8_t *l_obfuscated = NULL;
+    size_t l_obfuscated_size = 0;
+    
+    int l_ret = dap_transport_obfuscate_handshake(l_udp_ctx->handshake_payload,
+                                                   l_udp_ctx->handshake_payload_size,
+                                                   &l_obfuscated, &l_obfuscated_size);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "HANDSHAKE RETRANS: failed to obfuscate");
+        return true;  // Keep timer running, try again
+    }
+    
+    // Send obfuscated handshake
+    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_trans_ctx->esocket,
+                                                      l_obfuscated, l_obfuscated_size,
+                                                      &l_udp_ctx->remote_addr,
+                                                      l_udp_ctx->remote_addr_len);
+    DAP_DELETE(l_obfuscated);
+    
+    if (l_sent < 0) {
+        log_it(L_ERROR, "HANDSHAKE RETRANS: send failed (errno=%d)", errno);
+        return true;  // Keep timer running, try again
+    }
+    
+    log_it(L_DEBUG, "HANDSHAKE RETRANS: sent %zd bytes (attempt %u)",
+           l_sent, l_udp_ctx->handshake_retries);
+    
+    return true;  // Keep timer running
+}
+
+/**
+ * @brief Cancel handshake retransmission timer
+ * 
+ * Called when handshake response is received to stop retransmissions.
+ * 
+ * @param a_udp_ctx UDP context
+ */
+static void s_cancel_handshake_timer(dap_net_trans_udp_ctx_t *a_udp_ctx)
+{
+    if (!a_udp_ctx)
+        return;
+    
+    // Mark handshake as complete to stop timer callback
+    a_udp_ctx->handshake_complete = true;
+    
+    // Delete timer if exists
+    if (a_udp_ctx->handshake_timer) {
+        dap_timerfd_delete_unsafe(a_udp_ctx->handshake_timer);
+        a_udp_ctx->handshake_timer = NULL;
+        log_it(L_DEBUG, "HANDSHAKE: retransmission timer cancelled");
+    }
+    
+    // Free saved payload
+    if (a_udp_ctx->handshake_payload) {
+        DAP_DELETE(a_udp_ctx->handshake_payload);
+        a_udp_ctx->handshake_payload = NULL;
+        a_udp_ctx->handshake_payload_size = 0;
+    }
+}
+
 /**
  * @brief UDP read callback for processing incoming packets
  * 
@@ -1182,8 +1398,9 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     }
     
     // Set up read callback for client esocket and link stream
+    log_it(L_NOTICE, "HANDSHAKE INIT: esocket=%p", l_ctx->esocket);
     if (l_ctx->esocket) {
-        debug_if(s_debug_more, L_DEBUG, "Setting up UDP client esocket %p (fd=%d) for handshake_init", 
+        log_it(L_NOTICE, "Setting up UDP client esocket %p (fd=%d) for handshake_init", 
                  l_ctx->esocket, l_ctx->esocket->fd);
         
         // Store stream pointer
@@ -1227,13 +1444,46 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     void *l_alice_pub = l_udp_ctx->alice_key->pub_key_data;
     size_t l_alice_pub_size = l_udp_ctx->alice_key->pub_key_data_size;
     
+    // Save handshake payload for retransmission
+    l_udp_ctx->handshake_payload = DAP_DUP_SIZE(l_alice_pub, l_alice_pub_size);
+    if (!l_udp_ctx->handshake_payload) {
+        log_it(L_ERROR, "Failed to allocate handshake payload for retransmission");
+        return -1;
+    }
+    l_udp_ctx->handshake_payload_size = l_alice_pub_size;
+    l_udp_ctx->handshake_retries = 0;
+    l_udp_ctx->handshake_complete = false;
+    
     // Send HANDSHAKE packet with alice public key via s_udp_write_typed
     ssize_t l_sent = s_udp_write_typed(a_stream, DAP_STREAM_UDP_PKT_HANDSHAKE, 
                                         l_alice_pub, l_alice_pub_size);
     
     if (l_sent < 0) {
         log_it(L_ERROR, "Failed to send UDP handshake init");
+        DAP_DELETE(l_udp_ctx->handshake_payload);
+        l_udp_ctx->handshake_payload = NULL;
         return -1;
+    }
+    
+    // Start handshake retransmission timer
+    dap_worker_t *l_worker = l_ctx->esocket ? l_ctx->esocket->worker : dap_worker_get_current();
+    log_it(L_NOTICE, "HANDSHAKE: esocket=%p, esocket->worker=%p, worker_current=%p",
+           l_ctx->esocket, l_ctx->esocket ? l_ctx->esocket->worker : NULL, dap_worker_get_current());
+    if (l_worker) {
+        l_udp_ctx->handshake_timer = dap_timerfd_start_on_worker(
+            l_worker,
+            HANDSHAKE_RETRANSMIT_TIMEOUT_MS,
+            s_handshake_retransmit_timer_cb,
+            l_udp_ctx
+        );
+        if (l_udp_ctx->handshake_timer) {
+            log_it(L_NOTICE, "HANDSHAKE: retransmission timer STARTED (timeout=%dms, max_retries=%d)",
+                   HANDSHAKE_RETRANSMIT_TIMEOUT_MS, HANDSHAKE_RETRANSMIT_MAX_RETRIES);
+        } else {
+            log_it(L_ERROR, "HANDSHAKE: FAILED to start retransmission timer!");
+        }
+    } else {
+        log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", l_ctx->esocket);
     }
     
     log_it(L_INFO, "UDP handshake init sent: %zd bytes (session_id=%lu)", 
@@ -1372,6 +1622,9 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         dap_enc_key_delete(l_udp_ctx->handshake_key);
     }
     l_udp_ctx->handshake_key = l_handshake_key;
+    
+    // CRITICAL: Cancel handshake retransmission timer - handshake succeeded!
+    s_cancel_handshake_timer(l_udp_ctx);
     
     debug_if(s_debug_more, L_DEBUG,
              "CLIENT: stored handshake_key=%p for session_id=0x%lx",
@@ -1690,63 +1943,12 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         return 0;
     }
     
-    // Create Flow Control for reliable delivery (client-side)
-    // Allocate base dap_io_flow_t for Flow Control integration
-    if (!l_udp_ctx->base) {
-        l_udp_ctx->base = DAP_NEW_Z(dap_io_flow_t);
-        if (!l_udp_ctx->base) {
-            log_it(L_ERROR, "Failed to allocate base flow for client UDP");
-            return -2;
-        }
-        
-        // Initialize base flow fields (for Flow Control)
-        memcpy(&l_udp_ctx->base->remote_addr, &l_udp_ctx->remote_addr, 
-               sizeof(l_udp_ctx->remote_addr));
-        l_udp_ctx->base->remote_addr_len = l_udp_ctx->remote_addr_len;
-        l_udp_ctx->base->last_activity = time(NULL);
-        l_udp_ctx->base->boundary_type = DAP_IO_FLOW_BOUNDARY_DATAGRAM;
-        
-        log_it(L_DEBUG, "CLIENT: Created base flow for Flow Control");
+    // Create Flow Control for reliable delivery (client-side) via helper
+    int l_fc_ret = s_ensure_client_flow_ctrl(l_udp_ctx);
+    if (l_fc_ret != 0) {
+        log_it(L_ERROR, "SESSION_START: failed to create flow_ctrl: %d", l_fc_ret);
+        return l_fc_ret;
     }
-    
-    dap_io_flow_ctrl_config_t l_fc_config = {
-        .retransmit_timeout_ms = 100,   // 100ms for localhost (was 1000ms - TOO SLOW!)
-        .max_retransmit_count = 20,     // Increased for large transfers
-        .send_window_size = 65536,      // 64K packets in-flight (~64MB for 1KB packets)
-        .recv_window_size = 65536,      // 64K packets reorder buffer
-        .max_out_of_order_delay_ms = 10000,  // 10 seconds out-of-order window
-        .keepalive_interval_ms = 0,     // Not used (dap_stream has own keepalive)
-        .keepalive_timeout_ms = 0,      // Not used
-    };
-    
-    dap_io_flow_ctrl_callbacks_t l_fc_callbacks = {
-        .packet_prepare = s_client_flow_ctrl_packet_prepare_cb,
-        .packet_parse = s_client_flow_ctrl_packet_parse_cb,
-        .packet_send = s_client_flow_ctrl_packet_send_cb,
-        .payload_deliver = s_client_flow_ctrl_payload_deliver_cb,
-        .packet_free = s_client_flow_ctrl_packet_free_cb,
-        .keepalive_timeout = s_client_flow_ctrl_keepalive_timeout_cb,
-        .arg = l_udp_ctx,
-    };
-    
-    dap_io_flow_ctrl_flags_t l_fc_flags = DAP_IO_FLOW_CTRL_RETRANSMIT | 
-                                           DAP_IO_FLOW_CTRL_REORDER;
-    // NOTE: No KEEPALIVE flag - dap_stream has its own keep-alive!
-    
-    l_udp_ctx->flow_ctrl = dap_io_flow_ctrl_create(
-        l_udp_ctx->base,  // Client flow = allocated base dap_io_flow_t
-        l_fc_flags,
-        &l_fc_config,
-        &l_fc_callbacks
-    );
-    
-    if (!l_udp_ctx->flow_ctrl) {
-        log_it(L_ERROR, "Failed to create Flow Control for client UDP");
-        return -3;
-    }
-    
-    log_it(L_NOTICE, "Client-side Flow Control created: retransmit=%dms, max_retries=%d",
-           l_fc_config.retransmit_timeout_ms, l_fc_config.max_retransmit_count);
     
     // CRITICAL: Process ALL buffered packets (in order)!
     // These packets arrived between SESSION_CREATE and FC creation
@@ -2178,14 +2380,19 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     
 
     // HANDSHAKE packets are OBFUSCATED (size-based encryption)
+    // NOTE: HANDSHAKE cannot use Flow Control because:
+    // 1. It uses obfuscation format, not FC headers
+    // 2. Server responds with obfuscated packet (not FC packet)
+    // 3. FC expects symmetric protocol (both sides use seq/ack)
+    // TODO: Implement separate handshake retransmission timer
     if (a_pkt_type == DAP_STREAM_UDP_PKT_HANDSHAKE) {
         // Validate size (must be Kyber public key)
         if (a_size != DAP_STREAM_UDP_HANDSHAKE_SIZE) {
             log_it(L_ERROR, "Invalid handshake payload size: %zu (expected %d)",
                    a_size, DAP_STREAM_UDP_HANDSHAKE_SIZE);
             return -1;
-    }
-
+        }
+        
         // Obfuscate handshake (encrypt with size-derived key, add random padding)
         uint8_t *l_obfuscated = NULL;
         size_t l_obfuscated_size = 0;
@@ -2194,8 +2401,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
                                                       &l_obfuscated, &l_obfuscated_size);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to obfuscate HANDSHAKE packet");
-        return -1;
-    }
+            return -1;
+        }
         
         // Send obfuscated handshake (CLIENT UDP)
         // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
@@ -2207,8 +2414,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     
         if (l_sent < 0) {
             log_it(L_ERROR, "Failed to send obfuscated HANDSHAKE packet");
-        return -1;
-    }
+            return -1;
+        }
 
         debug_if(s_debug_more, L_DEBUG,
                  "Obfuscated HANDSHAKE sent: %zu → %zu bytes",
@@ -2426,6 +2633,9 @@ static void s_udp_close(dap_stream_t *a_stream)
             l_udp_ctx->buffered_count = 0;
             l_udp_ctx->buffered_capacity = 0;
         }
+        
+        // Cancel handshake retransmission timer if present
+        s_cancel_handshake_timer(l_udp_ctx);
         
         // Clean up alice_key if present
         if (l_udp_ctx->alice_key) {

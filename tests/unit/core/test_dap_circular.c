@@ -192,6 +192,7 @@ static void test_circular_load(void)
     dap_cbuf_read(cb, count_writed_bytes, expectedBuffer);
 
     int count_write_bytes = 4;
+    size_t l_expected_len = strlen(expectedBuffer);
     do {
         int r = dap_cbuf_write_in_socket(cb, fd[0]);
         dap_assert_PIF(r == count_write_bytes, "Check write bytes");
@@ -199,7 +200,10 @@ static void test_circular_load(void)
 
         count_write_bytes = rand() % strlen(digits);
         dap_cbuf_push(cb, (void*)digits, count_write_bytes);
-        strncat(expectedBuffer, digits, count_write_bytes);
+        // Use memcpy instead of strncat to avoid truncation warning
+        memcpy(expectedBuffer + l_expected_len, digits, count_write_bytes);
+        l_expected_len += count_write_bytes;
+        expectedBuffer[l_expected_len] = '\0';
         count_writed_bytes += count_write_bytes;
     } while (--iterations);
     count_writed_bytes -= count_write_bytes; // last bytes will not be writed

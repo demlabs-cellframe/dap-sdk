@@ -532,6 +532,10 @@ void dap_events_socket_close(dap_events_socket_t *a_socket);
 
 void dap_events_socket_remove_from_worker_unsafe( dap_events_socket_t *a_es, dap_worker_t * a_worker);
 
+// Get local address and port of socket
+int dap_events_socket_get_local_addr(dap_events_socket_t *a_es, struct sockaddr_storage *a_addr, socklen_t *a_addr_len);
+uint16_t dap_events_socket_get_local_port(dap_events_socket_t *a_es);
+
 // Buffer functions
 void    dap_events_socket_shrink_buf_in(dap_events_socket_t * a_es, size_t shrink_size);
 DAP_STATIC_INLINE size_t dap_events_socket_get_free_buf_size(dap_events_socket_t *a_es) { return a_es->buf_out_size_max - a_es->buf_out_size; }

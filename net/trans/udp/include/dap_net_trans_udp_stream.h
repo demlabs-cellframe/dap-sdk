@@ -28,6 +28,7 @@
 #include "dap_events_socket.h"
 #include "dap_serialize.h"
 #include "dap_io_flow_ctrl.h"  // For base Flow Control header
+#include "dap_timerfd.h"       // For handshake retransmission timer
 
 /**
  * @file dap_net_trans_udp_stream.h
@@ -254,6 +255,12 @@ typedef struct dap_net_trans_udp_ctx {
     size_t buffered_count;              ///< Number of buffered packets
     size_t buffered_capacity;           ///< Capacity of buffered arrays
     bool fc_creating;                   ///< Flag: FC is being created (buffer all packets)
+    // HANDSHAKE RETRANSMISSION (separate from Flow Control)
+    dap_timerfd_t *handshake_timer;     ///< Timer for handshake retransmission
+    uint8_t *handshake_payload;         ///< Saved handshake payload for retransmission
+    size_t handshake_payload_size;      ///< Size of saved handshake payload
+    uint32_t handshake_retries;         ///< Current handshake retry count
+    bool handshake_complete;            ///< Flag: handshake completed (stop retransmission)
 } dap_net_trans_udp_ctx_t;
 
 /**

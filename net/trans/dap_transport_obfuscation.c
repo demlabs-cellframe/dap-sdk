@@ -140,13 +140,18 @@ int dap_transport_obfuscate_handshake(const uint8_t *a_handshake_data,
     }
     
     // Choose random final size in range [MIN, MAX]
-    uint32_t l_size_range = DAP_TRANSPORT_OBFUSCATION_MAX_SIZE - 
-                            DAP_TRANSPORT_OBFUSCATION_MIN_SIZE;
+    // CRITICAL: Account for SALSA2012 nonce (8 bytes) that will be prepended during encryption
+    // So cleartext size should be [MIN - 8, MAX - 8] to get encrypted size in [MIN, MAX]
+    const size_t SALSA_NONCE_SIZE = 8;
+    size_t l_min_cleartext = DAP_TRANSPORT_OBFUSCATION_MIN_SIZE - SALSA_NONCE_SIZE;
+    size_t l_max_cleartext = DAP_TRANSPORT_OBFUSCATION_MAX_SIZE - SALSA_NONCE_SIZE;
+    
+    uint32_t l_size_range = l_max_cleartext - l_min_cleartext;
     uint32_t l_random_offset;
     randombytes((uint8_t*)&l_random_offset, sizeof(l_random_offset));
     l_random_offset = l_random_offset % (l_size_range + 1);
     
-    size_t l_final_size = DAP_TRANSPORT_OBFUSCATION_MIN_SIZE + l_random_offset;
+    size_t l_final_size = l_min_cleartext + l_random_offset;
     
     // Get header size from serializer
     size_t l_header_size = s_get_header_size();

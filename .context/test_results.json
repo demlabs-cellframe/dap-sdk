@@ -1,0 +1,249 @@
+{
+  "version": "1.0",
+  "created": "2026-02-02T16:20:00Z",
+  "test_run_summary": {
+    "total_tests": 39,
+    "passed": 34,
+    "failed": 5,
+    "success_rate": "87.2%",
+    "test_directory": "build/tests",
+    "build_configuration": "Debug with debug symbols"
+  },
+  "failed_tests": [
+    {
+      "test_id": 16,
+      "name": "test_thread_pool",
+      "path": "tests/unit/io/test_thread_pool",
+      "category": "unit",
+      "subcategory": "io/thread_pool",
+      "error_type": "Subprocess aborted (SIGABRT)",
+      "exit_code": 134,
+      "failure_point": "Thread pool graceful shutdown",
+      "specific_failure": "All tasks should complete before shutdown FAILED!",
+      "description": "Тест на корректное завершение пула потоков падает при проверке, что все задачи завершились до shutdown",
+      "status": "CRITICAL",
+      "impact": "Может привести к утечкам ресурсов при завершении приложения"
+    },
+    {
+      "test_id": 35,
+      "name": "test_http_simple",
+      "path": "tests/integration/net/http/test_http_simple",
+      "category": "integration",
+      "subcategory": "net/http",
+      "error_type": "Segmentation Fault (SIGSEGV)",
+      "exit_code": 139,
+      "failure_point": "dap_events_socket cleanup",
+      "specific_failure": "Segfault in dap_events_socket_release during shutdown",
+      "description": "HTTP сервер падает при очистке ресурсов событийной системы",
+      "status": "CRITICAL",
+      "impact": "Нестабильность HTTP сервера при завершении работы"
+    },
+    {
+      "test_id": 36,
+      "name": "test_stream",
+      "path": "tests/integration/net/stream/test_stream",
+      "category": "integration",
+      "subcategory": "net/stream",
+      "error_type": "Segmentation Fault (SIGSEGV)",
+      "exit_code": 139,
+      "failure_point": "dap_events_socket cleanup",
+      "specific_failure": "Segfault in dap_events_socket_release during shutdown",
+      "description": "Stream система падает при очистке ресурсов событийной системы",
+      "status": "CRITICAL",
+      "impact": "Нестабильность streaming при завершении работы"
+    },
+    {
+      "test_id": 37,
+      "name": "test_trans_api",
+      "path": "tests/integration/net/trans/test_trans_api",
+      "category": "integration",
+      "subcategory": "net/trans",
+      "error_type": "Segmentation Fault (SIGSEGV)",
+      "exit_code": 139,
+      "failure_point": "Unknown - needs investigation",
+      "specific_failure": "Segfault during test execution",
+      "description": "Transport API тест падает с segfault",
+      "status": "CRITICAL",
+      "impact": "Нестабильность transport layer API"
+    },
+    {
+      "test_id": 38,
+      "name": "test_trans_integration",
+      "path": "tests/integration/net/trans/test_trans_integration",
+      "category": "integration",
+      "subcategory": "net/trans",
+      "error_type": "Subprocess aborted",
+      "exit_code": "Exception",
+      "failure_point": "Unknown - needs investigation",
+      "specific_failure": "Test aborted during execution",
+      "description": "Transport integration тест падает с исключением",
+      "additional_error": "Failed to load eBPF program: Operation not permitted (errno=1)",
+      "status": "HIGH",
+      "impact": "Проблемы с eBPF могут влиять на производительность"
+    }
+  ],
+  "common_issues": {
+    "event_socket_cleanup": {
+      "affected_tests": ["test_http_simple", "test_stream"],
+      "description": "Segmentation fault при очистке dap_events_socket_release",
+      "probable_cause": "Use-after-free или double-free в cleanup коде событийной системы",
+      "priority": "CRITICAL",
+      "investigation_needed": [
+        "Проверить порядок освобождения ресурсов в dap_events_socket_release",
+        "Добавить валидацию указателей перед освобождением",
+        "Проверить reference counting для event sockets",
+        "Использовать valgrind для поиска memory leaks"
+      ]
+    },
+    "thread_pool_shutdown": {
+      "affected_tests": ["test_thread_pool"],
+      "description": "Задачи не завершаются корректно при shutdown",
+      "probable_cause": "Race condition между завершением задач и shutdown пула потоков",
+      "priority": "HIGH",
+      "investigation_needed": [
+        "Проверить логику ожидания завершения задач в dap_thread_pool_shutdown",
+        "Добавить timeout для graceful shutdown",
+        "Проверить синхронизацию между воркерами и главным потоком"
+      ]
+    },
+    "ebpf_permission": {
+      "affected_tests": ["test_trans_integration"],
+      "description": "Failed to load eBPF program: Operation not permitted",
+      "probable_cause": "Недостаточные привилегии для загрузки eBPF программ",
+      "priority": "MEDIUM",
+      "investigation_needed": [
+        "Проверить, требуются ли CAP_BPF или CAP_SYS_ADMIN capabilities",
+        "Добавить проверку доступности eBPF перед использованием",
+        "Предусмотреть fallback без eBPF для непривилегированных пользователей"
+      ]
+    }
+  },
+  "passing_tests_summary": {
+    "framework_tests": {
+      "count": 6,
+      "tests": [
+        "test_framework_unit",
+        "test_framework_integration",
+        "test_framework_variable_functions",
+        "test_framework_c_ifdef",
+        "test_framework_return_type_macros",
+        "test_framework_return_type_macros_dap_tpl"
+      ],
+      "status": "ALL PASS"
+    },
+    "core_tests": {
+      "count": 6,
+      "tests": [
+        "test_dap_common",
+        "test_dap_config",
+        "test_dap_strfuncs",
+        "test_dap_circular",
+        "test_dap_cpu_monitor",
+        "test_dap_process_memory"
+      ],
+      "status": "ALL PASS"
+    },
+    "crypto_tests": {
+      "count": 3,
+      "tests": [
+        "crypto_enc_test",
+        "crypto_cert_test",
+        "crypto_falcon_test"
+      ],
+      "status": "ALL PASS",
+      "note": "Квантово-устойчивые криптографические тесты проходят успешно"
+    },
+    "io_tests": {
+      "count": 3,
+      "tests": [
+        "test_io_flow_tiers",
+        "test_thread",
+        "test_thread_pool_integration"
+      ],
+      "status": "MOSTLY PASS",
+      "note": "Unit test test_thread_pool не проходит, но integration тест работает"
+    },
+    "network_tests": {
+      "count": 10,
+      "tests": [
+        "test_dap_client",
+        "test_stream_trans_full",
+        "test_dap_stream_pkt",
+        "test_dap_http_server",
+        "test_trans",
+        "test_trans_http",
+        "test_trans_websocket",
+        "test_trans_udp",
+        "test_trans_dns",
+        "test_http_client_server"
+      ],
+      "status": "ALL PASS"
+    },
+    "other_tests": {
+      "count": 6,
+      "tests": [
+        "test_stream_trans",
+        "test_stream_obfuscation",
+        "test_http_client_unit",
+        "dap_async",
+        "dap_mock",
+        "test_global_db"
+      ],
+      "status": "ALL PASS"
+    }
+  },
+  "recommendations": {
+    "immediate_actions": [
+      "Исправить segfault в dap_events_socket_release (критично для стабильности)",
+      "Исправить race condition в thread pool graceful shutdown",
+      "Запустить valgrind на падающих тестах для детальной диагностики"
+    ],
+    "investigation_priorities": [
+      {
+        "priority": 1,
+        "issue": "Event socket cleanup crashes",
+        "tests": ["test_http_simple", "test_stream", "test_trans_api"]
+      },
+      {
+        "priority": 2,
+        "issue": "Thread pool shutdown race condition",
+        "tests": ["test_thread_pool"]
+      },
+      {
+        "priority": 3,
+        "issue": "eBPF permission issue",
+        "tests": ["test_trans_integration"]
+      }
+    ],
+    "debugging_commands": [
+      "valgrind --leak-check=full ./tests/integration/net/http/test_http_simple",
+      "valgrind --leak-check=full ./tests/integration/net/stream/test_stream",
+      "gdb --args ./tests/unit/io/test_thread_pool",
+      "strace -e bpf ./tests/integration/net/trans/test_trans_integration"
+    ]
+  },
+  "next_steps": {
+    "code_fixes": [
+      "io/dap_thread_pool.c - исправить graceful shutdown логику",
+      "core/dap_events_socket.c - исправить cleanup в dap_events_socket_release",
+      "net/dap_io_flow_ebpf.c - добавить проверку capabilities перед загрузкой eBPF"
+    ],
+    "test_improvements": [
+      "Добавить проверки утечек памяти в CI/CD pipeline",
+      "Добавить timeout для длительных тестов",
+      "Улучшить error reporting в падающих тестах"
+    ],
+    "documentation": [
+      "Документировать требования к привилегиям для eBPF функционала",
+      "Добавить troubleshooting секцию для распространенных проблем с тестами"
+    ]
+  },
+  "test_environment": {
+    "os": "Linux 6.12.63+deb13-amd64",
+    "cmake_version": "CMake configured for Debug build",
+    "build_directory": "cellframe-node/dap-sdk/build",
+    "test_runner": "CTest",
+    "compiler_flags": "Debug with symbols",
+    "date": "2026-02-02"
+  }
+}

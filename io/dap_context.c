@@ -26,6 +26,7 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 
 #if ! defined (_GNU_SOURCE)
 #define _GNU_SOURCE         /* See feature_test_macros(7) */
@@ -1981,31 +1982,69 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 /**
  * @brief Compatibility wrapper - create context queue (deprecated, use dap_context_queue_create)
  * 
- * Returns dap_events_socket_t* for backward compatibility, but internally creates dap_context_queue_t.
- * The returned esocket is the event notification socket from the queue.
+ * Creates a pipe-based queue esocket for backward compatibility.
+ * Uses the old callback signature (esocket, ptr) instead of the new (ptr) signature.
  * 
  * @param a_context Context to create queue in
- * @param a_callback Callback function (old signature with 2 args, converted internally)
- * @return Event socket for compatibility (actually queue->event_socket), or NULL on error
+ * @param a_callback Callback function (old signature with 2 args)
+ * @return Event socket, or NULL on error
  */
 dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_events_socket_callback_queue_ptr_t a_callback)
 {
     log_it(L_WARNING, "dap_context_create_queue is deprecated, use dap_context_queue_create instead");
     
-    if (!a_context) {
+    if (!a_context || !a_callback) {
         return NULL;
     }
     
-    // Create new context queue with default capacity (4096)
-    dap_context_queue_t *l_queue = dap_context_queue_create(a_context, 4096, (void(*)(void*))a_callback);
-    if (!l_queue) {
-        log_it(L_ERROR, "Failed to create context queue");
+    dap_events_socket_t *l_es = DAP_NEW_Z(dap_events_socket_t);
+    if (!l_es) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     
-    // Return event socket for backward compatibility
-    // Old code expects to add this to epoll/kqueue
-    return l_queue->event_socket;
+    l_es->type = DESCRIPTOR_TYPE_QUEUE;
+    l_es->uuid = dap_new_es_id();
+    l_es->flags = DAP_SOCK_QUEUE_PTR | DAP_SOCK_READY_TO_READ;
+    l_es->callbacks.queue_ptr_callback = a_callback;
+    l_es->buf_in_size_max = PIPE_BUF;
+    l_es->buf_in = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
+    if (!l_es->buf_in) {
+        DAP_DELETE(l_es);
+        return NULL;
+    }
+    
+#if defined(DAP_EVENTS_CAPS_EPOLL)
+    l_es->ev_base_flags = EPOLLIN | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
+#elif defined(DAP_EVENTS_CAPS_POLL)
+    l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
+#elif defined(DAP_EVENTS_CAPS_KQUEUE)
+    l_es->kqueue_base_flags = EV_ADD | EV_ENABLE;
+    l_es->kqueue_base_filter = EVFILT_READ;
+#endif
+
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+    int l_pipe[2];
+    if (pipe2(l_pipe, O_NONBLOCK | O_CLOEXEC) < 0) {
+        log_it(L_ERROR, "Failed to create pipe for queue: %s", dap_strerror(errno));
+        DAP_DELETE(l_es->buf_in);
+        DAP_DELETE(l_es);
+        return NULL;
+    }
+    l_es->fd = l_pipe[0];   // Read end
+    l_es->fd2 = l_pipe[1];  // Write end
+#elif defined(DAP_EVENTS_CAPS_IOCP)
+    l_es->socket = INVALID_SOCKET;
+    l_es->buf_out = _aligned_malloc(sizeof(SLIST_HEADER), MEMORY_ALLOCATION_ALIGNMENT);
+    InitializeSListHead((PSLIST_HEADER)l_es->buf_out);
+#else
+#error "Queue not supported on this platform"
+#endif
+    
+    if (a_context)
+        dap_context_add(a_context, l_es);
+    
+    return l_es;
 }
 
 /**

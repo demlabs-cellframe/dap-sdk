@@ -6,4 +6,5 @@
 message("[*] DAP SDK Regression Tests")
 
 # Add subdirectories
+add_subdirectory(io)
 add_subdirectory(net)

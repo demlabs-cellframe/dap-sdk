@@ -94,12 +94,7 @@ dap_io_flow_server_t* dap_io_flow_server_new_datagram(
         DAP_IO_FLOW_BOUNDARY_DATAGRAM
     );
     
-    fprintf(stderr, "dap_io_flow_server_new returned: %p\n", (void*)l_server);
-    fflush(stderr);
-    
     if (!l_server) {
-        fprintf(stderr, "ERROR: Failed to create generic flow server for DATAGRAM\n");
-        fflush(stderr);
         log_it(L_ERROR, "Failed to create generic flow server for DATAGRAM (dap_io_flow_server_new returned NULL)");
         DAP_DELETE(l_wrapped_ops);
         return NULL;
@@ -403,13 +398,28 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
         l_datagram_flow->send_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
         l_datagram_flow->send_es->flags |= DAP_SOCK_READY_TO_WRITE;
         
-        // Add to worker with auto-balancing
-        dap_worker_t *l_assigned_worker = dap_worker_add_events_socket_auto(l_datagram_flow->send_es);
-        
-        log_it(L_NOTICE, "DATAGRAM flow_create: created separate send socket fd=%d (worker=%u) for SERVER flow %s", 
-               l_send_fd, 
-               l_assigned_worker ? l_assigned_worker->id : 999,
-               dap_io_flow_socket_addr_to_string(a_remote_addr));
+        // CRITICAL FIX: Add send_es to SAME worker as listener_es!
+        // flow_ctrl retransmit timer runs on listener's worker, so send_es 
+        // MUST be on same worker to use FAST PATH (direct sendto) instead of
+        // SLOW PATH (cross-worker queue) which causes packet loss under load.
+        dap_worker_t *l_listener_worker = a_listener_es->worker;
+        if (l_listener_worker) {
+            dap_worker_add_events_socket(l_listener_worker, l_datagram_flow->send_es);
+            // Log port and expected worker for BPF debugging
+            uint16_t l_src_port = 0;
+            if (a_remote_addr->ss_family == AF_INET) {
+                l_src_port = ntohs(((struct sockaddr_in*)a_remote_addr)->sin_port);
+            } else if (a_remote_addr->ss_family == AF_INET6) {
+                l_src_port = ntohs(((struct sockaddr_in6*)a_remote_addr)->sin6_port);
+            }
+            log_it(L_NOTICE, "DATAGRAM flow_create: port=%u worker=%u (expected=%u) fd=%d", 
+                   l_src_port, l_listener_worker->id, l_src_port % 10, l_send_fd);
+        } else {
+            // Fallback if listener has no worker (shouldn't happen)
+            dap_worker_t *l_auto_worker = dap_worker_add_events_socket_auto(l_datagram_flow->send_es);
+            log_it(L_WARNING, "DATAGRAM flow_create: listener has no worker! send fd=%d on auto worker=%u", 
+                   l_send_fd, l_auto_worker ? l_auto_worker->id : 999);
+        }
     } else {
         // CLIENT flow: no separate send socket needed
         l_datagram_flow->send_es = NULL;

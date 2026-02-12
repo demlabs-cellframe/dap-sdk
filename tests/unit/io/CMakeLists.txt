@@ -310,10 +310,33 @@ message("[+] IO Flow Multi-Client test - packet routing and ordering regression"
 
 # ============================================================================
 # Test: IO Flow Control Multi-Client Regression Test
-# DISABLED: Uses outdated API. Use test_udp_multiclient_regression instead.
-# See: tests/regression/net/trans/test_udp_multiclient_regression.c
+# Tests flow_ctrl with multiple concurrent clients - reproduces integration bug
 # ============================================================================
-# This test was designed to use the full UDP transport stack to reproduce
-# integration bugs. However, the dap_net_trans_server API has changed significantly.
-# The functionality is now covered by test_udp_multiclient_regression.
-message("[!] IO Flow Control Multi-Client test - DISABLED (outdated API, use test_udp_multiclient_regression)")
+project(test_io_flow_ctrl_multiclient)
+
+add_executable(${PROJECT_NAME}
+    test_io_flow_ctrl_multiclient.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../fixtures/dap_client_test_fixtures.c
+)
+
+# Link fixtures and dependencies
+target_link_libraries(${PROJECT_NAME} PRIVATE io_flow_test_fixtures)
+dap_test_link_libraries(${PROJECT_NAME})
+dap_test_add_includes(${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PRIVATE ${IO_TEST_INCLUDE_DIRS})
+
+# Enable automatic mock wrapping
+dap_mock_autowrap(${PROJECT_NAME})
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
+endif()
+
+# Add to CTest
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 120
+    LABELS "unit;io;flow;ctrl;multiclient;regression"
+)
+
+message("[+] IO Flow Control Multi-Client test - integration bug regression")

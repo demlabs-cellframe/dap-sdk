@@ -150,6 +150,9 @@ typedef struct stream_udp_session {
     // NOTE: Flow Control is now in base.base.flow_ctrl (dap_io_flow_t)
     // This ensures FC lifecycle is tied to flow, not session
     
+    // Handshake state protection
+    _Atomic bool kem_task_pending;       // KEM task in progress (prevent duplicate HANDSHAKE)
+    
     // Packet type tracking (for FC callbacks)
     _Atomic uint8_t last_send_type;     // Last packet type sent (for packet_prepare_cb)
     _Atomic uint8_t last_recv_type;     // Last packet type received (for payload_deliver_cb)
@@ -896,6 +899,9 @@ static dap_io_flow_datagram_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_
     l_session->encryption_key = NULL;
     l_session->session = NULL;
     l_session->session_id = 0;
+    
+    // Initialize handshake state protection
+    atomic_store(&l_session->kem_task_pending, false);
     
     debug_if(s_debug_more, L_DEBUG,
              "Allocated stream_udp_session_t at %p (stream=%p)",
@@ -1670,6 +1676,12 @@ static void s_kem_reactor_callback(void *a_arg)
     debug_if(s_debug_more, L_DEBUG, "[KEM Reactor] HANDSHAKE response sent (ret=%d)", l_ret);
     
 cleanup_reactor:
+    // Reset kem_task_pending flag (allow retries on error)
+    // NOTE: On success, encryption_key is set so duplicate check will catch retransmits
+    if (l_session) {
+        atomic_store(&l_session->kem_task_pending, false);
+    }
+    
     // Free result
     if (l_result) {
         DAP_DELETE(l_result->bob_ciphertext);
@@ -1794,9 +1806,31 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
              "Processing HANDSHAKE packet (%zu bytes) for session %p",
              a_payload_size, a_session);
     
+    // CRITICAL: Prevent duplicate HANDSHAKE processing!
+    // Client may retransmit HANDSHAKE if it doesn't receive response in time.
+    // Without this check, we'd create multiple KEM tasks causing race conditions.
+    if (a_session->encryption_key != NULL) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: Ignoring duplicate HANDSHAKE - encryption_key already set for session %p",
+                 a_session);
+        return 0;  // Already completed handshake, ignore duplicate
+    }
+    
+    // Use atomic CAS to prevent concurrent KEM task creation
+    bool l_expected = false;
+    if (!atomic_compare_exchange_strong(&a_session->kem_task_pending, &l_expected, true)) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: Ignoring duplicate HANDSHAKE - KEM task already pending for session %p",
+                 a_session);
+        return 0;  // KEM task already in progress, ignore duplicate
+    }
+    
+    // Now kem_task_pending is true, and we have exclusive ownership to create KEM task
+    
     // Check if thread pool is available
     if (!s_kem_thread_pool) {
         log_it(L_WARNING, "KEM thread pool not available, falling back to synchronous processing");
+        atomic_store(&a_session->kem_task_pending, false);  // Reset flag
         // TODO: Implement synchronous fallback (same code as s_kem_task_func)
         return -10;
     }
@@ -1805,6 +1839,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     kem_task_ctx_t *l_ctx = DAP_NEW_Z(kem_task_ctx_t);
     if (!l_ctx) {
         log_it(L_ERROR, "Failed to allocate KEM task context");
+        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
         return -2;
     }
     
@@ -1815,6 +1850,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     
     if (!l_ctx->alice_pub_key) {
         log_it(L_ERROR, "Failed to allocate Alice public key buffer");
+        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
         DAP_DELETE(l_ctx);
         return -3;
     }
@@ -1830,6 +1866,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to submit KEM task to thread pool: %d", l_ret);
+        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
         DAP_DELETE(l_ctx->alice_pub_key);
         DAP_DELETE(l_ctx);
         return -4;

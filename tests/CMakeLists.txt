@@ -53,6 +53,7 @@ else()
     set_tests_properties(test_framework_unit PROPERTIES
         TIMEOUT 300
         LABELS "test-framework;unit"
+        RUN_SERIAL TRUE
     )
     
     # Test: test-framework integration tests
@@ -64,6 +65,7 @@ else()
     set_tests_properties(test_framework_integration PROPERTIES
         TIMEOUT 300
         LABELS "test-framework;integration"
+        RUN_SERIAL TRUE
     )
     
     # Individual test-framework unit tests
@@ -76,6 +78,7 @@ else()
         set_tests_properties(test_framework_variable_functions PROPERTIES
             TIMEOUT 60
             LABELS "test-framework;unit"
+            RUN_SERIAL TRUE
         )
     endif()
     
@@ -89,6 +92,7 @@ else()
         set_tests_properties(test_framework_c_ifdef PROPERTIES
             TIMEOUT 60
             LABELS "test-framework;integration"
+            RUN_SERIAL TRUE
         )
     endif()
     
@@ -101,6 +105,7 @@ else()
         set_tests_properties(test_framework_return_type_macros PROPERTIES
             TIMEOUT 60
             LABELS "test-framework;integration"
+            RUN_SERIAL TRUE
         )
     endif()
     
@@ -113,6 +118,7 @@ else()
         set_tests_properties(test_framework_return_type_macros_dap_tpl PROPERTIES
             TIMEOUT 60
             LABELS "test-framework;integration"
+            RUN_SERIAL TRUE
         )
     endif()
     

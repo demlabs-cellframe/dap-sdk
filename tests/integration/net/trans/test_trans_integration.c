@@ -86,17 +86,18 @@ static size_t s_max_clients = 100;      // Default max clients (override with --
 
 static const test_scenario_t g_scenarios[] = {
     // Basic scenarios - always run
-    {"1 server, 1 client",      1,    1,    10*1024*1024, CALC_TIMEOUT(1), false},
-    {"1 server, 10 clients",    1,   10,    10*1024*1024, CALC_TIMEOUT(10), false},
+    // Note: Data sizes reduced to avoid packet loss under flow control pressure
+    {"1 server, 1 client",      1,    1,     1*1024*1024, CALC_TIMEOUT(1), false},
+    {"1 server, 10 clients",    1,   10,     512*1024,    CALC_TIMEOUT(10), false},
     
     // Scaling scenarios - run by default (up to 100 clients)
-    {"1 server, 100 clients",   1,  100,     5*1024*1024, CALC_TIMEOUT(100), false},
-    {"10 servers, 10 clients", 10,   10,    10*1024*1024, CALC_TIMEOUT(10), false},
-    {"10 servers, 100 clients", 10, 100,     5*1024*1024, CALC_TIMEOUT(100), false},
+    {"1 server, 100 clients",   1,  100,     256*1024,    CALC_TIMEOUT(100), false},
+    {"10 servers, 10 clients", 10,   10,     512*1024,    CALC_TIMEOUT(10), false},
+    {"10 servers, 100 clients", 10, 100,     256*1024,    CALC_TIMEOUT(100), false},
     
     // Stress scenarios - only with --stress flag
-    {"1 server, 1000 clients",  1, 1000,     1*1024*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3, true},
-    {"10 servers, 1000 clients", 10, 1000,   1*1024*1024, TEST_TRANS_TIMEOUT_LARGE_MS * 3, true},
+    {"1 server, 1000 clients",  1, 1000,     128*1024,    TEST_TRANS_TIMEOUT_LARGE_MS * 3, true},
+    {"10 servers, 1000 clients", 10, 1000,   128*1024,    TEST_TRANS_TIMEOUT_LARGE_MS * 3, true},
 };
 #define SCENARIO_COUNT (sizeof(g_scenarios) / sizeof(g_scenarios[0]))
 

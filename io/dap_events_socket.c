@@ -1475,6 +1475,44 @@ void dap_events_socket_close(dap_events_socket_t *a_esocket)
 }
 
 /**
+ * @brief dap_events_socket_get_local_addr - Get local address of socket
+ * @param a_es Event socket
+ * @param a_addr Output address structure
+ * @param a_addr_len Input/output address length
+ * @return 0 on success, -1 on error
+ */
+int dap_events_socket_get_local_addr(dap_events_socket_t *a_es, struct sockaddr_storage *a_addr, socklen_t *a_addr_len)
+{
+    if (!a_es || !a_addr || !a_addr_len || a_es->socket == INVALID_SOCKET) {
+        return -1;
+    }
+    return getsockname(a_es->socket, (struct sockaddr *)a_addr, a_addr_len);
+}
+
+/**
+ * @brief dap_events_socket_get_local_port - Get local port of socket
+ * @param a_es Event socket
+ * @return Port number in host byte order, 0 on error
+ */
+uint16_t dap_events_socket_get_local_port(dap_events_socket_t *a_es)
+{
+    if (!a_es || a_es->socket == INVALID_SOCKET) {
+        return 0;
+    }
+    struct sockaddr_storage l_addr;
+    socklen_t l_len = sizeof(l_addr);
+    if (getsockname(a_es->socket, (struct sockaddr *)&l_addr, &l_len) != 0) {
+        return 0;
+    }
+    if (l_addr.ss_family == AF_INET) {
+        return ntohs(((struct sockaddr_in *)&l_addr)->sin_port);
+    } else if (l_addr.ss_family == AF_INET6) {
+        return ntohs(((struct sockaddr_in6 *)&l_addr)->sin6_port);
+    }
+    return 0;
+}
+
+/**
  * @brief dap_events_socket_remove_and_delete_unsafe
  * @param a_es
  * @param a_preserve_inheritor

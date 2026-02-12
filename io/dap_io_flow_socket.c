@@ -25,6 +25,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "dap_common.h"
+#include "dap_strfuncs.h"
 #include "dap_config.h"
 #include "dap_list.h"
 #include "dap_io_flow_socket.h"
@@ -437,6 +438,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
                    "application-level queue forwarding" : "no load balancing");
     }
     
+    // Track the actual port used (for SO_REUSEPORT, all sockets must use the same port!)
+    uint16_t l_shared_port = a_port;
+    
     // Create listener socket for each worker
     for (uint32_t i = 0; i < l_num_listeners; i++) {
         dap_worker_t *l_worker = dap_events_worker_get(i);
@@ -552,6 +556,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
 #endif
         
         // Bind socket
+        // CRITICAL: For SO_REUSEPORT, ALL sockets must bind to the SAME port!
+        // Use l_shared_port which is updated after first socket binds
         struct sockaddr_storage l_bind_addr = {0};
         socklen_t l_addr_len;
         
@@ -559,7 +565,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             // IPv6
             struct sockaddr_in6 *l_sa6 = (struct sockaddr_in6*)&l_bind_addr;
             l_sa6->sin6_family = AF_INET6;
-            l_sa6->sin6_port = htons(a_port);
+            l_sa6->sin6_port = htons(l_shared_port);  // Use shared port!
             if (a_addr) {
                 inet_pton(AF_INET6, a_addr, &l_sa6->sin6_addr);
             } else {
@@ -570,7 +576,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             // IPv4
             struct sockaddr_in *l_sa4 = (struct sockaddr_in*)&l_bind_addr;
             l_sa4->sin_family = AF_INET;
-            l_sa4->sin_port = htons(a_port);
+            l_sa4->sin_port = htons(l_shared_port);  // Use shared port!
             if (a_addr) {
                 inet_pton(AF_INET, a_addr, &l_sa4->sin_addr);
             } else {
@@ -585,6 +591,23 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             return -4;
         }
         
+        // Get actual bound port (if port was 0, kernel assigns ephemeral port)
+        // CRITICAL: Update l_shared_port so subsequent sockets bind to SAME port!
+        uint16_t l_actual_port = l_shared_port;
+        if (l_shared_port == 0) {
+            if (getsockname(l_socket, (struct sockaddr*)&l_bind_addr, &l_addr_len) == 0) {
+                if (l_bind_addr.ss_family == AF_INET6) {
+                    l_actual_port = ntohs(((struct sockaddr_in6*)&l_bind_addr)->sin6_port);
+                } else {
+                    l_actual_port = ntohs(((struct sockaddr_in*)&l_bind_addr)->sin_port);
+                }
+                // Update shared port for next sockets
+                l_shared_port = l_actual_port;
+                log_it(L_DEBUG, "First listener bound to ephemeral port %u, using for all %u listeners",
+                       l_shared_port, l_num_listeners);
+            }
+        }
+        
         // Wrap socket in esocket (attach eBPF AFTER creating all sockets)
         dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_socket, a_callbacks);
         if (!l_es) {
@@ -594,6 +617,10 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         }
         
         l_es->type = (a_socket_type == SOCK_DGRAM) ? DESCRIPTOR_TYPE_SOCKET_UDP : DESCRIPTOR_TYPE_SOCKET_CLIENT;
+        l_es->listener_port = l_actual_port;
+        l_es->addr_storage = l_bind_addr;
+        if (a_addr)
+            dap_strncpy(l_es->listener_addr_str, a_addr, DAP_HOSTADDR_STRLEN);
         
         // CRITICAL FIX: Initialize addr_size for UDP sockets!
         // recvfrom() requires addr_size to be set to the buffer size BEFORE the call.
@@ -611,7 +638,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
+        log_it(L_DEBUG, "Listener #%u added, fd=%d, worker=%u", i, l_socket, l_worker->id);
     }
+    log_it(L_DEBUG, "Total %u listeners created", l_num_listeners);
     
     // CRITICAL: Attach BPF AFTER all sockets are created and bound
     // This is required by Linux kernel - attaching BPF before all sockets are ready
@@ -619,8 +648,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
 #if defined(__linux__) || defined(ANDROID)
     if (l_enable_reuseport && (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF || 
                                 l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF)) {
-        // Get first listener socket for BPF attachment
-        dap_events_socket_t *l_first_es = (dap_events_socket_t*)a_server->es_listeners->data;
+        // Get LAST listener socket for BPF attachment (some kernels require this)
+        dap_list_t *l_last = dap_list_last(a_server->es_listeners);
+        dap_events_socket_t *l_first_es = l_last ? (dap_events_socket_t*)l_last->data : NULL;
         if (l_first_es) {
             int config_ret = -1;
             if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {

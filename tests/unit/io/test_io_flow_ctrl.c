@@ -855,6 +855,156 @@ static void test_flow_ctrl_multiple_senders(void)
 }
 
 //===================================================================
+// REGRESSION TEST: Early deletion race condition
+//===================================================================
+
+typedef struct delete_race_ctx {
+    dap_io_flow_ctrl_t *ctrl;
+    test_flow_ctrl_ctx_t *test_ctx;
+    _Atomic bool keep_sending;
+    _Atomic uint64_t sends_attempted;
+    _Atomic uint64_t sends_succeeded;
+    _Atomic uint64_t sends_rejected;
+} delete_race_ctx_t;
+
+static void *s_sender_thread(void *a_arg)
+{
+    delete_race_ctx_t *l_ctx = (delete_race_ctx_t *)a_arg;
+    const char l_data[64] = "Race condition test data";
+    
+    while (atomic_load(&l_ctx->keep_sending)) {
+        atomic_fetch_add(&l_ctx->sends_attempted, 1);
+        
+        int l_ret = dap_io_flow_ctrl_send(l_ctx->ctrl, l_data, sizeof(l_data));
+        if (l_ret == 0) {
+            atomic_fetch_add(&l_ctx->sends_succeeded, 1);
+        } else if (l_ret == -10) {
+            // -10 = flow_ctrl is being deleted - expected during shutdown
+            atomic_fetch_add(&l_ctx->sends_rejected, 1);
+        }
+        // Small delay to allow interleaving
+        usleep(100);
+    }
+    return NULL;
+}
+
+/**
+ * @brief REGRESSION TEST: Race between delete and send operations
+ * 
+ * This test reproduces the original bug where:
+ * - flow_ctrl was deleted while operations were in progress
+ * - This caused use-after-free and SIGSEGV
+ * 
+ * With the lifecycle management fix:
+ * - Sends during deletion should return -10 (rejected)
+ * - OR complete successfully before deletion waits
+ * - No crash should occur
+ */
+static void test_flow_ctrl_delete_race(void)
+{
+    dap_test_msg("Test: Delete race condition (REGRESSION)");
+    
+    dap_events_init(0, 0);
+    dap_events_start();
+    dap_assert(s_wait_for_reactor(2000), "Reactor should start");
+    
+    test_flow_ctrl_ctx_t *l_sender_ctx = s_ctx_create();
+    test_flow_ctrl_ctx_t *l_receiver_ctx = s_ctx_create();
+    
+    dap_io_flow_ctrl_config_t l_config;
+    dap_io_flow_ctrl_get_default_config(&l_config);
+    l_config.retransmit_timeout_ms = 50;
+    l_config.send_window_size = 128;
+    
+    dap_io_flow_ctrl_callbacks_t l_sender_cb = {
+        .packet_prepare = s_packet_prepare,
+        .packet_parse = s_packet_parse,
+        .packet_send = s_packet_send,
+        .packet_free = s_packet_free,
+        .payload_deliver = s_payload_deliver,
+        .arg = l_sender_ctx,
+    };
+    
+    dap_io_flow_ctrl_callbacks_t l_receiver_cb = {
+        .packet_prepare = s_packet_prepare,
+        .packet_parse = s_packet_parse,
+        .packet_send = s_packet_send,
+        .packet_free = s_packet_free,
+        .payload_deliver = s_payload_deliver,
+        .arg = l_receiver_ctx,
+    };
+    
+    dap_io_flow_ctrl_t *l_sender = s_create_flow_ctrl_async(l_sender_ctx, &l_sender_cb, &l_config);
+    dap_io_flow_ctrl_t *l_receiver = s_create_flow_ctrl_async(l_receiver_ctx, &l_receiver_cb, &l_config);
+    
+    dap_assert(l_sender && l_receiver, "Flow controls created");
+    
+    // Setup race context
+    delete_race_ctx_t l_race_ctx = {
+        .ctrl = l_sender,
+        .test_ctx = l_sender_ctx,
+        .keep_sending = true,
+        .sends_attempted = 0,
+        .sends_succeeded = 0,
+        .sends_rejected = 0,
+    };
+    
+    // Start sender thread
+    pthread_t l_thread;
+    pthread_create(&l_thread, NULL, s_sender_thread, &l_race_ctx);
+    
+    // Wait for some sends to happen
+    dap_test_msg("Waiting for sends to start...");
+    bool l_sends_started = POLL_WAIT_UNTIL(
+        atomic_load(&l_race_ctx.sends_attempted) >= 10,
+        1000);
+    dap_assert(l_sends_started, "Sender thread should start sending");
+    
+    uint64_t l_sends_before_delete = atomic_load(&l_race_ctx.sends_attempted);
+    dap_test_msg("Sends before delete: %lu", l_sends_before_delete);
+    
+    // Now delete the flow_ctrl while sender is active
+    // This is the critical race condition!
+    dap_test_msg("Deleting flow_ctrl while sender is active...");
+    dap_io_flow_ctrl_delete(l_sender);
+    
+    // Stop sender thread
+    atomic_store(&l_race_ctx.keep_sending, false);
+    pthread_join(l_thread, NULL);
+    
+    // Check results
+    uint64_t l_total = atomic_load(&l_race_ctx.sends_attempted);
+    uint64_t l_ok = atomic_load(&l_race_ctx.sends_succeeded);
+    uint64_t l_rejected = atomic_load(&l_race_ctx.sends_rejected);
+    
+    dap_test_msg("Results: total=%lu, succeeded=%lu, rejected=%lu", l_total, l_ok, l_rejected);
+    
+    // Key assertions:
+    // 1. No crash occurred (if we get here, we passed!)
+    dap_pass_msg("No crash during delete race - lifecycle management works!");
+    
+    // 2. If delete happened fast enough, all sends may have succeeded (no rejection observed)
+    //    This is ALSO correct behavior - delete waited for pending operations
+    if (l_rejected > 0) {
+        dap_pass_msg("Some sends were rejected during deletion (expected)");
+    } else {
+        dap_pass_msg("All sends succeeded before delete completed (also valid)");
+    }
+    
+    // 3. Total = succeeded + rejected (no lost sends)
+    dap_assert(l_ok + l_rejected == l_total, "All sends accounted for (no silent failures)");
+    
+    // Cleanup receiver
+    dap_io_flow_ctrl_delete(l_receiver);
+    s_ctx_delete(l_sender_ctx);
+    s_ctx_delete(l_receiver_ctx);
+    
+    dap_events_deinit();
+    
+    dap_pass_msg("Delete race condition test PASSED - fix verified!");
+}
+
+//===================================================================
 // MAIN
 //===================================================================
 
@@ -895,6 +1045,9 @@ int main(int argc, char **argv)
     
     // Multi-client scenario
     test_flow_ctrl_multiple_senders();
+    
+    // REGRESSION TEST: delete race condition (verifies lifecycle management fix)
+    test_flow_ctrl_delete_race();
     
     dap_io_flow_ctrl_deinit();
     dap_mock_deinit();

@@ -14,6 +14,10 @@
 #include <stdatomic.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <net/if.h>
 
 #include "dap_common.h"
 #include "dap_time.h"
@@ -27,17 +31,22 @@
 #include "dap_client_pvt.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
+#include "dap_stream_worker.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_pkt.h"
+#include "dap_stream_ctl.h"
+#include "dap_enc.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_server.h"
 #include "dap_net_trans_udp_server.h"
 #include "dap_io_flow.h"
+#include "dap_io_flow_socket.h"
 #include "dap_link_manager.h"
 #include "dap_global_db.h"
 #include "dap_module.h"
 #include "dap_cert.h"
 #include "dap_cert_file.h"
+#include "dap_client_test_fixtures.h"
 
 #define LOG_TAG "test_fc_multiclient"
 
@@ -45,16 +54,86 @@
 // CONFIGURATION
 //===================================================================
 
-#define TEST_SERVER_ADDR    "127.0.0.1"
+// Will be set dynamically to first non-loopback interface IP
+static char s_test_server_addr[INET_ADDRSTRLEN] = "127.0.0.1";
 #define TEST_SERVER_PORT    18200
+
+/**
+ * @brief Find first non-loopback IPv4 interface address
+ * 
+ * For CBPF SO_REUSEPORT to work properly, we need a real interface
+ * because loopback doesn't compute rxhash (skb->hash = 0).
+ * 
+ * @return true if found, false if falling back to localhost
+ */
+static bool s_find_real_interface_ip(void) {
+    struct ifaddrs *ifaddr, *ifa;
+    
+    if (getifaddrs(&ifaddr) == -1) {
+        log_it(L_WARNING, "getifaddrs() failed, using localhost");
+        return false;
+    }
+    
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL)
+            continue;
+        
+        // Only IPv4
+        if (ifa->ifa_addr->sa_family != AF_INET)
+            continue;
+        
+        // Skip loopback
+        if (ifa->ifa_flags & IFF_LOOPBACK)
+            continue;
+        
+        // Skip down interfaces
+        if (!(ifa->ifa_flags & IFF_UP))
+            continue;
+        
+        struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+        inet_ntop(AF_INET, &addr->sin_addr, s_test_server_addr, sizeof(s_test_server_addr));
+        
+        log_it(L_NOTICE, "Using interface '%s' with IP %s for CBPF test (rxhash will work!)",
+               ifa->ifa_name, s_test_server_addr);
+        
+        freeifaddrs(ifaddr);
+        return true;
+    }
+    
+    freeifaddrs(ifaddr);
+    log_it(L_WARNING, "No non-loopback interface found, using localhost (rxhash will be 0!)");
+    return false;
+}
 #define TEST_CH_ID          'T'
-#define NUM_CLIENTS         10
-#define DATA_SIZE           (10 * 1024 * 1024)  // 10MB like integration test
-#define HANDSHAKE_TIMEOUT   15000
-#define DATA_TIMEOUT        60000
+#define NUM_CLIENTS         100    // 100 clients to stress test
+#define DATA_SIZE           (256 * 1024)  // 256KB per client (25.6MB total)
+#define HANDSHAKE_TIMEOUT   30000
+#define DATA_TIMEOUT        120000
+
+// Packet tracking statistics
+static _Atomic uint64_t s_packets_sent = 0;
+static _Atomic uint64_t s_packets_received = 0;
+static _Atomic uint64_t s_packets_wrong_worker = 0;
+static _Atomic uint64_t s_packets_no_session = 0;
+static _Atomic uint64_t s_acks_sent = 0;
+static _Atomic uint64_t s_acks_received = 0;
 
 // Server node address
 static dap_stream_node_addr_t s_server_node_addr = {0};
+
+// Print packet statistics
+static void s_print_stats(void) {
+    printf("\n╔══════════════════════════════════════════╗\n");
+    printf("║        PACKET TRACKING STATISTICS        ║\n");
+    printf("╠══════════════════════════════════════════╣\n");
+    printf("║ Packets sent:         %10lu        ║\n", atomic_load(&s_packets_sent));
+    printf("║ Packets received:     %10lu        ║\n", atomic_load(&s_packets_received));
+    printf("║ Wrong worker:         %10lu        ║\n", atomic_load(&s_packets_wrong_worker));
+    printf("║ No session:           %10lu        ║\n", atomic_load(&s_packets_no_session));
+    printf("║ ACKs sent:            %10lu        ║\n", atomic_load(&s_acks_sent));
+    printf("║ ACKs received:        %10lu        ║\n", atomic_load(&s_acks_received));
+    printf("╚══════════════════════════════════════════╝\n\n");
+}
 
 //===================================================================
 // TEST STATE
@@ -76,13 +155,17 @@ static dap_net_trans_server_t *s_server = NULL;
 static client_ctx_t s_clients[NUM_CLIENTS];
 
 //===================================================================
-// SERVER CHANNEL - Echo back data
+// SERVER CHANNEL - Echo back data (uses new API signature)
 //===================================================================
 
-static void s_ch_pkt_in(dap_stream_ch_t *a_ch, void *a_data, size_t a_size)
+static bool s_ch_pkt_in(dap_stream_ch_t *a_ch, void *a_data)
 {
-    log_it(L_DEBUG, "Server: echo %zu bytes", a_size);
-    dap_stream_ch_pkt_write_unsafe(a_ch, 0, a_data, a_size);
+    // New API: data is dap_stream_ch_pkt_t*, size in pkt->hdr.data_size
+    dap_stream_ch_pkt_t *l_pkt = (dap_stream_ch_pkt_t *)a_data;
+    size_t l_size = l_pkt->hdr.data_size;
+    log_it(L_DEBUG, "Server: echo %zu bytes", l_size);
+    dap_stream_ch_pkt_write_unsafe(a_ch, 0, l_pkt->data, l_size);
+    return true;
 }
 
 //===================================================================
@@ -95,10 +178,16 @@ static void s_ch_pkt_in(dap_stream_ch_t *a_ch, void *a_data, size_t a_size)
 static void s_client_data_in(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg)
 {
     (void)a_type;
-    (void)a_ch;
     client_ctx_t *ctx = (client_ctx_t*)a_arg;
     
     if (!ctx || !a_data || a_data_size == 0) return;
+    
+    // Track packet received
+    atomic_fetch_add(&s_packets_received, 1);
+    
+    // Log worker info for debugging
+    dap_worker_t *l_worker = a_ch->stream_worker ? a_ch->stream_worker->worker : NULL;
+    uint32_t l_worker_id = l_worker ? l_worker->id : 999;
     
     pthread_mutex_lock(&ctx->mutex);
     
@@ -107,8 +196,12 @@ static void s_client_data_in(dap_stream_ch_t *a_ch, uint8_t a_type, const void *
     memcpy(ctx->recv_data + ctx->recv_size, a_data, a_data_size);
     ctx->recv_size = new_size;
     
-    log_it(L_DEBUG, "Client %d: recv %zu (total %zu/%zu)", 
-           ctx->id, a_data_size, ctx->recv_size, ctx->send_size);
+    // Log every 100th packet or when data is complete
+    uint64_t total_recv = atomic_load(&s_packets_received);
+    if (total_recv % 100 == 0 || ctx->recv_size >= ctx->send_size) {
+        log_it(L_INFO, "Client %d @ worker %u: recv %zu (total %zu/%zu) [pkt #%lu]", 
+               ctx->id, l_worker_id, a_data_size, ctx->recv_size, ctx->send_size, total_recv);
+    }
     
     if (ctx->recv_size >= ctx->send_size) {
         ctx->data_received = true;
@@ -130,11 +223,16 @@ static int s_setup_server(void)
         log_it(L_ERROR, "Failed to generate server certificate");
         return -1;
     }
-    dap_stream_node_addr_from_cert(cert, &s_server_node_addr);
+    s_server_node_addr = dap_stream_node_addr_from_cert(cert);
     dap_cert_delete(cert);
     
-    // Register echo channel
-    dap_stream_ch_proc_add(TEST_CH_ID, s_ch_pkt_in, NULL, NULL, NULL, NULL);
+    // Register echo channel (new API: id, new_cb, delete_cb, pkt_in_cb, pkt_out_cb)
+    dap_stream_ch_proc_add(TEST_CH_ID, NULL, NULL, s_ch_pkt_in, NULL);
+    
+    // FORCE EBPF TIER for multi-worker distribution testing
+    // eBPF reads source port from UDP header - works on localhost!
+    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_EBPF);
+    log_it(L_NOTICE, "FORCED EBPF tier for stress testing");
     
     // Create UDP server
     s_server = dap_net_trans_server_new(DAP_NET_TRANS_UDP_BASIC, "test_server");
@@ -143,7 +241,10 @@ static int s_setup_server(void)
         return -2;
     }
     
-    int ret = dap_net_trans_server_start(s_server, TEST_SERVER_ADDR, TEST_SERVER_PORT);
+    // New API: dap_net_trans_server_start(server, config, addrs[], ports[], count)
+    const char *l_addr = s_test_server_addr;
+    uint16_t l_port = TEST_SERVER_PORT;
+    int ret = dap_net_trans_server_start(s_server, NULL, &l_addr, &l_port, 1);
     if (ret != 0) {
         log_it(L_ERROR, "Server start failed: %d", ret);
         dap_net_trans_server_delete(s_server);
@@ -151,7 +252,7 @@ static int s_setup_server(void)
         return -3;
     }
     
-    log_it(L_NOTICE, "Server started on %s:%d", TEST_SERVER_ADDR, TEST_SERVER_PORT);
+    log_it(L_NOTICE, "Server started on %s:%d with EBPF tier", s_test_server_addr, TEST_SERVER_PORT);
     return 0;
 }
 
@@ -197,7 +298,7 @@ static int s_setup_client(int id)
     }
     
     // Set uplink
-    dap_client_set_uplink_unsafe(ctx->client, &s_server_node_addr, TEST_SERVER_ADDR, TEST_SERVER_PORT);
+    dap_client_set_uplink_unsafe(ctx->client, &s_server_node_addr, s_test_server_addr, TEST_SERVER_PORT);
     
     // Set channels
     char ch[2] = {TEST_CH_ID, 0};
@@ -405,44 +506,63 @@ static void test_multiclient_udp(void)
         }
     }
     
-    // Sequential data exchange
-    printf("\n--- Sequential data exchange ---\n");
+    // PARALLEL data exchange - this is the key to reproducing the bug!
+    // Sequential sends don't stress the routing enough
+    printf("\n--- PARALLEL data exchange (stress test) ---\n");
+    printf("Sending %d KB x %d clients = %.1f MB simultaneously\n", 
+           DATA_SIZE / 1024, NUM_CLIENTS, (double)(DATA_SIZE * NUM_CLIENTS) / (1024.0 * 1024.0));
     
     int data_ok = 0;
     int data_fail = 0;
     
+    // Reset all clients first
     for (int i = 0; i < NUM_CLIENTS; i++) {
         client_ctx_t *ctx = &s_clients[i];
-        
-        // Reset
         pthread_mutex_lock(&ctx->mutex);
         ctx->data_received = false;
         ctx->recv_size = 0;
         DAP_DEL_Z(ctx->recv_data);
         pthread_mutex_unlock(&ctx->mutex);
-        
-        // Send
-        printf("Client %d: sending %zu bytes...\n", i, ctx->send_size);
+    }
+    
+    // Send from ALL clients simultaneously (this triggers the bug!)
+    printf("Sending from all %d clients...\n", NUM_CLIENTS);
+    int send_failed = 0;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        client_ctx_t *ctx = &s_clients[i];
         int sent = dap_client_write_mt(ctx->client, TEST_CH_ID, 0, ctx->send_data, ctx->send_size);
         if (sent < 0) {
             log_it(L_ERROR, "Client %d: send failed", i);
-            data_fail++;
-            continue;
+            send_failed++;
         }
+        atomic_fetch_add(&s_packets_sent, 1);
+    }
+    if (send_failed > 0) {
+        printf("WARNING: %d clients failed to send\n", send_failed);
+    }
+    printf("All sends initiated, waiting for responses...\n");
+    
+    // Now wait for ALL clients to receive data (parallel wait)
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        client_ctx_t *ctx = &s_clients[i];
         
-        // Wait
         if (s_wait_data(i, DATA_TIMEOUT)) {
             if (ctx->recv_size == ctx->send_size &&
                 memcmp(ctx->recv_data, ctx->send_data, ctx->send_size) == 0) {
                 data_ok++;
-                printf("Client %d: OK (%zu bytes)\n", i, ctx->recv_size);
+                if (data_ok % 10 == 0) {
+                    printf("Progress: %d/%d clients OK\n", data_ok, NUM_CLIENTS);
+                }
             } else {
                 data_fail++;
-                printf("Client %d: DATA MISMATCH\n", i);
+                printf("Client %d: DATA MISMATCH (got %zu, expected %zu)\n", 
+                       i, ctx->recv_size, ctx->send_size);
             }
         } else {
             data_fail++;
-            printf("Client %d: TIMEOUT (got %zu/%zu)\n", i, ctx->recv_size, ctx->send_size);
+            printf("Client %d: TIMEOUT (got %zu/%zu = %.1f%%)\n", 
+                   i, ctx->recv_size, ctx->send_size,
+                   100.0 * ctx->recv_size / ctx->send_size);
         }
     }
     
@@ -450,8 +570,20 @@ static void test_multiclient_udp(void)
     printf("Results: %d OK, %d FAILED\n", data_ok, data_fail);
     printf("========================================\n\n");
     
+    // Print detailed statistics
+    s_print_stats();
+    
     if (data_fail > 0) {
         printf("*** BUG REPRODUCED: %d clients failed! ***\n\n", data_fail);
+    }
+    
+    // Check for routing problems
+    uint64_t wrong_worker = atomic_load(&s_packets_wrong_worker);
+    uint64_t no_session = atomic_load(&s_packets_no_session);
+    if (wrong_worker > 0 || no_session > 0) {
+        printf("*** ROUTING PROBLEM DETECTED! ***\n");
+        printf("    Packets to wrong worker: %lu\n", wrong_worker);
+        printf("    Packets with no session: %lu\n\n", no_session);
     }
     
     // This should FAIL if bug is present
@@ -466,6 +598,9 @@ cleanup:
         dap_net_trans_server_delete(s_server);
         s_server = NULL;
     }
+    
+    // Reset tier forcing
+    dap_io_flow_set_forced_tier(-1);
 }
 
 //===================================================================
@@ -476,8 +611,41 @@ int main(int argc, char **argv)
 {
     (void)argc; (void)argv;
     
-    dap_common_init("test_fc_multiclient", NULL);
+    // 0. Find real network interface for CBPF test (loopback has rxhash=0)
+    s_find_real_interface_ip();
+    
+    // 1. Create test config file
+    const char *config_content = 
+        "[general]\n"
+        "debug_mode=true\n"
+        "[dap_io_flow_socket]\n"
+        "debug_more=true\n"
+        "[dap_stream]\n"
+        "debug_more=true\n"
+        "[dap_client]\n"
+        "debug_more=true\n";
+    FILE *f = fopen("test_fc_multiclient.cfg", "w");
+    if (f) {
+        fwrite(config_content, 1, strlen(config_content), f);
+        fclose(f);
+    }
+    
+    // 2. Set logging to stdout BEFORE dap_common_init
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     dap_log_level_set(L_DEBUG);
+    
+    // 3. Initialize config system
+    dap_config_init(".");
+    
+    // 4. Open config and set as global
+    extern dap_config_t *g_config;
+    g_config = dap_config_open("test_fc_multiclient");
+    if (!g_config) {
+        printf("WARNING: Failed to open config (continuing anyway)\n");
+    }
+    
+    // 5. Initialize DAP common
+    dap_common_init("test_fc_multiclient", NULL);
     
     printf("\n============================\n");
     printf("Flow Ctrl Regression Test\n");
@@ -486,43 +654,107 @@ int main(int argc, char **argv)
     
     dap_print_module_name("io_flow_ctrl_multiclient");
     
-    // Init all
-    int ret = dap_module_init_all();
-    if (ret != 0) {
-        log_it(L_CRITICAL, "Module init: %d", ret);
-        return 1;
-    }
+    int ret;
     
+    // 6. Events system
+    log_it(L_NOTICE, "Init: events_init...");
     ret = dap_events_init(0, 0);
     if (ret != 0) {
-        log_it(L_CRITICAL, "Events init: %d", ret);
+        log_it(L_CRITICAL, "Events init FAILED: %d", ret);
         return 1;
     }
     
+    log_it(L_NOTICE, "Init: events_start...");
     ret = dap_events_start();
     if (ret != 0) {
-        log_it(L_CRITICAL, "Events start: %d", ret);
+        log_it(L_CRITICAL, "Events start FAILED: %d", ret);
         return 1;
     }
     
-    usleep(500000);
+    // 7. Encryption and certificates
+    log_it(L_NOTICE, "Init: enc_init...");
+    dap_enc_init();
     
+    log_it(L_NOTICE, "Init: cert_init...");
+    ret = dap_cert_init(NULL);
+    if (ret != 0) {
+        log_it(L_CRITICAL, "Cert init FAILED: %d", ret);
+        return 1;
+    }
+    
+    // Setup test certificates (REQUIRED for dap_stream_init)
+    log_it(L_NOTICE, "Init: setup_certificates...");
+    ret = dap_test_setup_certificates(".");
+    if (ret != 0) {
+        log_it(L_CRITICAL, "Setup certificates FAILED: %d", ret);
+        return 1;
+    }
+    
+    // 8. Stream system (CRITICAL - initializes stream workers!)
+    log_it(L_NOTICE, "Init: stream_init...");
+    ret = dap_stream_init(NULL);
+    if (ret != 0) {
+        log_it(L_CRITICAL, "Stream init FAILED: %d", ret);
+        return 1;
+    }
+    
+    log_it(L_NOTICE, "Init: stream_ctl_init...");
+    ret = dap_stream_ctl_init();
+    if (ret != 0) {
+        log_it(L_CRITICAL, "Stream ctl init FAILED: %d", ret);
+        return 1;
+    }
+    
+    // 9. Other components
+    log_it(L_NOTICE, "Init: link_manager_init...");
     ret = dap_link_manager_init(NULL);
-    if (ret != 0) log_it(L_WARNING, "Link manager: %d", ret);
+    if (ret != 0) log_it(L_WARNING, "Link manager: %d (may be OK)", ret);
     
+    log_it(L_NOTICE, "Init: global_db_init...");
     ret = dap_global_db_init(NULL);
-    if (ret != 0) log_it(L_WARNING, "Global DB: %d", ret);
+    if (ret != 0) log_it(L_WARNING, "Global DB: %d (may be OK)", ret);
     
+    log_it(L_NOTICE, "Init: client_init...");
     ret = dap_client_init();
     if (ret != 0) log_it(L_WARNING, "Client init: %d", ret);
     
-    // Run
+    // 10. Module system
+    log_it(L_NOTICE, "Init: module_init_all...");
+    ret = dap_module_init_all();
+    if (ret != 0) {
+        log_it(L_CRITICAL, "Module init FAILED: %d", ret);
+        return 1;
+    }
+    
+    // Verify stream workers are initialized
+    uint32_t l_worker_count = dap_events_thread_get_count();
+    log_it(L_NOTICE, "Checking %u workers for stream_worker...", l_worker_count);
+    for (uint32_t i = 0; i < l_worker_count; i++) {
+        dap_worker_t *l_worker = dap_events_worker_get(i);
+        if (l_worker) {
+            log_it(L_NOTICE, "  Worker %u: _inheritor=%p", i, (void*)l_worker->_inheritor);
+        } else {
+            log_it(L_ERROR, "  Worker %u: NULL!", i);
+        }
+    }
+    
+    log_it(L_NOTICE, "Init: DONE");
+    
+    // Run test
     test_multiclient_udp();
     
     // Cleanup
     dap_client_deinit();
     dap_events_deinit();
+    if (g_config) {
+        dap_config_close(g_config);
+        g_config = NULL;
+    }
+    dap_config_deinit();
     dap_common_deinit();
+    
+    // Remove temp config
+    remove("test_fc_multiclient.cfg");
     
     return 0;
 }

@@ -55,10 +55,10 @@ const size_t g_trans_config_count = 0;
 //===================================================================
 
 #define TEST_CH_ID          'T'
-#define NUM_CLIENTS         20      // Start with 20 clients
-#define DATA_SIZE           (1 * 1024 * 1024)   // 1MB per client for faster testing
-#define HANDSHAKE_TIMEOUT   30000   // 30s 
-#define DATA_TIMEOUT        60000   // 1 min per client
+#define NUM_CLIENTS         100     // 100 clients to stress CBPF routing
+#define DATA_SIZE           (64 * 1024)    // 64KB per client (6.4MB total)
+#define HANDSHAKE_TIMEOUT   60000   // 60s for 100 clients
+#define DATA_TIMEOUT        120000  // 120 sec for parallel data exchange
 
 //===================================================================
 // TEST STATE
@@ -309,44 +309,87 @@ static void test_multiclient_udp(void)
         }
     }
     
-    // Sequential data exchange
-    TEST_INFO("Sequential data exchange...");
+    // PARALLEL data exchange - THIS IS KEY TO REPRODUCING THE BUG!
+    // Sequential sends don't stress CBPF routing enough
+    TEST_INFO("PARALLEL data exchange (%d clients x %d KB = %.1f MB)...", 
+              NUM_CLIENTS, DATA_SIZE / 1024, (double)(NUM_CLIENTS * DATA_SIZE) / (1024.0 * 1024.0));
     
     int data_ok = 0;
     int data_fail = 0;
     
+    // Step 1: Reset all contexts
     for (int i = 0; i < NUM_CLIENTS; i++) {
-        log_it(L_DEBUG, "Client %d: sending %zu bytes...", i, s_stream_ctxs[i].sent_data_size);
+        pthread_mutex_lock(&s_stream_ctxs[i].mutex);
+        s_stream_ctxs[i].data_received = false;
+        s_stream_ctxs[i].received_data_size = 0;
+        DAP_DEL_Z(s_stream_ctxs[i].received_data);
+        pthread_mutex_unlock(&s_stream_ctxs[i].mutex);
+    }
+    
+    // Step 2: Send from ALL clients simultaneously (triggers CBPF routing bug!)
+    TEST_INFO("Sending from all %d clients simultaneously...", NUM_CLIENTS);
+    int send_failed = 0;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        int sent = dap_client_write_mt(s_clients[i], TEST_CH_ID, 0, 
+                                        s_stream_ctxs[i].sent_data, 
+                                        s_stream_ctxs[i].sent_data_size);
+        if (sent < 0) {
+            TEST_ERROR("Client %d: send failed (ret=%d)", i, sent);
+            send_failed++;
+        }
+    }
+    if (send_failed > 0) {
+        TEST_WARN("%d clients failed to send", send_failed);
+    }
+    TEST_INFO("All sends initiated, waiting for responses...");
+    
+    // Step 3: Wait for ALL clients to receive data
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        bool success = false;
         
-        int ret = test_stream_ch_send_and_wait(s_clients[i], &s_stream_ctxs[i], DATA_TIMEOUT);
+        // Wait for this client's data
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += DATA_TIMEOUT / 1000;
+        ts.tv_nsec += (DATA_TIMEOUT % 1000) * 1000000;
+        if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
         
-        if (ret == 0) {
-            pthread_mutex_lock(&s_stream_ctxs[i].mutex);
-            bool received = s_stream_ctxs[i].data_received;
-            pthread_mutex_unlock(&s_stream_ctxs[i].mutex);
-            
-            if (received && s_stream_ctxs[i].received_data) {
-                bool valid = test_trans_verify_data(s_stream_ctxs[i].sent_data,
-                                                     s_stream_ctxs[i].received_data,
-                                                     s_stream_ctxs[i].received_data_size);
-                if (valid) {
-                    data_ok++;
-                    TEST_SUCCESS("Client %d: OK (%zu bytes)", i, s_stream_ctxs[i].received_data_size);
-                } else {
-                    data_fail++;
-                    TEST_ERROR("Client %d: DATA MISMATCH", i);
-                }
+        pthread_mutex_lock(&s_stream_ctxs[i].mutex);
+        while (!s_stream_ctxs[i].data_received) {
+            if (pthread_cond_timedwait(&s_stream_ctxs[i].cond, &s_stream_ctxs[i].mutex, &ts) == ETIMEDOUT) {
+                break;
+            }
+        }
+        bool received = s_stream_ctxs[i].data_received;
+        pthread_mutex_unlock(&s_stream_ctxs[i].mutex);
+        
+        if (received && s_stream_ctxs[i].received_data) {
+            bool valid = test_trans_verify_data(s_stream_ctxs[i].sent_data,
+                                                 s_stream_ctxs[i].received_data,
+                                                 s_stream_ctxs[i].received_data_size);
+            if (valid) {
+                data_ok++;
+                success = true;
             } else {
-                data_fail++;
-                TEST_ERROR("Client %d: NO DATA RECEIVED", i);
+                TEST_ERROR("Client %d: DATA MISMATCH (got %zu, expected %zu)", 
+                           i, s_stream_ctxs[i].received_data_size, s_stream_ctxs[i].sent_data_size);
             }
         } else {
-            data_fail++;
-            TEST_ERROR("Client %d: FAILED (ret=%d)", i, ret);
+            TEST_ERROR("Client %d: TIMEOUT (got %zu/%zu = %.1f%%)", 
+                       i, s_stream_ctxs[i].received_data_size, s_stream_ctxs[i].sent_data_size,
+                       100.0 * s_stream_ctxs[i].received_data_size / s_stream_ctxs[i].sent_data_size);
+        }
+        
+        if (!success) data_fail++;
+        
+        // Progress every 10 clients
+        if ((data_ok + data_fail) % 10 == 0) {
+            TEST_INFO("Progress: %d/%d clients processed (%d OK, %d FAIL)", 
+                      data_ok + data_fail, NUM_CLIENTS, data_ok, data_fail);
         }
     }
     
-    TEST_INFO("Results: %d OK, %d FAILED", data_ok, data_fail);
+    TEST_INFO("Results: %d OK, %d FAILED out of %d", data_ok, data_fail, NUM_CLIENTS);
     
     if (data_fail > 0) {
         TEST_WARN("BUG REPRODUCED: %d clients failed!", data_fail);

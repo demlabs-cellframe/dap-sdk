@@ -28,35 +28,47 @@ static bool s_cbpf_checked = false;
 /**
  * @brief Classic BPF program for SO_REUSEPORT consistent hashing
  * 
- * Classic BPF context for SO_REUSEPORT (simplified):
- * - A[0] = hash value from skb (for SO_REUSEPORT context)
- * - Program returns hash value
- * - Kernel does: socket_index = hash % num_sockets
+ * IMPORTANT: For classic BPF (cBPF) with SO_ATTACH_REUSEPORT_CBPF:
+ * - Data pointer starts AFTER transport header (UDP payload), NOT at UDP header!
+ * - Kernel calls pskb_pull(skb, sizeof(struct udphdr)) before running BPF
+ * - BPF program must return SOCKET INDEX (0 to N-1), not raw hash
+ * - If return value >= num_sockets, kernel uses default distribution
+ * 
+ * SOLUTION: Use BPF ancillary data extension SKF_AD_RXHASH to get the
+ * kernel-computed packet hash. This hash is based on the full 4-tuple:
+ *   (src_ip, src_port, dst_ip, dst_port)
+ * 
+ * This provides:
+ * 1. STICKY SESSIONS: Same client (same 4-tuple) always gets same hash
+ * 2. GOOD DISTRIBUTION: Kernel hash is well-distributed across values
+ * 3. WORKS FOR ALL CLIENTS: Not dependent on localhost quirks
+ * 
+ * The kernel documentation (networking/filter.rst) lists available extensions:
+ *   - SKF_AD_RXHASH (offset 32): skb->hash - packet hash
+ *   - SKF_AD_CPU (offset 36): current CPU number
+ *   - etc.
+ * 
+ * Access via: BPF_LD | BPF_W | BPF_ABS with k = SKF_AD_OFF + SKF_AD_*
  * 
  * Classic BPF instruction format:
- * - code: operation code
- * - jt: jump if true offset
+ * - code: operation code (BPF_LD, BPF_RET, etc.)
+ * - jt: jump if true offset  
  * - jf: jump if false offset
  * - k: generic multi-use field (constant/offset)
  * 
- * Classic BPF opcodes:
- * - 0x20: LD W (abs) - load word from absolute offset
- * - 0x06: RET A - return accumulator value
- * - 0x15: JEQ K - jump if accumulator == constant
- * 
- * Our program:
- * 1. Load hash from context (A[0] for REUSEPORT)
- * 2. Return it
- * 3. Kernel distributes: socket = sockets[hash % N]
+ * SKF_AD_OFF and SKF_AD_RXHASH are defined in linux/filter.h
  */
 static struct sock_filter s_cbpf_reuseport_prog[] = {
-    // ld [0]  - Load word from offset 0 (hash value in REUSEPORT context)
-    // For SO_REUSEPORT context, offset 0 contains the hash
-    { .code = 0x20, .jt = 0, .jf = 0, .k = 0 },
-    
-    // ret a   - Return accumulator (hash value)
-    // Kernel will do: socket_index = return_value % num_sockets
-    { .code = 0x06, .jt = 0, .jf = 0, .k = 0 },
+    // Use rxhash (kernel 4-tuple hash) for sticky sessions
+    // 
+    // IMPORTANT: rxhash is 0 for loopback/local traffic!
+    // - Production (real network): rxhash works, sticky sessions OK
+    // - Localhost testing: rxhash=0, all to worker 0 (use eBPF or Application tier)
+    //
+    // For full localhost support, upgrade to eBPF (BPF_PROG_TYPE_SK_REUSEPORT)
+    // which has access to sk_reuseport_md with remote_ip/remote_port fields
+    { .code = BPF_LD | BPF_W | BPF_ABS, .jt = 0, .jf = 0, .k = SKF_AD_OFF + SKF_AD_RXHASH },
+    { .code = BPF_RET | BPF_A, .jt = 0, .jf = 0, .k = 0 },
 };
 
 /**

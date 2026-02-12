@@ -18,6 +18,7 @@
 #include <sys/syscall.h>
 #include <sys/socket.h>
 #include <linux/bpf.h>
+#include <linux/bpf_common.h>
 #include <linux/filter.h>
 #include <errno.h>
 #include <string.h>
@@ -36,44 +37,69 @@ static bool s_ebpf_checked = false;
 /**
  * @brief eBPF program for SO_REUSEPORT hash-based socket selection
  * 
- * ARCHITECTURE (verified through kernel testing):
- * - BPF_PROG_TYPE_SK_REUSEPORT programs return hash value
- * - Kernel does: socket_index = hash % num_sockets_in_group
- * - NO helpers supported (bpf_sk_select_reuseport NOT allowed for this prog_type)
- * - NO maps needed (kernel handles distribution)
+ * PROBLEM: sk_reuseport_md->hash is 0 for loopback/local traffic!
+ * SOLUTION: Read source port from UDP header (via data pointer) and use it as hash.
  * 
- * Implementation:
- * 1. Load kernel-computed hash from sk_reuseport_md->hash (offset 32)
- * 2. Return hash
- * 3. Kernel distributes packets: socket = sockets[hash % N]
- * 
- * Kernel hash computation:
- * - f(src_ip, src_port, dst_ip, dst_port) for connected sockets
- * - f(src_ip, src_port) + dest info for UDP
- * - DETERMINISTIC and CONSISTENT for same client
- * 
- * Result: STICKY SESSIONS
- * - Same (src_ip, src_port) → same hash → same socket → same worker
- * - NO duplicate flows across workers
- * - PERFECT for preventing TOCTOU race condition at kernel level
- * 
- * sk_reuseport_md structure:
- * - offset 0: data (void*) - points to UDP/TCP header (IP header NOT accessible)
- * - offset 8: data_end (void*)
+ * sk_reuseport_md structure (from linux/bpf.h):
+ * - offset 0:  data (void*)     - points to UDP header start
+ * - offset 8:  data_end (void*)
  * - offset 16: len (u32)
  * - offset 20: eth_protocol (u32)
  * - offset 24: ip_protocol (u32)
  * - offset 28: bind_inany (u32)
- * - offset 32: hash (u32) ← KERNEL-COMPUTED, deterministic, perfect!
+ * - offset 32: hash (u32)       - kernel hash (0 on loopback!)
+ * 
+ * UDP header layout (data points here):
+ * - offset 0: source port (2 bytes, network byte order)
+ * - offset 2: dest port (2 bytes)
+ * - offset 4: length (2 bytes)
+ * - offset 6: checksum (2 bytes)
+ * 
+ * Algorithm:
+ * 1. Load kernel hash - if non-zero (real network), use it for full 4-tuple sticky
+ * 2. If hash == 0 (loopback), read source port from UDP header
+ * 3. Return hash value, kernel does socket_index = hash % num_sockets
+ * 
+ * Result: STICKY SESSIONS on both real network AND localhost!
+ * - Real network: full 4-tuple hash
+ * - Localhost: source port hash (same client port → same worker)
  */
+
+// eBPF instruction macros (prefixed to avoid conflicts with linux/bpf.h)
+#define EBPF_LD_MEM(SIZE, DST, SRC, OFF) \
+    ((struct bpf_insn){.code = BPF_LDX | BPF_MEM | (SIZE), .dst_reg = DST, .src_reg = SRC, .off = OFF, .imm = 0})
+#define EBPF_MOV64_REG(DST, SRC) \
+    ((struct bpf_insn){.code = BPF_ALU64 | BPF_MOV | BPF_X, .dst_reg = DST, .src_reg = SRC, .off = 0, .imm = 0})
+#define EBPF_JNE_IMM(DST, IMM, OFF) \
+    ((struct bpf_insn){.code = BPF_JMP | BPF_JNE | BPF_K, .dst_reg = DST, .src_reg = 0, .off = OFF, .imm = IMM})
+#define EBPF_EXIT_INSN() \
+    ((struct bpf_insn){.code = BPF_JMP | BPF_EXIT, .dst_reg = 0, .src_reg = 0, .off = 0, .imm = 0})
+
 static struct bpf_insn s_reuseport_ebpf_prog[] = {
-    // r0 = *(u32*)(ctx + 32) - load kernel-computed hash
-    {.code = 0x61, .dst_reg = 0, .src_reg = 1, .off = 32, .imm = 0},
+    // r6 = ctx (save context pointer)
+    EBPF_MOV64_REG(6, 1),
     
-    // exit (return hash value)
-    // Kernel automatically does: socket_index = hash % num_sockets
-    // This ensures same client → same socket → STICKY SESSIONS!
-    {.code = 0x95, .dst_reg = 0, .src_reg = 0, .off = 0, .imm = 0},
+    // r0 = *(u32*)(ctx + 32) - load kernel hash
+    EBPF_LD_MEM(BPF_W, 0, 6, 32),
+    
+    // if (r0 != 0) goto exit - use kernel hash if available
+    EBPF_JNE_IMM(0, 0, 4),
+    
+    // Kernel hash is 0 (loopback) - read source port from UDP header
+    // r2 = *(u64*)(ctx + 0) - load data pointer (points to UDP header)
+    EBPF_LD_MEM(BPF_DW, 2, 6, 0),
+    
+    // r0 = *(u16*)(data + 0) - load source port (first 2 bytes of UDP header)
+    // Note: This is in network byte order, but that's fine for hashing
+    EBPF_LD_MEM(BPF_H, 0, 2, 0),
+    
+    // Multiply by prime for better distribution: r0 = r0 * 2654435761
+    // Using ALU64 with immediate multiplication
+    ((struct bpf_insn){.code = BPF_ALU64 | BPF_MUL | BPF_K, .dst_reg = 0, .src_reg = 0, .off = 0, .imm = (int)2654435761U}),
+    
+    // exit - return r0 (hash value)
+    // Kernel does: socket_index = r0 % num_sockets
+    EBPF_EXIT_INSN(),
 };
 
 /**

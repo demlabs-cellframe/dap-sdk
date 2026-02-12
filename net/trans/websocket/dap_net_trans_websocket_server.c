@@ -525,9 +525,19 @@ static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, 
         return false;
     }
 
+    // WebSocket client key should be exactly 24 chars (base64 of 16 bytes)
+    // GUID is 36 chars, so max concat is 24 + 36 + 1 = 61 bytes
+    // Use 128 bytes for safety, validate input length
+    size_t l_key_len = strlen(a_client_key);
+    if (l_key_len > 64) {  // RFC 6455: client key should be 24 chars
+        log_it(L_WARNING, "WebSocket client key too long (%zu bytes), truncating", l_key_len);
+        l_key_len = 64;
+    }
+    
     // Concatenate client key with WebSocket GUID
-    char l_concat[256] = {0};
-    snprintf(l_concat, sizeof(l_concat), "%s%s", a_client_key, WEBSOCKET_GUID);
+    char l_concat[128] = {0};
+    memcpy(l_concat, a_client_key, l_key_len);
+    strcat(l_concat, WEBSOCKET_GUID);
 
     // Calculate SHA-1 hash using OpenSSL
     unsigned char l_hash[SHA_DIGEST_LENGTH];  // SHA-1 = 20 bytes
