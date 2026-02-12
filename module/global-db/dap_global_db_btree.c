@@ -45,6 +45,14 @@
 // Page layout constants
 #define PAGE_DATA_SIZE          (DAP_GLOBAL_DB_BTREE_PAGE_SIZE - sizeof(dap_global_db_btree_page_header_t))
 
+// Leaf page data layout constants (moved here for s_page_alloc visibility)
+#define LEAF_HEADER_SIZE        sizeof(uint16_t)  // lowest_used_offset cache (O(1) append)
+#define LEAF_OFFSET_SIZE        sizeof(uint16_t)  // each offset entry
+
+// Cached lowest-used-offset stored in the first 2 bytes of leaf data.
+// Eliminates O(n) min-offset scan in s_leaf_insert_entry.
+#define LEAF_LOWEST_OFFSET(data)    (*(uint16_t *)(data))
+#define LEAF_LOWEST_OFFSET_INIT     ((uint16_t)PAGE_DATA_SIZE)
 
 static bool s_debug_more = false;
 
@@ -84,7 +92,7 @@ static int s_leaf_entry_count(dap_global_db_btree_page_t *a_page);
 static dap_global_db_btree_leaf_entry_t *s_leaf_entry_at(dap_global_db_btree_page_t *a_page, int a_index,
                                                     uint8_t **a_out_data, size_t *a_out_total_size);
 static int s_leaf_find_entry(dap_global_db_btree_page_t *a_page, const dap_global_db_btree_key_t *a_key, int *a_out_index);
-static size_t s_leaf_entry_total_size(uint32_t a_key_len, uint32_t a_value_len, uint32_t a_sign_len);
+static inline size_t s_leaf_entry_total_size(uint32_t a_key_len, uint32_t a_value_len, uint32_t a_sign_len);
 
 // Leaf mutations — arena-aware
 static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
@@ -100,6 +108,9 @@ static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
 static void s_leaf_compact(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena);
 
 // Page checks
+static inline bool s_header_needs_split(const dap_global_db_btree_page_header_t *a_hdr,
+                                        uint32_t a_text_key_len, uint32_t a_value_len,
+                                        uint32_t a_sign_len);
 static bool s_page_needs_split(dap_global_db_btree_page_t *a_page, uint32_t a_text_key_len,
                                uint32_t a_value_len, uint32_t a_sign_len);
 
@@ -233,6 +244,9 @@ static dap_global_db_btree_page_t *s_page_alloc(dap_arena_t *a_arena)
         }
     }
     l_page->header.free_space = PAGE_DATA_SIZE;
+    // Initialize lowest-offset cache for leaf pages (branch pages ignore this field).
+    // Set to PAGE_DATA_SIZE = "no entries yet, next entry goes at end minus its size".
+    LEAF_LOWEST_OFFSET(l_page->data) = LEAF_LOWEST_OFFSET_INIT;
     return l_page;
 }
 
@@ -299,25 +313,19 @@ static dap_global_db_btree_page_t *s_page_read(dap_global_db_btree_t *a_tree, ui
     if (!l_page)
         return NULL;
     
+    // pread: single syscall per chunk, no lseek needed
     uint64_t l_offset = s_page_offset(a_page_id);
-    if (lseek(a_tree->fd, l_offset, SEEK_SET) < 0) {
-        log_it(L_ERROR, "Failed to seek to page %lu: %s", a_page_id, strerror(errno));
-        s_page_free(l_page);
-        return NULL;
-    }
-    
-    // Read page header
-    ssize_t l_read = read(a_tree->fd, &l_page->header, sizeof(dap_global_db_btree_page_header_t));
+    ssize_t l_read = pread(a_tree->fd, &l_page->header,
+                           sizeof(dap_global_db_btree_page_header_t), l_offset);
     if (l_read != (ssize_t)sizeof(dap_global_db_btree_page_header_t)) {
-        log_it(L_ERROR, "Failed to read page header: %s", strerror(errno));
+        log_it(L_ERROR, "Failed to pread page header: %s", strerror(errno));
         s_page_free(l_page);
         return NULL;
     }
-    
-    // Read page data
-    l_read = read(a_tree->fd, l_page->data, PAGE_DATA_SIZE);
+    l_read = pread(a_tree->fd, l_page->data, PAGE_DATA_SIZE,
+                   l_offset + sizeof(dap_global_db_btree_page_header_t));
     if (l_read != (ssize_t)PAGE_DATA_SIZE) {
-        log_it(L_ERROR, "Failed to read page data: %s", strerror(errno));
+        log_it(L_ERROR, "Failed to pread page data: %s", strerror(errno));
         s_page_free(l_page);
         return NULL;
     }
@@ -351,14 +359,18 @@ static bool s_page_read_ref(dap_global_db_btree_t *a_tree, uint64_t a_page_id,
         if (l_offset + DAP_GLOBAL_DB_BTREE_PAGE_SIZE > dap_mmap_get_size(a_tree->mmap))
             return false;
         uint8_t *l_src = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap) + l_offset;
-        memcpy(&a_out->header, l_src, sizeof(dap_global_db_btree_page_header_t));
+        // True zero-copy: cast header directly from mmap — 0 memcpy.
+        // LMDB approach: (MDB_page*)(map + offset). Safe because we're
+        // read-only and the mmap region won't be remapped during reads.
+        const dap_global_db_btree_page_header_t *l_hdr =
+            (const dap_global_db_btree_page_header_t *)l_src;
+        a_out->header = *l_hdr;
         a_out->data = l_src + sizeof(dap_global_db_btree_page_header_t);
         a_out->is_mmap_ref = true;
         a_out->is_dirty = false;
         return true;
     }
 
-    // No mmap — fall back to heap-allocated read (caller must free)
     return false;
 }
 
@@ -444,23 +456,18 @@ static int s_page_write(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_
         return 0;
     }
 
-    // Legacy fallback: lseek + write
-    if (lseek(a_tree->fd, l_offset, SEEK_SET) < 0) {
-        log_it(L_ERROR, "Failed to seek to page %lu: %s", (unsigned long)a_page->header.page_id, strerror(errno));
-        return -1;
-    }
-    
-    // Write page header
-    ssize_t l_written = write(a_tree->fd, &a_page->header, sizeof(dap_global_db_btree_page_header_t));
+    // Legacy fallback: pwrite (single syscall, no lseek needed)
+    // Write header + data as two pwrite calls (avoids temp buffer for concatenation)
+    ssize_t l_written = pwrite(a_tree->fd, &a_page->header,
+                               sizeof(dap_global_db_btree_page_header_t), l_offset);
     if (l_written != (ssize_t)sizeof(dap_global_db_btree_page_header_t)) {
-        log_it(L_ERROR, "Failed to write page header: %s", strerror(errno));
+        log_it(L_ERROR, "Failed to pwrite page header: %s", strerror(errno));
         return -1;
     }
-    
-    // Write page data
-    l_written = write(a_tree->fd, a_page->data, PAGE_DATA_SIZE);
+    l_written = pwrite(a_tree->fd, a_page->data, PAGE_DATA_SIZE,
+                       l_offset + sizeof(dap_global_db_btree_page_header_t));
     if (l_written != (ssize_t)PAGE_DATA_SIZE) {
-        log_it(L_ERROR, "Failed to write page data: %s", strerror(errno));
+        log_it(L_ERROR, "Failed to pwrite page data: %s", strerror(errno));
         return -1;
     }
     
@@ -598,15 +605,12 @@ static void s_branch_insert_entry(dap_global_db_btree_page_t *a_page, int a_inde
  * Offsets array stores the offset (from page data start) of each entry.
  */
 
-#define LEAF_HEADER_SIZE        sizeof(uint16_t)  // entry count
-#define LEAF_OFFSET_SIZE        sizeof(uint16_t)  // each offset entry
-
 static int s_leaf_entry_count(dap_global_db_btree_page_t *a_page)
 {
     return a_page->header.entries_count;
 }
 
-static size_t s_leaf_entry_total_size(uint32_t a_key_len, uint32_t a_value_len, uint32_t a_sign_len)
+static inline size_t s_leaf_entry_total_size(uint32_t a_key_len, uint32_t a_value_len, uint32_t a_sign_len)
 {
     return sizeof(dap_global_db_btree_leaf_entry_t) + a_key_len + a_value_len + a_sign_len;
 }
@@ -695,20 +699,10 @@ static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
     
     // Offsets array
     uint16_t *l_offsets = (uint16_t *)(a_page->data + LEAF_HEADER_SIZE);
-    
-    // Find where to place new entry (pack from end)
-    uint16_t l_new_offset;
-    if (l_count == 0) {
-        l_new_offset = PAGE_DATA_SIZE - l_entry_size;
-    } else {
-        // Find minimum offset (rightmost entry position)
-        uint16_t l_min_offset = PAGE_DATA_SIZE;
-        for (int i = 0; i < l_count; i++) {
-            if (l_offsets[i] < l_min_offset)
-                l_min_offset = l_offsets[i];
-        }
-        l_new_offset = l_min_offset - l_entry_size;
-    }
+
+    // O(1) offset calculation using cached lowest-used-offset.
+    // This replaces the O(n) min-offset scan that was here before.
+    uint16_t l_new_offset = LEAF_LOWEST_OFFSET(a_page->data) - (uint16_t)l_entry_size;
     
     // Shift offsets to make room
     for (int i = l_count; i > a_index; i--) {
@@ -740,6 +734,7 @@ static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
     
     a_page->header.entries_count++;
     a_page->header.free_space -= (l_entry_size + LEAF_OFFSET_SIZE);
+    LEAF_LOWEST_OFFSET(a_page->data) = l_new_offset;  // Update cache
     a_page->is_dirty = true;
     
     return 0;
@@ -816,6 +811,7 @@ static void s_leaf_compact(dap_global_db_btree_page_t *a_page, dap_arena_t *a_ar
     // first entry (lowest offset)
     size_t l_offsets_end = LEAF_HEADER_SIZE + l_count * LEAF_OFFSET_SIZE;
     a_page->header.free_space = l_write_offset - l_offsets_end;
+    LEAF_LOWEST_OFFSET(a_page->data) = l_write_offset;  // Update cache
     a_page->is_dirty = true;
 
     if (!a_arena)
@@ -829,14 +825,23 @@ static void s_leaf_compact(dap_global_db_btree_page_t *a_page, dap_arena_t *a_ar
 static bool s_page_needs_split(dap_global_db_btree_page_t *a_page, uint32_t a_text_key_len, 
                                uint32_t a_value_len, uint32_t a_sign_len)
 {
-    if (a_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF) {
-        // Leaf page - check free space
+    return s_header_needs_split(&a_page->header, a_text_key_len, a_value_len, a_sign_len);
+}
+
+/**
+ * @brief Header-only split check — works directly on mmap-mapped header.
+ * No page struct needed, no data copy. Used for zero-copy branch traversal.
+ */
+static inline bool s_header_needs_split(const dap_global_db_btree_page_header_t *a_hdr,
+                                        uint32_t a_text_key_len, uint32_t a_value_len,
+                                        uint32_t a_sign_len)
+{
+    if (a_hdr->flags & DAP_GLOBAL_DB_PAGE_LEAF) {
         size_t l_entry_size = s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
-        size_t l_header_size = LEAF_HEADER_SIZE + (a_page->header.entries_count + 1) * LEAF_OFFSET_SIZE;
-        return (l_header_size + l_entry_size > a_page->header.free_space);
+        size_t l_header_size = LEAF_HEADER_SIZE + (a_hdr->entries_count + 1) * LEAF_OFFSET_SIZE;
+        return (l_header_size + l_entry_size > a_hdr->free_space);
     } else {
-        // Branch page - check entry count
-        return (a_page->header.entries_count >= DAP_GLOBAL_DB_BTREE_MAX_KEYS);
+        return (a_hdr->entries_count >= DAP_GLOBAL_DB_BTREE_MAX_KEYS);
     }
 }
 
@@ -918,7 +923,7 @@ static int s_leaf_delete_entry(dap_global_db_btree_page_t *a_page, int a_index, 
     s_page_cow(a_page, a_arena);
 
     // Get entry size for free_space accounting
-    size_t l_entry_size;
+    size_t l_entry_size = 0;
     s_leaf_entry_at(a_page, a_index, NULL, &l_entry_size);
 
     // Shift offsets to close the gap
@@ -982,30 +987,48 @@ static int s_split_child(dap_global_db_btree_t *a_tree, dap_global_db_btree_page
 {
     dap_arena_t *l_arena = a_tree->arena;
     uint64_t l_child_id = s_branch_get_child(a_parent, a_index);
-    dap_global_db_btree_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
-    if (!l_child)
-        return -1;
 
-    // Allocate new sibling page on disk. NOTE: s_page_allocate_new may call
-    // dap_mmap_resize → mremap, which relocates the mmap base. After this call
-    // ALL outstanding mmap pointers (including a_parent->data if it was a writable
-    // mmap ref) are potentially invalid. We re-resolve a_parent below.
+    // Allocate new sibling page FIRST — may trigger mremap.
+    // After this, all mmap pointers are stable until the next allocation.
     uint64_t l_sibling_id = s_page_allocate_new(a_tree);
 
-    // Re-resolve parent's mmap pointer if it was a writable mmap ref — mremap
-    // may have invalidated it.
+    // Re-resolve parent's mmap pointer if it was a writable mmap ref.
     if (a_parent->is_mmap_writable && a_tree->mmap) {
         uint64_t l_parent_offset = s_page_offset(a_parent->header.page_id);
         a_parent->data = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
                          + l_parent_offset + sizeof(dap_global_db_btree_page_header_t);
     }
 
-    dap_global_db_btree_page_t *l_sibling = s_page_alloc(l_arena);
-    if (!l_sibling)
+    // Now read child — mmap is stable after s_page_allocate_new.
+    // Use writable mmap ref when available (zero data copy).
+    dap_global_db_btree_page_t l_child_buf;
+    dap_global_db_btree_page_t *l_child;
+    if (a_tree->mmap && s_page_read_writable(a_tree, l_child_id, &l_child_buf)) {
+        l_child = &l_child_buf;
+    } else {
+        l_child = s_page_read(a_tree, l_child_id, l_arena);
+    }
+    if (!l_child)
         return -1;
+
+    // Allocate sibling directly in mmap 
+    // New page region is already zeroed by the OS (ftruncate + MAP_SHARED).
+    // This eliminates: arena alloc + 4KB memset(0) + 4KB memcpy to mmap.
+    dap_global_db_btree_page_t l_sibling_buf;
+    dap_global_db_btree_page_t *l_sibling;
+    if (a_tree->mmap && s_page_read_writable(a_tree, l_sibling_id, &l_sibling_buf)) {
+        l_sibling = &l_sibling_buf;
+        // Initialize leaf lowest-offset cache (mmap region may be zero/stale)
+        LEAF_LOWEST_OFFSET(l_sibling->data) = LEAF_LOWEST_OFFSET_INIT;
+    } else {
+        l_sibling = s_page_alloc(l_arena);
+        if (!l_sibling)
+            return -1;
+    }
 
     l_sibling->header.page_id = l_sibling_id;
     l_sibling->header.flags = l_child->header.flags;
+    l_sibling->header.free_space = PAGE_DATA_SIZE;
     l_sibling->header.right_sibling = l_child->header.right_sibling;
     l_sibling->header.left_sibling = l_child_id;
     l_child->header.right_sibling = l_sibling_id;
@@ -1086,92 +1109,95 @@ static int s_insert_non_full(dap_global_db_btree_t *a_tree, dap_global_db_btree_
 {
     dap_arena_t *l_arena = a_tree->arena;
 
-    if (a_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF) {
-        // Insert into leaf
-        int l_index;
-        if (s_leaf_find_entry(a_page, a_key, &l_index) == 0) {
-            if (s_leaf_update_entry(a_page, l_index, a_text_key, a_text_key_len,
-                                   a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
-                // Update failed — entry grew beyond page capacity. Old entry
-                // already deleted. Write state, signal re-insert from root.
-                s_page_write(a_tree, a_page);
-                a_tree->header.items_count--;
-                return 1;
-            }
-        } else {
-            if (s_leaf_insert_entry(a_page, l_index, a_key, a_text_key, a_text_key_len,
-                                   a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
-                log_it(L_ERROR, "Failed to insert into leaf - no space");
-                return -1;
-            }
-            a_tree->header.items_count++;
-        }
+    // Iterative descent from a_page to the target leaf.
+    // Track the path (page_id + child_index) for hot_leaf caching.
+    struct { uint64_t page_id; int child_index; } l_path[DAP_GLOBAL_DB_BTREE_PATH_MAX];
+    int l_depth = 0;
+    dap_global_db_btree_page_t *l_page = a_page;
 
-        s_page_write(a_tree, a_page);
+    while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        bool l_found;
+        int l_index = s_search_in_page(l_page, a_key, &l_found);
 
-        // Capture leaf as hot_leaf for subsequent fast-path inserts.
-        // Hot leaf must be heap-allocated (survives arena_reset) with a writable
-        // mmap data pointer (direct mmap writes, header-only writeback).
-        if (a_tree->hot_leaf && a_tree->hot_leaf != a_page)
-            s_page_free(a_tree->hot_leaf);
-
-        if (a_page->is_mmap_writable && !a_page->is_arena) {
-            // Already writable mmap on heap — keep as-is
-            a_tree->hot_leaf = a_page;
-        } else {
-            // Promote to heap struct with writable mmap data pointer
-            dap_global_db_btree_page_t *l_hl = DAP_NEW(dap_global_db_btree_page_t);
-            *l_hl = *a_page;
-            if (a_tree->mmap) {
-                uint64_t l_offset = s_page_offset(l_hl->header.page_id);
-                l_hl->data = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
-                             + l_offset + sizeof(dap_global_db_btree_page_header_t);
-                l_hl->is_mmap_ref = true;
-                l_hl->is_mmap_writable = true;
-            }
-            l_hl->is_arena = false;
-            a_tree->hot_leaf = l_hl;
-        }
-        return 0;
-    }
-
-    // Branch page — find child and recurse.
-    // Children are read via arena (freed in bulk after top-level operation).
-    // We do NOT use writable mmap refs for branch traversal because:
-    // 1. Branch pages are only transiently needed for navigation
-    // 2. s_split_child → s_page_allocate_new can trigger mremap, invalidating
-    //    all mmap pointers up the recursion stack
-    bool l_found;
-    int l_index = s_search_in_page(a_page, a_key, &l_found);
-
-    uint64_t l_child_id = s_branch_get_child(a_page, l_index);
-    dap_global_db_btree_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
-    if (!l_child)
-        return -1;
-
-    // Check if child needs split
-    if (s_page_needs_split(l_child, a_text_key_len, a_value_len, a_sign_len)) {
-        // l_child is arena-allocated — no explicit free needed
-
-        if (s_split_child(a_tree, a_page, l_index) != 0)
-            return -1;
-
-        // After split, a_page might have been re-resolved inside s_split_child
-        // (if writable mmap). Re-read the branch entry to pick the right child.
-        dap_global_db_btree_branch_entry_t *l_entry = s_branch_entry_at(a_page, l_index);
-        if (dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash) > 0)
-            l_index++;
-
-        l_child_id = s_branch_get_child(a_page, l_index);
-        l_child = s_page_read(a_tree, l_child_id, l_arena);
+        uint64_t l_child_id = s_branch_get_child(l_page, l_index);
+        dap_global_db_btree_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
         if (!l_child)
             return -1;
+
+        // Preemptive split: if child is full, split before descending
+        if (s_page_needs_split(l_child, a_text_key_len, a_value_len, a_sign_len)) {
+            if (s_split_child(a_tree, l_page, l_index) != 0)
+                return -1;
+
+            dap_global_db_btree_branch_entry_t *l_entry = s_branch_entry_at(l_page, l_index);
+            if (dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash) > 0)
+                l_index++;
+
+            l_child_id = s_branch_get_child(l_page, l_index);
+            l_child = s_page_read(a_tree, l_child_id, l_arena);
+            if (!l_child)
+                return -1;
+        }
+
+        // Record path for hot_leaf cache
+        if (l_depth < DAP_GLOBAL_DB_BTREE_PATH_MAX) {
+            l_path[l_depth].page_id = l_page->header.page_id;
+            l_path[l_depth].child_index = l_index;
+            l_depth++;
+        }
+
+        l_page = l_child;
     }
 
-    int l_ret = s_insert_non_full(a_tree, l_child, a_key, a_text_key, a_text_key_len,
-                                  a_value, a_value_len, a_sign, a_sign_len, a_flags);
-    // l_child is arena-allocated or captured as hot_leaf — no explicit free
-    return l_ret;
+    // l_page is now a leaf — insert the entry
+    int l_index;
+    if (s_leaf_find_entry(l_page, a_key, &l_index) == 0) {
+        if (s_leaf_update_entry(l_page, l_index, a_text_key, a_text_key_len,
+                               a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
+            s_page_write(a_tree, l_page);
+            a_tree->header.items_count--;
+            return 1;
+        }
+    } else {
+        if (s_leaf_insert_entry(l_page, l_index, a_key, a_text_key, a_text_key_len,
+                               a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
+            log_it(L_ERROR, "Failed to insert into leaf - no space");
+            return -1;
+        }
+        a_tree->header.items_count++;
+    }
+
+    s_page_write(a_tree, l_page);
+
+    // Promote leaf to hot_leaf with writable mmap data pointer.
+    // Save the traversal path for fast split-on-full without re-traversal.
+    if (a_tree->hot_leaf && a_tree->hot_leaf != l_page)
+        s_page_free(a_tree->hot_leaf);
+
+    if (l_page->is_mmap_writable && !l_page->is_arena) {
+        a_tree->hot_leaf = l_page;
+    } else {
+        dap_global_db_btree_page_t *l_hl = DAP_NEW(dap_global_db_btree_page_t);
+        *l_hl = *l_page;
+        if (a_tree->mmap) {
+            uint64_t l_offset = s_page_offset(l_hl->header.page_id);
+            l_hl->data = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
+                         + l_offset + sizeof(dap_global_db_btree_page_header_t);
+            l_hl->is_mmap_ref = true;
+            l_hl->is_mmap_writable = true;
+        }
+        l_hl->is_arena = false;
+        a_tree->hot_leaf = l_hl;
+    }
+
+    // Cache the path to hot_leaf for fast inline split
+    a_tree->hot_path_depth = l_depth;
+    for (int i = 0; i < l_depth; i++) {
+        a_tree->hot_path[i].page_id = l_path[i].page_id;
+        a_tree->hot_path[i].child_index = l_path[i].child_index;
+    }
+
+    return 0;
 }
 
 // ============================================================================
@@ -1222,8 +1248,12 @@ dap_global_db_btree_t *dap_global_db_btree_create(const char *a_filepath)
         log_it(L_WARNING, "Failed to truncate file: %s", strerror(errno));
     }
 
-    // Initialize mmap (pre-allocate 1MB to amortize early growth)
-    size_t l_initial_mmap = 1024 * 1024;
+    // Initialize mmap: pre-allocate 64MB to amortize early growth and minimize
+    // mremap calls during bulk inserts. On Linux, unused pages don't consume
+    // physical RAM (lazy allocation via demand paging), so this is safe.
+    // LMDB pre-allocates 1GB by default; our dynamic growth is costlier due
+    // to mremap TLB shootdown and page fault overhead on new pages.
+    size_t l_initial_mmap = 64 * 1024 * 1024;
     if (l_initial_mmap < (size_t)BTREE_DATA_OFFSET)
         l_initial_mmap = BTREE_DATA_OFFSET;
     l_tree->mmap = dap_mmap_open(a_filepath,
@@ -1377,11 +1407,21 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
     // ---- Hot leaf fast path ------------------------------------------------
     // For sequential inserts, the same leaf is hit repeatedly. The hot_leaf is
     // a heap-allocated struct with writable mmap data — no arena involvement.
+    //
+    // This entire block is aggressively inlined for sequential append:
+    //   - Direct pointer arithmetic instead of s_leaf_entry_at (skip bounds/flags checks)
+    //   - Raw memcmp instead of dap_global_db_btree_key_compare (skip function call)
+    //   - Direct entry write instead of s_leaf_insert_entry (skip COW/space/shift checks)
     if (a_tree->hot_leaf && a_tree->hot_leaf->header.entries_count > 0) {
         dap_global_db_btree_page_t *hl = a_tree->hot_leaf;
+
+        // Inline: get last entry directly from mmap (no function call, no checks)
+        uint16_t *l_hl_offsets = (uint16_t *)(hl->data + LEAF_HEADER_SIZE);
         dap_global_db_btree_leaf_entry_t *l_last =
-            s_leaf_entry_at(hl, hl->header.entries_count - 1, NULL, NULL);
-        int l_cmp = dap_global_db_btree_key_compare(a_key, &l_last->driver_hash);
+            (dap_global_db_btree_leaf_entry_t *)(hl->data + l_hl_offsets[hl->header.entries_count - 1]);
+
+        // Inline: raw memcmp (16 bytes) — same semantics as dap_global_db_btree_key_compare
+        int l_cmp = memcmp(a_key, &l_last->driver_hash, sizeof(dap_global_db_btree_key_t));
 
         bool l_in_range = false;
         if (l_cmp > 0) {
@@ -1389,31 +1429,175 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
         } else if (l_cmp == 0) {
             l_in_range = true;
         } else {
-            dap_global_db_btree_leaf_entry_t *l_first = s_leaf_entry_at(hl, 0, NULL, NULL);
-            l_in_range = (dap_global_db_btree_key_compare(a_key, &l_first->driver_hash) >= 0);
+            // Key < last: check if >= first entry
+            dap_global_db_btree_leaf_entry_t *l_first =
+                (dap_global_db_btree_leaf_entry_t *)(hl->data + l_hl_offsets[0]);
+            l_in_range = (memcmp(a_key, &l_first->driver_hash, sizeof(dap_global_db_btree_key_t)) >= 0);
         }
 
         if (l_in_range && !s_page_needs_split(hl, a_text_key_len, a_value_len, a_sign_len)) {
-            int l_idx;
-            if (s_leaf_find_entry(hl, a_key, &l_idx) == 0) {
-                // Hot leaf is writable mmap — no arena needed for in-place update
-                if (s_leaf_update_entry(hl, l_idx, a_text_key, a_text_key_len,
-                                        a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
-                    hl->is_dirty = true;
-                    return 0;
-                }
+            if (l_cmp > 0) {
+                // ---- Fully inlined sequential append ----
+                // No function calls. No COW check. No space check (already done).
+                // No offset shifting (appending at end). No memset of reserved.
+                // This is the tightest possible hot path for sequential writes.
+                int l_count = hl->header.entries_count;
+                size_t l_entry_size = sizeof(dap_global_db_btree_leaf_entry_t)
+                                      + a_text_key_len + a_value_len + a_sign_len;
+                uint16_t l_new_offset = LEAF_LOWEST_OFFSET(hl->data) - (uint16_t)l_entry_size;
+
+                // Set offset at position l_count — zero shifting
+                l_hl_offsets[l_count] = l_new_offset;
+
+                // Write entry header + data directly into mmap
+                dap_global_db_btree_leaf_entry_t *l_ent =
+                    (dap_global_db_btree_leaf_entry_t *)(hl->data + l_new_offset);
+                l_ent->driver_hash = *a_key;
+                l_ent->key_len = a_text_key_len;
+                l_ent->value_len = a_value_len;
+                l_ent->sign_len = a_sign_len;
+                l_ent->flags = a_flags;
+
+                uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_btree_leaf_entry_t);
+                memcpy(l_dst, a_text_key, a_text_key_len);
+                if (a_value_len > 0)
+                    memcpy(l_dst + a_text_key_len, a_value, a_value_len);
+                if (a_sign_len > 0)
+                    memcpy(l_dst + a_text_key_len + a_value_len, a_sign, a_sign_len);
+
+                hl->header.entries_count = l_count + 1;
+                hl->header.free_space -= (l_entry_size + LEAF_OFFSET_SIZE);
+                LEAF_LOWEST_OFFSET(hl->data) = l_new_offset;
+
+                a_tree->header.items_count++;
+                hl->is_dirty = true;
+                return 0;
             } else {
-                if (s_leaf_insert_entry(hl, l_idx, a_key, a_text_key, a_text_key_len,
-                                        a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
-                    a_tree->header.items_count++;
-                    hl->is_dirty = true;
-                    return 0;
+                // Key is within page range — need binary search (non-sequential case)
+                int l_idx;
+                if (s_leaf_find_entry(hl, a_key, &l_idx) == 0) {
+                    if (s_leaf_update_entry(hl, l_idx, a_text_key, a_text_key_len,
+                                            a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
+                        hl->is_dirty = true;
+                        return 0;
+                    }
+                } else {
+                    if (s_leaf_insert_entry(hl, l_idx, a_key, a_text_key, a_text_key_len,
+                                            a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
+                        a_tree->header.items_count++;
+                        hl->is_dirty = true;
+                        return 0;
+                    }
                 }
             }
+        } else if (l_in_range && l_cmp > 0 && a_tree->hot_path_depth > 0 && a_tree->mmap) {
+            // ---- Append-only split (LMDB MDB_APPEND optimization) ----
+            // Hot leaf is full AND key > all entries AND it's the rightmost leaf
+            // (right_sibling == 0, guaranteed by l_in_range check for l_cmp > 0).
+            //
+            // LMDB key insight: for sequential inserts, keep ALL entries in the
+            // old leaf (zero copies), create an EMPTY new sibling, insert only
+            // the new key into it. This reduces split cost from O(N) to O(1):
+            //   - Eliminates N/2 × s_leaf_insert_entry (memmove + 3 memcpy each)
+            //   - Eliminates s_leaf_compact on the old leaf (2 full-page memcpy)
+            //   - Total savings: ~4KB of data copying per split
+
+            // 1. Separator = the NEW KEY being inserted (not the last key of the old leaf).
+            //    B-tree invariant: search(separator) → go RIGHT. So the separator must
+            //    exist in the right subtree. Since a_key will be inserted into the new
+            //    sibling (right child), using it as separator is correct:
+            //      - All old keys < a_key → search goes LEFT → found in old leaf ✓
+            //      - a_key == separator → search goes RIGHT → found in sibling ✓
+            //    Using l_last->driver_hash would be WRONG because that entry stays in
+            //    the left child but search(separator) goes RIGHT → lost record!
+            dap_global_db_btree_key_t l_separator = *a_key;
+
+            // 2. Allocate new sibling page — may trigger mremap.
+            //    s_page_allocate_new calls s_page_resolve_mmap(tree, hot_leaf) internally,
+            //    so hl->data stays valid after potential mremap.
+            uint64_t l_sibling_id = s_page_allocate_new(a_tree);
+            if (l_sibling_id == 0)
+                goto append_split_fallback;
+
+            // 3. Read parent as writable mmap ref (resolved after potential mremap)
+            int l_parent_depth = a_tree->hot_path_depth - 1;
+            uint64_t l_parent_id = a_tree->hot_path[l_parent_depth].page_id;
+            int l_child_idx = a_tree->hot_path[l_parent_depth].child_index;
+
+            dap_global_db_btree_page_t l_parent_buf;
+            if (!s_page_read_writable(a_tree, l_parent_id, &l_parent_buf))
+                goto append_split_fallback;
+            dap_global_db_btree_page_t *l_parent = &l_parent_buf;
+
+            // Check parent has space for new separator
+            if (s_page_needs_split(l_parent, 0, 0, 0))
+                goto append_split_fallback;
+
+            // 4. Setup sibling as empty leaf directly in mmap
+            dap_global_db_btree_page_t l_sib_buf;
+            if (!s_page_read_writable(a_tree, l_sibling_id, &l_sib_buf))
+                goto append_split_fallback;
+            dap_global_db_btree_page_t *l_sib = &l_sib_buf;
+
+            l_sib->header.page_id = l_sibling_id;
+            l_sib->header.flags = DAP_GLOBAL_DB_PAGE_LEAF;
+            l_sib->header.entries_count = 0;
+            l_sib->header.free_space = PAGE_DATA_SIZE;
+            l_sib->header.right_sibling = 0;   // New rightmost leaf
+            l_sib->header.left_sibling = hl->header.page_id;
+            LEAF_LOWEST_OFFSET(l_sib->data) = LEAF_LOWEST_OFFSET_INIT;
+
+            // === Point of no return: tree structure modifications begin ===
+
+            // 5. Link old hot_leaf to new sibling, flush header (32B only — mmap_writable)
+            hl->header.right_sibling = l_sibling_id;
+            hl->is_dirty = true;
+            s_page_write(a_tree, hl);
+
+            // 6. Insert separator into parent (data modified in-place in mmap)
+            s_branch_insert_entry(l_parent, l_child_idx, &l_separator, l_sibling_id, NULL);
+            s_page_write(a_tree, l_parent);  // 32B header writeback
+
+            // 7. Insert new key into empty sibling — trivially O(1), always succeeds
+            s_leaf_insert_entry(l_sib, 0, a_key, a_text_key, a_text_key_len,
+                                a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL);
+            a_tree->header.items_count++;
+            s_page_write(a_tree, l_sib);  // 32B header writeback
+
+            // 8. Promote sibling as new hot_leaf (heap struct, mmap data pointer)
+            {
+                dap_global_db_btree_page_t *l_new_hl = DAP_NEW(dap_global_db_btree_page_t);
+                if (l_new_hl) {
+                    *l_new_hl = l_sib_buf;
+                    l_new_hl->is_arena = false;
+
+                    s_page_free(a_tree->hot_leaf);
+                    a_tree->hot_leaf = l_new_hl;
+
+                    // Update path: sibling is at child_idx + 1 in parent
+                    a_tree->hot_path[l_parent_depth].child_index = l_child_idx + 1;
+                } else {
+                    // OOM for 40-byte struct — very unlikely, but degrade gracefully
+                    s_page_free(a_tree->hot_leaf);
+                    a_tree->hot_leaf = NULL;
+                    a_tree->hot_path_depth = 0;
+                }
+            }
+
+            return 0;
+
+        append_split_fallback:
+            // Pre-commit checks failed — fall back to full root-to-leaf insert
+            s_hot_leaf_flush(a_tree);
+            a_tree->hot_path_depth = 0;
+            if (l_arena)
+                dap_arena_reset(l_arena);
+            goto normal_path;
         }
         s_hot_leaf_flush(a_tree);
     }
 
+normal_path:
     // ---- Normal path -------------------------------------------------------
     // Empty tree - create root
     if (a_tree->header.root_page == 0) {
@@ -1581,7 +1765,7 @@ static size_t s_leaf_total_entry_bytes(dap_global_db_btree_page_t *a_page)
     size_t l_total = 0;
     int l_count = a_page->header.entries_count;
     for (int i = 0; i < l_count; i++) {
-        size_t l_size;
+        size_t l_size = 0;
         s_leaf_entry_at(a_page, i, NULL, &l_size);
         l_total += l_size + LEAF_OFFSET_SIZE;
     }
@@ -1920,42 +2104,91 @@ int dap_global_db_btree_get_ref(dap_global_db_btree_t *a_tree,
     if (a_tree->hot_leaf && a_tree->hot_leaf->is_dirty)
         s_hot_leaf_flush(a_tree);
 
-    // Zero-copy path via mmap — no malloc, no memcpy
-    dap_global_db_btree_page_t l_page_buf;
-    if (s_page_read_ref(a_tree, a_tree->header.root_page, &l_page_buf)) {
-        dap_global_db_btree_page_t *l_page = &l_page_buf;
-        while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
-            bool l_found;
-            int l_index = s_search_in_page(l_page, a_key, &l_found);
-            uint64_t l_child_id = s_branch_get_child(l_page, l_index);
-            if (!s_page_read_ref(a_tree, l_child_id, &l_page_buf))
+    // ==== True zero-copy path (LMDB approach) ====
+    // All data is accessed via direct pointer arithmetic into the mmap region.
+    // No memcpy, no struct copy, no allocation — just pointer casts.
+    if (a_tree->mmap) {
+        uint8_t *l_base = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap);
+        size_t l_mmap_size = dap_mmap_get_size(a_tree->mmap);
+
+        uint64_t l_page_id = a_tree->header.root_page;
+        for (;;) {
+            uint64_t l_offset = s_page_offset(l_page_id);
+            if (l_offset + DAP_GLOBAL_DB_BTREE_PAGE_SIZE > l_mmap_size)
                 return -1;
-        }
 
-        int l_index;
-        if (s_leaf_find_entry(l_page, a_key, &l_index) != 0)
-            return 1;
+            const dap_global_db_btree_page_header_t *l_hdr =
+                (const dap_global_db_btree_page_header_t *)(l_base + l_offset);
+            const uint8_t *l_data = (const uint8_t *)(l_hdr + 1);
 
-        uint8_t *l_data = NULL;
-        dap_global_db_btree_leaf_entry_t *l_entry = s_leaf_entry_at(l_page, l_index, &l_data, NULL);
+            if (l_hdr->flags & DAP_GLOBAL_DB_PAGE_LEAF) {
+                // Binary search in leaf — direct pointer into mmap
+                int l_count = l_hdr->entries_count;
+                const uint16_t *l_offsets = (const uint16_t *)(l_data + LEAF_HEADER_SIZE);
+                int l_low = 0, l_high = l_count - 1;
+                while (l_low <= l_high) {
+                    int l_mid = (l_low + l_high) / 2;
+                    const dap_global_db_btree_leaf_entry_t *l_entry =
+                        (const dap_global_db_btree_leaf_entry_t *)(l_data + l_offsets[l_mid]);
+                    int l_cmp = dap_global_db_btree_key_compare(a_key, &l_entry->driver_hash);
+                    if (l_cmp == 0) {
+                        // Found — extract refs
+                        const uint8_t *l_edata = (const uint8_t *)l_entry
+                                                  + sizeof(dap_global_db_btree_leaf_entry_t);
+                        if (a_out_text_key) {
+                            a_out_text_key->data = l_entry->key_len > 0
+                                ? (void *)l_edata : NULL;
+                            a_out_text_key->len = l_entry->key_len;
+                        }
+                        if (a_out_value) {
+                            a_out_value->data = l_entry->value_len > 0
+                                ? (void *)(l_edata + l_entry->key_len) : NULL;
+                            a_out_value->len = l_entry->value_len;
+                        }
+                        if (a_out_sign) {
+                            a_out_sign->data = l_entry->sign_len > 0
+                                ? (void *)(l_edata + l_entry->key_len + l_entry->value_len)
+                                : NULL;
+                            a_out_sign->len = l_entry->sign_len;
+                        }
+                        if (a_out_flags)
+                            *a_out_flags = l_entry->flags;
+                        return 0;
+                    }
+                    if (l_cmp < 0)
+                        l_high = l_mid - 1;
+                    else
+                        l_low = l_mid + 1;
+                }
+                return 1;  // Not found
+            }
 
-        if (a_out_text_key) {
-            a_out_text_key->data = l_entry->key_len > 0 ? l_data : NULL;
-            a_out_text_key->len  = l_entry->key_len;
+            // Branch page — binary search for child, then follow pointer
+            const dap_global_db_btree_branch_entry_t *l_entries =
+                (const dap_global_db_btree_branch_entry_t *)(l_data + sizeof(uint64_t));
+            int l_count = l_hdr->entries_count;
+            int l_low = 0, l_high = l_count - 1;
+            int l_idx = l_count;  // Default: rightmost child
+            while (l_low <= l_high) {
+                int l_mid = (l_low + l_high) / 2;
+                int l_cmp = dap_global_db_btree_key_compare(a_key, &l_entries[l_mid].driver_hash);
+                if (l_cmp == 0) {
+                    l_idx = l_mid + 1;
+                    break;
+                }
+                if (l_cmp < 0) {
+                    l_idx = l_mid;
+                    l_high = l_mid - 1;
+                } else {
+                    l_low = l_mid + 1;
+                }
+            }
+            // Get child page ID
+            if (l_idx == 0)
+                l_page_id = *(const uint64_t *)l_data;  // First child pointer
+            else
+                l_page_id = l_entries[l_idx - 1].child_page;
         }
-        if (a_out_value) {
-            a_out_value->data = l_entry->value_len > 0 ? l_data + l_entry->key_len : NULL;
-            a_out_value->len  = l_entry->value_len;
-        }
-        if (a_out_sign) {
-            a_out_sign->data = l_entry->sign_len > 0
-                ? l_data + l_entry->key_len + l_entry->value_len : NULL;
-            a_out_sign->len  = l_entry->sign_len;
-        }
-        if (a_out_flags)
-            *a_out_flags = l_entry->flags;
-
-        return 0;
     }
 
     // Fallback: no mmap available — use allocating get

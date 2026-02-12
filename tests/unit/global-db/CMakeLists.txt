@@ -3,7 +3,7 @@ project(test_global_db C)
 
 # B-tree unit tests
 add_executable(test_globaldb_btree test_globaldb_btree.c)
-target_link_libraries(test_globaldb_btree dap_global_db dap_core dap_test)
+target_link_libraries(test_globaldb_btree dap_sdk dap_test)
 target_include_directories(test_globaldb_btree PRIVATE
     ${CMAKE_SOURCE_DIR}/module/global-db/include
     ${CMAKE_SOURCE_DIR}/module/global-db
@@ -11,14 +11,14 @@ target_include_directories(test_globaldb_btree PRIVATE
 
 # Storage layer tests
 add_executable(test_globaldb_storage test_globaldb_storage.c)
-target_link_libraries(test_globaldb_storage dap_global_db dap_core dap_test)
+target_link_libraries(test_globaldb_storage dap_sdk dap_test)
 target_include_directories(test_globaldb_storage PRIVATE
     ${CMAKE_SOURCE_DIR}/module/global-db/include
 )
 
 # Migration tests
 add_executable(test_globaldb_migrate test_globaldb_migrate.c)
-target_link_libraries(test_globaldb_migrate dap_global_db_migrate dap_global_db dap_core dap_test)
+target_link_libraries(test_globaldb_migrate dap_global_db_migrate dap_sdk dap_test)
 target_include_directories(test_globaldb_migrate PRIVATE
     ${CMAKE_SOURCE_DIR}/module/global-db/include
     ${CMAKE_SOURCE_DIR}/module/global-db/migrate

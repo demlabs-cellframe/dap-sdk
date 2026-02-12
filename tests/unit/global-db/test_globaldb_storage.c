@@ -16,8 +16,9 @@
 #include <sys/stat.h>
 
 #include "dap_common.h"
+#include "dap_strfuncs.h"
 #include "dap_test.h"
-#include "dap_hash.h"
+#include "dap_hash_fast.h"
 #include "dap_global_db.h"
 #include "dap_global_db_storage.h"
 
@@ -50,7 +51,7 @@ static void test_storage_init_deinit(void)
     
     dap_global_db_storage_deinit();
     
-    dap_test_pass("Storage init/deinit");
+    dap_pass_msg("Storage init/deinit");
 }
 
 static void test_storage_group_create(void)
@@ -74,7 +75,7 @@ static void test_storage_group_create(void)
     
     dap_global_db_storage_deinit();
     
-    dap_test_pass("Group creation");
+    dap_pass_msg("Group creation");
 }
 
 static void test_storage_write_read(void)
@@ -91,7 +92,7 @@ static void test_storage_write_read(void)
     obj.value = (byte_t *)dap_strdup("test_value");
     obj.value_len = strlen((char *)obj.value) + 1;
     obj.timestamp = dap_nanotime_now();
-    obj.crc = dap_hash_fast64(obj.value, obj.value_len);
+    obj.crc = (uint64_t)dap_hash_xxh32(obj.value, obj.value_len, 0);
     
     // Write
     int rc = dap_global_db_storage_write(&obj);
@@ -111,7 +112,7 @@ static void test_storage_write_read(void)
     
     dap_global_db_storage_deinit();
     
-    dap_test_pass("Storage write/read");
+    dap_pass_msg("Storage write/read");
 }
 
 static void test_storage_count(void)
@@ -141,7 +142,7 @@ static void test_storage_count(void)
     
     dap_global_db_storage_deinit();
     
-    dap_test_pass("Storage count");
+    dap_pass_msg("Storage count");
 }
 
 static void test_storage_read_all(void)
@@ -177,7 +178,7 @@ static void test_storage_read_all(void)
     
     dap_global_db_storage_deinit();
     
-    dap_test_pass("Storage read all");
+    dap_pass_msg("Storage read all");
 }
 
 static void test_storage_exists(void)
@@ -209,7 +210,7 @@ static void test_storage_exists(void)
     
     dap_global_db_storage_deinit();
     
-    dap_test_pass("Storage exists check");
+    dap_pass_msg("Storage exists check");
 }
 
 static void test_storage_groups_by_mask(void)
@@ -246,7 +247,7 @@ static void test_storage_groups_by_mask(void)
     
     dap_global_db_storage_deinit();
     
-    dap_test_pass("Get groups by mask");
+    dap_pass_msg("Get groups by mask");
 }
 
 static void test_storage_persistence(void)
@@ -294,7 +295,7 @@ static void test_storage_persistence(void)
         dap_global_db_storage_deinit();
     }
     
-    dap_test_pass("Storage persistence");
+    dap_pass_msg("Storage persistence");
 }
 
 // ============================================================================

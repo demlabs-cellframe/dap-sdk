@@ -41,9 +41,13 @@ add_executable(benchmark_ecdsa ${ECDSA_BENCHMARK_SOURCES})
 target_compile_options(benchmark_ecdsa PRIVATE -Wno-unused-result)
 
 # Link with DAP SDK
+# dap_crypto depends on dap_json, dap_config, dap_math — OBJECT lib deps don't propagate
 target_link_libraries(benchmark_ecdsa PRIVATE
     dap_crypto
     dap_core
+    dap_json
+    dap_math
+    dap_config
 )
 
 # Include DAP SDK headers

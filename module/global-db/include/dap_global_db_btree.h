@@ -125,12 +125,22 @@ typedef struct dap_global_db_btree_page {
 /**
  * @brief B-tree handle
  */
+#define DAP_GLOBAL_DB_BTREE_PATH_MAX  16  // Max tree depth for path cache
+
 typedef struct dap_global_db_btree {
     int fd;                              // File descriptor (kept for header I/O fallback)
     char *filepath;                      // File path
     dap_global_db_btree_header_t header;       // Cached header
     dap_global_db_btree_page_t *root;          // Cached root page (may be NULL)
     dap_global_db_btree_page_t *hot_leaf;      // Cached last-written leaf (write-back, avoid navigation)
+    // Cached path from root to hot_leaf parent — LMDB cursor-style optimization.
+    // Eliminates full root-to-leaf traversal when hot_leaf fills up during
+    // sequential inserts. Updated when hot_leaf is promoted.
+    struct {
+        uint64_t page_id;       // Branch page ID at this level
+        int child_index;        // Index of child in this branch page
+    } hot_path[DAP_GLOBAL_DB_BTREE_PATH_MAX];
+    int hot_path_depth;                  // Number of entries in hot_path (0 = invalid)
     bool read_only;                      // Read-only mode
     uint64_t txn_id;                     // Current transaction ID
     dap_mmap_t *mmap;                    // Memory-mapped file handle (NULL = legacy I/O)

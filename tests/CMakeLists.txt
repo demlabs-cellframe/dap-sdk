@@ -136,6 +136,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/json/CMakeLists.txt)
     message("[+] JSON module unit tests configured (Phase 0.2 + Phase 1.1)")
 endif()
 
+# GlobalDB module unit tests (B-tree, Storage, Migration)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/global-db/CMakeLists.txt)
+    add_subdirectory(unit/global-db)
+endif()
+
 # Crypto module unit tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     add_dap_test(test_unit_crypto_sha3 unit/crypto/hash/test_sha3.c)

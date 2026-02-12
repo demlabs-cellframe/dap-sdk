@@ -52,7 +52,7 @@
 // {{ARCH_NAME}} Architecture-Specific Primitives
 // ============================================================================
 
-{{PRIMITIVES}}
+{{#include PRIMITIVES_FILE}}
 
 // ============================================================================
 // Platform-specific implementation selection

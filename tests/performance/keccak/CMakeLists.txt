@@ -202,11 +202,13 @@ if(BUILD_BENCHMARKS AND HAVE_XKCP AND HAVE_TINY_SHA3)
 endif()
 
 # Link with dap_crypto and its dependencies
-# dap_crypto uses dap_json (via dap_sign.c) but OBJECT library deps don't propagate automatically
+# dap_crypto uses dap_json, dap_config, dap_math — OBJECT library deps don't propagate automatically
 target_link_libraries(benchmark_keccak
     dap_crypto
     dap_core
     dap_json
+    dap_math
+    dap_config
 )
 
 # System libraries

@@ -22,4 +22,6 @@ message("[+] GlobalDB migrate: SQL dump parser")
 
 # Migration CLI tool
 add_executable(dap_gdb_migrate_tool migrate_tool.c)
-target_link_libraries(dap_gdb_migrate_tool ${PROJECT_NAME} dap_core)
+# dap_global_db_migrate → dap_global_db → dap_crypto (dap_sign_get_size), etc.
+# Use the final shared library to resolve all transitive dependencies
+target_link_libraries(dap_gdb_migrate_tool ${PROJECT_NAME} dap_sdk)

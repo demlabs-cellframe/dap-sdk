@@ -1098,48 +1098,141 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     printf("\n=================================================================\n");
     printf("Benchmark complete\n");
     printf("=================================================================\n\n");
-    
-    // Summary table
-    printf("Summary (ops/sec):\n");
-    printf("%-15s", "Backend");
-    printf("%-15s", "Seq Write");
-    printf("%-15s", "Rand Write");
-    printf("%-15s", "Seq Read");
-    printf("%-15s", "Rand Read");
-    printf("\n");
-    printf("---------------------------------------------------------------\n");
-    
-    // Group results by backend
+
+    // ------------------------------------------------------------------
+    // Summary table with ops/sec
+    // ------------------------------------------------------------------
     const char *backends[] = { "DAP B-tree", "MDBX", "LMDB", "RocksDB", "LevelDB" };
+    const int num_backends = (int)(sizeof(backends) / sizeof(backends[0]));
     const char *ops[] = { "seq write", "random write", "seq read", "random read" };
-    
-    for (size_t b = 0; b < sizeof(backends)/sizeof(backends[0]); b++) {
-        bool has_results = false;
-        for (int i = 0; i < result_count; i++) {
-            if (strcmp(results[i].name, backends[b]) == 0) {
-                has_results = true;
-                break;
-            }
-        }
-        if (!has_results)
-            continue;
-        
-        printf("%-15s", backends[b]);
-        for (size_t o = 0; o < sizeof(ops)/sizeof(ops[0]); o++) {
-            bool found = false;
+    const char *ops_short[] = { "Seq Write", "Rand Write", "Seq Read", "Rand Read" };
+    const int num_ops = (int)(sizeof(ops) / sizeof(ops[0]));
+
+    // Build lookup matrix: perf[backend][op] = ops_per_sec (0 = not tested)
+    double perf[5][4] = {{0}};
+    for (int b = 0; b < num_backends; b++) {
+        for (int o = 0; o < num_ops; o++) {
             for (int i = 0; i < result_count; i++) {
                 if (strcmp(results[i].name, backends[b]) == 0 &&
                     strcmp(results[i].operation, ops[o]) == 0) {
-                    printf("%-15.0f", results[i].ops_per_sec);
-                    found = true;
+                    perf[b][o] = results[i].ops_per_sec;
                     break;
                 }
             }
-            if (!found)
+        }
+    }
+
+    printf("Summary (ops/sec):\n");
+    printf("%-15s", "Backend");
+    for (int o = 0; o < num_ops; o++)
+        printf("%-15s", ops_short[o]);
+    printf("\n---------------------------------------------------------------\n");
+
+    for (int b = 0; b < num_backends; b++) {
+        bool has = false;
+        for (int o = 0; o < num_ops; o++)
+            if (perf[b][o] > 0) { has = true; break; }
+        if (!has) continue;
+
+        printf("%-15s", backends[b]);
+        for (int o = 0; o < num_ops; o++) {
+            if (perf[b][o] > 0)
+                printf("%-15.0f", perf[b][o]);
+            else
                 printf("%-15s", "-");
         }
         printf("\n");
     }
+
+    // ------------------------------------------------------------------
+    // Winner analysis table
+    // ------------------------------------------------------------------
+    printf("\n=================================================================\n");
+    printf("Winner Analysis\n");
+    printf("=================================================================\n\n");
+    printf("%-15s %-15s %-15s %-10s  %s\n",
+           "Operation", "Winner", "ops/sec", "Factor", "Details");
+    printf("-----------------------------------------------------------------------\n");
+
+    const int dap_idx = 0;  // DAP B-tree is always index 0
+    for (int o = 0; o < num_ops; o++) {
+        // Find winner (highest ops/sec) and runner-up
+        int winner_idx = -1;
+        double winner_val = 0;
+        int runner_idx = -1;
+        double runner_val = 0;
+
+        for (int b = 0; b < num_backends; b++) {
+            if (perf[b][o] <= 0) continue;
+            if (perf[b][o] > winner_val) {
+                runner_idx = winner_idx;
+                runner_val = winner_val;
+                winner_idx = b;
+                winner_val = perf[b][o];
+            } else if (perf[b][o] > runner_val) {
+                runner_idx = b;
+                runner_val = perf[b][o];
+            }
+        }
+        if (winner_idx < 0) continue;
+
+        double dap_val = perf[dap_idx][o];
+        char factor_str[32];
+        char detail_str[128];
+
+        if (winner_idx == dap_idx) {
+            // DAP SDK wins — show factor over closest competitor
+            if (runner_idx >= 0 && runner_val > 0) {
+                double factor = winner_val / runner_val;
+                snprintf(factor_str, sizeof(factor_str), "%.2fx", factor);
+                snprintf(detail_str, sizeof(detail_str),
+                         "\033[32mDAP wins\033[0m vs %s (%.0f ops/s)",
+                         backends[runner_idx], runner_val);
+            } else {
+                snprintf(factor_str, sizeof(factor_str), "-");
+                snprintf(detail_str, sizeof(detail_str), "\033[32mDAP wins\033[0m (no competitors)");
+            }
+        } else {
+            // Another backend wins — show how much faster it is than DAP
+            if (dap_val > 0) {
+                double factor = winner_val / dap_val;
+                snprintf(factor_str, sizeof(factor_str), "%.2fx", factor);
+                snprintf(detail_str, sizeof(detail_str),
+                         "\033[31m%s faster\033[0m than DAP (%.0f ops/s)",
+                         backends[winner_idx], dap_val);
+            } else {
+                snprintf(factor_str, sizeof(factor_str), "-");
+                snprintf(detail_str, sizeof(detail_str), "DAP not tested");
+            }
+        }
+
+        printf("%-15s %-15s %-15.0f %-10s  %s\n",
+               ops_short[o], backends[winner_idx], winner_val, factor_str, detail_str);
+    }
+
+    // Final scoreboard
+    int dap_wins = 0, total_ops = 0;
+    for (int o = 0; o < num_ops; o++) {
+        double best = 0;
+        int best_idx = -1;
+        for (int b = 0; b < num_backends; b++) {
+            if (perf[b][o] > best) {
+                best = perf[b][o];
+                best_idx = b;
+            }
+        }
+        if (best_idx >= 0) total_ops++;
+        if (best_idx == dap_idx) dap_wins++;
+    }
+
+    printf("\n=================================================================\n");
+    if (dap_wins == total_ops)
+        printf("\033[1;32m  DAP B-tree WINS ALL %d/%d categories!\033[0m\n", dap_wins, total_ops);
+    else if (dap_wins > total_ops / 2)
+        printf("\033[1;33m  DAP B-tree wins %d/%d categories\033[0m\n", dap_wins, total_ops);
+    else
+        printf("\033[1;31m  DAP B-tree wins %d/%d categories\033[0m\n", dap_wins, total_ops);
+    printf("=================================================================\n");
 }
 
 int main(int argc, char **argv)

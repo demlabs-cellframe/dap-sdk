@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 
 #include "dap_common.h"
+#include "dap_strfuncs.h"
 #include "dap_test.h"
 #include "dap_global_db.h"
 #include "dap_global_db_storage.h"
@@ -69,7 +70,7 @@ static void test_migrate_strerror(void)
     dap_assert(strcmp(dap_global_db_migrate_strerror(DAP_MIGRATE_ERR_SOURCE), "Cannot open source") == 0, "Source error");
     dap_assert(strcmp(dap_global_db_migrate_strerror(DAP_MIGRATE_ERR_FORMAT), "Invalid source format") == 0, "Format error");
     
-    dap_test_pass("migrate_strerror");
+    dap_pass_msg("migrate_strerror");
 }
 
 static void test_migrate_args_validation(void)
@@ -93,7 +94,7 @@ static void test_migrate_args_validation(void)
     dap_assert(result.status == DAP_MIGRATE_ERR_SOURCE, "Should fail on non-existent source");
     dap_global_db_migrate_result_free(&result);
     
-    dap_test_pass("Migration argument validation");
+    dap_pass_msg("Migration argument validation");
 }
 
 static void test_migrate_sql_dump(void)
@@ -121,7 +122,7 @@ static void test_migrate_sql_dump(void)
     
     dap_global_db_migrate_result_free(&result);
     
-    dap_test_pass("SQL dump migration");
+    dap_pass_msg("SQL dump migration");
 }
 
 static void test_migrate_auto_detection(void)
@@ -163,7 +164,7 @@ static void test_migrate_auto_detection(void)
     dap_assert(result.status == DAP_MIGRATE_ERR_FORMAT, "Unknown format should fail");
     dap_global_db_migrate_result_free(&result);
     
-    dap_test_pass("Auto format detection");
+    dap_pass_msg("Auto format detection");
 }
 
 static void test_migrate_result_free(void)
@@ -182,7 +183,7 @@ static void test_migrate_result_free(void)
     // Double free should be safe
     dap_global_db_migrate_result_free(&result);
     
-    dap_test_pass("Result free");
+    dap_pass_msg("Result free");
 }
 
 static void test_migrate_verify_data(void)
@@ -211,7 +212,7 @@ static void test_migrate_verify_data(void)
     
     dap_global_db_migrate_result_free(&result);
     
-    dap_test_pass("Migrated data verification");
+    dap_pass_msg("Migrated data verification");
 }
 
 // ============================================================================

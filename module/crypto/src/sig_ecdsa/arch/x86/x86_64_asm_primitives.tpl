@@ -12,16 +12,19 @@
 // ============================================================================
 
 #define SCALAR_MUL_512_IMPL(l, a, b) do { \
+    const uint64_t *_mul_pa = (const uint64_t *)(a); \
+    uint64_t *_mul_pl = (uint64_t *)(l); \
+    uint64_t _mul_pb = (uint64_t)(uintptr_t)(b); \
     __asm__ __volatile__( \
-        /* Load a[0..3] into r15, rbx, rcx, and later r15 again */ \
-        "movq 0(%[pa]), %%r15\n" \
-        "movq 8(%[pa]), %%rbx\n" \
-        "movq 16(%[pa]), %%rcx\n" \
-        /* Load b[0..3] into r11-r14 */ \
+        /* Load b[0..3] into r11-r14 FIRST (frees [pb] register after) */ \
         "movq 0(%[pb]), %%r11\n" \
         "movq 8(%[pb]), %%r12\n" \
         "movq 16(%[pb]), %%r13\n" \
         "movq 24(%[pb]), %%r14\n" \
+        /* Load a[0..2]: a[0]→r15, a[1]→[pb] (reuse!), a[2]→rcx */ \
+        "movq 0(%[pa]), %%r15\n" \
+        "movq 8(%[pa]), %[pb]\n" \
+        "movq 16(%[pa]), %%rcx\n" \
         \
         /* ================================================================ */ \
         /* l[0] = a[0] * b[0] */ \
@@ -42,7 +45,7 @@
         "adcq %%rdx, %%r9\n" \
         "adcq $0, %%r10\n" \
         \
-        "movq %%rbx, %%rax\n" \
+        "movq %[pb], %%rax\n" \
         "mulq %%r11\n" \
         "addq %%rax, %%r8\n" \
         "adcq %%rdx, %%r9\n" \
@@ -60,7 +63,7 @@
         "adcq %%rdx, %%r10\n" \
         "adcq $0, %%r8\n" \
         \
-        "movq %%rbx, %%rax\n" \
+        "movq %[pb], %%rax\n" \
         "mulq %%r12\n" \
         "addq %%rax, %%r9\n" \
         "adcq %%rdx, %%r10\n" \
@@ -84,10 +87,10 @@
         "adcq %%rdx, %%r8\n" \
         "adcq $0, %%r9\n" \
         \
-        /* Load a[3] into r15 (reusing register) */ \
+        /* Load a[3] into r15 (reusing register, [pa] still valid) */ \
         "movq 24(%[pa]), %%r15\n" \
         \
-        "movq %%rbx, %%rax\n" \
+        "movq %[pb], %%rax\n" \
         "mulq %%r13\n" \
         "addq %%rax, %%r10\n" \
         "adcq %%rdx, %%r8\n" \
@@ -111,7 +114,7 @@
         /* ================================================================ */ \
         /* l[4] = a[1]*b[3] + a[2]*b[2] + a[3]*b[1] */ \
         /* ================================================================ */ \
-        "movq %%rbx, %%rax\n" \
+        "movq %[pb], %%rax\n" \
         "mulq %%r14\n" \
         "addq %%rax, %%r8\n" \
         "adcq %%rdx, %%r9\n" \
@@ -160,9 +163,9 @@
         "movq %%r10, 48(%[pl])\n"    /* l[6] */ \
         "movq %%r8, 56(%[pl])\n"     /* l[7] */ \
         \
-        : /* outputs */ \
-        : [pl] "r" (l), [pa] "r" (a), [pb] "r" (b) /* inputs */ \
-        : "rax", "rdx", "rbx", "rcx", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "cc", "memory" \
+        : [pb] "+r" (_mul_pb) /* starts as &b, becomes a[1] scratch */ \
+        : [pl] "r" (_mul_pl), [pa] "r" (_mul_pa) \
+        : "rax", "rdx", "rcx", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "cc", "memory" \
     ); \
 } while(0)
 
