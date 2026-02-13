@@ -139,6 +139,39 @@ static void dap_string_test(void)
     dap_string_free(l_str, true);
 }
 
+static void dap_string_invalid_descriptor_regression_test(void)
+{
+    dap_string_t l_corrupted = {
+        .str = NULL,
+        .len = 0,
+        .allocated_len = 8
+    };
+
+    dap_string_set_size(&l_corrupted, 4);
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_set_size() should fail safely on invalid descriptor");
+
+    dap_string_insert_len(&l_corrupted, -1, "AB", 2);
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_insert_len() should fail safely on invalid descriptor");
+
+    dap_string_insert_c(&l_corrupted, -1, 'X');
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_insert_c() should fail safely on invalid descriptor");
+
+    dap_string_insert_unichar(&l_corrupted, -1, 0x24B62);
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_insert_unichar() should fail safely on invalid descriptor");
+
+    dap_string_overwrite_len(&l_corrupted, 0, "AB", 2);
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_overwrite_len() should fail safely on invalid descriptor");
+
+    dap_string_append_printf(&l_corrupted, "%s", "AB");
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_append_printf() should fail safely on invalid descriptor");
+}
+
 int main(void)
 {
     dap_log_level_set(L_CRITICAL);
@@ -149,6 +182,7 @@ int main(void)
     dap_str_array_test();
     dap_list_test();
     dap_string_test();
+    dap_string_invalid_descriptor_regression_test();
 
     dap_usleep(0.5 * DAP_USEC_PER_SEC);
     dap_assert(1, "Test dap_usleep(0.5 sec.)");

@@ -41,6 +41,8 @@
   #include <signal.h>
   #include <sys/syscall.h>
   #include <sys/uio.h>
+  #include <sys/wait.h>
+  #include <fcntl.h>
 #else // WIN32
   #include <processthreadsapi.h>
   #include <process.h>
@@ -403,7 +405,7 @@ int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_f
     return 0;
 }
 
-#ifdef WIN32
+#ifdef DAP_OS_WINDOWS
 int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename ) {
 
     // init randomer
@@ -775,7 +777,6 @@ char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
     struct tm l_tm = { };
     while ( fgets(l_line, l_len, fp) ) {
         if ( dap_strptime(l_line, /* "[%x-%X" */ "[%m/%d/%Y-%H:%M:%S]", &l_tm) ) {
-            l_tm.tm_year += 2000;
             time_t l_tm_sec = mktime(&l_tm);
             if (l_tm_sec >= a_start_time) {
                 l_start_pos = ftell(fp) - strlen(l_line);
@@ -834,11 +835,13 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
 	}
     int counter = 0;
     if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
         return NULL;
     }
 
     long l_ret = ftell(file);
     if (l_ret < 0) {
+        fclose(file);
         return NULL;
     }
     unsigned l_file_pos = l_ret;
@@ -850,11 +853,13 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
         l_file_pos -= to_read;
 
         if (fseek(file, l_file_pos, SEEK_SET) != 0) {
+            fclose(file);
             return NULL;
         }
 
         size_t res = fread(buf, 1, to_read, file);
         if (ferror(file)) {
+            fclose(file);
             return NULL;
         }
 
@@ -880,7 +885,11 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
         fclose(file);
         return NULL;
     }
-    fseek(file, l_n_line_pos, SEEK_SET);
+    if (fseek(file, l_n_line_pos, SEEK_SET) != 0) {
+        DAP_DELETE(l_res);
+        fclose(file);
+        return NULL;
+    }
     if (l_read_size > 0) {
         size_t l_read = fread(l_res, 1, l_read_size, file);
         if (l_read != (size_t)l_read_size && ferror(file)) {
@@ -1130,23 +1139,58 @@ FIN:
  */
 char * exec_with_ret_multistring(const char * a_cmd)
 {
-    FILE * fp;
-    size_t buf_len = 0;
-    char buf[4096] = {0};
-    fp= popen(a_cmd, "r");
-    if (!fp) {
-        goto FIN;
+    if (!a_cmd) {
+        return NULL;
     }
-    memset(buf,0,sizeof(buf));
-    char retbuf[4096] = {0};
-    while(fgets(buf,sizeof(buf)-1,fp)) {
-        strcat(retbuf, buf);
+    FILE *fp = popen(a_cmd, "r");
+    size_t l_len = 0;
+    size_t l_cap = 1;
+    char *l_retbuf = DAP_NEW_Z_SIZE(char, l_cap);
+    if (!l_retbuf) {
+        return NULL;
+    }
+    if (!fp) {
+        return l_retbuf;
+    }
+    char buf[4096] = {0};
+    while (fgets(buf, sizeof(buf), fp)) {
+        size_t l_chunk = strlen(buf);
+        if (!l_chunk) {
+            continue;
+        }
+        if (l_len > SIZE_MAX - l_chunk - 1) {
+            DAP_DELETE(l_retbuf);
+            pclose(fp);
+            return NULL;
+        }
+        size_t l_need = l_len + l_chunk + 1;
+        if (l_need > l_cap) {
+            size_t l_new_cap = l_cap;
+            while (l_new_cap < l_need) {
+                if (l_new_cap > SIZE_MAX / 2) {
+                    l_new_cap = l_need;
+                    break;
+                }
+                l_new_cap *= 2;
+            }
+            char *l_tmp = DAP_REALLOC(l_retbuf, l_new_cap);
+            if (!l_tmp) {
+                DAP_DELETE(l_retbuf);
+                pclose(fp);
+                return NULL;
+            }
+            l_retbuf = l_tmp;
+            l_cap = l_new_cap;
+        }
+        memcpy(l_retbuf + l_len, buf, l_chunk);
+        l_len += l_chunk;
+        l_retbuf[l_len] = '\0';
     }
     pclose(fp);
-    buf_len=strlen(retbuf);
-    if(retbuf[buf_len-1] =='\n')retbuf[buf_len-1] ='\0';
-FIN:
-    return strdup(retbuf);
+    if (l_len && l_retbuf[l_len - 1] == '\n') {
+        l_retbuf[l_len - 1] = '\0';
+    }
+    return l_retbuf;
 }
 
 static const char l_possible_chars[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -1359,6 +1403,9 @@ void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len)
  * \return 0 if success, -1 otherwise
  */
 int exec_silent(const char * a_cmd) {
+    if (!a_cmd || !*a_cmd) {
+        return -1;
+    }
 
 #ifdef _WIN32
     PROCESS_INFORMATION p_info;
@@ -1368,21 +1415,49 @@ int exec_silent(const char * a_cmd) {
     memset(&p_info, 0, sizeof(p_info));
 
     s_info.cb = sizeof(s_info);
-    char cmdline[512] = {'\0'};
-    strcat(cmdline, "C:\\Windows\\System32\\cmd.exe /c ");
-    strcat(cmdline, a_cmd);
+    const char *l_prefix = "C:\\Windows\\System32\\cmd.exe /c ";
+    size_t l_cmdline_len = strlen(l_prefix) + strlen(a_cmd) + 1;
+    char *l_cmdline = DAP_NEW_SIZE(char, l_cmdline_len);
+    if (!l_cmdline) {
+        return -1;
+    }
+    snprintf(l_cmdline, l_cmdline_len, "%s%s", l_prefix, a_cmd);
 
-    if (CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0x08000000, NULL, NULL, &s_info, &p_info)) {
+    if (CreateProcessA(NULL, l_cmdline, NULL, NULL, FALSE, 0x08000000, NULL, NULL, &s_info, &p_info)) {
+        DAP_DELETE(l_cmdline);
         WaitForSingleObject(p_info.hProcess, 0xffffffff);
         CloseHandle(p_info.hProcess);
         CloseHandle(p_info.hThread);
         return 0;
     }
     else {
+        DAP_DELETE(l_cmdline);
         return -1;
     }
 #else
-    return execl(".","%s",a_cmd,NULL);
+    pid_t l_pid = fork();
+    if (l_pid < 0) {
+        return -1;
+    }
+    if (l_pid == 0) {
+        int l_devnull = open("/dev/null", O_WRONLY);
+        if (l_devnull >= 0) {
+            dup2(l_devnull, STDOUT_FILENO);
+            dup2(l_devnull, STDERR_FILENO);
+            if (l_devnull > STDERR_FILENO) {
+                close(l_devnull);
+            }
+        }
+        execl("/bin/sh", "sh", "-c", a_cmd, NULL);
+        _exit(127);
+    }
+    int l_status = 0;
+    while (waitpid(l_pid, &l_status, 0) == -1) {
+        if (errno != EINTR) {
+            return -1;
+        }
+    }
+    return WIFEXITED(l_status) && WEXITSTATUS(l_status) == 0 ? 0 : -1;
 #endif
 }
 

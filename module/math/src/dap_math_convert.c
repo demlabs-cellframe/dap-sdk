@@ -382,6 +382,10 @@ uint256_t dap_uint256_scan_decimal(const char *a_str_decimal)
     int l_len, l_pos;
     char    l_buf  [DAP_CHAIN$SZ_MAX256DEC + 8] = {0}, *l_point = NULL;
 
+    if (!a_str_decimal) {
+        return log_it(L_WARNING, "Incorrect balance format - NULL input"), uint256_0;
+    }
+
     /* "12300000000.0000456" */
     if ( (l_len = strnlen(a_str_decimal, DATOSHI_POW256 + 2)) > DATOSHI_POW256 + 1)/* Check for legal length */ /* 1 symbol for \0, one for '.', if more, there is an error */
         return  log_it(L_WARNING, "Incorrect balance format of '%s' - too long (%d > %d)", a_str_decimal,
@@ -483,6 +487,9 @@ char *dap_uint256_decimal_to_char(uint256_t a_decimal){ //dap_chain_balance_to_c
 const char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_round_position, bool is_round)
 {
     char *l_uint256_str = dap_uint256_decimal_to_char(a_uint256);
+    if (!l_uint256_str) {
+        return log_it(L_CRITICAL, "%s", c_error_memory_alloc), NULL;
+    }
     const char *l_ret = dap_uint256_char_to_round_char(l_uint256_str, a_round_position, is_round);
     return DAP_DELETE(l_uint256_str), l_ret;
 }
@@ -491,6 +498,9 @@ const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_
 {
     _Thread_local static char s_buf[DATOSHI_POW256 + 3];
     memset(s_buf, 0, sizeof(s_buf));
+    if (!a_str_decimal) {
+        return log_it(L_WARNING, "Incorrect balance format - NULL input"), NULL;
+    }
     char *l_dot_pos = strchr(a_str_decimal, '.'), *l_res = s_buf;
     int l_len = strlen(a_str_decimal);
     if (!l_dot_pos || a_round_pos >= DATOSHI_DEGREE || ( l_len - (l_dot_pos - a_str_decimal) <= a_round_pos ))
@@ -624,6 +634,9 @@ char *dap_uint128_uninteger_to_char(uint128_t a_uninteger)
 char *dap_uint128_decimal_to_char(uint128_t a_decimal)
 {
     char *l_buf = dap_uint128_uninteger_to_char(a_decimal);
+    if (!l_buf) {
+        return NULL;
+    }
     int l_strlen = strlen(l_buf);
     int l_pos;
     if (l_strlen > DATOSHI_DEGREE) {
@@ -643,6 +656,9 @@ char *dap_uint128_decimal_to_char(uint128_t a_decimal)
 
 uint128_t dap_uint128_scan_uninteger(const char *a_str_uninteger)
 {
+    if (!a_str_uninteger) {
+        return log_it(L_WARNING, "Incorrect input number - NULL input"), uint128_0;
+    }
     int l_strlen = strlen(a_str_uninteger);
     uint128_t l_ret = uint128_0, l_nul = uint128_0;
     if (l_strlen > DATOSHI_POW)
@@ -702,6 +718,11 @@ uint128_t dap_uint128_scan_decimal(const char *a_str_decimal)
 {
     char l_buf [DATOSHI_POW + 2] = {0};
     uint128_t l_ret = uint128_0, l_nul = uint128_0;
+
+    if (!a_str_decimal) {
+        log_it(L_WARNING, "Incorrect balance format - NULL input");
+        return l_nul;
+    }
 
     if (strlen(a_str_decimal) > DATOSHI_POW + 1) {
         log_it(L_WARNING, "Incorrect balance format - too long");

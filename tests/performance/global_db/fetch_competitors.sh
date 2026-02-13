@@ -3,7 +3,7 @@
 # Fetch and build competitor KV-storage libraries for benchmarking
 #
 # Usage:
-#   ./fetch_competitors.sh [--all|--mdbx|--lmdb|--rocksdb|--leveldb]
+#   ./fetch_competitors.sh [--all|--mdbx|--lmdb|--rocksdb|--leveldb|--tidesdb|--wiredtiger|--sophia]
 #
 # This script downloads source code of competitor libraries and builds them
 # locally for benchmarking purposes. Libraries are placed in ./competitors/
@@ -16,11 +16,13 @@ COMPETITORS_DIR="${SCRIPT_DIR}/competitors"
 BUILD_DIR="${COMPETITORS_DIR}/build"
 INSTALL_DIR="${COMPETITORS_DIR}/install"
 
-# Versions (latest stable as of 2024)
+# Versions (latest stable)
 MDBX_VERSION="0.12.10"
 LMDB_VERSION="0.9.31"
 ROCKSDB_VERSION="9.0.0"
 LEVELDB_VERSION="1.23"
+TIDESDB_TAG="master"
+WIREDTIGER_TAG="develop"
 
 # Colors for output
 RED='\033[0;31m'
@@ -194,6 +196,136 @@ fetch_leveldb() {
 }
 
 # ============================================================================
+# TidesDB
+# ============================================================================
+
+fetch_tidesdb() {
+    log_info "Fetching TidesDB ${TIDESDB_TAG}..."
+
+    # Check system dependencies (pkg-config names differ from package names)
+    local missing=""
+    local -A pkgmap=([libzstd]=libzstd-dev [liblz4]=liblz4-dev [snappy]=libsnappy-dev)
+    for lib in libzstd liblz4 snappy; do
+        if ! pkg-config --exists "${lib}" 2>/dev/null; then
+            missing="${missing} ${pkgmap[$lib]}"
+        fi
+    done
+    if [ -n "${missing}" ]; then
+        log_warn "TidesDB requires system packages:${missing}"
+        log_warn "Install with: sudo apt install${missing}"
+        log_error "Skipping TidesDB build."
+        return 1
+    fi
+
+    local src_dir="${COMPETITORS_DIR}/tidesdb"
+
+    if [ -d "${src_dir}" ]; then
+        log_info "TidesDB source already exists, updating..."
+        cd "${src_dir}"
+        git fetch --tags
+        git checkout "${TIDESDB_TAG}" 2>/dev/null || git checkout "main"
+    else
+        git clone https://github.com/tidesdb/tidesdb.git "${src_dir}"
+        cd "${src_dir}"
+        git checkout "${TIDESDB_TAG}" 2>/dev/null || true
+    fi
+
+    log_info "Building TidesDB..."
+    mkdir -p "${BUILD_DIR}/tidesdb"
+    cd "${BUILD_DIR}/tidesdb"
+
+    cmake "${src_dir}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
+        -DBUILD_SHARED_LIBS=ON
+
+    make -j$(nproc)
+    make install 2>/dev/null || {
+        # TidesDB may not have install target — manual copy
+        log_info "Manual install for TidesDB..."
+        mkdir -p "${INSTALL_DIR}/lib" "${INSTALL_DIR}/include"
+        find "${BUILD_DIR}/tidesdb" -name "libtidesdb*.so*" -exec cp -a {} "${INSTALL_DIR}/lib/" \;
+        find "${BUILD_DIR}/tidesdb" -name "libtidesdb*.a" -exec cp -a {} "${INSTALL_DIR}/lib/" \;
+        # Use db.h (FFI-safe, self-contained) as the public header
+        cp "${src_dir}/src/db.h" "${INSTALL_DIR}/include/tidesdb.h"
+    }
+
+    log_info "TidesDB installed to ${INSTALL_DIR}"
+}
+
+# ============================================================================
+# WiredTiger
+# ============================================================================
+
+fetch_wiredtiger() {
+    log_info "Fetching WiredTiger (${WIREDTIGER_TAG})..."
+
+    local src_dir="${COMPETITORS_DIR}/wiredtiger"
+
+    if [ -d "${src_dir}" ]; then
+        log_info "WiredTiger source already exists, updating..."
+        cd "${src_dir}"
+        git fetch
+        git checkout "${WIREDTIGER_TAG}" 2>/dev/null || git checkout "develop"
+    else
+        git clone --depth 1 https://github.com/wiredtiger/wiredtiger.git "${src_dir}"
+        cd "${src_dir}"
+    fi
+
+    log_info "Building WiredTiger..."
+    mkdir -p "${BUILD_DIR}/wiredtiger"
+    cd "${BUILD_DIR}/wiredtiger"
+
+    cmake "${src_dir}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
+        -DENABLE_STATIC=0 \
+        -DENABLE_SHARED=1 \
+        -DHAVE_DIAGNOSTIC=0 \
+        -DENABLE_PYTHON=0 \
+        -DENABLE_STRICT=0 \
+        -DWITH_PYTHON_LANG=0
+
+    make -j$(nproc)
+    make install
+
+    log_info "WiredTiger installed to ${INSTALL_DIR}"
+}
+
+# ============================================================================
+# Sophia
+# ============================================================================
+
+fetch_sophia() {
+    log_info "Fetching Sophia..."
+
+    local src_dir="${COMPETITORS_DIR}/sophia"
+
+    if [ -d "${src_dir}" ]; then
+        log_info "Sophia source already exists."
+        cd "${src_dir}"
+    else
+        git clone https://github.com/pmwkaa/sophia.git "${src_dir}"
+        cd "${src_dir}"
+    fi
+
+    log_info "Building Sophia..."
+    make clean 2>/dev/null || true
+    make -j$(nproc) 2>/dev/null || {
+        log_warn "Sophia build failed (abandoned project, may need patches). Skipping."
+        return 1
+    }
+
+    # Manual install — Sophia builds in the repo root directory
+    mkdir -p "${INSTALL_DIR}/lib" "${INSTALL_DIR}/include"
+    cp "${src_dir}/libsophia.so" "${INSTALL_DIR}/lib/" 2>/dev/null || \
+    cp "${src_dir}/libsophia.a" "${INSTALL_DIR}/lib/" 2>/dev/null || true
+    cp "${src_dir}/sophia.h" "${INSTALL_DIR}/include/" 2>/dev/null || true
+
+    log_info "Sophia installed to ${INSTALL_DIR}"
+}
+
+# ============================================================================
 # Generate CMake toolchain file
 # ============================================================================
 
@@ -216,6 +348,9 @@ set(MDBX_ROOT "\${COMPETITORS_INSTALL_DIR}")
 set(LMDB_ROOT "\${COMPETITORS_INSTALL_DIR}")
 set(ROCKSDB_ROOT "\${COMPETITORS_INSTALL_DIR}")
 set(LEVELDB_ROOT "\${COMPETITORS_INSTALL_DIR}")
+set(TIDESDB_ROOT "\${COMPETITORS_INSTALL_DIR}")
+set(WIREDTIGER_ROOT "\${COMPETITORS_INSTALL_DIR}")
+set(SOPHIA_ROOT "\${COMPETITORS_INSTALL_DIR}")
 
 # PKG_CONFIG path
 set(ENV{PKG_CONFIG_PATH} "\${COMPETITORS_INSTALL_DIR}/lib/pkgconfig:\$ENV{PKG_CONFIG_PATH}")
@@ -234,13 +369,16 @@ print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --all       Fetch and build all competitors"
-    echo "  --mdbx      Fetch and build MDBX only"
-    echo "  --lmdb      Fetch and build LMDB only"
-    echo "  --rocksdb   Fetch and build RocksDB only"
-    echo "  --leveldb   Fetch and build LevelDB only"
-    echo "  --clean     Remove all downloaded sources and builds"
-    echo "  -h, --help  Show this help"
+    echo "  --all         Fetch and build all competitors"
+    echo "  --mdbx        Fetch and build MDBX only"
+    echo "  --lmdb        Fetch and build LMDB only"
+    echo "  --rocksdb     Fetch and build RocksDB only"
+    echo "  --leveldb     Fetch and build LevelDB only"
+    echo "  --tidesdb     Fetch and build TidesDB only (requires libzstd-dev liblz4-dev libsnappy-dev)"
+    echo "  --wiredtiger  Fetch and build WiredTiger only"
+    echo "  --sophia      Fetch and build Sophia only (abandoned, may fail)"
+    echo "  --clean       Remove all downloaded sources and builds"
+    echo "  -h, --help    Show this help"
     echo ""
     echo "After building, configure CMake with:"
     echo "  cmake -DCMAKE_PREFIX_PATH=${INSTALL_DIR} ..."
@@ -265,6 +403,9 @@ for arg in "$@"; do
             fetch_lmdb
             fetch_rocksdb
             fetch_leveldb
+            fetch_tidesdb || true
+            fetch_wiredtiger || true
+            fetch_sophia || true
             generate_cmake_config
             ;;
         --mdbx)
@@ -281,6 +422,18 @@ for arg in "$@"; do
             ;;
         --leveldb)
             fetch_leveldb
+            generate_cmake_config
+            ;;
+        --tidesdb)
+            fetch_tidesdb
+            generate_cmake_config
+            ;;
+        --wiredtiger)
+            fetch_wiredtiger
+            generate_cmake_config
+            ;;
+        --sophia)
+            fetch_sophia
             generate_cmake_config
             ;;
         --clean)

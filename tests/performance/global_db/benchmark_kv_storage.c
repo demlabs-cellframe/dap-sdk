@@ -6,20 +6,24 @@
  * - LMDB (if available)
  * - RocksDB (if available)
  * - LevelDB (if available)
+ * - TidesDB (if available)
+ * - WiredTiger (if available)
+ * - Sophia (if available)
  *
  * Metrics:
  * - Sequential write throughput (ops/sec, MB/sec)
  * - Random write throughput
  * - Sequential read throughput
  * - Random read throughput
- * - Range scan throughput
- * - Mixed workload (50% read, 50% write)
  *
  * Build with specific backends:
- *   -DWITH_MDBX=ON    (requires libmdbx)
- *   -DWITH_LMDB=ON    (requires liblmdb)
- *   -DWITH_ROCKSDB=ON (requires librocksdb)
- *   -DWITH_LEVELDB=ON (requires libleveldb)
+ *   -DWITH_MDBX=ON        (requires libmdbx)
+ *   -DWITH_LMDB=ON        (requires liblmdb)
+ *   -DWITH_ROCKSDB=ON     (requires librocksdb)
+ *   -DWITH_LEVELDB=ON     (requires libleveldb)
+ *   -DWITH_TIDESDB=ON     (requires libtidesdb + libzstd + liblz4 + libsnappy)
+ *   -DWITH_WIREDTIGER=ON  (requires libwiredtiger)
+ *   -DWITH_SOPHIA=ON      (requires libsophia)
  */
 
 #include <stdio.h>
@@ -51,6 +55,18 @@
 
 #ifdef WITH_LEVELDB
 #include <leveldb/c.h>
+#endif
+
+#ifdef WITH_TIDESDB
+#include <tidesdb/db.h>
+#endif
+
+#ifdef WITH_WIREDTIGER
+#include <wiredtiger.h>
+#endif
+
+#ifdef WITH_SOPHIA
+#include <sophia.h>
 #endif
 
 #define LOG_TAG "kv_benchmark"
@@ -1004,6 +1020,718 @@ static benchmark_result_t s_bench_rocksdb_random_read(const benchmark_config_t *
 #endif // WITH_ROCKSDB
 
 // ============================================================================
+// LevelDB backend (optional)
+// ============================================================================
+
+#ifdef WITH_LEVELDB
+
+static benchmark_result_t s_bench_leveldb_sequential_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "LevelDB", .operation = "seq write" };
+    char *db_path = dap_strdup_printf("%s/leveldb_bench_sw", cfg->db_path);
+
+    leveldb_options_t *opt = leveldb_options_create();
+    leveldb_options_set_create_if_missing(opt, 1);
+    char *err = NULL;
+    leveldb_t *db = leveldb_open(opt, db_path, &err);
+    if (err) { log_it(L_ERROR, "LevelDB open: %s", err); free(err);
+               leveldb_options_destroy(opt); DAP_DELETE(db_path); return result; }
+
+    leveldb_writeoptions_t *wo = leveldb_writeoptions_create();
+    leveldb_writeoptions_set_sync(wo, cfg->sync_writes ? 1 : 0);
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        err = NULL;
+        leveldb_put(db, wo, (char *)key, cfg->key_size, (char *)value, cfg->value_size, &err);
+        if (err) { free(err); err = NULL; }
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(value);
+    leveldb_writeoptions_destroy(wo); leveldb_close(db);
+    leveldb_options_destroy(opt); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static leveldb_t *s_leveldb_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
+                                               leveldb_options_t **out_opt)
+{
+    *out_opt = leveldb_options_create();
+    leveldb_options_set_create_if_missing(*out_opt, 1);
+    char *err = NULL;
+    leveldb_t *db = leveldb_open(*out_opt, db_path, &err);
+    if (err) { free(err); leveldb_options_destroy(*out_opt); return NULL; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    leveldb_writeoptions_t *wo = leveldb_writeoptions_create();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        err = NULL;
+        leveldb_put(db, wo, (char *)key, cfg->key_size, (char *)value, cfg->value_size, &err);
+        if (err) { free(err); err = NULL; }
+    }
+    leveldb_writeoptions_destroy(wo);
+    DAP_DELETE(key); DAP_DELETE(value);
+    return db;
+}
+
+static benchmark_result_t s_bench_leveldb_random_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "LevelDB", .operation = "random write" };
+    char *db_path = dap_strdup_printf("%s/leveldb_bench_rw", cfg->db_path);
+
+    leveldb_options_t *opt = leveldb_options_create();
+    leveldb_options_set_create_if_missing(opt, 1);
+    char *err = NULL;
+    leveldb_t *db = leveldb_open(opt, db_path, &err);
+    if (err) { free(err); leveldb_options_destroy(opt); DAP_DELETE(db_path); return result; }
+
+    leveldb_writeoptions_t *wo = leveldb_writeoptions_create();
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        s_generate_value(value, cfg->value_size, indices[i]);
+        err = NULL;
+        leveldb_put(db, wo, (char *)key, cfg->key_size, (char *)value, cfg->value_size, &err);
+        if (err) { free(err); err = NULL; }
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(value); DAP_DELETE(indices);
+    leveldb_writeoptions_destroy(wo); leveldb_close(db);
+    leveldb_options_destroy(opt); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_leveldb_sequential_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "LevelDB", .operation = "seq read" };
+    char *db_path = dap_strdup_printf("%s/leveldb_bench_sr", cfg->db_path);
+    leveldb_options_t *opt;
+    leveldb_t *db = s_leveldb_open_and_populate(cfg, db_path, &opt);
+    if (!db) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    leveldb_readoptions_t *ro = leveldb_readoptions_create();
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        size_t vlen = 0; char *err = NULL;
+        char *val = leveldb_get(db, ro, (char *)key, cfg->key_size, &vlen, &err);
+        if (val) { read_count++; free(val); }
+        if (err) free(err);
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    leveldb_readoptions_destroy(ro); DAP_DELETE(key);
+    leveldb_close(db); leveldb_options_destroy(opt); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_leveldb_random_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "LevelDB", .operation = "random read" };
+    char *db_path = dap_strdup_printf("%s/leveldb_bench_rr", cfg->db_path);
+    leveldb_options_t *opt;
+    leveldb_t *db = s_leveldb_open_and_populate(cfg, db_path, &opt);
+    if (!db) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    leveldb_readoptions_t *ro = leveldb_readoptions_create();
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        size_t vlen = 0; char *err = NULL;
+        char *val = leveldb_get(db, ro, (char *)key, cfg->key_size, &vlen, &err);
+        if (val) { read_count++; free(val); }
+        if (err) free(err);
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    leveldb_readoptions_destroy(ro); DAP_DELETE(key); DAP_DELETE(indices);
+    leveldb_close(db); leveldb_options_destroy(opt); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+#endif // WITH_LEVELDB
+
+// ============================================================================
+// TidesDB backend (optional)
+// ============================================================================
+
+#ifdef WITH_TIDESDB
+
+// Helper: open TidesDB, create "bench" column family
+static int s_tidesdb_open_db(const char *db_path, tidesdb_t **out_db,
+                              tidesdb_column_family_t **out_cf)
+{
+    mkdir(db_path, 0755);
+    tidesdb_init(NULL, NULL, NULL, NULL);
+
+    tidesdb_config_t tdb_cfg = tidesdb_default_config();
+    tdb_cfg.db_path = (char *)db_path;
+    tdb_cfg.log_level = TDB_LOG_NONE;
+
+    if (tidesdb_open(&tdb_cfg, out_db) != TDB_SUCCESS) {
+        tidesdb_finalize(); return -1;
+    }
+
+    tidesdb_column_family_config_t cf_cfg = tidesdb_default_column_family_config();
+    cf_cfg.compression_algorithm = TDB_COMPRESS_LZ4;
+    if (tidesdb_create_column_family(*out_db, "bench", &cf_cfg) != TDB_SUCCESS) {
+        tidesdb_close(*out_db); tidesdb_finalize(); return -1;
+    }
+
+    *out_cf = tidesdb_get_column_family(*out_db, "bench");
+    if (!*out_cf) {
+        tidesdb_close(*out_db); tidesdb_finalize(); return -1;
+    }
+    return 0;
+}
+
+static void s_tidesdb_close_db(tidesdb_t *db)
+{
+    tidesdb_close(db);
+    tidesdb_finalize();
+}
+
+// Helper: open + populate with sequential data
+static int s_tidesdb_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
+                                        tidesdb_t **out_db, tidesdb_column_family_t **out_cf)
+{
+    if (s_tidesdb_open_db(db_path, out_db, out_cf) != 0) return -1;
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+
+    tidesdb_txn_t *txn = NULL;
+    tidesdb_txn_begin(*out_db, &txn);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        tidesdb_txn_put(txn, *out_cf, key, cfg->key_size, value, cfg->value_size, -1);
+    }
+    tidesdb_txn_commit(txn);
+    tidesdb_txn_free(txn);
+    DAP_DELETE(key); DAP_DELETE(value);
+    return 0;
+}
+
+static benchmark_result_t s_bench_tidesdb_sequential_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "TidesDB", .operation = "seq write" };
+    char *db_path = dap_strdup_printf("%s/tidesdb_bench_sw", cfg->db_path);
+
+    tidesdb_t *tdb = NULL; tidesdb_column_family_t *cf = NULL;
+    if (s_tidesdb_open_db(db_path, &tdb, &cf) != 0) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+
+    double start = s_get_time_sec();
+    tidesdb_txn_t *txn = NULL;
+    tidesdb_txn_begin(tdb, &txn);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        tidesdb_txn_put(txn, cf, key, cfg->key_size, value, cfg->value_size, -1);
+    }
+    tidesdb_txn_commit(txn);
+    tidesdb_txn_free(txn);
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(value);
+    s_tidesdb_close_db(tdb); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_tidesdb_random_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "TidesDB", .operation = "random write" };
+    char *db_path = dap_strdup_printf("%s/tidesdb_bench_rw", cfg->db_path);
+
+    tidesdb_t *tdb = NULL; tidesdb_column_family_t *cf = NULL;
+    if (s_tidesdb_open_db(db_path, &tdb, &cf) != 0) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+
+    double start = s_get_time_sec();
+    tidesdb_txn_t *txn = NULL;
+    tidesdb_txn_begin(tdb, &txn);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        s_generate_value(value, cfg->value_size, indices[i]);
+        tidesdb_txn_put(txn, cf, key, cfg->key_size, value, cfg->value_size, -1);
+    }
+    tidesdb_txn_commit(txn);
+    tidesdb_txn_free(txn);
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(value); DAP_DELETE(indices);
+    s_tidesdb_close_db(tdb); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_tidesdb_sequential_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "TidesDB", .operation = "seq read" };
+    char *db_path = dap_strdup_printf("%s/tidesdb_bench_sr", cfg->db_path);
+
+    tidesdb_t *tdb = NULL; tidesdb_column_family_t *cf = NULL;
+    if (s_tidesdb_open_and_populate(cfg, db_path, &tdb, &cf) != 0) {
+        DAP_DELETE(db_path); return result;
+    }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    tidesdb_txn_t *txn = NULL;
+    tidesdb_txn_begin(tdb, &txn);
+
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        size_t vlen = 0;
+        uint8_t *val = NULL;
+        if (tidesdb_txn_get(txn, cf, key, cfg->key_size, &val, &vlen) == TDB_SUCCESS && val) {
+            read_count++;
+            tidesdb_free(val);
+        }
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    tidesdb_txn_rollback(txn);
+    tidesdb_txn_free(txn);
+    DAP_DELETE(key); s_tidesdb_close_db(tdb); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_tidesdb_random_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "TidesDB", .operation = "random read" };
+    char *db_path = dap_strdup_printf("%s/tidesdb_bench_rr", cfg->db_path);
+
+    tidesdb_t *tdb = NULL; tidesdb_column_family_t *cf = NULL;
+    if (s_tidesdb_open_and_populate(cfg, db_path, &tdb, &cf) != 0) {
+        DAP_DELETE(db_path); return result;
+    }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    tidesdb_txn_t *txn = NULL;
+    tidesdb_txn_begin(tdb, &txn);
+
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        size_t vlen = 0;
+        uint8_t *val = NULL;
+        if (tidesdb_txn_get(txn, cf, key, cfg->key_size, &val, &vlen) == TDB_SUCCESS && val) {
+            read_count++;
+            tidesdb_free(val);
+        }
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    tidesdb_txn_rollback(txn);
+    tidesdb_txn_free(txn);
+    DAP_DELETE(key); DAP_DELETE(indices);
+    s_tidesdb_close_db(tdb); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+#endif // WITH_TIDESDB
+
+// ============================================================================
+// WiredTiger backend (optional)
+// ============================================================================
+
+#ifdef WITH_WIREDTIGER
+
+static benchmark_result_t s_bench_wiredtiger_sequential_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "WiredTiger", .operation = "seq write" };
+    char *db_path = dap_strdup_printf("%s/wt_bench_sw", cfg->db_path);
+    mkdir(db_path, 0755);
+
+    WT_CONNECTION *conn = NULL;
+    if (wiredtiger_open(db_path, NULL, "create,cache_size=256M", &conn) != 0) {
+        DAP_DELETE(db_path); return result; }
+    WT_SESSION *session = NULL;
+    conn->open_session(conn, NULL, NULL, &session);
+    session->create(session, "table:bench", "key_format=u,value_format=u");
+
+    WT_CURSOR *cursor = NULL;
+    session->open_cursor(session, "table:bench", NULL, NULL, &cursor);
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    WT_ITEM wk, wv;
+
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        wk.data = key; wk.size = cfg->key_size;
+        wv.data = value; wv.size = cfg->value_size;
+        cursor->set_key(cursor, &wk);
+        cursor->set_value(cursor, &wv);
+        cursor->insert(cursor);
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(value);
+    cursor->close(cursor); session->close(session, NULL);
+    conn->close(conn, NULL); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static int s_wt_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
+                                   WT_CONNECTION **out_conn)
+{
+    mkdir(db_path, 0755);
+    if (wiredtiger_open(db_path, NULL, "create,cache_size=256M", out_conn) != 0) return -1;
+    WT_SESSION *session = NULL;
+    (*out_conn)->open_session(*out_conn, NULL, NULL, &session);
+    session->create(session, "table:bench", "key_format=u,value_format=u");
+    WT_CURSOR *cursor = NULL;
+    session->open_cursor(session, "table:bench", NULL, NULL, &cursor);
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    WT_ITEM wk, wv;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        wk.data = key; wk.size = cfg->key_size;
+        wv.data = value; wv.size = cfg->value_size;
+        cursor->set_key(cursor, &wk);
+        cursor->set_value(cursor, &wv);
+        cursor->insert(cursor);
+    }
+    DAP_DELETE(key); DAP_DELETE(value);
+    cursor->close(cursor); session->close(session, NULL);
+    return 0;
+}
+
+static benchmark_result_t s_bench_wiredtiger_random_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "WiredTiger", .operation = "random write" };
+    char *db_path = dap_strdup_printf("%s/wt_bench_rw", cfg->db_path);
+    mkdir(db_path, 0755);
+
+    WT_CONNECTION *conn = NULL;
+    if (wiredtiger_open(db_path, NULL, "create,cache_size=256M", &conn) != 0) {
+        DAP_DELETE(db_path); return result; }
+    WT_SESSION *session = NULL;
+    conn->open_session(conn, NULL, NULL, &session);
+    session->create(session, "table:bench", "key_format=u,value_format=u");
+    WT_CURSOR *cursor = NULL;
+    session->open_cursor(session, "table:bench", NULL, NULL, &cursor);
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    WT_ITEM wk, wv;
+
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        s_generate_value(value, cfg->value_size, indices[i]);
+        wk.data = key; wk.size = cfg->key_size;
+        wv.data = value; wv.size = cfg->value_size;
+        cursor->set_key(cursor, &wk);
+        cursor->set_value(cursor, &wv);
+        cursor->insert(cursor);
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(value); DAP_DELETE(indices);
+    cursor->close(cursor); session->close(session, NULL);
+    conn->close(conn, NULL); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_wiredtiger_sequential_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "WiredTiger", .operation = "seq read" };
+    char *db_path = dap_strdup_printf("%s/wt_bench_sr", cfg->db_path);
+    WT_CONNECTION *conn;
+    if (s_wt_open_and_populate(cfg, db_path, &conn) != 0) { DAP_DELETE(db_path); return result; }
+
+    WT_SESSION *session = NULL;
+    conn->open_session(conn, NULL, NULL, &session);
+    WT_CURSOR *cursor = NULL;
+    session->open_cursor(session, "table:bench", NULL, NULL, &cursor);
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    WT_ITEM wk, wv;
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        wk.data = key; wk.size = cfg->key_size;
+        cursor->set_key(cursor, &wk);
+        if (cursor->search(cursor) == 0) {
+            cursor->get_value(cursor, &wv);
+            read_count++;
+        }
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); cursor->close(cursor); session->close(session, NULL);
+    conn->close(conn, NULL); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_wiredtiger_random_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "WiredTiger", .operation = "random read" };
+    char *db_path = dap_strdup_printf("%s/wt_bench_rr", cfg->db_path);
+    WT_CONNECTION *conn;
+    if (s_wt_open_and_populate(cfg, db_path, &conn) != 0) { DAP_DELETE(db_path); return result; }
+
+    WT_SESSION *session = NULL;
+    conn->open_session(conn, NULL, NULL, &session);
+    WT_CURSOR *cursor = NULL;
+    session->open_cursor(session, "table:bench", NULL, NULL, &cursor);
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    WT_ITEM wk, wv;
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        wk.data = key; wk.size = cfg->key_size;
+        cursor->set_key(cursor, &wk);
+        if (cursor->search(cursor) == 0) {
+            cursor->get_value(cursor, &wv);
+            read_count++;
+        }
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(indices);
+    cursor->close(cursor); session->close(session, NULL);
+    conn->close(conn, NULL); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+#endif // WITH_WIREDTIGER
+
+// ============================================================================
+// Sophia backend (optional)
+// ============================================================================
+
+#ifdef WITH_SOPHIA
+
+static benchmark_result_t s_bench_sophia_sequential_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "Sophia", .operation = "seq write" };
+    char *db_path = dap_strdup_printf("%s/sophia_bench_sw", cfg->db_path);
+    mkdir(db_path, 0755);
+
+    void *env = sp_env();
+    sp_setstring(env, "sophia.path", db_path, 0);
+    sp_setstring(env, "db", "bench", 0);
+    if (sp_open(env) != 0) {
+        sp_destroy(env); DAP_DELETE(db_path); return result; }
+    void *db = sp_getobject(env, "db.bench");
+    if (!db) { sp_destroy(env); DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        void *doc = sp_document(db);
+        sp_setstring(doc, "key", key, cfg->key_size);
+        sp_setstring(doc, "value", value, cfg->value_size);
+        sp_set(db, doc);
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(value);
+    sp_destroy(env); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static int s_sophia_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
+                                       void **out_env, void **out_db)
+{
+    mkdir(db_path, 0755);
+    *out_env = sp_env();
+    sp_setstring(*out_env, "sophia.path", db_path, 0);
+    sp_setstring(*out_env, "db", "bench", 0);
+    if (sp_open(*out_env) != 0) { sp_destroy(*out_env); return -1; }
+    *out_db = sp_getobject(*out_env, "db.bench");
+    if (!*out_db) { sp_destroy(*out_env); return -1; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        void *doc = sp_document(*out_db);
+        sp_setstring(doc, "key", key, cfg->key_size);
+        sp_setstring(doc, "value", value, cfg->value_size);
+        sp_set(*out_db, doc);
+    }
+    DAP_DELETE(key); DAP_DELETE(value);
+    return 0;
+}
+
+static benchmark_result_t s_bench_sophia_random_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "Sophia", .operation = "random write" };
+    char *db_path = dap_strdup_printf("%s/sophia_bench_rw", cfg->db_path);
+    mkdir(db_path, 0755);
+
+    void *env = sp_env();
+    sp_setstring(env, "sophia.path", db_path, 0);
+    sp_setstring(env, "db", "bench", 0);
+    if (sp_open(env) != 0) { sp_destroy(env); DAP_DELETE(db_path); return result; }
+    void *db = sp_getobject(env, "db.bench");
+    if (!db) { sp_destroy(env); DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        s_generate_value(value, cfg->value_size, indices[i]);
+        void *doc = sp_document(db);
+        sp_setstring(doc, "key", key, cfg->key_size);
+        sp_setstring(doc, "value", value, cfg->value_size);
+        sp_set(db, doc);
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(value); DAP_DELETE(indices);
+    sp_destroy(env); DAP_DELETE(db_path);
+    result.num_ops = cfg->num_records; result.elapsed_sec = elapsed;
+    result.ops_per_sec = cfg->num_records / elapsed;
+    result.mb_per_sec = (cfg->num_records * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_sophia_sequential_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "Sophia", .operation = "seq read" };
+    char *db_path = dap_strdup_printf("%s/sophia_bench_sr", cfg->db_path);
+    void *env, *db;
+    if (s_sophia_open_and_populate(cfg, db_path, &env, &db) != 0) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        void *doc = sp_document(db);
+        sp_setstring(doc, "key", key, cfg->key_size);
+        void *r = sp_get(db, doc);
+        if (r) { read_count++; sp_destroy(r); }
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); sp_destroy(env); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_sophia_random_read(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "Sophia", .operation = "random read" };
+    char *db_path = dap_strdup_printf("%s/sophia_bench_rr", cfg->db_path);
+    void *env, *db;
+    if (s_sophia_open_and_populate(cfg, db_path, &env, &db) != 0) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    double start = s_get_time_sec();
+    size_t read_count = 0;
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, indices[i]);
+        void *doc = sp_document(db);
+        sp_setstring(doc, "key", key, cfg->key_size);
+        void *r = sp_get(db, doc);
+        if (r) { read_count++; sp_destroy(r); }
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    DAP_DELETE(key); DAP_DELETE(indices);
+    sp_destroy(env); DAP_DELETE(db_path);
+    result.num_ops = read_count; result.elapsed_sec = elapsed;
+    result.ops_per_sec = read_count / elapsed;
+    result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+#endif // WITH_SOPHIA
+
+// ============================================================================
 // Main benchmark runner
 // ============================================================================
 
@@ -1026,7 +1754,7 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
            (double)(cfg->num_records * (cfg->key_size + cfg->value_size)) / 1024 / 1024);
     printf("=================================================================\n\n");
     
-    benchmark_result_t results[32];
+    benchmark_result_t results[64];
     int result_count = 0;
     
     // DAP Native B-tree benchmarks
@@ -1094,7 +1822,71 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     results[result_count] = s_bench_rocksdb_random_read(cfg);
     s_print_result(&results[result_count++]);
 #endif
-    
+
+#ifdef WITH_LEVELDB
+    printf("\nLevelDB:\n");
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_leveldb_sequential_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_leveldb_random_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_leveldb_sequential_read(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_leveldb_random_read(cfg);
+    s_print_result(&results[result_count++]);
+#endif
+
+#ifdef WITH_TIDESDB
+    printf("\nTidesDB:\n");
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_tidesdb_sequential_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_tidesdb_random_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_tidesdb_sequential_read(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_tidesdb_random_read(cfg);
+    s_print_result(&results[result_count++]);
+#endif
+
+#ifdef WITH_WIREDTIGER
+    printf("\nWiredTiger:\n");
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_wiredtiger_sequential_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_wiredtiger_random_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_wiredtiger_sequential_read(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_wiredtiger_random_read(cfg);
+    s_print_result(&results[result_count++]);
+#endif
+
+#ifdef WITH_SOPHIA
+    printf("\nSophia:\n");
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_sophia_sequential_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_sophia_random_write(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_sophia_sequential_read(cfg);
+    s_print_result(&results[result_count++]);
+    s_cleanup_db_dir(cfg->db_path);
+    results[result_count] = s_bench_sophia_random_read(cfg);
+    s_print_result(&results[result_count++]);
+#endif
+
     printf("\n=================================================================\n");
     printf("Benchmark complete\n");
     printf("=================================================================\n\n");
@@ -1102,14 +1894,17 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     // ------------------------------------------------------------------
     // Summary table with ops/sec
     // ------------------------------------------------------------------
-    const char *backends[] = { "DAP B-tree", "MDBX", "LMDB", "RocksDB", "LevelDB" };
+    const char *backends[] = {
+        "DAP B-tree", "MDBX", "LMDB", "RocksDB", "LevelDB",
+        "TidesDB", "WiredTiger", "Sophia"
+    };
     const int num_backends = (int)(sizeof(backends) / sizeof(backends[0]));
     const char *ops[] = { "seq write", "random write", "seq read", "random read" };
     const char *ops_short[] = { "Seq Write", "Rand Write", "Seq Read", "Rand Read" };
     const int num_ops = (int)(sizeof(ops) / sizeof(ops[0]));
 
     // Build lookup matrix: perf[backend][op] = ops_per_sec (0 = not tested)
-    double perf[5][4] = {{0}};
+    double perf[8][4] = {{0}};
     for (int b = 0; b < num_backends; b++) {
         for (int o = 0; o < num_ops; o++) {
             for (int i = 0; i < result_count; i++) {
@@ -1123,10 +1918,10 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     }
 
     printf("Summary (ops/sec):\n");
-    printf("%-15s", "Backend");
+    printf("%-16s", "Backend");
     for (int o = 0; o < num_ops; o++)
-        printf("%-15s", ops_short[o]);
-    printf("\n---------------------------------------------------------------\n");
+        printf("%-16s", ops_short[o]);
+    printf("\n-------------------------------------------------------------------------\n");
 
     for (int b = 0; b < num_backends; b++) {
         bool has = false;
@@ -1134,12 +1929,12 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
             if (perf[b][o] > 0) { has = true; break; }
         if (!has) continue;
 
-        printf("%-15s", backends[b]);
+        printf("%-16s", backends[b]);
         for (int o = 0; o < num_ops; o++) {
             if (perf[b][o] > 0)
-                printf("%-15.0f", perf[b][o]);
+                printf("%-16.0f", perf[b][o]);
             else
-                printf("%-15s", "-");
+                printf("%-16s", "-");
         }
         printf("\n");
     }

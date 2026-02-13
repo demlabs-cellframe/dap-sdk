@@ -72,6 +72,34 @@ static void test_uint256_null_input(void) {
     dap_assert(IS_ZERO_256(a), "NULL должен давать ноль");
 }
 
+static void test_uint256_decimal_null_input(void) {
+    dap_test_msg("NULL decimal input should return zero");
+    uint256_t a = dap_uint256_scan_decimal(NULL);
+
+    dap_assert(IS_ZERO_256(a), "NULL decimal должен давать ноль");
+}
+
+static void test_uint128_uninteger_null_input(void) {
+    dap_test_msg("NULL uint128 integer input should return zero");
+    uint128_t a = dap_uint128_scan_uninteger(NULL);
+
+    dap_assert(IS_ZERO_128(a), "NULL uint128 integer должен давать ноль");
+}
+
+static void test_uint128_decimal_null_input(void) {
+    dap_test_msg("NULL uint128 decimal input should return zero");
+    uint128_t a = dap_uint128_scan_decimal(NULL);
+
+    dap_assert(IS_ZERO_128(a), "NULL uint128 decimal должен давать ноль");
+}
+
+static void test_uint256_round_char_null_input(void) {
+    dap_test_msg("NULL rounding input should return NULL");
+    const char *a = dap_uint256_char_to_round_char(NULL, 2, true);
+
+    dap_assert(a == NULL, "NULL round input должен возвращать NULL");
+}
+
 static void test_uint256_overflow_detection(void) {
     dap_test_msg("Overflow detection (one bit over MAX)");
     // Это MAX256 + 1
@@ -324,7 +352,7 @@ int main(void) {
     dap_test_msg("║   Converted from GoogleTest/Boost (3481 lines C++)    ║");
     dap_test_msg("╚════════════════════════════════════════════════════════╝");
     
-    // Suite 1: Input/Output Tests (10 tests)
+    // Suite 1: Input/Output Tests (14 tests)
     dap_test_msg("\n┌─ Suite 1: Input/Output Tests ─────────────────────────┐");
     test_uint256_zero_input();
     test_uint256_max64_from_string();
@@ -332,6 +360,10 @@ int main(void) {
     test_uint256_max256_from_string();
     test_uint256_empty_input();
     test_uint256_null_input();
+    test_uint256_decimal_null_input();
+    test_uint128_uninteger_null_input();
+    test_uint128_decimal_null_input();
+    test_uint256_round_char_null_input();
     test_uint256_overflow_detection();
     test_uint256_leading_zeroes();
     test_uint256_scientific_notation();
@@ -372,7 +404,7 @@ int main(void) {
     dap_test_msg("└───────────────────────────────────────────────────────┘");
     
     dap_test_msg("\n╔════════════════════════════════════════════════════════╗");
-    dap_test_msg("║  ✅ UINT256 TEST SUITE COMPLETE: 28 core tests        ║");
+    dap_test_msg("║  ✅ UINT256 TEST SUITE COMPLETE: 32 core tests        ║");
     dap_test_msg("║  📝 Original: 3481 lines C++ (GoogleTest/Boost)        ║");
     dap_test_msg("║  ✨ Converted: Clean C with dap_test framework         ║");
     dap_test_msg("║  🎯 Coverage: Input, Arithmetic, Compare, Bits, Edge   ║");
@@ -380,4 +412,3 @@ int main(void) {
     
     return 0;
 }
-
