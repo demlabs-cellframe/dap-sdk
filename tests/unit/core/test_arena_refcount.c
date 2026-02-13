@@ -199,6 +199,45 @@ static void s_test_growth_options(void)
     log_it(L_INFO, "✓ Growth options test passed");
 }
 
+/**
+ * @brief Regression: refcounted reset must preserve reusable page chain
+ */
+static void s_test_reset_chain_refcount(void)
+{
+    log_it(L_INFO, "\n=== Test: Reset Preserves Chain (Refcounted) ===");
+    
+    dap_arena_t *l_arena = dap_arena_new_opt((dap_arena_opt_t){
+        .initial_size = 512,
+        .allow_small_pages = true,
+        .page_growth_factor = 1.0,
+        .use_refcount = true
+    });
+    dap_assert(l_arena != NULL, "Arena created");
+    
+    for (int i = 0; i < 4; i++) {
+        void *l_ptr = dap_arena_alloc(l_arena, 400);
+        dap_assert(l_ptr != NULL, "Initial multi-page alloc");
+    }
+    
+    dap_arena_stats_t l_stats_before, l_stats_after;
+    dap_arena_get_stats(l_arena, &l_stats_before);
+    dap_assert(l_stats_before.page_count == 4, "Four pages created");
+    
+    dap_arena_reset(l_arena);
+    dap_assert(dap_arena_alloc(l_arena, 400) != NULL, "Alloc after reset #1");
+    dap_assert(dap_arena_alloc(l_arena, 400) != NULL, "Alloc after reset #2");
+    
+    dap_arena_get_stats(l_arena, &l_stats_after);
+    dap_assert(l_stats_after.page_count == l_stats_before.page_count,
+               "Page chain preserved after reset+regrow");
+    dap_assert(l_stats_after.total_allocated == l_stats_before.total_allocated,
+               "No extra allocation when reusing preserved chain");
+    
+    dap_arena_free(l_arena);
+    
+    log_it(L_INFO, "✓ Refcounted reset-chain regression test passed");
+}
+
 int main(int argc, char **argv)
 {
     (void)argc;
@@ -215,6 +254,7 @@ int main(int argc, char **argv)
     s_test_stats_refcount();
     s_test_comparison();
     s_test_growth_options();
+    s_test_reset_chain_refcount();
     
     log_it(L_INFO, "\n═══════════════════════════════════════════════════════");
     log_it(L_INFO, "  ✅ ALL TESTS PASSED");

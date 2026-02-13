@@ -122,22 +122,22 @@ static const DAP_ALIGNED(64) uint64_t s_crc64_table[256] =
 
 static uint64_t s_crc64_update(uint64_t a_crc, const uint8_t *a_ptr, const size_t a_count)
 {
-    const uint8_t *const c_endptr = a_ptr + a_count;
-    while (a_ptr < c_endptr)
-        a_crc = s_crc64_table[((a_crc >> 56) ^ (*a_ptr++)) & 0xFF] ^ (a_crc << 8);
+    for (size_t i = 0; i < a_count; ++i)
+        a_crc = s_crc64_table[((a_crc >> 56) ^ a_ptr[i]) & 0xFF] ^ (a_crc << 8);
     return a_crc;
 }
 
 static uint64_t s_crc64_reflected_update(uint64_t a_crc, const uint8_t *a_ptr, const size_t a_count)
 {
-    const uint8_t *const c_endptr = a_ptr + a_count;
-    while (a_ptr < c_endptr)
-        a_crc = (a_crc >> 8) ^ s_crc64_table[(a_crc & 0xff) ^ *a_ptr++];
+    for (size_t i = 0; i < a_count; ++i)
+        a_crc = (a_crc >> 8) ^ s_crc64_table[(a_crc & 0xff) ^ a_ptr[i]];
     return a_crc;
 }
 
 uint64_t crc64_update(uint64_t a_crc, const uint8_t *a_ptr, const size_t a_count)
 {
+    if (unlikely(!a_ptr))
+        return a_crc;
     return c_crc64_params.reflected ? s_crc64_reflected_update(a_crc, a_ptr, a_count) : s_crc64_update(a_crc, a_ptr, a_count);
 }
 

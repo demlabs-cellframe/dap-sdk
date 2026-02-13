@@ -624,6 +624,7 @@ char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tok
 {
     dap_list_t *l_string_list = NULL, *l_slist;
     char **l_str_array, *l_s;
+    size_t l_delimiter_len;
     uint32_t l_n = 1;
 
     dap_return_val_if_fail(a_string != NULL, NULL);
@@ -632,26 +633,30 @@ char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tok
     if(a_max_tokens < 1)
         a_max_tokens = INT_MAX;
 
+    l_delimiter_len = strlen(a_delimiter);
+    if(l_delimiter_len == 0) {
+        l_str_array = DAP_NEW_SIZE(char*, 2 * sizeof(char*));
+        dap_return_val_if_fail(l_str_array != NULL, NULL);
+        l_str_array[0] = dap_strdup(a_string);
+        l_str_array[1] = NULL;
+        return l_str_array;
+    }
+
     l_s = strstr(a_string, a_delimiter);
-    if(l_s)
+    while(l_s && a_max_tokens > 1)
     {
-        uint32_t delimiter_len = (uint32_t) strlen(a_delimiter);
+        size_t len;
+        char *new_string;
 
-        do
-        {
-            uint32_t len;
-            char *new_string;
-
-            len = (uint32_t) (l_s - a_string);
-            new_string = DAP_NEW_Z_SIZE(char, len + 1);
-            strncpy(new_string, a_string, len);
-            new_string[len] = 0;
-            l_string_list = dap_list_prepend(l_string_list, new_string);
-            l_n++;
-            a_string = l_s + delimiter_len;
-            l_s = strstr(a_string, a_delimiter);
-        }
-        while(--a_max_tokens && l_s);
+        len = (size_t) (l_s - a_string);
+        new_string = DAP_NEW_Z_SIZE(char, len + 1);
+        strncpy(new_string, a_string, len);
+        new_string[len] = 0;
+        l_string_list = dap_list_prepend(l_string_list, new_string);
+        l_n++;
+        a_string = l_s + l_delimiter_len;
+        l_s = strstr(a_string, a_delimiter);
+        a_max_tokens--;
     }
     l_string_list = dap_list_prepend(l_string_list, dap_strdup(a_string));
 
@@ -972,6 +977,8 @@ char *_strndup(const char *str, unsigned long len) {
     if (buf)
         len = buf - str;
     buf = (char*)malloc(len + 1);
+    if (!buf)
+        return NULL;
     memcpy(buf, str, len);
     buf[len] = '\0';
     return buf;

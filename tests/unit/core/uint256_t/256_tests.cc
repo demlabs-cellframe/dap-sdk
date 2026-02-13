@@ -139,6 +139,14 @@ void check_equality256(uint256_t a, string aa) {
     check_equality256(a, boost_a);
 }
 
+void check_equality512(uint512_t a, bmp::uint512_t boost_a) {
+    bmp::uint512_t low_mask = (bmp::uint512_t(1) << 256) - 1;
+    bmp::uint256_t boost_lo = bmp::uint256_t(boost_a & low_mask);
+    bmp::uint256_t boost_hi = bmp::uint256_t(boost_a >> 256);
+    check_equality256(a.lo, boost_lo);
+    check_equality256(a.hi, boost_hi);
+}
+
 
 
 TEST(InputTests, ZeroInputBase) {
@@ -1752,17 +1760,10 @@ TEST(LegacyTests, Uint256) {
         /////////////////////output of 256*256-->512//////////////////////
         dap_test_512_prod = uint512_0;
 
-        uint256_t intermed_lo_prod;
-        uint256_t intermed_hi_prod;
-
         MULT_256_512(dap_test_256_one,dap_test_256_two,&dap_test_512_prod);
 
-
         boost_dap_512_comparison_prod = boost_test_256_one * boost_test_256_two;
-
-        char buf[512] = {0};
-
-        //todo: Implement comparition for 512
+        check_equality512(dap_test_512_prod, boost_dap_512_comparison_prod);
 
 
         /////////////////////output of shift left 128/////////////////////
@@ -3356,14 +3357,15 @@ TEST(MathTest, Mult256TwoThree) {
 
 //TEST(MathTest, Mult256LowLow) {}
 
-TEST(DISABLE_MathTests, Mult256MaxMaxRet512) {
-//    uint256_t a, b = uint256_0;
-//    uint512_t c = uint512_0;
-//    a = dap_uint256_scan_uninteger(MAX256STR);
-//    b = dap_uint256_scan_uninteger(MAX256STR);
-//    char *ltp = dap_uint256_uninteger_to_char(a);
-//    MULT_256_512(a, b, &c);
-//    char *ccp = dap_uint256_uninteger_to_char(c);
+TEST(MathTests, Mult256MaxMaxRet512) {
+    uint256_t a = dap_uint256_scan_uninteger(MAX256STR);
+    uint256_t b = dap_uint256_scan_uninteger(MAX256STR);
+    uint512_t c = uint512_0;
+    MULT_256_512(a, b, &c);
+
+    bmp::uint256_t boost_a = bmp::uint256_t(MAX256STR);
+    bmp::uint512_t expected = bmp::uint512_t(boost_a) * bmp::uint512_t(boost_a);
+    check_equality512(c, expected);
 }
 
 TEST(MathTests, DivMoreToLess) {
@@ -3478,4 +3480,3 @@ TEST_F(RandomMathTests, Div256) {
 
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (boost_a/boost_b).str().c_str());
 }
-

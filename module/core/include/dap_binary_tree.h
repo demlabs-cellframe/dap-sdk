@@ -35,9 +35,23 @@ extern "C" {
 #endif
 
 typedef const char *dap_binary_tree_key_t;
-#define KEY_LS(a, b) (strcmp(a, b) < 0)
-#define KEY_GT(a, b) (strcmp(a, b) > 0)
-#define KEY_EQ(a, b) (strcmp(a, b) == 0)
+DAP_STATIC_INLINE int dap_binary_tree_key_cmp(dap_binary_tree_key_t a, dap_binary_tree_key_t b)
+{
+    if (a == b) {
+        return 0;
+    }
+    if (!a) {
+        return -1;
+    }
+    if (!b) {
+        return 1;
+    }
+    return strcmp(a, b);
+}
+
+#define KEY_LS(a, b) (dap_binary_tree_key_cmp((a), (b)) < 0)
+#define KEY_GT(a, b) (dap_binary_tree_key_cmp((a), (b)) > 0)
+#define KEY_EQ(a, b) (dap_binary_tree_key_cmp((a), (b)) == 0)
 
 typedef struct dap_binary_tree {
     dap_binary_tree_key_t key;
