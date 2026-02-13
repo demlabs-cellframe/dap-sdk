@@ -45,6 +45,39 @@ static void test_cpu_get_stats_multiple(void)
     dap_assert(stat1.cpu_cores_count == stat2.cpu_cores_count, "CPU cores count should remain constant");
 }
 
+/**
+ * @brief Test that CPU load values are in valid range [0, 100]
+ */
+static void test_cpu_load_range(void)
+{
+    // First call to initialize baseline
+    dap_cpu_get_stats();
+    usleep(100000); // 100ms for stats accumulation
+    
+    dap_cpu_stats_t stat = dap_cpu_get_stats();
+    
+    dap_assert(stat.cpu_summary.load >= 0.0f, "CPU summary load >= 0%");
+    dap_assert(stat.cpu_summary.load <= 100.0f, "CPU summary load <= 100%");
+    
+    for (unsigned i = 0; i < stat.cpu_cores_count; i++) {
+        dap_assert_PIF(stat.cpus[i].load >= 0.0f, "Per-CPU load >= 0%");
+        dap_assert_PIF(stat.cpus[i].load <= 100.0f, "Per-CPU load <= 100%");
+    }
+}
+
+/**
+ * @brief Test that total_time increases between calls
+ */
+static void test_cpu_time_increases(void)
+{
+    dap_cpu_stats_t stat1 = dap_cpu_get_stats();
+    usleep(50000); // 50ms
+    dap_cpu_stats_t stat2 = dap_cpu_get_stats();
+    
+    dap_assert(stat2.cpu_summary.total_time >= stat1.cpu_summary.total_time, 
+               "CPU total_time should increase over time");
+}
+
 int main(void)
 {
     dap_log_level_set(L_CRITICAL);
@@ -53,6 +86,8 @@ int main(void)
     init_test_case();
     test_cpu_get_stats();
     test_cpu_get_stats_multiple();
+    test_cpu_load_range();
+    test_cpu_time_increases();
     deinit_test_case();
 
     return 0;

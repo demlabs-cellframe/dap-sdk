@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.13)
 
 project(benchmark_keccak C)
 
-include(${CMAKE_SOURCE_DIR}/cmake/TargetArch_Detection.cmake)
+include(${CMAKE_SOURCE_DIR}/dap-sdk/cmake/TargetArch_Detection.cmake)
 target_architecture(TARGET_ARCH)
 
 # =============================================================================
