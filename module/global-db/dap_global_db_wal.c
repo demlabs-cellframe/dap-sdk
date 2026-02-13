@@ -4,27 +4,18 @@
  * Implementation of WAL for crash recovery and durability.
  */
 
+#include "dap_common.h"
+
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <string.h>
 #include <errno.h>
 
-#ifdef DAP_OS_WINDOWS
-#include <io.h>
-#include <windows.h>
-static inline int s_fsync_win(int fd) {
-    HANDLE h = (HANDLE)_get_osfhandle(fd);
-    return FlushFileBuffers(h) ? 0 : -1;
-}
-#define fsync(fd) s_fsync_win(fd)
-#else
-#include <unistd.h>
-#endif
-
-#include "dap_common.h"
+#include "dap_file_ops.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_hash.h"
+#include "dap_crc32.h"
 #include "dap_global_db_wal.h"
 
 #define LOG_TAG "dap_global_db_wal"
@@ -42,38 +33,6 @@ struct dap_global_db_wal {
     bool needs_recovery;        // True if WAL has uncommitted data
 };
 
-// ============================================================================
-// CRC32 (simple implementation)
-// ============================================================================
-
-static uint32_t s_crc32_table[256];
-static bool s_crc32_initialized = false;
-
-static void s_crc32_init(void)
-{
-    if (s_crc32_initialized)
-        return;
-    
-    for (uint32_t i = 0; i < 256; i++) {
-        uint32_t c = i;
-        for (int j = 0; j < 8; j++) {
-            c = (c & 1) ? (0xEDB88320 ^ (c >> 1)) : (c >> 1);
-        }
-        s_crc32_table[i] = c;
-    }
-    s_crc32_initialized = true;
-}
-
-static uint32_t s_crc32(const void *a_data, size_t a_len)
-{
-    s_crc32_init();
-    const uint8_t *p = (const uint8_t *)a_data;
-    uint32_t crc = 0xFFFFFFFF;
-    for (size_t i = 0; i < a_len; i++) {
-        crc = s_crc32_table[(crc ^ p[i]) & 0xFF] ^ (crc >> 8);
-    }
-    return crc ^ 0xFFFFFFFF;
-}
 
 // ============================================================================
 // Internal helpers
@@ -157,7 +116,7 @@ static int s_write_record(dap_global_db_wal_t *a_wal, uint8_t a_op,
         memcpy(l_rec->data, a_data, a_data_len);
     
     // Calculate CRC over op + data
-    l_rec->crc32 = s_crc32(&l_rec->op, 1 + a_data_len);
+    l_rec->crc32 = dap_crc32(&l_rec->op, 1 + a_data_len);
     
     // Write at current offset
     if (lseek(a_wal->fd, a_wal->write_offset, SEEK_SET) < 0) {
@@ -293,7 +252,7 @@ int dap_global_db_wal_recover(dap_global_db_wal_t *a_wal,
         if (l_data_len)
             memcpy(l_crc_buf + 1, l_data, l_data_len);
         
-        uint32_t l_crc = s_crc32(l_crc_buf, l_crc_len);
+        uint32_t l_crc = dap_crc32(l_crc_buf, l_crc_len);
         DAP_DELETE(l_crc_buf);
         
         if (l_crc != l_rec_hdr.crc32) {
