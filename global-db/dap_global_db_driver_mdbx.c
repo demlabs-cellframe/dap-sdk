@@ -111,6 +111,13 @@ static int              s_db_mdbx_txn_start();
 static int              s_db_mdbx_txn_end(bool a_commit);
 
 
+/**
+ * @brief Mutex to protect DB context creation operations.
+ * Prevents MDBX race condition when multiple threads simultaneously
+ * try to create a new DBI (database instance) for the same group.
+ */
+static pthread_mutex_t s_db_ctx_create_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 static MDBX_env *s_mdbx_env;                                                /* MDBX's context area */
 static char s_subdir [] = "";                                               /* Name of subdir for the MDBX's database files */
 
@@ -1049,14 +1056,22 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
     dap_return_val_if_fail(a_store_obj->key || l_type_erase, -EINVAL);
 
     dap_db_ctx_t *l_db_ctx;
-    if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group, a_txn)) ) {
-        if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn)) )
-            return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
+    /* Lock to prevent race condition when multiple threads try to create DB context simultaneously.
+     * This fixes MDBX assertion failure in mdbx_dbi_open when two threads create the same group. */
+    pthread_mutex_lock(&s_db_ctx_create_mutex);
+    l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group, a_txn);
+    if (!l_db_ctx) {
+        l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn);
+        pthread_mutex_unlock(&s_db_ctx_create_mutex);
+        if (!l_db_ctx)
+            return log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
         if (l_type_erase) {
             DAP_DELETE(l_db_ctx);
             return a_store_obj->key ? DAP_GLOBAL_DB_RC_NOT_FOUND : DAP_GLOBAL_DB_RC_SUCCESS;
         }
+    } else {
+        pthread_mutex_unlock(&s_db_ctx_create_mutex);
     }
     int rc = -EIO;
     MDBX_val l_key = {}, l_data;
