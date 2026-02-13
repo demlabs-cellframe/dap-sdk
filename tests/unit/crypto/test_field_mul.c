@@ -55,7 +55,8 @@ int main(void) {
         printf("FAIL: 12345 * 67890 != 838102050\n\n");
     }
     
-    // Test 2: Larger numbers (still fits in one limb)
+#ifdef ECDSA_FIELD_52BIT
+    // Test 2: Larger numbers (still fits in one limb) - 52-bit limbs only
     printf("Test 2: Larger numbers in single limb\n");
     ecdsa_field_set_int(&a, 0);
     a.n[0] = 0xFFFFFFFFFFFFULL;  // 48 bits
@@ -80,7 +81,7 @@ int main(void) {
         printf("FAIL\n\n");
     }
     
-    // Test 3: Numbers spanning multiple limbs
+    // Test 3: Numbers spanning multiple limbs - 52-bit limbs only
     printf("Test 3: Multi-limb multiplication\n");
     
     // a = 2^100
@@ -110,6 +111,9 @@ int main(void) {
     } else {
         printf("FAIL\n\n");
     }
+#else
+    printf("Test 2 & 3: Skipped (26-bit limbs - tests use 52-bit values)\n\n");
+#endif
     
     // Test 4: Known value from secp256k1 - Gx * Gy
     printf("Test 4: Gx * Gy (known curve point coordinates)\n");

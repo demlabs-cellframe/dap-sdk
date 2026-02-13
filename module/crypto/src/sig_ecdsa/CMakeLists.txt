@@ -58,11 +58,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
         ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_neon.c
         ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_sve.c
     )
-    # SVE files need -march=armv8.2-a+sve for GCC 10 compatibility:
-    # - Defines __ARM_FEATURE_SVE so #error guard in primitives passes
-    # - Enables SVE at compile level, making target("sve") pragma unnecessary (GCC 10 doesn't support it)
-    set_source_files_properties(${ECDSA_GEN_DIR}/ecdsa_scalar_mul_sve.c PROPERTIES
-        COMPILE_FLAGS "-march=armv8.2-a+sve")
+    # SVE compile flags set in parent module/crypto/CMakeLists.txt (directory scope)
 endif()
 
 # Field arithmetic implementations
@@ -82,11 +78,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
         ${ECDSA_GEN_DIR}/ecdsa_field_neon.c
         ${ECDSA_GEN_DIR}/ecdsa_field_sve.c
     )
-    # SVE files need -march=armv8.2-a+sve for GCC 10 compatibility:
-    # - Defines __ARM_FEATURE_SVE so #error guard in primitives passes
-    # - Enables SVE at compile level, making target("sve") pragma unnecessary (GCC 10 doesn't support it)
-    set_source_files_properties(${ECDSA_GEN_DIR}/ecdsa_field_sve.c PROPERTIES
-        COMPILE_FLAGS "-march=armv8.2-a+sve")
+    # SVE compile flags set in parent module/crypto/CMakeLists.txt (directory scope)
 endif()
 
 # All generated sources

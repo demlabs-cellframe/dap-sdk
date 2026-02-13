@@ -17,8 +17,8 @@
 #include <sys/stat.h>
 #ifndef DAP_OS_WINDOWS
 #include <sys/mman.h>
-#endif
 #include <endian.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"

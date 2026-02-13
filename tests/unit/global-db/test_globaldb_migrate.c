@@ -205,7 +205,7 @@ static void test_migrate_verify_data(void)
         dap_global_db_storage_init(TEST_DEST_DIR);
         
         uint64_t count = dap_global_db_storage_group_count("test_group", false);
-        dap_test_msg("test_group has %lu records", count);
+        dap_test_msg("test_group has %llu records", (unsigned long long)count);
         
         dap_global_db_storage_deinit();
     }

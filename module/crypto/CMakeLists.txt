@@ -152,6 +152,16 @@ if (BUILD_WITH_ECDSA)
     
     # Add all ECDSA sources (static + generated)
     set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SOURCES})
+    
+    # SVE files need -march=armv8.2-a+sve for GCC 10 compatibility.
+    # Must be set here (parent scope) since dap_crypto target is built in this directory.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+        set_source_files_properties(
+            ${ECDSA_GEN_INCLUDE_DIR}/ecdsa_scalar_mul_sve.c
+            ${ECDSA_GEN_INCLUDE_DIR}/ecdsa_field_sve.c
+            PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+sve"
+        )
+    endif()
     add_definitions("-DDAP_ECDSA")
     
     # Include directories for generated files
