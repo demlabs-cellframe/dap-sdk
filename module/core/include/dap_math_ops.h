@@ -209,9 +209,13 @@ static inline uint256_t OR_256(uint256_t a_256_bit,uint256_t b_256_bit){
 }
 
 static inline void LEFT_SHIFT_128(uint128_t a_128_bit,uint128_t* b_128_bit,int n){
-    assert (n <= 128);
+    assert (n >= 0 && n <= 128);
 
 #ifdef DAP_GLOBAL_IS_INT128
+    if (n == 128) {
+        *b_128_bit = uint128_0;
+        return;
+    }
     *b_128_bit= a_128_bit << n;
 
 #else
@@ -235,9 +239,13 @@ static inline void LEFT_SHIFT_128(uint128_t a_128_bit,uint128_t* b_128_bit,int n
 }
 
 static inline void RIGHT_SHIFT_128(uint128_t a_128_bit,uint128_t* b_128_bit,int n){
-    assert (n <= 128);
+    assert (n >= 0 && n <= 128);
 
 #ifdef DAP_GLOBAL_IS_INT128
+    if (n == 128) {
+        *b_128_bit = uint128_0;
+        return;
+    }
     (*b_128_bit) = a_128_bit >> n;
 #else
     if (n >= 64) // shifting 64-bit integer by more than 63 bits is not defined
@@ -380,6 +388,9 @@ static inline int OVERFLOW_SUM_64_64(uint64_t a_64_bit,uint64_t b_64_bit)
 
 static inline int OVERFLOW_MULT_64_64(uint64_t a_64_bit,uint64_t b_64_bit)
 {
+    if (!a_64_bit || !b_64_bit) {
+        return 0;
+    }
     return (int)(a_64_bit > ((uint64_t)-1) / b_64_bit);
 }
 
@@ -638,6 +649,10 @@ static inline int MULT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128
     int overflow_flag=0;
 
 #ifdef DAP_GLOBAL_IS_INT128
+    if (IS_ZERO_128(a_128_bit) || IS_ZERO_128(b_128_bit)) {
+        *c_128_bit = uint128_0;
+        return 0;
+    }
     *c_128_bit= a_128_bit * b_128_bit;
     overflow_flag=(a_128_bit>((uint128_t)-1)/b_128_bit);
 #else
@@ -653,41 +668,107 @@ static inline int MULT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128
     return overflow_flag;
 }
 
-// we have test fails for this function with 512 bit, need to check it out if using it with 512 bit space
-// But with 256 bit sapce it works correct
+static inline void ADD_128_TO_512_AT_LIMB(uint512_t *a_512_bit, uint128_t a_128_bit, int a_limb_idx)
+{
+    assert(a_limb_idx >= 0 && a_limb_idx <= 3);
+
+    if (IS_ZERO_128(a_128_bit)) {
+        return;
+    }
+
+    int overflow = 0;
+    switch (a_limb_idx) {
+    case 0:
+    {
+        uint128_t l_limb0 = a_512_bit->lo.lo;
+        overflow = SUM_128_128(l_limb0, a_128_bit, &l_limb0);
+        a_512_bit->lo.lo = l_limb0;
+        if (overflow) {
+            uint128_t l_limb1 = a_512_bit->lo.hi;
+            overflow = SUM_128_128(l_limb1, uint128_1, &l_limb1);
+            a_512_bit->lo.hi = l_limb1;
+            if (overflow) {
+                uint128_t l_limb2 = a_512_bit->hi.lo;
+                overflow = SUM_128_128(l_limb2, uint128_1, &l_limb2);
+                a_512_bit->hi.lo = l_limb2;
+                if (overflow) {
+                    uint128_t l_limb3 = a_512_bit->hi.hi;
+                    SUM_128_128(l_limb3, uint128_1, &l_limb3);
+                    a_512_bit->hi.hi = l_limb3;
+                }
+            }
+        }
+        return;
+    }
+    case 1:
+    {
+        uint128_t l_limb1 = a_512_bit->lo.hi;
+        overflow = SUM_128_128(l_limb1, a_128_bit, &l_limb1);
+        a_512_bit->lo.hi = l_limb1;
+        if (overflow) {
+            uint128_t l_limb2 = a_512_bit->hi.lo;
+            overflow = SUM_128_128(l_limb2, uint128_1, &l_limb2);
+            a_512_bit->hi.lo = l_limb2;
+            if (overflow) {
+                uint128_t l_limb3 = a_512_bit->hi.hi;
+                SUM_128_128(l_limb3, uint128_1, &l_limb3);
+                a_512_bit->hi.hi = l_limb3;
+            }
+        }
+        return;
+    }
+    case 2:
+    {
+        uint128_t l_limb2 = a_512_bit->hi.lo;
+        overflow = SUM_128_128(l_limb2, a_128_bit, &l_limb2);
+        a_512_bit->hi.lo = l_limb2;
+        if (overflow) {
+            uint128_t l_limb3 = a_512_bit->hi.hi;
+            SUM_128_128(l_limb3, uint128_1, &l_limb3);
+            a_512_bit->hi.hi = l_limb3;
+        }
+        return;
+    }
+    case 3:
+    {
+        uint128_t l_limb3 = a_512_bit->hi.hi;
+        SUM_128_128(l_limb3, a_128_bit, &l_limb3);
+        a_512_bit->hi.hi = l_limb3;
+        return;
+    }
+    default:
+        return;
+    }
+}
+
 static inline void MULT_256_512(uint256_t a_256_bit,uint256_t b_256_bit,uint512_t* c_512_bit) {
-    int dummy_overflow;
-    //product of .hi terms - stored in .hi field of c_512_bit
-    MULT_128_256(a_256_bit.hi,b_256_bit.hi, &c_512_bit->hi);
+    *c_512_bit = uint512_0;
 
-    //product of .lo terms - stored in .lo field of c_512_bit
-    MULT_128_256(a_256_bit.lo,b_256_bit.lo, &c_512_bit->lo);
+    // Product terms in base 2^128:
+    // a = a0 + a1*2^128, b = b0 + b1*2^128
+    // a*b = a0*b0 + (a1*b0 + a0*b1)*2^128 + (a1*b1)*2^256
+    uint256_t l_term_00 = uint256_0;
+    uint256_t l_term_10 = uint256_0;
+    uint256_t l_term_01 = uint256_0;
+    uint256_t l_term_11 = uint256_0;
 
-    //cross product of .hi and .lo terms
-    uint256_t cross_product_first_term=uint256_0;
-    uint256_t cross_product_second_term=uint256_0;
-    uint256_t cross_product=uint256_0;
-    uint256_t cross_product_shift_128=uint256_0;
-    uint256_t c_512_bit_lo_copy=uint256_0;
-    uint256_t c_512_bit_hi_copy=uint256_0;
-    int overflow=0;
+    MULT_128_256(a_256_bit.lo, b_256_bit.lo, &l_term_00);
+    MULT_128_256(a_256_bit.hi, b_256_bit.lo, &l_term_10);
+    MULT_128_256(a_256_bit.lo, b_256_bit.hi, &l_term_01);
+    MULT_128_256(a_256_bit.hi, b_256_bit.hi, &l_term_11);
 
-    MULT_128_256(a_256_bit.hi,b_256_bit.lo,&cross_product_first_term);
-    MULT_128_256(a_256_bit.lo,b_256_bit.hi,&cross_product_second_term);
-    overflow=SUM_256_256(cross_product_first_term,cross_product_second_term,&cross_product);
-
-    LEFT_SHIFT_256(cross_product,&cross_product_shift_128,128); //the factor in front of cross product is 2**128
-    c_512_bit_lo_copy=c_512_bit->lo;
-    dummy_overflow=SUM_256_256(c_512_bit_lo_copy,cross_product_shift_128,&c_512_bit->lo);
-
-    cross_product_shift_128.hi = uint128_0;
-    cross_product_shift_128.lo = uint128_0;
-    RIGHT_SHIFT_256(cross_product,&cross_product_shift_128,128);
-    c_512_bit_hi_copy=c_512_bit->hi;
-    dummy_overflow=SUM_256_256(c_512_bit_hi_copy,cross_product_shift_128,&c_512_bit->hi);
-    // TODO
-    UNUSED(overflow);
-    UNUSED(dummy_overflow);
+    // term00 -> limbs 0,1
+    ADD_128_TO_512_AT_LIMB(c_512_bit, l_term_00.lo, 0);
+    ADD_128_TO_512_AT_LIMB(c_512_bit, l_term_00.hi, 1);
+    // term10 << 128 -> limbs 1,2
+    ADD_128_TO_512_AT_LIMB(c_512_bit, l_term_10.lo, 1);
+    ADD_128_TO_512_AT_LIMB(c_512_bit, l_term_10.hi, 2);
+    // term01 << 128 -> limbs 1,2
+    ADD_128_TO_512_AT_LIMB(c_512_bit, l_term_01.lo, 1);
+    ADD_128_TO_512_AT_LIMB(c_512_bit, l_term_01.hi, 2);
+    // term11 << 256 -> limbs 2,3
+    ADD_128_TO_512_AT_LIMB(c_512_bit, l_term_11.lo, 2);
+    ADD_128_TO_512_AT_LIMB(c_512_bit, l_term_11.hi, 3);
 }
 
 /* Multiplicates 256-bit value to fixed-point value, represented as 256-bit value
@@ -787,7 +868,12 @@ static inline int fls128(uint128_t n) {
 //todo: this should not be ander ifndef
 static inline void divmod_impl_128(uint128_t a_dividend, uint128_t a_divisor, uint128_t *a_quotient, uint128_t *a_remainder)
 {
-    assert( compare128(a_divisor, uint128_0) ); // a_divisor != 0
+    if (!compare128(a_divisor, uint128_0)) {
+        _log_it(NULL, 0, "dap_math_ops", L_ERROR, "An error occurred when trying to divide by 0.");
+        *a_quotient = uint128_0;
+        *a_remainder = uint128_0;
+        return;
+    }
     if ( compare128(a_divisor, a_dividend) == 1 ) { // a_divisor > a_dividend
         *a_quotient = uint128_0;
         *a_remainder = a_dividend;
@@ -829,10 +915,11 @@ static inline int fls256(uint256_t n) {
 
 static inline void divmod_impl_256(uint256_t a_dividend, uint256_t a_divisor, uint256_t *a_quotient, uint256_t *a_remainder)
 {
-    assert( compare256(a_divisor, uint256_0) ); // a_divisor != 0
     if (!compare256(a_divisor, uint256_0)) {
         _log_it(NULL, 0, "dap_math_ops", L_ERROR, "An error occurred when trying to divide by 0.");
-        raise(SIGFPE);
+        *a_quotient = uint256_0;
+        *a_remainder = uint256_0;
+        return;
     }
     if ( compare256(a_divisor, a_dividend) == 1 ) { // a_divisor > a_dividend
         *a_quotient = uint256_0;
@@ -866,6 +953,11 @@ static inline void divmod_impl_256(uint256_t a_dividend, uint256_t a_divisor, ui
 
 
 static inline void DIV_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128_t* c_128_bit){
+    if (IS_ZERO_128(b_128_bit)) {
+        _log_it(NULL, 0, "dap_math_ops", L_ERROR, "An error occurred when trying to divide by 0.");
+        *c_128_bit = uint128_0;
+        return;
+    }
     uint128_t l_ret = uint128_0;
 #ifdef DAP_GLOBAL_IS_INT128
     l_ret = a_128_bit / b_128_bit;

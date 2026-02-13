@@ -48,8 +48,8 @@ parse_mock_declarations() {
     # The awk script outputs shell-compatible code that sets all environment variables
     local mock_data_code
     mock_data_code=$(awk -f "${MOCK_AWK_DIR}/process_mock_data.awk" "$tmp_param_counts" "$tmp_return_types" "$tmp_all_types" 2>/dev/null || cat <<'EOF'
-PARAM_COUNTS_ARRAY=(0)
-MAX_ARGS_COUNT=2
+declare -ga PARAM_COUNTS_ARRAY=(0)
+declare -gi MAX_ARGS_COUNT=2
 RETURN_TYPES=''
 RETURN_TYPES_PAIRS=''
 ALL_TYPES_PAIRS=''

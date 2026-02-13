@@ -129,6 +129,16 @@ static int s_name_sort_cb(dap_list_t *a_str1, dap_list_t *a_str2) {
 }
 #endif
 
+static bool s_is_cfg_filename(const char *a_filename)
+{
+    if (!a_filename)
+        return false;
+    if ((a_filename[0] == '.' && !a_filename[1]) || (a_filename[0] == '.' && a_filename[1] == '.' && !a_filename[2]))
+        return false;
+    size_t l_name_len = strlen(a_filename);
+    return l_name_len >= 4 && !strcmp(a_filename + l_name_len - 4, ".cfg");
+}
+
 static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
     if (!a_conf || !*a_conf) {
         log_it(L_ERROR, "Config is not initialized");
@@ -323,7 +333,16 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
 dap_config_t *dap_config_create_empty(void)
 {
     dap_config_t *l_conf = DAP_NEW_Z(dap_config_t);
+    if (!l_conf) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
     l_conf->path = dap_strdup("<memory>");
+    if (!l_conf->path) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        DAP_DELETE(l_conf);
+        return NULL;
+    }
     return l_conf;
 }
 
@@ -406,23 +425,33 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         log_it(L_ERROR, "Empty config name!");
         return NULL;
     }
+    if (!s_configs_path || !s_configs_path[0]) {
+        log_it(L_ERROR, "Config subsystem is not initialized");
+        return NULL;
+    }
     log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
     char l_path[MAX_PATH + 1] = "";
     const char *l_suffix = "";
     size_t l_path_len = strlen(a_file_path);
+    size_t l_configs_path_len = strlen(s_configs_path);
     if (l_path_len < 4 || strcmp(a_file_path + l_path_len - 4, ".cfg"))
         l_suffix = ".cfg";
-    int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path) - 4)
-            ? snprintf(l_path, MAX_PATH, "%s/%s%s", s_configs_path, a_file_path, l_suffix)
-            : snprintf(l_path, MAX_PATH, "%s%s", a_file_path, l_suffix);
+    bool l_path_has_config_prefix = l_configs_path_len > 4 && !dap_strncmp(a_file_path, s_configs_path, l_configs_path_len - 4);
+    int l_pos = (l_path_has_config_prefix || dap_path_is_absolute(a_file_path))
+            ? snprintf(l_path, MAX_PATH, "%s%s", a_file_path, l_suffix)
+            : snprintf(l_path, MAX_PATH, "%s/%s%s", s_configs_path, a_file_path, l_suffix);
 
-    if (l_pos >= MAX_PATH) {
+    if (l_pos < 0 || l_pos >= MAX_PATH) {
         log_it(L_ERROR, "Too long config name!");
         return NULL;
     }
 
     int l_basic_len = strlen(l_path) - 4;
     char *l_basic_name = dap_strdup_printf("%.*s", l_basic_len, l_path);
+    if (!l_basic_name) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
 #if 0
     dap_config_t *l_conf = NULL;
     dap_ht_find_str(g_configs_table, l_basic_name, l_conf);
@@ -435,9 +464,16 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     }
 #endif
     dap_config_t *l_conf = DAP_NEW_Z(dap_config_t);
+    if (!l_conf) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        DAP_DELETE(l_basic_name);
+        return NULL;
+    }
     l_conf->path = l_basic_name;
-    if (_dap_config_load(l_path, &l_conf))
+    if (_dap_config_load(l_path, &l_conf)) {
+       dap_config_close(l_conf);
        return NULL;
+    }
     debug_config = g_config ? dap_config_get_item_bool(g_config, "general", "debug-config") : false;
 
     if (l_pos >= MAX_PATH - 3)
@@ -456,7 +492,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     dap_list_t *l_filenames = NULL;
     while ((l_entry = readdir(l_dir))) {
         const char *l_filename = l_entry->d_name;
-        if (!strncmp(l_filename + strlen(l_filename) - 4, ".cfg", 4))
+        if (s_is_cfg_filename(l_filename))
             l_filenames = dap_list_append(l_filenames, dap_strdup(l_filename));
     }
     closedir(l_dir);
@@ -477,7 +513,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         return l_conf;
     }
     for (int i = 0; i < l_err; ++i) {
-        if (!strncmp(l_entries[i]->d_name + strlen(l_entries[i]->d_name) - 4, ".cfg", 4)) {
+        if (s_is_cfg_filename(l_entries[i]->d_name)) {
             char *l_entry_file = dap_strdup_printf("%s/%s", l_path, l_entries[i]->d_name);
             _dap_config_load(l_entry_file, &l_conf);
             DAP_DELETE(l_entry_file);
@@ -637,6 +673,10 @@ double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_
 void dap_config_close(dap_config_t *a_conf) {
     if (!a_conf)
         return;
+    if (a_conf == g_config) {
+        g_config = NULL;
+        debug_config = false;
+    }
     DAP_DELETE(a_conf->path);
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
     dap_ht_foreach(a_conf->items, l_item, l_tmp) {

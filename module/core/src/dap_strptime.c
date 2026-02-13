@@ -406,6 +406,8 @@ recurse:
             continue;
 
         case 'G':   // ISO week year (4 digits)
+            if (!isdigit(*bp))
+                return NULL;
             do {
                 bp++;
             } while (isdigit(*bp));
