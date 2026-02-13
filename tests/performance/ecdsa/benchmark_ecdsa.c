@@ -470,6 +470,7 @@ static void benchmark_scalar_arch(void) {
     
     scalar_bench_result_t results[MAX_SCALAR_RESULTS];
     int result_count = 0;
+    uint64_t start, elapsed;
     
     const int SCALAR_ITERATIONS = 100000;
     
@@ -515,11 +516,11 @@ static void benchmark_scalar_arch(void) {
         }
         
         // Benchmark
-        uint64_t start = get_time_ns();
+        start = get_time_ns();
         for (int j = 0; j < SCALAR_ITERATIONS; j++) {
             impls[i].mul_shift_384(&r, &a, &b);
         }
-        uint64_t elapsed = get_time_ns() - start;
+        elapsed = get_time_ns() - start;
         
         double time_us = ns_to_us(elapsed);
         double ops_per_sec = (double)SCALAR_ITERATIONS / (time_us / 1e6);
@@ -558,11 +559,11 @@ static void benchmark_scalar_arch(void) {
         secp256k1_bench_scalar_mul(bc_r, bc_a, bc_b);
     }
     
-    uint64_t start = get_time_ns();
+    start = get_time_ns();
     for (int j = 0; j < SCALAR_ITERATIONS; j++) {
         secp256k1_bench_scalar_mul(bc_r, bc_a, bc_b);
     }
-    uint64_t elapsed = get_time_ns() - start;
+    elapsed = get_time_ns() - start;
     
     double bc_mul_time_us = ns_to_us(elapsed);
     double bc_mul_ops = (double)SCALAR_ITERATIONS / (bc_mul_time_us / 1e6);
