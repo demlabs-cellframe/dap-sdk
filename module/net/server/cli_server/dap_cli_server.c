@@ -528,11 +528,27 @@ static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted)
             if (s_stat_callback) {
                 l_call_time = dap_nanotime_now();
             }
+            // If func_rpc is set, use intermediate JSON for post-processing
+            dap_json_t *l_json_cmd_result = l_cmd->func_rpc ? dap_json_array_new() : l_json_arr_reply;
             // Check if this is JSON-RPC command based on flags
             if (l_cmd->arg_func) {
-                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, l_json_arr_reply, request->version);
+                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, l_json_cmd_result, request->version);
             } else {
-                res = l_cmd->func(l_argc, l_argv, l_json_arr_reply, request->version);
+                res = l_cmd->func(l_argc, l_argv, l_json_cmd_result, request->version);
+            }
+            // Post-process with func_rpc if available
+            if (l_cmd->func_rpc) {
+                int l_rpc_res = l_cmd->func_rpc(l_json_cmd_result, l_json_arr_reply, l_argv, l_argc);
+                if (l_rpc_res != 0) {
+                    // func_rpc failed or declined, copy original result to output
+                    size_t l_arr_len = dap_json_array_length(l_json_cmd_result);
+                    for (size_t i = 0; i < l_arr_len; i++) {
+                        dap_json_t *l_item = dap_json_array_get_idx(l_json_cmd_result, i);
+                        if (l_item)
+                            dap_json_array_add(l_json_arr_reply, dap_json_object_get_ref(l_item));
+                    }
+                }
+                dap_json_object_free(l_json_cmd_result);
             }
             if (s_stat_callback) {
                 s_stat_callback(l_cmd->id, (dap_nanotime_now() - l_call_time) / 1000000);

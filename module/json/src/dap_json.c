@@ -724,6 +724,16 @@ dap_json_t* dap_json_object_ref(dap_json_t* a_json)
 }
 
 /**
+ * @brief Increment reference count (alias for json-c compatibility)
+ * @param a_json JSON object to reference
+ * @return Same object with incremented reference count
+ */
+dap_json_t* dap_json_object_get_ref(dap_json_t* a_json)
+{
+    return dap_json_object_ref(a_json);
+}
+
+/**
  * @brief Clean up all thread-local arenas
  * @details Call this at the end of thread to free ALL parsed JSON values
  * This frees all arenas in the thread-local list

@@ -53,6 +53,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 # Export dependencies for main SDK build
 set(DAP_GLOBAL_DB_DEPS "${dap_global_db_LIBS}" CACHE INTERNAL "dap_global_db external dependencies")
 
+# CLI module for global_db
+add_subdirectory(cli)
+
 if (BUILD_GLOBAL_DB_TEST)
     add_subdirectory(test)
 endif()
