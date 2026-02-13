@@ -15,7 +15,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#ifndef DAP_OS_WINDOWS
 #include <sys/mman.h>
+#endif
 #include <endian.h>
 
 #include "dap_common.h"
@@ -110,6 +112,7 @@ typedef struct mdbx_reader {
     mdb_meta_t meta;
 } mdbx_reader_t;
 
+#ifndef DAP_OS_WINDOWS
 static mdbx_reader_t *s_mdbx_open(const char *a_path)
 {
     mdbx_reader_t *r = DAP_NEW_Z(mdbx_reader_t);
@@ -158,7 +161,7 @@ static mdbx_reader_t *s_mdbx_open(const char *a_path)
     r->page_size = meta->mm_pagesize ? meta->mm_pagesize : 4096;
     r->last_pgno = meta->mm_last_pgno;
     
-    log_it(L_DEBUG, "MDBX opened: page_size=%u, pages=%lu, version=%u",
+    log_it(L_DEBUG, "MDBX opened: page_size=%u, pages=%" DAP_UINT64_FORMAT_U ", version=%u",
            r->page_size, r->last_pgno, meta->mm_version);
     
     return r;
@@ -336,6 +339,7 @@ static int s_migrate_record(const char *group, const byte_t *key, size_t key_len
     
     return 0;
 }
+#endif /* !DAP_OS_WINDOWS */
 
 // ============================================================================
 // Public implementation
@@ -347,7 +351,15 @@ dap_global_db_migrate_result_t dap_global_db_migrate_mdbx_impl(
     const dap_global_db_migrate_options_t *a_opts)
 {
     dap_global_db_migrate_result_t l_result = {0};
-    
+
+#ifdef DAP_OS_WINDOWS
+    (void)a_mdbx_path;
+    (void)a_dest_path;
+    (void)a_opts;
+    l_result.status = DAP_MIGRATE_ERR_SOURCE;
+    l_result.error_message = dap_strdup("MDBX migration not supported on Windows (requires mmap)");
+    return l_result;
+#else
     // Open MDBX file
     mdbx_reader_t *r = s_mdbx_open(a_mdbx_path);
     if (!r) {
@@ -405,4 +417,5 @@ dap_global_db_migrate_result_t dap_global_db_migrate_mdbx_impl(
                       ? DAP_MIGRATE_ERR_READ : DAP_MIGRATE_OK;
     
     return l_result;
+#endif /* !DAP_OS_WINDOWS */
 }

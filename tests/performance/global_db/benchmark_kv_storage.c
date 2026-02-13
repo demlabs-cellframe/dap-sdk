@@ -462,7 +462,11 @@ static benchmark_result_t s_bench_mdbx_sequential_write(const benchmark_config_t
     benchmark_result_t result = { .name = "MDBX", .operation = "seq write" };
     
     char *db_path = dap_strdup_printf("%s/mdbx_bench", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     
     MDBX_env *env = NULL;
     MDBX_dbi dbi;
@@ -582,7 +586,11 @@ static benchmark_result_t s_bench_mdbx_random_write(const benchmark_config_t *cf
 {
     benchmark_result_t result = { .name = "MDBX", .operation = "random write" };
     char *db_path = dap_strdup_printf("%s/mdbx_bench_rw", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     MDBX_env *env = NULL;
     MDBX_dbi dbi;
     MDBX_txn *txn = NULL;
@@ -628,7 +636,11 @@ static benchmark_result_t s_bench_mdbx_sequential_read(const benchmark_config_t 
 {
     benchmark_result_t result = { .name = "MDBX", .operation = "seq read" };
     char *db_path = dap_strdup_printf("%s/mdbx_bench_sr", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     MDBX_env *env; MDBX_dbi dbi;
     if (s_mdbx_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
 
@@ -688,7 +700,11 @@ static benchmark_result_t s_bench_mdbx_random_read(const benchmark_config_t *cfg
 {
     benchmark_result_t result = { .name = "MDBX", .operation = "random read" };
     char *db_path = dap_strdup_printf("%s/mdbx_bench_rr", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     MDBX_env *env; MDBX_dbi dbi;
     if (s_mdbx_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
 
@@ -729,7 +745,11 @@ static benchmark_result_t s_bench_lmdb_sequential_write(const benchmark_config_t
     benchmark_result_t result = { .name = "LMDB", .operation = "seq write" };
     
     char *db_path = dap_strdup_printf("%s/lmdb_bench", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     
     MDB_env *env = NULL;
     MDB_dbi dbi;
@@ -842,7 +862,11 @@ static benchmark_result_t s_bench_lmdb_random_write(const benchmark_config_t *cf
 {
     benchmark_result_t result = { .name = "LMDB", .operation = "random write" };
     char *db_path = dap_strdup_printf("%s/lmdb_bench_rw", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     MDB_env *env = NULL; MDB_dbi dbi; MDB_txn *txn = NULL;
     if (mdb_env_create(&env) != 0) { DAP_DELETE(db_path); return result; }
     mdb_env_set_mapsize(env, s_compute_mapsize(cfg));
@@ -886,7 +910,11 @@ static benchmark_result_t s_bench_lmdb_sequential_read(const benchmark_config_t 
 {
     benchmark_result_t result = { .name = "LMDB", .operation = "seq read" };
     char *db_path = dap_strdup_printf("%s/lmdb_bench_sr", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     MDB_env *env; MDB_dbi dbi;
     if (s_lmdb_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
 
@@ -946,7 +974,11 @@ static benchmark_result_t s_bench_lmdb_random_read(const benchmark_config_t *cfg
 {
     benchmark_result_t result = { .name = "LMDB", .operation = "random read" };
     char *db_path = dap_strdup_printf("%s/lmdb_bench_rr", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     MDB_env *env; MDB_dbi dbi;
     if (s_lmdb_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
 
@@ -1339,7 +1371,11 @@ static benchmark_result_t s_bench_leveldb_random_read(const benchmark_config_t *
 static int s_tidesdb_open_db(const char *db_path, tidesdb_t **out_db,
                               tidesdb_column_family_t **out_cf)
 {
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     tidesdb_init(NULL, NULL, NULL, NULL);
 
     tidesdb_config_t tdb_cfg = tidesdb_default_config();
@@ -1544,7 +1580,11 @@ static benchmark_result_t s_bench_wiredtiger_sequential_write(const benchmark_co
 {
     benchmark_result_t result = { .name = "WiredTiger", .operation = "seq write" };
     char *db_path = dap_strdup_printf("%s/wt_bench_sw", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
 
     WT_CONNECTION *conn = NULL;
     if (wiredtiger_open(db_path, NULL, "create,cache_size=256M", &conn) != 0) {
@@ -1584,7 +1624,11 @@ static benchmark_result_t s_bench_wiredtiger_sequential_write(const benchmark_co
 static int s_wt_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
                                    WT_CONNECTION **out_conn)
 {
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     if (wiredtiger_open(db_path, NULL, "create,cache_size=256M", out_conn) != 0) return -1;
     WT_SESSION *session = NULL;
     (*out_conn)->open_session(*out_conn, NULL, NULL, &session);
@@ -1613,7 +1657,11 @@ static benchmark_result_t s_bench_wiredtiger_random_write(const benchmark_config
 {
     benchmark_result_t result = { .name = "WiredTiger", .operation = "random write" };
     char *db_path = dap_strdup_printf("%s/wt_bench_rw", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
 
     WT_CONNECTION *conn = NULL;
     if (wiredtiger_open(db_path, NULL, "create,cache_size=256M", &conn) != 0) {
@@ -1738,7 +1786,11 @@ static benchmark_result_t s_bench_sophia_sequential_write(const benchmark_config
 {
     benchmark_result_t result = { .name = "Sophia", .operation = "seq write" };
     char *db_path = dap_strdup_printf("%s/sophia_bench_sw", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
 
     void *env = sp_env();
     sp_setstring(env, "sophia.path", db_path, 0);
@@ -1773,7 +1825,11 @@ static benchmark_result_t s_bench_sophia_sequential_write(const benchmark_config
 static int s_sophia_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
                                        void **out_env, void **out_db)
 {
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
     *out_env = sp_env();
     sp_setstring(*out_env, "sophia.path", db_path, 0);
     sp_setstring(*out_env, "db", "bench", 0);
@@ -1799,7 +1855,11 @@ static benchmark_result_t s_bench_sophia_random_write(const benchmark_config_t *
 {
     benchmark_result_t result = { .name = "Sophia", .operation = "random write" };
     char *db_path = dap_strdup_printf("%s/sophia_bench_rw", cfg->db_path);
+    #ifdef DAP_OS_WINDOWS
+    mkdir(db_path);
+#else
     mkdir(db_path, 0755);
+#endif
 
     void *env = sp_env();
     sp_setstring(env, "sophia.path", db_path, 0);
@@ -2233,7 +2293,11 @@ int main(int argc, char **argv)
     dap_common_init("kv_benchmark", NULL);
     
     // Create benchmark directory
+#ifdef DAP_OS_WINDOWS
+    mkdir(cfg.db_path);
+#else
     mkdir(cfg.db_path, 0755);
+#endif
     
     // Seed random
     srand(time(NULL));

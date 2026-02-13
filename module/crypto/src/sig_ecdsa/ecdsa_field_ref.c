@@ -639,6 +639,85 @@ void ecdsa_field_add(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field
     ecdsa_field_normalize_weak(r);
 }
 
+// Multiply by small integer constant (lazy, propagate carries)
+void ecdsa_field_mul_int(ecdsa_field_t *r, int a) {
+    uint64_t t0 = (uint64_t)r->n[0] * a;
+    uint64_t t1 = (uint64_t)r->n[1] * a;
+    uint64_t t2 = (uint64_t)r->n[2] * a;
+    uint64_t t3 = (uint64_t)r->n[3] * a;
+    uint64_t t4 = (uint64_t)r->n[4] * a;
+    uint64_t t5 = (uint64_t)r->n[5] * a;
+    uint64_t t6 = (uint64_t)r->n[6] * a;
+    uint64_t t7 = (uint64_t)r->n[7] * a;
+    uint64_t t8 = (uint64_t)r->n[8] * a;
+    uint64_t t9 = (uint64_t)r->n[9] * a;
+
+    t1 += t0 >> 26; t0 &= ECDSA_M26;
+    t2 += t1 >> 26; t1 &= ECDSA_M26;
+    t3 += t2 >> 26; t2 &= ECDSA_M26;
+    t4 += t3 >> 26; t3 &= ECDSA_M26;
+    t5 += t4 >> 26; t4 &= ECDSA_M26;
+    t6 += t5 >> 26; t5 &= ECDSA_M26;
+    t7 += t6 >> 26; t6 &= ECDSA_M26;
+    t8 += t7 >> 26; t7 &= ECDSA_M26;
+    t9 += t8 >> 26; t8 &= ECDSA_M26;
+
+    r->n[0] = (uint32_t)t0; r->n[1] = (uint32_t)t1; r->n[2] = (uint32_t)t2;
+    r->n[3] = (uint32_t)t3; r->n[4] = (uint32_t)t4; r->n[5] = (uint32_t)t5;
+    r->n[6] = (uint32_t)t6; r->n[7] = (uint32_t)t7; r->n[8] = (uint32_t)t8;
+    r->n[9] = (uint32_t)t9;
+}
+
+void ecdsa_field_add_int(ecdsa_field_t *r, int a) {
+    r->n[0] += a;
+}
+
+// Divide by 2: r = r/2 mod p (if odd add p first, then divide)
+void ecdsa_field_half(ecdsa_field_t *r) {
+    uint32_t t0 = r->n[0], t1 = r->n[1], t2 = r->n[2], t3 = r->n[3], t4 = r->n[4];
+    uint32_t t5 = r->n[5], t6 = r->n[6], t7 = r->n[7], t8 = r->n[8], t9 = r->n[9];
+    uint32_t mask = (uint32_t)(-(t0 & 1)) & ECDSA_M26;
+
+    t0 += ECDSA_P_LIMB0 & mask;
+    t1 += mask;
+    t2 += mask;
+    t3 += mask;
+    t4 += mask;
+    t5 += mask;
+    t6 += mask;
+    t7 += mask;
+    t8 += mask;
+    t9 += mask & ECDSA_M22;
+
+    r->n[0] = (t0 >> 1) + ((t1 & 1) << 25);
+    r->n[1] = (t1 >> 1) + ((t2 & 1) << 25);
+    r->n[2] = (t2 >> 1) + ((t3 & 1) << 25);
+    r->n[3] = (t3 >> 1) + ((t4 & 1) << 25);
+    r->n[4] = (t4 >> 1) + ((t5 & 1) << 25);
+    r->n[5] = (t5 >> 1) + ((t6 & 1) << 25);
+    r->n[6] = (t6 >> 1) + ((t7 & 1) << 25);
+    r->n[7] = (t7 >> 1) + ((t8 & 1) << 25);
+    r->n[8] = (t8 >> 1) + ((t9 & 1) << 25);
+    r->n[9] = t9 >> 1;
+}
+
+bool ecdsa_field_normalizes_to_zero(const ecdsa_field_t *a) {
+    ecdsa_field_t tmp = *a;
+    ecdsa_field_normalize(&tmp);
+    return tmp.n[0] == 0 && tmp.n[1] == 0 && tmp.n[2] == 0 && tmp.n[3] == 0 &&
+           tmp.n[4] == 0 && tmp.n[5] == 0 && tmp.n[6] == 0 && tmp.n[7] == 0 &&
+           tmp.n[8] == 0 && tmp.n[9] == 0;
+}
+
+void ecdsa_field_cmov(ecdsa_field_t *r, const ecdsa_field_t *a, int flag) {
+    volatile int vflag = flag;
+    uint32_t mask0 = (uint32_t)(vflag + ~0UL);
+    uint32_t mask1 = ~mask0;
+
+    for (int i = 0; i < 10; i++)
+        r->n[i] = (r->n[i] & mask0) | (a->n[i] & mask1);
+}
+
 void ecdsa_field_mul_ref(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
     uint64_t c;
     uint64_t t[19] = {0};

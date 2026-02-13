@@ -128,7 +128,7 @@ case "${ARCH}" in
             "ARCH_NAME=ARM64 SVE" \
             "ARCH_LOWER=sve" \
             'ARCH_INCLUDES=#include <arm_sve.h>' \
-            'TARGET_ATTR=__attribute__((target("sve")))' \
+            "TARGET_ATTR=" \
             "OPTIMIZATION_NOTES=SVE scalable vector extensions" \
             "PERF_TARGET=ARM64 server optimized" \
             "PRIMITIVES_FILE=${ARCH_DIR}/arm/sve_primitives.tpl"
@@ -194,7 +194,7 @@ case "${ARCH}" in
             "ARCH_NAME=ARM64 SVE" \
             "ARCH_LOWER=sve" \
             'ARCH_INCLUDES=#include <arm_sve.h>' \
-            'TARGET_ATTR=__attribute__((target("sve")))' \
+            "TARGET_ATTR=" \
             "OPTIMIZATION_NOTES=SVE scalable vector field arithmetic" \
             "PERF_TARGET=ARM64 server optimized" \
             "PRIMITIVES_FILE=${ARCH_DIR}/arm/field_sve_primitives.tpl"

@@ -49,7 +49,11 @@ static void test_btree_create(void)
     dap_test_msg("Testing B-tree creation");
     
     s_cleanup_test_dir();
+#ifdef DAP_OS_WINDOWS
+    mkdir(TEST_DIR);
+#else
     mkdir(TEST_DIR, 0755);
+#endif
     
     char path[256];
     snprintf(path, sizeof(path), "%s/test.gdb", TEST_DIR);
@@ -203,7 +207,11 @@ static void test_btree_persistence(void)
     dap_test_msg("Testing B-tree persistence");
     
     s_cleanup_test_dir();
+#ifdef DAP_OS_WINDOWS
+    mkdir(TEST_DIR);
+#else
     mkdir(TEST_DIR, 0755);
+#endif
     
     char path[256];
     snprintf(path, sizeof(path), "%s/persist.gdb", TEST_DIR);
@@ -391,7 +399,11 @@ static void test_btree_split_compaction_sigsegv(void)
     dap_test_msg("Regression: leaf split + decreasing keys → SIGSEGV");
 
     s_cleanup_test_dir();
+#ifdef DAP_OS_WINDOWS
+    mkdir(TEST_DIR);
+#else
     mkdir(TEST_DIR, 0755);
+#endif
 
     char path[256];
     snprintf(path, sizeof(path), "%s/regression_split.gdb", TEST_DIR);
