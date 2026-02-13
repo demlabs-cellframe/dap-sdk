@@ -105,15 +105,7 @@ if [ "$VERBOSE" = "1" ] && [ -n "$WRAPPER_FUNCTIONS" ]; then
     done
 fi
 
-# Step 3: Generate linker response file
-[ "$VERBOSE" = "1" ] && print_info "Generating linker response file: $WRAP_FILE"
-generate_wrap_file "$WRAP_FILE" "$MOCK_FUNCTIONS"
-
-# Step 4: Generate CMake integration
-[ "$VERBOSE" = "1" ] && print_info "Generating CMake integration: $CMAKE_FILE"
-generate_cmake_file "$CMAKE_FILE" "$MOCK_FUNCTIONS"
-
-# Step 5: Extract full information about custom mocks for direct function generation
+# Step 3: Extract full information about custom mocks (MUST be done before generate_wrap_file)
 [ "$VERBOSE" = "1" ] && print_info "Extracting full custom mock declarations for direct function generation..."
 
 # Temporary file for collecting custom mock declarations
@@ -129,11 +121,19 @@ extract_custom_mocks "$TMP_CUSTOM_MOCKS" "${SOURCE_FILES[@]}" || {
         exit 1
     }
 
-# Step 5.5: Generate named headers for each custom mock
+# Step 4: Generate linker response file (uses TMP_CUSTOM_MOCKS for typed wrappers on macOS)
+[ "$VERBOSE" = "1" ] && print_info "Generating linker response file: $WRAP_FILE"
+generate_wrap_file "$WRAP_FILE" "$MOCK_FUNCTIONS" "$TMP_CUSTOM_MOCKS"
+
+# Step 5: Generate CMake integration
+[ "$VERBOSE" = "1" ] && print_info "Generating CMake integration: $CMAKE_FILE"
+generate_cmake_file "$CMAKE_FILE" "$MOCK_FUNCTIONS"
+
+# Step 6: Generate named headers for each custom mock
 # Also generate default wrappers for DAP_MOCK_DECLARE functions without custom wrappers
 generate_custom_mock_headers "$OUTPUT_DIR" "$BASENAME" "$TMP_CUSTOM_MOCKS" "$WRAPPER_FUNCTIONS" "$MOCK_FUNCTIONS"
 
-# Step 6: Analyze DAP_MOCK_WRAPPER_CUSTOM usage and collect return types and parameter counts
+# Step 7: Analyze DAP_MOCK_WRAPPER_CUSTOM usage and collect return types and parameter counts
 [ "$VERBOSE" = "1" ] && print_info "Analyzing DAP_MOCK_WRAPPER_CUSTOM usage for macro generation..."
 
 # Parse mock declarations to extract types and parameter counts
@@ -142,9 +142,32 @@ parse_mock_declarations "${SOURCE_FILES[@]}" || {
     exit 1
 }
 
+# Add param_counts from custom_mocks_list.txt (5th field after |)
+# Format: return_type|func_name|param_list|macro_type|param_count
+if [ -f "$TMP_CUSTOM_MOCKS" ] && [ -s "$TMP_CUSTOM_MOCKS" ]; then
+    while IFS='|' read -r _ _ _ _ param_count _; do
+        if [ -n "$param_count" ] && [[ "$param_count" =~ ^[0-9]+$ ]]; then
+            # Add to array if not already present
+            found=0
+            for existing in "${PARAM_COUNTS_ARRAY[@]}"; do
+                [ "$existing" = "$param_count" ] && found=1 && break
+            done
+            [ "$found" -eq 0 ] && PARAM_COUNTS_ARRAY+=("$param_count")
+        fi
+    done < "$TMP_CUSTOM_MOCKS"
+    [ "$VERBOSE" = "1" ] && print_info "Added param_counts from custom mocks: ${PARAM_COUNTS_ARRAY[*]}"
+fi
+
 # Ensure variables are set even if no mocks found
 : "${MAX_ARGS_COUNT:=2}"
 : "${PARAM_COUNTS_ARRAY[0]:=0}"
+
+# Update MAX_ARGS_COUNT based on param counts
+for count in "${PARAM_COUNTS_ARRAY[@]}"; do
+    if [ -n "$count" ] && [ "$count" -gt "$MAX_ARGS_COUNT" ]; then
+        MAX_ARGS_COUNT=$((count * 2))  # Each param has type and name
+    fi
+done
 
 # Prepare all template data using library functions
 prepare_nargs_data "$MAX_ARGS_COUNT" || {
@@ -172,7 +195,7 @@ prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}" || {
     exit 1
 }
 
-# Step 7: Generate specialized macros header file
+# Step 8: Generate specialized macros header file
 generate_macros_file "$MACROS_FILE" "$TMP_CUSTOM_MOCKS" || {
     print_error "Failed to generate macros file"
     exit 1
@@ -185,7 +208,7 @@ generate_linker_wrapper_header "$LINKER_WRAPPER_FILE" || {
     exit 1
 }
 
-# Step 8: Generate wrapper template file
+# Step 9: Generate wrapper template file
 generate_template_file "$TEMPLATE_FILE" "$MOCK_FUNCTIONS" "$WRAPPER_FUNCTIONS"
 
 # Final summary (only if verbose)

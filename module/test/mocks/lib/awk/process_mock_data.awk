@@ -188,13 +188,14 @@ BEGIN {
     }
     
     # Output shell-compatible code to set all variables
+    # Note: avoid 'declare -g' as it's not supported in bash 3.x (macOS default)
     # Set PARAM_COUNTS_ARRAY
     if (param_counts_str == "") {
-        print "declare -ga PARAM_COUNTS_ARRAY=(0)"
+        print "PARAM_COUNTS_ARRAY=(0)"
     } else {
         # Split and output as array
         split(param_counts_str, param_array, " ")
-        printf "declare -ga PARAM_COUNTS_ARRAY=("
+        printf "PARAM_COUNTS_ARRAY=("
         for (i = 1; i <= length(param_array); i++) {
             if (i > 1) printf " "
             printf "%s", param_array[i]
@@ -203,7 +204,7 @@ BEGIN {
     }
     
     # Set MAX_ARGS_COUNT
-    print "declare -gi MAX_ARGS_COUNT=" max_args_count
+    print "MAX_ARGS_COUNT=" max_args_count
     
     # Set RETURN_TYPES (trimmed)
     gsub(/^[ \t]+|[ \t]+$/, "", return_types_str)
@@ -232,7 +233,8 @@ BEGIN {
     print "'"
     
     # Set ORIGINAL_TYPES associative array from RETURN_TYPES_PAIRS
-    print "declare -gA ORIGINAL_TYPES"
+    # Note: associative arrays require bash 4+, but we initialize empty for compatibility
+    print "ORIGINAL_TYPES=()"
     if (return_types_pairs_str != "") {
         # Split by newlines and process each pair
         split(return_types_pairs_str, pairs_array, "\n")

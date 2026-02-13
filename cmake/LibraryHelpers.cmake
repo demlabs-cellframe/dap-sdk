@@ -749,6 +749,13 @@ function(create_final_shared_library)
     elseif(APPLE)
         # macOS with Apple ld
         target_link_options(${TARGET_NAME} PRIVATE -Wl,-export_dynamic)
+        # Enable dyld interposition for unit tests with mocks
+        # -flat_namespace: use flat symbol namespace (required for interposition)
+        # -interposable: allow symbols to be interposed at runtime
+        if(BUILD_CELLFRAME_SDK_TESTS OR BUILD_DAP_SDK_TESTS)
+            target_link_options(${TARGET_NAME} PRIVATE "-Wl,-flat_namespace" "-Wl,-interposable")
+            message(STATUS "[LibraryHelpers] macOS: Added -flat_namespace -interposable for ${TARGET_NAME} (tests enabled)")
+        endif()
     elseif(ANDROID)
         # Android NDK - export-dynamic is supported but may need different flags
         target_link_options(${TARGET_NAME} PRIVATE -Wl,--export-dynamic)
