@@ -5,10 +5,21 @@
  */
 
 #include <fcntl.h>
-#include <unistd.h>
 #include <sys/stat.h>
 #include <string.h>
 #include <errno.h>
+
+#ifdef DAP_OS_WINDOWS
+#include <io.h>
+#include <windows.h>
+static inline int s_fsync_win(int fd) {
+    HANDLE h = (HANDLE)_get_osfhandle(fd);
+    return FlushFileBuffers(h) ? 0 : -1;
+}
+#define fsync(fd) s_fsync_win(fd)
+#else
+#include <unistd.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -201,7 +212,7 @@ dap_global_db_wal_t *dap_global_db_wal_open(const char *a_wal_path)
         return NULL;
     }
     
-    log_it(L_DEBUG, "WAL opened: %s (seq=%lu, recovery=%s)", 
+    log_it(L_DEBUG, "WAL opened: %s (seq=%" DAP_UINT64_FORMAT_U ", recovery=%s)", 
            a_wal_path, l_wal->sequence, l_wal->needs_recovery ? "yes" : "no");
     
     return l_wal;
@@ -429,7 +440,7 @@ int dap_global_db_wal_checkpoint(dap_global_db_wal_t *a_wal)
     
     fsync(a_wal->fd);
     
-    log_it(L_DEBUG, "WAL checkpoint: %s (seq=%lu)", a_wal->path, a_wal->sequence);
+    log_it(L_DEBUG, "WAL checkpoint: %s (seq=%" DAP_UINT64_FORMAT_U ")", a_wal->path, a_wal->sequence);
     
     return 0;
 }

@@ -22,7 +22,7 @@
 */
 #include <stddef.h>
 #include <string.h>
-#include <fnmatch.h>
+#include "dap_fnmatch.h"
 
 #include "dap_common.h"
 #include "dap_config.h"

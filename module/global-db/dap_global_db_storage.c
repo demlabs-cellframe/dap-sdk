@@ -6,7 +6,7 @@
  */
 
 #include <string.h>
-#include <fnmatch.h>
+#include "dap_fnmatch.h"
 #include <pthread.h>
 
 #include "dap_common.h"
@@ -356,7 +356,7 @@ dap_list_t *dap_global_db_storage_get_groups_by_mask(const char *a_mask)
     
     gdb_group_t *l_group, *l_tmp;
     HASH_ITER(hh, s_groups, l_group, l_tmp) {
-        if (fnmatch(a_mask, l_group->name, 0) == 0) {
+        if (dap_fnmatch(a_mask, l_group->name, 0) == 0) {
             l_result = dap_list_append(l_result, dap_strdup(l_group->name));
         }
     }

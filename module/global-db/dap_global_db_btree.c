@@ -19,7 +19,34 @@
 
 #ifdef DAP_OS_WINDOWS
 #include <io.h>
+#include <windows.h>
 #define O_SYNC 0
+
+// Windows pread/pwrite emulation via ReadFile/WriteFile with OVERLAPPED
+static inline ssize_t pread(int fd, void *buf, size_t count, off_t offset)
+{
+    HANDLE h = (HANDLE)_get_osfhandle(fd);
+    OVERLAPPED ov = {0};
+    ov.Offset = (DWORD)(offset & 0xFFFFFFFF);
+    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
+    DWORD bytes_read = 0;
+    if (!ReadFile(h, buf, (DWORD)count, &bytes_read, &ov))
+        return -1;
+    return (ssize_t)bytes_read;
+}
+
+static inline ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset)
+{
+    HANDLE h = (HANDLE)_get_osfhandle(fd);
+    OVERLAPPED ov = {0};
+    ov.Offset = (DWORD)(offset & 0xFFFFFFFF);
+    ov.OffsetHigh = (DWORD)((uint64_t)offset >> 32);
+    DWORD bytes_written = 0;
+    if (!WriteFile(h, buf, (DWORD)count, &bytes_written, &ov))
+        return -1;
+    return (ssize_t)bytes_written;
+}
+
 #else
 #include <unistd.h>
 #endif
