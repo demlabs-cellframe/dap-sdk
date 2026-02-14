@@ -6,16 +6,36 @@
 #include "dap_enc_bliss.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "SimpleFIPS202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 #define LOG_TAG "dap_enc_sig_bliss"
 
 static enum DAP_BLISS_SIGN_SECURITY _bliss_type = MAX_SECURITY; // by default
 bliss_kind_t _bliss_kind = BLISS_B_4; // same as previous as I expect
 
+static bliss_kind_t s_bliss_kind_from_security(enum DAP_BLISS_SIGN_SECURITY a_type)
+{
+    switch (a_type) {
+    case TOY:
+        return BLISS_B_0;
+    case MAX_SPEED:
+        return BLISS_B_1;
+    case MIN_SIZE:
+        return BLISS_B_2;
+    case SPEED_AND_SECURITY:
+        return BLISS_B_3;
+    case MAX_SECURITY:
+    default:
+        return BLISS_B_4;
+    }
+}
+
 void dap_enc_sig_bliss_set_type(enum DAP_BLISS_SIGN_SECURITY type)
 {
     _bliss_type = type;
+    _bliss_kind = s_bliss_kind_from_security(type);
 }
 
 void dap_enc_sig_bliss_key_new(dap_enc_key_t *a_key) {
@@ -54,6 +74,7 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
         UNUSED_ARG size_t kex_size, UNUSED_ARG const void *seed, 
         UNUSED_ARG size_t seed_size, UNUSED_ARG size_t key_size)
 {
+    dap_return_if_pass(!a_key);
     int32_t l_retcode = 0;
 
     dap_enc_sig_bliss_key_new(a_key);
@@ -62,7 +83,7 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
     entropy_t entropy;
     if(seed && seed_size>0){
         assert(SHA3_512_DIGEST_LENGTH==64);
-        SHA3_512((unsigned char *)seed_tmp, (const unsigned char *)seed, seed_size);
+        dap_hash_sha3_512((unsigned char *)seed_tmp, (const unsigned char *)seed, seed_size);
     }
     else
         randombytes(&seed_tmp, 64);
@@ -78,6 +99,11 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
     //int32_t type = 4;
     a_key->priv_key_data_size = sizeof(bliss_private_key_t);
     a_key->priv_key_data = DAP_NEW_SIZE(void, a_key->priv_key_data_size);
+    if (!a_key->priv_key_data) {
+        a_key->priv_key_data_size = 0;
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
     l_retcode = bliss_b_private_key_gen((bliss_private_key_t *) a_key->priv_key_data, _bliss_kind, &entropy);
     if(l_retcode != BLISS_B_NO_ERROR) {
         bliss_b_private_key_delete(a_key->priv_key_data);
@@ -89,11 +115,23 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
 
     a_key->pub_key_size = sizeof(bliss_public_key_t);
     a_key->pub_key_data = DAP_NEW_SIZE(void, a_key->pub_key_size);
+    if (!a_key->pub_key_data) {
+        bliss_b_private_key_delete(a_key->priv_key_data);
+        a_key->priv_key_data = NULL;
+        a_key->priv_key_data_size = 0;
+        a_key->pub_key_size = 0;
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
     l_retcode = bliss_b_public_key_extract((bliss_public_key_t *) a_key->pub_key_data,
             (const bliss_private_key_t *) a_key->priv_key_data);
     if(l_retcode != BLISS_B_NO_ERROR) {
         bliss_b_private_key_delete(a_key->priv_key_data);
         bliss_b_public_key_delete(a_key->pub_key_data);
+        a_key->priv_key_data = NULL;
+        a_key->priv_key_data_size = 0;
+        a_key->pub_key_data = NULL;
+        a_key->pub_key_size = 0;
         log_it(L_CRITICAL, "Error");
         return;
     }

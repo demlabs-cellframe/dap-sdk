@@ -611,9 +611,9 @@ lb_exit:
     //if (a_es->socket && a_es->socket != INVALID_SOCKET) {
         // Add in context HT
         dap_events_socket_t *l_es_sought = NULL;
-        HASH_FIND_BYHASHVALUE(hh, a_context->esockets, &a_es->uuid, sizeof(a_es->uuid), a_es->uuid, l_es_sought);
+        dap_ht_find(a_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_es_sought);
         if (!l_es_sought) {
-            HASH_ADD_BYHASHVALUE(hh, a_context->esockets, uuid, sizeof(a_es->uuid), a_es->uuid, a_es);
+            dap_ht_add(a_context->esockets, uuid, a_es);
             a_context->event_sockets_count++;
         }
     //}
@@ -634,12 +634,12 @@ int dap_context_remove( dap_events_socket_t * a_es)
         return -1;
     }
     dap_events_socket_t *l_es = NULL;
-    HASH_FIND_BYHASHVALUE(hh, l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), a_es->uuid, l_es);
+    dap_ht_find(l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_es);
     if (!l_es || l_es != a_es)
         log_it(L_ERROR, "Try to remove unexistent socket %p", a_es);
     else {
         l_context->event_sockets_count--;
-        HASH_DELETE(hh, l_context->esockets, a_es);
+        dap_ht_del(l_context->esockets, a_es);
     }
 
 #if defined DAP_EVENTS_CAPS_IOCP
@@ -753,7 +753,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 {
     dap_events_socket_t *l_es = NULL;
     if (a_context && a_context->esockets)
-        HASH_FIND_BYHASHVALUE(hh, a_context->esockets, &a_es_uuid, sizeof(a_es_uuid), a_es_uuid, l_es);
+        dap_ht_find(a_context->esockets, &a_es_uuid, sizeof(a_es_uuid), l_es);
     return l_es;
 }
 
@@ -836,9 +836,15 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     FILE* l_sys_max_pipe_size_fd = fopen("/proc/sys/fs/pipe-max-size", "r");
     if (l_sys_max_pipe_size_fd) {
         char l_file_buf[64] = "";
-        fread(l_file_buf, sizeof(l_file_buf), 1, l_sys_max_pipe_size_fd);
-        uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
-        fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
+        size_t l_read = fread(l_file_buf, 1, sizeof(l_file_buf) - 1, l_sys_max_pipe_size_fd);
+        if (l_read > 0) {
+            l_file_buf[l_read] = '\0';
+            uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
+            if (l_sys_max_pipe_size > 0)
+                fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
+        } else if (ferror(l_sys_max_pipe_size_fd)) {
+            log_it(L_WARNING, "Failed to read /proc/sys/fs/pipe-max-size");
+        }
         fclose(l_sys_max_pipe_size_fd);
     }
 #endif

@@ -32,6 +32,7 @@
 // HELPER: Load JSON file from fixtures/
 // =============================================================================
 
+static char *s_load_json_file(const char *filename) UNUSED_ARG;
 static char *s_load_json_file(const char *filename) {
     char path[512];
     snprintf(path, sizeof(path), "../../fixtures/json/real_world/%s", filename);
@@ -42,9 +43,19 @@ static char *s_load_json_file(const char *filename) {
         return NULL;
     }
     
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
     long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    if (fsize < 0) {
+        fclose(f);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
     
     char *content = (char*)malloc(fsize + 1);
     if (!content) {
@@ -52,7 +63,13 @@ static char *s_load_json_file(const char *filename) {
         return NULL;
     }
     
-    fread(content, 1, fsize, f);
+    size_t expected = (size_t)fsize;
+    size_t bytes_read = fread(content, 1, expected, f);
+    if (bytes_read != expected) {
+        free(content);
+        fclose(f);
+        return NULL;
+    }
     content[fsize] = '\0';
     fclose(f);
     
@@ -319,4 +336,3 @@ int main(void) {
     dap_print_module_name("DAP JSON Real-World Dataset Tests");
     return dap_json_real_world_tests_run();
 }
-

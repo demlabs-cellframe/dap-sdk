@@ -1371,27 +1371,17 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_
     return l_ret;
 }
 
-int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
+int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_type_t a_hash_type, byte_t *a_hash_out, size_t a_hash_out_size)
 {
     dap_return_val_if_fail(a_key && a_key->pub_key_data && a_key->pub_key_data_size && a_hash_out, -1);
+    size_t l_required_size = dap_hash_size(a_hash_type);
+    if (!l_required_size || a_hash_out_size < l_required_size)
+        return -2;
     size_t l_pub_key_size = 0;
-    int l_ret = -2;
     uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
     if (!l_pub_key)
-        return l_ret;
-    switch (a_key->type) {
-        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-#ifdef DAP_ECDSA
-            l_ret = !dap_enc_sig_ecdsa_hash_fast((const unsigned char *)l_pub_key, l_pub_key_size, a_hash_out);
-            break;
-#else
-            log_it(L_ERROR, "Using DAP_ENC_KEY_TYPE_SIG_ECDSA hash without DAP_ECDSA defining");
-            break;
-#endif
-        default:
-            l_ret = !dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
-            break;
-    }
+        return -3;
+    int l_ret = dap_hash(a_hash_type, l_pub_key, l_pub_key_size, a_hash_out, a_hash_out_size) ? 0 : -4;
     DAP_DELETE(l_pub_key);
     return l_ret;
 }

@@ -29,8 +29,8 @@
 #include "dap_list.h"
 #include "dap_file_utils.h"
 #include "dap_time.h"
-#include "../../../3rdparty/uthash/src/utlist.h"
-#include "uthash.h"
+#include "dap_dl.h"
+#include "dap_ht.h"
 
 #ifdef DAP_OS_ANDROID
   #include <android/log.h>
@@ -41,13 +41,15 @@
   #include <signal.h>
   #include <sys/syscall.h>
   #include <sys/uio.h>
+  #include <sys/wait.h>
+  #include <fcntl.h>
 #else // WIN32
   #include <processthreadsapi.h>
   #include <process.h>
   #include "win32/dap_console_manager.h"
-  // strptime is not available in MinGW - use 3rdparty implementation
-  extern char* strptime(const char* s, const char* format, struct tm* tm);
 #endif
+
+#include "dap_strptime.h"
 
 
 #define DAP_LOG_USE_SPINLOCK    0
@@ -422,7 +424,7 @@ int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_f
     return 0;
 }
 
-#ifdef WIN32
+#ifdef DAP_OS_WINDOWS
 int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename ) {
 
     // init randomer
@@ -774,8 +776,7 @@ char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
     long l_start_pos = -1, l_end_pos = 0;
     struct tm l_tm = { };
     while ( fgets(l_line, l_len, fp) ) {
-        if ( strptime(l_line, /* "[%x-%X" */ "[%m/%d/%Y-%H:%M:%S]", &l_tm) ) {
-            l_tm.tm_year += 2000;
+        if ( dap_strptime(l_line, /* "[%x-%X" */ "[%m/%d/%Y-%H:%M:%S]", &l_tm) ) {
             time_t l_tm_sec = mktime(&l_tm);
             if (l_tm_sec >= a_start_time) {
                 l_start_pos = ftell(fp) - strlen(l_line);
@@ -804,7 +805,21 @@ char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
     // Finaly read required data from file to buf
     l_len = l_end_pos - l_start_pos - 1;
     char *l_buf = DAP_NEW_Z_SIZE(char, l_len + 1);
-    fread(l_buf, l_len, 1, fp);
+    if (!l_buf) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        fclose(fp);
+        return NULL;
+    }
+    if (l_len > 0) {
+        size_t l_read = fread(l_buf, 1, l_len, fp);
+        if (l_read != l_len && ferror(fp)) {
+            log_it(L_ERROR, "Failed to read log file chunk");
+            DAP_DELETE(l_buf);
+            l_buf = NULL;
+            fclose(fp);
+            return NULL;
+        }
+    }
 	fclose(fp);
     //log_it(L_DEBUG, "Chunk is %s", l_buf); 
     return l_buf;
@@ -820,11 +835,13 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
 	}
     int counter = 0;
     if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
         return NULL;
     }
 
     long l_ret = ftell(file);
     if (l_ret < 0) {
+        fclose(file);
         return NULL;
     }
     unsigned l_file_pos = l_ret;
@@ -836,11 +853,13 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
         l_file_pos -= to_read;
 
         if (fseek(file, l_file_pos, SEEK_SET) != 0) {
+            fclose(file);
             return NULL;
         }
 
         size_t res = fread(buf, 1, to_read, file);
         if (ferror(file)) {
+            fclose(file);
             return NULL;
         }
 
@@ -861,8 +880,26 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
 
     long l_read_size = l_end_pos - l_n_line_pos - 1;
     char * l_res = DAP_NEW_Z_SIZE(char, l_read_size + 1);
-    fseek(file, l_n_line_pos, SEEK_SET);
-    fread(l_res, l_read_size, 1, file);
+    if (!l_res) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        fclose(file);
+        return NULL;
+    }
+    if (fseek(file, l_n_line_pos, SEEK_SET) != 0) {
+        DAP_DELETE(l_res);
+        fclose(file);
+        return NULL;
+    }
+    if (l_read_size > 0) {
+        size_t l_read = fread(l_res, 1, l_read_size, file);
+        if (l_read != (size_t)l_read_size && ferror(file)) {
+            log_it(L_ERROR, "Failed to read log file tail");
+            DAP_DELETE(l_res);
+            l_res = NULL;
+            fclose(file);
+            return NULL;
+        }
+    }
 	fclose(file);
 
     return l_res;
@@ -1038,11 +1075,12 @@ int exec_with_ret(char** repl, const char * a_cmd) {
         return(255);
     }
     memset(buf, 0, sizeof(buf));
-    fgets(buf, sizeof(buf) - 1, fp);
+    if (fgets(buf, sizeof(buf) - 1, fp) == NULL)
+        buf[0] = '\0';
     buf_len = strlen(buf);
     if(repl) {
-        if(buf[buf_len - 1] == '\n')
-            buf[buf_len - 1] ='\0';
+        if (buf_len > 0 && buf[buf_len - 1] == '\n')
+            buf[buf_len - 1] = '\0';
         *repl = strdup(buf);
     }
     return pclose(fp);
@@ -1101,23 +1139,58 @@ FIN:
  */
 char * exec_with_ret_multistring(const char * a_cmd)
 {
-    FILE * fp;
-    size_t buf_len = 0;
-    char buf[4096] = {0};
-    fp= popen(a_cmd, "r");
-    if (!fp) {
-        goto FIN;
+    if (!a_cmd) {
+        return NULL;
     }
-    memset(buf,0,sizeof(buf));
-    char retbuf[4096] = {0};
-    while(fgets(buf,sizeof(buf)-1,fp)) {
-        strcat(retbuf, buf);
+    FILE *fp = popen(a_cmd, "r");
+    size_t l_len = 0;
+    size_t l_cap = 1;
+    char *l_retbuf = DAP_NEW_Z_SIZE(char, l_cap);
+    if (!l_retbuf) {
+        return NULL;
+    }
+    if (!fp) {
+        return l_retbuf;
+    }
+    char buf[4096] = {0};
+    while (fgets(buf, sizeof(buf), fp)) {
+        size_t l_chunk = strlen(buf);
+        if (!l_chunk) {
+            continue;
+        }
+        if (l_len > SIZE_MAX - l_chunk - 1) {
+            DAP_DELETE(l_retbuf);
+            pclose(fp);
+            return NULL;
+        }
+        size_t l_need = l_len + l_chunk + 1;
+        if (l_need > l_cap) {
+            size_t l_new_cap = l_cap;
+            while (l_new_cap < l_need) {
+                if (l_new_cap > SIZE_MAX / 2) {
+                    l_new_cap = l_need;
+                    break;
+                }
+                l_new_cap *= 2;
+            }
+            char *l_tmp = DAP_REALLOC(l_retbuf, l_new_cap);
+            if (!l_tmp) {
+                DAP_DELETE(l_retbuf);
+                pclose(fp);
+                return NULL;
+            }
+            l_retbuf = l_tmp;
+            l_cap = l_new_cap;
+        }
+        memcpy(l_retbuf + l_len, buf, l_chunk);
+        l_len += l_chunk;
+        l_retbuf[l_len] = '\0';
     }
     pclose(fp);
-    buf_len=strlen(retbuf);
-    if(retbuf[buf_len-1] =='\n')retbuf[buf_len-1] ='\0';
-FIN:
-    return strdup(retbuf);
+    if (l_len && l_retbuf[l_len - 1] == '\n') {
+        l_retbuf[l_len - 1] = '\0';
+    }
+    return l_retbuf;
 }
 
 static const char l_possible_chars[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -1330,6 +1403,9 @@ void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len)
  * \return 0 if success, -1 otherwise
  */
 int exec_silent(const char * a_cmd) {
+    if (!a_cmd || !*a_cmd) {
+        return -1;
+    }
 
 #ifdef _WIN32
     PROCESS_INFORMATION p_info;
@@ -1339,21 +1415,49 @@ int exec_silent(const char * a_cmd) {
     memset(&p_info, 0, sizeof(p_info));
 
     s_info.cb = sizeof(s_info);
-    char cmdline[512] = {'\0'};
-    strcat(cmdline, "C:\\Windows\\System32\\cmd.exe /c ");
-    strcat(cmdline, a_cmd);
+    const char *l_prefix = "C:\\Windows\\System32\\cmd.exe /c ";
+    size_t l_cmdline_len = strlen(l_prefix) + strlen(a_cmd) + 1;
+    char *l_cmdline = DAP_NEW_SIZE(char, l_cmdline_len);
+    if (!l_cmdline) {
+        return -1;
+    }
+    snprintf(l_cmdline, l_cmdline_len, "%s%s", l_prefix, a_cmd);
 
-    if (CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0x08000000, NULL, NULL, &s_info, &p_info)) {
+    if (CreateProcessA(NULL, l_cmdline, NULL, NULL, FALSE, 0x08000000, NULL, NULL, &s_info, &p_info)) {
+        DAP_DELETE(l_cmdline);
         WaitForSingleObject(p_info.hProcess, 0xffffffff);
         CloseHandle(p_info.hProcess);
         CloseHandle(p_info.hThread);
         return 0;
     }
     else {
+        DAP_DELETE(l_cmdline);
         return -1;
     }
 #else
-    return execl(".","%s",a_cmd,NULL);
+    pid_t l_pid = fork();
+    if (l_pid < 0) {
+        return -1;
+    }
+    if (l_pid == 0) {
+        int l_devnull = open("/dev/null", O_WRONLY);
+        if (l_devnull >= 0) {
+            dup2(l_devnull, STDOUT_FILENO);
+            dup2(l_devnull, STDERR_FILENO);
+            if (l_devnull > STDERR_FILENO) {
+                close(l_devnull);
+            }
+        }
+        execl("/bin/sh", "sh", "-c", a_cmd, NULL);
+        _exit(127);
+    }
+    int l_status = 0;
+    while (waitpid(l_pid, &l_status, 0) == -1) {
+        if (errno != EINTR) {
+            return -1;
+        }
+    }
+    return WIFEXITED(l_status) && WEXITSTATUS(l_status) == 0 ? 0 : -1;
 #endif
 }
 
@@ -1365,7 +1469,7 @@ typedef struct dap_timer_interface {
 #endif
     dap_timer_callback_t callback;
     void *param;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_timer_interface_t;
 static dap_timer_interface_t *s_timers_map;
 static pthread_rwlock_t s_timers_rwlock;
@@ -1379,8 +1483,8 @@ void dap_interval_timer_init()
 void dap_interval_timer_deinit() {
     pthread_rwlock_wrlock(&s_timers_rwlock);
     dap_timer_interface_t *l_cur_timer = NULL, *l_tmp;
-    HASH_ITER(hh, s_timers_map, l_cur_timer, l_tmp) {
-        HASH_DEL(s_timers_map, l_cur_timer);
+    dap_ht_foreach(s_timers_map, l_cur_timer, l_tmp) {
+        dap_ht_del(s_timers_map, l_cur_timer);
         dap_interval_timer_disable(l_cur_timer->timer);
         DAP_FREE(l_cur_timer);
     }
@@ -1410,7 +1514,7 @@ static void s_bsd_callback(void *a_arg)
     }
     pthread_rwlock_rdlock(&s_timers_rwlock);
     dap_timer_interface_t *l_timer = NULL;
-    HASH_FIND_PTR(s_timers_map, l_timer_ptr, l_timer);
+    dap_ht_find_ptr(s_timers_map, l_timer_ptr, l_timer);
     pthread_rwlock_unlock(&s_timers_rwlock);
     if (l_timer && l_timer->callback) {
         //log_it(L_INFO, "Fire %p", l_timer_ptr);
@@ -1436,8 +1540,10 @@ dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_ca
     l_timer_obj->param      = a_param;
 #if (defined _WIN32)
     if ( !CreateTimerQueueTimer(&l_timer_obj->timer, NULL, (WAITORTIMERCALLBACK)s_win_callback,
-                                &l_timer_obj->timer, a_msec, a_msec, WT_EXECUTEINTIMERTHREAD | WT_EXECUTELONGFUNCTION) )
+                                &l_timer_obj->timer, a_msec, a_msec, WT_EXECUTEINTIMERTHREAD | WT_EXECUTELONGFUNCTION) ) {
+        DAP_DELETE(l_timer_obj);
         return NULL;
+    }
 #elif (defined DAP_OS_DARWIN)
     dispatch_queue_t l_queue = dispatch_queue_create("tqueue", 0);
     //todo: we should not use ^ like this, because this is clang-specific thing, but someone can use GCC on mac os
@@ -1452,15 +1558,20 @@ dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_ca
     l_sig_event.sigev_value.sival_ptr = &l_timer_obj->timer;
     l_sig_event.sigev_notify_function = s_posix_callback;
     if (timer_create(CLOCK_MONOTONIC, &l_sig_event, &(l_timer_obj->timer))) {
+        DAP_DELETE(l_timer_obj);
         return NULL;
     }
     struct itimerspec l_period = { };
     l_period.it_interval.tv_sec = l_period.it_value.tv_sec = a_msec / 1000;
     l_period.it_interval.tv_nsec = l_period.it_value.tv_nsec = (a_msec % 1000) * 1000000;
-    timer_settime(l_timer_obj->timer, 0, &l_period, NULL);
+    if (timer_settime(l_timer_obj->timer, 0, &l_period, NULL)) {
+        timer_delete(l_timer_obj->timer);
+        DAP_DELETE(l_timer_obj);
+        return NULL;
+    }
 #endif
     pthread_rwlock_wrlock(&s_timers_rwlock);
-    HASH_ADD_PTR(s_timers_map, timer, l_timer_obj);
+    dap_ht_add_ptr(s_timers_map, timer, l_timer_obj);
     pthread_rwlock_unlock(&s_timers_rwlock);
     log_it(L_DEBUG, "Interval timer %p created", &l_timer_obj->timer);
     return (dap_interval_timer_t)l_timer_obj->timer;
@@ -1480,9 +1591,9 @@ int dap_interval_timer_disable(dap_interval_timer_t a_timer) {
 void dap_interval_timer_delete(dap_interval_timer_t a_timer) {
     pthread_rwlock_wrlock(&s_timers_rwlock);
     dap_timer_interface_t *l_timer = NULL;
-    HASH_FIND_PTR(s_timers_map, &a_timer, l_timer);
+    dap_ht_find_ptr(s_timers_map, a_timer, l_timer);
     if (l_timer) {
-        HASH_DEL(s_timers_map, l_timer);
+        dap_ht_del(s_timers_map, l_timer);
         dap_interval_timer_disable(l_timer->timer);
         DAP_FREE(l_timer);
     }

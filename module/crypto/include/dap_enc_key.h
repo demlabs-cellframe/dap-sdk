@@ -344,7 +344,15 @@ void dap_enc_key_delete(dap_enc_key_t *a_key);
 
 dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_t a_count);
 
-int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out);
+/**
+ * @brief Get hash of public key
+ * @param a_key Encryption key
+ * @param a_hash_type Hash algorithm to use
+ * @param a_hash_out Output buffer for hash
+ * @param a_hash_out_size Size of output buffer (must be >= dap_hash_size(a_hash_type))
+ * @return 0 on success, negative on error
+ */
+int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_type_t a_hash_type, byte_t *a_hash_out, size_t a_hash_out_size);
 
 /**
  * @brief check if this key type use insign hashing

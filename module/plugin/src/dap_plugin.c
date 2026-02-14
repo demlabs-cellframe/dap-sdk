@@ -22,7 +22,8 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "uthash.h"
+#include "dap_ht.h"
+#include "dap_sl.h"
 #include "dap_config.h"
 #include "dap_common.h"
 #include "dap_file_utils.h"
@@ -42,7 +43,7 @@ static char *s_plugins_root_path = NULL;
 struct plugin_type{
     char name[64];
     dap_plugin_type_callbacks_t callbacks;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } * s_types;
 
 
@@ -52,7 +53,7 @@ struct plugin_module{
     dap_plugin_manifest_t *manifest;
 
     void * pvt_data; // Here are placed type-related things
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 };
 
 struct plugin_type *s_types = NULL; // List of all registred plugin types
@@ -90,7 +91,7 @@ int dap_plugin_init(const char * a_root_path)
     log_it(L_DEBUG, "Start registration of manifests");
 
     char *l_name_file = NULL;
-    LL_FOREACH(l_list_plugins_name, l_element){
+    dap_sl_foreach(l_list_plugins_name, l_element){
         log_it(L_NOTICE, "Registration of \"%s\" manifest", l_element->name_directory);
         l_name_file = dap_strjoin("",s_plugins_root_path, "/", l_element->name_directory, "/manifest.json", NULL);
         if (!dap_plugin_manifest_add_from_file(l_name_file)){
@@ -146,7 +147,7 @@ int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t* a_ca
     }
     strncpy(l_type->name,a_name, sizeof(l_type->name)-1);
     memcpy(&l_type->callbacks,a_callbacks,sizeof(l_type->callbacks));
-    HASH_ADD_STR(s_types,name,l_type);
+    dap_ht_add_str(s_types, name, l_type);
     log_it(L_NOTICE, "Plugin type \"%s\" added", a_name);
     return 0;
 }
@@ -157,7 +158,7 @@ int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t* a_ca
 void dap_plugin_start_all()
 {
     dap_plugin_manifest_t * l_manifest, *l_tmp;
-    HASH_ITER(hh,dap_plugin_manifest_all(),l_manifest,l_tmp ){
+    dap_ht_foreach(dap_plugin_manifest_all(), l_manifest, l_tmp) {
         s_start(l_manifest);
     }
 }
@@ -168,7 +169,7 @@ void dap_plugin_start_all()
 void dap_plugin_stop_all()
 {
     dap_plugin_manifest_t * l_manifest, *l_tmp;
-    HASH_ITER(hh,dap_plugin_manifest_all(),l_manifest,l_tmp ){
+    dap_ht_foreach(dap_plugin_manifest_all(), l_manifest, l_tmp) {
         s_stop(l_manifest);
     }
 }
@@ -198,7 +199,7 @@ static int s_stop(dap_plugin_manifest_t * a_manifest)
     if(!a_manifest)
         return -4;
     struct plugin_module * l_module = NULL;
-    HASH_FIND_STR(s_modules, a_manifest->name , l_module);
+    dap_ht_find_str(s_modules, a_manifest->name, l_module);
     if(! l_module){
         log_it(L_ERROR, "Plugin \"%s\" is not loaded", a_manifest->type);
         return -5;
@@ -211,7 +212,7 @@ static int s_stop(dap_plugin_manifest_t * a_manifest)
                l_err_str?l_err_str:"<UNKNOWN>", l_ret);
         DAP_DELETE(l_err_str);
     }else{
-        HASH_DELETE(hh, s_modules,l_module);
+        dap_ht_del(s_modules, l_module);
         DAP_DELETE(l_module);
     }
     return l_ret;
@@ -239,7 +240,7 @@ int dap_plugin_start(const char * a_name)
 static int s_start(dap_plugin_manifest_t * a_manifest)
 {
     struct plugin_type * l_type = NULL;
-    HASH_FIND_STR(s_types, a_manifest->type, l_type);
+    dap_ht_find_str(s_types, a_manifest->type, l_type);
     if(! l_type){
         log_it(L_ERROR, "Plugin \"%s\" with type \"%s\" is not recognized", a_manifest->name, a_manifest->type);
         return -1;
@@ -250,7 +251,7 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
         bool l_is_unsolved = false;
         for(size_t i=0; i< a_manifest->dependencies_count; i++){
             dap_plugin_manifest_dependence_t * l_dep = NULL;
-            HASH_FIND_STR(a_manifest->dependencies, a_manifest->dependencies_names[i], l_dep);
+            dap_ht_find_str(a_manifest->dependencies, a_manifest->dependencies_names[i], l_dep);
             if (!l_dep){ // meet unsolved dependence
                 log_it(L_ERROR, "Unsolved dependence \"%s\"", a_manifest->dependencies_names[i]);
                 l_is_unsolved = true;
@@ -279,7 +280,7 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
         l_module->name[sizeof(l_module->name) - 1] = '\0';  // Warning avoid
         l_module->type = l_type;
         l_module->manifest = a_manifest;
-        HASH_ADD_STR(s_modules,name,l_module);
+        dap_ht_add_str(s_modules, name, l_module);
         log_it(L_NOTICE, "Plugin \"%s\" is loaded", a_manifest->name);
     }
     return l_ret;
@@ -293,7 +294,7 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
 dap_plugin_status_t dap_plugin_status(const char * a_name)
 {
     struct plugin_module * l_module = NULL;
-    HASH_FIND_STR(s_modules,a_name,l_module);
+    dap_ht_find_str(s_modules, a_name, l_module);
     if(l_module){
         return STATUS_RUNNING;
     }

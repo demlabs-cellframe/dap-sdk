@@ -81,8 +81,8 @@ int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
         memcpy(l_param_seed + 32, &l_param_nonce, 4);
         
         // Generate random polynomial in time domain
-        dap_hash_fast_t l_hash_out;
-        dap_hash_fast(l_param_seed, 36, &l_hash_out);
+        dap_hash_sha3_256_t l_hash_out;
+        dap_hash_sha3_256(l_param_seed, 36, &l_hash_out);
         
         uint8_t l_hash[32];
         memcpy(l_hash, &l_hash_out, 32);
@@ -153,8 +153,8 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
     memcpy(l_seed_and_counter + 32, l_counter_bytes, 4);
     
     // Hash to get derived seed
-    dap_hash_fast_t l_hash_out;
-    dap_hash_fast(l_seed_and_counter, 36, &l_hash_out);
+    dap_hash_sha3_256_t l_hash_out;
+    dap_hash_sha3_256(l_seed_and_counter, 36, &l_hash_out);
     memcpy(l_derived_seed, &l_hash_out, 32);
     
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {

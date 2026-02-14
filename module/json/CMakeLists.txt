@@ -155,8 +155,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
     # ARM64 architecture (aarch64 on Linux, arm64 on macOS)
     set(NEON_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_neon.c ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c)
-    set(SVE_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve.c)
-    set(SVE2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve2.c)
     
     # ARM64 - NEON is always available (no extra flags needed on Apple Silicon)
     # Only set flags for files that actually exist

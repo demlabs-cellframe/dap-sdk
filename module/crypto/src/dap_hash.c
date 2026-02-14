@@ -23,64 +23,52 @@
 */
 #include <stdio.h>
 #include <stdlib.h>
-#include "dap_strfuncs.h"
 #include "dap_common.h"
 #include "dap_hash.h"
-#include "dap_enc_base58.h"
-// XKCP includes moved here from header for encapsulation
-#include "KeccakHash.h"
-#include "SimpleFIPS202.h"
 #include "hash/sha2-256/dap_sha2_256.h"
 
 #define LOG_TAG "dap_hash"
 
 /**
- * @brief dap_chain_str_to_hash_fast_to_str
- * @param a_hash_str
- * @param a_hash
- * @return
+ * @brief Compute hash of data using specified algorithm
+ * @param a_type Hash algorithm
+ * @param a_data_in Input data
+ * @param a_data_in_size Size of input data
+ * @param a_hash_out Output buffer (size depends on algorithm)
+ * @param a_hash_out_size Size of output buffer
+ * @return true on success, false on error
  */
-int dap_chain_hash_fast_from_hex_str( const char *a_hex_str, dap_chain_hash_fast_t *a_hash)
+bool dap_hash(dap_hash_type_t a_type, const void *a_data_in, size_t a_data_in_size,
+              void *a_hash_out, size_t a_hash_out_size)
 {
-    if (!a_hex_str || !a_hash)
-        return -1;
-    size_t l_hash_str_len = strlen(a_hex_str);
-    if ( l_hash_str_len == DAP_CHAIN_HASH_FAST_STR_LEN && !dap_strncmp(a_hex_str, "0x", 2) && !dap_is_hex_string(a_hex_str + 2, l_hash_str_len - 2)) {
-        dap_hex2bin(a_hash->raw, a_hex_str + 2, l_hash_str_len - 2);
-        return  0;
-    } else  { // Wrong string
-        return -1;
+    if (!a_hash_out)
+        return false;
+
+    switch (a_type) {
+        case DAP_HASH_TYPE_SHA3_256:
+            if (a_hash_out_size < DAP_HASH_SHA3_256_SIZE)
+                return false;
+            return dap_hash_sha3_256(a_data_in, a_data_in_size, (dap_hash_sha3_256_t *)a_hash_out);
+
+        case DAP_HASH_TYPE_SHA2_256:
+            if (a_hash_out_size < 32)
+                return false;
+            return dap_hash_sha2_256((uint8_t *)a_hash_out, (const uint8_t *)a_data_in, a_data_in_size) == 0;
+
+        case DAP_HASH_TYPE_KECCAK_256:
+            // TODO: Implement Keccak-256
+            log_it(L_ERROR, "Keccak-256 not yet implemented");
+            return false;
+
+        case DAP_HASH_TYPE_SLOW_0:
+            // TODO: Implement slow hash
+            log_it(L_ERROR, "Slow hash not yet implemented");
+            return false;
+
+        default:
+            log_it(L_ERROR, "Unknown hash type: %d", a_type);
+            return false;
     }
-}
-
-
-/**
- * @brief dap_chain_hash_fast_from_base58_str
- * @param a_base58_str
- * @param a_datum_hash
- * @return
- */
-int dap_chain_hash_fast_from_base58_str(const char *a_base58_str,  dap_chain_hash_fast_t *a_hash)
-{
-    if (!a_hash)
-        return -1;
-    if (!a_base58_str)
-        return -2;
-    size_t l_hash_len = dap_strlen(a_base58_str);
-    if (l_hash_len > DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_hash_fast_t)))
-        return -3;
-    // from base58 to binary
-    byte_t l_out[DAP_ENC_BASE58_DECODE_SIZE(DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_hash_fast_t)))];
-    size_t l_out_size = dap_enc_base58_decode(a_base58_str, l_out);
-    if (l_out_size != sizeof(dap_hash_fast_t))
-        return -4;
-    memcpy(a_hash, l_out, sizeof(dap_hash_fast_t));
-    return 0;
-}
-
-int dap_chain_hash_fast_from_str( const char *a_hash_str, dap_chain_hash_fast_t *a_hash)
-{
-    return dap_chain_hash_fast_from_hex_str(a_hash_str, a_hash) && dap_chain_hash_fast_from_base58_str(a_hash_str, a_hash);
 }
 
 /**
@@ -88,33 +76,9 @@ int dap_chain_hash_fast_from_str( const char *a_hash_str, dap_chain_hash_fast_t 
  * @param[out] a_output Output buffer (must be 32 bytes)
  * @param[in] a_input Input data
  * @param[in] a_inlen Input length
- * @return Returns 0 on success, negative error code on failure
+ * @return 0 on success, negative error code on failure
  */
-int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen) {
-    return dap_sha2_256(a_output, a_input, a_inlen);
-}
-
-/**
- * @brief dap_hash_fast
- * get SHA3_256 hash for specific data (moved from inline to proper encapsulation)
- * @param a_data_in input data
- * @param a_data_in_size size of input data
- * @param a_hash_out returned hash
- * @return true on success, false on failure
- */
-bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out )
+int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen)
 {
-    // Allow empty input (a_data_in_size == 0) - SHA3 can hash empty data
-    // For empty input, a_data_in can be NULL, but a_hash_out must be valid
-    if (a_hash_out == NULL)
-        return false;
-    
-    // For non-empty input, a_data_in must not be NULL and vise versa
-    if ((a_data_in == NULL) != (a_data_in_size == 0))
-        return false;
-
-    // Handle empty input case in order with each other cases
-    SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)a_data_in, a_data_in_size );
-
-    return true;
+    return dap_sha2_256(a_output, a_input, a_inlen);
 }

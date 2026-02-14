@@ -917,8 +917,8 @@ macro(target_setup_options TARGET)
 endmacro()
 
 macro(libmdbx_setup_libs TARGET MODE)
-  # Android: pthread is built into bionic, no separate Threads target
-  if(NOT ANDROID)
+  # Android/Apple: pthread is built into system libc, no separate Threads target
+  if(NOT ANDROID AND NOT APPLE)
     if(CMAKE_VERSION VERSION_LESS 3.1)
       target_link_libraries(${TARGET} ${MODE} ${CMAKE_THREAD_LIBS_INIT})
     else()

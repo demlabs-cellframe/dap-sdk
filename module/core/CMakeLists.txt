@@ -27,15 +27,11 @@ if(UNIX)
     endif()
 elseif(WIN32)
     file (GLOB CORE_SRCS ${CORE_SRCS} src/win32/*.c)
-    # Windows: Add strptime.c from 3rdparty (POSIX function not available)
-    list(APPEND CORE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/strptime.c")
+    # dap_strptime.c is now in src/ and included via glob
 endif()
 
-if (DAP_USE_RPMALLOC)
-    message("[!] rpmalloc ON")
-    file (GLOB CORE_HEADERS ${CORE_HEADERS} ../../3rdparty/rpmalloc/rpmalloc/rpmalloc.h)
-    file (GLOB CORE_SRCS ${CORE_SRCS} ../../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
-endif()
+# rpmalloc removed - was optional allocator, never enabled by default
+# If custom allocator needed, implement via dap_alloc callbacks
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CORE_SRCS} HEADERS ${CORE_HEADERS})
@@ -46,9 +42,7 @@ register_module_headers(DIRECTORIES include)
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Platform-specific include directories
 if(UNIX)
@@ -57,10 +51,7 @@ endif()
 if(WIN32)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/win32)
 endif()
-if (DAP_USE_RPMALLOC)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/rpmalloc/rpmalloc/)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC DAP_USE_RPMALLOC ENABLE_OVERRIDE=1 ENABLE_PRELOAD=1)
-endif()
+# rpmalloc include/definitions removed - see comment above
 if(WIN32)
     include_directories(include/)
     add_subdirectory(src/win32)
@@ -85,6 +76,14 @@ if (BUILD_WITH_ZIP)
 endif()
 # json-c is now part of module/json - no longer included here
 
+# Link macOS system frameworks (required by dap_network_monitor.c compiled into dap_core)
+if(APPLE)
+    target_link_libraries(${PROJECT_NAME} INTERFACE
+        "-framework CoreFoundation"
+        "-framework SystemConfiguration"
+    )
+endif()
+
 # Store dependencies for final library - no linking of OBJECT targets
 set(DAP_CORE_DEPS "${CORE_LIBRARIES}" CACHE INTERNAL "dap_core external dependencies")
 
@@ -104,8 +103,6 @@ if(INSTALL_DAP_SDK)
             PUBLIC_HEADER DESTINATION include/dap/core/
     )
 
-
-    INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #if (DAP_OS_LINUX)
     #INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")

@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <stdlib.h> // for NULL
 #include "bliss_b_params.h"
-#include "../sha3/fips202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 /* Increment the seed
  * (we treat it as an array of bytes/little-endian)  */
@@ -24,7 +26,7 @@ static void refresh(entropy_t *entropy, uint8_t *hash, uint32_t n) {
 
   while (n > 0) {
     //SHA3_512(hash, entropy->seed, SHA3_512_DIGEST_LENGTH);
-    sha3_512(hash, entropy->seed, SHA3_512_DIGEST_LENGTH);
+    dap_hash_sha3_512(hash, entropy->seed, SHA3_512_DIGEST_LENGTH);
     increment_seed(entropy);
     hash += SHA3_512_DIGEST_LENGTH;
     n --;

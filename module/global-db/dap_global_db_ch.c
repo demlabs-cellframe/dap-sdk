@@ -221,11 +221,12 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
         char l_ts_str[DAP_TIME_STR_SIZE] = { '\0' };
         dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
         dap_stream_node_addr_t l_signer_addr;
-        dap_hash_fast_t l_sign_hash;
+        dap_hash_sha3_256_t l_sign_hash;
         if (a_obj->sign && dap_sign_get_pkey_hash(a_obj->sign, &l_sign_hash))
            dap_stream_node_addr_from_hash(&l_sign_hash, &l_signer_addr);
-        const size_t c_dap_hex_str_len = 15;
-        char l_value_str[c_dap_hex_str_len + 1];
+        #define DAP_HEX_STR_LEN 15
+        char l_value_str[DAP_HEX_STR_LEN + 1];
+        const size_t c_dap_hex_str_len = DAP_HEX_STR_LEN;
         dap_bin2hex(l_value_str, a_obj->value, a_obj->value_len <= c_dap_hex_str_len / 2 ? a_obj->value_len : (c_dap_hex_str_len - 3) / 2);
         if (a_obj->value_len > c_dap_hex_str_len / 2)
             strcpy(l_value_str + c_dap_hex_str_len - 3, "...");

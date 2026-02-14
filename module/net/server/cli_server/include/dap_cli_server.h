@@ -28,7 +28,7 @@
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_config.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_json.h"
 #include "dap_json_rpc_response.h"
 
@@ -88,14 +88,14 @@ typedef struct dap_cli_cmd{
     dap_cli_server_cmd_override_t overrides; /* Used to change default behaviour */
     dap_cli_server_cmd_flags_t flags; /* Command flags */
     int16_t id;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_cli_cmd_t;
 
 typedef struct dap_cli_cmd_aliases{
     char alias[32];
     char addition[32];
     dap_cli_cmd_t *standard_command;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_cli_cmd_aliases_t;
 
 
@@ -125,7 +125,7 @@ typedef void (handler_func_cli_t)(dap_json_t *a_params, dap_json_t *a_reply);
 typedef struct dap_cli_handler_cl {
     const char *method;
     handler_func_cli_t *func;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 }dap_cli_handler_cl_t;
 
 void dap_json_rpc_cli_handler_add(const char *a_method, handler_func_cli_t* a_fund);

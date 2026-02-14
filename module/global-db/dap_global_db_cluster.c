@@ -32,6 +32,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_proc_thread.h"
 #include "dap_hash.h"
 #include "dap_stream_ch_gossip.h"
+#include "dap_dl.h"
 
 #define LOG_TAG "dap_global_db_cluster"
 
@@ -68,7 +69,7 @@ void dap_global_db_cluster_deinit()
     dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
     if (l_dbi) {
         dap_global_db_cluster_t *it, *tmp;
-        DL_FOREACH_SAFE(l_dbi->clusters, it, tmp)
+        dap_dl_foreach_safe(l_dbi->clusters, it, tmp)
             dap_global_db_cluster_delete(it);
     }
 }
@@ -76,7 +77,7 @@ void dap_global_db_cluster_deinit()
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name)
 {
     dap_global_db_cluster_t *it;
-    DL_FOREACH(a_dbi->clusters, it)
+    dap_dl_foreach(a_dbi->clusters, it)
         if (dap_global_db_group_match_mask(a_group_name, it->groups_mask))
             return it;
     return NULL;
@@ -86,7 +87,7 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
 {
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
     union hash_convert {
-        dap_hash_fast_t gossip_hash;
+        dap_hash_sha3_256_t gossip_hash;
         dap_global_db_driver_hash_t gdb_hash;
     } l_hash_cvt = {};
     l_hash_cvt.gdb_hash = dap_global_db_driver_hash_get(a_store_obj);
@@ -99,7 +100,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
                                                    dap_global_db_role_t a_default_role, dap_cluster_type_t a_links_cluster_role)
 {
     dap_global_db_cluster_t *it;
-    DL_FOREACH(a_dbi->clusters, it) {
+    dap_dl_foreach(a_dbi->clusters, it) {
         if (!dap_strcmp(it->groups_mask, a_group_mask)) {
             log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_group_mask);
             return NULL;
@@ -142,7 +143,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
-    DL_APPEND(a_dbi->clusters, l_cluster);
+    dap_dl_append(a_dbi->clusters, l_cluster);
     if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
         dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
     log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s, TTL %s",
@@ -175,7 +176,7 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     if (!a_cluster) return; //happens when no network connection available
     dap_cluster_delete(a_cluster->role_cluster);
     DAP_DELETE(a_cluster->groups_mask);
-    DL_DELETE(a_cluster->dbi->clusters, a_cluster);
+    dap_dl_delete(a_cluster->dbi->clusters, a_cluster);
     DAP_DELETE(a_cluster);
 }
 
@@ -191,7 +192,7 @@ static bool s_db_cluster_notify_on_proc_thread(void *a_arg)
 void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
 {
     dap_global_db_notifier_t *l_notifier;
-    DL_FOREACH(a_cluster->notifiers, l_notifier) {
+    dap_dl_foreach(a_cluster->notifiers, l_notifier) {
         assert(l_notifier->callback_notify);
         dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, l_notifier, sizeof(*l_notifier));
         dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj, DAP_QUEUE_MSG_PRIORITY_LOW);
@@ -208,7 +209,7 @@ int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster
     }
     l_notifier->callback_notify = a_callback;
     l_notifier->callback_arg = a_callback_arg;
-    DL_APPEND(a_cluster->notifiers, l_notifier);
+    dap_dl_append(a_cluster->notifiers, l_notifier);
     return 0;
 }
 

@@ -62,28 +62,43 @@ static dap_binary_tree_t *s_tree_search(dap_binary_tree_t *a_elm, dap_binary_tre
 
 void *dap_binary_tree_search(dap_binary_tree_t *a_tree_root, dap_binary_tree_key_t a_key)
 {
+    if (!a_key) {
+        return NULL;
+    }
     dap_binary_tree_t *l_res = s_tree_search(a_tree_root, a_key);
     return l_res ? l_res->data : NULL;
 }
 
 static dap_binary_tree_t *s_tree_minimum(dap_binary_tree_t *a_elm)
 {
-  return !a_elm->left ? a_elm : s_tree_minimum(a_elm->left);
+    if (!a_elm) {
+        return NULL;
+    }
+    return !a_elm->left ? a_elm : s_tree_minimum(a_elm->left);
 }
 
 void *dap_binary_tree_minimum(dap_binary_tree_t *a_tree_root)
 {
+    if (!a_tree_root) {
+        return NULL;
+    }
     dap_binary_tree_t *l_res = s_tree_minimum(a_tree_root);
     return l_res ? l_res->data : NULL;
 }
 
 static dap_binary_tree_t *s_tree_maximum(dap_binary_tree_t *a_elm)
 {
-  return !a_elm->right ? a_elm : s_tree_maximum(a_elm->right);
+    if (!a_elm) {
+        return NULL;
+    }
+    return !a_elm->right ? a_elm : s_tree_maximum(a_elm->right);
 }
 
 void *dap_binary_tree_maximum(dap_binary_tree_t *a_tree_root)
 {
+    if (!a_tree_root) {
+        return NULL;
+    }
     dap_binary_tree_t *l_res = s_tree_maximum(a_tree_root);
     return l_res ? l_res->data : NULL;
 }
@@ -112,6 +127,9 @@ static dap_binary_tree_t *s_tree_insert(dap_binary_tree_t *a_elm, dap_binary_tre
 
 dap_binary_tree_t *dap_binary_tree_insert(dap_binary_tree_t *a_tree_root, dap_binary_tree_key_t a_key, void *a_data)
 {
+    if (!a_key) {
+        return a_tree_root;
+    }
     return s_tree_insert(a_tree_root, a_key, a_data);
 }
 
@@ -126,8 +144,11 @@ static dap_binary_tree_t *s_tree_delete(dap_binary_tree_t *a_elm, dap_binary_tre
         a_elm->right = s_tree_delete(a_elm->right, a_key);
     } else if (a_elm->left && a_elm->right) {
         dap_binary_tree_t *l_tmp = s_tree_minimum(a_elm->right);
+        void *l_old_data = a_elm->data;
         a_elm->key = l_tmp->key;
         a_elm->data = l_tmp->data;
+        l_tmp->data = NULL;
+        DAP_DELETE(l_old_data);
         a_elm->right = s_tree_delete(a_elm->right, a_elm->key);
     } else if (a_elm->left) {
         dap_binary_tree_t * l_elm_old_left = a_elm->left;
@@ -155,6 +176,9 @@ static dap_binary_tree_t *s_tree_delete(dap_binary_tree_t *a_elm, dap_binary_tre
  */
 dap_binary_tree_t *dap_binary_tree_delete(dap_binary_tree_t *a_tree_root, dap_binary_tree_key_t a_key)
 {
+    if (!a_key) {
+        return a_tree_root;
+    }
     return s_tree_delete(a_tree_root, a_key);
 }
 

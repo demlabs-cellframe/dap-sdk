@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include "dilithium_poly.h"
-#include "fips202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 /*************************************************/
 void poly_reduce(poly *a) {
@@ -181,27 +183,20 @@ void poly_uniform_eta(poly *a, const unsigned char seed[SEEDBYTES], unsigned cha
     unsigned int i, ctr;
     unsigned char inbuf[SEEDBYTES + 1];
 
-    unsigned char outbuf[2*SHAKE256_RATE];
-  uint64_t state[25] = {0};
-    //Keccak_HashInstance   ks;
+    unsigned char outbuf[2*DAP_SHAKE256_RATE];
+    uint64_t state[25] = {0};
 
     for(i= 0; i < SEEDBYTES; ++i)
         inbuf[i] = seed[i];
     inbuf[SEEDBYTES] = nonce;
 
-  shake256_absorb(state, inbuf, SEEDBYTES + 1);
-  shake256_squeezeblocks(outbuf, 2, state);  
+    dap_hash_shake256_absorb(state, inbuf, SEEDBYTES + 1);
+    dap_hash_shake256_squeezeblocks(outbuf, 2, state);  
 
-    //Keccak_HashInitialize_SHAKE256( &ks );
-    //Keccak_HashUpdate( &ks, inbuf, (SEEDBYTES + 1) * 8 );
-    //Keccak_HashFinal( &ks, inbuf );
-    //Keccak_HashSqueeze( &ks, outbuf, 2 * 8 * 8 );
-
-    ctr = rej_eta(a->coeffs, NN, outbuf, 2*SHAKE256_RATE, p);
+    ctr = rej_eta(a->coeffs, NN, outbuf, 2*DAP_SHAKE256_RATE, p);
     if(ctr < NN) {
-      shake256_squeezeblocks(outbuf, 1, state);
-       // Keccak_HashSqueeze( &ks, outbuf, 1 * 8 * 8 );
-        rej_eta(a->coeffs + ctr, NN - ctr, outbuf, SHAKE256_RATE, p);
+        dap_hash_shake256_squeezeblocks(outbuf, 1, state);
+        rej_eta(a->coeffs + ctr, NN - ctr, outbuf, DAP_SHAKE256_RATE, p);
     }
 }
 
@@ -241,29 +236,21 @@ void poly_uniform_gamma1m1(poly *a, const unsigned char seed[SEEDBYTES + CRHBYTE
     unsigned int i, ctr;
     unsigned char inbuf[SEEDBYTES + CRHBYTES + 2];
 
-    unsigned char outbuf[5*SHAKE256_RATE];
+    unsigned char outbuf[5*DAP_SHAKE256_RATE];
     uint64_t state[25] = {0};
-//    Keccak_HashInstance ks;
 
     for(i = 0; i < SEEDBYTES + CRHBYTES; ++i)
         inbuf[i] = seed[i];
     inbuf[SEEDBYTES + CRHBYTES] = nonce & 0xFF;
     inbuf[SEEDBYTES + CRHBYTES + 1] = nonce >> 8;
 
-    shake256_absorb(state, inbuf, SEEDBYTES + CRHBYTES + 2);
-    shake256_squeezeblocks(outbuf, 5, state);
+    dap_hash_shake256_absorb(state, inbuf, SEEDBYTES + CRHBYTES + 2);
+    dap_hash_shake256_squeezeblocks(outbuf, 5, state);
 
-    //Keccak_HashInitialize_SHAKE128( &ks );
-    //Keccak_HashUpdate( &ks, inbuf, (SEEDBYTES + CRHBYTES + 2) * 8 );
-    //Keccak_HashFinal( &ks, inbuf );
-    //Keccak_HashSqueeze( &ks, outbuf, 5 * 8 * 8 );
-
-    ctr = rej_gamma1m1(a->coeffs, NN, outbuf, 5*SHAKE256_RATE);
+    ctr = rej_gamma1m1(a->coeffs, NN, outbuf, 5*DAP_SHAKE256_RATE);
     if(ctr < NN) {
-
-    shake256_squeezeblocks(outbuf, 1, state);
-        //Keccak_HashSqueeze( &ks, outbuf, 1 * 8 * 8 );
-        rej_gamma1m1(a->coeffs + ctr, NN - ctr, outbuf, SHAKE256_RATE);
+        dap_hash_shake256_squeezeblocks(outbuf, 1, state);
+        rej_gamma1m1(a->coeffs + ctr, NN - ctr, outbuf, DAP_SHAKE256_RATE);
     }
 }
 

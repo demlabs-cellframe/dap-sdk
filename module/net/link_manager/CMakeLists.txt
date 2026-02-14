@@ -13,13 +13,6 @@ dap_add_library(${PROJECT_NAME} ${DAP_LINK_MANAGER_SOURCES} HEADERS ${DAP_LINK_M
 # TODO Phase 8.1: Remove client dependency via abstraction layer (client interface)
 target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto dap_json_rpc dap_client)
 
-# Ensure link_manager builds after crypto module (which includes XKCP)
-add_dependencies(${PROJECT_NAME} dap_crypto)
-
-# Get XKCP include directories from crypto module's XKCP target
-get_target_property(XKCP_INCLUDES dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
-target_include_directories(${PROJECT_NAME} PUBLIC ${XKCP_INCLUDES})
-
 # All includes auto-propagate via linked modules above
 # Only add local includes
 target_include_directories(${PROJECT_NAME} PUBLIC include)

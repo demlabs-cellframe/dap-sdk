@@ -2265,13 +2265,14 @@ double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
         return (double)l_int_val;
     } else if (l_value->type == DAP_JSON_TYPE_STRING) {
         // Check for special string values: "Infinity", "-Infinity", "NaN"
+        // Use __builtin_* to avoid -ffast-math issues with INFINITY/NAN macros
         const char *l_str = s_materialize_string(a_json, l_value);
         if (strcmp(l_str, "Infinity") == 0) {
-            return INFINITY;
+            return __builtin_inf();
         } else if (strcmp(l_str, "-Infinity") == 0) {
-            return -INFINITY;
+            return -__builtin_inf();
         } else if (strcmp(l_str, "NaN") == 0) {
-            return NAN;
+            return __builtin_nan("");
         }
     }
     

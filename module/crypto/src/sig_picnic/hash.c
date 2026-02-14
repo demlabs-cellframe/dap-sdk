@@ -1,22 +1,33 @@
+/*! @file hash.c
+ *  @brief Hash implementation using native DAP Keccak.
+ *
+ *  This file is part of the reference implementation of the Picnic signature scheme.
+ *  See the accompanying documentation for complete details.
+ *
+ *  The code is provided under the MIT license, see LICENSE for
+ *  more details.
+ *  SPDX-License-Identifier: MIT
+ */
+
 #include "hash.h"
+#include <string.h>
 
 void HashUpdate(HashInstance* ctx, const uint8_t* data, size_t byteLen)
 {
-    HashReturn ret = Keccak_HashUpdate(ctx, data, byteLen * 8);
-
-    if (ret != KECCAK_SUCCESS) {
-        fprintf(stderr, "%s: Keccak_HashUpdate failed (returned %d)\n", __func__, ret);
-        assert(!"Keccak_HashUpdate failed");
-    }
+    dap_hash_keccak_sponge_absorb(&ctx->ctx, data, byteLen);
 }
 
 void HashInit(HashInstance* ctx, paramset_t* params, uint8_t hashPrefix)
 {
-    if (params->stateSizeBits == 128) {         /* L1 */
-        Keccak_HashInitialize_SHAKE128(ctx);
+    if (params->stateSizeBits == 128) {
+        /* L1 - SHAKE128 */
+        ctx->is_128 = 1;
+        dap_hash_keccak_sponge_init(&ctx->ctx, DAP_KECCAK_SHAKE128_RATE, DAP_KECCAK_SHAKE_SUFFIX);
     }
-    else {                                      /* L3, L5 */
-        Keccak_HashInitialize_SHAKE256(ctx);
+    else {
+        /* L3, L5 - SHAKE256 */
+        ctx->is_128 = 0;
+        dap_hash_keccak_sponge_init(&ctx->ctx, DAP_KECCAK_SHAKE256_RATE, DAP_KECCAK_SHAKE_SUFFIX);
     }
 
     if (hashPrefix != HASH_PREFIX_NONE) {
@@ -26,19 +37,20 @@ void HashInit(HashInstance* ctx, paramset_t* params, uint8_t hashPrefix)
 
 void HashFinal(HashInstance* ctx)
 {
-    HashReturn ret = Keccak_HashFinal(ctx, NULL);
-
-    if (ret != KECCAK_SUCCESS) {
-        fprintf(stderr, "%s: Keccak_HashFinal failed (returned %d)\n", __func__, ret);
-    }
+    dap_hash_keccak_sponge_finalize(&ctx->ctx);
 }
-
 
 void HashSqueeze(HashInstance* ctx, uint8_t* digest, size_t byteLen)
 {
-    HashReturn ret = Keccak_HashSqueeze(ctx, digest, byteLen * 8);
-
-    if (ret != KECCAK_SUCCESS) {
-        fprintf(stderr, "%s: Keccak_HashSqueeze failed (returned %d)\n", __func__, ret);
+    size_t l_rate = ctx->is_128 ? DAP_KECCAK_SHAKE128_RATE : DAP_KECCAK_SHAKE256_RATE;
+    
+    while (byteLen > 0) {
+        dap_hash_keccak_permute(&ctx->ctx.state);
+        
+        size_t l_to_copy = (byteLen < l_rate) ? byteLen : l_rate;
+        dap_hash_keccak_extract_bytes(&ctx->ctx.state, digest, l_to_copy);
+        
+        digest += l_to_copy;
+        byteLen -= l_to_copy;
     }
 }
