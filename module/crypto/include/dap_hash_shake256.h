@@ -76,14 +76,37 @@ DAP_STATIC_INLINE void dap_hash_shake256(uint8_t *a_output, size_t a_outlen,
  * @param a_state Keccak state (25 uint64_t)
  * @param a_input Input data
  * @param a_inlen Input length in bytes
+ * @note This function absorbs data and applies padding but does NOT permute.
+ *       The permutation is deferred to squeezeblocks, matching the standard
+ *       Keccak streaming API behavior where squeeze permutes before each block.
  */
 DAP_STATIC_INLINE void dap_hash_shake256_absorb(uint64_t *a_state, const uint8_t *a_input, size_t a_inlen)
 {
-    dap_hash_keccak_ctx_t l_ctx;
-    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHAKE256_RATE, DAP_KECCAK_SHAKE_SUFFIX);
-    dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
-    dap_hash_keccak_sponge_finalize(&l_ctx);
-    memcpy(a_state, l_ctx.state.lanes, DAP_KECCAK_STATE_BYTES);
+    // Zero state
+    memset(a_state, 0, DAP_KECCAK_STATE_BYTES);
+    
+    uint8_t *state_bytes = (uint8_t *)a_state;
+    
+    // Absorb full blocks
+    while (a_inlen >= DAP_KECCAK_SHAKE256_RATE) {
+        for (size_t i = 0; i < DAP_KECCAK_SHAKE256_RATE; i++) {
+            state_bytes[i] ^= a_input[i];
+        }
+        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);
+        a_input += DAP_KECCAK_SHAKE256_RATE;
+        a_inlen -= DAP_KECCAK_SHAKE256_RATE;
+    }
+    
+    // Absorb remaining bytes and apply padding
+    for (size_t i = 0; i < a_inlen; i++) {
+        state_bytes[i] ^= a_input[i];
+    }
+    
+    // Apply SHAKE256 domain separator (0x1F) and pad10*1 padding
+    state_bytes[a_inlen] ^= DAP_KECCAK_SHAKE_SUFFIX;
+    state_bytes[DAP_KECCAK_SHAKE256_RATE - 1] ^= 0x80;
+    
+    // NOTE: Do NOT permute here - squeezeblocks will do it
 }
 
 /**

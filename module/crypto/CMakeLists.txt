@@ -204,7 +204,7 @@ endif()
 enable_language(ASM)
 
 
-set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/keccak src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src/chipmunk src/hash/sha2-256 src include)
+set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/keccak src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src/sha3 src/chipmunk src/hash/sha2-256 src include)
 
 # XKCP removed - using native DAP Keccak implementation
 
@@ -244,7 +244,7 @@ message(STATUS "[dap_crypto] Output directory: ${KECCAK_SIMD_GEN_DIR}")
 # Set up environment for code generation
 set(CODEGEN_ENV
     "CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}"
-    "DAP_TPL_DIR=${CMAKE_SOURCE_DIR}/module/test/dap_tpl"
+    "DAP_TPL_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../test/dap_tpl"
 )
 
 # Run code generation at configure time

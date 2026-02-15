@@ -28,6 +28,45 @@
 #include "dap_hash_sha3.h"
 
 // =============================================================================
+// Legacy type definitions for backward compatibility with cellframe-sdk
+// =============================================================================
+
+#define DAP_HASH_FAST_SIZE          DAP_HASH_SHA3_256_SIZE
+#define DAP_CHAIN_HASH_FAST_SIZE    DAP_HASH_FAST_SIZE
+#define DAP_CHAIN_HASH_FAST_STR_LEN (DAP_HASH_FAST_SIZE * 2 + 2 /* heading 0x */)
+#define DAP_CHAIN_HASH_FAST_STR_SIZE (DAP_CHAIN_HASH_FAST_STR_LEN + 1 /*trailing zero*/)
+#define DAP_HASH_FAST_STR_SIZE DAP_CHAIN_HASH_FAST_STR_SIZE
+
+// Legacy types as aliases to new SHA3-256 types
+typedef dap_hash_sha3_256_t dap_chain_hash_fast_t;
+typedef dap_chain_hash_fast_t dap_hash_fast_t;
+typedef dap_hash_fast_t dap_hash_t;
+typedef dap_hash_sha3_256_str_t dap_hash_str_t;
+
+// Legacy function wrappers
+#define dap_hash_fast(data, size, hash_out) dap_hash_sha3_256(data, size, hash_out)
+#define dap_hash_fast_is_blank(hash) dap_hash_sha3_256_is_blank(hash)
+#define dap_hash_fast_compare(h1, h2) dap_hash_sha3_256_compare(h1, h2)
+#define dap_chain_hash_fast_is_blank(hash) dap_hash_sha3_256_is_blank(hash)
+#define dap_chain_hash_fast_compare(h1, h2) dap_hash_sha3_256_compare(h1, h2)
+#define dap_chain_hash_fast_to_str(hash, str, max) dap_hash_sha3_256_to_str(hash, str, max)
+#define dap_chain_hash_fast_to_str_new(hash) dap_hash_sha3_256_to_str_new(hash)
+#define dap_chain_hash_fast_to_str_static(hash) dap_hash_sha3_256_to_str_static(hash)
+#define dap_hash_fast_to_str(hash, str, max) dap_hash_sha3_256_to_str(hash, str, max)
+#define dap_hash_fast_to_str_new(hash) dap_hash_sha3_256_to_str_new(hash)
+#define dap_hash_fast_to_str_static(hash) dap_hash_sha3_256_to_str_static(hash)
+#define dap_get_data_hash_str(data, size) dap_hash_sha3_256_data_to_str(data, size)
+#define dap_chain_hash_fast_from_str(str, hash) dap_hash_sha3_256_from_str(str, hash)
+#define dap_hash_fast_from_str(str, hash) dap_hash_sha3_256_from_str(str, hash)
+#define dap_chain_hash_fast_from_hex_str(str, hash) dap_hash_sha3_256_from_hex_str(str, hash)
+#define dap_hash_fast_from_hex_str(str, hash) dap_hash_sha3_256_from_hex_str(str, hash)
+#define dap_hash_fast_str_new(data, size) dap_hash_sha3_256_str_new(data, size)
+#define dap_chain_hash_fast_to_str_do(hash, str) dap_hash_sha3_256_to_str_do(hash, str)
+#define dap_hash_fast_to_str_do(hash, str) dap_hash_sha3_256_to_str_do(hash, str)
+#define dap_chain_hash_fast_from_base58_str(str, hash) dap_hash_sha3_256_from_base58_str(str, hash)
+#define dap_hash_fast_from_base58_str(str, hash) dap_hash_sha3_256_from_base58_str(str, hash)
+
+// =============================================================================
 // Hash Dispatcher - Universal API for multiple hash algorithms
 // =============================================================================
 

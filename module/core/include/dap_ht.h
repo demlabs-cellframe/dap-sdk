@@ -436,6 +436,15 @@ static inline void* dap_ht_find_by_hashvalue_impl(dap_ht_table_t *tbl, const voi
         (ptrdiff_t)((char*)&((add)->hhname) - (char*)(add)))
 
 /**
+ * @brief Add item with explicit handle name and key pointer (for string keys)
+ * Use this when the key is a pointer to data (like char*), not a field containing the key
+ */
+#define dap_ht_add_keyptr_hh(hhname, head, keyptr, keylen, add) \
+    dap_ht_add_impl((void**)&(head), (add), &((add)->hhname), \
+        (keyptr), (unsigned)(keylen), \
+        (ptrdiff_t)((char*)&((add)->hhname) - (char*)(add)))
+
+/**
  * @brief Find item with explicit handle name
  */
 #define dap_ht_find_hh(hhname, head, keyptr, keylen, out) \

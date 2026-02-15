@@ -71,7 +71,7 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
             DAP_DELETE(ret);
             return NULL;
         }
-        dap_ht_add_by_hashvalue_hh(hh_str, s_cluster_mnemonims, mnemonim, strlen(a_mnemonim), dap_ht_hash_value(a_mnemonim, strlen(a_mnemonim)), ret);
+        dap_ht_add_keyptr_hh(hh_str, s_cluster_mnemonims, ret->mnemonim, strlen(ret->mnemonim), ret);
     }
     dap_ht_add_hh(hh, s_clusters, guuid, ret);
     pthread_rwlock_unlock(&s_clusters_rwlock);
