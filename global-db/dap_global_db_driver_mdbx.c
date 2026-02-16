@@ -1,4 +1,4 @@
-﻿/*
+/*
  * AUTHORS:
  * Ruslan R. (The BadAss SysMan) Laishev  <ruslan.laishev@demlabs.net>
  * DeM Labs Ltd.   https://demlabs.net
@@ -239,12 +239,18 @@ MDBX_val    l_key_iov, l_data_iov;
     if (MDBX_SUCCESS != (rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE))
          && (rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", rc, mdbx_strerror(rc));
-        if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) )
+        if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) ) {
+            DAP_DEL_Z(l_db_ctx);
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+        }
+        DAP_DEL_Z(l_db_ctx);
+        return NULL;
     }
 
-    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) )
+    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) ) {
+        DAP_DEL_Z(l_db_ctx);
         return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+    }
 
     return l_db_ctx;
 }
@@ -377,7 +383,9 @@ size_t     l_upper_limit_of_db_size = 16;
     dap_list_t *l_el, *l_tmp;
     DL_FOREACH_SAFE(l_slist, l_el, l_tmp) {
         l_data_iov.iov_base = l_el->data;
-        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
+        dap_db_ctx_t *l_db_ctx = s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
+        if (l_db_ctx)
+            DAP_DELETE(l_db_ctx);
         DL_DELETE(l_slist, l_el);
         DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
