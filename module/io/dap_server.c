@@ -241,7 +241,12 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     l_es->type = a_type;
     l_es->no_close = true;
     a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es);
-    return dap_worker_add_events_socket_auto(l_es) ? 0 : -1;
+    if (!dap_worker_add_events_socket_auto(l_es)) {
+        a_server->es_listeners = dap_list_remove(a_server->es_listeners, l_es);
+        dap_events_socket_delete_unsafe(l_es, false);
+        return -1;
+    }
+    return 0;
 }
 
 int dap_server_callbacks_set(dap_server_t* a_server, dap_events_socket_callbacks_t *a_server_cbs, dap_events_socket_callbacks_t *a_client_cbs) {
@@ -407,7 +412,13 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     l_es_new->addr_storage = *a_remote_addr;
     l_es_new->remote_port = strtol(l_port_str, NULL, 10);
     dap_strncpy(l_es_new->remote_addr_str, l_remote_addr_str, INET6_ADDRSTRLEN);
-    dap_worker_add_events_socket( dap_events_worker_get_auto(), l_es_new );
+    dap_worker_t *l_worker = dap_events_worker_get_auto();
+    if (!l_worker) {
+        log_it(L_WARNING, "No active worker for accepted socket %"DAP_FORMAT_SOCKET", closing", a_remote_socket);
+        dap_events_socket_delete_unsafe(l_es_new, false);
+        return;
+    }
+    dap_worker_add_events_socket(l_worker, l_es_new);
 }
 
 /**

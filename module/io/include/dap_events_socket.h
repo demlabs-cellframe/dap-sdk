@@ -408,11 +408,11 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 #ifdef DAP_EVENTS_CAPS_IOCP
 void dap_events_socket_set_readable_unsafe_ex       (dap_events_socket_t*, bool, dap_overlapped_t*);
 void dap_events_socket_set_writable_unsafe_ex       (dap_events_socket_t*, bool, size_t, dap_overlapped_t*);
-int dap_events_socket_queue_data_send               (dap_events_socket_t*, const void*, size_t);
+size_t dap_events_socket_queue_data_send            (dap_events_socket_t*, const void*, size_t);
+int dap_events_socket_queue_ptr_send                (dap_events_socket_t *a_es, void* a_arg);
 
 #define dap_events_socket_set_readable_unsafe(es, flag)         dap_events_socket_set_readable_unsafe_ex(es, flag, NULL)
 #define dap_events_socket_set_writable_unsafe(es, flag)         dap_events_socket_set_writable_unsafe_ex(es, flag, 0, NULL)
-#define dap_events_socket_queue_ptr_send(es, arg)               dap_events_socket_queue_data_send(es, arg, 0)
 #else
 void dap_events_socket_set_readable_unsafe(dap_events_socket_t *a_esocket, bool is_ready);
 void dap_events_socket_set_writable_unsafe(dap_events_socket_t *a_esocket, bool is_ready);

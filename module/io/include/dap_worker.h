@@ -32,6 +32,7 @@ typedef struct dap_timerfd dap_timerfd_t;
 typedef struct dap_proc_thread dap_proc_thread_t;
 typedef struct dap_worker {
     uint32_t  id;
+    // Cross-thread lifecycle link (worker <-> proc thread): access only via helpers below.
     dap_proc_thread_t *proc_queue_input;
 #ifndef DAP_EVENTS_CAPS_IOCP
     // worker control queues
@@ -48,6 +49,27 @@ typedef struct dap_worker {
 
     void * _inheritor;
 } dap_worker_t;
+
+DAP_STATIC_INLINE dap_proc_thread_t *dap_worker_proc_queue_input_load(const dap_worker_t *a_worker)
+{
+    if (!a_worker)
+        return NULL;
+    return __atomic_load_n(&a_worker->proc_queue_input, __ATOMIC_ACQUIRE);
+}
+
+DAP_STATIC_INLINE void dap_worker_proc_queue_input_store(dap_worker_t *a_worker, dap_proc_thread_t *a_proc_thread)
+{
+    if (!a_worker)
+        return;
+    __atomic_store_n(&a_worker->proc_queue_input, a_proc_thread, __ATOMIC_RELEASE);
+}
+
+DAP_STATIC_INLINE bool dap_worker_proc_queue_input_cas(dap_worker_t *a_worker, dap_proc_thread_t **a_expected, dap_proc_thread_t *a_desired)
+{
+    if (!a_worker || !a_expected)
+        return false;
+    return __atomic_compare_exchange_n(&a_worker->proc_queue_input, a_expected, a_desired, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
 
 // Message for reassigment
 typedef struct dap_worker_msg_reassign {

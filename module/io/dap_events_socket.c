@@ -206,22 +206,86 @@ static void s_es_reassign(dap_context_t *a_c, OVERLAPPED *a_ol) {
         dap_events_socket_reassign_between_workers_unsafe(a_es, l_new_worker);
 }
 
-int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size) {
+static inline void s_queue_entry_delete(queue_entry_t *a_entry)
+{
+    if (!a_entry)
+        return;
+    if (a_entry->size)
+        DAP_DELETE(a_entry->data);
+    DAP_ALFREE(a_entry);
+}
+
+static int s_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+{
+    dap_return_val_if_fail(a_es && a_es->buf_out, EINVAL);
+    dap_return_val_if_fail(!a_size || a_data, EINVAL);
+
     queue_entry_t *l_entry = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(queue_entry_t));
-    *l_entry = (queue_entry_t) {
+    if (!l_entry)
+        return ENOMEM;
+    void *l_data = (void *)a_data;
+    if (a_size) {
+        l_data = DAP_DUP_SIZE((const byte_t*)a_data, a_size);
+        if (!l_data)
+            return DAP_ALFREE(l_entry), ENOMEM;
+    }
+    *l_entry = (queue_entry_t){
         .size = a_size,
-        .data = a_size ? DAP_DUP_SIZE((char*)a_data, a_size) : (void*)a_data
+        .data = l_data
     };
+
     if (g_debug_reactor) {
         if (a_size)
             log_it(L_DEBUG, "Enqueue %zu bytes into "DAP_FORMAT_ESOCKET_UUID, a_size, a_es->uuid);
         else
             log_it(L_DEBUG, "Enqueue ptr %p into "DAP_FORMAT_ESOCKET_UUID, a_data, a_es->uuid);
     }
-    return InterlockedPushEntrySList((PSLIST_HEADER)a_es->buf_out, &(l_entry->entry))
-        ? a_size : PostQueuedCompletionStatus(a_es->context->iocp, a_size, (ULONG_PTR)a_es, NULL)
-            ? a_size : ( DAP_ALFREE(l_entry), log_it(L_ERROR, "Enqueue into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %lu",
-                                                              a_es->uuid, (unsigned long)GetLastError()), 0 );
+    if (InterlockedPushEntrySList((PSLIST_HEADER)a_es->buf_out, &(l_entry->entry)))
+        return 0;
+
+    if (!a_es->context) {
+        log_it(L_ERROR, "Queue "DAP_FORMAT_ESOCKET_UUID" has no context", a_es->uuid);
+        PSLIST_ENTRY l_popped = InterlockedPopEntrySList((PSLIST_HEADER)a_es->buf_out);
+        if ((queue_entry_t *)l_popped == l_entry)
+            s_queue_entry_delete(l_entry);
+        else if (l_popped) {
+            InterlockedPushEntrySList((PSLIST_HEADER)a_es->buf_out, l_popped);
+            log_it(L_WARNING, "Queue "DAP_FORMAT_ESOCKET_UUID" rollback race detected, left pending entry in queue", a_es->uuid);
+        }
+        return EINVAL;
+    }
+
+    DWORD l_iocp_bytes = a_size > UINT32_MAX ? UINT32_MAX : (DWORD)a_size;
+    if (PostQueuedCompletionStatus(a_es->context->iocp, l_iocp_bytes, (ULONG_PTR)a_es, NULL))
+        return 0;
+
+    int l_error = (int)GetLastError();
+    PSLIST_ENTRY l_popped = InterlockedPopEntrySList((PSLIST_HEADER)a_es->buf_out);
+    if ((queue_entry_t *)l_popped == l_entry)
+        s_queue_entry_delete(l_entry);
+    else if (l_popped) {
+        InterlockedPushEntrySList((PSLIST_HEADER)a_es->buf_out, l_popped);
+        log_it(L_WARNING, "Queue "DAP_FORMAT_ESOCKET_UUID" rollback race detected, left pending entry in queue", a_es->uuid);
+    }
+    return l_error;
+}
+
+size_t dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+{
+    int l_ret = s_queue_data_send(a_es, a_data, a_size);
+    if (l_ret)
+        return log_it(L_ERROR, "Enqueue into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %d",
+                      a_es ? a_es->uuid : (dap_events_socket_uuid_t)0, l_ret), 0;
+    return a_size;
+}
+
+int dap_events_socket_queue_ptr_send(dap_events_socket_t *a_es, void *a_arg)
+{
+    dap_return_val_if_fail(a_es && a_arg, EINVAL);
+    int l_ret = s_queue_data_send(a_es, a_arg, 0);
+    if (l_ret)
+        log_it(L_ERROR, "Enqueue ptr into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %d", a_es->uuid, l_ret);
+    return l_ret;
 }
 #endif
 

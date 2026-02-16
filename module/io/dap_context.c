@@ -73,6 +73,7 @@ struct dap_context_msg_run {
     int cpu_id;
     int flags;
     void *callback_arg;
+    bool started_wait_done;
 };
 
 static _Thread_local dap_context_t *s_context = NULL;
@@ -141,6 +142,8 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
 {
     struct dap_context_msg_run * l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct dap_context_msg_run, ENOMEM);
     int l_ret;
+    bool l_thread_created = false;
+    pthread_t l_thread_id = 0;
 
     // Prefill message structure for new context's thread
     l_msg->context = a_context;
@@ -171,6 +174,10 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         pthread_mutex_lock(&a_context->started_mutex);
 
         l_ret = pthread_create(&a_context->thread_id, NULL, s_context_thread, l_msg);
+        if (l_ret == 0) {
+            l_thread_created = true;
+            l_thread_id = a_context->thread_id;
+        }
 
         if(l_ret == 0){ // If everything is good we're waiting for DAP_CONTEXT_WAIT_FOR_STARTED_TIME seconds
             while (!a_context->started && !l_ret)
@@ -179,13 +186,22 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
                 log_it(L_CRITICAL, "Timeout %d seconds is out: context #%u thread don't respond", DAP_CONTEXT_WAIT_FOR_STARTED_TIME, a_context->id);
             } else if (l_ret != 0){ // Another error
                 log_it(L_CRITICAL, "Can't wait on condition: %d error code", l_ret);
-            } else // All is good
+            } else { // All is good
                 log_it(L_NOTICE, "Context %u started", a_context->id);
+                if ((a_flags & DAP_CONTEXT_FLAG_EXIT_IF_ERROR) && a_context->signal_exit)
+                    l_ret = ECANCELED;
+            }
         }else{ // Thread haven't started
             log_it(L_ERROR,"Can't create new thread for context %u", a_context->id );
             DAP_DELETE(l_msg);
         }
+        if (l_thread_created) {
+            l_msg->started_wait_done = true;
+            pthread_cond_broadcast(&a_context->started_cond);
+        }
         pthread_mutex_unlock(&a_context->started_mutex);
+        if ((a_flags & DAP_CONTEXT_FLAG_EXIT_IF_ERROR) && l_ret == ECANCELED && l_thread_created)
+            pthread_join(l_thread_id, NULL);
     }else{ // Here we wait for nothing, just run it
         l_ret = pthread_create( &a_context->thread_id , NULL, s_context_thread, l_msg);
         if(l_ret != 0){ // Check for error, if present lets cleanup the memory for l_msg
@@ -306,17 +322,19 @@ static void *s_context_thread(void *a_arg)
         pthread_cond_broadcast(&l_context->started_cond);
         pthread_mutex_unlock(&l_context->started_mutex);
     }
-    if (l_context->signal_exit)
+    if (l_context->signal_exit && !(l_msg->flags & DAP_CONTEXT_FLAG_EXIT_IF_ERROR))
         return NULL;
     // Initialization success
-    switch (l_context->type) {
-    case DAP_CONTEXT_TYPE_WORKER:
-        dap_worker_thread_loop(l_context);
-        break;
-    case DAP_CONTEXT_TYPE_PROC_THREAD:
-        dap_proc_thread_loop(l_context);
-    default:
-        break;
+    if (!l_context->signal_exit) {
+        switch (l_context->type) {
+        case DAP_CONTEXT_TYPE_WORKER:
+            dap_worker_thread_loop(l_context);
+            break;
+        case DAP_CONTEXT_TYPE_PROC_THREAD:
+            dap_proc_thread_loop(l_context);
+        default:
+            break;
+        }
     }
     // Stopped callback execution
     if (l_msg->callback_stopped)
@@ -325,6 +343,13 @@ static void *s_context_thread(void *a_arg)
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
 
     // Free memory. Because nobody expected to work with context outside itself it have to be safe
+    if (l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED) {
+        // Synchronize with dap_context_run() so cond/mutex are destroyed only after waiter completes startup checks.
+        pthread_mutex_lock(&l_context->started_mutex);
+        while (!l_msg->started_wait_done)
+            pthread_cond_wait(&l_context->started_cond, &l_context->started_mutex);
+        pthread_mutex_unlock(&l_context->started_mutex);
+    }
     pthread_cond_destroy(&l_context->started_cond);
     pthread_mutex_destroy(&l_context->started_mutex);
     DAP_DELETE(l_context);

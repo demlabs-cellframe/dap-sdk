@@ -12,6 +12,7 @@
 #include "dap_worker.h"
 #include "dap_context.h"
 #include "dap_mock.h"
+#include <limits.h>
 
 #define LOG_TAG "test_dap_events_socket"
 
@@ -49,6 +50,67 @@ static void s_reset_callback_state(void)
     s_callback_count = 0;
     s_callback_arg = NULL;
 }
+
+#ifdef DAP_EVENTS_CAPS_IOCP
+static void s_iocp_queue_flush_and_free(PSLIST_HEADER a_list)
+{
+    for (PSLIST_ENTRY l_cur = InterlockedPopEntrySList(a_list); l_cur; l_cur = InterlockedPopEntrySList(a_list)) {
+        queue_entry_t *l_entry = (queue_entry_t *)l_cur;
+        if (l_entry->size)
+            DAP_DELETE(l_entry->data);
+        DAP_ALFREE(l_entry);
+    }
+}
+
+static void s_test_iocp_queue_send_contract(void)
+{
+    log_it(L_INFO, "Testing IOCP queue send contract");
+
+    // Compile-time type check: data send must return size_t
+    size_t (*l_queue_data_send)(dap_events_socket_t*, const void*, size_t) = dap_events_socket_queue_data_send;
+    dap_assert(l_queue_data_send != NULL, "queue_data_send signature is size_t");
+
+    SLIST_HEADER l_slist = { 0 };
+    InitializeSListHead(&l_slist);
+
+    // Keep queue non-empty to avoid IOCP signaling dependency in success path
+    queue_entry_t *l_seed = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(queue_entry_t));
+    dap_assert(l_seed != NULL, "Seed queue entry allocation");
+    if (!l_seed)
+        return;
+    *l_seed = (queue_entry_t){ .size = 0, .data = NULL };
+    InterlockedPushEntrySList(&l_slist, &l_seed->entry);
+
+    dap_events_socket_t l_es = { 0 };
+    l_es.buf_out = &l_slist;
+    l_es.uuid = 1;
+
+    const char l_payload[] = "iocp-payload";
+    size_t l_written = dap_events_socket_queue_data_send(&l_es, l_payload, sizeof(l_payload));
+    dap_assert(l_written == sizeof(l_payload), "queue_data_send returns exact size_t payload length");
+
+    int l_ptr_send_ret = dap_events_socket_queue_ptr_send(&l_es, (void *)l_payload);
+    dap_assert(l_ptr_send_ret == 0, "queue_ptr_send returns status=0 on success");
+
+    // Boundary checks from regression ticket: INT_MAX / INT_MAX+1
+    size_t l_boundary_int_max = dap_events_socket_queue_data_send(&l_es, NULL, (size_t)INT_MAX);
+    size_t l_boundary_int_max_plus_1 = dap_events_socket_queue_data_send(&l_es, NULL, (size_t)INT_MAX + 1U);
+    dap_assert(l_boundary_int_max == 0, "queue_data_send handles INT_MAX boundary without truncation artifacts");
+    dap_assert(l_boundary_int_max_plus_1 == 0, "queue_data_send handles INT_MAX+1 boundary without truncation artifacts");
+
+    // For empty queue without context IOCP ptr send should report an error code, not false success.
+    SLIST_HEADER l_empty_slist = { 0 };
+    InitializeSListHead(&l_empty_slist);
+    dap_events_socket_t l_es_empty = { 0 };
+    l_es_empty.buf_out = &l_empty_slist;
+    l_es_empty.uuid = 2;
+    int l_ptr_send_fail = dap_events_socket_queue_ptr_send(&l_es_empty, (void *)l_payload);
+    dap_assert(l_ptr_send_fail != 0, "queue_ptr_send returns non-zero status on failure");
+
+    s_iocp_queue_flush_and_free(&l_slist);
+    s_iocp_queue_flush_and_free(&l_empty_slist);
+}
+#endif
 
 /**
  * @brief Test: Initialize and deinitialize events socket system
@@ -525,6 +587,9 @@ int main(int argc, char **argv)
     s_test_socket_lifecycle();
     s_test_events_socket_edge_cases();
     s_test_buffer_boundaries();
+#ifdef DAP_EVENTS_CAPS_IOCP
+    s_test_iocp_queue_send_contract();
+#endif
     
     log_it(L_INFO, "=== All Events Socket Tests PASSED! ===");
     

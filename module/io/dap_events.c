@@ -109,6 +109,7 @@ static atomic_int_fast32_t  s_workers_init = 0;
 static uint32_t s_threads_count = 1;
 static pthread_t *s_threads_id = NULL;
 static dap_worker_t **s_workers = NULL;
+static void s_events_stop_all_unsafe(void);
 
 /**
  * @brief
@@ -292,14 +293,31 @@ err:
     return -1;
 }
 
+static void s_events_stop_all_unsafe(void)
+{
+    if (!s_workers)
+        return;
+
+    for (uint32_t i = 0; i < s_threads_count; i++) {
+        if (!s_workers[i] || !s_workers[i]->context || !s_workers[i]->context->event_exit)
+            continue;
+        dap_events_socket_event_signal(s_workers[i]->context->event_exit, 1);
+    }
+}
+
 /**
  * @brief sa_server_deinit Deinit server module
  */
 void dap_events_deinit( )
 {
+    if (s_threads_id)
+        s_events_stop_all_unsafe();
+
     dap_proc_thread_deinit();
+    (void)dap_events_wait();
     dap_events_socket_deinit();
     dap_worker_deinit();
+    dap_context_deinit();
 #ifdef DAP_OS_WINDOWS
     WSACleanup();
 #endif
@@ -393,21 +411,24 @@ pthread_t       l_tid;
 
 #endif
 
-    // Check if workers are properly initialized before waiting
-    if (!s_workers_init || !s_workers) {
-        log_it(L_WARNING, "dap_events_wait(): Workers not initialized, skipping wait");
+    if (!s_workers && !s_threads_id) {
+        s_workers_init = 0;
         return 0;
     }
 
-    if (!s_threads_id) {
-        log_it(L_WARNING, "dap_events_wait(): Worker threads have not been started; nothing to join");
-    } else {
+    if (s_threads_id) {
         for( uint32_t i = 0; i < s_threads_count; i++ ) {
             pthread_join(s_threads_id[i] , NULL );
+            if (s_workers)
+                DAP_DEL_Z(s_workers[i]);
         }
         DAP_DEL_Z(s_threads_id);
         s_threads_id = NULL;
+    } else if (s_workers) {
+        for (uint32_t i = 0; i < s_threads_count; i++)
+            DAP_DEL_Z(s_workers[i]);
     }
+
     // Mark as stopped and free workers after threads are joined
     s_workers_init = 0;
     DAP_DEL_Z(s_workers);
@@ -431,11 +452,7 @@ void dap_events_stop_all( )
         return;
     }
 
-    for( uint32_t i = 0; i < s_threads_count; i++ ) {
-        if (!s_workers[i] || !s_workers[i]->context || !s_workers[i]->context->event_exit)
-            continue;
-        dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
-    }
+    s_events_stop_all_unsafe();
 }
 
 
@@ -444,17 +461,27 @@ void dap_events_stop_all( )
  * @return
  */
 uint32_t dap_events_worker_get_index_min() {
-    uint32_t min = 0;
+    uint32_t min = (uint32_t)-1;
 
     if (!s_workers_init) {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
-        return -1;
+        return (uint32_t)-1;
+    }
+    if (!s_workers || !s_threads_count) {
+        log_it(L_WARNING, "Worker pool is not ready: workers array is %s, threads count=%u",
+               s_workers ? "set" : "NULL", s_threads_count);
+        return (uint32_t)-1;
     }
     for(uint32_t i = 0; i < s_threads_count; i++) {
-        if (s_workers[min]->context->event_sockets_count > s_workers[i]->context->event_sockets_count)
+        if (!s_workers[i] || !s_workers[i]->context)
+            continue;
+        if (min == (uint32_t)-1 || s_workers[min]->context->event_sockets_count > s_workers[i]->context->event_sockets_count)
             min = i;
     }
-
+    if (min == (uint32_t)-1) {
+        log_it(L_WARNING, "No active workers available yet, call dap_events_start() before auto-worker APIs");
+        return (uint32_t)-1;
+    }
     return min;
 }
 
@@ -473,8 +500,16 @@ dap_worker_t *dap_events_worker_get_auto( )
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         return NULL;
     }
-
-    return s_workers[dap_events_worker_get_index_min()];
+    uint32_t l_index = dap_events_worker_get_index_min();
+    if (l_index == (uint32_t)-1 || l_index >= s_threads_count) {
+        log_it(L_WARNING, "Auto worker selection failed: worker pool is not ready");
+        return NULL;
+    }
+    if (!s_workers || !s_workers[l_index] || !s_workers[l_index]->context) {
+        log_it(L_WARNING, "Auto worker selection failed: worker #%u is not initialized", l_index);
+        return NULL;
+    }
+    return s_workers[l_index];
 }
 
 /**
@@ -488,13 +523,20 @@ dap_worker_t * dap_events_worker_get(uint8_t a_index)
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         return NULL;
     }
+    if (!s_workers) {
+        log_it(L_WARNING, "dap_events_worker_get(): workers array is NULL");
+        return NULL;
+    }
 
     if (a_index >= s_threads_count) {
         log_it(L_ERROR, "dap_events_worker_get(): Requested worker index %u >= threads_count %u", 
                (uint32_t)a_index, s_threads_count);
         return NULL;
     }
-
+    if (!s_workers[a_index] || !s_workers[a_index]->context) {
+        log_it(L_WARNING, "dap_events_worker_get(): Worker #%u is not initialized", (uint32_t)a_index);
+        return NULL;
+    }
     return s_workers[a_index];
 }
 
@@ -503,10 +545,20 @@ dap_worker_t * dap_events_worker_get(uint8_t a_index)
  */
 void dap_worker_print_all( )
 {
-    if ( !s_workers_init )
+    if ( !s_workers_init ) {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+        return;
+    }
+    if (!s_workers) {
+        log_it(L_WARNING, "dap_worker_print_all(): workers array is NULL");
+        return;
+    }
 
     for( uint32_t i = 0; i < s_threads_count; i ++ ) {
+        if (!s_workers[i] || !s_workers[i]->context) {
+            log_it(L_INFO, "Worker: %u, state: not initialized", i);
+            continue;
+        }
         log_it( L_INFO, "Worker: %d, count open connections: %d", s_workers[i]->id, s_workers[i]->context->event_sockets_count );
     }
 }

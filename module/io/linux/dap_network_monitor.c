@@ -112,11 +112,17 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
         return log_it(L_ERROR, "socket(AF_NETLINK) error %d: %s", errno, dap_strerror(errno)), -1;
     struct sockaddr_nl storage =
         { .nl_family = AF_NETLINK, .nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV4_ROUTE, .nl_pid = pthread_self() << 16 | getpid() };
-    if ( bind(fd, (struct sockaddr*)&storage, sizeof(storage)) < 0 )
+    if ( bind(fd, (struct sockaddr*)&storage, sizeof(storage)) < 0 ) {
+        close(fd);
         return log_it(L_ERROR, "bind() on netlink socket error %d: %s", errno, dap_strerror(errno)), -2;
+    }
 
     dap_events_socket_callbacks_t l_cb = { .read_callback = s_callback_read, .write_callback = s_callback_write };
     dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(fd, &l_cb);
+    if (!l_es) {
+        close(fd);
+        return log_it(L_ERROR, "Can't create network monitor event socket"), -4;
+    }
     l_es->type = DESCRIPTOR_TYPE_SOCKET_RAW;
     memcpy(&l_es->addr_storage, &storage, sizeof(storage));
     l_es->addr_size = sizeof(storage);
@@ -125,6 +131,10 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
     es_uuid = l_es->uuid;
     s_notify_cb = cb;
     es_worker = dap_events_worker_get_auto();
+    if (!es_worker) {
+        dap_events_socket_delete_unsafe(l_es, false);
+        return log_it(L_WARNING, "Network monitor requires started workers, call dap_events_start() first"), -5;
+    }
     dap_worker_add_events_socket( es_worker, l_es );
     log_it(L_INFO, "Network monitor initialized, es uid "DAP_FORMAT_ESOCKET_UUID", worker #%u", es_uuid, es_worker->id);
     return 0;

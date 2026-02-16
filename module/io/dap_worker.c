@@ -187,12 +187,49 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
 int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 {
     dap_return_val_if_fail(a_context && a_arg, -1);
-    //TODO add deinit code for queues and others
-    dap_context_remove(a_context->event_exit);
-    dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
-
     dap_worker_t *l_worker = a_arg;
     assert(l_worker);
+
+    // Final context drain: remove and delete every remaining esocket that belongs to this worker context.
+    while (a_context->esockets) {
+        dap_events_socket_t *l_es = a_context->esockets;
+        dap_events_socket_remove_and_delete_unsafe(l_es, false);
+    }
+    a_context->event_sockets_count = 0;
+
+#if defined(DAP_EVENTS_CAPS_POLL)
+    DAP_DEL_Z(a_context->poll);
+    DAP_DEL_Z(a_context->poll_esocket);
+    a_context->poll_count = 0;
+    a_context->poll_count_max = 0;
+    a_context->poll_compress = false;
+#elif defined(DAP_EVENTS_CAPS_EPOLL)
+    if (a_context->epoll_fd != -1) {
+        close(a_context->epoll_fd);
+        a_context->epoll_fd = -1;
+    }
+#elif defined(DAP_EVENTS_CAPS_KQUEUE)
+    if (a_context->kqueue_fd != -1) {
+        close(a_context->kqueue_fd);
+        a_context->kqueue_fd = -1;
+    }
+    DAP_DEL_Z(a_context->kqueue_events_selected);
+    DAP_DEL_Z(a_context->kqueue_events);
+    a_context->kqueue_events_count = 0;
+    a_context->kqueue_events_count_max = 0;
+    a_context->kqueue_events_selected_count_max = 0;
+#endif
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    l_worker->queue_es_new = NULL;
+    l_worker->queue_es_delete = NULL;
+    l_worker->queue_es_reassign = NULL;
+    l_worker->queue_es_io = NULL;
+#endif
+    l_worker->queue_callback = NULL;
+    l_worker->timer_check_activity = NULL;
+    dap_worker_proc_queue_input_store(l_worker, NULL);
+
     log_it(L_NOTICE,"Exiting thread #%u", l_worker->id);
     return 0;
 }
@@ -531,7 +568,10 @@ dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t *a_es)
 {
     dap_return_val_if_fail(a_es, NULL);
     dap_worker_t *l_worker = dap_events_worker_get_auto();
-    return dap_worker_add_events_socket(l_worker, a_es), l_worker;
+    if (!l_worker)
+        return NULL;
+    dap_worker_add_events_socket(l_worker, a_es);
+    return l_worker;
 }
 
 /**
