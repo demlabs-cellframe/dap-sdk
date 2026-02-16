@@ -157,7 +157,7 @@ case "${ARCH}" in
             "USE_AVX512_MASK=1"
         ;;
     
-    arm*|aarch64|ARM*)
+    arm64|aarch64|armv8*)
         echo ""
         echo "=== Generating ARM SIMD implementations ==="
         
@@ -238,6 +238,37 @@ case "${ARCH}" in
         generate_arch_helpers \
             "${OUTPUT_DIR}/dap_json_stage1_sve2_arch.h" \
             "${STAGE1_DIR}/arch/arm/movemask_sve.tpl"
+        ;;
+    
+    arm|ARM|armv7*)
+        echo ""
+        echo "=== Generating ARM32 SIMD implementations ==="
+        
+        echo "Generating ARM32 NEON..."
+        generate_arch \
+            "${OUTPUT_DIR}/dap_json_stage1_neon.c" \
+            "${OUTPUT_DIR}/dap_json_stage1_neon.h" \
+            "ARCH_NAME=NEON" \
+            "ARCH_LOWER=neon" \
+            "ARCH_INCLUDES=#include <arm_neon.h>  // ARM NEON" \
+            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)16)" \
+            "VECTOR_TYPE=uint8x16_t" \
+            "MASK_TYPE=uint16_t" \
+            "LOADU=vld1q_u8" \
+            "SET1_EPI8=vdupq_n_u8" \
+            "CMPEQ_EPI8=vceqq_u8" \
+            "OR=vorrq_u8" \
+            "MOVEMASK_EPI8=dap_neon_movemask_u8" \
+            "PERF_TARGET=1+ GB/s (single-core)" \
+            "TARGET_ATTR=" \
+            "USE_NEON_HELPER=1"
+        
+        # Generate ARM-specific arch helpers header (movemask, etc)
+        generate_arch_helpers \
+            "${OUTPUT_DIR}/dap_json_stage1_neon_arch.h" \
+            "${STAGE1_DIR}/arch/arm/movemask_neon.tpl"
+        
+        echo "Note: SVE/SVE2 require ARM64, skipped on ARM32"
         ;;
     
     *)
