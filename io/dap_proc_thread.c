@@ -266,7 +266,10 @@ struct timer_arg {
 static bool s_thread_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
-    return l_arg->callback(l_arg->callback_arg), false;
+    l_arg->callback(l_arg->callback_arg);
+    if (l_arg->oneshot)
+        DAP_DELETE(l_arg);
+    return false;
 }
 
 static bool s_timer_callback(void *a_arg)

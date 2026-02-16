@@ -23,8 +23,7 @@
  */
 bool dap_isstralnum(const char *c)
 {
-    if (!c)
-        return false;
+    dap_ret_val_if_any(false, !c);
     
     size_t str_len = strlen(c);
 
@@ -386,11 +385,10 @@ DAP_PRINTF_ATTR(1,2) char *dap_strdup_printf(const char *a_format, ...)
  **/
 char* dap_stpcpy(char *a_dest, const char *a_src)
 {
+    dap_ret_val_if_any(NULL, !a_dest, !a_src);
     char *l_d = a_dest;
     const char *l_s = a_src;
 
-    dap_return_val_if_fail(a_dest != NULL, NULL);
-    dap_return_val_if_fail(a_src != NULL, NULL);
     do
         *l_d++ = *l_s;
     while(*l_s++ != '\0');
@@ -413,16 +411,9 @@ char* dap_stpcpy(char *a_dest, const char *a_src)
  **/
 char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit)
 {
-    dap_return_val_if_fail(a_dst && a_src, NULL);
-    do {
-        if (a_limit--)
-            *a_dst++ = *a_src;
-        else {
-            *a_dst++ = '\0';
-            break;
-        }
-    } while (*a_src++ != '\0');
-    return --a_dst;
+    dap_ret_val_if_any(NULL, !a_dst, !a_src);
+    for ( ; (*a_dst = (a_limit-- ? *a_src : '\0')); ++a_src, ++a_dst );
+    return a_dst;
 }
 
 /**
@@ -799,6 +790,7 @@ char** dap_strdupv(const char **a_str_array)
 
 void dap_strfreev(char **a_str_array)
 {
+    dap_ret_if_any( !a_str_array);
     if(a_str_array)
     {
         int l_i;
