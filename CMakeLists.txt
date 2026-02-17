@@ -237,7 +237,6 @@ if(ENABLE_CPPCHECK_ANALYSIS)
                 ${CMAKE_SOURCE_DIR}/avrestream
                 ${CMAKE_SOURCE_DIR}/core
                 ${CMAKE_SOURCE_DIR}/crypto
-                ${CMAKE_SOURCE_DIR}/examples
                 ${CMAKE_SOURCE_DIR}/global-db
                 ${CMAKE_SOURCE_DIR}/io
                 ${CMAKE_SOURCE_DIR}/net
