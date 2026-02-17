@@ -16,6 +16,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdatomic.h>
+#include <pthread.h>
 #include "dap_common.h"
 #include "dap_mmap.h"
 #include "dap_arena.h"
@@ -39,6 +41,9 @@ extern "C" {
 #define DAP_GLOBAL_DB_PAGE_LEAF           0x0002
 #define DAP_GLOBAL_DB_PAGE_OVERFLOW       0x0004
 #define DAP_GLOBAL_DB_PAGE_ROOT           0x0008
+
+// MVCC constants
+#define DAP_BTREE_MAX_SNAPSHOTS           64  // Maximum concurrent reader snapshots
 
 // ============================================================================
 // Types
@@ -123,6 +128,19 @@ typedef struct dap_global_db_btree_page {
 } dap_global_db_btree_page_t;
 
 /**
+ * @brief Deferred free batch — pages freed during a COW write transaction.
+ *
+ * Pages cannot be immediately recycled because active reader snapshots may
+ * still reference them. They are reclaimed when min(active_snapshot_txn) > txn_id.
+ */
+typedef struct dap_btree_deferred_batch {
+    uint64_t txn_id;       // Transaction that freed these pages
+    uint64_t *page_ids;    // Array of freed page IDs
+    size_t count;          // Current number of entries
+    size_t capacity;       // Allocated capacity
+} dap_btree_deferred_batch_t;
+
+/**
  * @brief B-tree handle
  */
 #define DAP_GLOBAL_DB_BTREE_PATH_MAX  16  // Max tree depth for path cache
@@ -136,15 +154,36 @@ typedef struct dap_global_db_btree {
     // Cached path from root to hot_leaf parent — LMDB cursor-style optimization.
     // Eliminates full root-to-leaf traversal when hot_leaf fills up during
     // sequential inserts. Updated when hot_leaf is promoted.
-    struct {
+    struct dap_btree_path_entry {
         uint64_t page_id;       // Branch page ID at this level
         int child_index;        // Index of child in this branch page
     } hot_path[DAP_GLOBAL_DB_BTREE_PATH_MAX];
     int hot_path_depth;                  // Number of entries in hot_path (0 = invalid)
     bool read_only;                      // Read-only mode
-    uint64_t txn_id;                     // Current transaction ID
     dap_mmap_t *mmap;                    // Memory-mapped file handle (NULL = legacy I/O)
     dap_arena_t *arena;                  // Bump allocator for temporary page allocations
+    pthread_rwlock_t lock;               // Reader-writer lock for thread safety (Phase 3 compat)
+
+    // ---- MVCC state ----
+    // Enables lock-free reads via snapshot isolation. Writers use exclusive
+    // write_mutex. Readers atomically read mvcc_root and work on a frozen
+    // snapshot of the tree without acquiring any lock.
+    _Atomic(uint64_t) mvcc_root;         // Latest committed root page ID
+    _Atomic(uint64_t) mvcc_txn;          // Latest committed transaction ID
+    _Atomic(uint64_t) mvcc_count;        // Latest committed items_count
+    _Atomic(uint32_t) mvcc_height;       // Latest committed tree_height
+    pthread_mutex_t write_mutex;          // Exclusive writer access
+
+    // Snapshot tracking — each slot holds the txn_id of an active reader (0 = unused).
+    // Readers CAS from 0 to their txn_id on acquire, store 0 on release.
+    _Atomic(uint64_t) snapshot_txns[DAP_BTREE_MAX_SNAPSHOTS];
+
+    // Deferred free pages — COW-freed pages awaiting epoch-based reclamation.
+    // Each write transaction appends a batch. Batches are recycled when
+    // min(active snapshot_txns) > batch.txn_id.
+    dap_btree_deferred_batch_t *deferred_batches;
+    size_t deferred_batch_count;
+    size_t deferred_batch_capacity;
 } dap_global_db_btree_t;
 
 /**
@@ -156,6 +195,10 @@ typedef struct dap_global_db_btree_cursor {
     uint16_t current_index;              // Current entry index in page
     bool valid;                          // Cursor is valid
     bool at_end;                         // Cursor at end (no more entries)
+    // MVCC snapshot state
+    uint64_t snapshot_root;              // Root page at time of cursor creation
+    uint64_t snapshot_txn;               // Txn ID at time of cursor creation
+    int snapshot_slot;                   // Snapshot slot index (-1 = not using MVCC)
 } dap_global_db_btree_cursor_t;
 
 /**

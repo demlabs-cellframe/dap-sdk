@@ -55,7 +55,7 @@ set(SOURCES
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 # Use the final shared library — dap_global_db pulls in networking, cluster, stream, etc.
-target_link_libraries(${PROJECT_NAME} dap_sdk)
+target_link_libraries(${PROJECT_NAME} dap_sdk pthread)
 
 # Add competitors include/lib paths if they exist
 if(IS_DIRECTORY "${COMPETITORS_INSTALL_DIR}")

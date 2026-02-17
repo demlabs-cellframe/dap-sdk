@@ -34,6 +34,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -79,15 +80,17 @@
 #define DEFAULT_KEY_SIZE        16
 #define DEFAULT_VALUE_SIZE      256
 #define DEFAULT_BATCH_SIZE      1000
+#define DEFAULT_NUM_THREADS     4
 
 typedef struct benchmark_config {
     size_t num_records;
     size_t key_size;
     size_t value_size;
     size_t batch_size;
+    size_t num_threads;
     const char *db_path;
     bool sync_writes;
-    bool verify;            // Enable data verification after populate
+    bool verify;
 } benchmark_config_t;
 
 // ============================================================================
@@ -448,6 +451,384 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
     result.ops_per_sec = read_count / elapsed;
     result.mb_per_sec = (read_count * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
     
+    return result;
+}
+
+// ============================================================================
+// DAP B-tree multi-threaded benchmarks
+// ============================================================================
+
+typedef struct mt_thread_arg {
+    dap_global_db_btree_t *btree;
+    const benchmark_config_t *cfg;
+    size_t start_index;
+    size_t count;
+    size_t ops_completed;
+    char *db_path;
+    const uint64_t *indices;
+} mt_thread_arg_t;
+
+static void *s_mt_reader_thread(void *a_arg)
+{
+    mt_thread_arg_t *arg = (mt_thread_arg_t *)a_arg;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        s_generate_key(key, arg->cfg->key_size, i);
+        dap_global_db_btree_key_t bk = {
+            .bets = *(uint64_t *)key,
+            .becrc = arg->cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
+        };
+        dap_global_db_btree_ref_t vr;
+        if (dap_global_db_btree_get_ref(arg->btree, &bk, NULL, &vr, NULL, NULL) == 0)
+            arg->ops_completed++;
+    }
+
+    DAP_DELETE(key);
+    return NULL;
+}
+
+static void *s_mt_random_reader_thread(void *a_arg)
+{
+    mt_thread_arg_t *arg = (mt_thread_arg_t *)a_arg;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        s_generate_key(key, arg->cfg->key_size, arg->indices[i]);
+        dap_global_db_btree_key_t bk = {
+            .bets = *(uint64_t *)key,
+            .becrc = arg->cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
+        };
+        dap_global_db_btree_ref_t vr;
+        if (dap_global_db_btree_get_ref(arg->btree, &bk, NULL, &vr, NULL, NULL) == 0)
+            arg->ops_completed++;
+    }
+
+    DAP_DELETE(key);
+    return NULL;
+}
+
+static void *s_mt_writer_thread(void *a_arg)
+{
+    mt_thread_arg_t *arg = (mt_thread_arg_t *)a_arg;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, arg->cfg->value_size);
+
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        s_generate_key(key, arg->cfg->key_size, i);
+        s_generate_value(value, arg->cfg->value_size, i);
+        dap_global_db_btree_key_t bk = {
+            .bets = *(uint64_t *)key,
+            .becrc = arg->cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
+        };
+        if (dap_global_db_btree_insert(arg->btree, &bk, NULL, 0,
+                                        value, arg->cfg->value_size, NULL, 0, 0) == 0)
+            arg->ops_completed++;
+    }
+
+    DAP_DELETE(key);
+    DAP_DELETE(value);
+    return NULL;
+}
+
+static void *s_mt_group_writer_thread(void *a_arg)
+{
+    mt_thread_arg_t *arg = (mt_thread_arg_t *)a_arg;
+
+    dap_global_db_btree_t *btree = dap_global_db_btree_create(arg->db_path);
+    if (!btree)
+        return NULL;
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, arg->cfg->value_size);
+
+    for (size_t i = 0; i < arg->count; i++) {
+        s_generate_key(key, arg->cfg->key_size, i);
+        s_generate_value(value, arg->cfg->value_size, i);
+        dap_global_db_btree_key_t bk = {
+            .bets = *(uint64_t *)key,
+            .becrc = arg->cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
+        };
+        if (dap_global_db_btree_insert(btree, &bk, NULL, 0,
+                                        value, arg->cfg->value_size, NULL, 0, 0) == 0)
+            arg->ops_completed++;
+    }
+
+    DAP_DELETE(key);
+    DAP_DELETE(value);
+    dap_global_db_btree_close(btree);
+    return NULL;
+}
+
+static benchmark_result_t s_bench_dap_rdlock_overhead(void)
+{
+    benchmark_result_t result = { .name = "DAP B-tree", .operation = "rdlock overhead" };
+
+    pthread_rwlock_t lock;
+    pthread_rwlock_init(&lock, NULL);
+
+    const size_t iterations = 10000000;
+    double start = s_get_time_sec();
+    for (size_t i = 0; i < iterations; i++) {
+        pthread_rwlock_rdlock(&lock);
+        pthread_rwlock_unlock(&lock);
+    }
+    double elapsed = s_get_time_sec() - start;
+
+    pthread_rwlock_destroy(&lock);
+
+    printf("  rdlock/unlock cycle: %.1f ns/op (%zu M ops in %.3f sec)\n",
+           elapsed * 1e9 / (double)iterations, iterations / 1000000, elapsed);
+
+    result.num_ops = iterations;
+    result.elapsed_sec = elapsed;
+    result.ops_per_sec = (double)iterations / elapsed;
+    result.mb_per_sec = 0;
+    return result;
+}
+
+static benchmark_result_t s_bench_dap_parallel_reads(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "DAP B-tree", .operation = "parallel read" };
+    char *db_path = dap_strdup_printf("%s/dap_bench_pr.gdb", cfg->db_path);
+    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    if (!btree) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        dap_global_db_btree_key_t bk = {
+            .bets = *(uint64_t *)key,
+            .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
+        };
+        dap_global_db_btree_insert(btree, &bk, NULL, 0,
+                                    value, cfg->value_size, NULL, 0, 0);
+    }
+    dap_global_db_btree_sync(btree);
+    DAP_DELETE(key);
+    DAP_DELETE(value);
+
+    size_t nt = cfg->num_threads;
+    size_t per_thread = cfg->num_records / nt;
+
+    pthread_t *threads = DAP_NEW_SIZE(pthread_t, nt * sizeof(pthread_t));
+    mt_thread_arg_t *args = DAP_NEW_SIZE(mt_thread_arg_t, nt * sizeof(mt_thread_arg_t));
+
+    for (size_t t = 0; t < nt; t++) {
+        args[t] = (mt_thread_arg_t){
+            .btree = btree,
+            .cfg = cfg,
+            .start_index = t * per_thread,
+            .count = (t == nt - 1) ? (cfg->num_records - t * per_thread) : per_thread,
+            .ops_completed = 0
+        };
+    }
+
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++)
+        pthread_create(&threads[t], NULL, s_mt_reader_thread, &args[t]);
+    for (size_t t = 0; t < nt; t++)
+        pthread_join(threads[t], NULL);
+    double elapsed = s_get_time_sec() - start;
+
+    size_t total_ops = 0;
+    for (size_t t = 0; t < nt; t++)
+        total_ops += args[t].ops_completed;
+
+    DAP_DELETE(threads);
+    DAP_DELETE(args);
+    DAP_DELETE(db_path);
+    dap_global_db_btree_close(btree);
+
+    result.num_ops = total_ops;
+    result.elapsed_sec = elapsed;
+    result.ops_per_sec = (double)total_ops / elapsed;
+    result.mb_per_sec = (double)(total_ops * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_dap_parallel_random_reads(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "DAP B-tree", .operation = "parallel rand read" };
+    char *db_path = dap_strdup_printf("%s/dap_bench_prr.gdb", cfg->db_path);
+    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    if (!btree) { DAP_DELETE(db_path); return result; }
+
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    for (size_t i = 0; i < cfg->num_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        dap_global_db_btree_key_t bk = {
+            .bets = *(uint64_t *)key,
+            .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
+        };
+        dap_global_db_btree_insert(btree, &bk, NULL, 0,
+                                    value, cfg->value_size, NULL, 0, 0);
+    }
+    dap_global_db_btree_sync(btree);
+    DAP_DELETE(key);
+    DAP_DELETE(value);
+
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+
+    size_t nt = cfg->num_threads;
+    size_t per_thread = cfg->num_records / nt;
+
+    pthread_t *threads = DAP_NEW_SIZE(pthread_t, nt * sizeof(pthread_t));
+    mt_thread_arg_t *args = DAP_NEW_SIZE(mt_thread_arg_t, nt * sizeof(mt_thread_arg_t));
+
+    for (size_t t = 0; t < nt; t++) {
+        args[t] = (mt_thread_arg_t){
+            .btree = btree,
+            .cfg = cfg,
+            .start_index = t * per_thread,
+            .count = (t == nt - 1) ? (cfg->num_records - t * per_thread) : per_thread,
+            .ops_completed = 0,
+            .indices = indices
+        };
+    }
+
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++)
+        pthread_create(&threads[t], NULL, s_mt_random_reader_thread, &args[t]);
+    for (size_t t = 0; t < nt; t++)
+        pthread_join(threads[t], NULL);
+    double elapsed = s_get_time_sec() - start;
+
+    size_t total_ops = 0;
+    for (size_t t = 0; t < nt; t++)
+        total_ops += args[t].ops_completed;
+
+    DAP_DELETE(threads);
+    DAP_DELETE(args);
+    DAP_DELETE(indices);
+    DAP_DELETE(db_path);
+    dap_global_db_btree_close(btree);
+
+    result.num_ops = total_ops;
+    result.elapsed_sec = elapsed;
+    result.ops_per_sec = (double)total_ops / elapsed;
+    result.mb_per_sec = (double)(total_ops * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_dap_parallel_group_writes(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "DAP B-tree", .operation = "parallel group write" };
+
+    size_t nt = cfg->num_threads;
+    size_t per_thread = cfg->num_records / nt;
+
+    pthread_t *threads = DAP_NEW_SIZE(pthread_t, nt * sizeof(pthread_t));
+    mt_thread_arg_t *args = DAP_NEW_SIZE(mt_thread_arg_t, nt * sizeof(mt_thread_arg_t));
+
+    for (size_t t = 0; t < nt; t++) {
+        args[t] = (mt_thread_arg_t){
+            .cfg = cfg,
+            .count = (t == nt - 1) ? (cfg->num_records - t * per_thread) : per_thread,
+            .ops_completed = 0,
+            .db_path = dap_strdup_printf("%s/dap_bench_pgw_%zu.gdb", cfg->db_path, t)
+        };
+    }
+
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++)
+        pthread_create(&threads[t], NULL, s_mt_group_writer_thread, &args[t]);
+    for (size_t t = 0; t < nt; t++)
+        pthread_join(threads[t], NULL);
+    double elapsed = s_get_time_sec() - start;
+
+    size_t total_ops = 0;
+    for (size_t t = 0; t < nt; t++) {
+        total_ops += args[t].ops_completed;
+        DAP_DELETE(args[t].db_path);
+    }
+
+    DAP_DELETE(threads);
+    DAP_DELETE(args);
+
+    result.num_ops = total_ops;
+    result.elapsed_sec = elapsed;
+    result.ops_per_sec = (double)total_ops / elapsed;
+    result.mb_per_sec = (double)(total_ops * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+    return result;
+}
+
+static benchmark_result_t s_bench_dap_mixed_read_write(const benchmark_config_t *cfg)
+{
+    benchmark_result_t result = { .name = "DAP B-tree", .operation = "mixed R/W" };
+    char *db_path = dap_strdup_printf("%s/dap_bench_mrw.gdb", cfg->db_path);
+    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    if (!btree) { DAP_DELETE(db_path); return result; }
+
+    size_t pre_records = cfg->num_records / 2;
+    byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
+    byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    for (size_t i = 0; i < pre_records; i++) {
+        s_generate_key(key, cfg->key_size, i);
+        s_generate_value(value, cfg->value_size, i);
+        dap_global_db_btree_key_t bk = {
+            .bets = *(uint64_t *)key,
+            .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
+        };
+        dap_global_db_btree_insert(btree, &bk, NULL, 0,
+                                    value, cfg->value_size, NULL, 0, 0);
+    }
+    dap_global_db_btree_sync(btree);
+    DAP_DELETE(key);
+    DAP_DELETE(value);
+
+    size_t nt = cfg->num_threads;
+    size_t num_readers = nt > 1 ? nt - 1 : 1;
+    size_t reader_range = pre_records / num_readers;
+    size_t total_threads = (nt > 1) ? nt : 2;
+
+    pthread_t *threads = DAP_NEW_SIZE(pthread_t, total_threads * sizeof(pthread_t));
+    mt_thread_arg_t *args = DAP_NEW_SIZE(mt_thread_arg_t, total_threads * sizeof(mt_thread_arg_t));
+
+    args[0] = (mt_thread_arg_t){
+        .btree = btree, .cfg = cfg,
+        .start_index = pre_records, .count = pre_records,
+        .ops_completed = 0
+    };
+
+    for (size_t r = 0; r < num_readers; r++) {
+        args[1 + r] = (mt_thread_arg_t){
+            .btree = btree, .cfg = cfg,
+            .start_index = r * reader_range,
+            .count = (r == num_readers - 1) ? (pre_records - r * reader_range) : reader_range,
+            .ops_completed = 0
+        };
+    }
+
+    double start = s_get_time_sec();
+    pthread_create(&threads[0], NULL, s_mt_writer_thread, &args[0]);
+    for (size_t r = 0; r < num_readers; r++)
+        pthread_create(&threads[1 + r], NULL, s_mt_reader_thread, &args[1 + r]);
+    for (size_t t = 0; t < total_threads; t++)
+        pthread_join(threads[t], NULL);
+    double elapsed = s_get_time_sec() - start;
+
+    size_t read_ops = 0, write_ops = args[0].ops_completed;
+    for (size_t r = 0; r < num_readers; r++)
+        read_ops += args[1 + r].ops_completed;
+    size_t total_ops = read_ops + write_ops;
+
+    printf("    %zu readers + 1 writer: reads=%zu, writes=%zu\n",
+           num_readers, read_ops, write_ops);
+
+    DAP_DELETE(threads);
+    DAP_DELETE(args);
+    DAP_DELETE(db_path);
+    dap_global_db_btree_close(btree);
+
+    result.num_ops = total_ops;
+    result.elapsed_sec = elapsed;
+    result.ops_per_sec = (double)total_ops / elapsed;
+    result.mb_per_sec = (double)(total_ops * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
     return result;
 }
 
@@ -1970,8 +2351,9 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     printf("=================================================================\n");
     printf("Records: %zu, Key size: %zu bytes, Value size: %zu bytes\n",
            cfg->num_records, cfg->key_size, cfg->value_size);
-    printf("Total data: %.2f MB\n",
-           (double)(cfg->num_records * (cfg->key_size + cfg->value_size)) / 1024 / 1024);
+    printf("Total data: %.2f MB, Threads: %zu\n",
+           (double)(cfg->num_records * (cfg->key_size + cfg->value_size)) / 1024 / 1024,
+           cfg->num_threads);
     printf("=================================================================\n\n");
     
     benchmark_result_t results[64];
@@ -1994,7 +2376,40 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     s_cleanup_db_dir(cfg->db_path);
     results[result_count] = s_bench_dap_random_read(cfg);
     s_print_result(&results[result_count++]);
-    
+
+    int dap_seq_read_idx = result_count - 2;
+    int dap_rand_read_idx = result_count - 1;
+
+    if (cfg->num_threads > 1) {
+        printf("\nDAP B-tree multi-threaded (%zu threads):\n", cfg->num_threads);
+
+        s_bench_dap_rdlock_overhead();
+
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_dap_parallel_reads(cfg);
+        s_print_result(&results[result_count]);
+        if (results[dap_seq_read_idx].ops_per_sec > 0)
+            printf("    scaling vs ST seq read: %.2fx\n",
+                   results[result_count].ops_per_sec / results[dap_seq_read_idx].ops_per_sec);
+        result_count++;
+
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_dap_parallel_random_reads(cfg);
+        s_print_result(&results[result_count]);
+        if (results[dap_rand_read_idx].ops_per_sec > 0)
+            printf("    scaling vs ST rand read: %.2fx\n",
+                   results[result_count].ops_per_sec / results[dap_rand_read_idx].ops_per_sec);
+        result_count++;
+
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_dap_parallel_group_writes(cfg);
+        s_print_result(&results[result_count++]);
+
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_dap_mixed_read_write(cfg);
+        s_print_result(&results[result_count++]);
+    }
+
 #ifdef WITH_MDBX
     printf("\nMDBX:\n");
     s_cleanup_db_dir(cfg->db_path);
@@ -2257,11 +2672,11 @@ int main(int argc, char **argv)
         .key_size = DEFAULT_KEY_SIZE,
         .value_size = DEFAULT_VALUE_SIZE,
         .batch_size = DEFAULT_BATCH_SIZE,
+        .num_threads = DEFAULT_NUM_THREADS,
         .db_path = "/tmp/kv_benchmark",
         .sync_writes = false
     };
     
-    // Parse arguments
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-n") == 0 && i + 1 < argc)
             cfg.num_records = atol(argv[++i]);
@@ -2269,6 +2684,10 @@ int main(int argc, char **argv)
             cfg.key_size = atol(argv[++i]);
         else if (strcmp(argv[i], "-v") == 0 && i + 1 < argc)
             cfg.value_size = atol(argv[++i]);
+        else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc)
+            cfg.num_threads = atol(argv[++i]);
+        else if (strcmp(argv[i], "--threads") == 0 && i + 1 < argc)
+            cfg.num_threads = atol(argv[++i]);
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
             cfg.db_path = argv[++i];
         else if (strcmp(argv[i], "--sync") == 0)
@@ -2281,6 +2700,8 @@ int main(int argc, char **argv)
             printf("  -n NUM      Number of records (default: %d)\n", DEFAULT_NUM_RECORDS);
             printf("  -k SIZE     Key size in bytes (default: %d)\n", DEFAULT_KEY_SIZE);
             printf("  -v SIZE     Value size in bytes (default: %d)\n", DEFAULT_VALUE_SIZE);
+            printf("  -t, --threads N  Number of threads for MT benchmarks (default: %d)\n",
+                   DEFAULT_NUM_THREADS);
             printf("  -p PATH     Database directory (default: /tmp/kv_benchmark)\n");
             printf("  --sync      Enable sync writes\n");
             printf("  --verify    Verify data correctness after each populate\n");
