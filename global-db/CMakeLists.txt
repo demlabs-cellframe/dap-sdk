@@ -16,7 +16,13 @@ if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
     set(SAVED_CMAKE_REQUIRED_LINK_OPTIONS "${CMAKE_REQUIRED_LINK_OPTIONS}")
     # Remove problematic linker flags from C flags for the duration of MDBX configuration
-    string(REGEX REPLACE "-Wl,[^ ]*" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    # Remove all -Wl, flags (linker flags passed via compiler) that break check_function_exists
+    # Convert to list, filter out -Wl, flags, then convert back
+    separate_arguments(CMAKE_C_FLAGS_LIST UNIX_COMMAND "${CMAKE_C_FLAGS}")
+    list(FILTER CMAKE_C_FLAGS_LIST EXCLUDE REGEX "^-Wl,")
+    string(REPLACE ";" " " CMAKE_C_FLAGS "${CMAKE_C_FLAGS_LIST}")
+    string(STRIP "${CMAKE_C_FLAGS}" CMAKE_C_FLAGS)
+    # Clear flags used by check_function_exists
     set(CMAKE_REQUIRED_FLAGS "")
     set(CMAKE_EXE_LINKER_FLAGS "")
     set(CMAKE_REQUIRED_LINK_OPTIONS "")
