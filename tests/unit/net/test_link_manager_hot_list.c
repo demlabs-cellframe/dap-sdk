@@ -74,16 +74,12 @@ static bool s_test_init(void)
         return false;
     }
     
-    if (dap_proc_thread_init(l_cpu_count) != 0) {
-        log_it(L_ERROR, "Failed to initialize proc threads");
+    // Start event loop in async mode.
+    // dap_events_start() initializes workers and proc threads internally.
+    if (dap_events_start() != 0) {
+        log_it(L_ERROR, "Failed to start events");
         return false;
     }
-    
-    // Start event loop in async mode
-    dap_events_start();
-    
-    // Give some time for threads to start
-    sleep(1);
     
     // Initialize link manager
     dap_link_manager_callbacks_t l_callbacks = {
@@ -568,4 +564,3 @@ int main(int argc, char **argv)
     
     return 0;
 }
-
