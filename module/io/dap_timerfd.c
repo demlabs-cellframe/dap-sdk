@@ -343,7 +343,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_events_socket->socket = INVALID_SOCKET;
 #endif
 #endif
-    debug_if(g_debug_reactor, L_DEBUG, "Create timer on socket "DAP_FORMAT_ESOCKET_UUID, l_timerfd->events_socket->uuid);
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Create timer on socket "DAP_FORMAT_ESOCKET_UUID, l_timerfd->events_socket->uuid);
 #if defined (DAP_OS_LINUX)    
     l_timerfd->tfd = l_tfd;
 #endif
@@ -353,7 +353,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
     assert(a_timerfd);
-    debug_if(g_debug_reactor, L_DEBUG, "Reset timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Reset timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
 #if defined(DAP_OS_LINUX)
     struct itimerspec l_ts;
     // repeat never
@@ -395,11 +395,11 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
     if(!l_timer_fd)
         return;
     // run user's callback
-    debug_if(g_debug_reactor, L_DEBUG, "Call timer cb on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Call timer cb on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
     if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
-        debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
 #if defined DAP_EVENTS_CAPS_KQUEUE
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
@@ -453,7 +453,7 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
 {
     if (!a_timerfd || !a_timerfd->events_socket)
         return; 
-    debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else

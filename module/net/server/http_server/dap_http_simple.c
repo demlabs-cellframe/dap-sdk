@@ -223,7 +223,7 @@ static void s_esocket_worker_write_callback(void *a_arg)
     }
     dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_http_simple->esocket_uuid);
     if (!l_es) {
-        debug_if(g_debug_reactor, L_INFO, "Esocket 0x%"DAP_UINT64_FORMAT_x" is already deleted", l_http_simple->esocket_uuid);
+        debug_if(dap_events_debug_reactor_get(), L_INFO, "Esocket 0x%"DAP_UINT64_FORMAT_x" is already deleted", l_http_simple->esocket_uuid);
         dap_http_client_t *l_http_client = l_http_simple->http_client;
         if (l_http_client) {
             while (l_http_client->in_headers)

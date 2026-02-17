@@ -501,7 +501,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
      * If it is already on the target context, skip re-adding. */
     if (a_es->context) {
         if (a_es->context == a_context) {
-            debug_if(g_debug_reactor, L_DEBUG, "Es %p already attached to context #%u, skip add", a_es, a_context->id);
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Es %p already attached to context #%u, skip add", a_es, a_context->id);
             return 0;
         }
         log_it(L_WARNING, "Context switch detected on es %p : %" DAP_FORMAT_SOCKET ", moving from context %u to %u",
@@ -527,7 +527,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
         l_errno = GetLastError();
         l_is_error = true;
     } else {
-        debug_if(g_debug_reactor, L_DEBUG, "Es \"%s\" "DAP_FORMAT_ESOCKET_UUID" added to context #%d IOCP", 
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Es \"%s\" "DAP_FORMAT_ESOCKET_UUID" added to context #%d IOCP", 
                  dap_events_socket_get_type_str(a_es), a_es->uuid, a_context->id);
     }
 #elif defined DAP_EVENTS_CAPS_EPOLL
@@ -586,7 +586,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
             l_is_error = true;
             l_errno = errno;
             goto lb_exit;
-        }else if (g_debug_reactor){
+        }else if (dap_events_debug_reactor_get()){
             log_it(L_DEBUG, "kevent set custom filter %d on fd %d",l_filter, a_es->socket);
         }
     }else{
@@ -596,7 +596,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
                 l_is_error = true;
                 l_errno = errno;
                 goto lb_exit;
-            }else if (g_debug_reactor){
+            }else if (dap_events_debug_reactor_get()){
                 log_it(L_DEBUG, "kevent set EVFILT_READ on fd %d", a_es->socket);
             }
 
@@ -608,7 +608,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
                     l_is_error = true;
                     l_errno = errno;
                     goto lb_exit;
-                }else if (g_debug_reactor){
+                }else if (dap_events_debug_reactor_get()){
                     log_it(L_DEBUG, "kevent set EVFILT_WRITE on fd %d", a_es->socket);
                 }
             }

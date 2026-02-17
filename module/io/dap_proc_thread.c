@@ -391,7 +391,7 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
     }
     *l_item = (dap_proc_queue_item_t){ .callback = a_callback,
                                        .callback_arg = a_callback_arg };
-    debug_if(g_debug_reactor, L_DEBUG, "Add callback %p with arg %p to thread %p", a_callback, a_callback_arg, l_thread);
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Add callback %p with arg %p to thread %p", a_callback, a_callback_arg, l_thread);
     pthread_mutex_lock(&l_thread->queue_lock);
     dap_dl_append(l_thread->queue[a_priority], l_item);
     s_proc_queue_size_inc(l_thread);
@@ -434,7 +434,7 @@ int dap_proc_thread_loop(dap_context_t *a_context)
             pthread_cond_wait(&l_thread->queue_event, &l_thread->queue_lock);
         pthread_mutex_unlock(&l_thread->queue_lock);
         if (l_item)
-            debug_if(g_debug_reactor, L_DEBUG, "Call callback %p with arg %p on thread %p",
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Call callback %p with arg %p on thread %p",
                                             l_item->callback, l_item->callback_arg, l_thread);
         if (!a_context->signal_exit &&
                 l_item->callback(l_item->callback_arg))

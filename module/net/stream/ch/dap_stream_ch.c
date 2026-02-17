@@ -135,7 +135,7 @@ dap_stm_ch_rec_t    *l_rec;
     UNUSED(l_rc);
 #endif
 #endif
-    debug_if(g_debug_reactor, L_NOTICE, "dap_stream_ch_t:%p - is allocated", l_stm_ch);
+    debug_if(dap_events_debug_reactor_get(), L_NOTICE, "dap_stream_ch_t:%p - is allocated", l_stm_ch);
     return  l_stm_ch;
 }
 
@@ -186,7 +186,7 @@ dap_stm_ch_rec_t    *l_rec = NULL;
         dap_list_free_full(a_stm_ch->packet_in_notifiers, NULL);
         dap_list_free_full(a_stm_ch->packet_out_notifiers, NULL);
         DAP_DEL_MULTY(l_rec->stm_ch, l_rec);
-        debug_if(g_debug_reactor, L_NOTICE, "dap_stream_ch_t:%p - is released", a_stm_ch);
+        debug_if(dap_events_debug_reactor_get(), L_NOTICE, "dap_stream_ch_t:%p - is released", a_stm_ch);
     }
 #else
     dap_list_free_full(a_stm_ch->packet_in_notifiers, NULL);

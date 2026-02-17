@@ -8,14 +8,20 @@ HEADERS += $$PWD/include/dap_events.h \
     $$PWD/include/dap_context.h \
     $$PWD/include/dap_worker.h
 
-SOURCES += $$PWD/dap_events.c \
-    $$PWD/dap_events_socket.c \
-    $$PWD/dap_net.c \
-    $$PWD/dap_proc_queue.c \
-    $$PWD/dap_proc_thread.c \
-    $$PWD/dap_server.c \
-    $$PWD/dap_timerfd.c \
-    $$PWD/dap_context.c \
-    $$PWD/dap_worker.c
+# Avoid duplicate global/object registration when a consumer already links libdap-sdk.
+# In that case IO sources must not be embedded into a second shared object.
+contains(LIBS, -ldap-sdk)|contains(LIBS, -ldap_sdk) {
+    message("libdap-io.pri: detected dap-sdk in LIBS, skipping embedded io sources")
+} else {
+    SOURCES += $$PWD/dap_events.c \
+        $$PWD/dap_events_socket.c \
+        $$PWD/dap_net.c \
+        $$PWD/dap_proc_queue.c \
+        $$PWD/dap_proc_thread.c \
+        $$PWD/dap_server.c \
+        $$PWD/dap_timerfd.c \
+        $$PWD/dap_context.c \
+        $$PWD/dap_worker.c
+}
 
 INCLUDEPATH += $$PWD/include

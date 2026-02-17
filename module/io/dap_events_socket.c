@@ -181,7 +181,7 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
     dap_ht_add_hh(hh2, s_esockets, uuid, l_es);
     pthread_rwlock_unlock(&s_evsocks_lock);
 #endif
-    debug_if(g_debug_reactor, L_DEBUG, "Created blank es %p, uuid " DAP_FORMAT_ESOCKET_UUID,
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Created blank es %p, uuid " DAP_FORMAT_ESOCKET_UUID,
                               l_es, l_es->uuid);
     return  l_es;
 }
@@ -195,19 +195,19 @@ static void s_es_set_flag(dap_context_t *a_c, OVERLAPPED *a_ol) {
     if (a_ol->OffsetHigh) {
         switch (flag) {
         case DAP_SOCK_READY_TO_READ:
-            debug_if(g_debug_reactor, L_DEBUG, "Set READ flag on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Set READ flag on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
             dap_events_socket_set_readable_unsafe_ex(a_es, true, NULL);
         break;
         case DAP_SOCK_READY_TO_WRITE:
-            debug_if(g_debug_reactor, L_DEBUG, "Set WRITE flag on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Set WRITE flag on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
             dap_events_socket_set_writable_unsafe_ex(a_es, true, 0, NULL);
         break;
         case DAP_SOCK_SIGNAL_CLOSE:
-            debug_if(g_debug_reactor, L_DEBUG, "Set CLOSE flag on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Set CLOSE flag on es "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
             dap_events_socket_remove_and_delete_unsafe(a_es, false);
         break;
         default:
-            debug_if(g_debug_reactor, L_DEBUG, "Set flag %u on es "DAP_FORMAT_ESOCKET_UUID, flag, a_es->uuid);
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Set flag %u on es "DAP_FORMAT_ESOCKET_UUID, flag, a_es->uuid);
             a_es->flags |= flag;
         }
     } else
@@ -253,7 +253,7 @@ static int s_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size
         .data = l_data
     };
 
-    if (g_debug_reactor) {
+    if (dap_events_debug_reactor_get()) {
         if (a_size)
             log_it(L_DEBUG, "Enqueue %zu bytes into "DAP_FORMAT_ESOCKET_UUID, a_size, a_es->uuid);
         else
@@ -341,7 +341,7 @@ static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
     else if (l_es != a_es)
         log_it(L_WARNING, "[!] Esockets %p and %p share the same UUID %zu, possibly a dup!", a_es, l_es, a_es->uuid);
 #endif
-    debug_if(g_debug_reactor, L_DEBUG, "Release es %p \"%s\" uuid " DAP_FORMAT_ESOCKET_UUID,
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Release es %p \"%s\" uuid " DAP_FORMAT_ESOCKET_UUID,
                               a_es, dap_events_socket_get_type_str(a_es), a_es->uuid);
     DAP_DELETE(a_es);
 }
@@ -592,7 +592,7 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
         return NULL;
     }
     l_es->type = a_type;
-    debug_if(g_debug_reactor, L_DEBUG, "Created socket %"DAP_FORMAT_SOCKET" type %d", l_sock,l_es->type);
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Created socket %"DAP_FORMAT_SOCKET" type %d", l_sock,l_es->type);
     return l_es;
 }
 
@@ -679,7 +679,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             if (l_ret == -1) {
                 switch (errno) {
                 case EAGAIN:
-                    debug_if(g_debug_reactor, L_INFO, "Received and processed %lu callbacks in 1 pass", l_shift / 8);
+                    debug_if(dap_events_debug_reactor_get(), L_INFO, "Received and processed %lu callbacks in 1 pass", l_shift / 8);
                     break;
                 default:
                     return log_it(L_ERROR, "mq_receive error in esocket queue_ptr:\"%s\" code %d", dap_strerror(errno), errno), -1;
@@ -687,7 +687,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             }
 #elif defined DAP_EVENTS_CAPS_WEPOLL
             if(l_read > 0) {
-                debug_if(g_debug_reactor, L_NOTICE, "Got %ld bytes from socket", l_read);
+                debug_if(dap_events_debug_reactor_get(), L_NOTICE, "Got %ld bytes from socket", l_read);
                 for (long shift = 0; shift < l_read; shift += sizeof(void*)) {
                     void *l_queue_ptr = *(void **)(a_esocket->buf_in + shift);
                     a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
@@ -697,7 +697,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 log_it(L_ERROR, "Can't read message from socket");
 #elif defined DAP_EVENTS_CAPS_KQUEUE
             void *l_queue_ptr = a_esocket->kqueue_event_catched_data.data;
-            if(g_debug_reactor)
+            if(dap_events_debug_reactor_get())
                 log_it(L_INFO,"Queue ptr received %p ptr on input", l_queue_ptr);
             if(a_esocket->callbacks.queue_ptr_callback)
                 a_esocket->callbacks.queue_ptr_callback (a_esocket, l_queue_ptr);
@@ -720,7 +720,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 a_esocket->callbacks.queue_ptr_callback(a_esocket, l_work_item->data);
                 DAP_ALFREE(l_work_item);
             }
-            debug_if(g_debug_reactor, L_DEBUG, "Dequeued %u items from "DAP_FORMAT_ESOCKET_UUID, l_count, a_esocket->uuid);
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Dequeued %u items from "DAP_FORMAT_ESOCKET_UUID, l_count, a_esocket->uuid);
 #else
 #error "No Queue fetch mechanism implemented on your platform"
 #endif
@@ -728,7 +728,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
 #ifdef DAP_EVENTS_CAPS_KQUEUE
             void * l_queue_ptr = a_esocket->kqueue_event_catched_data.data;
             size_t l_queue_ptr_size = a_esocket->kqueue_event_catched_data.size;
-            if(g_debug_reactor)
+            if(dap_events_debug_reactor_get())
                 log_it(L_INFO,"Queue received %zd bytes on input", l_queue_ptr_size);
 
             a_esocket->callbacks.queue_callback(a_esocket, l_queue_ptr, l_queue_ptr_size);
@@ -943,12 +943,12 @@ static void *s_dap_events_socket_buf_thread(void *arg)
                 goto lb_thread_exit;
             }
         } else if (l_write_ret == (ssize_t)l_es->buf_out_size) {
-            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %zd bytes to pipe [es %d]", l_write_ret, l_sock);
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "[!] Sent all %zd bytes to pipe [es %d]", l_write_ret, l_sock);
             l_es->buf_out_size = 0;
             pthread_rwlock_unlock(&l_es->buf_out_lock);
             break;
         } else if (l_write_ret) {
-            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %zu / %zu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "[!] Sent %zu / %zu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
             l_es->buf_out_size -= l_write_ret;
             memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
         }
@@ -986,14 +986,14 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
             return;
         }
         a_es->buf_out = l_realloc;
-        debug_if(g_debug_reactor, L_MSG, "Es %p (%d): increase capacity to %zu, actual size: %zu",
+        debug_if(dap_events_debug_reactor_get(), L_MSG, "Es %p (%d): increase capacity to %zu, actual size: %zu",
                a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + sizeof(void*) <= l_basic_buf_size / 2) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         byte_t *l_realloc = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
         if (l_realloc)
             a_es->buf_out = l_realloc;
-        debug_if(g_debug_reactor, L_MSG, "Es %p (%d): decrease capacity to %zu, actual size: %zu",
+        debug_if(dap_events_debug_reactor_get(), L_MSG, "Es %p (%d): decrease capacity to %zu, actual size: %zu",
                a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
@@ -1052,7 +1052,7 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
             continue;
         if (l_started) {
             uint64_t l_count = atomic_fetch_add(&l_thd_count, 1) + 1;
-            debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
+            debug_if(dap_events_debug_reactor_get(), L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
                      l_count, (uint64_t)l_thread_id, a_es, a_arg);
         }
         return;
@@ -1256,7 +1256,7 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 {
     assert(a_es);
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-    debug_if(g_debug_reactor, L_DEBUG, "Remove es %p [%s] \"%s\" uuid "DAP_FORMAT_ESOCKET_UUID"",
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Remove es %p [%s] \"%s\" uuid "DAP_FORMAT_ESOCKET_UUID"",
              a_es, a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
              dap_events_socket_get_type_str(a_es), a_es->uuid);
     if( a_es->callbacks.delete_callback )
@@ -1300,18 +1300,18 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 
     switch (l_res) {
     case 0:
-        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" completed immediately", func, a_es->uuid);
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" completed immediately", func, a_es->uuid);
     break;
     case ERROR_IO_PENDING:
-        debug_if(g_debug_reactor, L_DEBUG, "Pending \"%s\" on es "DAP_FORMAT_ESOCKET_UUID, func, a_es->uuid);
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Pending \"%s\" on es "DAP_FORMAT_ESOCKET_UUID, func, a_es->uuid);
         return;
     default:
-        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" failed, error %d: \"%s\"",
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" failed, error %d: \"%s\"",
                                            func, a_es->uuid, l_res, dap_strerror(l_res));
         dap_events_socket_descriptor_close(a_es);
         return;
     }
-    debug_if(g_debug_reactor && FLAG_KEEP_INHERITOR(a_es->flags), L_DEBUG, "Keep inheritor of "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
+    debug_if(dap_events_debug_reactor_get() && FLAG_KEEP_INHERITOR(a_es->flags), L_DEBUG, "Keep inheritor of "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
     dap_events_socket_delete_unsafe( a_es, FLAG_KEEP_INHERITOR(a_es->flags) );
 #else
     dap_events_socket_delete_unsafe(a_es, preserve_inheritor);
@@ -1322,7 +1322,7 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 
 void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_is_ready, dap_overlapped_t *a_ol) {
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
-        debug_if(g_debug_reactor, L_DEBUG, "Attempt to %sset read flag on closed socket %p, dump it",
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Attempt to %sset read flag on closed socket %p, dump it",
                                            a_is_ready ? "" : "un", a_es);
         return dap_overlapped_free(a_ol);
     }
@@ -1334,7 +1334,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
     const char *func = "";
     dap_overlapped_t *ol = NULL;
     if (a_es->pending_read) {
-        debug_if( g_debug_reactor, L_DEBUG, DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" already has pending read, dump it",
+        debug_if( dap_events_debug_reactor_get(), L_DEBUG, DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" already has pending read, dump it",
                                             a_es->uuid, a_es->socket, dap_events_socket_get_type_str(a_es) );
         l_err = ERROR_IO_PENDING;
     } else {
@@ -1401,7 +1401,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
     switch (l_err) {
     case ERROR_SUCCESS:
     case ERROR_IO_PENDING:
-        debug_if(g_debug_reactor, L_DEBUG, "Pending \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID,
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Pending \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID,
                                            func, dap_events_socket_get_type_str(a_es), a_es->uuid);
         return;
     default:
@@ -1419,7 +1419,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
 void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_es, bool a_is_ready, size_t a_size, dap_overlapped_t *a_ol )
 {
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
-        debug_if(g_debug_reactor, L_DEBUG, "Attempt to %sset write flag on closed socket %p, dump it",
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Attempt to %sset write flag on closed socket %p, dump it",
                                            a_is_ready ? "" : "un", a_es);
         return dap_overlapped_free(a_ol);
     }
@@ -1503,7 +1503,7 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_es, bool a
     switch (l_err) {
     case ERROR_SUCCESS:
     case ERROR_IO_PENDING:
-        debug_if(g_debug_reactor, L_DEBUG, "Pending \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID,
+        debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Pending \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID,
                                            func, dap_events_socket_get_type_str(a_es), a_es->uuid);
         a_es->buf_out_size = 0;
         return;
@@ -1628,7 +1628,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 
     int l_ret = -1024, l_errno=0;
 
-    if (g_debug_reactor)
+    if (dap_events_debug_reactor_get())
         log_it(L_DEBUG,"Sent ptr %p to queue "DAP_FORMAT_ESOCKET_UUID, a_arg, a_es->uuid);
 
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
@@ -1640,7 +1640,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     //struct timespec tmo = {0};
     //tmo.tv_sec = 7 + time(NULL);
     if (!mq_send(a_es->mqd, (const char*)&a_arg, sizeof(a_arg), 0)) {
-        debug_if (g_debug_reactor, L_DEBUG,"Sent ptr %p to esocket queue %p (%d)", a_arg, a_es, a_es? a_es->fd : -1);
+        debug_if (dap_events_debug_reactor_get(), L_DEBUG,"Sent ptr %p to esocket queue %p (%d)", a_arg, a_es, a_es? a_es->fd : -1);
         return 0;
     }
     switch (l_errno = errno) {
@@ -1696,7 +1696,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     int l_n;
     if(a_es->pipe_out){ // If we have pipe out - we send events directly to the pipe out kqueue fd
         if(a_es->pipe_out->context){
-            if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to pipe_out worker on esocket %p",a_arg,a_es);
+            if( dap_events_debug_reactor_get()) log_it(L_DEBUG, "Sent kevent() with ptr %p to pipe_out worker on esocket %p",a_arg,a_es);
             l_n = kevent(a_es->pipe_out->context->kqueue_fd,&l_event,1,NULL,0,NULL);
         }
         else {
@@ -1706,7 +1706,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         }
     }else if(a_es->context){
         l_n = kevent(a_es->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %p",a_arg,a_es);
+        if( dap_events_debug_reactor_get()) log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %p",a_arg,a_es);
     }else {
         log_it(L_WARNING,"Trying to send pointer in queue thats not assigned to any worker or proc thread");
         l_n = 0;
@@ -2028,7 +2028,7 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
     *ol = (dap_overlapped_t) { .op = io_write };
     memcpy(ol->buf, a_data, a_data_size);
-    debug_if(g_debug_reactor, L_INFO, "Write %lu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_worker->id);
+    debug_if(dap_events_debug_reactor_get(), L_INFO, "Write %lu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_worker->id);
     l_result = PostQueuedCompletionStatus(a_worker->context->iocp, a_data_size, (ULONG_PTR)a_es_uuid, (OVERLAPPED*)ol)
         ? a_data_size
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
@@ -2149,10 +2149,10 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         return 0;
     }
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
-        debug_if(g_debug_reactor, L_NOTICE, "Trying to write into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
+        debug_if(dap_events_debug_reactor_get(), L_NOTICE, "Trying to write into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
         return 0;
     }
-    if (g_debug_reactor && a_es->context && dap_worker_get_current() != DAP_WORKER(a_es->context)) {
+    if (dap_events_debug_reactor_get() && a_es->context && dap_worker_get_current() != DAP_WORKER(a_es->context)) {
         log_it(L_ERROR, "Trying to write to foreign context %p", a_es->context);
         return -1;
     }
@@ -2167,16 +2167,16 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         if (!( l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max) ))
             return log_it(L_ERROR, "Can't increase capacity: OOM!"), 0;
         a_es->buf_out = l_buf_out;
-        debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
+        debug_if(dap_events_debug_reactor_get(), L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
+        debug_if(dap_events_debug_reactor_get(), L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
                a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     memcpy(a_es->buf_out + a_es->buf_out_size, a_data, a_data_size);
     a_es->buf_out_size += a_data_size;
-    debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
+    debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_data_size, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
     dap_events_socket_set_writable_unsafe(a_es, true);
     return a_data_size;
