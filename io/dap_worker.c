@@ -432,7 +432,7 @@ static bool s_socket_all_check_activity(void * a_arg)
     DL_FOREACH_SAFE(l_del_list, l_cur, l_tmp_list) {
         l_es = (dap_events_socket_t*)l_cur->data;
         log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
-                    l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
+                    l_es->socket, (uint64_t)(l_curtime - (time_t)l_es->last_time_active - s_connection_timeout));
             
         // Call error callback if set
         if (l_es->callbacks.error_callback)
