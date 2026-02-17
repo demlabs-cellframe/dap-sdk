@@ -109,6 +109,9 @@ static atomic_int_fast32_t  s_workers_init = 0;
 static uint32_t s_threads_count = 1;
 static pthread_t *s_threads_id = NULL;
 static dap_worker_t **s_workers = NULL;
+static pthread_mutex_t s_events_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_wait_cond = PTHREAD_COND_INITIALIZER;
+static bool s_wait_in_progress = false;
 static void s_events_stop_all_unsafe(void);
 
 /**
@@ -295,6 +298,7 @@ err:
 
 static void s_events_stop_all_unsafe(void)
 {
+    // Must be called with s_events_lock held.
     if (!s_workers)
         return;
 
@@ -310,8 +314,10 @@ static void s_events_stop_all_unsafe(void)
  */
 void dap_events_deinit( )
 {
+    pthread_mutex_lock(&s_events_lock);
     if (s_threads_id)
         s_events_stop_all_unsafe();
+    pthread_mutex_unlock(&s_events_lock);
 
     dap_proc_thread_deinit();
     (void)dap_events_wait();
@@ -411,28 +417,60 @@ pthread_t       l_tid;
 
 #endif
 
+    pthread_t *l_threads_id = NULL;
+    pthread_t *l_threads_id_orig = NULL;
+    dap_worker_t **l_workers = NULL;
+    dap_worker_t **l_workers_orig = NULL;
+    uint32_t l_threads_count = 0;
+
+    pthread_mutex_lock(&s_events_lock);
+    while (s_wait_in_progress)
+        pthread_cond_wait(&s_wait_cond, &s_events_lock);
+
     if (!s_workers && !s_threads_id) {
         s_workers_init = 0;
+        pthread_mutex_unlock(&s_events_lock);
         return 0;
     }
 
-    if (s_threads_id) {
-        for( uint32_t i = 0; i < s_threads_count; i++ ) {
-            pthread_join(s_threads_id[i] , NULL );
-            if (s_workers)
-                DAP_DEL_Z(s_workers[i]);
-        }
-        DAP_DEL_Z(s_threads_id);
-        s_threads_id = NULL;
-    } else if (s_workers) {
-        for (uint32_t i = 0; i < s_threads_count; i++)
-            DAP_DEL_Z(s_workers[i]);
+    s_wait_in_progress = true;
+    l_threads_id = s_threads_id;
+    l_threads_id_orig = l_threads_id;
+    l_workers = s_workers;
+    l_workers_orig = l_workers;
+    l_threads_count = s_threads_count;
+    pthread_mutex_unlock(&s_events_lock);
+
+    if (l_threads_id) {
+        for (uint32_t i = 0; i < l_threads_count; i++)
+            pthread_join(l_threads_id[i], NULL);
     }
 
-    // Mark as stopped and free workers after threads are joined
+    pthread_mutex_lock(&s_events_lock);
+    if (l_threads_id) {
+        for (uint32_t i = 0; i < l_threads_count; i++) {
+            if (l_workers)
+                DAP_DEL_Z(l_workers[i]);
+        }
+        DAP_DEL_Z(l_threads_id);
+        if (s_threads_id == l_threads_id_orig)
+            s_threads_id = NULL;
+    } else if (l_workers) {
+        for (uint32_t i = 0; i < l_threads_count; i++)
+            DAP_DEL_Z(l_workers[i]);
+    }
+
+    if (l_workers) {
+        DAP_DEL_Z(l_workers);
+        if (s_workers == l_workers_orig)
+            s_workers = NULL;
+    }
+
+    // Mark as stopped after threads are joined and resources are freed
     s_workers_init = 0;
-    DAP_DEL_Z(s_workers);
-    s_workers = NULL;
+    s_wait_in_progress = false;
+    pthread_cond_broadcast(&s_wait_cond);
+    pthread_mutex_unlock(&s_events_lock);
     return 0;
 }
 
@@ -442,17 +480,21 @@ pthread_t       l_tid;
  */
 void dap_events_stop_all( )
 {
+    pthread_mutex_lock(&s_events_lock);
     if ( !s_workers_init ) {
+        pthread_mutex_unlock(&s_events_lock);
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         return;
     }
 
     if (!s_workers) {
+        pthread_mutex_unlock(&s_events_lock);
         log_it(L_WARNING, "dap_events_stop_all(): workers array is NULL");
         return;
     }
 
     s_events_stop_all_unsafe();
+    pthread_mutex_unlock(&s_events_lock);
 }
 
 
