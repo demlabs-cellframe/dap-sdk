@@ -434,6 +434,8 @@ pthread_t       l_tid;
     }
 
     s_wait_in_progress = true;
+    // Publish shutdown state before joins/frees so cross-thread APIs stop scheduling work immediately.
+    s_workers_init = 0;
     l_threads_id = s_threads_id;
     l_threads_id_orig = l_threads_id;
     l_workers = s_workers;
@@ -466,8 +468,6 @@ pthread_t       l_tid;
             s_workers = NULL;
     }
 
-    // Mark as stopped after threads are joined and resources are freed
-    s_workers_init = 0;
     s_wait_in_progress = false;
     pthread_cond_broadcast(&s_wait_cond);
     pthread_mutex_unlock(&s_events_lock);
@@ -481,11 +481,14 @@ pthread_t       l_tid;
 void dap_events_stop_all( )
 {
     pthread_mutex_lock(&s_events_lock);
-    if ( !s_workers_init ) {
+    if ( !s_workers_init && !s_workers ) {
         pthread_mutex_unlock(&s_events_lock);
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         return;
     }
+
+    // Stop new cross-thread API scheduling before we start worker teardown.
+    s_workers_init = 0;
 
     if (!s_workers) {
         pthread_mutex_unlock(&s_events_lock);

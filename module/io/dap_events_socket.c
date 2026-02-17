@@ -112,7 +112,26 @@ struct queue_ptr_input_pvt{
 static uint64_t s_delayed_ops_timeout_ms = 5000;
 bool s_remove_and_delete_unsafe_delayed_delete_callback(void * a_arg);
 
-static pthread_attr_t s_attr_detached;                                      /* Thread's creation attribute = DETACHED ! */
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+typedef struct dap_queue_buf_thread_state {
+    dap_events_socket_t *es;
+    pthread_t thread_id;
+    atomic_bool running;
+    atomic_bool stop_requested;
+    bool thread_created;
+    bool destroy_requested;
+    struct dap_queue_buf_thread_state *next;
+} dap_queue_buf_thread_state_t;
+
+static pthread_mutex_t s_queue_buf_threads_lock = PTHREAD_MUTEX_INITIALIZER;
+static dap_queue_buf_thread_state_t *s_queue_buf_threads = NULL;
+#endif
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+static void s_queue_ops_enter(void);
+static void s_queue_ops_leave(void);
+static void s_queue_ops_wait_drain(void);
+#endif
 
 
 #ifdef   DAP_SYS_DEBUG
@@ -339,14 +358,6 @@ int dap_events_socket_init( void )
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
 #endif
-
-
-    /*
-     * @RRL: #6157
-     * Use this thread's attribute to eliminate resource consuming by terminated threads
-     */
-    pthread_attr_init(&s_attr_detached);
-    pthread_attr_setdetachstate(&s_attr_detached, PTHREAD_CREATE_DETACHED);
 
 #if defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
 #include <sys/time.h>
@@ -834,6 +845,42 @@ static int s_wait_send_socket(SOCKET a_sockfd, long timeout_ms)
 }
 
 
+static dap_queue_buf_thread_state_t *s_queue_buf_thread_state_find_unsafe(dap_events_socket_t *a_es)
+{
+    for (dap_queue_buf_thread_state_t *l_state = s_queue_buf_threads; l_state; l_state = l_state->next)
+        if (l_state->es == a_es)
+            return l_state;
+    return NULL;
+}
+
+static dap_queue_buf_thread_state_t *s_queue_buf_thread_state_create_unsafe(dap_events_socket_t *a_es)
+{
+    dap_queue_buf_thread_state_t *l_state = DAP_NEW_Z(dap_queue_buf_thread_state_t);
+    if (!l_state)
+        return NULL;
+    l_state->es = a_es;
+    atomic_init(&l_state->running, false);
+    atomic_init(&l_state->stop_requested, false);
+    l_state->next = s_queue_buf_threads;
+    s_queue_buf_threads = l_state;
+    return l_state;
+}
+
+static void s_queue_buf_thread_state_delete_unsafe(dap_queue_buf_thread_state_t *a_state)
+{
+    if (!a_state)
+        return;
+    dap_queue_buf_thread_state_t **l_link = &s_queue_buf_threads;
+    while (*l_link) {
+        if (*l_link == a_state) {
+            *l_link = a_state->next;
+            DAP_DELETE(a_state);
+            return;
+        }
+        l_link = &(*l_link)->next;
+    }
+}
+
 /**
  * @brief dap_events_socket_buf_thread
  * @param arg
@@ -841,7 +888,8 @@ static int s_wait_send_socket(SOCKET a_sockfd, long timeout_ms)
  */
 static void *s_dap_events_socket_buf_thread(void *arg)
 {
-    dap_events_socket_t *l_es = (dap_events_socket_t *)arg;
+    dap_queue_buf_thread_state_t *l_state = (dap_queue_buf_thread_state_t *)arg;
+    dap_events_socket_t *l_es = l_state ? l_state->es : NULL;
     if (!l_es) {
         log_it(L_ERROR, "NULL esocket in queue service thread");
         pthread_exit(0);
@@ -853,22 +901,29 @@ static void *s_dap_events_socket_buf_thread(void *arg)
         l_sock = l_es->mqd;
 #endif
     while (1) {
+        if (atomic_load_explicit(&l_state->stop_requested, memory_order_acquire))
+            break;
         pthread_rwlock_wrlock(&l_es->buf_out_lock);
+        if (!l_es->buf_out_size || atomic_load_explicit(&l_state->stop_requested, memory_order_acquire)) {
+            pthread_rwlock_unlock(&l_es->buf_out_lock);
+            break;
+        }
         errno = 0;
         ssize_t l_write_ret = write(l_sock, l_es->buf_out, dap_min((size_t)PIPE_BUF, l_es->buf_out_size));
         if (l_write_ret == -1) {
             switch (errno) {
             case EAGAIN:
                 pthread_rwlock_unlock(&l_es->buf_out_lock);
-                struct timeval l_tv = { .tv_sec = 120 };
+                struct timeval l_tv = { .tv_usec = 100 * 1000 };
                 fd_set l_outfd; FD_ZERO(&l_outfd);
                 FD_SET(l_sock, &l_outfd);
                 sched_yield();
-                switch ( select(l_sock + 1, NULL, &l_outfd, NULL, &l_tv) ) {
-                case 0:
-                    log_it(L_ERROR, "Es %p (fd %d) waiting timeout, data lost!",
-                           l_es, l_es->fd2);
-                case -1:
+                int l_select_ret = select(l_sock + 1, NULL, &l_outfd, NULL, &l_tv);
+                if (atomic_load_explicit(&l_state->stop_requested, memory_order_acquire))
+                    break;
+                if (l_select_ret == 0 || (l_select_ret == -1 && errno == EINTR))
+                    continue;
+                if (l_select_ret == -1) {
                     pthread_rwlock_wrlock(&l_es->buf_out_lock);
                     if (l_es->cb_buf_cleaner) {
                         size_t l_dropped = l_es->cb_buf_cleaner((char*)l_es->buf_out, l_es->buf_out_size);
@@ -876,17 +931,16 @@ static void *s_dap_events_socket_buf_thread(void *arg)
                     }
                     l_es->buf_out_size = 0;
                     pthread_rwlock_unlock(&l_es->buf_out_lock);
-                    pthread_exit(NULL);
-                default:
-                    if ( FD_ISSET(l_sock, &l_outfd) )
-                        continue;
-                    break;
-                } break;
+                    goto lb_thread_exit;
+                }
+                if (FD_ISSET(l_sock, &l_outfd))
+                    continue;
+                break;
             default:
                 log_it(L_CRITICAL, "[!] Can't write data to pipe! Errno %d", errno);
                 l_es->buf_out_size = 0;
                 pthread_rwlock_unlock(&l_es->buf_out_lock);
-                pthread_exit(NULL);
+                goto lb_thread_exit;
             }
         } else if (l_write_ret == (ssize_t)l_es->buf_out_size) {
             debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %zd bytes to pipe [es %d]", l_write_ret, l_sock);
@@ -899,48 +953,146 @@ static void *s_dap_events_socket_buf_thread(void *arg)
             memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
         }
 
-        if (l_write_ret % sizeof(arg))
+        if (l_write_ret > 0 && l_write_ret % sizeof(arg))
             log_it(L_CRITICAL, "[!] Sent unaligned chunk [%zd bytes] to pipe, possible data corruption!", l_write_ret);
         pthread_rwlock_unlock(&l_es->buf_out_lock);
     }
+lb_thread_exit:
+    atomic_store_explicit(&l_state->running, false, memory_order_release);
     pthread_exit(NULL);
 }
 
 static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
 {
-    static atomic_uint_fast64_t l_thd_count;
     static const size_t l_basic_buf_size = DAP_QUEUE_MAX_MSGS * sizeof(void*);
+    bool l_need_start_thread = false;
+
     pthread_rwlock_wrlock(&a_es->buf_out_lock);
+    if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
+        pthread_rwlock_unlock(&a_es->buf_out_lock);
+        return;
+    }
     if (!a_es->buf_out_size) {
         if (write(a_es->fd2, &a_arg, sizeof(a_arg)) == sizeof(a_arg)) {
             pthread_rwlock_unlock(&a_es->buf_out_lock);
             return;
         }
-        int l_rc;
-        pthread_t l_thread;
-        atomic_fetch_add(&l_thd_count, 1);
-        if ((l_rc = pthread_create(&l_thread, &s_attr_detached /* @RRL: #6157 */, s_dap_events_socket_buf_thread, a_es))) {
-            log_it(L_ERROR, "[#%"DAP_UINT64_FORMAT_U"] Cannot start thread, drop a_es: %p, a_arg: %p, rc: %d",
-                   atomic_load(&l_thd_count), a_es, a_arg, l_rc);
+    } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
+        a_es->buf_out_size_max += l_basic_buf_size;
+        byte_t *l_realloc = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        if (!l_realloc) {
+            log_it(L_ERROR, "Can't increase queue buffer for es %p", a_es);
             pthread_rwlock_unlock(&a_es->buf_out_lock);
             return;
         }
-        debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
-                     atomic_load(&l_thd_count), (uint64_t)l_thread, a_es, a_arg);
-    } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
-        a_es->buf_out_size_max += l_basic_buf_size;
-        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        a_es->buf_out = l_realloc;
         debug_if(g_debug_reactor, L_MSG, "Es %p (%d): increase capacity to %zu, actual size: %zu",
                a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + sizeof(void*) <= l_basic_buf_size / 2) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
-        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        byte_t *l_realloc = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        if (l_realloc)
+            a_es->buf_out = l_realloc;
         debug_if(g_debug_reactor, L_MSG, "Es %p (%d): decrease capacity to %zu, actual size: %zu",
                a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
     a_es->buf_out_size += sizeof(a_arg);
+    l_need_start_thread = true;
     pthread_rwlock_unlock(&a_es->buf_out_lock);
+
+    if (!l_need_start_thread || (a_es->flags & DAP_SOCK_SIGNAL_CLOSE))
+        return;
+
+    static atomic_uint_fast64_t l_thd_count;
+    while (1) {
+        pthread_t l_thread_id = 0;
+        bool l_need_join = false;
+        bool l_started = false;
+        pthread_mutex_lock(&s_queue_buf_threads_lock);
+        dap_queue_buf_thread_state_t *l_state = s_queue_buf_thread_state_find_unsafe(a_es);
+        if (!l_state)
+            l_state = s_queue_buf_thread_state_create_unsafe(a_es);
+        if (!l_state) {
+            pthread_mutex_unlock(&s_queue_buf_threads_lock);
+            log_it(L_ERROR, "Can't allocate queue buffer thread state for es %p", a_es);
+            return;
+        }
+        if (l_state->destroy_requested || (a_es->flags & DAP_SOCK_SIGNAL_CLOSE)) {
+            pthread_mutex_unlock(&s_queue_buf_threads_lock);
+            return;
+        }
+        if (l_state->thread_created) {
+            if (atomic_load_explicit(&l_state->running, memory_order_acquire)) {
+                pthread_mutex_unlock(&s_queue_buf_threads_lock);
+                return;
+            }
+            l_thread_id = l_state->thread_id;
+            l_state->thread_created = false;
+            l_need_join = true;
+            pthread_mutex_unlock(&s_queue_buf_threads_lock);
+            pthread_join(l_thread_id, NULL);
+            continue;
+        }
+        atomic_store_explicit(&l_state->stop_requested, false, memory_order_release);
+        atomic_store_explicit(&l_state->running, true, memory_order_release);
+        int l_rc = pthread_create(&l_state->thread_id, NULL, s_dap_events_socket_buf_thread, l_state);
+        if (l_rc == 0) {
+            l_state->thread_created = true;
+            l_thread_id = l_state->thread_id;
+            l_started = true;
+        } else {
+            atomic_store_explicit(&l_state->running, false, memory_order_release);
+            log_it(L_ERROR, "[#%"DAP_UINT64_FORMAT_U"] Cannot start thread, drop a_es: %p, a_arg: %p, rc: %d",
+                   atomic_load(&l_thd_count) + 1, a_es, a_arg, l_rc);
+        }
+        pthread_mutex_unlock(&s_queue_buf_threads_lock);
+
+        if (l_need_join)
+            continue;
+        if (l_started) {
+            uint64_t l_count = atomic_fetch_add(&l_thd_count, 1) + 1;
+            debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
+                     l_count, (uint64_t)l_thread_id, a_es, a_arg);
+        }
+        return;
+    }
+}
+
+static void s_queue_buf_thread_stop_and_join(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return;
+
+    pthread_t l_thread_id = 0;
+    bool l_need_join = false;
+
+    pthread_mutex_lock(&s_queue_buf_threads_lock);
+    dap_queue_buf_thread_state_t *l_state = s_queue_buf_thread_state_find_unsafe(a_es);
+    if (!l_state) {
+        pthread_mutex_unlock(&s_queue_buf_threads_lock);
+        return;
+    }
+
+    l_state->destroy_requested = true;
+    atomic_store_explicit(&l_state->stop_requested, true, memory_order_release);
+    if (l_state->thread_created) {
+        l_thread_id = l_state->thread_id;
+        l_state->thread_created = false;
+        l_need_join = true;
+    } else {
+        s_queue_buf_thread_state_delete_unsafe(l_state);
+    }
+    pthread_mutex_unlock(&s_queue_buf_threads_lock);
+
+    if (l_need_join)
+        pthread_join(l_thread_id, NULL);
+
+    pthread_mutex_lock(&s_queue_buf_threads_lock);
+    l_state = s_queue_buf_thread_state_find_unsafe(a_es);
+    if (l_state)
+        s_queue_buf_thread_state_delete_unsafe(l_state);
+    pthread_mutex_unlock(&s_queue_buf_threads_lock);
 }
 #endif
 
@@ -1103,6 +1255,7 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor )
 {
     assert(a_es);
+    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     debug_if(g_debug_reactor, L_DEBUG, "Remove es %p [%s] \"%s\" uuid "DAP_FORMAT_ESOCKET_UUID"",
              a_es, a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
              dap_events_socket_get_type_str(a_es), a_es->uuid);
@@ -1470,6 +1623,8 @@ void dap_events_socket_set_writable_unsafe(dap_events_socket_t *a_esocket, bool 
 int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 {
     dap_return_val_if_fail(a_es && a_arg, -1);
+    if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE)
+        return -1;
 
     int l_ret = -1024, l_errno=0;
 
@@ -1583,6 +1738,25 @@ void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_pres
 {
     dap_return_if_fail(a_esocket);
 #ifndef DAP_EVENTS_CAPS_IOCP
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+    if (a_esocket->type == DESCRIPTOR_TYPE_QUEUE) {
+        s_queue_ops_wait_drain();
+        s_queue_buf_thread_stop_and_join(a_esocket);
+        if (a_esocket->cb_buf_cleaner) {
+            if (a_esocket->buf_out_size) {
+                a_esocket->cb_buf_cleaner((char *)a_esocket->buf_out, a_esocket->buf_out_size);
+                a_esocket->buf_out_size = 0;
+            }
+            if (a_esocket->fd > 0) {
+                void *l_items[DAP_QUEUE_MAX_MSGS];
+                ssize_t l_read = 0;
+                while ( (l_read = read(a_esocket->fd, l_items, sizeof(l_items))) > 0 )
+                    a_esocket->cb_buf_cleaner((char *)l_items, (size_t)l_read);
+            }
+        }
+        pthread_rwlock_destroy(&a_esocket->buf_out_lock);
+    }
+#endif
     dap_events_socket_descriptor_close(a_esocket);
 #endif
     DAP_DEL_MULTY(a_esocket->_pvt, a_esocket->buf_in, a_esocket->buf_out);
@@ -1600,18 +1774,55 @@ void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_pres
  * @param a_worker
  * @param a_es_uuid
  */
+#ifndef DAP_EVENTS_CAPS_IOCP
+static atomic_uint_fast32_t s_queue_ops_inflight = 0;
+
+static inline void s_queue_ops_enter(void)
+{
+    atomic_fetch_add_explicit(&s_queue_ops_inflight, 1, memory_order_acq_rel);
+}
+
+static inline void s_queue_ops_leave(void)
+{
+    atomic_fetch_sub_explicit(&s_queue_ops_inflight, 1, memory_order_acq_rel);
+}
+
+static void s_queue_ops_wait_drain(void)
+{
+    while (atomic_load_explicit(&s_queue_ops_inflight, memory_order_acquire))
+        sched_yield();
+}
+
+static bool s_worker_queue_ready(const dap_worker_t *a_worker, const dap_events_socket_t *a_queue)
+{
+    return a_worker && a_queue;
+}
+#endif
+
 void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid)
 {
     dap_return_if_fail(a_worker);
+#ifndef DAP_EVENTS_CAPS_IOCP
+    bool l_queue_guard = a_worker != dap_worker_get_current();
+    if (l_queue_guard)
+        s_queue_ops_enter();
+#endif
+    if (!dap_events_workers_init_status())
+        goto lb_exit;
     if (a_worker == dap_worker_get_current()) {
+        if (!a_worker->context || a_worker->context->signal_exit)
+            goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
             log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
-            return;
+            goto lb_exit;
         }
         dap_events_socket_remove_and_delete_unsafe(l_es, false);
+        goto lb_exit;
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
+    if (!a_worker->context || a_worker->context->signal_exit)
+        goto lb_exit;
     dap_overlapped_t *ol = DAP_NEW_Z(dap_overlapped_t);
     ol->ol.Internal = (ULONG_PTR)a_es_uuid;
     ol->ol.Offset = DAP_SOCK_SIGNAL_CLOSE;
@@ -1623,17 +1834,25 @@ void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_sock
         dap_overlapped_free(ol);
     }
 #else
+    dap_events_socket_t *l_queue = a_worker->queue_es_delete;
+    if (!s_worker_queue_ready(a_worker, l_queue))
+        goto lb_exit;
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
+        goto lb_exit;
     }
     *l_es_uuid_ptr = a_es_uuid;
 
-    if( dap_events_socket_queue_ptr_send( a_worker->queue_es_delete, l_es_uuid_ptr ) != 0 ){
+    if( dap_events_socket_queue_ptr_send(l_queue, l_es_uuid_ptr) != 0 ){
         log_it(L_ERROR,"Can't send %"DAP_UINT64_FORMAT_U" uuid in queue",a_es_uuid);
         DAP_DELETE(l_es_uuid_ptr);
     }
+#endif
+lb_exit:
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_queue_guard)
+        s_queue_ops_leave();
 #endif
 }
 
@@ -1646,15 +1865,27 @@ void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_sock
 void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready)
 {
     dap_return_if_fail(a_worker);
+#ifndef DAP_EVENTS_CAPS_IOCP
+    bool l_queue_guard = a_worker != dap_worker_get_current();
+    if (l_queue_guard)
+        s_queue_ops_enter();
+#endif
+    if (!dap_events_workers_init_status())
+        goto lb_exit;
     if (a_worker == dap_worker_get_current()) {
+        if (!a_worker->context || a_worker->context->signal_exit)
+            goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
             log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
-            return;
+            goto lb_exit;
         }
-        return dap_events_socket_set_readable_unsafe(l_es, a_is_ready);
+        dap_events_socket_set_readable_unsafe(l_es, a_is_ready);
+        goto lb_exit;
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
+    if (!a_worker->context || a_worker->context->signal_exit)
+        goto lb_exit;
     dap_overlapped_t *ol = DAP_NEW_Z(dap_overlapped_t);
     ol->ol.Internal = (ULONG_PTR)a_es_uuid;
     ol->ol.Offset = DAP_SOCK_READY_TO_READ;
@@ -1666,18 +1897,30 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
         dap_overlapped_free(ol);
     }
 #else
-    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_IF_FAIL(dap_worker_msg_io_t);
+    dap_events_socket_t *l_queue = a_worker->queue_es_io;
+    if (!s_worker_queue_ready(a_worker, l_queue))
+        goto lb_exit;
+    dap_worker_msg_io_t *l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto lb_exit;
+    }
     l_msg->esocket_uuid = a_es_uuid;
     if (a_is_ready)
         l_msg->flags_set = DAP_SOCK_READY_TO_READ;
     else
         l_msg->flags_unset = DAP_SOCK_READY_TO_READ;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
+    int l_ret = dap_events_socket_queue_ptr_send(l_queue, l_msg);
     if (l_ret) {
         log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret);
         DAP_DELETE(l_msg);
     }
+#endif
+lb_exit:
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_queue_guard)
+        s_queue_ops_leave();
 #endif
 }
 
@@ -1690,15 +1933,27 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
 void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready)
 {
     dap_return_if_fail(a_worker);
+#ifndef DAP_EVENTS_CAPS_IOCP
+    bool l_queue_guard = a_worker != dap_worker_get_current();
+    if (l_queue_guard)
+        s_queue_ops_enter();
+#endif
+    if (!dap_events_workers_init_status())
+        goto lb_exit;
     if (a_worker == dap_worker_get_current()) {
+        if (!a_worker->context || a_worker->context->signal_exit)
+            goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
             log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
-            return;
+            goto lb_exit;
         }
-        return dap_events_socket_set_writable_unsafe(l_es, a_is_ready);
+        dap_events_socket_set_writable_unsafe(l_es, a_is_ready);
+        goto lb_exit;
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
+    if (!a_worker->context || a_worker->context->signal_exit)
+        goto lb_exit;
     dap_overlapped_t *ol = DAP_NEW_Z(dap_overlapped_t);
     ol->ol.Internal = (ULONG_PTR)a_es_uuid;
     ol->ol.Offset = DAP_SOCK_READY_TO_WRITE;
@@ -1710,7 +1965,14 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
         dap_overlapped_free(ol);
     }
 #else
-    dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t); if (!l_msg) return;
+    dap_events_socket_t *l_queue = a_worker->queue_es_io;
+    if (!s_worker_queue_ready(a_worker, l_queue))
+        goto lb_exit;
+    dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto lb_exit;
+    }
     l_msg->esocket_uuid = a_es_uuid;
 
     if (a_is_ready)
@@ -1718,11 +1980,16 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
     else
         l_msg->flags_unset = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg );
+    int l_ret = dap_events_socket_queue_ptr_send(l_queue, l_msg );
     if (l_ret) {
         log_it(L_ERROR, "set writable mt: wasn't send pointer to queue: code %d", l_ret);
         DAP_DELETE(l_msg);
     }
+#endif
+lb_exit:
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_queue_guard)
+        s_queue_ops_leave();
 #endif
 }
 
@@ -1737,34 +2004,60 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
 size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, const void *a_data, size_t a_data_size)
 {
     dap_return_val_if_fail(a_worker, 0);
+    size_t l_result = 0;
+#ifndef DAP_EVENTS_CAPS_IOCP
+    bool l_queue_guard = a_worker != dap_worker_get_current();
+    if (l_queue_guard)
+        s_queue_ops_enter();
+#endif
+    if (!dap_events_workers_init_status())
+        goto lb_exit;
     if (a_worker == dap_worker_get_current()) {
+        if (!a_worker->context || a_worker->context->signal_exit)
+            goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
-        return l_es
+        l_result = l_es
             ? dap_events_socket_write_unsafe(l_es, a_data, a_data_size)
             : ( log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id), 0 );
+        goto lb_exit;
     }
 
 #ifdef DAP_EVENTS_CAPS_IOCP
+    if (!a_worker->context || a_worker->context->signal_exit)
+        goto lb_exit;
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
     *ol = (dap_overlapped_t) { .op = io_write };
     memcpy(ol->buf, a_data, a_data_size);
     debug_if(g_debug_reactor, L_INFO, "Write %lu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_worker->id);
-    return PostQueuedCompletionStatus(a_worker->context->iocp, a_data_size, (ULONG_PTR)a_es_uuid, (OVERLAPPED*)ol)
+    l_result = PostQueuedCompletionStatus(a_worker->context->iocp, a_data_size, (ULONG_PTR)a_es_uuid, (OVERLAPPED*)ol)
         ? a_data_size
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
                                    a_es_uuid, a_worker->context->id, (unsigned long)GetLastError()), 0 );
 #else
-    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
+    dap_events_socket_t *l_queue = a_worker->queue_es_io;
+    if (!s_worker_queue_ready(a_worker, l_queue))
+        goto lb_exit;
+    dap_worker_msg_io_t *l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto lb_exit;
+    }
     l_msg->esocket_uuid = a_es_uuid;
     l_msg->data = DAP_DUP_SIZE((char*)a_data, a_data_size);
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
-    return l_ret
+    int l_ret = dap_events_socket_queue_ptr_send(l_queue, l_msg);
+    l_result = l_ret
         ? ( log_it(L_ERROR, "queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0 )
         : a_data_size;
 #endif
+lb_exit:
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_queue_guard)
+        s_queue_ops_leave();
+#endif
+    return l_result;
 }
 
 /**
@@ -1775,6 +2068,8 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
  */
 size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, const char *a_format, ...)
 {
+    if (!dap_events_workers_init_status())
+        return 0;
     dap_return_val_if_fail(a_worker, 0);
     va_list ap, ap_copy;
     va_start(ap,a_format);
@@ -1788,6 +2083,10 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
     }
     ++l_data_size; // include trailing 0
 #ifdef DAP_EVENTS_CAPS_IOCP
+    if (!a_worker->context || a_worker->context->signal_exit) {
+        va_end(ap_copy);
+        return 0;
+    }
     dap_overlapped_t *ol = DAP_NEW_Z_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + l_data_size);
     *ol = (dap_overlapped_t) { .op = io_write };
     vsprintf(ol->buf, a_format, ap_copy);
@@ -1796,6 +2095,11 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
                a_es_uuid, a_worker->context->id, (unsigned long)GetLastError()), 0 );
 #else
+    dap_events_socket_t *l_queue = a_worker->queue_es_io;
+    if (!s_worker_queue_ready(a_worker, l_queue)) {
+        va_end(ap_copy);
+        return 0;
+    }
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -1824,7 +2128,7 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
         size_t ret = dap_events_socket_write_unsafe(l_es, l_msg->data, l_msg->data_size);
         return DAP_DEL_MULTY(l_msg->data, l_msg), ret;
     }
-    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
+    int l_ret = dap_events_socket_queue_ptr_send(l_queue, l_msg);
     return l_ret
         ? log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
         : l_data_size;

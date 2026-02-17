@@ -78,6 +78,8 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg);
 static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg);
 static void s_queue_es_reassign_callback( dap_events_socket_t * a_es, void * a_arg);
 static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg);
+static size_t s_queue_delete_es_cleaner(char *a_buf, size_t a_size);
+static size_t s_queue_es_io_cleaner(char *a_buf, size_t a_size);
 #endif
 static void s_queue_callback_callback( dap_events_socket_t * a_es, void * a_arg);
 
@@ -167,6 +169,10 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
     l_worker->queue_es_delete   = dap_context_create_queue(a_context, s_queue_delete_es_callback);
     l_worker->queue_es_io       = dap_context_create_queue(a_context, s_queue_es_io_callback);
     l_worker->queue_es_reassign = dap_context_create_queue(a_context, s_queue_es_reassign_callback );
+    if (l_worker->queue_es_delete)
+        l_worker->queue_es_delete->cb_buf_cleaner = s_queue_delete_es_cleaner;
+    if (l_worker->queue_es_io)
+        l_worker->queue_es_io->cb_buf_cleaner = s_queue_es_io_cleaner;
 #endif
     l_worker->queue_callback    = dap_context_create_queue(a_context, s_queue_callback_callback);
 
@@ -189,6 +195,17 @@ int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
     dap_return_val_if_fail(a_context && a_arg, -1);
     dap_worker_t *l_worker = a_arg;
     assert(l_worker);
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    // Stop cross-thread producers first to prevent enqueue into queues that are being freed below.
+    l_worker->queue_es_new = NULL;
+    l_worker->queue_es_delete = NULL;
+    l_worker->queue_es_reassign = NULL;
+    l_worker->queue_es_io = NULL;
+#endif
+    l_worker->queue_callback = NULL;
+    l_worker->timer_check_activity = NULL;
+    dap_worker_proc_queue_input_store(l_worker, NULL);
 
     // Final context drain: remove and delete every remaining esocket that belongs to this worker context.
     while (a_context->esockets) {
@@ -220,16 +237,7 @@ int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
     a_context->kqueue_events_selected_count_max = 0;
 #endif
 
-#ifndef DAP_EVENTS_CAPS_IOCP
-    l_worker->queue_es_new = NULL;
-    l_worker->queue_es_delete = NULL;
-    l_worker->queue_es_reassign = NULL;
-    l_worker->queue_es_io = NULL;
-#endif
-    l_worker->queue_callback = NULL;
-    l_worker->timer_check_activity = NULL;
-    dap_worker_proc_queue_input_store(l_worker, NULL);
-
+    l_worker->context = NULL;
     log_it(L_NOTICE,"Exiting thread #%u", l_worker->id);
     return 0;
 }
@@ -407,6 +415,32 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);
+}
+
+static size_t s_queue_delete_es_cleaner(char *a_buf, size_t a_size)
+{
+    if (!a_buf || !a_size)
+        return 0;
+    size_t l_count = a_size / sizeof(void*);
+    dap_events_socket_uuid_t **l_items = (dap_events_socket_uuid_t **)a_buf;
+    for (size_t i = 0; i < l_count; i++)
+        DAP_DELETE(l_items[i]);
+    return l_count * sizeof(void*);
+}
+
+static size_t s_queue_es_io_cleaner(char *a_buf, size_t a_size)
+{
+    if (!a_buf || !a_size)
+        return 0;
+    size_t l_count = a_size / sizeof(void*);
+    dap_worker_msg_io_t **l_items = (dap_worker_msg_io_t **)a_buf;
+    for (size_t i = 0; i < l_count; i++) {
+        dap_worker_msg_io_t *l_msg = l_items[i];
+        if (!l_msg)
+            continue;
+        DAP_DEL_MULTY(l_msg->data, l_msg);
+    }
+    return l_count * sizeof(void*);
 }
 #else
 void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
