@@ -9,14 +9,22 @@ set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_link_manager da
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
     set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
-    # Save linker flags that interfere with libmdbx's check_function_exists() tests
+    # Save flags that interfere with libmdbx's check_function_exists() tests
+    # The -Wl,--strip-all and -Wl,--gc-sections in CMAKE_C_FLAGS break function checks
+    set(SAVED_CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    set(SAVED_CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
     set(SAVED_CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
     set(SAVED_CMAKE_REQUIRED_LINK_OPTIONS "${CMAKE_REQUIRED_LINK_OPTIONS}")
+    # Remove problematic linker flags from C flags for the duration of MDBX configuration
+    string(REGEX REPLACE "-Wl,[^ ]*" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    set(CMAKE_REQUIRED_FLAGS "")
     set(CMAKE_EXE_LINKER_FLAGS "")
     set(CMAKE_REQUIRED_LINK_OPTIONS "")
     list(APPEND dap_global_db_SRC dap_global_db_driver_mdbx.c)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/libmdbx ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/libmdbx EXCLUDE_FROM_ALL)
-    # Restore linker flags
+    # Restore all flags
+    set(CMAKE_C_FLAGS "${SAVED_CMAKE_C_FLAGS}")
+    set(CMAKE_REQUIRED_FLAGS "${SAVED_CMAKE_REQUIRED_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "${SAVED_CMAKE_EXE_LINKER_FLAGS}")
     set(CMAKE_REQUIRED_LINK_OPTIONS "${SAVED_CMAKE_REQUIRED_LINK_OPTIONS}")
     set(CMAKE_MESSAGE_LOG_LEVEL ${SAVED_CMAKE_MESSAGE_LOG_LEVEL})
