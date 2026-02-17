@@ -241,6 +241,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_events_deinit_without_wait
     register_dap_test(test_regression_events_deinit_without_wait "regression;io;events")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_server_delete_accept_race.c)
+    add_dap_test(test_regression_server_delete_accept_race regression/test_server_delete_accept_race.c)
+    register_dap_test(test_regression_server_delete_accept_race "regression;io;server")
+endif()
+
 # Build Security Tests
 message("[+] Configuring Security Tests")
 

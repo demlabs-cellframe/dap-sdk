@@ -54,6 +54,7 @@
 #include <stddef.h>
 #include <errno.h>
 #include <signal.h>
+#include <stdatomic.h>
 #if ! defined(_GNU_SOURCE)
 #define _GNU_SOURCE
 #endif
@@ -77,8 +78,205 @@ bool s_server_enabled = false;
 static void s_es_server_new     (dap_events_socket_t *a_es, void *a_arg);
 static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
 static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
+static void s_es_server_listener_delete(dap_events_socket_t *a_es, void *a_arg);
 
 static dap_server_t* s_default_server = NULL;
+
+typedef struct dap_server_lifecycle {
+    dap_server_t *server;
+    atomic_uint_fast32_t accept_refs;
+    atomic_uint_fast32_t listeners_pending;
+    atomic_bool delete_requested;
+    struct dap_server_lifecycle *next;
+} dap_server_lifecycle_t;
+
+typedef struct dap_server_listener_guard {
+    dap_events_socket_t *es_listener;
+    dap_server_t *server;
+    dap_events_socket_callback_t prev_delete_callback;
+    struct dap_server_listener_guard *next;
+} dap_server_listener_guard_t;
+
+static pthread_mutex_t s_server_lifecycle_lock = PTHREAD_MUTEX_INITIALIZER;
+static dap_server_lifecycle_t *s_server_lifecycle_list = NULL;
+static dap_server_listener_guard_t *s_server_listener_guard_list = NULL;
+
+static dap_server_lifecycle_t *s_server_lifecycle_find_unsafe(dap_server_t *a_server)
+{
+    for (dap_server_lifecycle_t *l_item = s_server_lifecycle_list; l_item; l_item = l_item->next)
+        if (l_item->server == a_server)
+            return l_item;
+    return NULL;
+}
+
+static dap_server_lifecycle_t *s_server_lifecycle_detach_unsafe(dap_server_t *a_server)
+{
+    dap_server_lifecycle_t **l_link = &s_server_lifecycle_list;
+    while (*l_link) {
+        if ((*l_link)->server == a_server) {
+            dap_server_lifecycle_t *l_item = *l_link;
+            *l_link = l_item->next;
+            return l_item;
+        }
+        l_link = &(*l_link)->next;
+    }
+    return NULL;
+}
+
+static dap_server_lifecycle_t *s_server_lifecycle_detach_if_finalizable_unsafe(dap_server_t *a_server)
+{
+    dap_server_lifecycle_t *l_item = s_server_lifecycle_find_unsafe(a_server);
+    if (!l_item)
+        return NULL;
+    if (!atomic_load_explicit(&l_item->delete_requested, memory_order_acquire))
+        return NULL;
+    if (atomic_load_explicit(&l_item->listeners_pending, memory_order_acquire))
+        return NULL;
+    if (atomic_load_explicit(&l_item->accept_refs, memory_order_acquire))
+        return NULL;
+    return s_server_lifecycle_detach_unsafe(a_server);
+}
+
+static void s_server_lifecycle_release_item(dap_server_lifecycle_t *a_item)
+{
+    if (!a_item)
+        return;
+    dap_server_t *l_server = a_item->server;
+    DAP_DELETE(a_item);
+    DAP_DELETE(l_server);
+}
+
+static bool s_server_lifecycle_register(dap_server_t *a_server)
+{
+    dap_server_lifecycle_t *l_item = DAP_NEW_Z(dap_server_lifecycle_t);
+    if (!l_item)
+        return false;
+    l_item->server = a_server;
+    atomic_init(&l_item->accept_refs, 0);
+    atomic_init(&l_item->listeners_pending, 0);
+    atomic_init(&l_item->delete_requested, false);
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    l_item->next = s_server_lifecycle_list;
+    s_server_lifecycle_list = l_item;
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    return true;
+}
+
+static bool s_server_lifecycle_ref(dap_server_t *a_server)
+{
+    bool l_ret = false;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    dap_server_lifecycle_t *l_item = s_server_lifecycle_find_unsafe(a_server);
+    if (l_item) {
+        atomic_fetch_add_explicit(&l_item->accept_refs, 1, memory_order_acq_rel);
+        l_ret = true;
+    }
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    return l_ret;
+}
+
+static void s_server_lifecycle_unref(dap_server_t *a_server)
+{
+    dap_server_lifecycle_t *l_to_free = NULL;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    dap_server_lifecycle_t *l_item = s_server_lifecycle_find_unsafe(a_server);
+    if (l_item) {
+        uint_fast32_t l_refcnt = atomic_load_explicit(&l_item->accept_refs, memory_order_acquire);
+        if (l_refcnt)
+            atomic_fetch_sub_explicit(&l_item->accept_refs, 1, memory_order_acq_rel);
+        l_to_free = s_server_lifecycle_detach_if_finalizable_unsafe(a_server);
+    }
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    s_server_lifecycle_release_item(l_to_free);
+}
+
+static bool s_server_lifecycle_is_delete_requested(dap_server_t *a_server)
+{
+    bool l_ret = true;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    dap_server_lifecycle_t *l_item = s_server_lifecycle_find_unsafe(a_server);
+    if (l_item)
+        l_ret = atomic_load_explicit(&l_item->delete_requested, memory_order_acquire);
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    return l_ret;
+}
+
+static bool s_server_lifecycle_listener_inc(dap_server_t *a_server)
+{
+    bool l_ret = false;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    dap_server_lifecycle_t *l_item = s_server_lifecycle_find_unsafe(a_server);
+    if (l_item) {
+        atomic_fetch_add_explicit(&l_item->listeners_pending, 1, memory_order_acq_rel);
+        l_ret = true;
+    }
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    return l_ret;
+}
+
+static void s_server_lifecycle_listener_dec(dap_server_t *a_server)
+{
+    dap_server_lifecycle_t *l_to_free = NULL;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    dap_server_lifecycle_t *l_item = s_server_lifecycle_find_unsafe(a_server);
+    if (l_item) {
+        uint_fast32_t l_pending = atomic_load_explicit(&l_item->listeners_pending, memory_order_acquire);
+        if (l_pending)
+            atomic_fetch_sub_explicit(&l_item->listeners_pending, 1, memory_order_acq_rel);
+        l_to_free = s_server_lifecycle_detach_if_finalizable_unsafe(a_server);
+    }
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    s_server_lifecycle_release_item(l_to_free);
+}
+
+static bool s_server_lifecycle_mark_delete_requested(dap_server_t *a_server)
+{
+    bool l_ret = false;
+    dap_server_lifecycle_t *l_to_free = NULL;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    dap_server_lifecycle_t *l_item = s_server_lifecycle_find_unsafe(a_server);
+    if (l_item) {
+        bool l_is_delete_requested = atomic_load_explicit(&l_item->delete_requested, memory_order_acquire);
+        if (!l_is_delete_requested) {
+            atomic_store_explicit(&l_item->delete_requested, true, memory_order_release);
+            l_ret = true;
+        }
+        l_to_free = s_server_lifecycle_detach_if_finalizable_unsafe(a_server);
+    }
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    s_server_lifecycle_release_item(l_to_free);
+    return l_ret;
+}
+
+static bool s_server_listener_guard_add(dap_events_socket_t *a_es_listener, dap_server_t *a_server,
+                                        dap_events_socket_callback_t a_prev_delete_callback)
+{
+    dap_server_listener_guard_t *l_guard = DAP_NEW_Z(dap_server_listener_guard_t);
+    if (!l_guard)
+        return false;
+    l_guard->es_listener = a_es_listener;
+    l_guard->server = a_server;
+    l_guard->prev_delete_callback = a_prev_delete_callback;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    l_guard->next = s_server_listener_guard_list;
+    s_server_listener_guard_list = l_guard;
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    return true;
+}
+
+static dap_server_listener_guard_t *s_server_listener_guard_take_unsafe(dap_events_socket_t *a_es_listener)
+{
+    dap_server_listener_guard_t **l_link = &s_server_listener_guard_list;
+    while (*l_link) {
+        if ((*l_link)->es_listener == a_es_listener) {
+            dap_server_listener_guard_t *l_guard = *l_link;
+            *l_link = l_guard->next;
+            return l_guard;
+        }
+        l_link = &(*l_link)->next;
+    }
+    return NULL;
+}
 
 /**
  * @brief dap_server_init
@@ -227,7 +425,22 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
 #else
     fcntl(l_socket, F_SETFL, O_NONBLOCK);
 #endif
-    dap_events_socket_t *l_es = dap_events_socket_wrap_listener(a_server, l_socket, a_callbacks);
+    dap_events_socket_callbacks_t l_listener_callbacks = *a_callbacks;
+    dap_events_socket_callback_t l_prev_delete_callback = l_listener_callbacks.delete_callback;
+    l_listener_callbacks.delete_callback = s_es_server_listener_delete;
+    dap_events_socket_t *l_es = dap_events_socket_wrap_listener(a_server, l_socket, &l_listener_callbacks);
+    if (!l_es) {
+        closesocket(l_socket);
+        return -1;
+    }
+    if (!s_server_listener_guard_add(l_es, a_server, l_prev_delete_callback)) {
+        dap_events_socket_delete_unsafe(l_es, false);
+        return -1;
+    }
+    if (!s_server_lifecycle_listener_inc(a_server)) {
+        dap_events_socket_delete_unsafe(l_es, false);
+        return -1;
+    }
 #ifdef DAP_EVENTS_CAPS_EPOLL
     l_es->ev_base_flags = EPOLLIN;
 #ifdef EPOLLEXCLUSIVE
@@ -265,6 +478,10 @@ int dap_server_callbacks_set(dap_server_t* a_server, dap_events_socket_callbacks
 dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callbacks_t *a_server_callbacks, dap_events_socket_callbacks_t *a_client_callbacks)
 {
     dap_server_t *l_server = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_server_t, NULL);
+    if (!s_server_lifecycle_register(l_server)) {
+        DAP_DELETE(l_server);
+        return NULL;
+    }
     dap_events_socket_callbacks_t l_callbacks = {
         .accept_callback = s_es_server_accept,
         .new_callback    = s_es_server_new,
@@ -348,8 +565,18 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
  */
 static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr)
 {
-    dap_server_t *l_server = a_es_listener->server;
-    assert(l_server);
+    dap_server_t *l_server = a_es_listener ? a_es_listener->server : NULL;
+    if (!l_server || !s_server_lifecycle_ref(l_server)) {
+        if (a_remote_socket != INVALID_SOCKET)
+            closesocket(a_remote_socket);
+        return;
+    }
+    if (s_server_lifecycle_is_delete_requested(l_server)) {
+        if (a_remote_socket != INVALID_SOCKET)
+            closesocket(a_remote_socket);
+        s_server_lifecycle_unref(l_server);
+        return;
+    }
 
     dap_events_socket_t *l_es_new = NULL;
     debug_if(l_server->ext_log, L_DEBUG, "Listening socket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" binded on %s:%u "
@@ -362,7 +589,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #endif
         log_it(L_ERROR, "Server socket %"DAP_FORMAT_SOCKET" accept() error %d: %s",
                         a_es_listener->socket, errno, dap_strerror(errno));
-        return;
+        goto lb_cleanup;
     }
     char l_remote_addr_str[INET6_ADDRSTRLEN] = "", l_port_str[NI_MAXSERV] = "";
 
@@ -386,14 +613,15 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #endif
             log_it(L_ERROR, "getnameinfo() error %d: %s", errno, dap_strerror(errno));
             closesocket(a_remote_socket);
-            return;
+            goto lb_cleanup;
         }
         if (( l_server->whitelist
             ? !dap_str_find(l_server->whitelist, l_remote_addr_str) 
             : !!dap_str_find(l_server->blacklist, l_remote_addr_str) )) {
                 closesocket(a_remote_socket);
-                return debug_if(l_server->ext_log, L_INFO, "Connection from %s : %s denied. Dump it",
-                                l_remote_addr_str, l_port_str);
+                debug_if(l_server->ext_log, L_INFO, "Connection from %s : %s denied. Dump it",
+                         l_remote_addr_str, l_port_str);
+                goto lb_cleanup;
             }
                 
         debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
@@ -404,7 +632,8 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         break;
     default:
         closesocket(a_remote_socket);
-        return log_it(L_ERROR, "Unsupported protocol family %hu from accept()", a_remote_addr->ss_family);
+        log_it(L_ERROR, "Unsupported protocol family %hu from accept()", a_remote_addr->ss_family);
+        goto lb_cleanup;
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
@@ -416,9 +645,28 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     if (!l_worker) {
         log_it(L_WARNING, "No active worker for accepted socket %"DAP_FORMAT_SOCKET", closing", a_remote_socket);
         dap_events_socket_delete_unsafe(l_es_new, false);
-        return;
+        goto lb_cleanup;
     }
     dap_worker_add_events_socket(l_worker, l_es_new);
+lb_cleanup:
+    s_server_lifecycle_unref(l_server);
+}
+
+static void s_es_server_listener_delete(dap_events_socket_t *a_es, void *a_arg)
+{
+    dap_server_listener_guard_t *l_guard = NULL;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
+    l_guard = s_server_listener_guard_take_unsafe(a_es);
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
+    if (!l_guard) {
+        a_es->server = NULL;
+        return;
+    }
+    if (l_guard->prev_delete_callback)
+        l_guard->prev_delete_callback(a_es, a_arg);
+    s_server_lifecycle_listener_dec(l_guard->server);
+    a_es->server = NULL;
+    DAP_DELETE(l_guard);
 }
 
 /**
@@ -428,9 +676,18 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 void dap_server_delete(dap_server_t *a_server)
 {
     dap_return_if_pass(!a_server);
+    if (!s_server_lifecycle_ref(a_server))
+        return;
+    if (!s_server_lifecycle_mark_delete_requested(a_server)) {
+        s_server_lifecycle_unref(a_server);
+        return;
+    }
     while (a_server->es_listeners) {
         dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
-        dap_events_socket_remove_and_delete(l_es->worker, l_es->uuid); // TODO unsafe moment. Replace storage to uuids
+        if (l_es->worker)
+            dap_events_socket_remove_and_delete(l_es->worker, l_es->uuid);
+        else
+            dap_events_socket_delete_unsafe(l_es, false);
         dap_list_t *l_tmp = a_server->es_listeners;
         a_server->es_listeners = l_tmp->next;
         DAP_DELETE(l_tmp);
@@ -438,6 +695,5 @@ void dap_server_delete(dap_server_t *a_server)
     if(a_server->delete_callback)
         a_server->delete_callback(a_server,NULL);
 
-    //DAP_DELETE(a_server->_inheritor);
-    DAP_DELETE(a_server);
+    s_server_lifecycle_unref(a_server);
 }

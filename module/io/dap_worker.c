@@ -513,12 +513,13 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
     const char *l_type_str = dap_events_socket_get_type_str(a_events_socket);
     SOCKET l_s = a_events_socket->socket;
     dap_events_socket_uuid_t l_uuid = a_events_socket->uuid;
-#ifdef DAP_EVENTS_CAPS_IOCP
+    /* Keep worker link stable even before queue_es_new callback runs. This lets
+     * concurrent delete path target the same worker queue instead of freeing esocket directly. */
     a_events_socket->worker = a_worker;
+#ifdef DAP_EVENTS_CAPS_IOCP
     if ( dap_worker_get_current() == a_worker )
         s_es_assign_to_context(a_worker->context, &(OVERLAPPED){ .Pointer = a_events_socket });
     else {
-        a_events_socket->worker = a_worker;
         dap_overlapped_t *ol = DAP_NEW_Z(dap_overlapped_t);
         ol->ol.Pointer = a_events_socket;
         ol->op = io_call;
