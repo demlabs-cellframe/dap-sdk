@@ -60,7 +60,7 @@ const uint128_t uint128_1 = {.hi = 0, .lo = 1};
 const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX};
 
 const uint256_t uint256_0 = {};
-const uint256_t uint256_1 = {.hi = {0,0}, .lo = {.hi = 0, .lo = 1}};
+const uint256_t uint256_1 = {.hi = {.hi = 0, .lo = 0}, .lo = {.hi = 0, .lo = 1}};
 const uint256_t uint256_max = {.hi = {.hi = UINT64_MAX, .lo = UINT64_MAX}, .lo = {.hi = UINT64_MAX, .lo = UINT64_MAX}};
 #else // DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = 0;
@@ -500,7 +500,7 @@ char *dap_dump_hex(byte_t *a_data, size_t a_len) {
     memset(l_ret, ' ', l_len);
     for (i = 0; i < l_div; ++i) {
 print_line:
-        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
+        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04zx:  ", i * BYTES_IN_LINE);
         //memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
         for (j = 0; j < l_line_len; ++j, ++a_data) {
             short l_pos = l_shift + j*3;
