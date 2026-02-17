@@ -886,7 +886,10 @@ dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
         }
     } else {
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-        assert(l_client);
+        if (!l_client) {
+            log_it(L_WARNING, "l_client is NULL in dap_stream_get_from_es, esocket type=%d", a_es->type);
+            return NULL;
+        }
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
         l_stream = l_client_pvt->stream;
     }
