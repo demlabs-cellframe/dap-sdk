@@ -256,6 +256,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_server_delete_accept_race.
     register_dap_test(test_regression_server_delete_accept_race "regression;io;server")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_server_delete_after_wait_race.c)
+    add_dap_test(test_regression_server_delete_after_wait_race regression/test_server_delete_after_wait_race.c)
+    register_dap_test(test_regression_server_delete_after_wait_race "regression;io;server")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_queue_write_remove_stop_race.c)
     add_dap_test(test_regression_queue_write_remove_stop_race regression/test_queue_write_remove_stop_race.c)
     register_dap_test(test_regression_queue_write_remove_stop_race "regression;io;events")

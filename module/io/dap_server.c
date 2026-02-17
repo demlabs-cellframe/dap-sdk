@@ -278,6 +278,15 @@ static dap_server_listener_guard_t *s_server_listener_guard_take_unsafe(dap_even
     return NULL;
 }
 
+static void s_server_listener_list_remove_unsafe(dap_server_t *a_server, dap_events_socket_t *a_es_listener)
+{
+    if (!a_server || !a_es_listener)
+        return;
+    dap_list_t *l_link = dap_list_find(a_server->es_listeners, a_es_listener, NULL);
+    if (l_link)
+        a_server->es_listeners = dap_list_delete_link(a_server->es_listeners, l_link);
+}
+
 /**
  * @brief dap_server_init
  * @return
@@ -453,9 +462,13 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     l_es->addr_storage = l_saddr;
     l_es->type = a_type;
     l_es->no_close = true;
+    pthread_mutex_lock(&s_server_lifecycle_lock);
     a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es);
+    pthread_mutex_unlock(&s_server_lifecycle_lock);
     if (!dap_worker_add_events_socket_auto(l_es)) {
+        pthread_mutex_lock(&s_server_lifecycle_lock);
         a_server->es_listeners = dap_list_remove(a_server->es_listeners, l_es);
+        pthread_mutex_unlock(&s_server_lifecycle_lock);
         dap_events_socket_delete_unsafe(l_es, false);
         return -1;
     }
@@ -657,6 +670,8 @@ static void s_es_server_listener_delete(dap_events_socket_t *a_es, void *a_arg)
     dap_server_listener_guard_t *l_guard = NULL;
     pthread_mutex_lock(&s_server_lifecycle_lock);
     l_guard = s_server_listener_guard_take_unsafe(a_es);
+    if (l_guard)
+        s_server_listener_list_remove_unsafe(l_guard->server, a_es);
     pthread_mutex_unlock(&s_server_lifecycle_lock);
     if (!l_guard) {
         a_es->server = NULL;
@@ -682,15 +697,21 @@ void dap_server_delete(dap_server_t *a_server)
         s_server_lifecycle_unref(a_server);
         return;
     }
-    while (a_server->es_listeners) {
-        dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
+    while (true) {
+        dap_events_socket_t *l_es = NULL;
+        pthread_mutex_lock(&s_server_lifecycle_lock);
+        dap_list_t *l_link = a_server->es_listeners;
+        if (l_link) {
+            l_es = (dap_events_socket_t *)l_link->data;
+            a_server->es_listeners = dap_list_delete_link(a_server->es_listeners, l_link);
+        }
+        pthread_mutex_unlock(&s_server_lifecycle_lock);
+        if (!l_es)
+            break;
         if (l_es->worker)
             dap_events_socket_remove_and_delete(l_es->worker, l_es->uuid);
         else
             dap_events_socket_delete_unsafe(l_es, false);
-        dap_list_t *l_tmp = a_server->es_listeners;
-        a_server->es_listeners = l_tmp->next;
-        DAP_DELETE(l_tmp);
     }
     if(a_server->delete_callback)
         a_server->delete_callback(a_server,NULL);
