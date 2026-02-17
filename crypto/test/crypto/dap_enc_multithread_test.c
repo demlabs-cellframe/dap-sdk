@@ -63,8 +63,10 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
         dap_assert_PIF(!l_verified, "Deserialize and verifying signature");
         l_ret |= l_verified;
     }
-    DAP_DEL_ARRAY(l_signs, a_times);
-    DAP_DEL_ARRAY(l_source, a_times);
+    for (int i = 0; i < a_times; ++i)
+        DAP_DELETE(l_signs[i]);
+    for (int i = 0; i < a_times; ++i)
+        DAP_DELETE(l_source[i]);
     return l_ret;
 }
 

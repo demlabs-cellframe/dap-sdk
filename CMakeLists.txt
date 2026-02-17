@@ -42,18 +42,18 @@ if(USE_LIBBSD_EXPLICIT_BZERO)
 endif()
 
 if (NOT DEFINED DAP_VERSION)
-    message(WARNING "DAP_VERSION is not defined")
     set(DAP_VERSION "0.0.0")
+    message(STATUS "DAP_VERSION is not defined, using default: ${DAP_VERSION}")
 endif()
 
 if (NOT DEFINED BUILD_TS)
-    message(WARNING "BUILD_TS is not defined")
-    set(BUILD_TS "0")
+    string(TIMESTAMP BUILD_TS "%s" UTC)
+    message(STATUS "BUILD_TS is not defined, using current timestamp: ${BUILD_TS}")
 endif()
 
 if (NOT DEFINED BUILD_HASH)
-    message(WARNING "BUILD_HASH is not defined")
-    set(BUILD_HASH "0")
+    set(BUILD_HASH "unknown")
+    message(STATUS "BUILD_HASH is not defined, using default: ${BUILD_HASH}")
 endif()
 
 add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")

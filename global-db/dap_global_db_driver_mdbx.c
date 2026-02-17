@@ -1,4 +1,4 @@
-﻿/*
+/*
  * AUTHORS:
  * Ruslan R. (The BadAss SysMan) Laishev  <ruslan.laishev@demlabs.net>
  * DeM Labs Ltd.   https://demlabs.net
@@ -731,6 +731,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
     int rc;
     dap_db_ctx_t *l_db_ctx = NULL;
     MDBX_txn *l_txn = s_txn;
+    dap_global_db_pkt_pack_t *l_ret = NULL;
 
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
@@ -738,7 +739,6 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group, l_txn)) )
         goto cleanup;
     MDBX_val l_key, l_data;
-    dap_global_db_pkt_pack_t *l_ret = NULL;
     for (size_t i = 0; i < a_count; i++) {
         l_key.iov_base = a_hashes + i;                                    /* Fill IOV for MDBX key */
         l_key.iov_len =  sizeof(dap_global_db_driver_hash_t);

@@ -10,9 +10,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #include_directories(../../include/)
  
 set(BOOST_REQUESTED_VERSION 1.65)
- 
+
+cmake_policy(SET CMP0167 OLD)
 if (NOT Boost_INCLUDE_DIR)
-        FIND_PACKAGE( Boost REQUIRED )
+        find_package(Boost REQUIRED)
 endif()
 
 # Try to find system GoogleTest first

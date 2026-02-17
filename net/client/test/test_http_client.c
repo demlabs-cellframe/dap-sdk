@@ -747,9 +747,9 @@ static void test14_response_callback(void *a_body, size_t a_body_size,
     if (a_headers) {
         struct dap_http_header *header = a_headers;
         while (header) {
-            if (header->name && strcasecmp(header->name, "Location") == 0) {
+            if (strcasecmp(header->name, "Location") == 0) {
                 g_test14_has_location = true;
-                TEST_INFO("[HEAD_TEST] Location header found: %s", header->value ? header->value : "NULL");
+                TEST_INFO("[HEAD_TEST] Location header found: %s", header->value);
             }
             header = header->next;
         }
@@ -786,9 +786,8 @@ static void test15_response_callback(void *a_body, size_t a_body_size,
         if (a_headers) {
             struct dap_http_header *header = a_headers;
             while (header) {
-                if (header->name && strcasecmp(header->name, "Location") == 0) {
-                    TEST_INFO("[HEAD_TEST] ✓ Location header found: %s", 
-                             header->value ? header->value : "NULL");
+                if (strcasecmp(header->name, "Location") == 0) {
+                    TEST_INFO("[HEAD_TEST] ✓ Location header found: %s", header->value);
                     g_test15_success = true;
                 }
                 header = header->next;
@@ -828,8 +827,8 @@ static void test16_response_callback(void *a_body, size_t a_body_size,
     if (a_headers) {
         struct dap_http_header *header = a_headers;
         while (header) {
-            if (header->name && strcasecmp(header->name, "Connection") == 0) {
-                if (header->value && strcasecmp(header->value, "close") == 0) {
+            if (strcasecmp(header->name, "Connection") == 0) {
+                if (strcasecmp(header->value, "close") == 0) {
                     g_test16_connection_close_handled = true;
                     TEST_INFO("[HEAD_TEST] ✓ Connection: close header detected");
                 }
