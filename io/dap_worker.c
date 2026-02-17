@@ -105,8 +105,8 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     if (s_worker)
-        return log_it(L_ERROR, "Worker %d is already assigned to current thread %ld",
-                               s_worker->id, s_worker->context->thread_id),
+        return log_it(L_ERROR, "Worker %d is already assigned to current thread %p",
+                               s_worker->id, (void*)(uintptr_t)s_worker->context->thread_id),
             -1;
     s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)

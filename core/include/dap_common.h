@@ -766,6 +766,8 @@ extern "C" {
         
         #define dap_mul(a,b)                                \
         ({                                                  \
+            _Pragma("GCC diagnostic push")                  \
+            _Pragma("GCC diagnostic ignored \"-Wabsolute-value\"") \
             __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
             bool a_negative = _a < 0; \
             bool b_negative = _b < 0; \
@@ -796,6 +798,7 @@ extern "C" {
                 (a_negative == b_negative && a_b_hight > a_max_high) || \
                 (a_negative != b_negative && a_b_hight == a_min_high && a_b_delta_low > a_min_low) \
             )) { (_a *= _b); } \
+            _Pragma("GCC diagnostic pop")                   \
             (_a); \
         })
     #else
