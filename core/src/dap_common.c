@@ -35,7 +35,7 @@
   #include <android/log.h>
 #endif
 
-#ifndef _WIN32
+#ifndef DAP_OS_WINDOWS
   #include <syslog.h>
   #include <signal.h>
   #include <sys/syscall.h>
@@ -52,7 +52,17 @@
 
 #define LOG_TAG "dap_common"
 
-typedef void (*print_callback) (unsigned a_off, const char *a_fmt, va_list va);
+typedef void (*print_callback) (enum dap_log_level a_ll, const char *a_buf, size_t a_len);
+
+#if !(defined(DAP_OS_LINUX) && !defined(DAP_OS_ANDROID))
+    #define fputs_unlocked  fputs
+    #define fwrite_unlocked fwrite
+    #define fputc_unlocked  fputc
+#endif
+#ifdef DAP_OS_WINDOWS
+    #define flockfile(f)     _lock_file(f)
+    #define funlockfile(f)   _unlock_file(f)
+#endif
 
 #ifndef DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = {};
@@ -126,8 +136,6 @@ const char *s_ansi_seq_color[ ] = {
 #endif
 };
 
-static unsigned int s_ansi_seq_color_len[ sizeof(s_ansi_seq_color) / sizeof(char*) ] = { };
-
 #ifdef DAP_OS_WINDOWS
     WORD log_level_colors[ ] = {
         7,              // L_DEBUG
@@ -154,51 +162,50 @@ char* g_sys_dir_path = NULL;
 
 static char s_log_file_path[MAX_PATH + 1], s_log_tag_fmt_str[10];
 
-static enum dap_log_level s_dap_log_level = L_DEBUG;
+enum dap_log_level g_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-static void print_it_stdout (unsigned a_off, const char *a_fmt, va_list va);
-static void print_it_stderr (unsigned a_off, const char *a_fmt, va_list va);
-static void print_it_fd (unsigned a_off, const char *a_fmt, va_list va);
-static void print_it_none (unsigned a_off, const char *a_fmt, va_list va){}
+static void print_it_stdout (enum dap_log_level a_ll, const char *a_buf, size_t a_len);
+static void print_it_stderr (enum dap_log_level a_ll, const char *a_buf, size_t a_len);
+static void print_it_none (enum dap_log_level a_ll, const char *a_buf, size_t a_len){}
 #if ANDROID
-static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va);
+static void print_it_alog (enum dap_log_level a_ll, const char *a_buf, size_t a_len);
 #endif
 
-#define LOG_FORMAT_LEN  2048
-#define LOG_BUF_SIZE    32768
+#define LOG_MSG_BUF_SIZE 4096
 
 static print_callback s_print_callback = print_it_none;
 //static void *s_print_param = NULL;
 
 
-static void print_it_stdout(unsigned a_off, const char *a_fmt, va_list va)
+static void print_it_stdout(enum dap_log_level a_ll, const char *a_buf, size_t a_len)
 {
-    vfprintf(stdout, a_fmt, va);
+    flockfile(stdout);
+    fputs_unlocked(s_ansi_seq_color[a_ll], stdout);
+    fwrite_unlocked(a_buf, a_len, 1, stdout);
+    funlockfile(stdout);
 #ifdef DAP_OS_WINDOWS
     fflush(stdout);
 #endif
 }
 
-static void print_it_stderr(unsigned a_off, const char *a_fmt, va_list va)
+static void print_it_stderr(enum dap_log_level a_ll, const char *a_buf, size_t a_len)
 {
-    vfprintf(stderr, a_fmt, va);
+    flockfile(stderr);
+    fputs_unlocked(s_ansi_seq_color[a_ll], stderr);
+    fwrite_unlocked(a_buf, a_len, 1, stderr);
+    funlockfile(stderr);
 #ifdef DAP_OS_WINDOWS
     fflush(stderr);
 #endif
 }
 
-/*static void print_it_fd(unsigned a_off, const char *a_fmt, va_list va)
-{
-    vfprintf(s_print_param, a_fmt, va);
-}
-*/
 #if ANDROID
 #include <android/log.h>
 
-static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va)
+static void print_it_alog(enum dap_log_level a_ll, const char *a_buf, size_t a_len)
 {
-    __android_log_vprint(ANDROID_LOG_INFO, "CellframeNodeNative", a_fmt, va);
+    __android_log_write(ANDROID_LOG_INFO, "CellframeNodeNative", a_buf);
 }
 
 #endif
@@ -207,16 +214,12 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
 {
   switch (output)
   {
-    case LOGGER_OUTPUT_STDOUT: {
-        static char s_buf_stdout[LOG_BUF_SIZE];
-        setvbuf(stdout, s_buf_stdout, _IOLBF, LOG_BUF_SIZE);
+    case LOGGER_OUTPUT_STDOUT:
         s_print_callback = print_it_stdout;
-    }
     break;
-    case LOGGER_OUTPUT_STDERR: {
-        setvbuf(stderr, NULL, _IOLBF, LOG_BUF_SIZE);
+    case LOGGER_OUTPUT_STDERR:
+        setvbuf(stderr, NULL, _IOLBF, LOG_MSG_BUF_SIZE);
         s_print_callback = print_it_stderr;
-    }
     break;
     /*case LOGGER_OUTPUT_FD:
         s_print_callback = print_it_fd;
@@ -238,18 +241,12 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
 
 static char s_appname[32];
 
-DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
-    time_t t = time(NULL);
-    struct tm tmptime;
-    return localtime_r(&t, &tmptime) ? strftime(a_datetime_str, 32, "[%x-%X]", &tmptime) : 0;
-}
-
 /**
  * @brief set_log_level Sets the logging level
  * @param[in] ll logging level
  */
 void dap_log_level_set( enum dap_log_level a_ll ) {
-    s_dap_log_level = a_ll;
+    g_dap_log_level = a_ll;
 }
 
 /**
@@ -272,7 +269,7 @@ void dap_set_appname(const char * a_appname)
 }
 
 enum dap_log_level dap_log_level_get( void ) {
-    return s_dap_log_level ;
+    return g_dap_log_level ;
 }
 
 /**
@@ -286,21 +283,6 @@ void dap_set_log_tag_width(size_t a_width) {
         return;
     }
     snprintf(s_log_tag_fmt_str,sizeof (s_log_tag_fmt_str), "[%%%zds]\t",a_width);
-}
-
-
-/**
- * @brief dap_del_z_all
- * DAP_FREE n args
- * @param int a_count - count deleted args
- * @param void* a_to_delete
- */
-void dap_delete_multy(size_t a_count, ...)
-{
-    va_list l_args_list;
-    va_start(l_args_list, a_count);
-    for ( void *l_cur; a_count-- && (( l_cur = va_arg(l_args_list, void*) ), 1); DAP_DELETE(l_cur) );
-    va_end(l_args_list);
 }
 
 /**
@@ -369,10 +351,9 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...)
 }
 
 static int s_dap_log_open(const char *a_log_file_path, bool a_new) {
-    if (! (s_log_file = s_log_file ? freopen(a_log_file_path, a_new ? "w" : "a", s_log_file) : fopen( a_log_file_path, a_new ? "w" : "a" )) )
-        return fprintf( stderr, "Can't open log file %s \n", a_log_file_path ), -1;
-    static char s_buf_file[LOG_BUF_SIZE];
-    return setvbuf(s_log_file, s_buf_file, _IOLBF, LOG_BUF_SIZE);
+    s_log_file = s_log_file ? freopen(a_log_file_path, a_new ? "w" : "a", s_log_file) : fopen( a_log_file_path, a_new ? "w" : "a" );
+    return s_log_file ? setvbuf(s_log_file, NULL, _IOLBF, LOG_MSG_BUF_SIZE)
+                      : fprintf(stderr, "Can't open log file %s\n", a_log_file_path);
 }
 
 /**
@@ -387,8 +368,6 @@ int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_f
     // init randomer
     srand( (unsigned int)time(NULL) );
     strncpy( s_log_tag_fmt_str, "[%s]\t",sizeof (s_log_tag_fmt_str));
-    for (int i = 0; i < 16; ++i)
-            s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
     if ( a_log_file_path && a_log_file_path[0] ) {
         if (s_dap_log_open(a_log_file_path, false))
             return -1;
@@ -405,8 +384,6 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
     srand( (unsigned int)time(NULL) );
     (void) a_console_title;
     strncpy( s_log_tag_fmt_str, "[%s]\t",sizeof (s_log_tag_fmt_str));
-    for (int i = 0; i < 16; ++i)
-            s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
     if ( a_log_filename ) {
         s_log_file = _wfopen( a_log_filename , L"a" );
         if( s_log_file == NULL)
@@ -426,36 +403,20 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
  * @brief dap_common_deinit Deinitialise
  */
 void dap_common_deinit( ) {
-    if (s_log_file)
-        fclose(s_log_file);
-}
-
-static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
-    va_list va_file;
-    va_copy(va_file, va);
-    s_print_callback(a_off, a_fmt, va);
-    if (!s_log_file) {
-        if ( dap_common_init(dap_get_appname(), s_log_file_path ) || !s_log_file) {
-            va_end(va_file);
-            return;
-        }
-    }
-    vfprintf(s_log_file, a_fmt + a_off, va_file);
-#ifdef DAP_OS_WINDOWS
-    fflush(s_log_file);
-#endif
-    va_end(va_file);
+    FILE *l_logf = s_log_file;
+    s_log_file = NULL;
+    if (l_logf)
+        fclose(l_logf);
 }
 
 /**
- * @brief _log_it
- * @param log_tag
- * @param ll
- * @param fmt
+ * @brief _log_it Core log function. Level tag, module tag and optional location
+ *        are expected to be already embedded in a_fmt by calling macros.
+ *        Level filtering is done in macros before this call.
+ * @param a_ll  log level (used for ANSI color selection)
+ * @param a_fmt format string (pre-built by macros with all prefixes baked in)
  */
-void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
-    if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
-        return;
+void _log_it(enum dap_log_level a_ll, const char *a_fmt, ...) {
 #ifdef DAP_TPS_TEST
     if (a_ll != L_TPS) {
         FILE *l_file = fopen("/opt/cellframe-node/share/ca/without_logs.txt", "r");
@@ -465,20 +426,50 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
         }
     }
 #endif
-    char s_format[LOG_FORMAT_LEN] = { '\0' };
-    unsigned offset = s_ansi_seq_color_len[a_ll];
-    memcpy(s_format, s_ansi_seq_color[a_ll], offset);
-    offset += s_update_log_time(s_format + offset);
-    offset += func_name
-            ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
-            : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
-    if (offset >= LOG_FORMAT_LEN) {
-        dap_strncpy(s_format + LOG_FORMAT_LEN - 5, "...\n", 4);
+    enum { ts_len = sizeof("[mm/dd/yy-HH:MM:SS]") - 1 };
+    static _Thread_local char s_log_buf[LOG_MSG_BUF_SIZE];
+    static _Thread_local time_t s_cached_time = 0;
+    static _Thread_local struct tm s_cached_tm;
+    time_t l_time = time(NULL);
+    if (l_time != s_cached_time) {
+        if (l_time == s_cached_time + 1 && s_cached_tm.tm_sec < 59)
+            s_cached_tm.tm_sec++;
+        else
+            localtime_r(&l_time, &s_cached_tm);
+        s_cached_time = l_time;
+        strftime(s_log_buf, ts_len + 1, "[%m/%d/%y-%H:%M:%S]", &s_cached_tm);
     }
     va_list va;
     va_start(va, a_fmt);
-    print_it(s_ansi_seq_color_len[a_ll], s_format, va);
+    int l_len = vsnprintf(s_log_buf + ts_len, LOG_MSG_BUF_SIZE - ts_len, a_fmt, va);
     va_end(va);
+    if (l_len < 0)
+        return;
+    bool l_overflow = l_len > LOG_MSG_BUF_SIZE - ts_len - 2;
+    if (l_overflow) {
+        l_len = LOG_MSG_BUF_SIZE - ts_len - 2;
+        memcpy(s_log_buf + ts_len + l_len - 3, "...", 3);
+    }
+    l_len += ts_len;
+    s_log_buf[l_len++] = '\n';
+    s_log_buf[l_len] = '\0';
+    s_print_callback(a_ll, s_log_buf, l_len);
+    FILE *l_logf = s_log_file;
+    if (!l_logf)
+        return;
+    if (l_overflow) {
+        flockfile(l_logf);
+        fwrite_unlocked(s_log_buf, ts_len, 1, l_logf);
+        va_start(va, a_fmt);
+        vfprintf(l_logf, a_fmt, va);
+        va_end(va);
+        fputc_unlocked('\n', l_logf);
+        funlockfile(l_logf);
+    } else
+        fwrite(s_log_buf, l_len, 1, l_logf);
+#ifdef DAP_OS_WINDOWS
+    fflush(l_logf);
+#endif
 }
 
 char *dap_dump_hex(byte_t *a_data, size_t a_len) {
@@ -493,9 +484,7 @@ char *dap_dump_hex(byte_t *a_data, size_t a_len) {
             l_line_len = BYTES_IN_LINE,
             l_shift = 0, i, j;
 
-    char *l_ret = DAP_NEW_Z_SIZE(char, l_len + 1);
-    if (!l_ret)
-        return log_it(L_CRITICAL, "Memory allocation error!"), NULL;
+    char *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(char, l_len + 1, NULL);
 
     memset(l_ret, ' ', l_len);
     for (i = 0; i < l_div; ++i) {
@@ -559,7 +548,7 @@ struct timespec now;
     if ( ((int) a_ll == -1) )
         return;
 
-    if ( (a_ll < s_dap_log_level) )
+    if ( (a_ll < g_dap_log_level) )
         return;
 
     clock_gettime(CLOCK_REALTIME, &now);
@@ -712,7 +701,7 @@ struct timespec now;
  */
 char *dap_log_get_item(time_t a_start_time, int a_limit)
 {
-    unsigned l_len = LOG_FORMAT_LEN * 8;
+    unsigned l_len = LOG_MSG_BUF_SIZE * 8;
     char l_line[l_len];
 	FILE *fp = fopen(s_log_file_path, "rb+"); // rb+ is for unignoring \r
 	if (!fp) {

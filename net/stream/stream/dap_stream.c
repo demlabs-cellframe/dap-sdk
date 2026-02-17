@@ -868,9 +868,11 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
             : 0;
 
     if (l_count_lost_packets) {
-        log_it(L_WARNING, l_count_lost_packets > 0
-               ? "Packet loss detected. Current seq_id: %"DAP_UINT64_FORMAT_U", last seq_id: %zu"
-               : "Packet replay detected, seq_id: %"DAP_UINT64_FORMAT_U, l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);
+        if (l_count_lost_packets > 0)
+            log_it(L_WARNING, "Packet loss detected. Current seq_id: %"DAP_UINT64_FORMAT_U", last seq_id: %zu",
+                l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);
+        else
+            log_it(L_WARNING, "Packet replay detected, seq_id: %"DAP_UINT64_FORMAT_U, l_ch_pkt->hdr.seq_id);
     }
     debug_if(s_debug, L_DEBUG, "Current seq_id: %"DAP_UINT64_FORMAT_U", last: %zu",
                                 l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);

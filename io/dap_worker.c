@@ -361,7 +361,7 @@ void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
         return;
     }
     int l_err = dap_worker_add_events_socket_unsafe(l_es->worker, l_es);
-    debug_if(l_err || g_debug_reactor, l_err ? L_ERROR : L_DEBUG, "%s es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d in context %d",
+    debug_if(l_err || g_debug_reactor, L_INFO, "%s es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d in context %d",
                                        l_err ? "Can't add" : "Added", l_es->uuid, dap_events_socket_get_type_str(l_es),
                                        l_es->socket == INVALID_SOCKET ? "" : dap_itoa(l_es->socket),
                                        l_es->worker->id, a_c->id);

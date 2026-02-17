@@ -90,7 +90,9 @@ static bool s_allowed_cmd_check(char *a_buf) {
     }
 
     bool l_allowed = !!dap_str_find( dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL), l_method );
-    return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), json_object_put(jobj), l_allowed;
+    debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method);
+    json_object_put(jobj);
+    return l_allowed;
 }
 
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
@@ -321,7 +323,8 @@ int json_commands(const char * a_name) {
             "stake_lock",
             "exec_cmd",
             "policy",
-            "stake_ext"
+            "stake_ext",
+            "srv_dex"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {

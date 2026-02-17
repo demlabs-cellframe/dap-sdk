@@ -136,8 +136,52 @@
 #endif // unlikely
  */
 
+ #ifdef __has_builtin
+ #if __has_builtin(__builtin_popcountll) && __has_builtin(__builtin_ctzll)
+     #define DAP_HAVE_BUILTIN_POPCOUNT 1
+ #else
+     #define DAP_HAVE_BUILTIN_POPCOUNT 0
+ #endif
+#elif defined(__GNUC__) && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4))
+ #define DAP_HAVE_BUILTIN_POPCOUNT 1
+#elif defined(__clang__)
+ #define DAP_HAVE_BUILTIN_POPCOUNT 1
+#else
+ #define DAP_HAVE_BUILTIN_POPCOUNT 0
+#endif
+
+// Type-safe bit manipulation macros with hardware/software fallback
+// DAP_POPCOUNT(x) - Count set bits in unsigned integer
+// DAP_CTZ(x)      - Count trailing zeros in unsigned integer
+// Returns 0 for signed types (compile-time type safety)
+
+// Type checker macro - ensures only unsigned types are processed
+#define DAP_IS_UNSIGNED_TYPE(x) _Generic((x), \
+    unsigned char: 1, unsigned short: 1, unsigned int: 1, unsigned long: 1, unsigned long long: 1, \
+    default: 0)
+
+#if DAP_HAVE_BUILTIN_POPCOUNT
+    #define DAP_POPCOUNT(x) (DAP_IS_UNSIGNED_TYPE(x) ? __builtin_popcountll((unsigned long long)(x)) : 0)
+    #define DAP_CTZ(x)  ( DAP_IS_UNSIGNED_TYPE(x) && (x) ? __builtin_ctzll((unsigned long long)(x)) : -1)
+#else
+// Software fallback implementations
+    static inline int dap_popcount_sw(unsigned long long a_x) {
+        a_x = a_x - ((a_x >> 1) & 0x5555555555555555ULL);
+        a_x = (a_x & 0x3333333333333333ULL) + ((a_x >> 2) & 0x3333333333333333ULL);
+        a_x = (a_x + (a_x >> 4)) & 0x0f0f0f0f0f0f0f0fULL;
+        return (int)((a_x * 0x0101010101010101ULL) >> 56);
+    }
+    
+    static inline int dap_ctz_sw(unsigned long long a_x) {
+        return dap_popcount_sw((a_x & -a_x) - 1ULL);
+    }
+    
+    #define DAP_POPCOUNT(x) (DAP_IS_UNSIGNED_TYPE(x) ? dap_popcount_sw((unsigned long long)(x)) : 0)
+    #define DAP_CTZ(x)  ( DAP_IS_UNSIGNED_TYPE(x) && (x) ? dap_ctz_sw((unsigned long long)(x)) : -1)
+#endif
+ 
 #ifndef ROUNDUP
-  #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
+    #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
 #endif
 
 #ifdef __cplusplus
@@ -148,11 +192,11 @@
 #define DAP_CAST_PTR(t,v) v
 #endif
 
-#define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
+#define HASH_LAST_EX(hh, head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
+#define HASH_LAST(head) HASH_LAST_EX(hh, head)
 
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */
-void dap_delete_multy(size_t, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...);
 
@@ -188,9 +232,6 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 
     #define DAP_MALLOC(a)       s_vm_get(__func__, __LINE__, a)
     #define DAP_CALLOC(a, b)    s_vm_get_z(__func__, __LINE__, a, b)
-    #define DAP_ALMALLOC(a, b)    _dap_aligned_alloc(a, b)
-    #define DAP_ALREALLOC(a, b)   _dap_aligned_realloc(a, b)
-    #define DAP_ALFREE(a)         _dap_aligned_free(a, b)
     #define DAP_NEW( a )          DAP_CAST_REINT(a, s_vm_get(__func__, __LINE__, sizeof(a)) )
     #define DAP_NEW_SIZE(a, b)    DAP_CAST_REINT(a, s_vm_get(__func__, __LINE__, b) )
     #define DAP_NEW_STACK( a )        DAP_CAST_REINT(a, alloca(sizeof(a)) )
@@ -211,11 +252,6 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_FREE(p)           free((void*)(p))
 #define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); _s > 0 && _n > 0 ? calloc(_n, _s) : NULL; })
 #define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? realloc(p, _s) : NULL; })
-#define DAP_ALMALLOC(a, s)    ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s > 0 && _a >= 0 ? _dap_aligned_alloc(_a, _s) : NULL; })
-#define DAP_ALREALLOC(p, s)   ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? _dap_aligned_realloc(p, _s) : NULL; })
-#define DAP_ALFREE(p)         _dap_aligned_free(p)
-#define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
-#define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
 #define DAP_NEW(t)            DAP_CAST_PTR( t, malloc(sizeof(t)) )
 #define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); _s >= (intmax_t)(sizeof(t)) ? DAP_CAST_PTR(t, malloc(_s)) : NULL; })
 /* Auto memory! Do not inline! Do not modify the size in-call! */
@@ -235,8 +271,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #endif
 
 #define DOOF_PTR (void*)&doof
-#define DAP_NARGS_PTRS(...)  ( sizeof( (void*[]){NULL, ##__VA_ARGS__} ) / sizeof(void*) - 1 )
-#define DAP_DEL_MULTY(...) dap_delete_multy(DAP_NARGS_PTRS(__VA_ARGS__), ##__VA_ARGS__)
+
 #define DAP_VA_SERIALIZE(data, size, ...) dap_serialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
 #define DAP_VA_SERIALIZE_NEW(size, ...) DAP_VA_SERIALIZE(NULL, size, __VA_ARGS__)
 #define DAP_VA_DESERIALIZE(data, size, ...) dap_deserialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
@@ -267,7 +302,49 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_REALLOC_RET_IF_FAIL(p, s, ...)      DAP_REALLOC_RET_VAL_IF_FAIL(p, s, , __VA_ARGS__)
 #define DAP_REALLOC_COUNT_RET_IF_FAIL(p, c, ...) DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(p, c, , __VA_ARGS__)
 
-#define dap_return_val_if_pass_err(e, r, s) do { if (e) { _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", s); return r; } } while(0);
+// Aligned memory allocation macros
+#if defined(DAP_OS_WINDOWS)
+    #define DAP_ALMALLOC(a, s)      _aligned_malloc((s), (a))
+    #define DAP_ALFREE(p)           _aligned_free(p)
+    #define DAP_ALREALLOC(p, a, s)  _aligned_realloc((p), (s), (a))
+    #define DAP_PAGE_ALMALLOC(s)    VirtualAlloc(0, (s), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+    #define DAP_PAGE_ALFREE(p)      VirtualFree((p), 0, MEM_RELEASE)
+#elif defined(DAP_OS_LINUX) || defined(DAP_OS_DARWIN) || defined(DAP_OS_BSD) || defined(DAP_OS_ANDROID)
+    #define DAP_ALMALLOC(a, s)      ({ void *_p = NULL; posix_memalign(&_p, (a), (s)) == 0 ? _p : NULL; })
+    #define DAP_ALFREE(p)           free(p)
+    #define DAP_ALREALLOC(p, a, s)  ({ \
+        size_t _s = (s), _a = (a); \
+        void *_p = (p), *_p_new = DAP_ALMALLOC(_a, _s); \
+        if (_p_new && _p) { \
+            memcpy(_p_new, _p, _s); \
+            free(_p); \
+        } \
+        _p_new; \
+    })
+    #define DAP_PAGE_ALMALLOC(s) DAP_ALMALLOC(dap_pagesize(), (s))
+    #define DAP_PAGE_ALFREE(p)   DAP_ALFREE(p)
+#else
+    // Fallback for exotic platforms
+    #define DAP_ALMALLOC(a, s) ({ \
+        size_t _a = (a), _s = (s); void *_r = NULL, *_p; \
+        if (_a >= sizeof(void*) && !(_a & (_a - 1)) && _s && (_p = DAP_NEW_Z_SIZE(void, _s + _a + sizeof(void*)))) { \
+            _r = (void**)(((uintptr_t)_p + sizeof(void*) + _a - 1) & ~(_a - 1)); \
+            ((void**)_r)[-1] = _p; \
+        } \
+        _r; \
+    })
+    #define DAP_ALFREE(p) do { if (p) DAP_FREE(((void**)(p))[-1]); } while(0)
+    #define DAP_ALREALLOC(p, a, s) ({ \
+        size_t _s = (s), _a = (a); \
+        void *_p = (p), *_p_new = DAP_ALMALLOC(_a, _s); \
+        if (_p_new && _p) { memcpy(_p_new, _p, _s); DAP_ALFREE(_p); } \
+        _p_new; \
+    })
+    #define DAP_PAGE_ALMALLOC(s) DAP_ALMALLOC(dap_pagesize(), (s))
+    #define DAP_PAGE_ALFREE(p)   DAP_ALFREE(p)
+#endif
+
+#define dap_return_val_if_pass_err(e, r, s) do { if (e) { log_it_fl(L_WARNING, "%s", s); return r; } } while (0);
 #define dap_return_val_if_fail_err(e, r, s) dap_return_val_if_pass_err(!(e), r, s)
 #define dap_return_val_if_pass(e, r)    dap_return_val_if_pass_err(e, r, c_error_sanity_check)
 #define dap_return_val_if_fail(e, r)    dap_return_val_if_fail_err(e, r, c_error_sanity_check)
@@ -279,6 +356,48 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #ifndef __cplusplus
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
 #endif
+
+#define DAP_DEL_MULTY(...) \
+    for (void *__ptrs[] = { NULL, __VA_ARGS__ }, **__p = __ptrs; __p < __ptrs + sizeof(__ptrs) / sizeof(void*) - 1; DAP_DELETE(*++__p));
+
+// Evaluates all conditions (NO short-circuit evaluation)
+#define dap_do_if_any(__action, ...) \
+    do { \
+        bool __cond_results[] = { __VA_ARGS__ }, __do_action = false; \
+        for (size_t __i = 0; __i < sizeof(__cond_results) / sizeof(bool); ++__i) { \
+            if (__cond_results[__i]) { \
+                const char *__s = #__VA_ARGS__, *__q = __s, *__pos = NULL, *__e = NULL; \
+                int __n = 0, __len = 0; \
+                size_t __m = 0; \
+                while (*__q && !__e) { \
+                    switch (*__q++) { \
+                        case '(': ++__n; break; \
+                        case ')': if (__n) --__n; break; \
+                        case ',': \
+                            if (__n) break; \
+                            if (__m == __i) { __e = __q - 1; break; } \
+                            __s = __q; ++__m; \
+                        default: break; \
+                    } \
+                } \
+                if (!__e && __m == __i) __e = __q; \
+                if (__e) { \
+                    while ( *__s == ' ' || *__s == '\t' ) ++__s; \
+                    while ( __e > __s && (__e[-1] == ' ' || __e[-1] == '\t') ) --__e; \
+                    __pos = __s; \
+                    __len = (int)(__e - __s); \
+                } \
+                if (L_WARNING >= g_dap_log_level) _log_it(L_WARNING, \
+                    __len ? _LOG_LVL_L_WARNING "[" LOG_TAG "] %s():%d; Assertion #%zu triggered: \"%.*s\"" \
+                          : _LOG_LVL_L_WARNING "[" LOG_TAG "] %s():%d; Assertion #%zu triggered", __FUNCTION__, __LINE__, __i + 1, __len, __pos); \
+                __do_action = true; \
+            } \
+        } \
+        if (__do_action) { __action; } \
+    } while (0)
+
+#define dap_ret_val_if_any(__ret_val, ...) dap_do_if_any(return __ret_val, __VA_ARGS__)
+#define dap_ret_if_any(...) dap_ret_val_if_any(, __VA_ARGS__)
 
 /**
   * @struct Node address
@@ -307,17 +426,18 @@ typedef union dap_stream_node_addr {
 #endif
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
-    static int s = 0;
-    if (s)
-        return s;
+    static atomic_int s = 0;
+    int l_s = s;
+    if (l_s) return l_s;
 #ifdef DAP_OS_WINDOWS
     SYSTEM_INFO si;
     GetSystemInfo(&si);
-    s = si.dwPageSize;
+    l_s = si.dwPageSize;
 #else
-    s = sysconf(_SC_PAGESIZE);
+    l_s = sysconf(_SC_PAGESIZE);
 #endif
-    return s ? s : 4096;
+    s = l_s = l_s ? l_s : 4096;
+    return l_s;
 }
 
 DAP_STATIC_INLINE uint64_t dap_page_roundup(uint64_t a) {
@@ -353,61 +473,78 @@ typedef int dap_errnum_t;
 #define dap_fileclose close
 #endif
 
+/**
+ * @brief The log_level enum
+ */
+
+ typedef enum dap_log_level {
+    L_DEBUG     = 0,
+    L_INFO      = 1,
+    L_NOTICE    = 2,
+    L_MSG       = 3,
+    L_DAP       = 4,
+    L_WARNING   = 5,
+    L_ATT       = 6,
+    L_ERROR     = 7,
+    L_CRITICAL  = 8,
+    L_TOTAL,
+  #ifdef DAP_TPS_TEST
+    L_TPS  = 15,
+  #endif
+  } dap_log_level_t;
+
+#define _LOG_LVL_L_DEBUG    " [DBG] "
+#define _LOG_LVL_L_INFO     " [INF] "
+#define _LOG_LVL_L_NOTICE   " [ * ] "
+#define _LOG_LVL_L_MSG      " [MSG] "
+#define _LOG_LVL_L_DAP      " [DAP] "
+#define _LOG_LVL_L_WARNING  " [WRN] "
+#define _LOG_LVL_L_ATT      " [ATT] "
+#define _LOG_LVL_L_ERROR    " [ERR] "
+#define _LOG_LVL_L_CRITICAL " [ ! ] "
+#ifdef DAP_TPS_TEST
+#define _LOG_LVL_L_TPS      " [TPS] "
+#endif
+#define _LOG_LVL(_lvl) _LOG_LVL_##_lvl
+
+#if defined (__GNUC__) || defined (__clang__)
+#ifdef __MINGW_PRINTF_FORMAT
+#define DAP_PRINTF_ATTR(format_index, args_index) \
+    __attribute__ ((format (__MINGW_PRINTF_FORMAT, format_index, args_index)))
+#else
+#define DAP_PRINTF_ATTR(format_index, args_index) \
+    __attribute__ ((format (printf, format_index, args_index)))
+#endif
+#else /* __GNUC__ */
+#define DAP_PRINTF_ATTR(format_index, args_index)
+#endif /* __GNUC__ */
+#ifdef __cplusplus
+extern "C" {
+#endif
+DAP_PRINTF_ATTR(2, 3) void _log_it(enum dap_log_level, const char *format, ... );
+#ifdef __cplusplus
+}
+#endif
+#define log_it(_lvl, _fmt, ... ) (void)\
+    ((_lvl) >= g_dap_log_level && (_log_it((_lvl), _LOG_LVL(_lvl) "[" LOG_TAG "] " _fmt, ##__VA_ARGS__), 1))
+#define log_it_f(_lvl, _fmt, ... ) (void)\
+    ((_lvl) >= g_dap_log_level && (_log_it((_lvl), _LOG_LVL(_lvl) "[" LOG_TAG "] %s(); " _fmt, __FUNCTION__, ##__VA_ARGS__), 1))
+#define log_it_fl(_lvl, _fmt, ... ) (void)\
+    ((_lvl) >= g_dap_log_level && (_log_it((_lvl), _LOG_LVL(_lvl) "[" LOG_TAG "] %s():%d; " _fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__), 1))
+#define ret_log_it(_ret, _lvl, _fmt, ... ) \
+    return log_it(_lvl, _fmt, ##__VA_ARGS__), (_ret)
+
+#define debug_if(_flg, _lvl, _fmt, ... ) (void)\
+    ((_flg) && (log_it(_lvl, _fmt, ##__VA_ARGS__), 1))
+#define debug_if_f(_flg, _lvl, _fmt, ... ) (void)\
+    ((_flg) && (log_it_f(_lvl, _fmt, ##__VA_ARGS__), 1))
+#define debug_if_fl(_flg, _lvl, _fmt, ... ) (void)\
+    ((_flg) && (log_it_fl(_lvl, _fmt, ##__VA_ARGS__), 1))
+
+
 ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
 ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
 
-DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size )
-{
-    uintptr_t ptr = (uintptr_t) DAP_MALLOC( size + (alignment * 2) + sizeof(void *) );
-
-    if ( !ptr )
-        return (void *)ptr;
-
-    uintptr_t al_ptr = ( ptr + sizeof(void *) + alignment) & ~(alignment - 1 );
-    ((uintptr_t *)al_ptr)[-1] = ptr;
-
-    return (void *)al_ptr;
-}
-
-DAP_STATIC_INLINE void *_dap_aligned_realloc( uintptr_t alignment, void *bptr, uintptr_t size )
-{
-    uintptr_t ptr = (uintptr_t) DAP_REALLOC((uint8_t*)bptr, size + (alignment * 2) + sizeof(void *) );
-
-    if ( !ptr )
-        return (void *)ptr;
-
-    uintptr_t al_ptr = ( ptr + sizeof(void *) + alignment) & ~(alignment - 1 );
-    ((uintptr_t *)al_ptr)[-1] = ptr;
-
-    return (void *)al_ptr;
-}
-
-DAP_STATIC_INLINE void _dap_aligned_free( void *ptr )
-{
-    if ( !ptr )
-        return;
-
-    void  *base_ptr = (void *)((uintptr_t *)ptr)[-1];
-    DAP_FREE( base_ptr );
-}
-
-DAP_STATIC_INLINE void *_dap_page_aligned_alloc(size_t size) {
-#ifdef __ANDROID__
-    return memalign(getpagesize(), size);
-#elif !defined(DAP_OS_WINDOWS)
-    return valloc(size);
-#else
-    return VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-#endif
-}
-
-DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
-#ifndef DAP_OS_WINDOWS
-    free(ptr);
-#else
-    VirtualFree(ptr, 0, MEM_RELEASE);
-#endif
-}
 
 /*
  * 23: added support for encryption key type parameter and option to encrypt headers
@@ -505,38 +642,6 @@ DAP_STATIC_INLINE void dap_secure_bzero(void *s, size_t n) {
 
 typedef uint8_t byte_t;
 typedef int dap_spinlock_t;
-
-#if defined (__GNUC__) || defined (__clang__)
-#ifdef __MINGW_PRINTF_FORMAT
-#define DAP_PRINTF_ATTR(format_index, args_index) \
-    __attribute__ ((format (__MINGW_PRINTF_FORMAT, format_index, args_index)))
-#else
-#define DAP_PRINTF_ATTR(format_index, args_index) \
-    __attribute__ ((format (printf, format_index, args_index)))
-#endif
-#else /* __GNUC__ */
-#define DAP_PRINTF_ATTR(format_index, args_index)
-#endif /* __GNUC__ */
-
-/**
- * @brief The log_level enum
- */
-
-typedef enum dap_log_level {
-  L_DEBUG     = 0,
-  L_INFO      = 1,
-  L_NOTICE    = 2,
-  L_MSG       = 3,
-  L_DAP       = 4,
-  L_WARNING   = 5,
-  L_ATT       = 6,
-  L_ERROR     = 7,
-  L_CRITICAL  = 8,
-  L_TOTAL,
-#ifdef DAP_TPS_TEST
-  L_TPS  = 15,
-#endif
-} dap_log_level_t;
 
 typedef void *dap_interval_timer_t;
 typedef void (*dap_timer_callback_t)(void *param);
@@ -990,20 +1095,19 @@ void dap_log_set_max_item(unsigned int a_max);
 // get logs from list
 char *dap_log_get_item(time_t a_start_time, int a_limit);
 
-DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const char * log_tag, enum dap_log_level, const char * format, ... );
-#define log_it_fl(_log_level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__)
-#define log_it(_log_level, ...) _log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__)
-#define debug_if(flg, lvl, ...) _log_it(NULL, 0, ((flg) ? LOG_TAG : NULL), (lvl), ##__VA_ARGS__)
-
 char *dap_dump_hex(byte_t *a_data, size_t a_size);
 
 #ifdef DAP_SYS_DEBUG
 void    _log_it_ext (const char *, unsigned, enum dap_log_level, const char * format, ... );
 void    _dump_it    (const char *, unsigned, const char *a_var_name, const void *src, unsigned short srclen);
 #undef  log_it
-#define log_it( _log_level, ...)        _log_it_ext( __func__, __LINE__, (_log_level), ##__VA_ARGS__)
+#undef  log_it_fl
+#define log_it(_log_level, _fmt, ...)       _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__)
+#define log_it_fl(_log_level, _fmt, ...)    _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__)
 #undef  debug_if
-#define debug_if(flg, _log_level, ...)  _log_it_ext( __func__, __LINE__, (flg) ? (_log_level) : -1 , ##__VA_ARGS__)
+#undef  debug_if_fl
+#define debug_if(flg, _log_level, _fmt, ...)    do { if (flg) _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__); } while(0)
+#define debug_if_fl(flg, _log_level, _fmt, ...) do { if (flg) _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__); } while(0)
 
 #define dump_it(v,s,l)                  _dump_it( __func__, __LINE__, (v), (s), (l))
 
@@ -1110,6 +1214,7 @@ dap_error_str_t dap_strerror_(long long err);
 dap_error_str_t dap_str_ntstatus_(DWORD err);
 #define dap_str_ntstatus(e) dap_str_ntstatus_(e).s
 #endif
+extern enum dap_log_level g_dap_log_level;
 void dap_log_level_set(enum dap_log_level ll);
 enum dap_log_level dap_log_level_get(void);
 void dap_set_log_tag_width(size_t width);
