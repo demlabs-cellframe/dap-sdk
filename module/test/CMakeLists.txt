@@ -30,8 +30,11 @@ if(DAP_TEST_SOURCES)
         ${CMAKE_SOURCE_DIR}/module/core/include
     )
     
+    # Keep dap_test as a pure test utility archive.
+    # Linking it with OBJECT library dap_core embeds core object files into
+    # libdap_test.a, which causes ASan ODR violations when tests also load
+    # shared libdap-sdk.so (duplicate globals from dap_common.c).
     target_link_libraries(dap_test
-        dap_core
         pthread
     )
     
