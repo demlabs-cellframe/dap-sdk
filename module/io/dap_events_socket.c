@@ -2068,9 +2068,15 @@ lb_exit:
  */
 size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, const char *a_format, ...)
 {
-    if (!dap_events_workers_init_status())
-        return 0;
     dap_return_val_if_fail(a_worker, 0);
+    size_t l_result = 0;
+#ifndef DAP_EVENTS_CAPS_IOCP
+    bool l_queue_guard = a_worker != dap_worker_get_current();
+    if (l_queue_guard)
+        s_queue_ops_enter();
+#endif
+    if (!dap_events_workers_init_status())
+        goto lb_exit;
     va_list ap, ap_copy;
     va_start(ap,a_format);
     va_copy(ap_copy, ap);
@@ -2079,18 +2085,19 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
     if (l_data_size <0 ){
         log_it(L_ERROR, "Write f mt: can't write out formatted data '%s' with values", a_format);
         va_end(ap_copy);
-        return 0;
+        goto lb_exit;
     }
     ++l_data_size; // include trailing 0
 #ifdef DAP_EVENTS_CAPS_IOCP
     if (!a_worker->context || a_worker->context->signal_exit) {
         va_end(ap_copy);
-        return 0;
+        goto lb_exit;
     }
     dap_overlapped_t *ol = DAP_NEW_Z_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + l_data_size);
     *ol = (dap_overlapped_t) { .op = io_write };
     vsprintf(ol->buf, a_format, ap_copy);
-    return PostQueuedCompletionStatus(a_worker->context->iocp, l_data_size, a_es_uuid, (OVERLAPPED*)ol)
+    va_end(ap_copy);
+    l_result = PostQueuedCompletionStatus(a_worker->context->iocp, l_data_size, a_es_uuid, (OVERLAPPED*)ol)
         ? l_data_size
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
                a_es_uuid, a_worker->context->id, (unsigned long)GetLastError()), 0 );
@@ -2098,13 +2105,13 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
     dap_events_socket_t *l_queue = a_worker->queue_es_io;
     if (!s_worker_queue_ready(a_worker, l_queue)) {
         va_end(ap_copy);
-        return 0;
+        goto lb_exit;
     }
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         va_end(ap_copy);
-        return 0;
+        goto lb_exit;
     }
     l_msg->esocket_uuid = a_es_uuid;
     l_msg->data_size = l_data_size;
@@ -2113,26 +2120,38 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         va_end(ap_copy);
         DAP_DEL_Z(l_msg);
-        return 0;
+        goto lb_exit;
     }
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_data_size = vsprintf(l_msg->data,a_format,ap_copy);
     va_end(ap_copy);
 
     if (a_worker == dap_worker_get_current()) {
+        if (!a_worker->context || a_worker->context->signal_exit) {
+            DAP_DEL_MULTY(l_msg->data, l_msg);
+            goto lb_exit;
+        }
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
             log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
-            return 0;
+            DAP_DEL_MULTY(l_msg->data, l_msg);
+            goto lb_exit;
         }
-        size_t ret = dap_events_socket_write_unsafe(l_es, l_msg->data, l_msg->data_size);
-        return DAP_DEL_MULTY(l_msg->data, l_msg), ret;
+        l_result = dap_events_socket_write_unsafe(l_es, l_msg->data, l_msg->data_size);
+        DAP_DEL_MULTY(l_msg->data, l_msg);
+        goto lb_exit;
     }
     int l_ret = dap_events_socket_queue_ptr_send(l_queue, l_msg);
-    return l_ret
+    l_result = l_ret
         ? log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
-        : l_data_size;
+        : (size_t)l_data_size;
 #endif
+lb_exit:
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_queue_guard)
+        s_queue_ops_leave();
+#endif
+    return l_result;
 }
 
 /**

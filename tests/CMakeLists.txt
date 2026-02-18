@@ -266,6 +266,11 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_queue_write_remove_stop_ra
     register_dap_test(test_regression_queue_write_remove_stop_race "regression;io;events")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_queue_write_f_remove_stop_race.c)
+    add_dap_test(test_regression_queue_write_f_remove_stop_race regression/test_queue_write_f_remove_stop_race.c)
+    register_dap_test(test_regression_queue_write_f_remove_stop_race "regression;io;events")
+endif()
+
 # Build Security Tests
 message("[+] Configuring Security Tests")
 
