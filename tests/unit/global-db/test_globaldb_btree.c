@@ -1179,6 +1179,106 @@ static void test_btree_insert_after_delete(void)
 }
 
 /**
+ * @brief B-tree structural invariant verification test.
+ *
+ * Exercises dap_global_db_btree_verify() across multiple mutation patterns:
+ *   - Empty tree
+ *   - Single entry
+ *   - Sequential inserts (triggers append-only split)
+ *   - Random-pattern deletes (triggers merge/rebalance)
+ *   - Interleaved insert/delete cycles
+ *   - Full delete back to empty
+ *
+ * Each phase asserts verify() returns 0 and entry count matches expectations.
+ */
+static void test_btree_invariants(void)
+{
+    dap_test_msg("B-tree invariant verification test");
+
+    char path[256];
+    snprintf(path, sizeof(path), "%s/invariants.gdb", TEST_DIR);
+    dap_global_db_btree_t *btree = dap_global_db_btree_create(path);
+    dap_assert(btree != NULL, "Tree should be created for invariant test");
+
+    uint64_t l_count = 0;
+    int l_rc;
+
+    // Phase 1: Empty tree
+    l_rc = dap_global_db_btree_verify(btree, &l_count);
+    dap_assert(l_rc == 0, "Empty tree should pass verify");
+    dap_assert(l_count == 0, "Empty tree verify count should be 0");
+
+    // Phase 2: Single entry
+    {
+        dap_global_db_btree_key_t key = s_make_key(100, 1);
+        dap_global_db_btree_insert(btree, &key, "k", 2, "v", 2, NULL, 0, 0);
+        l_rc = dap_global_db_btree_verify(btree, &l_count);
+        dap_assert(l_rc == 0, "Single entry should pass verify");
+        dap_assert(l_count == 1, "Single entry verify count should be 1");
+        dap_global_db_btree_delete(btree, &key);
+        l_rc = dap_global_db_btree_verify(btree, &l_count);
+        dap_assert(l_rc == 0, "After deleting single entry should pass verify");
+        dap_assert(l_count == 0, "After deleting single entry count should be 0");
+    }
+
+    // Phase 3: Sequential inserts (2000 entries, triggers many splits)
+    const int N = 2000;
+    for (int i = 0; i < N; i++) {
+        dap_global_db_btree_key_t key = s_make_key(200, (uint64_t)i);
+        char v[32]; snprintf(v, sizeof(v), "inv_%d", i);
+        int rc = dap_global_db_btree_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
+                                             v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
+        dap_assert(rc == 0, "Invariant test insert should succeed");
+    }
+    dap_global_db_btree_sync(btree);
+    l_rc = dap_global_db_btree_verify(btree, &l_count);
+    dap_assert(l_rc == 0, "After 2000 inserts should pass verify");
+    dap_assert(l_count == (uint64_t)N, "After 2000 inserts verify count should match");
+
+    // Phase 4: Delete every 2nd entry (aggressive rebalancing)
+    int l_deleted = 0;
+    for (int i = 0; i < N; i += 2) {
+        dap_global_db_btree_key_t key = s_make_key(200, (uint64_t)i);
+        if (dap_global_db_btree_delete(btree, &key) == 0)
+            l_deleted++;
+    }
+    int l_remaining = N - l_deleted;
+    l_rc = dap_global_db_btree_verify(btree, &l_count);
+    dap_assert(l_rc == 0, "After deleting every 2nd entry should pass verify");
+    dap_assert(l_count == (uint64_t)l_remaining,
+               "After deleting every 2nd entry count should match");
+
+    // Phase 5: Interleaved insert/delete — insert new keys into gaps
+    int l_inserted = 0;
+    for (int i = 0; i < N; i += 2) {
+        dap_global_db_btree_key_t key = s_make_key(300, (uint64_t)i);
+        char v[32]; snprintf(v, sizeof(v), "new_%d", i);
+        if (dap_global_db_btree_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
+                                        v, (uint32_t)strlen(v) + 1, NULL, 0, 0) == 0) {
+            l_inserted++;
+        }
+    }
+    l_rc = dap_global_db_btree_verify(btree, &l_count);
+    dap_assert(l_rc == 0, "After interleaved insert/delete should pass verify");
+    dap_assert(l_count == (uint64_t)(l_remaining + l_inserted),
+               "After interleaved insert/delete count should match");
+
+    // Phase 6: Delete everything
+    for (int i = 0; i < N; i++) {
+        dap_global_db_btree_key_t k1 = s_make_key(200, (uint64_t)i);
+        dap_global_db_btree_delete(btree, &k1);
+        dap_global_db_btree_key_t k2 = s_make_key(300, (uint64_t)i);
+        dap_global_db_btree_delete(btree, &k2);
+    }
+    l_rc = dap_global_db_btree_verify(btree, &l_count);
+    dap_assert(l_rc == 0, "After deleting everything should pass verify");
+    dap_assert(l_count == 0, "After deleting everything count should be 0");
+
+    dap_global_db_btree_close(btree);
+    dap_pass_msg("B-tree invariant verification");
+}
+
+/**
  * @brief Stress test: 10000 records — full lifecycle.
  * Insert all, verify all, delete half, verify remainder, delete rest.
  */
@@ -1204,6 +1304,14 @@ static void test_btree_stress(void)
     dap_global_db_btree_sync(btree);
     dap_assert(dap_global_db_btree_count(btree) == (uint64_t)N,
                "Count should be N after stress insert");
+
+    // Verify tree integrity after mass insert
+    {
+        uint64_t l_verify_count = 0;
+        int l_rc = dap_global_db_btree_verify(btree, &l_verify_count);
+        dap_assert(l_rc == 0, "Tree integrity after insert should be OK");
+        dap_assert(l_verify_count == (uint64_t)N, "Verify count should match N after insert");
+    }
 
     // Cursor count verification
     dap_global_db_btree_cursor_t *cur = dap_global_db_btree_cursor_create(btree);
@@ -1236,6 +1344,15 @@ static void test_btree_stress(void)
     dap_assert(dap_global_db_btree_count(btree) == (uint64_t)remaining,
                "Count should match after partial delete");
 
+    // Verify tree integrity after partial delete
+    {
+        uint64_t l_verify_count = 0;
+        int l_rc = dap_global_db_btree_verify(btree, &l_verify_count);
+        dap_assert(l_rc == 0, "Tree integrity after partial delete should be OK");
+        dap_assert(l_verify_count == (uint64_t)remaining,
+                   "Verify count should match remaining after partial delete");
+    }
+
     // Verify survivors exist and deleted don't
     for (int i = 0; i < N; i++) {
         dap_global_db_btree_key_t key = s_make_key(9000, (uint64_t)i);
@@ -1254,6 +1371,14 @@ static void test_btree_stress(void)
     }
     dap_assert(dap_global_db_btree_count(btree) == 0,
                "Count should be 0 after deleting everything");
+
+    // Verify tree integrity after full delete
+    {
+        uint64_t l_verify_count = 0;
+        int l_rc = dap_global_db_btree_verify(btree, &l_verify_count);
+        dap_assert(l_rc == 0, "Tree integrity after full delete should be OK");
+        dap_assert(l_verify_count == 0, "Verify count should be 0 after full delete");
+    }
 
     // Verify tree is truly empty
     cur = dap_global_db_btree_cursor_create(btree);
@@ -1497,6 +1622,258 @@ static void test_btree_concurrent_read_write(void)
 }
 
 // ============================================================================
+// MVCC Snapshot Isolation Tests (Phase 5.6)
+// ============================================================================
+
+/**
+ * @brief Test: cursor snapshot isolation — cursor sees tree state at creation time.
+ *
+ * 1. Populate with N records
+ * 2. Open cursor (acquires snapshot)
+ * 3. Delete half the records through the public API
+ * 4. Iterate cursor — should still see ALL N records (snapshot isolation)
+ * 5. Close cursor (releases snapshot)
+ * 6. Open new cursor — should see N/2 records
+ */
+static void test_btree_snapshot_isolation(void)
+{
+    dap_test_msg("MVCC snapshot isolation test");
+
+    s_cleanup_test_dir();
+#ifdef DAP_OS_WINDOWS
+    mkdir(TEST_DIR);
+#else
+    mkdir(TEST_DIR, 0755);
+#endif
+
+    char filepath[256];
+    snprintf(filepath, sizeof(filepath), "%s/snapshot_iso.gdb", TEST_DIR);
+
+    dap_global_db_btree_t *tree = dap_global_db_btree_create(filepath);
+    dap_assert(tree != NULL, "Tree should be created for snapshot isolation test");
+
+    const int N = 1000;
+
+    // Populate
+    for (int i = 0; i < N; i++) {
+        dap_global_db_btree_key_t key = s_make_key(500, (uint64_t)i);
+        char v[32]; snprintf(v, sizeof(v), "snap_%d", i);
+        int rc = dap_global_db_btree_insert(tree, &key, v, (uint32_t)strlen(v) + 1,
+                                             v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
+        dap_assert(rc == 0, "Snapshot isolation insert should succeed");
+    }
+    dap_global_db_btree_sync(tree);
+    dap_assert(dap_global_db_btree_count(tree) == (uint64_t)N,
+               "Should have N records before snapshot");
+
+    // Open cursor — acquires snapshot of the current state (N records)
+    dap_global_db_btree_cursor_t *snap_cur = dap_global_db_btree_cursor_create(tree);
+    dap_assert(snap_cur != NULL, "Snapshot cursor should be created");
+
+    // Delete half the records AFTER cursor creation
+    for (int i = 0; i < N; i += 2) {
+        dap_global_db_btree_key_t key = s_make_key(500, (uint64_t)i);
+        dap_global_db_btree_delete(tree, &key);
+    }
+    dap_assert(dap_global_db_btree_count(tree) == (uint64_t)(N / 2),
+               "Should have N/2 records after deletes");
+
+    // Iterate snapshot cursor — should still see ALL N records
+    dap_global_db_btree_cursor_move(snap_cur, DAP_GLOBAL_DB_BTREE_FIRST, NULL);
+    int snap_count = 0;
+    dap_global_db_btree_key_t prev_key = {0};
+    bool ordering_ok = true;
+    while (dap_global_db_btree_cursor_valid(snap_cur)) {
+        dap_global_db_btree_key_t cur_key;
+        char *tk = NULL; void *vd = NULL, *sd = NULL;
+        uint32_t vl = 0, sl = 0; uint8_t fl = 0;
+        if (dap_global_db_btree_cursor_get(snap_cur, &cur_key, &tk, &vd, &vl, &sd, &sl, &fl) == 0) {
+            if (snap_count > 0 && dap_global_db_btree_key_compare(&cur_key, &prev_key) <= 0)
+                ordering_ok = false;
+            prev_key = cur_key;
+            snap_count++;
+            DAP_DEL_Z(tk); DAP_DEL_Z(vd); DAP_DEL_Z(sd);
+        }
+        dap_global_db_btree_cursor_move(snap_cur, DAP_GLOBAL_DB_BTREE_NEXT, NULL);
+    }
+    dap_global_db_btree_cursor_close(snap_cur);
+
+    dap_test_msg("Snapshot cursor saw %d records (expected %d)", snap_count, N);
+    dap_assert(snap_count == N, "Snapshot cursor should see ALL N records despite concurrent deletes");
+    dap_assert(ordering_ok, "Snapshot cursor keys should be in ascending order");
+
+    // Open NEW cursor — should see current state (N/2 records)
+    dap_global_db_btree_cursor_t *new_cur = dap_global_db_btree_cursor_create(tree);
+    dap_global_db_btree_cursor_move(new_cur, DAP_GLOBAL_DB_BTREE_FIRST, NULL);
+    int new_count = 0;
+    while (dap_global_db_btree_cursor_valid(new_cur)) {
+        new_count++;
+        dap_global_db_btree_cursor_move(new_cur, DAP_GLOBAL_DB_BTREE_NEXT, NULL);
+    }
+    dap_global_db_btree_cursor_close(new_cur);
+
+    dap_test_msg("New cursor saw %d records (expected %d)", new_count, N / 2);
+    dap_assert(new_count == N / 2, "New cursor should see N/2 records after deletes");
+
+    dap_global_db_btree_close(tree);
+    dap_pass_msg("MVCC snapshot isolation");
+}
+
+/**
+ * @brief Thread argument for snapshot consistency test.
+ */
+typedef struct {
+    dap_global_db_btree_t *tree;
+    int thread_id;
+    int iterations;          // Number of cursor scan iterations
+    int inconsistencies;     // Number of scans with non-monotonic counts
+    int ordering_errors;     // Key ordering violations
+    _Atomic int *writer_done;
+} snapshot_reader_arg_t;
+
+/**
+ * @brief Reader thread: repeatedly opens cursors and scans, verifying consistency.
+ *
+ * Each scan MUST see a consistent count (non-decreasing between scans since
+ * writer only inserts) and keys MUST be in sorted order within each scan.
+ */
+static void *s_snapshot_reader_thread(void *a_arg)
+{
+    snapshot_reader_arg_t *arg = (snapshot_reader_arg_t *)a_arg;
+    arg->iterations = 0;
+    arg->inconsistencies = 0;
+    arg->ordering_errors = 0;
+
+    int prev_scan_count = 0;
+
+    while (!atomic_load(arg->writer_done) || arg->iterations < 10) {
+        dap_global_db_btree_cursor_t *cur = dap_global_db_btree_cursor_create(arg->tree);
+        if (!cur) break;
+
+        dap_global_db_btree_cursor_move(cur, DAP_GLOBAL_DB_BTREE_FIRST, NULL);
+        int scan_count = 0;
+        dap_global_db_btree_key_t prev_key = {0};
+        bool order_ok = true;
+
+        while (dap_global_db_btree_cursor_valid(cur)) {
+            dap_global_db_btree_key_t cur_key;
+            if (dap_global_db_btree_cursor_get(cur, &cur_key, NULL, NULL, NULL, NULL, NULL, NULL) == 0) {
+                if (scan_count > 0 && dap_global_db_btree_key_compare(&cur_key, &prev_key) <= 0)
+                    order_ok = false;
+                prev_key = cur_key;
+            }
+            scan_count++;
+            dap_global_db_btree_cursor_move(cur, DAP_GLOBAL_DB_BTREE_NEXT, NULL);
+        }
+
+        uint64_t l_snap_root = cur->snapshot_root;
+        uint64_t l_snap_txn = cur->snapshot_txn;
+        uint64_t l_snap_count = cur->snapshot_count;
+
+        // Verify count BEFORE closing cursor (snapshot still active, pages protected)
+        uint64_t l_tree_count = dap_global_db_btree_count_at_root(arg->tree, l_snap_root);
+
+        dap_global_db_btree_cursor_close(cur);
+
+        if (!order_ok)
+            arg->ordering_errors++;
+
+        if (scan_count < prev_scan_count) {
+            dap_test_msg("Thread %d: DECREASED %d -> %d (root=%llu txn=%llu snap_count=%llu tree_count=%llu)",
+                         arg->thread_id, prev_scan_count, scan_count,
+                         (unsigned long long)l_snap_root, (unsigned long long)l_snap_txn,
+                         (unsigned long long)l_snap_count, (unsigned long long)l_tree_count);
+            arg->inconsistencies++;
+        }
+        prev_scan_count = scan_count;
+        arg->iterations++;
+    }
+    return NULL;
+}
+
+/**
+ * @brief Test: concurrent writer + readers with snapshot consistency verification.
+ *
+ * Writer inserts 5000 records. Readers repeatedly open cursors and scan.
+ * Each reader scan must produce:
+ *   - Sorted keys (no ordering violations)
+ *   - Non-decreasing count between scans (writer only inserts)
+ */
+static void test_btree_snapshot_concurrent(void)
+{
+    dap_test_msg("MVCC concurrent snapshot consistency test");
+
+    s_cleanup_test_dir();
+#ifdef DAP_OS_WINDOWS
+    mkdir(TEST_DIR);
+#else
+    mkdir(TEST_DIR, 0755);
+#endif
+
+    char filepath[256];
+    snprintf(filepath, sizeof(filepath), "%s/snapshot_concurrent.gdb", TEST_DIR);
+
+    dap_global_db_btree_t *tree = dap_global_db_btree_create(filepath);
+    dap_assert(tree != NULL, "Tree should be created for snapshot concurrent test");
+
+    _Atomic int writer_done = 0;
+    const int WRITE_COUNT = 5000;
+
+    // Start reader threads
+    pthread_t reader_tids[NUM_READER_THREADS];
+    snapshot_reader_arg_t reader_args[NUM_READER_THREADS];
+    for (int t = 0; t < NUM_READER_THREADS; t++) {
+        reader_args[t].tree = tree;
+        reader_args[t].thread_id = t;
+        reader_args[t].writer_done = &writer_done;
+        int rc = pthread_create(&reader_tids[t], NULL, s_snapshot_reader_thread, &reader_args[t]);
+        dap_assert(rc == 0, "Snapshot reader thread should be created");
+    }
+
+    // Writer: insert records
+    for (int i = 0; i < WRITE_COUNT; i++) {
+        dap_global_db_btree_key_t key = s_make_key(600, (uint64_t)i);
+        char v[32]; snprintf(v, sizeof(v), "sc_%d", i);
+        dap_global_db_btree_insert(tree, &key, v, (uint32_t)strlen(v) + 1,
+                                    v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
+    }
+    atomic_store(&writer_done, 1);
+
+    // Wait for readers
+    for (int t = 0; t < NUM_READER_THREADS; t++)
+        pthread_join(reader_tids[t], NULL);
+
+    // Verify results
+    int total_iterations = 0;
+    int total_inconsistencies = 0;
+    int total_ordering_errors = 0;
+    for (int t = 0; t < NUM_READER_THREADS; t++) {
+        dap_test_msg("Snapshot reader %d: %d scans, %d inconsistencies, %d ordering errors",
+                     t, reader_args[t].iterations, reader_args[t].inconsistencies,
+                     reader_args[t].ordering_errors);
+        total_iterations += reader_args[t].iterations;
+        total_inconsistencies += reader_args[t].inconsistencies;
+        total_ordering_errors += reader_args[t].ordering_errors;
+    }
+    dap_test_msg("Total: %d scans across %d threads", total_iterations, NUM_READER_THREADS);
+    dap_assert(total_iterations > 0, "Readers should have completed at least 1 scan");
+    dap_assert(total_inconsistencies == 0,
+               "No snapshot count inconsistencies (non-decreasing with insert-only writer)");
+    dap_assert(total_ordering_errors == 0,
+               "No key ordering errors in snapshot scans");
+
+    // Final verify
+    uint64_t l_count = 0;
+    int l_rc = dap_global_db_btree_verify(tree, &l_count);
+    dap_assert(l_rc == 0, "Tree integrity after concurrent snapshot test should be OK");
+    dap_assert(l_count == (uint64_t)WRITE_COUNT,
+               "Tree should have all written records after concurrent test");
+
+    dap_global_db_btree_close(tree);
+    dap_pass_msg("MVCC concurrent snapshot consistency");
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -1530,12 +1907,17 @@ int main(int argc, char **argv)
     test_btree_persistence_after_delete();
     test_btree_root_collapse();
     test_btree_insert_after_delete();
+    test_btree_invariants();
     test_btree_stress();
 
     dap_test_msg("\n=== Thread Safety Tests (Phase 3) ===\n");
     test_btree_concurrent_reads();
     test_btree_concurrent_read_write();
-    
+
+    dap_test_msg("\n=== MVCC Snapshot Tests (Phase 5.6) ===\n");
+    test_btree_snapshot_isolation();
+    test_btree_snapshot_concurrent();
+
     s_cleanup_test_dir();
     
     dap_test_msg("\n=== All B-tree tests passed ===\n");

@@ -172,6 +172,7 @@ typedef struct dap_global_db_btree {
     _Atomic(uint64_t) mvcc_txn;          // Latest committed transaction ID
     _Atomic(uint64_t) mvcc_count;        // Latest committed items_count
     _Atomic(uint32_t) mvcc_height;       // Latest committed tree_height
+    _Atomic(uint64_t) mvcc_seq;          // Seqlock counter (odd = publish in progress)
     pthread_mutex_t write_mutex;          // Exclusive writer access
 
     // Snapshot tracking — each slot holds the txn_id of an active reader (0 = unused).
@@ -198,7 +199,14 @@ typedef struct dap_global_db_btree_cursor {
     // MVCC snapshot state
     uint64_t snapshot_root;              // Root page at time of cursor creation
     uint64_t snapshot_txn;               // Txn ID at time of cursor creation
+    uint64_t snapshot_count;             // items_count at time of cursor creation (from seqlock)
     int snapshot_slot;                   // Snapshot slot index (-1 = not using MVCC)
+    // Path stack for snapshot-mode traversal.
+    // In snapshot mode, sibling links are NOT used (they may be stale due to
+    // in-place updates by writers). Instead, NEXT/PREV pop the path stack to
+    // find the next/prev subtree — classic B-tree cursor without sibling links.
+    struct dap_btree_path_entry path[DAP_GLOBAL_DB_BTREE_PATH_MAX];
+    int path_depth;
 } dap_global_db_btree_cursor_t;
 
 /**
@@ -441,6 +449,32 @@ int dap_global_db_btree_key_compare(const dap_global_db_btree_key_t *a_key1,
  * @return true if blank, false otherwise
  */
 bool dap_global_db_btree_key_is_blank(const dap_global_db_btree_key_t *a_key);
+
+/**
+ * @brief Verify B-tree structural integrity (debug/test utility).
+ *
+ * Performs a full recursive traversal of the tree, checking:
+ *   - All page_ids are valid (non-zero, within mmap bounds)
+ *   - Branch pages: entries sorted, child count = entries_count + 1
+ *   - Leaf pages: entries sorted, sibling links consistent with parent structure
+ *   - Total entry count matches header.items_count
+ *   - Tree height matches actual depth to leaves
+ *
+ * Acquires rdlock internally. Safe to call from any thread.
+ *
+ * @param a_tree           Tree handle
+ * @param a_out_entry_count Output: total entries found (can be NULL)
+ * @return 0 if tree is structurally valid, negative error code otherwise:
+ *         -1  invalid argument
+ *         -2  page read failure (invalid page_id)
+ *         -3  key ordering violation
+ *         -4  entry count mismatch
+ *         -5  tree height mismatch
+ *         -6  leaf depth inconsistency
+ *         -7  sibling link inconsistency
+ */
+int dap_global_db_btree_verify(dap_global_db_btree_t *a_tree, uint64_t *a_out_entry_count);
+uint64_t dap_global_db_btree_count_at_root(dap_global_db_btree_t *a_tree, uint64_t a_root);
 
 #ifdef __cplusplus
 }
