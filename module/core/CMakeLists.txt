@@ -43,7 +43,7 @@ register_module_headers(DIRECTORIES include)
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../cellframe-sdk/dap-sdk/3rdparty/uthash/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 
 # Platform-specific include directories
 if(UNIX)

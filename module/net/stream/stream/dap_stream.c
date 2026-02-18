@@ -561,7 +561,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     if (!a_esocket->is_initalized)
         return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_WARNING, "Cannot get stream from esocket in worker_assign, skipping");
+        return;
+    }
     dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
@@ -588,7 +591,10 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 {
     UNUSED(a_worker);
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_WARNING, "Cannot get stream from esocket in worker_unassign, skipping");
+        return;
+    }
     s_stream_delete_from_list(l_stream);
     DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
     dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
@@ -919,7 +925,11 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     }
     assert(a_server_side == !!l_es->server);
     dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_WARNING, "Cannot get stream from esocket in keepalive callback, removing timer");
+        DAP_DELETE(l_es_uuid);
+        return false;
+    }
     if (l_stream->is_active) {
         l_stream->is_active = false;
         return true;
