@@ -96,7 +96,7 @@ target_include_directories(dap_sdk_interface PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/module/io/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/global-db/include
     ${CMAKE_CURRENT_SOURCE_DIR}/module/net/common/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../cellframe-sdk/dap-sdk/3rdparty/uthash/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src
 )
 
 # Optional modules with UPDATED PATHS

@@ -280,3 +280,30 @@ void dap_hash_keccak_sponge_squeeze(dap_hash_keccak_ctx_t *ctx, uint8_t *out, si
         }
     }
 }
+
+// ============================================================================
+// SIMD Stub Implementations (fallback to reference if SIMD not available)
+// ============================================================================
+// These stubs ensure symbols are always defined, even if generated SIMD files
+// don't exist. They fall back to the reference implementation.
+
+#if defined(__arm__) || defined(__aarch64__)
+// NEON stub - always provide fallback
+__attribute__((weak)) void dap_hash_keccak_permute_neon(dap_hash_keccak_state_t *state)
+{
+    dap_hash_keccak_permute_ref(state);
+}
+
+#if defined(__aarch64__) && !defined(__APPLE__)
+// SVE stubs - only on Linux ARM64
+__attribute__((weak)) void dap_hash_keccak_permute_sve(dap_hash_keccak_state_t *state)
+{
+    dap_hash_keccak_permute_ref(state);
+}
+
+__attribute__((weak)) void dap_hash_keccak_permute_sve2(dap_hash_keccak_state_t *state)
+{
+    dap_hash_keccak_permute_ref(state);
+}
+#endif
+#endif
