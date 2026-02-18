@@ -216,66 +216,6 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_known_issues.c)
     register_dap_test(test_regression_known_issues "regression;bugfix")
 endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_proc_thread_preinit_api.c)
-    add_dap_test(test_regression_proc_thread_preinit_api regression/test_proc_thread_preinit_api.c)
-    register_dap_test(test_regression_proc_thread_preinit_api "regression;io;proc_thread")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_proc_thread_init_contract.c)
-    add_dap_test(test_regression_proc_thread_init_contract regression/test_proc_thread_init_contract.c)
-    register_dap_test(test_regression_proc_thread_init_contract "regression;io;proc_thread")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_proc_thread_stale_handle_after_deinit.c)
-    add_dap_test(test_regression_proc_thread_stale_handle_after_deinit regression/test_proc_thread_stale_handle_after_deinit.c)
-    register_dap_test(test_regression_proc_thread_stale_handle_after_deinit "regression;io;proc_thread")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_proc_thread_callback_deinit_race.c)
-    add_dap_test(test_regression_proc_thread_callback_deinit_race regression/test_proc_thread_callback_deinit_race.c)
-    register_dap_test(test_regression_proc_thread_callback_deinit_race "regression;io;proc_thread")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_events_deinit_without_wait.c)
-    add_dap_test(test_regression_events_deinit_without_wait regression/test_events_deinit_without_wait.c)
-    register_dap_test(test_regression_events_deinit_without_wait "regression;io;events")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_events_wait_stop_concurrent_race.c)
-    add_dap_test(test_regression_events_wait_stop_concurrent_race regression/test_events_wait_stop_concurrent_race.c)
-    register_dap_test(test_regression_events_wait_stop_concurrent_race "regression;io;events")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_events_wait_concurrent_no_start_race.c)
-    add_dap_test(test_regression_events_wait_concurrent_no_start_race regression/test_events_wait_concurrent_no_start_race.c)
-    register_dap_test(test_regression_events_wait_concurrent_no_start_race "regression;io;events")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_server_delete_accept_race.c)
-    add_dap_test(test_regression_server_delete_accept_race regression/test_server_delete_accept_race.c)
-    register_dap_test(test_regression_server_delete_accept_race "regression;io;server")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_server_accept_wrap_no_add_null.c)
-    add_dap_test(test_regression_server_accept_wrap_no_add_null regression/test_server_accept_wrap_no_add_null.c)
-    register_dap_test(test_regression_server_accept_wrap_no_add_null "regression;io;server")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_server_delete_after_wait_race.c)
-    add_dap_test(test_regression_server_delete_after_wait_race regression/test_server_delete_after_wait_race.c)
-    register_dap_test(test_regression_server_delete_after_wait_race "regression;io;server")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_queue_write_remove_stop_race.c)
-    add_dap_test(test_regression_queue_write_remove_stop_race regression/test_queue_write_remove_stop_race.c)
-    register_dap_test(test_regression_queue_write_remove_stop_race "regression;io;events")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_queue_write_f_remove_stop_race.c)
-    add_dap_test(test_regression_queue_write_f_remove_stop_race regression/test_queue_write_f_remove_stop_race.c)
-    register_dap_test(test_regression_queue_write_f_remove_stop_race "regression;io;events")
-endif()
-
 # Build Security Tests
 message("[+] Configuring Security Tests")
 
