@@ -244,7 +244,7 @@ static int s_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size
         return ENOMEM;
     void *l_data = (void *)a_data;
     if (a_size) {
-        l_data = DAP_DUP_SIZE((const byte_t*)a_data, a_size);
+        l_data = DAP_DUP_SIZE((byte_t *)a_data, a_size);
         if (!l_data)
             return DAP_ALFREE(l_entry), ENOMEM;
     }

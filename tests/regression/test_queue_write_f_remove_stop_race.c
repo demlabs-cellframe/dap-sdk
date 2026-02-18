@@ -66,7 +66,7 @@ static void *s_writer_thread(void *a_arg)
         }
 
         dap_events_socket_uuid_t l_uuid = atomic_load_explicit(&l_shared->es_uuid, memory_order_acquire);
-        (void)dap_events_socket_write_f(l_worker, l_uuid, "writer=%u payload=%s", (unsigned)pthread_self(), l_payload);
+        (void)dap_events_socket_write_f(l_worker, l_uuid, "payload=%s", l_payload);
     }
 
     return NULL;
