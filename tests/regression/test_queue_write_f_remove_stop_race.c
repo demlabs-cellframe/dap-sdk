@@ -4,7 +4,6 @@
  * Regression: queue write/remove/shutdown race must not use freed queue esocket memory.
  */
 
-#include <arpa/inet.h>
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>
@@ -13,14 +12,25 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <sys/socket.h>
 #include <time.h>
+
+#if !defined(DAP_OS_WINDOWS)
+#include <arpa/inet.h>
+#include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_events.h"
 #include "dap_events_socket.h"
 #include "dap_server.h"
+
+#if defined(DAP_OS_WINDOWS)
+int main(void)
+{
+    return 0;
+}
+#else
 
 enum {
     TEST_ITERS = 40,
@@ -280,3 +290,5 @@ int main(void)
     alarm(0);
     return 0;
 }
+
+#endif
