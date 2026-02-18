@@ -101,6 +101,28 @@ static pthread_mutex_t s_server_lifecycle_lock = PTHREAD_MUTEX_INITIALIZER;
 static dap_server_lifecycle_t *s_server_lifecycle_list = NULL;
 static dap_server_listener_guard_t *s_server_listener_guard_list = NULL;
 
+#ifdef ENABLE_TESTING
+static bool s_test_fail_accept_wrap_no_add_once(void)
+{
+    static atomic_int s_fail_at = ATOMIC_VAR_INIT(-1);
+    int l_fail_at = atomic_load_explicit(&s_fail_at, memory_order_acquire);
+    if (l_fail_at < 0) {
+        const char *l_env = getenv("DAP_TEST_FAIL_ACCEPT_WRAP_NO_ADD_AT");
+        int l_parsed = l_env ? atoi(l_env) : 0;
+        if (l_parsed < 0)
+            l_parsed = 0;
+        atomic_store_explicit(&s_fail_at, l_parsed, memory_order_release);
+        l_fail_at = l_parsed;
+    }
+    while (l_fail_at > 0) {
+        if (atomic_compare_exchange_weak_explicit(&s_fail_at, &l_fail_at, l_fail_at - 1,
+                                                  memory_order_acq_rel, memory_order_acquire))
+            return l_fail_at == 1;
+    }
+    return false;
+}
+#endif
+
 static dap_server_lifecycle_t *s_server_lifecycle_find_unsafe(dap_server_t *a_server)
 {
     for (dap_server_lifecycle_t *l_item = s_server_lifecycle_list; l_item; l_item = l_item->next)
@@ -648,7 +670,18 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", a_remote_addr->ss_family);
         goto lb_cleanup;
     }
+#ifdef ENABLE_TESTING
+    if (s_test_fail_accept_wrap_no_add_once()) {
+        log_it(L_WARNING, "Test fault injection: forcing NULL from dap_events_socket_wrap_no_add()");
+        l_es_new = NULL;
+    } else
+#endif
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
+    if (!l_es_new) {
+        log_it(L_ERROR, "Can't wrap accepted socket %"DAP_FORMAT_SOCKET", closing", a_remote_socket);
+        closesocket(a_remote_socket);
+        goto lb_cleanup;
+    }
     l_es_new->server = l_server;
     l_es_new->type = l_es_type;
     l_es_new->addr_storage = *a_remote_addr;
