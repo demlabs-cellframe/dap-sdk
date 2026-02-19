@@ -225,8 +225,8 @@ static int s_setup_client(int id)
     // Wait for client init with polling
     bool ready = false;
     for (int i = 0; i < 20 && !ready; i++) {
-        dap_client_pvt_t *pvt = DAP_CLIENT_PVT(s_clients[id]);
-        if (pvt && pvt->worker) ready = true;
+        dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(s_clients[id]);
+        if (esocket && esocket->worker) ready = true;
         else usleep(100000);
     }
     

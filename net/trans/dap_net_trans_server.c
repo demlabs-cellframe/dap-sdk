@@ -260,41 +260,38 @@ int dap_net_trans_server_register_handlers(dap_net_trans_server_ctx_t *a_ctx)
     log_it(L_DEBUG, "Registering DAP protocol handlers for trans type %d", a_ctx->trans_type);
 
     // Register enc_init handler (encryption handshake)
-    // The client uses "enc_init/gd4y5yh78w42aaagh" path for enc_init requests
-    // HTTP server parses URL and looks for processor by dirname first, then extracts basename
-    // z_dirname() returns "/enc_init" for path "/enc_init/gd4y5yh78w42aaagh" (without trailing slash)
-    // So we register processor for "/enc_init" directory path (without trailing slash)
     enc_http_add_proc(a_ctx->http_server, "/enc_init");
     log_it(L_DEBUG, "Registered enc_init handler (path: /enc_init)");
 
-    // Register stream handler (DAP stream protocol)
-    dap_stream_add_proc_http(a_ctx->http_server, "/stream");
-    log_it(L_DEBUG, "Registered stream handler");
-
-    // Register stream_ctl handler (stream session control)
-    // The client uses "stream_ctl/..." path for stream_ctl requests
-    // HTTP server parses URL and looks for processor by dirname first, then extracts basename
-    // z_dirname() returns "/stream_ctl" for path "/stream_ctl/..." (without trailing slash)
-    // So we register processor for "/stream_ctl" directory path (without trailing slash)
-    dap_stream_ctl_add_proc(a_ctx->http_server, "/stream_ctl");
-    log_it(L_DEBUG, "Registered stream_ctl handler");
-
-    // Register trans-specific handlers via trans's callback
-    // Each trans registers its own handlers (e.g., WebSocket upgrade handlers)
+    // Register trans-specific handlers FIRST via trans's callback.
+    // This allows transports like WebSocket to register their own /stream handler
+    // (e.g., WebSocket upgrade handler) before the default HTTP stream handler.
     dap_net_trans_t *l_stream_trans = dap_net_trans_find(a_ctx->trans_type);
     if (l_stream_trans && l_stream_trans->ops && l_stream_trans->ops->register_server_handlers) {
         int l_ret = l_stream_trans->ops->register_server_handlers(l_stream_trans, a_ctx);
         if (l_ret != 0) {
             log_it(L_WARNING, "Trans '%s' failed to register server handlers: %d", 
                    l_stream_trans->name, l_ret);
-            // Non-fatal, continue
         } else {
             log_it(L_DEBUG, "Registered trans-specific handlers for '%s'", l_stream_trans->name);
         }
-    } else {
-        log_it(L_DEBUG, "Trans type %d doesn't require server handler registration", 
-               a_ctx->trans_type);
     }
+
+    // Register standard stream handler only if the trans didn't register its own.
+    // uthash HASH_FIND_STR returns only the first entry for duplicate keys,
+    // so we check if /stream is already handled by the trans-specific handler.
+    dap_http_url_proc_t *l_existing_stream = NULL;
+    HASH_FIND_STR(a_ctx->http_server->url_proc, "/stream", l_existing_stream);
+    if (!l_existing_stream) {
+        dap_stream_add_proc_http(a_ctx->http_server, "/stream");
+        log_it(L_DEBUG, "Registered default stream handler");
+    } else {
+        log_it(L_DEBUG, "Stream handler already registered by trans, skipping default");
+    }
+
+    // Register stream_ctl handler (stream session control)
+    dap_stream_ctl_add_proc(a_ctx->http_server, "/stream_ctl");
+    log_it(L_DEBUG, "Registered stream_ctl handler");
 
     log_it(L_INFO, "Registered all DAP protocol handlers for trans type %d", a_ctx->trans_type);
     return 0;

@@ -579,7 +579,7 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
         return false;
     if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
         // No write data if error code set
-        l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
         return false;
     }
     bool l_ret = false;
@@ -592,7 +592,7 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
             pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
             l_ret = l_http_client->proc->data_write_callback(l_http_client, a_arg);
         } else {
-            size_t l_sent = dap_events_socket_write_unsafe(l_http_client->esocket,
+            size_t l_sent = dap_events_socket_write_unsafe(a_esocket,
                                            l_http_client->proc->cache->body + l_http_client->out_cache_position,
                                            l_http_client->proc->cache->body_size-l_http_client->out_cache_position);
             if (!l_sent || l_http_client->out_cache_position + l_sent >= l_http_client->proc->cache->body_size) { // All is sent
@@ -600,15 +600,15 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
                     debug_if(s_debug_http, L_ERROR, "Can't send data to socket");
                 else
                     debug_if(s_debug_http, L_DEBUG, "Out %"DAP_FORMAT_SOCKET" All cached data over, signal to close connection",
-                             l_http_client->esocket->socket);
-                l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                             a_esocket->socket);
+                a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
             } else
                 l_http_client->out_cache_position += l_sent;
             pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
         }
     } else {
         log_it(L_WARNING, "No http proc, nothing to write");
-        l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
     return l_ret;
 }

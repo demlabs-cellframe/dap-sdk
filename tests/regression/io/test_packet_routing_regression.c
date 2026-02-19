@@ -623,14 +623,13 @@ static void test_packet_routing_multiclient(void)
     }
     dap_assert(l_violations == 0, "REGRESSION: No sticky session violations!");
     
-    // CRITICAL: Check that load balancing actually works!
-    // With CBPF/eBPF, packets should be distributed across workers
+    // CRITICAL: With flow control / CBPF, traffic must distribute across workers
     if (l_workers_with_traffic < 2 && s_ctx.num_clients >= 4 && s_num_workers >= 2) {
         dap_test_msg("\n*** BUG: NO DISTRIBUTION! All %u packets on single worker! ***", l_total_recv);
         dap_test_msg("Expected distribution across %u workers with %u clients", s_num_workers, s_ctx.num_clients);
         dap_test_msg("CBPF/eBPF kernel hash is not working properly");
     }
-    dap_assert(l_workers_with_traffic >= 2 || s_ctx.num_clients < 4 || s_num_workers < 2, 
+    dap_assert(l_workers_with_traffic >= 2 || s_ctx.num_clients < 4 || s_num_workers < 2,
                "REGRESSION: Load balancing should distribute traffic!");
     
     // Check for extreme imbalance (>95% on one worker with many clients)

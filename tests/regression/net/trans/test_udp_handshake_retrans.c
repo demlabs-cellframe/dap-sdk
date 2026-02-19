@@ -305,8 +305,8 @@ static void test_handshake_retransmission(void)
     // Wait for client to initialize
     bool l_ready = false;
     for (int i = 0; i < 20 && !l_ready; i++) {
-        dap_client_pvt_t *pvt = DAP_CLIENT_PVT(l_client);
-        if (pvt && pvt->worker) l_ready = true;
+        dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(l_client);
+        if (esocket && esocket->worker) l_ready = true;
         else usleep(100000);
     }
     dap_assert(l_ready, "Client initialized with worker");

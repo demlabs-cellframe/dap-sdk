@@ -83,7 +83,8 @@ static struct bpf_insn s_reuseport_ebpf_prog[] = {
     EBPF_LD_MEM(BPF_W, 0, 6, 32),
     
     // if (r0 != 0) goto exit - use kernel hash if available
-    EBPF_JNE_IMM(0, 0, 4),
+    // Jump offset: target = PC+1+offset = 2+1+3 = 6 (exit instruction)
+    EBPF_JNE_IMM(0, 0, 3),
     
     // Kernel hash is 0 (loopback) - read source port from UDP header
     // r2 = *(u64*)(ctx + 0) - load data pointer (points to UDP header)
@@ -175,6 +176,7 @@ bool dap_io_flow_ebpf_is_available(void)
     }
     
     // Step 2: Test SO_ATTACH_REUSEPORT_EBPF support with dummy socket
+    // CRITICAL: attach MUST happen BEFORE bind (kernel requires sk_unhashed())
     int test_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (test_sock < 0) {
         close(prog_fd);
@@ -185,41 +187,41 @@ bool dap_io_flow_ebpf_is_available(void)
     int opt = 1;
     setsockopt(test_sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
     
+    // Attach eBPF BEFORE bind - kernel requirement for reuseport_attach_prog()
+    int attach_ret = setsockopt(test_sock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF,
+                                 &prog_fd, sizeof(prog_fd));
+    
+    if (attach_ret < 0) {
+        int l_errno = errno;
+        close(test_sock);
+        close(prog_fd);
+        s_ebpf_available = false;
+        log_it(L_WARNING, "SO_ATTACH_REUSEPORT_EBPF not supported: %s (errno=%d)",
+               strerror(l_errno), l_errno);
+        return false;
+    }
+    
+    // Verify bind works after attach
     struct sockaddr_in test_addr = {
         .sin_family = AF_INET,
         .sin_port = 0,  // Kernel picks port
-        .sin_addr.s_addr = htonl(INADDR_LOOPBACK)  // CRITICAL: network byte order!
+        .sin_addr.s_addr = htonl(INADDR_LOOPBACK)
     };
     
     if (bind(test_sock, (struct sockaddr*)&test_addr, sizeof(test_addr)) < 0) {
-        log_it(L_WARNING, "Test socket bind failed: %s", strerror(errno));
+        log_it(L_WARNING, "Test socket bind after eBPF attach failed: %s", strerror(errno));
         close(test_sock);
         close(prog_fd);
         s_ebpf_available = false;
         return false;
     }
     
-    // Try SO_ATTACH_REUSEPORT_EBPF BEFORE bind (kernel requirement!)
-    // For unhashed sockets, attach works if SO_REUSEPORT is set
-    int attach_ret = setsockopt(test_sock, SOL_SOCKET, SO_ATTACH_REUSEPORT_EBPF,
-                                 &prog_fd, sizeof(prog_fd));
-    
     close(test_sock);
     close(prog_fd);
     
-    if (attach_ret < 0) {
-        s_ebpf_available = false;
-        log_it(L_WARNING, "❌ SO_ATTACH_REUSEPORT_EBPF not supported: %s (errno=%d)",
-               strerror(errno), errno);
-        log_it(L_NOTICE, "Kernel supports BPF syscall but NOT SO_ATTACH_REUSEPORT_EBPF");
-        log_it(L_NOTICE, "Falling back to Classic BPF (Tier 2) - works on all kernels 3.9+");
-        return false;
-    }
-    
-    // Attach succeeded
+    // Both attach and bind succeeded
     s_ebpf_available = true;
-    log_it(L_NOTICE, "✅ eBPF sticky sessions: AVAILABLE (attach before bind works)");
-    log_it(L_NOTICE, "SO_ATTACH_REUSEPORT_EBPF fully supported on this kernel");
+    log_it(L_NOTICE, "eBPF sticky sessions: AVAILABLE (attach before bind verified)");
     return true;
 }
 

@@ -440,7 +440,7 @@ static int s_verify_results(void)
         return -1;
     }
     
-    // Check distribution
+    // Check distribution — with flow control / CBPF, traffic must distribute across workers
     if (l_workers_with_traffic < 2 && NUM_CLIENTS >= 4) {
         dap_test_msg("BUG: NO DISTRIBUTION! All %u packets on single worker", l_received);
         return -2;

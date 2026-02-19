@@ -429,7 +429,7 @@ static void s_worker_execute_stage(void *a_arg)
     if (!l_ctx) return;
 
     dap_client_t *l_client = l_ctx->client;
-    dap_client_esocket_t *l_es = DAP_CLIENT_PVT(l_client);
+    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
     if (!l_es) {
         log_it(L_ERROR, "No esocket for stage execution");
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
@@ -577,6 +577,18 @@ static void s_worker_execute_stage(void *a_arg)
         for (size_t i = 0; i < l_count_channels; i++)
             dap_stream_ch_new(l_es->stream, (uint8_t)l_client->active_channels[i]);
 
+        // Install stream callbacks on the esocket BEFORE session_start sends data
+        // This ensures read/write/error/delete are handled when server responds
+        if (l_es->stream_es) {
+            dap_events_socket_callbacks_t l_stream_cbs;
+            dap_client_esocket_get_stream_callbacks(&l_stream_cbs);
+            l_es->stream_es->callbacks.read_callback = l_stream_cbs.read_callback;
+            l_es->stream_es->callbacks.write_callback = l_stream_cbs.write_callback;
+            l_es->stream_es->callbacks.error_callback = l_stream_cbs.error_callback;
+            l_es->stream_es->callbacks.delete_callback = l_stream_cbs.delete_callback;
+            // connected_callback stays as-is (not needed at this point)
+        }
+
         // Session start
         dap_net_trans_t *l_transport = l_es->stream->trans;
         int l_start_ret = 0;
@@ -673,7 +685,7 @@ static bool s_stream_timer_timeout_after_connected_check(void *a_arg)
             DAP_DELETE(l_es_uuid_ptr);
             return false;
         }
-        dap_client_esocket_t *l_client_es = DAP_CLIENT_PVT(l_client);
+        dap_client_esocket_t *l_client_es = DAP_CLIENT_ESOCKET(l_client);
         if (!l_client_es || l_client_es->is_removing) {
             DAP_DELETE(l_es_uuid_ptr);
             return false;
@@ -828,6 +840,15 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
     }
 }
 
+// ===== Handshake esocket delete callback: prevent reactor from freeing dap_client_t =====
+
+static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_arg)
+{
+    (void)a_arg;
+    if (a_es)
+        a_es->_inheritor = NULL;
+}
+
 // ===== Worker-side ENC_INIT IO (only transport calls, crypto already done on FSM thread) =====
 
 static void s_worker_execute_enc_init_io(void *a_arg)
@@ -836,7 +857,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     if (!l_ctx) return;
 
     dap_client_t *l_client = l_ctx->client;
-    dap_client_esocket_t *l_es = DAP_CLIENT_PVT(l_client);
+    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
     if (!l_es) {
         log_it(L_ERROR, "No esocket for ENC_INIT IO");
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
@@ -860,11 +881,14 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     }
 
     // Stage prepare: create esocket/stream via transport (must be on worker)
+    // Start with minimal callbacks - stream callbacks will be installed when streaming begins
+    // connected_callback MUST be NULL here - transport handles connection flow
+    // delete_callback MUST nullify _inheritor to prevent reactor from freeing dap_client_t
     static dap_events_socket_callbacks_t s_handshake_callbacks = {
         .read_callback = NULL,
         .write_callback = NULL,
         .error_callback = NULL,
-        .delete_callback = NULL, // FSM handles cleanup
+        .delete_callback = s_handshake_es_delete_callback,
         .connected_callback = NULL
     };
 

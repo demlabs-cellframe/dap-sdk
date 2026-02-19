@@ -5,7 +5,7 @@
 #define LOG_TAG "dap_json_rpc_request"
 
 struct exec_cmd_request {
-    dap_client_pvt_t * client_pvt;
+    dap_client_esocket_t * client_esocket;
 #ifdef DAP_OS_WINDOWS
     CONDITION_VARIABLE wait_cond;
     CRITICAL_SECTION wait_crit_sec;
@@ -24,12 +24,12 @@ enum ExecCmdRetCode {
     EXEC_CMD_ERR_UNKNOWN
 };
 
-static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_client_pvt)
+static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_esocket_t * a_client_esocket)
 {
     struct exec_cmd_request *l_exec_cmd_request = DAP_NEW_Z(struct exec_cmd_request);
     if (!l_exec_cmd_request)
         return NULL;
-    l_exec_cmd_request->client_pvt = a_client_pvt;
+    l_exec_cmd_request->client_esocket = a_client_esocket;
 #ifdef DAP_OS_WINDOWS
     InitializeCriticalSection(&l_exec_cmd_request->wait_crit_sec);
     InitializeConditionVariable(&l_exec_cmd_request->wait_cond);
@@ -107,12 +107,12 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
         log_it(L_ERROR, "Response error code: %d", ret);
         ret = - 1;
     } else if (a_exec_cmd_request->response) {
-            dap_client_pvt_t * l_client_pvt = a_exec_cmd_request->client_pvt;
+            dap_client_esocket_t * l_client_esocket = a_exec_cmd_request->client_esocket;
             size_t l_response_dec_size_max = a_exec_cmd_request->response_size ? a_exec_cmd_request->response_size * 2 + 16 : 0;
             char * l_response_dec = a_exec_cmd_request->response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
             size_t l_response_dec_size = 0;
             if(a_exec_cmd_request->response_size)
-                l_response_dec_size = dap_enc_decode(l_client_pvt->session_key,
+                l_response_dec_size = dap_enc_decode(l_client_esocket->session_key,
                         a_exec_cmd_request->response, a_exec_cmd_request->response_size,
                         l_response_dec, l_response_dec_size_max,
                         DAP_ENC_DATA_TYPE_RAW);
@@ -175,35 +175,35 @@ static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_requ
 #endif
 }
 
-char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
+char * dap_json_rpc_enc_request(dap_client_esocket_t* a_client_esocket, char * a_request_data_str, size_t a_request_data_size,
                                 char ** a_path, size_t * a_enc_request_size, char ** a_custom_header) {
 
     char s_query[] = "type=tcp,maxconn=4", s_suburl[128];
     int l_query_len = sizeof(s_query) - 1,
         l_suburl_len = snprintf(s_suburl, sizeof(s_suburl), "channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
-                                                            a_client_internal->client->active_channels, a_client_internal->session_key_type,
-                                                            a_client_internal->session_key_block_size, 0);
+                                                            a_client_esocket->client->active_channels, a_client_esocket->session_key_type,
+                                                            a_client_esocket->session_key_block_size, 0);
     if (l_suburl_len >= (int)sizeof(s_suburl))
         return NULL;
-    dap_enc_data_type_t l_enc_type = a_client_internal->uplink_protocol_version >= 21
+    dap_enc_data_type_t l_enc_type = a_client_esocket->uplink_protocol_version >= 21
         ? DAP_ENC_DATA_TYPE_B64_URLSAFE : DAP_ENC_DATA_TYPE_B64;
-    int l_suburl_enc_len = dap_enc_code_out_size(a_client_internal->session_key, l_suburl_len, l_enc_type),
-        l_query_enc_len = dap_enc_code_out_size(a_client_internal->session_key, l_query_len, l_enc_type),
-        l_req_enc_len = dap_enc_code_out_size(a_client_internal->session_key, a_request_data_size, DAP_ENC_DATA_TYPE_RAW);
+    int l_suburl_enc_len = dap_enc_code_out_size(a_client_esocket->session_key, l_suburl_len, l_enc_type),
+        l_query_enc_len = dap_enc_code_out_size(a_client_esocket->session_key, l_query_len, l_enc_type),
+        l_req_enc_len = dap_enc_code_out_size(a_client_esocket->session_key, a_request_data_size, DAP_ENC_DATA_TYPE_RAW);
 
     char l_suburl_enc[ l_suburl_enc_len + 1 ], l_query_enc[ l_query_enc_len + 1 ], *l_req_enc = DAP_NEW_Z_SIZE(char, l_req_enc_len + 1);
 
-    a_client_internal->is_encrypted = true;
-    l_suburl_enc_len = dap_enc_code(a_client_internal->session_key, s_suburl,             l_suburl_len,       l_suburl_enc, l_suburl_enc_len + 1, l_enc_type);
-    l_query_enc_len  = dap_enc_code(a_client_internal->session_key, s_query,              l_query_len,        l_query_enc,  l_query_enc_len + 1,  l_enc_type);
-    *a_enc_request_size = dap_enc_code(a_client_internal->session_key, a_request_data_str,a_request_data_size,l_req_enc,    l_req_enc_len + 1,    DAP_ENC_DATA_TYPE_RAW);
+    a_client_esocket->is_encrypted = true;
+    l_suburl_enc_len = dap_enc_code(a_client_esocket->session_key, s_suburl,             l_suburl_len,       l_suburl_enc, l_suburl_enc_len + 1, l_enc_type);
+    l_query_enc_len  = dap_enc_code(a_client_esocket->session_key, s_query,              l_query_len,        l_query_enc,  l_query_enc_len + 1,  l_enc_type);
+    *a_enc_request_size = dap_enc_code(a_client_esocket->session_key, a_request_data_str,a_request_data_size,l_req_enc,    l_req_enc_len + 1,    DAP_ENC_DATA_TYPE_RAW);
 
     l_suburl_enc[l_suburl_enc_len] = l_query_enc[l_query_enc_len] = '\0';
 
     *a_path = dap_strdup_printf("exec_cmd/%s?%s", l_suburl_enc, l_query_enc);
     *a_custom_header = dap_strdup_printf("KeyID: %s\r\n%s",
-                                         a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL",
-                                         a_client_internal->is_close_session ? "SessionCloseAfterRequest: true\r\n" : "");
+                                         a_client_esocket->session_key_id ? a_client_esocket->session_key_id : "NULL",
+                                         a_client_esocket->is_close_session ? "SessionCloseAfterRequest: true\r\n" : "");
     return l_req_enc;
 }
 
@@ -371,7 +371,7 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     return DAP_DELETE(l_http_request), l_http_str;
 }
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response, const char *a_cert_path) {
+int dap_json_rpc_request_send(dap_client_esocket_t*  a_client_esocket, dap_json_rpc_request_t *a_request, json_object** a_response, const char *a_cert_path) {
     size_t l_request_data_size, l_enc_request_size, l_response_size;
     char* l_custom_header = NULL, *l_path = NULL;
 
@@ -379,21 +379,21 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
     if (!l_request_data_str)
         return -1;
 
-    char * l_enc_request = dap_json_rpc_enc_request(a_client_internal, l_request_data_str, l_request_data_size, &l_path, &l_enc_request_size, &l_custom_header);
+    char * l_enc_request = dap_json_rpc_enc_request(a_client_esocket, l_request_data_str, l_request_data_size, &l_path, &l_enc_request_size, &l_custom_header);
     DAP_DELETE(l_request_data_str);
     if (!l_enc_request || !l_path)
         return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
 
-    struct exec_cmd_request* l_exec_cmd_request = s_exec_cmd_request_init(a_client_internal);
+    struct exec_cmd_request* l_exec_cmd_request = s_exec_cmd_request_init(a_client_esocket);
     if (!l_exec_cmd_request)
         return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
 
     log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
-                     a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_path, l_enc_request_size);
+                     a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port, l_path, l_enc_request_size);
 
-    dap_client_http_t *l_http_client = dap_client_http_request(a_client_internal->worker,
-                                                             a_client_internal->client->link_info.uplink_addr,
-                                                             a_client_internal->client->link_info.uplink_port,
+    dap_client_http_t *l_http_client = dap_client_http_request(a_client_esocket->worker,
+                                                             a_client_esocket->client->link_info.uplink_addr,
+                                                             a_client_esocket->client->link_info.uplink_port,
                                                              "POST", "application/json",
                                                              l_path, l_enc_request, l_enc_request_size, NULL,
                                                              s_exec_cmd_response_handler, s_exec_cmd_error_handler,
@@ -409,19 +409,19 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
                 break;
             }
             log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
-                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_response_size);
+                            a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port, l_response_size);
             break;
         }
         case EXEC_CMD_ERR_WAIT_TIMEOUT: {
             *a_response = json_object_new_string("Response time run out ");
             log_it(L_ERROR, "Response time from %s:%d  run out",
-                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
+                            a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port);
             break;
         }
         case EXEC_CMD_ERR_UNKNOWN : {
             *a_response = json_object_new_string("Unknown error in json-rpc");
             log_it(L_ERROR, "Response from %s:%d has unknown error",
-                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
+                            a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port);
             break;
         }
     }

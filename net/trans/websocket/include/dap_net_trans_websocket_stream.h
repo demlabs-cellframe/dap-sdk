@@ -278,6 +278,43 @@ bool dap_stream_trans_is_websocket(const dap_stream_t *a_stream);
  */
 dap_net_trans_websocket_private_t* dap_net_trans_websocket_get_private(dap_stream_t *a_stream);
 
+// ============================================================================
+// Frame Operations (shared between client and server)
+// ============================================================================
+
+/**
+ * @brief Parse a WebSocket frame from raw data
+ * @param a_data Raw data buffer
+ * @param a_data_size Size of raw data
+ * @param a_opcode_out Output: frame opcode
+ * @param a_fin_out Output: FIN bit
+ * @param a_payload_out Output: allocated payload (caller must free with DAP_DELETE)
+ * @param a_payload_size_out Output: payload size
+ * @param a_frame_total_size_out Output: total consumed frame size
+ * @return 0 on success, -1 on error, -2 if incomplete frame
+ */
+int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_size,
+                                         dap_ws_opcode_t *a_opcode_out, bool *a_fin_out,
+                                         uint8_t **a_payload_out, size_t *a_payload_size_out,
+                                         size_t *a_frame_total_size_out);
+
+/**
+ * @brief Build a WebSocket frame
+ * @param a_buffer Output buffer
+ * @param a_buffer_size Buffer size
+ * @param a_opcode Frame opcode
+ * @param a_fin FIN bit
+ * @param a_mask Whether to mask the payload
+ * @param a_payload Payload data
+ * @param a_payload_size Payload size
+ * @param a_frame_size_out Output: actual frame size
+ * @return 0 on success, negative error code on failure
+ */
+int dap_net_trans_websocket_build_frame(uint8_t *a_buffer, size_t a_buffer_size,
+                                         dap_ws_opcode_t a_opcode, bool a_fin, bool a_mask,
+                                         const void *a_payload, size_t a_payload_size,
+                                         size_t *a_frame_size_out);
+
 /**
  * @brief Send WebSocket close frame
  * @param a_stream Stream to close

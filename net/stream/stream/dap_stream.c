@@ -107,6 +107,7 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg);
 static bool s_esocket_write(dap_events_socket_t* a_esocket, void * a_arg);
 static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_arg);
+static void s_esocket_callback_error(dap_events_socket_t *a_esocket, int a_error);
 static void s_udp_esocket_new(dap_events_socket_t* a_esocket,void * a_arg);
 
 // Internal functions
@@ -295,6 +296,8 @@ int dap_stream_init(dap_config_t * a_config)
     s_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config, "stream", "debug_dump_stream_headers", false);
     s_debug = dap_config_get_item_bool_default(g_config, "stream", "debug_more", false);
+    debug_if(s_debug, L_DEBUG, "dap_stream_init: g_config=%p, s_debug=%d, s_dump_packet_headers=%d",
+             (void*)g_config, s_debug, s_dump_packet_headers);
 #ifdef DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
@@ -429,12 +432,13 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
         l_stm->trans_ctx->esocket_uuid = a_esocket->uuid;
         l_stm->trans_ctx->esocket_worker = a_esocket->worker;
         l_stm->trans_ctx->stream = l_stm;  // Back-reference
+        // Cache remote address for cross-thread access (safe snapshot)
+        dap_strncpy(l_stm->trans_ctx->remote_addr_str, a_esocket->remote_addr_str, sizeof(l_stm->trans_ctx->remote_addr_str) - 1);
+        l_stm->trans_ctx->remote_port = a_esocket->remote_port;
     }
     
-    // CRITICAL: _inheritor points to STREAM (not trans_ctx)!
-    // This allows DAP_STREAM() macro to work correctly.
-    // trans_ctx is owned by stream and will be deleted by stream, not by esocket.
-    a_esocket->_inheritor = l_stm;
+    // Unified: _inheritor always points to trans_ctx for all transport types
+    a_esocket->_inheritor = l_stm->trans_ctx;
     dap_stream_add_to_list(l_stm);
     log_it(L_NOTICE,"New stream instance udp");
     return l_stm ;
@@ -465,11 +469,12 @@ static void s_check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
     }
 
     dap_stream_t *l_stream;
-    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
-    if ( DAP_STREAM(l_http_client) == NULL )
-        l_stream = stream_new_udp( a_esocket );
+    // Unified: check trans_ctx for existing stream
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
+    if (!l_trans_ctx || !l_trans_ctx->stream)
+        l_stream = stream_new_udp(a_esocket);
     else
-        l_stream = DAP_STREAM( l_http_client );
+        l_stream = l_trans_ctx->stream;
 
     l_stream->session = l_session;
 
@@ -531,7 +536,11 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         l_ret->trans_ctx->esocket_uuid = a_http_client->esocket->uuid;
         l_ret->trans_ctx->esocket_worker = a_http_client->esocket->worker;
         l_ret->trans_ctx->stream = l_ret;  // Back-reference
-        // Set esocket->_inheritor to trans_ctx for unified access
+        // Cache remote address for cross-thread access (safe snapshot)
+        dap_strncpy(l_ret->trans_ctx->remote_addr_str, a_http_client->esocket->remote_addr_str, sizeof(l_ret->trans_ctx->remote_addr_str) - 1);
+        l_ret->trans_ctx->remote_port = a_http_client->esocket->remote_port;
+        // Unified: save http_client reference for cleanup, then set _inheritor to trans_ctx
+        l_ret->trans_ctx->http_client = a_http_client;
         a_http_client->esocket->_inheritor = l_ret->trans_ctx;
     }
     debug_if(s_debug, L_DEBUG, "s_stream_new: getting stream_worker");
@@ -588,14 +597,25 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         }
         
         debug_if(s_debug, L_DEBUG, "s_stream_new: keepalive timer started=%p", (void*)l_ret->keepalive_timer);
-        debug_if(s_debug, L_DEBUG, "s_stream_new: setting callbacks");
+        debug_if(s_debug, L_DEBUG, "s_stream_new: sending HTTP response before callback takeover, esocket=%p, read_cb=%p",
+                 (void*)l_ret->trans_ctx->esocket, (void*)l_ret->trans_ctx->esocket->callbacks.read_callback);
+        // Send HTTP response headers BEFORE replacing callbacks
+        // This queues "HTTP/1.1 200 OK\r\n...\r\n" into buf_out so client can proceed
+        dap_http_client_write(a_http_client);
+        
+        debug_if(s_debug, L_DEBUG, "s_stream_new: TAKEOVER old read_cb=%p -> new read_cb=%p, esocket=%p",
+                 (void*)l_ret->trans_ctx->esocket->callbacks.read_callback, (void*)s_esocket_data_read,
+                 (void*)l_ret->trans_ctx->esocket);
+        // Unified: replace ALL HTTP callbacks with stream-native ones
+        // After stream takeover, HTTP layer is no longer needed for data I/O
+        l_ret->trans_ctx->esocket->callbacks.read_callback = s_esocket_data_read;
+        l_ret->trans_ctx->esocket->callbacks.write_callback = s_esocket_write;
+        l_ret->trans_ctx->esocket->callbacks.delete_callback = s_esocket_callback_delete;
+        l_ret->trans_ctx->esocket->callbacks.error_callback = s_esocket_callback_error;
         l_ret->trans_ctx->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
         l_ret->trans_ctx->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     }
     debug_if(s_debug, L_DEBUG, "s_stream_new: callbacks set");
-    debug_if(s_debug, L_DEBUG, "s_stream_new: setting http_client->_inheritor");
-    a_http_client->_inheritor = l_ret;
-    debug_if(s_debug, L_DEBUG, "s_stream_new: http_client->_inheritor set");
     if (a_addr && !dap_stream_node_addr_is_blank(a_addr)) {
         debug_if(s_debug, L_DEBUG, "s_stream_new: setting node address");
         l_ret->node = *a_addr;
@@ -629,6 +649,10 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
         l_ret->trans_ctx->esocket = a_esocket;
         l_ret->trans_ctx->esocket_uuid = a_esocket->uuid;
         l_ret->trans_ctx->esocket_worker = a_esocket->worker;
+        l_ret->trans_ctx->stream = l_ret;  // Back-reference
+        // Cache remote address for cross-thread access (safe snapshot)
+        dap_strncpy(l_ret->trans_ctx->remote_addr_str, a_esocket->remote_addr_str, sizeof(l_ret->trans_ctx->remote_addr_str) - 1);
+        l_ret->trans_ctx->remote_port = a_esocket->remote_port;
     }
 
     l_ret->is_client_to_uplink = true;
@@ -667,11 +691,15 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         dap_stream_session_close_mt(a_stream->session->id);
     }
 
-    // CRITICAL: Call trans->ops->close() FIRST to let transport manage esocket
+    // Call trans->ops->close() FIRST to let transport manage esocket
     // This allows transport to extract esocket, set trans_ctx->esocket=NULL, and handle cleanup
     // Must be called BEFORE accessing trans_ctx->esocket directly
-    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->close) {
-        a_stream->trans->ops->close(a_stream);
+    dap_net_trans_t *l_trans = a_stream->trans;
+    if (l_trans) {
+        a_stream->trans = NULL;  // Prevent double close
+        if (l_trans->ops && l_trans->ops->close) {
+            l_trans->ops->close(a_stream);
+        }
     }
 
     // After close(), trans_ctx->esocket may be NULL (managed by transport)
@@ -711,19 +739,43 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_arg)
 {
     UNUSED(a_arg);
-    assert (a_esocket);
+    assert(a_esocket);
 
-    dap_stream_t *l_stm = DAP_STREAM(a_esocket);
+    // Unified: _inheritor is always trans_ctx
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
+    a_esocket->_inheritor = NULL;  // Clear FIRST to prevent use-after-free
     
-    // CRITICAL: Clear _inheritor FIRST to prevent use-after-free
-    // Stream will be deleted by dap_stream_delete_unsafe below,
-    // but esocket might still try to access it during cleanup
-    a_esocket->_inheritor = NULL;
+    if (!l_trans_ctx)
+        return;
     
-    if (l_stm && l_stm->trans_ctx)
-        l_stm->trans_ctx->esocket = NULL;
+    dap_stream_t *l_stm = l_trans_ctx->stream;
+    dap_http_client_t *l_http_client = l_trans_ctx->http_client;
+    
+    l_trans_ctx->esocket = NULL;
+    
+    // Clean up HTTP client resources if this was an HTTP-based stream
+    if (l_http_client) {
+        // Clean up HTTP headers
+        while (l_http_client->in_headers)
+            dap_http_header_remove(&l_http_client->in_headers, l_http_client->in_headers);
+        while (l_http_client->out_headers)
+            dap_http_header_remove(&l_http_client->out_headers, l_http_client->out_headers);
+        DAP_DEL_Z(l_http_client->_inheritor);
+    }
+    
+    // Delete the stream (removes from global list) — for ALL transport types
     if (l_stm)
         dap_stream_delete_unsafe(l_stm);
+}
+
+/**
+ * @brief s_esocket_callback_error Unified error callback for stream esockets
+ */
+static void s_esocket_callback_error(dap_events_socket_t *a_esocket, int a_error)
+{
+    log_it(L_WARNING, "Stream esocket error: %d", a_error);
+    // Mark for close, the delete callback will clean up
+    a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
 
 /**
@@ -821,13 +873,15 @@ static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void 
     (void) a_arg;
     //log_it(L_DEBUG,"s_http_client_headers_write()");
     if(a_http_client->reply_status_code == Http_Status_OK){
-        dap_stream_t *l_stream=DAP_STREAM(a_http_client);
+        // Unified: get stream via trans_ctx
+        dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_http_client->esocket->_inheritor;
+        dap_stream_t *l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
 
         dap_http_out_header_add(a_http_client,"Content-Type","application/octet-stream");
         dap_http_out_header_add(a_http_client,"Connection","keep-alive");
         dap_http_out_header_add(a_http_client,"Cache-Control","no-cache");
 
-        if(l_stream->stream_size>0)
+        if(l_stream && l_stream->stream_size > 0)
             dap_http_header_server_out_header_add_f(a_http_client,"Content-Length","%u", (unsigned int) l_stream->stream_size );
 
         a_http_client->state_read=DAP_HTTP_CLIENT_STATE_DATA;
@@ -901,19 +955,24 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
  */
 static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 {
-    dap_stream_t *l_stream = NULL;
     int *l_ret = (int *)a_arg;
     
     // Unified: _inheritor is always trans_ctx with back-reference to stream
-        dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
-        l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
+    dap_stream_t *l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
 
     debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_read: ready_to_write=%s, client->buf_in_size=%zu",
                (a_esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false", a_esocket->buf_in_size);
+    debug_if(s_debug, L_DEBUG, "s_esocket_data_read: stream=%p, buf_in_size=%zu", 
+             (void*)l_stream, a_esocket->buf_in_size);
+    size_t l_processed = dap_stream_data_proc_read(l_stream);
+    debug_if(s_debug, L_DEBUG, "s_esocket_data_read: processed=%zu", l_processed);
     if (l_ret)
-        *l_ret = dap_stream_data_proc_read(l_stream);
-    else
-        dap_stream_data_proc_read(l_stream);
+        *l_ret = (int)l_processed;
+    // Consume processed data from buf_in (critical for TCP: worker expects buf_in cleared)
+    if (l_processed > 0)
+        dap_events_socket_shrink_buf_in(a_esocket, l_processed);
+    // If nothing processed: keep partial data in buf_in, worker will append more on next read
 }
 
 
@@ -926,11 +985,10 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
 {
     bool l_ret = false;
-    dap_stream_t *l_stream = NULL;
     
-    // Unified: get stream from _inheritor
+    // Unified: get stream from trans_ctx
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
-    l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
+    dap_stream_t *l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
     
     if (!l_stream) {
         return false;
@@ -978,13 +1036,16 @@ static void s_http_client_data_read(dap_http_client_t * a_http_client, void * ar
 static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
 {
     UNUSED(a_arg);
-    dap_stream_t *l_stm = DAP_STREAM(a_http_client);
+    // Unified: get stream from esocket->trans_ctx, not from http_client->_inheritor
+    if (!a_http_client->esocket)
+        return;
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_http_client->esocket->_inheritor;
+    dap_stream_t *l_stm = l_trans_ctx ? l_trans_ctx->stream : NULL;
     if (!l_stm)
         return;
     if (l_stm->trans_ctx)
         l_stm->trans_ctx->esocket = NULL;
     dap_stream_delete_unsafe(l_stm);
-    a_http_client->_inheritor = NULL; // To prevent double free
 }
 
 /**
@@ -1295,22 +1356,20 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
 
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
 {
-    dap_stream_t *l_stream = NULL;
     if (a_es->server) {
-        if (a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP)
-            l_stream = DAP_STREAM(a_es);
-        else {
-            dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_es);
-            assert(l_http_client);
-            l_stream = DAP_STREAM(l_http_client);
-        }
+        // Server-side: unified trans_ctx approach
+        dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;
+        return l_trans_ctx ? l_trans_ctx->stream : NULL;
     } else {
+        // Client-side: dap_client hierarchy
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-        assert(l_client);
-        dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-        l_stream = l_client_pvt->stream;
+        if (l_client) {
+            dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
+            if (l_client_esocket)
+                return l_client_esocket->stream;
+        }
+        return NULL;
     }
-    return l_stream;
 }
 
 /**
@@ -1392,8 +1451,18 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
 
+    // Check if stream is in the list (prev is set by DL_APPEND/DL_DELETE)
+    // Client-side streams may never be added if worker_assign didn't fire
     dap_stream_t *l_stream = NULL;
-    if (a_stream->prev)
+    bool l_in_list = false;
+    DL_FOREACH(s_streams, l_stream) {
+        if (l_stream == a_stream) {
+            l_in_list = true;
+            break;
+        }
+    }
+    l_stream = NULL;
+    if (l_in_list)
         DL_DELETE(s_streams, a_stream);
     if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
@@ -1538,9 +1607,11 @@ dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey)
 static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_info)
 {
     a_out_info->node_addr = a_stream->node;
-    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
-        a_out_info->remote_addr_str = dap_strdup_printf("%-*s", INET_ADDRSTRLEN - 1, a_stream->trans_ctx->esocket->remote_addr_str);
-        a_out_info->remote_port = a_stream->trans_ctx->esocket->remote_port;
+    // Use cached remote address from trans_ctx — safe for cross-thread access,
+    // never dereference esocket pointer outside its worker context
+    if (a_stream->trans_ctx && a_stream->trans_ctx->remote_addr_str[0]) {
+        a_out_info->remote_addr_str = dap_strdup_printf("%-*s", INET_ADDRSTRLEN - 1, a_stream->trans_ctx->remote_addr_str);
+        a_out_info->remote_port = a_stream->trans_ctx->remote_port;
     }
     a_out_info->channels = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, a_stream->channel_count + 1, a_out_info->remote_addr_str);
     for (size_t i = 0; i < a_stream->channel_count; i++)

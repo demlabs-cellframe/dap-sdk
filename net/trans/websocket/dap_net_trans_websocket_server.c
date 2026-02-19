@@ -40,11 +40,28 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
 #include "dap_net_server_common.h"
+#include "dap_stream_session.h"
+#include "dap_stream_ch.h"
+#include "dap_stream_worker.h"
+
+#include "dap_net_trans_ctx.h"
 
 #define LOG_TAG "dap_net_trans_websocket_server"
 
 // WebSocket GUID for Sec-WebSocket-Accept calculation (RFC 6455)
 #define WEBSOCKET_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+// Per-connection WebSocket state for server-side de-framing
+typedef struct ws_server_conn_state {
+    uint8_t *frame_buffer;      // Leftover partial DAP stream data between reads
+    size_t frame_buffer_size;   // Allocated size
+    size_t frame_buffer_used;   // Used bytes
+} ws_server_conn_state_t;
+
+// Forward declarations for server-side esocket callbacks
+static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg);
+static void s_ws_server_esocket_delete(dap_events_socket_t *a_es, void *a_arg);
+static void s_ws_server_esocket_error(dap_events_socket_t *a_es, int a_arg);
 
 // Trans server operations callbacks
 static void* s_websocket_server_new(const char *a_server_name)
@@ -379,23 +396,39 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
     char l_accept_key[128] = {0};
     if (!s_generate_accept_key(l_ws_key->value, l_accept_key, sizeof(l_accept_key))) {
         log_it(L_ERROR, "Failed to generate Sec-WebSocket-Accept key");
-        a_http_client->reply_status_code = 500; // Internal Server Error
+        a_http_client->reply_status_code = 500;
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         return;
     }
 
-    // Add WebSocket upgrade response headers
-    dap_http_out_header_add(a_http_client, "Upgrade", "websocket");
-    dap_http_out_header_add(a_http_client, "Connection", "Upgrade");
-    dap_http_out_header_add(a_http_client, "Sec-WebSocket-Accept", l_accept_key);
-
     log_it(L_INFO, "WebSocket upgrade request accepted from %s",
            a_http_client->esocket->remote_addr_str);
+    log_it(L_DEBUG, "Generated Sec-WebSocket-Accept: %s", l_accept_key);
 
-    // Trigger response write
-    dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-    dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+    // Write 101 Switching Protocols response directly to esocket buf_out.
+    // We bypass the standard dap_http_client_write mechanism because:
+    // 1. dap_http_client_write_callback expects data_write_callback (we have none)
+    // 2. dap_http_client_write overwrites reply_status_code when out_headers are set
+    // 3. After 101, the connection is no longer HTTP — we switch to WebSocket immediately
+    dap_events_socket_write_f_unsafe(a_http_client->esocket,
+        "HTTP/1.1 101 Switching Protocols\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Accept: %s\r\n"
+        "\r\n",
+        l_accept_key);
+
+    // Switch to WebSocket protocol immediately after writing 101 response
+    if (s_switch_to_websocket_protocol(a_http_client) != 0) {
+        log_it(L_ERROR, "Failed to switch to WebSocket protocol after upgrade");
+        a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return;
+    }
+
+    // Callbacks are now replaced by s_switch_to_websocket_protocol.
+    // Ensure readable is set for incoming WebSocket frames.
+    dap_events_socket_set_readable_unsafe(a_http_client->esocket, true);
 }
 
 /**
@@ -467,49 +500,255 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
         }
     }
 
-    // Create new stream if needed
-    if (!l_stream) {
-        // Use dap_stream_new_es_client to create stream from existing socket
-        l_stream = dap_stream_new_es_client(a_http_client->esocket, NULL, false);
-        if (!l_stream) {
-            log_it(L_ERROR, "Failed to create stream from HTTP client");
+    // Extract session_id from URL query string (same as HTTP stream handler)
+    unsigned int l_session_id = 0;
+    if (a_http_client->in_query_string[0]) {
+        if (sscanf(a_http_client->in_query_string, "session_id=%u", &l_session_id) != 1) {
+            sscanf(a_http_client->in_query_string, "fj913htmdgaq-d9hf=%u", &l_session_id);
+        }
+    }
+
+    // Find session (created by stream_ctl stage)
+    dap_stream_session_t *l_session = NULL;
+    if (l_session_id) {
+        l_session = dap_stream_session_id_mt(l_session_id);
+        if (!l_session) {
+            log_it(L_ERROR, "WebSocket upgrade: session_id=%u not found", l_session_id);
             return -3;
         }
-        
-        // Store stream in HTTP client's inheritor
+        int l_open_ret = dap_stream_session_open(l_session);
+        if (l_open_ret != 0) {
+            log_it(L_ERROR, "WebSocket upgrade: failed to open session %u (ret=%d)", l_session_id, l_open_ret);
+            return -4;
+        }
+    }
+
+    // Create new stream if needed
+    if (!l_stream) {
+        dap_stream_node_addr_t *l_node_addr = l_session ? &l_session->node : NULL;
+        l_stream = dap_stream_new_es_client(a_http_client->esocket, l_node_addr, false);
+        if (!l_stream) {
+            log_it(L_ERROR, "Failed to create stream from HTTP client");
+            return -5;
+        }
+        // Server-side stream: set stream_worker from esocket's worker
+        if (a_http_client->esocket->worker) {
+            l_stream->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
+        }
+        l_stream->is_client_to_uplink = false;  // This is server-side
+        // Set esocket->_inheritor to trans_ctx (dap_stream_new_es_client doesn't do this)
+        a_http_client->esocket->_inheritor = l_stream->trans_ctx;
+        // Save http_client reference for cleanup
+        if (l_stream->trans_ctx)
+            l_stream->trans_ctx->http_client = a_http_client;
         a_http_client->_inheritor = l_stream;
+    }
+
+    // Associate stream with session and create channels
+    if (l_session) {
+        l_stream->session = l_session;
+        
+        // Extract Service-Key header if present
+        dap_http_header_t *l_service_key = dap_http_header_find(a_http_client->in_headers, "Service-Key");
+        if (l_service_key)
+            l_session->service_key = strdup(l_service_key->value);
+
+        // Create channels from session's active_channels list
+        if (l_session->active_channels) {
+            size_t l_count = strlen(l_session->active_channels);
+            for (size_t i = 0; i < l_count; i++) {
+                dap_stream_ch_t *l_ch = dap_stream_ch_new(l_stream, l_session->active_channels[i]);
+                if (!l_ch) {
+                    log_it(L_ERROR, "Failed to create channel '%c' for WebSocket session %u",
+                           l_session->active_channels[i], l_session_id);
+                }
+            }
+            log_it(L_INFO, "WebSocket: created %zu channels for session %u", l_count, l_session_id);
+        }
     }
 
     // Set WebSocket trans for this stream
     l_stream->trans = l_ws_trans;
-    
-    // Get WebSocket trans private data (shared across all streams)
-    // Note: This is trans-level configuration, not stream-specific
-    dap_net_trans_websocket_private_t *l_ws_priv = dap_net_trans_websocket_get_private(l_stream);
-    if (l_ws_priv) {
-        // Mark WebSocket as OPEN (handshake completed for this connection)
-        l_ws_priv->state = DAP_WS_STATE_OPEN;
-        
-        // Store socket reference for this connection
-        l_ws_priv->esocket = a_http_client->esocket;
-        l_ws_priv->http_client = a_http_client;  // Keep reference for cleanup
-        
-        // Store accept key from headers (already calculated)
-        dap_http_header_t *l_accept_header = dap_http_header_find(a_http_client->out_headers, "Sec-WebSocket-Accept");
-        if (l_accept_header && !l_ws_priv->sec_websocket_accept) {
-            l_ws_priv->sec_websocket_accept = dap_strdup(l_accept_header->value);
-        }
-    } else {
-        log_it(L_WARNING, "WebSocket trans private data not initialized - trans may not be ready");
-    }
 
-    // Set socket callbacks for WebSocket read/write
-    // Note: WebSocket read/write will be handled by trans layer
-    // The socket callbacks remain HTTP-based, but trans layer handles WebSocket frames
-    
-    log_it(L_INFO, "Successfully switched to WebSocket protocol for stream %p (socket %p)", 
+    // Create per-connection WebSocket state for de-framing
+    ws_server_conn_state_t *l_conn_state = DAP_NEW_Z(ws_server_conn_state_t);
+    if (l_stream->trans_ctx)
+        l_stream->trans_ctx->_inheritor = l_conn_state;
+
+    // Replace esocket callbacks: HTTP layer is no longer in charge.
+    // After upgrade, the esocket handles raw WebSocket frames, not HTTP.
+    a_http_client->esocket->callbacks.read_callback = s_ws_server_esocket_read;
+    a_http_client->esocket->callbacks.write_callback = NULL;  // Write via trans->ops->write
+    a_http_client->esocket->callbacks.delete_callback = s_ws_server_esocket_delete;
+    a_http_client->esocket->callbacks.error_callback = s_ws_server_esocket_error;
+
+    log_it(L_INFO, "Successfully switched to WebSocket protocol for stream %p (socket %p)",
            l_stream, a_http_client->esocket);
     return 0;
+}
+
+// ============================================================================
+// Server-side esocket callbacks (after WebSocket upgrade)
+// ============================================================================
+
+/**
+ * @brief Server-side WebSocket read callback
+ *
+ * De-frames WebSocket frames from buf_in, extracts payloads,
+ * and passes raw DAP stream data to dap_stream_data_proc_read_ext.
+ */
+static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
+{
+    (void)a_arg;
+    if (!a_es || a_es->buf_in_size == 0) return;
+
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;
+    dap_stream_t *l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
+    if (!l_stream) {
+        log_it(L_ERROR, "WebSocket server read: no stream for esocket");
+        return;
+    }
+
+    // Get per-connection state from trans_ctx->_inheritor
+    ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)l_trans_ctx->_inheritor;
+
+    size_t l_consumed = 0;
+    size_t l_payload_buf_alloc = a_es->buf_in_size;
+    uint8_t *l_payload_buf = DAP_NEW_Z_SIZE(uint8_t, l_payload_buf_alloc);
+    if (!l_payload_buf) return;
+    size_t l_payload_total = 0;
+
+    while (l_consumed < a_es->buf_in_size) {
+        dap_ws_opcode_t l_opcode = 0;
+        bool l_fin = false;
+        uint8_t *l_payload = NULL;
+        size_t l_payload_size = 0;
+        size_t l_frame_size = 0;
+
+        int l_res = dap_net_trans_websocket_parse_frame(
+            a_es->buf_in + l_consumed, a_es->buf_in_size - l_consumed,
+            &l_opcode, &l_fin, &l_payload, &l_payload_size, &l_frame_size);
+
+        if (l_res == -2) break;  // Incomplete frame
+        if (l_res != 0) { l_consumed++; continue; }
+
+        // Handle control frames
+        if (l_opcode == DAP_WS_OPCODE_CLOSE) {
+            log_it(L_INFO, "WebSocket server: received CLOSE frame");
+            DAP_DEL_Z(l_payload);
+            l_consumed += l_frame_size;
+            // Send close response and signal socket close
+            dap_net_trans_websocket_send_close(l_stream, DAP_WS_CLOSE_NORMAL, NULL);
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
+        if (l_opcode == DAP_WS_OPCODE_PING) {
+            dap_net_trans_websocket_send_pong(l_stream, l_payload, l_payload_size);
+            DAP_DEL_Z(l_payload);
+            l_consumed += l_frame_size;
+            continue;
+        }
+        if (l_opcode == DAP_WS_OPCODE_PONG) {
+            DAP_DEL_Z(l_payload);
+            l_consumed += l_frame_size;
+            continue;
+        }
+
+        // Data frame — accumulate payload
+        if (l_payload && l_payload_size > 0) {
+            if (l_payload_total + l_payload_size > l_payload_buf_alloc) {
+                l_payload_buf_alloc = (l_payload_total + l_payload_size) * 2;
+                l_payload_buf = DAP_REALLOC(l_payload_buf, l_payload_buf_alloc);
+            }
+            memcpy(l_payload_buf + l_payload_total, l_payload, l_payload_size);
+            l_payload_total += l_payload_size;
+        }
+        DAP_DEL_Z(l_payload);
+        l_consumed += l_frame_size;
+    }
+
+    if (l_consumed > 0)
+        dap_events_socket_shrink_buf_in(a_es, l_consumed);
+
+    // Process de-framed data as raw DAP stream packets
+    if (l_payload_total > 0 || (l_conn && l_conn->frame_buffer_used > 0)) {
+        uint8_t *l_data = l_payload_buf;
+        size_t l_data_size = l_payload_total;
+
+        // Prepend leftover from previous call
+        if (l_conn && l_conn->frame_buffer_used > 0) {
+            size_t l_total = l_conn->frame_buffer_used + l_payload_total;
+            uint8_t *l_combined = DAP_NEW_Z_SIZE(uint8_t, l_total);
+            if (l_combined) {
+                memcpy(l_combined, l_conn->frame_buffer, l_conn->frame_buffer_used);
+                memcpy(l_combined + l_conn->frame_buffer_used, l_payload_buf, l_payload_total);
+                l_conn->frame_buffer_used = 0;
+                l_data = l_combined;
+                l_data_size = l_total;
+            }
+        }
+
+        size_t l_processed = dap_stream_data_proc_read_ext(l_stream, l_data, l_data_size);
+
+        // Save unprocessed remainder
+        size_t l_remaining = l_data_size - l_processed;
+        if (l_remaining > 0 && l_conn) {
+            if (l_remaining > l_conn->frame_buffer_size) {
+                l_conn->frame_buffer = DAP_REALLOC(l_conn->frame_buffer, l_remaining);
+                l_conn->frame_buffer_size = l_remaining;
+            }
+            memcpy(l_conn->frame_buffer, l_data + l_processed, l_remaining);
+            l_conn->frame_buffer_used = l_remaining;
+        }
+
+        if (l_data != l_payload_buf)
+            DAP_DELETE(l_data);
+    }
+    DAP_DELETE(l_payload_buf);
+}
+
+/**
+ * @brief Server-side WebSocket esocket delete callback
+ */
+static void s_ws_server_esocket_delete(dap_events_socket_t *a_es, void *a_arg)
+{
+    (void)a_arg;
+    if (!a_es) return;
+
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;
+    if (!l_trans_ctx) return;
+
+    // Clear esocket reference FIRST — we are inside esocket's delete callback,
+    // so dap_stream_delete_unsafe must NOT try to re-delete this esocket
+    a_es->_inheritor = NULL;
+    l_trans_ctx->esocket = NULL;
+    l_trans_ctx->esocket_uuid = 0;
+    l_trans_ctx->esocket_worker = NULL;
+
+    // Clean up per-connection WS state
+    ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)l_trans_ctx->_inheritor;
+    if (l_conn) {
+        DAP_DEL_Z(l_conn->frame_buffer);
+        DAP_DELETE(l_conn);
+        l_trans_ctx->_inheritor = NULL;
+    }
+
+    // Clean up stream (will free trans_ctx and channels/session)
+    dap_stream_t *l_stream = l_trans_ctx->stream;
+    if (l_stream) {
+        dap_stream_delete_unsafe(l_stream);
+    }
+}
+
+/**
+ * @brief Server-side WebSocket esocket error callback
+ */
+static void s_ws_server_esocket_error(dap_events_socket_t *a_es, int a_arg)
+{
+    (void)a_arg;
+    if (!a_es) return;
+    log_it(L_ERROR, "WebSocket server: esocket error on fd=%d", a_es->socket);
+    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
 
 /**

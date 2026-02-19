@@ -32,7 +32,7 @@
 #include "dap_list.h"
 #include "dap_events_socket.h"
 #include "dap_common.h"
-#include "dap_client_pvt.h"
+#include "dap_client_pvt.h"  // includes dap_client_fsm.h + dap_client_esocket.h
 #include "dap_events.h"
 #include <string.h>
 
@@ -47,7 +47,8 @@ static dap_http_server_t s_mock_http_server = {0};
 static dap_http_client_t s_mock_http_client = {0};
 static dap_events_socket_t s_mock_esocket = {0};
 static dap_client_t s_mock_client = {0};
-static dap_client_pvt_t s_mock_client_pvt = {0};
+static dap_client_fsm_t s_mock_client_fsm = {0};
+static dap_client_esocket_t s_mock_client_esocket = {0};
 
 dap_server_t* dap_trans_test_get_mock_server(void)
 {
@@ -71,18 +72,22 @@ dap_events_socket_t* dap_trans_test_get_mock_esocket(void)
 
 dap_client_t* dap_trans_test_get_mock_client(void)
 {
-    // Initialize _internal pointer to client_pvt
-    s_mock_client._internal = (void*)&s_mock_client_pvt;
-    s_mock_client_pvt.client = &s_mock_client;
+    // Three-tier architecture: client -> fsm -> esocket (pvt)
+    // _internal now points to dap_client_fsm_t, not directly to pvt
+    s_mock_client._internal = (void*)&s_mock_client_fsm;
+    s_mock_client_fsm.client = &s_mock_client;
+    s_mock_client_fsm.esocket = &s_mock_client_esocket;
+    s_mock_client_esocket.client = &s_mock_client;
     // Initialize worker (required for HTTP requests)
-    s_mock_client_pvt.worker = dap_events_worker_get_auto();
+    s_mock_client_esocket.worker = dap_events_worker_get_auto();
+    s_mock_client_fsm.worker = s_mock_client_esocket.worker;
     // Initialize link_info (required for session_create)
     strncpy(s_mock_client.link_info.uplink_addr, "127.0.0.1", sizeof(s_mock_client.link_info.uplink_addr) - 1);
     s_mock_client.link_info.uplink_addr[sizeof(s_mock_client.link_info.uplink_addr) - 1] = '\0';
     s_mock_client.link_info.uplink_port = 8080;
     // Initialize protocol versions (required for session_create)
-    s_mock_client_pvt.remote_protocol_version = 23;
-    s_mock_client_pvt.uplink_protocol_version = 23;
+    s_mock_client_esocket.remote_protocol_version = 23;
+    s_mock_client_esocket.uplink_protocol_version = 23;
     return &s_mock_client;
 }
 

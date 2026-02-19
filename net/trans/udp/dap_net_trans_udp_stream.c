@@ -2444,7 +2444,9 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         // FC will call s_client_flow_ctrl_packet_prepare_cb to add headers + encrypt
         int l_ret = dap_io_flow_ctrl_send(l_udp_ctx->flow_ctrl, a_data, a_size);
         if (l_ret != 0) {
-            log_it(L_ERROR, "CLIENT: Flow Control send failed: ret=%d, type=%u", l_ret, a_pkt_type);
+            debug_if(s_debug_more, L_DEBUG,
+                     "CLIENT: Flow Control send failed: ret=%d, type=%u%s",
+                     l_ret, a_pkt_type, l_ret == -10 ? " (FC deleting)" : "");
             return -1;
         }
         

@@ -100,12 +100,6 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
 // WebSocket protocol helpers
 static int s_ws_generate_key(char *a_key_out, size_t a_key_size);
 static int s_ws_generate_accept(const char *a_key, char *a_accept_out, size_t a_accept_size);
-static int s_ws_build_frame(uint8_t *a_buffer, size_t a_buffer_size, dap_ws_opcode_t a_opcode,
-                             bool a_fin, bool a_mask, const void *a_payload, size_t a_payload_size,
-                             size_t *a_frame_size_out);
-static int s_ws_parse_frame(const uint8_t *a_data, size_t a_data_size, dap_ws_opcode_t *a_opcode_out,
-                             bool *a_fin_out, uint8_t **a_payload_out, size_t *a_payload_size_out,
-                             size_t *a_frame_total_size_out);
 static void s_ws_mask_unmask(uint8_t *a_data, size_t a_size, uint32_t a_mask_key);
 static bool s_ws_ping_timer_callback(void *a_user_data);
 
@@ -357,6 +351,11 @@ static void s_ws_deinit(dap_net_trans_t *a_trans)
 
 /**
  * @brief Connect WebSocket trans (client-side)
+ *
+ * TCP connection is already established in stage_prepare.
+ * This function prepares the WebSocket key and sets up l_priv->esocket
+ * for subsequent read/write operations. The actual HTTP upgrade is sent
+ * in session_start, following the same pattern as the HTTP transport.
  */
 static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_port,
                          dap_net_trans_connect_cb_t a_callback)
@@ -374,38 +373,34 @@ static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_p
 
     log_it(L_INFO, "WebSocket connecting to ws://%s:%u/stream", a_host, a_port);
 
-    // Set state to connecting
-    l_priv->state = DAP_WS_STATE_CONNECTING;
-
-    // Generate WebSocket key for handshake
+    // Generate WebSocket key for upgrade handshake (used in session_start)
     char l_ws_key[32] = {0};
     if (s_ws_generate_key(l_ws_key, sizeof(l_ws_key)) != 0) {
         log_it(L_ERROR, "Failed to generate WebSocket key");
         return -3;
     }
+    DAP_DEL_Z(l_priv->sec_websocket_key);
     l_priv->sec_websocket_key = dap_strdup(l_ws_key);
 
-    // Build HTTP upgrade request
-    // This will be sent via HTTP client
-    // Format:
-    // GET /stream HTTP/1.1
-    // Host: host:port
-    // Upgrade: websocket
-    // Connection: Upgrade
-    // Sec-WebSocket-Key: <base64-key>
-    // Sec-WebSocket-Version: 13
-    // Sec-WebSocket-Protocol: dap-stream (if configured)
-    // Origin: <origin> (if configured)
+    // Set esocket reference for client-side read/write operations
+    l_priv->esocket = a_stream->trans_ctx->esocket;
 
-    // Connection establishment will continue via HTTP upgrade
-    // Callback will be invoked when upgrade completes
-    UNUSED(a_callback);
+    // TCP connection is already established (stage_prepare created and connected the socket).
+    // Call callback synchronously — same pattern as HTTP transport.
+    if (a_callback) {
+        a_callback(a_stream, 0);
+    }
 
     return 0;
 }
 
 /**
  * @brief Listen on WebSocket trans (server-side)
+ *
+ * WebSocket listening is handled by the HTTP server which accepts TCP connections
+ * and routes WebSocket upgrade requests to the registered upgrade handler
+ * (via s_ws_register_server_handlers → dap_net_trans_websocket_server_add_upgrade_handler).
+ * This function is a no-op — the real work is done by dap_http_server + upgrade handler.
  */
 static int s_ws_listen(dap_net_trans_t *a_trans, const char *a_addr, uint16_t a_port,
                         dap_server_t *a_server)
@@ -415,17 +410,23 @@ static int s_ws_listen(dap_net_trans_t *a_trans, const char *a_addr, uint16_t a_
         return -1;
     }
 
-    log_it(L_INFO, "WebSocket listening on %s:%u", a_addr ? a_addr : "any", a_port);
+    log_it(L_INFO, "WebSocket listening on %s:%u (via HTTP server upgrade handler)",
+           a_addr ? a_addr : "any", a_port);
 
-    // WebSocket server listens on HTTP server with upgrade handler
-    // The HTTP server is already configured
     UNUSED(a_server);
-
     return 0;
 }
 
 /**
  * @brief Accept WebSocket connection (server-side)
+ *
+ * WebSocket connections are accepted via the HTTP upgrade mechanism:
+ * 1. TCP connection is accepted by dap_server (HTTP)
+ * 2. Client sends HTTP request with Upgrade: websocket headers
+ * 3. Server's upgrade handler (s_websocket_upgrade_headers_read) processes the request
+ * 4. On success, sends 101 Switching Protocols and calls s_switch_to_websocket_protocol
+ *
+ * This function is a no-op because WebSocket "accept" is implicit in the upgrade process.
  */
 static int s_ws_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_out)
 {
@@ -434,10 +435,7 @@ static int s_ws_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_
         return -1;
     }
 
-    log_it(L_DEBUG, "WebSocket connection accepted");
-
-    // WebSocket connections are accepted after HTTP upgrade
-    // Stream is created by HTTP layer
+    log_it(L_DEBUG, "WebSocket accept (delegated to HTTP upgrade handler)");
     return 0;
 }
 
@@ -464,9 +462,9 @@ static void s_ws_handshake_response_wrapper(void *a_data, size_t a_data_size, vo
     }
     
     // Restore callback arg
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_ctx->client);
-    if (l_client_pvt) {
-        l_client_pvt->callback_arg = l_ctx->old_callback_arg;
+    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_ctx->client);
+    if (l_client_esocket) {
+        l_client_esocket->callback_arg = l_ctx->old_callback_arg;
     }
     
     DAP_DELETE(l_ctx);
@@ -485,9 +483,9 @@ static void s_ws_handshake_error_wrapper(int a_error, void *a_arg)
     }
     
     // Restore callback arg
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_ctx->client);
-    if (l_client_pvt) {
-        l_client_pvt->callback_arg = l_ctx->old_callback_arg;
+    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_ctx->client);
+    if (l_client_esocket) {
+        l_client_esocket->callback_arg = l_ctx->old_callback_arg;
     }
     
     DAP_DELETE(l_ctx);
@@ -507,9 +505,9 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
     log_it(L_DEBUG, "WebSocket handshake init (via HTTP)");
     
     dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-    if (!l_client_pvt) {
-        log_it(L_ERROR, "Invalid client_pvt");
+    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
+    if (!l_client_esocket) {
+        log_it(L_ERROR, "Invalid client esocket");
         return -2;
     }
 
@@ -562,13 +560,13 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
     l_ctx->stream = a_stream;
     l_ctx->callback = a_callback;
     l_ctx->client = l_client;
-    l_ctx->old_callback_arg = l_client_pvt->callback_arg;
+    l_ctx->old_callback_arg = l_client_esocket->callback_arg;
     
-    l_client_pvt->callback_arg = l_ctx;
+    l_client_esocket->callback_arg = l_ctx;
     
     // Send HTTP request using dap_client_http_request
     // We use the client's worker and address
-    dap_client_http_t *l_http_client = dap_client_http_request(l_client_pvt->worker,
+    dap_client_http_t *l_http_client = dap_client_http_request(l_client_esocket->worker,
                                             l_client->link_info.uplink_addr,
                                             l_client->link_info.uplink_port,
                                             "POST", "text/text", l_enc_init_url, l_data_str,
@@ -579,7 +577,7 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
     
     if (!l_http_client) {
         log_it(L_ERROR, "Failed to create HTTP request for WebSocket handshake");
-        l_client_pvt->callback_arg = l_ctx->old_callback_arg;
+        l_client_esocket->callback_arg = l_ctx->old_callback_arg;
         DAP_DELETE(l_ctx);
         return -6;
     }
@@ -589,6 +587,14 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
 
 /**
  * @brief Process handshake (server-side)
+ *
+ * Server-side handshake processing for WebSocket transport.
+ * The actual cryptographic handshake (enc_init) is processed by the
+ * dap_enc_server module via HTTP POST callbacks, not through this function.
+ * The response is sent back via the HTTP response mechanism.
+ *
+ * This is the same delegation pattern used by HTTP transport
+ * (s_http_trans_handshake_process).
  */
 static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, size_t a_data_size,
                                    void **a_response, size_t *a_response_size)
@@ -598,12 +604,10 @@ static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, si
         return -1;
     }
 
-    log_it(L_DEBUG, "WebSocket handshake process: %zu bytes", a_data_size);
+    log_it(L_DEBUG, "WebSocket handshake process: %zu bytes (delegated to enc_server)", a_data_size);
 
-    // Processing handled by s_enc_init_response via callback
-    // We don't need to parse JSON here as dap_client_pvt handles it
     UNUSED(a_data);
-    
+
     if (a_response) *a_response = NULL;
     if (a_response_size) *a_response_size = 0;
 
@@ -795,16 +799,16 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
         return -2;
     }
     
-    // Get client_pvt from stream esocket for worker and address info
+    // Get client esocket from stream esocket for worker and address info
     if (!a_stream->trans_ctx->esocket || !a_stream->trans_ctx->esocket->_inheritor) {
         log_it(L_ERROR, "Stream esocket has no client ctx");
         return -3;
     }
     
     dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-    if (!l_client_pvt) {
-        log_it(L_ERROR, "Invalid client_pvt");
+    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
+    if (!l_client_esocket) {
+        log_it(L_ERROR, "Invalid client esocket");
         return -4;
     }
     
@@ -820,9 +824,9 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
     size_t l_request_size = snprintf(l_request, sizeof(l_request), "%d", DAP_CLIENT_PROTOCOL_VERSION);
     
     // Prepare sub_url based on protocol version
-    dap_net_trans_ctx_t *l_ctx = a_stream->trans_ctx;
-    uint32_t l_least_common_dap_protocol = dap_min(l_ctx->remote_protocol_version,
-                                                   l_ctx->uplink_protocol_version);
+    // Use client esocket values (set during enc_init), NOT trans_ctx (which may be uninitialized)
+    uint32_t l_least_common_dap_protocol = dap_min(l_client_esocket->remote_protocol_version,
+                                                   l_client_esocket->uplink_protocol_version);
     
     char *l_suburl;
     if (l_least_common_dap_protocol < 23) {
@@ -841,12 +845,11 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
     ws_session_ctx_t *l_ws_ctx = DAP_NEW_Z(ws_session_ctx_t);
     l_ws_ctx->stream = a_stream;
     l_ws_ctx->callback = a_callback;
-    l_ws_ctx->session_key = l_client_pvt->session_key; // Use key from client_pvt
+    l_ws_ctx->session_key = l_client_esocket->session_key; // Use key from client esocket
     
-    // Use client keys directly from client_pvt
-    // dap_client_pvt already populated session_key and session_key_id in STAGE_ENC_INIT
-    s_ws_send_http_request_enc(l_client_pvt->session_key, l_client_pvt->session_key_id,
-                               l_priv->http_client, l_client_pvt->worker,
+    // Use client keys directly from client esocket (populated in STAGE_ENC_INIT)
+    s_ws_send_http_request_enc(l_client_esocket->session_key, l_client_esocket->session_key_id,
+                               l_priv->http_client, l_client_esocket->worker,
                                l_client->link_info.uplink_addr, l_client->link_info.uplink_port,
                                DAP_UPLINK_PATH_STREAM_CTL,
                                l_suburl, "type=tcp,maxconn=4", l_request, l_request_size,
@@ -860,7 +863,14 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
 }
 
 /**
- * @brief Start streaming
+ * @brief Start streaming — sends WebSocket HTTP Upgrade request (RFC 6455 Section 4.1)
+ *
+ * This is the client-side equivalent of HTTP transport's session_start which sends
+ * "GET /stream/globaldb?session_id=... HTTP/1.1". For WebSocket, we send the same
+ * request but with Upgrade/Connection/Sec-WebSocket-Key headers.
+ *
+ * The 101 Switching Protocols response is handled asynchronously in s_ws_read().
+ * After receiving 101, the state transitions to OPEN and WebSocket framing begins.
  */
 static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
                                 dap_net_trans_ready_cb_t a_callback)
@@ -876,25 +886,61 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         return -2;
     }
 
-    log_it(L_DEBUG, "WebSocket session start: session_id=%u", a_session_id);
-
-    // Mark connection as open
-    l_priv->state = DAP_WS_STATE_OPEN;
-
-    // Start ping timer
-    if (l_priv->config.ping_interval_ms > 0) {
-        dap_worker_t *l_worker = dap_events_worker_get_auto();
-        if (l_worker) {
-            l_priv->ping_timer = dap_timerfd_start_on_worker(l_worker,
-                                                               l_priv->config.ping_interval_ms,
-                                                               s_ws_ping_timer_callback, a_stream);
-            if (!l_priv->ping_timer) {
-                log_it(L_WARNING, "Failed to start WebSocket ping timer");
-            }
-        }
+    if (!l_priv->esocket) {
+        log_it(L_ERROR, "WebSocket esocket not set (connect not called?)");
+        return -3;
     }
 
-    // Invoke ready callback
+    // Get client for host info
+    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket ||
+        !a_stream->trans_ctx->esocket->_inheritor) {
+        log_it(L_ERROR, "No client context for WebSocket session start");
+        return -4;
+    }
+    dap_client_t *l_client = (dap_client_t *)a_stream->trans_ctx->esocket->_inheritor;
+
+    log_it(L_INFO, "WebSocket session start: session_id=%u, sending upgrade to %s:%u",
+           a_session_id, l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
+
+    // Set state to CONNECTING (upgrade in progress)
+    l_priv->state = DAP_WS_STATE_CONNECTING;
+
+    // Build full path (same as HTTP transport uses for GET /stream)
+    char l_full_path[2048];
+    snprintf(l_full_path, sizeof(l_full_path), "%s/globaldb?session_id=%u",
+             DAP_UPLINK_PATH_STREAM, a_session_id);
+
+    // Build optional headers
+    char l_proto_hdr[256] = {0};
+    if (l_priv->config.subprotocol) {
+        snprintf(l_proto_hdr, sizeof(l_proto_hdr),
+                 "Sec-WebSocket-Protocol: %s\r\n", l_priv->config.subprotocol);
+    }
+
+    // Send WebSocket upgrade request (RFC 6455 Section 4.1)
+    ssize_t l_sent = dap_events_socket_write_f_unsafe(l_priv->esocket,
+        "GET /%s HTTP/1.1\r\n"
+        "Host: %s:%u\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: %s\r\n"
+        "Sec-WebSocket-Version: %d\r\n"
+        "%s"
+        "\r\n",
+        l_full_path,
+        l_client->link_info.uplink_addr, l_client->link_info.uplink_port,
+        l_priv->sec_websocket_key ? l_priv->sec_websocket_key : "",
+        DAP_WS_PROTOCOL_VERSION,
+        l_proto_hdr);
+
+    if (l_sent <= 0) {
+        log_it(L_ERROR, "Failed to send WebSocket upgrade request (ret=%zd)", l_sent);
+        l_priv->state = DAP_WS_STATE_CLOSED;
+        return -5;
+    }
+    log_it(L_DEBUG, "WebSocket upgrade request sent (%zd bytes)", l_sent);
+
+    // Invoke ready callback (same as HTTP transport — request sent, response is async)
     if (a_callback) {
         a_callback(a_stream, 0);
     }
@@ -903,108 +949,203 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 }
 
 /**
- * @brief Read data from WebSocket
+ * @brief Read data from WebSocket transport
+ *
+ * Called by dap_client_esocket with (NULL, 0). This function:
+ * 1. In CONNECTING state: handles HTTP 101 Switching Protocols response
+ * 2. In OPEN state: de-frames WebSocket frames, feeds raw stream data to
+ *    dap_stream_data_proc_read_ext(), and manages frame_buffer for partial packets
+ *
+ * Returns 0 to the caller — all buf_in management is handled internally.
  */
 static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
-    if (!a_stream || !a_buffer || a_size == 0) {
-        log_it(L_ERROR, "Invalid parameters");
+    UNUSED(a_buffer);
+    UNUSED(a_size);
+
+    if (!a_stream) {
         return -1;
     }
 
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_priv) {
-        log_it(L_ERROR, "WebSocket trans not initialized");
-        return -2;
+        return -1;
     }
 
+    dap_events_socket_t *l_es = l_priv->esocket;
+    if (!l_es || l_es->buf_in_size == 0) {
+        return 0;
+    }
+
+    // --- Phase 1: Handle HTTP 101 Switching Protocols response ---
+    if (l_priv->state == DAP_WS_STATE_CONNECTING) {
+        if (l_es->buf_in_size < 12) {
+            return 0;  // Need more data
+        }
+
+        // Search for end of HTTP headers (\r\n\r\n)
+        char *l_headers_end = NULL;
+        for (size_t i = 0; i + 3 < l_es->buf_in_size; i++) {
+            if (l_es->buf_in[i] == '\r' && l_es->buf_in[i + 1] == '\n' &&
+                l_es->buf_in[i + 2] == '\r' && l_es->buf_in[i + 3] == '\n') {
+                l_headers_end = (char *)l_es->buf_in + i;
+                break;
+            }
+        }
+        if (!l_headers_end) {
+            return 0;  // Incomplete headers, wait for more data
+        }
+
+        size_t l_headers_size = (size_t)(l_headers_end - (char *)l_es->buf_in) + 4;
+
+        // Validate 101 Switching Protocols response
+        if (memcmp(l_es->buf_in, "HTTP/1.1 101", 12) == 0 ||
+            memcmp(l_es->buf_in, "HTTP/1.0 101", 12) == 0) {
+            log_it(L_INFO, "WebSocket upgrade successful (101 Switching Protocols)");
+            l_priv->state = DAP_WS_STATE_OPEN;
+
+            // Start ping timer now that we're connected
+            if (l_priv->config.ping_interval_ms > 0 && l_es->worker) {
+                l_priv->ping_timer = dap_timerfd_start_on_worker(l_es->worker,
+                    l_priv->config.ping_interval_ms, s_ws_ping_timer_callback, a_stream);
+            }
+        } else {
+            log_it(L_ERROR, "WebSocket upgrade failed: %.40s", (char *)l_es->buf_in);
+            l_priv->state = DAP_WS_STATE_CLOSED;
+            dap_events_socket_shrink_buf_in(l_es, l_headers_size);
+            return -1;
+        }
+
+        // Consume HTTP headers from buf_in
+        dap_events_socket_shrink_buf_in(l_es, l_headers_size);
+
+        // Fall through to frame parsing if there's remaining data
+        if (l_es->buf_in_size == 0) {
+            return 0;
+        }
+    }
+
+    // --- Phase 2: Parse WebSocket frames and extract payloads ---
     if (l_priv->state != DAP_WS_STATE_OPEN) {
-        return 0;  // No data available
+        return 0;
     }
 
-    if (!l_priv->esocket || l_priv->esocket->buf_in_size == 0) {
-    return 0;
-    }
+    size_t l_consumed = 0;
 
-    // Process WebSocket frames from buf_in
-    size_t l_total_read = 0;
-    size_t l_consumed_total = 0;
-    
-    // We loop to consume as many frames as possible to fill a_buffer
-    while (l_total_read < a_size && l_priv->esocket->buf_in_size > l_consumed_total) {
+    // Accumulate de-framed payloads in a temporary buffer
+    size_t l_payload_buf_alloc = l_es->buf_in_size;
+    uint8_t *l_payload_buf = DAP_NEW_Z_SIZE(uint8_t, l_payload_buf_alloc);
+    if (!l_payload_buf) {
+        return -1;
+    }
+    size_t l_payload_total = 0;
+
+    while (l_consumed < l_es->buf_in_size) {
         dap_ws_opcode_t l_opcode = 0;
         bool l_fin = false;
         uint8_t *l_payload = NULL;
         size_t l_payload_size = 0;
-        size_t l_frame_len = 0;
-        
-        uint8_t *l_ptr = l_priv->esocket->buf_in + l_consumed_total;
-        size_t l_remaining = l_priv->esocket->buf_in_size - l_consumed_total;
-        
-        int l_res = s_ws_parse_frame(l_ptr, l_remaining, &l_opcode, &l_fin, &l_payload, &l_payload_size, &l_frame_len);
-        
+        size_t l_frame_size = 0;
+
+        int l_res = dap_net_trans_websocket_parse_frame(l_es->buf_in + l_consumed,
+                                     l_es->buf_in_size - l_consumed,
+                                     &l_opcode, &l_fin, &l_payload,
+                                     &l_payload_size, &l_frame_size);
+
         if (l_res == -2) {
-            // Incomplete frame
-            break;
+            break;  // Incomplete frame — wait for more data
         }
-        
         if (l_res != 0) {
-            log_it(L_ERROR, "WebSocket frame parse error");
-            // Consume 1 byte to try to recover (or close connection)
-            l_consumed_total++;
+            log_it(L_ERROR, "WebSocket frame parse error at offset %zu", l_consumed);
+            l_consumed++;
             continue;
         }
-        
+
         // Handle control frames
         if (l_opcode == DAP_WS_OPCODE_CLOSE) {
             log_it(L_INFO, "WebSocket received CLOSE frame");
-            s_ws_close(a_stream);
-            l_consumed_total += l_frame_len;
             DAP_DEL_Z(l_payload);
-            // If we read some data before close, return it.
-            // If we return -1 here, it signals error/close to dap_stream.
-            return l_total_read > 0 ? (ssize_t)l_total_read : -1;
+            l_consumed += l_frame_size;
+            s_ws_close(a_stream);
+            break;
         }
-        
         if (l_opcode == DAP_WS_OPCODE_PING) {
-            // Send Pong
             dap_net_trans_websocket_send_pong(a_stream, l_payload, l_payload_size);
             DAP_DEL_Z(l_payload);
-            l_consumed_total += l_frame_len;
+            l_consumed += l_frame_size;
             continue;
         }
-        
         if (l_opcode == DAP_WS_OPCODE_PONG) {
             l_priv->last_pong_time = time(NULL) * 1000;
             DAP_DEL_Z(l_payload);
-            l_consumed_total += l_frame_len;
+            l_consumed += l_frame_size;
             continue;
         }
-        
-        // Data frames (Binary or Text)
+
+        // Data frame — accumulate payload
         if (l_payload && l_payload_size > 0) {
-            size_t l_to_copy = dap_min(l_payload_size, a_size - l_total_read);
-            memcpy((uint8_t*)a_buffer + l_total_read, l_payload, l_to_copy);
-            l_total_read += l_to_copy;
-            
-            // If we couldn't copy all payload, we have a problem.
-            // dap_stream assumes stream behavior. We just dropped data.
-            // Ideally we should buffer it.
-            if (l_to_copy < l_payload_size) {
-                log_it(L_WARNING, "WebSocket read buffer too small (%zu < %zu), dropping %zu bytes", 
-                       a_size - (l_total_read - l_to_copy), l_payload_size, l_payload_size - l_to_copy);
+            // Grow buffer if needed
+            if (l_payload_total + l_payload_size > l_payload_buf_alloc) {
+                l_payload_buf_alloc = (l_payload_total + l_payload_size) * 2;
+                l_payload_buf = DAP_REALLOC(l_payload_buf, l_payload_buf_alloc);
             }
+            memcpy(l_payload_buf + l_payload_total, l_payload, l_payload_size);
+            l_payload_total += l_payload_size;
+            l_priv->frames_received++;
+            l_priv->bytes_received += l_payload_size;
         }
-        
+
         DAP_DEL_Z(l_payload);
-        l_consumed_total += l_frame_len;
-    }
-    
-    if (l_consumed_total > 0) {
-        dap_events_socket_shrink_buf_in(l_priv->esocket, l_consumed_total);
+        l_consumed += l_frame_size;
     }
 
-    return (ssize_t)l_total_read;
+    // Shrink buf_in by consumed frame bytes
+    if (l_consumed > 0) {
+        dap_events_socket_shrink_buf_in(l_es, l_consumed);
+    }
+
+    // --- Phase 3: Process de-framed data as raw DAP stream packets ---
+    if (l_payload_total > 0 || l_priv->frame_buffer_used > 0) {
+        uint8_t *l_data = l_payload_buf;
+        size_t l_data_size = l_payload_total;
+
+        // Prepend leftover from previous call (partial DAP stream packet)
+        if (l_priv->frame_buffer_used > 0) {
+            size_t l_total = l_priv->frame_buffer_used + l_payload_total;
+            uint8_t *l_combined = DAP_NEW_Z_SIZE(uint8_t, l_total);
+            if (l_combined) {
+                memcpy(l_combined, l_priv->frame_buffer, l_priv->frame_buffer_used);
+                memcpy(l_combined + l_priv->frame_buffer_used, l_payload_buf, l_payload_total);
+                l_priv->frame_buffer_used = 0;
+                l_data = l_combined;
+                l_data_size = l_total;
+            }
+        }
+
+        // Feed raw stream data to the stream processing layer
+        size_t l_processed = dap_stream_data_proc_read_ext(a_stream, l_data, l_data_size);
+
+        // Save any unprocessed bytes (partial DAP stream packet) for next call
+        size_t l_remaining = l_data_size - l_processed;
+        if (l_remaining > 0) {
+            if (l_remaining > l_priv->frame_buffer_size) {
+                l_priv->frame_buffer = DAP_REALLOC(l_priv->frame_buffer, l_remaining);
+                l_priv->frame_buffer_size = l_remaining;
+            }
+            memcpy(l_priv->frame_buffer, l_data + l_processed, l_remaining);
+            l_priv->frame_buffer_used = l_remaining;
+        }
+
+        // Free combined buffer if it was allocated
+        if (l_data != l_payload_buf) {
+            DAP_DELETE(l_data);
+        }
+    }
+
+    DAP_DELETE(l_payload_buf);
+
+    // Return 0 — all buf_in management handled internally
+    return 0;
 }
 
 /**
@@ -1017,19 +1158,29 @@ static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_s
         return -1;
     }
 
+    // Get esocket: prefer trans_ctx->esocket (works for both client and server),
+    // fall back to l_priv->esocket (client-only legacy path)
+    dap_events_socket_t *l_es = NULL;
+    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket)
+        l_es = a_stream->trans_ctx->esocket;
+
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
-    if (!l_priv) {
-        log_it(L_ERROR, "WebSocket trans not initialized");
+    if (!l_es && l_priv)
+        l_es = l_priv->esocket;
+
+    if (!l_es) {
+        log_it(L_ERROR, "WebSocket write: no esocket available");
         return -2;
     }
 
-    if (l_priv->state != DAP_WS_STATE_OPEN) {
+    // State check: only for client-side (server is always OPEN after upgrade)
+    if (l_priv && a_stream->is_client_to_uplink && l_priv->state != DAP_WS_STATE_OPEN) {
         log_it(L_ERROR, "WebSocket not in OPEN state");
         return -3;
     }
 
     // Build WebSocket binary frame
-    size_t l_frame_size = a_size + 14;  // Max header size
+    size_t l_frame_size = a_size + 14;
     uint8_t *l_frame_buffer = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
     if (!l_frame_buffer) {
         log_it(L_CRITICAL, "Failed to allocate frame buffer");
@@ -1037,9 +1188,10 @@ static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_s
     }
 
     size_t l_actual_frame_size = 0;
-    bool l_should_mask = l_priv->config.client_mask_frames;  // Mask if client
+    // RFC 6455: client MUST mask, server MUST NOT mask
+    bool l_should_mask = a_stream->is_client_to_uplink;
 
-    int l_ret = s_ws_build_frame(l_frame_buffer, l_frame_size, DAP_WS_OPCODE_BINARY,
+    int l_ret = dap_net_trans_websocket_build_frame(l_frame_buffer, l_frame_size, DAP_WS_OPCODE_BINARY,
                                    true, l_should_mask, a_data, a_size, &l_actual_frame_size);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to build WebSocket frame");
@@ -1047,22 +1199,16 @@ static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_s
         return -5;
     }
 
-    // Send frame via events socket
-    if (l_priv->esocket) {
-        size_t l_sent = dap_events_socket_write_unsafe(l_priv->esocket, l_frame_buffer, l_actual_frame_size);
-        if (l_sent == l_actual_frame_size) {
-    l_priv->frames_sent++;
-    l_priv->bytes_sent += a_size;
-            log_it(L_DEBUG, "WebSocket write: %zu bytes (frame: %zu)", a_size, l_actual_frame_size);
-        } else {
-            log_it(L_ERROR, "WebSocket write incomplete or failed");
-            // Return failure even if partial sent?
-            // dap_stream expects number of bytes written from a_data.
-            // If we failed to send full frame, we effectively failed.
-            l_ret = -6;
+    size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame_buffer, l_actual_frame_size);
+    if (l_sent == l_actual_frame_size) {
+        if (l_priv) {
+            l_priv->frames_sent++;
+            l_priv->bytes_sent += a_size;
         }
+        log_it(L_DEBUG, "WebSocket write: %zu bytes (frame: %zu)", a_size, l_actual_frame_size);
     } else {
-        l_ret = -7;
+        log_it(L_ERROR, "WebSocket write incomplete or failed");
+        l_ret = -6;
     }
 
     DAP_DELETE(l_frame_buffer);
@@ -1261,7 +1407,7 @@ static int s_ws_generate_accept(const char *a_key, char *a_accept_out, size_t a_
 /**
  * @brief Build WebSocket frame
  */
-static int s_ws_build_frame(uint8_t *a_buffer, size_t a_buffer_size, dap_ws_opcode_t a_opcode,
+int dap_net_trans_websocket_build_frame(uint8_t *a_buffer, size_t a_buffer_size, dap_ws_opcode_t a_opcode,
                              bool a_fin, bool a_mask, const void *a_payload, size_t a_payload_size,
                              size_t *a_frame_size_out)
 {
@@ -1322,7 +1468,7 @@ static int s_ws_build_frame(uint8_t *a_buffer, size_t a_buffer_size, dap_ws_opco
 /**
  * @brief Parse WebSocket frame (simplified)
  */
-static int s_ws_parse_frame(const uint8_t *a_data, size_t a_data_size, dap_ws_opcode_t *a_opcode_out,
+int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_size, dap_ws_opcode_t *a_opcode_out,
                              bool *a_fin_out, uint8_t **a_payload_out, size_t *a_payload_size_out,
                              size_t *a_frame_total_size_out)
 {
@@ -1465,41 +1611,42 @@ int dap_net_trans_websocket_send_close(dap_stream_t *a_stream, dap_ws_close_code
         return -1;
     }
 
+    // Get esocket: prefer trans_ctx, fallback to priv
+    dap_events_socket_t *l_es = (a_stream->trans_ctx && a_stream->trans_ctx->esocket)
+                                 ? a_stream->trans_ctx->esocket : NULL;
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
-    if (!l_priv) {
-        return -2;
-    }
+    if (!l_es && l_priv) l_es = l_priv->esocket;
+    if (!l_es) return -2;
 
     // Build close payload: 2-byte code + optional reason
     size_t l_reason_len = a_reason ? strlen(a_reason) : 0;
     size_t l_payload_size = 2 + l_reason_len;
     uint8_t *l_payload = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
     
-    // Write close code (big-endian)
     uint16_t l_code_be = htons((uint16_t)a_code);
     memcpy(l_payload, &l_code_be, 2);
-    
-    // Write reason
-    if (a_reason && l_reason_len > 0) {
+    if (a_reason && l_reason_len > 0)
         memcpy(l_payload + 2, a_reason, l_reason_len);
-    }
 
-    // Build and send close frame
     size_t l_frame_size = l_payload_size + 14;
     uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
     size_t l_actual_size;
+    bool l_should_mask = a_stream->is_client_to_uplink;
     
-    int l_ret = s_ws_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_CLOSE,
-                                   true, l_priv->config.client_mask_frames,
-                                   l_payload, l_payload_size, &l_actual_size);
-    
+    int l_ret = dap_net_trans_websocket_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_CLOSE,
+                                   true, l_should_mask, l_payload, l_payload_size, &l_actual_size);
     DAP_DELETE(l_payload);
-    DAP_DELETE(l_frame);
 
     if (l_ret == 0) {
-        log_it(L_DEBUG, "WebSocket close frame sent (code=%u)", a_code);
+        size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
+        if (l_sent == l_actual_size) {
+            log_it(L_DEBUG, "WebSocket close frame sent (code=%u)", a_code);
+        } else {
+            log_it(L_ERROR, "WebSocket close frame send failed");
+            l_ret = -5;
+        }
     }
-
+    DAP_DELETE(l_frame);
     return l_ret;
 }
 
@@ -1509,45 +1656,32 @@ int dap_net_trans_websocket_send_close(dap_stream_t *a_stream, dap_ws_close_code
 int dap_net_trans_websocket_send_ping(dap_stream_t *a_stream, const void *a_payload,
                                        size_t a_payload_size)
 {
-    if (!a_stream) {
-        return -1;
-    }
+    if (!a_stream) return -1;
+    if (a_payload_size > 125) return -2;
 
-    if (a_payload_size > 125) {
-        log_it(L_ERROR, "Ping payload too large (%zu > 125)", a_payload_size);
-        return -2;
-    }
-
+    dap_events_socket_t *l_es = (a_stream->trans_ctx && a_stream->trans_ctx->esocket)
+                                 ? a_stream->trans_ctx->esocket : NULL;
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
-    if (!l_priv) {
-        return -3;
-    }
+    if (!l_es && l_priv) l_es = l_priv->esocket;
+    if (!l_es) return -3;
 
-    // Build and send ping frame
     size_t l_frame_size = a_payload_size + 14;
     uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
     size_t l_actual_size;
+    bool l_should_mask = a_stream->is_client_to_uplink;
     
-    int l_ret = s_ws_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_PING,
-                                   true, l_priv->config.client_mask_frames,
-                                   a_payload, a_payload_size, &l_actual_size);
+    int l_ret = dap_net_trans_websocket_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_PING,
+                                   true, l_should_mask, a_payload, a_payload_size, &l_actual_size);
     
     if (l_ret == 0) {
-        if (l_priv->esocket) {
-            size_t l_sent = dap_events_socket_write_unsafe(l_priv->esocket, l_frame, l_actual_size);
-            if (l_sent == l_actual_size) {
-                log_it(L_DEBUG, "WebSocket ping sent (%zu bytes payload)", a_payload_size);
-                l_priv->frames_sent++;
-                l_priv->bytes_sent += l_actual_size;
-            } else {
-                log_it(L_ERROR, "WebSocket ping send failed or incomplete");
-                l_ret = -5;
-            }
+        size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
+        if (l_sent == l_actual_size) {
+            log_it(L_DEBUG, "WebSocket ping sent (%zu bytes payload)", a_payload_size);
+        } else {
+            l_ret = -5;
         }
     }
-    
     DAP_DELETE(l_frame);
-
     return l_ret;
 }
 
@@ -1557,45 +1691,32 @@ int dap_net_trans_websocket_send_ping(dap_stream_t *a_stream, const void *a_payl
 int dap_net_trans_websocket_send_pong(dap_stream_t *a_stream, const void *a_payload,
                                        size_t a_payload_size)
 {
-    if (!a_stream) {
-        return -1;
-    }
+    if (!a_stream) return -1;
+    if (a_payload_size > 125) return -2;
 
-    if (a_payload_size > 125) {
-        log_it(L_ERROR, "Pong payload too large (%zu > 125)", a_payload_size);
-        return -2;
-    }
-
+    dap_events_socket_t *l_es = (a_stream->trans_ctx && a_stream->trans_ctx->esocket)
+                                 ? a_stream->trans_ctx->esocket : NULL;
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
-    if (!l_priv) {
-        return -3;
-    }
+    if (!l_es && l_priv) l_es = l_priv->esocket;
+    if (!l_es) return -3;
 
-    // Build and send pong frame
     size_t l_frame_size = a_payload_size + 14;
     uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
     size_t l_actual_size;
+    bool l_should_mask = a_stream->is_client_to_uplink;
     
-    int l_ret = s_ws_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_PONG,
-                                   true, l_priv->config.client_mask_frames,
-                                   a_payload, a_payload_size, &l_actual_size);
+    int l_ret = dap_net_trans_websocket_build_frame(l_frame, l_frame_size, DAP_WS_OPCODE_PONG,
+                                   true, l_should_mask, a_payload, a_payload_size, &l_actual_size);
 
     if (l_ret == 0) {
-        if (l_priv->esocket) {
-            size_t l_sent = dap_events_socket_write_unsafe(l_priv->esocket, l_frame, l_actual_size);
-            if (l_sent == l_actual_size) {
-                log_it(L_DEBUG, "WebSocket pong sent (%zu bytes payload)", a_payload_size);
-                l_priv->frames_sent++;
-                l_priv->bytes_sent += l_actual_size;
-            } else {
-                log_it(L_ERROR, "WebSocket pong send failed or incomplete");
-                l_ret = -5;
-            }
+        size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
+        if (l_sent == l_actual_size) {
+            log_it(L_DEBUG, "WebSocket pong sent (%zu bytes payload)", a_payload_size);
+        } else {
+            l_ret = -5;
         }
     }
-    
     DAP_DELETE(l_frame);
-
     return l_ret;
 }
 
@@ -1670,9 +1791,10 @@ static int s_ws_register_server_handlers(dap_net_trans_t *a_trans, void *a_trans
         return -2;
     }
 
-    // Register WebSocket upgrade handler for stream path
+    // Register WebSocket upgrade handler for stream path (with leading slash
+    // to match z_dirname() output for URLs like "/stream/globaldb?session_id=...")
     int l_ret = dap_net_trans_websocket_server_add_upgrade_handler(
-        (dap_net_trans_websocket_server_t *)l_ctx->trans_specific, "stream");
+        (dap_net_trans_websocket_server_t *)l_ctx->trans_specific, "/stream");
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to register WebSocket upgrade handler for stream");
         return l_ret;

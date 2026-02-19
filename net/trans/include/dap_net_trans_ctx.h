@@ -4,8 +4,9 @@
 #include "dap_enc_key.h"
 #include "dap_net_trans.h"
 
-// Forward declaration
+// Forward declarations
 typedef struct dap_stream dap_stream_t;
+typedef struct dap_http_client dap_http_client_t;
 
 typedef struct dap_net_trans_ctx {
     // Esocket reference - CRITICAL ARCHITECTURE:
@@ -17,6 +18,7 @@ typedef struct dap_net_trans_ctx {
     
     struct dap_net_trans *trans; // Pointer to shared trans configuration
     dap_stream_t *stream;        // Back-reference to owning stream
+    dap_http_client_t *http_client; // HTTP client (for HTTP path cleanup, NULL for UDP/DNS)
     
     // Encryption ctx
     dap_enc_key_t *session_key;
@@ -29,6 +31,10 @@ typedef struct dap_net_trans_ctx {
     dap_net_trans_session_cb_t session_create_cb;
     bool session_create_sent;  // Duplicate protection: true if SESSION_CREATE already sent
     
+    // Cached remote address info (snapshot at connection time, safe for cross-thread reads)
+    char remote_addr_str[INET6_ADDRSTRLEN];
+    uint16_t remote_port;
+
     // Trans-specific private data (e.g., UDP session context, client context)
     void *_inheritor;
 } dap_net_trans_ctx_t;

@@ -1350,7 +1350,7 @@ static void test_02_sequential_trans_testing(void)
                 
                 // Cleanup after each scenario
                 test_trans_ctx_free(l_ctx);
-                
+
                 // Wait for cleanup
                 uint32_t l_cleanup_timeout = (l_scenario->num_clients > 100) ? 30000 : 20000;
                 if (!test_wait_for_cleanup_complete(l_cleanup_timeout)) {
@@ -1482,11 +1482,12 @@ int main(int argc, char **argv)
                                 "[dap_client]\n"
                                 "max_tries=5\n"
                                 "timeout=60\n"
+                                "timeout_read_after_connect=30\n"
+                                "timeout_active_after_connect=120\n"
                                 "debug_more=false\n"
-                                "timeout_active_after_connect=60\n"
                                "[stream]\n"
-                                "debug_more=false\n"
-                                "debug_dump_stream_headers=false\n"
+                                "debug_more=true\n"
+                                "debug_dump_stream_headers=true\n"
                                 "debug_channels=false\n"
                                 "[stream_pkt]\n"
                                 "debug_more=false\n"
@@ -1502,19 +1503,17 @@ int main(int argc, char **argv)
                                 "debug_more=false\n"
                                 "[dap_net_trans_udp_server]\n"
                                 "debug_more=false\n"
-                                "[dap_client]\n"
-                                "debug_more=false\n"
                                 "[test_trans_helpers]\n"
-                                "debug_more=false\n";
+                                "debug_more=true\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
         fclose(f);
     }
     
-    // Set logging output to stdout and level to DEBUG for detailed diagnostics
+    // Set logging output to stdout; level is controlled by config [general] log_level
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    dap_log_level_set(L_NOTICE);
+    dap_log_level_set(L_DEBUG);
     
     // Initialize config system first
     dap_config_init(".");

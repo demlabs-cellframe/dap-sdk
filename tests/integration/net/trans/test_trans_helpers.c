@@ -381,8 +381,8 @@ int test_stream_ch_register_receiver(dap_client_t *a_client,
     }
     
     // Get worker from client
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
-    if (!l_client_pvt || !l_client_pvt->worker) {
+    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(a_client);
+    if (!l_client_esocket || !l_client_esocket->worker) {
         log_it(L_ERROR, "Client has no worker");
         return -1;
     }
@@ -390,7 +390,7 @@ int test_stream_ch_register_receiver(dap_client_t *a_client,
     dap_worker_t *l_current_worker = dap_worker_get_current();
     
     log_it(L_INFO, "test_stream_ch_register_receiver: stream=%p, channel_id='%c', client_worker=%p, current_worker=%p (main_thread=%s)",
-           l_stream, a_channel_id, l_client_pvt->worker, l_current_worker,
+           l_stream, a_channel_id, l_client_esocket->worker, l_current_worker,
            l_current_worker ? "NO" : "YES");
     
     // DEBUG: Check for duplicate channels
@@ -430,7 +430,7 @@ int test_stream_ch_register_receiver(dap_client_t *a_client,
     l_args->result = &l_result;
     
     // Execute callback in worker thread
-    dap_worker_exec_callback_on(l_client_pvt->worker, s_register_notifier_in_worker_callback, l_args);
+    dap_worker_exec_callback_on(l_client_esocket->worker, s_register_notifier_in_worker_callback, l_args);
     
     log_it(L_INFO, "test_stream_ch_register_receiver: scheduled notifier registration in worker thread, waiting for completion...");
     

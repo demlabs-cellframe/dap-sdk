@@ -288,7 +288,8 @@ static ssize_t s_udp_server_trans_write(dap_stream_t *a_stream, const void *a_da
                                   a_size);
     
     if (l_ret != 0) {
-        log_it(L_WARNING, "Failed to send stream packet via s_udp_server_trans_write (%d)", l_ret);
+        debug_if(s_debug_more, L_DEBUG,
+                 "Send stream packet failed: ret=%d", l_ret);
         return -1;
     }
     
@@ -1252,7 +1253,9 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         l_ret = dap_io_flow_ctrl_send(l_flow_ctrl, a_payload, a_payload_size);
         
         if (l_ret != 0) {
-            log_it(L_ERROR, "Flow Control send failed (type=%u): ret=%d", a_type, l_ret);
+            debug_if(s_debug_more, L_DEBUG,
+                     "Flow Control send failed (type=%u): ret=%d%s",
+                     a_type, l_ret, l_ret == -10 ? " (FC deleting)" : "");
             return -8;
         }
         

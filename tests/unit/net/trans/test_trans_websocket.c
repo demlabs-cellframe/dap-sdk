@@ -722,7 +722,19 @@ static void test_14_stream_session(void)
     l_ret = l_trans->ops->session_create(&s_mock_stream, &l_session_params, s_session_callback);
     TEST_ASSERT(l_ret == 0, "Session create should succeed");
     
-    // Test session_start operation
+    // Prepare mock esocket buf_out for write operations (required by session_start)
+    dap_events_socket_t *l_mock_es = dap_trans_test_get_mock_esocket();
+    if (!l_mock_es->buf_out) {
+        l_mock_es->buf_out_size_max = 4096;
+        l_mock_es->buf_out = DAP_NEW_Z_SIZE(byte_t, l_mock_es->buf_out_size_max);
+        l_mock_es->buf_out_size = 0;
+    }
+
+    // Call connect first to set l_priv->esocket (required by session_start)
+    l_ret = l_trans->ops->connect(&s_mock_stream, "127.0.0.1", 8080, NULL);
+    TEST_ASSERT(l_ret == 0, "Connect should succeed");
+    
+    // Test session_start operation (sends WebSocket upgrade request via esocket)
     l_ret = l_trans->ops->session_start(&s_mock_stream, 12345, NULL);
     TEST_ASSERT(l_ret == 0, "Session start should succeed");
     

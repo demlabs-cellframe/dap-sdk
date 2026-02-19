@@ -94,13 +94,18 @@ typedef struct dap_client_pkt_queue_elm {
 
 /**
  * @brief Get esocket from client pointer (goes through FSM)
- * @note Backward compatible: DAP_CLIENT_PVT(client)->stream still works.
  */
-#define DAP_CLIENT_PVT(a) (DAP_CLIENT_FSM(a) ? DAP_CLIENT_FSM(a)->esocket : NULL)
+#define DAP_CLIENT_ESOCKET(a) (DAP_CLIENT_FSM(a) ? DAP_CLIENT_FSM(a)->esocket : NULL)
 
 // Module lifecycle
 int dap_client_esocket_init(void);
 void dap_client_esocket_deinit(void);
+
+/**
+ * @brief Get stream esocket callbacks for client-side stream connections.
+ * These callbacks handle read/write/error/delete/connected for streaming stage.
+ */
+void dap_client_esocket_get_stream_callbacks(dap_events_socket_callbacks_t *a_callbacks);
 
 // Instance lifecycle
 void dap_client_esocket_new(dap_client_esocket_t *a_esocket_ctx);
@@ -125,8 +130,7 @@ int dap_client_esocket_queue_clear(dap_client_esocket_t *a_esocket_ctx);
  */
 void dap_client_esocket_clean_unsafe(dap_client_esocket_t *a_esocket_ctx);
 
-// Backward compatibility aliases
-typedef dap_client_esocket_t dap_client_pvt_t;
+// Backward compatibility macro aliases (names only)
 #define dap_client_pvt_init          dap_client_esocket_init
 #define dap_client_pvt_deinit        dap_client_esocket_deinit
 #define dap_client_pvt_new           dap_client_esocket_new

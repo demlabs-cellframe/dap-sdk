@@ -286,13 +286,13 @@ static int s_setup_client(int id)
     
     // Wait for client init
     for (int i = 0; i < 20; i++) {
-        dap_client_pvt_t *pvt = DAP_CLIENT_PVT(ctx->client);
-        if (pvt && pvt->worker) break;
+        dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
+        if (esocket && esocket->worker) break;
         usleep(100000);
     }
     
-    dap_client_pvt_t *pvt = DAP_CLIENT_PVT(ctx->client);
-    if (!pvt || !pvt->worker) {
+    dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
+    if (!esocket || !esocket->worker) {
         log_it(L_ERROR, "Client %d: init timeout", id);
         return -2;
     }
@@ -372,8 +372,8 @@ static int s_register_receiver(int id)
         return -1;
     }
     
-    dap_client_pvt_t *pvt = DAP_CLIENT_PVT(ctx->client);
-    if (!pvt || !pvt->worker) {
+    dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
+    if (!esocket || !esocket->worker) {
         log_it(L_ERROR, "Client %d: no worker", id);
         return -2;
     }
@@ -390,7 +390,7 @@ static int s_register_receiver(int id)
     args->cond = &cond;
     args->result = &result;
     
-    dap_worker_exec_callback_on(pvt->worker, s_register_notifier_callback, args);
+    dap_worker_exec_callback_on(esocket->worker, s_register_notifier_callback, args);
     
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -481,7 +481,7 @@ static void test_multiclient_udp(void)
         dap_client_go_stage(s_clients[i].client, STAGE_STREAM_STREAMING, NULL);
     }
     
-    // Wait handshakes
+    // Wait handshakes — 100/100 required; any timeout = bug
     int hs_ok = 0;
     for (int i = 0; i < NUM_CLIENTS; i++) {
         if (s_wait_streaming(i, HANDSHAKE_TIMEOUT)) {

@@ -495,7 +495,7 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
         l_link->uplink.attempts_count = 0;
         l_link->uplink.state = LINK_STATE_ESTABLISHED;
-        l_link->uplink.es_uuid = DAP_CLIENT_PVT(a_client)->stream_es->uuid;
+        l_link->uplink.es_uuid = DAP_CLIENT_ESOCKET(a_client)->stream_es->uuid;
     } else
         log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS(l_addr));
     pthread_rwlock_unlock(&s_link_manager->links_lock);

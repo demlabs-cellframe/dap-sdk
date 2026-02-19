@@ -256,10 +256,10 @@ dap_stream_trans_dns_private_t* dap_stream_trans_dns_get_private(dap_stream_t *a
 }
 
 // ============================================================================
-// Trans Operations Implementation (Stubs)
+// Trans Operations Implementation
 // ============================================================================
-// Note: Full DNS tunnel implementation requires DNS query/response parsing,
-//       TXT record encoding/decoding, chunking, etc. These are stubs for now.
+// Note: Current implementation uses raw UDP-like approach for data transport.
+// Full DNS tunnel with TXT record encoding/decoding can be layered on top.
 
 /**
  * @brief Initialize DNS tunnel trans
@@ -452,8 +452,13 @@ static int s_dns_handshake_init(dap_stream_t *a_stream,
 }
 
 /**
- * @brief Process handshake response
- * @note Uses UDP-like approach for basic functionality
+ * @brief Process handshake data (server-side)
+ *
+ * Server-side handshake processing for DNS transport.
+ * DNS handshake uses the same pattern as UDP: the handshake data
+ * (alice public key) is sent as raw bytes and processed by
+ * dap_stream_handshake on the server side. This function delegates
+ * to the standard handshake processing.
  */
 static int s_dns_handshake_process(dap_stream_t *a_stream,
                                     const void *a_data, size_t a_data_size,
@@ -464,14 +469,14 @@ static int s_dns_handshake_process(dap_stream_t *a_stream,
         return -1;
     }
 
-    // DNS handshake processing uses UDP-like approach
-    // Full DNS response parsing can be added later
-    log_it(L_DEBUG, "DNS handshake process: %zu bytes", a_data_size);
-    
-    // Processing done via dap_stream_handshake module
-    UNUSED(a_response);
-    UNUSED(a_response_size);
-    
+    log_it(L_DEBUG, "DNS handshake process: %zu bytes (delegated to dap_stream_handshake)", a_data_size);
+
+    // The handshake data is raw alice_pub_key sent by the client.
+    // On the server, this is processed by dap_stream_handshake module.
+    // No DNS-specific transformation is needed.
+    if (a_response) *a_response = NULL;
+    if (a_response_size) *a_response_size = 0;
+
     return 0;
 }
 
@@ -529,40 +534,29 @@ static int s_dns_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 
 /**
  * @brief Read data from DNS tunnel
- * @note Uses UDP-like approach: reads from esocket buffer
- *       Full DNS response parsing can be added later
+ *
+ * Called by dap_client_esocket with (NULL, 0). Reads from esocket->buf_in
+ * and processes the data as raw DAP stream packets via dap_stream_data_proc_read.
+ * Returns the number of bytes consumed so the caller can shrink buf_in.
  */
 static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
-    if (!a_stream || !a_buffer || a_size == 0) {
-        log_it(L_ERROR, "Invalid arguments for DNS read");
+    UNUSED(a_buffer);
+    UNUSED(a_size);
+
+    if (!a_stream) {
         return -1;
     }
 
-    // DNS reading is done via dap_events_socket (similar to UDP)
-    // Data arrives in esocket->buf_in buffer
-    // This function reads from that buffer
-    
-    if (!a_stream->trans_ctx->esocket || !a_stream->trans_ctx->esocket->buf_in) {
-        return 0;  // No data available
+    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket ||
+        a_stream->trans_ctx->esocket->buf_in_size == 0) {
+        return 0;
     }
-    
-    // Read from esocket buffer
-    size_t l_available = a_stream->trans_ctx->esocket->buf_in_size;
-    size_t l_copy_size = (l_available < a_size) ? l_available : a_size;
-    
-    if (l_copy_size > 0) {
-        memcpy(a_buffer, a_stream->trans_ctx->esocket->buf_in, l_copy_size);
-        // Shift remaining data
-        if (l_copy_size < l_available) {
-            memmove(a_stream->trans_ctx->esocket->buf_in, 
-                    a_stream->trans_ctx->esocket->buf_in + l_copy_size,
-                    l_available - l_copy_size);
-        }
-        a_stream->trans_ctx->esocket->buf_in_size -= l_copy_size;
-    }
-    
-    return (ssize_t)l_copy_size;
+
+    // DNS data in buf_in is raw stream data (no DNS-specific framing in current impl).
+    // Delegate to dap_stream_data_proc_read which processes DAP stream packets
+    // from the esocket's buf_in and returns bytes consumed.
+    return (ssize_t)dap_stream_data_proc_read(a_stream);
 }
 
 /**
@@ -595,6 +589,9 @@ static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_
 
 /**
  * @brief Close DNS tunnel connection
+ *
+ * Cleans up DNS-specific state: resets the esocket reference,
+ * clears the remote address, and resets query/sequence counters.
  */
 static void s_dns_close(dap_stream_t *a_stream)
 {
@@ -602,8 +599,16 @@ static void s_dns_close(dap_stream_t *a_stream)
         return;
     }
 
-    log_it(L_DEBUG, "DNS tunnel trans close");
-    // TODO: Implement DNS tunnel cleanup
+    dap_stream_trans_dns_private_t *l_priv = s_get_private(a_stream->trans);
+    if (l_priv) {
+        l_priv->esocket = NULL;
+        memset(&l_priv->remote_addr, 0, sizeof(l_priv->remote_addr));
+        l_priv->remote_addr_len = 0;
+        l_priv->query_id = 0;
+        l_priv->seq_num = 0;
+    }
+
+    log_it(L_DEBUG, "DNS tunnel trans closed");
 }
 
 /**
@@ -630,6 +635,7 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     
     // Initialize result
     a_result->esocket = NULL;
+    a_result->stream = NULL;
     a_result->error_code = 0;
     
     // DNS tunneling uses UDP socket - create using platform-independent function
@@ -654,9 +660,20 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     // DNS tunneling uses UDP (connectionless) - just add to worker
     dap_worker_add_events_socket(a_params->worker, l_es);
     
+    // Create stream for this connection (same pattern as HTTP/WebSocket/UDP)
+    dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);
+    if (!l_stream) {
+        log_it(L_CRITICAL, "Failed to create stream for DNS trans");
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+    l_stream->trans = a_trans;
+    
     a_result->esocket = l_es;
+    a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "DNS socket prepared and added to worker for %s:%u", a_params->host, a_params->port);
+    log_it(L_DEBUG, "DNS socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 
