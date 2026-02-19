@@ -100,7 +100,13 @@ if(UNIX)
     # NOTE: -Werror is applied via add_compile_options() at the end of this file,
     # NOT here in CMAKE_C_FLAGS, to avoid breaking CMake's check_function_exists()
     # and other try_compile-based detection (e.g., libmdbx's libm check).
-    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter -Wno-unused-but-set-variable")
+    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+    
+    include(CheckCCompilerFlag)
+    check_c_compiler_flag("-Wno-unused-but-set-variable" HAS_WNO_UNUSED_BUT_SET_VARIABLE)
+    if (HAS_WNO_UNUSED_BUT_SET_VARIABLE)
+        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-but-set-variable")
+    endif()
     
     # Add Clang-specific warning flags
     if (CMAKE_C_COMPILER_ID MATCHES ".*[Cc][Ll][Aa][Nn][Gg].*")
