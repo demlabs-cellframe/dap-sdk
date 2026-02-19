@@ -25,7 +25,9 @@ else()
     message(STATUS "[Install] Using custom prefix: ${CMAKE_INSTALL_PREFIX}")
 endif()
 
-# Common includes and definitions
+# Build type (Debug / Release / Asan) and DAP_* build variables
+include(cmake/DapBuild.cmake)
+# Common includes and definitions (uses DAP_DEBUG, DAP_RELEASE, DAP_ASAN_BUILD from DapBuild)
 include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)
 include(cmake/PackageComponents.cmake)

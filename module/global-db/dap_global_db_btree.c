@@ -43,6 +43,8 @@
 
 // Page layout constants
 #define PAGE_DATA_SIZE          (DAP_GLOBAL_DB_BTREE_PAGE_SIZE - sizeof(dap_global_db_btree_page_header_t))
+/** Payload (value+sign) larger than this is stored in an overflow page chain */
+#define MAX_INLINE_PAYLOAD      PAGE_DATA_SIZE
 
 // Leaf page data layout constants (moved here for s_page_alloc visibility)
 #define LEAF_HEADER_SIZE        sizeof(uint16_t)  // lowest_used_offset cache (O(1) append)
@@ -54,6 +56,7 @@
 #define LEAF_LOWEST_OFFSET_INIT     ((uint16_t)PAGE_DATA_SIZE)
 
 static bool s_debug_more = false;
+void dap_global_db_btree_set_debug(bool a_on) { s_debug_more = a_on; }
 
 // ============================================================================
 // Forward Declarations
@@ -79,6 +82,13 @@ static uint64_t s_page_allocate_new(dap_global_db_btree_t *a_tree);
 // COW — detach mmap ref into a private buffer (arena or heap)
 static void s_page_cow(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena);
 
+// Overflow chain for values larger than one page
+static uint64_t s_overflow_write(dap_global_db_btree_t *a_tree, const void *a_value, uint32_t a_value_len,
+                                 const void *a_sign, uint32_t a_sign_len, uint64_t a_txn);
+static int s_overflow_read(dap_global_db_btree_t *a_tree, uint64_t a_first_page_id,
+                           void *a_out_buf, size_t a_buf_size, size_t *a_out_len);
+static void s_overflow_free(dap_global_db_btree_t *a_tree, uint64_t a_first_page_id, uint64_t a_txn);
+
 // B-tree navigation (read-only, no arena needed)
 static int s_search_in_page(dap_global_db_btree_page_t *a_page, const dap_global_db_btree_key_t *a_key, bool *a_found);
 
@@ -101,12 +111,17 @@ static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
                                const dap_global_db_btree_key_t *a_key, const char *a_text_key, uint32_t a_text_key_len,
                                const void *a_value, uint32_t a_value_len, const void *a_sign, uint32_t a_sign_len,
                                uint8_t a_flags, dap_arena_t *a_arena);
+static int s_leaf_insert_entry_overflow(dap_global_db_btree_page_t *a_page, int a_index,
+                                        const dap_global_db_btree_key_t *a_key, const char *a_text_key, uint32_t a_text_key_len,
+                                        uint64_t a_overflow_page_id, uint32_t a_value_len, uint32_t a_sign_len,
+                                        uint8_t a_flags, dap_arena_t *a_arena);
 static int s_leaf_delete_entry(dap_global_db_btree_page_t *a_page, int a_index, dap_arena_t *a_arena);
 static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
                                const char *a_text_key, uint32_t a_text_key_len,
                                const void *a_value, uint32_t a_value_len,
                                const void *a_sign, uint32_t a_sign_len,
-                               uint8_t a_flags, dap_arena_t *a_arena);
+                               uint8_t a_flags, dap_arena_t *a_arena,
+                               dap_global_db_btree_t *a_tree, uint64_t a_txn);
 static void s_leaf_compact(dap_global_db_btree_page_t *a_page, dap_arena_t *a_arena);
 
 // Page checks
@@ -496,6 +511,127 @@ static int s_page_write(dap_global_db_btree_t *a_tree, dap_global_db_btree_page_
     return 0;
 }
 
+// ============================================================================
+// Overflow chain: values larger than PAGE_DATA_SIZE
+// ============================================================================
+// Overflow pages use standard page header; right_sibling = next page id (0 = last).
+// Data area = raw payload. No offset array.
+
+static uint64_t s_overflow_write(dap_global_db_btree_t *a_tree, const void *a_value, uint32_t a_value_len,
+                                 const void *a_sign, uint32_t a_sign_len, uint64_t a_txn)
+{
+    size_t l_total = (size_t)a_value_len + (size_t)a_sign_len;
+    if (l_total == 0)
+        return 0;
+    const uint8_t *l_src = (const uint8_t *)a_value;
+    size_t l_value_done = 0;
+    size_t l_sign_done = 0;
+    uint64_t l_first_id = 0;
+    uint64_t l_prev_id = 0;
+
+    while (l_value_done < a_value_len || l_sign_done < a_sign_len) {
+        uint64_t l_page_id = s_page_allocate_new(a_tree);
+        if (l_page_id == 0)
+            goto fail;
+        if (l_first_id == 0)
+            l_first_id = l_page_id;
+
+        dap_global_db_btree_page_t *l_page = s_page_alloc(a_tree->arena);
+        if (!l_page)
+            goto fail;
+        l_page->header.page_id = l_page_id;
+        l_page->header.flags = DAP_GLOBAL_DB_PAGE_OVERFLOW;
+        l_page->header.entries_count = 0;
+        l_page->header.free_space = 0;
+        l_page->header.right_sibling = 0;
+        l_page->header.left_sibling = 0;
+
+        size_t l_chunk = 0;
+        if (l_value_done < a_value_len) {
+            size_t l_from_value = a_value_len - l_value_done;
+            if (l_from_value > PAGE_DATA_SIZE)
+                l_from_value = PAGE_DATA_SIZE;
+            memmove(l_page->data, l_src + l_value_done, l_from_value);
+            l_chunk += l_from_value;
+            l_value_done += l_from_value;
+        }
+        if (l_chunk < PAGE_DATA_SIZE && l_sign_done < a_sign_len) {
+            size_t l_from_sign = a_sign_len - l_sign_done;
+            size_t l_room = PAGE_DATA_SIZE - l_chunk;
+            if (l_from_sign > l_room)
+                l_from_sign = l_room;
+            memmove(l_page->data + l_chunk, (const uint8_t *)a_sign + l_sign_done, l_from_sign);
+            l_chunk += l_from_sign;
+            l_sign_done += l_from_sign;
+        }
+
+        if (l_prev_id != 0) {
+            dap_global_db_btree_page_t *l_prev = s_page_read(a_tree, l_prev_id, a_tree->arena);
+            if (l_prev) {
+                l_prev->header.right_sibling = l_page_id;
+                s_page_write(a_tree, l_prev);
+            }
+        }
+        s_page_write(a_tree, l_page);
+        l_prev_id = l_page_id;
+    }
+    return l_first_id;
+fail:
+    if (l_first_id != 0)
+        s_overflow_free(a_tree, l_first_id, a_txn);
+    return 0;
+}
+
+static int s_overflow_read(dap_global_db_btree_t *a_tree, uint64_t a_first_page_id,
+                           void *a_out_buf, size_t a_buf_size, size_t *a_out_len)
+{
+    if (a_first_page_id == 0 || !a_out_buf || a_buf_size == 0)
+        return -1;
+    uint64_t l_page_id = a_first_page_id;
+    size_t l_total = 0;
+    uint8_t *l_dst = (uint8_t *)a_out_buf;
+
+    while (l_page_id != 0) {
+        dap_global_db_btree_page_t l_buf;
+        if (!s_page_read_ref(a_tree, l_page_id, &l_buf)) {
+            log_it(L_ERROR, "overflow_read: s_page_read_ref failed for page=%llu (first=%llu total_so_far=%zu)",
+                   (unsigned long long)l_page_id, (unsigned long long)a_first_page_id, l_total);
+            return -1;
+        }
+        if (!(l_buf.header.flags & DAP_GLOBAL_DB_PAGE_OVERFLOW)) {
+            log_it(L_ERROR, "overflow_read: page=%llu flags=0x%x (not overflow), first=%llu total_so_far=%zu entries=%d",
+                   (unsigned long long)l_page_id, l_buf.header.flags,
+                   (unsigned long long)a_first_page_id, l_total, l_buf.header.entries_count);
+            return -1;
+        }
+        size_t l_chunk = PAGE_DATA_SIZE;
+        if (l_total + l_chunk > a_buf_size)
+            l_chunk = a_buf_size - l_total;
+        memcpy(l_dst, l_buf.data, l_chunk);
+        l_dst += l_chunk;
+        l_total += l_chunk;
+        if (l_total >= a_buf_size)
+            break;
+        l_page_id = l_buf.header.right_sibling;
+    }
+    if (a_out_len)
+        *a_out_len = l_total;
+    return 0;
+}
+
+static void s_overflow_free(dap_global_db_btree_t *a_tree, uint64_t a_first_page_id, uint64_t a_txn)
+{
+    uint64_t l_page_id = a_first_page_id;
+    while (l_page_id != 0) {
+        dap_global_db_btree_page_t l_buf;
+        if (!s_page_read_ref(a_tree, l_page_id, &l_buf))
+            break;
+        uint64_t l_next = l_buf.header.right_sibling;
+        s_deferred_free_add(a_tree, a_txn, l_page_id);
+        l_page_id = l_next;
+    }
+}
+
 static uint64_t s_page_allocate_new(dap_global_db_btree_t *a_tree)
 {
     // Check free list first
@@ -636,6 +772,12 @@ static inline size_t s_leaf_entry_total_size(uint32_t a_key_len, uint32_t a_valu
     return sizeof(dap_global_db_btree_leaf_entry_t) + a_key_len + a_value_len + a_sign_len;
 }
 
+/** On-disk size when value/sign are in overflow (entry holds key + 8-byte overflow_page_id) */
+static inline size_t s_leaf_entry_total_size_overflow(uint32_t a_key_len)
+{
+    return sizeof(dap_global_db_btree_leaf_entry_t) + a_key_len + sizeof(uint64_t);
+}
+
 /**
  * @brief Get leaf entry at index
  * 
@@ -662,9 +804,12 @@ static dap_global_db_btree_leaf_entry_t *s_leaf_entry_at(dap_global_db_btree_pag
     if (a_out_data)
         *a_out_data = (uint8_t *)l_entry + sizeof(dap_global_db_btree_leaf_entry_t);
     
-    if (a_out_total_size)
-        *a_out_total_size = s_leaf_entry_total_size(l_entry->key_len, l_entry->value_len, l_entry->sign_len);
-    
+    if (a_out_total_size) {
+        if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+            *a_out_total_size = s_leaf_entry_total_size_overflow(l_entry->key_len);
+        else
+            *a_out_total_size = s_leaf_entry_total_size(l_entry->key_len, l_entry->value_len, l_entry->sign_len);
+    }
     return l_entry;
 }
 
@@ -753,11 +898,11 @@ static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
         l_data += a_text_key_len;
     }
     if (a_value && a_value_len > 0) {
-        memcpy(l_data, a_value, a_value_len);
+        memmove(l_data, a_value, a_value_len);
         l_data += a_value_len;
     }
     if (a_sign && a_sign_len > 0) {
-        memcpy(l_data, a_sign, a_sign_len);
+        memmove(l_data, a_sign, a_sign_len);
     }
     
     a_page->header.entries_count++;
@@ -765,6 +910,49 @@ static int s_leaf_insert_entry(dap_global_db_btree_page_t *a_page, int a_index,
     LEAF_LOWEST_OFFSET(a_page->data) = l_new_offset;  // Update cache
     a_page->is_dirty = true;
     
+    return 0;
+}
+
+/**
+ * @brief Insert leaf entry that stores value/sign in overflow chain (key + overflow_page_id only in leaf)
+ */
+static int s_leaf_insert_entry_overflow(dap_global_db_btree_page_t *a_page, int a_index,
+                                        const dap_global_db_btree_key_t *a_key, const char *a_text_key, uint32_t a_text_key_len,
+                                        uint64_t a_overflow_page_id, uint32_t a_value_len, uint32_t a_sign_len,
+                                        uint8_t a_flags, dap_arena_t *a_arena)
+{
+    s_page_cow(a_page, a_arena);
+    int l_count = a_page->header.entries_count;
+    size_t l_entry_size = s_leaf_entry_total_size_overflow(a_text_key_len);
+    size_t l_header_size = LEAF_HEADER_SIZE + (l_count + 1) * LEAF_OFFSET_SIZE;
+    if (l_header_size + l_entry_size > a_page->header.free_space)
+        return -1;
+
+    uint16_t *l_offsets = (uint16_t *)(a_page->data + LEAF_HEADER_SIZE);
+    uint16_t l_new_offset = LEAF_LOWEST_OFFSET(a_page->data) - (uint16_t)l_entry_size;
+
+    for (int i = l_count; i > a_index; i--)
+        l_offsets[i] = l_offsets[i - 1];
+    l_offsets[a_index] = l_new_offset;
+
+    dap_global_db_btree_leaf_entry_t *l_entry = (dap_global_db_btree_leaf_entry_t *)(a_page->data + l_new_offset);
+    l_entry->driver_hash = *a_key;
+    l_entry->key_len = a_text_key_len;
+    l_entry->value_len = a_value_len;
+    l_entry->sign_len = a_sign_len;
+    l_entry->flags = a_flags | DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE;
+    memset(l_entry->reserved, 0, sizeof(l_entry->reserved));
+
+    uint8_t *l_data = (uint8_t *)l_entry + sizeof(dap_global_db_btree_leaf_entry_t);
+    if (a_text_key && a_text_key_len > 0)
+        memcpy(l_data, a_text_key, a_text_key_len);
+    l_data += a_text_key_len;
+    *(uint64_t *)l_data = a_overflow_page_id;
+
+    a_page->header.entries_count++;
+    a_page->header.free_space -= (l_entry_size + LEAF_OFFSET_SIZE);
+    LEAF_LOWEST_OFFSET(a_page->data) = l_new_offset;
+    a_page->is_dirty = true;
     return 0;
 }
 
@@ -800,8 +988,9 @@ static void s_leaf_compact(dap_global_db_btree_page_t *a_page, dap_arena_t *a_ar
     for (int i = 0; i < l_count; i++) {
         dap_global_db_btree_leaf_entry_t *l_entry =
             (dap_global_db_btree_leaf_entry_t *)(a_page->data + l_offsets[i]);
-        l_entries[i].size = s_leaf_entry_total_size(
-            l_entry->key_len, l_entry->value_len, l_entry->sign_len);
+        l_entries[i].size = (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+            ? s_leaf_entry_total_size_overflow(l_entry->key_len)
+            : s_leaf_entry_total_size(l_entry->key_len, l_entry->value_len, l_entry->sign_len);
         l_entries[i].old_offset = l_offsets[i];
         l_total_entry_data += l_entries[i].size;
     }
@@ -819,18 +1008,19 @@ static void s_leaf_compact(dap_global_db_btree_page_t *a_page, dap_arena_t *a_ar
         ? dap_arena_alloc(a_arena, l_total_entry_data)
         : DAP_NEW_SIZE(uint8_t, l_total_entry_data);
 
-    // Copy all entry data to temp buffer
+    // Copy all entry data to temp buffer (memmove: may overlap in same arena)
     uint8_t *l_dst = l_tmp;
     for (int i = 0; i < l_count; i++) {
-        memcpy(l_dst, a_page->data + l_entries[i].old_offset, l_entries[i].size);
+        memmove(l_dst, a_page->data + l_entries[i].old_offset, l_entries[i].size);
         l_dst += l_entries[i].size;
     }
 
-    // Write entries back contiguously from the end, update offsets
+    // Write entries back contiguously from the end, update offsets.
+    // Use memmove: l_tmp and a_page->data may be in the same arena region.
     l_dst = l_tmp;
     for (int i = 0; i < l_count; i++) {
         l_write_offset -= l_entries[i].size;
-        memcpy(a_page->data + l_write_offset, l_dst, l_entries[i].size);
+        memmove(a_page->data + l_write_offset, l_dst, l_entries[i].size);
         l_offsets[i] = l_write_offset;
         l_dst += l_entries[i].size;
     }
@@ -865,7 +1055,9 @@ static inline bool s_header_needs_split(const dap_global_db_btree_page_header_t 
                                         uint32_t a_sign_len)
 {
     if (a_hdr->flags & DAP_GLOBAL_DB_PAGE_LEAF) {
-        size_t l_entry_size = s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
+        size_t l_entry_size = (a_value_len + a_sign_len > MAX_INLINE_PAYLOAD)
+            ? s_leaf_entry_total_size_overflow(a_text_key_len)
+            : s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
         size_t l_header_size = LEAF_HEADER_SIZE + (a_hdr->entries_count + 1) * LEAF_OFFSET_SIZE;
         return (l_header_size + l_entry_size > a_hdr->free_space);
     } else {
@@ -880,7 +1072,8 @@ static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
                                const char *a_text_key, uint32_t a_text_key_len,
                                const void *a_value, uint32_t a_value_len,
                                const void *a_sign, uint32_t a_sign_len,
-                               uint8_t a_flags, dap_arena_t *a_arena)
+                               uint8_t a_flags, dap_arena_t *a_arena,
+                               dap_global_db_btree_t *a_tree, uint64_t a_txn)
 {
     s_page_cow(a_page, a_arena);
 
@@ -890,16 +1083,23 @@ static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
     if (!l_old_entry)
         return -1;
 
+    if (a_tree && (l_old_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)) {
+        uint64_t l_ov_id = *(const uint64_t *)(l_old_data + l_old_entry->key_len);
+        s_overflow_free(a_tree, l_ov_id, a_txn);
+    }
+
     dap_global_db_btree_key_t l_key = l_old_entry->driver_hash;
+    size_t l_payload = (size_t)a_value_len + (size_t)a_sign_len;
+    size_t l_new_size = l_payload > MAX_INLINE_PAYLOAD
+        ? s_leaf_entry_total_size_overflow(a_text_key_len)
+        : s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
 
-    size_t l_new_size = s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
-
-    if (l_new_size <= l_old_size) {
-        // Update in place
+    if (l_new_size <= l_old_size && l_payload <= MAX_INLINE_PAYLOAD) {
+        // Update in place (inline only)
         l_old_entry->key_len = a_text_key_len;
         l_old_entry->value_len = a_value_len;
         l_old_entry->sign_len = a_sign_len;
-        l_old_entry->flags = a_flags;
+        l_old_entry->flags = a_flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE;
 
         uint8_t *l_data = l_old_data;
         if (a_text_key && a_text_key_len > 0) {
@@ -907,30 +1107,35 @@ static int s_leaf_update_entry(dap_global_db_btree_page_t *a_page, int a_index,
             l_data += a_text_key_len;
         }
         if (a_value && a_value_len > 0) {
-            memcpy(l_data, a_value, a_value_len);
+            memmove(l_data, a_value, a_value_len);
             l_data += a_value_len;
         }
         if (a_sign && a_sign_len > 0) {
-            memcpy(l_data, a_sign, a_sign_len);
+            memmove(l_data, a_sign, a_sign_len);
         }
 
         a_page->is_dirty = true;
         return 0;
     }
 
-    // Entry grew: delete old, compact, re-insert
+    // Entry grew or switched to/from overflow: delete old, compact, re-insert
     if (s_leaf_delete_entry(a_page, a_index, a_arena) != 0)
         return -1;
 
     int l_count_after = a_page->header.entries_count;
     size_t l_header_after = LEAF_HEADER_SIZE + (l_count_after + 1) * LEAF_OFFSET_SIZE;
-    if (l_header_after + l_new_size > a_page->header.free_space) {
-        // Not enough space even after compaction — signal split needed
+    if (l_header_after + l_new_size > a_page->header.free_space)
         return -1;
-    }
 
     int l_new_index;
     s_leaf_find_entry(a_page, &l_key, &l_new_index);
+    if (l_payload > MAX_INLINE_PAYLOAD && a_tree) {
+        uint64_t l_ov_id = s_overflow_write(a_tree, a_value, a_value_len, a_sign, a_sign_len, a_txn);
+        if (l_ov_id == 0)
+            return -1;
+        return s_leaf_insert_entry_overflow(a_page, l_new_index, &l_key, a_text_key, a_text_key_len,
+                                            l_ov_id, a_value_len, a_sign_len, a_flags, a_arena);
+    }
     return s_leaf_insert_entry(a_page, l_new_index, &l_key, a_text_key, a_text_key_len,
                                a_value, a_value_len, a_sign, a_sign_len, a_flags, a_arena);
 }
@@ -1073,8 +1278,9 @@ static int s_split_child(dap_global_db_btree_t *a_tree, dap_global_db_btree_page
         for (int i = l_mid; i < l_count; i++) {
             dap_global_db_btree_leaf_entry_t *l_entry =
                 (dap_global_db_btree_leaf_entry_t *)(l_child->data + l_child_offsets[i]);
-            size_t l_entry_size = s_leaf_entry_total_size(
-                l_entry->key_len, l_entry->value_len, l_entry->sign_len);
+            size_t l_entry_size = (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+                ? s_leaf_entry_total_size_overflow(l_entry->key_len)
+                : s_leaf_entry_total_size(l_entry->key_len, l_entry->value_len, l_entry->sign_len);
 
             if (i == l_mid)
                 l_median_key = l_entry->driver_hash;
@@ -1216,13 +1422,27 @@ static int s_insert_non_full(dap_global_db_btree_t *a_tree, dap_global_db_btree_
     int l_index;
     if (s_leaf_find_entry(l_page, a_key, &l_index) == 0) {
         if (s_leaf_update_entry(l_page, l_index, a_text_key, a_text_key_len,
-                               a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
+                               a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena,
+                               a_tree, l_txn) != 0) {
             a_tree->header.items_count--;
             return 1;
         }
     } else {
-        if (s_leaf_insert_entry(l_page, l_index, a_key, a_text_key, a_text_key_len,
-                               a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
+        size_t l_payload = (size_t)a_value_len + (size_t)a_sign_len;
+        if (l_payload > MAX_INLINE_PAYLOAD) {
+            uint64_t l_ov_id = s_overflow_write(a_tree, a_value, a_value_len, a_sign, a_sign_len, l_txn);
+            if (l_ov_id == 0) {
+                log_it(L_ERROR, "Overflow write failed");
+                return -1;
+            }
+            if (s_leaf_insert_entry_overflow(l_page, l_index, a_key, a_text_key, a_text_key_len,
+                                              l_ov_id, a_value_len, a_sign_len, a_flags, l_arena) != 0) {
+                s_overflow_free(a_tree, l_ov_id, l_txn);
+                log_it(L_ERROR, "Failed to insert overflow entry - no space");
+                return -1;
+            }
+        } else if (s_leaf_insert_entry(l_page, l_index, a_key, a_text_key, a_text_key_len,
+                                       a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
             log_it(L_ERROR, "Failed to insert into leaf - no space");
             return -1;
         }
@@ -1460,6 +1680,9 @@ dap_global_db_btree_t *dap_global_db_btree_create(const char *a_filepath)
     for (int i = 0; i < DAP_BTREE_MAX_SNAPSHOTS; i++)
         atomic_store(&l_tree->snapshot_txns[i], 0);
 
+    l_tree->overflow_read_buf = NULL;
+    l_tree->overflow_read_buf_size = 0;
+
     debug_if(s_debug_more, L_INFO, "Created B-tree file: %s", a_filepath);
     return l_tree;
 }
@@ -1554,6 +1777,9 @@ void dap_global_db_btree_close(dap_global_db_btree_t *a_tree)
     if (a_tree->fd >= 0)
         close(a_tree->fd);
     pthread_rwlock_destroy(&a_tree->lock);
+
+    DAP_DELETE(a_tree->overflow_read_buf);
+    a_tree->overflow_read_buf_size = 0;
 
     // Cleanup MVCC state
     pthread_mutex_destroy(&a_tree->write_mutex);
@@ -1738,19 +1964,46 @@ static int s_btree_insert_impl(dap_global_db_btree_t *a_tree,
         }
         if (l_in_range && !s_page_needs_split(hl, a_text_key_len, a_value_len, a_sign_len)) {
             if (l_cmp > 0) {
-                // ---- Fully inlined sequential append ----
-                // No function calls. No COW check. No space check (already done).
-                // No offset shifting (appending at end). No memset of reserved.
-                // This is the tightest possible hot path for sequential writes.
+                // ---- Sequential append (inline or overflow) ----
                 int l_count = hl->header.entries_count;
+                uint64_t l_txn = (uint64_t)atomic_load(&a_tree->mvcc_txn) + 1;
+
+                if (a_value_len + a_sign_len > MAX_INLINE_PAYLOAD) {
+                    uint64_t l_ov_id = s_overflow_write(a_tree, a_value, a_value_len, a_sign, a_sign_len, l_txn);
+                    if (l_ov_id == 0) {
+                        s_hot_leaf_flush(a_tree);
+                        a_tree->hot_path_depth = 0;
+                        if (l_arena)
+                            dap_arena_reset(l_arena);
+                        goto normal_path;
+                    }
+                    s_page_resolve_mmap(a_tree, hl);
+                    size_t l_entry_size = s_leaf_entry_total_size_overflow(a_text_key_len);
+                    uint16_t l_new_offset = LEAF_LOWEST_OFFSET(hl->data) - (uint16_t)l_entry_size;
+                    l_hl_offsets[l_count] = l_new_offset;
+                    dap_global_db_btree_leaf_entry_t *l_ent =
+                        (dap_global_db_btree_leaf_entry_t *)(hl->data + l_new_offset);
+                    l_ent->driver_hash = *a_key;
+                    l_ent->key_len = a_text_key_len;
+                    l_ent->value_len = a_value_len;
+                    l_ent->sign_len = a_sign_len;
+                    l_ent->flags = a_flags | DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE;
+                    uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_btree_leaf_entry_t);
+                    memcpy(l_dst, a_text_key, a_text_key_len);
+                *(uint64_t *)(l_dst + a_text_key_len) = l_ov_id;
+                    hl->header.entries_count = l_count + 1;
+                    hl->header.free_space -= (l_entry_size + LEAF_OFFSET_SIZE);
+                    LEAF_LOWEST_OFFSET(hl->data) = l_new_offset;
+                    a_tree->header.items_count++;
+                    hl->is_dirty = true;
+                    return 0;
+                }
+
+                // Inline append
                 size_t l_entry_size = sizeof(dap_global_db_btree_leaf_entry_t)
                                       + a_text_key_len + a_value_len + a_sign_len;
                 uint16_t l_new_offset = LEAF_LOWEST_OFFSET(hl->data) - (uint16_t)l_entry_size;
-
-                // Set offset at position l_count — zero shifting
                 l_hl_offsets[l_count] = l_new_offset;
-
-                // Write entry header + data directly into mmap
                 dap_global_db_btree_leaf_entry_t *l_ent =
                     (dap_global_db_btree_leaf_entry_t *)(hl->data + l_new_offset);
                 l_ent->driver_hash = *a_key;
@@ -1758,33 +2011,48 @@ static int s_btree_insert_impl(dap_global_db_btree_t *a_tree,
                 l_ent->value_len = a_value_len;
                 l_ent->sign_len = a_sign_len;
                 l_ent->flags = a_flags;
-
                 uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_btree_leaf_entry_t);
                 memcpy(l_dst, a_text_key, a_text_key_len);
                 if (a_value_len > 0)
-                    memcpy(l_dst + a_text_key_len, a_value, a_value_len);
+                    memmove(l_dst + a_text_key_len, a_value, a_value_len);
                 if (a_sign_len > 0)
-                    memcpy(l_dst + a_text_key_len + a_value_len, a_sign, a_sign_len);
-
+                    memmove(l_dst + a_text_key_len + a_value_len, a_sign, a_sign_len);
                 hl->header.entries_count = l_count + 1;
                 hl->header.free_space -= (l_entry_size + LEAF_OFFSET_SIZE);
                 LEAF_LOWEST_OFFSET(hl->data) = l_new_offset;
-
                 a_tree->header.items_count++;
                 hl->is_dirty = true;
                 return 0;
             } else {
                 // Key is within page range — need binary search (non-sequential case)
                 int l_idx;
+                uint64_t l_txn = (uint64_t)atomic_load(&a_tree->mvcc_txn) + 1;
                 if (s_leaf_find_entry(hl, a_key, &l_idx) == 0) {
                     if (s_leaf_update_entry(hl, l_idx, a_text_key, a_text_key_len,
-                                            a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
+                                            a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL,
+                                            a_tree, l_txn) == 0) {
                         hl->is_dirty = true;
                         return 0;
                     }
                 } else {
-                    if (s_leaf_insert_entry(hl, l_idx, a_key, a_text_key, a_text_key_len,
-                                            a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
+                    if (a_value_len + a_sign_len > MAX_INLINE_PAYLOAD) {
+                        uint64_t l_ov_id = s_overflow_write(a_tree, a_value, a_value_len, a_sign, a_sign_len, l_txn);
+                        if (l_ov_id == 0) {
+                            s_hot_leaf_flush(a_tree);
+                            a_tree->hot_path_depth = 0;
+                            if (l_arena)
+                                dap_arena_reset(l_arena);
+                            goto normal_path;
+                        }
+                        s_page_resolve_mmap(a_tree, hl);
+                        if (s_leaf_insert_entry_overflow(hl, l_idx, a_key, a_text_key, a_text_key_len,
+                                                         l_ov_id, a_value_len, a_sign_len, a_flags, NULL) == 0) {
+                            a_tree->header.items_count++;
+                            hl->is_dirty = true;
+                            return 0;
+                        }
+                    } else if (s_leaf_insert_entry(hl, l_idx, a_key, a_text_key, a_text_key_len,
+                                                   a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) == 0) {
                         a_tree->header.items_count++;
                         hl->is_dirty = true;
                         return 0;
@@ -1829,11 +2097,25 @@ normal_path:
         l_root->header.page_id = l_root_id;
         l_root->header.flags = DAP_GLOBAL_DB_PAGE_LEAF | DAP_GLOBAL_DB_PAGE_ROOT;
         l_root->header.left_sibling = 0;
+        LEAF_LOWEST_OFFSET(l_root->data) = LEAF_LOWEST_OFFSET_INIT;
 
-        if (s_leaf_insert_entry(l_root, 0, a_key, a_text_key, a_text_key_len,
-                               a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) != 0) {
-            s_page_free(l_root);
-            return -1;
+        {
+            size_t l_payload = (size_t)a_value_len + (size_t)a_sign_len;
+            uint64_t l_txn = atomic_load(&a_tree->mvcc_txn) + 1;
+            if (l_payload > MAX_INLINE_PAYLOAD) {
+                uint64_t l_ov_id = s_overflow_write(a_tree, a_value, a_value_len, a_sign, a_sign_len, l_txn);
+                if (l_ov_id == 0 ||
+                    s_leaf_insert_entry_overflow(l_root, 0, a_key, a_text_key, a_text_key_len,
+                                                 l_ov_id, a_value_len, a_sign_len, a_flags, NULL) != 0) {
+                    if (l_ov_id) s_overflow_free(a_tree, l_ov_id, l_txn);
+                    s_page_free(l_root);
+                    return -1;
+                }
+            } else if (s_leaf_insert_entry(l_root, 0, a_key, a_text_key, a_text_key_len,
+                                          a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) != 0) {
+                s_page_free(l_root);
+                return -1;
+            }
         }
 
         a_tree->header.root_page = l_root_id;
@@ -2222,11 +2504,18 @@ static int s_leaf_merge_into(dap_global_db_btree_page_t *a_dst,
 
         int l_ins_idx;
         s_leaf_find_entry(a_dst, &l_entry->driver_hash, &l_ins_idx);
-        if (s_leaf_insert_entry(a_dst, l_ins_idx, &l_entry->driver_hash,
-                                (char *)l_data, l_entry->key_len,
-                                l_data + l_entry->key_len, l_entry->value_len,
-                                l_data + l_entry->key_len + l_entry->value_len,
-                                l_entry->sign_len, l_entry->flags, a_arena) != 0) {
+        if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+            uint64_t l_ov_id = *(const uint64_t *)(l_data + l_entry->key_len);
+            if (s_leaf_insert_entry_overflow(a_dst, l_ins_idx, &l_entry->driver_hash,
+                                             (const char *)l_data, l_entry->key_len,
+                                             l_ov_id, l_entry->value_len, l_entry->sign_len,
+                                             l_entry->flags, a_arena) != 0)
+                return -1;
+        } else if (s_leaf_insert_entry(a_dst, l_ins_idx, &l_entry->driver_hash,
+                                       (const char *)l_data, l_entry->key_len,
+                                       l_data + l_entry->key_len, l_entry->value_len,
+                                       l_data + l_entry->key_len + l_entry->value_len,
+                                       l_entry->sign_len, l_entry->flags, a_arena) != 0) {
             return -1;
         }
     }
@@ -2295,6 +2584,15 @@ static int s_btree_delete_impl(dap_global_db_btree_t *a_tree, const dap_global_d
         return 1;  // Not found
     }
 
+    {
+        uint8_t *l_edata = NULL;
+        dap_global_db_btree_leaf_entry_t *l_entry = s_leaf_entry_at(l_page, l_index, &l_edata, NULL);
+        if (l_entry && (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) && l_edata) {
+            uint64_t l_ov_id = *(const uint64_t *)(l_edata + l_entry->key_len);
+            uint64_t l_txn = atomic_load(&a_tree->mvcc_txn) + 1;
+            s_overflow_free(a_tree, l_ov_id, l_txn);
+        }
+    }
     if (s_leaf_delete_entry(l_page, l_index, l_arena) != 0) {
         if (l_arena) dap_arena_reset(l_arena);
         return -1;
@@ -2581,21 +2879,42 @@ static int s_btree_get_impl(dap_global_db_btree_t *a_tree,
                 memcpy(*a_out_text_key, l_hl_data, l_hl_entry->key_len);
             } else if (a_out_text_key)
                 *a_out_text_key = NULL;
-            if (a_out_value && l_hl_entry->value_len > 0) {
-                *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_hl_entry->value_len);
-                memcpy(*a_out_value, l_hl_data + l_hl_entry->key_len, l_hl_entry->value_len);
-            } else if (a_out_value)
-                *a_out_value = NULL;
             if (a_out_value_len)
                 *a_out_value_len = l_hl_entry->value_len;
-            if (a_out_sign && l_hl_entry->sign_len > 0) {
-                *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_hl_entry->sign_len);
-                memcpy(*a_out_sign, l_hl_data + l_hl_entry->key_len + l_hl_entry->value_len,
-                       l_hl_entry->sign_len);
-            } else if (a_out_sign)
-                *a_out_sign = NULL;
             if (a_out_sign_len)
                 *a_out_sign_len = l_hl_entry->sign_len;
+            if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+                uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
+                size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
+                uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
+                if (!l_buf || s_overflow_read(a_tree, l_ov_id, l_buf, l_total, NULL) != 0) {
+                    DAP_DELETE(l_buf);
+                    return -1;
+                }
+                if (a_out_value && l_hl_entry->value_len > 0) {
+                    *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_hl_entry->value_len);
+                    memcpy(*a_out_value, l_buf, l_hl_entry->value_len);
+                } else if (a_out_value)
+                    *a_out_value = NULL;
+                if (a_out_sign && l_hl_entry->sign_len > 0) {
+                    *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_hl_entry->sign_len);
+                    memcpy(*a_out_sign, l_buf + l_hl_entry->value_len, l_hl_entry->sign_len);
+                } else if (a_out_sign)
+                    *a_out_sign = NULL;
+                DAP_DELETE(l_buf);
+            } else {
+                if (a_out_value && l_hl_entry->value_len > 0) {
+                    *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_hl_entry->value_len);
+                    memcpy(*a_out_value, l_hl_data + l_hl_entry->key_len, l_hl_entry->value_len);
+                } else if (a_out_value)
+                    *a_out_value = NULL;
+                if (a_out_sign && l_hl_entry->sign_len > 0) {
+                    *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_hl_entry->sign_len);
+                    memcpy(*a_out_sign, l_hl_data + l_hl_entry->key_len + l_hl_entry->value_len,
+                           l_hl_entry->sign_len);
+                } else if (a_out_sign)
+                    *a_out_sign = NULL;
+            }
             if (a_out_flags)
                 *a_out_flags = l_hl_entry->flags;
             return 0;
@@ -2616,6 +2935,8 @@ static int s_btree_get_impl(dap_global_db_btree_t *a_tree,
                 return -1;
         }
 
+        s_page_refresh_from_hot_leaf(a_tree, l_page);
+
         int l_index;
         if (s_leaf_find_entry(l_page, a_key, &l_index) != 0)
             return 1;  // Not found
@@ -2629,30 +2950,43 @@ static int s_btree_get_impl(dap_global_db_btree_t *a_tree,
         } else if (a_out_text_key) {
             *a_out_text_key = NULL;
         }
-
-        if (a_out_value && l_entry->value_len > 0) {
-            *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
-            memcpy(*a_out_value, l_data + l_entry->key_len, l_entry->value_len);
-        } else if (a_out_value) {
-            *a_out_value = NULL;
-        }
-
         if (a_out_value_len)
             *a_out_value_len = l_entry->value_len;
-
-        if (a_out_sign && l_entry->sign_len > 0) {
-            *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
-            memcpy(*a_out_sign, l_data + l_entry->key_len + l_entry->value_len, l_entry->sign_len);
-        } else if (a_out_sign) {
-            *a_out_sign = NULL;
-        }
-
         if (a_out_sign_len)
             *a_out_sign_len = l_entry->sign_len;
-
+        if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+            uint64_t l_ov_id = *(const uint64_t *)(l_data + l_entry->key_len);
+            size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
+            uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
+            if (!l_buf || s_overflow_read(a_tree, l_ov_id, l_buf, l_total, NULL) != 0) {
+                DAP_DELETE(l_buf);
+                return -1;
+            }
+            if (a_out_value && l_entry->value_len > 0) {
+                *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
+                memcpy(*a_out_value, l_buf, l_entry->value_len);
+            } else if (a_out_value)
+                *a_out_value = NULL;
+            if (a_out_sign && l_entry->sign_len > 0) {
+                *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
+                memcpy(*a_out_sign, l_buf + l_entry->value_len, l_entry->sign_len);
+            } else if (a_out_sign)
+                *a_out_sign = NULL;
+            DAP_DELETE(l_buf);
+        } else {
+            if (a_out_value && l_entry->value_len > 0) {
+                *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
+                memcpy(*a_out_value, l_data + l_entry->key_len, l_entry->value_len);
+            } else if (a_out_value)
+                *a_out_value = NULL;
+            if (a_out_sign && l_entry->sign_len > 0) {
+                *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
+                memcpy(*a_out_sign, l_data + l_entry->key_len + l_entry->value_len, l_entry->sign_len);
+            } else if (a_out_sign)
+                *a_out_sign = NULL;
+        }
         if (a_out_flags)
             *a_out_flags = l_entry->flags;
-
         return 0;
     }
 
@@ -2687,30 +3021,44 @@ static int s_btree_get_impl(dap_global_db_btree_t *a_tree,
     } else if (a_out_text_key) {
         *a_out_text_key = NULL;
     }
-    
-    if (a_out_value && l_entry->value_len > 0) {
-        *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
-        memcpy(*a_out_value, l_data + l_entry->key_len, l_entry->value_len);
-    } else if (a_out_value) {
-        *a_out_value = NULL;
-    }
-    
     if (a_out_value_len)
         *a_out_value_len = l_entry->value_len;
-    
-    if (a_out_sign && l_entry->sign_len > 0) {
-        *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
-        memcpy(*a_out_sign, l_data + l_entry->key_len + l_entry->value_len, l_entry->sign_len);
-    } else if (a_out_sign) {
-        *a_out_sign = NULL;
-    }
-    
     if (a_out_sign_len)
         *a_out_sign_len = l_entry->sign_len;
-    
+    if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+        uint64_t l_ov_id = *(const uint64_t *)(l_data + l_entry->key_len);
+        size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
+        uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
+        if (!l_buf || s_overflow_read(a_tree, l_ov_id, l_buf, l_total, NULL) != 0) {
+            DAP_DELETE(l_buf);
+            s_page_free(l_page);
+            return -1;
+        }
+        if (a_out_value && l_entry->value_len > 0) {
+            *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
+            memcpy(*a_out_value, l_buf, l_entry->value_len);
+        } else if (a_out_value)
+            *a_out_value = NULL;
+        if (a_out_sign && l_entry->sign_len > 0) {
+            *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
+            memcpy(*a_out_sign, l_buf + l_entry->value_len, l_entry->sign_len);
+        } else if (a_out_sign)
+            *a_out_sign = NULL;
+        DAP_DELETE(l_buf);
+    } else {
+        if (a_out_value && l_entry->value_len > 0) {
+            *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
+            memcpy(*a_out_value, l_data + l_entry->key_len, l_entry->value_len);
+        } else if (a_out_value)
+            *a_out_value = NULL;
+        if (a_out_sign && l_entry->sign_len > 0) {
+            *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
+            memcpy(*a_out_sign, l_data + l_entry->key_len + l_entry->value_len, l_entry->sign_len);
+        } else if (a_out_sign)
+            *a_out_sign = NULL;
+    }
     if (a_out_flags)
         *a_out_flags = l_entry->flags;
-    
     s_page_free(l_page);
     return 0;
 }
@@ -2750,8 +3098,10 @@ static int s_btree_get_ref_impl(dap_global_db_btree_t *a_tree,
                                 uint64_t a_snapshot_root)
 {
     uint64_t l_root = a_snapshot_root ? a_snapshot_root : a_tree->header.root_page;
-    if (l_root == 0)
+    if (l_root == 0) {
+        debug_if(s_debug_more, L_WARNING, "get_ref: root=0, tree empty");
         return 1;
+    }
 
     // ---- Hot leaf read-only search (no flush, no mutation) ----
     // Snapshot readers skip hot_leaf.
@@ -2766,16 +3116,44 @@ static int s_btree_get_ref_impl(dap_global_db_btree_t *a_tree,
                     ? (void *)l_hl_data : NULL;
                 a_out_text_key->len = l_hl_entry->key_len;
             }
-            if (a_out_value) {
-                a_out_value->data = l_hl_entry->value_len > 0
-                    ? (void *)(l_hl_data + l_hl_entry->key_len) : NULL;
-                a_out_value->len = l_hl_entry->value_len;
-            }
-            if (a_out_sign) {
-                a_out_sign->data = l_hl_entry->sign_len > 0
-                    ? (void *)(l_hl_data + l_hl_entry->key_len + l_hl_entry->value_len)
-                    : NULL;
-                a_out_sign->len = l_hl_entry->sign_len;
+            if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+                uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
+                size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
+                if (a_tree->overflow_read_buf_size < l_total) {
+                    uint8_t *l_new = (uint8_t *)DAP_REALLOC(a_tree->overflow_read_buf, l_total);
+                    if (!l_new) {
+                        log_it(L_ERROR, "HL realloc failed: total=%zu", l_total);
+                        return -1;
+                    }
+                    a_tree->overflow_read_buf = l_new;
+                    a_tree->overflow_read_buf_size = l_total;
+                }
+                if (s_overflow_read(a_tree, l_ov_id, a_tree->overflow_read_buf, l_total, NULL) != 0) {
+                    log_it(L_ERROR, "HL overflow read failed: ov_id=%llu val=%u sign=%u total=%zu",
+                           (unsigned long long)l_ov_id, l_hl_entry->value_len, l_hl_entry->sign_len, l_total);
+                    return -1;
+                }
+                if (a_out_value) {
+                    a_out_value->data = l_hl_entry->value_len > 0 ? a_tree->overflow_read_buf : NULL;
+                    a_out_value->len = l_hl_entry->value_len;
+                }
+                if (a_out_sign) {
+                    a_out_sign->data = l_hl_entry->sign_len > 0
+                        ? (void *)(a_tree->overflow_read_buf + l_hl_entry->value_len) : NULL;
+                    a_out_sign->len = l_hl_entry->sign_len;
+                }
+            } else {
+                if (a_out_value) {
+                    a_out_value->data = l_hl_entry->value_len > 0
+                        ? (void *)(l_hl_data + l_hl_entry->key_len) : NULL;
+                    a_out_value->len = l_hl_entry->value_len;
+                }
+                if (a_out_sign) {
+                    a_out_sign->data = l_hl_entry->sign_len > 0
+                        ? (void *)(l_hl_data + l_hl_entry->key_len + l_hl_entry->value_len)
+                        : NULL;
+                    a_out_sign->len = l_hl_entry->sign_len;
+                }
             }
             if (a_out_flags)
                 *a_out_flags = l_hl_entry->flags;
@@ -2792,16 +3170,78 @@ static int s_btree_get_ref_impl(dap_global_db_btree_t *a_tree,
         size_t l_mmap_size = dap_mmap_get_size(a_tree->mmap);
 
         uint64_t l_page_id = l_root;
+        int l_zc_depth = 0;
         for (;;) {
             uint64_t l_offset = s_page_offset(l_page_id);
-            if (l_offset + DAP_GLOBAL_DB_BTREE_PAGE_SIZE > l_mmap_size)
+            if (l_offset + DAP_GLOBAL_DB_BTREE_PAGE_SIZE > l_mmap_size) {
+                log_it(L_ERROR, "ZC page out of mmap: page=%llu offset=%llu mmap_size=%zu",
+                       (unsigned long long)l_page_id, (unsigned long long)l_offset, l_mmap_size);
                 return -1;
+            }
 
             const dap_global_db_btree_page_header_t *l_hdr =
                 (const dap_global_db_btree_page_header_t *)(l_base + l_offset);
             const uint8_t *l_data = (const uint8_t *)(l_hdr + 1);
 
             if (l_hdr->flags & DAP_GLOBAL_DB_PAGE_LEAF) {
+                // If this leaf is the dirty hot_leaf, search there (mmap may be stale)
+                if (!a_snapshot_root && a_tree->hot_leaf && a_tree->hot_leaf->is_dirty
+                    && a_tree->hot_leaf->header.page_id == l_page_id) {
+                    int l_hl_idx;
+                    if (s_leaf_find_entry(a_tree->hot_leaf, a_key, &l_hl_idx) == 0) {
+                        uint8_t *l_hl_data = NULL;
+                        dap_global_db_btree_leaf_entry_t *l_hl_entry =
+                            s_leaf_entry_at(a_tree->hot_leaf, l_hl_idx, &l_hl_data, NULL);
+                        if (a_out_text_key) {
+                            a_out_text_key->data = l_hl_entry->key_len > 0
+                                ? (void *)l_hl_data : NULL;
+                            a_out_text_key->len = l_hl_entry->key_len;
+                        }
+                        if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+                            uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
+                            size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
+                            if (a_tree->overflow_read_buf_size < l_total) {
+                                uint8_t *l_new = (uint8_t *)DAP_REALLOC(a_tree->overflow_read_buf, l_total);
+                                if (!l_new) {
+                                    log_it(L_ERROR, "ZC-HL realloc failed: total=%zu", l_total);
+                                    return -1;
+                                }
+                                a_tree->overflow_read_buf = l_new;
+                                a_tree->overflow_read_buf_size = l_total;
+                            }
+                            if (s_overflow_read(a_tree, l_ov_id, a_tree->overflow_read_buf, l_total, NULL) != 0) {
+                                log_it(L_ERROR, "ZC-HL overflow read failed: page=%llu ov_id=%llu val=%u sign=%u total=%zu",
+                                       (unsigned long long)l_page_id, (unsigned long long)l_ov_id,
+                                       l_hl_entry->value_len, l_hl_entry->sign_len, l_total);
+                                return -1;
+                            }
+                            if (a_out_value) {
+                                a_out_value->data = l_hl_entry->value_len > 0 ? a_tree->overflow_read_buf : NULL;
+                                a_out_value->len = l_hl_entry->value_len;
+                            }
+                            if (a_out_sign) {
+                                a_out_sign->data = l_hl_entry->sign_len > 0
+                                    ? (void *)(a_tree->overflow_read_buf + l_hl_entry->value_len) : NULL;
+                                a_out_sign->len = l_hl_entry->sign_len;
+                            }
+                        } else {
+                            if (a_out_value) {
+                                a_out_value->data = l_hl_entry->value_len > 0
+                                    ? (void *)(l_hl_data + l_hl_entry->key_len) : NULL;
+                                a_out_value->len = l_hl_entry->value_len;
+                            }
+                            if (a_out_sign) {
+                                a_out_sign->data = l_hl_entry->sign_len > 0
+                                    ? (void *)(l_hl_data + l_hl_entry->key_len + l_hl_entry->value_len)
+                                    : NULL;
+                                a_out_sign->len = l_hl_entry->sign_len;
+                            }
+                        }
+                        if (a_out_flags)
+                            *a_out_flags = l_hl_entry->flags;
+                        return 0;
+                    }
+                }
                 // Binary search in leaf — direct pointer into mmap
                 int l_count = l_hdr->entries_count;
                 const uint16_t *l_offsets = (const uint16_t *)(l_data + LEAF_HEADER_SIZE);
@@ -2812,7 +3252,6 @@ static int s_btree_get_ref_impl(dap_global_db_btree_t *a_tree,
                         (const dap_global_db_btree_leaf_entry_t *)(l_data + l_offsets[l_mid]);
                     int l_cmp = s_key_cmp(a_key, &l_entry->driver_hash);
                     if (l_cmp == 0) {
-                        // Found — extract refs
                         const uint8_t *l_edata = (const uint8_t *)l_entry
                                                   + sizeof(dap_global_db_btree_leaf_entry_t);
                         if (a_out_text_key) {
@@ -2820,16 +3259,45 @@ static int s_btree_get_ref_impl(dap_global_db_btree_t *a_tree,
                                 ? (void *)l_edata : NULL;
                             a_out_text_key->len = l_entry->key_len;
                         }
-                        if (a_out_value) {
-                            a_out_value->data = l_entry->value_len > 0
-                                ? (void *)(l_edata + l_entry->key_len) : NULL;
-                            a_out_value->len = l_entry->value_len;
-                        }
-                        if (a_out_sign) {
-                            a_out_sign->data = l_entry->sign_len > 0
-                                ? (void *)(l_edata + l_entry->key_len + l_entry->value_len)
-                                : NULL;
-                            a_out_sign->len = l_entry->sign_len;
+                        if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+                            uint64_t l_ov_id = *(const uint64_t *)(l_edata + l_entry->key_len);
+                            size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
+                            if (a_tree->overflow_read_buf_size < l_total) {
+                                uint8_t *l_new = (uint8_t *)DAP_REALLOC(a_tree->overflow_read_buf, l_total);
+                                if (!l_new) {
+                                    log_it(L_ERROR, "ZC realloc failed: total=%zu", l_total);
+                                    return -1;
+                                }
+                                a_tree->overflow_read_buf = l_new;
+                                a_tree->overflow_read_buf_size = l_total;
+                            }
+                            if (s_overflow_read(a_tree, l_ov_id, a_tree->overflow_read_buf, l_total, NULL) != 0) {
+                                log_it(L_ERROR, "ZC overflow read failed: page=%llu ov_id=%llu val=%u sign=%u total=%zu",
+                                       (unsigned long long)l_page_id, (unsigned long long)l_ov_id,
+                                       l_entry->value_len, l_entry->sign_len, l_total);
+                                return -1;
+                            }
+                            if (a_out_value) {
+                                a_out_value->data = l_entry->value_len > 0 ? a_tree->overflow_read_buf : NULL;
+                                a_out_value->len = l_entry->value_len;
+                            }
+                            if (a_out_sign) {
+                                a_out_sign->data = l_entry->sign_len > 0
+                                    ? (void *)(a_tree->overflow_read_buf + l_entry->value_len) : NULL;
+                                a_out_sign->len = l_entry->sign_len;
+                            }
+                        } else {
+                            if (a_out_value) {
+                                a_out_value->data = l_entry->value_len > 0
+                                    ? (void *)(l_edata + l_entry->key_len) : NULL;
+                                a_out_value->len = l_entry->value_len;
+                            }
+                            if (a_out_sign) {
+                                a_out_sign->data = l_entry->sign_len > 0
+                                    ? (void *)(l_edata + l_entry->key_len + l_entry->value_len)
+                                    : NULL;
+                                a_out_sign->len = l_entry->sign_len;
+                            }
                         }
                         if (a_out_flags)
                             *a_out_flags = l_entry->flags;
@@ -2840,6 +3308,9 @@ static int s_btree_get_ref_impl(dap_global_db_btree_t *a_tree,
                     else
                         l_low = l_mid + 1;
                 }
+                debug_if(s_debug_more, L_WARNING, "ZC leaf miss: page=%llu entries=%d root=%llu depth=%d",
+                         (unsigned long long)l_page_id, l_hdr->entries_count,
+                         (unsigned long long)l_root, l_zc_depth);
                 return 1;  // Not found
             }
 
@@ -2872,6 +3343,8 @@ static int s_btree_get_ref_impl(dap_global_db_btree_t *a_tree,
     }
 
     // Fallback: no mmap available — use allocating get
+    log_it(L_ERROR, "get_ref: no mmap fallback, root=%llu",
+           (unsigned long long)l_root);
     return -1;
 }
 
@@ -2919,6 +3392,7 @@ static bool s_btree_exists_impl(dap_global_db_btree_t *a_tree,
             if (!s_page_read_ref(a_tree, l_child_id, &l_page_buf))
                 return false;
         }
+        s_page_refresh_from_hot_leaf(a_tree, &l_page_buf);
         int l_index;
         return s_leaf_find_entry(&l_page_buf, a_key, &l_index) == 0;
     }

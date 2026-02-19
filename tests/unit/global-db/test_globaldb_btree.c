@@ -918,6 +918,114 @@ static void test_btree_key_ordering(void)
     dap_pass_msg("Key ordering");
 }
 
+/** Benchmark-style key: first 8 bytes = big-endian index, bytes 8..15 = 0 for becrc */
+static void s_bench_key(uint8_t *key_buf, size_t key_size, uint64_t index,
+                        dap_global_db_btree_key_t *out_key)
+{
+    memset(key_buf, 0, key_size);
+    int n = 8 < (int)key_size ? 8 : (int)key_size;
+    for (int i = 0; i < n; i++)
+        key_buf[i] = (uint8_t)((index >> ((n - 1 - i) * 8)) & 0xFF);
+    out_key->bets = *(uint64_t *)key_buf;
+    out_key->becrc = key_size > 8 ? *(uint64_t *)(key_buf + 8) : 0;
+}
+
+/**
+ * @brief Exact benchmark scenario: n=2, key_size 2345, value 4978 (overflow), then verify.
+ * Reproduces "2/2 mismatches" and "read 1/2" if there is a bug.
+ */
+static void test_btree_overflow_benchmark_n2(void)
+{
+    dap_test_msg("Testing overflow benchmark scenario (n=2, key 2345, value 4978)");
+
+    char path[256];
+    snprintf(path, sizeof(path), "%s/overflow_bench_n2.gdb", TEST_DIR);
+    dap_global_db_btree_t *btree = dap_global_db_btree_create(path);
+    dap_assert(btree != NULL, "Tree should be created");
+
+    const size_t KEY_SIZE = 2345;
+    const size_t VAL_SIZE = 4978;
+    uint8_t *key = (uint8_t *)malloc(KEY_SIZE);
+    uint8_t *value = (uint8_t *)malloc(VAL_SIZE);
+    dap_assert(key != NULL && value != NULL, "Allocation should succeed");
+
+    for (size_t i = 0; i < 2; i++) {
+        dap_global_db_btree_key_t btree_key;
+        s_bench_key(key, KEY_SIZE, i, &btree_key);
+        memset(value, (int)(i & 0xFF), VAL_SIZE);
+        int rc = dap_global_db_btree_insert(btree, &btree_key, NULL, 0,
+                                           value, (uint32_t)VAL_SIZE, NULL, 0, 0);
+        dap_assert(rc == 0, "Insert overflow (bench n=2) should succeed");
+    }
+    dap_assert(dap_global_db_btree_count(btree) == 2, "Count should be 2");
+
+    for (size_t i = 0; i < 2; i++) {
+        dap_global_db_btree_key_t vk;
+        s_bench_key(key, KEY_SIZE, i, &vk);
+        dap_global_db_btree_ref_t vr;
+        int rc = dap_global_db_btree_get_ref(btree, &vk, NULL, &vr, NULL, NULL);
+        dap_assert(rc == 0, "Get overflow (bench n=2) should find key");
+        dap_assert(vr.len == VAL_SIZE, "Value length should match");
+        uint8_t expected = (uint8_t)(i & 0xFF);
+        for (size_t j = 0; j < VAL_SIZE; j++) {
+            dap_assert(((const uint8_t *)vr.data)[j] == expected,
+                       "Overflow value data should match");
+        }
+    }
+
+    free(key);
+    free(value);
+    dap_global_db_btree_close(btree);
+    dap_pass_msg("Overflow benchmark n=2");
+}
+
+/**
+ * @brief Overflow values: value size > page data size (stored in overflow chain).
+ * Same scenario as benchmark -v 4978.
+ */
+static void test_btree_overflow_values(void)
+{
+    dap_test_msg("Testing overflow values (> page data size)");
+
+    char path[256];
+    snprintf(path, sizeof(path), "%s/overflow_val.gdb", TEST_DIR);
+    dap_global_db_btree_t *btree = dap_global_db_btree_create(path);
+    dap_assert(btree != NULL, "Tree should be created");
+
+    /* Value larger than PAGE_DATA_SIZE (~4064) to trigger overflow chain */
+    const size_t VAL_SIZE = 4978;
+    uint8_t *big_val = (uint8_t *)calloc(VAL_SIZE, 1);
+    dap_assert(big_val != NULL, "Allocation should succeed");
+
+    const int N = 5;
+    for (int i = 0; i < N; i++) {
+        memset(big_val, (uint8_t)(i & 0xFF), VAL_SIZE);
+        dap_global_db_btree_key_t key = s_make_key(4000, (uint64_t)i);
+        int rc = dap_global_db_btree_insert(btree, &key, NULL, 0,
+                                            big_val, (uint32_t)VAL_SIZE, NULL, 0, 0);
+        dap_assert(rc == 0, "Insert overflow value should succeed");
+    }
+    dap_assert(dap_global_db_btree_count(btree) == (uint64_t)N, "Count should match");
+
+    for (int i = 0; i < N; i++) {
+        dap_global_db_btree_key_t key = s_make_key(4000, (uint64_t)i);
+        dap_global_db_btree_ref_t vr;
+        int rc = dap_global_db_btree_get_ref(btree, &key, NULL, &vr, NULL, NULL);
+        dap_assert(rc == 0, "Get overflow value should succeed");
+        dap_assert(vr.len == VAL_SIZE, "Value length should match");
+        uint8_t expected = (uint8_t)(i & 0xFF);
+        bool intact = true;
+        for (size_t j = 0; j < VAL_SIZE && intact; j++) {
+            if (((const uint8_t *)vr.data)[j] != expected) intact = false;
+        }
+        dap_assert(intact, "Overflow value data should be intact");
+    }
+
+    free(big_val);
+    dap_global_db_btree_close(btree);
+    dap_pass_msg("Overflow values");
+}
+
 /**
  * @brief Large values near page-data size.
  * Tests leaf pages with very few entries, deep trees, splits with large payloads.
@@ -1903,6 +2011,8 @@ int main(int argc, char **argv)
     test_btree_cursor_seek();
     test_btree_cursor_reverse();
     test_btree_key_ordering();
+    test_btree_overflow_benchmark_n2();
+    test_btree_overflow_values();
     test_btree_large_values();
     test_btree_persistence_after_delete();
     test_btree_root_collapse();

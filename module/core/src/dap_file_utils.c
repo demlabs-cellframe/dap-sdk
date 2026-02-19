@@ -1776,7 +1776,7 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
         for(i = sizeof l_buffer; i-- != 0;) {
             unsigned_sum += 0xFF & *p++;
         }
-        sprintf(l_buffer.header.chksum, "%6o", unsigned_sum);
+        snprintf(l_buffer.header.chksum, sizeof(l_buffer.header.chksum), "%6o", (unsigned)(unsigned_sum & 0777777));
     }
 
     // add header
@@ -1824,7 +1824,7 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
             for(i = sizeof l_buffer; i-- != 0;) {
                 unsigned_sum += 0xFF & *p++;
             }
-            sprintf(l_buffer.header.chksum, "%6o", unsigned_sum);
+            snprintf(l_buffer.header.chksum, sizeof(l_buffer.header.chksum), "%6o", (unsigned)(unsigned_sum & 0777777));
         }
 
         // add header

@@ -310,6 +310,54 @@ static benchmark_result_t s_bench_dap_sequential_read(const benchmark_config_t *
         printf("  [FAIL] DAP B-tree: expected %zu records, got %lu\n",
                cfg->num_records, (unsigned long)l_count);
 
+    // Incremental insertion + verify: insert again from scratch in a fresh tree
+    // to pinpoint which insert causes the first lookup failure
+    if (cfg->verify) {
+        char *idb_path = dap_strdup_printf("%s/dap_bench_incr.gdb", cfg->db_path);
+        dap_global_db_btree_t *ibtree = dap_global_db_btree_create(idb_path);
+        DAP_DELETE(idb_path);
+        if (ibtree) {
+            byte_t *ikey = DAP_NEW_SIZE(byte_t, cfg->key_size);
+            byte_t *ival = DAP_NEW_SIZE(byte_t, cfg->value_size);
+            for (size_t i = 0; i < cfg->num_records && i < 200; i++) {
+                s_generate_key(ikey, cfg->key_size, i);
+                s_generate_value(ival, cfg->value_size, i);
+                dap_global_db_btree_key_t bk = {
+                    .bets = *(uint64_t *)ikey,
+                    .becrc = cfg->key_size > 8 ? *(uint64_t *)(ikey + 8) : 0
+                };
+                dap_global_db_btree_insert(ibtree, &bk, NULL, 0, ival, cfg->value_size, NULL, 0, 0);
+                // After insert, verify ALL previous keys are still findable
+                for (size_t j = 0; j <= i; j++) {
+                    s_generate_key(ikey, cfg->key_size, j);
+                    dap_global_db_btree_key_t vk = {
+                        .bets = *(uint64_t *)ikey,
+                        .becrc = cfg->key_size > 8 ? *(uint64_t *)(ikey + 8) : 0
+                    };
+                    dap_global_db_btree_ref_t vr;
+                    int grc = dap_global_db_btree_get_ref(ibtree, &vk, NULL, &vr, NULL, NULL);
+                    if (grc != 0) {
+                        printf("  [INCR_FAIL] after insert i=%zu, key j=%zu NOT FOUND (rc=%d)\n", i, j, grc);
+                        char tag[64];
+                        snprintf(tag, sizeof(tag), "LOST_j%zu_after_i%zu", j, i);
+                        dap_global_db_btree_debug_trace(ibtree, &vk, tag);
+                        uint64_t real_count = 0;
+                        int vrc = dap_global_db_btree_verify(ibtree, &real_count);
+                        printf("  [DIAG] header.items=%lu verify_count=%lu verify_rc=%d\n",
+                               (unsigned long)dap_global_db_btree_count(ibtree),
+                               (unsigned long)real_count, vrc);
+                        goto incr_done;
+                    }
+                }
+            }
+            printf("  [INCR_PASS] 200 incremental inserts verified OK\n");
+incr_done:
+            DAP_DELETE(ikey);
+            DAP_DELETE(ival);
+            dap_global_db_btree_close(ibtree);
+        }
+    }
+
     // Verification pass (before timed read)
     if (cfg->verify) {
         byte_t *expected = DAP_NEW_SIZE(byte_t, cfg->value_size);
@@ -324,9 +372,16 @@ static benchmark_result_t s_bench_dap_sequential_read(const benchmark_config_t *
             dap_global_db_btree_ref_t vr;
             if (dap_global_db_btree_get_ref(btree, &vk, NULL, &vr, NULL, NULL) == 0) {
                 if (vr.len != cfg->value_size ||
-                    memcmp(vr.data, expected, cfg->value_size) != 0)
+                    memcmp(vr.data, expected, cfg->value_size) != 0) {
+                    if (mismatches < 5)
+                        printf("  [MISMATCH] i=%zu: got len=%zu expected=%zu, data_match=%d\n",
+                               i, (size_t)vr.len, cfg->value_size,
+                               vr.len == cfg->value_size ? (memcmp(vr.data, expected, cfg->value_size) == 0) : -1);
                     mismatches++;
+                }
             } else {
+                if (mismatches < 5)
+                    printf("  [NOT_FOUND] i=%zu: get_ref failed\n", i);
                 mismatches++;
             }
         }

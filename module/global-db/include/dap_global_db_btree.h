@@ -42,6 +42,9 @@ extern "C" {
 #define DAP_GLOBAL_DB_PAGE_OVERFLOW       0x0004
 #define DAP_GLOBAL_DB_PAGE_ROOT           0x0008
 
+/** Leaf entry flag: value+sign stored in overflow chain; entry holds overflow_page_id (8 bytes) after key instead of inline value/sign */
+#define DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE  0x01
+
 // MVCC constants
 #define DAP_BTREE_MAX_SNAPSHOTS           64  // Maximum concurrent reader snapshots
 
@@ -93,7 +96,7 @@ _Static_assert(sizeof(dap_global_db_btree_page_header_t) == 32, "Page header mus
 
 /**
  * @brief Leaf entry header (variable size)
- * Followed by: text_key[key_len] + value[value_len] + sign[sign_len]
+ * Followed by: text_key[key_len] + (value_data[value_len] + sign_data[sign_len]  OR  overflow_page_id if LEAF_ENTRY_OVERFLOW_VALUE)
  */
 typedef struct dap_global_db_btree_leaf_entry {
     dap_global_db_btree_key_t driver_hash;    // 16 bytes - sort key
@@ -185,6 +188,10 @@ typedef struct dap_global_db_btree {
     dap_btree_deferred_batch_t *deferred_batches;
     size_t deferred_batch_count;
     size_t deferred_batch_capacity;
+
+    // Overflow read buffer — get_ref copies large values here (valid until next get_ref/get/write)
+    uint8_t *overflow_read_buf;
+    size_t overflow_read_buf_size;
 } dap_global_db_btree_t;
 
 /**
@@ -475,6 +482,9 @@ bool dap_global_db_btree_key_is_blank(const dap_global_db_btree_key_t *a_key);
  */
 int dap_global_db_btree_verify(dap_global_db_btree_t *a_tree, uint64_t *a_out_entry_count);
 uint64_t dap_global_db_btree_count_at_root(dap_global_db_btree_t *a_tree, uint64_t a_root);
+void dap_global_db_btree_debug_trace(dap_global_db_btree_t *a_tree,
+                                      const dap_global_db_btree_key_t *a_key,
+                                      const char *a_tag);
 
 #ifdef __cplusplus
 }
