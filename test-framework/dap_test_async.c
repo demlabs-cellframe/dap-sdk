@@ -50,10 +50,14 @@ bool dap_test_wait_condition(
         dap_test_sleep_ms(l_poll_interval);
     }
     
-    // Timeout
-    log_it(a_config->fail_on_timeout ? L_ERROR : L_WARNING,
-           "Condition '%s' TIMEOUT after %u ms",
-           a_config->operation_name, a_config->timeout_ms);
+    // Timeout (log_it macro requires literal level token, so split by level)
+    if (a_config->fail_on_timeout) {
+        log_it(L_ERROR, "Condition '%s' TIMEOUT after %u ms",
+               a_config->operation_name, a_config->timeout_ms);
+    } else {
+        log_it(L_WARNING, "Condition '%s' TIMEOUT after %u ms",
+               a_config->operation_name, a_config->timeout_ms);
+    }
     
     if (a_config->fail_on_timeout) {
         dap_fail("Async operation timeout");

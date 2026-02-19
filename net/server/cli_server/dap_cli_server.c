@@ -90,7 +90,9 @@ static bool s_allowed_cmd_check(char *a_buf) {
     }
 
     bool l_allowed = !!dap_str_find( dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL), l_method );
-    return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), json_object_put(jobj), l_allowed;
+    debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method);
+    json_object_put(jobj);
+    return l_allowed;
 }
 
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
@@ -287,9 +289,11 @@ int json_commands(const char * a_name) {
             "tx_create_json",
             "mempool_add",
             "tx_verify",
+            "tx_cond",
             "tx_cond_create",
             "tx_cond_remove",
             "tx_cond_unspent_find",
+            "tx_cond_refill",
             "chain_ca_copy",
             "dag",
             "block",
@@ -317,7 +321,9 @@ int json_commands(const char * a_name) {
             "print_log",
             "stake_lock",
             "exec_cmd",
-            "policy"
+            "policy",
+            "stake_ext",
+            "srv_dex"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -485,13 +491,13 @@ static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = s_cli_cmd_exec_ex(l_arg->buf, l_arg->restricted),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                            "Content-Length: %"DAP_UINT64_FORMAT_U"\r\n"
-                                            "Processing-Time: %zu\r\n"
+                                            "Content-Length: %zu\r\n"
+                                            "Processing-Time: %"DAP_UINT64_FORMAT_U"\r\n"
                                             "Node-Type: %s\r\n"
                                             "Node-Version: %s\r\n\r\n"
                                             "%s", 
                                             dap_strlen(l_ret), 
-                                            dap_nanotime_now() - l_arg->time_start, 
+                                            (uint64_t)(dap_nanotime_now() - l_arg->time_start), 
                                             dap_config_get_item_bool_default(g_config, "cli-server", "allowed_cmd_control", false)
                                                 ? "Public" : "Private", 
                                             "CellframeNode, " DAP_VERSION ", " BUILD_TS ", " BUILD_HASH, 

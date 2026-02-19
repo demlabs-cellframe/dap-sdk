@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#ifdef DAP_OS_DARWIN
+#ifndef DAP_OS_LINUX
 #include <stdint.h>
 #else
 #include <bits/stdint-uintn.h>
