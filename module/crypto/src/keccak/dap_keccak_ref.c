@@ -286,6 +286,26 @@ void dap_hash_keccak_sponge_squeeze(dap_hash_keccak_ctx_t *ctx, uint8_t *out, si
 // ============================================================================
 // These stubs ensure symbols are always defined, even if generated SIMD files
 // don't exist. They fall back to the reference implementation.
+// When generated dap_keccak_sse2.c / avx2.c / avx512.c are linked, they provide
+// strong symbols and override these weak stubs.
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+/* x86/x64: SSE2, AVX2, AVX-512 stubs - used when Keccak SIMD codegen did not run */
+__attribute__((weak)) void dap_hash_keccak_permute_sse2(dap_hash_keccak_state_t *state)
+{
+    dap_hash_keccak_permute_ref(state);
+}
+
+__attribute__((weak)) void dap_hash_keccak_permute_avx2(dap_hash_keccak_state_t *state)
+{
+    dap_hash_keccak_permute_ref(state);
+}
+
+__attribute__((weak)) void dap_hash_keccak_permute_avx512(dap_hash_keccak_state_t *state)
+{
+    dap_hash_keccak_permute_ref(state);
+}
+#endif
 
 #if defined(__arm__) || defined(__aarch64__)
 // NEON stub - always provide fallback
