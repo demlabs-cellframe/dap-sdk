@@ -24,6 +24,8 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdio.h>
+#include <errno.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_config.h"
@@ -161,9 +163,173 @@ static void s_flow_sendto_callback(void *a_arg)
 // INITIALIZATION
 // =============================================================================
 
+#if defined(__linux__) || defined(ANDROID)
+
+#include <sched.h>
+#include <sys/syscall.h>
+#include <linux/capability.h>
+
+#define RPS_CPUS_PATH    "/sys/class/net/lo/queues/rx-0/rps_cpus"
+#define RPS_FLOW_PATH    "/proc/sys/net/core/rps_sock_flow_entries"
+#define RPS_FLOW_ENTRIES 32768
+
+/**
+ * @brief Read current value from a sysfs/procfs file
+ * @return Parsed unsigned long value, or 0 on any error
+ */
+static unsigned long s_read_sysfs_ulong(const char *a_path)
+{
+    FILE *l_fp = fopen(a_path, "r");
+    if (!l_fp)
+        return 0;
+    unsigned long l_val = 0;
+    if (fscanf(l_fp, "%lx", &l_val) != 1)
+        l_val = 0;
+    fclose(l_fp);
+    return l_val;
+}
+
+/**
+ * @brief Write a string value to a sysfs/procfs file
+ * @return true on success
+ */
+static bool s_write_sysfs(const char *a_path, const char *a_value)
+{
+    FILE *l_fp = fopen(a_path, "w");
+    if (!l_fp)
+        return false;
+    bool l_ok = (fputs(a_value, l_fp) >= 0);
+    fclose(l_fp);
+    return l_ok;
+}
+
+/**
+ * @brief Write a value to sysfs/procfs using sudo (non-interactive)
+ * @return true on success
+ */
+static bool s_write_sysfs_sudo(const char *a_path, const char *a_value)
+{
+    char l_cmd[256];
+    snprintf(l_cmd, sizeof(l_cmd),
+             "sudo -n sh -c 'echo %s > %s' 2>/dev/null", a_value, a_path);
+    return system(l_cmd) == 0;
+}
+
+/**
+ * @brief Check if current process has a specific effective capability
+ */
+static bool s_has_capability(int a_cap)
+{
+    struct __user_cap_header_struct l_hdr = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0
+    };
+    struct __user_cap_data_struct l_data[2] = {{0}};
+
+    if (syscall(SYS_capget, &l_hdr, l_data) != 0)
+        return false;
+
+    unsigned l_idx = (unsigned)a_cap >> 5;
+    unsigned l_bit = (unsigned)a_cap & 31;
+    return l_idx < 2 && (l_data[l_idx].effective & (1u << l_bit)) != 0;
+}
+
+/**
+ * @brief Check if non-interactive sudo is available for the current user
+ */
+static bool s_has_passwordless_sudo(void)
+{
+    return system("sudo -n true 2>/dev/null") == 0;
+}
+
+/**
+ * @brief Enable RPS (Receive Packet Steering) on the loopback interface
+ *
+ * When RPS is active the kernel calls skb_get_hash() for every incoming
+ * packet — even on loopback.  This populates skb->hash with a proper
+ * 4-tuple (src_ip, src_port, dst_ip, dst_port) hash which is exactly
+ * what SKF_AD_RXHASH reads inside the cBPF SO_REUSEPORT program.
+ *
+ * Without RPS on loopback, skb->hash stays 0 because the loopback
+ * driver never computes a packet hash.  Result: all packets land on
+ * socket 0 regardless of the BPF program.
+ *
+ * Privilege escalation strategy:
+ *   1. Direct write  — works as root or with CAP_DAC_OVERRIDE
+ *   2. sudo -n       — works when user has passwordless sudo
+ *   3. Give up       — log actionable warning
+ */
+static bool s_try_enable_loopback_rps(void)
+{
+    int l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+    if (l_ncpus <= 0)
+        l_ncpus = 1;
+
+    unsigned long l_desired_mask = (l_ncpus >= 64) ? ~0UL
+                                 : (1UL << l_ncpus) - 1;
+
+    unsigned long l_current = s_read_sysfs_ulong(RPS_CPUS_PATH);
+    if (l_current >= l_desired_mask) {
+        log_it(L_DEBUG, "Loopback RPS already enabled (rps_cpus=0x%lx)", l_current);
+        return true;
+    }
+
+    bool l_is_root = (geteuid() == 0);
+    bool l_has_net_admin = s_has_capability(CAP_NET_ADMIN);
+
+    log_it(L_DEBUG, "Loopback RPS not configured (current=0x%lx, need=0x%lx). "
+           "Privileges: root=%s, CAP_NET_ADMIN=%s",
+           l_current, l_desired_mask,
+           l_is_root ? "yes" : "no",
+           l_has_net_admin ? "yes" : "no");
+
+    char l_mask_str[32];
+    snprintf(l_mask_str, sizeof(l_mask_str), "%lx", l_desired_mask);
+
+    char l_flow_str[16];
+    snprintf(l_flow_str, sizeof(l_flow_str), "%d", RPS_FLOW_ENTRIES);
+
+    // Strategy 1: direct write (root / CAP_DAC_OVERRIDE)
+    if (s_write_sysfs(RPS_CPUS_PATH, l_mask_str)) {
+        s_write_sysfs(RPS_FLOW_PATH, l_flow_str);
+        log_it(L_NOTICE, "Loopback RPS enabled via direct write "
+               "(rps_cpus=0x%s, flow_entries=%d)",
+               l_mask_str, RPS_FLOW_ENTRIES);
+        return true;
+    }
+
+    // Strategy 2: sudo -n (non-interactive, no password prompt)
+    if (s_has_passwordless_sudo()) {
+        log_it(L_DEBUG, "Direct sysfs write failed, trying sudo -n ...");
+        if (s_write_sysfs_sudo(RPS_CPUS_PATH, l_mask_str)) {
+            s_write_sysfs_sudo(RPS_FLOW_PATH, l_flow_str);
+
+            unsigned long l_verify = s_read_sysfs_ulong(RPS_CPUS_PATH);
+            if (l_verify >= l_desired_mask) {
+                log_it(L_NOTICE, "Loopback RPS enabled via sudo "
+                       "(rps_cpus=0x%lx, flow_entries=%d)",
+                       l_verify, RPS_FLOW_ENTRIES);
+                return true;
+            }
+        }
+        log_it(L_WARNING, "sudo -n write to %s succeeded but verification failed",
+               RPS_CPUS_PATH);
+    }
+
+    // Strategy 3: give up with actionable message
+    log_it(L_WARNING, "Cannot enable loopback RPS (rps_cpus=0x%lx, need 0x%lx). "
+           "CBPF sticky sessions will NOT work on 127.0.0.1. "
+           "Fix: sudo sh -c 'echo %s > %s && echo %d > %s'",
+           l_current, l_desired_mask,
+           l_mask_str, RPS_CPUS_PATH,
+           RPS_FLOW_ENTRIES, RPS_FLOW_PATH);
+    return false;
+}
+#endif /* __linux__ || ANDROID */
+
 /**
  * @brief Initialize dap_io_flow_socket module
- * @details Reads debug flags from config
+ * @details Reads debug flags from config, enables loopback RPS on Linux
  * @return 0 on success
  */
 int dap_io_flow_socket_init(void)
@@ -174,6 +340,11 @@ int dap_io_flow_socket_init(void)
             log_it(L_INFO, "Flow socket debug mode ENABLED");
         }
     }
+
+#if defined(__linux__) || defined(ANDROID)
+    s_try_enable_loopback_rps();
+#endif
+
     return 0;
 }
 
