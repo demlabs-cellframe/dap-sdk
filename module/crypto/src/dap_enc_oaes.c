@@ -82,6 +82,7 @@ size_t dap_enc_oaes_calc_encode_size(const size_t size_in)
 
 size_t dap_enc_oaes_calc_decode_size(const size_t size_in)
 {
+    // OAES ciphertext always contains a 2-block prefix (header/options + IV).
     if(size_in < 2 * OAES_BLOCK_SIZE)
         return 0;
     return size_in - 2 * OAES_BLOCK_SIZE;
