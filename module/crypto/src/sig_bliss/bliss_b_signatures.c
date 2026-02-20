@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 #include "bliss_b_params.h"
 #include "sampler.h"
 #include "ntt_api.h"
@@ -9,14 +10,20 @@
 #define VERBOSE_RESTARTS  false
 
 /* iam: bliss-06-13-2013 */
-static void mul2d(int32_t *output, const int32_t *input, uint32_t n, uint32_t d){
+static bool mul2d(int32_t *output, const int32_t *input, uint32_t n, uint32_t d){
   uint32_t i;
+  const int64_t factor = (int64_t)1 << d;
 
   assert(0 < d && d < 31);
 
   for (i = 0; i < n; i++){
-    output[i] = input[i] << d;
+    const int64_t scaled = (int64_t)input[i] * factor;
+    if (scaled < INT32_MIN || scaled > INT32_MAX) {
+      return false;
+    }
+    output[i] = (int32_t)scaled;
   }
+  return true;
 }
 
 #ifndef NDEBUG
@@ -664,7 +671,10 @@ int32_t bliss_b_sign(bliss_signature_t *signature,  const bliss_private_key_t *p
         //goto restart;
         continue;
       }
-      mul2d(y2, z2, n, p.d);
+      if (!mul2d(y2, z2, n, p.d)) {
+        if(VERBOSE_RESTARTS){ fprintf(stdout, "--> z2*2^d overflow\n"); }
+        continue;
+      }
       if (vector_max_norm(y2, n) > (int32_t) p.b_inf) {
         if(VERBOSE_RESTARTS){ fprintf(stdout, "--> norm z2*2^d too high\n"); }
         //goto restart;
@@ -784,7 +794,19 @@ int32_t bliss_b_verify(const bliss_signature_t *signature,  const bliss_public_k
         return retval;
     }
 
-    mul2d(tz2, z2, n, p.d);
+    if (!mul2d(tz2, z2, n, p.d)){
+        retval = BLISS_B_BAD_DATA;
+        delete_ntt_state(state);
+        free(tz2);
+        tz2 = NULL;
+        free(v);
+        v = NULL;
+        free(indices);
+        indices = NULL;
+        free(hash);
+        hash = NULL;
+        return retval;
+    }
 
     if(vector_max_norm(tz2, n) > (int32_t) p.b_inf){
         retval = BLISS_B_BAD_DATA;
