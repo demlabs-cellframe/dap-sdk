@@ -163,12 +163,11 @@ bool tesla_params_init(tesla_param_t *params, tesla_kind_t kind){
 
 int64_t reduce(int64_t a, tesla_param_t *p) { // Montgomery reduction
 
-    int64_t u;
-
-    u = (a * (int64_t)(p->PARAM_QINV)) & 0xFFFFFFFF;
-    u *= (int64_t)(p->PARAM_Q);
-    a += u;
-    return a >> 32;
+    // Use 128-bit intermediates to keep Montgomery reduction arithmetic defined under UBSAN.
+    __int128 prod = (__int128)a * (int64_t)(p->PARAM_QINV);
+    int64_t u = (int64_t)prod & 0xFFFFFFFFLL;
+    __int128 sum = (__int128)a + (__int128)u * (int64_t)(p->PARAM_Q);
+    return (int64_t)(sum >> 32);
 }
 
 int64_t barr_reduce(int64_t a, tesla_param_t *p) { // Barrett reduction
@@ -333,7 +332,7 @@ void poly_uniform(poly_k *a, const unsigned char *seed, tesla_param_t *p) {
     // Generation of polynomials "a_i"
     unsigned int pos = 0, i = 0, nbytes = (p->PARAM_Q_LOG + 7) / 8;
     unsigned int nblocks = p->PARAM_GEN_A;
-    uint32_t val1, val2, val3, val4, mask = (uint32_t)(1 << p->PARAM_Q_LOG) - 1;
+    uint32_t val1, val2, val3, val4, mask = (uint32_t)(1U << p->PARAM_Q_LOG) - 1U;
     unsigned char *buf = malloc(DAP_SHAKE128_RATE * nblocks * sizeof(unsigned char));
     uint16_t dmsp = 0;
 
@@ -348,13 +347,17 @@ void poly_uniform(poly_k *a, const unsigned char *seed, tesla_param_t *p) {
 //          ++ dmsp;
             pos = 0;
         }
-        val1 = (*(uint32_t *) (buf + pos)) & mask;
+        memcpy(&val1, buf + pos, sizeof(val1));
+        val1 &= mask;
         pos += nbytes;
-        val2 = (*(uint32_t *) (buf + pos)) & mask;
+        memcpy(&val2, buf + pos, sizeof(val2));
+        val2 &= mask;
         pos += nbytes;
-        val3 = (*(uint32_t *) (buf + pos)) & mask;
+        memcpy(&val3, buf + pos, sizeof(val3));
+        val3 &= mask;
         pos += nbytes;
-        val4 = (*(uint32_t *) (buf + pos)) & mask;
+        memcpy(&val4, buf + pos, sizeof(val4));
+        val4 &= mask;
         pos += nbytes;
         if (val1 < p->PARAM_Q && i < p->PARAM_K * p->PARAM_N)
             a[i++] = reduce((int64_t) val1 * p->PARAM_R2_INVN, p);

@@ -660,7 +660,9 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
     unsigned char *seed_ex = malloc(p->PARAM_N * 8 * sizeof(unsigned char));
     int64_t i, j = 0, x_ind;
     int64_t *buf = (int64_t *) seed_ex;
-    int64_t sign, k, bitsremained, rbits, y, z;
+    int64_t k, y, z;
+    uint64_t sign, rbits;
+    uint32_t bitsremained;
     uint64_t r, s, t, c;
     int16_t dmsp = (int16_t)(nonce << 8);
 
@@ -692,7 +694,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                 j = 0;
             }
             do {
-                rbits = buf[j++];
+                rbits = (uint64_t)buf[j++];
                 bitsremained = 64;
                 do {
                     // Sample x from D^+_{\sigma_2} and y from U({0, ..., k-1}):
@@ -717,7 +719,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                     do {
                         do {
                             if (bitsremained < 6) {
-                                rbits = buf[j++];
+                                rbits = (uint64_t)buf[j++];
                                 bitsremained = 64;
                             }
                             z = rbits & 63;
@@ -725,7 +727,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                             bitsremained -= 6;
                         } while (z == 63);
                         if (bitsremained < 2) {
-                            rbits = buf[j++];
+                            rbits = (uint64_t)buf[j++];
                             bitsremained = 64;
                         }
                         z = (mod7(z) << 2) + (rbits & 3);
@@ -737,24 +739,26 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                 } while (Bernoulli(buf[j++], z * ((k << 1) - z), p) == 0);
 
                 // Put last randombits into sign bit
-                rbits <<= (64 - bitsremained);
-                if (bitsremained == 0LL) {
-                    rbits = buf[j++];
+                if (bitsremained > 0U && bitsremained < 64U) {
+                    rbits <<= (64U - bitsremained);
+                }
+                if (bitsremained == 0U) {
+                    rbits = (uint64_t)buf[j++];
                     bitsremained = 64;
                 }
                 sign = rbits >> 63;
                 rbits <<= 1;
                 bitsremained--;
-            } while ((k | (sign & 1)) == 0);
-            if (bitsremained == 0LL) {
-                rbits = buf[j++];
+            } while (k == 0 && sign == 0);
+            if (bitsremained == 0U) {
+                rbits = (uint64_t)buf[j++];
                 bitsremained = 64;
             }
             sign = rbits >> 63;
             rbits <<= 1;
             bitsremained--;
-            k = ((k << 1) & sign) - k;
-            x[x_ind] = (k << 48) >> 48;
+            k = sign ? k : -k;
+            x[x_ind] = (int16_t)k;
         }
     }
     else {
@@ -788,7 +792,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                 j = 0;
             }
             do {
-                rbits = buf[j++];
+                rbits = (uint64_t)buf[j++];
                 bitsremained = 64;
                 do {
                     // Sample x from D^+_{\sigma_2} and y from U({0, ..., k-1}):
@@ -818,7 +822,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                     do {
                         do {
                             if (bitsremained < 6) {
-                                rbits = buf[j++];
+                                rbits = (uint64_t)buf[j++];
                                 bitsremained = 64;
                             }
                             z = rbits & 63;
@@ -826,7 +830,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                             bitsremained -= 6;
                         } while (z == 63);
                         if (bitsremained < 2) {
-                            rbits = buf[j++];
+                            rbits = (uint64_t)buf[j++];
                             bitsremained = 64;
                         }
                         z = (mod7(z) << 2) + (rbits & 3);
@@ -838,24 +842,26 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                 } while (Bernoulli(buf[j++], z * ((k << 1) - z), p) == 0);
 
                 // Put last randombits into sign bit
-                rbits <<= (64 - bitsremained);
-                if (bitsremained == 0LL) {
-                    rbits = buf[j++];
+                if (bitsremained > 0U && bitsremained < 64U) {
+                    rbits <<= (64U - bitsremained);
+                }
+                if (bitsremained == 0U) {
+                    rbits = (uint64_t)buf[j++];
                     bitsremained = 64;
                 }
                 sign = rbits >> 63;
                 rbits <<= 1;
                 bitsremained--;
-            } while ((k | (sign & 1)) == 0);
-            if (bitsremained == 0LL) {
-                rbits = buf[j++];
+            } while (k == 0 && sign == 0);
+            if (bitsremained == 0U) {
+                rbits = (uint64_t)buf[j++];
                 bitsremained = 64;
             }
             sign = rbits >> 63;
             rbits <<= 1;
             bitsremained--;
-            k = ((k << 1) & sign) - k;
-            x[x_ind] = (k << 48) >> 48;
+            k = sign ? k : -k;
+            x[x_ind] = (int16_t)k;
         }
     }
     free(seed_ex);
