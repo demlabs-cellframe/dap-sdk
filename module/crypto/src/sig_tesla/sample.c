@@ -8,6 +8,7 @@
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
+#include <string.h>
 
 #define round_double(x) (uint64_t)(x + 0.5)
 
@@ -17,6 +18,10 @@ void sample_y(int64_t *y, const unsigned char *seed, int nonce, tesla_param_t *p
     unsigned int nbytes = ((p->PARAM_B_BITS + 1) + 7) / 8;
     unsigned char *buf = malloc(p->PARAM_N * nbytes * sizeof(char) + 1);
     int16_t dmsp = (int16_t)(nonce << 8);
+    uint32_t coeff_word = 0;
+    const uint32_t sample_bits = p->PARAM_B_BITS + 1U;
+    const uint32_t sample_mask = sample_bits >= 32U ? UINT32_MAX : ((1U << sample_bits) - 1U);
+    const uint64_t reject_value = p->PARAM_B_BITS < 63U ? (1ULL << p->PARAM_B_BITS) : UINT64_MAX;
 
     uint32_t NBLOCKS_SHAKE = 0;
     if(p->kind == 0 || p->kind == 3) {
@@ -48,9 +53,10 @@ void sample_y(int64_t *y, const unsigned char *seed, int nonce, tesla_param_t *p
             }
             pos = 0;
         }
-        y[i] = (*(uint32_t *) (buf + pos)) & ((1 << (p->PARAM_B_BITS + 1)) - 1);
+        memcpy(&coeff_word, buf + pos, sizeof(coeff_word));
+        y[i] = (int64_t)(coeff_word & sample_mask);
         y[i] -= (int64_t)(p->PARAM_B);
-        if (y[i] != (1 << p->PARAM_B_BITS))
+        if (y[i] != (int64_t)reject_value)
             i++;
         pos += nbytes;
     }

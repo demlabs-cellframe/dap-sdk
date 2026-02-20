@@ -310,8 +310,8 @@ static void decode_sig(unsigned char *c, poly *z, const unsigned char *sm, tesla
 
     if(p->kind <= 1) {
         for (i = 0; i < p->PARAM_N; i += 32) {
-            z[i   ] = ((int32_t)pt[j+ 0] << 11) >> 11; z[i+ 1] = (int32_t)(pt[j+ 0] >> 21) | ((int32_t)(pt[j+ 1] << 22) >> 11);
-            z[i+ 2] = ((int32_t)pt[j+ 1] <<  1) >> 11; z[i+ 3] = (int32_t)(pt[j+ 1] >> 31) | ((int32_t)(pt[j+ 2] << 12) >> 11);
+            z[i   ] = ((int32_t)(pt[j+ 0] << 11)) >> 11; z[i+ 1] = (int32_t)(pt[j+ 0] >> 21) | ((int32_t)(pt[j+ 1] << 22) >> 11);
+            z[i+ 2] = ((int32_t)(pt[j+ 1] <<  1)) >> 11; z[i+ 3] = (int32_t)(pt[j+ 1] >> 31) | ((int32_t)(pt[j+ 2] << 12) >> 11);
             z[i+ 4] = (int32_t)(pt[j+ 2] >> 20) | ((int32_t)(pt[j+ 3] << 23) >> 11);
             z[i+ 5] = (int32_t)(pt[j+ 3] <<  2) >> 11; z[i+ 6] = (int32_t)(pt[j+ 3] >> 30) | ((int32_t)(pt[j+ 4] << 13) >> 11);
             z[i+ 7] = (int32_t)(pt[j+ 4] >> 19) | ((int32_t)(pt[j+ 5] << 24) >> 11);
@@ -336,7 +336,7 @@ static void decode_sig(unsigned char *c, poly *z, const unsigned char *sm, tesla
     }
     if(p->kind == 2 || p->kind == 3) {
         for (i = 0; i < p->PARAM_N; i += 16) {
-            z[i   ] = ((int32_t)pt[j+ 0] << 10) >> 10;
+            z[i   ] = ((int32_t)(pt[j+ 0] << 10)) >> 10;
             z[i+ 1] = (int32_t)(pt[j+ 0] >> 22) | ((int32_t)(pt[j+ 1] << 20) >> 10);
             z[i+ 2] = (int32_t)(pt[j+ 1] >> 12) | ((int32_t)(pt[j+ 2] << 30) >> 10);
             z[i+ 3] = (int32_t)(pt[j+ 2] <<  8) >> 10;
@@ -357,7 +357,7 @@ static void decode_sig(unsigned char *c, poly *z, const unsigned char *sm, tesla
     }
     if(p->kind == 4) {
         for (i = 0; i < p->PARAM_N; i += 4) {
-            z[i  ] = ((int32_t)pt[j+0] << 8) >> 8;
+            z[i  ] = ((int32_t)(pt[j+0] << 8)) >> 8;
             z[i+1] = (int32_t)((pt[j+0] >> 24) & ((1<< 8)-1)) | ((int32_t)(pt[j+1] << 16) >> 8);
             z[i+2] = (int32_t)((pt[j+1] >> 16) & ((1<<16)-1)) | ((int32_t)(pt[j+2] << 24) >> 8);
             z[i+3] = (int32_t)(pt[j+2]) >> 8;
@@ -375,6 +375,8 @@ void hash_vm(unsigned char *c_bin, poly_k *v, const unsigned char *m, unsigned l
     unsigned char *t = malloc((p->PARAM_K * p->PARAM_N + mlen) * sizeof(unsigned char));
     int64_t mask, cL, temp;
     unsigned int i, k, index;
+    const uint64_t d_scale_u = p->PARAM_D < 63U ? (1ULL << p->PARAM_D) : 0ULL;
+    const uint64_t d_half_u = (p->PARAM_D > 0U && p->PARAM_D < 63U) ? (1ULL << (p->PARAM_D - 1U)) : 0ULL;
 
     for (k = 0; k < p->PARAM_K; k++) {
         index = k * p->PARAM_N;
@@ -384,10 +386,10 @@ void hash_vm(unsigned char *c_bin, poly_k *v, const unsigned char *m, unsigned l
             mask = ((int64_t)(p->PARAM_Q/2) - temp) >> 63;
             temp = ((temp - (int64_t)(p->PARAM_Q)) & mask) | (temp & ~mask);
 
-            cL = temp & ((1 << (int64_t)(p->PARAM_D)) - 1);
+            cL = temp & ((int64_t)d_scale_u - 1);
             // If cL > 2^(d-1) then cL -= 2^d
-            mask = (int64_t)((1 << ((int64_t)(p->PARAM_D) - 1)) - cL) >> 63;
-            cL = ((cL - (1 << (int64_t)(p->PARAM_D))) & mask) | (cL & ~mask);
+            mask = ((int64_t)d_half_u - cL) >> 63;
+            cL = ((cL - (int64_t)d_scale_u) & mask) | (cL & ~mask);
             t[index] = (unsigned char)((temp - cL) >> (int64_t)(p->PARAM_D));
             index += 1;
         }
@@ -433,6 +435,8 @@ static int test_v(poly *v, tesla_param_t *p)
     unsigned int i;
     int64_t mask, left, val;
     uint64_t t0, t1;
+    const int64_t scale = p->PARAM_D < 63U ? (1LL << p->PARAM_D) : 0;
+    const int64_t half_scale = (p->PARAM_D > 0U && p->PARAM_D < 63U) ? (1LL << (p->PARAM_D - 1U)) : 0;
 
     for (i = 0; i < p->PARAM_N; i++) {
         // If v[i] > PARAM_Q/2 then v[i] -= PARAM_Q
@@ -442,10 +446,10 @@ static int test_v(poly *v, tesla_param_t *p)
         t0 = (uint64_t)(~((int64_t)Abs(val) - ((int64_t)(p->PARAM_Q/2) - (int64_t)(p->PARAM_REJECTION)))) >> 63;
 
         left = val;
-        val = (int32_t)((val + (1 << (p->PARAM_D - 1)) - 1) >> p->PARAM_D);
-        val = left - (val << p->PARAM_D);
+        val = (int32_t)((val + half_scale - 1) >> p->PARAM_D);
+        val = left - val * scale;
         // If (Abs(val) < (1<<(PARAM_D-1))-PARAM_REJECTION) then t1 = 0, else t1 = 1
-        t1 = (uint64_t)(~((int64_t)Abs(val) - (int64_t)((1 << ((int64_t)(p->PARAM_D) - 1)) - (int64_t)(p->PARAM_REJECTION)))) >> 63;
+        t1 = (uint64_t)(~((int64_t)Abs(val) - (half_scale - (int64_t)(p->PARAM_REJECTION)))) >> 63;
 
         if ((t0 | t1) == 1)  // Returns 1 if any of the two tests failed
             return 1;
