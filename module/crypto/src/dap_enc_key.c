@@ -1363,6 +1363,13 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
     return 0;
 }
 
+static void s_multi_sign_params_delete_keep_keys(dap_multi_sign_params_t *a_params)
+{
+    if (!a_params)
+        return;
+    DAP_DEL_MULTY(a_params->key_seq, a_params->keys, a_params);
+}
+
 /**
  * @brief create new key with merged all keys 
  * @param a_keys pointer to keys
@@ -1381,7 +1388,19 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_
     }
 // func work
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, a_keys, a_count, NULL, a_count);
-    dap_enc_sig_multisign_forming_keys(l_ret, l_params);
+    if (!l_params) {
+        log_it(L_ERROR, "Can't create multisign params");
+        dap_enc_key_delete(l_ret);
+        return NULL;
+    }
+    int l_forming_res = dap_enc_sig_multisign_forming_keys(l_ret, l_params);
+    if (l_forming_res) {
+        log_it(L_ERROR, "Can't form multisign key from %zu keys, error code %d", a_count, l_forming_res);
+        // Keep input keys ownership on failure.
+        s_multi_sign_params_delete_keep_keys(l_params);
+        dap_enc_key_delete(l_ret);
+        return NULL;
+    }
     l_ret->_pvt = l_params;
     return l_ret;
 }

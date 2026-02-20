@@ -268,6 +268,30 @@ static bool s_test_integer_overflow_regression(void) {
 }
 
 /**
+ * @brief Regression test: multisign merge failure must return NULL
+ * @details IAES keys don't have public key serialization for multisign and must fail cleanly
+ */
+static bool s_test_multisign_merge_failure_regression(void) {
+    log_it(L_INFO, "Testing multisign merge failure regression (IAES + IAES)");
+
+    dap_enc_key_t *l_k1 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t *l_k2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES, NULL, 0, NULL, 0, 0);
+    DAP_TEST_ASSERT_NOT_NULL(l_k1, "First IAES key generation");
+    DAP_TEST_ASSERT_NOT_NULL(l_k2, "Second IAES key generation");
+
+    dap_enc_key_t *l_arr[2] = { l_k1, l_k2 };
+    dap_enc_key_t *l_merged = dap_enc_merge_keys_to_multisign_key(l_arr, 2);
+    DAP_TEST_ASSERT_NULL(l_merged, "Multisign merge must fail for IAES+IAES");
+
+    // On failure ownership must remain with caller.
+    dap_enc_key_delete(l_k1);
+    dap_enc_key_delete(l_k2);
+
+    log_it(L_INFO, "Multisign merge failure regression test passed");
+    return true;
+}
+
+/**
  * @brief Main test function for regression tests
  */
 int main(void) {
@@ -285,6 +309,7 @@ int main(void) {
     l_all_passed &= s_test_memory_management_regression();
     l_all_passed &= s_test_json_parsing_edge_cases_regression();
     l_all_passed &= s_test_integer_overflow_regression();
+    l_all_passed &= s_test_multisign_merge_failure_regression();
     
     dap_test_sdk_cleanup();
     
@@ -296,4 +321,3 @@ int main(void) {
         return -1;
     }
 }
-
