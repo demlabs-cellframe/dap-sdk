@@ -17,13 +17,32 @@
 void dap_enc_bf_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size, size_t key_size)
 {
+    (void)key_size;
+    if (!a_key)
+        return;
+
     a_key->last_used_timestamp = dap_time_now();
 
+    if (a_key->priv_key_data != NULL) {
+        randombytes(a_key->priv_key_data, a_key->priv_key_data_size);
+        DAP_DEL_Z(a_key->priv_key_data);
+        a_key->priv_key_data_size = 0;
+    }
 
     a_key->priv_key_data_size = sizeof(BF_KEY);
     a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);
+    if (!a_key->priv_key_data) {
+        a_key->priv_key_data_size = 0;
+        return;
+    }
 
     uint8_t *tmp_buf = DAP_NEW_SIZE(uint8_t, (BF_ROUNDS + 2)*4);
+    if (!tmp_buf) {
+        randombytes(a_key->priv_key_data, a_key->priv_key_data_size);
+        DAP_DEL_Z(a_key->priv_key_data);
+        a_key->priv_key_data_size = 0;
+        return;
+    }
     
     // Use SHA3-256 sponge construction for key derivation
     dap_hash_keccak_ctx_t l_ctx;
@@ -34,7 +53,7 @@ void dap_enc_bf_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     dap_hash_keccak_sponge_squeeze(&l_ctx, tmp_buf, (BF_ROUNDS + 2)*4);
 
     BF_set_key(a_key->priv_key_data, (BF_ROUNDS + 2)*4, tmp_buf);
-    DAP_DELETE(tmp_buf);
+    DAP_DEL_Z(tmp_buf);
  }
 void dap_enc_bf_key_delete(struct dap_enc_key *a_key)
 {
@@ -272,4 +291,3 @@ void dap_enc_bf_ofb_key_new(struct dap_enc_key * a_key)
     a_key->enc_na = dap_enc_bf_ofb_encrypt_fast;
     a_key->dec_na = dap_enc_bf_ofb_decrypt_fast;
 }
-
