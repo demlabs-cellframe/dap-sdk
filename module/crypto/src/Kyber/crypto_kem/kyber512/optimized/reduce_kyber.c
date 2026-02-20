@@ -19,7 +19,8 @@ int16_t montgomery_reduce(int32_t a)
   int32_t t;
   int16_t u;
 
-  u = a*QINV;
+  /* Keep multiply in defined signed-int range: only low 16 bits of a are needed here. */
+  u = (int16_t)a * QINV;
   t = (int32_t)u*KYBER_Q;
   t = a - t;
   t >>= 16;
