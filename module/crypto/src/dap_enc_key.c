@@ -1072,8 +1072,22 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         l_ser_skey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_ser_skey_size, NULL, l_ret);
     if (l_ser_pkey_size)
         l_ser_pkey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_ser_pkey_size, NULL, l_ser_skey, l_ret);
-    if (l_ser_inheritor_size)
-        l_ret->_inheritor = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(void, l_ser_inheritor_size, NULL, l_ser_pkey, l_ser_skey, l_ret);
+    if (l_ser_inheritor_size) {
+        if (!l_ret->_inheritor) {
+            l_ret->_inheritor = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(void, l_ser_inheritor_size, NULL, l_ser_pkey, l_ser_skey, l_ret);
+        } else if (l_ret->_inheritor_size != l_ser_inheritor_size) {
+            void *l_new_inheritor = DAP_REALLOC((uint8_t*)l_ret->_inheritor, l_ser_inheritor_size);
+            if (!l_new_inheritor) {
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                DAP_DEL_MULTY(l_ser_pkey, l_ser_skey);
+                dap_enc_key_delete(l_ret);
+                return NULL;
+            }
+            l_ret->_inheritor = l_new_inheritor;
+        }
+    } else {
+        DAP_DEL_Z(l_ret->_inheritor);
+    }
 // deser keys
     l_res_des = DAP_VA_DESERIALIZE( ((uint8_t*)buf) + l_sizes_len, (uint64_t)(a_buf_size - l_sizes_len),
         l_ser_skey, (uint64_t)l_ser_skey_size,
@@ -1084,7 +1098,8 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         || (l_ser_pkey_size && dap_enc_key_deserialize_pub_key(l_ret, l_ser_pkey, l_ser_pkey_size))
         || (l_ser_skey_size && dap_enc_key_deserialize_priv_key(l_ret, l_ser_skey, l_ser_skey_size)) )
     {
-        DAP_DEL_MULTY(l_ret->_inheritor, l_ser_pkey, l_ser_skey, l_ret);
+        DAP_DEL_MULTY(l_ser_pkey, l_ser_skey);
+        dap_enc_key_delete(l_ret);
         log_it(L_ERROR, "Enc_key pub and priv keys deserialisation error");
         return NULL;
     }
