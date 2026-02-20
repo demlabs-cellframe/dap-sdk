@@ -96,9 +96,9 @@ DAP_STATIC_INLINE void dap_hash_shake128_squeezeblocks(uint8_t *a_output, size_t
 {
     dap_hash_keccak_state_t *l_state = (dap_hash_keccak_state_t *)a_state;
     for (size_t i = 0; i < a_nblocks; i++) {
-        dap_hash_keccak_permute(l_state);
         dap_hash_keccak_extract_bytes(l_state, a_output, DAP_KECCAK_SHAKE128_RATE);
         a_output += DAP_KECCAK_SHAKE128_RATE;
+        dap_hash_keccak_permute(l_state);
     }
 }
 

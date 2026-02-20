@@ -173,6 +173,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_ecdsa_debug.c)
     register_dap_test(test_ecdsa_debug "unit;crypto;ecdsa")
 endif()
 
+# SHAKE/cSHAKE streaming vs one-shot parity tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keccak/test_shake_streaming_parity.c)
+    add_dap_test(test_unit_crypto_shake_streaming_parity unit/crypto/keccak/test_shake_streaming_parity.c)
+    register_dap_test(test_unit_crypto_shake_streaming_parity "unit;crypto;shake;keccak")
+endif()
+
 
 # test framework async unit tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/test/test_async.c)
