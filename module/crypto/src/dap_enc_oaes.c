@@ -41,6 +41,8 @@ void dap_enc_oaes_key_delete(struct dap_enc_key *a_key)
         a_key->_inheritor_size = 0;
         a_key->_inheritor = NULL;
     }
+    DAP_DEL_Z(a_key->pub_key_data);
+    a_key->pub_key_data_size = 0;
 }
 
 void dap_enc_oaes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
@@ -142,4 +144,3 @@ size_t dap_enc_oaes_encrypt_fast(struct dap_enc_key * a_key, const void * a_in,
     }
     return buf_out_size;
 }
-

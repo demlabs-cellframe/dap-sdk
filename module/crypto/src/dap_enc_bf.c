@@ -43,7 +43,9 @@ void dap_enc_bf_key_delete(struct dap_enc_key *a_key)
         randombytes(a_key->priv_key_data,a_key->priv_key_data_size);
         DAP_DEL_Z(a_key->priv_key_data);
     }
+    DAP_DEL_Z(a_key->pub_key_data);
     a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
 }
 //------CBC-----------
 size_t dap_enc_bf_cbc_decrypt(struct dap_enc_key *a_key, const void * a_in,
@@ -270,5 +272,4 @@ void dap_enc_bf_ofb_key_new(struct dap_enc_key * a_key)
     a_key->enc_na = dap_enc_bf_ofb_encrypt_fast;
     a_key->dec_na = dap_enc_bf_ofb_decrypt_fast;
 }
-
 

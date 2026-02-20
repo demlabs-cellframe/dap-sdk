@@ -28,8 +28,10 @@ void dap_enc_aes_key_delete(struct dap_enc_key *a_key)
 {
     DAP_DEL_Z(a_key->_inheritor);
     DAP_DEL_Z(a_key->priv_key_data);
+    DAP_DEL_Z(a_key->pub_key_data);
     a_key->_inheritor_size = 0;
     a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
     //No need any specific actions
 }
 
