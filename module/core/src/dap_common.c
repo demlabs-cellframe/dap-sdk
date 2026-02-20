@@ -363,6 +363,13 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...)
             va_end(l_args);
             return -2;
         }
+        if (!l_size)
+            continue;
+        if (!l_arg) {
+            log_it(L_ERROR, "NULL output buffer for non-zero chunk size: %"DAP_UINT64_FORMAT_U"", l_size);
+            va_end(l_args);
+            return -3;
+        }
         memcpy(l_arg, a_data + l_shift, l_size);
         l_shift += l_size;
     }
