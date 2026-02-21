@@ -24403,8 +24403,9 @@ static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck, const off_
     }
     rc = errno;
 #if MDBX_USE_OFDLOCKS
-    if (rc == EINVAL && (cmd == MDBX_F_OFD_SETLK || cmd == MDBX_F_OFD_SETLKW || cmd == MDBX_F_OFD_GETLK)) {
-      /* fallback to non-OFD locks */
+    if ((rc == EINVAL || rc == EOPNOTSUPP || rc == ENOTSUP) &&
+        (cmd == MDBX_F_OFD_SETLK || cmd == MDBX_F_OFD_SETLKW || cmd == MDBX_F_OFD_GETLK)) {
+      /* fallback to non-OFD locks (EINVAL on older kernels, EOPNOTSUPP/ENOTSUP under QEMU user-mode) */
       if (cmd == MDBX_F_OFD_SETLK)
         cmd = MDBX_F_SETLK;
       else if (cmd == MDBX_F_OFD_SETLKW)
