@@ -29740,8 +29740,11 @@ MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, cons
   map->limit = limit;
 
 #ifdef MADV_DONTFORK
-  if (unlikely(madvise(map->base, map->limit, MADV_DONTFORK) != 0))
-    return errno;
+  if (unlikely(madvise(map->base, map->limit, MADV_DONTFORK) != 0)) {
+    int err = ignore_enosys(errno);
+    if (unlikely(err != MDBX_RESULT_TRUE))
+      return err;
+  }
 #endif /* MADV_DONTFORK */
 #ifdef MADV_NOHUGEPAGE
   (void)madvise(map->base, map->limit, MADV_NOHUGEPAGE);
@@ -30135,8 +30138,9 @@ retry_mapview:;
 
 #ifdef MADV_DONTFORK
   if (unlikely(madvise(map->base, map->limit, MADV_DONTFORK) != 0)) {
-    assert(errno != 0);
-    return errno;
+    int err = ignore_enosys(errno);
+    if (unlikely(err != MDBX_RESULT_TRUE))
+      return err;
   }
 #endif /* MADV_DONTFORK */
 #ifdef MADV_NOHUGEPAGE
