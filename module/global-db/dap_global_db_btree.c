@@ -93,6 +93,7 @@ static uint64_t s_overflow_write(dap_global_db_t *a_tree, const void *a_value, u
 static int s_overflow_read(dap_global_db_t *a_tree, uint64_t a_first_page_id,
                            void *a_out_buf, size_t a_buf_size, size_t *a_out_len);
 static void s_overflow_free(dap_global_db_t *a_tree, uint64_t a_first_page_id, uint64_t a_txn);
+static uint64_t s_page_allocate_contiguous(dap_global_db_t *a_tree, uint32_t a_count);
 
 // B-tree navigation (read-only, no arena needed)
 static int s_search_in_page(dap_global_db_page_t *a_page, const dap_global_db_key_t *a_key, bool *a_found);
@@ -546,6 +547,35 @@ static uint64_t s_overflow_write(dap_global_db_t *a_tree, const void *a_value, u
     size_t l_total = (size_t)a_value_len + (size_t)a_sign_len;
     if (l_total == 0)
         return 0;
+
+    if (a_tree->mmap && l_total > PAGE_DATA_SIZE) {
+        uint32_t l_cont = (uint32_t)((l_total - PAGE_DATA_SIZE + DAP_GLOBAL_DB_PAGE_SIZE - 1)
+                                     / DAP_GLOBAL_DB_PAGE_SIZE);
+        uint32_t l_page_count = 1 + l_cont;
+        uint64_t l_first_id = s_page_allocate_contiguous(a_tree, l_page_count);
+        if (l_first_id == 0)
+            return 0;
+
+        uint8_t *l_base = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap);
+        uint64_t l_off = s_page_offset(l_first_id);
+
+        dap_global_db_page_header_t *l_hdr = (dap_global_db_page_header_t *)(l_base + l_off);
+        l_hdr->flags = DAP_GLOBAL_DB_PAGE_OVERFLOW | DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS;
+        l_hdr->entries_count = (uint16_t)l_cont;
+        l_hdr->free_space = 0;
+        l_hdr->page_id = l_first_id;
+        l_hdr->right_sibling = 0;
+        l_hdr->left_sibling = 0;
+
+        uint8_t *l_dst = l_base + l_off + sizeof(dap_global_db_page_header_t);
+        if (a_value_len > 0)
+            memcpy(l_dst, a_value, a_value_len);
+        if (a_sign_len > 0)
+            memcpy(l_dst + a_value_len, a_sign, a_sign_len);
+
+        return l_first_id;
+    }
+
     const uint8_t *l_src = (const uint8_t *)a_value;
     size_t l_value_done = 0;
     size_t l_sign_done = 0;
@@ -614,14 +644,33 @@ static int s_overflow_read(dap_global_db_t *a_tree, uint64_t a_first_page_id,
     if (a_tree->mmap) {
         const uint8_t *l_base = (const uint8_t *)dap_mmap_get_ptr(a_tree->mmap);
         size_t l_mmap_size = dap_mmap_get_size(a_tree->mmap);
+        uint64_t l_off = s_page_offset(a_first_page_id);
+        if (l_off + DAP_GLOBAL_DB_PAGE_SIZE > l_mmap_size)
+            return -1;
+        const dap_global_db_page_header_t *l_hdr =
+            (const dap_global_db_page_header_t *)(l_base + l_off);
+
+        if (l_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS) {
+            const uint8_t *l_src = l_base + l_off + sizeof(dap_global_db_page_header_t);
+            size_t l_copy = a_buf_size;
+            uint32_t l_cont = l_hdr->entries_count;
+            size_t l_capacity = PAGE_DATA_SIZE + (size_t)l_cont * DAP_GLOBAL_DB_PAGE_SIZE;
+            if (l_copy > l_capacity)
+                l_copy = l_capacity;
+            memcpy(a_out_buf, l_src, l_copy);
+            if (a_out_len)
+                *a_out_len = l_copy;
+            return 0;
+        }
+
         uint64_t l_page_id = a_first_page_id;
         size_t l_total = 0;
         uint8_t *l_dst = (uint8_t *)a_out_buf;
         while (l_page_id != 0 && l_total < a_buf_size) {
-            uint64_t l_off = s_page_offset(l_page_id);
+            l_off = s_page_offset(l_page_id);
             if (l_off + DAP_GLOBAL_DB_PAGE_SIZE > l_mmap_size)
                 return -1;
-            const dap_global_db_page_header_t *l_hdr =
+            const dap_global_db_page_header_t *l_ph =
                 (const dap_global_db_page_header_t *)(l_base + l_off);
             const uint8_t *l_data = l_base + l_off + sizeof(dap_global_db_page_header_t);
             size_t l_chunk = PAGE_DATA_SIZE;
@@ -630,7 +679,7 @@ static int s_overflow_read(dap_global_db_t *a_tree, uint64_t a_first_page_id,
             memcpy(l_dst, l_data, l_chunk);
             l_dst += l_chunk;
             l_total += l_chunk;
-            l_page_id = l_hdr->right_sibling;
+            l_page_id = l_ph->right_sibling;
         }
         if (a_out_len)
             *a_out_len = l_total;
@@ -670,9 +719,24 @@ static int s_overflow_read(dap_global_db_t *a_tree, uint64_t a_first_page_id,
 
 static void s_overflow_free(dap_global_db_t *a_tree, uint64_t a_first_page_id, uint64_t a_txn)
 {
+    if (a_first_page_id == 0)
+        return;
+
+    dap_global_db_page_t l_buf;
+    if (!s_page_read_ref(a_tree, a_first_page_id, &l_buf))
+        return;
+
+    if (l_buf.header.flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS) {
+        uint32_t l_count = 1 + (uint32_t)l_buf.header.entries_count;
+        for (uint32_t i = 0; i < l_count; i++)
+            s_deferred_free_add(a_tree, a_txn, a_first_page_id + i);
+        return;
+    }
+
     uint64_t l_page_id = a_first_page_id;
+    s_deferred_free_add(a_tree, a_txn, l_page_id);
+    l_page_id = l_buf.header.right_sibling;
     while (l_page_id != 0) {
-        dap_global_db_page_t l_buf;
         if (!s_page_read_ref(a_tree, l_page_id, &l_buf))
             break;
         uint64_t l_next = l_buf.header.right_sibling;
@@ -718,6 +782,31 @@ static uint64_t s_page_allocate_new(dap_global_db_t *a_tree)
     }
 
     return l_new_page_id;
+}
+
+static uint64_t s_page_allocate_contiguous(dap_global_db_t *a_tree, uint32_t a_count)
+{
+    if (a_count == 0)
+        return 0;
+    uint64_t l_first_id = a_tree->header.total_pages + 1;
+    a_tree->header.total_pages += a_count;
+
+    if (a_tree->mmap) {
+        size_t l_needed = s_page_offset(a_tree->header.total_pages) + DAP_GLOBAL_DB_PAGE_SIZE;
+        size_t l_cur = dap_mmap_get_size(a_tree->mmap);
+        if (l_needed > l_cur) {
+            size_t l_new_size = l_cur * 2;
+            if (l_new_size < l_needed)
+                l_new_size = l_needed;
+            if (dap_mmap_resize(a_tree->mmap, l_new_size) != 0) {
+                log_it(L_ERROR, "Failed to grow mmap for contiguous alloc (%u pages)", a_count);
+                a_tree->header.total_pages -= a_count;
+                return 0;
+            }
+            s_page_resolve_mmap(a_tree, a_tree->hot_leaf);
+        }
+    }
+    return l_first_id;
 }
 
 // ============================================================================
@@ -3752,7 +3841,18 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
             if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
                 uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
                 size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
-                if (l_total <= PAGE_DATA_SIZE && a_tree->mmap) {
+                bool l_zc_ok = false;
+                if (a_tree->mmap) {
+                    if (l_total <= PAGE_DATA_SIZE) {
+                        l_zc_ok = true;
+                    } else {
+                        const dap_global_db_page_header_t *l_ov_hdr =
+                            (const dap_global_db_page_header_t *)((uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
+                                                                  + s_page_offset(l_ov_id));
+                        l_zc_ok = !!(l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS);
+                    }
+                }
+                if (l_zc_ok) {
                     uint8_t *l_ov_ptr = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
                                         + s_page_offset(l_ov_id)
                                         + sizeof(dap_global_db_page_header_t);
@@ -3846,7 +3946,13 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                         if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
                             uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
                             size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
-                            if (l_total <= PAGE_DATA_SIZE) {
+                            bool l_zc_ok = (l_total <= PAGE_DATA_SIZE);
+                            if (!l_zc_ok) {
+                                const dap_global_db_page_header_t *l_ov_hdr =
+                                    (const dap_global_db_page_header_t *)(l_base + s_page_offset(l_ov_id));
+                                l_zc_ok = !!(l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS);
+                            }
+                            if (l_zc_ok) {
                                 uint8_t *l_ov_ptr = l_base + s_page_offset(l_ov_id)
                                                     + sizeof(dap_global_db_page_header_t);
                                 if (a_out_value) {
@@ -3925,7 +4031,13 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                         if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
                             uint64_t l_ov_id = *(const uint64_t *)(l_edata + l_entry->key_len);
                             size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
-                            if (l_total <= PAGE_DATA_SIZE) {
+                            bool l_zc_ok = (l_total <= PAGE_DATA_SIZE);
+                            if (!l_zc_ok) {
+                                const dap_global_db_page_header_t *l_ov_hdr =
+                                    (const dap_global_db_page_header_t *)(l_base + s_page_offset(l_ov_id));
+                                l_zc_ok = !!(l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS);
+                            }
+                            if (l_zc_ok) {
                                 uint8_t *l_ov_ptr = l_base + s_page_offset(l_ov_id)
                                                     + sizeof(dap_global_db_page_header_t);
                                 if (a_out_value) {

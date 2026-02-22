@@ -41,6 +41,7 @@ extern "C" {
 #define DAP_GLOBAL_DB_PAGE_LEAF           0x0002
 #define DAP_GLOBAL_DB_PAGE_OVERFLOW       0x0004
 #define DAP_GLOBAL_DB_PAGE_ROOT           0x0008
+#define DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS 0x0010
 
 /** Leaf entry flag: value+sign stored in overflow chain; entry holds overflow_page_id (8 bytes) after key instead of inline value/sign */
 #define DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE  0x01
