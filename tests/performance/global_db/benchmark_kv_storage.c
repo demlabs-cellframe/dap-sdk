@@ -414,10 +414,11 @@ incr_done:
             log_it(L_INFO, "[PASS] DAP B-tree: %zu records verified OK", cfg->num_records);
     }
 
-    // Now read sequentially
+    // Now read sequentially (inside a read transaction for leaf cache benefit)
     double start = s_get_time_sec();
     size_t read_count = 0;
     
+    dap_global_db_read_begin(btree);
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, i);
         
@@ -433,6 +434,7 @@ incr_done:
             read_count++;
         }
     }
+    dap_global_db_read_end(btree);
     
     double elapsed = s_get_time_sec() - start;
     
@@ -490,12 +492,13 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
         log_it(L_ERROR, "[FAIL] DAP B-tree: expected %zu records, got %lu",
                cfg->num_records, (unsigned long)l_rr_count);
 
-    // Random read
+    // Random read (inside a read transaction for snapshot reuse)
     uint64_t *indices = s_generate_random_indices(cfg->num_records);
     
     double start = s_get_time_sec();
     size_t read_count = 0;
     
+    dap_global_db_read_begin(btree);
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, indices[i]);
         
@@ -511,6 +514,7 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
             read_count++;
         }
     }
+    dap_global_db_read_end(btree);
     
     double elapsed = s_get_time_sec() - start;
     

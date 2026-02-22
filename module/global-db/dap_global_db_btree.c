@@ -166,12 +166,32 @@ static void s_mvcc_commit(dap_global_db_t *a_tree);
 // Key Comparison
 // ============================================================================
 
-// Internal inline version — used on every hot path (traversal, search, insert).
-// Eliminates function call overhead (~5ns per call × thousands of calls per insert batch).
+// Keys are stored big-endian; memcmp gives correct ordering but goes through PLT
+// on packed structs. Compare two uint64 fields with bswap64 for native-endian ordering.
 static inline int s_key_cmp(const dap_global_db_key_t *a_key1,
                             const dap_global_db_key_t *a_key2)
 {
-    return memcmp(a_key1, a_key2, sizeof(dap_global_db_key_t));
+    uint64_t a1, b1;
+    memcpy(&a1, &a_key1->bets, 8);
+    memcpy(&b1, &a_key2->bets, 8);
+    if (a1 != b1) {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return __builtin_bswap64(a1) < __builtin_bswap64(b1) ? -1 : 1;
+#else
+        return a1 < b1 ? -1 : 1;
+#endif
+    }
+    uint64_t a2, b2;
+    memcpy(&a2, &a_key1->becrc, 8);
+    memcpy(&b2, &a_key2->becrc, 8);
+    if (a2 != b2) {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return __builtin_bswap64(a2) < __builtin_bswap64(b2) ? -1 : 1;
+#else
+        return a2 < b2 ? -1 : 1;
+#endif
+    }
+    return 0;
 }
 
 // Public API wrapper (for external callers)
@@ -2631,7 +2651,7 @@ static void s_page_add_to_free_list(dap_global_db_t *a_tree, uint64_t a_page_id)
 #define SNAPSHOT_CACHELINE_STRIDE  (64 / sizeof(uint64_t))  // 8 slots per cache line
 
 static _Atomic(int) s_snapshot_hint_gen = 0;
-static _Thread_local int s_tl_snapshot_hint = -1;
+static _Thread_local __attribute__((tls_model("initial-exec"))) int s_tl_snapshot_hint = -1;
 
 static int s_snapshot_acquire(dap_global_db_t *a_tree,
                                uint64_t *a_out_root, uint64_t *a_out_txn,
@@ -2679,13 +2699,18 @@ static void s_snapshot_release(dap_global_db_t *a_tree, int a_slot)
 }
 
 // Thread-local read transaction: holds a snapshot across multiple reads.
+// Leaf cache amortizes tree traversal: if the key falls within the cached
+// leaf's [min, max] key range, we skip root-to-leaf descent entirely.
 typedef struct tl_read_txn {
     dap_global_db_t *tree;
     uint64_t snap_root;
     int slot;
+    uint64_t cached_leaf_id;
+    dap_global_db_key_t cached_leaf_min;
+    dap_global_db_key_t cached_leaf_max;
 } tl_read_txn_t;
 
-static _Thread_local tl_read_txn_t s_tl_read_txn = { .tree = NULL, .slot = -1 };
+static _Thread_local __attribute__((tls_model("initial-exec"))) tl_read_txn_t s_tl_read_txn = { .tree = NULL, .slot = -1 };
 
 int dap_global_db_read_begin(dap_global_db_t *a_tree)
 {
@@ -2699,6 +2724,7 @@ int dap_global_db_read_begin(dap_global_db_t *a_tree)
     s_tl_read_txn.tree = a_tree;
     s_tl_read_txn.snap_root = l_snap_root;
     s_tl_read_txn.slot = l_slot;
+    s_tl_read_txn.cached_leaf_id = 0;
     return 0;
 }
 
@@ -2708,6 +2734,7 @@ void dap_global_db_read_end(dap_global_db_t *a_tree)
         s_snapshot_release(a_tree, s_tl_read_txn.slot);
         s_tl_read_txn.tree = NULL;
         s_tl_read_txn.slot = -1;
+        s_tl_read_txn.cached_leaf_id = 0;
     }
 }
 
@@ -2718,6 +2745,17 @@ static inline int s_tl_read_txn_root(dap_global_db_t *a_tree, uint64_t *a_out_ro
         return 1;
     }
     return 0;
+}
+
+static inline void s_tl_leaf_cache_update(uint64_t a_leaf_id,
+                                           const dap_global_db_key_t *a_min,
+                                           const dap_global_db_key_t *a_max)
+{
+    if (s_tl_read_txn.slot >= 0 && s_tl_read_txn.cached_leaf_id != a_leaf_id) {
+        s_tl_read_txn.cached_leaf_id = a_leaf_id;
+        memcpy(&s_tl_read_txn.cached_leaf_min, a_min, sizeof(dap_global_db_key_t));
+        memcpy(&s_tl_read_txn.cached_leaf_max, a_max, sizeof(dap_global_db_key_t));
+    }
 }
 
 /**
@@ -3800,6 +3838,14 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                 // Binary search in leaf — direct pointer into mmap
                 int l_count = l_hdr->entries_count;
                 const uint16_t *l_offsets = (const uint16_t *)(l_data + LEAF_HEADER_SIZE);
+                if (l_count > 0) {
+                    const dap_global_db_leaf_entry_t *l_first =
+                        (const dap_global_db_leaf_entry_t *)(l_data + l_offsets[0]);
+                    const dap_global_db_leaf_entry_t *l_last =
+                        (const dap_global_db_leaf_entry_t *)(l_data + l_offsets[l_count - 1]);
+                    s_tl_leaf_cache_update(l_page_id, &l_first->driver_hash,
+                                           &l_last->driver_hash);
+                }
                 int l_low = 0, l_high = l_count - 1;
                 while (l_low <= l_high) {
                     int l_mid = (l_low + l_high) / 2;
@@ -3914,9 +3960,19 @@ int dap_global_db_get_ref(dap_global_db_t *a_tree,
 {
     dap_return_val_if_fail(a_tree && a_key, -1);
     uint64_t l_snap_root;
-    if (s_tl_read_txn_root(a_tree, &l_snap_root))
+    if (s_tl_read_txn_root(a_tree, &l_snap_root)) {
+        if (s_tl_read_txn.cached_leaf_id
+            && s_key_cmp(a_key, &s_tl_read_txn.cached_leaf_min) >= 0
+            && s_key_cmp(a_key, &s_tl_read_txn.cached_leaf_max) <= 0) {
+            int l_ret = s_btree_get_ref_impl(a_tree, a_key, a_out_text_key,
+                                              a_out_value, a_out_sign, a_out_flags,
+                                              s_tl_read_txn.cached_leaf_id);
+            if (l_ret != 1)
+                return l_ret;
+        }
         return s_btree_get_ref_impl(a_tree, a_key, a_out_text_key, a_out_value,
                                      a_out_sign, a_out_flags, l_snap_root);
+    }
     uint64_t l_snap_txn;
     int l_slot = s_snapshot_acquire(a_tree, &l_snap_root, &l_snap_txn, NULL);
     if (l_slot >= 0) {
