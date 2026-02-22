@@ -24913,31 +24913,25 @@ __cold MDBX_INTERNAL int lck_init(MDBX_env *env, MDBX_env *inprocess_neighbor, i
   rc = pthread_mutex_init(&env->lck_mmap.lck->rdt_lock, &ma);
 #if MDBX_LOCKING == MDBX_LOCKING_POSIX2008
   if (unlikely(rc == ENOTSUP || rc == EOPNOTSUPP)) {
-    /* QEMU user-mode: PTHREAD_PROCESS_SHARED + PTHREAD_MUTEX_ROBUST combo
-     * is not supported. Fall back to non-robust process-shared mutex. */
-    pthread_mutexattr_t ma_fallback;
-    rc = pthread_mutexattr_init(&ma_fallback);
-    if (likely(!rc)) {
-      rc = pthread_mutexattr_setpshared(&ma_fallback, PTHREAD_PROCESS_SHARED);
-#if defined(_POSIX_THREAD_PRIO_INHERIT) && _POSIX_THREAD_PRIO_INHERIT >= 0 && !defined(MDBX_SAFE4QEMU)
-      if (!rc) {
-        int prc = pthread_mutexattr_setprotocol(&ma_fallback, PTHREAD_PRIO_INHERIT);
-        if (prc == ENOTSUP)
-          prc = pthread_mutexattr_setprotocol(&ma_fallback, PTHREAD_PRIO_NONE);
-        if (prc && prc != ENOTSUP)
-          rc = prc;
+    /* QEMU user-mode: pthread_mutex_init() may return EOPNOTSUPP for
+     * process-shared mutexes with ROBUST or PRIO_INHERIT attributes because
+     * FUTEX_LOCK_PI / robust-futex support is not emulated.
+     * Fall back to a minimal PTHREAD_PROCESS_SHARED mutex with no extra
+     * attributes - basic futex(FUTEX_WAIT/WAKE) is supported by QEMU. */
+    pthread_mutexattr_t ma_minimal;
+    int mrc = pthread_mutexattr_init(&ma_minimal);
+    if (likely(!mrc)) {
+      mrc = pthread_mutexattr_setpshared(&ma_minimal, PTHREAD_PROCESS_SHARED);
+      if (likely(!mrc)) {
+        rc = pthread_mutex_init(&env->lck_mmap.lck->rdt_lock, &ma_minimal);
+        if (!rc)
+          rc = pthread_mutex_init(&env->lck_mmap.lck->wrt_lock, &ma_minimal);
+      } else {
+        rc = mrc;
       }
-#endif /* PTHREAD_PRIO_INHERIT */
-      if (!rc) {
-        int trc = pthread_mutexattr_settype(&ma_fallback, PTHREAD_MUTEX_ERRORCHECK);
-        if (trc && trc != ENOTSUP)
-          rc = trc;
-      }
-      if (!rc)
-        rc = pthread_mutex_init(&env->lck_mmap.lck->rdt_lock, &ma_fallback);
-      if (!rc)
-        rc = pthread_mutex_init(&env->lck_mmap.lck->wrt_lock, &ma_fallback);
-      pthread_mutexattr_destroy(&ma_fallback);
+      pthread_mutexattr_destroy(&ma_minimal);
+    } else {
+      rc = mrc;
     }
     goto bailout;
   }
