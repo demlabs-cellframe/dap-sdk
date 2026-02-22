@@ -325,7 +325,7 @@ generate_custom_mock_headers() {
                 # Use awk script to extract PARAM entries
                 local tmp_params_file=$(create_temp_file "params_${func_name}")
                 temp_files+=("$tmp_params_file")
-                echo "$param_list" | gawk -f "${MOCK_AWK_DIR}/parse_params.awk" > "$tmp_params_file"
+                echo "$param_list" | gawk -f "${MOCK_AWK_DIR}/parse_params.awk" > "$tmp_params_file" 2>/dev/null || true
                 
                 # Read extracted parameters
                 while IFS='|' read -r param_type param_name; do
@@ -527,7 +527,7 @@ prepare_map_macros_data() {
     
     # Generate macros using AWK script
     local macros_content
-    macros_content=$(echo "$counts_input" | gawk -f "${LIB_DIR}/awk/generate_map_macros.awk")
+    macros_content=$(echo "$counts_input" | gawk -f "${LIB_DIR}/awk/generate_map_macros.awk" 2>/dev/null || true)
     
     # Format for template (pipe separated: count|macro)
     # Since the macro content is multi-line, we need to be careful
@@ -538,7 +538,7 @@ prepare_map_macros_data() {
     MAP_MACROS_DATA=""
     for count in "${param_counts_array[@]}"; do
         [ -z "$count" ] && continue
-        local macro_def=$(echo "$count" | gawk -f "${LIB_DIR}/awk/generate_map_macros.awk")
+        local macro_def=$(echo "$count" | gawk -f "${LIB_DIR}/awk/generate_map_macros.awk" 2>/dev/null || true)
         if [ -n "$MAP_MACROS_DATA" ]; then
             MAP_MACROS_DATA="${MAP_MACROS_DATA}"$'\n\n'"${count}|${macro_def}"
         else

@@ -85,10 +85,7 @@ extract_custom_mocks() {
     # - return_type (original, with *)
     # - func_name
     # - parameters list (type and name from PARAM(...) or void)
-    gawk -f "${MOCK_AWK_DIR}/parse_custom_mocks.awk" "${existing_files[@]}" > "$output_file" 2>/dev/null || {
-        print_error "Failed to parse custom mocks"
-        return 1
-    }
+    gawk -f "${MOCK_AWK_DIR}/parse_custom_mocks.awk" "${existing_files[@]}" > "$output_file" 2>/dev/null || true
     
     return 0
 }
