@@ -29247,10 +29247,18 @@ MDBX_INTERNAL int osal_msync(const osal_mmap_t *map, size_t offset, size_t lengt
   // if (mode_bits <= MDBX_SYNC_KICK)
   //   return MDBX_SUCCESS;
 #endif /* Linux */
-  if (msync(ptr, length, (mode_bits & MDBX_SYNC_DATA) ? MS_SYNC : MS_ASYNC))
-    return errno;
-  if ((mode_bits & MDBX_SYNC_SIZE) && fsync(map->fd))
-    return errno;
+  if (msync(ptr, length, (mode_bits & MDBX_SYNC_DATA) ? MS_SYNC : MS_ASYNC)) {
+    int err = ignore_enosys(errno);
+    if (unlikely(err != MDBX_RESULT_TRUE))
+      return err;
+  }
+  if (mode_bits & MDBX_SYNC_SIZE) {
+    if (fsync(map->fd)) {
+      int err = ignore_enosys(errno);
+      if (unlikely(err != MDBX_RESULT_TRUE))
+        return err;
+    }
+  }
 #endif
   return MDBX_SUCCESS;
 }
