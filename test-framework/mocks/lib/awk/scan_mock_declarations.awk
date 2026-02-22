@@ -1,36 +1,41 @@
-#!/usr/bin/gawk -f
+#!/usr/bin/awk -f
 # Scan source files for DAP_MOCK_DECLARE and DAP_MOCK_DECLARE_CUSTOM declarations
 # Output: newline-separated list of function names
-
-BEGIN {
-    # Pattern for DAP_MOCK_DECLARE(func_name) or DAP_MOCK_DECLARE(func_name, ...)
-    pattern_declare = "DAP_MOCK_DECLARE\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
-    # Pattern for DAP_MOCK_DECLARE_CUSTOM(func_name, ...)
-    pattern_declare_custom = "DAP_MOCK_DECLARE_CUSTOM\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
-}
+# POSIX-compatible: no gawk-specific features (no 3-arg match, no \s)
 
 {
-    # Find DAP_MOCK_DECLARE(func_name) or DAP_MOCK_DECLARE(func_name, ...)
-    while (match($0, pattern_declare, arr)) {
-        func_name = arr[1]
-        if (func_name != "") {
-            print func_name
+    line = $0
+
+    # Find DAP_MOCK_DECLARE(func_name) - but NOT DAP_MOCK_DECLARE_CUSTOM
+    while (match(line, "DAP_MOCK_DECLARE[ \t]*\\([ \t]*[a-zA-Z_][a-zA-Z0-9_]*")) {
+        matched = substr(line, RSTART, RLENGTH)
+        # Skip if this is actually DAP_MOCK_DECLARE_CUSTOM
+        if (RSTART > 1 && substr(line, RSTART - 1, 1) == "_") {
+            line = substr(line, RSTART + RLENGTH)
+            continue
         }
-        # Remove matched part and continue searching
-        $0 = substr($0, RSTART + RLENGTH)
+        prefix_check = substr(line, RSTART, 26)
+        if (prefix_check ~ /^DAP_MOCK_DECLARE_CUSTOM/) {
+            line = substr(line, RSTART + RLENGTH)
+            continue
+        }
+        # Extract func_name: everything after "(" and optional whitespace
+        sub(/.*\([ \t]*/, "", matched)
+        if (matched != "") {
+            print matched
+        }
+        line = substr(line, RSTART + RLENGTH)
     }
-    
-    # Reset line for next pattern
-    $0 = $0
-    
+
+    line = $0
+
     # Find DAP_MOCK_DECLARE_CUSTOM(func_name, ...)
-    while (match($0, pattern_declare_custom, arr)) {
-        func_name = arr[1]
-        if (func_name != "") {
-            print func_name
+    while (match(line, "DAP_MOCK_DECLARE_CUSTOM[ \t]*\\([ \t]*[a-zA-Z_][a-zA-Z0-9_]*")) {
+        matched = substr(line, RSTART, RLENGTH)
+        sub(/.*\([ \t]*/, "", matched)
+        if (matched != "") {
+            print matched
         }
-        # Remove matched part and continue searching
-        $0 = substr($0, RSTART + RLENGTH)
+        line = substr(line, RSTART + RLENGTH)
     }
 }
-

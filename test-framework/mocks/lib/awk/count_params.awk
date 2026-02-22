@@ -16,7 +16,7 @@ BEGIN {
     
     # Check if this line contains opening parenthesis
     # Match any of: DAP_MOCK_WRAPPER_CUSTOM, _DAP_MOCK_WRAPPER_CUSTOM_NONVOID, _DAP_MOCK_WRAPPER_CUSTOM_VOID
-    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
+    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)[ \t]*\(/)) {
         found_opening_paren = 1
         paren_level = 1  # Opening paren of macro(
         
@@ -25,7 +25,7 @@ BEGIN {
         # For _DAP_MOCK_WRAPPER_CUSTOM_NONVOID(return_type, func_name, ...)
         # For _DAP_MOCK_WRAPPER_CUSTOM_VOID(func_name, ...) - no return_type
         rest = substr($0, RSTART + RLENGTH)
-        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
+        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM[ \t]*\(/)) {
             # Extract return_type - everything up to first comma or closing paren
             if (match(rest, /^([^,)]+)/)) {
                 return_type = substr(rest, RSTART, RLENGTH)
@@ -36,7 +36,7 @@ BEGIN {
                 # Remove trailing underscores
                 gsub(/_+$/, "", return_type)
             }
-        } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_NONVOID\s*\(/)) {
+        } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_NONVOID[ \t]*\(/)) {
             # Extract return_type - everything up to first comma
             if (match(rest, /^([^,]+)/)) {
                 return_type = substr(rest, RSTART, RLENGTH)
@@ -47,12 +47,12 @@ BEGIN {
                 # Remove trailing underscores
                 gsub(/_+$/, "", return_type)
             }
-        } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_VOID\s*\(/)) {
+        } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_VOID[ \t]*\(/)) {
             return_type = "void"
         }
         
         # Count PARAM( entries in rest of line
-        while (match(rest, /PARAM\s*\(/)) {
+        while (match(rest, /PARAM[ \t]*\(/)) {
             param_count++
             rest = substr(rest, RSTART + RLENGTH)
         }
@@ -119,7 +119,7 @@ in_custom {
     
     # Count PARAM( entries in current line
     line = $0
-    while (match(line, /PARAM\s*\(/)) {
+    while (match(line, /PARAM[ \t]*\(/)) {
         param_count++
         line = substr(line, RSTART + RLENGTH)
     }

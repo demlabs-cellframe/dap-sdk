@@ -123,8 +123,7 @@ BEGIN {
     }
     close(return_types_file)
     
-    # Sort and join return types
-    asort(return_types_array)
+    # Join return types (no sorting needed — order is deterministic from input)
     for (i = 1; i <= return_types_count; i++) {
         if (return_types_str == "") {
             return_types_str = return_types_array[i]
@@ -133,8 +132,6 @@ BEGIN {
         }
     }
     
-    # Sort and join return pairs
-    asort(return_pairs_array)
     for (i = 1; i <= return_pairs_count; i++) {
         if (return_types_pairs_str == "") {
             return_types_pairs_str = return_pairs_array[i]
@@ -177,8 +174,6 @@ BEGIN {
     }
     close(all_types_file)
     
-    # Sort and join all pairs
-    asort(all_pairs_array)
     for (i = 1; i <= all_pairs_count; i++) {
         if (all_types_pairs_str == "") {
             all_types_pairs_str = all_pairs_array[i]

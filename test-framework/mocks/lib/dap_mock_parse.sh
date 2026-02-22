@@ -32,22 +32,16 @@ parse_mock_declarations() {
         return 0
     fi
     
-    # Optimized: single gawk invocation per script for all files (much faster than per-file)
-    # Use awk to parse DAP_MOCK_WRAPPER_CUSTOM declarations (and variants)
-    # Extract return_type and count PARAM(...) entries between macro and opening brace {
-    # Handle multi-line declarations
-    gawk -f "${MOCK_AWK_DIR}/count_params.awk" "${existing_files[@]}" > "$tmp_param_counts" 2>/dev/null || true
+    # Single AWK invocation per script for all files (much faster than per-file)
+    "$AWK_CMD" -f "${MOCK_AWK_DIR}/count_params.awk" "${existing_files[@]}" > "$tmp_param_counts" 2>/dev/null || true
     
-    # Second pass: extract return types (both normalized and original)
-    gawk -f "${MOCK_AWK_DIR}/extract_return_types.awk" "${existing_files[@]}" > "$tmp_return_types" 2>/dev/null || true
+    "$AWK_CMD" -f "${MOCK_AWK_DIR}/extract_return_types.awk" "${existing_files[@]}" > "$tmp_return_types" 2>/dev/null || true
     
-    # Third pass: extract all types (return types + parameter types from PARAM(...))
-    gawk -f "${MOCK_AWK_DIR}/extract_all_types.awk" "${existing_files[@]}" > "$tmp_all_types" 2>/dev/null || true
+    "$AWK_CMD" -f "${MOCK_AWK_DIR}/extract_all_types.awk" "${existing_files[@]}" > "$tmp_all_types" 2>/dev/null || true
     
     # Process all mock data using single awk script
-    # The awk script outputs shell-compatible code that sets all environment variables
     local mock_data_code
-    mock_data_code=$(gawk -f "${MOCK_AWK_DIR}/process_mock_data.awk" "$tmp_param_counts" "$tmp_return_types" "$tmp_all_types" 2>/dev/null || cat <<'EOF'
+    mock_data_code=$("$AWK_CMD" -f "${MOCK_AWK_DIR}/process_mock_data.awk" "$tmp_param_counts" "$tmp_return_types" "$tmp_all_types" 2>/dev/null || cat <<'EOF'
 declare -ga PARAM_COUNTS_ARRAY=(0)
 declare -gi MAX_ARGS_COUNT=2
 RETURN_TYPES=''

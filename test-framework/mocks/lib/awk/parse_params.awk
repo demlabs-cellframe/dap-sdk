@@ -7,7 +7,7 @@ BEGIN {
     # Find all PARAM(type, name) entries
     line = $0
     pos = 1
-    while (match(substr(line, pos), /PARAM\s*\(/)) {
+    while (match(substr(line, pos), /PARAM[ \t]*\(/)) {
         # Found PARAM(, now extract type and name
         param_start = pos + RSTART + RLENGTH - 1
         paren_level = 1

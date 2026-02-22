@@ -14,11 +14,11 @@ BEGIN {
     return_type = ""
     return_type_original = ""
     
-    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
+    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)[ \t]*\(/)) {
         found_opening_paren = 1
         paren_level = 1
         rest = substr($0, RSTART + RLENGTH)
-        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
+        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM[ \t]*\(/)) {
             if (match(rest, /^([^,)]+)/)) {
                 return_type_original = substr(rest, RSTART, RLENGTH)
                 gsub(/^[ \t]+|[ \t]+$/, "", return_type_original)
@@ -29,7 +29,7 @@ BEGIN {
                 # Output both normalized and original (for normalization macros)
                 print return_type "|" return_type_original
             }
-        } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_NONVOID\s*\(/)) {
+        } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_NONVOID[ \t]*\(/)) {
             if (match(rest, /^([^,]+)/)) {
                 return_type_original = substr(rest, RSTART, RLENGTH)
                 gsub(/^[ \t]+|[ \t]+$/, "", return_type_original)
@@ -39,7 +39,7 @@ BEGIN {
                 gsub(/_+$/, "", return_type)
                 print return_type "|" return_type_original
             }
-        } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_VOID\s*\(/)) {
+        } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_VOID[ \t]*\(/)) {
             return_type = "void"
             return_type_original = "void"
             print return_type "|" return_type_original

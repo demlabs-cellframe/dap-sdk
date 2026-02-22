@@ -25,15 +25,15 @@ BEGIN {
     is_void = 0
     macro_type = ""
     
-    if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
+    if (match($0, /DAP_MOCK_WRAPPER_CUSTOM[ \t]*\(/)) {
         macro_type = "CUSTOM"
-    } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_NONVOID\s*\(/)) {
+    } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_NONVOID[ \t]*\(/)) {
         macro_type = "NONVOID"
-    } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_VOID\s*\(/)) {
+    } else if (match($0, /_DAP_MOCK_WRAPPER_CUSTOM_VOID[ \t]*\(/)) {
         macro_type = "VOID"
     }
     
-    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
+    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)[ \t]*\(/)) {
         found_opening_paren = 1
         paren_level = 1
         rest = substr($0, RSTART + RLENGTH)
