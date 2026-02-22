@@ -10,7 +10,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef DAP_OS_WINDOWS
 #include <unistd.h>
+#endif
 #include <sys/stat.h>
 
 #include "dap_common.h"
@@ -26,9 +28,7 @@
 
 static void s_cleanup_test_dir(void)
 {
-    char cmd[256];
-    snprintf(cmd, sizeof(cmd), "rm -rf %s", TEST_DIR);
-    system(cmd);
+    dap_rm_rf(TEST_DIR);
 }
 
 static void s_create_test_sql_dump(void)

@@ -30,7 +30,8 @@ static void print_hex(const char *label, const ecdsa_field_t *f) {
 
 int main(void) {
     printf("=== Testing field multiplication ===\n\n");
-    
+    int failures = 0;
+
     // Test 1: Small numbers
     printf("Test 1: Small numbers\n");
     ecdsa_field_t a, b, c;
@@ -53,6 +54,7 @@ int main(void) {
         printf("PASS: 12345 * 67890 = 838102050\n\n");
     } else {
         printf("FAIL: 12345 * 67890 != 838102050\n\n");
+        failures++;
     }
     
 #ifdef ECDSA_FIELD_52BIT
@@ -66,8 +68,8 @@ int main(void) {
     ecdsa_field_normalize(&c);
     
     // 0xFFFFFFFFFFFF * 2 = 0x1FFFFFFFFFFFE
-    expected.n[0] = 0x1FFFFFFFFFFEULL & 0xFFFFFFFFFFFFFULL;  // 52 bits
-    expected.n[1] = 0x1FFFFFFFFFFEULL >> 52;
+    expected.n[0] = 0x1FFFFFFFFFFFEULL & 0xFFFFFFFFFFFFFULL;
+    expected.n[1] = 0x1FFFFFFFFFFFEULL >> 52;
     expected.n[2] = expected.n[3] = expected.n[4] = 0;
     
     print_limbs("a", &a);
@@ -79,6 +81,7 @@ int main(void) {
         printf("PASS\n\n");
     } else {
         printf("FAIL\n\n");
+        failures++;
     }
     
     // Test 3: Numbers spanning multiple limbs - 52-bit limbs only
@@ -110,6 +113,7 @@ int main(void) {
         printf("PASS\n\n");
     } else {
         printf("FAIL\n\n");
+        failures++;
     }
 #else
     printf("Test 2 & 3: Skipped (26-bit limbs - tests use 52-bit values)\n\n");
@@ -176,5 +180,5 @@ int main(void) {
     // 5^64 = 5.42101086242752e44 = about 2^148
     printf("Expected 5^64 ~ 2^148 which spans 3 limbs\n");
     
-    return 0;
+    return failures ? 1 : 0;
 }

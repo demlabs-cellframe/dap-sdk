@@ -492,9 +492,11 @@ void ecdsa_field_normalize(ecdsa_field_t *r) {
     t9 += t8 >> 26; t8 &= ECDSA_M26;
     
     // Final reduction: subtract p if >= p
+    // P2..P8 == M26, P9 == M22, so those limbs can only equal P, never exceed it.
+    // For t1: P1 = 0x3FFFFBF < M26, so t1 CAN exceed P1 within 26 bits.
     m = (t9 == ECDSA_P_LIMB9) & (t8 == ECDSA_P_LIMB8) & (t7 == ECDSA_P_LIMB7) & (t6 == ECDSA_P_LIMB6) &
-        (t5 == ECDSA_P_LIMB5) & (t4 == ECDSA_P_LIMB4) & (t3 == ECDSA_P_LIMB3) & (t2 == ECDSA_P_LIMB2) &
-        (t1 >= ECDSA_P_LIMB1) & (t0 >= ECDSA_P_LIMB0);
+        (t5 == ECDSA_P_LIMB5) & (t4 == ECDSA_P_LIMB4) & (t3 == ECDSA_P_LIMB3) & (t2 == ECDSA_P_LIMB2);
+    m = m & ((t1 > ECDSA_P_LIMB1) | ((t1 == ECDSA_P_LIMB1) & (t0 >= ECDSA_P_LIMB0)));
     
     if (m) {
         t0 -= ECDSA_P_LIMB0;
@@ -679,7 +681,7 @@ void ecdsa_field_half(ecdsa_field_t *r) {
     uint32_t mask = (uint32_t)(-(t0 & 1)) & ECDSA_M26;
 
     t0 += ECDSA_P_LIMB0 & mask;
-    t1 += mask;
+    t1 += ECDSA_P_LIMB1 & mask;
     t2 += mask;
     t3 += mask;
     t4 += mask;
@@ -719,40 +721,38 @@ void ecdsa_field_cmov(ecdsa_field_t *r, const ecdsa_field_t *a, int flag) {
 }
 
 void ecdsa_field_mul_ref(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b) {
-    uint64_t c;
     uint64_t t[19] = {0};
-    uint32_t an[10], bn[10];
-    
-    for (int i = 0; i < 10; i++) {
-        an[i] = a->n[i];
-        bn[i] = b->n[i];
-    }
-    
+
     for (int i = 0; i < 10; i++)
         for (int j = 0; j < 10; j++)
-            t[i+j] += (uint64_t)an[i] * bn[j];
-    
-    const uint32_t R0 = 0x3D1, R1 = 0x40;
-    
-    for (int i = 10; i < 19; i++) {
-        uint64_t v = t[i];
-        t[i-10] += (v & ECDSA_M26) * R0 + ((v >> 26) & ECDSA_M26) * R0 * 64;
-        t[i-9] += (v & ECDSA_M26) * R1;
+            t[i+j] += (uint64_t)a->n[i] * b->n[j];
+
+    // Propagate carries so t[0..17] are ≤26 bits each
+    for (int i = 0; i < 18; i++) {
+        t[i+1] += t[i] >> 26;
+        t[i] &= ECDSA_M26;
     }
-    
-    c = 0;
+
+    // Reduce overflow limbs: 2^260 ≡ 15632 + 1024·2^26 (mod p)
+    // (2^260 = 2^4 · 2^256 = 16·(2^32+977) = 16·977 + 16·64·2^26)
+    for (int i = 10; i <= 18; i++) {
+        t[i-10] += t[i] * 15632ULL;
+        t[i-9]  += t[i] * 1024ULL;
+    }
+
+    uint64_t c = 0;
     for (int i = 0; i < 9; i++) {
         c += t[i];
         t[i] = c & ECDSA_M26;
         c >>= 26;
     }
     t[9] += c;
-    
+
     uint64_t d = t[9] >> 22;
-    t[9] &= 0x3FFFFFUL;
-    t[0] += d * R0;
-    t[1] += d * R1;
-    
+    t[9] &= ECDSA_M22;
+    t[0] += d * ECDSA_R_LO;
+    t[1] += d * ECDSA_R_HI;
+
     c = 0;
     for (int i = 0; i < 9; i++) {
         c += t[i];
@@ -760,7 +760,7 @@ void ecdsa_field_mul_ref(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_f
         c >>= 26;
     }
     r->n[9] = (uint32_t)(t[9] + c);
-    
+
     ecdsa_field_normalize_weak(r);
 }
 
