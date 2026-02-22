@@ -2026,7 +2026,7 @@ dap_global_db_t *dap_global_db_open(const char *a_filepath, bool a_read_only)
     int l_flags = a_read_only ? O_RDONLY : O_RDWR;
     int l_fd = open(a_filepath, l_flags);
     if (l_fd < 0) {
-        log_it(L_ERROR, "Failed to open B-tree file %s: %s", a_filepath, strerror(errno));
+        log_it(L_DEBUG, "Failed to open B-tree file %s: %s", a_filepath, strerror(errno));
         return NULL;
     }
     

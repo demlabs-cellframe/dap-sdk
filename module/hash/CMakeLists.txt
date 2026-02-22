@@ -90,7 +90,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686|i386")
     
     message(STATUS "[dap_hash] Keccak SIMD: AVX-512, AVX2, SSE2 enabled (generated)")
     
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     # ARM64: NEON, SVE, SVE2 implementations (generated)
     set(KECCAK_NEON_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_neon.c)
     set(KECCAK_SVE_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve.c)

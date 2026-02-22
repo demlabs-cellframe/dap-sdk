@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 
 #include "dap_common.h"
+#include "dap_file_utils.h"
 #include "dap_test.h"
 #include "dap_global_db.h"
 #include "dap_global_db_btree.h"
@@ -26,9 +27,7 @@
 // Helpers
 static void s_cleanup_test_dir(void)
 {
-    char cmd[256];
-    snprintf(cmd, sizeof(cmd), "rm -rf %s", TEST_DIR);
-    system(cmd);
+    dap_rm_rf(TEST_DIR);
 }
 
 static dap_global_db_key_t s_make_key(uint64_t ts, uint64_t crc)
@@ -114,7 +113,7 @@ static void test_btree_insert(void)
                                              key_str, strlen(key_str) + 1,
                                              value, strlen(value) + 1,
                                              NULL, 0, 0);
-        dap_assert(rc >= 0, "Insert should succeed");
+        dap_assert_PIF(rc >= 0, "Insert should succeed");
     }
     
     dap_global_db_sync(btree);
@@ -286,7 +285,7 @@ static void test_btree_delete(void)
         snprintf(val_buf, sizeof(val_buf), "val_%d", i);
         int rc = dap_global_db_insert(btree, &key, val_buf, strlen(val_buf) + 1,
                                              val_buf, strlen(val_buf) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Insert for delete test should succeed");
+        dap_assert_PIF(rc == 0, "Insert for delete test should succeed");
     }
     dap_global_db_sync(btree);
     dap_assert(dap_global_db_count(btree) == (uint64_t)NUM_ENTRIES, "Count should match NUM_ENTRIES");
@@ -324,8 +323,8 @@ static void test_btree_delete(void)
         // Verify remaining entries are still accessible
         for (int i = 1; i < NUM_ENTRIES; i += 2) {
             dap_global_db_key_t key = s_make_key(1000, (uint64_t)i);
-            dap_assert(dap_global_db_exists(btree, &key),
-                       "Odd keys should still exist after mass delete");
+            dap_assert_PIF(dap_global_db_exists(btree, &key),
+                           "Odd keys should still exist after mass delete");
         }
     }
 
@@ -435,11 +434,10 @@ static void test_btree_split_compaction_sigsegv(void)
 
         int rc = dap_global_db_insert(btree, &key, NULL, 0,
                                              value, VALUE_SIZE, NULL, 0, 0);
-        dap_assert(rc == 0, "Insert should succeed without SIGSEGV");
+        dap_assert_PIF(rc == 0, "Insert should succeed without SIGSEGV");
         insert_ok++;
     }
 
-    // Verify all records via individual lookups (cursor has a separate bug)
     dap_global_db_sync(btree);
 
     int verified = 0;
@@ -454,11 +452,10 @@ static void test_btree_split_compaction_sigsegv(void)
         int rc = dap_global_db_fetch(btree, &key, &text_key,
                                           &out_value, &out_value_len,
                                           &out_sign, &out_sign_len, &out_flags);
-        dap_assert(rc == 0, "Record lookup should succeed after split");
-        dap_assert(out_value_len == VALUE_SIZE,
-                   "Value length should match (data corruption check)");
+        dap_assert_PIF(rc == 0, "Record lookup should succeed after split");
+        dap_assert_PIF(out_value_len == VALUE_SIZE,
+                       "Value length should match (data corruption check)");
 
-        // Verify value integrity — if heap was corrupted, values will be wrong
         uint8_t *vp = (uint8_t *)out_value;
         int l_ok = 1;
         for (size_t j = 0; j < VALUE_SIZE; j++) {
@@ -467,7 +464,7 @@ static void test_btree_split_compaction_sigsegv(void)
                 break;
             }
         }
-        dap_assert(l_ok, "Value data should be intact (no heap corruption)");
+        dap_assert_PIF(l_ok, "Value data should be intact (no heap corruption)");
 
         DAP_DEL_Z(out_value);
         DAP_DEL_Z(out_sign);
@@ -654,16 +651,15 @@ static void test_btree_update_overwrite(void)
     dap_assert(dap_global_db_count(btree) == 51,
                "Count should still be 51 after mass update");
 
-    // Verify updated values
     for (int i = 0; i < 50; i++) {
         dap_global_db_key_t k = s_make_key(500, (uint64_t)i);
         char expected[32];
         snprintf(expected, sizeof(expected), "updated_%d", i);
         vd = NULL; vl = 0; tk = NULL; sd = NULL;
         rc = dap_global_db_fetch(btree, &k, &tk, &vd, &vl, &sd, &sl, &fl);
-        dap_assert(rc == 0, "Get updated entry should succeed");
-        dap_assert(vl == strlen(expected) + 1, "Updated value length should match");
-        dap_assert(memcmp(vd, expected, vl) == 0, "Updated value data should match");
+        dap_assert_PIF(rc == 0, "Get updated entry should succeed");
+        dap_assert_PIF(vl == strlen(expected) + 1, "Updated value length should match");
+        dap_assert_PIF(memcmp(vd, expected, vl) == 0, "Updated value data should match");
         DAP_DEL_Z(tk); DAP_DEL_Z(vd); DAP_DEL_Z(sd);
     }
 
@@ -687,8 +683,9 @@ static void test_btree_clear(void)
     for (int i = 0; i < 200; i++) {
         dap_global_db_key_t key = s_make_key(1000, (uint64_t)i);
         char v[32]; snprintf(v, sizeof(v), "v_%d", i);
-        dap_global_db_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
-                                    v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
+        dap_assert_PIF(dap_global_db_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
+                                    v, (uint32_t)strlen(v) + 1, NULL, 0, 0) == 0,
+                       "Insert should succeed");
     }
     dap_assert(dap_global_db_count(btree) == 200, "Count should be 200");
 
@@ -715,16 +712,15 @@ static void test_btree_clear(void)
         char v[32]; snprintf(v, sizeof(v), "new_%d", i);
         rc = dap_global_db_insert(btree, &k, v, (uint32_t)strlen(v) + 1,
                                          v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Insert after clear should succeed");
+        dap_assert_PIF(rc == 0, "Insert after clear should succeed");
     }
     dap_assert(dap_global_db_count(btree) == 100,
                "Count should be 100 after re-insert");
 
-    // Verify re-inserted entries
     for (int i = 0; i < 100; i++) {
         dap_global_db_key_t k = s_make_key(2000, (uint64_t)i);
-        dap_assert(dap_global_db_exists(btree, &k),
-                   "Re-inserted entry should exist");
+        dap_assert_PIF(dap_global_db_exists(btree, &k),
+                       "Re-inserted entry should exist");
     }
 
     dap_global_db_close(btree);
@@ -834,11 +830,11 @@ static void test_btree_cursor_reverse(void)
         char *tk = NULL; void *vd = NULL, *sd = NULL;
         uint32_t vl = 0, sl = 0; uint8_t fl = 0;
         rc = dap_global_db_cursor_get(cur, &k, &tk, &vd, &vl, &sd, &sl, &fl);
-        dap_assert(rc == 0, "Cursor get in reverse should succeed");
+        dap_assert_PIF(rc == 0, "Cursor get in reverse should succeed");
 
         if (!first) {
-            dap_assert(dap_global_db_key_compare(&k, &prev_key) < 0,
-                       "Keys should be in descending order during reverse iteration");
+            dap_assert_PIF(dap_global_db_key_compare(&k, &prev_key) < 0,
+                           "Keys should be in descending order during reverse iteration");
         }
         prev_key = k;
         first = false;
@@ -877,17 +873,15 @@ static void test_btree_key_ordering(void)
         int tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
     }
 
-    // Insert in random order
     for (int i = 0; i < N; i++) {
         dap_global_db_key_t key = s_make_key(1000, (uint64_t)indices[i]);
         char v[16]; snprintf(v, sizeof(v), "%d", indices[i]);
         int rc = dap_global_db_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
                                              v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Random-order insert should succeed");
+        dap_assert_PIF(rc == 0, "Random-order insert should succeed");
     }
     dap_global_db_sync(btree);
 
-    // Verify forward cursor produces ascending keys
     dap_global_db_cursor_t *cur = dap_global_db_cursor_create(btree);
     int rc = dap_global_db_cursor_move(cur, DAP_GLOBAL_DB_FIRST, NULL);
     dap_assert(rc == 0, "FIRST should succeed");
@@ -902,8 +896,8 @@ static void test_btree_key_ordering(void)
         dap_global_db_cursor_get(cur, &k, &tk, &vd, &vl, &sd, &sl, &fl);
 
         if (!first) {
-            dap_assert(dap_global_db_key_compare(&k, &prev_key) > 0,
-                       "Keys should be in ascending order after random insert");
+            dap_assert_PIF(dap_global_db_key_compare(&k, &prev_key) > 0,
+                           "Keys should be in ascending order after random insert");
         }
         prev_key = k;
         first = false;
@@ -967,10 +961,11 @@ static void test_btree_overflow_benchmark_n2(void)
         dap_assert(rc == 0, "Get overflow (bench n=2) should find key");
         dap_assert(vr.len == VAL_SIZE, "Value length should match");
         uint8_t expected = (uint8_t)(i & 0xFF);
-        for (size_t j = 0; j < VAL_SIZE; j++) {
-            dap_assert(((const uint8_t *)vr.data)[j] == expected,
-                       "Overflow value data should match");
+        bool intact = true;
+        for (size_t j = 0; j < VAL_SIZE && intact; j++) {
+            if (((const uint8_t *)vr.data)[j] != expected) intact = false;
         }
+        dap_assert(intact, "Overflow value data should match");
     }
 
     free(key);
@@ -1003,7 +998,7 @@ static void test_btree_overflow_values(void)
         dap_global_db_key_t key = s_make_key(4000, (uint64_t)i);
         int rc = dap_global_db_insert(btree, &key, NULL, 0,
                                             big_val, (uint32_t)VAL_SIZE, NULL, 0, 0);
-        dap_assert(rc == 0, "Insert overflow value should succeed");
+        dap_assert_PIF(rc == 0, "Insert overflow value should succeed");
     }
     dap_assert(dap_global_db_count(btree) == (uint64_t)N, "Count should match");
 
@@ -1011,8 +1006,8 @@ static void test_btree_overflow_values(void)
         dap_global_db_key_t key = s_make_key(4000, (uint64_t)i);
         dap_global_db_ref_t vr;
         int rc = dap_global_db_get_ref(btree, &key, NULL, &vr, NULL, NULL);
-        dap_assert(rc == 0, "Get overflow value should succeed");
-        dap_assert(vr.len == VAL_SIZE, "Value length should match");
+        dap_assert_PIF(rc == 0, "Get overflow value should succeed");
+        dap_assert_PIF(vr.len == VAL_SIZE, "Value length should match");
         uint8_t expected = (uint8_t)(i & 0xFF);
         bool intact = true;
         for (size_t j = 0; j < VAL_SIZE && intact; j++) {
@@ -1051,19 +1046,18 @@ static void test_btree_large_values(void)
         char kstr[16]; snprintf(kstr, sizeof(kstr), "big_%d", i);
         int rc = dap_global_db_insert(btree, &key, kstr, (uint32_t)strlen(kstr) + 1,
                                              big_val, (uint32_t)VAL_SIZE, NULL, 0, 0);
-        dap_assert(rc == 0, "Insert large value should succeed");
+        dap_assert_PIF(rc == 0, "Insert large value should succeed");
     }
     dap_assert(dap_global_db_count(btree) == (uint64_t)N, "Count should match");
     dap_global_db_sync(btree);
 
-    // Verify each entry's value integrity
     for (int i = 0; i < N; i++) {
         dap_global_db_key_t key = s_make_key(3000, (uint64_t)i);
         char *tk = NULL; void *vd = NULL, *sd = NULL;
         uint32_t vl = 0, sl = 0; uint8_t fl = 0;
         int rc = dap_global_db_fetch(btree, &key, &tk, &vd, &vl, &sd, &sl, &fl);
-        dap_assert(rc == 0, "Get large value should succeed");
-        dap_assert(vl == (uint32_t)VAL_SIZE, "Value length should match");
+        dap_assert_PIF(rc == 0, "Get large value should succeed");
+        dap_assert_PIF(vl == (uint32_t)VAL_SIZE, "Value length should match");
 
         uint8_t expected = (uint8_t)(i & 0xFF);
         uint8_t *p = (uint8_t *)vd;
@@ -1071,7 +1065,7 @@ static void test_btree_large_values(void)
         for (size_t j = 0; j < VAL_SIZE; j++) {
             if (p[j] != expected) { intact = false; break; }
         }
-        dap_assert(intact, "Large value data should be intact");
+        dap_assert_PIF(intact, "Large value data should be intact");
         DAP_DEL_Z(tk); DAP_DEL_Z(vd); DAP_DEL_Z(sd);
     }
 
@@ -1141,9 +1135,9 @@ static void test_btree_persistence_after_delete(void)
             dap_global_db_key_t key = s_make_key(5000, (uint64_t)i);
             bool exists = dap_global_db_exists(btree, &key);
             if (i % 2 == 0) {
-                dap_assert(!exists, "Even key should not exist after reopen");
+                dap_assert_PIF(!exists, "Even key should not exist after reopen");
             } else {
-                dap_assert(exists, "Odd key should exist after reopen");
+                dap_assert_PIF(exists, "Odd key should exist after reopen");
             }
         }
 
@@ -1166,31 +1160,28 @@ static void test_btree_root_collapse(void)
     dap_global_db_t *btree = dap_global_db_create(path);
     dap_assert(btree != NULL, "Tree should be created");
 
-    // Insert 2000 entries to force multi-level tree
     const int N = 2000;
     for (int i = 0; i < N; i++) {
         dap_global_db_key_t key = s_make_key(6000, (uint64_t)i);
         char v[32]; snprintf(v, sizeof(v), "c_%d", i);
         int rc = dap_global_db_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
                                              v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Insert for collapse test should succeed");
+        dap_assert_PIF(rc == 0, "Insert for collapse test should succeed");
     }
     dap_global_db_sync(btree);
 
-    // Delete all but 5 entries
     for (int i = 5; i < N; i++) {
         dap_global_db_key_t key = s_make_key(6000, (uint64_t)i);
         int rc = dap_global_db_delete(btree, &key);
-        dap_assert(rc == 0, "Delete for collapse should succeed");
+        dap_assert_PIF(rc == 0, "Delete for collapse should succeed");
     }
     dap_assert(dap_global_db_count(btree) == 5,
                "Count should be 5 after mass delete");
 
-    // Verify remaining entries
     for (int i = 0; i < 5; i++) {
         dap_global_db_key_t key = s_make_key(6000, (uint64_t)i);
-        dap_assert(dap_global_db_exists(btree, &key),
-                   "Surviving entry should exist after collapse");
+        dap_assert_PIF(dap_global_db_exists(btree, &key),
+                       "Surviving entry should exist after collapse");
     }
 
     // Cursor check
@@ -1205,11 +1196,10 @@ static void test_btree_root_collapse(void)
     dap_assert(count == 5, "Cursor should iterate 5 entries after collapse");
     dap_global_db_cursor_close(cur);
 
-    // Delete remaining
     for (int i = 0; i < 5; i++) {
         dap_global_db_key_t key = s_make_key(6000, (uint64_t)i);
         rc = dap_global_db_delete(btree, &key);
-        dap_assert(rc == 0, "Delete last entries should succeed");
+        dap_assert_PIF(rc == 0, "Delete last entries should succeed");
     }
     dap_assert(dap_global_db_count(btree) == 0,
                "Tree should be empty after deleting everything");
@@ -1249,36 +1239,33 @@ static void test_btree_insert_after_delete(void)
     dap_assert(dap_global_db_count(btree) == 0,
                "Should be empty after deleting all");
 
-    // Phase 3: Re-insert different entries (reuses freed pages)
     for (int i = 0; i < REUSE_N; i++) {
         dap_global_db_key_t key = s_make_key(8000, (uint64_t)i);
         char v[32]; snprintf(v, sizeof(v), "new_%d", i);
         int rc = dap_global_db_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
                                              v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Re-insert should succeed");
-        dap_assert(dap_global_db_exists(btree, &key),
-                   "Just-inserted key must be immediately readable");
+        dap_assert_PIF(rc == 0, "Re-insert should succeed");
+        dap_assert_PIF(dap_global_db_exists(btree, &key),
+                       "Just-inserted key must be immediately readable");
     }
     dap_assert(dap_global_db_count(btree) == (uint64_t)REUSE_N,
                "Count should match after re-insert");
 
-    // Verify old keys don't exist
     for (int i = 0; i < REUSE_N; i++) {
         dap_global_db_key_t key = s_make_key(7000, (uint64_t)i);
-        dap_assert(!dap_global_db_exists(btree, &key),
-                   "Old key should not exist after re-insert");
+        dap_assert_PIF(!dap_global_db_exists(btree, &key),
+                       "Old key should not exist after re-insert");
     }
 
-    // Verify new keys exist with correct values
     for (int i = 0; i < REUSE_N; i++) {
         dap_global_db_key_t key = s_make_key(8000, (uint64_t)i);
         char expected[32]; snprintf(expected, sizeof(expected), "new_%d", i);
         char *tk = NULL; void *vd = NULL, *sd = NULL;
         uint32_t vl = 0, sl = 0; uint8_t fl = 0;
         int rc = dap_global_db_fetch(btree, &key, &tk, &vd, &vl, &sd, &sl, &fl);
-        dap_assert(rc == 0, "All re-inserted entries must be found");
-        dap_assert(vl == strlen(expected) + 1, "Value length should match");
-        dap_assert(memcmp(vd, expected, vl) == 0, "Value data should match");
+        dap_assert_PIF(rc == 0, "All re-inserted entries must be found");
+        dap_assert_PIF(vl == strlen(expected) + 1, "Value length should match");
+        dap_assert_PIF(memcmp(vd, expected, vl) == 0, "Value data should match");
         DAP_DEL_Z(tk); DAP_DEL_Z(vd); DAP_DEL_Z(sd);
     }
 
@@ -1336,7 +1323,7 @@ static void test_btree_invariants(void)
         char v[32]; snprintf(v, sizeof(v), "inv_%d", i);
         int rc = dap_global_db_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
                                              v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Invariant test insert should succeed");
+        dap_assert_PIF(rc == 0, "Invariant test insert should succeed");
     }
     dap_global_db_sync(btree);
     l_rc = dap_global_db_verify(btree, &l_count);
@@ -1401,13 +1388,12 @@ static void test_btree_stress(void)
 
     const int N = 10000;
 
-    // Insert all
     for (int i = 0; i < N; i++) {
         dap_global_db_key_t key = s_make_key(9000, (uint64_t)i);
         char v[32]; snprintf(v, sizeof(v), "s_%d", i);
         int rc = dap_global_db_insert(btree, &key, v, (uint32_t)strlen(v) + 1,
                                              v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Stress insert should succeed");
+        dap_assert_PIF(rc == 0, "Stress insert should succeed");
     }
     dap_global_db_sync(btree);
     dap_assert(dap_global_db_count(btree) == (uint64_t)N,
@@ -1461,14 +1447,13 @@ static void test_btree_stress(void)
                    "Verify count should match remaining after partial delete");
     }
 
-    // Verify survivors exist and deleted don't
     for (int i = 0; i < N; i++) {
         dap_global_db_key_t key = s_make_key(9000, (uint64_t)i);
         bool exists = dap_global_db_exists(btree, &key);
         if (i % 3 == 0) {
-            dap_assert(!exists, "Deleted key should not exist");
+            dap_assert_PIF(!exists, "Deleted key should not exist");
         } else {
-            dap_assert(exists, "Surviving key should exist");
+            dap_assert_PIF(exists, "Surviving key should exist");
         }
     }
 
@@ -1579,12 +1564,11 @@ static void test_btree_concurrent_reads(void)
         snprintf(text_key, sizeof(text_key), "key_%d", i);
         int rc = dap_global_db_insert(tree, &key, text_key, (uint32_t)strlen(text_key) + 1,
                                              value, sizeof(value), NULL, 0, 0);
-        dap_assert(rc == 0, "Insert should succeed during populate");
+        dap_assert_PIF(rc == 0, "Insert should succeed during populate");
     }
 
     dap_global_db_sync(tree);
 
-    // Launch reader threads
     pthread_t threads[NUM_READER_THREADS];
     reader_thread_arg_t args[NUM_READER_THREADS];
 
@@ -1768,7 +1752,7 @@ static void test_btree_snapshot_isolation(void)
         char v[32]; snprintf(v, sizeof(v), "snap_%d", i);
         int rc = dap_global_db_insert(tree, &key, v, (uint32_t)strlen(v) + 1,
                                              v, (uint32_t)strlen(v) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Snapshot isolation insert should succeed");
+        dap_assert_PIF(rc == 0, "Snapshot isolation insert should succeed");
     }
     dap_global_db_sync(tree);
     dap_assert(dap_global_db_count(tree) == (uint64_t)N,
@@ -1997,13 +1981,12 @@ static void test_btree_cross_parent_cursor(void)
     const int N = 3000;
     char val[64];
 
-    // Insert N records with DECREASING keys to maximize splits and branch diversity
     for (int i = N; i > 0; i--) {
         dap_global_db_key_t key = s_make_key(500, (uint64_t)i);
         snprintf(val, sizeof(val), "cross_%d", i);
         int rc = dap_global_db_insert(btree, &key, val, (uint32_t)strlen(val) + 1,
                                              val, (uint32_t)strlen(val) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Insert decreasing key should succeed");
+        dap_assert_PIF(rc == 0, "Insert decreasing key should succeed");
     }
     dap_global_db_sync(btree);
 
@@ -2030,14 +2013,13 @@ static void test_btree_cross_parent_cursor(void)
         rc = dap_global_db_cursor_get(cursor, &key, &text_key, &vdata, &vlen, &sdata, &slen, &flags);
         if (rc != 0) break;
         if (fwd_count > 0)
-            dap_assert(memcmp(&prev_key, &key, sizeof(key)) < 0, "Keys must be strictly ascending");
+            dap_assert_PIF(memcmp(&prev_key, &key, sizeof(key)) < 0, "Keys must be strictly ascending");
         prev_key = key;
         fwd_count++;
     } while (dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_NEXT, NULL) == 0);
 
     dap_assert(fwd_count == (size_t)N, "Forward scan must visit all N records");
 
-    // Reverse cursor scan
     rc = dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_LAST, NULL);
     dap_assert(rc == 0, "Cursor should move to last");
 
@@ -2052,7 +2034,7 @@ static void test_btree_cross_parent_cursor(void)
         rc = dap_global_db_cursor_get(cursor, &key, &text_key, &vdata, &vlen, &sdata, &slen, &flags);
         if (rc != 0) break;
         if (rev_count > 0)
-            dap_assert(memcmp(&prev_key, &key, sizeof(key)) > 0, "Keys must be strictly descending in reverse");
+            dap_assert_PIF(memcmp(&prev_key, &key, sizeof(key)) > 0, "Keys must be strictly descending in reverse");
         prev_key = key;
         rev_count++;
     } while (dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_PREV, NULL) == 0);
@@ -2075,13 +2057,12 @@ static void test_btree_cross_parent_cursor(void)
     dap_assert(rc == 0, "Tree should pass verify after cross-boundary deletes");
     dap_assert(count == (uint64_t)(N - deleted), "Entry count should match after deletes");
 
-    // Re-insert at boundary positions (odd keys that were deleted)
     for (int i = 1; i <= N; i += 3) {
         dap_global_db_key_t key = s_make_key(500, (uint64_t)i);
         snprintf(val, sizeof(val), "reinsert_%d", i);
         rc = dap_global_db_insert(btree, &key, val, (uint32_t)strlen(val) + 1,
                                          val, (uint32_t)strlen(val) + 1, NULL, 0, 0);
-        dap_assert(rc == 0, "Re-insert should succeed");
+        dap_assert_PIF(rc == 0, "Re-insert should succeed");
     }
     dap_global_db_sync(btree);
 
@@ -2105,7 +2086,7 @@ static void test_btree_cross_parent_cursor(void)
         rc = dap_global_db_cursor_get(cursor, &key, &text_key, &vdata, &vlen, &sdata, &slen, &flags);
         if (rc != 0) break;
         if (fwd_count > 0)
-            dap_assert(memcmp(&prev_key, &key, sizeof(key)) < 0, "Final scan keys must be ascending");
+            dap_assert_PIF(memcmp(&prev_key, &key, sizeof(key)) < 0, "Final scan keys must be ascending");
         prev_key = key;
         fwd_count++;
     } while (dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_NEXT, NULL) == 0);
