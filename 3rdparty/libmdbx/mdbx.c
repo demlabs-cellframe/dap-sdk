@@ -24911,6 +24911,37 @@ __cold MDBX_INTERNAL int lck_init(MDBX_env *env, MDBX_env *inprocess_neighbor, i
     goto bailout;
 
   rc = pthread_mutex_init(&env->lck_mmap.lck->rdt_lock, &ma);
+#if MDBX_LOCKING == MDBX_LOCKING_POSIX2008
+  if (unlikely(rc == ENOTSUP || rc == EOPNOTSUPP)) {
+    /* QEMU user-mode: PTHREAD_PROCESS_SHARED + PTHREAD_MUTEX_ROBUST combo
+     * is not supported. Fall back to non-robust process-shared mutex. */
+    pthread_mutexattr_t ma_fallback;
+    rc = pthread_mutexattr_init(&ma_fallback);
+    if (likely(!rc)) {
+      rc = pthread_mutexattr_setpshared(&ma_fallback, PTHREAD_PROCESS_SHARED);
+#if defined(_POSIX_THREAD_PRIO_INHERIT) && _POSIX_THREAD_PRIO_INHERIT >= 0 && !defined(MDBX_SAFE4QEMU)
+      if (!rc) {
+        int prc = pthread_mutexattr_setprotocol(&ma_fallback, PTHREAD_PRIO_INHERIT);
+        if (prc == ENOTSUP)
+          prc = pthread_mutexattr_setprotocol(&ma_fallback, PTHREAD_PRIO_NONE);
+        if (prc && prc != ENOTSUP)
+          rc = prc;
+      }
+#endif /* PTHREAD_PRIO_INHERIT */
+      if (!rc) {
+        int trc = pthread_mutexattr_settype(&ma_fallback, PTHREAD_MUTEX_ERRORCHECK);
+        if (trc && trc != ENOTSUP)
+          rc = trc;
+      }
+      if (!rc)
+        rc = pthread_mutex_init(&env->lck_mmap.lck->rdt_lock, &ma_fallback);
+      if (!rc)
+        rc = pthread_mutex_init(&env->lck_mmap.lck->wrt_lock, &ma_fallback);
+      pthread_mutexattr_destroy(&ma_fallback);
+    }
+    goto bailout;
+  }
+#endif /* MDBX_LOCKING == MDBX_LOCKING_POSIX2008 */
   if (rc)
     goto bailout;
   rc = pthread_mutex_init(&env->lck_mmap.lck->wrt_lock, &ma);
