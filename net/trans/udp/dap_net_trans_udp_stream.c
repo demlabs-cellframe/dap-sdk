@@ -567,7 +567,6 @@ static int s_client_flow_ctrl_payload_deliver_cb(
         }
         
         case DAP_STREAM_UDP_PKT_DATA: {
-            // DATA packet
             debug_if(s_debug_more, L_DEBUG,
                      "CLIENT FC deliver: DATA packet (%zu bytes)", a_payload_size);
             

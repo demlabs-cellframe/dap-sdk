@@ -105,7 +105,7 @@ static bool s_find_real_interface_ip(void) {
     return false;
 }
 #define TEST_CH_ID          'T'
-#define NUM_CLIENTS         100    // 100 clients to stress test
+#define NUM_CLIENTS         100
 #define DATA_SIZE           (256 * 1024)  // 256KB per client (25.6MB total)
 #define HANDSHAKE_TIMEOUT   30000
 #define DATA_TIMEOUT        120000
@@ -160,7 +160,8 @@ static client_ctx_t s_clients[NUM_CLIENTS];
 
 static bool s_ch_pkt_in(dap_stream_ch_t *a_ch, void *a_data)
 {
-    // New API: data is dap_stream_ch_pkt_t*, size in pkt->hdr.data_size
+    if (a_ch->stream->is_client_to_uplink)
+        return true;
     dap_stream_ch_pkt_t *l_pkt = (dap_stream_ch_pkt_t *)a_data;
     size_t l_size = l_pkt->hdr.data_size;
     log_it(L_DEBUG, "Server: echo %zu bytes", l_size);
@@ -558,8 +559,32 @@ static void test_multiclient_udp(void)
                 }
             } else {
                 data_fail++;
-                printf("Client %d: DATA MISMATCH (got %zu, expected %zu)\n", 
-                       i, ctx->recv_size, ctx->send_size);
+                bool first_chunk_ok = (ctx->recv_size >= ctx->send_size) &&
+                    (memcmp(ctx->recv_data, ctx->send_data, ctx->send_size) == 0);
+                printf("Client %d: DATA MISMATCH (got %zu, expected %zu, first_chunk=%s)\n", 
+                       i, ctx->recv_size, ctx->send_size,
+                       first_chunk_ok ? "MATCH" : "DIFFER");
+                if (ctx->recv_size > ctx->send_size && first_chunk_ok) {
+                    size_t extra = ctx->recv_size - ctx->send_size;
+                    size_t extra_chunks = extra / ctx->send_size;
+                    size_t remainder = extra % ctx->send_size;
+                    printf("  -> Extra data: %zu bytes (%zu full chunks + %zu remainder)\n",
+                           extra, extra_chunks, remainder);
+                    for (size_t c = 1; c <= extra_chunks + (remainder > 0 ? 1 : 0); c++) {
+                        size_t chunk_start = c * ctx->send_size;
+                        if (chunk_start >= ctx->recv_size) break;
+                        size_t chunk_len = ctx->send_size;
+                        if (chunk_start + chunk_len > ctx->recv_size)
+                            chunk_len = ctx->recv_size - chunk_start;
+                        for (int j = 0; j < NUM_CLIENTS; j++) {
+                            if (chunk_len >= s_clients[j].send_size &&
+                                memcmp(ctx->recv_data + chunk_start, s_clients[j].send_data, s_clients[j].send_size) == 0) {
+                                printf("  -> Chunk %zu matches CLIENT %d's data!\n", c, j);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         } else {
             data_fail++;

@@ -1197,10 +1197,13 @@ static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_s
         return -2;
     }
 
-    // State check: only for client-side (server is always OPEN after upgrade)
+    if (l_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
+        return -3;
+    }
+
     if (l_priv && a_stream->is_client_to_uplink && l_priv->state != DAP_WS_STATE_OPEN) {
         log_it(L_ERROR, "WebSocket not in OPEN state");
-        return -3;
+        return -4;
     }
 
     // Build WebSocket binary frame
@@ -1586,33 +1589,39 @@ static void s_ws_mask_unmask(uint8_t *a_data, size_t a_size, uint32_t a_mask_key
 }
 
 /**
- * @brief Ping timer callback
+ * @brief Ping timer callback — fires every ping_interval_ms.
+ *
+ * Before sending a new ping, checks whether the previous ping received a pong.
+ * If pong was not received within one full ping cycle, the connection is dead.
  */
 static bool s_ws_ping_timer_callback(void *a_user_data)
 {
     dap_stream_t *l_stream = (dap_stream_t*)a_user_data;
     if (!l_stream) {
-        return false;  // Stop timer
+        return false;
     }
 
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(l_stream);
     if (!l_priv || l_priv->state != DAP_WS_STATE_OPEN) {
-        return false;  // Stop timer
+        return false;
     }
 
-    // Send ping
-    dap_net_trans_websocket_send_ping(l_stream, NULL, 0);
-
-    // Check pong timeout
     int64_t l_now = time(NULL) * 1000;
-    if (l_priv->last_pong_time > 0 &&
-        (l_now - l_priv->last_pong_time) > (int64_t)l_priv->config.pong_timeout_ms) {
-        log_it(L_WARNING, "WebSocket pong timeout, closing connection");
+
+    // If a ping was already sent, verify that a pong was received for it
+    if (l_priv->last_ping_sent_time > 0 &&
+        l_priv->last_pong_time < l_priv->last_ping_sent_time) {
+        log_it(L_WARNING, "WebSocket pong timeout (%lld ms since ping), closing connection",
+               (long long)(l_now - l_priv->last_ping_sent_time));
         dap_net_trans_websocket_send_close(l_stream, DAP_WS_CLOSE_ABNORMAL, "Pong timeout");
-        return false;  // Stop timer
+        return false;
     }
 
-    return true;  // Continue timer
+    // Send new ping and record the timestamp
+    dap_net_trans_websocket_send_ping(l_stream, NULL, 0);
+    l_priv->last_ping_sent_time = l_now;
+
+    return true;
 }
 
 // ============================================================================
@@ -1648,12 +1657,14 @@ int dap_net_trans_websocket_send_close(dap_stream_t *a_stream, dap_ws_close_code
         return -1;
     }
 
-    // Get esocket: prefer trans_ctx, fallback to priv
     dap_events_socket_t *l_es = (a_stream->trans_ctx && a_stream->trans_ctx->esocket)
                                  ? a_stream->trans_ctx->esocket : NULL;
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_es && l_priv) l_es = l_priv->esocket;
     if (!l_es) return -2;
+
+    if (l_es->flags & DAP_SOCK_SIGNAL_CLOSE)
+        return 0;
 
     // Build close payload: 2-byte code + optional reason
     size_t l_reason_len = a_reason ? strlen(a_reason) : 0;
@@ -1700,7 +1711,7 @@ int dap_net_trans_websocket_send_ping(dap_stream_t *a_stream, const void *a_payl
                                  ? a_stream->trans_ctx->esocket : NULL;
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_es && l_priv) l_es = l_priv->esocket;
-    if (!l_es) return -3;
+    if (!l_es || (l_es->flags & DAP_SOCK_SIGNAL_CLOSE)) return -3;
 
     size_t l_frame_size = a_payload_size + 14;
     uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);
@@ -1735,7 +1746,7 @@ int dap_net_trans_websocket_send_pong(dap_stream_t *a_stream, const void *a_payl
                                  ? a_stream->trans_ctx->esocket : NULL;
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
     if (!l_es && l_priv) l_es = l_priv->esocket;
-    if (!l_es) return -3;
+    if (!l_es || (l_es->flags & DAP_SOCK_SIGNAL_CLOSE)) return -3;
 
     size_t l_frame_size = a_payload_size + 14;
     uint8_t *l_frame = DAP_NEW_Z_SIZE(uint8_t, l_frame_size);

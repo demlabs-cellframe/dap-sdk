@@ -82,7 +82,9 @@ typedef struct test_scenario {
 // Test mode flags (set via command line)
 static bool s_stress_mode = false;      // --stress: Enable 1000+ client scenarios
 static bool s_quick_mode = false;       // --quick: Only 1 client scenario per tier
-static size_t s_max_clients = 100;      // Default max clients (override with --max-clients=N)
+static size_t s_max_clients = 10;       // Default max clients (override with --max-clients=N)
+static enum dap_log_level s_log_level = L_DEBUG;  // --log-level: controls verbosity
+static const char *s_trans_filter = NULL;          // --trans=NAME: test only this transport
 
 static const test_scenario_t g_scenarios[] = {
     // Basic scenarios - always run
@@ -1208,6 +1210,10 @@ static void test_02_sequential_trans_testing(void)
     // Test each transport protocol
     for (size_t trans_idx = 0; trans_idx < TRANS_CONFIG_COUNT; trans_idx++) {
         const trans_test_config_t *l_trans = &g_trans_configs[trans_idx];
+
+        if (s_trans_filter && strcasecmp(s_trans_filter, l_trans->name) != 0)
+            continue;
+
         bool l_is_datagram = (l_trans->trans_type == DAP_NET_TRANS_UDP_BASIC);
         
         // For datagram protocols, test each available tier
@@ -1431,14 +1437,31 @@ static void s_print_usage(const char *prog_name)
 {
     printf("Usage: %s [OPTIONS]\n", prog_name);
     printf("\nOptions:\n");
-    printf("  --stress          Enable stress tests (1000+ clients)\n");
-    printf("  --quick           Quick mode: only 1 client scenario per tier\n");
-    printf("  --max-clients=N   Set max clients limit (default: 100)\n");
-    printf("  --help            Show this help\n");
+    printf("  --stress            Enable stress tests (1000+ clients)\n");
+    printf("  --quick             Quick mode: only 1 client scenario per tier\n");
+    printf("  --max-clients=N     Set max clients limit (default: 10)\n");
+    printf("  --log-level=LEVEL   Set log level: debug|info|notice|warning|error (default: debug)\n");
+    printf("  --trans=NAME        Test only this transport: HTTP|WebSocket|UDP|DNS\n");
+    printf("  --help              Show this help\n");
     printf("\nExamples:\n");
-    printf("  %s                 Run default tests (up to 100 clients)\n", prog_name);
-    printf("  %s --quick         Quick smoke test (1 client only)\n", prog_name);
-    printf("  %s --stress        Full stress test (up to 1000 clients)\n", prog_name);
+    printf("  %s                            Run default tests (up to 10 clients)\n", prog_name);
+    printf("  %s --quick                    Quick smoke test (1 client only)\n", prog_name);
+    printf("  %s --max-clients=100          100 clients, full debug logs\n", prog_name);
+    printf("  %s --trans=WebSocket --max-clients=100  WS stress test\n", prog_name);
+    printf("  %s --stress --log-level=warning  Stress test, minimal output\n", prog_name);
+}
+
+static enum dap_log_level s_parse_log_level(const char *a_str)
+{
+    if (strcasecmp(a_str, "debug") == 0)   return L_DEBUG;
+    if (strcasecmp(a_str, "info") == 0)    return L_INFO;
+    if (strcasecmp(a_str, "notice") == 0)  return L_NOTICE;
+    if (strcasecmp(a_str, "msg") == 0)     return L_MSG;
+    if (strcasecmp(a_str, "warning") == 0) return L_WARNING;
+    if (strcasecmp(a_str, "error") == 0)   return L_ERROR;
+    if (strcasecmp(a_str, "critical") == 0) return L_CRITICAL;
+    printf("  ⚠️  Unknown log level '%s', using debug\n", a_str);
+    return L_DEBUG;
 }
 
 static void s_parse_args(int argc, char **argv)
@@ -1446,7 +1469,7 @@ static void s_parse_args(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--stress") == 0) {
             s_stress_mode = true;
-            s_max_clients = 10000;  // Allow stress scenarios
+            s_max_clients = 10000;
             printf("  ℹ️  Stress mode enabled (max clients: %zu)\n", s_max_clients);
         } else if (strcmp(argv[i], "--quick") == 0) {
             s_quick_mode = true;
@@ -1455,6 +1478,12 @@ static void s_parse_args(int argc, char **argv)
         } else if (strncmp(argv[i], "--max-clients=", 14) == 0) {
             s_max_clients = (size_t)atoi(argv[i] + 14);
             printf("  ℹ️  Max clients set to: %zu\n", s_max_clients);
+        } else if (strncmp(argv[i], "--log-level=", 12) == 0) {
+            s_log_level = s_parse_log_level(argv[i] + 12);
+            printf("  ℹ️  Log level set to: %s (%d)\n", argv[i] + 12, s_log_level);
+        } else if (strncmp(argv[i], "--trans=", 8) == 0) {
+            s_trans_filter = argv[i] + 8;
+            printf("  ℹ️  Transport filter: %s\n", s_trans_filter);
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             s_print_usage(argv[0]);
             exit(0);
@@ -1485,8 +1514,8 @@ int main(int argc, char **argv)
                                 "timeout_active_after_connect=120\n"
                                 "debug_more=false\n"
                                "[stream]\n"
-                                "debug_more=true\n"
-                                "debug_dump_stream_headers=true\n"
+                                "debug_more=false\n"
+                                "debug_dump_stream_headers=false\n"
                                 "debug_channels=false\n"
                                 "[stream_pkt]\n"
                                 "debug_more=false\n"
@@ -1503,16 +1532,15 @@ int main(int argc, char **argv)
                                 "[dap_net_trans_udp_server]\n"
                                 "debug_more=false\n"
                                 "[test_trans_helpers]\n"
-                                "debug_more=true\n";
+                                "debug_more=false\n";
     FILE *f = fopen("test_trans.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);
         fclose(f);
     }
     
-    // Set logging output to stdout; level is controlled by config [general] log_level
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    dap_log_level_set(L_DEBUG);
+    dap_log_level_set(s_log_level);
     
     // Initialize config system first
     dap_config_init(".");

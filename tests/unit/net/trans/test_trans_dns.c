@@ -89,6 +89,7 @@ DAP_MOCK_DECLARE(dap_events_socket_create_platform);
 DAP_MOCK_DECLARE(dap_events_socket_delete);
 DAP_MOCK_DECLARE(dap_events_socket_delete_unsafe);
 DAP_MOCK_DECLARE(dap_events_socket_write_unsafe);
+DAP_MOCK_DECLARE(dap_events_socket_sendto_unsafe);
 DAP_MOCK_DECLARE(dap_events_socket_connect);
 DAP_MOCK_DECLARE(dap_events_socket_resolve_and_set_addr);
 DAP_MOCK_DECLARE(dap_worker_add_events_socket);
@@ -196,6 +197,23 @@ DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_events_socket_write_unsafe,
     
     // Return size passed (simulate successful write)
     return a_size;
+}
+
+// Wrapper for dap_events_socket_sendto_unsafe (used by DNS write)
+DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_events_socket_sendto_unsafe,
+    PARAM(dap_events_socket_t*, a_esocket),
+    PARAM(const void*, a_data),
+    PARAM(size_t, a_data_size),
+    PARAM(const struct sockaddr_storage*, a_addr),
+    PARAM(socklen_t, a_addr_len)
+)
+{
+    UNUSED(a_esocket);
+    UNUSED(a_data);
+    UNUSED(a_addr);
+    UNUSED(a_addr_len);
+    
+    return a_data_size;
 }
 
 // Wrapper for dap_events_socket_create
@@ -486,9 +504,9 @@ static void test_03_server_start(void)
                                                 l_addrs, l_ports, 1);
     TEST_ASSERT(l_ret == 0, "Server start should succeed");
     
-    // Verify DNS handlers were registered
-    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_stream_add_proc_dns) >= 1,
-                "dap_stream_add_proc_dns should be called for DNS handlers");
+    // Verify server was created (DNS uses its own UDP listener, not dap_stream_add_proc_dns)
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_server_new) >= 1,
+                "dap_server_new should be called to create UDP listener");
     
     // Verify listen address was added
     TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_server_listen_addr_add) >= 1,
@@ -757,8 +775,11 @@ static void test_13_stream_handshake(void)
     s_mock_stream.trans = l_trans;
     s_mock_stream.trans_ctx->esocket = &s_mock_events_socket;  // Set esocket for handshake operations
     
-    // Test handshake_init operation
+    // Test handshake_init operation (requires a non-empty alice_pub_key)
+    uint8_t l_fake_pub_key[32] = {1, 2, 3};
     dap_net_handshake_params_t l_params = {0};
+    l_params.alice_pub_key = l_fake_pub_key;
+    l_params.alice_pub_key_size = sizeof(l_fake_pub_key);
     l_ret = l_trans->ops->handshake_init(&s_mock_stream, &l_params, NULL);
     TEST_ASSERT(l_ret == 0, "Handshake init should succeed");
     

@@ -707,6 +707,7 @@ static void test_14_stream_session(void)
     
     // Create mock stream with esocket and client ctx (required for session_create)
     s_mock_stream.trans = l_trans;
+    s_mock_stream.is_client_to_uplink = true;
     s_mock_trans_ctx.esocket = dap_trans_test_get_mock_esocket();
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     s_mock_stream.trans_ctx->esocket->_inheritor = (void*)dap_trans_test_get_mock_client();

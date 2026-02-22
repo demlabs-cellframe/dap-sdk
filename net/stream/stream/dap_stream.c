@@ -1036,16 +1036,7 @@ static void s_http_client_data_read(dap_http_client_t * a_http_client, void * ar
 static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
 {
     UNUSED(a_arg);
-    // Unified: get stream from esocket->trans_ctx, not from http_client->_inheritor
-    if (!a_http_client->esocket)
-        return;
-    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_http_client->esocket->_inheritor;
-    dap_stream_t *l_stm = l_trans_ctx ? l_trans_ctx->stream : NULL;
-    if (!l_stm)
-        return;
-    if (l_stm->trans_ctx)
-        l_stm->trans_ctx->esocket = NULL;
-    dap_stream_delete_unsafe(l_stm);
+    UNUSED(a_http_client);
 }
 
 /**
@@ -1487,25 +1478,22 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
 int dap_stream_add_to_list(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream, -1);
-    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: entering, stream=%p, authorized=%d", 
-           (void*)a_stream, a_stream->authorized);
     int l_ret = 0;
-    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: locking rwlock");
     int lock = pthread_rwlock_wrlock(&s_streams_lock);
     assert(lock != EDEADLK);
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), -666;
-    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: lock acquired, appending to list");
-    DL_APPEND(s_streams, a_stream);
-    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: appended to list, authorized=%d", a_stream->authorized);
-    if (a_stream->authorized) {
-        debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: calling s_stream_add_to_hashtable");
-        l_ret = s_stream_add_to_hashtable(a_stream);
-        debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: s_stream_add_to_hashtable returned %d", l_ret);
+    dap_stream_t *l_tmp = NULL;
+    DL_FOREACH(s_streams, l_tmp) {
+        if (l_tmp == a_stream) {
+            pthread_rwlock_unlock(&s_streams_lock);
+            return 0;
+        }
     }
-    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: unlocking rwlock");
+    DL_APPEND(s_streams, a_stream);
+    if (a_stream->authorized)
+        l_ret = s_stream_add_to_hashtable(a_stream);
     pthread_rwlock_unlock(&s_streams_lock);
-    debug_if(s_debug, L_DEBUG, "dap_stream_add_to_list: returning %d", l_ret);
     return l_ret;
 }
 

@@ -759,10 +759,6 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             // Check if this is the expected sequence
             if (l_seq == a_ctrl->recv_seq_expected) {
                 // IN-ORDER: Deliver immediately + check buffered packets
-                debug_if(s_debug_more, L_DEBUG, "FC recv: DELIVERING IN-ORDER seq=%lu, payload_size=%zu", 
-                         l_seq, l_payload_size);
-                debug_if(s_debug_more, L_DEBUG, "FC recv: a_ctrl=%p, a_ctrl->flow=%p, payload_deliver=%p, arg=%p", 
-                         a_ctrl, a_ctrl->flow, a_ctrl->callbacks.payload_deliver, a_ctrl->callbacks.arg);
                 
                 // Deliver payload
                 debug_if(s_debug_more, L_DEBUG, "FC recv: CALLING payload_deliver (flow=%p, payload_size=%zu, arg=%p)",

@@ -203,7 +203,8 @@ typedef struct dap_net_trans_websocket_private {
     
     // Heartbeat
     dap_timerfd_t *ping_timer;                ///< Ping interval timer
-    int64_t last_pong_time;                   ///< Timestamp of last pong received
+    int64_t last_ping_sent_time;              ///< Timestamp of last ping sent (ms)
+    int64_t last_pong_time;                   ///< Timestamp of last pong received (ms)
     
     // Events socket
     dap_events_socket_t *esocket;             ///< Underlying events socket
