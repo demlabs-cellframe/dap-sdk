@@ -164,7 +164,6 @@ typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 typedef struct dap_global_db_instance {
     uint32_t version;     // Current GlobalDB version
     char *storage_path;   // GlobalDB storage path
-    char *driver_name;    // GlobalDB driver name
     dap_list_t *whitelist;
     dap_list_t *blacklist;
     uint64_t store_time_limit;
@@ -234,6 +233,7 @@ typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_instance_t *
 #define DAP_GLOBAL_DB_RC_ERROR      -6
 
 extern int g_dap_global_db_debug_more;
+extern bool g_dap_global_db_wal_enabled;
 
 int dap_global_db_init();
 void dap_global_db_deinit();
@@ -270,7 +270,6 @@ int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_ca
 int dap_global_db_del(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_len,
                                                               dap_global_db_callback_result_t a_callback, void *a_arg);
-int dap_del_global_db_obj_by_ttl(dap_global_db_store_obj_t* a_obj);
 int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void *a_arg);
 
 // Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well
@@ -301,4 +300,25 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask);
 
 int dap_global_db_erase_table_sync(const char *a_group);
 int dap_global_db_erase_table(const char *a_group, dap_global_db_callback_result_t a_callback, void *a_arg);
+
+// === Storage group operations (direct B-tree access) ===
+typedef struct dap_global_db_btree dap_global_db_t;
+
+dap_list_t *dap_global_db_get_groups_by_mask(const char *a_mask);
+uint64_t dap_global_db_group_count(const char *a_group_name, bool a_with_deleted);
+bool dap_global_db_exists_hash(const char *a_group, dap_global_db_hash_t a_hash);
+
+dap_global_db_hash_pkt_t *dap_global_db_read_hashes(const char *a_group, dap_global_db_hash_t a_hash_from);
+dap_global_db_pkt_pack_t *dap_global_db_get_by_hash(const char *a_group, dap_global_db_hash_t *a_hashes, size_t a_count);
+
+// Lightweight init/deinit for standalone tools (e.g. migrate)
+int dap_global_db_groups_init(const char *a_storage_path);
+void dap_global_db_groups_deinit(void);
+int dap_global_db_groups_flush(void);
+dap_global_db_t *dap_global_db_group_get_or_create(const char *a_group_name);
 size_t dap_global_db_group_clear(const char *a_group, bool a_pinned);
+
+// WAL (Write-Ahead Log) — optional durability layer, disabled by default.
+// Enable via config: [global_db] wal_enabled = true
+DAP_STATIC_INLINE void dap_global_db_set_wal_enabled(bool a_enabled) { g_dap_global_db_wal_enabled = a_enabled; }
+DAP_STATIC_INLINE bool dap_global_db_get_wal_enabled(void) { return g_dap_global_db_wal_enabled; }

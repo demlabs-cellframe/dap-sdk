@@ -25,7 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_common.h"
 #include "dap_global_db.h"
 #include "dap_global_db_cluster.h"
-#include "dap_global_db_storage.h"
+#include "dap_global_db.h"
 #include "dap_global_db_pkt.h"
 #include "dap_global_db_ch.h"
 #include "dap_link_manager.h"
@@ -245,7 +245,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         dap_stream_node_addr_t l_current_link = dap_cluster_get_random_link(l_cluster->links_cluster);
         if (dap_stream_node_addr_is_blank(&l_current_link))
             break;
-        dap_list_t *l_groups = dap_global_db_storage_get_groups_by_mask(l_cluster->groups_mask);
+        dap_list_t *l_groups = dap_global_db_get_groups_by_mask(l_cluster->groups_mask);
         if (!l_groups) {    // Nothing to sync
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
             l_cluster->sync_context.stage_last_activity = dap_time_now();
@@ -254,7 +254,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         l_cluster->sync_context.current_link = l_current_link;
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
-            if (!dap_global_db_storage_group_count(it->data, true))
+            if (!dap_global_db_group_count(it->data, true))
                 continue;   // Don't send request for empty group, if any
             size_t l_group_len = dap_strlen(it->data) + 1;
             dap_global_db_start_pkt_t *l_msg = DAP_NEW_STACK_SIZE(dap_global_db_start_pkt_t, sizeof(dap_global_db_start_pkt_t) + l_group_len);

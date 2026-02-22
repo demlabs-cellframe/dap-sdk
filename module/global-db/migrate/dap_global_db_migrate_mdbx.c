@@ -23,7 +23,7 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_global_db.h"
-#include "dap_global_db_storage.h"
+#include "dap_global_db_btree.h"
 #include "dap_global_db_migrate.h"
 
 #define LOG_TAG "dap_global_db_migrate_mdbx"
@@ -305,20 +305,20 @@ static int s_migrate_record(const char *group, const byte_t *key, size_t key_len
     const void *sign = rec->data + rec->key_len + rec->value_len;
     
     // Get or create group B-tree
-    dap_global_db_btree_t *btree = dap_global_db_storage_group_get_or_create(group);
+    dap_global_db_t *btree = dap_global_db_group_get_or_create(group);
     if (!btree) {
         ctx->result->records_failed++;
         return ctx->opts->skip_errors ? 0 : -1;
     }
     
     // Build key
-    dap_global_db_btree_key_t bkey = {
+    dap_global_db_key_t bkey = {
         .bets = htobe64(rec->timestamp),
         .becrc = htobe64(rec->crc)
     };
     
     // Insert
-    int rc = dap_global_db_btree_insert(btree, &bkey,
+    int rc = dap_global_db_insert(btree, &bkey,
                                          text_key, rec->key_len,
                                          value, rec->value_len,
                                          sign, rec->sign_len,
@@ -369,7 +369,7 @@ dap_global_db_migrate_result_t dap_global_db_migrate_mdbx_impl(
     }
     
     // Initialize destination storage
-    if (dap_global_db_storage_init(a_dest_path) < 0) {
+    if (dap_global_db_groups_init(a_dest_path) < 0) {
         s_mdbx_close(r);
         l_result.status = DAP_MIGRATE_ERR_DEST;
         l_result.error_message = dap_strdup("Failed to initialize destination storage");
@@ -405,8 +405,8 @@ dap_global_db_migrate_result_t dap_global_db_migrate_mdbx_impl(
     s_mdbx_close(r);
     
     // Flush and deinit storage
-    dap_global_db_storage_flush();
-    dap_global_db_storage_deinit();
+    dap_global_db_groups_flush();
+    dap_global_db_groups_deinit();
     
     if (a_opts->verbose) {
         log_it(L_INFO, "MDBX migration complete: %zu records, %zu failed, %zu bytes",

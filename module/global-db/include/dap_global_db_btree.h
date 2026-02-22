@@ -30,11 +30,11 @@ extern "C" {
 // Constants
 // ============================================================================
 
-#define DAP_GLOBAL_DB_BTREE_MAGIC         0x4E424447  // "GDBN" in little-endian
-#define DAP_GLOBAL_DB_BTREE_VERSION       1
-#define DAP_GLOBAL_DB_BTREE_PAGE_SIZE     4096
-#define DAP_GLOBAL_DB_BTREE_MIN_KEYS      2           // Minimum keys per node (t-1 for B-tree order t)
-#define DAP_GLOBAL_DB_BTREE_MAX_KEYS      ((DAP_GLOBAL_DB_BTREE_PAGE_SIZE - 64) / 32)  // ~126 keys per page
+#define DAP_GLOBAL_DB_MAGIC         0x4E424447  // "GDBN" in little-endian
+#define DAP_GLOBAL_DB_STORAGE_VERSION       1
+#define DAP_GLOBAL_DB_PAGE_SIZE     4096
+#define DAP_GLOBAL_DB_MIN_KEYS      2           // Minimum keys per node (t-1 for B-tree order t)
+#define DAP_GLOBAL_DB_MAX_KEYS      ((DAP_GLOBAL_DB_PAGE_SIZE - 64) / 32)  // ~126 keys per page
 
 // Page flags
 #define DAP_GLOBAL_DB_PAGE_BRANCH         0x0001
@@ -55,17 +55,17 @@ extern "C" {
 /**
  * @brief B-tree key type - matches dap_global_db_hash_t
  */
-typedef struct dap_global_db_btree_key {
+typedef struct dap_global_db_key {
     uint64_t bets;      // timestamp in big-endian
     uint64_t becrc;     // CRC in big-endian
-} DAP_ALIGN_PACKED dap_global_db_btree_key_t;
+} DAP_ALIGN_PACKED dap_global_db_key_t;
 
 /**
  * @brief B-tree file header (64 bytes)
  */
-typedef struct dap_global_db_btree_header {
-    uint32_t magic;             // DAP_GLOBAL_DB_BTREE_MAGIC
-    uint16_t version;           // DAP_GLOBAL_DB_BTREE_VERSION
+typedef struct dap_global_db_header {
+    uint32_t magic;             // DAP_GLOBAL_DB_MAGIC
+    uint16_t version;           // DAP_GLOBAL_DB_STORAGE_VERSION
     uint16_t flags;             // Reserved flags
     uint32_t page_size;         // Page size (4096)
     uint32_t reserved1;         // Alignment
@@ -76,59 +76,59 @@ typedef struct dap_global_db_btree_header {
     uint32_t reserved2;         // Alignment
     uint64_t free_list_head;    // Head of free page list
     uint64_t checksum;          // Header checksum
-} DAP_ALIGN_PACKED dap_global_db_btree_header_t;
+} DAP_ALIGN_PACKED dap_global_db_header_t;
 
-_Static_assert(sizeof(dap_global_db_btree_header_t) == 64, "Header must be 64 bytes");
+_Static_assert(sizeof(dap_global_db_header_t) == 64, "Header must be 64 bytes");
 
 /**
  * @brief B-tree page header (32 bytes)
  */
-typedef struct dap_global_db_btree_page_header {
+typedef struct dap_global_db_page_header {
     uint16_t flags;             // Page flags (BRANCH/LEAF/OVERFLOW)
     uint16_t entries_count;     // Number of entries in page
     uint32_t free_space;        // Free space in page
     uint64_t page_id;           // This page's ID/offset
     uint64_t right_sibling;     // Right sibling page (for forward scan, 0 = rightmost)
     uint64_t left_sibling;      // Left sibling page (for reverse scan, 0 = leftmost)
-} DAP_ALIGN_PACKED dap_global_db_btree_page_header_t;
+} DAP_ALIGN_PACKED dap_global_db_page_header_t;
 
-_Static_assert(sizeof(dap_global_db_btree_page_header_t) == 32, "Page header must be 32 bytes");
+_Static_assert(sizeof(dap_global_db_page_header_t) == 32, "Page header must be 32 bytes");
 
 /**
  * @brief Leaf entry header (variable size)
  * Followed by: text_key[key_len] + (value_data[value_len] + sign_data[sign_len]  OR  overflow_page_id if LEAF_ENTRY_OVERFLOW_VALUE)
  */
-typedef struct dap_global_db_btree_leaf_entry {
-    dap_global_db_btree_key_t driver_hash;    // 16 bytes - sort key
+typedef struct dap_global_db_leaf_entry {
+    dap_global_db_key_t driver_hash;    // 16 bytes - sort key
     uint32_t key_len;                    // Text key length
     uint32_t value_len;                  // Value length
     uint32_t sign_len;                   // Signature length
     uint8_t flags;                       // Record flags
     uint8_t reserved[3];                 // Alignment
     // Followed by: key_data[key_len] + value_data[value_len] + sign_data[sign_len]
-} DAP_ALIGN_PACKED dap_global_db_btree_leaf_entry_t;
+} DAP_ALIGN_PACKED dap_global_db_leaf_entry_t;
 
 /**
  * @brief Branch entry (24 bytes)
  */
-typedef struct dap_global_db_btree_branch_entry {
-    dap_global_db_btree_key_t driver_hash;    // 16 bytes - separator key
+typedef struct dap_global_db_branch_entry {
+    dap_global_db_key_t driver_hash;    // 16 bytes - separator key
     uint64_t child_page;                 // Child page offset
-} DAP_ALIGN_PACKED dap_global_db_btree_branch_entry_t;
+} DAP_ALIGN_PACKED dap_global_db_branch_entry_t;
 
-_Static_assert(sizeof(dap_global_db_btree_branch_entry_t) == 24, "Branch entry must be 24 bytes");
+_Static_assert(sizeof(dap_global_db_branch_entry_t) == 24, "Branch entry must be 24 bytes");
 
 /**
  * @brief B-tree page structure (in-memory representation)
  */
-typedef struct dap_global_db_btree_page {
-    dap_global_db_btree_page_header_t header;
+typedef struct dap_global_db_page {
+    dap_global_db_page_header_t header;
     bool is_dirty;                       // Page has been modified
     bool is_mmap_ref;                    // Data points into mmap region (don't free)
     bool is_mmap_writable;               // Writable mmap ref (skip COW, header-only writeback)
     bool is_arena;                       // Allocated from arena (don't individually free)
     uint8_t *data;                       // Page data (entries area)
-} dap_global_db_btree_page_t;
+} dap_global_db_page_t;
 
 /**
  * @brief Deferred free batch — pages freed during a COW write transaction.
@@ -146,23 +146,24 @@ typedef struct dap_btree_deferred_batch {
 /**
  * @brief B-tree handle
  */
-#define DAP_GLOBAL_DB_BTREE_PATH_MAX  16  // Max tree depth for path cache
+#define DAP_GLOBAL_DB_PATH_MAX  16  // Max tree depth for path cache
 
 typedef struct dap_global_db_btree {
     int fd;                              // File descriptor (kept for header I/O fallback)
     char *filepath;                      // File path
-    dap_global_db_btree_header_t header;       // Cached header
-    dap_global_db_btree_page_t *root;          // Cached root page (may be NULL)
-    dap_global_db_btree_page_t *hot_leaf;      // Cached last-written leaf (write-back, avoid navigation)
+    dap_global_db_header_t header;       // Cached header
+    dap_global_db_page_t *root;          // Cached root page (may be NULL)
+    dap_global_db_page_t *hot_leaf;      // Cached last-written leaf (write-back, avoid navigation)
     // Cached path from root to hot_leaf parent — LMDB cursor-style optimization.
     // Eliminates full root-to-leaf traversal when hot_leaf fills up during
     // sequential inserts. Updated when hot_leaf is promoted.
     struct dap_btree_path_entry {
         uint64_t page_id;       // Branch page ID at this level
         int child_index;        // Index of child in this branch page
-    } hot_path[DAP_GLOBAL_DB_BTREE_PATH_MAX];
+    } hot_path[DAP_GLOBAL_DB_PATH_MAX];
     int hot_path_depth;                  // Number of entries in hot_path (0 = invalid)
     bool read_only;                      // Read-only mode
+    bool in_batch;                       // Batch insert mode active (wrlock held externally)
     dap_mmap_t *mmap;                    // Memory-mapped file handle (NULL = legacy I/O)
     dap_arena_t *arena;                  // Bump allocator for temporary page allocations
     pthread_rwlock_t lock;               // Reader-writer lock for thread safety (Phase 3 compat)
@@ -188,18 +189,20 @@ typedef struct dap_global_db_btree {
     dap_btree_deferred_batch_t *deferred_batches;
     size_t deferred_batch_count;
     size_t deferred_batch_capacity;
+    dap_btree_deferred_batch_t *deferred_last_batch; // O(1) lookup cache for deferred_free_add
+    uint32_t mvcc_commit_counter;                     // Throttle reclaim: run every N commits
 
     // Overflow read buffer — get_ref copies large values here (valid until next get_ref/get/write)
     uint8_t *overflow_read_buf;
     size_t overflow_read_buf_size;
-} dap_global_db_btree_t;
+} dap_global_db_t;
 
 /**
  * @brief B-tree cursor for iteration
  */
-typedef struct dap_global_db_btree_cursor {
-    dap_global_db_btree_t *tree;               // Tree handle
-    dap_global_db_btree_page_t *current_page;  // Current leaf page
+typedef struct dap_global_db_cursor {
+    dap_global_db_t *tree;               // Tree handle
+    dap_global_db_page_t *current_page;  // Current leaf page
     uint16_t current_index;              // Current entry index in page
     bool valid;                          // Cursor is valid
     bool at_end;                         // Cursor at end (no more entries)
@@ -212,22 +215,22 @@ typedef struct dap_global_db_btree_cursor {
     // In snapshot mode, sibling links are NOT used (they may be stale due to
     // in-place updates by writers). Instead, NEXT/PREV pop the path stack to
     // find the next/prev subtree — classic B-tree cursor without sibling links.
-    struct dap_btree_path_entry path[DAP_GLOBAL_DB_BTREE_PATH_MAX];
+    struct dap_btree_path_entry path[DAP_GLOBAL_DB_PATH_MAX];
     int path_depth;
-} dap_global_db_btree_cursor_t;
+} dap_global_db_cursor_t;
 
 /**
  * @brief Cursor position operations
  */
-typedef enum dap_global_db_btree_cursor_op {
-    DAP_GLOBAL_DB_BTREE_FIRST,         // Position at first entry
-    DAP_GLOBAL_DB_BTREE_LAST,          // Position at last entry
-    DAP_GLOBAL_DB_BTREE_NEXT,          // Move to next entry
-    DAP_GLOBAL_DB_BTREE_PREV,          // Move to previous entry
-    DAP_GLOBAL_DB_BTREE_SET,           // Position at exact key
-    DAP_GLOBAL_DB_BTREE_SET_RANGE,     // Position at key or next greater
-    DAP_GLOBAL_DB_BTREE_SET_UPPERBOUND // Position at first key > given key
-} dap_global_db_btree_cursor_op_t;
+typedef enum dap_global_db_cursor_op {
+    DAP_GLOBAL_DB_FIRST,         // Position at first entry
+    DAP_GLOBAL_DB_LAST,          // Position at last entry
+    DAP_GLOBAL_DB_NEXT,          // Move to next entry
+    DAP_GLOBAL_DB_PREV,          // Move to previous entry
+    DAP_GLOBAL_DB_SET,           // Position at exact key
+    DAP_GLOBAL_DB_SET_RANGE,     // Position at key or next greater
+    DAP_GLOBAL_DB_SET_UPPERBOUND // Position at first key > given key
+} dap_global_db_cursor_op_t;
 
 // ============================================================================
 // Functions
@@ -238,7 +241,7 @@ typedef enum dap_global_db_btree_cursor_op {
  * @param a_filepath Path to the B-tree file
  * @return Tree handle or NULL on error
  */
-dap_global_db_btree_t *dap_global_db_btree_create(const char *a_filepath);
+dap_global_db_t *dap_global_db_create(const char *a_filepath);
 
 /**
  * @brief Open an existing B-tree file
@@ -246,20 +249,20 @@ dap_global_db_btree_t *dap_global_db_btree_create(const char *a_filepath);
  * @param a_read_only Open in read-only mode
  * @return Tree handle or NULL on error
  */
-dap_global_db_btree_t *dap_global_db_btree_open(const char *a_filepath, bool a_read_only);
+dap_global_db_t *dap_global_db_open(const char *a_filepath, bool a_read_only);
 
 /**
  * @brief Close B-tree and free resources
  * @param a_tree Tree handle
  */
-void dap_global_db_btree_close(dap_global_db_btree_t *a_tree);
+void dap_global_db_close(dap_global_db_t *a_tree);
 
 /**
  * @brief Sync all dirty pages to disk
  * @param a_tree Tree handle
  * @return 0 on success, negative on error
  */
-int dap_global_db_btree_sync(dap_global_db_btree_t *a_tree);
+int dap_global_db_sync(dap_global_db_t *a_tree);
 
 /**
  * @brief Insert or update an entry
@@ -274,12 +277,35 @@ int dap_global_db_btree_sync(dap_global_db_btree_t *a_tree);
  * @param a_flags Record flags
  * @return 0 on success, negative on error
  */
-int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
-                         const dap_global_db_btree_key_t *a_key,
+int dap_global_db_insert(dap_global_db_t *a_tree,
+                         const dap_global_db_key_t *a_key,
                          const char *a_text_key, uint32_t a_text_key_len,
                          const void *a_value, uint32_t a_value_len,
                          const void *a_sign, uint32_t a_sign_len,
                          uint8_t a_flags);
+
+/**
+ * @brief Begin a batch insert transaction.
+ *
+ * Acquires the write lock and enters batch mode. Subsequent inserts skip
+ * per-insert locking and MVCC publishing — changes become visible to
+ * readers only after dap_global_db_batch_commit().
+ *
+ * @param a_tree Tree handle
+ * @return 0 on success, negative on error
+ */
+int dap_global_db_batch_begin(dap_global_db_t *a_tree);
+
+/**
+ * @brief Commit a batch insert transaction.
+ *
+ * Flushes the hot-leaf, publishes the new MVCC snapshot, and releases
+ * the write lock. All inserts since batch_begin() become visible atomically.
+ *
+ * @param a_tree Tree handle
+ * @return 0 on success, negative on error
+ */
+int dap_global_db_batch_commit(dap_global_db_t *a_tree);
 
 /**
  * @brief Delete an entry by driver hash key
@@ -287,7 +313,7 @@ int dap_global_db_btree_insert(dap_global_db_btree_t *a_tree,
  * @param a_key Driver hash key
  * @return 0 on success, 1 if not found, negative on error
  */
-int dap_global_db_btree_delete(dap_global_db_btree_t *a_tree, const dap_global_db_btree_key_t *a_key);
+int dap_global_db_delete(dap_global_db_t *a_tree, const dap_global_db_key_t *a_key);
 
 /**
  * @brief Get entry by driver hash key
@@ -301,8 +327,8 @@ int dap_global_db_btree_delete(dap_global_db_btree_t *a_tree, const dap_global_d
  * @param a_out_flags Output: record flags
  * @return 0 on success, 1 if not found, negative on error
  */
-int dap_global_db_btree_get(dap_global_db_btree_t *a_tree,
-                      const dap_global_db_btree_key_t *a_key,
+int dap_global_db_fetch(dap_global_db_t *a_tree,
+                      const dap_global_db_key_t *a_key,
                       char **a_out_text_key,
                       void **a_out_value, uint32_t *a_out_value_len,
                       void **a_out_sign, uint32_t *a_out_sign_len,
@@ -314,21 +340,21 @@ int dap_global_db_btree_get(dap_global_db_btree_t *a_tree,
  * @param a_key Driver hash key
  * @return true if exists, false otherwise
  */
-bool dap_global_db_btree_exists(dap_global_db_btree_t *a_tree, const dap_global_db_btree_key_t *a_key);
+bool dap_global_db_exists(dap_global_db_t *a_tree, const dap_global_db_key_t *a_key);
 
 /**
  * @brief Get total number of entries
  * @param a_tree Tree handle
  * @return Number of entries
  */
-uint64_t dap_global_db_btree_count(dap_global_db_btree_t *a_tree);
+uint64_t dap_global_db_count(dap_global_db_t *a_tree);
 
 /**
  * @brief Clear all entries (truncate tree)
  * @param a_tree Tree handle
  * @return 0 on success, negative on error
  */
-int dap_global_db_btree_clear(dap_global_db_btree_t *a_tree);
+int dap_global_db_clear(dap_global_db_t *a_tree);
 
 // ============================================================================
 // Cursor Functions
@@ -339,13 +365,13 @@ int dap_global_db_btree_clear(dap_global_db_btree_t *a_tree);
  * @param a_tree Tree handle
  * @return Cursor handle or NULL on error
  */
-dap_global_db_btree_cursor_t *dap_global_db_btree_cursor_create(dap_global_db_btree_t *a_tree);
+dap_global_db_cursor_t *dap_global_db_cursor_create(dap_global_db_t *a_tree);
 
 /**
  * @brief Close cursor and free resources
  * @param a_cursor Cursor handle
  */
-void dap_global_db_btree_cursor_close(dap_global_db_btree_cursor_t *a_cursor);
+void dap_global_db_cursor_close(dap_global_db_cursor_t *a_cursor);
 
 /**
  * @brief Move cursor to position
@@ -354,9 +380,9 @@ void dap_global_db_btree_cursor_close(dap_global_db_btree_cursor_t *a_cursor);
  * @param a_key Key for SET/SET_RANGE/SET_UPPERBOUND operations (can be NULL for FIRST/LAST/NEXT/PREV)
  * @return 0 on success, 1 if not found, negative on error
  */
-int dap_global_db_btree_cursor_move(dap_global_db_btree_cursor_t *a_cursor,
-                              dap_global_db_btree_cursor_op_t a_op,
-                              const dap_global_db_btree_key_t *a_key);
+int dap_global_db_cursor_move(dap_global_db_cursor_t *a_cursor,
+                              dap_global_db_cursor_op_t a_op,
+                              const dap_global_db_key_t *a_key);
 
 /**
  * @brief Get current entry at cursor position
@@ -370,8 +396,8 @@ int dap_global_db_btree_cursor_move(dap_global_db_btree_cursor_t *a_cursor,
  * @param a_out_flags Output: record flags
  * @return 0 on success, 1 if cursor invalid, negative on error
  */
-int dap_global_db_btree_cursor_get(dap_global_db_btree_cursor_t *a_cursor,
-                             dap_global_db_btree_key_t *a_out_key,
+int dap_global_db_cursor_get(dap_global_db_cursor_t *a_cursor,
+                             dap_global_db_key_t *a_out_key,
                              char **a_out_text_key,
                              void **a_out_value, uint32_t *a_out_value_len,
                              void **a_out_sign, uint32_t *a_out_sign_len,
@@ -382,7 +408,7 @@ int dap_global_db_btree_cursor_get(dap_global_db_btree_cursor_t *a_cursor,
  * @param a_cursor Cursor handle
  * @return true if valid, false otherwise
  */
-bool dap_global_db_btree_cursor_valid(dap_global_db_btree_cursor_t *a_cursor);
+bool dap_global_db_cursor_valid(dap_global_db_cursor_t *a_cursor);
 
 // ============================================================================
 // Zero-Copy Read API
@@ -396,10 +422,10 @@ bool dap_global_db_btree_cursor_valid(dap_global_db_btree_cursor_t *a_cursor);
  * (insert, delete, clear) or until the tree is closed.
  * Callers MUST NOT free or modify the data.
  */
-typedef struct dap_global_db_btree_ref {
+typedef struct dap_global_db_ref {
     const void *data;    // Pointer into mmap region (NULL if field absent)
     uint32_t len;        // Data length in bytes
-} dap_global_db_btree_ref_t;
+} dap_global_db_ref_t;
 
 /**
  * @brief Zero-copy get: returns pointers directly into mmap.
@@ -415,26 +441,43 @@ typedef struct dap_global_db_btree_ref {
  * @param a_out_flags     Output: record flags (can be NULL)
  * @return 0 on success, 1 if not found, negative on error
  */
-int dap_global_db_btree_get_ref(dap_global_db_btree_t *a_tree,
-                                const dap_global_db_btree_key_t *a_key,
-                                dap_global_db_btree_ref_t *a_out_text_key,
-                                dap_global_db_btree_ref_t *a_out_value,
-                                dap_global_db_btree_ref_t *a_out_sign,
+int dap_global_db_get_ref(dap_global_db_t *a_tree,
+                                const dap_global_db_key_t *a_key,
+                                dap_global_db_ref_t *a_out_text_key,
+                                dap_global_db_ref_t *a_out_value,
+                                dap_global_db_ref_t *a_out_sign,
                                 uint8_t *a_out_flags);
+
+/**
+ * @brief Begin a read transaction (scoped snapshot).
+ *
+ * Acquires a snapshot once; subsequent get/get_ref/exists calls from
+ * the same thread reuse it without per-call atomic overhead.
+ * Analogous to LMDB mdb_txn_begin(MDB_RDONLY).
+ * Thread-local: each thread maintains its own read transaction.
+ *
+ * @return 0 on success, -1 on error (snapshot slots exhausted)
+ */
+int dap_global_db_read_begin(dap_global_db_t *a_tree);
+
+/**
+ * @brief End a read transaction, releasing the snapshot.
+ */
+void dap_global_db_read_end(dap_global_db_t *a_tree);
 
 /**
  * @brief Zero-copy cursor get: returns pointers directly into mmap.
  *
- * Like dap_global_db_btree_cursor_get(), but avoids all allocation.
+ * Like dap_global_db_cursor_get(), but avoids all allocation.
  * Returned refs are valid until cursor_move or any write operation.
  *
  * @return 0 on success, 1 if cursor invalid, negative on error
  */
-int dap_global_db_btree_cursor_get_ref(dap_global_db_btree_cursor_t *a_cursor,
-                                       dap_global_db_btree_key_t *a_out_key,
-                                       dap_global_db_btree_ref_t *a_out_text_key,
-                                       dap_global_db_btree_ref_t *a_out_value,
-                                       dap_global_db_btree_ref_t *a_out_sign,
+int dap_global_db_cursor_get_ref(dap_global_db_cursor_t *a_cursor,
+                                       dap_global_db_key_t *a_out_key,
+                                       dap_global_db_ref_t *a_out_text_key,
+                                       dap_global_db_ref_t *a_out_value,
+                                       dap_global_db_ref_t *a_out_sign,
                                        uint8_t *a_out_flags);
 
 // ============================================================================
@@ -447,15 +490,15 @@ int dap_global_db_btree_cursor_get_ref(dap_global_db_btree_cursor_t *a_cursor,
  * @param a_key2 Second key
  * @return <0 if key1 < key2, 0 if equal, >0 if key1 > key2
  */
-int dap_global_db_btree_key_compare(const dap_global_db_btree_key_t *a_key1,
-                              const dap_global_db_btree_key_t *a_key2);
+int dap_global_db_key_compare(const dap_global_db_key_t *a_key1,
+                              const dap_global_db_key_t *a_key2);
 
 /**
  * @brief Check if key is blank (all zeros)
  * @param a_key Key to check
  * @return true if blank, false otherwise
  */
-bool dap_global_db_btree_key_is_blank(const dap_global_db_btree_key_t *a_key);
+bool dap_global_db_key_is_blank(const dap_global_db_key_t *a_key);
 
 /**
  * @brief Verify B-tree structural integrity (debug/test utility).
@@ -480,11 +523,12 @@ bool dap_global_db_btree_key_is_blank(const dap_global_db_btree_key_t *a_key);
  *         -6  leaf depth inconsistency
  *         -7  sibling link inconsistency
  */
-int dap_global_db_btree_verify(dap_global_db_btree_t *a_tree, uint64_t *a_out_entry_count);
-uint64_t dap_global_db_btree_count_at_root(dap_global_db_btree_t *a_tree, uint64_t a_root);
-void dap_global_db_btree_debug_trace(dap_global_db_btree_t *a_tree,
-                                      const dap_global_db_btree_key_t *a_key,
+int dap_global_db_verify(dap_global_db_t *a_tree, uint64_t *a_out_entry_count);
+uint64_t dap_global_db_count_at_root(dap_global_db_t *a_tree, uint64_t a_root);
+void dap_global_db_debug_trace(dap_global_db_t *a_tree,
+                                      const dap_global_db_key_t *a_key,
                                       const char *a_tag);
+void dap_global_db_set_debug(bool a_on);
 
 #ifdef __cplusplus
 }

@@ -26,7 +26,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db.h"
 #include "dap_global_db_ch.h"
 #include "dap_global_db_pkt.h"
-#include "dap_global_db_storage.h"
+#include "dap_global_db.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_gossip.h"
 #include "dap_global_db_cluster.h"
@@ -101,7 +101,7 @@ bool s_proc_thread_reader(void *a_arg)
         return false;
     }
     bool l_ret = false;
-    dap_global_db_hash_pkt_t *l_hashes_pkt = dap_global_db_storage_read_hashes(l_group, l_pkt->last_hash);
+    dap_global_db_hash_pkt_t *l_hashes_pkt = dap_global_db_read_hashes(l_group, l_pkt->last_hash);
     if (l_hashes_pkt && l_hashes_pkt->hashes_count) {
         dap_global_db_hash_t *l_hashes_diff = (dap_global_db_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
@@ -163,7 +163,7 @@ static bool s_process_hashes(void *a_arg)
     uint32_t j = 0;
     for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
         dap_global_db_hash_t *l_hash_cur = l_hashes + i;
-        if (!dap_global_db_storage_exists_hash(l_group, *l_hash_cur)) {
+        if (!dap_global_db_exists_hash(l_group, *l_hash_cur)) {
             if (i != j)
                 *(l_hashes + j) = *l_hash_cur;
             j++;
@@ -199,7 +199,7 @@ static bool s_process_request(void *a_arg)
         return false;
     }
     dap_global_db_hash_t *l_hashes = (dap_global_db_hash_t *)(l_group + l_pkt->group_name_len);
-    dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_storage_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
+    dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
 
     if (l_pkt_out) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_RECORD_PACK packet for group %s with records count %u",

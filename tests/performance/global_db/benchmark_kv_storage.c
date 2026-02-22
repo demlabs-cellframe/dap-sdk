@@ -180,6 +180,18 @@ static size_t s_compute_mapsize(const benchmark_config_t *cfg)
     return l_needed > l_min ? l_needed : l_min;
 }
 
+/* Minimum MDBX/LMDB pagesize to fit key_size bytes.
+ * MDBX max_key_size = pagesize/4 - 6, so pagesize >= (key_size + 6) * 4.
+ * Round up to next power of two, clamped to [512, 65536]. */
+static intptr_t s_mdbx_pagesize_for_key(size_t key_size)
+{
+    size_t needed = (key_size + 6) * 4;
+    intptr_t ps = 512;
+    while ((size_t)ps < needed && ps < 65536)
+        ps <<= 1;
+    return ps;
+}
+
 // ============================================================================
 // DAP Native B-tree backend
 // ============================================================================
@@ -189,7 +201,7 @@ static benchmark_result_t s_bench_dap_sequential_write(const benchmark_config_t 
     benchmark_result_t result = { .name = "DAP B-tree", .operation = "seq write" };
     
     char *db_path = dap_strdup_printf("%s/dap_bench.gdb", cfg->db_path);
-    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    dap_global_db_t *btree = dap_global_db_create(db_path);
     DAP_DELETE(db_path);
     
     if (!btree) {
@@ -202,24 +214,26 @@ static benchmark_result_t s_bench_dap_sequential_write(const benchmark_config_t 
     
     double start = s_get_time_sec();
     
+    dap_global_db_batch_begin(btree);
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, i);
         s_generate_value(value, cfg->value_size, i);
         
-        dap_global_db_btree_key_t btree_key = {
+        dap_global_db_key_t btree_key = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
         
-        dap_global_db_btree_insert(btree, &btree_key, NULL, 0, 
+        dap_global_db_insert(btree, &btree_key, NULL, 0, 
                                     value, cfg->value_size, NULL, 0, 0);
     }
+    dap_global_db_batch_commit(btree);
     
     double elapsed = s_get_time_sec() - start;
     
     DAP_DELETE(key);
     DAP_DELETE(value);
-    dap_global_db_btree_close(btree);
+    dap_global_db_close(btree);
     
     result.num_ops = cfg->num_records;
     result.elapsed_sec = elapsed;
@@ -234,7 +248,7 @@ static benchmark_result_t s_bench_dap_random_write(const benchmark_config_t *cfg
     benchmark_result_t result = { .name = "DAP B-tree", .operation = "random write" };
     
     char *db_path = dap_strdup_printf("%s/dap_bench_rw.gdb", cfg->db_path);
-    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    dap_global_db_t *btree = dap_global_db_create(db_path);
     DAP_DELETE(db_path);
     
     if (!btree)
@@ -246,25 +260,27 @@ static benchmark_result_t s_bench_dap_random_write(const benchmark_config_t *cfg
     
     double start = s_get_time_sec();
     
+    dap_global_db_batch_begin(btree);
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, indices[i]);
         s_generate_value(value, cfg->value_size, indices[i]);
         
-        dap_global_db_btree_key_t btree_key = {
+        dap_global_db_key_t btree_key = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
         
-        dap_global_db_btree_insert(btree, &btree_key, NULL, 0,
+        dap_global_db_insert(btree, &btree_key, NULL, 0,
                                     value, cfg->value_size, NULL, 0, 0);
     }
+    dap_global_db_batch_commit(btree);
     
     double elapsed = s_get_time_sec() - start;
     
     DAP_DELETE(key);
     DAP_DELETE(value);
     DAP_DELETE(indices);
-    dap_global_db_btree_close(btree);
+    dap_global_db_close(btree);
     
     result.num_ops = cfg->num_records;
     result.elapsed_sec = elapsed;
@@ -280,7 +296,7 @@ static benchmark_result_t s_bench_dap_sequential_read(const benchmark_config_t *
     
     // First, populate the database
     char *db_path = dap_strdup_printf("%s/dap_bench_sr.gdb", cfg->db_path);
-    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    dap_global_db_t *btree = dap_global_db_create(db_path);
     
     if (!btree) {
         DAP_DELETE(db_path);
@@ -291,70 +307,75 @@ static benchmark_result_t s_bench_dap_sequential_read(const benchmark_config_t *
     byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
     
     // Populate
+    dap_global_db_batch_begin(btree);
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, i);
         s_generate_value(value, cfg->value_size, i);
         
-        dap_global_db_btree_key_t btree_key = {
+        dap_global_db_key_t btree_key = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
         
-        dap_global_db_btree_insert(btree, &btree_key, NULL, 0,
+        dap_global_db_insert(btree, &btree_key, NULL, 0,
                                     value, cfg->value_size, NULL, 0, 0);
     }
+    dap_global_db_batch_commit(btree);
     
     // Verify record count
-    uint64_t l_count = dap_global_db_btree_count(btree);
+    uint64_t l_count = dap_global_db_count(btree);
     if (l_count != cfg->num_records)
-        printf("  [FAIL] DAP B-tree: expected %zu records, got %lu\n",
+        log_it(L_ERROR, "[FAIL] DAP B-tree: expected %zu records, got %lu",
                cfg->num_records, (unsigned long)l_count);
 
-    // Incremental insertion + verify: insert again from scratch in a fresh tree
-    // to pinpoint which insert causes the first lookup failure
+    // Incremental insertion + verify: insert from scratch in a fresh tree;
+    // verify at logarithmic steps (i+1 power of 2) to keep total cost O(n)
     if (cfg->verify) {
         char *idb_path = dap_strdup_printf("%s/dap_bench_incr.gdb", cfg->db_path);
-        dap_global_db_btree_t *ibtree = dap_global_db_btree_create(idb_path);
+        dap_global_db_t *ibtree = dap_global_db_create(idb_path);
         DAP_DELETE(idb_path);
         if (ibtree) {
             byte_t *ikey = DAP_NEW_SIZE(byte_t, cfg->key_size);
             byte_t *ival = DAP_NEW_SIZE(byte_t, cfg->value_size);
-            for (size_t i = 0; i < cfg->num_records && i < 200; i++) {
+            for (size_t i = 0; i < cfg->num_records; i++) {
                 s_generate_key(ikey, cfg->key_size, i);
                 s_generate_value(ival, cfg->value_size, i);
-                dap_global_db_btree_key_t bk = {
+                dap_global_db_key_t bk = {
                     .bets = *(uint64_t *)ikey,
                     .becrc = cfg->key_size > 8 ? *(uint64_t *)(ikey + 8) : 0
                 };
-                dap_global_db_btree_insert(ibtree, &bk, NULL, 0, ival, cfg->value_size, NULL, 0, 0);
-                // After insert, verify ALL previous keys are still findable
-                for (size_t j = 0; j <= i; j++) {
-                    s_generate_key(ikey, cfg->key_size, j);
-                    dap_global_db_btree_key_t vk = {
-                        .bets = *(uint64_t *)ikey,
-                        .becrc = cfg->key_size > 8 ? *(uint64_t *)(ikey + 8) : 0
-                    };
-                    dap_global_db_btree_ref_t vr;
-                    int grc = dap_global_db_btree_get_ref(ibtree, &vk, NULL, &vr, NULL, NULL);
-                    if (grc != 0) {
-                        printf("  [INCR_FAIL] after insert i=%zu, key j=%zu NOT FOUND (rc=%d)\n", i, j, grc);
-                        char tag[64];
-                        snprintf(tag, sizeof(tag), "LOST_j%zu_after_i%zu", j, i);
-                        dap_global_db_btree_debug_trace(ibtree, &vk, tag);
-                        uint64_t real_count = 0;
-                        int vrc = dap_global_db_btree_verify(ibtree, &real_count);
-                        printf("  [DIAG] header.items=%lu verify_count=%lu verify_rc=%d\n",
-                               (unsigned long)dap_global_db_btree_count(ibtree),
-                               (unsigned long)real_count, vrc);
-                        goto incr_done;
+                dap_global_db_insert(ibtree, &bk, NULL, 0, ival, cfg->value_size, NULL, 0, 0);
+                // Verify all keys 0..i only at logarithmic steps (i+1 is power of 2)
+                int do_verify = (i == 0) || ((i & (i + 1)) == 0);
+                if (do_verify) {
+                    for (size_t j = 0; j <= i; j++) {
+                        s_generate_key(ikey, cfg->key_size, j);
+                        dap_global_db_key_t vk = {
+                            .bets = *(uint64_t *)ikey,
+                            .becrc = cfg->key_size > 8 ? *(uint64_t *)(ikey + 8) : 0
+                        };
+                        dap_global_db_ref_t vr;
+                        int grc = dap_global_db_get_ref(ibtree, &vk, NULL, &vr, NULL, NULL);
+                        if (grc != 0) {
+                            log_it(L_ERROR, "[INCR_FAIL] after insert i=%zu, key j=%zu NOT FOUND (rc=%d)", i, j, grc);
+                            char tag[64];
+                            snprintf(tag, sizeof(tag), "LOST_j%zu_after_i%zu", j, i);
+                            dap_global_db_debug_trace(ibtree, &vk, tag);
+                            uint64_t real_count = 0;
+                            int vrc = dap_global_db_verify(ibtree, &real_count);
+                            log_it(L_DEBUG, "[DIAG] header.items=%lu verify_count=%lu verify_rc=%d",
+                                   (unsigned long)dap_global_db_count(ibtree),
+                                   (unsigned long)real_count, vrc);
+                            goto incr_done;
+                        }
                     }
                 }
             }
-            printf("  [INCR_PASS] 200 incremental inserts verified OK\n");
+            log_it(L_INFO, "[INCR_PASS] %zu incremental inserts verified OK", cfg->num_records);
 incr_done:
             DAP_DELETE(ikey);
             DAP_DELETE(ival);
-            dap_global_db_btree_close(ibtree);
+            dap_global_db_close(ibtree);
         }
     }
 
@@ -365,32 +386,32 @@ incr_done:
         for (size_t i = 0; i < cfg->num_records; i++) {
             s_generate_key(key, cfg->key_size, i);
             s_generate_value(expected, cfg->value_size, i);
-            dap_global_db_btree_key_t vk = {
+            dap_global_db_key_t vk = {
                 .bets = *(uint64_t *)key,
                 .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
             };
-            dap_global_db_btree_ref_t vr;
-            if (dap_global_db_btree_get_ref(btree, &vk, NULL, &vr, NULL, NULL) == 0) {
+            dap_global_db_ref_t vr;
+            if (dap_global_db_get_ref(btree, &vk, NULL, &vr, NULL, NULL) == 0) {
                 if (vr.len != cfg->value_size ||
                     memcmp(vr.data, expected, cfg->value_size) != 0) {
                     if (mismatches < 5)
-                        printf("  [MISMATCH] i=%zu: got len=%zu expected=%zu, data_match=%d\n",
+                        log_it(L_ERROR, "[MISMATCH] i=%zu: got len=%zu expected=%zu, data_match=%d",
                                i, (size_t)vr.len, cfg->value_size,
                                vr.len == cfg->value_size ? (memcmp(vr.data, expected, cfg->value_size) == 0) : -1);
                     mismatches++;
                 }
             } else {
                 if (mismatches < 5)
-                    printf("  [NOT_FOUND] i=%zu: get_ref failed\n", i);
+                    log_it(L_ERROR, "[NOT_FOUND] i=%zu: get_ref failed", i);
                 mismatches++;
             }
         }
         DAP_DELETE(expected);
         if (mismatches > 0)
-            printf("  [FAIL] DAP B-tree: %zu/%zu mismatches in verification\n",
+            log_it(L_ERROR, "[FAIL] DAP B-tree: %zu/%zu mismatches in verification",
                    mismatches, cfg->num_records);
         else
-            printf("  [PASS] DAP B-tree: %zu records verified OK\n", cfg->num_records);
+            log_it(L_INFO, "[PASS] DAP B-tree: %zu records verified OK", cfg->num_records);
     }
 
     // Now read sequentially
@@ -400,14 +421,14 @@ incr_done:
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, i);
         
-        dap_global_db_btree_key_t btree_key = {
+        dap_global_db_key_t btree_key = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
         
-        dap_global_db_btree_ref_t val_ref;
+        dap_global_db_ref_t val_ref;
         
-        if (dap_global_db_btree_get_ref(btree, &btree_key, NULL, &val_ref,
+        if (dap_global_db_get_ref(btree, &btree_key, NULL, &val_ref,
                                          NULL, NULL) == 0) {
             read_count++;
         }
@@ -416,13 +437,13 @@ incr_done:
     double elapsed = s_get_time_sec() - start;
     
     if (read_count != cfg->num_records)
-        printf("  [WARN] DAP B-tree seq read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] DAP B-tree seq read: read %zu/%zu records",
                read_count, cfg->num_records);
 
     DAP_DELETE(key);
     DAP_DELETE(value);
     DAP_DELETE(db_path);
-    dap_global_db_btree_close(btree);
+    dap_global_db_close(btree);
     
     result.num_ops = read_count;
     result.elapsed_sec = elapsed;
@@ -437,7 +458,7 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
     benchmark_result_t result = { .name = "DAP B-tree", .operation = "random read" };
     
     char *db_path = dap_strdup_printf("%s/dap_bench_rr.gdb", cfg->db_path);
-    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    dap_global_db_t *btree = dap_global_db_create(db_path);
     
     if (!btree) {
         DAP_DELETE(db_path);
@@ -448,23 +469,25 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
     byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
     
     // Populate
+    dap_global_db_batch_begin(btree);
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, i);
         s_generate_value(value, cfg->value_size, i);
         
-        dap_global_db_btree_key_t btree_key = {
+        dap_global_db_key_t btree_key = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
         
-        dap_global_db_btree_insert(btree, &btree_key, NULL, 0,
+        dap_global_db_insert(btree, &btree_key, NULL, 0,
                                     value, cfg->value_size, NULL, 0, 0);
     }
+    dap_global_db_batch_commit(btree);
     
     // Verify record count
-    uint64_t l_rr_count = dap_global_db_btree_count(btree);
+    uint64_t l_rr_count = dap_global_db_count(btree);
     if (l_rr_count != cfg->num_records)
-        printf("  [FAIL] DAP B-tree: expected %zu records, got %lu\n",
+        log_it(L_ERROR, "[FAIL] DAP B-tree: expected %zu records, got %lu",
                cfg->num_records, (unsigned long)l_rr_count);
 
     // Random read
@@ -476,14 +499,14 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, indices[i]);
         
-        dap_global_db_btree_key_t btree_key = {
+        dap_global_db_key_t btree_key = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
         
-        dap_global_db_btree_ref_t val_ref;
+        dap_global_db_ref_t val_ref;
         
-        if (dap_global_db_btree_get_ref(btree, &btree_key, NULL, &val_ref,
+        if (dap_global_db_get_ref(btree, &btree_key, NULL, &val_ref,
                                          NULL, NULL) == 0) {
             read_count++;
         }
@@ -492,14 +515,14 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
     double elapsed = s_get_time_sec() - start;
     
     if (read_count != cfg->num_records)
-        printf("  [WARN] DAP B-tree rand read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] DAP B-tree rand read: read %zu/%zu records",
                read_count, cfg->num_records);
 
     DAP_DELETE(key);
     DAP_DELETE(value);
     DAP_DELETE(indices);
     DAP_DELETE(db_path);
-    dap_global_db_btree_close(btree);
+    dap_global_db_close(btree);
     
     result.num_ops = read_count;
     result.elapsed_sec = elapsed;
@@ -514,7 +537,7 @@ static benchmark_result_t s_bench_dap_random_read(const benchmark_config_t *cfg)
 // ============================================================================
 
 typedef struct mt_thread_arg {
-    dap_global_db_btree_t *btree;
+    dap_global_db_t *btree;
     const benchmark_config_t *cfg;
     size_t start_index;
     size_t count;
@@ -528,16 +551,18 @@ static void *s_mt_reader_thread(void *a_arg)
     mt_thread_arg_t *arg = (mt_thread_arg_t *)a_arg;
     byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
 
+    dap_global_db_read_begin(arg->btree);
     for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
         s_generate_key(key, arg->cfg->key_size, i);
-        dap_global_db_btree_key_t bk = {
+        dap_global_db_key_t bk = {
             .bets = *(uint64_t *)key,
             .becrc = arg->cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
-        dap_global_db_btree_ref_t vr;
-        if (dap_global_db_btree_get_ref(arg->btree, &bk, NULL, &vr, NULL, NULL) == 0)
+        dap_global_db_ref_t vr;
+        if (dap_global_db_get_ref(arg->btree, &bk, NULL, &vr, NULL, NULL) == 0)
             arg->ops_completed++;
     }
+    dap_global_db_read_end(arg->btree);
 
     DAP_DELETE(key);
     return NULL;
@@ -548,16 +573,18 @@ static void *s_mt_random_reader_thread(void *a_arg)
     mt_thread_arg_t *arg = (mt_thread_arg_t *)a_arg;
     byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
 
+    dap_global_db_read_begin(arg->btree);
     for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
         s_generate_key(key, arg->cfg->key_size, arg->indices[i]);
-        dap_global_db_btree_key_t bk = {
+        dap_global_db_key_t bk = {
             .bets = *(uint64_t *)key,
             .becrc = arg->cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
-        dap_global_db_btree_ref_t vr;
-        if (dap_global_db_btree_get_ref(arg->btree, &bk, NULL, &vr, NULL, NULL) == 0)
+        dap_global_db_ref_t vr;
+        if (dap_global_db_get_ref(arg->btree, &bk, NULL, &vr, NULL, NULL) == 0)
             arg->ops_completed++;
     }
+    dap_global_db_read_end(arg->btree);
 
     DAP_DELETE(key);
     return NULL;
@@ -572,11 +599,11 @@ static void *s_mt_writer_thread(void *a_arg)
     for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
         s_generate_key(key, arg->cfg->key_size, i);
         s_generate_value(value, arg->cfg->value_size, i);
-        dap_global_db_btree_key_t bk = {
+        dap_global_db_key_t bk = {
             .bets = *(uint64_t *)key,
             .becrc = arg->cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
-        if (dap_global_db_btree_insert(arg->btree, &bk, NULL, 0,
+        if (dap_global_db_insert(arg->btree, &bk, NULL, 0,
                                         value, arg->cfg->value_size, NULL, 0, 0) == 0)
             arg->ops_completed++;
     }
@@ -590,28 +617,30 @@ static void *s_mt_group_writer_thread(void *a_arg)
 {
     mt_thread_arg_t *arg = (mt_thread_arg_t *)a_arg;
 
-    dap_global_db_btree_t *btree = dap_global_db_btree_create(arg->db_path);
+    dap_global_db_t *btree = dap_global_db_create(arg->db_path);
     if (!btree)
         return NULL;
 
     byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
     byte_t *value = DAP_NEW_SIZE(byte_t, arg->cfg->value_size);
 
+    dap_global_db_batch_begin(btree);
     for (size_t i = 0; i < arg->count; i++) {
         s_generate_key(key, arg->cfg->key_size, i);
         s_generate_value(value, arg->cfg->value_size, i);
-        dap_global_db_btree_key_t bk = {
+        dap_global_db_key_t bk = {
             .bets = *(uint64_t *)key,
             .becrc = arg->cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
-        if (dap_global_db_btree_insert(btree, &bk, NULL, 0,
+        if (dap_global_db_insert(btree, &bk, NULL, 0,
                                         value, arg->cfg->value_size, NULL, 0, 0) == 0)
             arg->ops_completed++;
     }
+    dap_global_db_batch_commit(btree);
 
     DAP_DELETE(key);
     DAP_DELETE(value);
-    dap_global_db_btree_close(btree);
+    dap_global_db_close(btree);
     return NULL;
 }
 
@@ -646,22 +675,24 @@ static benchmark_result_t s_bench_dap_parallel_reads(const benchmark_config_t *c
 {
     benchmark_result_t result = { .name = "DAP B-tree", .operation = "parallel read" };
     char *db_path = dap_strdup_printf("%s/dap_bench_pr.gdb", cfg->db_path);
-    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    dap_global_db_t *btree = dap_global_db_create(db_path);
     if (!btree) { DAP_DELETE(db_path); return result; }
 
     byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
     byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    dap_global_db_batch_begin(btree);
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, i);
         s_generate_value(value, cfg->value_size, i);
-        dap_global_db_btree_key_t bk = {
+        dap_global_db_key_t bk = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
-        dap_global_db_btree_insert(btree, &bk, NULL, 0,
+        dap_global_db_insert(btree, &bk, NULL, 0,
                                     value, cfg->value_size, NULL, 0, 0);
     }
-    dap_global_db_btree_sync(btree);
+    dap_global_db_batch_commit(btree);
+    dap_global_db_sync(btree);
     DAP_DELETE(key);
     DAP_DELETE(value);
 
@@ -695,7 +726,7 @@ static benchmark_result_t s_bench_dap_parallel_reads(const benchmark_config_t *c
     DAP_DELETE(threads);
     DAP_DELETE(args);
     DAP_DELETE(db_path);
-    dap_global_db_btree_close(btree);
+    dap_global_db_close(btree);
 
     result.num_ops = total_ops;
     result.elapsed_sec = elapsed;
@@ -708,22 +739,24 @@ static benchmark_result_t s_bench_dap_parallel_random_reads(const benchmark_conf
 {
     benchmark_result_t result = { .name = "DAP B-tree", .operation = "parallel rand read" };
     char *db_path = dap_strdup_printf("%s/dap_bench_prr.gdb", cfg->db_path);
-    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    dap_global_db_t *btree = dap_global_db_create(db_path);
     if (!btree) { DAP_DELETE(db_path); return result; }
 
     byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
     byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    dap_global_db_batch_begin(btree);
     for (size_t i = 0; i < cfg->num_records; i++) {
         s_generate_key(key, cfg->key_size, i);
         s_generate_value(value, cfg->value_size, i);
-        dap_global_db_btree_key_t bk = {
+        dap_global_db_key_t bk = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
-        dap_global_db_btree_insert(btree, &bk, NULL, 0,
+        dap_global_db_insert(btree, &bk, NULL, 0,
                                     value, cfg->value_size, NULL, 0, 0);
     }
-    dap_global_db_btree_sync(btree);
+    dap_global_db_batch_commit(btree);
+    dap_global_db_sync(btree);
     DAP_DELETE(key);
     DAP_DELETE(value);
 
@@ -761,7 +794,7 @@ static benchmark_result_t s_bench_dap_parallel_random_reads(const benchmark_conf
     DAP_DELETE(args);
     DAP_DELETE(indices);
     DAP_DELETE(db_path);
-    dap_global_db_btree_close(btree);
+    dap_global_db_close(btree);
 
     result.num_ops = total_ops;
     result.elapsed_sec = elapsed;
@@ -816,23 +849,25 @@ static benchmark_result_t s_bench_dap_mixed_read_write(const benchmark_config_t 
 {
     benchmark_result_t result = { .name = "DAP B-tree", .operation = "mixed R/W" };
     char *db_path = dap_strdup_printf("%s/dap_bench_mrw.gdb", cfg->db_path);
-    dap_global_db_btree_t *btree = dap_global_db_btree_create(db_path);
+    dap_global_db_t *btree = dap_global_db_create(db_path);
     if (!btree) { DAP_DELETE(db_path); return result; }
 
     size_t pre_records = cfg->num_records / 2;
     byte_t *key = DAP_NEW_SIZE(byte_t, cfg->key_size);
     byte_t *value = DAP_NEW_SIZE(byte_t, cfg->value_size);
+    dap_global_db_batch_begin(btree);
     for (size_t i = 0; i < pre_records; i++) {
         s_generate_key(key, cfg->key_size, i);
         s_generate_value(value, cfg->value_size, i);
-        dap_global_db_btree_key_t bk = {
+        dap_global_db_key_t bk = {
             .bets = *(uint64_t *)key,
             .becrc = cfg->key_size > 8 ? *(uint64_t *)(key + 8) : 0
         };
-        dap_global_db_btree_insert(btree, &bk, NULL, 0,
+        dap_global_db_insert(btree, &bk, NULL, 0,
                                     value, cfg->value_size, NULL, 0, 0);
     }
-    dap_global_db_btree_sync(btree);
+    dap_global_db_batch_commit(btree);
+    dap_global_db_sync(btree);
     DAP_DELETE(key);
     DAP_DELETE(value);
 
@@ -878,7 +913,7 @@ static benchmark_result_t s_bench_dap_mixed_read_write(const benchmark_config_t 
     DAP_DELETE(threads);
     DAP_DELETE(args);
     DAP_DELETE(db_path);
-    dap_global_db_btree_close(btree);
+    dap_global_db_close(btree);
 
     result.num_ops = total_ops;
     result.elapsed_sec = elapsed;
@@ -898,12 +933,11 @@ static benchmark_result_t s_bench_mdbx_sequential_write(const benchmark_config_t
     benchmark_result_t result = { .name = "MDBX", .operation = "seq write" };
     
     char *db_path = dap_strdup_printf("%s/mdbx_bench", cfg->db_path);
-    #ifdef DAP_OS_WINDOWS
-    mkdir(db_path);
-#else
-    mkdir(db_path, 0755);
-#endif
-    
+    // MDBX: path = directory (no MDBX_NOSUBDIR); env creates data/lock files inside
+    if (dap_mkdir_with_parents(db_path) != 0) {
+        DAP_DELETE(db_path);
+        return result;
+    }
     MDBX_env *env = NULL;
     MDBX_dbi dbi;
     MDBX_txn *txn = NULL;
@@ -913,9 +947,11 @@ static benchmark_result_t s_bench_mdbx_sequential_write(const benchmark_config_t
         return result;
     }
     
-    mdbx_env_set_geometry(env, 0, 0, s_compute_mapsize(cfg), -1, -1, -1);
+    mdbx_env_set_geometry(env, 0, 0, s_compute_mapsize(cfg), -1, -1, s_mdbx_pagesize_for_key(cfg->key_size));
     
-    if (mdbx_env_open(env, db_path, MDBX_NOSUBDIR | MDBX_WRITEMAP, 0644) != MDBX_SUCCESS) {
+    int l_rc = mdbx_env_open(env, db_path, MDBX_WRITEMAP, 0644);
+    if (l_rc != MDBX_SUCCESS) {
+        log_it(L_ERROR, "MDBX seq_write env_open failed: %d (%s) path=%s", l_rc, mdbx_strerror(l_rc), db_path);
         mdbx_env_close(env);
         DAP_DELETE(db_path);
         return result;
@@ -976,14 +1012,17 @@ static benchmark_result_t s_bench_mdbx_sequential_write(const benchmark_config_t
     return result;
 }
 
-// Helper: open MDBX env+dbi, populate with sequential data, return open env+dbi
+// Helper: open MDBX env+dbi, populate with sequential data, return open env+dbi.
+// Caller must pass db_path as directory; we do not use MDBX_NOSUBDIR (path = dir, not file).
 static int s_mdbx_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
                                      MDBX_env **out_env, MDBX_dbi *out_dbi)
 {
+    if (dap_mkdir_with_parents(db_path) != 0)
+        return -1;
     if (mdbx_env_create(out_env) != MDBX_SUCCESS)
         return -1;
-    mdbx_env_set_geometry(*out_env, 0, 0, s_compute_mapsize(cfg), -1, -1, -1);
-    if (mdbx_env_open(*out_env, db_path, MDBX_NOSUBDIR | MDBX_WRITEMAP, 0644) != MDBX_SUCCESS) {
+    mdbx_env_set_geometry(*out_env, 0, 0, s_compute_mapsize(cfg), -1, -1, s_mdbx_pagesize_for_key(cfg->key_size));
+    if (mdbx_env_open(*out_env, db_path, MDBX_WRITEMAP, 0644) != MDBX_SUCCESS) {
         mdbx_env_close(*out_env);
         return -1;
     }
@@ -1022,17 +1061,13 @@ static benchmark_result_t s_bench_mdbx_random_write(const benchmark_config_t *cf
 {
     benchmark_result_t result = { .name = "MDBX", .operation = "random write" };
     char *db_path = dap_strdup_printf("%s/mdbx_bench_rw", cfg->db_path);
-    #ifdef DAP_OS_WINDOWS
-    mkdir(db_path);
-#else
-    mkdir(db_path, 0755);
-#endif
+    if (dap_mkdir_with_parents(db_path) != 0) { DAP_DELETE(db_path); return result; }
     MDBX_env *env = NULL;
     MDBX_dbi dbi;
     MDBX_txn *txn = NULL;
     if (mdbx_env_create(&env) != MDBX_SUCCESS) { DAP_DELETE(db_path); return result; }
-    mdbx_env_set_geometry(env, 0, 0, s_compute_mapsize(cfg), -1, -1, -1);
-    if (mdbx_env_open(env, db_path, MDBX_NOSUBDIR | MDBX_WRITEMAP, 0644) != MDBX_SUCCESS) {
+    mdbx_env_set_geometry(env, 0, 0, s_compute_mapsize(cfg), -1, -1, s_mdbx_pagesize_for_key(cfg->key_size));
+    if (mdbx_env_open(env, db_path, MDBX_WRITEMAP, 0644) != MDBX_SUCCESS) {
         mdbx_env_close(env); DAP_DELETE(db_path); return result;
     }
     if (mdbx_txn_begin(env, NULL, 0, &txn) != MDBX_SUCCESS) {
@@ -1072,11 +1107,6 @@ static benchmark_result_t s_bench_mdbx_sequential_read(const benchmark_config_t 
 {
     benchmark_result_t result = { .name = "MDBX", .operation = "seq read" };
     char *db_path = dap_strdup_printf("%s/mdbx_bench_sr", cfg->db_path);
-    #ifdef DAP_OS_WINDOWS
-    mkdir(db_path);
-#else
-    mkdir(db_path, 0755);
-#endif
     MDBX_env *env; MDBX_dbi dbi;
     if (s_mdbx_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
 
@@ -1086,28 +1116,42 @@ static benchmark_result_t s_bench_mdbx_sequential_read(const benchmark_config_t 
     if (cfg->verify) {
         byte_t *expected = DAP_NEW_SIZE(byte_t, cfg->value_size);
         MDBX_txn *vtxn = NULL;
-        mdbx_txn_begin(env, NULL, MDBX_TXN_RDONLY, &vtxn);
+        log_it(L_DEBUG, "MDBX verify: n=%zu dbi=%u env=%p", cfg->num_records, (unsigned)dbi, (void*)env);
+        int txn_rc = mdbx_txn_begin(env, NULL, MDBX_TXN_RDONLY, &vtxn);
+        if (txn_rc != MDBX_SUCCESS || !vtxn)
+            log_it(L_ERROR, "MDBX verify: txn_begin failed rc=%d (%s)", txn_rc, mdbx_strerror(txn_rc));
         size_t mismatches = 0;
         for (size_t i = 0; i < cfg->num_records; i++) {
             s_generate_key(key, cfg->key_size, i);
             s_generate_value(expected, cfg->value_size, i);
             MDBX_val mk = { .iov_base = key, .iov_len = cfg->key_size };
-            MDBX_val mv;
-            if (mdbx_get(vtxn, dbi, &mk, &mv) == MDBX_SUCCESS) {
-                if (mv.iov_len != cfg->value_size ||
-                    memcmp(mv.iov_base, expected, cfg->value_size) != 0)
+            MDBX_val mv = {0};
+            int grc = vtxn ? mdbx_get(vtxn, dbi, &mk, &mv) : MDBX_EINVAL;
+            if (grc == MDBX_SUCCESS) {
+                if (mv.iov_len != cfg->value_size) {
+                    if (mismatches == 0)
+                        log_it(L_ERROR, "MDBX verify: size mismatch i=%zu got=%zu want=%zu",
+                               i, mv.iov_len, cfg->value_size);
                     mismatches++;
+                } else if (memcmp(mv.iov_base, expected, cfg->value_size) != 0) {
+                    if (mismatches == 0)
+                        log_it(L_ERROR, "MDBX verify: data mismatch i=%zu", i);
+                    mismatches++;
+                }
             } else {
+                if (mismatches == 0)
+                    log_it(L_ERROR, "MDBX verify: first miss i=%zu rc=%d (%s)",
+                           i, grc, mdbx_strerror(grc));
                 mismatches++;
             }
         }
-        mdbx_txn_abort(vtxn);
+        if (vtxn) mdbx_txn_abort(vtxn);
         DAP_DELETE(expected);
         if (mismatches > 0)
-            printf("  [FAIL] MDBX: %zu/%zu mismatches in verification\n",
+            log_it(L_ERROR, "[FAIL] MDBX: %zu/%zu mismatches in verification",
                    mismatches, cfg->num_records);
         else
-            printf("  [PASS] MDBX: %zu records verified OK\n", cfg->num_records);
+            log_it(L_INFO, "[PASS] MDBX: %zu records verified OK", cfg->num_records);
     }
 
     MDBX_txn *txn = NULL;
@@ -1122,7 +1166,7 @@ static benchmark_result_t s_bench_mdbx_sequential_read(const benchmark_config_t 
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] MDBX seq read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] MDBX seq read: read %zu/%zu records",
                read_count, cfg->num_records);
     mdbx_txn_abort(txn);
     DAP_DELETE(key); mdbx_env_close(env); DAP_DELETE(db_path);
@@ -1136,11 +1180,6 @@ static benchmark_result_t s_bench_mdbx_random_read(const benchmark_config_t *cfg
 {
     benchmark_result_t result = { .name = "MDBX", .operation = "random read" };
     char *db_path = dap_strdup_printf("%s/mdbx_bench_rr", cfg->db_path);
-    #ifdef DAP_OS_WINDOWS
-    mkdir(db_path);
-#else
-    mkdir(db_path, 0755);
-#endif
     MDBX_env *env; MDBX_dbi dbi;
     if (s_mdbx_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
 
@@ -1158,7 +1197,7 @@ static benchmark_result_t s_bench_mdbx_random_read(const benchmark_config_t *cfg
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] MDBX rand read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] MDBX rand read: read %zu/%zu records",
                read_count, cfg->num_records);
     mdbx_txn_abort(txn);
     DAP_DELETE(key); DAP_DELETE(indices); mdbx_env_close(env); DAP_DELETE(db_path);
@@ -1181,12 +1220,7 @@ static benchmark_result_t s_bench_lmdb_sequential_write(const benchmark_config_t
     benchmark_result_t result = { .name = "LMDB", .operation = "seq write" };
     
     char *db_path = dap_strdup_printf("%s/lmdb_bench", cfg->db_path);
-    #ifdef DAP_OS_WINDOWS
-    mkdir(db_path);
-#else
-    mkdir(db_path, 0755);
-#endif
-    
+    if (dap_mkdir_with_parents(db_path) != 0) { DAP_DELETE(db_path); return result; }
     MDB_env *env = NULL;
     MDB_dbi dbi;
     MDB_txn *txn = NULL;
@@ -1259,10 +1293,12 @@ static benchmark_result_t s_bench_lmdb_sequential_write(const benchmark_config_t
     return result;
 }
 
-// Helper: open LMDB env+dbi, populate with sequential data
+// Helper: open LMDB env+dbi, populate with sequential data.
+// Caller passes db_path as directory (LMDB creates data.mdb/lock.mdb inside); no MDB_NOSUBDIR.
 static int s_lmdb_open_and_populate(const benchmark_config_t *cfg, const char *db_path,
                                      MDB_env **out_env, MDB_dbi *out_dbi)
 {
+    if (dap_mkdir_with_parents(db_path) != 0) return -1;
     if (mdb_env_create(out_env) != 0) return -1;
     mdb_env_set_mapsize(*out_env, s_compute_mapsize(cfg));
     if (mdb_env_open(*out_env, db_path, MDB_WRITEMAP | MDB_MAPASYNC, 0644) != 0) {
@@ -1298,11 +1334,7 @@ static benchmark_result_t s_bench_lmdb_random_write(const benchmark_config_t *cf
 {
     benchmark_result_t result = { .name = "LMDB", .operation = "random write" };
     char *db_path = dap_strdup_printf("%s/lmdb_bench_rw", cfg->db_path);
-    #ifdef DAP_OS_WINDOWS
-    mkdir(db_path);
-#else
-    mkdir(db_path, 0755);
-#endif
+    if (dap_mkdir_with_parents(db_path) != 0) { DAP_DELETE(db_path); return result; }
     MDB_env *env = NULL; MDB_dbi dbi; MDB_txn *txn = NULL;
     if (mdb_env_create(&env) != 0) { DAP_DELETE(db_path); return result; }
     mdb_env_set_mapsize(env, s_compute_mapsize(cfg));
@@ -1346,11 +1378,6 @@ static benchmark_result_t s_bench_lmdb_sequential_read(const benchmark_config_t 
 {
     benchmark_result_t result = { .name = "LMDB", .operation = "seq read" };
     char *db_path = dap_strdup_printf("%s/lmdb_bench_sr", cfg->db_path);
-    #ifdef DAP_OS_WINDOWS
-    mkdir(db_path);
-#else
-    mkdir(db_path, 0755);
-#endif
     MDB_env *env; MDB_dbi dbi;
     if (s_lmdb_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
 
@@ -1378,10 +1405,10 @@ static benchmark_result_t s_bench_lmdb_sequential_read(const benchmark_config_t 
         mdb_txn_abort(vtxn);
         DAP_DELETE(expected);
         if (mismatches > 0)
-            printf("  [FAIL] LMDB: %zu/%zu mismatches in verification\n",
+            log_it(L_ERROR, "[FAIL] LMDB: %zu/%zu mismatches in verification",
                    mismatches, cfg->num_records);
         else
-            printf("  [PASS] LMDB: %zu records verified OK\n", cfg->num_records);
+            log_it(L_INFO, "[PASS] LMDB: %zu records verified OK", cfg->num_records);
     }
 
     MDB_txn *txn = NULL;
@@ -1396,7 +1423,7 @@ static benchmark_result_t s_bench_lmdb_sequential_read(const benchmark_config_t 
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] LMDB seq read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] LMDB seq read: read %zu/%zu records",
                read_count, cfg->num_records);
     mdb_txn_abort(txn);
     DAP_DELETE(key); mdb_env_close(env); DAP_DELETE(db_path);
@@ -1410,11 +1437,6 @@ static benchmark_result_t s_bench_lmdb_random_read(const benchmark_config_t *cfg
 {
     benchmark_result_t result = { .name = "LMDB", .operation = "random read" };
     char *db_path = dap_strdup_printf("%s/lmdb_bench_rr", cfg->db_path);
-    #ifdef DAP_OS_WINDOWS
-    mkdir(db_path);
-#else
-    mkdir(db_path, 0755);
-#endif
     MDB_env *env; MDB_dbi dbi;
     if (s_lmdb_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
 
@@ -1432,7 +1454,7 @@ static benchmark_result_t s_bench_lmdb_random_read(const benchmark_config_t *cfg
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] LMDB rand read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] LMDB rand read: read %zu/%zu records",
                read_count, cfg->num_records);
     mdb_txn_abort(txn);
     DAP_DELETE(key); DAP_DELETE(indices); mdb_env_close(env); DAP_DELETE(db_path);
@@ -1586,7 +1608,7 @@ static benchmark_result_t s_bench_rocksdb_sequential_read(const benchmark_config
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] RocksDB seq read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] RocksDB seq read: read %zu/%zu records",
                read_count, cfg->num_records);
     rocksdb_readoptions_destroy(ro);
     DAP_DELETE(key); rocksdb_close(db); rocksdb_options_destroy(options); DAP_DELETE(db_path);
@@ -1619,7 +1641,7 @@ static benchmark_result_t s_bench_rocksdb_random_read(const benchmark_config_t *
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] RocksDB rand read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] RocksDB rand read: read %zu/%zu records",
                read_count, cfg->num_records);
     rocksdb_readoptions_destroy(ro);
     DAP_DELETE(key); DAP_DELETE(indices); rocksdb_close(db); rocksdb_options_destroy(options); DAP_DELETE(db_path);
@@ -1753,7 +1775,7 @@ static benchmark_result_t s_bench_leveldb_sequential_read(const benchmark_config
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] LevelDB seq read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] LevelDB seq read: read %zu/%zu records",
                read_count, cfg->num_records);
     leveldb_readoptions_destroy(ro); DAP_DELETE(key);
     leveldb_close(db); leveldb_options_destroy(opt); DAP_DELETE(db_path);
@@ -1785,7 +1807,7 @@ static benchmark_result_t s_bench_leveldb_random_read(const benchmark_config_t *
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] LevelDB rand read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] LevelDB rand read: read %zu/%zu records",
                read_count, cfg->num_records);
     leveldb_readoptions_destroy(ro); DAP_DELETE(key); DAP_DELETE(indices);
     leveldb_close(db); leveldb_options_destroy(opt); DAP_DELETE(db_path);
@@ -1953,7 +1975,7 @@ static benchmark_result_t s_bench_tidesdb_sequential_read(const benchmark_config
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] TidesDB seq read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] TidesDB seq read: read %zu/%zu records",
                read_count, cfg->num_records);
     tidesdb_txn_rollback(txn);
     tidesdb_txn_free(txn);
@@ -1992,7 +2014,7 @@ static benchmark_result_t s_bench_tidesdb_random_read(const benchmark_config_t *
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] TidesDB rand read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] TidesDB rand read: read %zu/%zu records",
                read_count, cfg->num_records);
     tidesdb_txn_rollback(txn);
     tidesdb_txn_free(txn);
@@ -2161,7 +2183,7 @@ static benchmark_result_t s_bench_wiredtiger_sequential_read(const benchmark_con
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] WiredTiger seq read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] WiredTiger seq read: read %zu/%zu records",
                read_count, cfg->num_records);
     DAP_DELETE(key); cursor->close(cursor); session->close(session, NULL);
     conn->close(conn, NULL); DAP_DELETE(db_path);
@@ -2199,7 +2221,7 @@ static benchmark_result_t s_bench_wiredtiger_random_read(const benchmark_config_
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] WiredTiger rand read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] WiredTiger rand read: read %zu/%zu records",
                read_count, cfg->num_records);
     DAP_DELETE(key); DAP_DELETE(indices);
     cursor->close(cursor); session->close(session, NULL);
@@ -2346,7 +2368,7 @@ static benchmark_result_t s_bench_sophia_sequential_read(const benchmark_config_
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] Sophia seq read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] Sophia seq read: read %zu/%zu records",
                read_count, cfg->num_records);
     DAP_DELETE(key); sp_destroy(env); DAP_DELETE(db_path);
     result.num_ops = read_count; result.elapsed_sec = elapsed;
@@ -2375,7 +2397,7 @@ static benchmark_result_t s_bench_sophia_random_read(const benchmark_config_t *c
     }
     double elapsed = s_get_time_sec() - start;
     if (read_count != cfg->num_records)
-        printf("  [WARN] Sophia rand read: read %zu/%zu records\n",
+        log_it(L_WARNING, "[WARN] Sophia rand read: read %zu/%zu records",
                read_count, cfg->num_records);
     DAP_DELETE(key); DAP_DELETE(indices);
     sp_destroy(env); DAP_DELETE(db_path);
@@ -2386,6 +2408,394 @@ static benchmark_result_t s_bench_sophia_random_read(const benchmark_config_t *c
 }
 
 #endif // WITH_SOPHIA
+
+// ============================================================================
+// Multi-threaded parallel read benchmarks for all backends
+// ============================================================================
+
+typedef struct mt_generic_arg {
+    const benchmark_config_t *cfg;
+    size_t start_index;
+    size_t count;
+    size_t ops_completed;
+    const uint64_t *indices;
+    void *h1, *h2;
+    unsigned int h3;
+} mt_generic_arg_t;
+
+#define MT_BENCH_SETUP(BACKEND_LABEL, OP_LABEL, SUFFIX, OPEN_CALL) \
+    benchmark_result_t result = { .name = BACKEND_LABEL, .operation = OP_LABEL }; \
+    char *db_path = dap_strdup_printf("%s/" SUFFIX, cfg->db_path);
+
+#define MT_BENCH_SPAWN(THREAD_FN) \
+    size_t nt = cfg->num_threads; \
+    size_t per_thread = cfg->num_records / nt; \
+    pthread_t *threads = DAP_NEW_SIZE(pthread_t, nt * sizeof(pthread_t)); \
+    mt_generic_arg_t *args = DAP_NEW_SIZE(mt_generic_arg_t, nt * sizeof(mt_generic_arg_t)); \
+    for (size_t t = 0; t < nt; t++) { \
+        args[t] = (mt_generic_arg_t){ \
+            .cfg = cfg, .start_index = t * per_thread, \
+            .count = (t == nt - 1) ? (cfg->num_records - t * per_thread) : per_thread, \
+            .ops_completed = 0 }; \
+    }
+
+#define MT_BENCH_COLLECT \
+    double elapsed = s_get_time_sec() - start; \
+    size_t total_ops = 0; \
+    for (size_t t = 0; t < nt; t++) total_ops += args[t].ops_completed; \
+    DAP_DELETE(threads); DAP_DELETE(args); \
+    result.num_ops = total_ops; result.elapsed_sec = elapsed; \
+    result.ops_per_sec = (double)total_ops / elapsed; \
+    result.mb_per_sec = (double)(total_ops * (cfg->key_size + cfg->value_size)) / elapsed / 1024 / 1024;
+
+// --- LMDB MT ---
+#ifdef WITH_LMDB
+static void *s_mt_lmdb_reader(void *a) {
+    mt_generic_arg_t *arg = (mt_generic_arg_t *)a;
+    MDB_env *env = (MDB_env *)arg->h1;
+    MDB_dbi dbi = (MDB_dbi)arg->h3;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    MDB_txn *txn = NULL;
+    mdb_txn_begin(env, NULL, MDB_RDONLY, &txn);
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        size_t idx = arg->indices ? arg->indices[i] : i;
+        s_generate_key(key, arg->cfg->key_size, idx);
+        MDB_val mk = { .mv_data = key, .mv_size = arg->cfg->key_size }, mv;
+        if (mdb_get(txn, dbi, &mk, &mv) == 0) arg->ops_completed++;
+    }
+    mdb_txn_abort(txn);
+    DAP_DELETE(key);
+    return NULL;
+}
+static benchmark_result_t s_bench_lmdb_parallel_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("LMDB", "parallel read", "lmdb_mt_pr", 0)
+    MDB_env *env; MDB_dbi dbi;
+    if (s_lmdb_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
+    MT_BENCH_SPAWN(s_mt_lmdb_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = env; args[t].h3 = dbi; args[t].indices = NULL; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_lmdb_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(db_path); mdb_env_close(env);
+    return result;
+}
+static benchmark_result_t s_bench_lmdb_parallel_random_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("LMDB", "parallel rand read", "lmdb_mt_prr", 0)
+    MDB_env *env; MDB_dbi dbi;
+    if (s_lmdb_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MT_BENCH_SPAWN(s_mt_lmdb_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = env; args[t].h3 = dbi; args[t].indices = indices; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_lmdb_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(indices); DAP_DELETE(db_path); mdb_env_close(env);
+    return result;
+}
+#endif
+
+// --- MDBX MT ---
+#ifdef WITH_MDBX
+static void *s_mt_mdbx_reader(void *a) {
+    mt_generic_arg_t *arg = (mt_generic_arg_t *)a;
+    MDBX_env *env = (MDBX_env *)arg->h1;
+    MDBX_dbi dbi = (MDBX_dbi)(uintptr_t)arg->h2;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    MDBX_txn *txn = NULL;
+    mdbx_txn_begin(env, NULL, MDBX_TXN_RDONLY, &txn);
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        size_t idx = arg->indices ? arg->indices[i] : i;
+        s_generate_key(key, arg->cfg->key_size, idx);
+        MDBX_val mk = { .iov_base = key, .iov_len = arg->cfg->key_size }, mv;
+        if (mdbx_get(txn, dbi, &mk, &mv) == MDBX_SUCCESS) arg->ops_completed++;
+    }
+    mdbx_txn_abort(txn);
+    DAP_DELETE(key);
+    return NULL;
+}
+static benchmark_result_t s_bench_mdbx_parallel_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("MDBX", "parallel read", "mdbx_mt_pr", 0)
+    MDBX_env *env; MDBX_dbi dbi;
+    if (s_mdbx_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
+    MT_BENCH_SPAWN(s_mt_mdbx_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = env; args[t].h2 = (void *)(uintptr_t)dbi; args[t].indices = NULL; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_mdbx_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(db_path); mdbx_env_close(env);
+    return result;
+}
+static benchmark_result_t s_bench_mdbx_parallel_random_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("MDBX", "parallel rand read", "mdbx_mt_prr", 0)
+    MDBX_env *env; MDBX_dbi dbi;
+    if (s_mdbx_open_and_populate(cfg, db_path, &env, &dbi) != 0) { DAP_DELETE(db_path); return result; }
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MT_BENCH_SPAWN(s_mt_mdbx_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = env; args[t].h2 = (void *)(uintptr_t)dbi; args[t].indices = indices; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_mdbx_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(indices); DAP_DELETE(db_path); mdbx_env_close(env);
+    return result;
+}
+#endif
+
+// --- RocksDB MT ---
+#ifdef WITH_ROCKSDB
+static void *s_mt_rocksdb_reader(void *a) {
+    mt_generic_arg_t *arg = (mt_generic_arg_t *)a;
+    rocksdb_t *db = (rocksdb_t *)arg->h1;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    rocksdb_readoptions_t *ro = rocksdb_readoptions_create();
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        size_t idx = arg->indices ? arg->indices[i] : i;
+        s_generate_key(key, arg->cfg->key_size, idx);
+        size_t vlen = 0; char *err = NULL;
+        char *val = rocksdb_get(db, ro, (char *)key, arg->cfg->key_size, &vlen, &err);
+        if (val) { arg->ops_completed++; free(val); }
+        if (err) free(err);
+    }
+    rocksdb_readoptions_destroy(ro);
+    DAP_DELETE(key);
+    return NULL;
+}
+static benchmark_result_t s_bench_rocksdb_parallel_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("RocksDB", "parallel read", "rocksdb_mt_pr", 0)
+    rocksdb_options_t *opts;
+    rocksdb_t *db = s_rocksdb_open_and_populate(cfg, db_path, &opts);
+    if (!db) { DAP_DELETE(db_path); return result; }
+    MT_BENCH_SPAWN(s_mt_rocksdb_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = db; args[t].indices = NULL; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_rocksdb_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    rocksdb_close(db); rocksdb_options_destroy(opts); DAP_DELETE(db_path);
+    return result;
+}
+static benchmark_result_t s_bench_rocksdb_parallel_random_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("RocksDB", "parallel rand read", "rocksdb_mt_prr", 0)
+    rocksdb_options_t *opts;
+    rocksdb_t *db = s_rocksdb_open_and_populate(cfg, db_path, &opts);
+    if (!db) { DAP_DELETE(db_path); return result; }
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MT_BENCH_SPAWN(s_mt_rocksdb_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = db; args[t].indices = indices; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_rocksdb_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(indices); rocksdb_close(db); rocksdb_options_destroy(opts); DAP_DELETE(db_path);
+    return result;
+}
+#endif
+
+// --- LevelDB MT ---
+#ifdef WITH_LEVELDB
+static void *s_mt_leveldb_reader(void *a) {
+    mt_generic_arg_t *arg = (mt_generic_arg_t *)a;
+    leveldb_t *db = (leveldb_t *)arg->h1;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    leveldb_readoptions_t *ro = leveldb_readoptions_create();
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        size_t idx = arg->indices ? arg->indices[i] : i;
+        s_generate_key(key, arg->cfg->key_size, idx);
+        size_t vlen = 0; char *err = NULL;
+        char *val = leveldb_get(db, ro, (char *)key, arg->cfg->key_size, &vlen, &err);
+        if (val) { arg->ops_completed++; free(val); }
+        if (err) free(err);
+    }
+    leveldb_readoptions_destroy(ro);
+    DAP_DELETE(key);
+    return NULL;
+}
+static benchmark_result_t s_bench_leveldb_parallel_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("LevelDB", "parallel read", "leveldb_mt_pr", 0)
+    leveldb_options_t *opt;
+    leveldb_t *db = s_leveldb_open_and_populate(cfg, db_path, &opt);
+    if (!db) { DAP_DELETE(db_path); return result; }
+    MT_BENCH_SPAWN(s_mt_leveldb_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = db; args[t].indices = NULL; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_leveldb_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    leveldb_close(db); leveldb_options_destroy(opt); DAP_DELETE(db_path);
+    return result;
+}
+static benchmark_result_t s_bench_leveldb_parallel_random_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("LevelDB", "parallel rand read", "leveldb_mt_prr", 0)
+    leveldb_options_t *opt;
+    leveldb_t *db = s_leveldb_open_and_populate(cfg, db_path, &opt);
+    if (!db) { DAP_DELETE(db_path); return result; }
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MT_BENCH_SPAWN(s_mt_leveldb_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = db; args[t].indices = indices; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_leveldb_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(indices); leveldb_close(db); leveldb_options_destroy(opt); DAP_DELETE(db_path);
+    return result;
+}
+#endif
+
+// --- WiredTiger MT ---
+#ifdef WITH_WIREDTIGER
+static void *s_mt_wt_reader(void *a) {
+    mt_generic_arg_t *arg = (mt_generic_arg_t *)a;
+    WT_CONNECTION *conn = (WT_CONNECTION *)arg->h1;
+    WT_SESSION *session = NULL;
+    conn->open_session(conn, NULL, NULL, &session);
+    WT_CURSOR *cursor = NULL;
+    session->open_cursor(session, "table:bench", NULL, NULL, &cursor);
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    WT_ITEM wk, wv;
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        size_t idx = arg->indices ? arg->indices[i] : i;
+        s_generate_key(key, arg->cfg->key_size, idx);
+        wk.data = key; wk.size = arg->cfg->key_size;
+        cursor->set_key(cursor, &wk);
+        if (cursor->search(cursor) == 0) {
+            cursor->get_value(cursor, &wv);
+            arg->ops_completed++;
+        }
+    }
+    DAP_DELETE(key);
+    cursor->close(cursor);
+    session->close(session, NULL);
+    return NULL;
+}
+static benchmark_result_t s_bench_wiredtiger_parallel_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("WiredTiger", "parallel read", "wt_mt_pr", 0)
+    WT_CONNECTION *conn;
+    if (s_wt_open_and_populate(cfg, db_path, &conn) != 0) { DAP_DELETE(db_path); return result; }
+    MT_BENCH_SPAWN(s_mt_wt_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = conn; args[t].indices = NULL; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_wt_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    conn->close(conn, NULL); DAP_DELETE(db_path);
+    return result;
+}
+static benchmark_result_t s_bench_wiredtiger_parallel_random_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("WiredTiger", "parallel rand read", "wt_mt_prr", 0)
+    WT_CONNECTION *conn;
+    if (s_wt_open_and_populate(cfg, db_path, &conn) != 0) { DAP_DELETE(db_path); return result; }
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MT_BENCH_SPAWN(s_mt_wt_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = conn; args[t].indices = indices; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_wt_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(indices); conn->close(conn, NULL); DAP_DELETE(db_path);
+    return result;
+}
+#endif
+
+// --- TidesDB MT ---
+#ifdef WITH_TIDESDB
+static void *s_mt_tidesdb_reader(void *a) {
+    mt_generic_arg_t *arg = (mt_generic_arg_t *)a;
+    tidesdb_t *tdb = (tidesdb_t *)arg->h1;
+    tidesdb_column_family_t *cf = (tidesdb_column_family_t *)arg->h2;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    tidesdb_txn_t *txn = NULL;
+    tidesdb_txn_begin(tdb, &txn);
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        size_t idx = arg->indices ? arg->indices[i] : i;
+        s_generate_key(key, arg->cfg->key_size, idx);
+        size_t vlen = 0; uint8_t *val = NULL;
+        if (tidesdb_txn_get(txn, cf, key, arg->cfg->key_size, &val, &vlen) == TDB_SUCCESS && val) {
+            arg->ops_completed++;
+            tidesdb_free(val);
+        }
+    }
+    tidesdb_txn_rollback(txn);
+    tidesdb_txn_free(txn);
+    DAP_DELETE(key);
+    return NULL;
+}
+static benchmark_result_t s_bench_tidesdb_parallel_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("TidesDB", "parallel read", "tidesdb_mt_pr", 0)
+    tidesdb_t *tdb = NULL; tidesdb_column_family_t *cf = NULL;
+    if (s_tidesdb_open_and_populate(cfg, db_path, &tdb, &cf) != 0) { DAP_DELETE(db_path); return result; }
+    MT_BENCH_SPAWN(s_mt_tidesdb_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = tdb; args[t].h2 = cf; args[t].indices = NULL; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_tidesdb_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(db_path); s_tidesdb_close_db(tdb);
+    return result;
+}
+static benchmark_result_t s_bench_tidesdb_parallel_random_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("TidesDB", "parallel rand read", "tidesdb_mt_prr", 0)
+    tidesdb_t *tdb = NULL; tidesdb_column_family_t *cf = NULL;
+    if (s_tidesdb_open_and_populate(cfg, db_path, &tdb, &cf) != 0) { DAP_DELETE(db_path); return result; }
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MT_BENCH_SPAWN(s_mt_tidesdb_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = tdb; args[t].h2 = cf; args[t].indices = indices; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_tidesdb_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(indices); DAP_DELETE(db_path); s_tidesdb_close_db(tdb);
+    return result;
+}
+#endif
+
+// --- Sophia MT ---
+#ifdef WITH_SOPHIA
+static void *s_mt_sophia_reader(void *a) {
+    mt_generic_arg_t *arg = (mt_generic_arg_t *)a;
+    void *db = arg->h1;
+    byte_t *key = DAP_NEW_SIZE(byte_t, arg->cfg->key_size);
+    for (size_t i = arg->start_index; i < arg->start_index + arg->count; i++) {
+        size_t idx = arg->indices ? arg->indices[i] : i;
+        s_generate_key(key, arg->cfg->key_size, idx);
+        void *doc = sp_document(db);
+        sp_setstring(doc, "key", key, arg->cfg->key_size);
+        void *r = sp_get(db, doc);
+        if (r) { arg->ops_completed++; sp_destroy(r); }
+    }
+    DAP_DELETE(key);
+    return NULL;
+}
+static benchmark_result_t s_bench_sophia_parallel_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("Sophia", "parallel read", "sophia_mt_pr", 0)
+    void *env, *db;
+    if (s_sophia_open_and_populate(cfg, db_path, &env, &db) != 0) { DAP_DELETE(db_path); return result; }
+    MT_BENCH_SPAWN(s_mt_sophia_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = db; args[t].indices = NULL; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_sophia_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(db_path); sp_destroy(env);
+    return result;
+}
+static benchmark_result_t s_bench_sophia_parallel_random_reads(const benchmark_config_t *cfg) {
+    MT_BENCH_SETUP("Sophia", "parallel rand read", "sophia_mt_prr", 0)
+    void *env, *db;
+    if (s_sophia_open_and_populate(cfg, db_path, &env, &db) != 0) { DAP_DELETE(db_path); return result; }
+    uint64_t *indices = s_generate_random_indices(cfg->num_records);
+    MT_BENCH_SPAWN(s_mt_sophia_reader)
+    for (size_t t = 0; t < nt; t++) { args[t].h1 = db; args[t].indices = indices; }
+    double start = s_get_time_sec();
+    for (size_t t = 0; t < nt; t++) pthread_create(&threads[t], NULL, s_mt_sophia_reader, &args[t]);
+    for (size_t t = 0; t < nt; t++) pthread_join(threads[t], NULL);
+    MT_BENCH_COLLECT
+    DAP_DELETE(indices); DAP_DELETE(db_path); sp_destroy(env);
+    return result;
+}
+#endif
 
 // ============================================================================
 // Main benchmark runner
@@ -2411,7 +2821,7 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
            cfg->num_threads);
     printf("=================================================================\n\n");
     
-    benchmark_result_t results[64];
+    benchmark_result_t results[128];
     int result_count = 0;
     
     // DAP Native B-tree benchmarks
@@ -2577,6 +2987,75 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
     s_print_result(&results[result_count++]);
 #endif
 
+    // ------------------------------------------------------------------
+    // Multi-threaded parallel reads for all backends
+    // ------------------------------------------------------------------
+    if (cfg->num_threads > 1) {
+#ifdef WITH_LMDB
+        printf("\nLMDB multi-threaded (%zu threads):\n", cfg->num_threads);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_lmdb_parallel_reads(cfg);
+        s_print_result(&results[result_count++]);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_lmdb_parallel_random_reads(cfg);
+        s_print_result(&results[result_count++]);
+#endif
+#ifdef WITH_MDBX
+        printf("\nMDBX multi-threaded (%zu threads):\n", cfg->num_threads);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_mdbx_parallel_reads(cfg);
+        s_print_result(&results[result_count++]);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_mdbx_parallel_random_reads(cfg);
+        s_print_result(&results[result_count++]);
+#endif
+#ifdef WITH_ROCKSDB
+        printf("\nRocksDB multi-threaded (%zu threads):\n", cfg->num_threads);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_rocksdb_parallel_reads(cfg);
+        s_print_result(&results[result_count++]);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_rocksdb_parallel_random_reads(cfg);
+        s_print_result(&results[result_count++]);
+#endif
+#ifdef WITH_LEVELDB
+        printf("\nLevelDB multi-threaded (%zu threads):\n", cfg->num_threads);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_leveldb_parallel_reads(cfg);
+        s_print_result(&results[result_count++]);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_leveldb_parallel_random_reads(cfg);
+        s_print_result(&results[result_count++]);
+#endif
+#ifdef WITH_WIREDTIGER
+        printf("\nWiredTiger multi-threaded (%zu threads):\n", cfg->num_threads);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_wiredtiger_parallel_reads(cfg);
+        s_print_result(&results[result_count++]);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_wiredtiger_parallel_random_reads(cfg);
+        s_print_result(&results[result_count++]);
+#endif
+#ifdef WITH_TIDESDB
+        printf("\nTidesDB multi-threaded (%zu threads):\n", cfg->num_threads);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_tidesdb_parallel_reads(cfg);
+        s_print_result(&results[result_count++]);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_tidesdb_parallel_random_reads(cfg);
+        s_print_result(&results[result_count++]);
+#endif
+#ifdef WITH_SOPHIA
+        printf("\nSophia multi-threaded (%zu threads):\n", cfg->num_threads);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_sophia_parallel_reads(cfg);
+        s_print_result(&results[result_count++]);
+        s_cleanup_db_dir(cfg->db_path);
+        results[result_count] = s_bench_sophia_parallel_random_reads(cfg);
+        s_print_result(&results[result_count++]);
+#endif
+    }
+
     printf("\n=================================================================\n");
     printf("Benchmark complete\n");
     printf("=================================================================\n\n");
@@ -2589,12 +3068,14 @@ static void s_run_benchmarks(const benchmark_config_t *cfg)
         "TidesDB", "WiredTiger", "Sophia"
     };
     const int num_backends = (int)(sizeof(backends) / sizeof(backends[0]));
-    const char *ops[] = { "seq write", "random write", "seq read", "random read" };
-    const char *ops_short[] = { "Seq Write", "Rand Write", "Seq Read", "Rand Read" };
+    const char *ops[] = { "seq write", "random write", "seq read", "random read",
+                           "parallel read", "parallel rand read" };
+    const char *ops_short[] = { "Seq Write", "Rand Write", "Seq Read", "Rand Read",
+                                "MT Read", "MT Rand Read" };
     const int num_ops = (int)(sizeof(ops) / sizeof(ops[0]));
 
     // Build lookup matrix: perf[backend][op] = ops_per_sec (0 = not tested)
-    double perf[8][4] = {{0}};
+    double perf[8][6] = {{0}};
     for (int b = 0; b < num_backends; b++) {
         for (int o = 0; o < num_ops; o++) {
             for (int i = 0; i < result_count; i++) {
@@ -2768,13 +3249,12 @@ int main(int argc, char **argv)
     // Initialize DAP common
     dap_common_init("kv_benchmark", NULL);
     
-    // Create benchmark directory
-#ifdef DAP_OS_WINDOWS
-    mkdir(cfg.db_path);
-#else
-    mkdir(cfg.db_path, 0755);
-#endif
-    
+    // Create benchmark directory (and parents if -p path is nested)
+    if (dap_mkdir_with_parents(cfg.db_path) != 0) {
+        log_it(L_ERROR, "Failed to create benchmark directory: %s", cfg.db_path);
+        return 1;
+    }
+
     // Seed random
     srand(time(NULL));
     

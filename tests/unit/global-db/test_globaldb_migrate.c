@@ -17,7 +17,6 @@
 #include "dap_strfuncs.h"
 #include "dap_test.h"
 #include "dap_global_db.h"
-#include "dap_global_db_storage.h"
 #include "dap_global_db_migrate.h"
 
 #define TEST_DIR "/tmp/test_globaldb_migrate"
@@ -202,12 +201,12 @@ static void test_migrate_verify_data(void)
     
     if (result.status == DAP_MIGRATE_OK && result.records_migrated > 0) {
         // Open the migrated storage and verify
-        dap_global_db_storage_init(TEST_DEST_DIR);
-        
-        uint64_t count = dap_global_db_storage_group_count("test_group", false);
+        dap_global_db_groups_init(TEST_DEST_DIR);
+
+        uint64_t count = dap_global_db_group_count("test_group", false);
         dap_test_msg("test_group has %llu records", (unsigned long long)count);
-        
-        dap_global_db_storage_deinit();
+
+        dap_global_db_groups_deinit();
     }
     
     dap_global_db_migrate_result_free(&result);

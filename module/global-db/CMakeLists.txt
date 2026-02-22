@@ -7,7 +7,6 @@ file(GLOB dap_global_db_SRC
     dap_global_db_pkt.c 
     dap_global_db_cluster.c 
     dap_global_db_btree.c
-    dap_global_db_storage.c
     dap_global_db_obj.c
     dap_global_db_wal.c
 )

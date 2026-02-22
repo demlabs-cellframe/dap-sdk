@@ -11,7 +11,7 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_global_db.h"
-#include "dap_global_db_storage.h"
+#include "dap_global_db_btree.h"
 #include "dap_global_db_migrate.h"
 
 #define LOG_TAG "dap_global_db_migrate_sql"
@@ -272,7 +272,7 @@ dap_global_db_migrate_result_t dap_global_db_migrate_sql_impl(
     dap_global_db_migrate_result_t l_result = {0};
     
     // Initialize destination storage
-    if (dap_global_db_storage_init(a_dest_path) < 0) {
+    if (dap_global_db_groups_init(a_dest_path) < 0) {
         l_result.status = DAP_MIGRATE_ERR_DEST;
         l_result.error_message = dap_strdup("Failed to initialize destination storage");
         return l_result;
@@ -282,7 +282,7 @@ dap_global_db_migrate_result_t dap_global_db_migrate_sql_impl(
     if (!l_fp) {
         l_result.status = DAP_MIGRATE_ERR_SOURCE;
         l_result.error_message = dap_strdup_printf("Cannot open SQL file: %s", a_sql_path);
-        dap_global_db_storage_deinit();
+        dap_global_db_groups_deinit();
         return l_result;
     }
     
@@ -291,7 +291,7 @@ dap_global_db_migrate_result_t dap_global_db_migrate_sql_impl(
         fclose(l_fp);
         l_result.status = DAP_MIGRATE_ERR_MEMORY;
         l_result.error_message = dap_strdup("Memory allocation failed");
-        dap_global_db_storage_deinit();
+        dap_global_db_groups_deinit();
         return l_result;
     }
     
@@ -321,16 +321,16 @@ dap_global_db_migrate_result_t dap_global_db_migrate_sql_impl(
                 }
                 
                 // Get or create B-tree for group
-                dap_global_db_btree_t *l_btree = dap_global_db_storage_group_get_or_create(l_rec.group);
+                dap_global_db_t *l_btree = dap_global_db_group_get_or_create(l_rec.group);
                 if (l_btree) {
                     // Build key
-                    dap_global_db_btree_key_t l_key = {
+                    dap_global_db_key_t l_key = {
                         .bets = htobe64(l_rec.timestamp),
                         .becrc = htobe64(l_rec.crc)
                     };
                     
                     // Insert
-                    int l_rc = dap_global_db_btree_insert(l_btree, &l_key,
+                    int l_rc = dap_global_db_insert(l_btree, &l_key,
                                                           l_rec.key, l_rec.key ? strlen(l_rec.key) + 1 : 0,
                                                           l_rec.value, l_rec.value_len,
                                                           l_rec.sign, l_rec.sign_len,
@@ -360,8 +360,8 @@ dap_global_db_migrate_result_t dap_global_db_migrate_sql_impl(
     fclose(l_fp);
     
     // Flush and deinit
-    dap_global_db_storage_flush();
-    dap_global_db_storage_deinit();
+    dap_global_db_groups_flush();
+    dap_global_db_groups_deinit();
     
     if (a_opts->verbose) {
         log_it(L_INFO, "SQL migration complete: %zu groups, %zu records, %zu bytes",
