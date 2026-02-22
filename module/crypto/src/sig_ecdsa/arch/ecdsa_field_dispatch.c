@@ -6,6 +6,7 @@
 
 #include <string.h>
 #include "ecdsa_field_arch.h"
+#include "dap_cpu_arch.h"
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <cpuid.h>
@@ -101,22 +102,6 @@ static void detect_x86_features(void) {
 }
 #endif
 
-#if defined(__aarch64__)
-#include <sys/auxv.h>
-#ifndef HWCAP_SVE
-#define HWCAP_SVE (1 << 22)
-#endif
-
-static void detect_arm64_features(void) {
-    // NEON is always available on ARM64
-    s_impls[ECDSA_FIELD_IMPL_ARM64_NEON].available = true;
-    
-    // Check for SVE support via hwcap
-    unsigned long hwcap = getauxval(AT_HWCAP);
-    s_impls[ECDSA_FIELD_IMPL_ARM64_SVE].available = (hwcap & HWCAP_SVE) != 0;
-}
-#endif
-
 // ============================================================================
 // Dispatcher Implementation
 // ============================================================================
@@ -124,34 +109,49 @@ static void detect_arm64_features(void) {
 void ecdsa_field_dispatch_init(void) {
     if (s_initialized) return;
     
-    // Detect features
 #if defined(__x86_64__) || defined(_M_X64)
     detect_x86_features();
 #endif
-#if defined(__aarch64__)
-    detect_arm64_features();
-#endif
-    
-    // Select best available implementation (prefer newest/fastest)
-    s_current_impl = ECDSA_FIELD_IMPL_GENERIC;
-    
-#if defined(__x86_64__) || defined(_M_X64)
-    // AVX2+BMI2 uses MULX for fast multiplication with __uint128_t accumulation
-    if (s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available) {
-        s_current_impl = ECDSA_FIELD_IMPL_AVX2_BMI2;
-    }
-#endif
 
 #if defined(__aarch64__)
-    if (s_impls[ECDSA_FIELD_IMPL_ARM64_NEON].available) {
-        s_current_impl = ECDSA_FIELD_IMPL_ARM64_NEON;
+    s_impls[ECDSA_FIELD_IMPL_ARM64_NEON].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_NEON);
+    s_impls[ECDSA_FIELD_IMPL_ARM64_SVE].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_SVE);
+#endif
+
+    s_current_impl = ECDSA_FIELD_IMPL_GENERIC;
+
+    dap_cpu_arch_t best = dap_cpu_arch_get_best();
+    switch (best) {
+#if defined(__x86_64__) || defined(_M_X64)
+        case DAP_CPU_ARCH_AVX2:
+            if (s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available)
+                s_current_impl = ECDSA_FIELD_IMPL_AVX2_BMI2;
+            break;
+#endif
+#if defined(__aarch64__)
+        case DAP_CPU_ARCH_SVE2:
+        case DAP_CPU_ARCH_SVE:
+            if (s_impls[ECDSA_FIELD_IMPL_ARM64_SVE].available) {
+                s_current_impl = ECDSA_FIELD_IMPL_ARM64_SVE;
+                break;
+            }
+            /* fallthrough */
+        case DAP_CPU_ARCH_NEON:
+            if (s_impls[ECDSA_FIELD_IMPL_ARM64_NEON].available)
+                s_current_impl = ECDSA_FIELD_IMPL_ARM64_NEON;
+            break;
+#endif
+        default:
+            break;
     }
-    if (s_impls[ECDSA_FIELD_IMPL_ARM64_SVE].available) {
-        s_current_impl = ECDSA_FIELD_IMPL_ARM64_SVE;
+
+#if defined(__x86_64__) || defined(_M_X64)
+    if (s_current_impl == ECDSA_FIELD_IMPL_GENERIC &&
+        s_impls[ECDSA_FIELD_IMPL_X86_64_ASM].available) {
+        s_current_impl = ECDSA_FIELD_IMPL_X86_64_ASM;
     }
 #endif
     
-    // Set function pointers
     ecdsa_field_mul_ptr = s_impls[s_current_impl].mul;
     ecdsa_field_sqr_ptr = s_impls[s_current_impl].sqr;
     
