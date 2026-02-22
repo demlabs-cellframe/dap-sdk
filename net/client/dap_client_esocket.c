@@ -626,17 +626,12 @@ static void s_stream_es_callback_read(dap_events_socket_t *a_es, void *arg)
         dap_events_socket_shrink_buf_in(a_es, l_bytes_read);
 
     switch (l_stage) {
-        case STAGE_STREAM_SESSION:
+    case STAGE_STREAM_SESSION:
         dap_client_go_stage(l_client, STAGE_STREAM_STREAMING, s_stage_stream_streaming);
         break;
     case STAGE_STREAM_CONNECTED:
-        dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
-                              STAGE_STATUS_DONE, ERROR_NO_ERROR);
-        dap_events_socket_set_readable_unsafe(a_es, true);
-        break;
     case STAGE_STREAM_STREAMING:
-        // Normal streaming read, already processed
-            break;
+        break;
     default:
         break;
     }
