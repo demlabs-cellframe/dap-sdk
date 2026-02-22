@@ -28,6 +28,7 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}❌ $1${NC}"
+    echo "ERROR: $1" >&2
 }
 
 # Initialize paths and load dependencies

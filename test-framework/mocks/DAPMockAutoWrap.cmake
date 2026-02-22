@@ -105,7 +105,7 @@ function(dap_mock_autowrap TARGET_NAME)
     )
     
     if(NOT MOCK_GEN_RESULT EQUAL 0)
-        message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
+        message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME} (exit code: ${MOCK_GEN_RESULT}):\nSTDERR:\n${MOCK_GEN_ERROR}\nSTDOUT:\n${MOCK_GEN_OUTPUT}\nMock generator failure is fatal - build aborted.")
     endif()
     
     # STAGE 2: Setup re-generation on source file changes
