@@ -365,11 +365,39 @@ static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_p
         return -1;
     }
 
-    dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
-    if (!l_priv) {
-        log_it(L_ERROR, "WebSocket trans not initialized");
+    if (!a_stream->trans || !a_stream->trans_ctx) {
+        log_it(L_ERROR, "WebSocket trans or trans_ctx not set");
         return -2;
     }
+
+    // Allocate per-stream WS state (each client connection gets its own)
+    dap_net_trans_websocket_private_t *l_priv = DAP_NEW_Z(dap_net_trans_websocket_private_t);
+    if (!l_priv) {
+        log_it(L_CRITICAL, "Failed to allocate per-stream WebSocket state");
+        return -3;
+    }
+
+    // Copy default config from the global transport private
+    dap_net_trans_websocket_private_t *l_global = s_get_private(a_stream->trans);
+    if (l_global) {
+        l_priv->config = l_global->config;
+        if (l_global->config.subprotocol)
+            l_priv->config.subprotocol = dap_strdup(l_global->config.subprotocol);
+        if (l_global->config.origin)
+            l_priv->config.origin = dap_strdup(l_global->config.origin);
+    } else {
+        l_priv->config = dap_net_trans_websocket_config_default();
+    }
+
+    l_priv->state = DAP_WS_STATE_CLOSED;
+    l_priv->frame_buffer_size = WS_INITIAL_FRAME_BUFFER;
+    l_priv->frame_buffer = DAP_NEW_Z_SIZE(uint8_t, l_priv->frame_buffer_size);
+    if (!l_priv->frame_buffer) {
+        DAP_DELETE(l_priv);
+        return -4;
+    }
+
+    a_stream->trans_ctx->_inheritor = l_priv;
 
     log_it(L_INFO, "WebSocket connecting to ws://%s:%u/stream", a_host, a_port);
 
@@ -377,16 +405,12 @@ static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_p
     char l_ws_key[32] = {0};
     if (s_ws_generate_key(l_ws_key, sizeof(l_ws_key)) != 0) {
         log_it(L_ERROR, "Failed to generate WebSocket key");
-        return -3;
+        return -5;
     }
-    DAP_DEL_Z(l_priv->sec_websocket_key);
     l_priv->sec_websocket_key = dap_strdup(l_ws_key);
 
-    // Set esocket reference for client-side read/write operations
     l_priv->esocket = a_stream->trans_ctx->esocket;
 
-    // TCP connection is already established (stage_prepare created and connected the socket).
-    // Call callback synchronously — same pattern as HTTP transport.
     if (a_callback) {
         a_callback(a_stream, 0);
     }
@@ -1250,6 +1274,19 @@ static void s_ws_close(dap_stream_t *a_stream)
 
     log_it(L_INFO, "WebSocket connection closed (sent=%lu frames, received=%lu frames)",
            l_priv->frames_sent, l_priv->frames_received);
+
+    // Free per-stream WS state (allocated in s_ws_connect)
+    if (a_stream->is_client_to_uplink && a_stream->trans_ctx
+            && a_stream->trans_ctx->_inheritor == l_priv) {
+        a_stream->trans_ctx->_inheritor = NULL;
+        DAP_DEL_Z(l_priv->frame_buffer);
+        DAP_DEL_Z(l_priv->sec_websocket_key);
+        DAP_DEL_Z(l_priv->sec_websocket_accept);
+        DAP_DEL_Z(l_priv->upgrade_path);
+        DAP_DEL_Z(l_priv->config.subprotocol);
+        DAP_DEL_Z(l_priv->config.origin);
+        DAP_DELETE(l_priv);
+    }
 }
 
 /**
@@ -1761,10 +1798,21 @@ static dap_net_trans_websocket_private_t *s_get_private(dap_net_trans_t *a_trans
 
 /**
  * @brief Get private data from stream
+ *
+ * Returns per-stream WS state if available (stored in trans_ctx->_inheritor
+ * for client-side connections), otherwise falls back to the global transport
+ * private data (trans->_inheritor). Per-stream state is allocated in s_ws_connect().
  */
 static dap_net_trans_websocket_private_t *s_get_private_from_stream(dap_stream_t *a_stream)
 {
-    if (!a_stream || !a_stream->trans) {
+    if (!a_stream) {
+        return NULL;
+    }
+    if (a_stream->trans_ctx && a_stream->trans_ctx->_inheritor
+            && a_stream->is_client_to_uplink) {
+        return (dap_net_trans_websocket_private_t *)a_stream->trans_ctx->_inheritor;
+    }
+    if (!a_stream->trans) {
         return NULL;
     }
     return s_get_private(a_stream->trans);

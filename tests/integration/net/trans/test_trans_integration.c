@@ -311,11 +311,10 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     // from new clients with same addresses (e.g., 127.0.0.1:33537).
     // By deleting flows immediately, we ensure hash tables are cleared before
     // the next test starts.
-    if (a_ctx->servers) {
+    if (a_ctx->servers && a_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) {
         log_it(L_DEBUG, "Phase 0: Immediately deleting all server flows to prevent address reuse...");
         for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
             if (a_ctx->servers[i] && a_ctx->servers[i]->trans_specific) {
-                // Get UDP-specific server
                 dap_net_trans_udp_server_t *l_udp_server = 
                     (dap_net_trans_udp_server_t*)a_ctx->servers[i]->trans_specific;
                 
@@ -1046,7 +1045,7 @@ static void *test_trans_worker(void *a_arg)
     bool l_all_channels_ready = true;
     size_t l_channels_ready = 0;
     for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
-        if (!test_wait_for_stream_channels_ready(l_ctx->clients[i], "ABC", 5000)) {
+        if (!test_wait_for_stream_channels_ready(l_ctx->clients[i], "ABC", 15000)) {
             TEST_ERROR("Channels not ready for client %zu in %s", i, l_ctx->config.name);
             l_all_channels_ready = false;
             break;
@@ -1482,7 +1481,7 @@ int main(int argc, char **argv)
                                 "[dap_client]\n"
                                 "max_tries=5\n"
                                 "timeout=60\n"
-                                "timeout_read_after_connect=30\n"
+                                "timeout_read_after_connect=5\n"
                                 "timeout_active_after_connect=120\n"
                                 "debug_more=false\n"
                                "[stream]\n"

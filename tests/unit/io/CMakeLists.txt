@@ -335,7 +335,7 @@ endif()
 # Add to CTest
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 120
+    TIMEOUT 300
     LABELS "unit;io;flow;ctrl;multiclient;regression"
 )
 

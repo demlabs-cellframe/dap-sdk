@@ -36,6 +36,7 @@
 #include "dap_http_server.h"
 #include "dap_http_header_server.h"
 #include "dap_http_client.h"
+#include "dap_http_simple.h"
 #include "dap_strfuncs.h"
 #include "dap_worker.h"
 #include "dap_events.h"
@@ -59,6 +60,11 @@ int dap_http_init( )
         return -2;
     }
 
+    if ( dap_http_simple_module_init() != 0 ) {
+        log_it(L_CRITICAL,"Can't init HTTP simple submodule");
+        return -3;
+    }
+
     log_it( L_NOTICE, "Initialized HTTP server module" );
     return 0;
 }
@@ -68,6 +74,7 @@ int dap_http_init( )
  */
 void dap_http_deinit()
 {
+    dap_http_simple_module_deinit( );
     dap_http_header_server_deinit( );
     dap_http_client_deinit( );
 }

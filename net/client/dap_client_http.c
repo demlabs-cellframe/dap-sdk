@@ -1066,6 +1066,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
         }
     }
         
+    if (!l_client_http->timer) {
         dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
             *a_error_code = ENOMEM;
@@ -1075,18 +1076,17 @@ static dap_client_http_t* s_client_http_create_and_connect(
             dap_events_socket_delete_unsafe(l_ev_socket, true);
             return NULL;
         }
-        
         *l_ev_uuid_ptr = l_ev_socket->uuid;
-        l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, 
+        l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms,
                                                             s_timer_timeout_check, l_ev_uuid_ptr);
         if (!l_client_http->timer) {
-            log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
+            log_it(L_ERROR, "Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
                    l_client_http->worker->id, *l_ev_uuid_ptr);
             DAP_DEL_Z(l_ev_uuid_ptr);
         } else {
-            // Cache UUID for MT-safe deletion
             l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
         }
+    }
         *a_error_code = 0;
         return l_client_http;
 #endif
@@ -1191,6 +1191,8 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     // Cache UUID for MT-safe deletion
     l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
 
+    l_client_http->ts_last_read = time(NULL);
+
     // Send HTTP request with properly formatted headers
     s_send_http_request(a_esocket, l_client_http);
 }
@@ -1216,7 +1218,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     if(l_es){
         dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
         assert(l_client_http);
-        if ( time(NULL)- l_client_http->ts_last_read >= (time_t) s_client_timeout_read_after_connect_ms){
+        if ( time(NULL) - l_client_http->ts_last_read >= (time_t)(s_client_timeout_read_after_connect_ms / 1000)){
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path ? l_client_http->path : "");
                    

@@ -579,14 +579,19 @@ static void s_worker_execute_stage(void *a_arg)
 
         // Install stream callbacks on the esocket BEFORE session_start sends data
         // This ensures read/write/error/delete are handled when server responds
+        // CRITICAL: For datagram transports (UDP/DNS), the transport layer has already
+        // installed its own read_callback that handles decryption, Flow Control, etc.
+        // Overwriting it would break the transport's read path!
         if (l_es->stream_es) {
             dap_events_socket_callbacks_t l_stream_cbs;
             dap_client_esocket_get_stream_callbacks(&l_stream_cbs);
-            l_es->stream_es->callbacks.read_callback = l_stream_cbs.read_callback;
+            bool l_is_datagram = (l_es->stream_es->type == DESCRIPTOR_TYPE_SOCKET_UDP);
+            if (!l_is_datagram) {
+                l_es->stream_es->callbacks.read_callback = l_stream_cbs.read_callback;
+            }
             l_es->stream_es->callbacks.write_callback = l_stream_cbs.write_callback;
             l_es->stream_es->callbacks.error_callback = l_stream_cbs.error_callback;
             l_es->stream_es->callbacks.delete_callback = l_stream_cbs.delete_callback;
-            // connected_callback stays as-is (not needed at this point)
         }
 
         // Session start

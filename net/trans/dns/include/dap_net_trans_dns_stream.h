@@ -80,6 +80,8 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include "dap_net_trans.h"
 #include "dap_events_socket.h"
+#include "dap_enc_key.h"
+#include "dap_stream.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -114,7 +116,18 @@ typedef struct dap_stream_trans_dns_config {
 } dap_stream_trans_dns_config_t;
 
 /**
- * @brief DNS tunnel trans private data
+ * @brief Per-client DNS context stored in stream->_inheritor
+ *
+ * Each DNS client stream gets its own context for handshake state.
+ */
+typedef struct dns_client_ctx {
+    dap_net_trans_handshake_cb_t handshake_cb;   ///< Stored handshake callback
+    dap_stream_t *handshake_stream;               ///< Stream awaiting handshake response
+    dap_enc_key_t *handshake_key;                 ///< Derived symmetric key from KEM
+} dns_client_ctx_t;
+
+/**
+ * @brief DNS tunnel trans private data (per-transport, shared)
  */
 typedef struct dap_stream_trans_dns_private {
     dap_stream_trans_dns_config_t config;  ///< Configuration

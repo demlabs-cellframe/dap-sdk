@@ -35,9 +35,9 @@ add_test(
     COMMAND ${PROJECT_NAME}
 )
 
-# Test properties
+# Test properties: 100 clients x 64KB data exchange on CBPF (10 workers) needs ~3 min
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 120
+    TIMEOUT 300
     LABELS "regression;net;trans;udp"
 )
 

@@ -28,12 +28,32 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_trans_dns_server.h"
 #include "dap_net_trans_dns_stream.h"
 #include "dap_stream.h"
+#include "dap_stream_ch.h"
+#include "dap_stream_session.h"
+#include "dap_stream_worker.h"
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
+#include "dap_enc_key.h"
+#include "dap_enc_kdf.h"
+
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
 
 #define LOG_TAG "dap_net_trans_dns_server"
 
-// Trans server operations callbacks
+static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg);
+static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
+
+static const dap_net_trans_ops_t s_dns_server_trans_ops = {
+    .write = s_dns_server_trans_write
+};
+
 static void* s_dns_server_new(const char *a_server_name)
 {
     return (void*)dap_net_trans_dns_server_new(a_server_name);
@@ -65,12 +85,8 @@ static const dap_net_trans_server_ops_t s_dns_server_ops = {
     .delete = s_dns_server_delete
 };
 
-/**
- * @brief Initialize DNS server module
- */
 int dap_net_trans_dns_server_init(void)
 {
-    // Register trans server operations
     int l_ret = dap_net_trans_server_register_ops(DAP_NET_TRANS_DNS_TUNNEL, &s_dns_server_ops);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to register DNS trans server operations");
@@ -81,20 +97,12 @@ int dap_net_trans_dns_server_init(void)
     return 0;
 }
 
-/**
- * @brief Deinitialize DNS server module
- */
 void dap_net_trans_dns_server_deinit(void)
 {
-    // Unregister trans server operations
     dap_net_trans_server_unregister_ops(DAP_NET_TRANS_DNS_TUNNEL);
-    
     log_it(L_INFO, "DNS server module deinitialized");
 }
 
-/**
- * @brief Create new DNS server instance
- */
 dap_net_trans_dns_server_t *dap_net_trans_dns_server_new(const char *a_server_name)
 {
     if (!a_server_name) {
@@ -109,27 +117,22 @@ dap_net_trans_dns_server_t *dap_net_trans_dns_server_new(const char *a_server_na
     }
 
     dap_strncpy(l_dns_server->server_name, a_server_name, sizeof(l_dns_server->server_name) - 1);
+    l_dns_server->sessions = NULL;
     
-    // Get DNS trans instance
-    // Note: DNS trans implementation will be created separately
-    // For now, we create the server structure but trans will be NULL
-    // until DNS trans stream implementation is created
-    l_dns_server->trans = dap_net_trans_find(DAP_NET_TRANS_DNS_TUNNEL);
+    l_dns_server->trans = DAP_NEW_Z(dap_net_trans_t);
     if (!l_dns_server->trans) {
-        log_it(L_WARNING, "DNS trans not registered yet - server will be created but trans operations will be limited");
-        // Don't fail - server can be created before trans is registered
+        log_it(L_CRITICAL, "Cannot allocate DNS server trans");
+        DAP_DELETE(l_dns_server);
+        return NULL;
     }
+    l_dns_server->trans->type = DAP_NET_TRANS_DNS_TUNNEL;
+    l_dns_server->trans->ops = &s_dns_server_trans_ops;
+    l_dns_server->trans->socket_type = DAP_NET_TRANS_SOCKET_UDP;
 
     log_it(L_INFO, "Created DNS server: %s", a_server_name);
     return l_dns_server;
 }
 
-/**
- * @brief Start DNS server on specified addresses and ports
- * 
- * DNS tunnel server listens on UDP port (typically 53) and processes DNS queries
- * to tunnel DAP stream data through DNS responses.
- */
 int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
                                        const char *a_cfg_section,
                                        const char **a_addrs,
@@ -146,14 +149,11 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
         return -2;
     }
 
-    // Create underlying dap_server_t
-    // DNS callbacks will be set by DNS trans implementation
-    // Similar to UDP, DNS is connectionless
     dap_events_socket_callbacks_t l_dns_callbacks = {
-        .new_callback = NULL,      // Will be set by DNS trans implementation
-        .delete_callback = NULL,   // Will be set by DNS trans implementation
-        .read_callback = NULL,     // Will be set by DNS trans implementation
-        .write_callback = NULL,    // Will be set by DNS trans implementation
+        .read_callback = s_dns_listener_read_cb,
+        .write_callback = NULL,
+        .delete_callback = NULL,
+        .new_callback = NULL,
         .error_callback = NULL
     };
 
@@ -163,17 +163,10 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
         return -3;
     }
 
-    // Set DNS server as inheritor
     a_dns_server->server->_inheritor = a_dns_server;
-
-    // Register DNS stream handlers
-    // This sets up all necessary callbacks for DNS processing
-    // DNS uses the same callbacks as UDP since both are connectionless
-    dap_stream_add_proc_dns(a_dns_server->server);
 
     log_it(L_DEBUG, "Registered DNS stream handlers");
 
-    // Start listening on all specified address:port pairs
     for (size_t i = 0; i < a_count; i++) {
         const char *l_addr = (a_addrs && a_addrs[i]) ? a_addrs[i] : "0.0.0.0";
         uint16_t l_port = a_ports[i];
@@ -194,36 +187,254 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
     return 0;
 }
 
-/**
- * @brief Stop DNS server
- */
 void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
 {
-    if (!a_dns_server) {
+    if (!a_dns_server)
         return;
-    }
 
     if (a_dns_server->server) {
         dap_server_delete(a_dns_server->server);
         a_dns_server->server = NULL;
     }
 
+    dns_server_client_session_t *l_session, *l_tmp;
+    HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
+        HASH_DEL(a_dns_server->sessions, l_session);
+        if (l_session->handshake_key)
+            dap_enc_key_delete(l_session->handshake_key);
+        DAP_DEL_Z(l_session->trans_ctx);
+        DAP_DEL_Z(l_session->stream);
+        DAP_DELETE(l_session);
+    }
+
     log_it(L_INFO, "DNS server '%s' stopped", a_dns_server->server_name);
 }
 
-/**
- * @brief Delete DNS server instance
- */
 void dap_net_trans_dns_server_delete(dap_net_trans_dns_server_t *a_dns_server)
 {
-    if (!a_dns_server) {
+    if (!a_dns_server)
         return;
-    }
-
-    // Ensure server is stopped before deletion
     dap_net_trans_dns_server_stop(a_dns_server);
-
+    DAP_DEL_Z(a_dns_server->trans);
     log_it(L_INFO, "Deleted DNS server: %s", a_dns_server->server_name);
     DAP_DELETE(a_dns_server);
 }
 
+/**
+ * @brief DNS server listener read callback
+ *
+ * Receives raw UDP packets, routes by remote address, processes KEM handshake.
+ * For new clients: do KEM encapsulation, send bob_ciphertext back.
+ */
+static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_server_t *a_dns_server,
+                                   void *a_data, size_t a_size,
+                                   struct sockaddr_storage *a_addr, socklen_t a_addr_len);
+
+static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg)
+{
+    (void)a_arg;
+    
+    if (!a_es || a_es->buf_in_size == 0)
+        return;
+
+    dap_server_t *l_server = a_es->server;
+    if (!l_server || !l_server->_inheritor) {
+        log_it(L_ERROR, "DNS listener has no server context");
+        a_es->buf_in_size = 0;
+        return;
+    }
+
+    dap_net_trans_dns_server_t *l_dns_server = DAP_NET_TRANS_DNS_SERVER(l_server);
+    
+    struct sockaddr_storage l_remote_addr;
+    socklen_t l_remote_addr_len = a_es->addr_size;
+    memcpy(&l_remote_addr, &a_es->addr_storage, l_remote_addr_len);
+
+    s_dns_process_datagram(a_es, l_dns_server, a_es->buf_in, a_es->buf_in_size,
+                           &l_remote_addr, l_remote_addr_len);
+    a_es->buf_in_size = 0;
+
+    /* Drain remaining datagrams from kernel buffer to avoid multiple event loop iterations */
+    byte_t l_buf[65536];
+    struct sockaddr_storage l_addr;
+    for (int i = 0; i < 256; i++) {
+        socklen_t l_addr_len = sizeof(l_addr);
+        ssize_t l_read = recvfrom(a_es->fd, l_buf, sizeof(l_buf), MSG_DONTWAIT,
+                                  (struct sockaddr *)&l_addr, &l_addr_len);
+        if (l_read <= 0)
+            break;
+        s_dns_process_datagram(a_es, l_dns_server, l_buf, (size_t)l_read, &l_addr, l_addr_len);
+    }
+}
+
+static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_server_t *a_dns_server,
+                                   void *a_data, size_t a_size,
+                                   struct sockaddr_storage *a_addr, socklen_t a_addr_len)
+{
+    dns_server_client_session_t *l_session = NULL;
+    HASH_FIND(hh, a_dns_server->sessions, a_addr, a_addr_len, l_session);
+
+    if (l_session) {
+        if (l_session->stream) {
+            dap_stream_data_proc_read_ext(l_session->stream, a_data, a_size);
+        }
+        return;
+    }
+
+    log_it(L_INFO, "DNS server: new client handshake, size=%zu", a_size);
+
+    /* KEM encapsulation: generate bob key, derive shared secret */
+    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(
+        DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
+    if (!l_bob_key) {
+        log_it(L_ERROR, "DNS server: failed to generate Bob KEM key");
+        return;
+    }
+
+    void *l_bob_pub = NULL;
+    size_t l_shared_key_size = 0;
+
+    if (!l_bob_key->gen_bob_shared_key) {
+        log_it(L_ERROR, "DNS server: key type doesn't support KEM");
+        dap_enc_key_delete(l_bob_key);
+        return;
+    }
+
+    l_shared_key_size = l_bob_key->gen_bob_shared_key(
+        l_bob_key, a_data, a_size, &l_bob_pub);
+
+    if (!l_bob_pub || l_shared_key_size == 0 || !l_bob_key->shared_key) {
+        log_it(L_ERROR, "DNS server: KEM encapsulation failed");
+        dap_enc_key_delete(l_bob_key);
+        return;
+    }
+
+    log_it(L_INFO, "DNS server: KEM done, ciphertext=%zu bytes", l_shared_key_size);
+
+    dap_enc_key_t *l_handshake_key = dap_enc_kdf_create_cipher_key(
+        l_bob_key,
+        DAP_ENC_KEY_TYPE_SALSA2012,
+        "dns_handshake", 13,
+        0, 32);
+
+    if (!l_handshake_key) {
+        log_it(L_ERROR, "DNS server: failed to derive handshake key");
+        dap_enc_key_delete(l_bob_key);
+        return;
+    }
+
+    /* Send bob_ciphertext back to client */
+    size_t l_sent = dap_events_socket_sendto_unsafe(
+        a_es, l_bob_pub, l_shared_key_size,
+        a_addr, a_addr_len);
+
+    if (l_sent != l_shared_key_size) {
+        log_it(L_ERROR, "DNS server: failed to send handshake response: %zu of %zu",
+               l_sent, l_shared_key_size);
+        dap_enc_key_delete(l_bob_key);
+        dap_enc_key_delete(l_handshake_key);
+        return;
+    }
+
+    log_it(L_INFO, "DNS server: sent handshake response (%zu bytes)", l_sent);
+
+    /* Create session for this client */
+    l_session = DAP_NEW_Z(dns_server_client_session_t);
+    if (!l_session) {
+        dap_enc_key_delete(l_bob_key);
+        dap_enc_key_delete(l_handshake_key);
+        return;
+    }
+
+    memcpy(&l_session->remote_addr, a_addr, a_addr_len);
+    l_session->remote_addr_len = a_addr_len;
+    l_session->handshake_key = l_handshake_key;
+
+    /* Create server-side stream for bidirectional data exchange */
+    dap_stream_t *l_stream = DAP_NEW_Z(dap_stream_t);
+    if (!l_stream) {
+        log_it(L_ERROR, "DNS server: failed to allocate stream");
+        dap_enc_key_delete(l_bob_key);
+        DAP_DELETE(l_session);
+        return;
+    }
+
+    dap_net_trans_ctx_t *l_trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (!l_trans_ctx) {
+        log_it(L_ERROR, "DNS server: failed to allocate trans_ctx");
+        dap_enc_key_delete(l_bob_key);
+        DAP_DELETE(l_stream);
+        DAP_DELETE(l_session);
+        return;
+    }
+    l_trans_ctx->esocket = a_es;
+    l_trans_ctx->esocket_worker = a_es->worker;
+    l_trans_ctx->trans = a_dns_server->trans;
+    l_trans_ctx->stream = l_stream;
+    l_stream->trans = a_dns_server->trans;
+    l_stream->trans_ctx = l_trans_ctx;
+    l_stream->_server_session = l_session;
+    l_stream->stream_worker = DAP_STREAM_WORKER(a_es->worker);
+
+    dap_stream_session_t *l_stream_session = dap_stream_session_new(0, false);
+    if (!l_stream_session) {
+        log_it(L_ERROR, "DNS server: failed to create stream session");
+        dap_enc_key_delete(l_bob_key);
+        DAP_DELETE(l_trans_ctx);
+        DAP_DELETE(l_stream);
+        DAP_DELETE(l_session);
+        return;
+    }
+    dap_stream_session_open(l_stream_session);
+    l_stream_session->key = dap_enc_key_dup(l_handshake_key);
+    dap_strncpy(l_stream_session->active_channels, "ABC",
+                sizeof(l_stream_session->active_channels) - 1);
+    l_stream->session = l_stream_session;
+
+    const char *l_channels = "ABC";
+    for (size_t i = 0; i < strlen(l_channels); i++) {
+        dap_stream_ch_t *l_ch = dap_stream_ch_new(l_stream, (uint8_t)l_channels[i]);
+        if (l_ch) {
+            l_ch->ready_to_read = true;
+        }
+    }
+
+    l_session->stream = l_stream;
+    l_session->trans_ctx = l_trans_ctx;
+    l_session->stream_session = l_stream_session;
+
+    HASH_ADD(hh, a_dns_server->sessions, remote_addr, a_addr_len, l_session);
+
+    log_it(L_INFO, "DNS server: created stream %p with %zu channels for new client",
+           l_stream, l_stream->channel_count);
+
+    dap_enc_key_delete(l_bob_key);
+}
+
+/**
+ * @brief Server-side write: send data back to DNS client via sendto_unsafe
+ */
+static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_data || a_size == 0)
+        return -1;
+
+    dns_server_client_session_t *l_session =
+        (dns_server_client_session_t *)a_stream->_server_session;
+    if (!l_session || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
+        log_it(L_ERROR, "DNS server write: no session or esocket");
+        return -1;
+    }
+
+    size_t l_sent = dap_events_socket_sendto_unsafe(
+        a_stream->trans_ctx->esocket,
+        a_data, a_size,
+        &l_session->remote_addr,
+        l_session->remote_addr_len);
+
+    if (l_sent != a_size) {
+        log_it(L_WARNING, "DNS server write incomplete: %zu of %zu bytes", l_sent, a_size);
+    }
+
+    return (ssize_t)l_sent;
+}

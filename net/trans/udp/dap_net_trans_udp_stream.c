@@ -754,6 +754,14 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
         l_udp_ctx->handshake_payload = NULL;
         l_udp_ctx->handshake_payload_size = 0;
         l_udp_ctx->handshake_timer = NULL;
+        // Notify FSM about handshake timeout so it can transition to error state
+        if (l_udp_ctx->stream && l_udp_ctx->stream->trans_ctx) {
+            dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_udp_ctx->stream->trans_ctx;
+            if (l_trans_ctx->handshake_cb) {
+                log_it(L_WARNING, "HANDSHAKE RETRANS: notifying FSM of ETIMEDOUT");
+                l_trans_ctx->handshake_cb(l_udp_ctx->stream, NULL, 0, ETIMEDOUT);
+            }
+        }
         return false;  // Stop timer
     }
     
@@ -2597,7 +2605,7 @@ static void s_udp_close(dap_stream_t *a_stream)
         return;
     }
 
-    if (!a_stream->trans) {
+    if (!a_stream->trans_ctx) {
         return;
     }
 

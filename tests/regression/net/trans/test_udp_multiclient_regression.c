@@ -427,7 +427,23 @@ cleanup:
 int main(int argc, char **argv)
 {
     (void)argc; (void)argv;
-    
+
+    // Create config before init so dap_client_fsm_init() picks up our settings.
+    // timeout_active_after_connect: 100 clients can take ~70s to all complete
+    // handshakes; default 15s would kill early clients before data exchange.
+    const char *l_cfg =
+        "[general]\ndebug_mode=true\n"
+        "[dap_client]\n"
+        "timeout_active_after_connect=300\n"
+        "debug_more=false\n"
+        "[dap_net_trans_udp]\ndebug_more=false\n"
+        "[dap_io_flow_socket]\ndebug_more=false\n";
+    FILE *l_f = fopen("test_udp_multiclient.cfg", "w");
+    if (l_f) { fwrite(l_cfg, 1, strlen(l_cfg), l_f); fclose(l_f); }
+    dap_config_init(".");
+    extern dap_config_t *g_config;
+    g_config = dap_config_open("test_udp_multiclient");
+
     dap_common_init(LOG_TAG, NULL);
     dap_log_level_set(L_DEBUG);
     

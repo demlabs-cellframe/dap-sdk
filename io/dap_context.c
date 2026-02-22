@@ -1050,35 +1050,28 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         debug_if(g_debug_reactor, L_DEBUG, "Processing listening socket %"DAP_FORMAT_SOCKET" event: EPOLLIN=%d, EPOLLOUT=%d, flags=0x%x",
                                 l_cur->socket, !!(l_flag_read), !!(l_flag_write), l_cur->flags);
                         if (l_cur->callbacks.accept_callback) {
-                            struct sockaddr_storage l_addr_storage = { };
-                            socklen_t l_remote_addr_size = sizeof(l_addr_storage);
-                            SOCKET l_remote_socket = accept(l_cur->socket, (struct sockaddr*)&l_addr_storage, &l_remote_addr_size);
+                            for (;;) {
+                                struct sockaddr_storage l_addr_storage = { };
+                                socklen_t l_remote_addr_size = sizeof(l_addr_storage);
+                                SOCKET l_remote_socket = accept(l_cur->socket, (struct sockaddr*)&l_addr_storage, &l_remote_addr_size);
 #ifdef DAP_OS_WINDOWS
-                            /*u_long l_mode = 1;
-                            ioctlsocket((SOCKET)l_remote_socket, (long)FIONBIO, &l_mode); */
-                            // no need, since l_cur->socket is already NBIO
-                            if (l_remote_socket == INVALID_SOCKET) {
-                                int l_errno = WSAGetLastError();
-                                if (l_errno == WSAEWOULDBLOCK)
-                                    continue;
-                                else {
-                                    log_it(L_WARNING,"Can't accept on socket %"DAP_FORMAT_SOCKET", WSA errno: %d", l_cur->socket, l_errno);
+                                if (l_remote_socket == INVALID_SOCKET) {
+                                    int l_errno = WSAGetLastError();
+                                    if (l_errno != WSAEWOULDBLOCK)
+                                        log_it(L_WARNING,"Can't accept on socket %"DAP_FORMAT_SOCKET", WSA errno: %d", l_cur->socket, l_errno);
                                     break;
                                 }
-                            }
 #else
-                            fcntl( l_remote_socket, F_SETFL, O_NONBLOCK);
-                            int l_errno = errno;
-                            if ( l_remote_socket == INVALID_SOCKET ){
-                                if( l_errno == EAGAIN || l_errno == EWOULDBLOCK){// Everything is good, we'll receive ACCEPT on next poll
-                                    continue;
-                                }else{
-                                    log_it(L_WARNING,"accept() on socket %d error %d: \"%s\"",l_cur->socket, l_errno, dap_strerror(l_errno));
+                                if ( l_remote_socket == INVALID_SOCKET ){
+                                    int l_errno = errno;
+                                    if( l_errno != EAGAIN && l_errno != EWOULDBLOCK)
+                                        log_it(L_WARNING,"accept() on socket %d error %d: \"%s\"",l_cur->socket, l_errno, dap_strerror(l_errno));
                                     break;
                                 }
-                            }
+                                fcntl( l_remote_socket, F_SETFL, O_NONBLOCK);
 #endif
-                            l_cur->callbacks.accept_callback(l_cur, l_remote_socket, &l_addr_storage);
+                                l_cur->callbacks.accept_callback(l_cur, l_remote_socket, &l_addr_storage);
+                            }
                         }else
                             log_it(L_ERROR,"No accept_callback on listening socket");
                     break;

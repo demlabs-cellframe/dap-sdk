@@ -110,6 +110,7 @@ pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError  = NULL;
 bool g_debug_reactor = false;
 static int s_workers_init = 0;
 static uint32_t s_threads_count = 1;
+static _Atomic uint32_t s_worker_rr_counter = 0;
 static dap_worker_t **s_workers = NULL;
 
 /**
@@ -623,15 +624,30 @@ uint32_t dap_events_thread_get_count()
 }
 
 /**
- * @brief dap_worker_get_min
- * @return
+ * @brief Select worker with least load, round-robin tiebreaker.
+ *
+ * Finds the minimum event_sockets_count, then selects among workers with
+ * that count using a round-robin counter to avoid always picking index 0.
  */
-dap_worker_t *dap_events_worker_get_auto( )
+dap_worker_t *dap_events_worker_get_auto(void)
 {
-    if ( !s_workers_init )
+    if (!s_workers_init)
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
 
-    return s_workers[dap_events_worker_get_index_min()];
+    uint32_t l_min_count = s_workers[0]->context->event_sockets_count;
+    for (uint32_t i = 1; i < s_threads_count; i++) {
+        if (s_workers[i]->context->event_sockets_count < l_min_count)
+            l_min_count = s_workers[i]->context->event_sockets_count;
+    }
+
+    uint32_t l_rr = atomic_fetch_add(&s_worker_rr_counter, 1);
+    for (uint32_t i = 0; i < s_threads_count; i++) {
+        uint32_t l_idx = (l_rr + i) % s_threads_count;
+        if (s_workers[l_idx]->context->event_sockets_count == l_min_count)
+            return s_workers[l_idx];
+    }
+
+    return s_workers[l_rr % s_threads_count];
 }
 
 /**

@@ -229,10 +229,13 @@ static int s_setup_server(void)
     // Register echo channel (new API: id, new_cb, delete_cb, pkt_in_cb, pkt_out_cb)
     dap_stream_ch_proc_add(TEST_CH_ID, NULL, NULL, s_ch_pkt_in, NULL);
     
-    // FORCE EBPF TIER for multi-worker distribution testing
-    // eBPF reads source port from UDP header - works on localhost!
-    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_EBPF);
-    log_it(L_NOTICE, "FORCED EBPF tier for stress testing");
+    // Use best available multi-worker tier: eBPF (if available) → CBPF → Application.
+    // Auto-detect chooses eBPF on systems that support it,
+    // falls back to CBPF (works on loopback after RPS is enabled) otherwise.
+    // Explicitly avoid forcing eBPF so we don't fall back to APPLICATION
+    // (single-worker) when eBPF is unavailable — CBPF is sufficient.
+    dap_io_flow_set_forced_tier(-1);  // auto-detect
+    log_it(L_NOTICE, "AUTO-DETECT tier for stress testing (eBPF → CBPF → Application)");
     
     // Create UDP server
     s_server = dap_net_trans_server_new(DAP_NET_TRANS_UDP_BASIC, "test_server");
@@ -615,6 +618,9 @@ int main(int argc, char **argv)
     s_find_real_interface_ip();
     
     // 1. Create test config file
+    // timeout_active_after_connect: 100 clients can take up to ~30s to all
+    // complete handshakes; default 15s would kill early connections before
+    // data exchange starts.
     const char *config_content = 
         "[general]\n"
         "debug_mode=true\n"
@@ -623,7 +629,8 @@ int main(int argc, char **argv)
         "[dap_stream]\n"
         "debug_more=false\n"
         "[dap_client]\n"
-        "debug_more=false\n";
+        "debug_more=false\n"
+        "timeout_active_after_connect=300\n";
     FILE *f = fopen("test_fc_multiclient.cfg", "w");
     if (f) {
         fwrite(config_content, 1, strlen(config_content), f);

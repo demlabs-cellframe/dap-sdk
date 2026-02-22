@@ -46,6 +46,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_events.h"
 #include "dap_strfuncs.h"
 #include "dap_proc_thread.h"
+#include "dap_thread_pool.h"
 #include "dap_http_server.h"
 #include "dap_http_header_server.h"
 #include "dap_http_client.h"
@@ -64,7 +65,8 @@ static void s_http_client_headers_read( dap_http_client_t *cl_ht, void *arg );
 static void s_http_client_data_read( dap_http_client_t * cl_ht, void *arg );
 static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *arg);
 static bool s_http_client_data_write( dap_http_client_t * a_http_client, void *a_arg );
-static bool s_proc_queue_callback(void *a_arg );
+static void *s_proc_pool_task(void *a_arg);
+static void s_proc_pool_complete(dap_thread_pool_t *a_pool, dap_thread_t a_worker_thread, void *a_result, void *a_arg);
 
 typedef struct dap_http_simple_url_proc {
   dap_http_simple_callback_t proc_callback;
@@ -79,6 +81,7 @@ typedef struct user_agents_item {
 
 static user_agents_item_t *user_agents_list = NULL;
 static int is_unknown_user_agents_pass = 0;
+static dap_thread_pool_t *s_http_proc_pool = NULL;
 
 #define DAP_HTTP_SIMPLE_URL_PROC(a) ((dap_http_simple_url_proc_t*) (a)->_inheritor)
 
@@ -86,11 +89,22 @@ static void s_free_user_agents_list( void );
 
 int dap_http_simple_module_init( )
 {
+    s_http_proc_pool = dap_thread_pool_create(0, 256);
+    if (!s_http_proc_pool) {
+        log_it(L_CRITICAL, "Failed to create HTTP proc thread pool");
+        return -1;
+    }
+    log_it(L_NOTICE, "HTTP proc thread pool created with %u workers",
+           dap_thread_pool_get_thread_count(s_http_proc_pool));
     return 0;
 }
 
 void dap_http_simple_module_deinit( void )
 {
+    if (s_http_proc_pool) {
+        dap_thread_pool_delete(s_http_proc_pool);
+        s_http_proc_pool = NULL;
+    }
     s_free_user_agents_list( );
 }
 
@@ -331,20 +345,22 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
 }
 
 /**
- * @brief dap_http_simple_proc Execute procession callback and switch to write state
- * @param cl_sh HTTP simple client instance
+ * @brief Thread pool task: execute HTTP simple proc callback
+ *
+ * Runs in a pool worker thread (parallel with other requests).
+ * Each l_http_simple is per-client so no shared mutable state.
  */
-static bool s_proc_queue_callback(void *a_arg)
+static void *s_proc_pool_task(void *a_arg)
 {
     dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
     log_it(L_DEBUG, "dap http simple proc");
     if (!l_http_simple->http_client) {
         log_it(L_ERROR, "[!] HTTP client is already deleted!");
-        return false;
+        return NULL;
     }
     if (!l_http_simple->reply_byte) {
         log_it(L_ERROR, "[!] HTTP client is corrupted!");
-        return false;
+        return NULL;
     }
     http_status_code_t return_code = (http_status_code_t)0;
 
@@ -356,20 +372,18 @@ static bool s_proc_queue_callback(void *a_arg)
         if (!l_header && !is_unknown_user_agents_pass) {
             const char l_error_msg[] = "Not found User-Agent HTTP header";
             s_write_response_bad_request(l_http_simple, l_error_msg);
-            s_write_data_to_socket(l_http_simple);
-            return false;
+            return l_http_simple;
         }
 
         if (l_header && s_is_user_agent_supported(l_header->value) == false) {
             log_it(L_DEBUG, "Not supported user agent in request: %s", l_header->value);
             const char *l_error_msg = "User-Agent version not supported. Update your software";
             s_write_response_bad_request(l_http_simple, l_error_msg);
-            s_write_data_to_socket(l_http_simple);
-            return false;
+            return l_http_simple;
         }
     }
 
-    DAP_HTTP_SIMPLE_URL_PROC(l_http_simple->http_client->proc)->proc_callback(l_http_simple,&return_code);
+    DAP_HTTP_SIMPLE_URL_PROC(l_http_simple->http_client->proc)->proc_callback(l_http_simple, &return_code);
 
     if(return_code) {
         log_it(L_DEBUG, "Request was processed well return_code=%d", return_code);
@@ -379,8 +393,24 @@ static bool s_proc_queue_callback(void *a_arg)
         log_it(L_ERROR, "Request was processed with ERROR");
         l_http_simple->http_client->reply_status_code = Http_Status_InternalServerError;
     }
-    s_write_data_to_socket(l_http_simple);
-    return false;
+    return l_http_simple;
+}
+
+/**
+ * @brief Thread pool completion callback: post result back to reactor worker
+ *
+ * Called from pool worker thread after s_proc_pool_task completes.
+ * Schedules write on the original reactor worker via dap_worker_exec_callback_on.
+ */
+static void s_proc_pool_complete(dap_thread_pool_t *a_pool, dap_thread_t a_worker_thread,
+                                 void *a_result, void *a_arg)
+{
+    (void)a_pool;
+    (void)a_worker_thread;
+    (void)a_arg;
+    dap_http_simple_t *l_http_simple = (dap_http_simple_t *)a_result;
+    if (l_http_simple)
+        s_write_data_to_socket(l_http_simple);
 }
 
 static void s_http_client_new(dap_http_client_t *a_http_client, UNUSED_ARG void *arg)
@@ -442,7 +472,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
         log_it( L_DEBUG, "No data section, execution proc callback" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_proc_thread_callback_add_pri(l_http_simple->worker->proc_queue_input, s_proc_queue_callback, l_http_simple, DAP_QUEUE_MSG_PRIORITY_HIGH);
+        dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
 
     }
 }
@@ -491,7 +521,7 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
         log_it( L_INFO,"Data for http_simple_request collected" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_proc_thread_callback_add( l_http_simple->worker->proc_queue_input , s_proc_queue_callback, l_http_simple);
+        dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
     }
 }
 

@@ -167,29 +167,35 @@ bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
     return true;
 }
 
+#define DAP_CONTEXT_QUEUE_BATCH_SIZE 5
+
 /**
- * @brief Process one item from queue (called by reactor)
- * @return 0 on success, -1 on error
+ * @brief Process a batch of items from queue (called by reactor)
+ *
+ * Processes up to DAP_CONTEXT_QUEUE_BATCH_SIZE items per call to avoid
+ * starving other reactor events under heavy load. Re-signals the eventfd
+ * if items remain, so the reactor picks them up on the next iteration.
+ *
+ * @return Number of items processed, or -1 on error
  */
 int dap_context_queue_process(dap_context_queue_t *a_queue) {
     if (!a_queue || !a_queue->callback) {
         return -1;
     }
     
-    // Process only ONE item per reactor iteration (atomic operation)
-    // This prevents blocking event loop with heavy callbacks
-    void *l_item = dap_ring_buffer_pop(a_queue->ring_buffer);
-    if (l_item) {
-        // Call user callback
+    int l_count = 0;
+    void *l_item;
+    while (l_count < DAP_CONTEXT_QUEUE_BATCH_SIZE
+           && (l_item = dap_ring_buffer_pop(a_queue->ring_buffer)) != NULL) {
         a_queue->callback(l_item);
-        
-        // Re-signal event if more items remain
-        if (!dap_ring_buffer_is_empty(a_queue->ring_buffer)) {
-            dap_events_socket_event_signal(a_queue->event_socket, 1);
-        }
+        l_count++;
     }
     
-    return 0;
+    if (!dap_ring_buffer_is_empty(a_queue->ring_buffer)) {
+        dap_events_socket_event_signal(a_queue->event_socket, 1);
+    }
+    
+    return l_count;
 }
 
 /**
