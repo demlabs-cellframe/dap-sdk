@@ -610,10 +610,36 @@ static int s_overflow_read(dap_global_db_t *a_tree, uint64_t a_first_page_id,
 {
     if (a_first_page_id == 0 || !a_out_buf || a_buf_size == 0)
         return -1;
+
+    if (a_tree->mmap) {
+        const uint8_t *l_base = (const uint8_t *)dap_mmap_get_ptr(a_tree->mmap);
+        size_t l_mmap_size = dap_mmap_get_size(a_tree->mmap);
+        uint64_t l_page_id = a_first_page_id;
+        size_t l_total = 0;
+        uint8_t *l_dst = (uint8_t *)a_out_buf;
+        while (l_page_id != 0 && l_total < a_buf_size) {
+            uint64_t l_off = s_page_offset(l_page_id);
+            if (l_off + DAP_GLOBAL_DB_PAGE_SIZE > l_mmap_size)
+                return -1;
+            const dap_global_db_page_header_t *l_hdr =
+                (const dap_global_db_page_header_t *)(l_base + l_off);
+            const uint8_t *l_data = l_base + l_off + sizeof(dap_global_db_page_header_t);
+            size_t l_chunk = PAGE_DATA_SIZE;
+            if (l_total + l_chunk > a_buf_size)
+                l_chunk = a_buf_size - l_total;
+            memcpy(l_dst, l_data, l_chunk);
+            l_dst += l_chunk;
+            l_total += l_chunk;
+            l_page_id = l_hdr->right_sibling;
+        }
+        if (a_out_len)
+            *a_out_len = l_total;
+        return 0;
+    }
+
     uint64_t l_page_id = a_first_page_id;
     size_t l_total = 0;
     uint8_t *l_dst = (uint8_t *)a_out_buf;
-
     while (l_page_id != 0) {
         dap_global_db_page_t l_buf;
         if (!s_page_read_ref(a_tree, l_page_id, &l_buf)) {
@@ -2712,6 +2738,22 @@ typedef struct tl_read_txn {
 
 static _Thread_local __attribute__((tls_model("initial-exec"))) tl_read_txn_t s_tl_read_txn = { .tree = NULL, .slot = -1 };
 
+// Per-thread overflow read buffer (replaces per-tree overflow_read_buf for thread-safety)
+static _Thread_local __attribute__((tls_model("initial-exec"))) uint8_t *s_tl_overflow_buf = NULL;
+static _Thread_local __attribute__((tls_model("initial-exec"))) size_t s_tl_overflow_buf_size = 0;
+
+static inline uint8_t *s_tl_overflow_ensure(size_t a_size)
+{
+    if (s_tl_overflow_buf_size < a_size) {
+        uint8_t *l_new = (uint8_t *)DAP_REALLOC(s_tl_overflow_buf, a_size);
+        if (!l_new)
+            return NULL;
+        s_tl_overflow_buf = l_new;
+        s_tl_overflow_buf_size = a_size;
+    }
+    return s_tl_overflow_buf;
+}
+
 int dap_global_db_read_begin(dap_global_db_t *a_tree)
 {
     dap_return_val_if_fail(a_tree, -1);
@@ -3710,28 +3752,39 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
             if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
                 uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
                 size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
-                if (a_tree->overflow_read_buf_size < l_total) {
-                    uint8_t *l_new = (uint8_t *)DAP_REALLOC(a_tree->overflow_read_buf, l_total);
-                    if (!l_new) {
-                        log_it(L_ERROR, "HL realloc failed: total=%zu", l_total);
+                if (l_total <= PAGE_DATA_SIZE && a_tree->mmap) {
+                    uint8_t *l_ov_ptr = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
+                                        + s_page_offset(l_ov_id)
+                                        + sizeof(dap_global_db_page_header_t);
+                    if (a_out_value) {
+                        a_out_value->data = l_hl_entry->value_len > 0 ? l_ov_ptr : NULL;
+                        a_out_value->len = l_hl_entry->value_len;
+                    }
+                    if (a_out_sign) {
+                        a_out_sign->data = l_hl_entry->sign_len > 0
+                            ? l_ov_ptr + l_hl_entry->value_len : NULL;
+                        a_out_sign->len = l_hl_entry->sign_len;
+                    }
+                } else {
+                    uint8_t *l_buf = s_tl_overflow_ensure(l_total);
+                    if (!l_buf) {
+                        log_it(L_ERROR, "HL overflow TLS alloc failed: %zu", l_total);
                         return -1;
                     }
-                    a_tree->overflow_read_buf = l_new;
-                    a_tree->overflow_read_buf_size = l_total;
-                }
-                if (s_overflow_read(a_tree, l_ov_id, a_tree->overflow_read_buf, l_total, NULL) != 0) {
-                    log_it(L_ERROR, "HL overflow read failed: ov_id=%llu val=%u sign=%u total=%zu",
-                           (unsigned long long)l_ov_id, l_hl_entry->value_len, l_hl_entry->sign_len, l_total);
-                    return -1;
-                }
-                if (a_out_value) {
-                    a_out_value->data = l_hl_entry->value_len > 0 ? a_tree->overflow_read_buf : NULL;
-                    a_out_value->len = l_hl_entry->value_len;
-                }
-                if (a_out_sign) {
-                    a_out_sign->data = l_hl_entry->sign_len > 0
-                        ? (void *)(a_tree->overflow_read_buf + l_hl_entry->value_len) : NULL;
-                    a_out_sign->len = l_hl_entry->sign_len;
+                    if (s_overflow_read(a_tree, l_ov_id, l_buf, l_total, NULL) != 0) {
+                        log_it(L_ERROR, "HL overflow read failed: ov_id=%llu total=%zu",
+                               (unsigned long long)l_ov_id, l_total);
+                        return -1;
+                    }
+                    if (a_out_value) {
+                        a_out_value->data = l_hl_entry->value_len > 0 ? l_buf : NULL;
+                        a_out_value->len = l_hl_entry->value_len;
+                    }
+                    if (a_out_sign) {
+                        a_out_sign->data = l_hl_entry->sign_len > 0
+                            ? l_buf + l_hl_entry->value_len : NULL;
+                        a_out_sign->len = l_hl_entry->sign_len;
+                    }
                 }
             } else {
                 if (a_out_value) {
@@ -3793,29 +3846,38 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                         if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
                             uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
                             size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
-                            if (a_tree->overflow_read_buf_size < l_total) {
-                                uint8_t *l_new = (uint8_t *)DAP_REALLOC(a_tree->overflow_read_buf, l_total);
-                                if (!l_new) {
-                                    log_it(L_ERROR, "ZC-HL realloc failed: total=%zu", l_total);
+                            if (l_total <= PAGE_DATA_SIZE) {
+                                uint8_t *l_ov_ptr = l_base + s_page_offset(l_ov_id)
+                                                    + sizeof(dap_global_db_page_header_t);
+                                if (a_out_value) {
+                                    a_out_value->data = l_hl_entry->value_len > 0 ? l_ov_ptr : NULL;
+                                    a_out_value->len = l_hl_entry->value_len;
+                                }
+                                if (a_out_sign) {
+                                    a_out_sign->data = l_hl_entry->sign_len > 0
+                                        ? l_ov_ptr + l_hl_entry->value_len : NULL;
+                                    a_out_sign->len = l_hl_entry->sign_len;
+                                }
+                            } else {
+                                uint8_t *l_buf = s_tl_overflow_ensure(l_total);
+                                if (!l_buf) {
+                                    log_it(L_ERROR, "ZC-HL overflow TLS alloc failed: %zu", l_total);
                                     return -1;
                                 }
-                                a_tree->overflow_read_buf = l_new;
-                                a_tree->overflow_read_buf_size = l_total;
-                            }
-                            if (s_overflow_read(a_tree, l_ov_id, a_tree->overflow_read_buf, l_total, NULL) != 0) {
-                                log_it(L_ERROR, "ZC-HL overflow read failed: page=%llu ov_id=%llu val=%u sign=%u total=%zu",
-                                       (unsigned long long)l_page_id, (unsigned long long)l_ov_id,
-                                       l_hl_entry->value_len, l_hl_entry->sign_len, l_total);
-                                return -1;
-                            }
-                            if (a_out_value) {
-                                a_out_value->data = l_hl_entry->value_len > 0 ? a_tree->overflow_read_buf : NULL;
-                                a_out_value->len = l_hl_entry->value_len;
-                            }
-                            if (a_out_sign) {
-                                a_out_sign->data = l_hl_entry->sign_len > 0
-                                    ? (void *)(a_tree->overflow_read_buf + l_hl_entry->value_len) : NULL;
-                                a_out_sign->len = l_hl_entry->sign_len;
+                                if (s_overflow_read(a_tree, l_ov_id, l_buf, l_total, NULL) != 0) {
+                                    log_it(L_ERROR, "ZC-HL overflow read failed: ov_id=%llu total=%zu",
+                                           (unsigned long long)l_ov_id, l_total);
+                                    return -1;
+                                }
+                                if (a_out_value) {
+                                    a_out_value->data = l_hl_entry->value_len > 0 ? l_buf : NULL;
+                                    a_out_value->len = l_hl_entry->value_len;
+                                }
+                                if (a_out_sign) {
+                                    a_out_sign->data = l_hl_entry->sign_len > 0
+                                        ? l_buf + l_hl_entry->value_len : NULL;
+                                    a_out_sign->len = l_hl_entry->sign_len;
+                                }
                             }
                         } else {
                             if (a_out_value) {
@@ -3863,29 +3925,38 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                         if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
                             uint64_t l_ov_id = *(const uint64_t *)(l_edata + l_entry->key_len);
                             size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
-                            if (a_tree->overflow_read_buf_size < l_total) {
-                                uint8_t *l_new = (uint8_t *)DAP_REALLOC(a_tree->overflow_read_buf, l_total);
-                                if (!l_new) {
-                                    log_it(L_ERROR, "ZC realloc failed: total=%zu", l_total);
+                            if (l_total <= PAGE_DATA_SIZE) {
+                                uint8_t *l_ov_ptr = l_base + s_page_offset(l_ov_id)
+                                                    + sizeof(dap_global_db_page_header_t);
+                                if (a_out_value) {
+                                    a_out_value->data = l_entry->value_len > 0 ? l_ov_ptr : NULL;
+                                    a_out_value->len = l_entry->value_len;
+                                }
+                                if (a_out_sign) {
+                                    a_out_sign->data = l_entry->sign_len > 0
+                                        ? l_ov_ptr + l_entry->value_len : NULL;
+                                    a_out_sign->len = l_entry->sign_len;
+                                }
+                            } else {
+                                uint8_t *l_buf = s_tl_overflow_ensure(l_total);
+                                if (!l_buf) {
+                                    log_it(L_ERROR, "ZC overflow TLS alloc failed: %zu", l_total);
                                     return -1;
                                 }
-                                a_tree->overflow_read_buf = l_new;
-                                a_tree->overflow_read_buf_size = l_total;
-                            }
-                            if (s_overflow_read(a_tree, l_ov_id, a_tree->overflow_read_buf, l_total, NULL) != 0) {
-                                log_it(L_ERROR, "ZC overflow read failed: page=%llu ov_id=%llu val=%u sign=%u total=%zu",
-                                       (unsigned long long)l_page_id, (unsigned long long)l_ov_id,
-                                       l_entry->value_len, l_entry->sign_len, l_total);
-                                return -1;
-                            }
-                            if (a_out_value) {
-                                a_out_value->data = l_entry->value_len > 0 ? a_tree->overflow_read_buf : NULL;
-                                a_out_value->len = l_entry->value_len;
-                            }
-                            if (a_out_sign) {
-                                a_out_sign->data = l_entry->sign_len > 0
-                                    ? (void *)(a_tree->overflow_read_buf + l_entry->value_len) : NULL;
-                                a_out_sign->len = l_entry->sign_len;
+                                if (s_overflow_read(a_tree, l_ov_id, l_buf, l_total, NULL) != 0) {
+                                    log_it(L_ERROR, "ZC overflow read failed: ov_id=%llu total=%zu",
+                                           (unsigned long long)l_ov_id, l_total);
+                                    return -1;
+                                }
+                                if (a_out_value) {
+                                    a_out_value->data = l_entry->value_len > 0 ? l_buf : NULL;
+                                    a_out_value->len = l_entry->value_len;
+                                }
+                                if (a_out_sign) {
+                                    a_out_sign->data = l_entry->sign_len > 0
+                                        ? l_buf + l_entry->value_len : NULL;
+                                    a_out_sign->len = l_entry->sign_len;
+                                }
                             }
                         } else {
                             if (a_out_value) {
