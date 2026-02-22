@@ -15,6 +15,7 @@
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_file_utils.h"
 #include "dap_test.h"
 #include "dap_global_db.h"
 #include "dap_global_db_migrate.h"
@@ -32,7 +33,7 @@ static void s_cleanup_test_dir(void)
 
 static void s_create_test_sql_dump(void)
 {
-    mkdir(TEST_DIR, 0755);
+    dap_mkdir_with_parents(TEST_DIR);
     
     FILE *fp = fopen(TEST_SQL_FILE, "w");
     if (!fp) return;
@@ -102,7 +103,7 @@ static void test_migrate_sql_dump(void)
     
     s_cleanup_test_dir();
     s_create_test_sql_dump();
-    mkdir(TEST_DEST_DIR, 0755);
+    dap_mkdir_with_parents(TEST_DEST_DIR);
     
     dap_global_db_migrate_options_t opts = DAP_GLOBAL_DB_MIGRATE_OPTIONS_DEFAULT;
     opts.verbose = false;
@@ -191,7 +192,7 @@ static void test_migrate_verify_data(void)
     
     s_cleanup_test_dir();
     s_create_test_sql_dump();
-    mkdir(TEST_DEST_DIR, 0755);
+    dap_mkdir_with_parents(TEST_DEST_DIR);
     
     // Migrate
     dap_global_db_migrate_options_t opts = DAP_GLOBAL_DB_MIGRATE_OPTIONS_DEFAULT;
