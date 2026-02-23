@@ -7,7 +7,7 @@ source "${LIB_DIR}/dap_mock_common.sh"
 
 # Scan for mock declarations (DAP_MOCK_DECLARE, DAP_MOCK_DECLARE_CUSTOM)
 # Output: newline-separated list of function names
-# Optimized: single AWK invocation for all files instead of per-file
+# Optimized: single awk invocation for all files instead of per-file
 scan_mock_declarations() {
     local source_files=("$@")
     local tmp_mocks=$(create_temp_file "mock_funcs")
@@ -23,8 +23,8 @@ scan_mock_declarations() {
         return
     fi
     
-    # Single AWK invocation for all files (much faster than per-file)
-    "$AWK_CMD" -f "${MOCK_AWK_DIR}/scan_mock_declarations.awk" "${existing_files[@]}" > "$tmp_mocks" 2>/dev/null || true
+    # Single awk invocation for all files (much faster than per-file)
+    awk -f "${MOCK_AWK_DIR}/scan_mock_declarations.awk" "${existing_files[@]}" > "$tmp_mocks" 2>/dev/null || true
     
     local mock_functions=$(sort -u "$tmp_mocks" 2>/dev/null | grep -v '^$')
     rm -f "$tmp_mocks"
@@ -34,7 +34,7 @@ scan_mock_declarations() {
 
 # Scan for existing wrapper definitions
 # Output: newline-separated list of function names that have wrappers
-# Optimized: single AWK invocation for all files instead of per-file
+# Optimized: single awk invocation for all files instead of per-file
 scan_wrapper_definitions() {
     local source_files=("$@")
     local tmp_wrappers=$(create_temp_file "wrapper_funcs")
@@ -50,8 +50,8 @@ scan_wrapper_definitions() {
         return
     fi
     
-    # Single AWK invocation for all files (much faster than per-file)
-    "$AWK_CMD" -f "${MOCK_AWK_DIR}/scan_wrapper_definitions.awk" "${existing_files[@]}" > "$tmp_wrappers" 2>/dev/null || true
+    # Single awk invocation for all files (much faster than per-file)
+    awk -f "${MOCK_AWK_DIR}/scan_wrapper_definitions.awk" "${existing_files[@]}" > "$tmp_wrappers" 2>/dev/null || true
     
     local wrapper_functions=$(sort -u "$tmp_wrappers" 2>/dev/null | grep -v '^$')
     rm -f "$tmp_wrappers"
@@ -62,7 +62,7 @@ scan_wrapper_definitions() {
 # Extract custom mock declarations with full information
 # Output: return_type|func_name|param_list|macro_type (one per declaration)
 # Usage: extract_custom_mocks <output_file> <source_file1> <source_file2> ...
-# Optimized: single AWK invocation for all files instead of per-file
+# Optimized: single awk invocation for all files instead of per-file
 extract_custom_mocks() {
     local output_file="$1"
     shift
@@ -80,11 +80,15 @@ extract_custom_mocks() {
         return 0
     fi
     
+    # Single awk invocation for all files (much faster than per-file)
     # Use awk script to parse DAP_MOCK_WRAPPER_CUSTOM declarations and extract:
     # - return_type (original, with *)
     # - func_name
     # - parameters list (type and name from PARAM(...) or void)
-    "$AWK_CMD" -f "${MOCK_AWK_DIR}/parse_custom_mocks.awk" "${existing_files[@]}" > "$output_file" 2>/dev/null || true
+    awk -f "${MOCK_AWK_DIR}/parse_custom_mocks.awk" "${existing_files[@]}" > "$output_file" 2>/dev/null || {
+        print_error "Failed to parse custom mocks"
+        return 1
+    }
     
     return 0
 }

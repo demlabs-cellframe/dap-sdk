@@ -7,6 +7,7 @@
 
 #include "dap_test_async.h"
 #include "dap_test.h"
+#include "dap_time.h"
 #include <errno.h>
 #include <stdio.h>
 
@@ -50,14 +51,10 @@ bool dap_test_wait_condition(
         dap_test_sleep_ms(l_poll_interval);
     }
     
-    // Timeout (log_it macro requires literal level token, so split by level)
-    if (a_config->fail_on_timeout) {
-        log_it(L_ERROR, "Condition '%s' TIMEOUT after %u ms",
-               a_config->operation_name, a_config->timeout_ms);
-    } else {
-        log_it(L_WARNING, "Condition '%s' TIMEOUT after %u ms",
-               a_config->operation_name, a_config->timeout_ms);
-    }
+    // Timeout
+    log_it(a_config->fail_on_timeout ? L_ERROR : L_WARNING,
+           "Condition '%s' TIMEOUT after %u ms",
+           a_config->operation_name, a_config->timeout_ms);
     
     if (a_config->fail_on_timeout) {
         dap_fail("Async operation timeout");
@@ -111,12 +108,11 @@ bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms)
     
     // Calculate absolute timeout
     struct timespec l_timeout;
-    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    dap_nanotime_t now_ns = dap_nanotime_now();
+    dap_nanotime_t timeout_ns = now_ns + (dap_nanotime_t)a_timeout_ms * DAP_NSEC_PER_MSEC;
     
-    // Add timeout (handle overflow correctly)
-    uint64_t l_nsec = l_timeout.tv_nsec + (uint64_t)(a_timeout_ms % 1000) * 1000000;
-    l_timeout.tv_sec += a_timeout_ms / 1000 + l_nsec / 1000000000;
-    l_timeout.tv_nsec = l_nsec % 1000000000;
+    l_timeout.tv_sec = dap_nanotime_to_sec(timeout_ns);
+    l_timeout.tv_nsec = timeout_ns % DAP_NSEC_PER_SEC;
     
     // Wait with timeout
     int l_result = pthread_cond_timedwait(&a_ctx->cond, &a_ctx->mutex, &l_timeout);
@@ -136,8 +132,13 @@ bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms)
 }
 
 // =============================================================================
-// GLOBAL TEST TIMEOUT (ALARM-BASED)
+// GLOBAL TEST TIMEOUT - Cross-platform implementation
 // =============================================================================
+
+#ifndef _WIN32
+// ============================================================================
+// POSIX: Signal-based timeout with setjmp/longjmp
+// ============================================================================
 
 static void s_global_timeout_handler(int a_sig)
 {
@@ -199,4 +200,83 @@ void dap_test_cancel_global_timeout(void)
     
     log_it(L_DEBUG, "Global test timeout cancelled");
 }
+
+#else
+// ============================================================================
+// Windows: Waitable timer-based timeout
+// ============================================================================
+
+static VOID CALLBACK s_global_timeout_handler_win32(
+    PVOID a_param,
+    BOOLEAN a_timer_or_wait_fired)
+{
+    UNUSED(a_timer_or_wait_fired);
+    
+    dap_test_global_timeout_t *l_timeout = (dap_test_global_timeout_t*)a_param;
+    if (!l_timeout) return;
+    
+    InterlockedExchange(&l_timeout->timeout_triggered, 1);
+    
+    log_it(L_CRITICAL, "=== TEST TIMEOUT ===");
+    log_it(L_CRITICAL, "Test '%s' exceeded %u seconds",
+           l_timeout->test_name ? l_timeout->test_name : "unknown",
+           l_timeout->timeout_sec);
+    log_it(L_CRITICAL, "Terminating test process...");
+    
+    // Windows: terminate process (no safe unwinding like longjmp)
+    ExitProcess(1);
+}
+
+int dap_test_set_global_timeout(
+    dap_test_global_timeout_t *a_timeout,
+    uint32_t a_timeout_sec,
+    const char *a_test_name)
+{
+    if (!a_timeout) return -1;
+    
+    InterlockedExchange(&a_timeout->timeout_triggered, 0);
+    a_timeout->timeout_sec = a_timeout_sec;
+    a_timeout->test_name = a_test_name;
+    a_timeout->timer_handle = NULL;
+    
+    s_global_timeout = a_timeout;
+    
+    // Create waitable timer with callback
+    HANDLE l_timer_queue = NULL;  // Use default timer queue
+    BOOL l_result = CreateTimerQueueTimer(
+        &a_timeout->timer_handle,
+        l_timer_queue,
+        s_global_timeout_handler_win32,
+        a_timeout,
+        a_timeout_sec * 1000,  // Due time (ms)
+        0,                     // Period (0 = one-shot)
+        WT_EXECUTEONLYONCE
+    );
+    
+    if (!l_result) {
+        log_it(L_ERROR, "Failed to create timer queue timer: error %lu", GetLastError());
+        return -1;
+    }
+    
+    log_it(L_INFO, "Global test timeout set: %u seconds for '%s'",
+           a_timeout_sec, a_test_name ? a_test_name : "test");
+    
+    return 0;
+}
+
+void dap_test_cancel_global_timeout(void)
+{
+    if (!s_global_timeout) return;
+    
+    if (s_global_timeout->timer_handle) {
+        DeleteTimerQueueTimer(NULL, s_global_timeout->timer_handle, NULL);
+        s_global_timeout->timer_handle = NULL;
+    }
+    
+    s_global_timeout = NULL;
+    
+    log_it(L_DEBUG, "Global test timeout cancelled");
+}
+
+#endif  // _WIN32
 

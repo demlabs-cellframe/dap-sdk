@@ -16,12 +16,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <time.h>
+#include "dap_common.h"
+#include "dap_test.h"
+
+#ifndef _WIN32
+// POSIX: signals, setjmp for timeout handling
 #include <pthread.h>
 #include <signal.h>
 #include <setjmp.h>
 #include <unistd.h>
-#include "dap_common.h"
-#include "dap_test.h"
+#else
+// Windows: threads, synchronization
+#include <windows.h>
+#include <process.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -155,8 +163,14 @@ bool dap_test_cond_wait(dap_test_cond_wait_ctx_t *a_ctx, uint32_t a_timeout_ms);
  * @brief Global timeout context for entire test suite
  */
 typedef struct dap_test_global_timeout {
+#ifndef _WIN32
     sigjmp_buf jump_buf;
     volatile sig_atomic_t timeout_triggered;
+#else
+    HANDLE timer_handle;
+    volatile LONG timeout_triggered;
+    void (*exit_callback)(void);
+#endif
     uint32_t timeout_sec;
     const char *test_name;
 } dap_test_global_timeout_t;
@@ -211,7 +225,11 @@ void dap_test_cancel_global_timeout(void);
  * @param a_delay_ms Delay in ms
  */
 static inline void dap_test_sleep_ms(uint32_t a_delay_ms) {
+#ifndef _WIN32
     usleep(a_delay_ms * 1000);
+#else
+    Sleep(a_delay_ms);
+#endif
 }
 
 /**
@@ -219,9 +237,13 @@ static inline void dap_test_sleep_ms(uint32_t a_delay_ms) {
  * @return Time in ms
  */
 static inline uint64_t dap_test_get_time_ms(void) {
+#ifndef _WIN32
     struct timespec l_ts;
     clock_gettime(CLOCK_MONOTONIC, &l_ts);
     return (uint64_t)l_ts.tv_sec * 1000 + (uint64_t)l_ts.tv_nsec / 1000000;
+#else
+    return (uint64_t)GetTickCount64();
+#endif
 }
 
 // =============================================================================

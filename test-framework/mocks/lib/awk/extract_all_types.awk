@@ -62,7 +62,7 @@ BEGIN {
 /PARAM[ \t]*\(/ {
     if (in_custom || match($0, /DAP_MOCK_WRAPPER_CUSTOM/)) {
         # Extract type from PARAM(type, name)
-        if (match($0, /PARAM[ \t]*\([ \t]*[^,)]+/)) {
+        if (match($0, /PARAM[ \t]*\([ \t]*([^,)]+)/)) {
             param_type_original = substr($0, RSTART + 6, RLENGTH - 6)
             gsub(/^[ \t]+|[ \t]+$/, "", param_type_original)
             # Remove const, volatile qualifiers for normalization

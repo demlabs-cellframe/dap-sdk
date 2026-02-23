@@ -27,7 +27,7 @@ if(DAP_TEST_SOURCES)
     
     target_include_directories(dap_test PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/cellframe-node/dap-sdk/core/include
+        ${CMAKE_SOURCE_DIR}/module/core/include
     )
     
     target_link_libraries(dap_test
