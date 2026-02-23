@@ -57,6 +57,26 @@
 #define LOG_TAG "file_utils"
 
 /**
+ * Normalize path separators to the OS-native form in place.
+ */
+void dap_path_to_native_inplace(char *path)
+{
+    if (!path)
+        return;
+#ifdef DAP_OS_WINDOWS
+    for (; *path; path++) {
+        if (*path == '/')
+            *path = DAP_DIR_SEPARATOR;
+    }
+#else
+    for (; *path; path++) {
+        if (*path == '\\')
+            *path = DAP_DIR_SEPARATOR;
+    }
+#endif
+}
+
+/**
  * Check the directory path for unsupported symbols
  *
  * @string
@@ -173,6 +193,7 @@ int dap_mkdir_with_parents(const char *a_dir_path)
     }
     char path[strlen(a_dir_path) + 1], *p;
     dap_strncpy(path, a_dir_path, sizeof(path) - 1);
+    dap_path_to_native_inplace(path);
     // skip the root component if it is present, i.e. the "/" in Unix or "C:\" in Windows
 #ifdef DAP_OS_WINDOWS
     if(((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
@@ -1515,25 +1536,34 @@ void dap_rm_rf(const char *path)
 {
     DIR *dir = NULL;
     const char *entry;
+    size_t n = strlen(path) + 1;
+    char *path_native = DAP_NEW_SIZE(char, n);
 
-    dir = opendir(path);
+    if (!path_native)
+        return;
+    memcpy(path_native, path, n);
+    dap_path_to_native_inplace(path_native);
+
+    dir = opendir(path_native);
     if(dir == NULL)
     {
         /* Assume it’s a file. Ignore failure. */
-        remove(path);
+        remove(path_native);
+        DAP_DELETE(path_native);
         return;
     }
 
     while((entry = dap_dir_read_name(dir)) != NULL)
     {
-        char *sub_path = dap_build_filename(path, entry, NULL);
+        char *sub_path = dap_build_filename(path_native, entry, NULL);
         dap_rm_rf(sub_path);
         DAP_DELETE(sub_path);
     }
 
     closedir(dir);
 
-    rmdir(path);
+    rmdir(path_native);
+    DAP_DELETE(path_native);
 }
 
 #ifdef DAP_BUILD_WITH_ZIP

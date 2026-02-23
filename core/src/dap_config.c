@@ -309,6 +309,10 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
     
     bool l_is_abs = dap_path_is_absolute(a_file_path);
+    if (!l_is_abs && !s_configs_path) {
+        log_it(L_ERROR, "Config not initialized - call dap_config_init first");
+        return NULL;
+    }
     const char *l_check = l_is_abs ? dap_path_skip_root(a_file_path) : a_file_path;
     if (!l_check || !*l_check) {
         log_it(L_ERROR, "Invalid config path: %s", a_file_path);
