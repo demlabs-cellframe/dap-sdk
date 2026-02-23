@@ -706,9 +706,7 @@ int dap_random_poly_time_domain(chipmunk_poly_t *a_poly, const uint8_t *a_seed, 
     
     // Use SHA2-256 for deterministic generation
     uint8_t l_derived_seed[32];
-    if (dap_hash_sha2_256(l_derived_seed, a_seed, a_seed_len) != 0) {
-        return -1;
-    }
+    dap_hash_sha2_256(l_derived_seed, a_seed, a_seed_len);
     
     memset(a_poly, 0, sizeof(*a_poly));
     
@@ -721,9 +719,7 @@ int dap_random_poly_time_domain(chipmunk_poly_t *a_poly, const uint8_t *a_seed, 
         
         // Hash to get random value
         uint8_t l_hash[32];
-        if (dap_hash_sha2_256(l_hash, l_input, sizeof(l_input)) != 0) {
-            return -1;
-        }
+        dap_hash_sha2_256(l_hash, l_input, sizeof(l_input));
         
         // Use first 4 bytes as random value
         uint32_t l_random = *(uint32_t*)l_hash;

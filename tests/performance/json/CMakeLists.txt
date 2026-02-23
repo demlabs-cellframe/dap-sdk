@@ -67,6 +67,7 @@ add_executable(benchmark_competitive_full
 target_link_libraries(benchmark_competitive_full PRIVATE
     dap_core
     dap_json
+    dap_math
 )
 
 # Platform-specific system libraries
@@ -140,6 +141,7 @@ add_executable(benchmark_stage1_multi_arch
 target_link_libraries(benchmark_stage1_multi_arch PRIVATE
     dap_core
     dap_json
+    dap_math
 )
 
 target_include_directories(benchmark_stage1_multi_arch PRIVATE
