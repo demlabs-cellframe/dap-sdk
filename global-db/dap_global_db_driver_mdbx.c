@@ -320,6 +320,7 @@ size_t     l_upper_limit_of_db_size = 16;
     log_it(L_INFO, "Set MDBX Upper Limit of DB Size to %zu bytes", l_upper_limit_of_db_size);
 
     snprintf(s_db_path, sizeof(s_db_path), "%s/%s", a_mdbx_path, s_subdir );/* Make a path to MDBX root */
+    dap_path_to_native_inplace(s_db_path);
     dap_mkdir_with_parents(s_db_path);                                      /* Create directory for the MDBX storage */
 
     log_it(L_NOTICE, "Directory '%s' will be used as an location for MDBX database files", s_db_path);
