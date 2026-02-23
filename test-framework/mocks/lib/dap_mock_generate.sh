@@ -796,7 +796,7 @@ generate_single_map_macro() {
     local count="$1"
     
     if [ "$count" -eq 0 ]; then
-        # Special case for 0 params - no expansion needed
+        # Special case for 0 params - accept and ignore extra args (e.g. 'void')
         echo "#define _DAP_MOCK_MAP_0(macro) \\"
         echo "    "
         return
@@ -897,24 +897,103 @@ EOF_CHECK_VOID
     # Generate routing macros for each param_count value
     for count in "${param_counts[@]}"; do
         [ -z "$count" ] && continue
-        echo "// Routing for param_count=${count}" >> "$output_file"
-        echo "#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE_${count}(param_count, first_arg, macro, ...) \\" >> "$output_file"
+        if [ "$count" -eq 0 ]; then
+            echo "// Routing for param_count=0 — routes through first-arg check for void handling" >> "$output_file"
+            echo "#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE_0(param_count_val, first_arg, macro, ...) \\" >> "$output_file"
+            echo "    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK(first_arg, macro, __VA_ARGS__)" >> "$output_file"
+        else
+            echo "// Routing for param_count=${count}" >> "$output_file"
+            echo "#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE_${count}(param_count_val, first_arg, macro, ...) \\" >> "$output_file"
+            echo "    _DAP_MOCK_MAP_IMPL_COND_${count}(macro, __VA_ARGS__)" >> "$output_file"
+        fi
+    done
+    echo "" >> "$output_file"
+
+    # Generate first-arg routing macros (for param_count=0 case: void vs empty)
+    cat >> "$output_file" << 'EOF_FIRST_ARG_ROUTING'
+// ============================================================================
+// First-arg routing for param_count=0: handles "void" vs empty
+// ============================================================================
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK(first_arg, macro, ...) \
+    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_ROUTE(first_arg, macro, __VA_ARGS__)
+
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_ROUTE(first_arg, macro, ...) \
+    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_ROUTE_EXPAND(first_arg, macro, __VA_ARGS__)
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_ROUTE_EXPAND(first_arg, macro, ...) \
+    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_ROUTE_IMPL_##first_arg(first_arg, macro, __VA_ARGS__)
+
+// first_arg="void" — dispatch by macro name to produce correct expansion
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_ROUTE_IMPL_void(first_arg, macro, ...) \
+    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_void_BY_MACRO_##macro()
+
+// first_arg="" (empty) — just call _DAP_MOCK_MAP_0
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_ROUTE_IMPL_(first_arg, macro, ...) \
+    _DAP_MOCK_MAP_0(macro)
+
+// Per-macro void expansions
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_void_BY_MACRO__DAP_MOCK_PARAM_DECL() void
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_void_BY_MACRO__DAP_MOCK_PARAM_NAME()
+#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_0_CHECK_void_BY_MACRO__DAP_MOCK_PARAM_CAST()
+
+EOF_FIRST_ARG_ROUTING
+
+    # Generate _DAP_MOCK_MAP_IMPL_COND macros for non-zero param counts
+    echo "// ============================================================================" >> "$output_file"
+    echo "// Implementation conditional macros" >> "$output_file"
+    echo "// ============================================================================" >> "$output_file"
+    for count in "${param_counts[@]}"; do
+        [ -z "$count" ] && continue
+        [ "$count" -eq 0 ] && continue
+        echo "#define _DAP_MOCK_MAP_IMPL_COND_${count}(macro, ...) \\" >> "$output_file"
         echo "    _DAP_MOCK_MAP_${count}(macro, __VA_ARGS__)" >> "$output_file"
     done
     echo "" >> "$output_file"
-    
-    # Generate _DAP_MOCK_MAP_COUNT_PARAMS macro
-    # This counts PARAM() entries (each PARAM contributes 2 args: type, name)
-    cat >> "$output_file" << 'EOF_COUNT_PARAMS'
-// Count PARAM entries - each PARAM(type, name) expands to 2 arguments
-// We need to count how many type,name pairs we have
+
+    # Generate _DAP_MOCK_MAP_COUNT_PARAMS with preprocessor-level dispatch
+    # (NOT C-level arithmetic — must produce a token usable in ## pasting)
+    cat >> "$output_file" << 'EOF_COUNT_PARAMS_HEADER'
+// ============================================================================
+// Parameter counting macros — preprocessor-level dispatch
+// ============================================================================
 #define _DAP_MOCK_MAP_COUNT_PARAMS(...) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL(__VA_ARGS__)
+    _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND(__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND(...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND2(__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_EXPAND2(...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL(_DAP_MOCK_NARGS(__VA_ARGS__), __VA_ARGS__)
 
-#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL(...) \
-    ((_DAP_MOCK_NARGS(__VA_ARGS__) + 1) / 2)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL(arg_count, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_EXPAND(arg_count, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_EXPAND(arg_count, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_EXPAND2(arg_count, ##__VA_ARGS__)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_EXPAND2(arg_count, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_##arg_count(arg_count, ##__VA_ARGS__)
 
-EOF_COUNT_PARAMS
+// arg_count=0 → 0 params
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_0(arg_count_val, ...) 0
+
+// arg_count=1 → check for "void" keyword
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_1(arg_count_val, first_arg, ...) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_1_CHECK(first_arg)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_1_CHECK(first_arg) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_1_CHECK_EXPAND(first_arg)
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_1_CHECK_EXPAND(first_arg) \
+    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_1_CHECK_##first_arg
+
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_1_CHECK_void 0
+#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_1_CHECK_ 0
+
+EOF_COUNT_PARAMS_HEADER
+
+    # Generate arg_count→param_count mappings for actual param counts
+    # Each PARAM(type, name) expands to 2 args, so arg_count = param_count * 2
+    for count in "${param_counts[@]}"; do
+        [ -z "$count" ] && continue
+        [ "$count" -eq 0 ] && continue
+        local arg_count=$((count * 2))
+        echo "#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL_${arg_count}(arg_count_val, ...) ${count}" >> "$output_file"
+    done
+    echo "" >> "$output_file"
 }
 
 # Prepare MAP_MACROS_DATA for template generation
