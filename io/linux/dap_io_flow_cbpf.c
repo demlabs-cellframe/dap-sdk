@@ -27,48 +27,32 @@ static bool s_cbpf_checked = false;
 
 /**
  * @brief Classic BPF program for SO_REUSEPORT consistent hashing
- * 
- * IMPORTANT: For classic BPF (cBPF) with SO_ATTACH_REUSEPORT_CBPF:
- * - Data pointer starts AFTER transport header (UDP payload), NOT at UDP header!
- * - Kernel calls pskb_pull(skb, sizeof(struct udphdr)) before running BPF
- * - BPF program must return SOCKET INDEX (0 to N-1), not raw hash
- * - If return value >= num_sockets, kernel uses default distribution
- * 
- * SOLUTION: Use BPF ancillary data extension SKF_AD_RXHASH to get the
- * kernel-computed packet hash. This hash is based on the full 4-tuple:
- *   (src_ip, src_port, dst_ip, dst_port)
- * 
- * This provides:
- * 1. STICKY SESSIONS: Same client (same 4-tuple) always gets same hash
- * 2. GOOD DISTRIBUTION: Kernel hash is well-distributed across values
- * 3. WORKS FOR ALL CLIENTS: Not dependent on localhost quirks
- * 
- * The kernel documentation (networking/filter.rst) lists available extensions:
- *   - SKF_AD_RXHASH (offset 32): skb->hash - packet hash
- *   - SKF_AD_CPU (offset 36): current CPU number
- *   - etc.
- * 
- * Access via: BPF_LD | BPF_W | BPF_ABS with k = SKF_AD_OFF + SKF_AD_*
- * 
- * Classic BPF instruction format:
- * - code: operation code (BPF_LD, BPF_RET, etc.)
- * - jt: jump if true offset  
- * - jf: jump if false offset
- * - k: generic multi-use field (constant/offset)
- * 
- * SKF_AD_OFF and SKF_AD_RXHASH are defined in linux/filter.h
+ *
+ * For cBPF with SO_ATTACH_REUSEPORT_CBPF:
+ * - Kernel calls pskb_pull(skb, sizeof(struct udphdr)) → data at UDP payload
+ * - Return value = socket index (kernel does index % num_sockets)
+ *
+ * Algorithm:
+ * 1. Load SKF_AD_RXHASH (kernel 4-tuple hash from skb->hash)
+ * 2. If non-zero (real network) → return it for sticky sessions
+ * 3. If zero (loopback — rxhash not computed) → fallback:
+ *    read UDP source port via SKF_NET_OFF (accesses the original network
+ *    header regardless of pskb_pull) + IP header length (BPF_MSH)
+ * 4. Return source port → kernel does % num_sockets → sticky per-client
+ *
+ * Result: sticky sessions on BOTH real network AND localhost.
  */
 static struct sock_filter s_cbpf_reuseport_prog[] = {
-    // Use rxhash (kernel 4-tuple hash) for sticky sessions
-    // 
-    // IMPORTANT: rxhash is 0 for loopback/local traffic!
-    // - Production (real network): rxhash works, sticky sessions OK
-    // - Localhost testing: rxhash=0, all to worker 0 (use eBPF or Application tier)
-    //
-    // For full localhost support, upgrade to eBPF (BPF_PROG_TYPE_SK_REUSEPORT)
-    // which has access to sk_reuseport_md with remote_ip/remote_port fields
-    { .code = BPF_LD | BPF_W | BPF_ABS, .jt = 0, .jf = 0, .k = SKF_AD_OFF + SKF_AD_RXHASH },
-    { .code = BPF_RET | BPF_A, .jt = 0, .jf = 0, .k = 0 },
+    /* [0] A = skb->hash (rxhash) */
+    BPF_STMT(BPF_LD  | BPF_W | BPF_ABS, SKF_AD_OFF + SKF_AD_RXHASH),
+    /* [1] if (A != 0) goto [4] — use kernel hash when available */
+    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 2),
+    /* [2] X = (ip_hdr[0] & 0xf) * 4 — IP header length via SKF_NET_OFF */
+    BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, SKF_NET_OFF),
+    /* [3] A = *(u16*)(net_hdr + X) — UDP source port (first field after IP hdr) */
+    BPF_STMT(BPF_LD  | BPF_H | BPF_IND, SKF_NET_OFF),
+    /* [4] return A */
+    BPF_STMT(BPF_RET | BPF_A, 0),
 };
 
 /**
