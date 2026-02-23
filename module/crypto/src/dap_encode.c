@@ -71,16 +71,9 @@ size_t dap_encode_bignum_to_string(const char * a_in, size_t a_in_size, uint8_t 
     // but does not need to extract the rightmost byte, using only the leftmost byte of the input buffer.
 
     if (NULL == a_in || NULL == a_out || NULL == a_table || a_base_size == 0) {
+        return 0;
+    }
 
-
-
-
-
-
-
-
-
-
-
+    // TODO: Implement bignum to string encoding
+    return 0;
 }
-
