@@ -321,6 +321,10 @@ size_t     l_upper_limit_of_db_size = 16;
 
     snprintf(s_db_path, sizeof(s_db_path), "%s/%s", a_mdbx_path, s_subdir );/* Make a path to MDBX root */
     dap_path_to_native_inplace(s_db_path);
+    /* Strip trailing dir separator — MDBX/Wine chokes on paths like "C:\foo\bar\" */
+    size_t l_path_len = strlen(s_db_path);
+    while (l_path_len > 1 && DAP_IS_DIR_SEPARATOR(s_db_path[l_path_len - 1]))
+        s_db_path[--l_path_len] = '\0';
     dap_mkdir_with_parents(s_db_path);                                      /* Create directory for the MDBX storage */
 
     log_it(L_NOTICE, "Directory '%s' will be used as an location for MDBX database files", s_db_path);
