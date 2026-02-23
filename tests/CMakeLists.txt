@@ -5,8 +5,7 @@ project(dap_sdk_tests C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Compiler options for tests
-add_compile_options(-Wall -Wextra -Werror -Wno-unused-but-set-variable)
+# Warning flags inherited from cmake/OS_Detection.cmake (CFLAGS_WARNINGS via CMAKE_C_FLAGS)
 
 # Include directories for DAP SDK
 include_directories(
