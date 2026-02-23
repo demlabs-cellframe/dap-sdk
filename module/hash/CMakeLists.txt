@@ -33,7 +33,7 @@ message(STATUS "[dap_hash] Output directory: ${KECCAK_SIMD_GEN_DIR}")
 # Set up environment for code generation
 set(CODEGEN_ENV
     "CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}"
-    "DAP_TPL_DIR=${CMAKE_SOURCE_DIR}/module/test/dap_tpl"
+    "DAP_TPL_DIR=${DAP_TPL_DIR}"
 )
 
 # Run code generation at configure time
