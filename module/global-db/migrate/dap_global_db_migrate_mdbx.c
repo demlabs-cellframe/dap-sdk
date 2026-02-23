@@ -17,7 +17,9 @@
 #include <sys/stat.h>
 #ifndef DAP_OS_WINDOWS
 #include <sys/mman.h>
+#if !defined(DAP_OS_DARWIN)
 #include <endian.h>
+#endif
 #endif
 
 #include "dap_common.h"

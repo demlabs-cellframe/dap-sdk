@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Compiler options for tests
-add_compile_options(-Wall -Wextra -Werror)
+add_compile_options(-Wall -Wextra -Werror -Wno-unused-but-set-variable)
 
 # Include directories for DAP SDK
 include_directories(

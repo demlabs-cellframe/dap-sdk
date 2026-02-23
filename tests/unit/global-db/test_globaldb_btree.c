@@ -427,7 +427,6 @@ static void test_btree_split_compaction_sigsegv(void)
     // We insert 500 records to also expose cascaded corruption (the write at
     // data+65280 may silently corrupt heap instead of faulting immediately).
     const int NUM_RECORDS = 500;
-    int insert_ok = 0;
 
     for (int i = NUM_RECORDS; i > 0; i--) {
         dap_global_db_key_t key = s_make_key((uint64_t)i, (uint64_t)(i * 7919));
@@ -435,7 +434,6 @@ static void test_btree_split_compaction_sigsegv(void)
         int rc = dap_global_db_insert(btree, &key, NULL, 0,
                                              value, VALUE_SIZE, NULL, 0, 0);
         dap_assert_PIF(rc == 0, "Insert should succeed without SIGSEGV");
-        insert_ok++;
     }
 
     dap_global_db_sync(btree);

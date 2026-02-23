@@ -169,6 +169,7 @@ static uint64_t *s_generate_random_indices(size_t count)
 // Map size helper for MDBX/LMDB
 // ============================================================================
 
+#if defined(WITH_MDBX) || defined(WITH_LMDB)
 // Compute mapsize large enough to hold all records with B-tree overhead.
 // Returns at least 1 GB; for large datasets returns 3× the raw data size
 // (accounts for B-tree page overhead, free-space fragmentation, etc.).
@@ -179,7 +180,9 @@ static size_t s_compute_mapsize(const benchmark_config_t *cfg)
     size_t l_needed = l_data_size * 3;       // 3× safety margin
     return l_needed > l_min ? l_needed : l_min;
 }
+#endif
 
+#ifdef WITH_MDBX
 /* Minimum MDBX/LMDB pagesize to fit key_size bytes.
  * MDBX max_key_size = pagesize/4 - 6, so pagesize >= (key_size + 6) * 4.
  * Round up to next power of two, clamped to [512, 65536]. */
@@ -191,6 +194,7 @@ static intptr_t s_mdbx_pagesize_for_key(size_t key_size)
         ps <<= 1;
     return ps;
 }
+#endif
 
 // ============================================================================
 // DAP Native B-tree backend
