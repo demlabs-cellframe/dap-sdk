@@ -487,10 +487,7 @@ typedef int dap_errnum_t;
     L_ATT       = 6,
     L_ERROR     = 7,
     L_CRITICAL  = 8,
-    L_TOTAL,
-  #ifdef DAP_TPS_TEST
-    L_TPS  = 15,
-  #endif
+    L_TOTAL
   } dap_log_level_t;
 
 #define _LOG_LVL_L_DEBUG    " [DBG] "
@@ -502,9 +499,6 @@ typedef int dap_errnum_t;
 #define _LOG_LVL_L_ATT      " [ATT] "
 #define _LOG_LVL_L_ERROR    " [ERR] "
 #define _LOG_LVL_L_CRITICAL " [ ! ] "
-#ifdef DAP_TPS_TEST
-#define _LOG_LVL_L_TPS      " [TPS] "
-#endif
 #define _LOG_LVL(_lvl) _LOG_LVL_##_lvl
 
 #if defined (__GNUC__) || defined (__clang__)
@@ -522,15 +516,16 @@ typedef int dap_errnum_t;
 extern "C" {
 #endif
 DAP_PRINTF_ATTR(2, 3) void _log_it(enum dap_log_level, const char *format, ... );
+DAP_PRINTF_ATTR(3, 4) void _log_it_tag(enum dap_log_level, const char *tag, const char *format, ... );
 #ifdef __cplusplus
 }
 #endif
 #define log_it(_lvl, _fmt, ... ) (void)\
-    ((_lvl) >= g_dap_log_level && (_log_it((_lvl), _LOG_LVL(_lvl) "[" LOG_TAG "] " _fmt, ##__VA_ARGS__), 1))
+    ((_lvl) >= g_dap_log_level && (_log_it_tag((_lvl), LOG_TAG, _fmt, ##__VA_ARGS__), 1))
 #define log_it_f(_lvl, _fmt, ... ) (void)\
-    ((_lvl) >= g_dap_log_level && (_log_it((_lvl), _LOG_LVL(_lvl) "[" LOG_TAG "] %s(); " _fmt, __FUNCTION__, ##__VA_ARGS__), 1))
+    ((_lvl) >= g_dap_log_level && (_log_it_tag((_lvl), LOG_TAG, "%s(); " _fmt, __FUNCTION__, ##__VA_ARGS__), 1))
 #define log_it_fl(_lvl, _fmt, ... ) (void)\
-    ((_lvl) >= g_dap_log_level && (_log_it((_lvl), _LOG_LVL(_lvl) "[" LOG_TAG "] %s():%d; " _fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__), 1))
+    ((_lvl) >= g_dap_log_level && (_log_it_tag((_lvl), LOG_TAG, "%s():%d; " _fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__), 1))
 #define ret_log_it(_ret, _lvl, _fmt, ... ) \
     return log_it(_lvl, _fmt, ##__VA_ARGS__), (_ret)
 

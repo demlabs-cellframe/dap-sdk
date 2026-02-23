@@ -428,6 +428,67 @@ bool dap_is_wine(void)
  * @param a_ll  log level (used for ANSI color selection)
  * @param a_fmt format string (pre-built by macros with all prefixes baked in)
  */
+void _log_it_tag(enum dap_log_level a_ll, const char *a_tag, const char *a_fmt, ...) {
+#ifdef DAP_TPS_TEST
+    if (a_ll != L_TPS) {
+        FILE *l_file = fopen("/opt/cellframe-node/share/ca/without_logs.txt", "r");
+        if (l_file) {
+            fclose(l_file);
+            return;
+        }
+    }
+#endif
+    enum { ts_len = sizeof("[mm/dd/yy-HH:MM:SS]") - 1 };
+    static _Thread_local char s_log_buf[LOG_MSG_BUF_SIZE];
+    static _Thread_local time_t s_cached_time = 0;
+    static _Thread_local struct tm s_cached_tm;
+    time_t l_time = time(NULL);
+    if (l_time != s_cached_time) {
+        if (l_time == s_cached_time + 1 && s_cached_tm.tm_sec < 59)
+            s_cached_tm.tm_sec++;
+        else
+            localtime_r(&l_time, &s_cached_tm);
+        s_cached_time = l_time;
+        strftime(s_log_buf, ts_len + 1, "[%m/%d/%y-%H:%M:%S]", &s_cached_tm);
+    }
+    int l_pos = ts_len;
+    const char *l_lvl = ((unsigned)a_ll < sizeof(s_log_level_tag) / sizeof(s_log_level_tag[0]))
+                        ? s_log_level_tag[a_ll] : " [???] ";
+    l_pos += snprintf(s_log_buf + l_pos, LOG_MSG_BUF_SIZE - l_pos,
+                      "%s[%s] ", l_lvl, a_tag ? a_tag : "???");
+    va_list va;
+    va_start(va, a_fmt);
+    int l_len = vsnprintf(s_log_buf + l_pos, LOG_MSG_BUF_SIZE - l_pos, a_fmt, va);
+    va_end(va);
+    if (l_len < 0)
+        return;
+    l_len += l_pos;
+    bool l_overflow = l_len > LOG_MSG_BUF_SIZE - 2;
+    if (l_overflow) {
+        l_len = LOG_MSG_BUF_SIZE - 2;
+        memcpy(s_log_buf + l_len - 3, "...", 3);
+    }
+    s_log_buf[l_len++] = '\n';
+    s_log_buf[l_len] = '\0';
+    s_print_callback(a_ll, s_log_buf, l_len);
+    FILE *l_logf = s_log_file;
+    if (!l_logf)
+        return;
+    if (l_overflow) {
+        flockfile(l_logf);
+        fwrite_unlocked(s_log_buf, l_pos, 1, l_logf);
+        va_start(va, a_fmt);
+        vfprintf(l_logf, a_fmt, va);
+        va_end(va);
+        fputc_unlocked('\n', l_logf);
+        funlockfile(l_logf);
+    } else
+        fwrite(s_log_buf, l_len, 1, l_logf);
+#ifdef DAP_OS_WINDOWS
+    fflush(l_logf);
+#endif
+}
+
 void _log_it(enum dap_log_level a_ll, const char *a_fmt, ...) {
 #ifdef DAP_TPS_TEST
     if (a_ll != L_TPS) {
