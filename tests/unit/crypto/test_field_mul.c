@@ -42,8 +42,7 @@ int main(void) {
     
     // 12345 * 67890 = 838102050
     ecdsa_field_t expected;
-    expected.n[0] = 838102050ULL;
-    expected.n[1] = expected.n[2] = expected.n[3] = expected.n[4] = 0;
+    ecdsa_field_set_int(&expected, 838102050U);
     
     print_limbs("a", &a);
     print_limbs("b", &b);

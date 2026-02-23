@@ -178,13 +178,15 @@ int dap_mkdir_with_parents(const char *a_dir_path)
     if(((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
             && (path[1] == ':') && DAP_IS_DIR_SEPARATOR(path[2])) {
         p = path + 3;
+    } else if (DAP_IS_DIR_SEPARATOR(path[0])) {
+        p = path + 1;
     }
 #else
-        if (DAP_IS_DIR_SEPARATOR(path[0])) {
-            p = path + 1;
-        }
+    if (DAP_IS_DIR_SEPARATOR(path[0])) {
+        p = path + 1;
+    }
 #endif
-        else
+    else
         p = path;
 
     do {
