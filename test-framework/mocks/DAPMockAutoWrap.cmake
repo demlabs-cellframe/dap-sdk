@@ -111,7 +111,7 @@ function(dap_mock_autowrap TARGET_NAME)
     # For STAGE 1 (execute_process) - use list
     set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
-        message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
+        # message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
         # Escape semicolons in source file list for env variable value;
         # unescaped ';' splits the cmake list, causing the 2nd file path
         # to be treated as a separate command argument (→ "permission denied")
