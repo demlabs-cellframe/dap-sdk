@@ -106,7 +106,7 @@ file( GLOB CRYPTO_SRCS
       src/GOST/*.c
       src/salsa2012/*.c
       src/seed/*.c
-      src/keccak/dap_keccak_ref.c
+      # keccak moved to module/hash
       src/msrln/*.c
       src/newhope/*.c
       src/sig_bliss/*.c
@@ -128,16 +128,46 @@ file( GLOB CRYPTO_SRCS
       src/hash/sha2-256/*.c
       ${SPHINCS_BASE_SRCS}
       ${SPHINCS_SRCS}
-) 
+)
+
+# ECDSA is now native implementation, enable by default
+option(BUILD_WITH_ECDSA "Build with native secp256k1/ECDSA support" ON)
 
 if (BUILD_WITH_TPS_TEST)
     set (BUILD_WITH_ECDSA ON)
 endif()
 
 if (BUILD_WITH_ECDSA)
-    file (GLOB ECDSA_SRC src/sig_ecdsa/*.c)
-    set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SRC})
+    # =========================================================================
+    # ECDSA - Native secp256k1 implementation
+    # Scalar multiplication implementations generated from template:
+    #   - ecdsa_scalar_mul_generic.c     - Portable C (__uint128_t)
+    #   - ecdsa_scalar_mul_x86_64_asm.c  - x86-64 inline assembly (MULQ)
+    #   - ecdsa_scalar_mul_avx2_bmi2.c   - AVX2+BMI2 (MULX/ADCX/ADOX)
+    #   - ecdsa_scalar_mul_neon.c        - ARM64 NEON (MUL/UMULH)
+    # =========================================================================
+    
+    # Generate arch-specific implementations and collect all ECDSA sources
+    add_subdirectory(src/sig_ecdsa)
+    
+    # Add all ECDSA sources (static + generated)
+    set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SOURCES})
+    
+    # SVE files need -march=armv8.2-a+sve for GCC 10 compatibility.
+    # Must be set here (parent scope) since dap_crypto target is built in this directory.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+        set_source_files_properties(
+            ${ECDSA_GEN_INCLUDE_DIR}/ecdsa_scalar_mul_sve.c
+            ${ECDSA_GEN_INCLUDE_DIR}/ecdsa_field_sve.c
+            PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+sve"
+        )
+    endif()
     add_definitions("-DDAP_ECDSA")
+    
+    # Include directories for generated files
+    include_directories(${ECDSA_GEN_INCLUDE_DIR})
+    
+    message(STATUS "[ECDSA] Native secp256k1 with arch-optimized scalar arithmetic")
 else()
     list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*ecdsa.c")
 endif()
@@ -165,7 +195,7 @@ file( GLOB CRYPTO_HEADERS
       src/GOST/*.h
       src/salsa2012/*.h
       src/seed/*.h
-      src/keccak/*.h
+      # keccak moved to module/hash
       src/msrln/*.h
       src/newhope/*.h
       src/sig_bliss/*.h
@@ -204,13 +234,10 @@ endif()
 enable_language(ASM)
 
 
-set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/keccak src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src/chipmunk src/hash/sha2-256 src include)
+set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src/chipmunk src/hash/sha2-256 src include)
 
-# XKCP removed - using native DAP Keccak implementation
-
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
-endif()
+# XKCP removed - using native DAP Keccak implementation (now in module/hash)
+# secp256k1 removed - using native DAP ECDSA implementation (sig_ecdsa/)
 
 
 option (DAP_PQLR "PQRL Intergration" OFF)
@@ -230,128 +257,7 @@ if ( DAP_PQLR)
 endif()
 
 
-# =============================================================================
-# Keccak SIMD optimizations - Code Generation
-# Generated files go to build directory to keep source tree clean
-# =============================================================================
-
-set(KECCAK_SIMD_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/keccak_simd_gen")
-file(MAKE_DIRECTORY ${KECCAK_SIMD_GEN_DIR})
-
-message(STATUS "[dap_crypto] Generating Keccak SIMD implementations from templates...")
-message(STATUS "[dap_crypto] Output directory: ${KECCAK_SIMD_GEN_DIR}")
-
-# Set up environment for code generation
-set(CODEGEN_ENV
-    "CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}"
-    "DAP_TPL_DIR=${CMAKE_SOURCE_DIR}/module/test/dap_tpl"
-)
-
-# Run code generation at configure time
-execute_process(
-    COMMAND ${CMAKE_COMMAND} -E env ${CODEGEN_ENV}
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/keccak/generate_simd.sh ${KECCAK_SIMD_GEN_DIR}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/keccak
-    RESULT_VARIABLE KECCAK_CODEGEN_RESULT
-    OUTPUT_VARIABLE KECCAK_CODEGEN_OUTPUT
-    ERROR_VARIABLE KECCAK_CODEGEN_ERROR
-)
-
-if(NOT KECCAK_CODEGEN_RESULT EQUAL 0)
-    message(WARNING "[dap_crypto] Keccak SIMD code generation failed:")
-    message(WARNING "  Exit code: ${KECCAK_CODEGEN_RESULT}")
-    message(WARNING "  Output: ${KECCAK_CODEGEN_OUTPUT}")
-    message(WARNING "  Error: ${KECCAK_CODEGEN_ERROR}")
-    message(WARNING "  Only reference implementation will be available")
-else()
-    message(STATUS "[dap_crypto] Keccak SIMD code generation successful")
-endif()
-
-# Collect generated SIMD sources and set compiler flags
-set(KECCAK_SIMD_SRCS "")
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686|i386")
-    # x86/x64: AVX-512, AVX2, SSE2 implementations (generated)
-    set(KECCAK_AVX512_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_avx512.c)
-    set(KECCAK_AVX2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_avx2.c)
-    set(KECCAK_SSE2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sse2.c)
-    
-    if(EXISTS ${KECCAK_AVX512_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_AVX512_SRC})
-        set_source_files_properties(${KECCAK_AVX512_SRC} PROPERTIES 
-            COMPILE_FLAGS "-mavx512f -mavx512dq -mavx512bw -mavx512vl"
-            GENERATED TRUE)
-    endif()
-    
-    if(EXISTS ${KECCAK_AVX2_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_AVX2_SRC})
-        set_source_files_properties(${KECCAK_AVX2_SRC} PROPERTIES 
-            COMPILE_FLAGS "-mavx2 -mbmi -mbmi2"
-            GENERATED TRUE)
-    endif()
-    
-    if(EXISTS ${KECCAK_SSE2_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SSE2_SRC})
-        set_source_files_properties(${KECCAK_SSE2_SRC} PROPERTIES 
-            COMPILE_FLAGS "-msse2"
-            GENERATED TRUE)
-    endif()
-    
-    message(STATUS "[dap_crypto] Keccak SIMD: AVX-512, AVX2, SSE2 enabled (generated)")
-    
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
-    # ARM64: NEON implementation (always available on ARM64)
-    # Note: arm64 is used by Apple, aarch64 by Linux
-    set(KECCAK_NEON_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_neon.c)
-    
-    if(EXISTS ${KECCAK_NEON_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_NEON_SRC})
-        set_source_files_properties(${KECCAK_NEON_SRC} PROPERTIES GENERATED TRUE)
-    endif()
-    
-    # SVE/SVE2 only on Linux ARM64 servers (AWS Graviton etc), not on Apple Silicon
-    if(NOT APPLE)
-        set(KECCAK_SVE_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve.c)
-        set(KECCAK_SVE2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve2.c)
-        
-        if(EXISTS ${KECCAK_SVE_SRC})
-            list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE_SRC})
-            set_source_files_properties(${KECCAK_SVE_SRC} PROPERTIES 
-                COMPILE_FLAGS "-march=armv8.2-a+sve"
-                GENERATED TRUE)
-        endif()
-        
-        if(EXISTS ${KECCAK_SVE2_SRC})
-            list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE2_SRC})
-            set_source_files_properties(${KECCAK_SVE2_SRC} PROPERTIES 
-                COMPILE_FLAGS "-march=armv8.2-a+sve2"
-                GENERATED TRUE)
-        endif()
-        
-        message(STATUS "[dap_crypto] Keccak SIMD: NEON, SVE, SVE2 enabled (generated)")
-    else()
-        message(STATUS "[dap_crypto] Keccak SIMD: NEON enabled (SVE/SVE2 disabled on Apple Silicon)")
-    endif()
-    
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
-    # ARM32: NEON implementation (generated)
-    set(KECCAK_NEON_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_neon.c)
-    
-    if(EXISTS ${KECCAK_NEON_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_NEON_SRC})
-        set_source_files_properties(${KECCAK_NEON_SRC} PROPERTIES 
-            COMPILE_FLAGS "-mfpu=neon"
-            GENERATED TRUE)
-    endif()
-    
-    message(STATUS "[dap_crypto] Keccak SIMD: NEON enabled (generated, ARM32)")
-endif()
-
-# Add generated SIMD sources to main crypto sources
-set(CRYPTO_SRCS ${CRYPTO_SRCS} ${KECCAK_SIMD_SRCS})
-
-# Add include path for generated headers (if any)
-include_directories(${KECCAK_SIMD_GEN_DIR})
+# Keccak SIMD optimizations moved to module/hash
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CRYPTO_SRCS} HEADERS ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
@@ -416,18 +322,12 @@ target_include_directories(dap_crypto PUBLIC
 
 # Store dependencies for final library - no linking of OBJECT targets  
 set(CRYPTO_LIBS "dap_crypto_kyber512")
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    list(APPEND CRYPTO_LIBS "secp256k1")
-endif()
+# secp256k1 removed - using native DAP ECDSA implementation
 if(UNIX)
     list(APPEND CRYPTO_LIBS "m")
 endif()
 
-target_link_libraries(dap_crypto dap_core dap_json)
-
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    target_link_libraries(dap_crypto secp256k1)
-endif()
+target_link_libraries(dap_crypto dap_core dap_json dap_hash dap_hash_table dap_config)
 
 if(UNIX)
   target_link_libraries(dap_crypto m)
@@ -439,10 +339,7 @@ set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external depende
 # shishua moved from 3rdparty to src/rand/shishua (native implementation)
 target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/rand/shishua)
 target_include_directories(dap_crypto PUBLIC src/Kyber/crypto_kem/kyber512/optimized)
-if (BUILD_WITH_ECDSA)
-    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/include)
-    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/secp256k1/src)
-endif()
+# Native ECDSA implementation in sig_ecdsa/ - no external includes needed
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()

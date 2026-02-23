@@ -30,7 +30,7 @@
 #include "dap_file_utils.h"
 #include "dap_time.h"
 #include "dap_dl.h"
-#include "dap_ht.h"
+// dap_ht.h moved to module/hash/table - timer code moved to module/timer
 
 #ifdef DAP_OS_ANDROID
   #include <android/log.h>
@@ -59,26 +59,7 @@
 
 typedef void (*print_callback) (unsigned a_off, const char *a_fmt, va_list va);
 
-#ifndef DAP_GLOBAL_IS_INT128
-const uint128_t uint128_0 = {};
-const uint128_t uint128_1 = {.hi = 0, .lo = 1};
-const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX};
-
-const uint256_t uint256_0 = {};
-const uint256_t uint256_1 = {.hi = {.lo = 0, .hi = 0}, .lo = {.lo = 1, .hi = 0}};
-const uint256_t uint256_max = {.hi = {.lo = UINT64_MAX, .hi = UINT64_MAX}, .lo = {.lo = UINT64_MAX, .hi = UINT64_MAX}};
-#else // DAP_GLOBAL_IS_INT128
-const uint128_t uint128_0 = 0;
-const uint128_t uint128_1 = 1;
-const uint128_t uint128_max = ((uint128_t)((int128_t)-1L));
-
-const uint256_t uint256_0 = {};
-const uint256_t uint256_1 = {.hi = uint128_0, .lo = uint128_1};
-const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
-#endif // DAP_GLOBAL_IS_INT128
-
-
-const uint512_t uint512_0 = {};
+// uint128_t/uint256_t/uint512_t constants moved to module/math/src/dap_math_const.c
 
 const char *c_error_memory_alloc = "Memory allocation error",
            *c_error_sanity_check = "Sanity check error",
@@ -456,6 +437,25 @@ void dap_common_deinit( ) {
         fclose(s_log_file);
         s_log_file = NULL;  // prevent double-close on repeated deinit or atexit
     }
+}
+
+/**
+ * @brief Get current log file handle
+ * @return FILE* pointer to log file, or NULL if not opened
+ */
+FILE *dap_log_get_file(void) {
+    return s_log_file;
+}
+
+/**
+ * @brief Reopen log file (for log rotation)
+ * @return 0 on success, -1 on error
+ */
+int dap_log_reopen(void) {
+    if (!s_log_file_path[0]) {
+        return -1;
+    }
+    return s_dap_log_open(s_log_file_path, true);
 }
 
 static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
@@ -1461,354 +1461,8 @@ int exec_silent(const char * a_cmd) {
 #endif
 }
 
-typedef struct dap_timer_interface {
-#ifdef DAP_OS_DARWIN
-    dispatch_source_t timer;
-#else
-    void *timer;
-#endif
-    dap_timer_callback_t callback;
-    void *param;
-    dap_ht_handle_t hh;
-} dap_timer_interface_t;
-static dap_timer_interface_t *s_timers_map;
-static pthread_rwlock_t s_timers_rwlock;
-
-void dap_interval_timer_init()
-{
-    s_timers_map = NULL;
-    pthread_rwlock_init(&s_timers_rwlock, NULL);
-}
-
-void dap_interval_timer_deinit() {
-    pthread_rwlock_wrlock(&s_timers_rwlock);
-    dap_timer_interface_t *l_cur_timer = NULL, *l_tmp;
-    dap_ht_foreach(s_timers_map, l_cur_timer, l_tmp) {
-        dap_ht_del(s_timers_map, l_cur_timer);
-        dap_interval_timer_disable(l_cur_timer->timer);
-        DAP_FREE(l_cur_timer);
-    }
-    pthread_rwlock_unlock(&s_timers_rwlock);
-    pthread_rwlock_destroy(&s_timers_rwlock);
-}
-
-#ifdef DAP_OS_LINUX
-static void s_posix_callback(union sigval a_arg)
-{
-    void *l_timer_ptr = a_arg.sival_ptr;
-#elif defined (DAP_OS_WINDOWS)
-static void CALLBACK s_win_callback(PVOID a_arg, BOOLEAN a_always_true)
-{
-    UNUSED(a_always_true);
-    void *l_timer_ptr = a_arg;
-#elif defined (DAP_OS_DARWIN)
-static void s_bsd_callback(void *a_arg)
-{
-     void *l_timer_ptr = &a_arg;
-#else
-#error "Timaer callback is undefined for your platform"
-#endif
-    if (!l_timer_ptr) {
-        log_it(L_ERROR, "Timer cb arg is NULL");
-        return;
-    }
-    pthread_rwlock_rdlock(&s_timers_rwlock);
-    dap_timer_interface_t *l_timer = NULL;
-    dap_ht_find_ptr(s_timers_map, l_timer_ptr, l_timer);
-    pthread_rwlock_unlock(&s_timers_rwlock);
-    if (l_timer && l_timer->callback) {
-        //log_it(L_INFO, "Fire %p", l_timer_ptr);
-        l_timer->callback(l_timer->param);
-    } else {
-        log_it(L_WARNING, "Timer '%p' is not initialized", l_timer_ptr);
-    }
-}
-
-/*!
- * \brief dap_interval_timer_create Create new timer object and set callback function to it
- * \param a_msec Timer period
- * \param a_callback Function to be called with timer period
- * \return pointer to timer object if success, otherwise return NULL
- */
-dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param) {
-    dap_timer_interface_t *l_timer_obj = DAP_NEW_Z(dap_timer_interface_t);
-    if (!l_timer_obj) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
-    l_timer_obj->callback   = a_callback;
-    l_timer_obj->param      = a_param;
-#if (defined _WIN32)
-    if ( !CreateTimerQueueTimer(&l_timer_obj->timer, NULL, (WAITORTIMERCALLBACK)s_win_callback,
-                                &l_timer_obj->timer, a_msec, a_msec, WT_EXECUTEINTIMERTHREAD | WT_EXECUTELONGFUNCTION) ) {
-        DAP_DELETE(l_timer_obj);
-        return NULL;
-    }
-#elif (defined DAP_OS_DARWIN)
-    dispatch_queue_t l_queue = dispatch_queue_create("tqueue", 0);
-    //todo: we should not use ^ like this, because this is clang-specific thing, but someone can use GCC on mac os
-    l_timer_obj->timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, l_queue);
-    dispatch_source_set_event_handler((l_timer_obj->timer), ^(void){ s_bsd_callback((void*)(l_timer_obj->timer)); });
-    dispatch_time_t start = dispatch_time(DISPATCH_TIME_NOW, a_msec * NSEC_PER_MSEC);
-    dispatch_source_set_timer(l_timer_obj->timer, start, a_msec * NSEC_PER_MSEC, 0);
-    dispatch_resume(l_timer_obj->timer);
-#else
-    struct sigevent l_sig_event = { };
-    l_sig_event.sigev_notify = SIGEV_THREAD;
-    l_sig_event.sigev_value.sival_ptr = &l_timer_obj->timer;
-    l_sig_event.sigev_notify_function = s_posix_callback;
-    if (timer_create(CLOCK_MONOTONIC, &l_sig_event, &(l_timer_obj->timer))) {
-        DAP_DELETE(l_timer_obj);
-        return NULL;
-    }
-    struct itimerspec l_period = { };
-    l_period.it_interval.tv_sec = l_period.it_value.tv_sec = a_msec / 1000;
-    l_period.it_interval.tv_nsec = l_period.it_value.tv_nsec = (a_msec % 1000) * 1000000;
-    if (timer_settime(l_timer_obj->timer, 0, &l_period, NULL)) {
-        timer_delete(l_timer_obj->timer);
-        DAP_DELETE(l_timer_obj);
-        return NULL;
-    }
-#endif
-    pthread_rwlock_wrlock(&s_timers_rwlock);
-    dap_ht_add_ptr(s_timers_map, timer, l_timer_obj);
-    pthread_rwlock_unlock(&s_timers_rwlock);
-    log_it(L_DEBUG, "Interval timer %p created", &l_timer_obj->timer);
-    return (dap_interval_timer_t)l_timer_obj->timer;
-}
-
-int dap_interval_timer_disable(dap_interval_timer_t a_timer) {
-#ifdef _WIN32
-    return !DeleteTimerQueueTimer(NULL, (HANDLE)a_timer, NULL);
-#elif defined (DAP_OS_DARWIN)
-    dispatch_source_cancel((dispatch_source_t)a_timer);
-    return 0;
-#else
-    return timer_delete((timer_t)a_timer);
-#endif
-}
-
-void dap_interval_timer_delete(dap_interval_timer_t a_timer) {
-    pthread_rwlock_wrlock(&s_timers_rwlock);
-    dap_timer_interface_t *l_timer = NULL;
-    dap_ht_find_ptr(s_timers_map, a_timer, l_timer);
-    if (l_timer) {
-        dap_ht_del(s_timers_map, l_timer);
-        dap_interval_timer_disable(l_timer->timer);
-        DAP_FREE(l_timer);
-    }
-    pthread_rwlock_unlock(&s_timers_rwlock);
-}
-
-ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err)
-{
-#ifdef DAP_OS_WINDOWS
-    if (!a_bufs || !a_bufs_num) {
-        return -1;
-    }
-    DWORD l_ret = 0;
-    bool l_is_aligned = false;
-    if (!l_is_aligned) {
-        for (iovec_t const *cur_buf = a_bufs, *end = a_bufs + a_bufs_num; cur_buf < end; ++cur_buf) {
-            DWORD l_read = 0;
-            if (ReadFile(a_hf, (char*)cur_buf->iov_base, cur_buf->iov_len, &l_read, 0) == FALSE) {
-                if (a_err)
-                    *a_err = GetLastError();
-                return -1;
-            }
-            l_ret += l_read;
-        }
-        return l_ret;
-    }
-
-    size_t l_total_bufs_size = 0;
-    for (iovec_t const *i = a_bufs, *end = a_bufs + a_bufs_num; i < end; ++i)
-        l_total_bufs_size += i->iov_len;
-    l_ret += l_total_bufs_size;
-
-    size_t l_page_size = dap_pagesize();
-    int l_pages_count = (l_total_bufs_size + l_page_size - 1) / l_page_size;
-    PFILE_SEGMENT_ELEMENT l_seg_arr = DAP_PAGE_ALMALLOC(sizeof(FILE_SEGMENT_ELEMENT) * (l_pages_count + 1)),
-            l_cur_seg = l_seg_arr;
-    /* FILE_SEGMENT_ELEMENT l_seg_arr[l_pages_count + 1], *l_cur_seg = l_seg_arr; */
-    for (iovec_t const *i = a_bufs, *end = a_bufs + a_bufs_num; i < end; ++i)
-        for (size_t j = 0; j < i->iov_len; j += l_page_size, ++l_cur_seg)
-            l_cur_seg->Buffer = PtrToPtr64((((char*)i->iov_base) + j));
-    l_cur_seg->Buffer = 0;
-
-    /* lol */
-    OVERLAPPED l_ol = {
-        .hEvent = CreateEvent(0, TRUE, FALSE, 0)
-    };
-
-    l_total_bufs_size = l_pages_count * l_page_size;
-    if (!ReadFileScatter(a_hf, l_seg_arr, l_total_bufs_size, 0, &l_ol)) {
-        DWORD l_err = GetLastError();
-        if (l_err != ERROR_IO_PENDING) {
-            if (a_err)
-                *a_err = GetLastError();
-            CloseHandle(l_ol.hEvent);
-            DAP_PAGE_ALFREE(l_seg_arr);
-            return -1;
-        }
-        if (!GetOverlappedResult(a_hf, &l_ol, &l_ret, TRUE)) {
-            if (a_err)
-                *a_err = GetLastError();
-            CloseHandle(l_ol.hEvent);
-            DAP_PAGE_ALFREE(l_seg_arr);
-            return -1;
-        }
-    }
-    CloseHandle(l_ol.hEvent);
-    DAP_PAGE_ALFREE(l_seg_arr);
-    return l_ret;
-#else
-    dap_errnum_t l_err = 0;
-    ssize_t l_res = readv(a_hf, a_bufs, a_bufs_num);
-    if (l_res == -1)
-        l_err = errno;
-    if (a_err)
-        *a_err = l_err;
-    return l_res;
-#endif
-}
-
-ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err)
-{
-#ifdef DAP_OS_WINDOWS
-    if (!a_bufs || !a_bufs_num) {
-        log_it(L_ERROR, "Bad input data");
-        return -1;
-    }
-    DWORD l_ret = 0;
-    bool l_is_aligned = false;
-    /* For a buffer which is not aligned to the page size, we use regular I/O */
-    if (!l_is_aligned) {
-        for (iovec_t const *cur_buf = a_bufs, *end = a_bufs + a_bufs_num; cur_buf < end; ++cur_buf) {
-            DWORD l_written = 0;
-            if (!WriteFile(a_hf, (char const*)cur_buf->iov_base, cur_buf->iov_len, &l_written, NULL)) {
-                if (a_err)
-                    *a_err = GetLastError();
-                return -1;
-            }
-            l_ret += l_written;
-        }
-        return l_ret;
-    }
-
-    size_t l_total_bufs_size = 0, l_file_size = 0;
-    for (iovec_t const *i = a_bufs, *end = a_bufs + a_bufs_num; i < end; ++i)
-        l_total_bufs_size += i->iov_len;
-    l_ret += l_total_bufs_size;
-
-    size_t l_page_size = dap_pagesize();
-    int l_pages_count = (l_total_bufs_size + l_page_size - 1) / l_page_size;
-    PFILE_SEGMENT_ELEMENT l_seg_arr = DAP_PAGE_ALMALLOC(sizeof(FILE_SEGMENT_ELEMENT) * (l_pages_count + 1)),
-            l_cur_seg = l_seg_arr;
-    int l_idx = 0;
-    for (iovec_t const *cur_buf = a_bufs; l_idx++ < a_bufs_num; ++cur_buf)
-        for (size_t j = 0; j < cur_buf->iov_len; j += l_page_size)
-            l_cur_seg++->Buffer = PtrToPtr64((((char*)cur_buf->iov_base) + j));
-    l_cur_seg->Buffer = 0;
-
-    /* lol */
-    OVERLAPPED l_ol = {
-        .Offset = 0xFFFFFFFF, .OffsetHigh = 0xFFFFFFFF,
-        .hEvent = CreateEvent(0, TRUE, FALSE, 0)
-    };
-
-    /* Let's check whether it's file tail */
-    if (l_total_bufs_size & (l_page_size - 1)) {
-        l_file_size = l_total_bufs_size;
-        l_total_bufs_size = l_pages_count * l_page_size;
-    }
-
-    DWORD l_err;
-    l_err = GetLastError();
-    if (!WriteFileGather(a_hf, l_seg_arr, l_total_bufs_size * 3, 0, &l_ol)) {
-        l_err = GetLastError();
-        if (l_err != ERROR_IO_PENDING) {
-            if (a_err)
-                *a_err = l_err;
-            DAP_PAGE_ALFREE(l_seg_arr);
-            CloseHandle(l_ol.hEvent);
-            log_it(L_ERROR, "Write file err: %lu", l_err);
-            return -1;
-        }
-        DWORD l_tmp;
-        if (!GetOverlappedResult(a_hf, &l_ol, &l_tmp, TRUE)) {
-            l_err = GetLastError();
-            if (a_err)
-                *a_err = l_err;
-            DAP_PAGE_ALFREE(l_seg_arr);
-            CloseHandle(l_ol.hEvent);
-            log_it(L_ERROR, "Async writing failure, err %lu", l_err);
-            return -1;
-        }
-        if (l_tmp < l_ret)
-            l_ret = l_tmp;
-    }
-    CloseHandle(l_ol.hEvent);
-    DAP_PAGE_ALFREE(l_seg_arr);
-    /* Set the proper file size if needed */
-    if (l_file_size) {
-        HANDLE l_hf = CreateFile(a_filename, GENERIC_WRITE,
-                                 FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                 0, OPEN_EXISTING,
-                                 FILE_ATTRIBUTE_NORMAL | FILE_FLAG_RANDOM_ACCESS,
-                                 0);
-        if (l_hf == INVALID_HANDLE_VALUE) {
-            if (a_err)
-                *a_err = GetLastError();
-            return -1;
-        }
-
-        LARGE_INTEGER l_offs = { };
-        l_offs.QuadPart = l_file_size;
-        if (!SetFilePointerEx(l_hf, l_offs, &l_offs, FILE_BEGIN)) {
-            CloseHandle(l_hf);
-            if (a_err)
-                *a_err = GetLastError();
-            log_it(L_ERROR, "File pointer setting err: %lu", l_err);
-            return -1;
-        }
-        if (!SetEndOfFile(l_hf)) {
-            if (a_err)
-                *a_err = GetLastError();
-            CloseHandle(l_hf);
-            log_it(L_ERROR, "EOF setting err: %lu", l_err);
-            return -1;
-        }
-        CloseHandle(l_hf);
-    }
-    return l_ret;
-#else
-    UNUSED(a_filename);
-    dap_errnum_t l_err = 0;
-    ssize_t l_res = writev(a_hf, a_bufs, a_bufs_num);
-    if (l_res == -1)
-        l_err = errno;
-    if (a_err)
-        *a_err = l_err;
-    return l_res;
-#endif
-}
-
-static void s_dap_common_log_cleanner_interval(void *a_max_size) {
-    size_t  l_max_size = DAP_POINTER_TO_SIZE(a_max_size),
-            l_log_size = ftello(s_log_file);
-    switch (l_log_size) {
-        case -1:    return log_it(L_ERROR, "Can't tell log file size, error %d :\"%s\"", errno, dap_strerror(errno));
-        case 0:     return log_it(L_ERROR, "Log file is empty");
-        default:
-            if ( l_log_size / 1048576 > l_max_size && s_dap_log_open(s_log_file_path, true) )
-                return log_it(L_ERROR, "Can't reopen log file \"%s\"", s_log_file_path);
-    }
-    
-}
-void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
-    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
-}
+// dap_readv/dap_writev moved to module/io/dap_io_ops.c
+// dap_common_enable_cleaner_log moved to module/daemon/dap_daemon.c
 
 // Node address functions moved to module/net/common/dap_net_common.c
 
