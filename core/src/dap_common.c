@@ -409,6 +409,18 @@ void dap_common_deinit( ) {
         fclose(l_logf);
 }
 
+#ifdef DAP_OS_WINDOWS
+bool dap_is_wine(void)
+{
+    static int s_cached = -1;
+    if (s_cached < 0) {
+        HMODULE l_ntdll = GetModuleHandleA("ntdll.dll");
+        s_cached = (l_ntdll && GetProcAddress(l_ntdll, "wine_get_version")) ? 1 : 0;
+    }
+    return s_cached == 1;
+}
+#endif
+
 /**
  * @brief _log_it Core log function. Level tag, module tag and optional location
  *        are expected to be already embedded in a_fmt by calling macros.

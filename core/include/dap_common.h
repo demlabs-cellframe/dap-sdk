@@ -1069,6 +1069,10 @@ DAP_INLINE uint64_t dap_hex_to_uint(const char *arr, short size) {
 
 extern char *g_sys_dir_path;
 
+#ifdef DAP_OS_WINDOWS
+bool dap_is_wine(void);
+#endif
+
 //int dap_common_init( const char * a_log_file );
 int dap_common_init( const char *console_title, const char *a_log_file );
 int wdap_common_init( const char *console_title, const wchar_t *a_wlog_file );

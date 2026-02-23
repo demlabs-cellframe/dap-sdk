@@ -343,21 +343,24 @@ size_t     l_upper_limit_of_db_size = 16;
                                                                               according to number of supported groups */
 
                                                                             /* We set "unlim" for all MDBX characteristics at the moment */
-#ifdef DAP_OS_WINDOWS
-    /* Wine cannot extend memory-mapped files at runtime (MDBX_UNABLE_EXTEND_MAPSIZE),
-     * so pre-allocate the full map size up front to avoid any resizing */
-    if ( MDBX_SUCCESS != (rc = mdbx_env_set_geometry(s_mdbx_env,
-            l_upper_limit_of_db_size, l_upper_limit_of_db_size,
-            l_upper_limit_of_db_size, 0, 0, -1)) )
-#else
-    if ( MDBX_SUCCESS != (rc = mdbx_env_set_geometry(s_mdbx_env, -1, -1, l_upper_limit_of_db_size, -1, -1, -1)) )
-#endif
-        return  log_it (L_CRITICAL, "mdbx_env_set_geometry (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
-
     MDBX_env_flags_t l_env_flags = MDBX_CREATE | MDBX_SAFE_NOSYNC;
 #ifdef DAP_OS_WINDOWS
-    l_env_flags |= MDBX_EXCLUSIVE;
+    bool l_is_wine = dap_is_wine();
+    if (l_is_wine) {
+        log_it(L_WARNING, "Running under Wine — applying MDBX compatibility workarounds");
+        /* Wine cannot extend memory-mapped files (MDBX_UNABLE_EXTEND_MAPSIZE)
+         * and lacks shared-memory/locking APIs (error 775), so pre-allocate
+         * the full map and open in exclusive mode */
+        rc = mdbx_env_set_geometry(s_mdbx_env,
+                l_upper_limit_of_db_size, l_upper_limit_of_db_size,
+                l_upper_limit_of_db_size, 0, 0, -1);
+        l_env_flags |= MDBX_EXCLUSIVE;
+    } else
 #endif
+        rc = mdbx_env_set_geometry(s_mdbx_env, -1, -1, l_upper_limit_of_db_size, -1, -1, -1);
+    if (MDBX_SUCCESS != rc)
+        return  log_it (L_CRITICAL, "mdbx_env_set_geometry (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
+
     if ( MDBX_SUCCESS != (rc = mdbx_env_open(s_mdbx_env, s_db_path, l_env_flags, 0664)) )
         return  log_it (L_CRITICAL, "mdbx_env_open (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
 
