@@ -61,6 +61,31 @@ TEMPLATE_FILE="$OUTPUT_DIR/${BASENAME}_wrappers_template.c"
 MACROS_FILE="$OUTPUT_DIR/${BASENAME}_mock_macros.h"
 LINKER_WRAPPER_FILE="$OUTPUT_DIR/dap_mock_linker_wrapper.h"
 
+# Skip regeneration if outputs are up-to-date (all outputs newer than all inputs).
+# Inputs = source files + template files + generator scripts.
+# Saves ~2s per target on repeated cmake configure with no source changes.
+_outputs_up_to_date() {
+    local _stamp="$OUTPUT_DIR/.mock_gen_stamp"
+    [ ! -f "$_stamp" ] && return 1
+    [ ! -f "$WRAP_FILE" ] && return 1
+    [ ! -f "$MACROS_FILE" ] && return 1
+    [ ! -f "$LINKER_WRAPPER_FILE" ] && return 1
+
+    # Check source files
+    for _src in "${SOURCE_FILES[@]}"; do
+        [ -f "$_src" ] && [ "$_src" -nt "$_stamp" ] && return 1
+    done
+    # Check templates and generator scripts
+    local _changed
+    _changed=$(find "$TEMPLATES_DIR" "$LIB_DIR" -newer "$_stamp" -type f 2>/dev/null | head -1)
+    [ -n "$_changed" ] && return 1
+    return 0
+}
+
+if _outputs_up_to_date; then
+    exit 0
+fi
+
 # Check if verbose output is enabled (default: disabled for performance)
 VERBOSE="${DAP_MOCK_VERBOSE:-0}"
 
@@ -211,18 +236,24 @@ generate_linker_wrapper_header "$LINKER_WRAPPER_FILE" || {
 # Step 9: Generate wrapper template file
 generate_template_file "$TEMPLATE_FILE" "$MOCK_FUNCTIONS" "$WRAPPER_FUNCTIONS"
 
+# Mark generation timestamp for incremental rebuild detection
+touch "$OUTPUT_DIR/.mock_gen_stamp"
+
+# Cleanup cached dap_tpl engine (built once, reused across all template calls above)
+dap_tpl_cleanup
+
 # Final summary (only if verbose)
 if [ "$VERBOSE" = "1" ]; then
-    print_header "✅ Generation Complete!"
+    print_header "Generation Complete!"
     echo ""
     echo "Generated files:"
-    echo "  📄 $WRAP_FILE"
-    echo "  📄 $CMAKE_FILE"
+    echo "  $WRAP_FILE"
+    echo "  $CMAKE_FILE"
     if [ -f "$MACROS_FILE" ]; then
-        echo "  📄 $MACROS_FILE"
+        echo "  $MACROS_FILE"
     fi
     if [ -f "$TEMPLATE_FILE" ]; then
-        echo "  📄 $TEMPLATE_FILE"
+        echo "  $TEMPLATE_FILE"
     fi
     echo ""
     echo "To use in CMakeLists.txt:"
