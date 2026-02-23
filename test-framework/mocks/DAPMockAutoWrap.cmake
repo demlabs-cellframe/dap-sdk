@@ -112,13 +112,17 @@ function(dap_mock_autowrap TARGET_NAME)
     set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
         message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
+        # Escape semicolons in source file list for env variable value;
+        # unescaped ';' splits the cmake list, causing the 2nd file path
+        # to be treated as a separate command argument (→ "permission denied")
+        string(REPLACE ";" "\\;" ALL_SOURCES_ENV "${ALL_SOURCES}")
         # Use cmake -E env to set environment variables (works with CMake 3.10+)
         # Pass CMAKE_SYSTEM_NAME so script can detect target platform (not just host)
         # Pass source files for __wrap_ signature extraction on macOS
         set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env 
             "DAP_TPL_DIR=${DAP_TPL_DIR}" 
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
-            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES}"
+            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES_ENV}"
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     endif()
     
@@ -139,7 +143,7 @@ function(dap_mock_autowrap TARGET_NAME)
         set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env 
             "DAP_TPL_DIR=${DAP_TPL_DIR}"
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
-            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES}"
+            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES_ENV}"
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     else()
         set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
