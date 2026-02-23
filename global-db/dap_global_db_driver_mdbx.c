@@ -343,8 +343,15 @@ size_t     l_upper_limit_of_db_size = 16;
                                                                               according to number of supported groups */
 
                                                                             /* We set "unlim" for all MDBX characteristics at the moment */
-
+#ifdef DAP_OS_WINDOWS
+    /* Wine cannot extend memory-mapped files at runtime (MDBX_UNABLE_EXTEND_MAPSIZE),
+     * so pre-allocate the full map size up front to avoid any resizing */
+    if ( MDBX_SUCCESS != (rc = mdbx_env_set_geometry(s_mdbx_env,
+            l_upper_limit_of_db_size, l_upper_limit_of_db_size,
+            l_upper_limit_of_db_size, 0, 0, -1)) )
+#else
     if ( MDBX_SUCCESS != (rc = mdbx_env_set_geometry(s_mdbx_env, -1, -1, l_upper_limit_of_db_size, -1, -1, -1)) )
+#endif
         return  log_it (L_CRITICAL, "mdbx_env_set_geometry (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
 
     MDBX_env_flags_t l_env_flags = MDBX_CREATE | MDBX_SAFE_NOSYNC;
