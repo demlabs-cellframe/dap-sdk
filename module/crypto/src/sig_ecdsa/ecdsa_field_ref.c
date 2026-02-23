@@ -780,7 +780,13 @@ void ecdsa_field_clear(ecdsa_field_t *r) {
 
 void ecdsa_field_set_int(ecdsa_field_t *r, int a) {
     ecdsa_field_clear(r);
-    r->n[0] = (ecdsa_field_limb_t)(a >= 0 ? a : 0);
+    uint32_t v = (uint32_t)(a >= 0 ? a : 0);
+#ifdef ECDSA_FIELD_26BIT
+    r->n[0] = v & 0x3FFFFFFU;
+    r->n[1] = v >> 26;
+#else
+    r->n[0] = v;
+#endif
 }
 
 void ecdsa_field_copy(ecdsa_field_t *r, const ecdsa_field_t *a) {
