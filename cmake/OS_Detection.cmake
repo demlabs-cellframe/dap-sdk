@@ -110,7 +110,7 @@ if(UNIX)
 endif()
 
 # Base warning flags (compatible with both GCC and Clang on all platforms)
-set(CFLAGS_WARNINGS "-Wall -Wextra -Werror -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+set(CFLAGS_WARNINGS "-Wall -Wextra -Werror -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers")
 
 # Add GCC-specific flags only when using GCC
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
