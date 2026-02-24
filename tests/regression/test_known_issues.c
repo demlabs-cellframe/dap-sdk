@@ -26,6 +26,7 @@
 #include "dap_json.h"
 #include "dap_hash.h"
 #include "dap_enc_key.h"
+#include "dap_enc_falcon.h"
 #include "dap_sign.h"
 #include "../fixtures/utilities/test_helpers.h"
 
@@ -292,6 +293,59 @@ static bool s_test_multisign_merge_failure_regression(void) {
 }
 
 /**
+ * @brief Regression test: Falcon signing must work in TREE and DYNAMIC modes
+ * @details Validates sign/verify roundtrip for all supported kinds and degrees
+ */
+static bool s_test_falcon_sign_modes_regression(void) {
+    log_it(L_INFO, "Testing Falcon sign regression (DYNAMIC/TREE)");
+
+    static const uint8_t l_seed[] = "seed";
+    static const uint8_t l_msg[] = "falcon-sign-mode-regression";
+    falcon_sign_degree_t l_degrees[] = { FALCON_512, FALCON_1024 };
+    falcon_sign_type_t l_types[] = { FALCON_DYNAMIC, FALCON_TREE };
+    falcon_kind_t l_kinds[] = { FALCON_COMPRESSED, FALCON_PADDED, FALCON_CT };
+
+    for (size_t i = 0; i < sizeof(l_degrees) / sizeof(l_degrees[0]); i++) {
+        for (size_t j = 0; j < sizeof(l_types) / sizeof(l_types[0]); j++) {
+            for (size_t k = 0; k < sizeof(l_kinds) / sizeof(l_kinds[0]); k++) {
+                dap_enc_key_t l_key = {0};
+                falcon_signature_t l_sig = {0};
+
+                dap_enc_sig_falcon_set_degree(l_degrees[i]);
+                dap_enc_sig_falcon_set_type(l_types[j]);
+                dap_enc_sig_falcon_set_kind(l_kinds[k]);
+                dap_enc_sig_falcon_key_new(&l_key);
+                dap_enc_sig_falcon_key_new_generate(&l_key, NULL, 0, l_seed, sizeof(l_seed) - 1, 0);
+
+                int l_sign_rc = dap_enc_sig_falcon_get_sign(&l_key, l_msg, sizeof(l_msg) - 1, &l_sig, sizeof(l_sig));
+                if (l_sign_rc != 0) {
+                    log_it(L_ERROR, "Falcon sign failed (degree=%u type=%u kind=%u rc=%d)",
+                           (unsigned)l_degrees[i], (unsigned)l_types[j], (unsigned)l_kinds[k], l_sign_rc);
+                    falcon_signature_delete(&l_sig);
+                    dap_enc_sig_falcon_key_delete(&l_key);
+                    return false;
+                }
+
+                int l_verify_rc = dap_enc_sig_falcon_verify_sign(&l_key, l_msg, sizeof(l_msg) - 1, &l_sig, sizeof(l_sig));
+                if (l_verify_rc != 0) {
+                    log_it(L_ERROR, "Falcon verify failed (degree=%u type=%u kind=%u rc=%d)",
+                           (unsigned)l_degrees[i], (unsigned)l_types[j], (unsigned)l_kinds[k], l_verify_rc);
+                    falcon_signature_delete(&l_sig);
+                    dap_enc_sig_falcon_key_delete(&l_key);
+                    return false;
+                }
+
+                falcon_signature_delete(&l_sig);
+                dap_enc_sig_falcon_key_delete(&l_key);
+            }
+        }
+    }
+
+    log_it(L_INFO, "Falcon sign regression test passed");
+    return true;
+}
+
+/**
  * @brief Main test function for regression tests
  */
 int main(void) {
@@ -310,6 +364,7 @@ int main(void) {
     l_all_passed &= s_test_json_parsing_edge_cases_regression();
     l_all_passed &= s_test_integer_overflow_regression();
     l_all_passed &= s_test_multisign_merge_failure_regression();
+    l_all_passed &= s_test_falcon_sign_modes_regression();
     
     dap_test_sdk_cleanup();
     
