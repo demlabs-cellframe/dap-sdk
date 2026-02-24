@@ -151,6 +151,10 @@ generate_arch \
     "is_avx512=1" \
     "USE_AVX512_MASK=1"
 
+# dap_tpl exports env vars that persist across calls — unset AVX-512-only
+# variables so they don't leak into ARM template generation
+unset USE_AVX512_MASK is_avx512 CMPEQ_EPI8_MASK MOVEMASK_TYPE 2>/dev/null || true
+
 echo ""
 echo "=== Generating ARM SIMD implementations ==="
 
