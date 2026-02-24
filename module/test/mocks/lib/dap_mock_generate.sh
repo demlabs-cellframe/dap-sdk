@@ -248,7 +248,7 @@ generate_macros_file() {
     prepare_map_impl_cond_1_data "$MAX_ARGS_COUNT" "${PARAM_COUNTS_ARRAY[@]}"
     prepare_map_impl_cond_data "${PARAM_COUNTS_ARRAY[@]}"
     
-    # Convert PARAM_COUNTS_ARRAY to pipe-separated string for dap_tpl
+    # Convert saved param counts to pipe-separated string for dap_tpl for loop
     PARAM_COUNTS_ARRAY_PIPE=$(IFS='|'; echo "${local_param_counts[*]}")
     
     # Generate macros header from master template
