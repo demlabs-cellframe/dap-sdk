@@ -1,7 +1,30 @@
 /*
- * Test for dap_arena refcounted mode
- * 
- * Demonstrates hybrid approach with dap_arena_opt_t
+ * Authors:
+ * Cellframe SDK Team
+ * DeM Labs Inc.   https://demlabs.net
+ * DeM Labs Open source community https://gitlab.demlabs.net/cellframe
+ * Copyright  (c) 2017-2025
+ * All rights reserved.
+
+ This file is part of DAP (Distributed Applications Platform) the open source project
+
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    DAP is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+/**
+ * @file test_arena_refcount.c
+ * @brief Test for dap_arena refcounted mode
  */
 
 #include <stdio.h>
@@ -63,7 +86,7 @@ static void s_test_basic_refcount(void)
     // Cleanup
     dap_arena_free(l_arena);
     
-    log_it(L_INFO, "✓ Basic refcount test passed");
+    log_it(L_INFO, "Basic refcount test passed");
 }
 
 /**
@@ -104,7 +127,7 @@ static void s_test_stats_refcount(void)
     
     dap_arena_free(l_arena);
     
-    log_it(L_INFO, "✓ Stats test passed");
+    log_it(L_INFO, "Stats test passed");
 }
 
 /**
@@ -131,12 +154,12 @@ static void s_test_comparison(void)
     // Standard arena: simple alloc
     void *l_ptr_std = dap_arena_alloc(l_arena_std, 128);
     dap_assert(l_ptr_std != NULL, "Standard alloc works");
-    log_it(L_INFO, "✓ Standard arena: simple alloc works");
+    log_it(L_INFO, "Standard arena: simple alloc works");
     
     // Refcounted arena: extended alloc
     dap_arena_alloc_ex_t l_result_ref;
     dap_assert(dap_arena_alloc_ex(l_arena_ref, 128, &l_result_ref), "Refcounted alloc works");
-    log_it(L_INFO, "✓ Refcounted arena: extended alloc works");
+    log_it(L_INFO, "Refcounted arena: extended alloc works");
     
     // Standard arena: can still use simple alloc
     void *l_ptr_std2 = dap_arena_alloc(l_arena_std, 256);
@@ -145,12 +168,12 @@ static void s_test_comparison(void)
     // Refcounted arena: can also use simple alloc (for backward compatibility)
     void *l_ptr_ref_simple = dap_arena_alloc(l_arena_ref, 256);
     dap_assert(l_ptr_ref_simple != NULL, "Refcounted arena: simple alloc works too");
-    log_it(L_INFO, "✓ Refcounted arena: backward compatible with simple alloc");
+    log_it(L_INFO, "Refcounted arena: backward compatible with simple alloc");
     
     dap_arena_free(l_arena_std);
     dap_arena_free(l_arena_ref);
     
-    log_it(L_INFO, "✓ Comparison test passed");
+    log_it(L_INFO, "Comparison test passed");
 }
 
 /**
@@ -196,7 +219,7 @@ static void s_test_growth_options(void)
     
     dap_arena_free(l_arena);
     
-    log_it(L_INFO, "✓ Growth options test passed");
+    log_it(L_INFO, "Growth options test passed");
 }
 
 /**
@@ -235,7 +258,7 @@ static void s_test_reset_chain_refcount(void)
     
     dap_arena_free(l_arena);
     
-    log_it(L_INFO, "✓ Refcounted reset-chain regression test passed");
+    log_it(L_INFO, "Refcounted reset-chain regression test passed");
 }
 
 int main(int argc, char **argv)
@@ -245,20 +268,13 @@ int main(int argc, char **argv)
     
     dap_log_level_set(L_INFO);
     
-    log_it(L_INFO, "\n═══════════════════════════════════════════════════════");
-    log_it(L_INFO, "  DAP Arena Refcount Test Suite");
-    log_it(L_INFO, "  Hybrid approach with dap_arena_opt_t");
-    log_it(L_INFO, "═══════════════════════════════════════════════════════");
+    dap_print_module_name("dap_arena_refcount");
     
     s_test_basic_refcount();
     s_test_stats_refcount();
     s_test_comparison();
     s_test_growth_options();
     s_test_reset_chain_refcount();
-    
-    log_it(L_INFO, "\n═══════════════════════════════════════════════════════");
-    log_it(L_INFO, "  ✅ ALL TESTS PASSED");
-    log_it(L_INFO, "═══════════════════════════════════════════════════════\n");
     
     return 0;
 }
