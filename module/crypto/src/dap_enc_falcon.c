@@ -81,12 +81,11 @@ void dap_enc_sig_falcon_key_new_generate(dap_enc_key_t *a_key, const void *kex_b
     size_t l_tmp[FALCON_TMPSIZE_KEYGEN(l_logn)];
     falcon_private_key_t *l_skey = NULL;
     falcon_public_key_t *l_pkey = NULL;
+    falcon_private_key_t *l_old_skey = (falcon_private_key_t *)a_key->priv_key_data;
+    falcon_public_key_t *l_old_pkey = (falcon_public_key_t *)a_key->pub_key_data;
 
-    a_key->pub_key_data_size = sizeof(falcon_public_key_t);
-    a_key->priv_key_data_size = sizeof(falcon_private_key_t);
-
-    l_skey = DAP_NEW_Z_SIZE_RET_IF_FAIL(falcon_private_key_t, a_key->priv_key_data_size);
-    l_pkey = DAP_NEW_Z_SIZE_RET_IF_FAIL(falcon_public_key_t, a_key->pub_key_data_size, l_skey);
+    l_skey = DAP_NEW_Z_SIZE_RET_IF_FAIL(falcon_private_key_t, sizeof(falcon_private_key_t));
+    l_pkey = DAP_NEW_Z_SIZE_RET_IF_FAIL(falcon_public_key_t, sizeof(falcon_public_key_t), l_skey);
     l_skey->data = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, FALCON_PRIVKEY_SIZE(l_logn), l_skey, l_pkey);
     l_pkey->data = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, FALCON_PUBKEY_SIZE(l_logn), l_skey->data, l_skey, l_pkey);
 
@@ -119,8 +118,12 @@ void dap_enc_sig_falcon_key_new_generate(dap_enc_key_t *a_key, const void *kex_b
         DAP_DEL_MULTY(l_skey->data, l_skey, l_pkey->data, l_pkey);
         return;
     }
+
+    falcon_private_and_public_keys_delete(l_old_skey, l_old_pkey);
     a_key->priv_key_data = l_skey;
     a_key->pub_key_data = l_pkey;
+    a_key->priv_key_data_size = sizeof(falcon_private_key_t);
+    a_key->pub_key_data_size = sizeof(falcon_public_key_t);
 }
 
 int dap_enc_sig_falcon_get_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, void* a_sig, const size_t a_signature_size)
