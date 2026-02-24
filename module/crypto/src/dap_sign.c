@@ -1354,8 +1354,8 @@ int dap_sign_benchmark_aggregation(
         case SIG_TYPE_CHIPMUNK:
         {
             // Создаем реальные тестовые подписи для агрегации
-            dap_sign_t **test_signatures = DAP_NEW_Z_SIZE(dap_sign_t*, a_signatures_count);
-            dap_enc_key_t **test_keys = DAP_NEW_Z_SIZE(dap_enc_key_t*, a_signatures_count);
+            dap_sign_t **test_signatures = DAP_NEW_Z_COUNT(dap_sign_t*, a_signatures_count);
+            dap_enc_key_t **test_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, a_signatures_count);
             
             if (!test_signatures || !test_keys) {
                 log_it(L_ERROR, "Failed to allocate memory for benchmark");
@@ -1383,13 +1383,10 @@ int dap_sign_benchmark_aggregation(
                     return -3;
                 }
                 
-                // Создаем подпись
-                size_t signature_size = 0;
-                dap_sign_create_output(test_keys[i], test_message, test_message_len, NULL, &signature_size);
-                
-                test_signatures[i] = DAP_NEW_Z_SIZE(dap_sign_t, signature_size);
+                // Создаем полную DAP-подпись (header + pkey + sign)
+                test_signatures[i] = dap_sign_create(test_keys[i], test_message, test_message_len);
                 if (!test_signatures[i]) {
-                    log_it(L_ERROR, "Failed to allocate signature %u", i);
+                    log_it(L_ERROR, "Failed to create test signature %u", i);
                     // Cleanup
                     for (uint32_t j = 0; j < i; j++) {
                         if (test_signatures[j]) DAP_DELETE(test_signatures[j]);
@@ -1399,13 +1396,6 @@ int dap_sign_benchmark_aggregation(
                     DAP_DELETE(test_signatures);
                     DAP_DELETE(test_keys);
                     return -3;
-                }
-                
-                size_t actual_size = signature_size;
-                int sign_result = dap_sign_create_output(test_keys[i], test_message, test_message_len, 
-                                                        test_signatures[i], &actual_size);
-                if (sign_result != 0) {
-                    log_it(L_WARNING, "Failed to create test signature %u", i);
                 }
             }
             
