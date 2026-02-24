@@ -161,8 +161,6 @@
 #define DAP_CAST_PTR(t,v) v
 #endif
 
-#define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
-
 // Constructor/Destructor attributes for automatic initialization/cleanup
 #ifdef _MSC_VER
     // MSVC doesn't support __attribute__ constructor/destructor

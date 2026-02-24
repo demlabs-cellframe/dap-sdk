@@ -34,7 +34,6 @@
 #pragma once
 
 #include "dap_mock.h"
-#include "dap_mock_linker_wrapper.h"
 #include "dap_common.h"
 #include "dap_config.h"
 
@@ -53,40 +52,13 @@ extern "C" {
  * Can be customized in tests if needed.
  */
 DAP_MOCK_CUSTOM(void, log_it,
-    PARAM(int, a_level),
-    PARAM(const char *, a_tag),
-    PARAM(const char *, a_fmt),
-    PARAM_VARARGS()
-) {
-    // Default: pass through to real logging
-    __real_log_it(a_level, a_tag, a_fmt, DAP_MOCK_VARARGS);
-}
-
-// ============================================================================
-// Memory Allocation Mocks
-// ============================================================================
-
-/**
- * @brief Mock for DAP_NEW_Z (zero-initialized allocation)
- * 
- * By default, passes through to real allocation.
- */
-DAP_MOCK_CUSTOM(void *, DAP_NEW_Z_impl,
-    PARAM(size_t, a_size)
-) {
-    return __real_DAP_NEW_Z_impl(a_size);
+    (int a_level, const char *a_tag, const char *a_fmt, ...))
+    UNUSED(a_level);
+    UNUSED(a_tag);
+    UNUSED(a_fmt);
 }
 
 /**
- * @brief Mock for DAP_DELETE (deallocation)
- * 
- * By default, passes through to real deallocation.
- */
-DAP_MOCK_CUSTOM(void, DAP_DELETE_impl,
-    PARAM(void *, a_ptr)
-) {
-    __real_DAP_DELETE_impl(a_ptr);
-}
 
 // ============================================================================
 // Configuration Mocks
@@ -98,12 +70,10 @@ DAP_MOCK_CUSTOM(void, DAP_DELETE_impl,
  * By default, returns the default value (pass-through behavior).
  */
 DAP_MOCK_CUSTOM(bool, dap_config_get_item_bool_default,
-    PARAM(const dap_config_t *, a_config),
-    PARAM(const char *, a_section),
-    PARAM(const char *, a_key),
-    PARAM(bool, a_default)
-) {
-    // Default: return the default value
+    (const dap_config_t *a_config, const char *a_section, const char *a_key, bool a_default))
+    UNUSED(a_config);
+    UNUSED(a_section);
+    UNUSED(a_key);
     return a_default;
 }
 
@@ -113,11 +83,10 @@ DAP_MOCK_CUSTOM(bool, dap_config_get_item_bool_default,
  * By default, returns the default value.
  */
 DAP_MOCK_CUSTOM(const char *, dap_config_get_item_str_default,
-    PARAM(const dap_config_t *, a_config),
-    PARAM(const char *, a_section),
-    PARAM(const char *, a_key),
-    PARAM(const char *, a_default)
-) {
+    (const dap_config_t *a_config, const char *a_section, const char *a_key, const char *a_default))
+    UNUSED(a_config);
+    UNUSED(a_section);
+    UNUSED(a_key);
     return a_default;
 }
 
@@ -127,11 +96,10 @@ DAP_MOCK_CUSTOM(const char *, dap_config_get_item_str_default,
  * By default, returns the default value.
  */
 DAP_MOCK_CUSTOM(int32_t, dap_config_get_item_int32_default,
-    PARAM(const dap_config_t *, a_config),
-    PARAM(const char *, a_section),
-    PARAM(const char *, a_key),
-    PARAM(int32_t, a_default)
-) {
+    (const dap_config_t *a_config, const char *a_section, const char *a_key, int32_t a_default))
+    UNUSED(a_config);
+    UNUSED(a_section);
+    UNUSED(a_key);
     return a_default;
 }
 
@@ -141,11 +109,10 @@ DAP_MOCK_CUSTOM(int32_t, dap_config_get_item_int32_default,
  * By default, returns the default value.
  */
 DAP_MOCK_CUSTOM(uint32_t, dap_config_get_item_uint32_default,
-    PARAM(const dap_config_t *, a_config),
-    PARAM(const char *, a_section),
-    PARAM(const char *, a_key),
-    PARAM(uint32_t, a_default)
-) {
+    (const dap_config_t *a_config, const char *a_section, const char *a_key, uint32_t a_default))
+    UNUSED(a_config);
+    UNUSED(a_section);
+    UNUSED(a_key);
     return a_default;
 }
 

@@ -137,12 +137,8 @@ generate_macros_file() {
     # NOTE: prepare_map_macros_data() is NO LONGER USED - we generate macros directly now
     # prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}"
     
-    # Generate mock_map_macros content with template language constructs
-    RETURN_TYPE_MACROS_FILE="$return_type_macros_file" \
-    SIMPLE_WRAPPER_MACROS_FILE="$simple_wrapper_macros_file" \
-    # Convert PARAM_COUNTS_ARRAY to pipe-separated string for dap_tpl for loop
-    # dap_tpl for_evaluator expects pipe-separated or newline-separated arrays
-    PARAM_COUNTS_ARRAY_PIPE=$(IFS='|'; echo "${PARAM_COUNTS_ARRAY[*]}")
+    # Convert saved param counts to pipe-separated string for dap_tpl for loop
+    PARAM_COUNTS_ARRAY_PIPE=$(IFS='|'; echo "${local_param_counts[*]}")
     
     # NOTE: DO NOT set PARAM_COUNTS_ARRAY in environment here - it will corrupt the global array!
     # The template only needs PARAM_COUNTS_ARRAY_PIPE (passed as argument below)
@@ -226,6 +222,12 @@ EOF_HEADER
         generate_single_map_macro "$count" >> "$macros_file"
         echo "" >> "$macros_file"
     done
+    
+    # Append MAP core macros (_DAP_MOCK_MAP definition and routing)
+    local map_content_file="${macros_file}.map_content"
+    if [ -f "$map_content_file" ] && [ -s "$map_content_file" ]; then
+        cat "$map_content_file" >> "$macros_file"
+    fi
     
     # Append return type macros if they exist
     if [ -n "$saved_return_type_macros_file" ] && [ -f "$saved_return_type_macros_file" ] && [ -s "$saved_return_type_macros_file" ]; then

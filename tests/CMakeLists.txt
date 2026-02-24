@@ -56,11 +56,11 @@ function(add_dap_test TEST_NAME TEST_SOURCE)
     
     # Include DAP SDK headers
     target_include_directories(${TEST_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/module/core/include
-        ${CMAKE_SOURCE_DIR}/module/crypto/include
-        ${CMAKE_SOURCE_DIR}/module/io/include
-        ${CMAKE_SOURCE_DIR}/module/global-db/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/core/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/io/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/global-db/include
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
     )
     
@@ -156,9 +156,9 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_field_mul.c)
     add_dap_test(test_field_mul unit/crypto/test_field_mul.c)
     target_include_directories(test_field_mul PRIVATE 
-        ${CMAKE_SOURCE_DIR}/module/crypto/src
-        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig_ecdsa
-        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig_ecdsa/arch
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa/arch
     )
     register_dap_test(test_field_mul "unit;crypto;ecdsa")
 endif()
@@ -166,9 +166,9 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_ecdsa_debug.c)
     add_dap_test(test_ecdsa_debug unit/crypto/test_ecdsa_debug.c)
     target_include_directories(test_ecdsa_debug PRIVATE 
-        ${CMAKE_SOURCE_DIR}/module/crypto/src
-        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig_ecdsa
-        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig_ecdsa/arch
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa/arch
     )
     register_dap_test(test_ecdsa_debug "unit;crypto;ecdsa")
 endif()

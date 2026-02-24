@@ -16,17 +16,28 @@
 
 # Function to escape shell special characters
 function shell_escape(str) {
-    # Replace single quotes with '\''
     gsub(/'/, "'\\''", str)
     return str
 }
 
 # Function to escape array key (for associative array)
 function shell_escape_key(str) {
-    # Replace special characters that could break array key syntax
     gsub(/[\[\]"]/, "", str)
     gsub(/'/, "'\\''", str)
     return str
+}
+
+# mawk-compatible insertion sort (asort is gawk-only)
+function sort_array(arr, n,    i, j, tmp) {
+    for (i = 2; i <= n; i++) {
+        tmp = arr[i]
+        j = i - 1
+        while (j >= 1 && arr[j] > tmp) {
+            arr[j + 1] = arr[j]
+            j--
+        }
+        arr[j + 1] = tmp
+    }
 }
 
 BEGIN {
@@ -124,7 +135,7 @@ BEGIN {
     close(return_types_file)
     
     # Sort and join return types
-    asort(return_types_array)
+    sort_array(return_types_array, return_types_count)
     for (i = 1; i <= return_types_count; i++) {
         if (return_types_str == "") {
             return_types_str = return_types_array[i]
@@ -134,7 +145,7 @@ BEGIN {
     }
     
     # Sort and join return pairs
-    asort(return_pairs_array)
+    sort_array(return_pairs_array, return_pairs_count)
     for (i = 1; i <= return_pairs_count; i++) {
         if (return_types_pairs_str == "") {
             return_types_pairs_str = return_pairs_array[i]
@@ -178,7 +189,7 @@ BEGIN {
     close(all_types_file)
     
     # Sort and join all pairs
-    asort(all_pairs_array)
+    sort_array(all_pairs_array, all_pairs_count)
     for (i = 1; i <= all_pairs_count; i++) {
         if (all_types_pairs_str == "") {
             all_types_pairs_str = all_pairs_array[i]
