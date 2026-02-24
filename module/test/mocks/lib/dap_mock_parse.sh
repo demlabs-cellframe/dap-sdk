@@ -51,15 +51,8 @@ parse_mock_declarations() {
 declare -ga PARAM_COUNTS_ARRAY=(0)
 declare -gi MAX_ARGS_COUNT=2
 RETURN_TYPES=''
-RETURN_TYPES_PAIRS=$''
-ALL_TYPES_PAIRS=$''
-declare -gA ORIGINAL_TYPES
-export PARAM_COUNTS_ARRAY
-export MAX_ARGS_COUNT
-export RETURN_TYPES
-export RETURN_TYPES_PAIRS
-export ALL_TYPES_PAIRS
-export ORIGINAL_TYPES
+RETURN_TYPES_PAIRS=''
+ALL_TYPES_PAIRS=''
 EOF
     )
     
@@ -73,9 +66,9 @@ EOF
     
     # Ensure minimum values for safety
     if [ ${#PARAM_COUNTS_ARRAY[@]} -eq 0 ] || [ -z "${PARAM_COUNTS_ARRAY[0]}" ]; then
-        declare -ga PARAM_COUNTS_ARRAY=(0)
+        PARAM_COUNTS_ARRAY=(0)
     fi
-    [ "$MAX_ARGS_COUNT" -lt 2 ] && declare -gi MAX_ARGS_COUNT=2
+    [ -z "$MAX_ARGS_COUNT" ] || [ "$MAX_ARGS_COUNT" -lt 2 ] && MAX_ARGS_COUNT=2
     
     print_success "Found parameter counts: ${PARAM_COUNTS_ARRAY[*]}"
 }
