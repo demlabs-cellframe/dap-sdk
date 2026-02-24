@@ -1196,8 +1196,8 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
 
     // **ПРОИЗВОДСТВЕННАЯ ВЕРСИЯ**: Создаем multi-signatures для batch verification
     uint32_t added_count = 0;
-    chipmunk_multi_signature_t *multi_sigs = DAP_NEW_Z_SIZE(chipmunk_multi_signature_t, a_ctx->signatures_count);
-    uint8_t **converted_messages = DAP_NEW_Z_SIZE(uint8_t *, a_ctx->signatures_count);
+    chipmunk_multi_signature_t *multi_sigs = DAP_NEW_Z_COUNT(chipmunk_multi_signature_t, a_ctx->signatures_count);
+    uint8_t **converted_messages = DAP_NEW_Z_COUNT(uint8_t *, a_ctx->signatures_count);
     
     if (!multi_sigs || !converted_messages) {
         log_it(L_ERROR, "Failed to allocate memory for batch verification");
@@ -1236,10 +1236,28 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
         // Инициализируем tree_root как нулевой (для single signature не нужен)
         memset(&multi_sigs[i].tree_root, 0, sizeof(chipmunk_hvc_poly_t));
         
-        // Преобразуем signature data в HOTS signature
-        if (dap_sig->header.sign_size >= sizeof(chipmunk_signature_t)) {
-            chipmunk_signature_t *chipmunk_sig = (chipmunk_signature_t*)(dap_sig->pkey_n_sign + dap_sig->header.sign_pkey_size);
-            memcpy(&multi_sigs[i].aggregated_hots.sigma, &chipmunk_sig->sigma, sizeof(chipmunk_sig->sigma));
+        // Преобразуем signature data в HOTS signature без предположений о выравнивании
+        if (dap_sig->header.sign_size >= CHIPMUNK_SIGNATURE_SIZE) {
+            const uint8_t *chipmunk_sig_bytes = dap_sig->pkey_n_sign + dap_sig->header.sign_pkey_size;
+            chipmunk_signature_t chipmunk_sig = {0};
+            if (chipmunk_signature_from_bytes(&chipmunk_sig, chipmunk_sig_bytes) != CHIPMUNK_ERROR_SUCCESS) {
+                log_it(L_ERROR, "Failed to deserialize Chipmunk signature %u", i);
+                for (uint32_t j = 0; j <= i; j++) {
+                    DAP_DELETE(multi_sigs[j].public_key_roots);
+                    DAP_DELETE(multi_sigs[j].proofs);
+                    DAP_DELETE(multi_sigs[j].leaf_indices);
+                }
+                DAP_DELETE(multi_sigs);
+                DAP_DELETE(converted_messages);
+                chipmunk_batch_context_free(&chipmunk_batch);
+                return -3;
+            }
+
+            for (int w = 0; w < CHIPMUNK_W; w++) {
+                memcpy(&multi_sigs[i].aggregated_hots.sigma[w],
+                       &chipmunk_sig.sigma[w],
+                       sizeof(chipmunk_poly_t));
+            }
             multi_sigs[i].aggregated_hots.is_randomized = false; // Individual signatures are not randomized
         } else {
             log_it(L_ERROR, "Invalid signature size for signature %u", i);

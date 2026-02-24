@@ -672,13 +672,15 @@ int chipmunk_batch_context_init(chipmunk_batch_context_t *context,
 
     context->signatures = calloc(max_signatures, sizeof(chipmunk_multi_signature_t));
     context->messages = calloc(max_signatures, sizeof(uint8_t*));
+    context->message_lens = calloc(max_signatures, sizeof(size_t));
     
-    if (!context->signatures || !context->messages) {
+    if (!context->signatures || !context->messages || !context->message_lens) {
         chipmunk_batch_context_free(context);
         return -2;
     }
 
     context->signature_count = 0;
+    context->max_signatures = max_signatures;
     return 0;
 }
 
@@ -689,7 +691,10 @@ int chipmunk_batch_add_signature(chipmunk_batch_context_t *context,
                                  const chipmunk_multi_signature_t *multi_sig,
                                  const uint8_t *message,
                                  size_t message_len) {
-    if (!context || !multi_sig || !message) {
+    if (!context || !multi_sig || !message || message_len == 0) {
+        return -1;
+    }
+    if (context->signature_count >= context->max_signatures) {
         return -1;
     }
 
@@ -699,6 +704,7 @@ int chipmunk_batch_add_signature(chipmunk_batch_context_t *context,
     
     // Store message pointer (caller must ensure message remains valid)
     context->messages[context->signature_count] = (uint8_t*)message;
+    context->message_lens[context->signature_count] = message_len;
     
     context->signature_count++;
     return 0;
@@ -733,7 +739,7 @@ int chipmunk_batch_verify(const chipmunk_batch_context_t *context) {
     for (size_t sig_idx = 0; sig_idx < context->signature_count; sig_idx++) {
         const chipmunk_multi_signature_t *multi_sig = &context->signatures[sig_idx];
         const uint8_t *message = context->messages[sig_idx];
-        size_t message_len = strlen((char*)message);
+        size_t message_len = context->message_lens[sig_idx];
         
         // Генерируем batch coefficient для этой подписи
         uint32_t batch_coeff = 1;
@@ -803,7 +809,7 @@ int chipmunk_batch_verify(const chipmunk_batch_context_t *context) {
         for (size_t i = 0; i < context->signature_count; i++) {
             int ret = chipmunk_verify_multi_signature(&context->signatures[i],
                                                       context->messages[i],
-                                                      strlen((char*)context->messages[i]));
+                                                      context->message_lens[i]);
             if (ret != 1) {
                 return 0; // At least one signature is invalid
             }
@@ -827,6 +833,11 @@ void chipmunk_batch_context_free(chipmunk_batch_context_t *context) {
             free(context->messages);
             context->messages = NULL;
         }
+        if (context->message_lens) {
+            free(context->message_lens);
+            context->message_lens = NULL;
+        }
         context->signature_count = 0;
+        context->max_signatures = 0;
     }
 } 

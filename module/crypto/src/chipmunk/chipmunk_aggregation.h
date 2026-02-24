@@ -59,7 +59,9 @@ typedef struct {
 typedef struct {
     chipmunk_multi_signature_t *signatures;
     uint8_t **messages;
+    size_t *message_lens;
     size_t signature_count;
+    size_t max_signatures;
 } chipmunk_batch_context_t;
 
 // === Randomizer Functions ===
