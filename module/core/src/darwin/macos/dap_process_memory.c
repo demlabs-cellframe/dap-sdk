@@ -50,11 +50,11 @@ static dap_process_memory_t s_get_task_memory(task_t a_task)
     mach_task_basic_info_data_t l_info;
     mach_msg_type_number_t l_info_count = MACH_TASK_BASIC_INFO_COUNT;
     
-    kern_return_t kr = task_info(a_task, MACH_TASK_BASIC_INFO, 
-                                  (task_info_t)&l_info, &l_info_count);
+    kern_return_t l_kr = task_info(a_task, MACH_TASK_BASIC_INFO, 
+                                    (task_info_t)&l_info, &l_info_count);
     
-    if (kr != KERN_SUCCESS) {
-        log_it(L_WARNING, "task_info failed: %s", mach_error_string(kr));
+    if (l_kr != KERN_SUCCESS) {
+        log_it(L_WARNING, "task_info failed: %s", mach_error_string(l_kr));
         return l_proc_mem;
     }
     
@@ -91,16 +91,16 @@ dap_process_memory_t get_proc_mem_by_pid(pid_t a_pid)
     
     // For other processes, try task_for_pid (requires root or entitlements)
     task_t l_task = MACH_PORT_NULL;
-    kern_return_t kr = task_for_pid(mach_task_self(), a_pid, &l_task);
+    kern_return_t l_kr = task_for_pid(mach_task_self(), a_pid, &l_task);
     
-    if (kr != KERN_SUCCESS) {
+    if (l_kr != KERN_SUCCESS) {
         // task_for_pid requires special privileges on macOS
         // Fall back to using sysctl for basic info
-        int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, a_pid };
+        int l_mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, a_pid };
         struct kinfo_proc l_kinfo;
         size_t l_len = sizeof(l_kinfo);
         
-        if (sysctl(mib, 4, &l_kinfo, &l_len, NULL, 0) == 0 && l_len > 0) {
+        if (sysctl(l_mib, 4, &l_kinfo, &l_len, NULL, 0) == 0 && l_len > 0) {
             // Check if process exists
             if (l_kinfo.kp_proc.p_pid == a_pid) {
                 // On modern macOS, detailed memory info for other processes
