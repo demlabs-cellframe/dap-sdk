@@ -571,7 +571,7 @@ static inline void dap_ht_add_inorder_impl(void **head, void *add, dap_ht_handle
     if (!*head) {
         dap_ht_table_t *tbl = (dap_ht_table_t*)DAP_CALLOC(1, sizeof(dap_ht_table_t));
         if (!tbl) return;
-        tbl->num_items = 0;
+        tbl->num_items = 1;
         tbl->hho = hho;
         tbl->num_buckets = DAP_HT_INITIAL_BUCKETS;
         tbl->buckets = (dap_ht_bucket_t*)DAP_CALLOC(tbl->num_buckets, sizeof(dap_ht_bucket_t));
@@ -579,10 +579,14 @@ static inline void dap_ht_add_inorder_impl(void **head, void *add, dap_ht_handle
         add_hh->tbl = tbl;
         *head = add;
         tbl->tail = add;
-    } else {
-        dap_ht_handle_t *head_hh = (dap_ht_handle_t*)((char*)*head + hho);
-        add_hh->tbl = head_hh->tbl;
+        unsigned bkt = DAP_HT_TO_BKT(add_hh->hashv, tbl->num_buckets);
+        tbl->buckets[bkt].head = add_hh;
+        tbl->buckets[bkt].count = 1;
+        return;
     }
+
+    dap_ht_handle_t *head_hh = (dap_ht_handle_t*)((char*)*head + hho);
+    add_hh->tbl = head_hh->tbl;
 
     dap_ht_table_t *tbl = add_hh->tbl;
     tbl->num_items++;

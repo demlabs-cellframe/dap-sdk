@@ -381,6 +381,32 @@ void dap_config_set_item_str(dap_config_t *a_config, const char *a_section, cons
     l_item->val.val_str = dap_strdup(a_value);
 }
 
+void dap_config_set_item_uint(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint64_t a_value)
+{
+    if (!a_config || !a_section || !a_item_name)
+        return;
+
+    char *l_name = dap_strdup_printf("%s:%s", a_section, a_item_name);
+    for (char *c = l_name; *c; ++c) {
+        if (*c == '-')
+            *c = '_';
+    }
+
+    dap_config_item_t *l_item = NULL;
+    dap_ht_find_str(a_config->items, l_name, l_item);
+
+    if (l_item) {
+        dap_config_item_del(l_item, false);
+    } else {
+        l_item = DAP_NEW_Z(dap_config_item_t);
+        l_item->name = l_name;
+        dap_ht_add_keyptr(a_config->items, l_item->name, strlen(l_item->name), l_item);
+    }
+
+    l_item->type = DAP_CONFIG_ITEM_DECIMAL;
+    l_item->val.val_int = (int64_t)a_value;
+}
+
 void dap_config_set_item_str_array(dap_config_t *a_config, const char *a_section, const char *a_item_name,
                                    const char **a_values, uint16_t a_count)
 {

@@ -13,20 +13,20 @@ BEGIN {
 }
 
 # Match DAP_MOCK_WRAPPER_CUSTOM declarations
-/DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
+/DAP_MOCK_WRAPPER_CUSTOM|DAP_MOCK_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
     in_custom = 1
     paren_level = 0
     found_opening_paren = 0
     return_type = ""
     return_type_original = ""
     
-    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
+    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|DAP_MOCK_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
         found_opening_paren = 1
         paren_level = 1
         rest = substr($0, RSTART + RLENGTH)
         
         # Extract return type
-        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
+        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/) || match($0, /DAP_MOCK_CUSTOM\s*\(/)) {
             if (match(rest, /^([^,)]+)/)) {
                 return_type_original = substr(rest, RSTART, RLENGTH)
                 gsub(/^[ \t]+|[ \t]+$/, "", return_type_original)
@@ -60,7 +60,7 @@ BEGIN {
 
 # Process PARAM(...) declarations to extract parameter types
 /PARAM\s*\(/ {
-    if (in_custom || match($0, /DAP_MOCK_WRAPPER_CUSTOM/)) {
+    if (in_custom || match($0, /DAP_MOCK_WRAPPER_CUSTOM/) || match($0, /DAP_MOCK_CUSTOM/)) {
         # Extract type from PARAM(type, name)
         if (match($0, /PARAM\s*\(\s*([^,)]+)/)) {
             param_type_original = substr($0, RSTART + 6, RLENGTH - 6)

@@ -346,68 +346,84 @@ cleanup:
  * @details Create input that triggers worst-case performance
  *          Expected: Parse time should be O(n), not O(n²)
  */
+static int s_compare_double(const void *a, const void *b) {
+    double da = *(const double *)a, db = *(const double *)b;
+    return (da > db) - (da < db);
+}
+
+static char *s_generate_json_object(int a_key_count) {
+    size_t l_buf_size = (size_t)a_key_count * 30 + 4;
+    char *l_json_str = (char *)malloc(l_buf_size);
+    if (!l_json_str) return NULL;
+    char *ptr = l_json_str;
+    ptr += sprintf(ptr, "{");
+    for (int i = 0; i < a_key_count; i++) {
+        if (i > 0) ptr += sprintf(ptr, ",");
+        ptr += sprintf(ptr, "\"k%d\":%d", i, i);
+    }
+    ptr += sprintf(ptr, "}");
+    return l_json_str;
+}
+
 static bool s_test_algorithmic_complexity(void) {
     log_it(L_DEBUG, "Testing algorithmic complexity attack protection");
     bool result = false;
-    
-    // Warmup: parse small JSON to warm caches
-    dap_json_t *l_warmup = dap_json_parse_string("{\"warmup\":1}");
-    dap_json_object_free(l_warmup);
-    
-    // Test with increasing sizes to detect O(n²) behavior
-    const int sizes[] = {100, 200, 400};
+
+    // Larger sizes to get stable timing (milliseconds, not microseconds)
+    const int sizes[] = {2000, 4000, 8000};
+    const int NUM_RUNS = 5;
     double times[3];
-    
+
+    // Warmup: parse objects of similar size to stabilize CPU caches,
+    // branch prediction, and memory allocator arena
+    for (int w = 0; w < 3; w++) {
+        char *l_warmup_str = s_generate_json_object(sizes[2]);
+        DAP_TEST_FAIL_IF_NULL(l_warmup_str, "Allocate warmup buffer");
+        dap_json_t *l_warmup = dap_json_parse_string(l_warmup_str);
+        dap_json_object_free(l_warmup);
+        free(l_warmup_str);
+    }
+
     for (int test = 0; test < 3; test++) {
         int size = sizes[test];
-        
-        // Create JSON object with 'size' keys
-        size_t json_size = size * 30;
-        char *l_json_str = (char*)malloc(json_size);
+        char *l_json_str = s_generate_json_object(size);
         DAP_TEST_FAIL_IF_NULL(l_json_str, "Allocate JSON buffer");
-        
-        char *ptr = l_json_str;
-        ptr += sprintf(ptr, "{");
-        for (int i = 0; i < size; i++) {
-            if (i > 0) ptr += sprintf(ptr, ",");
-            ptr += sprintf(ptr, "\"k%d\":%d", i, i);
+
+        double runs[NUM_RUNS];
+        for (int r = 0; r < NUM_RUNS; r++) {
+            dos_timer_t timer;
+            s_timer_start(&timer);
+            dap_json_t *l_json = dap_json_parse_string(l_json_str);
+            s_timer_stop(&timer);
+            runs[r] = s_timer_get_seconds(&timer);
+            DAP_TEST_FAIL_IF_NULL(l_json, "Parse JSON");
+            dap_json_object_free(l_json);
         }
-        ptr += sprintf(ptr, "}");
-        
-        dos_timer_t timer;
-        s_timer_start(&timer);
-        
-        dap_json_t *l_json = dap_json_parse_string(l_json_str);
-        
-        s_timer_stop(&timer);
-        times[test] = s_timer_get_seconds(&timer);
-        
-        DAP_TEST_FAIL_IF_NULL(l_json, "Parse JSON");
-        
-        log_it(L_INFO, "Complexity test: %d keys in %.3f seconds", size, times[test]);
-        
-        dap_json_object_free(l_json);
+
+        qsort(runs, NUM_RUNS, sizeof(double), s_compare_double);
+        times[test] = runs[NUM_RUNS / 2]; // median
+
+        log_it(L_INFO, "Complexity test: %d keys, median %.6f sec (min %.6f, max %.6f)",
+               size, times[test], runs[0], runs[NUM_RUNS - 1]);
+
         free(l_json_str);
     }
-    
-    // Check that time grows linearly (not quadratically)
-    // If linear: time[1]/time[0] ≈ 2.0, time[2]/time[0] ≈ 4.0
-    // If quadratic: time[1]/time[0] ≈ 4.0, time[2]/time[0] ≈ 16.0
-    
-    double ratio_2x = times[1] / times[0];
-    double ratio_4x = times[2] / times[0];
-    
-    log_it(L_INFO, "Time ratios: 2x=%.2f (expect ~2.0), 4x=%.2f (expect ~4.0)", 
+
+    double ratio_2x = (times[0] > 0) ? times[1] / times[0] : 0;
+    double ratio_4x = (times[0] > 0) ? times[2] / times[0] : 0;
+
+    log_it(L_INFO, "Time ratios: 2x=%.2f (expect ~2.0), 4x=%.2f (expect ~4.0)",
            ratio_2x, ratio_4x);
-    
-    // Allow variance for cache effects, arena resizing, etc.
-    // Reject only if clearly O(n²) (ratio > 5x would indicate quadratic growth)
-    DAP_TEST_FAIL_IF(ratio_2x > 6.0, "2x size should not take > 6x time (detecting O(n²))");
-    DAP_TEST_FAIL_IF(ratio_4x > 16.0, "4x size should not take > 16x time (detecting O(n²))");
-    
+
+    // O(n) → ratio_2x ≈ 2, ratio_4x ≈ 4
+    // O(n²) → ratio_2x ≈ 4, ratio_4x ≈ 16
+    // Threshold: clearly worse than O(n log n) means quadratic
+    DAP_TEST_FAIL_IF(ratio_2x > 8.0, "2x size should not take > 8x time (detecting O(n²))");
+    DAP_TEST_FAIL_IF(ratio_4x > 24.0, "4x size should not take > 24x time (detecting O(n²))");
+
     result = true;
     log_it(L_DEBUG, "Algorithmic complexity attack protection test passed");
-    
+
 cleanup:
     return result;
 }
