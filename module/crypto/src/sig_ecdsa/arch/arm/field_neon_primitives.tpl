@@ -3,6 +3,8 @@
 // Uses MUL/UMULH instructions with interleaved reduction
 // ============================================================================
 
+#if defined(__aarch64__)
+
 // secp256k1 field constants
 #define FIELD_M52 0xFFFFFFFFFFFFFULL
 #define FIELD_M48 0xFFFFFFFFFFFFULL
@@ -278,3 +280,7 @@
     \
     (r)[4] = c0 + t4; \
 } while(0)
+
+#else
+#error "ARM64 NEON field primitives require aarch64 architecture"
+#endif /* __aarch64__ */

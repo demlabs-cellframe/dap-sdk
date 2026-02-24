@@ -7,6 +7,10 @@
 #
 # Uses dap_tpl template engine for reliable multi-line substitution.
 #
+# On macOS both x86_64 and ARM NEON variants are generated for universal
+# (fat) binary support. Architecture guards (#if) in the generated .c files
+# ensure only the right code compiles per arch slice. No SVE on Apple.
+#
 # Called by CMake during configuration, or manually for debugging.
 #
 # Usage: ./generate_arch.sh OUTPUT_DIR [ARCH]
@@ -33,6 +37,10 @@ fi
 OUTPUT_DIR="$1"
 ARCH="${2:-${CMAKE_SYSTEM_PROCESSOR:-$(uname -m)}}"
 
+# Detect macOS for universal binary support
+IS_DARWIN=false
+[[ "$(uname -s)" == "Darwin" ]] && IS_DARWIN=true
+
 # DAP_TPL_DIR can be provided via environment (from CMake) for flexibility
 if [[ -n "${DAP_TPL_DIR:-}" ]]; then
     echo "Using DAP_TPL_DIR from environment: ${DAP_TPL_DIR}"
@@ -55,6 +63,7 @@ export TEMPLATES_DIR="${SCRIPT_DIR}"
 echo "=== ECDSA Architecture-Specific Code Generation ==="
 echo "Output:   ${OUTPUT_DIR}"
 echo "Arch:     ${ARCH}"
+echo "Darwin:   ${IS_DARWIN}"
 echo ""
 
 mkdir -p "${OUTPUT_DIR}"
@@ -68,6 +77,35 @@ generate() {
     replace_template_placeholders "$template" "$output" "$@"
     echo "  Generated: ${output##*/}"
 }
+
+# Wrap generated file with preprocessor architecture guard
+wrap_arch_guard() {
+    local file="$1"
+    local guard="$2"
+    if [[ -f "$file" ]]; then
+        local tmp="${file}.tmp"
+        { echo "#if ${guard}"; cat "${file}"; echo "#endif"; } > "${tmp}"
+        mv "${tmp}" "${file}"
+    fi
+}
+
+# Determine which variant sets to generate
+GEN_X86=false
+GEN_ARM=false
+GEN_SVE=false
+
+if [[ "$IS_DARWIN" == "true" ]]; then
+    GEN_X86=true
+    GEN_ARM=true
+    # Apple Silicon does NOT support SVE
+else
+    case "${ARCH}" in
+        x86_64|amd64|AMD64) GEN_X86=true ;;
+        aarch64|arm64|ARM64) GEN_ARM=true; GEN_SVE=true ;;
+        armv7*|arm) ;; # ARM32: generic only
+        *) echo "  Unknown arch '${ARCH}': Using generic only" ;;
+    esac
+fi
 
 # ============================================================================
 # SCALAR MULTIPLICATION implementations
@@ -85,61 +123,62 @@ generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_generic.c" \
     "PERF_TARGET=Baseline portable performance" \
     "PRIMITIVES_FILE=${ARCH_DIR}/generic_primitives.tpl"
 
-case "${ARCH}" in
-    x86_64|amd64|AMD64)
-        generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_x86_64_asm.c" \
-            "ARCH_NAME=x86-64 ASM" \
-            "ARCH_LOWER=x86_64_asm" \
-            "ARCH_INCLUDES=" \
-            "TARGET_ATTR=" \
-            "OPTIMIZATION_NOTES=Hand-optimized MULQ inline assembly" \
-            "PERF_TARGET=Maximum single-core throughput" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/x86/x86_64_asm_primitives.tpl"
+if [[ "$GEN_X86" == "true" ]]; then
+    echo ""
+    echo "  x86/x64 scalar variants:"
 
-        generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_avx2_bmi2.c" \
-            "ARCH_NAME=AVX2+BMI2" \
-            "ARCH_LOWER=avx2_bmi2" \
-            'ARCH_INCLUDES=#include <immintrin.h>' \
-            'TARGET_ATTR=__attribute__((target("avx2,bmi2,adx")))' \
-            "OPTIMIZATION_NOTES=MULX + ADCX/ADOX dual carry chains" \
-            "PERF_TARGET=Modern CPU optimized" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/x86/avx2_bmi2_primitives.tpl"
+    generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_x86_64_asm.c" \
+        "ARCH_NAME=x86-64 ASM" \
+        "ARCH_LOWER=x86_64_asm" \
+        "ARCH_INCLUDES=" \
+        "TARGET_ATTR=" \
+        "OPTIMIZATION_NOTES=Hand-optimized MULQ inline assembly" \
+        "PERF_TARGET=Maximum single-core throughput" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/x86/x86_64_asm_primitives.tpl"
 
-        generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_avx512.c" \
-            "ARCH_NAME=AVX-512" \
-            "ARCH_LOWER=avx512" \
-            'ARCH_INCLUDES=#include <immintrin.h>' \
-            'TARGET_ATTR=__attribute__((target("avx512f,avx512ifma,avx512vl")))' \
-            "OPTIMIZATION_NOTES=AVX-512 IFMA VPMADD52 for 52-bit multiply" \
-            "PERF_TARGET=Latest CPU optimized" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/x86/avx512_primitives.tpl"
-        ;;
-    aarch64|arm64|ARM64)
-        generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_neon.c" \
-            "ARCH_NAME=ARM64 NEON" \
-            "ARCH_LOWER=neon" \
-            'ARCH_INCLUDES=#include <arm_neon.h>' \
-            "TARGET_ATTR=" \
-            "OPTIMIZATION_NOTES=UMULH/MUL pair for 64x64->128" \
-            "PERF_TARGET=ARM64 optimized" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/arm/neon_primitives.tpl"
+    generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_avx2_bmi2.c" \
+        "ARCH_NAME=AVX2+BMI2" \
+        "ARCH_LOWER=avx2_bmi2" \
+        'ARCH_INCLUDES=#include <immintrin.h>' \
+        'TARGET_ATTR=__attribute__((target("avx2,bmi2,adx")))' \
+        "OPTIMIZATION_NOTES=MULX + ADCX/ADOX dual carry chains" \
+        "PERF_TARGET=Modern CPU optimized" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/x86/avx2_bmi2_primitives.tpl"
 
-        generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_sve.c" \
-            "ARCH_NAME=ARM64 SVE" \
-            "ARCH_LOWER=sve" \
-            'ARCH_INCLUDES=#include <arm_sve.h>' \
-            "TARGET_ATTR=" \
-            "OPTIMIZATION_NOTES=SVE scalable vector extensions" \
-            "PERF_TARGET=ARM64 server optimized" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/arm/sve_primitives.tpl"
-        ;;
-    armv7*|arm)
-        echo "  ARM32: Using generic only (no optimizations)"
-        ;;
-    *)
-        echo "  Unknown arch '${ARCH}': Using generic only"
-        ;;
-esac
+    generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_avx512.c" \
+        "ARCH_NAME=AVX-512" \
+        "ARCH_LOWER=avx512" \
+        'ARCH_INCLUDES=#include <immintrin.h>' \
+        'TARGET_ATTR=__attribute__((target("avx512f,avx512ifma,avx512vl")))' \
+        "OPTIMIZATION_NOTES=AVX-512 IFMA VPMADD52 for 52-bit multiply" \
+        "PERF_TARGET=Latest CPU optimized" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/x86/avx512_primitives.tpl"
+fi
+
+if [[ "$GEN_ARM" == "true" ]]; then
+    echo ""
+    echo "  ARM64 scalar variants:"
+
+    generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_neon.c" \
+        "ARCH_NAME=ARM64 NEON" \
+        "ARCH_LOWER=neon" \
+        'ARCH_INCLUDES=#include <arm_neon.h>' \
+        "TARGET_ATTR=" \
+        "OPTIMIZATION_NOTES=UMULH/MUL pair for 64x64->128" \
+        "PERF_TARGET=ARM64 optimized" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/arm/neon_primitives.tpl"
+fi
+
+if [[ "$GEN_SVE" == "true" ]]; then
+    generate "${TPL_SCALAR}" "${OUTPUT_DIR}/ecdsa_scalar_mul_sve.c" \
+        "ARCH_NAME=ARM64 SVE" \
+        "ARCH_LOWER=sve" \
+        'ARCH_INCLUDES=#include <arm_sve.h>' \
+        "TARGET_ATTR=" \
+        "OPTIMIZATION_NOTES=SVE scalable vector extensions" \
+        "PERF_TARGET=ARM64 server optimized" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/arm/sve_primitives.tpl"
+fi
 
 # ============================================================================
 # FIELD ARITHMETIC implementations
@@ -158,54 +197,78 @@ generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_generic.c" \
     "PERF_TARGET=Baseline portable field arithmetic" \
     "PRIMITIVES_FILE=${ARCH_DIR}/field_generic_primitives.tpl"
 
-case "${ARCH}" in
-    x86_64|amd64|AMD64)
-        generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_x86_64_asm.c" \
-            "ARCH_NAME=x86-64 ASM" \
-            "ARCH_LOWER=x86_64_asm" \
-            "ARCH_INCLUDES=" \
-            "TARGET_ATTR=" \
-            "OPTIMIZATION_NOTES=Hand-optimized MULQ inline assembly for field ops" \
-            "PERF_TARGET=Maximum single-core throughput" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/x86/field_x86_64_asm_primitives.tpl"
+if [[ "$GEN_X86" == "true" ]]; then
+    echo ""
+    echo "  x86/x64 field variants:"
 
-        generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_avx2_bmi2.c" \
-            "ARCH_NAME=AVX2+BMI2" \
-            "ARCH_LOWER=avx2_bmi2" \
-            'ARCH_INCLUDES=#include <immintrin.h>' \
-            'TARGET_ATTR=__attribute__((target("avx2,bmi2,adx")))' \
-            "OPTIMIZATION_NOTES=MULX + ADCX/ADOX for field multiplication" \
-            "PERF_TARGET=Modern CPU optimized" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/x86/field_avx2_bmi2_primitives.tpl"
-        # NOTE: AVX-512 IFMA not beneficial for field ops - interleaved reduction
-        # pattern doesn't parallelize well, generic __uint128_t is faster
-        ;;
-    aarch64|arm64|ARM64)
-        generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_neon.c" \
-            "ARCH_NAME=ARM64 NEON" \
-            "ARCH_LOWER=neon" \
-            'ARCH_INCLUDES=#include <arm_neon.h>' \
-            "TARGET_ATTR=" \
-            "OPTIMIZATION_NOTES=UMULH/MUL pair for field multiplication" \
-            "PERF_TARGET=ARM64 optimized" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/arm/field_neon_primitives.tpl"
+    generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_x86_64_asm.c" \
+        "ARCH_NAME=x86-64 ASM" \
+        "ARCH_LOWER=x86_64_asm" \
+        "ARCH_INCLUDES=" \
+        "TARGET_ATTR=" \
+        "OPTIMIZATION_NOTES=Hand-optimized MULQ inline assembly for field ops" \
+        "PERF_TARGET=Maximum single-core throughput" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/x86/field_x86_64_asm_primitives.tpl"
 
-        generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_sve.c" \
-            "ARCH_NAME=ARM64 SVE" \
-            "ARCH_LOWER=sve" \
-            'ARCH_INCLUDES=#include <arm_sve.h>' \
-            "TARGET_ATTR=" \
-            "OPTIMIZATION_NOTES=SVE scalable vector field arithmetic" \
-            "PERF_TARGET=ARM64 server optimized" \
-            "PRIMITIVES_FILE=${ARCH_DIR}/arm/field_sve_primitives.tpl"
-        ;;
-    armv7*|arm)
-        echo "  ARM32: Using generic field only"
-        ;;
-    *)
-        echo "  Unknown arch: Using generic field only"
-        ;;
-esac
+    generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_avx2_bmi2.c" \
+        "ARCH_NAME=AVX2+BMI2" \
+        "ARCH_LOWER=avx2_bmi2" \
+        'ARCH_INCLUDES=#include <immintrin.h>' \
+        'TARGET_ATTR=__attribute__((target("avx2,bmi2,adx")))' \
+        "OPTIMIZATION_NOTES=MULX + ADCX/ADOX for field multiplication" \
+        "PERF_TARGET=Modern CPU optimized" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/x86/field_avx2_bmi2_primitives.tpl"
+    # NOTE: AVX-512 IFMA not beneficial for field ops - interleaved reduction
+    # pattern doesn't parallelize well, generic __uint128_t is faster
+fi
+
+if [[ "$GEN_ARM" == "true" ]]; then
+    echo ""
+    echo "  ARM64 field variants:"
+
+    generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_neon.c" \
+        "ARCH_NAME=ARM64 NEON" \
+        "ARCH_LOWER=neon" \
+        'ARCH_INCLUDES=#include <arm_neon.h>' \
+        "TARGET_ATTR=" \
+        "OPTIMIZATION_NOTES=UMULH/MUL pair for field multiplication" \
+        "PERF_TARGET=ARM64 optimized" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/arm/field_neon_primitives.tpl"
+fi
+
+if [[ "$GEN_SVE" == "true" ]]; then
+    generate "${TPL_FIELD}" "${OUTPUT_DIR}/ecdsa_field_sve.c" \
+        "ARCH_NAME=ARM64 SVE" \
+        "ARCH_LOWER=sve" \
+        'ARCH_INCLUDES=#include <arm_sve.h>' \
+        "TARGET_ATTR=" \
+        "OPTIMIZATION_NOTES=SVE scalable vector field arithmetic" \
+        "PERF_TARGET=ARM64 server optimized" \
+        "PRIMITIVES_FILE=${ARCH_DIR}/arm/field_sve_primitives.tpl"
+fi
+
+# ============================================================================
+# Apply architecture guards for macOS universal binary support.
+# Each non-generic file is wrapped in #if defined(...) so it compiles to
+# empty on the wrong architecture slice of a fat binary.
+# ============================================================================
+
+if [[ "$IS_DARWIN" == "true" ]]; then
+    echo ""
+    echo "=== Applying architecture guards (macOS universal) ==="
+
+    X86_GUARD="defined(__x86_64__) || defined(_M_X64)"
+    ARM_GUARD="defined(__aarch64__)"
+
+    wrap_arch_guard "${OUTPUT_DIR}/ecdsa_scalar_mul_x86_64_asm.c" "$X86_GUARD"
+    wrap_arch_guard "${OUTPUT_DIR}/ecdsa_scalar_mul_avx2_bmi2.c"  "$X86_GUARD"
+    wrap_arch_guard "${OUTPUT_DIR}/ecdsa_scalar_mul_avx512.c"     "$X86_GUARD"
+    wrap_arch_guard "${OUTPUT_DIR}/ecdsa_scalar_mul_neon.c"       "$ARM_GUARD"
+
+    wrap_arch_guard "${OUTPUT_DIR}/ecdsa_field_x86_64_asm.c"  "$X86_GUARD"
+    wrap_arch_guard "${OUTPUT_DIR}/ecdsa_field_avx2_bmi2.c"   "$X86_GUARD"
+    wrap_arch_guard "${OUTPUT_DIR}/ecdsa_field_neon.c"        "$ARM_GUARD"
+fi
 
 echo ""
 echo "=== Generation complete ==="

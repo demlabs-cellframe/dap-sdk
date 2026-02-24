@@ -45,40 +45,43 @@ endif()
 # Scalar multiplication implementations
 set(ECDSA_SCALAR_GENERATED_SOURCES ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_generic.c)
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+# Field arithmetic implementations
+set(ECDSA_FIELD_GENERATED_SOURCES ${ECDSA_GEN_DIR}/ecdsa_field_generic.c)
+
+if(APPLE)
+    # Apple universal binary (arm64 + x86_64): include both architecture sets.
+    # Generated .c files have #if arch guards so only the right code compiles per slice.
+    # No SVE on Apple Silicon.
+    list(APPEND ECDSA_SCALAR_GENERATED_SOURCES
+        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_x86_64_asm.c
+        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_avx2_bmi2.c
+        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_avx512.c
+        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_neon.c
+    )
+    list(APPEND ECDSA_FIELD_GENERATED_SOURCES
+        ${ECDSA_GEN_DIR}/ecdsa_field_x86_64_asm.c
+        ${ECDSA_GEN_DIR}/ecdsa_field_avx2_bmi2.c
+        ${ECDSA_GEN_DIR}/ecdsa_field_neon.c
+    )
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     list(APPEND ECDSA_SCALAR_GENERATED_SOURCES
         ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_x86_64_asm.c
         ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_avx2_bmi2.c
         ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_avx512.c
     )
-endif()
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
-    list(APPEND ECDSA_SCALAR_GENERATED_SOURCES
-        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_neon.c
-        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_sve.c
-    )
-    # SVE compile flags set in parent module/crypto/CMakeLists.txt (directory scope)
-endif()
-
-# Field arithmetic implementations
-set(ECDSA_FIELD_GENERATED_SOURCES ${ECDSA_GEN_DIR}/ecdsa_field_generic.c)
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     list(APPEND ECDSA_FIELD_GENERATED_SOURCES
         ${ECDSA_GEN_DIR}/ecdsa_field_x86_64_asm.c
         ${ECDSA_GEN_DIR}/ecdsa_field_avx2_bmi2.c
     )
-    # NOTE: AVX-512 IFMA not beneficial for field ops — interleaved reduction
-    # pattern doesn't parallelize well, generic __uint128_t is faster
-endif()
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    list(APPEND ECDSA_SCALAR_GENERATED_SOURCES
+        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_neon.c
+        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_sve.c
+    )
     list(APPEND ECDSA_FIELD_GENERATED_SOURCES
         ${ECDSA_GEN_DIR}/ecdsa_field_neon.c
         ${ECDSA_GEN_DIR}/ecdsa_field_sve.c
     )
-    # SVE compile flags set in parent module/crypto/CMakeLists.txt (directory scope)
 endif()
 
 # All generated sources
