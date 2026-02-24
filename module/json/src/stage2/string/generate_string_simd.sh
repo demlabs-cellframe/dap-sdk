@@ -109,37 +109,39 @@ generate_arch() {
     echo "  ✅ ${arch_upper}: ${output_c}, ${output_h}"
 }
 
-# Detect target architecture
-ARCH="${CMAKE_SYSTEM_PROCESSOR:-$(uname -m)}"
-echo "Target architecture: ${ARCH}"
-echo ""
+# Generate ALL architecture variants unconditionally (needed for macOS universal binaries)
 
-case "${ARCH}" in
-    x86_64|amd64|AMD64|i686|i386)
-        echo "=== x86/x64 SIMD ==="
-        generate_arch "sse2" "SSE2" "x86" "16" "32" "16" "arch/string_scanner_vector_impl.c"
-        generate_arch "avx2" "AVX2" "x86" "32" "32" "32" "arch/string_scanner_vector_impl.c"
-        generate_arch "avx512" "AVX512" "x86" "64" "64" "64" "arch/x86/string_scanner_avx512_impl.c"
-        ;;
-    
-    aarch64|arm64|armv8*)
-        echo "=== ARM64 SIMD ==="
-        generate_arch "neon" "NEON" "arm" "16" "32" "16" "arch/string_scanner_vector_impl.c"
-        generate_arch "sve" "SVE" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve_impl.c"
-        generate_arch "sve2" "SVE2" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve2_impl.c"
-        ;;
-    
-    arm|ARM|armv7*)
-        echo "=== ARM32 (ARMv7) SIMD ==="
-        generate_arch "neon" "NEON" "arm" "16" "32" "16" "arch/string_scanner_vector_impl.c"
-        echo "Note: SVE/SVE2 require ARM64, skipped on ARM32"
-        ;;
-    
-    *)
-        echo "⚠️  Unknown architecture '${ARCH}'"
-        echo "Only reference implementation will be available"
-        ;;
-esac
+wrap_arch_guard() {
+    local file="$1"
+    local guard="$2"
+    if [[ -f "$file" ]]; then
+        local tmp="${file}.tmp"
+        { echo "#if ${guard}"; cat "${file}"; echo "#endif"; } > "${tmp}"
+        mv "${tmp}" "${file}"
+    fi
+}
+
+echo "=== x86/x64 SIMD ==="
+generate_arch "sse2" "SSE2" "x86" "16" "32" "16" "arch/string_scanner_vector_impl.c"
+generate_arch "avx2" "AVX2" "x86" "32" "32" "32" "arch/string_scanner_vector_impl.c"
+generate_arch "avx512" "AVX512" "x86" "64" "64" "64" "arch/x86/string_scanner_avx512_impl.c"
+
+echo ""
+echo "=== ARM SIMD ==="
+generate_arch "neon" "NEON" "arm" "16" "32" "16" "arch/string_scanner_vector_impl.c"
+generate_arch "sve" "SVE" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve_impl.c"
+generate_arch "sve2" "SVE2" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve2_impl.c"
+
+X86_GUARD="defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)"
+ARM_GUARD="defined(__aarch64__) || defined(__arm__)"
+SVE_GUARD="defined(__aarch64__) && !defined(__APPLE__)"
+
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_string_simd_sse2.c"   "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_string_simd_avx2.c"   "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_string_simd_avx512.c" "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_string_simd_neon.c"   "$ARM_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_string_simd_sve.c"    "$SVE_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_string_simd_sve2.c"   "$SVE_GUARD"
 
 echo ""
 echo "✅ Generation complete"

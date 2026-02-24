@@ -42,13 +42,8 @@ echo "=== Generating Keccak SIMD implementations using dap_tpl ==="
 echo "Output directory: ${OUTPUT_DIR}"
 echo "Templates directory: ${TEMPLATES_DIR}"
 
-# Detect target architecture
-ARCH="${CMAKE_SYSTEM_PROCESSOR:-$(uname -m)}"
-echo "Target architecture: ${ARCH}"
-
 mkdir -p "${OUTPUT_DIR}"
 
-# Helper function to generate from template
 generate() {
     local template="$1"
     local output="$2"
@@ -58,118 +53,121 @@ generate() {
     echo "  Generated: $output"
 }
 
+wrap_arch_guard() {
+    local file="$1"
+    local guard="$2"
+    if [[ -f "$file" ]]; then
+        local tmp="${file}.tmp"
+        { echo "#if ${guard}"; cat "${file}"; echo "#endif"; } > "${tmp}"
+        mv "${tmp}" "${file}"
+    fi
+}
+
 # ========================================================================
-# Generate based on current architecture
+# Generate ALL architecture variants unconditionally.
+# Required for macOS universal (fat) binaries (arm64 + x86_64).
+# Architecture guards (#if) in .c files ensure correct per-arch compilation.
 # ========================================================================
 
-case "${ARCH}" in
-    x86_64|amd64|AMD64|i686|i386)
-        echo ""
-        echo "=== Generating x86/x64 SIMD implementations ==="
-        
-        # AVX-512 (Plane layout - most advanced)
-        echo ""
-        echo "Generating AVX-512 (plane layout)..."
-        generate "${TPL_PLANE}" "${OUTPUT_DIR}/dap_keccak_avx512.c" \
-            "ARCH_NAME=AVX-512" \
-            "ARCH_LOWER=avx512" \
-            "ARCH_INCLUDES=#include <immintrin.h>" \
-            "ALIGNMENT_ATTR=__attribute__((aligned(64)))" \
-            "TARGET_ATTR=__attribute__((target(\"avx512f,avx512dq,avx512bw,avx512vl\")))" \
-            "OPTIMIZATION_NOTES=- _mm512_ternarylogic_epi64(0xD2) for Chi: a ^ (~b & c) in single instruction
+echo ""
+echo "=== Generating x86/x64 SIMD implementations ==="
+
+echo ""
+echo "Generating AVX-512 (plane layout)..."
+generate "${TPL_PLANE}" "${OUTPUT_DIR}/dap_keccak_avx512.c" \
+    "ARCH_NAME=AVX-512" \
+    "ARCH_LOWER=avx512" \
+    "ARCH_INCLUDES=#include <immintrin.h>" \
+    "ALIGNMENT_ATTR=__attribute__((aligned(64)))" \
+    "TARGET_ATTR=__attribute__((target(\"avx512f,avx512dq,avx512bw,avx512vl\")))" \
+    "OPTIMIZATION_NOTES=- _mm512_ternarylogic_epi64(0xD2) for Chi: a ^ (~b & c) in single instruction
  *   - _mm512_ternarylogic_epi64(0x96) for XOR3: a ^ b ^ c in single instruction
  *   - _mm512_rolv_epi64 for Rho: variable rotation per lane
  *   - _mm512_permutexvar_epi64 for Theta/Pi permutations
  *   - Plane layout (5 lanes/register) for maximum parallelism
  *   - Full 24-round unrolling for maximum ILP" \
-            "PERF_TARGET=2-4 GB/s (single-core)" \
-            "PRIMITIVES=@${KECCAK_DIR}/arch/x86/avx512_primitives.tpl"
-        
-        # AVX2 (Lane layout)
-        echo ""
-        echo "Generating AVX2 (lane layout)..."
-        generate "${TPL_LANE}" "${OUTPUT_DIR}/dap_keccak_avx2.c" \
-            "ARCH_NAME=AVX2" \
-            "ARCH_LOWER=avx2" \
-            "ARCH_INCLUDES=#include <immintrin.h>" \
-            "TARGET_ATTR=__attribute__((target(\"avx2\")))" \
-            "OPTIMIZATION_NOTES=- 256-bit SIMD for column parity (Theta)
+    "PERF_TARGET=2-4 GB/s (single-core)" \
+    "PRIMITIVES=@${KECCAK_DIR}/arch/x86/avx512_primitives.tpl"
+
+echo ""
+echo "Generating AVX2 (lane layout)..."
+generate "${TPL_LANE}" "${OUTPUT_DIR}/dap_keccak_avx2.c" \
+    "ARCH_NAME=AVX2" \
+    "ARCH_LOWER=avx2" \
+    "ARCH_INCLUDES=#include <immintrin.h>" \
+    "TARGET_ATTR=__attribute__((target(\"avx2\")))" \
+    "OPTIMIZATION_NOTES=- 256-bit SIMD for column parity (Theta)
  *   - ANDN for Chi step (2 instructions vs 3 scalar)
  *   - Interleaved state processing" \
-            "PERF_TARGET=1-2 GB/s (single-core)" \
-            "PRIMITIVES=@${KECCAK_DIR}/arch/x86/avx2_primitives.tpl"
-        
-        # SSE2 (Lane layout - baseline)
-        echo ""
-        echo "Generating SSE2 (lane layout)..."
-        generate "${TPL_LANE}" "${OUTPUT_DIR}/dap_keccak_sse2.c" \
-            "ARCH_NAME=SSE2" \
-            "ARCH_LOWER=sse2" \
-            "ARCH_INCLUDES=#include <emmintrin.h>" \
-            "TARGET_ATTR=__attribute__((target(\"sse2\")))" \
-            "OPTIMIZATION_NOTES=- 128-bit SIMD for column parity (Theta)
+    "PERF_TARGET=1-2 GB/s (single-core)" \
+    "PRIMITIVES=@${KECCAK_DIR}/arch/x86/avx2_primitives.tpl"
+
+echo ""
+echo "Generating SSE2 (lane layout)..."
+generate "${TPL_LANE}" "${OUTPUT_DIR}/dap_keccak_sse2.c" \
+    "ARCH_NAME=SSE2" \
+    "ARCH_LOWER=sse2" \
+    "ARCH_INCLUDES=#include <emmintrin.h>" \
+    "TARGET_ATTR=__attribute__((target(\"sse2\")))" \
+    "OPTIMIZATION_NOTES=- 128-bit SIMD for column parity (Theta)
  *   - Baseline x86-64 SIMD support" \
-            "PERF_TARGET=500 MB/s - 1 GB/s (single-core)" \
-            "PRIMITIVES=@${KECCAK_DIR}/arch/x86/sse2_primitives.tpl"
-        ;;
-    
-    arm*|aarch64|ARM*)
-        echo ""
-        echo "=== Generating ARM SIMD implementations ==="
-        
-        # NEON (Lane layout)
-        echo ""
-        echo "Generating ARM NEON (lane layout)..."
-        generate "${TPL_LANE}" "${OUTPUT_DIR}/dap_keccak_neon.c" \
-            "ARCH_NAME=NEON" \
-            "ARCH_LOWER=neon" \
-            "ARCH_INCLUDES=#include <arm_neon.h>" \
-            "TARGET_ATTR=" \
-            "OPTIMIZATION_NOTES=- 128-bit SIMD for column parity (Theta)
+    "PERF_TARGET=500 MB/s - 1 GB/s (single-core)" \
+    "PRIMITIVES=@${KECCAK_DIR}/arch/x86/sse2_primitives.tpl"
+
+echo ""
+echo "=== Generating ARM SIMD implementations ==="
+
+echo ""
+echo "Generating ARM NEON (lane layout)..."
+generate "${TPL_LANE}" "${OUTPUT_DIR}/dap_keccak_neon.c" \
+    "ARCH_NAME=NEON" \
+    "ARCH_LOWER=neon" \
+    "ARCH_INCLUDES=#include <arm_neon.h>" \
+    "TARGET_ATTR=" \
+    "OPTIMIZATION_NOTES=- 128-bit SIMD for column parity (Theta)
  *   - BIC (bit clear) available for Chi" \
-            "PERF_TARGET=500 MB/s - 1.5 GB/s (single-core)" \
-            "PRIMITIVES=@${KECCAK_DIR}/arch/arm/neon_primitives.tpl"
-        
-        # SVE and SVE2 (AArch64 only)
-        if [[ "${ARCH}" == "aarch64" ]]; then
-            # SVE (Lane layout - no EOR3/BCAX)
-            echo ""
-            echo "Generating ARM SVE (lane layout)..."
-            generate "${TPL_LANE}" "${OUTPUT_DIR}/dap_keccak_sve.c" \
-                "ARCH_NAME=SVE" \
-                "ARCH_LOWER=sve" \
-                "ARCH_INCLUDES=#include <arm_sve.h>" \
-                "TARGET_ATTR=__attribute__((target(\"+sve\")))" \
-                "OPTIMIZATION_NOTES=- Scalable vectors (128-2048 bits)
+    "PERF_TARGET=500 MB/s - 1.5 GB/s (single-core)" \
+    "PRIMITIVES=@${KECCAK_DIR}/arch/arm/neon_primitives.tpl"
+
+echo ""
+echo "Generating ARM SVE (lane layout)..."
+generate "${TPL_LANE}" "${OUTPUT_DIR}/dap_keccak_sve.c" \
+    "ARCH_NAME=SVE" \
+    "ARCH_LOWER=sve" \
+    "ARCH_INCLUDES=#include <arm_sve.h>" \
+    "TARGET_ATTR=__attribute__((target(\"+sve\")))" \
+    "OPTIMIZATION_NOTES=- Scalable vectors (128-2048 bits)
  *   - Predicated operations for flexible vector lengths
  *   - EOR for XOR, BIC available for bit clear" \
-                "PERF_TARGET=1-2 GB/s (single-core)" \
-                "PRIMITIVES=@${KECCAK_DIR}/arch/arm/sve_primitives.tpl"
-            
-            # SVE2 (Plane layout - with EOR3/BCAX)
-            echo ""
-            echo "Generating ARM SVE2 (plane layout)..."
-            generate "${TPL_PLANE}" "${OUTPUT_DIR}/dap_keccak_sve2.c" \
-                "ARCH_NAME=SVE2" \
-                "ARCH_LOWER=sve2" \
-                "ARCH_INCLUDES=#include <arm_sve.h>" \
-                "ALIGNMENT_ATTR=__attribute__((aligned(64)))" \
-                "TARGET_ATTR=__attribute__((target(\"+sve2\")))" \
-                "OPTIMIZATION_NOTES=- Scalable vectors (128-2048 bits)
+    "PERF_TARGET=1-2 GB/s (single-core)" \
+    "PRIMITIVES=@${KECCAK_DIR}/arch/arm/sve_primitives.tpl"
+
+echo ""
+echo "Generating ARM SVE2 (plane layout)..."
+generate "${TPL_PLANE}" "${OUTPUT_DIR}/dap_keccak_sve2.c" \
+    "ARCH_NAME=SVE2" \
+    "ARCH_LOWER=sve2" \
+    "ARCH_INCLUDES=#include <arm_sve.h>" \
+    "ALIGNMENT_ATTR=__attribute__((aligned(64)))" \
+    "TARGET_ATTR=__attribute__((target(\"+sve2\")))" \
+    "OPTIMIZATION_NOTES=- Scalable vectors (128-2048 bits)
  *   - EOR3 for 3-way XOR in single instruction
  *   - BCAX for Chi: a ^ (~b & c) in single instruction
  *   - Predicated operations for 5-lane planes" \
-                "PERF_TARGET=2-4 GB/s (single-core)" \
-                "PRIMITIVES=@${KECCAK_DIR}/arch/arm/sve2_primitives.tpl"
-        fi
-        ;;
-    
-    *)
-        echo "WARNING: Unknown architecture '${ARCH}', no SIMD implementations generated"
-        echo "Only reference C implementation will be available"
-        exit 0
-        ;;
-esac
+    "PERF_TARGET=2-4 GB/s (single-core)" \
+    "PRIMITIVES=@${KECCAK_DIR}/arch/arm/sve2_primitives.tpl"
+
+# Wrap generated .c files with architecture preprocessor guards
+X86_GUARD="defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)"
+ARM_GUARD="defined(__aarch64__) || defined(__arm__)"
+SVE_GUARD="defined(__aarch64__) && !defined(__APPLE__)"
+
+wrap_arch_guard "${OUTPUT_DIR}/dap_keccak_avx512.c" "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_keccak_avx2.c"   "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_keccak_sse2.c"   "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_keccak_neon.c"   "$ARM_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_keccak_sve.c"    "$SVE_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_keccak_sve2.c"   "$SVE_GUARD"
 
 echo ""
 echo "=== Generation complete! ==="
