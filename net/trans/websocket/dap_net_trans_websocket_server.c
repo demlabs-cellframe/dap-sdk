@@ -554,7 +554,7 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
             l_session->service_key = strdup(l_service_key->value);
 
         // Create channels from session's active_channels list
-        if (l_session->active_channels) {
+        if (l_session->active_channels[0]) {
             size_t l_count = strlen(l_session->active_channels);
             for (size_t i = 0; i < l_count; i++) {
                 dap_stream_ch_t *l_ch = dap_stream_ch_new(l_stream, l_session->active_channels[i]);

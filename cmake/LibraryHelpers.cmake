@@ -21,115 +21,43 @@ function(_dap_create_visited_set TARGET_NAME VISITED_SET_VAR)
     set(${VISITED_SET_VAR} "${TARGET_NAME}_${TIMESTAMP_VALUE}_${RANDOM_VALUE}" PARENT_SCOPE)
 endfunction()
 
-# Mark a target as visited in the global cache
-# Usage: _dap_mark_visited(TARGET_NAME VISITED_SET_VAR)
+# Mark a target as visited (GLOBAL PROPERTY — O(1), unlike CACHE which is O(n))
 function(_dap_mark_visited TARGET_NAME VISITED_SET_VAR)
-    set(CACHE_KEY "_DAP_VISITED_${VISITED_SET_VAR}_${TARGET_NAME}")
-    set(${CACHE_KEY} "VISITED" CACHE INTERNAL "Cycle detection marker")
+    set_property(GLOBAL PROPERTY "_DAP_VISITED_${VISITED_SET_VAR}_${TARGET_NAME}" TRUE)
 endfunction()
 
 # Check if a target has been visited
-# Usage: _dap_is_visited(TARGET_NAME VISITED_SET_VAR RESULT_VAR)
 function(_dap_is_visited TARGET_NAME VISITED_SET_VAR RESULT_VAR)
-    set(CACHE_KEY "_DAP_VISITED_${VISITED_SET_VAR}_${TARGET_NAME}")
-    # Read CACHE variable using get_property (more reliable than dereferencing)
-    get_property(IS_VISITED_VALUE CACHE ${CACHE_KEY} PROPERTY VALUE)
-    if(IS_VISITED_VALUE STREQUAL "VISITED")
+    get_property(_val GLOBAL PROPERTY "_DAP_VISITED_${VISITED_SET_VAR}_${TARGET_NAME}")
+    if(_val)
         set(${RESULT_VAR} TRUE PARENT_SCOPE)
     else()
         set(${RESULT_VAR} FALSE PARENT_SCOPE)
     endif()
 endfunction()
 
-# Clear visited set for a new traversal
-# Usage: _dap_clear_visited_set(VISITED_SET_VAR)
+# Clear visited set (GLOBAL properties don't need explicit cleanup —
+# unique VISITED_SET_VAR per traversal prevents collisions)
 function(_dap_clear_visited_set VISITED_SET_VAR)
-    # Track visited targets in a list stored in a cache variable
-    set(CACHE_LIST_KEY "_DAP_VISITED_LIST_${VISITED_SET_VAR}")
-    # Read CACHE variable using get_property (more reliable)
-    get_property(VISITED_LIST CACHE ${CACHE_LIST_KEY} PROPERTY VALUE)
-    if(VISITED_LIST)
-        foreach(TARGET ${VISITED_LIST})
-            set(CACHE_KEY "_DAP_VISITED_${VISITED_SET_VAR}_${TARGET}")
-            unset(${CACHE_KEY} CACHE)
-        endforeach()
-        unset(${CACHE_LIST_KEY} CACHE)
-    endif()
 endfunction()
 
-# Internal helper: add target to visited list for cleanup
+# Internal helper: add target to visited list (no-op — cleanup not needed with GLOBAL properties)
 function(_dap_add_to_visited_list TARGET_NAME VISITED_SET_VAR)
-    set(CACHE_LIST_KEY "_DAP_VISITED_LIST_${VISITED_SET_VAR}")
-    # Read CACHE variable using get_property (more reliable)
-    get_property(VISITED_LIST CACHE ${CACHE_LIST_KEY} PROPERTY VALUE)
-    if(NOT VISITED_LIST)
-        set(VISITED_LIST "")
-    endif()
-    list(FIND VISITED_LIST ${TARGET_NAME} FOUND)
-    if(FOUND EQUAL -1)
-        list(APPEND VISITED_LIST ${TARGET_NAME})
-        set(${CACHE_LIST_KEY} ${VISITED_LIST} CACHE INTERNAL "Visited targets list")
-    endif()
-endfunction()
-
-# Helper function to propagate include directories from INTERFACE dependencies
-# This is needed because CMake doesn't automatically propagate INTERFACE_INCLUDE_DIRECTORIES
-# to OBJECT libraries during compilation
-# This function recursively processes all dependencies to ensure transitive includes are propagated
-function(propagate_interface_includes_for_object TARGET_NAME)
-    get_target_property(TARGET_TYPE ${TARGET_NAME} TYPE)
-    if(NOT TARGET_TYPE STREQUAL "OBJECT_LIBRARY")
-        return()
-    endif()
-    
-    # Get all linked libraries (INTERFACE dependencies)
-    get_target_property(LINK_LIBS ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
-    if(LINK_LIBS)
-        foreach(LIB ${LINK_LIBS})
-            if(TARGET ${LIB})
-                # Get INTERFACE_INCLUDE_DIRECTORIES from dependency (includes PUBLIC)
-                get_target_property(LIB_INTERFACE_INCLUDES ${LIB} INTERFACE_INCLUDE_DIRECTORIES)
-                if(LIB_INTERFACE_INCLUDES)
-                    target_include_directories(${TARGET_NAME} PRIVATE ${LIB_INTERFACE_INCLUDES})
-                endif()
-                # Also get regular INCLUDE_DIRECTORIES if they exist
-                get_target_property(LIB_INCLUDES ${LIB} INCLUDE_DIRECTORIES)
-                if(LIB_INCLUDES)
-                    target_include_directories(${TARGET_NAME} PRIVATE ${LIB_INCLUDES})
-                endif()
-                
-                # Recursively process dependencies of this library to get transitive includes
-                get_target_property(LIB_INTERFACE_DEPS ${LIB} INTERFACE_LINK_LIBRARIES)
-                if(LIB_INTERFACE_DEPS)
-                    foreach(DEP ${LIB_INTERFACE_DEPS})
-                        if(TARGET ${DEP})
-                            get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
-                            if(DEP_INTERFACE_INCLUDES)
-                                target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INTERFACE_INCLUDES})
-                            endif()
-                        endif()
-                    endforeach()
-                endif()
-            endif()
-        endforeach()
-    endif()
 endfunction()
 
 # =========================================
-# DAP_LINK_LIBRARIES - Enhanced linking with automatic include propagation
+# DAP_LINK_LIBRARIES
 # =========================================
-# Links libraries and automatically propagates include directories for OBJECT libraries
-# Handles transitive dependencies recursively with cycle detection
+# Links libraries with build dependency propagation for OBJECT libraries.
+# Include propagation is handled by post_process_object_libraries() in a single
+# pass after all targets are created (see ObjectLibraryIncludePostProcess.cmake).
 # Usage: dap_link_libraries(TARGET_NAME [PUBLIC|PRIVATE|INTERFACE] lib1 lib2 ...)
 function(dap_link_libraries TARGET_NAME)
-    # For OBJECT libraries, we need to establish build dependencies BEFORE target_link_libraries
-    # because target_link_libraries for OBJECT libraries with INTERFACE doesn't create build dependencies
     get_target_property(TGT_TYPE ${TARGET_NAME} TYPE)
     if(TGT_TYPE STREQUAL "OBJECT_LIBRARY")
-        # Parse arguments to find libraries (skip scope keywords)
         set(LIBS_TO_PROCESS "")
         set(CURRENT_SCOPE "")
-        
+
         foreach(ARG ${ARGN})
             if(ARG MATCHES "^(PUBLIC|PRIVATE|INTERFACE)$")
                 set(CURRENT_SCOPE ${ARG})
@@ -137,32 +65,18 @@ function(dap_link_libraries TARGET_NAME)
                 list(APPEND LIBS_TO_PROCESS ${ARG})
             endif()
         endforeach()
-        
-        # If no scope specified, INTERFACE is implied for OBJECT libraries
+
         if(NOT CURRENT_SCOPE AND LIBS_TO_PROCESS)
             set(CURRENT_SCOPE "INTERFACE")
         endif()
-        
-        # Process dependencies with cycle detection
+
+        # Propagate DAP_BUILD_DEPENDENCIES (e.g. BuildXKCP) so build order is correct
         if(LIBS_TO_PROCESS AND (CURRENT_SCOPE STREQUAL "INTERFACE" OR CURRENT_SCOPE STREQUAL "PUBLIC"))
-            # Create unique visited set for this call to ensure proper cycle detection
-            _dap_create_visited_set(${TARGET_NAME} VISITED_SET_INCLUDES)
-            
-            # IMPORTANT: Establish build dependencies for DIRECT dependencies BEFORE target_link_libraries
-            # This ensures that custom build dependencies (like BuildXKCP) are propagated
-            # and create proper build order in Makefile
             foreach(DEP ${LIBS_TO_PROCESS})
                 if(TARGET ${DEP})
-                    # Get build dependencies of this direct dependency
                     get_target_property(DEP_BUILD_DEPS ${DEP} DAP_BUILD_DEPENDENCIES)
-                    if(DEP_BUILD_DEPS AND NOT DEP_BUILD_DEPS STREQUAL "DAP_BUILD_DEPENDENCIES-NOTFOUND" AND NOT DEP_BUILD_DEPS STREQUAL "NOTFOUND")
-                        # Handle both string and list formats
-                        if(DEP_BUILD_DEPS MATCHES ";")
-                            set(DEP_BUILD_DEPS_LIST ${DEP_BUILD_DEPS})
-                        else()
-                            set(DEP_BUILD_DEPS_LIST ${DEP_BUILD_DEPS})
-                        endif()
-                        foreach(BUILD_DEP ${DEP_BUILD_DEPS_LIST})
+                    if(DEP_BUILD_DEPS AND NOT DEP_BUILD_DEPS STREQUAL "DAP_BUILD_DEPENDENCIES-NOTFOUND")
+                        foreach(BUILD_DEP ${DEP_BUILD_DEPS})
                             if(BUILD_DEP AND TARGET ${BUILD_DEP})
                                 add_dependencies(${TARGET_NAME} ${BUILD_DEP})
                             endif()
@@ -170,205 +84,24 @@ function(dap_link_libraries TARGET_NAME)
                     endif()
                 endif()
             endforeach()
-            
-            # Propagate include directories for DIRECT dependencies only before target_link_libraries
-            # Transitive dependencies will be processed after target_link_libraries
-            foreach(DEP ${LIBS_TO_PROCESS})
-                if(TARGET ${DEP})
-                    get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
-                    get_target_property(DEP_INCLUDES ${DEP} INCLUDE_DIRECTORIES)
-                    # Handle both list and string formats for INTERFACE_INCLUDE_DIRECTORIES
-                    # IMPORTANT: Check for empty string/list as well as NOTFOUND
-                    # Also handle case where property might be a generator expression or uninitialized
-                    if(DEP_INTERFACE_INCLUDES)
-                        # Check if it's NOTFOUND (uninitialized property)
-                        if(NOT DEP_INTERFACE_INCLUDES STREQUAL "INTERFACE_INCLUDE_DIRECTORIES-NOTFOUND" AND NOT DEP_INTERFACE_INCLUDES STREQUAL "NOTFOUND")
-                            # Convert to list if it's a string with semicolons
-                            if(DEP_INTERFACE_INCLUDES MATCHES ";")
-                                set(DEP_INTERFACE_INCLUDES_LIST ${DEP_INTERFACE_INCLUDES})
-                            else()
-                                set(DEP_INTERFACE_INCLUDES_LIST ${DEP_INTERFACE_INCLUDES})
-                            endif()
-                            # Only add if list is not empty (after removing empty strings)
-                            list(REMOVE_ITEM DEP_INTERFACE_INCLUDES_LIST "")
-                            if(DEP_INTERFACE_INCLUDES_LIST)
-                                target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INTERFACE_INCLUDES_LIST})
-                            endif()
-                        endif()
-                    endif()
-                    if(DEP_INCLUDES)
-                        # Check if it's NOTFOUND (uninitialized property)
-                        if(NOT DEP_INCLUDES STREQUAL "INCLUDE_DIRECTORIES-NOTFOUND" AND NOT DEP_INCLUDES STREQUAL "NOTFOUND")
-                            # Convert to list if it's a string with semicolons
-                            if(DEP_INCLUDES MATCHES ";")
-                                set(DEP_INCLUDES_LIST ${DEP_INCLUDES})
-                            else()
-                                set(DEP_INCLUDES_LIST ${DEP_INCLUDES})
-                            endif()
-                            # Only add if list is not empty (after removing empty strings)
-                            list(REMOVE_ITEM DEP_INCLUDES_LIST "")
-                            if(DEP_INCLUDES_LIST)
-                                target_include_directories(${TARGET_NAME} PRIVATE ${DEP_INCLUDES_LIST})
-                            endif()
-                        endif()
-                    endif()
-                endif()
-            endforeach()
         endif()
     endif()
-    
-    # Call standard CMake target_link_libraries
-    # This establishes link dependencies and propagates INTERFACE properties
+
     target_link_libraries(${TARGET_NAME} ${ARGN})
-    
-    # Process transitive dependencies AFTER target_link_libraries
-    # This ensures INTERFACE_LINK_LIBRARIES is properly set
-    # IMPORTANT: For OBJECT libraries, CMake doesn't automatically propagate transitive dependencies
-    # in INTERFACE_LINK_LIBRARIES, so we need to process them recursively starting from direct dependencies
+
+    # Transitive build dependency propagation (includes are handled by post_process)
     if(TGT_TYPE STREQUAL "OBJECT_LIBRARY" AND LIBS_TO_PROCESS AND (CURRENT_SCOPE STREQUAL "INTERFACE" OR CURRENT_SCOPE STREQUAL "PUBLIC"))
-        # Create unique visited sets for transitive processing
-        _dap_create_visited_set(${TARGET_NAME} VISITED_SET_INCLUDES_TRANS)
         _dap_create_visited_set(${TARGET_NAME} VISITED_SET_BUILD)
-        
-        # Process transitive dependencies recursively starting from direct dependencies
-        # IMPORTANT: We need to process transitive dependencies of direct dependencies.
-        # The direct dependencies' includes were already added in lines 174-187,
-        # but we need to recursively process their INTERFACE_LINK_LIBRARIES to get
-        # transitive includes (like dap_http_common from dap_http_server).
-        # We mark direct dependencies as visited first to skip their own includes,
-        # but still process their transitive dependencies.
         foreach(DEP ${LIBS_TO_PROCESS})
             if(TARGET ${DEP})
-                _dap_mark_visited(${DEP} ${VISITED_SET_INCLUDES_TRANS})
-                _dap_add_to_visited_list(${DEP} ${VISITED_SET_INCLUDES_TRANS})
                 _dap_mark_visited(${DEP} ${VISITED_SET_BUILD})
-                _dap_add_to_visited_list(${DEP} ${VISITED_SET_BUILD})
-                
-                # Get transitive dependencies of this direct dependency
                 get_target_property(DEP_INTERFACE_DEPS ${DEP} INTERFACE_LINK_LIBRARIES)
                 if(DEP_INTERFACE_DEPS)
-                    # Process transitive includes from this dependency's dependencies
-                    propagate_includes_for_target(${TARGET_NAME} "${DEP_INTERFACE_DEPS}" ${VISITED_SET_INCLUDES_TRANS})
-                    
-                    # Process transitive build dependencies
                     propagate_build_dependencies(${TARGET_NAME} "${DEP_INTERFACE_DEPS}" ${VISITED_SET_BUILD})
                 endif()
             endif()
         endforeach()
     endif()
-endfunction()
-
-# =========================================
-# INCLUDE PROPAGATION WITH CYCLE DETECTION
-# =========================================
-# Two-phase approach: collect dependencies first, then apply changes
-# This ensures consistent state for parallel builds and handles cycles correctly
-
-# Collect transitive include directories from dependencies
-# Returns collected includes in RESULT_VAR as a list
-# Usage: _collect_transitive_includes(TARGET_NAME DEPENDENCIES VISITED_SET_VAR RESULT_VAR)
-function(_collect_transitive_includes TARGET_NAME DEPENDENCIES VISITED_SET_VAR RESULT_VAR)
-    set(COLLECTED_INCLUDES ${${RESULT_VAR}})
-    
-    foreach(DEP ${DEPENDENCIES})
-        if(TARGET ${DEP})
-            # Check for cycles using global cache
-            _dap_is_visited(${DEP} ${VISITED_SET_VAR} IS_VISITED)
-            if(IS_VISITED)
-                # Cycle detected - stop processing this branch immediately
-                # Already collected includes up to this point will be used
-                # Further includes should be specified directly by the modules
-                continue()
-            endif()
-            
-            # Mark as visited BEFORE recursive calls
-            _dap_mark_visited(${DEP} ${VISITED_SET_VAR})
-            _dap_add_to_visited_list(${DEP} ${VISITED_SET_VAR})
-            
-            # Collect direct includes from this dependency
-            get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
-            get_target_property(DEP_INCLUDES ${DEP} INCLUDE_DIRECTORIES)
-            
-            # Handle both list and string formats, and check for NOTFOUND
-            if(DEP_INTERFACE_INCLUDES AND NOT DEP_INTERFACE_INCLUDES STREQUAL "INTERFACE_INCLUDE_DIRECTORIES-NOTFOUND" AND NOT DEP_INTERFACE_INCLUDES STREQUAL "NOTFOUND")
-                # Convert to list if it's a string with semicolons
-                if(DEP_INTERFACE_INCLUDES MATCHES ";")
-                    set(DEP_INTERFACE_INCLUDES_LIST ${DEP_INTERFACE_INCLUDES})
-                else()
-                    set(DEP_INTERFACE_INCLUDES_LIST ${DEP_INTERFACE_INCLUDES})
-                endif()
-                list(APPEND COLLECTED_INCLUDES ${DEP_INTERFACE_INCLUDES_LIST})
-            endif()
-            if(DEP_INCLUDES AND NOT DEP_INCLUDES STREQUAL "INCLUDE_DIRECTORIES-NOTFOUND" AND NOT DEP_INCLUDES STREQUAL "NOTFOUND")
-                # Convert to list if it's a string with semicolons
-                if(DEP_INCLUDES MATCHES ";")
-                    set(DEP_INCLUDES_LIST ${DEP_INCLUDES})
-                else()
-                    set(DEP_INCLUDES_LIST ${DEP_INCLUDES})
-                endif()
-                list(APPEND COLLECTED_INCLUDES ${DEP_INCLUDES_LIST})
-            endif()
-            
-            # Recursively collect transitive dependencies
-            get_target_property(DEP_INTERFACE_DEPS ${DEP} INTERFACE_LINK_LIBRARIES)
-            get_target_property(DEP_LINK_DEPS ${DEP} LINK_LIBRARIES)
-            
-            # Process INTERFACE dependencies (propagated to consumers)
-            if(DEP_INTERFACE_DEPS)
-                # Update parent scope with current state before recursive call
-                set(${RESULT_VAR} ${COLLECTED_INCLUDES} PARENT_SCOPE)
-                _collect_transitive_includes(${TARGET_NAME} "${DEP_INTERFACE_DEPS}" ${VISITED_SET_VAR} ${RESULT_VAR})
-                # Read updated value from parent scope after recursive call
-                set(COLLECTED_INCLUDES ${${RESULT_VAR}})
-            endif()
-            
-            # Process PRIVATE dependencies for OBJECT libraries
-            if(DEP_LINK_DEPS)
-                get_target_property(DEP_TYPE ${DEP} TYPE)
-                if(DEP_TYPE STREQUAL "OBJECT_LIBRARY")
-                    # Update parent scope with current state before recursive call
-                    set(${RESULT_VAR} ${COLLECTED_INCLUDES} PARENT_SCOPE)
-                    _collect_transitive_includes(${TARGET_NAME} "${DEP_LINK_DEPS}" ${VISITED_SET_VAR} ${RESULT_VAR})
-                    # Read updated value from parent scope after recursive call
-                    set(COLLECTED_INCLUDES ${${RESULT_VAR}})
-                endif()
-            endif()
-        endif()
-    endforeach()
-    
-    # Return collected includes
-    set(${RESULT_VAR} ${COLLECTED_INCLUDES} PARENT_SCOPE)
-endfunction()
-
-# Apply collected include directories to target
-# Usage: _apply_collected_includes(TARGET_NAME COLLECTED_INCLUDES)
-function(_apply_collected_includes TARGET_NAME COLLECTED_INCLUDES)
-    if(COLLECTED_INCLUDES)
-        # Remove duplicates
-        list(REMOVE_DUPLICATES COLLECTED_INCLUDES)
-        # Apply all includes at once
-        target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INCLUDES})
-    endif()
-endfunction()
-
-# Helper function to propagate includes recursively with cycle detection
-# Uses two-phase approach: collect first, then apply
-# VISITED_SET_VAR is a unique identifier for this traversal
-function(propagate_includes_for_target TARGET_NAME DEPENDENCIES VISITED_SET_VAR)
-    # Create unique visited set if not provided
-    if(NOT VISITED_SET_VAR OR VISITED_SET_VAR STREQUAL "")
-        _dap_create_visited_set(${TARGET_NAME} VISITED_SET_VAR)
-    endif()
-    
-    # Phase 1: Collect all transitive includes
-    set(COLLECTED_INCLUDES "")
-    _collect_transitive_includes(${TARGET_NAME} "${DEPENDENCIES}" ${VISITED_SET_VAR} COLLECTED_INCLUDES)
-    
-    # Phase 2: Apply collected includes
-    _apply_collected_includes(${TARGET_NAME} "${COLLECTED_INCLUDES}")
-    
-    # Cleanup visited set
-    _dap_clear_visited_set(${VISITED_SET_VAR})
 endfunction()
 
 # =========================================
