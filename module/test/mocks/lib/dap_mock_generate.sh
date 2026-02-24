@@ -25,7 +25,7 @@ generate_wrap_file() {
         
         if [ "$system_name" == "Darwin" ]; then
             # =================================================================
-            # macOS: Generate typed override functions
+            # macOS: Generate typed override functions via template
             # =================================================================
             # Apple ld doesn't support --wrap, so we generate override functions
             # that are linked directly into the test executable.
@@ -35,8 +35,6 @@ generate_wrap_file() {
             local dylib_path_file="${wrap_dir}/mock_dylib_path.txt"
             
             # Build lookup file from custom_mocks_file for type lookup
-            # Format: return_type|func_name|param_list|macro_type|param_count
-            # Note: Using file-based lookup instead of associative arrays for bash 3.x compatibility
             local type_lookup_file="${wrap_dir}/mock_type_lookup.txt"
             if [ -n "$custom_mocks_file" ] && [ -f "$custom_mocks_file" ] && [ -s "$custom_mocks_file" ]; then
                 cp "$custom_mocks_file" "$type_lookup_file"
@@ -49,17 +47,12 @@ generate_wrap_file() {
                 local lookup_file="$1"
                 local func_name="$2"
                 local field="$3"  # 1=return_type, 3=param_list, 5=param_count
-                # Format: return_type|func_name|param_list|macro_type|param_count
-                # Need to match |func_name| in the middle
                 grep "|${func_name}|" "$lookup_file" 2>/dev/null | head -1 | cut -d'|' -f"$field"
             }
             
             # Helper to extract __wrap_func signature from source files
             # Returns: return_type|param_list
             # BSD-compatible (no gawk-specific features)
-            # Searches for:
-            # 1. Explicit __wrap_func_name definitions
-            # 2. DAP_MOCK_WRAPPER_DEFAULT(ret_type, func_name, (params), ...)
             _extract_wrap_signature() {
                 local func_name="$1"
                 shift
@@ -69,7 +62,6 @@ generate_wrap_file() {
                     [ ! -f "$src_file" ] && continue
                     
                     # Method 1: Look for DAP_MOCK_WRAPPER_DEFAULT
-                    # Format: DAP_MOCK_WRAPPER_DEFAULT(return_type, func_name, (params_decl), (param_names))
                     local default_sig=$(grep -A 3 "DAP_MOCK_WRAPPER_DEFAULT[[:space:]]*([^,]*,[[:space:]]*${func_name}[[:space:]]*," "$src_file" 2>/dev/null | \
                         tr '\n' ' ' | \
                         sed -E "s/.*DAP_MOCK_WRAPPER_DEFAULT[[:space:]]*\\([[:space:]]*([^,]+)[[:space:]]*,[[:space:]]*${func_name}[[:space:]]*,[[:space:]]*\\(([^)]+)\\).*/\\1|\\2/" | \
@@ -91,7 +83,6 @@ generate_wrap_file() {
                         sed 's/[[:space:]]*$//')
                     
                     if [ -n "$sig" ] && echo "$sig" | grep -q "${func_name}"; then
-                        # Parse: "return_type func_name(type1 arg1, type2 arg2)"
                         local ret_type=$(echo "$sig" | sed -E "s/^(.+)[[:space:]]+${func_name}[[:space:]]*\(.*/\1/" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
                         local params=$(echo "$sig" | sed -E "s/.*${func_name}[[:space:]]*\(([^)]*)\).*/\1/" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
                         [ -z "$params" ] && params="void"
@@ -102,28 +93,6 @@ generate_wrap_file() {
                 echo ""
             }
             
-            # Generate C file for symbol override with proper types
-            cat > "$interpose_c" << 'INTERPOSE_HEADER'
-// Auto-generated mock override library for macOS
-// Linked BEFORE cellframe_sdk with -flat_namespace for symbol override
-// Uses TYPED functions for proper ARM64 ABI (critical for struct returns!)
-#ifdef __APPLE__
-#include <stddef.h>
-#include <dlfcn.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdbool.h>
-
-// Include SDK headers for type definitions
-#include "dap_common.h"
-#include "dap_chain_common.h"
-#include "dap_chain_datum_tx.h"
-#include "dap_chain_ledger.h"
-#include "dap_math_ops.h"
-
-INTERPOSE_HEADER
-
             # Get source files from environment (passed from CMake)
             local source_files_str="${DAP_MOCK_SOURCE_FILES:-}"
             local -a source_files_arr=()
@@ -131,8 +100,8 @@ INTERPOSE_HEADER
                 IFS=';' read -ra source_files_arr <<< "$source_files_str"
             fi
             
-            # Generate typed override functions for each mock
-            # NOTE: Use while loop with redirect (not pipe) to preserve variables
+            # Pre-process all functions: collect data for template
+            local FUNCTIONS_DATA=""
             while read func; do
                 [ -z "$func" ] && continue
                 
@@ -147,7 +116,6 @@ INTERPOSE_HEADER
                     if [ -n "$sig" ]; then
                         ret_type=$(echo "$sig" | cut -d'|' -f1)
                         param_list=$(echo "$sig" | cut -d'|' -f2)
-                        # Count params
                         if [ "$param_list" = "void" ] || [ -z "$param_list" ]; then
                             param_count=0
                         else
@@ -160,8 +128,7 @@ INTERPOSE_HEADER
                 [ -z "$ret_type" ] && ret_type="void*"
                 [ -z "$param_count" ] && param_count=0
                 
-                # Determine if this is a pointer return type (safe for variadic cast)
-                # or a struct return type (needs proper typing)
+                # Determine if this is a struct return type
                 local is_struct_return=0
                 case "$ret_type" in
                     *"*"|void|int|long|short|char|size_t|ssize_t|intptr_t|uintptr_t|uint8_t|uint16_t|uint32_t|uint64_t|int8_t|int16_t|int32_t|int64_t|bool|_Bool)
@@ -180,64 +147,23 @@ INTERPOSE_HEADER
                     param_names=""
                 else
                     param_decl="$param_list"
-                    # Extract parameter names from "type1 name1, type2 name2, ..."
-                    # Use awk to get last word from each comma-separated part, removing leading *
                     param_names=$(echo "$param_list" | awk -F',' '{for(i=1;i<=NF;i++){gsub(/^[[:space:]]+|[[:space:]]+$/,"",$i); n=split($i,a," "); name=a[n]; gsub(/^\*+/,"",name); printf "%s%s", name, (i<NF?", ":"")}}')
                 fi
                 
-                if [ "$is_struct_return" -eq 1 ]; then
-                    # Struct return type - generate fully typed wrapper
-                    cat >> "$interpose_c" << STRUCT_FUNC_TPL
-
-// === Typed override for: ${func} (struct return: ${ret_type}) ===
-// CRITICAL: Struct returns on ARM64 use hidden pointer parameter (x8 register)
-// Cannot use variadic forwarding - must have exact signature!
-
-// Forward declaration of wrapper (defined in test)
-extern ${ret_type} __wrap_${func}(${param_decl});
-
-// The override function that replaces original
-__attribute__((visibility("default")))
-${ret_type} ${func}(${param_decl}) {
-    // Always call the mock wrapper
-    return __wrap_${func}(${param_names});
-}
-
-STRUCT_FUNC_TPL
+                # Append to FUNCTIONS_DATA (newline-separated, pipe-delimited fields)
+                local entry="${func}|${ret_type}|${param_decl}|${param_names}|${is_struct_return}"
+                if [ -n "$FUNCTIONS_DATA" ]; then
+                    FUNCTIONS_DATA="${FUNCTIONS_DATA}"$'\n'"${entry}"
                 else
-                    # Pointer/scalar return type - can use variadic approach for __real_
-                    cat >> "$interpose_c" << PTR_FUNC_TPL
-
-// === Override for: ${func} (pointer/scalar return: ${ret_type}) ===
-typedef ${ret_type} (*${func}_func_t)(${param_decl});
-static ${func}_func_t s_real_${func} = NULL;
-
-// Forward declaration of wrapper (defined in test)
-extern ${ret_type} __wrap_${func}(${param_decl});
-
-// Provide __real_${func} for DAP_MOCK_WRAPPER_* macros
-__attribute__((visibility("default")))
-${ret_type} __real_${func}(${param_decl}) {
-    if (!s_real_${func}) {
-        s_real_${func} = (${func}_func_t)dlsym(RTLD_NEXT, "${func}");
-        if (!s_real_${func}) {
-            fprintf(stderr, "FATAL: dlsym(RTLD_NEXT, \"${func}\") failed: %s\\n", dlerror());
-            abort();
-        }
-    }
-    return s_real_${func}(${param_names});
-}
-
-// Override function - replaces ${func} due to link order + flat_namespace
-__attribute__((visibility("default")))
-${ret_type} ${func}(${param_decl}) {
-    return __wrap_${func}(${param_names});
-}
-
-PTR_FUNC_TPL
+                    FUNCTIONS_DATA="${entry}"
                 fi
             done <<< "$mock_functions"
-            echo "#endif // __APPLE__" >> "$interpose_c"
+            
+            # Generate interpose C file from template
+            replace_template_placeholders_with_mocking \
+                "${TEMPLATES_DIR}/interpose_typed.c.tpl" \
+                "$interpose_c" \
+                "FUNCTIONS_DATA=$FUNCTIONS_DATA"
             
             # Save C file path for CMake to compile (CMake has proper include paths)
             echo "$interpose_c" > "$dylib_path_file"
@@ -321,124 +247,30 @@ generate_macros_file() {
     prepare_map_count_params_helper_data "$MAX_ARGS_COUNT"
     prepare_map_impl_cond_1_data "$MAX_ARGS_COUNT" "${PARAM_COUNTS_ARRAY[@]}"
     prepare_map_impl_cond_data "${PARAM_COUNTS_ARRAY[@]}"
-    # NOTE: prepare_map_macros_data() is NO LONGER USED - we generate macros directly now
-    # prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}"
     
-    # Generate mock_map_macros content with template language constructs
-    RETURN_TYPE_MACROS_FILE="$return_type_macros_file" \
-    SIMPLE_WRAPPER_MACROS_FILE="$simple_wrapper_macros_file" \
-    # Convert PARAM_COUNTS_ARRAY to pipe-separated string for dap_tpl for loop
-    # dap_tpl for_evaluator expects pipe-separated or newline-separated arrays
-    PARAM_COUNTS_ARRAY_PIPE=$(IFS='|'; echo "${PARAM_COUNTS_ARRAY[*]}")
+    # Convert PARAM_COUNTS_ARRAY to pipe-separated string for dap_tpl
+    PARAM_COUNTS_ARRAY_PIPE=$(IFS='|'; echo "${local_param_counts[*]}")
     
-    # NOTE: DO NOT set PARAM_COUNTS_ARRAY in environment here - it will corrupt the global array!
-    # The template only needs PARAM_COUNTS_ARRAY_PIPE (passed as argument below)
-    MAX_ARGS_COUNT="$MAX_ARGS_COUNT" \
-    MAP_COUNT_PARAMS_BY_COUNT_DATA="$MAP_COUNT_PARAMS_BY_COUNT_DATA" \
-    MAP_COUNT_PARAMS_HELPER_DATA="$MAP_COUNT_PARAMS_HELPER_DATA" \
-    MAP_IMPL_COND_1_DATA="$MAP_IMPL_COND_1_DATA" \
-    MAP_IMPL_COND_DATA="$MAP_IMPL_COND_DATA" \
+    # Generate macros header from master template
+    # All sub-templates (mock_map_core, mock_map_n, etc.) are included via {{#include}}
     replace_template_placeholders_with_mocking \
-        "${TEMPLATES_DIR}/mock_map_macros.h.tpl" \
-        "${macros_file}.map_content" \
+        "${TEMPLATES_DIR}/mock_macros_header.h.tpl" \
+        "$macros_file" \
         "RETURN_TYPE_MACROS_FILE=$return_type_macros_file" \
         "SIMPLE_WRAPPER_MACROS_FILE=$simple_wrapper_macros_file" \
+        "FUNCTION_WRAPPERS_FILE=$function_wrappers_file" \
         "PARAM_COUNTS_ARRAY=$PARAM_COUNTS_ARRAY_PIPE" \
+        "PARAM_COUNTS_ARRAY_PIPE=$PARAM_COUNTS_ARRAY_PIPE" \
         "MAX_ARGS_COUNT=$MAX_ARGS_COUNT" \
+        "NARGS_IMPL_PARAMS=$NARGS_IMPL_PARAMS" \
+        "NARGS_SEQUENCE=$NARGS_SEQUENCE" \
         "MAP_COUNT_PARAMS_BY_COUNT_DATA=$MAP_COUNT_PARAMS_BY_COUNT_DATA" \
         "MAP_COUNT_PARAMS_HELPER_DATA=$MAP_COUNT_PARAMS_HELPER_DATA" \
         "MAP_IMPL_COND_1_DATA=$MAP_IMPL_COND_1_DATA" \
         "MAP_IMPL_COND_DATA=$MAP_IMPL_COND_DATA"
     
-    # Export file paths for template processing
-    export RETURN_TYPE_MACROS_FILE="$return_type_macros_file"
-    export SIMPLE_WRAPPER_MACROS_FILE="$simple_wrapper_macros_file"
-    export FUNCTION_WRAPPERS_FILE="$function_wrappers_file"
-    export MAP_MACROS_CONTENT_FILE="${macros_file}.map_content"
-    
-    # Verify files exist before template processing
-    if [ ! -f "$RETURN_TYPE_MACROS_FILE" ]; then
-        print_error "RETURN_TYPE_MACROS_FILE does not exist: $RETURN_TYPE_MACROS_FILE"
-        return 1
-    fi
-    
-    # Save file paths before they might be overwritten in function calls
-    local saved_return_type_macros_file="$RETURN_TYPE_MACROS_FILE"
-    local saved_simple_wrapper_macros_file="$SIMPLE_WRAPPER_MACROS_FILE"
-    
-    # DIRECT GENERATION - bypass dap_tpl for huge MAP_MACROS_DATA
-    # Generate header manually to avoid passing 805+ lines through AWK (mawk buffer overflow)
-    
-    # Write file header
-    cat > "$macros_file" << 'EOF_HEADER'
-/**
- * Auto-generated mock macros for DAP_MOCK_WRAPPER_CUSTOM
- * Generated by dap_mock_autowrap.sh
- * 
- * This file contains only the macros needed for this specific test target.
- * Do not modify manually - it will be regenerated.
- * 
- * This file is included via CMake's -include flag before dap_mock.h
- * No include guards needed - file is included unconditionally via -include
- * 
- * Note: dap_mock_linker_wrapper.h is included via #include in dap_mock.h
- */
-
-// Include standard headers for size_t and other basic types
-#include <stddef.h>
-
-// Include base macros we need from dap_mock_linker_wrapper.h
-// Since this file is included first, we need the base macros here
-#ifndef _DAP_MOCK_NARGS_DEFINED
-#define _DAP_MOCK_NARGS_DEFINED
-
-EOF_HEADER
-
-    # Generate NARGS macros
-    echo "// Dynamically generated _DAP_MOCK_NARGS supporting up to $MAX_ARGS_COUNT arguments" >> "$macros_file"
-    echo "// Full implementation - always uses parameter list (never simplified version)" >> "$macros_file"
-    echo "#define _DAP_MOCK_NARGS_IMPL($NARGS_IMPL_PARAMS, N, ...) N" >> "$macros_file"
-    echo "#define _DAP_MOCK_NARGS(...) _DAP_MOCK_NARGS_IMPL(__VA_ARGS__$NARGS_SEQUENCE)" >> "$macros_file"
-    echo "" >> "$macros_file"
-    echo "#define _DAP_MOCK_IS_EMPTY(...) \\" >> "$macros_file"
-    echo "    (_DAP_MOCK_NARGS(__VA_ARGS__) == 0)" >> "$macros_file"
-    echo "#endif // _DAP_MOCK_NARGS_DEFINED" >> "$macros_file"
-    echo "" >> "$macros_file"
-    echo "" >> "$macros_file"
-    
-    # Generate core _DAP_MOCK_MAP infrastructure macros
-    generate_map_core_macros "$macros_file" "${local_param_counts[@]}"
-    echo "" >> "$macros_file"
-    
-    # Generate MAP_N macros directly - NO dap_tpl, NO AWK
-    # This is the key fix for mawk buffer overflow (no sprintf limits)
-    for count in "${local_param_counts[@]}"; do
-        [ -z "$count" ] && continue
-        generate_single_map_macro "$count" >> "$macros_file"
-        echo "" >> "$macros_file"
-    done
-    
-    # Append return type macros if they exist
-    if [ -n "$saved_return_type_macros_file" ] && [ -f "$saved_return_type_macros_file" ] && [ -s "$saved_return_type_macros_file" ]; then
-        cat "$saved_return_type_macros_file" >> "$macros_file"
-    fi
-    
-    # Append simple wrapper macros if they exist
-    if [ -n "$saved_simple_wrapper_macros_file" ] && [ -f "$saved_simple_wrapper_macros_file" ] && [ -s "$saved_simple_wrapper_macros_file" ]; then
-        cat "$saved_simple_wrapper_macros_file" >> "$macros_file"
-    fi
-    
-    # Append function wrappers if they exist
-    if [ -n "$function_wrappers_file" ] && [ -f "$function_wrappers_file" ] && [ -s "$function_wrappers_file" ]; then
-        cat "$function_wrappers_file" >> "$macros_file"
-    fi
-    
-    # Clean up temporary files AFTER template processing is complete
-    # Note: map_content file is included via {{#include}}, so it must exist during template processing
-    # It will be cleaned up after the final template is generated
+    # Clean up temporary files
     rm -f "$return_type_macros_file" "$simple_wrapper_macros_file"
-    # Keep map_content file for now - it's needed for include processing
-    # It will be cleaned up later if needed
     
     print_success "Generated macros header with ${#local_param_counts[@]} parameter count(s)"
     if [ -n "$RETURN_TYPES" ]; then
@@ -498,7 +330,7 @@ generate_template_file() {
             # Show missing functions
             echo "$missing_functions" | while read func; do
                 [ -z "$func" ] && continue
-                echo "   ⚠️  $func"
+                echo "   WARNING: $func"
             done
             
             print_success "Template generated with $missing_count function stubs"
@@ -518,7 +350,7 @@ generate_template_file() {
         # Show missing functions
         echo "$mock_functions" | while read func; do
             [ -z "$func" ] && continue
-            echo "   ⚠️  $func"
+            echo "   WARNING: $func"
         done
         
         print_success "Template generated with $func_count function stubs"
@@ -526,7 +358,7 @@ generate_template_file() {
 }
 
 # Generate custom mock headers for each custom mock declaration
-# Usage: generate_custom_mock_headers <output_dir> <basename> <custom_mocks_file> <wrapper_functions>
+# Usage: generate_custom_mock_headers <output_dir> <basename> <custom_mocks_file> <wrapper_functions> <mock_functions>
 generate_custom_mock_headers() {
     local output_dir="$1"
     local basename="$2"
@@ -538,17 +370,11 @@ generate_custom_mock_headers() {
         print_info "No custom mocks found - creating custom mocks header with macros only"
         local main_custom_mocks_file="${output_dir}/${basename}_custom_mocks.h"
         
-        # Generate empty main include file manually (no template needed)
-        cat > "$main_custom_mocks_file" <<EOF
-// Auto-generated main include file for all custom mocks
-// Generated by dap_mock_autowrap.sh
-// Do not modify manually
-
-#include "${basename}_mock_macros.h"
-
-// No custom mocks found - only includes macros header
-
-EOF
+        # Generate empty main include file from template
+        replace_template_placeholders_with_mocking \
+            "${TEMPLATES_DIR}/custom_mocks_main_empty.h.tpl" \
+            "$main_custom_mocks_file" \
+            "BASENAME=$basename"
         return 0
     fi
     
@@ -696,29 +522,17 @@ EOF
     # Create main include file that includes all custom mock headers
     local main_custom_mocks_file="${output_dir}/${basename}_custom_mocks.h"
     
-    # Generate main include file directly (template has issues with complex data)
-    {
-        echo "// Auto-generated main include file for all custom mocks"
-        echo "// Generated by dap_mock_autowrap.sh"
-        echo "// Do not modify manually"
-        echo ""
-        echo "#include \"${basename}_mock_macros.h\""
-        echo ""
-        
-        # Include each custom mock header (unless already has wrapper)
-        while IFS='|' read -r return_type func_name param_list macro_type; do
-            [ -z "$func_name" ] && continue
-            
-            # Skip if function already has a wrapper defined in source files
-            if echo "$wrapper_functions" | grep -q "^${func_name}$"; then
-                continue
-            fi
-            
-            echo "#include \"custom_mocks/${func_name}_mock.h\""
-        done < "$custom_mocks_file"
-        
-        echo ""
-    } > "$main_custom_mocks_file"
+    # Read custom mocks list for template
+    local CUSTOM_MOCKS_LIST=""
+    CUSTOM_MOCKS_LIST=$(cat "$custom_mocks_file" 2>/dev/null | grep -v '^$' || true)
+    
+    # Generate main include file from template
+    replace_template_placeholders_with_mocking \
+        "${TEMPLATES_DIR}/custom_mocks_main.h.tpl" \
+        "$main_custom_mocks_file" \
+        "BASENAME=$basename" \
+        "CUSTOM_MOCKS_LIST=$CUSTOM_MOCKS_LIST" \
+        "WRAPPER_FUNCTIONS=$wrapper_functions"
     
     print_success "Generated main custom mocks include: $main_custom_mocks_file"
 }
@@ -786,149 +600,6 @@ prepare_map_impl_cond_data() {
     done
 }
 
-# Generate single MAP macro definition using pure bash (no AWK)
-# Avoids mawk sprintf buffer limit (8KB) for large parameter counts
-# Usage: generate_single_map_macro COUNT
-# Output: Two-level macro for forced expansion of PARAM(type, name) before processing
-#   #define _DAP_MOCK_MAP_N(macro, ...) _DAP_MOCK_MAP_N_IMPL(macro, __VA_ARGS__)
-#   #define _DAP_MOCK_MAP_N_IMPL(macro, type1, name1, ...) macro(type1, name1), ...
-generate_single_map_macro() {
-    local count="$1"
-    
-    if [ "$count" -eq 0 ]; then
-        # Special case for 0 params - no expansion needed
-        echo "#define _DAP_MOCK_MAP_0(macro) \\"
-        echo "    "
-        return
-    fi
-    
-    # First level: forces expansion of __VA_ARGS__ (PARAM macros expand here)
-    echo -n "#define _DAP_MOCK_MAP_${count}(macro, ...) "
-    echo "_DAP_MOCK_MAP_${count}_IMPL(macro, __VA_ARGS__)"
-    
-    # Second level: receives expanded arguments
-    echo -n "#define _DAP_MOCK_MAP_${count}_IMPL(macro"
-    
-    # Generate parameter list: , type1, name1, type2, name2, ...
-    for ((i=1; i<=count; i++)); do
-        echo -n ", type${i}, name${i}"
-    done
-    
-    # Start macro body
-    echo -n ") \\"
-    echo ""
-    echo -n "    "
-    
-    # Generate macro invocations: macro(type1, name1), macro(type2, name2), ...
-    for ((i=1; i<=count; i++)); do
-        if [ "$i" -gt 1 ]; then
-            echo -n ", "
-        fi
-        echo -n "macro(type${i}, name${i})"
-    done
-    echo ""
-}
-
-# Generate core _DAP_MOCK_MAP infrastructure macros
-# These are the routing macros that dispatch to _DAP_MOCK_MAP_N based on parameter count
-# Usage: generate_map_core_macros OUTPUT_FILE PARAM_COUNTS...
-generate_map_core_macros() {
-    local output_file="$1"
-    shift
-    local param_counts=("$@")
-    
-    cat >> "$output_file" << 'EOF_CORE_HEADER'
-// ============================================================================
-// Core _DAP_MOCK_MAP macros - Routes to _DAP_MOCK_MAP_N based on parameter count
-// ============================================================================
-// Main entry point for mapping macros over PARAM entries
-// Each PARAM expands to 2 arguments (type, name), so we need to divide arg count by 2
-
-#define _DAP_MOCK_MAP(macro, ...) \
-    _DAP_MOCK_MAP_EXPAND_1(macro, __VA_ARGS__)
-
-// Helper to extract first argument
-#define _DAP_MOCK_GET_FIRST(first, ...) first
-
-EOF_CORE_HEADER
-
-    # Generate expansion levels (6 levels for proper macro expansion)
-    local max_level=6
-    for ((i=1; i<=max_level; i++)); do
-        if [ "$i" -lt "$max_level" ]; then
-            echo "#define _DAP_MOCK_MAP_EXPAND_${i}(macro, ...) \\" >> "$output_file"
-            echo "    _DAP_MOCK_MAP_EXPAND_$((i+1))(macro, __VA_ARGS__)" >> "$output_file"
-        else
-            echo "#define _DAP_MOCK_MAP_EXPAND_${i}(macro, ...) \\" >> "$output_file"
-            echo "    _DAP_MOCK_MAP_CHECK_VOID(_DAP_MOCK_NARGS(__VA_ARGS__), _DAP_MOCK_MAP_COUNT_PARAMS(__VA_ARGS__), macro, __VA_ARGS__)" >> "$output_file"
-        fi
-    done
-    echo "" >> "$output_file"
-    
-    cat >> "$output_file" << 'EOF_CHECK_VOID'
-// CHECK_VOID receives arguments in safe order
-#define _DAP_MOCK_MAP_CHECK_VOID(arg_count, param_count, macro, ...) \
-    _DAP_MOCK_MAP_CHECK_VOID_IMPL(arg_count, param_count, macro, _DAP_MOCK_GET_FIRST(__VA_ARGS__), __VA_ARGS__)
-
-// IMPL receives extracted first_arg
-#define _DAP_MOCK_MAP_CHECK_VOID_IMPL(arg_count, param_count, macro, first_arg, ...) \
-    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_EXPAND(param_count, first_arg, macro, __VA_ARGS__)
-
-// Multi-level expansion to ensure param_count is fully expanded before routing
-#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_EXPAND(param_count, first_arg, macro, ...) \
-    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_EXPAND2(param_count, first_arg, macro, __VA_ARGS__)
-#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_EXPAND2(param_count, first_arg, macro, ...) \
-    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_EXPAND3(param_count, first_arg, macro, __VA_ARGS__)
-#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_EXPAND3(param_count, first_arg, macro, ...) \
-    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_EXPAND4(param_count, first_arg, macro, __VA_ARGS__)
-#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_EXPAND4(param_count, first_arg, macro, ...) \
-    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE(param_count, first_arg, macro, __VA_ARGS__)
-
-// Route to specific param_count handler
-#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE(param_count, first_arg, macro, ...) \
-    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE_EXPAND(param_count, first_arg, macro, __VA_ARGS__)
-
-// Expand to ensure numeric value is pasted
-#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE_EXPAND(param_count, first_arg, macro, ...) \
-    _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE_##param_count(param_count, first_arg, macro, __VA_ARGS__)
-
-EOF_CHECK_VOID
-
-    # Generate routing macros for each param_count value
-    for count in "${param_counts[@]}"; do
-        [ -z "$count" ] && continue
-        echo "// Routing for param_count=${count}" >> "$output_file"
-        echo "#define _DAP_MOCK_MAP_CHECK_VOID_BY_PARAM_COUNT_ROUTE_${count}(param_count, first_arg, macro, ...) \\" >> "$output_file"
-        echo "    _DAP_MOCK_MAP_${count}(macro, __VA_ARGS__)" >> "$output_file"
-    done
-    echo "" >> "$output_file"
-    
-    # Generate _DAP_MOCK_MAP_COUNT_PARAMS macro
-    # This counts PARAM() entries (each PARAM contributes 2 args: type, name)
-    cat >> "$output_file" << 'EOF_COUNT_PARAMS'
-// Count PARAM entries - each PARAM(type, name) expands to 2 arguments
-// We need to count how many type,name pairs we have
-#define _DAP_MOCK_MAP_COUNT_PARAMS(...) \
-    _DAP_MOCK_MAP_COUNT_PARAMS_IMPL(__VA_ARGS__)
-
-#define _DAP_MOCK_MAP_COUNT_PARAMS_IMPL(...) \
-    ((_DAP_MOCK_NARGS(__VA_ARGS__) + 1) / 2)
-
-EOF_COUNT_PARAMS
-}
-
-# Prepare MAP_MACROS_DATA for template generation
-# Uses pure bash generation to avoid mawk sprintf buffer overflow (8KB limit)
-# NOTE: This function is DEPRECATED - macros are now generated directly in generate_macros_file()
-# Kept for backward compatibility but does NOT produce pipe-separated data
-prepare_map_macros_data() {
-    local param_counts_array=("$@")
-    
-    # Do nothing - direct generation is used now
-    # This function is kept to avoid breaking old code that might call it
-    MAP_MACROS_DATA=""
-}
-
 # Prepare NARGS data for template generation
 # Generates data for _DAP_MOCK_NARGS macro generation
 # Usage: prepare_nargs_data MAX_ARGS_COUNT
@@ -940,8 +611,6 @@ prepare_nargs_data() {
     [ "$max_args_count" -lt 0 ] && max_args_count=0
     
     # Always ensure minimum of 2 args for full implementation
-    # This ensures we always have a proper _DAP_MOCK_NARGS_IMPL definition
-    # Minimum needed: _1, _2 for proper macro expansion
     local effective_max_args=$max_args_count
     [ "$effective_max_args" -lt 2 ] && effective_max_args=2
     
@@ -956,7 +625,6 @@ prepare_nargs_data() {
     done
     
     # Prepare NARGS_IMPL_PARAMS (always includes at least _1, _2)
-    # Format: single line with comma-separated parameters: _1, _2, _3, ...
     NARGS_IMPL_PARAMS=""
     for i in $(seq 1 $effective_max_args); do
         if [ -n "$NARGS_IMPL_PARAMS" ]; then

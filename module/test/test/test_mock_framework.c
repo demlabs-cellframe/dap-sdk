@@ -1,17 +1,21 @@
+/*
+ * Authors:
+ * Cellframe Team <https://cellframe.net>
+ * DeM Labs Inc.   https://demlabs.net
+ * Copyright  (c) 2017-2025
+ * All rights reserved.
+ *
+ * This file is part of DAP (Distributed Applications Platform) the open source project
+ *
+ *    DAP is free software: you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation, either version 3 of the License, or
+ *    (at your option) any later version.
+ */
+
 /**
  * @file test_mock_framework.c
- * @brief Unit tests for DAP SDK Mock Framework V4
- * @details Comprehensive tests for all mock framework features:
- *          - Mock declaration with structured config
- *          - Enable/disable mocks
- *          - Return value configuration (union-based)
- *          - Call counting and recording
- *          - Delay execution (fixed, range, variance)
- *          - Custom callbacks
- *          - Thread safety
- * 
- * @date 2025-10-27
- * @copyright (c) 2025 Demlabs
+ * @brief Unit tests for DAP SDK Mock Framework
  */
 
 #include "dap_test.h"
@@ -354,8 +358,8 @@ static void* runtime_callback_impl(void **a_args, int a_arg_count, void *a_user_
 {
     UNUSED(a_user_data);
     if (a_arg_count >= 1) {
-        int val = (int)(intptr_t)a_args[0];
-        return (void*)(intptr_t)(val * 10);  // Multiply by 10
+        int l_val = (int)(intptr_t)a_args[0];
+        return (void*)(intptr_t)(l_val * 10);  // Multiply by 10
     }
     return (void*)0;
 }
@@ -408,8 +412,8 @@ static void test_mock_thread_safety(void)
     
     reset_all_test_mocks();
     
-    const int THREAD_COUNT = 5;
-    const int CALLS_PER_THREAD = 15;
+#define THREAD_COUNT 5
+#define CALLS_PER_THREAD 15
     pthread_t l_threads[THREAD_COUNT];
     
     log_it(L_DEBUG, "Starting %d threads, %d calls each (total: %d)...",
@@ -480,7 +484,7 @@ int main(int argc, char **argv)
     // Initialize DAP SDK
     int l_ret = dap_common_init("test_mock", NULL);
     if (l_ret != 0) {
-        printf("Failed to initialize DAP SDK\n");
+        log_it(L_ERROR, "Failed to initialize DAP SDK");
         return 1;
     }
     

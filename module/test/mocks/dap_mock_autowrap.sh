@@ -169,33 +169,8 @@ for count in "${PARAM_COUNTS_ARRAY[@]}"; do
     fi
 done
 
-# Prepare all template data using library functions
-prepare_nargs_data "$MAX_ARGS_COUNT" || {
-    print_error "Failed to prepare NARGS data"
-    exit 1
-}
-prepare_map_count_params_by_count_data "$MAX_ARGS_COUNT" || {
-    print_error "Failed to prepare map count params by count data"
-    exit 1
-}
-prepare_map_count_params_helper_data "$MAX_ARGS_COUNT" || {
-    print_error "Failed to prepare map count params helper data"
-    exit 1
-}
-prepare_map_impl_cond_1_data "$MAX_ARGS_COUNT" "${PARAM_COUNTS_ARRAY[@]}" || {
-    print_error "Failed to prepare map impl cond 1 data"
-    exit 1
-}
-prepare_map_impl_cond_data "${PARAM_COUNTS_ARRAY[@]}" || {
-    print_error "Failed to prepare map impl cond data"
-    exit 1
-}
-prepare_map_macros_data "${PARAM_COUNTS_ARRAY[@]}" || {
-    print_error "Failed to prepare map macros data"
-    exit 1
-}
-
 # Step 8: Generate specialized macros header file
+# All template data preparation (NARGS, MAP params, etc.) is done inside generate_macros_file()
 generate_macros_file "$MACROS_FILE" "$TMP_CUSTOM_MOCKS" || {
     print_error "Failed to generate macros file"
     exit 1
