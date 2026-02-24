@@ -839,6 +839,7 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     if (result != 0) {
         log_it(L_ERROR, "Chipmunk aggregation failed with error %d", result);
         chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
         DAP_DELETE(individual_sigs);
         return NULL;
     }
@@ -846,6 +847,7 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     if (multi_sig->signer_count > UINT32_MAX) {
         log_it(L_ERROR, "Signer count exceeds uint32_t range");
         chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
         DAP_DELETE(individual_sigs);
         return NULL;
     }
@@ -861,6 +863,7 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     if (!l_aggregated) {
         log_it(L_ERROR, "Memory allocation failed for aggregated signature");
         chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
         DAP_DELETE(individual_sigs);
         return NULL;
     }
@@ -889,6 +892,7 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     
     // Cleanup
     chipmunk_multi_signature_free(multi_sig);
+    DAP_DELETE(multi_sig);
     DAP_DELETE(individual_sigs);
     
     return l_aggregated;
