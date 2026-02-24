@@ -31,14 +31,7 @@
 #include <stdint.h>
 #include "dap_common.h"
 #include "dap_hash.h"
-
-typedef enum dap_enc_data_type{DAP_ENC_DATA_TYPE_RAW,
-
-                               DAP_ENC_DATA_TYPE_B64,
-
-                               DAP_ENC_DATA_TYPE_B64_URLSAFE,
-
-                               } dap_enc_data_type_t;
+#include "dap_data.h"  // dap_data_type_t (and legacy dap_enc_data_type_t alias)
 
 
 typedef enum dap_enc_key_type {

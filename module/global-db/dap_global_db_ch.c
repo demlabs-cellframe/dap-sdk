@@ -26,6 +26,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db.h"
 #include "dap_global_db_ch.h"
 #include "dap_global_db_pkt.h"
+#include "dap_global_db.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_gossip.h"
 #include "dap_global_db_cluster.h"
@@ -100,15 +101,15 @@ bool s_proc_thread_reader(void *a_arg)
         return false;
     }
     bool l_ret = false;
-    dap_global_db_hash_pkt_t *l_hashes_pkt = dap_global_db_driver_hashes_read(l_group, l_pkt->last_hash);
+    dap_global_db_hash_pkt_t *l_hashes_pkt = dap_global_db_read_hashes(l_group, l_pkt->last_hash);
     if (l_hashes_pkt && l_hashes_pkt->hashes_count) {
-        dap_global_db_driver_hash_t *l_hashes_diff = (dap_global_db_driver_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
+        dap_global_db_hash_t *l_hashes_diff = (dap_global_db_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         if (l_ttl) {
             dap_nanotime_t l_now = dap_nanotime_now();
             uint32_t i;
             for (i = 0; i < l_hashes_pkt->hashes_count && be64toh((l_hashes_diff + i)->bets) + l_ttl < l_now; i++) {
-                if (dap_global_db_driver_hash_is_blank(l_hashes_diff + i))
+                if (dap_global_db_hash_is_blank(l_hashes_diff + i))
                     break;
             }
             if (i == l_hashes_pkt->hashes_count) {
@@ -118,11 +119,11 @@ bool s_proc_thread_reader(void *a_arg)
             }
             if (i) {
                 l_hashes_pkt->hashes_count -= i;
-                memmove(l_hashes_diff, l_hashes_diff + i, sizeof(dap_global_db_driver_hash_t) * l_hashes_pkt->hashes_count);
+                memmove(l_hashes_diff, l_hashes_diff + i, sizeof(dap_global_db_hash_t) * l_hashes_pkt->hashes_count);
             }
         }
         l_pkt->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];
-        l_ret = !dap_global_db_driver_hash_is_blank(&l_pkt->last_hash);
+        l_ret = !dap_global_db_hash_is_blank(&l_pkt->last_hash);
         if (!l_ret) {
             --l_hashes_pkt->hashes_count;
             //dap_db_set_last_hash_remote(l_req->link, l_req->group, l_hashes_diff[l_hashes_pkt->hashes_count - 1]);
@@ -137,8 +138,8 @@ bool s_proc_thread_reader(void *a_arg)
         DAP_DELETE(l_hashes_pkt);
     } else if (l_type != DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_GROUP_REQUEST packet for group %s from first record", l_group);
-        dap_global_db_driver_hash_t l_tmp_hash = l_pkt->last_hash;
-        l_pkt->last_hash = c_dap_global_db_driver_hash_blank;
+        dap_global_db_hash_t l_tmp_hash = l_pkt->last_hash;
+        l_pkt->last_hash = c_dap_global_db_hash_blank;
         dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST,
                                        l_pkt, dap_global_db_start_pkt_get_size(l_pkt));
         l_pkt->last_hash = l_tmp_hash;
@@ -158,11 +159,11 @@ static bool s_process_hashes(void *a_arg)
         DAP_DELETE(a_arg);
         return false;
     }
-    dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
+    dap_global_db_hash_t *l_hashes = (dap_global_db_hash_t *)(l_group + l_pkt->group_name_len);
     uint32_t j = 0;
     for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
-        dap_global_db_driver_hash_t *l_hash_cur = l_hashes + i;
-        if (!dap_global_db_driver_is_hash(l_group, *l_hash_cur)) {
+        dap_global_db_hash_t *l_hash_cur = l_hashes + i;
+        if (!dap_global_db_exists_hash(l_group, *l_hash_cur)) {
             if (i != j)
                 *(l_hashes + j) = *l_hash_cur;
             j++;
@@ -197,8 +198,8 @@ static bool s_process_request(void *a_arg)
         DAP_DELETE(a_arg);
         return false;
     }
-    dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
-    dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
+    dap_global_db_hash_t *l_hashes = (dap_global_db_hash_t *)(l_group + l_pkt->group_name_len);
+    dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
 
     if (l_pkt_out) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_RECORD_PACK packet for group %s with records count %u",
@@ -211,7 +212,7 @@ static bool s_process_request(void *a_arg)
     return false;
 }
 
-bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_addr_t *a_addr)
+bool dap_global_db_ch_check_store_obj(dap_global_db_store_obj_t *a_obj, dap_stream_node_addr_t *a_addr)
 {
     if (!dap_global_db_pkt_check_sign_crc(a_obj)) {
         log_it(L_WARNING, "Global DB record packet sign verify or CRC check error for group %s and key %s", a_obj->group, a_obj->key);
@@ -232,7 +233,7 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
             strcpy(l_value_str + c_dap_hex_str_len - 3, "...");
         log_it(L_DEBUG, "Unpacked object: type='%c', group=\"%s\", key=\"%s\""
                 " timestamp=\"%s\", value_len=%zu, signer_addr=%s, value=\"%s\"",
-                    dap_store_obj_get_type(a_obj),
+                    dap_global_db_store_obj_get_type(a_obj),
                         a_obj->group, a_obj->key, l_ts_str, a_obj->value_len,
                             a_obj->sign ? dap_stream_node_addr_to_str_static(l_signer_addr) : "UNSIGNED",
                                 l_value_str);
@@ -258,7 +259,7 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
 struct processing_arg {
     uint32_t count;
-    dap_store_obj_t *objs;
+    dap_global_db_store_obj_t *objs;
     dap_stream_node_addr_t addr;
 };
 
@@ -272,7 +273,7 @@ static bool s_process_records(void *a_arg)
             break;
     if (l_success)
         dap_global_db_set_raw_sync(l_arg->objs, l_arg->count);
-    dap_store_obj_free(l_arg->objs, l_arg->count);
+    dap_global_db_store_obj_free(l_arg->objs, l_arg->count);
     DAP_DELETE(l_arg);
     return false;
 }
@@ -281,17 +282,17 @@ static bool s_process_records(void *a_arg)
 static bool s_process_record(void *a_arg)
 {
     dap_return_val_if_fail(a_arg, false);
-    dap_store_obj_t *l_obj = a_arg;
+    dap_global_db_store_obj_t *l_obj = a_arg;
     if (dap_global_db_ch_check_store_obj(l_obj, (dap_stream_node_addr_t *)l_obj->ext))
         dap_global_db_set_raw_sync(l_obj, 1);
-    dap_store_obj_free_one(l_obj);
+    dap_global_db_store_obj_free_one(l_obj);
     return false;
 }
 
 static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr)
 {
     dap_global_db_pkt_t *l_pkt = a_payload;
-    dap_store_obj_t *l_obj = dap_global_db_pkt_deserialize(l_pkt, a_payload_size, &a_sender_addr);
+    dap_global_db_store_obj_t *l_obj = dap_global_db_pkt_deserialize(l_pkt, a_payload_size, &a_sender_addr);
     if (!l_obj) {
         log_it(L_WARNING, "Wrong Global DB gossip packet rejected");
         return;
@@ -372,9 +373,9 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         }
         size_t l_objs_count = 0;
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
-        dap_store_obj_t *l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count);
+        dap_global_db_store_obj_t *l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count);
 #else
-        dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count, &a_ch->stream->node);
+        dap_global_db_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count, &a_ch->stream->node);
 #endif
         if (!l_objs) {
             log_it(L_WARNING, "Wrong Global DB record packet rejected");
@@ -408,12 +409,12 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
  * @param a_group a group name string
  * @return Returns true if successful, otherwise false.
  */
-bool dap_global_db_ch_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group, dap_global_db_driver_hash_t a_hash)
+bool dap_global_db_ch_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group, dap_global_db_hash_t a_hash)
 {
     char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr.uint64, a_group);
     if (!l_key)
         return false;
-    bool l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_LAST_HASH, l_key, &a_hash, sizeof(dap_global_db_driver_hash_t), false, NULL, NULL) == 0;
+    bool l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_LAST_HASH, l_key, &a_hash, sizeof(dap_global_db_hash_t), false, NULL, NULL) == 0;
     DAP_DELETE(l_key);
     return l_ret;
 }
@@ -425,16 +426,16 @@ bool dap_global_db_ch_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, c
  * @param a_group a group name string
  * @return Returns last synchronize object driver hash for provided node if successful, otherwise blank hash.
  */
-dap_global_db_driver_hash_t dap_global_db_ch_get_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group)
+dap_global_db_hash_t dap_global_db_ch_get_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group)
 {
     char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr.uint64, a_group);
     if (!l_key)
-        return c_dap_global_db_driver_hash_blank;
+        return c_dap_global_db_hash_blank;
     size_t l_ret_len = 0;
     byte_t *l_ret_ptr = dap_global_db_get_sync(DAP_GLOBAL_DB_LOCAL_LAST_HASH, l_key, &l_ret_len, NULL, NULL);
-    dap_global_db_driver_hash_t l_ret_hash = l_ret_ptr && l_ret_len == sizeof(dap_global_db_driver_hash_t)
-            ? *(dap_global_db_driver_hash_t *)l_ret_ptr
-            : c_dap_global_db_driver_hash_blank;
+    dap_global_db_hash_t l_ret_hash = l_ret_ptr && l_ret_len == sizeof(dap_global_db_hash_t)
+            ? *(dap_global_db_hash_t *)l_ret_ptr
+            : c_dap_global_db_hash_blank;
     DAP_DEL_Z(l_ret_ptr);
     return l_ret_hash;
 }

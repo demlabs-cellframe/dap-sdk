@@ -54,11 +54,11 @@ DAP_STATIC_INLINE const char *dap_global_db_cluster_role_str(dap_global_db_role_
     }
 }
 
-typedef void (*dap_store_obj_callback_notify_t)(dap_store_obj_t *a_obj, void *a_arg);
-typedef void (*dap_cluster_del_callback_t)(dap_store_obj_t *a_obj, void *a_arg);
+typedef void (*dap_global_db_store_obj_callback_notify_t)(dap_global_db_store_obj_t *a_obj, void *a_arg);
+typedef void (*dap_cluster_del_callback_t)(dap_global_db_store_obj_t *a_obj, void *a_arg);
 
 typedef struct dap_global_db_notifier {
-    dap_store_obj_callback_notify_t callback_notify;
+    dap_global_db_store_obj_callback_notify_t callback_notify;
     void *callback_arg;             // Cluster changes notify callback and its argument
     struct dap_global_db_notifier *prev, *next;
 } dap_global_db_notifier_t;
@@ -92,7 +92,7 @@ typedef struct dap_global_db_cluster {
 int dap_global_db_cluster_init();
 void dap_global_db_cluster_deinit();
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name);
-void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj);
+void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_t *a_store_obj);
 dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_guuid_t a_guuid,
                                                    const char *a_group_mask, uint64_t a_ttl, bool a_owner_root_access,
                                                    dap_global_db_role_t a_default_role, dap_cluster_type_t a_links_cluster_role);
@@ -102,5 +102,5 @@ DAP_STATIC_INLINE int dap_global_db_cluster_member_delete(dap_global_db_cluster_
 }
 dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr, dap_global_db_role_t a_role);
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster);
-void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj);
-int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster, dap_store_obj_callback_notify_t a_callback, void *a_callback_arg);
+void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_t *a_store_obj);
+int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster, dap_global_db_store_obj_callback_notify_t a_callback, void *a_callback_arg);

@@ -95,8 +95,8 @@ bool dap_file_test(const char * a_file_path)
     if(!a_file_path)
         return false;
 #ifdef DAP_OS_WINDOWS
-    int attr = GetFileAttributesA(a_file_path);
-    if(attr != -1 && (attr & FILE_ATTRIBUTE_NORMAL))
+    DWORD attr = GetFileAttributesA(a_file_path);
+    if(attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
         return true;
 #else
     struct stat st;
@@ -178,13 +178,15 @@ int dap_mkdir_with_parents(const char *a_dir_path)
     if(((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
             && (path[1] == ':') && DAP_IS_DIR_SEPARATOR(path[2])) {
         p = path + 3;
+    } else if (DAP_IS_DIR_SEPARATOR(path[0])) {
+        p = path + 1;
     }
 #else
-        if (DAP_IS_DIR_SEPARATOR(path[0])) {
-            p = path + 1;
-        }
+    if (DAP_IS_DIR_SEPARATOR(path[0])) {
+        p = path + 1;
+    }
 #endif
-        else
+    else
         p = path;
 
     do {
@@ -1776,7 +1778,7 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
         for(i = sizeof l_buffer; i-- != 0;) {
             unsigned_sum += 0xFF & *p++;
         }
-        sprintf(l_buffer.header.chksum, "%6o", unsigned_sum);
+        snprintf(l_buffer.header.chksum, sizeof(l_buffer.header.chksum), "%6o", (unsigned)(unsigned_sum & 0777777));
     }
 
     // add header
@@ -1824,7 +1826,7 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
             for(i = sizeof l_buffer; i-- != 0;) {
                 unsigned_sum += 0xFF & *p++;
             }
-            sprintf(l_buffer.header.chksum, "%6o", unsigned_sum);
+            snprintf(l_buffer.header.chksum, sizeof(l_buffer.header.chksum), "%6o", (unsigned)(unsigned_sum & 0777777));
         }
 
         // add header

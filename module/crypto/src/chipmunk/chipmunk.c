@@ -23,6 +23,7 @@
 */
 
 #include "dap_enc_base64.h"
+#include "dap_hash_sha3.h"
 #include "chipmunk.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"

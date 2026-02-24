@@ -7,18 +7,18 @@ BEGIN {
     return_type = ""
     return_type_original = ""
 }
-/DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
+/DAP_MOCK_WRAPPER_CUSTOM|DAP_MOCK_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
     in_custom = 1
     paren_level = 0
     found_opening_paren = 0
     return_type = ""
     return_type_original = ""
     
-    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
+    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|DAP_MOCK_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
         found_opening_paren = 1
         paren_level = 1
         rest = substr($0, RSTART + RLENGTH)
-        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/)) {
+        if (match($0, /DAP_MOCK_WRAPPER_CUSTOM\s*\(/) || match($0, /DAP_MOCK_CUSTOM\s*\(/)) {
             if (match(rest, /^([^,)]+)/)) {
                 return_type_original = substr(rest, RSTART, RLENGTH)
                 gsub(/^[ \t]+|[ \t]+$/, "", return_type_original)

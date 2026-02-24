@@ -104,17 +104,11 @@ function(dap_mock_autowrap TARGET_NAME)
     #message(STATUS "🔧 Generating mock wrappers for ${TARGET_NAME}...")
     #message(STATUS "   Scanning ${list_length_result} source files...")
     
-    # Convert source files list to semicolon-separated string for passing to script
-    string(REPLACE ";" "\\;" SOURCES_ESCAPED "${ALL_SOURCES}")
-    
     # Prepare command for mock generation
     # For STAGE 1 (execute_process) - use list
     set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
         message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
-        # Use cmake -E env to set environment variables (works with CMake 3.10+)
-        # Pass CMAKE_SYSTEM_NAME so script can detect target platform (not just host)
-        # Pass source files for __wrap_ signature extraction on macOS
         set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env 
             "DAP_TPL_DIR=${DAP_TPL_DIR}" 
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"

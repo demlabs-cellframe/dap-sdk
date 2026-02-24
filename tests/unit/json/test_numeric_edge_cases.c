@@ -34,6 +34,31 @@
 #define LOG_TAG "dap_json_numeric_tests"
 
 /**
+ * @brief Check if hardware Flush-To-Zero (FTZ) or Denormals-Are-Zero (DAZ) is active
+ * @details When -ffast-math is enabled globally, crtfastmath.o sets FTZ/DAZ bits
+ *          in MXCSR register at process startup. This causes subnormal doubles
+ *          (values below DBL_MIN ≈ 2.22e-308) to be flushed to zero by hardware.
+ *          Tests must account for this when verifying subnormal number behavior.
+ */
+static inline bool s_is_ftz_or_daz_enabled(void) {
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+    unsigned int l_mxcsr;
+    __asm__ __volatile__("stmxcsr %0" : "=m"(l_mxcsr));
+    // FTZ = bit 15, DAZ = bit 6
+    return (l_mxcsr & ((1u << 15) | (1u << 6))) != 0;
+#elif defined(__aarch64__)
+    // ARM64: FPCR bit 24 = FZ (flush-to-zero)
+    uint64_t l_fpcr;
+    __asm__ __volatile__("mrs %0, fpcr" : "=r"(l_fpcr));
+    return (l_fpcr & (1u << 24)) != 0;
+#else
+    // Conservative: assume FTZ may be active if -ffast-math is used
+    volatile double l_subnormal = 5e-324;  // DBL_TRUE_MIN
+    return l_subnormal == 0.0;
+#endif
+}
+
+/**
  * @brief Check if double is infinity (IEEE 754) without using isinf()
  * @details -ffast-math breaks isinf(), so we check bit pattern directly
  */
@@ -282,14 +307,21 @@ static bool s_test_float_denormalized(void) {
     l_json = dap_json_object_new();
     DAP_TEST_FAIL_IF_NULL(l_json, "Create JSON object");
     
-    // Smallest positive denormalized double
+    // Smallest positive denormalized double (subnormal)
+    // Note: DBL_MIN / 2.0 is subnormal. With FTZ, both input and output are 0.0.
     double l_denorm = DBL_MIN / 2.0;
     dap_json_object_add_double(l_json, "denorm", l_denorm);
     
     double l_retrieved = dap_json_object_get_double(l_json, "denorm");
-    // May lose precision, but should be very close
-    DAP_TEST_FAIL_IF(fabs(l_retrieved - l_denorm) > l_denorm * 0.1, 
-                     "Denormalized float approximate round-trip");
+    bool l_ftz = s_is_ftz_or_daz_enabled();
+    if (l_ftz) {
+        // FTZ active: both l_denorm and l_retrieved are flushed to 0.0
+        DAP_TEST_FAIL_IF(l_retrieved != 0.0, "Denormalized flushed to zero (FTZ active)");
+    } else {
+        // No FTZ: may lose precision, but should be very close
+        DAP_TEST_FAIL_IF(fabs(l_retrieved - l_denorm) > l_denorm * 0.1, 
+                         "Denormalized float approximate round-trip");
+    }
     
     result = true;
     log_it(L_DEBUG, "Denormalized floats test passed");
@@ -317,14 +349,23 @@ static bool s_test_large_exponents(void) {
     
     dap_json_object_free(l_json);
     
-    // Test parsing 1e-308 (near DBL_MIN)
+    // Test parsing 1e-308 (near DBL_MIN, this is a subnormal double)
+    // Note: 1e-308 ≈ 9.99e-309 < DBL_MIN ≈ 2.22e-308, so it IS subnormal.
+    // With -ffast-math (FTZ/DAZ enabled), hardware flushes subnormals to zero.
     const char *l_small_exp = "{\"small\":1e-308}";
     l_json = dap_json_parse_string(l_small_exp);
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse small exponent");
     
     double l_small = dap_json_object_get_double(l_json, "small");
-    DAP_TEST_FAIL_IF(l_small > 1e-307, "Small exponent value");
-    DAP_TEST_FAIL_IF(l_small == 0.0, "Small exponent not zero");
+    bool l_ftz = s_is_ftz_or_daz_enabled();
+    if (l_ftz) {
+        // FTZ active: subnormal 1e-308 is flushed to 0.0 by hardware — expected
+        DAP_TEST_FAIL_IF(l_small != 0.0, "Small exponent flushed to zero (FTZ active)");
+    } else {
+        // No FTZ: subnormal should be preserved
+        DAP_TEST_FAIL_IF(l_small > 1e-307, "Small exponent value");
+        DAP_TEST_FAIL_IF(l_small == 0.0, "Small exponent not zero");
+    }
     
     result = true;
     log_it(L_DEBUG, "Large exponents test passed");
