@@ -43,6 +43,19 @@ static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 static bool s_dap_sign_debug_more = false;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
 
+// Read/write helpers for packed buffers where natural alignment is not guaranteed.
+DAP_STATIC_INLINE uint32_t s_load_u32_unaligned(const uint8_t *a_src)
+{
+    uint32_t l_value = 0;
+    memcpy(&l_value, a_src, sizeof(l_value));
+    return l_value;
+}
+
+DAP_STATIC_INLINE void s_store_u32_unaligned(uint8_t *a_dst, uint32_t a_value)
+{
+    memcpy(a_dst, &a_value, sizeof(a_value));
+}
+
 // Static function declarations for internal implementations
 static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     dap_sign_t **a_signatures,
@@ -748,8 +761,8 @@ uint32_t dap_sign_get_signers_count(dap_sign_t *a_sign)
                 return 1; // Not enough data for aggregated signature
             }
             
-            uint8_t *sig_data = a_sign->pkey_n_sign;
-            uint32_t signers_count = *(uint32_t*)sig_data;
+            const uint8_t *sig_data = a_sign->pkey_n_sign;
+            uint32_t signers_count = s_load_u32_unaligned(sig_data);
             
             // Sanity check - reasonable upper limit
             if (signers_count > 1000) {
@@ -829,11 +842,19 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
         DAP_DELETE(individual_sigs);
         return NULL;
     }
+
+    if (multi_sig->signer_count > UINT32_MAX) {
+        log_it(L_ERROR, "Signer count exceeds uint32_t range");
+        chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(individual_sigs);
+        return NULL;
+    }
+    uint32_t l_signer_count = (uint32_t)multi_sig->signer_count;
     
     // Calculate size for serialized aggregated signature
     size_t serialized_size = sizeof(chipmunk_multi_signature_t) + 
                            sizeof(uint32_t) + // metadata: signer count
-                           multi_sig->signer_count * sizeof(uint32_t); // leaf indices
+                           (size_t)l_signer_count * sizeof(uint32_t); // leaf indices
     
     // Allocate DAP signature structure
     dap_sign_t *l_aggregated = DAP_NEW_Z_SIZE(dap_sign_t, sizeof(dap_sign_t) + serialized_size);
@@ -854,7 +875,7 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     uint8_t *sig_data = l_aggregated->pkey_n_sign;
     
     // Store signer count
-    *(uint32_t*)sig_data = multi_sig->signer_count;
+    s_store_u32_unaligned(sig_data, l_signer_count);
     sig_data += sizeof(uint32_t);
     
     // Store leaf indices
@@ -963,8 +984,12 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     }
     
     // Extract metadata from aggregated signature
-    uint8_t *sig_data = a_aggregated_sign->pkey_n_sign;
-    uint32_t stored_signers_count = *(uint32_t*)sig_data;
+    const uint8_t *sig_data = a_aggregated_sign->pkey_n_sign;
+    if (a_aggregated_sign->header.sign_size < sizeof(uint32_t)) {
+        log_it(L_ERROR, "Aggregated signature data is too small");
+        return -1;
+    }
+    uint32_t stored_signers_count = s_load_u32_unaligned(sig_data);
     
     if (stored_signers_count != a_signers_count) {
         log_it(L_ERROR, "Signer count mismatch: %u vs %u", stored_signers_count, a_signers_count);
@@ -973,12 +998,19 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     
     sig_data += sizeof(uint32_t);
     
-    // Extract leaf indices
-    uint32_t *leaf_indices = (uint32_t*)sig_data;
-    sig_data += stored_signers_count * sizeof(uint32_t);
+    // Validate payload size before parsing following fields
+    size_t leaf_indices_size = (size_t)stored_signers_count * sizeof(uint32_t);
+    size_t min_payload_size = sizeof(uint32_t) + leaf_indices_size + sizeof(chipmunk_multi_signature_t);
+    if (a_aggregated_sign->header.sign_size < min_payload_size) {
+        log_it(L_ERROR, "Aggregated signature payload size is invalid");
+        return -1;
+    }
+    sig_data += leaf_indices_size;
     
-    // Extract multi-signature data
-    chipmunk_multi_signature_t *multi_sig = (chipmunk_multi_signature_t*)sig_data;
+    // Extract multi-signature into aligned local storage.
+    chipmunk_multi_signature_t multi_sig_local;
+    memcpy(&multi_sig_local, sig_data, sizeof(multi_sig_local));
+    chipmunk_multi_signature_t *multi_sig = &multi_sig_local;
     
     log_it(L_INFO, "Verifying aggregated Chipmunk signature with %u signers", a_signers_count);
     
@@ -1526,4 +1558,3 @@ int dap_sign_get_information_json(dap_sign_t* a_sign, dap_json_t *a_json_out, co
     
     return 0;
 }
-
