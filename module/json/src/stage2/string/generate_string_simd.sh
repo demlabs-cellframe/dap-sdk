@@ -90,6 +90,8 @@ generate_arch() {
     local output_c="${OUTPUT_DIR}/dap_json_string_simd_${arch_lower}.c"
     local output_h="${OUTPUT_DIR}/dap_json_string_simd_${arch_lower}.h"
     
+    local target_attr="${8:-}"
+    
     # Generate .c file
     replace_template_placeholders "$TPL_C" "$output_c" \
         "ARCH_LOWER=${arch_lower}" \
@@ -98,7 +100,8 @@ generate_arch() {
         "CHUNK_SIZE=${chunk_size}" \
         "MASK_BITS=${mask_bits}" \
         "SPEEDUP=${speedup}" \
-        "SIMD_LOOP_IMPL=${simd_loop_impl}"
+        "SIMD_LOOP_IMPL=${simd_loop_impl}" \
+        "TARGET_ATTR=${target_attr}"
     
     # Generate .h file
     replace_template_placeholders "$TPL_H" "$output_h" \
@@ -122,15 +125,15 @@ wrap_arch_guard() {
 }
 
 echo "=== x86/x64 SIMD ==="
-generate_arch "sse2" "SSE2" "x86" "16" "32" "16" "arch/string_scanner_vector_impl.c"
-generate_arch "avx2" "AVX2" "x86" "32" "32" "32" "arch/string_scanner_vector_impl.c"
-generate_arch "avx512" "AVX512" "x86" "64" "64" "64" "arch/x86/string_scanner_avx512_impl.c"
+generate_arch "sse2" "SSE2" "x86" "16" "32" "16" "arch/string_scanner_vector_impl.c" ""
+generate_arch "avx2" "AVX2" "x86" "32" "32" "32" "arch/string_scanner_vector_impl.c" "avx2"
+generate_arch "avx512" "AVX512" "x86" "64" "64" "64" "arch/x86/string_scanner_avx512_impl.c" "avx512f,avx512bw"
 
 echo ""
 echo "=== ARM SIMD ==="
-generate_arch "neon" "NEON" "arm" "16" "32" "16" "arch/string_scanner_vector_impl.c"
-generate_arch "sve" "SVE" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve_impl.c"
-generate_arch "sve2" "SVE2" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve2_impl.c"
+generate_arch "neon" "NEON" "arm" "16" "32" "16" "arch/string_scanner_vector_impl.c" ""
+generate_arch "sve" "SVE" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve_impl.c" "+sve"
+generate_arch "sve2" "SVE2" "arm" "VLEN" "VLEN" "VLEN" "arch/arm/string_scanner_sve2_impl.c" "+sve2"
 
 X86_GUARD="defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)"
 ARM_GUARD="defined(__aarch64__) || defined(__arm__)"
