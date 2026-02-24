@@ -110,16 +110,19 @@ if(UNIX)
 endif()
 
 # Base warning flags (compatible with both GCC and Clang on all platforms)
-set(CFLAGS_WARNINGS "-Wall -Wextra -Werror -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter -Wno-unused-but-set-variable")
+set(CFLAGS_WARNINGS "-Wall -Wextra -Werror -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers")
 
 # Add GCC-specific flags only when using GCC
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-error=builtin-declaration-mismatch")
+    set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-but-set-variable -Wno-error=builtin-declaration-mismatch")
 endif()
 
 # Add Clang-specific flags (matches both Clang and AppleClang)
 if (CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument")
+    if (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
+        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-but-set-variable")
+    endif()
 endif()
 
 if(UNIX)
