@@ -60,29 +60,53 @@
 #define LOG_TAG "dap_enc_key"
 
 // Wrapper functions for Chipmunk callbacks
+static void dap_enc_chipmunk_key_move_data(dap_enc_key_t *dst, dap_enc_key_t *src)
+{
+    if (!dst || !src) {
+        return;
+    }
+
+    // Replace existing key buffers in destination to avoid leaks on re-generation.
+    if (dst->priv_key_data) {
+        DAP_DELETE(dst->priv_key_data);
+        dst->priv_key_data = NULL;
+        dst->priv_key_data_size = 0;
+    }
+    if (dst->pub_key_data) {
+        DAP_DELETE(dst->pub_key_data);
+        dst->pub_key_data = NULL;
+        dst->pub_key_data_size = 0;
+    }
+
+    dst->type = src->type;
+    dst->dec_na = src->dec_na;
+    dst->enc_na = src->enc_na;
+    dst->sign_get = src->sign_get;
+    dst->sign_verify = src->sign_verify;
+    dst->priv_key_data = src->priv_key_data;
+    dst->priv_key_data_size = src->priv_key_data_size;
+    dst->pub_key_data = src->pub_key_data;
+    dst->pub_key_data_size = src->pub_key_data_size;
+
+    // Detach ownership from the temporary wrapper.
+    src->priv_key_data = NULL;
+    src->priv_key_data_size = 0;
+    src->pub_key_data = NULL;
+    src->pub_key_data_size = 0;
+}
+
 static void dap_enc_chipmunk_key_new_callback(dap_enc_key_t *key)
 {
     dap_enc_key_t *new_key = dap_enc_chipmunk_key_new();
     if (new_key) {
-        // Copy data to the provided key
-        key->type = new_key->type;
-        key->dec_na = new_key->dec_na;
-        key->enc_na = new_key->enc_na;
-        key->sign_get = new_key->sign_get;
-        key->sign_verify = new_key->sign_verify;
-        key->priv_key_data = new_key->priv_key_data;
-        key->priv_key_data_size = new_key->priv_key_data_size;
-        key->pub_key_data = new_key->pub_key_data;
-        key->pub_key_data_size = new_key->pub_key_data_size;
-        
-        // Clear only the wrapper key, not the data
-        new_key->priv_key_data = NULL;
-        new_key->pub_key_data = NULL;
+        dap_enc_chipmunk_key_move_data(key, new_key);
         DAP_DELETE(new_key);
     } else {
-        // Initialize key with NULL values if creation failed
+        // Keep key object in consistent state on failure.
         memset(key, 0, sizeof(dap_enc_key_t));
         key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
+        key->sign_get = dap_enc_chipmunk_get_sign;
+        key->sign_verify = dap_enc_chipmunk_verify_sign;
     }
 }
 
@@ -93,25 +117,11 @@ static void dap_enc_chipmunk_key_generate_callback(dap_enc_key_t *key, const voi
     (void) key_size; // Unused
     dap_enc_key_t *new_key = dap_enc_chipmunk_key_generate(kex_buf, kex_size, seed, seed_size, NULL, 0);
     if (new_key) {
-        // Copy data to the provided key
-        key->type = new_key->type;
-        key->dec_na = new_key->dec_na;
-        key->enc_na = new_key->enc_na;
-        key->sign_get = new_key->sign_get;
-        key->sign_verify = new_key->sign_verify;
-        key->priv_key_data = new_key->priv_key_data;
-        key->priv_key_data_size = new_key->priv_key_data_size;
-        key->pub_key_data = new_key->pub_key_data;
-        key->pub_key_data_size = new_key->pub_key_data_size;
-        
-        // Clear only the wrapper key, not the data
-        new_key->priv_key_data = NULL;
-        new_key->pub_key_data = NULL;
+        dap_enc_chipmunk_key_move_data(key, new_key);
         DAP_DELETE(new_key);
     } else {
-        // Initialize key with NULL values if creation failed
-        memset(key, 0, sizeof(dap_enc_key_t));
-        key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
+        // Keep existing key data untouched if generation failed.
+        log_it(L_ERROR, "Chipmunk key generation callback failed, preserving existing key");
     }
 }
 
