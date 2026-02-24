@@ -688,8 +688,8 @@ function(create_final_shared_library)
     message(STATUS "[LibraryHelpers] Target name: ${TARGET_NAME} with OUTPUT_NAME: ${FINAL_LIB_LIBRARY_NAME}")
     add_library(${TARGET_NAME} ${LIB_TYPE} ${ALL_OBJECTS} ${FINAL_LIB_ADDITIONAL_SOURCES})
     
-    # Propagate include directories from all OBJECT modules as PUBLIC
-    # so that executables linking against this library can find headers
+    # Propagate include directories from OBJECT modules to compile additional sources
+    # and to consuming targets (PUBLIC for executables linking this library)
     foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
         if(TARGET ${MODULE})
             get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
