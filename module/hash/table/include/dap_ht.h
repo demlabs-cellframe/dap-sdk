@@ -346,6 +346,9 @@ static inline void dap_ht_del_impl(void **head, void *del UNUSED_ARG, dap_ht_han
  */
 #define dap_ht_hash_value(key, keylen) DAP_HT_HASH((key), (keylen))
 
+#define dap_ht_last(head) \
+    ( (head) && (head)->hh.tbl ? (typeof(head))((head)->hh.tbl->tail) : NULL )
+
 // ============================================================================
 // By-hashvalue functions (pre-computed hash for performance)
 // ============================================================================
@@ -479,6 +482,160 @@ static inline void* dap_ht_find_by_hashvalue_impl(dap_ht_table_t *tbl, const voi
  * @brief Delete item with explicit handle name
  */
 #define dap_ht_del_by_hashvalue_hh(hhname, head, del) dap_ht_del_hh(hhname, head, del)
+
+// ============================================================================
+// Sort hash table iteration order
+// ============================================================================
+
+static inline void dap_ht_sort_impl(void **head, int (*cmp)(void*, void*), ptrdiff_t hho) {
+    if (!*head) return;
+    dap_ht_handle_t *head_hh = (dap_ht_handle_t*)((char*)*head + hho);
+    dap_ht_table_t *tbl = head_hh->tbl;
+    if (!tbl) return;
+
+    int insize = 1;
+    void *list = *head;
+    while (1) {
+        void *p = list, *tail = NULL;
+        list = NULL;
+        int nmerges = 0;
+        while (p) {
+            nmerges++;
+            void *q = p;
+            int psize = 0;
+            for (int i = 0; i < insize; i++) {
+                psize++;
+                q = ((dap_ht_handle_t*)((char*)q + hho))->next;
+                if (!q) break;
+            }
+            int qsize = insize;
+            while (psize > 0 || (qsize > 0 && q)) {
+                void *e;
+                if (psize == 0) {
+                    e = q; q = ((dap_ht_handle_t*)((char*)q + hho))->next; qsize--;
+                } else if (qsize == 0 || !q) {
+                    e = p; p = ((dap_ht_handle_t*)((char*)p + hho))->next; psize--;
+                } else if (cmp(p, q) <= 0) {
+                    e = p; p = ((dap_ht_handle_t*)((char*)p + hho))->next; psize--;
+                } else {
+                    e = q; q = ((dap_ht_handle_t*)((char*)q + hho))->next; qsize--;
+                }
+                dap_ht_handle_t *e_hh = (dap_ht_handle_t*)((char*)e + hho);
+                if (tail) {
+                    ((dap_ht_handle_t*)((char*)tail + hho))->next = e;
+                } else {
+                    list = e;
+                }
+                e_hh->prev = tail;
+                tail = e;
+            }
+            p = q;
+        }
+        if (tail) ((dap_ht_handle_t*)((char*)tail + hho))->next = NULL;
+        if (nmerges <= 1) {
+            *head = list;
+            tbl->tail = tail;
+            break;
+        }
+        insize *= 2;
+    }
+}
+
+#define dap_ht_sort(head, cmp) do { \
+    if (head) \
+        dap_ht_sort_impl((void**)&(head), (int(*)(void*,void*))(cmp), \
+            (ptrdiff_t)((char*)&((head)->hh) - (char*)(head))); \
+} while (0)
+
+#define dap_ht_sort_hh(hhname, head, cmp) do { \
+    if (head) \
+        dap_ht_sort_impl((void**)&(head), (int(*)(void*,void*))(cmp), \
+            (ptrdiff_t)((char*)&((head)->hhname) - (char*)(head))); \
+} while (0)
+
+// ============================================================================
+// Add to hash table in sorted order
+// ============================================================================
+
+static inline void dap_ht_add_inorder_impl(void **head, void *add, dap_ht_handle_t *add_hh,
+                                             const void *key, unsigned keylen,
+                                             int (*cmp)(void*, void*), ptrdiff_t hho) {
+    add_hh->key = key;
+    add_hh->keylen = keylen;
+    add_hh->hashv = DAP_HT_HASH(key, keylen);
+    add_hh->prev = NULL;
+    add_hh->next = NULL;
+    add_hh->hh_prev = NULL;
+    add_hh->hh_next = NULL;
+
+    if (!*head) {
+        dap_ht_table_t *tbl = (dap_ht_table_t*)DAP_CALLOC(1, sizeof(dap_ht_table_t));
+        if (!tbl) return;
+        tbl->num_items = 1;
+        tbl->hho = hho;
+        tbl->num_buckets = DAP_HT_INITIAL_BUCKETS;
+        tbl->buckets = (dap_ht_bucket_t*)DAP_CALLOC(tbl->num_buckets, sizeof(dap_ht_bucket_t));
+        if (!tbl->buckets) { DAP_DELETE(tbl); return; }
+        add_hh->tbl = tbl;
+        *head = add;
+        tbl->tail = add;
+        unsigned bkt = DAP_HT_TO_BKT(add_hh->hashv, tbl->num_buckets);
+        tbl->buckets[bkt].head = add_hh;
+        tbl->buckets[bkt].count = 1;
+        return;
+    }
+
+    dap_ht_handle_t *head_hh = (dap_ht_handle_t*)((char*)*head + hho);
+    add_hh->tbl = head_hh->tbl;
+
+    dap_ht_table_t *tbl = add_hh->tbl;
+    tbl->num_items++;
+
+    unsigned bkt = DAP_HT_TO_BKT(add_hh->hashv, tbl->num_buckets);
+    add_hh->hh_next = tbl->buckets[bkt].head;
+    if (tbl->buckets[bkt].head) tbl->buckets[bkt].head->hh_prev = add_hh;
+    tbl->buckets[bkt].head = add_hh;
+    tbl->buckets[bkt].count++;
+
+    void *pos = NULL;
+    void *el = *head;
+    while (el) {
+        if (cmp(add, el) <= 0) { pos = el; break; }
+        el = ((dap_ht_handle_t*)((char*)el + hho))->next;
+    }
+
+    if (pos) {
+        dap_ht_handle_t *pos_hh = (dap_ht_handle_t*)((char*)pos + hho);
+        add_hh->next = pos;
+        add_hh->prev = pos_hh->prev;
+        if (pos == *head) {
+            *head = add;
+        } else if (pos_hh->prev) {
+            ((dap_ht_handle_t*)((char*)pos_hh->prev + hho))->next = add;
+        }
+        pos_hh->prev = add;
+    } else {
+        if (tbl->tail && tbl->tail != add) {
+            dap_ht_handle_t *tail_hh = (dap_ht_handle_t*)((char*)tbl->tail + hho);
+            tail_hh->next = add;
+            add_hh->prev = tbl->tail;
+        }
+        tbl->tail = add;
+    }
+
+    if (tbl->num_items >= tbl->num_buckets * 10)
+        dap_ht_expand(tbl);
+}
+
+#define dap_ht_add_inorder(head, field, add, cmp) \
+    dap_ht_add_inorder_impl((void**)&(head), (add), &((add)->hh), \
+        &((add)->field), sizeof((add)->field), (int(*)(void*,void*))(cmp), \
+        (ptrdiff_t)((char*)&((add)->hh) - (char*)(add)))
+
+#define dap_ht_add_inorder_hh(hhname, head, field, add, cmp) \
+    dap_ht_add_inorder_impl((void**)&(head), (add), &((add)->hhname), \
+        &((add)->field), sizeof((add)->field), (int(*)(void*,void*))(cmp), \
+        (ptrdiff_t)((char*)&((add)->hhname) - (char*)(add)))
 
 #ifdef __cplusplus
 }

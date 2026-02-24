@@ -429,31 +429,23 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
  * No need to write DAP_MOCK_DECLARE_CUSTOM separately!
  * 
  * Usage:
- *   DAP_MOCK_CUSTOM(return_type, func_name, PARAM(type1, name1), PARAM(type2, name2), ...) {
- *       // Local variable G_MOCK is automatically available, pointing to g_mock_func_name
- *       // You can use G_MOCK directly without arguments inside the wrapper body
- *       
- *       // Custom mock logic here
- *       if (G_MOCK && G_MOCK->enabled) {
- *           // ... custom logic ...
- *           return custom_value;
- *       }
- *       return __real_func_name(name1, name2, ...);
- *   }
- * 
- * With optional config:
- *   DAP_MOCK_CUSTOM(return_type, func_name, { .delay = {...} }, PARAM(type1, name1), ...) {
- *       // Custom mock logic
+ *   DAP_MOCK_CUSTOM(return_type, func_name,
+ *       (type1 name1, type2 name2, ...))
+ *       // G_MOCK is automatically available (points to g_mock_func_name)
+ *       return custom_value;
  *   }
  * 
  * Examples:
  *   DAP_MOCK_CUSTOM(size_t, dap_enc_code_out_size,
- *       PARAM(dap_enc_key_t*, a_key),
- *       PARAM(size_t, a_buf_in_size),
- *       PARAM(dap_enc_data_type_t, type)
- *   ) {
+ *       (dap_enc_key_t *a_key, size_t a_buf_in_size, dap_enc_data_type_t type))
  *       size_t l_result = (type == DAP_ENC_DATA_TYPE_RAW) ? a_buf_in_size : (a_buf_in_size * 4 / 3 + 100);
- *       return (size_t)(intptr_t)(G_MOCK->return_value.ptr ?: (void*)(intptr_t)l_result);
+ *       return l_result;
+ *   }
+ *
+ *   DAP_MOCK_CUSTOM(uint256_t, dap_ledger_calc_balance,
+ *       (dap_ledger_t *a_ledger, const dap_chain_addr_t *a_addr, const char *a_token_ticker))
+ *       UNUSED(a_ledger); UNUSED(a_addr); UNUSED(a_token_ticker);
+ *       return GET_256_FROM_64(1000000);
  *   }
  */
 #define DAP_MOCK_CUSTOM(return_type, func_name, ...) \

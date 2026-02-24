@@ -6,7 +6,7 @@
 #include "params.h"
 #include "utils.h"
 
-#include "fips202.h"
+#include "spx_fips202.h"
 
 /**
  * Takes an array of inblocks concatenated arrays of SPX_N bytes.

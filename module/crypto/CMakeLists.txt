@@ -58,13 +58,13 @@ if(NOT DEFINED SPHINCSPLUS_FLEX)
     # add needed files
     if(SPHINCS_HASH_TYPE MATCHES "shake")
         file( GLOB SPHINCS_SRCS
-            src/sphincsplus/fips202.c 
+            src/sphincsplus/spx_fips202.c
             src/sphincsplus/hash_shake.c 
             src/sphincsplus/thash_shake_${SPHINCS_THASH}.c
         )
 
         file( GLOB SPHINCS_HEADERS
-            src/sphincsplus/fips202.h
+            src/sphincsplus/spx_fips202.h
         )
     elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
         file( GLOB SPHINCS_SRCS

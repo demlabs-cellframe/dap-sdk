@@ -40,7 +40,7 @@
 #include "dap_global_db_cluster.h"
 #include "dap_global_db_pkt.h"
 #include "dap_stream.h"
-#include "uthash.h"
+#include "dap_ht.h"
 
 #define LOG_TAG "dap_global_db"
 
@@ -61,7 +61,7 @@ typedef struct gdb_group {
     dap_global_db_t *btree;
     dap_global_db_wal_t *wal;
     bool is_dirty;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } gdb_group_t;
 
 typedef struct gdb_groups_index_header {
@@ -258,7 +258,7 @@ static gdb_group_t *s_group_open(const char *a_group_name, bool a_create)
         return NULL;
 
     gdb_group_t *l_group = NULL;
-    HASH_FIND_STR(s_groups, a_group_name, l_group);
+    dap_ht_find_str(s_groups, a_group_name, l_group);
     if (l_group)
         return l_group;
 
@@ -294,7 +294,7 @@ static gdb_group_t *s_group_open(const char *a_group_name, bool a_create)
         }
     }
 
-    HASH_ADD_STR(s_groups, name, l_group);
+    dap_ht_add_str(s_groups, name, l_group);
     return l_group;
 }
 
@@ -363,7 +363,7 @@ static int s_groups_index_save(void)
         return -1;
     }
 
-    uint32_t l_count = HASH_COUNT(s_groups);
+    uint32_t l_count = dap_ht_count(s_groups);
     gdb_groups_index_header_t l_header = {
         .magic = GROUPS_INDEX_MAGIC,
         .version = GROUPS_INDEX_VERSION,
@@ -374,7 +374,7 @@ static int s_groups_index_save(void)
 
     fwrite(&l_header, sizeof(l_header), 1, l_fp);
     gdb_group_t *l_group, *l_tmp;
-    HASH_ITER(hh, s_groups, l_group, l_tmp) {
+    dap_ht_foreach(s_groups, l_group, l_tmp) {
         uint16_t l_name_len = strlen(l_group->name);
         fwrite(&l_name_len, sizeof(l_name_len), 1, l_fp);
         fwrite(l_group->name, l_name_len, 1, l_fp);
@@ -440,8 +440,8 @@ static void s_storage_deinit(void)
     pthread_rwlock_wrlock(&s_groups_lock);
     s_groups_index_save();
     gdb_group_t *l_group, *l_tmp;
-    HASH_ITER(hh, s_groups, l_group, l_tmp) {
-        HASH_DEL(s_groups, l_group);
+    dap_ht_foreach(s_groups, l_group, l_tmp) {
+        dap_ht_del(s_groups, l_group);
         s_group_close(l_group);
     }
     pthread_rwlock_unlock(&s_groups_lock);
@@ -454,7 +454,7 @@ static int s_storage_flush(void)
 {
     pthread_rwlock_rdlock(&s_groups_lock);
     gdb_group_t *l_group, *l_tmp;
-    HASH_ITER(hh, s_groups, l_group, l_tmp) {
+    dap_ht_foreach(s_groups, l_group, l_tmp) {
         if (l_group->btree)
             dap_global_db_sync(l_group->btree);
         if (l_group->wal)
@@ -474,11 +474,11 @@ static gdb_group_t *s_group_find(const char *a_group_name, bool a_create)
         return NULL;
     pthread_rwlock_rdlock(&s_groups_lock);
     gdb_group_t *l_group = NULL;
-    HASH_FIND_STR(s_groups, a_group_name, l_group);
+    dap_ht_find_str(s_groups, a_group_name, l_group);
     pthread_rwlock_unlock(&s_groups_lock);
     if (!l_group) {
         pthread_rwlock_wrlock(&s_groups_lock);
-        HASH_FIND_STR(s_groups, a_group_name, l_group);
+        dap_ht_find_str(s_groups, a_group_name, l_group);
         if (!l_group)
             l_group = s_group_open(a_group_name, a_create);
         pthread_rwlock_unlock(&s_groups_lock);
@@ -504,7 +504,7 @@ dap_list_t *dap_global_db_get_groups_by_mask(const char *a_mask)
     dap_list_t *l_result = NULL;
     pthread_rwlock_rdlock(&s_groups_lock);
     gdb_group_t *l_group, *l_tmp;
-    HASH_ITER(hh, s_groups, l_group, l_tmp) {
+    dap_ht_foreach(s_groups, l_group, l_tmp) {
         if (dap_fnmatch(a_mask, l_group->name, 0) == 0)
             l_result = dap_list_append(l_result, dap_strdup(l_group->name));
     }
