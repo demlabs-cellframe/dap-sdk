@@ -27,6 +27,7 @@
 #include "dap_hash.h"
 #include "dap_enc_key.h"
 #include "dap_enc_falcon.h"
+#include "dap_enc_multisign.h"
 #include "dap_sign.h"
 #include "../fixtures/utilities/test_helpers.h"
 
@@ -346,6 +347,45 @@ static bool s_test_falcon_sign_modes_regression(void) {
 }
 
 /**
+ * @brief Regression test: multisign key regenerate on same object must stay functional
+ * @details Repeated generate on the same key is used in LSAN runs to catch leaks
+ */
+static bool s_test_multisign_regenerate_same_key_regression(void) {
+    log_it(L_INFO, "Testing multisign regenerate on same key regression");
+
+    bool l_ok = false;
+    dap_enc_key_t *l_key = NULL;
+    dap_sign_t *l_sign = NULL;
+    const uint8_t l_msg[] = "multisign-regenerate-regression";
+    const dap_enc_key_type_t l_types[2] = {
+        DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
+        DAP_ENC_KEY_TYPE_SIG_DILITHIUM
+    };
+
+    l_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED);
+    DAP_TEST_FAIL_IF_NULL(l_key, "Multisign key");
+
+    dap_enc_sig_multisign_key_new_generate(l_key, l_types, 2, NULL, 0, 0);
+    dap_enc_sig_multisign_key_new_generate(l_key, l_types, 2, NULL, 0, 0);
+
+    DAP_TEST_FAIL_IF_NULL(l_key->priv_key_data, "Multisign private key data");
+    DAP_TEST_FAIL_IF_NULL(l_key->pub_key_data, "Multisign public key data");
+
+    l_sign = dap_sign_create(l_key, l_msg, sizeof(l_msg) - 1);
+    DAP_TEST_FAIL_IF_NULL(l_sign, "Multisign sign after regenerate");
+    DAP_TEST_FAIL_IF_NONZERO(dap_sign_verify(l_sign, l_msg, sizeof(l_msg) - 1),
+                             "Multisign verify after regenerate");
+
+    l_ok = true;
+    log_it(L_INFO, "Multisign regenerate regression test passed");
+
+cleanup:
+    DAP_DELETE(l_sign);
+    dap_enc_key_delete(l_key);
+    return l_ok;
+}
+
+/**
  * @brief Main test function for regression tests
  */
 int main(void) {
@@ -365,6 +405,7 @@ int main(void) {
     l_all_passed &= s_test_integer_overflow_regression();
     l_all_passed &= s_test_multisign_merge_failure_regression();
     l_all_passed &= s_test_falcon_sign_modes_regression();
+    l_all_passed &= s_test_multisign_regenerate_same_key_regression();
     
     dap_test_sdk_cleanup();
     
