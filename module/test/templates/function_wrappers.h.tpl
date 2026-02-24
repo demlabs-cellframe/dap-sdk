@@ -16,6 +16,7 @@
         {{entry|split|pipe}}
         {{#set return_type={{entry|part|0}}}}
         {{#set func_name={{entry|part|1}}}}
+        {{#set param_count={{entry|part|4}}}}
         
         {{#if func_name}}
             #define _DAP_MOCK_WRAPPER_CUSTOM_FOR_{{func_name}}(return_type_full, ...) \
