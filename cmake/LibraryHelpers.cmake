@@ -688,18 +688,16 @@ function(create_final_shared_library)
     message(STATUS "[LibraryHelpers] Target name: ${TARGET_NAME} with OUTPUT_NAME: ${FINAL_LIB_LIBRARY_NAME}")
     add_library(${TARGET_NAME} ${LIB_TYPE} ${ALL_OBJECTS} ${FINAL_LIB_ADDITIONAL_SOURCES})
     
-    # If we have additional sources, inherit include directories from all modules
-    if(FINAL_LIB_ADDITIONAL_SOURCES)
-        foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
-            if(TARGET ${MODULE})
-                # Get INTERFACE_INCLUDE_DIRECTORIES from OBJECT library
-                get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
-                if(MODULE_INCLUDES)
-                    target_include_directories(${TARGET_NAME} PRIVATE ${MODULE_INCLUDES})
-                endif()
+    # Propagate include directories from all OBJECT modules as PUBLIC
+    # so that executables linking against this library can find headers
+    foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
+        if(TARGET ${MODULE})
+            get_target_property(MODULE_INCLUDES ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
+            if(MODULE_INCLUDES)
+                target_include_directories(${TARGET_NAME} PUBLIC ${MODULE_INCLUDES})
             endif()
-        endforeach()
-    endif()
+        endif()
+    endforeach()
     
     # Set versioning and output name
     # OUTPUT_NAME should be without 'lib' prefix and without extension
