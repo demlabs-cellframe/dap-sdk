@@ -45,13 +45,6 @@ echo "=== Generating SIMD implementations using dap_tpl ==="
 echo "Output directory: ${OUTPUT_DIR}"
 echo "Templates directory: ${TEMPLATES_DIR}"
 
-# Detect target architecture
-# CMAKE_SYSTEM_PROCESSOR can be passed from CMake for cross-compilation
-# Otherwise, fallback to uname -m (native build)
-ARCH="${CMAKE_SYSTEM_PROCESSOR:-$(uname -m)}"
-echo "Target architecture: ${ARCH}"
-echo "  (CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR:-<not set>})"
-
 # Create output directory
 mkdir -p "${OUTPUT_DIR}"
 
@@ -61,25 +54,18 @@ generate_arch() {
     local output_h="$2"
     shift 2
     
-    # Create output directory if needed
     mkdir -p "$(dirname "$output_c")"
-    
-    # Generate .c file
     replace_template_placeholders "$TPL_C" "$output_c" "$@"
     echo "  Generated: $output_c"
-    
-    # Generate .h file
     replace_template_placeholders "$TPL_H" "$output_h" "$@"
     echo "  Generated: $output_h"
 }
 
-# Helper to generate arch-specific helper header
 generate_arch_helpers() {
     local output_helpers_h="$1"
     local arch_tpl="$2"
     
     if [ -f "$arch_tpl" ]; then
-        # Simply copy arch-specific template to output as .h file
         cp "$arch_tpl" "$output_helpers_h"
         echo "  Generated arch helpers: $output_helpers_h"
     else
@@ -87,165 +73,177 @@ generate_arch_helpers() {
     fi
 }
 
+wrap_arch_guard() {
+    local file="$1"
+    local guard="$2"
+    if [[ -f "$file" ]]; then
+        local tmp="${file}.tmp"
+        { echo "#if ${guard}"; cat "${file}"; echo "#endif"; } > "${tmp}"
+        mv "${tmp}" "${file}"
+    fi
+}
+
 # ========================================================================
-# Generate based on current architecture
+# Generate ALL architecture variants unconditionally.
+# This is required for macOS universal (fat) binaries that compile for
+# both arm64 and x86_64 in a single build. Architecture guards (#if)
+# in the generated .c files ensure only the right code compiles per arch.
 # ========================================================================
 
-case "${ARCH}" in
-    x86_64|amd64|AMD64|i686|i386)
-        echo ""
-        echo "=== Generating x86/x64 SIMD implementations ==="
-        echo ""
-        echo "=== Generating x86/x64 SIMD implementations ==="
-        
-        echo "Generating SSE2..."
-        generate_arch \
-            "${OUTPUT_DIR}/dap_json_stage1_sse2.c" \
-            "${OUTPUT_DIR}/dap_json_stage1_sse2.h" \
-            "ARCH_NAME=SSE2" \
-            "ARCH_LOWER=sse2" \
-            "ARCH_INCLUDES=#include <emmintrin.h>  // SSE2" \
-            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)16)" \
-            "VECTOR_TYPE=__m128i" \
-            "MASK_TYPE=uint16_t" \
-            "LOADU=_mm_loadu_si128" \
-            "SET1_EPI8=_mm_set1_epi8" \
-            "CMPEQ_EPI8=_mm_cmpeq_epi8" \
-            "OR=_mm_or_si128" \
-            "MOVEMASK_EPI8=_mm_movemask_epi8" \
-            "PERF_TARGET=1+ GB/s (single-core)" \
-            "TARGET_ATTR="
-        
-        echo ""
-        echo "Generating AVX2..."
-        generate_arch \
-            "${OUTPUT_DIR}/dap_json_stage1_avx2.c" \
-            "${OUTPUT_DIR}/dap_json_stage1_avx2.h" \
-            "ARCH_NAME=AVX2" \
-            "ARCH_LOWER=avx2" \
-            "ARCH_INCLUDES=#include <immintrin.h>  // AVX2" \
-            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)32)" \
-            "VECTOR_TYPE=__m256i" \
-            "MASK_TYPE=uint32_t" \
-            "LOADU=_mm256_loadu_si256" \
-            "SET1_EPI8=_mm256_set1_epi8" \
-            "CMPEQ_EPI8=_mm256_cmpeq_epi8" \
-            "OR=_mm256_or_si256" \
-            "MOVEMASK_EPI8=_mm256_movemask_epi8" \
-            "PERF_TARGET=4-5 GB/s (single-core)" \
-            "TARGET_ATTR=avx2"
-        
-        echo ""
-        echo "Generating AVX-512..."
-        generate_arch \
-            "${OUTPUT_DIR}/dap_json_stage1_avx512.c" \
-            "${OUTPUT_DIR}/dap_json_stage1_avx512.h" \
-            "ARCH_NAME=AVX-512" \
-            "ARCH_LOWER=avx512" \
-            "ARCH_INCLUDES=#include <immintrin.h>  // AVX-512" \
-            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)64)" \
-            "VECTOR_TYPE=__m512i" \
-            "MASK_TYPE=uint64_t" \
-            "LOADU=_mm512_loadu_si512" \
-            "SET1_EPI8=_mm512_set1_epi8" \
-            "CMPEQ_EPI8=_mm512_cmpeq_epi8_mask" \
-            "CMPEQ_EPI8_MASK=_mm512_cmpeq_epi8_mask" \
-            "MOVEMASK_TYPE=__mmask64" \
-            "PERF_TARGET=2+ GB/s (single-core)" \
-            "TARGET_ATTR=avx512f,avx512dq,avx512bw" \
-            "is_avx512=1" \
-            "USE_AVX512_MASK=1"
-        ;;
-    
-    arm*|aarch64|ARM*)
-        echo ""
-        echo "=== Generating ARM SIMD implementations ==="
-        
-        echo "Generating ARM NEON..."
-        generate_arch \
-            "${OUTPUT_DIR}/dap_json_stage1_neon.c" \
-            "${OUTPUT_DIR}/dap_json_stage1_neon.h" \
-            "ARCH_NAME=NEON" \
-            "ARCH_LOWER=neon" \
-            "ARCH_INCLUDES=#include <arm_neon.h>  // ARM NEON" \
-            "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)16)" \
-            "VECTOR_TYPE=uint8x16_t" \
-            "MASK_TYPE=uint16_t" \
-            "LOADU=vld1q_u8" \
-            "SET1_EPI8=vdupq_n_u8" \
-            "CMPEQ_EPI8=vceqq_u8" \
-            "OR=vorrq_u8" \
-            "MOVEMASK_EPI8=dap_neon_movemask_u8" \
-            "PERF_TARGET=1+ GB/s (single-core)" \
-            "TARGET_ATTR=" \
-            "USE_NEON_HELPER=1"
-        
-        # Generate ARM-specific arch helpers header (movemask, etc)
-        generate_arch_helpers \
-            "${OUTPUT_DIR}/dap_json_stage1_neon_arch.h" \
-            "${STAGE1_DIR}/arch/arm/movemask_neon.tpl"
-        
-        echo ""
-        echo "Generating ARM SVE..."
-        generate_arch \
-            "${OUTPUT_DIR}/dap_json_stage1_sve.c" \
-            "${OUTPUT_DIR}/dap_json_stage1_sve.h" \
-            "ARCH_NAME=SVE" \
-            "ARCH_LOWER=sve" \
-            "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE" \
-            "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve(void) { return svcntb(); }
+echo ""
+echo "=== Generating x86/x64 SIMD implementations ==="
+
+echo "Generating SSE2..."
+generate_arch \
+    "${OUTPUT_DIR}/dap_json_stage1_sse2.c" \
+    "${OUTPUT_DIR}/dap_json_stage1_sse2.h" \
+    "ARCH_NAME=SSE2" \
+    "ARCH_LOWER=sse2" \
+    "ARCH_INCLUDES=#include <emmintrin.h>  // SSE2" \
+    "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)16)" \
+    "VECTOR_TYPE=__m128i" \
+    "MASK_TYPE=uint16_t" \
+    "LOADU=_mm_loadu_si128" \
+    "SET1_EPI8=_mm_set1_epi8" \
+    "CMPEQ_EPI8=_mm_cmpeq_epi8" \
+    "OR=_mm_or_si128" \
+    "MOVEMASK_EPI8=_mm_movemask_epi8" \
+    "PERF_TARGET=1+ GB/s (single-core)" \
+    "TARGET_ATTR="
+
+echo ""
+echo "Generating AVX2..."
+generate_arch \
+    "${OUTPUT_DIR}/dap_json_stage1_avx2.c" \
+    "${OUTPUT_DIR}/dap_json_stage1_avx2.h" \
+    "ARCH_NAME=AVX2" \
+    "ARCH_LOWER=avx2" \
+    "ARCH_INCLUDES=#include <immintrin.h>  // AVX2" \
+    "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)32)" \
+    "VECTOR_TYPE=__m256i" \
+    "MASK_TYPE=uint32_t" \
+    "LOADU=_mm256_loadu_si256" \
+    "SET1_EPI8=_mm256_set1_epi8" \
+    "CMPEQ_EPI8=_mm256_cmpeq_epi8" \
+    "OR=_mm256_or_si256" \
+    "MOVEMASK_EPI8=_mm256_movemask_epi8" \
+    "PERF_TARGET=4-5 GB/s (single-core)" \
+    "TARGET_ATTR=avx2"
+
+echo ""
+echo "Generating AVX-512..."
+generate_arch \
+    "${OUTPUT_DIR}/dap_json_stage1_avx512.c" \
+    "${OUTPUT_DIR}/dap_json_stage1_avx512.h" \
+    "ARCH_NAME=AVX-512" \
+    "ARCH_LOWER=avx512" \
+    "ARCH_INCLUDES=#include <immintrin.h>  // AVX-512" \
+    "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)64)" \
+    "VECTOR_TYPE=__m512i" \
+    "MASK_TYPE=uint64_t" \
+    "LOADU=_mm512_loadu_si512" \
+    "SET1_EPI8=_mm512_set1_epi8" \
+    "CMPEQ_EPI8=_mm512_cmpeq_epi8_mask" \
+    "CMPEQ_EPI8_MASK=_mm512_cmpeq_epi8_mask" \
+    "MOVEMASK_TYPE=__mmask64" \
+    "PERF_TARGET=2+ GB/s (single-core)" \
+    "TARGET_ATTR=avx512f,avx512dq,avx512bw" \
+    "is_avx512=1" \
+    "USE_AVX512_MASK=1"
+
+# dap_tpl exports env vars that persist across calls — unset AVX-512-only
+# variables so they don't leak into ARM template generation
+unset USE_AVX512_MASK is_avx512 CMPEQ_EPI8_MASK MOVEMASK_TYPE 2>/dev/null || true
+
+echo ""
+echo "=== Generating ARM SIMD implementations ==="
+
+echo "Generating ARM NEON..."
+generate_arch \
+    "${OUTPUT_DIR}/dap_json_stage1_neon.c" \
+    "${OUTPUT_DIR}/dap_json_stage1_neon.h" \
+    "ARCH_NAME=NEON" \
+    "ARCH_LOWER=neon" \
+    "ARCH_INCLUDES=#include <arm_neon.h>  // ARM NEON" \
+    "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE ((size_t)16)" \
+    "VECTOR_TYPE=uint8x16_t" \
+    "MASK_TYPE=uint16_t" \
+    "LOADU=vld1q_u8" \
+    "SET1_EPI8=vdupq_n_u8" \
+    "CMPEQ_EPI8=vceqq_u8" \
+    "OR=vorrq_u8" \
+    "MOVEMASK_EPI8=dap_neon_movemask_u8" \
+    "PERF_TARGET=1+ GB/s (single-core)" \
+    "TARGET_ATTR=" \
+    "USE_NEON_HELPER=1"
+
+generate_arch_helpers \
+    "${OUTPUT_DIR}/dap_json_stage1_neon_arch.h" \
+    "${STAGE1_DIR}/arch/arm/movemask_neon.tpl"
+
+echo ""
+echo "Generating ARM SVE..."
+generate_arch \
+    "${OUTPUT_DIR}/dap_json_stage1_sve.c" \
+    "${OUTPUT_DIR}/dap_json_stage1_sve.h" \
+    "ARCH_NAME=SVE" \
+    "ARCH_LOWER=sve" \
+    "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE" \
+    "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve(void) { return svcntb(); }
 #define CHUNK_SIZE_VALUE get_chunk_size_sve()" \
-            "USE_SVE_PREDICATES=YES" \
-            "VECTOR_TYPE=svuint8_t" \
-            "MASK_TYPE=uint64_t" \
-            "LOADU=svld1_u8" \
-            "SET1_EPI8=svdup_u8" \
-            "CMPEQ_EPI8=svcmpeq_u8" \
-            "OR=svorr_u8_z" \
-            "MOVEMASK_EPI8=dap_sve_movemask_u8" \
-            "PERF_TARGET=2+ GB/s (single-core, scalable)" \
-            "TARGET_ATTR=+sve" \
-            "USE_SVE_HELPER=1"
-        
-        # Generate SVE-specific arch helpers header
-        generate_arch_helpers \
-            "${OUTPUT_DIR}/dap_json_stage1_sve_arch.h" \
-            "${STAGE1_DIR}/arch/arm/movemask_sve.tpl"
-        
-        echo ""
-        echo "Generating ARM SVE2..."
-        generate_arch \
-            "${OUTPUT_DIR}/dap_json_stage1_sve2.c" \
-            "${OUTPUT_DIR}/dap_json_stage1_sve2.h" \
-            "ARCH_NAME=SVE2" \
-            "ARCH_LOWER=sve2" \
-            "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE2" \
-            "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve2(void) { return svcntb(); }
+    "USE_SVE_PREDICATES=YES" \
+    "VECTOR_TYPE=svuint8_t" \
+    "MASK_TYPE=uint64_t" \
+    "LOADU=svld1_u8" \
+    "SET1_EPI8=svdup_u8" \
+    "CMPEQ_EPI8=svcmpeq_u8" \
+    "OR=svorr_u8_z" \
+    "MOVEMASK_EPI8=dap_sve_movemask_u8" \
+    "PERF_TARGET=2+ GB/s (single-core, scalable)" \
+    "TARGET_ATTR=+sve" \
+    "USE_SVE_HELPER=1"
+
+generate_arch_helpers \
+    "${OUTPUT_DIR}/dap_json_stage1_sve_arch.h" \
+    "${STAGE1_DIR}/arch/arm/movemask_sve.tpl"
+
+echo ""
+echo "Generating ARM SVE2..."
+generate_arch \
+    "${OUTPUT_DIR}/dap_json_stage1_sve2.c" \
+    "${OUTPUT_DIR}/dap_json_stage1_sve2.h" \
+    "ARCH_NAME=SVE2" \
+    "ARCH_LOWER=sve2" \
+    "ARCH_INCLUDES=#include <arm_sve.h>  // ARM SVE2" \
+    "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve2(void) { return svcntb(); }
 #define CHUNK_SIZE_VALUE get_chunk_size_sve2()" \
-            "USE_SVE_PREDICATES=YES" \
-            "VECTOR_TYPE=svuint8_t" \
-            "MASK_TYPE=uint64_t" \
-            "LOADU=svld1_u8" \
-            "SET1_EPI8=svdup_u8" \
-            "CMPEQ_EPI8=svcmpeq_u8" \
-            "OR=svorr_u8_z" \
-            "MOVEMASK_EPI8=dap_sve2_movemask_u8" \
-            "PERF_TARGET=3+ GB/s (single-core, enhanced SVE)" \
-            "TARGET_ATTR=+sve2" \
-            "USE_SVE2_HELPER=1"
-        
-        # Generate SVE2-specific arch helpers header (same as SVE for now)
-        generate_arch_helpers \
-            "${OUTPUT_DIR}/dap_json_stage1_sve2_arch.h" \
-            "${STAGE1_DIR}/arch/arm/movemask_sve.tpl"
-        ;;
-    
-    *)
-        echo "WARNING: Unknown architecture '${ARCH}', no SIMD implementations generated"
-        echo "Only reference C implementation will be available"
-        exit 0
-        ;;
-esac
+    "USE_SVE_PREDICATES=YES" \
+    "VECTOR_TYPE=svuint8_t" \
+    "MASK_TYPE=uint64_t" \
+    "LOADU=svld1_u8" \
+    "SET1_EPI8=svdup_u8" \
+    "CMPEQ_EPI8=svcmpeq_u8" \
+    "OR=svorr_u8_z" \
+    "MOVEMASK_EPI8=dap_sve2_movemask_u8" \
+    "PERF_TARGET=3+ GB/s (single-core, enhanced SVE)" \
+    "TARGET_ATTR=+sve2" \
+    "USE_SVE2_HELPER=1"
+
+generate_arch_helpers \
+    "${OUTPUT_DIR}/dap_json_stage1_sve2_arch.h" \
+    "${STAGE1_DIR}/arch/arm/movemask_sve.tpl"
+
+# Wrap generated .c files with architecture preprocessor guards
+X86_GUARD="defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)"
+ARM_GUARD="defined(__aarch64__) || defined(__arm__)"
+SVE_GUARD="defined(__aarch64__) && !defined(__APPLE__)"
+
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_stage1_sse2.c"   "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_stage1_avx2.c"   "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_stage1_avx512.c" "$X86_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_stage1_neon.c"   "$ARM_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_stage1_sve.c"    "$SVE_GUARD"
+wrap_arch_guard "${OUTPUT_DIR}/dap_json_stage1_sve2.c"   "$SVE_GUARD"
 
 echo ""
 echo "=== Generation complete! ==="

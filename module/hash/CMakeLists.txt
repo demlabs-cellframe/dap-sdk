@@ -61,74 +61,75 @@ endif()
 # Collect generated SIMD sources and set compiler flags
 set(KECCAK_SIMD_SRCS "")
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686|i386")
-    # x86/x64: AVX-512, AVX2, SSE2 implementations (generated)
-    set(KECCAK_AVX512_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_avx512.c)
-    set(KECCAK_AVX2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_avx2.c)
-    set(KECCAK_SSE2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sse2.c)
-    
+set(KECCAK_AVX512_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_avx512.c)
+set(KECCAK_AVX2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_avx2.c)
+set(KECCAK_SSE2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sse2.c)
+set(KECCAK_NEON_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_neon.c)
+set(KECCAK_SVE_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve.c)
+set(KECCAK_SVE2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve2.c)
+
+if(APPLE)
+    # Apple universal binary (arm64 + x86_64): include ALL generated sources.
+    # Architecture guards (#if) in .c files handle per-arch compilation.
+    # No per-file ISA flags — functions use __attribute__((target(...))).
+    foreach(_src ${KECCAK_AVX512_SRC} ${KECCAK_AVX2_SRC} ${KECCAK_SSE2_SRC} ${KECCAK_NEON_SRC})
+        if(EXISTS ${_src})
+            list(APPEND KECCAK_SIMD_SRCS ${_src})
+            set_source_files_properties(${_src} PROPERTIES GENERATED TRUE)
+        endif()
+    endforeach()
+    message(STATUS "[dap_hash] Keccak SIMD: all variants included (Apple universal)")
+
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686|i386")
     if(EXISTS ${KECCAK_AVX512_SRC})
         list(APPEND KECCAK_SIMD_SRCS ${KECCAK_AVX512_SRC})
         set_source_files_properties(${KECCAK_AVX512_SRC} PROPERTIES 
             COMPILE_FLAGS "-mavx512f -mavx512dq -mavx512bw -mavx512vl"
             GENERATED TRUE)
     endif()
-    
     if(EXISTS ${KECCAK_AVX2_SRC})
         list(APPEND KECCAK_SIMD_SRCS ${KECCAK_AVX2_SRC})
         set_source_files_properties(${KECCAK_AVX2_SRC} PROPERTIES 
             COMPILE_FLAGS "-mavx2 -mbmi -mbmi2"
             GENERATED TRUE)
     endif()
-    
     if(EXISTS ${KECCAK_SSE2_SRC})
         list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SSE2_SRC})
         set_source_files_properties(${KECCAK_SSE2_SRC} PROPERTIES 
             COMPILE_FLAGS "-msse2"
             GENERATED TRUE)
     endif()
-    
-    message(STATUS "[dap_hash] Keccak SIMD: AVX-512, AVX2, SSE2 enabled (generated)")
-    
+    message(STATUS "[dap_hash] Keccak SIMD: AVX-512, AVX2, SSE2 enabled")
+
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
-    # ARM64: NEON, SVE, SVE2 implementations (generated)
-    set(KECCAK_NEON_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_neon.c)
-    set(KECCAK_SVE_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve.c)
-    set(KECCAK_SVE2_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_sve2.c)
-    
     if(EXISTS ${KECCAK_NEON_SRC})
         list(APPEND KECCAK_SIMD_SRCS ${KECCAK_NEON_SRC})
         set_source_files_properties(${KECCAK_NEON_SRC} PROPERTIES GENERATED TRUE)
     endif()
-    
-    if(EXISTS ${KECCAK_SVE_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE_SRC})
-        set_source_files_properties(${KECCAK_SVE_SRC} PROPERTIES 
-            COMPILE_FLAGS "-march=armv8.2-a+sve"
-            GENERATED TRUE)
+    if(NOT APPLE)
+        if(EXISTS ${KECCAK_SVE_SRC})
+            list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE_SRC})
+            set_source_files_properties(${KECCAK_SVE_SRC} PROPERTIES 
+                COMPILE_FLAGS "-march=armv8.2-a+sve"
+                GENERATED TRUE)
+        endif()
+        if(EXISTS ${KECCAK_SVE2_SRC})
+            list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE2_SRC})
+            set_source_files_properties(${KECCAK_SVE2_SRC} PROPERTIES 
+                COMPILE_FLAGS "-march=armv8.2-a+sve2"
+                GENERATED TRUE)
+        endif()
     endif()
-    
-    if(EXISTS ${KECCAK_SVE2_SRC})
-        list(APPEND KECCAK_SIMD_SRCS ${KECCAK_SVE2_SRC})
-        set_source_files_properties(${KECCAK_SVE2_SRC} PROPERTIES 
-            COMPILE_FLAGS "-march=armv8.2-a+sve2"
-            GENERATED TRUE)
-    endif()
-    
-    message(STATUS "[dap_hash] Keccak SIMD: NEON, SVE, SVE2 enabled (generated)")
-    
+    message(STATUS "[dap_hash] Keccak SIMD: NEON enabled")
+
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
-    # ARM32: NEON implementation (generated)
-    set(KECCAK_NEON_SRC ${KECCAK_SIMD_GEN_DIR}/dap_keccak_neon.c)
-    
     if(EXISTS ${KECCAK_NEON_SRC})
         list(APPEND KECCAK_SIMD_SRCS ${KECCAK_NEON_SRC})
         set_source_files_properties(${KECCAK_NEON_SRC} PROPERTIES 
             COMPILE_FLAGS "-mfpu=neon"
             GENERATED TRUE)
     endif()
-    
-    message(STATUS "[dap_hash] Keccak SIMD: NEON enabled (generated, ARM32)")
+    message(STATUS "[dap_hash] Keccak SIMD: NEON enabled (ARM32)")
 endif()
 
 # Add generated SIMD sources

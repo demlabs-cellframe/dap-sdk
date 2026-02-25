@@ -59,6 +59,7 @@ static ecdsa_field_impl_info_t s_impls[ECDSA_FIELD_IMPL_COUNT] = {
         .mul = ecdsa_field_mul_neon,
         .sqr = ecdsa_field_sqr_neon
     },
+    #if !defined(__APPLE__)
     [ECDSA_FIELD_IMPL_ARM64_SVE] = {
         .name = "sve",
         .description = "ARM64 SVE (scalable vectors)",
@@ -67,6 +68,7 @@ static ecdsa_field_impl_info_t s_impls[ECDSA_FIELD_IMPL_COUNT] = {
         .mul = ecdsa_field_mul_sve,
         .sqr = ecdsa_field_sqr_sve
     },
+    #endif
 #endif
 };
 
@@ -115,7 +117,9 @@ void ecdsa_field_dispatch_init(void) {
 
 #if defined(__aarch64__)
     s_impls[ECDSA_FIELD_IMPL_ARM64_NEON].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_NEON);
+    #if !defined(__APPLE__)
     s_impls[ECDSA_FIELD_IMPL_ARM64_SVE].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_SVE);
+    #endif
 #endif
 
     s_current_impl = ECDSA_FIELD_IMPL_GENERIC;
@@ -129,6 +133,7 @@ void ecdsa_field_dispatch_init(void) {
             break;
 #endif
 #if defined(__aarch64__)
+    #if !defined(__APPLE__)
         case DAP_CPU_ARCH_SVE2:
         case DAP_CPU_ARCH_SVE:
             if (s_impls[ECDSA_FIELD_IMPL_ARM64_SVE].available) {
@@ -136,6 +141,7 @@ void ecdsa_field_dispatch_init(void) {
                 break;
             }
             /* fallthrough */
+    #endif
         case DAP_CPU_ARCH_NEON:
             if (s_impls[ECDSA_FIELD_IMPL_ARM64_NEON].available)
                 s_current_impl = ECDSA_FIELD_IMPL_ARM64_NEON;

@@ -78,6 +78,7 @@ static ecdsa_scalar_impl_info_t s_implementations[] = {
         .mul = ecdsa_scalar_mul_neon,
     },
     
+    #if !defined(__APPLE__)
     // ARM64 SVE (servers: Graviton3, Neoverse, Ampere)
     {
         .name = "arm64_sve",
@@ -89,6 +90,7 @@ static ecdsa_scalar_impl_info_t s_implementations[] = {
         .reduce_512 = ecdsa_scalar_reduce_512_sve,
         .mul = ecdsa_scalar_mul_sve,
     },
+    #endif
 #endif
 };
 
@@ -141,7 +143,7 @@ void ecdsa_scalar_dispatch_init(void) {
                 s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX512);
                 break;
 #endif
-#if defined(__aarch64__)
+#if defined(__aarch64__) && !defined(__APPLE__)
             case ECDSA_SCALAR_IMPL_ARM64_SVE:
                 s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_SVE);
                 break;
@@ -165,10 +167,12 @@ void ecdsa_scalar_dispatch_init(void) {
             break;
 #endif
 #if defined(__aarch64__)
+    #if !defined(__APPLE__)
         case DAP_CPU_ARCH_SVE2:
         case DAP_CPU_ARCH_SVE:
             s_current_impl = ECDSA_SCALAR_IMPL_ARM64_SVE;
             break;
+    #endif
         case DAP_CPU_ARCH_NEON:
             s_current_impl = ECDSA_SCALAR_IMPL_ARM64_NEON;
             break;

@@ -63,6 +63,9 @@
  * @param a_out_end_offset Output: offset of closing quote
  * @return true on success, false on error
  */
+{{#if TARGET_ATTR}}
+__attribute__((target("{{TARGET_ATTR}}")))
+{{/if}}
 bool dap_json_string_scan_{{ARCH_LOWER}}(
     const uint8_t *a_input,
     size_t a_input_len,

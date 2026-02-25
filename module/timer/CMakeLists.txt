@@ -23,8 +23,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 target_link_libraries(${PROJECT_NAME} dap_core dap_hash_table)
 
 # Platform-specific libraries
-if(UNIX AND NOT APPLE)
-    # rt library for timer_create on Linux
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    # rt library for timer_create on Linux (Android libc includes rt)
     target_link_libraries(${PROJECT_NAME} rt)
 endif()
 
