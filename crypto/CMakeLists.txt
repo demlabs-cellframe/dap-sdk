@@ -327,6 +327,11 @@ if (BUILD_WITH_ECDSA)
 endif()
 
 
+option(BUILD_WITH_TLS "Build system TLS support (OpenSSL/SecureTransport/SChannel)" OFF)
+if(BUILD_WITH_TLS)
+    add_subdirectory(tls)
+endif()
+
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${CRYPTO_HEADERS}")
 

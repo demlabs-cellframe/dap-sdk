@@ -10,8 +10,7 @@ add_subdirectory(websocket)
 add_subdirectory(http)
 add_subdirectory(udp)
 add_subdirectory(dns)
-# TODO: add TLS trans when implemented
-# add_subdirectory(tls)
+add_subdirectory(tls)
 
 # Unified trans abstraction layer (dap_net_trans.c) and server API (dap_net_trans_server.c)
 file(GLOB TRANS_CORE_SRCS 
@@ -42,6 +41,7 @@ target_include_directories(dap_net_trans PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/websocket/include
     ${CMAKE_CURRENT_SOURCE_DIR}/udp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/dns/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tls/include
 )
 
 # Link dependencies
@@ -52,6 +52,7 @@ dap_link_libraries(dap_net_trans INTERFACE
     dap_trans_websocket
     dap_trans_udp
     dap_trans_dns
+    dap_trans_tls
 )
 
 # Register dap_net_trans module with dap_module system

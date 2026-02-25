@@ -556,6 +556,9 @@ DAP_INLINE int dap_close_socket(SOCKET s) {
 #endif
 }
 
+int dap_events_socket_queue_data_send               (dap_events_socket_t*, const void*, size_t);
+#define dap_events_socket_queue_ptr_send(es, arg)               dap_events_socket_queue_data_send(es, arg, 0)
+
 #ifdef DAP_EVENTS_CAPS_IOCP
 
 DAP_STATIC_INLINE void dap_overlapped_free(dap_overlapped_t *ol) {
@@ -566,11 +569,9 @@ DAP_STATIC_INLINE void dap_overlapped_free(dap_overlapped_t *ol) {
 }
 void dap_events_socket_set_readable_unsafe_ex       (dap_events_socket_t*, bool, dap_overlapped_t*);
 void dap_events_socket_set_writable_unsafe_ex       (dap_events_socket_t*, bool, size_t, dap_overlapped_t*);
-int dap_events_socket_queue_data_send               (dap_events_socket_t*, const void*, size_t);
 
 #define dap_events_socket_set_readable_unsafe(es, flag)         dap_events_socket_set_readable_unsafe_ex(es, flag, NULL)
 #define dap_events_socket_set_writable_unsafe(es, flag)         dap_events_socket_set_writable_unsafe_ex(es, flag, 0, NULL)
-#define dap_events_socket_queue_ptr_send(es, arg)               dap_events_socket_queue_data_send(es, arg, 0)
 
 #endif
 
