@@ -122,9 +122,11 @@ void ecdsa_field_sqr_avx2_bmi2(ecdsa_field_t *r, const ecdsa_field_t *a);
 void ecdsa_field_mul_neon(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
 void ecdsa_field_sqr_neon(ecdsa_field_t *r, const ecdsa_field_t *a);
 
+#if !defined(__APPLE__)
 // ARM64 SVE (servers: Graviton3, Neoverse, Ampere)
 void ecdsa_field_mul_sve(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
 void ecdsa_field_sqr_sve(ecdsa_field_t *r, const ecdsa_field_t *a);
+#endif
 #endif
 
 #ifdef __cplusplus

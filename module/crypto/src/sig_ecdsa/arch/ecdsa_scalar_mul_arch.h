@@ -155,11 +155,13 @@ void ecdsa_scalar_mul_shift_384_neon(ecdsa_scalar_t *r, const ecdsa_scalar_t *a,
 void ecdsa_scalar_reduce_512_neon(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_neon(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 
+#if !defined(__APPLE__)
 // ARM64 SVE (servers: Graviton3, Neoverse, Ampere)
 void ecdsa_scalar_mul_512_sve(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_mul_shift_384_sve(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_reduce_512_sve(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_sve(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
+#endif
 #endif
 
 #ifdef __cplusplus

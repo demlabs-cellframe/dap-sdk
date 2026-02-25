@@ -155,7 +155,8 @@ if (BUILD_WITH_ECDSA)
     
     # SVE files need -march=armv8.2-a+sve for GCC 10 compatibility.
     # Must be set here (parent scope) since dap_crypto target is built in this directory.
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    # Skip on Apple: Apple Silicon doesn't support SVE, and the flag breaks universal builds.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64" AND NOT APPLE)
         set_source_files_properties(
             ${ECDSA_GEN_INCLUDE_DIR}/ecdsa_scalar_mul_sve.c
             ${ECDSA_GEN_INCLUDE_DIR}/ecdsa_field_sve.c
