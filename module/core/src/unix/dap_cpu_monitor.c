@@ -2,6 +2,8 @@
 #include "dap_common.h"
 
 #include <stdio.h>
+#include <stdbool.h>
+#include <inttypes.h>
 
 #ifdef DAP_OS_ANDROID
 // Android-compatible getline implementation
@@ -36,24 +38,34 @@ typedef struct proc_stat_line
 {
     /* http://man7.org/linux/man-pages/man5/proc.5.html */
     char cpu[10];
-    size_t user;
-    size_t nice;
-    size_t system;
-    size_t idle;
-    size_t iowait;
-    size_t irq;
-    size_t softirq;
-    size_t steal;
-    size_t guest;
-    size_t guest_nice;
-    size_t total; // summary all parameters
+    uint64_t user;
+    uint64_t nice;
+    uint64_t system;
+    uint64_t idle;
+    uint64_t iowait;
+    uint64_t irq;
+    uint64_t softirq;
+    uint64_t steal;
+    uint64_t guest;
+    uint64_t guest_nice;
+    uint64_t total; // summary all parameters
 } proc_stat_line_t;
 
 int dap_cpu_monitor_init()
 {
-    _cpu_stats.cpu_cores_count = (unsigned) sysconf(_SC_NPROCESSORS_ONLN);
+    long l_cpu_cores_count = sysconf(_SC_NPROCESSORS_ONLN);
+    if (l_cpu_cores_count <= 0) {
+        log_it(L_WARNING, "Failed to detect CPU count, fallback to 1");
+        l_cpu_cores_count = 1;
+    }
+    if (l_cpu_cores_count > MAX_CPU_COUNT) {
+        log_it(L_WARNING, "CPU core count %ld exceeds MAX_CPU_COUNT=%d, clamping",
+               l_cpu_cores_count, MAX_CPU_COUNT);
+        l_cpu_cores_count = MAX_CPU_COUNT;
+    }
+    _cpu_stats.cpu_cores_count = (unsigned)l_cpu_cores_count;
 
-    log_it(L_DEBUG, "Cpu core count: %d", _cpu_stats.cpu_cores_count);
+    log_it(L_DEBUG, "Cpu core count: %u", _cpu_stats.cpu_cores_count);
 
     dap_cpu_get_stats(); // init prev parameters
 
@@ -65,22 +77,47 @@ void dap_cpu_monitor_deinit()
 
 }
 
-static void _deserialize_proc_stat(char *line, proc_stat_line_t *stat)
+static bool _deserialize_proc_stat(const char *a_line, proc_stat_line_t *a_stat)
 {
-    sscanf(line,"%s %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu",
-           stat->cpu, &stat->user, &stat->nice, &stat->system, &stat->idle,
-           &stat->iowait, &stat->irq, &stat->softirq, &stat->steal,
-           &stat->guest, &stat->guest_nice);
-    stat->total = stat->user + stat->system + stat->idle +
-            stat->iowait + stat->irq + stat->softirq +
-            stat->steal + stat->guest + stat->guest_nice;
+    memset(a_stat, 0, sizeof(*a_stat));
+    int l_scanned = sscanf(a_line, "%9s %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64
+                                   " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64
+                                   " %" SCNu64 " %" SCNu64,
+                           a_stat->cpu,
+                           &a_stat->user, &a_stat->nice, &a_stat->system, &a_stat->idle,
+                           &a_stat->iowait, &a_stat->irq, &a_stat->softirq, &a_stat->steal,
+                           &a_stat->guest, &a_stat->guest_nice);
+    if (l_scanned < 5) {
+        return false;
+    }
+    // Linux total jiffies: user + nice + system + idle + iowait + irq + softirq + steal.
+    a_stat->total = a_stat->user + a_stat->nice + a_stat->system + a_stat->idle +
+                    a_stat->iowait + a_stat->irq + a_stat->softirq + a_stat->steal;
+    return true;
 }
 
-static float _calculate_load(size_t idle_time, size_t prev_idle_time,
-                      size_t total_time, size_t prev_total_time)
+static float _calculate_load(uint64_t a_idle_time, uint64_t a_prev_idle_time,
+                             uint64_t a_total_time, uint64_t a_prev_total_time)
 {
-    return (1 - (1.0*idle_time -prev_idle_time) /
-            (total_time - prev_total_time)) * 100.0;
+    if (a_total_time <= a_prev_total_time || a_idle_time < a_prev_idle_time) {
+        return 0.0f;
+    }
+    uint64_t l_total_diff = a_total_time - a_prev_total_time;
+    uint64_t l_idle_diff = a_idle_time - a_prev_idle_time;
+    if (l_total_diff == 0) {
+        return 0.0f;
+    }
+    if (l_idle_diff > l_total_diff) {
+        l_idle_diff = l_total_diff;
+    }
+    float l_load = (1.0f - (float)l_idle_diff / (float)l_total_diff) * 100.0f;
+    if (l_load < 0.0f) {
+        return 0.0f;
+    }
+    if (l_load > 100.0f) {
+        return 100.0f;
+    }
+    return l_load;
 }
 
 dap_cpu_stats_t dap_cpu_get_stats()
@@ -107,7 +144,15 @@ dap_cpu_stats_t dap_cpu_get_stats()
         }
         return (dap_cpu_stats_t){0};
     }
-    _deserialize_proc_stat(line, &l_stat);
+    if (!_deserialize_proc_stat(line, &l_stat)) {
+        log_it(L_ERROR, "Failed to parse /proc/stat summary line");
+        fclose(_proc_stat);
+        if (line) {
+            DAP_FREE(line);
+            line = NULL;
+        }
+        return (dap_cpu_stats_t){0};
+    }
 
     _cpu_stats.cpu_summary.idle_time = l_stat.idle;
     _cpu_stats.cpu_summary.total_time = l_stat.total;
@@ -124,7 +169,15 @@ dap_cpu_stats_t dap_cpu_get_stats()
             }
             return (dap_cpu_stats_t){0};
         }
-        _deserialize_proc_stat(line, &l_stat);
+        if (!_deserialize_proc_stat(line, &l_stat)) {
+            log_it(L_ERROR, "Failed to parse /proc/stat cpu line");
+            fclose(_proc_stat);
+            if (line) {
+                DAP_FREE(line);
+                line = NULL;
+            }
+            return (dap_cpu_stats_t){0};
+        }
         _cpu_stats.cpus[i].idle_time = l_stat.idle;
         _cpu_stats.cpus[i].total_time = l_stat.total;
         _cpu_stats.cpus[i].ncpu = i;
