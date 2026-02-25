@@ -7,6 +7,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Warning flags inherited from cmake/OS_Detection.cmake (CFLAGS_WARNINGS via CMAKE_C_FLAGS)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/dap_test_helpers.cmake)
+
 # Include directories for DAP SDK
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -256,6 +258,21 @@ message("[+] Configuring Regression Tests")
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_known_issues.c)
     add_dap_test(test_regression_known_issues regression/test_known_issues.c)
     register_dap_test(test_regression_known_issues "regression;bugfix")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_bliss_failure_cleanup.c)
+    if(UNIX AND NOT APPLE)
+        add_executable(test_regression_bliss_failure_cleanup regression/test_bliss_failure_cleanup.c)
+        dap_test_link_libraries(test_regression_bliss_failure_cleanup)
+        dap_test_add_includes(test_regression_bliss_failure_cleanup)
+        target_link_options(test_regression_bliss_failure_cleanup PRIVATE -Wl,--wrap=invert_polynomial)
+        set_target_properties(test_regression_bliss_failure_cleanup PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
+        )
+        register_dap_test(test_regression_bliss_failure_cleanup "regression;bugfix;crypto;memory")
+    else()
+        message("[+] Skipping test_regression_bliss_failure_cleanup: requires linker --wrap support")
+    endif()
 endif()
 
 # Build Security Tests

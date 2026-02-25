@@ -171,7 +171,6 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -180,7 +179,6 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -189,7 +187,6 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -238,7 +235,6 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
   secure_free(&t, p.n);
   secure_free(&u, p.n);
   delete_ntt_state(state);
-  bliss_b_private_key_delete((void *)private_key);
   return BLISS_B_BAD_DATA;
 }
 
