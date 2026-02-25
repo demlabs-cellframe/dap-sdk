@@ -52,6 +52,11 @@ void dap_enc_aes_key_new(struct dap_enc_key * a_key)
     //a_key->delete_callback = dap_enc_aes_key_delete;
 
     a_key->priv_key_data = (uint8_t *)malloc(IAES_KEYSIZE);
+    if (!a_key->priv_key_data) {
+        a_key->priv_key_data_size = 0;
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
     a_key->priv_key_data_size = IAES_KEYSIZE;
 }
 
@@ -60,13 +65,21 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
                                                 size_t key_size)
 {
     (void)key_size;
+    if (!a_key || !a_key->priv_key_data || a_key->priv_key_data_size < IAES_KEYSIZE || !DAP_ENC_AES_KEY(a_key)) {
+        log_it(L_CRITICAL, "IAES key generation: key buffer is not initialized");
+        if (a_key) {
+            if (a_key->priv_key_data && a_key->priv_key_data_size)
+                memset(a_key->priv_key_data, 0, a_key->priv_key_data_size);
+            a_key->priv_key_data_size = 0;
+        }
+        return;
+    }
+
     a_key->last_used_timestamp = dap_time_now();
 
     static const uint8_t s_empty_input = 0;
     const uint8_t *l_seed = (const uint8_t *)seed;
     const uint8_t *l_kex = (const uint8_t *)kex_buf;
-    const uint8_t *l_kdf_input = &s_empty_input;
-    size_t l_kdf_input_size = 0;
 
     if (seed_size && !l_seed) {
         log_it(L_ERROR, "IAES key generation: seed is NULL while seed_size=%zu, fallback to empty seed", seed_size);
@@ -76,34 +89,18 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         log_it(L_ERROR, "IAES key generation: kex_buf is NULL while kex_size=%zu, fallback to empty kex", kex_size);
         kex_size = 0;
     }
-    if (kex_size > ((size_t)-1) - seed_size) {
-        log_it(L_ERROR, "IAES key generation: input size overflow, fallback to empty input");
-        seed_size = 0;
-        kex_size = 0;
-    }
+
+    // KDF input is SHAKE256(seed || kex) via streaming absorb to avoid temporary heap allocation.
+    dap_hash_keccak_ctx_t l_kdf_ctx;
+    dap_hash_keccak_sponge_init(&l_kdf_ctx, DAP_KECCAK_SHAKE256_RATE, DAP_KECCAK_SHAKE_SUFFIX);
+    if (seed_size)
+        dap_hash_keccak_sponge_absorb(&l_kdf_ctx, l_seed, seed_size);
+    if (kex_size)
+        dap_hash_keccak_sponge_absorb(&l_kdf_ctx, l_kex, kex_size);
+    dap_hash_keccak_sponge_squeeze(&l_kdf_ctx, a_key->priv_key_data, IAES_KEYSIZE);
 
     l_seed = seed_size ? l_seed : &s_empty_input;
-    l_kex = kex_size ? l_kex : &s_empty_input;
-
-    size_t l_concat_size = kex_size + seed_size;
-    uint8_t *id_concat_kex = l_concat_size ? (uint8_t *)malloc(l_concat_size) : NULL;
-    if (l_concat_size && !id_concat_kex) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-    } else if (id_concat_kex) {
-        if (seed_size)
-            memcpy(id_concat_kex, l_seed, seed_size);
-        if (kex_size)
-            memcpy(id_concat_kex + seed_size, l_kex, kex_size);
-        l_kdf_input = id_concat_kex;
-        l_kdf_input_size = l_concat_size;
-    }
-
-    //SHAKE256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
-    //SHAKE128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
-    dap_hash_shake256(a_key->priv_key_data, IAES_KEYSIZE, l_kdf_input, l_kdf_input_size);
     dap_hash_shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, l_seed, seed_size);
-
-    free(id_concat_kex);
 }
 
 

@@ -26,6 +26,7 @@
 #include "dap_json.h"
 #include "dap_hash.h"
 #include "dap_enc_key.h"
+#include "dap_enc_iaes.h"
 #include "dap_enc_falcon.h"
 #include "dap_enc_multisign.h"
 #include "dap_sign.h"
@@ -294,6 +295,52 @@ static bool s_test_multisign_merge_failure_regression(void) {
 }
 
 /**
+ * @brief Regression test: IAES key derivation must depend on non-empty seed/kex input
+ * @details Guards against accidental fallback to empty KDF input on internal failures.
+ */
+static bool s_test_iaes_kdf_input_dependency_regression(void) {
+    log_it(L_INFO, "Testing IAES KDF input dependency regression");
+
+    static const uint8_t l_seed_a[] = "iaes-seed-A";
+    static const uint8_t l_seed_b[] = "iaes-seed-B";
+    static const uint8_t l_kex_a[] = "iaes-kex-A";
+    static const uint8_t l_kex_b[] = "iaes-kex-B";
+
+    dap_enc_key_t *l_k1 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES,
+                                                    l_kex_a, sizeof(l_kex_a) - 1,
+                                                    l_seed_a, sizeof(l_seed_a) - 1, 0);
+    dap_enc_key_t *l_k2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES,
+                                                    l_kex_a, sizeof(l_kex_a) - 1,
+                                                    l_seed_a, sizeof(l_seed_a) - 1, 0);
+    dap_enc_key_t *l_k3 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES,
+                                                    l_kex_b, sizeof(l_kex_b) - 1,
+                                                    l_seed_b, sizeof(l_seed_b) - 1, 0);
+
+    DAP_TEST_ASSERT_NOT_NULL(l_k1, "IAES key #1 generation");
+    DAP_TEST_ASSERT_NOT_NULL(l_k2, "IAES key #2 generation");
+    DAP_TEST_ASSERT_NOT_NULL(l_k3, "IAES key #3 generation");
+
+    DAP_TEST_ASSERT(l_k1->priv_key_data && l_k2->priv_key_data && l_k3->priv_key_data,
+                    "IAES private key buffers must be initialized");
+    DAP_TEST_ASSERT(l_k1->priv_key_data_size == IAES_KEYSIZE &&
+                    l_k2->priv_key_data_size == IAES_KEYSIZE &&
+                    l_k3->priv_key_data_size == IAES_KEYSIZE,
+                    "IAES private key size must match IAES_KEYSIZE");
+
+    DAP_TEST_ASSERT(memcmp(l_k1->priv_key_data, l_k2->priv_key_data, IAES_KEYSIZE) == 0,
+                    "IAES same input must produce same key");
+    DAP_TEST_ASSERT(memcmp(l_k1->priv_key_data, l_k3->priv_key_data, IAES_KEYSIZE) != 0,
+                    "IAES different input must produce different key");
+
+    dap_enc_key_delete(l_k1);
+    dap_enc_key_delete(l_k2);
+    dap_enc_key_delete(l_k3);
+
+    log_it(L_INFO, "IAES KDF input dependency regression test passed");
+    return true;
+}
+
+/**
  * @brief Regression test: Falcon signing must work in TREE and DYNAMIC modes
  * @details Validates sign/verify roundtrip for all supported kinds and degrees
  */
@@ -404,6 +451,7 @@ int main(void) {
     l_all_passed &= s_test_json_parsing_edge_cases_regression();
     l_all_passed &= s_test_integer_overflow_regression();
     l_all_passed &= s_test_multisign_merge_failure_regression();
+    l_all_passed &= s_test_iaes_kdf_input_dependency_regression();
     l_all_passed &= s_test_falcon_sign_modes_regression();
     l_all_passed &= s_test_multisign_regenerate_same_key_regression();
     
