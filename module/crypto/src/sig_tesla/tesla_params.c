@@ -163,11 +163,25 @@ bool tesla_params_init(tesla_param_t *params, tesla_kind_t kind){
 
 int64_t reduce(int64_t a, tesla_param_t *p) { // Montgomery reduction
 
-    // Use 128-bit intermediates to keep Montgomery reduction arithmetic defined under UBSAN.
+#if defined(__SIZEOF_INT128__)
+    // Keep arithmetic defined under UBSAN when native 128-bit type is available.
     __int128 prod = (__int128)a * (int64_t)(p->PARAM_QINV);
     int64_t u = (int64_t)prod & 0xFFFFFFFFLL;
     __int128 sum = (__int128)a + (__int128)u * (int64_t)(p->PARAM_Q);
     return (int64_t)(sum >> 32);
+#else
+    // Portable fallback for targets without __int128 (e.g. some 32-bit Android ABIs).
+    // Computes floor((a + ((a * QINV mod 2^32) * Q)) / 2^32) using 32-bit limbs only.
+    int64_t a_hi = a >> 32;
+    uint32_t a_lo = (uint32_t)a;
+    uint32_t u = (uint32_t)((uint64_t)a_lo * (uint64_t)p->PARAM_QINV);
+    uint64_t uq = (uint64_t)u * (uint64_t)p->PARAM_Q;
+    uint32_t uq_lo = (uint32_t)uq;
+    int64_t uq_hi = (int64_t)(uq >> 32);
+    uint32_t sum_lo = a_lo + uq_lo;
+    int64_t carry = (sum_lo < a_lo) ? 1 : 0;
+    return a_hi + uq_hi + carry;
+#endif
 }
 
 int64_t barr_reduce(int64_t a, tesla_param_t *p) { // Barrett reduction
