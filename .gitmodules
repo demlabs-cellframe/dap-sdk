@@ -1,3 +1,0 @@
-[submodule "module/test/dap_tpl"]
-	path = module/test/dap_tpl
-	url = ../dap_tpl
