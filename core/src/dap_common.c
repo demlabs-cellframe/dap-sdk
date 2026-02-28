@@ -417,6 +417,8 @@ void dap_common_deinit( ) {
  * @param a_fmt format string (pre-built by macros with all prefixes baked in)
  */
 void _log_it(enum dap_log_level a_ll, const char *a_fmt, ...) {
+    if (!a_fmt)
+        return;
 #ifdef DAP_TPS_TEST
     if (a_ll != L_TPS) {
         FILE *l_file = fopen("/opt/cellframe-node/share/ca/without_logs.txt", "r");
