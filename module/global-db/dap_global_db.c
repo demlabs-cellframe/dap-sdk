@@ -624,10 +624,12 @@ static dap_global_db_store_obj_t *s_storage_read_all(const char *a_group, size_t
     dap_return_val_if_fail(a_group, NULL);
     dap_global_db_t *l_btree = s_group_get(a_group);
     if (!l_btree) {
+        log_it(L_DEBUG, "s_storage_read_all: group=%s btree=NULL", a_group);
         if (a_count_out) *a_count_out = 0;
         return NULL;
     }
     uint64_t l_total = dap_global_db_count(l_btree);
+    log_it(L_DEBUG, "s_storage_read_all: group=%s count=%"PRIu64, a_group, l_total);
     if (l_total == 0) {
         if (a_count_out) *a_count_out = 0;
         return NULL;
@@ -977,6 +979,7 @@ dap_global_db_pkt_pack_t *dap_global_db_get_by_hash(const char *a_group,
     dap_global_db_t *l_btree = s_group_get(a_group);
     if (!l_btree)
         return NULL;
+    size_t l_group_len = strlen(a_group) + 1;
     size_t l_total_size = 0;
     size_t l_valid_count = 0;
     for (size_t i = 0; i < a_count; i++) {
@@ -992,14 +995,13 @@ dap_global_db_pkt_pack_t *dap_global_db_get_by_hash(const char *a_group,
         if (dap_global_db_fetch(l_btree, &l_key, &l_text_key, &l_value, &l_value_len,
                               &l_sign, &l_sign_len, NULL) == 0) {
             size_t l_key_len = l_text_key ? strlen(l_text_key) + 1 : 0;
-            l_total_size += sizeof(dap_global_db_pkt_t) + l_key_len + l_value_len + l_sign_len;
+            l_total_size += sizeof(dap_global_db_pkt_t) + l_group_len + l_key_len + l_value_len + l_sign_len;
             l_valid_count++;
             DAP_DEL_MULTY(l_text_key, l_value, l_sign);
         }
     }
     if (l_valid_count == 0)
         return NULL;
-    size_t l_group_len = strlen(a_group) + 1;
     dap_global_db_pkt_pack_t *l_result = DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t,
                                                          sizeof(dap_global_db_pkt_pack_t) + l_total_size);
     if (!l_result)
@@ -1212,6 +1214,8 @@ static void s_store_obj_update_timestamp(dap_global_db_store_obj_t *a_obj, dap_g
 
 static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_global_db_store_obj_t *a_obj)
 {
+    log_it(L_DEBUG, "s_store_obj_apply: group=%s key=%s value_len=%zu flags=0x%x",
+           a_obj->group, a_obj->key, a_obj->value_len, a_obj->flags);
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, a_obj->group);
     if (!l_cluster) {
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any cluster", a_obj->group);
@@ -1321,9 +1325,14 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_global_db_stor
         l_ret = -19;
         break;
     }
+    log_it(L_DEBUG, "s_store_obj_apply: group=%s key=%s hash_cmp=%d l_ret=%d signer_role=%d",
+           a_obj->group, a_obj->key, l_ret ? l_ret : -999, l_ret,
+           (int)l_signer_role);
     if (!l_ret) {
         // Apply new object via storage API
         l_ret = s_storage_write(a_obj);
+        log_it(L_DEBUG, "s_store_obj_apply: s_storage_write returned %d for group=%s key=%s",
+               l_ret, a_obj->group, a_obj->key);
 
         // if global_db obj is pinned
         if (a_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {

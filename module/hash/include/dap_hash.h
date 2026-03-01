@@ -27,6 +27,7 @@
 #include "dap_common.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_sha2.h"
+#include "dap_hash_compat.h"
 
 // =============================================================================
 // Hash Dispatcher - Universal API for multiple hash algorithms

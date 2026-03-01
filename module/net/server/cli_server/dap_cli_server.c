@@ -476,6 +476,8 @@ static char *s_cli_cmd_exec_ex(char *a_req_str, bool a_restricted)
     char *str_cmd = dap_json_rpc_params_get(params, 0);
     if (!str_cmd)
         str_cmd = cmd_name;
+    debug_if(s_debug_cli, L_DEBUG, "CLI exec: method='%s', str_cmd='%s', params_len=%u",
+             cmd_name, str_cmd, dap_json_rpc_params_length(params));
     int res = -1;
     dap_json_t* l_json_arr_reply = dap_json_array_new();
     if (l_cmd && a_restricted) {

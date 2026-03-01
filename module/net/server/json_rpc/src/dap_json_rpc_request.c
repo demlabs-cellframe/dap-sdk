@@ -303,7 +303,9 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
             }
 
             // Parse params/subcommand/arguments
-            dap_json_t *jobj_params = dap_json_object_get_object(jobj, "params");
+            dap_json_t *jobj_params = dap_json_object_get_array(jobj, "params");
+            if (!jobj_params)
+                jobj_params = dap_json_object_get_object(jobj, "params");
             if (!jobj_params) {
                 dap_json_t *jobj_subcmd = dap_json_object_get_object(jobj, "subcommand");
                 dap_json_t *l_arguments_obj = dap_json_object_get_object(jobj, "arguments");
@@ -339,7 +341,7 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
         return log_it(L_ERROR, "Failed to generate JSON for params"), NULL;
 
     char *l_str = dap_strdup_printf(
-        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%" DAP_UINT64_FORMAT_U "\", \"version\":\"%d\" }",
+        "{\"method\":\"%s\", \"params\":%s, \"id\":%" DAP_UINT64_FORMAT_U ", \"version\":%d }",
         a_request->method, params_json, a_request->id, a_request->version);
     DAP_DELETE(params_json);
     return l_str;

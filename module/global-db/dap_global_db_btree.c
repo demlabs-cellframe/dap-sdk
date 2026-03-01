@@ -3605,7 +3605,9 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
                 *a_out_value_len = l_hl_entry->value_len;
             if (a_out_sign_len)
                 *a_out_sign_len = l_hl_entry->sign_len;
-            if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+            bool l_is_ov = (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+                && ((size_t)l_hl_entry->value_len + l_hl_entry->sign_len > MAX_INLINE_PAYLOAD);
+            if (l_is_ov) {
                 uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
                 size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
                 uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
@@ -3638,7 +3640,9 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
                     *a_out_sign = NULL;
             }
             if (a_out_flags)
-                *a_out_flags = l_hl_entry->flags;
+                *a_out_flags = l_is_ov
+                    ? l_hl_entry->flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE
+                    : l_hl_entry->flags;
             return 0;
         }
         // Not found in hot_leaf — fall through to mmap search
@@ -3676,7 +3680,9 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
             *a_out_value_len = l_entry->value_len;
         if (a_out_sign_len)
             *a_out_sign_len = l_entry->sign_len;
-        if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+        bool l_ov = (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+            && ((size_t)l_entry->value_len + l_entry->sign_len > MAX_INLINE_PAYLOAD);
+        if (l_ov) {
             uint64_t l_ov_id = *(const uint64_t *)(l_data + l_entry->key_len);
             size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
             uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
@@ -3708,7 +3714,8 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
                 *a_out_sign = NULL;
         }
         if (a_out_flags)
-            *a_out_flags = l_entry->flags;
+            *a_out_flags = l_ov ? l_entry->flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE
+                                : l_entry->flags;
         return 0;
     }
 
@@ -3747,7 +3754,9 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
         *a_out_value_len = l_entry->value_len;
     if (a_out_sign_len)
         *a_out_sign_len = l_entry->sign_len;
-    if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+    bool l_ov = (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+        && ((size_t)l_entry->value_len + l_entry->sign_len > MAX_INLINE_PAYLOAD);
+    if (l_ov) {
         uint64_t l_ov_id = *(const uint64_t *)(l_data + l_entry->key_len);
         size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
         uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
@@ -3780,7 +3789,8 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
             *a_out_sign = NULL;
     }
     if (a_out_flags)
-        *a_out_flags = l_entry->flags;
+        *a_out_flags = l_ov ? l_entry->flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE
+                            : l_entry->flags;
     s_page_free(l_page);
     return 0;
 }
@@ -3838,7 +3848,9 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                     ? (void *)l_hl_data : NULL;
                 a_out_text_key->len = l_hl_entry->key_len;
             }
-            if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+            bool l_ov = (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+                && ((size_t)l_hl_entry->value_len + l_hl_entry->sign_len > MAX_INLINE_PAYLOAD);
+            if (l_ov) {
                 uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
                 size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
                 bool l_zc_ok = false;
@@ -3900,7 +3912,8 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                 }
             }
             if (a_out_flags)
-                *a_out_flags = l_hl_entry->flags;
+                *a_out_flags = l_ov ? l_hl_entry->flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE
+                                    : l_hl_entry->flags;
             return 0;
         }
         // Not found in hot_leaf — fall through to mmap search
@@ -3943,7 +3956,9 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                                 ? (void *)l_hl_data : NULL;
                             a_out_text_key->len = l_hl_entry->key_len;
                         }
-                        if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+                        bool l_ov = (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+                            && ((size_t)l_hl_entry->value_len + l_hl_entry->sign_len > MAX_INLINE_PAYLOAD);
+                        if (l_ov) {
                             uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
                             size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
                             bool l_zc_ok = (l_total <= PAGE_DATA_SIZE);
@@ -3999,7 +4014,8 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                             }
                         }
                         if (a_out_flags)
-                            *a_out_flags = l_hl_entry->flags;
+                            *a_out_flags = l_ov ? l_hl_entry->flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE
+                                                : l_hl_entry->flags;
                         return 0;
                     }
                 }
@@ -4028,7 +4044,9 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                                 ? (void *)l_edata : NULL;
                             a_out_text_key->len = l_entry->key_len;
                         }
-                        if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+                        bool l_ov = (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+                            && ((size_t)l_entry->value_len + l_entry->sign_len > MAX_INLINE_PAYLOAD);
+                        if (l_ov) {
                             uint64_t l_ov_id = *(const uint64_t *)(l_edata + l_entry->key_len);
                             size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
                             bool l_zc_ok = (l_total <= PAGE_DATA_SIZE);
@@ -4084,7 +4102,8 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                             }
                         }
                         if (a_out_flags)
-                            *a_out_flags = l_entry->flags;
+                            *a_out_flags = l_ov ? l_entry->flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE
+                                                : l_entry->flags;
                         return 0;
                     }
                     if (l_cmp < 0)
@@ -5100,29 +5119,58 @@ static int s_btree_cursor_get_impl(dap_global_db_cursor_t *a_cursor,
     } else if (a_out_text_key) {
         *a_out_text_key = NULL;
     }
-    
-    if (a_out_value && l_entry->value_len > 0) {
-        *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
-        memcpy(*a_out_value, l_data + l_entry->key_len, l_entry->value_len);
-    } else if (a_out_value) {
-        *a_out_value = NULL;
-    }
-    
+
     if (a_out_value_len)
         *a_out_value_len = l_entry->value_len;
-    
-    if (a_out_sign && l_entry->sign_len > 0) {
-        *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
-        memcpy(*a_out_sign, l_data + l_entry->key_len + l_entry->value_len, l_entry->sign_len);
-    } else if (a_out_sign) {
-        *a_out_sign = NULL;
-    }
-    
     if (a_out_sign_len)
         *a_out_sign_len = l_entry->sign_len;
+
+    // Disambiguate overflow vs deleted-inline: both use flags bit 0x01, but
+    // true overflow entries have payload > MAX_INLINE_PAYLOAD (stored externally)
+    bool l_is_overflow = (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+        && ((size_t)l_entry->value_len + l_entry->sign_len > MAX_INLINE_PAYLOAD);
+
+    if (l_is_overflow) {
+        uint64_t l_ov_id = *(const uint64_t *)(l_data + l_entry->key_len);
+        size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
+        uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
+        if (!l_buf)
+            return -1;
+        int l_ov_rc = s_overflow_read(a_cursor->tree, l_ov_id, l_buf, l_total, NULL);
+        if (l_ov_rc != 0) {
+            DAP_DELETE(l_buf);
+            return -1;
+        }
+        if (a_out_value && l_entry->value_len > 0) {
+            *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
+            memcpy(*a_out_value, l_buf, l_entry->value_len);
+        } else if (a_out_value)
+            *a_out_value = NULL;
+        if (a_out_sign && l_entry->sign_len > 0) {
+            *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
+            memcpy(*a_out_sign, l_buf + l_entry->value_len, l_entry->sign_len);
+        } else if (a_out_sign)
+            *a_out_sign = NULL;
+        DAP_DELETE(l_buf);
+    } else {
+        if (a_out_value && l_entry->value_len > 0) {
+            *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
+            memcpy(*a_out_value, l_data + l_entry->key_len, l_entry->value_len);
+        } else if (a_out_value) {
+            *a_out_value = NULL;
+        }
+        if (a_out_sign && l_entry->sign_len > 0) {
+            *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
+            memcpy(*a_out_sign, l_data + l_entry->key_len + l_entry->value_len, l_entry->sign_len);
+        } else if (a_out_sign) {
+            *a_out_sign = NULL;
+        }
+    }
     
     if (a_out_flags)
-        *a_out_flags = l_entry->flags;
+        *a_out_flags = l_is_overflow
+            ? l_entry->flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE
+            : l_entry->flags;
     
     return 0;
 }
@@ -5168,21 +5216,33 @@ static int s_btree_cursor_get_ref_impl(dap_global_db_cursor_t *a_cursor,
     if (a_out_key)
         *a_out_key = l_entry->driver_hash;
 
+    bool l_is_overflow = (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
+        && ((size_t)l_entry->value_len + l_entry->sign_len > MAX_INLINE_PAYLOAD);
+
     if (a_out_text_key) {
         a_out_text_key->data = l_entry->key_len > 0 ? l_data : NULL;
         a_out_text_key->len  = l_entry->key_len;
     }
-    if (a_out_value) {
-        a_out_value->data = l_entry->value_len > 0 ? l_data + l_entry->key_len : NULL;
-        a_out_value->len  = l_entry->value_len;
-    }
-    if (a_out_sign) {
-        a_out_sign->data = l_entry->sign_len > 0
-            ? l_data + l_entry->key_len + l_entry->value_len : NULL;
-        a_out_sign->len  = l_entry->sign_len;
+    if (!l_is_overflow) {
+        if (a_out_value) {
+            a_out_value->data = l_entry->value_len > 0 ? l_data + l_entry->key_len : NULL;
+            a_out_value->len  = l_entry->value_len;
+        }
+        if (a_out_sign) {
+            a_out_sign->data = l_entry->sign_len > 0
+                ? l_data + l_entry->key_len + l_entry->value_len : NULL;
+            a_out_sign->len  = l_entry->sign_len;
+        }
+    } else {
+        if (a_out_value)
+            a_out_value->data = NULL, a_out_value->len = 0;
+        if (a_out_sign)
+            a_out_sign->data = NULL, a_out_sign->len = 0;
     }
     if (a_out_flags)
-        *a_out_flags = l_entry->flags;
+        *a_out_flags = l_is_overflow
+            ? l_entry->flags & (uint8_t)~DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE
+            : l_entry->flags;
 
     return 0;
 }

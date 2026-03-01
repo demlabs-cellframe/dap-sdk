@@ -71,7 +71,13 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
             DAP_DELETE(ret);
             return NULL;
         }
-        dap_ht_add_by_hashvalue_hh(hh_str, s_cluster_mnemonims, mnemonim, strlen(a_mnemonim), dap_ht_hash_value(a_mnemonim, strlen(a_mnemonim)), ret);
+        // Use direct impl call: dap_ht_add_by_hashvalue_hh passes &(ret->mnemonim) (char**)
+        // as key, but dap_cluster_by_mnemonim passes the string pointer (char*), causing
+        // memcmp to compare pointer bytes against string content. Pass ret->mnemonim directly.
+        dap_ht_add_by_hashvalue_impl((void **)&(s_cluster_mnemonims), (ret), &((ret)->hh_str),
+            (ret)->mnemonim, (unsigned)(strlen(a_mnemonim)),
+            dap_ht_hash_value(a_mnemonim, strlen(a_mnemonim)),
+            (ptrdiff_t)((char *)&((ret)->hh_str) - (char *)(ret)));
     }
     dap_ht_add_hh(hh, s_clusters, guuid, ret);
     pthread_rwlock_unlock(&s_clusters_rwlock);
