@@ -145,6 +145,159 @@ int     buflen;
 #define dap_assert(expr)  s_dap_assert_fail( (bool) (expr), #expr, __FILE__, __LINE__)
 
 
+/*
+ *  DESCRIPTION: Validate that a buffer contains a valid group name.
+ *      Must be non-empty, contain only printable ASCII (0x21..0x7E),
+ *      and be null-terminated within the given length.
+ */
+static bool s_is_valid_group_name(const void *a_data, size_t a_len)
+{
+    if (!a_data || a_len < 2)
+        return false;
+    const uint8_t *l_bytes = (const uint8_t *)a_data;
+    if (l_bytes[a_len - 1] != '\0')
+        return false;
+    for (size_t i = 0; i < a_len - 1; i++) {
+        if (l_bytes[i] < 0x21 || l_bytes[i] > 0x7E)
+            return false;
+    }
+    return true;
+}
+
+/*
+ *  DESCRIPTION: Check MDBX$MASTER integrity and rebuild from MDBX's internal
+ *      MAIN DBI catalog if corrupted entries are detected. The MAIN DBI is the
+ *      authoritative source of truth for subDB names.
+ *
+ *  RETURNS:
+ *       0  - no corruption detected
+ *      >0  - number of groups recovered
+ *      <0  - error
+ */
+static int s_db_mdbx_check_and_repair_master(void)
+{
+int     rc;
+MDBX_txn    *l_txn = NULL;
+MDBX_cursor *l_cursor = NULL;
+MDBX_val    l_key, l_data;
+int         l_total = 0, l_corrupted = 0;
+
+    /* Phase 1: read-only scan for corrupted entries */
+    if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)))
+        return  log_it(L_ERROR, "Repair: mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+
+    if (MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, s_db_master_dbi, &l_cursor))) {
+        mdbx_txn_abort(l_txn);
+        return  log_it(L_ERROR, "Repair: mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+    }
+
+    while (!(rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))) {
+        l_total++;
+        if (!s_is_valid_group_name(l_data.iov_base, l_data.iov_len)) {
+            if (!l_corrupted)
+                log_it(L_WARNING, "--- Corrupted MDBX$MASTER entries detected ---");
+            log_it(L_WARNING, "MDBX$MASTER entry #%d [%zu bytes]: non-ASCII or malformed name",
+                   l_total - 1, l_data.iov_len);
+            l_corrupted++;
+        }
+    }
+    mdbx_cursor_close(l_cursor);
+    l_cursor = NULL;
+
+    if (!l_corrupted) {
+        mdbx_txn_commit(l_txn);
+        log_it(L_NOTICE, "MDBX$MASTER integrity check passed: all %d entries valid", l_total);
+        return  0;
+    }
+    log_it(L_WARNING, "MDBX$MASTER: %d of %d entries corrupted, rebuilding from MDBX catalog...",
+           l_corrupted, l_total);
+
+    /* Phase 2a: collect valid subDB names from MAIN DBI (authoritative catalog) */
+    MDBX_dbi l_main_dbi;
+    if (MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, NULL, 0, &l_main_dbi))) {
+        mdbx_txn_commit(l_txn);
+        return  log_it(L_ERROR, "Repair: cannot open MAIN DBI: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+    }
+    if (MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_main_dbi, &l_cursor))) {
+        mdbx_txn_commit(l_txn);
+        return  log_it(L_ERROR, "Repair: mdbx_cursor_open(MAIN): (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+    }
+
+    dap_list_t  *l_names = NULL;
+    int         l_catalog_count = 0;
+    char        l_name_buf[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 1];
+
+    while (!(rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))) {
+        if (!l_key.iov_len || l_key.iov_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX)
+            continue;
+        memcpy(l_name_buf, l_key.iov_base, l_key.iov_len);
+        l_name_buf[l_key.iov_len] = '\0';
+
+        if (!strcmp(l_name_buf, s_db_master_tbl))
+            continue;
+        if (!s_is_valid_group_name(l_name_buf, l_key.iov_len + 1)) {
+            log_it(L_ERROR, "MAIN DBI catalog also contains corrupted entry [%zu bytes], skipping",
+                   l_key.iov_len);
+            continue;
+        }
+        l_names = dap_list_append(l_names, dap_strdup(l_name_buf));
+        l_catalog_count++;
+    }
+    mdbx_cursor_close(l_cursor);
+    mdbx_txn_commit(l_txn);
+    l_txn = NULL;
+
+    log_it(L_NOTICE, "Found %d valid subDB names in MDBX internal catalog", l_catalog_count);
+
+    /* Phase 2b: rebuild MDBX$MASTER in a write transaction */
+    int l_recovered = 0, l_result = -EIO;
+
+    if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &l_txn))) {
+        log_it(L_ERROR, "Repair: mdbx_txn_begin(rw): (%d) %s", rc, mdbx_strerror(rc));
+        goto cleanup;
+    }
+
+    if (MDBX_SUCCESS != (rc = mdbx_drop(l_txn, s_db_master_dbi, false))) {
+        log_it(L_ERROR, "Repair: mdbx_drop(MASTER): (%d) %s", rc, mdbx_strerror(rc));
+        mdbx_txn_abort(l_txn);
+        goto cleanup;
+    }
+
+    for (dap_list_t *l_el = l_names; l_el; l_el = l_el->next) {
+        const char *l_name = (const char *)l_el->data;
+        size_t l_len = strlen(l_name) + 1;
+        MDBX_val l_mk = { .iov_base = (void *)l_name, .iov_len = l_len };
+        MDBX_val l_mv = l_mk;
+
+        rc = mdbx_put(l_txn, s_db_master_dbi, &l_mk, &l_mv, MDBX_NOOVERWRITE);
+        if (rc == MDBX_SUCCESS) {
+            l_recovered++;
+            log_it(L_NOTICE, "Recovered group '%s'", l_name);
+        } else if (rc != MDBX_KEYEXIST) {
+            log_it(L_ERROR, "Repair: mdbx_put('%s'): (%d) %s", l_name, rc, mdbx_strerror(rc));
+        }
+    }
+
+    if (MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn))) {
+        log_it(L_ERROR, "Repair: mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
+        goto cleanup;
+    }
+    log_it(L_WARNING, "MDBX$MASTER repair complete: recovered %d groups from MDBX catalog", l_recovered);
+    l_result = l_recovered;
+
+cleanup:
+    {
+        dap_list_t *l_el, *l_tmp;
+        DL_FOREACH_SAFE(l_names, l_el, l_tmp) {
+            DL_DELETE(l_names, l_el);
+            DAP_DELETE(l_el->data);
+            DAP_DELETE(l_el);
+        }
+    }
+    return  l_result;
+}
+
+
 #ifdef  DAP_SYS_DEBUG   /* cmake ../ -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-DDAP_SYS_DEBUG=1" */
 /*
  *  DESCRIPTION: Dump all records from the table . Is supposed to be used at debug time.
@@ -371,6 +524,9 @@ size_t     l_upper_limit_of_db_size = 16;
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
 
     dap_assert ( MDBX_SUCCESS == (rc = mdbx_txn_commit (l_txn)) );
+
+    /* Check MDBX$MASTER integrity and repair from MDBX catalog if needed */
+    s_db_mdbx_check_and_repair_master();
 
     /*
      * Run over records in the  MASTER table to get subDB names
