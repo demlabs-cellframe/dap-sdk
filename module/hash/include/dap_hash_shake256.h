@@ -82,7 +82,11 @@ DAP_STATIC_INLINE void dap_hash_shake256_absorb(uint64_t *a_state, const uint8_t
     dap_hash_keccak_ctx_t l_ctx;
     dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHAKE256_RATE, DAP_KECCAK_SHAKE_SUFFIX);
     dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
-    dap_hash_keccak_sponge_finalize(&l_ctx);
+    // Apply padding WITHOUT permuting: squeezeblocks permutes before each extraction,
+    // matching the original fips202.c keccak_absorb() contract
+    uint8_t *l_state_bytes = (uint8_t *)l_ctx.state.lanes;
+    l_state_bytes[l_ctx.block_idx] ^= l_ctx.suffix;
+    l_state_bytes[l_ctx.rate - 1] ^= 0x80;
     memcpy(a_state, l_ctx.state.lanes, DAP_KECCAK_STATE_BYTES);
 }
 

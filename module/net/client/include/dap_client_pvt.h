@@ -71,6 +71,7 @@ typedef struct dap_client_pvt {
     time_t ts_last_active;
 
     bool is_removing;
+    bool enc_fallback;
 
     dap_client_callback_data_size_t request_response_callback;
     dap_client_callback_int_t request_error_callback;
