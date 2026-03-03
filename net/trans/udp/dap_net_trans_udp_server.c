@@ -33,6 +33,7 @@
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
+#include "dap_net_trans_qos.h"
 #include "dap_stream_worker.h"
 #include "dap_stream_session.h"
 #include "dap_net_trans.h"
@@ -1829,7 +1830,29 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     }
     
     // Now kem_task_pending is true, and we have exclusive ownership to create KEM task
-    
+
+    // QoS probe detection: payload starts with DAP_QOS_PROBE_MAGIC → echo, skip KEM
+    if (dap_qos_is_probe(a_payload, a_payload_size)) {
+        log_it(L_DEBUG, "QoS probe detected (%zu bytes), building echo", a_payload_size);
+        atomic_store(&a_session->kem_task_pending, false);
+
+        void  *l_echo = NULL;
+        size_t l_echo_size = 0;
+        if (dap_qos_build_echo(a_payload, a_payload_size, &l_echo, &l_echo_size) == 0) {
+            if (l_echo_size <= 65507) {
+                s_send_udp_packet(a_session, DAP_STREAM_UDP_PKT_HANDSHAKE,
+                                  (const uint8_t *)l_echo, l_echo_size);
+            } else {
+                log_it(L_WARNING, "QoS BW echo too large for UDP (%zu bytes), sending header only",
+                       l_echo_size);
+                s_send_udp_packet(a_session, DAP_STREAM_UDP_PKT_HANDSHAKE,
+                                  (const uint8_t *)l_echo, sizeof(dap_qos_echo_pkt_t));
+            }
+            DAP_DELETE(l_echo);
+        }
+        return 0;
+    }
+
     // Check if thread pool is available
     if (!s_kem_thread_pool) {
         log_it(L_WARNING, "KEM thread pool not available, falling back to synchronous processing");

@@ -434,6 +434,7 @@ typedef struct dap_net_trans_ops {
      *       Typical values: UDP=1200, DNS=500, TCP/HTTP/WebSocket=0
      */
     size_t (*get_max_packet_size)(dap_net_trans_t *a_trans);
+
 } dap_net_trans_ops_t;
 
 /**
@@ -614,3 +615,47 @@ ssize_t dap_net_trans_read_deobfuscated(dap_stream_t *a_stream,
 int dap_net_trans_stage_prepare(dap_net_trans_type_t a_trans_type,
                                       const dap_net_stage_prepare_params_t *a_params,
                                       dap_net_stage_prepare_result_t *a_result);
+
+// =========================================================================
+// QoS / Link quality measurement wrappers
+//
+// These call the transport's own implementation if provided, otherwise
+// Delegated to dap_net_trans_qos module (transport-independent probe/echo).
+// =========================================================================
+
+/**
+ * @brief Probe transport latency via probe/echo protocol (no KEM overhead).
+ * Uses the same handshake path but sends a PROBE packet instead of a key.
+ * @return Latency in ms (>=0) on success, negative on failure.
+ */
+int dap_net_trans_probe_latency(dap_net_trans_t *a_trans, const char *a_host,
+                                uint16_t a_port, uint32_t a_timeout_ms);
+
+/**
+ * @brief Measure round-trip time with multiple probes
+ * @param a_trans Transport instance
+ * @param a_host Remote hostname or IP
+ * @param a_port Remote port
+ * @param a_count Number of probes
+ * @param a_timeout_ms Per-probe timeout
+ * @param a_out_rtt Output: RTT samples (ms), caller allocates array of size >= a_count
+ * @param a_out_ok Output: number of successful probes
+ * @return 0 if at least one probe succeeded, negative on total failure
+ */
+int dap_net_trans_measure_rtt(dap_net_trans_t *a_trans, const char *a_host, uint16_t a_port,
+                              uint32_t a_count, uint32_t a_timeout_ms,
+                              uint32_t *a_out_rtt, uint32_t *a_out_ok);
+
+/**
+ * @brief Measure throughput
+ * @param a_trans Transport instance
+ * @param a_host Remote hostname or IP
+ * @param a_port Remote port
+ * @param a_timeout_ms Measurement timeout
+ * @param a_out_down_mbps Output: download Mbps (NULL to skip)
+ * @param a_out_up_mbps Output: upload Mbps (NULL to skip)
+ * @return 0 on success, negative on failure
+ */
+int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_host, uint16_t a_port,
+                                     uint32_t a_timeout_ms,
+                                     float *a_out_down_mbps, float *a_out_up_mbps);

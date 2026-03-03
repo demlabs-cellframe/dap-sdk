@@ -131,7 +131,7 @@ int dap_enc_server_process_request(
         log_it(L_CRITICAL, "Failed to allocate response");
         return -2;
     }
-    
+
     debug_if(s_debug_more, L_DEBUG, "Processing handshake request: protocol_version=%d, sign_count=%zu, msg_size=%zu",
            a_request->protocol_version, a_request->sign_count, a_request->alice_msg_size);
     

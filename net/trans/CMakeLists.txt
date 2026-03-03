@@ -16,12 +16,14 @@ add_subdirectory(tls)
 file(GLOB TRANS_CORE_SRCS 
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans_server.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans_qos.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_transport_obfuscation.c"
 )
 
 file(GLOB TRANS_CORE_HDRS 
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dap_net_trans.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dap_net_trans_server.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/dap_net_trans_qos.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dap_transport_obfuscation.h"
 )
 
@@ -47,7 +49,10 @@ target_include_directories(dap_net_trans PRIVATE
 # Link dependencies
 dap_link_libraries(dap_net_trans INTERFACE
     dap_core
+    dap_crypto
     dap_stream
+    dap_client
+    dap_http_server
     dap_trans_http
     dap_trans_websocket
     dap_trans_udp

@@ -1411,7 +1411,7 @@ static const dap_net_trans_ops_t s_http_trans_ops = {
     .close = s_http_trans_close,
     .get_capabilities = s_http_trans_get_capabilities,
     .stage_prepare = s_http_stage_prepare,
-    .register_server_handlers = NULL  // HTTP trans doesn't need additional handlers
+    .register_server_handlers = NULL
 };
 
 // ============================================================================

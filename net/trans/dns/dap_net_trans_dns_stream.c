@@ -27,7 +27,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_strfuncs.h"
 #include "dap_net_trans_dns_stream.h"
 #include "dap_net_trans_dns_server.h"
-#include "dap_net_trans.h"  // For dap_net_trans_t and dap_net_trans_ops_t
+#include "dap_net_trans.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
 #include "dap_net.h"
@@ -103,7 +103,7 @@ static const dap_net_trans_ops_t s_dns_ops = {
     .write = s_dns_write,
     .close = s_dns_close,
     .get_capabilities = s_dns_get_capabilities,
-    .register_server_handlers = NULL,  // DNS trans registers handlers via DNS server implementation
+    .register_server_handlers = NULL,
     .stage_prepare = s_dns_stage_prepare
 };
 

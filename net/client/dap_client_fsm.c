@@ -36,7 +36,9 @@
 #include "dap_stream_pkt.h"
 #include "dap_net.h"
 #include "dap_net_trans.h"
+#include "dap_net_trans_qos.h"
 #include "dap_stream_handshake.h"
+#include "rand/dap_rand.h"
 #include "dap_worker.h"
 #include "dap_events.h"
 #include "dap_thread_pool.h"
@@ -421,6 +423,48 @@ extern void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_er
 static bool s_stream_timer_timeout_check(void *a_arg);
 static bool s_stream_timer_timeout_after_connected_check(void *a_arg);
 
+static void s_qos_handshake_callback(dap_stream_t *a_stream, const void *a_data,
+                                      size_t a_data_size, int a_error)
+{
+    if (!a_stream)
+        return;
+
+    dap_client_t *l_client = NULL;
+    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
+        l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
+    else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket && a_stream->trans_ctx->esocket->_inheritor)
+        l_client = (dap_client_t *)a_stream->trans_ctx->esocket->_inheritor;
+
+    if (!l_client)
+        return;
+
+    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
+    if (!l_es)
+        return;
+
+    if (a_error != 0) {
+        log_it(L_WARNING, "QoS probe handshake error %d", a_error);
+        dap_client_error_t l_err = (a_error == ETIMEDOUT)
+            ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_NETWORK_CONNECTION_REFUSE;
+        dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
+                              STAGE_STATUS_ERROR, l_err);
+        return;
+    }
+
+    if (a_data && a_data_size >= sizeof(dap_qos_echo_pkt_t)) {
+        const dap_qos_echo_pkt_t *l_echo = (const dap_qos_echo_pkt_t *)a_data;
+        if (l_echo->magic == DAP_QOS_ECHO_MAGIC) {
+            dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
+                                  STAGE_STATUS_DONE, ERROR_NO_ERROR);
+            return;
+        }
+    }
+
+    log_it(L_WARNING, "QoS probe: invalid echo response (size=%zu)", a_data_size);
+    dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
+                          STAGE_STATUS_ERROR, ERROR_STREAM_RESPONSE_WRONG);
+}
+
 // ===== Worker-side stage execution (called on worker thread) =====
 
 static void s_worker_execute_stage(void *a_arg)
@@ -624,9 +668,94 @@ static void s_worker_execute_stage(void *a_arg)
 
     case STAGE_STREAM_STREAMING: {
         debug_if(s_debug_more, L_INFO, "Worker: executing STAGE_STREAM_STREAMING for client %p", l_client);
-        // Nothing to do on worker for streaming stage
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_DONE, ERROR_NO_ERROR);
+    } break;
+
+    case STAGE_QOS_PROBE: {
+        debug_if(s_debug_more, L_INFO, "Worker: executing STAGE_QOS_PROBE for client %p", l_client);
+
+        dap_net_trans_t *l_transport = dap_net_trans_find(l_client->trans_type);
+        if (!l_transport || !l_transport->ops || !l_transport->ops->handshake_init) {
+            log_it(L_ERROR, "Transport type %d not available or missing handshake_init for QoS probe",
+                   l_client->trans_type);
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+            break;
+        }
+
+        static dap_events_socket_callbacks_t s_qos_callbacks = {
+            .read_callback = NULL,
+            .write_callback = NULL,
+            .error_callback = NULL,
+            .delete_callback = s_handshake_es_delete_callback,
+            .connected_callback = NULL
+        };
+
+        dap_net_stage_prepare_params_t l_prepare_params = {
+            .host = l_client->link_info.uplink_addr,
+            .port = l_client->link_info.uplink_port,
+            .node_addr = &l_client->link_info.node_addr,
+            .authorized = false,
+            .callbacks = &s_qos_callbacks,
+            .client_ctx = l_client,
+            .worker = l_worker
+        };
+
+        dap_net_stage_prepare_result_t l_prepare_result;
+        int l_ret = dap_net_trans_stage_prepare(l_client->trans_type, &l_prepare_params, &l_prepare_result);
+        if (l_ret != 0 || !l_prepare_result.esocket) {
+            log_it(L_ERROR, "Stage prepare failed for QoS probe: transport %d, error %d",
+                   l_client->trans_type, l_prepare_result.error_code);
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+            break;
+        }
+
+        if (!l_prepare_result.stream) {
+            log_it(L_CRITICAL, "Transport failed to create stream for QoS probe");
+            dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
+            break;
+        }
+
+        l_es->stream = l_prepare_result.stream;
+        l_es->stream_es = l_prepare_result.esocket;
+
+        #define DAP_QOS_PROBE_PAYLOAD_SIZE 800
+        uint8_t *l_probe_buf = DAP_NEW_Z_SIZE(uint8_t, DAP_QOS_PROBE_PAYLOAD_SIZE);
+        if (!l_probe_buf) {
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
+            break;
+        }
+
+        dap_qos_probe_pkt_t *l_probe = (dap_qos_probe_pkt_t *)l_probe_buf;
+        l_probe->magic = DAP_QOS_PROBE_MAGIC;
+        l_probe->type  = DAP_QOS_TYPE_PROBE;
+        randombytes((uint8_t *)&l_probe->probe_id, sizeof(l_probe->probe_id));
+        l_probe->client_ts = 0;
+        if (DAP_QOS_PROBE_PAYLOAD_SIZE > sizeof(dap_qos_probe_pkt_t))
+            randombytes(l_probe_buf + sizeof(dap_qos_probe_pkt_t),
+                        DAP_QOS_PROBE_PAYLOAD_SIZE - sizeof(dap_qos_probe_pkt_t));
+
+        dap_net_handshake_params_t l_hs_params = {
+            .pkey_exchange_type = DAP_ENC_KEY_TYPE_QOS_PROBE,
+            .pkey_exchange_size = DAP_QOS_PROBE_PAYLOAD_SIZE,
+            .alice_pub_key = l_probe_buf,
+            .alice_pub_key_size = DAP_QOS_PROBE_PAYLOAD_SIZE,
+            .sign_count = 0
+        };
+
+        int l_hs_ret = l_transport->ops->handshake_init(l_es->stream, &l_hs_params,
+                                                         s_qos_handshake_callback);
+        if (l_hs_ret != 0) {
+            log_it(L_ERROR, "Failed to initiate QoS probe handshake: %d", l_hs_ret);
+            DAP_DELETE(l_probe_buf);
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+        }
     } break;
 
     default:
@@ -1052,6 +1181,28 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         return;
     }
 
+    // For STAGE_QOS_PROBE: build probe payload on FSM thread, dispatch IO to worker
+    if (a_fsm->stage == STAGE_QOS_PROBE) {
+        dap_client_t *l_client = a_fsm->client;
+
+        if (!*l_client->link_info.uplink_addr || !l_client->link_info.uplink_port) {
+            log_it(L_ERROR, "Client remote address is empty for QOS_PROBE");
+            s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
+            a_fsm->last_error = ERROR_WRONG_ADDRESS;
+            s_fsm_process(a_fsm);
+            return;
+        }
+
+        fsm_worker_dispatch_t *l_dispatch = DAP_NEW_Z(fsm_worker_dispatch_t);
+        if (!l_dispatch) return;
+        l_dispatch->fsm_uuid = a_fsm->uuid;
+        l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
+        l_dispatch->client = l_client;
+        l_dispatch->stage = STAGE_QOS_PROBE;
+        dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+        return;
+    }
+
     // For all other stages (STREAM_CTL, STREAM_SESSION, STREAM_CONNECTED): dispatch to worker
     fsm_worker_dispatch_t *l_dispatch = DAP_NEW_Z(fsm_worker_dispatch_t);
     if (!l_dispatch) return;
@@ -1098,8 +1249,22 @@ void dap_client_fsm_advance(dap_client_t *a_client, void *a_arg)
         return;
     }
 
-    assert(a_client->stage_target > l_fsm->stage);
-    dap_client_stage_t l_next = l_fsm->stage + 1;
+    dap_client_stage_t l_next;
+    if (a_client->stage_target == STAGE_QOS_PROBE) {
+        if (l_fsm->stage == STAGE_BEGIN) {
+            l_next = STAGE_QOS_PROBE;
+        } else {
+            log_it(L_ERROR, "FSM advance: QOS_PROBE branch reached unexpected stage %s",
+                   dap_client_stage_str(l_fsm->stage));
+            s_set_stage_status(l_fsm, STAGE_STATUS_ERROR);
+            a_fsm->last_error = ERROR_WRONG_STAGE;
+            s_fsm_process(l_fsm);
+            return;
+        }
+    } else {
+        assert(a_client->stage_target > l_fsm->stage);
+        l_next = l_fsm->stage + 1;
+    }
     log_it(L_NOTICE, "FSM advance: %s -> %s (target %s)",
            dap_client_stage_str(l_fsm->stage), dap_client_stage_str(l_next),
            dap_client_stage_str(a_client->stage_target));
@@ -1140,10 +1305,15 @@ static void *s_fsm_go_stage_on_fsm_thread(void *a_arg)
     }
 
     // If COMPLETE and below target, advance from current
-    if (l_fsm->stage_status == STAGE_STATUS_COMPLETE && l_fsm->stage < l_ctx->stage_target) {
+    if (l_fsm->stage_status == STAGE_STATUS_COMPLETE && l_fsm->stage != l_ctx->stage_target) {
         debug_if(s_debug_more, L_DEBUG, "FSM at %s COMPLETE, advancing to %s",
                dap_client_stage_str(l_fsm->stage), dap_client_stage_str(l_ctx->stage_target));
-        dap_client_fsm_stage_transaction_begin(l_fsm, l_fsm->stage + 1, dap_client_fsm_advance);
+        dap_client_stage_t l_next;
+        if (l_ctx->stage_target == STAGE_QOS_PROBE && l_fsm->stage == STAGE_BEGIN)
+            l_next = STAGE_QOS_PROBE;
+        else
+            l_next = l_fsm->stage + 1;
+        dap_client_fsm_stage_transaction_begin(l_fsm, l_next, dap_client_fsm_advance);
         DAP_DELETE(l_ctx);
         return NULL;
     }

@@ -41,7 +41,8 @@ typedef enum dap_client_stage {
     STAGE_STREAM_CTL=2,
     STAGE_STREAM_SESSION=3,
     STAGE_STREAM_CONNECTED=4,
-    STAGE_STREAM_STREAMING=5
+    STAGE_STREAM_STREAMING=5,
+    STAGE_QOS_PROBE=100
 } dap_client_stage_t;
 
 typedef enum dap_client_stage_status {

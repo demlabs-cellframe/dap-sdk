@@ -64,7 +64,7 @@ static const dap_net_trans_ops_t s_tls_ops = {
     .get_capabilities = s_tls_get_caps,
     .handshake_init   = NULL,
     .session_create   = NULL,
-    .session_start    = NULL,
+    .session_start    = NULL
 };
 
 /* ========================================================================== */

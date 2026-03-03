@@ -34,6 +34,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
 #include "dap_enc_key.h"
+#include "dap_net_trans_qos.h"
 #include "dap_enc_kdf.h"
 
 #ifdef DAP_OS_WINDOWS
@@ -282,6 +283,17 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     }
 
     log_it(L_INFO, "DNS server: new client handshake, size=%zu", a_size);
+
+    if (dap_qos_is_probe(a_data, a_size)) {
+        log_it(L_DEBUG, "DNS server: QoS probe detected (%zu bytes)", a_size);
+        void  *l_echo = NULL;
+        size_t l_echo_size = 0;
+        if (dap_qos_build_echo(a_data, a_size, &l_echo, &l_echo_size) == 0) {
+            dap_events_socket_sendto_unsafe(a_es, l_echo, l_echo_size, a_addr, a_addr_len);
+            DAP_DELETE(l_echo);
+        }
+        return;
+    }
 
     /* KEM encapsulation: generate bob key, derive shared secret */
     dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(

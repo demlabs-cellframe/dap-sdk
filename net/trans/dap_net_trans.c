@@ -32,6 +32,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "dap_net_trans.h"
+#include "dap_net_trans_qos.h"
 #include "dap_stream_obfuscation.h"
 #include "dap_stream.h"
 #include "dap_common.h"
@@ -105,7 +106,6 @@ int dap_net_trans_register(const char *a_name,
                                     dap_net_trans_socket_type_t a_socket_type,
                                     void *a_inheritor)
 {
-    // Validate parameters
     if (!a_name || !a_ops) {
         log_it(L_ERROR, "Invalid parameters: name=%p, ops=%p", a_name, a_ops);
         return -1;
@@ -614,5 +614,36 @@ int dap_net_trans_stage_prepare(dap_net_trans_type_t a_trans_type,
     
     log_it(L_DEBUG, "Trans %d prepared socket via stage_prepare callback", a_trans_type);
     return 0;
+}
+
+// =========================================================================
+// QoS — transport-independent, delegated to dap_net_trans_qos module.
+// Uses probe/echo protocol extension (packet-size detection).
+// =========================================================================
+
+int dap_net_trans_probe_latency(dap_net_trans_t *a_trans, const char *a_host,
+                                uint16_t a_port, uint32_t a_timeout_ms)
+{
+    if (!a_trans || !a_host) return -1;
+    return dap_net_trans_qos_probe_latency(a_trans, a_host, a_port, a_timeout_ms);
+}
+
+int dap_net_trans_measure_rtt(dap_net_trans_t *a_trans, const char *a_host, uint16_t a_port,
+                              uint32_t a_count, uint32_t a_timeout_ms,
+                              uint32_t *a_out_rtt, uint32_t *a_out_ok)
+{
+    if (!a_trans || !a_host || !a_out_rtt || !a_out_ok || a_count == 0)
+        return -1;
+    return dap_net_trans_qos_measure_rtt(a_trans, a_host, a_port, a_count,
+                                         a_timeout_ms, a_out_rtt, a_out_ok);
+}
+
+int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_host, uint16_t a_port,
+                                     uint32_t a_timeout_ms,
+                                     float *a_out_down_mbps, float *a_out_up_mbps)
+{
+    if (!a_trans || !a_host) return -1;
+    return dap_net_trans_qos_measure_throughput(a_trans, a_host, a_port, a_timeout_ms,
+                                                a_out_down_mbps, a_out_up_mbps);
 }
 

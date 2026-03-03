@@ -31,6 +31,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_stream.h"
 #include "dap_stream_ctl.h"
 #include "dap_net_trans.h"
+#include "dap_net_trans_qos.h"
 #include "dap_enc_http.h"
 #include "uthash.h"
 
@@ -262,6 +263,9 @@ int dap_net_trans_server_register_handlers(dap_net_trans_server_ctx_t *a_ctx)
     // Register enc_init handler (encryption handshake)
     enc_http_add_proc(a_ctx->http_server, "/enc_init");
     log_it(L_DEBUG, "Registered enc_init handler (path: /enc_init)");
+
+    // Register QoS probe handler (legacy HTTP transport)
+    dap_net_trans_qos_add_proc(a_ctx->http_server);
 
     // Register trans-specific handlers FIRST via trans's callback.
     // This allows transports like WebSocket to register their own /stream handler
