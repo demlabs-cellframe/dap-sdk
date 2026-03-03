@@ -3399,7 +3399,8 @@ static void s_print_yaml_value(dap_json_t *a_json, FILE *a_stream, int a_indent,
         case DAP_JSON_TYPE_ARRAY: {
             size_t l_len = dap_json_array_length(a_json);
             if (l_len == 0) {
-                fprintf(a_stream, "[]\n");
+                // Empty array - print nothing (cleaner output)
+                fprintf(a_stream, "\n");
             } else {
                 if (a_newline_before) {
                     fprintf(a_stream, "\n");
@@ -3415,8 +3416,8 @@ static void s_print_yaml_value(dap_json_t *a_json, FILE *a_stream, int a_indent,
                                 fprintf(a_stream, "\n");  // Separator between array objects
                             }
                         } else if (l_elem_type == DAP_JSON_TYPE_ARRAY) {
-                            fprintf(a_stream, "%*s- ", a_indent * 4, "");
-                            s_print_yaml_value(l_elem, a_stream, a_indent + 1, true);
+                            // For nested arrays, print content directly (skip "- " prefix for cleaner output)
+                            s_print_yaml_value(l_elem, a_stream, a_indent, false);
                         } else {
                             fprintf(a_stream, "%*s- ", a_indent * 4, "");
                             s_print_yaml_value(l_elem, a_stream, a_indent + 1, false);
@@ -3538,7 +3539,8 @@ static void s_print_yaml_value(dap_json_t *a_json, FILE *a_stream, int a_indent,
             }
             
             if (!l_has_content) {
-                fprintf(a_stream, "{}\n");
+                // Empty object - print nothing (cleaner output)
+                fprintf(a_stream, "\n");
             }
             break;
         }
