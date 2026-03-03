@@ -89,6 +89,7 @@ static void s_fsm_thread_callback_add(uint32_t a_thread_idx,
 static void s_fsm_process(dap_client_fsm_t *a_fsm);
 static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm);
 static void s_worker_execute_enc_init_io(void *a_arg);
+static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_arg);
 static int s_add_tried_transport(dap_client_fsm_t *a_fsm, dap_net_trans_type_t a_trans_type);
 static bool s_is_transport_tried(dap_client_fsm_t *a_fsm, dap_net_trans_type_t a_trans_type);
 static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm);
@@ -1257,7 +1258,7 @@ void dap_client_fsm_advance(dap_client_t *a_client, void *a_arg)
             log_it(L_ERROR, "FSM advance: QOS_PROBE branch reached unexpected stage %s",
                    dap_client_stage_str(l_fsm->stage));
             s_set_stage_status(l_fsm, STAGE_STATUS_ERROR);
-            a_fsm->last_error = ERROR_WRONG_STAGE;
+            l_fsm->last_error = ERROR_WRONG_STAGE;
             s_fsm_process(l_fsm);
             return;
         }
