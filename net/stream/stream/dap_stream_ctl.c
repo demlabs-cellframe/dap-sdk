@@ -187,6 +187,9 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
                 }
                 l_stream_session->acl = l_ks_key->acl_list;
                 l_stream_session->node = l_ks_key->node_addr;
+                log_it(L_INFO, "stream_ctl: session %u node_addr=" NODE_ADDR_FP_STR " (blank=%d)",
+                       l_stream_session->id, NODE_ADDR_FP_ARGS_S(l_ks_key->node_addr),
+                       dap_stream_node_addr_is_blank(&l_ks_key->node_addr));
             }
             if (l_is_legacy)
                 enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);

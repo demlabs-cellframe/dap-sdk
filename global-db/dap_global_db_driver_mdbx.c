@@ -212,6 +212,7 @@ dap_db_ctx_t *l_db_ctx = NULL;
 size_t l_name_len;
 MDBX_val    l_key_iov, l_data_iov;
 
+    dap_return_val_if_fail(s_mdbx_env, NULL);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Init group/table '%s', flags: %#x ...", a_group, a_flags);
 
     if ( (l_name_len = strlen(a_group)) >(int) DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX )
@@ -272,8 +273,11 @@ MDBX_val    l_key_iov, l_data_iov;
 
 static  int s_db_mdbx_deinit(void)
 {
-    if (s_mdbx_env)
+    if (s_mdbx_env) {
+        mdbx_env_sync(s_mdbx_env);
         mdbx_env_close(s_mdbx_env);
+        s_mdbx_env = NULL;
+    }
 
     return 0;
 }
@@ -604,7 +608,7 @@ MDBX_cursor *l_cursor = NULL;
 dap_store_obj_t *l_obj = NULL;
 
      /* Sanity check for group/table */
-    dap_return_val_if_fail(a_group, NULL);
+    dap_return_val_if_fail(a_group && s_mdbx_env, NULL);
 
     MDBX_txn *l_txn = s_txn;
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
@@ -678,7 +682,7 @@ bool s_db_mdbx_is_obj(const char *a_group, const char *a_key)
     MDBX_val l_key, l_data;
     bool l_ret = false;
 
-    dap_return_val_if_fail(a_group && a_key, NULL)
+    dap_return_val_if_fail(a_group && a_key && s_mdbx_env, false)
 
     MDBX_txn *l_txn = s_txn;
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
@@ -699,7 +703,7 @@ cleanup:
 
 static bool s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash)
 {
-    dap_return_val_if_fail(a_group, NULL);
+    dap_return_val_if_fail(a_group && s_mdbx_env, false);
     int rc;
     bool l_ret = false;
     dap_db_ctx_t *l_db_ctx = NULL;
@@ -728,7 +732,7 @@ cleanup:
 
 static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
 {
-    dap_return_val_if_fail(a_group && a_count, NULL);
+    dap_return_val_if_fail(a_group && a_count && s_mdbx_env, NULL);
     int rc;
     dap_db_ctx_t *l_db_ctx = NULL;
     MDBX_txn *l_txn = s_txn;
@@ -826,7 +830,7 @@ cleanup:
  */
 static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev)
 {
-    dap_return_val_if_fail(a_group && *a_group, NULL);
+    dap_return_val_if_fail(a_group && *a_group && s_mdbx_env, NULL);
     dap_db_ctx_t *l_db_ctx = NULL;
     size_t l_element_size = a_keys_only_read ? sizeof(dap_global_db_driver_hash_t) : sizeof(dap_store_obj_t);
     size_t l_count_current = 0,
@@ -919,7 +923,7 @@ safe_ret:
     DAP_DELETE(l_db_ctx);
     if (l_cursor)
         mdbx_cursor_close(l_cursor);
-    if (l_txn)
+    if (!s_txn && l_txn)
         mdbx_txn_commit(l_txn);
     if (a_count_out)
         *a_count_out = l_count_current;
@@ -935,7 +939,7 @@ safe_ret:
  */
 static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
 {
-    dap_return_val_if_fail(a_group, 0);
+    dap_return_val_if_fail(a_group && s_mdbx_env, 0);
     dap_db_ctx_t *l_db_ctx = NULL;
     int rc = 0;
     size_t l_ret = 0;
@@ -963,8 +967,7 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
     MDBX_cursor *l_cursor = NULL;
     if ( MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
         log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
-        mdbx_txn_commit(l_txn);
-        return 0;
+        goto cleanup;
     }
     MDBX_val l_key = { .iov_base = &a_hash_from, .iov_len = sizeof(a_hash_from) },
              l_data = {};
@@ -1011,7 +1014,7 @@ static dap_list_t  *s_db_mdbx_get_groups_by_mask(const char *a_group_mask)
     MDBX_cursor *l_cursor;
     MDBX_val l_key_iov, l_data_iov;
 
-    dap_return_val_if_fail(a_group_mask, NULL);
+    dap_return_val_if_fail(a_group_mask && s_mdbx_env, NULL);
 
     if ( MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
@@ -1139,6 +1142,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
 
 static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
+    dap_return_val_if_fail(s_mdbx_env, -EINVAL);
     if (s_txn)
         return s_db_mdbx_apply_store_obj_with_txn(a_store_obj, s_txn);
 
@@ -1182,7 +1186,7 @@ MDBX_stat   l_stat;
 MDBX_cursor *l_cursor = NULL;
 MDBX_txn *l_txn = s_txn;
 
-    dap_return_val_if_fail(a_group, NULL);
+    dap_return_val_if_fail(a_group && s_mdbx_env, NULL);
 
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) ) {
         log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc));
@@ -1288,6 +1292,8 @@ static int s_db_mdbx_txn_start()
 {
     if (s_txn)
         return MDBX_BUSY;
+    if (!s_mdbx_env)
+        return MDBX_PANIC;
     int rc;
     if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &s_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), rc;

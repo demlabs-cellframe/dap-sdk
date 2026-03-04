@@ -620,6 +620,10 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         debug_if(s_debug, L_DEBUG, "s_stream_new: setting node address");
         l_ret->node = *a_addr;
         l_ret->authorized = true;
+        log_it(L_INFO, "s_stream_new: stream %p AUTHORIZED, node=" NODE_ADDR_FP_STR, (void*)l_ret, NODE_ADDR_FP_ARGS_S(*a_addr));
+    } else {
+        log_it(L_WARNING, "s_stream_new: stream %p NOT authorized (a_addr=%p, blank=%d)",
+               (void*)l_ret, (void*)a_addr, a_addr ? dap_stream_node_addr_is_blank(a_addr) : -1);
     }
     debug_if(s_debug, L_DEBUG, "s_stream_new: adding stream to list");
     dap_stream_add_to_list(l_ret);

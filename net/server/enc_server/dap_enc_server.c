@@ -297,6 +297,8 @@ int dap_enc_server_process_request(
     
     if (a_request->protocol_version && l_sign_count) {
         l_enc_key_ks->node_addr = dap_stream_node_addr_from_sign(l_first_sign);
+        log_it(L_INFO, "enc_server: set node_addr=" NODE_ADDR_FP_STR " for KS key (protocol_v=%d, sign_count=%zu)",
+               NODE_ADDR_FP_ARGS_S(l_enc_key_ks->node_addr), a_request->protocol_version, l_sign_count);
         
         dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
         if (l_node_cert) {
