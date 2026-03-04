@@ -815,6 +815,47 @@ function(create_final_shared_library)
     )
     
     message(STATUS "[SDK] Final library configured: ${LIB_FILENAME}")
+
+    if(BUILD_STATIC)
+        set(STATIC_TARGET "${TARGET_NAME}_static")
+        add_library(${STATIC_TARGET} STATIC ${ALL_OBJECTS} ${FINAL_LIB_ADDITIONAL_SOURCES})
+        set_target_properties(${STATIC_TARGET} PROPERTIES
+            OUTPUT_NAME "${FINAL_LIB_LIBRARY_NAME}"
+            ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/static"
+        )
+
+        foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
+            if(TARGET ${MODULE})
+                get_target_property(_inc ${MODULE} INTERFACE_INCLUDE_DIRECTORIES)
+                if(_inc)
+                    target_include_directories(${STATIC_TARGET} PUBLIC ${_inc})
+                endif()
+            endif()
+        endforeach()
+
+        if(DEFINED FINAL_LIB_LINK_LIBRARIES)
+            set(_static_link_libs "")
+            foreach(_lib ${FINAL_LIB_LINK_LIBRARIES})
+                if(TARGET ${_lib}_static)
+                    list(APPEND _static_link_libs ${_lib}_static)
+                else()
+                    list(APPEND _static_link_libs ${_lib})
+                endif()
+            endforeach()
+            target_link_libraries(${STATIC_TARGET} PUBLIC ${_static_link_libs})
+        endif()
+        target_link_libraries(${STATIC_TARGET} PUBLIC ${CMAKE_DL_LIBS})
+        if(UNIX AND NOT APPLE AND NOT ANDROID)
+            target_link_libraries(${STATIC_TARGET} PUBLIC pthread m rt)
+        elseif(APPLE)
+            target_link_libraries(${STATIC_TARGET} PUBLIC pthread
+                "-framework CoreFoundation" "-framework SystemConfiguration")
+        elseif(WIN32)
+            target_link_libraries(${STATIC_TARGET} PUBLIC ws2_32 mswsock psapi pthread)
+        endif()
+
+        message(STATUS "[SDK] Static companion: ${STATIC_TARGET}")
+    endif()
 endfunction()
 
 # =========================================
