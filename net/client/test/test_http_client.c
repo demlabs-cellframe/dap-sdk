@@ -16,16 +16,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <stdbool.h>
 #include <time.h>
 #include <errno.h>
-#include <unistd.h>
-#include <signal.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <pthread.h>
+#ifndef _WIN32
+#  include <strings.h>
+#  include <unistd.h>
+#  include <signal.h>
+#  include <fcntl.h>
+#  include <sys/socket.h>
+#  include <netinet/in.h>
+#  include <arpa/inet.h>
+#  include <pthread.h>
+#  define MOCK_SUPPORTED 1
+#  define dap_usleep(us) usleep(us)
+#else
+#  include <windows.h>
+#  define MOCK_SUPPORTED 0
+#  define dap_usleep(us) Sleep((us) / 1000)
+#endif
 #include "dap_client_http.h"
 #include "dap_worker.h"
 #include "dap_events.h"
@@ -39,11 +48,14 @@
  * whole test suite is fully self-contained (no external network).
  * ============================================================ */
 
-#define MOCK_HOST     "127.0.0.1"
-#define MOCK_PORT     18089
-#define _STR(x)       #x
-#define STR(x)        _STR(x)
-#define MOCK_PORT_STR STR(MOCK_PORT)
+#define MOCK_HOST         "127.0.0.1"
+#define MOCK_PORT_DEFAULT  18089
+
+/* Runtime port (may differ from default if default port is busy) */
+static int s_srv_port = MOCK_PORT_DEFAULT;
+#define MOCK_PORT (s_srv_port)
+
+#if MOCK_SUPPORTED
 
 /* Minimal 1×1 px RGB PNG (valid binary, correct CRC values). */
 static const unsigned char s_tiny_png[] = {
@@ -135,10 +147,10 @@ static void _srv_handle(int fd, const char *req, int close_conn) {
      * /httpbin/get  – basic GET / HEAD 200
      * -------------------------------------------------- */
     if (strcmp(path, "/httpbin/get") == 0) {
-        const char *body =
-            "{\"url\":\"http://" MOCK_HOST ":" MOCK_PORT_STR "/httpbin/get\","
-            "\"args\":{}}";
-        _srv_status(fd, 200, "application/json", (int)strlen(body), close_conn);
+        char body[256];
+        int blen = snprintf(body, sizeof(body),
+            "{\"url\":\"http://" MOCK_HOST ":%d/httpbin/get\",\"args\":{}}", s_srv_port);
+        _srv_status(fd, 200, "application/json", blen, close_conn);
         if (!is_head) _srv_sends(fd, body);
         return;
     }
@@ -273,11 +285,10 @@ static void _srv_handle(int fd, const char *req, int close_conn) {
             char loc[256];
             snprintf(loc, sizeof(loc),
                      "HTTP/1.1 302 Found\r\n"
-                     "Location: http://" MOCK_HOST ":" MOCK_PORT_STR
-                     "/httpbin/redirect/%d\r\n"
+                     "Location: http://" MOCK_HOST ":%d/httpbin/redirect/%d\r\n"
                      "Content-Length: 0\r\n"
                      "Connection: keep-alive\r\n\r\n",
-                     n - 1);
+                     s_srv_port, n - 1);
             _srv_sends(fd, loc);
         } else {
             const char *ok = "{\"redirects\":0}";
@@ -296,11 +307,10 @@ static void _srv_handle(int fd, const char *req, int close_conn) {
             char loc[256];
             snprintf(loc, sizeof(loc),
                      "HTTP/1.1 302 Found\r\n"
-                     "Location: http://" MOCK_HOST ":" MOCK_PORT_STR
-                     "/httpbin/absolute-redirect/%d\r\n"
+                     "Location: http://" MOCK_HOST ":%d/httpbin/absolute-redirect/%d\r\n"
                      "Content-Length: 0\r\n"
                      "Connection: keep-alive\r\n\r\n",
-                     n - 1);
+                     s_srv_port, n - 1);
             _srv_sends(fd, loc);
         } else {
             const char *ok = "{\"redirects\":0}";
@@ -326,10 +336,10 @@ static void _srv_handle(int fd, const char *req, int close_conn) {
         if (target[0] == '/') {
             snprintf(loc, sizeof(loc),
                      "HTTP/1.1 302 Found\r\n"
-                     "Location: http://" MOCK_HOST ":" MOCK_PORT_STR "%s\r\n"
+                     "Location: http://" MOCK_HOST ":%d%s\r\n"
                      "Content-Length: 0\r\n"
                      "Connection: keep-alive\r\n\r\n",
-                     target);
+                     s_srv_port, target);
         } else {
             snprintf(loc, sizeof(loc),
                      "HTTP/1.1 302 Found\r\n"
@@ -350,10 +360,10 @@ static void _srv_handle(int fd, const char *req, int close_conn) {
         char loc[256];
         snprintf(loc, sizeof(loc),
                  "HTTP/1.1 301 Moved Permanently\r\n"
-                 "Location: http://" MOCK_HOST ":" MOCK_PORT_STR "/httpbin/get\r\n"
+                 "Location: http://" MOCK_HOST ":%d/httpbin/get\r\n"
                  "Content-Length: 0\r\n"
                  "Connection: %s\r\n\r\n",
-                 close_conn ? "close" : "keep-alive");
+                 s_srv_port, close_conn ? "close" : "keep-alive");
         _srv_sends(fd, loc);
         return;
     }
@@ -417,25 +427,49 @@ static int s_mock_server_start(void) {
 
     int opt = 1;
     setsockopt(s_srv_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    /* accept() will return after 1 s so the loop can check s_srv_running */
-    struct timeval atv = {1, 0};
-    setsockopt(s_srv_fd, SOL_SOCKET, SO_RCVTIMEO, &atv, sizeof(atv));
+#if defined(SO_REUSEPORT)
+    setsockopt(s_srv_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
 
     struct sockaddr_in addr = {0};
     addr.sin_family      = AF_INET;
-    addr.sin_port        = htons(MOCK_PORT);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port        = htons(MOCK_PORT_DEFAULT);
 
     if (bind(s_srv_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(s_srv_fd); s_srv_fd = -1; return -1;
+        /* Preferred port busy (e.g. TIME_WAIT) — let the OS pick one */
+        addr.sin_port = 0;
+        if (bind(s_srv_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            close(s_srv_fd); s_srv_fd = -1; return -1;
+        }
+        socklen_t alen = sizeof(addr);
+        getsockname(s_srv_fd, (struct sockaddr *)&addr, &alen);
+        s_srv_port = ntohs(addr.sin_port);
+        printf("  [NOTE] Port %d busy, using %d instead\n",
+               MOCK_PORT_DEFAULT, s_srv_port);
+    } else {
+        s_srv_port = MOCK_PORT_DEFAULT;
     }
+
     if (listen(s_srv_fd, 32) < 0) {
         close(s_srv_fd); s_srv_fd = -1; return -1;
     }
+
+    /* Make accept() non-blocking so the loop can check s_srv_running portably */
+    {
+#ifdef O_NONBLOCK
+        int fl = fcntl(s_srv_fd, F_GETFL, 0);
+        fcntl(s_srv_fd, F_SETFL, fl | O_NONBLOCK);
+#else
+        /* Fallback: 1 s accept timeout via SO_RCVTIMEO */
+        struct timeval atv = {1, 0};
+        setsockopt(s_srv_fd, SOL_SOCKET, SO_RCVTIMEO, &atv, sizeof(atv));
+#endif
+    }
+
     s_srv_running = 1;
     pthread_create(&s_srv_thread, NULL, s_srv_loop, NULL);
-    printf("  ✓ Mock HTTP server started at http://%s:%d\n", MOCK_HOST, MOCK_PORT);
+    printf("  ✓ Mock HTTP server started at http://%s:%d\n", MOCK_HOST, s_srv_port);
     return 0;
 }
 
@@ -448,6 +482,11 @@ static void s_mock_server_stop(void) {
     }
     pthread_join(s_srv_thread, NULL);
 }
+
+#else  /* !MOCK_SUPPORTED */
+static int  s_mock_server_start(void) { return -1; }
+static void s_mock_server_stop(void)  {}
+#endif /* MOCK_SUPPORTED */
 
 /* ============================================================
  * Test state tracking
@@ -2182,16 +2221,24 @@ void test_http_client()
 {
     g_test_state.start_time = time(NULL);
 
+#if MOCK_SUPPORTED
     /* Prevent SIGPIPE from killing the process when writing to a closed socket */
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     /* Start the local mock server (must come before dap_events_start) */
     if (s_mock_server_start() != 0) {
+#if MOCK_SUPPORTED
         fprintf(stderr, "ERROR: Failed to start mock HTTP server on port %d\n",
-                MOCK_PORT);
+                MOCK_PORT_DEFAULT);
         exit(EXIT_FAILURE);
+#else
+        printf("[SKIP] Mock HTTP server is not supported on this platform.\n");
+        printf("       Skipping all dap_client_http tests.\n");
+        return;
+#endif
     }
-    usleep(100000); /* 100 ms warm-up */
+    dap_usleep(100000); /* 100 ms warm-up */
 
     /* Initialize DAP subsystems */
     dap_events_init(1, 0);
