@@ -383,11 +383,22 @@ static void *s_srv_loop(void *arg) {
         socklen_t cli_len = sizeof(cli);
         int cfd = accept(s_srv_fd, (struct sockaddr *)&cli, &cli_len);
         if (cfd < 0) {
-            if (s_srv_running) usleep(1000);
+            if (s_srv_running) dap_usleep(1000);
             continue;
         }
 
-        /* per-connection receive timeout */
+        /* On some systems (macOS/BSD) accept() may hand back a socket
+         * that inherited O_NONBLOCK from the listening socket.
+         * Explicitly reset to blocking so the keep-alive recv() loop
+         * does not return EAGAIN before the client's follow-up request
+         * has arrived (which would cause premature connection close). */
+#ifdef O_NONBLOCK
+        {
+            int fl = fcntl(cfd, F_GETFL, 0);
+            if (fl >= 0) fcntl(cfd, F_SETFL, fl & ~O_NONBLOCK);
+        }
+#endif
+        /* 5-second per-request receive timeout */
         struct timeval rtv = {5, 0};
         setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &rtv, sizeof(rtv));
 
