@@ -446,13 +446,15 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             if (!dap_sign_verify_all(l_sign, l_decoded_len, l_bob_message, l_bob_message_size)) {
                 dap_stream_node_addr_t l_sign_addr = dap_stream_node_addr_from_sign(l_sign);
                 l_es->authorized = (l_sign_addr.uint64 == a_client->link_info.node_addr.uint64);
-                } else {
+            } else {
                 l_es->authorized = false;
             }
             DAP_DELETE(l_sign);
         } else {
             l_es->authorized = false;
         }
+        if (l_es->stream)
+            l_es->stream->authorized = l_es->authorized;
         break;
     }
 

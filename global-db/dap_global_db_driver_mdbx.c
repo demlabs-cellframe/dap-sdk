@@ -118,6 +118,14 @@ static char s_db_master_tbl [] = "MDBX$MASTER";                             /* A
                                                                               to keep and maintains application level information */
 static MDBX_dbi s_db_master_dbi;                                            /* A handle of the MDBX' DBI of the master subDB */
 static _Thread_local MDBX_txn *s_txn = NULL;
+/**
+ * Serialize mdbx_dbi_open AND mdbx_txn_commit when new DBIs are created.
+ * mdbx's internal dbi_update() runs during commit and touches env-global
+ * DBI array that mdbx_dbi_open also reads/writes — not thread-safe.
+ * Lock must be held from dbi_open through txn_commit for CREATE,
+ * and around every dbi_open (even read-only) to avoid racing with commits.
+ */
+static pthread_mutex_t s_dbi_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  *   DESCRIPTION: A kind of replacement of the C RTL assert()
@@ -229,8 +237,16 @@ MDBX_val    l_key_iov, l_data_iov;
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
+    /* Hold s_dbi_mutex from dbi_open through txn_commit: mdbx's internal
+       dbi_update() runs at commit time and touches the same env-global DBI
+       array that mdbx_dbi_open reads, so both must be serialized. */
+    pthread_mutex_lock(&s_dbi_mutex);
+
     if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) ) {
+        pthread_mutex_unlock(&s_dbi_mutex);
         DAP_DEL_Z(l_db_ctx);
+        if (!a_txn)
+            mdbx_txn_abort(l_txn);
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
@@ -241,18 +257,22 @@ MDBX_val    l_key_iov, l_data_iov;
          && (rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", rc, mdbx_strerror(rc));
         if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) ) {
+            pthread_mutex_unlock(&s_dbi_mutex);
             DAP_DEL_Z(l_db_ctx);
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc)), NULL;
         }
+        pthread_mutex_unlock(&s_dbi_mutex);
         DAP_DEL_Z(l_db_ctx);
         return NULL;
     }
 
     if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) ) {
+        pthread_mutex_unlock(&s_dbi_mutex);
         DAP_DEL_Z(l_db_ctx);
         return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
+    pthread_mutex_unlock(&s_dbi_mutex);
     return l_db_ctx;
 }
 
@@ -351,7 +371,10 @@ size_t     l_upper_limit_of_db_size = 16;
     if ( MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
 
-    if ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, s_db_master_tbl, MDBX_CREATE, &s_db_master_dbi)) )
+    pthread_mutex_lock(&s_dbi_mutex);
+    rc = mdbx_dbi_open(l_txn, s_db_master_tbl, MDBX_CREATE, &s_db_master_dbi);
+    pthread_mutex_unlock(&s_dbi_mutex);
+    if ( MDBX_SUCCESS != rc )
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
 
     dap_assert ( MDBX_SUCCESS == (rc = mdbx_txn_commit (l_txn)) );
@@ -454,7 +477,10 @@ static  dap_db_ctx_t  *s_get_db_ctx_for_group(const char *a_group, MDBX_txn *a_t
 
     memcpy(l_db_ctx->name, a_group, l_db_ctx->namelen = l_name_len);
 
-    if ( MDBX_SUCCESS != (rc = mdbx_dbi_open(a_txn, a_group, 0, &l_db_ctx->dbi)) ) {
+    pthread_mutex_lock(&s_dbi_mutex);
+    rc = mdbx_dbi_open(a_txn, a_group, 0, &l_db_ctx->dbi);
+    pthread_mutex_unlock(&s_dbi_mutex);
+    if ( MDBX_SUCCESS != rc ) {
         if (rc != MDBX_NOTFOUND)
             log_it(L_ERROR, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc));
         DAP_DEL_Z(l_db_ctx);
@@ -1151,11 +1177,18 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
     if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), rc;
     rc = s_db_mdbx_apply_store_obj_with_txn(a_store_obj, l_txn);
-    if ( rc != MDBX_SUCCESS ) {                                      /* Check result of mdbx_drop/del */
+    if ( rc != MDBX_SUCCESS ) {
         if ( MDBX_SUCCESS != (rc2 = mdbx_txn_abort(l_txn)) )
             log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc2, mdbx_strerror(rc2));
-    } else if ( MDBX_SUCCESS != (rc2 = mdbx_txn_commit(l_txn)) )
-        log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc2, mdbx_strerror(rc2));
+    } else {
+        /* dbi_update inside mdbx_txn_commit touches env-global DBI array —
+           serialize with mdbx_dbi_open calls on other threads */
+        pthread_mutex_lock(&s_dbi_mutex);
+        rc2 = mdbx_txn_commit(l_txn);
+        pthread_mutex_unlock(&s_dbi_mutex);
+        if (MDBX_SUCCESS != rc2)
+            log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc2, mdbx_strerror(rc2));
+    }
     return rc;
 }
 
@@ -1309,8 +1342,13 @@ static int s_db_mdbx_txn_end(bool a_commit)
     if (!a_commit) {
         if ( MDBX_SUCCESS != (rc = mdbx_txn_abort(s_txn)) )
             log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc));
-    } else if ( MDBX_SUCCESS != (rc = mdbx_txn_commit(s_txn)) )
-        log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
+    } else {
+        pthread_mutex_lock(&s_dbi_mutex);
+        rc = mdbx_txn_commit(s_txn);
+        pthread_mutex_unlock(&s_dbi_mutex);
+        if (MDBX_SUCCESS != rc)
+            log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
+    }
     if (MDBX_SUCCESS == rc)
         s_txn = NULL;
     return rc;
