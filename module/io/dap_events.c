@@ -85,7 +85,6 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include <io.h>
 #endif
 
-#include <utlist.h>
 #include <pthread.h>
 
 #include "dap_common.h"

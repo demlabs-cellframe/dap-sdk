@@ -121,8 +121,8 @@ static bool s_test_tsan_validation(void) {
     log_it(L_DEBUG, "Testing ThreadSanitizer validation");
     bool result = false;
     
-    const int NUM_THREADS = 4;
-    const int ITERATIONS_PER_THREAD = 100;
+    enum { NUM_THREADS = 4 };
+    enum { ITERATIONS_PER_THREAD = 100 };
     
     pthread_t threads[NUM_THREADS];
     thread_test_args_t args[NUM_THREADS];
@@ -204,8 +204,8 @@ static bool s_test_concurrent_parsing_different_json(void) {
     log_it(L_DEBUG, "Testing concurrent parsing of different JSON");
     bool result = false;
     
-    const int NUM_THREADS = 8;
-    const int ITERATIONS_PER_THREAD = 50;
+    enum { NUM_THREADS = 8 };
+    enum { ITERATIONS_PER_THREAD = 50 };
     
     pthread_t threads[NUM_THREADS];
     thread_test_args_t args[NUM_THREADS];
@@ -279,8 +279,8 @@ static bool s_test_arena_allocator_races(void) {
     log_it(L_DEBUG, "Testing arena allocator race conditions");
     bool result = false;
     
-    const int NUM_THREADS = 4;
-    const int ITERATIONS_PER_THREAD = 100;
+    enum { NUM_THREADS = 4 };
+    enum { ITERATIONS_PER_THREAD = 100 };
     
     pthread_t threads[NUM_THREADS];
     thread_test_args_t args[NUM_THREADS];
@@ -349,8 +349,8 @@ static bool s_test_string_pool_races(void) {
     log_it(L_DEBUG, "Testing string pool race conditions");
     bool result = false;
     
-    const int NUM_THREADS = 4;
-    const int ITERATIONS_PER_THREAD = 100;
+    enum { NUM_THREADS = 4 };
+    enum { ITERATIONS_PER_THREAD = 100 };
     
     pthread_t threads[NUM_THREADS];
     thread_test_args_t args[NUM_THREADS];

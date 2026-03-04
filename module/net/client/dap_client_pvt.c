@@ -126,6 +126,7 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
     a_client_pvt->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012 ;
     a_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
     a_client_pvt->session_key_block_size = 32;
+    a_client_pvt->enc_fallback = false;
 
     a_client_pvt->stage = STAGE_BEGIN; // start point of state machine
     a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
@@ -382,6 +383,10 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 case STAGE_ENC_INIT: {
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
 
+                    if (!a_client_pvt->enc_fallback) {
+                        a_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
+                    }
+
                     if (!*a_client_pvt->client->link_info.uplink_addr || !a_client_pvt->client->link_info.uplink_port) {
                         log_it(L_ERROR, "Client remote address is empty");
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
@@ -405,20 +410,26 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         break;
                     }
-                    dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
                     size_t l_sign_count = 0;
-                    if (a_client_pvt->client->auth_cert)
-                        l_sign_count += s_add_cert_sign_to_data(a_client_pvt->client->auth_cert, &l_data, &l_data_size,
-                                                                a_client_pvt->session_key_open->pub_key_data,
-                                                                a_client_pvt->session_key_open->pub_key_data_size);
-                    l_sign_count += s_add_cert_sign_to_data(l_node_cert, &l_data, &l_data_size,
-                                                             a_client_pvt->session_key_open->pub_key_data,
-                                                             a_client_pvt->session_key_open->pub_key_data_size);
-                
+                    int l_protocol_version = DAP_CLIENT_PROTOCOL_VERSION;
+                    if (a_client_pvt->enc_fallback) {
+                        log_it(L_INFO, "ENC fallback mode: using MSRLN with legacy protocol for %s:%u",
+                               a_client_pvt->client->link_info.uplink_addr,
+                               a_client_pvt->client->link_info.uplink_port);
+                        l_protocol_version = 0;
+                    } else {
+                        dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+                        if (a_client_pvt->client->auth_cert)
+                            l_sign_count += s_add_cert_sign_to_data(a_client_pvt->client->auth_cert, &l_data, &l_data_size,
+                                                                    a_client_pvt->session_key_open->pub_key_data,
+                                                                    a_client_pvt->session_key_open->pub_key_data_size);
+                        l_sign_count += s_add_cert_sign_to_data(l_node_cert, &l_data, &l_data_size,
+                                                                 a_client_pvt->session_key_open->pub_key_data,
+                                                                 a_client_pvt->session_key_open->pub_key_data_size);
+                    }
 
                     size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);
                     char *l_data_str = DAP_NEW_Z_SIZE(char, l_data_str_size_max + 1);
-                    // DAP_ENC_DATA_TYPE_B64_URLSAFE not need because send it by POST request
                     size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_data_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
 
                     debug_if(s_debug_more, L_DEBUG, "ENC request size %zu", l_data_str_enc_size);
@@ -427,7 +438,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
                                  "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
                                  a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, a_client_pvt->session_key_open->pub_key_data_size,
-                                 a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
+                                 a_client_pvt->session_key_block_size, l_protocol_version, l_sign_count);
                     int l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
                             l_data_str, l_data_str_enc_size, s_enc_init_response, s_enc_init_error);
                     // bad request
@@ -880,14 +891,25 @@ static void s_request_error(int a_err_code, void * a_obj)
  * @param a_response_size
  * @param a_obj
  */
-static void s_request_response(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG dap_http_status_code_t a_http_code)
+static void s_request_response(void * a_response, size_t a_response_size, void * a_obj, dap_http_status_code_t a_http_code)
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
     if ( !l_client_pvt->request_response_callback )
         return log_it(L_ERROR, "No request_response_callback in encrypted client!");
     l_client_pvt->http_client = NULL;
-    
+    if (l_client_pvt->stage == STAGE_STREAM_CTL || (a_http_code != DAP_HTTP_STATUS_OK && a_http_code != 0)) {
+        log_it(L_WARNING, "enc_response: stage %d http_code %d raw_size %zu is_enc %d raw[0..7]: %02x %02x %02x %02x %02x %02x %02x %02x",
+               l_client_pvt->stage, a_http_code, a_response_size, l_client_pvt->is_encrypted,
+               a_response_size > 0 ? ((unsigned char*)a_response)[0] : 0,
+               a_response_size > 1 ? ((unsigned char*)a_response)[1] : 0,
+               a_response_size > 2 ? ((unsigned char*)a_response)[2] : 0,
+               a_response_size > 3 ? ((unsigned char*)a_response)[3] : 0,
+               a_response_size > 4 ? ((unsigned char*)a_response)[4] : 0,
+               a_response_size > 5 ? ((unsigned char*)a_response)[5] : 0,
+               a_response_size > 6 ? ((unsigned char*)a_response)[6] : 0,
+               a_response_size > 7 ? ((unsigned char*)a_response)[7] : 0);
+    }
     if (a_response && a_response_size) {
         if (l_client_pvt->is_encrypted) {
             if (!l_client_pvt->session_key)
@@ -897,6 +919,19 @@ static void s_request_response(void * a_response, size_t a_response_size, void *
             l_len = dap_enc_decode(l_client_pvt->session_key, a_response, a_response_size,
                                    l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
             l_response[l_len] = '\0';
+            if (l_client_pvt->stage == STAGE_STREAM_CTL) {
+                log_it(L_WARNING, "STREAM_CTL dec_size %zu dec[0..7]: %02x %02x %02x %02x %02x %02x %02x %02x txt: '%.32s'",
+                       l_len,
+                       l_len > 0 ? (unsigned char)l_response[0] : 0,
+                       l_len > 1 ? (unsigned char)l_response[1] : 0,
+                       l_len > 2 ? (unsigned char)l_response[2] : 0,
+                       l_len > 3 ? (unsigned char)l_response[3] : 0,
+                       l_len > 4 ? (unsigned char)l_response[4] : 0,
+                       l_len > 5 ? (unsigned char)l_response[5] : 0,
+                       l_len > 6 ? (unsigned char)l_response[6] : 0,
+                       l_len > 7 ? (unsigned char)l_response[7] : 0,
+                       l_len > 0 ? l_response : "(empty)");
+            }
             l_client_pvt->request_response_callback(l_client_pvt->client, l_response, l_len);
             DAP_DELETE(l_response);
         } else
@@ -1072,6 +1107,20 @@ static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_d
     DAP_DEL_MULTY(l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_bob_message);
     if (l_client_pvt->last_error == ERROR_NO_ERROR) {
         l_client_pvt->stage_status = STAGE_STATUS_DONE;
+    } else if (!l_client_pvt->enc_fallback
+               && l_client_pvt->session_key_open_type == DAP_ENC_KEY_TYPE_KEM_KYBER512) {
+        log_it(L_WARNING, "ENC handshake with KYBER512 failed, falling back to MSRLN for %s:%u",
+               l_client_pvt->client->link_info.uplink_addr,
+               l_client_pvt->client->link_info.uplink_port);
+        DAP_DEL_Z(l_client_pvt->session_key_id);
+        l_client_pvt->enc_fallback = true;
+        l_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN;
+        l_client_pvt->last_error = ERROR_NO_ERROR;
+        l_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
+        dap_enc_key_delete(l_client_pvt->session_key_open);
+        l_client_pvt->session_key_open = NULL;
+        s_stage_status_after(l_client_pvt);
+        return;
     } else {
         DAP_DEL_Z(l_client_pvt->session_key_id);
         l_client_pvt->stage_status = STAGE_STATUS_ERROR;
@@ -1091,6 +1140,19 @@ static void s_enc_init_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, in
     dap_client_pvt_t * l_client_pvt = DAP_CLIENT_PVT(a_client);
     log_it(L_ERROR, "ENC: Can't init encryption session, err code %d", a_err_code);
     if (!l_client_pvt) return;
+    if (a_err_code != ETIMEDOUT
+        && !l_client_pvt->enc_fallback
+        && l_client_pvt->session_key_open_type == DAP_ENC_KEY_TYPE_KEM_KYBER512) {
+        log_it(L_WARNING, "ENC handshake with KYBER512 failed (err %d), falling back to MSRLN for %s:%u",
+               a_err_code, l_client_pvt->client->link_info.uplink_addr,
+               l_client_pvt->client->link_info.uplink_port);
+        l_client_pvt->enc_fallback = true;
+        l_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN;
+        l_client_pvt->last_error = ERROR_NO_ERROR;
+        l_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
+        s_stage_status_after(l_client_pvt);
+        return;
+    }
     if (a_err_code == ETIMEDOUT) {
         l_client_pvt->last_error = ERROR_NETWORK_CONNECTION_TIMEOUT;
     } else {
@@ -1137,7 +1199,12 @@ static void s_stream_ctl_response(dap_client_t * a_client, void *a_data, size_t 
                                              &l_remote_protocol_version,
                                              &l_enc_type, &l_enc_headers);
         if(l_arg_count < 2) {
-            log_it(L_WARNING, "STREAM_CTL Need at least 2 arguments in reply (got %d)", l_arg_count);
+            log_it(L_WARNING, "STREAM_CTL Need at least 2 arguments in reply (got %d), response size %zu, first bytes: 0x%02x 0x%02x 0x%02x 0x%02x",
+                   l_arg_count, a_data_size,
+                   a_data_size > 0 ? (unsigned char)l_response_str[0] : 0,
+                   a_data_size > 1 ? (unsigned char)l_response_str[1] : 0,
+                   a_data_size > 2 ? (unsigned char)l_response_str[2] : 0,
+                   a_data_size > 3 ? (unsigned char)l_response_str[3] : 0);
             l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT;
             l_client_pvt->stage_status = STAGE_STATUS_ERROR;
             s_stage_status_after(l_client_pvt);

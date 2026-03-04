@@ -9,9 +9,8 @@ add_definitions ("-D_GNU_SOURCE")
 file(GLOB DAP_IO_SOURCES *.c)
 file(GLOB DAP_IO_HEADERS include/*.h)
 if(WIN32)
-    set(DAP_IO_SOURCES ${DAP_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll/wepoll.c)
-    set(DAP_IO_HEADERS ${DAP_IO_HEADERS} ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll/wepoll.h)
-    include_directories(../../3rdparty/wepoll)
+    # wepoll removed - using native IOCP (DAP_EVENTS_CAPS_IOCP) since 2026
+    # See dap_events_socket.h line 86: #define DAP_EVENTS_CAPS_IOCP
 elseif(LINUX OR ANDROID)
     file(GLOB DAP_IO_LINUX_SRCS linux/*.c)
     file(GLOB DAP_IO_LINUX_HEADERS linux/*.h)
@@ -31,12 +30,11 @@ if(UNIX)
   endif()
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-                                                ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 if (WIN32)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll)
+    # wepoll include removed - using native IOCP
     # Add WIN32 dependencies to final library deps
     list(APPEND IO_LIBS "ws2_32")
     set(DAP_IO_DEPS "${IO_LIBS}" CACHE INTERNAL "dap_io external dependencies")

@@ -7,8 +7,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "KeccakHash.h"
-#include "SimpleFIPS202.h"
+#include "dap_hash_keccak.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 #include "tesla_params.h"
 
 #define LOG_TAG "dap_crypto_sign_tesla"
@@ -393,9 +395,9 @@ void hash_vm(unsigned char *c_bin, poly_k *v, const unsigned char *m, unsigned l
     memcpy(&t[p->PARAM_K * p->PARAM_N], m, mlen);
 
     if(p->kind == 0 || p->kind == 3)
-        SHAKE128(c_bin, CRYPTO_C_BYTES, t, p->PARAM_K * p->PARAM_N + mlen);
+        dap_hash_shake128(c_bin, CRYPTO_C_BYTES, t, p->PARAM_K * p->PARAM_N + mlen);
     else
-        SHAKE256(c_bin, CRYPTO_C_BYTES, t, p->PARAM_K * p->PARAM_N + mlen);
+        dap_hash_shake256(c_bin, CRYPTO_C_BYTES, t, p->PARAM_K * p->PARAM_N + mlen);
 
     free(t);
     t = NULL;
@@ -660,16 +662,16 @@ int tesla_crypto_sign_keypair(tesla_public_key_t *public_key, tesla_private_key_
     // Get randomness_extended <- seed_e, seed_s, seed_a, seed_y
     if(seed && seed_size>0){
         assert(CRYPTO_RANDOMBYTES==32);
-        SHA3_256((unsigned char *)randomness, (const unsigned char *)seed, seed_size);
+        dap_hash_sha3_256_raw((unsigned char *)randomness, (const unsigned char *)seed, seed_size);
     }
     else{
         randombytes(randomness, CRYPTO_RANDOMBYTES);
     }
 
     if(p->kind == 0 || p->kind == 3)
-        SHAKE128(randomness_extended, ((p->PARAM_K) + 3) * CRYPTO_SEEDBYTES, randomness, CRYPTO_RANDOMBYTES);
+        dap_hash_shake128(randomness_extended, ((p->PARAM_K) + 3) * CRYPTO_SEEDBYTES, randomness, CRYPTO_RANDOMBYTES);
     else
-        SHAKE256(randomness_extended, ((p->PARAM_K) + 3) * CRYPTO_SEEDBYTES, randomness, CRYPTO_RANDOMBYTES);
+        dap_hash_shake256(randomness_extended, ((p->PARAM_K) + 3) * CRYPTO_SEEDBYTES, randomness, CRYPTO_RANDOMBYTES);
 
     poly *s = malloc(p->PARAM_N * sizeof(int64_t));
     poly *s_ntt = malloc(p->PARAM_N * sizeof(int64_t));
@@ -769,9 +771,9 @@ int tesla_crypto_sign( tesla_signature_t *sig, const unsigned char *m, unsigned 
     memcpy(randomness_input + CRYPTO_RANDOMBYTES + CRYPTO_SEEDBYTES, m, mlen);
 
     if(p->kind == 0 || p->kind == 3)
-        SHAKE128(randomness, CRYPTO_SEEDBYTES, randomness_input, CRYPTO_RANDOMBYTES + CRYPTO_SEEDBYTES + mlen);
+        dap_hash_shake128(randomness, CRYPTO_SEEDBYTES, randomness_input, CRYPTO_RANDOMBYTES + CRYPTO_SEEDBYTES + mlen);
     else
-        SHAKE256(randomness, CRYPTO_SEEDBYTES, randomness_input, CRYPTO_RANDOMBYTES + CRYPTO_SEEDBYTES + mlen);
+        dap_hash_shake256(randomness, CRYPTO_SEEDBYTES, randomness_input, CRYPTO_RANDOMBYTES + CRYPTO_SEEDBYTES + mlen);
 
     uint32_t *pos_list = malloc(p->PARAM_W * sizeof(uint32_t));
     int16_t *sign_list = malloc(p->PARAM_W * sizeof(uint16_t));

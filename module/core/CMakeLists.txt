@@ -7,35 +7,32 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/PackageComponents.cmake)
 add_definitions("-D_GNU_SOURCE") 
 
 file (GLOB CORE_HEADERS include/*.h)
-# Exclude dap_json.h - moved to module/json
-list(FILTER CORE_HEADERS EXCLUDE REGEX ".*dap_json\\.h$")
-
 file (GLOB CORE_SRCS src/*.c src/etc/*.c)
-# Exclude dap_json.c - moved to module/json
-list(FILTER CORE_SRCS EXCLUDE REGEX ".*dap_json\\.c$")
 
 if(UNIX)
-    file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h)
-    file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/*.c)
-
     if(MACOS)
+        # macOS: use darwin-specific implementations for cpu_monitor, process_memory, network_monitor
         file (GLOB CORE_HEADERS ${CORE_HEADERS} src/darwin/macos/*.h)
         file (GLOB CORE_SRCS ${CORE_SRCS} src/darwin/macos/*.c)
-    elseif(LINUX)
-        file (GLOB CORE_HEADERS ${CORE_HEADERS} src/unix/linux/*.h)
-        file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/linux/*.c)
+        # Include only process_manager from unix (it uses POSIX APIs that work on macOS)
+        list(APPEND CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/src/unix/dap_process_manager.h)
+        list(APPEND CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/src/unix/dap_process_manager.c)
+    else()
+        # Linux/Android: use unix implementations (they read /proc filesystem)
+        file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h)
+        file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/*.c)
+        if(LINUX)
+            file (GLOB CORE_HEADERS ${CORE_HEADERS} src/unix/linux/*.h)
+            file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/linux/*.c)
+        endif()
     endif()
 elseif(WIN32)
     file (GLOB CORE_SRCS ${CORE_SRCS} src/win32/*.c)
-    # Windows: Add strptime.c from 3rdparty (POSIX function not available)
-    list(APPEND CORE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/strptime.c")
+    # dap_strptime.c is now in src/ and included via glob
 endif()
 
-if (DAP_USE_RPMALLOC)
-    message("[!] rpmalloc ON")
-    file (GLOB CORE_HEADERS ${CORE_HEADERS} ../../3rdparty/rpmalloc/rpmalloc/rpmalloc.h)
-    file (GLOB CORE_SRCS ${CORE_SRCS} ../../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
-endif()
+# rpmalloc removed - was optional allocator, never enabled by default
+# If custom allocator needed, implement via dap_alloc callbacks
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CORE_SRCS} HEADERS ${CORE_HEADERS})
@@ -46,21 +43,23 @@ register_module_headers(DIRECTORIES include)
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Platform-specific include directories
 if(UNIX)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/unix)
+    if(MACOS)
+        # macOS uses darwin/macos implementations
+        target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/darwin/macos)
+        # Also include unix for dap_process_manager.h
+        target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/unix)
+    else()
+        target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/unix)
+    endif()
 endif()
 if(WIN32)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/win32)
 endif()
-if (DAP_USE_RPMALLOC)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/rpmalloc/rpmalloc/)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC DAP_USE_RPMALLOC ENABLE_OVERRIDE=1 ENABLE_PRELOAD=1)
-endif()
+# rpmalloc include/definitions removed - see comment above
 if(WIN32)
     include_directories(include/)
     add_subdirectory(src/win32)
@@ -68,14 +67,18 @@ if(WIN32)
 endif()
 
 if(UNIX)
-    add_subdirectory(src/unix)
-    set(CORE_LIBRARIES dap_core_unix)
     if(MACOS)
+        # macOS: use darwin implementations, skip unix (which uses /proc)
         add_subdirectory(src/darwin)
-        set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_darwin)
-    elseif(NOT ANDROID AND NOT APPLE)
-        # rt (realtime) library is only needed on Linux, not on Apple platforms (macOS/iOS/tvOS/watchOS)
-        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
+        set(CORE_LIBRARIES dap_core_darwin)
+    else()
+        # Linux/other Unix: use unix implementations
+        add_subdirectory(src/unix)
+        set(CORE_LIBRARIES dap_core_unix)
+        if(NOT ANDROID)
+            # rt (realtime) library is only needed on Linux, not on Apple platforms
+            set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
+        endif()
     endif() 
 endif()
 
@@ -84,6 +87,14 @@ if (BUILD_WITH_ZIP)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
 # json-c is now part of module/json - no longer included here
+
+# Link macOS system frameworks (required by dap_network_monitor.c compiled into dap_core)
+if(APPLE)
+    target_link_libraries(${PROJECT_NAME} INTERFACE
+        "-framework CoreFoundation"
+        "-framework SystemConfiguration"
+    )
+endif()
 
 # Store dependencies for final library - no linking of OBJECT targets
 set(DAP_CORE_DEPS "${CORE_LIBRARIES}" CACHE INTERNAL "dap_core external dependencies")
@@ -104,8 +115,6 @@ if(INSTALL_DAP_SDK)
             PUBLIC_HEADER DESTINATION include/dap/core/
     )
 
-
-    INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #if (DAP_OS_LINUX)
     #INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")

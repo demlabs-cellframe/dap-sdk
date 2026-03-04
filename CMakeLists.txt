@@ -25,7 +25,9 @@ else()
     message(STATUS "[Install] Using custom prefix: ${CMAKE_INSTALL_PREFIX}")
 endif()
 
-# Common includes and definitions
+# Build type (Debug / Release / Asan) and DAP_* build variables
+include(cmake/DapBuild.cmake)
+# Common includes and definitions (uses DAP_DEBUG, DAP_RELEASE, DAP_ASAN_BUILD from DapBuild)
 include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)
 include(cmake/PackageComponents.cmake)
@@ -44,11 +46,6 @@ option(BUILD_SHARED "Build final DAP SDK library as shared (default)" ON)
 option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
 
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
-
-# Global DB drivers - MDBX is default for all platforms
-option(BUILD_WITH_GDB_DRIVER_MDBX "Build with MDBX driver for Global DB (default)" ON)
-option(BUILD_WITH_GDB_DRIVER_SQLITE "Build with SQLite driver for Global DB" OFF)  
-option(BUILD_WITH_GDB_DRIVER_PGSQL "Build with PostgreSQL driver for Global DB" OFF)
 
 # Internal modules are ALWAYS static, final can be SHARED or STATIC
 if(BUILD_SHARED)
@@ -85,19 +82,25 @@ endif()
 add_subdirectory(module/json)
 message("[+] Module 'json' (always required)")
 
-# Add DAP SDK unified interface using dap_add_library
-# This ensures dap_sdk_interface is properly registered in DAP_INTERNAL_MODULES
-dap_add_library(dap_sdk_interface dap_sdk.c)
-target_include_directories(dap_sdk_interface PUBLIC 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/module/core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/module/json/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/module/crypto/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/module/io/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/module/global-db/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/module/net/common/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src
-)
+# Math module - uint128_t/uint256_t operations
+add_subdirectory(module/math)
+message("[+] Module 'math'")
+
+# Hash module - hash functions (SHA3, SHA2, Keccak, etc.) and hash tables
+add_subdirectory(module/hash)
+message("[+] Module 'hash'")
+
+# Timer module - interval timers
+add_subdirectory(module/timer)
+message("[+] Module 'timer'")
+
+# Daemon module - daemonization, signals, PID files
+add_subdirectory(module/daemon)
+message("[+] Module 'daemon'")
+
+# Config module - configuration management
+add_subdirectory(module/config)
+message("[+] Module 'config'")
 
 # Optional modules with UPDATED PATHS
 if (DAPSDK_MODULES MATCHES "crypto")
@@ -117,6 +120,14 @@ endif()
 
 # Network common types and functions  
 add_subdirectory(module/net/common)
+
+# Add DAP SDK unified interface using dap_add_library
+# This ensures dap_sdk_interface is properly registered in DAP_INTERNAL_MODULES
+# NOTE: Must be after all modules it depends on (io, net/common, etc.)
+dap_add_library(dap_sdk_interface dap_sdk.c)
+target_include_directories(dap_sdk_interface PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# Link dependencies - include paths propagate through target_link_libraries
+target_link_libraries(dap_sdk_interface dap_core dap_json dap_math dap_hash dap_hash_table dap_timer dap_daemon dap_config dap_io dap_net_common)
 
 # HTTP client
 add_subdirectory(module/net/client_http)
@@ -146,22 +157,8 @@ add_subdirectory(module/net/app-cli)
 message("[+] Module 'app-cli'")
 
 if (DAPSDK_MODULES MATCHES "global-db")
-    # Check if at least one Global DB driver is enabled
-    if(NOT BUILD_WITH_GDB_DRIVER_MDBX AND NOT BUILD_WITH_GDB_DRIVER_SQLITE AND NOT BUILD_WITH_GDB_DRIVER_PGSQL)
-        message(FATAL_ERROR "At least one Global DB driver must be enabled (MDBX, SQLite, or PostgreSQL)")
-    endif()
-    
     add_subdirectory(module/global-db)
-    message("[+] Module 'global-db'")
-    if(BUILD_WITH_GDB_DRIVER_MDBX)
-        message("[+] Global DB: MDBX driver enabled")
-    endif()
-    if(BUILD_WITH_GDB_DRIVER_SQLITE)
-        message("[+] Global DB: SQLite driver enabled")
-    endif()
-    if(BUILD_WITH_GDB_DRIVER_PGSQL)
-        message("[+] Global DB: PostgreSQL driver enabled")
-    endif()
+    message("[+] Module 'global-db' (native B-tree engine)")
 endif()
 
 # Test framework - UPDATED PATH
@@ -197,11 +194,6 @@ if(BUILD_DAP_SDK_TESTS)
     message("[+] Tests enabled with new structure")
 endif()
 
-# Benchmarks (optional)
-if(EXISTS "${CMAKE_SOURCE_DIR}/benchmarks/CMakeLists.txt")
-    add_subdirectory(benchmarks)
-endif()
-
 # Create final combined DAP SDK library
 dap_create_final_library()
 
@@ -228,11 +220,6 @@ if(INSTALL_DAP_SDK)
         OS_SUFFIX "${DAP_PACKAGE_OS_SUFFIX}"
     )
 
-    # Register 3rd party headers required by public API
-    register_3rdparty_headers(
-        DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/uthash/src"
-        DESTINATION "uthash"
-    )
 
     # Note: Module headers are auto-registered by dap_add_library() in each module's CMakeLists.txt
 

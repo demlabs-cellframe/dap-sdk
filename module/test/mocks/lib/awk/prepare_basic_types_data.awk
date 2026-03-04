@@ -1,4 +1,4 @@
-#!/usr/bin/gawk -f
+#!/usr/bin/awk -f
 # Prepare basic types data for template generation
 # Input: BASIC_TYPES (associative array data as basic_type|original_type pairs)
 # Output: BASIC_TYPES_DATA (newline-separated basic_type|normalized_key|escaped_base_key|selector_name)

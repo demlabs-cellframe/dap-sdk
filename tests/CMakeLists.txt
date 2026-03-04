@@ -5,19 +5,16 @@ project(dap_sdk_tests C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Compiler options for tests
-add_compile_options(-Wall -Wextra -Werror)
+# Warning flags inherited from cmake/OS_Detection.cmake (CFLAGS_WARNINGS via CMAKE_C_FLAGS)
 
 # Include directories for DAP SDK
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../dap-sdk/module/core/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/core/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/io/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/net/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../module/global-db/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/utilities
 )
@@ -40,12 +37,9 @@ file(GLOB FIXTURES_SOURCES
 
 if(FIXTURES_SOURCES)
     add_library(dap_test_fixtures STATIC ${FIXTURES_SOURCES})
+    # dap_sdk propagates all include directories from modules
     target_link_libraries(dap_test_fixtures dap_sdk)
     target_include_directories(dap_test_fixtures PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/..
-        ${CMAKE_SOURCE_DIR}/../../dap-sdk/module/core/include
-        ${CMAKE_SOURCE_DIR}/module/core/include
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/utilities
     )
     message("[+] Test fixtures library created")
@@ -62,14 +56,11 @@ function(add_dap_test TEST_NAME TEST_SOURCE)
     
     # Include DAP SDK headers
     target_include_directories(${TEST_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/..
-        ${CMAKE_SOURCE_DIR}/../../dap-sdk/module/core/include
-        ${CMAKE_SOURCE_DIR}/module/core/include
-        ${CMAKE_SOURCE_DIR}/module/crypto/include
-        ${CMAKE_SOURCE_DIR}/module/io/include
-        ${CMAKE_SOURCE_DIR}/module/global-db/include
-        ${CMAKE_SOURCE_DIR}/3rdparty/uthash/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/core/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/io/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/global-db/include
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
     )
     
@@ -144,10 +135,42 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/json/CMakeLists.txt)
     message("[+] JSON module unit tests configured (Phase 0.2 + Phase 1.1)")
 endif()
 
+# GlobalDB module unit tests (B-tree, Storage, Migration)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/global-db/CMakeLists.txt)
+    add_subdirectory(unit/global-db)
+endif()
+
 # Crypto module unit tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/hash/test_sha3.c)
     add_dap_test(test_unit_crypto_sha3 unit/crypto/hash/test_sha3.c)
     register_dap_test(test_unit_crypto_sha3 "unit;crypto;hash")
+endif()
+
+# Keccak/SHA3 Known Answer Tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keccak/test_sha3_kat.c)
+    add_dap_test(test_unit_crypto_sha3_kat unit/crypto/keccak/test_sha3_kat.c)
+    register_dap_test(test_unit_crypto_sha3_kat "unit;crypto;sha3;keccak")
+endif()
+
+# ECDSA Field Operations Tests
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_field_mul.c)
+    add_dap_test(test_field_mul unit/crypto/test_field_mul.c)
+    target_include_directories(test_field_mul PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa/arch
+    )
+    register_dap_test(test_field_mul "unit;crypto;ecdsa")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_ecdsa_debug.c)
+    add_dap_test(test_ecdsa_debug unit/crypto/test_ecdsa_debug.c)
+    target_include_directories(test_ecdsa_debug PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa/arch
+    )
+    register_dap_test(test_ecdsa_debug "unit;crypto;ecdsa")
 endif()
 
 
@@ -192,6 +215,33 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/json/CMakeLists.txt)
     add_subdirectory(performance/json)
     message("[+] JSON performance benchmarks configured")
+endif()
+
+# Performance benchmarks options
+option(BUILD_BENCHMARKS "Build performance benchmarks with competitor implementations" OFF)
+option(BENCHMARK_COMPETITORS "Include competitor hash table implementations in benchmark" OFF)
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/hashtable/CMakeLists.txt)
+    add_subdirectory(performance/hashtable)
+    message("[+] Hash Table performance benchmarks configured")
+endif()
+
+# Keccak/SHA3 performance benchmarks (dap_keccak vs XKCP, tiny_sha3)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/keccak/CMakeLists.txt)
+    add_subdirectory(performance/keccak)
+    message("[+] Keccak/SHA3 performance benchmarks configured")
+endif()
+
+# ECDSA performance benchmarks (DAP vs bitcoin-core/secp256k1, OpenSSL)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/ecdsa/CMakeLists.txt)
+    add_subdirectory(performance/ecdsa)
+    message("[+] ECDSA performance benchmarks configured")
+endif()
+
+# GlobalDB/KV Storage performance benchmarks (DAP vs MDBX, LMDB, RocksDB, LevelDB)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/global_db/CMakeLists.txt)
+    add_subdirectory(performance/global_db)
+    message("[+] GlobalDB/KV Storage performance benchmarks configured")
 endif()
 
 # Build Regression Tests  
@@ -277,20 +327,14 @@ list(LENGTH SECURITY_TEST_FILES SECURITY_COUNT)
 message("[+] Test Discovery Results:")
 message("[+] - Unit test files found: ${UNIT_COUNT}")
 message("[+] - Integration test files found: ${INTEGRATION_COUNT}")
-message("[+] - E2E test files found: ${E2E_COUNT}")
 message("[+] - Performance test files found: ${PERFORMANCE_COUNT}")
-message("[+] - Functional test files found: ${FUNCTIONAL_COUNT}")
 message("[+] - Regression test files found: ${REGRESSION_COUNT}")
-message("[+] - Security test files found: ${SECURITY_COUNT}")
 
 message("[+] Test targets available:")
 message("[+] - make test_unit        : Run only unit tests")
 message("[+] - make test_integration : Run only integration tests")
-message("[+] - make test_e2e         : Run only E2E tests")
 message("[+] - make test_performance : Run only performance tests")
-message("[+] - make test_functional  : Run only functional tests")
 message("[+] - make test_regression  : Run only regression tests")
-message("[+] - make test_security    : Run only security tests")
 message("[+] - make test_crypto      : Run all crypto-related tests")
 message("[+] - make test_all         : Run all tests")
 message("[+] - ctest                 : Run all tests with CTest")

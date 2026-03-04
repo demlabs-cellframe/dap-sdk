@@ -24,37 +24,55 @@ tests:amd64.debian:
     extends: .tests
     image: demlabs/debian/amd64:qt6
     before_script:
-      - apt-get update -qq && apt-get install -y -qq gawk
+      - set -eo pipefail
+      - apt-get update -qq
+      - apt-get install -y -qq gawk
       - /opt/buildtools/prepare_environment.sh amd64-linux 
     script:
+      - set -eo pipefail
       - pwd
       - env
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
+      - cd build
+      - cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON
+      - make -j$(nproc)
+      - ctest --verbose
 
 tests:arm32.debian:
     extends: .tests
     image: demlabs/debian/amd64:cross
     script:
+      - set -eo pipefail
       - mkdir build
-      - cd build && cmake-arm32 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - cd build
+      - cmake-arm32 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON
+      - make -j$(nproc)
       - ctest --verbose
 
 tests:arm64.debian:
     extends: .tests
     image: demlabs/debian/amd64:cross
     script:
+      - set -eo pipefail
       - mkdir build
-      - cd build && cmake-arm64 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - cd build
+      - cmake-arm64 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON
+      - make -j$(nproc)
       - ctest --verbose
 
 tests:amd64.windows:
     extends: .tests
     image: demlabs/windows/amd64:qt6
-    before_script: /opt/buildtools/prepare_environment.sh amd64-windows
+    before_script:
+      - set -eo pipefail
+      - /opt/buildtools/prepare_environment.sh amd64-windows
     script:
+      - set -eo pipefail
       - mkdir build
-      - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release  -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/wine && make -j$(nproc)
+      - cd build
+      - export PATH=${MXE_ROOT}/usr/bin:$PATH
+      - x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_PGSQL=0 -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/wine
+      - make -j$(nproc)
       - ctest --verbose
 
 tests:arm64.macos:
@@ -62,15 +80,23 @@ tests:arm64.macos:
     tags:
       - macos-native
     script:
+      - set -eo pipefail
       - mkdir build
-      - cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_DAP_SDK_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_PGSQL=0 .. && make -j$(nproc)
+      - cd build
+      - cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_DAP_SDK_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_PGSQL=0 ..
+      - make -j$(sysctl -n hw.ncpu)
       - ctest --verbose
 
 build:any.android:
     extends: .tests
     image: demlabs/android/any:qt6
-    before_script: /opt/buildtools/prepare_environment.sh amd64-osx
+    before_script:
+      - set -eo pipefail
+      - /opt/buildtools/prepare_environment.sh amd64-osx
     script:
+      - set -eo pipefail
       - mkdir build
-      - cd build &&  cmake -DANDROID_PLATFORM=29 -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${ANDROID_CMAKE_TOOLCHAIN} .. && make -j$(nproc)
+      - cd build
+      - cmake -DANDROID_PLATFORM=29 -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${ANDROID_CMAKE_TOOLCHAIN} ..
+      - make -j$(nproc)
 

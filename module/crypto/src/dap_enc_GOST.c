@@ -8,7 +8,8 @@
 #include "dap_common.h"
 #include "dap_time.h"
 #include "rand/dap_rand.h"
-#include "KeccakHash.h"
+#include "dap_hash_keccak.h"
+#include "dap_hash_sha3.h"
 
 #define LOG_TAG "dap_enc_gost"
 
@@ -19,12 +20,13 @@ void dap_enc_gost_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     a_key->priv_key_data_size = 32;
     a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);
 
-    Keccak_HashInstance Keccak_ctx;
-    Keccak_HashInitialize(&Keccak_ctx, 1088,  512, a_key->priv_key_data_size*8, 0x06);
-    Keccak_HashUpdate(&Keccak_ctx, kex_buf, kex_size*8);
-    if(seed_size)
-        Keccak_HashUpdate(&Keccak_ctx, seed, seed_size*8);
-    Keccak_HashFinal(&Keccak_ctx, a_key->priv_key_data);
+    // Use SHA3-256 sponge construction for key derivation
+    dap_hash_keccak_ctx_t l_ctx;
+    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_256_RATE, DAP_KECCAK_SHA3_SUFFIX);
+    dap_hash_keccak_sponge_absorb(&l_ctx, kex_buf, kex_size);
+    if (seed_size)
+        dap_hash_keccak_sponge_absorb(&l_ctx, seed, seed_size);
+    dap_hash_keccak_sponge_squeeze(&l_ctx, a_key->priv_key_data, a_key->priv_key_data_size);
 }
 
 void dap_enc_gost_key_delete(struct dap_enc_key *a_key)
@@ -51,11 +53,11 @@ void dap_enc_gost_ofb_key_new(struct dap_enc_key * a_key)
 
 size_t dap_enc_gost_ofb_decrypt(struct dap_enc_key *a_key, const void * a_in, size_t a_in_size, void ** a_out)
 {
-    size_t l_out_size = a_in_size - kBlockLen89;
-    if(l_out_size <= 0) {
+    if(a_in_size <= kBlockLen89) {
         log_it(L_ERROR, "gost_ofb decryption ct with iv must be more than kBlockLen89 bytes");
         return 0;
     }
+    size_t l_out_size = a_in_size - kBlockLen89;
     *a_out = DAP_NEW_SIZE(uint8_t, a_in_size - kBlockLen89);
     l_out_size = dap_enc_gost_ofb_decrypt_fast(a_key, a_in, a_in_size, *a_out, l_out_size);
     if(l_out_size == 0)
@@ -93,6 +95,10 @@ size_t dap_enc_gost_ofb_calc_decode_size(const size_t size_in)
 
 size_t dap_enc_gost_ofb_decrypt_fast(struct dap_enc_key *a_key, const void * a_in,
         size_t a_in_size, void * a_out, size_t buf_out_size) {
+    if(a_in_size <= kBlockLen89) {
+        log_it(L_ERROR, "gost_ofb fast_decryption too small a_in_size");
+        return 0;
+    }
     size_t l_out_size = a_in_size - kBlockLen89;
     if(l_out_size > buf_out_size) {
         log_it(L_ERROR, "gost_ofb fast_decryption too small buf_out_size");
@@ -102,13 +108,15 @@ size_t dap_enc_gost_ofb_decrypt_fast(struct dap_enc_key *a_key, const void * a_i
 
     memcpy(iv, a_in, kBlockLen89);
 
-    unsigned char ctx[kOfb89ContextLen];
+    unsigned char ctx[kOfb89ContextLen] = {0};
     if(init_ofb_89(a_key->priv_key_data, ctx, kBlockLen89, iv, kBlockLen89,NULL, NULL))//, print_array, print_uint_array))
     {
+         free_ofb(ctx);
          return 0;
     }
     if(crypt_ofb(ctx, a_in + kBlockLen89, a_out, a_in_size - kBlockLen89))
     {
+         free_ofb(ctx);
          return 0;
     }
     free_ofb(ctx);
@@ -117,6 +125,10 @@ size_t dap_enc_gost_ofb_decrypt_fast(struct dap_enc_key *a_key, const void * a_i
 
 size_t dap_enc_gost_ofb_encrypt_fast(struct dap_enc_key * a_key, const void * a_in, size_t a_in_size, void * a_out,size_t buf_out_size)
 {
+    if(a_in_size <= 0) {
+        log_it(L_ERROR, "gost_ofb fast_encryption too small a_in_size");
+        return 0;
+    }
     //generate iv and put it in *a_out first bytes
     size_t l_out_size = a_in_size + kBlockLen89;
     if(l_out_size > buf_out_size) {
@@ -132,13 +144,15 @@ size_t dap_enc_gost_ofb_encrypt_fast(struct dap_enc_key * a_key, const void * a_
     }
 
     memcpy(a_out, iv, kBlockLen89);
-    unsigned char ctx[kOfb89ContextLen];
+    unsigned char ctx[kOfb89ContextLen] = {0};
     if(init_ofb_89(a_key->priv_key_data, ctx, kBlockLen89, iv, kBlockLen89,NULL, NULL))//, print_array, print_uint_array))
     {
+        free_ofb(ctx);
         return 0;
     }
     if(crypt_ofb(ctx, a_in, a_out + kBlockLen89, a_in_size))
     {
+        free_ofb(ctx);
         return 0;
     }
     free_ofb(ctx);
@@ -150,7 +164,7 @@ void dap_enc_kuzn_ofb_key_new(struct dap_enc_key * a_key)
 {
     a_key->_inheritor = NULL;
     a_key->_inheritor_size = 0;
-    a_key->type = DAP_ENC_KEY_TYPE_GOST_OFB;
+    a_key->type = DAP_ENC_KEY_TYPE_KUZN_OFB;
     a_key->enc = dap_enc_kuzn_ofb_encrypt;
     a_key->dec = dap_enc_kuzn_ofb_decrypt;
     a_key->enc_na = dap_enc_kuzn_ofb_encrypt_fast;
@@ -193,14 +207,20 @@ size_t dap_enc_kuzn_ofb_encrypt_fast(struct dap_enc_key * a_key, const void * a_
     }
 
 
-    unsigned char ctx[kOfb14ContextLen];
+    unsigned char ctx[kOfb14ContextLen] = {0};
 
 
     if(init_ofb_14(a_key->priv_key_data, ctx, kBlockLen14, a_out, kBlockLen14, NULL,NULL))
-         return -1;
+    {
+         free_ofb(ctx);
+         return 0;
+    }
 
     if(crypt_ofb(ctx, a_in, a_out + kBlockLen14, a_in_size))
-         return -1;
+    {
+         free_ofb(ctx);
+         return 0;
+    }
 
     free_ofb(ctx);
     return l_out_size;
@@ -209,25 +229,31 @@ size_t dap_enc_kuzn_ofb_encrypt_fast(struct dap_enc_key * a_key, const void * a_
 size_t dap_enc_kuzn_ofb_decrypt_fast(struct dap_enc_key *a_key, const void * a_in,
         size_t a_in_size, void * a_out, size_t buf_out_size)
 {
-    size_t l_out_size = a_in_size - kBlockLen14;
-    if(l_out_size <= 0) {
+    if(a_in_size <= kBlockLen14) {
         log_it(L_ERROR, "kuzn_ofb fast_decryption too small a_in_size");
         return 0;
     }
+    size_t l_out_size = a_in_size - kBlockLen14;
 
     if(l_out_size > buf_out_size) {
         log_it(L_ERROR, "kuzn_ofb fast_decryption too small buf_out_size");
         return 0;
     }
 
-    unsigned char ctx[kOfb14ContextLen];
+    unsigned char ctx[kOfb14ContextLen] = {0};
     //iv first kBlockLen14 a_in bytes
 
     if(init_ofb_14(a_key->priv_key_data, ctx, kBlockLen14, a_in, kBlockLen14, NULL, NULL))
-         return -1;
+    {
+         free_ofb(ctx);
+         return 0;
+    }
 
     if(decrypt_ofb(ctx, a_in + kBlockLen14, a_out, l_out_size))
-         return -1;
+    {
+         free_ofb(ctx);
+         return 0;
+    }
 
     free_ofb(ctx);
     return l_out_size;
@@ -235,11 +261,11 @@ size_t dap_enc_kuzn_ofb_decrypt_fast(struct dap_enc_key *a_key, const void * a_i
 size_t dap_enc_kuzn_ofb_decrypt(struct dap_enc_key *a_key, const void * a_in,
         size_t a_in_size, void ** a_out) {
 
-    size_t l_out_size = a_in_size - kBlockLen14;
-    if(l_out_size <= 0) {
+    if(a_in_size <= kBlockLen14) {
         log_it(L_ERROR, "kuzn_ofb decryption too small a_in_size");
         return 0;
     }
+    size_t l_out_size = a_in_size - kBlockLen14;
 
     *a_out = DAP_NEW_SIZE(uint8_t, l_out_size);
     l_out_size = dap_enc_kuzn_ofb_decrypt_fast(a_key, a_in, a_in_size, *a_out, l_out_size);

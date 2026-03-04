@@ -44,13 +44,13 @@ static bool s_benchmark_hash_performance(void) {
     
     const char* l_test_data = "DAP SDK performance test data for hashing benchmarks";
     size_t l_data_size = strlen(l_test_data);
-    dap_hash_fast_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     
     dap_test_timer_t l_timer;
     dap_test_timer_start(&l_timer);
     
     for (size_t i = 0; i < HASH_ITERATIONS; i++) {
-        bool l_ret = dap_hash_fast(l_test_data, l_data_size, &l_hash);
+        bool l_ret = dap_hash_sha3_256(l_test_data, l_data_size, &l_hash);
         if (l_ret != true) {
             log_it(L_ERROR, "Hash calculation failed at iteration %zu", i);
             return false;

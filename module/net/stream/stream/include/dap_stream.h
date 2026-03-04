@@ -37,6 +37,7 @@
 #include "dap_strfuncs.h"
 #include "dap_enc_ks.h"
 #include "dap_net_common.h"
+#include "dap_ht.h"
 
 #define STREAM_KEEPALIVE_HEARTBEAT  3   // How often send keeplive messages (seconds)
 #define STREAM_KEEPALIVE_DELAY      10  // Minimum seconds to wait before send 1st keepalive message (maximum is 2*DELAY) after stream reading last activity
@@ -73,7 +74,7 @@ typedef struct dap_stream {
     size_t stream_size;
     size_t client_last_seq_id_packet;
 
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
     struct dap_stream *prev, *next;
 } dap_stream_t;
 
@@ -116,13 +117,13 @@ DAP_STATIC_INLINE char* dap_stream_node_addr_to_str(dap_stream_node_addr_t a_add
 }
 
 
-DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
+DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_sha3_256_t *a_hash, dap_stream_node_addr_t *a_node_addr)
 {
     // Copy fist four and last four octets of hash to fill node addr
     a_node_addr->words[3] = *(uint16_t *)a_hash->raw;
     a_node_addr->words[2] = *(uint16_t *)(a_hash->raw + sizeof(uint16_t));
-    a_node_addr->words[1] = *(uint16_t *)(a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint16_t) * 2);
-    a_node_addr->words[0] = *(uint16_t *)(a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint16_t));
+    a_node_addr->words[1] = *(uint16_t *)(a_hash->raw + DAP_HASH_SHA3_256_SIZE - sizeof(uint16_t) * 2);
+    a_node_addr->words[0] = *(uint16_t *)(a_hash->raw + DAP_HASH_SHA3_256_SIZE - sizeof(uint16_t));
 }
 
 #define DAP_STREAM(a) ((dap_stream_t *) (a)->_inheritor )

@@ -1,14 +1,21 @@
+/*
+ * Authors:
+ * Cellframe Team <https://cellframe.net>
+ * DeM Labs Inc.   https://demlabs.net
+ * Copyright  (c) 2017-2025
+ * All rights reserved.
+ *
+ * This file is part of DAP (Distributed Applications Platform) the open source project
+ *
+ *    DAP is free software: you can redistribute it and/or modify
+ *    it under the terms of the GNU General Public License as published by
+ *    the Free Software Foundation, either version 3 of the License, or
+ *    (at your option) any later version.
+ */
+
 /**
- * @file test_async_framework.c
+ * @file test_async.c
  * @brief Unit tests for DAP SDK Async Test Framework
- * @details Tests all async testing utilities:
- *          - Global timeout handling
- *          - Condition polling
- *          - pthread condition variable helpers
- *          - Time utilities
- * 
- * @date 2025-10-27
- * @copyright (c) 2025 Demlabs
  */
 
 #include "dap_test.h"
@@ -347,7 +354,7 @@ int main(int argc, char **argv)
     // Initialize DAP SDK
     int l_ret = dap_common_init("test_async", NULL);
     if (l_ret != 0) {
-        printf("Failed to initialize DAP SDK\n");
+        log_it(L_ERROR, "Failed to initialize DAP SDK");
         return 1;
     }
     

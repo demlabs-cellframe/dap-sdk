@@ -8,7 +8,8 @@
 #include "dap_common.h"
 #include "dap_time.h"
 #include "rand/dap_rand.h"
-#include "KeccakHash.h"
+#include "dap_hash_keccak.h"
+#include "dap_hash_sha3.h"
 
 #define LOG_TAG "dap_enc_blowfish"
 
@@ -23,12 +24,14 @@ void dap_enc_bf_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);
 
     uint8_t *tmp_buf = DAP_NEW_SIZE(uint8_t, (BF_ROUNDS + 2)*4);
-    Keccak_HashInstance Keccak_ctx;
-    Keccak_HashInitialize(&Keccak_ctx, 1088,  512, (BF_ROUNDS + 2)*4*8, 0x06);
-    Keccak_HashUpdate(&Keccak_ctx, kex_buf, kex_size*8);
-    if(seed_size)
-        Keccak_HashUpdate(&Keccak_ctx, seed, seed_size*8);
-    Keccak_HashFinal(&Keccak_ctx, tmp_buf);
+    
+    // Use SHA3-256 sponge construction for key derivation
+    dap_hash_keccak_ctx_t l_ctx;
+    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_256_RATE, DAP_KECCAK_SHA3_SUFFIX);
+    dap_hash_keccak_sponge_absorb(&l_ctx, kex_buf, kex_size);
+    if (seed_size)
+        dap_hash_keccak_sponge_absorb(&l_ctx, seed, seed_size);
+    dap_hash_keccak_sponge_squeeze(&l_ctx, tmp_buf, (BF_ROUNDS + 2)*4);
 
     BF_set_key(a_key->priv_key_data, (BF_ROUNDS + 2)*4, tmp_buf);
     DAP_DELETE(tmp_buf);

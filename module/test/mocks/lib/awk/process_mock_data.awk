@@ -12,21 +12,32 @@
 #   - ALL_TYPES_PAIRS (multiline string)
 #   - ORIGINAL_TYPES (associative array)
 #
-# The output can be executed via: eval "$(gawk -f process_mock_data.awk ...)"
+# The output can be executed via: eval "$(awk -f process_mock_data.awk ...)"
 
 # Function to escape shell special characters
 function shell_escape(str) {
-    # Replace single quotes with '\''
     gsub(/'/, "'\\''", str)
     return str
 }
 
 # Function to escape array key (for associative array)
 function shell_escape_key(str) {
-    # Replace special characters that could break array key syntax
     gsub(/[\[\]"]/, "", str)
     gsub(/'/, "'\\''", str)
     return str
+}
+
+# mawk-compatible insertion sort (asort is gawk-only)
+function sort_array(arr, n,    i, j, tmp) {
+    for (i = 2; i <= n; i++) {
+        tmp = arr[i]
+        j = i - 1
+        while (j >= 1 && arr[j] > tmp) {
+            arr[j + 1] = arr[j]
+            j--
+        }
+        arr[j + 1] = tmp
+    }
 }
 
 BEGIN {
@@ -124,7 +135,7 @@ BEGIN {
     close(return_types_file)
     
     # Sort and join return types
-    asort(return_types_array)
+    sort_array(return_types_array, return_types_count)
     for (i = 1; i <= return_types_count; i++) {
         if (return_types_str == "") {
             return_types_str = return_types_array[i]
@@ -134,7 +145,7 @@ BEGIN {
     }
     
     # Sort and join return pairs
-    asort(return_pairs_array)
+    sort_array(return_pairs_array, return_pairs_count)
     for (i = 1; i <= return_pairs_count; i++) {
         if (return_types_pairs_str == "") {
             return_types_pairs_str = return_pairs_array[i]
@@ -178,7 +189,7 @@ BEGIN {
     close(all_types_file)
     
     # Sort and join all pairs
-    asort(all_pairs_array)
+    sort_array(all_pairs_array, all_pairs_count)
     for (i = 1; i <= all_pairs_count; i++) {
         if (all_types_pairs_str == "") {
             all_types_pairs_str = all_pairs_array[i]
@@ -188,13 +199,14 @@ BEGIN {
     }
     
     # Output shell-compatible code to set all variables
+    # Note: avoid 'declare -g' as it's not supported in bash 3.x (macOS default)
     # Set PARAM_COUNTS_ARRAY
     if (param_counts_str == "") {
-        print "declare -ga PARAM_COUNTS_ARRAY=(0)"
+        print "PARAM_COUNTS_ARRAY=(0)"
     } else {
         # Split and output as array
         split(param_counts_str, param_array, " ")
-        printf "declare -ga PARAM_COUNTS_ARRAY=("
+        printf "PARAM_COUNTS_ARRAY=("
         for (i = 1; i <= length(param_array); i++) {
             if (i > 1) printf " "
             printf "%s", param_array[i]
@@ -203,7 +215,7 @@ BEGIN {
     }
     
     # Set MAX_ARGS_COUNT
-    print "declare -gi MAX_ARGS_COUNT=" max_args_count
+    print "MAX_ARGS_COUNT=" max_args_count
     
     # Set RETURN_TYPES (trimmed)
     gsub(/^[ \t]+|[ \t]+$/, "", return_types_str)
@@ -232,7 +244,8 @@ BEGIN {
     print "'"
     
     # Set ORIGINAL_TYPES associative array from RETURN_TYPES_PAIRS
-    print "declare -gA ORIGINAL_TYPES"
+    # Note: associative arrays require bash 4+, but we initialize empty for compatibility
+    print "ORIGINAL_TYPES=()"
     if (return_types_pairs_str != "") {
         # Split by newlines and process each pair
         split(return_types_pairs_str, pairs_array, "\n")

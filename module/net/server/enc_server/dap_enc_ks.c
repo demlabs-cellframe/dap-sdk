@@ -29,7 +29,7 @@
 
 #include <pthread.h>
 
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_common.h"
 
 #include "../http_server/http_client/include/dap_http_client.h"
@@ -51,9 +51,9 @@ void dap_enc_ks_deinit()
 {
     if (_ks) {
         dap_enc_ks_key_t *cur_item, *tmp;
-        HASH_ITER(hh, _ks, cur_item, tmp) {
+        dap_ht_foreach(_ks, cur_item, tmp) {
             // Clang bug at this, cur_item should change at every loop cycle
-            HASH_DEL(_ks, cur_item);
+            dap_ht_del(_ks, cur_item);
             s_enc_key_free(&cur_item);
         }
     }
@@ -67,7 +67,7 @@ inline static void s_gen_session_id(char a_id_buf[DAP_ENC_KS_KEY_ID_SIZE])
 
 void s_save_key_in_storge(dap_enc_ks_key_t *a_key)
 {
-    HASH_ADD_STR(_ks,id,a_key);
+    dap_ht_add_str(_ks, id, a_key);
     if(s_memcache_enable) {
         uint8_t* l_serialize_key = dap_enc_key_serialize(a_key->key, NULL);
         //dap_memcache_put(a_key->id, l_serialize_key, sizeof (dap_enc_key_serialize_t), s_memcache_expiration_key);
@@ -79,7 +79,7 @@ void s_save_key_in_storge(dap_enc_ks_key_t *a_key)
 dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id)
 {
     dap_enc_ks_key_t * ret = NULL;
-    HASH_FIND_STR(_ks,v_id,ret);
+    dap_ht_find_str(_ks, v_id, ret);
     if(ret == NULL) {
         if(s_memcache_enable) {
             /*void* l_key_buf;
@@ -94,7 +94,7 @@ dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id)
                 strncpy(ret->id, v_id, DAP_ENC_KS_KEY_ID_SIZE);
                 pthread_mutex_init(&ret->mutex,NULL);
                 ret->key = key;
-                HASH_ADD_STR(_ks,id,ret);
+                dap_ht_add_str(_ks, id, ret);
                 free(l_key_buf);
                 return ret;
             }*/
@@ -162,7 +162,7 @@ void dap_enc_ks_delete(const char *id)
 {
     dap_enc_ks_key_t *delItem = dap_enc_ks_find(id);
     if (delItem) {
-        HASH_DEL (_ks, delItem);
+        dap_ht_del(_ks, delItem);
         pthread_mutex_destroy(&delItem->mutex);
         s_enc_key_free(&delItem);
         return;

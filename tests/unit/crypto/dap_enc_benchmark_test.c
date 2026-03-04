@@ -4,13 +4,13 @@
 #include "dap_test.h"
 #include "dap_enc_test.h"
 #include "rand/dap_rand.h"
-#include "uthash.h"
+#include "dap_ht.h"
 #define LOG_TAG "dap_crypto_benchmark_tests"
 
 typedef struct pkey_hash_table {
     uint8_t *pkey_hash;
     dap_pkey_t *pkey;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } pkey_hash_table_t;
 
 static pkey_hash_table_t *s_pkey_hash_table = NULL;
@@ -20,8 +20,8 @@ static dap_pkey_t *s_get_pkey_by_hash_callback(const uint8_t *a_hash)
     pkey_hash_table_t *l_finded = NULL;
 
     pkey_hash_table_t *l_temp, *l_current = NULL;
-    HASH_ITER(hh, s_pkey_hash_table, l_current, l_temp){
-        if (!memcmp(l_current->pkey_hash, a_hash, DAP_CHAIN_HASH_FAST_SIZE))
+    dap_ht_foreach(s_pkey_hash_table, l_current, l_temp) {
+        if (!memcmp(l_current->pkey_hash, a_hash, DAP_HASH_SHA3_256_SIZE))
             l_finded = l_current;
     }
     return l_finded->pkey;
@@ -139,8 +139,8 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
         if (l_keys[i]->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_signed = l_keys[i]->sign_get(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
         else {
-            dap_chain_hash_fast_t l_hash;
-            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            dap_hash_sha3_256_t l_hash;
+            dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             l_signed = l_keys[i]->sign_get(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
         }
         *a_sig_time += get_cur_time_msec() - l_t1;
@@ -153,8 +153,8 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
         if (l_keys[i]->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_verified = l_keys[i]->sign_verify(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
         else {
-            dap_chain_hash_fast_t l_hash;
-            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            dap_hash_sha3_256_t l_hash;
+            dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             l_verified = l_keys[i]->sign_verify(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
         }
         dap_assert_PIF(!l_verified, "Verifying signature");
@@ -196,23 +196,23 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         dap_enc_key_t *key = dap_enc_key_new_generate(a_key_type, l_key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
         uint32_t l_hash_type = i % 2 ? DAP_SIGN_ADD_PKEY_HASHING_FLAG(DAP_SIGN_HASH_TYPE_DEFAULT) : DAP_SIGN_HASH_TYPE_DEFAULT;
         
-        dap_chain_hash_fast_t l_hash = {};
+        dap_hash_sha3_256_t l_hash = {};
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_signs[i] = dap_sign_create_with_hash_type(key, l_source[i], l_source_size[i], l_hash_type);
         else {
-            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             l_signs[i] = dap_sign_create_with_hash_type(key, &l_hash, sizeof(l_hash), l_hash_type);
         }
         if (i % 2) {
             pkey_hash_table_t *l_item = DAP_NEW_Z(pkey_hash_table_t);
-            l_item->pkey_hash = DAP_NEW_Z(dap_chain_hash_fast_t);
-            dap_enc_key_get_pkey_hash(key, (dap_chain_hash_fast_t *)l_item->pkey_hash);
+            l_item->pkey_hash = DAP_NEW_Z(dap_hash_sha3_256_t);
+            dap_enc_key_get_pkey_hash(key, DAP_HASH_TYPE_SHA3_256, (byte_t *)l_item->pkey_hash, sizeof(dap_hash_sha3_256_t));
             
             dap_assert_PIF(dap_sign_get_pkey_hash(l_signs[i], &l_hash), "Get pkeyhash by sign");
-            dap_assert_PIF(!memcmp(l_item->pkey_hash, &l_hash, DAP_CHAIN_HASH_FAST_SIZE), "pkey hash in enc_key and sign equal")
+            dap_assert_PIF(!memcmp(l_item->pkey_hash, &l_hash, DAP_HASH_SHA3_256_SIZE), "pkey hash in enc_key and sign equal")
 
             l_item->pkey = dap_pkey_from_enc_key (key);
-            HASH_ADD(hh, s_pkey_hash_table, pkey_hash, DAP_CHAIN_HASH_FAST_SIZE, l_item);
+            dap_ht_add_keyptr(s_pkey_hash_table, l_item->pkey_hash, DAP_HASH_SHA3_256_SIZE, l_item);
         }
         *a_sig_time += get_cur_time_msec() - l_t1;
         
@@ -225,17 +225,17 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         int l_verified = 0;
         if (dap_sign_type_to_key_type(l_signs[i]->header.type) == DAP_ENC_KEY_TYPE_SIG_ECDSA) {
             if (dap_sign_is_use_pkey_hash(l_signs[i])) {
-                dap_hash_fast_t l_sign_pkey_hash = {};
+                dap_hash_sha3_256_t l_sign_pkey_hash = {};
                 dap_sign_get_pkey_hash(l_signs[i], &l_sign_pkey_hash);
                 l_verified = dap_sign_verify_by_pkey(l_signs[i], l_source[i], l_source_size[i], s_get_pkey_by_hash_callback( (const uint8_t *)&l_sign_pkey_hash));
             } else {
                 l_verified = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
             }
         } else {
-            dap_chain_hash_fast_t l_hash;
-            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            dap_hash_sha3_256_t l_hash;
+            dap_hash_sha3_256(l_source[i], l_source_size[i], &l_hash);
             if (dap_sign_is_use_pkey_hash(l_signs[i])) {
-                dap_hash_fast_t l_sign_pkey_hash = {};
+                dap_hash_sha3_256_t l_sign_pkey_hash = {};
                 dap_sign_get_pkey_hash(l_signs[i], &l_sign_pkey_hash);
                 l_verified = dap_sign_verify_by_pkey(l_signs[i], &l_hash, sizeof(l_hash), s_get_pkey_by_hash_callback( (const uint8_t *)&l_sign_pkey_hash));
             } else {
@@ -250,8 +250,8 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         DAP_DEL_MULTY(l_signs[i], l_source[i]);
     }
     pkey_hash_table_t *l_temp, *l_current = NULL;
-    HASH_ITER(hh, s_pkey_hash_table, l_current, l_temp){
-        HASH_DEL(s_pkey_hash_table, l_current);
+    dap_ht_foreach(s_pkey_hash_table, l_current, l_temp) {
+        dap_ht_del(s_pkey_hash_table, l_current);
         DAP_DEL_MULTY(l_current->pkey, l_current->pkey_hash, l_current);
     }
 }

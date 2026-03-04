@@ -45,6 +45,9 @@ add_executable(${PROJECT_NAME}
     test_numeric_edge_cases.c
 )
 
+# Disable -ffast-math for this test: it tests NaN/Infinity round-trip which requires IEEE 754 compliance
+target_compile_options(${PROJECT_NAME} PRIVATE -fno-fast-math -fno-finite-math-only)
+
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 
@@ -585,19 +588,19 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;sch
 # Phase 2 Profiling Tool
 project(profile_stage2)
 add_executable(${PROJECT_NAME} profile_stage2.c)
-target_link_libraries(${PROJECT_NAME} dap_json dap_core)
+target_link_libraries(${PROJECT_NAME} dap_json dap_core dap_math)
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/unit/json")
 
 # Profile Number Parsing (Phase 2.2)
 project(profile_numbers)
 add_executable(${PROJECT_NAME} profile_numbers.c)
-target_link_libraries(${PROJECT_NAME} dap_json dap_core)
+target_link_libraries(${PROJECT_NAME} dap_json dap_core dap_math)
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/unit/json")
 
 # Deep Nesting Benchmark (Phase 2.4)
 project(benchmark_deep_nesting)
 add_executable(${PROJECT_NAME} benchmark_deep_nesting.c)
-target_link_libraries(${PROJECT_NAME} dap_json dap_core)
+target_link_libraries(${PROJECT_NAME} dap_json dap_core dap_math)
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/unit/json")
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;benchmark;phase2.4")
@@ -651,5 +654,5 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 # Small JSON Profiling Micro-benchmark (Phase 3)
 project(profile_small_json)
 add_executable(${PROJECT_NAME} profile_small_json.c)
-target_link_libraries(${PROJECT_NAME} dap_json dap_core)
+target_link_libraries(${PROJECT_NAME} dap_json dap_core dap_math)
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/unit/json")

@@ -5,6 +5,8 @@
 
 
 #define LOG_TAG "dap_enc_msrln"
+// MSRLN backend consumes SecretKeyA as int32_t[1024] (4096 bytes).
+#define DAP_MSRLN_SECRET_KEY_BYTES ( 1024u * sizeof( int32_t ) )
 
 void dap_enc_msrln_key_new(dap_enc_key_t *a_key)
 {
@@ -58,9 +60,13 @@ void dap_enc_msrln_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_k
 {
 // sanity check
     dap_return_if_pass(!a_key);
-    uint8_t *l_skey = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, MSRLN_PKA_BYTES * sizeof(int32_t)),
+    uint8_t *l_skey = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, DAP_MSRLN_SECRET_KEY_BYTES),
             *l_pkey = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, MSRLN_PKA_BYTES, l_skey);
     PLatticeCryptoStruct PLCS = LatticeCrypto_allocate();
+    if ( !PLCS ) {
+        DAP_DEL_MULTY( l_skey, l_pkey );
+        return;
+    }
     LatticeCrypto_initialize(PLCS, (RandomBytes)randombytes, MSRLN_generate_a, MSRLN_get_error);
     if (MSRLN_KeyGeneration_A((int32_t *) l_skey, l_pkey, PLCS) != CRYPTO_MSRLN_SUCCESS) {
         DAP_DEL_MULTY(l_skey, l_pkey, PLCS);
@@ -71,7 +77,7 @@ void dap_enc_msrln_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_k
     DAP_DEL_MULTY(a_key->priv_key_data, a_key->pub_key_data);
     a_key->priv_key_data = l_skey;
     a_key->pub_key_data = l_pkey;
-    a_key->priv_key_data_size = MSRLN_SHAREDKEY_BYTES;
+    a_key->priv_key_data_size = DAP_MSRLN_SECRET_KEY_BYTES;
     a_key->pub_key_data_size = MSRLN_PKA_BYTES;
     return;
 }
@@ -94,6 +100,10 @@ size_t dap_enc_msrln_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *a_
             *l_cypher_msg = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, MSRLN_PKB_BYTES, 0, l_shared_key);
 // crypto calc
     PLatticeCryptoStruct PLCS = LatticeCrypto_allocate();
+    if ( !PLCS ) {
+        DAP_DEL_MULTY( l_cypher_msg, l_shared_key );
+        return 0;
+    }
     LatticeCrypto_initialize(PLCS, (RandomBytes)randombytes, MSRLN_generate_a, MSRLN_get_error);
     if (MSRLN_SecretAgreement_B((unsigned char *)a_alice_pub, l_shared_key, l_cypher_msg, PLCS) != CRYPTO_MSRLN_SUCCESS) {
         DAP_DEL_MULTY(l_cypher_msg, l_shared_key, PLCS);

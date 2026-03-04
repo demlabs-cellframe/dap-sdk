@@ -397,10 +397,22 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                dap_json_encoding_name(l_enc_info.encoding), l_parse_len);
     }
     
+    // SIMD safety: AVX2/AVX-512 SIMD loads may read up to 64 bytes past the
+    // logical end of the buffer. Allocate a padded copy to prevent OOB reads.
+    const size_t l_simd_padding = 64;
+    uint8_t *l_padded_input = DAP_NEW_Z_SIZE(uint8_t, l_parse_len + l_simd_padding);
+    if (!l_padded_input) {
+        log_it(L_ERROR, "Failed to allocate SIMD-padded input buffer");
+        if (l_transcoded) DAP_DELETE(l_transcoded);
+        return NULL;
+    }
+    memcpy(l_padded_input, l_parse_input, l_parse_len);
+
     // Stage 1: Tokenization (UTF-8 only)
-    dap_json_stage1_t *l_stage1 = dap_json_stage1_create(l_parse_input, l_parse_len);
+    dap_json_stage1_t *l_stage1 = dap_json_stage1_create(l_padded_input, l_parse_len);
     if (!l_stage1) {
         log_it(L_ERROR, "Failed to initialize Stage 1");
+        DAP_DELETE(l_padded_input);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
@@ -409,6 +421,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     if (l_ret != STAGE1_SUCCESS) {
         log_it(L_ERROR, "Stage 1 tokenization failed: error %d", l_ret);
         dap_json_stage1_free(l_stage1);
+        DAP_DELETE(l_padded_input);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
@@ -417,6 +430,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     if (l_stage1->indices_count == 0) {
         log_it(L_ERROR, "No JSON content found (whitespace-only or empty input)");
         dap_json_stage1_free(l_stage1);
+        DAP_DELETE(l_padded_input);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
@@ -443,9 +457,10 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
             for (const char *l_p = l_str_start; l_p < l_str_start + l_str_len && *l_p && *l_p != '"'; l_p++) {
                 // STRICT: Reject unescaped control characters (0x00-0x1F)
                 if ((unsigned char)*l_p < 0x20 && *l_p != '\t' && *l_p != '\n' && *l_p != '\r') {
-                    log_it(L_ERROR, "Unescaped control character 0x%02X in string at position %u", 
+                    log_it(L_ERROR, "Unescaped control character 0x%02X in string at position %u",
                            (unsigned char)*l_p, l_str_pos);
                     dap_json_stage1_free(l_stage1);
+                    DAP_DELETE(l_padded_input);
                     if (l_transcoded) DAP_DELETE(l_transcoded);
                     return NULL;
                 }
@@ -457,6 +472,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                         if ((l_p + 4) > (l_str_start + l_str_len)) {
                             log_it(L_ERROR, "Incomplete Unicode escape at position %u", l_str_pos);
                             dap_json_stage1_free(l_stage1);
+                            DAP_DELETE(l_padded_input);
                             if (l_transcoded) DAP_DELETE(l_transcoded);
                             return NULL;
                         }
@@ -472,6 +488,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                             else {
                                 log_it(L_ERROR, "Invalid hex digit in Unicode escape");
                                 dap_json_stage1_free(l_stage1);
+                                DAP_DELETE(l_padded_input);
                                 if (l_transcoded) DAP_DELETE(l_transcoded);
                                 return NULL;
                             }
@@ -485,9 +502,10 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                             const char *l_next = l_p + 1;
                             if ((l_next + 6) > (l_str_start + l_str_len) || 
                                 l_next[0] != '\\' || l_next[1] != 'u') {
-                                log_it(L_ERROR, "Unpaired high surrogate U+%04X at position %zu", 
+                                log_it(L_ERROR, "Unpaired high surrogate U+%04X at position %zu",
                                        cp, (size_t)(l_p - (const char*)l_parse_input));
                                 dap_json_stage1_free(l_stage1);
+                                DAP_DELETE(l_padded_input);
                                 if (l_transcoded) DAP_DELETE(l_transcoded);
                                 return NULL;
                             }
@@ -503,6 +521,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                                 else {
                                     log_it(L_ERROR, "Invalid hex in low surrogate");
                                     dap_json_stage1_free(l_stage1);
+                                    DAP_DELETE(l_padded_input);
                                     if (l_transcoded) DAP_DELETE(l_transcoded);
                                     return NULL;
                                 }
@@ -512,6 +531,7 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                             if (low < 0xDC00 || low > 0xDFFF) {
                                 log_it(L_ERROR, "Invalid low surrogate U+%04X after high U+%04X", low, cp);
                                 dap_json_stage1_free(l_stage1);
+                                DAP_DELETE(l_padded_input);
                                 if (l_transcoded) DAP_DELETE(l_transcoded);
                                 return NULL;
                             }
@@ -521,9 +541,10 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
                         } 
                         else if (cp >= 0xDC00 && cp <= 0xDFFF) {
                             // Low surrogate without high - INVALID
-                            log_it(L_ERROR, "Unpaired low surrogate U+%04X at position %zu", 
+                            log_it(L_ERROR, "Unpaired low surrogate U+%04X at position %zu",
                                    cp, (size_t)(l_p - (const char*)l_parse_input));
                             dap_json_stage1_free(l_stage1);
+                            DAP_DELETE(l_padded_input);
                             if (l_transcoded) DAP_DELETE(l_transcoded);
                             return NULL;
                         }
@@ -539,15 +560,19 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     if (!dap_json_build_tape(l_stage1, &l_tape, &l_tape_count)) {
         log_it(L_ERROR, "Failed to build tape");
         dap_json_stage1_free(l_stage1);
+        DAP_DELETE(l_padded_input);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
+    
+    // Padded buffer no longer needed after tape is built
+    dap_json_stage1_free(l_stage1);
+    DAP_DELETE(l_padded_input);
     
     // Create wrapper with tape (NO DOM!)
     dap_json_t *l_result = DAP_NEW_Z(dap_json_t);
     if (!l_result) {
         log_it(L_ERROR, "Failed to allocate JSON wrapper");
-        dap_json_stage1_free(l_stage1);
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
@@ -2275,13 +2300,14 @@ double dap_json_object_get_double(dap_json_t* a_json, const char* a_key)
         return (double)l_int_val;
     } else if (l_value->type == DAP_JSON_TYPE_STRING) {
         // Check for special string values: "Infinity", "-Infinity", "NaN"
+        // Use __builtin_* to avoid -ffast-math issues with INFINITY/NAN macros
         const char *l_str = s_materialize_string(a_json, l_value);
         if (strcmp(l_str, "Infinity") == 0) {
-            return INFINITY;
+            return __builtin_inf();
         } else if (strcmp(l_str, "-Infinity") == 0) {
-            return -INFINITY;
+            return -__builtin_inf();
         } else if (strcmp(l_str, "NaN") == 0) {
-            return NAN;
+            return __builtin_nan("");
         }
     }
     

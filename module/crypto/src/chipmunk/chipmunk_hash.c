@@ -26,11 +26,10 @@
 #include "dap_hash.h"
 #include "dap_crypto_common.h"
 #include "chipmunk.h"
-// Добавляем SHA2-256 из secp256k1 с правильными путями
-#include "../../3rdparty/secp256k1/src/hash.h"
-#include "../../3rdparty/secp256k1/src/hash_impl.h"
-// XKCP includes for SHA3 functions
-#include "SimpleFIPS202.h"
+// SHA2-256 provided by native dap_hash module
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 #include <string.h>
 
 #define LOG_TAG "chipmunk_hash"
@@ -47,11 +46,7 @@ static int dap_chipmunk_hash_sha2_256(uint8_t *a_output, const uint8_t *a_input,
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    int l_result = dap_hash_sha2_256(a_output, a_input, a_inlen);
-    if (l_result != 0) {
-        return CHIPMUNK_ERROR_HASH_FAILED;
-    }
-    
+    dap_hash_sha2_256(a_output, a_input, a_inlen);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -73,7 +68,7 @@ int dap_chipmunk_hash_sha3_256(uint8_t *a_output, const uint8_t *a_input, size_t
     }
     
     // Perform SHA3-256 hash
-    SHA3_256(a_output, a_input, a_inlen);
+    dap_hash_sha3_256_raw(a_output, a_input, a_inlen);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -86,7 +81,7 @@ int dap_chipmunk_hash_sha3_384(uint8_t *a_output, const uint8_t *a_input, size_t
     }
     
     // Perform SHA3-384 hash
-    SHA3_384(a_output, a_input, a_inlen);
+    dap_hash_sha3_384(a_output, a_input, a_inlen);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -99,7 +94,7 @@ int dap_chipmunk_hash_sha3_512(uint8_t *a_output, const uint8_t *a_input, size_t
     }
     
     // Perform SHA3-512 hash
-    SHA3_512(a_output, a_input, a_inlen);
+    dap_hash_sha3_512(a_output, a_input, a_inlen);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 

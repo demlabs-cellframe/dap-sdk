@@ -11,9 +11,18 @@ add_executable(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     dap_test
     dap_core
+    dap_math
     pthread
     m
 )
+
+# Link macOS system frameworks (required by dap_network_monitor in dap_core)
+if(APPLE)
+    target_link_libraries(${PROJECT_NAME}
+        "-framework CoreFoundation"
+        "-framework SystemConfiguration"
+    )
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ../../include/

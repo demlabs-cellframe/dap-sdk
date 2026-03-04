@@ -1,7 +1,30 @@
+/*
+ * Authors:
+ * Cellframe SDK Team
+ * DeM Labs Inc.   https://demlabs.net
+ * DeM Labs Open source community https://gitlab.demlabs.net/cellframe
+ * Copyright  (c) 2017-2025
+ * All rights reserved.
+
+ This file is part of DAP (Distributed Applications Platform) the open source project
+
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    DAP is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 /**
  * @file test_dap_strfuncs.c
  * @brief Unit tests for string functions, list, and string builder
- * @date 2025
  */
 
 #include <dap_test.h>
@@ -18,17 +41,17 @@ static void dap_str_dup_test(void)
     int l_a = rand(), l_b = rand();
     const char *l_s = "test string";
     char l_str0[1024];
-    sprintf(l_str0, "a=%d b=%d s=%s", l_a, l_b, l_s);
+    snprintf(l_str0, sizeof(l_str0), "a=%d b=%d s=%s", l_a, l_b, l_s);
     char *l_str1 = dap_strdup_printf("a=%d b=%d s=%s", l_a, l_b, l_s);
-    size_t str_size0 = strlen(l_str0);
-    size_t str_size1 = strlen(l_str1);
+    size_t l_str_size0 = strlen(l_str0);
+    size_t l_str_size1 = strlen(l_str1);
 
-    char *l_str2 = DAP_NEW_SIZE(char, str_size1 + 1);
+    char *l_str2 = DAP_NEW_SIZE(char, l_str_size1 + 1);
     dap_stpcpy(l_str2, l_str1);
 
-    size_t str_size2 = strlen(l_str2);
-    dap_assert_PIF(str_size0 == str_size1, "Strings sizes must be equal");
-    dap_assert_PIF(str_size1 == str_size2, "Strings sizes must be equal");
+    size_t l_str_size2 = strlen(l_str2);
+    dap_assert_PIF(l_str_size0 == l_str_size1, "Strings sizes must be equal");
+    dap_assert_PIF(l_str_size1 == l_str_size2, "Strings sizes must be equal");
 
     dap_assert(!strcmp(l_str0, l_str1), "Test dap_strdup_printf()");
     dap_assert(!strcmp(l_str1, l_str2), "Test dap_stpcpy()");
@@ -88,7 +111,7 @@ static void dap_str_array_test(void)
     DAP_DELETE(l_s_out);
 }
 
-static void list_delete(void* a_pointer)
+static void s_list_delete(void *a_pointer)
 {
     DAP_DELETE(a_pointer);
 }
@@ -117,7 +140,7 @@ static void dap_list_test(void)
     l_list = dap_list_append(l_list, dap_strdup("item 2"));
 
     dap_assert(l_list, "Test dap_list_t");
-    dap_list_free_full(l_list, list_delete);
+    dap_list_free_full(l_list, s_list_delete);
 }
 
 static void dap_string_test(void)
@@ -139,6 +162,39 @@ static void dap_string_test(void)
     dap_string_free(l_str, true);
 }
 
+static void dap_string_invalid_descriptor_regression_test(void)
+{
+    dap_string_t l_corrupted = {
+        .str = NULL,
+        .len = 0,
+        .allocated_len = 8
+    };
+
+    dap_string_set_size(&l_corrupted, 4);
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_set_size() should fail safely on invalid descriptor");
+
+    dap_string_insert_len(&l_corrupted, -1, "AB", 2);
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_insert_len() should fail safely on invalid descriptor");
+
+    dap_string_insert_c(&l_corrupted, -1, 'X');
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_insert_c() should fail safely on invalid descriptor");
+
+    dap_string_insert_unichar(&l_corrupted, -1, 0x24B62);
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_insert_unichar() should fail safely on invalid descriptor");
+
+    dap_string_overwrite_len(&l_corrupted, 0, "AB", 2);
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_overwrite_len() should fail safely on invalid descriptor");
+
+    dap_string_append_printf(&l_corrupted, "%s", "AB");
+    dap_assert_PIF(!l_corrupted.str && !l_corrupted.len && l_corrupted.allocated_len == 8,
+                   "dap_string_append_printf() should fail safely on invalid descriptor");
+}
+
 int main(void)
 {
     dap_log_level_set(L_CRITICAL);
@@ -149,6 +205,7 @@ int main(void)
     dap_str_array_test();
     dap_list_test();
     dap_string_test();
+    dap_string_invalid_descriptor_regression_test();
 
     dap_usleep(0.5 * DAP_USEC_PER_SEC);
     dap_assert(1, "Test dap_usleep(0.5 sec.)");

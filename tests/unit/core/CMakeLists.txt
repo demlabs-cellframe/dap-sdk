@@ -101,7 +101,7 @@ if(UNIX)
 endif()
 
 # ============================================================================
-# Test: DAP CPU Monitor (Unix-specific)
+# Test: DAP CPU Monitor (Unix - Linux uses /proc/stat, macOS uses Mach API)
 # ============================================================================
 if(UNIX)
     project(test_dap_cpu_monitor)
@@ -125,7 +125,7 @@ if(UNIX)
 endif()
 
 # ============================================================================
-# Test: DAP Process Memory (Unix-specific)
+# Test: DAP Process Memory (Unix - Linux uses /proc, macOS uses Mach API)
 # ============================================================================
 if(UNIX)
     project(test_dap_process_memory)
@@ -214,33 +214,97 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     LABELS "unit;core;string_pool;memory"
 )
 
+# rpmalloc tests removed - library was optional and never used
+
 # ============================================================================
-# RPMalloc Test (from release-6.0)
+# Test: DAP Doubly-Linked List (dap_dl)
 # ============================================================================
-if (DAP_USE_RPMALLOC)
-    add_executable(rpmalloc_test
-      ../../3rdparty/rpmalloc/test/test.h
-      ../../3rdparty/rpmalloc/test/thread.h 
-      ../../3rdparty/rpmalloc/test/thread.c
-      ../../3rdparty/rpmalloc/test/main.c
+project(test_dap_dl)
+
+add_executable(${PROJECT_NAME}
+    test_dap_dl.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;dap_dl;list"
+)
+
+# ============================================================================
+# Test: DAP Hash Table (dap_ht)
+# ============================================================================
+project(test_dap_ht)
+
+add_executable(${PROJECT_NAME}
+    test_dap_ht.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;dap_ht;hash_table"
+)
+
+# ============================================================================
+# Test: DAP Fast Hash Functions (dap_hash_fast)
+# ============================================================================
+project(test_dap_hash_fast)
+
+add_executable(${PROJECT_NAME}
+    test_dap_hash_fast.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;dap_hash_fast;hash"
+)
+
+# ============================================================================
+# Test: DAP Memory-Mapped File I/O (dap_mmap)
+# ============================================================================
+if(UNIX)
+    project(test_dap_mmap)
+
+    add_executable(${PROJECT_NAME}
+        test_dap_mmap.c
     )
-    target_link_libraries(rpmalloc_test dap_core)
-    # Platform-specific system libraries
-    if(UNIX AND NOT ANDROID)
-        target_link_libraries(rpmalloc_test m pthread dl)
-    elseif(WIN32)
-        # Windows doesn't need explicit dl/pthread
-    endif()
-    target_include_directories(rpmalloc_test PRIVATE ../../3rdparty/rpmalloc/test)
-    if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
-        add_test(
-            NAME rpm-test
-            COMMAND rpmalloc_test
-        )
-    else()
-        message("[-] Disable rpm test")
-    endif()
-endif(DAP_USE_RPMALLOC)
+
+    dap_test_add_includes(${PROJECT_NAME})
+    dap_test_link_libraries(${PROJECT_NAME})
+
+    add_test(
+        NAME ${PROJECT_NAME}
+        COMMAND ${PROJECT_NAME}
+    )
+
+    set_tests_properties(${PROJECT_NAME} PROPERTIES 
+        TIMEOUT 300
+        LABELS "unit;core;dap_mmap;io"
+    )
+endif()
 
 # uint256_t test suite (converted from GoogleTest/Boost to dap_test)
 add_subdirectory(uint256_t)

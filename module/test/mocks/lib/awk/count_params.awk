@@ -7,7 +7,7 @@ BEGIN {
     found_opening_paren = 0
     return_type = ""
 }
-/DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
+/DAP_MOCK_WRAPPER_CUSTOM|DAP_MOCK_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID/ {
     in_custom = 1
     param_count = 0
     paren_level = 0
@@ -15,8 +15,7 @@ BEGIN {
     return_type = ""
     
     # Check if this line contains opening parenthesis
-    # Match any of: DAP_MOCK_WRAPPER_CUSTOM, _DAP_MOCK_WRAPPER_CUSTOM_NONVOID, _DAP_MOCK_WRAPPER_CUSTOM_VOID
-    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
+    if (match($0, /(DAP_MOCK_WRAPPER_CUSTOM|DAP_MOCK_CUSTOM|_DAP_MOCK_WRAPPER_CUSTOM_NONVOID|_DAP_MOCK_WRAPPER_CUSTOM_VOID)\s*\(/)) {
         found_opening_paren = 1
         paren_level = 1  # Opening paren of macro(
         
@@ -82,6 +81,13 @@ BEGIN {
     next
 }
 in_custom {
+    # Count PARAM( entries BEFORE paren tracking (paren check may exit early via next)
+    line = $0
+    while (match(line, /PARAM\s*\(/)) {
+        param_count++
+        line = substr(line, RSTART + RLENGTH)
+    }
+
     # Count parentheses to track when we exit the macro parameter list
     for (i = 1; i <= length($0); i++) {
         char = substr($0, i, 1)
@@ -95,8 +101,6 @@ in_custom {
         if (char == ")") {
             paren_level--
             if (paren_level <= 0 && found_opening_paren) {
-                # We found the closing parenthesis of macro
-                # Output param count
                 print param_count
                 in_custom = 0
                 param_count = 0
@@ -106,8 +110,6 @@ in_custom {
             }
         }
         if (char == "{" && found_opening_paren && paren_level == 0) {
-            # We found opening brace - this means no parameters (or already closed)
-            # Output param count
             print param_count
             in_custom = 0
             param_count = 0
@@ -115,13 +117,6 @@ in_custom {
             found_opening_paren = 0
             next
         }
-    }
-    
-    # Count PARAM( entries in current line
-    line = $0
-    while (match(line, /PARAM\s*\(/)) {
-        param_count++
-        line = substr(line, RSTART + RLENGTH)
     }
 }
 

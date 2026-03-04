@@ -2,12 +2,20 @@
 # - return_type (original, with *)
 # - func_name
 # - parameters list (type and name from PARAM(...) or void)
-# Output format: return_type|func_name|param_list|macro_type
-# Parse DAP_MOCK_CUSTOM and DAP_MOCK_WRAPPER_CUSTOM declarations and extract:
-# - return_type (original, with *)
-# - func_name
-# - parameters list (type and name from PARAM(...) or void)
-# Output format: return_type|func_name|param_list|macro_type
+# - param_count (number of parameters)
+# Output format: return_type|func_name|param_list|macro_type|param_count
+
+# Function to count parameters in param_list
+# Input: "type1 name1, type2 name2" or "void"
+# Returns: number of parameters (0 for void)
+function count_params(param_list) {
+    if (param_list == "" || param_list == "void") {
+        return 0
+    }
+    # Count commas + 1 = number of parameters
+    n = gsub(/,/, ",", param_list)
+    return n + 1
+}
 
 # Function to process PARAM(type, name) macros into "type name" format
 function process_params(params_str) {
@@ -18,16 +26,16 @@ function process_params(params_str) {
     
     # Extract all PARAM(...) entries
     result = ""
-    while (match(params_str, /PARAM\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/)) {
+    while (match(params_str, /PARAM[ \t]*\([ \t]*[^,]+[ \t]*,[ \t]*[^)]+[ \t]*\)/)) {
         # Extract type and name from PARAM(type, name)
         param_content = substr(params_str, RSTART, RLENGTH)
         
         # Extract the captured groups manually
-        if (match(param_content, /PARAM\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/)) {
+        if (match(param_content, /PARAM[ \t]*\([ \t]*[^,]+[ \t]*,[ \t]*[^)]+[ \t]*\)/)) {
             # Get everything inside PARAM(...)
             inner = param_content
-            gsub(/^PARAM\s*\(\s*/, "", inner)
-            gsub(/\s*\)\s*$/, "", inner)
+            gsub(/^PARAM[ \t]*\([ \t]*/, "", inner)
+            gsub(/[ \t]*\)[ \t]*$/, "", inner)
             
             # Split by comma to get type and name
             comma_pos = index(inner, ",")
@@ -129,8 +137,8 @@ BEGIN {
         if (rest == "void") {
             is_void = 1
             param_list = "void"
-            # Output immediately for void
-            printf "%s|%s|%s|%s\n", return_type, func_name, param_list, macro_type
+            # Output immediately for void (0 params)
+            printf "%s|%s|%s|%s|0\n", return_type, func_name, param_list, macro_type
             in_custom = 0
             next
         } else if (rest == "") {
@@ -158,8 +166,8 @@ BEGIN {
                             # Process PARAM(...) macros
                             param_list = process_params(param_list)
                         }
-                        # Output: return_type|func_name|param_list|macro_type
-                        printf "%s|%s|%s|%s\n", return_type, func_name, param_list, macro_type
+                        # Output: return_type|func_name|param_list|macro_type|param_count
+                        printf "%s|%s|%s|%s|%d\n", return_type, func_name, param_list, macro_type, count_params(param_list)
                         in_custom = 0
                         next
                     }
@@ -200,8 +208,8 @@ in_custom {
                     # Process PARAM(...) macros
                     param_list = process_params(param_list)
                 }
-                # Output: return_type|func_name|param_list|macro_type
-                printf "%s|%s|%s|%s\n", return_type, func_name, param_list, macro_type
+                # Output: return_type|func_name|param_list|macro_type|param_count
+                printf "%s|%s|%s|%s|%d\n", return_type, func_name, param_list, macro_type, count_params(param_list)
                 in_custom = 0
                 paren_level = 0
                 found_opening_paren = 0
@@ -229,8 +237,8 @@ in_custom {
             # Process PARAM(...) macros
             param_list = process_params(param_list)
         }
-        # Output: return_type|func_name|param_list|macro_type
-        printf "%s|%s|%s|%s\n", return_type, func_name, param_list, macro_type
+        # Output: return_type|func_name|param_list|macro_type|param_count
+        printf "%s|%s|%s|%s|%d\n", return_type, func_name, param_list, macro_type, count_params(param_list)
         in_custom = 0
         paren_level = 0
         found_opening_paren = 0

@@ -71,7 +71,7 @@
 #ifdef __MACH__
 #include <dispatch/dispatch.h>
 #endif
-#include "portable_endian.h"
+#include "dap_bit_ops.h"
 
 #define BIT( x ) ( 1 << x )
 #define __has_builtin(x) (0)
@@ -161,8 +161,6 @@
 #define DAP_CAST_PTR(t,v) v
 #endif
 
-#define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
-
 // Constructor/Destructor attributes for automatic initialization/cleanup
 #ifdef _MSC_VER
     // MSVC doesn't support __attribute__ constructor/destructor
@@ -183,7 +181,7 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...);
 #if   DAP_SYS_DEBUG
 #include    <assert.h>
 
-#define     MEMSTAT$SZ_NAME     63            dap_global_db_del_sync(l_gdb_group, l_objs[i].key);
+#define     MEMSTAT$SZ_NAME     63
 #define     MEMSTAT$K_MAXNR     8192
 #define     MEMSTAT$K_MINTOLOG  (32*1024)
 
@@ -212,9 +210,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 
     #define DAP_MALLOC(a)       s_vm_get(__func__, __LINE__, a)
     #define DAP_CALLOC(a, b)    s_vm_get_z(__func__, __LINE__, a, b)
-    #define DAP_ALMALLOC(a, b)    _dap_aligned_alloc(a, b)
-    #define DAP_ALREALLOC(a, b)   _dap_aligned_realloc(a, b)
-    #define DAP_ALFREE(a)         _dap_aligned_free(a, b)
+    #define DAP_ALMALLOC(a, b)      _dap_aligned_alloc(a, b)
+    #define DAP_ALREALLOC(a, p, s)  _dap_aligned_realloc(a, p, s)
+    #define DAP_ALFREE(a)           _dap_aligned_free(a)
     #define DAP_NEW( a )          DAP_CAST_REINT(a, s_vm_get(__func__, __LINE__, sizeof(a)) )
     #define DAP_NEW_SIZE(a, b)    DAP_CAST_REINT(a, s_vm_get(__func__, __LINE__, b) )
     #define DAP_NEW_STACK( a )        DAP_CAST_REINT(a, alloca(sizeof(a)) )
@@ -227,16 +225,14 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_DUP_SIZE(a, s)    memcpy(s_vm_get(__func__, __LINE__, s), a, s)
 
 #else
-#ifdef DAP_USE_RPMALLOC
-#include "rpmalloc.h"
-#endif
+// Standard allocator (rpmalloc removed - was optional, never used)
 #define DAP_TYPE_SIZE(p)      (intmax_t)sizeof( *(__typeof__(p)){ 0 } )
 #define DAP_MALLOC(s)         ({ intmax_t _s = (intmax_t)(s); _s > 0 ? malloc(_s) : NULL; })
 #define DAP_FREE(p)           free((void*)(p))
 #define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); _s > 0 && _n > 0 ? calloc(_n, _s) : NULL; })
 #define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? realloc(p, _s) : NULL; })
 #define DAP_ALMALLOC(a, s)    ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s > 0 && _a >= 0 ? _dap_aligned_alloc(_a, _s) : NULL; })
-#define DAP_ALREALLOC(p, s)   ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? _dap_aligned_realloc(p, _s) : NULL; })
+#define DAP_ALREALLOC(a, p, s) ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s >= DAP_TYPE_SIZE(p) && _a > 0 ? _dap_aligned_realloc(_a, p, _s) : NULL; })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
@@ -372,15 +368,42 @@ typedef int dap_errnum_t;
 #define dap_fileclose close
 #endif
 
-ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
-ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
+// dap_readv/dap_writev moved to module/io/dap_io_ops.h
+
+/* Returns non-zero only for valid non-zero power-of-two alignments. */
+DAP_STATIC_INLINE int _dap_alignment_is_power_of_two( uintptr_t alignment )
+{
+    return alignment && !( alignment & ( alignment - 1 ) );
+}
+
+/*
+ * Validates aligned allocation size math and computes total block size:
+ * user size + extra space for alignment padding and hidden base pointer.
+ */
+DAP_STATIC_INLINE int _dap_aligned_block_size_ok( uintptr_t alignment, uintptr_t size, uintptr_t *total_size )
+{
+    if ( alignment > ( UINTPTR_MAX - sizeof(void *) ) / 2 )
+        return 0;
+
+    uintptr_t l_extra = ( alignment * 2 ) + sizeof(void *);
+    if ( size > UINTPTR_MAX - l_extra )
+        return 0;
+
+    *total_size = size + l_extra;
+    return 1;
+}
 
 DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size )
 {
-    uintptr_t ptr = (uintptr_t) DAP_MALLOC( size + (alignment * 2) + sizeof(void *) );
+    uintptr_t l_total_size = 0;
+    if ( !_dap_alignment_is_power_of_two( alignment ) ||
+         !_dap_aligned_block_size_ok( alignment, size, &l_total_size ) )
+        return NULL;
+
+    uintptr_t ptr = (uintptr_t) DAP_MALLOC( l_total_size );
 
     if ( !ptr )
-        return (void *)ptr;
+        return NULL;
 
     uintptr_t al_ptr = ( ptr + sizeof(void *) + alignment) & ~(alignment - 1 );
     ((uintptr_t *)al_ptr)[-1] = ptr;
@@ -390,10 +413,22 @@ DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size 
 
 DAP_STATIC_INLINE void *_dap_aligned_realloc( uintptr_t alignment, void *bptr, uintptr_t size )
 {
-    uintptr_t ptr = (uintptr_t) DAP_REALLOC((uint8_t*)bptr, size + (alignment * 2) + sizeof(void *) );
+    uintptr_t l_total_size = 0;
+    if ( !_dap_alignment_is_power_of_two( alignment ) ||
+         !_dap_aligned_block_size_ok( alignment, size, &l_total_size ) )
+        return NULL;
+
+    if ( !bptr )
+        return _dap_aligned_alloc( alignment, size );
+
+    uintptr_t l_base_ptr = ((uintptr_t *)bptr)[-1];
+    if ( !l_base_ptr )
+        return NULL;
+
+    uintptr_t ptr = (uintptr_t) DAP_REALLOC( (uint8_t*)l_base_ptr, l_total_size );
 
     if ( !ptr )
-        return (void *)ptr;
+        return NULL;
 
     uintptr_t al_ptr = ( ptr + sizeof(void *) + alignment) & ~(alignment - 1 );
     ((uintptr_t *)al_ptr)[-1] = ptr;
@@ -530,8 +565,7 @@ typedef enum dap_log_level {
   L_TOTAL
 } dap_log_level_t;
 
-typedef void *dap_interval_timer_t;
-typedef void (*dap_timer_callback_t)(void *param);
+// Interval timer moved to module/timer/dap_interval_timer.h
 
 #ifdef __cplusplus
 extern "C" {
@@ -901,7 +935,9 @@ extern char *g_sys_dir_path;
 
 //int dap_common_init( const char * a_log_file );
 int dap_common_init( const char *console_title, const char *a_log_file );
+#ifdef DAP_OS_WINDOWS
 int wdap_common_init( const char *console_title, const wchar_t *a_wlog_file );
+#endif
 
 typedef enum 
 {
@@ -919,6 +955,11 @@ typedef enum
 void dap_log_set_external_output (LOGGER_EXTERNAL_OUTPUT output, void *param);
 
 void dap_common_deinit(void);
+
+// Get current log file handle (for log rotation checks)
+FILE *dap_log_get_file(void);
+// Reopen log file (for log rotation)
+int dap_log_reopen(void);
 
 // set max items in log list
 void dap_log_set_max_item(unsigned int a_max);
@@ -1077,7 +1118,9 @@ dap_maxint_str_t dap_utoa_(unsigned long long i);
 #define dap_itoa(i) (char*)dap_itoa_(i).s
 #define dap_utoa(i) (char*)dap_utoa_(i).s
 
+#ifdef DAP_SYS_DEBUG
 unsigned dap_gettid();
+#endif
 
 int get_select_breaker(void);
 int send_select_break(void);
@@ -1092,11 +1135,8 @@ int dap_is_hex_string(const char *a_in, size_t a_len);
 void dap_digit_from_string(const char *num_str, void *raw, size_t raw_len);
 void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len);
 
-dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param);
-void dap_interval_timer_delete(dap_interval_timer_t a_timer);
-int dap_interval_timer_disable(dap_interval_timer_t a_timer);
-void dap_interval_timer_init();
-void dap_interval_timer_deinit();
+// Interval timer functions moved to module/timer/include/dap_interval_timer.h
+// Use #include "dap_interval_timer.h" if you need dap_interval_timer_create, etc.
 
 static inline void *dap_mempcpy(void *a_dest, const void *a_src, size_t n)
 {
@@ -1157,9 +1197,7 @@ static inline const char *dap_get_arch()
     #endif
 }
 
-#ifdef __MINGW32__
 int exec_silent(const char *a_cmd);
-#endif
 
 #ifdef __cplusplus
 }
@@ -1168,7 +1206,7 @@ int exec_silent(const char *a_cmd);
 // Node address types and functions moved to module/net/common/include/dap_net_common.h
 // Use #include "dap_net_common.h" if you need dap_stream_node_addr_t and related functions
 
-void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);
+// dap_common_enable_cleaner_log moved to module/daemon/dap_daemon.h as dap_daemon_enable_log_cleaner
 
 /**
  * @brief Log format control functions

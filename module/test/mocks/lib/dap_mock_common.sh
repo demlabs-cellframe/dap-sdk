@@ -35,10 +35,11 @@ init_mock_common() {
     # Get script directory (where dap_mock_autowrap.sh is located)
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
     
-    # dap_tpl is in test-framework/dap_tpl (one level up from mocks)
-    # Templates are in test-framework/templates (same level as dap_tpl)
-    DAP_TPL_DIR="$(cd "${script_dir}/../dap_tpl" && pwd)"
-    TEMPLATES_DIR="$(cd "${script_dir}/../templates" && pwd)"
+    # DAP_TPL_DIR can be passed via environment (CMake sets it for centralized dap_tpl location)
+    if [ -z "${DAP_TPL_DIR}" ] || [ ! -f "${DAP_TPL_DIR}/dap_tpl.sh" ]; then
+        DAP_TPL_DIR="$(cd "${script_dir}/../dap_tpl" && pwd)"
+    fi
+    TEMPLATES_DIR="$(cd "${script_dir}/../templates" 2>/dev/null && pwd || echo "${script_dir}/../templates")"
     SCRIPTS_DIR="${DAP_TPL_DIR}"
     
     # Mocking extensions for dap_tpl are in mocks/lib/dap_tpl

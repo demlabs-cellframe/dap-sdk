@@ -29,29 +29,33 @@
 #endif // _DAP_MOCK_NARGS_DEFINED
 
 
-{{#if MAP_MACROS_DATA}}
-    {{#for map_entry in MAP_MACROS_DATA|newline_double}}
-        {{map_entry|split|pipe}}
-        {{#set map_count={{map_entry|part|0}}}}
-        {{#set map_macro={{map_entry|part|1}}}}
-        {{#if map_macro}}
-{{map_macro}}
-        {{/if}}
-    {{/for}}
-{{/if}}
+// ============================================================================
+// MAP infrastructure macros (core, routing, counting, conditionals)
+// ============================================================================
+{{#include "mock_map_macros.h.tpl"}}
 
+// ============================================================================
+// MAP_N macro definitions
+// ============================================================================
+{{#include "mock_map_n.h.tpl"}}
+
+// ============================================================================
+// Return type dispatcher macros
+// ============================================================================
 {{#if RETURN_TYPE_MACROS_FILE}}
 {{#include RETURN_TYPE_MACROS_FILE}}
 {{/if}}
 
+// ============================================================================
+// Simple wrapper macros
+// ============================================================================
 {{#if SIMPLE_WRAPPER_MACROS_FILE}}
 {{#include SIMPLE_WRAPPER_MACROS_FILE}}
 {{/if}}
 
+// ============================================================================
+// Function-specific wrapper macros
+// ============================================================================
 {{#if FUNCTION_WRAPPERS_FILE}}
 {{#include FUNCTION_WRAPPERS_FILE}}
-{{/if}}
-
-{{#if MAP_MACROS_CONTENT_FILE}}
-{{#include MAP_MACROS_CONTENT_FILE}}
 {{/if}}

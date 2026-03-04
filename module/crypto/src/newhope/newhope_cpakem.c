@@ -3,7 +3,9 @@
 #include "newhope_cpapke.h"
 #include "newhope_params.h"
 #include "rand/dap_rand.h"
-#include "sha3/fips202.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 /*************************************************
 * Name:        crypto_kem_keypair
@@ -43,11 +45,11 @@ int crypto_kem_enc(unsigned char *ct, unsigned char *ss, const unsigned char *pk
   buf[0] = 0x02;
   randombytes(buf+1,NEWHOPE_SYMBYTES);
 
-  shake256(buf,2*NEWHOPE_SYMBYTES,buf,NEWHOPE_SYMBYTES + 1);                     /* Don't release system RNG output */
+  dap_hash_shake256(buf,2*NEWHOPE_SYMBYTES,buf,NEWHOPE_SYMBYTES + 1);                     /* Don't release system RNG output */
 
   cpapke_enc(ct, buf, pk, buf+NEWHOPE_SYMBYTES);                                 /* coins are in buf+NEWHOPE_SYMBYTES */
 
-  shake256(ss, NEWHOPE_SYMBYTES, buf, NEWHOPE_SYMBYTES);                         /* hash pre-k to ss */
+  dap_hash_shake256(ss, NEWHOPE_SYMBYTES, buf, NEWHOPE_SYMBYTES);                         /* hash pre-k to ss */
   return 0;
 }
 
@@ -68,7 +70,7 @@ int crypto_kem_dec(unsigned char *ss, const unsigned char *ct, const unsigned ch
 {
   cpapke_dec(ss, ct, sk);
 
-  shake256(ss, NEWHOPE_SYMBYTES, ss, NEWHOPE_SYMBYTES);                          /* hash pre-k to ss */
+  dap_hash_shake256(ss, NEWHOPE_SYMBYTES, ss, NEWHOPE_SYMBYTES);                          /* hash pre-k to ss */
 
   return 0;
 }

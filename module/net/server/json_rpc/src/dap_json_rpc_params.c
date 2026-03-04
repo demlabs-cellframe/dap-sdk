@@ -152,26 +152,39 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(dap_json_t *a
             dap_json_rpc_params_add_data(params, NULL, TYPE_PARAM_NULL);
             continue;
         }
-        if (dap_json_is_string(jobj)) {
-            const char *l_str = dap_json_get_string(jobj);
+
+        dap_json_type_t l_type = dap_json_get_type(jobj);
+        switch (l_type) {
+        case DAP_JSON_TYPE_STRING: {
+            const char *l_str = dap_json_array_get_string(a_array_list, i);
             if (l_str) {
-                char *l_str_tmp = dap_strdup(l_str);
-                dap_json_rpc_params_add_data(params, l_str_tmp, TYPE_PARAM_STRING);
-                DAP_FREE(l_str_tmp);
+                dap_json_rpc_params_add_data(params, (void*)l_str, TYPE_PARAM_STRING);
+                DAP_DEL_Z(l_str);
             }
-        } else if (dap_json_is_bool(jobj)) {
-            bool l_bool_tmp = dap_json_get_bool(jobj);
+            break;
+        }
+        case DAP_JSON_TYPE_BOOLEAN: {
+            bool l_bool_tmp = dap_json_array_get_bool(a_array_list, i);
             dap_json_rpc_params_add_data(params, &l_bool_tmp, TYPE_PARAM_BOOLEAN);
-        } else if (dap_json_is_int(jobj)) {
-            int64_t l_int_tmp = dap_json_get_int64(jobj);
+            break;
+        }
+        case DAP_JSON_TYPE_INT: {
+            int64_t l_int_tmp = dap_json_array_get_int64(a_array_list, i);
             dap_json_rpc_params_add_data(params, &l_int_tmp, TYPE_PARAM_INTEGER);
-        } else if (dap_json_is_double(jobj)) {
-            double l_double_tmp = dap_json_get_double(jobj);
+            break;
+        }
+        case DAP_JSON_TYPE_DOUBLE: {
+            double l_double_tmp = dap_json_array_get_double(a_array_list, i);
             dap_json_rpc_params_add_data(params, &l_double_tmp, TYPE_PARAM_DOUBLE);
-        } else if (dap_json_is_object(jobj) || dap_json_is_array(jobj)) {
+            break;
+        }
+        case DAP_JSON_TYPE_OBJECT:
+        case DAP_JSON_TYPE_ARRAY:
             dap_json_rpc_params_add_data(params, jobj, TYPE_PARAM_JSON);
-        } else {
+            break;
+        default:
             dap_json_rpc_params_add_data(params, NULL, TYPE_PARAM_NULL);
+            break;
         }
         // jobj is borrowed reference - no free needed
     }

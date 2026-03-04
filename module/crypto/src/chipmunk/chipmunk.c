@@ -23,6 +23,7 @@
 */
 
 #include "dap_enc_base64.h"
+#include "dap_hash_sha3.h"
 #include "chipmunk.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
@@ -151,7 +152,7 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
     s_key_counter++;
     
     // Генерируем детерминированный seed на основе времени и счетчика для уникальности
-    dap_hash_fast_t l_hash_out;
+    dap_hash_sha3_256_t l_hash_out;
     uint8_t l_entropy_source[64];
     memset(l_entropy_source, 0, sizeof(l_entropy_source));
     
@@ -165,7 +166,7 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
         l_entropy_source[i] = (uint8_t)(i * s_key_counter + l_time_part);
     }
     
-    dap_hash_fast(l_entropy_source, 64, &l_hash_out);
+    dap_hash_sha3_256(l_entropy_source, 64, &l_hash_out);
     memcpy(l_key_seed, &l_hash_out, 32);
     
     debug_if(s_debug_more, L_DEBUG, "Generated deterministic key seed with counter %u", s_key_counter);
@@ -177,8 +178,8 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
     uint32_t l_rho_nonce = 0xDEADBEEF; // Фиксированное значение для rho
     memcpy(l_rho_source + 32, &l_rho_nonce, 4);
     
-    dap_hash_fast_t l_rho_hash;
-    dap_hash_fast(l_rho_source, 36, &l_rho_hash);
+    dap_hash_sha3_256_t l_rho_hash;
+    dap_hash_sha3_256(l_rho_source, 36, &l_rho_hash);
     memcpy(l_rho_seed, &l_rho_hash, 32);
     
     // Генерируем HOTS параметры из rho_seed (как при подписи/верификации!)
@@ -360,8 +361,8 @@ int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message,
     memcpy(l_seed_and_counter + 32, l_counter_bytes, 4);
     
     // Hash to get derived seed (точно как в chipmunk_hots_keygen)
-    dap_hash_fast_t l_hash_out;
-    dap_hash_fast(l_seed_and_counter, 36, &l_hash_out);
+    dap_hash_sha3_256_t l_hash_out;
+    dap_hash_sha3_256(l_seed_and_counter, 36, &l_hash_out);
     memcpy(l_derived_seed, &l_hash_out, 32);
     
     // Генерируем секретные ключи точно как в chipmunk_hots_keygen
@@ -782,8 +783,8 @@ int chipmunk_keypair_from_seed(const uint8_t a_seed[32],
     uint32_t l_rho_nonce = 0x12345678; // Фиксированное значение для rho (отличное от общей функции)
     memcpy(l_rho_source + 32, &l_rho_nonce, 4);
     
-    dap_hash_fast_t l_rho_hash;
-    dap_hash_fast(l_rho_source, 36, &l_rho_hash);
+    dap_hash_sha3_256_t l_rho_hash;
+    dap_hash_sha3_256(l_rho_source, 36, &l_rho_hash);
     memcpy(l_rho_seed, &l_rho_hash, 32);
     
     // Генерируем HOTS параметры из rho_seed детерминированно
