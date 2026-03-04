@@ -386,6 +386,20 @@ int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_d
             ? a_size : ( DAP_ALFREE(l_entry), log_it(L_ERROR, "Enqueue into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %d",
                                                               a_es->uuid, GetLastError()), 0 );
 }
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+
+int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+{
+    if (!a_es)
+        return -1;
+    if (a_size != 0) {
+        log_it(L_ERROR, "pipe2 queue supports pointer-only sends (a_size must be 0)");
+        return -1;
+    }
+    ssize_t ret = write(a_es->fd2, &a_data, sizeof(void *));
+    return ret == (ssize_t)sizeof(void *) ? 0 : -1;
+}
+
 #endif
 
 /*
