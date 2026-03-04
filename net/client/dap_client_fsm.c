@@ -868,14 +868,23 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
             }
             s_set_stage_status(a_fsm, STAGE_STATUS_IN_PROGRESS);
         } else {
-            log_it(L_ERROR, "Disconnect state(%s), doing callback",
+            if (s_retry_handshake_with_fallback(a_fsm) == 0) {
+                log_it(L_NOTICE, "Switching to fallback transport %s after %d failed attempts",
+                       dap_net_trans_type_to_str(a_fsm->client->trans_type),
+                       a_fsm->reconnect_attempts);
+                a_fsm->reconnect_attempts = 0;
+                return;
+            }
+            log_it(L_ERROR, "Disconnect state(%s), all transports exhausted, doing callback",
                    dap_client_error_str(a_fsm->last_error));
             if (a_fsm->client->stage_status_error_callback)
                 a_fsm->client->stage_status_error_callback(a_fsm->client, (void *)(intptr_t)l_is_last_attempt);
             if (a_fsm->client->always_reconnect) {
-                log_it(L_INFO, "Too many attempts, reconnect in %d seconds", s_timeout);
+                log_it(L_INFO, "Too many attempts, reconnect in %d seconds (reset tried transports)", s_timeout);
                 s_set_stage_status(a_fsm, STAGE_STATUS_IN_PROGRESS);
                 a_fsm->reconnect_attempts = 0;
+                a_fsm->tried_transport_count = 0;
+                s_add_tried_transport(a_fsm, a_fsm->client->trans_type);
             } else {
                 log_it(L_ERROR, "Connect to %s:%u failed",
                        a_fsm->client->link_info.uplink_addr, a_fsm->client->link_info.uplink_port);
