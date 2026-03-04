@@ -31,9 +31,8 @@
 #  define MOCK_SUPPORTED 1
 #  define dap_usleep(us) usleep(us)
 #else
-#  include <windows.h>
 #  define MOCK_SUPPORTED 0
-#  define dap_usleep(us) Sleep((us) / 1000)
+#  define dap_usleep(us) ((void)(us))
 #endif
 #include "dap_client_http.h"
 #include "dap_worker.h"
