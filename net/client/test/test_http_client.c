@@ -21,6 +21,7 @@
 #include <time.h>
 #include <errno.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -29,6 +30,7 @@
 #include "dap_worker.h"
 #include "dap_events.h"
 #include "dap_http_header.h"
+#include "dap_strfuncs.h"
 
 /* ============================================================
  * Embedded mock HTTP/1.1 server
@@ -74,8 +76,11 @@ static void _srv_chunk(int fd, const void *d, size_t n) {
 }
 static void _srv_chunk_end(int fd) { _srv_sends(fd, "0\r\n\r\n"); }
 
-/* ---- emit status line + common headers ---- */
-static void _srv_status(int fd, int code, const char *ct, int content_len) {
+/* ---- emit status line + common headers ----
+ * close_conn: 1 → send "Connection: close", 0 → send "Connection: keep-alive"
+ */
+static void _srv_status(int fd, int code, const char *ct, int content_len,
+                        int close_conn) {
     const char *txt =
         code == 200 ? "OK" :
         code == 201 ? "Created" :
@@ -88,8 +93,10 @@ static void _srv_status(int fd, int code, const char *ct, int content_len) {
     snprintf(hdr, sizeof(hdr),
              "HTTP/1.1 %d %s\r\n"
              "Content-Type: %s\r\n"
-             "Connection: close\r\n",
-             code, txt, ct ? ct : "text/plain");
+             "Connection: %s\r\n",
+             code, txt,
+             ct ? ct : "text/plain",
+             close_conn ? "close" : "keep-alive");
     _srv_sends(fd, hdr);
     if (content_len >= 0) {
         char cl[48];
@@ -101,8 +108,10 @@ static void _srv_status(int fd, int code, const char *ct, int content_len) {
     _srv_sends(fd, "\r\n");
 }
 
-/* ---- route handler ---- */
-static void _srv_handle(int fd, const char *req) {
+/* ---- route handler ----
+ * close_conn: honour the Connection: close policy from the outer loop
+ */
+static void _srv_handle(int fd, const char *req, int close_conn) {
     char method[16] = {0}, path_q[2048] = {0};
     if (sscanf(req, "%15s %2047s", method, path_q) < 2)
         return;
@@ -114,10 +123,12 @@ static void _srv_handle(int fd, const char *req) {
     char *qmark = strchr(path_q, '?');
     if (qmark) {
         size_t plen = (size_t)(qmark - path_q);
-        if (plen < sizeof(path)) { memcpy(path, path_q, plen); path[plen] = '\0'; }
-        strncpy(query, qmark + 1, sizeof(query) - 1);
+        if (plen >= sizeof(path)) plen = sizeof(path) - 1;
+        memcpy(path, path_q, plen);
+        path[plen] = '\0';
+        dap_strncpy(query, qmark + 1, sizeof(query) - 1);
     } else {
-        strncpy(path, path_q, sizeof(path) - 1);
+        dap_strncpy(path, path_q, sizeof(path) - 1);
     }
 
     /* --------------------------------------------------
@@ -127,7 +138,7 @@ static void _srv_handle(int fd, const char *req) {
         const char *body =
             "{\"url\":\"http://" MOCK_HOST ":" MOCK_PORT_STR "/httpbin/get\","
             "\"args\":{}}";
-        _srv_status(fd, 200, "application/json", (int)strlen(body));
+        _srv_status(fd, 200, "application/json", (int)strlen(body), close_conn);
         if (!is_head) _srv_sends(fd, body);
         return;
     }
@@ -145,7 +156,7 @@ static void _srv_handle(int fd, const char *req) {
                             "\"json\":{\"name\": \"test_user\","
                             "\"message\": \"Hello from DAP HTTP client\"}}",
                             body);
-        _srv_status(fd, 200, "application/json", rlen);
+        _srv_status(fd, 200, "application/json", rlen, close_conn);
         if (!is_head) _srv_send(fd, resp, (size_t)rlen);
         return;
     }
@@ -158,7 +169,7 @@ static void _srv_handle(int fd, const char *req) {
     if (strcmp(path, "/httpbin/headers") == 0) {
         const char *hdr_end = strstr(req, "\r\n\r\n");
         int hdr_len = hdr_end ? (int)(hdr_end - req) : (int)strlen(req);
-        _srv_status(fd, 200, "text/plain", hdr_len);
+        _srv_status(fd, 200, "text/plain", hdr_len, close_conn);
         if (!is_head) _srv_send(fd, req, (size_t)hdr_len);
         return;
     }
@@ -170,7 +181,7 @@ static void _srv_handle(int fd, const char *req) {
         int code = atoi(path + 16);
         if (code <= 0) code = 200;
         const char *err_body = "";
-        _srv_status(fd, code, "text/plain", (int)strlen(err_body));
+        _srv_status(fd, code, "text/plain", (int)strlen(err_body), close_conn);
         if (!is_head) _srv_sends(fd, err_body);
         return;
     }
@@ -182,7 +193,7 @@ static void _srv_handle(int fd, const char *req) {
         int n = atoi(path + 15);
         if (n <= 0) n = 256;
         if (n > 1024 * 1024) n = 1024 * 1024;
-        _srv_status(fd, 200, "application/octet-stream", n);
+        _srv_status(fd, 200, "application/octet-stream", n, close_conn);
         if (!is_head) {
             char *buf = calloc(1, (size_t)n);
             if (buf) {
@@ -201,7 +212,7 @@ static void _srv_handle(int fd, const char *req) {
         int n = atoi(path + 16);
         if (n <= 0) n = 3;
         if (n > 100) n = 100;
-        _srv_status(fd, 200, "application/json", -1 /* chunked */);
+        _srv_status(fd, 200, "application/json", -1 /* chunked */, close_conn);
         if (!is_head) {
             for (int i = 0; i < n; i++) {
                 char chunk[128];
@@ -223,7 +234,7 @@ static void _srv_handle(int fd, const char *req) {
         int total = atoi(path + 22);
         if (total <= 0) total = 1024;
         if (total > 1024 * 1024) total = 1024 * 1024;
-        _srv_status(fd, 200, "application/octet-stream", -1 /* chunked */);
+        _srv_status(fd, 200, "application/octet-stream", -1 /* chunked */, close_conn);
         if (!is_head) {
             const int chunk_size = 8192;
             char *buf = malloc((size_t)chunk_size);
@@ -248,7 +259,7 @@ static void _srv_handle(int fd, const char *req) {
      * /httpbin/image/png  – minimal valid PNG
      * -------------------------------------------------- */
     if (strcmp(path, "/httpbin/image/png") == 0) {
-        _srv_status(fd, 200, "image/png", TINY_PNG_SIZE);
+        _srv_status(fd, 200, "image/png", TINY_PNG_SIZE, close_conn);
         if (!is_head) _srv_send(fd, s_tiny_png, sizeof(s_tiny_png));
         return;
     }
@@ -265,12 +276,12 @@ static void _srv_handle(int fd, const char *req) {
                      "Location: http://" MOCK_HOST ":" MOCK_PORT_STR
                      "/httpbin/redirect/%d\r\n"
                      "Content-Length: 0\r\n"
-                     "Connection: close\r\n\r\n",
+                     "Connection: keep-alive\r\n\r\n",
                      n - 1);
             _srv_sends(fd, loc);
         } else {
             const char *ok = "{\"redirects\":0}";
-            _srv_status(fd, 200, "application/json", (int)strlen(ok));
+            _srv_status(fd, 200, "application/json", (int)strlen(ok), close_conn);
             if (!is_head) _srv_sends(fd, ok);
         }
         return;
@@ -288,12 +299,12 @@ static void _srv_handle(int fd, const char *req) {
                      "Location: http://" MOCK_HOST ":" MOCK_PORT_STR
                      "/httpbin/absolute-redirect/%d\r\n"
                      "Content-Length: 0\r\n"
-                     "Connection: close\r\n\r\n",
+                     "Connection: keep-alive\r\n\r\n",
                      n - 1);
             _srv_sends(fd, loc);
         } else {
             const char *ok = "{\"redirects\":0}";
-            _srv_status(fd, 200, "application/json", (int)strlen(ok));
+            _srv_status(fd, 200, "application/json", (int)strlen(ok), close_conn);
             if (!is_head) _srv_sends(fd, ok);
         }
         return;
@@ -317,14 +328,14 @@ static void _srv_handle(int fd, const char *req) {
                      "HTTP/1.1 302 Found\r\n"
                      "Location: http://" MOCK_HOST ":" MOCK_PORT_STR "%s\r\n"
                      "Content-Length: 0\r\n"
-                     "Connection: close\r\n\r\n",
+                     "Connection: keep-alive\r\n\r\n",
                      target);
         } else {
             snprintf(loc, sizeof(loc),
                      "HTTP/1.1 302 Found\r\n"
                      "Location: %s\r\n"
                      "Content-Length: 0\r\n"
-                     "Connection: close\r\n\r\n",
+                     "Connection: keep-alive\r\n\r\n",
                      target);
         }
         _srv_sends(fd, loc);
@@ -341,7 +352,8 @@ static void _srv_handle(int fd, const char *req) {
                  "HTTP/1.1 301 Moved Permanently\r\n"
                  "Location: http://" MOCK_HOST ":" MOCK_PORT_STR "/httpbin/get\r\n"
                  "Content-Length: 0\r\n"
-                 "Connection: close\r\n\r\n");
+                 "Connection: %s\r\n\r\n",
+                 close_conn ? "close" : "keep-alive");
         _srv_sends(fd, loc);
         return;
     }
@@ -350,7 +362,7 @@ static void _srv_handle(int fd, const char *req) {
      * Fallback: 404
      * -------------------------------------------------- */
     const char *nf = "Not Found";
-    _srv_status(fd, 404, "text/plain", (int)strlen(nf));
+    _srv_status(fd, 404, "text/plain", (int)strlen(nf), close_conn);
     if (!is_head) _srv_sends(fd, nf);
 }
 
@@ -365,21 +377,34 @@ static void *s_srv_loop(void *arg) {
             if (s_srv_running) usleep(1000);
             continue;
         }
-        /* set per-connection receive timeout */
+
+        /* per-connection receive timeout */
         struct timeval rtv = {5, 0};
         setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &rtv, sizeof(rtv));
 
-        /* read request (headers end at \r\n\r\n) */
-        char req[65536] = {0};
-        size_t total = 0;
-        while (total < sizeof(req) - 1) {
-            ssize_t n = recv(cfd, req + total, sizeof(req) - 1 - total, 0);
-            if (n <= 0) break;
-            total += (size_t)n;
-            if (strstr(req, "\r\n\r\n")) break;
+        /* Keep-alive: handle multiple requests on same TCP connection.
+         * The client reuses the connection when following redirects, so
+         * we must NOT close after each response unless explicitly asked. */
+        while (1) {
+            char req[65536] = {0};
+            size_t total = 0;
+            while (total < sizeof(req) - 1) {
+                ssize_t n = recv(cfd, req + total, sizeof(req) - 1 - total, 0);
+                if (n <= 0) goto next_conn;
+                total += (size_t)n;
+                if (strstr(req, "\r\n\r\n")) break;
+            }
+            if (total == 0) break;
+
+            /* Honour explicit Connection: close from the client */
+            int close_conn = (strstr(req, "Connection: close") != NULL ||
+                              strstr(req, "connection: close") != NULL);
+
+            _srv_handle(cfd, req, close_conn);
+
+            if (close_conn) break;
         }
-        if (total > 0)
-            _srv_handle(cfd, req);
+        next_conn:
         close(cfd);
     }
     return NULL;
@@ -603,6 +628,13 @@ static void test3_progress_callback(void *a_data, size_t a_data_size,
             TEST_INFO("Multiple JSON objects received in single chunk (valid streaming)");
             g_test3_completed = true;
         }
+    }
+
+    /* 0-byte progress callback = end-of-chunked-stream marker */
+    if (a_data_size == 0 && g_test3_chunks_received > 0) {
+        TEST_INFO("End-of-stream (0-byte chunk), completing test");
+        g_test3_completed = true;
+        return;
     }
 
     if (g_test3_chunks_received >= 1 &&
@@ -1008,7 +1040,7 @@ static void test10_response_callback(void *a_body, size_t a_body_size,
 
         if (a_body_size > 100) {
             char preview[101] = {0};
-            strncpy(preview, response_str, 100);
+            dap_strncpy(preview, response_str, 100);
             TEST_INFO("Response preview: %.100s...", preview);
         } else {
             TEST_INFO("Full response: %.*s", (int)a_body_size, response_str);
@@ -1097,6 +1129,14 @@ static void test13_progress_callback(void *a_data, size_t a_data_size,
 
     TEST_INFO("Chunked chunk #%d: %zu bytes (total: %zu)",
               g_test13_chunks_received, a_data_size, g_test13_total_streamed);
+
+    /* 0-byte callback = end-of-stream */
+    if (a_data_size == 0 && g_test13_chunks_received > 0) {
+        TEST_INFO("End-of-stream (0-byte chunk), completing test (%zu bytes total)",
+                  g_test13_total_streamed);
+        g_test13_completed = true;
+        return;
+    }
 
     if (g_test13_total_streamed >= 50 * 1024) {
         TEST_INFO("Received sufficient chunked data (%zu bytes), completing test",
@@ -2141,6 +2181,9 @@ void print_test_summary()
 void test_http_client()
 {
     g_test_state.start_time = time(NULL);
+
+    /* Prevent SIGPIPE from killing the process when writing to a closed socket */
+    signal(SIGPIPE, SIG_IGN);
 
     /* Start the local mock server (must come before dap_events_start) */
     if (s_mock_server_start() != 0) {
