@@ -14,7 +14,6 @@
 #pragma once
 
 #include "dap_global_db.h"
-#include "dap_global_db_driver.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -59,11 +58,11 @@ int dap_global_db_set_sync_w(const char *a_group, const char *a_key,
 int dap_global_db_del_sync_w(const char *a_group, const char *a_key);
 
 /**
- * @brief Wrapper for dap_global_db_driver_hash_count
+ * @brief Wrapper for dap_global_db_group_count
  * @param a_group Group name
  * @return Number of records in group
  */
-size_t dap_global_db_driver_hash_count_w(const char *a_group);
+size_t dap_global_db_group_count_w(const char *a_group);
 
 /**
  * @brief Wrapper for dap_global_db_get_all_sync

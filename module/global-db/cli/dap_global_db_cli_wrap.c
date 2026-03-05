@@ -12,7 +12,6 @@
 
 #include "dap_global_db_cli_wrap.h"
 #include "dap_global_db.h"
-#include "dap_global_db_driver.h"
 
 /**
  * @brief Wrapper for dap_global_db_flush_sync
@@ -49,12 +48,11 @@ int dap_global_db_del_sync_w(const char *a_group, const char *a_key)
 }
 
 /**
- * @brief Wrapper for dap_global_db_driver_count
+ * @brief Wrapper for dap_global_db_group_count
  */
-size_t dap_global_db_driver_hash_count_w(const char *a_group)
+size_t dap_global_db_group_count_w(const char *a_group)
 {
-    dap_global_db_driver_hash_t l_hash_null = {0};
-    return dap_global_db_driver_count(a_group, l_hash_null, false);
+    return dap_global_db_group_count(a_group, false);
 }
 
 /**

@@ -41,7 +41,6 @@
 #include "dap_cli_server.h"
 
 #include "dap_global_db.h"
-#include "dap_global_db_driver.h"
 
 #include "dap_global_db_cli.h"
 
@@ -172,7 +171,7 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
                 
                 dap_json_object_add_string(json_obj_rec, a_version == 1 ? "command status" : "command_status", "Record found");
                 dap_json_object_add_uint64(json_obj_rec, a_version == 1 ? "length(byte)" : "length_byte", l_value_len);
-                dap_json_object_add_string(json_obj_rec, "hash", dap_get_data_hash_str(l_value, l_value_len).s);
+                dap_json_object_add_string(json_obj_rec, "hash", dap_hash_sha3_256_data_to_str(l_value, l_value_len).s);
                 if (a_version == 1) {
                     dap_json_object_add_string(json_obj_rec, "pinned", l_is_pinned ? "Yes" : "No");
                 } else {
@@ -295,7 +294,7 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
                                        "\"%s : %s\"\nTime: %s\nNo value", l_group_str, l_key_str, l_ts_str);
             }
         } else if (dap_global_db_group_match_mask(l_group_str, "*.mempool") && !l_value_out) {
-            dap_store_obj_t *l_read_obj = dap_global_db_get_raw_sync(l_group_str, l_key_str);
+            dap_global_db_store_obj_t *l_read_obj = dap_global_db_get_raw_sync(l_group_str, l_key_str);
             if (!l_read_obj || !l_read_obj->value || !l_read_obj->value_len) {
                 dap_json_rpc_error_add(a_json_arr_reply, DAP_GLOBAL_DB_CLI_TIME_NO_VALUE,
                                        "\"%s : %s\"\nNo value", l_group_str, l_key_str);
@@ -304,7 +303,7 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
                 dap_json_object_add_string(json_obj_read, "key", l_key_str);
                 dap_json_object_add_string(json_obj_read, "error", (char *)l_read_obj->value);
             }
-            dap_store_obj_free_one(l_read_obj);
+            dap_global_db_store_obj_free(l_read_obj, 1);
         } else {
             dap_json_rpc_error_add(a_json_arr_reply, DAP_GLOBAL_DB_CLI_RECORD_NOT_FOUND,
                                    "Record \"%s : %s\" not found", l_group_str, l_key_str);
@@ -328,20 +327,15 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
             return -DAP_GLOBAL_DB_CLI_PARAM_ERR;
         }
 
-        if (!dap_global_db_driver_is(l_group_str, l_key_str)) {
+        dap_global_db_store_obj_t *l_check_obj = dap_global_db_get_raw_sync(l_group_str, l_key_str);
+        if (!l_check_obj) {
             dap_json_rpc_error_add(a_json_arr_reply, DAP_GLOBAL_DB_CLI_NO_DATA_IN_GROUP,
                                    "Key %s not found in group %s", l_key_str, l_group_str);
             return -DAP_GLOBAL_DB_CLI_NO_DATA_IN_GROUP;
         }
+        dap_global_db_store_obj_free(l_check_obj, 1);
 
-        bool l_del_success = false;
-        if (dap_global_db_group_match_mask(l_group_str, "local.*")) {
-            dap_store_obj_t *l_read_obj = dap_global_db_get_raw_sync(l_group_str, l_key_str);
-            l_del_success = !dap_global_db_driver_delete(l_read_obj, 1);
-            dap_store_obj_free_one(l_read_obj);
-        } else {
-            l_del_success = !dap_global_db_del_sync(l_group_str, l_key_str);
-        }
+        bool l_del_success = !dap_global_db_del_sync(l_group_str, l_key_str);
 
         if (l_del_success) {
             dap_json_t *json_obj_del = dap_json_object_new();
@@ -391,7 +385,7 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
         }
 
         size_t l_objs_count = 0;
-        dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_str, &l_objs_count);
+        dap_global_db_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_str, &l_objs_count);
 
         if (!l_objs || !l_objs_count) {
             dap_json_rpc_error_add(a_json_arr_reply, DAP_GLOBAL_DB_CLI_NO_DATA_IN_GROUP, "No data in group %s", l_group_str);
@@ -406,10 +400,10 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
             dap_json_object_add_string(json_obj_keys, "key", l_objs[i].key);
             dap_json_object_add_string(json_obj_keys, "time", l_ts);
             dap_json_object_add_string(json_obj_keys, "type",
-                                       dap_store_obj_get_type(l_objs + i) == DAP_GLOBAL_DB_OPTYPE_ADD ? "record" : "hole");
+                                       dap_global_db_store_obj_get_type(l_objs + i) == DAP_GLOBAL_DB_OPTYPE_ADD ? "record" : "hole");
             dap_json_array_add(json_arr_keys, json_obj_keys);
         }
-        dap_store_obj_free(l_objs, l_objs_count);
+        dap_global_db_store_obj_free(l_objs, l_objs_count);
 
         dap_json_t *json_keys_list = dap_json_object_new();
         dap_json_object_add_string(json_keys_list, a_version == 1 ? "group name" : "group_name", l_group_str);
@@ -424,7 +418,7 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
         dap_cli_server_cmd_find_option_val(a_argv, arg_index, a_argc, "-mask", &l_mask);
         
         dap_json_t *json_group_list = dap_json_object_new();
-        dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask(l_mask ? l_mask : "*");
+        dap_list_t *l_group_list = dap_global_db_get_groups_by_mask(l_mask ? l_mask : "*");
         size_t l_count = 0;
         dap_json_t *json_arr_group = dap_json_array_new();
         
@@ -433,7 +427,7 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
         for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
             dap_json_t *json_obj_list = dap_json_object_new();
             dap_json_object_add_uint64(json_obj_list, (char *)l_list->data,
-                                       dap_global_db_driver_count((char *)l_list->data, c_dap_global_db_driver_hash_blank, l_count_all));
+                                       dap_global_db_group_count((char *)l_list->data, l_count_all));
             dap_json_array_add(json_arr_group, json_obj_list);
         }
         dap_json_object_add_object(json_group_list, a_version == 1 ? "group list" : "group_list", json_arr_group);
@@ -469,7 +463,7 @@ int com_global_db(int a_argc, char **a_argv, dap_json_t *a_json_arr_reply, int a
             l_total_count = 1;
         }
         if (l_all || l_mask) {
-            dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask(l_mask ? l_mask : "*");
+            dap_list_t *l_group_list = dap_global_db_get_groups_by_mask(l_mask ? l_mask : "*");
             for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list)) {
                 size_t l_count = dap_global_db_group_clear((const char *)(l_list->data), l_pinned);
                 if (l_count) {
