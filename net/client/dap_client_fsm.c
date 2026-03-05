@@ -357,7 +357,7 @@ static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm)
             break;
         }
     }
-    dap_list_free_full(l_all_transports, NULL);
+    dap_list_free(l_all_transports);
 
     if (!l_found) {
         log_it(L_WARNING, "No more untried transports available");

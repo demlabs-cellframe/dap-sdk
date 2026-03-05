@@ -222,8 +222,14 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
     dap_client_t *l_client = NULL;
     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
         l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
-    else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket && a_stream->trans_ctx->esocket->_inheritor)
-        l_client = (dap_client_t *)a_stream->trans_ctx->esocket->_inheritor;
+    else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket_worker
+                                 && a_stream->trans_ctx->esocket_uuid) {
+        dap_events_socket_t *l_found = dap_context_find(
+                a_stream->trans_ctx->esocket_worker->context,
+                a_stream->trans_ctx->esocket_uuid);
+        if (l_found && l_found->_inheritor)
+            l_client = (dap_client_t *)l_found->_inheritor;
+    }
 
     if (!l_client)
         return;
@@ -268,8 +274,13 @@ void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_sessio
     dap_client_t *l_client = NULL;
     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
         l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
-    else if (a_stream->trans_ctx->esocket && a_stream->trans_ctx->esocket->_inheritor)
-        l_client = (dap_client_t *)a_stream->trans_ctx->esocket->_inheritor;
+    else if (a_stream->trans_ctx->esocket_worker && a_stream->trans_ctx->esocket_uuid) {
+        dap_events_socket_t *l_found = dap_context_find(
+                a_stream->trans_ctx->esocket_worker->context,
+                a_stream->trans_ctx->esocket_uuid);
+        if (l_found && l_found->_inheritor)
+            l_client = (dap_client_t *)l_found->_inheritor;
+    }
 
     dap_client_esocket_t *l_es = l_client ? DAP_CLIENT_ESOCKET(l_client) : NULL;
     if (!l_es)
@@ -307,14 +318,19 @@ void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_sessio
 
 void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_code)
 {
-    if (!a_stream || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket)
+    if (!a_stream || !a_stream->trans_ctx)
         return;
     
     dap_client_t *l_client = NULL;
     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
         l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
-    else
-        l_client = DAP_ESOCKET_CLIENT(a_stream->trans_ctx->esocket);
+    else if (a_stream->trans_ctx->esocket_worker && a_stream->trans_ctx->esocket_uuid) {
+        dap_events_socket_t *l_found = dap_context_find(
+                a_stream->trans_ctx->esocket_worker->context,
+                a_stream->trans_ctx->esocket_uuid);
+        if (l_found)
+            l_client = DAP_ESOCKET_CLIENT(l_found);
+    }
     
     dap_client_esocket_t *l_es = l_client ? DAP_CLIENT_ESOCKET(l_client) : NULL;
     if (!l_es)

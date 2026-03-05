@@ -1288,11 +1288,14 @@ static void s_http_trans_close(dap_stream_t *a_stream)
         log_it(L_ERROR, "Invalid stream pointer");
         return;
     }
-    
+
     log_it(L_DEBUG, "HTTP trans connection closed");
-    
-    // HTTP trans doesn't need special close handling
-    // The connection is managed by HTTP client infrastructure
+
+    if (a_stream->trans_ctx) {
+        a_stream->trans_ctx->esocket = NULL;
+        a_stream->trans_ctx->esocket_uuid = 0;
+        a_stream->trans_ctx->esocket_worker = NULL;
+    }
 }
 
 /**

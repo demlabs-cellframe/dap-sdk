@@ -507,7 +507,7 @@ pthread_t       l_tid;
     // Save thread IDs before threads exit and free their contexts
     // Context is freed by the thread itself before pthread_exit, so we need
     // to save thread_id before calling this function
-    pthread_t *l_thread_ids = DAP_NEW_Z_SIZE(pthread_t, s_threads_count);
+    pthread_t *l_thread_ids = DAP_NEW_Z_COUNT(pthread_t, s_threads_count);
     if (!l_thread_ids) {
         log_it(L_ERROR, "Failed to allocate memory for thread IDs");
         return -1;
