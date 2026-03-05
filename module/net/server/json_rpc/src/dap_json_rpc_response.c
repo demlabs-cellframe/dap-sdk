@@ -197,9 +197,8 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
                 dap_json_object_free(result_obj); // Free borrowed wrapper
                 break;
             case TYPE_RESPONSE_JSON:
-                // Link the result JSON object for response 
+                // Take ownership of the result JSON wrapper (ref_count already 1)
                 response->result_json_object = result_obj;
-                dap_json_object_ref(result_obj);
                 break;
             case TYPE_RESPONSE_NULL:
                 dap_json_object_free(result_obj); // Free borrowed wrapper

@@ -293,7 +293,7 @@ char *dap_json_rpc_params_get_string_json(dap_json_rpc_params_t * a_params)
         }
         dap_json_array_add(jobj_array, jobj_tmp);
     };
-    char *l_str = dap_strdup( dap_json_to_string(jobj_array) );
+    char *l_str = dap_json_to_string(jobj_array);
     dap_json_object_free(jobj_array);
     return l_str;
 }

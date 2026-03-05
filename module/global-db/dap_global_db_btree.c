@@ -1320,7 +1320,10 @@ static int s_leaf_delete_entry(dap_global_db_page_t *a_page, int a_index, dap_ar
 static int s_search_in_page(dap_global_db_page_t *a_page, const dap_global_db_key_t *a_key, bool *a_found)
 {
     *a_found = false;
-    
+
+    if (!a_page)
+        return 0;
+
     if (a_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF) {
         int l_index;
         if (s_leaf_find_entry(a_page, a_key, &l_index) == 0) {
@@ -1328,18 +1331,22 @@ static int s_search_in_page(dap_global_db_page_t *a_page, const dap_global_db_ke
         }
         return l_index;
     }
-    
-    // Branch page - binary search for child
+
+    if (!(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
+        return 0;
+
     int l_count = a_page->header.entries_count;
     int l_low = 0, l_high = l_count - 1;
     
     while (l_low <= l_high) {
         int l_mid = (l_low + l_high) / 2;
         dap_global_db_branch_entry_t *l_entry = s_branch_entry_at(a_page, l_mid);
-        
+        if (!l_entry)
+            return l_low;
+
         int l_cmp = s_key_cmp(a_key, &l_entry->driver_hash);
         if (l_cmp == 0) {
-            return l_mid + 1;  // Go to right child on exact match
+            return l_mid + 1;
         } else if (l_cmp < 0) {
             l_high = l_mid - 1;
         } else {
@@ -1347,7 +1354,7 @@ static int s_search_in_page(dap_global_db_page_t *a_page, const dap_global_db_ke
         }
     }
     
-    return l_low;  // Child index to follow
+    return l_low;
 }
 
 // ============================================================================
@@ -4591,7 +4598,7 @@ void dap_global_db_cursor_close(dap_global_db_cursor_t *a_cursor)
  * adjacent leaves by popping up to the parent branch and descending into
  * the next/prev child subtree.
  */
-static int s_btree_cursor_move_snapshot(dap_global_db_cursor_t *a_cursor,
+static int s_btree_cursor_move_snapshot_unlocked(dap_global_db_cursor_t *a_cursor,
                                         dap_global_db_cursor_op_t a_op,
                                         const dap_global_db_key_t *a_key)
 {
@@ -4758,6 +4765,16 @@ static int s_btree_cursor_move_snapshot(dap_global_db_cursor_t *a_cursor,
     if (!a_cursor->valid && !a_cursor->at_end)
         return 1;
     return 0;
+}
+
+static int s_btree_cursor_move_snapshot(dap_global_db_cursor_t *a_cursor,
+                                        dap_global_db_cursor_op_t a_op,
+                                        const dap_global_db_key_t *a_key)
+{
+    pthread_rwlock_rdlock(&a_cursor->tree->lock);
+    int l_ret = s_btree_cursor_move_snapshot_unlocked(a_cursor, a_op, a_key);
+    pthread_rwlock_unlock(&a_cursor->tree->lock);
+    return l_ret;
 }
 
 /**
