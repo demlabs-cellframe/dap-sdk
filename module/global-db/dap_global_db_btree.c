@@ -4545,6 +4545,9 @@ dap_global_db_cursor_t *dap_global_db_cursor_create(dap_global_db_t *a_tree)
         l_cursor->snapshot_txn = 0;
         l_cursor->snapshot_count = 0;
     }
+    debug_if(s_debug_more, L_INFO, "cursor_create: slot=%d snap_root=%llu snap_txn=%llu snap_count=%llu header_root=%llu",
+           l_slot, (unsigned long long)l_cursor->snapshot_root, (unsigned long long)l_cursor->snapshot_txn,
+           (unsigned long long)l_cursor->snapshot_count, (unsigned long long)a_tree->header.root_page);
     
     return l_cursor;
 }
@@ -4639,6 +4642,11 @@ static int s_btree_cursor_move_snapshot(dap_global_db_cursor_t *a_cursor,
     case DAP_GLOBAL_DB_FIRST:
         a_cursor->current_page = s_find_leftmost_leaf_path(l_tree, l_root,
             a_cursor->path, &a_cursor->path_depth);
+        debug_if(s_debug_more, L_INFO, "cursor_move_snapshot FIRST: root=%llu page=%p entries=%d flags=0x%x",
+               (unsigned long long)l_root,
+               (void *)a_cursor->current_page,
+               a_cursor->current_page ? (int)a_cursor->current_page->header.entries_count : -1,
+               a_cursor->current_page ? (int)a_cursor->current_page->header.flags : -1);
         if (a_cursor->current_page && a_cursor->current_page->header.entries_count > 0) {
             a_cursor->current_index = 0;
             a_cursor->valid = true;
@@ -5083,7 +5091,7 @@ static int s_btree_cursor_get_impl(dap_global_db_cursor_t *a_cursor,
                              uint8_t *a_out_flags)
 {
     if (!a_cursor->valid || !a_cursor->current_page)
-        return 1;  // Invalid cursor
+        return 1;
     
     uint8_t *l_data;
     dap_global_db_leaf_entry_t *l_entry = s_leaf_entry_at(a_cursor->current_page, 
@@ -5101,25 +5109,44 @@ static int s_btree_cursor_get_impl(dap_global_db_cursor_t *a_cursor,
         *a_out_text_key = NULL;
     }
     
-    if (a_out_value && l_entry->value_len > 0) {
-        *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
-        memcpy(*a_out_value, l_data + l_entry->key_len, l_entry->value_len);
-    } else if (a_out_value) {
-        *a_out_value = NULL;
-    }
-    
     if (a_out_value_len)
         *a_out_value_len = l_entry->value_len;
-    
-    if (a_out_sign && l_entry->sign_len > 0) {
-        *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
-        memcpy(*a_out_sign, l_data + l_entry->key_len + l_entry->value_len, l_entry->sign_len);
-    } else if (a_out_sign) {
-        *a_out_sign = NULL;
-    }
-    
     if (a_out_sign_len)
         *a_out_sign_len = l_entry->sign_len;
+    
+    if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
+        uint64_t l_ov_id = *(const uint64_t *)(l_data + l_entry->key_len);
+        size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
+        uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
+        if (!l_buf || s_overflow_read(a_cursor->tree, l_ov_id, l_buf, l_total, NULL) != 0) {
+            DAP_DELETE(l_buf);
+            return -1;
+        }
+        if (a_out_value && l_entry->value_len > 0) {
+            *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
+            memcpy(*a_out_value, l_buf, l_entry->value_len);
+        } else if (a_out_value)
+            *a_out_value = NULL;
+        if (a_out_sign && l_entry->sign_len > 0) {
+            *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
+            memcpy(*a_out_sign, l_buf + l_entry->value_len, l_entry->sign_len);
+        } else if (a_out_sign)
+            *a_out_sign = NULL;
+        DAP_DELETE(l_buf);
+    } else {
+        if (a_out_value && l_entry->value_len > 0) {
+            *a_out_value = DAP_NEW_Z_SIZE(uint8_t, l_entry->value_len);
+            memcpy(*a_out_value, l_data + l_entry->key_len, l_entry->value_len);
+        } else if (a_out_value) {
+            *a_out_value = NULL;
+        }
+        if (a_out_sign && l_entry->sign_len > 0) {
+            *a_out_sign = DAP_NEW_Z_SIZE(uint8_t, l_entry->sign_len);
+            memcpy(*a_out_sign, l_data + l_entry->key_len + l_entry->value_len, l_entry->sign_len);
+        } else if (a_out_sign) {
+            *a_out_sign = NULL;
+        }
+    }
     
     if (a_out_flags)
         *a_out_flags = l_entry->flags;
