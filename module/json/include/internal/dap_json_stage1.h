@@ -520,30 +520,37 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 // Include architecture-specific implementations for static inline dispatch
 // These must be included AFTER all typedefs are complete
 // Use __has_include to gracefully handle missing generated headers (e.g. when codegen fails)
+// Define availability macros for dispatch logic
 #include "dap_json_stage1_ref.h"
 
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 #if __has_include("dap_json_stage1_sse2.h")
 #include "dap_json_stage1_sse2.h"
+#define DAP_JSON_STAGE1_SSE2_AVAILABLE 1
 #endif
 #if __has_include("dap_json_stage1_avx2.h")
 #include "dap_json_stage1_avx2.h"
+#define DAP_JSON_STAGE1_AVX2_AVAILABLE 1
 #endif
 #if __has_include("dap_json_stage1_avx512.h")
 #include "dap_json_stage1_avx512.h"
+#define DAP_JSON_STAGE1_AVX512_AVAILABLE 1
 #endif
 
 #elif defined(__arm__) || defined(__aarch64__)
 #if __has_include("dap_json_stage1_neon.h")
 #include "dap_json_stage1_neon.h"
+#define DAP_JSON_STAGE1_NEON_AVAILABLE 1
 #endif
 // SVE/SVE2 are ARM64-only (ARMv8-A 64-bit) and NOT supported on Apple Silicon
 #if defined(__aarch64__) && !defined(__APPLE__)
 #if __has_include("dap_json_stage1_sve.h")
 #include "dap_json_stage1_sve.h"
+#define DAP_JSON_STAGE1_SVE_AVAILABLE 1
 #endif
 #if __has_include("dap_json_stage1_sve2.h")
 #include "dap_json_stage1_sve2.h"
+#define DAP_JSON_STAGE1_SVE2_AVAILABLE 1
 #endif
 #endif
 #endif
@@ -596,28 +603,35 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     
     int result;
     switch (arch) {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#ifdef DAP_JSON_STAGE1_SSE2_AVAILABLE
         case DAP_CPU_ARCH_SSE2:
             result = dap_json_stage1_run_sse2(a_stage1);
             break;
+#endif
+#ifdef DAP_JSON_STAGE1_AVX2_AVAILABLE
         case DAP_CPU_ARCH_AVX2:
             result = dap_json_stage1_run_avx2(a_stage1);
             break;
+#endif
+#ifdef DAP_JSON_STAGE1_AVX512_AVAILABLE
         case DAP_CPU_ARCH_AVX512:
             result = dap_json_stage1_run_avx512(a_stage1);
             break;
-#elif defined(__arm__) || defined(__aarch64__)
+#endif
+#ifdef DAP_JSON_STAGE1_NEON_AVAILABLE
         case DAP_CPU_ARCH_NEON:
             result = dap_json_stage1_run_neon(a_stage1);
             break;
-#if defined(__aarch64__) && !defined(__APPLE__)
+#endif
+#ifdef DAP_JSON_STAGE1_SVE_AVAILABLE
         case DAP_CPU_ARCH_SVE:
             result = dap_json_stage1_run_sve(a_stage1);
             break;
+#endif
+#ifdef DAP_JSON_STAGE1_SVE2_AVAILABLE
         case DAP_CPU_ARCH_SVE2:
             result = dap_json_stage1_run_sve2(a_stage1);
             break;
-#endif
 #endif
         case DAP_CPU_ARCH_REFERENCE:
         case DAP_CPU_ARCH_AUTO:
