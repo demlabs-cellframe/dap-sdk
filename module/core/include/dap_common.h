@@ -23,6 +23,12 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
+
+// Ensure __has_builtin is defined for compilers that don't support it
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
 #ifndef __STDC_WANT_LIB_EXT1__
 #define __STDC_WANT_LIB_EXT1__ 1
 #endif

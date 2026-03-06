@@ -2813,7 +2813,8 @@ static void s_cleanup_db_dir(const char *path)
 {
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "rm -rf %s/*", path);
-    system(cmd);
+    int ret = system(cmd);
+    (void)ret;
 }
 
 static void s_run_benchmarks(const benchmark_config_t *cfg)
