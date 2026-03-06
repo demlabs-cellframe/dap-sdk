@@ -297,7 +297,11 @@ static dap_global_db_page_t *s_page_alloc(dap_arena_t *a_arena)
     dap_global_db_page_t *l_page;
     if (a_arena) {
         l_page = dap_arena_alloc_zero(a_arena, sizeof(*l_page));
+        if (!l_page)
+            return NULL;
         l_page->data = dap_arena_alloc(a_arena, PAGE_DATA_SIZE);
+        if (!l_page->data)
+            return NULL;
         memset(l_page->data, 0, PAGE_DATA_SIZE);
         l_page->is_arena = true;
     } else {
@@ -815,35 +819,28 @@ static uint64_t s_page_allocate_contiguous(dap_global_db_t *a_tree, uint32_t a_c
 
 static dap_global_db_branch_entry_t *s_branch_entry_at(dap_global_db_page_t *a_page, int a_index)
 {
-    if (!(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
+    if (!a_page->data || !(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
         return NULL;
-    
-    // Branch entries are stored as: [child0] [key0] [child1] [key1] ... [childN-1] [keyN-1] [childN]
-    // First 8 bytes is leftmost child pointer
-    // Then alternating: branch_entry_t (key + child)
-    
+
     dap_global_db_branch_entry_t *l_entries = (dap_global_db_branch_entry_t *)(a_page->data + sizeof(uint64_t));
     return &l_entries[a_index];
 }
 
 static uint64_t s_branch_get_child(dap_global_db_page_t *a_page, int a_index)
 {
-    if (!(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
+    if (!a_page->data || !(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
         return 0;
-    
-    if (a_index == 0) {
-        // Leftmost child
+
+    if (a_index == 0)
         return *(uint64_t *)a_page->data;
-    }
-    
-    // Child is stored in entry[index-1]
+
     dap_global_db_branch_entry_t *l_entry = s_branch_entry_at(a_page, a_index - 1);
     return l_entry ? l_entry->child_page : 0;
 }
 
 static void s_branch_set_child(dap_global_db_page_t *a_page, int a_index, uint64_t a_child, dap_arena_t *a_arena)
 {
-    if (!(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
+    if (!a_page->data || !(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
         return;
     s_page_cow(a_page, a_arena);
     if (a_index == 0) {
@@ -926,7 +923,7 @@ static inline size_t s_leaf_entry_total_size_overflow(uint32_t a_key_len)
 static dap_global_db_leaf_entry_t *s_leaf_entry_at(dap_global_db_page_t *a_page, int a_index,
                                                     uint8_t **a_out_data, size_t *a_out_total_size)
 {
-    if (!(a_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF))
+    if (!a_page->data || !(a_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF))
         return NULL;
     
     int l_count = a_page->header.entries_count;
@@ -963,6 +960,10 @@ static dap_global_db_leaf_entry_t *s_leaf_entry_at(dap_global_db_page_t *a_page,
  */
 static int s_leaf_find_entry(dap_global_db_page_t *a_page, const dap_global_db_key_t *a_key, int *a_out_index)
 {
+    if (!a_page->data) {
+        *a_out_index = 0;
+        return -1;
+    }
     int l_count = a_page->header.entries_count;
     const uint16_t *l_offsets = (const uint16_t *)(a_page->data + LEAF_HEADER_SIZE);
     const uint8_t *l_data = a_page->data;
@@ -1320,7 +1321,10 @@ static int s_leaf_delete_entry(dap_global_db_page_t *a_page, int a_index, dap_ar
 static int s_search_in_page(dap_global_db_page_t *a_page, const dap_global_db_key_t *a_key, bool *a_found)
 {
     *a_found = false;
-    
+
+    if (!a_page)
+        return 0;
+
     if (a_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF) {
         int l_index;
         if (s_leaf_find_entry(a_page, a_key, &l_index) == 0) {
@@ -1328,18 +1332,22 @@ static int s_search_in_page(dap_global_db_page_t *a_page, const dap_global_db_ke
         }
         return l_index;
     }
-    
-    // Branch page - binary search for child
+
+    if (!(a_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
+        return 0;
+
     int l_count = a_page->header.entries_count;
     int l_low = 0, l_high = l_count - 1;
     
     while (l_low <= l_high) {
         int l_mid = (l_low + l_high) / 2;
         dap_global_db_branch_entry_t *l_entry = s_branch_entry_at(a_page, l_mid);
-        
+        if (!l_entry)
+            return l_low;
+
         int l_cmp = s_key_cmp(a_key, &l_entry->driver_hash);
         if (l_cmp == 0) {
-            return l_mid + 1;  // Go to right child on exact match
+            return l_mid + 1;
         } else if (l_cmp < 0) {
             l_high = l_mid - 1;
         } else {
@@ -1347,7 +1355,7 @@ static int s_search_in_page(dap_global_db_page_t *a_page, const dap_global_db_ke
         }
     }
     
-    return l_low;  // Child index to follow
+    return l_low;
 }
 
 // ============================================================================
@@ -1371,8 +1379,17 @@ static int s_split_child(dap_global_db_t *a_tree, dap_global_db_page_t *a_parent
 {
     dap_arena_t *l_arena = a_tree->arena;
     uint64_t l_child_id = s_branch_get_child(a_parent, a_index);
+    if (l_child_id == 0) {
+        log_it(L_ERROR, "s_split_child: parent page_id=%llu has child[%d]=0 (corrupted tree)",
+                (unsigned long long)a_parent->header.page_id, a_index);
+        return -1;
+    }
 
     uint64_t l_sibling_id = s_page_allocate_new(a_tree);
+    if (l_sibling_id == 0) {
+        log_it(L_ERROR, "s_split_child: failed to allocate sibling page");
+        return -1;
+    }
 
     // Read child as arena copy (COW: never modify original in mmap)
     dap_global_db_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
@@ -1611,11 +1628,17 @@ arena_path:;
         // Read child as arena copy (COW: never modify mmap in place)
         dap_global_db_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
         if (!l_child) {
-            log_it(L_ERROR, "s_page_read child_id=%llu returned NULL, parent page_id=%llu entries=%d l_index=%d",
-                    (unsigned long long)l_child_id, (unsigned long long)l_page->header.page_id,
-                    l_page->header.entries_count, l_index);
-            for (int _d = 0; _d <= l_page->header.entries_count; _d++)
-                log_it(L_ERROR, "  parent child[%d] = %llu", _d, (unsigned long long)s_branch_get_child(l_page, _d));
+            static _Atomic uint64_t s_read_err_count = 0;
+            uint64_t l_cnt = atomic_fetch_add(&s_read_err_count, 1);
+            if (l_cnt < 3 || (l_cnt & (l_cnt - 1)) == 0) {
+                log_it(L_ERROR, "s_page_read child_id=%llu returned NULL, parent page_id=%llu entries=%d l_index=%d (occurrence #%llu)",
+                        (unsigned long long)l_child_id, (unsigned long long)l_page->header.page_id,
+                        l_page->header.entries_count, l_index, (unsigned long long)(l_cnt + 1));
+                if (s_debug_more) {
+                    for (int _d = 0; _d <= l_page->header.entries_count; _d++)
+                        log_it(L_ERROR, "  parent child[%d] = %llu", _d, (unsigned long long)s_branch_get_child(l_page, _d));
+                }
+            }
             return -1;
         }
 
@@ -2532,6 +2555,8 @@ normal_path:
     // Empty tree - create root
     if (a_tree->header.root_page == 0) {
         uint64_t l_root_id = s_page_allocate_new(a_tree);
+        if (l_root_id == 0)
+            return -1;
         // Root page allocated on heap (not arena) — survives as hot_leaf
         dap_global_db_page_t *l_root = s_page_alloc(NULL);
         if (!l_root)
@@ -2600,6 +2625,8 @@ normal_path:
     // Check if root needs split
     if (s_page_needs_split(l_root, a_text_key_len, a_value_len, a_sign_len)) {
         uint64_t l_new_root_id = s_page_allocate_new(a_tree);
+        if (l_new_root_id == 0)
+            return -1;
         dap_global_db_page_t *l_new_root = s_page_alloc(l_arena);
         if (!l_new_root)
             return -1;
@@ -4591,7 +4618,7 @@ void dap_global_db_cursor_close(dap_global_db_cursor_t *a_cursor)
  * adjacent leaves by popping up to the parent branch and descending into
  * the next/prev child subtree.
  */
-static int s_btree_cursor_move_snapshot(dap_global_db_cursor_t *a_cursor,
+static int s_btree_cursor_move_snapshot_unlocked(dap_global_db_cursor_t *a_cursor,
                                         dap_global_db_cursor_op_t a_op,
                                         const dap_global_db_key_t *a_key)
 {
@@ -4758,6 +4785,16 @@ static int s_btree_cursor_move_snapshot(dap_global_db_cursor_t *a_cursor,
     if (!a_cursor->valid && !a_cursor->at_end)
         return 1;
     return 0;
+}
+
+static int s_btree_cursor_move_snapshot(dap_global_db_cursor_t *a_cursor,
+                                        dap_global_db_cursor_op_t a_op,
+                                        const dap_global_db_key_t *a_key)
+{
+    pthread_rwlock_rdlock(&a_cursor->tree->lock);
+    int l_ret = s_btree_cursor_move_snapshot_unlocked(a_cursor, a_op, a_key);
+    pthread_rwlock_unlock(&a_cursor->tree->lock);
+    return l_ret;
 }
 
 /**
