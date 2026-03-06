@@ -2,21 +2,26 @@
 #include <stdint.h>
 
 #include "dap_common.h"
+#include "dap_mock.h"
 #include "dap_enc_bliss.h"
 #include "dap_enc_key.h"
 
 #define LOG_TAG "test_regression_bliss_failure_cleanup"
 
-bool __wrap_invert_polynomial(void *state, void *output, const int32_t *input)
-{
-    (void)state;
-    (void)output;
-    (void)input;
+DAP_MOCK_CUSTOM(bool, invert_polynomial,
+    (void *state, void *output, const int32_t *input))
+    UNUSED(state);
+    UNUSED(output);
+    UNUSED(input);
     return false;
 }
 
 int main(void)
 {
+    if (dap_mock_init() != 0) {
+        return 1;
+    }
+
     bool l_ok = true;
     dap_enc_key_t l_key = {0};
 
@@ -31,5 +36,6 @@ int main(void)
     }
 
     dap_enc_sig_bliss_key_delete(&l_key);
+    dap_mock_deinit();
     return l_ok ? 0 : 1;
 }

@@ -126,6 +126,75 @@ void dap_enc_sig_falcon_key_new_generate(dap_enc_key_t *a_key, const void *kex_b
     a_key->pub_key_data_size = sizeof(falcon_public_key_t);
 }
 
+static int s_falcon_sign_by_mode(const falcon_private_key_t *a_private_key, shake256_context *a_rng, byte_t *a_sig_data,
+                                 size_t *a_sig_len, const void *a_msg, size_t a_msg_size)
+{
+    int l_ret = 0;
+    uint8_t *l_tmp = NULL;
+    uint8_t *l_expanded_key = NULL;
+    size_t l_tmp_size = 0;
+    size_t l_expanded_key_size = 0;
+
+    if (a_private_key->type == FALCON_DYNAMIC) {
+        l_tmp_size = FALCON_TMPSIZE_SIGNDYN(a_private_key->degree);
+        l_tmp = DAP_NEW_Z_SIZE(uint8_t, l_tmp_size);
+        if (!l_tmp) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return -1;
+        }
+
+        l_ret = falcon_sign_dyn(
+                a_rng,
+                a_sig_data, a_sig_len, a_private_key->kind,
+                a_private_key->data, FALCON_PRIVKEY_SIZE(a_private_key->degree),
+                a_msg, a_msg_size,
+                l_tmp, l_tmp_size
+                );
+    } else if (a_private_key->type == FALCON_TREE) {
+        size_t l_tmp_expand_size = FALCON_TMPSIZE_EXPANDPRIV(a_private_key->degree);
+        size_t l_tmp_sign_size = FALCON_TMPSIZE_SIGNTREE(a_private_key->degree);
+        l_tmp_size = l_tmp_expand_size > l_tmp_sign_size ? l_tmp_expand_size : l_tmp_sign_size;
+
+        l_tmp = DAP_NEW_Z_SIZE(uint8_t, l_tmp_size);
+        if (!l_tmp) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return -1;
+        }
+
+        l_expanded_key_size = FALCON_EXPANDEDKEY_SIZE(a_private_key->degree);
+        l_expanded_key = DAP_NEW_Z_SIZE(uint8_t, l_expanded_key_size);
+        if (!l_expanded_key) {
+            DAP_DEL_Z(l_tmp);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return -1;
+        }
+
+        l_ret = falcon_expand_privkey(
+                l_expanded_key, l_expanded_key_size,
+                a_private_key->data, FALCON_PRIVKEY_SIZE(a_private_key->degree),
+                l_tmp, l_tmp_size
+                );
+        if (!l_ret) {
+            l_ret = falcon_sign_tree(
+                    a_rng,
+                    a_sig_data, a_sig_len, a_private_key->kind,
+                    l_expanded_key,
+                    a_msg, a_msg_size,
+                    l_tmp, l_tmp_size
+                    );
+        }
+    } else {
+        l_ret = -13;
+    }
+
+    if (l_expanded_key) {
+        memset(l_expanded_key, 0, l_expanded_key_size);
+        DAP_DEL_Z(l_expanded_key);
+    }
+    DAP_DEL_Z(l_tmp);
+    return l_ret;
+}
+
 int dap_enc_sig_falcon_get_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, void* a_sig, const size_t a_signature_size)
 {
     if (a_signature_size != sizeof(falcon_signature_t)) {
@@ -176,71 +245,7 @@ int dap_enc_sig_falcon_get_sign(dap_enc_key_t *a_key, const void *a_msg, const s
         return -1;
     }
 
-    uint8_t *l_tmp = NULL;
-    uint8_t *l_expanded_key = NULL;
-    size_t l_tmp_size = 0;
-    size_t l_expanded_key_size = 0;
-
-    if (privateKey->type == FALCON_DYNAMIC) {
-        l_tmp_size = FALCON_TMPSIZE_SIGNDYN(privateKey->degree);
-        l_tmp = DAP_NEW_Z_SIZE(uint8_t, l_tmp_size);
-        if (!l_tmp) {
-            DAP_DEL_Z(l_sig_data);
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return -1;
-        }
-
-        l_ret = falcon_sign_dyn(
-                &l_rng,
-                l_sig_data, &l_sig_len, privateKey->kind,
-                privateKey->data, FALCON_PRIVKEY_SIZE(privateKey->degree),
-                a_msg, a_msg_size,
-                l_tmp, l_tmp_size
-                );
-    } else if (privateKey->type == FALCON_TREE) {
-        size_t l_tmp_expand_size = FALCON_TMPSIZE_EXPANDPRIV(privateKey->degree);
-        size_t l_tmp_sign_size = FALCON_TMPSIZE_SIGNTREE(privateKey->degree);
-        l_tmp_size = l_tmp_expand_size > l_tmp_sign_size ? l_tmp_expand_size : l_tmp_sign_size;
-
-        l_tmp = DAP_NEW_Z_SIZE(uint8_t, l_tmp_size);
-        if (!l_tmp) {
-            DAP_DEL_Z(l_sig_data);
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return -1;
-        }
-
-        l_expanded_key_size = FALCON_EXPANDEDKEY_SIZE(privateKey->degree);
-        l_expanded_key = DAP_NEW_Z_SIZE(uint8_t, l_expanded_key_size);
-        if (!l_expanded_key) {
-            DAP_DEL_Z(l_sig_data);
-            DAP_DEL_Z(l_tmp);
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return -1;
-        }
-
-        l_ret = falcon_expand_privkey(
-                l_expanded_key, l_expanded_key_size,
-                privateKey->data, FALCON_PRIVKEY_SIZE(privateKey->degree),
-                l_tmp, l_tmp_size
-                );
-        if (!l_ret) {
-            l_ret = falcon_sign_tree(
-                    &l_rng,
-                    l_sig_data, &l_sig_len, privateKey->kind,
-                    l_expanded_key,
-                    a_msg, a_msg_size,
-                    l_tmp, l_tmp_size
-                    );
-        }
-    } else {
-        l_ret = -13;
-    }
-
-    if (l_expanded_key) {
-        memset(l_expanded_key, 0, l_expanded_key_size);
-        DAP_DEL_Z(l_expanded_key);
-    }
-    DAP_DEL_Z(l_tmp);
+    l_ret = s_falcon_sign_by_mode(privateKey, &l_rng, l_sig_data, &l_sig_len, a_msg, a_msg_size);
 
     if (!l_ret) {
         l_sig->sig_data = l_sig_data;
