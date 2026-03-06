@@ -95,7 +95,7 @@ static void test_uint128_decimal_null_input(void) {
 
 static void test_uint256_round_char_null_input(void) {
     dap_test_msg("NULL rounding input should return NULL");
-    const char *a = dap_uint256_char_to_round_char(NULL, 2, true);
+    const char *a = dap_uint256_char_to_round_const_char(NULL, 2, true);
 
     dap_assert(a == NULL, "NULL round input должен возвращать NULL");
 }
