@@ -74,7 +74,7 @@
 #include "dap_bit_ops.h"
 
 #define BIT( x ) ( 1 << x )
-#define __has_builtin(x) (0)
+
 // Stuffs an integer into a pointer type
 #define DAP_INT_TO_POINTER(i) ((void*) (size_t) (i))
 // Extracts an integer from a pointer
