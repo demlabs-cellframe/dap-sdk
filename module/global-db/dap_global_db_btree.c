@@ -1631,9 +1631,10 @@ arena_path:;
             static _Atomic uint64_t s_read_err_count = 0;
             uint64_t l_cnt = atomic_fetch_add(&s_read_err_count, 1);
             if (l_cnt < 3 || (l_cnt & (l_cnt - 1)) == 0) {
-                log_it(L_ERROR, "s_page_read child_id=%llu returned NULL, parent page_id=%llu entries=%d l_index=%d (occurrence #%llu)",
+                log_it(L_ERROR, "s_page_read child_id=%llu returned NULL, parent page_id=%llu entries=%d l_index=%d (occurrence #%llu) file=%s",
                         (unsigned long long)l_child_id, (unsigned long long)l_page->header.page_id,
-                        l_page->header.entries_count, l_index, (unsigned long long)(l_cnt + 1));
+                        l_page->header.entries_count, l_index, (unsigned long long)(l_cnt + 1),
+                        a_tree->filepath ? a_tree->filepath : "unknown");
                 if (s_debug_more) {
                     for (int _d = 0; _d <= l_page->header.entries_count; _d++)
                         log_it(L_ERROR, "  parent child[%d] = %llu", _d, (unsigned long long)s_branch_get_child(l_page, _d));
@@ -2729,6 +2730,7 @@ int dap_global_db_insert(dap_global_db_t *a_tree,
     if (l_in_batch) {
         if (l_ret == 0) {
             if (++a_tree->mvcc_commit_counter >= 64 || a_tree->deferred_batch_count > 128) {
+                s_header_write(a_tree);  // Persist header before freeing old pages
                 s_deferred_free_reclaim(a_tree);
                 a_tree->mvcc_commit_counter = 0;
             }
@@ -3142,6 +3144,12 @@ static void s_mvcc_commit(dap_global_db_t *a_tree)
 
     // Seqlock: even seq signals "publish complete"
     atomic_fetch_add_explicit(&a_tree->mvcc_seq, 1, memory_order_release);
+
+    // Persist header to mmap/disk BEFORE reclaiming old pages.
+    // Without this, an unclean shutdown leaves the on-disk header pointing
+    // to the old root page, which may have been freed and reused (e.g. as
+    // an OVERFLOW page), causing corruption on restart.
+    s_header_write(a_tree);
 
     if (++a_tree->mvcc_commit_counter >= 64 || a_tree->deferred_batch_count > 128) {
         s_deferred_free_reclaim(a_tree);
