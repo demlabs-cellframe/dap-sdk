@@ -42,27 +42,43 @@ endif()
 # Collect generated sources (produced by generate_arch.sh)
 # ============================================================================
 
-# Scalar multiplication implementations
-set(ECDSA_SCALAR_GENERATED_SOURCES ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_generic.c)
+# Helper macro to add file only if it exists (for graceful fallback when codegen fails)
+macro(add_ecdsa_scalar_if_exists file_path)
+    if(EXISTS "${file_path}")
+        list(APPEND ECDSA_SCALAR_GENERATED_SOURCES "${file_path}")
+    else()
+        message(STATUS "[ECDSA] Scalar file not found, skipping: ${file_path}")
+    endif()
+endmacro()
 
-# Field arithmetic implementations
-set(ECDSA_FIELD_GENERATED_SOURCES ${ECDSA_GEN_DIR}/ecdsa_field_generic.c)
+macro(add_ecdsa_field_if_exists file_path)
+    if(EXISTS "${file_path}")
+        list(APPEND ECDSA_FIELD_GENERATED_SOURCES "${file_path}")
+    else()
+        message(STATUS "[ECDSA] Field file not found, skipping: ${file_path}")
+    endif()
+endmacro()
+
+# Scalar multiplication implementations (generic is always required)
+set(ECDSA_SCALAR_GENERATED_SOURCES "")
+add_ecdsa_scalar_if_exists(${ECDSA_GEN_DIR}/ecdsa_scalar_mul_generic.c)
+
+# Field arithmetic implementations (generic is always required)
+set(ECDSA_FIELD_GENERATED_SOURCES "")
+add_ecdsa_field_if_exists(${ECDSA_GEN_DIR}/ecdsa_field_generic.c)
 
 if(APPLE)
     # Apple universal binary (arm64 + x86_64): include both architecture sets.
     # Generated .c files have #if arch guards so only the right code compiles per slice.
     # No SVE on Apple Silicon.
-    list(APPEND ECDSA_SCALAR_GENERATED_SOURCES
-        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_x86_64_asm.c
-        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_avx2_bmi2.c
-        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_avx512.c
-        ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_neon.c
-    )
-    list(APPEND ECDSA_FIELD_GENERATED_SOURCES
-        ${ECDSA_GEN_DIR}/ecdsa_field_x86_64_asm.c
-        ${ECDSA_GEN_DIR}/ecdsa_field_avx2_bmi2.c
-        ${ECDSA_GEN_DIR}/ecdsa_field_neon.c
-    )
+    # Use conditional add to handle codegen failures gracefully
+    add_ecdsa_scalar_if_exists(${ECDSA_GEN_DIR}/ecdsa_scalar_mul_x86_64_asm.c)
+    add_ecdsa_scalar_if_exists(${ECDSA_GEN_DIR}/ecdsa_scalar_mul_avx2_bmi2.c)
+    add_ecdsa_scalar_if_exists(${ECDSA_GEN_DIR}/ecdsa_scalar_mul_avx512.c)
+    add_ecdsa_scalar_if_exists(${ECDSA_GEN_DIR}/ecdsa_scalar_mul_neon.c)
+    add_ecdsa_field_if_exists(${ECDSA_GEN_DIR}/ecdsa_field_x86_64_asm.c)
+    add_ecdsa_field_if_exists(${ECDSA_GEN_DIR}/ecdsa_field_avx2_bmi2.c)
+    add_ecdsa_field_if_exists(${ECDSA_GEN_DIR}/ecdsa_field_neon.c)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     list(APPEND ECDSA_SCALAR_GENERATED_SOURCES
         ${ECDSA_GEN_DIR}/ecdsa_scalar_mul_x86_64_asm.c
