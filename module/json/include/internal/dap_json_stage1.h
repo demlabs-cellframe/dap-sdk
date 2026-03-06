@@ -519,19 +519,32 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 
 // Include architecture-specific implementations for static inline dispatch
 // These must be included AFTER all typedefs are complete
+// Use __has_include to gracefully handle missing generated headers (e.g. when codegen fails)
 #include "dap_json_stage1_ref.h"
 
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if __has_include("dap_json_stage1_sse2.h")
 #include "dap_json_stage1_sse2.h"
+#endif
+#if __has_include("dap_json_stage1_avx2.h")
 #include "dap_json_stage1_avx2.h"
+#endif
+#if __has_include("dap_json_stage1_avx512.h")
 #include "dap_json_stage1_avx512.h"
+#endif
 
 #elif defined(__arm__) || defined(__aarch64__)
+#if __has_include("dap_json_stage1_neon.h")
 #include "dap_json_stage1_neon.h"
+#endif
 // SVE/SVE2 are ARM64-only (ARMv8-A 64-bit) and NOT supported on Apple Silicon
 #if defined(__aarch64__) && !defined(__APPLE__)
+#if __has_include("dap_json_stage1_sve.h")
 #include "dap_json_stage1_sve.h"
+#endif
+#if __has_include("dap_json_stage1_sve2.h")
 #include "dap_json_stage1_sve2.h"
+#endif
 #endif
 #endif
 
