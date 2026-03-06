@@ -2811,9 +2811,31 @@ static benchmark_result_t s_bench_sophia_parallel_random_reads(const benchmark_c
 
 static void s_cleanup_db_dir(const char *path)
 {
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "rm -rf %s/*", path);
-    system(cmd);
+    if (!path || !*path) {
+        return;
+    }
+
+    DIR *l_dir = opendir(path);
+    if (!l_dir) {
+        return;
+    }
+
+    struct dirent *l_entry = NULL;
+    while ((l_entry = readdir(l_dir)) != NULL) {
+        if (strcmp(l_entry->d_name, ".") == 0 || strcmp(l_entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char *l_full_path = dap_build_filename(path, l_entry->d_name, NULL);
+        if (!l_full_path) {
+            continue;
+        }
+
+        dap_rm_rf(l_full_path);
+        DAP_DELETE(l_full_path);
+    }
+
+    closedir(l_dir);
 }
 
 static void s_run_benchmarks(const benchmark_config_t *cfg)
