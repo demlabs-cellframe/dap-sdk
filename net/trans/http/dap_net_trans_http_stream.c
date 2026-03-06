@@ -839,17 +839,19 @@ static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t 
         if (l_headers_end) {
             size_t l_headers_size = (l_headers_end - (char*)l_es->buf_in) + 4;
             log_it(L_DEBUG, "Skipping HTTP headers (%zu bytes)", l_headers_size);
-    
-            // Return header size so caller (dap_client_esocket) can shrink buffer
-            // Next call will process data after headers
-            return (ssize_t)l_headers_size;
+
+            size_t l_remaining = l_es->buf_in_size - l_headers_size;
+            size_t l_stream_processed = 0;
+            if (l_remaining > 0) {
+                l_stream_processed = dap_stream_data_proc_read_ext(
+                        a_stream, l_es->buf_in + l_headers_size, l_remaining);
+            }
+            return (ssize_t)(l_headers_size + l_stream_processed);
         } else {
-            // Headers incomplete. Return 0 to wait for more data.
-    return 0;
+            return 0;
         }
     }
-    
-    // No headers (or already skipped). Process stream packets.
+
     return (ssize_t)dap_stream_data_proc_read(a_stream);
 }
 

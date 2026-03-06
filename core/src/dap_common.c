@@ -906,8 +906,8 @@ int exec_with_ret(char** repl, const char * a_cmd) {
     fgets(buf, sizeof(buf) - 1, fp);
     buf_len = strlen(buf);
     if(repl) {
-        if(buf[buf_len - 1] == '\n')
-            buf[buf_len - 1] ='\0';
+        if(buf_len > 0 && buf[buf_len - 1] == '\n')
+            buf[buf_len - 1] = '\0';
         *repl = strdup(buf);
     }
     return pclose(fp);

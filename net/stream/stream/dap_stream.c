@@ -708,17 +708,14 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 
     // After close(), trans_ctx->esocket may be NULL (managed by transport)
     // Only delete esocket if trans didn't handle it
-    // ALWAYS use _mt method for 100% thread safety
-    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket_uuid && a_stream->trans_ctx->esocket_worker) {
-        debug_if(g_debug_reactor, L_DEBUG, 
-               "Stream delete: queueing esocket deletion (UUID 0x%016lx) on its worker",
-               a_stream->trans_ctx->esocket_uuid);
-        
-        // ALWAYS use _mt method - 100% safe from any thread
-        dap_events_socket_remove_and_delete_mt(a_stream->trans_ctx->esocket_worker, 
-                                               a_stream->trans_ctx->esocket_uuid);
-        
-        // Clear esocket references
+    if (a_stream->trans_ctx && a_stream->trans_ctx->esocket && a_stream->trans_ctx->esocket_worker) {
+        dap_worker_t *l_current = dap_worker_get_current();
+        if (l_current == a_stream->trans_ctx->esocket_worker) {
+            dap_events_socket_remove_and_delete_unsafe(a_stream->trans_ctx->esocket, false);
+        } else {
+            dap_events_socket_remove_and_delete_mt(a_stream->trans_ctx->esocket_worker,
+                                                   a_stream->trans_ctx->esocket_uuid);
+        }
         a_stream->trans_ctx->esocket = NULL;
         a_stream->trans_ctx->esocket_uuid = 0;
         a_stream->trans_ctx->esocket_worker = NULL;

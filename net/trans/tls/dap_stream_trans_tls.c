@@ -267,9 +267,6 @@ static void s_tls_close(dap_stream_t *a_stream)
             DAP_DELETE(l_ctx);
             a_stream->trans_ctx->_inheritor = NULL;
         }
-        if (a_stream->trans_ctx->esocket)
-            dap_events_socket_remove_and_delete_mt(a_stream->trans_ctx->esocket_worker,
-                                                   a_stream->trans_ctx->esocket_uuid);
     }
 }
 
