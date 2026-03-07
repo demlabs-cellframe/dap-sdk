@@ -418,12 +418,8 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
             if (response->version == 1) {
                 switch(json_print_commands(cmd_name)) {
                     case 1: json_print_for_file_cmd(response); break;
-                    default: {
-                            dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
-                            if (!l_cmd || l_cmd->func_rpc(response, cmd_params, cmd_cnt)){
-                                dap_json_print_object(response->result_json_object, stdout, 0);
-                            }
-                        }
+                    default: 
+                        dap_json_print_object(response->result_json_object, stdout, 0);
                         break;
                 }
             } else {

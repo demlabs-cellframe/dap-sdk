@@ -28,6 +28,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC include)
 # Export dependencies for main SDK build
 set(DAP_GLOBAL_DB_DEPS "${dap_global_db_LIBS}" CACHE INTERNAL "dap_global_db external dependencies")
 
+# CLI module for global_db
+add_subdirectory(cli)
 # Migration module
 add_subdirectory(migrate)
 

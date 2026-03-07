@@ -36,6 +36,7 @@
 #include "dap_app_cli_shell.h"
 #include "dap_json_rpc_params.h"
 #include "dap_json_rpc_request.h"
+#include "dap_json_rpc_response.h"
 
 #ifdef DAP_OS_ANDROID
 #include <android/log.h>
@@ -167,7 +168,8 @@ char *dap_cli_exec(int argc, char **argv, int a_version) {
     dap_json_rpc_params_t *params = dap_json_rpc_params_create();
     dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
     DAP_DELETE(l_cmd_str);
-    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, 0, a_version);
+    uint64_t l_id = dap_json_rpc_response_get_new_id();
+    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, l_id, a_version);
     char    *req_str = dap_json_rpc_request_to_json_string(a_request),
             *res = dap_cli_cmd_exec(req_str);
     dap_json_rpc_request_free(a_request);
@@ -206,7 +208,8 @@ JNIEXPORT jstring JNICALL Java_com_CellframeWallet_Node_cellframeNodeCliMain(JNI
         dap_json_rpc_params_t *params = dap_json_rpc_params_create();
         dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
         DAP_DELETE(l_cmd_str);
-        dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, 0, dap_config_get_item_int32_default(g_config, "cli-server", "version", 1));
+        uint64_t l_id = dap_json_rpc_response_get_new_id();
+        dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, l_id, dap_config_get_item_int32_default(g_config, "cli-server", "version", 1));
         char    *req_str = dap_json_rpc_request_to_json_string(a_request),
                 *res = dap_cli_cmd_exec(req_str);
         __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Full command %s", req_str);
