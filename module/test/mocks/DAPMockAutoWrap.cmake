@@ -196,11 +196,29 @@ function(dap_mock_autowrap TARGET_NAME)
                         target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${SDK_INCLUDES})
                     endif()
                 endif()
-                if(TARGET dap-sdk)
-                    get_target_property(DAP_SDK_INCLUDES dap-sdk INTERFACE_INCLUDE_DIRECTORIES)
+                if(TARGET dap_sdk)
+                    get_target_property(DAP_SDK_INCLUDES dap_sdk INTERFACE_INCLUDE_DIRECTORIES)
                     if(DAP_SDK_INCLUDES)
                         target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${DAP_SDK_INCLUDES})
                     endif()
+                endif()
+                
+                # Fallback: add core dap-sdk includes directly (needed when INTERFACE_INCLUDE_DIRECTORIES not yet populated)
+                if(EXISTS "${CMAKE_SOURCE_DIR}/dap-sdk/module/core/include")
+                    target_include_directories(${MOCK_OBJ_LIB} PRIVATE
+                        "${CMAKE_SOURCE_DIR}/dap-sdk/module/core/include"
+                        "${CMAKE_SOURCE_DIR}/dap-sdk/module/hash/include"
+                        "${CMAKE_SOURCE_DIR}/dap-sdk/module/crypto/include"
+                    )
+                endif()
+                # Cellframe SDK includes
+                if(EXISTS "${CMAKE_SOURCE_DIR}/modules/common/include")
+                    target_include_directories(${MOCK_OBJ_LIB} PRIVATE
+                        "${CMAKE_SOURCE_DIR}/modules/common/include"
+                        "${CMAKE_SOURCE_DIR}/modules/chain/include"
+                        "${CMAKE_SOURCE_DIR}/modules/datum/include"
+                        "${CMAKE_SOURCE_DIR}/modules/ledger/include"
+                    )
                 endif()
                 
                 # Add object files to test target - they link before libraries
