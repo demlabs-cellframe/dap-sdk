@@ -59,15 +59,23 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
         return NULL;
     }
     if (a_mnemonim) {
-        dap_ht_find_hh(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_check);
+        // NB: can't use dap_ht_find_hh / dap_ht_add_by_hashvalue_hh here because
+        // those macros take &(add->field) as key, which for a char* field gives
+        // the address of the pointer, not the string content.
+        if (s_cluster_mnemonims) {
+            l_check = (dap_cluster_t *)dap_ht_find_impl(
+                s_cluster_mnemonims->hh_str.tbl, a_mnemonim, strlen(a_mnemonim));
+        }
         if (l_check) {
             log_it(L_ERROR, "Mnemonim %s already in use", a_mnemonim);
+            pthread_rwlock_unlock(&s_clusters_rwlock);
             DAP_DELETE(ret);
             return NULL;
         }
         ret->mnemonim = strdup(a_mnemonim);
         if (!ret->mnemonim) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            pthread_rwlock_unlock(&s_clusters_rwlock);
             DAP_DELETE(ret);
             return NULL;
         }

@@ -428,7 +428,7 @@ uint256_t dap_uint256_scan_decimal(const char *a_str_decimal)
     return dap_uint256_scan_uninteger(l_buf);
 }
 
-const char *dap_uint256_to_char(uint256_t a_uint256, const char **a_frac)
+const char *dap_uint256_to_const_char(uint256_t a_uint256, const char **a_frac)
 {
     _Thread_local static char   s_buf       [DATOSHI_POW256 + 2],
                                 s_buf_frac  [DATOSHI_POW256 + 2]; // Space for decimal dot and trailing zero
@@ -475,26 +475,26 @@ const char *dap_uint256_to_char(uint256_t a_uint256, const char **a_frac)
 }
 
 char *dap_uint256_uninteger_to_char(uint256_t a_uninteger) {
-    return strdup(dap_uint256_to_char(a_uninteger, NULL));
+    return strdup(dap_uint256_to_const_char(a_uninteger, NULL));
 }
 
 char *dap_uint256_decimal_to_char(uint256_t a_decimal){ //dap_chain_balance_to_coins256, dap_chain_balance_to_coins
     const char *l_frac = NULL;
-    dap_uint256_to_char(a_decimal, &l_frac);
+    dap_uint256_to_const_char(a_decimal, &l_frac);
     return strdup(l_frac);
 }
 
-const char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_round_position, bool is_round)
+const char *dap_uint256_decimal_to_round_const_char(uint256_t a_uint256, uint8_t a_round_position, bool is_round)
 {
     char *l_uint256_str = dap_uint256_decimal_to_char(a_uint256);
     if (!l_uint256_str) {
         return log_it(L_CRITICAL, "%s", c_error_memory_alloc), NULL;
     }
-    const char *l_ret = dap_uint256_char_to_round_char(l_uint256_str, a_round_position, is_round);
+    const char *l_ret = dap_uint256_char_to_round_const_char(l_uint256_str, a_round_position, is_round);
     return DAP_DELETE(l_uint256_str), l_ret;
 }
 
-const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_pos, bool is_round)
+const char *dap_uint256_char_to_round_const_char(char* a_str_decimal, uint8_t a_round_pos, bool is_round)
 {
     _Thread_local static char s_buf[DATOSHI_POW256 + 3];
     memset(s_buf, 0, sizeof(s_buf));
@@ -762,6 +762,6 @@ uint128_t dap_uint128_scan_decimal(const char *a_str_decimal)
 
 double dap_uint256_decimal_to_double(uint256_t a_decimal){
     const char *l_str = NULL;
-    dap_uint256_to_char(a_decimal, &l_str);
+    dap_uint256_to_const_char(a_decimal, &l_str);
     return strtod(l_str, NULL);
 }
