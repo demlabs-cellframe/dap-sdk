@@ -582,6 +582,7 @@ static void s_stage_stream_streaming(dap_client_t *a_client, void *a_arg)
 static void s_stream_es_callback_connected(dap_events_socket_t *a_es)
 {
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    if (!l_client) return;
     dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
     if (!l_es)
         return;
@@ -621,6 +622,7 @@ static void s_stream_es_callback_read(dap_events_socket_t *a_es, void *arg)
 {
     (void)arg;
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    if (!l_client) return;
     dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
     if (!l_es) return;
 
@@ -658,6 +660,7 @@ static void s_stream_es_callback_read(dap_events_socket_t *a_es, void *arg)
 static bool s_stream_es_callback_write(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg)
 {
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    if (!l_client) return false;
     dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
     if (!l_es || !l_es->stream) return false;
 
