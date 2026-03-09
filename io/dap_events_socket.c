@@ -1584,7 +1584,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     case EINTR:
     case EWOULDBLOCK:
         log_it(L_ERROR, "Can't send ptr to queue (err %d), will be resent again in a while...", l_errno);
-        log_it(L_ERROR, "Number of pending messages: %ld", a_es->buf_out_size);
+        log_it(L_ERROR, "Number of pending messages: %zu", a_es->buf_out_size);
         s_add_ptr_to_buf(a_es, a_arg);
         return 0;
     default:
