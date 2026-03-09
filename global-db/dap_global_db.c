@@ -208,6 +208,13 @@ int dap_global_db_init()
     if ( (l_rc = dap_global_db_driver_init(s_dbi->driver_name, s_dbi->storage_path)) )
         return log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
                        s_dbi->driver_name, s_dbi->storage_path, l_rc), l_rc;
+    // Update driver name in case of fallback (e.g. MDBX → SQLite)
+    const char *l_actual_driver = dap_global_db_driver_get_name();
+    if (l_actual_driver && dap_strcmp(s_dbi->driver_name, l_actual_driver)) {
+        log_it(L_NOTICE, "GlobalDB driver changed from \"%s\" to \"%s\" (fallback)", s_dbi->driver_name, l_actual_driver);
+        DAP_DELETE(s_dbi->driver_name);
+        s_dbi->driver_name = dap_strdup(l_actual_driver);
+    }
 
     // Clusters initialization
     if ( (l_rc = dap_global_db_cluster_init()) )
