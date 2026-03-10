@@ -655,6 +655,12 @@ static int s_overflow_read(dap_global_db_t *a_tree, uint64_t a_first_page_id,
             size_t l_copy = a_buf_size;
             uint32_t l_cont = l_hdr->entries_count;
             size_t l_capacity = PAGE_DATA_SIZE + (size_t)l_cont * DAP_GLOBAL_DB_PAGE_SIZE;
+            size_t l_region_end = l_off + sizeof(dap_global_db_page_header_t) + l_capacity;
+            if (l_region_end > l_mmap_size) {
+                log_it(L_ERROR, "Contiguous overflow region exceeds mmap: offset=%llu cont=%u region_end=%zu mmap_size=%zu",
+                       (unsigned long long)l_off, l_cont, l_region_end, l_mmap_size);
+                return -1;
+            }
             if (l_copy > l_capacity)
                 l_copy = l_capacity;
             memcpy(a_out_buf, l_src, l_copy);
@@ -936,12 +942,19 @@ static dap_global_db_leaf_entry_t *s_leaf_entry_at(dap_global_db_page_t *a_page,
     // Offsets are stored after the count
     uint16_t *l_offsets = (uint16_t *)(a_page->data + LEAF_HEADER_SIZE);
     uint16_t l_offset = l_offsets[a_index];
-    
+
+    if (l_offset < LEAF_HEADER_SIZE + l_count * LEAF_OFFSET_SIZE ||
+        l_offset + sizeof(dap_global_db_leaf_entry_t) > PAGE_DATA_SIZE) {
+        log_it(L_ERROR, "s_leaf_entry_at: invalid offset %u for index %d (page_id=%llu, entries=%d)",
+               l_offset, a_index, (unsigned long long)a_page->header.page_id, l_count);
+        return NULL;
+    }
+
     dap_global_db_leaf_entry_t *l_entry = (dap_global_db_leaf_entry_t *)(a_page->data + l_offset);
-    
+
     if (a_out_data)
         *a_out_data = (uint8_t *)l_entry + sizeof(dap_global_db_leaf_entry_t);
-    
+
     if (a_out_total_size) {
         if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE)
             *a_out_total_size = s_leaf_entry_total_size_overflow(l_entry->key_len);
@@ -1000,12 +1013,10 @@ static int s_leaf_insert_entry(dap_global_db_page_t *a_page, int a_index,
     int l_count = a_page->header.entries_count;
     size_t l_entry_size = s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
     
-    // Calculate space needed
-    size_t l_header_size = LEAF_HEADER_SIZE + (l_count + 1) * LEAF_OFFSET_SIZE;
-    
-    // Check available space
-    if (l_header_size + l_entry_size > a_page->header.free_space) {
-        return -1;  // No space
+    // free_space already accounts for existing offsets (decremented by LEAF_OFFSET_SIZE per entry).
+    // We only need LEAF_HEADER_SIZE (lowest-offset cache, constant) + one new LEAF_OFFSET_SIZE + entry.
+    if (LEAF_HEADER_SIZE + LEAF_OFFSET_SIZE + l_entry_size > a_page->header.free_space) {
+        return -1;
     }
     
     // Offsets array
@@ -1062,8 +1073,7 @@ static int s_leaf_insert_entry_overflow(dap_global_db_page_t *a_page, int a_inde
     s_page_cow(a_page, a_arena);
     int l_count = a_page->header.entries_count;
     size_t l_entry_size = s_leaf_entry_total_size_overflow(a_text_key_len);
-    size_t l_header_size = LEAF_HEADER_SIZE + (l_count + 1) * LEAF_OFFSET_SIZE;
-    if (l_header_size + l_entry_size > a_page->header.free_space)
+    if (LEAF_HEADER_SIZE + LEAF_OFFSET_SIZE + l_entry_size > a_page->header.free_space)
         return -1;
 
     uint16_t *l_offsets = (uint16_t *)(a_page->data + LEAF_HEADER_SIZE);
@@ -1196,8 +1206,7 @@ static inline bool s_header_needs_split(const dap_global_db_page_header_t *a_hdr
         size_t l_entry_size = (a_value_len + a_sign_len > MAX_INLINE_PAYLOAD)
             ? s_leaf_entry_total_size_overflow(a_text_key_len)
             : s_leaf_entry_total_size(a_text_key_len, a_value_len, a_sign_len);
-        size_t l_header_size = LEAF_HEADER_SIZE + (a_hdr->entries_count + 1) * LEAF_OFFSET_SIZE;
-        return (l_header_size + l_entry_size > a_hdr->free_space);
+        return (LEAF_HEADER_SIZE + LEAF_OFFSET_SIZE + l_entry_size > a_hdr->free_space);
     } else {
         return (a_hdr->entries_count >= DAP_GLOBAL_DB_MAX_KEYS);
     }
@@ -1373,6 +1382,11 @@ static int s_split_child(dap_global_db_t *a_tree, dap_global_db_page_t *a_parent
     uint64_t l_child_id = s_branch_get_child(a_parent, a_index);
 
     uint64_t l_sibling_id = s_page_allocate_new(a_tree);
+    if (l_sibling_id == 0) {
+        log_it(L_ERROR, "s_split_child: failed to allocate sibling page for child %llu",
+               (unsigned long long)l_child_id);
+        return -1;
+    }
 
     // Read child as arena copy (COW: never modify original in mmap)
     dap_global_db_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
@@ -1516,6 +1530,8 @@ static int s_insert_non_full(dap_global_db_t *a_tree, dap_global_db_page_t *a_pa
 
         dap_global_db_page_t *lp = &l_refs[0];
         while (!(lp->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+            if (!(lp->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
+                goto arena_path;
             bool l_found;
             int l_index = s_search_in_page(lp, a_key, &l_found);
             uint64_t l_child_id = s_branch_get_child(lp, l_index);
@@ -1600,15 +1616,25 @@ arena_path:;
     } l_path[DAP_GLOBAL_DB_PATH_MAX];
     int l_depth = 0;
 
+    // Accumulate deferred-free page IDs from preemptive splits.
+    // Only actually defer them after the leaf insert and full chain-up succeed,
+    // to avoid freeing pages still referenced by the un-updated on-disk parent.
+    uint64_t l_pending_defer[DAP_GLOBAL_DB_PATH_MAX];
+    int l_pending_defer_count = 0;
+
     dap_global_db_page_t *l_page = a_page;
 
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+            log_it(L_ERROR, "s_insert_non_full: page %llu has invalid flags 0x%x (expected branch or leaf)",
+                   (unsigned long long)l_page->header.page_id, l_page->header.flags);
+            return -1;
+        }
         bool l_found;
         int l_index = s_search_in_page(l_page, a_key, &l_found);
 
         uint64_t l_child_id = s_branch_get_child(l_page, l_index);
 
-        // Read child as arena copy (COW: never modify mmap in place)
         dap_global_db_page_t *l_child = s_page_read(a_tree, l_child_id, l_arena);
         if (!l_child) {
             log_it(L_ERROR, "s_page_read child_id=%llu returned NULL, parent page_id=%llu entries=%d l_index=%d",
@@ -1654,7 +1680,8 @@ arena_path:;
                         }
                         l_split_child->header.page_id = l_new_split_id;
                         s_page_write(a_tree, l_split_child);
-                        s_deferred_free_add(a_tree, l_txn, l_old_split_id);
+                        if (l_pending_defer_count < DAP_GLOBAL_DB_PATH_MAX)
+                            l_pending_defer[l_pending_defer_count++] = l_old_split_id;
                         s_branch_set_child(l_page, l_split_index, l_new_split_id, l_arena);
                     }
                 }
@@ -1784,20 +1811,28 @@ batch_no_hl:
     if (l_new_right_id != 0)
         l_page->header.right_sibling = l_new_right_id;
 
-    // 4. Write leaf with correct sibling links
+    // 4. Pre-allocate all branch page IDs for the COW chain-up BEFORE
+    //    writing anything. If any allocation fails, no pages are deferred
+    //    and the tree structure remains consistent.
+    uint64_t l_branch_new_ids[DAP_GLOBAL_DB_PATH_MAX];
+    for (int i = l_depth - 1; i >= 0; i--) {
+        l_branch_new_ids[i] = s_page_allocate_new(a_tree);
+        if (l_branch_new_ids[i] == 0) {
+            log_it(L_ERROR, "COW: pre-alloc failed for branch at depth %d/%d", i, l_depth);
+            return -1;
+        }
+    }
+
+    // 5. Write leaf with correct sibling links
     l_page->header.page_id = l_new_leaf_id;
     s_page_write(a_tree, l_page);
-    s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
 
-    // Walk up the path: COW each parent with updated child pointer(s)
+    // 6. Walk up the path: COW each parent with updated child pointer(s)
     uint64_t l_new_child_id = l_new_leaf_id;
     for (int i = l_depth - 1; i >= 0; i--) {
         dap_global_db_page_t *p = l_path[i].page;
-        uint64_t l_old_id = l_path[i].original_page_id;
 
-        // Update child pointer to the new child page
         s_branch_set_child(p, l_path[i].child_index, l_new_child_id, l_arena);
-        // At leaf level parent, also set new ids for COW'd left/right neighbors
         if (i == l_depth - 1) {
             if (l_new_left_id != 0)
                 s_branch_set_child(p, l_ci - 1, l_new_left_id, l_arena);
@@ -1805,7 +1840,6 @@ batch_no_hl:
                 s_branch_set_child(p, l_ci + 1, l_new_right_id, l_arena);
         }
 
-        // Verify no zero child pointers after set_child
         if (s_debug_more) {
             for (int _d = 0; _d <= p->header.entries_count; _d++) {
                 uint64_t _c = s_branch_get_child(p, _d);
@@ -1819,19 +1853,21 @@ batch_no_hl:
             }
         }
 
-        // Allocate new page for this parent
-        uint64_t l_new_id = s_page_allocate_new(a_tree);
-        if (l_new_id == 0) {
-            log_it(L_ERROR, "COW: failed to allocate new branch page, depth_level=%d", i);
-            return -1;
-        }
-        p->header.page_id = l_new_id;
+        p->header.page_id = l_branch_new_ids[i];
         p->is_dirty = true;
         s_page_write(a_tree, p);
-        s_deferred_free_add(a_tree, l_txn, l_old_id);
+        s_deferred_free_add(a_tree, l_txn, l_path[i].original_page_id);
 
-        l_new_child_id = l_new_id;
+        l_new_child_id = l_branch_new_ids[i];
     }
+
+    // Defer old leaf only after full chain-up succeeds
+    s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
+
+    // Now safe to defer pages from preemptive splits — the chain-up has
+    // written all parents, so no on-disk reference to the old pages remains.
+    for (int i = 0; i < l_pending_defer_count; i++)
+        s_deferred_free_add(a_tree, l_txn, l_pending_defer[i]);
 
     // Update root to the topmost new page
     a_tree->header.root_page = l_new_child_id;
@@ -1890,6 +1926,11 @@ static void s_debug_trace_search(dap_global_db_t *a_tree, const dap_global_db_ke
     }
     int depth = 0;
     while (!(l_buf.header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        if (!(l_buf.header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+            log_it(L_ERROR, "[TRACE:%s]  page %llu has invalid flags 0x%x (not branch/leaf)",
+                   a_tag, (unsigned long long)l_buf.header.page_id, l_buf.header.flags);
+            return;
+        }
         bool found;
         int idx = s_search_in_page(&l_buf, a_key, &found);
         uint64_t child = s_branch_get_child(&l_buf, idx);
@@ -2019,6 +2060,43 @@ dap_global_db_t *dap_global_db_create(const char *a_filepath)
     return l_tree;
 }
 
+static int s_validate_subtree(dap_global_db_t *a_tree, uint64_t a_page_id, int a_depth)
+{
+    if (a_depth > 20 || a_page_id == 0 || a_page_id > a_tree->header.total_pages)
+        return -1;
+
+    dap_global_db_page_t *l_page = s_page_read(a_tree, a_page_id, NULL);
+    if (!l_page)
+        return -1;
+
+    if (l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF) {
+        s_page_free(l_page);
+        return 0;
+    }
+
+    if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+        s_page_free(l_page);
+        return -1;
+    }
+
+    for (int i = 0; i <= l_page->header.entries_count; i++) {
+        uint64_t l_child = s_branch_get_child(l_page, i);
+        if (l_child == 0 || l_child > a_tree->header.total_pages) {
+            log_it(L_ERROR, "B-tree validation: page %llu has invalid child[%d]=%llu",
+                   (unsigned long long)a_page_id, i, (unsigned long long)l_child);
+            s_page_free(l_page);
+            return -1;
+        }
+        if (s_validate_subtree(a_tree, l_child, a_depth + 1) != 0) {
+            s_page_free(l_page);
+            return -1;
+        }
+    }
+
+    s_page_free(l_page);
+    return 0;
+}
+
 dap_global_db_t *dap_global_db_open(const char *a_filepath, bool a_read_only)
 {
     dap_return_val_if_fail(a_filepath, NULL);
@@ -2078,7 +2156,20 @@ dap_global_db_t *dap_global_db_open(const char *a_filepath, bool a_read_only)
            a_filepath, (unsigned long)l_tree->header.items_count,
            (unsigned long)l_tree->header.total_pages,
            l_tree->mmap ? "yes" : "no");
-    
+
+    if (!a_read_only && l_tree->header.root_page > 0) {
+        if (s_validate_subtree(l_tree, l_tree->header.root_page, 0) != 0) {
+            log_it(L_WARNING, "B-tree file '%s' is structurally corrupted "
+                   "(items=%lu, pages=%lu). Deleting for automatic recreation.",
+                   a_filepath, (unsigned long)l_tree->header.items_count,
+                   (unsigned long)l_tree->header.total_pages);
+            l_tree->read_only = true;
+            dap_global_db_close(l_tree);
+            unlink(a_filepath);
+            return NULL;
+        }
+    }
+
     return l_tree;
 }
 
@@ -2231,9 +2322,11 @@ static void s_hot_leaf_flush(dap_global_db_t *a_tree)
 
         hl->header.page_id = l_new_leaf_id;
         s_page_write(a_tree, hl);
-        s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
 
-        // 5. COW chain-up through parents to root
+        // 5. COW chain-up through parents to root.
+        // Defer old page IDs only AFTER chain-up succeeds — if chain-up
+        // fails, the old root still references the old pages, so they
+        // must not be reclaimed.
         if (l_parent) {
             s_branch_set_child(l_parent, l_ci, l_new_leaf_id, l_arena);
             if (l_new_left_id != 0 && l_ci > 0)
@@ -2245,24 +2338,31 @@ static void s_hot_leaf_flush(dap_global_db_t *a_tree)
                 l_parent->header.page_id = l_new_parent_id;
                 l_parent->is_dirty = true;
                 s_page_write(a_tree, l_parent);
-                s_deferred_free_add(a_tree, l_txn, l_parent_id);
                 uint64_t l_new_root = s_cow_chain_up(a_tree, a_tree->hot_path,
                                                     l_depth - 1, l_new_parent_id, l_txn);
-                if (l_new_root != 0)
+                if (l_new_root != 0) {
                     a_tree->header.root_page = l_new_root;
+                    s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
+                    s_deferred_free_add(a_tree, l_txn, l_parent_id);
+                }
             } else {
                 uint64_t l_new_root = s_cow_chain_up(a_tree, a_tree->hot_path,
                                                      l_depth, l_new_leaf_id, l_txn);
-                if (l_new_root != 0)
+                if (l_new_root != 0) {
                     a_tree->header.root_page = l_new_root;
+                    s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
+                }
             }
         } else if (l_depth > 0) {
             uint64_t l_new_root = s_cow_chain_up(a_tree, a_tree->hot_path,
                                                  l_depth, l_new_leaf_id, l_txn);
-            if (l_new_root != 0)
+            if (l_new_root != 0) {
                 a_tree->header.root_page = l_new_root;
+                s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
+            }
         } else {
             a_tree->header.root_page = l_new_leaf_id;
+            s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
         }
     }
 
@@ -2532,6 +2632,10 @@ normal_path:
     // Empty tree - create root
     if (a_tree->header.root_page == 0) {
         uint64_t l_root_id = s_page_allocate_new(a_tree);
+        if (l_root_id == 0) {
+            log_it(L_ERROR, "Failed to allocate root page");
+            return -1;
+        }
         // Root page allocated on heap (not arena) — survives as hot_leaf
         dap_global_db_page_t *l_root = s_page_alloc(NULL);
         if (!l_root)
@@ -2600,6 +2704,10 @@ normal_path:
     // Check if root needs split
     if (s_page_needs_split(l_root, a_text_key_len, a_value_len, a_sign_len)) {
         uint64_t l_new_root_id = s_page_allocate_new(a_tree);
+        if (l_new_root_id == 0) {
+            log_it(L_ERROR, "Failed to allocate new root page during root split");
+            return -1;
+        }
         dap_global_db_page_t *l_new_root = s_page_alloc(l_arena);
         if (!l_new_root)
             return -1;
@@ -3036,27 +3144,42 @@ static uint64_t s_cow_chain_up(dap_global_db_t *a_tree,
                                 uint64_t a_new_child_id,
                                 uint64_t a_txn)
 {
+    if (a_path_depth == 0)
+        return a_new_child_id;
+
     dap_arena_t *l_arena = a_tree->arena;
-    uint64_t l_child_id = a_new_child_id;
+
+    // Phase 1: Pre-allocate all page IDs and pre-read all parent pages.
+    // If any allocation or read fails, return 0 without having deferred
+    // anything — the caller's tree structure remains consistent.
+    uint64_t l_new_ids[DAP_GLOBAL_DB_PATH_MAX];
+    dap_global_db_page_t *l_pages[DAP_GLOBAL_DB_PATH_MAX];
 
     for (int i = a_path_depth - 1; i >= 0; i--) {
-        uint64_t l_old_id = a_path[i].page_id;
-        int l_idx = a_path[i].child_index;
+        l_new_ids[i] = s_page_allocate_new(a_tree);
+        if (l_new_ids[i] == 0) {
+            log_it(L_ERROR, "s_cow_chain_up: pre-alloc failed at depth %d/%d", i, a_path_depth);
+            return 0;
+        }
+        l_pages[i] = s_page_read(a_tree, a_path[i].page_id, l_arena);
+        if (!l_pages[i]) {
+            log_it(L_ERROR, "s_cow_chain_up: pre-read failed page_id=%llu at depth %d",
+                   (unsigned long long)a_path[i].page_id, i);
+            return 0;
+        }
+    }
 
-        dap_global_db_page_t *l_page = s_page_read(a_tree, l_old_id, l_arena);
-        if (!l_page) return 0;
+    // Phase 2: All resources acquired — write pages and defer old IDs.
+    uint64_t l_child_id = a_new_child_id;
+    for (int i = a_path_depth - 1; i >= 0; i--) {
+        s_branch_set_child(l_pages[i], a_path[i].child_index, l_child_id, l_arena);
 
-        s_branch_set_child(l_page, l_idx, l_child_id, l_arena);
+        l_pages[i]->header.page_id = l_new_ids[i];
+        l_pages[i]->is_dirty = true;
+        s_page_write(a_tree, l_pages[i]);
 
-        uint64_t l_new_id = s_page_allocate_new(a_tree);
-        if (l_new_id == 0) return 0;
-
-        l_page->header.page_id = l_new_id;
-        l_page->is_dirty = true;
-        s_page_write(a_tree, l_page);
-
-        s_deferred_free_add(a_tree, a_txn, l_old_id);
-        l_child_id = l_new_id;
+        s_deferred_free_add(a_tree, a_txn, a_path[i].page_id);
+        l_child_id = l_new_ids[i];
     }
 
     return l_child_id;
@@ -3222,6 +3345,12 @@ static int s_btree_delete_impl(dap_global_db_t *a_tree, const dap_global_db_key_
         return -1;
 
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+            log_it(L_ERROR, "s_btree_delete: page %llu has invalid flags 0x%x (expected branch or leaf)",
+                   (unsigned long long)l_page->header.page_id, l_page->header.flags);
+            if (l_arena) dap_arena_reset(l_arena);
+            return -1;
+        }
         bool l_found;
         int l_index = s_search_in_page(l_page, a_key, &l_found);
         if (l_depth < BTREE_PATH_MAX_DEPTH) {
@@ -3341,26 +3470,28 @@ static int s_btree_delete_impl(dap_global_db_t *a_tree, const dap_global_db_key_
                         s_branch_set_child(l_parent, l_child_idx, l_new_right_id, l_arena);
                         s_branch_remove_entry(l_parent, l_child_idx, l_arena);
 
-                        // COW chain-up parent through root
+                        // COW chain-up parent through root — defer only on success
                         uint64_t l_new_parent_id = s_page_allocate_new(a_tree);
                         if (l_new_parent_id != 0) {
-                            s_deferred_free_add(a_tree, l_txn, l_parent_path->page_id);
                             l_parent->header.page_id = l_new_parent_id;
                             s_page_write(a_tree, l_parent);
                             if (l_depth > 1) {
                                 uint64_t l_new_root = s_cow_chain_up(a_tree, l_path,
                                                                       l_depth - 1, l_new_parent_id, l_txn);
-                                if (l_new_root != 0)
+                                if (l_new_root != 0) {
                                     a_tree->header.root_page = l_new_root;
+                                    s_deferred_free_add(a_tree, l_txn, l_parent_path->page_id);
+                                    s_deferred_free_add(a_tree, l_txn, l_page->header.page_id);
+                                }
                             } else {
                                 a_tree->header.root_page = l_new_parent_id;
+                                s_deferred_free_add(a_tree, l_txn, l_parent_path->page_id);
+                                s_deferred_free_add(a_tree, l_txn, l_page->header.page_id);
                             }
                         } else {
                             s_page_write(a_tree, l_parent);
                         }
 
-                        // Deferred free the merged-away leaf
-                        s_deferred_free_add(a_tree, l_txn, l_page->header.page_id);
                         l_merged = true;
                     }
                 }
@@ -3416,26 +3547,28 @@ static int s_btree_delete_impl(dap_global_db_t *a_tree, const dap_global_db_key_
                         s_branch_set_child(l_parent, l_child_idx - 1, l_new_left_id, l_arena);
                         s_branch_remove_entry(l_parent, l_child_idx - 1, l_arena);
 
-                        // COW chain-up parent through root
+                        // COW chain-up parent through root — defer only on success
                         uint64_t l_new_parent_id = s_page_allocate_new(a_tree);
                         if (l_new_parent_id != 0) {
-                            s_deferred_free_add(a_tree, l_txn, l_parent_path->page_id);
                             l_parent->header.page_id = l_new_parent_id;
                             s_page_write(a_tree, l_parent);
                             if (l_depth > 1) {
                                 uint64_t l_new_root = s_cow_chain_up(a_tree, l_path,
                                                                       l_depth - 1, l_new_parent_id, l_txn);
-                                if (l_new_root != 0)
+                                if (l_new_root != 0) {
                                     a_tree->header.root_page = l_new_root;
+                                    s_deferred_free_add(a_tree, l_txn, l_parent_path->page_id);
+                                    s_deferred_free_add(a_tree, l_txn, l_page->header.page_id);
+                                }
                             } else {
                                 a_tree->header.root_page = l_new_parent_id;
+                                s_deferred_free_add(a_tree, l_txn, l_parent_path->page_id);
+                                s_deferred_free_add(a_tree, l_txn, l_page->header.page_id);
                             }
                         } else {
                             s_page_write(a_tree, l_parent);
                         }
 
-                        // Deferred free the merged-away leaf
-                        s_deferred_free_add(a_tree, l_txn, l_page->header.page_id);
                         l_merged = true;
                     }
                 }
@@ -3522,9 +3655,8 @@ static int s_btree_delete_impl(dap_global_db_t *a_tree, const dap_global_db_key_
 
             l_page->header.page_id = l_new_leaf_id;
             s_page_write(a_tree, l_page);
-            s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
 
-            // Chain-up with updated parent
+            // Chain-up with updated parent — defer only after success
             if (l_parent) {
                 s_branch_set_child(l_parent, l_ci, l_new_leaf_id, l_arena);
                 if (l_new_left_id != 0)
@@ -3536,24 +3668,31 @@ static int s_btree_delete_impl(dap_global_db_t *a_tree, const dap_global_db_key_
                     l_parent->header.page_id = l_new_parent_id;
                     l_parent->is_dirty = true;
                     s_page_write(a_tree, l_parent);
-                    s_deferred_free_add(a_tree, l_txn, l_parent_id);
                     uint64_t l_new_root = s_cow_chain_up(a_tree, l_path, l_depth - 1,
                                                          l_new_parent_id, l_txn);
-                    if (l_new_root != 0)
+                    if (l_new_root != 0) {
                         a_tree->header.root_page = l_new_root;
+                        s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
+                        s_deferred_free_add(a_tree, l_txn, l_parent_id);
+                    }
                 } else {
                     uint64_t l_new_root = s_cow_chain_up(a_tree, l_path, l_depth,
                                                          l_new_leaf_id, l_txn);
-                    if (l_new_root != 0)
+                    if (l_new_root != 0) {
                         a_tree->header.root_page = l_new_root;
+                        s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
+                    }
                 }
             } else if (l_depth > 0) {
                 uint64_t l_new_root = s_cow_chain_up(a_tree, l_path, l_depth,
                                                      l_new_leaf_id, l_txn);
-                if (l_new_root != 0)
+                if (l_new_root != 0) {
                     a_tree->header.root_page = l_new_root;
+                    s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
+                }
             } else {
                 a_tree->header.root_page = l_new_leaf_id;
+                s_deferred_free_add(a_tree, l_txn, l_old_leaf_id);
             }
         } else {
             s_page_write(a_tree, l_page);
@@ -3649,10 +3788,11 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
     if (s_page_read_ref(a_tree, l_root, &l_page_buf)) {
         dap_global_db_page_t *l_page = &l_page_buf;
         while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+            if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
+                return -1;
             bool l_found;
             int l_index = s_search_in_page(l_page, a_key, &l_found);
             uint64_t l_child_id = s_branch_get_child(l_page, l_index);
-            // No free needed — stack page with mmap ref
             if (!s_page_read_ref(a_tree, l_child_id, &l_page_buf))
                 return -1;
         }
@@ -3718,6 +3858,10 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
         return -1;
 
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+            s_page_free(l_page);
+            return -1;
+        }
         bool l_found;
         int l_index = s_search_in_page(l_page, a_key, &l_found);
         uint64_t l_child_id = s_branch_get_child(l_page, l_index);
@@ -3727,16 +3871,16 @@ static int s_btree_get_impl(dap_global_db_t *a_tree,
         if (!l_page)
             return -1;
     }
-    
+
     int l_index;
     if (s_leaf_find_entry(l_page, a_key, &l_index) != 0) {
         s_page_free(l_page);
         return 1;
     }
-    
+
     uint8_t *l_data = NULL;
     dap_global_db_leaf_entry_t *l_entry = s_leaf_entry_at(l_page, l_index, &l_data, NULL);
-    
+
     if (a_out_text_key && l_entry->key_len > 0) {
         *a_out_text_key = DAP_NEW_Z_SIZE(char, l_entry->key_len);
         memcpy(*a_out_text_key, l_data, l_entry->key_len);
@@ -3843,13 +3987,17 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                 size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
                 bool l_zc_ok = false;
                 if (a_tree->mmap) {
+                    size_t l_ov_off = s_page_offset(l_ov_id);
+                    size_t l_mmap_sz = dap_mmap_get_size(a_tree->mmap);
                     if (l_total <= PAGE_DATA_SIZE) {
-                        l_zc_ok = true;
-                    } else {
+                        l_zc_ok = (l_ov_off + sizeof(dap_global_db_page_header_t) + l_total <= l_mmap_sz);
+                    } else if (l_ov_off + DAP_GLOBAL_DB_PAGE_SIZE <= l_mmap_sz) {
                         const dap_global_db_page_header_t *l_ov_hdr =
                             (const dap_global_db_page_header_t *)((uint8_t *)dap_mmap_get_ptr(a_tree->mmap)
-                                                                  + s_page_offset(l_ov_id));
-                        l_zc_ok = !!(l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS);
+                                                                  + l_ov_off);
+                        if ((l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS) &&
+                            l_ov_off + sizeof(dap_global_db_page_header_t) + l_total <= l_mmap_sz)
+                            l_zc_ok = true;
                     }
                 }
                 if (l_zc_ok) {
@@ -3946,14 +4094,19 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                         if (l_hl_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
                             uint64_t l_ov_id = *(const uint64_t *)(l_hl_data + l_hl_entry->key_len);
                             size_t l_total = (size_t)l_hl_entry->value_len + (size_t)l_hl_entry->sign_len;
-                            bool l_zc_ok = (l_total <= PAGE_DATA_SIZE);
-                            if (!l_zc_ok) {
+                            size_t l_ov_off = s_page_offset(l_ov_id);
+                            bool l_zc_ok = false;
+                            if (l_total <= PAGE_DATA_SIZE) {
+                                l_zc_ok = (l_ov_off + sizeof(dap_global_db_page_header_t) + l_total <= l_mmap_size);
+                            } else if (l_ov_off + DAP_GLOBAL_DB_PAGE_SIZE <= l_mmap_size) {
                                 const dap_global_db_page_header_t *l_ov_hdr =
-                                    (const dap_global_db_page_header_t *)(l_base + s_page_offset(l_ov_id));
-                                l_zc_ok = !!(l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS);
+                                    (const dap_global_db_page_header_t *)(l_base + l_ov_off);
+                                if ((l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS) &&
+                                    l_ov_off + sizeof(dap_global_db_page_header_t) + l_total <= l_mmap_size)
+                                    l_zc_ok = true;
                             }
                             if (l_zc_ok) {
-                                uint8_t *l_ov_ptr = l_base + s_page_offset(l_ov_id)
+                                uint8_t *l_ov_ptr = l_base + l_ov_off
                                                     + sizeof(dap_global_db_page_header_t);
                                 if (a_out_value) {
                                     a_out_value->data = l_hl_entry->value_len > 0 ? l_ov_ptr : NULL;
@@ -4031,14 +4184,19 @@ static int s_btree_get_ref_impl(dap_global_db_t *a_tree,
                         if (l_entry->flags & DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE) {
                             uint64_t l_ov_id = *(const uint64_t *)(l_edata + l_entry->key_len);
                             size_t l_total = (size_t)l_entry->value_len + (size_t)l_entry->sign_len;
-                            bool l_zc_ok = (l_total <= PAGE_DATA_SIZE);
-                            if (!l_zc_ok) {
+                            size_t l_ov_off = s_page_offset(l_ov_id);
+                            bool l_zc_ok = false;
+                            if (l_total <= PAGE_DATA_SIZE) {
+                                l_zc_ok = (l_ov_off + sizeof(dap_global_db_page_header_t) + l_total <= l_mmap_size);
+                            } else if (l_ov_off + DAP_GLOBAL_DB_PAGE_SIZE <= l_mmap_size) {
                                 const dap_global_db_page_header_t *l_ov_hdr =
-                                    (const dap_global_db_page_header_t *)(l_base + s_page_offset(l_ov_id));
-                                l_zc_ok = !!(l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS);
+                                    (const dap_global_db_page_header_t *)(l_base + l_ov_off);
+                                if ((l_ov_hdr->flags & DAP_GLOBAL_DB_PAGE_OVERFLOW_CONTIGUOUS) &&
+                                    l_ov_off + sizeof(dap_global_db_page_header_t) + l_total <= l_mmap_size)
+                                    l_zc_ok = true;
                             }
                             if (l_zc_ok) {
-                                uint8_t *l_ov_ptr = l_base + s_page_offset(l_ov_id)
+                                uint8_t *l_ov_ptr = l_base + l_ov_off
                                                     + sizeof(dap_global_db_page_header_t);
                                 if (a_out_value) {
                                     a_out_value->data = l_entry->value_len > 0 ? l_ov_ptr : NULL;
@@ -4192,6 +4350,8 @@ static bool s_btree_exists_impl(dap_global_db_t *a_tree,
     dap_global_db_page_t l_page_buf;
     if (s_page_read_ref(a_tree, l_root, &l_page_buf)) {
         while (!(l_page_buf.header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+            if (!(l_page_buf.header.flags & DAP_GLOBAL_DB_PAGE_BRANCH))
+                return false;
             bool l_found;
             int l_index = s_search_in_page(&l_page_buf, a_key, &l_found);
             uint64_t l_child_id = s_branch_get_child(&l_page_buf, l_index);
@@ -4207,13 +4367,17 @@ static bool s_btree_exists_impl(dap_global_db_t *a_tree,
     dap_global_db_page_t *l_page = s_page_read(a_tree, l_root, NULL);
     if (!l_page)
         return false;
-    
+
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+            s_page_free(l_page);
+            return false;
+        }
         bool l_found;
         int l_index = s_search_in_page(l_page, a_key, &l_found);
         uint64_t l_child_id = s_branch_get_child(l_page, l_index);
         s_page_free(l_page);
-        
+
         l_page = s_page_read(a_tree, l_child_id, NULL);
         if (!l_page)
             return false;
@@ -4333,6 +4497,10 @@ static dap_global_db_page_t *s_find_leftmost_leaf_path(
         return NULL;
 
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+            s_page_free(l_page);
+            return NULL;
+        }
         if (*a_path_depth < DAP_GLOBAL_DB_PATH_MAX) {
             a_path[*a_path_depth].page_id = l_page->header.page_id;
             a_path[*a_path_depth].child_index = 0;
@@ -4363,6 +4531,10 @@ static dap_global_db_page_t *s_find_rightmost_leaf_path(
         return NULL;
 
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+            s_page_free(l_page);
+            return NULL;
+        }
         int l_count = l_page->header.entries_count;
         if (*a_path_depth < DAP_GLOBAL_DB_PATH_MAX) {
             a_path[*a_path_depth].page_id = l_page->header.page_id;
@@ -4395,6 +4567,10 @@ static dap_global_db_page_t *s_find_leaf_for_key_path(
         return NULL;
 
     while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+        if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+            s_page_free(l_page);
+            return NULL;
+        }
         bool l_found;
         int l_index = s_search_in_page(l_page, a_key, &l_found);
         if (*a_path_depth < DAP_GLOBAL_DB_PATH_MAX) {
@@ -4448,6 +4624,10 @@ static dap_global_db_page_t *s_cursor_snapshot_next_leaf(
                 return NULL;
 
             while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+                if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+                    s_page_free(l_page);
+                    return NULL;
+                }
                 if (*a_path_depth < DAP_GLOBAL_DB_PATH_MAX) {
                     a_path[*a_path_depth].page_id = l_page->header.page_id;
                     a_path[*a_path_depth].child_index = 0;
@@ -4462,9 +4642,8 @@ static dap_global_db_page_t *s_cursor_snapshot_next_leaf(
             return l_page;
         }
         s_page_free(l_parent);
-        // No more children at this level — pop one more
     }
-    return NULL;  // Exhausted all ancestors — end of tree
+    return NULL;
 }
 
 /**
@@ -4495,6 +4674,10 @@ static dap_global_db_page_t *s_cursor_snapshot_prev_leaf(
                 return NULL;
 
             while (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_LEAF)) {
+                if (!(l_page->header.flags & DAP_GLOBAL_DB_PAGE_BRANCH)) {
+                    s_page_free(l_page);
+                    return NULL;
+                }
                 int l_count = l_page->header.entries_count;
                 if (*a_path_depth < DAP_GLOBAL_DB_PATH_MAX) {
                     a_path[*a_path_depth].page_id = l_page->header.page_id;
@@ -4511,7 +4694,7 @@ static dap_global_db_page_t *s_cursor_snapshot_prev_leaf(
         }
         s_page_free(l_parent);
     }
-    return NULL;  // Beginning of tree
+    return NULL;
 }
 
 // ============================================================================
