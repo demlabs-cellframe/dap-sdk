@@ -1269,22 +1269,23 @@ static int s_leaf_update_entry(dap_global_db_page_t *a_page, int a_index,
     if (s_leaf_delete_entry(a_page, a_index, a_arena) != 0)
         return -1;
 
-    int l_count_after = a_page->header.entries_count;
-    size_t l_header_after = LEAF_HEADER_SIZE + (l_count_after + 1) * LEAF_OFFSET_SIZE;
-    if (l_header_after + l_new_size > a_page->header.free_space)
-        return -1;
-
     int l_new_index;
     s_leaf_find_entry(a_page, &l_key, &l_new_index);
-    if (l_payload > MAX_INLINE_PAYLOAD && a_tree) {
+    bool l_use_ov = (l_payload > MAX_INLINE_PAYLOAD);
+    if (!l_use_ov) {
+        if (s_leaf_insert_entry(a_page, l_new_index, &l_key, a_text_key, a_text_key_len,
+                                a_value, a_value_len, a_sign, a_sign_len, a_flags, a_arena) == 0)
+            return 0;
+        l_use_ov = true;
+    }
+    if (l_use_ov && a_tree) {
         uint64_t l_ov_id = s_overflow_write(a_tree, a_value, a_value_len, a_sign, a_sign_len, a_txn);
         if (l_ov_id == 0)
             return -1;
         return s_leaf_insert_entry_overflow(a_page, l_new_index, &l_key, a_text_key, a_text_key_len,
                                             l_ov_id, a_value_len, a_sign_len, a_flags, a_arena);
     }
-    return s_leaf_insert_entry(a_page, l_new_index, &l_key, a_text_key, a_text_key_len,
-                               a_value, a_value_len, a_sign, a_sign_len, a_flags, a_arena);
+    return -1;
 }
 
 /**
@@ -1561,7 +1562,13 @@ static int s_insert_non_full(dap_global_db_t *a_tree, dap_global_db_page_t *a_pa
             }
         } else {
             size_t l_payload = (size_t)a_value_len + (size_t)a_sign_len;
-            if (l_payload > MAX_INLINE_PAYLOAD) {
+            bool l_use_ov = (l_payload > MAX_INLINE_PAYLOAD);
+            if (!l_use_ov) {
+                if (s_leaf_insert_entry(lp, l_idx, a_key, a_text_key, a_text_key_len,
+                                        a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) != 0)
+                    l_use_ov = true;
+            }
+            if (l_use_ov) {
                 uint64_t l_ov_id = s_overflow_write(a_tree, a_value, a_value_len, a_sign, a_sign_len, l_txn);
                 if (l_ov_id == 0)
                     return -1;
@@ -1571,9 +1578,6 @@ static int s_insert_non_full(dap_global_db_t *a_tree, dap_global_db_page_t *a_pa
                     s_overflow_free(a_tree, l_ov_id, l_txn);
                     return -1;
                 }
-            } else if (s_leaf_insert_entry(lp, l_idx, a_key, a_text_key, a_text_key_len,
-                                            a_value, a_value_len, a_sign, a_sign_len, a_flags, NULL) != 0) {
-                return -1;
             }
             a_tree->header.items_count++;
         }
@@ -1714,7 +1718,14 @@ arena_path:;
         }
     } else {
         size_t l_payload = (size_t)a_value_len + (size_t)a_sign_len;
-        if (l_payload > MAX_INLINE_PAYLOAD) {
+        bool l_use_overflow = (l_payload > MAX_INLINE_PAYLOAD);
+        if (!l_use_overflow) {
+            if (s_leaf_insert_entry(l_page, l_index, a_key, a_text_key, a_text_key_len,
+                                    a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
+                l_use_overflow = true;
+            }
+        }
+        if (l_use_overflow) {
             uint64_t l_ov_id = s_overflow_write(a_tree, a_value, a_value_len, a_sign, a_sign_len, l_txn);
             if (l_ov_id == 0) {
                 log_it(L_ERROR, "Overflow write failed");
@@ -1723,14 +1734,10 @@ arena_path:;
             if (s_leaf_insert_entry_overflow(l_page, l_index, a_key, a_text_key, a_text_key_len,
                                               l_ov_id, a_value_len, a_sign_len, a_flags, l_arena) != 0) {
                 s_overflow_free(a_tree, l_ov_id, l_txn);
-                log_it(L_ERROR, "Failed to insert overflow entry - no space");
+                log_it(L_ERROR, "Failed to insert entry - no space even with overflow, entries=%d free=%u",
+                        l_page->header.entries_count, l_page->header.free_space);
                 return -1;
             }
-        } else if (s_leaf_insert_entry(l_page, l_index, a_key, a_text_key, a_text_key_len,
-                                       a_value, a_value_len, a_sign, a_sign_len, a_flags, l_arena) != 0) {
-            log_it(L_ERROR, "Failed to insert into leaf - no space, entries=%d free=%u l_index=%d",
-                    l_page->header.entries_count, l_page->header.free_space, l_index);
-            return -1;
         }
         a_tree->header.items_count++;
     }
