@@ -318,6 +318,17 @@ static inline void dap_ht_del_impl(void **head, void *del UNUSED_ARG, dap_ht_han
 } while (0)
 
 /**
+ * @brief Clear table with explicit handle name (does NOT free items)
+ */
+#define dap_ht_clear_hh(hhname, head) do { \
+    if ((head) && (head)->hhname.tbl) { \
+        DAP_DELETE((head)->hhname.tbl->buckets); \
+        DAP_DELETE((head)->hhname.tbl); \
+    } \
+    (head) = NULL; \
+} while (0)
+
+/**
  * @brief Add item with pointer key (key is the address of field)
  */
 #define dap_ht_add_ptr(head, field, add) \
