@@ -342,15 +342,18 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
             return false;
         }
+        if (!l_pkt->group_name_len || l_pkt->group_name_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {
+            log_it(L_WARNING, "Invalid group_name_len %u in hash packet", l_pkt->group_name_len);
+            return false;
+        }
         if (l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES &&
                 dap_proc_thread_get_avg_queue_size() > DAP_GLOBAL_DB_QUEUE_SIZE_MAX)
             break;
-        debug_if(g_dap_global_db_debug_more, L_INFO, "IN: %s packet for group %s with hashes count %u",
+        debug_if(g_dap_global_db_debug_more, L_INFO, "IN: %s packet for group %.*s with hashes count %u",
                                                 l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES
                                                 ? "GLOBAL_DB_HASHES" : "GLOBAL_DB_REQUEST",
-                                                l_pkt->group_n_hashses, l_pkt->hashes_count);
+                                                (int)l_pkt->group_name_len, l_pkt->group_n_hashses, l_pkt->hashes_count);
         if (!l_pkt->hashes_count)
-            // Nothnig to process
             break;
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
