@@ -5514,7 +5514,7 @@ static void s_verify_subtree(s_verify_ctx_t *a_ctx, uint64_t a_page_id, int a_de
         a_ctx->entry_count += (uint64_t)l_count;
 
         // Check key ordering within leaf
-        dap_global_db_key_t l_prev_key;
+        dap_global_db_key_t l_prev_key = {};
         for (int i = 0; i < l_count; i++) {
             dap_global_db_leaf_entry_t *l_entry = s_leaf_entry_at(l_page, i, NULL, NULL);
             if (!l_entry) {
