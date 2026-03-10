@@ -35,7 +35,7 @@ int clock_gettime(clockid_t clock_id, struct timespec *spec)
 //    spec->tv_nsec = wintime % 10000000i64 * 100; //nano-seconds
 //    return 0;
     uint64_t ft;
-    GetSystemTimeAsFileTime(FILETIME*)&ft); //return the number of 100-nanosecond intervals since January 1, 1601 (UTC)
+    GetSystemTimeAsFileTime((FILETIME*)&ft); //return the number of 100-nanosecond intervals since January 1, 1601 (UTC)
     // from 1 jan 1601 to 1 jan 1970
     ft -= 116444736000000000i64;
     spec->tv_sec = ft / 10000000i64; //seconds

@@ -1488,7 +1488,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS ){
                 if (l_errno == EBADF){
-                    log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
+                    log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %zu:%zu"
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
                     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
@@ -1536,7 +1536,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS && l_errno != ENOENT ){
                 if (l_errno == EBADF){
-                    log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
+                    log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %zu:%zu"
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
                     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
@@ -1584,7 +1584,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     case EINTR:
     case EWOULDBLOCK:
         log_it(L_ERROR, "Can't send ptr to queue (err %d), will be resent again in a while...", l_errno);
-        log_it(L_ERROR, "Number of pending messages: %ld", a_es->buf_out_size);
+        log_it(L_ERROR, "Number of pending messages: %zu", a_es->buf_out_size);
         s_add_ptr_to_buf(a_es, a_arg);
         return 0;
     default:
@@ -1631,7 +1631,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     int l_n;
     if(a_es->pipe_out){ // If we have pipe out - we send events directly to the pipe out kqueue fd
         if(a_es->pipe_out->context){
-            if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to pipe_out worker on esocket %d",a_arg,a_es);
+            if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to pipe_out worker on esocket %p",a_arg,a_es);
             l_n = kevent(a_es->pipe_out->context->kqueue_fd,&l_event,1,NULL,0,NULL);
         }
         else {
@@ -1641,7 +1641,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         }
     }else if(a_es->context){
         l_n = kevent(a_es->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %d",a_arg,a_es);
+        if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %p",a_arg,a_es);
     }else {
         log_it(L_WARNING,"Trying to send pointer in queue thats not assigned to any worker or proc thread");
         l_n = 0;

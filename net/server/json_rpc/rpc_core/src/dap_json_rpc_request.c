@@ -393,7 +393,7 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
         return -1;
     }
 
-    log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
+    log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %zu",
                      a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_path, l_enc_request_size);
 
     a_client_internal->http_client = dap_client_http_request(a_client_internal->worker,
@@ -413,7 +413,7 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
                 *a_response = json_object_new_string(l_err);
                 break;
             }
-            log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
+            log_it(L_DEBUG, "Get response from %s:%d, response size = %zu",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_response_size);
             break;
         }
