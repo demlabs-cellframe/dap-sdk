@@ -689,7 +689,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ( (l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos) ) {
-                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
+                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %zu", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
             } else
                 break;
@@ -698,7 +698,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
         } else
             ++l_pos;
     }
-    debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %lu / %lu bytes",
+    debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %zu / %zu bytes",
               l_processed_size, (size_t)(l_end - a_stream->esocket->buf_in) );
     return l_processed_size;
 }
