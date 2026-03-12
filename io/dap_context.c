@@ -1516,7 +1516,18 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
              a_esocket->socket, a_esocket->flags, events, !!(events & EPOLLOUT));
 
     if( a_esocket->context){
-        if ( epoll_ctl(a_esocket->context->epoll_fd, EPOLL_CTL_MOD, a_esocket->socket, &a_esocket->ev) ){
+        int l_fd;
+        switch (a_esocket->type) {
+        case DESCRIPTOR_TYPE_QUEUE:
+        case DESCRIPTOR_TYPE_EVENT:
+        case DESCRIPTOR_TYPE_PIPE:
+            l_fd = a_esocket->fd;
+            break;
+        default:
+            l_fd = a_esocket->socket;
+            break;
+        }
+        if ( epoll_ctl(a_esocket->context->epoll_fd, EPOLL_CTL_MOD, l_fd, &a_esocket->ev) ){
 #ifdef DAP_OS_WINDOWS
             int l_errno = WSAGetLastError();
 #else
@@ -1670,13 +1681,19 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
              !!(a_es->flags & DAP_SOCK_READY_TO_READ), !!(a_es->flags & DAP_SOCK_READY_TO_WRITE), !!(a_es->flags & DAP_SOCK_CONNECTING),
              a_es->ev.events, !!(a_es->ev.events & EPOLLIN), !!(a_es->ev.events & EPOLLOUT), a_es->type, g_debug_reactor);
     
-    // For QUEUE type (pipe-based), use fd instead of socket
-    int l_fd_to_monitor = (a_es->type == DESCRIPTOR_TYPE_QUEUE) ? a_es->fd : a_es->socket;
-    
-    debug_if(g_debug_reactor && a_es->type == DESCRIPTOR_TYPE_QUEUE, L_DEBUG, 
-             "Adding QUEUE to epoll: fd=%d, socket=%"DAP_FORMAT_SOCKET", using fd=%d",
-             a_es->fd, a_es->socket, l_fd_to_monitor);
-    
+    // For QUEUE and EVENT types, the real descriptor is in 'fd', not 'socket'
+    int l_fd_to_monitor;
+    switch (a_es->type) {
+    case DESCRIPTOR_TYPE_QUEUE:
+    case DESCRIPTOR_TYPE_EVENT:
+    case DESCRIPTOR_TYPE_PIPE:
+        l_fd_to_monitor = a_es->fd;
+        break;
+    default:
+        l_fd_to_monitor = a_es->socket;
+        break;
+    }
+
     int l_ret = epoll_ctl(a_context->epoll_fd, EPOLL_CTL_ADD, l_fd_to_monitor, &a_es->ev);
     if (l_ret != 0 ){
         l_is_error = true;
@@ -1819,16 +1836,25 @@ int dap_context_remove_from_polling(dap_events_socket_t * a_es)
             l_event->data.ptr = NULL; // signal to skip on its iteration
     }
 
-    // For QUEUE type (pipe-based), use fd instead of socket
-    int l_fd_to_remove = (a_es->type == DESCRIPTOR_TYPE_QUEUE) ? a_es->fd : a_es->socket;
+    // For QUEUE, EVENT and PIPE types, the real descriptor is in 'fd', not 'socket'
+    int l_fd_to_remove;
+    switch (a_es->type) {
+    case DESCRIPTOR_TYPE_QUEUE:
+    case DESCRIPTOR_TYPE_EVENT:
+    case DESCRIPTOR_TYPE_PIPE:
+        l_fd_to_remove = a_es->fd;
+        break;
+    default:
+        l_fd_to_remove = a_es->socket;
+        break;
+    }
 
     // Remove from epoll
     if (epoll_ctl(l_context->epoll_fd, EPOLL_CTL_DEL, l_fd_to_remove, &a_es->ev) == -1) {
         int l_errno = errno;
-        if (l_errno != ENOENT) {  // ENOENT = already removed, not an error
-            log_it(L_WARNING, "Error removing esocket %p %s %d from epoll: %s (%d)",
-                   a_es, a_es->type == DESCRIPTOR_TYPE_QUEUE ? "fd" : "socket",
-                   l_fd_to_remove, dap_strerror(l_errno), l_errno);
+        if (l_errno != ENOENT) {
+            log_it(L_WARNING, "Error removing esocket %p (type %d) fd %d from epoll: %s (%d)",
+                   a_es, a_es->type, l_fd_to_remove, dap_strerror(l_errno), l_errno);
             return -1;
         }
     }
