@@ -53,6 +53,10 @@ if (BUILD_WITH_ZIP)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
 add_subdirectory(../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
+# json-c is 3rdparty code: disable -Werror to avoid failures from
+# warnings in vendored code we don't control (e.g., -Wnan-infinity-disabled
+# triggered by INFINITY/NAN macros when -ffast-math is active on AppleClang).
+target_compile_options(dap_json-c PRIVATE -Wno-error)
 target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_json-c)
 
 if(BUILD_DAP_TESTS)

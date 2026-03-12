@@ -60,7 +60,7 @@ static int s_parse_callback_content_remove(avrs_ch_t *a_avrs_ch,dap_tsd_t* l_tsd
 int avrs_ch_pkt_in_session_add_callback(avrs_ch_pkt_session_callback_t a_callback)
 {
     if ( !(s_pkt_in_session_callbacks_size < DAP_AVRS$SZ_SESSION_CB) )
-        return  log_it(L_ERROR, "Table of content call back is full (%ld entries), cb:%p cannot be added", s_pkt_in_session_callbacks_size, a_callback),
+        return  log_it(L_ERROR, "Table of content call back is full (%zu entries), cb:%p cannot be added", s_pkt_in_session_callbacks_size, a_callback),
                 -ENOMEM;
 
     debug_if(g_avrs_debug_more, L_DEBUG, "Added content call back:%p, index #%zd", a_callback, s_pkt_in_session_callbacks_size);

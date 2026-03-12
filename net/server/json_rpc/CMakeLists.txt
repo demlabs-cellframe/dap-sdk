@@ -8,7 +8,6 @@ file(GLOB JSON_RPC_SRCS src/*.c)
 
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/rpc_core/)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/btc_rpc/)
 
 add_library(${PROJECT_NAME} STATIC ${JSON_RPC_HEADERS} ${JSON_RPC_SRCS})
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)

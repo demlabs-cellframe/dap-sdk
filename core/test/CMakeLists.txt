@@ -17,6 +17,10 @@ endif()
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
 target_link_libraries(core_test dap_test dap_core pthread)
 
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-type-limits -Wno-absolute-value)
+endif()
+
 if (DAP_USE_RPMALLOC)
 add_executable(rpmalloc_test
   ../../3rdparty/rpmalloc/test/test.h

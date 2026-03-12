@@ -97,7 +97,16 @@ if(UNIX)
     endif()
     
     # Base warning flags (compatible with both GCC and Clang)
-    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Werror=sign-compare -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+    # NOTE: -Werror is applied via add_compile_options() at the end of this file,
+    # NOT here in CMAKE_C_FLAGS, to avoid breaking CMake's check_function_exists()
+    # and other try_compile-based detection (e.g., libmdbx's libm check).
+    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+    
+    include(CheckCCompilerFlag)
+    check_c_compiler_flag("-Wno-unused-but-set-variable" HAS_WNO_UNUSED_BUT_SET_VARIABLE)
+    if (HAS_WNO_UNUSED_BUT_SET_VARIABLE)
+        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-but-set-variable")
+    endif()
     
     # Add Clang-specific warning flags
     if (CMAKE_C_COMPILER_ID MATCHES ".*[Cc][Ll][Aa][Nn][Gg].*")
@@ -269,3 +278,8 @@ if ( CELLFRAME_NO_OPTIMIZATION)
     set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
 
+# Apply -Werror to all actual compilation targets, but NOT to CMake's
+# internal try_compile/check_function_exists probes (which use CMAKE_C_FLAGS
+# but not COMPILE_OPTIONS). This prevents -Werror from breaking feature
+# detection in 3rdparty libraries (e.g., libmdbx's check for libm).
+add_compile_options(-Werror)
