@@ -14,7 +14,6 @@ set(JSON-C-CONFIG_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json-c/
     -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
     -DCMAKE_GENERATOR=${CMAKE_GENERATOR})
 
-##TODO: customize for universal platforms
 if ("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
     if (ANDROID)
         set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND}
@@ -37,10 +36,17 @@ else()
     set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
 endif()
 
+if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+    string(REPLACE ";" "|" _pipe_osx_archs "${CMAKE_OSX_ARCHITECTURES}")
+    set(JSON-C-CONFIG_COMMAND ${JSON-C-CONFIG_COMMAND}
+        -DCMAKE_OSX_ARCHITECTURES=${_pipe_osx_archs})
+endif()
+
 message("json-c build cmd ${JSON-C-CONFIG_COMMAND}")
 
 ExternalProject_Add(dap_json-c_dep
                     SOURCE_DIR ${PROJECT_SOURCE_DIR}/3rdparty/json-c/
+                    LIST_SEPARATOR |
                     CONFIGURE_COMMAND ${JSON-C-CONFIG_COMMAND})
 
 include(cmake/OS_Detection.cmake)

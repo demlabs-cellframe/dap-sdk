@@ -32,21 +32,33 @@ option(DAP_CRYPTO_XKCP_PLAINC "Use xkcp plain-c implemintation" OFF)
 include(CheckCCompilerFlag)
 unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
 CHECK_C_COMPILER_FLAG(-march=native COMPILER_SUPPORTS_MARCH_NATIVE)
-if(COMPILER_SUPPORTS_MARCH_NATIVE)
-    SET(TARGET_POSTFIX "-native")
-endif()
 
-
-if (${TARGET_ARCH} MATCHES "x86_64")
-    SET(XKCP_TARGET libdap-XKCP-x8664${TARGET_POSTFIX}.a)
-elseif(${TARGET_ARCH} MATCHES "armv7")
-    SET(XKCP_TARGET libdap-XKCP-armv7${TARGET_POSTFIX}.a)
-elseif(${TARGET_ARCH} MATCHES "armv8")
-    SET(XKCP_TARGET libdap-XKCP-armv8${TARGET_POSTFIX}.a)
+list(LENGTH TARGET_ARCH _arch_count)
+if(_arch_count GREATER 1)
+    message("[!] XKCP: Universal build (${TARGET_ARCH}), using plain-c implementation")
+    set(DAP_CRYPTO_XKCP_PLAINC ON)
+    SET(TARGET_POSTFIX "")
+    foreach(_a ${CMAKE_OSX_ARCHITECTURES})
+        string(APPEND XKCP_ARCH_FLAGS " -arch ${_a}")
+    endforeach()
 else()
-    SET(XKCP_TARGET libdap-XKCP-ref${TARGET_POSTFIX}.a)
-    message("[!] XKCP: Unknown architecture ${TARGET_ARCH}, use reference inplementation")
-    set(DAP_CRYPTO_XKCP_REFERENCE ON)
+    if(COMPILER_SUPPORTS_MARCH_NATIVE)
+        SET(TARGET_POSTFIX "-native")
+    else()
+        SET(TARGET_POSTFIX "")
+    endif()
+
+    if(${TARGET_ARCH} MATCHES "x86_64")
+        SET(XKCP_TARGET libdap-XKCP-x8664${TARGET_POSTFIX}.a)
+    elseif(${TARGET_ARCH} MATCHES "armv7")
+        SET(XKCP_TARGET libdap-XKCP-armv7${TARGET_POSTFIX}.a)
+    elseif(${TARGET_ARCH} MATCHES "armv8" OR ${TARGET_ARCH} MATCHES "arm64")
+        SET(XKCP_TARGET libdap-XKCP-armv8${TARGET_POSTFIX}.a)
+    else()
+        SET(XKCP_TARGET libdap-XKCP-ref${TARGET_POSTFIX}.a)
+        message("[!] XKCP: Unknown architecture ${TARGET_ARCH}, use reference inplementation")
+        set(DAP_CRYPTO_XKCP_REFERENCE ON)
+    endif()
 endif()
 
 IF (DAP_CRYPTO_XKCP_REFERENCE)
@@ -81,10 +93,14 @@ else()
     set(MAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 endif()
 
+if(XKCP_ARCH_FLAGS)
+    string(APPEND MAKE_C_FLAGS " ${XKCP_ARCH_FLAGS}")
+endif()
+
 message("[*] XKCP CFLAGS: ${MAKE_C_FLAGS}")
 
 add_custom_target(BuildXKCP ALL
-    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} CFLAGS=${MAKE_C_FLAGS} SDKROOT=${CMAKE_OSX_SYSROOT}  ${MAKE} -C ./xkcp_build_src ${XKCP_TARGET}
+    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} "CFLAGS=${MAKE_C_FLAGS}" SDKROOT=${CMAKE_OSX_SYSROOT}  ${MAKE} -C ./xkcp_build_src ${XKCP_TARGET}
     BYPRODUCTS ${XKCP_BUILD_LIB}
 )
 

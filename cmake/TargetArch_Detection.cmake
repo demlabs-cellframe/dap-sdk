@@ -6,7 +6,9 @@
 # "There are many more known variants/revisions that we do not handle/detect."
 
 set(archdetect_c_code "
-#if defined(__arm__) || defined(__TARGET_ARCH_ARM) || defined(__ARM_ARCH)
+#if defined(__aarch64__) || defined(_M_ARM64)
+    #error cmake_ARCH arm64
+#elif defined(__arm__) || defined(__TARGET_ARCH_ARM) || defined(__ARM_ARCH)
     #if defined(__ARM_ARCH_8__) || defined(__ARM_ARCH_8A__) || defined(__ARM_ARCH_8R__) || defined(__ARM_ARCH_8M__) || (defined(__TARGET_ARCH_ARM) && __TARGET_ARCH_ARM-0 >= 8) || (defined(__ARM_ARCH) && __ARM_ARCH == 8) 
         #error cmake_ARCH armv8
     #elif defined(__ARM_ARCH_7__) || defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || (defined(__TARGET_ARCH_ARM) && __TARGET_ARCH_ARM-0 >= 7)
@@ -59,6 +61,8 @@ function(target_architecture output_var)
                 set(osx_arch_i386 TRUE)
             elseif("${osx_arch}" STREQUAL "x86_64")
                 set(osx_arch_x86_64 TRUE)
+            elseif("${osx_arch}" STREQUAL "arm64")
+                set(osx_arch_arm64 TRUE)
             elseif("${osx_arch}" STREQUAL "ppc64" AND ppc_support)
                 set(osx_arch_ppc64 TRUE)
             else()
@@ -77,6 +81,10 @@ function(target_architecture output_var)
 
         if(osx_arch_x86_64)
             list(APPEND ARCH x86_64)
+        endif()
+
+        if(osx_arch_arm64)
+            list(APPEND ARCH arm64)
         endif()
 
         if(osx_arch_ppc64)
