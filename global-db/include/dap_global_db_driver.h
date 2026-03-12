@@ -170,6 +170,7 @@ typedef struct dap_global_db_driver_callbacks {
 } dap_global_db_driver_callbacks_t;
 
 int     dap_global_db_driver_init(const char *driver_name, const char *a_filename_db);
+const char *dap_global_db_driver_get_name(void);
 void    dap_global_db_driver_deinit(void);
 
 dap_store_obj_t *dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
