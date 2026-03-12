@@ -22,6 +22,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE .)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 
+if(BUILD_DAP_SDK_TESTS)
+    enable_testing()
+    add_subdirectory(test)
+endif()
+
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_LINK_MANAGER_HEADERS}")
 INSTALL(TARGETS ${PROJECT_NAME} 
