@@ -242,7 +242,7 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger)
     }
 
     /* Convert number from xxx.yyyyE+zz to xxxyyyy0000... */
-    char *l_eptr = strchr(a_str_uninteger, 'e');
+    const char *l_eptr = strchr(a_str_uninteger, 'e');
     if (!l_eptr)
         l_eptr = strchr(a_str_uninteger, 'E');
     if (l_eptr) {
@@ -250,13 +250,13 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger)
         if ( (l_strlen = strnlen(a_str_uninteger, DAP_SZ_MAX256SCINOT + 1) ) > DAP_SZ_MAX256SCINOT)
             return  log_it(L_ERROR, "Too many digits in `%s` (%d > %d)", a_str_uninteger, l_strlen, DAP_SZ_MAX256SCINOT), l_nul;
 
-        char *l_exp_ptr = l_eptr + 1;
+        const char *l_exp_ptr = l_eptr + 1;
         if (*l_exp_ptr == '+')
             l_exp_ptr++;
         int l_exp = atoi(l_exp_ptr);
         if (!l_exp)
             return  log_it(L_ERROR, "Invalid exponent %s", l_eptr), uint256_0;
-        char *l_dot_ptr = strchr(a_str_uninteger, '.');
+        const char *l_dot_ptr = strchr(a_str_uninteger, '.');
         if (!l_dot_ptr || l_dot_ptr > l_eptr)
             return  log_it(L_ERROR, "Invalid number format with exponent %d", l_exp), uint256_0;
         int l_dot_len = l_dot_ptr - a_str_uninteger;
