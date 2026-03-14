@@ -1358,6 +1358,10 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
 #if defined(DAP_EVENTS_CAPS_EVENT_EVENTFD)
     int ret = eventfd_write( a_es->fd2,a_value);
         int l_errno = errno;
+        if (ret != 0) {
+            log_it(L_WARNING, "eventfd_write(fd=%d, val=%"PRIu64") FAILED: ret=%d errno=%d (%s)",
+                   a_es->fd2, a_value, ret, l_errno, dap_strerror(l_errno));
+        }
         if (ret == 0 )
             return  0;
         else if ( ret < 0)

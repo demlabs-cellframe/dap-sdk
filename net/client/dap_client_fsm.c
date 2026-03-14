@@ -473,6 +473,10 @@ static void s_worker_execute_stage(void *a_arg)
     fsm_worker_dispatch_t *l_ctx = (fsm_worker_dispatch_t *)a_arg;
     if (!l_ctx) return;
 
+    dap_worker_t *l_cur_worker = dap_worker_get_current();
+    log_it(L_INFO, "FSM worker exec: stage %d (fsm_uuid=0x%"DAP_UINT64_FORMAT_x") on worker #%u",
+           l_ctx->stage, l_ctx->fsm_uuid, l_cur_worker ? l_cur_worker->id : 999);
+
     dap_client_t *l_client = l_ctx->client;
     dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
     if (!l_es) {
@@ -1220,6 +1224,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
     l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
     l_dispatch->client = a_fsm->client;
     l_dispatch->stage = a_fsm->stage;
+    log_it(L_INFO, "FSM dispatch: stage %d -> worker #%u (fsm_uuid=0x%"DAP_UINT64_FORMAT_x")",
+           a_fsm->stage, a_fsm->worker->id, a_fsm->uuid);
     dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
 }
 

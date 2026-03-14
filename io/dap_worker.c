@@ -335,7 +335,11 @@ static int s_queue_es_add(dap_worker_t *a_worker, dap_events_socket_t *a_esocket
 static void s_queue_add_es_callback(void *a_arg) {
     dap_events_socket_t *l_es = (dap_events_socket_t *)a_arg;
     if (l_es && l_es->worker) {
+        log_it(L_INFO, "Worker #%u: dequeued new esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" type %d",
+               l_es->worker->id, l_es->socket, l_es->uuid, l_es->type);
         s_queue_es_add(l_es->worker, l_es);
+    } else {
+        log_it(L_WARNING, "s_queue_add_es_callback: NULL es=%p or NULL worker", a_arg);
     }
 }
 
@@ -416,11 +420,10 @@ static void s_queue_es_io_callback(void *a_arg)
     
     dap_context_t *l_context = l_worker->context;
     
-    // Check if it was removed from the list
     dap_events_socket_t *l_msg_es = dap_context_find(l_context, l_msg->esocket_uuid);
     if (l_msg_es == NULL) {
-        log_it(L_INFO, "We got i/o message for esocket %"DAP_UINT64_FORMAT_U" thats now not in list. Lost %zu data", 
-               l_msg->esocket_uuid, l_msg->data_size);
+        log_it(L_WARNING, "IO message for esocket 0x%"DAP_UINT64_FORMAT_x" not in list, lost %zu bytes (flags_set=0x%x)",
+               l_msg->esocket_uuid, l_msg->data_size, l_msg->flags_set);
         DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
         return;
@@ -432,9 +435,9 @@ static void s_queue_es_io_callback(void *a_arg)
             dap_context_poll_update(l_msg_es);
         }
 
-    if (l_msg->flags_set & DAP_SOCK_CONNECTING)
-        if (!(l_msg_es->flags & DAP_SOCK_CONNECTING)) {
-            l_msg_es->flags ^= DAP_SOCK_CONNECTING;
+    if (l_msg->flags_unset & DAP_SOCK_CONNECTING)
+        if (l_msg_es->flags & DAP_SOCK_CONNECTING) {
+            l_msg_es->flags &= ~DAP_SOCK_CONNECTING;
             dap_context_poll_update(l_msg_es);
         }
 
@@ -447,6 +450,9 @@ static void s_queue_es_io_callback(void *a_arg)
     if (l_msg->flags_unset & DAP_SOCK_READY_TO_WRITE)
         dap_events_socket_set_writable_unsafe(l_msg_es, false);
     if (l_msg->data_size && l_msg->data) {
+        debug_if(l_msg_es->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+                 "CLI IO: writing %zu bytes to es_uid 0x%"DAP_UINT64_FORMAT_x" buf_out was %zu flags 0x%x",
+                 l_msg->data_size, l_msg->esocket_uuid, l_msg_es->buf_out_size, l_msg_es->flags);
         dap_events_socket_write_unsafe(l_msg_es, l_msg->data, l_msg->data_size);
         DAP_DELETE(l_msg->data);
     }
@@ -503,8 +509,10 @@ static void s_queue_callback_callback(void *a_arg)
     dap_worker_msg_callback_t *l_msg = (dap_worker_msg_callback_t *)a_arg;
     assert(l_msg);
     assert(l_msg->callback);
-    
-    debug_if(g_debug_reactor, L_INFO, "Calling callback=%p with arg=%p", l_msg->callback, l_msg->arg);
+
+    dap_worker_t *l_w = dap_worker_get_current();
+    log_it(L_INFO, "Worker #%u: processing callback %p arg=%p",
+           l_w ? l_w->id : 999, l_msg->callback, l_msg->arg);
     l_msg->callback(l_msg->arg);
     
     DAP_DELETE(l_msg);
@@ -587,6 +595,8 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
     } else {
         // Cross-worker - push to queue
         a_events_socket->worker = a_worker; // Set worker before pushing
+        log_it(L_INFO, "Cross-worker push: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" → worker #%u",
+               a_events_socket->socket, a_events_socket->uuid, a_worker->id);
         if (!dap_context_queue_push(a_worker->queue_es_new, a_events_socket)) {
             l_ret = -1;
         } else {
@@ -662,10 +672,15 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
         return;
     }
     *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };
-    
+
     if (!dap_context_queue_push(a_worker->queue_callback, l_msg)) {
-        log_it(L_ERROR, "Failed to push callback to worker queue (queue full)");
+        log_it(L_ERROR, "Failed to push callback to worker #%u queue (queue full)", a_worker->id);
         DAP_DELETE(l_msg);
+    } else {
+        log_it(L_INFO, "Pushed callback %p to worker #%u queue_callback (eventfd=%d)",
+               a_callback, a_worker->id,
+               a_worker->queue_callback && a_worker->queue_callback->event_socket
+                   ? a_worker->queue_callback->event_socket->fd : -1);
     }
 }
 

@@ -715,11 +715,40 @@ int dap_worker_thread_loop(dap_context_t * a_context)
     char l_error_buf[128] = {0};
     ssize_t l_bytes_sent = 0, l_bytes_read = 0, l_sockets_max;
     int l_selected_sockets = 0;
+    static _Thread_local uint64_t s_heartbeat_counter = 0;
+    static _Thread_local uint64_t s_busy_count = 0;
+    static _Thread_local time_t s_last_heartbeat_log = 0;
     do {
 #ifdef DAP_EVENTS_CAPS_EPOLL
         struct epoll_event *l_epoll_events = a_context->epoll_events;
-        l_selected_sockets = epoll_wait(a_context->epoll_fd, l_epoll_events, DAP_EVENTS_SOCKET_MAX, -1);
+        l_selected_sockets = epoll_wait(a_context->epoll_fd, l_epoll_events, DAP_EVENTS_SOCKET_MAX, 10000);
         l_sockets_max = l_selected_sockets;
+        ++s_heartbeat_counter;
+        {
+            time_t l_now = time(NULL);
+            if (l_now - s_last_heartbeat_log >= 10) {
+                s_last_heartbeat_log = l_now;
+                log_it(L_INFO, "Worker ctx #%u heartbeat: iter=%"PRIu64" selected=%d busy=%"PRIu64" epoll_fd=%d",
+                       a_context->id, s_heartbeat_counter, l_selected_sockets, s_busy_count, a_context->epoll_fd);
+            }
+        }
+        if (l_selected_sockets > 0) {
+            s_busy_count++;
+            if (s_busy_count > 10000) {
+                dap_events_socket_t *l_es0 = (dap_events_socket_t *)l_epoll_events[0].data.ptr;
+                log_it(L_WARNING, "Worker ctx #%u busy loop: %"PRIu64" iters, fd=%d type=%u epoll_ev=0x%x n_events=%d sock_flags=0x%x buf_out=%zu has_write_cb=%d",
+                       a_context->id, s_busy_count,
+                       l_es0 ? l_es0->fd : -1,
+                       l_es0 ? (unsigned)l_es0->type : 0,
+                       l_epoll_events[0].events, l_selected_sockets,
+                       l_es0 ? l_es0->flags : 0,
+                       l_es0 ? l_es0->buf_out_size : 0,
+                       l_es0 ? (l_es0->callbacks.write_callback != NULL) : 0);
+                s_busy_count = 0;
+            }
+        } else {
+            s_busy_count = 0;
+        }
 #elif defined(DAP_EVENTS_CAPS_POLL)
         l_selected_sockets = poll(a_context->poll, a_context->poll_count, -1);
         l_sockets_max = a_context->poll_count;
@@ -746,6 +775,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
         a_context->esockets_selected = l_selected_sockets;
         time_t l_cur_time = time( NULL);
+        struct timespec l_loop_start;
+        clock_gettime(CLOCK_MONOTONIC, &l_loop_start);
         for (a_context->esocket_current = 0; a_context->esocket_current < l_sockets_max; a_context->esocket_current++) {
             ssize_t n = a_context->esocket_current;
             bool l_flag_hup, l_flag_rdhup, l_flag_read, l_flag_write, l_flag_error, l_flag_nval, l_flag_msg, l_flag_pri;
@@ -1162,6 +1193,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
             // Possibly have data to read despite EPOLLRDHUP
             if (l_flag_rdhup){
+                debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_WARNING,
+                         "CLI RDHUP: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" buf_out %zu — client disconnected before response",
+                         l_cur->socket, l_cur->uuid, l_cur->buf_out_size);
                 switch (l_cur->type ){
                     case DESCRIPTOR_TYPE_SOCKET_RAW:
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
@@ -1254,16 +1288,37 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     switch (l_cur->type){
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
+                        if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT) {
+#if defined(SO_PEERCRED) && !defined(_WIN32)
+                            struct ucred l_cr;
+                            socklen_t l_cr_len = sizeof(l_cr);
+                            if (!getsockopt(l_cur->socket, SOL_SOCKET, SO_PEERCRED, &l_cr, &l_cr_len))
+                                log_it(L_INFO, "CLI send: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
+                                       " buf_out %zu bytes, peer_pid=%d",
+                                       l_cur->socket, l_cur->uuid, l_cur->buf_out_size, (int)l_cr.pid);
+                            else
+#endif
+                                log_it(L_INFO, "CLI send: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
+                                       " buf_out %zu bytes",
+                                       l_cur->socket, l_cur->uuid, l_cur->buf_out_size);
+                        }
                         l_bytes_sent = send(l_cur->socket, (const char *)l_cur->buf_out,
                                             l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
-                        if (l_bytes_sent == -1)
+                        if (l_bytes_sent == -1) {
 #ifdef DAP_OS_WINDOWS
                             l_errno = WSAGetLastError();
 #else
                             l_errno = errno;
 #endif
-                        else
+                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_WARNING,
+                                     "CLI send failed: socket %"DAP_FORMAT_SOCKET" errno=%d (%s)",
+                                     l_cur->socket, l_errno, dap_strerror(l_errno));
+                        } else {
                             l_errno = 0;
+                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+                                     "CLI send OK: socket %"DAP_FORMAT_SOCKET" sent %zd/%zu bytes",
+                                     l_cur->socket, l_bytes_sent, l_cur->buf_out_size);
+                        }
                     }
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
@@ -1404,12 +1459,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         }
                     }
                 }
-                /*
-                 * If whole buffer has been sent - clear "write flag" for socket/file descriptor to prevent
-                 * generation of unexpected I/O events like POLLOUT and consuming CPU by this.
-                 */
-                if (!l_cur->buf_out_size && !l_write_repeat)
-                    dap_events_socket_set_writable_unsafe(l_cur, false); /* Clear "enable write flag" */
+                if (!l_cur->buf_out_size) {
+                    if (l_cur->type != DESCRIPTOR_TYPE_SOCKET_UDP || !l_cur->packet_queue || !l_cur->packet_queue->count)
+                        dap_events_socket_set_writable_unsafe(l_cur, false);
+                }
+            } else if (l_flag_write && !(l_cur->flags & (DAP_SOCK_READY_TO_WRITE | DAP_SOCK_CONNECTING | DAP_SOCK_SIGNAL_CLOSE))) {
+                dap_context_poll_update(l_cur);
             }
 
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)
@@ -1459,6 +1514,18 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             }
 
         }
+#ifdef DAP_EVENTS_CAPS_EPOLL
+        {
+            struct timespec l_loop_end;
+            clock_gettime(CLOCK_MONOTONIC, &l_loop_end);
+            long l_elapsed_ms = (l_loop_end.tv_sec - l_loop_start.tv_sec) * 1000
+                              + (l_loop_end.tv_nsec - l_loop_start.tv_nsec) / 1000000;
+            if (l_elapsed_ms > 1000) {
+                log_it(L_WARNING, "Worker ctx #%u slow iteration: %ld ms processing %d events",
+                       a_context->id, l_elapsed_ms, l_selected_sockets);
+            }
+        }
+#endif
 #ifdef DAP_EVENTS_CAPS_POLL
         /***********************************************************/
         /* If the compress_array flag was turned on, we need       */
@@ -1515,6 +1582,10 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
     debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Updating CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, events=0x%x, EPOLLOUT=%d)", 
              a_esocket->socket, a_esocket->flags, events, !!(events & EPOLLOUT));
 
+    debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+             "CLI poll_update: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" flags=0x%x events=0x%x EPOLLOUT=%d",
+             a_esocket->socket, a_esocket->uuid, a_esocket->flags, events, !!(events & EPOLLOUT));
+
     if( a_esocket->context){
         int l_fd;
         switch (a_esocket->type) {
@@ -1536,9 +1607,16 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
             return log_it(L_CRITICAL, "Error updating client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
                 a_esocket->context->epoll_fd, dap_strerror(l_errno), l_errno), -1;
         } else {
+            debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+                     "CLI poll_update OK: epoll_ctl MOD fd=%d epoll_fd=%"DAP_FORMAT_HANDLE,
+                     l_fd, a_esocket->context->epoll_fd);
             debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Successfully updated CONNECTING socket %"DAP_FORMAT_SOCKET" in epoll", 
                      a_esocket->socket);
         }
+    } else {
+        debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_WARNING,
+                 "CLI poll_update: no context! socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x,
+                 a_esocket->socket, a_esocket->uuid);
     }
 
 #elif defined (DAP_EVENTS_CAPS_POLL)
