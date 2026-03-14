@@ -278,8 +278,7 @@ if ( CELLFRAME_NO_OPTIMIZATION)
     set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
 
-# Apply -Werror to all actual compilation targets, but NOT to CMake's
-# internal try_compile/check_function_exists probes (which use CMAKE_C_FLAGS
-# but not COMPILE_OPTIONS). This prevents -Werror from breaking feature
-# detection in 3rdparty libraries (e.g., libmdbx's check for libm).
-add_compile_options(-Werror)
+# Note: -Werror is intentionally not set here. It prevents CMake's
+# try_compile/check_function_exists probes from working and causes
+# build failures with bundled 3rdparty code on newer compilers.
+# Consumers should set -Werror in their own build configuration.
