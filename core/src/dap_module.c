@@ -67,16 +67,14 @@ int dap_module_add(const char *a_name, unsigned int a_version, const char *a_dep
         return -1;
     }
     
-    // Check if module already registered
     dap_module_registry_entry_t *l_existing = NULL;
     HASH_FIND_STR(s_module_registry, a_name, l_existing);
     if (l_existing) {
-        log_it(L_WARNING, "dap_module_add: Module '%s' already registered (version %u)", 
+        log_it(L_WARNING, "dap_module_add: Module '%s' already registered (version %u)",
                a_name, l_existing->version);
         return -1;
     }
     
-    // Create new registry entry
     dap_module_registry_entry_t *l_entry = DAP_NEW_Z(dap_module_registry_entry_t);
     if (!l_entry) {
         log_it(L_ERROR, "dap_module_add: Failed to allocate memory for module '%s'", a_name);
@@ -92,7 +90,6 @@ int dap_module_add(const char *a_name, unsigned int a_version, const char *a_dep
     l_entry->deinit_cb = a_deinit_callback;
     l_entry->initialized = false;
     
-    // Add to hash table
     HASH_ADD_STR(s_module_registry, name, l_entry);
     
     log_it(L_DEBUG, "dap_module_add: Registered module '%s' (version %u)", a_name, a_version);
