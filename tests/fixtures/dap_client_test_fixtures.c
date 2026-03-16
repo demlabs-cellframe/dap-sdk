@@ -46,7 +46,7 @@
 // ============================================================================
 
 int dap_test_generate_unique_node_addr(const char *a_cert_name, dap_enc_key_type_t a_key_type, 
-                                      dap_stream_node_addr_t *a_node_addr_out) {
+                                      dap_cluster_node_addr_t *a_node_addr_out) {
     if (!a_cert_name || !a_node_addr_out) {
         log_it(L_ERROR, "Invalid parameters for node address generation");
         return -1;
@@ -60,7 +60,7 @@ int dap_test_generate_unique_node_addr(const char *a_cert_name, dap_enc_key_type
     }
     
     // Extract node address from certificate
-    *a_node_addr_out = dap_stream_node_addr_from_cert(l_cert);
+    *a_node_addr_out = dap_cluster_node_addr_from_cert(l_cert);
     
     // Add certificate to registry (required for some operations)
     if (dap_cert_add(l_cert) != 0) {

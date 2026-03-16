@@ -3,7 +3,9 @@
 //#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
 #include "shishua.h"
 
-#if defined(_WIN32)
+#if defined(DAP_OS_WASM)
+    #include <emscripten.h>
+#elif defined(_WIN32)
     #include <windows.h>
 #else
     #include <unistd.h>
@@ -77,7 +79,13 @@ int randombase64(void*random_array, unsigned int size)
 int randombytes(void* random_array, unsigned int nbytes)
 { // Generation of "nbytes" of random values
     
-#if defined(_WIN32)
+#if defined(DAP_OS_WASM)
+    EM_ASM({
+        var buf = new Uint8Array(Module.HEAPU8.buffer, $0, $1);
+        crypto.getRandomValues(buf);
+    }, random_array, nbytes);
+    return passed;
+#elif defined(_WIN32)
     HCRYPTPROV p;
 
     if (CryptAcquireContext(&p, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) == FALSE) {

@@ -52,7 +52,7 @@
 #define DAP_CFG_PARAM_BLACK_LIST        "black-list"
 
 typedef struct dap_link_info {
-    dap_stream_node_addr_t node_addr;
+    dap_cluster_node_addr_t node_addr;
     char uplink_addr[DAP_HOSTADDR_STRLEN];
     uint16_t uplink_port;
 } DAP_ALIGN_PACKED dap_link_info_t;

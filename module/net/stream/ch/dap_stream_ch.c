@@ -28,10 +28,12 @@
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
+#include "dap_ht.h"
+#include "dap_dl.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_ch_gossip.h"
 #include "dap_stream_worker.h"
-#include "dap_ht.h"
+#include "dap_net_trans_ctx.h"
 #include <pthread.h>
 
 #define LOG_TAG "dap_stream_ch"
@@ -196,6 +198,14 @@ dap_stm_ch_rec_t    *l_rec = NULL;
     return  0;  /* SS$_SUCCESS */
 }
 
+// Deferred free to avoid use-after-free during notifier callbacks
+static void s_stream_ch_free_callback(void *a_arg)
+{
+    dap_stream_ch_t *l_ch = (dap_stream_ch_t *)a_arg;
+    if (l_ch)
+        dap_stm_ch_free(l_ch);
+}
+
 unsigned int dap_new_stream_ch_id() {
     static _Atomic unsigned int stream_ch_id = 0;
     return stream_ch_id++;
@@ -217,23 +227,37 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         l_ch_new->stream = a_stream;
         l_ch_new->proc = proc;
         l_ch_new->ready_to_read = true;
+        l_ch_new->closing = false;
         l_ch_new->uuid = dap_new_stream_ch_id();
         pthread_mutex_init(&(l_ch_new->mutex),NULL);
 
         // Init on stream worker
         dap_stream_worker_t * l_stream_worker = a_stream->stream_worker;
+        if (!l_stream_worker) {
+            log_it(L_ERROR, "stream_worker is NULL for stream %p, cannot create channel", (void*)a_stream);
+            dap_stm_ch_free(l_ch_new);
+            return NULL;
+        }
         l_ch_new->stream_worker = l_stream_worker;
 
         pthread_rwlock_wrlock(&l_stream_worker->channels_rwlock);
-        dap_ht_add_by_hashvalue_hh(hh_worker, l_stream_worker->channels, uuid, sizeof(l_ch_new->uuid), l_ch_new->uuid, l_ch_new);
+        dap_ht_add_hh(hh_worker, l_stream_worker->channels, uuid, l_ch_new);
         pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
 
 
         // Proc new callback
-        if(l_ch_new->proc->new_callback)
+        if(l_ch_new->proc->new_callback) {
+            debug_if(s_debug_more, L_DEBUG, "Calling new_callback for channel '%c' (proc=%p, callback=%p)", 
+                   a_id, (void*)l_ch_new->proc, (void*)l_ch_new->proc->new_callback);
             l_ch_new->proc->new_callback(l_ch_new,NULL);
+            debug_if(s_debug_more, L_DEBUG, "new_callback for channel '%c' completed", a_id);
+        } else {
+            debug_if(s_debug_more, L_DEBUG, "No new_callback for channel '%c'", a_id);
+        }
 
-        a_stream->channel[l_ch_new->stream->channel_count++] = l_ch_new;
+        a_stream->channel[a_stream->channel_count++] = l_ch_new;
+        log_it(L_NOTICE, "Channel '%c' CREATED: %p (stream=%p, total_channels=%zu, notifiers=0)", 
+               a_id, l_ch_new, a_stream, a_stream->channel_count);
 
         return l_ch_new;
     }else{
@@ -248,6 +272,10 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
  */
 void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
 {
+    log_it(L_NOTICE, "Channel '%c' DELETE: %p (stream=%p, notifiers=%zu)", 
+           a_ch->proc ? a_ch->proc->id : '?', a_ch, a_ch->stream,
+           dap_list_length(a_ch->packet_in_notifiers));
+    
     dap_stream_worker_t * l_stream_worker = a_ch->stream_worker;
 
     if(l_stream_worker){
@@ -257,6 +285,7 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
     }
 
     pthread_mutex_lock(&a_ch->mutex);
+    a_ch->closing = true;
     if (a_ch->proc)
         if (a_ch->proc->delete_callback)
             a_ch->proc->delete_callback(a_ch, NULL);
@@ -276,7 +305,11 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
 
     pthread_mutex_unlock(&a_ch->mutex);
 
-    dap_stm_ch_free (a_ch);
+    // Defer actual free to worker's queue to avoid freeing while iterating notifiers
+    if (l_stream_worker && l_stream_worker->worker)
+        dap_worker_exec_callback_on(l_stream_worker->worker, s_stream_ch_free_callback, a_ch);
+    else
+        dap_stm_ch_free(a_ch);
 }
 
 /**
@@ -295,7 +328,7 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
 
     pthread_rwlock_rdlock(&a_worker->channels_rwlock);
     if ( a_worker->channels)
-        dap_ht_find_by_hashvalue_hh(hh_worker, a_worker->channels, &a_uuid, sizeof(a_uuid), a_uuid, l_ch);
+        dap_ht_find_hh(hh_worker, a_worker->channels, &a_uuid, sizeof(a_uuid), l_ch);
     pthread_rwlock_unlock(&a_worker->channels_rwlock);
 
     return l_ch;
@@ -312,7 +345,8 @@ void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_rea
     if( a_ch->ready_to_read != a_is_ready){
         //log_it(L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         a_ch->ready_to_read=a_is_ready;
-        dap_events_socket_set_readable_unsafe(a_ch->stream->esocket, a_is_ready);
+        if (a_ch->stream->trans_ctx && a_ch->stream->trans_ctx->esocket)
+            dap_events_socket_set_readable_unsafe(a_ch->stream->trans_ctx->esocket, a_is_ready);
     }
 }
 
@@ -326,7 +360,8 @@ void dap_stream_ch_set_ready_to_write_unsafe(dap_stream_ch_t * ch,bool is_ready)
     if(ch->ready_to_write!=is_ready){
         //log_it(L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         ch->ready_to_write=is_ready;
-        dap_events_socket_set_writable_unsafe(ch->stream->esocket, is_ready);
+        if (ch->stream->trans_ctx && ch->stream->trans_ctx->esocket)
+            dap_events_socket_set_writable_unsafe(ch->stream->trans_ctx->esocket, is_ready);
     }
 }
 
@@ -357,7 +392,7 @@ static void s_print_workers_channels()
         }
         dap_stream_worker_t* l_stream_worker = DAP_STREAM_WORKER(l_worker);
         if (l_stream_worker->channels)
-            dap_ht_foreach_hh(hh_worker, l_stream_worker->channels, l_msg_ch, l_msg_ch_tmp) {
+            HASH_ITER(hh_worker, l_stream_worker->channels, l_msg_ch, l_msg_ch_tmp) {
                 //log_it(L_DEBUG, "Worker id = %d, channel uuid = 0x%llx", l_worker->id, l_msg_ch->uuid);
                 l_channel_count += 1;
         }
@@ -405,6 +440,20 @@ static void s_place_notifier_callback(void *a_arg)
         log_it(L_ERROR, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID, l_es->uuid);
         goto ret_n_clear;
     }
+    debug_if(s_debug_more, L_DEBUG, "s_place_notifier_callback: stream=%p, channel_count=%zu, ch_id='%c'", 
+           (void*)l_stream, l_stream->channel_count, l_arg->ch_id);
+    if (l_stream->channel_count > 0 && l_stream->channel) {
+        for (size_t i = 0; i < l_stream->channel_count; i++) {
+            if (l_stream->channel[i] && l_stream->channel[i]->proc) {
+                debug_if(s_debug_more, L_DEBUG, "  channel[%zu]: id='%c', proc=%p", i, l_stream->channel[i]->proc->id, (void*)l_stream->channel[i]->proc);
+            } else {
+                debug_if(s_debug_more, L_DEBUG, "  channel[%zu]: NULL or no proc", i);
+            }
+        }
+    } else {
+        debug_if(s_debug_more, L_DEBUG, "  stream has no channels (channel_count=%zu, channel=%p)", 
+               l_stream->channel_count, (void*)l_stream->channel);
+    }
     dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, l_arg->ch_id);
     if (!l_ch) {
         log_it(L_WARNING, "Stream found, but channel '%c' isn't set", l_arg->ch_id);
@@ -449,7 +498,7 @@ ret_n_clear:
     DAP_DELETE(l_arg);
 }
 
-static int s_stream_ch_place_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+static int s_stream_ch_place_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
                                       dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
                                       void *a_callback_arg, bool a_add)
 {
@@ -464,16 +513,67 @@ static int s_stream_ch_place_notifier(dap_stream_node_addr_t *a_stream_addr, uin
     return 0;
 }
 
-int dap_stream_ch_add_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+int dap_stream_ch_add_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
                              dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
                              void *a_callback_arg)
 {
     return s_stream_ch_place_notifier(a_stream_addr, a_ch_id, a_direction, a_callback, a_callback_arg, true);
 }
 
-int dap_stream_ch_del_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+int dap_stream_ch_del_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
                              dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
                              void *a_callback_arg)
 {
     return s_stream_ch_place_notifier(a_stream_addr, a_ch_id, a_direction, a_callback, a_callback_arg, false);
+}
+
+/**
+ * @brief Get worker for a channel by UUID (MT-safe)
+ * @param a_ch_uuid Channel UUID
+ * @return Pointer to worker or NULL if channel not found
+ * @note This function searches through all stream workers to find the channel
+ *       Uses proper locking for thread safety
+ */
+dap_worker_t *dap_stream_ch_get_worker_mt(dap_stream_ch_uuid_t a_ch_uuid)
+{
+    uint32_t l_worker_count = dap_events_thread_get_count();
+    
+    // Search through all workers with proper locking
+    for (uint32_t i = 0; i < l_worker_count; i++) {
+        dap_worker_t *l_worker = dap_events_worker_get(i);
+        if (!l_worker) {
+            continue;
+        }
+        
+        // Get stream worker from worker
+        dap_stream_worker_t *l_stream_worker = DAP_STREAM_WORKER(l_worker);
+        if (!l_stream_worker) {
+            continue;
+        }
+        
+        // Lock channels for read access (MT-safe)
+        pthread_rwlock_rdlock(&l_stream_worker->channels_rwlock);
+        
+        // Search through channels hash table
+        dap_stream_ch_t *l_ch = NULL;
+        dap_stream_ch_t *l_ch_iter = NULL;
+        dap_stream_ch_t *l_ch_tmp = NULL;
+        
+        // Iterate through UTHASH table
+        dap_ht_foreach_hh(hh_worker, l_stream_worker->channels, l_ch_iter, l_ch_tmp) {
+            if (memcmp(&l_ch_iter->uuid, &a_ch_uuid, sizeof(dap_stream_ch_uuid_t)) == 0) {
+                l_ch = l_ch_iter;
+                break;
+            }
+        }
+        
+        pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
+        
+        // If found, return this worker
+        if (l_ch) {
+            return l_worker;
+        }
+    }
+    
+    return NULL;
 }

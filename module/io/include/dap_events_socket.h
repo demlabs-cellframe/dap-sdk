@@ -396,6 +396,18 @@ void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t *a_es
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
 
+/** UDP sendto with explicit address (5.8 compatibility - used by DNS server, io_flow_socket) */
+size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_size,
+                                       const struct sockaddr_storage *a_addr, socklen_t a_addr_len);
+
+/** Create TCP/UDP socket with explicit domain/type/protocol (5.8 compatibility) */
+dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type, int a_protocol,
+                                                        dap_events_socket_callbacks_t *a_callbacks);
+/** Resolve host and set addr_storage for client connection */
+int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
+/** Initiate non-blocking connect (returns 0 on success or EINPROGRESS, -1 on immediate failure) */
+int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_err_out);
+
 // MT variants less
 void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
 void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
@@ -420,6 +432,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t * a_es, void* a_arg);
 #endif
 
 void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid);
+#define dap_events_socket_remove_and_delete_mt dap_events_socket_remove_and_delete
 
 // Delayed removed
 void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_es, bool a_preserve_inheritor);
@@ -438,6 +451,12 @@ size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_dat
 DAP_STATIC_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t *a_es)
 {
     return a_es && a_es->type >= 0 && a_es->type < DESCRIPTOR_TYPE_MAX ? s_socket_type_to_str[a_es->type] : "UNKNOWN";
+}
+
+/** 5.8 compatibility: check if socket is datagram (UDP) transport */
+DAP_STATIC_INLINE bool dap_events_socket_is_datagram(dap_events_socket_t *a_es)
+{
+    return a_es && a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP;
 }
 
 DAP_INLINE int dap_close_socket(SOCKET s) {

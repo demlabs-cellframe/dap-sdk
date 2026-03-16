@@ -522,6 +522,43 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
 
 }
 
+typedef struct {
+    dap_worker_callback_t callback;
+    void *arg;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool done;
+} dap_worker_sync_msg_t;
+
+static void s_worker_exec_callback_on_sync_wrapper(void *a_arg)
+{
+    dap_worker_sync_msg_t *l_msg = (dap_worker_sync_msg_t *)a_arg;
+    l_msg->callback(l_msg->arg);
+    pthread_mutex_lock(&l_msg->mutex);
+    l_msg->done = true;
+    pthread_cond_signal(&l_msg->cond);
+    pthread_mutex_unlock(&l_msg->mutex);
+}
+
+void dap_worker_exec_callback_on_sync(dap_worker_t *a_worker, dap_worker_callback_t a_callback, void *a_arg)
+{
+    dap_return_if_fail(a_worker && a_callback);
+    if (dap_context_current() == a_worker->context) {
+        a_callback(a_arg);
+        return;
+    }
+    dap_worker_sync_msg_t l_msg = { .callback = a_callback, .arg = a_arg, .done = false };
+    pthread_mutex_init(&l_msg.mutex, NULL);
+    pthread_cond_init(&l_msg.cond, NULL);
+    dap_worker_exec_callback_on(a_worker, s_worker_exec_callback_on_sync_wrapper, &l_msg);
+    pthread_mutex_lock(&l_msg.mutex);
+    while (!l_msg.done)
+        pthread_cond_wait(&l_msg.cond, &l_msg.mutex);
+    pthread_mutex_unlock(&l_msg.mutex);
+    pthread_mutex_destroy(&l_msg.mutex);
+    pthread_cond_destroy(&l_msg.cond);
+}
+
 /**
  * @brief dap_worker_add_events_socket
  * @param a_worker

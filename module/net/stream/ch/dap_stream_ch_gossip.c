@@ -28,7 +28,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_gossip.h"
-#include "dap_stream_cluster.h"
+#include "dap_cluster.h"
 #include "dap_ht.h"
 #include "dap_dl.h"
 
@@ -42,7 +42,7 @@ static struct gossip_callback {
 
 static pthread_rwlock_t s_gossip_lock = PTHREAD_RWLOCK_INITIALIZER;
 static struct gossip_msg_item {
-    dap_hash_sha3_256_t payload_hash;
+    dap_hash_t payload_hash;
     dap_nanotime_t timestamp;
     bool with_payload;
     dap_ht_handle_t hh;
@@ -69,7 +69,7 @@ int dap_stream_ch_gossip_init()
 void dap_stream_ch_gossip_deinit()
 {
     if (s_gossip_timer)
-        dap_timerfd_delete(s_gossip_timer->worker, s_gossip_timer->esocket_uuid);
+        dap_timerfd_delete_mt(s_gossip_timer->worker, s_gossip_timer->esocket_uuid);
     pthread_rwlock_wrlock(&s_gossip_lock);
     struct gossip_msg_item *it, *tmp;
     dap_ht_foreach(s_gossip_last_msgs, it, tmp) {
@@ -121,18 +121,18 @@ static bool s_callback_hashtable_maintenance(void UNUSED_ARG *a_arg)
     return true;
 }
 
-void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_sha3_256_t *a_payload_hash)
+void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_fast_t *a_payload_hash)
 {
     dap_return_if_fail(a_cluster && a_payload && a_payload_size && a_payload_hash);
     if (dap_cluster_is_empty(a_cluster))
         return;
     struct gossip_msg_item *l_msg_item = NULL;
     pthread_rwlock_wrlock(&s_gossip_lock);
-    uint32_t l_hash_value = dap_ht_hash_value(a_payload_hash, sizeof(dap_hash_sha3_256_t));
-    dap_ht_find_by_hashvalue(s_gossip_last_msgs, a_payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
+    unsigned l_hash_value = dap_ht_hash_value(a_payload_hash, sizeof(dap_hash_t));
+    dap_ht_find_by_hashvalue(s_gossip_last_msgs, a_payload_hash, sizeof(dap_hash_t), l_hash_value, l_msg_item);
     if (l_msg_item) {
         pthread_rwlock_unlock(&s_gossip_lock);
-        log_it(L_ERROR, "Hash %s already exist", dap_hash_sha3_256_to_str_static(a_payload_hash)); 
+        log_it(L_ERROR, "Hash %s already exist", dap_hash_fast_to_str_static(a_payload_hash)); 
         return;
     }
     l_msg_item = DAP_NEW_Z_SIZE(struct gossip_msg_item, sizeof(struct gossip_msg_item) + sizeof(dap_gossip_msg_t) +
@@ -152,14 +152,14 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
     l_msg->payload_len = a_payload_size;
     l_msg->cluster_id.raw = a_cluster->guuid.raw;
     l_msg->payload_hash = *a_payload_hash;
-    *(dap_stream_node_addr_t *)l_msg->trace_n_payload = g_node_addr;
+    *(dap_cluster_node_addr_t *)l_msg->trace_n_payload = g_node_addr;
     memcpy(l_msg->trace_n_payload + l_msg->trace_len, a_payload, a_payload_size);
-    dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
+    dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_msg_item);
     pthread_rwlock_unlock(&s_gossip_lock);
-    debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_HASH packet for hash %s", dap_hash_sha3_256_to_str_static(a_payload_hash));
+    debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_HASH packet for hash %s", dap_hash_fast_to_str_static(a_payload_hash));
     dap_cluster_broadcast(a_cluster, DAP_STREAM_CH_GOSSIP_ID,
                           DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH,
-                          a_payload_hash, sizeof(dap_hash_sha3_256_t),
+                          a_payload_hash, sizeof(dap_hash_t),
                           &g_node_addr, 1);
 }
 
@@ -171,25 +171,25 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
     case DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH:
     case DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST: {
         struct gossip_msg_item *l_msg_item = NULL;
-        if (l_ch_pkt->hdr.data_size != sizeof(dap_hash_sha3_256_t)) {
+        if (l_ch_pkt->hdr.data_size != sizeof(dap_hash_t)) {
             log_it(L_WARNING, "Incorrect gossip message data size %u, expected %zu",
-                                        l_ch_pkt->hdr.data_size, sizeof(dap_hash_sha3_256_t));
+                                        l_ch_pkt->hdr.data_size, sizeof(dap_hash_t));
             return false;
         }
-        dap_hash_sha3_256_t *l_payload_hash = (dap_hash_sha3_256_t *)&l_ch_pkt->data;
+        dap_hash_fast_t *l_payload_hash = (dap_hash_fast_t *)&l_ch_pkt->data;
         debug_if(s_debug_more, L_INFO, "IN: %s packet for hash %s", l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH
                                                                     ? "GOSSIP_HASH" : "GOSSIP_REQUEST",
-                                                                    dap_hash_sha3_256_to_str_static(l_payload_hash));
-        uint32_t l_hash_value = dap_ht_hash_value(l_payload_hash, sizeof(dap_hash_sha3_256_t));
+                                                                    dap_hash_fast_to_str_static(l_payload_hash));
+        unsigned l_hash_value = dap_ht_hash_value(l_payload_hash, sizeof(dap_hash_t));
         pthread_rwlock_wrlock(&s_gossip_lock);
-        dap_ht_find_by_hashvalue(s_gossip_last_msgs, l_ch_pkt->data, sizeof(dap_hash_sha3_256_t), l_hash_value, l_msg_item);
+        dap_ht_find_by_hashvalue(s_gossip_last_msgs, l_ch_pkt->data, sizeof(dap_hash_t), l_hash_value, l_msg_item);
         if (l_msg_item) {
             if (l_msg_item->timestamp < dap_nanotime_now() - DAP_GOSSIP_LIFETIME * 1000000000UL) {
-                debug_if(s_debug_more, L_INFO, "Packet for hash %s is derelict", dap_hash_sha3_256_to_str_static(l_payload_hash));
+                debug_if(s_debug_more, L_INFO, "Packet for hash %s is derelict", dap_hash_fast_to_str_static(l_payload_hash));
                 dap_ht_del(s_gossip_last_msgs, l_msg_item);
                 DAP_DELETE(l_msg_item);
             } else if (l_msg_item->with_payload && l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST) {
-                debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_DATA packet for hash %s", dap_hash_sha3_256_to_str_static((dap_hash_sha3_256_t *)&l_ch_pkt->data));
+                debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_DATA packet for hash %s", dap_hash_fast_to_str_static((dap_hash_fast_t *)&l_ch_pkt->data));
                 // Send data associated with this hash by request
                 dap_gossip_msg_t *l_msg = (dap_gossip_msg_t *)l_msg_item->message;
                 dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_DATA, l_msg, dap_gossip_msg_get_size(l_msg));
@@ -203,10 +203,10 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             }
             l_item_new->payload_hash = *l_payload_hash;
             l_item_new->timestamp = dap_nanotime_now();
-            dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_item_new);
-            debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_REQUEST packet for hash %s", dap_hash_sha3_256_to_str_static(l_payload_hash));
+            dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_item_new);
+            debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_REQUEST packet for hash %s", dap_hash_fast_to_str_static(l_payload_hash));
             // Send request for data associated with this hash
-            dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST, l_payload_hash, sizeof(dap_hash_sha3_256_t));
+            dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST, l_payload_hash, sizeof(dap_hash_t));
         }
         pthread_rwlock_unlock(&s_gossip_lock);
     } break;
@@ -219,7 +219,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             return false;
         }
         if (l_ch_pkt->hdr.data_size != dap_gossip_msg_get_size(l_msg)) {
-            log_it(L_WARNING, "Incorrect gossip message data size %u, expected %"DAP_UINT64_FORMAT_U,
+            log_it(L_WARNING, "Incorrect gossip message data size %u, expected %zu",
                                                 l_ch_pkt->hdr.data_size, dap_gossip_msg_get_size(l_msg));
             return false;
         }
@@ -228,7 +228,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                                                          l_msg->version, DAP_GOSSIP_CURRENT_VERSION);
             return false;
         }
-        if (l_msg->trace_len % sizeof(dap_stream_node_addr_t) != 0) {
+        if (l_msg->trace_len % sizeof(dap_cluster_node_addr_t) != 0) {
             log_it(L_WARNING, "Unaligned gossip message tracepath size %u", l_msg->trace_len);
             return false;
         }
@@ -236,11 +236,11 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             log_it(L_WARNING, "Zero size of gossip message payload");
             return false;
         }
-        debug_if(s_debug_more, L_INFO, "IN: GOSSIP_DATA packet for hash %s", dap_hash_sha3_256_to_str_static(&l_msg->payload_hash));
-        uint32_t l_hash_value = dap_ht_hash_value(&l_msg->payload_hash, sizeof(dap_hash_sha3_256_t));
+        debug_if(s_debug_more, L_INFO, "IN: GOSSIP_DATA packet for hash %s", dap_hash_fast_to_str_static(&l_msg->payload_hash));
+        unsigned l_hash_value = dap_ht_hash_value(&l_msg->payload_hash, sizeof(dap_hash_t));
         struct gossip_msg_item *l_payload_item = NULL, *l_payload_item_new;
         pthread_rwlock_wrlock(&s_gossip_lock);
-        dap_ht_find_by_hashvalue(s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_payload_item);
+        dap_ht_find_by_hashvalue(s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value, l_payload_item);
         if (!l_payload_item || l_payload_item->with_payload) {
             // Get data for non requested hash or double data. Drop it
             pthread_rwlock_unlock(&s_gossip_lock);
@@ -258,16 +258,16 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             if (!l_check) {
                 log_it(L_WARNING, "Node with addr "NODE_ADDR_FP_STR" isn't a member of cluster %s",
                                             NODE_ADDR_FP_ARGS_S(a_ch->stream->node), l_links_cluster->mnemonim);
-                dap_stream_node_addr_t l_member = dap_cluster_get_random_link(l_links_cluster);
-                if (dap_stream_node_addr_is_blank(&l_member)) {
+                dap_cluster_node_addr_t l_member = dap_cluster_get_random_link(l_links_cluster);
+                if (dap_cluster_node_addr_is_blank(&l_member)) {
                     log_it(L_ERROR, "Cluster %s has no active members", l_links_cluster->mnemonim);
                     pthread_rwlock_unlock(&s_gossip_lock);
                     break;
                 }
-                debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_REQUEST packet for hash %s", dap_hash_sha3_256_to_str_static(&l_msg->payload_hash));
+                debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_REQUEST packet for hash %s", dap_hash_fast_to_str_static(&l_msg->payload_hash));
                 // Send request for data associated with this hash to another link
                 dap_stream_ch_pkt_send_by_addr(&l_member, DAP_STREAM_CH_GOSSIP_ID, DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST,
-                                               l_ch_pkt->data, sizeof(dap_hash_sha3_256_t));
+                                               l_ch_pkt->data, sizeof(dap_hash_t));
                 pthread_rwlock_unlock(&s_gossip_lock);
                 break;
             }
@@ -286,22 +286,22 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         }
         l_payload_item = l_payload_item_new;
-        dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_sha3_256_t), l_hash_value, l_payload_item);
+        dap_ht_add_by_hashvalue(s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_payload_item);
         l_payload_item->with_payload = true;
         // Copy message and append g_node_addr to pathtrace
         dap_gossip_msg_t *l_msg_new = (dap_gossip_msg_t *)l_payload_item->message;
         memcpy(l_msg_new, l_msg, sizeof(dap_gossip_msg_t) + l_msg->trace_len);
         l_msg_new->trace_len = l_msg->trace_len + sizeof(g_node_addr);
-        *(dap_stream_node_addr_t *)(l_msg_new->trace_n_payload + l_msg->trace_len) = g_node_addr;
+        *(dap_cluster_node_addr_t *)(l_msg_new->trace_n_payload + l_msg->trace_len) = g_node_addr;
         memcpy(l_msg_new->trace_n_payload + l_msg_new->trace_len, l_msg->trace_n_payload + l_msg->trace_len, l_msg->payload_len);
         // Broadcast new message
         debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_HASH broadcast for hash %s",
-                                        dap_hash_sha3_256_to_str_static(&l_msg_new->payload_hash));
+                                        dap_hash_fast_to_str_static(&l_msg_new->payload_hash));
         dap_cluster_broadcast(l_links_cluster, DAP_STREAM_CH_GOSSIP_ID,
                               DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH,
-                              &l_msg_new->payload_hash, sizeof(dap_hash_sha3_256_t),
-                              (dap_stream_node_addr_t *)l_msg_new->trace_n_payload,
-                              l_msg_new->trace_len / sizeof(dap_stream_node_addr_t));
+                              &l_msg_new->payload_hash, sizeof(dap_hash_t),
+                              (dap_cluster_node_addr_t *)l_msg_new->trace_n_payload,
+                              l_msg_new->trace_len / sizeof(dap_cluster_node_addr_t));
         pthread_rwlock_unlock(&s_gossip_lock);
         // Call back the payload func if any
         struct gossip_callback *l_callback = s_get_callbacks_by_ch_id(l_msg->payload_ch_id);

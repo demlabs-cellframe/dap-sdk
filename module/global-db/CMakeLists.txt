@@ -18,7 +18,7 @@ set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_json dap_net_common dap_en
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${dap_global_db_SRC} HEADERS ${dap_global_db_HDR})
 
-target_link_libraries(${PROJECT_NAME} ${dap_global_db_LIBS})
+dap_link_libraries(${PROJECT_NAME} INTERFACE ${dap_global_db_LIBS})
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)

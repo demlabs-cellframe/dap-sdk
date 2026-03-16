@@ -456,6 +456,20 @@ static inline void* dap_ht_find_by_hashvalue_impl(dap_ht_table_t *tbl, const voi
     (out) = (head) ? (DAP_HT_TYPEOF(head))dap_ht_find_impl((head)->hhname.tbl, (keyptr), (unsigned)(keylen)) : NULL
 
 /**
+ * @brief Add item with explicit handle name and key pointer
+ */
+#define dap_ht_add_keyptr_hh(hhname, head, keyptr, keylen, add) \
+    dap_ht_add_impl((void**)&(head), (add), &((add)->hhname), \
+        (keyptr), (unsigned)(keylen), \
+        (ptrdiff_t)((char*)&((add)->hhname) - (char*)(add)))
+
+/**
+ * @brief Find item by string key with explicit handle name
+ */
+#define dap_ht_find_str_hh(hhname, head, findstr, out) \
+    dap_ht_find_hh(hhname, head, findstr, strlen(findstr), out)
+
+/**
  * @brief Delete item with explicit handle name
  */
 #define dap_ht_del_hh(hhname, head, del) \

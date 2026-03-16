@@ -7,11 +7,13 @@ set(CMAKE_C_STANDARD 11)
 file(GLOB CLIENT_HTTP_HEADERS include/*.h)
 file(GLOB CLIENT_HTTP_SRCS *.c)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
+
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CLIENT_HTTP_SRCS} HEADERS ${CLIENT_HTTP_HEADERS})
 
 # Link with required modules - minimal dependencies, no dap_client or dap_stream
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_net_common)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_io dap_net_common)
 
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)

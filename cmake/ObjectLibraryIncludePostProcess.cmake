@@ -34,51 +34,44 @@ endmacro()
 # Function to propagate includes recursively with cycle detection
 # Uses global property for cycle detection (much faster than CACHE)
 function(propagate_includes_recursive TARGET_NAME VISITED_SET_ID)
-    # Check if already visited using global property (faster than CACHE)
     set(PROPERTY_KEY "_DAP_POST_VISITED_${VISITED_SET_ID}_${TARGET_NAME}")
     get_property(IS_VISITED_VALUE GLOBAL PROPERTY ${PROPERTY_KEY})
     if(IS_VISITED_VALUE STREQUAL "VISITED")
-        # Cycle detected - stop processing this branch immediately
         return()
     endif()
-    
-    # Mark as visited in global property (faster than CACHE)
     set_property(GLOBAL PROPERTY ${PROPERTY_KEY} "VISITED")
-    
-    # Collect all includes first, then apply once (more efficient)
+
+    get_target_property(TGT_TYPE_PP ${TARGET_NAME} TYPE)
+    if(TGT_TYPE_PP STREQUAL "INTERFACE_LIBRARY")
+        return()
+    endif()
+
     set(COLLECTED_INTERFACE_INCLUDES "")
     set(COLLECTED_INCLUDES "")
-    
-    # Get dependencies
+
     get_target_property(DEPS ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
     if(DEPS)
         foreach(DEP ${DEPS})
             if(TARGET ${DEP})
-                # Recursively process dependency's dependencies FIRST
                 propagate_includes_recursive(${DEP} ${VISITED_SET_ID})
-                
-                # Get include directories from dependency
+
                 get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
                 get_target_property(DEP_INCLUDES ${DEP} INCLUDE_DIRECTORIES)
-                
-                # Collect includes (avoid duplicates)
-                if(DEP_INTERFACE_INCLUDES AND NOT DEP_INTERFACE_INCLUDES STREQUAL "DEP_INTERFACE_INCLUDES-NOTFOUND")
+
+                if(DEP_INTERFACE_INCLUDES AND NOT DEP_INTERFACE_INCLUDES MATCHES "-NOTFOUND$")
                     list(APPEND COLLECTED_INTERFACE_INCLUDES ${DEP_INTERFACE_INCLUDES})
                 endif()
-                
-                if(DEP_INCLUDES AND NOT DEP_INCLUDES STREQUAL "DEP_INCLUDES-NOTFOUND")
+                if(DEP_INCLUDES AND NOT DEP_INCLUDES MATCHES "-NOTFOUND$")
                     list(APPEND COLLECTED_INCLUDES ${DEP_INCLUDES})
                 endif()
             endif()
         endforeach()
     endif()
-    
-    # Apply collected includes once (more efficient than multiple calls)
+
     if(COLLECTED_INTERFACE_INCLUDES)
         list(REMOVE_DUPLICATES COLLECTED_INTERFACE_INCLUDES)
         target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INTERFACE_INCLUDES})
     endif()
-    
     if(COLLECTED_INCLUDES)
         list(REMOVE_DUPLICATES COLLECTED_INCLUDES)
         target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INCLUDES})

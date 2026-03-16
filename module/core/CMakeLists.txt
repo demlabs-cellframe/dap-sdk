@@ -9,6 +9,10 @@ add_definitions("-D_GNU_SOURCE")
 file (GLOB CORE_HEADERS include/*.h)
 file (GLOB CORE_SRCS src/*.c src/etc/*.c)
 
+list(FILTER CORE_SRCS EXCLUDE REGEX "dap_json_rpc_errors\\.c$")
+list(FILTER CORE_HEADERS EXCLUDE REGEX "dap_json_rpc_errors\\.h$")
+list(FILTER CORE_HEADERS EXCLUDE REGEX "dap_json_rpc_errors\\.h$")
+
 if(UNIX)
     if(MACOS)
         # macOS: use darwin-specific implementations for cpu_monitor, process_memory, network_monitor
@@ -43,7 +47,8 @@ register_module_headers(DIRECTORIES include)
 #This paths will be used by project-dependent project libraries
 target_include_directories(${PROJECT_NAME} PUBLIC . 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 
 # Platform-specific include directories
 if(UNIX)

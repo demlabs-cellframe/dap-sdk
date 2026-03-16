@@ -13,7 +13,7 @@ dap_add_library(${PROJECT_NAME}
 
 # dap_net_common depends on dap_core and dap_config
 # target_link_libraries automatically propagates includes for OBJECT libraries (see main CMakeLists.txt)
-target_link_libraries(${PROJECT_NAME} PUBLIC dap_core dap_config)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_config dap_cluster_node)
 
 # Export include directory
 target_include_directories(${PROJECT_NAME} PUBLIC 

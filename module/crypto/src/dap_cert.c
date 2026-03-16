@@ -220,6 +220,37 @@ int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer)
     }
 }
 
+/**
+ * @brief Append certificate signature to data buffer (5.8 compatibility)
+ * @param a_cert Certificate to sign with
+ * @param a_data Pointer to data buffer (reallocated to append signature)
+ * @param a_data_size Current size, updated to new size
+ * @param a_data_to_sign Data to sign (e.g. alice public key)
+ * @param a_data_to_sign_size Size of data to sign
+ * @return 1 on success, 0 on failure
+ */
+size_t dap_cert_add_sign_to_data(dap_cert_t *a_cert, uint8_t **a_data, size_t *a_data_size,
+                                 const void *a_data_to_sign, size_t a_data_to_sign_size)
+{
+    dap_return_val_if_fail(a_cert && a_data && a_data_size && a_data_to_sign, 0);
+    dap_sign_t *l_sign = dap_cert_sign(a_cert, a_data_to_sign, a_data_to_sign_size);
+    if (!l_sign) {
+        log_it(L_WARNING, "dap_cert_add_sign_to_data: dap_cert_sign failed");
+        return 0;
+    }
+    size_t l_sign_size = (size_t)dap_sign_get_size(l_sign);
+    uint8_t *l_new = DAP_REALLOC(*a_data, *a_data_size + l_sign_size);
+    if (!l_new) {
+        DAP_DELETE(l_sign);
+        log_it(L_ERROR, "dap_cert_add_sign_to_data: realloc failed");
+        return 0;
+    }
+    *a_data = l_new;
+    memcpy(l_new + *a_data_size, l_sign, l_sign_size);
+    *a_data_size += l_sign_size;
+    DAP_DELETE(l_sign);
+    return 1;
+}
 
 /**
  * @brief generate certificate in memory with specified seed

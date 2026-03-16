@@ -20,13 +20,13 @@ endif()
 # Use universal DAP library macro  
 dap_add_library(${PROJECT_NAME} ${DAP_IO_SOURCES} ${DAP_IO_LINUX_SRCS} HEADERS ${DAP_IO_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_net_common)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_hash_table dap_math dap_net_common)
 if(DAPSDK_MODULES MATCHES "ssl-support")
 endif()
 
 if(UNIX)
   if(NOT ANDROID)
-      target_link_libraries(${PROJECT_NAME} pthread)
+      target_link_libraries(${PROJECT_NAME} INTERFACE pthread)
   endif()
 endif()
 
