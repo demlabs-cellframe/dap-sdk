@@ -26,11 +26,17 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <pthread.h>
+#ifndef DAP_OS_WASM
 #include "dap_http_server.h"
 #include "dap_events_socket.h"
+#endif
 #include "dap_config.h"
 #include "dap_stream_session.h"
+#ifndef DAP_OS_WASM
 #include "dap_timerfd.h"
+#else
+typedef struct dap_timerfd dap_timerfd_t;
+#endif
 #include "dap_sign.h"
 #include "dap_cert.h"
 #include "dap_pkey.h"
@@ -52,8 +58,10 @@ typedef struct dap_stream {
     bool primary;
     int id;
     dap_stream_session_t *session;
+#ifndef DAP_OS_WASM
     dap_stream_worker_t *stream_worker;
     dap_events_socket_t *esocket;
+#endif
 
     dap_timerfd_t *keepalive_timer;
     bool is_active;
@@ -130,6 +138,7 @@ bool dap_stream_get_dump_packet_headers();
 
 void dap_stream_deinit();
 
+#ifndef DAP_OS_WASM
 void dap_stream_add_proc_http(dap_http_server_t * sh, const char * url);
 
 void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
@@ -137,6 +146,7 @@ void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
 void dap_stream_add_proc_dns(dap_server_t *a_dns_server);
 
 dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_cluster_node_addr_t *a_addr, bool a_authorized);
+#endif
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_read_ext(dap_stream_t * a_stream, const void *a_data, size_t a_data_size);
 size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
@@ -173,7 +183,9 @@ void dap_stream_delete_unsafe(dap_stream_t * a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
+#ifndef DAP_OS_WASM
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
+#endif
 
 // autorization stream block
 int dap_stream_add_addr(dap_cluster_node_addr_t a_addr, void *a_id);
@@ -182,8 +194,10 @@ int dap_stream_delete_addr(dap_cluster_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 
+#ifndef DAP_OS_WASM
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_cluster_node_addr_t *a_addr, dap_worker_t **a_worker);
 dap_list_t *dap_stream_find_all_by_addr(dap_cluster_node_addr_t *a_addr);
+#endif
 dap_stream_info_t *dap_stream_get_all_links_info(size_t *a_count);
 dap_stream_info_t *dap_stream_get_links_info_by_addrs(dap_cluster_node_addr_t *a_addrs,
                                                        size_t a_addrs_count, size_t *a_count);

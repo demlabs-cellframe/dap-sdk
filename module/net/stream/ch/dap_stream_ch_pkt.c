@@ -41,15 +41,17 @@
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 
+#ifndef DAP_OS_WASM
 #include "dap_events_socket.h"
 #include "dap_context_queue.h"
+#include "dap_stream_worker.h"
+#endif
 #include "dap_net_trans.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_pkt.h"
-#include "dap_stream_worker.h"
 
 #define LOG_TAG "dap_stream_ch_pkt"
 
@@ -68,13 +70,7 @@ void dap_stream_ch_pkt_deinit()
 
 }
 
-/**
- * @brief dap_stream_ch_pkt_write_f_mt
- * @param a_ch_uuid
- * @param a_type
- * @param a_str
- * @return
- */
+#ifndef DAP_OS_WASM
 size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char * a_format,...)
 {
     if (!a_worker)
@@ -248,15 +244,6 @@ int dap_stream_ch_pkt_send_by_addr(dap_cluster_node_addr_t *a_addr, const char a
         : -1;
 }
 
-/**
- * @brief dap_stream_ch_pkt_write_inter
- * @param a_queue_input
- * @param a_ch_uuid
- * @param a_type
- * @param a_data
- * @param a_data_size
- * @return
- */
 size_t dap_stream_ch_pkt_write_inter(dap_context_queue_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
 {
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
@@ -279,14 +266,8 @@ size_t dap_stream_ch_pkt_write_inter(dap_context_queue_t * a_queue_input, dap_st
     }
     return a_data_size;
 }
+#endif /* !DAP_OS_WASM */
 
-/**
- * @brief dap_stream_ch_pkt_write
- * @param a_ch
- * @param a_data
- * @param a_data_size
- * @return
- */
 size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, const void * a_data, size_t a_data_size)
 {
     if (!a_ch) {

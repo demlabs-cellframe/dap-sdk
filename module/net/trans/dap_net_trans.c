@@ -39,7 +39,9 @@
 #include "dap_strfuncs.h"
 #include "dap_list.h"
 #include "dap_module.h"
+#ifndef DAP_OS_WASM
 #include "dap_events_socket.h"
+#endif
 #include "dap_net.h"
 #include "dap_config.h"
 

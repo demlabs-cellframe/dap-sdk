@@ -20,10 +20,12 @@
 #include "dap_common.h"
 #include "dap_net.h"
 #include "dap_strfuncs.h"
+#ifndef DAP_OS_WASM
 #include "dap_events.h"
 #include "dap_events_socket.h"
 #include "dap_context.h"
 #include "dap_http_client.h"
+#endif
 #include "dap_uuid.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
@@ -32,7 +34,9 @@
 #include "dap_dl.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_ch_gossip.h"
+#ifndef DAP_OS_WASM
 #include "dap_stream_worker.h"
+#endif
 #include "dap_net_trans_ctx.h"
 #include <pthread.h>
 
@@ -343,10 +347,11 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
 void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_ready)
 {
     if( a_ch->ready_to_read != a_is_ready){
-        //log_it(L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         a_ch->ready_to_read=a_is_ready;
+#ifndef DAP_OS_WASM
         if (a_ch->stream->trans_ctx && a_ch->stream->trans_ctx->esocket)
             dap_events_socket_set_readable_unsafe(a_ch->stream->trans_ctx->esocket, a_is_ready);
+#endif
     }
 }
 
@@ -358,10 +363,11 @@ void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_rea
 void dap_stream_ch_set_ready_to_write_unsafe(dap_stream_ch_t * ch,bool is_ready)
 {
     if(ch->ready_to_write!=is_ready){
-        //log_it(L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         ch->ready_to_write=is_ready;
+#ifndef DAP_OS_WASM
         if (ch->stream->trans_ctx && ch->stream->trans_ctx->esocket)
             dap_events_socket_set_writable_unsafe(ch->stream->trans_ctx->esocket, is_ready);
+#endif
     }
 }
 
@@ -402,6 +408,7 @@ static void s_print_workers_channels()
 }
 */
 
+#ifndef DAP_OS_WASM
 static int s_notifiers_compare(dap_list_t *a_list1, dap_list_t *a_list2)
 {
     dap_stream_ch_notifier_t *l_notifier1 = a_list1->data,
@@ -577,3 +584,4 @@ dap_worker_t *dap_stream_ch_get_worker_mt(dap_stream_ch_uuid_t a_ch_uuid)
     
     return NULL;
 }
+#endif /* !DAP_OS_WASM */

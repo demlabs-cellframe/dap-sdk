@@ -154,15 +154,17 @@ if (DAPSDK_MODULES MATCHES "network-core")
     message("[+] Module 'stream'")
 endif()
 
-# Full cluster module — depends on stream, must be after stream
-create_object_library(dap_cluster DAP_INTERNAL_MODULES
-    ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/dap_cluster.c
-    HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include/dap_cluster.h)
-dap_link_libraries(dap_cluster INTERFACE
-    dap_cluster_node dap_hash_table dap_json
-    dap_stream dap_stream_ch)
-target_include_directories(dap_cluster PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include)
-message("[+] Module 'cluster'")
+if(NOT DAP_WASM)
+    # Full cluster module — depends on stream, must be after stream
+    create_object_library(dap_cluster DAP_INTERNAL_MODULES
+        ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/dap_cluster.c
+        HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include/dap_cluster.h)
+    dap_link_libraries(dap_cluster INTERFACE
+        dap_cluster_node dap_hash_table dap_json
+        dap_stream dap_stream_ch)
+    target_include_directories(dap_cluster PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include)
+    message("[+] Module 'cluster'")
+endif()
 
 if (DAPSDK_MODULES MATCHES "network-client")
     add_subdirectory(module/net/client)

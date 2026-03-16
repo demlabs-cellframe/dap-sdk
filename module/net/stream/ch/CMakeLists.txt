@@ -9,11 +9,11 @@ file(GLOB DAP_STREAM_CH_HDRS include/*.h)
 create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_STREAM_CH_SRCS} HEADERS ${DAP_STREAM_CH_HDRS})
 
 dap_link_libraries(${PROJECT_NAME} INTERFACE
-    dap_core dap_crypto dap_io dap_io_flow dap_hash_table dap_stream dap_net_common)
+    dap_core dap_crypto dap_io dap_hash_table dap_stream dap_net_common)
 
 if(NOT DAP_WASM)
     dap_link_libraries(${PROJECT_NAME} INTERFACE
-        dap_http_server)
+        dap_io_flow dap_http_server)
 endif()
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)

@@ -20,9 +20,11 @@
 
 #include "dap_common.h"
 #include "dap_config.h"
+#ifndef DAP_OS_WASM
 #include "dap_events_socket.h"
 #include "dap_context_queue.h"
 #include "dap_worker.h"
+#endif
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 #include "dap_stream.h"
@@ -31,25 +33,15 @@
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_pkt.h"
 
-#include "dap_io_flow_datagram.h"  // For datagram remote_addr callback
+#ifndef DAP_OS_WASM
+#include "dap_io_flow_datagram.h"
+#endif
 
 #define LOG_TAG "stream_pkt"
 
 static bool s_debug_more = false;
 
-/**
- * @brief Send data to datagram stream using flow callback
- * 
- * Helper function to send data via datagram stream (UDP, etc), properly resolving
- * the destination address through the datagram flow's get_remote_addr callback.
- * 
- * Works for both CLIENT and SERVER streams via stream->flow.
- * 
- * @param a_stream Stream instance
- * @param a_data Data to send
- * @param a_size Data size
- * @return Number of bytes sent, or 0 on error
- */
+#ifndef DAP_OS_WASM
 static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
     if (!a_stream || !a_data || a_size == 0) {
@@ -69,7 +61,6 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
     dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
     dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t*)a_stream->flow;
     
-    // Get destination address from datagram flow callback
     struct sockaddr_storage l_dest_addr;
     socklen_t l_dest_addr_len;
     
@@ -80,6 +71,7 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
     
     return dap_events_socket_sendto_unsafe(l_es, a_data, a_size, &l_dest_addr, l_dest_addr_len);
 }
+#endif
 
 const uint8_t c_dap_stream_sig [STREAM_PKT_SIG_SIZE] = {0xa0,0x95,0x96,0xa9,0x9e,0x5c,0xfb,0xfa};
 
@@ -180,28 +172,22 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     
     if (l_trans && l_trans->ops && l_trans->ops->write) {
         return l_trans->ops->write(a_stream, s_pkt_buf, l_full_size);
-    } else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
+    }
+#ifndef DAP_OS_WASM
+    else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
         dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
         
-        // Check if this is a datagram transport (UDP, SCTP, etc)
         if (dap_events_socket_is_datagram(l_es)) {
             return s_stream_send_datagram_unsafe(a_stream, s_pkt_buf, l_full_size);
         }
         
-        // Stream-oriented transport (TCP, etc)
         return dap_events_socket_write_unsafe(l_es, s_pkt_buf, l_full_size);
     }
+#endif
     return 0;
 }
 
-/**
- * @brief dap_stream_pkt_write_mt
- * @param a_stream_session
- * @param a_es
- * @param a_data
- * @param a_data_size
- * @return
- */
+#ifndef DAP_OS_WASM
 size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_uuid, dap_enc_key_t *a_key, const void * a_data, size_t a_data_size)
 {
 #ifdef DAP_EVENTS_CAPS_IOCP
@@ -231,4 +217,5 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     return a_data_size;
 #endif
 }
+#endif /* !DAP_OS_WASM */
 
