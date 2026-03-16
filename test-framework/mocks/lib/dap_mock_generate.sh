@@ -56,7 +56,7 @@ generate_wrap_file() {
             
             # Helper to extract __wrap_func signature from source files
             # Returns: return_type|param_list
-            # BSD-compatible (no gawk-specific features)
+            # BSD-compatible (no gawk-specific features, uses plain awk)
             # Searches for:
             # 1. Explicit __wrap_func_name definitions
             # 2. DAP_MOCK_WRAPPER_DEFAULT(ret_type, func_name, (params), ...)

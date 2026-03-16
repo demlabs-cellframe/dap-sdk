@@ -95,7 +95,7 @@ run_awk_test() {
     local test_file="$1"
     local test_name=$(basename "$test_file" .awk)
     
-    # Run test with gawk from dap_tpl directory where modules are visible
+    # Run test with awk from dap_tpl directory where modules are visible
     local result
     local test_path="$test_file"
     if [[ ! "$test_path" =~ ^/ ]]; then
@@ -109,7 +109,7 @@ run_awk_test() {
         fi
     fi
     
-    if result=$(cd "$DAP_TPL_DIR" && gawk -f "$test_path" <<< "" 2>&1); then
+    if result=$(cd "$DAP_TPL_DIR" && awk -f "$test_path" <<< "" 2>&1); then
         if echo "$result" | grep -q "^PASS$"; then
             echo "PASS"
             return 0

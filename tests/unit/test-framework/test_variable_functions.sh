@@ -33,7 +33,7 @@ for test_file in "$TESTS_DIR"/*.awk; do
     test_name=$(basename "$test_file" .awk)
     echo -n "  $test_name: "
     
-    if result=$(cd "$DAP_TPL_DIR" && AWKPATH="${AWKPATH}" gawk -f "$test_file" <<< "" 2>&1); then
+    if result=$(cd "$DAP_TPL_DIR" && AWKPATH="${AWKPATH}" awk -f "$test_file" <<< "" 2>&1); then
         if echo "$result" | grep -q "^PASS$"; then
             echo "PASS"
             ((passed++)) || true
