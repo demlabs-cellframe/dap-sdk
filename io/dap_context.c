@@ -90,6 +90,8 @@
 #include "dap_proc_thread.h"
 #include "dap_worker.h"
 
+static bool s_debug_more = false;
+
 // Forward declaration for packet queue helper (defined in dap_events_socket.c, NOT static)
 extern ssize_t s_packet_queue_pop_and_send(dap_events_socket_packet_queue_t *a_queue, int a_fd);
 
@@ -696,7 +698,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 snprintf(states + shift, sizeof(states) - shift, ", pending read / write: %d / %d",
                          l_cur->pending_read, l_cur->pending_write);  
                 
-                log_it(L_DEBUG, "Finished completion of i/o op '%c' on es "DAP_FORMAT_ESOCKET_UUID"%s",
+                debug_if(s_debug_more, L_DEBUG, "Finished completion of i/o op '%c' on es "DAP_FORMAT_ESOCKET_UUID"%s",
                                 op ? op : ' ', l_cur->uuid, states);
             }
             if (l_errno) {
@@ -810,7 +812,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             l_flag_pri = l_cur_flags & POLLPRI;
             l_flag_msg = l_cur_flags & POLLMSG;
             l_cur = a_context->poll_esocket[n];
-            //log_it(L_DEBUG, "flags: returned events 0x%0X requested events 0x%0X",a_context->poll[n].revents,a_context->poll[n].events );
+            //debug_if(s_debug_more, L_DEBUG, "flags: returned events 0x%0X requested events 0x%0X",a_context->poll[n].revents,a_context->poll[n].events );
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
         l_flag_hup=l_flag_rdhup=l_flag_read=l_flag_write=l_flag_error=l_flag_nval=l_flag_msg =l_flag_pri = false;
         struct kevent * l_kevent_selected = &a_context->kqueue_events_selected[n];
@@ -818,7 +820,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             dap_events_socket_w_data_t * l_es_w_data = (dap_events_socket_w_data_t *) l_kevent_selected->udata;
             if(l_es_w_data){
                 //if(g_debug_reactor)
-                //    log_it(L_DEBUG,"EVFILT_USER: udata=%p", l_es_w_data);
+                //    debug_if(s_debug_more, L_DEBUG,"EVFILT_USER: udata=%p", l_es_w_data);
 
                 l_cur = l_es_w_data->esocket;
                 if(l_cur){
@@ -830,7 +832,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     if(l_es_w_data != l_ptr){
                         DAP_DELETE(l_es_w_data);
                     }else if (g_debug_reactor){
-                        log_it(L_DEBUG,"Own event signal without actual event data");
+                        debug_if(s_debug_more, L_DEBUG,"Own event signal without actual event data");
                     }
                 }
             } else // Looks it was deleted on previous iteration
@@ -898,7 +900,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             }
 
             if(g_debug_reactor) {
-                log_it(L_DEBUG, "--Context #%u esocket %p uuid 0x%016"DAP_UINT64_FORMAT_x" type %d fd=%"DAP_FORMAT_SOCKET" flags=0x%0X (%s:%s:%s:%s:%s:%s:%s:%s)--",
+                debug_if(s_debug_more, L_DEBUG, "--Context #%u esocket %p uuid 0x%016"DAP_UINT64_FORMAT_x" type %d fd=%"DAP_FORMAT_SOCKET" flags=0x%0X (%s:%s:%s:%s:%s:%s:%s:%s)--",
                        a_context->id, l_cur, l_cur->uuid, l_cur->type, l_cur->socket,
                     l_cur_flags, l_flag_read?"read":"", l_flag_write?"write":"", l_flag_error?"error":"",
                     l_flag_hup?"hup":"", l_flag_rdhup?"rdhup":"", l_flag_msg?"msg":"", l_flag_nval?"nval":"",
@@ -917,9 +919,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
 #ifndef DAP_OS_WINDOWS
                     if (l_sock_err) {
-                         log_it(L_DEBUG, "Socket %d error %d", l_cur->socket, l_sock_err);
+                         debug_if(s_debug_more, L_DEBUG, "Socket %d error %d", l_cur->socket, l_sock_err);
 #else
-                    log_it(L_DEBUG, "Socket %"DAP_FORMAT_SOCKET" will be shutdown (EPOLLHUP), error %d", l_cur->socket, WSAGetLastError());
+                    debug_if(s_debug_more, L_DEBUG, "Socket %"DAP_FORMAT_SOCKET" will be shutdown (EPOLLHUP), error %d", l_cur->socket, WSAGetLastError());
 #endif
                     dap_events_socket_set_readable_unsafe(l_cur, false);
                     dap_events_socket_set_writable_unsafe(l_cur, false);
@@ -942,7 +944,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     // We MUST remove from epoll immediately to prevent INFINITE HUP events
                     // The esocket will be deleted later via worker callback
                     if(g_debug_reactor)
-                        log_it(L_DEBUG, "HUP on internal esocket %p (%"DAP_FORMAT_SOCKET") type %d - removing from polling", 
+                        debug_if(s_debug_more, L_DEBUG, "HUP on internal esocket %p (%"DAP_FORMAT_SOCKET") type %d - removing from polling", 
                                l_cur, l_cur->socket, l_cur->type);
                     
                     dap_context_remove_from_polling(l_cur);
@@ -996,7 +998,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
             if (l_flag_read && !(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)) {
 
-                //log_it(L_DEBUG, "Comes connection with type %d", l_cur->type);
+                //debug_if(s_debug_more, L_DEBUG, "Comes connection with type %d", l_cur->type);
                 if(l_cur->buf_in_size_max && l_cur->buf_in_size >= l_cur->buf_in_size_max ) {
                     log_it(L_WARNING, "Buffer is full when there is smth to read. Its dropped! esocket %p (%"DAP_FORMAT_SOCKET")", l_cur, l_cur->socket);
                     l_cur->buf_in_size = 0;
@@ -1068,7 +1070,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                                      l_cur->buf_in_size_max - l_cur->buf_in_size);
                         l_errno = wolfSSL_get_error(l_ssl, 0);
                         if (l_bytes_read > 0 && g_debug_reactor)
-                            log_it(L_DEBUG, "SSL read: %s", (char *)(l_cur->buf_in + l_cur->buf_in_size));
+                            debug_if(s_debug_more, L_DEBUG, "SSL read: %s", (char *)(l_cur->buf_in + l_cur->buf_in_size));
 #endif
                     }
                     break;
@@ -1143,7 +1145,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             l_cur->buf_in_size += l_bytes_read;  // APPEND for TCP
                         }
                         if(g_debug_reactor)
-                            log_it(L_DEBUG, "Received %zd bytes for fd %d ", l_bytes_read, l_cur->fd);
+                            debug_if(s_debug_more, L_DEBUG, "Received %zd bytes for fd %d ", l_bytes_read, l_cur->fd);
                         if (l_cur->callbacks.read_callback) {
                             // Call callback to process read event. At the end of callback buf_in_size should be zero if everything was read well
                             l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
@@ -1184,7 +1186,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     }
                     else if (!l_flag_rdhup && !l_flag_error && !(l_cur->flags & DAP_SOCK_CONNECTING )) {
-                        log_it(L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d", 
+                        debug_if(s_debug_more, L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d", 
                                l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur->socket, l_cur->type);
                         //dap_events_socket_set_readable_unsafe(l_cur,false);
                     }
@@ -1211,7 +1213,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     default:{}
                 }
                 if(g_debug_reactor)
-                    log_it(L_DEBUG, "RDHUP event on esocket %p (%"DAP_FORMAT_SOCKET") type %d", l_cur, l_cur->socket, l_cur->type);
+                    debug_if(s_debug_more, L_DEBUG, "RDHUP event on esocket %p (%"DAP_FORMAT_SOCKET") type %d", l_cur, l_cur->socket, l_cur->type);
             }
             // Debug: log all sockets with CONNECTING flag
             debug_if(g_debug_reactor, L_DEBUG, "Socket %"DAP_FORMAT_SOCKET" has CONNECTING flag: server=%d, type=%d, flag_write=%d, flag_error=%d", 
@@ -1368,7 +1370,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         WOLFSSL *l_ssl = SSL(l_cur);
                         l_bytes_sent = wolfSSL_write(l_ssl, (char *)(l_cur->buf_out), l_cur->buf_out_size);
                         if (l_bytes_sent > 0)
-                            log_it(L_DEBUG, "SSL write: %s", (char *)(l_cur->buf_out));
+                            debug_if(s_debug_more, L_DEBUG, "SSL write: %s", (char *)(l_cur->buf_out));
                         l_errno = wolfSSL_get_error(l_ssl, 0);
 #endif
                     }
@@ -1727,6 +1729,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     // TODO: reassignment requires some extra calls to WDK. Also there must be no pending I/O ops
     /*
         #include <ntifs.h>
+
         int len = sizeof(FILE_COMPLETION_INFORMATION);
         FILE_COMPLETION_INFORMATION fci = (FILE_COMPLETION_INFORMATION) {
             .Port = NULL
@@ -1828,7 +1831,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
             l_errno = errno;
             goto lb_exit;
         }else if (g_debug_reactor){
-            log_it(L_DEBUG, "kevent set custom filter %d on fd %d",l_filter, a_es->socket);
+            debug_if(s_debug_more, L_DEBUG, "kevent set custom filter %d on fd %d",l_filter, a_es->socket);
         }
     }else{
         if( a_es->flags & DAP_SOCK_READY_TO_READ ){
@@ -1838,7 +1841,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
                 l_errno = errno;
                 goto lb_exit;
             }else if (g_debug_reactor){
-                log_it(L_DEBUG, "kevent set EVFILT_READ on fd %d", a_es->socket);
+                debug_if(s_debug_more, L_DEBUG, "kevent set EVFILT_READ on fd %d", a_es->socket);
             }
 
         }
@@ -1850,7 +1853,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
                     l_errno = errno;
                     goto lb_exit;
                 }else if (g_debug_reactor){
-                    log_it(L_DEBUG, "kevent set EVFILT_WRITE on fd %d", a_es->socket);
+                    debug_if(s_debug_more, L_DEBUG, "kevent set EVFILT_WRITE on fd %d", a_es->socket);
                 }
             }
         }
@@ -1943,7 +1946,7 @@ int dap_context_remove_from_polling(dap_events_socket_t * a_es)
         log_it(L_ERROR, "Trying to remove bad socket from kqueue, a_es=%p", a_es);
         return -1;
     } else if (a_es->type == DESCRIPTOR_TYPE_EVENT || a_es->type == DESCRIPTOR_TYPE_QUEUE) {
-        log_it(L_DEBUG, "Skipping kqueue removal for internal socket type %d", a_es->type);
+        debug_if(s_debug_more, L_DEBUG, "Skipping kqueue removal for internal socket type %d", a_es->type);
         return 0;  // These types can't be removed from kqueue on BSD
     } else if (a_es->type == DESCRIPTOR_TYPE_TIMER && a_es->kqueue_base_filter == EVFILT_EMPTY) {
         // Nothing to do, it was already removed from kqueue cause of one shot strategy

@@ -9,12 +9,13 @@
 
 #define LOG_TAG "dap_enc_sig_ecdsa"
 
+static bool s_debug_more = false;
 static enum DAP_ECDSA_SIGN_SECURITY _ecdsa_type = ECDSA_MIN_SIZE; // by default
 static _Thread_local ecdsa_context_t *s_context = NULL;  // local connection
 
 static void s_context_destructor(UNUSED_ARG void *a_context) {
     secp256k1_context_destroy(s_context);
-    log_it(L_DEBUG, "ECDSA context is destroyed @%p", s_context);
+    debug_if(s_debug_more, L_DEBUG, "ECDSA context is destroyed @%p", s_context);
     s_context = NULL;
 }
 
@@ -34,7 +35,7 @@ static ecdsa_context_t *s_context_create()
         pthread_key_t s_context_destructor_key;
         pthread_key_create(&s_context_destructor_key, s_context_destructor);
         pthread_setspecific(s_context_destructor_key, (const void *)s_context);
-        log_it(L_DEBUG, "ECDSA context is created @%p", s_context);
+        debug_if(s_debug_more, L_DEBUG, "ECDSA context is created @%p", s_context);
     }
     unsigned char l_random_seed[32];
     randombytes(l_random_seed, sizeof(l_random_seed));

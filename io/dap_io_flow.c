@@ -358,7 +358,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     
     // Mark server as stopped (if not already)
     if (a_server->is_running) {
-        log_it(L_DEBUG, "Marking server as stopped to prevent new flows");
+        debug_if(s_debug_more, L_DEBUG, "Marking server as stopped to prevent new flows");
         dap_io_flow_server_stop(a_server);
     }
     
@@ -491,7 +491,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // Step 7: Final cleanup
     char *l_name_copy = a_server->name ? dap_strdup(a_server->name) : NULL;
     
-    log_it(L_DEBUG, "Freeing server name and object");
+    debug_if(s_debug_more, L_DEBUG, "Freeing server name and object");
     DAP_DELETE(a_server->name);
     
     // Mark server as freed (helps detect use-after-free)
@@ -702,7 +702,7 @@ static dap_arena_t* s_get_cross_worker_arena(void)
             log_it(L_CRITICAL, "Failed to create refcounted cross-worker arena");
             return NULL;
         }
-        log_it(L_DEBUG, "Created refcounted cross-worker arena for worker thread");
+        debug_if(s_debug_more, L_DEBUG, "Created refcounted cross-worker arena for worker thread");
     }
     return tl_cross_worker_arena;
 }

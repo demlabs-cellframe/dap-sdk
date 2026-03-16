@@ -27,6 +27,7 @@
 
 #define LOG_TAG "dap_thread"
 
+static bool s_debug_more = false;
 dap_thread_t dap_thread_create(dap_thread_func_t a_func, void *a_arg)
 {
     if (!a_func) {
@@ -139,7 +140,7 @@ int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id)
         return -2;
     }
     
-    log_it(L_DEBUG, "Thread %lu bound to CPU core %u", (unsigned long)a_thread, a_cpu_id);
+    debug_if(s_debug_more, L_DEBUG, "Thread %lu bound to CPU core %u", (unsigned long)a_thread, a_cpu_id);
     
 #elif defined(__FreeBSD__) || defined(__NetBSD__)
     // FreeBSD/NetBSD: cpuset_t
@@ -154,7 +155,7 @@ int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id)
         return -2;
     }
     
-    log_it(L_DEBUG, "Thread %lu bound to CPU core %u", (unsigned long)a_thread, a_cpu_id);
+    debug_if(s_debug_more, L_DEBUG, "Thread %lu bound to CPU core %u", (unsigned long)a_thread, a_cpu_id);
     
 #elif defined(__APPLE__) && defined(__MACH__)
     // macOS: thread_policy_set (deprecated but still works)
@@ -171,7 +172,7 @@ int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id)
         return -2;
     }
     
-    log_it(L_DEBUG, "Thread %lu bound to CPU core %u (macOS)", (unsigned long)a_thread, a_cpu_id);
+    debug_if(s_debug_more, L_DEBUG, "Thread %lu bound to CPU core %u (macOS)", (unsigned long)a_thread, a_cpu_id);
     
 #elif defined(_WIN32) || defined(_WIN64)
     // Windows: SetThreadAffinityMask
@@ -185,7 +186,7 @@ int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id)
         return -2;
     }
     
-    log_it(L_DEBUG, "Thread bound to CPU core %u (Windows)", a_cpu_id);
+    debug_if(s_debug_more, L_DEBUG, "Thread bound to CPU core %u (Windows)", a_cpu_id);
     
 #else
     // Unsupported platform

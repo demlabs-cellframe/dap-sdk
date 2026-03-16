@@ -50,6 +50,7 @@
 
 #define LOG_TAG "dap_cli_server"
 
+static bool s_debug_more = false;
 #define MAX_CONSOLE_CLIENTS 16
 
 static dap_server_t *s_cli_server = NULL;
@@ -152,7 +153,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
 
     dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 500 Internal Server Error\r\n");
     char *buf_dump = dap_dump_hex(a_es->buf_in, dap_min(a_es->buf_in_size, (size_t)65536));
-    log_it(L_DEBUG, "Incomplete cmd request:\r\n%s", buf_dump);
+    debug_if(s_debug_more, L_DEBUG, "Incomplete cmd request:\r\n%s", buf_dump);
     DAP_DELETE(buf_dump);
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
@@ -248,7 +249,7 @@ static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cm
     }
     l_cmd_item->func_rpc = a_func_rpc;
     l_cmd_item->arg_func_rpc = NULL;
-    log_it(L_DEBUG, "%s command %s", l_is_replace ? "Replaced" : "Added", l_cmd_item->name);
+    debug_if(s_debug_more, L_DEBUG, "%s command %s", l_is_replace ? "Replaced" : "Added", l_cmd_item->name);
     return l_cmd_item;
 }
 
@@ -276,7 +277,7 @@ bool dap_cli_server_cmd_remove(const char *a_name)
         l_cmd_item->doc_ex = NULL;
     }
     HASH_DEL(cli_commands, l_cmd_item);
-    log_it(L_DEBUG, "Removed command %s", l_cmd_item->name);
+    debug_if(s_debug_more, L_DEBUG, "Removed command %s", l_cmd_item->name);
     DAP_DELETE(l_cmd_item);
     return true;
 }

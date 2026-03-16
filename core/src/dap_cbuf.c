@@ -133,6 +133,8 @@ void dap_cbuf_push(dap_cbuf_t cBuf, const void *src, size_t length)
     }
 }
 
+static bool s_debug_more = false;
+
 #ifdef DAP_OS_UNIX
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -187,7 +189,7 @@ int dap_cbuf_write_in_socket(dap_cbuf_t cBuf, int sockfd)
             rdLen = send(sockfd,
                          &cBuf->buffer[cBuf->offset_head],
                     countBytesToEnd, MSG_DONTWAIT | MSG_NOSIGNAL);
-          //  log_it(L_DEBUG, "Write in socket: %s", &cBuf->buffer[cBuf->headOffset]);
+          //  debug_if(s_debug_more, L_DEBUG, "Write in socket: %s", &cBuf->buffer[cBuf->headOffset]);
             if(rdLen < 0) {
                 log_it(L_ERROR, "Can't write data in socket. %s", strerror(errno));
                 return -1;

@@ -34,6 +34,7 @@
 
 #define LOG_TAG "dap_enc_multi_sign"
 
+static bool s_debug_more = false;
 
 void dap_enc_sig_multisign_key_new(dap_enc_key_t *a_key)
 {
@@ -68,7 +69,7 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
         }
     }
     
-    log_it(L_DEBUG, "All %zu keys generated, creating params", a_kex_size);
+    debug_if(s_debug_more, L_DEBUG, "All %zu keys generated, creating params", a_kex_size);
     
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_keys, a_kex_size, NULL, a_kex_size);
     if (!l_params) {
@@ -84,7 +85,7 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
     // But we still need to free our pointer array
     DAP_DELETE(l_keys);
     
-    log_it(L_DEBUG, "Forming multisign keys structure");
+    debug_if(s_debug_more, L_DEBUG, "Forming multisign keys structure");
     
     int l_result = dap_enc_sig_multisign_forming_keys(a_key, l_params);
     if (l_result) {
@@ -93,7 +94,7 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
         return;
     }
     a_key->_pvt = l_params;
-    log_it(L_DEBUG, "Multisign key generation completed successfully");
+    debug_if(s_debug_more, L_DEBUG, "Multisign key generation completed successfully");
 }
 
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)

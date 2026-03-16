@@ -201,6 +201,8 @@ static void print_it_stderr(enum dap_log_level a_ll, const char *a_buf, size_t a
 #endif
 }
 
+static bool s_debug_more = false;
+
 #if ANDROID
 #include <android/log.h>
 
@@ -755,7 +757,7 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
     char *l_buf = DAP_NEW_Z_SIZE(char, l_len + 1);
     fread(l_buf, l_len, 1, fp);
 	fclose(fp);
-    //log_it(L_DEBUG, "Chunk is %s", l_buf); 
+    //debug_if(s_debug_more, L_DEBUG, "Chunk is %s", l_buf); 
     return l_buf;
 }
 
@@ -1327,7 +1329,7 @@ dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_ca
     pthread_rwlock_wrlock(&s_timers_rwlock);
     HASH_ADD_PTR(s_timers_map, timer, l_timer_obj);
     pthread_rwlock_unlock(&s_timers_rwlock);
-    log_it(L_DEBUG, "Interval timer %p created", &l_timer_obj->timer);
+    debug_if(s_debug_more, L_DEBUG, "Interval timer %p created", &l_timer_obj->timer);
     return (dap_interval_timer_t)l_timer_obj->timer;
 }
 

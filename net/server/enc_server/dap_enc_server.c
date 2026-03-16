@@ -74,7 +74,7 @@ void dap_enc_server_deinit(void) {
  */
 void dap_enc_server_set_acl_callback(dap_enc_server_acl_callback_t a_callback) {
     s_acl_callback = a_callback;
-    log_it(L_DEBUG, "ACL callback configured");
+    debug_if(s_debug_more, L_DEBUG, "ACL callback configured");
 }
 
 /**
@@ -104,7 +104,7 @@ int dap_enc_server_parse_query(const char *a_query_string, dap_enc_server_reques
            &a_request->protocol_version,
            &a_request->sign_count);
     
-    log_it(L_DEBUG, "Parsed: enc_type=%s, pkey_exchange=%s, protocol_v=%d, sign_count=%zu",
+    debug_if(s_debug_more, L_DEBUG, "Parsed: enc_type=%s, pkey_exchange=%s, protocol_v=%d, sign_count=%zu",
            dap_enc_get_type_name(a_request->enc_type),
            dap_enc_get_type_name(a_request->pkey_exchange_type),
            a_request->protocol_version,
@@ -152,7 +152,7 @@ int dap_enc_server_process_request(
     if (!a_request->protocol_version && !l_sign_count) {
         if (a_request->alice_msg_size > l_pkey_size + sizeof(dap_sign_hdr_t)) {
             l_sign_count = 1;
-            log_it(L_DEBUG, "Auto-detected signature (legacy mode)");
+            debug_if(s_debug_more, L_DEBUG, "Auto-detected signature (legacy mode)");
         } else if (a_request->alice_msg_size != l_pkey_size) {
             l_resp->success = false;
             l_resp->error_code = -4;

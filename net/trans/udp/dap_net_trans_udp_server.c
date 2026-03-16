@@ -1093,7 +1093,7 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     if (l_flow_ctrl) {
         l_session->base.base.flow_ctrl = NULL;  // Clear pointer first
         dap_io_flow_ctrl_delete(l_flow_ctrl);   // Then delete (waits for operations)
-        log_it(L_DEBUG, "Flow Control deleted for session");
+        debug_if(s_debug_more, L_DEBUG, "Flow Control deleted for session");
     }
     
     // Close session using session ID
@@ -1833,7 +1833,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
 
     // QoS probe detection: payload starts with DAP_QOS_PROBE_MAGIC → echo, skip KEM
     if (dap_qos_is_probe(a_payload, a_payload_size)) {
-        log_it(L_DEBUG, "QoS probe detected (%zu bytes), building echo", a_payload_size);
+        debug_if(s_debug_more, L_DEBUG, "QoS probe detected (%zu bytes), building echo", a_payload_size);
         atomic_store(&a_session->kem_task_pending, false);
 
         void  *l_echo = NULL;

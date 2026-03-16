@@ -37,6 +37,7 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
 
 #define LOG_TAG "dap_plugin"
 
+static bool s_debug_more = false;
 static char *s_plugins_root_path = NULL;
 
 struct plugin_type{
@@ -87,7 +88,7 @@ int dap_plugin_init(const char * a_root_path)
     dap_list_name_directories_t *l_list_plugins_name = dap_get_subs(s_plugins_root_path);
     dap_list_name_directories_t *l_element;
     // Register manifests
-    log_it(L_DEBUG, "Start registration of manifests");
+    debug_if(s_debug_more, L_DEBUG, "Start registration of manifests");
 
     char *l_name_file = NULL;
     LL_FOREACH(l_list_plugins_name, l_element){

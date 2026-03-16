@@ -147,7 +147,7 @@ static void s_tls_deinit(dap_net_trans_t *a_trans)
 {
     UNUSED(a_trans);
     DAP_DEL_Z(s_config.sni_hostname);
-    log_it(L_DEBUG, "TLS Mimicry transport deinitialized");
+    debug_if(s_debug_more, L_DEBUG, "TLS Mimicry transport deinitialized");
 }
 
 static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
@@ -257,7 +257,7 @@ static void s_tls_close(dap_stream_t *a_stream)
 {
     if (!a_stream)
         return;
-    log_it(L_DEBUG, "TLS Mimicry: closing stream");
+    debug_if(s_debug_more, L_DEBUG, "TLS Mimicry: closing stream");
 
     if (a_stream->trans_ctx) {
         tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->_inheritor;

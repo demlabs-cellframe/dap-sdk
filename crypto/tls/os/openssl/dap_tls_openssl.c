@@ -21,6 +21,7 @@
 
 #define LOG_TAG "dap_tls_openssl"
 
+static bool s_debug_more = false;
 struct dap_tls_context {
     SSL_CTX *ssl_ctx;
 };
@@ -46,7 +47,7 @@ int dap_tls_init(void)
 
 void dap_tls_deinit(void)
 {
-    log_it(L_DEBUG, "TLS backend deinitialized");
+    debug_if(s_debug_more, L_DEBUG, "TLS backend deinitialized");
 }
 
 const char *dap_tls_backend_name(void)

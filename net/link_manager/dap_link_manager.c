@@ -110,7 +110,7 @@ static int s_update_hot_list(uint64_t a_net_id)
     char *l_hot_group = s_hot_group_forming(a_net_id);
     dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_hot_group, &l_node_count);
     if (!l_node_count || !l_objs) {
-        log_it(L_DEBUG, "Hot list is empty");
+        debug_if(s_debug_more, L_DEBUG, "Hot list is empty");
         DAP_DEL_Z(l_hot_group);
         return 1;
     }
@@ -125,7 +125,7 @@ static int s_update_hot_list(uint64_t a_net_id)
     DAP_DEL_Z(l_hot_group);
     dap_global_db_objs_delete(l_objs, l_node_count);
     if (l_deleted == l_node_count) {
-        log_it(L_DEBUG, "Hot list cleared");
+        debug_if(s_debug_more, L_DEBUG, "Hot list cleared");
         return 2;
     }
     return 0;
@@ -183,7 +183,7 @@ DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_lin
         }
         dap_string_append_printf(l_report, "%s", "\n");
     }
-    log_it(L_DEBUG, "%s", l_report->str);
+    debug_if(s_debug_more, L_DEBUG, "%s", l_report->str);
     dap_string_free(l_report, true);
 }
 
@@ -978,7 +978,7 @@ static bool s_stream_add_callback(void *a_arg)
         // For uplink: link may not exist yet if stream is created before link is established
         // This is normal in some scenarios (e.g., tests), so use DEBUG level instead of ERROR
         if (l_args->uplink) {
-            log_it(L_DEBUG, "Can't find link for address " NODE_ADDR_FP_STR,
+            debug_if(s_debug_more, L_DEBUG, "Can't find link for address " NODE_ADDR_FP_STR,
                    NODE_ADDR_FP_ARGS(l_node_addr));
         } else {
             log_it(L_ERROR, "Can't create link for address " NODE_ADDR_FP_STR,
@@ -1331,7 +1331,7 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_hot_group, &l_node_count);
     DAP_DEL_Z(l_hot_group);
     if (!l_node_count || !l_objs) {        
-        log_it(L_DEBUG, "Hot list is empty");
+        debug_if(s_debug_more, L_DEBUG, "Hot list is empty");
         return NULL;
     }
 // memory alloc

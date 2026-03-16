@@ -62,6 +62,7 @@
 
 #define LOG_TAG "dap_net_trans_websocket_stream"
 
+static bool s_debug_more = false;
 // WebSocket magic GUID for handshake (RFC 6455)
 #define WS_MAGIC_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -145,7 +146,7 @@ int dap_net_trans_websocket_stream_register(void)
         return l_ret;
     }
     
-    log_it(L_DEBUG, "dap_net_trans_websocket_stream_register: WebSocket server module initialized, registering trans");
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_websocket_stream_register: WebSocket server module initialized, registering trans");
     
     // Register WebSocket trans operations
     int l_ret_trans = dap_net_trans_register("WebSocket",
@@ -239,7 +240,7 @@ int dap_net_trans_websocket_set_config(dap_net_trans_t *a_trans,
         l_priv->config.origin = dap_strdup(a_config->origin);
     }
 
-    log_it(L_DEBUG, "WebSocket configuration updated");
+    debug_if(s_debug_more, L_DEBUG, "WebSocket configuration updated");
     return 0;
 }
 
@@ -301,7 +302,7 @@ static int s_ws_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
     a_trans->_inheritor = l_priv;
     UNUSED(a_config);
 
-    log_it(L_DEBUG, "WebSocket trans initialized");
+    debug_if(s_debug_more, L_DEBUG, "WebSocket trans initialized");
     return 0;
 }
 
@@ -346,7 +347,7 @@ static void s_ws_deinit(dap_net_trans_t *a_trans)
     DAP_DELETE(l_priv);
     a_trans->_inheritor = NULL;
 
-    log_it(L_DEBUG, "WebSocket trans deinitialized");
+    debug_if(s_debug_more, L_DEBUG, "WebSocket trans deinitialized");
 }
 
 /**
@@ -459,7 +460,7 @@ static int s_ws_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream_
         return -1;
     }
 
-    log_it(L_DEBUG, "WebSocket accept (delegated to HTTP upgrade handler)");
+    debug_if(s_debug_more, L_DEBUG, "WebSocket accept (delegated to HTTP upgrade handler)");
     return 0;
 }
 
@@ -526,7 +527,7 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
         return -1;
     }
 
-    log_it(L_DEBUG, "WebSocket handshake init (via HTTP)");
+    debug_if(s_debug_more, L_DEBUG, "WebSocket handshake init (via HTTP)");
     
     dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
     dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
@@ -576,7 +577,7 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
                  a_params->enc_type, a_params->pkey_exchange_type, a_params->pkey_exchange_size,
                  a_params->block_key_size, a_params->protocol_version, l_sign_count);
     
-    log_it(L_DEBUG, "WebSocket handshake init: sending POST to %s:%u%s", 
+    debug_if(s_debug_more, L_DEBUG, "WebSocket handshake init: sending POST to %s:%u%s", 
            l_client->link_info.uplink_addr, l_client->link_info.uplink_port, l_enc_init_url);
            
     // Create ctx
@@ -628,7 +629,7 @@ static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, si
         return -1;
     }
 
-    log_it(L_DEBUG, "WebSocket handshake process: %zu bytes (delegated to enc_server)", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "WebSocket handshake process: %zu bytes (delegated to enc_server)", a_data_size);
 
     UNUSED(a_data);
 
@@ -861,7 +862,7 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
                                      a_params->enc_key_size, a_params->enc_headers ? 1 : 0);
     }
     
-    log_it(L_DEBUG, "WebSocket session create: sending POST to %s:%u%s/%s", 
+    debug_if(s_debug_more, L_DEBUG, "WebSocket session create: sending POST to %s:%u%s/%s", 
            l_client->link_info.uplink_addr, l_client->link_info.uplink_port, 
            DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
     
@@ -882,7 +883,7 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
     
     DAP_DELETE(l_suburl);
     
-    log_it(L_DEBUG, "WebSocket session create request sent successfully");
+    debug_if(s_debug_more, L_DEBUG, "WebSocket session create request sent successfully");
     return 0;
 }
 
@@ -962,7 +963,7 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         l_priv->state = DAP_WS_STATE_CLOSED;
         return -5;
     }
-    log_it(L_DEBUG, "WebSocket upgrade request sent (%zd bytes)", l_sent);
+    debug_if(s_debug_more, L_DEBUG, "WebSocket upgrade request sent (%zd bytes)", l_sent);
 
     // Invoke ready callback (same as HTTP transport — request sent, response is async)
     if (a_callback) {
@@ -1232,7 +1233,7 @@ static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_s
             l_priv->frames_sent++;
             l_priv->bytes_sent += a_size;
         }
-        log_it(L_DEBUG, "WebSocket write: %zu bytes (frame: %zu)", a_size, l_actual_frame_size);
+        debug_if(s_debug_more, L_DEBUG, "WebSocket write: %zu bytes (frame: %zu)", a_size, l_actual_frame_size);
     } else {
         log_it(L_ERROR, "WebSocket write incomplete or failed");
         l_ret = -6;
@@ -1259,7 +1260,7 @@ static void s_ws_close(dap_stream_t *a_stream)
         return;
     }
 
-    log_it(L_DEBUG, "WebSocket connection closing");
+    debug_if(s_debug_more, L_DEBUG, "WebSocket connection closing");
 
     // Send close frame if not already closing
     if (l_priv->state == DAP_WS_STATE_OPEN) {
@@ -1371,7 +1372,7 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "WebSocket TCP socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    debug_if(s_debug_more, L_DEBUG, "WebSocket TCP socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 
@@ -1688,7 +1689,7 @@ int dap_net_trans_websocket_send_close(dap_stream_t *a_stream, dap_ws_close_code
     if (l_ret == 0) {
         size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
         if (l_sent == l_actual_size) {
-            log_it(L_DEBUG, "WebSocket close frame sent (code=%u)", a_code);
+            debug_if(s_debug_more, L_DEBUG, "WebSocket close frame sent (code=%u)", a_code);
         } else {
             log_it(L_ERROR, "WebSocket close frame send failed");
             l_ret = -5;
@@ -1724,7 +1725,7 @@ int dap_net_trans_websocket_send_ping(dap_stream_t *a_stream, const void *a_payl
     if (l_ret == 0) {
         size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
         if (l_sent == l_actual_size) {
-            log_it(L_DEBUG, "WebSocket ping sent (%zu bytes payload)", a_payload_size);
+            debug_if(s_debug_more, L_DEBUG, "WebSocket ping sent (%zu bytes payload)", a_payload_size);
         } else {
             l_ret = -5;
         }
@@ -1759,7 +1760,7 @@ int dap_net_trans_websocket_send_pong(dap_stream_t *a_stream, const void *a_payl
     if (l_ret == 0) {
         size_t l_sent = dap_events_socket_write_unsafe(l_es, l_frame, l_actual_size);
         if (l_sent == l_actual_size) {
-            log_it(L_DEBUG, "WebSocket pong sent (%zu bytes payload)", a_payload_size);
+            debug_if(s_debug_more, L_DEBUG, "WebSocket pong sent (%zu bytes payload)", a_payload_size);
         } else {
             l_ret = -5;
         }
@@ -1859,7 +1860,7 @@ static int s_ws_register_server_handlers(dap_net_trans_t *a_trans, void *a_trans
         return l_ret;
     }
 
-    log_it(L_DEBUG, "Registered WebSocket upgrade handler for stream path");
+    debug_if(s_debug_more, L_DEBUG, "Registered WebSocket upgrade handler for stream path");
     return 0;
 }
 

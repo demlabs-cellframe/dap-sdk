@@ -91,6 +91,8 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events_socket"
 
+static bool s_debug_more = false;
+
 // =============================================================================
 // DATAGRAM PACKET QUEUE (for non-blocking sendto on UDP, SCTP, etc.)
 // =============================================================================
@@ -377,9 +379,9 @@ int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_d
     };
     if (g_debug_reactor) {
         if (a_size)
-            log_it(L_DEBUG, "Enqueue %zu bytes into "DAP_FORMAT_ESOCKET_UUID, a_size, a_es->uuid);
+            debug_if(s_debug_more, L_DEBUG, "Enqueue %zu bytes into "DAP_FORMAT_ESOCKET_UUID, a_size, a_es->uuid);
         else
-            log_it(L_DEBUG, "Enqueue ptr %p into "DAP_FORMAT_ESOCKET_UUID, a_data, a_es->uuid);
+            debug_if(s_debug_more, L_DEBUG, "Enqueue ptr %p into "DAP_FORMAT_ESOCKET_UUID, a_data, a_es->uuid);
     }
     return InterlockedPushEntrySList((PSLIST_HEADER)a_es->buf_out, &(l_entry->entry))
         ? a_size : PostQueuedCompletionStatus(a_es->context->iocp, a_size, (ULONG_PTR)a_es, NULL)
@@ -464,6 +466,7 @@ int dap_events_socket_init( void )
 #if defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
 #include <sys/time.h>
 #include <sys/resource.h>
+
     struct rlimit l_mqueue_limit;
     l_mqueue_limit.rlim_cur = RLIM_INFINITY;
     l_mqueue_limit.rlim_max = RLIM_INFINITY;
@@ -553,7 +556,7 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
 void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct dap_worker * a_worker)
 {
     a_es->last_ping_request = time(NULL);
-   // log_it(L_DEBUG, "Assigned %p on worker %u", a_es, a_worker->id);
+   // debug_if(s_debug_more, L_DEBUG, "Assigned %p on worker %u", a_es, a_worker->id);
     dap_worker_add_events_socket(a_worker, a_es);
 }
 
@@ -565,7 +568,7 @@ void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct da
 void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_es, dap_worker_t * a_worker_new)
 {
     dap_worker_t *l_worker = a_es->worker;
-    log_it(L_DEBUG, "Reassign between %u->%u workers: %p (%d)  ", l_worker->id, a_worker_new->id, a_es, a_es->fd );
+    debug_if(s_debug_more, L_DEBUG, "Reassign between %u->%u workers: %p (%d)  ", l_worker->id, a_worker_new->id, a_es, a_es->fd );
 
     dap_context_remove(a_es);
     a_es->was_reassigned = true;
@@ -768,7 +771,7 @@ int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
     if (l_err == 0) {
         // Connected immediately - this is rare but possible
         if (a_error_code) *a_error_code = 0;
-        log_it(L_DEBUG, "Connected immediately to %s:%u!", a_es->remote_addr_str, a_es->remote_port);
+        debug_if(s_debug_more, L_DEBUG, "Connected immediately to %s:%u!", a_es->remote_addr_str, a_es->remote_port);
         return 0;
     }
     
@@ -1211,13 +1214,13 @@ static int s_wait_send_socket(SOCKET a_sockfd, long timeout_ms)
         int l_res = select(a_sockfd + 1, NULL, &l_outfd, NULL, &l_tv);
 #endif
         if (l_res == 0) {
-            //log_it(L_DEBUG, "socket %d timed out", a_sockfd)
+            //debug_if(s_debug_more, L_DEBUG, "socket %d timed out", a_sockfd)
             return -2;
         }
         if (l_res == -1) {
             if (errno == EINTR)
                 continue;
-            log_it(L_DEBUG, "socket %"DAP_FORMAT_SOCKET" waiting errno=%d", a_sockfd, errno);
+            debug_if(s_debug_more, L_DEBUG, "socket %"DAP_FORMAT_SOCKET" waiting errno=%d", a_sockfd, errno);
             return l_res;
         }
         break;
@@ -2049,7 +2052,7 @@ void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, 
         return;
 
     a_es->last_ping_request = time(NULL);
-    //log_it(L_DEBUG, "Interthread assign esocket %p(fd %d) on input esocket %p (fd %d)", a_es, a_es->fd,
+    //debug_if(s_debug_more, L_DEBUG, "Interthread assign esocket %p(fd %d) on input esocket %p (fd %d)", a_es, a_es->fd,
     //       a_es_input, a_es_input->fd);
     dap_worker_add_events_socket_inter(a_es_input,a_es);
 

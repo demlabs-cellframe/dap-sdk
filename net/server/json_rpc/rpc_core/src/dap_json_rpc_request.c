@@ -4,6 +4,7 @@
 
 #define LOG_TAG "dap_json_rpc_request"
 
+static bool s_debug_more = false;
 struct exec_cmd_request {
     dap_client_esocket_t * client_esocket;
 #ifdef DAP_OS_WINDOWS
@@ -119,7 +120,7 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
             *a_response_out = json_tokener_parse(l_response_dec);
             if (!*a_response_out && l_response_dec) {
                 *a_response_out = json_object_new_string("Can't decode the response, check the access rights on the remote node");
-                log_it(L_DEBUG, "Wrong response %s", l_response_dec);
+                debug_if(s_debug_more, L_DEBUG, "Wrong response %s", l_response_dec);
                 DAP_DEL_Z(l_response_dec);
             }
             *a_response_out_size = l_response_dec_size;
@@ -252,7 +253,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
             if (json_object_object_get_ex(jobj, "version", &jobj_version))
                 request->version = json_object_get_int64(jobj_version);
             else {
-                log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
+                debug_if(s_debug_more, L_DEBUG, "Can't find request version, apply version %d", a_version_default);
                 request->version = a_version_default;
             }
 
@@ -392,7 +393,7 @@ int dap_json_rpc_request_send(dap_client_esocket_t*  a_client_esocket, dap_json_
         return -1;
     }
 
-    log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
+    debug_if(s_debug_more, L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
                      a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port, l_path, l_enc_request_size);
 
     dap_client_http_t *l_http_client = dap_client_http_request(a_client_esocket->worker,
@@ -412,7 +413,7 @@ int dap_json_rpc_request_send(dap_client_esocket_t*  a_client_esocket, dap_json_
                 *a_response = json_object_new_string(l_err);
                 break;
             }
-            log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
+            debug_if(s_debug_more, L_DEBUG, "Get response from %s:%d, response size = %lu",
                             a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port, l_response_size);
             break;
         }

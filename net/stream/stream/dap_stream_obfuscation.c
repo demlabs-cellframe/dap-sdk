@@ -32,6 +32,7 @@
 
 #define LOG_TAG "dap_stream_obfuscation"
 
+static bool s_debug_more = false;
 // Internal implementation
 typedef struct dap_stream_obfuscation_internal {
     uint64_t rng_state;             // RNG state for reproducibility
@@ -140,7 +141,7 @@ void dap_stream_obfuscation_destroy(dap_stream_obfuscation_t *a_obfs)
     }
 
     DAP_DELETE(a_obfs);
-    log_it(L_DEBUG, "Obfuscation engine destroyed");
+    debug_if(s_debug_more, L_DEBUG, "Obfuscation engine destroyed");
 }
 
 /**
@@ -208,7 +209,7 @@ int dap_stream_obfuscation_generate_fake_traffic(dap_stream_obfuscation_t *a_obf
     }
 
     if (!(a_obfs->config.enabled_techniques & DAP_STREAM_OBFS_MIXING)) {
-        log_it(L_DEBUG, "Traffic mixing not enabled");
+        debug_if(s_debug_more, L_DEBUG, "Traffic mixing not enabled");
         return -1;
     }
 
@@ -261,10 +262,10 @@ int dap_stream_obfuscation_set_technique(dap_stream_obfuscation_t *a_obfs,
 
     if (a_enable) {
         a_obfs->config.enabled_techniques |= a_technique;
-        log_it(L_DEBUG, "Enabled obfuscation technique: 0x%x", a_technique);
+        debug_if(s_debug_more, L_DEBUG, "Enabled obfuscation technique: 0x%x", a_technique);
     } else {
         a_obfs->config.enabled_techniques &= ~a_technique;
-        log_it(L_DEBUG, "Disabled obfuscation technique: 0x%x", a_technique);
+        debug_if(s_debug_more, L_DEBUG, "Disabled obfuscation technique: 0x%x", a_technique);
     }
 
     return 0;
@@ -343,7 +344,7 @@ int dap_stream_obfuscation_reset_stats(dap_stream_obfuscation_t *a_obfs)
     }
 
     memset(&a_obfs->stats, 0, sizeof(a_obfs->stats));
-    log_it(L_DEBUG, "Obfuscation statistics reset");
+    debug_if(s_debug_more, L_DEBUG, "Obfuscation statistics reset");
     return 0;
 }
 
@@ -561,7 +562,7 @@ static int s_generate_fake_traffic_impl(dap_stream_obfuscation_t *a_obfs,
     *a_fake_data = l_fake_data;
     *a_fake_size = l_size;
 
-    log_it(L_DEBUG, "Generated fake traffic: %zu bytes", l_size);
+    debug_if(s_debug_more, L_DEBUG, "Generated fake traffic: %zu bytes", l_size);
     return 0;
 }
 

@@ -42,6 +42,7 @@
 
 #define LOG_TAG "dap_worker"
 
+static bool s_debug_more = false;
 typedef struct dap_worker_msg_callback {
     dap_worker_callback_t callback; // Callback for specific client operations
     void * arg;
@@ -93,7 +94,7 @@ static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
     (void) a_flags;
     a_es->context->signal_exit = true;
     if (g_debug_reactor)
-        log_it(L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
+        debug_if(s_debug_more, L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
 }
 
 /**
@@ -320,7 +321,7 @@ static int s_queue_es_add(dap_worker_t *a_worker, dap_events_socket_t *a_esocket
     if (!l_es_new->is_initalized && l_es_new->callbacks.new_callback)
         l_es_new->callbacks.new_callback(l_es_new, NULL);
 
-    //log_it(L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
+    //debug_if(s_debug_more, L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
     if (l_es_new->callbacks.worker_assign_callback)
         l_es_new->callbacks.worker_assign_callback(l_es_new, a_worker);
 

@@ -48,6 +48,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_net_trans_websocket_server"
 
+static bool s_debug_more = false;
 // WebSocket GUID for Sec-WebSocket-Accept calculation (RFC 6455)
 #define WEBSOCKET_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -217,7 +218,7 @@ int dap_net_trans_websocket_server_start(dap_net_trans_websocket_server_t *a_ws_
                       NULL,  // data_write_callback
                       NULL); // error_callback
 
-    log_it(L_DEBUG, "Registered WebSocket upgrade handler on path '/'");
+    debug_if(s_debug_more, L_DEBUG, "Registered WebSocket upgrade handler on path '/'");
 
     // Register all required handlers for DAP protocol endpoints using unified trans API
     dap_net_trans_server_ctx_t *l_ctx = dap_net_trans_server_ctx_from_http(
@@ -355,7 +356,7 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
     // Check if this is a WebSocket upgrade request
     if (!l_upgrade || !l_connection || !l_ws_key || !l_ws_version) {
         // Not a WebSocket upgrade request - handle as regular HTTP
-        log_it(L_DEBUG, "Not a WebSocket upgrade request");
+        debug_if(s_debug_more, L_DEBUG, "Not a WebSocket upgrade request");
         a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
@@ -404,7 +405,7 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
 
     log_it(L_INFO, "WebSocket upgrade request accepted from %s",
            a_http_client->esocket->remote_addr_str);
-    log_it(L_DEBUG, "Generated Sec-WebSocket-Accept: %s", l_accept_key);
+    debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", l_accept_key);
 
     // Write 101 Switching Protocols response directly to esocket buf_out.
     // We bypass the standard dap_http_client_write mechanism because:
@@ -494,7 +495,7 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
         l_stream = (dap_stream_t*)a_http_client->_inheritor;
         // Verify it's actually a stream (has esocket field)
         if (l_stream && l_stream->trans_ctx && l_stream->trans_ctx->esocket == a_http_client->esocket) {
-            log_it(L_DEBUG, "Reusing existing stream for WebSocket upgrade");
+            debug_if(s_debug_more, L_DEBUG, "Reusing existing stream for WebSocket upgrade");
         } else {
             l_stream = NULL;  // Not a valid stream, create new one
         }
@@ -792,7 +793,7 @@ static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, 
 
     a_accept_key[l_encoded_size] = '\0';
 
-    log_it(L_DEBUG, "Generated Sec-WebSocket-Accept: %s", a_accept_key);
+    debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", a_accept_key);
     return true;
 }
 

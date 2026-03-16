@@ -62,6 +62,8 @@
 
 #include "mdbx.h"                                                           /* LibMDBX API */
 #define LOG_TAG "dap_global_db_mdbx"
+
+static bool s_debug_more = false;
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_MDBX
 
 /** Struct for a MDBX DB context */
@@ -505,7 +507,7 @@ static  dap_db_ctx_t  *s_get_db_ctx_for_group(const char *a_group, MDBX_txn *a_t
  */
 static  int s_db_mdbx_flush(void)
 {
-    return  log_it(L_DEBUG, "Flushing resident part of the MDBX to disk"), 0;
+    return  debug_if(s_debug_more, L_DEBUG, "Flushing resident part of the MDBX to disk"), 0;
 }
 
 /*

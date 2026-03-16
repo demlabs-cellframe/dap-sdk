@@ -49,6 +49,7 @@
 
 #define LOG_TAG "dap_enc_http"
 
+static bool s_debug_more = false;
 /**
  * @brief Initialize HTTP encryption adapter
  */
@@ -101,7 +102,7 @@ static void _enc_http_write_reply(struct dap_http_simple *a_cl_st,
  */
 void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
 {
-    log_it(L_DEBUG, "Processing HTTP encryption request (via adapter)");
+    debug_if(s_debug_more, L_DEBUG, "Processing HTTP encryption request (via adapter)");
     http_status_code_t *return_code = (http_status_code_t*)arg;
     
     if (!cl_st) {
@@ -113,7 +114,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
     // HTTP server extracts basename before calling processor
     // So url_path should be basename (e.g., "gd4y5yh78w42aaagh"), not full path
     // We accept any basename - it's just an identifier, not validated
-    log_it(L_DEBUG, "enc_http_proc: url_path='%s' (len=%u)", 
+    debug_if(s_debug_more, L_DEBUG, "enc_http_proc: url_path='%s' (len=%u)", 
            cl_st->http_client->url_path, 
            cl_st->http_client->url_path_len);
     
@@ -195,7 +196,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
  */
 void enc_http_add_proc(struct dap_http_server* sh, const char * url)
 {
-    log_it(L_DEBUG, "enc_http_add_proc: registering handler for URL '%s' on HTTP server '%s' (sh=%p)", 
+    debug_if(s_debug_more, L_DEBUG, "enc_http_add_proc: registering handler for URL '%s' on HTTP server '%s' (sh=%p)", 
            url, sh ? sh->server_name : "NULL", (void*)sh);
     dap_http_simple_proc_add(sh, url, 140000, enc_http_proc);
     log_it(L_INFO, "HTTP encryption endpoint registered: %s", url);

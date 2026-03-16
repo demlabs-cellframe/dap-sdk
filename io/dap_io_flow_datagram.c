@@ -423,7 +423,7 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
     } else {
         // CLIENT flow: no separate send socket needed
         l_datagram_flow->send_es = NULL;
-        log_it(L_DEBUG, "DATAGRAM flow_create: CLIENT flow, will use listener_es for sending");
+        debug_if(s_debug_more, L_DEBUG, "DATAGRAM flow_create: CLIENT flow, will use listener_es for sending");
     }
     
     debug_if(s_debug_more, L_DEBUG, "DATAGRAM flow created: listener_es=%p (fd=%d), send_es=%p (fd=%d)",
@@ -445,7 +445,7 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
         }
     }
     
-    log_it(L_DEBUG, "Created DATAGRAM flow for %s",
+    debug_if(s_debug_more, L_DEBUG, "Created DATAGRAM flow for %s",
            dap_io_flow_datagram_get_remote_addr_str(l_datagram_flow));
     
     return &l_datagram_flow->base;
@@ -462,7 +462,7 @@ static void s_datagram_flow_destroy_wrapper(dap_io_flow_t *a_flow)
     
     dap_io_flow_datagram_t *l_datagram_flow = (dap_io_flow_datagram_t*)a_flow;
     
-    log_it(L_DEBUG, "Destroying DATAGRAM flow for %s",
+    debug_if(s_debug_more, L_DEBUG, "Destroying DATAGRAM flow for %s",
            dap_io_flow_datagram_get_remote_addr_str(l_datagram_flow));
     
     // Close separate send socket if exists (SERVER flows)
@@ -471,11 +471,11 @@ static void s_datagram_flow_destroy_wrapper(dap_io_flow_t *a_flow)
         if (l_datagram_flow->send_es->worker) {
             dap_events_socket_remove_and_delete_mt(l_datagram_flow->send_es->worker, 
                                                    l_datagram_flow->send_es->uuid);
-            log_it(L_DEBUG, "Removed and deleted separate send socket from worker");
+            debug_if(s_debug_more, L_DEBUG, "Removed and deleted separate send socket from worker");
         } else {
             // Fallback: if no worker, delete directly
             dap_events_socket_delete_unsafe(l_datagram_flow->send_es, true);
-            log_it(L_DEBUG, "Deleted separate send socket (no worker)");
+            debug_if(s_debug_more, L_DEBUG, "Deleted separate send socket (no worker)");
         }
         l_datagram_flow->send_es = NULL;
     }

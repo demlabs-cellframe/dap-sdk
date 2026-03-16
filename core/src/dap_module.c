@@ -29,6 +29,7 @@
 
 #define LOG_TAG "dap_module"
 
+static bool s_debug_more = false;
 /**
  * @brief Module registry entry
  */
@@ -92,7 +93,7 @@ int dap_module_add(const char *a_name, unsigned int a_version, const char *a_dep
     
     HASH_ADD_STR(s_module_registry, name, l_entry);
     
-    log_it(L_DEBUG, "dap_module_add: Registered module '%s' (version %u)", a_name, a_version);
+    debug_if(s_debug_more, L_DEBUG, "dap_module_add: Registered module '%s' (version %u)", a_name, a_version);
     return 0;
 }
 
@@ -268,7 +269,7 @@ static bool s_all_dependencies_initialized(dap_module_registry_entry_t *a_entry)
 int dap_module_init_all(void)
 {
     if (s_module_system_initialized) {
-        log_it(L_DEBUG, "dap_module_init_all: Module system already initialized");
+        debug_if(s_debug_more, L_DEBUG, "dap_module_init_all: Module system already initialized");
         return 0;
     }
     
@@ -301,7 +302,7 @@ int dap_module_init_all(void)
                    l_entry->name, l_entry->version, l_initialized_count + 1, l_total_modules);
             
             if (l_entry->dependencies && l_entry->dependencies[0]) {
-                log_it(L_DEBUG, "dap_module_init_all: Module '%s' dependencies satisfied", l_entry->name);
+                debug_if(s_debug_more, L_DEBUG, "dap_module_init_all: Module '%s' dependencies satisfied", l_entry->name);
             }
             
             int l_ret = l_entry->init_cb(NULL);
@@ -309,7 +310,7 @@ int dap_module_init_all(void)
                 // If init returns error code -2 (already registered from dap_net_transport_register),
                 // treat it as success (idempotent operation)
                 if (l_ret == -2) {
-                    log_it(L_DEBUG, "dap_module_init_all: Module '%s' already registered (idempotent), marking as initialized", 
+                    debug_if(s_debug_more, L_DEBUG, "dap_module_init_all: Module '%s' already registered (idempotent), marking as initialized", 
                            l_entry->name);
                     l_entry->initialized = true;
                     l_initialized_count++;
@@ -375,7 +376,7 @@ int dap_module_init_all(void)
 void dap_module_deinit_all(void)
 {
     if (!s_module_system_initialized) {
-        log_it(L_DEBUG, "dap_module_deinit_all: Module system not initialized");
+        debug_if(s_debug_more, L_DEBUG, "dap_module_deinit_all: Module system not initialized");
         return;
     }
     
@@ -441,12 +442,12 @@ void dap_module_deinit_all(void)
                 l_entry->deinit_cb();
                 
                 l_entry->initialized = false;
-                log_it(L_DEBUG, "dap_module_deinit_all: Module '%s' deinitialized successfully", l_entry->name);
+                debug_if(s_debug_more, L_DEBUG, "dap_module_deinit_all: Module '%s' deinitialized successfully", l_entry->name);
                 l_module_index++;
                 
                 // Early exit: if we've processed all modules, break
                 if (l_module_index >= l_total_modules) {
-                    log_it(L_DEBUG, "dap_module_deinit_all: All modules processed, exiting iteration loop");
+                    debug_if(s_debug_more, L_DEBUG, "dap_module_deinit_all: All modules processed, exiting iteration loop");
                     break;
                 }
             } else {
@@ -454,12 +455,12 @@ void dap_module_deinit_all(void)
                 // Log why this entry is skipped (only for first few or if all modules are processed)
                 if (l_module_index >= l_total_modules && l_consecutive_skipped <= 3) {
                     if (!l_entry) {
-                        log_it(L_DEBUG, "dap_module_deinit_all: Skipping NULL entry at iteration %zu", l_iteration_count);
+                        debug_if(s_debug_more, L_DEBUG, "dap_module_deinit_all: Skipping NULL entry at iteration %zu", l_iteration_count);
                     } else if (!l_entry->deinit_cb) {
-                        log_it(L_DEBUG, "dap_module_deinit_all: Skipping entry '%s' (no deinit_cb) at iteration %zu", 
+                        debug_if(s_debug_more, L_DEBUG, "dap_module_deinit_all: Skipping entry '%s' (no deinit_cb) at iteration %zu", 
                                l_entry->name, l_iteration_count);
                     } else if (!l_entry->initialized) {
-                        log_it(L_DEBUG, "dap_module_deinit_all: Skipping entry '%s' (already deinitialized) at iteration %zu", 
+                        debug_if(s_debug_more, L_DEBUG, "dap_module_deinit_all: Skipping entry '%s' (already deinitialized) at iteration %zu", 
                                l_entry->name, l_iteration_count);
                     }
                 }
@@ -475,7 +476,7 @@ void dap_module_deinit_all(void)
             l_iter = l_prev;
         }
         
-        log_it(L_DEBUG, "dap_module_deinit_all: Finished iteration loop: processed %zu modules in %zu iterations", 
+        debug_if(s_debug_more, L_DEBUG, "dap_module_deinit_all: Finished iteration loop: processed %zu modules in %zu iterations", 
                l_module_index, l_iteration_count);
         
         dap_list_free(l_deinit_list);
@@ -534,12 +535,12 @@ int dap_module_mark_initialized(const char *a_name)
     }
     
     if (l_entry->initialized) {
-        log_it(L_DEBUG, "dap_module_mark_initialized: Module '%s' already marked as initialized", a_name);
+        debug_if(s_debug_more, L_DEBUG, "dap_module_mark_initialized: Module '%s' already marked as initialized", a_name);
         return 0;
     }
     
     l_entry->initialized = true;
-    log_it(L_DEBUG, "dap_module_mark_initialized: Module '%s' marked as initialized", a_name);
+    debug_if(s_debug_more, L_DEBUG, "dap_module_mark_initialized: Module '%s' marked as initialized", a_name);
     return 0;
 }
 

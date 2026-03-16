@@ -48,6 +48,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_net_trans_dns_server"
 
+static bool s_debug_more = false;
 static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg);
 static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 
@@ -166,7 +167,7 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
 
     a_dns_server->server->_inheritor = a_dns_server;
 
-    log_it(L_DEBUG, "Registered DNS stream handlers");
+    debug_if(s_debug_more, L_DEBUG, "Registered DNS stream handlers");
 
     for (size_t i = 0; i < a_count; i++) {
         const char *l_addr = (a_addrs && a_addrs[i]) ? a_addrs[i] : "0.0.0.0";
@@ -285,7 +286,7 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     log_it(L_INFO, "DNS server: new client handshake, size=%zu", a_size);
 
     if (dap_qos_is_probe(a_data, a_size)) {
-        log_it(L_DEBUG, "DNS server: QoS probe detected (%zu bytes)", a_size);
+        debug_if(s_debug_more, L_DEBUG, "DNS server: QoS probe detected (%zu bytes)", a_size);
         void  *l_echo = NULL;
         size_t l_echo_size = 0;
         if (dap_qos_build_echo(a_data, a_size, &l_echo, &l_echo_size) == 0) {

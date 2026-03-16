@@ -41,6 +41,7 @@
 //#include "dap_hash.h"
 #define LOG_TAG "dap_cert"
 
+static bool s_debug_more = false;
 
 typedef struct dap_sign_item
 {
@@ -235,7 +236,7 @@ dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_k
         dap_cert_t * l_cert = dap_cert_new(a_cert_name);
         l_cert->enc_key = l_enc_key;
         if (a_seed && a_seed_size)
-            log_it(L_DEBUG, "Certificate generated with seed hash %s", dap_get_data_hash_str(a_seed, a_seed_size).s);
+            debug_if(s_debug_more, L_DEBUG, "Certificate generated with seed hash %s", dap_get_data_hash_str(a_seed, a_seed_size).s);
         return l_cert;
     } else {
         log_it(L_ERROR,"Can't generate key in memory!");
@@ -344,7 +345,7 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
         }
     }
     if (!l_ret)
-        log_it(L_DEBUG, "Can't load cert '%s'", a_cert_name);
+        debug_if(s_debug_more, L_DEBUG, "Can't load cert '%s'", a_cert_name);
     return l_ret;
 }
 
@@ -604,7 +605,7 @@ void dap_cert_add_folder(const char *a_folder_path)
                     if (!dap_cert_add_file(l_cert_name,a_folder_path))
                         log_it(L_ERROR,"Cert %s not loaded", l_filename);
                     else
-                        log_it(L_DEBUG,"Cert %s loaded", l_filename);
+                        debug_if(s_debug_more, L_DEBUG,"Cert %s loaded", l_filename);
                     DAP_DELETE(l_cert_name);
                 }
             }
@@ -724,7 +725,7 @@ char *dap_cert_get_meta_string(dap_cert_t *a_cert, const char *a_field)
         return NULL;
     }
     if (l_meta->type != DAP_CERT_META_STRING) {
-        log_it(L_DEBUG, "Requested and actual metadata types are not equal");
+        debug_if(s_debug_more, L_DEBUG, "Requested and actual metadata types are not equal");
         return NULL;
     }
     return strndup((char *)&l_meta->value[0], l_meta->length);
@@ -745,11 +746,11 @@ bool dap_cert_get_meta_bool(dap_cert_t *a_cert, const char *a_field)
         return -1;
     }
     if (l_meta->type != DAP_CERT_META_BOOL) {
-        log_it(L_DEBUG, "Requested and actual metadata types are not equal");
+        debug_if(s_debug_more, L_DEBUG, "Requested and actual metadata types are not equal");
         return -1;
     }
     if (l_meta->length != sizeof(bool)) {
-        log_it(L_DEBUG, "Metadata field corrupted");
+        debug_if(s_debug_more, L_DEBUG, "Metadata field corrupted");
     }
     return *(bool *)&l_meta->value[0];
 }
@@ -768,11 +769,11 @@ int dap_cert_get_meta_int(dap_cert_t *a_cert, const char *a_field)
         return -1;
     }
     if (l_meta->type != DAP_CERT_META_INT) {
-        log_it(L_DEBUG, "Requested and actual metadata types are not equal");
+        debug_if(s_debug_more, L_DEBUG, "Requested and actual metadata types are not equal");
         return -1;
     }
     if (l_meta->length != sizeof(int)) {
-        log_it(L_DEBUG, "Metadata field corrupted");
+        debug_if(s_debug_more, L_DEBUG, "Metadata field corrupted");
     }
     return *(int *)&l_meta->value[0];
 }
@@ -791,11 +792,11 @@ time_t dap_cert_get_meta_time(dap_cert_t *a_cert, const char *a_field)
         return -1;
     }
     if (l_meta->type != DAP_CERT_META_DATETIME) {
-        log_it(L_DEBUG, "Requested and actual metadata types are not equal");
+        debug_if(s_debug_more, L_DEBUG, "Requested and actual metadata types are not equal");
         return -1;
     }
     if (l_meta->length != sizeof(time_t)) {
-        log_it(L_DEBUG, "Metadata field corrupted");
+        debug_if(s_debug_more, L_DEBUG, "Metadata field corrupted");
     }
     return *(time_t *)&l_meta->value[0];
 }
@@ -814,11 +815,11 @@ time_t dap_cert_get_meta_period(dap_cert_t *a_cert, const char *a_field)
         return -1;
     }
     if (l_meta->type != DAP_CERT_META_DATETIME_PERIOD) {
-        log_it(L_DEBUG, "Requested and actual metadata types are not equal");
+        debug_if(s_debug_more, L_DEBUG, "Requested and actual metadata types are not equal");
         return -1;
     }
     if (l_meta->length != sizeof(time_t)) {
-        log_it(L_DEBUG, "Metadata field corrupted");
+        debug_if(s_debug_more, L_DEBUG, "Metadata field corrupted");
     }
     return *(time_t *)&l_meta->value[0];
 }
@@ -837,12 +838,12 @@ dap_sign_t *dap_cert_get_meta_sign(dap_cert_t *a_cert, const char *a_field)
         return NULL;
     }
     if (l_meta->type != DAP_CERT_META_SIGN) {
-        log_it(L_DEBUG, "Requested and actual metadata types are not equal");
+        debug_if(s_debug_more, L_DEBUG, "Requested and actual metadata types are not equal");
         return NULL;
     }
     dap_sign_t *l_ret = (dap_sign_t *)&l_meta->value[0];
     if (l_meta->length != dap_sign_get_size(l_ret)) {
-        log_it(L_DEBUG, "Metadata field corrupted");
+        debug_if(s_debug_more, L_DEBUG, "Metadata field corrupted");
     }
     return l_ret;
 }
@@ -862,7 +863,7 @@ void *dap_cert_get_meta_custom(dap_cert_t *a_cert, const char *a_field, size_t *
         return NULL;
     }
     if (l_meta->type != DAP_CERT_META_CUSTOM) {
-        log_it(L_DEBUG, "Requested and actual metadata types are not equal");
+        debug_if(s_debug_more, L_DEBUG, "Requested and actual metadata types are not equal");
         return NULL;
     }
     if (a_meta_size_out) {

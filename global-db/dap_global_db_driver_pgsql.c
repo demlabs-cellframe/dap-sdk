@@ -37,6 +37,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include <strings.h>
 
 #define LOG_TAG "db_pgsql"
+
+static bool s_debug_more = false;
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_PGSQL
 
 static char s_db_conn_info[MAX_PATH + 1];
@@ -65,7 +67,7 @@ static void s_connection_destructor(UNUSED_ARG void *a_conn) {
     if (!s_conn)
         return;
     PQfinish(s_conn->conn);
-    log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
+    debug_if(s_debug_more, L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
     DAP_DEL_Z(s_conn);
 }
 
@@ -77,7 +79,7 @@ static void s_connection_destructor(UNUSED_ARG void *a_conn) {
 static inline void s_db_pgsql_free_connection(conn_list_item_t *a_conn, bool a_trans)
 {
     if (g_dap_global_db_debug_more)
-        log_it(L_DEBUG, "Free  l_conn: @%p/%p, usage: %llu", a_conn, a_conn->conn, a_conn->usage);
+        debug_if(s_debug_more, L_DEBUG, "Free  l_conn: @%p/%p, usage: %llu", a_conn, a_conn->conn, a_conn->usage);
     if (a_trans)
         atomic_flag_clear(&a_conn->busy_trans);  
     else
@@ -170,7 +172,7 @@ static conn_list_item_t *s_db_pgsql_get_connection(bool a_trans)
             return NULL;
         }
         s_conn->idx = l_conn_idx++;
-        log_it(L_DEBUG, "PGSQL connection #%d is created @%p", s_conn->idx, s_conn);
+        debug_if(s_debug_more, L_DEBUG, "PGSQL connection #%d is created @%p", s_conn->idx, s_conn);
     }
     // busy check
     if (a_trans) {
@@ -186,7 +188,7 @@ static conn_list_item_t *s_db_pgsql_get_connection(bool a_trans)
     }
     atomic_fetch_add(&s_conn->usage, 1);
     if (g_dap_global_db_debug_more )
-        log_it(L_DEBUG, "Start use connection %p, usage %llu, idx %d", s_conn, s_conn->usage, s_conn->idx);
+        debug_if(s_debug_more, L_DEBUG, "Start use connection %p, usage %llu, idx %d", s_conn, s_conn->usage, s_conn->idx);
     return s_conn;
 }
 
@@ -870,7 +872,7 @@ static int s_db_pgsql_flush()
     conn_list_item_t *l_conn = s_db_pgsql_get_connection(false);
     dap_return_val_if_pass(!l_conn, -1);
 // preparing
-    log_it(L_DEBUG, "Start flush PGSQL data base.");
+    debug_if(s_debug_more, L_DEBUG, "Start flush PGSQL data base.");
     int l_ret = 0;
     if ( !(l_ret = s_db_pgsql_exec_command(l_conn->conn, "CHECKPOINT", NULL, NULL, 0, NULL, "checkpint")) ) {
         l_ret = s_db_pgsql_exec_command(l_conn->conn, "VACUUM", NULL, NULL, 0, NULL, "vacuum");

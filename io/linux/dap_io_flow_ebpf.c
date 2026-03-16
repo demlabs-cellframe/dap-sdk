@@ -30,6 +30,7 @@
 
 #define LOG_TAG "dap_io_flow_ebpf"
 
+static bool s_debug_more = false;
 // eBPF availability flag
 static bool s_ebpf_available = false;
 static bool s_ebpf_checked = false;
@@ -278,7 +279,7 @@ int dap_io_flow_ebpf_detach_socket(int socket_fd)
         return -1;
     }
     
-    log_it(L_DEBUG, "eBPF program detached from socket %d", socket_fd);
+    debug_if(s_debug_more, L_DEBUG, "eBPF program detached from socket %d", socket_fd);
     return 0;
 }
 

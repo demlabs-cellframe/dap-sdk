@@ -31,6 +31,7 @@
 
 #define LOG_TAG "avrestream"
 
+static bool s_debug_more = false;
 #ifdef  DAP_SYS_DEBUG
     #ifndef DAP_VERSION
         #define DAP_VERSION "0.9-15"
@@ -40,7 +41,7 @@
 
 int avrs_plugin_init(dap_config_t * a_config, char ** a_error_str)
 {
-    log_it(L_DEBUG, "AVReStream Plugin version %s --- loading ...", DAP_VERSION );
+    debug_if(s_debug_more, L_DEBUG, "AVReStream Plugin version %s --- loading ...", DAP_VERSION );
 
     avrs_content_init();
     avrs_ch_init();
@@ -63,7 +64,7 @@ int avrs_plugin_init(dap_config_t * a_config, char ** a_error_str)
 
 void avrs_plugin_deinit()
 {
-    log_it(L_DEBUG, "AVReStream Plugin version %s --- cleanuping ...", DAP_VERSION );
+    debug_if(s_debug_more, L_DEBUG, "AVReStream Plugin version %s --- cleanuping ...", DAP_VERSION );
 
     avrs_cli_deinit();
     avrs_srv_deinit();

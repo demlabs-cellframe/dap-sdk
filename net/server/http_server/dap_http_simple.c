@@ -57,6 +57,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_http_simple"
 
+static bool s_debug_more = false;
 static void s_http_client_new( dap_http_client_t *a_http_client, void *arg );
 static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg );
 static void s_http_simple_delete( dap_http_simple_t *a_http_simple);
@@ -187,7 +188,7 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
 
   const char* str = user_agents;
 
-//  log_it(L_DEBUG,"dap_http_simple_set_supported_user_agents");
+//  debug_if(s_debug_more, L_DEBUG,"dap_http_simple_set_supported_user_agents");
 //  Sleep(300);
 
   while ( str != NULL )
@@ -278,7 +279,7 @@ static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg)
 
     for (dap_http_header_t *i = l_hs->ext_headers; i; i = i->next) {
         dap_http_out_header_add(cl_ht, i->name, i->value);
-        log_it(L_DEBUG, "Added http header. %s: %s", i->name, i->value);
+        debug_if(s_debug_more, L_DEBUG, "Added http header. %s: %s", i->name, i->value);
     }
 
     return !l_hs->generate_default_header;
@@ -311,7 +312,7 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
 
 inline static void s_copy_reply_and_mime_to_response( dap_http_simple_t *a_simple )
 {
-//  log_it(L_DEBUG,"_copy_reply_and_mime_to_response");
+//  debug_if(s_debug_more, L_DEBUG,"_copy_reply_and_mime_to_response");
 //  Sleep(300);
 
     if( !a_simple->reply_size )
@@ -325,7 +326,7 @@ inline static void s_copy_reply_and_mime_to_response( dap_http_simple_t *a_simpl
 inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simple,
                                                const char* error_msg )
 {
-    //  log_it(L_DEBUG,"_write_response_bad_request");
+    //  debug_if(s_debug_more, L_DEBUG,"_write_response_bad_request");
     //  Sleep(300);
 
     struct json_object *jobj = json_object_new_object( );
@@ -353,7 +354,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
 static void *s_proc_pool_task(void *a_arg)
 {
     dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
-    log_it(L_DEBUG, "dap http simple proc");
+    debug_if(s_debug_more, L_DEBUG, "dap http simple proc");
     if (!l_http_simple->http_client) {
         log_it(L_ERROR, "[!] HTTP client is already deleted!");
         return NULL;
@@ -376,7 +377,7 @@ static void *s_proc_pool_task(void *a_arg)
         }
 
         if (l_header && s_is_user_agent_supported(l_header->value) == false) {
-            log_it(L_DEBUG, "Not supported user agent in request: %s", l_header->value);
+            debug_if(s_debug_more, L_DEBUG, "Not supported user agent in request: %s", l_header->value);
             const char *l_error_msg = "User-Agent version not supported. Update your software";
             s_write_response_bad_request(l_http_simple, l_error_msg);
             return l_http_simple;
@@ -386,7 +387,7 @@ static void *s_proc_pool_task(void *a_arg)
     DAP_HTTP_SIMPLE_URL_PROC(l_http_simple->http_client->proc)->proc_callback(l_http_simple, &return_code);
 
     if(return_code) {
-        log_it(L_DEBUG, "Request was processed well return_code=%d", return_code);
+        debug_if(s_debug_more, L_DEBUG, "Request was processed well return_code=%d", return_code);
         l_http_simple->http_client->reply_status_code = (uint16_t)return_code;
         s_copy_reply_and_mime_to_response(l_http_simple);
     } else {
@@ -481,7 +482,7 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
 {
     int *ret = (int *)a_arg;
 
-    //log_it(L_DEBUG,"dap_http_simple_data_read");
+    //debug_if(s_debug_more, L_DEBUG,"dap_http_simple_data_read");
     //  Sleep(300);
 
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);

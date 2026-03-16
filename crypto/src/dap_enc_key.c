@@ -56,6 +56,8 @@
 
 #undef LOG_TAG
 #define LOG_TAG "dap_enc_key"
+
+static bool s_debug_more = false;
 dap_enc_key_callbacks_t s_callbacks[]={
     //-Symmetric ciphers----------------------
     // AES
@@ -779,7 +781,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
                 return -3;
             }
             if (!s_callbacks[a_key->type].deser_priv_key_size) {
-                log_it(L_DEBUG, "No callback for private key deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
+                debug_if(s_debug_more, L_DEBUG, "No callback for private key deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
                 a_key->priv_key_data_size = a_buflen;
             } else {
                 a_key->priv_key_data_size = s_callbacks[a_key->type].deser_priv_key_size(NULL);
@@ -838,7 +840,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
                 return -3;
             }
             if (!s_callbacks[a_key->type].deser_pub_key_size) {
-                log_it(L_DEBUG, "No callback for public key deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
+                debug_if(s_debug_more, L_DEBUG, "No callback for public key deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
                 a_key->pub_key_data_size = a_buflen;
             } else {
                 a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
@@ -1388,7 +1390,7 @@ dap_enc_kem_result_t* dap_enc_kem_alice_generate_keypair(dap_enc_key_type_t a_ke
     memcpy(l_result->public_data, l_result->kem_key->pub_key_data, 
            l_result->public_data_size);
     
-    log_it(L_DEBUG, "Alice generated %s keypair: pub_key=%zu bytes",
+    debug_if(s_debug_more, L_DEBUG, "Alice generated %s keypair: pub_key=%zu bytes",
            dap_enc_get_type_name(a_kem_type), l_result->public_data_size);
     
     return l_result;
@@ -1492,7 +1494,7 @@ dap_enc_kem_result_t* dap_enc_kem_bob_encapsulate(
     l_result->public_data_size = l_ciphertext_size;
     l_result->public_data = l_ciphertext;  // Transfer ownership
     
-    log_it(L_DEBUG, "Bob encapsulated shared secret: ciphertext=%zu bytes, secret=%zu bytes",
+    debug_if(s_debug_more, L_DEBUG, "Bob encapsulated shared secret: ciphertext=%zu bytes, secret=%zu bytes",
            l_result->public_data_size, l_result->shared_secret_size);
     
     return l_result;
@@ -1559,7 +1561,7 @@ int dap_enc_kem_alice_decapsulate(
     memcpy(a_alice_kem->shared_secret, a_alice_kem->kem_key->priv_key_data,
            a_alice_kem->shared_secret_size);
     
-    log_it(L_DEBUG, "Alice decapsulated shared secret: %zu bytes",
+    debug_if(s_debug_more, L_DEBUG, "Alice decapsulated shared secret: %zu bytes",
            a_alice_kem->shared_secret_size);
     
     return 0;
@@ -1656,7 +1658,7 @@ dap_enc_key_t* dap_enc_kem_derive_key(
         return NULL;
     }
     
-    log_it(L_DEBUG, "Derived %s key: context=%s, counter=%lu, size=%zu",
+    debug_if(s_debug_more, L_DEBUG, "Derived %s key: context=%s, counter=%lu, size=%zu",
            dap_enc_get_type_name(a_cipher_type), a_context, a_counter, a_key_size);
     
     return l_key;

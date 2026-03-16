@@ -37,6 +37,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_net_server_common"
 
+static bool s_debug_more = false;
 /**
  * @brief Structure to store pre_worker_added callback and user data in listener socket
  */
@@ -95,7 +96,7 @@ void dap_net_server_accept_callback(dap_events_socket_t *a_es_listener,
         if ((l_server->whitelist
             ? !dap_str_find(l_server->whitelist, l_remote_addr_str)
             : !!dap_str_find(l_server->blacklist, l_remote_addr_str))) {
-            log_it(L_DEBUG, "Connection from %s : %s denied by whitelist/blacklist (whitelist=%p, blacklist=%p)",
+            debug_if(s_debug_more, L_DEBUG, "Connection from %s : %s denied by whitelist/blacklist (whitelist=%p, blacklist=%p)",
                    l_remote_addr_str, l_port_str, (void*)l_server->whitelist, (void*)l_server->blacklist);
             closesocket(a_remote_socket);
             return debug_if(l_server->ext_log, L_INFO, "Connection from %s : %s denied",
@@ -103,7 +104,7 @@ void dap_net_server_accept_callback(dap_events_socket_t *a_es_listener,
         }
         debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
                                 l_remote_addr_str, l_port_str, a_remote_socket);
-        log_it(L_DEBUG, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
+        debug_if(s_debug_more, L_DEBUG, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
                                 l_remote_addr_str, l_port_str, a_remote_socket);
         int one = 1;
         if (setsockopt(a_remote_socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0) {
@@ -129,7 +130,7 @@ void dap_net_server_accept_callback(dap_events_socket_t *a_es_listener,
     l_es_new->remote_port = strtol(l_port_str, NULL, 10);
     dap_strncpy(l_es_new->remote_addr_str, l_remote_addr_str, INET6_ADDRSTRLEN);
     
-    log_it(L_DEBUG, "Created client socket %"DAP_FORMAT_SOCKET" from %s:%s, new_callback=%p",
+    debug_if(s_debug_more, L_DEBUG, "Created client socket %"DAP_FORMAT_SOCKET" from %s:%s, new_callback=%p",
            l_es_new->socket, l_remote_addr_str, l_port_str, 
            (void*)l_server->client_callbacks.new_callback);
     
@@ -145,9 +146,9 @@ void dap_net_server_accept_callback(dap_events_socket_t *a_es_listener,
         }
     }
     
-    log_it(L_DEBUG, "Adding client socket %"DAP_FORMAT_SOCKET" to worker", l_es_new->socket);
+    debug_if(s_debug_more, L_DEBUG, "Adding client socket %"DAP_FORMAT_SOCKET" to worker", l_es_new->socket);
     dap_worker_add_events_socket(dap_events_worker_get_auto(), l_es_new);
-    log_it(L_DEBUG, "Client socket %"DAP_FORMAT_SOCKET" added to worker", l_es_new->socket);
+    debug_if(s_debug_more, L_DEBUG, "Client socket %"DAP_FORMAT_SOCKET" added to worker", l_es_new->socket);
 }
 
 /**
@@ -192,7 +193,7 @@ int dap_net_server_listen_addr_add_with_callback(dap_server_t *a_server,
         return l_ret;
     }
 
-    log_it(L_DEBUG, "Listener socket added for %s:%u, searching for it in es_listeners", a_addr, a_port);
+    debug_if(s_debug_more, L_DEBUG, "Listener socket added for %s:%u, searching for it in es_listeners", a_addr, a_port);
 
     // Find the newly created listener socket by address and port
     // The new listener should be at the head of es_listeners list (added via dap_list_prepend)
@@ -207,17 +208,17 @@ int dap_net_server_listen_addr_add_with_callback(dap_server_t *a_server,
     while (l_iter) {
         l_listener = (dap_events_socket_t *)l_iter->data;
         if (l_listener) {
-            log_it(L_DEBUG, "Found listener socket: addr='%s', port=%u, socket=%"DAP_FORMAT_SOCKET, 
+            debug_if(s_debug_more, L_DEBUG, "Found listener socket: addr='%s', port=%u, socket=%"DAP_FORMAT_SOCKET, 
                    l_listener->listener_addr_str, l_listener->listener_port, l_listener->socket);
             if (strcmp(l_listener->listener_addr_str, a_addr) == 0 &&
                 l_listener->listener_port == a_port) {
-                log_it(L_DEBUG, "Matched listener socket for %s:%u", a_addr, a_port);
+                debug_if(s_debug_more, L_DEBUG, "Matched listener socket for %s:%u", a_addr, a_port);
                 // Verify accept_callback is set
                 if (!l_listener->callbacks.accept_callback) {
                     log_it(L_ERROR, "Listener socket for %s:%u has no accept_callback!", a_addr, a_port);
                     return -3;
                 }
-                log_it(L_DEBUG, "Listener socket for %s:%u has accept_callback=%p", 
+                debug_if(s_debug_more, L_DEBUG, "Listener socket for %s:%u has accept_callback=%p", 
                        a_addr, a_port, (void*)l_listener->callbacks.accept_callback);
                 
                 // Setup listener data if callback provided

@@ -17,6 +17,7 @@
 
 #define LOG_TAG "dap_thread_pool"
 
+static bool s_debug_more = false;
 /**
  * @brief Task structure (per-thread queue node)
  */
@@ -194,7 +195,7 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
             uint32_t l_cpu_id = i % (uint32_t)l_ncpus;
             int l_aff_ret = dap_thread_set_affinity(l_w->thread, l_cpu_id);
             if (l_aff_ret == 0)
-                log_it(L_DEBUG, "Worker %u bound to CPU core %u", i, l_cpu_id);
+                debug_if(s_debug_more, L_DEBUG, "Worker %u bound to CPU core %u", i, l_cpu_id);
         }
     }
 
