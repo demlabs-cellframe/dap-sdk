@@ -861,28 +861,30 @@ static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t 
 static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
     if (!a_stream || !a_data || a_size == 0) {
-        log_it(L_ERROR, "Invalid parameters");
+        log_it(L_ERROR, "HTTP trans write: invalid parameters (stream=%p data=%p size=%zu)",
+               (void*)a_stream, a_data, a_size);
         return -1;
     }
-    
-    // HTTP streaming is server→client only (via long-polled GET /stream).
-    // Client→server data goes through separate POST requests, not via trans write.
-    // For server-side (echo), we write through the HTTP response esocket.
+
     if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
         log_it(L_WARNING, "HTTP trans write: no esocket available");
         return -1;
     }
-    
+
     dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
-    
-    // Only write if this is the server-side stream (has HTTP proc infrastructure)
+
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans write: size=%zu esocket=%p fd=%d _inheritor=%p buf_out_size=%zu",
+             a_size, (void*)l_es, l_es->socket, (void*)l_es->_inheritor, l_es->buf_out_size);
+
     if (l_es->_inheritor) {
-        return dap_events_socket_write_unsafe(l_es, a_data, a_size);
+        size_t l_ret = dap_events_socket_write_unsafe(l_es, a_data, a_size);
+        debug_if(s_debug_more, L_DEBUG, "HTTP trans write: wrote %zu bytes to esocket buf_out (now %zu)",
+                 l_ret, l_es->buf_out_size);
+        return (ssize_t)l_ret;
     }
-    
-    // Client-side: data should be sent via POST request, not raw write
-    debug_if(g_debug_reactor, L_DEBUG, "HTTP trans write: client-side write not supported via trans_write");
-    return (ssize_t)a_size;  // Pretend success - data will be sent via POST
+
+    log_it(L_WARNING, "HTTP trans write: _inheritor is NULL, data dropped! size=%zu", a_size);
+    return (ssize_t)a_size;
 }
 
 /**

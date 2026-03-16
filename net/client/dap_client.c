@@ -51,6 +51,7 @@ int dap_client_init()
         extern dap_config_t *g_config;
         if (g_config)
             s_debug_more = dap_config_get_item_bool_default(g_config, "dap_client", "debug_more", false);
+        log_it(L_INFO, "DAP client debug_more=%d (g_config=%p)", s_debug_more, (void*)g_config);
 
         dap_http_client_init();
         err = dap_client_http_init();
@@ -133,12 +134,21 @@ ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint
                                  void *a_data, size_t a_data_size)
 {
     if (!a_client || !a_client->active_channels || !strchr(a_client->active_channels, a_ch_id)) {
-        log_it(L_ERROR, "Invalid arguments for dap_client_write_unsafe");
+        log_it(L_ERROR, "dap_client_write_unsafe: invalid args client=%p channels=%s ch_id='%c'(0x%02x)",
+               (void*)a_client, a_client ? a_client->active_channels : "NULL", a_ch_id, (unsigned)a_ch_id);
         return -1;
     }
     dap_stream_ch_t *l_ch = dap_client_get_stream_ch_unsafe(a_client, a_ch_id);
-    if (l_ch)
-        return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
+    if (l_ch) {
+        debug_if(s_debug_more, L_DEBUG, "dap_client_write_unsafe: ch='%c' type=0x%02x size=%zu ch=%p stream=%p",
+                 a_ch_id, a_type, a_data_size, (void*)l_ch, (void*)l_ch->stream);
+        ssize_t l_ret = dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
+        debug_if(s_debug_more, L_DEBUG, "dap_client_write_unsafe: wrote %zd bytes", l_ret);
+        return l_ret;
+    }
+
+    log_it(L_WARNING, "dap_client_write_unsafe: channel '%c' not found, connect_on_demand=%d",
+           a_ch_id, a_client->connect_on_demand);
 
     if (a_client->connect_on_demand) {
         dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
@@ -149,7 +159,7 @@ ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint
 
         if (a_client->stage_target == STAGE_STREAM_STREAMING &&
             l_fsm->stage_status == STAGE_STATUS_IN_PROGRESS)
-            return 0; // Already in progress
+            return 0;
 
         a_client->stage_target = STAGE_STREAM_STREAMING;
         dap_client_fsm_stage_transaction_begin(l_fsm, STAGE_BEGIN, dap_client_fsm_advance);
@@ -169,6 +179,8 @@ struct dap_client_write_args {
 static void s_client_write_on_worker(void *a_arg)
 {
     struct dap_client_write_args *l_args = a_arg;
+    debug_if(s_debug_more, L_DEBUG, "s_client_write_on_worker: ch='%c' type=0x%02x size=%zu client=%p",
+             l_args->ch_id, l_args->type, l_args->data_size, (void*)l_args->client);
     dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
     DAP_DELETE(a_arg);
 }
@@ -382,8 +394,18 @@ dap_stream_worker_t *dap_client_get_stream_worker(dap_client_t *a_client)
 dap_stream_ch_t *dap_client_get_stream_ch_unsafe(dap_client_t *a_client, uint8_t a_ch_id)
 {
     dap_client_esocket_t *l_es = a_client ? DAP_CLIENT_ESOCKET(a_client) : NULL;
-    if (l_es && l_es->stream && l_es->stream_es)
-        return dap_stream_ch_by_id_unsafe(l_es->stream, a_ch_id);
+    if (l_es && l_es->stream && l_es->stream_es) {
+        dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_es->stream, a_ch_id);
+        debug_if(s_debug_more && !l_ch, L_DEBUG,
+                 "get_stream_ch_unsafe: ch '%c' (0x%02x) not found in stream %p, ch_count=%zu",
+                 a_ch_id, (unsigned)a_ch_id, (void *)l_es->stream, l_es->stream->channel_count);
+        return l_ch;
+    }
+    debug_if(s_debug_more, L_DEBUG,
+             "get_stream_ch_unsafe: client %p — es=%p stream=%p stream_es=%p",
+             (void *)a_client, (void *)l_es,
+             l_es ? (void *)l_es->stream : NULL,
+             l_es ? (void *)l_es->stream_es : NULL);
     return NULL;
 }
 
