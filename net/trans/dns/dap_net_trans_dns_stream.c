@@ -53,6 +53,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_stream_trans_dns"
 
+static bool s_debug_more = false;
 // DNS Trans Protocol Version
 #define DAP_STREAM_DNS_VERSION 1
 
@@ -404,7 +405,7 @@ static int s_dns_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream
     
     // DNS is connectionless, so "accept" creates a new stream for DNS query source
     // Stream is created by server layer and associated with socket
-    log_it(L_DEBUG, "DNS tunnel trans accept");
+    debug_if(s_debug_more, L_DEBUG, "DNS tunnel trans accept");
     return 0;
 }
 
@@ -477,7 +478,7 @@ static int s_dns_handshake_process(dap_stream_t *a_stream,
         return -1;
     }
 
-    log_it(L_DEBUG, "DNS handshake process: %zu bytes (delegated to dap_stream_handshake)", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "DNS handshake process: %zu bytes (delegated to dap_stream_handshake)", a_data_size);
 
     // The handshake data is raw alice_pub_key sent by the client.
     // On the server, this is processed by dap_stream_handshake module.
@@ -530,7 +531,7 @@ static int s_dns_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         return -1;
     }
 
-    log_it(L_DEBUG, "DNS session start: session_id=%u", a_session_id);
+    debug_if(s_debug_more, L_DEBUG, "DNS session start: session_id=%u", a_session_id);
     
     // Call callback immediately (DNS session ready, similar to UDP)
     if (a_callback) {
@@ -622,7 +623,7 @@ static void s_dns_close(dap_stream_t *a_stream)
         }
     }
 
-    log_it(L_DEBUG, "DNS tunnel trans closed");
+    debug_if(s_debug_more, L_DEBUG, "DNS tunnel trans closed");
 }
 
 /**
@@ -691,7 +692,7 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "DNS socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    debug_if(s_debug_more, L_DEBUG, "DNS socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 

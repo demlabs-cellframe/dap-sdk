@@ -42,6 +42,7 @@
 
 #define LOG_TAG "dap_worker"
 
+static bool s_debug_more = false;
 typedef struct dap_worker_msg_callback {
     dap_worker_callback_t callback; // Callback for specific client operations
     void * arg;
@@ -93,7 +94,7 @@ static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
     (void) a_flags;
     a_es->context->signal_exit = true;
     if (g_debug_reactor)
-        log_it(L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
+        debug_if(s_debug_more, L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
 }
 
 /**
@@ -320,7 +321,7 @@ static int s_queue_es_add(dap_worker_t *a_worker, dap_events_socket_t *a_esocket
     if (!l_es_new->is_initalized && l_es_new->callbacks.new_callback)
         l_es_new->callbacks.new_callback(l_es_new, NULL);
 
-    //log_it(L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
+    //debug_if(s_debug_more, L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
     if (l_es_new->callbacks.worker_assign_callback)
         l_es_new->callbacks.worker_assign_callback(l_es_new, a_worker);
 
@@ -335,7 +336,7 @@ static int s_queue_es_add(dap_worker_t *a_worker, dap_events_socket_t *a_esocket
 static void s_queue_add_es_callback(void *a_arg) {
     dap_events_socket_t *l_es = (dap_events_socket_t *)a_arg;
     if (l_es && l_es->worker) {
-        log_it(L_INFO, "Worker #%u: dequeued new esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" type %d",
+        debug_if(s_debug_more, L_INFO, "Worker #%u: dequeued new esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" type %d",
                l_es->worker->id, l_es->socket, l_es->uuid, l_es->type);
         s_queue_es_add(l_es->worker, l_es);
     } else {
@@ -511,7 +512,7 @@ static void s_queue_callback_callback(void *a_arg)
     assert(l_msg->callback);
 
     dap_worker_t *l_w = dap_worker_get_current();
-    log_it(L_INFO, "Worker #%u: processing callback %p arg=%p",
+    debug_if(s_debug_more, L_INFO, "Worker #%u: processing callback %p arg=%p",
            l_w ? l_w->id : 999, l_msg->callback, l_msg->arg);
     l_msg->callback(l_msg->arg);
     
@@ -595,7 +596,7 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
     } else {
         // Cross-worker - push to queue
         a_events_socket->worker = a_worker; // Set worker before pushing
-        log_it(L_INFO, "Cross-worker push: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" → worker #%u",
+        debug_if(s_debug_more, L_INFO, "Cross-worker push: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" → worker #%u",
                a_events_socket->socket, a_events_socket->uuid, a_worker->id);
         if (!dap_context_queue_push(a_worker->queue_es_new, a_events_socket)) {
             l_ret = -1;
@@ -677,7 +678,7 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
         log_it(L_ERROR, "Failed to push callback to worker #%u queue (queue full)", a_worker->id);
         DAP_DELETE(l_msg);
     } else {
-        log_it(L_INFO, "Pushed callback %p to worker #%u queue_callback (eventfd=%d)",
+        debug_if(s_debug_more, L_INFO, "Pushed callback %p to worker #%u queue_callback (eventfd=%d)",
                a_callback, a_worker->id,
                a_worker->queue_callback && a_worker->queue_callback->event_socket
                    ? a_worker->queue_callback->event_socket->fd : -1);

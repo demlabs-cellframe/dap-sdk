@@ -27,6 +27,7 @@
 
 #define LOG_TAG "dap_io_flow_win_rio"
 
+static bool s_debug_more = false;
 /**
  * @brief Check if RIO is available
  */
@@ -79,8 +80,8 @@ int dap_io_flow_win_rio_configure(int socket_fd)
     // Optional: Set SO_EXCLUSIVEADDRUSE = FALSE to allow port sharing
     // (Already implicit with SO_REUSEADDR on Windows for UDP)
     
-    log_it(L_DEBUG, "✅ Windows socket configured for multi-socket load balancing");
-    log_it(L_DEBUG, "Distribution: Application-level hash + IOCP");
+    debug_if(s_debug_more, L_DEBUG, "✅ Windows socket configured for multi-socket load balancing");
+    debug_if(s_debug_more, L_DEBUG, "Distribution: Application-level hash + IOCP");
     
     // Note: RIO registration happens later when socket is associated with
     // completion queue in dap_events/dap_worker infrastructure

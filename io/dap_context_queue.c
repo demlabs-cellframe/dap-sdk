@@ -30,6 +30,7 @@
 
 #define LOG_TAG "dap_context_queue"
 
+static bool s_debug_more = false;
 // Default ring buffer capacity (power of 2)
 // INCREASED for high-throughput scenarios with cross-worker packet forwarding
 #define DAP_CONTEXT_QUEUE_DEFAULT_CAPACITY 65536  // Was 16384, now 64K
@@ -163,7 +164,7 @@ bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
         log_it(L_WARNING, "Failed to signal event socket fd=%d context=%p: error %d",
                a_queue->event_socket ? a_queue->event_socket->fd : -1, a_queue->context, l_ret);
     } else {
-        log_it(L_DEBUG, "Queue push OK: signaled eventfd=%d context=%p",
+        debug_if(s_debug_more, L_DEBUG, "Queue push OK: signaled eventfd=%d context=%p",
                a_queue->event_socket ? a_queue->event_socket->fd : -1, a_queue->context);
     }
     

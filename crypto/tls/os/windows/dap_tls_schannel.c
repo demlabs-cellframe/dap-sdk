@@ -32,6 +32,7 @@
 
 #define LOG_TAG "dap_tls_schannel"
 
+static bool s_debug_more = false;
 #define SCHAN_RECV_BUF_INIT  (16 * 1024)
 #define SCHAN_SEND_BUF_MAX   (16 * 1024)
 
@@ -223,7 +224,7 @@ int dap_tls_context_set_verify(dap_tls_context_t *a_ctx, bool a_verify)
 int dap_tls_context_set_ciphers(dap_tls_context_t *a_ctx, const char *a_ciphers)
 {
     UNUSED(a_ctx); UNUSED(a_ciphers);
-    log_it(L_DEBUG, "SChannel uses system cipher configuration via registry/policy");
+    debug_if(s_debug_more, L_DEBUG, "SChannel uses system cipher configuration via registry/policy");
     return 0;
 }
 
@@ -231,7 +232,7 @@ int dap_tls_context_load_ca(dap_tls_context_t *a_ctx,
                              const char *a_ca_file, const char *a_ca_dir)
 {
     UNUSED(a_ctx); UNUSED(a_ca_file); UNUSED(a_ca_dir);
-    log_it(L_DEBUG, "SChannel uses system certificate store for CA verification");
+    debug_if(s_debug_more, L_DEBUG, "SChannel uses system certificate store for CA verification");
     return 0;
 }
 
@@ -239,14 +240,14 @@ int dap_tls_context_set_alpn(dap_tls_context_t *a_ctx,
                               const uint8_t *a_protos, uint32_t a_protos_len)
 {
     UNUSED(a_ctx); UNUSED(a_protos); UNUSED(a_protos_len);
-    log_it(L_DEBUG, "ALPN for SChannel is configured via InitializeSecurityContext");
+    debug_if(s_debug_more, L_DEBUG, "ALPN for SChannel is configured via InitializeSecurityContext");
     return 0;
 }
 
 int dap_tls_context_set_min_version(dap_tls_context_t *a_ctx, uint16_t a_version)
 {
     UNUSED(a_ctx); UNUSED(a_version);
-    log_it(L_DEBUG, "TLS version negotiation handled by SChannel via SCH_CREDENTIALS");
+    debug_if(s_debug_more, L_DEBUG, "TLS version negotiation handled by SChannel via SCH_CREDENTIALS");
     return 0;
 }
 

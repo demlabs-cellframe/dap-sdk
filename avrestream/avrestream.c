@@ -31,6 +31,7 @@
 
 #define LOG_TAG "avrestream"
 
+static bool s_debug_more = false;
 #ifdef  DAP_SYS_DEBUG
     #ifndef DAP_VERSION
         #define DAP_VERSION "0.9-15"

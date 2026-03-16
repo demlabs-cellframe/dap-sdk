@@ -8,6 +8,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+void dap_enc_salsa2012_set_debug(bool a_debug_more);
 void dap_enc_salsa2012_key_delete(struct dap_enc_key *a_key);
 void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size, size_t key_size);

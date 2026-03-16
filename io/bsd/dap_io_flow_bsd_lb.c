@@ -22,6 +22,7 @@
 
 #define LOG_TAG "dap_io_flow_bsd_lb"
 
+static bool s_debug_more = false;
 // SO_REUSEPORT_LB constant (FreeBSD 12.0+)
 #ifndef SO_REUSEPORT_LB
 #define SO_REUSEPORT_LB 0x00010000
@@ -62,7 +63,7 @@ int dap_io_flow_bsd_lb_enable(int socket_fd)
         return -1;
     }
     
-    log_it(L_DEBUG, "✅ SO_REUSEPORT_LB enabled on socket %d", socket_fd);
+    debug_if(s_debug_more, L_DEBUG, "✅ SO_REUSEPORT_LB enabled on socket %d", socket_fd);
     return 0;
 #else
     log_it(L_ERROR, "SO_REUSEPORT_LB not supported on this BSD variant");

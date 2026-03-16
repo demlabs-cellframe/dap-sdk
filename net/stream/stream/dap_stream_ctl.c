@@ -54,6 +54,7 @@
 
 #define LOG_TAG "dap_stream_ctl"
 
+static bool s_debug_more = false;
 const char* connection_type_str[] =
 {
         [STEAM_SESSION_HTTP] = "http",
@@ -130,24 +131,24 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
             char *l_subtok_value = strchr(l_tok, '=');
             if (l_subtok_value && l_subtok_value != l_subtok_name) {
                 *l_subtok_value++ = '\0';
-                //log_it(L_DEBUG, "tok = %s value =%s",l_subtok_name,l_subtok_value);
+                //debug_if(s_debug_more, L_DEBUG, "tok = %s value =%s",l_subtok_name,l_subtok_value);
                 if (strcmp(l_subtok_name,"channels")==0 ){
                     strncpy(l_channels_str,l_subtok_value,sizeof (l_channels_str)-1);
-                    //log_it(L_DEBUG,"Param: channels=%s",l_channels_str);
+                    //debug_if(s_debug_more, L_DEBUG,"Param: channels=%s",l_channels_str);
                 }else if(strcmp(l_subtok_name,"enc_type")==0){
                     l_enc_type = atoi(l_subtok_value);
-                    //log_it(L_DEBUG,"Param: enc_type=%s",dap_enc_get_type_name(l_enc_type));
+                    //debug_if(s_debug_more, L_DEBUG,"Param: enc_type=%s",dap_enc_get_type_name(l_enc_type));
                     l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_key_size")==0){
                     // TODO impliment enc_key_size influence
                     l_enc_key_size = (size_t) atoi(l_subtok_value);
                     if (l_enc_key_size > l_dg->request_size )
                         l_enc_key_size = 32;
-                    //log_it(L_DEBUG,"Param: enc_key_size=%d", l_enc_key_size);
+                    //debug_if(s_debug_more, L_DEBUG,"Param: enc_key_size=%d", l_enc_key_size);
                     l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_headers")==0){
                     l_enc_headers = atoi(l_subtok_value);
-                    //log_it(L_DEBUG,"Param: enc_headers=%d",l_enc_headers);
+                    //debug_if(s_debug_more, L_DEBUG,"Param: enc_headers=%d",l_enc_headers);
                 }
             }
             l_tok = strtok_r(NULL, ",", &l_tok_tmp);
@@ -158,7 +159,7 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
             l_enc_type = DAP_ENC_KEY_TYPE_OAES;
             l_new_session = true;
         }else
-            log_it(L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
+            debug_if(s_debug_more, L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
 
         dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
         dap_enc_ks_key_t *l_ks_key = NULL;

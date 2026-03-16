@@ -55,6 +55,7 @@ bool dap_http_folder_data_write( dap_http_client_t *cl_ht, void *arg );
 
 #define LOG_TAG "dap_http_folder"
 
+static bool s_debug_more = false;
 int dap_http_folder_init( )
 {
     return 0;
@@ -159,7 +160,7 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
 
   // Produce local path for file to open
   snprintf(cl_ht_file->local_path,sizeof(cl_ht_file->local_path),"%s/%s", up_folder->local_path, cl_ht->url_path );
-  log_it(L_DEBUG, "Check %s file", cl_ht_file->local_path);
+  debug_if(s_debug_more, L_DEBUG, "Check %s file", cl_ht_file->local_path);
 
   dap_file_stat_t file_stat;
   if (dap_file_stat(cl_ht_file->local_path, &file_stat) != 0) {
@@ -233,7 +234,7 @@ bool dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
     dap_events_socket_set_writable_unsafe(cl_ht->esocket, true);
 
     if(feof(cl_ht_file->fd)!=0){
-        log_it(L_INFO, "All the file %s is sent out",cl_ht_file->local_path);
+        debug_if(s_debug_more, L_INFO, "All the file %s is sent out",cl_ht_file->local_path);
         //strncat(cl_ht->client->buf_out+cl_ht->client->buf_out_size,"\r\n",sizeof(cl_ht->client->buf_out));
         fclose(cl_ht_file->fd);
         dap_events_socket_set_writable_unsafe(cl_ht->esocket,false);

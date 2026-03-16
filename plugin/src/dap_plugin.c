@@ -37,6 +37,7 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
 
 #define LOG_TAG "dap_plugin"
 
+static bool s_debug_more = false;
 static char *s_plugins_root_path = NULL;
 
 struct plugin_type{

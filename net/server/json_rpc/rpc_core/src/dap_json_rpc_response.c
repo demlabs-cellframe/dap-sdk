@@ -2,6 +2,8 @@
 #include "dap_cli_server.h"
 
 #define LOG_TAG "dap_json_rpc_response"
+
+static bool s_debug_more = false;
 #define INDENTATION_LEVEL "    "
 
 dap_json_rpc_response_t *dap_json_rpc_response_init()
@@ -142,7 +144,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     if (json_object_object_get_ex(jobj, "version", &version_obj))
         response->version = json_object_get_int64(version_obj);
     else {
-        log_it(L_DEBUG, "Can't find response version, apply version 1");
+        debug_if(s_debug_more, L_DEBUG, "Can't find response version, apply version 1");
         response->version = 1;
     }
 

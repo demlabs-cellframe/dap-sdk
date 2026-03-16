@@ -414,7 +414,7 @@ static int s_http_trans_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
     s_http_trans = a_trans;
     
     UNUSED(a_config); // Config not used in legacy HTTP trans
-    log_it(L_DEBUG, "HTTP trans initialized");
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans initialized");
     return 0;
 }
 
@@ -447,7 +447,7 @@ static void s_http_trans_deinit(dap_net_trans_t *a_trans)
         s_http_trans = NULL;
     }
     
-    log_it(L_DEBUG, "HTTP trans deinitialized");
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans deinitialized");
 }
 
 /**
@@ -522,7 +522,7 @@ static int s_http_trans_accept(dap_events_socket_t *a_listener, dap_stream_t **a
     // HTTP server handles accept internally via dap_http_server
     // Stream is created by HTTP layer when connection is accepted
     // This function is called after stream is already created
-    log_it(L_DEBUG, "HTTP trans connection accepted");
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans connection accepted");
     
     // Stream is created by HTTP layer, we just validate it
     return 0;
@@ -598,7 +598,7 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
                  a_params->enc_type, a_params->pkey_exchange_type, a_params->pkey_exchange_size,
                  a_params->block_key_size, a_params->protocol_version, l_sign_count);
     
-    log_it(L_DEBUG, "HTTP handshake init: sending POST to %s:%u%s", 
+    debug_if(s_debug_more, L_DEBUG, "HTTP handshake init: sending POST to %s:%u%s", 
            l_client->link_info.uplink_addr, l_client->link_info.uplink_port, l_enc_init_url);
     
     // Store callback ctx dynamically
@@ -641,7 +641,7 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
         return -6;
     }
     
-    log_it(L_DEBUG, "HTTP handshake init request sent successfully");
+    debug_if(s_debug_more, L_DEBUG, "HTTP handshake init request sent successfully");
     return 0;
 }
 
@@ -659,7 +659,7 @@ static int s_http_trans_handshake_process(dap_stream_t *a_stream,
     
     // HTTP handshake processing is done by enc_server
     // This function is called on server side to process client handshake request
-    log_it(L_DEBUG, "HTTP trans handshake process: %zu bytes", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans handshake process: %zu bytes", a_data_size);
     
     // Processing is done by enc_server infrastructure
     // Response is generated there
@@ -716,7 +716,7 @@ static int s_http_trans_session_create(dap_stream_t *a_stream,
                                      a_params->enc_key_size, a_params->enc_headers ? 1 : 0);
     }
     
-    log_it(L_DEBUG, "HTTP session create: sending POST to %s:%u%s/%s", 
+    debug_if(s_debug_more, L_DEBUG, "HTTP session create: sending POST to %s:%u%s/%s", 
            l_client->link_info.uplink_addr, l_client->link_info.uplink_port, 
            DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
     
@@ -759,7 +759,7 @@ static int s_http_trans_session_create(dap_stream_t *a_stream,
     
     DAP_DELETE(l_suburl);
     
-    log_it(L_DEBUG, "HTTP session create request sent successfully");
+    debug_if(s_debug_more, L_DEBUG, "HTTP session create request sent successfully");
     return 0;
 }
 
@@ -777,7 +777,7 @@ static int s_http_trans_session_start(dap_stream_t *a_stream,
     
     dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
     
-    log_it(L_DEBUG, "HTTP trans session start: session_id=%u", a_session_id);
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans session start: session_id=%u", a_session_id);
     
     // Construct HTTP GET request for streaming
     char l_full_path[2048];
@@ -838,7 +838,7 @@ static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t 
         
         if (l_headers_end) {
             size_t l_headers_size = (l_headers_end - (char*)l_es->buf_in) + 4;
-            log_it(L_DEBUG, "Skipping HTTP headers (%zu bytes)", l_headers_size);
+            debug_if(s_debug_more, L_DEBUG, "Skipping HTTP headers (%zu bytes)", l_headers_size);
 
             size_t l_remaining = l_es->buf_in_size - l_headers_size;
             size_t l_stream_processed = 0;
@@ -1293,7 +1293,7 @@ static void s_http_trans_close(dap_stream_t *a_stream)
         return;
     }
 
-    log_it(L_DEBUG, "HTTP trans connection closed");
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans connection closed");
 }
 
 /**
@@ -1375,7 +1375,7 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "HTTP TCP socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    debug_if(s_debug_more, L_DEBUG, "HTTP TCP socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 
@@ -1424,7 +1424,7 @@ static const dap_net_trans_ops_t s_http_trans_ops = {
  */
 int dap_net_trans_http_stream_register(void)
 {
-    log_it(L_DEBUG, "dap_net_trans_http_stream_register: Starting HTTP trans registration");
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_http_stream_register: Starting HTTP trans registration");
     // Initialize HTTP server module first (registers server operations)
     int l_ret = dap_net_trans_http_server_init();
     if (l_ret != 0) {
@@ -1432,7 +1432,7 @@ int dap_net_trans_http_stream_register(void)
         return l_ret;
     }
     
-    log_it(L_DEBUG, "dap_net_trans_http_stream_register: HTTP server module initialized, registering trans");
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_http_stream_register: HTTP server module initialized, registering trans");
     
     // Register HTTP trans operations
     int l_ret_trans = dap_net_trans_register("HTTP", 
@@ -1455,7 +1455,7 @@ int dap_net_trans_http_stream_register(void)
  */
 int dap_net_trans_http_stream_unregister(void)
 {
-    log_it(L_DEBUG, "dap_net_trans_http_stream_unregister: Starting HTTP trans unregistration");
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_http_stream_unregister: Starting HTTP trans unregistration");
     
     int l_ret = dap_net_trans_unregister(DAP_NET_TRANS_HTTP);
     if (l_ret < 0) {
@@ -1464,7 +1464,7 @@ int dap_net_trans_http_stream_unregister(void)
     }
     
     // Deinitialize HTTP server module (unregisters server operations)
-    log_it(L_DEBUG, "dap_net_trans_http_stream_unregister: Deinitializing HTTP server module");
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_http_stream_unregister: Deinitializing HTTP server module");
     dap_net_trans_http_server_deinit();
     
     log_it(L_NOTICE, "HTTP trans adapter unregistered successfully");
@@ -1517,7 +1517,7 @@ int dap_stream_trans_http_parse_query_params(
     if (l_block_size > 0) a_params->block_key_size = l_block_size;
     if (l_protocol_version > 0) a_params->protocol_version = l_protocol_version;
     
-    log_it(L_DEBUG, "Parsed query params: enc=%d, pkey=%d, pkey_size=%zu, block=%zu, ver=%d",
+    debug_if(s_debug_more, L_DEBUG, "Parsed query params: enc=%d, pkey=%d, pkey_size=%zu, block=%zu, ver=%d",
            a_params->enc_type, a_params->pkey_exchange_type, 
            a_params->pkey_exchange_size, a_params->block_key_size,
            a_params->protocol_version);
@@ -1712,7 +1712,7 @@ int dap_stream_trans_http_translate_request_to_http(
     }
     
     *a_size = l_actual_size;
-    log_it(L_DEBUG, "Translated TLV to HTTP: %zu bytes → %zu base64 bytes", 
+    debug_if(s_debug_more, L_DEBUG, "Translated TLV to HTTP: %zu bytes → %zu base64 bytes", 
            l_tlv_size, l_actual_size);
     return 0;
 }
@@ -1763,7 +1763,7 @@ int dap_stream_trans_http_translate_response_from_http(
     l_response->bob_pub_key = NULL;
     dap_stream_handshake_response_free(l_response);
     
-    log_it(L_DEBUG, "Translated HTTP to TLV: %zu base64 bytes → %zu bytes", 
+    debug_if(s_debug_more, L_DEBUG, "Translated HTTP to TLV: %zu base64 bytes → %zu bytes", 
            a_size, l_decoded_size);
     return 0;
 }

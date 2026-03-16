@@ -451,7 +451,7 @@ static int s_client_flow_ctrl_packet_send_cb(
     static uint64_t s_send_count = 0;
     s_send_count++;
     if (s_send_count % 50 == 0 || s_send_count < 10) {
-        log_it(L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%lu)", l_written, s_send_count);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%lu)", l_written, s_send_count);
     }
     
     return 0;
@@ -654,7 +654,7 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
             log_it(L_ERROR, "Failed to allocate base flow for client UDP");
             return -2;
         }
-        log_it(L_DEBUG, "CLIENT: Created base flow for Flow Control");
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: Created base flow for Flow Control");
     }
     
     // Initialize base flow fields (for Flow Control)
@@ -726,7 +726,7 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
     
     // Check if handshake completed or context is being destroyed
     if (l_udp_ctx->handshake_complete) {
-        log_it(L_DEBUG, "HANDSHAKE RETRANS: handshake completed, stopping timer");
+        debug_if(s_debug_more, L_DEBUG, "HANDSHAKE RETRANS: handshake completed, stopping timer");
         // Clear saved payload
         if (l_udp_ctx->handshake_payload) {
             DAP_DELETE(l_udp_ctx->handshake_payload);
@@ -808,7 +808,7 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
         return true;  // Keep timer running, try again
     }
     
-    log_it(L_DEBUG, "HANDSHAKE RETRANS: sent %zd bytes (attempt %u)",
+    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE RETRANS: sent %zd bytes (attempt %u)",
            l_sent, l_udp_ctx->handshake_retries);
     
     return true;  // Keep timer running
@@ -833,7 +833,7 @@ static void s_cancel_handshake_timer(dap_net_trans_udp_ctx_t *a_udp_ctx)
     if (a_udp_ctx->handshake_timer) {
         dap_timerfd_delete_unsafe(a_udp_ctx->handshake_timer);
         a_udp_ctx->handshake_timer = NULL;
-        log_it(L_DEBUG, "HANDSHAKE: retransmission timer cancelled");
+        debug_if(s_debug_more, L_DEBUG, "HANDSHAKE: retransmission timer cancelled");
     }
     
     // Free saved payload
@@ -1351,7 +1351,7 @@ static int s_udp_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream
     
     // UDP is connectionless, so "accept" creates a new stream for datagram source
     // Stream is created by server layer and associated with socket
-    log_it(L_DEBUG, "UDP trans accept");
+    debug_if(s_debug_more, L_DEBUG, "UDP trans accept");
     return 0;
 }
 
@@ -1514,7 +1514,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         return -1;
     }
 
-    log_it(L_DEBUG, "UDP handshake response: processing %zu bytes", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake response: processing %zu bytes", a_data_size);
     
     // Validate size: Bob's ciphertext (768 bytes) + session_id (8 bytes) = 776 bytes
     const size_t EXPECTED_SIZE = CRYPTO_CIPHERTEXTBYTES + sizeof(uint64_t);
@@ -1564,7 +1564,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         for (int i = 0; i < 16; i++) {
             sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_udp_ctx->alice_key->pub_key_data)[i]);
         }
-        log_it(L_DEBUG, "CLIENT sent Alice public key (first 16 bytes): %s", l_hex);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT sent Alice public key (first 16 bytes): %s", l_hex);
     }
     
     // DEBUG: Log received ciphertext (first 16 bytes)
@@ -1573,11 +1573,11 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         for (int i = 0; i < 16; i++) {
             sprintf(l_hex + i*3, "%02x ", ((uint8_t*)a_data)[i]);
         }
-        log_it(L_DEBUG, "CLIENT received ciphertext from server (first 16 bytes): %s", l_hex);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT received ciphertext from server (first 16 bytes): %s", l_hex);
     }
     
     dap_enc_key_t *l_alice_key = l_udp_ctx->alice_key;
-    log_it(L_DEBUG, "UDP handshake response: alice_key=%p, gen_alice_shared_key=%p", 
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake response: alice_key=%p, gen_alice_shared_key=%p", 
            l_alice_key, l_alice_key->gen_alice_shared_key);
     
     // UDP uses BINARY protocol, not JSON!
@@ -1665,7 +1665,7 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
         return -1;
     }
 
-    log_it(L_DEBUG, "UDP handshake process: %zu bytes", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake process: %zu bytes", a_data_size);
     
     // DEBUG: Log Alice's public key (first 16 bytes)
     if (a_data && a_data_size >= 16) {
@@ -1719,7 +1719,7 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
             for (int i = 0; i < 16; i++) {
                 sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_bob_pub)[i]);
             }
-            log_it(L_DEBUG, "SERVER sending ciphertext to Alice (first 16 bytes): %s", l_hex);
+            debug_if(s_debug_more, L_DEBUG, "SERVER sending ciphertext to Alice (first 16 bytes): %s", l_hex);
         }
         
         // DEBUG: Log first 16 bytes of shared secret
@@ -1729,7 +1729,7 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
             for (int i = 0; i < 16; i++) {
                 sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_shared_key)[i]);
             }
-            log_it(L_DEBUG, "SERVER shared secret (first 16 bytes): %s", l_hex);
+            debug_if(s_debug_more, L_DEBUG, "SERVER shared secret (first 16 bytes): %s", l_hex);
         }
         
         // Create HANDSHAKE key from shared secret using KDF (NOT session key yet!)
@@ -2076,7 +2076,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return -1;
     }
     
-    log_it(L_DEBUG, "UDP_READ: udp_ctx=%p, stream=%p, flow_ctrl=%p", 
+    debug_if(s_debug_more, L_DEBUG, "UDP_READ: udp_ctx=%p, stream=%p, flow_ctrl=%p", 
            l_udp_ctx, a_stream, l_udp_ctx->flow_ctrl);
     
     // TRY DEOBFUSCATE AS HANDSHAKE (size 600-900 bytes)
@@ -2126,7 +2126,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     
     // ENCRYPTED PACKET: Process via Flow Control OR buffer (if FC not ready)
     
-    log_it(L_DEBUG, "CLIENT: udp_ctx=%p, flow_ctrl=%p, fc_creating=%d, buf_in_size=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "CLIENT: udp_ctx=%p, flow_ctrl=%p, fc_creating=%d, buf_in_size=%zu", 
            l_udp_ctx, l_udp_ctx ? l_udp_ctx->flow_ctrl : NULL, l_udp_ctx ? l_udp_ctx->fc_creating : 0,
            l_es->buf_in_size);
     
@@ -2378,7 +2378,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        log_it(L_DEBUG, "UDP write: remote_addr=%s:%u, addr_len=%u",
+        debug_if(s_debug_more, L_DEBUG, "UDP write: remote_addr=%s:%u, addr_len=%u",
                l_addr_str, ntohs(l_sin->sin_port), l_udp_ctx->remote_addr_len);
     } else {
         log_it(L_WARNING, "UDP write: remote_addr has INVALID family: %d",
@@ -2761,7 +2761,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // NO write_callback needed - reactor handles packet_queue automatically!
     l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
     
-    log_it(L_DEBUG, "Created UDP socket %p", l_es);
+    debug_if(s_debug_more, L_DEBUG, "Created UDP socket %p", l_es);
     
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
@@ -2771,7 +2771,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
 
-    log_it(L_DEBUG, "Resolved UDP address: family=%d, size=%zu", l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
+    debug_if(s_debug_more, L_DEBUG, "Resolved UDP address: family=%d, size=%zu", l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
 
     // NOTE: DO NOT connect() for Flow Control scenarios!
     // Flow Control needs bidirectional communication with server's listener port.
@@ -2900,12 +2900,12 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // _inheritor is for client infrastructure ownership, we use callbacks.arg for trans_ctx
     l_es->callbacks.arg = l_ctx;
     
-    log_it(L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
+    debug_if(s_debug_more, L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    debug_if(s_debug_more, L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 

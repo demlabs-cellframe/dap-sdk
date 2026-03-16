@@ -36,6 +36,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_net_trans_http_server"
 
+static bool s_debug_more = false;
 // Trans server operations callbacks
 static void* s_http_server_new(const char *a_server_name)
 {
@@ -73,7 +74,7 @@ static const dap_net_trans_server_ops_t s_http_server_ops = {
  */
 int dap_net_trans_http_server_init(void)
 {
-    log_it(L_DEBUG, "dap_net_trans_http_server_init: Starting HTTP server initialization");
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_http_server_init: Starting HTTP server initialization");
     
     int l_ret = dap_http_init();
     if (l_ret != 0) {
@@ -81,7 +82,7 @@ int dap_net_trans_http_server_init(void)
         return l_ret;
     }
     
-    log_it(L_DEBUG, "dap_net_trans_http_server_init: HTTP module initialized, initializing encryption");
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_http_server_init: HTTP module initialized, initializing encryption");
     
     l_ret = enc_http_init();
     if (l_ret != 0) {
@@ -90,7 +91,7 @@ int dap_net_trans_http_server_init(void)
         return l_ret;
     }
     
-    log_it(L_DEBUG, "dap_net_trans_http_server_init: Encryption module initialized, registering server operations");
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_http_server_init: Encryption module initialized, registering server operations");
     
     // Register trans server operations
     l_ret = dap_net_trans_server_register_ops(DAP_NET_TRANS_HTTP, &s_http_server_ops);
@@ -227,7 +228,7 @@ int dap_net_trans_http_server_start(dap_net_trans_http_server_t *a_http_server,
     // Delete trans ctx (handlers are already registered)
     dap_net_trans_server_ctx_delete(l_ctx);
 
-    log_it(L_DEBUG, "Registered all DAP protocol handlers for HTTP server");
+    debug_if(s_debug_more, L_DEBUG, "Registered all DAP protocol handlers for HTTP server");
 
     // Start listening on all specified address:port pairs using common accept callback
     for (size_t i = 0; i < a_count; i++) {

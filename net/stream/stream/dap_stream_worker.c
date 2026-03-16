@@ -30,6 +30,7 @@
 
 #define LOG_TAG "dap_stream_worker"
 
+static bool s_debug_more = false;
 static void s_ch_io_callback(void * a_msg);
 static void s_ch_send_callback(void *a_msg);
 
@@ -104,7 +105,7 @@ static void s_ch_io_callback(void * a_msg)
     pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
     if (l_msg_ch == NULL) {
         if (l_msg->data_size) {
-            log_it(L_DEBUG, "We got i/o message for client thats now not in list. Lost %zu data", l_msg->data_size);
+            debug_if(s_debug_more, L_DEBUG, "We got i/o message for client thats now not in list. Lost %zu data", l_msg->data_size);
             DAP_DELETE(l_msg->data);
         }
         DAP_DELETE(l_msg);
@@ -137,7 +138,7 @@ static void s_ch_send_callback(void *a_msg)
     // Check if it was removed from the list
     dap_events_socket_t *l_es = dap_context_find(l_context, l_msg->uuid);
     if (!l_es) {
-        log_it(L_DEBUG, "We got i/o message for client thats now not in list");
+        debug_if(s_debug_more, L_DEBUG, "We got i/o message for client thats now not in list");
         goto ret_n_clear;
     }
     dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
@@ -154,7 +155,7 @@ static void s_ch_send_callback(void *a_msg)
     DAP_DEL_Z(l_msg->data);
 ret_n_clear:
     if (l_msg->data) {
-        log_it(L_DEBUG, "Lost %zu data", l_msg->data_size);
+        debug_if(s_debug_more, L_DEBUG, "Lost %zu data", l_msg->data_size);
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);

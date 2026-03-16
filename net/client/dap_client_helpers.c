@@ -33,6 +33,7 @@
 
 #define LOG_TAG "dap_client_helpers"
 
+static bool s_debug_more = false;
 /**
  * @brief Context for channels ready check callback
  */
@@ -125,7 +126,7 @@ bool dap_client_wait_for_stage(dap_client_t *a_client, dap_client_stage_t a_targ
         }
         
         if (l_status == STAGE_STATUS_ERROR) {
-            log_it(L_DEBUG, "Client reached error state at stage %d", l_stage);
+            debug_if(s_debug_more, L_DEBUG, "Client reached error state at stage %d", l_stage);
             return false;
         }
         
@@ -135,7 +136,7 @@ bool dap_client_wait_for_stage(dap_client_t *a_client, dap_client_stage_t a_targ
         l_elapsed += l_poll_interval_ms;
     }
     
-    log_it(L_DEBUG, "Timeout waiting for client stage %d (current: %d)", a_target_stage, dap_client_get_stage(a_client));
+    debug_if(s_debug_more, L_DEBUG, "Timeout waiting for client stage %d (current: %d)", a_target_stage, dap_client_get_stage(a_client));
     return false;
 }
 

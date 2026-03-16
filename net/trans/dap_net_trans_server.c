@@ -37,6 +37,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_net_trans_server"
 
+static bool s_debug_more = false;
 /**
  * @brief Registry entry for trans server operations
  */
@@ -83,7 +84,7 @@ int dap_net_trans_server_register_ops(dap_net_trans_type_t a_trans_type,
     
     log_it(L_INFO, "Registered trans server operations for type %d (registry size: %u)", 
            a_trans_type, HASH_COUNT(s_ops_registry));
-    log_it(L_DEBUG, "Registry after registration: ops->new=%p, ops->start=%p, ops->stop=%p, ops->delete=%p",
+    debug_if(s_debug_more, L_DEBUG, "Registry after registration: ops->new=%p, ops->start=%p, ops->stop=%p, ops->delete=%p",
            (void*)a_ops->new, (void*)a_ops->start, (void*)a_ops->stop, (void*)a_ops->delete);
     return 0;
 }
@@ -98,7 +99,7 @@ void dap_net_trans_server_unregister_ops(dap_net_trans_type_t a_trans_type)
     if (l_entry) {
         HASH_DEL(s_ops_registry, l_entry);
         DAP_DELETE(l_entry);
-        log_it(L_DEBUG, "Unregistered trans server operations for type %d", a_trans_type);
+        debug_if(s_debug_more, L_DEBUG, "Unregistered trans server operations for type %d", a_trans_type);
     }
 }
 
@@ -110,7 +111,7 @@ const dap_net_trans_server_ops_t *dap_net_trans_server_get_ops(dap_net_trans_typ
     dap_net_trans_server_ops_entry_t *l_entry = NULL;
     HASH_FIND_INT(s_ops_registry, &a_trans_type, l_entry);
     if (l_entry) {
-        log_it(L_DEBUG, "Found trans server operations for type %d", a_trans_type);
+        debug_if(s_debug_more, L_DEBUG, "Found trans server operations for type %d", a_trans_type);
         return l_entry->ops;
     }
     log_it(L_ERROR, "Trans server operations NOT FOUND for type %d (registry size: %u)", 
@@ -171,7 +172,7 @@ int dap_net_trans_server_start(dap_net_trans_server_t *a_server,
         return -1;
     }
 
-    log_it(L_DEBUG, "dap_net_trans_server_start: type=%d, count=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_server_start: type=%d, count=%zu", 
              a_server->trans_type, a_count);
 
     // Get operations for this trans type
@@ -181,13 +182,13 @@ int dap_net_trans_server_start(dap_net_trans_server_t *a_server,
         return -1;
     }
 
-    log_it(L_DEBUG, "dap_net_trans_server_start: ops=%p, start=%p, trans_specific=%p", 
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_server_start: ops=%p, start=%p, trans_specific=%p", 
              (void*)l_ops, (void*)l_ops->start, (void*)a_server->trans_specific);
 
     // Start trans-specific server using registered callback
     int l_ret = l_ops->start(a_server->trans_specific, a_cfg_section, a_addrs, a_ports, a_count);
     
-    log_it(L_DEBUG, "dap_net_trans_server_start: start returned %d", l_ret);
+    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_server_start: start returned %d", l_ret);
     
     return l_ret;
 }
@@ -258,11 +259,11 @@ int dap_net_trans_server_register_handlers(dap_net_trans_server_ctx_t *a_ctx)
         return -1;
     }
 
-    log_it(L_DEBUG, "Registering DAP protocol handlers for trans type %d", a_ctx->trans_type);
+    debug_if(s_debug_more, L_DEBUG, "Registering DAP protocol handlers for trans type %d", a_ctx->trans_type);
 
     // Register enc_init handler (encryption handshake)
     enc_http_add_proc(a_ctx->http_server, "/enc_init");
-    log_it(L_DEBUG, "Registered enc_init handler (path: /enc_init)");
+    debug_if(s_debug_more, L_DEBUG, "Registered enc_init handler (path: /enc_init)");
 
     // Register QoS probe handler (legacy HTTP transport)
     dap_net_trans_qos_add_proc(a_ctx->http_server);
@@ -277,7 +278,7 @@ int dap_net_trans_server_register_handlers(dap_net_trans_server_ctx_t *a_ctx)
             log_it(L_WARNING, "Trans '%s' failed to register server handlers: %d", 
                    l_stream_trans->name, l_ret);
         } else {
-            log_it(L_DEBUG, "Registered trans-specific handlers for '%s'", l_stream_trans->name);
+            debug_if(s_debug_more, L_DEBUG, "Registered trans-specific handlers for '%s'", l_stream_trans->name);
         }
     }
 
@@ -288,14 +289,14 @@ int dap_net_trans_server_register_handlers(dap_net_trans_server_ctx_t *a_ctx)
     HASH_FIND_STR(a_ctx->http_server->url_proc, "/stream", l_existing_stream);
     if (!l_existing_stream) {
         dap_stream_add_proc_http(a_ctx->http_server, "/stream");
-        log_it(L_DEBUG, "Registered default stream handler");
+        debug_if(s_debug_more, L_DEBUG, "Registered default stream handler");
     } else {
-        log_it(L_DEBUG, "Stream handler already registered by trans, skipping default");
+        debug_if(s_debug_more, L_DEBUG, "Stream handler already registered by trans, skipping default");
     }
 
     // Register stream_ctl handler (stream session control)
     dap_stream_ctl_add_proc(a_ctx->http_server, "/stream_ctl");
-    log_it(L_DEBUG, "Registered stream_ctl handler");
+    debug_if(s_debug_more, L_DEBUG, "Registered stream_ctl handler");
 
     log_it(L_INFO, "Registered all DAP protocol handlers for trans type %d", a_ctx->trans_type);
     return 0;
@@ -340,7 +341,7 @@ dap_net_trans_server_ctx_t *dap_net_trans_server_ctx_from_http(dap_http_server_t
     l_ctx->server = a_http_server->server;
     l_ctx->trans_specific = a_trans_specific;
 
-    log_it(L_DEBUG, "Created trans server ctx for type %d", a_trans_type);
+    debug_if(s_debug_more, L_DEBUG, "Created trans server ctx for type %d", a_trans_type);
     return l_ctx;
 }
 
@@ -353,7 +354,7 @@ void dap_net_trans_server_ctx_delete(dap_net_trans_server_ctx_t *a_ctx)
         return;
     }
 
-    log_it(L_DEBUG, "Deleting trans server ctx for type %d", a_ctx->trans_type);
+    debug_if(s_debug_more, L_DEBUG, "Deleting trans server ctx for type %d", a_ctx->trans_type);
     DAP_DELETE(a_ctx);
 }
 

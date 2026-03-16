@@ -99,6 +99,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events"
 
+static bool s_debug_more = false;
 #ifdef DAP_EVENTS_CAPS_IOCP
 LPFN_ACCEPTEX             pfnAcceptEx               = NULL;
 LPFN_GETACCEPTEXSOCKADDRS pfnGetAcceptExSockaddrs   = NULL;
@@ -516,7 +517,7 @@ pthread_t       l_tid;
     uint32_t l_valid_threads = 0;
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
         if (!s_workers[i] || !s_workers[i]->context) {
-            log_it(L_DEBUG, "Worker %u or its context is NULL, skipping", i);
+            debug_if(s_debug_more, L_DEBUG, "Worker %u or its context is NULL, skipping", i);
             l_thread_ids[i] = 0; // Mark as invalid
             continue;
         }
@@ -528,7 +529,7 @@ pthread_t       l_tid;
     }
     
     if (l_valid_threads == 0) {
-        log_it(L_DEBUG, "No valid threads to join");
+        debug_if(s_debug_more, L_DEBUG, "No valid threads to join");
         DAP_DELETE(l_thread_ids);
         return 0;
     }
@@ -547,10 +548,10 @@ pthread_t       l_tid;
         int l_join_result = pthread_join(l_thread_ids[i], &ret);
         if (l_join_result == ESRCH) {
             // Thread doesn't exist - already joined or never started
-            log_it(L_DEBUG, "Worker %u thread already joined or doesn't exist", i);
+            debug_if(s_debug_more, L_DEBUG, "Worker %u thread already joined or doesn't exist", i);
         } else if (l_join_result == EINVAL) {
             // Thread is not joinable or already joined
-            log_it(L_DEBUG, "Worker %u thread is not joinable", i);
+            debug_if(s_debug_more, L_DEBUG, "Worker %u thread is not joinable", i);
         } else if (l_join_result != 0) {
             log_it(L_WARNING, "pthread_join failed for worker %u: %d", i, l_join_result);
     }
@@ -567,7 +568,7 @@ pthread_t       l_tid;
 void dap_events_stop_all( )
 {
     if ( !s_workers_init ) {
-        log_it(L_DEBUG, "dap_events_stop_all: Event socket reactor not initialized, skipping");
+        debug_if(s_debug_more, L_DEBUG, "dap_events_stop_all: Event socket reactor not initialized, skipping");
         return;
     }
 
@@ -578,19 +579,19 @@ void dap_events_stop_all( )
 
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
         if (!s_workers[i] || !s_workers[i]->context) {
-            log_it(L_DEBUG, "Worker %u or context is NULL, skipping stop signal", i);
+            debug_if(s_debug_more, L_DEBUG, "Worker %u or context is NULL, skipping stop signal", i);
             continue;
         }
         
         if (!s_workers[i]->context->event_exit) {
-            log_it(L_DEBUG, "Worker %u event_exit socket is NULL, skipping stop signal", i);
+            debug_if(s_debug_more, L_DEBUG, "Worker %u event_exit socket is NULL, skipping stop signal", i);
             continue;
         }
         
         // Check if socket is still valid before signaling
         // After deinitialization, socket may be freed but pointer may still be non-NULL
         if (s_workers[i]->context->event_exit->fd2 < 0) {
-            log_it(L_DEBUG, "Worker %u event_exit socket fd2 is invalid, skipping stop signal", i);
+            debug_if(s_debug_more, L_DEBUG, "Worker %u event_exit socket fd2 is invalid, skipping stop signal", i);
             continue;
         }
         

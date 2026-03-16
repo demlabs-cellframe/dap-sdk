@@ -271,6 +271,8 @@ int s_stream_init_node_addr_cert()
     g_node_addr = dap_stream_node_addr_from_cert(l_addr_cert);
     return 0;
 }
+static bool s_debug_more = false;
+
 /**
  * @brief stream_init Init stream module
  * @return  0 if ok others if not
@@ -690,7 +692,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
             // Future: Implement delayed close using dap_timerfd
             // This would allow pending data to be sent before session close
             // For now, fallback to immediate close
-            log_it(L_DEBUG, "Stream close timeout configured but not yet implemented, closing immediately");
+            debug_if(s_debug_more, L_DEBUG, "Stream close timeout configured but not yet implemented, closing immediately");
         #endif
         dap_stream_session_close_mt(a_stream->session->id);
     }
@@ -787,7 +789,7 @@ static void s_esocket_callback_error(dap_events_socket_t *a_esocket, int a_error
 void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_ARG *a_arg)
 {
     unsigned int l_id=0;
-    //log_it(L_DEBUG,"Prepare data stream");
+    //debug_if(s_debug_more, L_DEBUG,"Prepare data stream");
     if(a_http_client->in_query_string[0]){
         log_it(L_INFO,"Query string [%s]",a_http_client->in_query_string);
         if(sscanf(a_http_client->in_query_string,"session_id=%u",&l_id) == 1 ||
@@ -872,7 +874,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
 static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void *a_arg)
 {
     (void) a_arg;
-    //log_it(L_DEBUG,"s_http_client_headers_write()");
+    //debug_if(s_debug_more, L_DEBUG,"s_http_client_headers_write()");
     if(a_http_client->reply_status_code == Http_Status_OK){
         // Unified: get stream via trans_ctx
         dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_http_client->esocket->_inheritor;
@@ -1000,7 +1002,7 @@ static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
     // This approach works for current use cases but could be optimized in future by:
     // - Maintaining a "dirty" flag for channels with pending writes
     // - Using a priority queue for channels with different QoS requirements
-    //log_it(L_DEBUG,"Process channels data output (%u channels)", l_stream->channel_count );
+    //debug_if(s_debug_more, L_DEBUG,"Process channels data output (%u channels)", l_stream->channel_count );
     for (size_t i = 0; i < l_stream->channel_count; i++) {
         dap_stream_ch_t *l_ch = l_stream->channel[i];
         if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
@@ -1391,7 +1393,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             return true;
         }
         if(s_debug)
-            log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
+            debug_if(s_debug_more, L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
         dap_stream_pkt_hdr_t l_pkt = {};
         l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
         memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
@@ -1399,7 +1401,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         return true;
     }else{
         if(s_debug)
-            log_it(L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
+            debug_if(s_debug_more, L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
         DAP_DELETE(l_es_uuid);
         return false; // Socket is removed from worker
     }
@@ -1422,7 +1424,7 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: searching for duplicate");
     HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
-        log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
+        debug_if(s_debug_more, L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
         return -1;
     }
     debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: no duplicate found, setting primary=true");
