@@ -38,7 +38,7 @@ echo "=========================================="
 export ORIGINAL_TYPES_DATA="void|void
 int|int"
 
-gawk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
+awk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
 
 # Check that void macro is generated
 if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_DISPATCH_void" "${TEST_OUTPUT}"; then
@@ -78,7 +78,7 @@ echo "=========================================="
 export ORIGINAL_TYPES_DATA="dap_list_t_STAR|dap_list_t*
 int|int"
 
-gawk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
+awk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
 
 # Check that normalized macro is generated
 if ! grep -q "_DAP_MOCK_WRAPPER_CUSTOM_DISPATCH_dap_list_t_STAR" "${TEST_OUTPUT}"; then
@@ -96,7 +96,7 @@ echo "TEST 3: ORIGINAL_TYPES_DATA unset (should skip)"
 echo "=========================================="
 unset ORIGINAL_TYPES_DATA
 
-gawk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
+awk -f "$ENGINE_PATH" "$TEST_TEMPLATE" > "${TEST_OUTPUT}" 2>&1
 
 # Check that no macros are generated (file should be mostly empty comments)
 if grep -q "#define _DAP_MOCK_WRAPPER_CUSTOM_DISPATCH" "${TEST_OUTPUT}"; then

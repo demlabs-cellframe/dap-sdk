@@ -40,7 +40,7 @@ EOF
 export FEATURE_ENABLED="1"
 # Use temp file to preserve trailing newline
 TEMP_OUTPUT=$(mktemp)
-cd "$DAP_TPL_DIR" && gawk -f "$COMPILED_ENGINE" "$TEST_TEMPLATE" > "$TEMP_OUTPUT" 2>&1
+cd "$DAP_TPL_DIR" && awk -f "$COMPILED_ENGINE" "$TEST_TEMPLATE" > "$TEMP_OUTPUT" 2>&1
 # Read file - command substitution removes trailing newline
 OUTPUT=$(cat "$TEMP_OUTPUT")
 # File ends with \n\n (one from #endif\n, one from print)
@@ -71,7 +71,7 @@ echo "PASS: c_ifdef with true condition"
 echo "Test: c_ifdef with false condition"
 export FEATURE_ENABLED="0"
 TEMP_OUTPUT=$(mktemp)
-cd "$DAP_TPL_DIR" && gawk -f "$COMPILED_ENGINE" "$TEST_TEMPLATE" > "$TEMP_OUTPUT" 2>&1
+cd "$DAP_TPL_DIR" && awk -f "$COMPILED_ENGINE" "$TEST_TEMPLATE" > "$TEMP_OUTPUT" 2>&1
 OUTPUT=$(cat "$TEMP_OUTPUT")
 OUTPUT="${OUTPUT%$'\n'}"  # Remove trailing newline from print
 OUTPUT="${OUTPUT}"$'\n'   # Add one newline to match EXPECTED format
@@ -106,7 +106,7 @@ EOF
 export FEATURE_A="0"
 export FEATURE_B="1"
 TEMP_OUTPUT2=$(mktemp)
-cd "$DAP_TPL_DIR" && gawk -f "$COMPILED_ENGINE" "$TEST_TEMPLATE2" > "$TEMP_OUTPUT2" 2>&1
+cd "$DAP_TPL_DIR" && awk -f "$COMPILED_ENGINE" "$TEST_TEMPLATE2" > "$TEMP_OUTPUT2" 2>&1
 OUTPUT2=$(cat "$TEMP_OUTPUT2")
 OUTPUT2="${OUTPUT2%$'\n'}"  # Remove trailing newline from print
 OUTPUT2="${OUTPUT2}"$'\n'   # Add one newline to match EXPECTED format

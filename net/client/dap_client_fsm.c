@@ -1277,9 +1277,13 @@ void dap_client_fsm_advance(dap_client_t *a_client, void *a_arg)
             s_fsm_process(l_fsm);
             return;
         }
-    } else {
-        assert(a_client->stage_target > l_fsm->stage);
+    } else if (a_client->stage_target > l_fsm->stage) {
         l_next = l_fsm->stage + 1;
+    } else {
+        log_it(L_WARNING, "FSM advance: stage_target %s <= current %s, aborting stale advance",
+               dap_client_stage_str(a_client->stage_target), dap_client_stage_str(l_fsm->stage));
+        l_fsm->stage_status_done_callback = NULL;
+        return;
     }
     log_it(L_NOTICE, "FSM advance: %s -> %s (target %s)",
            dap_client_stage_str(l_fsm->stage), dap_client_stage_str(l_next),
@@ -1320,8 +1324,8 @@ static void *s_fsm_go_stage_on_fsm_thread(void *a_arg)
         return NULL;
     }
 
-    // If COMPLETE and below target, advance from current
-    if (l_fsm->stage_status == STAGE_STATUS_COMPLETE && l_fsm->stage != l_ctx->stage_target) {
+    // If COMPLETE and target is ahead, advance from current stage
+    if (l_fsm->stage_status == STAGE_STATUS_COMPLETE && l_ctx->stage_target > l_fsm->stage) {
         debug_if(s_debug_more, L_DEBUG, "FSM at %s COMPLETE, advancing to %s",
                dap_client_stage_str(l_fsm->stage), dap_client_stage_str(l_ctx->stage_target));
         dap_client_stage_t l_next;
