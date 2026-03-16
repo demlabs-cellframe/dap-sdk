@@ -27,7 +27,7 @@
  *
  * Uses EM_JS to call browser's native WebSocket API. Data flows:
  *   C (dap_stream) -> write() -> EM_JS ws_send() -> JS WebSocket.send()
- *   JS WebSocket.onmessage -> C callback -> dap_stream_data_proc_read_ext()
+ *   JS WebSocket.onmessage -> C callback -> byte buffer -> read() -> dap_stream
  */
 
 #ifdef __EMSCRIPTEN__
@@ -46,10 +46,80 @@
 #define LOG_TAG "ws_system_wasm"
 
 #define WS_DEFAULT_MAX_MSG_SIZE   (1024 * 1024)
+#define WS_DEFAULT_RECV_BUF_SIZE  (256 * 1024)
+
+typedef struct ws_byte_buf {
+    uint8_t *data;
+    size_t capacity;
+    size_t read_pos;
+    size_t write_pos;
+} ws_byte_buf_t;
+
+static ws_byte_buf_t *s_byte_buf_create(size_t a_capacity)
+{
+    ws_byte_buf_t *l_buf = DAP_NEW_Z(ws_byte_buf_t);
+    if (!l_buf) return NULL;
+    l_buf->data = DAP_NEW_Z_SIZE(uint8_t, a_capacity);
+    if (!l_buf->data) { DAP_FREE(l_buf); return NULL; }
+    l_buf->capacity = a_capacity;
+    return l_buf;
+}
+
+static void s_byte_buf_delete(ws_byte_buf_t *a_buf)
+{
+    if (!a_buf) return;
+    DAP_DEL_Z(a_buf->data);
+    DAP_FREE(a_buf);
+}
+
+static size_t s_byte_buf_used(ws_byte_buf_t *a_buf)
+{
+    return a_buf->write_pos - a_buf->read_pos;
+}
+
+static size_t s_byte_buf_write(ws_byte_buf_t *a_buf, const void *a_data, size_t a_size)
+{
+    size_t l_used = s_byte_buf_used(a_buf);
+    if (l_used + a_size > a_buf->capacity) {
+        size_t l_new_cap = (l_used + a_size) * 2;
+        if (l_new_cap < a_buf->capacity * 2) l_new_cap = a_buf->capacity * 2;
+        uint8_t *l_new = DAP_NEW_SIZE(uint8_t, l_new_cap);
+        if (!l_new) return 0;
+        if (l_used > 0)
+            memcpy(l_new, a_buf->data + a_buf->read_pos, l_used);
+        DAP_FREE(a_buf->data);
+        a_buf->data = l_new;
+        a_buf->capacity = l_new_cap;
+        a_buf->read_pos = 0;
+        a_buf->write_pos = l_used;
+    } else if (a_buf->write_pos + a_size > a_buf->capacity) {
+        memmove(a_buf->data, a_buf->data + a_buf->read_pos, l_used);
+        a_buf->read_pos = 0;
+        a_buf->write_pos = l_used;
+    }
+    memcpy(a_buf->data + a_buf->write_pos, a_data, a_size);
+    a_buf->write_pos += a_size;
+    return a_size;
+}
+
+static size_t s_byte_buf_read(ws_byte_buf_t *a_buf, void *a_out, size_t a_size)
+{
+    size_t l_used = s_byte_buf_used(a_buf);
+    size_t l_to_read = a_size < l_used ? a_size : l_used;
+    if (l_to_read == 0) return 0;
+    memcpy(a_out, a_buf->data + a_buf->read_pos, l_to_read);
+    a_buf->read_pos += l_to_read;
+    if (a_buf->read_pos == a_buf->write_pos) {
+        a_buf->read_pos = 0;
+        a_buf->write_pos = 0;
+    }
+    return l_to_read;
+}
 
 typedef struct ws_system_conn {
     int js_handle;
     dap_ws_system_state_t state;
+    ws_byte_buf_t *recv_buf;
     dap_net_trans_ws_system_config_t config;
 
     dap_net_trans_connect_cb_t connect_cb;
@@ -234,12 +304,14 @@ EMSCRIPTEN_KEEPALIVE
 void _ws_on_message(int a_handle, const uint8_t *a_data, int a_len)
 {
     ws_system_conn_t *l_conn = s_find_conn(a_handle);
-    if (!l_conn || !l_conn->stream || a_len <= 0) return;
+    if (!l_conn || !l_conn->recv_buf || a_len <= 0) return;
 
-    l_conn->bytes_received += (uint64_t)a_len;
+    size_t l_written = s_byte_buf_write(l_conn->recv_buf, a_data, (size_t)a_len);
+    if (l_written < (size_t)a_len)
+        log_it(L_WARNING, "WebSocket recv buffer: only %zu of %d bytes stored", l_written, a_len);
+
+    l_conn->bytes_received += l_written;
     l_conn->msgs_received++;
-
-    dap_stream_data_proc_read_ext(l_conn->stream, a_data, (size_t)a_len);
 }
 
 /* ========================================================================
@@ -272,6 +344,7 @@ static void s_ws_system_deinit(dap_net_trans_t *a_trans)
     for (int i = 0; i < 256; i++) {
         if (s_connections[i]) {
             js_ws_destroy(i);
+            s_byte_buf_delete(s_connections[i]->recv_buf);
             DAP_FREE(s_connections[i]);
             s_connections[i] = NULL;
         }
@@ -290,6 +363,11 @@ static int s_ws_system_connect(dap_stream_t *a_stream,
     if (!l_conn) return -1;
 
     l_conn->config = dap_net_trans_ws_system_config_default();
+    l_conn->recv_buf = s_byte_buf_create(WS_DEFAULT_RECV_BUF_SIZE);
+    if (!l_conn->recv_buf) {
+        DAP_FREE(l_conn);
+        return -1;
+    }
 
     char l_url[512];
     snprintf(l_url, sizeof(l_url), "wss://%s:%u/stream", a_host, a_port);
@@ -315,8 +393,15 @@ static int s_ws_system_connect(dap_stream_t *a_stream,
 
 static ssize_t s_ws_system_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
-    (void)a_stream; (void)a_buffer; (void)a_size;
-    return 0;
+    if (!a_stream || !a_stream->_server_session) return -1;
+    ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
+    if (!l_conn->recv_buf) return -1;
+
+    size_t l_available = s_byte_buf_used(l_conn->recv_buf);
+    if (l_available == 0) return 0;
+
+    size_t l_to_read = a_size < l_available ? a_size : l_available;
+    return (ssize_t)s_byte_buf_read(l_conn->recv_buf, a_buffer, l_to_read);
 }
 
 static ssize_t s_ws_system_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
@@ -345,6 +430,7 @@ static void s_ws_system_close(dap_stream_t *a_stream)
 
     s_unregister_conn(l_conn->js_handle);
     js_ws_destroy(l_conn->js_handle);
+    s_byte_buf_delete(l_conn->recv_buf);
 
     log_it(L_INFO, "WebSocket System closed (handle=%d, sent=%" PRIu64 ", recv=%" PRIu64 ")",
            l_conn->js_handle, l_conn->bytes_sent, l_conn->bytes_received);
