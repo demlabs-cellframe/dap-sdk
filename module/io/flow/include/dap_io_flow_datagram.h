@@ -31,6 +31,7 @@
 #pragma once
 
 #include <time.h>
+#include <netinet/in.h>
 #include "dap_io_flow.h"
 #include "dap_events_socket.h"
 

@@ -27,8 +27,6 @@ endif()
 
 # Build type (Debug / Release / Asan) and DAP_* build variables
 include(cmake/DapBuild.cmake)
-# Compiler sanitizers (ASan, UBSan, TSan, MSan)
-include(cmake/Sanitizers.cmake)
 # Common includes and definitions (uses DAP_DEBUG, DAP_RELEASE, DAP_ASAN_BUILD from DapBuild)
 include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)
@@ -51,7 +49,6 @@ option(BUILD_STATIC "Also build static version of DAP SDK library" OFF)
 option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
 
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
-option(BUILD_WITH_GPU  "Build GPU compute acceleration module (Vulkan/Metal/CUDA/OpenCL)" OFF)
 
 # Internal modules are ALWAYS static, final can be SHARED or STATIC
 if(BUILD_SHARED)
@@ -78,22 +75,11 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
-# Optimization module - arch dispatch macros (header-only, depends on core)
-add_subdirectory(module/optimization)
-message("[+] Module 'optimization'")
-
 # Set DAP_TPL_DIR for dap_json SIMD code generation (if not already set by parent)
 if(NOT DEFINED DAP_TPL_DIR)
     set(DAP_TPL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/test/dap_tpl" CACHE PATH "Path to dap_tpl template engine")
     message("[+] DAP SDK: DAP_TPL_DIR set to ${DAP_TPL_DIR}")
 endif()
-
-# Arch-optimized code generation infrastructure (used by hash, json, crypto, math modules)
-if(NOT DEFINED DAP_ARCH_DIR)
-    set(DAP_ARCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/arch" CACHE PATH "Path to arch codegen infrastructure")
-endif()
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapTplGenerate.cmake)
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapArchCodegen.cmake)
 
 # Math module - uint128_t/uint256_t operations (must be before json)
 add_subdirectory(module/math)
@@ -121,18 +107,7 @@ endif()
 add_subdirectory(module/config)
 message("[+] Module 'config'")
 
-# Bignum library — independent of dap_math, used only by crypto algorithms
-if (DAPSDK_MODULES MATCHES "crypto")
-    add_subdirectory(module/math/bignum)
-    message("[+] Module 'math/bignum' (NTT, poly, multi-precision)")
-endif()
-
-# GPU compute module (Vulkan, Metal, CUDA, OpenCL backends) — before crypto for DAP_HAS_GPU
-if (BUILD_WITH_GPU AND DAPSDK_MODULES MATCHES "crypto" AND NOT DAP_WASM)
-    add_subdirectory(module/gpu)
-    message("[+] Module 'gpu' (GPU compute acceleration)")
-endif()
-
+# Optional modules with UPDATED PATHS
 if (DAPSDK_MODULES MATCHES "crypto")
     add_subdirectory(module/crypto)
     message("[+] Module 'crypto'")
@@ -143,9 +118,13 @@ if (DAPSDK_MODULES MATCHES "plugin" AND NOT DAP_WASM)
     message("[+] Module 'plugin'")
 endif()
 
-if(DAPSDK_MODULES MATCHES "io" OR DAP_WASM)
+if(DAP_WASM)
+    add_subdirectory(module/io/wasm)
+    message("[+] Module 'io' (WASM stub)")
+elseif(DAPSDK_MODULES MATCHES "io")
     add_subdirectory(module/io)
     message("[+] Module 'io'")
+    # io_flow: 5.8 datagram reactor, context_queue, thread_pool
     add_subdirectory(module/io/flow)
 endif()
 
@@ -156,28 +135,17 @@ message("[+] Module 'cluster_node'")
 # Network common types and functions (needed by all platforms including WASM)
 add_subdirectory(module/net/common)
 
-# Add DAP SDK unified interface — link dependencies are added later,
-# after all module targets have been defined (see _DAP_SDK_LATE_LINK below)
+# Add DAP SDK unified interface using dap_add_library
 dap_add_library(dap_sdk_interface dap_sdk.c)
 target_include_directories(dap_sdk_interface PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-
-# Server module — must be before trans (trans depends on dap_http_server includes)
-if (DAPSDK_MODULES MATCHES "network-server")
-    add_subdirectory(module/net/server)
-    message("[+] Module 'server'")
+if(DAP_WASM)
+    set(_DAP_SDK_IFACE_DEPS dap_core dap_json dap_math dap_hash dap_hash_table dap_timer dap_config dap_io dap_net_common dap_cluster_node)
+else()
+    set(_DAP_SDK_IFACE_DEPS dap_core dap_json dap_math dap_hash dap_hash_table dap_timer dap_daemon dap_config dap_io dap_net_common dap_cluster_node)
 endif()
+dap_link_libraries(dap_sdk_interface INTERFACE ${_DAP_SDK_IFACE_DEPS})
 
-if (DAPSDK_MODULES MATCHES "network-client")
-    add_subdirectory(module/net/client)
-    message("[+] Module 'client'")
-endif()
-
-if (DAPSDK_MODULES MATCHES "network-link_manager")
-    add_subdirectory(module/net/link_manager)
-    message("[+] Module 'link manager'")
-endif()
-
-# Transport abstraction layer (after server, client, link_manager — depends on their includes)
+# Transport abstraction layer
 add_subdirectory(module/net/trans)
 message("[+] Module 'trans' (transport abstraction)")
 
@@ -192,21 +160,37 @@ create_object_library(dap_cluster DAP_INTERNAL_MODULES
     HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include/dap_cluster.h)
 dap_link_libraries(dap_cluster INTERFACE
     dap_cluster_node dap_hash_table dap_json
-    dap_stream)
+    dap_stream dap_stream_ch)
 target_include_directories(dap_cluster PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include)
 message("[+] Module 'cluster'")
 
-# App CLI module
-add_subdirectory(module/net/app-cli)
-message("[+] Module 'app-cli'")
+if (DAPSDK_MODULES MATCHES "network-client")
+    add_subdirectory(module/net/client)
+    message("[+] Module 'client'")
+endif()
 
-if (DAPSDK_MODULES MATCHES "global-db")
-    add_subdirectory(module/global-db)
-    if(DAP_WASM)
-        message("[+] Module 'global-db' (WASM: local storage only)")
-    else()
-        message("[+] Module 'global-db' (native B-tree engine)")
+if(NOT DAP_WASM)
+    # NOTE: client_http is now part of the 5.8 dap_client module (module/net/client/)
+    # add_subdirectory(module/net/client_http)
+
+    if (DAPSDK_MODULES MATCHES "network-link_manager")
+        add_subdirectory(module/net/link_manager)
+        message("[+] Module 'link manager'")
     endif()
+
+    if (DAPSDK_MODULES MATCHES "network-server")
+        add_subdirectory(module/net/server)
+        message("[+] Module 'server'")
+    endif()
+
+    # App CLI module
+    add_subdirectory(module/net/app-cli)
+    message("[+] Module 'app-cli'")
+endif()
+
+if (DAPSDK_MODULES MATCHES "global-db" AND NOT DAP_WASM)
+    add_subdirectory(module/global-db)
+    message("[+] Module 'global-db' (native B-tree engine)")
 endif()
 
 # Test framework - UPDATED PATH (not available on WASM)
@@ -227,13 +211,7 @@ if(BUILD_DAP_SDK_TESTS)
             if(MODULE_INCLUDES)
                 target_include_directories(${MODULE}_static PUBLIC ${MODULE_INCLUDES})
             endif()
-            # OBJECT libraries use INTERFACE_LINK_LIBRARIES (via dap_link_libraries),
-            # not LINK_LIBRARIES. Check both to propagate transitive deps correctly.
-            get_target_property(MODULE_IFACE_LINK_LIBS ${MODULE} INTERFACE_LINK_LIBRARIES)
             get_target_property(MODULE_LINK_LIBS ${MODULE} LINK_LIBRARIES)
-            if(MODULE_IFACE_LINK_LIBS)
-                target_link_libraries(${MODULE}_static PUBLIC ${MODULE_IFACE_LINK_LIBS})
-            endif()
             if(MODULE_LINK_LIBS)
                 target_link_libraries(${MODULE}_static PUBLIC ${MODULE_LINK_LIBS})
             endif()
@@ -248,34 +226,12 @@ if(BUILD_DAP_SDK_TESTS)
     message("[+] Tests enabled with new structure")
 endif()
 
-# _DAP_SDK_LATE_LINK: connect dap_sdk_interface to every module it calls into.
-# Must happen AFTER all add_subdirectory() / create_object_library() calls.
-set(_DAP_SDK_IFACE_DEPS dap_core dap_json dap_math dap_hash dap_hash_table
-                        dap_timer dap_config dap_io dap_net_common dap_cluster_node)
-if(NOT DAP_WASM)
-    list(APPEND _DAP_SDK_IFACE_DEPS dap_daemon)
-endif()
-foreach(_mod dap_crypto dap_stream dap_client dap_cluster dap_global_db
-             dap_http_server dap_enc_server dap_notify_srv dap_cli_server
-             dap_dns_server dap_link_manager dap_plugin)
-    if(TARGET ${_mod})
-        list(APPEND _DAP_SDK_IFACE_DEPS ${_mod})
-    endif()
-endforeach()
-dap_link_libraries(dap_sdk_interface INTERFACE ${_DAP_SDK_IFACE_DEPS})
-
 # Post-process: propagate include directories for ALL OBJECT libraries
 # Must be called AFTER all targets are created (resolves forward references)
 post_process_object_libraries()
 
 # Create final combined DAP SDK library
 dap_create_final_library()
-
-if(DAP_WASM)
-    set(DAP_SDK_JS_LIBRARIES
-        "${CMAKE_CURRENT_SOURCE_DIR}/module/net/trans/wasm/library_dap_transport.js"
-        CACHE STRING "DAP SDK JS library files for emscripten" FORCE)
-endif()
 
 message("[+] =========================================")
 message("[+] DAP SDK with module/ structure configured")
