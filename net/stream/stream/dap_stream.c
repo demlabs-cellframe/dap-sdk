@@ -1401,7 +1401,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         return true;
     }else{
         if(s_debug)
-            log_it(L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
+            debug_if(s_debug_more, L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
         DAP_DELETE(l_es_uuid);
         return false; // Socket is removed from worker
     }

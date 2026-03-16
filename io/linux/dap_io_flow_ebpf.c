@@ -279,7 +279,7 @@ int dap_io_flow_ebpf_detach_socket(int socket_fd)
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "eBPF program detached from socket %d", socket_fd);
+    log_it(L_DEBUG, "eBPF program detached from socket %d", socket_fd);
     return 0;
 }
 

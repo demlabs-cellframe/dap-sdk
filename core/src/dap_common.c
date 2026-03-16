@@ -1607,7 +1607,7 @@ int l_rc;
 
         g_memstat[l_nr] = a_memstat_rec;
 
-        return  log_it(L_INFO, "[<%.*s>, %zu octets] has been registered",
+        return  debug_if(s_debug_more, L_INFO, "[<%.*s>, %zu octets] has been registered",
                     a_memstat_rec->fac_len, a_memstat_rec->fac_name, a_memstat_rec->alloc_sz), 0;
 }
 
@@ -1619,7 +1619,7 @@ dap_memstat_rec_t   *l_memstat_rec;
     for ( uint64_t i = 0; i < s_memstat_nr; i++)
     {
         if ( (l_memstat_rec = g_memstat[i]) )
-            log_it(L_INFO, "[<%.*s>, %zu octets] allocations/deallocations: %lld/%lld (%lld octets still is allocated)",
+            debug_if(s_debug_more, L_INFO, "[<%.*s>, %zu octets] allocations/deallocations: %lld/%lld (%lld octets still is allocated)",
                 l_memstat_rec->fac_len, l_memstat_rec->fac_name, l_memstat_rec->alloc_sz,
                 l_memstat_rec->alloc_nr, l_memstat_rec->free_nr,
                 (l_memstat_rec->alloc_nr - l_memstat_rec->free_nr) * l_memstat_rec->alloc_sz);

@@ -47,7 +47,7 @@ int dap_tls_init(void)
 
 void dap_tls_deinit(void)
 {
-    debug_if(s_debug_more, L_DEBUG, "TLS backend deinitialized");
+    log_it(L_DEBUG, "TLS backend deinitialized");
 }
 
 const char *dap_tls_backend_name(void)

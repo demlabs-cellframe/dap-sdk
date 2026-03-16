@@ -146,7 +146,7 @@ int dap_net_trans_websocket_stream_register(void)
         return l_ret;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_websocket_stream_register: WebSocket server module initialized, registering trans");
+    log_it(L_DEBUG, "dap_net_trans_websocket_stream_register: WebSocket server module initialized, registering trans");
     
     // Register WebSocket trans operations
     int l_ret_trans = dap_net_trans_register("WebSocket",
@@ -240,7 +240,7 @@ int dap_net_trans_websocket_set_config(dap_net_trans_t *a_trans,
         l_priv->config.origin = dap_strdup(a_config->origin);
     }
 
-    debug_if(s_debug_more, L_DEBUG, "WebSocket configuration updated");
+    log_it(L_DEBUG, "WebSocket configuration updated");
     return 0;
 }
 
@@ -302,7 +302,7 @@ static int s_ws_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
     a_trans->_inheritor = l_priv;
     UNUSED(a_config);
 
-    debug_if(s_debug_more, L_DEBUG, "WebSocket trans initialized");
+    log_it(L_DEBUG, "WebSocket trans initialized");
     return 0;
 }
 
@@ -347,7 +347,7 @@ static void s_ws_deinit(dap_net_trans_t *a_trans)
     DAP_DELETE(l_priv);
     a_trans->_inheritor = NULL;
 
-    debug_if(s_debug_more, L_DEBUG, "WebSocket trans deinitialized");
+    log_it(L_DEBUG, "WebSocket trans deinitialized");
 }
 
 /**
@@ -1860,7 +1860,7 @@ static int s_ws_register_server_handlers(dap_net_trans_t *a_trans, void *a_trans
         return l_ret;
     }
 
-    debug_if(s_debug_more, L_DEBUG, "Registered WebSocket upgrade handler for stream path");
+    log_it(L_DEBUG, "Registered WebSocket upgrade handler for stream path");
     return 0;
 }
 

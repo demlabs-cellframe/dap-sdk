@@ -196,7 +196,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
  */
 void enc_http_add_proc(struct dap_http_server* sh, const char * url)
 {
-    debug_if(s_debug_more, L_DEBUG, "enc_http_add_proc: registering handler for URL '%s' on HTTP server '%s' (sh=%p)", 
+    log_it(L_DEBUG, "enc_http_add_proc: registering handler for URL '%s' on HTTP server '%s' (sh=%p)", 
            url, sh ? sh->server_name : "NULL", (void*)sh);
     dap_http_simple_proc_add(sh, url, 140000, enc_http_proc);
     log_it(L_INFO, "HTTP encryption endpoint registered: %s", url);

@@ -88,7 +88,7 @@ int dap_plugin_init(const char * a_root_path)
     dap_list_name_directories_t *l_list_plugins_name = dap_get_subs(s_plugins_root_path);
     dap_list_name_directories_t *l_element;
     // Register manifests
-    debug_if(s_debug_more, L_DEBUG, "Start registration of manifests");
+    log_it(L_DEBUG, "Start registration of manifests");
 
     char *l_name_file = NULL;
     LL_FOREACH(l_list_plugins_name, l_element){

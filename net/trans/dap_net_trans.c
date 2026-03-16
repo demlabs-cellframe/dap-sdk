@@ -67,7 +67,7 @@ int dap_net_trans_init(void)
 {
     // Idempotent: safe to call multiple times
     if (s_trans_registry_initialized) {
-        debug_if(s_debug_more, L_DEBUG, "Trans registry already initialized, skipping");
+        log_it(L_DEBUG, "Trans registry already initialized, skipping");
         return 0;
     }
     
@@ -115,7 +115,7 @@ int dap_net_trans_register(const char *a_name,
     // Auto-initialize registry if not initialized yet (for constructor-based registration)
     // This allows transs to register themselves via constructors before dap_net_trans_init()
     if (!s_trans_registry_initialized) {
-        debug_if(s_debug_more, L_DEBUG, "Registry not initialized, auto-initializing for trans '%s'", a_name);
+        log_it(L_DEBUG, "Registry not initialized, auto-initializing for trans '%s'", a_name);
         s_trans_registry = NULL;
         s_trans_registry_initialized = true;
     }

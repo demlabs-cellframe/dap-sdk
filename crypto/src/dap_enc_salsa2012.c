@@ -185,7 +185,7 @@ void dap_enc_salsa2012_key_new_from_raw_bytes(struct dap_enc_key *a_key,
  */
 size_t dap_enc_salsa2012_decrypt(struct dap_enc_key *a_key, const void * a_in, size_t a_in_size, void ** a_out)
 {
-    log_it(L_INFO, "SALSA2012_DECRYPT (wrapper): a_in_size=%zu, SALSA20_NONCE_SIZE=%d, _inheritor=%p, _inheritor_size=%zu",
+    debug_if(s_debug_more, L_INFO, "SALSA2012_DECRYPT (wrapper): a_in_size=%zu, SALSA20_NONCE_SIZE=%d, _inheritor=%p, _inheritor_size=%zu",
            a_in_size, SALSA20_NONCE_SIZE, a_key->_inheritor, a_key->_inheritor_size);
     
     size_t l_out_size = a_in_size - SALSA20_NONCE_SIZE;
@@ -211,7 +211,7 @@ size_t dap_enc_salsa2012_decrypt(struct dap_enc_key *a_key, const void * a_in, s
  */
 size_t dap_enc_salsa2012_encrypt(struct dap_enc_key * a_key, const void * a_in, size_t a_in_size, void ** a_out)
 {
-    log_it(L_INFO, "SALSA2012_ENCRYPT (wrapper): a_in_size=%zu, _inheritor=%p, _inheritor_size=%zu",
+    debug_if(s_debug_more, L_INFO, "SALSA2012_ENCRYPT (wrapper): a_in_size=%zu, _inheritor=%p, _inheritor_size=%zu",
            a_in_size, a_key->_inheritor, a_key->_inheritor_size);
     
     if(a_in_size <= 0) {

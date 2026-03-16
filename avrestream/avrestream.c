@@ -41,7 +41,7 @@ static bool s_debug_more = false;
 
 int avrs_plugin_init(dap_config_t * a_config, char ** a_error_str)
 {
-    debug_if(s_debug_more, L_DEBUG, "AVReStream Plugin version %s --- loading ...", DAP_VERSION );
+    log_it(L_DEBUG, "AVReStream Plugin version %s --- loading ...", DAP_VERSION );
 
     avrs_content_init();
     avrs_ch_init();
@@ -64,7 +64,7 @@ int avrs_plugin_init(dap_config_t * a_config, char ** a_error_str)
 
 void avrs_plugin_deinit()
 {
-    debug_if(s_debug_more, L_DEBUG, "AVReStream Plugin version %s --- cleanuping ...", DAP_VERSION );
+    log_it(L_DEBUG, "AVReStream Plugin version %s --- cleanuping ...", DAP_VERSION );
 
     avrs_cli_deinit();
     avrs_srv_deinit();

@@ -270,14 +270,14 @@ static bool s_try_enable_loopback_rps(void)
 
     unsigned long l_current = s_read_sysfs_ulong(RPS_CPUS_PATH);
     if (l_current >= l_desired_mask) {
-        debug_if(s_debug_more, L_DEBUG, "Loopback RPS already enabled (rps_cpus=0x%lx)", l_current);
+        log_it(L_DEBUG, "Loopback RPS already enabled (rps_cpus=0x%lx)", l_current);
         return true;
     }
 
     bool l_is_root = (geteuid() == 0);
     bool l_has_net_admin = s_has_capability(CAP_NET_ADMIN);
 
-    debug_if(s_debug_more, L_DEBUG, "Loopback RPS not configured (current=0x%lx, need=0x%lx). "
+    log_it(L_DEBUG, "Loopback RPS not configured (current=0x%lx, need=0x%lx). "
            "Privileges: root=%s, CAP_NET_ADMIN=%s",
            l_current, l_desired_mask,
            l_is_root ? "yes" : "no",
@@ -300,7 +300,7 @@ static bool s_try_enable_loopback_rps(void)
 
     // Strategy 2: sudo -n (non-interactive, no password prompt)
     if (s_has_passwordless_sudo()) {
-        debug_if(s_debug_more, L_DEBUG, "Direct sysfs write failed, trying sudo -n ...");
+        log_it(L_DEBUG, "Direct sysfs write failed, trying sudo -n ...");
         if (s_write_sysfs_sudo(RPS_CPUS_PATH, l_mask_str)) {
             s_write_sysfs_sudo(RPS_FLOW_PATH, l_flow_str);
 
@@ -774,7 +774,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
                 }
                 // Update shared port for next sockets
                 l_shared_port = l_actual_port;
-                debug_if(s_debug_more, L_DEBUG, "First listener bound to ephemeral port %u, using for all %u listeners",
+                log_it(L_DEBUG, "First listener bound to ephemeral port %u, using for all %u listeners",
                        l_shared_port, l_num_listeners);
             }
         }
@@ -809,9 +809,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
-        debug_if(s_debug_more, L_DEBUG, "Listener #%u added, fd=%d, worker=%u", i, l_socket, l_worker->id);
+        log_it(L_DEBUG, "Listener #%u added, fd=%d, worker=%u", i, l_socket, l_worker->id);
     }
-    debug_if(s_debug_more, L_DEBUG, "Total %u listeners created", l_num_listeners);
+    log_it(L_DEBUG, "Total %u listeners created", l_num_listeners);
     
     // CRITICAL: Attach BPF AFTER all sockets are created and bound
     // This is required by Linux kernel - attaching BPF before all sockets are ready

@@ -955,7 +955,7 @@ int dap_net_trans_udp_stream_register(void)
         return l_ret;
     }
 
-    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_udp_stream_register: UDP server module initialized, registering trans");
+    log_it(L_DEBUG, "dap_net_trans_udp_stream_register: UDP server module initialized, registering trans");
     
     // Register UDP trans operations
     int l_ret_trans = dap_net_trans_register("UDP",
@@ -1024,7 +1024,7 @@ int dap_stream_trans_udp_set_config(dap_net_trans_t *a_trans,
     }
 
     memcpy(&l_priv->config, a_config, sizeof(dap_stream_trans_udp_config_t));
-    debug_if(s_debug_more, L_DEBUG, "UDP trans configuration updated");
+    log_it(L_DEBUG, "UDP trans configuration updated");
     return 0;
 }
 
@@ -1242,7 +1242,7 @@ static int s_udp_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
     a_trans->has_session_control = false;
     a_trans->mtu = DAP_STREAM_UDP_DEFAULT_MAX_PACKET_SIZE;
     
-    debug_if(s_debug_more, L_DEBUG, "UDP trans initialized (uses dap_events_socket for I/O)");
+    log_it(L_DEBUG, "UDP trans initialized (uses dap_events_socket for I/O)");
     return 0;
 }
 
@@ -1259,7 +1259,7 @@ static void s_udp_deinit(dap_net_trans_t *a_trans)
         // alice_key is now per-stream, cleaned up in s_udp_close
         DAP_DELETE(l_priv);
         a_trans->_inheritor = NULL;
-        debug_if(s_debug_more, L_DEBUG, "UDP trans deinitialized");
+        log_it(L_DEBUG, "UDP trans deinitialized");
     }
 }
 

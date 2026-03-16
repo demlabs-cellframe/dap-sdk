@@ -125,7 +125,7 @@ int dap_net_trans_dns_stream_register(void)
         return l_ret;
     }
 
-    debug_if(s_debug_more, L_DEBUG, "dap_net_trans_dns_stream_register: DNS server module initialized, registering trans");
+    log_it(L_DEBUG, "dap_net_trans_dns_stream_register: DNS server module initialized, registering trans");
     
     // Register DNS trans operations
     int l_ret_trans = dap_net_trans_register("DNS_TUNNEL",
@@ -203,7 +203,7 @@ int dap_stream_trans_dns_set_config(dap_net_trans_t *a_trans,
         l_priv->config.domain_suffix = dap_strdup(a_config->domain_suffix);
     }
 
-    debug_if(s_debug_more, L_DEBUG, "DNS tunnel configuration updated");
+    log_it(L_DEBUG, "DNS tunnel configuration updated");
     return 0;
 }
 

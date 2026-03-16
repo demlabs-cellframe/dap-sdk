@@ -234,7 +234,7 @@ bool dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
     dap_events_socket_set_writable_unsafe(cl_ht->esocket, true);
 
     if(feof(cl_ht_file->fd)!=0){
-        log_it(L_INFO, "All the file %s is sent out",cl_ht_file->local_path);
+        debug_if(s_debug_more, L_INFO, "All the file %s is sent out",cl_ht_file->local_path);
         //strncat(cl_ht->client->buf_out+cl_ht->client->buf_out_size,"\r\n",sizeof(cl_ht->client->buf_out));
         fclose(cl_ht_file->fd);
         dap_events_socket_set_writable_unsafe(cl_ht->esocket,false);

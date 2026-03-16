@@ -730,7 +730,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             time_t l_now = time(NULL);
             if (l_now - s_last_heartbeat_log >= 10) {
                 s_last_heartbeat_log = l_now;
-                log_it(L_INFO, "Worker ctx #%u heartbeat: iter=%"PRIu64" selected=%d busy=%"PRIu64" epoll_fd=%d",
+                debug_if(s_debug_more, L_INFO, "Worker ctx #%u heartbeat: iter=%"PRIu64" selected=%d busy=%"PRIu64" epoll_fd=%d",
                        a_context->id, s_heartbeat_counter, l_selected_sockets, s_busy_count, a_context->epoll_fd);
             }
         }
@@ -1295,12 +1295,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             struct ucred l_cr;
                             socklen_t l_cr_len = sizeof(l_cr);
                             if (!getsockopt(l_cur->socket, SOL_SOCKET, SO_PEERCRED, &l_cr, &l_cr_len))
-                                log_it(L_INFO, "CLI send: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
+                                debug_if(s_debug_more, L_INFO, "CLI send: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
                                        " buf_out %zu bytes, peer_pid=%d",
                                        l_cur->socket, l_cur->uuid, l_cur->buf_out_size, (int)l_cr.pid);
                             else
 #endif
-                                log_it(L_INFO, "CLI send: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
+                                debug_if(s_debug_more, L_INFO, "CLI send: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
                                        " buf_out %zu bytes",
                                        l_cur->socket, l_cur->uuid, l_cur->buf_out_size);
                         }
