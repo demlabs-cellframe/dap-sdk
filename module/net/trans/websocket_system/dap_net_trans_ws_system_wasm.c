@@ -27,7 +27,7 @@
  *
  * Uses EM_JS to call browser's native WebSocket API. Data flows:
  *   C (dap_stream) -> write() -> EM_JS ws_send() -> JS WebSocket.send()
- *   JS WebSocket.onmessage -> EM_ASM callback -> C read buffer -> dap_stream
+ *   JS WebSocket.onmessage -> C callback -> dap_stream_data_proc_read_ext()
  */
 
 #ifdef __EMSCRIPTEN__
@@ -41,21 +41,19 @@
 #include "dap_net_trans_websocket_system.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_types.h"
-#include "dap_ring_buffer.h"
+#include "dap_stream.h"
 
 #define LOG_TAG "ws_system_wasm"
 
 #define WS_DEFAULT_MAX_MSG_SIZE   (1024 * 1024)
-#define WS_DEFAULT_RECV_BUF_SIZE  (256 * 1024)
 
 typedef struct ws_system_conn {
     int js_handle;
     dap_ws_system_state_t state;
-    dap_ring_buffer_t *recv_buf;
     dap_net_trans_ws_system_config_t config;
 
     dap_net_trans_connect_cb_t connect_cb;
-    struct dap_stream *connect_stream;
+    dap_stream_t *stream;
 
     uint64_t bytes_sent;
     uint64_t bytes_received;
@@ -197,8 +195,8 @@ void _ws_on_open(int a_handle)
     l_conn->state = DAP_WS_SYSTEM_STATE_OPEN;
     log_it(L_NOTICE, "WebSocket System connection opened (handle=%d)", a_handle);
 
-    if (l_conn->connect_cb && l_conn->connect_stream) {
-        l_conn->connect_cb(l_conn->connect_stream, 0);
+    if (l_conn->connect_cb && l_conn->stream) {
+        l_conn->connect_cb(l_conn->stream, 0);
         l_conn->connect_cb = NULL;
     }
 }
@@ -212,8 +210,8 @@ void _ws_on_close(int a_handle, int a_code)
     l_conn->state = DAP_WS_SYSTEM_STATE_CLOSED;
     log_it(L_INFO, "WebSocket System connection closed (handle=%d, code=%d)", a_handle, a_code);
 
-    if (l_conn->connect_cb && l_conn->connect_stream) {
-        l_conn->connect_cb(l_conn->connect_stream, -1);
+    if (l_conn->connect_cb && l_conn->stream) {
+        l_conn->connect_cb(l_conn->stream, -1);
         l_conn->connect_cb = NULL;
     }
 }
@@ -226,8 +224,8 @@ void _ws_on_error(int a_handle)
 
     log_it(L_ERROR, "WebSocket System error (handle=%d)", a_handle);
 
-    if (l_conn->connect_cb && l_conn->connect_stream) {
-        l_conn->connect_cb(l_conn->connect_stream, -2);
+    if (l_conn->connect_cb && l_conn->stream) {
+        l_conn->connect_cb(l_conn->stream, -2);
         l_conn->connect_cb = NULL;
     }
 }
@@ -236,16 +234,12 @@ EMSCRIPTEN_KEEPALIVE
 void _ws_on_message(int a_handle, const uint8_t *a_data, int a_len)
 {
     ws_system_conn_t *l_conn = s_find_conn(a_handle);
-    if (!l_conn || !l_conn->recv_buf || a_len <= 0) return;
+    if (!l_conn || !l_conn->stream || a_len <= 0) return;
 
-    size_t l_written = dap_ring_buffer_write(l_conn->recv_buf, a_data, (size_t)a_len);
-    if (l_written < (size_t)a_len) {
-        log_it(L_WARNING, "WebSocket recv buffer overflow: %d bytes dropped",
-               a_len - (int)l_written);
-    }
-
-    l_conn->bytes_received += l_written;
+    l_conn->bytes_received += (uint64_t)a_len;
     l_conn->msgs_received++;
+
+    dap_stream_data_proc_read_ext(l_conn->stream, a_data, (size_t)a_len);
 }
 
 /* ========================================================================
@@ -278,8 +272,6 @@ static void s_ws_system_deinit(dap_net_trans_t *a_trans)
     for (int i = 0; i < 256; i++) {
         if (s_connections[i]) {
             js_ws_destroy(i);
-            if (s_connections[i]->recv_buf)
-                dap_ring_buffer_delete(s_connections[i]->recv_buf);
             DAP_FREE(s_connections[i]);
             s_connections[i] = NULL;
         }
@@ -298,21 +290,15 @@ static int s_ws_system_connect(dap_stream_t *a_stream,
     if (!l_conn) return -1;
 
     l_conn->config = dap_net_trans_ws_system_config_default();
-    l_conn->recv_buf = dap_ring_buffer_create(WS_DEFAULT_RECV_BUF_SIZE);
-    if (!l_conn->recv_buf) {
-        DAP_FREE(l_conn);
-        return -1;
-    }
 
     char l_url[512];
     snprintf(l_url, sizeof(l_url), "wss://%s:%u/stream", a_host, a_port);
 
     l_conn->connect_cb = a_callback;
-    l_conn->connect_stream = a_stream;
+    l_conn->stream = a_stream;
 
     int l_handle = js_ws_create(l_url, l_conn->config.subprotocol);
     if (l_handle < 0) {
-        dap_ring_buffer_delete(l_conn->recv_buf);
         DAP_FREE(l_conn);
         return -1;
     }
@@ -329,15 +315,8 @@ static int s_ws_system_connect(dap_stream_t *a_stream,
 
 static ssize_t s_ws_system_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
-    if (!a_stream || !a_stream->_server_session) return -1;
-    ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
-    if (!l_conn->recv_buf) return -1;
-
-    size_t l_available = dap_ring_buffer_get_used(l_conn->recv_buf);
-    if (l_available == 0) return 0;
-
-    size_t l_to_read = a_size < l_available ? a_size : l_available;
-    return (ssize_t)dap_ring_buffer_read(l_conn->recv_buf, a_buffer, l_to_read);
+    (void)a_stream; (void)a_buffer; (void)a_size;
+    return 0;
 }
 
 static ssize_t s_ws_system_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
@@ -366,9 +345,6 @@ static void s_ws_system_close(dap_stream_t *a_stream)
 
     s_unregister_conn(l_conn->js_handle);
     js_ws_destroy(l_conn->js_handle);
-
-    if (l_conn->recv_buf)
-        dap_ring_buffer_delete(l_conn->recv_buf);
 
     log_it(L_INFO, "WebSocket System closed (handle=%d, sent=%" PRIu64 ", recv=%" PRIu64 ")",
            l_conn->js_handle, l_conn->bytes_sent, l_conn->bytes_received);

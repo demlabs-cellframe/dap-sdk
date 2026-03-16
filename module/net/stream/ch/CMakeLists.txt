@@ -3,8 +3,16 @@ project(dap_stream_ch)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/LibraryHelpers.cmake)
 
-file(GLOB DAP_STREAM_CH_SRCS *.c)
 file(GLOB DAP_STREAM_CH_HDRS include/*.h)
+
+if(DAP_WASM)
+    set(DAP_STREAM_CH_SRCS
+        dap_stream_ch.c
+        dap_stream_ch_pkt.c
+        dap_stream_ch_proc.c)
+else()
+    file(GLOB DAP_STREAM_CH_SRCS *.c)
+endif()
 
 create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_STREAM_CH_SRCS} HEADERS ${DAP_STREAM_CH_HDRS})
 

@@ -10,7 +10,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #include "dap_common.h"
 #include "dap_config.h"
@@ -36,7 +35,6 @@ static dap_stream_member_callback_t s_member_add_callback = NULL;
 static dap_stream_member_callback_t s_member_del_callback = NULL;
 
 static dap_stream_t *s_streams = NULL;
-static pthread_rwlock_t s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 static void s_stream_proc_pkt_in(dap_stream_t *a_stream, dap_stream_pkt_t *a_pkt);
 
@@ -111,9 +109,7 @@ void dap_stream_set_member_callbacks(dap_stream_member_callback_t a_add,
 int dap_stream_add_to_list(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream, -1);
-    pthread_rwlock_wrlock(&s_streams_lock);
     DL_APPEND(s_streams, a_stream);
-    pthread_rwlock_unlock(&s_streams_lock);
 
     if (s_member_add_callback)
         s_member_add_callback(&a_stream->node);
@@ -123,9 +119,7 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
 static void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     if (!a_stream) return;
-    pthread_rwlock_wrlock(&s_streams_lock);
     DL_DELETE(s_streams, a_stream);
-    pthread_rwlock_unlock(&s_streams_lock);
 
     if (s_member_del_callback)
         s_member_del_callback(&a_stream->node);

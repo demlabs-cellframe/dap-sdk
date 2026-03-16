@@ -33,8 +33,8 @@
 #include "dap_ht.h"
 #include "dap_dl.h"
 #include "dap_stream_ch_pkt.h"
-#include "dap_stream_ch_gossip.h"
 #ifndef DAP_OS_WASM
+#include "dap_stream_ch_gossip.h"
 #include "dap_stream_worker.h"
 #endif
 #include "dap_net_trans_ctx.h"
@@ -65,10 +65,12 @@ int dap_stream_ch_init()
         log_it(L_CRITICAL,"Can't init stream channel packet submodule");
         return -1;
     }
+#ifndef DAP_OS_WASM
     if (dap_stream_ch_gossip_init() != 0) {
         log_it(L_CRITICAL,"Can't init stream gossip channel");
         return -1;
     }
+#endif
 #ifdef  DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
