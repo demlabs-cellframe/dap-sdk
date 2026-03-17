@@ -2133,6 +2133,20 @@ dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_ev
     }
     l_es->fd = l_pipe[0];   // Read end
     l_es->fd2 = l_pipe[1];  // Write end
+#elif defined(DAP_EVENTS_CAPS_QUEUE_KEVENT)
+    int l_pipe[2];
+    if (pipe(l_pipe) < 0) {
+        log_it(L_ERROR, "Failed to create pipe for queue: %s", dap_strerror(errno));
+        DAP_DELETE(l_es->buf_in);
+        DAP_DELETE(l_es);
+        return NULL;
+    }
+    fcntl(l_pipe[0], F_SETFL, O_NONBLOCK);
+    fcntl(l_pipe[1], F_SETFL, O_NONBLOCK);
+    fcntl(l_pipe[0], F_SETFD, FD_CLOEXEC);
+    fcntl(l_pipe[1], F_SETFD, FD_CLOEXEC);
+    l_es->fd = l_pipe[0];
+    l_es->fd2 = l_pipe[1];
 #elif defined(DAP_EVENTS_CAPS_IOCP)
     l_es->socket = INVALID_SOCKET;
     l_es->buf_out = _aligned_malloc(sizeof(SLIST_HEADER), MEMORY_ALLOCATION_ALIGNMENT);
