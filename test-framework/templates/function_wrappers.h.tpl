@@ -38,6 +38,7 @@
                         bool __wrap_mock_enabled = dap_mock_prepare_call(g_mock_{{func_name}}, __wrap_args, __wrap_args_count); \
                         if (__wrap_mock_enabled) { \
                             __mock_impl_{{func_name}}(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_NAME, ##__VA_ARGS__)); \
+                            dap_mock_record_call(g_mock_{{func_name}}, __wrap_args, __wrap_args_count, NULL); \
                         } else { \
                             __real_{{func_name}}(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_NAME, ##__VA_ARGS__)); \
                         } \
@@ -55,14 +56,8 @@
                         bool __wrap_mock_enabled = dap_mock_prepare_call(g_mock_{{func_name}}, __wrap_args, __wrap_args_count); \
                         if (__wrap_mock_enabled) { \
                             __wrap_result = __mock_impl_{{func_name}}(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_NAME, ##__VA_ARGS__)); \
-                            dap_mock_function_state_t *__wrap_mock_state = g_mock_{{func_name}}; \
-                            if (__wrap_mock_state) { \
-                                void *__wrap_override = __wrap_mock_state->return_value.ptr; \
-                                if (__wrap_override != NULL) { \
-                                    __wrap_result = (return_type_full)(intptr_t)__wrap_override; \
-                                } \
-                            } \
-                            dap_mock_record_call(__wrap_mock_state, __wrap_args, __wrap_args_count, (void*)(intptr_t)__wrap_result); \
+                            dap_mock_record_call(g_mock_{{func_name}}, __wrap_args, __wrap_args_count, \
+                            ({ void *_rr = NULL; __builtin_memcpy(&_rr, &__wrap_result, sizeof(__wrap_result)); _rr; })); \
                         } else { \
                             __wrap_result = __real_{{func_name}}(_DAP_MOCK_MAP(_DAP_MOCK_PARAM_NAME, ##__VA_ARGS__)); \
                         } \

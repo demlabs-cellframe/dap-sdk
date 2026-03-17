@@ -668,6 +668,11 @@ bool test_server_channel_echo_callback(dap_stream_ch_t *a_ch, void *a_arg)
         return false;
     }
     
+    if (!a_ch->stream || !a_ch->stream->is_active) {
+        debug_if(s_debug_more, L_DEBUG, "ECHO_CALLBACK: stream/esocket already closed");
+        return false;
+    }
+    
     dap_stream_ch_pkt_t *l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
     
     debug_if(s_debug_more, L_DEBUG, "ECHO_CALLBACK: ch_pkt=%p, data_size=%u",

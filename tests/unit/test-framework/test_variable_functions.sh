@@ -16,6 +16,9 @@ DAP_TPL_DIR="${TEST_FRAMEWORK_DIR}/dap_tpl"
 export AWKPATH="${DAP_TPL_DIR}:${TEST_FRAMEWORK_DIR}:${MOCKS_DIR}/lib/dap_tpl"
 export SCRIPTS_DIR="${DAP_TPL_DIR}"
 
+# Source preprocessing helpers (handles @include expansion for mawk compatibility)
+source "${DAP_TPL_DIR}/tests/fixtures/test_helpers_common.sh"
+
 # Initialize counters
 failed=0
 passed=0
@@ -24,7 +27,6 @@ TESTS_DIR="${TEST_DIR}/variable_functions_tests"
 
 echo "Running mocking variable_functions tests..."
 
-# Run all tests in directory (need to run from DAP_TPL_DIR for @include to work)
 for test_file in "$TESTS_DIR"/*.awk; do
     if [ ! -f "$test_file" ]; then
         continue
@@ -33,7 +35,7 @@ for test_file in "$TESTS_DIR"/*.awk; do
     test_name=$(basename "$test_file" .awk)
     echo -n "  $test_name: "
     
-    if result=$(cd "$DAP_TPL_DIR" && AWKPATH="${AWKPATH}" awk -f "$test_file" <<< "" 2>&1); then
+    if result=$(run_preprocessed_awk_test "$test_file" "$DAP_TPL_DIR" 2>&1); then
         if echo "$result" | grep -q "^PASS$"; then
             echo "PASS"
             ((passed++)) || true

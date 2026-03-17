@@ -90,16 +90,16 @@ run_ctest() {
     return $?
 }
 
+# Source preprocessing helpers (handles @include expansion for mawk compatibility)
+source "${DAP_TPL_DIR}/tests/fixtures/test_helpers_common.sh"
+
 # Function to run a single .awk test file
 run_awk_test() {
     local test_file="$1"
     local test_name=$(basename "$test_file" .awk)
     
-    # Run test with awk from dap_tpl directory where modules are visible
-    local result
     local test_path="$test_file"
     if [[ ! "$test_path" =~ ^/ ]]; then
-        # Relative path - try to find in test-framework directories
         if [ -f "${SCRIPT_DIR}/unit/test-framework/$test_file" ]; then
             test_path="${SCRIPT_DIR}/unit/test-framework/$test_file"
         elif [ -f "${SCRIPT_DIR}/integration/test-framework/$test_file" ]; then
@@ -109,7 +109,8 @@ run_awk_test() {
         fi
     fi
     
-    if result=$(cd "$DAP_TPL_DIR" && awk -f "$test_path" <<< "" 2>&1); then
+    local result
+    if result=$(run_preprocessed_awk_test "$test_path" "$DAP_TPL_DIR" 2>&1); then
         if echo "$result" | grep -q "^PASS$"; then
             echo "PASS"
             return 0

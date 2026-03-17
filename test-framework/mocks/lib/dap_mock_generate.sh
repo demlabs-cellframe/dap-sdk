@@ -600,7 +600,7 @@ EOF
                 
                 param_decl_parts+=("$param")
                 param_name_parts+=("$param_name")
-                param_array_parts+=("(void*)(intptr_t)$param_name")
+                param_array_parts+=("({ void *_p = NULL; __builtin_memcpy(&_p, &$param_name, sizeof($param_name)); _p; })")
             done
             
             # Join parameters with proper formatting
@@ -661,7 +661,7 @@ EOF
                 echo "            __wrap_result = *($return_type*)__wrap_mock_state->return_value.ptr;"
                 echo "        }"
             } > "$return_value_override_file"
-            echo "        dap_mock_record_call(__wrap_mock_state, __wrap_args, __wrap_args_count, (void*)(intptr_t)__wrap_result);" > "$record_call_file"
+            echo "        { void *_rr = NULL; __builtin_memcpy(&_rr, &__wrap_result, sizeof(__wrap_result)); dap_mock_record_call(__wrap_mock_state, __wrap_args, __wrap_args_count, _rr); }" > "$record_call_file"
             return_value_override="@$return_value_override_file"
             record_call="@$record_call_file"
             return_statement="    return __wrap_result;"

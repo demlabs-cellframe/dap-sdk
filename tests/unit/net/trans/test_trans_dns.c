@@ -72,6 +72,7 @@ DAP_MOCK_DECLARE(dap_server_create);
 DAP_MOCK_DECLARE(dap_server_new);
 DAP_MOCK_DECLARE(dap_server_listen_addr_add);
 DAP_MOCK_DECLARE(dap_server_delete);
+DAP_MOCK_DECLARE(dap_server_delete_sync);
 
 // Mock dap_stream_trans functions
 // Don't mock dap_net_trans_find - use real implementation
@@ -156,8 +157,13 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete,
     PARAM(dap_server_t *, a_server)
 )
 {
-    // Just verify the call, don't actually delete anything
-    // In real implementation this would free the server, but in tests we use static mocks
+    (void)a_server;
+}
+
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete_sync,
+    PARAM(dap_server_t *, a_server)
+)
+{
     (void)a_server;
 }
 

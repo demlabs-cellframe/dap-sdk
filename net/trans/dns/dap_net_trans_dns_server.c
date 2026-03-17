@@ -22,6 +22,7 @@ See more details here <http://www.gnu.org/licenses/>.
 */
 
 #include <string.h>
+#include <unistd.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
@@ -194,16 +195,29 @@ void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
     if (!a_dns_server)
         return;
 
+    dns_server_client_session_t *l_session, *l_tmp;
+    HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
+        if (l_session->trans_ctx)
+            l_session->trans_ctx->esocket = NULL;
+        if (l_session->stream)
+            l_session->stream->trans_ctx = NULL;
+    }
+
     if (a_dns_server->server) {
-        dap_server_delete(a_dns_server->server);
+        dap_server_delete_sync(a_dns_server->server);
         a_dns_server->server = NULL;
     }
 
-    dns_server_client_session_t *l_session, *l_tmp;
     HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
         HASH_DEL(a_dns_server->sessions, l_session);
         if (l_session->handshake_key)
             dap_enc_key_delete(l_session->handshake_key);
+        if (l_session->stream) {
+            l_session->stream->trans_ctx = NULL;
+            DAP_DEL_Z(l_session->stream->buf_fragments);
+            DAP_DEL_Z(l_session->stream->pkt_cache);
+            DAP_DEL_Z(l_session->stream->channel);
+        }
         DAP_DEL_Z(l_session->trans_ctx);
         DAP_DEL_Z(l_session->stream);
         DAP_DELETE(l_session);

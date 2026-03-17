@@ -9,7 +9,14 @@
 
 #define _DAP_MOCK_PARAM_DECL(type, name) type name
 #define _DAP_MOCK_PARAM_NAME(type, name) name
-#define _DAP_MOCK_PARAM_CAST(type, name) (void*)(intptr_t)name
+// Safe cast for any type that fits in a pointer (including struct/union by value).
+// Uses memcpy to avoid UB from aggregate-to-integer casts.
+// _Static_assert ensures compile-time failure for types larger than void*.
+#define _DAP_MOCK_PARAM_CAST(type, name) \
+    ({ _Static_assert(sizeof(type) <= sizeof(void*), \
+       "PARAM type " #type " too large for mock args array"); \
+       void *_r = NULL; type _v = (name); \
+       __builtin_memcpy(&_r, &_v, sizeof(_v)); _r; })
 
 // Helper macros for creating argument arrays
 // Supports empty __VA_ARGS__, "void", and PARAM(...) entries

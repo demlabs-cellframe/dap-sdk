@@ -21,6 +21,7 @@
 
 #include "dap_common.h"
 #include "dap_test.h"
+#include "dap_test_async.h"
 #include "dap_events.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
@@ -197,6 +198,8 @@ static void s_client_send_packet_cb(void *a_arg)
     dap_events_socket_t *l_es = (dap_events_socket_t*)a_arg;
     if (!l_es || !l_es->_inheritor) return;
     
+    if (atomic_load(&s_ctx.test_complete)) return;
+    
     client_ctx_t *l_ctx = (client_ctx_t*)l_es->_inheritor;
     
     if (l_ctx->packets_sent >= PACKETS_PER_CLIENT) return;
@@ -235,6 +238,8 @@ static void s_client_send_packet_cb(void *a_arg)
 static bool s_start_sending_cb(void *a_arg)
 {
     (void)a_arg;
+    
+    if (atomic_load(&s_ctx.test_complete)) return false;
     
     for (int i = 0; i < NUM_CLIENTS; i++) {
         dap_events_socket_t *l_es = s_ctx.client_es[i];
@@ -349,13 +354,27 @@ static int s_setup_test(void)
 
 static void s_cleanup_test(void)
 {
+    atomic_store(&s_ctx.test_complete, true);
+    dap_test_sleep_ms(500);
+
+    if (s_ctx.server) {
+        dap_io_flow_server_stop(s_ctx.server);
+        dap_io_flow_delete_all_flows(s_ctx.server);
+    }
+
     for (int i = 0; i < NUM_CLIENTS; i++) {
         if (s_ctx.client_es[i]) {
-            dap_events_socket_remove_and_delete_unsafe(s_ctx.client_es[i], true);
+            dap_worker_t *l_worker = s_ctx.client_es[i]->worker;
+            dap_events_socket_uuid_t l_uuid = s_ctx.client_es[i]->uuid;
+            s_ctx.client_es[i]->_inheritor = NULL;
             s_ctx.client_es[i] = NULL;
+            if (l_worker)
+                dap_events_socket_remove_and_delete_mt(l_worker, l_uuid);
         }
     }
-    
+
+    dap_test_sleep_ms(500);
+
     if (s_ctx.server) {
         dap_io_flow_server_delete(s_ctx.server);
         s_ctx.server = NULL;
