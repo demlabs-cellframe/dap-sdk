@@ -1285,9 +1285,9 @@ void dap_client_fsm_advance(dap_client_t *a_client, void *a_arg)
         l_fsm->stage_status_done_callback = NULL;
         return;
     }
-    log_it(L_NOTICE, "FSM advance: %s -> %s (target %s)",
-           dap_client_stage_str(l_fsm->stage), dap_client_stage_str(l_next),
-           dap_client_stage_str(a_client->stage_target));
+    debug_if(s_debug_more, L_DEBUG, "FSM advance: %s -> %s (target %s)",
+             dap_client_stage_str(l_fsm->stage), dap_client_stage_str(l_next),
+             dap_client_stage_str(a_client->stage_target));
     dap_client_fsm_stage_transaction_begin(l_fsm, l_next, dap_client_fsm_advance);
 }
 

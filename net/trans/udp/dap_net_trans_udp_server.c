@@ -1071,7 +1071,7 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
         log_it(L_ERROR, "Failed to create Flow Control for session");
         // Continue without flow control (fallback to unreliable UDP)
     } else {
-        log_it(L_INFO, "Flow Control enabled for session (RELIABLE mode: retransmit + reorder)");
+        debug_if(s_debug_more, L_DEBUG, "Flow Control enabled for session (RELIABLE mode: retransmit + reorder)");
     }
     
     return l_stream_session;
@@ -2003,7 +2003,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
                a_session->stream, a_session->stream ? a_session->stream->session : NULL);
     }
     
-    log_it(L_INFO, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
+    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
     
     // CRITICAL: Send SESSION_CREATE response using HANDSHAKE key (still in a_session->encryption_key)!
     // Client will derive session key after receiving this counter, so response must use handshake key

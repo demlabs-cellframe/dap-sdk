@@ -126,7 +126,7 @@ uint32_t session_id = 0;
        l_stm_sess->time_created = time(NULL);
        l_stm_sess->create_empty = true;
 
-       log_it(L_INFO, "Created session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
+       debug_if(s_debug_more, L_DEBUG, "Created session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 
        return l_stm_sess;
 }
@@ -188,13 +188,13 @@ int dap_stream_session_close_mt(uint32_t id)
 {
 dap_stream_session_t *l_stm_sess;
 
-    log_it(L_INFO, "Close session id %u ...", id);
+    debug_if(s_debug_more, L_DEBUG, "Close session id %u ...", id);
 
     dap_stream_session_lock();
     if ( !(l_stm_sess = dap_stream_session_id_unsafe( id )) )
     {
         dap_stream_session_unlock();
-        log_it(L_WARNING, "Session id %u not found", id);
+        debug_if(s_debug_more, L_DEBUG, "Session id %u not found (already closed)", id);
 
         return -1;
     }
@@ -202,7 +202,7 @@ dap_stream_session_t *l_stm_sess;
     HASH_DEL(s_sessions, l_stm_sess);
     dap_stream_session_unlock();
 
-    log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
+    debug_if(s_debug_more, L_DEBUG, "Delete session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 
     if (l_stm_sess->callback_delete)
         l_stm_sess->callback_delete(l_stm_sess, NULL);

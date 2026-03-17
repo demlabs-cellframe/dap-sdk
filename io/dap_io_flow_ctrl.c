@@ -810,7 +810,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 // Check if already received (duplicate)
                 if (a_ctrl->recv_window[l_idx].received && 
                     a_ctrl->recv_window[l_idx].seq_num == l_seq) {
-                    log_it(L_WARNING, "Duplicate packet: seq=%lu", l_seq);
+                    debug_if(s_debug_more, L_DEBUG, "Duplicate packet: seq=%lu", l_seq);
                     atomic_fetch_add(&a_ctrl->stats_duplicate, 1);
                 } else {
                     // Buffer packet

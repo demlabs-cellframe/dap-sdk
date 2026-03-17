@@ -342,8 +342,8 @@ void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_cod
         return;
     }
     
-    log_it(L_INFO, "Transport connected for streaming on %s:%u",
-                   l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
+    debug_if(s_debug_more, L_DEBUG, "Transport connected for streaming on %s:%u",
+             l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
     dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
                           STAGE_STATUS_DONE, ERROR_NO_ERROR);
 }

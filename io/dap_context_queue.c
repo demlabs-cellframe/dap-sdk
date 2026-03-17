@@ -49,7 +49,7 @@ static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
     size_t l_processed = dap_context_queue_process(l_queue);
     
     if (l_processed > 0) {
-        debug_if(true, L_DEBUG, "Context queue fd=%d: processed %zu items (eventfd_value=%"PRIu64")",
+        debug_if(s_debug_more, L_DEBUG, "Context queue fd=%d: processed %zu items (eventfd_value=%"PRIu64")",
                  a_es->fd, l_processed, a_value);
     } else if (a_value > 0) {
         log_it(L_WARNING, "Context queue fd=%d: EMPTY wakeup (eventfd_value=%"PRIu64", rb_size=%zu)",
@@ -101,8 +101,8 @@ dap_context_queue_t *dap_context_queue_create(dap_context_t *a_context, size_t a
     // Add event socket to context's reactor (already done in dap_context_create_event for worker context)
     // Event socket is already added to context during creation
     
-    log_it(L_INFO, "Created context queue: context=%p, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
-           a_context, l_capacity, l_queue->event_socket->fd);
+    debug_if(s_debug_more, L_DEBUG, "Created context queue: context=%p, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
+             (void *)a_context, l_capacity, l_queue->event_socket->fd);
     
     return l_queue;
 }
@@ -120,8 +120,8 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue) {
         uint64_t l_pushes, l_pops, l_full, l_empty;
         dap_ring_buffer_get_stats(a_queue->ring_buffer, &l_pushes, &l_pops, &l_full, &l_empty);
         
-        log_it(L_INFO, "Deleting context queue %p: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
-               a_queue, l_pushes, l_pops, l_full, l_empty);
+        debug_if(s_debug_more, L_DEBUG, "Deleting context queue %p: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
+                 (void *)a_queue, l_pushes, l_pops, l_full, l_empty);
         
         if (l_full > 0) {
             log_it(L_WARNING, "Context queue was full %"PRIu64" times - consider increasing capacity", l_full);
