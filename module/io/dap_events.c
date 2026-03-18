@@ -104,7 +104,7 @@ LPFN_DISCONNECTEX         pfnDisconnectEx           = NULL;
 pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError  = NULL;
 #endif
 
-static bool s_debug_reactor = false;
+bool g_debug_reactor = false;
 static atomic_int_fast32_t  s_workers_init = 0;
 static uint32_t s_threads_count = 1;
 static pthread_t *s_threads_id = NULL;
@@ -121,16 +121,6 @@ static void s_events_stop_all_unsafe(void);
  */
 bool dap_events_workers_init_status(){
     return s_workers_init != 0 ? true : false;
-}
-
-bool dap_events_debug_reactor_get(void)
-{
-    return s_debug_reactor;
-}
-
-void dap_events_debug_reactor_set(bool a_enabled)
-{
-    s_debug_reactor = a_enabled;
 }
 
 /**

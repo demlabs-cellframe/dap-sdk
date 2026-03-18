@@ -66,9 +66,13 @@ static void s_test_iocp_queue_send_contract(void)
 {
     log_it(L_INFO, "Testing IOCP queue send contract");
 
-    // Compile-time type check: data send must return size_t
-    size_t (*l_queue_data_send)(dap_events_socket_t*, const void*, size_t) = dap_events_socket_queue_data_send;
-    dap_assert(l_queue_data_send != NULL, "queue_data_send signature is size_t");
+    // API compatibility check:
+    // - legacy queue_data_send keeps int return type
+    // - size_t-safe queue_data_send_size is additive API
+    int (*l_queue_data_send_compat)(dap_events_socket_t*, const void*, size_t) = dap_events_socket_queue_data_send;
+    size_t (*l_queue_data_send_size)(dap_events_socket_t*, const void*, size_t) = dap_events_socket_queue_data_send_size;
+    dap_assert(l_queue_data_send_compat != NULL, "legacy queue_data_send(int) API is available");
+    dap_assert(l_queue_data_send_size != NULL, "queue_data_send_size(size_t) API is available");
 
     SLIST_HEADER l_slist = { 0 };
     InitializeSListHead(&l_slist);
@@ -86,17 +90,23 @@ static void s_test_iocp_queue_send_contract(void)
     l_es.uuid = 1;
 
     const char l_payload[] = "iocp-payload";
-    size_t l_written = dap_events_socket_queue_data_send(&l_es, l_payload, sizeof(l_payload));
-    dap_assert(l_written == sizeof(l_payload), "queue_data_send returns exact size_t payload length");
+    int l_written_compat = dap_events_socket_queue_data_send(&l_es, l_payload, sizeof(l_payload));
+    size_t l_written = dap_events_socket_queue_data_send_size(&l_es, l_payload, sizeof(l_payload));
+    dap_assert(l_written_compat == (int)sizeof(l_payload), "legacy queue_data_send returns payload length");
+    dap_assert(l_written == sizeof(l_payload), "queue_data_send_size returns exact size_t payload length");
 
     int l_ptr_send_ret = dap_events_socket_queue_ptr_send(&l_es, (void *)l_payload);
     dap_assert(l_ptr_send_ret == 0, "queue_ptr_send returns status=0 on success");
 
     // Boundary checks from regression ticket: INT_MAX / INT_MAX+1
-    size_t l_boundary_int_max = dap_events_socket_queue_data_send(&l_es, NULL, (size_t)INT_MAX);
-    size_t l_boundary_int_max_plus_1 = dap_events_socket_queue_data_send(&l_es, NULL, (size_t)INT_MAX + 1U);
-    dap_assert(l_boundary_int_max == 0, "queue_data_send handles INT_MAX boundary without truncation artifacts");
-    dap_assert(l_boundary_int_max_plus_1 == 0, "queue_data_send handles INT_MAX+1 boundary without truncation artifacts");
+    int l_boundary_compat_int_max = dap_events_socket_queue_data_send(&l_es, NULL, (size_t)INT_MAX);
+    int l_boundary_compat_int_max_plus_1 = dap_events_socket_queue_data_send(&l_es, NULL, (size_t)INT_MAX + 1U);
+    size_t l_boundary_int_max = dap_events_socket_queue_data_send_size(&l_es, NULL, (size_t)INT_MAX);
+    size_t l_boundary_int_max_plus_1 = dap_events_socket_queue_data_send_size(&l_es, NULL, (size_t)INT_MAX + 1U);
+    dap_assert(l_boundary_compat_int_max == 0, "legacy queue_data_send handles INT_MAX boundary");
+    dap_assert(l_boundary_compat_int_max_plus_1 == 0, "legacy queue_data_send handles INT_MAX+1 boundary");
+    dap_assert(l_boundary_int_max == 0, "queue_data_send_size handles INT_MAX boundary");
+    dap_assert(l_boundary_int_max_plus_1 == 0, "queue_data_send_size handles INT_MAX+1 boundary");
 
     // For empty queue without context IOCP ptr send should report an error code, not false success.
     SLIST_HEADER l_empty_slist = { 0 };

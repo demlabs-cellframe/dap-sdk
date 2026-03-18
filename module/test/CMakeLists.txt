@@ -27,6 +27,7 @@ if(DAP_TEST_SOURCES)
     
     target_include_directories(dap_test PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/module/core/include
     )
     
     # Keep dap_test as a pure test utility archive.

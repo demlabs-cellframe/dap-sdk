@@ -31,8 +31,17 @@
 extern "C" {
 #endif
 
-bool dap_events_debug_reactor_get(void);
-void dap_events_debug_reactor_set(bool a_enabled);
+extern bool g_debug_reactor;
+
+DAP_STATIC_INLINE bool dap_events_debug_reactor_get(void)
+{
+    return g_debug_reactor;
+}
+
+DAP_STATIC_INLINE void dap_events_debug_reactor_set(bool a_enabled)
+{
+    g_debug_reactor = a_enabled;
+}
 
 int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout ); // Init events module
 void dap_events_deinit( ); // Deinit events module

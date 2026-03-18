@@ -28,6 +28,7 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 
 #if defined (DAP_OS_LINUX)
 #include <sys/epoll.h>
@@ -36,7 +37,6 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include <limits.h>
 #elif defined (DAP_OS_BSD)
 #include <sys/types.h>
 #include <sys/select.h>
@@ -289,13 +289,21 @@ static int s_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size
     return l_error;
 }
 
-size_t dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+size_t dap_events_socket_queue_data_send_size(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
 {
     int l_ret = s_queue_data_send(a_es, a_data, a_size);
     if (l_ret)
         return log_it(L_ERROR, "Enqueue into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %d",
                       a_es ? a_es->uuid : (dap_events_socket_uuid_t)0, l_ret), 0;
     return a_size;
+}
+
+int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+{
+    size_t l_size = dap_events_socket_queue_data_send_size(a_es, a_data, a_size);
+    if (!l_size)
+        return 0;
+    return l_size > (size_t)INT_MAX ? INT_MAX : (int)l_size;
 }
 
 int dap_events_socket_queue_ptr_send(dap_events_socket_t *a_es, void *a_arg)
@@ -2177,7 +2185,7 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
     if (a_es->type == DESCRIPTOR_TYPE_QUEUE)
-        return dap_events_socket_queue_data_send(a_es, a_data, a_data_size);
+        return dap_events_socket_queue_data_send_size(a_es, a_data, a_data_size);
 #endif
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
     byte_t *l_buf_out;
