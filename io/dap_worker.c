@@ -298,7 +298,6 @@ static int s_queue_es_add(dap_worker_t *a_worker, dap_events_socket_t *a_esocket
 #ifdef DAP_EVENTS_CAPS_KQUEUE
     if(l_es_new->socket!=0 && l_es_new->socket != -1 &&
             l_es_new->type != DESCRIPTOR_TYPE_EVENT &&
-        l_es_new->type != DESCRIPTOR_TYPE_QUEUE &&
         l_es_new->type != DESCRIPTOR_TYPE_TIMER
             )
 #else
