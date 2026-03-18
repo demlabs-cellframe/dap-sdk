@@ -531,6 +531,69 @@ static void s_bench16_intt_avx512(void)
 }
 #endif
 
+/* ===== SIMD NTT16 correctness: compare SIMD output to reference ===== */
+
+static void s_test_ntt16_simd_correctness(void)
+{
+    dap_print_module_name("NTT16 SIMD correctness vs reference");
+
+    int16_t l_ref[256], l_simd[256];
+    srand(42);
+    for (int i = 0; i < 256; i++)
+        l_ref[i] = (int16_t)(rand() % 3329);
+    memcpy(l_simd, l_ref, sizeof(l_ref));
+
+    dap_ntt16_forward_ref(l_ref, &s_kyber_bench_params);
+    dap_ntt16_forward(l_simd, &s_kyber_bench_params);
+    dap_assert(memcmp(l_ref, l_simd, sizeof(l_ref)) == 0,
+               "NTT16 forward: dispatch matches reference");
+
+    memcpy(l_simd, l_ref, sizeof(l_ref));
+    int16_t l_ref2[256];
+    memcpy(l_ref2, l_ref, sizeof(l_ref));
+
+    dap_ntt16_inverse_ref(l_ref2, &s_kyber_bench_params);
+    dap_ntt16_inverse(l_simd, &s_kyber_bench_params);
+    dap_assert(memcmp(l_ref2, l_simd, sizeof(l_ref2)) == 0,
+               "NTT16 inverse: dispatch matches reference");
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+    srand(42);
+    for (int i = 0; i < 256; i++)
+        l_ref[i] = (int16_t)(rand() % 3329);
+    memcpy(l_simd, l_ref, sizeof(l_ref));
+
+    dap_ntt16_forward_ref(l_ref, &s_kyber_bench_params);
+    dap_ntt16_forward_avx2(l_simd, &s_kyber_bench_params);
+    dap_assert(memcmp(l_ref, l_simd, sizeof(l_ref)) == 0,
+               "NTT16 forward: AVX2 matches reference");
+
+    memcpy(l_simd, l_ref, sizeof(l_ref));
+    memcpy(l_ref2, l_ref, sizeof(l_ref));
+    dap_ntt16_inverse_ref(l_ref2, &s_kyber_bench_params);
+    dap_ntt16_inverse_avx2(l_simd, &s_kyber_bench_params);
+    dap_assert(memcmp(l_ref2, l_simd, sizeof(l_ref2)) == 0,
+               "NTT16 inverse: AVX2 matches reference");
+
+    srand(42);
+    for (int i = 0; i < 256; i++)
+        l_ref[i] = (int16_t)(rand() % 3329);
+    memcpy(l_simd, l_ref, sizeof(l_ref));
+
+    dap_ntt16_forward_ref(l_ref, &s_kyber_bench_params);
+    dap_ntt16_forward_avx512(l_simd, &s_kyber_bench_params);
+    dap_assert(memcmp(l_ref, l_simd, sizeof(l_ref)) == 0,
+               "NTT16 forward: AVX-512 matches reference");
+
+    memcpy(l_simd, l_ref, sizeof(l_ref));
+    memcpy(l_ref2, l_ref, sizeof(l_ref));
+    dap_ntt16_inverse_ref(l_ref2, &s_kyber_bench_params);
+    dap_ntt16_inverse_avx512(l_simd, &s_kyber_bench_params);
+    dap_assert(memcmp(l_ref2, l_simd, sizeof(l_ref2)) == 0,
+               "NTT16 inverse: AVX-512 matches reference");
+#endif
+}
+
 /* ===== Main ===== */
 
 int main(void)
@@ -556,6 +619,8 @@ int main(void)
     s_test_bignum_mod_exp();
     s_test_bignum_gcd();
     s_test_bignum_mod_inv();
+
+    s_test_ntt16_simd_correctness();
 
     dap_print_module_name("dap_math_bignum benchmarks");
     benchmark_mgs_time("NTT32 forward (N=8)", benchmark_test_time(s_bench_ntt_forward, 10000));

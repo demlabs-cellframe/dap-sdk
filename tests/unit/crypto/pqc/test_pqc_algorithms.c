@@ -71,17 +71,15 @@ static void s_test_mldsa(void)
 
 /* ===== ML-KEM (FIPS 203) ===== */
 
-static void s_test_mlkem(void)
+static void s_test_mlkem_encaps_decaps(uint8_t a_security_level, const char *a_level_name)
 {
-    dap_print_module_name("ML-KEM (FIPS 203)");
-
     dap_enc_key_t *l_alice = dap_enc_key_new_generate(
-            DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, DAP_SIGN_PARAMS_DEFAULT);
+            DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, a_security_level);
     dap_assert(l_alice != NULL, "ML-KEM Alice keygen succeeded");
     dap_assert(l_alice->pub_key_data != NULL, "ML-KEM Alice public key allocated");
 
     dap_enc_key_t *l_bob = dap_enc_key_new_generate(
-            DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, DAP_SIGN_PARAMS_DEFAULT);
+            DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, a_security_level);
     dap_assert(l_bob != NULL, "ML-KEM Bob keygen succeeded");
 
     void *l_cypher_msg = NULL;
@@ -104,6 +102,21 @@ static void s_test_mlkem(void)
     DAP_DELETE(l_cypher_msg);
     dap_enc_key_delete(l_alice);
     dap_enc_key_delete(l_bob);
+}
+
+static void s_test_mlkem(void)
+{
+    dap_print_module_name("ML-KEM (FIPS 203)");
+
+    dap_print_module_name("ML-KEM-512 (Category 2)");
+    s_test_mlkem_encaps_decaps(DAP_SIGN_PARAMS_SECURITY_2, "ML-KEM-512");
+
+    dap_print_module_name("ML-KEM-768 (Category 3, default)");
+    s_test_mlkem_encaps_decaps(DAP_SIGN_PARAMS_DEFAULT, "ML-KEM-768 (default)");
+    s_test_mlkem_encaps_decaps(DAP_SIGN_PARAMS_SECURITY_3, "ML-KEM-768 (explicit)");
+
+    dap_print_module_name("ML-KEM-1024 (Category 5)");
+    s_test_mlkem_encaps_decaps(DAP_SIGN_PARAMS_SECURITY_5, "ML-KEM-1024");
 }
 
 /* ===== ChaCha20-Poly1305 (RFC 8439) ===== */

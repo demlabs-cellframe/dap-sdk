@@ -100,14 +100,30 @@ void dap_ntt_pointwise_montgomery_ref(int32_t *a_c, const int32_t *a_a,
     }
 }
 
+/*
+ * Raw Montgomery reduce: a * R^{-1} mod q, result in approximately (-q, q).
+ * Same algorithm as dap_ntt_montgomery_reduce() but without the final
+ * normalization to [0, q) — this is required for the NTT butterfly where
+ * intermediate coefficients must stay centered around zero.
+ */
+static inline int32_t s_montgomery_reduce_raw(int64_t a_value,
+                                              const dap_ntt_params_t *a_params)
+{
+    uint32_t l_mask = a_params->mont_r_mask;
+    int64_t l_u = ((uint64_t)a_value & l_mask) * a_params->qinv;
+    l_u &= l_mask;
+    return (int32_t)((a_value + l_u * (int64_t)a_params->q) >> a_params->mont_r_bits);
+}
+
 /**
  * @brief Montgomery-domain forward NTT (Cooley–Tukey, sequential zeta walk).
  *
  * Matches the Dilithium NTT structure: len = n/2 down to 1, zetas[k++].
+ * Uses raw Montgomery reduce to keep coefficients bounded in [-q, q)
+ * throughout all layers (no +2q that causes overflow for large q).
  */
 void dap_ntt_forward_mont_ref(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
 {
-    const int32_t l_q = a_params->q;
     const int32_t *l_zetas = a_params->zetas;
     unsigned int l_len, l_start, l_j, l_k = 1;
 
@@ -115,10 +131,10 @@ void dap_ntt_forward_mont_ref(int32_t *a_coeffs, const dap_ntt_params_t *a_param
         for (l_start = 0; l_start < a_params->n; l_start = l_j + l_len) {
             int32_t l_zeta = l_zetas[l_k++];
             for (l_j = l_start; l_j < l_start + l_len; l_j++) {
-                int32_t l_t = dap_ntt_montgomery_reduce(
+                int32_t l_t = s_montgomery_reduce_raw(
                         (int64_t)l_zeta * a_coeffs[l_j + l_len], a_params);
-                a_coeffs[l_j + l_len] = a_coeffs[l_j] + 2 * l_q - l_t;
-                a_coeffs[l_j] = a_coeffs[l_j] + l_t;
+                a_coeffs[l_j + l_len] = a_coeffs[l_j] - l_t;
+                a_coeffs[l_j]         = a_coeffs[l_j] + l_t;
             }
         }
     }
@@ -132,7 +148,6 @@ void dap_ntt_forward_mont_ref(int32_t *a_coeffs, const dap_ntt_params_t *a_param
  */
 void dap_ntt_inverse_mont_ref(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
 {
-    const uint32_t l_nq = (uint32_t)a_params->n * (uint32_t)a_params->q;
     const int32_t *l_zinv = a_params->zetas_inv;
     unsigned int l_start, l_len, l_j, l_k = 0;
 
@@ -140,12 +155,10 @@ void dap_ntt_inverse_mont_ref(int32_t *a_coeffs, const dap_ntt_params_t *a_param
         for (l_start = 0; l_start < a_params->n; l_start = l_j + l_len) {
             int32_t l_zeta = l_zinv[l_k++];
             for (l_j = l_start; l_j < l_start + l_len; l_j++) {
-                uint32_t l_t = (uint32_t)a_coeffs[l_j];
-                uint32_t l_u = (uint32_t)a_coeffs[l_j + l_len];
-                a_coeffs[l_j] = (int32_t)(l_t + l_u);
-                uint32_t l_diff = l_t + l_nq - l_u;
-                a_coeffs[l_j + l_len] = dap_ntt_montgomery_reduce(
-                        (int64_t)l_zeta * (int64_t)(int32_t)l_diff, a_params);
+                int32_t l_t    = a_coeffs[l_j];
+                a_coeffs[l_j]        = l_t + a_coeffs[l_j + l_len];
+                a_coeffs[l_j + l_len] = s_montgomery_reduce_raw(
+                        (int64_t)l_zeta * (l_t - a_coeffs[l_j + l_len]), a_params);
             }
         }
     }

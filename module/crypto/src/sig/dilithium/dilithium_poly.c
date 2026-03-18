@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "dilithium_poly.h"
+#include "dilithium_rounding_reduce.h"
 #include "dap_ntt.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
@@ -570,8 +571,9 @@ void invntt_frominvmont(uint32_t pp[NN])
 {
     dap_ntt_inverse_mont((int32_t *)pp, &g_dilithium_ntt_params);
 
-    const uint32_t f = (((uint64_t)MONT*MONT % Q) * (Q-1) % Q) * ((Q-1) >> 8) % Q;
+    const int32_t f = (int32_t)((((uint64_t)MONT * MONT % Q) * (Q - 1) % Q) * ((Q - 1) >> 8) % Q);
     for (unsigned int j = 0; j < NN; j++)
-        pp[j] = montgomery_reduce((uint64_t)f * pp[j]);
+        pp[j] = (uint32_t)dap_ntt_montgomery_reduce(
+                    (int64_t)f * (int32_t)pp[j], &g_dilithium_ntt_params);
 }
 
