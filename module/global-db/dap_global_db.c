@@ -999,7 +999,6 @@ dap_global_db_pkt_pack_t *dap_global_db_get_by_hash(const char *a_group,
     size_t l_group_len = strlen(a_group) + 1;
     size_t l_total_size = 0;
     size_t l_valid_count = 0;
-    size_t l_group_len = strlen(a_group) + 1;
     for (size_t i = 0; i < a_count; i++) {
         dap_global_db_key_t l_key = {
             .bets = a_hashes[i].bets,

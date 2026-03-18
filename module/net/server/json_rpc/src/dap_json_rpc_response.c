@@ -366,6 +366,73 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     return response;
 }
 
+/**
+ * @brief Check if command requires special JSON printing format
+ * @param a_name Command name to check
+ * @return Index of special command (1-based), or 0 if standard format should be used
+ */
+static int json_print_commands(const char * a_name) {
+    const char* long_cmd[] = {
+            "file"
+    };
+    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
+        if (!strcmp(a_name, long_cmd[i])) {
+            return i+1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief Print JSON-RPC response with custom format for file-related commands
+ * @param response Pointer to dap_json_rpc_response_t structure containing file command output
+ * @note Handles nested array structures and prints file content appropriately
+ */
+static void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
+    if (!response || !response->result_json_object) {
+        printf("Response is empty\n");
+        return;
+    }
+    
+    if (dap_json_is_array(response->result_json_object)) {
+        size_t result_count = dap_json_array_length(response->result_json_object);
+        if (result_count <= 0) {
+            printf("Response array is empty\n");
+            return;
+        }
+        
+        dap_json_t *first_element = dap_json_array_get_idx(response->result_json_object, 0);
+        if (first_element && dap_json_is_array(first_element)) {
+            for (size_t i = 0; i < result_count; i++) {
+                dap_json_t *json_obj_result = dap_json_array_get_idx(response->result_json_object, i);
+                if (!json_obj_result) {
+                    printf("Failed to get array element at index %zu\n", i);
+                    continue;
+                }
+                
+                size_t inner_count = dap_json_array_length(json_obj_result);
+                for (size_t j = 0; j < inner_count; j++) {
+                    dap_json_t *json_obj = dap_json_array_get_idx(json_obj_result, j);
+                    if (json_obj) {
+                        const char *str_val = dap_json_get_string(json_obj);
+                        if (str_val) {
+                            printf("%s", str_val);
+                        }
+                        dap_json_object_free(json_obj);
+                    }
+                }
+                dap_json_object_free(json_obj_result);
+            }
+            dap_json_object_free(first_element);
+        } else {
+            dap_json_object_free(first_element);
+            dap_json_print_object(response->result_json_object, stdout, -1);
+        }
+    } else {
+        dap_json_print_object(response->result_json_object, stdout, -1);
+    }
+}
+
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt) {
     if (!response) {
         printf("Empty response");
@@ -403,16 +470,17 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                         break;
                 }
             } else {
-            if (l_json_mode) {
-                dap_json_print_object(response->result_json_object, stdout, 0);
-            } else {
-                char *l_str = dap_json_to_string(response->result_json_object);
-                if (l_str) {
-                    if (s_json_str_has_errors(l_str))
-                        s_print_error_messages(l_str, stdout);
-                    else
-                        s_json_str_to_text(l_str, stdout, 0);
-                    DAP_DELETE(l_str);
+                if (l_json_mode) {
+                    dap_json_print_object(response->result_json_object, stdout, 0);
+                } else {
+                    char *l_str = dap_json_to_string(response->result_json_object);
+                    if (l_str) {
+                        if (s_json_str_has_errors(l_str))
+                            s_print_error_messages(l_str, stdout);
+                        else
+                            s_json_str_to_text(l_str, stdout, 0);
+                        DAP_DELETE(l_str);
+                    }
                 }
             }
             break;
