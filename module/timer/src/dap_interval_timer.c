@@ -63,31 +63,36 @@ void dap_interval_timer_deinit(void)
 #ifdef DAP_OS_LINUX
 static void s_posix_callback(union sigval a_arg)
 {
-    void *l_timer_ptr = a_arg.sival_ptr;
+    void *l_field_addr = a_arg.sival_ptr;
+    if (!l_field_addr) {
+        log_it(L_ERROR, "Timer cb arg is NULL");
+        return;
+    }
+    void *l_timer_id = *(void **)l_field_addr;
 #elif defined(DAP_OS_WINDOWS)
 static void CALLBACK s_win_callback(PVOID a_arg, BOOLEAN a_always_true)
 {
     UNUSED(a_always_true);
-    void *l_timer_ptr = a_arg;
-#elif defined(DAP_OS_DARWIN)
-static void s_bsd_callback(void *a_arg)
-{
-    void *l_timer_ptr = &a_arg;
-#else
-#error "Timer callback is undefined for your platform"
-#endif
-    if (!l_timer_ptr) {
+    if (!a_arg) {
         log_it(L_ERROR, "Timer cb arg is NULL");
         return;
     }
+    void *l_timer_id = *(void **)a_arg;
+#elif defined(DAP_OS_DARWIN)
+static void s_bsd_callback(void *a_arg)
+{
+    void *l_timer_id = a_arg;
+#else
+#error "Timer callback is undefined for your platform"
+#endif
     pthread_rwlock_rdlock(&s_timers_rwlock);
     dap_timer_interface_t *l_timer = NULL;
-    dap_ht_find_ptr(s_timers_map, l_timer_ptr, l_timer);
+    dap_ht_find_ptr(s_timers_map, l_timer_id, l_timer);
     pthread_rwlock_unlock(&s_timers_rwlock);
     if (l_timer && l_timer->callback) {
         l_timer->callback(l_timer->param);
     } else {
-        log_it(L_WARNING, "Timer '%p' is not initialized", l_timer_ptr);
+        log_it(L_WARNING, "Timer '%p' is not initialized", l_timer_id);
     }
 }
 

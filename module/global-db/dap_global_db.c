@@ -483,6 +483,8 @@ static gdb_group_t *s_group_find(const char *a_group_name, bool a_create)
             l_group = s_group_open(a_group_name, a_create);
         pthread_rwlock_unlock(&s_groups_lock);
     }
+    debug_if(g_dap_global_db_debug_more, L_INFO, "s_group_find: name='%s', create=%d, found=%p, btree=%p",
+           a_group_name, a_create, (void *)l_group, l_group ? (void *)l_group->btree : NULL);
     return l_group;
 }
 
@@ -624,12 +626,13 @@ static dap_global_db_store_obj_t *s_storage_read_all(const char *a_group, size_t
     dap_return_val_if_fail(a_group, NULL);
     dap_global_db_t *l_btree = s_group_get(a_group);
     if (!l_btree) {
-        log_it(L_DEBUG, "s_storage_read_all: group=%s btree=NULL", a_group);
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "s_storage_read_all: group='%s' btree=NULL", a_group);
         if (a_count_out) *a_count_out = 0;
         return NULL;
     }
     uint64_t l_total = dap_global_db_count(l_btree);
-    log_it(L_DEBUG, "s_storage_read_all: group=%s count=%"PRIu64, a_group, l_total);
+    debug_if(g_dap_global_db_debug_more, L_INFO, "s_storage_read_all: group='%s', btree=%p, mvcc_count=%"DAP_UINT64_FORMAT_U", header_items=%"DAP_UINT64_FORMAT_U,
+           a_group, (void *)l_btree, (uint64_t)l_total, (uint64_t)l_btree->header.items_count);
     if (l_total == 0) {
         if (a_count_out) *a_count_out = 0;
         return NULL;
@@ -646,7 +649,11 @@ static dap_global_db_store_obj_t *s_storage_read_all(const char *a_group, size_t
         return NULL;
     }
     size_t l_count = 0;
-    if (dap_global_db_cursor_move(l_cursor, DAP_GLOBAL_DB_FIRST, NULL) == 0) {
+    int l_move_rc = dap_global_db_cursor_move(l_cursor, DAP_GLOBAL_DB_FIRST, NULL);
+    debug_if(g_dap_global_db_debug_more, L_INFO,
+             "s_storage_read_all(%s): cursor_move(FIRST)=%d valid=%d",
+             a_group, l_move_rc, dap_global_db_cursor_valid(l_cursor));
+    if (l_move_rc == 0) {
         do {
             dap_global_db_key_t l_drv_key;
             char *l_text_key = NULL;
@@ -655,9 +662,13 @@ static dap_global_db_store_obj_t *s_storage_read_all(const char *a_group, size_t
             void *l_sign = NULL;
             uint32_t l_sign_len = 0;
             uint8_t l_flags = 0;
-            if (dap_global_db_cursor_get(l_cursor, &l_drv_key, &l_text_key,
+            int l_get_rc = dap_global_db_cursor_get(l_cursor, &l_drv_key, &l_text_key,
                                           &l_value, &l_value_len,
-                                          &l_sign, &l_sign_len, &l_flags) == 0) {
+                                          &l_sign, &l_sign_len, &l_flags);
+            debug_if(g_dap_global_db_debug_more, L_INFO,
+                     "s_storage_read_all(%s): cursor_get=%d key=%s value_len=%u flags=0x%x",
+                     a_group, l_get_rc, l_text_key ? l_text_key : "(null)", l_value_len, l_flags);
+            if (l_get_rc == 0) {
                 if (!a_with_deleted && (l_flags & DAP_GLOBAL_DB_RECORD_DEL)) {
                     DAP_DEL_MULTY(l_text_key, l_value, l_sign);
                     continue;
@@ -839,6 +850,8 @@ static int s_storage_write(dap_global_db_store_obj_t *a_obj)
         log_it(L_ERROR, "Failed to get/create group '%s'", a_obj->group);
         return -2;
     }
+    debug_if(g_dap_global_db_debug_more, L_INFO, "s_storage_write: group='%s', btree=%p, key='%s', value_len=%zu",
+           a_obj->group, (void *)l_group->btree, a_obj->key ? a_obj->key : "(null)", a_obj->value_len);
     dap_global_db_key_t l_key = {
         .bets = htobe64(a_obj->timestamp),
         .becrc = htobe64(a_obj->crc)
@@ -855,11 +868,15 @@ static int s_storage_write(dap_global_db_store_obj_t *a_obj)
         dap_global_db_wal_write(l_group->wal, l_hash, a_obj->key,
                                  a_obj->value, a_obj->value_len,
                                  a_obj->sign, l_sign_len, a_obj->flags);
-    return dap_global_db_insert(l_group->btree, &l_key,
+    int l_ret = dap_global_db_insert(l_group->btree, &l_key,
                                  a_obj->key, l_key_len,
                                  a_obj->value, a_obj->value_len,
                                  a_obj->sign, l_sign_len,
                                  a_obj->flags);
+    debug_if(g_dap_global_db_debug_more, L_INFO, "s_storage_write: insert ret=%d, mvcc_count=%"DAP_UINT64_FORMAT_U", header_items=%"DAP_UINT64_FORMAT_U,
+           l_ret, (uint64_t)atomic_load(&l_group->btree->mvcc_count),
+           (uint64_t)l_group->btree->header.items_count);
+    return l_ret;
 }
 
 static int s_storage_erase(const char *a_group, dap_global_db_hash_t a_hash)
@@ -982,6 +999,7 @@ dap_global_db_pkt_pack_t *dap_global_db_get_by_hash(const char *a_group,
     size_t l_group_len = strlen(a_group) + 1;
     size_t l_total_size = 0;
     size_t l_valid_count = 0;
+    size_t l_group_len = strlen(a_group) + 1;
     for (size_t i = 0; i < a_count; i++) {
         dap_global_db_key_t l_key = {
             .bets = a_hashes[i].bets,
@@ -1351,6 +1369,9 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_global_db_stor
                 // Notify others
                 dap_global_db_cluster_notify(l_cluster, a_obj);
         }
+    } else {
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "s_store_obj_apply: REJECTED group='%s', key='%s', ret=%d",
+               a_obj->group, a_obj->key ? a_obj->key : "(null)", l_ret);
     }
 free_n_exit:
     if (l_read_obj)

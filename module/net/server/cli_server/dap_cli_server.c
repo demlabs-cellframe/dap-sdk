@@ -59,7 +59,7 @@ static bool s_debug_cli = false;
 static atomic_int_fast32_t s_cmd_thread_count = 0;
 static bool s_allowed_cmd_control = false;
 static const char **s_allowed_cmd_array = NULL;
-static int s_cli_version = 1;
+static int s_cli_version = 2;
 
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;

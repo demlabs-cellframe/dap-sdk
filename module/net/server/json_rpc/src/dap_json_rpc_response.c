@@ -1,14 +1,201 @@
+#include <string.h>
+#include <ctype.h>
 #include "dap_json_rpc_response.h"
 #include "dap_cli_server.h"
 #include "dap_json.h"
 
 #define LOG_TAG "dap_json_rpc_response"
-#define INDENTATION_LEVEL "    "
 
-/**
- * @brief Initialize a new JSON-RPC response object
- * @return Pointer to newly allocated dap_json_rpc_response_t structure, or NULL on memory allocation failure
+static bool s_has_json_flag(char **a_params, int a_cnt)
+{
+    for (int i = 0; i < a_cnt; i++) {
+        if (a_params[i] && !strcmp(a_params[i], "-json"))
+            return true;
+    }
+    return false;
+}
+
+/*
+ * Lightweight JSON string → human-readable text converter.
+ * Works directly on the serialized JSON string (no dap_json_t traversal needed,
+ * bypassing IMMUTABLE mode limitations).
  */
+
+static const char *s_skip_ws(const char *p) { while (*p && isspace((unsigned char)*p)) p++; return p; }
+
+static const char *s_skip_string(const char *p, char *a_buf, size_t a_buf_sz)
+{
+    if (*p != '"') return p;
+    p++;
+    size_t pos = 0;
+    while (*p && *p != '"') {
+        if (*p == '\\' && *(p + 1)) {
+            p++;
+            char c = *p;
+            switch (c) {
+                case 'n': c = '\n'; break;
+                case 't': c = '\t'; break;
+                case 'r': c = '\r'; break;
+                case '"': case '\\': case '/': break;
+                default: break;
+            }
+            if (a_buf && pos + 1 < a_buf_sz) a_buf[pos++] = c;
+        } else {
+            if (a_buf && pos + 1 < a_buf_sz) a_buf[pos++] = *p;
+        }
+        p++;
+    }
+    if (a_buf && pos < a_buf_sz) a_buf[pos] = '\0';
+    if (*p == '"') p++;
+    return p;
+}
+
+static const char *s_skip_value(const char *p)
+{
+    p = s_skip_ws(p);
+    if (*p == '"') return s_skip_string(p, NULL, 0);
+    if (*p == '{') {
+        int depth = 1; p++;
+        while (*p && depth > 0) {
+            if (*p == '{') depth++;
+            else if (*p == '}') depth--;
+            else if (*p == '"') p = s_skip_string(p, NULL, 0) - 1;
+            p++;
+        }
+        return p;
+    }
+    if (*p == '[') {
+        int depth = 1; p++;
+        while (*p && depth > 0) {
+            if (*p == '[') depth++;
+            else if (*p == ']') depth--;
+            else if (*p == '"') p = s_skip_string(p, NULL, 0) - 1;
+            p++;
+        }
+        return p;
+    }
+    while (*p && *p != ',' && *p != '}' && *p != ']' && !isspace((unsigned char)*p)) p++;
+    return p;
+}
+
+static size_t s_read_scalar(const char *p, char *a_buf, size_t a_buf_sz)
+{
+    p = s_skip_ws(p);
+    if (*p == '"') {
+        s_skip_string(p, a_buf, a_buf_sz);
+        return strlen(a_buf);
+    }
+    size_t pos = 0;
+    while (*p && *p != ',' && *p != '}' && *p != ']' && !isspace((unsigned char)*p)) {
+        if (pos + 1 < a_buf_sz) a_buf[pos++] = *p;
+        p++;
+    }
+    if (pos < a_buf_sz) a_buf[pos] = '\0';
+    return pos;
+}
+
+static void s_print_indent(FILE *f, int level) { for (int i = 0; i < level; i++) fputs("  ", f); }
+
+static void s_json_str_to_text(const char *p, FILE *f, int indent);
+
+static void s_print_object(const char *p, FILE *f, int indent)
+{
+    p = s_skip_ws(p);
+    if (*p != '{') return;
+    p++; // skip '{'
+    char key[256];
+    while (*p) {
+        p = s_skip_ws(p);
+        if (*p == '}') break;
+        if (*p == ',') { p++; continue; }
+        if (*p != '"') break;
+        p = s_skip_string(p, key, sizeof(key));
+        p = s_skip_ws(p);
+        if (*p == ':') p++;
+        p = s_skip_ws(p);
+
+        if (*p == '{') {
+            s_print_indent(f, indent);
+            fprintf(f, "%s:\n", key);
+            const char *start = p;
+            s_print_object(p, f, indent + 1);
+            p = s_skip_value(start);
+        } else if (*p == '[') {
+            s_print_indent(f, indent);
+            fprintf(f, "%s:\n", key);
+            const char *start = p;
+            s_json_str_to_text(p, f, indent + 1);
+            p = s_skip_value(start);
+        } else {
+            char val[4096];
+            s_read_scalar(p, val, sizeof(val));
+            s_print_indent(f, indent);
+            fprintf(f, "%s: %s\n", key, val);
+            p = s_skip_value(p);
+        }
+    }
+}
+
+static void s_json_str_to_text(const char *p, FILE *f, int indent)
+{
+    p = s_skip_ws(p);
+    if (*p == '[') {
+        p++; // skip '['
+        bool first = true;
+        while (*p) {
+            p = s_skip_ws(p);
+            if (*p == ']') break;
+            if (*p == ',') { p++; continue; }
+            if (*p == '{') {
+                if (!first) fprintf(f, "\n");
+                first = false;
+                const char *start = p;
+                s_print_object(p, f, indent);
+                p = s_skip_value(start);
+            } else if (*p == '[') {
+                const char *start = p;
+                s_json_str_to_text(p, f, indent);
+                p = s_skip_value(start);
+            } else {
+                char val[4096];
+                s_read_scalar(p, val, sizeof(val));
+                s_print_indent(f, indent);
+                fprintf(f, "%s\n", val);
+                p = s_skip_value(p);
+            }
+        }
+    } else if (*p == '{') {
+        s_print_object(p, f, indent);
+    } else {
+        char val[4096];
+        s_read_scalar(p, val, sizeof(val));
+        if (val[0]) fprintf(f, "%s\n", val);
+    }
+}
+
+static bool s_json_str_has_errors(const char *p)
+{
+    return strstr(p, "\"errors\"") != NULL;
+}
+
+static void s_print_error_messages(const char *p, FILE *f)
+{
+    /* Find all "message":"..." and print them line by line */
+    const char *needle = "\"message\"";
+    while ((p = strstr(p, needle)) != NULL) {
+        p += strlen(needle);
+        p = s_skip_ws(p);
+        if (*p == ':') p++;
+        p = s_skip_ws(p);
+        if (*p == '"') {
+            char msg[4096];
+            s_skip_string(p, msg, sizeof(msg));
+            fprintf(f, "%s\n", msg);
+            p = s_skip_value(p);
+        }
+    }
+}
+
 dap_json_rpc_response_t *dap_json_rpc_response_init()
 {
     dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
@@ -17,14 +204,6 @@ dap_json_rpc_response_t *dap_json_rpc_response_init()
     return response;
 }
 
-/**
- * @brief Create a JSON-RPC response with specified result data
- * @param result Pointer to result data (type depends on 'type' parameter)
- * @param type Type of the result (string, integer, double, boolean, JSON object, or null)
- * @param id Request identifier to match response with request
- * @param a_version JSON-RPC protocol version
- * @return Pointer to newly created dap_json_rpc_response_t structure, or NULL on error
- */
 dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id, int a_version) {
 
     dap_return_val_if_fail(result, NULL);
@@ -55,11 +234,6 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
     return response;
 }
 
-/**
- * @brief Free memory allocated for JSON-RPC response object
- * @param response Pointer to dap_json_rpc_response_t structure to be freed
- * @note Handles freeing of internal data based on response type
- */
 void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
 {
     if (response) {
@@ -83,13 +257,6 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
     }
 }
 
-/**
- * @brief Convert JSON-RPC response structure to JSON string representation
- * @param response Pointer to dap_json_rpc_response_t structure to be serialized
- * @return Dynamically allocated string containing JSON representation, or NULL on error
- * @note Caller is responsible for freeing the returned string
- * @note Internal response JSON object dereferenced and highly likely (sic!) to be freed by this call
- */
 char *dap_json_rpc_response_to_string(dap_json_rpc_response_t* response) {
     if (!response) {
         return NULL;
@@ -100,10 +267,8 @@ char *dap_json_rpc_response_to_string(dap_json_rpc_response_t* response) {
         return NULL;
     }
     
-    // json type
     dap_json_object_add_int64(jobj, "type", response->type);
 
-    // json result
     switch (response->type) {
         case TYPE_RESPONSE_STRING:
             dap_json_object_add_string(jobj, "result", response->result_string);
@@ -129,12 +294,9 @@ char *dap_json_rpc_response_to_string(dap_json_rpc_response_t* response) {
             break;
     }
 
-    // json id
     dap_json_object_add_int64(jobj, "id", response->id);
-    // json version
     dap_json_object_add_int64(jobj, "version", response->version);
 
-    // convert to string
     char* result_string = dap_json_to_string(jobj);
     dap_json_object_free(jobj);
     response->result_json_object = NULL;
@@ -143,12 +305,6 @@ char *dap_json_rpc_response_to_string(dap_json_rpc_response_t* response) {
     return result_string;
 }
 
-/**
- * @brief Parse JSON string and create JSON-RPC response structure 
- * @param json_string JSON formatted string to be parsed
- * @return Pointer to newly created dap_json_rpc_response_t structure, or NULL on parsing error
- * @note Caller is responsible for freeing the returned structure using dap_json_rpc_response_free()
- */
 dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_string) {
     dap_json_t *jobj = dap_json_parse_string(json_string);
     if (!jobj) {
@@ -163,14 +319,12 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
         return NULL;
     }
 
-    // Parse version (direct int64 read)
     response->version = dap_json_object_get_int64(jobj, "version");
     if (response->version == 0) {
         log_it(L_DEBUG, "Can't find response version, apply version 1");
         response->version = 1;
     }
 
-    // Parse type (direct int64 read)
     response->type = (int)dap_json_object_get_int64(jobj, "type");
     
     // Parse result - may be an object, array, string, or primitive depending on type
@@ -181,218 +335,44 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
             case TYPE_RESPONSE_STRING: {
                 const char *str_val = dap_json_get_string(result_obj);
                 response->result_string = str_val ? dap_strdup(str_val) : NULL;
-                dap_json_object_free(result_obj); // Free borrowed wrapper
+                dap_json_object_free(result_obj);
                 break;
             }
             case TYPE_RESPONSE_INTEGER:
                 response->result_int = dap_json_get_int64(result_obj);
-                dap_json_object_free(result_obj); // Free borrowed wrapper
+                dap_json_object_free(result_obj);
                 break;
             case TYPE_RESPONSE_DOUBLE:
                 response->result_double = dap_json_get_double(result_obj);
-                dap_json_object_free(result_obj); // Free borrowed wrapper
+                dap_json_object_free(result_obj);
                 break;
             case TYPE_RESPONSE_BOOLEAN:
                 response->result_boolean = dap_json_get_bool(result_obj);
-                dap_json_object_free(result_obj); // Free borrowed wrapper
+                dap_json_object_free(result_obj);
                 break;
             case TYPE_RESPONSE_JSON:
                 // Take ownership of the result JSON wrapper (ref_count already 1)
                 response->result_json_object = result_obj;
                 break;
             case TYPE_RESPONSE_NULL:
-                dap_json_object_free(result_obj); // Free borrowed wrapper
+                dap_json_object_free(result_obj);
                 break;
         }
     }
     
-    // Parse id (direct int64 read)
     response->id = dap_json_object_get_int64(jobj, "id");
 
     dap_json_object_free(jobj);
     return response;
 }
 
-/**
- * @brief Check if command requires special JSON printing format
- * @param a_name Command name to check
- * @return Index of special command (1-based), or 0 if standard format should be used
- */
-int json_print_commands(const char * a_name) {
-    const char* long_cmd[] = {
-            "file"
-    };
-    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[i]); i++) {
-        if (!strcmp(a_name, long_cmd[i])) {
-            return i+1;
-        }
-    }
-    return 0;
-}
-
-/**
- * @brief Print JSON-RPC response with custom format for transaction history command
- * @param response Pointer to dap_json_rpc_response_t structure containing transaction history data
- * @note Provides formatted output showing transaction statistics per network and chain
- */
-void json_print_for_tx_history(dap_json_rpc_response_t* response) {
-    if (!response || !response->result_json_object) {
-        printf("Response is empty\n");
-        return;
-    }
-    
-    if (dap_json_is_array(response->result_json_object)) {
-        size_t result_count = dap_json_array_length(response->result_json_object);
-        if (result_count <= 0) {
-            printf("Response array is empty\n");
-            return;
-        }
-        
-        for (size_t i = 0; i < result_count; i++) {
-            dap_json_t *json_obj_result = dap_json_array_get_idx(response->result_json_object, i);
-            if (!json_obj_result) {
-                printf("Failed to get array element at index %zu\n", i);
-                continue;
-            }
-
-            dap_json_t *j_obj_sum = dap_json_object_get_object(json_obj_result, "tx_sum");
-            dap_json_t *j_obj_accepted = dap_json_object_get_object(json_obj_result, "accepted_tx");
-            dap_json_t *j_obj_rejected = dap_json_object_get_object(json_obj_result, "rejected_tx");
-            dap_json_t *j_obj_chain = dap_json_object_get_object(json_obj_result, "chain");
-            dap_json_t *j_obj_net_name = dap_json_object_get_object(json_obj_result, "network");
-            
-            if (j_obj_sum && j_obj_accepted && j_obj_rejected) {
-                int64_t sum = dap_json_get_int64(j_obj_sum);
-                int64_t accepted = dap_json_get_int64(j_obj_accepted);
-                int64_t rejected = dap_json_get_int64(j_obj_rejected);
-                const char *net_name = j_obj_net_name ? dap_json_get_string(j_obj_net_name) : "unknown";
-                const char *chain_name = j_obj_chain ? dap_json_get_string(j_obj_chain) : "unknown";
-                
-                printf("Print %"DAP_INT64_FORMAT" transactions in network %s chain %s. \n"
-                        "Of which %"DAP_INT64_FORMAT" were accepted into the ledger and %"DAP_INT64_FORMAT" were rejected.\n",
-                        sum, net_name ? net_name : "unknown", 
-                        chain_name ? chain_name : "unknown", accepted, rejected);
-            } else {
-                dap_json_print_object(json_obj_result, stdout, 0);
-            }
-            printf("\n");
-            
-            // All are borrowed references - no free needed
-        }
-    } else {
-        dap_json_print_object(response->result_json_object, stdout, 0);
-    }
-}
-
-/**
- * @brief Print JSON-RPC response with custom format for file-related commands
- * @param response Pointer to dap_json_rpc_response_t structure containing file command output
- * @note Handles nested array structures and prints file content appropriately
- */
-void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
-    if (!response || !response->result_json_object) {
-        printf("Response is empty\n");
-        return;
-    }
-    
-    if (dap_json_is_array(response->result_json_object)) {
-        size_t result_count = dap_json_array_length(response->result_json_object);
-        if (result_count <= 0) {
-            printf("Response array is empty\n");
-            return;
-        }
-        
-        dap_json_t *first_element = dap_json_array_get_idx(response->result_json_object, 0);
-        if (first_element && dap_json_is_array(first_element)) {
-            for (size_t i = 0; i < result_count; i++) {
-                dap_json_t *json_obj_result = dap_json_array_get_idx(response->result_json_object, i);
-                if (!json_obj_result) {
-                    printf("Failed to get array element at index %zu\n", i);
-                    continue;
-                }
-                
-                size_t inner_count = dap_json_array_length(json_obj_result);
-                for (size_t j = 0; j < inner_count; j++) {
-                    dap_json_t *json_obj = dap_json_array_get_idx(json_obj_result, j);
-                    if (json_obj) {
-                        const char *str_val = dap_json_get_string(json_obj);
-                        if (str_val) {
-                            printf("%s", str_val);
-                        }
-                        dap_json_object_free(json_obj);  // Free wrapper from inner loop
-                    }
-                }
-                dap_json_object_free(json_obj_result);  // Free wrapper from outer loop
-            }
-            dap_json_object_free(first_element);  // Free first element wrapper
-        } else {
-            dap_json_object_free(first_element);  // Free even if not array
-            dap_json_print_object(response->result_json_object, stdout, -1);
-        }
-    } else {
-        dap_json_print_object(response->result_json_object, stdout, -1);
-    }
-}
-
-/**
- * @brief Print JSON-RPC response with custom format for mempool list command
- * @param response Pointer to dap_json_rpc_response_t structure containing mempool data
- * @note Displays removed records count and datum information per chain
- */
-void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
-    dap_json_t *json_obj_response = dap_json_array_get_idx(response->result_json_object, 0);
-    if (!json_obj_response) return;
-    
-    dap_json_t *j_obj_net_name = dap_json_object_get_object(json_obj_response, "net");
-    dap_json_t *j_arr_chains = dap_json_object_get_object(json_obj_response, "chains");
-    if (!j_arr_chains) {
-        // Free allocated wrappers before early return
-        dap_json_object_free(j_obj_net_name);
-        dap_json_object_free(json_obj_response);
-        return;
-    }
-    
-    size_t result_count = dap_json_array_length(j_arr_chains);
-    for (size_t i = 0; i < result_count; i++) {
-        dap_json_t *json_obj_result = dap_json_array_get_idx(j_arr_chains, i);
-        if (!json_obj_result) continue;
-        
-        dap_json_t *j_obj_chain = dap_json_object_get_object(json_obj_result, "name");
-        dap_json_t *j_obj_removed = dap_json_object_get_object(json_obj_result, "removed");
-        dap_json_t *j_arr_datums = dap_json_object_get_object(json_obj_result, "datums");
-        dap_json_t *j_arr_total = dap_json_object_get_object(json_obj_result, "total");
-        
-        const char *net_name = j_obj_net_name ? dap_json_get_string(j_obj_net_name) : "unknown";
-        const char *chain_name = j_obj_chain ? dap_json_get_string(j_obj_chain) : "unknown";
-        int64_t removed_count = j_obj_removed ? dap_json_get_int64(j_obj_removed) : 0;
-        
-        printf("Removed %"DAP_INT64_FORMAT" records from the %s chain mempool in %s network.\n", 
-                removed_count, chain_name ? chain_name : "unknown", net_name ? net_name : "unknown");
-        printf("Datums:\n");
-        if (j_arr_datums)
-            dap_json_print_object(j_arr_datums, stdout, 1);
-        // TODO total parser
-        if (j_arr_total)
-            dap_json_print_object(j_arr_total, stdout, 1);
-        
-        // All are borrowed references - no free needed
-    }
-    
-    // All are borrowed references - no free needed
-}
-
-/**
- * @brief Print JSON-RPC response result to stdout based on response type
- * @param response Pointer to dap_json_rpc_response_t structure to print
- * @param cmd_name Command name used to determine special formatting rules
- * @return 0 on success, negative value on error
- * @note Automatically selects appropriate formatting based on response type and command name
- */
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt) {
     if (!response) {
         printf("Empty response");
         return -1;
     }
+
+    bool l_json_mode = s_has_json_flag(cmd_params, cmd_cnt);
 
     switch (response->type) {
         case TYPE_RESPONSE_STRING:
@@ -423,18 +403,23 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                         break;
                 }
             } else {
+            if (l_json_mode) {
                 dap_json_print_object(response->result_json_object, stdout, 0);
+            } else {
+                char *l_str = dap_json_to_string(response->result_json_object);
+                if (l_str) {
+                    if (s_json_str_has_errors(l_str))
+                        s_print_error_messages(l_str, stdout);
+                    else
+                        s_json_str_to_text(l_str, stdout, 0);
+                    DAP_DELETE(l_str);
+                }
             }
             break;
     }
     return 0;
 }
 
-/**
- * @brief Free memory allocated for JSON-RPC request JSON structure
- * @param l_request_JSON Pointer to dap_json_rpc_request_JSON_t structure to be freed
- * @note Frees all internal JSON objects and error structures
- */
 void dap_json_rpc_request_JSON_free(dap_json_rpc_request_JSON_t *l_request_JSON)
 {
     if (l_request_JSON->struct_error)
