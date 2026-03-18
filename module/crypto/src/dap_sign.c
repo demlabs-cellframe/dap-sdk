@@ -43,6 +43,44 @@ static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 static bool s_dap_sign_debug_more = false;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
 
+// Read/write helpers for packed buffers where natural alignment is not guaranteed.
+DAP_STATIC_INLINE uint32_t s_load_u32_unaligned(const uint8_t *a_src)
+{
+    uint32_t l_value = 0;
+    memcpy(&l_value, a_src, sizeof(l_value));
+    return l_value;
+}
+
+DAP_STATIC_INLINE void s_store_u32_unaligned(uint8_t *a_dst, uint32_t a_value)
+{
+    memcpy(a_dst, &a_value, sizeof(a_value));
+}
+
+// Size helpers with overflow checks for serialization/parsing.
+DAP_STATIC_INLINE bool s_size_mul_overflow(size_t a_left, size_t a_right, size_t *a_out)
+{
+    if (!a_out) {
+        return true;
+    }
+    if (a_left != 0 && a_right > SIZE_MAX / a_left) {
+        return true;
+    }
+    *a_out = a_left * a_right;
+    return false;
+}
+
+DAP_STATIC_INLINE bool s_size_add_overflow(size_t a_left, size_t a_right, size_t *a_out)
+{
+    if (!a_out) {
+        return true;
+    }
+    if (a_left > SIZE_MAX - a_right) {
+        return true;
+    }
+    *a_out = a_left + a_right;
+    return false;
+}
+
 // Static function declarations for internal implementations
 static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     dap_sign_t **a_signatures,
@@ -748,8 +786,8 @@ uint32_t dap_sign_get_signers_count(dap_sign_t *a_sign)
                 return 1; // Not enough data for aggregated signature
             }
             
-            uint8_t *sig_data = a_sign->pkey_n_sign;
-            uint32_t signers_count = *(uint32_t*)sig_data;
+            const uint8_t *sig_data = a_sign->pkey_n_sign;
+            uint32_t signers_count = s_load_u32_unaligned(sig_data);
             
             // Sanity check - reasonable upper limit
             if (signers_count > 1000) {
@@ -826,20 +864,87 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     if (result != 0) {
         log_it(L_ERROR, "Chipmunk aggregation failed with error %d", result);
         chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
         DAP_DELETE(individual_sigs);
         return NULL;
     }
+
+    if (multi_sig->signer_count > UINT32_MAX) {
+        log_it(L_ERROR, "Signer count exceeds uint32_t range");
+        chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
+        DAP_DELETE(individual_sigs);
+        return NULL;
+    }
+    uint32_t l_signer_count = (uint32_t)multi_sig->signer_count;
     
-    // Calculate size for serialized aggregated signature
-    size_t serialized_size = sizeof(chipmunk_multi_signature_t) + 
-                           sizeof(uint32_t) + // metadata: signer count
-                           multi_sig->signer_count * sizeof(uint32_t); // leaf indices
+    // Serialize with deep-copy layout (no raw heap pointers):
+    // [u32 signer_count][leaf_indices[count]][chipmunk_multi_signature_t with NULL pointers]
+    // [public_key_roots[count]][proofs[count] with NULL nodes][proof_nodes (variable)]
+    if (!multi_sig->public_key_roots || !multi_sig->proofs || !multi_sig->leaf_indices) {
+        log_it(L_ERROR, "Invalid Chipmunk multi-signature internals for serialization");
+        chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
+        DAP_DELETE(individual_sigs);
+        return NULL;
+    }
+
+    size_t l_leaf_indices_size = 0, l_roots_size = 0, l_proofs_size = 0, l_nodes_total_size = 0;
+    size_t serialized_size = 0;
+    if (s_size_mul_overflow((size_t)l_signer_count, sizeof(uint32_t), &l_leaf_indices_size) ||
+        s_size_mul_overflow((size_t)l_signer_count, sizeof(chipmunk_hvc_poly_t), &l_roots_size) ||
+        s_size_mul_overflow((size_t)l_signer_count, sizeof(chipmunk_path_t), &l_proofs_size)) {
+        log_it(L_ERROR, "Chipmunk aggregated signature size overflow (base arrays)");
+        chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
+        DAP_DELETE(individual_sigs);
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < l_signer_count; i++) {
+        if (multi_sig->proofs[i].path_length > CHIPMUNK_TREE_HEIGHT_MAX) {
+            log_it(L_ERROR, "Unsupported proof path length for signer %u: %zu", i, multi_sig->proofs[i].path_length);
+            chipmunk_multi_signature_free(multi_sig);
+            DAP_DELETE(multi_sig);
+            DAP_DELETE(individual_sigs);
+            return NULL;
+        }
+        size_t l_path_nodes_size = 0;
+        if (s_size_mul_overflow(multi_sig->proofs[i].path_length, sizeof(chipmunk_path_node_t), &l_path_nodes_size) ||
+            s_size_add_overflow(l_nodes_total_size, l_path_nodes_size, &l_nodes_total_size)) {
+            log_it(L_ERROR, "Chipmunk aggregated signature size overflow (proof nodes)");
+            chipmunk_multi_signature_free(multi_sig);
+            DAP_DELETE(multi_sig);
+            DAP_DELETE(individual_sigs);
+            return NULL;
+        }
+        if (l_path_nodes_size && !multi_sig->proofs[i].nodes) {
+            log_it(L_ERROR, "Missing proof nodes buffer for signer %u", i);
+            chipmunk_multi_signature_free(multi_sig);
+            DAP_DELETE(multi_sig);
+            DAP_DELETE(individual_sigs);
+            return NULL;
+        }
+    }
+
+    if (s_size_add_overflow(sizeof(uint32_t), l_leaf_indices_size, &serialized_size) ||
+        s_size_add_overflow(serialized_size, sizeof(chipmunk_multi_signature_t), &serialized_size) ||
+        s_size_add_overflow(serialized_size, l_roots_size, &serialized_size) ||
+        s_size_add_overflow(serialized_size, l_proofs_size, &serialized_size) ||
+        s_size_add_overflow(serialized_size, l_nodes_total_size, &serialized_size)) {
+        log_it(L_ERROR, "Chipmunk aggregated signature size overflow (total)");
+        chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
+        DAP_DELETE(individual_sigs);
+        return NULL;
+    }
     
     // Allocate DAP signature structure
     dap_sign_t *l_aggregated = DAP_NEW_Z_SIZE(dap_sign_t, sizeof(dap_sign_t) + serialized_size);
     if (!l_aggregated) {
         log_it(L_ERROR, "Memory allocation failed for aggregated signature");
         chipmunk_multi_signature_free(multi_sig);
+        DAP_DELETE(multi_sig);
         DAP_DELETE(individual_sigs);
         return NULL;
     }
@@ -854,20 +959,48 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     uint8_t *sig_data = l_aggregated->pkey_n_sign;
     
     // Store signer count
-    *(uint32_t*)sig_data = multi_sig->signer_count;
+    s_store_u32_unaligned(sig_data, l_signer_count);
     sig_data += sizeof(uint32_t);
     
     // Store leaf indices
-    memcpy(sig_data, multi_sig->leaf_indices, multi_sig->signer_count * sizeof(uint32_t));
-    sig_data += multi_sig->signer_count * sizeof(uint32_t);
-    
-    // Store multi-signature data
-    memcpy(sig_data, multi_sig, sizeof(chipmunk_multi_signature_t));
+    memcpy(sig_data, multi_sig->leaf_indices, l_leaf_indices_size);
+    sig_data += l_leaf_indices_size;
+
+    // Store base multi-signature with pointers zeroed (pointers are serialized separately).
+    chipmunk_multi_signature_t l_multi_sig_wire = *multi_sig;
+    l_multi_sig_wire.public_key_roots = NULL;
+    l_multi_sig_wire.proofs = NULL;
+    l_multi_sig_wire.leaf_indices = NULL;
+    memcpy(sig_data, &l_multi_sig_wire, sizeof(l_multi_sig_wire));
+    sig_data += sizeof(l_multi_sig_wire);
+
+    // Store roots.
+    memcpy(sig_data, multi_sig->public_key_roots, l_roots_size);
+    sig_data += l_roots_size;
+
+    // Store proof headers with nodes pointer stripped.
+    for (uint32_t i = 0; i < l_signer_count; i++) {
+        chipmunk_path_t l_proof_wire = multi_sig->proofs[i];
+        l_proof_wire.nodes = NULL;
+        memcpy(sig_data, &l_proof_wire, sizeof(l_proof_wire));
+        sig_data += sizeof(l_proof_wire);
+    }
+
+    // Store proof nodes buffers.
+    for (uint32_t i = 0; i < l_signer_count; i++) {
+        size_t l_path_nodes_size = multi_sig->proofs[i].path_length * sizeof(chipmunk_path_node_t);
+        if (!l_path_nodes_size) {
+            continue;
+        }
+        memcpy(sig_data, multi_sig->proofs[i].nodes, l_path_nodes_size);
+        sig_data += l_path_nodes_size;
+    }
     
     log_it(L_INFO, "Successfully aggregated %u Chipmunk signatures", a_signatures_count);
     
     // Cleanup
     chipmunk_multi_signature_free(multi_sig);
+    DAP_DELETE(multi_sig);
     DAP_DELETE(individual_sigs);
     
     return l_aggregated;
@@ -963,22 +1096,44 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     }
     
     // Extract metadata from aggregated signature
-    uint8_t *sig_data = a_aggregated_sign->pkey_n_sign;
-    uint32_t stored_signers_count = *(uint32_t*)sig_data;
+    const uint8_t *sig_data = a_aggregated_sign->pkey_n_sign;
+    if (a_aggregated_sign->header.sign_size < sizeof(uint32_t)) {
+        log_it(L_ERROR, "Aggregated signature data is too small");
+        return -1;
+    }
+    uint32_t stored_signers_count = s_load_u32_unaligned(sig_data);
     
     if (stored_signers_count != a_signers_count) {
         log_it(L_ERROR, "Signer count mismatch: %u vs %u", stored_signers_count, a_signers_count);
         return -1;
     }
     
-    sig_data += sizeof(uint32_t);
-    
-    // Extract leaf indices
-    uint32_t *leaf_indices = (uint32_t*)sig_data;
-    sig_data += stored_signers_count * sizeof(uint32_t);
-    
-    // Extract multi-signature data
-    chipmunk_multi_signature_t *multi_sig = (chipmunk_multi_signature_t*)sig_data;
+    size_t l_leaf_indices_size = 0;
+    if (s_size_mul_overflow((size_t)stored_signers_count, sizeof(uint32_t), &l_leaf_indices_size)) {
+        log_it(L_ERROR, "Aggregated signature leaf indices size overflow");
+        return -1;
+    }
+    size_t l_min_payload_size = 0;
+    if (s_size_add_overflow(sizeof(uint32_t), l_leaf_indices_size, &l_min_payload_size) ||
+        s_size_add_overflow(l_min_payload_size, sizeof(chipmunk_multi_signature_t), &l_min_payload_size) ||
+        a_aggregated_sign->header.sign_size < l_min_payload_size) {
+        log_it(L_ERROR, "Aggregated signature payload size is invalid");
+        return -1;
+    }
+
+    const uint8_t *l_leaf_indices_data = sig_data + sizeof(uint32_t);
+    const uint8_t *l_payload = l_leaf_indices_data + l_leaf_indices_size;
+
+    // Extract multi-signature into aligned local storage.
+    chipmunk_multi_signature_t multi_sig_local;
+    memcpy(&multi_sig_local, l_payload, sizeof(multi_sig_local));
+    chipmunk_multi_signature_t *multi_sig = &multi_sig_local;
+
+    // Runtime-owned parsed storage.
+    chipmunk_hvc_poly_t *l_public_key_roots = NULL;
+    chipmunk_path_t *l_proofs = NULL;
+    chipmunk_path_node_t *l_proof_nodes_blob = NULL;
+    int l_ret = -1;
     
     log_it(L_INFO, "Verifying aggregated Chipmunk signature with %u signers", a_signers_count);
     
@@ -991,6 +1146,144 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     if (!multi_sig || multi_sig->signer_count != stored_signers_count) {
         log_it(L_ERROR, "Invalid multi-signature structure");
         return -2;
+    }
+
+    size_t l_roots_size = 0, l_proofs_size = 0;
+    if (s_size_mul_overflow((size_t)stored_signers_count, sizeof(chipmunk_hvc_poly_t), &l_roots_size) ||
+        s_size_mul_overflow((size_t)stored_signers_count, sizeof(chipmunk_path_t), &l_proofs_size)) {
+        log_it(L_ERROR, "Aggregated signature payload size overflow");
+        return -2;
+    }
+
+    const size_t l_base_with_header_size = sizeof(chipmunk_multi_signature_t) + l_roots_size + l_proofs_size;
+    const size_t l_legacy_size = sizeof(chipmunk_multi_signature_t);
+    const size_t l_tail_size = a_aggregated_sign->header.sign_size - (sizeof(uint32_t) + l_leaf_indices_size);
+    const uint8_t *l_tail_data = l_payload;
+
+    if (l_tail_size == l_legacy_size) {
+        // Legacy format: only shallow-copied chipmunk_multi_signature_t.
+        if (!a_public_keys) {
+            log_it(L_ERROR, "Legacy aggregated signature requires public keys for safe verification");
+            return -2;
+        }
+
+        l_public_key_roots = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, stored_signers_count);
+        if (!l_public_key_roots) {
+            log_it(L_ERROR, "Memory allocation failed for reconstructed public key roots");
+            return -2;
+        }
+
+        for (uint32_t i = 0; i < stored_signers_count; i++) {
+            if (!a_public_keys[i]) {
+                log_it(L_ERROR, "Missing public key %u for legacy aggregated signature", i);
+                l_ret = -2;
+                goto cleanup;
+            }
+            if (a_public_keys[i]->header.type.type != DAP_PKEY_TYPE_SIG_CHIPMUNK) {
+                log_it(L_ERROR, "Unsupported public key type for legacy aggregated signature at signer %u", i);
+                l_ret = -2;
+                goto cleanup;
+            }
+            if (a_public_keys[i]->header.size < sizeof(chipmunk_public_key_t)) {
+                log_it(L_ERROR, "Invalid Chipmunk public key size for signer %u", i);
+                l_ret = -2;
+                goto cleanup;
+            }
+            chipmunk_public_key_t l_public_key;
+            memcpy(&l_public_key, a_public_keys[i]->pkey, sizeof(l_public_key));
+            if (chipmunk_hots_pk_to_hvc_poly(&l_public_key, &l_public_key_roots[i]) != CHIPMUNK_ERROR_SUCCESS) {
+                log_it(L_ERROR, "Failed to derive HVC root from public key %u", i);
+                l_ret = -2;
+                goto cleanup;
+            }
+        }
+
+        bool l_has_tree_root = false;
+        for (int i = 0; i < CHIPMUNK_N && !l_has_tree_root; i++) {
+            if (multi_sig->tree_root.coeffs[i] != 0) {
+                l_has_tree_root = true;
+            }
+        }
+        if (l_has_tree_root) {
+            log_it(L_ERROR, "Legacy aggregated signature with non-empty tree root is not supported");
+            l_ret = -2;
+            goto cleanup;
+        }
+
+        multi_sig->public_key_roots = l_public_key_roots;
+        multi_sig->proofs = NULL;
+        multi_sig->leaf_indices = (uint32_t *)l_leaf_indices_data;
+    } else {
+        // New deep-copy format.
+        if (l_tail_size < l_base_with_header_size) {
+            log_it(L_ERROR, "Aggregated signature payload is truncated");
+            return -2;
+        }
+
+        const uint8_t *l_cursor = l_tail_data + sizeof(chipmunk_multi_signature_t);
+
+        l_public_key_roots = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, stored_signers_count);
+        l_proofs = DAP_NEW_Z_COUNT(chipmunk_path_t, stored_signers_count);
+        if (!l_public_key_roots || !l_proofs) {
+            log_it(L_ERROR, "Memory allocation failed while parsing aggregated signature");
+            l_ret = -2;
+            goto cleanup;
+        }
+
+        memcpy(l_public_key_roots, l_cursor, l_roots_size);
+        l_cursor += l_roots_size;
+
+        memcpy(l_proofs, l_cursor, l_proofs_size);
+        l_cursor += l_proofs_size;
+
+        size_t l_expected_nodes_size = 0;
+        for (uint32_t i = 0; i < stored_signers_count; i++) {
+            if (l_proofs[i].path_length > CHIPMUNK_TREE_HEIGHT_MAX) {
+                log_it(L_ERROR, "Unsupported proof path length in payload for signer %u: %zu", i, l_proofs[i].path_length);
+                l_ret = -2;
+                goto cleanup;
+            }
+            size_t l_path_nodes_size = 0;
+            if (s_size_mul_overflow(l_proofs[i].path_length, sizeof(chipmunk_path_node_t), &l_path_nodes_size) ||
+                s_size_add_overflow(l_expected_nodes_size, l_path_nodes_size, &l_expected_nodes_size)) {
+                log_it(L_ERROR, "Aggregated signature proof nodes size overflow");
+                l_ret = -2;
+                goto cleanup;
+            }
+        }
+
+        size_t l_parsed_without_nodes = sizeof(chipmunk_multi_signature_t) + l_roots_size + l_proofs_size;
+        if (l_tail_size < l_parsed_without_nodes ||
+            l_tail_size - l_parsed_without_nodes != l_expected_nodes_size) {
+            log_it(L_ERROR, "Aggregated signature proof nodes payload size mismatch");
+            l_ret = -2;
+            goto cleanup;
+        }
+
+        if (l_expected_nodes_size) {
+            l_proof_nodes_blob = DAP_NEW_Z_SIZE(chipmunk_path_node_t, l_expected_nodes_size);
+            if (!l_proof_nodes_blob) {
+                log_it(L_ERROR, "Memory allocation failed for proof nodes payload");
+                l_ret = -2;
+                goto cleanup;
+            }
+            memcpy(l_proof_nodes_blob, l_cursor, l_expected_nodes_size);
+        }
+
+        size_t l_nodes_offset = 0;
+        for (uint32_t i = 0; i < stored_signers_count; i++) {
+            size_t l_path_nodes_size = l_proofs[i].path_length * sizeof(chipmunk_path_node_t);
+            if (l_path_nodes_size) {
+                l_proofs[i].nodes = (chipmunk_path_node_t *)((uint8_t *)l_proof_nodes_blob + l_nodes_offset);
+                l_nodes_offset += l_path_nodes_size;
+            } else {
+                l_proofs[i].nodes = NULL;
+            }
+        }
+
+        multi_sig->public_key_roots = l_public_key_roots;
+        multi_sig->proofs = l_proofs;
+        multi_sig->leaf_indices = (uint32_t *)l_leaf_indices_data;
     }
     
     // Verify that aggregated HOTS signature has non-zero components
@@ -1005,7 +1298,8 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     
     if (!has_nonzero) {
         log_it(L_ERROR, "Aggregated signature appears to be zero - invalid");
-        return -3;
+        l_ret = -3;
+        goto cleanup;
     }
     
     // Use Chipmunk's multi-signature verification
@@ -1019,11 +1313,18 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     
     if (verification_result <= 0) {
         log_it(L_ERROR, "Chipmunk multi-signature verification failed with code %d", verification_result);
-        return -4;
+        l_ret = -4;
+        goto cleanup;
     }
     
     log_it(L_INFO, "Aggregated Chipmunk signature verification completed successfully");
-    return 0;
+    l_ret = 0;
+
+cleanup:
+    DAP_DELETE(l_proof_nodes_blob);
+    DAP_DELETE(l_proofs);
+    DAP_DELETE(l_public_key_roots);
+    return l_ret;
 }
 
 // Universal batch verification context creation
@@ -1164,8 +1465,8 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
 
     // **ПРОИЗВОДСТВЕННАЯ ВЕРСИЯ**: Создаем multi-signatures для batch verification
     uint32_t added_count = 0;
-    chipmunk_multi_signature_t *multi_sigs = DAP_NEW_Z_SIZE(chipmunk_multi_signature_t, a_ctx->signatures_count);
-    uint8_t **converted_messages = DAP_NEW_Z_SIZE(uint8_t *, a_ctx->signatures_count);
+    chipmunk_multi_signature_t *multi_sigs = DAP_NEW_Z_COUNT(chipmunk_multi_signature_t, a_ctx->signatures_count);
+    uint8_t **converted_messages = DAP_NEW_Z_COUNT(uint8_t *, a_ctx->signatures_count);
     
     if (!multi_sigs || !converted_messages) {
         log_it(L_ERROR, "Failed to allocate memory for batch verification");
@@ -1204,10 +1505,28 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
         // Инициализируем tree_root как нулевой (для single signature не нужен)
         memset(&multi_sigs[i].tree_root, 0, sizeof(chipmunk_hvc_poly_t));
         
-        // Преобразуем signature data в HOTS signature
-        if (dap_sig->header.sign_size >= sizeof(chipmunk_signature_t)) {
-            chipmunk_signature_t *chipmunk_sig = (chipmunk_signature_t*)(dap_sig->pkey_n_sign + dap_sig->header.sign_pkey_size);
-            memcpy(&multi_sigs[i].aggregated_hots.sigma, &chipmunk_sig->sigma, sizeof(chipmunk_sig->sigma));
+        // Преобразуем signature data в HOTS signature без предположений о выравнивании
+        if (dap_sig->header.sign_size >= CHIPMUNK_SIGNATURE_SIZE) {
+            const uint8_t *chipmunk_sig_bytes = dap_sig->pkey_n_sign + dap_sig->header.sign_pkey_size;
+            chipmunk_signature_t chipmunk_sig = {0};
+            if (chipmunk_signature_from_bytes(&chipmunk_sig, chipmunk_sig_bytes) != CHIPMUNK_ERROR_SUCCESS) {
+                log_it(L_ERROR, "Failed to deserialize Chipmunk signature %u", i);
+                for (uint32_t j = 0; j <= i; j++) {
+                    DAP_DELETE(multi_sigs[j].public_key_roots);
+                    DAP_DELETE(multi_sigs[j].proofs);
+                    DAP_DELETE(multi_sigs[j].leaf_indices);
+                }
+                DAP_DELETE(multi_sigs);
+                DAP_DELETE(converted_messages);
+                chipmunk_batch_context_free(&chipmunk_batch);
+                return -3;
+            }
+
+            for (int w = 0; w < CHIPMUNK_W; w++) {
+                memcpy(&multi_sigs[i].aggregated_hots.sigma[w],
+                       &chipmunk_sig.sigma[w],
+                       sizeof(chipmunk_poly_t));
+            }
             multi_sigs[i].aggregated_hots.is_randomized = false; // Individual signatures are not randomized
         } else {
             log_it(L_ERROR, "Invalid signature size for signature %u", i);
@@ -1300,8 +1619,8 @@ int dap_sign_benchmark_aggregation(
         case SIG_TYPE_CHIPMUNK:
         {
             // Создаем реальные тестовые подписи для агрегации
-            dap_sign_t **test_signatures = DAP_NEW_Z_SIZE(dap_sign_t*, a_signatures_count);
-            dap_enc_key_t **test_keys = DAP_NEW_Z_SIZE(dap_enc_key_t*, a_signatures_count);
+            dap_sign_t **test_signatures = DAP_NEW_Z_COUNT(dap_sign_t*, a_signatures_count);
+            dap_enc_key_t **test_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, a_signatures_count);
             
             if (!test_signatures || !test_keys) {
                 log_it(L_ERROR, "Failed to allocate memory for benchmark");
@@ -1329,13 +1648,10 @@ int dap_sign_benchmark_aggregation(
                     return -3;
                 }
                 
-                // Создаем подпись
-                size_t signature_size = 0;
-                dap_sign_create_output(test_keys[i], test_message, test_message_len, NULL, &signature_size);
-                
-                test_signatures[i] = DAP_NEW_Z_SIZE(dap_sign_t, signature_size);
+                // Создаем полную DAP-подпись (header + pkey + sign)
+                test_signatures[i] = dap_sign_create(test_keys[i], test_message, test_message_len);
                 if (!test_signatures[i]) {
-                    log_it(L_ERROR, "Failed to allocate signature %u", i);
+                    log_it(L_ERROR, "Failed to create test signature %u", i);
                     // Cleanup
                     for (uint32_t j = 0; j < i; j++) {
                         if (test_signatures[j]) DAP_DELETE(test_signatures[j]);
@@ -1345,13 +1661,6 @@ int dap_sign_benchmark_aggregation(
                     DAP_DELETE(test_signatures);
                     DAP_DELETE(test_keys);
                     return -3;
-                }
-                
-                size_t actual_size = signature_size;
-                int sign_result = dap_sign_create_output(test_keys[i], test_message, test_message_len, 
-                                                        test_signatures[i], &actual_size);
-                if (sign_result != 0) {
-                    log_it(L_WARNING, "Failed to create test signature %u", i);
                 }
             }
             
@@ -1526,4 +1835,3 @@ int dap_sign_get_information_json(dap_sign_t* a_sign, dap_json_t *a_json_out, co
     
     return 0;
 }
-

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "dap_enc_bf.h"
@@ -13,17 +14,67 @@
 
 #define LOG_TAG "dap_enc_blowfish"
 
+static bool s_bf_cbc_extract_payload_size(const uint8_t *a_dec_buf, size_t a_dec_size, size_t *a_payload_size)
+{
+    if (!a_dec_buf || !a_payload_size || a_dec_size < (sizeof(uint32_t) + 1))
+        return false;
+
+    uint8_t l_padding_len = a_dec_buf[a_dec_size - 1];
+    if (l_padding_len > BLOWFISH_BLOCK_SIZE - 1) {
+        log_it(L_WARNING, "blowfish_cbc decryption invalid padding length %u", l_padding_len);
+        return false;
+    }
+
+    size_t l_trailer_size = sizeof(uint32_t) + 1 + (size_t)l_padding_len;
+    if (l_trailer_size > a_dec_size) {
+        log_it(L_WARNING, "blowfish_cbc decryption invalid trailer size %zu for buffer %zu", l_trailer_size, a_dec_size);
+        return false;
+    }
+
+    size_t l_payload_len_pos = a_dec_size - l_trailer_size;
+    uint32_t l_payload_size_u32 = 0;
+    memcpy(&l_payload_size_u32, a_dec_buf + l_payload_len_pos, sizeof(l_payload_size_u32));
+
+    size_t l_payload_size = (size_t)l_payload_size_u32;
+    if (l_payload_size > l_payload_len_pos) {
+        log_it(L_WARNING, "blowfish_cbc decryption payload size %zu exceeds decrypted data %zu", l_payload_size, l_payload_len_pos);
+        return false;
+    }
+
+    *a_payload_size = l_payload_size;
+    return true;
+}
+
 
 void dap_enc_bf_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size, size_t key_size)
 {
+    (void)key_size;
+    if (!a_key)
+        return;
+
     a_key->last_used_timestamp = dap_time_now();
 
+    if (a_key->priv_key_data != NULL) {
+        randombytes(a_key->priv_key_data, a_key->priv_key_data_size);
+        DAP_DEL_Z(a_key->priv_key_data);
+        a_key->priv_key_data_size = 0;
+    }
 
     a_key->priv_key_data_size = sizeof(BF_KEY);
     a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);
+    if (!a_key->priv_key_data) {
+        a_key->priv_key_data_size = 0;
+        return;
+    }
 
     uint8_t *tmp_buf = DAP_NEW_SIZE(uint8_t, (BF_ROUNDS + 2)*4);
+    if (!tmp_buf) {
+        randombytes(a_key->priv_key_data, a_key->priv_key_data_size);
+        DAP_DEL_Z(a_key->priv_key_data);
+        a_key->priv_key_data_size = 0;
+        return;
+    }
     
     // Use SHA3-256 sponge construction for key derivation
     dap_hash_keccak_ctx_t l_ctx;
@@ -34,7 +85,7 @@ void dap_enc_bf_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     dap_hash_keccak_sponge_squeeze(&l_ctx, tmp_buf, (BF_ROUNDS + 2)*4);
 
     BF_set_key(a_key->priv_key_data, (BF_ROUNDS + 2)*4, tmp_buf);
-    DAP_DELETE(tmp_buf);
+    DAP_DEL_Z(tmp_buf);
  }
 void dap_enc_bf_key_delete(struct dap_enc_key *a_key)
 {
@@ -43,7 +94,9 @@ void dap_enc_bf_key_delete(struct dap_enc_key *a_key)
         randombytes(a_key->priv_key_data,a_key->priv_key_data_size);
         DAP_DEL_Z(a_key->priv_key_data);
     }
+    DAP_DEL_Z(a_key->pub_key_data);
     a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
 }
 //------CBC-----------
 size_t dap_enc_bf_cbc_decrypt(struct dap_enc_key *a_key, const void * a_in,
@@ -54,16 +107,25 @@ size_t dap_enc_bf_cbc_decrypt(struct dap_enc_key *a_key, const void * a_in,
         log_it(L_ERROR, "blowfish_cbc decryption ct with iv must be more than BLOWFISH_BLOCK_SIZE bytes and equal to BLOWFISH_BLOCK_SIZE*k");
         return 0;
     }
+    size_t l_dec_size = a_in_size - BLOWFISH_BLOCK_SIZE;
 
 
-    *a_out = DAP_NEW_SIZE(uint8_t, a_in_size - BLOWFISH_BLOCK_SIZE);
+    *a_out = DAP_NEW_SIZE(uint8_t, l_dec_size);
+    if (!*a_out) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return 0;
+    }
     memcpy(iv, a_in, BLOWFISH_BLOCK_SIZE);
-    BF_cbc_encrypt((unsigned char *)(a_in + BLOWFISH_BLOCK_SIZE), *a_out, a_in_size - BLOWFISH_BLOCK_SIZE,
+    BF_cbc_encrypt((unsigned char *)(a_in + BLOWFISH_BLOCK_SIZE), *a_out, l_dec_size,
                    a_key->priv_key_data, iv, BF_DECRYPT);
-    int bf_cbc_padding_length = *(uint8_t*)(*a_out + a_in_size - BLOWFISH_BLOCK_SIZE - 1);
 
-    size_t a_out_size = *(uint32_t*)(*a_out + a_in_size - BLOWFISH_BLOCK_SIZE - 1 - bf_cbc_padding_length - 4);
-    return a_out_size;
+    size_t l_out_size = 0;
+    if (!s_bf_cbc_extract_payload_size((const uint8_t *)*a_out, l_dec_size, &l_out_size)) {
+        DAP_DEL_Z(*a_out);
+        return 0;
+    }
+
+    return l_out_size;
 }
 
 
@@ -106,24 +168,29 @@ size_t dap_enc_bf_cbc_calc_decode_max_size(const size_t size_in)
 
 size_t dap_enc_bf_cbc_decrypt_fast(struct dap_enc_key *a_key, const void * a_in,
         size_t a_in_size, void * a_out, size_t buf_out_size) {
-    if(a_in_size - BLOWFISH_BLOCK_SIZE > buf_out_size || a_in_size %BLOWFISH_BLOCK_SIZE || a_in_size <= BLOWFISH_BLOCK_SIZE) {
+    if(a_in_size <= BLOWFISH_BLOCK_SIZE || a_in_size % BLOWFISH_BLOCK_SIZE) {
         log_it(L_ERROR, "blowfish_cbc fast_decryption too small buf_out_size or not 8*k");
         return 0;
     }
+    size_t l_dec_size = a_in_size - BLOWFISH_BLOCK_SIZE;
+    if (l_dec_size > buf_out_size) {
+        log_it(L_ERROR, "blowfish_cbc fast_decryption too small buf_out_size or not 8*k");
+        return 0;
+    }
+
     uint8_t iv[BLOWFISH_BLOCK_SIZE];
     //BF_KEY *key=a_key->priv_key_data;
 
     memcpy(iv, a_in, BLOWFISH_BLOCK_SIZE);
-    BF_cbc_encrypt((unsigned char *)(a_in + BLOWFISH_BLOCK_SIZE), a_out, a_in_size - BLOWFISH_BLOCK_SIZE,
+    BF_cbc_encrypt((unsigned char *)(a_in + BLOWFISH_BLOCK_SIZE), a_out, l_dec_size,
                    a_key->priv_key_data, iv, BF_DECRYPT);
 
-    int bf_cbc_padding_length = *(uint8_t*)(a_out + a_in_size - BLOWFISH_BLOCK_SIZE - 1);
-    size_t a_out_size = *(uint32_t*)(a_out + a_in_size - BLOWFISH_BLOCK_SIZE - 1 - bf_cbc_padding_length - 4);
-    if (a_out_size > a_in_size + BLOWFISH_BLOCK_SIZE) {
-        log_it(L_WARNING, "blowfish_cbc decryption out size %zu too big", a_out_size);
-        return a_in_size + BLOWFISH_BLOCK_SIZE;
+    size_t l_out_size = 0;
+    if (!s_bf_cbc_extract_payload_size((const uint8_t *)a_out, l_dec_size, &l_out_size)) {
+        return 0;
     }
-    return a_out_size;
+
+    return l_out_size;
 }
 
 
@@ -270,5 +337,3 @@ void dap_enc_bf_ofb_key_new(struct dap_enc_key * a_key)
     a_key->enc_na = dap_enc_bf_ofb_encrypt_fast;
     a_key->dec_na = dap_enc_bf_ofb_decrypt_fast;
 }
-
-

@@ -910,16 +910,28 @@ dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count
 // memory alloc
     size_t l_keys_count = 0;
     dap_enc_key_t *l_keys[a_count];
+    memset(l_keys, 0, sizeof(l_keys));
 // func work
     for(size_t i = a_key_start_index; i < a_count; ++i) {
         if (a_certs[i]) {
-            l_keys[i] = dap_enc_key_dup(a_certs[i]->enc_key);
+            l_keys[l_keys_count] = dap_enc_key_dup(a_certs[i]->enc_key);
+            if (!l_keys[l_keys_count]) {
+                log_it(L_ERROR, "Can't duplicate key from cert index %zu", i);
+                for (size_t j = 0; j < l_keys_count; ++j)
+                    dap_enc_key_delete(l_keys[j]);
+                return NULL;
+            }
             l_keys_count++;
         } else {
             log_it(L_WARNING, "Certs with NULL value");
         }
     }
-    return dap_enc_merge_keys_to_multisign_key(l_keys, l_keys_count);
+    dap_enc_key_t *l_merged = dap_enc_merge_keys_to_multisign_key(l_keys, l_keys_count);
+    if (!l_merged) {
+        for (size_t i = 0; i < l_keys_count; ++i)
+            dap_enc_key_delete(l_keys[i]);
+    }
+    return l_merged;
 }
 
 DAP_INLINE const char *dap_cert_get_str_recommended_sign(){

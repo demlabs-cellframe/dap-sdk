@@ -104,7 +104,8 @@ typedef struct {
  * - kind: the kind describes the choice of parameters in the particular variety of bliss-b that we are using.
  * - entropy: our source of randomness, an initialized entropy object.
  *
- * Returns 0 on success, or a negative error code on failure (see bliss_b_error_t). */
+ * Returns 0 on success, or a negative error code on failure (see bliss_b_error_t).
+ * Ownership note: this function never frees private_key wrapper passed by caller. */
 extern int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t kind, entropy_t *entropy);
 
 /* Delete the memory associated with the private_key */

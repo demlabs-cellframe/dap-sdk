@@ -8,6 +8,7 @@
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
+#include <string.h>
 
 #define round_double(x) (uint64_t)(x + 0.5)
 
@@ -17,6 +18,10 @@ void sample_y(int64_t *y, const unsigned char *seed, int nonce, tesla_param_t *p
     unsigned int nbytes = ((p->PARAM_B_BITS + 1) + 7) / 8;
     unsigned char *buf = malloc(p->PARAM_N * nbytes * sizeof(char) + 1);
     int16_t dmsp = (int16_t)(nonce << 8);
+    uint32_t coeff_word = 0;
+    const uint32_t sample_bits = p->PARAM_B_BITS + 1U;
+    const uint32_t sample_mask = sample_bits >= 32U ? UINT32_MAX : ((1U << sample_bits) - 1U);
+    const uint64_t reject_value = p->PARAM_B_BITS < 63U ? (1ULL << p->PARAM_B_BITS) : UINT64_MAX;
 
     uint32_t NBLOCKS_SHAKE = 0;
     if(p->kind == 0 || p->kind == 3) {
@@ -48,9 +53,10 @@ void sample_y(int64_t *y, const unsigned char *seed, int nonce, tesla_param_t *p
             }
             pos = 0;
         }
-        y[i] = (*(uint32_t *) (buf + pos)) & ((1 << (p->PARAM_B_BITS + 1)) - 1);
+        memcpy(&coeff_word, buf + pos, sizeof(coeff_word));
+        y[i] = (int64_t)(coeff_word & sample_mask);
         y[i] -= (int64_t)(p->PARAM_B);
-        if (y[i] != (1 << p->PARAM_B_BITS))
+        if (y[i] != (int64_t)reject_value)
             i++;
         pos += nbytes;
     }
@@ -660,7 +666,9 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
     unsigned char *seed_ex = malloc(p->PARAM_N * 8 * sizeof(unsigned char));
     int64_t i, j = 0, x_ind;
     int64_t *buf = (int64_t *) seed_ex;
-    int64_t sign, k, bitsremained, rbits, y, z;
+    int64_t k, y, z;
+    uint64_t sign, rbits;
+    uint32_t bitsremained;
     uint64_t r, s, t, c;
     int16_t dmsp = (int16_t)(nonce << 8);
 
@@ -692,7 +700,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                 j = 0;
             }
             do {
-                rbits = buf[j++];
+                rbits = (uint64_t)buf[j++];
                 bitsremained = 64;
                 do {
                     // Sample x from D^+_{\sigma_2} and y from U({0, ..., k-1}):
@@ -717,7 +725,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                     do {
                         do {
                             if (bitsremained < 6) {
-                                rbits = buf[j++];
+                                rbits = (uint64_t)buf[j++];
                                 bitsremained = 64;
                             }
                             z = rbits & 63;
@@ -725,7 +733,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                             bitsremained -= 6;
                         } while (z == 63);
                         if (bitsremained < 2) {
-                            rbits = buf[j++];
+                            rbits = (uint64_t)buf[j++];
                             bitsremained = 64;
                         }
                         z = (mod7(z) << 2) + (rbits & 3);
@@ -737,24 +745,26 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                 } while (Bernoulli(buf[j++], z * ((k << 1) - z), p) == 0);
 
                 // Put last randombits into sign bit
-                rbits <<= (64 - bitsremained);
-                if (bitsremained == 0LL) {
-                    rbits = buf[j++];
+                if (bitsremained > 0U && bitsremained < 64U) {
+                    rbits <<= (64U - bitsremained);
+                }
+                if (bitsremained == 0U) {
+                    rbits = (uint64_t)buf[j++];
                     bitsremained = 64;
                 }
                 sign = rbits >> 63;
                 rbits <<= 1;
                 bitsremained--;
-            } while ((k | (sign & 1)) == 0);
-            if (bitsremained == 0LL) {
-                rbits = buf[j++];
+            } while (k == 0 && sign == 0);
+            if (bitsremained == 0U) {
+                rbits = (uint64_t)buf[j++];
                 bitsremained = 64;
             }
             sign = rbits >> 63;
             rbits <<= 1;
             bitsremained--;
-            k = ((k << 1) & sign) - k;
-            x[x_ind] = (k << 48) >> 48;
+            k = sign ? k : -k;
+            x[x_ind] = (int16_t)k;
         }
     }
     else {
@@ -788,7 +798,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                 j = 0;
             }
             do {
-                rbits = buf[j++];
+                rbits = (uint64_t)buf[j++];
                 bitsremained = 64;
                 do {
                     // Sample x from D^+_{\sigma_2} and y from U({0, ..., k-1}):
@@ -818,7 +828,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                     do {
                         do {
                             if (bitsremained < 6) {
-                                rbits = buf[j++];
+                                rbits = (uint64_t)buf[j++];
                                 bitsremained = 64;
                             }
                             z = rbits & 63;
@@ -826,7 +836,7 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                             bitsremained -= 6;
                         } while (z == 63);
                         if (bitsremained < 2) {
-                            rbits = buf[j++];
+                            rbits = (uint64_t)buf[j++];
                             bitsremained = 64;
                         }
                         z = (mod7(z) << 2) + (rbits & 3);
@@ -838,24 +848,26 @@ void sample_gauss_poly(int64_t *x, const unsigned char *seed, int nonce, tesla_p
                 } while (Bernoulli(buf[j++], z * ((k << 1) - z), p) == 0);
 
                 // Put last randombits into sign bit
-                rbits <<= (64 - bitsremained);
-                if (bitsremained == 0LL) {
-                    rbits = buf[j++];
+                if (bitsremained > 0U && bitsremained < 64U) {
+                    rbits <<= (64U - bitsremained);
+                }
+                if (bitsremained == 0U) {
+                    rbits = (uint64_t)buf[j++];
                     bitsremained = 64;
                 }
                 sign = rbits >> 63;
                 rbits <<= 1;
                 bitsremained--;
-            } while ((k | (sign & 1)) == 0);
-            if (bitsremained == 0LL) {
-                rbits = buf[j++];
+            } while (k == 0 && sign == 0);
+            if (bitsremained == 0U) {
+                rbits = (uint64_t)buf[j++];
                 bitsremained = 64;
             }
             sign = rbits >> 63;
             rbits <<= 1;
             bitsremained--;
-            k = ((k << 1) & sign) - k;
-            x[x_ind] = (k << 48) >> 48;
+            k = sign ? k : -k;
+            x[x_ind] = (int16_t)k;
         }
     }
     free(seed_ex);

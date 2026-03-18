@@ -32,12 +32,13 @@ extern "C" {
 #define MAX_CPU_COUNT 64
 
 #include <stdlib.h>
+#include <stdint.h>
 
 typedef struct dap_cpu {
     unsigned ncpu; // number of cpu core
     float load; // percent of load
-    size_t total_time;
-    size_t idle_time;
+    uint64_t total_time;
+    uint64_t idle_time;
 } dap_cpu_t;
 
 typedef struct dap_cpu_stats

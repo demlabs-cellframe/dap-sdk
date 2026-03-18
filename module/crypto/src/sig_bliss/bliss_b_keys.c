@@ -148,7 +148,7 @@ static int32_t bliss_b_private_key_init(bliss_private_key_t *private_key, bliss_
 /* Bliss-b public and sign key generation sign key is f, g small and f invertible
  *        public key is  a_q = -(2g-1)/f mod q = (2g'+1)/f  */
 int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t kind, entropy_t *entropy) {
-  int32_t retcode;
+  int32_t retcode = BLISS_B_NO_ERROR;
   uint32_t i, j;
   int32_t *t = NULL, *u = NULL;
   ntt_state_t state;
@@ -171,7 +171,6 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -180,7 +179,6 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -189,7 +187,6 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -235,7 +232,10 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
     return BLISS_B_NO_ERROR;
   }
 
-  return retcode;
+  secure_free(&t, p.n);
+  secure_free(&u, p.n);
+  delete_ntt_state(state);
+  return BLISS_B_BAD_DATA;
 }
 
 void bliss_b_private_key_delete(void *a_skey){
@@ -245,6 +245,7 @@ void bliss_b_private_key_delete(void *a_skey){
     bliss_param_t p;
 
     if (! bliss_params_init(&p, l_skey->kind)) {
+        DAP_DELETE(l_skey);
         return;
     }
 

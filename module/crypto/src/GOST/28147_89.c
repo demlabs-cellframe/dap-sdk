@@ -16,8 +16,11 @@
  */
 static unsigned int uint8ToUint32(const unsigned char* input)
 {
-     unsigned int r = ( (input[3]) | (input[2]<<8) | (input[1]<<16) | (input[0]<<24));
-     return r;
+     uint32_t r = ((uint32_t)input[3]) |
+                  ((uint32_t)input[2] << 8u) |
+                  ((uint32_t)input[1] << 16u) |
+                  ((uint32_t)input[0] << 24u);
+     return (unsigned int)r;
 }
 
 /** @brief Конвертирует int32 в массив байт
@@ -66,13 +69,13 @@ unsigned int DLL_IMPORT funcT(unsigned int a, printout_uint_array print)
      unsigned int res = 0;
 
      res ^=   p[ 0 ][ a & 0x0000000f ];
-     res ^= ( p[ 1 ][ ( ( a & 0x000000f0 ) >>  4 ) ] << 4 );
-     res ^= ( p[ 2 ][ ( ( a & 0x00000f00 ) >>  8 ) ] << 8 );
-     res ^= ( p[ 3 ][ ( ( a & 0x0000f000 ) >> 12 ) ] << 12 );
-     res ^= ( p[ 4 ][ ( ( a & 0x000f0000 ) >> 16 ) ] << 16 );
-     res ^= ( p[ 5 ][ ( ( a & 0x00f00000 ) >> 20 ) ] << 20 );
-     res ^= ( p[ 6 ][ ( ( a & 0x0f000000 ) >> 24 ) ] << 24 );
-     res ^= ( p[ 7 ][ ( ( a & 0xf0000000 ) >> 28 ) ] << 28 );
+     res ^= ((unsigned int)p[ 1 ][ ( ( a & 0x000000f0u ) >>  4u ) ] << 4u);
+     res ^= ((unsigned int)p[ 2 ][ ( ( a & 0x00000f00u ) >>  8u ) ] << 8u);
+     res ^= ((unsigned int)p[ 3 ][ ( ( a & 0x0000f000u ) >> 12u ) ] << 12u);
+     res ^= ((unsigned int)p[ 4 ][ ( ( a & 0x000f0000u ) >> 16u ) ] << 16u);
+     res ^= ((unsigned int)p[ 5 ][ ( ( a & 0x00f00000u ) >> 20u ) ] << 20u);
+     res ^= ((unsigned int)p[ 6 ][ ( ( a & 0x0f000000u ) >> 24u ) ] << 24u);
+     res ^= ((unsigned int)p[ 7 ][ ( ( a & 0xf0000000u ) >> 28u ) ] << 28u);
 
      if(print)
      {

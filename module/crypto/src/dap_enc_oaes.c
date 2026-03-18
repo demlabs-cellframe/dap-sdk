@@ -41,6 +41,8 @@ void dap_enc_oaes_key_delete(struct dap_enc_key *a_key)
         a_key->_inheritor_size = 0;
         a_key->_inheritor = NULL;
     }
+    DAP_DEL_Z(a_key->pub_key_data);
+    a_key->pub_key_data_size = 0;
 }
 
 void dap_enc_oaes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
@@ -80,20 +82,29 @@ size_t dap_enc_oaes_calc_encode_size(const size_t size_in)
 
 size_t dap_enc_oaes_calc_decode_size(const size_t size_in)
 {
+    // OAES ciphertext always contains a 2-block prefix (header/options + IV).
+    if(size_in < 2 * OAES_BLOCK_SIZE)
+        return 0;
     return size_in - 2 * OAES_BLOCK_SIZE;
 }
 
 size_t dap_enc_oaes_decrypt(struct dap_enc_key *a_key, const void * a_in,
         size_t a_in_size, void ** a_out) {
     OAES_CTX *ctx = get_oaes_ctx(a_key);
-    if(!ctx)
+    if(!ctx || !a_out)
+        return 0;
+    *a_out = NULL;
+    if(a_in_size < 2 * OAES_BLOCK_SIZE)
         return 0;
     size_t l_out_size = dap_enc_oaes_calc_decode_size(a_in_size);
     *a_out = calloc(l_out_size, 1);
+    if(l_out_size && !*a_out)
+        return 0;
     OAES_RET ret = oaes_decrypt(ctx, a_in, a_in_size, *a_out, &l_out_size);
     if(ret != OAES_RET_SUCCESS) {
         l_out_size = 0;
         free(*a_out);
+        *a_out = NULL;
     }
     return l_out_size;
 }
@@ -142,4 +153,3 @@ size_t dap_enc_oaes_encrypt_fast(struct dap_enc_key * a_key, const void * a_in,
     }
     return buf_out_size;
 }
-

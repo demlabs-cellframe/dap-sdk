@@ -50,12 +50,34 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
 // memory alloc
     const dap_enc_key_type_t *l_key_types = a_kex_buf;
     dap_enc_key_t *l_keys[a_kex_size];
+    memset(l_keys, 0, sizeof(l_keys));
     for (size_t i = 0; i < a_kex_size; i++) {
         l_keys[i] = dap_enc_key_new_generate(l_key_types[i], NULL, 0, a_seed, a_seed_size, 0);
+        if (!l_keys[i]) {
+            log_it(L_ERROR, "Can't generate multisign inner key at index %zu", i);
+            for (size_t j = 0; j < a_kex_size; j++) {
+                dap_enc_key_delete(l_keys[j]);
+            }
+            return;
+        }
     }
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_keys, a_kex_size, NULL, a_kex_size);
-    dap_enc_sig_multisign_forming_keys(a_key, l_params);
+    if (!l_params) {
+        log_it(L_ERROR, "Can't create multisign params");
+        for (size_t i = 0; i < a_kex_size; i++) {
+            dap_enc_key_delete(l_keys[i]);
+        }
+        return;
+    }
+    int l_forming_res = dap_enc_sig_multisign_forming_keys(a_key, l_params);
+    if (l_forming_res != 0) {
+        log_it(L_ERROR, "Can't form multisign key, error code %d", l_forming_res);
+        dap_multi_sign_params_delete(l_params);
+        return;
+    }
+    dap_multi_sign_params_t *l_prev_params = (dap_multi_sign_params_t*)a_key->_pvt;
     a_key->_pvt = l_params;
+    dap_multi_sign_params_delete(l_prev_params);
 }
 
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)

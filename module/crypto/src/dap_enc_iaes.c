@@ -28,8 +28,10 @@ void dap_enc_aes_key_delete(struct dap_enc_key *a_key)
 {
     DAP_DEL_Z(a_key->_inheritor);
     DAP_DEL_Z(a_key->priv_key_data);
+    DAP_DEL_Z(a_key->pub_key_data);
     a_key->_inheritor_size = 0;
     a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
     //No need any specific actions
 }
 
@@ -50,6 +52,11 @@ void dap_enc_aes_key_new(struct dap_enc_key * a_key)
     //a_key->delete_callback = dap_enc_aes_key_delete;
 
     a_key->priv_key_data = (uint8_t *)malloc(IAES_KEYSIZE);
+    if (!a_key->priv_key_data) {
+        a_key->priv_key_data_size = 0;
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
     a_key->priv_key_data_size = IAES_KEYSIZE;
 }
 
@@ -58,22 +65,42 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
                                                 size_t key_size)
 {
     (void)key_size;
-    a_key->last_used_timestamp = dap_time_now();
-
-    uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
-    if (!id_concat_kex) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+    if (!a_key || !a_key->priv_key_data || a_key->priv_key_data_size < IAES_KEYSIZE || !DAP_ENC_AES_KEY(a_key)) {
+        log_it(L_CRITICAL, "IAES key generation: key buffer is not initialized");
+        if (a_key) {
+            if (a_key->priv_key_data && a_key->priv_key_data_size)
+                memset(a_key->priv_key_data, 0, a_key->priv_key_data_size);
+            a_key->priv_key_data_size = 0;
+        }
         return;
     }
 
-    memcpy(id_concat_kex,seed, seed_size);
-    memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
-    //SHAKE256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
-    //SHAKE128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
-    dap_hash_shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
-    dap_hash_shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
+    a_key->last_used_timestamp = dap_time_now();
 
-    free(id_concat_kex);
+    static const uint8_t s_empty_input = 0;
+    const uint8_t *l_seed = (const uint8_t *)seed;
+    const uint8_t *l_kex = (const uint8_t *)kex_buf;
+
+    if (seed_size && !l_seed) {
+        log_it(L_ERROR, "IAES key generation: seed is NULL while seed_size=%zu, fallback to empty seed", seed_size);
+        seed_size = 0;
+    }
+    if (kex_size && !l_kex) {
+        log_it(L_ERROR, "IAES key generation: kex_buf is NULL while kex_size=%zu, fallback to empty kex", kex_size);
+        kex_size = 0;
+    }
+
+    // KDF input is SHAKE256(seed || kex) via streaming absorb to avoid temporary heap allocation.
+    dap_hash_keccak_ctx_t l_kdf_ctx;
+    dap_hash_keccak_sponge_init(&l_kdf_ctx, DAP_KECCAK_SHAKE256_RATE, DAP_KECCAK_SHAKE_SUFFIX);
+    if (seed_size)
+        dap_hash_keccak_sponge_absorb(&l_kdf_ctx, l_seed, seed_size);
+    if (kex_size)
+        dap_hash_keccak_sponge_absorb(&l_kdf_ctx, l_kex, kex_size);
+    dap_hash_keccak_sponge_squeeze(&l_kdf_ctx, a_key->priv_key_data, IAES_KEYSIZE);
+
+    l_seed = seed_size ? l_seed : &s_empty_input;
+    dap_hash_shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, l_seed, seed_size);
 }
 
 

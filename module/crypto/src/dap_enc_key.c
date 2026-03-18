@@ -60,29 +60,53 @@
 #define LOG_TAG "dap_enc_key"
 
 // Wrapper functions for Chipmunk callbacks
+static void dap_enc_chipmunk_key_move_data(dap_enc_key_t *dst, dap_enc_key_t *src)
+{
+    if (!dst || !src) {
+        return;
+    }
+
+    // Replace existing key buffers in destination to avoid leaks on re-generation.
+    if (dst->priv_key_data) {
+        DAP_DELETE(dst->priv_key_data);
+        dst->priv_key_data = NULL;
+        dst->priv_key_data_size = 0;
+    }
+    if (dst->pub_key_data) {
+        DAP_DELETE(dst->pub_key_data);
+        dst->pub_key_data = NULL;
+        dst->pub_key_data_size = 0;
+    }
+
+    dst->type = src->type;
+    dst->dec_na = src->dec_na;
+    dst->enc_na = src->enc_na;
+    dst->sign_get = src->sign_get;
+    dst->sign_verify = src->sign_verify;
+    dst->priv_key_data = src->priv_key_data;
+    dst->priv_key_data_size = src->priv_key_data_size;
+    dst->pub_key_data = src->pub_key_data;
+    dst->pub_key_data_size = src->pub_key_data_size;
+
+    // Detach ownership from the temporary wrapper.
+    src->priv_key_data = NULL;
+    src->priv_key_data_size = 0;
+    src->pub_key_data = NULL;
+    src->pub_key_data_size = 0;
+}
+
 static void dap_enc_chipmunk_key_new_callback(dap_enc_key_t *key)
 {
     dap_enc_key_t *new_key = dap_enc_chipmunk_key_new();
     if (new_key) {
-        // Copy data to the provided key
-        key->type = new_key->type;
-        key->dec_na = new_key->dec_na;
-        key->enc_na = new_key->enc_na;
-        key->sign_get = new_key->sign_get;
-        key->sign_verify = new_key->sign_verify;
-        key->priv_key_data = new_key->priv_key_data;
-        key->priv_key_data_size = new_key->priv_key_data_size;
-        key->pub_key_data = new_key->pub_key_data;
-        key->pub_key_data_size = new_key->pub_key_data_size;
-        
-        // Clear only the wrapper key, not the data
-        new_key->priv_key_data = NULL;
-        new_key->pub_key_data = NULL;
+        dap_enc_chipmunk_key_move_data(key, new_key);
         DAP_DELETE(new_key);
     } else {
-        // Initialize key with NULL values if creation failed
+        // Keep key object in consistent state on failure.
         memset(key, 0, sizeof(dap_enc_key_t));
         key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
+        key->sign_get = dap_enc_chipmunk_get_sign;
+        key->sign_verify = dap_enc_chipmunk_verify_sign;
     }
 }
 
@@ -93,25 +117,11 @@ static void dap_enc_chipmunk_key_generate_callback(dap_enc_key_t *key, const voi
     (void) key_size; // Unused
     dap_enc_key_t *new_key = dap_enc_chipmunk_key_generate(kex_buf, kex_size, seed, seed_size, NULL, 0);
     if (new_key) {
-        // Copy data to the provided key
-        key->type = new_key->type;
-        key->dec_na = new_key->dec_na;
-        key->enc_na = new_key->enc_na;
-        key->sign_get = new_key->sign_get;
-        key->sign_verify = new_key->sign_verify;
-        key->priv_key_data = new_key->priv_key_data;
-        key->priv_key_data_size = new_key->priv_key_data_size;
-        key->pub_key_data = new_key->pub_key_data;
-        key->pub_key_data_size = new_key->pub_key_data_size;
-        
-        // Clear only the wrapper key, not the data
-        new_key->priv_key_data = NULL;
-        new_key->pub_key_data = NULL;
+        dap_enc_chipmunk_key_move_data(key, new_key);
         DAP_DELETE(new_key);
     } else {
-        // Initialize key with NULL values if creation failed
-        memset(key, 0, sizeof(dap_enc_key_t));
-        key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
+        // Keep existing key data untouched if generation failed.
+        log_it(L_ERROR, "Chipmunk key generation callback failed, preserving existing key");
     }
 }
 
@@ -1072,8 +1082,22 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         l_ser_skey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_ser_skey_size, NULL, l_ret);
     if (l_ser_pkey_size)
         l_ser_pkey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_ser_pkey_size, NULL, l_ser_skey, l_ret);
-    if (l_ser_inheritor_size)
-        l_ret->_inheritor = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(void, l_ser_inheritor_size, NULL, l_ser_pkey, l_ser_skey, l_ret);
+    if (l_ser_inheritor_size) {
+        if (!l_ret->_inheritor) {
+            l_ret->_inheritor = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(void, l_ser_inheritor_size, NULL, l_ser_pkey, l_ser_skey, l_ret);
+        } else if (l_ret->_inheritor_size != l_ser_inheritor_size) {
+            void *l_new_inheritor = DAP_REALLOC((uint8_t*)l_ret->_inheritor, l_ser_inheritor_size);
+            if (!l_new_inheritor) {
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                DAP_DEL_MULTY(l_ser_pkey, l_ser_skey);
+                dap_enc_key_delete(l_ret);
+                return NULL;
+            }
+            l_ret->_inheritor = l_new_inheritor;
+        }
+    } else {
+        DAP_DEL_Z(l_ret->_inheritor);
+    }
 // deser keys
     l_res_des = DAP_VA_DESERIALIZE( ((uint8_t*)buf) + l_sizes_len, (uint64_t)(a_buf_size - l_sizes_len),
         l_ser_skey, (uint64_t)l_ser_skey_size,
@@ -1084,7 +1108,8 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         || (l_ser_pkey_size && dap_enc_key_deserialize_pub_key(l_ret, l_ser_pkey, l_ser_pkey_size))
         || (l_ser_skey_size && dap_enc_key_deserialize_priv_key(l_ret, l_ser_skey, l_ser_skey_size)) )
     {
-        DAP_DEL_MULTY(l_ret->_inheritor, l_ser_pkey, l_ser_skey, l_ret);
+        DAP_DEL_MULTY(l_ser_pkey, l_ser_skey);
+        dap_enc_key_delete(l_ret);
         log_it(L_ERROR, "Enc_key pub and priv keys deserialisation error");
         return NULL;
     }
@@ -1348,6 +1373,13 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
     return 0;
 }
 
+static void s_multi_sign_params_delete_keep_keys(dap_multi_sign_params_t *a_params)
+{
+    if (!a_params)
+        return;
+    DAP_DEL_MULTY(a_params->key_seq, a_params->keys, a_params);
+}
+
 /**
  * @brief create new key with merged all keys 
  * @param a_keys pointer to keys
@@ -1366,7 +1398,19 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_
     }
 // func work
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, a_keys, a_count, NULL, a_count);
-    dap_enc_sig_multisign_forming_keys(l_ret, l_params);
+    if (!l_params) {
+        log_it(L_ERROR, "Can't create multisign params");
+        dap_enc_key_delete(l_ret);
+        return NULL;
+    }
+    int l_forming_res = dap_enc_sig_multisign_forming_keys(l_ret, l_params);
+    if (l_forming_res) {
+        log_it(L_ERROR, "Can't form multisign key from %zu keys, error code %d", a_count, l_forming_res);
+        // Keep input keys ownership on failure.
+        s_multi_sign_params_delete_keep_keys(l_params);
+        dap_enc_key_delete(l_ret);
+        return NULL;
+    }
     l_ret->_pvt = l_params;
     return l_ret;
 }

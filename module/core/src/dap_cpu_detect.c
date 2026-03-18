@@ -91,7 +91,7 @@ static void s_detect_x86_features(dap_cpu_features_t *a_features)
         a_features->has_avx512f = (ebx & (1 << 16)) != 0;
         a_features->has_avx512dq = (ebx & (1 << 17)) != 0;
         a_features->has_avx512bw = (ebx & (1 << 30)) != 0;
-        a_features->has_avx512vl = (ebx & (1 << 31)) != 0;
+        a_features->has_avx512vl = (ebx & (UINT32_C(1) << 31)) != 0;
     }
 }
 

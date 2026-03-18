@@ -522,6 +522,9 @@ dap_http_cache_t * dap_http_simple_make_cache_from_reply(dap_http_simple_t * a_h
  */
 size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_format, ... )
 {
+    if (!a_http_simple || !a_format)
+        return 0;
+
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);

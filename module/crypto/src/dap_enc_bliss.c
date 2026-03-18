@@ -77,6 +77,9 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
     dap_return_if_pass(!a_key);
     int32_t l_retcode = 0;
 
+    if (a_key->priv_key_data || a_key->pub_key_data)
+        dap_enc_sig_bliss_key_delete(a_key);
+
     dap_enc_sig_bliss_key_new(a_key);
 
     uint8_t seed_tmp[SHA3_512_DIGEST_LENGTH];
@@ -98,7 +101,7 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
      */
     //int32_t type = 4;
     a_key->priv_key_data_size = sizeof(bliss_private_key_t);
-    a_key->priv_key_data = DAP_NEW_SIZE(void, a_key->priv_key_data_size);
+    a_key->priv_key_data = DAP_NEW_Z(bliss_private_key_t);
     if (!a_key->priv_key_data) {
         a_key->priv_key_data_size = 0;
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -114,11 +117,12 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
     }
 
     a_key->pub_key_size = sizeof(bliss_public_key_t);
-    a_key->pub_key_data = DAP_NEW_SIZE(void, a_key->pub_key_size);
+    a_key->pub_key_data = DAP_NEW_Z(bliss_public_key_t);
     if (!a_key->pub_key_data) {
         bliss_b_private_key_delete(a_key->priv_key_data);
         a_key->priv_key_data = NULL;
         a_key->priv_key_data_size = 0;
+        a_key->pub_key_data = NULL;
         a_key->pub_key_size = 0;
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
