@@ -21,6 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <errno.h>
@@ -55,7 +56,9 @@ typedef struct dap_timerfd {
     HANDLE th;
 #endif
 #elif defined(DAP_OS_LINUX)
-    int tfd; //timer file descriptor
+    int tfd;
+#elif defined(DAP_OS_WASM)
+    long interval_id;
 #endif
     dap_worker_t *worker;
     dap_proc_thread_t *proc_thread;
@@ -78,3 +81,4 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd);
 #ifdef DAP_EVENTS_CAPS_IOCP
 DWORD dap_del_queuetimer(HANDLE h);
 #endif
+

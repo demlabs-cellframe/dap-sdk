@@ -426,6 +426,17 @@ typedef struct dap_net_trans_ops {
     void* (*get_client_context)(dap_stream_t *a_stream);
 
     /**
+     * @brief Check/open session for SERVICE_PACKET handling (optional)
+     * @param a_trans Trans instance
+     * @param a_session_id Session ID from service packet
+     * @param a_esocket Stream event socket
+     * @note Only used by transports with session control (e.g. UDP).
+     *       If NULL, service packet session check is skipped.
+     */
+    void (*check_session)(dap_net_trans_t *a_trans, uint32_t a_session_id,
+                          dap_events_socket_t *a_esocket);
+
+    /**
      * @brief Get maximum packet size for this trans (optional)
      * @param a_trans Trans instance
      * @return Maximum packet size in bytes, or 0 if unlimited/streaming

@@ -38,10 +38,6 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg);
 static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, dap_cluster_node_addr_t a_sender_addr);
 
-/**
- * @brief dap_stream_ch_gdb_init
- * @return
- */
 int dap_global_db_ch_init()
 {
     log_it(L_NOTICE, "Global DB exchange channel initialized");

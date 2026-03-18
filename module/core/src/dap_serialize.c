@@ -44,12 +44,12 @@ const dap_serialize_arg_t* dap_serialize_get_arg_by_index(const dap_serialize_si
 uint64_t dap_serialize_get_arg_uint_by_index(const dap_serialize_size_params_t *a_params, size_t a_index, uint64_t a_default) {
     const dap_serialize_arg_t *arg = dap_serialize_get_arg_by_index(a_params, a_index);
     if (!arg || arg->type != 0) { // type 0 = uint
-        debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, arg=%p, returning default=%lu", 
+        debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, arg=%p, returning default=%" DAP_UINT64_FORMAT_U "", 
                  a_index, arg, a_default);
         return a_default;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, value=%lu", 
+    debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, value=%" DAP_UINT64_FORMAT_U "", 
              a_index, arg->value.uint_value);
     return arg->value.uint_value;
 }

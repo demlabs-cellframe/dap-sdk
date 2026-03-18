@@ -53,6 +53,9 @@
 #endif
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
+#include "dap_stream_session.h"
+#include "dap_stream_ch.h"
+#include "dap_stream_esocket_ops.h"
 #include "dap_server.h"
 #include "dap_enc_server.h"
 #include "dap_client.h"
@@ -67,6 +70,9 @@
 #include "dap_json.h"  // For JSON API
 
 #define LOG_TAG "dap_stream_trans_udp"
+
+// Stream creation counter (from dap_stream.c)
+extern _Atomic uint64_t dap_stream_created_count;
 
 // Debug flags
 static bool s_debug_more = false;  // Extra verbose debugging
@@ -114,6 +120,8 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
                                const dap_net_stage_prepare_params_t *a_params,
                                dap_net_stage_prepare_result_t *a_result);
 static size_t s_udp_get_max_packet_size(dap_net_trans_t *a_trans);
+static void s_udp_check_session_op(dap_net_trans_t *a_trans, uint32_t a_session_id,
+                                   dap_events_socket_t *a_esocket);
 
 // UDP trans operations table
 static const dap_net_trans_ops_t s_udp_ops = {
@@ -133,6 +141,7 @@ static const dap_net_trans_ops_t s_udp_ops = {
     .register_server_handlers = NULL,
     .stage_prepare = s_udp_stage_prepare,
     .get_client_context = s_udp_get_client_context,
+    .check_session = s_udp_check_session_op,
     .get_max_packet_size = s_udp_get_max_packet_size
 };
 
@@ -269,7 +278,7 @@ static int s_client_flow_ctrl_packet_prepare_cb(
     *a_packet_size_out = l_final_encrypted_size;
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC prepare: seq=%lu, ack=%lu, type=%u, payload=%zu → packet=%zu bytes",
+             "CLIENT FC prepare: seq=%" DAP_UINT64_FORMAT_U ", ack=%" DAP_UINT64_FORMAT_U ", type=%u, payload=%zu → packet=%zu bytes",
              a_metadata->seq_num, a_metadata->ack_seq, l_hdr.type, a_payload_size, l_final_encrypted_size);
     
     return 0;
@@ -349,7 +358,7 @@ static int s_client_flow_ctrl_packet_parse_cb(
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC parse: AFTER deserialize: seq_num=%lu, ack_seq=%lu, type=%u",
+             "CLIENT FC parse: AFTER deserialize: seq_num=%" DAP_UINT64_FORMAT_U ", ack_seq=%" DAP_UINT64_FORMAT_U ", type=%u",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type);
     
     if (l_deser_result.error_code != 0) {
@@ -391,7 +400,7 @@ static int s_client_flow_ctrl_packet_parse_cb(
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC parse: seq=%lu, ack=%lu, type=%u, payload=%zu bytes",
+             "CLIENT FC parse: seq=%" DAP_UINT64_FORMAT_U ", ack=%" DAP_UINT64_FORMAT_U ", type=%u, payload=%zu bytes",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type, *a_payload_size_out);
     
     return 0;
@@ -430,7 +439,7 @@ static int s_client_flow_ctrl_packet_send_cb(
         static uint64_t s_addr_log_count = 0;
         s_addr_log_count++;
         if (s_addr_log_count % 100 == 0 || s_addr_log_count < 5) {
-            log_it(L_INFO, "CLIENT FC send: dest=%s:%u (count=%lu)",
+            log_it(L_INFO, "CLIENT FC send: dest=%s:%u (count=%" DAP_UINT64_FORMAT_U ")",
                    l_addr_str, ntohs(l_sin->sin_port), s_addr_log_count);
         }
     }
@@ -451,7 +460,7 @@ static int s_client_flow_ctrl_packet_send_cb(
     static uint64_t s_send_count = 0;
     s_send_count++;
     if (s_send_count % 50 == 0 || s_send_count < 10) {
-        log_it(L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%lu)", l_written, s_send_count);
+        log_it(L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%" DAP_UINT64_FORMAT_U ")", l_written, s_send_count);
     }
     
     return 0;
@@ -510,7 +519,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             uint64_t l_kdf_counter = be64toh(l_counter_be);
             
             debug_if(s_debug_more, L_DEBUG,
-                     "CLIENT FC deliver: KDF counter=%lu", l_kdf_counter);
+                     "CLIENT FC deliver: KDF counter=%" DAP_UINT64_FORMAT_U "", l_kdf_counter);
             
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
@@ -545,7 +554,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             l_stream->session->key = l_session_key;
             l_stream->session->id = l_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT FC deliver: session key installed (session_id=0x%lx)", l_ctx->session_id);
+            log_it(L_INFO, "CLIENT FC deliver: session key installed (session_id=0x%" DAP_UINT64_FORMAT_x ")", l_ctx->session_id);
             
             // Call session_create callback
             if (l_trans_ctx->session_create_cb) {
@@ -1332,7 +1341,7 @@ static int s_udp_listen(dap_net_trans_t *a_trans, const char *a_addr, uint16_t a
     l_priv->server = a_server;
     
     // UDP listening is handled by dap_server_t which creates dap_events_socket_t
-    // The server will call callbacks registered via dap_stream_add_proc_udp()
+    // The server will call callbacks registered via dap_net_trans_udp_stream_add_proc()
     // which use dap_events_socket for all I/O operations
     log_it(L_INFO, "UDP trans listening on %s:%u (via dap_events_socket)", 
            a_addr ? a_addr : "0.0.0.0", a_port);
@@ -1493,7 +1502,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", l_ctx->esocket);
     }
     
-    log_it(L_INFO, "UDP handshake init sent: %zd bytes (session_id=%lu)", 
+    log_it(L_INFO, "UDP handshake init sent: %zd bytes (session_id=%" DAP_UINT64_FORMAT_U ")", 
            l_sent, l_udp_ctx->session_id);
     
     return 0;
@@ -1551,7 +1560,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     uint64_t l_server_session_id = be64toh(l_session_id_be);
     
     debug_if(s_debug_more, L_DEBUG,
-             "HANDSHAKE response: ciphertext=%zu bytes, server_session_id=0x%lx (replacing client's 0x%lx)",
+             "HANDSHAKE response: ciphertext=%zu bytes, server_session_id=0x%" DAP_UINT64_FORMAT_x " (replacing client's 0x%" DAP_UINT64_FORMAT_x ")",
              (size_t)CRYPTO_CIPHERTEXTBYTES, l_server_session_id, l_udp_ctx->session_id);
     
     // CRITICAL: Replace client's session_id with server's session_id!
@@ -1634,7 +1643,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     s_cancel_handshake_timer(l_udp_ctx);
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT: stored handshake_key=%p for session_id=0x%lx",
+             "CLIENT: stored handshake_key=%p for session_id=0x%" DAP_UINT64_FORMAT_x "",
              l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
     // Create session if it doesn't exist
@@ -1851,7 +1860,7 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT: encrypting SESSION_CREATE with handshake_key=%p (session_id=0x%lx)",
+             "CLIENT: encrypting SESSION_CREATE with handshake_key=%p (session_id=0x%" DAP_UINT64_FORMAT_x ")",
              l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
     // Prepare JSON payload (NO session_id - it's already in internal header!)
@@ -2209,7 +2218,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             memcpy(&l_kdf_counter_be, l_payload, sizeof(l_kdf_counter_be));
             uint64_t l_kdf_counter = be64toh(l_kdf_counter_be);
             
-            log_it(L_INFO, "CLIENT: Deriving session key with KDF counter=%lu", l_kdf_counter);
+            log_it(L_INFO, "CLIENT: Deriving session key with KDF counter=%" DAP_UINT64_FORMAT_U "", l_kdf_counter);
             
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
@@ -2251,7 +2260,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             a_stream->session->key = l_session_key;
             a_stream->session->id = l_udp_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%lx)",
+            log_it(L_INFO, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%" DAP_UINT64_FORMAT_x ")",
                    a_stream, a_stream->session, a_stream->session->key, l_udp_ctx->session_id);
             
             // Call session_create_cb for client stage transition
@@ -2577,7 +2586,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     }
 
     debug_if(s_debug_more, L_DEBUG,
-             "Encrypted packet sent: type=%u, session=0x%lx, encrypted_size=%zu",
+             "Encrypted packet sent: type=%u, session=0x%" DAP_UINT64_FORMAT_x ", encrypted_size=%zu",
              a_pkt_type, l_udp_ctx->session_id, l_encrypted_size);
     
     return l_sent;
@@ -2615,7 +2624,7 @@ static void s_udp_close(dap_stream_t *a_stream)
     // Get UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (l_udp_ctx) {
-        log_it(L_INFO, "Closing UDP trans session 0x%lx", l_udp_ctx->session_id);
+        log_it(L_INFO, "Closing UDP trans session 0x%" DAP_UINT64_FORMAT_x "", l_udp_ctx->session_id);
         
         // Clean up Flow Control if present
         if (l_udp_ctx->flow_ctrl) {
@@ -2683,7 +2692,7 @@ static void s_udp_close(dap_stream_t *a_stream)
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
     if (l_ctx && l_ctx->esocket_uuid && l_ctx->esocket_worker) {
         debug_if(s_debug_more, L_DEBUG, 
-               "UDP close: queueing esocket deletion (UUID 0x%016lx) on its worker",
+               "UDP close: queueing esocket deletion (UUID 0x%016" DAP_UINT64_FORMAT_x ") on its worker",
                l_ctx->esocket_uuid);
         
         // CRITICAL: Clear callbacks BEFORE async delete to prevent use-after-free!
@@ -3014,6 +3023,131 @@ static size_t s_udp_get_max_packet_size(dap_net_trans_t *a_trans)
     // Conservative UDP payload size to avoid fragmentation
     // Actual UDP packet will be larger due to headers + encryption
     return DAP_STREAM_UDP_MAX_PAYLOAD_SIZE;  // 1200 bytes
+}
+
+//===================================================================
+// UDP STREAM SERVER CALLBACKS (moved from dap_stream.c)
+//===================================================================
+
+static void s_udp_esocket_new(dap_events_socket_t *a_esocket, void *a_arg);
+
+/**
+ * @brief Create new stream instance for UDP client
+ * @param a_esocket Event socket for the UDP connection
+ * @return New stream instance or NULL
+ */
+dap_stream_t *dap_net_trans_udp_stream_new(dap_events_socket_t *a_esocket)
+{
+    dap_stream_t *l_stm = DAP_NEW_Z(dap_stream_t);
+    assert(l_stm);
+    if (!l_stm) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
+    atomic_fetch_add(&dap_stream_created_count, 1);
+
+    l_stm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (l_stm->trans_ctx) {
+        l_stm->trans_ctx->esocket = a_esocket;
+        l_stm->trans_ctx->esocket_uuid = a_esocket->uuid;
+        l_stm->trans_ctx->esocket_worker = a_esocket->worker;
+        l_stm->trans_ctx->stream = l_stm;
+        dap_strncpy(l_stm->trans_ctx->remote_addr_str, a_esocket->remote_addr_str,
+                    sizeof(l_stm->trans_ctx->remote_addr_str) - 1);
+        l_stm->trans_ctx->remote_port = a_esocket->remote_port;
+    }
+
+    a_esocket->_inheritor = l_stm->trans_ctx;
+    dap_stream_add_to_list(l_stm);
+    log_it(L_NOTICE, "New stream instance udp");
+    return l_stm;
+}
+
+/**
+ * @brief Check session status, open if needed (UDP SERVICE_PACKET handler)
+ * @param a_id Session ID
+ * @param a_esocket Stream event socket
+ */
+static void s_udp_check_session(unsigned int a_id, dap_events_socket_t *a_esocket)
+{
+    dap_stream_session_t *l_session = dap_stream_session_id_mt(a_id);
+
+    if (l_session == NULL) {
+        log_it(L_ERROR, "No session id %u was found", a_id);
+        return;
+    }
+
+    log_it(L_INFO, "Session id %u was found with media_id = %d", a_id, l_session->media_id);
+
+    if (dap_stream_session_open(l_session) != 0) {
+        log_it(L_ERROR, "Can't open session id %u", a_id);
+        return;
+    }
+
+    dap_stream_t *l_stream;
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
+    if (!l_trans_ctx || !l_trans_ctx->stream)
+        l_stream = dap_net_trans_udp_stream_new(a_esocket);
+    else
+        l_stream = l_trans_ctx->stream;
+
+    l_stream->session = l_session;
+
+    if (l_session->create_empty)
+        log_it(L_INFO, "Session created empty");
+
+    log_it(L_INFO, "Opened stream session technical and data channels");
+
+    for (size_t i = 0; i < sizeof(l_session->active_channels); i++)
+        if (l_session->active_channels[i])
+            dap_stream_ch_new(l_stream, l_session->active_channels[i]);
+
+    dap_stream_states_update(l_stream);
+
+#ifdef DAP_EVENTS_CAPS_IOCP
+    a_esocket->flags |= DAP_SOCK_READY_TO_READ;
+#else
+    dap_events_socket_set_readable_unsafe(a_esocket, true);
+#endif
+}
+
+/**
+ * @brief New connection callback for UDP client
+ */
+static void s_udp_esocket_new(dap_events_socket_t *a_esocket, UNUSED_ARG void *a_arg)
+{
+    dap_net_trans_udp_stream_new(a_esocket);
+}
+
+/**
+ * @brief Add processor callbacks for UDP streaming
+ * @param a_udp_server UDP server instance
+ */
+void dap_net_trans_udp_stream_add_proc(dap_server_t *a_udp_server)
+{
+    a_udp_server->client_callbacks.read_callback = dap_stream_esocket_read_cb;
+    a_udp_server->client_callbacks.write_callback = dap_stream_esocket_write_cb;
+    a_udp_server->client_callbacks.delete_callback = dap_stream_esocket_delete_cb;
+    a_udp_server->client_callbacks.new_callback = s_udp_esocket_new;
+    a_udp_server->client_callbacks.worker_assign_callback = dap_stream_esocket_worker_assign_cb;
+    a_udp_server->client_callbacks.worker_unassign_callback = dap_stream_esocket_worker_unassign_cb;
+}
+
+/**
+ * @brief Check session for UDP stream (called from dap_stream on SERVICE_PACKET)
+ * @param a_id Session ID
+ * @param a_esocket Event socket
+ */
+void dap_net_trans_udp_stream_check_session(unsigned int a_id, dap_events_socket_t *a_esocket)
+{
+    s_udp_check_session(a_id, a_esocket);
+}
+
+static void s_udp_check_session_op(dap_net_trans_t *a_trans, uint32_t a_session_id,
+                                   dap_events_socket_t *a_esocket)
+{
+    UNUSED(a_trans);
+    s_udp_check_session(a_session_id, a_esocket);
 }
 
 /**

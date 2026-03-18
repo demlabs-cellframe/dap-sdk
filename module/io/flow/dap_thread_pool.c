@@ -118,7 +118,6 @@ static void *s_worker_thread(void *a_arg)
 
 dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_queue_size)
 {
-    // Auto-detect CPU count
     if (a_num_threads == 0) {
         long l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
         a_num_threads = (l_ncpus > 0) ? (uint32_t)l_ncpus : 4;
@@ -135,7 +134,6 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
     l_pool->threads_joined = false;
     atomic_store(&l_pool->next_thread, 0);
 
-    // Allocate per-thread worker contexts
     l_pool->workers = DAP_NEW_Z_COUNT(dap_thread_pool_worker_t, a_num_threads);
     if (!l_pool->workers) {
         log_it(L_CRITICAL, "Failed to allocate worker array");
@@ -143,7 +141,6 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
         return NULL;
     }
 
-    // Initialize each worker
     for (uint32_t i = 0; i < a_num_threads; i++) {
         dap_thread_pool_worker_t *l_w = &l_pool->workers[i];
         l_w->id = i;
@@ -153,16 +150,14 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
         pthread_cond_init(&l_w->cond, NULL);
     }
 
-    // Get CPU count once for affinity binding
+    {
     long l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
 
-    // Create threads
     for (uint32_t i = 0; i < a_num_threads; i++) {
         dap_thread_pool_worker_t *l_w = &l_pool->workers[i];
         int l_ret = pthread_create(&l_w->thread, NULL, s_worker_thread, l_w);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to create worker thread %u: %s", i, strerror(l_ret));
-            // Shutdown already-created threads
             for (uint32_t j = 0; j < i; j++) {
                 pthread_mutex_lock(&l_pool->workers[j].mutex);
                 l_pool->workers[j].shutdown = true;
@@ -174,7 +169,6 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
                 pthread_mutex_destroy(&l_pool->workers[j].mutex);
                 pthread_cond_destroy(&l_pool->workers[j].cond);
             }
-            // Destroy un-started mutexes/conds
             for (uint32_t j = i; j < a_num_threads; j++) {
                 pthread_mutex_destroy(&l_pool->workers[j].mutex);
                 pthread_cond_destroy(&l_pool->workers[j].cond);
@@ -184,12 +178,10 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
             return NULL;
         }
 
-        // Set thread name
         char l_name[32];
         snprintf(l_name, sizeof(l_name), "tp_worker_%u", i);
         dap_thread_set_name(l_w->thread, l_name);
 
-        // Bind thread to CPU core
         if (l_ncpus > 0) {
             uint32_t l_cpu_id = i % (uint32_t)l_ncpus;
             int l_aff_ret = dap_thread_set_affinity(l_w->thread, l_cpu_id);
@@ -199,6 +191,7 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
     }
 
     log_it(L_INFO, "Created thread pool with %u workers (per-thread queues)", a_num_threads);
+    }
     return l_pool;
 }
 
@@ -211,7 +204,6 @@ static int s_submit_to_worker(dap_thread_pool_worker_t *a_worker, uint32_t a_que
                                dap_thread_pool_task_func_t a_task_func, void *a_task_arg,
                                dap_thread_pool_callback_t a_callback, void *a_callback_arg)
 {
-    // Allocate task outside lock
     dap_thread_pool_task_t *l_task = DAP_NEW_Z(dap_thread_pool_task_t);
     if (!l_task)
         return -4;
@@ -236,7 +228,6 @@ static int s_submit_to_worker(dap_thread_pool_worker_t *a_worker, uint32_t a_que
         return -3;
     }
 
-    // Enqueue
     if (a_worker->queue_tail)
         a_worker->queue_tail->next = l_task;
     else
@@ -309,11 +300,9 @@ int dap_thread_pool_shutdown(dap_thread_pool_t *a_pool, uint32_t a_timeout_ms)
     if (!a_pool || !a_pool->workers)
         return -1;
 
-    // Guard against double-join
     if (a_pool->threads_joined)
         return 0;
 
-    // Signal shutdown to all workers
     for (uint32_t i = 0; i < a_pool->num_threads; i++) {
         dap_thread_pool_worker_t *l_w = &a_pool->workers[i];
         pthread_mutex_lock(&l_w->mutex);
@@ -324,9 +313,7 @@ int dap_thread_pool_shutdown(dap_thread_pool_t *a_pool, uint32_t a_timeout_ms)
 
     int l_rc = 0;
 
-    // Wait for workers to drain
     if (a_timeout_ms > 0) {
-        // Timed drain-wait
         struct timespec l_deadline;
         clock_gettime(CLOCK_REALTIME, &l_deadline);
         l_deadline.tv_sec += a_timeout_ms / 1000;
@@ -352,8 +339,6 @@ int dap_thread_pool_shutdown(dap_thread_pool_t *a_pool, uint32_t a_timeout_ms)
             pthread_mutex_unlock(&l_w->mutex);
         }
     }
-    // a_timeout_ms == 0: no drain-wait, pthread_join below will block until thread exits
-    // (worker drains its queue before exiting when shutdown=true)
 
 join_threads:
     for (uint32_t i = 0; i < a_pool->num_threads; i++)

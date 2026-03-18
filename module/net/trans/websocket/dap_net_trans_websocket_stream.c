@@ -1275,7 +1275,7 @@ static void s_ws_close(dap_stream_t *a_stream)
 
     l_priv->state = DAP_WS_STATE_CLOSED;
 
-    log_it(L_INFO, "WebSocket connection closed (sent=%lu frames, received=%lu frames)",
+    log_it(L_INFO, "WebSocket connection closed (sent=%" DAP_UINT64_FORMAT_U " frames, received=%" DAP_UINT64_FORMAT_U " frames)",
            l_priv->frames_sent, l_priv->frames_received);
 
     // Free per-stream WS state (allocated in s_ws_connect)

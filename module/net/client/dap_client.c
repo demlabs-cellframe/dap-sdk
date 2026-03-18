@@ -21,16 +21,16 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_http_client.h"
+#include "dap_client_http.h"
+#include "dap_net_trans_http_stream.h"
 #include "dap_client.h"
 #include "dap_client_fsm.h"
 #include "dap_client_esocket.h"
-#include "dap_client_http.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
 #include "dap_config.h"
 #include "dap_net_trans.h"
-#include "dap_net_trans_http_stream.h"
 #include "dap_uuid.h"
 
 #define LOG_TAG "dap_client"
@@ -85,7 +85,11 @@ static dap_net_trans_type_t s_get_default_transport_from_config(void)
         log_it(L_INFO, "Default transport from config: %s (%d)", l_transport_str, l_trans_type);
         return l_trans_type;
     }
+#ifdef DAP_OS_WASM
+    return DAP_NET_TRANS_WEBSOCKET;
+#else
     return DAP_NET_TRANS_HTTP;
+#endif
 }
 
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg)

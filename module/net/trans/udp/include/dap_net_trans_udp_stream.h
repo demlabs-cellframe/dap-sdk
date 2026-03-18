@@ -421,6 +421,25 @@ int dap_stream_trans_udp_get_remote_addr(dap_net_trans_t *a_trans,
  */
 void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg);
 
+/**
+ * @brief Add processor callbacks for UDP streaming
+ * @param a_udp_server UDP server instance
+ */
+void dap_net_trans_udp_stream_add_proc(dap_server_t *a_udp_server);
+
+/**
+ * @brief Create new stream instance for UDP client
+ * @param a_esocket Event socket for the UDP connection
+ * @return New stream instance or NULL
+ */
+dap_stream_t *dap_net_trans_udp_stream_new(dap_events_socket_t *a_esocket);
+
+/**
+ * @brief Check session for UDP stream (called from dap_stream on SERVICE_PACKET)
+ * @param a_id Session ID
+ * @param a_esocket Event socket
+ */
+void dap_net_trans_udp_stream_check_session(unsigned int a_id, dap_events_socket_t *a_esocket);
 
 #ifdef __cplusplus
 }

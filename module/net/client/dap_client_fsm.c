@@ -57,19 +57,15 @@ static int s_timeout = 20;
 static bool s_debug_more = false;
 static time_t s_client_timeout_active_after_connect_seconds = 15;
 
-// ===== FSM Thread Pool (single pool, per-thread queues, sticky binding via submit_to) =====
+// ===== FSM Thread Pool =====
 
 static dap_thread_pool_t *s_fsm_pool = NULL;
 static uint32_t s_fsm_thread_count = 0;
 
-/**
- * @brief Submit task to FSM thread (thread-safe, called from any thread)
- *
- * Sticky binding: each FSM is assigned to thread [uuid % count].
- * All tasks for the same FSM execute sequentially on the same thread.
- */
+typedef void *(*s_fsm_callback_t)(void *);
+
 static void s_fsm_thread_callback_add(uint32_t a_thread_idx,
-                                       dap_thread_pool_task_func_t a_callback, void *a_arg)
+                                       s_fsm_callback_t a_callback, void *a_arg)
 {
     if (!s_fsm_pool) {
         log_it(L_ERROR, "FSM thread pool not initialized");
@@ -162,7 +158,6 @@ int dap_client_fsm_init(void)
     s_client_timeout_active_after_connect_seconds = (time_t)dap_config_get_item_uint32_default(
         g_config, "dap_client", "timeout_active_after_connect", s_client_timeout_active_after_connect_seconds);
 
-    // Create FSM thread pool (one thread per CPU, sticky binding via submit_to)
     s_fsm_thread_count = dap_config_get_item_uint32_default(g_config, "dap_client", "fsm_threads", 0);
     s_fsm_pool = dap_thread_pool_create(s_fsm_thread_count, 0);
     if (!s_fsm_pool) {
@@ -170,7 +165,6 @@ int dap_client_fsm_init(void)
         return -1;
     }
     s_fsm_thread_count = dap_thread_pool_get_thread_count(s_fsm_pool);
-
     log_it(L_INFO, "Client FSM module initialized (max_attempts=%d, timeout=%d, fsm_threads=%u)",
            s_max_attempts, s_timeout, s_fsm_thread_count);
     return 0;
@@ -178,14 +172,12 @@ int dap_client_fsm_init(void)
 
 void dap_client_fsm_deinit(void)
 {
-    // Shutdown FSM thread pool
     if (s_fsm_pool) {
         dap_thread_pool_delete(s_fsm_pool);
         s_fsm_pool = NULL;
-        s_fsm_thread_count = 0;
     }
+    s_fsm_thread_count = 0;
 
-    // Clean FSM table
     pthread_rwlock_wrlock(&s_fsm_table_lock);
     dap_client_fsm_t *l_current, *l_tmp;
     dap_ht_foreach(s_fsm_table, l_current, l_tmp) {

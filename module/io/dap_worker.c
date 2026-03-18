@@ -47,6 +47,11 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
+#elif defined(DAP_OS_WASM)
+#include <sys/types.h>
+#include <fcntl.h>
+#include <emscripten.h>
+#include <emscripten/eventloop.h>
 #elif defined (DAP_OS_WINDOWS)
 #include <winsock2.h>
 #include <windows.h>
@@ -187,9 +192,8 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
 int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 {
     dap_return_val_if_fail(a_context && a_arg, -1);
-    //TODO add deinit code for queues and others
     dap_context_remove(a_context->event_exit);
-    dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
+    dap_events_socket_delete_unsafe(a_context->event_exit, false);
 
     dap_worker_t *l_worker = a_arg;
     assert(l_worker);
@@ -476,7 +480,7 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
     const char *l_type_str = dap_events_socket_get_type_str(a_events_socket);
     SOCKET l_s = a_events_socket->socket;
     dap_events_socket_uuid_t l_uuid = a_events_socket->uuid;
-#ifdef DAP_EVENTS_CAPS_IOCP
+#if defined(DAP_EVENTS_CAPS_IOCP)
     a_events_socket->worker = a_worker;
     if ( dap_worker_get_current() == a_worker )
         s_es_assign_to_context(a_worker->context, &(OVERLAPPED){ .Pointer = a_events_socket });
@@ -519,7 +523,6 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
     if ( dap_events_socket_queue_ptr_send( a_worker->queue_callback, l_msg ) )
         log_it(L_ERROR, "Cant send pointer to queue input: \"%s\"(code %d)",
                         dap_strerror(errno), errno);
-
 }
 
 typedef struct {

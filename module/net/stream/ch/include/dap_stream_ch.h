@@ -31,7 +31,7 @@
 #define TECHICAL_CHANNEL_ID 't'
 
 typedef struct dap_stream_worker dap_stream_worker_t;
-typedef struct dap_stream_ch_proc dap_dap_stream_ch_proc_t;
+typedef struct dap_stream_ch_proc dap_stream_ch_proc_t;
 typedef struct dap_events_socket dap_events_socket_t;
 typedef struct dap_worker dap_worker_t;
 
@@ -66,7 +66,7 @@ typedef struct dap_stream_ch {
     dap_list_t *packet_in_notifiers;
     dap_list_t *packet_out_notifiers;
 
-    dap_dap_stream_ch_proc_t * proc;
+    dap_stream_ch_proc_t * proc;
     void * internal;
     struct dap_stream_ch *me;
     dap_ht_handle_t hh_worker;
@@ -87,6 +87,7 @@ void dap_stream_ch_set_ready_to_write_unsafe(dap_stream_ch_t * a_ch,bool a_is_re
 void dap_stream_ch_delete(dap_stream_ch_t *a_ch);
 
 dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t *a_worker, dap_stream_ch_uuid_t a_uuid);
+dap_stream_ch_t *dap_stream_ch_find_by_uuid_in_stream_unsafe(dap_stream_t *a_stream, dap_stream_ch_uuid_t a_uuid);
 dap_stream_ch_t *dap_stream_ch_by_id_unsafe(dap_stream_t *a_stream, const char a_ch_id);
 
 // MT-safe functions

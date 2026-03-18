@@ -72,7 +72,7 @@ static size_t s_cert_folders_capacity = 0;
  * @brief dap_cert_init empty stub for certificate init
  * @return
  */
-int dap_cert_init() // TODO deinit too
+int dap_cert_init()
 {
     uint16_t l_ca_folders_size = 0;
     char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);

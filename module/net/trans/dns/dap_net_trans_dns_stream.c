@@ -44,6 +44,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #endif
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
+#include "dap_stream_esocket_ops.h"
+#include "dap_net_trans_udp_stream.h"  // For dap_net_trans_udp_stream_new (DNS reuses UDP stream creation)
 #include "dap_server.h"
 #include "dap_enc_server.h"
 #include "dap_enc_kdf.h"
@@ -510,7 +512,7 @@ static int s_dns_session_create(dap_stream_t *a_stream,
     uint32_t l_rand;
     randombytes(&l_rand, sizeof(l_rand));
     uint64_t l_session_id = (uint64_t)time(NULL) | ((uint64_t)l_rand << 32);
-    log_it(L_INFO, "DNS session created: ID=0x%lx", l_session_id);
+    log_it(L_INFO, "DNS session created: ID=0x%" DAP_UINT64_FORMAT_x, l_session_id);
     
     // Call callback with session ID (no full response data for DNS trans)
     if (a_callback) {

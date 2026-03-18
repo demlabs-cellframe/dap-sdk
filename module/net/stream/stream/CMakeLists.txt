@@ -4,30 +4,16 @@ project(dap_stream C)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/LibraryHelpers.cmake)
 
 file(GLOB STREAM_HDRS include/*.h)
-
-if(DAP_WASM)
-    set(STREAM_SRCS
-        dap_stream_wasm.c
-        dap_stream_pkt.c
-        dap_stream_handshake.c
-        dap_stream_obfuscation.c
-        dap_stream_obfuscation_mimicry.c)
-else()
-    file(GLOB STREAM_SRCS *.c)
-endif()
+file(GLOB STREAM_SRCS *.c)
 
 create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${STREAM_SRCS} HEADERS ${STREAM_HDRS})
 
 dap_link_libraries(${PROJECT_NAME} INTERFACE
     dap_core dap_io dap_crypto dap_hash_table dap_json
-    dap_stream_ch dap_session dap_net_common dap_net_trans)
-
-if(NOT DAP_WASM)
-    dap_link_libraries(${PROJECT_NAME} INTERFACE
-        dap_trans_websocket dap_trans_http
-        dap_http_server dap_enc_server dap_client dap_global_db
-        dap_link_manager dap_trans_udp)
-endif()
+    dap_stream_ch dap_session dap_net_common dap_net_trans
+    dap_trans_websocket dap_trans_http
+    dap_http_server dap_enc_server dap_client dap_global_db
+    dap_link_manager dap_trans_udp)
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)

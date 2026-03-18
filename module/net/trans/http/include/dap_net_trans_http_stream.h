@@ -172,6 +172,14 @@ void dap_stream_trans_http_add_proc(dap_http_server_t *a_http_server,
                                          const char *a_url_path);
 
 /**
+ * @brief Add HTTP stream processor (backward compatibility alias)
+ * 
+ * Alias for dap_stream_trans_http_add_proc(). Use dap_stream_trans_http_add_proc()
+ * for new code.
+ */
+void dap_stream_add_proc_http(dap_http_server_t *a_http_server, const char *a_url_path);
+
+/**
  * @brief Add HTTP encryption processor
  * 
  * Registers the encryption handshake endpoint. This is backward-compatible

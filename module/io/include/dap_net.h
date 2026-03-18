@@ -23,17 +23,14 @@
 #pragma once
 
 #ifdef WIN32
-// for Windows
 #include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>
 #include <ws2tcpip.h>
 #include <io.h>
-
 #define s6_addr32 s6_addr
 #define herror perror
 #else
-// for Unix-like systems
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>

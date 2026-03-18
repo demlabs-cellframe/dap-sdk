@@ -44,6 +44,16 @@
 #include "dap_client_esocket.h"
 #include "dap_cert.h"
 #include "dap_worker.h"
+#include "dap_http_client.h"
+#include "dap_http_header.h"
+#include "http_status_code.h"
+#include "dap_stream_session.h"
+#include "dap_stream_ch.h"
+#include "dap_stream_esocket_ops.h"
+#include "dap_stream_worker.h"
+#include "dap_net_trans_ctx.h"
+#include "dap_timerfd.h"
+#include "dap_cluster_node.h"
 
 #define LOG_TAG "dap_stream_trans_http"
 
@@ -1626,6 +1636,263 @@ dap_http_client_t* dap_stream_trans_http_get_client(dap_stream_t *a_stream)
 }
 
 // ============================================================================
+// HTTP Stream Server Callbacks (moved from dap_stream.c)
+// ============================================================================
+
+extern _Atomic uint64_t dap_stream_created_count;
+extern bool dap_stream_callback_server_keepalive(void *a_arg);
+
+static dap_stream_t *s_http_stream_new(dap_http_client_t *a_http_client, dap_cluster_node_addr_t *a_addr);
+static void s_http_client_headers_read(dap_http_client_t *a_http_client, void *a_arg);
+static bool s_http_client_headers_write(dap_http_client_t *a_http_client, void *a_arg);
+static bool s_http_client_data_write(dap_http_client_t *a_http_client, void *a_arg);
+static void s_http_client_data_read(dap_http_client_t *a_http_client, void *a_arg);
+static void s_http_client_delete(dap_http_client_t *a_http_client, void *a_arg);
+
+/**
+ * @brief Create new stream instance for HTTP client
+ */
+static dap_stream_t *s_http_stream_new(dap_http_client_t *a_http_client, dap_cluster_node_addr_t *a_addr)
+{
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: entering, a_http_client=%p, a_addr=%p", (void*)a_http_client, (void*)a_addr);
+    if (!a_http_client) {
+        log_it(L_ERROR, "s_http_stream_new: a_http_client is NULL");
+        return NULL;
+    }
+    if (!a_http_client->esocket) {
+        log_it(L_ERROR, "s_http_stream_new: a_http_client->esocket is NULL");
+        return NULL;
+    }
+    if (!a_http_client->esocket->worker) {
+        log_it(L_ERROR, "s_http_stream_new: a_http_client->esocket->worker is NULL");
+        return NULL;
+    }
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: allocating dap_stream_t");
+    dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: DAP_NEW_Z returned %p", (void*)l_ret);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: allocated stream %p", (void*)l_ret);
+    atomic_fetch_add(&dap_stream_created_count, 1);
+
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: setting esocket");
+    l_ret->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (l_ret->trans_ctx) {
+        l_ret->trans_ctx->esocket = a_http_client->esocket;
+        l_ret->trans_ctx->esocket_uuid = a_http_client->esocket->uuid;
+        l_ret->trans_ctx->esocket_worker = a_http_client->esocket->worker;
+        l_ret->trans_ctx->stream = l_ret;  // Back-reference
+        dap_strncpy(l_ret->trans_ctx->remote_addr_str, a_http_client->esocket->remote_addr_str, sizeof(l_ret->trans_ctx->remote_addr_str) - 1);
+        l_ret->trans_ctx->remote_port = a_http_client->esocket->remote_port;
+        l_ret->trans_ctx->http_client = a_http_client;
+        a_http_client->esocket->_inheritor = l_ret->trans_ctx;
+    }
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: getting stream_worker");
+    l_ret->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: stream_worker=%p", (void*)l_ret->stream_worker);
+    if (!l_ret->stream_worker) {
+        log_it(L_ERROR, "stream_worker is NULL for worker %p (worker->_inheritor=%p)",
+               (void*)a_http_client->esocket->worker,
+               a_http_client->esocket->worker ? (void*)a_http_client->esocket->worker->_inheritor : NULL);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: assigning HTTP transport");
+    dap_net_trans_t *l_transport = dap_net_trans_find(DAP_NET_TRANS_HTTP);
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: found transport=%p", (void*)l_transport);
+    if (l_transport) {
+        l_ret->trans = l_transport;
+    }
+
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: initializing seq_id");
+    l_ret->seq_id = 0;
+    l_ret->client_last_seq_id_packet = (size_t)-1;
+
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: allocating es_uuid");
+    dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: es_uuid allocated=%p", (void*)l_es_uuid);
+    if (!l_es_uuid) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        DAP_DEL_Z(l_ret);
+        return NULL;
+    }
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: copying esocket uuid");
+    if (l_ret->trans_ctx && l_ret->trans_ctx->esocket) {
+        *l_es_uuid = l_ret->trans_ctx->esocket->uuid;
+        debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: starting keepalive timer");
+        l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->trans_ctx->esocket->worker,
+                                                              STREAM_KEEPALIVE_TIMEOUT * 1000,
+                                                              (dap_timerfd_callback_t)dap_stream_callback_server_keepalive,
+                                                              l_es_uuid);
+
+        if (!l_ret->keepalive_timer) {
+            log_it(L_ERROR, "Failed to start keepalive timer");
+            DAP_DELETE(l_es_uuid);
+        }
+
+        debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: sending HTTP response before callback takeover");
+        dap_http_client_write(a_http_client);
+
+        debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: TAKEOVER - replacing HTTP callbacks with stream-native ones");
+        l_ret->trans_ctx->esocket->callbacks.read_callback = dap_stream_esocket_read_cb;
+        l_ret->trans_ctx->esocket->callbacks.write_callback = dap_stream_esocket_write_cb;
+        l_ret->trans_ctx->esocket->callbacks.delete_callback = dap_stream_esocket_delete_cb;
+        l_ret->trans_ctx->esocket->callbacks.error_callback = dap_stream_esocket_error_cb;
+        l_ret->trans_ctx->esocket->callbacks.worker_assign_callback = dap_stream_esocket_worker_assign_cb;
+        l_ret->trans_ctx->esocket->callbacks.worker_unassign_callback = dap_stream_esocket_worker_unassign_cb;
+    }
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: callbacks set");
+    if (a_addr && !dap_cluster_node_addr_is_blank(a_addr)) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: setting node address");
+        l_ret->node = *a_addr;
+        l_ret->authorized = true;
+        log_it(L_INFO, "s_http_stream_new: stream %p AUTHORIZED, node=" NODE_ADDR_FP_STR, (void*)l_ret, NODE_ADDR_FP_ARGS_S(*a_addr));
+    } else {
+        log_it(L_WARNING, "s_http_stream_new: stream %p NOT authorized (a_addr=%p, blank=%d)",
+               (void*)l_ret, (void*)a_addr, a_addr ? dap_cluster_node_addr_is_blank(a_addr) : -1);
+    }
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: adding stream to list");
+    dap_stream_add_to_list(l_ret);
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: stream added to list");
+    log_it(L_NOTICE,"New stream instance");
+    debug_if(s_debug_more, L_DEBUG, "s_http_stream_new: returning stream %p", (void*)l_ret);
+    return l_ret;
+}
+
+/**
+ * @brief Read headers callback for HTTP stream
+ */
+static void s_http_client_headers_read(dap_http_client_t *a_http_client, void UNUSED_ARG *a_arg)
+{
+    unsigned int l_id=0;
+    if(a_http_client->in_query_string[0]){
+        log_it(L_INFO,"Query string [%s]",a_http_client->in_query_string);
+        if(sscanf(a_http_client->in_query_string,"session_id=%u",&l_id) == 1 ||
+                sscanf(a_http_client->in_query_string,"fj913htmdgaq-d9hf=%u",&l_id) == 1) {
+            dap_stream_session_t *l_ss = dap_stream_session_id_mt(l_id);
+            if(!l_ss) {
+                log_it(L_ERROR,"No session id %u was found", l_id);
+                a_http_client->reply_status_code = Http_Status_NotFound;
+                strcpy(a_http_client->reply_reason_phrase,"Not found");
+            } else {
+                log_it(L_INFO,"Session id %u was found with channels = %s", l_id, l_ss->active_channels);
+                debug_if(s_debug_more, L_DEBUG, "Session pointer: %p, mutex: %p, active_channels: %p",
+                       (void*)l_ss, (void*)&l_ss->mutex, (void*)l_ss->active_channels);
+                debug_if(s_debug_more, L_DEBUG, "Calling dap_stream_session_open for session %u", l_id);
+                int l_open_ret = dap_stream_session_open(l_ss);
+                debug_if(s_debug_more, L_DEBUG, "dap_stream_session_open returned %d for session %u", l_open_ret, l_id);
+                if(!l_open_ret){
+                    debug_if(s_debug_more, L_DEBUG, "Opening session %u, creating stream", l_id);
+                    dap_cluster_node_addr_t *l_node_addr = &l_ss->node;
+                    debug_if(s_debug_more, L_DEBUG, "l_node_addr=%p", (void*)l_node_addr);
+                    dap_stream_t *l_stream = s_http_stream_new(a_http_client, l_node_addr);
+                    debug_if(s_debug_more, L_DEBUG, "After s_http_stream_new: l_stream=%p", (void*)l_stream);
+                    if (!l_stream) {
+                        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                        a_http_client->reply_status_code = Http_Status_NotFound;
+                        return;
+                    }
+                    debug_if(s_debug_more, L_DEBUG, "Stream created successfully: %p (esocket=%p, stream_worker=%p)",
+                           (void*)l_stream, (void*)(l_stream->trans_ctx ? l_stream->trans_ctx->esocket : NULL), (void*)l_stream->stream_worker);
+                    l_stream->session = l_ss;
+                    debug_if(s_debug_more, L_DEBUG, "Session assigned to stream");
+                    dap_http_header_t *header = dap_http_header_find(a_http_client->in_headers, "Service-Key");
+                    if (header)
+                        l_ss->service_key = strdup(header->value);
+                    size_t count_channels = strlen(l_ss->active_channels);
+                    debug_if(s_debug_more, L_DEBUG, "Creating %zu channels for session %u", count_channels, l_id);
+                    for(size_t i = 0; i < count_channels; i++) {
+                        dap_stream_ch_t * l_ch = dap_stream_ch_new(l_stream, l_ss->active_channels[i]);
+                        if (!l_ch) {
+                            log_it(L_ERROR, "Failed to create channel '%c' for session %u", l_ss->active_channels[i], l_id);
+                            a_http_client->reply_status_code = Http_Status_InternalServerError;
+                            return;
+                        }
+                        l_ch->ready_to_read = true;
+                    }
+                    debug_if(s_debug_more, L_DEBUG, "All %zu channels created successfully, updating stream states", count_channels);
+
+                    a_http_client->reply_status_code = Http_Status_OK;
+                    strcpy(a_http_client->reply_reason_phrase,"OK");
+                    debug_if(s_debug_more, L_DEBUG, "Calling dap_stream_states_update for stream %p (esocket=%p, channel_count=%zu)",
+                           (void*)l_stream, (void*)(l_stream->trans_ctx ? l_stream->trans_ctx->esocket : NULL), l_stream->channel_count);
+                    dap_stream_states_update(l_stream);
+                    debug_if(s_debug_more, L_DEBUG, "dap_stream_states_update completed successfully");
+                    a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
+#ifdef DAP_EVENTS_CAPS_IOCP
+                    a_http_client->esocket->flags |= DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE;
+#else
+                    dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
+                    dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
+#endif
+                }else{
+                    log_it(L_ERROR,"Can't open session id %u", l_id);
+                    a_http_client->reply_status_code = Http_Status_NotFound;
+                    strcpy(a_http_client->reply_reason_phrase,"Not found");
+                }
+            }
+        }
+    }else{
+        log_it(L_ERROR,"No query string");
+    }
+}
+
+/**
+ * @brief Prepare headers for output
+ */
+static bool s_http_client_headers_write(dap_http_client_t *a_http_client, void *a_arg)
+{
+    (void) a_arg;
+    if(a_http_client->reply_status_code == Http_Status_OK){
+        dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_http_client->esocket->_inheritor;
+        dap_stream_t *l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
+
+        dap_http_out_header_add(a_http_client,"Content-Type","application/octet-stream");
+        dap_http_out_header_add(a_http_client,"Connection","keep-alive");
+        dap_http_out_header_add(a_http_client,"Cache-Control","no-cache");
+
+        if(l_stream && l_stream->stream_size > 0)
+            dap_http_out_header_add_f(a_http_client,"Content-Length","%u", (unsigned int) l_stream->stream_size );
+
+        a_http_client->state_read=DAP_HTTP_CLIENT_STATE_DATA;
+        dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
+    }
+    return false;
+}
+
+/**
+ * @brief HTTP data write callback
+ */
+static bool s_http_client_data_write(dap_http_client_t *a_http_client, void UNUSED_ARG *a_arg)
+{
+    if (a_http_client->reply_status_code == Http_Status_OK)
+        return dap_stream_esocket_write_cb(a_http_client->esocket, a_arg);
+
+    log_it(L_WARNING, "Wrong request, reply status code is %u", a_http_client->reply_status_code);
+    return false;
+}
+
+/**
+ * @brief HTTP data read callback
+ */
+static void s_http_client_data_read(dap_http_client_t *a_http_client, void *a_arg)
+{
+    dap_stream_esocket_read_cb(a_http_client->esocket, a_arg);
+}
+
+/**
+ * @brief HTTP delete callback
+ */
+static void s_http_client_delete(dap_http_client_t *a_http_client, void *a_arg)
+{
+    UNUSED(a_arg);
+    UNUSED(a_http_client);
+}
+
+// ============================================================================
 // HTTP Server Integration (Backward Compatibility)
 // ============================================================================
 
@@ -1641,11 +1908,26 @@ void dap_stream_trans_http_add_proc(dap_http_server_t *a_http_server,
         log_it(L_ERROR, "Invalid parameters for HTTP proc");
         return;
     }
-    
-    // Delegate to original dap_stream_add_proc_http
-    dap_stream_add_proc_http(a_http_server, a_url_path);
-    
+
+    dap_http_add_proc(a_http_server,
+                      a_url_path,
+                      NULL,
+                      NULL,
+                      s_http_client_delete,
+                      s_http_client_headers_read,
+                      s_http_client_headers_write,
+                      s_http_client_data_read,
+                      s_http_client_data_write,
+                      NULL);
     log_it(L_INFO, "HTTP stream processor registered for path: %s", a_url_path);
+}
+
+/**
+ * @brief Add HTTP stream processor (backward compatibility alias)
+ */
+void dap_stream_add_proc_http(dap_http_server_t *a_http_server, const char *a_url_path)
+{
+    dap_stream_trans_http_add_proc(a_http_server, a_url_path);
 }
 
 /**

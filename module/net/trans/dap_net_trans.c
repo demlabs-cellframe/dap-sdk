@@ -32,18 +32,14 @@
 #include <string.h>
 #include <stdio.h>
 #include "dap_net_trans.h"
-#ifndef DAP_OS_WASM
 #include "dap_net_trans_qos.h"
-#endif
 #include "dap_stream_obfuscation.h"
 #include "dap_stream.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_list.h"
 #include "dap_module.h"
-#ifndef DAP_OS_WASM
 #include "dap_events_socket.h"
-#endif
 #include "dap_net.h"
 #include "dap_config.h"
 
@@ -620,7 +616,6 @@ int dap_net_trans_stage_prepare(dap_net_trans_type_t a_trans_type,
     return 0;
 }
 
-#ifndef DAP_OS_WASM
 // =========================================================================
 // QoS — transport-independent, delegated to dap_net_trans_qos module.
 // Uses probe/echo protocol extension (packet-size detection).
@@ -651,30 +646,4 @@ int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_hos
     return dap_net_trans_qos_measure_throughput(a_trans, a_host, a_port, a_timeout_ms,
                                                 a_out_down_mbps, a_out_up_mbps);
 }
-#else
-int dap_net_trans_probe_latency(dap_net_trans_t *a_trans, const char *a_host,
-                                uint16_t a_port, uint32_t a_timeout_ms)
-{
-    (void)a_trans; (void)a_host; (void)a_port; (void)a_timeout_ms;
-    return -1;
-}
-
-int dap_net_trans_measure_rtt(dap_net_trans_t *a_trans, const char *a_host, uint16_t a_port,
-                              uint32_t a_count, uint32_t a_timeout_ms,
-                              uint32_t *a_out_rtt, uint32_t *a_out_ok)
-{
-    (void)a_trans; (void)a_host; (void)a_port; (void)a_count;
-    (void)a_timeout_ms; (void)a_out_rtt; (void)a_out_ok;
-    return -1;
-}
-
-int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_host, uint16_t a_port,
-                                     uint32_t a_timeout_ms,
-                                     float *a_out_down_mbps, float *a_out_up_mbps)
-{
-    (void)a_trans; (void)a_host; (void)a_port; (void)a_timeout_ms;
-    (void)a_out_down_mbps; (void)a_out_up_mbps;
-    return -1;
-}
-#endif
 

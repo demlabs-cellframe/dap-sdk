@@ -241,7 +241,7 @@ void _ws_on_message(int a_handle, const uint8_t *a_data, int a_len)
 
     dap_cbuf_push(l_conn->recv_buf, a_data, (size_t)a_len);
 
-    l_conn->bytes_received += l_written;
+    l_conn->bytes_received += (size_t)a_len;
     l_conn->msgs_received++;
 }
 

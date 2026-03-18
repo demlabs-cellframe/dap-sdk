@@ -798,7 +798,7 @@ static int s_unwrap_websocket(dap_stream_mimicry_t *a_mimicry,
     *a_out_data = l_payload;
     *a_out_size = l_payload_len;
 
-    log_it(L_DEBUG, "Unwrapped %lu bytes from WebSocket frame", l_payload_len);
+    log_it(L_DEBUG, "Unwrapped %" DAP_UINT64_FORMAT_U " bytes from WebSocket frame", l_payload_len);
     return 0;
 }
 

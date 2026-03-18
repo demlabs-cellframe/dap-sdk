@@ -21,6 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
+
 #ifndef DAP_OS_WINDOWS
 #include "unistd.h"
 typedef int SOCKET;
@@ -72,6 +73,13 @@ typedef int SOCKET;
     #include <sys/socket.h>
     #include <sys/types.h>
     #include <sys/un.h>
+#elif defined(DAP_OS_WASM)
+    #define DAP_EVENTS_CAPS_POLL
+    #define DAP_EVENTS_CAPS_PIPE_POSIX
+    #define DAP_EVENTS_CAPS_QUEUE_PIPE2
+    #define DAP_EVENTS_CAPS_EVENT_PIPE
+    #include <sys/types.h>
+    #include <netinet/in.h>
 #elif defined (DAP_OS_UNIX)
     #define DAP_EVENTS_CAPS_POLL
     #define DAP_EVENTS_CAPS_PIPE_POSIX

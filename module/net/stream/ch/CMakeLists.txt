@@ -4,25 +4,13 @@ project(dap_stream_ch)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/LibraryHelpers.cmake)
 
 file(GLOB DAP_STREAM_CH_HDRS include/*.h)
-
-if(DAP_WASM)
-    set(DAP_STREAM_CH_SRCS
-        dap_stream_ch.c
-        dap_stream_ch_pkt.c
-        dap_stream_ch_proc.c)
-else()
-    file(GLOB DAP_STREAM_CH_SRCS *.c)
-endif()
+file(GLOB DAP_STREAM_CH_SRCS *.c)
 
 create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_STREAM_CH_SRCS} HEADERS ${DAP_STREAM_CH_HDRS})
 
 dap_link_libraries(${PROJECT_NAME} INTERFACE
-    dap_core dap_crypto dap_io dap_hash_table dap_stream dap_net_common)
-
-if(NOT DAP_WASM)
-    dap_link_libraries(${PROJECT_NAME} INTERFACE
-        dap_io_flow dap_http_server)
-endif()
+    dap_core dap_crypto dap_io dap_hash_table dap_stream dap_net_common
+    dap_io_flow dap_http_server)
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)

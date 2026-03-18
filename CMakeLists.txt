@@ -118,13 +118,9 @@ if (DAPSDK_MODULES MATCHES "plugin" AND NOT DAP_WASM)
     message("[+] Module 'plugin'")
 endif()
 
-if(DAP_WASM)
-    add_subdirectory(module/io/wasm)
-    message("[+] Module 'io' (WASM stub)")
-elseif(DAPSDK_MODULES MATCHES "io")
+if(DAPSDK_MODULES MATCHES "io" OR DAP_WASM)
     add_subdirectory(module/io)
     message("[+] Module 'io'")
-    # io_flow: 5.8 datagram reactor, context_queue, thread_pool
     add_subdirectory(module/io/flow)
 endif()
 
@@ -135,17 +131,28 @@ message("[+] Module 'cluster_node'")
 # Network common types and functions (needed by all platforms including WASM)
 add_subdirectory(module/net/common)
 
-# Add DAP SDK unified interface using dap_add_library
+# Add DAP SDK unified interface — link dependencies are added later,
+# after all module targets have been defined (see _DAP_SDK_LATE_LINK below)
 dap_add_library(dap_sdk_interface dap_sdk.c)
 target_include_directories(dap_sdk_interface PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-if(DAP_WASM)
-    set(_DAP_SDK_IFACE_DEPS dap_core dap_json dap_math dap_hash dap_hash_table dap_timer dap_config dap_io dap_net_common dap_cluster_node)
-else()
-    set(_DAP_SDK_IFACE_DEPS dap_core dap_json dap_math dap_hash dap_hash_table dap_timer dap_daemon dap_config dap_io dap_net_common dap_cluster_node)
-endif()
-dap_link_libraries(dap_sdk_interface INTERFACE ${_DAP_SDK_IFACE_DEPS})
 
-# Transport abstraction layer
+# Server module — must be before trans (trans depends on dap_http_server includes)
+if (DAPSDK_MODULES MATCHES "network-server")
+    add_subdirectory(module/net/server)
+    message("[+] Module 'server'")
+endif()
+
+if (DAPSDK_MODULES MATCHES "network-client")
+    add_subdirectory(module/net/client)
+    message("[+] Module 'client'")
+endif()
+
+if (DAPSDK_MODULES MATCHES "network-link_manager")
+    add_subdirectory(module/net/link_manager)
+    message("[+] Module 'link manager'")
+endif()
+
+# Transport abstraction layer (after server, client, link_manager — depends on their includes)
 add_subdirectory(module/net/trans)
 message("[+] Module 'trans' (transport abstraction)")
 
@@ -154,45 +161,27 @@ if (DAPSDK_MODULES MATCHES "network-core")
     message("[+] Module 'stream'")
 endif()
 
-if(NOT DAP_WASM)
-    # Full cluster module — depends on stream, must be after stream
-    create_object_library(dap_cluster DAP_INTERNAL_MODULES
-        ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/dap_cluster.c
-        HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include/dap_cluster.h)
-    dap_link_libraries(dap_cluster INTERFACE
-        dap_cluster_node dap_hash_table dap_json
-        dap_stream dap_stream_ch)
-    target_include_directories(dap_cluster PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include)
-    message("[+] Module 'cluster'")
-endif()
+# Full cluster module — depends on stream, must be after stream
+create_object_library(dap_cluster DAP_INTERNAL_MODULES
+    ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/dap_cluster.c
+    HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include/dap_cluster.h)
+dap_link_libraries(dap_cluster INTERFACE
+    dap_cluster_node dap_hash_table dap_json
+    dap_stream dap_stream_ch)
+target_include_directories(dap_cluster PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include)
+message("[+] Module 'cluster'")
 
-if (DAPSDK_MODULES MATCHES "network-client")
-    add_subdirectory(module/net/client)
-    message("[+] Module 'client'")
-endif()
+# App CLI module
+add_subdirectory(module/net/app-cli)
+message("[+] Module 'app-cli'")
 
-if(NOT DAP_WASM)
-    # NOTE: client_http is now part of the 5.8 dap_client module (module/net/client/)
-    # add_subdirectory(module/net/client_http)
-
-    if (DAPSDK_MODULES MATCHES "network-link_manager")
-        add_subdirectory(module/net/link_manager)
-        message("[+] Module 'link manager'")
-    endif()
-
-    if (DAPSDK_MODULES MATCHES "network-server")
-        add_subdirectory(module/net/server)
-        message("[+] Module 'server'")
-    endif()
-
-    # App CLI module
-    add_subdirectory(module/net/app-cli)
-    message("[+] Module 'app-cli'")
-endif()
-
-if (DAPSDK_MODULES MATCHES "global-db" AND NOT DAP_WASM)
+if (DAPSDK_MODULES MATCHES "global-db")
     add_subdirectory(module/global-db)
-    message("[+] Module 'global-db' (native B-tree engine)")
+    if(DAP_WASM)
+        message("[+] Module 'global-db' (WASM: local storage only)")
+    else()
+        message("[+] Module 'global-db' (native B-tree engine)")
+    endif()
 endif()
 
 # Test framework - UPDATED PATH (not available on WASM)
@@ -227,6 +216,22 @@ if(BUILD_DAP_SDK_TESTS)
     add_subdirectory(tests)
     message("[+] Tests enabled with new structure")
 endif()
+
+# _DAP_SDK_LATE_LINK: connect dap_sdk_interface to every module it calls into.
+# Must happen AFTER all add_subdirectory() / create_object_library() calls.
+set(_DAP_SDK_IFACE_DEPS dap_core dap_json dap_math dap_hash dap_hash_table
+                        dap_timer dap_config dap_io dap_net_common dap_cluster_node)
+if(NOT DAP_WASM)
+    list(APPEND _DAP_SDK_IFACE_DEPS dap_daemon)
+endif()
+foreach(_mod dap_crypto dap_stream dap_client dap_cluster dap_global_db
+             dap_http_server dap_enc_server dap_notify_srv dap_cli_server
+             dap_dns_server dap_link_manager dap_plugin)
+    if(TARGET ${_mod})
+        list(APPEND _DAP_SDK_IFACE_DEPS ${_mod})
+    endif()
+endforeach()
+dap_link_libraries(dap_sdk_interface INTERFACE ${_DAP_SDK_IFACE_DEPS})
 
 # Post-process: propagate include directories for ALL OBJECT libraries
 # Must be called AFTER all targets are created (resolves forward references)

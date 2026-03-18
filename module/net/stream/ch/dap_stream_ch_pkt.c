@@ -41,11 +41,9 @@
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 
-#ifndef DAP_OS_WASM
 #include "dap_events_socket.h"
 #include "dap_context_queue.h"
 #include "dap_stream_worker.h"
-#endif
 #include "dap_net_trans.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
@@ -70,7 +68,6 @@ void dap_stream_ch_pkt_deinit()
 
 }
 
-#ifndef DAP_OS_WASM
 size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char * a_format,...)
 {
     if (!a_worker)
@@ -266,7 +263,6 @@ size_t dap_stream_ch_pkt_write_inter(dap_context_queue_t * a_queue_input, dap_st
     }
     return a_data_size;
 }
-#endif /* !DAP_OS_WASM */
 
 size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, const void * a_data, size_t a_data_size)
 {

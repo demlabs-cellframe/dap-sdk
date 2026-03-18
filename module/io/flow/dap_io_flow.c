@@ -415,7 +415,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         // Timeout check
         uint64_t l_elapsed_ns = dap_nanotime_now() - l_drain_start;
         if (l_elapsed_ns > l_max_drain_time_ns) {
-            log_it(L_WARNING, "Drain timeout after %lu ms, %u packets remaining",
+            log_it(L_WARNING, "Drain timeout after %" DAP_UINT64_FORMAT_U " ms, %u packets remaining",
                    l_elapsed_ns / 1000000, l_current);
             break;
         }
@@ -426,9 +426,9 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     uint64_t l_drain_time_ms = (dap_nanotime_now() - l_drain_start) / 1000000;
     uint32_t l_final_count = atomic_load(&a_server->cross_worker_packets);
     if (l_final_count == 0) {
-        log_it(L_INFO, "Natural drain complete in %lu ms", l_drain_time_ms);
+        log_it(L_INFO, "Natural drain complete in %" DAP_UINT64_FORMAT_U " ms", l_drain_time_ms);
     } else {
-        log_it(L_WARNING, "Drain finished with %u packets remaining after %lu ms", 
+        log_it(L_WARNING, "Drain finished with %u packets remaining after %" DAP_UINT64_FORMAT_U " ms", 
                l_final_count, l_drain_time_ms);
     }
     
@@ -763,13 +763,13 @@ static void s_process_flow_packet_common(
         return;
     }
     
+#if defined(__linux__) || defined(ANDROID)
     // === FAST PATH for BPF tiers (Tier 2/3): NO forwarding needed! ===
     // Kernel SO_REUSEPORT + BPF already distributed packet to correct worker.
     // Simply create flow locally without any cross-worker logic.
     if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_EBPF ||
         a_server->lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
         
-        // Find or create flow on LOCAL worker only
         pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_worker->id]);
         
         dap_io_flow_t *l_flow = NULL;
@@ -777,7 +777,6 @@ static void s_process_flow_packet_common(
                   sizeof(struct sockaddr_storage), l_flow);
         
         if (!l_flow) {
-            // Create flow locally (kernel already routed packet to correct worker!)
             l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
             
             if (l_flow) {
@@ -803,14 +802,14 @@ static void s_process_flow_packet_common(
             return;
         }
         
-        // Process packet directly (no forwarding!)
         if (a_server->ops->packet_received) {
             a_server->ops->packet_received(a_server, l_flow, a_data, a_data_size,
                                            a_remote_addr, a_listener_es);
         }
         
-        return;  // BPF tier processing complete
+        return;
     }
+#endif
     
     // === SLOW PATH for Application-level LB (Tier 1): manual forwarding === 
     

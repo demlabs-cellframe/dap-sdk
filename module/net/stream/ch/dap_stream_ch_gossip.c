@@ -219,8 +219,8 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             return false;
         }
         if (l_ch_pkt->hdr.data_size != dap_gossip_msg_get_size(l_msg)) {
-            log_it(L_WARNING, "Incorrect gossip message data size %u, expected %zu",
-                                                l_ch_pkt->hdr.data_size, dap_gossip_msg_get_size(l_msg));
+            log_it(L_WARNING, "Incorrect gossip message data size %u, expected %" DAP_UINT64_FORMAT_U,
+                                                l_ch_pkt->hdr.data_size, (uint64_t)dap_gossip_msg_get_size(l_msg));
             return false;
         }
         if (l_msg->version != DAP_GOSSIP_CURRENT_VERSION) {

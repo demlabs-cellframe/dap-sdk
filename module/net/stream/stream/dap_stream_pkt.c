@@ -20,11 +20,9 @@
 
 #include "dap_common.h"
 #include "dap_config.h"
-#ifndef DAP_OS_WASM
 #include "dap_events_socket.h"
 #include "dap_context_queue.h"
 #include "dap_worker.h"
-#endif
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 #include "dap_stream.h"
@@ -173,21 +171,17 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     if (l_trans && l_trans->ops && l_trans->ops->write) {
         return l_trans->ops->write(a_stream, s_pkt_buf, l_full_size);
     }
-#ifndef DAP_OS_WASM
     else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
         dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
-        
-        if (dap_events_socket_is_datagram(l_es)) {
+#ifndef DAP_OS_WASM
+        if (dap_events_socket_is_datagram(l_es))
             return s_stream_send_datagram_unsafe(a_stream, s_pkt_buf, l_full_size);
-        }
-        
+#endif
         return dap_events_socket_write_unsafe(l_es, s_pkt_buf, l_full_size);
     }
-#endif
     return 0;
 }
 
-#ifndef DAP_OS_WASM
 size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_uuid, dap_enc_key_t *a_key, const void * a_data, size_t a_data_size)
 {
 #ifdef DAP_EVENTS_CAPS_IOCP
@@ -217,5 +211,4 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     return a_data_size;
 #endif
 }
-#endif /* !DAP_OS_WASM */
 
