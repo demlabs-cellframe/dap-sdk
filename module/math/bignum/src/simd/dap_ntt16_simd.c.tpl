@@ -20,7 +20,7 @@
  * {{ARCH_NAME}} Architecture-Specific SIMD Primitives
  * ============================================================================ */
 
-{{PRIMITIVES}}
+{{#include PRIMITIVES_FILE}}
 
 /* ============================================================================
  * Vectorized Montgomery field multiply: a * b * R^{-1} mod q

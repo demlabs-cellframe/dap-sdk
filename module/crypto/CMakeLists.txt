@@ -324,22 +324,19 @@ dap_arch_generate_variant(
     TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_sse2.c
     ARCH     sse2
-    ARGS     "PRIMITIVES=@${CHACHA_SIMD_DIR}/arch/x86/sse2_primitives.tpl"
-             "ARCH_NAME=SSE2" "ARCH_LOWER=sse2"
+    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/x86/sse2_primitives.tpl"
 )
 dap_arch_generate_variant(
     TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx2.c
     ARCH     avx2
-    ARGS     "PRIMITIVES=@${CHACHA_SIMD_DIR}/arch/x86/avx2_primitives.tpl"
-             "ARCH_NAME=AVX2" "ARCH_LOWER=avx2"
+    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/x86/avx2_primitives.tpl"
 )
 dap_arch_generate_variant(
     TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_neon.c
     ARCH     neon
-    ARGS     "PRIMITIVES=@${CHACHA_SIMD_DIR}/arch/arm/neon_primitives.tpl"
-             "ARCH_NAME=NEON" "ARCH_LOWER=neon"
+    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/arm/neon_primitives.tpl"
 )
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
     SOURCES

@@ -10,7 +10,7 @@
 #include <string.h>
 #include "dap_chacha20_poly1305.h"
 
-{{PRIMITIVES}}
+{{#include PRIMITIVES_FILE}}
 
 /* Quarter-round on vectorized state */
 #define QR_VEC(a, b, c, d) do {   \

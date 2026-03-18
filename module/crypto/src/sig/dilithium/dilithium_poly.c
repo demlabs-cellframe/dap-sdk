@@ -5,6 +5,8 @@
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
 
+extern const dap_ntt_params_t g_dilithium_ntt_params;
+
 /*************************************************/
 void poly_reduce(poly *a) {
   unsigned int i;  
@@ -73,9 +75,9 @@ void poly_invntt_montgomery(poly *a) {
 
 /*************************************************/
 void poly_pointwise_invmontgomery(poly *c, const poly *a, const poly *b) {
-  unsigned int i;
-  for(i = 0; i < NN; ++i)
-    c->coeffs[i] = montgomery_reduce((uint64_t)a->coeffs[i] * b->coeffs[i]);
+  dap_ntt_pointwise_montgomery(
+      (int32_t *)c->coeffs, (const int32_t *)a->coeffs,
+      (const int32_t *)b->coeffs, &g_dilithium_ntt_params);
 }
 
 /*************************************************/
@@ -560,51 +562,16 @@ const dap_ntt_params_t g_dilithium_ntt_params = {
 /*************************************************/
 void dilithium_ntt(uint32_t pp[NN])
 {
-    unsigned int len, start, j, k;
-    uint32_t zeta, t;
-
-    k = 1;
-    for(len = 128; len > 0; len >>= 1)
-    {
-        for(start = 0; start < NN; start = j + len)
-        {
-            zeta = zetas[k++];
-            for(j = start; j < start + len; ++j)
-            {
-                t = montgomery_reduce((uint64_t)zeta * pp[j + len]);
-                pp[j + len] = pp[j] + 2*Q - t;
-                pp[j] = pp[j] + t;
-            }
-        }
-    }
+    dap_ntt_forward_mont((int32_t *)pp, &g_dilithium_ntt_params);
 }
 
 /*************************************************/
 void invntt_frominvmont(uint32_t pp[NN])
 {
-    unsigned int start, len, j, k;
-    uint32_t t, zeta;
+    dap_ntt_inverse_mont((int32_t *)pp, &g_dilithium_ntt_params);
+
     const uint32_t f = (((uint64_t)MONT*MONT % Q) * (Q-1) % Q) * ((Q-1) >> 8) % Q;
-
-    k = 0;
-    for(len = 1; len < NN; len <<= 1)
-    {
-        for(start = 0; start < NN; start = j + len)
-        {
-            zeta = zetas_inv[k++];
-            for(j = start; j < start + len; ++j)
-            {
-                t = pp[j];
-                pp[j] = t + pp[j + len];
-                pp[j + len] = t + 256*Q - pp[j + len];
-                pp[j + len] = montgomery_reduce((uint64_t)zeta * pp[j + len]);
-            }
-        }
-    }
-
-    for(j = 0; j < NN; ++j)
-    {
+    for (unsigned int j = 0; j < NN; j++)
         pp[j] = montgomery_reduce((uint64_t)f * pp[j]);
-    }
 }
 

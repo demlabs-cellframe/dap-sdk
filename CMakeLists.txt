@@ -73,6 +73,10 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
+# Optimization module - arch dispatch macros (header-only, depends on core)
+add_subdirectory(module/optimization)
+message("[+] Module 'optimization'")
+
 # Set DAP_TPL_DIR for dap_json SIMD code generation (if not already set by parent)
 if(NOT DEFINED DAP_TPL_DIR)
     set(DAP_TPL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/test/dap_tpl" CACHE PATH "Path to dap_tpl template engine")
@@ -83,6 +87,7 @@ endif()
 if(NOT DEFINED DAP_ARCH_DIR)
     set(DAP_ARCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/arch" CACHE PATH "Path to arch codegen infrastructure")
 endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapTplGenerate.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapArchCodegen.cmake)
 
 # JSON module is always required (used by core and other modules)

@@ -6,6 +6,9 @@
  *   dap_ntt_params_t   — int32_t coefficients (Chipmunk N=512 q=3168257, Dilithium N=256 q=8380417)
  *   dap_ntt_params16_t — int16_t coefficients (Kyber N=256 q=3329, and similar small-q rings)
  *
+ * Dispatch is zero-overhead: static inline wrappers resolve function pointers
+ * lazily on first call, then each subsequent call is a single indirect branch.
+ *
  * @authors naeper
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -13,12 +16,13 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "dap_arch_dispatch.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ===== 32-bit API (Chipmunk, Dilithium, …) ===== */
+/* ===== 32-bit parameter set (Chipmunk, Dilithium, …) ===== */
 
 typedef struct dap_ntt_params {
     uint32_t n;
@@ -32,32 +36,86 @@ typedef struct dap_ntt_params {
     uint32_t zetas_len;
 } dap_ntt_params_t;
 
-/**
- * @brief Forward NTT: time-domain → frequency-domain (Chipmunk-style, table-driven CT/GS)
- */
-void dap_ntt_forward(int32_t *a_coeffs, const dap_ntt_params_t *a_params);
+/* ===== 16-bit parameter set (Kyber, and similar small-q rings with R=2^16) ===== */
 
-/**
- * @brief Inverse NTT: frequency-domain → time-domain (Chipmunk-style, table-driven CT/GS)
- */
-void dap_ntt_inverse(int32_t *a_coeffs, const dap_ntt_params_t *a_params);
+typedef struct dap_ntt_params16 {
+    uint16_t n;
+    int16_t  q;
+    int16_t  qinv;            ///< q^(-1) mod 2^16 (signed, as in Kyber)
+    const int16_t *zetas;
+    const int16_t *zetas_inv;
+    uint16_t zetas_len;
+} dap_ntt_params16_t;
 
-/**
- * @brief Montgomery-domain forward NTT (Dilithium-compatible).
- *
- * Sequential zeta walking (k++), Montgomery reduction in the butterfly.
- * Zetas must be in "sequential CT/GS" order.
- */
-void dap_ntt_forward_mont(int32_t *a_coeffs, const dap_ntt_params_t *a_params);
+/* ===== Dispatch pointer declarations (storage is in dap_ntt_dispatch.c) ===== */
 
-/**
- * @brief Montgomery-domain inverse NTT (Dilithium-compatible).
- */
-void dap_ntt_inverse_mont(int32_t *a_coeffs, const dap_ntt_params_t *a_params);
+DAP_DISPATCH_DECLARE(dap_ntt_forward,                void, int32_t *, const dap_ntt_params_t *);
+DAP_DISPATCH_DECLARE(dap_ntt_inverse,                void, int32_t *, const dap_ntt_params_t *);
+DAP_DISPATCH_DECLARE(dap_ntt_forward_mont,           void, int32_t *, const dap_ntt_params_t *);
+DAP_DISPATCH_DECLARE(dap_ntt_inverse_mont,           void, int32_t *, const dap_ntt_params_t *);
+DAP_DISPATCH_DECLARE(dap_ntt_pointwise_montgomery,   void, int32_t *, const int32_t *, const int32_t *, const dap_ntt_params_t *);
+DAP_DISPATCH_DECLARE(dap_ntt16_forward,              void, int16_t *, const dap_ntt_params16_t *);
+DAP_DISPATCH_DECLARE(dap_ntt16_inverse,              void, int16_t *, const dap_ntt_params16_t *);
+DAP_DISPATCH_DECLARE(dap_ntt16_basemul,              void, int16_t [2], const int16_t [2], const int16_t [2], int16_t, const dap_ntt_params16_t *);
 
-/**
- * @brief Montgomery reduction: a * R^{-1} mod q
- */
+extern void dap_ntt_dispatch_init(void);
+
+/* ===== 32-bit public API — static inline for zero-overhead dispatch ===== */
+
+static inline void dap_ntt_forward(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
+{
+    DAP_DISPATCH_ENSURE(dap_ntt_forward, dap_ntt_dispatch_init);
+    dap_ntt_forward_ptr(a_coeffs, a_params);
+}
+
+static inline void dap_ntt_inverse(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
+{
+    DAP_DISPATCH_ENSURE(dap_ntt_inverse, dap_ntt_dispatch_init);
+    dap_ntt_inverse_ptr(a_coeffs, a_params);
+}
+
+static inline void dap_ntt_forward_mont(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
+{
+    DAP_DISPATCH_ENSURE(dap_ntt_forward_mont, dap_ntt_dispatch_init);
+    dap_ntt_forward_mont_ptr(a_coeffs, a_params);
+}
+
+static inline void dap_ntt_inverse_mont(int32_t *a_coeffs, const dap_ntt_params_t *a_params)
+{
+    DAP_DISPATCH_ENSURE(dap_ntt_inverse_mont, dap_ntt_dispatch_init);
+    dap_ntt_inverse_mont_ptr(a_coeffs, a_params);
+}
+
+static inline void dap_ntt_pointwise_montgomery(int32_t *a_c, const int32_t *a_a,
+                                                const int32_t *a_b, const dap_ntt_params_t *a_params)
+{
+    DAP_DISPATCH_ENSURE(dap_ntt_pointwise_montgomery, dap_ntt_dispatch_init);
+    dap_ntt_pointwise_montgomery_ptr(a_c, a_a, a_b, a_params);
+}
+
+/* ===== 16-bit public API — static inline for zero-overhead dispatch ===== */
+
+static inline void dap_ntt16_forward(int16_t *a_coeffs, const dap_ntt_params16_t *a_params)
+{
+    DAP_DISPATCH_ENSURE(dap_ntt16_forward, dap_ntt_dispatch_init);
+    dap_ntt16_forward_ptr(a_coeffs, a_params);
+}
+
+static inline void dap_ntt16_inverse(int16_t *a_coeffs, const dap_ntt_params16_t *a_params)
+{
+    DAP_DISPATCH_ENSURE(dap_ntt16_inverse, dap_ntt_dispatch_init);
+    dap_ntt16_inverse_ptr(a_coeffs, a_params);
+}
+
+static inline void dap_ntt16_basemul(int16_t a_r[2], const int16_t a_a[2], const int16_t a_b[2],
+                                     int16_t a_zeta, const dap_ntt_params16_t *a_params)
+{
+    DAP_DISPATCH_ENSURE(dap_ntt16_basemul, dap_ntt_dispatch_init);
+    dap_ntt16_basemul_ptr(a_r, a_a, a_b, a_zeta, a_params);
+}
+
+/* ===== Arithmetic helpers (always inline, no dispatch needed) ===== */
+
 static inline int32_t dap_ntt_montgomery_reduce(int64_t a_value, const dap_ntt_params_t *a_params)
 {
     uint32_t l_u = (uint32_t)(a_value & a_params->mont_r_mask) * a_params->qinv;
@@ -69,9 +127,6 @@ static inline int32_t dap_ntt_montgomery_reduce(int64_t a_value, const dap_ntt_p
     return l_result;
 }
 
-/**
- * @brief Barrett reduction: a mod q
- */
 static inline int32_t dap_ntt_barrett_reduce(int32_t a_value, const dap_ntt_params_t *a_params)
 {
     int32_t l_q = a_params->q;
@@ -82,36 +137,6 @@ static inline int32_t dap_ntt_barrett_reduce(int32_t a_value, const dap_ntt_para
     return l_t;
 }
 
-/**
- * @brief Pointwise Montgomery multiplication in NTT domain: c[i] = a[i]*b[i]*R^{-1} mod q
- */
-void dap_ntt_pointwise_montgomery(int32_t *a_c, const int32_t *a_a,
-                                  const int32_t *a_b, const dap_ntt_params_t *a_params);
-
-/* ===== 16-bit API (Kyber, and similar small-q rings with R=2^16) ===== */
-
-typedef struct dap_ntt_params16 {
-    uint16_t n;
-    int16_t  q;
-    int16_t  qinv;            ///< q^(-1) mod 2^16 (signed, as in Kyber)
-    const int16_t *zetas;
-    const int16_t *zetas_inv;
-    uint16_t zetas_len;
-} dap_ntt_params16_t;
-
-/**
- * @brief Forward NTT (Kyber-style Cooley–Tukey, Montgomery butterfly, stops at len=2)
- */
-void dap_ntt16_forward(int16_t *a_coeffs, const dap_ntt_params16_t *a_params);
-
-/**
- * @brief Inverse NTT (Kyber-style Gentleman–Sande, Montgomery butterfly)
- */
-void dap_ntt16_inverse(int16_t *a_coeffs, const dap_ntt_params16_t *a_params);
-
-/**
- * @brief Montgomery reduction for 16-bit domain: a * R^{-1} mod q, R=2^16
- */
 static inline int16_t dap_ntt16_montgomery_reduce(int32_t a_value, const dap_ntt_params16_t *a_params)
 {
     int16_t l_u = (int16_t)a_value * a_params->qinv;
@@ -119,9 +144,6 @@ static inline int16_t dap_ntt16_montgomery_reduce(int32_t a_value, const dap_ntt
     return (int16_t)(l_t >> 16);
 }
 
-/**
- * @brief Barrett reduction for 16-bit domain: a mod q
- */
 static inline int16_t dap_ntt16_barrett_reduce(int16_t a_value, const dap_ntt_params16_t *a_params)
 {
     int16_t l_v = (int16_t)(((1U << 26) + a_params->q / 2) / a_params->q);
@@ -130,19 +152,10 @@ static inline int16_t dap_ntt16_barrett_reduce(int16_t a_value, const dap_ntt_pa
     return a_value - l_t;
 }
 
-/**
- * @brief Field multiplication: a * b * R^{-1} mod q
- */
 static inline int16_t dap_ntt16_fqmul(int16_t a_a, int16_t a_b, const dap_ntt_params16_t *a_params)
 {
     return dap_ntt16_montgomery_reduce((int32_t)a_a * a_b, a_params);
 }
-
-/**
- * @brief Basemul: polynomial multiplication in Zq[X]/(X^2-zeta), for NTT-domain elements
- */
-void dap_ntt16_basemul(int16_t a_r[2], const int16_t a_a[2], const int16_t a_b[2],
-                       int16_t a_zeta, const dap_ntt_params16_t *a_params);
 
 #ifdef __cplusplus
 }

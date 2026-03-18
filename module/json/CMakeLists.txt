@@ -116,15 +116,36 @@ file(COPY ${S2}/arch/x86/string_scanner_avx512_impl.c DESTINATION ${SIMD_GEN_DIR
 file(COPY ${S2}/arch/arm/string_scanner_sve_impl.c DESTINATION ${SIMD_GEN_DIR}/arch/arm/)
 file(COPY ${S2}/arch/arm/string_scanner_sve2_impl.c DESTINATION ${SIMD_GEN_DIR}/arch/arm/)
 
-# Copy arch-specific header templates as headers
-foreach(_arch_pair "x86/string_scanner_sse2.h" "x86/string_scanner_avx2.h"
-                   "x86/string_scanner_avx512.h" "arm/string_scanner_neon.h"
-                   "arm/string_scanner_sve.h" "arm/string_scanner_sve2.h")
+# Process arch-specific header templates through dap_tpl (for {{#include PRIM_LIB}})
+# Flat list of pairs: (relative_path, arch_id)
+set(_JSON_SCANNER_PAIRS
+    "x86/string_scanner_sse2.h"    sse2
+    "x86/string_scanner_avx2.h"    avx2
+    "x86/string_scanner_avx512.h"  avx512
+    "arm/string_scanner_neon.h"    neon
+    "arm/string_scanner_sve.h"     sve
+    "arm/string_scanner_sve2.h"    sve2
+)
+list(LENGTH _JSON_SCANNER_PAIRS _json_pairs_len)
+set(_json_i 0)
+while(_json_i LESS _json_pairs_len)
+    list(GET _JSON_SCANNER_PAIRS ${_json_i} _arch_pair)
+    math(EXPR _json_j "${_json_i} + 1")
+    list(GET _JSON_SCANNER_PAIRS ${_json_j} _arch_id)
+    math(EXPR _json_i "${_json_j} + 1")
+
     if(EXISTS "${S2}/arch/${_arch_pair}.tpl")
-        configure_file("${S2}/arch/${_arch_pair}.tpl"
-                       "${SIMD_GEN_DIR}/arch/${_arch_pair}" COPYONLY)
+        set(_prim_args "")
+        if(DEFINED _DAP_ARCH_PRIM_LIB_${_arch_id})
+            set(_prim_args "PRIM_LIB=${_DAP_ARCH_PRIM_LIB_${_arch_id}}")
+        endif()
+        dap_tpl_generate(
+            TEMPLATE "${S2}/arch/${_arch_pair}.tpl"
+            OUTPUT   "${SIMD_GEN_DIR}/arch/${_arch_pair}"
+            ARGS     ${_prim_args}
+        )
     endif()
-endforeach()
+endwhile()
 
 # SSE2 string
 dap_arch_generate_variant(TEMPLATE ${S2}/dap_json_string_simd.c.tpl

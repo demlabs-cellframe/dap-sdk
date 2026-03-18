@@ -31,25 +31,25 @@ dap_arch_generate_variant(
     TEMPLATE ${K}/dap_keccak_simd_lane.c.tpl
     OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_avx2.c
     ARCH     avx2
-    ARGS     "PRIMITIVES=@${K}/arch/x86/avx2_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${K}/arch/x86/avx2_primitives.tpl"
 )
 dap_arch_generate_variant(
     TEMPLATE ${K}/dap_keccak_simd_lane.c.tpl
     OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_sse2.c
     ARCH     sse2
-    ARGS     "PRIMITIVES=@${K}/arch/x86/sse2_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${K}/arch/x86/sse2_primitives.tpl"
 )
 dap_arch_generate_variant(
     TEMPLATE ${K}/dap_keccak_simd_lane.c.tpl
     OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_neon.c
     ARCH     neon
-    ARGS     "PRIMITIVES=@${K}/arch/arm/neon_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${K}/arch/arm/neon_primitives.tpl"
 )
 dap_arch_generate_variant(
     TEMPLATE ${K}/dap_keccak_simd_lane.c.tpl
     OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_sve.c
     ARCH     sve
-    ARGS     "PRIMITIVES=@${K}/arch/arm/sve_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${K}/arch/arm/sve_primitives.tpl"
 )
 
 # Plane-layout variants (AVX-512, SVE2)
@@ -57,14 +57,14 @@ dap_arch_generate_variant(
     TEMPLATE ${K}/dap_keccak_simd_plane.c.tpl
     OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_avx512.c
     ARCH     avx512
-    ARGS     "PRIMITIVES=@${K}/arch/x86/avx512_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${K}/arch/x86/avx512_primitives.tpl"
              "ALIGNMENT_ATTR=__attribute__((aligned(64)))"
 )
 dap_arch_generate_variant(
     TEMPLATE ${K}/dap_keccak_simd_plane.c.tpl
     OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_sve2.c
     ARCH     sve2
-    ARGS     "PRIMITIVES=@${K}/arch/arm/sve2_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${K}/arch/arm/sve2_primitives.tpl"
              "ALIGNMENT_ATTR=__attribute__((aligned(64)))"
 )
 

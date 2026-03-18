@@ -95,6 +95,16 @@ set(_DAP_ARCH_FAMILY_x86   "sse2;avx2;avx2_bmi2;avx512;avx512_ifma;x86_64_asm")
 set(_DAP_ARCH_FAMILY_arm   "neon")
 set(_DAP_ARCH_FAMILY_sve   "sve;sve2")
 
+# Shared primitive library paths (auto-injected as PRIM_LIB template variable)
+set(_DAP_ARCH_PRIM_LIB_sse2       "${DAP_ARCH_DIR}/primitives/x86/sse2.tpl")
+set(_DAP_ARCH_PRIM_LIB_avx2       "${DAP_ARCH_DIR}/primitives/x86/avx2.tpl")
+set(_DAP_ARCH_PRIM_LIB_avx2_bmi2  "${DAP_ARCH_DIR}/primitives/x86/avx2.tpl")
+set(_DAP_ARCH_PRIM_LIB_avx512     "${DAP_ARCH_DIR}/primitives/x86/avx512.tpl")
+set(_DAP_ARCH_PRIM_LIB_avx512_ifma "${DAP_ARCH_DIR}/primitives/x86/avx512.tpl")
+set(_DAP_ARCH_PRIM_LIB_neon       "${DAP_ARCH_DIR}/primitives/arm/neon.tpl")
+set(_DAP_ARCH_PRIM_LIB_sve        "${DAP_ARCH_DIR}/primitives/arm/sve.tpl")
+set(_DAP_ARCH_PRIM_LIB_sve2       "${DAP_ARCH_DIR}/primitives/arm/sve2.tpl")
+
 # ============================================================================
 # dap_arch_generate_variant(TEMPLATE t OUTPUT o ARCH a [ARGS key=val ...])
 # Generate ONE output file from ONE template.
@@ -141,17 +151,24 @@ function(dap_arch_generate_variant)
         set(_target_attr "")
     endif()
 
-    # Build argument list: standard values first, then user ARGS (which can override)
+    # Build argument list: standard arch values first, then user ARGS (which can override)
     set(_tpl_args
         "ARCH_NAME=${_name}"
         "ARCH_LOWER=${_arch}"
         "ARCH_INCLUDES=${_includes}"
         "TARGET_ATTR=${_target_attr}"
     )
+
+    # Auto-inject shared primitive library path for this architecture
+    if(DEFINED _DAP_ARCH_PRIM_LIB_${_arch})
+        list(APPEND _tpl_args "PRIM_LIB=${_DAP_ARCH_PRIM_LIB_${_arch}}")
+    endif()
+
     if(ARG_ARGS)
         list(APPEND _tpl_args ${ARG_ARGS})
     endif()
 
+    # Delegate template processing to dap_arch_codegen.sh (template + guard in one pass)
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
             "DAP_TPL_DIR=${DAP_TPL_DIR}"
@@ -206,7 +223,7 @@ function(dap_arch_generate)
         math(EXPR _i "${_j} + 1")
 
         set(_output "${ARG_OUTPUT_DIR}/${ARG_PREFIX}_${_arch}.c")
-        set(_args "PRIMITIVES=@${_primitives}")
+        set(_args "PRIMITIVES_FILE=${_primitives}")
 
         if(ARG_EXTRA_ARGS)
             list(APPEND _args ${ARG_EXTRA_ARGS})

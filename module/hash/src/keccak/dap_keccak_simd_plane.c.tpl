@@ -48,7 +48,7 @@
 // {{ARCH_NAME}} Architecture-Specific Primitives
 // ============================================================================
 
-{{PRIMITIVES}}
+{{#include PRIMITIVES_FILE}}
 
 // ============================================================================
 // Round Constants (aligned for SIMD)
