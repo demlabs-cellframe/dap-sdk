@@ -1,5 +1,5 @@
 // ============================================================================
-// Simplified _DAP_MOCK_MAP implementation
+// _DAP_MOCK_MAP implementation
 // ============================================================================
 // This file includes all parts of the _DAP_MOCK_MAP macro system
 // Each part is in a separate template file for clarity and maintainability
@@ -38,14 +38,3 @@
 // Part 5: Implementation conditional macros
 // ============================================================================
 {{#include "mock_map_impl_cond.h.tpl"}}
-
-// ============================================================================
-// Include additional generated macros
-// ============================================================================
-{{#if RETURN_TYPE_MACROS_FILE}}
-{{#include RETURN_TYPE_MACROS_FILE}}
-{{/if}}
-
-{{#if SIMPLE_WRAPPER_MACROS_FILE}}
-{{#include SIMPLE_WRAPPER_MACROS_FILE}}
-{{/if}}

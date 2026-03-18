@@ -25,9 +25,30 @@ function(dap_test_add_includes TARGET_NAME)
         
         # Core modules
         ${DAP_SDK_ROOT}/module/core/include
-        ${DAP_SDK_ROOT}/module/core/src/unix
         ${DAP_SDK_ROOT}/module/crypto/include
         ${DAP_SDK_ROOT}/module/io/include
+    )
+    
+    # Platform-specific core includes
+    if(APPLE)
+        # macOS: use darwin/macos implementations
+        target_include_directories(${TARGET_NAME} PRIVATE
+            ${DAP_SDK_ROOT}/module/core/src/darwin/macos
+            ${DAP_SDK_ROOT}/module/core/src/unix  # for dap_process_manager.h
+        )
+    elseif(UNIX)
+        # Linux: use unix implementations
+        target_include_directories(${TARGET_NAME} PRIVATE
+            ${DAP_SDK_ROOT}/module/core/src/unix
+        )
+    elseif(WIN32)
+        target_include_directories(${TARGET_NAME} PRIVATE
+            ${DAP_SDK_ROOT}/module/core/src/win32
+        )
+    endif()
+    
+    # Continue with other includes
+    target_include_directories(${TARGET_NAME} PRIVATE
         
         # JSON module (Phase 1.1+)
         ${DAP_SDK_ROOT}/module/json/include

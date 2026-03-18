@@ -2594,7 +2594,9 @@ bool dap_json_is_int(dap_json_t* a_json)
     if (!a_json) {
         return false;
     }
-    
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_INT;
+    }
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_INT;
 }
@@ -2607,7 +2609,9 @@ bool dap_json_is_string(dap_json_t* a_json)
     if (!a_json) {
         return false;
     }
-    
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_STRING;
+    }
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_STRING;
 }
@@ -2620,7 +2624,9 @@ bool dap_json_is_double(dap_json_t* a_json)
     if (!a_json) {
         return false;
     }
-    
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_DOUBLE;
+    }
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_DOUBLE;
 }
@@ -2633,7 +2639,9 @@ bool dap_json_is_bool(dap_json_t* a_json)
     if (!a_json) {
         return false;
     }
-    
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_BOOLEAN;
+    }
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_BOOLEAN;
 }
@@ -2646,7 +2654,9 @@ bool dap_json_is_null(dap_json_t* a_json)
     if (!a_json) {
         return true; // NULL pointer treated as JSON null
     }
-    
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        return dap_json_get_type(a_json) == DAP_JSON_TYPE_NULL;
+    }
     dap_json_value_t *l_value = s_unwrap_value(a_json);
     return l_value && l_value->type == DAP_JSON_TYPE_NULL;
 }

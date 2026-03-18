@@ -71,7 +71,7 @@
 #ifdef __MACH__
 #include <dispatch/dispatch.h>
 #endif
-#include "portable_endian.h"
+#include "dap_bit_ops.h"
 
 #define BIT( x ) ( 1 << x )
 
@@ -160,8 +160,6 @@
 #define DAP_CAST(t,v) v
 #define DAP_CAST_PTR(t,v) v
 #endif
-
-#define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
 
 // Constructor/Destructor attributes for automatic initialization/cleanup
 #ifdef _MSC_VER
@@ -370,8 +368,7 @@ typedef int dap_errnum_t;
 #define dap_fileclose close
 #endif
 
-ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
-ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
+// dap_readv/dap_writev moved to module/io/dap_io_ops.h
 
 /* Returns non-zero only for valid non-zero power-of-two alignments. */
 DAP_STATIC_INLINE int _dap_alignment_is_power_of_two( uintptr_t alignment )
@@ -568,8 +565,7 @@ typedef enum dap_log_level {
   L_TOTAL
 } dap_log_level_t;
 
-typedef void *dap_interval_timer_t;
-typedef void (*dap_timer_callback_t)(void *param);
+// Interval timer moved to module/timer/dap_interval_timer.h
 
 #ifdef __cplusplus
 extern "C" {
@@ -960,6 +956,11 @@ void dap_log_set_external_output (LOGGER_EXTERNAL_OUTPUT output, void *param);
 
 void dap_common_deinit(void);
 
+// Get current log file handle (for log rotation checks)
+FILE *dap_log_get_file(void);
+// Reopen log file (for log rotation)
+int dap_log_reopen(void);
+
 // set max items in log list
 void dap_log_set_max_item(unsigned int a_max);
 // get logs from list
@@ -1134,11 +1135,8 @@ int dap_is_hex_string(const char *a_in, size_t a_len);
 void dap_digit_from_string(const char *num_str, void *raw, size_t raw_len);
 void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len);
 
-dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param);
-void dap_interval_timer_delete(dap_interval_timer_t a_timer);
-int dap_interval_timer_disable(dap_interval_timer_t a_timer);
-void dap_interval_timer_init();
-void dap_interval_timer_deinit();
+// Interval timer functions moved to module/timer/include/dap_interval_timer.h
+// Use #include "dap_interval_timer.h" if you need dap_interval_timer_create, etc.
 
 static inline void *dap_mempcpy(void *a_dest, const void *a_src, size_t n)
 {
@@ -1208,7 +1206,7 @@ int exec_silent(const char *a_cmd);
 // Node address types and functions moved to module/net/common/include/dap_net_common.h
 // Use #include "dap_net_common.h" if you need dap_stream_node_addr_t and related functions
 
-void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);
+// dap_common_enable_cleaner_log moved to module/daemon/dap_daemon.h as dap_daemon_enable_log_cleaner
 
 /**
  * @brief Log format control functions

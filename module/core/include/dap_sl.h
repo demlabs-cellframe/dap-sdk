@@ -82,6 +82,25 @@ extern "C" {
          (el) = (tmp), (tmp) = (el) ? (el)->next : NULL)
 
 /**
+ * @brief Insert element maintaining sorted order (ascending per cmp)
+ * @param head List head (may be modified)
+ * @param add Element to add
+ * @param cmp Comparison function: int cmp(typeof(head) a, typeof(head) b)
+ */
+#define dap_sl_insert_inorder(head, add, cmp) do { \
+    if (!(head) || cmp((add), (head)) <= 0) { \
+        (add)->next = (head); \
+        (head) = (add); \
+    } else { \
+        typeof(head) _sl_tmp = (head); \
+        while (_sl_tmp->next && cmp((add), _sl_tmp->next) > 0) \
+            _sl_tmp = _sl_tmp->next; \
+        (add)->next = _sl_tmp->next; \
+        _sl_tmp->next = (add); \
+    } \
+} while (0)
+
+/**
  * @brief Count elements in singly-linked list
  * @param head List head
  * @param counter Output variable (will be set to count)

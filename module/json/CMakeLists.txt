@@ -63,12 +63,24 @@ else()
     message(STATUS "[dap_json] String scanner SIMD codegen completed successfully")
 endif()
 
-# Architecture-specific sources - ADD only what's needed for target architecture
-# DO NOT use file(GLOB ...) - explicitly add per-architecture
+# Architecture-specific sources
 set(JSON_ARCH_SRCS "")
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-    # x86/x64: Add AVX2, SSE2, AVX-512 implementations
+if(APPLE)
+    # Apple universal binary (arm64 + x86_64): include ALL architectures.
+    # Generated .c files have #ifdef guards so only the right code compiles per arch slice.
+    # No SVE/SVE2 on Apple Silicon.
+    list(APPEND JSON_ARCH_SRCS 
+        ${SIMD_GEN_DIR}/dap_json_stage1_avx2.c
+        ${SIMD_GEN_DIR}/dap_json_stage1_sse2.c
+        ${SIMD_GEN_DIR}/dap_json_stage1_avx512.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_avx2.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_sse2.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_avx512.c
+        ${SIMD_GEN_DIR}/dap_json_stage1_neon.c
+        ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c
+    )
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
     list(APPEND JSON_ARCH_SRCS 
         ${SIMD_GEN_DIR}/dap_json_stage1_avx2.c
         ${SIMD_GEN_DIR}/dap_json_stage1_sse2.c
@@ -78,13 +90,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
         ${SIMD_GEN_DIR}/dap_json_string_simd_avx512.c
     )
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    # ARM64: Add NEON implementation (always available on ARM64)
-    # Note: arm64 is used by Apple, aarch64 by Linux
     list(APPEND JSON_ARCH_SRCS 
         ${SIMD_GEN_DIR}/dap_json_stage1_neon.c
         ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c
     )
-    # SVE/SVE2 only on Linux ARM64 servers (AWS Graviton etc), not on Apple Silicon
     if(NOT APPLE)
         list(APPEND JSON_ARCH_SRCS 
             ${SIMD_GEN_DIR}/dap_json_stage1_sve.c
@@ -94,8 +103,6 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
         )
     endif()
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
-    # ARM32: ONLY NEON (no SVE/SVE2)
-    # Note: Stage 2 String Scanner SIMD not yet implemented for ARM32
     list(APPEND JSON_ARCH_SRCS 
         ${SIMD_GEN_DIR}/dap_json_stage1_neon.c
     )
@@ -108,9 +115,12 @@ set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS} ${JSON_TA
 dap_add_library(${PROJECT_NAME} ${JSON_ALL_SRCS} HEADERS ${JSON_HEADERS} ${JSON_INTERNAL_HEADERS})
 
 # Set architecture-specific compiler flags for SIMD implementations
-# This enables compile-time dispatch based on available instruction sets
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
-    # x86/x64 architecture
+if(APPLE)
+    # Apple universal builds: no per-file ISA flags (they break cross-arch compilation).
+    # Functions use __attribute__((target(...))) for ISA selection; SSE2 is baseline on x86_64;
+    # NEON is always available on arm64. Generated .c files have #ifdef arch guards.
+    message(STATUS "[dap_json] Apple: all SIMD variants included (universal binary support)")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
     set(AVX2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_avx2.c ${SIMD_GEN_DIR}/dap_json_string_simd_avx2.c)
     set(SSE2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sse2.c ${SIMD_GEN_DIR}/dap_json_string_simd_sse2.c)
     set(AVX512_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_avx512.c ${SIMD_GEN_DIR}/dap_json_string_simd_avx512.c)
@@ -118,43 +128,16 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
     set_source_files_properties(${AVX2_SRCS} PROPERTIES COMPILE_FLAGS "-mavx2 -mbmi -mbmi2 -mpopcnt")
     set_source_files_properties(${SSE2_SRCS} PROPERTIES COMPILE_FLAGS "-msse2 -msse4.2")
     set_source_files_properties(${AVX512_SRCS} PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512dq -mavx512bw -mavx512vl")
-    
-    message(STATUS "[dap_json] AVX2 implementation enabled: ${AVX2_SRCS}")
-    message(STATUS "[dap_json] SSE2 implementation enabled: ${SSE2_SRCS}")
-    message(STATUS "[dap_json] AVX-512 implementation enabled: ${AVX512_SRCS}")
-    
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    # ARM64 architecture (aarch64 on Linux, arm64 on Apple)
-    set(NEON_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_neon.c ${SIMD_GEN_DIR}/dap_json_string_simd_neon.c)
-    
-    # ARM64 - NEON is always available (no extra flags needed)
-    set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "")
-    message(STATUS "[dap_json] NEON implementation enabled: ${NEON_SRCS}")
-    
-    # SVE/SVE2 only on Linux ARM64 servers (AWS Graviton etc), not on Apple Silicon
     if(NOT APPLE)
         set(SVE_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve.c)
         set(SVE2_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c ${SIMD_GEN_DIR}/dap_json_string_simd_sve2.c)
-        
         set_source_files_properties(${SVE_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
         set_source_files_properties(${SVE2_SRCS} PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve2")
-        
-        message(STATUS "[dap_json] SVE implementation enabled: ${SVE_SRCS}")
-        message(STATUS "[dap_json] SVE2 implementation enabled: ${SVE2_SRCS}")
-    else()
-        message(STATUS "[dap_json] SVE/SVE2 disabled (Apple Silicon does not support SVE)")
     endif()
-    
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM")
-    # ARM32 architecture (ARMv7)
     set(NEON_SRCS ${SIMD_GEN_DIR}/dap_json_stage1_neon.c)
-    
-    # ARM32 - explicit NEON flag required
     set_source_files_properties(${NEON_SRCS} PROPERTIES COMPILE_FLAGS "-mfpu=neon")
-    
-    message(STATUS "[dap_json] NEON implementation enabled (ARM32): ${NEON_SRCS}")
-    message(STATUS "[dap_json] SVE/SVE2 skipped (ARM64 only)")
-    message(STATUS "[dap_json] Stage 2 String Scanner SIMD: reference implementation (ARM32 NEON in development)")
 endif()
 
 # Register headers for component-based installation
@@ -174,7 +157,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${SIMD_GEN_DIR})
 set(JSON_LIBRARIES "dap_core" CACHE INTERNAL "dap_json external dependencies")
 
 # Link dependencies
-target_link_libraries(${PROJECT_NAME} PUBLIC dap_core PRIVATE ${JSON_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} PUBLIC dap_core dap_math PRIVATE ${JSON_LIBRARIES})
 # Installation
 if(INSTALL_DAP_SDK)
     set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${JSON_HEADERS}")

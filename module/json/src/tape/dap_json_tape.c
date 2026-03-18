@@ -144,12 +144,14 @@ bool dap_json_build_tape(
     
     size_t i = 0;
     
+    #define TAPE_MAX_DEPTH 2048
+    
     // Stack for tracking open brackets (to fill jump pointers on close)
     typedef struct {
         size_t tape_position;  // Position of opening bracket in tape
     } bracket_stack_t;
     
-    bracket_stack_t bracket_stack[256];
+    bracket_stack_t bracket_stack[TAPE_MAX_DEPTH];
     int bracket_depth = 0;
     
     // Stack for tracking context (are we in array or object?)
@@ -160,7 +162,7 @@ bool dap_json_build_tape(
         bool after_colon;  // true if last token was ':' (for double colon detection in objects)
     } parse_ctx_t;
     
-    parse_ctx_t ctx_stack[256];  // Max 256 levels deep
+    parse_ctx_t ctx_stack[TAPE_MAX_DEPTH];
     int ctx_depth = 0;
     
     while (i < a_stage1->indices_count) {
@@ -171,11 +173,12 @@ bool dap_json_build_tape(
                 char c = idx->character;
                 
                 if (c == '{') {
-                    // Save position for later jump pointer fill
-                    if (bracket_depth < 256) {
-                        bracket_stack[bracket_depth].tape_position = tape_idx;
-                        bracket_depth++;
+                    if (bracket_depth >= TAPE_MAX_DEPTH) {
+                        log_it(L_ERROR, "Nesting depth exceeds %d at position %u", TAPE_MAX_DEPTH, idx->position);
+                        return false;
                     }
+                    bracket_stack[bracket_depth].tape_position = tape_idx;
+                    bracket_depth++;
                     
                     // Write OBJECT_START (payload=0, will be updated on close)
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_OBJECT_START, 0);
@@ -189,13 +192,11 @@ bool dap_json_build_tape(
                     }
                     
                     // Push context
-                    if (ctx_depth < 256) {
-                        ctx_stack[ctx_depth].is_array = false;
-                        ctx_stack[ctx_depth].after_comma = false;
-                        ctx_stack[ctx_depth].has_elements = false;
-                        ctx_stack[ctx_depth].after_colon = false;
-                        ctx_depth++;
-                    }
+                    ctx_stack[ctx_depth].is_array = false;
+                    ctx_stack[ctx_depth].after_comma = false;
+                    ctx_stack[ctx_depth].has_elements = false;
+                    ctx_stack[ctx_depth].after_colon = false;
+                    ctx_depth++;
                     
                 } else if (c == '}') {
                     // STRICT: Check for trailing comma (after_comma flag)
@@ -230,11 +231,12 @@ bool dap_json_build_tape(
                     if (ctx_depth > 0) ctx_depth--;
                     
                 } else if (c == '[') {
-                    // Save position for later jump pointer fill
-                    if (bracket_depth < 256) {
-                        bracket_stack[bracket_depth].tape_position = tape_idx;
-                        bracket_depth++;
+                    if (bracket_depth >= TAPE_MAX_DEPTH) {
+                        log_it(L_ERROR, "Nesting depth exceeds %d at position %u", TAPE_MAX_DEPTH, idx->position);
+                        return false;
                     }
+                    bracket_stack[bracket_depth].tape_position = tape_idx;
+                    bracket_depth++;
                     
                     // Write ARRAY_START (payload=0, will be updated on close)
                     tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_ARRAY_START, 0);
@@ -248,13 +250,11 @@ bool dap_json_build_tape(
                     }
                     
                     // Push context
-                    if (ctx_depth < 256) {
-                        ctx_stack[ctx_depth].is_array = true;
-                        ctx_stack[ctx_depth].after_comma = false;
-                        ctx_stack[ctx_depth].has_elements = false;
-                        ctx_stack[ctx_depth].after_colon = false;
-                        ctx_depth++;
-                    }
+                    ctx_stack[ctx_depth].is_array = true;
+                    ctx_stack[ctx_depth].after_comma = false;
+                    ctx_stack[ctx_depth].has_elements = false;
+                    ctx_stack[ctx_depth].after_colon = false;
+                    ctx_depth++;
                     
                 } else if (c == ']') {
                     // STRICT: Check for trailing comma (after_comma flag)

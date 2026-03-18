@@ -101,9 +101,9 @@ if(UNIX)
 endif()
 
 # ============================================================================
-# Test: DAP CPU Monitor (Linux-only, requires /proc/stat)
+# Test: DAP CPU Monitor (Unix - Linux uses /proc/stat, macOS uses Mach API)
 # ============================================================================
-if(UNIX AND NOT APPLE)
+if(UNIX)
     project(test_dap_cpu_monitor)
 
     add_executable(${PROJECT_NAME}
@@ -125,9 +125,9 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # ============================================================================
-# Test: DAP Process Memory (Linux-only, requires /proc/self/status)
+# Test: DAP Process Memory (Unix - Linux uses /proc, macOS uses Mach API)
 # ============================================================================
-if(UNIX AND NOT APPLE)
+if(UNIX)
     project(test_dap_process_memory)
 
     add_executable(${PROJECT_NAME}
@@ -281,6 +281,30 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 300
     LABELS "unit;core;dap_hash_fast;hash"
 )
+
+# ============================================================================
+# Test: DAP Memory-Mapped File I/O (dap_mmap)
+# ============================================================================
+if(UNIX)
+    project(test_dap_mmap)
+
+    add_executable(${PROJECT_NAME}
+        test_dap_mmap.c
+    )
+
+    dap_test_add_includes(${PROJECT_NAME})
+    dap_test_link_libraries(${PROJECT_NAME})
+
+    add_test(
+        NAME ${PROJECT_NAME}
+        COMMAND ${PROJECT_NAME}
+    )
+
+    set_tests_properties(${PROJECT_NAME} PROPERTIES 
+        TIMEOUT 300
+        LABELS "unit;core;dap_mmap;io"
+    )
+endif()
 
 # uint256_t test suite (converted from GoogleTest/Boost to dap_test)
 add_subdirectory(uint256_t)

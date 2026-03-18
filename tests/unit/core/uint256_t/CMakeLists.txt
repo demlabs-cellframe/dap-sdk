@@ -11,6 +11,7 @@ add_executable(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     dap_test
     dap_core
+    dap_math
     pthread
     m
 )

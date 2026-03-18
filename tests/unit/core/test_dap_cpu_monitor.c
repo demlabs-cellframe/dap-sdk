@@ -1,7 +1,30 @@
+/*
+ * Authors:
+ * Cellframe SDK Team
+ * DeM Labs Inc.   https://demlabs.net
+ * DeM Labs Open source community https://gitlab.demlabs.net/cellframe
+ * Copyright  (c) 2017-2025
+ * All rights reserved.
+
+ This file is part of DAP (Distributed Applications Platform) the open source project
+
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    DAP is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 /**
  * @file test_dap_cpu_monitor.c
- * @brief Unit tests for CPU monitor (Unix-specific)
- * @date 2025
+ * @brief Unit tests for CPU monitor
  */
 
 #include <dap_test.h>
@@ -22,27 +45,60 @@ static void deinit_test_case(void)
 
 static void test_cpu_get_stats(void)
 {
-    dap_cpu_stats_t stat = dap_cpu_get_stats();
-    dap_assert(stat.cpu_cores_count > 0, "Check cpu count");
-    dap_assert(stat.cpu_summary.total_time > 0, "Check cpu summary total_time");
-    dap_assert(stat.cpu_summary.idle_time > 0, "Check cpu summary idle_time");
-    dap_assert(stat.cpu_cores_count > 0, "Check cpu count");
-    for (unsigned i = 0; i < stat.cpu_cores_count; i++) {
-        dap_assert_PIF(stat.cpus[i].ncpu == i, "Check ncpu and index in array");
-        dap_assert_PIF(stat.cpus[i].idle_time > 0, "Check cpu idle_time");
-        dap_assert_PIF(stat.cpus[i].total_time > 0, "Check cpu total_time");
+    dap_cpu_stats_t l_stat = dap_cpu_get_stats();
+    dap_assert(l_stat.cpu_cores_count > 0, "Check cpu count");
+    dap_assert(l_stat.cpu_summary.total_time > 0, "Check cpu summary total_time");
+    dap_assert(l_stat.cpu_summary.idle_time > 0, "Check cpu summary idle_time");
+    dap_assert(l_stat.cpu_cores_count > 0, "Check cpu count");
+    for (unsigned i = 0; i < l_stat.cpu_cores_count; i++) {
+        dap_assert_PIF(l_stat.cpus[i].ncpu == i, "Check ncpu and index in array");
+        dap_assert_PIF(l_stat.cpus[i].idle_time > 0, "Check cpu idle_time");
+        dap_assert_PIF(l_stat.cpus[i].total_time > 0, "Check cpu total_time");
     }
 }
 
 static void test_cpu_get_stats_multiple(void)
 {
-    dap_cpu_stats_t stat1 = dap_cpu_get_stats();
+    dap_cpu_stats_t l_stat1 = dap_cpu_get_stats();
     usleep(10000); // 10ms
-    dap_cpu_stats_t stat2 = dap_cpu_get_stats();
+    dap_cpu_stats_t l_stat2 = dap_cpu_get_stats();
     
-    dap_assert(stat1.cpu_cores_count > 0, "First stat: cpu count > 0");
-    dap_assert(stat2.cpu_cores_count > 0, "Second stat: cpu count > 0");
-    dap_assert(stat1.cpu_cores_count == stat2.cpu_cores_count, "CPU cores count should remain constant");
+    dap_assert(l_stat1.cpu_cores_count > 0, "First stat: cpu count > 0");
+    dap_assert(l_stat2.cpu_cores_count > 0, "Second stat: cpu count > 0");
+    dap_assert(l_stat1.cpu_cores_count == l_stat2.cpu_cores_count, "CPU cores count should remain constant");
+}
+
+/**
+ * @brief Test that CPU load values are in valid range [0, 100]
+ */
+static void test_cpu_load_range(void)
+{
+    // First call to initialize baseline
+    dap_cpu_get_stats();
+    usleep(100000); // 100ms for stats accumulation
+    
+    dap_cpu_stats_t l_stat = dap_cpu_get_stats();
+    
+    dap_assert(l_stat.cpu_summary.load >= 0.0f, "CPU summary load >= 0%");
+    dap_assert(l_stat.cpu_summary.load <= 100.0f, "CPU summary load <= 100%");
+    
+    for (unsigned i = 0; i < l_stat.cpu_cores_count; i++) {
+        dap_assert_PIF(l_stat.cpus[i].load >= 0.0f, "Per-CPU load >= 0%");
+        dap_assert_PIF(l_stat.cpus[i].load <= 100.0f, "Per-CPU load <= 100%");
+    }
+}
+
+/**
+ * @brief Test that total_time increases between calls
+ */
+static void test_cpu_time_increases(void)
+{
+    dap_cpu_stats_t l_stat1 = dap_cpu_get_stats();
+    usleep(50000); // 50ms
+    dap_cpu_stats_t l_stat2 = dap_cpu_get_stats();
+    
+    dap_assert(l_stat2.cpu_summary.total_time >= l_stat1.cpu_summary.total_time, 
+               "CPU total_time should increase over time");
 }
 
 int main(void)
@@ -53,6 +109,8 @@ int main(void)
     init_test_case();
     test_cpu_get_stats();
     test_cpu_get_stats_multiple();
+    test_cpu_load_range();
+    test_cpu_time_increases();
     deinit_test_case();
 
     return 0;
