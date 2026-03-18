@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
@@ -193,8 +194,8 @@ static void print_test_statistics(void)
     printf("📊 Overall Results:\n");
     printf("   Total Scenarios: %zu passed, %zu failed\n",
            s_test_stats.total_scenarios_passed, s_test_stats.total_scenarios_failed);
-    printf("   Total Duration: %lu seconds (%.1f minutes)\n",
-           total_duration_sec, total_duration_sec / 60.0);
+    printf("   Total Duration: %" PRIu64 " seconds (%.1f minutes)\n",
+           total_duration_sec, (double)total_duration_sec / 60.0);
     printf("\n");
     
     // Per-transport statistics

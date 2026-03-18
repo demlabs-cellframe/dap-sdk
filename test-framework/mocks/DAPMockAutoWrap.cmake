@@ -230,21 +230,17 @@ function(dap_mock_autowrap TARGET_NAME)
         
         # Only apply wrap options if file is not empty
         if(WRAP_CONTENT_STRIPPED)
-            # Detect if compiler supports response files
-            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
-               CMAKE_C_COMPILER_ID MATCHES "Clang" OR
-               CMAKE_C_COMPILER_ID MATCHES "AppleClang")
-                # GCC and Clang support -Wl,@file for response files
-                # Note: macOS generates -Wl,-alias options, Linux generates --wrap options
-                target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
+            if(APPLE)
                 # macOS: Don't add linker flags - we use DYLD_INSERT_LIBRARIES instead
-                # The interposition dylib is injected at runtime via ctest ENVIRONMENT
-                #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (via @file)")
+                # Apple ld does not support GNU --wrap; interposition dylib is injected at runtime
+            elseif(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
+                   CMAKE_C_COMPILER_ID MATCHES "Clang")
+                # GCC and Clang with GNU ld support -Wl,@file for response files with --wrap options
+                target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
             else()
                 # Fallback: read file and add options individually
                 string(REPLACE "\n" ";" WRAP_OPTIONS_LIST "${WRAP_CONTENT}")
                 target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS_LIST})
-                #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME}")
             endif()
             
             # Count wrapped functions
@@ -605,21 +601,23 @@ function(dap_mock_manual_wrap TARGET_NAME)
     set(WRAP_OPTIONS "")
     
     # Detect compiler and linker type
-    if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_C_SIMULATE_ID MATCHES "MSVC")
+    if(APPLE)
+        # macOS: --wrap not supported by Apple ld; mocking via DYLD_INSERT_LIBRARIES
+    elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_C_SIMULATE_ID MATCHES "MSVC")
         # MSVC does not support --wrap, use /ALTERNATENAME instead
         message(WARNING "MSVC does not support --wrap. Please use MinGW/Clang for mock testing.")
         message(WARNING "Alternative: Use /ALTERNATENAME:_function_name=_mock_function_name")
         foreach(FUNC ${ARGN})
             list(APPEND WRAP_OPTIONS "/ALTERNATENAME:_${FUNC}=_mock_${FUNC}")
         endforeach()
+        target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS})
     else()
         # GCC, Clang, MinGW - all support GNU ld --wrap
         foreach(FUNC ${ARGN})
             list(APPEND WRAP_OPTIONS "-Wl,--wrap=${FUNC}")
         endforeach()
+        target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS})
     endif()
-    
-    target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS})
     
     list(LENGTH ARGN FUNC_COUNT)
     message(STATUS "✅ Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME}")
@@ -640,13 +638,16 @@ function(dap_mock_wrap_from_file TARGET_NAME WRAP_FILE)
         #message(FATAL_ERROR "Wrap file not found: ${WRAP_FILE_ABS}")
     endif()
     
+    # macOS: --wrap not supported by Apple ld; mocking via DYLD_INSERT_LIBRARIES
+    if(APPLE)
+        return()
+    endif()
+
     # Detect if compiler supports response files directly
     if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR 
-       CMAKE_C_COMPILER_ID MATCHES "Clang" OR
-       CMAKE_C_COMPILER_ID MATCHES "AppleClang")
-        # GCC/Clang: use -Wl,@file directly (most efficient)
+       CMAKE_C_COMPILER_ID MATCHES "Clang")
+        # GCC/Clang with GNU ld: use -Wl,@file directly (most efficient)
         target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_FILE_ABS}")
-        #message(STATUS "✅ Mock wrap from file: ${WRAP_FILE} (via @file)")
         return()
     endif()
     
