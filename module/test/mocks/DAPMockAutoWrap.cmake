@@ -24,26 +24,24 @@ if(NOT DAP_MOCK_AUTOWRAP_MODULE_DIR)
 endif()
 #message(STATUS "DAPMockAutoWrap module directory: ${DAP_MOCK_AUTOWRAP_MODULE_DIR}")
 
-# Detect script executor (bash on Unix, PowerShell on Windows)
-# Note: PowerShell version (ps1) is basic and may not support all features
-# Full functionality is available in bash version (sh)
+# Detect script executor on HOST (where generator runs), not target platform.
+# In cross-builds (e.g. Linux -> Windows), target flags like WIN32 are true
+# but scripts are still executed on Linux runner.
+# Note: PowerShell version (ps1) is basic and may not support all features.
+# Full functionality is available in bash version (sh).
 if(NOT DEFINED SCRIPT_EXECUTOR)
-    if(UNIX)
-        find_program(BASH_EXECUTABLE bash)
-        if(BASH_EXECUTABLE)
-            set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
-            set(SCRIPT_EXT "sh" CACHE INTERNAL "Script extension for mock autowrap")
-        else()
-            message(FATAL_ERROR "Bash required for dap_mock_autowrap() on Unix. Please install bash.")
-        endif()
-    elseif(WIN32)
-        find_program(POWERSHELL_EXECUTABLE powershell)
+    find_program(BASH_EXECUTABLE bash)
+    if(BASH_EXECUTABLE)
+        set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+        set(SCRIPT_EXT "sh" CACHE INTERNAL "Script extension for mock autowrap")
+    else()
+        find_program(POWERSHELL_EXECUTABLE NAMES pwsh powershell)
         if(POWERSHELL_EXECUTABLE)
             set(SCRIPT_EXECUTOR ${POWERSHELL_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
             set(SCRIPT_EXT "ps1" CACHE INTERNAL "Script extension for mock autowrap")
             message(WARNING "Using PowerShell version of dap_mock_autowrap - basic functionality only. Full features require bash.")
         else()
-            message(FATAL_ERROR "PowerShell required for dap_mock_autowrap() on Windows. Please install PowerShell.")
+            message(FATAL_ERROR "No script executor found for dap_mock_autowrap(). Install bash (preferred) or PowerShell.")
         endif()
     endif()
 endif()
