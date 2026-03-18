@@ -54,7 +54,7 @@ target_link_libraries(benchmark_ecdsa PRIVATE
 target_include_directories(benchmark_ecdsa PRIVATE
     ${CMAKE_SOURCE_DIR}/module/crypto/include
     ${CMAKE_SOURCE_DIR}/module/core/include
-    ${CMAKE_SOURCE_DIR}/module/crypto/src  # For internal ecdsa headers
+    ${CMAKE_SOURCE_DIR}/module/crypto/src/sig/classic/ecdsa
 )
 
 # Architecture-specific scalar benchmarks
@@ -63,7 +63,7 @@ if(BUILD_BENCHMARKS)
     
     # Include internal ECDSA headers
     target_include_directories(benchmark_ecdsa PRIVATE
-        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig_ecdsa
+        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig/classic/ecdsa
     )
 endif()
 

@@ -53,11 +53,14 @@ typedef struct dap_cpu_features {
     bool has_bmi;       /**< BMI (Bit Manipulation Instructions) */
     bool has_bmi2;      /**< BMI2 */
     bool has_popcnt;    /**< POPCNT */
+    bool has_aes_ni;    /**< AES-NI (hardware AES acceleration) */
+    bool has_sha_ni;    /**< SHA-NI (hardware SHA acceleration) */
     
     // ARM features
     bool has_neon;      /**< ARM NEON (baseline for ARM64) */
     bool has_sve;       /**< ARM SVE (Scalable Vector Extension) */
     bool has_sve2;      /**< ARM SVE2 */
+    bool has_arm_ce;    /**< ARM Cryptographic Extensions (AES/SHA) */
     
     // Architecture info
     bool is_x86;        /**< x86/x64 architecture */

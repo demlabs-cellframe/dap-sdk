@@ -153,22 +153,22 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keccak/test_sha3_kat.c)
 endif()
 
 # ECDSA Field Operations Tests
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_field_mul.c)
+if(BUILD_WITH_ECDSA AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_field_mul.c)
     add_dap_test(test_field_mul unit/crypto/test_field_mul.c)
     target_include_directories(test_field_mul PRIVATE 
         ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa/arch
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig/classic/ecdsa
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig/classic/ecdsa/arch
     )
     register_dap_test(test_field_mul "unit;crypto;ecdsa")
 endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_ecdsa_debug.c)
+if(BUILD_WITH_ECDSA AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_ecdsa_debug.c)
     add_dap_test(test_ecdsa_debug unit/crypto/test_ecdsa_debug.c)
     target_include_directories(test_ecdsa_debug PRIVATE 
         ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig_ecdsa/arch
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig/classic/ecdsa
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig/classic/ecdsa/arch
     )
     register_dap_test(test_ecdsa_debug "unit;crypto;ecdsa")
 endif()
@@ -199,6 +199,18 @@ message("[+] Configuring Integration Tests")
 #    add_dap_test(test_integration_crypto_network integration/test_crypto_network.c)
 #    register_dap_test(test_integration_crypto_network "integration;crypto;network")
 #endif()
+
+# PQC & new symmetric algorithm unit tests (ML-DSA, ML-KEM, ChaCha20, NTRU Prime, AES)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/pqc/CMakeLists.txt)
+    add_subdirectory(unit/crypto/pqc)
+    message("[+] PQC algorithm unit tests configured")
+endif()
+
+# Math bignum unit tests (NTT, poly, multi-precision)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/math/bignum/CMakeLists.txt)
+    add_subdirectory(unit/math/bignum)
+    message("[+] Math bignum unit tests configured")
+endif()
 
 # Build Performance Tests
 message("[+] Configuring Performance Tests")
@@ -233,7 +245,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/keccak/CMakeLists.txt)
 endif()
 
 # ECDSA performance benchmarks (DAP vs bitcoin-core/secp256k1, OpenSSL)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/ecdsa/CMakeLists.txt)
+if(BUILD_WITH_ECDSA AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/ecdsa/CMakeLists.txt)
     add_subdirectory(performance/ecdsa)
     message("[+] ECDSA performance benchmarks configured")
 endif()

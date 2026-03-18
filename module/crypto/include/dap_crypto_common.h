@@ -18,7 +18,7 @@ extern "C" {
 // #include "SimpleFIPS202.h"
 //#include "SP800-185.h"
 
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 
 
 // Definition of operating system

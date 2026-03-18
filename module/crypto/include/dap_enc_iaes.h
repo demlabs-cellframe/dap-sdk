@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "iaes/dap_iaes_proto.h"
+#include "dap_iaes_proto.h"
 
 #ifdef __cplusplus
 extern "C" {

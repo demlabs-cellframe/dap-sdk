@@ -79,6 +79,12 @@ if(NOT DEFINED DAP_TPL_DIR)
     message("[+] DAP SDK: DAP_TPL_DIR set to ${DAP_TPL_DIR}")
 endif()
 
+# Arch-optimized code generation infrastructure (used by hash, json, crypto, math modules)
+if(NOT DEFINED DAP_ARCH_DIR)
+    set(DAP_ARCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/arch" CACHE PATH "Path to arch codegen infrastructure")
+endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapArchCodegen.cmake)
+
 # JSON module is always required (used by core and other modules)
 add_subdirectory(module/json)
 message("[+] Module 'json' (always required)")
@@ -102,6 +108,12 @@ message("[+] Module 'daemon'")
 # Config module - configuration management
 add_subdirectory(module/config)
 message("[+] Module 'config'")
+
+# Bignum library — independent of dap_math, used only by crypto algorithms
+if (DAPSDK_MODULES MATCHES "crypto")
+    add_subdirectory(module/math/bignum)
+    message("[+] Module 'math/bignum' (NTT, poly, multi-precision)")
+endif()
 
 # Optional modules with UPDATED PATHS
 if (DAPSDK_MODULES MATCHES "crypto")

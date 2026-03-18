@@ -3,7 +3,7 @@
 #include <string.h>
 #include "dap_common.h"
 #include "dap_test.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_enc_base58.h"
 #include "dap_enc_base58_test.h"
 
@@ -13,11 +13,11 @@ static void test_encode_decode_base58(void)
 {
 //    static size_t source_size = 0;
 //    source_size = 0;
-    int step = 1 + random_uint32_t( 20);
+    int step = 1 + dap_random_uint32( 20);
     source_size += (size_t) step;
 
     uint8_t source[source_size];
-    randombytes(source, source_size);
+    dap_random_bytes(source, source_size);
     //source[0] = 0;
     //source[1] = 0;
     size_t encode_result_size = DAP_ENC_BASE58_ENCODE_SIZE(source_size);

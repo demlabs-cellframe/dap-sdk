@@ -81,6 +81,7 @@ static void s_detect_x86_features(dap_cpu_features_t *a_features)
         a_features->has_sse4_1 = (ecx & (1 << 19)) != 0;
         a_features->has_sse4_2 = (ecx & (1 << 20)) != 0;
         a_features->has_avx = (ecx & (1 << 28)) != 0;
+        a_features->has_aes_ni = (ecx & (1 << 25)) != 0;
     }
     
     // CPUID.7:EBX - Extended features
@@ -92,6 +93,7 @@ static void s_detect_x86_features(dap_cpu_features_t *a_features)
         a_features->has_avx512dq = (ebx & (1 << 17)) != 0;
         a_features->has_avx512bw = (ebx & (1 << 30)) != 0;
         a_features->has_avx512vl = (ebx & (1 << 31)) != 0;
+        a_features->has_sha_ni = (ebx & (1 << 29)) != 0;
     }
 }
 
@@ -107,7 +109,6 @@ static void s_detect_arm_features(dap_cpu_features_t *a_features)
     a_features->cache_line_size = 64;  // Common for modern ARM
     
 #if defined(__aarch64__)
-    // NEON is baseline for ARM64
     a_features->has_neon = true;
     snprintf(s_cpu_name, sizeof(s_cpu_name), "ARM64 (AArch64)");
 #elif defined(__ARM_NEON)
@@ -116,11 +117,20 @@ static void s_detect_arm_features(dap_cpu_features_t *a_features)
 #else
     snprintf(s_cpu_name, sizeof(s_cpu_name), "ARM32");
 #endif
+
+#if defined(__APPLE__) && defined(__aarch64__)
+    a_features->has_arm_ce = true;
+#elif defined(__ARM_FEATURE_CRYPTO)
+    a_features->has_arm_ce = true;
+#endif
     
 #if defined(__linux__)
-    // Use getauxval to detect SVE on Linux
     unsigned long hwcap = getauxval(AT_HWCAP);
     unsigned long hwcap2 = getauxval(AT_HWCAP2);
+    
+    #ifdef HWCAP_AES
+        a_features->has_arm_ce = (hwcap & HWCAP_AES) != 0;
+    #endif
     
     #ifdef HWCAP_SVE
         a_features->has_sve = (hwcap & HWCAP_SVE) != 0;
@@ -184,11 +194,15 @@ dap_cpu_features_t dap_cpu_detect_features(void)
                s_cached_features.has_bmi ? "yes" : "no",
                s_cached_features.has_bmi2 ? "yes" : "no",
                s_cached_features.has_popcnt ? "yes" : "no");
+        log_it(L_DEBUG, "  AES-NI: %s, SHA-NI: %s",
+               s_cached_features.has_aes_ni ? "yes" : "no",
+               s_cached_features.has_sha_ni ? "yes" : "no");
 #elif defined(__aarch64__) || defined(__arm__)
-        log_it(L_DEBUG, "  NEON: %s, SVE: %s, SVE2: %s",
+        log_it(L_DEBUG, "  NEON: %s, SVE: %s, SVE2: %s, ARM-CE: %s",
                s_cached_features.has_neon ? "yes" : "no",
                s_cached_features.has_sve ? "yes" : "no",
-               s_cached_features.has_sve2 ? "yes" : "no");
+               s_cached_features.has_sve2 ? "yes" : "no",
+               s_cached_features.has_arm_ce ? "yes" : "no");
 #endif
     }
     
@@ -219,11 +233,11 @@ void dap_cpu_print_features(void)
                f.has_sse2, f.has_sse4_1, f.has_sse4_2, f.has_avx, f.has_avx2);
         log_it(L_INFO, "AVX-512: F=%d DQ=%d BW=%d VL=%d",
                f.has_avx512f, f.has_avx512dq, f.has_avx512bw, f.has_avx512vl);
-        log_it(L_INFO, "Other: BMI=%d BMI2=%d POPCNT=%d",
-               f.has_bmi, f.has_bmi2, f.has_popcnt);
+        log_it(L_INFO, "Other: BMI=%d BMI2=%d POPCNT=%d AES-NI=%d SHA-NI=%d",
+               f.has_bmi, f.has_bmi2, f.has_popcnt, f.has_aes_ni, f.has_sha_ni);
     } else if (f.is_arm) {
-        log_it(L_INFO, "SIMD: NEON=%d SVE=%d SVE2=%d",
-               f.has_neon, f.has_sve, f.has_sve2);
+        log_it(L_INFO, "SIMD: NEON=%d SVE=%d SVE2=%d ARM-CE=%d",
+               f.has_neon, f.has_sve, f.has_sve2, f.has_arm_ce);
     }
 }
 

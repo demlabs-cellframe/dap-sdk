@@ -41,9 +41,6 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_IAES = 0, // Symmetric AES
     DAP_ENC_KEY_TYPE_OAES = 1,// from https://github.com/monero-project/monero/tree/master/src/crypto
 
-    DAP_ENC_KEY_TYPE_BF_CBC = 2,// BlowFish CBCmode
-    DAP_ENC_KEY_TYPE_BF_OFB = 3,//BlowFish OFBmode
-
     DAP_ENC_KEY_TYPE_GOST_OFB = 4,//GOST28147_89
     DAP_ENC_KEY_TYPE_KUZN_OFB = 5,//GOST28147_14
 
@@ -109,6 +106,12 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
     DAP_ENC_KEY_TYPE_SIG_ECDSA = 26,
     DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK=27,
+    DAP_ENC_KEY_TYPE_SIG_ML_DSA = 28,
+    DAP_ENC_KEY_TYPE_ML_KEM = 29,
+    DAP_ENC_KEY_TYPE_CHACHA20_POLY1305 = 34,
+    DAP_ENC_KEY_TYPE_AES256_CBC = 35,
+    DAP_ENC_KEY_TYPE_KEM_NTRU_PRIME = 36,
+    DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME = 37,
     DAP_ENC_KEY_TYPE_SIG_CHIPMUNK=0x0108,
 
     DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM = 99,

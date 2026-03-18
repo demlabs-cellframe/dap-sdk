@@ -215,6 +215,75 @@ static bool s_benchmark_memory_usage(void) {
 }
 
 /**
+ * @brief Benchmark NTRU Prime signature keygen/sign/verify performance
+ */
+static bool s_benchmark_ntru_prime_sig_performance(void) {
+    log_it(L_INFO, "Benchmarking NTRU Prime signature performance");
+
+    const char *l_test_data = "NTRU Prime signature performance test message";
+    size_t l_data_size = strlen(l_test_data);
+    const size_t l_keygen_iters = 20;
+    const size_t l_sign_iters = SIGN_ITERATIONS;
+    const size_t l_verify_iters = VERIFY_ITERATIONS;
+
+    dap_test_timer_t l_timer;
+    dap_test_timer_start(&l_timer);
+    dap_enc_key_t *l_key = NULL;
+    for (size_t i = 0; i < l_keygen_iters; i++) {
+        if (l_key) dap_enc_key_delete(l_key);
+        l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME, NULL, 0, NULL, 0, 0);
+        if (!l_key) {
+            log_it(L_ERROR, "NTRU Prime keygen failed at iteration %zu", i);
+            return false;
+        }
+    }
+    uint64_t l_keygen_us = dap_test_timer_stop(&l_timer);
+    double l_keygen_per_sec = (double)l_keygen_iters / (l_keygen_us / 1000000.0);
+    log_it(L_INFO, "NTRU Prime Keygen:");
+    log_it(L_INFO, "  - %zu iterations in %" PRIu64 " us (%.2f keygen/s, %.2f ms/op)",
+           l_keygen_iters, l_keygen_us, l_keygen_per_sec,
+           (double)l_keygen_us / (l_keygen_iters * 1000));
+    DAP_TEST_ASSERT(l_key != NULL, "NTRU Prime key available for sign/verify benchmark");
+
+    dap_test_timer_start(&l_timer);
+    dap_sign_t *l_signature = NULL;
+    for (size_t i = 0; i < l_sign_iters; i++) {
+        if (l_signature) DAP_DELETE(l_signature);
+        l_signature = dap_sign_create(l_key, l_test_data, l_data_size);
+        if (!l_signature) {
+            log_it(L_ERROR, "NTRU Prime sign failed at iteration %zu", i);
+            dap_enc_key_delete(l_key);
+            return false;
+        }
+    }
+    uint64_t l_sign_us = dap_test_timer_stop(&l_timer);
+    double l_signs_per_sec = (double)l_sign_iters / (l_sign_us / 1000000.0);
+    log_it(L_INFO, "NTRU Prime Sign:");
+    log_it(L_INFO, "  - %zu iterations in %" PRIu64 " us (%.2f sign/s, %.2f ms/op)",
+           l_sign_iters, l_sign_us, l_signs_per_sec,
+           (double)l_sign_us / (l_sign_iters * 1000));
+
+    dap_test_timer_start(&l_timer);
+    size_t l_ok = 0;
+    for (size_t i = 0; i < l_verify_iters; i++) {
+        if (dap_sign_verify(l_signature, l_test_data, l_data_size) == 0)
+            l_ok++;
+    }
+    uint64_t l_verify_us = dap_test_timer_stop(&l_timer);
+    double l_verifies_per_sec = (double)l_verify_iters / (l_verify_us / 1000000.0);
+    log_it(L_INFO, "NTRU Prime Verify:");
+    log_it(L_INFO, "  - %zu iterations in %" PRIu64 " us (%.2f verify/s, %.2f ms/op)",
+           l_verify_iters, l_verify_us, l_verifies_per_sec,
+           (double)l_verify_us / (l_verify_iters * 1000));
+
+    DAP_TEST_ASSERT(l_ok == l_verify_iters, "All NTRU Prime verifications should succeed");
+
+    if (l_signature) DAP_DELETE(l_signature);
+    dap_enc_key_delete(l_key);
+    return true;
+}
+
+/**
  * @brief Compare performance of different signature algorithms
  */
 static bool s_benchmark_algorithm_comparison(void) {
@@ -226,6 +295,8 @@ static bool s_benchmark_algorithm_comparison(void) {
     } l_algorithms[] = {
         {{.type = SIG_TYPE_DILITHIUM}, "Dilithium"},
         {{.type = SIG_TYPE_FALCON}, "Falcon"},
+        {{.type = SIG_TYPE_NTRU_PRIME}, "NTRU Prime"},
+        {{.type = SIG_TYPE_CHIPMUNK}, "Chipmunk"},
         {{.type = SIG_TYPE_PICNIC}, "Picnic"}
     };
     
@@ -296,6 +367,7 @@ int main(void) {
     l_all_passed &= s_benchmark_dilithium_sign_performance();
     l_all_passed &= s_benchmark_dilithium_verify_performance();
     l_all_passed &= s_benchmark_memory_usage();
+    l_all_passed &= s_benchmark_ntru_prime_sig_performance();
     l_all_passed &= s_benchmark_algorithm_comparison();
     
     dap_test_sdk_cleanup();

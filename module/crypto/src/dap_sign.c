@@ -99,8 +99,10 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
         case DAP_ENC_KEY_TYPE_SIG_PICNIC: l_sign_type.type = SIG_TYPE_PICNIC; break;
         case DAP_ENC_KEY_TYPE_SIG_TESLA: l_sign_type.type = SIG_TYPE_TESLA; break;
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_type.type = SIG_TYPE_DILITHIUM; break;
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA: l_sign_type.type = SIG_TYPE_ML_DSA; break;
         case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_type.type = SIG_TYPE_FALCON; break;
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_type.type = SIG_TYPE_SPHINCSPLUS; break;
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME: l_sign_type.type = SIG_TYPE_NTRU_PRIME; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK: l_sign_type.type = SIG_TYPE_CHIPMUNK; break;
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
@@ -127,8 +129,10 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_TESLA: return DAP_ENC_KEY_TYPE_SIG_TESLA;
         case SIG_TYPE_PICNIC: return DAP_ENC_KEY_TYPE_SIG_PICNIC;
         case SIG_TYPE_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
+        case SIG_TYPE_ML_DSA: return DAP_ENC_KEY_TYPE_SIG_ML_DSA;
         case SIG_TYPE_FALCON: return DAP_ENC_KEY_TYPE_SIG_FALCON;
         case SIG_TYPE_SPHINCSPLUS: return DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
+        case SIG_TYPE_NTRU_PRIME: return DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME;
         case SIG_TYPE_CHIPMUNK: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
@@ -157,8 +161,10 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_TESLA: return "sig_tesla";
         case SIG_TYPE_PICNIC: return "sig_picnic";
         case SIG_TYPE_DILITHIUM: return "sig_dil";
+        case SIG_TYPE_ML_DSA: return "sig_ml_dsa";
         case SIG_TYPE_FALCON: return "sig_falcon";
         case SIG_TYPE_SPHINCSPLUS: return "sig_sphincs";
+        case SIG_TYPE_NTRU_PRIME: return "sig_ntru_prime";
         case SIG_TYPE_CHIPMUNK: return "sig_chipmunk";
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return "sig_ecdsa";
@@ -191,10 +197,14 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
         l_sign_type.type = SIG_TYPE_PICNIC;
     } else if ( !dap_strcmp (a_type_str,"sig_dil") ){
         l_sign_type.type = SIG_TYPE_DILITHIUM;
+    } else if ( !dap_strcmp (a_type_str, "sig_ml_dsa") ){
+        l_sign_type.type = SIG_TYPE_ML_DSA;
     } else if ( !dap_strcmp (a_type_str, "sig_falcon") ) {
         l_sign_type.type = SIG_TYPE_FALCON;
     } else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
          l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
+    } else if ( !dap_strcmp (a_type_str, "sig_ntru_prime") ) {
+         l_sign_type.type = SIG_TYPE_NTRU_PRIME;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk") ) {
          l_sign_type.type = SIG_TYPE_CHIPMUNK;
 #ifdef DAP_ECDSA
@@ -251,6 +261,7 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
@@ -515,6 +526,7 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
@@ -623,7 +635,7 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
  */
 DAP_INLINE const char *dap_sign_get_str_recommended_types()
 {
-    return "sig_dil\nsig_falcon\n"
+    return "sig_dil\nsig_falcon\nsig_ntru_prime\n"
 #ifdef DAP_ECDSA
     "sig_ecdsa\n"
     "sig_multi_ecdsa_dil\n"
