@@ -10,6 +10,7 @@ target_link_libraries(test_bignum
 
 target_include_directories(test_bignum PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/math/bignum/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/math/bignum/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/core/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/test
 )

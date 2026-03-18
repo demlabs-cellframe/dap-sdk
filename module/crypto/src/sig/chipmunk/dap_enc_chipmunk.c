@@ -22,51 +22,27 @@ int dap_enc_chipmunk_init(void)
 // Allocate and initialize new private key
 dap_enc_key_t *dap_enc_chipmunk_key_new(void)
 {
-    debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_new: Creating new Chipmunk key");
-    
-    // Allocate the key structure
     dap_enc_key_t *l_key = DAP_NEW_Z(dap_enc_key_t);
     if (!l_key) {
         log_it(L_ERROR, "Failed to allocate dap_enc_key_t structure");
         return NULL;
     }
-    
-    debug_if(s_debug_more, L_DEBUG, "✅ DAP_NEW_Z(dap_enc_key_t) successful, l_key = %p", (void*)l_key);
-    
-    // Basic corruption check - verify memory is properly zeroed
-    if (l_key->priv_key_data_size != 0 || l_key->pub_key_data_size != 0 ||
-        l_key->priv_key_data != NULL || l_key->pub_key_data != NULL) {
-        log_it(L_ERROR, "❌ CORRUPTION DETECTED IMMEDIATELY AFTER DAP_NEW_Z!");
-        DAP_DELETE(l_key);
-        return NULL;
-    }
 
-    // Set key type and management functions
     l_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
     l_key->dec_na = 0;
     l_key->enc_na = 0;
     l_key->sign_get = dap_enc_chipmunk_get_sign;
     l_key->sign_verify = dap_enc_chipmunk_verify_sign;
-    
     l_key->priv_key_data_size = CHIPMUNK_PRIVATE_KEY_SIZE;
     l_key->pub_key_data_size = CHIPMUNK_PUBLIC_KEY_SIZE;
-    
-    // Quick check after setting sizes
-    if (l_key->priv_key_data_size != CHIPMUNK_PRIVATE_KEY_SIZE || 
-        l_key->pub_key_data_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
-        log_it(L_ERROR, "❌ CORRUPTION DETECTED AFTER SIZE ASSIGNMENT!");
-        DAP_DELETE(l_key);
-        return NULL;
-    }
-    
-    // Allocate memory for keys
+
     l_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, l_key->priv_key_data_size);
     if (!l_key->priv_key_data) {
         log_it(L_ERROR, "Failed to allocate memory for private key");
         DAP_DELETE(l_key);
         return NULL;
     }
-    
+
     l_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, l_key->pub_key_data_size);
     if (!l_key->pub_key_data) {
         log_it(L_ERROR, "Failed to allocate memory for public key");
@@ -74,27 +50,9 @@ dap_enc_key_t *dap_enc_chipmunk_key_new(void)
         DAP_DELETE(l_key);
         return NULL;
     }
-    
-    // Final check before chipmunk_keypair
-    if (l_key->priv_key_data_size != CHIPMUNK_PRIVATE_KEY_SIZE || 
-        l_key->pub_key_data_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
-        log_it(L_ERROR, "❌ CORRUPTION after key allocation!");
-        DAP_DELETE(l_key->priv_key_data);
-        DAP_DELETE(l_key->pub_key_data);
-        DAP_DELETE(l_key);
-        return NULL;
-    }
-    
-    // Generate Chipmunk keypair
-    debug_if(s_debug_more, L_DEBUG, "Calling chipmunk_keypair");
 
-    
     int ret = chipmunk_keypair(l_key->pub_key_data, l_key->pub_key_data_size,
-                              l_key->priv_key_data, l_key->priv_key_data_size);
-    
-
-    
-    // Check if chipmunk_keypair succeeded
+                               l_key->priv_key_data, l_key->priv_key_data_size);
     if (ret != 0) {
         log_it(L_ERROR, "chipmunk_keypair failed with error %d", ret);
         DAP_DELETE(l_key->priv_key_data);
@@ -102,8 +60,7 @@ dap_enc_key_t *dap_enc_chipmunk_key_new(void)
         DAP_DELETE(l_key);
         return NULL;
     }
-    
-    debug_if(s_debug_more, L_DEBUG, "Successfully generated Chipmunk keypair");
+
     return l_key;
 }
 
@@ -286,105 +243,32 @@ void dap_enc_chipmunk_key_delete(dap_enc_key_t *a_key)
 // Serialization functions for private and public keys
 uint8_t *dap_enc_chipmunk_write_private_key(const void *a_key, size_t *a_buflen_out)
 {
-    log_it(L_INFO, "=== CORRUPTION INVESTIGATION: dap_enc_chipmunk_write_private_key ===");
-    log_it(L_INFO, "Function called with a_key = %p", a_key);
-    
-    if (!a_key) {
-        log_it(L_ERROR, "❌ a_key is NULL!");
+    if (!a_key || !a_buflen_out)
         return NULL;
-    }
-    
-    if (!a_buflen_out) {
-        log_it(L_ERROR, "❌ a_buflen_out is NULL!");
-        return NULL;
-    }
-    
-    // Log current state of a_buflen_out
-    log_it(L_INFO, "Initial *a_buflen_out = %zu", *a_buflen_out);
-    
-    const chipmunk_private_key_t* l_private_key = (const chipmunk_private_key_t*) a_key;
-    
-    // Log address and first few bytes of the key structure
-    log_it(L_INFO, "l_private_key address: %p", (void*)l_private_key);
-    log_it(L_INFO, "chipmunk_private_key_t structure size: %zu", sizeof(chipmunk_private_key_t));
-    
-    // Check if the address is reasonable (lower bound only - upper bound is platform-specific)
-    if ((uintptr_t)l_private_key < 0x1000) {
-        log_it(L_ERROR, "❌ Suspicious private key address: %p", (void*)l_private_key);
-        log_it(L_ERROR, "This looks like corrupted memory or invalid pointer!");
-        return NULL;
-    }
-    
-    // Memory pattern check
-    const uint8_t *check_ptr = (const uint8_t*)l_private_key;
-    log_it(L_INFO, "First 16 bytes of private key structure: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-           check_ptr[0], check_ptr[1], check_ptr[2], check_ptr[3],
-           check_ptr[4], check_ptr[5], check_ptr[6], check_ptr[7],
-           check_ptr[8], check_ptr[9], check_ptr[10], check_ptr[11],
-           check_ptr[12], check_ptr[13], check_ptr[14], check_ptr[15]);
-    
-    log_it(L_INFO, "About to access private key structure...");
-    log_it(L_INFO, "=========================================");
-    
+
+    const chipmunk_private_key_t *l_private_key = (const chipmunk_private_key_t *)a_key;
     *a_buflen_out = sizeof(chipmunk_private_key_t);
     uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, *a_buflen_out);
     if (!l_buf) {
         log_it(L_ERROR, "Failed to allocate memory for private key serialization");
         return NULL;
     }
-    
     memcpy(l_buf, l_private_key, *a_buflen_out);
     return l_buf;
 }
 
 uint8_t *dap_enc_chipmunk_write_public_key(const void *a_key, size_t *a_buflen_out)
 {
-    log_it(L_INFO, "=== CORRUPTION INVESTIGATION: dap_enc_chipmunk_write_public_key ===");
-    log_it(L_INFO, "Function called with a_key = %p", a_key);
-    
-    if (!a_key) {
-        log_it(L_ERROR, "❌ a_key is NULL!");
+    if (!a_key || !a_buflen_out)
         return NULL;
-    }
-    
-    if (!a_buflen_out) {
-        log_it(L_ERROR, "❌ a_buflen_out is NULL!");
-        return NULL;
-    }
-    
-    // Log current state of a_buflen_out
-    log_it(L_INFO, "Initial *a_buflen_out = %zu", *a_buflen_out);
-    
-    const chipmunk_public_key_t* l_public_key = (const chipmunk_public_key_t*) a_key;
-    
-    // Log address and first few bytes of the key structure
-    log_it(L_INFO, "l_public_key address: %p", (void*)l_public_key);
-    log_it(L_INFO, "chipmunk_public_key_t structure size: %zu", sizeof(chipmunk_public_key_t));
-    
-    // Check if the address is reasonable (lower bound only - upper bound is platform-specific)
-    if ((uintptr_t)l_public_key < 0x1000) {
-        log_it(L_ERROR, "❌ Suspicious public key address: %p", (void*)l_public_key);
-        log_it(L_ERROR, "This looks like corrupted memory or invalid pointer!");
-        return NULL;
-    }
-    
-    // Memory pattern check
-    const uint8_t *check_ptr = (const uint8_t*)l_public_key;
-    log_it(L_INFO, "First 16 bytes of public key structure: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-           check_ptr[0], check_ptr[1], check_ptr[2], check_ptr[3],
-           check_ptr[4], check_ptr[5], check_ptr[6], check_ptr[7],
-           check_ptr[8], check_ptr[9], check_ptr[10], check_ptr[11],
-           check_ptr[12], check_ptr[13], check_ptr[14], check_ptr[15]);
-    
-    log_it(L_INFO, "About to access public key structure...");
-    log_it(L_INFO, "=========================================");
+
+    const chipmunk_public_key_t *l_public_key = (const chipmunk_public_key_t *)a_key;
     *a_buflen_out = sizeof(chipmunk_public_key_t);
     uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, *a_buflen_out);
     if (!l_buf) {
-        log_it(L_ERROR, "Memory allocation failed for public key serialization, size = %zu", *a_buflen_out);
+        log_it(L_ERROR, "Failed to allocate memory for public key serialization");
         return NULL;
     }
-    
     memcpy(l_buf, l_public_key, *a_buflen_out);
     return l_buf;
 }

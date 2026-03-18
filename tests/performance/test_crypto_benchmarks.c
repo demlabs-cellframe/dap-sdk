@@ -26,8 +26,11 @@
 #include "dap_hash.h"
 #include "dap_sign.h"
 #include "dap_enc_key.h"
+#include "dap_enc_chacha20_poly1305.h"
 #include "../fixtures/utilities/test_helpers.h"
 #include <inttypes.h>
+#include <string.h>
+#include <stdlib.h>
 
 #define LOG_TAG "test_crypto_performance"
 
@@ -351,6 +354,49 @@ static bool s_benchmark_algorithm_comparison(void) {
 }
 
 /**
+ * @brief Benchmark ChaCha20-Poly1305 symmetric encryption throughput
+ */
+static bool s_benchmark_chacha20_poly1305_throughput(void) {
+    log_it(L_INFO, "Benchmarking ChaCha20-Poly1305 throughput");
+
+    static const size_t l_sizes[] = {64, 1024, 16384, 65536};
+    static const int    l_iters[] = {100000, 50000, 5000, 1000};
+
+    for (int s = 0; s < 4; s++) {
+        size_t l_sz = l_sizes[s];
+        int    l_n  = l_iters[s];
+
+        dap_enc_key_t *l_key = dap_enc_key_new_generate(
+                DAP_ENC_KEY_TYPE_CHACHA20_POLY1305, NULL, 0, NULL, 0, 0);
+        if (!l_key) {
+            log_it(L_ERROR, "ChaCha20 key gen failed for size %zu", l_sz);
+            return false;
+        }
+
+        uint8_t *l_pt = calloc(1, l_sz);
+        void *l_ct = NULL;
+
+        dap_test_timer_t l_t;
+        dap_test_timer_start(&l_t);
+        for (int i = 0; i < l_n; i++) {
+            size_t l_out = dap_enc_chacha20_poly1305_encrypt(l_key, l_pt, l_sz, &l_ct);
+            (void)l_out;
+            DAP_DELETE(l_ct);
+            l_ct = NULL;
+        }
+        uint64_t l_us = dap_test_timer_stop(&l_t);
+
+        double l_mbps = ((double)l_sz * l_n) / (l_us ? l_us : 1) * 1000000.0 / (1024 * 1024);
+        log_it(L_INFO, "  ChaCha20-Poly1305 %5zu B: %.1f MB/s (%d iters, %" PRIu64 " us)",
+               l_sz, l_mbps, l_n, l_us);
+
+        free(l_pt);
+        dap_enc_key_delete(l_key);
+    }
+    return true;
+}
+
+/**
  * @brief Main test function for performance benchmarks
  */
 int main(void) {
@@ -369,6 +415,7 @@ int main(void) {
     l_all_passed &= s_benchmark_memory_usage();
     l_all_passed &= s_benchmark_ntru_prime_sig_performance();
     l_all_passed &= s_benchmark_algorithm_comparison();
+    l_all_passed &= s_benchmark_chacha20_poly1305_throughput();
     
     dap_test_sdk_cleanup();
     

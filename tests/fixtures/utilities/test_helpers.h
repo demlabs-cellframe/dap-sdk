@@ -91,7 +91,7 @@ typedef struct {
  * @param a_timer Timer structure
  */
 static inline void dap_test_timer_start(dap_test_timer_t* a_timer) {
-    a_timer->start_time = dap_time_now();
+    a_timer->start_time = dap_nanotime_now();
 }
 
 /**
@@ -100,8 +100,8 @@ static inline void dap_test_timer_start(dap_test_timer_t* a_timer) {
  * @return Elapsed time in microseconds
  */
 static inline uint64_t dap_test_timer_stop(dap_test_timer_t* a_timer) {
-    a_timer->end_time = dap_time_now();
-    return a_timer->end_time - a_timer->start_time;
+    a_timer->end_time = dap_nanotime_now();
+    return (a_timer->end_time - a_timer->start_time) / 1000;
 }
 
 // Memory testing utilities

@@ -316,6 +316,39 @@ endif()
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CRYPTO_SRCS} HEADERS ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
 
+# --- ChaCha20 multi-block SIMD ---
+set(CHACHA_SIMD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/simd)
+set(CHACHA_GEN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/chacha20_arch_gen)
+
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_sse2.c
+    ARCH     sse2
+    ARGS     "PRIMITIVES=@${CHACHA_SIMD_DIR}/arch/x86/sse2_primitives.tpl"
+             "ARCH_NAME=SSE2" "ARCH_LOWER=sse2"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx2.c
+    ARCH     avx2
+    ARGS     "PRIMITIVES=@${CHACHA_SIMD_DIR}/arch/x86/avx2_primitives.tpl"
+             "ARCH_NAME=AVX2" "ARCH_LOWER=avx2"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_neon.c
+    ARCH     neon
+    ARGS     "PRIMITIVES=@${CHACHA_SIMD_DIR}/arch/arm/neon_primitives.tpl"
+             "ARCH_NAME=NEON" "ARCH_LOWER=neon"
+)
+dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
+    SOURCES
+        dap_chacha20_sse2.c  sse2
+        dap_chacha20_avx2.c  avx2
+        dap_chacha20_neon.c  neon
+)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR})
+
 ## Get all properties that cmake supports
 execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
 ## Convert command output into a CMake list

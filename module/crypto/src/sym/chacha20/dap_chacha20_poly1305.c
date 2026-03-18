@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "dap_chacha20_poly1305.h"
+#include "dap_chacha20_internal.h"
+#include "dap_cpu_arch.h"
 
 /* ─── helpers ──────────────────────────────────────────────────────── */
 
@@ -64,7 +66,7 @@ void dap_chacha20_block(uint32_t a_out[16], const uint32_t a_in[16])
         a_out[i] = x[i] + a_in[i];
 }
 
-void dap_chacha20_encrypt(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
+static void s_chacha20_encrypt_ref(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
         const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE], uint32_t a_counter)
 {
@@ -93,6 +95,43 @@ void dap_chacha20_encrypt(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         a_in  += todo;
         a_len -= todo;
     }
+}
+
+typedef void (*chacha20_encrypt_fn)(uint8_t *, const uint8_t *, size_t,
+        const uint8_t[32], const uint8_t[12], uint32_t);
+
+static chacha20_encrypt_fn s_chacha20_simd_fn = NULL;
+static int s_chacha20_dispatch_done = 0;
+
+static void s_chacha20_dispatch_init(void)
+{
+    s_chacha20_simd_fn = NULL;
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+    dap_cpu_arch_t l_arch = dap_cpu_arch_get_best();
+    if (l_arch >= DAP_CPU_ARCH_AVX2)
+        s_chacha20_simd_fn = dap_chacha20_encrypt_avx2;
+    else if (l_arch >= DAP_CPU_ARCH_SSE2)
+        s_chacha20_simd_fn = dap_chacha20_encrypt_sse2;
+#elif defined(__aarch64__) || defined(__arm__)
+    dap_cpu_arch_t l_arch = dap_cpu_arch_get_best();
+    if (l_arch >= DAP_CPU_ARCH_NEON)
+        s_chacha20_simd_fn = dap_chacha20_encrypt_neon;
+#endif
+    s_chacha20_dispatch_done = 1;
+}
+
+void dap_chacha20_encrypt(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
+        const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
+        const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE], uint32_t a_counter)
+{
+    if (__builtin_expect(!s_chacha20_dispatch_done, 0))
+        s_chacha20_dispatch_init();
+
+    if (s_chacha20_simd_fn && a_len >= 256) {
+        s_chacha20_simd_fn(a_out, a_in, a_len, a_key, a_nonce, a_counter);
+        return;
+    }
+    s_chacha20_encrypt_ref(a_out, a_in, a_len, a_key, a_nonce, a_counter);
 }
 
 /* ─── Poly1305 (RFC 8439 §2.5) — 26-bit limb arithmetic ─────────── */
