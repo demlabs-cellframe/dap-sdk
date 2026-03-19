@@ -290,7 +290,7 @@ option(BUILD_DAP_CRYPTO_KYBER512 "Build Kyber512 crypto module" ON) # default KE
 if(BUILD_DAP_CRYPTO_KYBER512)
     add_subdirectory(src/Kyber/crypto_kem/kyber512/optimized kyber512_build)
     add_dependencies(${PROJECT_NAME} dap_crypto_kyber512)
-    target_link_libraries(${PROJECT_NAME} dap_crypto_kyber512)
+    target_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto_kyber512)
     message("[+] DAP Crypto: Kyber512 support enabled")
 else()
     message("[!] DAP Crypto: Kyber512 support disabled ")
@@ -298,7 +298,7 @@ endif()
 
 if (DAP_PQRL)
 
-    TARGET_LINK_LIBRARIES(dap_crypto ${PQLR_DILITHIUM_LIBRARIES})
+    TARGET_LINK_LIBRARIES(dap_crypto INTERFACE ${PQLR_DILITHIUM_LIBRARIES})
 
     IF(WIN32)
         ADD_CUSTOM_COMMAND(TARGET dap_crypto POST_BUILD
@@ -328,16 +328,15 @@ if(UNIX)
     list(APPEND CRYPTO_LIBS "m")
 endif()
 
-target_link_libraries(dap_crypto dap_core dap_json dap_hash dap_hash_table dap_config)
+dap_link_libraries(dap_crypto INTERFACE dap_core dap_json dap_hash dap_hash_table dap_config dap_math)
 
 if(UNIX)
-  target_link_libraries(dap_crypto m)
+  target_link_libraries(dap_crypto INTERFACE m)
 endif()
 
 # Export dependencies for main SDK build
 set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external dependencies")
 
-# shishua moved from 3rdparty to src/rand/shishua (native implementation)
 target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/rand/shishua)
 target_include_directories(dap_crypto PUBLIC src/Kyber/crypto_kem/kyber512/optimized)
 # Native ECDSA implementation in sig_ecdsa/ - no external includes needed

@@ -87,7 +87,7 @@ void dap_stream_event_callbacks_unregister(void)
  * @param a_addr Stream node address
  * @param a_is_uplink Is uplink flag
  */
-void dap_stream_event_notify_add(dap_stream_node_addr_t *a_addr, bool a_is_uplink)
+void dap_stream_event_notify_add(dap_cluster_node_addr_t *a_addr, bool a_is_uplink)
 {
     pthread_rwlock_rdlock(&s_stream_callbacks_lock);
     if (s_stream_add_callback) {
@@ -101,7 +101,7 @@ void dap_stream_event_notify_add(dap_stream_node_addr_t *a_addr, bool a_is_uplin
  * @param a_addr Stream node address
  * @param a_is_uplink Is uplink flag
  */
-void dap_stream_event_notify_replace(dap_stream_node_addr_t *a_addr, bool a_is_uplink)
+void dap_stream_event_notify_replace(dap_cluster_node_addr_t *a_addr, bool a_is_uplink)
 {
     pthread_rwlock_rdlock(&s_stream_callbacks_lock);
     if (s_stream_replace_callback) {
@@ -114,7 +114,7 @@ void dap_stream_event_notify_replace(dap_stream_node_addr_t *a_addr, bool a_is_u
  * @brief Notify about stream delete event
  * @param a_addr Stream node address
  */
-void dap_stream_event_notify_delete(dap_stream_node_addr_t *a_addr)
+void dap_stream_event_notify_delete(dap_cluster_node_addr_t *a_addr)
 {
     pthread_rwlock_rdlock(&s_stream_callbacks_lock);
     if (s_stream_delete_callback) {

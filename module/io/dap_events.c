@@ -71,10 +71,15 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 
 
-#if defined(DAP_OS_ANDROID)
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_WASM)
 #define NO_POSIX_SHED
+#endif
+#if defined(DAP_OS_ANDROID)
 #define NO_TIMER
-#else
+#endif
+#ifdef DAP_OS_WASM
+#include <emscripten.h>
+#include <emscripten/threading.h>
 #endif
 
 #ifdef DAP_OS_WINDOWS
@@ -110,6 +115,7 @@ static uint32_t s_threads_count = 1;
 static pthread_t *s_threads_id = NULL;
 static dap_worker_t **s_workers = NULL;
 
+
 /**
  * @brief
  *
@@ -126,7 +132,10 @@ bool dap_events_workers_init_status(){
  */
 uint32_t dap_get_cpu_count( )
 {
-#ifdef DAP_OS_WINDOWS
+#ifdef DAP_OS_WASM
+  int l_cores = emscripten_num_logical_cores();
+  return l_cores > 0 ? (uint32_t)l_cores : 1;
+#elif defined(DAP_OS_WINDOWS)
   SYSTEM_INFO si;
 
   GetSystemInfo( &si );
@@ -171,7 +180,9 @@ uint32_t dap_get_cpu_count( )
  */
 void dap_cpu_assign_thread_on(uint32_t a_cpu_id)
 {
-#ifndef DAP_OS_WINDOWS
+#ifdef DAP_OS_WASM
+    (void)a_cpu_id;
+#elif !defined(DAP_OS_WINDOWS)
 #ifndef NO_POSIX_SHED
 
 #ifdef DAP_OS_DARWIN
@@ -383,7 +394,10 @@ void    *s_th_memstat_show  (void *a_arg)
  */
 int dap_events_wait( )
 {
-#ifdef  DAP_SYS_DEBUG                                                    /* @RRL: 6901, 7202 Start of memstat show at interval basis */
+#ifdef DAP_OS_WASM
+    return 0;
+#else
+#ifdef  DAP_SYS_DEBUG
 pthread_attr_t  l_tattr;
 pthread_t       l_tid;
 
@@ -393,7 +407,6 @@ pthread_t       l_tid;
 
 #endif
 
-    // Check if workers are properly initialized before waiting
     if (!s_workers_init || !s_workers) {
         log_it(L_WARNING, "dap_events_wait(): Workers not initialized, skipping wait");
         return 0;
@@ -413,6 +426,7 @@ pthread_t       l_tid;
     DAP_DEL_Z(s_workers);
     s_workers = NULL;
     return 0;
+#endif // !DAP_OS_WASM
 }
 
 /**

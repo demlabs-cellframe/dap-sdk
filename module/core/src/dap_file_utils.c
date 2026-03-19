@@ -220,6 +220,39 @@ int dap_mkdir_with_parents(const char *a_dir_path)
 }
 
 /**
+ * @brief dap_mkdir_tmp Create a uniquely-named temporary directory
+ *
+ * @param a_prefix prefix for the directory name, may be NULL (defaults to "dap")
+ * @return heap-allocated absolute path to the created directory, or NULL on failure.
+ *         Caller must free with DAP_DELETE().
+ */
+char *dap_mkdir_tmp(const char *a_prefix)
+{
+    if (!a_prefix || !*a_prefix)
+        a_prefix = "dap";
+#ifdef DAP_OS_WINDOWS
+    char l_tmp[MAX_PATH];
+    if (!GetTempPathA(sizeof(l_tmp), l_tmp))
+        return log_it(L_ERROR, "GetTempPathA failed"), NULL;
+    char l_template[MAX_PATH];
+    snprintf(l_template, sizeof(l_template), "%s%s_XXXXXX", l_tmp, a_prefix);
+    if (_mktemp_s(l_template, strlen(l_template) + 1) != 0)
+        return log_it(L_ERROR, "dap_mkdir_tmp: _mktemp_s failed: %s", strerror(errno)), NULL;
+    if (mkdir(l_template) != 0)
+        return log_it(L_ERROR, "dap_mkdir_tmp: mkdir failed: %s", strerror(errno)), NULL;
+#else
+    const char *l_tmpdir = getenv("TMPDIR");
+    if (!l_tmpdir)
+        l_tmpdir = "/tmp";
+    char l_template[PATH_MAX];
+    snprintf(l_template, sizeof(l_template), "%s/%s_XXXXXX", l_tmpdir, a_prefix);
+    if (!mkdtemp(l_template))
+        return log_it(L_ERROR, "dap_mkdir_tmp: mkdtemp failed: %s", strerror(errno)), NULL;
+#endif
+    return dap_strdup(l_template);
+}
+
+/**
  * dap_path_get_basename:
  * @a_file_name: the name of the file
  *

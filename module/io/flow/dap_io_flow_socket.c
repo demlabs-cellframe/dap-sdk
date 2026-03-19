@@ -1,0 +1,966 @@
+/*
+ * Authors:
+ * Dmitrii Gerasimov <naeper@demlabs.net>
+ * DeM Labs Inc.   https://demlabs.net
+ * Cellframe https://cellframe.net
+ * Copyright  (c) 2025
+ * All rights reserved.
+ *
+ * This file is part of DAP the open source project.
+ *
+ * DAP is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * DAP is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * See more details here <http://www.gnu.org/licenses/>.
+ */
+
+#include <string.h>
+#include <stdio.h>
+#include <errno.h>
+#include "dap_common.h"
+#include "dap_strfuncs.h"
+#include "dap_config.h"
+#include "dap_list.h"
+#include "dap_io_flow_socket.h"
+#include "dap_worker.h"
+
+// Platform-specific load balancing implementations
+#if defined(__linux__) || defined(ANDROID)
+#include "linux/dap_io_flow_ebpf.h"
+#include "linux/dap_io_flow_cbpf.h"
+#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#include "bsd/dap_io_flow_bsd_lb.h"
+#elif defined(__APPLE__) && defined(__MACH__)
+#include "darwin/dap_io_flow_darwin_gcd.h"
+#elif defined(_WIN32) || defined(_WIN64)
+#include "windows/dap_io_flow_win_rio.h"
+#endif
+#include "dap_server.h"
+#include "dap_proc_thread.h"
+
+#define LOG_TAG "dap_io_flow_socket"
+
+// Debug flag for verbose logging
+static bool s_debug_more = false;
+
+// Forced tier for testing (negative = auto-detect, positive = force specific tier)
+static int s_forced_lb_tier = -1;
+
+/**
+ * @brief Force a specific load balancing tier (for testing)
+ * @param a_tier Tier to force, or -1 to auto-detect
+ */
+void dap_io_flow_set_forced_tier(int a_tier)
+{
+    s_forced_lb_tier = a_tier;
+    log_it(L_NOTICE, "IO Flow: Forced tier set to %d", a_tier);
+}
+
+/**
+ * @brief Get current forced tier setting
+ * @return Forced tier or -1 if auto-detect
+ */
+int dap_io_flow_get_forced_tier(void)
+{
+    return s_forced_lb_tier;
+}
+
+/**
+ * @brief Get tier name string
+ * @param a_tier Tier enum value
+ * @return Human-readable tier name
+ */
+const char* dap_io_flow_tier_name(dap_io_flow_lb_tier_t a_tier)
+{
+    switch (a_tier) {
+        case DAP_IO_FLOW_LB_TIER_NONE: return "NONE";
+        case DAP_IO_FLOW_LB_TIER_APPLICATION: return "APPLICATION";
+#if defined(__linux__) || defined(ANDROID)
+        case DAP_IO_FLOW_LB_TIER_CLASSIC_BPF: return "CBPF";
+        case DAP_IO_FLOW_LB_TIER_EBPF: return "eBPF";
+#endif
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+        case DAP_IO_FLOW_LB_TIER_BSD_LB: return "BSD_LB";
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+        case DAP_IO_FLOW_LB_TIER_DARWIN_GCD: return "DARWIN_GCD";
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+        case DAP_IO_FLOW_LB_TIER_WIN_RIO: return "WIN_RIO";
+#endif
+        default: return "UNKNOWN";
+    }
+}
+
+// Thread-local buffer for address formatting
+static __thread char s_addr_str_buf[INET6_ADDRSTRLEN + 8];
+
+/**
+ * @brief Arguments for cross-worker sendto callback
+ */
+typedef struct flow_sendto_args {
+    dap_io_flow_server_t *server;  ///< Server (for is_deleting check)
+    dap_events_socket_t *esocket;
+    uint8_t *data;
+    size_t size;
+    struct sockaddr_storage addr;
+    socklen_t addr_len;
+} flow_sendto_args_t;
+
+/**
+ * @brief Callback executed in listener's worker thread for sendto
+ */
+static void s_flow_sendto_callback(void *a_arg)
+{
+    flow_sendto_args_t *l_args = (flow_sendto_args_t*)a_arg;
+    if (!l_args || !l_args->esocket || !l_args->server) {
+        if (l_args) {
+            DAP_DELETE(l_args->data);
+        }
+        DAP_DELETE(l_args);
+        return;
+    }
+    
+    // CRITICAL: Check if server is being deleted
+    // If so, listener socket may have been freed - don't send!
+    if (atomic_load(&l_args->server->is_deleting)) {
+        debug_if(s_debug_more, L_DEBUG, 
+                 "s_flow_sendto_callback: server is deleting - dropping response (size=%zu)", 
+                 l_args->size);
+        DAP_DELETE(l_args->data);
+        DAP_DELETE(l_args);
+        return;
+    }
+    
+    dap_events_socket_t *l_es = l_args->esocket;
+    
+    debug_if(s_debug_more, L_DEBUG, "s_flow_sendto_callback: ENTRY esocket=%p, fd=%d, size=%zu", 
+           l_es, l_es->fd, l_args->size);
+    
+    // Use specialized sendto function that accepts address explicitly
+    // This avoids race conditions with addr_storage and properly queues packet
+    size_t l_ret = dap_events_socket_sendto_unsafe(l_es, l_args->data, l_args->size,
+                                                    &l_args->addr, l_args->addr_len);
+    
+    debug_if(s_debug_more, L_DEBUG, "s_flow_sendto_callback: sendto_unsafe returned %zu", l_ret);
+    
+    // Cleanup
+    DAP_DELETE(l_args->data);
+    DAP_DELETE(l_args);
+}
+
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
+#if defined(__linux__) || defined(ANDROID)
+
+#include <sched.h>
+#include <sys/syscall.h>
+#include <linux/capability.h>
+
+#define RPS_CPUS_PATH    "/sys/class/net/lo/queues/rx-0/rps_cpus"
+#define RPS_FLOW_PATH    "/proc/sys/net/core/rps_sock_flow_entries"
+#define RPS_FLOW_ENTRIES 32768
+
+/**
+ * @brief Read current value from a sysfs/procfs file
+ * @return Parsed unsigned long value, or 0 on any error
+ */
+static unsigned long s_read_sysfs_ulong(const char *a_path)
+{
+    FILE *l_fp = fopen(a_path, "r");
+    if (!l_fp)
+        return 0;
+    unsigned long l_val = 0;
+    if (fscanf(l_fp, "%lx", &l_val) != 1)
+        l_val = 0;
+    fclose(l_fp);
+    return l_val;
+}
+
+/**
+ * @brief Write a string value to a sysfs/procfs file
+ * @return true on success
+ */
+static bool s_write_sysfs(const char *a_path, const char *a_value)
+{
+    FILE *l_fp = fopen(a_path, "w");
+    if (!l_fp)
+        return false;
+    bool l_ok = (fputs(a_value, l_fp) >= 0);
+    fclose(l_fp);
+    return l_ok;
+}
+
+/**
+ * @brief Write a value to sysfs/procfs using sudo (non-interactive)
+ * @return true on success
+ */
+static bool s_write_sysfs_sudo(const char *a_path, const char *a_value)
+{
+    char l_cmd[256];
+    snprintf(l_cmd, sizeof(l_cmd),
+             "sudo -n sh -c 'echo %s > %s' 2>/dev/null", a_value, a_path);
+    return system(l_cmd) == 0;
+}
+
+/**
+ * @brief Check if current process has a specific effective capability
+ */
+static bool s_has_capability(int a_cap)
+{
+    struct __user_cap_header_struct l_hdr = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0
+    };
+    struct __user_cap_data_struct l_data[2] = {{0}};
+
+    if (syscall(SYS_capget, &l_hdr, l_data) != 0)
+        return false;
+
+    unsigned l_idx = (unsigned)a_cap >> 5;
+    unsigned l_bit = (unsigned)a_cap & 31;
+    return l_idx < 2 && (l_data[l_idx].effective & (1u << l_bit)) != 0;
+}
+
+/**
+ * @brief Check if non-interactive sudo is available for the current user
+ */
+static bool s_has_passwordless_sudo(void)
+{
+    return system("sudo -n true 2>/dev/null") == 0;
+}
+
+/**
+ * @brief Enable RPS (Receive Packet Steering) on the loopback interface
+ *
+ * When RPS is active the kernel calls skb_get_hash() for every incoming
+ * packet — even on loopback.  This populates skb->hash with a proper
+ * 4-tuple (src_ip, src_port, dst_ip, dst_port) hash which is exactly
+ * what SKF_AD_RXHASH reads inside the cBPF SO_REUSEPORT program.
+ *
+ * Without RPS on loopback, skb->hash stays 0 because the loopback
+ * driver never computes a packet hash.  Result: all packets land on
+ * socket 0 regardless of the BPF program.
+ *
+ * Privilege escalation strategy:
+ *   1. Direct write  — works as root or with CAP_DAC_OVERRIDE
+ *   2. sudo -n       — works when user has passwordless sudo
+ *   3. Give up       — log actionable warning
+ */
+static bool s_try_enable_loopback_rps(void)
+{
+    int l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+    if (l_ncpus <= 0)
+        l_ncpus = 1;
+
+    unsigned long l_desired_mask = (l_ncpus >= 64) ? ~0UL
+                                 : (1UL << l_ncpus) - 1;
+
+    unsigned long l_current = s_read_sysfs_ulong(RPS_CPUS_PATH);
+    if (l_current >= l_desired_mask) {
+        log_it(L_DEBUG, "Loopback RPS already enabled (rps_cpus=0x%lx)", l_current);
+        return true;
+    }
+
+    bool l_is_root = (geteuid() == 0);
+    bool l_has_net_admin = s_has_capability(CAP_NET_ADMIN);
+
+    log_it(L_DEBUG, "Loopback RPS not configured (current=0x%lx, need=0x%lx). "
+           "Privileges: root=%s, CAP_NET_ADMIN=%s",
+           l_current, l_desired_mask,
+           l_is_root ? "yes" : "no",
+           l_has_net_admin ? "yes" : "no");
+
+    char l_mask_str[32];
+    snprintf(l_mask_str, sizeof(l_mask_str), "%lx", l_desired_mask);
+
+    char l_flow_str[16];
+    snprintf(l_flow_str, sizeof(l_flow_str), "%d", RPS_FLOW_ENTRIES);
+
+    // Strategy 1: direct write (root / CAP_DAC_OVERRIDE)
+    if (s_write_sysfs(RPS_CPUS_PATH, l_mask_str)) {
+        s_write_sysfs(RPS_FLOW_PATH, l_flow_str);
+        log_it(L_NOTICE, "Loopback RPS enabled via direct write "
+               "(rps_cpus=0x%s, flow_entries=%d)",
+               l_mask_str, RPS_FLOW_ENTRIES);
+        return true;
+    }
+
+    // Strategy 2: sudo -n (non-interactive, no password prompt)
+    if (s_has_passwordless_sudo()) {
+        log_it(L_DEBUG, "Direct sysfs write failed, trying sudo -n ...");
+        if (s_write_sysfs_sudo(RPS_CPUS_PATH, l_mask_str)) {
+            s_write_sysfs_sudo(RPS_FLOW_PATH, l_flow_str);
+
+            unsigned long l_verify = s_read_sysfs_ulong(RPS_CPUS_PATH);
+            if (l_verify >= l_desired_mask) {
+                log_it(L_NOTICE, "Loopback RPS enabled via sudo "
+                       "(rps_cpus=0x%lx, flow_entries=%d)",
+                       l_verify, RPS_FLOW_ENTRIES);
+                return true;
+            }
+        }
+        log_it(L_WARNING, "sudo -n write to %s succeeded but verification failed",
+               RPS_CPUS_PATH);
+    }
+
+    // Strategy 3: give up with actionable message
+    log_it(L_WARNING, "Cannot enable loopback RPS (rps_cpus=0x%lx, need 0x%lx). "
+           "CBPF sticky sessions will NOT work on 127.0.0.1. "
+           "Fix: sudo sh -c 'echo %s > %s && echo %d > %s'",
+           l_current, l_desired_mask,
+           l_mask_str, RPS_CPUS_PATH,
+           RPS_FLOW_ENTRIES, RPS_FLOW_PATH);
+    return false;
+}
+#endif /* __linux__ || ANDROID */
+
+/**
+ * @brief Initialize dap_io_flow_socket module
+ * @details Reads debug flags from config, enables loopback RPS on Linux
+ * @return 0 on success
+ */
+int dap_io_flow_socket_init(void)
+{
+    if (g_config) {
+        s_debug_more = dap_config_get_item_bool_default(g_config, "dap_io_flow_socket", "debug_more", false);
+        if (s_debug_more) {
+            log_it(L_INFO, "Flow socket debug mode ENABLED");
+        }
+    }
+
+#if defined(__linux__) || defined(ANDROID)
+    s_try_enable_loopback_rps();
+#endif
+
+    return 0;
+}
+
+/**
+ * @brief Deinitialize dap_io_flow_socket module
+ */
+void dap_io_flow_socket_deinit(void)
+{
+    // Nothing to cleanup yet
+}
+
+// =============================================================================
+// PUBLIC API IMPLEMENTATION
+// =============================================================================
+
+int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
+                                dap_events_socket_t *a_es,
+                                const uint8_t *a_data,
+                                size_t a_size,
+                                const struct sockaddr_storage *a_addr,
+                                socklen_t a_addr_len)
+{
+    if (!a_es || !a_data || a_size == 0 || !a_addr) {
+        log_it(L_ERROR, "Invalid arguments for sendto");
+        return -1;
+    }
+    
+    // DEBUG: Log destination address and socket info
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, fd=%d, type=%d, size=%zu",
+           a_es, a_es->fd, a_es->type, a_size);
+    
+    if (s_debug_more && a_addr->ss_family == AF_INET) {
+        struct sockaddr_in *l_sin = (struct sockaddr_in*)a_addr;
+        char l_addr_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: DEST=%s:%u",
+                 l_addr_str, ntohs(l_sin->sin_port));
+    }
+    
+    if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
+        a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT) {
+        log_it(L_ERROR, "Socket is not datagram type (esocket=%p, fd=%d, type=%d)", a_es, a_es->fd, a_es->type);
+        return -2;
+    }
+    
+    // Check if we're in the esocket's worker thread
+    dap_worker_t *l_current_worker = dap_worker_get_current();
+    dap_worker_t *l_target_worker = a_es->worker;
+    
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: size=%zu, current_worker=%u, target_worker=%u, fd=%d", 
+           a_size, l_current_worker ? l_current_worker->id : 999, 
+           l_target_worker ? l_target_worker->id : 999, a_es->fd);
+    
+    if (l_current_worker == l_target_worker) {
+        // FAST PATH: Same worker, direct sendto with explicit address
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: FAST PATH size=%zu", a_size);
+        
+        size_t l_ret = dap_events_socket_sendto_unsafe(a_es, a_data, a_size, a_addr, a_addr_len);
+        
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: FAST PATH sendto returned %zu", l_ret);
+        return l_ret;
+    } else {
+        // SLOW PATH: Cross-worker, use callback
+        debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: SLOW PATH (cross-worker)");
+        
+        // CRITICAL: Drop if server is deleting - prevents callback queue overflow
+        // during cleanup when we try to schedule deletion callbacks!
+        if (atomic_load(&a_server->is_deleting)) {
+            debug_if(s_debug_more, L_DEBUG, "Server is deleting - dropping sendto (size=%zu)", a_size);
+            return a_size;  // Pretend success to avoid upstream errors
+        }
+        
+        flow_sendto_args_t *l_args = DAP_NEW_Z(flow_sendto_args_t);
+        if (!l_args) {
+            log_it(L_ERROR, "Failed to allocate sendto args");
+            return -3;
+        }
+        
+        l_args->server = a_server;
+        l_args->esocket = a_es;
+        l_args->data = DAP_NEW_SIZE(uint8_t, a_size);
+        if (!l_args->data) {
+            log_it(L_ERROR, "Failed to allocate data buffer");
+            DAP_DELETE(l_args);
+            return -4;
+        }
+        
+        memcpy(l_args->data, a_data, a_size);
+        l_args->size = a_size;
+        memcpy(&l_args->addr, a_addr, a_addr_len);
+        l_args->addr_len = a_addr_len;
+        
+        dap_worker_exec_callback_on(l_target_worker, s_flow_sendto_callback, l_args);
+        
+        return a_size;  // Queued successfully
+    }
+}
+
+int dap_io_flow_socket_forward_packet(dap_events_socket_t *a_pipe_es,
+                                       void *a_packet_ptr)
+{
+    if (!a_pipe_es || !a_packet_ptr) {
+        log_it(L_ERROR, "Invalid arguments for packet forwarding");
+        return -1;
+    }
+    
+    if (a_pipe_es->type != DESCRIPTOR_TYPE_PIPE) {
+        log_it(L_ERROR, "Socket is not PIPE type");
+        return -2;
+    }
+    
+    // Write pointer directly to pipe buf_out (ZERO-COPY)
+    size_t l_written = dap_events_socket_write_unsafe(a_pipe_es, &a_packet_ptr, sizeof(void*));
+    
+    if (l_written != sizeof(void*)) {
+        log_it(L_ERROR, "Failed to write packet pointer to pipe");
+        return -3;
+    }
+    
+    // Set writable flag to trigger reactor flush
+    dap_events_socket_set_writable_unsafe(a_pipe_es, true);
+    
+    return 0;
+}
+
+int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
+                                                 const char *a_addr,
+                                                 uint16_t a_port,
+                                                 int a_socket_type,
+                                                 int a_protocol,
+                                                 dap_events_socket_callbacks_t *a_callbacks,
+                                                 dap_io_flow_lb_tier_t *a_lb_tier_out)
+{
+    if (!a_server || !a_callbacks) {
+        log_it(L_ERROR, "Invalid arguments for sharded listeners");
+        return -1;
+    }
+    
+    uint32_t l_worker_count = dap_proc_thread_get_count();
+    bool l_is_udp = (a_socket_type == SOCK_DGRAM);
+    
+    // Detect best available load balancing tier (platform-specific)
+    dap_io_flow_lb_tier_t l_lb_tier = DAP_IO_FLOW_LB_TIER_NONE;
+    if (l_is_udp && l_worker_count > 1) {
+        // Check for forced tier (for testing)
+        if (s_forced_lb_tier >= 0) {
+            l_lb_tier = (dap_io_flow_lb_tier_t)s_forced_lb_tier;
+            
+            // Validate forced tier is available
+            bool l_tier_available = false;
+            switch (l_lb_tier) {
+                case DAP_IO_FLOW_LB_TIER_NONE:
+                case DAP_IO_FLOW_LB_TIER_APPLICATION:
+                    l_tier_available = true;
+                    break;
+#if defined(__linux__) || defined(ANDROID)
+                case DAP_IO_FLOW_LB_TIER_EBPF:
+                    l_tier_available = dap_io_flow_ebpf_is_available();
+                    break;
+                case DAP_IO_FLOW_LB_TIER_CLASSIC_BPF:
+                    l_tier_available = dap_io_flow_cbpf_is_available();
+                    break;
+#endif
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+                case DAP_IO_FLOW_LB_TIER_BSD_LB:
+                    l_tier_available = dap_io_flow_bsd_lb_is_available();
+                    break;
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+                case DAP_IO_FLOW_LB_TIER_DARWIN_GCD:
+                    l_tier_available = dap_io_flow_darwin_gcd_is_available();
+                    break;
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+                case DAP_IO_FLOW_LB_TIER_WIN_RIO:
+                    l_tier_available = dap_io_flow_win_rio_is_available();
+                    break;
+#endif
+                default:
+                    l_tier_available = false;
+            }
+            
+            if (l_tier_available) {
+                log_it(L_NOTICE, "⚙️  Load balancing: FORCED to %s", dap_io_flow_tier_name(l_lb_tier));
+            } else {
+                log_it(L_WARNING, "⚠️  Forced tier %s not available, falling back to APPLICATION", 
+                       dap_io_flow_tier_name(l_lb_tier));
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+            }
+        } else {
+            // Auto-detect best available tier
+#if defined(__linux__) || defined(ANDROID)
+            // Linux/Android: eBPF → Classic BPF → Application
+            if (dap_io_flow_ebpf_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_EBPF;
+                log_it(L_NOTICE, "🚀 Load balancing: Tier 3 (eBPF) - Kernel sticky sessions");
+            } else if (dap_io_flow_cbpf_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
+                log_it(L_NOTICE, "🔧 Load balancing: Tier 2 (Classic BPF) - Kernel sticky sessions");
+            } else {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+            }
+#elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+            // BSD: SO_REUSEPORT_LB (FreeBSD/DragonFly) → Application
+            if (dap_io_flow_bsd_lb_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_BSD_LB;
+                log_it(L_NOTICE, "🔧 Load balancing: Tier 4 (BSD SO_REUSEPORT_LB) - Kernel distribution");
+            } else {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+            }
+#elif defined(__APPLE__) && defined(__MACH__)
+            // macOS/iOS: GCD with SO_REUSEPORT (application-level, but optimized)
+            if (dap_io_flow_darwin_gcd_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_DARWIN_GCD;
+                log_it(L_NOTICE, "🍎 Load balancing: Tier 5 (macOS GCD) - SO_REUSEPORT + kqueue");
+            } else {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+            }
+#elif defined(_WIN32) || defined(_WIN64)
+            // Windows: RIO + IOCP (application-level)
+            if (dap_io_flow_win_rio_is_available()) {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_WIN_RIO;
+                log_it(L_NOTICE, "🪟 Load balancing: Tier 6 (Windows RIO) - IOCP + app distribution");
+            } else {
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Queue-based");
+            }
+#else
+            // Unknown platform: use universal application-level
+            l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+            log_it(L_NOTICE, "📦 Load balancing: Tier 1 (Application-level) - Universal fallback");
+#endif
+        }
+    }
+    
+    // Return tier to caller
+    if (a_lb_tier_out) {
+        *a_lb_tier_out = l_lb_tier;
+    }
+    
+    // Determine if we need SO_REUSEPORT or equivalent
+    // All tiers except NONE and APPLICATION require multiple sockets
+    bool l_enable_reuseport = (l_lb_tier != DAP_IO_FLOW_LB_TIER_NONE &&
+                                l_lb_tier != DAP_IO_FLOW_LB_TIER_APPLICATION);
+    
+    // Determine number of listeners to create
+    uint32_t l_num_listeners = 1;
+    if (l_enable_reuseport) {
+        // Kernel-level load balancing (Tier 2): one listener per worker with SO_REUSEPORT + eBPF
+        l_num_listeners = l_worker_count;
+        log_it(L_NOTICE, "Creating %u sharded listeners with SO_REUSEPORT + eBPF",
+               l_num_listeners);
+    } else {
+        // Application-level (Tier 1) or no LB (Tier 0): single listener
+        // Application-level will manually forward packets via queues
+        log_it(L_NOTICE, "Creating single listener (tier=%d: %s)",
+               l_lb_tier,
+               l_lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION ? 
+                   "application-level queue forwarding" : "no load balancing");
+    }
+    
+    // Track the actual port used (for SO_REUSEPORT, all sockets must use the same port!)
+    uint16_t l_shared_port = a_port;
+    
+    // Create listener socket for each worker
+    for (uint32_t i = 0; i < l_num_listeners; i++) {
+        dap_worker_t *l_worker = dap_events_worker_get(i);
+        if (!l_worker) {
+            log_it(L_ERROR, "Failed to get worker %u", i);
+            return -2;
+        }
+        
+        // Create socket
+        int l_socket = socket(
+            (a_addr && strchr(a_addr, ':')) ? AF_INET6 : AF_INET,
+            a_socket_type,
+            a_protocol);
+        
+        if (l_socket < 0) {
+            log_it(L_ERROR, "Failed to create socket for worker %u", i);
+            return -3;
+        }
+        
+        // CRITICAL: Set LARGE socket buffers (64 MB) for high-throughput UDP with many clients
+        // MUST be set BEFORE bind() for maximum effectiveness
+        if (a_socket_type == SOCK_DGRAM) {
+            int l_buffer_size = 64 * 1024 * 1024;  // 64 MB
+            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+                log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes for listener %u: %s",
+                       l_buffer_size, i, strerror(errno));
+            } else {
+                int l_actual_size = 0;
+                socklen_t l_optlen = sizeof(l_actual_size);
+                if (getsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (char *)&l_actual_size, &l_optlen) == 0) {
+                    log_it(L_INFO, "Set SO_RCVBUF for UDP listener %u: requested=%d, actual=%d",
+                           i, l_buffer_size, l_actual_size);
+                } else {
+                    log_it(L_INFO, "Set SO_RCVBUF to %d bytes (64 MB) for UDP listener %u", l_buffer_size, i);
+                }
+            }
+            
+            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+                log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes for listener %u: %s",
+                       l_buffer_size, i, strerror(errno));
+            } else {
+                int l_actual_size = 0;
+                socklen_t l_optlen = sizeof(l_actual_size);
+                if (getsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, (char *)&l_actual_size, &l_optlen) == 0) {
+                    log_it(L_INFO, "Set SO_SNDBUF for UDP listener %u: requested=%d, actual=%d",
+                           i, l_buffer_size, l_actual_size);
+                } else {
+                    log_it(L_INFO, "Set SO_SNDBUF to %d bytes (64 MB) for UDP listener %u", l_buffer_size, i);
+                }
+            }
+        }
+        
+        // Set SO_REUSEADDR
+        int l_opt = 1;
+        if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&l_opt, sizeof(l_opt)) < 0) {
+            log_it(L_WARNING, "Failed to set SO_REUSEADDR");
+        }
+        
+        // Set SO_REUSEPORT if needed (Tier 2 or Tier 3)
+        if (l_enable_reuseport) {
+#ifdef SO_REUSEPORT
+            l_opt = 1;
+            if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, &l_opt, sizeof(l_opt)) < 0) {
+                log_it(L_ERROR, "SO_REUSEPORT failed: %s", strerror(errno));
+                closesocket(l_socket);
+                return -6;
+            }
+#else
+            log_it(L_ERROR, "SO_REUSEPORT not supported on this platform");
+            closesocket(l_socket);
+            return -7;
+#endif
+        }
+        
+        // NOTE: Platform-specific BPF attachment moved AFTER all sockets are created and bound
+        // This is the correct order according to kernel documentation and testing:
+        // 1. Create all sockets with SO_REUSEPORT + SO_REUSEADDR
+        // 2. bind() all sockets
+        // 3. THEN attach BPF to the reuseport group (via any socket in the group)
+        // 
+        // BSD and other platforms still configure BEFORE bind as they don't have the same constraints
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+        if (i == 0 && l_enable_reuseport && l_lb_tier == DAP_IO_FLOW_LB_TIER_BSD_LB) {
+            int config_ret = dap_io_flow_bsd_lb_enable(l_socket);
+            if (config_ret != 0) {
+                log_it(L_CRITICAL, "BSD SO_REUSEPORT_LB failed before bind");
+                closesocket(l_socket);
+                return -98;
+            }
+            log_it(L_NOTICE, "✅ BSD SO_REUSEPORT_LB enabled BEFORE bind");
+        }
+#elif defined(__APPLE__) && defined(__MACH__)
+        if (i == 0 && l_enable_reuseport && l_lb_tier == DAP_IO_FLOW_LB_TIER_DARWIN_GCD) {
+            int config_ret = dap_io_flow_darwin_gcd_configure(l_socket);
+            if (config_ret != 0) {
+                log_it(L_CRITICAL, "macOS GCD configuration failed");
+                closesocket(l_socket);
+                return -98;
+            }
+            log_it(L_NOTICE, "✅ macOS GCD configured (SO_REUSEPORT + SO_REUSEADDR)");
+        }
+#elif defined(_WIN32) || defined(_WIN64)
+        if (i == 0 && l_enable_reuseport && l_lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
+            int config_ret = dap_io_flow_win_rio_configure(l_socket);
+            if (config_ret != 0) {
+                log_it(L_CRITICAL, "Windows RIO configuration failed");
+                closesocket(l_socket);
+                return -98;
+            }
+            log_it(L_NOTICE, "✅ Windows RIO configured (SO_REUSEADDR)");
+        }
+#endif
+        
+        // Bind socket
+        // CRITICAL: For SO_REUSEPORT, ALL sockets must bind to the SAME port!
+        // Use l_shared_port which is updated after first socket binds
+        struct sockaddr_storage l_bind_addr = {0};
+        socklen_t l_addr_len;
+        
+        if (a_addr && strchr(a_addr, ':')) {
+            // IPv6
+            struct sockaddr_in6 *l_sa6 = (struct sockaddr_in6*)&l_bind_addr;
+            l_sa6->sin6_family = AF_INET6;
+            l_sa6->sin6_port = htons(l_shared_port);  // Use shared port!
+            if (a_addr) {
+                inet_pton(AF_INET6, a_addr, &l_sa6->sin6_addr);
+            } else {
+                l_sa6->sin6_addr = in6addr_any;
+            }
+            l_addr_len = sizeof(struct sockaddr_in6);
+        } else {
+            // IPv4
+            struct sockaddr_in *l_sa4 = (struct sockaddr_in*)&l_bind_addr;
+            l_sa4->sin_family = AF_INET;
+            l_sa4->sin_port = htons(l_shared_port);  // Use shared port!
+            if (a_addr) {
+                inet_pton(AF_INET, a_addr, &l_sa4->sin_addr);
+            } else {
+                l_sa4->sin_addr.s_addr = INADDR_ANY;
+            }
+            l_addr_len = sizeof(struct sockaddr_in);
+        }
+        
+        if (bind(l_socket, (struct sockaddr*)&l_bind_addr, l_addr_len) < 0) {
+            log_it(L_ERROR, "Failed to bind socket for worker %u: %s", i, strerror(errno));
+            closesocket(l_socket);
+            return -4;
+        }
+        
+        // Get actual bound port (if port was 0, kernel assigns ephemeral port)
+        // CRITICAL: Update l_shared_port so subsequent sockets bind to SAME port!
+        uint16_t l_actual_port = l_shared_port;
+        if (l_shared_port == 0) {
+            if (getsockname(l_socket, (struct sockaddr*)&l_bind_addr, &l_addr_len) == 0) {
+                if (l_bind_addr.ss_family == AF_INET6) {
+                    l_actual_port = ntohs(((struct sockaddr_in6*)&l_bind_addr)->sin6_port);
+                } else {
+                    l_actual_port = ntohs(((struct sockaddr_in*)&l_bind_addr)->sin_port);
+                }
+                // Update shared port for next sockets
+                l_shared_port = l_actual_port;
+                log_it(L_DEBUG, "First listener bound to ephemeral port %u, using for all %u listeners",
+                       l_shared_port, l_num_listeners);
+            }
+        }
+        
+        // Wrap socket in esocket (attach eBPF AFTER creating all sockets)
+        dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_socket, a_callbacks);
+        if (!l_es) {
+            log_it(L_ERROR, "Failed to wrap socket for worker %u", i);
+            closesocket(l_socket);
+            return -5;
+        }
+        
+        l_es->type = (a_socket_type == SOCK_DGRAM) ? DESCRIPTOR_TYPE_SOCKET_UDP : DESCRIPTOR_TYPE_SOCKET_CLIENT;
+        l_es->listener_port = l_actual_port;
+        l_es->addr_storage = l_bind_addr;
+        if (a_addr)
+            dap_strncpy(l_es->listener_addr_str, a_addr, DAP_HOSTADDR_STRLEN);
+        
+        // CRITICAL FIX: Initialize addr_size for UDP sockets!
+        // recvfrom() requires addr_size to be set to the buffer size BEFORE the call.
+        // Without this, the first recvfrom() won't populate addr_storage!
+        if (l_es->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+            l_es->addr_size = sizeof(struct sockaddr_storage);
+        }
+        
+        // Add to specific worker (use thread-safe version from main thread)
+        dap_worker_add_events_socket(l_worker, l_es);
+        
+        debug_if(g_debug_reactor, L_DEBUG, 
+                 "Sharded listener #%u: fd=%d added to worker %u", 
+                 i, l_socket, l_worker->id);
+        
+        // Add to server's listener list
+        a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
+        log_it(L_DEBUG, "Listener #%u added, fd=%d, worker=%u", i, l_socket, l_worker->id);
+    }
+    log_it(L_DEBUG, "Total %u listeners created", l_num_listeners);
+    
+    // CRITICAL: Attach BPF AFTER all sockets are created and bound
+    // This is required by Linux kernel - attaching BPF before all sockets are ready
+    // prevents additional sockets from joining the reuseport group
+#if defined(__linux__) || defined(ANDROID)
+    if (l_enable_reuseport && (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF || 
+                                l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF)) {
+        // Get LAST listener socket for BPF attachment (some kernels require this)
+        dap_list_t *l_last = dap_list_last(a_server->es_listeners);
+        dap_events_socket_t *l_first_es = l_last ? (dap_events_socket_t*)l_last->data : NULL;
+        if (l_first_es) {
+            int config_ret = -1;
+            if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
+                config_ret = dap_io_flow_ebpf_attach_socket(l_first_es->fd);
+            } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
+                config_ret = dap_io_flow_cbpf_attach_socket(l_first_es->fd);
+            }
+            
+            if (config_ret != 0) {
+                log_it(L_CRITICAL, "BPF attach failed AFTER bind (tier=%d) - falling back to Application tier", 
+                       l_lb_tier);
+                // Don't fail - fall back to application-level distribution
+                // The sockets are already created, they just won't have BPF-based distribution
+            } else {
+                log_it(L_NOTICE, "✅ BPF attached to reuseport group AFTER all %u sockets bound (fd=%d)", 
+                       l_num_listeners, l_first_es->fd);
+            }
+        }
+    }
+#endif
+    
+    // Final summary with platform-specific descriptions
+    const char *l_tier_desc = "unknown";
+    switch (l_lb_tier) {
+#if defined(__linux__) || defined(ANDROID)
+        case DAP_IO_FLOW_LB_TIER_EBPF:
+            l_tier_desc = "eBPF (Tier 3 - Linux kernel sticky sessions)";
+            break;
+        case DAP_IO_FLOW_LB_TIER_CLASSIC_BPF:
+            l_tier_desc = "Classic BPF (Tier 2 - Linux kernel sticky sessions)";
+            break;
+#endif
+#if defined(__FreeBSD__) || defined(__DragonFly__) || defined(__OpenBSD__) || defined(__NetBSD__)
+        case DAP_IO_FLOW_LB_TIER_BSD_LB:
+            l_tier_desc = "BSD SO_REUSEPORT_LB (Tier 4 - FreeBSD kernel distribution)";
+            break;
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+        case DAP_IO_FLOW_LB_TIER_DARWIN_GCD:
+            l_tier_desc = "macOS GCD (Tier 5 - kqueue + SO_REUSEPORT)";
+            break;
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+        case DAP_IO_FLOW_LB_TIER_WIN_RIO:
+            l_tier_desc = "Windows RIO (Tier 6 - IOCP + app distribution)";
+            break;
+#endif
+        case DAP_IO_FLOW_LB_TIER_APPLICATION:
+            l_tier_desc = "Application-level (Tier 1 - universal queue-based)";
+            break;
+        default:
+            l_tier_desc = "None (single listener)";
+            break;
+    }
+    
+    log_it(L_INFO, "✅ Created %u listener%s on %s:%u - %s",
+           l_num_listeners, (l_num_listeners > 1) ? "s" : "",
+           a_addr ? a_addr : "0.0.0.0", a_port, l_tier_desc);
+    
+    return 0;
+}
+
+int dap_io_flow_socket_get_remote_addr(dap_events_socket_t *a_es,
+                                        struct sockaddr_storage *a_addr,
+                                        socklen_t *a_addr_len)
+{
+    if (!a_es || !a_addr || !a_addr_len) {
+        return -1;
+    }
+    
+    memcpy(a_addr, &a_es->addr_storage, a_es->addr_size);
+    *a_addr_len = a_es->addr_size;
+    
+    return 0;
+}
+
+const char* dap_io_flow_socket_addr_to_string(const struct sockaddr_storage *a_addr)
+{
+    if (!a_addr) {
+        return "(null)";
+    }
+    
+    char ip_buf[INET6_ADDRSTRLEN];
+    uint16_t port = 0;
+    
+    if (a_addr->ss_family == AF_INET) {
+        const struct sockaddr_in *l_sa4 = (const struct sockaddr_in*)a_addr;
+        inet_ntop(AF_INET, &l_sa4->sin_addr, ip_buf, sizeof(ip_buf));
+        port = ntohs(l_sa4->sin_port);
+    } else if (a_addr->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *l_sa6 = (const struct sockaddr_in6*)a_addr;
+        inet_ntop(AF_INET6, &l_sa6->sin6_addr, ip_buf, sizeof(ip_buf));
+        port = ntohs(l_sa6->sin6_port);
+    } else {
+        return "(unknown)";
+    }
+    
+    snprintf(s_addr_str_buf, sizeof(s_addr_str_buf), "%s:%u", ip_buf, port);
+    return s_addr_str_buf;
+}
+
+bool dap_io_flow_socket_addr_equal(const struct sockaddr_storage *a,
+                                    const struct sockaddr_storage *b)
+{
+    if (!a || !b) {
+        return false;
+    }
+    
+    if (a->ss_family != b->ss_family) {
+        return false;
+    }
+    
+    if (a->ss_family == AF_INET) {
+        const struct sockaddr_in *l_a4 = (const struct sockaddr_in*)a;
+        const struct sockaddr_in *l_b4 = (const struct sockaddr_in*)b;
+        return (l_a4->sin_addr.s_addr == l_b4->sin_addr.s_addr) &&
+               (l_a4->sin_port == l_b4->sin_port);
+    } else if (a->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *l_a6 = (const struct sockaddr_in6*)a;
+        const struct sockaddr_in6 *l_b6 = (const struct sockaddr_in6*)b;
+        return (memcmp(&l_a6->sin6_addr, &l_b6->sin6_addr, sizeof(struct in6_addr)) == 0) &&
+               (l_a6->sin6_port == l_b6->sin6_port);
+    }
+    
+    return false;
+}
+
+uint32_t dap_io_flow_socket_addr_hash(const struct sockaddr_storage *a_addr)
+{
+    if (!a_addr) {
+        return 0;
+    }
+    
+    uint32_t hash = 0;
+    
+    if (a_addr->ss_family == AF_INET) {
+        const struct sockaddr_in *l_sa4 = (const struct sockaddr_in*)a_addr;
+        hash = l_sa4->sin_addr.s_addr ^ l_sa4->sin_port;
+    } else if (a_addr->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *l_sa6 = (const struct sockaddr_in6*)a_addr;
+        const uint32_t *l_addr_words = (const uint32_t*)&l_sa6->sin6_addr;
+        hash = l_addr_words[0] ^ l_addr_words[1] ^ l_addr_words[2] ^ l_addr_words[3] ^ l_sa6->sin6_port;
+    }
+    
+    return hash;
+}

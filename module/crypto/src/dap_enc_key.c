@@ -1132,6 +1132,48 @@ dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
     return l_ret;
 }
 
+dap_enc_key_t *dap_enc_key_new_from_raw_bytes(dap_enc_key_type_t a_key_type,
+                                              const uint8_t *a_raw_bytes,
+                                              size_t a_raw_bytes_size)
+{
+    if (!a_raw_bytes) return NULL;
+    if (a_key_type != DAP_ENC_KEY_TYPE_SALSA2012) return NULL;
+    /* SALSA2012: need 40 bytes = [nonce(8)][key(32)], we use key from [8:39] */
+    if (a_raw_bytes_size < 40) return NULL;
+
+    dap_enc_key_t *l_key = dap_enc_key_new(a_key_type);
+    if (!l_key) return NULL;
+
+    l_key->priv_key_data_size = 32;
+    l_key->priv_key_data = DAP_NEW_SIZE(uint8_t, 32);
+    if (!l_key->priv_key_data) {
+        dap_enc_key_delete(l_key);
+        return NULL;
+    }
+    memcpy(l_key->priv_key_data, a_raw_bytes + 8, 32);
+    return l_key;
+}
+
+int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
+                                     const uint8_t *a_raw_bytes,
+                                     size_t a_raw_bytes_size)
+{
+    if (!a_key || !a_raw_bytes) return -1;
+    if (a_key->type != DAP_ENC_KEY_TYPE_SALSA2012) return -1;
+    if (a_raw_bytes_size < 40) return -1;
+
+    if (a_key->priv_key_data) {
+        DAP_DELETE(a_key->priv_key_data);
+        a_key->priv_key_data = NULL;
+        a_key->priv_key_data_size = 0;
+    }
+    a_key->priv_key_data_size = 32;
+    a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, 32);
+    if (!a_key->priv_key_data) return -1;
+    memcpy(a_key->priv_key_data, a_raw_bytes + 8, 32);
+    return 0;
+}
+
 /**
  * @brief dap_enc_key_new_generate
  * @param a_key_type

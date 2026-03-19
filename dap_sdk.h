@@ -29,59 +29,56 @@
 extern "C" {
 #endif
 
-/**
- * @brief DAP SDK Module flags for initialization
- */
+struct dap_link_manager_callbacks;
+
 typedef enum dap_sdk_modules {
-    // Core modules
-    DAP_SDK_MODULE_CORE         = 0x00000001,    ///< Core modules (always required)
-    DAP_SDK_MODULE_CRYPTO       = 0x00000002,    ///< Cryptographic modules
-    DAP_SDK_MODULE_IO           = 0x00000004,    ///< I/O and event system
-    DAP_SDK_MODULE_GLOBAL_DB    = 0x00000008,    ///< Global database system
-    
-    // Network modules
-    DAP_SDK_MODULE_NET_CLIENT   = 0x00000010,    ///< Network client
-    DAP_SDK_MODULE_NET_SERVER   = 0x00000020,    ///< Basic network server
-    DAP_SDK_MODULE_NET_HTTP     = 0x00000040,    ///< HTTP server/client
-    DAP_SDK_MODULE_NET_STREAM   = 0x00000080,    ///< Stream protocol
-    DAP_SDK_MODULE_NET_DNS      = 0x00000100,    ///< DNS server/client
-    DAP_SDK_MODULE_NET_ENC      = 0x00000200,    ///< Encryption server
-    DAP_SDK_MODULE_NET_NOTIFY   = 0x00000400,    ///< Notification server
-    DAP_SDK_MODULE_NET_LINK_MGR = 0x00000800,    ///< Link manager
-    
-    // CLI and RPC
-    DAP_SDK_MODULE_CLI_SERVER   = 0x00001000,    ///< CLI server
-    DAP_SDK_MODULE_APP_CLI      = 0x00002000,    ///< Application CLI
-    DAP_SDK_MODULE_JSON_RPC     = 0x00004000,    ///< JSON-RPC server
-    
-    // Additional systems
-    DAP_SDK_MODULE_PLUGIN       = 0x00008000,    ///< Plugin system
-    DAP_SDK_MODULE_TEST         = 0x00020000,    ///< Test framework
-    
-    // Convenience combinations
+    DAP_SDK_MODULE_CORE         = 0x00000001,
+    DAP_SDK_MODULE_CRYPTO       = 0x00000002,
+    DAP_SDK_MODULE_IO           = 0x00000004,
+    DAP_SDK_MODULE_GLOBAL_DB    = 0x00000008,
+
+    DAP_SDK_MODULE_NET_CLIENT   = 0x00000010,
+    DAP_SDK_MODULE_NET_SERVER   = 0x00000020,
+    DAP_SDK_MODULE_NET_HTTP     = 0x00000040,
+    DAP_SDK_MODULE_NET_STREAM   = 0x00000080,
+    DAP_SDK_MODULE_NET_DNS      = 0x00000100,
+    DAP_SDK_MODULE_NET_ENC      = 0x00000200,
+    DAP_SDK_MODULE_NET_NOTIFY   = 0x00000400,
+    DAP_SDK_MODULE_NET_LINK_MGR = 0x00000800,
+
+    DAP_SDK_MODULE_CLI_SERVER   = 0x00001000,
+    DAP_SDK_MODULE_APP_CLI      = 0x00002000,
+    DAP_SDK_MODULE_JSON_RPC     = 0x00004000,
+
+    DAP_SDK_MODULE_PLUGIN       = 0x00008000,
+    DAP_SDK_MODULE_NET_CLUSTER  = 0x00010000,
+    DAP_SDK_MODULE_TEST         = 0x00020000,
+
     DAP_SDK_MODULE_MINIMAL      = DAP_SDK_MODULE_CORE,
     DAP_SDK_MODULE_BASIC        = DAP_SDK_MODULE_CORE | DAP_SDK_MODULE_CRYPTO,
-    DAP_SDK_MODULE_NETWORK_BASE = DAP_SDK_MODULE_CORE | DAP_SDK_MODULE_IO | 
-                                 DAP_SDK_MODULE_NET_CLIENT | DAP_SDK_MODULE_NET_SERVER,
-    DAP_SDK_MODULE_WEB_SERVER   = DAP_SDK_MODULE_NETWORK_BASE | DAP_SDK_MODULE_NET_HTTP,
-    DAP_SDK_MODULE_FULL_NET     = DAP_SDK_MODULE_CORE | DAP_SDK_MODULE_CRYPTO | 
-                                 DAP_SDK_MODULE_IO | DAP_SDK_MODULE_GLOBAL_DB |
-                                 DAP_SDK_MODULE_NET_CLIENT | DAP_SDK_MODULE_NET_SERVER |
-                                 DAP_SDK_MODULE_NET_HTTP | DAP_SDK_MODULE_NET_STREAM |
-                                 DAP_SDK_MODULE_JSON_RPC,
-    DAP_SDK_MODULE_ALL          = 0xFFFFFFFF     ///< All available modules
+    DAP_SDK_MODULE_NETWORK_BASE = DAP_SDK_MODULE_CORE | DAP_SDK_MODULE_CRYPTO |
+                                  DAP_SDK_MODULE_IO | DAP_SDK_MODULE_NET_CLIENT,
+    DAP_SDK_MODULE_FULL_NET     = DAP_SDK_MODULE_NETWORK_BASE |
+                                  DAP_SDK_MODULE_NET_SERVER | DAP_SDK_MODULE_NET_HTTP |
+                                  DAP_SDK_MODULE_NET_STREAM | DAP_SDK_MODULE_NET_ENC |
+                                  DAP_SDK_MODULE_NET_CLUSTER | DAP_SDK_MODULE_NET_NOTIFY |
+                                  DAP_SDK_MODULE_NET_LINK_MGR | DAP_SDK_MODULE_GLOBAL_DB |
+                                  DAP_SDK_MODULE_CLI_SERVER,
+    DAP_SDK_MODULE_ALL          = 0xFFFFFFFF
 } dap_sdk_modules_t;
 
-/**
- * @brief DAP SDK Configuration structure
- */
 typedef struct dap_sdk_config {
-    uint32_t modules;               ///< Module flags (combination of dap_sdk_modules_t)
-    const char *app_name;           ///< Application name for logging and identification
-    dap_log_level_t log_level;      ///< Logging level
-    const char *temp_dir;           ///< Temporary directory (optional)
-    const char *log_file;           ///< Log file path (optional)
-    bool enable_debug;              ///< Enable debug mode
+    uint32_t modules;
+    const char *app_name;
+    dap_log_level_t log_level;
+    const char *sys_dir;            ///< Base directory; sets g_sys_dir_path
+    const char *config_dir;         ///< Config directory for .cfg files
+    const char *config_name;        ///< Config file name (opens g_config); NULL to skip
+    const char *log_file;
+    uint32_t io_threads;            ///< 0 = auto-detect
+    uint32_t io_timeout;            ///< Connection timeout in seconds; 0 = default
+    bool enable_debug;
+    const struct dap_link_manager_callbacks *link_manager_callbacks; ///< NULL = default no-op stubs
 } dap_sdk_config_t;
 
 /**
