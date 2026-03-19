@@ -82,38 +82,24 @@ endfunction()
 function(post_process_object_libraries)
     message(STATUS "[SDK] Post-processing OBJECT libraries to propagate include directories...")
     
-    # Count total libraries for progress reporting
     list(LENGTH DAP_SDK_OBJECT_LIBRARIES TOTAL_LIBS)
     message(STATUS "[SDK] Processing ${TOTAL_LIBS} OBJECT libraries...")
     
+    # Single shared visited set for the entire pass.  propagate_includes_recursive
+    # is depth-first: by the time we read a dependency's includes, it is already
+    # fully processed — so re-visiting it from another entry point is redundant.
+    # Sharing the ID turns O(N * tree_size) into O(N + edges).
+    set(VISITED_SET_ID "pp")
+
     set(PROCESSED_COUNT 0)
-    set(VISITED_SET_COUNTER 0)
     foreach(OBJ_LIB ${DAP_SDK_OBJECT_LIBRARIES})
         if(TARGET ${OBJ_LIB})
-            # Create unique visited set ID using simple counter (much faster than timestamp+random)
-            math(EXPR VISITED_SET_COUNTER "${VISITED_SET_COUNTER} + 1")
-            set(VISITED_SET_ID "${VISITED_SET_COUNTER}")
-            
-            # Process includes with global property-based cycle detection
             propagate_includes_recursive(${OBJ_LIB} ${VISITED_SET_ID})
             
-            # Note: Property cleanup not needed - GLOBAL properties are faster than CACHE
-            # Properties with unique VISITED_SET_ID won't conflict between traversals
-            # and GLOBAL properties don't have the performance penalty of CACHE variables
-            
             math(EXPR PROCESSED_COUNT "${PROCESSED_COUNT} + 1")
-            # Show progress for first 10, last, or every 10th library
-            math(EXPR MOD_RESULT "${PROCESSED_COUNT} % 10")
-            if(PROCESSED_COUNT LESS 10)
-                message(STATUS "[SDK] Processed ${PROCESSED_COUNT}/${TOTAL_LIBS} libraries...")
-            elseif(PROCESSED_COUNT EQUAL TOTAL_LIBS)
-                message(STATUS "[SDK] Processed ${PROCESSED_COUNT}/${TOTAL_LIBS} libraries...")
-            elseif(MOD_RESULT EQUAL 0)
-                message(STATUS "[SDK] Processed ${PROCESSED_COUNT}/${TOTAL_LIBS} libraries...")
-            endif()
         endif()
     endforeach()
     
-    message(STATUS "[SDK] Post-processing complete for ${TOTAL_LIBS} OBJECT libraries")
+    message(STATUS "[SDK] Post-processing complete: ${PROCESSED_COUNT}/${TOTAL_LIBS} OBJECT libraries")
 endfunction()
 
