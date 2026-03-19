@@ -85,15 +85,12 @@ function(post_process_object_libraries)
     list(LENGTH DAP_SDK_OBJECT_LIBRARIES TOTAL_LIBS)
     message(STATUS "[SDK] Processing ${TOTAL_LIBS} OBJECT libraries...")
     
-    # Single shared visited set for the entire pass.  propagate_includes_recursive
-    # is depth-first: by the time we read a dependency's includes, it is already
-    # fully processed — so re-visiting it from another entry point is redundant.
-    # Sharing the ID turns O(N * tree_size) into O(N + edges).
-    set(VISITED_SET_ID "pp")
-
+    set(VISITED_SET_COUNTER 0)
     set(PROCESSED_COUNT 0)
     foreach(OBJ_LIB ${DAP_SDK_OBJECT_LIBRARIES})
         if(TARGET ${OBJ_LIB})
+            math(EXPR VISITED_SET_COUNTER "${VISITED_SET_COUNTER} + 1")
+            set(VISITED_SET_ID "${VISITED_SET_COUNTER}")
             propagate_includes_recursive(${OBJ_LIB} ${VISITED_SET_ID})
             
             math(EXPR PROCESSED_COUNT "${PROCESSED_COUNT} + 1")
