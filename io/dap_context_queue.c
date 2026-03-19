@@ -49,7 +49,7 @@ static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
     size_t l_processed = dap_context_queue_process(l_queue);
     
     if (l_processed > 0) {
-        debug_if(true, L_DEBUG, "Context queue fd=%d: processed %zu items (eventfd_value=%"PRIu64")",
+        debug_if(s_debug_more, L_DEBUG, "Context queue fd=%d: processed %zu items (eventfd_value=%"PRIu64")",
                  a_es->fd, l_processed, a_value);
     } else if (a_value > 0) {
         log_it(L_WARNING, "Context queue fd=%d: EMPTY wakeup (eventfd_value=%"PRIu64", rb_size=%zu)",
