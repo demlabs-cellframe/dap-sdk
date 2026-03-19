@@ -154,10 +154,10 @@ static int s_create_test_env(void)
 }
 
 /**
- * @brief Setup full DAP SDK environment for testing
+ * @brief Setup DAP SDK environment with specific modules
  */
-int dap_test_sdk_init(void) {
-    log_it(L_INFO, "Initializing DAP SDK test environment");
+int dap_test_sdk_init_modules(uint32_t a_modules) {
+    log_it(L_INFO, "Initializing DAP SDK test environment (modules 0x%08X)", a_modules);
 
     s_allocated_memory = 0;
     s_allocation_count = 0;
@@ -168,7 +168,7 @@ int dap_test_sdk_init(void) {
     char *l_config_dir = dap_strdup_printf("%s/config", s_test_root);
 
     dap_sdk_config_t l_cfg = {
-        .modules     = DAP_SDK_MODULE_ALL,
+        .modules     = a_modules,
         .app_name    = "DAP SDK Tests",
         .sys_dir     = s_test_root,
         .config_dir  = l_config_dir,
@@ -185,6 +185,13 @@ int dap_test_sdk_init(void) {
 
     log_it(L_INFO, "DAP SDK test environment initialized successfully");
     return 0;
+}
+
+/**
+ * @brief Setup full DAP SDK environment for testing (all modules)
+ */
+int dap_test_sdk_init(void) {
+    return dap_test_sdk_init_modules(DAP_SDK_MODULE_ALL);
 }
 
 /**
