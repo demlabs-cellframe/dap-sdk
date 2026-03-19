@@ -202,7 +202,13 @@ if(BUILD_DAP_SDK_TESTS)
             if(MODULE_INCLUDES)
                 target_include_directories(${MODULE}_static PUBLIC ${MODULE_INCLUDES})
             endif()
+            # OBJECT libraries use INTERFACE_LINK_LIBRARIES (via dap_link_libraries),
+            # not LINK_LIBRARIES. Check both to propagate transitive deps correctly.
+            get_target_property(MODULE_IFACE_LINK_LIBS ${MODULE} INTERFACE_LINK_LIBRARIES)
             get_target_property(MODULE_LINK_LIBS ${MODULE} LINK_LIBRARIES)
+            if(MODULE_IFACE_LINK_LIBS)
+                target_link_libraries(${MODULE}_static PUBLIC ${MODULE_IFACE_LINK_LIBS})
+            endif()
             if(MODULE_LINK_LIBS)
                 target_link_libraries(${MODULE}_static PUBLIC ${MODULE_LINK_LIBS})
             endif()

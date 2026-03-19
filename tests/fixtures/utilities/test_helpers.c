@@ -109,35 +109,21 @@ char* dap_test_random_string(size_t a_length) {
  * @brief Setup minimal DAP SDK environment for testing
  */
 int dap_test_sdk_init(void) {
-    printf("=== PRINTF: Inside dap_test_sdk_init() ===\n");
-    fflush(stdout);
-    
     log_it(L_INFO, "Initializing DAP SDK test environment");
     
-    // Reset memory tracking
     s_allocated_memory = 0;
     s_allocation_count = 0;
     
-    printf("=== PRINTF: About to call dap_sdk_init_with_app_name() ===\n");
-    fflush(stdout);
-    
-    // Initialize DAP SDK with all modules (needed for complex tests)
-    int ret = dap_sdk_init_with_app_name("DAP SDK Tests", DAP_SDK_MODULE_ALL);
-    
-    printf("=== PRINTF: dap_sdk_init_with_app_name() returned: %d ===\n", ret);
-    fflush(stdout);
+    // Unit tests don't need full network stack or GlobalDB which require
+    // certificates, signing keys and external configuration.
+    uint32_t l_modules = DAP_SDK_MODULE_BASIC | DAP_SDK_MODULE_IO;
+    int ret = dap_sdk_init_with_app_name("DAP SDK Tests", l_modules);
     if (ret != 0) {
         log_it(L_ERROR, "Failed to initialize DAP SDK: %d", ret);
         return ret;
     }
     
-    printf("=== PRINTF: About to return 0 from dap_test_sdk_init() ===\n");
-    fflush(stdout);
-    
     log_it(L_INFO, "DAP SDK test environment initialized successfully");
-    
-    printf("=== PRINTF: Returning 0 from dap_test_sdk_init() ===\n");
-    fflush(stdout);
     return 0;
 }
 
