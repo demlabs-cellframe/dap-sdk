@@ -2892,7 +2892,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        debug_if(s_debug_more  L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
+        debug_if(s_debug_more, L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
                l_addr_str, ntohs(l_sin->sin_port));
     }
     
