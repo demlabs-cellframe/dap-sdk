@@ -96,14 +96,15 @@ set(_DAP_ARCH_FAMILY_arm   "neon")
 set(_DAP_ARCH_FAMILY_sve   "sve;sve2")
 
 # Shared primitive library paths (auto-injected as PRIM_LIB template variable)
-set(_DAP_ARCH_PRIM_LIB_sse2       "${DAP_ARCH_DIR}/primitives/x86/sse2.tpl")
-set(_DAP_ARCH_PRIM_LIB_avx2       "${DAP_ARCH_DIR}/primitives/x86/avx2.tpl")
-set(_DAP_ARCH_PRIM_LIB_avx2_bmi2  "${DAP_ARCH_DIR}/primitives/x86/avx2.tpl")
-set(_DAP_ARCH_PRIM_LIB_avx512     "${DAP_ARCH_DIR}/primitives/x86/avx512.tpl")
-set(_DAP_ARCH_PRIM_LIB_avx512_ifma "${DAP_ARCH_DIR}/primitives/x86/avx512.tpl")
-set(_DAP_ARCH_PRIM_LIB_neon       "${DAP_ARCH_DIR}/primitives/arm/neon.tpl")
-set(_DAP_ARCH_PRIM_LIB_sve        "${DAP_ARCH_DIR}/primitives/arm/sve.tpl")
-set(_DAP_ARCH_PRIM_LIB_sve2       "${DAP_ARCH_DIR}/primitives/arm/sve2.tpl")
+# Templates live in module/optimization/primitives/, exposed via DAP_PRIMITIVES_DIR
+set(_DAP_ARCH_PRIM_LIB_sse2       "${DAP_PRIMITIVES_DIR}/x86/sse2.tpl")
+set(_DAP_ARCH_PRIM_LIB_avx2       "${DAP_PRIMITIVES_DIR}/x86/avx2.tpl")
+set(_DAP_ARCH_PRIM_LIB_avx2_bmi2  "${DAP_PRIMITIVES_DIR}/x86/avx2.tpl")
+set(_DAP_ARCH_PRIM_LIB_avx512     "${DAP_PRIMITIVES_DIR}/x86/avx512.tpl")
+set(_DAP_ARCH_PRIM_LIB_avx512_ifma "${DAP_PRIMITIVES_DIR}/x86/avx512.tpl")
+set(_DAP_ARCH_PRIM_LIB_neon       "${DAP_PRIMITIVES_DIR}/arm/neon.tpl")
+set(_DAP_ARCH_PRIM_LIB_sve        "${DAP_PRIMITIVES_DIR}/arm/sve.tpl")
+set(_DAP_ARCH_PRIM_LIB_sve2       "${DAP_PRIMITIVES_DIR}/arm/sve2.tpl")
 
 # ============================================================================
 # dap_arch_generate_variant(TEMPLATE t OUTPUT o ARCH a [ARGS key=val ...])

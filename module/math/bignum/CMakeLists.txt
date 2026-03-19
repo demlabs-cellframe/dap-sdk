@@ -38,9 +38,10 @@ dap_arch_generate(
     OUTPUT_DIR ${NTT_ARCH_GEN_DIR}
     PREFIX     dap_ntt16
     VARIANTS
-        avx512  "${DAP_ARCH_DIR}/primitives/x86/int16_avx512.tpl"
-        avx2    "${DAP_ARCH_DIR}/primitives/x86/int16_avx2.tpl"
-        neon    "${DAP_ARCH_DIR}/primitives/arm/int16_neon.tpl"
+        avx512  "${DAP_PRIMITIVES_DIR}/x86/int16_avx512.tpl"
+        avx2    "${DAP_PRIMITIVES_DIR}/x86/int16_avx2.tpl"
+        sse2    "${DAP_PRIMITIVES_DIR}/x86/int16_sse2.tpl"
+        neon    "${DAP_PRIMITIVES_DIR}/arm/int16_neon.tpl"
 )
 
 dap_add_library(${PROJECT_NAME} ${BIGNUM_SRCS} HEADERS ${BIGNUM_HEADERS})
@@ -49,6 +50,7 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${NTT_ARCH_GEN_DIR}
     SOURCES
         dap_ntt16_avx512.c  avx512
         dap_ntt16_avx2.c    avx2
+        dap_ntt16_sse2.c    sse2
         dap_ntt16_neon.c    neon
 )
 

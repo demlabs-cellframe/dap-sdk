@@ -38,6 +38,10 @@ void dap_ntt_dispatch_init(void)
 
     DAP_DISPATCH_ARCH_SELECT;
 
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_SSE2,   dap_ntt16_forward, dap_ntt16_forward_sse2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_SSE2,   dap_ntt16_inverse, dap_ntt16_inverse_sse2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_SSE2,   dap_ntt16_basemul, dap_ntt16_basemul_sse2);
+
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   dap_ntt16_forward, dap_ntt16_forward_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   dap_ntt16_inverse, dap_ntt16_inverse_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   dap_ntt16_basemul, dap_ntt16_basemul_avx2);

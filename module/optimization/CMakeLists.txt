@@ -8,3 +8,6 @@ target_include_directories(${PROJECT_NAME} INTERFACE
 )
 
 target_link_libraries(${PROJECT_NAME} INTERFACE dap_core)
+
+set(DAP_PRIMITIVES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/primitives" CACHE PATH
+    "Path to shared arch-specific SIMD/asm primitive templates")

@@ -1,8 +1,6 @@
 /**
  * @file dap_enc_aes.c
- * @brief Unified AES-256-CBC — delegates to IAES (software T-table).
- *
- * Future: runtime dispatch to AES-NI / ARM CE via dap_cpu_features.
+ * @brief Unified AES-256-CBC with runtime dispatch: AES-NI > ARM CE > IAES T-table.
  *
  * @authors naeper
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -10,6 +8,52 @@
 
 #include "dap_enc_aes.h"
 #include "dap_enc_iaes.h"
+#include "dap_cpu_detect.h"
+#include <stddef.h>
+
+/* Backend headers (guarded by platform ifdefs internally) */
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#include "dap_aes_ni.h"
+#endif
+#if defined(__aarch64__) || (defined(__arm__) && defined(__ARM_FEATURE_CRYPTO))
+#include "dap_aes_armce.h"
+#endif
+
+/* ========== Function pointer dispatch ========== */
+
+typedef size_t (*dap_aes_cbc_fast_fn_t)(struct dap_enc_key *, const void *, size_t, void *, size_t);
+
+static dap_aes_cbc_fast_fn_t s_encrypt_fast = NULL;
+static dap_aes_cbc_fast_fn_t s_decrypt_fast = NULL;
+
+static void s_aes_dispatch_init(void)
+{
+    s_encrypt_fast = dap_enc_iaes256_cbc_encrypt_fast;
+    s_decrypt_fast = dap_enc_iaes256_cbc_decrypt_fast;
+
+    dap_cpu_features_t l_cpu = dap_cpu_detect_features();
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+    if (l_cpu.has_aes_ni) {
+        s_encrypt_fast = dap_aes_ni_cbc_encrypt_fast;
+        s_decrypt_fast = dap_aes_ni_cbc_decrypt_fast;
+    }
+#endif
+#if defined(__aarch64__) || (defined(__arm__) && defined(__ARM_FEATURE_CRYPTO))
+    if (l_cpu.has_arm_ce) {
+        s_encrypt_fast = dap_aes_armce_cbc_encrypt_fast;
+        s_decrypt_fast = dap_aes_armce_cbc_decrypt_fast;
+    }
+#endif
+    (void)l_cpu;
+}
+
+static inline void s_ensure_init(void)
+{
+    if (__builtin_expect(!s_encrypt_fast, 0))
+        s_aes_dispatch_init();
+}
+
+/* ========== Public API ========== */
 
 void dap_enc_aes256_key_new(dap_enc_key_t *a_key)
 {
@@ -40,23 +84,35 @@ size_t dap_enc_aes256_cbc_calc_decode_size(size_t a_size)
 size_t dap_enc_aes256_cbc_encrypt(dap_enc_key_t *a_key, const void *a_in,
         size_t a_in_size, void **a_out)
 {
-    return dap_enc_iaes256_cbc_encrypt(a_key, a_in, a_in_size, a_out);
+    s_ensure_init();
+    size_t l_out_size = dap_enc_iaes256_calc_encode_size(a_in_size);
+    *a_out = DAP_NEW_SIZE(uint8_t, l_out_size);
+    if (!*a_out)
+        return 0;
+    return s_encrypt_fast(a_key, a_in, a_in_size, *a_out, l_out_size);
 }
 
 size_t dap_enc_aes256_cbc_decrypt(dap_enc_key_t *a_key, const void *a_in,
         size_t a_in_size, void **a_out)
 {
-    return dap_enc_iaes256_cbc_decrypt(a_key, a_in, a_in_size, a_out);
+    s_ensure_init();
+    size_t l_out_size = dap_enc_iaes256_calc_decode_max_size(a_in_size);
+    *a_out = DAP_NEW_SIZE(uint8_t, l_out_size);
+    if (!*a_out)
+        return 0;
+    return s_decrypt_fast(a_key, a_in, a_in_size, *a_out, l_out_size);
 }
 
 size_t dap_enc_aes256_cbc_encrypt_fast(dap_enc_key_t *a_key, const void *a_in,
         size_t a_in_size, void *a_out, size_t a_out_size)
 {
-    return dap_enc_iaes256_cbc_encrypt_fast(a_key, a_in, a_in_size, a_out, a_out_size);
+    s_ensure_init();
+    return s_encrypt_fast(a_key, a_in, a_in_size, a_out, a_out_size);
 }
 
 size_t dap_enc_aes256_cbc_decrypt_fast(dap_enc_key_t *a_key, const void *a_in,
         size_t a_in_size, void *a_out, size_t a_out_size)
 {
-    return dap_enc_iaes256_cbc_decrypt_fast(a_key, a_in, a_in_size, a_out, a_out_size);
+    s_ensure_init();
+    return s_decrypt_fast(a_key, a_in, a_in_size, a_out, a_out_size);
 }

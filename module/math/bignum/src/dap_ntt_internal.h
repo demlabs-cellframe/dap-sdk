@@ -34,6 +34,11 @@ void dap_ntt16_basemul_ref(int16_t [2], const int16_t [2], const int16_t [2],
 
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 
+void dap_ntt16_forward_sse2(int16_t *, const dap_ntt_params16_t *);
+void dap_ntt16_inverse_sse2(int16_t *, const dap_ntt_params16_t *);
+void dap_ntt16_basemul_sse2(int16_t [2], const int16_t [2], const int16_t [2],
+                            int16_t, const dap_ntt_params16_t *);
+
 void dap_ntt16_forward_avx2(int16_t *, const dap_ntt_params16_t *);
 void dap_ntt16_inverse_avx2(int16_t *, const dap_ntt_params16_t *);
 void dap_ntt16_basemul_avx2(int16_t [2], const int16_t [2], const int16_t [2],

@@ -123,7 +123,7 @@ file( GLOB CRYPTO_SRCS
       src/sym/chacha20/*.c
       # --- kem (active) ---
       src/kem/kyber/dap_enc_kyber.c
-      src/kem/kyber/dap_enc_mlkem.c
+      src/kem/mlkem/dap_enc_mlkem.c
       src/kem/ntru_prime/*.c
       # --- sphincsplus ---
       src/sig/sphincsplus/dap_enc_sphincsplus.c
@@ -270,7 +270,7 @@ set( CRYPTO_INCLUDE_PRIVATE
     src/sig src/sig/dilithium src/sig/falcon src/sig/chipmunk src/sig/ntru_prime src/sig/sphincsplus
     src/sig/classic/ecdsa src/sig/classic/ecdsa/arch
     src/sym src/sym/aes src/sym/seed src/sym/chacha20
-    src/kem src/kem/ntru_prime
+    src/kem src/kem/mlkem src/kem/ntru_prime
     src include
 )
 
@@ -315,6 +315,20 @@ endif()
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CRYPTO_SRCS} HEADERS ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
+
+# --- AES hardware acceleration compile flags ---
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686|i386")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/aes/dap_aes_ni.c
+        PROPERTIES COMPILE_FLAGS "-maes -msse2"
+    )
+endif()
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/aes/dap_aes_armce.c
+        PROPERTIES COMPILE_FLAGS "-march=armv8-a+crypto"
+    )
+endif()
 
 # --- ChaCha20 multi-block SIMD ---
 set(CHACHA_SIMD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/simd)
@@ -369,33 +383,12 @@ function(print_target_properties tgt)
     endforeach(prop)
 endfunction(print_target_properties)
 
-option(BUILD_DAP_CRYPTO_KYBER512 "Build Kyber512 crypto module" ON)
-if(BUILD_DAP_CRYPTO_KYBER512)
-    add_subdirectory(src/kem/kyber/crypto_kem/kyber512/optimized kyber512_build)
-    add_dependencies(${PROJECT_NAME} dap_crypto_kyber512)
-    target_link_libraries(${PROJECT_NAME} dap_crypto_kyber512)
-    message("[+] DAP Crypto: Kyber512 support enabled")
-else()
-    message("[!] DAP Crypto: Kyber512 support disabled ")
-endif()
-
-option(BUILD_DAP_CRYPTO_KYBER768 "Build Kyber768 crypto module" ON)
-if(BUILD_DAP_CRYPTO_KYBER768)
-    add_subdirectory(src/kem/kyber/crypto_kem/kyber768/optimized kyber768_build)
-    add_dependencies(${PROJECT_NAME} dap_crypto_kyber768)
-    target_link_libraries(${PROJECT_NAME} dap_crypto_kyber768)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_KYBER768=1)
-    message("[+] DAP Crypto: Kyber768 support enabled")
-endif()
-
-option(BUILD_DAP_CRYPTO_KYBER1024 "Build Kyber1024 crypto module" ON)
-if(BUILD_DAP_CRYPTO_KYBER1024)
-    add_subdirectory(src/kem/kyber/crypto_kem/kyber1024/optimized kyber1024_build)
-    add_dependencies(${PROJECT_NAME} dap_crypto_kyber1024)
-    target_link_libraries(${PROJECT_NAME} dap_crypto_kyber1024)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_KYBER1024=1)
-    message("[+] DAP Crypto: Kyber1024 support enabled")
-endif()
+# --- ML-KEM (FIPS 203) — own implementation ---
+add_subdirectory(src/kem/mlkem mlkem_build)
+add_dependencies(${PROJECT_NAME} dap_mlkem_512 dap_mlkem_768 dap_mlkem_1024)
+target_link_libraries(${PROJECT_NAME} dap_mlkem_512 dap_mlkem_768 dap_mlkem_1024)
+target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_MLKEM_512=1 DAP_MLKEM_768=1 DAP_MLKEM_1024=1)
+message("[+] DAP Crypto: ML-KEM-512/768/1024 support enabled")
 
 if (DAP_PQRL)
 
@@ -423,13 +416,7 @@ target_include_directories(dap_crypto PUBLIC
 
 
 # Store dependencies for final library - no linking of OBJECT targets  
-set(CRYPTO_LIBS "dap_crypto_kyber512")
-if(BUILD_DAP_CRYPTO_KYBER768)
-    list(APPEND CRYPTO_LIBS "dap_crypto_kyber768")
-endif()
-if(BUILD_DAP_CRYPTO_KYBER1024)
-    list(APPEND CRYPTO_LIBS "dap_crypto_kyber1024")
-endif()
+set(CRYPTO_LIBS "dap_mlkem_512" "dap_mlkem_768" "dap_mlkem_1024")
 # secp256k1 removed - using native DAP ECDSA implementation
 if(UNIX)
     list(APPEND CRYPTO_LIBS "m")
@@ -444,7 +431,7 @@ endif()
 # Export dependencies for main SDK build
 set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external dependencies")
 
-target_include_directories(dap_crypto PUBLIC src/kem/kyber/crypto_kem/kyber512/optimized)
+target_include_directories(dap_crypto PUBLIC src/kem/mlkem)
 # Native ECDSA implementation in sig_ecdsa/ - no external includes needed
 
 if(BUILD_CRYPTO_TESTS)

@@ -256,6 +256,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/global_db/CMakeLists.txt)
     message("[+] GlobalDB/KV Storage performance benchmarks configured")
 endif()
 
+# Crypto competitive benchmarks (DAP vs liboqs, OpenSSL, libsodium)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/crypto/CMakeLists.txt)
+    add_subdirectory(performance/crypto)
+    message("[+] Crypto competitive benchmarks configured")
+endif()
+
 # Build Regression Tests  
 message("[+] Configuring Regression Tests")
 
