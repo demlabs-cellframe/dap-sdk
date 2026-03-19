@@ -653,11 +653,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 }
             break;
 
-            case DESCRIPTOR_TYPE_QUEUE:
-                dap_events_socket_queue_proc_input_unsafe(l_cur);
-                l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-            break;
-
             case DESCRIPTOR_TYPE_EVENT:
                 dap_events_socket_event_proc_input_unsafe(l_cur);
             break;
@@ -889,7 +884,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     continue;
                 } break;
             // TODO define condition for invalid socket with other descriptor types
-            case DESCRIPTOR_TYPE_QUEUE:
             case DESCRIPTOR_TYPE_PIPE:
             case DESCRIPTOR_TYPE_EVENT:
             case DESCRIPTOR_TYPE_FILE:
@@ -936,7 +930,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     break;
                 }
-                case DESCRIPTOR_TYPE_QUEUE:
                 case DESCRIPTOR_TYPE_PIPE:
                 case DESCRIPTOR_TYPE_EVENT:
                     // Internal pipes/queues with HUP - CRITICAL: Remove from polling!
@@ -1122,10 +1115,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             log_it(L_ERROR, "Socket %"DAP_FORMAT_SOCKET" with timer callback fired, but callback is NULL ", l_cur->socket);
 
                     } break;
-                    case DESCRIPTOR_TYPE_QUEUE:
-                        dap_events_socket_queue_proc_input_unsafe(l_cur);
-                        dap_events_socket_set_writable_unsafe(l_cur, false);
-                        continue;
                     case DESCRIPTOR_TYPE_EVENT:
                         dap_events_socket_event_proc_input_unsafe(l_cur);
                     break;
@@ -1374,44 +1363,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_errno = wolfSSL_get_error(l_ssl, 0);
 #endif
                     }
-                    case DESCRIPTOR_TYPE_QUEUE:
-                        if (l_cur->flags & DAP_SOCK_QUEUE_PTR && l_cur->buf_out_size>= sizeof (void*)) {
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-                            l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
-                            l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
-                            debug_if(l_errno, L_ERROR, "Writing to pipe %zu bytes failed, sent %zd only...", l_cur->buf_out_size, l_bytes_sent);
-#elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
-                            l_bytes_sent = mq_send(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0);
-#elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
-                            l_bytes_sent = mq_send(l_cur->mqd , (const char *)l_cur->buf_out,sizeof (void*),0);
-                            if(l_bytes_sent == 0)
-                                l_bytes_sent = sizeof (void*);
-                            l_errno = errno;
-                            if (l_bytes_sent == -1 && l_errno == EINVAL) // To make compatible with other
-                                l_errno = EAGAIN;                        // non-blocking sockets
-#elif defined (DAP_EVENTS_CAPS_KQUEUE)
-                            struct kevent* l_event=&l_cur->kqueue_event;
-                            dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
-                            l_es_w_data->esocket = l_cur;
-                            memcpy(&l_es_w_data->ptr, l_cur->buf_out,sizeof(l_cur));
-                            EV_SET(l_event,l_cur->socket, l_cur->kqueue_base_filter,l_cur->kqueue_base_flags, l_cur->kqueue_base_fflags,l_cur->kqueue_data, l_es_w_data);
-                            int l_n = kevent(a_context->kqueue_fd,l_event,1,NULL,0,NULL);
-                            if (l_n == 1){
-                                l_bytes_sent = sizeof(l_cur);
-                            }else{
-                                l_errno = errno;
-                                log_it(L_WARNING,"queue ptr send error: kevent %p errno: %d", l_es_w_data, l_errno);
-                                DAP_DELETE(l_es_w_data);
-                            }
-
-#else
-#error "Not implemented dap_events_socket_queue_ptr_send() for this platform"
-#endif
-                        }else{
-                             assert("Not implemented non-ptr queue send from outgoing buffer");
-                             // TODO Implement non-ptr queue output
-                         }
-                    break;
                     case DESCRIPTOR_TYPE_PIPE:
                     case DESCRIPTOR_TYPE_FILE:
                         l_bytes_sent = write(l_cur->fd, (char *) (l_cur->buf_out), l_cur->buf_out_size );
@@ -1591,7 +1542,6 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
     if( a_esocket->context){
         int l_fd;
         switch (a_esocket->type) {
-        case DESCRIPTOR_TYPE_QUEUE:
         case DESCRIPTOR_TYPE_EVENT:
         case DESCRIPTOR_TYPE_PIPE:
             l_fd = a_esocket->fd;
@@ -1653,7 +1603,7 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
         // Check & add
         bool l_is_error=false;
         int l_errno=0;
-        if (a_esocket->type == DESCRIPTOR_TYPE_EVENT || a_esocket->type == DESCRIPTOR_TYPE_QUEUE ){
+        if (a_esocket->type == DESCRIPTOR_TYPE_EVENT){
             // Do nothing
         }else{
             EV_SET(l_event, a_esocket->socket, l_filter,l_flags| EV_ADD,l_fflags,a_esocket->kqueue_data,a_esocket);
@@ -1762,10 +1712,9 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
              !!(a_es->flags & DAP_SOCK_READY_TO_READ), !!(a_es->flags & DAP_SOCK_READY_TO_WRITE), !!(a_es->flags & DAP_SOCK_CONNECTING),
              a_es->ev.events, !!(a_es->ev.events & EPOLLIN), !!(a_es->ev.events & EPOLLOUT), a_es->type, g_debug_reactor);
     
-    // For QUEUE and EVENT types, the real descriptor is in 'fd', not 'socket'
+    // For EVENT and PIPE types, the real descriptor is in 'fd', not 'socket'
     int l_fd_to_monitor;
     switch (a_es->type) {
-    case DESCRIPTOR_TYPE_QUEUE:
     case DESCRIPTOR_TYPE_EVENT:
     case DESCRIPTOR_TYPE_PIPE:
         l_fd_to_monitor = a_es->fd;
@@ -1779,12 +1728,10 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     if (l_ret != 0 ){
         l_is_error = true;
         l_errno = errno;
-        log_it(L_ERROR, "epoll_ctl(EPOLL_CTL_ADD) failed for %s %d: %d (%s)", 
-               a_es->type == DESCRIPTOR_TYPE_QUEUE ? "fd" : "socket",
+        log_it(L_ERROR, "epoll_ctl(EPOLL_CTL_ADD) failed for fd %d: %d (%s)",
                l_fd_to_monitor, l_errno, dap_strerror(l_errno));
     } else {
-        debug_if(g_debug_reactor, L_DEBUG, "Successfully added %s %d to epoll (g_debug_reactor=%d)",
-                 a_es->type == DESCRIPTOR_TYPE_QUEUE ? "fd" : "socket",
+        debug_if(g_debug_reactor, L_DEBUG, "Successfully added fd %d to epoll (g_debug_reactor=%d)",
                  l_fd_to_monitor, g_debug_reactor);
     }
 #elif defined (DAP_EVENTS_CAPS_POLL)
@@ -1806,9 +1753,6 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     a_context->poll_esocket[a_context->poll_count] = a_es;
     a_context->poll_count++;
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
-    if ( a_es->type == DESCRIPTOR_TYPE_QUEUE ){
-        goto lb_exit;
-    }
     if ( a_es->type == DESCRIPTOR_TYPE_EVENT ){
         goto lb_exit;
     }
@@ -1917,10 +1861,9 @@ int dap_context_remove_from_polling(dap_events_socket_t * a_es)
             l_event->data.ptr = NULL; // signal to skip on its iteration
     }
 
-    // For QUEUE, EVENT and PIPE types, the real descriptor is in 'fd', not 'socket'
+    // For EVENT and PIPE types, the real descriptor is in 'fd', not 'socket'
     int l_fd_to_remove;
     switch (a_es->type) {
-    case DESCRIPTOR_TYPE_QUEUE:
     case DESCRIPTOR_TYPE_EVENT:
     case DESCRIPTOR_TYPE_PIPE:
         l_fd_to_remove = a_es->fd;
@@ -1945,9 +1888,9 @@ int dap_context_remove_from_polling(dap_events_socket_t * a_es)
     if (a_es->socket == -1) {
         log_it(L_ERROR, "Trying to remove bad socket from kqueue, a_es=%p", a_es);
         return -1;
-    } else if (a_es->type == DESCRIPTOR_TYPE_EVENT || a_es->type == DESCRIPTOR_TYPE_QUEUE) {
+    } else if (a_es->type == DESCRIPTOR_TYPE_EVENT) {
         debug_if(s_debug_more, L_DEBUG, "Skipping kqueue removal for internal socket type %d", a_es->type);
-        return 0;  // These types can't be removed from kqueue on BSD
+        return 0;
     } else if (a_es->type == DESCRIPTOR_TYPE_TIMER && a_es->kqueue_base_filter == EVFILT_EMPTY) {
         // Nothing to do, it was already removed from kqueue cause of one shot strategy
         return 0;
@@ -2076,74 +2019,6 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     dap_events_socket_t *l_es = NULL;
     if (a_context && a_context->esockets)
         HASH_FIND_BYHASHVALUE(hh, a_context->esockets, &a_es_uuid, sizeof(a_es_uuid), a_es_uuid, l_es);
-    return l_es;
-}
-
-/**
- * @brief Compatibility wrapper - create context queue (deprecated, use dap_context_queue_create)
- * 
- * Creates a pipe-based queue esocket for backward compatibility.
- * Uses the old callback signature (esocket, ptr) instead of the new (ptr) signature.
- * 
- * @param a_context Context to create queue in
- * @param a_callback Callback function (old signature with 2 args)
- * @return Event socket, or NULL on error
- */
-dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_events_socket_callback_queue_ptr_t a_callback)
-{
-    log_it(L_WARNING, "dap_context_create_queue is deprecated, use dap_context_queue_create instead");
-    
-    if (!a_context || !a_callback) {
-        return NULL;
-    }
-    
-    dap_events_socket_t *l_es = DAP_NEW_Z(dap_events_socket_t);
-    if (!l_es) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
-    
-    l_es->type = DESCRIPTOR_TYPE_QUEUE;
-    l_es->uuid = dap_new_es_id();
-    l_es->flags = DAP_SOCK_QUEUE_PTR | DAP_SOCK_READY_TO_READ;
-    l_es->callbacks.queue_ptr_callback = a_callback;
-    l_es->buf_in_size_max = PIPE_BUF;
-    l_es->buf_in = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
-    if (!l_es->buf_in) {
-        DAP_DELETE(l_es);
-        return NULL;
-    }
-    
-#if defined(DAP_EVENTS_CAPS_EPOLL)
-    l_es->ev_base_flags = EPOLLIN | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
-#elif defined(DAP_EVENTS_CAPS_POLL)
-    l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
-#elif defined(DAP_EVENTS_CAPS_KQUEUE)
-    l_es->kqueue_base_flags = EV_ADD | EV_ENABLE;
-    l_es->kqueue_base_filter = EVFILT_READ;
-#endif
-
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-    int l_pipe[2];
-    if (pipe2(l_pipe, O_NONBLOCK | O_CLOEXEC) < 0) {
-        log_it(L_ERROR, "Failed to create pipe for queue: %s", dap_strerror(errno));
-        DAP_DELETE(l_es->buf_in);
-        DAP_DELETE(l_es);
-        return NULL;
-    }
-    l_es->fd = l_pipe[0];   // Read end
-    l_es->fd2 = l_pipe[1];  // Write end
-#elif defined(DAP_EVENTS_CAPS_IOCP)
-    l_es->socket = INVALID_SOCKET;
-    l_es->buf_out = _aligned_malloc(sizeof(SLIST_HEADER), MEMORY_ALLOCATION_ALIGNMENT);
-    InitializeSListHead((PSLIST_HEADER)l_es->buf_out);
-#else
-#error "Queue not supported on this platform"
-#endif
-    
-    if (a_context)
-        dap_context_add(a_context, l_es);
-    
     return l_es;
 }
 
@@ -2283,11 +2158,3 @@ dap_events_socket_t * dap_context_create_pipe(dap_context_t * a_context, dap_eve
 #endif
 }
 
-/**
- * @brief dap_context_create_queues
- * @param a_callback
- */
-void dap_context_create_queues( dap_events_socket_callback_queue_ptr_t a_callback)
-{
-    // TODO complete queues create
-}

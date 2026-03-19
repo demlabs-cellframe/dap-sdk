@@ -118,7 +118,7 @@ void test_stream_ch_receive_callback(dap_stream_ch_t *a_ch,
         return;
     }
     
-    log_it(L_INFO, "test_stream_ch_receive_callback: RECEIVED %zu bytes on channel '%c', type=0x%02x", 
+    debug_if(s_debug_more, L_INFO, "test_stream_ch_receive_callback: RECEIVED %zu bytes on channel '%c', type=0x%02x",
            a_data_size, a_ch->proc->id, a_type);
     
     pthread_mutex_lock(&l_ctx->mutex);

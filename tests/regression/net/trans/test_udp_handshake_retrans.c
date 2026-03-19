@@ -212,8 +212,12 @@ static int s_init_sdk(void)
 {
     log_it(L_INFO, "Initializing DAP SDK...");
     
-    // Force CBPF tier for consistent testing
+    // Force a non-application tier for consistent testing
+#if defined(__linux__) || defined(ANDROID)
     dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_CLASSIC_BPF);
+#elif defined(__APPLE__) && defined(__MACH__)
+    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_DARWIN_GCD);
+#endif
     
     int ret = dap_events_init(0, 0);
     if (ret != 0) {

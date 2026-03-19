@@ -254,8 +254,8 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         }
 
         a_stream->channel[a_stream->channel_count++] = l_ch_new;
-        log_it(L_NOTICE, "Channel '%c' CREATED: %p (stream=%p, total_channels=%zu, notifiers=0)", 
-               a_id, l_ch_new, a_stream, a_stream->channel_count);
+        debug_if(s_debug_more, L_DEBUG, "Channel '%c' CREATED: %p (stream=%p, total_channels=%zu, notifiers=0)",
+                 a_id, (void *)l_ch_new, (void *)a_stream, a_stream->channel_count);
 
         return l_ch_new;
     }else{
@@ -270,8 +270,8 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
  */
 void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
 {
-    log_it(L_NOTICE, "Channel '%c' DELETE: %p (stream=%p, notifiers=%zu)", 
-           a_ch->proc ? a_ch->proc->id : '?', a_ch, a_ch->stream,
+    debug_if(s_debug_more, L_DEBUG, "Channel '%c' DELETE: %p (stream=%p, notifiers=%zu)",
+           a_ch->proc ? a_ch->proc->id : '?', (void *)a_ch, (void *)a_ch->stream,
            dap_list_length(a_ch->packet_in_notifiers));
     
     dap_stream_worker_t * l_stream_worker = a_ch->stream_worker;

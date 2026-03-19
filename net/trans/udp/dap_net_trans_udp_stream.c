@@ -430,8 +430,8 @@ static int s_client_flow_ctrl_packet_send_cb(
         static uint64_t s_addr_log_count = 0;
         s_addr_log_count++;
         if (s_addr_log_count % 100 == 0 || s_addr_log_count < 5) {
-            log_it(L_INFO, "CLIENT FC send: dest=%s:%u (count=%lu)",
-                   l_addr_str, ntohs(l_sin->sin_port), s_addr_log_count);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: dest=%s:%u (count=%lu)",
+                     l_addr_str, ntohs(l_sin->sin_port), s_addr_log_count);
         }
     }
     
@@ -545,7 +545,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             l_stream->session->key = l_session_key;
             l_stream->session->id = l_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT FC deliver: session key installed (session_id=0x%lx)", l_ctx->session_id);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT FC deliver: session key installed (session_id=0x%lx)", l_ctx->session_id);
             
             // Call session_create callback
             if (l_trans_ctx->session_create_cb) {
@@ -700,8 +700,8 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
         return -3;
     }
     
-    log_it(L_NOTICE, "Client-side Flow Control created: retransmit=%dms, max_retries=%d",
-           l_fc_config.retransmit_timeout_ms, l_fc_config.max_retransmit_count);
+    debug_if(s_debug_more, L_DEBUG, "Client-side Flow Control created: retransmit=%dms, max_retries=%d",
+             l_fc_config.retransmit_timeout_ms, l_fc_config.max_retransmit_count);
     
     return 0;
 }
@@ -1385,8 +1385,8 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         return -1;
     }
 
-    log_it(L_INFO, "UDP handshake init: enc_type=%d, pkey_type=%d",
-           a_params->enc_type, a_params->pkey_exchange_type);
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake init: enc_type=%d, pkey_type=%d",
+             a_params->enc_type, a_params->pkey_exchange_type);
     
     // Get or create trans_ctx
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
@@ -1405,10 +1405,10 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     }
     
     // Set up read callback for client esocket and link stream
-    log_it(L_NOTICE, "HANDSHAKE INIT: esocket=%p", l_ctx->esocket);
+    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE INIT: esocket=%p", (void *)l_ctx->esocket);
     if (l_ctx->esocket) {
-        log_it(L_NOTICE, "Setting up UDP client esocket %p (fd=%d) for handshake_init", 
-                 l_ctx->esocket, l_ctx->esocket->fd);
+        debug_if(s_debug_more, L_DEBUG, "Setting up UDP client esocket %p (fd=%d) for handshake_init",
+                 (void *)l_ctx->esocket, l_ctx->esocket->fd);
         
         // Store stream pointer
         l_udp_ctx->stream = a_stream;
@@ -1474,8 +1474,8 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     
     // Start handshake retransmission timer
     dap_worker_t *l_worker = l_ctx->esocket ? l_ctx->esocket->worker : dap_worker_get_current();
-    log_it(L_NOTICE, "HANDSHAKE: esocket=%p, esocket->worker=%p, worker_current=%p",
-           l_ctx->esocket, l_ctx->esocket ? l_ctx->esocket->worker : NULL, dap_worker_get_current());
+    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE: esocket=%p, esocket->worker=%p, worker_current=%p",
+             (void *)l_ctx->esocket, l_ctx->esocket ? (void *)l_ctx->esocket->worker : NULL, (void *)dap_worker_get_current());
     if (l_worker) {
         l_udp_ctx->handshake_timer = dap_timerfd_start_on_worker(
             l_worker,
@@ -1484,8 +1484,8 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
             l_udp_ctx
         );
         if (l_udp_ctx->handshake_timer) {
-            log_it(L_NOTICE, "HANDSHAKE: retransmission timer STARTED (timeout=%dms, max_retries=%d)",
-                   HANDSHAKE_RETRANSMIT_TIMEOUT_MS, HANDSHAKE_RETRANSMIT_MAX_RETRIES);
+            debug_if(s_debug_more, L_DEBUG, "HANDSHAKE: retransmission timer STARTED (timeout=%dms, max_retries=%d)",
+                     HANDSHAKE_RETRANSMIT_TIMEOUT_MS, HANDSHAKE_RETRANSMIT_MAX_RETRIES);
         } else {
             log_it(L_ERROR, "HANDSHAKE: FAILED to start retransmission timer!");
         }
@@ -1493,8 +1493,8 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", l_ctx->esocket);
     }
     
-    log_it(L_INFO, "UDP handshake init sent: %zd bytes (session_id=%lu)", 
-           l_sent, l_udp_ctx->session_id);
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake init sent: %zd bytes (session_id=%lu)",
+             l_sent, l_udp_ctx->session_id);
     
     return 0;
 }
@@ -1602,8 +1602,8 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         return -1;
     }
     
-    log_it(L_INFO, "CLIENT: derived shared key via KEM decapsulation (%zu bytes)", 
-           l_shared_key_size);
+    debug_if(s_debug_more, L_DEBUG, "CLIENT: derived shared key via KEM decapsulation (%zu bytes)",
+             l_shared_key_size);
     
     // Derive HANDSHAKE cipher key from shared secret using KDF-SHAKE256
     dap_enc_key_t *l_handshake_key = dap_enc_kdf_create_cipher_key(
@@ -1620,12 +1620,12 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         return -1;
     }
     
-    log_it(L_INFO, "CLIENT: handshake key derived via KDF-SHAKE256");
+    debug_if(s_debug_more, L_DEBUG, "CLIENT: handshake key derived via KDF-SHAKE256");
     
     // Store handshake key in UDP context (will be used for encryption/decryption)
     if (l_udp_ctx->handshake_key) {
-        log_it(L_WARNING, "CLIENT: replacing existing handshake_key %p with new one %p",
-               l_udp_ctx->handshake_key, l_handshake_key);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: replacing existing handshake_key %p with new one %p",
+                 (void *)l_udp_ctx->handshake_key, (void *)l_handshake_key);
         dap_enc_key_delete(l_udp_ctx->handshake_key);
     }
     l_udp_ctx->handshake_key = l_handshake_key;
@@ -1649,7 +1649,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     // DO NOT create session key here! It will be received and decrypted during SESSION_CREATE
     a_stream->session->key = NULL;
     
-    log_it(L_INFO, "UDP handshake complete: CLIENT handshake key established, waiting for session key from server");
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake complete: CLIENT handshake key established, waiting for session key from server");
     return 0;
 }
 
@@ -1964,12 +1964,12 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
              l_udp_ctx->buffered_packets, l_udp_ctx->buffered_count);
     
     if (l_udp_ctx->buffered_packets && l_udp_ctx->buffered_count > 0) {
-        log_it(L_NOTICE, "SESSION_START: Processing %zu buffered packets through FC",
-               l_udp_ctx->buffered_count);
-        
+        debug_if(s_debug_more, L_DEBUG, "SESSION_START: Processing %zu buffered packets through FC",
+                 l_udp_ctx->buffered_count);
+
         for (size_t i = 0; i < l_udp_ctx->buffered_count; i++) {
-            log_it(L_NOTICE, "SESSION_START: Processing buffered packet #%zu (%zu bytes)",
-                   i + 1, l_udp_ctx->buffered_packet_sizes[i]);
+            debug_if(s_debug_more, L_DEBUG, "SESSION_START: Processing buffered packet #%zu (%zu bytes)",
+                     i + 1, l_udp_ctx->buffered_packet_sizes[i]);
             
             int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, 
                                               l_udp_ctx->buffered_packets[i], 
@@ -1983,7 +1983,7 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
             DAP_DELETE(l_udp_ctx->buffered_packets[i]);
         }
         
-        log_it(L_NOTICE, "SESSION_START: All %zu buffered packets processed", l_udp_ctx->buffered_count);
+        debug_if(s_debug_more, L_DEBUG, "SESSION_START: All %zu buffered packets processed", l_udp_ctx->buffered_count);
         
         // Free buffer arrays
         DAP_DELETE(l_udp_ctx->buffered_packets);
@@ -1996,7 +1996,7 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     
     // Clear fc_creating flag - FC is ready now!
     l_udp_ctx->fc_creating = false;
-    log_it(L_NOTICE, "SESSION_START: Cleared fc_creating flag - FC is ready");
+    debug_if(s_debug_more, L_DEBUG, "SESSION_START: Cleared fc_creating flag - FC is ready");
     
     // Call callback immediately (UDP session ready)
     if (a_callback) {
@@ -2132,8 +2132,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     
     // BUFFER PATH: FC is being created (after SESSION_CREATE, before SESSION_START complete)
     if (l_udp_ctx->fc_creating || !l_udp_ctx->flow_ctrl) {
-        log_it(L_NOTICE, "CLIENT: FC not ready (fc_creating=%d, flow_ctrl=%p) - checking packet type", 
-               l_udp_ctx->fc_creating, l_udp_ctx->flow_ctrl);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: FC not ready (fc_creating=%d, flow_ctrl=%p) - checking packet type",
+                 l_udp_ctx->fc_creating, (void *)l_udp_ctx->flow_ctrl);
         
         // Decrypt packet to check type
         if (!l_udp_ctx->handshake_key) {
@@ -2184,8 +2184,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
         const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
         
-        log_it(L_NOTICE, "CLIENT: First packet type=%u (SESSION_CREATE=0x%02x, DATA=0x%02x)",
-               l_type, DAP_STREAM_UDP_PKT_SESSION_CREATE, DAP_STREAM_UDP_PKT_DATA);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: First packet type=%u (SESSION_CREATE=0x%02x, DATA=0x%02x)",
+                 l_type, DAP_STREAM_UDP_PKT_SESSION_CREATE, DAP_STREAM_UDP_PKT_DATA);
         
         if (l_type == DAP_STREAM_UDP_PKT_SESSION_CREATE) {
             // SESSION_CREATE response - process immediately to establish session key!
@@ -2205,7 +2205,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             memcpy(&l_kdf_counter_be, l_payload, sizeof(l_kdf_counter_be));
             uint64_t l_kdf_counter = be64toh(l_kdf_counter_be);
             
-            log_it(L_INFO, "CLIENT: Deriving session key with KDF counter=%lu", l_kdf_counter);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: Deriving session key with KDF counter=%lu", l_kdf_counter);
             
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
@@ -2247,8 +2247,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             a_stream->session->key = l_session_key;
             a_stream->session->id = l_udp_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%lx)",
-                   a_stream, a_stream->session, a_stream->session->key, l_udp_ctx->session_id);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%lx)",
+                     (void *)a_stream, (void *)a_stream->session, (void *)a_stream->session->key, l_udp_ctx->session_id);
             
             // Call session_create_cb for client stage transition
             dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
@@ -2548,8 +2548,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     debug_if(s_debug_more, L_DEBUG, "Encrypted: %zu bytes (expected ~%zu)",
              l_encrypted_size, l_cleartext_size + 8);
     
-    log_it(L_WARNING, "UDP write: cleartext_size=%zu, encrypted_size=%zu", 
-           l_cleartext_size, l_encrypted_size);
+    debug_if(s_debug_more, L_DEBUG, "UDP write: cleartext_size=%zu, encrypted_size=%zu",
+             l_cleartext_size, l_encrypted_size);
     
     DAP_DELETE(l_cleartext);
     
@@ -2611,7 +2611,7 @@ static void s_udp_close(dap_stream_t *a_stream)
     // Get UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (l_udp_ctx) {
-        log_it(L_INFO, "Closing UDP trans session 0x%lx", l_udp_ctx->session_id);
+        debug_if(s_debug_more, L_DEBUG, "Closing UDP trans session 0x%lx", l_udp_ctx->session_id);
         
         // Clean up Flow Control if present
         if (l_udp_ctx->flow_ctrl) {
@@ -2799,20 +2799,20 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
-        log_it(L_INFO, "Set SO_RCVBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
+        debug_if(s_debug_more, L_DEBUG, "Set SO_RCVBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
     }
-    
+
     if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
-        log_it(L_INFO, "Set SO_SNDBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
+        debug_if(s_debug_more, L_DEBUG, "Set SO_SNDBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
     }
-    
+
     // Get local port assigned by OS
     struct sockaddr_in l_local_addr;
     socklen_t l_local_addr_len = sizeof(l_local_addr);
     if (getsockname(l_es->socket, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
-        log_it(L_INFO, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
+        debug_if(s_debug_more, L_DEBUG, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
     }
     
     // CRITICAL: Add socket to worker AFTER bind() so reactor monitors properly configured socket!
@@ -2852,8 +2852,8 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
     l_es->callbacks.arg = l_ctx;
-    log_it(L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%d), stream=%p, trans_ctx=%p", 
-           l_es, l_es->socket, l_stream, l_ctx);
+    debug_if(s_debug_more, L_DEBUG, "UDP CLIENT CREATED: esocket=%p (fd=%d), stream=%p, trans_ctx=%p",
+             (void *)l_es, l_es->socket, (void *)l_stream, (void *)l_ctx);
     
     // Create UDP per-stream context and store client_ctx
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(l_stream);
@@ -2879,8 +2879,8 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        log_it(L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
-               l_addr_str, ntohs(l_sin->sin_port));
+        debug_if(s_debug_more, L_DEBUG, "UDP CLIENT: initialized remote_addr=%s:%u",
+                 l_addr_str, ntohs(l_sin->sin_port));
     }
     
     // CRITICAL: Create CLIENT datagram flow for address resolution callback

@@ -734,10 +734,11 @@ prepare_map_impl_cond_1_data() {
     [ -z "$max_args_count" ] && max_args_count=0
     [ "$max_args_count" -lt 0 ] && max_args_count=0
     
-    declare -A HAS_PARAM_COUNT
+    # POSIX-compatible set membership (no associative arrays — bash 3.2 on macOS)
+    _has_param_count_str=""
     for count in "${param_counts_array[@]}"; do
         [ -z "$count" ] && continue
-        HAS_PARAM_COUNT["$count"]=1
+        _has_param_count_str="${_has_param_count_str}|${count}|"
     done
     
     MAP_IMPL_COND_1_DATA=""
@@ -751,7 +752,7 @@ prepare_map_impl_cond_1_data() {
         done
         
         has_count=0
-        if [ "${HAS_PARAM_COUNT[$param_count]:-0}" = "1" ] || [ "$param_count" -eq 0 ]; then
+        if echo "$_has_param_count_str" | grep -q "|${param_count}|" || [ "$param_count" -eq 0 ]; then
             has_count=1
             fallback_count="$param_count"
         else

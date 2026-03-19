@@ -84,9 +84,13 @@ static const trans_test_config_t s_udp_config = {
 
 static int s_init_all(void)
 {
-    // Force CBPF tier for reliable testing
+    // Force a non-application tier for reliable testing
     // Application tier has race conditions with multiple clients
+#if defined(__linux__) || defined(ANDROID)
     dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_CLASSIC_BPF);
+#elif defined(__APPLE__) && defined(__MACH__)
+    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_DARWIN_GCD);
+#endif
     
     log_it(L_INFO, "Init: events_init...");
     int ret = dap_events_init(0, 0);

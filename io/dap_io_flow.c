@@ -765,6 +765,7 @@ static void s_process_flow_packet_common(
     // === FAST PATH for BPF tiers (Tier 2/3): NO forwarding needed! ===
     // Kernel SO_REUSEPORT + BPF already distributed packet to correct worker.
     // Simply create flow locally without any cross-worker logic.
+#if defined(__linux__) || defined(ANDROID)
     if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_EBPF ||
         a_server->lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
         
@@ -810,6 +811,7 @@ static void s_process_flow_packet_common(
         
         return;  // BPF tier processing complete
     }
+#endif // __linux__ || ANDROID
     
     // === SLOW PATH for Application-level LB (Tier 1): manual forwarding === 
     

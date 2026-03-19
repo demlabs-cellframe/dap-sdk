@@ -100,7 +100,7 @@ dap_io_flow_server_t* dap_io_flow_server_new_datagram(
         return NULL;
     }
     
-    log_it(L_INFO, "Created DATAGRAM flow server '%s'", a_name);
+    debug_if(s_debug_more, L_DEBUG, "Created DATAGRAM flow server '%s'", a_name);
     
     debug_if(s_debug_more, L_DEBUG, "dap_io_flow_server_new_datagram: success, returning %p", (void*)l_server);
     
@@ -412,8 +412,8 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
             } else if (a_remote_addr->ss_family == AF_INET6) {
                 l_src_port = ntohs(((struct sockaddr_in6*)a_remote_addr)->sin6_port);
             }
-            log_it(L_NOTICE, "DATAGRAM flow_create: port=%u worker=%u (expected=%u) fd=%d", 
-                   l_src_port, l_listener_worker->id, l_src_port % 10, l_send_fd);
+            debug_if(s_debug_more, L_DEBUG, "DATAGRAM flow_create: port=%u worker=%u (expected=%u) fd=%d",
+                     l_src_port, l_listener_worker->id, l_src_port % 10, l_send_fd);
         } else {
             // Fallback if listener has no worker (shouldn't happen)
             dap_worker_t *l_auto_worker = dap_worker_add_events_socket_auto(l_datagram_flow->send_es);

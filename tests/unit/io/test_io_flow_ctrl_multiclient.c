@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <stdatomic.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -126,12 +127,12 @@ static void s_print_stats(void) {
     printf("\n╔══════════════════════════════════════════╗\n");
     printf("║        PACKET TRACKING STATISTICS        ║\n");
     printf("╠══════════════════════════════════════════╣\n");
-    printf("║ Packets sent:         %10lu        ║\n", atomic_load(&s_packets_sent));
-    printf("║ Packets received:     %10lu        ║\n", atomic_load(&s_packets_received));
-    printf("║ Wrong worker:         %10lu        ║\n", atomic_load(&s_packets_wrong_worker));
-    printf("║ No session:           %10lu        ║\n", atomic_load(&s_packets_no_session));
-    printf("║ ACKs sent:            %10lu        ║\n", atomic_load(&s_acks_sent));
-    printf("║ ACKs received:        %10lu        ║\n", atomic_load(&s_acks_received));
+    printf("║ Packets sent:         %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_packets_sent));
+    printf("║ Packets received:     %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_packets_received));
+    printf("║ Wrong worker:         %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_packets_wrong_worker));
+    printf("║ No session:           %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_packets_no_session));
+    printf("║ ACKs sent:            %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_acks_sent));
+    printf("║ ACKs received:        %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_acks_received));
     printf("╚══════════════════════════════════════════╝\n\n");
 }
 

@@ -625,7 +625,7 @@ static bool s_wait_for_test_complete(uint32_t timeout_sec)
 {
     time_t start = time(NULL);
     
-    while ((time(NULL) - start) < timeout_sec) {
+    while ((time(NULL) - start) < (time_t)timeout_sec) {
         if (atomic_load(&s_ctx.test_complete)) return true;
         usleep(POLL_INTERVAL_US * 10);  // 50ms
     }
