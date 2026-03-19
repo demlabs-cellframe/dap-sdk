@@ -32,6 +32,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef DAP_OS_WINDOWS
+#include <direct.h>
+#include <io.h>
+#endif
 #include <time.h>
 
 #define LOG_TAG "dap_test_helpers"
@@ -112,12 +116,31 @@ char* dap_test_random_string(size_t a_length) {
 
 static int s_create_test_env(void)
 {
+#ifdef DAP_OS_WINDOWS
+    char l_tmp[MAX_PATH];
+    if (!GetTempPathA(sizeof(l_tmp), l_tmp)) {
+        log_it(L_ERROR, "GetTempPathA failed");
+        return -1;
+    }
+    char l_template[MAX_PATH];
+    snprintf(l_template, sizeof(l_template), "%sdap_test_XXXXXX", l_tmp);
+    if (_mktemp_s(l_template, strlen(l_template) + 1) != 0) {
+        log_it(L_ERROR, "_mktemp_s failed: %s", strerror(errno));
+        return -1;
+    }
+    if (_mkdir(l_template) != 0) {
+        log_it(L_ERROR, "_mkdir failed: %s", strerror(errno));
+        return -1;
+    }
+    char *l_root = l_template;
+#else
     char l_template[] = "/tmp/dap_test_XXXXXX";
     char *l_root = mkdtemp(l_template);
     if (!l_root) {
         log_it(L_ERROR, "mkdtemp failed: %s", strerror(errno));
         return -1;
     }
+#endif
     s_test_root = dap_strdup(l_root);
 
     char *l_config_dir = dap_strdup_printf("%s/config", s_test_root);
