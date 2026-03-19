@@ -31,75 +31,102 @@ macro(register_object_library TARGET_NAME)
     endif()
 endmacro()
 
-# Function to propagate includes recursively with cycle detection
-# Uses global property for cycle detection (much faster than CACHE)
-function(propagate_includes_recursive TARGET_NAME VISITED_SET_ID)
-    set(PROPERTY_KEY "_DAP_POST_VISITED_${VISITED_SET_ID}_${TARGET_NAME}")
-    get_property(IS_VISITED_VALUE GLOBAL PROPERTY ${PROPERTY_KEY})
-    if(IS_VISITED_VALUE STREQUAL "VISITED")
+# Compute transitive include closure for TARGET_NAME's dependencies.
+# Memoizes results for acyclic nodes. Nodes involved in dependency cycles are
+# marked _NOCACHE_ and re-resolved on each access — this lets them read
+# INCLUDE_DIRECTORIES that were enriched by earlier post-processing iterations,
+# replicating the accumulation effect of per-library visited sets while keeping
+# O(1) lookups for the majority of (acyclic) nodes.
+function(_dap_collect_transitive_includes TARGET_NAME OUT_VAR)
+    get_property(_memo GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}")
+    get_property(_has  GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" SET)
+
+    if(_has AND NOT _memo STREQUAL "_WIP_" AND NOT _memo STREQUAL "_NOCACHE_")
+        set(${OUT_VAR} "${_memo}" PARENT_SCOPE)
         return()
     endif()
-    set_property(GLOBAL PROPERTY ${PROPERTY_KEY} "VISITED")
 
-    get_target_property(TGT_TYPE_PP ${TARGET_NAME} TYPE)
-    if(TGT_TYPE_PP STREQUAL "INTERFACE_LIBRARY")
+    if(_memo STREQUAL "_WIP_")
+        set(${OUT_VAR} "" PARENT_SCOPE)
+        set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" TRUE)
         return()
     endif()
 
-    set(COLLECTED_INTERFACE_INCLUDES "")
-    set(COLLECTED_INCLUDES "")
+    set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "_WIP_")
 
-    get_target_property(DEPS ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
-    if(DEPS)
-        foreach(DEP ${DEPS})
-            if(TARGET ${DEP})
-                propagate_includes_recursive(${DEP} ${VISITED_SET_ID})
+    get_target_property(_type ${TARGET_NAME} TYPE)
+    if(_type STREQUAL "INTERFACE_LIBRARY")
+        set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "")
+        set(${OUT_VAR} "" PARENT_SCOPE)
+        return()
+    endif()
 
-                get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
-                get_target_property(DEP_INCLUDES ${DEP} INCLUDE_DIRECTORIES)
+    set(_all "")
+    set(_in_cycle FALSE)
 
-                if(DEP_INTERFACE_INCLUDES AND NOT DEP_INTERFACE_INCLUDES MATCHES "-NOTFOUND$")
-                    list(APPEND COLLECTED_INTERFACE_INCLUDES ${DEP_INTERFACE_INCLUDES})
+    get_target_property(_deps ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
+    if(_deps)
+        foreach(_dep ${_deps})
+            if(TARGET ${_dep})
+                get_target_property(_dep_iface ${_dep} INTERFACE_INCLUDE_DIRECTORIES)
+                if(_dep_iface AND NOT _dep_iface MATCHES "-NOTFOUND$")
+                    list(APPEND _all ${_dep_iface})
                 endif()
-                if(DEP_INCLUDES AND NOT DEP_INCLUDES MATCHES "-NOTFOUND$")
-                    list(APPEND COLLECTED_INCLUDES ${DEP_INCLUDES})
+
+                get_target_property(_dep_inc ${_dep} INCLUDE_DIRECTORIES)
+                if(_dep_inc AND NOT _dep_inc MATCHES "-NOTFOUND$")
+                    list(APPEND _all ${_dep_inc})
+                endif()
+
+                set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" FALSE)
+                _dap_collect_transitive_includes(${_dep} _trans)
+                get_property(_dep_cycle GLOBAL PROPERTY "_DAP_PP_IN_CYCLE")
+                if(_dep_cycle)
+                    set(_in_cycle TRUE)
+                endif()
+
+                if(_trans)
+                    list(APPEND _all ${_trans})
                 endif()
             endif()
         endforeach()
     endif()
 
-    if(COLLECTED_INTERFACE_INCLUDES)
-        list(REMOVE_DUPLICATES COLLECTED_INTERFACE_INCLUDES)
-        target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INTERFACE_INCLUDES})
+    if(_all)
+        list(REMOVE_DUPLICATES _all)
     endif()
-    if(COLLECTED_INCLUDES)
-        list(REMOVE_DUPLICATES COLLECTED_INCLUDES)
-        target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INCLUDES})
+
+    if(_in_cycle)
+        set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "_NOCACHE_")
+        set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" TRUE)
+    else()
+        set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "${_all}")
     endif()
+
+    set(${OUT_VAR} "${_all}" PARENT_SCOPE)
 endfunction()
 
-# Function to post-process all OBJECT libraries
 function(post_process_object_libraries)
     message(STATUS "[SDK] Post-processing OBJECT libraries to propagate include directories...")
-    
+
     list(LENGTH DAP_SDK_OBJECT_LIBRARIES TOTAL_LIBS)
     message(STATUS "[SDK] Processing ${TOTAL_LIBS} OBJECT libraries...")
-    
-    # Single shared visited set for the entire pass.  propagate_includes_recursive
-    # is depth-first: by the time we read a dependency's includes, it is already
-    # fully processed — so re-visiting it from another entry point is redundant.
-    # Sharing the ID turns O(N * tree_size) into O(N + edges).
-    set(VISITED_SET_ID "pp")
 
     set(PROCESSED_COUNT 0)
     foreach(OBJ_LIB ${DAP_SDK_OBJECT_LIBRARIES})
         if(TARGET ${OBJ_LIB})
-            propagate_includes_recursive(${OBJ_LIB} ${VISITED_SET_ID})
-            
+            get_property(_done GLOBAL PROPERTY "_DAP_PP_DONE_${OBJ_LIB}")
+            if(NOT _done)
+                _dap_collect_transitive_includes(${OBJ_LIB} _includes)
+                if(_includes)
+                    target_include_directories(${OBJ_LIB} PRIVATE ${_includes})
+                endif()
+                set_property(GLOBAL PROPERTY "_DAP_PP_DONE_${OBJ_LIB}" TRUE)
+            endif()
             math(EXPR PROCESSED_COUNT "${PROCESSED_COUNT} + 1")
         endif()
     endforeach()
-    
+
     message(STATUS "[SDK] Post-processing complete: ${PROCESSED_COUNT}/${TOTAL_LIBS} OBJECT libraries")
 endfunction()
 
