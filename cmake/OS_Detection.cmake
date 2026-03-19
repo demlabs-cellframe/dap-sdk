@@ -315,8 +315,6 @@ if(WIN32)
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT} ")
     set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${_LOPT}")
-
-    include_directories(../../dap-sdk/3rdparty/json-c)
 endif()
 
 # Platform
