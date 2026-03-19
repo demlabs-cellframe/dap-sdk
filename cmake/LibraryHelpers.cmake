@@ -1036,7 +1036,6 @@ endfunction()
 #            LIBRARY_NAME "dap-sdk"
 #            HEADER_DIRECTORIES "core/include" "crypto/include" ...
 #            PKGCONFIG_TEMPLATE "dap-sdk.pc.in"
-#            [INSTALL_3RDPARTY_HEADERS "3rdparty/uthash/src"]
 #        )
 function(install_sdk_library)
     cmake_parse_arguments(

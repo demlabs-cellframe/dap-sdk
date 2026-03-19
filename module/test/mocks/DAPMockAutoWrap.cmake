@@ -109,10 +109,14 @@ function(dap_mock_autowrap TARGET_NAME)
     set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
         message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
+        # Replace CMake list separator (;) with space in env var value —
+        # otherwise execute_process splits it into separate COMMAND arguments,
+        # treating the second source path as a program to execute.
+        string(REPLACE ";" " " _DAP_MOCK_SRC_FILES "${ALL_SOURCES}")
         set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env 
             "DAP_TPL_DIR=${DAP_TPL_DIR}" 
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
-            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES}"
+            "DAP_MOCK_SOURCE_FILES=${_DAP_MOCK_SRC_FILES}"
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     endif()
     
@@ -133,7 +137,7 @@ function(dap_mock_autowrap TARGET_NAME)
         set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env 
             "DAP_TPL_DIR=${DAP_TPL_DIR}"
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
-            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES}"
+            "DAP_MOCK_SOURCE_FILES=${_DAP_MOCK_SRC_FILES}"
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     else()
         set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})

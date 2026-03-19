@@ -9,6 +9,10 @@ add_definitions("-D_GNU_SOURCE")
 file (GLOB CORE_HEADERS include/*.h)
 file (GLOB CORE_SRCS src/*.c src/etc/*.c)
 
+list(FILTER CORE_SRCS EXCLUDE REGEX "dap_json_rpc_errors\\.c$")
+list(FILTER CORE_HEADERS EXCLUDE REGEX "dap_json_rpc_errors\\.h$")
+list(FILTER CORE_HEADERS EXCLUDE REGEX "dap_json_rpc_errors\\.h$")
+
 if(UNIX)
     if(MACOS)
         # macOS: use darwin-specific implementations for cpu_monitor, process_memory, network_monitor

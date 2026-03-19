@@ -27,8 +27,21 @@
 #include "randombytes.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdlib.h>
+
+#if defined(DAP_OS_WASM) || defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+
+void randombytes(uint8_t *out, size_t outlen) {
+  EM_ASM({
+      var buf = new Uint8Array(Module.HEAPU8.buffer, $0, $1);
+      crypto.getRandomValues(buf);
+  }, out, (int)outlen);
+}
+
+#else
+
+#include <fcntl.h>
 #include <unistd.h>
 
 void randombytes(uint8_t *out, size_t outlen) {
@@ -54,3 +67,5 @@ void randombytes(uint8_t *out, size_t outlen) {
     outlen -= ret;
   }
 }
+
+#endif /* DAP_OS_WASM */

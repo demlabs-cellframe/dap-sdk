@@ -329,7 +329,23 @@ EOF_HEADER
     # This is the key fix for mawk buffer overflow (no sprintf limits)
     for count in "${local_param_counts[@]}"; do
         [ -z "$count" ] && continue
-        generate_single_map_macro "$count" >> "$macros_file"
+        if [ "$count" -eq 0 ]; then
+            echo "#define _DAP_MOCK_MAP_0(macro) \\"  >> "$macros_file"
+            echo "    "                               >> "$macros_file"
+        else
+            printf "#define _DAP_MOCK_MAP_%d(macro, ...) " "$count" >> "$macros_file"
+            printf "_DAP_MOCK_MAP_%d_IMPL(macro, __VA_ARGS__)\n" "$count" >> "$macros_file"
+            printf "#define _DAP_MOCK_MAP_%d_IMPL(macro" "$count" >> "$macros_file"
+            for ((i=1; i<=count; i++)); do
+                printf ", type%d, name%d" "$i" "$i" >> "$macros_file"
+            done
+            printf ") \\\\\n    " >> "$macros_file"
+            for ((i=1; i<=count; i++)); do
+                [ "$i" -gt 1 ] && printf ", " >> "$macros_file"
+                printf "macro(type%d, name%d)" "$i" "$i" >> "$macros_file"
+            done
+            echo "" >> "$macros_file"
+        fi
         echo "" >> "$macros_file"
     done
     

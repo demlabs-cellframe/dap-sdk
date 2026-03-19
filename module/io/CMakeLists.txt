@@ -6,27 +6,32 @@ set(CMAKE_C_STANDARD 11)
 
 add_definitions ("-D_GNU_SOURCE")
 
-file(GLOB DAP_IO_SOURCES *.c)
 file(GLOB DAP_IO_HEADERS include/*.h)
-if(WIN32)
+
+file(GLOB DAP_IO_SOURCES *.c)
+list(FILTER DAP_IO_SOURCES EXCLUDE REGEX ".*_wasm\\.c$")
+
+if(DAP_WASM)
+    # WASM compiles the same native .c files with #ifdef DAP_OS_WASM
+    # for platform-specific syscalls (emscripten timers, no threading, etc.)
+elseif(WIN32)
     # wepoll removed - using native IOCP (DAP_EVENTS_CAPS_IOCP) since 2026
-    # See dap_events_socket.h line 86: #define DAP_EVENTS_CAPS_IOCP
 elseif(LINUX OR ANDROID)
     file(GLOB DAP_IO_LINUX_SRCS linux/*.c)
     file(GLOB DAP_IO_LINUX_HEADERS linux/*.h)
-    set (DAP_IO_HEADERS ${DAP_IO_HEADERS} ${DAP_IO_LINUX_HEADERS})
+    set(DAP_IO_HEADERS ${DAP_IO_HEADERS} ${DAP_IO_LINUX_HEADERS})
 endif()
 
 # Use universal DAP library macro  
 dap_add_library(${PROJECT_NAME} ${DAP_IO_SOURCES} ${DAP_IO_LINUX_SRCS} HEADERS ${DAP_IO_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_net_common)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_hash_table dap_math dap_net_common)
 if(DAPSDK_MODULES MATCHES "ssl-support")
 endif()
 
 if(UNIX)
   if(NOT ANDROID)
-      target_link_libraries(${PROJECT_NAME} pthread)
+      target_link_libraries(${PROJECT_NAME} INTERFACE pthread)
   endif()
 endif()
 

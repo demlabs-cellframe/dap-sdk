@@ -29,6 +29,8 @@ extern "C" {
 
 #if defined(_WIN32)        // Microsoft Windows OS
     #define OS_TARGET OS_WIN
+#elif defined(__EMSCRIPTEN__)   // WebAssembly (Emscripten)
+    #define OS_TARGET OS_LINUX
 #elif defined(__linux__)        // Linux OS
     #define OS_TARGET OS_LINUX
 #elif defined(__APPLE__)         // MACOS

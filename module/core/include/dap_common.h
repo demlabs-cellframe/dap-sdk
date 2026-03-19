@@ -253,7 +253,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     intmax_t _s = (intmax_t)(s); \
     void *volatile _vp = (void*)(p); /* volatile предотвращает -Werror=address для стековых переменных */ \
     __typeof__(p) _p = (_vp && _s >= DAP_TYPE_SIZE(p)) ? DAP_CAST(__typeof__(p), calloc(1, _s)) : NULL; \
-    _p ? DAP_CAST(__typeof__(p), memcpy(_p, _vp, _s)) : NULL; \
+    _p ? DAP_CAST(__typeof__(p), memcpy((void*)_p, _vp, _s)) : NULL; \
 })
 #define DAP_DUP(p)            ({ \
     void *volatile _vp = (void*)(p); /* volatile предотвращает -Werror=address для стековых переменных */ \
@@ -1204,7 +1204,7 @@ int exec_silent(const char *a_cmd);
 #endif
 
 // Node address types and functions moved to module/net/common/include/dap_net_common.h
-// Use #include "dap_net_common.h" if you need dap_stream_node_addr_t and related functions
+// Use #include "dap_net_common.h" if you need dap_cluster_node_addr_t and related functions
 
 // dap_common_enable_cleaner_log moved to module/daemon/dap_daemon.h as dap_daemon_enable_log_cleaner
 

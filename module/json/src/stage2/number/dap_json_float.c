@@ -132,8 +132,8 @@ static inline uint64_t s_get_low64(uint128_t a) {
  * @return true if successful (exact result), false if need fallback
  */
 static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_value) {
-    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire input: mantissa=%lu, exponent=%d", a_mantissa, a_exponent);
-    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: a_mantissa=%lu (0x%016lx), a_exponent=%d", a_mantissa, a_mantissa, a_exponent);
+    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire input: mantissa=%" DAP_UINT64_FORMAT_U ", exponent=%d", a_mantissa, a_exponent);
+    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: a_mantissa=%" DAP_UINT64_FORMAT_U " (0x%016" DAP_UINT64_FORMAT_x "), a_exponent=%d", a_mantissa, a_mantissa, a_exponent);
     
     // Count leading zeros in INPUT mantissa
     int l_mantissa_lz = s_clz64(a_mantissa);
@@ -150,7 +150,7 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     // Normalize mantissa to use full 64 bits [2^63, 2^64)
     // This is CRITICAL for Eisel-Lemire algorithm correctness
     uint64_t l_normalized_mantissa = a_mantissa << l_mantissa_lz;
-    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: normalized mantissa=0x%016lx (shifted left %d)", 
+    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire: normalized mantissa=0x%016" DAP_UINT64_FORMAT_x " (shifted left %d)", 
            l_normalized_mantissa, l_mantissa_lz);
     
     // Eisel-Lemire works for exponents in extended range
@@ -183,7 +183,7 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     uint64_t l_pow5_high = s_power5_table->table[l_idx][0];
     uint64_t l_pow5_low = s_power5_table->table[l_idx][1];
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire: idx=%d, pow5_high=%016lx, pow5_low=%016lx", 
+    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire: idx=%d, pow5_high=%016" DAP_UINT64_FORMAT_x ", pow5_low=%016" DAP_UINT64_FORMAT_x "", 
              l_idx, l_pow5_high, l_pow5_low);
     
     // Multiply NORMALIZED mantissa * power_of_5 (as is from table) using dap_math_ops.h
@@ -217,7 +217,7 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     uint64_t l_prod_high = s_get_high64(l_product);
     uint64_t l_prod_low = s_get_low64(l_product);
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "Product: high=%016lx, low=%016lx", l_prod_high, l_prod_low);
+    debug_if(dap_json_get_debug(), L_DEBUG, "Product: high=%016" DAP_UINT64_FORMAT_x ", low=%016" DAP_UINT64_FORMAT_x "", l_prod_high, l_prod_low);
     
     // Compute IEEE 754 exponent
     // Formula: exponent_10 * log2(10) ≈ exponent_10 * 3.32192809...
@@ -298,19 +298,19 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
             l_norm_low = 0;
         }
         
-        debug_if(dap_json_get_debug(), L_DEBUG, "Normalized: high=%016lx, low=%016lx", l_norm_high, l_norm_low);
+        debug_if(dap_json_get_debug(), L_DEBUG, "Normalized: high=%016" DAP_UINT64_FORMAT_x ", low=%016" DAP_UINT64_FORMAT_x "", l_norm_high, l_norm_low);
         
         // Now take bits [62:11] from normalized high (52 bits for mantissa)
         l_mantissa_bits = l_norm_high >> 11;
     }
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "Extracted mantissa_bits=%016lx (before removing implicit 1), bit52=%d", 
+    debug_if(dap_json_get_debug(), L_DEBUG, "Extracted mantissa_bits=%016" DAP_UINT64_FORMAT_x " (before removing implicit 1), bit52=%d", 
              l_mantissa_bits, (int)((l_mantissa_bits >> 52) & 1));
     
     // TEMP DEBUG: expected for 3.14 is 0x40091EB851EB851F
     // exp=1024, mantissa WITH implicit 1 (before mask) = 0x191EB851EB851F (53 bits)
     if (dap_json_get_debug() && l_binary_exp == 1024) {
-        debug_if(true, L_DEBUG, "For comparison: 3.14 should have mantissa_with_implicit1=0x191EB851EB851F, we have=%013lx", 
+        debug_if(true, L_DEBUG, "For comparison: 3.14 should have mantissa_with_implicit1=0x191EB851EB851F, we have=%013" DAP_UINT64_FORMAT_x "", 
                  l_mantissa_bits);
     }
     
@@ -321,12 +321,12 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     // Format: [sign:1][exp:11][mantissa:52]
     uint64_t l_bits = ((uint64_t)l_binary_exp << 52) | l_mantissa_bits;
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "Final: mantissa_bits=%013lx, bits=%016lx", 
+    debug_if(dap_json_get_debug(), L_DEBUG, "Final: mantissa_bits=%013" DAP_UINT64_FORMAT_x ", bits=%016" DAP_UINT64_FORMAT_x "", 
              l_mantissa_bits, l_bits);
     
     memcpy(a_out_value, &l_bits, sizeof(double));
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire SUCCESS: binary_exp=%d, mantissa_bits=%016lx, result=%f", 
+    debug_if(dap_json_get_debug(), L_DEBUG, "s_eisel_lemire SUCCESS: binary_exp=%d, mantissa_bits=%016" DAP_UINT64_FORMAT_x ", result=%f", 
            l_binary_exp, l_mantissa_bits, *a_out_value);
     
     return true;
@@ -409,7 +409,7 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
         l_pos++;
     }
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: after integer part: mantissa=%lu, digits=%d, significant_digits=%d", 
+    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: after integer part: mantissa=%" DAP_UINT64_FORMAT_U ", digits=%d, significant_digits=%d", 
            l_mantissa, l_digit_count, l_significant_digits);
     
     // Parse decimal part
@@ -431,7 +431,7 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
         }
         
         l_exponent -= l_decimal_digits;
-        debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: after decimal: mantissa=%lu, decimal_digits=%d, total_digits=%d, exp=%d", 
+        debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: after decimal: mantissa=%" DAP_UINT64_FORMAT_U ", decimal_digits=%d, total_digits=%d, exp=%d", 
                l_mantissa, l_decimal_digits, l_digit_count, l_exponent);
     }
     
@@ -471,10 +471,10 @@ bool dap_json_float_parse(const char *a_str, size_t a_len, double *a_out_value) 
         return false;
     }
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: before Eisel-Lemire: mantissa=%lu, exponent=%d, digit_count=%d", 
+    debug_if(dap_json_get_debug(), L_DEBUG, "dap_json_float_parse: before Eisel-Lemire: mantissa=%" DAP_UINT64_FORMAT_U ", exponent=%d, digit_count=%d", 
            l_mantissa, l_exponent, l_digit_count);
     
-    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire input: mantissa=%lu, exponent=%d", l_mantissa, l_exponent);
+    debug_if(dap_json_get_debug(), L_DEBUG, "Eisel-Lemire input: mantissa=%" DAP_UINT64_FORMAT_U ", exponent=%d", l_mantissa, l_exponent);
     
     // Phase 2: Apply Eisel-Lemire algorithm
     double l_result;
