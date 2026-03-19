@@ -12,7 +12,7 @@ dap_link_libraries(${PROJECT_NAME} INTERFACE
     dap_core dap_io dap_io_flow dap_crypto dap_hash_table dap_json
     dap_session dap_net_common dap_net_trans
     dap_trans_websocket dap_trans_http
-    dap_http_server dap_enc_server dap_client dap_global_db
+    dap_http_server dap_enc_server dap_global_db
     dap_trans_udp)
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
