@@ -22,9 +22,9 @@
 */
 
 #include <string.h>
-#include <arpa/inet.h>
 
 #include "dap_common.h"
+#include "dap_events_socket.h"
 #include "dap_strfuncs.h"
 #include "dap_stream_obfuscation_mimicry.h"
 #include "rand/dap_rand.h"

@@ -22,8 +22,6 @@
  */
 
 #include <string.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <stdio.h>
 #include <errno.h>
 #include "dap_common.h"

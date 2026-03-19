@@ -2865,7 +2865,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
     l_es->callbacks.arg = l_ctx;
-    log_it(L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%" DAP_FORMAT_SOCKET "), stream=%p, trans_ctx=%p", 
+    debug_if(s_debug_more, L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%" DAP_FORMAT_SOCKET "), stream=%p, trans_ctx=%p", 
            l_es, l_es->socket, l_stream, l_ctx);
     
     // Create UDP per-stream context and store client_ctx

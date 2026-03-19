@@ -191,7 +191,7 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( a_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
                                                                 l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ) };
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
-    return dap_events_socket_write_mt(a_w, a_es_uuid, s_pkt_buf, l_full_size);
+    return dap_events_socket_write(a_w, a_es_uuid, s_pkt_buf, l_full_size);
 #else
     dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
     l_msg->esocket_uuid = a_es_uuid;

@@ -9,9 +9,9 @@
 
 #include <string.h>
 #include <errno.h>
+#ifndef DAP_OS_WINDOWS
 #include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
+#endif
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_worker.h"
