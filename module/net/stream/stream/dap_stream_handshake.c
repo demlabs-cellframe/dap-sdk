@@ -30,9 +30,9 @@
  */
 
 #include <string.h>
-#include <arpa/inet.h>  // for htons/ntohs (network byte order)
 #include "dap_stream_handshake.h"
 #include "dap_common.h"
+#include "dap_events_socket.h"
 #include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_stream_handshake"

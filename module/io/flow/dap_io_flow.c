@@ -22,9 +22,6 @@
  */
 
 #include <string.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"

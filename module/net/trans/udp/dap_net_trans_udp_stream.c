@@ -871,14 +871,14 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     }
 
     debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
-             a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
+             a_es, a_es->fd, (size_t)a_es->buf_in_size, a_es->callbacks.arg);
 
     // Get trans_ctx from callbacks.arg (NOT _inheritor!)
     // _inheritor may point to client (dap_client_t), not trans_ctx!
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->callbacks.arg;
 
     if (!l_trans_ctx) {
-        log_it(L_WARNING, "UDP client esocket has no trans_ctx (callbacks.arg is NULL), dropping %zu bytes", a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client esocket has no trans_ctx (callbacks.arg is NULL), dropping %zu bytes", (size_t)a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -886,7 +886,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     // CRITICAL: Validate stream pointer - may be NULL during cleanup!
     if (!l_trans_ctx->stream) {
         log_it(L_WARNING, "UDP client trans_ctx %p has no stream (stream is NULL), dropping %zu bytes", 
-               l_trans_ctx, a_es->buf_in_size);
+               l_trans_ctx, (size_t)a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -898,7 +898,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     
     // Validate stream pointer first
     if (!l_stream) {
-        log_it(L_WARNING, "UDP client stream pointer is NULL (stream closed?), dropping %zu bytes", a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client stream pointer is NULL (stream closed?), dropping %zu bytes", (size_t)a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -906,7 +906,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     // Validate stream->trans before accessing it
     // Check if stream has been deleted (trans would be NULL or invalid)
     if (!l_stream->trans) {
-        log_it(L_WARNING, "UDP client stream has NULL trans (use-after-free?), dropping %zu bytes", a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client stream has NULL trans (use-after-free?), dropping %zu bytes", (size_t)a_es->buf_in_size);
         // Clear the dangling pointer to prevent future issues
         l_trans_ctx->stream = NULL;
         a_es->buf_in_size = 0;
@@ -915,7 +915,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     
     // Validate trans operations
     if (!l_stream->trans->ops || !l_stream->trans->ops->read) {
-        log_it(L_ERROR, "UDP client stream has invalid trans, dropping %zu bytes", a_es->buf_in_size);
+        log_it(L_ERROR, "UDP client stream has invalid trans, dropping %zu bytes", (size_t)a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -930,13 +930,13 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         size_t l_buf_in_size_before = a_es->buf_in_size;
         
         debug_if(s_debug_more, L_DEBUG, "Processing UDP packet from buf_in, buf_in_size=%zu (iteration %d)", 
-                 a_es->buf_in_size, l_iterations);
+                 (size_t)a_es->buf_in_size, l_iterations);
         
         // Process one packet from buffer (s_udp_read will shrink buf_in)
         ssize_t l_result = s_udp_read(l_stream, NULL, 0);
         
         debug_if(s_debug_more, L_DEBUG, "CLIENT: s_udp_read returned %zd, buf_in_size now=%zu", 
-                 l_result, a_es->buf_in_size);
+                 l_result, (size_t)a_es->buf_in_size);
         
         // If buf_in_size didn't change, break to prevent infinite loop
         if (a_es->buf_in_size == l_buf_in_size_before) {
@@ -948,7 +948,7 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     }
     
     if (l_iterations >= l_max_iterations) {
-        log_it(L_WARNING, "UDP client read callback: max iterations reached, %zu bytes remaining", a_es->buf_in_size);
+        log_it(L_WARNING, "UDP client read callback: max iterations reached, %zu bytes remaining", (size_t)a_es->buf_in_size);
     }
 }
 
@@ -2049,7 +2049,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     }
 
     debug_if(s_debug_more, L_DEBUG, "s_udp_read: ctx=%p, es=%p, buf_in=%p, buf_in_size=%zu", 
-             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0);
+             l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? (size_t)l_es->buf_in_size : (size_t)0);
 
     // NEW PROTOCOL: Two modes (CLIENT uses l_es->buf_in, SERVER uses a_buffer)
     if (!l_es) {
@@ -2080,7 +2080,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return 0;  // No data available
     }
     
-    debug_if(s_debug_more, L_DEBUG, "UDP CLIENT: buf_in_size=%zu", l_es->buf_in_size);
+    debug_if(s_debug_more, L_DEBUG, "UDP CLIENT: buf_in_size=%zu", (size_t)l_es->buf_in_size);
     
     // Get UDP context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(a_stream);
@@ -2141,7 +2141,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     
     log_it(L_DEBUG, "CLIENT: udp_ctx=%p, flow_ctrl=%p, fc_creating=%d, buf_in_size=%zu", 
            l_udp_ctx, l_udp_ctx ? l_udp_ctx->flow_ctrl : NULL, l_udp_ctx ? l_udp_ctx->fc_creating : 0,
-           l_es->buf_in_size);
+           (size_t)l_es->buf_in_size);
     
     // BUFFER PATH: FC is being created (after SESSION_CREATE, before SESSION_START complete)
     if (l_udp_ctx->fc_creating || !l_udp_ctx->flow_ctrl) {
@@ -2292,7 +2292,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         } else {
             // DATA or other packet - buffer for FC processing
             debug_if(s_debug_more, L_DEBUG,
-                     "CLIENT: Buffering packet type=%u (%zu bytes) for FC", l_type, l_es->buf_in_size);
+                     "CLIENT: Buffering packet type=%u (%zu bytes) for FC", l_type, (size_t)l_es->buf_in_size);
             
             DAP_DELETE(l_decrypted);  // Don't need decrypted version - FC will decrypt again
             
@@ -2343,7 +2343,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     } else {
         // FLOW CONTROL PATH: FC is ready - pass packet directly
         debug_if(s_debug_more, L_DEBUG,
-                 "CLIENT: Passing packet to FC (%p), size=%zu", l_udp_ctx->flow_ctrl, l_es->buf_in_size);
+                 "CLIENT: Passing packet to FC (%p), size=%zu", l_udp_ctx->flow_ctrl, (size_t)l_es->buf_in_size);
         
         int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, l_es->buf_in, l_es->buf_in_size);
         
@@ -2809,13 +2809,13 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // Set LARGE socket buffers (64 MB) to prevent packet loss under high load with many clients
     int l_buffer_size = 64 * 1024 * 1024;  // 64 MB
-    if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+    if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
         log_it(L_INFO, "Set SO_RCVBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
     }
     
-    if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+    if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
         log_it(L_INFO, "Set SO_SNDBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
@@ -2825,7 +2825,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     struct sockaddr_in l_local_addr;
     socklen_t l_local_addr_len = sizeof(l_local_addr);
     if (getsockname(l_es->socket, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
-        log_it(L_INFO, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
+        log_it(L_INFO, "UDP socket fd=%" DAP_FORMAT_SOCKET " bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
     }
     
     // CRITICAL: Add socket to worker AFTER bind() so reactor monitors properly configured socket!
@@ -2865,7 +2865,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
     l_es->callbacks.arg = l_ctx;
-    log_it(L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%d), stream=%p, trans_ctx=%p", 
+    log_it(L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%" DAP_FORMAT_SOCKET "), stream=%p, trans_ctx=%p", 
            l_es, l_es->socket, l_stream, l_ctx);
     
     // Create UDP per-stream context and store client_ctx
@@ -2892,7 +2892,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        log_it(L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
+        debug_if(s_debug_more  L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
                l_addr_str, ntohs(l_sin->sin_port));
     }
     
@@ -2913,12 +2913,12 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // _inheritor is for client infrastructure ownership, we use callbacks.arg for trans_ctx
     l_es->callbacks.arg = l_ctx;
     
-    log_it(L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
+    debug_if(s_debug_more,L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    debug_if(s_debug_more,L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 
@@ -3059,7 +3059,7 @@ dap_stream_t *dap_net_trans_udp_stream_new(dap_events_socket_t *a_esocket)
 
     a_esocket->_inheritor = l_stm->trans_ctx;
     dap_stream_add_to_list(l_stm);
-    log_it(L_NOTICE, "New stream instance udp");
+    debug_if(s_debug_more, L_INFO, "New stream instance udp");
     return l_stm;
 }
 
@@ -3094,9 +3094,9 @@ static void s_udp_check_session(unsigned int a_id, dap_events_socket_t *a_esocke
     l_stream->session = l_session;
 
     if (l_session->create_empty)
-        log_it(L_INFO, "Session created empty");
+    debug_if(s_debug_more,L_INFO, "Session created empty");
 
-    log_it(L_INFO, "Opened stream session technical and data channels");
+    debug_if(s_debug_more,L_INFO, "Opened stream session technical and data channels");
 
     for (size_t i = 0; i < sizeof(l_session->active_channels); i++)
         if (l_session->active_channels[i])

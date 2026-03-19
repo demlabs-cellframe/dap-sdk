@@ -24,6 +24,8 @@
 
 #ifndef DAP_OS_WINDOWS
 #include "unistd.h"
+#include <sys/socket.h>
+#include <arpa/inet.h>
 typedef int SOCKET;
 #define closesocket close
 #define INVALID_SOCKET  -1  // for win32 =  (SOCKET)(~0)
