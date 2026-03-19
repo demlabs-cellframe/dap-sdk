@@ -60,7 +60,6 @@
 #include "dap_io_flow_datagram.h"
 #include "dap_stream_worker.h"
 #include "dap_client_pvt.h"
-#include "dap_link_manager.h"
 
 #define LOG_TAG "dap_stream"
 

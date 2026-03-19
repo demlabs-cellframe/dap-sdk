@@ -12,7 +12,7 @@ file(GLOB dap_global_db_SRC
 )
 file(GLOB dap_global_db_HDR include/*.h)
 
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_json dap_net_common dap_enc_server dap_json_rpc dap_stream dap_stream_ch dap_link_manager dap_cluster)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_json dap_net_common dap_enc_server dap_json_rpc dap_stream dap_link_manager dap_cluster)
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${dap_global_db_SRC} HEADERS ${dap_global_db_HDR})
