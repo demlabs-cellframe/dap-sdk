@@ -9,5 +9,13 @@
 #pragma once
 
 #include <stddef.h>
+#include "dap_common.h"
 
 void *dap_memwipe(void *src, size_t n);
+
+#define DAP_WIPE_AND_FREE(ptr, size) do { \
+    if (ptr) {                             \
+        dap_memwipe((ptr), (size));        \
+        DAP_DEL_Z(ptr);                    \
+    }                                      \
+} while (0)

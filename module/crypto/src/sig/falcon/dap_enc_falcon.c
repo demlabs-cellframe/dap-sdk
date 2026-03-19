@@ -1,4 +1,5 @@
 #include "dap_enc_falcon.h"
+#include "dap_memwipe.h"
 #include "falcon.h"
 
 #define LOG_TAG "dap_enc_sig_falcon"
@@ -406,7 +407,7 @@ void falcon_private_key_delete(void* a_skey) {
     dap_return_if_pass(!a_skey);
 
     falcon_private_key_t *l_skey = a_skey;
-    memset(l_skey->data, 0, FALCON_PRIVKEY_SIZE(l_skey->degree));
+    dap_memwipe(l_skey->data, FALCON_PRIVKEY_SIZE(l_skey->degree));
     l_skey->degree = 0;
     l_skey->type = 0;
     l_skey->kind = 0;

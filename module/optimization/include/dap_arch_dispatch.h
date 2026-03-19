@@ -145,6 +145,17 @@ extern "C" {
     (void)l_best_arch
 
 /**
+ * Same as DAP_DISPATCH_ARCH_SELECT but considers per-algorithm-class
+ * CPU tuning rules (e.g. cap NTT at AVX2 on AMD Zen4 where AVX-512
+ * causes frequency throttling).
+ *
+ * Usage: DAP_DISPATCH_ARCH_SELECT_FOR(DAP_ALGO_CLASS_NTT);
+ */
+#define DAP_DISPATCH_ARCH_SELECT_FOR(algo_class)                         \
+    dap_cpu_arch_t l_best_arch = dap_cpu_arch_get_best_for(algo_class);  \
+    (void)l_best_arch
+
+/**
  * Conditionally upgrade dispatch pointer for an x86 arch level.
  * Call from lowest to highest: AVX2 first, then AVX512.
  * Higher levels overwrite lower (last match wins).

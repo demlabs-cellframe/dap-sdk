@@ -37,7 +37,16 @@ extern "C" {
 #endif
 
 /**
- * @brief CPU feature flags
+ * @brief CPU vendor identification
+ */
+typedef enum {
+    DAP_CPU_VENDOR_UNKNOWN = 0,
+    DAP_CPU_VENDOR_INTEL,
+    DAP_CPU_VENDOR_AMD,
+} dap_cpu_vendor_t;
+
+/**
+ * @brief CPU feature flags and identity
  */
 typedef struct dap_cpu_features {
     // x86/x64 features
@@ -55,6 +64,8 @@ typedef struct dap_cpu_features {
     bool has_popcnt;    /**< POPCNT */
     bool has_aes_ni;    /**< AES-NI (hardware AES acceleration) */
     bool has_sha_ni;    /**< SHA-NI (hardware SHA acceleration) */
+    bool has_pclmulqdq; /**< PCLMULQDQ (carry-less multiply for GCM/GHASH) */
+    bool has_avx512_ifma; /**< AVX-512 IFMA (52-bit integer FMA for bignum) */
     
     // ARM features
     bool has_neon;      /**< ARM NEON (baseline for ARM64) */
@@ -66,6 +77,12 @@ typedef struct dap_cpu_features {
     bool is_x86;        /**< x86/x64 architecture */
     bool is_arm;        /**< ARM architecture */
     bool is_64bit;      /**< 64-bit architecture */
+
+    // CPU identity (x86: from CPUID; ARM: from MIDR_EL1 / /proc/cpuinfo)
+    dap_cpu_vendor_t vendor;    /**< CPU vendor (Intel, AMD, ...) */
+    uint32_t x86_family;        /**< x86 extended family */
+    uint32_t x86_model;         /**< x86 extended model */
+    uint32_t x86_stepping;      /**< x86 stepping */
     
     // Cache info
     uint32_t cache_line_size;  /**< L1 cache line size in bytes */

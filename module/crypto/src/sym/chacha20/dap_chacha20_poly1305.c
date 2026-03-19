@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include "dap_chacha20_poly1305.h"
 #include "dap_chacha20_internal.h"
 #include "dap_cpu_arch.h"
@@ -101,7 +102,7 @@ typedef void (*chacha20_encrypt_fn)(uint8_t *, const uint8_t *, size_t,
         const uint8_t[32], const uint8_t[12], uint32_t);
 
 static chacha20_encrypt_fn s_chacha20_simd_fn = NULL;
-static int s_chacha20_dispatch_done = 0;
+static pthread_once_t s_chacha20_once = PTHREAD_ONCE_INIT;
 
 static void s_chacha20_dispatch_init(void)
 {
@@ -117,15 +118,13 @@ static void s_chacha20_dispatch_init(void)
     if (l_arch >= DAP_CPU_ARCH_NEON)
         s_chacha20_simd_fn = dap_chacha20_encrypt_neon;
 #endif
-    s_chacha20_dispatch_done = 1;
 }
 
 void dap_chacha20_encrypt(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
         const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE], uint32_t a_counter)
 {
-    if (__builtin_expect(!s_chacha20_dispatch_done, 0))
-        s_chacha20_dispatch_init();
+    pthread_once(&s_chacha20_once, s_chacha20_dispatch_init);
 
     if (s_chacha20_simd_fn && a_len >= 256) {
         s_chacha20_simd_fn(a_out, a_in, a_len, a_key, a_nonce, a_counter);

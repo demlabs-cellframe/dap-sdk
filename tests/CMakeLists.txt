@@ -22,6 +22,16 @@ include_directories(
 # Enable testing
 enable_testing()
 
+# Auto-detect CPU count for parallel test execution
+include(ProcessorCount)
+ProcessorCount(DAP_NPROC)
+if(NOT DAP_NPROC OR DAP_NPROC EQUAL 0)
+    set(DAP_NPROC 4)
+endif()
+
+# `make test` and `cmake --build . --target test` run CTest in parallel
+set(CMAKE_CTEST_ARGUMENTS "--output-on-failure" "--parallel" "${DAP_NPROC}" CACHE STRING "")
+
 message("[+] DAP SDK Test Infrastructure:")
 message("[+] - Unit tests: ${CMAKE_CURRENT_SOURCE_DIR}/unit")
 message("[+] - Integration tests: ${CMAKE_CURRENT_SOURCE_DIR}/integration") 
@@ -206,6 +216,19 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/pqc/CMakeLists.txt)
     message("[+] PQC algorithm unit tests configured")
 endif()
 
+# Crypto Known Answer Tests (RFC/NIST vectors)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/kat/CMakeLists.txt)
+    add_subdirectory(unit/crypto/kat)
+    message("[+] Crypto KAT tests configured")
+endif()
+
+# Fuzz targets (libFuzzer, Clang only)
+option(BUILD_FUZZING "Build libFuzzer fuzz targets (requires Clang)" OFF)
+if(BUILD_FUZZING AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/CMakeLists.txt)
+    add_subdirectory(fuzz)
+    message("[+] Fuzz targets configured")
+endif()
+
 # Math bignum unit tests (NTT, poly, multi-precision)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/math/bignum/CMakeLists.txt)
     add_subdirectory(unit/math/bignum)
@@ -278,50 +301,50 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/security/test_memory_safety.c)
     register_dap_test(test_security_memory "security;memory")
 endif()
 
-# Custom test targets for different categories
+# Custom test targets — all run in parallel by default (DAP_NPROC cores)
 add_custom_target(test_unit
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "unit"
-    COMMENT "Running unit tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC} -L "unit"
+    COMMENT "Running unit tests (${DAP_NPROC} parallel)"
 )
 
 add_custom_target(test_integration
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "integration"
-    COMMENT "Running integration tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC} -L "integration"
+    COMMENT "Running integration tests (${DAP_NPROC} parallel)"
 )
 
 add_custom_target(test_e2e
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "e2e"
-    COMMENT "Running E2E tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC} -L "e2e"
+    COMMENT "Running E2E tests (${DAP_NPROC} parallel)"
 )
 
 add_custom_target(test_performance
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "performance"
-    COMMENT "Running performance tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC} -L "performance"
+    COMMENT "Running performance tests (${DAP_NPROC} parallel)"
 )
 
 add_custom_target(test_functional
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "functional"
-    COMMENT "Running functional tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC} -L "functional"
+    COMMENT "Running functional tests (${DAP_NPROC} parallel)"
 )
 
 add_custom_target(test_regression
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "regression"
-    COMMENT "Running regression tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC} -L "regression"
+    COMMENT "Running regression tests (${DAP_NPROC} parallel)"
 )
 
 add_custom_target(test_security
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "security"
-    COMMENT "Running security tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC} -L "security"
+    COMMENT "Running security tests (${DAP_NPROC} parallel)"
 )
 
 add_custom_target(test_crypto
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L "crypto"
-    COMMENT "Running crypto-related tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC} -L "crypto"
+    COMMENT "Running crypto-related tests (${DAP_NPROC} parallel)"
 )
 
 add_custom_target(test_all
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    COMMENT "Running all tests"
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -j${DAP_NPROC}
+    COMMENT "Running all tests (${DAP_NPROC} parallel)"
 )
 
 # Test discovery for dynamic test addition
@@ -348,6 +371,7 @@ message("[+] - Integration test files found: ${INTEGRATION_COUNT}")
 message("[+] - Performance test files found: ${PERFORMANCE_COUNT}")
 message("[+] - Regression test files found: ${REGRESSION_COUNT}")
 
+message("[+] Parallel test execution: ${DAP_NPROC} jobs (auto-detected)")
 message("[+] Test targets available:")
 message("[+] - make test_unit        : Run only unit tests")
 message("[+] - make test_integration : Run only integration tests")
@@ -355,7 +379,8 @@ message("[+] - make test_performance : Run only performance tests")
 message("[+] - make test_regression  : Run only regression tests")
 message("[+] - make test_crypto      : Run all crypto-related tests")
 message("[+] - make test_all         : Run all tests")
-message("[+] - ctest                 : Run all tests with CTest")
-message("[+] - ctest -L unit         : Run tests with 'unit' label")
+message("[+] - make test             : Run all tests (CMake built-in)")
+message("[+] - ctest --preset default: Run with preset (parallel auto)")
+message("[+] All targets run tests in parallel by default")
 
 message("[+] DAP SDK Test configuration completed successfully")

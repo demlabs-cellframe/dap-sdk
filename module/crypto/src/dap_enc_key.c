@@ -60,6 +60,7 @@
 #endif
 
 #include "dap_enc_key.h"
+#include "dap_memwipe.h"
 
 #undef LOG_TAG
 #define LOG_TAG "dap_enc_key"
@@ -1408,8 +1409,13 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
         s_callbacks[a_key->type].delete_callback(a_key);
     } else {
         log_it(L_WARNING, "No callback for key delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key->type));
+        if (a_key->priv_key_data && a_key->priv_key_data_size)
+            dap_memwipe(a_key->priv_key_data, a_key->priv_key_data_size);
+        if (a_key->_inheritor && a_key->_inheritor_size)
+            dap_memwipe(a_key->_inheritor, a_key->_inheritor_size);
         DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key->_inheritor, a_key->pbk_list_data, a_key);
     }
+    dap_memwipe(a_key, sizeof(dap_enc_key_t));
     DAP_DELETE(a_key);
 }
 

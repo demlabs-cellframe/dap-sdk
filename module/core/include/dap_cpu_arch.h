@@ -40,6 +40,26 @@ extern "C" {
 #endif
 
 /* ========================================================================== */
+/*                       ALGORITHM CLASS ENUMERATION                          */
+/* ========================================================================== */
+
+/**
+ * @brief Algorithm class for per-workload SIMD tuning
+ * @details Different algorithm classes may prefer different SIMD levels
+ *          on the same CPU (e.g., sustained NTT may prefer AVX2 on AMD
+ *          Zen4 where AVX-512 causes frequency throttling, while burst
+ *          operations like pointwise multiply benefit from AVX-512).
+ */
+typedef enum {
+    DAP_ALGO_CLASS_DEFAULT   = 0,  ///< General-purpose (no specific tuning)
+    DAP_ALGO_CLASS_NTT,            ///< NTT butterfly (sustained wide SIMD)
+    DAP_ALGO_CLASS_HASH,           ///< Hashing: SHA, SHAKE, BLAKE
+    DAP_ALGO_CLASS_SYMMETRIC,      ///< Symmetric crypto: AES, ChaCha20
+    DAP_ALGO_CLASS_ECC,            ///< Elliptic curve scalar/field ops
+    DAP_ALGO_CLASS_MAX
+} dap_algo_class_t;
+
+/* ========================================================================== */
 /*                     CPU ARCHITECTURE ENUMERATION                           */
 /* ========================================================================== */
 
@@ -118,6 +138,21 @@ bool dap_cpu_arch_is_available(dap_cpu_arch_t a_arch);
  *   ARM:     SVE2 > SVE > NEON > Reference
  */
 dap_cpu_arch_t dap_cpu_arch_get_best(void);
+
+/**
+ * @brief Get best architecture for a specific algorithm class
+ * @param a_class Algorithm class (NTT, HASH, ECC, etc.)
+ * @return Optimal architecture considering CPU-specific tuning rules
+ *
+ * @details Consults the built-in tuning table that maps
+ *          (vendor, family, model) -> per-class architecture preferences.
+ *          For example, AMD Zen4 may cap NTT at AVX2 while allowing
+ *          AVX-512 for other workloads.
+ *
+ * @note Manual override via dap_cpu_arch_set() takes highest priority.
+ * @note DAP_ALGO_CLASS_DEFAULT returns the same as dap_cpu_arch_get_best().
+ */
+dap_cpu_arch_t dap_cpu_arch_get_best_for(dap_algo_class_t a_class);
 
 /* ========================================================================== */
 /*                   GLOBAL ARCHITECTURE STATE MANAGEMENT                     */

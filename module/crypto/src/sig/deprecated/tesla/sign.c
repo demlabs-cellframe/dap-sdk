@@ -10,6 +10,7 @@
 #include "dap_hash_keccak.h"
 #include "dap_hash_sha3.h"
 #include "dap_rand.h"
+#include "dap_memwipe.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
 #include "tesla_params.h"
@@ -594,7 +595,13 @@ static void sparse_mul32(poly *prod, const int32_t *pk, const uint32_t *pos_list
 void tesla_private_key_delete(void *l_skey)
 {
     dap_return_if_pass(!l_skey);
-    DAP_DEL_MULTY(((tesla_private_key_t *)l_skey)->data, l_skey);
+    tesla_private_key_t *l_key = (tesla_private_key_t *)l_skey;
+    if (l_key->data) {
+        tesla_param_t p;
+        if (tesla_params_init(&p, l_key->kind))
+            dap_memwipe(l_key->data, p.CRYPTO_SECRETKEYBYTES);
+    }
+    DAP_DEL_MULTY(l_key->data, l_skey);
 }
 
 void tesla_public_key_delete(void *l_pkey)

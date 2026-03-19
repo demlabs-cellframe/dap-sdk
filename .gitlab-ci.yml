@@ -87,6 +87,41 @@ tests:arm64.macos:
       - make -j$(sysctl -n hw.ncpu)
       - ctest --verbose
 
+tests:amd64.debian.asan-ubsan:
+    extends: .tests
+    image: demlabs/debian/amd64:qt6
+    before_script:
+      - set -eo pipefail
+      - apt-get update -qq
+      - apt-get install -y -qq gawk
+      - /opt/buildtools/prepare_environment.sh amd64-linux
+    script:
+      - set -eo pipefail
+      - mkdir build && cd build
+      - cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON
+            -DDAP_SANITIZE_ADDRESS=ON -DDAP_SANITIZE_UNDEFINED=ON
+      - make -j$(nproc)
+      - ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
+        UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+        ctest --verbose --label-regex "unit|crypto"
+
+tests:amd64.debian.tsan:
+    extends: .tests
+    image: demlabs/debian/amd64:qt6
+    before_script:
+      - set -eo pipefail
+      - apt-get update -qq
+      - apt-get install -y -qq gawk
+      - /opt/buildtools/prepare_environment.sh amd64-linux
+    script:
+      - set -eo pipefail
+      - mkdir build && cd build
+      - cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON
+            -DDAP_SANITIZE_THREAD=ON
+      - make -j$(nproc)
+      - TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1
+        ctest --verbose --label-regex "unit|crypto"
+
 build:any.android:
     extends: .tests
     image: demlabs/android/any:qt6

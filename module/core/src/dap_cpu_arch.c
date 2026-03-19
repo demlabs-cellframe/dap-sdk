@@ -140,6 +140,88 @@ dap_cpu_arch_t dap_cpu_arch_get_best(void)
 }
 
 /* ========================================================================== */
+/*                  CPU-SPECIFIC TUNING RULES TABLE                           */
+/* ========================================================================== */
+
+/**
+ * @brief Rule for overriding default arch selection on specific CPUs
+ *
+ * Matched top-to-bottom; first match wins. If algo_class == DEFAULT,
+ * the rule applies to every class that has no more-specific match.
+ */
+typedef struct {
+    dap_cpu_vendor_t vendor;
+    uint32_t family_min, family_max;
+    uint32_t model_min,  model_max;
+    dap_algo_class_t algo_class;
+    dap_cpu_arch_t preferred_arch;
+} dap_cpu_tune_rule_t;
+
+/*
+ * Tuning table: first matching rule wins.
+ *
+ * AMD Zen4 (Raphael/Phoenix): family 0x19, model 0x60-0x7F / 0x70-0x7F
+ *   AVX-512 on Zen4 uses double-pumping (256-bit units), causing frequency
+ *   throttling on sustained SIMD workloads like NTT butterfly.  AVX2 is
+ *   faster in practice.
+ *
+ * AMD Zen5 (Granite Ridge / Strix Point): family 0x1A
+ *   512-bit data paths present but still observed to throttle under
+ *   sustained load; conservatively cap NTT at AVX2.
+ *
+ * Intel Xeon / Core (all families): no rules needed — AVX-512 runs
+ *   at full width without throttling on server parts (Skylake-X+),
+ *   and desktop Alder/Raptor Lake simply lacks AVX-512, so
+ *   dap_cpu_arch_get_best() already falls back to AVX2.
+ */
+static const dap_cpu_tune_rule_t s_tune_rules[] = {
+    /* AMD Zen4: family 0x19, model range 0x60..0x7F — NTT prefers AVX2 */
+    { DAP_CPU_VENDOR_AMD, 0x19, 0x19, 0x60, 0x7F,
+      DAP_ALGO_CLASS_NTT, DAP_CPU_ARCH_AVX2 },
+
+    /* AMD Zen5: family 0x1A, all models — NTT prefers AVX2 */
+    { DAP_CPU_VENDOR_AMD, 0x1A, 0x1A, 0x00, 0xFF,
+      DAP_ALGO_CLASS_NTT, DAP_CPU_ARCH_AVX2 },
+};
+
+#define DAP_TUNE_RULES_COUNT  (sizeof(s_tune_rules) / sizeof(s_tune_rules[0]))
+
+/* ========================================================================== */
+/*              PER-ALGORITHM-CLASS BEST ARCHITECTURE SELECTION                */
+/* ========================================================================== */
+
+dap_cpu_arch_t dap_cpu_arch_get_best_for(dap_algo_class_t a_class)
+{
+    if (s_manual_arch != DAP_CPU_ARCH_AUTO)
+        return s_manual_arch;
+
+    dap_cpu_arch_t l_best = dap_cpu_arch_get_best();
+
+    if (a_class == DAP_ALGO_CLASS_DEFAULT)
+        return l_best;
+
+    dap_cpu_features_t l_feat = dap_cpu_detect_features();
+
+    for (size_t i = 0; i < DAP_TUNE_RULES_COUNT; i++) {
+        const dap_cpu_tune_rule_t *r = &s_tune_rules[i];
+        if (r->vendor != DAP_CPU_VENDOR_UNKNOWN && r->vendor != l_feat.vendor)
+            continue;
+        if (l_feat.x86_family < r->family_min || l_feat.x86_family > r->family_max)
+            continue;
+        if (l_feat.x86_model < r->model_min || l_feat.x86_model > r->model_max)
+            continue;
+        if (r->algo_class != DAP_ALGO_CLASS_DEFAULT && r->algo_class != a_class)
+            continue;
+
+        if (r->preferred_arch < l_best)
+            return r->preferred_arch;
+        break;
+    }
+
+    return l_best;
+}
+
+/* ========================================================================== */
 /*                   GLOBAL ARCHITECTURE STATE MANAGEMENT                     */
 /* ========================================================================== */
 

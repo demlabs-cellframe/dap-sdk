@@ -44,6 +44,16 @@ dap_arch_generate(
         neon    "${DAP_PRIMITIVES_DIR}/arm/int16_neon.tpl"
 )
 
+dap_arch_generate(
+    TEMPLATE   ${CMAKE_CURRENT_SOURCE_DIR}/src/simd/dap_ntt32_simd.c.tpl
+    OUTPUT_DIR ${NTT_ARCH_GEN_DIR}
+    PREFIX     dap_ntt32
+    VARIANTS
+        avx512  "${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
+        avx2    "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+        neon    "${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
+)
+
 dap_add_library(${PROJECT_NAME} ${BIGNUM_SRCS} HEADERS ${BIGNUM_HEADERS})
 
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${NTT_ARCH_GEN_DIR}
@@ -52,6 +62,9 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${NTT_ARCH_GEN_DIR}
         dap_ntt16_avx2.c    avx2
         dap_ntt16_sse2.c    sse2
         dap_ntt16_neon.c    neon
+        dap_ntt32_avx512.c  avx512
+        dap_ntt32_avx2.c    avx2
+        dap_ntt32_neon.c    neon
 )
 
 register_module_headers(DIRECTORIES include)

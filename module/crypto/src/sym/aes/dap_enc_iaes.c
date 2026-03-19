@@ -14,7 +14,7 @@
 #include "dap_hash_shake256.h"
 
 #include "dap_common.h"
-
+#include "dap_memwipe.h"
 
 #define LOG_TAG "dap_enc_aes"
 
@@ -26,11 +26,10 @@ typedef struct dap_enc_aes_key {
 
 void dap_enc_aes_key_delete(struct dap_enc_key *a_key)
 {
-    DAP_DEL_Z(a_key->_inheritor);
-    DAP_DEL_Z(a_key->priv_key_data);
+    DAP_WIPE_AND_FREE(a_key->_inheritor, a_key->_inheritor_size);
+    DAP_WIPE_AND_FREE(a_key->priv_key_data, a_key->priv_key_data_size);
     a_key->_inheritor_size = 0;
     a_key->priv_key_data_size = 0;
-    //No need any specific actions
 }
 
 /**

@@ -307,7 +307,6 @@ function(dap_arch_add_sources)
             set(_flags "")
         endif()
 
-        set_source_files_properties("${_src}" PROPERTIES GENERATED TRUE)
         if(_flags)
             set_source_files_properties("${_src}" PROPERTIES COMPILE_FLAGS "${_flags}")
         endif()

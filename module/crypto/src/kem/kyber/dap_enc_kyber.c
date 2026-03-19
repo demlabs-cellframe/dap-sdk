@@ -6,6 +6,7 @@
  */
 
 #include "dap_common.h"
+#include "dap_memwipe.h"
 #include "dap_enc_kyber.h"
 
 #define LOG_TAG "dap_enc_kyber"
@@ -58,9 +59,9 @@ void dap_enc_kyber512_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *
 void dap_enc_kyber512_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
-    DAP_DEL_Z(a_key->shared_key);
+    DAP_WIPE_AND_FREE(a_key->shared_key, a_key->shared_key_size);
     DAP_DEL_Z(a_key->pub_key_data);
-    DAP_DEL_Z(a_key->_inheritor);
+    DAP_WIPE_AND_FREE(a_key->_inheritor, a_key->_inheritor_size);
     a_key->shared_key_size = 0;
     a_key->pub_key_data_size = 0;
     a_key->_inheritor_size = 0;

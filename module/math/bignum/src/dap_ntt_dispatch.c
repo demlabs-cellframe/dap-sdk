@@ -36,8 +36,9 @@ void dap_ntt_dispatch_init(void)
     DAP_DISPATCH_DEFAULT(dap_ntt16_inverse, dap_ntt16_inverse_ref);
     DAP_DISPATCH_DEFAULT(dap_ntt16_basemul, dap_ntt16_basemul_ref);
 
-    DAP_DISPATCH_ARCH_SELECT;
+    DAP_DISPATCH_ARCH_SELECT_FOR(DAP_ALGO_CLASS_NTT);
 
+    /* 16-bit NTT SIMD backends */
     DAP_DISPATCH_X86(DAP_CPU_ARCH_SSE2,   dap_ntt16_forward, dap_ntt16_forward_sse2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_SSE2,   dap_ntt16_inverse, dap_ntt16_inverse_sse2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_SSE2,   dap_ntt16_basemul, dap_ntt16_basemul_sse2);
@@ -53,4 +54,17 @@ void dap_ntt_dispatch_init(void)
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   dap_ntt16_forward, dap_ntt16_forward_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   dap_ntt16_inverse, dap_ntt16_inverse_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   dap_ntt16_basemul, dap_ntt16_basemul_neon);
+
+    /* 32-bit Montgomery NTT SIMD backends */
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   dap_ntt_forward_mont,          dap_ntt_forward_mont_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   dap_ntt_inverse_mont,          dap_ntt_inverse_mont_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   dap_ntt_pointwise_montgomery,  dap_ntt_pointwise_montgomery_avx2);
+
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, dap_ntt_forward_mont,          dap_ntt_forward_mont_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, dap_ntt_inverse_mont,          dap_ntt_inverse_mont_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, dap_ntt_pointwise_montgomery,  dap_ntt_pointwise_montgomery_avx512);
+
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   dap_ntt_forward_mont,          dap_ntt_forward_mont_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   dap_ntt_inverse_mont,          dap_ntt_inverse_mont_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   dap_ntt_pointwise_montgomery,  dap_ntt_pointwise_montgomery_neon);
 }

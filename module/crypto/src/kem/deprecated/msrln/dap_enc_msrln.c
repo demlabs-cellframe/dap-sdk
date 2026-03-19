@@ -1,5 +1,6 @@
 #include <string.h>
 #include "dap_common.h"
+#include "dap_memwipe.h"
 #include "dap_enc_msrln.h"
 #include "msrln/msrln.h"
 #include "dap_rand.h"
@@ -167,7 +168,7 @@ void dap_enc_msrln_key_new_from_data_public(UNUSED_ARG dap_enc_key_t *a_key, UNU
 void dap_enc_msrln_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
-    DAP_DEL_Z(a_key->priv_key_data);
+    DAP_WIPE_AND_FREE(a_key->priv_key_data, a_key->priv_key_data_size);
     DAP_DEL_Z(a_key->pub_key_data);
     a_key->priv_key_data_size = 0;
     a_key->pub_key_data_size = 0;

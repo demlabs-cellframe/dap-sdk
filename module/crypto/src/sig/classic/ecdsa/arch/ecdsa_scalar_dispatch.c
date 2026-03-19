@@ -9,6 +9,7 @@
 #include "dap_cpu_arch.h"
 #include <string.h>
 #include <stdio.h>
+#include <pthread.h>
 
 // ============================================================================
 // Implementation Registry
@@ -99,6 +100,7 @@ static const size_t s_num_implementations = sizeof(s_implementations) / sizeof(s
 // Current active implementation
 static ecdsa_scalar_impl_t s_current_impl = ECDSA_SCALAR_IMPL_GENERIC;
 static bool s_initialized = false;
+static pthread_once_t s_scalar_once = PTHREAD_ONCE_INIT;
 
 // Global dispatch function pointers (used by static inline dispatchers in header)
 ecdsa_scalar_mul_512_fn ecdsa_scalar_mul_512_ptr = NULL;
@@ -126,10 +128,7 @@ static void s_update_function_pointers(void) {
     }
 }
 
-void ecdsa_scalar_dispatch_init(void) {
-    if (s_initialized) return;
-    
-    // Use dap_cpu_arch for unified platform/feature detection
+static void s_scalar_dispatch_impl(void) {
     dap_cpu_arch_t best = dap_cpu_arch_get_best();
     
     // Update availability and select implementation based on dap_cpu_arch
@@ -186,8 +185,12 @@ void ecdsa_scalar_dispatch_init(void) {
     s_initialized = true;
 }
 
+void ecdsa_scalar_dispatch_init(void) {
+    pthread_once(&s_scalar_once, s_scalar_dispatch_impl);
+}
+
 ecdsa_scalar_impl_t ecdsa_scalar_get_impl(void) {
-    if (!s_initialized) ecdsa_scalar_dispatch_init();
+    ecdsa_scalar_dispatch_init();
     return s_current_impl;
 }
 
@@ -201,13 +204,13 @@ const ecdsa_scalar_impl_info_t* ecdsa_scalar_get_impl_info(ecdsa_scalar_impl_t i
 }
 
 const ecdsa_scalar_impl_info_t* ecdsa_scalar_get_all_impls(size_t *count) {
-    if (!s_initialized) ecdsa_scalar_dispatch_init();
+    ecdsa_scalar_dispatch_init();
     if (count) *count = s_num_implementations;
     return s_implementations;
 }
 
 bool ecdsa_scalar_set_impl(ecdsa_scalar_impl_t impl) {
-    if (!s_initialized) ecdsa_scalar_dispatch_init();
+    ecdsa_scalar_dispatch_init();
     
     for (size_t i = 0; i < s_num_implementations; i++) {
         if (s_implementations[i].id == impl && s_implementations[i].available) {

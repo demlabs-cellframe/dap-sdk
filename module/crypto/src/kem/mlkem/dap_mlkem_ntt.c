@@ -7,6 +7,7 @@
 
 #include "dap_mlkem_ntt.h"
 #include "dap_ntt.h"
+#include <pthread.h>
 
 static const int16_t s_zetas[128] = {
   2285, 2571, 2970, 1812, 1493, 1422, 287, 202, 3158, 622, 1577, 182, 962,
@@ -37,19 +38,21 @@ static const int16_t s_zetas_inv[128] = {
 const int16_t *MLKEM_NAMESPACE(_get_zetas)(void) { return s_zetas; }
 
 static dap_ntt_params16_t s_ntt_params;
-static int s_inited = 0;
+static pthread_once_t s_ntt_once = PTHREAD_ONCE_INIT;
+
+static void s_ntt_init(void)
+{
+    s_ntt_params.n          = MLKEM_N;
+    s_ntt_params.q          = MLKEM_Q;
+    s_ntt_params.qinv       = MLKEM_QINV;
+    s_ntt_params.zetas      = s_zetas;
+    s_ntt_params.zetas_inv  = s_zetas_inv;
+    s_ntt_params.zetas_len  = 128;
+}
 
 static void s_ensure_init(void)
 {
-    if (__builtin_expect(!s_inited, 0)) {
-        s_ntt_params.n          = MLKEM_N;
-        s_ntt_params.q          = MLKEM_Q;
-        s_ntt_params.qinv       = MLKEM_QINV;
-        s_ntt_params.zetas      = s_zetas;
-        s_ntt_params.zetas_inv  = s_zetas_inv;
-        s_ntt_params.zetas_len  = 128;
-        s_inited = 1;
-    }
+    pthread_once(&s_ntt_once, s_ntt_init);
 }
 
 void MLKEM_NAMESPACE(_ntt)(int16_t a_coeffs[MLKEM_N])

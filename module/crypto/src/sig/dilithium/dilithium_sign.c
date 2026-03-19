@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "dilithium_sign.h"
+#include "dap_memwipe.h"
 
 //#include "dap_hash_keccak.h"
 #include "dap_hash_sha3.h"
@@ -78,7 +79,13 @@ void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, di
 void dilithium_private_key_delete(void *private_key)
 {
     dap_return_if_pass(!private_key);
-    DAP_DEL_MULTY(((dilithium_private_key_t *)private_key)->data, private_key);
+    dilithium_private_key_t *l_skey = (dilithium_private_key_t *)private_key;
+    if (l_skey->data) {
+        dilithium_param_t p;
+        if (dilithium_params_init(&p, l_skey->kind))
+            dap_memwipe(l_skey->data, p.CRYPTO_SECRETKEYBYTES);
+    }
+    DAP_DEL_MULTY(l_skey->data, private_key);
 }
 
 void dilithium_public_key_delete(void *public_key)

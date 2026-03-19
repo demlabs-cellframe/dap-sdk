@@ -27,6 +27,8 @@ endif()
 
 # Build type (Debug / Release / Asan) and DAP_* build variables
 include(cmake/DapBuild.cmake)
+# Compiler sanitizers (ASan, UBSan, TSan, MSan)
+include(cmake/Sanitizers.cmake)
 # Common includes and definitions (uses DAP_DEBUG, DAP_RELEASE, DAP_ASAN_BUILD from DapBuild)
 include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)

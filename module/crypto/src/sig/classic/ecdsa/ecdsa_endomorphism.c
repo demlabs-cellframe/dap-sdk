@@ -10,6 +10,7 @@
 #include "ecdsa_precompute.h"
 #include "dap_common.h"
 #include <string.h>
+#include <pthread.h>
 
 #define LOG_TAG "ecdsa_endomorphism"
 
@@ -23,6 +24,7 @@
 static ecdsa_field_t s_beta;
 static ecdsa_scalar_t s_lambda;
 static bool s_endo_initialized = false;
+static pthread_once_t s_endo_once = PTHREAD_ONCE_INIT;
 
 // λ = 0x5363ad4cc05c30e0a5261c028812645a122e22ea20816678df02967c1b23bd72
 // This is a primitive cube root of unity in Fn: λ³ = 1 (mod n)
@@ -43,14 +45,16 @@ static const uint8_t s_lambda_bytes[32] = {
 };
 
 // Initialize endomorphism constants
-static void s_endo_init(void) {
-    if (s_endo_initialized) return;
+static void s_endo_init_impl(void) {
     ecdsa_field_set_b32(&s_beta, s_beta_bytes);
     ecdsa_scalar_set_b32(&s_lambda, s_lambda_bytes, NULL);
     s_endo_initialized = true;
 }
 
-// Access BETA (ensures initialization)
+static void s_endo_init(void) {
+    pthread_once(&s_endo_once, s_endo_init_impl);
+}
+
 const ecdsa_field_t *ecdsa_get_beta(void) {
     s_endo_init();
     return &s_beta;
@@ -110,14 +114,18 @@ static ecdsa_scalar_t s_g2_scalar;
 static ecdsa_scalar_t s_minus_b1_scalar;
 static ecdsa_scalar_t s_minus_b2_scalar;
 static bool s_glv_scalars_initialized = false;
+static pthread_once_t s_glv_once = PTHREAD_ONCE_INIT;
 
-static void s_init_glv_scalars(void) {
-    if (s_glv_scalars_initialized) return;
+static void s_init_glv_scalars_impl(void) {
     ecdsa_scalar_set_b32(&s_g1_scalar, GLV_G1_BYTES, NULL);
     ecdsa_scalar_set_b32(&s_g2_scalar, GLV_G2_BYTES, NULL);
     ecdsa_scalar_set_b32(&s_minus_b1_scalar, GLV_MINUS_B1_BYTES, NULL);
     ecdsa_scalar_set_b32(&s_minus_b2_scalar, GLV_MINUS_B2_BYTES, NULL);
     s_glv_scalars_initialized = true;
+}
+
+static void s_init_glv_scalars(void) {
+    pthread_once(&s_glv_once, s_init_glv_scalars_impl);
 }
 
 // =============================================================================
@@ -493,7 +501,14 @@ void ecdsa_ecmult_endomorphism(
 
 // Precomputed φ(G) wNAF table - initialized once
 static ecdsa_wnaf_table_t s_table_phi_g;
-static bool s_table_phi_g_init = false;
+static pthread_once_t s_phi_g_once = PTHREAD_ONCE_INIT;
+
+static void s_init_phi_g_table(void) {
+    ecdsa_ecmult_gen_ctx_t *ctx = ecdsa_ecmult_gen_ctx_get();
+    ecdsa_ge_t phi_g;
+    ecdsa_ge_mul_lambda(&phi_g, &ctx->wnaf_table[0]);
+    ecdsa_wnaf_table_build(&s_table_phi_g, &phi_g, ECDSA_WNAF_WINDOW);
+}
 
 void ecdsa_ecmult_strauss_endo(
     ecdsa_gej_t *a_result,
@@ -508,13 +523,7 @@ void ecdsa_ecmult_strauss_endo(
     bool have_a = a_point_a && a_scalar_a && !ecdsa_scalar_is_zero(a_scalar_a);
     bool have_g = a_scalar_g && !ecdsa_scalar_is_zero(a_scalar_g);
     
-    // Initialize φ(G) table once
-    if (!s_table_phi_g_init) {
-        ecdsa_ge_t phi_g;
-        ecdsa_ge_mul_lambda(&phi_g, &ctx->wnaf_table[0]);
-        ecdsa_wnaf_table_build(&s_table_phi_g, &phi_g, ECDSA_WNAF_WINDOW);
-        s_table_phi_g_init = true;
-    }
+    pthread_once(&s_phi_g_once, s_init_phi_g_table);
     
     // For point A: check if Z=1 (already affine) to avoid expensive inversion
     ecdsa_ge_t a_affine, phi_a;

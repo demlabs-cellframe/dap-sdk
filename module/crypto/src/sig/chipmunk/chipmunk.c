@@ -41,7 +41,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <errno.h>
-#include <stddef.h>  // для offsetof
+#include <stddef.h>
+#include <pthread.h>
 
 #define LOG_TAG "chipmunk"
 
@@ -56,27 +57,26 @@
 static bool s_debug_more = false;
 
 static volatile int g_initialized = 0;
+static pthread_once_t s_chipmunk_once = PTHREAD_ONCE_INIT;
+static int s_chipmunk_init_result = 0;
 
 // Forward declarations
 static void secure_clean(volatile void* data, size_t size);
 
-/**
- * @brief Initialize Chipmunk module
- * @return Returns 0 on success
- */
-int chipmunk_init(void) {
-    if (g_initialized) {
-        return CHIPMUNK_ERROR_SUCCESS;
-    }
-
-    // Инициализация криптографических примитивов
+static void s_chipmunk_init_impl(void)
+{
     if (dap_chipmunk_hash_init() != 0) {
         log_it(L_ERROR, "Failed to initialize chipmunk hash functions");
-        return CHIPMUNK_ERROR_INIT_FAILED;
+        s_chipmunk_init_result = CHIPMUNK_ERROR_INIT_FAILED;
+        return;
     }
-
     g_initialized = 1;
-    return CHIPMUNK_ERROR_SUCCESS;
+    s_chipmunk_init_result = CHIPMUNK_ERROR_SUCCESS;
+}
+
+int chipmunk_init(void) {
+    pthread_once(&s_chipmunk_once, s_chipmunk_init_impl);
+    return s_chipmunk_init_result;
 }
 
 /**

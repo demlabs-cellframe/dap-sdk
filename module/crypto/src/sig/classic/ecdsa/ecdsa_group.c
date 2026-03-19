@@ -8,6 +8,7 @@
 #include "ecdsa_group.h"
 #include "ecdsa_precompute.h"
 #include "ecdsa_endomorphism.h"
+#include <pthread.h>
 #include <string.h>
 #include "dap_common.h"
 
@@ -47,6 +48,7 @@ static void s_debug_field_print(const char *a_name, const ecdsa_field_t *a_field
 // Runtime generator (set during init from bytes for consistency)
 static ecdsa_ge_t s_generator;
 static bool s_generator_initialized = false;
+static pthread_once_t s_gen_once = PTHREAD_ONCE_INIT;
 
 #ifdef ECDSA_FIELD_52BIT
 // 5x52-bit limb representation
@@ -473,9 +475,7 @@ void ecdsa_gej_add(ecdsa_gej_t *r, const ecdsa_gej_t *a, const ecdsa_gej_t *b) {
 // Generator multiplication: r = n*G
 // Uses precomputed tables for ~15-20x speedup
 void ecdsa_ecmult_gen(ecdsa_gej_t *r, const ecdsa_scalar_t *n) {
-    if (!s_generator_initialized) {
-        ecdsa_ecmult_gen_init();
-    }
+    ecdsa_ecmult_gen_init();
     
     // Use optimized comb method with precomputed tables
     ecdsa_ecmult_gen_fast(r, n);
@@ -600,10 +600,7 @@ bool ecdsa_ge_parse(ecdsa_ge_t *r, const uint8_t *input, size_t inputlen) {
 // Initialization
 // =============================================================================
 
-void ecdsa_ecmult_gen_init(void) {
-    if (s_generator_initialized) return;
-    
-    // Generator point coordinates
+static void s_ecmult_gen_init_impl(void) {
     const uint8_t gx[32] = {
         0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC,
         0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B, 0x07,
@@ -622,6 +619,10 @@ void ecdsa_ecmult_gen_init(void) {
     s_generator.infinity = false;
     
     s_generator_initialized = true;
+}
+
+void ecdsa_ecmult_gen_init(void) {
+    pthread_once(&s_gen_once, s_ecmult_gen_init_impl);
 }
 
 void ecdsa_ecmult_gen_deinit(void) {

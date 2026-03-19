@@ -5,6 +5,7 @@
  */
 
 #include <string.h>
+#include <pthread.h>
 #include "ecdsa_field_arch.h"
 #include "dap_cpu_arch.h"
 
@@ -74,6 +75,7 @@ static ecdsa_field_impl_info_t s_impls[ECDSA_FIELD_IMPL_COUNT] = {
 
 static ecdsa_field_impl_t s_current_impl = ECDSA_FIELD_IMPL_GENERIC;
 static bool s_initialized = false;
+static pthread_once_t s_field_once = PTHREAD_ONCE_INIT;
 
 // ============================================================================
 // CPU Feature Detection
@@ -108,9 +110,7 @@ static void detect_x86_features(void) {
 // Dispatcher Implementation
 // ============================================================================
 
-void ecdsa_field_dispatch_init(void) {
-    if (s_initialized) return;
-    
+static void s_field_dispatch_impl(void) {
 #if defined(__x86_64__) || defined(_M_X64)
     detect_x86_features();
 #endif
@@ -164,8 +164,12 @@ void ecdsa_field_dispatch_init(void) {
     s_initialized = true;
 }
 
+void ecdsa_field_dispatch_init(void) {
+    pthread_once(&s_field_once, s_field_dispatch_impl);
+}
+
 ecdsa_field_impl_t ecdsa_field_get_impl(void) {
-    if (!s_initialized) ecdsa_field_dispatch_init();
+    ecdsa_field_dispatch_init();
     return s_current_impl;
 }
 
@@ -180,7 +184,7 @@ const ecdsa_field_impl_info_t* ecdsa_field_get_all_impls(size_t *count) {
 }
 
 bool ecdsa_field_set_impl(ecdsa_field_impl_t impl) {
-    if (!s_initialized) ecdsa_field_dispatch_init();
+    ecdsa_field_dispatch_init();
     if (impl >= ECDSA_FIELD_IMPL_COUNT) return false;
     if (!s_impls[impl].available) return false;
     

@@ -1,4 +1,5 @@
 #include "dap_common.h"
+#include "dap_memwipe.h"
 #include "dap_enc_picnic.h"
 #include <stdio.h>
 #include <stddef.h>
@@ -61,7 +62,7 @@ void dap_enc_sig_picnic_key_new(dap_enc_key_t *key) {
 
 void dap_enc_sig_picnic_key_delete(dap_enc_key_t *key)
 {
-    DAP_DEL_Z(key->priv_key_data);
+    DAP_WIPE_AND_FREE(key->priv_key_data, key->priv_key_data_size);
     DAP_DEL_Z(key->pub_key_data);
     DAP_DEL_Z(key->_inheritor);
     key->priv_key_data_size = 0;

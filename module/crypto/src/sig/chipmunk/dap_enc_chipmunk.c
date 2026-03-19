@@ -1,4 +1,5 @@
 #include "dap_common.h"
+#include "dap_memwipe.h"
 #include "dap_enc_chipmunk.h"
 #include "dap_enc_key.h"
 #include "dap_sign.h"
@@ -211,33 +212,11 @@ int dap_enc_chipmunk_verify_sign(dap_enc_key_t *key, const void *data, const siz
 // Clean up key data, remove key pair
 void dap_enc_chipmunk_key_delete(dap_enc_key_t *a_key)
 {
-    debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_delete: Deleting Chipmunk key at %p", 
-             (void*)a_key);
-    
-    if (!a_key) {
-        log_it(L_ERROR, "dap_enc_chipmunk_key_delete: NULL key passed");
-        return;
-    }
-    
-    debug_if(s_debug_more, L_DEBUG, "Deleting Chipmunk key at %p", (void*)a_key);
-    
-    // Освобождаем открытый ключ
-    if (a_key->pub_key_data) {
-        DAP_DELETE(a_key->pub_key_data);
-        a_key->pub_key_data = NULL;
-        a_key->pub_key_data_size = 0;
-        debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_delete: Public key data freed");
-    }
-    
-    // Освобождаем закрытый ключ
-    if (a_key->priv_key_data) {
-        DAP_DELETE(a_key->priv_key_data);
-        a_key->priv_key_data = NULL;
-        a_key->priv_key_data_size = 0;
-        debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_delete: private key data freed");
-    }
-    
-    debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_delete: Chipmunk key deletion completed");
+    dap_return_if_pass(!a_key);
+    DAP_DEL_Z(a_key->pub_key_data);
+    a_key->pub_key_data_size = 0;
+    DAP_WIPE_AND_FREE(a_key->priv_key_data, a_key->priv_key_data_size);
+    a_key->priv_key_data_size = 0;
 }
 
 // Serialization functions for private and public keys

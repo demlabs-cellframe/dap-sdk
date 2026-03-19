@@ -1,7 +1,7 @@
 #include "dap_enc_sphincsplus.h"
-//#include "sphincsplus/randombytes.h"
 #include "api.h"
 #include "dap_hash.h"
+#include "dap_memwipe.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
@@ -342,7 +342,12 @@ void sphincsplus_private_and_public_keys_delete(void *a_skey, void *a_pkey)
 void sphincsplus_private_key_delete(void *a_skey)
 {
     dap_return_if_pass(!a_skey);
-    DAP_DEL_MULTY(((sphincsplus_private_key_t *)a_skey)->data, a_skey);
+    sphincsplus_private_key_t *l_skey = (sphincsplus_private_key_t *)a_skey;
+    if (l_skey->data) {
+        uint32_t l_sk_bytes = 4 * l_skey->params.spx_n;
+        dap_memwipe(l_skey->data, l_sk_bytes);
+    }
+    DAP_DEL_MULTY(l_skey->data, a_skey);
 }
 
 void sphincsplus_public_key_delete(void *a_pkey)

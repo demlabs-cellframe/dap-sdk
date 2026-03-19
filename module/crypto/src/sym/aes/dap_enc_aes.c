@@ -10,6 +10,7 @@
 #include "dap_enc_iaes.h"
 #include "dap_cpu_detect.h"
 #include <stddef.h>
+#include <pthread.h>
 
 /* Backend headers (guarded by platform ifdefs internally) */
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
@@ -25,6 +26,7 @@ typedef size_t (*dap_aes_cbc_fast_fn_t)(struct dap_enc_key *, const void *, size
 
 static dap_aes_cbc_fast_fn_t s_encrypt_fast = NULL;
 static dap_aes_cbc_fast_fn_t s_decrypt_fast = NULL;
+static pthread_once_t s_aes_once = PTHREAD_ONCE_INIT;
 
 static void s_aes_dispatch_init(void)
 {
@@ -49,8 +51,7 @@ static void s_aes_dispatch_init(void)
 
 static inline void s_ensure_init(void)
 {
-    if (__builtin_expect(!s_encrypt_fast, 0))
-        s_aes_dispatch_init();
+    pthread_once(&s_aes_once, s_aes_dispatch_init);
 }
 
 /* ========== Public API ========== */

@@ -7,6 +7,7 @@
 #include "dap_enc_chacha20_poly1305.h"
 #include "dap_chacha20_poly1305.h"
 #include "dap_common.h"
+#include "dap_memwipe.h"
 #include "dap_rand.h"
 
 #define LOG_TAG "dap_enc_chacha20_poly1305"
@@ -44,10 +45,7 @@ void dap_enc_chacha20_poly1305_key_generate(dap_enc_key_t *a_key,
 void dap_enc_chacha20_poly1305_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
-    if (a_key->priv_key_data) {
-        memset(a_key->priv_key_data, 0, a_key->priv_key_data_size);
-        DAP_DEL_Z(a_key->priv_key_data);
-    }
+    DAP_WIPE_AND_FREE(a_key->priv_key_data, a_key->priv_key_data_size);
     a_key->priv_key_data_size = 0;
 }
 

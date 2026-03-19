@@ -6,6 +6,7 @@
 #include "dap_enc_ntru_prime.h"
 #include "dap_sntrup761.h"
 #include "dap_common.h"
+#include "dap_memwipe.h"
 
 #define LOG_TAG "dap_enc_ntru_prime"
 
@@ -54,9 +55,9 @@ void dap_enc_ntru_prime_key_new_from_data_public(UNUSED_ARG dap_enc_key_t *a_key
 void dap_enc_ntru_prime_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
-    DAP_DEL_Z(a_key->shared_key);
+    DAP_WIPE_AND_FREE(a_key->shared_key, a_key->shared_key_size);
     DAP_DEL_Z(a_key->pub_key_data);
-    DAP_DEL_Z(a_key->_inheritor);
+    DAP_WIPE_AND_FREE(a_key->_inheritor, a_key->_inheritor_size);
     a_key->shared_key_size = 0;
     a_key->pub_key_data_size = 0;
     a_key->_inheritor_size = 0;
