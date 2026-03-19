@@ -668,8 +668,8 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     l_es->_inheritor = a_params->client_ctx;
     
     int l_buf_size = 4 * 1024 * 1024;
-    setsockopt(l_es->fd, SOL_SOCKET, SO_RCVBUF, &l_buf_size, sizeof(l_buf_size));
-    setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, &l_buf_size, sizeof(l_buf_size));
+    setsockopt(l_es->fd, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
+    setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
     
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
@@ -769,7 +769,7 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
 
-    log_it(L_INFO, "DNS client: received server handshake response (%zu bytes)", a_es->buf_in_size);
+    log_it(L_INFO, "DNS client: received server handshake response (%zu bytes)", (size_t)a_es->buf_in_size);
 
     dap_enc_key_t *l_alice_key = l_client_es->session_key_open;
     if (!l_alice_key || !l_alice_key->gen_alice_shared_key) {

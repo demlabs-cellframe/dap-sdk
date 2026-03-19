@@ -26,6 +26,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#ifdef DAP_OS_WINDOWS
+#include <malloc.h>
+#endif
 
 #define LOG_TAG "dap_ring_buffer"
 
@@ -58,10 +61,12 @@ dap_ring_buffer_t *dap_ring_buffer_create(size_t a_capacity) {
     // Round up to power of 2
     size_t l_capacity = s_next_power_of_2(a_capacity);
     
-    // Allocate ring buffer with flexible array member
     size_t l_size = sizeof(dap_ring_buffer_t) + l_capacity * sizeof(void*);
+#ifdef DAP_OS_WINDOWS
+    dap_ring_buffer_t *l_rb = (dap_ring_buffer_t*)_aligned_malloc(l_size, DAP_RING_BUFFER_CACHE_LINE);
+#else
     dap_ring_buffer_t *l_rb = (dap_ring_buffer_t*)aligned_alloc(DAP_RING_BUFFER_CACHE_LINE, l_size);
-    
+#endif
     if (!l_rb) {
         log_it(L_CRITICAL, "Failed to allocate ring buffer of size %zu", l_size);
         return NULL;
@@ -102,7 +107,11 @@ void dap_ring_buffer_delete(dap_ring_buffer_t *a_rb) {
     log_it(L_DEBUG, "Deleting ring buffer: capacity=%zu, total_pushes=%" PRIu64 ", total_pops=%" PRIu64 ", total_full=%" PRIu64 ", total_empty=%" PRIu64,
            a_rb->capacity, l_pushes, l_pops, l_full, l_empty);
     
+#ifdef DAP_OS_WINDOWS
+    _aligned_free(a_rb);
+#else
     free(a_rb);
+#endif
 }
 
 /**

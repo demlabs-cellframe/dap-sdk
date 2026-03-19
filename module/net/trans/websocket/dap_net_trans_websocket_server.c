@@ -24,7 +24,10 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-#include <strings.h>  // For strcasestr
+#ifndef DAP_OS_WINDOWS
+#include <strings.h>
+#endif
+#include <ctype.h>
 #include "dap_hash_sha1.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -47,6 +50,21 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_trans_ctx.h"
 
 #define LOG_TAG "dap_net_trans_websocket_server"
+
+#ifdef DAP_OS_WINDOWS
+static inline char *s_strcasestr(const char *a_haystack, const char *a_needle)
+{
+    if (!a_needle[0]) return (char *)a_haystack;
+    for (; *a_haystack; ++a_haystack) {
+        const char *h = a_haystack, *n = a_needle;
+        while (*h && *n && tolower((unsigned char)*h) == tolower((unsigned char)*n))
+            ++h, ++n;
+        if (!*n) return (char *)a_haystack;
+    }
+    return NULL;
+}
+#define strcasestr s_strcasestr
+#endif
 
 // WebSocket GUID for Sec-WebSocket-Accept calculation (RFC 6455)
 #define WEBSOCKET_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -747,7 +765,7 @@ static void s_ws_server_esocket_error(dap_events_socket_t *a_es, int a_arg)
 {
     (void)a_arg;
     if (!a_es) return;
-    log_it(L_ERROR, "WebSocket server: esocket error on fd=%d", a_es->socket);
+    log_it(L_ERROR, "WebSocket server: esocket error on fd=%" DAP_FORMAT_SOCKET, a_es->socket);
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
 

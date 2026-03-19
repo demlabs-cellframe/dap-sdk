@@ -58,9 +58,21 @@
 
 #endif /* __EMSCRIPTEN__ */
 
-/* 5.8 compatibility: dap_memmem_n (memmem is POSIX/GNU) */
-#define dap_memmem_n(haystack, haystack_len, needle, needle_len) \
-    memmem((haystack), (haystack_len), (needle), (needle_len))
+/* Portable memmem: POSIX/GNU only, missing on Windows/MinGW */
+static inline void *dap_memmem_n(const void *a_haystack, size_t a_hlen,
+                                 const void *a_needle, size_t a_nlen)
+{
+    if (a_nlen == 0) return (void *)a_haystack;
+    if (a_hlen < a_nlen) return NULL;
+    const uint8_t *h = (const uint8_t *)a_haystack;
+    const uint8_t *n = (const uint8_t *)a_needle;
+    const uint8_t *end = h + a_hlen - a_nlen + 1;
+    for (; h < end; ++h) {
+        if (*h == *n && memcmp(h, n, a_nlen) == 0)
+            return (void *)h;
+    }
+    return NULL;
+}
 
 #define DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT (10 * 1024 * 1024) // 10MB maximum response size
 
@@ -1766,7 +1778,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         {
             // Check if we already have all the data (body came with headers)
             log_it(L_DEBUG, "DAP_HTTP_PARSE_BODY: is_chunked=%d, content_length=%zu, response_size=%zu, buf_in_size=%zu", 
-                   l_client_http->is_chunked, l_client_http->content_length, l_client_http->response_size, a_es->buf_in_size);
+                   l_client_http->is_chunked, l_client_http->content_length, l_client_http->response_size, (size_t)a_es->buf_in_size);
             
             if (!l_client_http->is_chunked &&
                 l_client_http->content_length > 0 &&
@@ -1822,7 +1834,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     l_ctx->streamed_body_size >= l_client_http->content_length) {
                     log_it(L_DEBUG, "Zero-copy streaming complete: %zu bytes total", l_ctx->streamed_body_size);
                     if (a_es->buf_in_size > 0) {
-                        log_it(L_DEBUG, "Discarding %zu excess bytes beyond Content-Length", a_es->buf_in_size);
+                        log_it(L_DEBUG, "Discarding %zu excess bytes beyond Content-Length", (size_t)a_es->buf_in_size);
                         a_es->buf_in_size = 0;
                     }
                     l_client_http->parse_state = DAP_HTTP_PARSE_COMPLETE;
@@ -1881,12 +1893,12 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     // Complete if: content received OR HTTP error without data
                     log_it(L_DEBUG, "HTTP response complete: content_length=%zu, response_size=%zu, status_code=%d, buf_in_size=%zu", 
                            l_client_http->content_length, l_client_http->response_size, 
-                           l_client_http->status_code, a_es->buf_in_size);
+                           l_client_http->status_code, (size_t)a_es->buf_in_size);
                     s_http_finalize_response(l_client_http, l_ctx);
                 } else {
                     log_it(L_DEBUG, "HTTP response not complete yet: content_length=%zu, response_size=%zu, status_code=%d, buf_in_size=%zu", 
                            l_client_http->content_length, l_client_http->response_size, 
-                           l_client_http->status_code, a_es->buf_in_size);
+                           l_client_http->status_code, (size_t)a_es->buf_in_size);
                 }
             }
             
@@ -1904,7 +1916,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
     
     if (s_debug_more) {
         log_it(L_DEBUG, "s_http_read exit: state=%d, buf_in_size=%zu, response_size=%zu", 
-               l_client_http->parse_state, a_es->buf_in_size, 
+               l_client_http->parse_state, (size_t)a_es->buf_in_size, 
                l_client_http->response ? l_client_http->response_size : 0);
     }
     

@@ -25,7 +25,11 @@ This file is part of DAP SDK the open source project
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include <string.h>
-#include <arpa/inet.h>  // for htonl, ntohl
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>
+#endif
 
 #define LOG_TAG "dap_serialize"
 
