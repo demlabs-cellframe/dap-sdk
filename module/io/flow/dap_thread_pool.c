@@ -9,10 +9,13 @@
 
 #include <pthread.h>
 #include <errno.h>
+#ifndef DAP_OS_WINDOWS
 #include <unistd.h>
+#endif
 #include <stdatomic.h>
 #include "dap_thread_pool.h"
 #include "dap_thread.h"
+#include "dap_events.h"
 #include "dap_common.h"
 
 #define LOG_TAG "dap_thread_pool"
@@ -119,8 +122,8 @@ static void *s_worker_thread(void *a_arg)
 dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_queue_size)
 {
     if (a_num_threads == 0) {
-        long l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
-        a_num_threads = (l_ncpus > 0) ? (uint32_t)l_ncpus : 4;
+        uint32_t l_ncpus = dap_get_cpu_count();
+        a_num_threads = l_ncpus > 0 ? l_ncpus : 4;
     }
 
     dap_thread_pool_t *l_pool = DAP_NEW_Z(dap_thread_pool_t);
