@@ -32,19 +32,26 @@ extern "C"{
 #include "dap_plugin_manifest.h"
 
 typedef int (*dap_plugin_type_callback_load_t)(dap_plugin_manifest_t * a_manifest, void ** a_pvt_data, char ** a_error_str );
+typedef int (*dap_plugin_type_callback_preinit_t)(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
+typedef int (*dap_plugin_type_callback_init_t)(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
 typedef int (*dap_plugin_type_callback_unload_t)(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
 
 typedef struct dap_plugin_type_callbacks
 {
     dap_plugin_type_callback_load_t load;
+    dap_plugin_type_callback_preinit_t preinit;
+    dap_plugin_type_callback_init_t init;
     dap_plugin_type_callback_unload_t unload;
 } dap_plugin_type_callbacks_t;
 typedef enum dap_plugin_status{ STATUS_RUNNING, STATUS_STOPPED, STATUS_NONE } dap_plugin_status_t;
 
 int dap_plugin_init(const char * a_root_path);
 void dap_plugin_deinit();
+const char *dap_plugin_root_path(void);
 
 int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t *a_callbacks);
+void dap_plugin_load_all();
+void dap_plugin_preinit_all();
 void dap_plugin_start_all();
 void dap_plugin_stop_all();
 dap_plugin_status_t dap_plugin_status(const char * a_name);

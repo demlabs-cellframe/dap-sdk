@@ -99,8 +99,10 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int 
             }
             break;
         case CMD_RESTART:
-            log_it(L_NOTICE, "Restart python plugin module");
+            log_it(L_NOTICE, "Restart plugin modules");
             dap_plugin_stop_all();
+            dap_plugin_load_all();
+            dap_plugin_preinit_all();
             dap_plugin_start_all();
             log_it(L_NOTICE, "Restart completed");
             dap_cli_server_cmd_set_reply_text(a_str_reply, "Restart completed");
