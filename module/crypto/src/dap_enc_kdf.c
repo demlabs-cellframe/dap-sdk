@@ -8,9 +8,9 @@
 
 #include <string.h>
 #include <stdint.h>
-#include <arpa/inet.h>  // For htobe64 (network byte order)
 
 #include "dap_enc_kdf.h"
+#include "dap_bit_ops.h"
 #include "dap_common.h"
 #include "dap_hash_shake256.h"
 
