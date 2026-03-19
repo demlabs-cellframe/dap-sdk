@@ -186,26 +186,34 @@ function(dap_mock_autowrap TARGET_NAME)
                 set(MOCK_OBJ_LIB "${TARGET_NAME}_mock_override")
                 add_library(${MOCK_OBJ_LIB} OBJECT ${MOCK_SRC_PATH})
                 
-                # Inherit include directories from target (which should have all SDK includes)
-                # Also add common SDK includes as fallback
+                # Inherit include directories from test target
                 get_target_property(TARGET_INCLUDES ${TARGET_NAME} INCLUDE_DIRECTORIES)
                 if(TARGET_INCLUDES)
                     target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${TARGET_INCLUDES})
                 endif()
                 
-                # Add SDK include directories (in case target doesn't have them yet)
-                if(TARGET cellframe_sdk)
-                    get_target_property(SDK_INCLUDES cellframe_sdk INTERFACE_INCLUDE_DIRECTORIES)
-                    if(SDK_INCLUDES)
-                        target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${SDK_INCLUDES})
-                    endif()
+                # Propagate includes from all libraries the test links against
+                get_target_property(TARGET_LINK_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+                if(TARGET_LINK_LIBS)
+                    foreach(_LINK_LIB ${TARGET_LINK_LIBS})
+                        if(TARGET ${_LINK_LIB})
+                            get_target_property(_LIB_INCLUDES ${_LINK_LIB} INTERFACE_INCLUDE_DIRECTORIES)
+                            if(_LIB_INCLUDES)
+                                target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${_LIB_INCLUDES})
+                            endif()
+                        endif()
+                    endforeach()
                 endif()
-                if(TARGET dap-sdk)
-                    get_target_property(DAP_SDK_INCLUDES dap-sdk INTERFACE_INCLUDE_DIRECTORIES)
-                    if(DAP_SDK_INCLUDES)
-                        target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${DAP_SDK_INCLUDES})
+                
+                # Also try well-known SDK targets by both naming conventions
+                foreach(_SDK_TARGET dap_sdk dap-sdk cellframe_sdk)
+                    if(TARGET ${_SDK_TARGET})
+                        get_target_property(_SDK_INCLUDES ${_SDK_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+                        if(_SDK_INCLUDES)
+                            target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${_SDK_INCLUDES})
+                        endif()
                     endif()
-                endif()
+                endforeach()
                 
                 # Add object files to test target - they link before libraries
                 target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MOCK_OBJ_LIB}>)
