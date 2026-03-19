@@ -57,7 +57,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdatomic.h>
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
+#endif
 #include "dap_ht.h"
 #include "dap_events_socket.h"
 #include "dap_server.h"

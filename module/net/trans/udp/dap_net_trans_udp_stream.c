@@ -22,7 +22,6 @@
 */
 
 #include <string.h>
-#include <arpa/inet.h>
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -31,20 +30,21 @@
 #include "dap_net_trans.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
-#include "dap_timerfd.h"  // For handshake retransmission timer
+#include "dap_timerfd.h"
 #include "dap_net.h"
-#include "dap_enc_kyber.h"  // For Kyber512 KEM functions
-#include "dap_transport_obfuscation.h"  // For handshake obfuscation
-#include "dap_json.h"  // For JSON API
-#include "dap_io_flow.h"        // For dap_io_flow_t
-#include "dap_io_flow_ctrl.h"  // For Flow Control
-#include "dap_io_flow_datagram.h"  // For datagram flow API
-#include "dap_arena.h"          // For arena allocator
+#include "dap_enc_kyber.h"
+#include "dap_transport_obfuscation.h"
+#include "dap_json.h"
+#include "dap_io_flow.h"
+#include "dap_io_flow_ctrl.h"
+#include "dap_io_flow_datagram.h"
+#include "dap_arena.h"
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>

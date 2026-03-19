@@ -4,12 +4,6 @@ project (dap_http_server C)
 file(GLOB HTTP_SERVER_SRCS FILES *.c http_client/*.c)
 file(GLOB HTTP_SERVER_HDRS FILES include/*.h http_client/include/*.h)
 
-if (ANDROID)
-  list(FILTER HTTP_SERVER_SRCS EXCLUDE REGEX ".*dap_http_folder\\.c$")
-  list(FILTER HTTP_SERVER_HDRS EXCLUDE REGEX ".*dap_http_folder\\.h$")
-  message(${HTTP_SERVER_SRCS})
-endif()
-
 if(WIN32)
     add_definitions ("-DUNDEBUG")
     add_definitions ("-DNDEBUG")

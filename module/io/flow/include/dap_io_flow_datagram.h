@@ -31,7 +31,12 @@
 #pragma once
 
 #include <time.h>
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
+#endif
 #include "dap_io_flow.h"
 #include "dap_events_socket.h"
 
