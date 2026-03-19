@@ -24,17 +24,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#ifdef DAP_OS_WINDOWS
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
+#ifndef DAP_OS_WINDOWS
 #include <arpa/inet.h>
-#include <sys/time.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
 #endif
 
 #include "dap_common.h"
