@@ -29,6 +29,8 @@
 extern "C" {
 #endif
 
+struct dap_link_manager_callbacks;
+
 typedef enum dap_sdk_modules {
     DAP_SDK_MODULE_CORE         = 0x00000001,
     DAP_SDK_MODULE_CRYPTO       = 0x00000002,
@@ -76,6 +78,7 @@ typedef struct dap_sdk_config {
     uint32_t io_threads;            ///< 0 = auto-detect
     uint32_t io_timeout;            ///< Connection timeout in seconds; 0 = default
     bool enable_debug;
+    const struct dap_link_manager_callbacks *link_manager_callbacks; ///< NULL = default no-op stubs
 } dap_sdk_config_t;
 
 /**

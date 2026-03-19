@@ -328,10 +328,17 @@ static int s_init_global_db(const dap_sdk_config_t *a_config)
     return dap_global_db_init();
 }
 
+static int s_default_fill_net_info(dap_link_t *a_link)
+{
+    (void)a_link;
+    return 0;
+}
+
 static int s_init_net_link_mgr(const dap_sdk_config_t *a_config)
 {
-    (void)a_config;
-    return dap_link_manager_init(NULL);
+    const dap_link_manager_callbacks_t *l_cb = a_config->link_manager_callbacks;
+    dap_link_manager_callbacks_t l_defaults = { .fill_net_info = s_default_fill_net_info };
+    return dap_link_manager_init(l_cb ? l_cb : &l_defaults);
 }
 
 static int s_init_net_dns(const dap_sdk_config_t *a_config)
