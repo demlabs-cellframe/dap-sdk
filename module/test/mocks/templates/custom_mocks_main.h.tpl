@@ -6,8 +6,7 @@
 
 {{#if CUSTOM_MOCKS_LIST}}
     {{#for line in CUSTOM_MOCKS_LIST}}
-        {{line|split|pipe}}
-        {{#set func_name={{line|part|1}}}}
+        {{#set func_name={{line|split|pipe|part|1}}}}
         {{#if func_name != ""}}
 #include "custom_mocks/{{func_name}}_mock.h"
         {{/if}}
