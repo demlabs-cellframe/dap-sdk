@@ -149,7 +149,7 @@ extern "C" {
  * CPU tuning rules (e.g. cap NTT at AVX2 on AMD Zen4 where AVX-512
  * causes frequency throttling).
  *
- * Usage: DAP_DISPATCH_ARCH_SELECT_FOR(DAP_ALGO_CLASS_NTT);
+ * Usage: DAP_DISPATCH_ARCH_SELECT_FOR(my_registered_class);
  */
 #define DAP_DISPATCH_ARCH_SELECT_FOR(algo_class)                         \
     dap_cpu_arch_t l_best_arch = dap_cpu_arch_get_best_for(algo_class);  \

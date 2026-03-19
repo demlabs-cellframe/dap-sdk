@@ -34,30 +34,28 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* ========================================================================== */
-/*                       ALGORITHM CLASS ENUMERATION                          */
+/*                     ALGORITHM CLASS (REGISTRATION-BASED)                   */
 /* ========================================================================== */
 
 /**
- * @brief Algorithm class for per-workload SIMD tuning
- * @details Different algorithm classes may prefer different SIMD levels
- *          on the same CPU (e.g., sustained NTT may prefer AVX2 on AMD
- *          Zen4 where AVX-512 causes frequency throttling, while burst
- *          operations like pointwise multiply benefit from AVX-512).
+ * @brief Opaque algorithm class handle for per-workload SIMD tuning.
+ *
+ * Modules (math, crypto, etc.) register their own classes via
+ * dap_algo_class_register() and then attach CPU-specific tuning
+ * rules via dap_cpu_tune_add().  Core knows nothing about the
+ * semantics — it only stores the handles and matches rules.
  */
-typedef enum {
-    DAP_ALGO_CLASS_DEFAULT   = 0,  ///< General-purpose (no specific tuning)
-    DAP_ALGO_CLASS_NTT,            ///< NTT butterfly (sustained wide SIMD)
-    DAP_ALGO_CLASS_HASH,           ///< Hashing: SHA, SHAKE, BLAKE
-    DAP_ALGO_CLASS_SYMMETRIC,      ///< Symmetric crypto: AES, ChaCha20
-    DAP_ALGO_CLASS_ECC,            ///< Elliptic curve scalar/field ops
-    DAP_ALGO_CLASS_MAX
-} dap_algo_class_t;
+typedef uint32_t dap_algo_class_t;
+
+#define DAP_ALGO_CLASS_DEFAULT  ((dap_algo_class_t)0)
 
 /* ========================================================================== */
 /*                     CPU ARCHITECTURE ENUMERATION                           */
@@ -141,18 +139,72 @@ dap_cpu_arch_t dap_cpu_arch_get_best(void);
 
 /**
  * @brief Get best architecture for a specific algorithm class
- * @param a_class Algorithm class (NTT, HASH, ECC, etc.)
+ * @param a_class Algorithm class handle (from dap_algo_class_register)
  * @return Optimal architecture considering CPU-specific tuning rules
  *
- * @details Consults the built-in tuning table that maps
- *          (vendor, family, model) -> per-class architecture preferences.
- *          For example, AMD Zen4 may cap NTT at AVX2 while allowing
- *          AVX-512 for other workloads.
+ * @details Consults registered tuning rules that map
+ *          (vendor, family, model, algo_class) -> preferred arch.
  *
  * @note Manual override via dap_cpu_arch_set() takes highest priority.
  * @note DAP_ALGO_CLASS_DEFAULT returns the same as dap_cpu_arch_get_best().
  */
 dap_cpu_arch_t dap_cpu_arch_get_best_for(dap_algo_class_t a_class);
+
+/* ========================================================================== */
+/*                  ALGORITHM CLASS REGISTRATION                              */
+/* ========================================================================== */
+
+/**
+ * @brief Register a new algorithm class.
+ * @param a_name Human-readable name (e.g. "NTT", "HASH", "ECC")
+ * @return Unique non-zero handle, or 0 on capacity overflow.
+ *
+ * Call once per class during module init.  The returned handle is
+ * then passed to dap_cpu_tune_add() and DAP_DISPATCH_ARCH_SELECT_FOR().
+ */
+dap_algo_class_t dap_algo_class_register(const char *a_name);
+
+/**
+ * @brief Get human-readable name of a registered algorithm class.
+ */
+const char *dap_algo_class_get_name(dap_algo_class_t a_class);
+
+/* ========================================================================== */
+/*                  CPU TUNING RULE REGISTRATION                              */
+/* ========================================================================== */
+
+/* Forward-declare vendor enum used in rules (defined in dap_cpu_detect.h) */
+#include "dap_cpu_detect.h"
+
+/**
+ * @brief CPU-specific tuning rule.
+ *
+ * Modules populate these and pass to dap_cpu_tune_add().
+ * When dap_cpu_arch_get_best_for(class) is called, rules are
+ * matched top-to-bottom; first match wins.
+ *
+ * vendor == DAP_CPU_VENDOR_UNKNOWN means "match any vendor".
+ * algo_class == DAP_ALGO_CLASS_DEFAULT means "match any class".
+ */
+typedef struct {
+    dap_cpu_vendor_t vendor;
+    uint32_t family_min, family_max;
+    uint32_t model_min,  model_max;
+    dap_algo_class_t algo_class;
+    dap_cpu_arch_t   preferred_arch;
+} dap_cpu_tune_rule_t;
+
+/**
+ * @brief Register a single tuning rule.
+ * @return 0 on success, -1 if the rule table is full.
+ */
+int dap_cpu_tune_add(const dap_cpu_tune_rule_t *a_rule);
+
+/**
+ * @brief Register multiple tuning rules at once.
+ * @return 0 on success, -1 if the rule table overflows.
+ */
+int dap_cpu_tune_add_rules(const dap_cpu_tune_rule_t *a_rules, size_t a_count);
 
 /* ========================================================================== */
 /*                   GLOBAL ARCHITECTURE STATE MANAGEMENT                     */

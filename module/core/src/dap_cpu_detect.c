@@ -24,11 +24,12 @@
 #include "dap_cpu_detect.h"
 #include "dap_common.h"
 #include <string.h>
+#include <stdio.h>
 #include <pthread.h>
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if DAP_CPU_DETECT_X86
     #include <cpuid.h>
-#elif defined(__aarch64__) || defined(__arm__)
+#elif DAP_CPU_DETECT_ARM
     #if defined(__linux__)
         #include <sys/auxv.h>
         #include <asm/hwcap.h>
@@ -43,7 +44,7 @@ static bool s_features_detected = false;
 static char s_cpu_name[64] = "Unknown CPU";
 static pthread_once_t s_detect_once = PTHREAD_ONCE_INIT;
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if DAP_CPU_DETECT_X86
 
 /**
  * @brief Detect x86/x64 CPU features using CPUID
@@ -52,20 +53,27 @@ static void s_detect_x86_features(dap_cpu_features_t *a_features)
 {
     unsigned int eax, ebx, ecx, edx;
     
-    a_features->is_x86 = true;
     a_features->is_64bit = sizeof(void*) == 8;
-    a_features->cache_line_size = 64;  // Common for modern x86
+    a_features->cache_line_size = 64;
     
     // CPUID leaf 0: max leaf + vendor string
     if (!__get_cpuid(0, &eax, &ebx, &ecx, &edx)) {
         return;
     }
 
-    // Vendor: EBX-EDX-ECX spell "GenuineIntel" or "AuthenticAMD"
+    // Vendor: EBX-EDX-ECX form a 12-byte ASCII string
+    // "GenuineIntel", "AuthenticAMD", "HygonGenuine",
+    // "CentaurHauls" / "  Shanghai  " (VIA/Zhaoxin)
     if (ebx == 0x756E6547 && edx == 0x49656E69 && ecx == 0x6C65746E)
         a_features->vendor = DAP_CPU_VENDOR_INTEL;
     else if (ebx == 0x68747541 && edx == 0x69746E65 && ecx == 0x444D4163)
         a_features->vendor = DAP_CPU_VENDOR_AMD;
+    else if (ebx == 0x6F677948 && edx == 0x6E65476E && ecx == 0x656E6975)
+        a_features->vendor = DAP_CPU_VENDOR_HYGON;
+    else if (ebx == 0x746E6543 && edx == 0x48727561 && ecx == 0x736C7561)
+        a_features->vendor = DAP_CPU_VENDOR_VIA;
+    else if (ebx == 0x68532020 && edx == 0x68676E61 && ecx == 0x20206961)
+        a_features->vendor = DAP_CPU_VENDOR_VIA;
 
     // Brand string (leaves 0x80000002..04)
     unsigned int brand[12] = {0};
@@ -119,17 +127,42 @@ static void s_detect_x86_features(dap_cpu_features_t *a_features)
     }
 }
 
-#elif defined(__aarch64__) || defined(__arm__)
+#elif DAP_CPU_DETECT_ARM
 
 /**
  * @brief Detect ARM CPU features
  */
+static void s_detect_arm_vendor(dap_cpu_features_t *a_features)
+{
+#if defined(__APPLE__) && defined(__aarch64__)
+    a_features->vendor = DAP_CPU_VENDOR_APPLE;
+#elif defined(__linux__) && defined(__aarch64__)
+    // MIDR_EL1 is readable from /proc/cpuinfo or /sys on Linux
+    FILE *f = fopen("/sys/devices/system/cpu/cpu0/regs/identification/midr_el1", "r");
+    if (f) {
+        unsigned long long midr = 0;
+        if (fscanf(f, "%llx", &midr) == 1) {
+            uint8_t l_impl = (uint8_t)(midr >> 24);
+            switch (l_impl) {
+                case 0x41: a_features->vendor = DAP_CPU_VENDOR_ARM;       break;
+                case 0x42: /* Broadcom — fall through to unknown */       break;
+                case 0x48: a_features->vendor = DAP_CPU_VENDOR_HUAWEI;    break;
+                case 0x51: a_features->vendor = DAP_CPU_VENDOR_QUALCOMM;  break;
+                case 0x53: a_features->vendor = DAP_CPU_VENDOR_SAMSUNG;   break;
+                case 0x61: a_features->vendor = DAP_CPU_VENDOR_APPLE;     break;
+                case 0xC0: a_features->vendor = DAP_CPU_VENDOR_AMPERE;    break;
+            }
+        }
+        fclose(f);
+    }
+#endif
+}
+
 static void s_detect_arm_features(dap_cpu_features_t *a_features)
 {
-    a_features->is_arm = true;
     a_features->is_64bit = sizeof(void*) == 8;
-    a_features->cache_line_size = 64;  // Common for modern ARM
-    
+    a_features->cache_line_size = 64;
+
 #if defined(__aarch64__)
     a_features->has_neon = true;
     snprintf(s_cpu_name, sizeof(s_cpu_name), "ARM64 (AArch64)");
@@ -145,23 +178,25 @@ static void s_detect_arm_features(dap_cpu_features_t *a_features)
 #elif defined(__ARM_FEATURE_CRYPTO)
     a_features->has_arm_ce = true;
 #endif
-    
+
 #if defined(__linux__)
     unsigned long hwcap = getauxval(AT_HWCAP);
     unsigned long hwcap2 = getauxval(AT_HWCAP2);
-    
+
     #ifdef HWCAP_AES
         a_features->has_arm_ce = (hwcap & HWCAP_AES) != 0;
     #endif
-    
+
     #ifdef HWCAP_SVE
         a_features->has_sve = (hwcap & HWCAP_SVE) != 0;
     #endif
-    
+
     #ifdef HWCAP2_SVE2
         a_features->has_sve2 = (hwcap2 & HWCAP2_SVE2) != 0;
     #endif
 #endif
+
+    s_detect_arm_vendor(a_features);
 }
 
 #else
@@ -185,9 +220,9 @@ static void s_detect_features_impl(void)
 {
     memset(&s_cached_features, 0, sizeof(s_cached_features));
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if DAP_CPU_DETECT_X86
     s_detect_x86_features(&s_cached_features);
-#elif defined(__aarch64__) || defined(__arm__)
+#elif DAP_CPU_DETECT_ARM
     s_detect_arm_features(&s_cached_features);
 #else
     s_detect_generic_features(&s_cached_features);
@@ -195,13 +230,19 @@ static void s_detect_features_impl(void)
 
     s_features_detected = true;
 
-    static const char *s_vendor_names[] = { "Unknown", "Intel", "AMD" };
+    static const char *s_vendor_names[] = {
+        "Unknown", "Intel", "AMD", "ARM", "Apple", "Qualcomm",
+        "Samsung", "Ampere", "HiSilicon", "Baikal", "VIA/Zhaoxin", "Hygon"
+    };
+    unsigned l_vi = (unsigned)s_cached_features.vendor;
+    const char *l_vendor = l_vi < sizeof(s_vendor_names)/sizeof(s_vendor_names[0])
+                           ? s_vendor_names[l_vi] : "Other";
     log_it(L_INFO, "CPU detected: %s", s_cpu_name);
     log_it(L_DEBUG, "  64-bit: %s", s_cached_features.is_64bit ? "yes" : "no");
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if DAP_CPU_DETECT_X86
     log_it(L_DEBUG, "  Vendor: %s, Family: 0x%X, Model: 0x%X, Stepping: %u",
-           s_vendor_names[s_cached_features.vendor],
+           l_vendor,
            s_cached_features.x86_family,
            s_cached_features.x86_model,
            s_cached_features.x86_stepping);
@@ -226,7 +267,8 @@ static void s_detect_features_impl(void)
            s_cached_features.has_aes_ni ? "yes" : "no",
            s_cached_features.has_sha_ni ? "yes" : "no",
            s_cached_features.has_pclmulqdq ? "yes" : "no");
-#elif defined(__aarch64__) || defined(__arm__)
+#elif DAP_CPU_DETECT_ARM
+    log_it(L_DEBUG, "  Vendor: %s", l_vendor);
     log_it(L_DEBUG, "  NEON: %s, SVE: %s, SVE2: %s, ARM-CE: %s",
            s_cached_features.has_neon ? "yes" : "no",
            s_cached_features.has_sve ? "yes" : "no",
@@ -252,24 +294,32 @@ const char* dap_cpu_get_name(void)
 void dap_cpu_print_features(void)
 {
     dap_cpu_features_t f = dap_cpu_detect_features();
-    
+
+    static const char *s_arch_name =
+#if DAP_CPU_DETECT_X86
+        "x86";
+#elif DAP_CPU_DETECT_ARM
+        "ARM";
+#else
+        "Unknown";
+#endif
+
     log_it(L_INFO, "=== CPU Features ===");
     log_it(L_INFO, "CPU: %s", s_cpu_name);
-    log_it(L_INFO, "Architecture: %s %s",
-           f.is_x86 ? "x86" : (f.is_arm ? "ARM" : "Unknown"),
+    log_it(L_INFO, "Architecture: %s %s", s_arch_name,
            f.is_64bit ? "64-bit" : "32-bit");
     log_it(L_INFO, "Cache line size: %u bytes", f.cache_line_size);
-    
-    if (f.is_x86) {
-        log_it(L_INFO, "SIMD: SSE2=%d SSE4.1=%d SSE4.2=%d AVX=%d AVX2=%d",
-               f.has_sse2, f.has_sse4_1, f.has_sse4_2, f.has_avx, f.has_avx2);
-        log_it(L_INFO, "AVX-512: F=%d DQ=%d BW=%d VL=%d IFMA=%d",
-               f.has_avx512f, f.has_avx512dq, f.has_avx512bw, f.has_avx512vl, f.has_avx512_ifma);
-        log_it(L_INFO, "Other: BMI=%d BMI2=%d POPCNT=%d AES-NI=%d SHA-NI=%d PCLMULQDQ=%d",
-               f.has_bmi, f.has_bmi2, f.has_popcnt, f.has_aes_ni, f.has_sha_ni, f.has_pclmulqdq);
-    } else if (f.is_arm) {
-        log_it(L_INFO, "SIMD: NEON=%d SVE=%d SVE2=%d ARM-CE=%d",
-               f.has_neon, f.has_sve, f.has_sve2, f.has_arm_ce);
-    }
+
+#if DAP_CPU_DETECT_X86
+    log_it(L_INFO, "SIMD: SSE2=%d SSE4.1=%d SSE4.2=%d AVX=%d AVX2=%d",
+           f.has_sse2, f.has_sse4_1, f.has_sse4_2, f.has_avx, f.has_avx2);
+    log_it(L_INFO, "AVX-512: F=%d DQ=%d BW=%d VL=%d IFMA=%d",
+           f.has_avx512f, f.has_avx512dq, f.has_avx512bw, f.has_avx512vl, f.has_avx512_ifma);
+    log_it(L_INFO, "Other: BMI=%d BMI2=%d POPCNT=%d AES-NI=%d SHA-NI=%d PCLMULQDQ=%d",
+           f.has_bmi, f.has_bmi2, f.has_popcnt, f.has_aes_ni, f.has_sha_ni, f.has_pclmulqdq);
+#elif DAP_CPU_DETECT_ARM
+    log_it(L_INFO, "SIMD: NEON=%d SVE=%d SVE2=%d ARM-CE=%d",
+           f.has_neon, f.has_sve, f.has_sve2, f.has_arm_ce);
+#endif
 }
 

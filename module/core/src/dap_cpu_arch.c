@@ -71,33 +71,24 @@ const char* dap_cpu_arch_get_name(dap_cpu_arch_t a_arch)
 bool dap_cpu_arch_is_available(dap_cpu_arch_t a_arch)
 {
     dap_cpu_features_t features = dap_cpu_detect_features();
-    
+
     switch (a_arch) {
         case DAP_CPU_ARCH_AUTO:
         case DAP_CPU_ARCH_REFERENCE:
-            return true;  // Always available
-            
-        case DAP_CPU_ARCH_SSE2:
-            return features.has_sse2;
-            
-        case DAP_CPU_ARCH_AVX2:
-            return features.has_avx2;
-            
-        case DAP_CPU_ARCH_AVX512:
-            return features.has_avx512f && features.has_avx512bw;
-            
-        case DAP_CPU_ARCH_NEON:
-            return features.has_neon;
-            
-        case DAP_CPU_ARCH_SVE:
-            return features.has_sve;
-            
-        case DAP_CPU_ARCH_SVE2:
-            return features.has_sve2;
-            
-        case DAP_CPU_ARCH_RISC_V:
-            return false;  // Not yet implemented
-            
+            return true;
+
+#if DAP_CPU_DETECT_X86
+        case DAP_CPU_ARCH_SSE2:   return features.has_sse2;
+        case DAP_CPU_ARCH_AVX2:   return features.has_avx2;
+        case DAP_CPU_ARCH_AVX512: return features.has_avx512f && features.has_avx512bw;
+#endif
+
+#if DAP_CPU_DETECT_ARM
+        case DAP_CPU_ARCH_NEON:   return features.has_neon;
+        case DAP_CPU_ARCH_SVE:    return features.has_sve;
+        case DAP_CPU_ARCH_SVE2:   return features.has_sve2;
+#endif
+
         default:
             return false;
     }
@@ -111,28 +102,20 @@ dap_cpu_arch_t dap_cpu_arch_get_best(void)
 {
     dap_cpu_features_t features = dap_cpu_detect_features();
     
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-    /* x86/x64 priority: AVX-512 > AVX2 > SSE2 > Reference */
-    if (features.has_avx512f && features.has_avx512bw) {
+#if DAP_CPU_DETECT_X86
+    if (features.has_avx512f && features.has_avx512bw)
         return DAP_CPU_ARCH_AVX512;
-    }
-    if (features.has_avx2) {
+    if (features.has_avx2)
         return DAP_CPU_ARCH_AVX2;
-    }
-    if (features.has_sse2) {
+    if (features.has_sse2)
         return DAP_CPU_ARCH_SSE2;
-    }
-#elif defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || defined(_M_ARM64)
-    /* ARM priority: SVE2 > SVE > NEON > Reference */
-    if (features.has_sve2) {
+#elif DAP_CPU_DETECT_ARM
+    if (features.has_sve2)
         return DAP_CPU_ARCH_SVE2;
-    }
-    if (features.has_sve) {
+    if (features.has_sve)
         return DAP_CPU_ARCH_SVE;
-    }
-    if (features.has_neon) {
+    if (features.has_neon)
         return DAP_CPU_ARCH_NEON;
-    }
 #endif
     
     /* Fallback to reference implementation */
@@ -140,51 +123,61 @@ dap_cpu_arch_t dap_cpu_arch_get_best(void)
 }
 
 /* ========================================================================== */
-/*                  CPU-SPECIFIC TUNING RULES TABLE                           */
+/*                    ALGORITHM CLASS REGISTRY                                */
 /* ========================================================================== */
 
-/**
- * @brief Rule for overriding default arch selection on specific CPUs
- *
- * Matched top-to-bottom; first match wins. If algo_class == DEFAULT,
- * the rule applies to every class that has no more-specific match.
- */
-typedef struct {
-    dap_cpu_vendor_t vendor;
-    uint32_t family_min, family_max;
-    uint32_t model_min,  model_max;
-    dap_algo_class_t algo_class;
-    dap_cpu_arch_t preferred_arch;
-} dap_cpu_tune_rule_t;
+#define DAP_ALGO_CLASS_MAX_REGISTERED 32
 
-/*
- * Tuning table: first matching rule wins.
- *
- * AMD Zen4 (Raphael/Phoenix): family 0x19, model 0x60-0x7F / 0x70-0x7F
- *   AVX-512 on Zen4 uses double-pumping (256-bit units), causing frequency
- *   throttling on sustained SIMD workloads like NTT butterfly.  AVX2 is
- *   faster in practice.
- *
- * AMD Zen5 (Granite Ridge / Strix Point): family 0x1A
- *   512-bit data paths present but still observed to throttle under
- *   sustained load; conservatively cap NTT at AVX2.
- *
- * Intel Xeon / Core (all families): no rules needed — AVX-512 runs
- *   at full width without throttling on server parts (Skylake-X+),
- *   and desktop Alder/Raptor Lake simply lacks AVX-512, so
- *   dap_cpu_arch_get_best() already falls back to AVX2.
- */
-static const dap_cpu_tune_rule_t s_tune_rules[] = {
-    /* AMD Zen4: family 0x19, model range 0x60..0x7F — NTT prefers AVX2 */
-    { DAP_CPU_VENDOR_AMD, 0x19, 0x19, 0x60, 0x7F,
-      DAP_ALGO_CLASS_NTT, DAP_CPU_ARCH_AVX2 },
+static const char *s_algo_class_names[DAP_ALGO_CLASS_MAX_REGISTERED] = { [0] = "default" };
+static uint32_t    s_algo_class_next_id = 1;
 
-    /* AMD Zen5: family 0x1A, all models — NTT prefers AVX2 */
-    { DAP_CPU_VENDOR_AMD, 0x1A, 0x1A, 0x00, 0xFF,
-      DAP_ALGO_CLASS_NTT, DAP_CPU_ARCH_AVX2 },
-};
+dap_algo_class_t dap_algo_class_register(const char *a_name)
+{
+    uint32_t l_id = s_algo_class_next_id;
+    if (l_id >= DAP_ALGO_CLASS_MAX_REGISTERED) {
+        log_it(L_ERROR, "Algorithm class registry full (max %d)", DAP_ALGO_CLASS_MAX_REGISTERED);
+        return DAP_ALGO_CLASS_DEFAULT;
+    }
+    s_algo_class_names[l_id] = a_name;
+    s_algo_class_next_id = l_id + 1;
+    log_it(L_DEBUG, "Registered algo class %u: \"%s\"", l_id, a_name);
+    return (dap_algo_class_t)l_id;
+}
 
-#define DAP_TUNE_RULES_COUNT  (sizeof(s_tune_rules) / sizeof(s_tune_rules[0]))
+const char *dap_algo_class_get_name(dap_algo_class_t a_class)
+{
+    if (a_class < s_algo_class_next_id)
+        return s_algo_class_names[a_class];
+    return "unknown";
+}
+
+/* ========================================================================== */
+/*                  CPU TUNING RULES (DYNAMIC REGISTRY)                       */
+/* ========================================================================== */
+
+#define DAP_TUNE_RULES_MAX 64
+
+static dap_cpu_tune_rule_t s_tune_rules[DAP_TUNE_RULES_MAX];
+static size_t              s_tune_rules_count = 0;
+
+int dap_cpu_tune_add(const dap_cpu_tune_rule_t *a_rule)
+{
+    if (s_tune_rules_count >= DAP_TUNE_RULES_MAX) {
+        log_it(L_ERROR, "CPU tune rules table full (max %d)", DAP_TUNE_RULES_MAX);
+        return -1;
+    }
+    s_tune_rules[s_tune_rules_count++] = *a_rule;
+    return 0;
+}
+
+int dap_cpu_tune_add_rules(const dap_cpu_tune_rule_t *a_rules, size_t a_count)
+{
+    for (size_t i = 0; i < a_count; i++) {
+        if (dap_cpu_tune_add(&a_rules[i]) != 0)
+            return -1;
+    }
+    return 0;
+}
 
 /* ========================================================================== */
 /*              PER-ALGORITHM-CLASS BEST ARCHITECTURE SELECTION                */
@@ -202,14 +195,16 @@ dap_cpu_arch_t dap_cpu_arch_get_best_for(dap_algo_class_t a_class)
 
     dap_cpu_features_t l_feat = dap_cpu_detect_features();
 
-    for (size_t i = 0; i < DAP_TUNE_RULES_COUNT; i++) {
+    for (size_t i = 0; i < s_tune_rules_count; i++) {
         const dap_cpu_tune_rule_t *r = &s_tune_rules[i];
         if (r->vendor != DAP_CPU_VENDOR_UNKNOWN && r->vendor != l_feat.vendor)
             continue;
+#if DAP_CPU_DETECT_X86
         if (l_feat.x86_family < r->family_min || l_feat.x86_family > r->family_max)
             continue;
         if (l_feat.x86_model < r->model_min || l_feat.x86_model > r->model_max)
             continue;
+#endif
         if (r->algo_class != DAP_ALGO_CLASS_DEFAULT && r->algo_class != a_class)
             continue;
 
