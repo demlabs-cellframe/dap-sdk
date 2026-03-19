@@ -238,6 +238,8 @@ typedef struct dap_net_session_params {
     size_t enc_key_size;                   ///< Encryption key size
     bool enc_headers;                      ///< Encrypt packet headers flag
     uint32_t protocol_version;             ///< Protocol version
+    dap_enc_key_t *session_key;           ///< Session key for encrypting this request (from handshake)
+    const char *session_key_id;           ///< Session key identifier (from handshake)
 } dap_net_session_params_t;
 
 /**

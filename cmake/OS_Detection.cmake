@@ -275,7 +275,7 @@ if(UNIX)
         set(_LOPT "${_LOPT} -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=16777216 -sMAXIMUM_MEMORY=268435456")
         set(_LOPT "${_LOPT} -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','stringToUTF8']")
         set(_LOPT "${_LOPT} -sENVIRONMENT=web,worker,node")
-        set(_LOPT "${_LOPT} -sPTHREAD_POOL_SIZE=8 -sPROXY_TO_PTHREAD")
+        set(_LOPT "${_LOPT} -sPTHREAD_POOL_SIZE=8")
     endif()
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT}")

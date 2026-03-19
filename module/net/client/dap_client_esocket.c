@@ -346,6 +346,39 @@ void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_cod
                           STAGE_STATUS_DONE, ERROR_NO_ERROR);
 }
 
+void s_session_start_callback_wrapper(dap_stream_t *a_stream, int a_error_code)
+{
+    if (!a_stream)
+        return;
+
+    dap_client_t *l_client = NULL;
+    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
+        l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
+    else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket_worker
+                                 && a_stream->trans_ctx->esocket_uuid) {
+        dap_events_socket_t *l_found = dap_context_find(
+                a_stream->trans_ctx->esocket_worker->context,
+                a_stream->trans_ctx->esocket_uuid);
+        if (l_found)
+            l_client = DAP_ESOCKET_CLIENT(l_found);
+    }
+
+    dap_client_esocket_t *l_es = l_client ? DAP_CLIENT_ESOCKET(l_client) : NULL;
+    if (!l_es)
+        return;
+
+    if (a_error_code != 0) {
+        log_it(L_ERROR, "Session start failed with error %d", a_error_code);
+        dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
+                              STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+        return;
+    }
+
+    log_it(L_INFO, "Session started, streaming ready");
+    dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
+                          STAGE_STATUS_DONE, ERROR_NO_ERROR);
+}
+
 // ===== ENC response processing (runs on worker) =====
 
 static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size_t a_data_size)

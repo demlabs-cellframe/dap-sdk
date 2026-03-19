@@ -411,6 +411,7 @@ extern void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
 extern void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id,
                                                const char *a_response_data, size_t a_response_size, int a_error);
 extern void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_code);
+extern void s_session_start_callback_wrapper(dap_stream_t *a_stream, int a_error_code);
 
 // Timer callbacks (defined below)
 static bool s_stream_timer_timeout_check(void *a_arg);
@@ -520,7 +521,9 @@ static void s_worker_execute_stage(void *a_arg)
             .enc_type = l_es->session_key_type,
             .enc_key_size = l_es->session_key_block_size,
             .enc_headers = false,
-            .protocol_version = DAP_CLIENT_PROTOCOL_VERSION
+            .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
+            .session_key = l_es->session_key,
+            .session_key_id = l_es->session_key_id
         };
 
         int l_ret = l_transport->ops->session_create(l_es->stream, &l_session_params,
@@ -537,14 +540,13 @@ static void s_worker_execute_stage(void *a_arg)
     case STAGE_STREAM_SESSION: {
         debug_if(s_debug_more, L_INFO, "Worker: executing STAGE_STREAM_SESSION for client %p", l_client);
 
-        if (!l_es->stream || !l_es->stream_es) {
+        if (!l_es->stream) {
             log_it(L_ERROR, "No stream for STAGE_STREAM_SESSION");
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
             break;
         }
 
-        // Create session if needed
         if (!l_es->stream->session || !l_es->stream->session->key) {
             l_es->stream->session = dap_stream_session_pure_new();
             if (!l_es->stream->session) {
@@ -582,9 +584,7 @@ static void s_worker_execute_stage(void *a_arg)
                                       STAGE_STATUS_ERROR, ERROR_STREAM_CONNECT);
                 break;
             }
-            // Async; callback will notify FSM
-        } else {
-            // No explicit connect needed; set up timeout
+        } else if (l_es->stream_es) {
             dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_DUP(&l_es->stream_es->uuid);
             if (!dap_timerfd_start_on_worker(l_worker,
                                              (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
@@ -594,7 +594,9 @@ static void s_worker_execute_stage(void *a_arg)
                                       STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
                 break;
             }
-            // Immediately connected
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_DONE, ERROR_NO_ERROR);
+        } else {
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_DONE, ERROR_NO_ERROR);
         }
@@ -631,32 +633,31 @@ static void s_worker_execute_stage(void *a_arg)
             l_es->stream_es->callbacks.delete_callback = l_stream_cbs.delete_callback;
         }
 
-        // Session start
         dap_net_trans_t *l_transport = l_es->stream->trans;
-        int l_start_ret = 0;
         if (l_transport && l_transport->ops && l_transport->ops->session_start) {
-            l_start_ret = l_transport->ops->session_start(l_es->stream, l_es->stream_id, NULL);
-        }
-        if (l_start_ret != 0) {
-            log_it(L_ERROR, "Session start failed: %d", l_start_ret);
-            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                                  STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
-            break;
-        }
-
-        // Start timeout timer for streaming
-        dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (l_es_uuid_ptr && l_es->stream_es) {
-            *l_es_uuid_ptr = l_es->stream_es->uuid;
-            if (!dap_timerfd_start_on_worker(l_worker,
-                                             s_client_timeout_active_after_connect_seconds * 1024,
-                                             s_stream_timer_timeout_after_connected_check, l_es_uuid_ptr)) {
-                DAP_DELETE(l_es_uuid_ptr);
+            int l_start_ret = l_transport->ops->session_start(
+                l_es->stream, l_es->stream_id, s_session_start_callback_wrapper);
+            if (l_start_ret != 0) {
+                log_it(L_ERROR, "Session start failed: %d", l_start_ret);
+                dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                      STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+                break;
             }
+        } else {
+            if (l_es->stream_es) {
+                dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+                if (l_es_uuid_ptr) {
+                    *l_es_uuid_ptr = l_es->stream_es->uuid;
+                    if (!dap_timerfd_start_on_worker(l_worker,
+                                                     s_client_timeout_active_after_connect_seconds * 1024,
+                                                     s_stream_timer_timeout_after_connected_check, l_es_uuid_ptr)) {
+                        DAP_DELETE(l_es_uuid_ptr);
+                    }
+                }
+            }
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_DONE, ERROR_NO_ERROR);
         }
-
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                              STAGE_STATUS_DONE, ERROR_NO_ERROR);
     } break;
 
     case STAGE_STREAM_STREAMING: {
@@ -697,7 +698,7 @@ static void s_worker_execute_stage(void *a_arg)
 
         dap_net_stage_prepare_result_t l_prepare_result;
         int l_ret = dap_net_trans_stage_prepare(l_client->trans_type, &l_prepare_params, &l_prepare_result);
-        if (l_ret != 0 || !l_prepare_result.esocket) {
+        if (l_ret != 0) {
             log_it(L_ERROR, "Stage prepare failed for QoS probe: transport %d, error %d",
                    l_client->trans_type, l_prepare_result.error_code);
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
@@ -707,7 +708,8 @@ static void s_worker_execute_stage(void *a_arg)
 
         if (!l_prepare_result.stream) {
             log_it(L_CRITICAL, "Transport failed to create stream for QoS probe");
-            dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
+            if (l_prepare_result.esocket)
+                dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
             break;
@@ -1041,7 +1043,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     dap_net_stage_prepare_result_t l_prepare_result;
     int l_ret = dap_net_trans_stage_prepare(l_ctx->trans_type, &l_prepare_params, &l_prepare_result);
 
-    if (l_ret != 0 || !l_prepare_result.esocket) {
+    if (l_ret != 0) {
         log_it(L_ERROR, "Stage prepare failed: transport %d, error %d", l_ctx->trans_type,
                l_prepare_result.error_code);
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
@@ -1053,7 +1055,8 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
     if (!l_prepare_result.stream) {
         log_it(L_CRITICAL, "Transport failed to create stream for handshake");
-        dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
+        if (l_prepare_result.esocket)
+            dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
