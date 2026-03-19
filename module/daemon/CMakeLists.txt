@@ -20,7 +20,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 # Dependencies
-target_link_libraries(${PROJECT_NAME} dap_core dap_timer)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_timer)
 
 # Export headers for installation
 if(INSTALL_DAP_SDK)

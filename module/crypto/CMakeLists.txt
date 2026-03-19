@@ -392,7 +392,7 @@ message("[+] DAP Crypto: ML-KEM-512/768/1024 support enabled")
 
 if (DAP_PQRL)
 
-    TARGET_LINK_LIBRARIES(dap_crypto ${PQLR_DILITHIUM_LIBRARIES})
+    TARGET_LINK_LIBRARIES(dap_crypto INTERFACE ${PQLR_DILITHIUM_LIBRARIES})
 
     IF(WIN32)
         ADD_CUSTOM_COMMAND(TARGET dap_crypto POST_BUILD
@@ -422,10 +422,10 @@ if(UNIX)
     list(APPEND CRYPTO_LIBS "m")
 endif()
 
-target_link_libraries(dap_crypto dap_core dap_json dap_hash dap_hash_table dap_config dap_math_bignum)
+dap_link_libraries(dap_crypto INTERFACE dap_core dap_json dap_hash dap_hash_table dap_config dap_math dap_math_bignum)
 
 if(UNIX)
-  target_link_libraries(dap_crypto m)
+  target_link_libraries(dap_crypto INTERFACE m)
 endif()
 
 # Export dependencies for main SDK build

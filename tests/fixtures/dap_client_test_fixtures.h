@@ -151,7 +151,7 @@ int dap_test_setup_certificates(const char *a_test_dir);
  * @return 0 on success, negative error code on failure
  */
 int dap_test_generate_unique_node_addr(const char *a_cert_name, dap_enc_key_type_t a_key_type, 
-                                      dap_stream_node_addr_t *a_node_addr_out);
+                                      dap_cluster_node_addr_t *a_node_addr_out);
 
 /**
  * @brief Cleanup test certificate environment

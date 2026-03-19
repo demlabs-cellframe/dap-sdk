@@ -25,7 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #include "dap_common.h"
 #include "dap_hash.h"
-#include "dap_stream_cluster.h"
+#include "dap_cluster.h"
 
 typedef enum dap_gossip_msg_type {
     DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH,
@@ -41,11 +41,11 @@ typedef struct dap_gossip_msg {
     uint32_t    trace_len;                  // Size of tracepath, in bytes
     uint64_t    payload_len;                // Size of payload, bytes
     dap_guuid_t cluster_id;                 // Links cluster ID to message retranslate to
-    dap_hash_sha3_256_t  payload_hash;               // Payoad hash for doubles check
+    dap_hash_t  payload_hash;               // Payoad hash for doubles check
     byte_t      trace_n_payload[];          // Serialized form of message tracepath and payload itself
 } DAP_ALIGN_PACKED dap_gossip_msg_t;
 
-typedef void (*dap_gossip_callback_payload_t)(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr);
+typedef void (*dap_gossip_callback_payload_t)(void *a_payload, size_t a_payload_size, dap_cluster_node_addr_t a_sender_addr);
 
 #define DAP_STREAM_CH_GOSSIP_ID     'G'
 #define DAP_GOSSIP_CURRENT_VERSION  1
@@ -55,5 +55,5 @@ DAP_STATIC_INLINE uint64_t dap_gossip_msg_get_size(dap_gossip_msg_t *a_msg) { re
                                                                                     ? 0 : sizeof(dap_gossip_msg_t) + (uint64_t)a_msg->trace_len + a_msg->payload_len; }
 int dap_stream_ch_gossip_init();
 void dap_stream_ch_gossip_deinit();
-void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_sha3_256_t *a_payload_hash);
+void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_fast_t *a_payload_hash);
 int dap_stream_ch_gossip_callback_add(const char a_ch_id, dap_gossip_callback_payload_t a_callback);

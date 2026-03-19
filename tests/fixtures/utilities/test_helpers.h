@@ -135,10 +135,17 @@ char* dap_test_random_string(size_t a_length);
 
 // Test configuration helpers
 /**
- * @brief Setup minimal DAP SDK environment for testing
+ * @brief Setup full DAP SDK environment for testing (all modules)
  * @return 0 on success, negative error code on failure
  */
 int dap_test_sdk_init(void);
+
+/**
+ * @brief Setup DAP SDK environment with specific modules
+ * @param a_modules Bitmask of DAP_SDK_MODULE_* flags
+ * @return 0 on success, negative error code on failure
+ */
+int dap_test_sdk_init_modules(uint32_t a_modules);
 
 /**
  * @brief Cleanup DAP SDK test environment

@@ -19,28 +19,17 @@
 */
 
 
-#ifdef _WIN32
-#include <time.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <winsock2.h>
-#include <windows.h>
-#include <mswsock.h>
-#include <ws2tcpip.h>
-#include <io.h>
-#include <pthread.h>
-#endif
-
 #include "dap_common.h"
-#include "dap_time.h"
 #include "dap_stream_session.h"
+#include "dap_config.h"
+#include "dap_ht.h"
 #include "dap_rand.h"
 
 #define LOG_TAG "dap_stream_session"
 
 static dap_stream_session_t *s_sessions = NULL;
 static pthread_mutex_t s_sessions_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool s_debug_more = false;
 
 
 
@@ -50,8 +39,9 @@ static void * session_check(void * data);
 
 void dap_stream_session_init()
 {
+    s_debug_more = dap_config_get_item_bool_default(g_config, "stream", "debug_more", false);
     log_it(L_INFO,"Init module");
-    srand ( (unsigned int)dap_time_now() );
+    srand ( time(NULL) );
 }
 
 void dap_stream_session_deinit()
@@ -64,7 +54,7 @@ void dap_stream_session_deinit()
           dap_ht_del(s_sessions, current);
           if (current->callback_delete)
               current->callback_delete(current, NULL);
-          if (current->_inheritor)
+          if (current->_inheritor )
               DAP_DELETE(current->_inheritor);
           DAP_DELETE(current);
       }
@@ -121,7 +111,7 @@ uint32_t session_id = 0;
 
        /* Prefill session context with data ... */
        pthread_mutex_init(&l_stm_sess->mutex, NULL);
-       l_stm_sess->time_created = dap_time_now();
+       l_stm_sess->time_created = time(NULL);
        l_stm_sess->create_empty = true;
 
        log_it(L_INFO, "Created session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
@@ -140,32 +130,66 @@ dap_stream_session_t * dap_stream_session_new(unsigned int media_id, bool open_p
 }
 
 /**
- * @brief dap_stream_session_by_id
+ * @brief dap_stream_session_id_mt
  * @param id
  * @return
  */
-dap_stream_session_t *dap_stream_session_by_id(uint32_t a_id)
+dap_stream_session_t *dap_stream_session_id_mt(uint32_t a_id)
 {
     dap_stream_session_t *l_ret = NULL;
-    pthread_mutex_lock(&s_sessions_mutex);
+    dap_stream_session_lock();
     dap_ht_find_int(s_sessions, a_id, l_ret);
-    pthread_mutex_unlock(&s_sessions_mutex);
+    dap_stream_session_unlock();
     return l_ret;
 }
 
-int dap_stream_session_close(uint32_t a_id)
+/**
+ * @brief dap_stream_session_id_unsafe
+ * @param id
+ * @return
+ */
+dap_stream_session_t *dap_stream_session_id_unsafe(uint32_t id )
 {
-    dap_stream_session_t *l_stm_sess = NULL;
-    log_it(L_INFO, "Close session id %u ...", a_id);
+    dap_stream_session_t *ret = NULL;
+    dap_ht_find_int(s_sessions, id, ret);
+    return ret;
+}
+
+/**
+ * @brief dap_stream_session_lock
+ */
+void dap_stream_session_lock()
+{
     pthread_mutex_lock(&s_sessions_mutex);
-    dap_ht_find_int(s_sessions, a_id, l_stm_sess);
-    if (!l_stm_sess) {
-        pthread_mutex_unlock(&s_sessions_mutex);
-        log_it(L_WARNING, "Session id %u not found", a_id);
+}
+
+/**
+ * @brief dap_stream_session_unlock
+ */
+void dap_stream_session_unlock()
+{
+    pthread_mutex_unlock(&s_sessions_mutex);
+}
+
+
+int dap_stream_session_close_mt(uint32_t id)
+{
+dap_stream_session_t *l_stm_sess;
+
+    log_it(L_INFO, "Close session id %u ...", id);
+
+    dap_stream_session_lock();
+    if ( !(l_stm_sess = dap_stream_session_id_unsafe( id )) )
+    {
+        dap_stream_session_unlock();
+        log_it(L_WARNING, "Session id %u not found", id);
+
         return -1;
     }
+
     dap_ht_del(s_sessions, l_stm_sess);
-    pthread_mutex_unlock(&s_sessions_mutex);
+    dap_stream_session_unlock();
+
     log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 
     if (l_stm_sess->callback_delete)
@@ -189,10 +213,17 @@ int dap_stream_session_close(uint32_t a_id)
  */
 int dap_stream_session_open(dap_stream_session_t * a_session)
 {
+    if (!a_session) {
+        log_it(L_ERROR, "dap_stream_session_open: session is NULL");
+        return -1;
+    }
     int ret;
+    debug_if(s_debug_more, L_DEBUG, "dap_stream_session_open: locking mutex for session %u", a_session->id);
     pthread_mutex_lock(&a_session->mutex);
+    debug_if(s_debug_more, L_DEBUG, "dap_stream_session_open: mutex locked, opened=%d", a_session->opened);
     ret=a_session->opened;
     if(a_session->opened==0) a_session->opened=1;
     pthread_mutex_unlock(&a_session->mutex);
+    debug_if(s_debug_more, L_DEBUG, "dap_stream_session_open: returning %d", ret);
     return ret;
 }

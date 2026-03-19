@@ -17,7 +17,7 @@
 #include "dap_net_common.h"
 #include "dap_test.h"
 #include "dap_link_manager.h"
-#include "dap_stream_cluster.h"
+#include "dap_cluster.h"
 #include "dap_config.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
@@ -187,7 +187,7 @@ static void s_cleanup_test_nets(void)
 /**
  * @brief Compare node addresses
  */
-static bool s_addr_equal(dap_stream_node_addr_t a_addr1, dap_stream_node_addr_t a_addr2)
+static bool s_addr_equal(dap_cluster_node_addr_t a_addr1, dap_cluster_node_addr_t a_addr2)
 {
     return a_addr1.uint64 == a_addr2.uint64;
 }
@@ -195,9 +195,9 @@ static bool s_addr_equal(dap_stream_node_addr_t a_addr1, dap_stream_node_addr_t 
 /**
  * @brief Create test node address from uint64
  */
-static dap_stream_node_addr_t s_make_addr(uint64_t a_val)
+static dap_cluster_node_addr_t s_make_addr(uint64_t a_val)
 {
-    dap_stream_node_addr_t l_addr;
+    dap_cluster_node_addr_t l_addr;
     l_addr.uint64 = a_val;
     return l_addr;
 }
@@ -219,7 +219,7 @@ static void test_hot_list_init(void)
     
     // Verify hot list is empty initially
     size_t l_count = 0;
-    dap_stream_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
+    dap_cluster_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
     
     dap_assert_PIF(l_addrs == NULL, "Hot list should be empty initially");
     dap_assert_PIF(l_count == 0, "Count should be 0 for empty hot list");
@@ -242,12 +242,12 @@ static void test_hot_list_add_single(void)
                    "Failed to create test network");
     
     // Add node to hot list
-    dap_stream_node_addr_t l_addr = s_make_addr(0x01);
+    dap_cluster_node_addr_t l_addr = s_make_addr(0x01);
     dap_link_manager_add_to_hot_list(l_addr, TEST_NET_ID_1);
     
     // Verify node is in hot list
     size_t l_count = 0;
-    dap_stream_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
+    dap_cluster_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
     
     log_it(L_DEBUG, "Hot list count: %zu (expected: 1)", l_count);
     dap_assert_PIF(l_count == 1, "Hot list should contain 1 node");
@@ -278,7 +278,7 @@ static void test_hot_list_add_multiple(void)
     
     // Add multiple nodes
     const size_t l_nodes_count = 3;
-    dap_stream_node_addr_t l_addrs_to_add[3];
+    dap_cluster_node_addr_t l_addrs_to_add[3];
     l_addrs_to_add[0] = s_make_addr(0x01);
     l_addrs_to_add[1] = s_make_addr(0x02);
     l_addrs_to_add[2] = s_make_addr(0x03);
@@ -289,7 +289,7 @@ static void test_hot_list_add_multiple(void)
     
     // Verify all nodes are in hot list
     size_t l_count = 0;
-    dap_stream_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
+    dap_cluster_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
     
     log_it(L_DEBUG, "Hot list count: %zu (expected: %zu)", l_count, l_nodes_count);
     dap_assert_PIF(l_count == l_nodes_count, "Hot list should contain all added nodes");
@@ -328,7 +328,7 @@ static void test_hot_list_duplicate(void)
                    "Failed to create test network");
     
     // Add node first time
-    dap_stream_node_addr_t l_addr = s_make_addr(0x01);
+    dap_cluster_node_addr_t l_addr = s_make_addr(0x01);
     dap_link_manager_add_to_hot_list(l_addr, TEST_NET_ID_1);
     
     // Add same node again (should update timestamp, not add duplicate)
@@ -336,7 +336,7 @@ static void test_hot_list_duplicate(void)
     
     // Verify still only one entry
     size_t l_count = 0;
-    dap_stream_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
+    dap_cluster_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
     
     log_it(L_DEBUG, "Hot list count after duplicate add: %zu (expected: 1)", l_count);
     dap_assert_PIF(l_count == 1, "Should still have only 1 node (no duplicates)");
@@ -365,15 +365,15 @@ static void test_hot_list_multi_net(void)
                    "Failed to create test network 2");
     
     // Add nodes to different networks
-    dap_stream_node_addr_t l_addr1 = s_make_addr(0x01);
-    dap_stream_node_addr_t l_addr2 = s_make_addr(0x02);
+    dap_cluster_node_addr_t l_addr1 = s_make_addr(0x01);
+    dap_cluster_node_addr_t l_addr2 = s_make_addr(0x02);
     
     dap_link_manager_add_to_hot_list(l_addr1, TEST_NET_ID_1);
     dap_link_manager_add_to_hot_list(l_addr2, TEST_NET_ID_2);
     
     // Verify network 1 hot list
     size_t l_count1 = 0;
-    dap_stream_node_addr_t *l_addrs1 = dap_link_manager_get_ignored_addrs(&l_count1, TEST_NET_ID_1);
+    dap_cluster_node_addr_t *l_addrs1 = dap_link_manager_get_ignored_addrs(&l_count1, TEST_NET_ID_1);
     
     log_it(L_DEBUG, "Net 1 hot list count: %zu", l_count1);
     dap_assert_PIF(l_count1 == 1, "Network 1 should have 1 node");
@@ -385,7 +385,7 @@ static void test_hot_list_multi_net(void)
     
     // Verify network 2 hot list
     size_t l_count2 = 0;
-    dap_stream_node_addr_t *l_addrs2 = dap_link_manager_get_ignored_addrs(&l_count2, TEST_NET_ID_2);
+    dap_cluster_node_addr_t *l_addrs2 = dap_link_manager_get_ignored_addrs(&l_count2, TEST_NET_ID_2);
     
     log_it(L_DEBUG, "Net 2 hot list count: %zu", l_count2);
     dap_assert_PIF(l_count2 == 1, "Network 2 should have 1 node");
@@ -413,7 +413,7 @@ static void test_hot_list_cleanup(void)
                    "Failed to create test network");
     
     // Add multiple nodes
-    dap_stream_node_addr_t l_addrs[3];
+    dap_cluster_node_addr_t l_addrs[3];
     l_addrs[0] = s_make_addr(0x01);
     l_addrs[1] = s_make_addr(0x02);
     l_addrs[2] = s_make_addr(0x03);
@@ -424,7 +424,7 @@ static void test_hot_list_cleanup(void)
     
     // Verify nodes are present
     size_t l_count = 0;
-    dap_stream_node_addr_t *l_hot_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
+    dap_cluster_node_addr_t *l_hot_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
     log_it(L_DEBUG, "Hot list count before cleanup: %zu", l_count);
     
     if (l_hot_addrs) {
@@ -454,7 +454,7 @@ static void test_hot_list_empty(void)
     // Query empty hot list multiple times
     for (int i = 0; i < 3; i++) {
         size_t l_count = 0;
-        dap_stream_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
+        dap_cluster_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
         
         dap_assert_PIF(l_addrs == NULL, "Empty hot list should return NULL");
         dap_assert_PIF(l_count == 0, "Empty hot list count should be 0");
@@ -476,7 +476,7 @@ static void test_hot_list_invalid_net(void)
     // Query hot list for non-existent network
     uint64_t l_invalid_net_id = 0xDEADBEEFDEADBEEFULL;
     size_t l_count = 0;
-    dap_stream_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, l_invalid_net_id);
+    dap_cluster_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, l_invalid_net_id);
     
     dap_assert_PIF(l_addrs == NULL, "Invalid network should return NULL");
     dap_assert_PIF(l_count == 0, "Invalid network count should be 0");
@@ -498,14 +498,14 @@ static void test_hot_list_many_nodes(void)
     // Add many nodes
     const size_t NODES_COUNT = 50;
     for (size_t i = 1; i <= NODES_COUNT; i++) {
-        dap_stream_node_addr_t l_addr;
+        dap_cluster_node_addr_t l_addr;
         l_addr.uint64 = i;
         dap_link_manager_add_to_hot_list(l_addr, TEST_NET_ID_1);
     }
     
     // Verify all nodes are present
     size_t l_count = 0;
-    dap_stream_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
+    dap_cluster_node_addr_t *l_addrs = dap_link_manager_get_ignored_addrs(&l_count, TEST_NET_ID_1);
     
     log_it(L_DEBUG, "Hot list count with many nodes: %zu (expected: %zu)", l_count, NODES_COUNT);
     dap_assert_PIF(l_count == NODES_COUNT, "Should have all nodes");

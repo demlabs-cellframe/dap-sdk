@@ -27,6 +27,7 @@
 #include "dap_sign.h"
 #include "dap_enc_key.h"
 #include "dap_enc_chacha20_poly1305.h"
+#include "dap_sdk.h"
 #include "../fixtures/utilities/test_helpers.h"
 #include <inttypes.h>
 #include <string.h>
@@ -402,7 +403,7 @@ static bool s_benchmark_chacha20_poly1305_throughput(void) {
 int main(void) {
     log_it(L_INFO, "Starting DAP SDK Crypto Performance Benchmarks");
     
-    if (dap_test_sdk_init() != 0) {
+    if (dap_test_sdk_init_modules(DAP_SDK_MODULE_BASIC) != 0) {
         log_it(L_ERROR, "Failed to initialize test SDK");
         return -1;
     }

@@ -247,7 +247,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${SIMD_GEN_DIR})
 set(JSON_LIBRARIES "dap_core" CACHE INTERNAL "dap_json external dependencies")
 
 # Link dependencies
-target_link_libraries(${PROJECT_NAME} PUBLIC dap_core dap_math PRIVATE ${JSON_LIBRARIES})
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_math)
 # Installation
 if(INSTALL_DAP_SDK)
     set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${JSON_HEADERS}")

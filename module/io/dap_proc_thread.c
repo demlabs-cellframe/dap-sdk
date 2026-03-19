@@ -28,7 +28,6 @@
 #include "dap_proc_thread.h"
 #include "dap_context.h"
 #include "dap_timerfd.h"
-
 #define LOG_TAG "dap_proc_thread"
 
 static uint32_t s_threads_count = 0;
@@ -36,6 +35,7 @@ static dap_proc_thread_t *s_threads = NULL;
 
 static int s_context_callback_started(dap_context_t *a_context, void *a_arg);
 static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
+static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int *a_priority);
 
 /**
  * @brief add and run context to thread
@@ -88,8 +88,9 @@ void dap_proc_thread_deinit()
         return;
 
     for (uint32_t i = s_threads_count; i--; ) {
-        if (s_threads[i].context)
+        if (s_threads[i].context) {
             dap_context_stop_n_kill(s_threads[i].context);
+        }
     }
     DAP_DEL_Z(s_threads);
     s_threads_count = 0;

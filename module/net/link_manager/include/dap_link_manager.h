@@ -28,7 +28,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_timerfd.h"
 #include "dap_common.h"
 #include "dap_client.h"
-#include "dap_stream_cluster.h"
+#include "dap_cluster.h"
 #include "dap_ht.h"
 
 #define DAP_NET_ID_INVALID UINT64_C(~0)
@@ -61,7 +61,7 @@ typedef enum dap_link_state {
 } dap_link_state_t;
 
 typedef struct dap_link {
-    dap_stream_node_addr_t addr;
+    dap_cluster_node_addr_t addr;
     bool is_uplink;
     dap_list_t *active_clusters;
     struct {
@@ -101,10 +101,10 @@ void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member, void *a_
 void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
 void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
 void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
-int dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, uint64_t a_associated_net_id);
-int dap_link_manager_link_update(dap_stream_node_addr_t *a_link, const char *a_host, uint16_t a_port);
-bool dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr, uint64_t a_net_id);
-void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr, bool a_no_error);
+int dap_link_manager_link_create(dap_cluster_node_addr_t *a_node_addr, uint64_t a_associated_net_id);
+int dap_link_manager_link_update(dap_cluster_node_addr_t *a_link, const char *a_host, uint16_t a_port);
+bool dap_link_manager_link_find(dap_cluster_node_addr_t *a_node_addr, uint64_t a_net_id);
+void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_cluster_node_addr_t *a_node_addr, bool a_no_error);
 void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition);
 bool dap_link_manager_get_net_condition(uint64_t a_net_id);
 size_t dap_link_manager_links_count(uint64_t a_net_id);
@@ -113,7 +113,7 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
 void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();
-dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_established_only);
-dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_count, uint64_t a_net_id);
+dap_cluster_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_established_only);
+dap_cluster_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_count, uint64_t a_net_id);
 // Public API for hot list management (can be used in tests)
-void dap_link_manager_add_to_hot_list(dap_stream_node_addr_t a_node_addr, uint64_t a_net_id);
+void dap_link_manager_add_to_hot_list(dap_cluster_node_addr_t a_node_addr, uint64_t a_net_id);

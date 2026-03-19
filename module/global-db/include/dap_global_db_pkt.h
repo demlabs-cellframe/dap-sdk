@@ -86,9 +86,9 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_global_db_store_obj_t *a_st
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
 dap_global_db_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);
 #else
-dap_global_db_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_stream_node_addr_t *a_addr);
+dap_global_db_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_cluster_node_addr_t *a_addr);
 #endif
-dap_global_db_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size, dap_stream_node_addr_t *a_addr);
+dap_global_db_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size, dap_cluster_node_addr_t *a_addr);
 dap_sign_t *dap_global_db_store_obj_sign(dap_global_db_store_obj_t *a_obj, dap_enc_key_t *a_key, uint64_t *a_checksum);
 DAP_STATIC_INLINE uint64_t dap_global_db_store_obj_checksum(dap_global_db_store_obj_t *a_obj)
 {

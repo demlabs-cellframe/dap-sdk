@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include "dap_stream.h"
 #include "dap_enc_key.h"
+#include "dap_context_queue.h"
 
 typedef unsigned int dap_stream_ch_uuid_t;
 
@@ -53,9 +54,14 @@ void dap_stream_ch_pkt_deinit();
 DAP_PRINTF_ATTR(3, 4) ssize_t dap_stream_ch_pkt_write_f_unsafe(dap_stream_ch_t *a_ch, uint8_t a_type, const char *a_format, ...);
 size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, const void * a_data, size_t a_data_size);
 
-DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f(dap_stream_worker_t *a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
-size_t dap_stream_ch_pkt_write(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);
-// Send to channel by stream events socket UUID
-int dap_stream_ch_pkt_send(dap_stream_worker_t *a_worker, dap_events_socket_uuid_t a_uuid, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
-// Send to channel by stream addr
-int dap_stream_ch_pkt_send_by_addr(dap_stream_node_addr_t *a_addr, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
+int dap_stream_ch_pkt_send_by_addr(dap_cluster_node_addr_t *a_addr, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
+
+DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t *a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
+size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);
+int dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_uuid_t a_uuid, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
+
+DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_inter(dap_context_queue_t *a_queue_input , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
+size_t dap_stream_ch_pkt_write_inter(dap_context_queue_t * a_queue_input , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);
+
+#define dap_stream_ch_pkt_write dap_stream_ch_pkt_write_mt
+#define dap_stream_ch_pkt_write_f dap_stream_ch_pkt_write_f_mt

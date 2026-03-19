@@ -7,7 +7,9 @@
 #include "dap_rand.h"
 #include <stdlib.h>
 
-#if defined(_WIN32)
+#if defined(DAP_OS_WASM)
+#include <emscripten.h>
+#elif defined(_WIN32)
 #include <windows.h>
 #else
 #include <unistd.h>
@@ -22,7 +24,13 @@ static inline void s_delay(unsigned int count)
 
 int dap_random_bytes(void *a_buf, unsigned int a_nbytes)
 {
-#if defined(_WIN32)
+#if defined(DAP_OS_WASM)
+    EM_ASM({
+        var buf = new Uint8Array(Module.HEAPU8.buffer, $0, $1);
+        crypto.getRandomValues(buf);
+    }, a_buf, a_nbytes);
+    return 0;
+#elif defined(_WIN32)
     HCRYPTPROV p;
     if (CryptAcquireContext(&p, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) == FALSE)
         return 1;

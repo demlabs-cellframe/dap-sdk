@@ -8,6 +8,8 @@ set(CMAKE_C_STANDARD 11)
 file(GLOB DAP_PLUGIN_SRCS src/*.c)
 file(GLOB DAP_PLUGIN_HEADERS include/*.h)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/LibraryHelpers.cmake)
+
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${DAP_PLUGIN_SRCS} HEADERS ${DAP_PLUGIN_HEADERS})
 
@@ -19,14 +21,9 @@ endif()
 
 set(DAP_PLUGIN_DEPS "${PLUGIN_LIBS}" CACHE INTERNAL "dap_plugin external dependencies")
 
-target_include_directories(${PROJECT_NAME} PUBLIC 
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../net/server/cli_server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../io/include
-)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_link_libraries(${PROJECT_NAME} dap_json_rpc)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_json_rpc dap_cli_server dap_http_server dap_io dap_json dap_hash_table dap_core dap_config dap_crypto dap_net_common)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_PLUGIN_HEADERS}")
