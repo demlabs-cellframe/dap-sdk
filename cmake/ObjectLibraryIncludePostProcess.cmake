@@ -31,20 +31,24 @@ macro(register_object_library TARGET_NAME)
     endif()
 endmacro()
 
-# Compute full transitive include closure for TARGET_NAME's dependencies.
-# Result is memoized in a global property — each node is resolved exactly once.
-# Complexity: O(N + edges) instead of O(N * tree_size) with per-library visited sets.
+# Compute transitive include closure for TARGET_NAME's dependencies.
+# Memoizes results for acyclic nodes. Nodes involved in dependency cycles are
+# marked _NOCACHE_ and re-resolved on each access — this lets them read
+# INCLUDE_DIRECTORIES that were enriched by earlier post-processing iterations,
+# replicating the accumulation effect of per-library visited sets while keeping
+# O(1) lookups for the majority of (acyclic) nodes.
 function(_dap_collect_transitive_includes TARGET_NAME OUT_VAR)
     get_property(_memo GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}")
     get_property(_has  GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" SET)
 
-    if(_has AND NOT _memo STREQUAL "_WIP_")
+    if(_has AND NOT _memo STREQUAL "_WIP_" AND NOT _memo STREQUAL "_NOCACHE_")
         set(${OUT_VAR} "${_memo}" PARENT_SCOPE)
         return()
     endif()
 
     if(_memo STREQUAL "_WIP_")
         set(${OUT_VAR} "" PARENT_SCOPE)
+        set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" TRUE)
         return()
     endif()
 
@@ -58,6 +62,7 @@ function(_dap_collect_transitive_includes TARGET_NAME OUT_VAR)
     endif()
 
     set(_all "")
+    set(_in_cycle FALSE)
 
     get_target_property(_deps ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
     if(_deps)
@@ -73,7 +78,13 @@ function(_dap_collect_transitive_includes TARGET_NAME OUT_VAR)
                     list(APPEND _all ${_dep_inc})
                 endif()
 
+                set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" FALSE)
                 _dap_collect_transitive_includes(${_dep} _trans)
+                get_property(_dep_cycle GLOBAL PROPERTY "_DAP_PP_IN_CYCLE")
+                if(_dep_cycle)
+                    set(_in_cycle TRUE)
+                endif()
+
                 if(_trans)
                     list(APPEND _all ${_trans})
                 endif()
@@ -85,7 +96,13 @@ function(_dap_collect_transitive_includes TARGET_NAME OUT_VAR)
         list(REMOVE_DUPLICATES _all)
     endif()
 
-    set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "${_all}")
+    if(_in_cycle)
+        set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "_NOCACHE_")
+        set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" TRUE)
+    else()
+        set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "${_all}")
+    endif()
+
     set(${OUT_VAR} "${_all}" PARENT_SCOPE)
 endfunction()
 
