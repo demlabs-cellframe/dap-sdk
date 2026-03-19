@@ -390,7 +390,7 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
         
         if (!l_datagram_flow->send_es) {
             log_it(L_ERROR, "Failed to wrap send socket");
-            close(l_send_fd);
+            closesocket(l_send_fd);
             s_datagram_ops->protocol_destroy(l_datagram_flow);
             return NULL;
         }
