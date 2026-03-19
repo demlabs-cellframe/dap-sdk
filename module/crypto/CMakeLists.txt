@@ -383,11 +383,10 @@ function(print_target_properties tgt)
     endforeach(prop)
 endfunction(print_target_properties)
 
-# --- ML-KEM (FIPS 203) — own implementation ---
+# --- ML-KEM (FIPS 203) — single codebase compiled 3× with MLKEM_K=2/3/4
 add_subdirectory(src/kem/mlkem mlkem_build)
 add_dependencies(${PROJECT_NAME} dap_mlkem_512 dap_mlkem_768 dap_mlkem_1024)
-target_link_libraries(${PROJECT_NAME} dap_mlkem_512 dap_mlkem_768 dap_mlkem_1024)
-target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_MLKEM_512=1 DAP_MLKEM_768=1 DAP_MLKEM_1024=1)
+target_link_libraries(${PROJECT_NAME} INTERFACE dap_mlkem_512 dap_mlkem_768 dap_mlkem_1024)
 message("[+] DAP Crypto: ML-KEM-512/768/1024 support enabled")
 
 if (DAP_PQRL)

@@ -23,7 +23,7 @@
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
-#include "dap_enc_kyber.h"
+#include "dap_enc_mlkem.h"
 #include "dap_rand.h"  // For randombytes
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "dap_string.h"
@@ -773,7 +773,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
                      a_size, l_handshake_size);
             
             // Initialize session_id
-            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
+            dap_random_bytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
             debug_if(s_debug_more, L_DEBUG,
                      "HANDSHAKE: generated session_id=0x%" DAP_UINT64_FORMAT_x " for session %p",
                      l_session->session_id, l_session);

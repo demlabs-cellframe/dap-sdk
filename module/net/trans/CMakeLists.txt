@@ -43,7 +43,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 dap_link_libraries(${PROJECT_NAME} INTERFACE
     dap_core dap_crypto dap_io dap_hash_table dap_net_common
-    dap_stream dap_trans_websocket_system dap_trans_webrtc)
+    dap_stream dap_stream_ch dap_trans_websocket_system dap_trans_webrtc)
 
 dap_link_libraries(${PROJECT_NAME} INTERFACE
     dap_trans_http dap_trans_websocket

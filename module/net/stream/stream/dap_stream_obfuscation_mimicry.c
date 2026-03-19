@@ -27,7 +27,7 @@
 #include "dap_events_socket.h"
 #include "dap_strfuncs.h"
 #include "dap_stream_obfuscation_mimicry.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 
 #define LOG_TAG "dap_stream_mimicry"
 
@@ -260,7 +260,7 @@ int dap_stream_mimicry_generate_client_hello(dap_stream_mimicry_t *a_mimicry,
     l_offset += 2;
     
     // Random (32 bytes)
-    randombytes(&l_hello[l_offset], 32);
+    dap_random_bytes(&l_hello[l_offset], 32);
     l_offset += 32;
     
     // Session ID (empty for now)
@@ -374,7 +374,7 @@ int dap_stream_mimicry_generate_server_hello(dap_stream_mimicry_t *a_mimicry,
     l_offset += 2;
     
     // Random (32 bytes)
-    randombytes(&l_hello[l_offset], 32);
+    dap_random_bytes(&l_hello[l_offset], 32);
     l_offset += 32;
     
     // Session ID (empty)
@@ -697,7 +697,7 @@ static int s_wrap_websocket(dap_stream_mimicry_t *a_mimicry,
     // Masking key (if masked)
     uint8_t l_masking_key[4] = {0};
     if (l_mask) {
-        randombytes(l_masking_key, 4);
+        dap_random_bytes(l_masking_key, 4);
         memcpy(&l_output[l_offset], l_masking_key, 4);
         l_offset += 4;
     }

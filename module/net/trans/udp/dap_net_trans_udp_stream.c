@@ -32,7 +32,8 @@
 #include "dap_worker.h"
 #include "dap_timerfd.h"
 #include "dap_net.h"
-#include "dap_enc_kyber.h"
+#include "dap_enc_mlkem.h"
+#define CRYPTO_CIPHERTEXTBYTES  768
 #include "dap_transport_obfuscation.h"
 #include "dap_json.h"
 #include "dap_io_flow.h"
@@ -59,7 +60,7 @@
 #include "dap_server.h"
 #include "dap_enc_server.h"
 #include "dap_client.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_enc_key.h"
 #include "dap_enc.h"
 #include "dap_enc_kdf.h"
@@ -1439,7 +1440,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     }
     
     // Generate random session ID for THIS stream
-    if (randombytes((uint8_t*)&l_udp_ctx->session_id, sizeof(l_udp_ctx->session_id)) != 0) {
+    if (dap_random_bytes((uint8_t*)&l_udp_ctx->session_id, sizeof(l_udp_ctx->session_id)) != 0) {
         log_it(L_ERROR, "Failed to generate random session ID");
         return -1;
     }
@@ -2892,7 +2893,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        debug_if(s_debug_more  L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
+        debug_if(s_debug_more, L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
                l_addr_str, ntohs(l_sin->sin_port));
     }
     

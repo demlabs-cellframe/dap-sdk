@@ -257,11 +257,11 @@ static void s_benchmark_mldsa(void)
     if (r.us_per_op >= 0) s_print_result(&r);
 
 #ifdef HAVE_LIBOQS
-    r = s_bench_mldsa_oqs(OQS_SIG_alg_dilithium_2, "liboqs ML-DSA-44");
+    r = s_bench_mldsa_oqs(OQS_SIG_alg_ml_dsa_44, "liboqs ML-DSA-44");
     if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_oqs(OQS_SIG_alg_dilithium_3, "liboqs ML-DSA-65");
+    r = s_bench_mldsa_oqs(OQS_SIG_alg_ml_dsa_65, "liboqs ML-DSA-65");
     if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_oqs(OQS_SIG_alg_dilithium_5, "liboqs ML-DSA-87");
+    r = s_bench_mldsa_oqs(OQS_SIG_alg_ml_dsa_87, "liboqs ML-DSA-87");
     if (r.us_per_op >= 0) s_print_result(&r);
 #else
     printf("  (liboqs not available)\n");
