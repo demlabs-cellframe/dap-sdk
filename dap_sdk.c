@@ -355,6 +355,7 @@ static int s_ensure_node_addr_cert(void)
     }
     g_node_addr = dap_cluster_node_addr_from_cert(l_cert);
     return 0;
+#endif
 }
 
 static int s_init_global_db(const dap_sdk_config_t *a_config)

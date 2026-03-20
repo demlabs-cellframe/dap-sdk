@@ -79,6 +79,7 @@ typedef struct dap_sdk_config {
     uint32_t io_timeout;            ///< Connection timeout in seconds; 0 = default
     bool enable_debug;
     bool auto_node_cert;            ///< Generate node-addr signing cert if absent
+
     const struct dap_link_manager_callbacks *link_manager_callbacks; ///< NULL = default no-op stubs
 } dap_sdk_config_t;
 
