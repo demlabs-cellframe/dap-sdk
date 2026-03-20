@@ -9,7 +9,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/LibraryHelpers.cmake)
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${DAP_DNS_SRV_SRCS} HEADERS ${DAP_DNS_SRV_HEADERS})
 
-dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io m dap_json_rpc dap_client)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io $<$<NOT:$<PLATFORM_ID:Darwin>>:m> dap_json_rpc dap_client)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(INSTALL_DAP_SDK)

@@ -26,6 +26,7 @@
 #include "dap_client.h"
 #include "dap_client_fsm.h"
 #include "dap_client_esocket.h"
+#include "dap_stream.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
@@ -36,6 +37,17 @@
 #define LOG_TAG "dap_client"
 
 static bool s_debug_more = false;
+
+static dap_stream_t *s_stream_from_client_esocket(dap_events_socket_t *a_es)
+{
+    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    if (l_client) {
+        dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
+        if (l_client_esocket)
+            return l_client_esocket->stream;
+    }
+    return NULL;
+}
 
 /**
  * @brief dap_client_init
@@ -57,6 +69,8 @@ int dap_client_init()
         if (err) return err;
         dap_client_esocket_init();
         dap_client_fsm_init();
+        dap_stream_set_client_esocket_callback(s_stream_from_client_esocket);
+
         s_is_first_time = false;
     }
     return 0;

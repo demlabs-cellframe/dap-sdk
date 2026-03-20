@@ -17,11 +17,13 @@
 #include "dap_net_common.h"
 #include "dap_events.h"
 #include "dap_enc.h"
+#include "dap_cert.h"
 #include "dap_stream.h"
 #include "dap_stream_ctl.h"
 #include "dap_client.h"
 #include "dap_server.h"
 #include "dap_cluster.h"
+#include "dap_cluster_node.h"
 #include "dap_global_db.h"
 #include "dap_enc_ks.h"
 
@@ -39,7 +41,6 @@
 
 #ifdef DAP_OS_WASM
 #include <emscripten/wasmfs.h>
-#include <sys/stat.h>
 #include <errno.h>
 #endif
 
@@ -322,9 +323,47 @@ static int s_init_net_notify(const dap_sdk_config_t *a_config)
 #endif
 }
 
+static int s_ensure_node_addr_cert(void)
+{
+    dap_cert_t *l_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+    if (!l_cert) {
+        const char *l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
+        if (!l_folder) {
+            if (!g_sys_dir_path)
+                return log_it(L_CRITICAL, "No cert folder and no sys_dir — "
+                              "set [resources] ca_folders in config"), -1;
+            char *l_default = dap_strdup_printf("%s/certs", g_sys_dir_path);
+            dap_cert_add_folder(l_default);
+            DAP_DELETE(l_default);
+            l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
+        }
+        dap_mkdir_with_parents(l_folder);
+
+        char *l_path = dap_strdup_printf("%s/%s.dcert", l_folder,
+                                         DAP_STREAM_NODE_ADDR_CERT_NAME);
+        l_cert = dap_cert_generate(DAP_STREAM_NODE_ADDR_CERT_NAME,
+                                   l_path,
+                                   DAP_STREAM_NODE_ADDR_CERT_TYPE);
+        DAP_DELETE(l_path);
+        if (!l_cert)
+            return log_it(L_CRITICAL, "Failed to generate %s certificate",
+                          DAP_STREAM_NODE_ADDR_CERT_NAME), -2;
+
+        log_it(L_NOTICE, "Generated %s certificate (%s)",
+               DAP_STREAM_NODE_ADDR_CERT_NAME,
+               dap_enc_get_type_name(DAP_STREAM_NODE_ADDR_CERT_TYPE));
+    }
+    g_node_addr = dap_cluster_node_addr_from_cert(l_cert);
+    return 0;
+}
+
 static int s_init_global_db(const dap_sdk_config_t *a_config)
 {
-    (void)a_config;
+    if (a_config->auto_node_cert) {
+        int l_rc = s_ensure_node_addr_cert();
+        if (l_rc)
+            return l_rc;
+    }
     return dap_global_db_init();
 }
 

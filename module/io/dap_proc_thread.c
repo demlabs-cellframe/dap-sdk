@@ -121,6 +121,10 @@ DAP_INLINE uint32_t dap_proc_thread_get_count()
  */
 dap_proc_thread_t *dap_proc_thread_get_auto()
 {
+    if (!s_threads_count) {
+        log_it(L_CRITICAL, "proc_thread subsystem not initialized (s_threads_count == 0)");
+        return NULL;
+    }
     uint32_t l_id_start = rand() % s_threads_count,
              l_id_min = l_id_start,
              l_size_min = UINT32_MAX;
@@ -275,6 +279,7 @@ int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_
 {
     dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    dap_return_val_if_fail(l_thread, -1);
     dap_worker_t *l_worker = dap_events_worker_get(l_thread->context->cpu_id);
     if (!l_worker) {
         log_it(L_CRITICAL, "Worker with ID corresonding to specified processing thread ID %u doesn't exists", l_thread->context->id);

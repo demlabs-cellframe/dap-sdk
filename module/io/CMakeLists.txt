@@ -29,10 +29,8 @@ dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_hash_table 
 if(DAPSDK_MODULES MATCHES "ssl-support")
 endif()
 
-if(UNIX)
-  if(NOT ANDROID)
-      target_link_libraries(${PROJECT_NAME} INTERFACE pthread)
-  endif()
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} INTERFACE pthread)
 endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
