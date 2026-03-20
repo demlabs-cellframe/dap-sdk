@@ -3,6 +3,7 @@ project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(CheckFunctionExists)
+option(DAP_MANAGE_CFLAGS "Let dap-sdk manage compiler and linker flags internally" ON)
 include(cmake/OS_Detection.cmake)
 
 # Check for secure memory clearing functions
