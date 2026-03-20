@@ -59,8 +59,6 @@
 #include "dap_events_socket.h"
 #include "dap_io_flow_datagram.h"
 #include "dap_stream_worker.h"
-#include "dap_client_pvt.h"
-#include "dap_link_manager.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -68,6 +66,7 @@
 
 static dap_stream_member_callback_t s_member_add_callback = NULL;
 static dap_stream_member_callback_t s_member_del_callback = NULL;
+static dap_stream_from_esocket_callback_t s_client_esocket_callback = NULL;
 static dap_stream_t         *s_streams = NULL;
 static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
 static bool s_dump_packet_headers = false;
@@ -599,21 +598,18 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
     return l_count_lost_packets < 0;
 }
 
+void dap_stream_set_client_esocket_callback(dap_stream_from_esocket_callback_t a_callback)
+{
+    s_client_esocket_callback = a_callback;
+}
+
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
 {
     if (a_es->server) {
-        // Server-side: unified trans_ctx approach
         dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;
         return l_trans_ctx ? l_trans_ctx->stream : NULL;
     } else {
-        // Client-side: dap_client hierarchy
-        dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-        if (l_client) {
-            dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
-            if (l_client_esocket)
-                return l_client_esocket->stream;
-        }
-        return NULL;
+        return s_client_esocket_callback ? s_client_esocket_callback(a_es) : NULL;
     }
 }
 

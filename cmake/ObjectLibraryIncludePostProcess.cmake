@@ -31,89 +31,134 @@ macro(register_object_library TARGET_NAME)
     endif()
 endmacro()
 
-# Function to propagate includes recursively with cycle detection
-# Uses global property for cycle detection (much faster than CACHE)
-function(propagate_includes_recursive TARGET_NAME VISITED_SET_ID)
-    set(PROPERTY_KEY "_DAP_POST_VISITED_${VISITED_SET_ID}_${TARGET_NAME}")
-    get_property(IS_VISITED_VALUE GLOBAL PROPERTY ${PROPERTY_KEY})
-    if(IS_VISITED_VALUE STREQUAL "VISITED")
+# Compute transitive include closure for TARGET_NAME's dependencies.
+# Uses bounded fixed-point iteration: cyclic nodes are cached per-pass
+# and re-evaluated across passes (max 3) until stable.
+function(_dap_collect_transitive_includes TARGET_NAME OUT_VAR)
+    get_property(_pass_id GLOBAL PROPERTY "_DAP_PP_CURRENT_PASS")
+    get_property(_memo GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}")
+    get_property(_has  GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" SET)
+    get_property(_memo_pass GLOBAL PROPERTY "_DAP_PP_PASS_${TARGET_NAME}")
+
+    # Cached acyclic result — always reusable
+    if(_has AND NOT _memo STREQUAL "_WIP_" AND NOT _memo STREQUAL "_NOCACHE_")
+        set(${OUT_VAR} "${_memo}" PARENT_SCOPE)
         return()
     endif()
-    set_property(GLOBAL PROPERTY ${PROPERTY_KEY} "VISITED")
 
-    get_target_property(TGT_TYPE_PP ${TARGET_NAME} TYPE)
-    if(TGT_TYPE_PP STREQUAL "INTERFACE_LIBRARY")
+    # Cyclic node cached for this pass — reuse within same pass
+    if(_memo STREQUAL "_NOCACHE_" AND _memo_pass STREQUAL "${_pass_id}")
+        get_property(_cached GLOBAL PROPERTY "_DAP_PP_CACHED_${TARGET_NAME}")
+        set(${OUT_VAR} "${_cached}" PARENT_SCOPE)
         return()
     endif()
 
-    set(COLLECTED_INTERFACE_INCLUDES "")
-    set(COLLECTED_INCLUDES "")
+    # Cycle detection: currently being resolved
+    if(_memo STREQUAL "_WIP_")
+        set(${OUT_VAR} "" PARENT_SCOPE)
+        set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" TRUE)
+        return()
+    endif()
 
-    get_target_property(DEPS ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
-    if(DEPS)
-        foreach(DEP ${DEPS})
-            if(TARGET ${DEP})
-                propagate_includes_recursive(${DEP} ${VISITED_SET_ID})
+    set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "_WIP_")
 
-                get_target_property(DEP_INTERFACE_INCLUDES ${DEP} INTERFACE_INCLUDE_DIRECTORIES)
-                get_target_property(DEP_INCLUDES ${DEP} INCLUDE_DIRECTORIES)
+    get_target_property(_type ${TARGET_NAME} TYPE)
+    if(_type STREQUAL "INTERFACE_LIBRARY")
+        set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "")
+        set(${OUT_VAR} "" PARENT_SCOPE)
+        return()
+    endif()
 
-                if(DEP_INTERFACE_INCLUDES AND NOT DEP_INTERFACE_INCLUDES MATCHES "-NOTFOUND$")
-                    list(APPEND COLLECTED_INTERFACE_INCLUDES ${DEP_INTERFACE_INCLUDES})
+    set(_all "")
+    set(_in_cycle FALSE)
+
+    get_target_property(_deps ${TARGET_NAME} INTERFACE_LINK_LIBRARIES)
+    if(_deps)
+        foreach(_dep ${_deps})
+            if(TARGET ${_dep})
+                get_target_property(_dep_iface ${_dep} INTERFACE_INCLUDE_DIRECTORIES)
+                if(_dep_iface AND NOT _dep_iface MATCHES "-NOTFOUND$")
+                    list(APPEND _all ${_dep_iface})
                 endif()
-                if(DEP_INCLUDES AND NOT DEP_INCLUDES MATCHES "-NOTFOUND$")
-                    list(APPEND COLLECTED_INCLUDES ${DEP_INCLUDES})
+
+                get_target_property(_dep_inc ${_dep} INCLUDE_DIRECTORIES)
+                if(_dep_inc AND NOT _dep_inc MATCHES "-NOTFOUND$")
+                    list(APPEND _all ${_dep_inc})
+                endif()
+
+                set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" FALSE)
+                _dap_collect_transitive_includes(${_dep} _trans)
+                get_property(_dep_cycle GLOBAL PROPERTY "_DAP_PP_IN_CYCLE")
+                if(_dep_cycle)
+                    set(_in_cycle TRUE)
+                endif()
+
+                if(_trans)
+                    list(APPEND _all ${_trans})
                 endif()
             endif()
         endforeach()
     endif()
 
-    if(COLLECTED_INTERFACE_INCLUDES)
-        list(REMOVE_DUPLICATES COLLECTED_INTERFACE_INCLUDES)
-        target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INTERFACE_INCLUDES})
+    if(_all)
+        list(REMOVE_DUPLICATES _all)
     endif()
-    if(COLLECTED_INCLUDES)
-        list(REMOVE_DUPLICATES COLLECTED_INCLUDES)
-        target_include_directories(${TARGET_NAME} PRIVATE ${COLLECTED_INCLUDES})
+
+    if(_in_cycle)
+        set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "_NOCACHE_")
+        set_property(GLOBAL PROPERTY "_DAP_PP_PASS_${TARGET_NAME}" "${_pass_id}")
+        set_property(GLOBAL PROPERTY "_DAP_PP_CACHED_${TARGET_NAME}" "${_all}")
+        set_property(GLOBAL PROPERTY "_DAP_PP_IN_CYCLE" TRUE)
+    else()
+        set_property(GLOBAL PROPERTY "_DAP_PP_MEMO_${TARGET_NAME}" "${_all}")
     endif()
+
+    set(${OUT_VAR} "${_all}" PARENT_SCOPE)
 endfunction()
 
-# Function to post-process all OBJECT libraries
 function(post_process_object_libraries)
     message(STATUS "[SDK] Post-processing OBJECT libraries to propagate include directories...")
-    
-    # Count total libraries for progress reporting
+
     list(LENGTH DAP_SDK_OBJECT_LIBRARIES TOTAL_LIBS)
     message(STATUS "[SDK] Processing ${TOTAL_LIBS} OBJECT libraries...")
-    
-    set(PROCESSED_COUNT 0)
-    set(VISITED_SET_COUNTER 0)
-    foreach(OBJ_LIB ${DAP_SDK_OBJECT_LIBRARIES})
-        if(TARGET ${OBJ_LIB})
-            # Create unique visited set ID using simple counter (much faster than timestamp+random)
-            math(EXPR VISITED_SET_COUNTER "${VISITED_SET_COUNTER} + 1")
-            set(VISITED_SET_ID "${VISITED_SET_COUNTER}")
-            
-            # Process includes with global property-based cycle detection
-            propagate_includes_recursive(${OBJ_LIB} ${VISITED_SET_ID})
-            
-            # Note: Property cleanup not needed - GLOBAL properties are faster than CACHE
-            # Properties with unique VISITED_SET_ID won't conflict between traversals
-            # and GLOBAL properties don't have the performance penalty of CACHE variables
-            
-            math(EXPR PROCESSED_COUNT "${PROCESSED_COUNT} + 1")
-            # Show progress for first 10, last, or every 10th library
-            math(EXPR MOD_RESULT "${PROCESSED_COUNT} % 10")
-            if(PROCESSED_COUNT LESS 10)
-                message(STATUS "[SDK] Processed ${PROCESSED_COUNT}/${TOTAL_LIBS} libraries...")
-            elseif(PROCESSED_COUNT EQUAL TOTAL_LIBS)
-                message(STATUS "[SDK] Processed ${PROCESSED_COUNT}/${TOTAL_LIBS} libraries...")
-            elseif(MOD_RESULT EQUAL 0)
-                message(STATUS "[SDK] Processed ${PROCESSED_COUNT}/${TOTAL_LIBS} libraries...")
+
+    set(_MAX_PASSES 3)
+    set(_pass 0)
+    set(_changed TRUE)
+    while(_changed AND _pass LESS _MAX_PASSES)
+        math(EXPR _pass "${_pass} + 1")
+        set_property(GLOBAL PROPERTY "_DAP_PP_CURRENT_PASS" "${_pass}")
+        set(_changed FALSE)
+
+        set(PROCESSED_COUNT 0)
+        foreach(OBJ_LIB ${DAP_SDK_OBJECT_LIBRARIES})
+            if(TARGET ${OBJ_LIB})
+                _dap_collect_transitive_includes(${OBJ_LIB} _includes)
+
+                get_target_property(_current_inc ${OBJ_LIB} INCLUDE_DIRECTORIES)
+                if(NOT _current_inc OR _current_inc MATCHES "-NOTFOUND$")
+                    set(_current_inc "")
+                endif()
+
+                if(_includes)
+                    set(_new_dirs "")
+                    foreach(_inc ${_includes})
+                        list(FIND _current_inc "${_inc}" _idx)
+                        if(_idx EQUAL -1)
+                            list(APPEND _new_dirs "${_inc}")
+                        endif()
+                    endforeach()
+                    if(_new_dirs)
+                        target_include_directories(${OBJ_LIB} PRIVATE ${_new_dirs})
+                        set(_changed TRUE)
+                    endif()
+                endif()
+                math(EXPR PROCESSED_COUNT "${PROCESSED_COUNT} + 1")
             endif()
-        endif()
-    endforeach()
-    
-    message(STATUS "[SDK] Post-processing complete for ${TOTAL_LIBS} OBJECT libraries")
+        endforeach()
+        message(STATUS "[SDK] Pass ${_pass}: processed ${PROCESSED_COUNT}/${TOTAL_LIBS}, changed=${_changed}")
+    endwhile()
+
+    message(STATUS "[SDK] Post-processing complete after ${_pass} pass(es): ${PROCESSED_COUNT}/${TOTAL_LIBS} OBJECT libraries")
 endfunction()
 
