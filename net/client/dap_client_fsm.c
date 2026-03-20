@@ -993,8 +993,15 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
 static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_arg)
 {
     (void)a_arg;
-    if (a_es)
-        a_es->_inheritor = NULL;
+    if (!a_es)
+        return;
+    dap_client_t *l_client = (dap_client_t *)a_es->_inheritor;
+    if (l_client) {
+        dap_client_esocket_t *l_client_es = DAP_CLIENT_ESOCKET(l_client);
+        if (l_client_es && l_client_es->stream && l_client_es->stream->trans_ctx)
+            l_client_es->stream->trans_ctx->esocket = NULL;
+    }
+    a_es->_inheritor = NULL;
 }
 
 // ===== Worker-side ENC_INIT IO (only transport calls, crypto already done on FSM thread) =====
