@@ -39,8 +39,6 @@
 #include "dap_plugin.h"
 #endif
 
-#include <sys/stat.h>
-
 #ifdef DAP_OS_WASM
 #include <emscripten/wasmfs.h>
 #include <errno.h>
@@ -339,7 +337,7 @@ static int s_ensure_node_addr_cert(void)
             DAP_DELETE(l_default);
             l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
         }
-        mkdir(l_folder, 0750);
+        dap_mkdir_with_parents(l_folder);
 
         char *l_path = dap_strdup_printf("%s/%s.dcert", l_folder,
                                          DAP_STREAM_NODE_ADDR_CERT_NAME);
