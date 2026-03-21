@@ -1,13 +1,14 @@
 /**
  * @file dap_mlkem_ntt.c
- * @brief ML-KEM NTT — thin wrapper around dap_ntt16 with Kyber zetas.
+ * @brief ML-KEM NTT — specialized dispatch to arch-specific implementations.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include "dap_mlkem_ntt.h"
 #include "dap_ntt.h"
-#include <pthread.h>
+#include "dap_cpu_arch.h"
+#include "dap_cpu_detect.h"
 
 static const int16_t s_zetas[128] = {
   2285, 2571, 2970, 1812, 1493, 1422, 287, 202, 3158, 622, 1577, 182, 962,
@@ -22,6 +23,31 @@ static const int16_t s_zetas[128] = {
   478, 3221, 3021, 996, 991, 958, 1869, 1522, 1628
 };
 
+const int16_t *MLKEM_NAMESPACE(_get_zetas)(void) { return s_zetas; }
+
+/* Specialized NTT — generated from dap_mlkem_ntt_simd.c.tpl */
+#if defined(__x86_64__) || defined(_M_X64)
+void dap_mlkem_ntt_forward_avx2(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_inverse_avx2(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_forward_avx2_512vl(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_inverse_avx2_512vl(int16_t a_coeffs[256]);
+/* Hand-written AVX2+AVX-512VL assembly NTT (32 YMM registers, zero spills) */
+void dap_mlkem_ntt_forward_asm(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_inverse_asm(int16_t a_coeffs[256]);
+#endif
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+void dap_mlkem_ntt_forward_neon(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_inverse_neon(int16_t a_coeffs[256]);
+#endif
+
+typedef void (*mlkem_ntt_fn_t)(int16_t *);
+static mlkem_ntt_fn_t s_ntt_forward_fn = NULL;
+static mlkem_ntt_fn_t s_ntt_inverse_fn = NULL;
+
+/* Scalar fallback using generic NTT */
+static dap_ntt_params16_t s_ntt_params;
+
 static const int16_t s_zetas_inv[128] = {
   1701, 1807, 1460, 2371, 2338, 2333, 308, 108, 2851, 870, 854, 1510, 2535,
   1278, 1530, 1185, 1659, 1187, 3109, 874, 1335, 2111, 136, 1215, 2945, 1465,
@@ -35,41 +61,77 @@ static const int16_t s_zetas_inv[128] = {
   3127, 3042, 1907, 1836, 1517, 359, 758, 1441
 };
 
-const int16_t *MLKEM_NAMESPACE(_get_zetas)(void) { return s_zetas; }
-
-static dap_ntt_params16_t s_ntt_params;
-static pthread_once_t s_ntt_once = PTHREAD_ONCE_INIT;
-
-static void s_ntt_init(void)
+static void s_ntt_forward_generic(int16_t *a_coeffs)
 {
-    s_ntt_params.n          = MLKEM_N;
-    s_ntt_params.q          = MLKEM_Q;
-    s_ntt_params.qinv       = MLKEM_QINV;
-    s_ntt_params.zetas      = s_zetas;
-    s_ntt_params.zetas_inv  = s_zetas_inv;
-    s_ntt_params.zetas_len  = 128;
+    dap_ntt16_forward(a_coeffs, &s_ntt_params);
+}
+static void s_ntt_inverse_generic(int16_t *a_coeffs)
+{
+    dap_ntt16_inverse(a_coeffs, &s_ntt_params);
 }
 
-static void s_ensure_init(void)
+static void s_resolve_ntt(void)
 {
-    pthread_once(&s_ntt_once, s_ntt_init);
+    s_ntt_params.n         = MLKEM_N;
+    s_ntt_params.q         = MLKEM_Q;
+    s_ntt_params.qinv      = MLKEM_QINV;
+    s_ntt_params.zetas     = s_zetas;
+    s_ntt_params.zetas_inv = s_zetas_inv;
+    s_ntt_params.zetas_len = 128;
+
+    s_ntt_forward_fn = s_ntt_forward_generic;
+    s_ntt_inverse_fn = s_ntt_inverse_generic;
+
+#if DAP_CPU_DETECT_X86
+    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
+        s_ntt_forward_fn = dap_mlkem_ntt_forward_asm;
+        s_ntt_inverse_fn = dap_mlkem_ntt_inverse_asm;
+    } else if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
+        s_ntt_forward_fn = dap_mlkem_ntt_forward_avx2;
+        s_ntt_inverse_fn = dap_mlkem_ntt_inverse_avx2;
+    }
+#endif
+#if DAP_CPU_DETECT_ARM
+    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_NEON) {
+        s_ntt_forward_fn = dap_mlkem_ntt_forward_neon;
+        s_ntt_inverse_fn = dap_mlkem_ntt_inverse_neon;
+    }
+#endif
+}
+
+static inline void s_ensure_init(void)
+{
+    if (__builtin_expect(!s_ntt_forward_fn, 0))
+        s_resolve_ntt();
 }
 
 void MLKEM_NAMESPACE(_ntt)(int16_t a_coeffs[MLKEM_N])
 {
     s_ensure_init();
-    dap_ntt16_forward(a_coeffs, &s_ntt_params);
+    s_ntt_forward_fn(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_invntt)(int16_t a_coeffs[MLKEM_N])
 {
     s_ensure_init();
-    dap_ntt16_inverse(a_coeffs, &s_ntt_params);
+    s_ntt_inverse_fn(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_basemul)(int16_t a_r[2], const int16_t a_a[2],
                                 const int16_t a_b[2], int16_t a_zeta)
 {
-    s_ensure_init();
-    dap_ntt16_basemul(a_r, a_a, a_b, a_zeta, &s_ntt_params);
+    int16_t l_qinv = MLKEM_QINV;
+    int32_t t;
+
+    t = (int32_t)a_a[1] * a_b[1];
+    a_r[0] = (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+    t = (int32_t)a_r[0] * a_zeta;
+    a_r[0] = (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+    t = (int32_t)a_a[0] * a_b[0];
+    a_r[0] += (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+
+    t = (int32_t)a_a[0] * a_b[1];
+    a_r[1] = (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+    t = (int32_t)a_a[1] * a_b[0];
+    a_r[1] += (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
 }

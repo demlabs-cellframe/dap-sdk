@@ -233,4 +233,23 @@ int chipmunk_signature_to_bytes(uint8_t *a_output, const chipmunk_signature_t *a
  * @param a_input Input buffer containing serialized signature (CHIPMUNK_SIGNATURE_SIZE bytes)
  * @return CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
  */
-int chipmunk_signature_from_bytes(chipmunk_signature_t *a_sig, const uint8_t *a_input); 
+int chipmunk_signature_from_bytes(chipmunk_signature_t *a_sig, const uint8_t *a_input);
+
+/**
+ * @brief Batch verify Chipmunk HOTS signatures with optional GPU NTT.
+ *
+ * @param a_public_keys  Array of serialized public keys
+ * @param a_messages     Array of message pointers
+ * @param a_msg_lens     Array of message lengths
+ * @param a_signatures   Array of serialized signatures
+ * @param a_count        Number of signatures
+ * @param a_results      [out] Per-signature results (0 = valid)
+ * @return Number of valid signatures, or negative on error
+ */
+int chipmunk_batch_verify_hots(
+    const uint8_t **a_public_keys,
+    const uint8_t **a_messages,
+    const size_t *a_msg_lens,
+    const uint8_t **a_signatures,
+    unsigned int a_count,
+    int *a_results);

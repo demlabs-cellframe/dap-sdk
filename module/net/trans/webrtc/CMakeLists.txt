@@ -21,9 +21,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC include)
 dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_net_common dap_net_trans)
 
 if(DAP_WASM)
-    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto dap_json dap_stream dap_stream_ch dap_session)
+    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto dap_json dap_stream dap_session)
 else()
-    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto dap_stream dap_stream_ch dap_session dap_http_server)
+    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto dap_stream dap_session dap_http_server)
 
     find_library(LIBDATACHANNEL_LIB datachannel)
     find_path(LIBDATACHANNEL_INCLUDE rtc/rtc.h)

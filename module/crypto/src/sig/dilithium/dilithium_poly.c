@@ -5,8 +5,53 @@
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
+#include "dap_hash_shake_x4.h"
+#include "dap_cpu_arch.h"
+#include "dap_cpu_detect.h"
 
 extern const dap_ntt_params_t g_dilithium_ntt_params;
+
+#if defined(__x86_64__) || defined(_M_X64)
+extern void dap_dilithium_ntt_forward_avx2(int32_t coeffs[256]);
+extern void dap_dilithium_ntt_inverse_avx2(int32_t coeffs[256]);
+extern void dap_dilithium_pointwise_mont_avx2(int32_t *c, const int32_t *a, const int32_t *b);
+extern void dap_dilithium_ntt_forward_avx2_512vl(int32_t coeffs[256]);
+extern void dap_dilithium_ntt_inverse_avx2_512vl(int32_t coeffs[256]);
+extern void dap_dilithium_pointwise_mont_avx2_512vl(int32_t *c, const int32_t *a, const int32_t *b);
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+extern void dap_dilithium_ntt_forward_neon(int32_t coeffs[256]);
+extern void dap_dilithium_ntt_inverse_neon(int32_t coeffs[256]);
+extern void dap_dilithium_pointwise_mont_neon(int32_t *c, const int32_t *a, const int32_t *b);
+#endif
+
+typedef void (*dil_ntt_fn_t)(int32_t *);
+typedef void (*dil_pw_fn_t)(int32_t *, const int32_t *, const int32_t *);
+static dil_ntt_fn_t s_dil_ntt_fwd = NULL;
+static dil_ntt_fn_t s_dil_ntt_inv = NULL;
+static dil_pw_fn_t  s_dil_pw_mont = NULL;
+
+static void s_dil_dispatch_init(void)
+{
+#if DAP_CPU_DETECT_X86
+    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
+        s_dil_ntt_fwd = dap_dilithium_ntt_forward_avx2_512vl;
+        s_dil_ntt_inv = dap_dilithium_ntt_inverse_avx2_512vl;
+        s_dil_pw_mont = dap_dilithium_pointwise_mont_avx2_512vl;
+    } else if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
+        s_dil_ntt_fwd = dap_dilithium_ntt_forward_avx2;
+        s_dil_ntt_inv = dap_dilithium_ntt_inverse_avx2;
+        s_dil_pw_mont = dap_dilithium_pointwise_mont_avx2;
+    }
+#endif
+#if DAP_CPU_DETECT_ARM
+    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_NEON) {
+        s_dil_ntt_fwd = dap_dilithium_ntt_forward_neon;
+        s_dil_ntt_inv = dap_dilithium_ntt_inverse_neon;
+        s_dil_pw_mont = dap_dilithium_pointwise_mont_neon;
+    }
+#endif
+}
 
 /*************************************************/
 void poly_reduce(poly *a) {
@@ -76,6 +121,13 @@ void poly_invntt_montgomery(poly *a) {
 
 /*************************************************/
 void poly_pointwise_invmontgomery(poly *c, const poly *a, const poly *b) {
+  if (__builtin_expect(!s_dil_pw_mont, 0))
+      s_dil_dispatch_init();
+  if (s_dil_pw_mont) {
+      s_dil_pw_mont((int32_t *)c->coeffs, (const int32_t *)a->coeffs,
+                    (const int32_t *)b->coeffs);
+      return;
+  }
   dap_ntt_pointwise_montgomery(
       (int32_t *)c->coeffs, (const int32_t *)a->coeffs,
       (const int32_t *)b->coeffs, &g_dilithium_ntt_params);
@@ -202,6 +254,48 @@ void poly_uniform_eta(poly *a, const unsigned char seed[SEEDBYTES], unsigned cha
 }
 
 /*************************************************/
+void poly_uniform_eta_x4(poly *a0, poly *a1, poly *a2, poly *a3,
+                          const unsigned char seed[SEEDBYTES],
+                          unsigned char n0, unsigned char n1,
+                          unsigned char n2, unsigned char n3,
+                          dilithium_param_t *p)
+{
+    unsigned char inbuf[4][SEEDBYTES + 1];
+    unsigned char outbuf[4][2 * DAP_SHAKE256_RATE];
+
+    for (int k = 0; k < 4; k++)
+        memcpy(inbuf[k], seed, SEEDBYTES);
+    inbuf[0][SEEDBYTES] = n0;
+    inbuf[1][SEEDBYTES] = n1;
+    inbuf[2][SEEDBYTES] = n2;
+    inbuf[3][SEEDBYTES] = n3;
+
+    dap_keccak_x4_state_t l_state;
+    dap_hash_shake256_x4_absorb(&l_state, inbuf[0], inbuf[1], inbuf[2], inbuf[3],
+                                 SEEDBYTES + 1);
+    dap_hash_shake256_x4_squeezeblocks(outbuf[0], outbuf[1], outbuf[2], outbuf[3],
+                                        2, &l_state);
+
+    poly *l_polys[4] = {a0, a1, a2, a3};
+    unsigned int l_ctr[4];
+    int l_need_more = 0;
+    for (int k = 0; k < 4; k++) {
+        l_ctr[k] = rej_eta(l_polys[k]->coeffs, NN, outbuf[k], 2 * DAP_SHAKE256_RATE, p);
+        if (l_ctr[k] < NN)
+            l_need_more = 1;
+    }
+    if (l_need_more) {
+        unsigned char l_extra[4][DAP_SHAKE256_RATE];
+        dap_hash_shake256_x4_squeezeblocks(l_extra[0], l_extra[1], l_extra[2], l_extra[3],
+                                            1, &l_state);
+        for (int k = 0; k < 4; k++)
+            if (l_ctr[k] < NN)
+                rej_eta(l_polys[k]->coeffs + l_ctr[k], NN - l_ctr[k],
+                        l_extra[k], DAP_SHAKE256_RATE, p);
+    }
+}
+
+/*************************************************/
 static unsigned int rej_gamma1m1(uint32_t *a, unsigned int len, const unsigned char *buf, unsigned int buflen)
 {
 #if GAMMA1 > (1 << 19)
@@ -252,6 +346,48 @@ void poly_uniform_gamma1m1(poly *a, const unsigned char seed[SEEDBYTES + CRHBYTE
     if(ctr < NN) {
         dap_hash_shake256_squeezeblocks(outbuf, 1, state);
         rej_gamma1m1(a->coeffs + ctr, NN - ctr, outbuf, DAP_SHAKE256_RATE);
+    }
+}
+
+/*************************************************/
+void poly_uniform_gamma1m1_x4(poly *a0, poly *a1, poly *a2, poly *a3,
+                               const unsigned char seed[SEEDBYTES + CRHBYTES],
+                               uint16_t n0, uint16_t n1, uint16_t n2, uint16_t n3)
+{
+    unsigned char inbuf[4][SEEDBYTES + CRHBYTES + 2];
+    unsigned char outbuf[4][5 * DAP_SHAKE256_RATE];
+
+    for (int k = 0; k < 4; k++)
+        memcpy(inbuf[k], seed, SEEDBYTES + CRHBYTES);
+
+    const uint16_t l_nonces[4] = {n0, n1, n2, n3};
+    for (int k = 0; k < 4; k++) {
+        inbuf[k][SEEDBYTES + CRHBYTES]     = l_nonces[k] & 0xFF;
+        inbuf[k][SEEDBYTES + CRHBYTES + 1] = l_nonces[k] >> 8;
+    }
+
+    dap_keccak_x4_state_t l_state;
+    dap_hash_shake256_x4_absorb(&l_state, inbuf[0], inbuf[1], inbuf[2], inbuf[3],
+                                 SEEDBYTES + CRHBYTES + 2);
+    dap_hash_shake256_x4_squeezeblocks(outbuf[0], outbuf[1], outbuf[2], outbuf[3],
+                                        5, &l_state);
+
+    poly *l_polys[4] = {a0, a1, a2, a3};
+    unsigned int l_ctr[4];
+    int l_need_more = 0;
+    for (int k = 0; k < 4; k++) {
+        l_ctr[k] = rej_gamma1m1(l_polys[k]->coeffs, NN, outbuf[k], 5 * DAP_SHAKE256_RATE);
+        if (l_ctr[k] < NN)
+            l_need_more = 1;
+    }
+    if (l_need_more) {
+        unsigned char l_extra[4][DAP_SHAKE256_RATE];
+        dap_hash_shake256_x4_squeezeblocks(l_extra[0], l_extra[1], l_extra[2], l_extra[3],
+                                            1, &l_state);
+        for (int k = 0; k < 4; k++)
+            if (l_ctr[k] < NN)
+                rej_gamma1m1(l_polys[k]->coeffs + l_ctr[k], NN - l_ctr[k],
+                             l_extra[k], DAP_SHAKE256_RATE);
     }
 }
 
@@ -563,14 +699,25 @@ const dap_ntt_params_t g_dilithium_ntt_params = {
 /*************************************************/
 void dilithium_ntt(uint32_t pp[NN])
 {
+    if (__builtin_expect(!s_dil_ntt_fwd, 0))
+        s_dil_dispatch_init();
+    if (s_dil_ntt_fwd) {
+        s_dil_ntt_fwd((int32_t *)pp);
+        return;
+    }
     dap_ntt_forward_mont((int32_t *)pp, &g_dilithium_ntt_params);
 }
 
 /*************************************************/
 void invntt_frominvmont(uint32_t pp[NN])
 {
+    if (__builtin_expect(!s_dil_ntt_inv, 0))
+        s_dil_dispatch_init();
+    if (s_dil_ntt_inv) {
+        s_dil_ntt_inv((int32_t *)pp);
+        return;
+    }
     dap_ntt_inverse_mont((int32_t *)pp, &g_dilithium_ntt_params);
-
     const int32_t f = (int32_t)((((uint64_t)MONT * MONT % Q) * (Q - 1) % Q) * ((Q - 1) >> 8) % Q);
     for (unsigned int j = 0; j < NN; j++)
         pp[j] = (uint32_t)dap_ntt_montgomery_reduce(

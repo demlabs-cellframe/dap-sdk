@@ -18,7 +18,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC include)
 dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_net_common dap_net_trans)
 
 if(DAP_WASM)
-    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto dap_json dap_stream dap_stream_ch dap_session)
+    dap_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto dap_json dap_stream dap_session)
 endif()
 
 if(INSTALL_DAP_SDK)

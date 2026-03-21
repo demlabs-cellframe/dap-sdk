@@ -59,6 +59,12 @@ static inline void s_ensure_init(void)
 void dap_enc_aes256_key_new(dap_enc_key_t *a_key)
 {
     dap_enc_aes_key_new(a_key);
+    s_ensure_init();
+    a_key->type = DAP_ENC_KEY_TYPE_AES256_CBC;
+    a_key->enc = (dap_enc_callback_dataop_t)dap_enc_aes256_cbc_encrypt;
+    a_key->dec = (dap_enc_callback_dataop_t)dap_enc_aes256_cbc_decrypt;
+    a_key->enc_na = (dap_enc_callback_dataop_na_t)dap_enc_aes256_cbc_encrypt_fast;
+    a_key->dec_na = (dap_enc_callback_dataop_na_t)dap_enc_aes256_cbc_decrypt_fast;
 }
 
 void dap_enc_aes256_key_generate(dap_enc_key_t *a_key, const void *a_kex_buf,

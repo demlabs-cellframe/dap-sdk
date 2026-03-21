@@ -61,6 +61,11 @@ static inline int16x8_t neon_mulhi_s16(int16x8_t a, int16x8_t b) {
 #define VEC_SRAI16(a, n)       vshrq_n_s16(a, n)
 #define VEC_SLLI16(a, n)       vshlq_n_s16(a, n)
 
+// === 16-bit advanced ops ====================================================
+
+#define VEC_MULHRS16(a, b)     vqrdmulhq_s16(a, b)
+#define VEC_AND_S16(a, b)      vandq_s16(a, b)
+
 // === 32-bit unsigned (uint32x4_t) operations ================================
 
 #define VEC_LOAD_U32(p)        vld1q_u32((const uint32_t *)(p))

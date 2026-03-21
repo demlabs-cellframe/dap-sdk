@@ -68,17 +68,43 @@ dap_arch_generate_variant(
              "ALIGNMENT_ATTR=__attribute__((aligned(64)))"
 )
 
+# =============================================================================
+# Keccak×4 parallel permutation — generated via DapArchCodegen
+# =============================================================================
+
+dap_arch_generate_variant(
+    TEMPLATE ${K}/dap_keccak_x4.c.tpl
+    OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_x4_avx512.c
+    ARCH     avx512
+    ARGS     "PRIMITIVES_FILE=${K}/arch/x86/x4_avx512_primitives.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${K}/dap_keccak_x4.c.tpl
+    OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_x4_avx2.c
+    ARCH     avx2
+    ARGS     "PRIMITIVES_FILE=${K}/arch/x86/x4_avx2_primitives.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${K}/dap_keccak_x4.c.tpl
+    OUTPUT   ${KECCAK_GEN_DIR}/dap_keccak_x4_neon.c
+    ARCH     neon
+    ARGS     "PRIMITIVES_FILE=${K}/arch/arm/x4_neon_primitives.tpl"
+)
+
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${ALL_SRCS} HEADERS ${ALL_HDRS})
 
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${KECCAK_GEN_DIR}
     SOURCES
-        dap_keccak_avx512.c  avx512
-        dap_keccak_avx2.c    avx2
-        dap_keccak_sse2.c    sse2
-        dap_keccak_neon.c    neon
-        dap_keccak_sve.c     sve
-        dap_keccak_sve2.c    sve2
+        dap_keccak_avx512.c      avx512
+        dap_keccak_avx2.c        avx2
+        dap_keccak_sse2.c        sse2
+        dap_keccak_neon.c        neon
+        dap_keccak_sve.c         sve
+        dap_keccak_sve2.c        sve2
+        dap_keccak_x4_avx512.c  avx512
+        dap_keccak_x4_avx2.c    avx2
+        dap_keccak_x4_neon.c    neon
 )
 
 # Register headers for component-based installation

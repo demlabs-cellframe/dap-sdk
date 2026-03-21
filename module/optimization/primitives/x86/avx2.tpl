@@ -47,6 +47,15 @@ typedef __m256i VEC_T;
 #define VEC_SLLI16(a, n)    _mm256_slli_epi16(a, n)
 #define VEC_SRLI16(a, n)    _mm256_srli_epi16(a, n)
 
+// === 16-bit advanced ops ====================================================
+
+#define VEC_MULHRS16(a, b)      _mm256_mulhrs_epi16(a, b)
+#define VEC_BLEND16(a, b, imm)  _mm256_blend_epi16(a, b, imm)
+#define VEC_SHUFFLELO16(a, imm) _mm256_shufflelo_epi16(a, imm)
+#define VEC_SHUFFLEHI16(a, imm) _mm256_shufflehi_epi16(a, imm)
+#define VEC_SETR_16(e0,e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12,e13,e14,e15) \
+    _mm256_setr_epi16(e0,e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12,e13,e14,e15)
+
 // === 32-bit element ops =====================================================
 
 #define VEC_SET1_32(x)          _mm256_set1_epi32((int)(x))

@@ -203,10 +203,14 @@ inline dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const c
 {
     dap_http_header_t *l_new_header = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_header_t, NULL);
 
-    l_new_header->namesz = strnlen(a_name, DAP_HTTP$SZ_FIELD_NAME);
+    l_new_header->namesz = strlen(a_name);
+    if (l_new_header->namesz > DAP_HTTP$SZ_FIELD_NAME)
+        l_new_header->namesz = DAP_HTTP$SZ_FIELD_NAME;
     memcpy(l_new_header->name, a_name, l_new_header->namesz);
 
-    l_new_header->valuesz = strnlen(a_value, DAP_HTTP$SZ_FIELD_VALUE);
+    l_new_header->valuesz = strlen(a_value);
+    if (l_new_header->valuesz > DAP_HTTP$SZ_FIELD_VALUE)
+        l_new_header->valuesz = DAP_HTTP$SZ_FIELD_VALUE;
     memcpy(l_new_header->value, a_value, l_new_header->valuesz);
 
     dap_dl_append(*a_top, l_new_header);

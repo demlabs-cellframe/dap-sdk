@@ -217,7 +217,7 @@ bool dap_global_db_ch_check_store_obj(dap_global_db_store_obj_t *a_obj, dap_clus
     if (g_dap_global_db_debug_more) {
         char l_ts_str[DAP_TIME_STR_SIZE] = { '\0' };
         dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
-        dap_cluster_node_addr_t l_signer_addr;
+        dap_cluster_node_addr_t l_signer_addr = {};
         dap_hash_sha3_256_t l_sign_hash;
         if (a_obj->sign && dap_sign_get_pkey_hash(a_obj->sign, &l_sign_hash))
            dap_cluster_node_addr_from_hash(&l_sign_hash, &l_signer_addr);
@@ -263,10 +263,54 @@ static bool s_process_records(void *a_arg)
 {
     dap_return_val_if_fail(a_arg, false);
     struct processing_arg *l_arg = a_arg;
-    bool l_success = false;
-    for (uint32_t i = 0; i < l_arg->count; i++)
-        if (!(l_success = dap_global_db_ch_check_store_obj(l_arg->objs + i, &l_arg->addr)))
+
+    bool *l_sign_results = DAP_NEW_Z_COUNT(bool, l_arg->count);
+    if (!l_sign_results) {
+        log_it(L_ERROR, "Memory allocation failed for batch sign check");
+        dap_global_db_store_obj_free(l_arg->objs, l_arg->count);
+        DAP_DELETE(l_arg);
+        return false;
+    }
+
+    int l_verified = dap_global_db_pkt_batch_check_sign_crc(l_arg->objs, l_arg->count, l_sign_results);
+    if (l_verified < 0) {
+        log_it(L_ERROR, "Batch sign/CRC check error");
+        DAP_DELETE(l_sign_results);
+        dap_global_db_store_obj_free(l_arg->objs, l_arg->count);
+        DAP_DELETE(l_arg);
+        return false;
+    }
+
+    bool l_success = true;
+    for (uint32_t i = 0; i < l_arg->count && l_success; i++) {
+        if (!l_sign_results[i]) {
+            log_it(L_WARNING, "Global DB record packet sign verify or CRC check error for group %s and key %s",
+                   l_arg->objs[i].group, l_arg->objs[i].key);
+            l_success = false;
             break;
+        }
+        dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(
+            dap_global_db_instance_get_default(), l_arg->objs[i].group);
+        if (!l_cluster) {
+            log_it(L_ERROR, "Cluster for group %s not found", l_arg->objs[i].group);
+            l_success = false;
+            break;
+        }
+        if (dap_cluster_node_addr_is_blank(&l_arg->addr) &&
+                l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_EMBEDDED &&
+                l_cluster->links_cluster->status == DAP_CLUSTER_STATUS_ENABLED)
+            continue;
+        if (!dap_cluster_member_find_unsafe(l_cluster->links_cluster, &l_arg->addr)) {
+            const char *l_name = l_cluster->links_cluster->mnemonim
+                ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
+            log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s",
+                   NODE_ADDR_FP_ARGS(&l_arg->addr), l_name);
+            l_success = false;
+            break;
+        }
+    }
+
+    DAP_DELETE(l_sign_results);
     if (l_success)
         dap_global_db_set_raw_sync(l_arg->objs, l_arg->count);
     dap_global_db_store_obj_free(l_arg->objs, l_arg->count);

@@ -31,7 +31,7 @@ build_liboqs() {
         -DBUILD_SHARED_LIBS=OFF \
         -DOQS_BUILD_ONLY_LIB=ON \
         -DOQS_USE_OPENSSL=OFF \
-        -DOQS_MINIMAL_BUILD="KEM_kyber_512;KEM_kyber_768;KEM_kyber_1024;SIG_dilithium_2;SIG_dilithium_3;SIG_dilithium_5"
+        -DOQS_MINIMAL_BUILD="KEM_kyber_512;KEM_kyber_768;KEM_kyber_1024;SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87"
     cmake --build "${BUILD}" -j "${NPROC}"
     cmake --install "${BUILD}"
     echo "=== liboqs installed to ${INSTALL_DIR} ==="

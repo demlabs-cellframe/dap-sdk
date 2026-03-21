@@ -87,8 +87,50 @@ void dap_ntt_forward_mont_{{ARCH_LOWER}}(int32_t *a_coeffs,
         }
     }
 
+#if VEC_LANES == 8 && defined(HVEC_LANES) && HVEC_LANES == 4
+    /* Fused inner 3 layers (len=4,2,1) in a single load/store pass.
+     * Eliminates 2 scalar layers and reduces memory traffic 3x. */
+    {
+        unsigned l_k4 = l_k;
+        unsigned l_k2 = l_k + l_n / 8;
+        unsigned l_k1 = l_k + l_n / 8 + l_n / 4;
+        HVEC_T l_hqinv = HVEC_SET1_32((int32_t)a_params->qinv);
+        HVEC_T l_hq    = HVEC_SET1_32(a_params->q);
+        for (l_start = 0; l_start < l_n; l_start += VEC_LANES) {
+            VEC_T v = VEC_LOAD(a_coeffs + l_start);
+            {
+                HVEC_T _lo = VEC_LO_HALF(v), _hi = VEC_HI_HALF(v);
+                HVEC_T _t = s_mont_reduce_mul_hvec(HVEC_SET1_32(l_z[l_k4++]),
+                                                    _hi, l_hqinv, l_hq);
+                v = VEC_FROM_HALVES(HVEC_ADD32(_lo, _t), HVEC_SUB32(_lo, _t));
+            }
+            {
+                VEC_T _lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(1,0,1,0));
+                VEC_T _hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,2,3,2));
+                VEC_T _zv = _mm256_setr_m128i(
+                    _mm_set1_epi32(l_z[l_k2]),
+                    _mm_set1_epi32(l_z[l_k2 + 1]));
+                l_k2 += 2;
+                VEC_T _t = s_mont_reduce_mul_vec(_zv, _hi, l_qinv_vec, l_q_vec);
+                v = _mm256_blend_epi32(VEC_ADD32(_lo, _t),
+                                       VEC_SUB32(_lo, _t), 0xCC);
+            }
+            {
+                VEC_T _lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(2,2,0,0));
+                VEC_T _hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,3,1,1));
+                VEC_T _zv = _mm256_setr_epi32(
+                    l_z[l_k1], l_z[l_k1], l_z[l_k1+1], l_z[l_k1+1],
+                    l_z[l_k1+2], l_z[l_k1+2], l_z[l_k1+3], l_z[l_k1+3]);
+                l_k1 += 4;
+                VEC_T _t = s_mont_reduce_mul_vec(_zv, _hi, l_qinv_vec, l_q_vec);
+                v = _mm256_blend_epi32(VEC_ADD32(_lo, _t),
+                                       VEC_SUB32(_lo, _t), 0xAA);
+            }
+            VEC_STORE(a_coeffs + l_start, v);
+        }
+    }
+#else
 #ifdef HVEC_LANES
-    /* --- Half-vector layer (len == HVEC_LANES) --- */
     if (l_len == HVEC_LANES && l_len >= 1) {
         HVEC_T l_hqinv = HVEC_SET1_32((int32_t)a_params->qinv);
         HVEC_T l_hq    = HVEC_SET1_32(a_params->q);
@@ -105,8 +147,6 @@ void dap_ntt_forward_mont_{{ARCH_LOWER}}(int32_t *a_coeffs,
         l_len >>= 1;
     }
 #endif
-
-    /* --- Scalar fallback for remaining small layers --- */
     for (; l_len >= 1; l_len >>= 1) {
         for (l_start = 0; l_start < l_n; l_start = l_j + l_len) {
             int32_t l_zeta = l_z[l_k++];
@@ -120,6 +160,7 @@ void dap_ntt_forward_mont_{{ARCH_LOWER}}(int32_t *a_coeffs,
             }
         }
     }
+#endif
 }
 
 /* ============================================================================
@@ -143,12 +184,60 @@ void dap_ntt_inverse_mont_{{ARCH_LOWER}}(int32_t *a_coeffs,
     const unsigned int l_n = a_params->n;
     const unsigned int l_half_n = l_n / 2;
 
+#if VEC_LANES == 8 && defined(HVEC_LANES) && HVEC_LANES == 4
+    /* Fused inner 3 layers (len=1,2,4) in a single load/store pass. */
+    {
+        unsigned l_k1 = 0;
+        unsigned l_k2 = l_n / 2;
+        unsigned l_k4 = l_n / 2 + l_n / 4;
+        HVEC_T l_hqinv = HVEC_SET1_32((int32_t)a_params->qinv);
+        HVEC_T l_hq    = HVEC_SET1_32(a_params->q);
+        VEC_T l_qinv_vec = VEC_SET1_32((int32_t)a_params->qinv);
+        VEC_T l_q_vec    = VEC_SET1_32(a_params->q);
+        for (l_start = 0; l_start < l_n; l_start += VEC_LANES) {
+            VEC_T v = VEC_LOAD(a_coeffs + l_start);
+            {
+                VEC_T _lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(2,2,0,0));
+                VEC_T _hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,3,1,1));
+                VEC_T _sum = VEC_ADD32(_lo, _hi);
+                VEC_T _dif = VEC_SUB32(_lo, _hi);
+                VEC_T _zv = _mm256_setr_epi32(
+                    l_zinv[l_k1], l_zinv[l_k1], l_zinv[l_k1+1], l_zinv[l_k1+1],
+                    l_zinv[l_k1+2], l_zinv[l_k1+2], l_zinv[l_k1+3], l_zinv[l_k1+3]);
+                l_k1 += 4;
+                v = _mm256_blend_epi32(_sum,
+                    s_mont_reduce_mul_vec(_zv, _dif, l_qinv_vec, l_q_vec), 0xAA);
+            }
+            {
+                VEC_T _lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(1,0,1,0));
+                VEC_T _hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,2,3,2));
+                VEC_T _sum = VEC_ADD32(_lo, _hi);
+                VEC_T _dif = VEC_SUB32(_lo, _hi);
+                VEC_T _zv = _mm256_setr_m128i(
+                    _mm_set1_epi32(l_zinv[l_k2]),
+                    _mm_set1_epi32(l_zinv[l_k2 + 1]));
+                l_k2 += 2;
+                v = _mm256_blend_epi32(_sum,
+                    s_mont_reduce_mul_vec(_zv, _dif, l_qinv_vec, l_q_vec), 0xCC);
+            }
+            {
+                HVEC_T _lo = VEC_LO_HALF(v), _hi = VEC_HI_HALF(v);
+                HVEC_T _sum = HVEC_ADD32(_lo, _hi);
+                HVEC_T _dif = HVEC_SUB32(_lo, _hi);
+                v = VEC_FROM_HALVES(_sum,
+                    s_mont_reduce_mul_hvec(HVEC_SET1_32(l_zinv[l_k4++]),
+                                           _dif, l_hqinv, l_hq));
+            }
+            VEC_STORE(a_coeffs + l_start, v);
+        }
+        l_k = l_k4;
+        l_len = VEC_LANES;
+    }
+#else
     unsigned int l_simd_start = VEC_LANES;
 #ifdef HVEC_LANES
     l_simd_start = HVEC_LANES;
 #endif
-
-    /* --- Scalar layers: len from 1 up to (but not including) l_simd_start --- */
     for (l_len = 1; l_len < l_simd_start && l_len < l_n; l_len <<= 1) {
         for (l_start = 0; l_start < l_n; l_start = l_j + l_len) {
             int32_t l_zeta = l_zinv[l_k++];
@@ -162,13 +251,10 @@ void dap_ntt_inverse_mont_{{ARCH_LOWER}}(int32_t *a_coeffs,
             }
         }
     }
-
 #ifdef HVEC_LANES
-    /* --- Half-vector layer --- */
     if (l_len == HVEC_LANES && l_len <= l_half_n) {
         HVEC_T l_hqinv = HVEC_SET1_32((int32_t)a_params->qinv);
         HVEC_T l_hq    = HVEC_SET1_32(a_params->q);
-
         for (l_start = 0; l_start < l_n; l_start = l_j + l_len) {
             HVEC_T l_zv = HVEC_SET1_32(l_zinv[l_k++]);
             for (l_j = l_start; l_j < l_start + l_len; l_j += HVEC_LANES) {
@@ -183,6 +269,7 @@ void dap_ntt_inverse_mont_{{ARCH_LOWER}}(int32_t *a_coeffs,
         }
         l_len <<= 1;
     }
+#endif
 #endif
 
     /* --- Full-vector SIMD layers --- */

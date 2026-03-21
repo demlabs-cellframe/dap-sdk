@@ -61,6 +61,13 @@
 #define MLKEM_SECRETKEYBYTES   (MLKEM_INDCPA_SECRETKEYBYTES + MLKEM_INDCPA_PUBLICKEYBYTES + 2 * MLKEM_SYMBYTES)
 #define MLKEM_CIPHERTEXTBYTES  MLKEM_INDCPA_BYTES
 
+/* Multi-versioning: emit both AVX2 and scalar fallback, dispatch via IFUNC */
+#if defined(__GNUC__) && defined(__x86_64__) && !defined(MLKEM_NO_CLONES)
+#define MLKEM_HOTFN __attribute__((target_clones("avx2", "default")))
+#else
+#define MLKEM_HOTFN
+#endif
+
 typedef struct {
     int16_t coeffs[MLKEM_N];
 } dap_mlkem_poly;

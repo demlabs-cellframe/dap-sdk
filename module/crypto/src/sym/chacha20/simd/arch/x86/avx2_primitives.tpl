@@ -22,3 +22,5 @@ static inline chacha_vec_t s_vec_counter_init(uint32_t a_base)
                       (int)(a_base + 3), (int)(a_base + 2),
                       (int)(a_base + 1), (int)(a_base));
 }
+
+#define CHACHA_HAS_TRANSPOSE_XOR 1

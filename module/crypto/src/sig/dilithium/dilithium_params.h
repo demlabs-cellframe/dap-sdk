@@ -81,6 +81,14 @@ int dilithium_crypto_sign(dilithium_signature_t *, const unsigned char *, unsign
 
 int dilithium_crypto_sign_open( unsigned char *, unsigned long long, dilithium_signature_t *, const dilithium_public_key_t *);
 
+int dilithium_crypto_sign_open_batch(
+    unsigned char **a_msgs,
+    unsigned long long *a_msg_lens,
+    dilithium_signature_t **a_sigs,
+    const dilithium_public_key_t **a_pub_keys,
+    unsigned int a_count,
+    int *a_results);
+
 void dilithium_private_key_delete(void *private_key);
 void dilithium_public_key_delete(void *public_key);
 void dilithium_private_and_public_keys_delete(void *private_key, void *public_key);

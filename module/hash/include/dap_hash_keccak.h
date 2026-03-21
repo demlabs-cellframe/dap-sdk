@@ -100,50 +100,42 @@ static inline void dap_hash_keccak_state_init(dap_hash_keccak_state_t *state)
     dap_hash_keccak_state_init_ref(state);
 }
 
+typedef void (*dap_hash_keccak_permute_fn_t)(dap_hash_keccak_state_t *);
+
 /**
- * @brief Apply Keccak-p[1600] permutation with automatic SIMD dispatch
- * @param state Pointer to state (modified in place)
- * @details Automatically selects best available SIMD implementation
- *          based on CPU features or manual override.
+ * @brief Resolve best Keccak permutation once, cache the function pointer.
+ */
+static inline dap_hash_keccak_permute_fn_t s_keccak_resolve_permute(void)
+{
+    dap_cpu_arch_t arch = dap_cpu_arch_get();
+    switch (arch) {
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+        case DAP_CPU_ARCH_AVX512: return dap_hash_keccak_permute_avx512;
+        case DAP_CPU_ARCH_AVX2:   return dap_hash_keccak_permute_avx2;
+        case DAP_CPU_ARCH_SSE2:   return dap_hash_keccak_permute_sse2;
+#elif defined(__arm__) || defined(__aarch64__)
+        case DAP_CPU_ARCH_NEON:   return dap_hash_keccak_permute_neon;
+#if defined(__aarch64__) && !defined(__APPLE__)
+        case DAP_CPU_ARCH_SVE:    return dap_hash_keccak_permute_sve;
+        case DAP_CPU_ARCH_SVE2:   return dap_hash_keccak_permute_sve2;
+#endif
+#endif
+        default: return dap_hash_keccak_permute_ref;
+    }
+}
+
+/**
+ * @brief Apply Keccak-p[1600] permutation with cached SIMD dispatch.
  *
- * Dispatch priority:
- *   x86/x64: AVX-512 → AVX2 → SSE2 → Reference C
- *   ARM:     SVE2 → SVE → NEON → Reference C
+ * The function pointer is resolved on first call and cached, avoiding
+ * repeated dap_cpu_arch_get() → dap_cpu_detect_features() overhead.
  */
 static inline void dap_hash_keccak_permute(dap_hash_keccak_state_t *state)
 {
-    dap_cpu_arch_t arch = dap_cpu_arch_get();
-    
-    switch (arch) {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-        case DAP_CPU_ARCH_SSE2:
-            dap_hash_keccak_permute_sse2(state);
-            break;
-        case DAP_CPU_ARCH_AVX2:
-            dap_hash_keccak_permute_avx2(state);
-            break;
-        case DAP_CPU_ARCH_AVX512:
-            dap_hash_keccak_permute_avx512(state);
-            break;
-#elif defined(__arm__) || defined(__aarch64__)
-        case DAP_CPU_ARCH_NEON:
-            dap_hash_keccak_permute_neon(state);
-            break;
-#if defined(__aarch64__) && !defined(__APPLE__)
-        case DAP_CPU_ARCH_SVE:
-            dap_hash_keccak_permute_sve(state);
-            break;
-        case DAP_CPU_ARCH_SVE2:
-            dap_hash_keccak_permute_sve2(state);
-            break;
-#endif
-#endif
-        case DAP_CPU_ARCH_REFERENCE:
-        case DAP_CPU_ARCH_AUTO:
-        default:
-            dap_hash_keccak_permute_ref(state);
-            break;
-    }
+    static dap_hash_keccak_permute_fn_t s_fn = NULL;
+    if (__builtin_expect(s_fn == NULL, 0))
+        s_fn = s_keccak_resolve_permute();
+    s_fn(state);
 }
 
 /**

@@ -162,6 +162,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keccak/test_sha3_kat.c)
     register_dap_test(test_unit_crypto_sha3_kat "unit;crypto;sha3;keccak")
 endif()
 
+# Keccak x4 (parallel SHAKE) correctness + benchmark
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keccak/test_keccak_x4.c)
+    add_dap_test(test_keccak_x4 unit/crypto/keccak/test_keccak_x4.c)
+    register_dap_test(test_keccak_x4 "unit;crypto;keccak;x4")
+endif()
+
 # ECDSA Field Operations Tests
 if(BUILD_WITH_ECDSA AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_field_mul.c)
     add_dap_test(test_field_mul unit/crypto/test_field_mul.c)
@@ -220,6 +226,12 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/kat/CMakeLists.txt)
     add_subdirectory(unit/crypto/kat)
     message("[+] Crypto KAT tests configured")
+endif()
+
+# GPU NTT correctness tests
+if(TARGET dap_gpu AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/gpu/CMakeLists.txt)
+    add_subdirectory(unit/crypto/gpu)
+    message("[+] GPU NTT correctness tests configured")
 endif()
 
 # Fuzz targets (libFuzzer, Clang only)

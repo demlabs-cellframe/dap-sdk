@@ -30,7 +30,15 @@ void poly_use_hint(poly *a, const poly *b, const poly *h);
 int  poly_chknorm(const poly *a, uint32_t B);
 void dilithium_poly_uniform(poly *a, const unsigned char *buf);
 void poly_uniform_eta(poly *a, const unsigned char seed[SEEDBYTES], unsigned char nonce, dilithium_param_t *p);
+void poly_uniform_eta_x4(poly *a0, poly *a1, poly *a2, poly *a3,
+                          const unsigned char seed[SEEDBYTES],
+                          unsigned char n0, unsigned char n1,
+                          unsigned char n2, unsigned char n3,
+                          dilithium_param_t *p);
 void poly_uniform_gamma1m1(poly *a, const unsigned char seed[SEEDBYTES + CRHBYTES], uint16_t nonce);
+void poly_uniform_gamma1m1_x4(poly *a0, poly *a1, poly *a2, poly *a3,
+                               const unsigned char seed[SEEDBYTES + CRHBYTES],
+                               uint16_t n0, uint16_t n1, uint16_t n2, uint16_t n3);
 
 void polyeta_pack(unsigned char *r, const poly *a, dilithium_param_t *p);
 void polyeta_unpack(poly *r, const unsigned char *a, dilithium_param_t *p);

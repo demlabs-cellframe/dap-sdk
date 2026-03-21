@@ -16,8 +16,18 @@ void MLKEM_NAMESPACE(_poly_frommsg)(dap_mlkem_poly *a_r, const uint8_t a_msg[MLK
 void MLKEM_NAMESPACE(_poly_tomsg)(uint8_t a_msg[MLKEM_INDCPA_MSGBYTES], dap_mlkem_poly *a_a);
 void MLKEM_NAMESPACE(_poly_getnoise_eta1)(dap_mlkem_poly *a_r,
                                            const uint8_t a_seed[MLKEM_SYMBYTES], uint8_t a_nonce);
+void MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(dap_mlkem_poly *a_r0, dap_mlkem_poly *a_r1,
+                                               dap_mlkem_poly *a_r2, dap_mlkem_poly *a_r3,
+                                               const uint8_t a_seed[MLKEM_SYMBYTES],
+                                               uint8_t a_n0, uint8_t a_n1,
+                                               uint8_t a_n2, uint8_t a_n3);
 void MLKEM_NAMESPACE(_poly_getnoise_eta2)(dap_mlkem_poly *a_r,
                                            const uint8_t a_seed[MLKEM_SYMBYTES], uint8_t a_nonce);
+void MLKEM_NAMESPACE(_poly_getnoise_eta2_x4)(dap_mlkem_poly *a_r0, dap_mlkem_poly *a_r1,
+                                               dap_mlkem_poly *a_r2, dap_mlkem_poly *a_r3,
+                                               const uint8_t a_seed[MLKEM_SYMBYTES],
+                                               uint8_t a_n0, uint8_t a_n1,
+                                               uint8_t a_n2, uint8_t a_n3);
 void MLKEM_NAMESPACE(_poly_ntt)(dap_mlkem_poly *a_r);
 void MLKEM_NAMESPACE(_poly_invntt_tomont)(dap_mlkem_poly *a_r);
 void MLKEM_NAMESPACE(_poly_basemul_montgomery)(dap_mlkem_poly *a_r,

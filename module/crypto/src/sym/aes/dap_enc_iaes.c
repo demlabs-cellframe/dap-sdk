@@ -1,28 +1,16 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 #include "dap_enc_key.h"
 #include "dap_enc_iaes.h"
 #include "dap_time.h"
-#include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
-
-#include "dap_hash_keccak.h"
-#include "dap_hash_sha3.h"
-#include "dap_hash_shake128.h"
-#include "dap_hash_shake256.h"
-
+#include "dap_rand.h"
 #include "dap_common.h"
 #include "dap_memwipe.h"
 
 #define LOG_TAG "dap_enc_aes"
 
-typedef struct dap_enc_aes_key {
-    unsigned char ivec[IAES_BLOCK_SIZE];
-} dap_enc_aes_key_t;
-
-#define DAP_ENC_AES_KEY(a) ((dap_enc_aes_key_t *)((a)->_inheritor) )
+/* struct dap_enc_aes_key_t and DAP_ENC_AES_KEY defined in dap_enc_iaes.h */
 
 void dap_enc_aes_key_delete(struct dap_enc_key *a_key)
 {
@@ -46,9 +34,8 @@ void dap_enc_aes_key_new(struct dap_enc_key * a_key)
     a_key->dec = dap_enc_iaes256_cbc_decrypt;
     a_key->enc_na = dap_enc_iaes256_cbc_encrypt_fast;
     a_key->dec_na = dap_enc_iaes256_cbc_decrypt_fast;
-    //a_key->delete_callback = dap_enc_aes_key_delete;
 
-    a_key->priv_key_data = (uint8_t *)malloc(IAES_KEYSIZE);
+    a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, IAES_KEYSIZE);
     a_key->priv_key_data_size = IAES_KEYSIZE;
 }
 
@@ -59,20 +46,23 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     (void)key_size;
     a_key->last_used_timestamp = dap_time_now();
 
-    uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
-    if (!id_concat_kex) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
+    if (kex_size + seed_size == 0) {
+        dap_random_bytes(a_key->priv_key_data, IAES_KEYSIZE);
+        dap_random_bytes(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE);
+    } else {
+        uint8_t *id_concat_kex = DAP_NEW_SIZE(uint8_t, kex_size + seed_size);
+        if (!id_concat_kex) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return;
+        }
+        if (seed_size) memcpy(id_concat_kex, seed, seed_size);
+        if (kex_size) memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
+        dap_hash_shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, kex_size + seed_size);
+        dap_hash_shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
+        DAP_DELETE(id_concat_kex);
     }
 
-    memcpy(id_concat_kex,seed, seed_size);
-    memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
-    //SHAKE256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
-    //SHAKE128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
-    dap_hash_shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
-    dap_hash_shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
-
-    free(id_concat_kex);
+    DAP_ENC_AES_KEY(a_key)->hw_schedule_ready = 0;
 }
 
 
@@ -92,7 +82,7 @@ size_t dap_enc_iaes256_cbc_decrypt(struct dap_enc_key * a_key, const void * a_in
         return 0;
     }
 
-    *a_out = (uint8_t *) malloc(a_in_size);
+    *a_out = DAP_NEW_SIZE(uint8_t, a_in_size);
 
     return dap_enc_iaes256_cbc_decrypt_fast(a_key, a_in, a_in_size, *a_out, a_in_size);
 }

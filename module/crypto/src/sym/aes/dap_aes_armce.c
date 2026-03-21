@@ -11,7 +11,7 @@
 #if defined(__aarch64__) || (defined(__arm__) && defined(__ARM_FEATURE_CRYPTO))
 
 #include "dap_aes_armce.h"
-#include "dap_iaes_proto.h"
+#include "dap_enc_iaes.h"
 #include "dap_common.h"
 #include <string.h>
 #include <arm_neon.h>
@@ -24,10 +24,7 @@
 
 #define AES256_ROUNDS 14
 
-typedef struct {
-    unsigned char ivec[IAES_BLOCK_SIZE];
-} dap_enc_aes_key_t;
-#define DAP_AES_KEY(a) ((dap_enc_aes_key_t *)((a)->_inheritor))
+/* struct dap_enc_aes_key_t and DAP_ENC_AES_KEY defined in dap_enc_iaes.h */
 
 /* ========== AES-256 key expansion ========== */
 
@@ -111,6 +108,29 @@ static inline uint8x16_t s_aes256_decrypt_block(uint8x16_t a_block, const uint8x
     return veorq_u8(a_block, a_dk[AES256_ROUNDS]);
 }
 
+/* ========== Cached key schedule helpers ========== */
+
+static inline const uint8x16_t *s_get_enc_schedule(dap_enc_aes_key_t *a_aes, const uint8_t *a_raw_key)
+{
+    uint8x16_t *l_sched = (uint8x16_t *)a_aes->hw_enc_schedule;
+    if (!(a_aes->hw_schedule_ready & 1)) {
+        s_aes256_expand_key(a_raw_key, l_sched);
+        a_aes->hw_schedule_ready |= 1;
+    }
+    return (const uint8x16_t *)l_sched;
+}
+
+static inline const uint8x16_t *s_get_dec_schedule(dap_enc_aes_key_t *a_aes, const uint8_t *a_raw_key)
+{
+    const uint8x16_t *l_enc = s_get_enc_schedule(a_aes, a_raw_key);
+    uint8x16_t *l_dec = (uint8x16_t *)a_aes->hw_dec_schedule;
+    if (!(a_aes->hw_schedule_ready & 2)) {
+        s_aes256_derive_dec_keys(l_enc, l_dec);
+        a_aes->hw_schedule_ready |= 2;
+    }
+    return (const uint8x16_t *)l_dec;
+}
+
 /* ========== CBC encrypt / decrypt ========== */
 
 size_t dap_aes_armce_cbc_encrypt_fast(struct dap_enc_key *a_key, const void *a_in,
@@ -120,10 +140,10 @@ size_t dap_aes_armce_cbc_encrypt_fast(struct dap_enc_key *a_key, const void *a_i
     if (a_out_size < l_enc_size)
         return 0;
 
-    uint8x16_t l_enc_keys[AES256_ROUNDS + 1];
-    s_aes256_expand_key(a_key->priv_key_data, l_enc_keys);
+    dap_enc_aes_key_t *l_aes = DAP_ENC_AES_KEY(a_key);
+    const uint8x16_t *l_enc_keys = s_get_enc_schedule(l_aes, a_key->priv_key_data);
 
-    uint8x16_t l_feedback = vld1q_u8(DAP_AES_KEY(a_key)->ivec);
+    uint8x16_t l_feedback = vld1q_u8(l_aes->ivec);
     const uint8_t *l_in = (const uint8_t *)a_in;
     uint8_t *l_out = (uint8_t *)a_out;
     size_t l_full_blocks = a_in_size / IAES_BLOCK_SIZE;
@@ -157,12 +177,10 @@ size_t dap_aes_armce_cbc_decrypt_fast(struct dap_enc_key *a_key, const void *a_i
     if (a_in_size == 0 || a_in_size % IAES_BLOCK_SIZE != 0)
         return 0;
 
-    uint8x16_t l_enc_keys[AES256_ROUNDS + 1];
-    uint8x16_t l_dec_keys[AES256_ROUNDS + 1];
-    s_aes256_expand_key(a_key->priv_key_data, l_enc_keys);
-    s_aes256_derive_dec_keys(l_enc_keys, l_dec_keys);
+    dap_enc_aes_key_t *l_aes = DAP_ENC_AES_KEY(a_key);
+    const uint8x16_t *l_dec_keys = s_get_dec_schedule(l_aes, a_key->priv_key_data);
 
-    uint8x16_t l_feedback = vld1q_u8(DAP_AES_KEY(a_key)->ivec);
+    uint8x16_t l_feedback = vld1q_u8(l_aes->ivec);
     const uint8_t *l_in = (const uint8_t *)a_in;
     uint8_t *l_out = (uint8_t *)a_out;
     size_t l_blocks = a_in_size / IAES_BLOCK_SIZE;

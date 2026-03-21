@@ -11,7 +11,7 @@ dap_add_library(${PROJECT_NAME} ${DAP_LINK_MANAGER_SOURCES} HEADERS ${DAP_LINK_M
 # Link with required modules
 # Note: Most dependencies auto-propagate, but some needed explicitly for headers
 # TODO Phase 8.1: Remove client dependency via abstraction layer (client interface)
-dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_crypto dap_json_rpc dap_client dap_stream dap_stream_ch dap_net_common)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_crypto dap_json_rpc dap_client dap_stream dap_net_common)
 
 # All includes auto-propagate via linked modules above
 # Only add local includes

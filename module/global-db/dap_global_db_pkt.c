@@ -145,6 +145,163 @@ bool dap_global_db_pkt_check_sign_crc(dap_global_db_store_obj_t *a_obj)
 
 }
 
+/**
+ * @brief Batch signature verification + CRC check for an array of store objects.
+ *
+ * Groups signed objects by signature type, uses dap_sign_batch_verify for
+ * Dilithium/Chipmunk when the group is large enough, falls back to individual
+ * verification otherwise.  CRC is always checked per-object.
+ *
+ * @param a_objs   Array of store objects
+ * @param a_count  Number of objects
+ * @param a_results  Per-object boolean results (true = ok)
+ * @return Number of objects that passed, or -1 on allocation error
+ */
+int dap_global_db_pkt_batch_check_sign_crc(dap_global_db_store_obj_t *a_objs,
+                                           uint32_t a_count, bool *a_results)
+{
+    if (!a_objs || !a_count || !a_results)
+        return -1;
+
+    dap_global_db_pkt_t **l_pkts = DAP_NEW_Z_COUNT(dap_global_db_pkt_t *, a_count);
+    if (!l_pkts) return -1;
+
+    for (uint32_t i = 0; i < a_count; i++) {
+        a_results[i] = false;
+        l_pkts[i] = dap_global_db_pkt_serialize(a_objs + i);
+    }
+
+    typedef struct { uint32_t *indices; uint32_t count; } sig_group_t;
+    sig_group_t l_dilithium = { NULL, 0 };
+    sig_group_t l_chipmunk  = { NULL, 0 };
+
+    uint32_t l_signed_count = 0;
+    for (uint32_t i = 0; i < a_count; i++) {
+        if (a_objs[i].sign) l_signed_count++;
+    }
+
+    if (l_signed_count > 0) {
+        l_dilithium.indices = DAP_NEW_Z_COUNT(uint32_t, l_signed_count);
+        l_chipmunk.indices  = DAP_NEW_Z_COUNT(uint32_t, l_signed_count);
+    }
+
+    int l_passed = 0;
+    for (uint32_t i = 0; i < a_count; i++) {
+        if (!l_pkts[i]) continue;
+
+        if (!a_objs[i].sign) {
+            uint64_t l_crc = crc64((uint8_t *)l_pkts[i] + sizeof(uint64_t),
+                                   dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t));
+            a_results[i] = (l_crc == l_pkts[i]->crc);
+            if (a_results[i]) l_passed++;
+            continue;
+        }
+
+        size_t l_signed_data_size = l_pkts[i]->group_len + l_pkts[i]->key_len + l_pkts[i]->value_len;
+        dap_sign_t *l_sign = (dap_sign_t *)(l_pkts[i]->data + l_signed_data_size);
+        dap_sign_type_t l_type = l_sign->header.type;
+
+        if (l_type.type == SIG_TYPE_DILITHIUM || l_type.type == SIG_TYPE_ML_DSA) {
+            if (l_dilithium.indices)
+                l_dilithium.indices[l_dilithium.count++] = i;
+        } else if (l_type.type == SIG_TYPE_CHIPMUNK) {
+            if (l_chipmunk.indices)
+                l_chipmunk.indices[l_chipmunk.count++] = i;
+        } else {
+            size_t l_full_data_len = l_pkts[i]->data_len;
+            l_pkts[i]->data_len = (uint32_t)l_signed_data_size;
+            int l_rc = dap_sign_verify(l_sign, (uint8_t *)l_pkts[i] + sizeof(uint64_t),
+                                       dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t));
+            l_pkts[i]->data_len = (uint32_t)l_full_data_len;
+            if (l_rc != 0) goto next_obj;
+
+            uint64_t l_crc = crc64((uint8_t *)l_pkts[i] + sizeof(uint64_t),
+                                   dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t));
+            a_results[i] = (l_crc == l_pkts[i]->crc);
+            if (a_results[i]) l_passed++;
+        }
+next_obj:;
+    }
+
+    /* Process batched groups using dap_sign_batch_verify_execute */
+    sig_group_t *l_groups[] = { &l_dilithium, &l_chipmunk };
+    dap_sign_type_enum_t l_types[] = { SIG_TYPE_DILITHIUM, SIG_TYPE_CHIPMUNK };
+
+    for (int g = 0; g < 2; g++) {
+        sig_group_t *l_grp = l_groups[g];
+        if (!l_grp->count) continue;
+
+        dap_sign_type_t l_sig_type = { .type = l_types[g] };
+        dap_sign_batch_verify_ctx_t *l_ctx = dap_sign_batch_verify_ctx_new(l_sig_type, l_grp->count);
+        if (!l_ctx) {
+            for (uint32_t j = 0; j < l_grp->count; j++) {
+                uint32_t i = l_grp->indices[j];
+                size_t l_sd = l_pkts[i]->group_len + l_pkts[i]->key_len + l_pkts[i]->value_len;
+                dap_sign_t *l_sign = (dap_sign_t *)(l_pkts[i]->data + l_sd);
+                uint32_t l_full = l_pkts[i]->data_len;
+                l_pkts[i]->data_len = (uint32_t)l_sd;
+                int l_rc = dap_sign_verify(l_sign, (uint8_t *)l_pkts[i] + sizeof(uint64_t),
+                                           dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t));
+                l_pkts[i]->data_len = l_full;
+                if (l_rc != 0) continue;
+                uint64_t l_crc = crc64((uint8_t *)l_pkts[i] + sizeof(uint64_t),
+                                       dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t));
+                a_results[i] = (l_crc == l_pkts[i]->crc);
+                if (a_results[i]) l_passed++;
+            }
+            continue;
+        }
+
+        for (uint32_t j = 0; j < l_grp->count; j++) {
+            uint32_t i = l_grp->indices[j];
+            size_t l_sd = l_pkts[i]->group_len + l_pkts[i]->key_len + l_pkts[i]->value_len;
+            dap_sign_t *l_sign = (dap_sign_t *)(l_pkts[i]->data + l_sd);
+            uint32_t l_full = l_pkts[i]->data_len;
+            l_pkts[i]->data_len = (uint32_t)l_sd;
+            size_t l_msg_size = dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t);
+            dap_sign_batch_verify_add_signature(l_ctx, l_sign,
+                (uint8_t *)l_pkts[i] + sizeof(uint64_t), l_msg_size, NULL);
+            l_pkts[i]->data_len = l_full;
+        }
+
+        int l_batch_rc = dap_sign_batch_verify_execute(l_ctx);
+        dap_sign_batch_verify_ctx_free(l_ctx);
+
+        if (l_batch_rc == 0) {
+            for (uint32_t j = 0; j < l_grp->count; j++) {
+                uint32_t i = l_grp->indices[j];
+                uint64_t l_crc = crc64((uint8_t *)l_pkts[i] + sizeof(uint64_t),
+                                       dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t));
+                a_results[i] = (l_crc == l_pkts[i]->crc);
+                if (a_results[i]) l_passed++;
+            }
+        } else {
+            for (uint32_t j = 0; j < l_grp->count; j++) {
+                uint32_t i = l_grp->indices[j];
+                size_t l_sd = l_pkts[i]->group_len + l_pkts[i]->key_len + l_pkts[i]->value_len;
+                dap_sign_t *l_sign = (dap_sign_t *)(l_pkts[i]->data + l_sd);
+                uint32_t l_full = l_pkts[i]->data_len;
+                l_pkts[i]->data_len = (uint32_t)l_sd;
+                int l_rc = dap_sign_verify(l_sign, (uint8_t *)l_pkts[i] + sizeof(uint64_t),
+                                           dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t));
+                l_pkts[i]->data_len = l_full;
+                if (l_rc != 0) continue;
+                uint64_t l_crc = crc64((uint8_t *)l_pkts[i] + sizeof(uint64_t),
+                                       dap_global_db_pkt_get_size(l_pkts[i]) - sizeof(uint64_t));
+                a_results[i] = (l_crc == l_pkts[i]->crc);
+                if (a_results[i]) l_passed++;
+            }
+        }
+    }
+
+    DAP_DEL_Z(l_dilithium.indices);
+    DAP_DEL_Z(l_chipmunk.indices);
+    for (uint32_t i = 0; i < a_count; i++)
+        DAP_DEL_Z(l_pkts[i]);
+    DAP_DELETE(l_pkts);
+    return l_passed;
+}
+
 static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_global_db_store_obj_t *a_obj, size_t a_bound_size, dap_cluster_node_addr_t *a_addr)
 {
     if (sizeof(dap_global_db_pkt_t) > a_bound_size ||            /* Check for buffer boundaries */

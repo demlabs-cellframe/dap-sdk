@@ -51,6 +51,7 @@ option(BUILD_STATIC "Also build static version of DAP SDK library" OFF)
 option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
 
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
+option(BUILD_WITH_GPU  "Build GPU compute acceleration module (Vulkan/Metal/CUDA/OpenCL)" ON)
 
 # Internal modules are ALWAYS static, final can be SHARED or STATIC
 if(BUILD_SHARED)
@@ -126,7 +127,12 @@ if (DAPSDK_MODULES MATCHES "crypto")
     message("[+] Module 'math/bignum' (NTT, poly, multi-precision)")
 endif()
 
-# Optional modules with UPDATED PATHS
+# GPU compute module (Vulkan, Metal, CUDA, OpenCL backends) — before crypto for DAP_HAS_GPU
+if (BUILD_WITH_GPU AND DAPSDK_MODULES MATCHES "crypto" AND NOT DAP_WASM)
+    add_subdirectory(module/gpu)
+    message("[+] Module 'gpu' (GPU compute acceleration)")
+endif()
+
 if (DAPSDK_MODULES MATCHES "crypto")
     add_subdirectory(module/crypto)
     message("[+] Module 'crypto'")

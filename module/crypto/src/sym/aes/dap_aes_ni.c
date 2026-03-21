@@ -18,10 +18,7 @@
 
 #define AES256_ROUNDS 14
 
-typedef struct {
-    unsigned char ivec[IAES_BLOCK_SIZE];
-} dap_enc_aes_key_t;
-#define DAP_AES_KEY(a) ((dap_enc_aes_key_t *)((a)->_inheritor))
+/* struct dap_enc_aes_key_t and DAP_ENC_AES_KEY defined in dap_enc_iaes.h */
 
 /* ========== AES-256 key expansion (encrypt direction) ========== */
 
@@ -133,6 +130,29 @@ static inline __m128i s_aes256_decrypt_block(__m128i a_block, const __m128i *a_d
     return _mm_aesdeclast_si128(a_block, a_dk[14]);
 }
 
+/* ========== Cached key schedule helpers ========== */
+
+static inline const __m128i *s_get_enc_schedule(dap_enc_aes_key_t *a_aes, const uint8_t *a_raw_key)
+{
+    __m128i *l_sched = (__m128i *)a_aes->hw_enc_schedule;
+    if (!(a_aes->hw_schedule_ready & 1)) {
+        s_aes256_expand_key(a_raw_key, l_sched);
+        a_aes->hw_schedule_ready |= 1;
+    }
+    return (const __m128i *)l_sched;
+}
+
+static inline const __m128i *s_get_dec_schedule(dap_enc_aes_key_t *a_aes, const uint8_t *a_raw_key)
+{
+    const __m128i *l_enc = s_get_enc_schedule(a_aes, a_raw_key);
+    __m128i *l_dec = (__m128i *)a_aes->hw_dec_schedule;
+    if (!(a_aes->hw_schedule_ready & 2)) {
+        s_aes256_derive_dec_keys(l_enc, l_dec);
+        a_aes->hw_schedule_ready |= 2;
+    }
+    return (const __m128i *)l_dec;
+}
+
 /* ========== Public fast functions (same signature as IAES) ========== */
 
 __attribute__((target("aes,sse2")))
@@ -143,10 +163,10 @@ size_t dap_aes_ni_cbc_encrypt_fast(struct dap_enc_key *a_key, const void *a_in,
     if (a_out_size < l_enc_size)
         return 0;
 
-    __m128i l_enc_keys[AES256_ROUNDS + 1];
-    s_aes256_expand_key(a_key->priv_key_data, l_enc_keys);
+    dap_enc_aes_key_t *l_aes = DAP_ENC_AES_KEY(a_key);
+    const __m128i *l_enc_keys = s_get_enc_schedule(l_aes, a_key->priv_key_data);
 
-    __m128i l_feedback = _mm_loadu_si128((const __m128i *)DAP_AES_KEY(a_key)->ivec);
+    __m128i l_feedback = _mm_loadu_si128((const __m128i *)l_aes->ivec);
 
     const uint8_t *l_in = (const uint8_t *)a_in;
     uint8_t *l_out = (uint8_t *)a_out;
@@ -182,12 +202,10 @@ size_t dap_aes_ni_cbc_decrypt_fast(struct dap_enc_key *a_key, const void *a_in,
     if (a_in_size == 0 || a_in_size % IAES_BLOCK_SIZE != 0)
         return 0;
 
-    __m128i l_enc_keys[AES256_ROUNDS + 1];
-    __m128i l_dec_keys[AES256_ROUNDS + 1];
-    s_aes256_expand_key(a_key->priv_key_data, l_enc_keys);
-    s_aes256_derive_dec_keys(l_enc_keys, l_dec_keys);
+    dap_enc_aes_key_t *l_aes = DAP_ENC_AES_KEY(a_key);
+    const __m128i *l_dec_keys = s_get_dec_schedule(l_aes, a_key->priv_key_data);
 
-    __m128i l_feedback = _mm_loadu_si128((const __m128i *)DAP_AES_KEY(a_key)->ivec);
+    __m128i l_feedback = _mm_loadu_si128((const __m128i *)l_aes->ivec);
 
     const uint8_t *l_in = (const uint8_t *)a_in;
     uint8_t *l_out = (uint8_t *)a_out;

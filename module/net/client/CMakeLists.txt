@@ -14,11 +14,11 @@ create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${DAP_CLIENT_SOURCES}
 
 if(DAP_WASM)
     dap_link_libraries(${PROJECT_NAME} INTERFACE
-        dap_core dap_crypto dap_io dap_io_flow dap_stream dap_stream_ch dap_session
+        dap_core dap_crypto dap_io dap_io_flow dap_stream dap_session
         dap_json dap_hash_table dap_net_trans)
 else()
     dap_link_libraries(${PROJECT_NAME} INTERFACE
-        dap_core dap_crypto dap_io dap_io_flow dap_enc_server dap_stream dap_stream_ch dap_session
+        dap_core dap_crypto dap_io dap_io_flow dap_enc_server dap_stream dap_session
         dap_json dap_hash_table dap_http_server dap_net_trans)
     if(DAPSDK_MODULES MATCHES "ssl-support")
         target_link_libraries(${PROJECT_NAME} INTERFACE wolfssl)

@@ -53,7 +53,7 @@ static void s_cbd3(dap_mlkem_poly *a_r, const uint8_t *a_buf)
 }
 #endif
 
-void MLKEM_NAMESPACE(_cbd_eta1)(dap_mlkem_poly *a_r,
+MLKEM_HOTFN void MLKEM_NAMESPACE(_cbd_eta1)(dap_mlkem_poly *a_r,
                                  const uint8_t a_buf[MLKEM_ETA1 * MLKEM_N / 4])
 {
 #if MLKEM_ETA1 == 2
@@ -65,7 +65,7 @@ void MLKEM_NAMESPACE(_cbd_eta1)(dap_mlkem_poly *a_r,
 #endif
 }
 
-void MLKEM_NAMESPACE(_cbd_eta2)(dap_mlkem_poly *a_r,
+MLKEM_HOTFN void MLKEM_NAMESPACE(_cbd_eta2)(dap_mlkem_poly *a_r,
                                  const uint8_t a_buf[MLKEM_ETA2 * MLKEM_N / 4])
 {
     s_cbd2(a_r, a_buf);

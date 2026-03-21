@@ -300,8 +300,7 @@ static bool s_benchmark_algorithm_comparison(void) {
         {{.type = SIG_TYPE_DILITHIUM}, "Dilithium"},
         {{.type = SIG_TYPE_FALCON}, "Falcon"},
         {{.type = SIG_TYPE_NTRU_PRIME}, "NTRU Prime"},
-        {{.type = SIG_TYPE_CHIPMUNK}, "Chipmunk"},
-        {{.type = SIG_TYPE_PICNIC}, "Picnic"}
+        {{.type = SIG_TYPE_CHIPMUNK}, "Chipmunk"}
     };
     
     const size_t l_num_algorithms = sizeof(l_algorithms) / sizeof(l_algorithms[0]);

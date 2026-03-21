@@ -124,6 +124,7 @@ file( GLOB CRYPTO_SRCS
       # --- kem (active) ---
       src/kem/kyber/dap_enc_kyber.c
       src/kem/mlkem/dap_enc_mlkem.c
+      src/kem/mlkem/dap_mlkem_batch.c
       src/kem/ntru_prime/*.c
       # --- sphincsplus ---
       src/sig/sphincsplus/dap_enc_sphincsplus.c
@@ -330,6 +331,27 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     )
 endif()
 
+# --- Dilithium specialized NTT SIMD ---
+set(DIL_NTT_TPL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sig/dilithium)
+set(DIL_NTT_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/dilithium_ntt_gen)
+
+dap_arch_generate(
+    TEMPLATE   ${DIL_NTT_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT_DIR ${DIL_NTT_GEN_DIR}
+    PREFIX     dap_dilithium_ntt
+    VARIANTS
+        avx2         "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+        avx2_512vl   "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+        neon         "${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
+)
+dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_NTT_GEN_DIR}
+    SOURCES
+        dap_dilithium_ntt_avx2.c        avx2
+        dap_dilithium_ntt_avx2_512vl.c  avx2_512vl
+        dap_dilithium_ntt_neon.c        neon
+)
+target_include_directories(${PROJECT_NAME} PRIVATE ${DIL_NTT_GEN_DIR})
+
 # --- ChaCha20 multi-block SIMD ---
 set(CHACHA_SIMD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/simd)
 set(CHACHA_GEN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/chacha20_arch_gen)
@@ -359,6 +381,22 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
         dap_chacha20_neon.c  neon
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR})
+
+# --- Poly1305 multi-block SIMD ---
+set(POLY1305_SIMD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/simd)
+set(POLY1305_GEN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/poly1305_arch_gen)
+
+dap_arch_generate_variant(
+    TEMPLATE ${POLY1305_SIMD_DIR}/dap_poly1305_simd.c.tpl
+    OUTPUT   ${POLY1305_GEN_DIR}/dap_poly1305_avx2.c
+    ARCH     avx2
+    ARGS     "IMPL_FILE=${POLY1305_SIMD_DIR}/arch/x86/avx2_poly1305_impl.tpl"
+)
+dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${POLY1305_GEN_DIR}
+    SOURCES
+        dap_poly1305_avx2.c  avx2
+)
+target_include_directories(${PROJECT_NAME} PRIVATE ${POLY1305_GEN_DIR})
 
 ## Get all properties that cmake supports
 execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
@@ -422,6 +460,11 @@ if(UNIX)
 endif()
 
 dap_link_libraries(dap_crypto INTERFACE dap_core dap_json dap_hash dap_hash_table dap_config dap_math dap_math_bignum)
+
+if(TARGET dap_gpu)
+    dap_link_libraries(dap_crypto INTERFACE dap_gpu)
+    target_compile_definitions(dap_crypto PUBLIC DAP_HAS_GPU)
+endif()
 
 if(UNIX)
   target_link_libraries(dap_crypto INTERFACE m)

@@ -2,34 +2,53 @@
 #include "dilithium_sign.h"
 #include "dap_memwipe.h"
 
-//#include "dap_hash_keccak.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
-#include "dap_hash_sha3.h"
-#include "dap_hash_shake128.h"
-#include "dap_hash_shake256.h"
+#include "dap_hash_shake_x4.h"
 
 #define LOG_TAG "dap_crypto_sign_dilithium"
 
 /********************************************************************************************/
 void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_param_t *p)
 {
-  unsigned int i, j;
-  unsigned char inbuf[SEEDBYTES + 1];
+  unsigned int total = p->PARAM_K * p->PARAM_L;
+  unsigned int idx = 0;
 
-  unsigned char outbuf[5*DAP_SHAKE128_RATE];
+  unsigned char inbuf[4][SEEDBYTES + 1];
+  unsigned char outbuf[4][5 * DAP_SHAKE128_RATE];
 
-  for(i = 0; i < SEEDBYTES; ++i)
-    inbuf[i] = rho[i];
+  for (int k = 0; k < 4; k++)
+      memcpy(inbuf[k], rho, SEEDBYTES);
 
-  for(i = 0; i < p->PARAM_K; ++i) {
-    for(j = 0; j < p->PARAM_L; ++j) {
-      inbuf[SEEDBYTES] = i + (j << 4);
-      //SHAKE128(outbuf, sizeof(outbuf), inbuf, SEEDBYTES + 1);
-      dap_hash_shake128(outbuf, sizeof(outbuf), inbuf, SEEDBYTES + 1);
-      dilithium_poly_uniform(mat[i].vec + j, outbuf);
-    }
+  while (idx + 4 <= total) {
+      for (int k = 0; k < 4; k++) {
+          unsigned int ii = (idx + k) / p->PARAM_L;
+          unsigned int jj = (idx + k) % p->PARAM_L;
+          inbuf[k][SEEDBYTES] = ii + (jj << 4);
+      }
+
+      dap_keccak_x4_state_t l_state;
+      dap_hash_shake128_x4_absorb(&l_state, inbuf[0], inbuf[1], inbuf[2], inbuf[3],
+                                   SEEDBYTES + 1);
+      dap_hash_shake128_x4_squeezeblocks(outbuf[0], outbuf[1], outbuf[2], outbuf[3],
+                                          5, &l_state);
+
+      for (int k = 0; k < 4; k++) {
+          unsigned int ii = (idx + k) / p->PARAM_L;
+          unsigned int jj = (idx + k) % p->PARAM_L;
+          dilithium_poly_uniform(mat[ii].vec + jj, outbuf[k]);
+      }
+      idx += 4;
+  }
+
+  while (idx < total) {
+      unsigned int ii = idx / p->PARAM_L;
+      unsigned int jj = idx % p->PARAM_L;
+      inbuf[0][SEEDBYTES] = ii + (jj << 4);
+      dap_hash_shake128(outbuf[0], sizeof(outbuf[0]), inbuf[0], SEEDBYTES + 1);
+      dilithium_poly_uniform(mat[ii].vec + jj, outbuf[0]);
+      idx++;
   }
 }
 
@@ -176,9 +195,20 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
 
     expand_mat(mat, rho, p);
 
-    for(i = 0; i < p->PARAM_L; ++i)
+    for(i = 0; i + 4 <= p->PARAM_L; i += 4) {
+        poly_uniform_eta_x4(&s1.vec[i], &s1.vec[i+1], &s1.vec[i+2], &s1.vec[i+3],
+                             rhoprime, nonce, nonce+1, nonce+2, nonce+3, p);
+        nonce += 4;
+    }
+    for(; i < p->PARAM_L; ++i)
         poly_uniform_eta(s1.vec + i, rhoprime, nonce++, p);
-    for(i = 0; i < p->PARAM_K; ++i)
+
+    for(i = 0; i + 4 <= p->PARAM_K; i += 4) {
+        poly_uniform_eta_x4(&s2.vec[i], &s2.vec[i+1], &s2.vec[i+2], &s2.vec[i+3],
+                             rhoprime, nonce, nonce+1, nonce+2, nonce+3, p);
+        nonce += 4;
+    }
+    for(; i < p->PARAM_K; ++i)
         poly_uniform_eta(s2.vec + i, rhoprime, nonce++, p);
 
     s1hat = s1;
@@ -247,8 +277,13 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
     polyveck_ntt(&s2, p);
     polyveck_ntt(&t0, p);
 
-    while(1){        
-        for(i = 0; i < p->PARAM_L; ++i)
+    while(1){
+        for(i = 0; i + 4 <= p->PARAM_L; i += 4) {
+            poly_uniform_gamma1m1_x4(&y.vec[i], &y.vec[i+1], &y.vec[i+2], &y.vec[i+3],
+                                      key, nonce, nonce+1, nonce+2, nonce+3);
+            nonce += 4;
+        }
+        for(; i < p->PARAM_L; ++i)
             poly_uniform_gamma1m1(y.vec+i, key, nonce++);
 
         yhat = y;

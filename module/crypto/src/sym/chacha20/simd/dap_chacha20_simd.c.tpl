@@ -87,7 +87,51 @@ void dap_chacha20_encrypt_{{ARCH_LOWER}}(
         v14 = VEC_ADD32(v14, VEC_SET1(s[14]));
         v15 = VEC_ADD32(v15, VEC_SET1(s[15]));
 
-        /* Store keystream vectors to flat buffer, XOR with plaintext */
+#if defined(CHACHA_HAS_TRANSPOSE_XOR) && CHACHA_LANES == 8
+        /* In-register 8×8 transpose + SIMD XOR — no stack spill.
+         * Two passes: lo (words 0-7) and hi (words 8-15) of each block.
+         * After transpose, row k = 32-byte half of block k. Stride = 64. */
+        {
+#define _XOR_ROW(row_reg, blk, off) \
+    _mm256_storeu_si256((__m256i *)(a_out + (blk)*64 + (off)), \
+        _mm256_xor_si256(row_reg, _mm256_loadu_si256((const __m256i *)(a_in + (blk)*64 + (off)))))
+
+#define TRANSPOSE8_XOR(V0,V1,V2,V3,V4,V5,V6,V7, byte_off) \
+do { \
+    __m256i _t0 = _mm256_unpacklo_epi32(V0, V1); \
+    __m256i _t1 = _mm256_unpackhi_epi32(V0, V1); \
+    __m256i _t2 = _mm256_unpacklo_epi32(V2, V3); \
+    __m256i _t3 = _mm256_unpackhi_epi32(V2, V3); \
+    __m256i _t4 = _mm256_unpacklo_epi32(V4, V5); \
+    __m256i _t5 = _mm256_unpackhi_epi32(V4, V5); \
+    __m256i _t6 = _mm256_unpacklo_epi32(V6, V7); \
+    __m256i _t7 = _mm256_unpackhi_epi32(V6, V7); \
+    __m256i _u0 = _mm256_unpacklo_epi64(_t0, _t2); \
+    __m256i _u1 = _mm256_unpackhi_epi64(_t0, _t2); \
+    __m256i _u2 = _mm256_unpacklo_epi64(_t1, _t3); \
+    __m256i _u3 = _mm256_unpackhi_epi64(_t1, _t3); \
+    __m256i _u4 = _mm256_unpacklo_epi64(_t4, _t6); \
+    __m256i _u5 = _mm256_unpackhi_epi64(_t4, _t6); \
+    __m256i _u6 = _mm256_unpacklo_epi64(_t5, _t7); \
+    __m256i _u7 = _mm256_unpackhi_epi64(_t5, _t7); \
+    _XOR_ROW(_mm256_permute2x128_si256(_u0, _u4, 0x20), 0, byte_off); \
+    _XOR_ROW(_mm256_permute2x128_si256(_u1, _u5, 0x20), 1, byte_off); \
+    _XOR_ROW(_mm256_permute2x128_si256(_u2, _u6, 0x20), 2, byte_off); \
+    _XOR_ROW(_mm256_permute2x128_si256(_u3, _u7, 0x20), 3, byte_off); \
+    _XOR_ROW(_mm256_permute2x128_si256(_u0, _u4, 0x31), 4, byte_off); \
+    _XOR_ROW(_mm256_permute2x128_si256(_u1, _u5, 0x31), 5, byte_off); \
+    _XOR_ROW(_mm256_permute2x128_si256(_u2, _u6, 0x31), 6, byte_off); \
+    _XOR_ROW(_mm256_permute2x128_si256(_u3, _u7, 0x31), 7, byte_off); \
+} while (0)
+
+            TRANSPOSE8_XOR(v0,v1,v2,v3,v4,v5,v6,v7, 0);
+            TRANSPOSE8_XOR(v8,v9,v10,v11,v12,v13,v14,v15, 32);
+
+#undef _XOR_ROW
+#undef TRANSPOSE8_XOR
+        }
+#else
+        /* Fallback: store keystream to stack, scalar XOR */
         uint32_t ks[16 * CHACHA_LANES] __attribute__((aligned(64)));
         VEC_STOREU(ks + 0  * CHACHA_LANES, v0);
         VEC_STOREU(ks + 1  * CHACHA_LANES, v1);
@@ -112,6 +156,7 @@ void dap_chacha20_encrypt_{{ARCH_LOWER}}(
             for (int w = 0; w < 16; w++)
                 l_out_w[w] = l_in_w[w] ^ ks[w * CHACHA_LANES + lane];
         }
+#endif
 
         a_counter += CHACHA_LANES;
         a_out += CHACHA_BLOCK_BYTES;
