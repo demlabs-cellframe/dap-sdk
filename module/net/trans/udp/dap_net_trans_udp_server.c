@@ -23,7 +23,7 @@
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
-#include "dap_enc_mlkem.h"
+#include "dap_enc_kyber.h"
 #include "dap_rand.h"  // For randombytes
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "dap_string.h"
@@ -45,49 +45,17 @@
 #include "dap_worker.h"
 #include "dap_thread_pool.h"
 #include "dap_json.h"
-#include "dap_mlkem_batch.h"
 
 #define LOG_TAG "dap_net_trans_udp_server"
 
 // Protocol version
 #define DAP_STREAM_UDP_VERSION 1
 
-// Batch KEM accumulator parameters
-#define KEM_BATCH_MAX_SIZE      32
-#define KEM_BATCH_FLUSH_MS       5
-
-typedef struct kem_task_ctx kem_task_ctx_t;
-
 // Global debug flag
 static bool s_debug_more = false;
 
 // Global thread pool for heavy KEM operations
 static dap_thread_pool_t *s_kem_thread_pool = NULL;
-
-/**
- * @brief Batch KEM accumulator.
- *
- * Collects HANDSHAKE requests from reactor threads, flushing
- * them as a single GPU-friendly batch when the queue reaches
- * KEM_BATCH_MAX_SIZE entries or KEM_BATCH_FLUSH_MS elapses.
- */
-typedef struct kem_batch_accumulator {
-    kem_task_ctx_t *items[KEM_BATCH_MAX_SIZE];
-    uint32_t        count;
-    pthread_mutex_t lock;
-    dap_timerfd_t  *flush_timer;
-    bool            timer_active;
-} kem_batch_accumulator_t;
-
-static kem_batch_accumulator_t s_kem_batch = {
-    .count        = 0,
-    .lock         = PTHREAD_MUTEX_INITIALIZER,
-    .flush_timer  = NULL,
-    .timer_active = false,
-};
-
-static void s_kem_batch_flush_locked(void);
-static bool s_kem_batch_timer_cb(void *a_arg);
 
 //===================================================================
 // UDP EXTENDED FLOW CONTROL HEADER SCHEMA (dap_serialize)
@@ -199,12 +167,12 @@ typedef struct stream_udp_session {
 /**
  * @brief KEM task context for thread pool offload
  */
-struct kem_task_ctx {
+typedef struct kem_task_ctx {
     stream_udp_session_t *session;       // Session handle (must remain valid!)
     uint8_t *alice_pub_key;              // Alice's public key (copied)
     size_t alice_pub_key_size;           // Alice's public key size
     dap_events_socket_uuid_t session_uuid; // Session UUID for validation
-};
+} kem_task_ctx_t;
 
 /**
  * @brief Listener disable callback arguments
@@ -587,12 +555,7 @@ int dap_net_trans_udp_server_init(void)
 void dap_net_trans_udp_server_deinit(void)
 {
     log_it(L_NOTICE, "Deinitializing Stream UDP server module");
-
-    // Flush remaining batch items before shutting down the pool
-    pthread_mutex_lock(&s_kem_batch.lock);
-    s_kem_batch_flush_locked();
-    pthread_mutex_unlock(&s_kem_batch.lock);
-
+    
     // Shutdown KEM thread pool
     if (s_kem_thread_pool) {
         log_it(L_INFO, "Shutting down KEM thread pool...");
@@ -810,7 +773,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
                      a_size, l_handshake_size);
             
             // Initialize session_id
-            dap_random_bytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
+            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
             debug_if(s_debug_more, L_DEBUG,
                      "HANDSHAKE: generated session_id=0x%" DAP_UINT64_FORMAT_x " for session %p",
                      l_session->session_id, l_session);
@@ -1558,284 +1521,7 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
 }
 
 //===================================================================
-// BATCH KEM ACCUMULATOR
-//===================================================================
-
-/**
- * @brief Context for a batch KEM thread-pool task.
- */
-typedef struct kem_batch_task_ctx {
-    kem_task_ctx_t *items[KEM_BATCH_MAX_SIZE];
-    uint32_t        count;
-} kem_batch_task_ctx_t;
-
-/**
- * @brief Per-item result from the batch KEM task.
- */
-typedef struct kem_batch_task_result {
-    kem_task_result_t results[KEM_BATCH_MAX_SIZE];
-    kem_task_ctx_t   *items[KEM_BATCH_MAX_SIZE];
-    uint32_t          count;
-} kem_batch_task_result_t;
-
-static void *s_kem_batch_task_func(void *a_arg)
-{
-    kem_batch_task_ctx_t *l_ctx = (kem_batch_task_ctx_t *)a_arg;
-    if (!l_ctx || l_ctx->count == 0)
-        return NULL;
-
-    uint32_t l_n = l_ctx->count;
-
-    kem_batch_task_result_t *l_out = DAP_NEW_Z(kem_batch_task_result_t);
-    if (!l_out) return NULL;
-    l_out->count = l_n;
-    memcpy(l_out->items, l_ctx->items, l_n * sizeof(kem_task_ctx_t *));
-
-    const uint8_t **l_alice_pks      = DAP_NEW_Z_COUNT(const uint8_t *, l_n);
-    size_t         *l_alice_pk_sizes = DAP_NEW_Z_COUNT(size_t, l_n);
-    dap_mlkem_batch_encaps_result_t *l_enc_results = DAP_NEW_Z_COUNT(dap_mlkem_batch_encaps_result_t, l_n);
-    if (!l_alice_pks || !l_alice_pk_sizes || !l_enc_results) {
-        for (uint32_t i = 0; i < l_n; i++)
-            l_out->results[i].error_code = -1;
-        DAP_DEL_MULTY(l_alice_pks, l_alice_pk_sizes, l_enc_results);
-        return l_out;
-    }
-
-    for (uint32_t i = 0; i < l_n; i++) {
-        l_alice_pks[i]      = l_ctx->items[i]->alice_pub_key;
-        l_alice_pk_sizes[i] = l_ctx->items[i]->alice_pub_key_size;
-    }
-
-    int l_rc = dap_mlkem512_batch_encaps(l_alice_pks, l_alice_pk_sizes, l_n, l_enc_results);
-    if (l_rc != 0) {
-        log_it(L_ERROR, "[KEM Batch] dap_mlkem512_batch_encaps failed: %d", l_rc);
-        for (uint32_t i = 0; i < l_n; i++)
-            l_out->results[i].error_code = -2;
-        DAP_DEL_MULTY(l_alice_pks, l_alice_pk_sizes, l_enc_results);
-        return l_out;
-    }
-
-    for (uint32_t i = 0; i < l_n; i++) {
-        kem_task_result_t *r = &l_out->results[i];
-        dap_mlkem_batch_encaps_result_t *e = &l_enc_results[i];
-        r->session_id = l_ctx->items[i]->session->session_id;
-
-        if (e->error != 0) {
-            r->error_code = e->error;
-            continue;
-        }
-
-        r->bob_ciphertext      = e->ciphertext;
-        r->bob_ciphertext_size = e->ciphertext_size;
-        e->ciphertext = NULL;
-
-        /* Derive handshake key from shared secret via KDF-SHAKE256 */
-        dap_enc_key_t l_tmp_key = {
-            .shared_key      = e->shared_secret,
-            .shared_key_size = e->shared_secret_size,
-        };
-        dap_enc_key_t *l_hk = dap_enc_kdf_create_cipher_key(
-            &l_tmp_key, DAP_ENC_KEY_TYPE_SALSA2012, "udp_handshake", 14, 0, 32);
-
-        if (!l_hk) {
-            r->error_code = -6;
-            DAP_DEL_Z(r->bob_ciphertext);
-            dap_mlkem_batch_encaps_result_cleanup(e);
-            continue;
-        }
-        r->handshake_key = l_hk;
-
-        dap_mlkem_batch_encaps_result_cleanup(e);
-    }
-
-    DAP_DEL_MULTY(l_alice_pks, l_alice_pk_sizes, l_enc_results);
-    return l_out;
-}
-
-/**
- * @brief Reactor-side delivery of one batch item's result.
- */
-typedef struct kem_batch_reactor_arg {
-    stream_udp_session_t *session;
-    kem_task_result_t     result;
-} kem_batch_reactor_arg_t;
-
-static void s_kem_batch_reactor_callback(void *a_arg);
-
-static void s_kem_batch_task_callback(dap_thread_pool_t *a_pool,
-                                      dap_thread_t a_worker_thread,
-                                      void *a_result, void *a_arg)
-{
-    (void)a_pool; (void)a_worker_thread;
-    kem_batch_task_result_t *l_res  = (kem_batch_task_result_t *)a_result;
-    kem_batch_task_ctx_t    *l_ctx  = (kem_batch_task_ctx_t *)a_arg;
-    if (!l_res) {
-        if (l_ctx) DAP_DELETE(l_ctx);
-        return;
-    }
-
-    for (uint32_t i = 0; i < l_res->count; i++) {
-        kem_task_ctx_t *l_item = l_res->items[i];
-        stream_udp_session_t *l_session = l_item ? l_item->session : NULL;
-        if (!l_session) {
-            DAP_DEL_Z(l_res->results[i].bob_ciphertext);
-            if (l_item) { DAP_DEL_Z(l_item->alice_pub_key); DAP_DELETE(l_item); }
-            continue;
-        }
-
-        kem_batch_reactor_arg_t *l_ra = DAP_NEW_Z(kem_batch_reactor_arg_t);
-        if (!l_ra) {
-            atomic_store(&l_session->kem_task_pending, false);
-            DAP_DEL_Z(l_res->results[i].bob_ciphertext);
-            DAP_DEL_Z(l_item->alice_pub_key); DAP_DELETE(l_item);
-            continue;
-        }
-        l_ra->session = l_session;
-        l_ra->result  = l_res->results[i];
-
-        uint32_t l_owner_id = l_session->base.base.owner_worker_id;
-        dap_worker_t *l_worker = dap_events_worker_get(l_owner_id);
-        if (!l_worker && l_session->base.listener_es && l_session->base.listener_es->worker)
-            l_worker = l_session->base.listener_es->worker;
-
-        if (l_worker) {
-            dap_worker_exec_callback_on(l_worker, s_kem_batch_reactor_callback, l_ra);
-        } else {
-            log_it(L_ERROR, "[KEM Batch] No worker for session %p", l_session);
-            atomic_store(&l_session->kem_task_pending, false);
-            DAP_DEL_Z(l_res->results[i].bob_ciphertext);
-            DAP_DELETE(l_ra);
-        }
-
-        DAP_DEL_Z(l_item->alice_pub_key);
-        DAP_DELETE(l_item);
-    }
-
-    DAP_DELETE(l_res);
-    DAP_DELETE(l_ctx);
-}
-
-static void s_kem_batch_reactor_callback(void *a_arg)
-{
-    kem_batch_reactor_arg_t *l_a = (kem_batch_reactor_arg_t *)a_arg;
-    if (!l_a) return;
-
-    stream_udp_session_t *l_session = l_a->session;
-    kem_task_result_t    *l_r       = &l_a->result;
-
-    if (!l_session || !l_session->base.base.stream_context || !l_session->base.listener_es) {
-        debug_if(s_debug_more, L_DEBUG, "[KEM Batch Reactor] Session %p invalid", l_session);
-        goto done;
-    }
-
-    if (l_r->error_code != 0) {
-        log_it(L_ERROR, "[KEM Batch Reactor] item error %d", l_r->error_code);
-        goto done;
-    }
-
-    l_session->encryption_key = l_r->handshake_key;
-    l_r->handshake_key = NULL;
-
-    size_t l_resp_size = l_r->bob_ciphertext_size + sizeof(uint64_t);
-    uint64_t l_sid_be  = htobe64(l_r->session_id);
-    uint8_t *l_resp    = dap_serialize_multy(NULL, l_resp_size,
-                                             l_r->bob_ciphertext, l_r->bob_ciphertext_size,
-                                             &l_sid_be, sizeof(uint64_t), DOOF_PTR);
-    if (l_resp) {
-        s_send_udp_packet(l_session, DAP_STREAM_UDP_PKT_HANDSHAKE, l_resp, l_resp_size);
-        DAP_DELETE(l_resp);
-    }
-
-done:
-    if (l_session)
-        atomic_store(&l_session->kem_task_pending, false);
-    DAP_DEL_Z(l_r->bob_ciphertext);
-    DAP_DELETE(l_a);
-}
-
-/**
- * @brief Flush the batch accumulator (called with lock held).
- *
- * Moves all queued items into a single thread-pool task.
- */
-static void s_kem_batch_flush_locked(void)
-{
-    if (s_kem_batch.count == 0)
-        return;
-
-    kem_batch_task_ctx_t *l_ctx = DAP_NEW_Z(kem_batch_task_ctx_t);
-    if (!l_ctx) {
-        log_it(L_CRITICAL, "[KEM Batch] Failed to allocate batch task context");
-        for (uint32_t i = 0; i < s_kem_batch.count; i++) {
-            if (s_kem_batch.items[i] && s_kem_batch.items[i]->session)
-                atomic_store(&s_kem_batch.items[i]->session->kem_task_pending, false);
-            DAP_DEL_Z(s_kem_batch.items[i]->alice_pub_key);
-            DAP_DELETE(s_kem_batch.items[i]);
-        }
-        s_kem_batch.count = 0;
-        return;
-    }
-
-    l_ctx->count = s_kem_batch.count;
-    memcpy(l_ctx->items, s_kem_batch.items, l_ctx->count * sizeof(kem_task_ctx_t *));
-    s_kem_batch.count = 0;
-
-    debug_if(s_debug_more, L_DEBUG,
-             "[KEM Batch] Flushing %u items to thread pool", l_ctx->count);
-
-    int l_ret = dap_thread_pool_submit(s_kem_thread_pool,
-                                       s_kem_batch_task_func, l_ctx,
-                                       s_kem_batch_task_callback, l_ctx);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "[KEM Batch] Failed to submit batch task: %d", l_ret);
-        for (uint32_t i = 0; i < l_ctx->count; i++) {
-            if (l_ctx->items[i] && l_ctx->items[i]->session)
-                atomic_store(&l_ctx->items[i]->session->kem_task_pending, false);
-            DAP_DEL_Z(l_ctx->items[i]->alice_pub_key);
-            DAP_DELETE(l_ctx->items[i]);
-        }
-        DAP_DELETE(l_ctx);
-    }
-}
-
-/**
- * @brief Timer callback — flushes partial batch after KEM_BATCH_FLUSH_MS.
- */
-static bool s_kem_batch_timer_cb(void *a_arg)
-{
-    (void)a_arg;
-    pthread_mutex_lock(&s_kem_batch.lock);
-    s_kem_batch.timer_active = false;
-    s_kem_batch_flush_locked();
-    pthread_mutex_unlock(&s_kem_batch.lock);
-    return false;
-}
-
-/**
- * @brief Add a KEM task to the batch accumulator.
- *
- * Thread-safe.  Flushes immediately when the batch is full,
- * otherwise starts a KEM_BATCH_FLUSH_MS timer.
- */
-static void s_kem_batch_enqueue(kem_task_ctx_t *a_ctx)
-{
-    pthread_mutex_lock(&s_kem_batch.lock);
-
-    s_kem_batch.items[s_kem_batch.count++] = a_ctx;
-
-    if (s_kem_batch.count >= KEM_BATCH_MAX_SIZE) {
-        s_kem_batch_flush_locked();
-    } else if (!s_kem_batch.timer_active) {
-        s_kem_batch.flush_timer = dap_timerfd_start(KEM_BATCH_FLUSH_MS,
-                                                     s_kem_batch_timer_cb, NULL);
-        s_kem_batch.timer_active = (s_kem_batch.flush_timer != NULL);
-    }
-
-    pthread_mutex_unlock(&s_kem_batch.lock);
-}
-
-//===================================================================
-// PROTOCOL PACKET HANDLERS (individual KEM fallback)
+// PROTOCOL PACKET HANDLERS
 //===================================================================
 
 /**
@@ -2183,7 +1869,8 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     // Check if thread pool is available
     if (!s_kem_thread_pool) {
         log_it(L_WARNING, "KEM thread pool not available, falling back to synchronous processing");
-        atomic_store(&a_session->kem_task_pending, false);
+        atomic_store(&a_session->kem_task_pending, false);  // Reset flag
+        // TODO: Implement synchronous fallback (same code as s_kem_task_func)
         return -10;
     }
     
@@ -2191,34 +1878,44 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     kem_task_ctx_t *l_ctx = DAP_NEW_Z(kem_task_ctx_t);
     if (!l_ctx) {
         log_it(L_ERROR, "Failed to allocate KEM task context");
-        atomic_store(&a_session->kem_task_pending, false);
+        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
         return -2;
     }
     
     l_ctx->session = a_session;
-    l_ctx->session_uuid = 0;
+    l_ctx->session_uuid = 0;  // UUID validation not needed - encryption_key check is sufficient
     l_ctx->alice_pub_key_size = a_payload_size;
     l_ctx->alice_pub_key = DAP_NEW_SIZE(uint8_t, a_payload_size);
     
     if (!l_ctx->alice_pub_key) {
         log_it(L_ERROR, "Failed to allocate Alice public key buffer");
-        atomic_store(&a_session->kem_task_pending, false);
+        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
         DAP_DELETE(l_ctx);
         return -3;
     }
     
     memcpy(l_ctx->alice_pub_key, a_payload, a_payload_size);
     
-    // Enqueue into the batch accumulator instead of individual submission.
-    // The accumulator flushes when full (KEM_BATCH_MAX_SIZE) or after
-    // KEM_BATCH_FLUSH_MS, dispatching all queued encapsulations as a
-    // single GPU-friendly batch via dap_mlkem512_batch_encaps().
-    s_kem_batch_enqueue(l_ctx);
+    // Submit task to thread pool
+    int l_ret = dap_thread_pool_submit(s_kem_thread_pool,
+                                      s_kem_task_func,
+                                      l_ctx,
+                                      s_kem_task_callback,
+                                      l_ctx);
+    
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to submit KEM task to thread pool: %d", l_ret);
+        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
+        DAP_DELETE(l_ctx->alice_pub_key);
+        DAP_DELETE(l_ctx);
+        return -4;
+    }
     
     debug_if(s_debug_more, L_DEBUG,
-             "HANDSHAKE: KEM task enqueued (batch) for session %p (session_id=0x%" DAP_UINT64_FORMAT_x ")",
+             "HANDSHAKE: KEM task submitted to thread pool for session %p (session_id=0x%" DAP_UINT64_FORMAT_x ")",
              a_session, a_session->session_id);
     
+    // Return immediately - response will be sent from callback
     return 0;
 }
 

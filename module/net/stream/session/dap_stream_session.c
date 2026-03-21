@@ -19,11 +19,24 @@
 */
 
 
+#ifdef _WIN32
+#include <time.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <winsock2.h>
+#include <windows.h>
+#include <mswsock.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#include <pthread.h>
+#endif
+
 #include "dap_common.h"
 #include "dap_stream_session.h"
 #include "dap_config.h"
 #include "dap_ht.h"
-#include "dap_rand.h"
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_stream_session"
 
@@ -101,7 +114,7 @@ uint32_t session_id = 0;
        pthread_mutex_lock(&s_sessions_mutex);
 
        do {
-           session_id = dap_random_uint32(RAND_MAX);
+           session_id = random_uint32_t(RAND_MAX);
            dap_ht_find_int(s_sessions, session_id, l_stm_tmp);
        } while(l_stm_tmp);
 

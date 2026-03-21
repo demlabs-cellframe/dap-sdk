@@ -204,3 +204,4 @@ void dap_stream_set_member_callbacks(dap_stream_member_callback_t a_add,
 typedef dap_stream_t *(*dap_stream_from_esocket_callback_t)(dap_events_socket_t *a_es);
 void dap_stream_set_client_esocket_callback(dap_stream_from_esocket_callback_t a_callback);
 
+

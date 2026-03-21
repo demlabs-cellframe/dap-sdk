@@ -70,6 +70,7 @@ int dap_client_init()
         dap_client_esocket_init();
         dap_client_fsm_init();
         dap_stream_set_client_esocket_callback(s_stream_from_client_esocket);
+
         s_is_first_time = false;
     }
     return 0;

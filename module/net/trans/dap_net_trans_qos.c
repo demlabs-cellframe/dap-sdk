@@ -29,7 +29,7 @@
 #include "dap_worker.h"
 #include "dap_http_simple.h"
 #include "http_status_code.h"
-#include "dap_rand.h"
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_net_trans_qos"
 
@@ -278,7 +278,7 @@ static int s_probe_latency_http(const char *a_host, uint16_t a_port, uint32_t a_
     dap_qos_probe_pkt_t l_probe = {0};
     l_probe.magic = DAP_QOS_PROBE_MAGIC;
     l_probe.type  = DAP_QOS_TYPE_PROBE;
-    dap_random_bytes((uint8_t *)&l_probe.probe_id, sizeof(l_probe.probe_id));
+    randombytes((uint8_t *)&l_probe.probe_id, sizeof(l_probe.probe_id));
     l_probe.client_ts = s_mono_ns();
 
     ctx->start_ns  = l_probe.client_ts;
@@ -355,7 +355,7 @@ static int s_bw_test_http(const char *a_host, uint16_t a_port,
     l_probe.magic    = DAP_QOS_PROBE_MAGIC;
     l_probe.type     = DAP_QOS_TYPE_BW_REQUEST;
     l_probe.bw_bytes = a_bw_bytes;
-    dap_random_bytes((uint8_t *)&l_probe.probe_id, sizeof(l_probe.probe_id));
+    randombytes((uint8_t *)&l_probe.probe_id, sizeof(l_probe.probe_id));
     l_probe.client_ts = s_mono_ns();
     ctx->start_ns     = l_probe.client_ts;
     ctx->probe_id     = l_probe.probe_id;

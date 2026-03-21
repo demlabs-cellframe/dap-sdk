@@ -51,7 +51,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_kdf.h"
 #include "dap_client.h"
 #include "dap_client_esocket.h"
-#include "dap_rand.h"
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_stream_trans_dns"
 
@@ -510,7 +510,7 @@ static int s_dns_session_create(dap_stream_t *a_stream,
 
     // Generate session ID (similar to UDP)
     uint32_t l_rand;
-    dap_random_bytes(&l_rand, sizeof(l_rand));
+    randombytes(&l_rand, sizeof(l_rand));
     uint64_t l_session_id = (uint64_t)time(NULL) | ((uint64_t)l_rand << 32);
     log_it(L_INFO, "DNS session created: ID=0x%" DAP_UINT64_FORMAT_x, l_session_id);
     

@@ -609,16 +609,17 @@ endfunction()
 function(dap_mock_manual_wrap TARGET_NAME)
     set(WRAP_OPTIONS "")
     
-    # Detect compiler and linker type
-    if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_C_SIMULATE_ID MATCHES "MSVC")
-        # MSVC does not support --wrap, use /ALTERNATENAME instead
+    if(APPLE)
+        # macOS: mock_interpose.c + flat_namespace handles overrides; no linker flags needed
+        list(LENGTH ARGN FUNC_COUNT)
+        message(STATUS " Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME} (macOS: interpose)")
+        return()
+    elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_C_SIMULATE_ID MATCHES "MSVC")
         message(WARNING "MSVC does not support --wrap. Please use MinGW/Clang for mock testing.")
-        message(WARNING "Alternative: Use /ALTERNATENAME:_function_name=_mock_function_name")
         foreach(FUNC ${ARGN})
             list(APPEND WRAP_OPTIONS "/ALTERNATENAME:_${FUNC}=_mock_${FUNC}")
         endforeach()
     else()
-        # GCC, Clang, MinGW - all support GNU ld --wrap
         foreach(FUNC ${ARGN})
             list(APPEND WRAP_OPTIONS "-Wl,--wrap=${FUNC}")
         endforeach()
@@ -627,7 +628,7 @@ function(dap_mock_manual_wrap TARGET_NAME)
     target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS})
     
     list(LENGTH ARGN FUNC_COUNT)
-    message(STATUS "✅ Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME}")
+    message(STATUS " Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME}")
 endfunction()
 
 #
