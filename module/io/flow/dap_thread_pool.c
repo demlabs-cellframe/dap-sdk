@@ -62,6 +62,7 @@ struct dap_thread_pool {
     uint32_t queue_size;          // per-thread limit (0 = unlimited)
     _Atomic uint32_t next_thread; // round-robin counter for submit()
     bool threads_joined;          // guard against double pthread_join
+    bool inline_mode;             // WASM ST: execute tasks synchronously
 };
 
 /**
@@ -153,6 +154,13 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
         pthread_cond_init(&l_w->cond, NULL);
     }
 
+#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+    l_pool->inline_mode = true;
+    l_pool->threads_joined = true;
+    log_it(L_NOTICE, "Created thread pool in inline mode (WASM ST, %u virtual workers)", a_num_threads);
+    return l_pool;
+#else
+    l_pool->inline_mode = false;
     {
     uint32_t l_ncpus = dap_get_cpu_count();
 
@@ -196,6 +204,7 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
     log_it(L_INFO, "Created thread pool with %u workers (per-thread queues)", a_num_threads);
     }
     return l_pool;
+#endif
 }
 
 /**
@@ -207,6 +216,13 @@ static int s_submit_to_worker(dap_thread_pool_worker_t *a_worker, uint32_t a_que
                                dap_thread_pool_task_func_t a_task_func, void *a_task_arg,
                                dap_thread_pool_callback_t a_callback, void *a_callback_arg)
 {
+    if (a_worker->pool->inline_mode) {
+        void *l_result = a_task_func ? a_task_func(a_task_arg) : NULL;
+        if (a_callback)
+            a_callback(a_worker->pool, 0, l_result, a_callback_arg);
+        return 0;
+    }
+
     dap_thread_pool_task_t *l_task = DAP_NEW_Z(dap_thread_pool_task_t);
     if (!l_task)
         return -4;
@@ -303,7 +319,7 @@ int dap_thread_pool_shutdown(dap_thread_pool_t *a_pool, uint32_t a_timeout_ms)
     if (!a_pool || !a_pool->workers)
         return -1;
 
-    if (a_pool->threads_joined)
+    if (a_pool->threads_joined || a_pool->inline_mode)
         return 0;
 
     for (uint32_t i = 0; i < a_pool->num_threads; i++) {

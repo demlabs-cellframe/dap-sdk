@@ -96,6 +96,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_events.h"
 #include "dap_context.h"
 #include "dap_events_socket.h"
+#include "dap_worker.h"
 #include "dap_proc_thread.h"
 #include "dap_config.h"
 
@@ -317,6 +318,60 @@ void dap_events_deinit( )
 }
 
 
+/* ─── WASM single-threaded: inline workers + emscripten main loop ────── */
+#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+
+static void s_wasm_st_main_loop_step(void);
+
+int dap_events_start()
+{
+    if (!s_workers_init) {
+        log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+        return -1;
+    }
+
+    s_threads_count = 1;
+
+    dap_worker_t *l_worker = DAP_NEW_Z(dap_worker_t);
+    if (!l_worker) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return -6;
+    }
+
+    l_worker->id = 0;
+    l_worker->context = dap_context_new(DAP_CONTEXT_TYPE_WORKER);
+    l_worker->context->_inheritor = l_worker;
+    l_worker->context->cpu_id = 0;
+    l_worker->context->is_running = true;
+    s_workers[0] = l_worker;
+
+    if (dap_worker_context_callback_started(l_worker->context, l_worker)) {
+        log_it(L_CRITICAL, "Worker inline init failed");
+        DAP_DEL_Z(l_worker);
+        return -1;
+    }
+
+    if (dap_proc_thread_init_wasm_st(1) != 0) {
+        log_it(L_CRITICAL, "Proc thread inline init failed");
+        return -4;
+    }
+
+    emscripten_set_main_loop(s_wasm_st_main_loop_step, 0, 0);
+
+    log_it(L_NOTICE, "WASM ST event loop started via emscripten_set_main_loop");
+    return 0;
+}
+
+static void s_wasm_st_main_loop_step(void)
+{
+    if (s_workers[0] && s_workers[0]->context && s_workers[0]->context->is_running)
+        dap_worker_poll_step(s_workers[0]->context);
+    dap_proc_thread_poll_step();
+}
+
+#else
+/* ─── Normal multi-threaded path ─────────────────────────────────────── */
+
 /**
  * @brief dap_events_start  Run main server loop
  * @return Zero if ok others if not
@@ -371,6 +426,8 @@ lb_err:
     DAP_DEL_Z(s_threads_id);
     return l_ret;
 }
+
+#endif /* DAP_OS_WASM && !DAP_WASM_PTHREADS */
 
 
 

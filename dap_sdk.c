@@ -71,6 +71,7 @@ static int  s_init_net_dns     (const dap_sdk_config_t *);
 static int  s_init_cli_server  (const dap_sdk_config_t *);
 static int  s_init_plugin      (const dap_sdk_config_t *);
 static int  s_init_test        (const dap_sdk_config_t *);
+static int  s_ensure_node_addr_cert(void);
 
 static void s_deinit_core(void);
 static void s_deinit_crypto(void);
@@ -306,6 +307,10 @@ static int s_init_net_stream(const dap_sdk_config_t *a_config)
 {
     (void)a_config;
     int l_rc;
+#ifdef DAP_OS_WASM
+    if ((l_rc = s_ensure_node_addr_cert()) != 0)
+        return l_rc;
+#endif
     if ((l_rc = dap_stream_init(g_config)) != 0) return l_rc;
 #ifndef DAP_OS_WASM
     if ((l_rc = dap_stream_ctl_init()) != 0) return l_rc;

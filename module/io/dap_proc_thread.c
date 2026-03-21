@@ -275,6 +275,65 @@ static bool s_timer_callback(void *a_arg)
     return dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority), !l_arg->oneshot;
 }
 
+/* ─── WASM single-threaded: inline init & non-blocking step ────────── */
+#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+
+int dap_proc_thread_init_wasm_st(uint32_t a_threads_count)
+{
+    (void)a_threads_count;
+    s_threads_count = 1;
+    s_threads = DAP_NEW_Z_SIZE(dap_proc_thread_t, sizeof(dap_proc_thread_t));
+    if (!s_threads) return -1;
+
+    dap_proc_thread_t *l_thread = &s_threads[0];
+    l_thread->context = dap_context_new(DAP_CONTEXT_TYPE_PROC_THREAD);
+    l_thread->context->_inheritor = l_thread;
+    l_thread->context->cpu_id = 0;
+    l_thread->context->is_running = true;
+
+    pthread_mutex_init(&l_thread->queue_lock, NULL);
+    pthread_cond_init(&l_thread->queue_event, NULL);
+
+    dap_worker_t *l_worker = dap_events_worker_get(0);
+    if (!l_worker) {
+        log_it(L_ERROR, "dap_proc_thread_init_wasm_st: no worker at CPU 0");
+        return -1;
+    }
+    l_worker->proc_queue_input = l_thread;
+
+    log_it(L_NOTICE, "Proc thread init (WASM ST inline)");
+    return 0;
+}
+
+void dap_proc_thread_poll_step(void)
+{
+    if (!s_threads || !s_threads_count) return;
+
+    dap_proc_thread_t *l_thread = &s_threads[0];
+    if (!l_thread->context || l_thread->context->signal_exit) return;
+
+    int l_batch = 0;
+    const int l_max_per_step = 16;
+
+    while (l_batch < l_max_per_step) {
+        dap_proc_queue_item_t *l_item = NULL;
+        int l_item_priority = 0;
+
+        pthread_mutex_lock(&l_thread->queue_lock);
+        l_item = s_proc_queue_pull(l_thread, &l_item_priority);
+        pthread_mutex_unlock(&l_thread->queue_lock);
+
+        if (!l_item) break;
+
+        if (l_item->callback && l_item->callback(l_item->callback_arg))
+            dap_proc_thread_callback_add_pri(l_thread, l_item->callback, l_item->callback_arg, l_item_priority);
+        DAP_DEL_Z(l_item);
+        l_batch++;
+    }
+}
+
+#endif /* DAP_OS_WASM && !DAP_WASM_PTHREADS */
+
 int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority)
 {
     dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
