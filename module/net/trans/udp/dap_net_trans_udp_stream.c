@@ -32,7 +32,7 @@
 #include "dap_worker.h"
 #include "dap_timerfd.h"
 #include "dap_net.h"
-#include "dap_enc_kyber.h"
+#include "dap_enc_key.h"
 #include "dap_transport_obfuscation.h"
 #include "dap_json.h"
 #include "dap_io_flow.h"
@@ -59,7 +59,7 @@
 #include "dap_server.h"
 #include "dap_enc_server.h"
 #include "dap_client.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_enc_key.h"
 #include "dap_enc.h"
 #include "dap_enc_kdf.h"
@@ -1439,7 +1439,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     }
     
     // Generate random session ID for THIS stream
-    if (randombytes((uint8_t*)&l_udp_ctx->session_id, sizeof(l_udp_ctx->session_id)) != 0) {
+    if (dap_random_bytes((uint8_t*)&l_udp_ctx->session_id, sizeof(l_udp_ctx->session_id)) != 0) {
         log_it(L_ERROR, "Failed to generate random session ID");
         return -1;
     }
@@ -1524,15 +1524,13 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     }
 
     log_it(L_DEBUG, "UDP handshake response: processing %zu bytes", a_data_size);
-    
-    // Validate size: Bob's ciphertext (768 bytes) + session_id (8 bytes) = 776 bytes
-    const size_t EXPECTED_SIZE = CRYPTO_CIPHERTEXTBYTES + sizeof(uint64_t);
-    if (a_data_size != EXPECTED_SIZE) {
-        log_it(L_ERROR, "Invalid handshake response size: %zu (expected %zu = %d ciphertext + 8 session_id)",
-               a_data_size, EXPECTED_SIZE, CRYPTO_CIPHERTEXTBYTES);
+
+    if (a_data_size <= sizeof(uint64_t)) {
+        log_it(L_ERROR, "Handshake response too small: %zu bytes (need ciphertext + 8 session_id)", a_data_size);
         return -1;
     }
-    
+    const size_t l_ciphertext_size = a_data_size - sizeof(uint64_t);
+
     // Get Alice's key from UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (!l_udp_ctx) {
@@ -1543,25 +1541,24 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         log_it(L_ERROR, "UDP handshake response: no Alice key");
         return -1;
     }
-    
-    // Deserialize: Bob's ciphertext (CRYPTO_CIPHERTEXTBYTES) + session_id (8 bytes)
-    uint8_t l_bob_ciphertext[CRYPTO_CIPHERTEXTBYTES];
+
+    uint8_t *l_bob_ciphertext = (uint8_t *)alloca(l_ciphertext_size);
     uint64_t l_session_id_be;
-    
+
     int l_ret = dap_deserialize_multy(a_data, a_data_size,
-                                      l_bob_ciphertext, (uint64_t)CRYPTO_CIPHERTEXTBYTES,
+                                      l_bob_ciphertext, (uint64_t)l_ciphertext_size,
                                       &l_session_id_be, sizeof(uint64_t),
                                       DOOF_PTR);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to deserialize handshake response");
         return -1;
     }
-    
+
     uint64_t l_server_session_id = be64toh(l_session_id_be);
-    
+
     debug_if(s_debug_more, L_DEBUG,
              "HANDSHAKE response: ciphertext=%zu bytes, server_session_id=0x%" DAP_UINT64_FORMAT_x " (replacing client's 0x%" DAP_UINT64_FORMAT_x ")",
-             (size_t)CRYPTO_CIPHERTEXTBYTES, l_server_session_id, l_udp_ctx->session_id);
+             l_ciphertext_size, l_server_session_id, l_udp_ctx->session_id);
     
     // CRITICAL: Replace client's session_id with server's session_id!
     // All subsequent packets MUST use server's session_id
@@ -1589,21 +1586,17 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     log_it(L_DEBUG, "UDP handshake response: alice_key=%p, gen_alice_shared_key=%p", 
            l_alice_key, l_alice_key->gen_alice_shared_key);
     
-    // UDP uses BINARY protocol, not JSON!
-    // Server sends: Bob's ciphertext (768 bytes) + session_id (8 bytes)
-    // We already extracted session_id above, now use ciphertext for KEM
-    
     // Perform KEM decapsulation (Alice side) using received ciphertext
     if (!l_alice_key->gen_alice_shared_key) {
         log_it(L_ERROR, "Alice key doesn't support KEM decapsulation");
-            return -1;
-        }
-    
+        return -1;
+    }
+
     size_t l_shared_key_size = l_alice_key->gen_alice_shared_key(
         l_alice_key,
-        NULL,  // Alice's private key (already in l_alice_key->_inheritor)
-        CRYPTO_CIPHERTEXTBYTES,  // Size of Bob's ciphertext
-        (uint8_t*)l_bob_ciphertext  // Bob's ciphertext (extracted above)
+        NULL,
+        l_ciphertext_size,
+        (uint8_t*)l_bob_ciphertext
     );
     
     if (l_shared_key_size == 0 || !l_alice_key->shared_key) {
