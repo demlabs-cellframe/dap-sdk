@@ -350,16 +350,57 @@ static bench_result_t s_bench_mldsa_oqs(const char *a_alg_name, const char *a_la
 }
 #endif
 
+static bench_result_t s_bench_mldsa_dap_raw(uint8_t a_level, const char *a_name)
+{
+    bench_result_t l_res = { .name = a_name };
+    const uint8_t l_msg[] = "Benchmark message for ML-DSA signing test.";
+    size_t l_msg_len = sizeof(l_msg) - 1;
+
+    dap_enc_key_t *l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_ML_DSA, NULL, 0, NULL, 0, a_level);
+    if (!l_key) { l_res.us_per_op = -1; return l_res; }
+
+    uint8_t l_sig_buf[8192];
+    size_t l_sig_size = sizeof(l_sig_buf);
+    if (l_key->sign_get(l_key, l_msg, l_msg_len, l_sig_buf, l_sig_size) != 0) {
+        dap_enc_key_delete(l_key);
+        l_res.us_per_op = -1;
+        return l_res;
+    }
+
+    for (int w = 0; w < BENCH_WARMUP; w++)
+        l_key->sign_verify(l_key, l_msg, l_msg_len, l_sig_buf, l_sig_size);
+
+    uint64_t l_total = 0;
+    for (int i = 0; i < BENCH_ITERS; i++) {
+        uint64_t t0 = s_rdtsc_or_clock();
+        l_key->sign_verify(l_key, l_msg, l_msg_len, l_sig_buf, l_sig_size);
+        uint64_t t1 = s_rdtsc_or_clock();
+        l_total += t1 - t0;
+    }
+    dap_enc_key_delete(l_key);
+
+    double us = (double)l_total / BENCH_ITERS / 1000.0;
+    l_res.us_per_op = us;
+    l_res.ops_per_sec = 1000000.0 / us;
+    return l_res;
+}
+
 static void s_benchmark_mldsa(void)
 {
     s_print_header("ML-DSA (verify)");
 
     bench_result_t r;
-    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_2, "DAP ML-DSA-44");
+    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_2, "DAP ML-DSA-44  (raw)");
     if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_3, "DAP ML-DSA-65");
+    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_3, "DAP ML-DSA-65  (raw)");
     if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_5, "DAP ML-DSA-87");
+    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_5, "DAP ML-DSA-87  (raw)");
+    if (r.us_per_op >= 0) s_print_result(&r);
+    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_2, "DAP ML-DSA-44  (wrap)");
+    if (r.us_per_op >= 0) s_print_result(&r);
+    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_3, "DAP ML-DSA-65  (wrap)");
+    if (r.us_per_op >= 0) s_print_result(&r);
+    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_5, "DAP ML-DSA-87  (wrap)");
     if (r.us_per_op >= 0) s_print_result(&r);
 
 #ifdef HAVE_LIBOQS

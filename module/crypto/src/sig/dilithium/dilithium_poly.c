@@ -18,6 +18,9 @@ extern void dap_dilithium_pointwise_mont_avx2(int32_t *c, const int32_t *a, cons
 extern void dap_dilithium_ntt_forward_avx2_512vl(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_avx2_512vl(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_avx2_512vl(int32_t *c, const int32_t *a, const int32_t *b);
+extern void dap_dilithium_ntt_forward_avx512(int32_t coeffs[256]);
+extern void dap_dilithium_ntt_inverse_avx512(int32_t coeffs[256]);
+extern void dap_dilithium_pointwise_mont_avx512(int32_t *c, const int32_t *a, const int32_t *b);
 #endif
 #if defined(__aarch64__) || defined(_M_ARM64)
 extern void dap_dilithium_ntt_forward_neon(int32_t coeffs[256]);
@@ -54,60 +57,316 @@ static void s_dil_dispatch_init(void)
 }
 
 /*************************************************/
+
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+
+__attribute__((target("avx2")))
 void poly_reduce(poly *a) {
-  unsigned int i;  
-
-  for(i = 0; i < NN; ++i)
-    a->coeffs[i] = reduce32(a->coeffs[i]);  
+    const __m256i mask23 = _mm256_set1_epi32(0x7FFFFF);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i lo = _mm256_and_si256(v, mask23);
+        __m256i hi = _mm256_srli_epi32(v, 23);
+        __m256i r = _mm256_add_epi32(lo,
+            _mm256_sub_epi32(_mm256_slli_epi32(hi, 13), hi));
+        _mm256_store_si256((__m256i *)(a->coeffs + i), r);
+    }
 }
 
-/*************************************************/
+__attribute__((target("avx2")))
 void poly_csubq(poly *a) {
-  unsigned int i; 
-
-  for(i = 0; i < NN; ++i)
-    a->coeffs[i] = csubq(a->coeffs[i]); 
+    const __m256i vq = _mm256_set1_epi32(Q);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i t = _mm256_sub_epi32(v, vq);
+        __m256i m = _mm256_srai_epi32(t, 31);
+        _mm256_store_si256((__m256i *)(a->coeffs + i),
+            _mm256_add_epi32(t, _mm256_and_si256(m, vq)));
+    }
 }
 
-/*************************************************/
+__attribute__((target("avx2")))
 void poly_freeze(poly *a) {
-  unsigned int i;
-
-  for(i = 0; i < NN; ++i)
-    a->coeffs[i] = freeze(a->coeffs[i]);
+    const __m256i mask23 = _mm256_set1_epi32(0x7FFFFF);
+    const __m256i vq = _mm256_set1_epi32(Q);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i lo = _mm256_and_si256(v, mask23);
+        __m256i hi = _mm256_srli_epi32(v, 23);
+        __m256i r = _mm256_add_epi32(lo,
+            _mm256_sub_epi32(_mm256_slli_epi32(hi, 13), hi));
+        __m256i t = _mm256_sub_epi32(r, vq);
+        __m256i m = _mm256_srai_epi32(t, 31);
+        _mm256_store_si256((__m256i *)(a->coeffs + i),
+            _mm256_add_epi32(t, _mm256_and_si256(m, vq)));
+    }
 }
 
-/*************************************************/
-void dilithium_poly_add(poly *c, const poly *a, const poly *b)  {
-  unsigned int i;  
-
-  for(i = 0; i < NN; ++i)
-    c->coeffs[i] = a->coeffs[i] + b->coeffs[i];
+__attribute__((target("avx2")))
+void dilithium_poly_add(poly *c, const poly *a, const poly *b) {
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i vb = _mm256_load_si256((__m256i *)(b->coeffs + i));
+        _mm256_store_si256((__m256i *)(c->coeffs + i), _mm256_add_epi32(va, vb));
+    }
 }
 
-/*************************************************/
+__attribute__((target("avx2")))
 void dilithium_poly_sub(poly *c, const poly *a, const poly *b) {
-  unsigned int i;
-
-  for(i = 0; i < NN; ++i)
-    c->coeffs[i] = a->coeffs[i] + 2*Q - b->coeffs[i];
+    const __m256i v2q = _mm256_set1_epi32(2 * Q);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i vb = _mm256_load_si256((__m256i *)(b->coeffs + i));
+        _mm256_store_si256((__m256i *)(c->coeffs + i),
+            _mm256_sub_epi32(_mm256_add_epi32(va, v2q), vb));
+    }
 }
 
-/*************************************************/
+__attribute__((target("avx2")))
 void poly_neg(poly *a) {
-  unsigned int i;
-
-  for(i = 0; i < NN; ++i)
-    a->coeffs[i] = Q - a->coeffs[i];
+    const __m256i vq = _mm256_set1_epi32(Q);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        _mm256_store_si256((__m256i *)(a->coeffs + i), _mm256_sub_epi32(vq, v));
+    }
 }
 
-/*************************************************/
+__attribute__((target("avx2")))
 void poly_shiftl(poly *a, unsigned int k) {
-  unsigned int i;
-
-  for(i = 0; i < NN; ++i)
-    a->coeffs[i] <<= k;
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        _mm256_store_si256((__m256i *)(a->coeffs + i), _mm256_slli_epi32(v, k));
+    }
 }
+
+__attribute__((target("avx2")))
+void poly_decompose(poly *a1, poly *a0, const poly *a) {
+    const __m256i mask19 = _mm256_set1_epi32(0x7FFFF);
+    const __m256i valpha = _mm256_set1_epi32(ALPHA);
+    const __m256i vhalf_plus1 = _mm256_set1_epi32(ALPHA / 2 + 1);
+    const __m256i vhalf_min1 = _mm256_set1_epi32(ALPHA / 2 - 1);
+    const __m256i vq = _mm256_set1_epi32(Q);
+    const __m256i v1 = _mm256_set1_epi32(1);
+    const __m256i v0xF = _mm256_set1_epi32(0xF);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i t = _mm256_and_si256(va, mask19);
+        t = _mm256_add_epi32(t, _mm256_slli_epi32(_mm256_srli_epi32(va, 19), 9));
+        t = _mm256_sub_epi32(t, vhalf_plus1);
+        __m256i tm = _mm256_srai_epi32(t, 31);
+        t = _mm256_add_epi32(t, _mm256_and_si256(tm, valpha));
+        t = _mm256_sub_epi32(t, vhalf_min1);
+        __m256i a_val = _mm256_sub_epi32(va, t);
+        __m256i u = _mm256_sub_epi32(a_val, v1);
+        u = _mm256_srai_epi32(u, 31);
+        a_val = _mm256_add_epi32(_mm256_srli_epi32(a_val, 19), v1);
+        a_val = _mm256_sub_epi32(a_val, _mm256_and_si256(u, v1));
+        _mm256_store_si256((__m256i *)(a0->coeffs + i),
+            _mm256_sub_epi32(_mm256_add_epi32(vq, t), _mm256_srli_epi32(a_val, 4)));
+        _mm256_store_si256((__m256i *)(a1->coeffs + i),
+            _mm256_and_si256(a_val, v0xF));
+    }
+}
+
+__attribute__((target("avx2")))
+void poly_power2round(poly *a1, poly *a0, const poly *a) {
+    const __m256i vd_mask = _mm256_set1_epi32((1 << D) - 1);
+    const __m256i vd_half_p1 = _mm256_set1_epi32((1 << (D - 1)) + 1);
+    const __m256i vd_full = _mm256_set1_epi32(1 << D);
+    const __m256i vd_half_m1 = _mm256_set1_epi32((1 << (D - 1)) - 1);
+    const __m256i vq = _mm256_set1_epi32(Q);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i t = _mm256_and_si256(va, vd_mask);
+        t = _mm256_sub_epi32(t, vd_half_p1);
+        __m256i tm = _mm256_srai_epi32(t, 31);
+        t = _mm256_add_epi32(t, _mm256_and_si256(tm, vd_full));
+        t = _mm256_sub_epi32(t, vd_half_m1);
+        _mm256_store_si256((__m256i *)(a0->coeffs + i), _mm256_add_epi32(vq, t));
+        _mm256_store_si256((__m256i *)(a1->coeffs + i),
+            _mm256_srli_epi32(_mm256_sub_epi32(va, t), D));
+    }
+}
+
+__attribute__((target("avx2")))
+unsigned int poly_make_hint(poly *h, const poly *a, const poly *b) {
+    unsigned int s = 0;
+    const __m256i mask19 = _mm256_set1_epi32(0x7FFFF);
+    const __m256i valpha = _mm256_set1_epi32(ALPHA);
+    const __m256i vhalf_plus1 = _mm256_set1_epi32(ALPHA / 2 + 1);
+    const __m256i vhalf_min1 = _mm256_set1_epi32(ALPHA / 2 - 1);
+    const __m256i v1 = _mm256_set1_epi32(1);
+    const __m256i v0xF = _mm256_set1_epi32(0xF);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i vb = _mm256_load_si256((__m256i *)(b->coeffs + i));
+        /* Inline decompose for a */
+        __m256i ta = _mm256_and_si256(va, mask19);
+        ta = _mm256_add_epi32(ta, _mm256_slli_epi32(_mm256_srli_epi32(va, 19), 9));
+        ta = _mm256_sub_epi32(ta, vhalf_plus1);
+        ta = _mm256_add_epi32(ta, _mm256_and_si256(_mm256_srai_epi32(ta, 31), valpha));
+        ta = _mm256_sub_epi32(ta, vhalf_min1);
+        __m256i a1a = _mm256_sub_epi32(va, ta);
+        __m256i ua = _mm256_srai_epi32(_mm256_sub_epi32(a1a, v1), 31);
+        a1a = _mm256_sub_epi32(_mm256_add_epi32(_mm256_srli_epi32(a1a, 19), v1),
+                                _mm256_and_si256(ua, v1));
+        a1a = _mm256_and_si256(a1a, v0xF);
+        /* Inline decompose for b */
+        __m256i tb = _mm256_and_si256(vb, mask19);
+        tb = _mm256_add_epi32(tb, _mm256_slli_epi32(_mm256_srli_epi32(vb, 19), 9));
+        tb = _mm256_sub_epi32(tb, vhalf_plus1);
+        tb = _mm256_add_epi32(tb, _mm256_and_si256(_mm256_srai_epi32(tb, 31), valpha));
+        tb = _mm256_sub_epi32(tb, vhalf_min1);
+        __m256i a1b = _mm256_sub_epi32(vb, tb);
+        __m256i ub = _mm256_srai_epi32(_mm256_sub_epi32(a1b, v1), 31);
+        a1b = _mm256_sub_epi32(_mm256_add_epi32(_mm256_srli_epi32(a1b, 19), v1),
+                                _mm256_and_si256(ub, v1));
+        a1b = _mm256_and_si256(a1b, v0xF);
+        /* hint = (decompose(a) != decompose(b)) ? 1 : 0 */
+        __m256i cmp = _mm256_cmpeq_epi32(a1a, a1b);
+        __m256i hint = _mm256_andnot_si256(cmp, v1);
+        _mm256_store_si256((__m256i *)(h->coeffs + i), hint);
+        /* Horizontal sum: extract and sum via movemask or store+add */
+        uint32_t buf[8] __attribute__((aligned(32)));
+        _mm256_store_si256((__m256i *)buf, hint);
+        for (int j = 0; j < 8; j++) s += buf[j];
+    }
+    return s;
+}
+
+__attribute__((target("avx2")))
+void poly_use_hint(poly *a, const poly *b, const poly *h) {
+    const __m256i mask19 = _mm256_set1_epi32(0x7FFFF);
+    const __m256i valpha = _mm256_set1_epi32(ALPHA);
+    const __m256i vhalf_plus1 = _mm256_set1_epi32(ALPHA / 2 + 1);
+    const __m256i vhalf_min1 = _mm256_set1_epi32(ALPHA / 2 - 1);
+    const __m256i vq = _mm256_set1_epi32(Q);
+    const __m256i v1 = _mm256_set1_epi32(1);
+    const __m256i v0xF = _mm256_set1_epi32(0xF);
+    const __m256i vzero = _mm256_setzero_si256();
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i vb_val = _mm256_load_si256((__m256i *)(b->coeffs + i));
+        __m256i vh = _mm256_load_si256((__m256i *)(h->coeffs + i));
+        /* Inline decompose(b) → a1, a0 */
+        __m256i t = _mm256_and_si256(vb_val, mask19);
+        t = _mm256_add_epi32(t, _mm256_slli_epi32(_mm256_srli_epi32(vb_val, 19), 9));
+        t = _mm256_sub_epi32(t, vhalf_plus1);
+        __m256i tm = _mm256_srai_epi32(t, 31);
+        t = _mm256_add_epi32(t, _mm256_and_si256(tm, valpha));
+        t = _mm256_sub_epi32(t, vhalf_min1);
+        __m256i a_val = _mm256_sub_epi32(vb_val, t);
+        __m256i u = _mm256_srai_epi32(_mm256_sub_epi32(a_val, v1), 31);
+        a_val = _mm256_sub_epi32(_mm256_add_epi32(_mm256_srli_epi32(a_val, 19), v1),
+                                  _mm256_and_si256(u, v1));
+        __m256i a1 = _mm256_and_si256(a_val, v0xF);
+        __m256i a0 = _mm256_sub_epi32(_mm256_add_epi32(vq, t),
+                                       _mm256_srli_epi32(a_val, 4));
+        /* if (hint == 0): result = a1
+         * else if (a0 > Q): result = (a1 + 1) & 0xF
+         * else: result = (a1 - 1) & 0xF */
+        __m256i hint_is_zero = _mm256_cmpeq_epi32(vh, vzero);
+        __m256i a0_gt_q = _mm256_cmpgt_epi32(a0, vq);
+        __m256i plus1 = _mm256_and_si256(_mm256_add_epi32(a1, v1), v0xF);
+        __m256i minus1 = _mm256_and_si256(_mm256_sub_epi32(a1, v1), v0xF);
+        __m256i hint_result = _mm256_blendv_epi8(minus1, plus1, a0_gt_q);
+        __m256i result = _mm256_blendv_epi8(hint_result, a1, hint_is_zero);
+        _mm256_store_si256((__m256i *)(a->coeffs + i), result);
+    }
+}
+
+__attribute__((target("avx2")))
+int poly_chknorm(const poly *a, uint32_t B) {
+    const __m256i vhalf = _mm256_set1_epi32((Q - 1) / 2);
+    const __m256i vbound = _mm256_set1_epi32((int32_t)B);
+    for (unsigned i = 0; i < NN; i += 8) {
+        __m256i v = _mm256_load_si256((const __m256i *)(a->coeffs + i));
+        __m256i t = _mm256_sub_epi32(vhalf, v);
+        __m256i m = _mm256_srai_epi32(t, 31);
+        t = _mm256_xor_si256(t, m);
+        t = _mm256_sub_epi32(vhalf, t);
+        /* Check if any element >= B (as unsigned) */
+        __m256i cmp = _mm256_or_si256(
+            _mm256_cmpgt_epi32(t, _mm256_sub_epi32(vbound, _mm256_set1_epi32(1))),
+            _mm256_cmpeq_epi32(t, vbound));
+        if (_mm256_movemask_epi8(cmp))
+            return 1;
+    }
+    return 0;
+}
+
+#else /* scalar fallback */
+
+void poly_reduce(poly *a) {
+    for (unsigned i = 0; i < NN; ++i)
+        a->coeffs[i] = reduce32(a->coeffs[i]);
+}
+
+void poly_csubq(poly *a) {
+    for (unsigned i = 0; i < NN; ++i)
+        a->coeffs[i] = csubq(a->coeffs[i]);
+}
+
+void poly_freeze(poly *a) {
+    for (unsigned i = 0; i < NN; ++i)
+        a->coeffs[i] = freeze(a->coeffs[i]);
+}
+
+void dilithium_poly_add(poly *c, const poly *a, const poly *b) {
+    for (unsigned i = 0; i < NN; ++i)
+        c->coeffs[i] = a->coeffs[i] + b->coeffs[i];
+}
+
+void dilithium_poly_sub(poly *c, const poly *a, const poly *b) {
+    for (unsigned i = 0; i < NN; ++i)
+        c->coeffs[i] = a->coeffs[i] + 2 * Q - b->coeffs[i];
+}
+
+void poly_neg(poly *a) {
+    for (unsigned i = 0; i < NN; ++i)
+        a->coeffs[i] = Q - a->coeffs[i];
+}
+
+void poly_shiftl(poly *a, unsigned int k) {
+    for (unsigned i = 0; i < NN; ++i)
+        a->coeffs[i] <<= k;
+}
+
+void poly_decompose(poly *a1, poly *a0, const poly *a) {
+    for (unsigned i = 0; i < NN; ++i)
+        a1->coeffs[i] = decompose(a->coeffs[i], a0->coeffs + i);
+}
+
+void poly_power2round(poly *a1, poly *a0, const poly *a) {
+    for (unsigned i = 0; i < NN; ++i)
+        a1->coeffs[i] = power2round(a->coeffs[i], a0->coeffs + i);
+}
+
+unsigned int poly_make_hint(poly *h, const poly *a, const poly *b) {
+    unsigned int i, s = 0;
+    for (i = 0; i < NN; ++i) {
+        h->coeffs[i] = make_hint(a->coeffs[i], b->coeffs[i]);
+        s += h->coeffs[i];
+    }
+    return s;
+}
+
+void poly_use_hint(poly *a, const poly *b, const poly *h) {
+    for (unsigned i = 0; i < NN; ++i)
+        a->coeffs[i] = use_hint(b->coeffs[i], h->coeffs[i]);
+}
+
+int poly_chknorm(const poly *a, uint32_t B) {
+    for (unsigned i = 0; i < NN; ++i) {
+        int32_t t = (Q - 1) / 2 - a->coeffs[i];
+        t ^= (t >> 31);
+        t = (Q - 1) / 2 - t;
+        if ((uint32_t)t >= B) return 1;
+    }
+    return 0;
+}
+
+#endif /* x86_64 */
 
 /*************************************************/
 void dilithium_poly_ntt(poly *a) {
@@ -134,72 +393,15 @@ void poly_pointwise_invmontgomery(poly *c, const poly *a, const poly *b) {
 }
 
 /*************************************************/
-void poly_power2round(poly *a1, poly *a0, const poly *a) {
-  unsigned int i;
-
-  for(i = 0; i < NN; ++i)
-    a1->coeffs[i] = power2round(a->coeffs[i], a0->coeffs+i);
-}
-
-/*************************************************/
-void poly_decompose(poly *a1, poly *a0, const poly *a) {
-  unsigned int i;
-
-  for(i = 0; i < NN; ++i)
-    a1->coeffs[i] = decompose(a->coeffs[i], a0->coeffs+i);
-}
-
-/*************************************************/
-unsigned int poly_make_hint(poly *h, const poly *a, const poly *b) {
-  unsigned int i, s = 0;
-
-  for(i = 0; i < NN; ++i) {
-    h->coeffs[i] = make_hint(a->coeffs[i], b->coeffs[i]);
-    s += h->coeffs[i];
-  }
-  return s;
-}
-
-/*************************************************/
-void poly_use_hint(poly *a, const poly *b, const poly *h) {
-  unsigned int i;
-
-  for(i = 0; i < NN; ++i)
-    a->coeffs[i] = use_hint(b->coeffs[i], h->coeffs[i]);
-}
-
-/*************************************************/
-int poly_chknorm(const poly *a, uint32_t B) {
-  unsigned int i;
-  int32_t t;
-
-  for(i = 0; i < NN; ++i) {    
-    t = (Q-1)/2 - a->coeffs[i];
-    t ^= (t >> 31);
-    t = (Q-1)/2 - t;
-
-    if((uint32_t)t >= B) {      
-      return 1;
-    }
-  }
-  return 0;
-}
-
-/*************************************************/
 void dilithium_poly_uniform(poly *a, const unsigned char *buf) {
-  unsigned int ctr, pos;
-  uint32_t t;
-
-  ctr = pos = 0;
-  while(ctr < NN) {
-    t  = buf[pos++];
-    t |= (uint32_t)buf[pos++] << 8;
-    t |= (uint32_t)buf[pos++] << 16;
-    t &= 0x7FFFFF;
-
-    if(t < Q)
-      a->coeffs[ctr++] = t;
-  }
+    unsigned int ctr = 0, pos = 0;
+    while (ctr < NN) {
+        uint32_t t = (uint32_t)buf[pos] | ((uint32_t)buf[pos+1] << 8)
+                     | ((uint32_t)buf[pos+2] << 16);
+        t &= 0x7FFFFF;
+        pos += 3;
+        if (t < Q) a->coeffs[ctr++] = t;
+    }
 }
 
 /*************************************************/

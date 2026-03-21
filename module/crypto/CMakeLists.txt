@@ -342,12 +342,14 @@ dap_arch_generate(
     VARIANTS
         avx2         "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
         avx2_512vl   "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+        avx512       "${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
         neon         "${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
 )
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_NTT_GEN_DIR}
     SOURCES
         dap_dilithium_ntt_avx2.c        avx2
         dap_dilithium_ntt_avx2_512vl.c  avx2_512vl
+        dap_dilithium_ntt_avx512.c      avx512
         dap_dilithium_ntt_neon.c        neon
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${DIL_NTT_GEN_DIR})
