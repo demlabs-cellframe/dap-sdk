@@ -43,7 +43,6 @@
 #include <semaphore.h>
 
 #include <emscripten.h>
-#include <emscripten/em_js.h>
 #include <emscripten/threading.h>
 
 #include "dap_common.h"
@@ -112,79 +111,16 @@ static void s_unregister_conn(int a_handle)
 }
 
 /* ========================================================================
- * WebSocket JS bridge: EM_JS functions (must be called from main thread)
+ * WebSocket JS bridge: extern declarations (impl in library_dap_transport.js)
  * + proxy wrappers to call them from any thread
  * ======================================================================== */
 
 #include <emscripten/proxying.h>
 
-EM_JS(int, js_ws_create, (const char *a_url_ptr), {
-    var url = UTF8ToString(a_url_ptr);
-    if (!Module._ws_pool) {
-        Module._ws_pool = {};
-        Module._ws_next_id = 1;
-    }
-    var id = Module._ws_next_id++;
-    var ws;
-    try { ws = new WebSocket(url, "dap-stream"); }
-    catch (e) { return -1; }
-    ws.binaryType = "arraybuffer";
-    var entry = {};
-    entry.ws = ws;
-    entry.state = 0;
-    Module._ws_pool[id] = entry;
-
-    ws.onopen = function() {
-        var e = Module._ws_pool[id];
-        if (e) e.state = 1;
-        if (Module.__ws_on_open) Module.__ws_on_open(id);
-    };
-    ws.onclose = function(ev) {
-        var e = Module._ws_pool[id];
-        if (e) e.state = 3;
-        if (Module.__ws_on_close) Module.__ws_on_close(id, ev.code);
-    };
-    ws.onerror = function() {
-        if (Module.__ws_on_error) Module.__ws_on_error(id);
-    };
-    ws.onmessage = function(ev) {
-        var data = ev.data;
-        var arr = (typeof data === "string")
-            ? new TextEncoder().encode(data)
-            : new Uint8Array(data);
-        var buf = _malloc(arr.length);
-        HEAPU8.set(arr, buf);
-        if (Module.__ws_on_message) Module.__ws_on_message(id, buf, arr.length);
-        _free(buf);
-    };
-    return id;
-});
-
-EM_JS(int, js_ws_send, (int a_handle, const void *a_data, int a_len), {
-    var entry = Module._ws_pool ? Module._ws_pool[a_handle] : null;
-    if (!entry || entry.state !== 1) return -1;
-    try {
-        entry.ws.send(HEAPU8.slice(a_data, a_data + a_len).buffer);
-        return a_len;
-    } catch (e) { return -1; }
-});
-
-EM_JS(void, js_ws_close, (int a_handle, int a_code), {
-    var entry = Module._ws_pool ? Module._ws_pool[a_handle] : null;
-    if (entry) {
-        try { entry.ws.close(a_code); } catch(e) {}
-        entry.state = 2;
-    }
-});
-
-EM_JS(void, js_ws_destroy, (int a_handle), {
-    if (!Module._ws_pool) return;
-    var entry = Module._ws_pool[a_handle];
-    if (entry) {
-        try { entry.ws.close(); } catch(e) {}
-        delete Module._ws_pool[a_handle];
-    }
-});
+extern int js_ws_create(const char *a_url_ptr);
+extern int js_ws_send(int a_handle, const void *a_data, int a_len);
+extern void js_ws_close(int a_handle, int a_code);
+extern void js_ws_destroy(int a_handle);
 
 /* Proxy arg structures */
 typedef struct { const char *url; int result; } ws_create_args_t;
@@ -339,12 +275,7 @@ static void *s_recv_thread_func(void *a_arg)
  * Transport ops
  * ======================================================================== */
 
-EM_JS(void, js_ws_init_callbacks, (void), {
-    Module.__ws_on_open    = Module.cwrap('_ws_on_open', null, ['number']);
-    Module.__ws_on_close   = Module.cwrap('_ws_on_close', null, ['number', 'number']);
-    Module.__ws_on_error   = Module.cwrap('_ws_on_error', null, ['number']);
-    Module.__ws_on_message = Module.cwrap('_ws_on_message', null, ['number', 'number', 'number']);
-});
+extern void js_ws_init_callbacks(void);
 
 static void s_proxy_init_callbacks(void *a_arg)
 {

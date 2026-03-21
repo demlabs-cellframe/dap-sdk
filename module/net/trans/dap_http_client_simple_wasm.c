@@ -23,7 +23,6 @@
 #include <pthread.h>
 
 #include <emscripten.h>
-#include <emscripten/em_js.h>
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -31,57 +30,11 @@
 
 #define LOG_TAG "http_client_simple"
 
-/* ========================================================================
- * EM_JS: Synchronous HTTP POST (runs on calling pthread's Web Worker)
- * ======================================================================== */
-
-EM_JS(int, js_http_post_sync, (const char *a_url_ptr,
-                                const char *a_content_type_ptr,
-                                const void *a_body, int a_body_len,
-                                const char *a_extra_headers_ptr,
-                                int a_out_ptr_addr, int a_out_len_addr), {
-    var url = UTF8ToString(a_url_ptr);
-    var contentType = a_content_type_ptr ? UTF8ToString(a_content_type_ptr) : null;
-    var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
-
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", url, false);
-    xhr.responseType = "arraybuffer";
-    if (contentType) xhr.setRequestHeader("Content-Type", contentType);
-
-    if (extraHeaders) {
-        var lines = extraHeaders.split("\r\n");
-        for (var i = 0; i < lines.length; i++) {
-            var sep = lines[i].indexOf(":");
-            if (sep > 0) {
-                xhr.setRequestHeader(lines[i].substring(0, sep).trim(),
-                                     lines[i].substring(sep + 1).trim());
-            }
-        }
-    }
-
-    if (a_body && a_body_len > 0) {
-        xhr.send(HEAPU8.slice(a_body, a_body + a_body_len));
-    } else {
-        xhr.send();
-    }
-
-    if (xhr.status >= 200 && xhr.status < 300) {
-        var response = new Uint8Array(xhr.response);
-        if (response.length > 0) {
-            var ptr = _malloc(response.length + 1);
-            HEAPU8.set(response, ptr);
-            HEAPU8[ptr + response.length] = 0;
-            setValue(a_out_ptr_addr, ptr, '*');
-            setValue(a_out_len_addr, response.length, 'i32');
-        } else {
-            setValue(a_out_ptr_addr, 0, '*');
-            setValue(a_out_len_addr, 0, 'i32');
-        }
-        return 0;
-    }
-    return -xhr.status || -1;
-});
+extern int js_http_post_sync(const char *a_url_ptr,
+                              const char *a_content_type_ptr,
+                              const void *a_body, int a_body_len,
+                              const char *a_extra_headers_ptr,
+                              int a_out_ptr_addr, int a_out_len_addr);
 
 /* ========================================================================
  * Async request: spawns detached pthread that calls js_http_post_sync

@@ -246,6 +246,12 @@ post_process_object_libraries()
 # Create final combined DAP SDK library
 dap_create_final_library()
 
+if(DAP_WASM)
+    set(DAP_SDK_JS_LIBRARIES
+        "${CMAKE_CURRENT_SOURCE_DIR}/module/net/trans/wasm/library_dap_transport.js"
+        CACHE STRING "DAP SDK JS library files for emscripten" FORCE)
+endif()
+
 message("[+] =========================================")
 message("[+] DAP SDK with module/ structure configured")
 message("[+] =========================================")

@@ -43,7 +43,6 @@
 #include <semaphore.h>
 
 #include <emscripten.h>
-#include <emscripten/em_js.h>
 #include <emscripten/threading.h>
 #include <emscripten/proxying.h>
 
@@ -68,6 +67,15 @@ extern int js_http_post_sync(const char *a_url_ptr,
                               const void *a_body, int a_body_len,
                               const char *a_extra_headers_ptr,
                               int a_out_ptr_addr, int a_out_len_addr);
+extern int js_rtc_create_peer(const char *a_stun_ptr);
+extern int js_rtc_create_dc(int a_peer_id, const char *a_label_ptr);
+extern int js_rtc_create_offer(int a_peer_id, int a_out_ptr);
+extern int js_rtc_set_remote_answer(int a_peer_id, const char *a_sdp_ptr);
+extern int js_rtc_add_ice(int a_peer_id, const char *a_candidate_ptr);
+extern int js_rtc_get_ice_candidates(int a_peer_id, int a_out_ptr);
+extern int js_rtc_dc_send(int a_peer_id, const void *a_data, int a_len);
+extern void js_rtc_close(int a_peer_id);
+extern void js_rtc_init_callbacks(void);
 
 #define RTC_RECV_BUF_SIZE   (256 * 1024)
 #define RTC_READ_CHUNK      (64 * 1024)
@@ -117,187 +125,6 @@ static void s_unregister_conn(int a_id)
     if (a_id >= 0 && a_id < RTC_MAX_CONNECTIONS)
         s_connections[a_id] = NULL;
 }
-
-/* ========================================================================
- * EM_JS: WebRTC operations (must run on main thread)
- * ======================================================================== */
-
-EM_JS(int, js_rtc_create_peer, (const char *a_stun_ptr), {
-    var stun = a_stun_ptr ? UTF8ToString(a_stun_ptr) : "stun:stun.l.google.com:19302";
-    if (!Module._rtc_pool) {
-        Module._rtc_pool = {};
-        Module._rtc_next_id = 1;
-    }
-    var id = Module._rtc_next_id++;
-    var config = {};
-    config.iceServers = [{}];
-    config.iceServers[0].urls = stun;
-
-    var pc;
-    try { pc = new RTCPeerConnection(config); }
-    catch (e) { return -1; }
-
-    var entry = {};
-    entry.pc = pc;
-    entry.dc = null;
-    entry.state = 0;
-    entry.ice_candidates = [];
-    entry.ice_done = false;
-    Module._rtc_pool[id] = entry;
-
-    pc.onicecandidate = function(ev) {
-        if (ev.candidate) {
-            entry.ice_candidates.push(JSON.stringify(ev.candidate));
-        } else {
-            entry.ice_done = true;
-        }
-    };
-
-    pc.onconnectionstatechange = function() {
-        if (pc.connectionState === "connected") {
-            entry.state = 2;
-            if (Module.__rtc_on_connected) Module.__rtc_on_connected(id);
-        } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-            entry.state = 5;
-            if (Module.__rtc_on_closed) Module.__rtc_on_closed(id);
-        }
-    };
-
-    return id;
-});
-
-EM_JS(int, js_rtc_create_dc, (int a_peer_id, const char *a_label_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var label = a_label_ptr ? UTF8ToString(a_label_ptr) : "dap-stream";
-    var opts = {};
-    opts.ordered = true;
-    var dc;
-    try { dc = entry.pc.createDataChannel(label, opts); }
-    catch (e) { return -1; }
-    dc.binaryType = "arraybuffer";
-    entry.dc = dc;
-
-    dc.onopen = function() {
-        entry.state = 2;
-        if (Module.__rtc_on_dc_open) Module.__rtc_on_dc_open(a_peer_id);
-    };
-    dc.onclose = function() {
-        if (Module.__rtc_on_dc_close) Module.__rtc_on_dc_close(a_peer_id);
-    };
-    dc.onmessage = function(ev) {
-        var arr = new Uint8Array(ev.data);
-        var buf = _malloc(arr.length);
-        HEAPU8.set(arr, buf);
-        if (Module.__rtc_on_dc_message) Module.__rtc_on_dc_message(a_peer_id, buf, arr.length);
-        _free(buf);
-    };
-    return 0;
-});
-
-EM_JS(int, js_rtc_create_offer, (int a_peer_id, int a_out_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var pc = entry.pc;
-
-    var done = false;
-    var result = -1;
-    pc.createOffer().then(function(offer) {
-        return pc.setLocalDescription(offer);
-    }).then(function() {
-        var sdp = pc.localDescription.sdp;
-        var len = lengthBytesUTF8(sdp) + 1;
-        var ptr = _malloc(len);
-        stringToUTF8(sdp, ptr, len);
-        setValue(a_out_ptr, ptr, '*');
-        result = 0;
-        done = true;
-    }).catch(function(e) {
-        result = -1;
-        done = true;
-    });
-
-    while (!done) {}
-    return result;
-});
-
-EM_JS(int, js_rtc_set_remote_answer, (int a_peer_id, const char *a_sdp_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var sdp = UTF8ToString(a_sdp_ptr);
-
-    var done = false;
-    var result = -1;
-    var desc = {};
-    desc.type = "answer";
-    desc.sdp = sdp;
-    entry.pc.setRemoteDescription(desc).then(function() {
-        result = 0;
-        done = true;
-    }).catch(function(e) {
-        result = -1;
-        done = true;
-    });
-
-    while (!done) {}
-    return result;
-});
-
-EM_JS(int, js_rtc_add_ice, (int a_peer_id, const char *a_candidate_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var cand_json = UTF8ToString(a_candidate_ptr);
-    var cand = JSON.parse(cand_json);
-
-    var done = false;
-    var result = -1;
-    entry.pc.addIceCandidate(cand).then(function() {
-        result = 0;
-        done = true;
-    }).catch(function(e) {
-        result = -1;
-        done = true;
-    });
-
-    while (!done) {}
-    return result;
-});
-
-EM_JS(int, js_rtc_get_ice_candidates, (int a_peer_id, int a_out_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var json = "[" + entry.ice_candidates.join(",") + "]";
-    var len = lengthBytesUTF8(json) + 1;
-    var ptr = _malloc(len);
-    stringToUTF8(json, ptr, len);
-    setValue(a_out_ptr, ptr, '*');
-    return entry.ice_candidates.length;
-});
-
-EM_JS(int, js_rtc_dc_send, (int a_peer_id, const void *a_data, int a_len), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry || !entry.dc || entry.dc.readyState !== "open") return -1;
-    try {
-        entry.dc.send(HEAPU8.slice(a_data, a_data + a_len).buffer);
-        return a_len;
-    } catch (e) { return -1; }
-});
-
-EM_JS(void, js_rtc_close, (int a_peer_id), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return;
-    if (entry.dc) try { entry.dc.close(); } catch(e) {}
-    try { entry.pc.close(); } catch(e) {}
-    delete Module._rtc_pool[a_peer_id];
-});
-
-EM_JS(void, js_rtc_init_callbacks, (void), {
-    Module.__rtc_on_connected  = Module.cwrap('_rtc_on_connected', null, ['number']);
-    Module.__rtc_on_closed     = Module.cwrap('_rtc_on_closed', null, ['number']);
-    Module.__rtc_on_dc_open    = Module.cwrap('_rtc_on_dc_open', null, ['number']);
-    Module.__rtc_on_dc_close   = Module.cwrap('_rtc_on_dc_close', null, ['number']);
-    Module.__rtc_on_dc_message = Module.cwrap('_rtc_on_dc_message', null, ['number', 'number', 'number']);
-});
 
 /* ========================================================================
  * C callbacks from JavaScript (run on main thread)
