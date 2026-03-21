@@ -128,8 +128,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         PROPERTIES COMPILE_FLAGS "-mavx2"
     )
 
-    # AVX-512VL Keccak-f[1600] assembly — generated from .S.tpl via dap_tpl
-    # Instruction mnemonics loaded from .env, passed as template variables
+    # AVX-512VL Keccak-f[1600] assembly — shared framework + x86 arch impl
     enable_language(ASM)
     set(KECCAK_AVX512VL_ASM ${KECCAK_GEN_DIR}/dap_keccak_f1600_avx512vl.S)
     file(STRINGS "${K}/arch/x86/keccak_asm_avx512vl.env" _KECCAK_ASM_ENV)
@@ -137,12 +136,32 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         TEMPLATE ${K}/dap_keccak_f1600_asm.S.tpl
         OUTPUT   ${KECCAK_AVX512VL_ASM}
         ARGS     "FUNC_SUFFIX=avx512vl_asm"
+                 "ARCH_IMPL=${K}/arch/x86/keccak_f1600_x86.tpl"
                  ${_KECCAK_ASM_ENV}
     )
     target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_AVX512VL_ASM})
     set_source_files_properties(${KECCAK_AVX512VL_ASM}
         PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
     )
+endif()
+
+# AArch64 SHA3 Keccak-f[1600] assembly — shared framework + ARM arch impl
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    enable_language(ASM)
+    set(KECCAK_NEON_SHA3_ASM ${KECCAK_GEN_DIR}/dap_keccak_f1600_neon_sha3.S)
+    file(STRINGS "${K}/arch/arm/keccak_asm_neon_sha3.env" _KECCAK_ARM_ENV)
+    dap_tpl_generate(
+        TEMPLATE ${K}/dap_keccak_f1600_asm.S.tpl
+        OUTPUT   ${KECCAK_NEON_SHA3_ASM}
+        ARGS     "ARCH_IMPL=${K}/arch/arm/keccak_f1600_arm.tpl"
+                 ${_KECCAK_ARM_ENV}
+    )
+    target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_NEON_SHA3_ASM})
+    if(NOT APPLE)
+        set_source_files_properties(${KECCAK_NEON_SHA3_ASM}
+            PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+sha3"
+        )
+    endif()
 endif()
 
 # Register headers for component-based installation

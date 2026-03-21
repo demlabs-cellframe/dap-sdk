@@ -82,10 +82,13 @@ void dap_hash_keccak_permute_avx512vl_asm(dap_hash_keccak_state_t *state);
 
 #if defined(__arm__) || defined(__aarch64__)
 void dap_hash_keccak_permute_neon(dap_hash_keccak_state_t *state);
+#if defined(__aarch64__)
+void dap_hash_keccak_permute_neon_sha3_asm(dap_hash_keccak_state_t *state);
 // SVE/SVE2 are NOT supported on Apple Silicon
-#if defined(__aarch64__) && !defined(__APPLE__)
+#if !defined(__APPLE__)
 void dap_hash_keccak_permute_sve(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_sve2(dap_hash_keccak_state_t *state);
+#endif
 #endif
 #endif
 
@@ -115,7 +118,11 @@ static inline dap_hash_keccak_permute_fn_t s_keccak_resolve_permute(void)
         case DAP_CPU_ARCH_AVX2:   return dap_hash_keccak_permute_avx2;
         case DAP_CPU_ARCH_SSE2:   return dap_hash_keccak_permute_sse2;
 #elif defined(__arm__) || defined(__aarch64__)
+#if defined(__aarch64__)
+        case DAP_CPU_ARCH_NEON:   return dap_hash_keccak_permute_neon_sha3_asm;
+#else
         case DAP_CPU_ARCH_NEON:   return dap_hash_keccak_permute_neon;
+#endif
 #if defined(__aarch64__) && !defined(__APPLE__)
         case DAP_CPU_ARCH_SVE:    return dap_hash_keccak_permute_sve;
         case DAP_CPU_ARCH_SVE2:   return dap_hash_keccak_permute_sve2;

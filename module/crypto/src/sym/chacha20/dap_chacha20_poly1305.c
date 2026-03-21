@@ -148,6 +148,8 @@ void dap_chacha20_encrypt(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
 #if defined(__x86_64__) || defined(_M_X64)
 extern void dap_poly1305_blocks_avx2(s_poly1305_state_t *, const uint8_t *, size_t);
 extern void dap_poly1305_blocks_avx512_ifma(s_poly1305_state_t *, const uint8_t *, size_t);
+#elif defined(__aarch64__)
+extern void dap_poly1305_blocks_neon(s_poly1305_state_t *, const uint8_t *, size_t);
 #endif
 
 static void s_poly1305_init(s_poly1305_state_t *st, const uint8_t a_key[32])
@@ -194,6 +196,21 @@ static void s_poly1305_update(s_poly1305_state_t *st, const uint8_t *data, size_
             len  &= 15;
         } else if (nblocks >= 8) {
             dap_poly1305_blocks_avx2(st, data, nblocks);
+            data += nblocks << 4;
+            len  &= 15;
+        } else {
+            while (len >= 16) {
+                s_poly1305_block(st, data, 1);
+                data += 16;
+                len  -= 16;
+            }
+        }
+    }
+#elif defined(__aarch64__)
+    {
+        size_t nblocks = len >> 4;
+        if (nblocks >= 4) {
+            dap_poly1305_blocks_neon(st, data, nblocks);
             data += nblocks << 4;
             len  &= 15;
         } else {
