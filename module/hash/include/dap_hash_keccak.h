@@ -77,6 +77,7 @@ void dap_hash_keccak_extract_bytes(const dap_hash_keccak_state_t *state, uint8_t
 void dap_hash_keccak_permute_sse2(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_avx2(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_avx512(dap_hash_keccak_state_t *state);
+void dap_hash_keccak_permute_avx512vl_asm(dap_hash_keccak_state_t *state);
 #endif
 
 #if defined(__arm__) || defined(__aarch64__)
@@ -110,7 +111,7 @@ static inline dap_hash_keccak_permute_fn_t s_keccak_resolve_permute(void)
     dap_cpu_arch_t arch = dap_cpu_arch_get();
     switch (arch) {
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-        case DAP_CPU_ARCH_AVX512: return dap_hash_keccak_permute_avx512;
+        case DAP_CPU_ARCH_AVX512: return dap_hash_keccak_permute_avx512vl_asm;
         case DAP_CPU_ARCH_AVX2:   return dap_hash_keccak_permute_avx2;
         case DAP_CPU_ARCH_SSE2:   return dap_hash_keccak_permute_sse2;
 #elif defined(__arm__) || defined(__aarch64__)

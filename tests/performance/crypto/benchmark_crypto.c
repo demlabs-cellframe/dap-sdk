@@ -20,6 +20,8 @@
 #include "dap_chacha20_poly1305.h"
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
+#include "dap_hash_keccak.h"
+#include "dap_hash_keccak_x4.h"
 
 #ifdef HAVE_LIBOQS
 #include <oqs/oqs.h>
@@ -640,6 +642,78 @@ int main(int argc, char **argv)
         printf("\n");
         (void)f;
 #endif
+    }
+
+    /* Keccak micro-benchmark */
+    if (getenv("BENCH_KECCAK")) {
+        const int N = 200000;
+        s_print_header("Keccak Permutation (micro)");
+        {
+            dap_hash_keccak_state_t st = {0};
+            for (int i = 0; i < 1000; i++) dap_hash_keccak_permute(&st);
+            uint64_t t0 = s_rdtsc_or_clock();
+            for (int i = 0; i < N; i++) dap_hash_keccak_permute(&st);
+            uint64_t t1 = s_rdtsc_or_clock();
+            printf("  dispatch (cached ptr) 1x: %.1f ns\n", (double)(t1-t0)/N);
+        }
+#if defined(__x86_64__) || defined(__i386__)
+        {
+            dap_hash_keccak_state_t st = {0};
+            for (int i = 0; i < 1000; i++) dap_hash_keccak_permute_avx512(&st);
+            uint64_t t0 = s_rdtsc_or_clock();
+            for (int i = 0; i < N; i++) dap_hash_keccak_permute_avx512(&st);
+            uint64_t t1 = s_rdtsc_or_clock();
+            printf("  direct avx512 (plane)  1x: %.1f ns\n", (double)(t1-t0)/N);
+        }
+        {
+            dap_hash_keccak_state_t st = {0};
+            for (int i = 0; i < 1000; i++) dap_hash_keccak_permute_avx2(&st);
+            uint64_t t0 = s_rdtsc_or_clock();
+            for (int i = 0; i < N; i++) dap_hash_keccak_permute_avx2(&st);
+            uint64_t t1 = s_rdtsc_or_clock();
+            printf("  direct avx2   (lane)   1x: %.1f ns\n", (double)(t1-t0)/N);
+        }
+        {
+            dap_hash_keccak_state_t st = {0};
+            for (int i = 0; i < 1000; i++) dap_hash_keccak_permute_ref(&st);
+            uint64_t t0 = s_rdtsc_or_clock();
+            for (int i = 0; i < N; i++) dap_hash_keccak_permute_ref(&st);
+            uint64_t t1 = s_rdtsc_or_clock();
+            printf("  direct ref    (scalar) 1x: %.1f ns\n", (double)(t1-t0)/N);
+        }
+#endif
+        {
+            dap_keccak_x4_state_t st = {0}; dap_keccak_x4_init(&st);
+            for (int i = 0; i < 1000; i++) dap_keccak_x4_permute(&st);
+            uint64_t t0 = s_rdtsc_or_clock();
+            for (int i = 0; i < N; i++) dap_keccak_x4_permute(&st);
+            uint64_t t1 = s_rdtsc_or_clock();
+            double ns = (double)(t1-t0)/N;
+            printf("  x4 dispatch            4x: %.1f ns (%.1f ns/perm)\n", ns, ns/4);
+        }
+#if defined(__x86_64__) || defined(__i386__)
+        {
+            dap_keccak_x4_state_t st = {0}; dap_keccak_x4_init(&st);
+            for (int i = 0; i < 1000; i++) dap_keccak_x4_permute_avx2(&st);
+            uint64_t t0 = s_rdtsc_or_clock();
+            for (int i = 0; i < N; i++) dap_keccak_x4_permute_avx2(&st);
+            uint64_t t1 = s_rdtsc_or_clock();
+            double ns = (double)(t1-t0)/N;
+            printf("  x4 direct avx2         4x: %.1f ns (%.1f ns/perm)\n", ns, ns/4);
+        }
+        {
+            dap_keccak_x4_state_t st = {0}; dap_keccak_x4_init(&st);
+            for (int i = 0; i < 1000; i++) dap_keccak_x4_permute_avx512(&st);
+            uint64_t t0 = s_rdtsc_or_clock();
+            for (int i = 0; i < N; i++) dap_keccak_x4_permute_avx512(&st);
+            uint64_t t1 = s_rdtsc_or_clock();
+            double ns = (double)(t1-t0)/N;
+            printf("  x4 direct avx512       4x: %.1f ns (%.1f ns/perm)\n", ns, ns/4);
+        }
+#endif
+        printf("\n=== Done (Keccak only) ===\n");
+        dap_common_deinit();
+        return 0;
     }
 
     fflush(stdout);

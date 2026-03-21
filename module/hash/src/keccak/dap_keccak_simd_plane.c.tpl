@@ -73,67 +73,38 @@ static const uint64_t s_round_constants[24] {{ALIGNMENT_ATTR}} = {
 // {{ARCH_NAME}} Keccak-p[1600] Permutation (Plane-Based)
 // ============================================================================
 
-{{TARGET_ATTR}}
+{{TARGET_ATTR}} __attribute__((noinline))
 void dap_hash_keccak_permute_{{ARCH_LOWER}}(dap_hash_keccak_state_t *state)
 {
     uint64_t *A = state->lanes;
     
-    // Load state into 5 plane registers (B, G, K, M, S)
     VTYPE B = LOAD_PLANE(A + 0);
     VTYPE G = LOAD_PLANE(A + 5);
     VTYPE K = LOAD_PLANE(A + 10);
     VTYPE M = LOAD_PLANE(A + 15);
     VTYPE S = LOAD_PLANE(A + 20);
-    
-    // Temporary registers
     VTYPE t0, t1, t2, t3, t4;
     
-    // ========================================================================
-    // Single Round Macro - All 5 steps fused for maximum register reuse
-    // ========================================================================
+    for (int i = 0; i < 24; i++) {
+        t0 = XOR5(B, G, K, M, S);
+        t1 = PERMUTE_THETA_PREV(t0);
+        t0 = PERMUTE_THETA_NEXT(t0);
+        t0 = ROL1(t0);
+        B = XOR3(B, t0, t1); G = XOR3(G, t0, t1);
+        K = XOR3(K, t0, t1); M = XOR3(M, t0, t1); S = XOR3(S, t0, t1);
+        
+        B = ROLV_B(B); G = ROLV_G(G); K = ROLV_K(K); M = ROLV_M(M); S = ROLV_S(S);
+        
+        t0 = PERMUTE_PI1_B(B); t1 = PERMUTE_PI1_G(G); t2 = PERMUTE_PI1_K(K);
+        t3 = PERMUTE_PI1_M(M); t4 = PERMUTE_PI1_S(S);
+        
+        B = CHI(t0, t1, t2); G = CHI(t1, t2, t3); K = CHI(t2, t3, t4);
+        M = CHI(t3, t4, t0); S = CHI(t4, t0, t1);
+        
+        B = XOR(B, LOAD_RC(i));
+        PI2_PERMUTE(B, G, K, M, S, t0, t1, t2, t3, t4);
+    }
     
-#define KECCAK_ROUND(i) \
-do { \
-    /* Theta: column parity XOR */ \
-    t0 = XOR5(B, G, K, M, S); \
-    t1 = PERMUTE_THETA_PREV(t0); \
-    t0 = PERMUTE_THETA_NEXT(t0); \
-    t0 = ROL1(t0); \
-    B = XOR3(B, t0, t1); G = XOR3(G, t0, t1); \
-    K = XOR3(K, t0, t1); M = XOR3(M, t0, t1); S = XOR3(S, t0, t1); \
-    \
-    /* Rho: variable rotation per lane */ \
-    B = ROLV_B(B); G = ROLV_G(G); K = ROLV_K(K); M = ROLV_M(M); S = ROLV_S(S); \
-    \
-    /* Pi step 1: within-plane permutation */ \
-    t0 = PERMUTE_PI1_B(B); t1 = PERMUTE_PI1_G(G); t2 = PERMUTE_PI1_K(K); \
-    t3 = PERMUTE_PI1_M(M); t4 = PERMUTE_PI1_S(S); \
-    \
-    /* Chi: non-linear mixing (single instruction per plane!) */ \
-    B = CHI(t0, t1, t2); G = CHI(t1, t2, t3); K = CHI(t2, t3, t4); \
-    M = CHI(t3, t4, t0); S = CHI(t4, t0, t1); \
-    \
-    /* Iota: round constant XOR */ \
-    B = XOR(B, LOAD_RC(i)); \
-    \
-    /* Pi step 2: cross-plane permutation */ \
-    PI2_PERMUTE(B, G, K, M, S, t0, t1, t2, t3, t4); \
-} while(0)
-    
-    // ========================================================================
-    // 24 Rounds (Fully Unrolled for Maximum ILP)
-    // ========================================================================
-    
-    KECCAK_ROUND(0);  KECCAK_ROUND(1);  KECCAK_ROUND(2);  KECCAK_ROUND(3);
-    KECCAK_ROUND(4);  KECCAK_ROUND(5);  KECCAK_ROUND(6);  KECCAK_ROUND(7);
-    KECCAK_ROUND(8);  KECCAK_ROUND(9);  KECCAK_ROUND(10); KECCAK_ROUND(11);
-    KECCAK_ROUND(12); KECCAK_ROUND(13); KECCAK_ROUND(14); KECCAK_ROUND(15);
-    KECCAK_ROUND(16); KECCAK_ROUND(17); KECCAK_ROUND(18); KECCAK_ROUND(19);
-    KECCAK_ROUND(20); KECCAK_ROUND(21); KECCAK_ROUND(22); KECCAK_ROUND(23);
-    
-#undef KECCAK_ROUND
-    
-    // Store planes back to state
     STORE_PLANE(A + 0, B);
     STORE_PLANE(A + 5, G);
     STORE_PLANE(A + 10, K);

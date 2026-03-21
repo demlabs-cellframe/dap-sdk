@@ -70,6 +70,25 @@ macro(mlkem_add_variant target_name k_value)
             dap_mlkem_ntt_neon.c        neon
     )
 
+    # Disable LTO for hot SIMD files — needed for __attribute__((optimize("Os")))
+    # to prevent I-cache bloat from aggressive loop unrolling by LTO
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+        foreach(_simd_file
+            dap_mlkem_ntt_avx2.c dap_mlkem_ntt_avx2_512vl.c
+            dap_mlkem_poly_avx2.c
+        )
+            set(_src "${MLKEM_SIMD_GEN_DIR}/${_simd_file}")
+            if(EXISTS "${_src}")
+                get_source_file_property(_cf "${_src}" COMPILE_FLAGS)
+                if(_cf)
+                    set_source_files_properties("${_src}" PROPERTIES COMPILE_FLAGS "${_cf} -fno-lto")
+                else()
+                    set_source_files_properties("${_src}" PROPERTIES COMPILE_FLAGS "-fno-lto")
+                endif()
+            endif()
+        endforeach()
+    endif()
+
     # Hand-written NTT assembly (AVX2+AVX-512VL EVEX for 32 YMM registers)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
         target_sources(${target_name} PRIVATE ${MLKEM_ASM_NTT_SRC})

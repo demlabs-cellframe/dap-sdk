@@ -131,6 +131,21 @@ static inline void dap_keccak_x4_extract_bytes(const dap_keccak_x4_state_t *a_st
     }
 }
 
+// ============================================================================
+// AVX2 SIMD: 4×4 uint64 transpose for interleave/deinterleave
+// ============================================================================
+
+#if DAP_CPU_DETECT_X86
+void dap_keccak_x4_xor_bytes_all_avx2(dap_keccak_x4_state_t *a_state,
+                                       const uint8_t *a_in0, const uint8_t *a_in1,
+                                       const uint8_t *a_in2, const uint8_t *a_in3,
+                                       size_t a_len);
+void dap_keccak_x4_extract_bytes_all_avx2(const dap_keccak_x4_state_t *a_state,
+                                           uint8_t *a_out0, uint8_t *a_out1,
+                                           uint8_t *a_out2, uint8_t *a_out3,
+                                           size_t a_len);
+#endif
+
 /**
  * @brief XOR data into all 4 instances at once (same-length inputs)
  */
@@ -141,6 +156,15 @@ static inline void dap_keccak_x4_xor_bytes_all(dap_keccak_x4_state_t *a_state,
                                                 const uint8_t *a_in3,
                                                 size_t a_len)
 {
+#if DAP_CPU_DETECT_X86
+    static int s_avx2 = -1;
+    if (__builtin_expect(s_avx2 < 0, 0))
+        s_avx2 = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2);
+    if (__builtin_expect(s_avx2, 1)) {
+        dap_keccak_x4_xor_bytes_all_avx2(a_state, a_in0, a_in1, a_in2, a_in3, a_len);
+        return;
+    }
+#endif
     const size_t l_full_lanes = a_len / 8;
     const size_t l_tail       = a_len & 7;
     const uint64_t *l_w0 = (const uint64_t *)a_in0;
@@ -181,6 +205,15 @@ static inline void dap_keccak_x4_extract_bytes_all(const dap_keccak_x4_state_t *
                                                     uint8_t *a_out3,
                                                     size_t a_len)
 {
+#if DAP_CPU_DETECT_X86
+    static int s_avx2 = -1;
+    if (__builtin_expect(s_avx2 < 0, 0))
+        s_avx2 = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2);
+    if (__builtin_expect(s_avx2, 1)) {
+        dap_keccak_x4_extract_bytes_all_avx2(a_state, a_out0, a_out1, a_out2, a_out3, a_len);
+        return;
+    }
+#endif
     const size_t l_full_lanes = a_len / 8;
     const size_t l_tail       = a_len & 7;
     uint64_t *l_w0 = (uint64_t *)a_out0;
@@ -275,6 +308,7 @@ static inline void dap_keccak_x4_permute_opt(dap_keccak_x4_state_t *a_state)
 /** Native SIMD x4 — generated from dap_keccak_x4.c.tpl */
 #if DAP_CPU_DETECT_X86
 void dap_keccak_x4_permute_avx512(dap_keccak_x4_state_t *a_state);
+void dap_keccak_x4_permute_avx512vl_asm(dap_keccak_x4_state_t *a_state);
 void dap_keccak_x4_permute_avx2(dap_keccak_x4_state_t *a_state);
 #endif
 
@@ -299,7 +333,7 @@ static inline dap_keccak_x4_permute_fn_t dap_keccak_x4_resolve_permute(void)
     (void)l_arch;
 #if DAP_CPU_DETECT_X86
     if (l_arch >= DAP_CPU_ARCH_AVX512)
-        return dap_keccak_x4_permute_avx512;
+        return dap_keccak_x4_permute_avx512vl_asm;
     if (l_arch >= DAP_CPU_ARCH_AVX2)
         return dap_keccak_x4_permute_avx2;
 #endif

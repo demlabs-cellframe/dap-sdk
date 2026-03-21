@@ -107,6 +107,36 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${KECCAK_GEN_DIR}
         dap_keccak_x4_neon.c    neon
 )
 
+# Disable LTO for Keccak AVX-512 to keep looped permutation compact in L1I
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+    set(_keccak_avx512 "${KECCAK_GEN_DIR}/dap_keccak_avx512.c")
+    if(EXISTS "${_keccak_avx512}")
+        get_source_file_property(_cf "${_keccak_avx512}" COMPILE_FLAGS)
+        if(_cf)
+            set_source_files_properties("${_keccak_avx512}" PROPERTIES COMPILE_FLAGS "${_cf} -fno-lto")
+        else()
+            set_source_files_properties("${_keccak_avx512}" PROPERTIES COMPILE_FLAGS "-fno-lto")
+        endif()
+    endif()
+endif()
+
+# AVX2 x4 transpose helpers (extract/xor with 4×4 uint64 SIMD transpose)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+    set(X4_TRANSPOSE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/keccak/dap_keccak_x4_transpose_avx2.c)
+    target_sources(${PROJECT_NAME} PRIVATE ${X4_TRANSPOSE_SRC})
+    set_source_files_properties(${X4_TRANSPOSE_SRC}
+        PROPERTIES COMPILE_FLAGS "-mavx2"
+    )
+
+    # Hand-tuned AVX-512VL Keccak-f[1600] assembly (1x + 4x)
+    enable_language(ASM)
+    set(KECCAK_AVX512VL_ASM ${CMAKE_CURRENT_SOURCE_DIR}/src/keccak/asm/x86_64/dap_keccak_f1600_avx512vl.S)
+    target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_AVX512VL_ASM})
+    set_source_files_properties(${KECCAK_AVX512VL_ASM}
+        PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
+    )
+endif()
+
 # Register headers for component-based installation
 register_module_headers(DIRECTORIES include)
 

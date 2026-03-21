@@ -152,7 +152,7 @@ static const int16_t s_basemul_zetas_expanded[256] = {
      1522,  1522, -1522, -1522,  1628,  1628, -1628, -1628,
 };
 
-{{TARGET_ATTR}}
+{{TARGET_ATTR}} __attribute__((optimize("Os"), noinline))
 void dap_mlkem_poly_basemul_montgomery_{{ARCH_LOWER}}(
     int16_t *a_r, const int16_t *a_a, const int16_t *a_b, const int16_t *a_zetas)
 {
@@ -186,7 +186,7 @@ void dap_mlkem_poly_basemul_montgomery_{{ARCH_LOWER}}(
  * Eliminates K-1 intermediate load/store passes vs separate basemul + add.
  * ============================================================================ */
 
-{{TARGET_ATTR}}
+{{TARGET_ATTR}} __attribute__((optimize("Os"), noinline))
 void dap_mlkem_poly_basemul_acc_montgomery_{{ARCH_LOWER}}(
     int16_t *a_r,
     const int16_t * const *a_polys_a,

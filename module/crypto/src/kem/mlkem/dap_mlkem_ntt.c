@@ -84,8 +84,8 @@ static void s_resolve_ntt(void)
 
 #if DAP_CPU_DETECT_X86
     if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
-        s_ntt_forward_fn = dap_mlkem_ntt_forward_asm;
-        s_ntt_inverse_fn = dap_mlkem_ntt_inverse_asm;
+        s_ntt_forward_fn = dap_mlkem_ntt_forward_avx2_512vl;
+        s_ntt_inverse_fn = dap_mlkem_ntt_inverse_avx2_512vl;
     } else if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
         s_ntt_forward_fn = dap_mlkem_ntt_forward_avx2;
         s_ntt_inverse_fn = dap_mlkem_ntt_inverse_avx2;
