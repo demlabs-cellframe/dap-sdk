@@ -722,7 +722,7 @@ function(create_final_shared_library)
     # Link system libraries
     target_link_libraries(${TARGET_NAME} PUBLIC ${CMAKE_DL_LIBS})
     
-    if(UNIX AND NOT APPLE AND NOT ANDROID)
+    if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT DAP_WASM)
         # Linux: link pthread, math, and realtime libraries
         target_link_libraries(${TARGET_NAME} PUBLIC pthread m rt)
     elseif(ANDROID)

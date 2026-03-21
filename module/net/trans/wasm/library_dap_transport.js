@@ -9,6 +9,56 @@
 addToLibrary({
 
     /* ==================================================================
+     * HTTP POST — async version (ST mode, main thread safe)
+     * Calls C callback with result: _dap_http_async_callback(req_id, ptr, len, status)
+     * ================================================================== */
+
+    js_http_post_async__deps: ['$UTF8ToString', 'malloc', '_dap_http_async_callback'],
+    js_http_post_async: function(a_req_id, a_url_ptr, a_content_type_ptr, a_body, a_body_len,
+                                  a_extra_headers_ptr) {
+        var url = UTF8ToString(a_url_ptr);
+        var contentType = a_content_type_ptr ? UTF8ToString(a_content_type_ptr) : null;
+        var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
+        var bodySlice = (a_body && a_body_len > 0)
+            ? HEAPU8.slice(a_body, a_body + a_body_len)
+            : null;
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", url, true);
+        xhr.responseType = "arraybuffer";
+        if (contentType) xhr.setRequestHeader("Content-Type", contentType);
+        if (extraHeaders) {
+            var lines = extraHeaders.split("\r\n");
+            for (var i = 0; i < lines.length; i++) {
+                var sep = lines[i].indexOf(":");
+                if (sep > 0)
+                    xhr.setRequestHeader(lines[i].substring(0, sep).trim(),
+                                         lines[i].substring(sep + 1).trim());
+            }
+        }
+        xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 300 && xhr.response) {
+                var resp = new Uint8Array(xhr.response);
+                if (resp.length > 0) {
+                    var ptr = _malloc(resp.length + 1);
+                    HEAPU8.set(resp, ptr);
+                    HEAPU8[ptr + resp.length] = 0;
+                    __dap_http_async_callback(a_req_id, ptr, resp.length, 0);
+                } else {
+                    __dap_http_async_callback(a_req_id, 0, 0, 0);
+                }
+            } else {
+                __dap_http_async_callback(a_req_id, 0, 0, -xhr.status || -1);
+            }
+        };
+        xhr.onerror = function() {
+            __dap_http_async_callback(a_req_id, 0, 0, -1);
+        };
+        if (bodySlice) xhr.send(bodySlice);
+        else xhr.send();
+    },
+
+    /* ==================================================================
      * HTTP POST (synchronous XHR, runs on calling pthread's Web Worker)
      * ================================================================== */
 
@@ -173,6 +223,40 @@ addToLibrary({
 
         while (!done) {}
         return result;
+    },
+
+    /* ==================================================================
+     * RTC async variants (ST mode — no busy-wait, callback into C)
+     * ================================================================== */
+
+    js_rtc_create_offer_async__deps: ['$lengthBytesUTF8', '$stringToUTF8', 'malloc', '_rtc_offer_async_callback'],
+    js_rtc_create_offer_async: function(a_peer_id) {
+        var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
+        if (!entry) { __rtc_offer_async_callback(a_peer_id, 0, -1); return; }
+        var pc = entry.pc;
+        pc.createOffer().then(function(offer) {
+            return pc.setLocalDescription(offer);
+        }).then(function() {
+            var sdp = pc.localDescription.sdp;
+            var len = lengthBytesUTF8(sdp) + 1;
+            var ptr = _malloc(len);
+            stringToUTF8(sdp, ptr, len);
+            __rtc_offer_async_callback(a_peer_id, ptr, 0);
+        }).catch(function(e) {
+            __rtc_offer_async_callback(a_peer_id, 0, -1);
+        });
+    },
+
+    js_rtc_set_answer_async__deps: ['$UTF8ToString', '_rtc_answer_async_callback'],
+    js_rtc_set_answer_async: function(a_peer_id, a_sdp_ptr) {
+        var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
+        if (!entry) { __rtc_answer_async_callback(a_peer_id, -1); return; }
+        var sdp = UTF8ToString(a_sdp_ptr);
+        entry.pc.setRemoteDescription({ type: "answer", sdp: sdp }).then(function() {
+            __rtc_answer_async_callback(a_peer_id, 0);
+        }).catch(function() {
+            __rtc_answer_async_callback(a_peer_id, -1);
+        });
     },
 
     js_rtc_add_ice__deps: ['$UTF8ToString'],

@@ -8,7 +8,7 @@ file(GLOB CORE_UNIX_HEADERS *.h)
 add_library(${PROJECT_NAME} STATIC ${CORE_UNIX_SRCS} ${CORE_UNIX_HEADERS})
 
 target_link_libraries(${PROJECT_NAME} dap_core)
-if (NOT ANDROID)
+if (NOT ANDROID AND NOT DAP_WASM)
     target_link_libraries(${PROJECT_NAME} pthread)
 endif()
 

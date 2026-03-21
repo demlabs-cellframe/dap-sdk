@@ -39,9 +39,11 @@
 #include "dap_plugin.h"
 #endif
 
-#ifdef DAP_OS_WASM
+#ifdef DAP_WASM_PTHREADS
 #include <emscripten/wasmfs.h>
 #include <errno.h>
+#elif defined(DAP_OS_WASM)
+#include <sys/stat.h>
 #endif
 
 #define LOG_TAG "dap_sdk"
@@ -89,7 +91,7 @@ static void s_deinit_plugin(void);
 /*  WASM filesystem bootstrap                                                */
 /* ========================================================================= */
 
-#ifdef DAP_OS_WASM
+#ifdef DAP_WASM_PTHREADS
 #define DAP_WASM_SYS_DIR "/dap"
 
 static int s_init_wasmfs(void)
@@ -104,6 +106,15 @@ static int s_init_wasmfs(void)
         g_sys_dir_path = dap_strdup(l_mount);
     log_it(L_NOTICE, "WASMFS/OPFS persistent storage mounted at %s", g_sys_dir_path);
     return 0;
+}
+#elif defined(DAP_OS_WASM)
+static void s_init_memfs(void)
+{
+    if (!g_sys_dir_path) {
+        g_sys_dir_path = dap_strdup("/dap");
+        mkdir(g_sys_dir_path, 0777);
+    }
+    log_it(L_NOTICE, "WASM using MEMFS at %s (non-persistent)", g_sys_dir_path);
 }
 #endif
 
@@ -206,9 +217,11 @@ static int s_init_core(const dap_sdk_config_t *a_config)
     int l_rc = 0;
     dap_log_level_set(a_config->log_level);
 
-#ifdef DAP_OS_WASM
+#ifdef DAP_WASM_PTHREADS
     if ((l_rc = s_init_wasmfs()) != 0)
         return l_rc;
+#elif defined(DAP_OS_WASM)
+    s_init_memfs();
 #endif
 
     if (a_config->sys_dir && !g_sys_dir_path)
