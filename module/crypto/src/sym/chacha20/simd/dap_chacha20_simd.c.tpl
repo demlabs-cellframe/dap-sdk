@@ -46,6 +46,100 @@ void dap_chacha20_encrypt_{{ARCH_LOWER}}(
     s[14] = s_load32_le_tpl(a_nonce + 4);
     s[15] = s_load32_le_tpl(a_nonce + 8);
 
+#if defined(CHACHA_HAS_TRANSPOSE_XOR) && CHACHA_LANES == 8
+#define TRANSPOSE8(V0,V1,V2,V3,V4,V5,V6,V7, byte_off, base_out, base_in) \
+do { \
+    __m256i _t0 = _mm256_unpacklo_epi32(V0, V1); \
+    __m256i _t1 = _mm256_unpackhi_epi32(V0, V1); \
+    __m256i _t2 = _mm256_unpacklo_epi32(V2, V3); \
+    __m256i _t3 = _mm256_unpackhi_epi32(V2, V3); \
+    __m256i _t4 = _mm256_unpacklo_epi32(V4, V5); \
+    __m256i _t5 = _mm256_unpackhi_epi32(V4, V5); \
+    __m256i _t6 = _mm256_unpacklo_epi32(V6, V7); \
+    __m256i _t7 = _mm256_unpackhi_epi32(V6, V7); \
+    __m256i _u0 = _mm256_unpacklo_epi64(_t0, _t2); \
+    __m256i _u1 = _mm256_unpackhi_epi64(_t0, _t2); \
+    __m256i _u2 = _mm256_unpacklo_epi64(_t1, _t3); \
+    __m256i _u3 = _mm256_unpackhi_epi64(_t1, _t3); \
+    __m256i _u4 = _mm256_unpacklo_epi64(_t4, _t6); \
+    __m256i _u5 = _mm256_unpackhi_epi64(_t4, _t6); \
+    __m256i _u6 = _mm256_unpacklo_epi64(_t5, _t7); \
+    __m256i _u7 = _mm256_unpackhi_epi64(_t5, _t7); \
+    _mm256_storeu_si256((__m256i *)((base_out) + 0*64 + (byte_off)), _mm256_xor_si256(_mm256_permute2x128_si256(_u0, _u4, 0x20), _mm256_loadu_si256((const __m256i *)((base_in) + 0*64 + (byte_off))))); \
+    _mm256_storeu_si256((__m256i *)((base_out) + 1*64 + (byte_off)), _mm256_xor_si256(_mm256_permute2x128_si256(_u1, _u5, 0x20), _mm256_loadu_si256((const __m256i *)((base_in) + 1*64 + (byte_off))))); \
+    _mm256_storeu_si256((__m256i *)((base_out) + 2*64 + (byte_off)), _mm256_xor_si256(_mm256_permute2x128_si256(_u2, _u6, 0x20), _mm256_loadu_si256((const __m256i *)((base_in) + 2*64 + (byte_off))))); \
+    _mm256_storeu_si256((__m256i *)((base_out) + 3*64 + (byte_off)), _mm256_xor_si256(_mm256_permute2x128_si256(_u3, _u7, 0x20), _mm256_loadu_si256((const __m256i *)((base_in) + 3*64 + (byte_off))))); \
+    _mm256_storeu_si256((__m256i *)((base_out) + 4*64 + (byte_off)), _mm256_xor_si256(_mm256_permute2x128_si256(_u0, _u4, 0x31), _mm256_loadu_si256((const __m256i *)((base_in) + 4*64 + (byte_off))))); \
+    _mm256_storeu_si256((__m256i *)((base_out) + 5*64 + (byte_off)), _mm256_xor_si256(_mm256_permute2x128_si256(_u1, _u5, 0x31), _mm256_loadu_si256((const __m256i *)((base_in) + 5*64 + (byte_off))))); \
+    _mm256_storeu_si256((__m256i *)((base_out) + 6*64 + (byte_off)), _mm256_xor_si256(_mm256_permute2x128_si256(_u2, _u6, 0x31), _mm256_loadu_si256((const __m256i *)((base_in) + 6*64 + (byte_off))))); \
+    _mm256_storeu_si256((__m256i *)((base_out) + 7*64 + (byte_off)), _mm256_xor_si256(_mm256_permute2x128_si256(_u3, _u7, 0x31), _mm256_loadu_si256((const __m256i *)((base_in) + 7*64 + (byte_off))))); \
+} while (0)
+#endif
+
+#if defined(CHACHA_HAS_DUAL_BLOCK) && defined(CHACHA_HAS_TRANSPOSE_XOR) && CHACHA_LANES == 8
+    while (a_len >= 2 * CHACHA_BLOCK_BYTES) {
+        chacha_vec_t a0  = VEC_SET1(s[0]),  a1  = VEC_SET1(s[1]);
+        chacha_vec_t a2  = VEC_SET1(s[2]),  a3  = VEC_SET1(s[3]);
+        chacha_vec_t a4  = VEC_SET1(s[4]),  a5  = VEC_SET1(s[5]);
+        chacha_vec_t a6  = VEC_SET1(s[6]),  a7  = VEC_SET1(s[7]);
+        chacha_vec_t a8  = VEC_SET1(s[8]),  a9  = VEC_SET1(s[9]);
+        chacha_vec_t a10 = VEC_SET1(s[10]), a11 = VEC_SET1(s[11]);
+        chacha_vec_t a12 = s_vec_counter_init(a_counter);
+        chacha_vec_t a13 = VEC_SET1(s[13]), a14 = VEC_SET1(s[14]);
+        chacha_vec_t a15 = VEC_SET1(s[15]);
+        chacha_vec_t sa12 = a12;
+
+        chacha_vec_t b0  = VEC_SET1(s[0]),  b1  = VEC_SET1(s[1]);
+        chacha_vec_t b2  = VEC_SET1(s[2]),  b3  = VEC_SET1(s[3]);
+        chacha_vec_t b4  = VEC_SET1(s[4]),  b5  = VEC_SET1(s[5]);
+        chacha_vec_t b6  = VEC_SET1(s[6]),  b7  = VEC_SET1(s[7]);
+        chacha_vec_t b8  = VEC_SET1(s[8]),  b9  = VEC_SET1(s[9]);
+        chacha_vec_t b10 = VEC_SET1(s[10]), b11 = VEC_SET1(s[11]);
+        chacha_vec_t b12 = s_vec_counter_init(a_counter + CHACHA_LANES);
+        chacha_vec_t b13 = VEC_SET1(s[13]), b14 = VEC_SET1(s[14]);
+        chacha_vec_t b15 = VEC_SET1(s[15]);
+        chacha_vec_t sb12 = b12;
+
+        for (int r = 0; r < 10; r++) {
+            QR_VEC(a0, a4, a8,  a12); QR_VEC(b0, b4, b8,  b12);
+            QR_VEC(a1, a5, a9,  a13); QR_VEC(b1, b5, b9,  b13);
+            QR_VEC(a2, a6, a10, a14); QR_VEC(b2, b6, b10, b14);
+            QR_VEC(a3, a7, a11, a15); QR_VEC(b3, b7, b11, b15);
+            QR_VEC(a0, a5, a10, a15); QR_VEC(b0, b5, b10, b15);
+            QR_VEC(a1, a6, a11, a12); QR_VEC(b1, b6, b11, b12);
+            QR_VEC(a2, a7, a8,  a13); QR_VEC(b2, b7, b8,  b13);
+            QR_VEC(a3, a4, a9,  a14); QR_VEC(b3, b4, b9,  b14);
+        }
+
+        a0  = VEC_ADD32(a0,  VEC_SET1(s[0]));  b0  = VEC_ADD32(b0,  VEC_SET1(s[0]));
+        a1  = VEC_ADD32(a1,  VEC_SET1(s[1]));  b1  = VEC_ADD32(b1,  VEC_SET1(s[1]));
+        a2  = VEC_ADD32(a2,  VEC_SET1(s[2]));  b2  = VEC_ADD32(b2,  VEC_SET1(s[2]));
+        a3  = VEC_ADD32(a3,  VEC_SET1(s[3]));  b3  = VEC_ADD32(b3,  VEC_SET1(s[3]));
+        a4  = VEC_ADD32(a4,  VEC_SET1(s[4]));  b4  = VEC_ADD32(b4,  VEC_SET1(s[4]));
+        a5  = VEC_ADD32(a5,  VEC_SET1(s[5]));  b5  = VEC_ADD32(b5,  VEC_SET1(s[5]));
+        a6  = VEC_ADD32(a6,  VEC_SET1(s[6]));  b6  = VEC_ADD32(b6,  VEC_SET1(s[6]));
+        a7  = VEC_ADD32(a7,  VEC_SET1(s[7]));  b7  = VEC_ADD32(b7,  VEC_SET1(s[7]));
+        a8  = VEC_ADD32(a8,  VEC_SET1(s[8]));  b8  = VEC_ADD32(b8,  VEC_SET1(s[8]));
+        a9  = VEC_ADD32(a9,  VEC_SET1(s[9]));  b9  = VEC_ADD32(b9,  VEC_SET1(s[9]));
+        a10 = VEC_ADD32(a10, VEC_SET1(s[10])); b10 = VEC_ADD32(b10, VEC_SET1(s[10]));
+        a11 = VEC_ADD32(a11, VEC_SET1(s[11])); b11 = VEC_ADD32(b11, VEC_SET1(s[11]));
+        a12 = VEC_ADD32(a12, sa12);            b12 = VEC_ADD32(b12, sb12);
+        a13 = VEC_ADD32(a13, VEC_SET1(s[13])); b13 = VEC_ADD32(b13, VEC_SET1(s[13]));
+        a14 = VEC_ADD32(a14, VEC_SET1(s[14])); b14 = VEC_ADD32(b14, VEC_SET1(s[14]));
+        a15 = VEC_ADD32(a15, VEC_SET1(s[15])); b15 = VEC_ADD32(b15, VEC_SET1(s[15]));
+
+        TRANSPOSE8(a0,a1,a2,a3,a4,a5,a6,a7, 0, a_out, a_in);
+        TRANSPOSE8(a8,a9,a10,a11,a12,a13,a14,a15, 32, a_out, a_in);
+        TRANSPOSE8(b0,b1,b2,b3,b4,b5,b6,b7, 0, a_out + CHACHA_BLOCK_BYTES, a_in + CHACHA_BLOCK_BYTES);
+        TRANSPOSE8(b8,b9,b10,b11,b12,b13,b14,b15, 32, a_out + CHACHA_BLOCK_BYTES, a_in + CHACHA_BLOCK_BYTES);
+
+        a_counter += 2 * CHACHA_LANES;
+        a_out += 2 * CHACHA_BLOCK_BYTES;
+        a_in  += 2 * CHACHA_BLOCK_BYTES;
+        a_len -= 2 * CHACHA_BLOCK_BYTES;
+    }
+#endif
+
     while (a_len >= CHACHA_BLOCK_BYTES) {
         chacha_vec_t v0  = VEC_SET1(s[0]),  v1  = VEC_SET1(s[1]);
         chacha_vec_t v2  = VEC_SET1(s[2]),  v3  = VEC_SET1(s[3]);
@@ -88,47 +182,9 @@ void dap_chacha20_encrypt_{{ARCH_LOWER}}(
         v15 = VEC_ADD32(v15, VEC_SET1(s[15]));
 
 #if defined(CHACHA_HAS_TRANSPOSE_XOR) && CHACHA_LANES == 8
-        /* In-register 8×8 transpose + SIMD XOR — no stack spill.
-         * Two passes: lo (words 0-7) and hi (words 8-15) of each block.
-         * After transpose, row k = 32-byte half of block k. Stride = 64. */
         {
-#define _XOR_ROW(row_reg, blk, off) \
-    _mm256_storeu_si256((__m256i *)(a_out + (blk)*64 + (off)), \
-        _mm256_xor_si256(row_reg, _mm256_loadu_si256((const __m256i *)(a_in + (blk)*64 + (off)))))
-
-#define TRANSPOSE8_XOR(V0,V1,V2,V3,V4,V5,V6,V7, byte_off) \
-do { \
-    __m256i _t0 = _mm256_unpacklo_epi32(V0, V1); \
-    __m256i _t1 = _mm256_unpackhi_epi32(V0, V1); \
-    __m256i _t2 = _mm256_unpacklo_epi32(V2, V3); \
-    __m256i _t3 = _mm256_unpackhi_epi32(V2, V3); \
-    __m256i _t4 = _mm256_unpacklo_epi32(V4, V5); \
-    __m256i _t5 = _mm256_unpackhi_epi32(V4, V5); \
-    __m256i _t6 = _mm256_unpacklo_epi32(V6, V7); \
-    __m256i _t7 = _mm256_unpackhi_epi32(V6, V7); \
-    __m256i _u0 = _mm256_unpacklo_epi64(_t0, _t2); \
-    __m256i _u1 = _mm256_unpackhi_epi64(_t0, _t2); \
-    __m256i _u2 = _mm256_unpacklo_epi64(_t1, _t3); \
-    __m256i _u3 = _mm256_unpackhi_epi64(_t1, _t3); \
-    __m256i _u4 = _mm256_unpacklo_epi64(_t4, _t6); \
-    __m256i _u5 = _mm256_unpackhi_epi64(_t4, _t6); \
-    __m256i _u6 = _mm256_unpacklo_epi64(_t5, _t7); \
-    __m256i _u7 = _mm256_unpackhi_epi64(_t5, _t7); \
-    _XOR_ROW(_mm256_permute2x128_si256(_u0, _u4, 0x20), 0, byte_off); \
-    _XOR_ROW(_mm256_permute2x128_si256(_u1, _u5, 0x20), 1, byte_off); \
-    _XOR_ROW(_mm256_permute2x128_si256(_u2, _u6, 0x20), 2, byte_off); \
-    _XOR_ROW(_mm256_permute2x128_si256(_u3, _u7, 0x20), 3, byte_off); \
-    _XOR_ROW(_mm256_permute2x128_si256(_u0, _u4, 0x31), 4, byte_off); \
-    _XOR_ROW(_mm256_permute2x128_si256(_u1, _u5, 0x31), 5, byte_off); \
-    _XOR_ROW(_mm256_permute2x128_si256(_u2, _u6, 0x31), 6, byte_off); \
-    _XOR_ROW(_mm256_permute2x128_si256(_u3, _u7, 0x31), 7, byte_off); \
-} while (0)
-
-            TRANSPOSE8_XOR(v0,v1,v2,v3,v4,v5,v6,v7, 0);
-            TRANSPOSE8_XOR(v8,v9,v10,v11,v12,v13,v14,v15, 32);
-
-#undef _XOR_ROW
-#undef TRANSPOSE8_XOR
+            TRANSPOSE8(v0,v1,v2,v3,v4,v5,v6,v7, 0, a_out, a_in);
+            TRANSPOSE8(v8,v9,v10,v11,v12,v13,v14,v15, 32, a_out, a_in);
         }
 #elif defined(CHACHA_HAS_GATHER_XOR) && CHACHA_LANES == 16
         /* AVX-512: store to stack, gather+XOR per block */

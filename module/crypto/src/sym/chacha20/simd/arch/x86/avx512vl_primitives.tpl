@@ -30,3 +30,4 @@ static inline chacha_vec_t s_vec_counter_init(uint32_t a_base)
 }
 
 #define CHACHA_HAS_TRANSPOSE_XOR 1
+#define CHACHA_HAS_DUAL_BLOCK 1

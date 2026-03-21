@@ -452,14 +452,32 @@ static inline void s_aead_mac(uint8_t tag[16], const uint8_t poly_key[32],
     s_poly1305_finalize(&st, tag);
 }
 
+static inline void s_generate_poly_key(uint8_t a_poly_key[32],
+        const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
+        const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE])
+{
+    uint32_t state[16], ks[16];
+    state[0] = 0x61707865; state[1] = 0x3320646e;
+    state[2] = 0x79622d32; state[3] = 0x6b206574;
+    for (int i = 0; i < 8; i++)
+        state[4 + i] = s_load32_le(a_key + 4 * i);
+    state[12] = 0;
+    state[13] = s_load32_le(a_nonce);
+    state[14] = s_load32_le(a_nonce + 4);
+    state[15] = s_load32_le(a_nonce + 8);
+    dap_chacha20_block(ks, state);
+    for (int i = 0; i < 8; i++)
+        s_store32_le(a_poly_key + 4 * i, ks[i]);
+}
+
 int dap_chacha20_poly1305_seal(uint8_t *a_ct, uint8_t a_tag[DAP_CHACHA20_POLY1305_TAG_SIZE],
         const uint8_t *a_pt, size_t a_pt_len,
         const uint8_t *a_aad, size_t a_aad_len,
         const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
         const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE])
 {
-    uint8_t poly_key[64] = {0};
-    dap_chacha20_encrypt(poly_key, poly_key, sizeof(poly_key), a_key, a_nonce, 0);
+    uint8_t poly_key[32];
+    s_generate_poly_key(poly_key, a_key, a_nonce);
     dap_chacha20_encrypt(a_ct, a_pt, a_pt_len, a_key, a_nonce, 1);
     s_aead_mac(a_tag, poly_key, a_aad, a_aad_len, a_ct, a_pt_len);
     memset(poly_key, 0, sizeof(poly_key));
@@ -473,8 +491,8 @@ int dap_chacha20_poly1305_open(uint8_t *a_pt,
         const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
         const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE])
 {
-    uint8_t poly_key[64] = {0};
-    dap_chacha20_encrypt(poly_key, poly_key, sizeof(poly_key), a_key, a_nonce, 0);
+    uint8_t poly_key[32];
+    s_generate_poly_key(poly_key, a_key, a_nonce);
 
     uint8_t computed_tag[DAP_POLY1305_TAG_SIZE];
     {

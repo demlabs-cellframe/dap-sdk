@@ -229,17 +229,11 @@ static void s_benchmark_mlkem(void)
 
     bench_result_t r;
     if (!getenv("BENCH_OQS_ONLY")) {
-        r = s_bench_mlkem_raw(0, "DAP ML-KEM-512  (raw)");
+        r = s_bench_mlkem_raw(0, "DAP ML-KEM-512");
         s_print_result(&r);
-        r = s_bench_mlkem_raw(1, "DAP ML-KEM-768  (raw)");
+        r = s_bench_mlkem_raw(1, "DAP ML-KEM-768");
         s_print_result(&r);
-        r = s_bench_mlkem_raw(2, "DAP ML-KEM-1024 (raw)");
-        s_print_result(&r);
-        r = s_bench_mlkem_dap(DAP_SIGN_PARAMS_SECURITY_2, "DAP ML-KEM-512  (wrap)");
-        s_print_result(&r);
-        r = s_bench_mlkem_dap(DAP_SIGN_PARAMS_SECURITY_3, "DAP ML-KEM-768  (wrap)");
-        s_print_result(&r);
-        r = s_bench_mlkem_dap(DAP_SIGN_PARAMS_SECURITY_5, "DAP ML-KEM-1024 (wrap)");
+        r = s_bench_mlkem_raw(2, "DAP ML-KEM-1024");
         s_print_result(&r);
     }
 
@@ -390,17 +384,11 @@ static void s_benchmark_mldsa(void)
     s_print_header("ML-DSA (verify)");
 
     bench_result_t r;
-    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_2, "DAP ML-DSA-44  (raw)");
+    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_2, "DAP ML-DSA-44");
     if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_3, "DAP ML-DSA-65  (raw)");
+    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_3, "DAP ML-DSA-65");
     if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_5, "DAP ML-DSA-87  (raw)");
-    if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_2, "DAP ML-DSA-44  (wrap)");
-    if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_3, "DAP ML-DSA-65  (wrap)");
-    if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap(DAP_SIGN_PARAMS_SECURITY_5, "DAP ML-DSA-87  (wrap)");
+    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_5, "DAP ML-DSA-87");
     if (r.us_per_op >= 0) s_print_result(&r);
 
 #ifdef HAVE_LIBOQS

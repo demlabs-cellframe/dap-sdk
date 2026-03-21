@@ -51,7 +51,7 @@ option(BUILD_STATIC "Also build static version of DAP SDK library" OFF)
 option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
 
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
-option(BUILD_WITH_GPU  "Build GPU compute acceleration module (Vulkan/Metal/CUDA/OpenCL)" ON)
+option(BUILD_WITH_GPU  "Build GPU compute acceleration module (Vulkan/Metal/CUDA/OpenCL)" OFF)
 
 # Internal modules are ALWAYS static, final can be SHARED or STATIC
 if(BUILD_SHARED)

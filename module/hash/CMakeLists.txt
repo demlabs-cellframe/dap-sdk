@@ -128,9 +128,17 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         PROPERTIES COMPILE_FLAGS "-mavx2"
     )
 
-    # Hand-tuned AVX-512VL Keccak-f[1600] assembly (1x + 4x)
+    # AVX-512VL Keccak-f[1600] assembly — generated from .S.tpl via dap_tpl
+    # Instruction mnemonics loaded from .env, passed as template variables
     enable_language(ASM)
-    set(KECCAK_AVX512VL_ASM ${CMAKE_CURRENT_SOURCE_DIR}/src/keccak/asm/x86_64/dap_keccak_f1600_avx512vl.S)
+    set(KECCAK_AVX512VL_ASM ${KECCAK_GEN_DIR}/dap_keccak_f1600_avx512vl.S)
+    file(STRINGS "${K}/arch/x86/keccak_asm_avx512vl.env" _KECCAK_ASM_ENV)
+    dap_tpl_generate(
+        TEMPLATE ${K}/dap_keccak_f1600_asm.S.tpl
+        OUTPUT   ${KECCAK_AVX512VL_ASM}
+        ARGS     "FUNC_SUFFIX=avx512vl_asm"
+                 ${_KECCAK_ASM_ENV}
+    )
     target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_AVX512VL_ASM})
     set_source_files_properties(${KECCAK_AVX512VL_ASM}
         PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
