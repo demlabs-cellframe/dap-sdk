@@ -18,6 +18,10 @@ void dap_chacha20_encrypt_sse2(uint8_t *a_out, const uint8_t *a_in, size_t a_len
         const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);
 void dap_chacha20_encrypt_avx2(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);
+void dap_chacha20_encrypt_avx2_512vl(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
+        const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);
+void dap_chacha20_encrypt_avx512(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
+        const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);
 #elif defined(__aarch64__) || defined(__arm__)
 void dap_chacha20_encrypt_neon(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);

@@ -370,6 +370,18 @@ dap_arch_generate_variant(
 )
 dap_arch_generate_variant(
     TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx2_512vl.c
+    ARCH     avx2_512vl
+    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/x86/avx512vl_primitives.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx512.c
+    ARCH     avx512
+    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/x86/avx512_primitives.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_neon.c
     ARCH     neon
     ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/arm/neon_primitives.tpl"
@@ -378,6 +390,8 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
     SOURCES
         dap_chacha20_sse2.c  sse2
         dap_chacha20_avx2.c  avx2
+        dap_chacha20_avx2_512vl.c  avx2_512vl
+        dap_chacha20_avx512.c  avx512
         dap_chacha20_neon.c  neon
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR})
@@ -392,9 +406,16 @@ dap_arch_generate_variant(
     ARCH     avx2
     ARGS     "IMPL_FILE=${POLY1305_SIMD_DIR}/arch/x86/avx2_poly1305_impl.tpl"
 )
+dap_arch_generate_variant(
+    TEMPLATE ${POLY1305_SIMD_DIR}/dap_poly1305_simd.c.tpl
+    OUTPUT   ${POLY1305_GEN_DIR}/dap_poly1305_avx512_ifma.c
+    ARCH     avx512_ifma
+    ARGS     "IMPL_FILE=${POLY1305_SIMD_DIR}/arch/x86/avx512_ifma_poly1305_impl.tpl"
+)
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${POLY1305_GEN_DIR}
     SOURCES
         dap_poly1305_avx2.c  avx2
+        dap_poly1305_avx512_ifma.c  avx512_ifma
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${POLY1305_GEN_DIR})
 

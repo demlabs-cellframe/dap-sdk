@@ -75,3 +75,11 @@ typedef struct {
 typedef struct {
     dap_mlkem_poly vec[MLKEM_K];
 } dap_mlkem_polyvec;
+
+typedef struct {
+    int16_t coeffs[MLKEM_N];
+} dap_mlkem_poly_mulcache;
+
+typedef struct {
+    dap_mlkem_poly_mulcache vec[MLKEM_K];
+} dap_mlkem_polyvec_mulcache;

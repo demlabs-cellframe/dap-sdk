@@ -109,18 +109,25 @@ static bench_result_t s_bench_mlkem_raw(int a_variant, const char *a_name)
         v->enc(ct, ss_enc, pk);
         v->dec(ss_dec, ct, sk);
     }
-    uint64_t l_total = 0;
+    uint64_t l_total = 0, l_enc_total = 0, l_dec_total = 0;
     for (int i = 0; i < BENCH_ITERS; i++) {
         uint64_t t0 = s_rdtsc_or_clock();
         v->enc(ct, ss_enc, pk);
-        v->dec(ss_dec, ct, sk);
         uint64_t t1 = s_rdtsc_or_clock();
-        l_total += t1 - t0;
+        v->dec(ss_dec, ct, sk);
+        uint64_t t2 = s_rdtsc_or_clock();
+        l_total += t2 - t0;
+        l_enc_total += t1 - t0;
+        l_dec_total += t2 - t1;
     }
     free(pk); free(sk); free(ct); free(ss_enc); free(ss_dec);
     double us = (double)l_total / BENCH_ITERS / 1000.0;
     l_res.us_per_op = us;
     l_res.ops_per_sec = 1000000.0 / us;
+    if (getenv("BENCH_DETAIL"))
+        printf("    enc=%.2f us  dec=%.2f us\n",
+               (double)l_enc_total / BENCH_ITERS / 1000.0,
+               (double)l_dec_total / BENCH_ITERS / 1000.0);
     return l_res;
 }
 
@@ -177,37 +184,39 @@ static bench_result_t s_bench_mlkem_oqs(const char *a_alg_name, const char *a_la
         l_res.us_per_op = -1;
         return l_res;
     }
-    uint8_t *pk[BENCH_POOL], *sk[BENCH_POOL];
-    for (int j = 0; j < BENCH_POOL; j++) {
-        pk[j] = DAP_NEW_SIZE(uint8_t, kem->length_public_key);
-        sk[j] = DAP_NEW_SIZE(uint8_t, kem->length_secret_key);
-        OQS_KEM_keypair(kem, pk[j], sk[j]);
-    }
+    uint8_t *pk = DAP_NEW_SIZE(uint8_t, kem->length_public_key);
+    uint8_t *sk = DAP_NEW_SIZE(uint8_t, kem->length_secret_key);
+    OQS_KEM_keypair(kem, pk, sk);
     uint8_t *ct     = DAP_NEW_SIZE(uint8_t, kem->length_ciphertext);
     uint8_t *ss_enc = DAP_NEW_SIZE(uint8_t, kem->length_shared_secret);
     uint8_t *ss_dec = DAP_NEW_SIZE(uint8_t, kem->length_shared_secret);
 
     for (int w = 0; w < BENCH_WARMUP; w++) {
-        int j = w % BENCH_POOL;
-        OQS_KEM_encaps(kem, ct, ss_enc, pk[j]);
-        OQS_KEM_decaps(kem, ss_dec, ct, sk[j]);
+        OQS_KEM_encaps(kem, ct, ss_enc, pk);
+        OQS_KEM_decaps(kem, ss_dec, ct, sk);
     }
 
-    uint64_t l_total = 0;
+    uint64_t l_total = 0, l_enc_total = 0, l_dec_total = 0;
     for (int i = 0; i < BENCH_ITERS; i++) {
-        int j = i % BENCH_POOL;
         uint64_t t0 = s_rdtsc_or_clock();
-        OQS_KEM_encaps(kem, ct, ss_enc, pk[j]);
-        OQS_KEM_decaps(kem, ss_dec, ct, sk[j]);
+        OQS_KEM_encaps(kem, ct, ss_enc, pk);
         uint64_t t1 = s_rdtsc_or_clock();
-        l_total += t1 - t0;
+        OQS_KEM_decaps(kem, ss_dec, ct, sk);
+        uint64_t t2 = s_rdtsc_or_clock();
+        l_total += t2 - t0;
+        l_enc_total += t1 - t0;
+        l_dec_total += t2 - t1;
     }
 
     double us = (double)l_total / BENCH_ITERS / 1000.0;
     l_res.us_per_op = us;
     l_res.ops_per_sec = 1000000.0 / us;
+    if (getenv("BENCH_DETAIL"))
+        printf("    enc=%.2f us  dec=%.2f us\n",
+               (double)l_enc_total / BENCH_ITERS / 1000.0,
+               (double)l_dec_total / BENCH_ITERS / 1000.0);
 
-    for (int j = 0; j < BENCH_POOL; j++) { DAP_DELETE(pk[j]); DAP_DELETE(sk[j]); }
+    DAP_DELETE(pk); DAP_DELETE(sk);
     DAP_DELETE(ct); DAP_DELETE(ss_enc); DAP_DELETE(ss_dec);
     OQS_KEM_free(kem);
     return l_res;
@@ -415,6 +424,24 @@ static void s_benchmark_chacha20(void)
     s_print_result(&r);
     double mbps = (double)MSG_LEN * iters / ((double)l_total / 1e9) / (1024 * 1024);
     printf("  Throughput: %.1f MB/s\n", mbps);
+
+    if (getenv("BENCH_DETAIL")) {
+        uint8_t l_key32[32], l_poly_tag[16];
+        dap_random_bytes(l_key32, 32);
+        uint64_t l_enc_total = 0, l_mac_total = 0;
+        for (int i = 0; i < iters; i++) {
+            uint64_t t0 = s_rdtsc_or_clock();
+            dap_chacha20_encrypt(l_out, l_msgs[i % BENCH_POOL], MSG_LEN, l_key32, l_nonce, 1);
+            uint64_t t1 = s_rdtsc_or_clock();
+            dap_poly1305_mac(l_poly_tag, l_out, MSG_LEN, l_key32);
+            uint64_t t2 = s_rdtsc_or_clock();
+            l_enc_total += t1 - t0;
+            l_mac_total += t2 - t1;
+        }
+        printf("    ChaCha20 encrypt=%.2f us  Poly1305 MAC=%.2f us\n",
+               (double)l_enc_total / iters / 1000.0,
+               (double)l_mac_total / iters / 1000.0);
+    }
 
     for (int j = 0; j < BENCH_POOL; j++) dap_enc_key_delete(l_keys[j]);
 

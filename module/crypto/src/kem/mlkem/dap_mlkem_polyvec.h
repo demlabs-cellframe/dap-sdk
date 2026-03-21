@@ -23,3 +23,10 @@ void MLKEM_NAMESPACE(_polyvec_csubq)(dap_mlkem_polyvec *a_r);
 void MLKEM_NAMESPACE(_polyvec_add)(dap_mlkem_polyvec *a_r,
                                     const dap_mlkem_polyvec *a_a,
                                     const dap_mlkem_polyvec *a_b);
+void MLKEM_NAMESPACE(_polyvec_mulcache_compute)(dap_mlkem_polyvec_mulcache *a_cache,
+                                                 const dap_mlkem_polyvec *a_b);
+void MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(
+    dap_mlkem_poly *a_r,
+    const dap_mlkem_polyvec *a_a,
+    const dap_mlkem_polyvec *a_b,
+    const dap_mlkem_polyvec_mulcache *a_b_cache);

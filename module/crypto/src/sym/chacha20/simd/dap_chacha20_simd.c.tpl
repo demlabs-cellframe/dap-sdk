@@ -130,31 +130,54 @@ do { \
 #undef _XOR_ROW
 #undef TRANSPOSE8_XOR
         }
+#elif defined(CHACHA_HAS_GATHER_XOR) && CHACHA_LANES == 16
+        /* AVX-512: store to stack, gather+XOR per block */
+        {
+            uint32_t ks[16 * 16] __attribute__((aligned(64)));
+            VEC_STOREU(ks + 0*16,  v0);  VEC_STOREU(ks + 1*16,  v1);
+            VEC_STOREU(ks + 2*16,  v2);  VEC_STOREU(ks + 3*16,  v3);
+            VEC_STOREU(ks + 4*16,  v4);  VEC_STOREU(ks + 5*16,  v5);
+            VEC_STOREU(ks + 6*16,  v6);  VEC_STOREU(ks + 7*16,  v7);
+            VEC_STOREU(ks + 8*16,  v8);  VEC_STOREU(ks + 9*16,  v9);
+            VEC_STOREU(ks + 10*16, v10); VEC_STOREU(ks + 11*16, v11);
+            VEC_STOREU(ks + 12*16, v12); VEC_STOREU(ks + 13*16, v13);
+            VEC_STOREU(ks + 14*16, v14); VEC_STOREU(ks + 15*16, v15);
+            __m512i gidx = _mm512_setr_epi32(
+                0,16,32,48,64,80,96,112,128,144,160,176,192,208,224,240);
+            for (int lane = 0; lane < 16; lane++) {
+                __m512i pt = _mm512_loadu_si512(a_in + lane * 64);
+                __m512i bks = _mm512_i32gather_epi32(gidx, &ks[lane], 4);
+                _mm512_storeu_si512(a_out + lane * 64,
+                    _mm512_xor_si512(pt, bks));
+            }
+        }
 #else
         /* Fallback: store keystream to stack, scalar XOR */
-        uint32_t ks[16 * CHACHA_LANES] __attribute__((aligned(64)));
-        VEC_STOREU(ks + 0  * CHACHA_LANES, v0);
-        VEC_STOREU(ks + 1  * CHACHA_LANES, v1);
-        VEC_STOREU(ks + 2  * CHACHA_LANES, v2);
-        VEC_STOREU(ks + 3  * CHACHA_LANES, v3);
-        VEC_STOREU(ks + 4  * CHACHA_LANES, v4);
-        VEC_STOREU(ks + 5  * CHACHA_LANES, v5);
-        VEC_STOREU(ks + 6  * CHACHA_LANES, v6);
-        VEC_STOREU(ks + 7  * CHACHA_LANES, v7);
-        VEC_STOREU(ks + 8  * CHACHA_LANES, v8);
-        VEC_STOREU(ks + 9  * CHACHA_LANES, v9);
-        VEC_STOREU(ks + 10 * CHACHA_LANES, v10);
-        VEC_STOREU(ks + 11 * CHACHA_LANES, v11);
-        VEC_STOREU(ks + 12 * CHACHA_LANES, v12);
-        VEC_STOREU(ks + 13 * CHACHA_LANES, v13);
-        VEC_STOREU(ks + 14 * CHACHA_LANES, v14);
-        VEC_STOREU(ks + 15 * CHACHA_LANES, v15);
+        {
+            uint32_t ks[16 * CHACHA_LANES] __attribute__((aligned(64)));
+            VEC_STOREU(ks + 0  * CHACHA_LANES, v0);
+            VEC_STOREU(ks + 1  * CHACHA_LANES, v1);
+            VEC_STOREU(ks + 2  * CHACHA_LANES, v2);
+            VEC_STOREU(ks + 3  * CHACHA_LANES, v3);
+            VEC_STOREU(ks + 4  * CHACHA_LANES, v4);
+            VEC_STOREU(ks + 5  * CHACHA_LANES, v5);
+            VEC_STOREU(ks + 6  * CHACHA_LANES, v6);
+            VEC_STOREU(ks + 7  * CHACHA_LANES, v7);
+            VEC_STOREU(ks + 8  * CHACHA_LANES, v8);
+            VEC_STOREU(ks + 9  * CHACHA_LANES, v9);
+            VEC_STOREU(ks + 10 * CHACHA_LANES, v10);
+            VEC_STOREU(ks + 11 * CHACHA_LANES, v11);
+            VEC_STOREU(ks + 12 * CHACHA_LANES, v12);
+            VEC_STOREU(ks + 13 * CHACHA_LANES, v13);
+            VEC_STOREU(ks + 14 * CHACHA_LANES, v14);
+            VEC_STOREU(ks + 15 * CHACHA_LANES, v15);
 
-        for (int lane = 0; lane < CHACHA_LANES; lane++) {
-            const uint32_t *l_in_w = (const uint32_t *)(a_in + lane * 64);
-            uint32_t *l_out_w = (uint32_t *)(a_out + lane * 64);
-            for (int w = 0; w < 16; w++)
-                l_out_w[w] = l_in_w[w] ^ ks[w * CHACHA_LANES + lane];
+            for (int lane = 0; lane < CHACHA_LANES; lane++) {
+                const uint32_t *l_in_w = (const uint32_t *)(a_in + lane * 64);
+                uint32_t *l_out_w = (uint32_t *)(a_out + lane * 64);
+                for (int w = 0; w < 16; w++)
+                    l_out_w[w] = l_in_w[w] ^ ks[w * CHACHA_LANES + lane];
+            }
         }
 #endif
 

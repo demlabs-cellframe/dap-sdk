@@ -72,6 +72,20 @@ static inline void s_keccak_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
     }
 }
 
+static inline void s_keccak_absorb_squeeze(uint8_t *a_out, size_t a_nblocks,
+                                            uint64_t *a_state, unsigned a_rate,
+                                            const uint8_t *a_data, size_t a_len,
+                                            uint8_t a_suffix)
+{
+    s_keccak_absorb(a_state, a_rate, a_data, a_len, a_suffix);
+    if (a_nblocks > 0) {
+        memcpy(a_out, a_state, a_rate);
+        a_out += a_rate;
+        a_nblocks--;
+    }
+    s_keccak_squeezeblocks(a_out, a_nblocks, a_state, a_rate);
+}
+
 /* ---------- SHA3-256 (hash_h): rate=136, suffix=0x06, output=32 ---------- */
 static inline void dap_mlkem_hash_h(uint8_t *a_out, const uint8_t *a_in, size_t a_len)
 {
@@ -108,6 +122,20 @@ static inline void dap_mlkem_xof_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
                                                  dap_mlkem_xof_state *a_state)
 {
     s_keccak_squeezeblocks(a_out, a_nblocks, a_state->s, DAP_KECCAK_SHAKE128_RATE);
+}
+
+/* ---------- XOF absorb + squeeze first block free ----------------------- */
+static inline void dap_mlkem_xof_absorb_squeeze(dap_mlkem_xof_state *a_state,
+                                                  uint8_t *a_out, size_t a_nblocks,
+                                                  const uint8_t a_seed[MLKEM_SYMBYTES],
+                                                  uint8_t a_x, uint8_t a_y)
+{
+    uint8_t l_extseed[MLKEM_SYMBYTES + 2];
+    memcpy(l_extseed, a_seed, MLKEM_SYMBYTES);
+    l_extseed[MLKEM_SYMBYTES]     = a_x;
+    l_extseed[MLKEM_SYMBYTES + 1] = a_y;
+    s_keccak_absorb_squeeze(a_out, a_nblocks, a_state->s, DAP_KECCAK_SHAKE128_RATE,
+                            l_extseed, sizeof(l_extseed), DAP_KECCAK_SHAKE_SUFFIX);
 }
 
 /* ---------- PRF (SHAKE256): rate=136, input=33 bytes --------------------- */
@@ -171,6 +199,30 @@ static inline void dap_mlkem_xof_squeezeblocks_x4(uint8_t *a_out0, uint8_t *a_ou
                                         a_nblocks, a_state);
 }
 
+static inline void dap_mlkem_xof_absorb_squeeze_x4(
+    dap_keccak_x4_state_t *a_state,
+    uint8_t *a_out0, uint8_t *a_out1, uint8_t *a_out2, uint8_t *a_out3,
+    size_t a_nblocks,
+    const uint8_t a_seed[MLKEM_SYMBYTES],
+    uint8_t a_x0, uint8_t a_y0, uint8_t a_x1, uint8_t a_y1,
+    uint8_t a_x2, uint8_t a_y2, uint8_t a_x3, uint8_t a_y3)
+{
+    dap_mlkem_xof_absorb_x4(a_state, a_seed, a_x0, a_y0, a_x1, a_y1,
+                              a_x2, a_y2, a_x3, a_y3);
+    if (a_nblocks > 0) {
+        dap_keccak_x4_extract_bytes_all(a_state, a_out0, a_out1, a_out2, a_out3,
+                                         DAP_KECCAK_SHAKE128_RATE);
+        a_out0 += DAP_KECCAK_SHAKE128_RATE;
+        a_out1 += DAP_KECCAK_SHAKE128_RATE;
+        a_out2 += DAP_KECCAK_SHAKE128_RATE;
+        a_out3 += DAP_KECCAK_SHAKE128_RATE;
+        a_nblocks--;
+    }
+    if (a_nblocks > 0)
+        dap_mlkem_xof_squeezeblocks_x4(a_out0, a_out1, a_out2, a_out3,
+                                         a_nblocks, a_state);
+}
+
 static inline void dap_mlkem_prf_x4(uint8_t *a_out0, uint8_t *a_out1,
                                       uint8_t *a_out2, uint8_t *a_out3,
                                       size_t a_outlen,
@@ -190,19 +242,33 @@ static inline void dap_mlkem_prf_x4(uint8_t *a_out0, uint8_t *a_out1,
     dap_hash_shake256_x4_absorb(&l_state, l_ext[0], l_ext[1], l_ext[2], l_ext[3],
                                  MLKEM_SYMBYTES + 1);
 
-    size_t l_nblocks = a_outlen / DAP_KECCAK_SHAKE256_RATE;
-    if (l_nblocks)
-        dap_hash_shake256_x4_squeezeblocks(a_out0, a_out1, a_out2, a_out3,
-                                            l_nblocks, &l_state);
-    size_t l_done = l_nblocks * DAP_KECCAK_SHAKE256_RATE;
-    if (l_done < a_outlen) {
-        uint8_t l_tail[4][DAP_KECCAK_SHAKE256_RATE];
-        dap_hash_shake256_x4_squeezeblocks(l_tail[0], l_tail[1], l_tail[2], l_tail[3],
-                                            1, &l_state);
-        size_t l_rem = a_outlen - l_done;
-        memcpy(a_out0 + l_done, l_tail[0], l_rem);
-        memcpy(a_out1 + l_done, l_tail[1], l_rem);
-        memcpy(a_out2 + l_done, l_tail[2], l_rem);
-        memcpy(a_out3 + l_done, l_tail[3], l_rem);
+    unsigned l_rate = DAP_KECCAK_SHAKE256_RATE;
+    size_t l_pos = 0;
+    size_t l_first = (a_outlen < l_rate) ? a_outlen : l_rate;
+    if (l_first <= l_rate) {
+        uint8_t l_tmp[4][DAP_KECCAK_SHAKE256_RATE];
+        dap_keccak_x4_extract_bytes_all(&l_state, l_tmp[0], l_tmp[1], l_tmp[2], l_tmp[3], l_rate);
+        memcpy(a_out0, l_tmp[0], l_first);
+        memcpy(a_out1, l_tmp[1], l_first);
+        memcpy(a_out2, l_tmp[2], l_first);
+        memcpy(a_out3, l_tmp[3], l_first);
+        l_pos = l_first;
+    }
+    while (l_pos < a_outlen) {
+        dap_keccak_x4_permute(&l_state);
+        size_t l_rem = a_outlen - l_pos;
+        size_t l_copy = (l_rem < l_rate) ? l_rem : l_rate;
+        if (l_copy == l_rate) {
+            dap_keccak_x4_extract_bytes_all(&l_state, a_out0 + l_pos, a_out1 + l_pos,
+                                             a_out2 + l_pos, a_out3 + l_pos, l_rate);
+        } else {
+            uint8_t l_tmp[4][DAP_KECCAK_SHAKE256_RATE];
+            dap_keccak_x4_extract_bytes_all(&l_state, l_tmp[0], l_tmp[1], l_tmp[2], l_tmp[3], l_rate);
+            memcpy(a_out0 + l_pos, l_tmp[0], l_copy);
+            memcpy(a_out1 + l_pos, l_tmp[1], l_copy);
+            memcpy(a_out2 + l_pos, l_tmp[2], l_copy);
+            memcpy(a_out3 + l_pos, l_tmp[3], l_copy);
+        }
+        l_pos += l_copy;
     }
 }

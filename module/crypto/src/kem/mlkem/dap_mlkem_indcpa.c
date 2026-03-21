@@ -435,28 +435,32 @@ static void s_gen_matrix(dap_mlkem_polyvec *a_mat, const uint8_t a_seed[MLKEM_SY
                           int a_transposed)
 {
     unsigned l_total = MLKEM_K * MLKEM_K;
-    unsigned l_idx = 0;
     uint8_t l_buf[4][GEN_MATRIX_NBLOCKS * MLKEM_XOF_BLOCKBYTES + 2];
 
-    while (l_idx + 4 <= l_total) {
+    for (unsigned l_idx = 0; l_idx < l_total; l_idx += 4) {
         uint8_t l_x[4], l_y[4];
-        for (int k = 0; k < 4; k++) {
+        unsigned l_count = (l_total - l_idx >= 4) ? 4 : l_total - l_idx;
+        for (unsigned k = 0; k < l_count; k++) {
             unsigned ii = (l_idx + k) / MLKEM_K;
             unsigned jj = (l_idx + k) % MLKEM_K;
             l_x[k] = a_transposed ? (uint8_t)ii : (uint8_t)jj;
             l_y[k] = a_transposed ? (uint8_t)jj : (uint8_t)ii;
         }
+        for (unsigned k = l_count; k < 4; k++) {
+            l_x[k] = l_x[0];
+            l_y[k] = l_y[0];
+        }
 
         dap_keccak_x4_state_t l_x4;
-        dap_mlkem_xof_absorb_x4(&l_x4, a_seed,
-                                  l_x[0], l_y[0], l_x[1], l_y[1],
-                                  l_x[2], l_y[2], l_x[3], l_y[3]);
-        dap_mlkem_xof_squeezeblocks_x4(l_buf[0], l_buf[1], l_buf[2], l_buf[3],
-                                         GEN_MATRIX_NBLOCKS, &l_x4);
+        dap_mlkem_xof_absorb_squeeze_x4(&l_x4,
+                                          l_buf[0], l_buf[1], l_buf[2], l_buf[3],
+                                          GEN_MATRIX_NBLOCKS, a_seed,
+                                          l_x[0], l_y[0], l_x[1], l_y[1],
+                                          l_x[2], l_y[2], l_x[3], l_y[3]);
 
         unsigned l_ctr[4];
         int l_need_more = 0;
-        for (int k = 0; k < 4; k++) {
+        for (unsigned k = 0; k < l_count; k++) {
             unsigned ii = (l_idx + k) / MLKEM_K;
             unsigned jj = (l_idx + k) % MLKEM_K;
             l_ctr[k] = s_rej_uniform(a_mat[ii].vec[jj].coeffs, MLKEM_N,
@@ -464,13 +468,15 @@ static void s_gen_matrix(dap_mlkem_polyvec *a_mat, const uint8_t a_seed[MLKEM_SY
             if (l_ctr[k] < MLKEM_N)
                 l_need_more = 1;
         }
+        for (unsigned k = l_count; k < 4; k++)
+            l_ctr[k] = MLKEM_N;
 
         while (l_need_more) {
             uint8_t l_extra[4][MLKEM_XOF_BLOCKBYTES];
             dap_mlkem_xof_squeezeblocks_x4(l_extra[0], l_extra[1], l_extra[2], l_extra[3],
                                              1, &l_x4);
             l_need_more = 0;
-            for (int k = 0; k < 4; k++) {
+            for (unsigned k = 0; k < l_count; k++) {
                 if (l_ctr[k] < MLKEM_N) {
                     unsigned ii = (l_idx + k) / MLKEM_K;
                     unsigned jj = (l_idx + k) % MLKEM_K;
@@ -482,32 +488,6 @@ static void s_gen_matrix(dap_mlkem_polyvec *a_mat, const uint8_t a_seed[MLKEM_SY
                 }
             }
         }
-        l_idx += 4;
-    }
-
-    /* Remainder: 1x path */
-    dap_mlkem_xof_state l_state;
-    while (l_idx < l_total) {
-        unsigned ii = l_idx / MLKEM_K;
-        unsigned jj = l_idx % MLKEM_K;
-        if (a_transposed)
-            dap_mlkem_xof_absorb(&l_state, a_seed, (uint8_t)ii, (uint8_t)jj);
-        else
-            dap_mlkem_xof_absorb(&l_state, a_seed, (uint8_t)jj, (uint8_t)ii);
-
-        dap_mlkem_xof_squeezeblocks(l_buf[0], GEN_MATRIX_NBLOCKS, &l_state);
-        unsigned l_buflen = GEN_MATRIX_NBLOCKS * MLKEM_XOF_BLOCKBYTES;
-        unsigned l_ctr0 = s_rej_uniform(a_mat[ii].vec[jj].coeffs, MLKEM_N, l_buf[0], l_buflen);
-        while (l_ctr0 < MLKEM_N) {
-            unsigned l_off = l_buflen % 3;
-            for (unsigned m = 0; m < l_off; m++)
-                l_buf[0][m] = l_buf[0][l_buflen - l_off + m];
-            dap_mlkem_xof_squeezeblocks(l_buf[0] + l_off, 1, &l_state);
-            l_buflen = l_off + MLKEM_XOF_BLOCKBYTES;
-            l_ctr0 += s_rej_uniform(a_mat[ii].vec[jj].coeffs + l_ctr0, MLKEM_N - l_ctr0,
-                                     l_buf[0], l_buflen);
-        }
-        l_idx++;
     }
 }
 
@@ -527,27 +507,47 @@ void MLKEM_NAMESPACE(_indcpa_keypair)(uint8_t a_pk[MLKEM_INDCPA_PUBLICKEYBYTES],
 
     s_gen_matrix(l_a, l_publicseed, 0);
 
-    /* Batch noise sampling: skpv[0..K-1] then e[0..K-1], all eta1 */
+    /* Batch noise sampling: skpv[0..K-1] then e[0..K-1], all eta1 — always x4 */
     dap_mlkem_poly *l_npolys[2 * MLKEM_K];
     for (unsigned j = 0; j < MLKEM_K; j++)
         l_npolys[j] = &l_skpv.vec[j];
     for (unsigned j = 0; j < MLKEM_K; j++)
         l_npolys[MLKEM_K + j] = &l_e.vec[j];
 
-    unsigned i = 0;
-    for (; i + 4 <= 2 * MLKEM_K; i += 4, l_nonce += 4)
-        MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(l_npolys[i], l_npolys[i + 1],
-                                                  l_npolys[i + 2], l_npolys[i + 3],
-                                                  l_noiseseed, l_nonce, (uint8_t)(l_nonce + 1),
-                                                  (uint8_t)(l_nonce + 2), (uint8_t)(l_nonce + 3));
-    for (; i < 2 * MLKEM_K; i++)
-        MLKEM_NAMESPACE(_poly_getnoise_eta1)(l_npolys[i], l_noiseseed, l_nonce++);
+    {
+        dap_mlkem_poly l_dummy;
+        unsigned i = 0;
+        for (; i + 4 <= 2 * MLKEM_K; i += 4, l_nonce += 4)
+            MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(l_npolys[i], l_npolys[i + 1],
+                                                      l_npolys[i + 2], l_npolys[i + 3],
+                                                      l_noiseseed, l_nonce, (uint8_t)(l_nonce + 1),
+                                                      (uint8_t)(l_nonce + 2), (uint8_t)(l_nonce + 3));
+        if (i < 2 * MLKEM_K) {
+            dap_mlkem_poly *l_ptrs[4];
+            uint8_t l_nonces[4];
+            unsigned k = 0;
+            for (; i + k < 2 * MLKEM_K; k++) {
+                l_ptrs[k] = l_npolys[i + k];
+                l_nonces[k] = (uint8_t)(l_nonce + k);
+            }
+            for (; k < 4; k++) {
+                l_ptrs[k] = &l_dummy;
+                l_nonces[k] = l_nonces[0];
+            }
+            MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(l_ptrs[0], l_ptrs[1], l_ptrs[2], l_ptrs[3],
+                                                      l_noiseseed, l_nonces[0], l_nonces[1],
+                                                      l_nonces[2], l_nonces[3]);
+            l_nonce += (uint8_t)(2 * MLKEM_K - i);
+        }
+    }
 
     MLKEM_NAMESPACE(_polyvec_ntt)(&l_skpv);
     MLKEM_NAMESPACE(_polyvec_ntt)(&l_e);
 
+    dap_mlkem_polyvec_mulcache l_skpv_cache;
+    MLKEM_NAMESPACE(_polyvec_mulcache_compute)(&l_skpv_cache, &l_skpv);
     for (unsigned i = 0; i < MLKEM_K; i++) {
-        MLKEM_NAMESPACE(_polyvec_pointwise_acc_montgomery)(&l_pkpv.vec[i], &l_a[i], &l_skpv);
+        MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(&l_pkpv.vec[i], &l_a[i], &l_skpv, &l_skpv_cache);
         MLKEM_NAMESPACE(_poly_tomont)(&l_pkpv.vec[i]);
     }
     MLKEM_NAMESPACE(_polyvec_add)(&l_pkpv, &l_pkpv, &l_e);
@@ -571,19 +571,37 @@ void MLKEM_NAMESPACE(_indcpa_enc)(uint8_t a_c[MLKEM_INDCPA_BYTES],
     MLKEM_NAMESPACE(_poly_frommsg)(&l_k, a_m);
     s_gen_matrix(l_at, l_seed, 1);
 
-    /* sp: K polys with eta1 */
+    /* sp: K polys with eta1 — always x4 (pad with dummy if K < 4) */
     {
+        dap_mlkem_poly l_dummy;
         unsigned i = 0;
         for (; i + 4 <= MLKEM_K; i += 4, l_nonce += 4)
             MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(&l_sp.vec[i], &l_sp.vec[i + 1],
                                                       &l_sp.vec[i + 2], &l_sp.vec[i + 3],
                                                       a_coins, l_nonce, (uint8_t)(l_nonce + 1),
                                                       (uint8_t)(l_nonce + 2), (uint8_t)(l_nonce + 3));
-        for (; i < MLKEM_K; i++)
-            MLKEM_NAMESPACE(_poly_getnoise_eta1)(l_sp.vec + i, a_coins, l_nonce++);
+        if (i < MLKEM_K) {
+            dap_mlkem_poly *l_ptrs[4];
+            uint8_t l_nonces[4];
+            unsigned k = 0;
+            for (; i + k < MLKEM_K; k++) {
+                l_ptrs[k] = &l_sp.vec[i + k];
+                l_nonces[k] = (uint8_t)(l_nonce + k);
+            }
+            for (; k < 4; k++) {
+                l_ptrs[k] = &l_dummy;
+                l_nonces[k] = l_nonces[0];
+            }
+            MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(l_ptrs[0], l_ptrs[1], l_ptrs[2], l_ptrs[3],
+                                                      a_coins, l_nonces[0], l_nonces[1],
+                                                      l_nonces[2], l_nonces[3]);
+            l_nonce += (uint8_t)(MLKEM_K - i);
+            i = MLKEM_K;
+        }
     }
-    /* ep: K polys with eta2, epp: 1 poly with eta2 */
+    /* ep: K polys with eta2, epp: 1 poly with eta2 — always x4 */
     {
+        dap_mlkem_poly l_dummy;
         dap_mlkem_poly *l_eta2[MLKEM_K + 1];
         for (unsigned j = 0; j < MLKEM_K; j++)
             l_eta2[j] = &l_ep.vec[j];
@@ -594,15 +612,32 @@ void MLKEM_NAMESPACE(_indcpa_enc)(uint8_t a_c[MLKEM_INDCPA_BYTES],
                                                       l_eta2[i + 2], l_eta2[i + 3],
                                                       a_coins, l_nonce, (uint8_t)(l_nonce + 1),
                                                       (uint8_t)(l_nonce + 2), (uint8_t)(l_nonce + 3));
-        for (; i < MLKEM_K + 1; i++)
-            MLKEM_NAMESPACE(_poly_getnoise_eta2)(l_eta2[i], a_coins, l_nonce++);
+        if (i < MLKEM_K + 1) {
+            dap_mlkem_poly *l_ptrs[4];
+            uint8_t l_nonces[4];
+            unsigned k = 0;
+            for (; i + k < MLKEM_K + 1; k++) {
+                l_ptrs[k] = l_eta2[i + k];
+                l_nonces[k] = (uint8_t)(l_nonce + k);
+            }
+            for (; k < 4; k++) {
+                l_ptrs[k] = &l_dummy;
+                l_nonces[k] = l_nonces[0];
+            }
+            MLKEM_NAMESPACE(_poly_getnoise_eta2_x4)(l_ptrs[0], l_ptrs[1], l_ptrs[2], l_ptrs[3],
+                                                      a_coins, l_nonces[0], l_nonces[1],
+                                                      l_nonces[2], l_nonces[3]);
+            l_nonce += (uint8_t)(MLKEM_K + 1 - i);
+        }
     }
 
     MLKEM_NAMESPACE(_polyvec_ntt)(&l_sp);
 
+    dap_mlkem_polyvec_mulcache l_sp_cache;
+    MLKEM_NAMESPACE(_polyvec_mulcache_compute)(&l_sp_cache, &l_sp);
     for (unsigned i = 0; i < MLKEM_K; i++)
-        MLKEM_NAMESPACE(_polyvec_pointwise_acc_montgomery)(&l_bp.vec[i], &l_at[i], &l_sp);
-    MLKEM_NAMESPACE(_polyvec_pointwise_acc_montgomery)(&l_v, &l_pkpv, &l_sp);
+        MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(&l_bp.vec[i], &l_at[i], &l_sp, &l_sp_cache);
+    MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(&l_v, &l_pkpv, &l_sp, &l_sp_cache);
 
     MLKEM_NAMESPACE(_polyvec_invntt_tomont)(&l_bp);
     MLKEM_NAMESPACE(_poly_invntt_tomont)(&l_v);
@@ -627,7 +662,9 @@ void MLKEM_NAMESPACE(_indcpa_dec)(uint8_t a_m[MLKEM_INDCPA_MSGBYTES],
     s_unpack_sk(&l_skpv, a_sk);
 
     MLKEM_NAMESPACE(_polyvec_ntt)(&l_bp);
-    MLKEM_NAMESPACE(_polyvec_pointwise_acc_montgomery)(&l_mp, &l_skpv, &l_bp);
+    dap_mlkem_polyvec_mulcache l_bp_cache;
+    MLKEM_NAMESPACE(_polyvec_mulcache_compute)(&l_bp_cache, &l_bp);
+    MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(&l_mp, &l_skpv, &l_bp, &l_bp_cache);
     MLKEM_NAMESPACE(_poly_invntt_tomont)(&l_mp);
 
     MLKEM_NAMESPACE(_poly_sub)(&l_mp, &l_v, &l_mp);

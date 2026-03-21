@@ -40,3 +40,5 @@ void MLKEM_NAMESPACE(_poly_add)(dap_mlkem_poly *a_r, const dap_mlkem_poly *a_a,
                                  const dap_mlkem_poly *a_b);
 void MLKEM_NAMESPACE(_poly_sub)(dap_mlkem_poly *a_r, const dap_mlkem_poly *a_a,
                                  const dap_mlkem_poly *a_b);
+void MLKEM_NAMESPACE(_poly_mulcache_compute)(dap_mlkem_poly_mulcache *a_cache,
+                                              const dap_mlkem_poly *a_b);

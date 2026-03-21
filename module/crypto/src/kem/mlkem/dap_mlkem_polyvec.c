@@ -16,16 +16,178 @@
 #define MLKEM_POLYVEC_AVX2 1
 #endif
 
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#include "dap_mlkem_poly_simd.h"
+
+#if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
+__attribute__((target("avx2")))
+static void s_polyvec_compress_d11_avx2(uint8_t *a_r, const int16_t *a_coeffs)
+{
+    const __m256i v = _mm256_set1_epi16(20159);
+    const __m256i v8 = _mm256_slli_epi16(v, 3);
+    const __m256i off = _mm256_set1_epi16(36);
+    const __m256i shift1 = _mm256_set1_epi16(1 << 13);
+    const __m256i mask = _mm256_set1_epi16(2047);
+    const __m256i shift2 = _mm256_set1_epi64x((2048LL << 48) + (1LL << 32) + (2048 << 16) + 1);
+    const __m256i sllvdidx = _mm256_set1_epi64x(10);
+    const __m256i srlvqidx = _mm256_set_epi64x(30, 10, 30, 10);
+    const __m256i shufbidx = _mm256_set_epi8(
+        4,3,2,1,0, 0,-1,-1,-1,-1, 10,9,8,7,6,5,
+        -1,-1,-1,-1,-1, 10,9,8,7,6, 5,4,3,2,1,0);
+
+    for (unsigned i = 0; i < MLKEM_N / 16; i++) {
+        __m256i f0 = _mm256_loadu_si256((const __m256i *)(a_coeffs + 16 * i));
+        __m256i f1 = _mm256_mullo_epi16(f0, v8);
+        __m256i f2 = _mm256_add_epi16(f0, off);
+        f0 = _mm256_slli_epi16(f0, 3);
+        f0 = _mm256_mulhi_epi16(f0, v);
+        f2 = _mm256_sub_epi16(f1, f2);
+        f1 = _mm256_andnot_si256(f1, f2);
+        f1 = _mm256_srli_epi16(f1, 15);
+        f0 = _mm256_sub_epi16(f0, f1);
+        f0 = _mm256_mulhrs_epi16(f0, shift1);
+        f0 = _mm256_and_si256(f0, mask);
+        f0 = _mm256_madd_epi16(f0, shift2);
+        f0 = _mm256_sllv_epi32(f0, sllvdidx);
+        f1 = _mm256_bsrli_epi128(f0, 8);
+        f0 = _mm256_srlv_epi64(f0, srlvqidx);
+        f1 = _mm256_slli_epi64(f1, 34);
+        f0 = _mm256_add_epi64(f0, f1);
+        f0 = _mm256_shuffle_epi8(f0, shufbidx);
+        __m128i t0 = _mm256_castsi256_si128(f0);
+        __m128i t1 = _mm256_extracti128_si256(f0, 1);
+        t0 = _mm_blendv_epi8(t0, t1, _mm256_castsi256_si128(shufbidx));
+        _mm_storeu_si128((__m128i *)(a_r + 22 * i), t0);
+        if (i < MLKEM_N / 16 - 1)
+            _mm_storel_epi64((__m128i *)(a_r + 22 * i + 16), t1);
+        else
+            memcpy(a_r + 22 * i + 16, &t1, 6);
+    }
+}
+#elif MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 320)
+__attribute__((target("avx2")))
+static void s_polyvec_compress_d10_avx2(uint8_t *a_r, const int16_t *a_coeffs)
+{
+    const __m256i v = _mm256_set1_epi16(20159);
+    const __m256i v8 = _mm256_slli_epi16(v, 3);
+    const __m256i off = _mm256_set1_epi16(15);
+    const __m256i shift1 = _mm256_set1_epi16(1 << 12);
+    const __m256i mask = _mm256_set1_epi16(1023);
+    const __m256i shift2 = _mm256_set1_epi64x((1024LL << 48) + (1LL << 32) + (1024 << 16) + 1);
+    const __m256i sllvdidx = _mm256_set1_epi64x(12);
+    const __m256i shufbidx = _mm256_set_epi8(
+        8, 4,3,2,1,0, -1,-1,-1,-1,-1,-1, 12,11,10,9,
+        -1,-1,-1,-1,-1,-1, 12,11,10,9,8, 4,3,2,1,0);
+
+    for (unsigned i = 0; i < MLKEM_N / 16; i++) {
+        __m256i f0 = _mm256_loadu_si256((const __m256i *)(a_coeffs + 16 * i));
+        __m256i f1 = _mm256_mullo_epi16(f0, v8);
+        __m256i f2 = _mm256_add_epi16(f0, off);
+        f0 = _mm256_slli_epi16(f0, 3);
+        f0 = _mm256_mulhi_epi16(f0, v);
+        f2 = _mm256_sub_epi16(f1, f2);
+        f1 = _mm256_andnot_si256(f1, f2);
+        f1 = _mm256_srli_epi16(f1, 15);
+        f0 = _mm256_sub_epi16(f0, f1);
+        f0 = _mm256_mulhrs_epi16(f0, shift1);
+        f0 = _mm256_and_si256(f0, mask);
+        f0 = _mm256_madd_epi16(f0, shift2);
+        f0 = _mm256_sllv_epi32(f0, sllvdidx);
+        f0 = _mm256_srli_epi64(f0, 12);
+        f0 = _mm256_shuffle_epi8(f0, shufbidx);
+        __m128i t0 = _mm256_castsi256_si128(f0);
+        __m128i t1 = _mm256_extracti128_si256(f0, 1);
+        t0 = _mm_blend_epi16(t0, t1, 0xE0);
+        _mm_storeu_si128((__m128i *)(a_r + 20 * i), t0);
+        memcpy(a_r + 20 * i + 16, &t1, 4);
+    }
+}
+#endif
+
+#if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
+__attribute__((target("avx2")))
+static void s_polyvec_decompress_d11_avx2(int16_t *a_r, const uint8_t *a_a)
+{
+    const __m256i q = _mm256_set1_epi16(MLKEM_Q);
+    const __m256i shufbidx = _mm256_set_epi8(
+        13,12,12,11, 10,9,9,8, 8,7,6,5, 5,4,4,3,
+        10,9,9,8, 7,6,6,5, 5,4,3,2, 2,1,1,0);
+    const __m256i srlvdidx = _mm256_set_epi32(0, 0, 1, 0, 0, 0, 1, 0);
+    const __m256i srlvqidx = _mm256_set_epi64x(2, 0, 2, 0);
+    const __m256i shift = _mm256_set_epi16(
+        4,32,1,8, 32,1,4,32, 4,32,1,8, 32,1,4,32);
+    const __m256i mask = _mm256_set1_epi16(32752);
+
+    for (unsigned i = 0; i < MLKEM_N / 16; i++) {
+        __m256i f;
+        if (i < MLKEM_N / 16 - 1)
+            f = _mm256_loadu_si256((const __m256i *)(a_a + 22 * i));
+        else
+            memcpy(&f, a_a + 22 * i, 22);
+        f = _mm256_permute4x64_epi64(f, 0x94);
+        f = _mm256_shuffle_epi8(f, shufbidx);
+        f = _mm256_srlv_epi32(f, srlvdidx);
+        f = _mm256_srlv_epi64(f, srlvqidx);
+        f = _mm256_mullo_epi16(f, shift);
+        f = _mm256_srli_epi16(f, 1);
+        f = _mm256_and_si256(f, mask);
+        f = _mm256_mulhrs_epi16(f, q);
+        _mm256_storeu_si256((__m256i *)(a_r + 16 * i), f);
+    }
+}
+#elif MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 320)
+__attribute__((target("avx2")))
+static void s_polyvec_decompress_d10_avx2(int16_t *a_r, const uint8_t *a_a)
+{
+    const __m256i q = _mm256_set1_epi32((MLKEM_Q << 16) + 4 * MLKEM_Q);
+    const __m256i shufbidx = _mm256_set_epi8(
+        11,10,10,9, 9,8,8,7, 6,5,5,4, 4,3,3,2,
+        9,8,8,7, 7,6,6,5, 4,3,3,2, 2,1,1,0);
+    const __m256i sllvdidx = _mm256_set1_epi64x(4);
+    const __m256i mask = _mm256_set1_epi32((32736 << 16) + 8184);
+
+    for (unsigned i = 0; i < MLKEM_N / 16; i++) {
+        __m256i f;
+        if (i < MLKEM_N / 16 - 1)
+            f = _mm256_loadu_si256((const __m256i *)(a_a + 20 * i));
+        else
+            memcpy(&f, a_a + 20 * i, 20);
+        f = _mm256_permute4x64_epi64(f, 0x94);
+        f = _mm256_shuffle_epi8(f, shufbidx);
+        f = _mm256_sllv_epi32(f, sllvdidx);
+        f = _mm256_srli_epi16(f, 1);
+        f = _mm256_and_si256(f, mask);
+        f = _mm256_mulhrs_epi16(f, q);
+        _mm256_storeu_si256((__m256i *)(a_r + 16 * i), f);
+    }
+}
+#endif
+#define MLKEM_POLYVEC_AVX2 1
+#endif /* x86_64 */
+
 void MLKEM_NAMESPACE(_polyvec_compress)(uint8_t *a_r, dap_mlkem_polyvec *a_a)
 {
     MLKEM_NAMESPACE(_polyvec_csubq)(a_a);
+#ifdef MLKEM_POLYVEC_AVX2
+    if (dap_mlkem_poly_simd_available()) {
+        for (unsigned i = 0; i < MLKEM_K; i++) {
+#if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
+            s_polyvec_compress_d11_avx2(a_r, a_a->vec[i].coeffs);
+            a_r += 352;
+#elif MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 320)
+            s_polyvec_compress_d10_avx2(a_r, a_a->vec[i].coeffs);
+            a_r += 320;
+#endif
+        }
+        return;
+    }
+#endif
 #if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
     for (unsigned i = 0; i < MLKEM_K; i++) {
-        if (!MLKEM_SIMD_DISPATCH(compress_coeffs, a_a->vec[i].coeffs, 20158, 0x7FF)) {
-            for (unsigned k = 0; k < MLKEM_N; k++)
-                a_a->vec[i].coeffs[k] = (int16_t)((((uint32_t)a_a->vec[i].coeffs[k] << 11)
-                    + MLKEM_Q / 2) / MLKEM_Q) & 0x7ff;
-        }
+        for (unsigned k = 0; k < MLKEM_N; k++)
+            a_a->vec[i].coeffs[k] = (int16_t)((((uint32_t)a_a->vec[i].coeffs[k] << 11)
+                + MLKEM_Q / 2) / MLKEM_Q) & 0x7ff;
         for (unsigned j = 0; j < MLKEM_N / 8; j++) {
             int16_t *t = a_a->vec[i].coeffs + 8 * j;
             a_r[ 0] = (uint8_t)(t[0]);
@@ -44,11 +206,9 @@ void MLKEM_NAMESPACE(_polyvec_compress)(uint8_t *a_r, dap_mlkem_polyvec *a_a)
     }
 #elif MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 320)
     for (unsigned i = 0; i < MLKEM_K; i++) {
-        if (!MLKEM_SIMD_DISPATCH(compress_coeffs, a_a->vec[i].coeffs, 10079, 0x3FF)) {
-            for (unsigned k = 0; k < MLKEM_N; k++)
-                a_a->vec[i].coeffs[k] = (int16_t)((((uint32_t)a_a->vec[i].coeffs[k] << 10)
-                    + MLKEM_Q / 2) / MLKEM_Q) & 0x3ff;
-        }
+        for (unsigned k = 0; k < MLKEM_N; k++)
+            a_a->vec[i].coeffs[k] = (int16_t)((((uint32_t)a_a->vec[i].coeffs[k] << 10)
+                + MLKEM_Q / 2) / MLKEM_Q) & 0x3ff;
         for (unsigned j = 0; j < MLKEM_N / 4; j++) {
             int16_t *t = a_a->vec[i].coeffs + 4 * j;
             a_r[0] = (uint8_t)(t[0]);
@@ -64,6 +224,20 @@ void MLKEM_NAMESPACE(_polyvec_compress)(uint8_t *a_r, dap_mlkem_polyvec *a_a)
 
 MLKEM_HOTFN void MLKEM_NAMESPACE(_polyvec_decompress)(dap_mlkem_polyvec *a_r, const uint8_t *a_a)
 {
+#ifdef MLKEM_POLYVEC_AVX2
+    if (dap_mlkem_poly_simd_available()) {
+        for (unsigned i = 0; i < MLKEM_K; i++) {
+#if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
+            s_polyvec_decompress_d11_avx2(a_r->vec[i].coeffs, a_a);
+            a_a += 352;
+#elif MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 320)
+            s_polyvec_decompress_d10_avx2(a_r->vec[i].coeffs, a_a);
+            a_a += 320;
+#endif
+        }
+        return;
+    }
+#endif
 #if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
     uint16_t t[8];
     for (unsigned i = 0; i < MLKEM_K; i++) {
@@ -121,27 +295,68 @@ void MLKEM_NAMESPACE(_polyvec_invntt_tomont)(dap_mlkem_polyvec *a_r)
         MLKEM_NAMESPACE(_poly_invntt_tomont)(&a_r->vec[i]);
 }
 
-MLKEM_HOTFN void MLKEM_NAMESPACE(_polyvec_pointwise_acc_montgomery)(dap_mlkem_poly *a_r,
-                                                         const dap_mlkem_polyvec *a_a,
-                                                         const dap_mlkem_polyvec *a_b)
+#ifdef MLKEM_POLYVEC_AVX2
+__attribute__((target("avx2")))
+static void s_polyvec_basemul_acc_cached_avx2(
+    int16_t * restrict a_r,
+    const int16_t * const *a_polys_a,
+    const int16_t * const *a_polys_b,
+    const int16_t * const *a_caches,
+    unsigned a_count)
 {
-    const int16_t *l_pa[MLKEM_K], *l_pb[MLKEM_K];
-    for (unsigned i = 0; i < MLKEM_K; i++) {
-        l_pa[i] = a_a->vec[i].coeffs;
-        l_pb[i] = a_b->vec[i].coeffs;
-    }
-#if defined(__x86_64__) || defined(_M_X64)
-    {
-        extern void dap_mlkem_basemul_acc_asm(int16_t *, const int16_t * const *,
-                                               const int16_t * const *, unsigned);
-        if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
-            dap_mlkem_basemul_acc_asm(a_r->coeffs, l_pa, l_pb, MLKEM_K);
-            return;
+    const __m256i l_qinv16 = _mm256_set1_epi16((int16_t)MLKEM_QINV);
+    const __m256i l_q32    = _mm256_set1_epi32(MLKEM_Q);
+    const __m256i l_swap   = _mm256_setr_epi8(
+        2,3,0,1, 6,7,4,5, 10,11,8,9, 14,15,12,13,
+        2,3,0,1, 6,7,4,5, 10,11,8,9, 14,15,12,13);
+
+    for (unsigned i = 0; i < MLKEM_N; i += 16) {
+        __m256i l_diag  = _mm256_setzero_si256();
+        __m256i l_cross = _mm256_setzero_si256();
+
+        for (unsigned k = 0; k < a_count; k++) {
+            __m256i va = _mm256_loadu_si256((const __m256i *)(a_polys_a[k] + i));
+            __m256i bd = _mm256_loadu_si256((const __m256i *)(a_caches[k] + i));
+            __m256i vb = _mm256_loadu_si256((const __m256i *)(a_polys_b[k] + i));
+            __m256i bc = _mm256_shuffle_epi8(vb, l_swap);
+
+            l_diag  = _mm256_add_epi32(l_diag,  _mm256_madd_epi16(va, bd));
+            l_cross = _mm256_add_epi32(l_cross, _mm256_madd_epi16(va, bc));
         }
+
+        __m256i ud  = _mm256_mullo_epi16(l_diag, l_qinv16);
+        __m256i tqd = _mm256_madd_epi16(ud, l_q32);
+        l_diag = _mm256_srai_epi32(_mm256_sub_epi32(l_diag, tqd), 16);
+
+        __m256i uc  = _mm256_mullo_epi16(l_cross, l_qinv16);
+        __m256i tqc = _mm256_madd_epi16(uc, l_q32);
+        l_cross = _mm256_srai_epi32(_mm256_sub_epi32(l_cross, tqc), 16);
+
+        __m256i lo = _mm256_unpacklo_epi32(l_diag, l_cross);
+        __m256i hi = _mm256_unpackhi_epi32(l_diag, l_cross);
+        _mm256_storeu_si256((__m256i *)(a_r + i), _mm256_packs_epi32(lo, hi));
+    }
+}
+#endif
+
+MLKEM_HOTFN void MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(
+    dap_mlkem_poly *a_r,
+    const dap_mlkem_polyvec *a_a,
+    const dap_mlkem_polyvec *a_b,
+    const dap_mlkem_polyvec_mulcache *a_b_cache)
+{
+#ifdef MLKEM_POLYVEC_AVX2
+    if (dap_mlkem_poly_simd_available()) {
+        const int16_t *l_pa[MLKEM_K], *l_pb[MLKEM_K], *l_pc[MLKEM_K];
+        for (unsigned i = 0; i < MLKEM_K; i++) {
+            l_pa[i] = a_a->vec[i].coeffs;
+            l_pb[i] = a_b->vec[i].coeffs;
+            l_pc[i] = a_b_cache->vec[i].coeffs;
+        }
+        s_polyvec_basemul_acc_cached_avx2(a_r->coeffs, l_pa, l_pb, l_pc, MLKEM_K);
+        return;
     }
 #endif
-    if (MLKEM_SIMD_DISPATCH(basemul_acc_montgomery, a_r->coeffs, l_pa, l_pb, MLKEM_K))
-        return;
     dap_mlkem_poly l_t;
     MLKEM_NAMESPACE(_poly_basemul_montgomery)(a_r, &a_a->vec[0], &a_b->vec[0]);
     for (unsigned i = 1; i < MLKEM_K; i++) {
@@ -149,6 +364,15 @@ MLKEM_HOTFN void MLKEM_NAMESPACE(_polyvec_pointwise_acc_montgomery)(dap_mlkem_po
         MLKEM_NAMESPACE(_poly_add)(a_r, a_r, &l_t);
     }
     MLKEM_NAMESPACE(_poly_reduce)(a_r);
+}
+
+MLKEM_HOTFN void MLKEM_NAMESPACE(_polyvec_pointwise_acc_montgomery)(dap_mlkem_poly *a_r,
+                                                         const dap_mlkem_polyvec *a_a,
+                                                         const dap_mlkem_polyvec *a_b)
+{
+    dap_mlkem_polyvec_mulcache l_cache;
+    MLKEM_NAMESPACE(_polyvec_mulcache_compute)(&l_cache, a_b);
+    MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(a_r, a_a, a_b, &l_cache);
 }
 
 void MLKEM_NAMESPACE(_polyvec_reduce)(dap_mlkem_polyvec *a_r)
@@ -169,4 +393,11 @@ void MLKEM_NAMESPACE(_polyvec_add)(dap_mlkem_polyvec *a_r,
 {
     for (unsigned i = 0; i < MLKEM_K; i++)
         MLKEM_NAMESPACE(_poly_add)(&a_r->vec[i], &a_a->vec[i], &a_b->vec[i]);
+}
+
+void MLKEM_NAMESPACE(_polyvec_mulcache_compute)(dap_mlkem_polyvec_mulcache *a_cache,
+                                                 const dap_mlkem_polyvec *a_b)
+{
+    for (unsigned i = 0; i < MLKEM_K; i++)
+        MLKEM_NAMESPACE(_poly_mulcache_compute)(&a_cache->vec[i], &a_b->vec[i]);
 }

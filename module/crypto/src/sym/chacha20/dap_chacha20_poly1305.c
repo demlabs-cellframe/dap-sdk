@@ -10,6 +10,7 @@
 #include "dap_chacha20_internal.h"
 #include "dap_poly1305_internal.h"
 #include "dap_cpu_arch.h"
+#include "dap_cpu_detect.h"
 
 /* ─── helpers ──────────────────────────────────────────────────────── */
 
@@ -104,12 +105,19 @@ typedef void (*chacha20_encrypt_fn)(uint8_t *, const uint8_t *, size_t,
 static chacha20_encrypt_fn s_chacha20_simd_fn = NULL;
 static pthread_once_t s_chacha20_once = PTHREAD_ONCE_INIT;
 
+static int s_has_avx512_ifma = 0;
+
 static void s_chacha20_dispatch_init(void)
 {
     s_chacha20_simd_fn = NULL;
+    s_has_avx512_ifma = 0;
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     dap_cpu_arch_t l_arch = dap_cpu_arch_get_best();
-    if (l_arch >= DAP_CPU_ARCH_AVX2)
+    if (l_arch >= DAP_CPU_ARCH_AVX512) {
+        s_chacha20_simd_fn = dap_chacha20_encrypt_avx2_512vl;
+        dap_cpu_features_t l_feat = dap_cpu_detect_features();
+        s_has_avx512_ifma = l_feat.has_avx512_ifma && l_feat.has_avx512vl;
+    } else if (l_arch >= DAP_CPU_ARCH_AVX2)
         s_chacha20_simd_fn = dap_chacha20_encrypt_avx2;
     else if (l_arch >= DAP_CPU_ARCH_SSE2)
         s_chacha20_simd_fn = dap_chacha20_encrypt_sse2;
@@ -139,6 +147,7 @@ void dap_chacha20_encrypt(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
 
 #if defined(__x86_64__) || defined(_M_X64)
 extern void dap_poly1305_blocks_avx2(s_poly1305_state_t *, const uint8_t *, size_t);
+extern void dap_poly1305_blocks_avx512_ifma(s_poly1305_state_t *, const uint8_t *, size_t);
 #endif
 
 static void s_poly1305_init(s_poly1305_state_t *st, const uint8_t a_key[32])
@@ -176,9 +185,14 @@ static void s_poly1305_update(s_poly1305_state_t *st, const uint8_t *data, size_
         st->buf_used = 0;
     }
 #if defined(__x86_64__) || defined(_M_X64)
+    pthread_once(&s_chacha20_once, s_chacha20_dispatch_init);
     {
         size_t nblocks = len >> 4;
-        if (nblocks >= 8) {
+        if (nblocks >= 16 && s_has_avx512_ifma) {
+            dap_poly1305_blocks_avx512_ifma(st, data, nblocks);
+            data += nblocks << 4;
+            len  &= 15;
+        } else if (nblocks >= 8) {
             dap_poly1305_blocks_avx2(st, data, nblocks);
             data += nblocks << 4;
             len  &= 15;
@@ -463,7 +477,21 @@ int dap_chacha20_poly1305_open(uint8_t *a_pt,
     dap_chacha20_encrypt(poly_key, poly_key, sizeof(poly_key), a_key, a_nonce, 0);
 
     uint8_t computed_tag[DAP_POLY1305_TAG_SIZE];
-    s_aead_mac(computed_tag, poly_key, a_aad, a_aad_len, a_ct, a_ct_len);
+    {
+        s_poly1305_state_t st;
+        s_poly1305_init(&st, poly_key);
+        if (a_aad_len) {
+            s_poly1305_update(&st, a_aad, a_aad_len);
+            s_poly1305_pad16(&st);
+        }
+        s_poly1305_update(&st, a_ct, a_ct_len);
+        s_poly1305_pad16(&st);
+        uint8_t lens[16];
+        s_store64_le(lens,     (uint64_t)a_aad_len);
+        s_store64_le(lens + 8, (uint64_t)a_ct_len);
+        s_poly1305_update(&st, lens, 16);
+        s_poly1305_finalize(&st, computed_tag);
+    }
     memset(poly_key, 0, sizeof(poly_key));
 
     uint8_t diff = 0;
