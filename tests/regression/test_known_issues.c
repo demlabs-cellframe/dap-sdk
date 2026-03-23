@@ -341,6 +341,45 @@ static bool s_test_iaes_kdf_input_dependency_regression(void) {
 }
 
 /**
+ * @brief Regression test: IAES must fail closed on inconsistent pointer/size inputs
+ * @details Guards against silent fallback to empty KDF input for NULL+non-zero pairs.
+ */
+static bool s_test_iaes_invalid_input_fail_closed_regression(void) {
+    log_it(L_INFO, "Testing IAES invalid input fail-closed regression");
+
+    bool l_ok = false;
+    static const uint8_t l_seed[] = "iaes-seed-invalid-input";
+    static const uint8_t l_kex[] = "iaes-kex-invalid-input";
+
+    dap_enc_key_t *l_bad_seed = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES,
+                                                          l_kex, sizeof(l_kex) - 1,
+                                                          NULL, sizeof(l_seed) - 1, 0);
+    dap_enc_key_t *l_bad_kex = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES,
+                                                         NULL, sizeof(l_kex) - 1,
+                                                         l_seed, sizeof(l_seed) - 1, 0);
+    dap_enc_key_t *l_ok_empty = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES,
+                                                          NULL, 0, NULL, 0, 0);
+    dap_enc_key_t *l_ok_valid = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_IAES,
+                                                          l_kex, sizeof(l_kex) - 1,
+                                                          l_seed, sizeof(l_seed) - 1, 0);
+
+    DAP_TEST_FAIL_IF(l_bad_seed != NULL, "IAES should fail for NULL seed with non-zero seed_size");
+    DAP_TEST_FAIL_IF(l_bad_kex != NULL, "IAES should fail for NULL kex with non-zero kex_size");
+    DAP_TEST_FAIL_IF_NULL(l_ok_empty, "IAES generation with explicit empty input");
+    DAP_TEST_FAIL_IF_NULL(l_ok_valid, "IAES generation with valid seed/kex");
+
+    l_ok = true;
+    log_it(L_INFO, "IAES invalid input fail-closed regression test passed");
+
+cleanup:
+    dap_enc_key_delete(l_bad_seed);
+    dap_enc_key_delete(l_bad_kex);
+    dap_enc_key_delete(l_ok_empty);
+    dap_enc_key_delete(l_ok_valid);
+    return l_ok;
+}
+
+/**
  * @brief Regression test: Falcon signing must work in TREE and DYNAMIC modes
  * @details Validates sign/verify roundtrip for all supported kinds and degrees
  */
@@ -452,6 +491,7 @@ int main(void) {
     l_all_passed &= s_test_integer_overflow_regression();
     l_all_passed &= s_test_multisign_merge_failure_regression();
     l_all_passed &= s_test_iaes_kdf_input_dependency_regression();
+    l_all_passed &= s_test_iaes_invalid_input_fail_closed_regression();
     l_all_passed &= s_test_falcon_sign_modes_regression();
     l_all_passed &= s_test_multisign_regenerate_same_key_regression();
     

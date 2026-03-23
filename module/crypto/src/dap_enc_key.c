@@ -1222,6 +1222,15 @@ dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const voi
     if(l_ret && s_callbacks[a_key_type].new_generate_callback) {
         s_callbacks[a_key_type].new_generate_callback( l_ret, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
     }
+
+    // IAES must fail closed on invalid input/state and never silently degrade to empty KDF input.
+    if (l_ret && a_key_type == DAP_ENC_KEY_TYPE_IAES &&
+            (!l_ret->priv_key_data || l_ret->priv_key_data_size != IAES_KEYSIZE)) {
+        log_it(L_ERROR, "IAES key generation failed due to invalid input/state");
+        dap_enc_key_delete(l_ret);
+        l_ret = NULL;
+    }
+
     return l_ret;
 }
 

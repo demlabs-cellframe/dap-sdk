@@ -24,6 +24,20 @@ typedef struct dap_enc_aes_key {
 
 #define DAP_ENC_AES_KEY(a) ((dap_enc_aes_key_t *)((a)->_inheritor) )
 
+static void s_iaes_mark_generation_failed(dap_enc_key_t *a_key)
+{
+    if (!a_key)
+        return;
+
+    if (a_key->priv_key_data && a_key->priv_key_data_size)
+        memset(a_key->priv_key_data, 0, a_key->priv_key_data_size);
+    DAP_DEL_Z(a_key->priv_key_data);
+    a_key->priv_key_data_size = 0;
+
+    if (DAP_ENC_AES_KEY(a_key))
+        memset(DAP_ENC_AES_KEY(a_key)->ivec, 0, IAES_BLOCK_SIZE);
+}
+
 void dap_enc_aes_key_delete(struct dap_enc_key *a_key)
 {
     DAP_DEL_Z(a_key->_inheritor);
@@ -67,11 +81,7 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     (void)key_size;
     if (!a_key || !a_key->priv_key_data || a_key->priv_key_data_size < IAES_KEYSIZE || !DAP_ENC_AES_KEY(a_key)) {
         log_it(L_CRITICAL, "IAES key generation: key buffer is not initialized");
-        if (a_key) {
-            if (a_key->priv_key_data && a_key->priv_key_data_size)
-                memset(a_key->priv_key_data, 0, a_key->priv_key_data_size);
-            a_key->priv_key_data_size = 0;
-        }
+        s_iaes_mark_generation_failed(a_key);
         return;
     }
 
@@ -82,12 +92,14 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     const uint8_t *l_kex = (const uint8_t *)kex_buf;
 
     if (seed_size && !l_seed) {
-        log_it(L_ERROR, "IAES key generation: seed is NULL while seed_size=%zu, fallback to empty seed", seed_size);
-        seed_size = 0;
+        log_it(L_ERROR, "IAES key generation: invalid seed pointer/size pair (%p, %zu)", l_seed, seed_size);
+        s_iaes_mark_generation_failed(a_key);
+        return;
     }
     if (kex_size && !l_kex) {
-        log_it(L_ERROR, "IAES key generation: kex_buf is NULL while kex_size=%zu, fallback to empty kex", kex_size);
-        kex_size = 0;
+        log_it(L_ERROR, "IAES key generation: invalid kex pointer/size pair (%p, %zu)", l_kex, kex_size);
+        s_iaes_mark_generation_failed(a_key);
+        return;
     }
 
     // KDF input is SHAKE256(seed || kex) via streaming absorb to avoid temporary heap allocation.
