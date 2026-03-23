@@ -276,6 +276,41 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_bliss_failure_cleanup.c)
     endif()
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_chipmunk_aggregated_parser_contract.c)
+    if(UNIX AND NOT APPLE)
+        add_executable(test_regression_chipmunk_aggregated_parser_contract
+            regression/test_chipmunk_aggregated_parser_contract.c)
+        dap_test_link_libraries(test_regression_chipmunk_aggregated_parser_contract)
+        dap_test_add_includes(test_regression_chipmunk_aggregated_parser_contract)
+        target_include_directories(test_regression_chipmunk_aggregated_parser_contract PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/chipmunk
+        )
+        dap_mock_autowrap(test_regression_chipmunk_aggregated_parser_contract)
+        set_target_properties(test_regression_chipmunk_aggregated_parser_contract PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
+        )
+        register_dap_test(test_regression_chipmunk_aggregated_parser_contract
+            "regression;bugfix;crypto;sign;mock")
+    else()
+        message("[+] Skipping test_regression_chipmunk_aggregated_parser_contract: requires linker --wrap support")
+    endif()
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_multisign_keygen_bounds.c)
+    if(UNIX AND NOT APPLE)
+        add_executable(test_regression_multisign_keygen_bounds regression/test_multisign_keygen_bounds.c)
+        dap_test_link_libraries(test_regression_multisign_keygen_bounds)
+        dap_test_add_includes(test_regression_multisign_keygen_bounds)
+        dap_mock_autowrap(test_regression_multisign_keygen_bounds)
+        set_target_properties(test_regression_multisign_keygen_bounds PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
+        )
+        register_dap_test(test_regression_multisign_keygen_bounds "regression;bugfix;crypto;multisign")
+    else()
+        message("[+] Skipping test_regression_multisign_keygen_bounds: requires linker --wrap support")
+    endif()
+endif()
+
 # Build Security Tests
 message("[+] Configuring Security Tests")
 
