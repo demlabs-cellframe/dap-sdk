@@ -406,7 +406,11 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         if (l_transcoded) DAP_DELETE(l_transcoded);
         return NULL;
     }
-    memcpy(l_padded_input, l_parse_input, l_parse_len);
+    // Byte-by-byte copy to avoid SIMD OOB read from unpadded source buffer
+    // (glibc memcpy with AVX2 may read 32 bytes at a time, exceeding source bounds)
+    for (size_t i = 0; i < l_parse_len; i++) {
+        l_padded_input[i] = l_parse_input[i];
+    }
 
     // Stage 1: Tokenization (UTF-8 only)
     dap_json_stage1_t *l_stage1 = dap_json_stage1_create(l_padded_input, l_parse_len);
