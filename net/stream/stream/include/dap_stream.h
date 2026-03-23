@@ -109,6 +109,11 @@ typedef struct dap_stream {
      * NULL on client side.
      */
     void *_server_session;
+
+    // Client-side: pointer to dap_client_esocket_t->stream slot.
+    // On stream destruction, *client_stream_ref is set to NULL
+    // to prevent dangling pointers and double-free.
+    dap_stream_t **client_stream_ref;
 } dap_stream_t;
 
 typedef struct dap_stream_info {

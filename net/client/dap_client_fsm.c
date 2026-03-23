@@ -727,6 +727,7 @@ static void s_worker_execute_stage(void *a_arg)
 
         l_es->stream = l_prepare_result.stream;
         l_es->stream_es = l_prepare_result.esocket;
+        l_prepare_result.stream->client_stream_ref = &l_es->stream;
 
         #define DAP_QOS_PROBE_PAYLOAD_SIZE 800
         uint8_t *l_probe_buf = DAP_NEW_Z_SIZE(uint8_t, DAP_QOS_PROBE_PAYLOAD_SIZE);
@@ -865,8 +866,9 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
 
         if (!l_is_last_attempt) {
             if (!a_fsm->reconnect_attempts) {
-                log_it(L_ERROR, "Error state(%s), doing callback",
-                       dap_client_error_str(a_fsm->last_error));
+                log_it(L_ERROR, "Error state(%s) at stage %s, doing callback",
+                       dap_client_error_str(a_fsm->last_error),
+                       dap_client_stage_str(a_fsm->stage));
                 if (a_fsm->client->stage_status_error_callback)
                     a_fsm->client->stage_status_error_callback(a_fsm->client, (void *)(intptr_t)l_is_last_attempt);
             }
@@ -931,10 +933,10 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
     } break;
 
     case STAGE_STATUS_DONE: {
-        debug_if(s_debug_more, L_INFO, "Stage %s done for client %p (target: %s)",
+        log_it(L_INFO, "FSM stage %s completed (target: %s, attempt: %d)",
                dap_client_stage_str(a_fsm->stage),
-               a_fsm->client,
-               dap_client_stage_str(a_fsm->client->stage_target));
+               dap_client_stage_str(a_fsm->client->stage_target),
+               a_fsm->reconnect_attempts);
 
         bool l_is_last_stage = (a_fsm->stage == a_fsm->client->stage_target);
         if (l_is_last_stage) {
@@ -993,8 +995,21 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
 static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_arg)
 {
     (void)a_arg;
-    if (a_es)
-        a_es->_inheritor = NULL;
+    if(!a_es)
+        return;
+
+    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    if(l_client)
+    {
+        dap_client_esocket_t *l_ces = DAP_CLIENT_ESOCKET(l_client);
+        if(l_ces && l_ces->stream && l_ces->stream->trans_ctx)
+        {
+            l_ces->stream->trans_ctx->esocket = NULL;
+            l_ces->stream->trans_ctx->esocket_uuid = 0;
+            l_ces->stream->trans_ctx->esocket_worker = NULL;
+        }
+    }
+    a_es->_inheritor = NULL;
 }
 
 // ===== Worker-side ENC_INIT IO (only transport calls, crypto already done on FSM thread) =====
@@ -1075,6 +1090,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
     l_es->stream = l_prepare_result.stream;
     l_es->stream_es = l_prepare_result.esocket;
+    l_prepare_result.stream->client_stream_ref = &l_es->stream;
 
     // Handshake init: async IO, transport callback will notify FSM
     int l_handshake_ret = l_transport->ops->handshake_init(l_es->stream, &l_ctx->handshake_params,
@@ -1094,6 +1110,10 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
 static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
 {
+    log_it(L_INFO, "FSM dispatching stage %s (transport: %s)",
+           dap_client_stage_str(a_fsm->stage),
+           dap_net_trans_type_to_str(a_fsm->client->trans_type));
+
     // For STAGE_BEGIN: dispatch clean to worker
     if (a_fsm->stage == STAGE_BEGIN) {
         fsm_worker_dispatch_t *l_dispatch = DAP_NEW_Z(fsm_worker_dispatch_t);
