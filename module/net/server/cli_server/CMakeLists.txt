@@ -4,14 +4,13 @@ project (dap_cli_server C)
 file(GLOB DAP_CLI_SRV_SRCS *.c)
 file(GLOB DAP_CLI_SRV_HEADERS include/*.h)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/LibraryHelpers.cmake)
+
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${DAP_CLI_SRV_SRCS} HEADERS ${DAP_CLI_SRV_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io m)
-target_include_directories(${PROJECT_NAME} PUBLIC 
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../json_rpc/include
-)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_json_rpc dap_json dap_net_common $<$<NOT:$<PLATFORM_ID:Darwin>>:m>)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_CLI_SRV_HEADERS}")

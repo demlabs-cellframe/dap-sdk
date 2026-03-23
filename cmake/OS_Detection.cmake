@@ -1,6 +1,15 @@
 include_guard(GLOBAL)
 
-if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+if(EMSCRIPTEN)
+    set(DAP_WASM ON)
+    set(UNIX ON)
+    message(STATUS "[*] Emscripten/WebAssembly build detected")
+    add_definitions(-DDAP_OS_WASM -DDAP_OS_UNIX)
+    add_definitions(-DDAP_WASM_PTHREADS)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread -sPTHREAD_POOL_SIZE=8 -Wno-error=pthreads-mem-growth")
+elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(OS_TYPE_DESKTOP ON)
     set(LINUX ON)
     set(UNIX ON)
@@ -255,6 +264,20 @@ if(UNIX)
         # Android uses manual implementations for missing functions
     endif()
 
+    if (DAP_WASM)
+        set(_CCOPT "-std=gnu11 ${CFLAGS_WARNINGS} -fno-strict-aliasing -sDISABLE_EXCEPTION_CATCHING=1 -Wno-dangling")
+        if(DAP_DEBUG)
+            set(_CCOPT "${_CCOPT} -DDAP_DEBUG -g3 -gsource-map")
+        else()
+            set(_CCOPT "${_CCOPT} -O3 -flto")
+        endif()
+        set(_LOPT "-sWASMFS -sOPFS -sFORCE_FILESYSTEM=1")
+        set(_LOPT "${_LOPT} -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=16777216 -sMAXIMUM_MEMORY=268435456")
+        set(_LOPT "${_LOPT} -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','UTF8ToString','stringToUTF8']")
+        set(_LOPT "${_LOPT} -sENVIRONMENT=web,worker,node")
+        set(_LOPT "${_LOPT} -sPTHREAD_POOL_SIZE=8")
+    endif()
+
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT}")
     set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${_LOPT}")
 
@@ -292,8 +315,6 @@ if(WIN32)
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT} ")
     set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${_LOPT}")
-
-    include_directories(../../dap-sdk/3rdparty/json-c)
 endif()
 
 # Platform
@@ -312,6 +333,9 @@ elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv8")
     set(PLATFORM_ARM ON)
     set(VERSION "8")
     message("[*] Platform armv8")
+elseif (EMSCRIPTEN OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "wasm")
+    set(PLATFORM_WASM ON)
+    message("[*] Platform wasm32")
 endif ()
 
 if ( CELLFRAME_NO_OPTIMIZATION)
@@ -319,6 +343,5 @@ if ( CELLFRAME_NO_OPTIMIZATION)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=core2")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=core2")
     endif()
-    set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
 

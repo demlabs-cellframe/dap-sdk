@@ -32,10 +32,12 @@
 #endif
 #include <fcntl.h>
 #include <sys/types.h>
-#ifdef DAP_OS_UNIX
+#if defined(DAP_OS_UNIX)
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#ifndef DAP_OS_WASM
 #include <sys/resource.h>
+#endif
 #elif defined DAP_OS_WINDOWS
 #include <ws2tcpip.h>
 #endif
@@ -84,7 +86,7 @@ static void *s_context_thread(void *arg); // Context thread
  */
 int dap_context_init()
 {
-#ifdef DAP_OS_UNIX
+#if defined(DAP_OS_UNIX) && !defined(DAP_OS_WASM)
     struct rlimit l_fdlimit;
     if (getrlimit(RLIMIT_NOFILE, &l_fdlimit))
         return -1;
@@ -142,7 +144,6 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
     struct dap_context_msg_run * l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct dap_context_msg_run, ENOMEM);
     int l_ret;
 
-    // Prefill message structure for new context's thread
     l_msg->context = a_context;
     l_msg->priority = a_priority;
     l_msg->sched_policy = a_sched_policy;
@@ -152,9 +153,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
     l_msg->callback_stopped = a_callback_loop_after;
     l_msg->callback_arg = a_callback_arg;
 
-    // If we have to wait for started thread (and initialization inside )
     if( a_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED){
-        // Init kernel objects
         pthread_condattr_t attr;
         pthread_condattr_init(&attr);
 #if !defined(DAP_OS_DARWIN) && !defined(DAP_OS_ANDROID)
@@ -163,32 +162,30 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         pthread_mutex_init(&a_context->started_mutex, NULL);
         pthread_cond_init( &a_context->started_cond, &attr);
 
-        // Prepare timer
         struct timespec l_timeout;
         clock_gettime(CLOCK_REALTIME, &l_timeout);
         l_timeout.tv_sec += DAP_CONTEXT_WAIT_FOR_STARTED_TIME;
-        // Lock started mutex and try to run a thread
         pthread_mutex_lock(&a_context->started_mutex);
 
         l_ret = pthread_create(&a_context->thread_id, NULL, s_context_thread, l_msg);
 
-        if(l_ret == 0){ // If everything is good we're waiting for DAP_CONTEXT_WAIT_FOR_STARTED_TIME seconds
+        if(l_ret == 0){
             while (!a_context->started && !l_ret)
                 l_ret = pthread_cond_timedwait(&a_context->started_cond, &a_context->started_mutex, &l_timeout);
-            if ( l_ret== ETIMEDOUT ){ // Timeout
+            if ( l_ret== ETIMEDOUT ){
                 log_it(L_CRITICAL, "Timeout %d seconds is out: context #%u thread don't respond", DAP_CONTEXT_WAIT_FOR_STARTED_TIME, a_context->id);
-            } else if (l_ret != 0){ // Another error
+            } else if (l_ret != 0){
                 log_it(L_CRITICAL, "Can't wait on condition: %d error code", l_ret);
-            } else // All is good
+            } else
                 log_it(L_NOTICE, "Context %u started", a_context->id);
-        }else{ // Thread haven't started
+        }else{
             log_it(L_ERROR,"Can't create new thread for context %u", a_context->id );
             DAP_DELETE(l_msg);
         }
         pthread_mutex_unlock(&a_context->started_mutex);
-    }else{ // Here we wait for nothing, just run it
+    }else{
         l_ret = pthread_create( &a_context->thread_id , NULL, s_context_thread, l_msg);
-        if(l_ret != 0){ // Check for error, if present lets cleanup the memory for l_msg
+        if(l_ret != 0){
             log_it(L_ERROR,"Can't create new thread for context %u", a_context->id );
             DAP_DELETE(l_msg);
         }
@@ -807,7 +804,11 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     int l_pipe[2];
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-    if( pipe2(l_pipe,O_DIRECT | O_NONBLOCK ) < 0 ){
+#ifdef O_DIRECT
+    if( pipe2(l_pipe, O_DIRECT | O_NONBLOCK ) < 0 ){
+#else
+    if( pipe2(l_pipe, O_NONBLOCK ) < 0 ){
+#endif
 #elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     if( pipe(l_pipe) < 0 ){
 #endif
@@ -832,7 +833,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     }
 #endif
 
-#if !defined (DAP_OS_ANDROID)
+#if !defined(DAP_OS_ANDROID) && !defined(DAP_OS_WASM)
     FILE* l_sys_max_pipe_size_fd = fopen("/proc/sys/fs/pipe-max-size", "r");
     if (l_sys_max_pipe_size_fd) {
         char l_file_buf[64] = "";
@@ -991,6 +992,20 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
     // Do nothing ...
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
     // nothing to do
+#elif defined(DAP_EVENTS_CAPS_EVENT_PIPE)
+    {
+        int l_pipe[2];
+        if (pipe(l_pipe) < 0)
+            return DAP_DELETE(l_es), log_it(L_ERROR, "pipe() for event failed, error %d: '%s'", errno, dap_strerror(errno)), NULL;
+        int l_flags = fcntl(l_pipe[0], F_GETFL, 0);
+        if (l_flags != -1)
+            fcntl(l_pipe[0], F_SETFL, l_flags | O_NONBLOCK);
+        l_flags = fcntl(l_pipe[1], F_GETFL, 0);
+        if (l_flags != -1)
+            fcntl(l_pipe[1], F_SETFL, l_flags | O_NONBLOCK);
+        l_es->fd  = l_pipe[0];
+        l_es->fd2 = l_pipe[1];
+    }
 #else
 #error "Not defined dap_context_create_event() on your platform"
 #endif

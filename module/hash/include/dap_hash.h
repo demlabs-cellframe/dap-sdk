@@ -181,6 +181,21 @@ DAP_STATIC_INLINE char *dap_hash_to_str_new_type(dap_hash_type_t a_type, const v
 // - dap_hash_sha2_256_init/update/final for incremental hashing
 // - dap_hash_hmac_sha2_256 for HMAC
 
+DAP_STATIC_INLINE uint32_t dap_hash_fnv1a_32(const void *a_input, size_t a_input_size)
+{
+    if (!a_input || a_input_size == 0)
+        return 0;
+    const uint32_t FNV_OFFSET_BASIS = 2166136261u;
+    const uint32_t FNV_PRIME = 16777619u;
+    uint32_t hash = FNV_OFFSET_BASIS;
+    const uint8_t *bytes = (const uint8_t *)a_input;
+    for (size_t i = 0; i < a_input_size; i++) {
+        hash ^= bytes[i];
+        hash *= FNV_PRIME;
+    }
+    return hash;
+}
+
 #ifdef __cplusplus
 }
 #endif

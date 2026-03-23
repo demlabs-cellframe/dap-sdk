@@ -497,7 +497,7 @@ static int s_page_write(dap_global_db_t *a_tree, dap_global_db_page_t *a_page)
     // mmap fast path
     if (a_tree->mmap) {
         if (l_offset + DAP_GLOBAL_DB_PAGE_SIZE > dap_mmap_get_size(a_tree->mmap)) {
-            log_it(L_ERROR, "Page %lu offset beyond mmap size", (unsigned long)a_page->header.page_id);
+            log_it(L_ERROR, "Page %" DAP_UINT64_FORMAT_U " offset beyond mmap size", a_page->header.page_id);
             return -1;
         }
         uint8_t *l_dst = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap) + l_offset;
@@ -2179,17 +2179,17 @@ dap_global_db_t *dap_global_db_open(const char *a_filepath, bool a_read_only)
     for (int i = 0; i < DAP_BTREE_MAX_SNAPSHOTS; i++)
         atomic_store(&l_tree->snapshot_txns[i], 0);
 
-    log_it(L_INFO, "Opened B-tree file: %s (items: %lu, pages: %lu, mmap: %s)",
-           a_filepath, (unsigned long)l_tree->header.items_count,
-           (unsigned long)l_tree->header.total_pages,
+    log_it(L_INFO, "Opened B-tree file: %s (items: %" DAP_UINT64_FORMAT_U ", pages: %" DAP_UINT64_FORMAT_U ", mmap: %s)",
+           a_filepath, l_tree->header.items_count,
+           l_tree->header.total_pages,
            l_tree->mmap ? "yes" : "no");
 
     if (!a_read_only && l_tree->header.root_page > 0) {
         if (s_validate_subtree(l_tree, l_tree->header.root_page, 0) != 0) {
             log_it(L_WARNING, "B-tree file '%s' is structurally corrupted "
-                   "(items=%lu, pages=%lu). Deleting for automatic recreation.",
-                   a_filepath, (unsigned long)l_tree->header.items_count,
-                   (unsigned long)l_tree->header.total_pages);
+                   "(items=%" DAP_UINT64_FORMAT_U ", pages=%" DAP_UINT64_FORMAT_U "). Deleting for automatic recreation.",
+                   a_filepath, l_tree->header.items_count,
+                   l_tree->header.total_pages);
             l_tree->read_only = true;
             dap_global_db_close(l_tree);
             unlink(a_filepath);

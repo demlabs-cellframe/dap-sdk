@@ -1,104 +1,12 @@
 /*
- * Authors:
- * Dmitriy A. Gearasimov <gerasimov.dmitriy@demlabs.net>
- * DeM Labs Ltd.   https://demlabs.net
- * Copyright  (c) 2017-2020
- * All rights reserved.
-
- This file is part of DAP SDK the open source project
-
-    DAP SDK is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    DAP SDK is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#include "dap_common.h"
-
-#ifdef WIN32
-#include <winsock2.h>
-#include <windows.h>
-#include <mswsock.h>
-#include <ws2tcpip.h>
-#include <io.h>
-#else
-#include <sys/types.h>          /* See NOTES */
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#endif
-
-#include "dap_enc_key.h"
-#include "dap_enc_base64.h"
-#include "dap_enc.h"
-#include "dap_common.h"
-#include "dap_time.h"
-#include "dap_strfuncs.h"
-#include "dap_cert.h"
-#include "dap_context.h"
-#include "dap_timerfd.h"
-#include "dap_client_pvt.h"
-#include "dap_enc_ks.h"
-#include "dap_stream.h"
-#include "dap_stream_worker.h"
-#include "dap_stream_ch.h"
-#include "dap_stream_ch_proc.h"
-#include "dap_stream_pkt.h"
-#include "dap_net.h"
-
-#define LOG_TAG "dap_client_pvt"
-
-#ifndef DAP_ENC_KS_KEY_ID_SIZE
-#define DAP_ENC_KS_KEY_ID_SIZE 33
-#endif
-
-static int s_max_attempts = 3;
-static int s_timeout = 20;
-static bool s_debug_more = false;
-static time_t s_client_timeout_active_after_connect_seconds = 15;
-
-
-static void s_stage_status_after(dap_client_pvt_t * a_client_internal);
-static int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, const void* a_signing_data, size_t a_signing_size);
-static int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count, ...);
-
-// ENC stage callbacks
-static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_data_size);
-static void s_enc_init_error(dap_client_t *a_client, void *a_arg, int a_error);
-
-// STREAM_CTL stage callbacks
-static void s_stream_ctl_response(dap_client_t *a_client, void *a_data, size_t a_data_size);
-static void s_stream_ctl_error(dap_client_t *a_client, void *a_arg, int a_error);
-static void s_stage_stream_streaming(dap_client_t *a_client, void *a_arg);
-
-// STREAM stage callbacks
-static void s_request_response(void *a_response, size_t a_response_size, void * a_obj, dap_http_status_code_t http_status);
-static void s_request_error(int a_error_code, void *a_obj);
-
-// stream callbacks
-static void s_stream_es_callback_connected(dap_events_socket_t * a_es);
-static void s_stream_es_callback_delete(dap_events_socket_t * a_es, void *a_arg);
-static void s_stream_es_callback_read(dap_events_socket_t * a_es, void *a_arg);
-static bool s_stream_es_callback_write(dap_events_socket_t * a_es, void *a_arg);
-static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error);
-
-// Timer callbacks
-static bool s_stream_timer_timeout_after_connected_check(void * a_arg);
-static bool s_stream_timer_timeout_check(void * a_arg);
-
-
-
-/**
- * @brief dap_client_internal_init
- * @return
+ * dap_client_pvt.c - Backward compatibility stub
+ *
+ * The original implementation has been split into:
+ *   - dap_client_fsm.c    (FSM state machine, runs on dedicated FSM threads)
+ *   - dap_client_esocket.c (IO/transport layer, runs on worker threads)
+ *
+ * This file is intentionally empty. All functions are now provided by the
+ * new modules, with backward-compatible aliases defined in dap_client_esocket.h.
  */
 int dap_client_pvt_init()
 {

@@ -1,25 +1,13 @@
 /*
- * Authors:
- * Dmitriy A. Gearasimov <gerasimov.dmitriy@demlabs.net>
- * DeM Labs Ltd.   https://demlabs.net
- * Copyright  (c) 2017-2020
- * All rights reserved.
-
- This file is part of DAP SDK the open source project
-
-    DAP SDK is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    DAP SDK is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ * dap_client_pvt.h - Backward compatibility wrapper
+ *
+ * This header is maintained for backward compatibility.
+ * The actual implementation has been split into:
+ *   - dap_client_fsm.h    (FSM state machine, runs on dedicated FSM threads)
+ *   - dap_client_esocket.h (IO/transport layer, runs on worker threads)
+ *
+ * Use dap_client_esocket_t and DAP_CLIENT_ESOCKET() from dap_client_esocket.h.
+ */
 #pragma once
 
 #include <stdbool.h>
@@ -29,6 +17,8 @@
 #include "dap_stream.h"
 #include "dap_events_socket.h"
 #include "dap_cert.h"
+#include "dap_client_fsm.h"
+#include "dap_client_esocket.h"
 
 typedef struct dap_enc_key dap_enc_key_t;
 typedef struct dap_http_client dap_http_client_t;
@@ -108,3 +98,4 @@ void dap_client_pvt_new(dap_client_pvt_t *a_client_internal);
 void dap_client_pvt_delete_unsafe(dap_client_pvt_t *a_client_pvt);
 void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
 int dap_client_pvt_queue_clear(dap_client_pvt_t *a_client_pvt);
+

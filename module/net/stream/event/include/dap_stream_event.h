@@ -52,7 +52,7 @@ extern "C" {
  * @param a_is_uplink Whether stream is uplink
  * @param a_user_data User data passed during registration
  */
-typedef void (*dap_stream_event_add_callback_t)(dap_stream_node_addr_t *a_addr, bool a_is_uplink, void *a_user_data);
+typedef void (*dap_stream_event_add_callback_t)(dap_cluster_node_addr_t *a_addr, bool a_is_uplink, void *a_user_data);
 
 /**
  * @brief Callback for stream replace event
@@ -60,14 +60,14 @@ typedef void (*dap_stream_event_add_callback_t)(dap_stream_node_addr_t *a_addr, 
  * @param a_is_uplink Whether stream is uplink
  * @param a_user_data User data passed during registration
  */
-typedef void (*dap_stream_event_replace_callback_t)(dap_stream_node_addr_t *a_addr, bool a_is_uplink, void *a_user_data);
+typedef void (*dap_stream_event_replace_callback_t)(dap_cluster_node_addr_t *a_addr, bool a_is_uplink, void *a_user_data);
 
 /**
  * @brief Callback for stream delete event
  * @param a_addr Node address of deleted stream
  * @param a_user_data User data passed during registration
  */
-typedef void (*dap_stream_event_delete_callback_t)(dap_stream_node_addr_t *a_addr, void *a_user_data);
+typedef void (*dap_stream_event_delete_callback_t)(dap_cluster_node_addr_t *a_addr, void *a_user_data);
 
 // ============================================================================
 // Stream Event API
@@ -97,7 +97,7 @@ void dap_stream_event_callbacks_unregister(void);
  * @param a_addr Stream node address
  * @param a_is_uplink Is uplink flag
  */
-void dap_stream_event_notify_add(dap_stream_node_addr_t *a_addr, bool a_is_uplink);
+void dap_stream_event_notify_add(dap_cluster_node_addr_t *a_addr, bool a_is_uplink);
 
 /**
  * @brief Notify about stream replace event
@@ -105,14 +105,14 @@ void dap_stream_event_notify_add(dap_stream_node_addr_t *a_addr, bool a_is_uplin
  * @param a_addr Stream node address
  * @param a_is_uplink Is uplink flag
  */
-void dap_stream_event_notify_replace(dap_stream_node_addr_t *a_addr, bool a_is_uplink);
+void dap_stream_event_notify_replace(dap_cluster_node_addr_t *a_addr, bool a_is_uplink);
 
 /**
  * @brief Notify about stream delete event
  * Called by stream module when stream is deleted
  * @param a_addr Stream node address
  */
-void dap_stream_event_notify_delete(dap_stream_node_addr_t *a_addr);
+void dap_stream_event_notify_delete(dap_cluster_node_addr_t *a_addr);
 
 #ifdef __cplusplus
 }

@@ -1,753 +1,522 @@
 /*
+ * DAP SDK — centralized initialization / deinitialization
+ *
  * Authors:
- * Dmitry Gerasimov <ceo@cellframe.net>
- * DeM Labs Inc.   https://demlabs.net
- * DAP SDK  https://gitlab.demlabs.net/dap/dap-sdk
- * Copyright  (c) 2025
- * All rights reserved.
-
- This file is part of DAP SDK the open source project
-
-    DAP SDK is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    DAP SDK is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ *   Dmitry Gerasimov <ceo@cellframe.net>
+ *   DeM Labs Inc.   https://demlabs.net
+ * Copyright (c) 2025-2026
+ * License: GPLv3
+ */
 
 #include "dap_sdk.h"
 #include "dap_common.h"
 #include "dap_config.h"
-#include "dap_events.h"
-#include "dap_string.h"
-
-// Core includes
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
-#include "dap_config.h"
 #include "dap_crc64.h"
 #include "dap_net_common.h"
+#include "dap_events.h"
+#include "dap_enc.h"
+#include "dap_cert.h"
+#include "dap_stream.h"
+#include "dap_stream_ctl.h"
+#include "dap_client.h"
+#include "dap_server.h"
+#include "dap_cluster.h"
+#include "dap_cluster_node.h"
+#include "dap_global_db.h"
+#include "dap_enc_ks.h"
 
-// Conditional includes based on available modules
-// Core includes are always needed
-// Other modules will be included only if available and needed
+#include "dap_link_manager.h"
+#ifndef DAP_OS_WASM
+#include "dap_http_server.h"
+#include "dap_http_folder.h"
+#include "dap_http_simple.h"
+#include "dap_enc_http.h"
+#include "dap_notify_srv.h"
+#include "dap_cli_server.h"
+#include "dap_dns_server.h"
+#include "dap_plugin.h"
+#endif
+
+#ifdef DAP_OS_WASM
+#include <emscripten/wasmfs.h>
+#include <errno.h>
+#endif
 
 #define LOG_TAG "dap_sdk"
 
-// Global state
-static bool s_dap_sdk_initialized = false;
-static uint32_t s_current_modules = 0;
+static bool     s_initialized = false;
+static uint32_t s_modules     = 0;
 
-// Forward declarations for all initialization functions
-static int s_init_core(const dap_sdk_config_t *a_config);
-static int s_init_crypto(const dap_sdk_config_t *a_config);
-static int s_init_io(const dap_sdk_config_t *a_config);
-static int s_init_global_db(const dap_sdk_config_t *a_config);
-static int s_init_net_client(const dap_sdk_config_t *a_config);
-static int s_init_net_server(const dap_sdk_config_t *a_config);
-static int s_init_net_http(const dap_sdk_config_t *a_config);
-static int s_init_net_stream(const dap_sdk_config_t *a_config);
-static int s_init_net_dns(const dap_sdk_config_t *a_config);
-static int s_init_net_enc(const dap_sdk_config_t *a_config);
-static int s_init_net_notify(const dap_sdk_config_t *a_config);
-static int s_init_net_link_mgr(const dap_sdk_config_t *a_config);
-static int s_init_cli_server(const dap_sdk_config_t *a_config);
-static int s_init_app_cli(const dap_sdk_config_t *a_config);
-static int s_init_json_rpc(const dap_sdk_config_t *a_config);
-static int s_init_plugin(const dap_sdk_config_t *a_config);
-static int s_init_test(const dap_sdk_config_t *a_config);
+/* ========================================================================= */
+/*  Forward declarations                                                     */
+/* ========================================================================= */
 
-// Forward declarations for all deinitialization functions
+static int  s_init_core        (const dap_sdk_config_t *);
+static int  s_init_crypto      (const dap_sdk_config_t *);
+static int  s_init_io          (const dap_sdk_config_t *);
+static int  s_init_net_server  (const dap_sdk_config_t *);
+static int  s_init_net_http    (const dap_sdk_config_t *);
+static int  s_init_net_enc     (const dap_sdk_config_t *);
+static int  s_init_net_stream  (const dap_sdk_config_t *);
+static int  s_init_net_cluster (const dap_sdk_config_t *);
+static int  s_init_net_client  (const dap_sdk_config_t *);
+static int  s_init_net_notify  (const dap_sdk_config_t *);
+static int  s_init_global_db   (const dap_sdk_config_t *);
+static int  s_init_net_link_mgr(const dap_sdk_config_t *);
+static int  s_init_net_dns     (const dap_sdk_config_t *);
+static int  s_init_cli_server  (const dap_sdk_config_t *);
+static int  s_init_plugin      (const dap_sdk_config_t *);
+static int  s_init_test        (const dap_sdk_config_t *);
+
 static void s_deinit_core(void);
 static void s_deinit_crypto(void);
 static void s_deinit_io(void);
-static void s_deinit_global_db(void);
-static void s_deinit_net_client(void);
 static void s_deinit_net_server(void);
 static void s_deinit_net_http(void);
-static void s_deinit_net_stream(void);
-static void s_deinit_net_dns(void);
 static void s_deinit_net_enc(void);
+static void s_deinit_net_stream(void);
+static void s_deinit_net_client(void);
 static void s_deinit_net_notify(void);
+static void s_deinit_global_db(void);
 static void s_deinit_net_link_mgr(void);
+static void s_deinit_net_dns(void);
 static void s_deinit_cli_server(void);
-static void s_deinit_app_cli(void);
-static void s_deinit_json_rpc(void);
 static void s_deinit_plugin(void);
-static void s_deinit_test(void);
 
-/**
- * @brief Initialize core subsystems
- */
-static int s_init_core(const dap_sdk_config_t *a_config) {
-    int ret = 0;
-    
-    // Initialize logging first
-    dap_log_level_set(a_config->log_level);
-    log_it(L_INFO, "Initializing DAP SDK Core subsystems");
-    
-    // Initialize common subsystem with provided app name
-    const char *app_name = a_config->app_name ? a_config->app_name : "DAP SDK";
-    if ((ret = dap_common_init(app_name, a_config->log_file)) != 0) {
-        log_it(L_ERROR, "Failed to initialize dap_common: %d", ret);
-        return ret;
-    }
-    
-    // Initialize CRC64
-    if ((ret = dap_crc64_init()) != 0) {
-        log_it(L_ERROR, "Failed to initialize CRC64: %d", ret);
-        return ret;
-    }
-    
-    // Initialize config system if config path provided
-    if (a_config->temp_dir) {
-        if ((ret = dap_config_init(a_config->temp_dir)) != 0) {
-            log_it(L_ERROR, "Failed to initialize config system: %d", ret);
-            return ret;
-        }
-    }
-    
-    log_it(L_INFO, "DAP SDK Core initialized successfully");
-    return 0;
-}
+/* ========================================================================= */
+/*  WASM filesystem bootstrap                                                */
+/* ========================================================================= */
 
-/**
- * @brief Initialize crypto subsystems
- */
-static int s_init_crypto(const dap_sdk_config_t *a_config) {
-    log_it(L_INFO, "Initializing DAP SDK Crypto subsystem");
-    
-    // For now, crypto modules work out of the box
-    // Real initialization will be added when we have proper includes
-    
-    log_it(L_INFO, "DAP SDK Crypto initialized successfully");
-    return 0;
-}
+#ifdef DAP_OS_WASM
+#define DAP_WASM_SYS_DIR "/dap"
 
-/**
- * @brief Initialize IO subsystems
- */
-static int s_init_io(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "Initializing DAP SDK IO subsystem");
-    
-    // Initialize events system (required for timers, sockets, etc.)
-    // Use reasonable defaults: 6 threads (to support multi-threaded tests), 60 second timeout
-    if (dap_events_init(6, 60) != 0) {
-        log_it(L_ERROR, "Failed to initialize events system");
+static int s_init_wasmfs(void)
+{
+    backend_t l_opfs = wasmfs_create_opfs_backend();
+    const char *l_mount = g_sys_dir_path ? g_sys_dir_path : DAP_WASM_SYS_DIR;
+    if (wasmfs_create_directory(l_mount, 0777, l_opfs) != 0 && errno != EEXIST) {
+        log_it(L_ERROR, "Failed to mount OPFS at %s: %s", l_mount, strerror(errno));
         return -1;
     }
-    
-    log_it(L_INFO, "DAP SDK IO subsystem initialized successfully");
+    if (!g_sys_dir_path)
+        g_sys_dir_path = dap_strdup(l_mount);
+    log_it(L_NOTICE, "WASMFS/OPFS persistent storage mounted at %s", g_sys_dir_path);
     return 0;
 }
+#endif
 
-/**
- * @brief Initialize network subsystems
- */
-static int s_init_network(const dap_sdk_config_t *a_config) {
-    log_it(L_INFO, "Initializing DAP SDK Network subsystem");
-    (void)a_config;
-    int rc = dap_net_common_init();
-    if (rc != 0) {
-        log_it(L_ERROR, "dap_net_common_init failed with code %d", rc);
-        return rc;
-    }
-    return 0;
-}
+/* ========================================================================= */
+/*  Helper: run init step with logging                                       */
+/* ========================================================================= */
 
-/**
- * @brief Initialize DAP SDK with specified configuration
- */
-int dap_sdk_init(const dap_sdk_config_t *a_config) {
-    if (!a_config) {
-        return -1;
+#define DAP_SDK_INIT_MODULE(flag, func, label) \
+    if (l_modules & (flag)) { \
+        if ((l_rc = (func)(a_config)) != 0) \
+            return log_it(L_CRITICAL, "Failed to init " label), l_rc; \
     }
-    
-    if (s_dap_sdk_initialized) {
+
+/* ========================================================================= */
+/*  Public API                                                               */
+/* ========================================================================= */
+
+int dap_sdk_init(const dap_sdk_config_t *a_config)
+{
+    if (!a_config) return -1;
+    if (s_initialized) {
         log_it(L_WARNING, "DAP SDK already initialized");
         return 0;
     }
-    
-    int ret = 0;
-    uint32_t modules = a_config->modules;
-    
-    // Core is always required - force it if not specified
-    if (!(modules & DAP_SDK_MODULE_CORE)) {
-        modules |= DAP_SDK_MODULE_CORE;
-        log_it(L_INFO, "Core module auto-enabled (always required)");
-    }
-    
-    log_it(L_INFO, "Initializing DAP SDK with modules: 0x%08X", modules);
-    
-    // Initialize core (always required)
-    if ((ret = s_init_core(a_config)) != 0) {
-        log_it(L_ERROR, "Failed to initialize DAP SDK Core");
-        return ret;
-    }
-    
-    // Initialize crypto module
-    if (modules & DAP_SDK_MODULE_CRYPTO) {
-        if ((ret = s_init_crypto(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Crypto subsystem");
-            return ret;
-        }
-    }
-    
-    // Initialize IO module  
-    if (modules & DAP_SDK_MODULE_IO) {
-        if ((ret = s_init_io(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize IO subsystem");
-            return ret;
-        }
-    }
-    
-    // Initialize global database module
-    if (modules & DAP_SDK_MODULE_GLOBAL_DB) {
-        if ((ret = s_init_global_db(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Global DB subsystem");
-            return ret;
-        }
-    }
-    
-    // Initialize basic network modules
-    if (modules & DAP_SDK_MODULE_NET_CLIENT) {
-        if ((ret = s_init_net_client(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Network Client");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_NET_SERVER) {
-        if ((ret = s_init_net_server(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Network Server");
-            return ret;
-        }
-    }
-    
-    // Initialize advanced network modules
-    if (modules & DAP_SDK_MODULE_NET_HTTP) {
-        if ((ret = s_init_net_http(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize HTTP Server/Client");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_NET_STREAM) {
-        if ((ret = s_init_net_stream(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Stream Protocol");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_NET_DNS) {
-        if ((ret = s_init_net_dns(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize DNS Server/Client");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_NET_ENC) {
-        if ((ret = s_init_net_enc(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Encryption Server");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_NET_NOTIFY) {
-        if ((ret = s_init_net_notify(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Notification Server");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_NET_LINK_MGR) {
-        if ((ret = s_init_net_link_mgr(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Link Manager");
-            return ret;
-        }
-    }
-    
-    // Initialize CLI and RPC modules
-    if (modules & DAP_SDK_MODULE_CLI_SERVER) {
-        if ((ret = s_init_cli_server(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize CLI Server");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_APP_CLI) {
-        if ((ret = s_init_app_cli(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Application CLI");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_JSON_RPC) {
-        if ((ret = s_init_json_rpc(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize JSON-RPC Server");
-            return ret;
-        }
-    }
-    
-    // Initialize additional systems
-    if (modules & DAP_SDK_MODULE_PLUGIN) {
-        if ((ret = s_init_plugin(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Plugin System");
-            return ret;
-        }
-    }
-    
-    if (modules & DAP_SDK_MODULE_TEST) {
-        if ((ret = s_init_test(a_config)) != 0) {
-            log_it(L_ERROR, "Failed to initialize Test Framework");
-            return ret;
-        }
-    }
-    
-    s_dap_sdk_initialized = true;
-    s_current_modules = modules;
-    
-    log_it(L_INFO, "DAP SDK initialized successfully with modules: 0x%08X", modules);
+
+    int l_rc = 0;
+    uint32_t l_modules = a_config->modules | DAP_SDK_MODULE_CORE;
+
+    if ((l_rc = s_init_core(a_config)) != 0)
+        return l_rc;
+
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_CRYPTO,       s_init_crypto,       "crypto");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_IO,           s_init_io,           "IO");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_SERVER,   s_init_net_server,   "net server");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_HTTP,     s_init_net_http,     "net HTTP");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_ENC,      s_init_net_enc,      "net enc");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_STREAM,   s_init_net_stream,   "net stream");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_CLUSTER,  s_init_net_cluster,  "net cluster");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_CLIENT,   s_init_net_client,   "net client");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_NOTIFY,   s_init_net_notify,   "net notify");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_GLOBAL_DB,    s_init_global_db,    "global DB");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_LINK_MGR, s_init_net_link_mgr, "link manager");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_NET_DNS,      s_init_net_dns,      "DNS");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_CLI_SERVER,   s_init_cli_server,   "CLI server");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_PLUGIN,       s_init_plugin,       "plugin");
+    DAP_SDK_INIT_MODULE(DAP_SDK_MODULE_TEST,         s_init_test,         "test framework");
+
+    s_initialized = true;
+    s_modules = l_modules;
+    log_it(L_NOTICE, "DAP SDK initialized (modules 0x%08X)", s_modules);
     return 0;
 }
 
-/**
- * @brief Initialize DAP SDK with simple modules
- */
-int dap_sdk_init_simple(uint32_t a_modules) {
-    dap_sdk_config_t config = {
-        .modules = a_modules,
-        .app_name = "DAP SDK",
-        .log_level = L_INFO,
-        .temp_dir = NULL,
-        .log_file = NULL,
-        .enable_debug = false
-    };
-    
-    return dap_sdk_init(&config);
+int dap_sdk_init_simple(uint32_t a_modules)
+{
+    dap_sdk_config_t l_cfg = { .modules = a_modules, .app_name = "DAP SDK" };
+    return dap_sdk_init(&l_cfg);
 }
 
-/**
- * @brief Initialize DAP SDK with app name and modules
- */
-int dap_sdk_init_with_app_name(const char *a_app_name, uint32_t a_modules) {
-    if (!a_app_name) {
-        return -1;
+int dap_sdk_init_with_app_name(const char *a_app_name, uint32_t a_modules)
+{
+    if (!a_app_name) return -1;
+    dap_sdk_config_t l_cfg = { .modules = a_modules, .app_name = a_app_name };
+    return dap_sdk_init(&l_cfg);
+}
+
+void dap_sdk_deinit(void)
+{
+    if (!s_initialized) return;
+    log_it(L_INFO, "Deinitializing DAP SDK (modules 0x%08X)", s_modules);
+
+    if (s_modules & DAP_SDK_MODULE_PLUGIN)       s_deinit_plugin();
+    if (s_modules & DAP_SDK_MODULE_CLI_SERVER)    s_deinit_cli_server();
+    if (s_modules & DAP_SDK_MODULE_NET_DNS)       s_deinit_net_dns();
+    if (s_modules & DAP_SDK_MODULE_NET_LINK_MGR)  s_deinit_net_link_mgr();
+    if (s_modules & DAP_SDK_MODULE_GLOBAL_DB)     s_deinit_global_db();
+    if (s_modules & DAP_SDK_MODULE_NET_NOTIFY)    s_deinit_net_notify();
+    if (s_modules & DAP_SDK_MODULE_NET_CLIENT)    s_deinit_net_client();
+    if (s_modules & DAP_SDK_MODULE_NET_STREAM)    s_deinit_net_stream();
+    if (s_modules & DAP_SDK_MODULE_NET_ENC)       s_deinit_net_enc();
+    if (s_modules & DAP_SDK_MODULE_NET_HTTP)      s_deinit_net_http();
+    if (s_modules & DAP_SDK_MODULE_NET_SERVER)    s_deinit_net_server();
+    if (s_modules & DAP_SDK_MODULE_IO)            s_deinit_io();
+    if (s_modules & DAP_SDK_MODULE_CRYPTO)        s_deinit_crypto();
+    s_deinit_core();
+
+    s_initialized = false;
+    s_modules = 0;
+}
+
+bool     dap_sdk_is_initialized(void) { return s_initialized; }
+uint32_t dap_sdk_get_modules(void)    { return s_modules; }
+
+/* ========================================================================= */
+/*  Module init implementations                                              */
+/* ========================================================================= */
+
+static int s_init_core(const dap_sdk_config_t *a_config)
+{
+    int l_rc = 0;
+    dap_log_level_set(a_config->log_level);
+
+#ifdef DAP_OS_WASM
+    if ((l_rc = s_init_wasmfs()) != 0)
+        return l_rc;
+#endif
+
+    if (a_config->sys_dir && !g_sys_dir_path)
+        g_sys_dir_path = dap_strdup(a_config->sys_dir);
+
+    const char *l_app = a_config->app_name ? a_config->app_name : "DAP SDK";
+    if ((l_rc = dap_common_init(l_app, a_config->log_file)) != 0)
+        return log_it(L_ERROR, "dap_common_init failed: %d", l_rc), l_rc;
+    if ((l_rc = dap_crc64_init()) != 0)
+        return log_it(L_ERROR, "dap_crc64_init failed: %d", l_rc), l_rc;
+
+    if (a_config->config_dir) {
+        if ((l_rc = dap_config_init(a_config->config_dir)) != 0)
+            return log_it(L_ERROR, "dap_config_init(%s) failed: %d", a_config->config_dir, l_rc), l_rc;
     }
-    
-    dap_sdk_config_t config = {
-        .modules = a_modules,
-        .app_name = a_app_name,
-        .log_level = L_INFO,
-        .temp_dir = NULL,
-        .log_file = NULL,
-        .enable_debug = false
-    };
-    
-    return dap_sdk_init(&config);
+
+    if (a_config->config_name) {
+        g_config = dap_config_open(a_config->config_name);
+        if (!g_config)
+            return log_it(L_CRITICAL, "Can't open config %s.cfg", a_config->config_name), -5;
+    }
+
+    if (a_config->enable_debug || (g_config && dap_config_get_item_bool_default(g_config, "general", "debug_mode", false)))
+        dap_log_level_set(L_DEBUG);
+
+    return 0;
 }
 
-/**
- * @brief Deinitialize network subsystems
- */
-static void s_deinit_network(void) {
-    log_it(L_INFO, "Deinitializing DAP SDK Network subsystem");
-
-    dap_net_common_deinit();
-
-    log_it(L_INFO, "DAP SDK Network deinitialized");
+static int s_init_crypto(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+    return dap_enc_init();
 }
 
-/**
- * @brief Deinitialize IO subsystems
- */
-static void s_deinit_io(void) {
-    log_it(L_INFO, "Deinitializing DAP SDK IO subsystem");
-    
-    // Cleanup events system
+static int s_init_io(const dap_sdk_config_t *a_config)
+{
+    uint32_t l_threads = a_config->io_threads;
+    if (!l_threads && g_config)
+        l_threads = dap_config_get_item_int32_default(g_config, "resources", "threads_cnt", 0);
+    uint32_t l_timeout = a_config->io_timeout;
+    int l_rc = dap_events_init(l_threads, l_timeout);
+    if (l_rc) return l_rc;
+    dap_events_start();
+    return dap_net_common_init();
+}
+
+static int s_init_net_server(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+#ifndef DAP_OS_WASM
+    if (g_config && !dap_config_get_item_bool_default(g_config, "server", "enabled", false))
+        return 0;
+    return dap_server_init();
+#else
+    return 0;
+#endif
+}
+
+static int s_init_net_http(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+#ifndef DAP_OS_WASM
+    int l_rc;
+    if ((l_rc = dap_http_init()) != 0) return l_rc;
+    if ((l_rc = dap_http_folder_init()) != 0) return l_rc;
+    if ((l_rc = dap_http_simple_module_init()) != 0) return l_rc;
+#endif
+    return 0;
+}
+
+static int s_init_net_enc(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+#ifndef DAP_OS_WASM
+    return enc_http_init();
+#else
+    return 0;
+#endif
+}
+
+static int s_init_net_stream(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+    int l_rc;
+    if ((l_rc = dap_stream_init(g_config)) != 0) return l_rc;
+#ifndef DAP_OS_WASM
+    if ((l_rc = dap_stream_ctl_init()) != 0) return l_rc;
+#endif
+    return 0;
+}
+
+static int s_init_net_cluster(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+    return dap_cluster_init();
+}
+
+static int s_init_net_client(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+    dap_client_init();
+    return 0;
+}
+
+static int s_init_net_notify(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+#ifndef DAP_OS_WASM
+    return dap_notify_server_init();
+#else
+    return 0;
+#endif
+}
+
+static int s_ensure_node_addr_cert(void)
+{
+    dap_cert_t *l_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+    if (!l_cert) {
+        const char *l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
+        if (!l_folder) {
+            if (!g_sys_dir_path)
+                return log_it(L_CRITICAL, "No cert folder and no sys_dir — "
+                              "set [resources] ca_folders in config"), -1;
+            char *l_default = dap_strdup_printf("%s/certs", g_sys_dir_path);
+            dap_cert_add_folder(l_default);
+            DAP_DELETE(l_default);
+            l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
+        }
+        dap_mkdir_with_parents(l_folder);
+
+        char *l_path = dap_strdup_printf("%s/%s.dcert", l_folder,
+                                         DAP_STREAM_NODE_ADDR_CERT_NAME);
+        l_cert = dap_cert_generate(DAP_STREAM_NODE_ADDR_CERT_NAME,
+                                   l_path,
+                                   DAP_STREAM_NODE_ADDR_CERT_TYPE);
+        DAP_DELETE(l_path);
+        if (!l_cert)
+            return log_it(L_CRITICAL, "Failed to generate %s certificate",
+                          DAP_STREAM_NODE_ADDR_CERT_NAME), -2;
+
+        log_it(L_NOTICE, "Generated %s certificate (%s)",
+               DAP_STREAM_NODE_ADDR_CERT_NAME,
+               dap_enc_get_type_name(DAP_STREAM_NODE_ADDR_CERT_TYPE));
+    }
+    g_node_addr = dap_cluster_node_addr_from_cert(l_cert);
+    return 0;
+}
+
+static int s_init_global_db(const dap_sdk_config_t *a_config)
+{
+    if (a_config->auto_node_cert) {
+        int l_rc = s_ensure_node_addr_cert();
+        if (l_rc)
+            return l_rc;
+    }
+    return dap_global_db_init();
+}
+
+static int s_default_fill_net_info(dap_link_t *a_link)
+{
+    (void)a_link;
+    return 0;
+}
+
+static int s_init_net_link_mgr(const dap_sdk_config_t *a_config)
+{
+    const dap_link_manager_callbacks_t *l_cb = a_config->link_manager_callbacks;
+    dap_link_manager_callbacks_t l_defaults = { .fill_net_info = s_default_fill_net_info };
+    return dap_link_manager_init(l_cb ? l_cb : &l_defaults);
+}
+
+static int s_init_net_dns(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+#ifndef DAP_OS_WASM
+    if (g_config && dap_config_get_item_bool_default(g_config, "bootstrap_balancer", "dns_server", false))
+        dap_dns_server_start("bootstrap_balancer");
+#endif
+    return 0;
+}
+
+static int s_init_cli_server(const dap_sdk_config_t *a_config)
+{
+#ifndef DAP_OS_WASM
+    return dap_cli_server_init(a_config->enable_debug, "cli-server");
+#else
+    (void)a_config;
+    return 0;
+#endif
+}
+
+static int s_init_plugin(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+#ifndef DAP_OS_WASM
+    if (!g_config || !dap_config_get_item_bool_default(g_config, "plugins", "enabled", false))
+        return 0;
+    char *l_default = g_sys_dir_path
+        ? dap_strdup_printf("%s/var/lib/plugins", g_sys_dir_path)
+        : dap_strdup("/var/lib/plugins");
+    const char *l_path = dap_config_get_item_str_default(g_config, "plugins", "path", l_default);
+    int l_rc = dap_plugin_init(l_path);
+    DAP_DELETE(l_default);
+    return l_rc;
+#else
+    return 0;
+#endif
+}
+
+static int s_init_test(const dap_sdk_config_t *a_config)
+{
+    (void)a_config;
+    return 0;
+}
+
+/* ========================================================================= */
+/*  Module deinit implementations                                            */
+/* ========================================================================= */
+
+static void s_deinit_plugin(void)
+{
+#ifndef DAP_OS_WASM
+    if (g_config && dap_config_get_item_bool_default(g_config, "plugins", "enabled", false)) {
+        dap_plugin_stop_all();
+        dap_plugin_deinit();
+    }
+#endif
+}
+
+static void s_deinit_cli_server(void)
+{
+#ifndef DAP_OS_WASM
+    dap_cli_server_deinit();
+#endif
+}
+
+static void s_deinit_net_dns(void)
+{
+#ifndef DAP_OS_WASM
+    dap_dns_server_stop();
+#endif
+}
+
+static void s_deinit_net_link_mgr(void)
+{
+    dap_link_manager_deinit();
+}
+
+static void s_deinit_global_db(void)
+{
+    dap_global_db_deinit();
+}
+
+static void s_deinit_net_notify(void)
+{
+#ifndef DAP_OS_WASM
+    dap_notify_server_deinit();
+#endif
+}
+
+static void s_deinit_net_client(void)
+{
+    dap_client_deinit();
+}
+
+static void s_deinit_net_stream(void)
+{
+    dap_stream_deinit();
+#ifndef DAP_OS_WASM
+    dap_stream_ctl_deinit();
+#endif
+}
+
+static void s_deinit_net_enc(void)
+{
+#ifndef DAP_OS_WASM
+    enc_http_deinit();
+    dap_enc_ks_deinit();
+#endif
+}
+
+static void s_deinit_net_http(void)
+{
+#ifndef DAP_OS_WASM
+    dap_http_folder_deinit();
+    dap_http_deinit();
+#endif
+}
+
+static void s_deinit_net_server(void)
+{
+#ifndef DAP_OS_WASM
+    dap_server_deinit();
+#endif
+}
+
+static void s_deinit_io(void)
+{
     dap_events_deinit();
-    
-    log_it(L_INFO, "DAP SDK IO deinitialized");
 }
 
-/**
- * @brief Deinitialize crypto subsystems
- */
-static void s_deinit_crypto(void) {
-    log_it(L_INFO, "Deinitializing DAP SDK Crypto subsystem");
-    
-    // Crypto cleanup will be added when we have proper includes
-    
-    log_it(L_INFO, "DAP SDK Crypto deinitialized");
+static void s_deinit_crypto(void)
+{
+    dap_enc_deinit();
 }
 
-/**
- * @brief Deinitialize core subsystems
- */
-static void s_deinit_core(void) {
-    log_it(L_INFO, "Deinitializing DAP SDK Core subsystem");
-    
-    // Deinitialize config system
+static void s_deinit_core(void)
+{
     dap_config_deinit();
-    
-    // Deinitialize common subsystem (should be last)
     dap_common_deinit();
-    
-    log_it(L_INFO, "DAP SDK Core deinitialized");
-}
-
-/**
- * @brief Deinitialize DAP SDK
- */
-void dap_sdk_deinit(void) {
-    if (!s_dap_sdk_initialized) {
-        return;
-    }
-    
-    log_it(L_INFO, "Deinitializing DAP SDK (modules were: 0x%08X)", s_current_modules);
-    
-    // Cleanup in reverse order of initialization based on what was initialized
-    
-    // Additional systems
-    if (s_current_modules & DAP_SDK_MODULE_TEST) {
-        s_deinit_test();
-    }
-    
-    
-    if (s_current_modules & DAP_SDK_MODULE_PLUGIN) {
-        s_deinit_plugin();
-    }
-    
-    // CLI and RPC modules
-    if (s_current_modules & DAP_SDK_MODULE_JSON_RPC) {
-        s_deinit_json_rpc();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_APP_CLI) {
-        s_deinit_app_cli();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_CLI_SERVER) {
-        s_deinit_cli_server();
-    }
-    
-    // Advanced network modules
-    if (s_current_modules & DAP_SDK_MODULE_NET_LINK_MGR) {
-        s_deinit_net_link_mgr();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_NET_NOTIFY) {
-        s_deinit_net_notify();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_NET_ENC) {
-        s_deinit_net_enc();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_NET_DNS) {
-        s_deinit_net_dns();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_NET_STREAM) {
-        s_deinit_net_stream();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_NET_HTTP) {
-        s_deinit_net_http();
-    }
-    
-    // Basic network modules
-    if (s_current_modules & DAP_SDK_MODULE_NET_SERVER) {
-        s_deinit_net_server();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_NET_CLIENT) {
-        s_deinit_net_client();
-    }
-    
-    // Core modules
-    if (s_current_modules & DAP_SDK_MODULE_GLOBAL_DB) {
-        s_deinit_global_db();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_IO) {
-        s_deinit_io();
-    }
-    
-    if (s_current_modules & DAP_SDK_MODULE_CRYPTO) {
-        s_deinit_crypto();
-    }
-    
-    // Core is always cleaned up last
-    if (s_current_modules & DAP_SDK_MODULE_CORE) {
-        s_deinit_core();
-    }
-    
-    s_dap_sdk_initialized = false;
-    s_current_modules = 0;
-    
-    // Final message - after common deinit this might not be visible
-    printf("DAP SDK deinitialized successfully\n");
-}
-
-/**
- * @brief Check if DAP SDK is initialized
- */
-bool dap_sdk_is_initialized(void) {
-    return s_dap_sdk_initialized;
-}
-
-/**
- * @brief Get current initialized modules
- */
-uint32_t dap_sdk_get_modules(void) {
-    return s_current_modules;
-}
-
-// =============================================================================
-// New module initialization functions
-// =============================================================================
-
-/**
- * @brief Initialize global database subsystem
- */
-static int s_init_global_db(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Global DB initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize network client
- */
-static int s_init_net_client(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Network Client initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize network server
- */
-static int s_init_net_server(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Network Server initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize HTTP server/client
- */
-static int s_init_net_http(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK HTTP Server/Client initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize stream protocol
- */
-static int s_init_net_stream(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Stream Protocol initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize DNS server/client
- */
-static int s_init_net_dns(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK DNS Server/Client initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize encryption server
- */
-static int s_init_net_enc(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Encryption Server initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize notification server
- */
-static int s_init_net_notify(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Notification Server initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize link manager
- */
-static int s_init_net_link_mgr(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Link Manager initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize CLI server
- */
-static int s_init_cli_server(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK CLI Server initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize application CLI
- */
-static int s_init_app_cli(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Application CLI initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize JSON-RPC server
- */
-static int s_init_json_rpc(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK JSON-RPC Server initialization (stub implementation)");
-    return 0;
-}
-
-/**
- * @brief Initialize plugin system
- */
-static int s_init_plugin(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Plugin System initialization (stub implementation)");
-    return 0;
-}
-
-
-/**
- * @brief Initialize test framework
- */
-static int s_init_test(const dap_sdk_config_t *a_config) {
-    (void)a_config;
-    log_it(L_INFO, "DAP SDK Test Framework initialization (stub implementation)");
-    return 0;
-}
-
-// =============================================================================
-// New module deinitialization functions
-// =============================================================================
-
-/**
- * @brief Deinitialize global database subsystem
- */
-static void s_deinit_global_db(void) {
-    log_it(L_INFO, "DAP SDK Global DB deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize network client
- */
-static void s_deinit_net_client(void) {
-    log_it(L_INFO, "DAP SDK Network Client deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize network server
- */
-static void s_deinit_net_server(void) {
-    log_it(L_INFO, "DAP SDK Network Server deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize HTTP server/client
- */
-static void s_deinit_net_http(void) {
-    log_it(L_INFO, "DAP SDK HTTP Server/Client deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize stream protocol
- */
-static void s_deinit_net_stream(void) {
-    log_it(L_INFO, "DAP SDK Stream Protocol deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize DNS server/client
- */
-static void s_deinit_net_dns(void) {
-    log_it(L_INFO, "DAP SDK DNS Server/Client deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize encryption server
- */
-static void s_deinit_net_enc(void) {
-    log_it(L_INFO, "DAP SDK Encryption Server deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize notification server
- */
-static void s_deinit_net_notify(void) {
-    log_it(L_INFO, "DAP SDK Notification Server deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize link manager
- */
-static void s_deinit_net_link_mgr(void) {
-    log_it(L_INFO, "DAP SDK Link Manager deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize CLI server
- */
-static void s_deinit_cli_server(void) {
-    log_it(L_INFO, "DAP SDK CLI Server deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize application CLI
- */
-static void s_deinit_app_cli(void) {
-    log_it(L_INFO, "DAP SDK Application CLI deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize JSON-RPC server
- */
-static void s_deinit_json_rpc(void) {
-    log_it(L_INFO, "DAP SDK JSON-RPC Server deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize plugin system
- */
-static void s_deinit_plugin(void) {
-    log_it(L_INFO, "DAP SDK Plugin System deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize AVRestream system
- */
-static void s_deinit_avrestream(void) {
-    log_it(L_INFO, "DAP SDK AVRestream System deinitialized (stub implementation)");
-}
-
-/**
- * @brief Deinitialize test framework
- */
-static void s_deinit_test(void) {
-    log_it(L_INFO, "DAP SDK Test Framework deinitialized (stub implementation)");
 }

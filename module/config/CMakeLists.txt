@@ -20,7 +20,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 # Dependencies - needs core and hash_table (for dap_ht.h)
-target_link_libraries(${PROJECT_NAME} dap_core dap_hash_table)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_hash_table)
 
 # Export headers for installation
 if(INSTALL_DAP_SDK)

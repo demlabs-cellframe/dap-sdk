@@ -329,7 +329,23 @@ EOF_HEADER
     # This is the key fix for mawk buffer overflow (no sprintf limits)
     for count in "${local_param_counts[@]}"; do
         [ -z "$count" ] && continue
-        generate_single_map_macro "$count" >> "$macros_file"
+        if [ "$count" -eq 0 ]; then
+            echo "#define _DAP_MOCK_MAP_0(macro) \\"  >> "$macros_file"
+            echo "    "                               >> "$macros_file"
+        else
+            printf "#define _DAP_MOCK_MAP_%d(macro, ...) " "$count" >> "$macros_file"
+            printf "_DAP_MOCK_MAP_%d_IMPL(macro, __VA_ARGS__)\n" "$count" >> "$macros_file"
+            printf "#define _DAP_MOCK_MAP_%d_IMPL(macro" "$count" >> "$macros_file"
+            for ((i=1; i<=count; i++)); do
+                printf ", type%d, name%d" "$i" "$i" >> "$macros_file"
+            done
+            printf ") \\\\\n    " >> "$macros_file"
+            for ((i=1; i<=count; i++)); do
+                [ "$i" -gt 1 ] && printf ", " >> "$macros_file"
+                printf "macro(type%d, name%d)" "$i" "$i" >> "$macros_file"
+            done
+            echo "" >> "$macros_file"
+        fi
         echo "" >> "$macros_file"
     done
     
@@ -607,16 +623,16 @@ generate_custom_mock_headers() {
     # Create main include file that includes all custom mock headers
     local main_custom_mocks_file="${output_dir}/${basename}_custom_mocks.h"
     
-    # Read custom mocks list for template
-    local CUSTOM_MOCKS_LIST=""
-    CUSTOM_MOCKS_LIST=$(cat "$custom_mocks_file" 2>/dev/null | grep -v '^$' || true)
+    # Extract just function names (field 2, pipe-delimited) for the template
+    local CUSTOM_MOCK_FUNC_NAMES=""
+    CUSTOM_MOCK_FUNC_NAMES=$(awk -F'|' '{if ($2 != "") print $2}' "$custom_mocks_file" 2>/dev/null || true)
     
     # Generate main include file from template
     replace_template_placeholders_with_mocking \
         "${TEMPLATES_DIR}/custom_mocks_main.h.tpl" \
         "$main_custom_mocks_file" \
         "BASENAME=$basename" \
-        "CUSTOM_MOCKS_LIST=$CUSTOM_MOCKS_LIST" \
+        "CUSTOM_MOCK_FUNC_NAMES=$CUSTOM_MOCK_FUNC_NAMES" \
         "WRAPPER_FUNCTIONS=$wrapper_functions"
     
     print_success "Generated main custom mocks include: $main_custom_mocks_file"

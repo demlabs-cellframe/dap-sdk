@@ -21,6 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <errno.h>
@@ -55,7 +56,9 @@ typedef struct dap_timerfd {
     HANDLE th;
 #endif
 #elif defined(DAP_OS_LINUX)
-    int tfd; //timer file descriptor
+    int tfd;
+#elif defined(DAP_OS_WASM)
+    long interval_id;
 #endif
     dap_worker_t *worker;
     dap_proc_thread_t *proc_thread;
@@ -70,6 +73,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *callback_arg);
 dap_timerfd_t* dap_timerfd_start_on_worker(dap_worker_t * a_worker, uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg);
 void dap_timerfd_delete(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid);
+#define dap_timerfd_delete_mt dap_timerfd_delete
 void dap_timerfd_reset(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid);
 void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd);
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd);
@@ -77,3 +81,4 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd);
 #ifdef DAP_EVENTS_CAPS_IOCP
 DWORD dap_del_queuetimer(HANDLE h);
 #endif
+
