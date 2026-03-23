@@ -49,7 +49,7 @@
 
 #include "dap_stream_session.h"
 #include "dap_stream_ctl.h"
-#include "dap_http_status_code.h"
+#include "http_status_code.h"
 #include "dap_enc_ks.h"
 
 #define LOG_TAG "dap_stream_ctl"
@@ -107,7 +107,7 @@ void dap_stream_ctl_add_proc(struct dap_http_server* sh, const char * url)
  */
 void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
 {
-    dap_http_status_code_t *return_code = (dap_http_status_code_t *)a_arg;
+    http_status_code_t *return_code = (http_status_code_t *)a_arg;
 
    // unsigned int proto_version;
     dap_stream_session_t *l_stream_session = NULL;
@@ -166,7 +166,7 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
             l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
             if (!l_ks_key) {
                 log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
-                *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
+                *return_code = Http_Status_BadRequest;
                 return;
             }
         }
@@ -182,34 +182,41 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
                 dap_enc_ks_key_t *l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
                 if (!l_ks_key) {
                     log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
-                    *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
+                    *return_code = Http_Status_BadRequest;
                     return;
                 }
                 l_stream_session->acl = l_ks_key->acl_list;
                 l_stream_session->node = l_ks_key->node_addr;
+                log_it(L_INFO, "stream_ctl: session %u node_addr=" NODE_ADDR_FP_STR " (blank=%d)",
+                       l_stream_session->id, NODE_ADDR_FP_ARGS_S(l_ks_key->node_addr),
+                       dap_cluster_node_addr_is_blank(&l_ks_key->node_addr));
             }
             if (l_is_legacy)
                 enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);
             else
                 enc_http_reply_f(l_dg, "%u %s %u %d %d", l_stream_session->id, l_key_str,
                                        DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
-            *return_code = DAP_HTTP_STATUS_OK;
+            *return_code = Http_Status_OK;
 
             log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
 
             DAP_DELETE(l_key_str);
         }else{
             log_it(L_ERROR,"Wrong request: \"%s\"",l_dg->in_query);
-            *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
+            *return_code = Http_Status_BadRequest;
             return;
         }
 
         enc_http_reply_encode(a_http_simple,l_dg);
-        dap_enc_ks_delete(l_hdr_key_id->value);
+        // NOTE: Do NOT delete key immediately after STREAM_CTL
+        // The key must remain in storage until stream session closes
+        // Multiple parallel clients may use the same KeyID (though each should have unique KeyID)
+        // Key will be cleaned up automatically when session expires or is closed
+        // dap_enc_ks_delete(l_hdr_key_id->value);
         enc_http_delegate_delete(l_dg);
     }else{
         log_it(L_ERROR,"No encryption layer was initialized well");
-        *return_code = DAP_HTTP_STATUS_BAD_REQUEST;
+        *return_code = Http_Status_BadRequest;
     }
 }
 

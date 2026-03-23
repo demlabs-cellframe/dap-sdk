@@ -27,9 +27,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <time.h>
 
-#ifndef _WIN32
-#include <sys/queue.h>
-#else
+#ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>

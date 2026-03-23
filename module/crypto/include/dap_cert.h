@@ -104,6 +104,10 @@ size_t dap_cert_sign_output_size(dap_cert_t *a_cert);
 
 int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer);
 
+/** Append cert signature to data buffer (reallocates). Returns 1 on success, 0 on failure. */
+size_t dap_cert_add_sign_to_data(dap_cert_t *a_cert, uint8_t **a_data, size_t *a_data_size,
+                                  const void *a_data_to_sign, size_t a_data_to_sign_size);
+
 size_t dap_cert_count_cert_sign(dap_cert_t *a_cert);
 
 void dap_cert_deinit();

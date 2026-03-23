@@ -315,6 +315,31 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t *a_key);
 // allocate memory for key struct
 dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type);
 
+/**
+ * @brief Create encryption key from raw bytes (6.0 compatibility)
+ * For SALSA2012: a_raw_bytes should be 40 bytes = [nonce(8)][key(32)].
+ * Only the key part [8:39] is used; nonce is per-message in encrypt/decrypt.
+ * @param a_key_type Cipher type (e.g. DAP_ENC_KEY_TYPE_SALSA2012)
+ * @param a_raw_bytes Raw key material
+ * @param a_raw_bytes_size Size (must be >= 40 for SALSA2012)
+ * @return New key or NULL on error
+ */
+dap_enc_key_t *dap_enc_key_new_from_raw_bytes(dap_enc_key_type_t a_key_type,
+                                              const uint8_t *a_raw_bytes,
+                                              size_t a_raw_bytes_size);
+
+/**
+ * @brief Update existing key with raw bytes (6.0 compatibility)
+ * For SALSA2012: a_raw_bytes should be 40 bytes = [nonce(8)][key(32)].
+ * Only the key part [8:39] is used.
+ * @param a_key Existing key to update
+ * @param a_raw_bytes Raw key material
+ * @param a_raw_bytes_size Size (must be >= 40 for SALSA2012)
+ * @return 0 on success, -1 on error
+ */
+int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
+                                     const uint8_t *a_raw_bytes,
+                                     size_t a_raw_bytes_size);
 
 // default gen key
 dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const void *a_kex_buf,

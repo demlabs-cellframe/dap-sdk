@@ -47,6 +47,11 @@
 #include "dap_timerfd.h"
 #include "dap_context.h"
 
+#ifdef DAP_OS_WASM
+#include <emscripten.h>
+#include <emscripten/eventloop.h>
+#endif
+
 #ifdef DAP_OS_ANDROID
 // Android-compatible timerfd replacement using POSIX timers
 #include <time.h>
@@ -171,6 +176,19 @@ static int android_timerfd_settime(int a_fd, int a_flags, const struct itimerspe
 static void s_es_callback_timer(struct dap_events_socket *a_es);
 
 static bool l_debug_timer = false;
+
+#ifdef DAP_OS_WASM
+static void s_wasm_timer_callback(void *a_arg)
+{
+    dap_timerfd_t *l_timerfd = (dap_timerfd_t *)a_arg;
+    if (!l_timerfd || !l_timerfd->callback)
+        return;
+    if (!l_timerfd->callback(l_timerfd->callback_arg)) {
+        emscripten_clear_interval(l_timerfd->interval_id);
+        l_timerfd->interval_id = 0;
+    }
+}
+#endif
 
 #ifdef DAP_OS_WINDOWS
     static HANDLE hTimerQueue = NULL;
@@ -342,6 +360,10 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     }
     l_events_socket->socket = INVALID_SOCKET;
 #endif
+#elif defined(DAP_OS_WASM)
+    l_events_socket->socket = INVALID_SOCKET;
+    l_timerfd->interval_id = emscripten_set_interval(s_wasm_timer_callback,
+                                                     (double)a_timeout_ms, l_timerfd);
 #endif
     debug_if(g_debug_reactor, L_DEBUG, "Create timer on socket "DAP_FORMAT_ESOCKET_UUID, l_timerfd->events_socket->uuid);
 #if defined (DAP_OS_LINUX)    
@@ -376,11 +398,15 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
     if ( !CreateTimerQueueTimer(&a_timerfd->th, hTimerQueue, (WAITORTIMERCALLBACK)TimerCallback,
                                 a_timerfd, (DWORD)a_timerfd->timeout_ms, 0, WT_EXECUTEONLYONCE) )
         log_it(L_CRITICAL, "Timer not reset, error %lu", GetLastError());
+#elif defined(DAP_OS_WASM)
+    emscripten_clear_interval(a_timerfd->interval_id);
+    a_timerfd->interval_id = emscripten_set_interval(s_wasm_timer_callback,
+                                                     (double)a_timerfd->timeout_ms, a_timerfd);
 #else
 #error "No timer reset realization for your platform"
 #endif
 
-#if !defined(DAP_OS_BSD) && !defined (DAP_OS_WINDOWS)
+#if !defined(DAP_OS_BSD) && !defined(DAP_OS_WINDOWS) && !defined(DAP_OS_WASM)
     dap_events_socket_set_readable_unsafe(a_timerfd->events_socket, true);
 #endif
 }
@@ -454,6 +480,12 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
     if (!a_timerfd || !a_timerfd->events_socket)
         return; 
     debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
+#ifdef DAP_OS_WASM
+    if (a_timerfd->interval_id) {
+        emscripten_clear_interval(a_timerfd->interval_id);
+        a_timerfd->interval_id = 0;
+    }
+#endif
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else

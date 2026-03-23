@@ -152,7 +152,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Dependencies
-target_link_libraries(${PROJECT_NAME} dap_core)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core)
 
 # Add hash table submodule
 add_subdirectory(table)

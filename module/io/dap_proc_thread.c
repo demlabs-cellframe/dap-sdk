@@ -28,7 +28,6 @@
 #include "dap_proc_thread.h"
 #include "dap_context.h"
 #include "dap_timerfd.h"
-
 #define LOG_TAG "dap_proc_thread"
 
 static uint32_t s_threads_count = 0;
@@ -36,6 +35,7 @@ static dap_proc_thread_t *s_threads = NULL;
 
 static int s_context_callback_started(dap_context_t *a_context, void *a_arg);
 static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
+static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int *a_priority);
 
 /**
  * @brief add and run context to thread
@@ -88,8 +88,9 @@ void dap_proc_thread_deinit()
         return;
 
     for (uint32_t i = s_threads_count; i--; ) {
-        if (s_threads[i].context)
+        if (s_threads[i].context) {
             dap_context_stop_n_kill(s_threads[i].context);
+        }
     }
     DAP_DEL_Z(s_threads);
     s_threads_count = 0;
@@ -120,6 +121,10 @@ DAP_INLINE uint32_t dap_proc_thread_get_count()
  */
 dap_proc_thread_t *dap_proc_thread_get_auto()
 {
+    if (!s_threads_count) {
+        log_it(L_CRITICAL, "proc_thread subsystem not initialized (s_threads_count == 0)");
+        return NULL;
+    }
     uint32_t l_id_start = rand() % s_threads_count,
              l_id_min = l_id_start,
              l_size_min = UINT32_MAX;
@@ -274,6 +279,7 @@ int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_
 {
     dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    dap_return_val_if_fail(l_thread, -1);
     dap_worker_t *l_worker = dap_events_worker_get(l_thread->context->cpu_id);
     if (!l_worker) {
         log_it(L_CRITICAL, "Worker with ID corresonding to specified processing thread ID %u doesn't exists", l_thread->context->id);

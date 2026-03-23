@@ -75,10 +75,14 @@ static struct dap_mock_msvc_init_helper {
 
 int dap_mock_init(void)
 {
-    // Now just a no-op / reset function (kept for backward compatibility)
     pthread_mutex_lock(&s_lock);
     if (!s_initialized) {
-        dap_mock_auto_init();
+        memset(s_registered_mocks, 0, sizeof(s_registered_mocks));
+        s_mock_count = 0;
+        s_initialized = true;
+        if (!dap_mock_async_is_initialized()) {
+            dap_mock_async_init(s_settings.async_worker_threads);
+        }
     }
     pthread_mutex_unlock(&s_lock);
     return 0;

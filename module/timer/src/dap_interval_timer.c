@@ -8,6 +8,11 @@
 
 #include <pthread.h>
 
+#ifdef DAP_OS_WASM
+#include <emscripten.h>
+#include <emscripten/eventloop.h>
+#endif
+
 #ifdef DAP_OS_WINDOWS
 #include <windows.h>
 #endif
@@ -16,7 +21,7 @@
 #include <dispatch/dispatch.h>
 #endif
 
-#ifdef DAP_OS_LINUX
+#if defined(DAP_OS_LINUX) && !defined(DAP_OS_WASM)
 #include <signal.h>
 #include <time.h>
 #endif
@@ -60,7 +65,15 @@ void dap_interval_timer_deinit(void)
     pthread_rwlock_destroy(&s_timers_rwlock);
 }
 
-#ifdef DAP_OS_LINUX
+#ifdef DAP_OS_WASM
+static void s_wasm_callback(void *a_arg)
+{
+    if (!a_arg) {
+        log_it(L_ERROR, "Timer cb arg is NULL");
+        return;
+    }
+    void *l_timer_id = a_arg;
+#elif defined(DAP_OS_LINUX)
 static void s_posix_callback(union sigval a_arg)
 {
     void *l_field_addr = a_arg.sival_ptr;
@@ -108,7 +121,10 @@ dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec,
     l_timer_obj->callback = a_callback;
     l_timer_obj->param = a_param;
 
-#if defined(_WIN32)
+#if defined(DAP_OS_WASM)
+    long l_id = emscripten_set_interval(s_wasm_callback, (double)a_msec, l_timer_obj);
+    l_timer_obj->timer = (void *)(intptr_t)l_id;
+#elif defined(_WIN32)
     if (!CreateTimerQueueTimer(&l_timer_obj->timer, NULL, (WAITORTIMERCALLBACK)s_win_callback,
                                &l_timer_obj->timer, a_msec, a_msec, 
                                WT_EXECUTEINTIMERTHREAD | WT_EXECUTELONGFUNCTION)) {
@@ -148,7 +164,10 @@ dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec,
 
 int dap_interval_timer_disable(dap_interval_timer_t a_timer)
 {
-#ifdef _WIN32
+#ifdef DAP_OS_WASM
+    emscripten_clear_interval((long)(intptr_t)a_timer);
+    return 0;
+#elif defined(_WIN32)
     return !DeleteTimerQueueTimer(NULL, (HANDLE)a_timer, NULL);
 #elif defined(DAP_OS_DARWIN)
     dispatch_source_cancel((dispatch_source_t)a_timer);

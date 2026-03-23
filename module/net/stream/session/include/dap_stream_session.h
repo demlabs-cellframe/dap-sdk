@@ -61,7 +61,7 @@ struct dap_stream_session {
     stream_session_connection_type_t conn_type;
     stream_session_type_t type;
     uint8_t *acl;
-    dap_stream_node_addr_t node;
+    dap_cluster_node_addr_t node;
     dap_ht_handle_t hh;
     struct in_addr tun_client_addr;
 
@@ -78,7 +78,11 @@ void dap_stream_session_get_list_sessions_unlock(void);
 
 dap_stream_session_t *dap_stream_session_pure_new();
 dap_stream_session_t *dap_stream_session_new(uint32_t media_id, bool open_preview);
-dap_stream_session_t *dap_stream_session_by_id(uint32_t id);
+dap_stream_session_t *dap_stream_session_id_mt(uint32_t a_id);
+dap_stream_session_t *dap_stream_session_id_unsafe(uint32_t id);
+void dap_stream_session_lock();
+void dap_stream_session_unlock();
+
 int dap_stream_session_open(dap_stream_session_t * a_session); /*Lock for opening for single client , return 0 if ok*/
-int dap_stream_session_close(uint32_t a_id);
+int dap_stream_session_close_mt(uint32_t id);
 

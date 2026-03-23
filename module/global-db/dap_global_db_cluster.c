@@ -29,10 +29,10 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_pkt.h"
 #include "dap_global_db_ch.h"
 #include "dap_link_manager.h"
+#include "dap_stream_ch_gossip.h"
 #include "dap_strfuncs.h"
 #include "dap_proc_thread.h"
 #include "dap_hash.h"
-#include "dap_stream_ch_gossip.h"
 #include "dap_dl.h"
 
 #define LOG_TAG "dap_global_db_cluster"
@@ -46,7 +46,7 @@ int dap_global_db_cluster_init()
     dap_global_db_ch_init();
     // Pseudo-cluster for global scope
     if ( !(s_global_cluster = dap_global_db_cluster_add(
-                dap_global_db_instance_get_default(), DAP_STREAM_CLUSTER_GLOBAL,
+                dap_global_db_instance_get_default(), DAP_CLUSTER_GLOBAL,
                 *(dap_guuid_t*)&uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL,
                 dap_config_get_item_uint64_default(g_config, "global_db", "ttl_unclustered", DAP_GLOBAL_DB_UNCLUSTERED_TTL),
                 true, DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_TYPE_SYSTEM)))
@@ -54,7 +54,7 @@ int dap_global_db_cluster_init()
 
     // Pseudo-cluster for local scope (unsynced groups).
     if ( !(s_local_cluster = dap_global_db_cluster_add(
-                dap_global_db_instance_get_default(), DAP_STREAM_CLUSTER_LOCAL,
+                dap_global_db_instance_get_default(), DAP_CLUSTER_LOCAL,
                 dap_guuid_compose(0, 1), DAP_GLOBAL_DB_CLUSTER_LOCAL,
                 0, false, DAP_GDB_MEMBER_ROLE_NOBODY, DAP_CLUSTER_TYPE_SYSTEM)))
         return -2;
@@ -145,14 +145,14 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->dbi = a_dbi;
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
     dap_dl_append(a_dbi->clusters, l_cluster);
-    if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
+    if (dap_strcmp(DAP_CLUSTER_LOCAL, a_mnemonim))
         dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
     log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s, TTL %s",
                     dap_guuid_to_hex_str(a_guuid), a_group_mask, l_cluster->ttl ? dap_itoa(l_cluster->ttl) : "unlimited");
     return l_cluster;
 }
 
-dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr, dap_global_db_role_t a_role)
+dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *a_cluster, dap_cluster_node_addr_t *a_node_addr, dap_global_db_role_t a_role)
 {
     if (!a_cluster || !a_node_addr) {
         log_it(L_ERROR, "Invalid argument with cluster member adding");
@@ -242,11 +242,11 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
     dap_global_db_cluster_t *l_cluster = a_arg;
     switch (l_cluster->sync_context.state) {
     case DAP_GLOBAL_DB_SYNC_STATE_START: {
-        dap_stream_node_addr_t l_current_link = dap_cluster_get_random_link(l_cluster->links_cluster);
-        if (dap_stream_node_addr_is_blank(&l_current_link))
+        dap_cluster_node_addr_t l_current_link = dap_cluster_get_random_link(l_cluster->links_cluster);
+        if (dap_cluster_node_addr_is_blank(&l_current_link))
             break;
         dap_list_t *l_groups = dap_global_db_get_groups_by_mask(l_cluster->groups_mask);
-        if (!l_groups) {    // Nothing to sync
+        if (!l_groups) {
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
             l_cluster->sync_context.stage_last_activity = dap_time_now();
             break;
@@ -255,10 +255,10 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
             if (!dap_global_db_group_count(it->data, true))
-                continue;   // Don't send request for empty group, if any
+                continue;
             size_t l_group_len = dap_strlen(it->data) + 1;
             dap_global_db_start_pkt_t *l_msg = DAP_NEW_STACK_SIZE(dap_global_db_start_pkt_t, sizeof(dap_global_db_start_pkt_t) + l_group_len);
-            l_msg->last_hash = c_dap_global_db_hash_blank; //dap_db_get_last_hash_remote(l_req->link, l_req->group);
+            l_msg->last_hash = c_dap_global_db_hash_blank;
             l_msg->group_len = l_group_len;
             memcpy(l_msg->group, it->data, l_group_len);
             debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_SYNC_START packet for group %s from first record", l_msg->group);
@@ -267,7 +267,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         }
 
         dap_list_free_full(l_groups, NULL);
-        
+
         l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
         l_cluster->sync_context.stage_last_activity = dap_time_now();
 
@@ -276,10 +276,10 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         if (dap_time_now() - l_cluster->sync_context.stage_last_activity >
                 l_cluster->dbi->sync_idle_time) {
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
-            if (!dap_stream_node_addr_is_blank(&l_cluster->sync_context.current_link))
+            if (!dap_cluster_node_addr_is_blank(&l_cluster->sync_context.current_link))
                 dap_stream_ch_del_notifier(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
                                            DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
-            l_cluster->sync_context.current_link = (dap_stream_node_addr_t){};
+            l_cluster->sync_context.current_link = (dap_cluster_node_addr_t){};
         }
         break;
     default:
