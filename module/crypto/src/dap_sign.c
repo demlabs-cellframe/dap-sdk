@@ -1094,6 +1094,42 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
         log_it(L_ERROR, "Invalid parameters for Chipmunk aggregated verification");
         return -1;
     }
+
+    // Aggregated signatures must not carry inline serialized public key bytes.
+    if (a_aggregated_sign->header.sign_pkey_size != 0) {
+        log_it(L_ERROR, "Invalid aggregated signature: sign_pkey_size must be 0, got %u",
+               a_aggregated_sign->header.sign_pkey_size);
+        return -1;
+    }
+
+    // Contract: aggregated verification currently supports a single shared message
+    // for all signers. Reject mixed-message input instead of silently using only
+    // the first message.
+    static const uint8_t s_empty_message = 0;
+    const uint8_t *l_ref_message = a_messages[0] ? (const uint8_t *)a_messages[0] : &s_empty_message;
+    size_t l_ref_message_size = a_message_sizes[0];
+    if (!a_messages[0] && l_ref_message_size > 0) {
+        log_it(L_ERROR, "Invalid first message pointer for non-zero size (%zu)", l_ref_message_size);
+        return -1;
+    }
+    for (uint32_t i = 1; i < a_signers_count; i++) {
+        if (!a_messages[i] && a_message_sizes[i] > 0) {
+            log_it(L_ERROR, "Invalid message pointer for signer %u with non-zero size %zu", i, a_message_sizes[i]);
+            return -1;
+        }
+        if (a_message_sizes[i] != l_ref_message_size) {
+            log_it(L_ERROR, "Aggregated verification requires identical message sizes for all signers (%zu vs %zu)",
+                   l_ref_message_size, a_message_sizes[i]);
+            return -1;
+        }
+        if (l_ref_message_size > 0) {
+            const uint8_t *l_msg_i = a_messages[i] ? (const uint8_t *)a_messages[i] : &s_empty_message;
+            if (memcmp(l_ref_message, l_msg_i, l_ref_message_size) != 0) {
+                log_it(L_ERROR, "Aggregated verification requires identical messages for all signers (mismatch at %u)", i);
+                return -1;
+            }
+        }
+    }
     
     // Extract metadata from aggregated signature
     const uint8_t *sig_data = a_aggregated_sign->pkey_n_sign;
@@ -1303,12 +1339,11 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     }
     
     // Use Chipmunk's multi-signature verification
-    // Note: We use the first message as a representative for the aggregated verification
-    // In production, this would be the properly combined message hash
+    // Contract is validated above: all signer messages are identical.
     int verification_result = chipmunk_verify_multi_signature(
         multi_sig,
-        (const uint8_t*)a_messages[0],
-        a_message_sizes[0]
+        l_ref_message,
+        l_ref_message_size
     );
     
     if (verification_result <= 0) {
