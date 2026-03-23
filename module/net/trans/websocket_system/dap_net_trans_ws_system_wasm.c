@@ -44,6 +44,7 @@
 #include "dap_json.h"
 #include "dap_cert.h"
 #include "dap_net_trans.h"
+#include "dap_net_trans_ctx.h"
 #include "dap_net_trans_types.h"
 #include "dap_net_trans_websocket_system.h"
 #include "dap_http_client_simple.h"
@@ -67,6 +68,10 @@
  * Connection context
  * ======================================================================== */
 
+EM_JS(int, js_page_is_secure, (void), {
+    return (typeof location !== 'undefined' && location.protocol === 'https:') ? 1 : 0;
+});
+
 typedef struct ws_system_conn {
     int                     js_handle;
     dap_ws_system_state_t   state;
@@ -77,6 +82,7 @@ typedef struct ws_system_conn {
 
     char                   *host;
     uint16_t                port;
+    bool                    use_tls;
     uint32_t                session_id;
 
 #ifdef DAP_WASM_PTHREADS
@@ -348,6 +354,7 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
+    l_conn->use_tls = (a_params->port == 443) || js_page_is_secure();
     l_conn->client_ctx = a_params->client_ctx;
 
     dap_stream_t *l_stream = DAP_NEW_Z(dap_stream_t);
@@ -364,6 +371,11 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     }
 
     l_stream->trans = a_trans;
+    l_stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (l_stream->trans_ctx) {
+        l_stream->trans_ctx->trans = a_trans;
+        l_stream->trans_ctx->stream = l_stream;
+    }
     l_stream->_server_session = l_conn;
     l_conn->stream = l_stream;
 
@@ -406,12 +418,13 @@ static int s_ws_handshake_init(dap_stream_t *a_stream,
                                               a_params->alice_pub_key_size,
                                               l_b64_body, DAP_ENC_DATA_TYPE_B64);
 
+    const char *l_scheme = l_conn->use_tls ? "https" : "http";
     char l_url[1024];
     snprintf(l_url, sizeof(l_url),
-             "https://%s:%u/enc_init/gd4y5yh78w42aaagh"
+             "%s://%s:%u/enc_init/gd4y5yh78w42aaagh"
              "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu"
              ",block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-             l_conn->host, l_conn->port,
+             l_scheme, l_conn->host, l_conn->port,
              a_params->enc_type, a_params->pkey_exchange_type,
              a_params->pkey_exchange_size, a_params->block_key_size,
              a_params->protocol_version, a_params->sign_count);
@@ -519,7 +532,8 @@ static int s_ws_session_create(dap_stream_t *a_stream,
     l_sub_enc[l_sub_len] = '\0';
     l_q_enc[l_q_len] = '\0';
     char l_url[2048];
-    snprintf(l_url, sizeof(l_url), "https://%s:%u/stream_ctl/%s?%s",
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u/stream_ctl/%s?%s",
+             l_conn->use_tls ? "https" : "http",
              l_conn->host, l_conn->port, l_sub_enc, l_q_enc);
     DAP_DELETE(l_sub_enc);
     DAP_DELETE(l_q_enc);
@@ -563,7 +577,8 @@ static void *s_session_start_thread(void *a_arg)
 
     char l_ws_url[1024];
     snprintf(l_ws_url, sizeof(l_ws_url),
-             "wss://%s:%u/stream/globaldb?session_id=%u",
+             "%s://%s:%u/stream/globaldb?session_id=%u",
+             l_conn->use_tls ? "wss" : "ws",
              l_conn->host, l_conn->port, l_a->session_id);
 
     int l_handle = s_ws_create_on_main(l_ws_url);
@@ -633,7 +648,8 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 
     char l_ws_url[1024];
     snprintf(l_ws_url, sizeof(l_ws_url),
-             "wss://%s:%u/stream/globaldb?session_id=%u",
+             "%s://%s:%u/stream/globaldb?session_id=%u",
+             l_conn->use_tls ? "wss" : "ws",
              l_conn->host, l_conn->port, a_session_id);
 
     int l_handle = js_ws_create(l_ws_url);

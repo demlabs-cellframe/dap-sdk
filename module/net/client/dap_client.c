@@ -100,7 +100,7 @@ static dap_net_trans_type_t s_get_default_transport_from_config(void)
         return l_trans_type;
     }
 #ifdef DAP_OS_WASM
-    return DAP_NET_TRANS_WEBSOCKET;
+    return DAP_NET_TRANS_WEBSOCKET_SYSTEM;
 #else
     return DAP_NET_TRANS_HTTP;
 #endif
@@ -400,7 +400,7 @@ dap_stream_worker_t *dap_client_get_stream_worker(dap_client_t *a_client)
 dap_stream_ch_t *dap_client_get_stream_ch_unsafe(dap_client_t *a_client, uint8_t a_ch_id)
 {
     dap_client_esocket_t *l_es = a_client ? DAP_CLIENT_ESOCKET(a_client) : NULL;
-    if (l_es && l_es->stream && l_es->stream_es)
+    if (l_es && l_es->stream)
         return dap_stream_ch_by_id_unsafe(l_es->stream, a_ch_id);
     return NULL;
 }

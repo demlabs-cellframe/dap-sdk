@@ -405,6 +405,16 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
 //    This is necessary in order to be able to request information using JavaScript obtained from another source.
     if ( dap_http_header_find(a_http_client->in_headers, "Origin") ){
         dap_http_out_header_add(a_http_client, "Access-Control-Allow-Origin", "*");
+        dap_http_out_header_add(a_http_client, "Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        dap_http_out_header_add(a_http_client, "Access-Control-Allow-Headers", "*");
+        dap_http_out_header_add(a_http_client, "Access-Control-Max-Age", "86400");
+    }
+
+    if (strncasecmp(a_http_client->action, "OPTIONS", 7) == 0) {
+        a_http_client->reply_status_code = 204;
+        a_http_client->out_content_length = 0;
+        dap_http_client_write(a_http_client);
+        return;
     }
 
     if( a_http_client->in_content_length ) {

@@ -2,12 +2,21 @@
  * Stub/fallback implementations for POSIX functions unavailable
  * in Emscripten single-threaded (no -pthread) builds.
  */
-#if defined(__EMSCRIPTEN__) && !defined(DAP_WASM_PTHREADS)
+/**
+ * Stub/fallback implementations for POSIX functions unavailable
+ * in Emscripten WASM builds.
+ *
+ * pipe2() stub: needed for both MT and ST WASM builds.
+ * Scheduler stubs: only for non-pthreads (ST) builds where
+ * Emscripten doesn't provide these symbols.
+ */
+#if defined(__EMSCRIPTEN__)
 
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 
+#ifndef DAP_WASM_PTHREADS
 int sched_get_priority_min(int policy) {
     (void)policy;
     return 0;
@@ -23,11 +32,8 @@ int pthread_setschedparam(unsigned long thread, int policy, const struct sched_p
     (void)thread; (void)policy; (void)param;
     return 0;
 }
+#endif
 
-/**
- * pipe2() is not available in Emscripten's musl.
- * Fallback to pipe() + fcntl() for O_NONBLOCK flag.
- */
 int pipe2(int pipefd[2], int flags) {
     if (pipe(pipefd) < 0)
         return -1;

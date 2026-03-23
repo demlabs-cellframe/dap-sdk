@@ -931,7 +931,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         l_selected_sockets = epoll_wait(a_context->epoll_fd, l_epoll_events, DAP_EVENTS_SOCKET_MAX, -1);
         l_sockets_max = l_selected_sockets;
 #elif defined(DAP_EVENTS_CAPS_POLL)
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM)
         l_selected_sockets = poll(a_context->poll, a_context->poll_count, 0);
 #else
         l_selected_sockets = poll(a_context->poll, a_context->poll_count, -1);
@@ -1644,14 +1644,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             }
         }
 #endif
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM)
     } while(0);
 #else
     } while(!a_context->signal_exit);
 #endif
 #endif // IOCP
 
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM)
     return 0;
 #else
     log_it(L_ATT,"Context :%u finished", a_context->id);
@@ -1659,7 +1659,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
 }
 
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM)
 void dap_worker_poll_step(dap_context_t *a_context)
 {
     if (a_context && a_context->is_running && !a_context->signal_exit)

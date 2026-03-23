@@ -66,7 +66,7 @@ int dap_proc_thread_init(uint32_t a_threads_count);
 void dap_proc_thread_deinit();
 int dap_proc_thread_loop(dap_context_t *a_context);
 
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM)
 int dap_proc_thread_init_wasm_st(uint32_t a_threads_count);
 void dap_proc_thread_poll_step(void);
 #endif

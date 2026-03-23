@@ -318,10 +318,10 @@ void dap_events_deinit( )
 }
 
 
-/* ─── WASM single-threaded: inline workers + emscripten main loop ────── */
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+/* ─── WASM: main-thread event loop + emscripten main loop ────────────── */
+#if defined(DAP_OS_WASM)
 
-static void s_wasm_st_main_loop_step(void);
+static void s_wasm_main_loop_step(void);
 
 int dap_events_start()
 {
@@ -352,17 +352,23 @@ int dap_events_start()
     }
 
     if (dap_proc_thread_init_wasm_st(1) != 0) {
-        log_it(L_CRITICAL, "Proc thread inline init failed");
+        log_it(L_CRITICAL, "Proc thread init failed");
         return -4;
     }
 
-    emscripten_set_main_loop(s_wasm_st_main_loop_step, 0, 0);
+    emscripten_set_main_loop(s_wasm_main_loop_step, 0, 0);
 
-    log_it(L_NOTICE, "WASM ST event loop started via emscripten_set_main_loop");
+    log_it(L_NOTICE, "WASM event loop started via emscripten_set_main_loop (pthreads=%s)",
+#ifdef DAP_WASM_PTHREADS
+           "yes"
+#else
+           "no"
+#endif
+    );
     return 0;
 }
 
-static void s_wasm_st_main_loop_step(void)
+static void s_wasm_main_loop_step(void)
 {
     if (s_workers[0] && s_workers[0]->context && s_workers[0]->context->is_running)
         dap_worker_poll_step(s_workers[0]->context);

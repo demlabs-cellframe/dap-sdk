@@ -91,7 +91,7 @@ int dap_worker_context_callback_started( dap_context_t * a_context, void *a_arg)
 int dap_worker_context_callback_stopped( dap_context_t * a_context, void *a_arg);
 int dap_worker_thread_loop(dap_context_t * a_context);
 
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM)
 void dap_worker_poll_step(dap_context_t *a_context);
 #endif
 

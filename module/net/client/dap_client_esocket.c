@@ -266,7 +266,7 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
 void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id,
                                         const char *a_response_data, size_t a_response_size, int a_error)
 {
-    if (!a_stream || !a_stream->trans_ctx)
+    if (!a_stream)
         return;
     
     dap_client_t *l_client = NULL;
@@ -316,13 +316,13 @@ void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_sessio
 
 void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_code)
 {
-    if (!a_stream || !a_stream->trans_ctx)
+    if (!a_stream)
         return;
     
     dap_client_t *l_client = NULL;
     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
         l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
-    else if (a_stream->trans_ctx->esocket_worker && a_stream->trans_ctx->esocket_uuid) {
+    else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket_worker && a_stream->trans_ctx->esocket_uuid) {
         dap_events_socket_t *l_found = dap_context_find(
                 a_stream->trans_ctx->esocket_worker->context,
                 a_stream->trans_ctx->esocket_uuid);
@@ -406,7 +406,6 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         if (l_data_copy) {
             memcpy(l_data_copy, l_data, a_data_size);
             dap_json_t *jobj = dap_json_parse_string(l_data_copy);
-            DAP_DELETE(l_data_copy);
             if (jobj) {
                 const char *l_str;
                 l_str = dap_json_object_get_string(jobj, "encrypt_id");
@@ -434,6 +433,7 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
                 if (!l_es->remote_protocol_version)
                     l_es->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
             }
+            DAP_DELETE(l_data_copy);
         }
 
         if (l_json_parse_count < 2 || l_json_parse_count > 4) {

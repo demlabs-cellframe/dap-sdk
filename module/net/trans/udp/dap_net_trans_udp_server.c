@@ -1951,14 +1951,13 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     
     // Parse JSON directly from payload
     dap_json_t *l_json = dap_json_parse_string(l_json_str);
-    DAP_DELETE(l_json_str);
     
     if (!l_json) {
+        DAP_DELETE(l_json_str);
         log_it(L_ERROR, "Failed to parse SESSION_CREATE JSON (size=%zu)", a_payload_size);
         return -4;
     }
 
-    
     // Extract session ID
     if (dap_json_object_has_key(l_json, "session_id")) {
         a_session->session_id = dap_json_object_get_int64(l_json, "session_id");
@@ -1978,6 +1977,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     }
     
     dap_json_object_free(l_json);
+    DAP_DELETE(l_json_str);
     
     // Derive session key from handshake key using KDF ratcheting
     uint64_t l_kdf_counter = 1;  // Counter = 1 for first session

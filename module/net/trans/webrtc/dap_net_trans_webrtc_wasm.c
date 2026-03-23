@@ -82,6 +82,10 @@ extern int js_http_post_sync(const char *a_url_ptr, const char *a_content_type_p
  * Connection context
  * ======================================================================== */
 
+EM_JS(int, js_rtc_page_is_secure, (void), {
+    return (typeof location !== 'undefined' && location.protocol === 'https:') ? 1 : 0;
+});
+
 typedef struct rtc_conn {
     int                     js_peer_id;
     dap_webrtc_state_t      state;
@@ -92,6 +96,7 @@ typedef struct rtc_conn {
 
     char                   *host;
     uint16_t                port;
+    bool                    use_tls;
     uint32_t                session_id;
 
 #ifdef DAP_WASM_PTHREADS
@@ -279,7 +284,8 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     if (l_offer_args.result < 0 || !l_offer_args.out) { log_it(L_ERROR, "SDP offer creation failed"); return -1; }
 
     char l_url[1024];
-    snprintf(l_url, sizeof(l_url), "https://%s:%u/rtc/offer", a_conn->host, a_conn->port);
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/offer",
+             a_conn->use_tls ? "https" : "http", a_conn->host, a_conn->port);
 
     void *l_resp = NULL;
     int l_resp_len = 0;
@@ -298,7 +304,8 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     rtc_offer_args_t l_ice_args = { .peer_id = a_conn->js_peer_id, .out = NULL, .result = -1 };
     RTC_PROXY_SYNC(s_proxy_get_ice, &l_ice_args);
     if (l_ice_args.result > 0 && l_ice_args.out) {
-        snprintf(l_url, sizeof(l_url), "https://%s:%u/rtc/ice?session_id=%u",
+        snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/ice?session_id=%u",
+                 a_conn->use_tls ? "https" : "http",
                  a_conn->host, a_conn->port, a_conn->session_id);
         void *l_ice_resp = NULL;
         int l_ice_resp_len = 0;
@@ -378,6 +385,7 @@ static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
+    l_conn->use_tls = (a_params->port == 443) || js_rtc_page_is_secure();
     l_conn->client_ctx = a_params->client_ctx;
 
     dap_stream_t *l_stream = DAP_NEW_Z(dap_stream_t);
@@ -432,12 +440,13 @@ static int s_rtc_handshake_init(dap_stream_t *a_stream,
                                               a_params->alice_pub_key_size,
                                               l_b64_body, DAP_ENC_DATA_TYPE_B64);
 
+    const char *l_scheme = l_conn->use_tls ? "https" : "http";
     char l_url[1024];
     snprintf(l_url, sizeof(l_url),
-             "https://%s:%u/enc_init/gd4y5yh78w42aaagh"
+             "%s://%s:%u/enc_init/gd4y5yh78w42aaagh"
              "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu"
              ",block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-             l_conn->host, l_conn->port,
+             l_scheme, l_conn->host, l_conn->port,
              a_params->enc_type, a_params->pkey_exchange_type,
              a_params->pkey_exchange_size, a_params->block_key_size,
              a_params->protocol_version, a_params->sign_count);
@@ -533,7 +542,8 @@ static int s_rtc_session_create(dap_stream_t *a_stream,
                                    l_b_enc, l_b_max, DAP_ENC_DATA_TYPE_RAW);
 
     char l_url[2048];
-    snprintf(l_url, sizeof(l_url), "https://%s:%u/stream_ctl/%s?%s",
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u/stream_ctl/%s?%s",
+             l_conn->use_tls ? "https" : "http",
              l_conn->host, l_conn->port, l_sub_enc, l_q_enc);
     DAP_DELETE(l_sub_enc);
     DAP_DELETE(l_q_enc);
@@ -663,7 +673,8 @@ void _rtc_offer_async_callback(int a_peer_id, char *a_sdp_ptr, int a_status)
     }
 
     char l_url[1024];
-    snprintf(l_url, sizeof(l_url), "https://%s:%u/rtc/offer", l_conn->host, l_conn->port);
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/offer",
+             l_conn->use_tls ? "https" : "http", l_conn->host, l_conn->port);
 
     int l_ret = dap_http_client_simple_request(l_url, "application/sdp",
                                                 a_sdp_ptr, (int)strlen(a_sdp_ptr), NULL,
