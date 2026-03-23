@@ -691,7 +691,12 @@ int chipmunk_batch_add_signature(chipmunk_batch_context_t *context,
                                  const chipmunk_multi_signature_t *multi_sig,
                                  const uint8_t *message,
                                  size_t message_len) {
-    if (!context || !multi_sig || !message || message_len == 0) {
+    static const uint8_t s_empty_message = 0;
+
+    if (!context || !multi_sig) {
+        return -1;
+    }
+    if (message_len > 0 && !message) {
         return -1;
     }
     if (context->signature_count >= context->max_signatures) {
@@ -703,7 +708,8 @@ int chipmunk_batch_add_signature(chipmunk_batch_context_t *context,
            sizeof(chipmunk_multi_signature_t));
     
     // Store message pointer (caller must ensure message remains valid)
-    context->messages[context->signature_count] = (uint8_t*)message;
+    context->messages[context->signature_count] =
+        (uint8_t*)(message ? message : &s_empty_message);
     context->message_lens[context->signature_count] = message_len;
     
     context->signature_count++;
