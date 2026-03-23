@@ -10,6 +10,8 @@
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
 
+#include <string.h>
+
 static const int16_t s_zetas[128] = {
   2285, 2571, 2970, 1812, 1493, 1422, 287, 202, 3158, 622, 1577, 182, 962,
   2127, 1855, 1468, 573, 2004, 264, 383, 2500, 1458, 1727, 3199, 2648, 1017,
@@ -29,21 +31,31 @@ const int16_t *MLKEM_NAMESPACE(_get_zetas)(void) { return s_zetas; }
 #if defined(__x86_64__) || defined(_M_X64)
 void dap_mlkem_ntt_forward_avx2(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_avx2(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_nttpack_avx2(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_nttunpack_avx2(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_forward_avx2_512vl(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_avx2_512vl(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_nttpack_avx2_512vl(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_nttunpack_avx2_512vl(int16_t a_coeffs[256]);
 /* Hand-written AVX2+AVX-512VL assembly NTT (32 YMM registers, zero spills) */
 void dap_mlkem_ntt_forward_asm(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_asm(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_nttpack_asm(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_nttunpack_asm(int16_t a_coeffs[256]);
 #endif
 
 #if defined(__aarch64__) || defined(_M_ARM64)
 void dap_mlkem_ntt_forward_neon(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_neon(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_nttpack_neon(int16_t a_coeffs[256]);
+void dap_mlkem_ntt_nttunpack_neon(int16_t a_coeffs[256]);
 #endif
 
 typedef void (*mlkem_ntt_fn_t)(int16_t *);
 static mlkem_ntt_fn_t s_ntt_forward_fn = NULL;
 static mlkem_ntt_fn_t s_ntt_inverse_fn = NULL;
+static mlkem_ntt_fn_t s_ntt_nttpack_fn = NULL;
+static mlkem_ntt_fn_t s_ntt_nttunpack_fn = NULL;
 
 /* Scalar fallback using generic NTT */
 static dap_ntt_params16_t s_ntt_params;
@@ -61,14 +73,81 @@ static const int16_t s_zetas_inv[128] = {
   3127, 3042, 1907, 1836, 1517, 359, 758, 1441
 };
 
+static void s_nttpack_scalar(int16_t *a_coeffs)
+{
+    int16_t l_tmp[32];
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        int16_t *l_blk = a_coeffs + 32 * l_p;
+        for (unsigned l_j = 0; l_j < 16; l_j++) {
+            l_tmp[l_j]      = l_blk[2 * l_j];
+            l_tmp[16 + l_j] = l_blk[2 * l_j + 1];
+        }
+        memcpy(l_blk, l_tmp, 64);
+    }
+}
+
+static void s_nttunpack_scalar(int16_t *a_coeffs)
+{
+    int16_t l_tmp[32];
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        int16_t *l_blk = a_coeffs + 32 * l_p;
+        for (unsigned l_j = 0; l_j < 16; l_j++) {
+            l_tmp[2 * l_j]     = l_blk[l_j];
+            l_tmp[2 * l_j + 1] = l_blk[16 + l_j];
+        }
+        memcpy(l_blk, l_tmp, 64);
+    }
+}
+
 static void s_ntt_forward_generic(int16_t *a_coeffs)
 {
     dap_ntt16_forward(a_coeffs, &s_ntt_params);
+    s_nttpack_scalar(a_coeffs);
 }
 static void s_ntt_inverse_generic(int16_t *a_coeffs)
 {
+    s_nttunpack_scalar(a_coeffs);
     dap_ntt16_inverse(a_coeffs, &s_ntt_params);
 }
+
+/*
+ * SIMD wrappers: _ntt() = forward + nttpack, _invntt() = nttunpack + inverse.
+ * Callers (indcpa) rely on _ntt() returning nttpacked data.
+ */
+#if DAP_CPU_DETECT_X86
+static void s_ntt_forward_avx2_512vl_packed(int16_t *a_coeffs)
+{
+    dap_mlkem_ntt_forward_avx2_512vl(a_coeffs);
+    dap_mlkem_ntt_nttpack_avx2_512vl(a_coeffs);
+}
+static void s_ntt_inverse_avx2_512vl_packed(int16_t *a_coeffs)
+{
+    dap_mlkem_ntt_nttunpack_avx2_512vl(a_coeffs);
+    dap_mlkem_ntt_inverse_avx2_512vl(a_coeffs);
+}
+static void s_ntt_forward_avx2_packed(int16_t *a_coeffs)
+{
+    dap_mlkem_ntt_forward_avx2(a_coeffs);
+    dap_mlkem_ntt_nttpack_avx2(a_coeffs);
+}
+static void s_ntt_inverse_avx2_packed(int16_t *a_coeffs)
+{
+    dap_mlkem_ntt_nttunpack_avx2(a_coeffs);
+    dap_mlkem_ntt_inverse_avx2(a_coeffs);
+}
+#endif
+#if DAP_CPU_DETECT_ARM
+static void s_ntt_forward_neon_packed(int16_t *a_coeffs)
+{
+    dap_mlkem_ntt_forward_neon(a_coeffs);
+    dap_mlkem_ntt_nttpack_neon(a_coeffs);
+}
+static void s_ntt_inverse_neon_packed(int16_t *a_coeffs)
+{
+    dap_mlkem_ntt_nttunpack_neon(a_coeffs);
+    dap_mlkem_ntt_inverse_neon(a_coeffs);
+}
+#endif
 
 static void s_resolve_ntt(void)
 {
@@ -79,22 +158,30 @@ static void s_resolve_ntt(void)
     s_ntt_params.zetas_inv = s_zetas_inv;
     s_ntt_params.zetas_len = 128;
 
-    s_ntt_forward_fn = s_ntt_forward_generic;
-    s_ntt_inverse_fn = s_ntt_inverse_generic;
+    s_ntt_forward_fn  = s_ntt_forward_generic;
+    s_ntt_inverse_fn  = s_ntt_inverse_generic;
+    s_ntt_nttpack_fn  = s_nttpack_scalar;
+    s_ntt_nttunpack_fn = s_nttunpack_scalar;
 
 #if DAP_CPU_DETECT_X86
     if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
-        s_ntt_forward_fn = dap_mlkem_ntt_forward_avx2_512vl;
-        s_ntt_inverse_fn = dap_mlkem_ntt_inverse_avx2_512vl;
+        s_ntt_forward_fn  = s_ntt_forward_avx2_512vl_packed;
+        s_ntt_inverse_fn  = s_ntt_inverse_avx2_512vl_packed;
+        s_ntt_nttpack_fn  = dap_mlkem_ntt_nttpack_avx2_512vl;
+        s_ntt_nttunpack_fn = dap_mlkem_ntt_nttunpack_avx2_512vl;
     } else if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
-        s_ntt_forward_fn = dap_mlkem_ntt_forward_avx2;
-        s_ntt_inverse_fn = dap_mlkem_ntt_inverse_avx2;
+        s_ntt_forward_fn  = s_ntt_forward_avx2_packed;
+        s_ntt_inverse_fn  = s_ntt_inverse_avx2_packed;
+        s_ntt_nttpack_fn  = dap_mlkem_ntt_nttpack_avx2;
+        s_ntt_nttunpack_fn = dap_mlkem_ntt_nttunpack_avx2;
     }
 #endif
 #if DAP_CPU_DETECT_ARM
     if (dap_cpu_arch_get() >= DAP_CPU_ARCH_NEON) {
-        s_ntt_forward_fn = dap_mlkem_ntt_forward_neon;
-        s_ntt_inverse_fn = dap_mlkem_ntt_inverse_neon;
+        s_ntt_forward_fn  = s_ntt_forward_neon_packed;
+        s_ntt_inverse_fn  = s_ntt_inverse_neon_packed;
+        s_ntt_nttpack_fn  = dap_mlkem_ntt_nttpack_neon;
+        s_ntt_nttunpack_fn = dap_mlkem_ntt_nttunpack_neon;
     }
 #endif
 }
@@ -115,6 +202,18 @@ void MLKEM_NAMESPACE(_invntt)(int16_t a_coeffs[MLKEM_N])
 {
     s_ensure_init();
     s_ntt_inverse_fn(a_coeffs);
+}
+
+void MLKEM_NAMESPACE(_nttpack)(int16_t a_coeffs[MLKEM_N])
+{
+    s_ensure_init();
+    s_ntt_nttpack_fn(a_coeffs);
+}
+
+void MLKEM_NAMESPACE(_nttunpack)(int16_t a_coeffs[MLKEM_N])
+{
+    s_ensure_init();
+    s_ntt_nttunpack_fn(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_basemul)(int16_t a_r[2], const int16_t a_a[2],

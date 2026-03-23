@@ -9,10 +9,8 @@
 
 #define LOG_TAG "dap_enc_sig_dilithium"
 
-static enum DAP_DILITHIUM_SIGN_SECURITY _dilithium_type = DILITHIUM_MIN_SIZE; // by default
+static enum DAP_DILITHIUM_SIGN_SECURITY _dilithium_type = DILITHIUM_MAX_SPEED; // by default
 
-//// WARNING! Its because of accident with wrong sizes on mobile 32bit platforms
-//// Remove it after you'll update all mobile keys
 
 void dap_enc_sig_dilithium_set_type(enum DAP_DILITHIUM_SIGN_SECURITY type)
 {

@@ -1,10 +1,14 @@
 /*
- * OS-based cryptographically secure random number generation.
+ * Cryptographically secure random number generation with buffered urandom.
+ *
+ * Amortizes syscall overhead by reading large chunks from /dev/urandom
+ * and serving small requests from an internal buffer.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include "dap_rand.h"
+#include <string.h>
 #include <stdlib.h>
 
 #if defined(DAP_OS_WASM)
@@ -14,13 +18,37 @@
 #else
 #include <unistd.h>
 #include <fcntl.h>
-static int s_urandom_fd = -1;
-#endif
+
+#define RAND_BUF_SIZE 4096
+
+static int     s_urandom_fd = -1;
+static uint8_t s_buf[RAND_BUF_SIZE];
+static unsigned s_buf_pos = RAND_BUF_SIZE;
 
 static inline void s_delay(unsigned int count)
 {
     while (count--) {}
 }
+
+static void s_read_urandom_raw(void *a_buf, unsigned a_nbytes)
+{
+    if (__builtin_expect(s_urandom_fd == -1, 0)) {
+        do {
+            s_urandom_fd = open("/dev/urandom", O_RDONLY);
+            if (s_urandom_fd == -1)
+                s_delay(0xFFFFF);
+        } while (s_urandom_fd == -1);
+    }
+    int n = (int)a_nbytes;
+    for (int i = 0; i < n; ) {
+        int r = read(s_urandom_fd, (char *)a_buf + i, n - i);
+        if (r >= 0)
+            i += r;
+        else
+            s_delay(0xFFFF);
+    }
+}
+#endif
 
 int dap_random_bytes(void *a_buf, unsigned int a_nbytes)
 {
@@ -41,20 +69,23 @@ int dap_random_bytes(void *a_buf, unsigned int a_nbytes)
     CryptReleaseContext(p, 0);
     return 0;
 #else
-    if (s_urandom_fd == -1) {
-        do {
-            s_urandom_fd = open("/dev/urandom", O_RDONLY);
-            if (s_urandom_fd == -1)
-                s_delay(0xFFFFF);
-        } while (s_urandom_fd == -1);
+    if (a_nbytes >= RAND_BUF_SIZE) {
+        s_read_urandom_raw(a_buf, a_nbytes);
+        return 0;
     }
-    int n = (int)a_nbytes;
-    for (int i = 0; i < n; ) {
-        int r = read(s_urandom_fd, (char *)a_buf + i, n - i);
-        if (r >= 0)
-            i += r;
-        else
-            s_delay(0xFFFF);
+    uint8_t *dst = (uint8_t *)a_buf;
+    unsigned rem = a_nbytes;
+    while (rem > 0) {
+        if (__builtin_expect(s_buf_pos >= RAND_BUF_SIZE, 0)) {
+            s_read_urandom_raw(s_buf, RAND_BUF_SIZE);
+            s_buf_pos = 0;
+        }
+        unsigned avail = RAND_BUF_SIZE - s_buf_pos;
+        unsigned chunk = rem < avail ? rem : avail;
+        memcpy(dst, s_buf + s_buf_pos, chunk);
+        s_buf_pos += chunk;
+        dst += chunk;
+        rem -= chunk;
     }
     return 0;
 #endif

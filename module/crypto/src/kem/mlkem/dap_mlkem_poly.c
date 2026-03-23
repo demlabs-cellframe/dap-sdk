@@ -21,7 +21,7 @@
 #endif
 
 #ifdef MLKEM_POLY_AVX2
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_compress_d4_onepass_avx2(uint8_t *a_r, const int16_t *a_coeffs)
 {
     const __m256i v = _mm256_set1_epi16(20159);
@@ -57,7 +57,7 @@ static void s_poly_compress_d4_onepass_avx2(uint8_t *a_r, const int16_t *a_coeff
     }
 }
 
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_compress_d5_onepass_avx2(uint8_t *a_r, const int16_t *a_coeffs)
 {
     const __m256i v = _mm256_set1_epi16(20159);
@@ -93,7 +93,7 @@ static void s_poly_compress_d5_onepass_avx2(uint8_t *a_r, const int16_t *a_coeff
     }
 }
 
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_decompress_d4_avx2(int16_t *a_r, const uint8_t *a_a)
 {
     const __m256i q = _mm256_set1_epi16(MLKEM_Q);
@@ -114,7 +114,7 @@ static void s_poly_decompress_d4_avx2(int16_t *a_r, const uint8_t *a_a)
     }
 }
 
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_decompress_d5_avx2(int16_t *a_r, const uint8_t *a_a)
 {
     const __m256i q = _mm256_set1_epi16(MLKEM_Q);
@@ -217,7 +217,7 @@ void MLKEM_NAMESPACE(_poly_decompress)(dap_mlkem_poly *a_r, const uint8_t *a_a)
 }
 
 #ifdef MLKEM_POLY_AVX2
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_tobytes_avx2(uint8_t *a_r, const int16_t *a_coeffs)
 {
     const __m256i v_mix = _mm256_set1_epi32(0x10000001);
@@ -257,7 +257,7 @@ void MLKEM_NAMESPACE(_poly_tobytes)(uint8_t *a_r, dap_mlkem_poly *a_a)
 }
 
 #ifdef MLKEM_POLY_AVX2
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_frombytes_avx2(int16_t *a_r, const uint8_t *a_a)
 {
     const __m256i v_shuf = _mm256_setr_epi8(
@@ -299,7 +299,7 @@ void MLKEM_NAMESPACE(_poly_frombytes)(dap_mlkem_poly *a_r, const uint8_t *a_a)
 }
 
 #ifdef MLKEM_POLY_AVX2
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_frommsg_avx2(int16_t *a_r, const uint8_t *a_msg)
 {
     const __m256i v_half_q = _mm256_set1_epi16((MLKEM_Q + 1) / 2);
@@ -317,7 +317,7 @@ static void s_poly_frommsg_avx2(int16_t *a_r, const uint8_t *a_msg)
     }
 }
 
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_tomsg_avx2(uint8_t *a_msg, const int16_t *a_coeffs)
 {
     const __m256i v_lo = _mm256_set1_epi16(832);
@@ -425,27 +425,46 @@ void MLKEM_NAMESPACE(_poly_invntt_tomont)(dap_mlkem_poly *a_r)
     MLKEM_NAMESPACE(_invntt)(a_r->coeffs);
 }
 
+static const int16_t s_basemul_zetas_nttpack[128] = {
+     2226, -2226,   430,  -430,   555,  -555,   843,  -843,
+     2078, -2078,   871,  -871,  1550, -1550,   105,  -105,
+      422,  -422,   587,  -587,   177,  -177,  3094, -3094,
+     3038, -3038,  2869, -2869,  1574, -1574,  1653, -1653,
+     3083, -3083,   778,  -778,  1159, -1159,  3182, -3182,
+     2552, -2552,  1483, -1483,  2727, -2727,  1119, -1119,
+     1739, -1739,   644,  -644,  2457, -2457,   349,  -349,
+      418,  -418,   329,  -329,  3173, -3173,  3254, -3254,
+      817,  -817,  1097, -1097,   603,  -603,   610,  -610,
+     1322, -1322,  2044, -2044,  1864, -1864,   384,  -384,
+     2114, -2114,  3193, -3193,  1218, -1218,  1994, -1994,
+     2455, -2455,   220,  -220,  2142, -2142,  1670, -1670,
+     2144, -2144,  1799, -1799,  2051, -2051,   794,  -794,
+     1819, -1819,  2475, -2475,  2459, -2459,   478,  -478,
+     3221, -3221,  3021, -3021,   996,  -996,   991,  -991,
+      958,  -958,  1869, -1869,  1522, -1522,  1628, -1628,
+};
+
 void MLKEM_NAMESPACE(_poly_basemul_montgomery)(dap_mlkem_poly *a_r,
                                                 const dap_mlkem_poly *a_a,
                                                 const dap_mlkem_poly *a_b)
 {
-    const int16_t *l_z = MLKEM_NAMESPACE(_get_zetas)();
-    if (MLKEM_SIMD_DISPATCH(basemul_montgomery, a_r->coeffs, a_a->coeffs, a_b->coeffs, l_z + 64))
+    if (MLKEM_SIMD_DISPATCH(basemul_montgomery, a_r->coeffs, a_a->coeffs, a_b->coeffs, NULL))
         return;
-    for (unsigned i = 0; i < MLKEM_N / 4; i++) {
-        int16_t zeta = l_z[64 + i];
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        const int16_t *l_ae = a_a->coeffs + 32 * l_p;
+        const int16_t *l_ao = a_a->coeffs + 32 * l_p + 16;
+        const int16_t *l_be = a_b->coeffs + 32 * l_p;
+        const int16_t *l_bo = a_b->coeffs + 32 * l_p + 16;
+        int16_t *l_re = a_r->coeffs + 32 * l_p;
+        int16_t *l_ro = a_r->coeffs + 32 * l_p + 16;
+        const int16_t *l_z = s_basemul_zetas_nttpack + 16 * l_p;
 
-        a_r->coeffs[4 * i]     = dap_mlkem_fqmul(a_a->coeffs[4 * i + 1], a_b->coeffs[4 * i + 1]);
-        a_r->coeffs[4 * i]     = dap_mlkem_fqmul(a_r->coeffs[4 * i], zeta);
-        a_r->coeffs[4 * i]    += dap_mlkem_fqmul(a_a->coeffs[4 * i], a_b->coeffs[4 * i]);
-        a_r->coeffs[4 * i + 1] = dap_mlkem_fqmul(a_a->coeffs[4 * i], a_b->coeffs[4 * i + 1]);
-        a_r->coeffs[4 * i + 1]+= dap_mlkem_fqmul(a_a->coeffs[4 * i + 1], a_b->coeffs[4 * i]);
-
-        a_r->coeffs[4 * i + 2] = dap_mlkem_fqmul(a_a->coeffs[4 * i + 3], a_b->coeffs[4 * i + 3]);
-        a_r->coeffs[4 * i + 2] = dap_mlkem_fqmul(a_r->coeffs[4 * i + 2], (int16_t)-zeta);
-        a_r->coeffs[4 * i + 2]+= dap_mlkem_fqmul(a_a->coeffs[4 * i + 2], a_b->coeffs[4 * i + 2]);
-        a_r->coeffs[4 * i + 3] = dap_mlkem_fqmul(a_a->coeffs[4 * i + 2], a_b->coeffs[4 * i + 3]);
-        a_r->coeffs[4 * i + 3]+= dap_mlkem_fqmul(a_a->coeffs[4 * i + 3], a_b->coeffs[4 * i + 2]);
+        for (unsigned l_j = 0; l_j < 16; l_j++) {
+            l_re[l_j] = dap_mlkem_fqmul(l_ae[l_j], l_be[l_j])
+                       + dap_mlkem_fqmul(dap_mlkem_fqmul(l_ao[l_j], l_bo[l_j]), l_z[l_j]);
+            l_ro[l_j] = dap_mlkem_fqmul(l_ae[l_j], l_bo[l_j])
+                       + dap_mlkem_fqmul(l_ao[l_j], l_be[l_j]);
+        }
     }
 }
 
@@ -493,57 +512,23 @@ MLKEM_HOTFN void MLKEM_NAMESPACE(_poly_sub)(dap_mlkem_poly *a_r, const dap_mlkem
 }
 
 #ifdef MLKEM_POLY_AVX2
-static const int16_t s_mulcache_zetas_expanded[256] = {
-     2226,  2226, -2226, -2226,   430,   430,  -430,  -430,
-      555,   555,  -555,  -555,   843,   843,  -843,  -843,
-     2078,  2078, -2078, -2078,   871,   871,  -871,  -871,
-     1550,  1550, -1550, -1550,   105,   105,  -105,  -105,
-      422,   422,  -422,  -422,   587,   587,  -587,  -587,
-      177,   177,  -177,  -177,  3094,  3094, -3094, -3094,
-     3038,  3038, -3038, -3038,  2869,  2869, -2869, -2869,
-     1574,  1574, -1574, -1574,  1653,  1653, -1653, -1653,
-     3083,  3083, -3083, -3083,   778,   778,  -778,  -778,
-     1159,  1159, -1159, -1159,  3182,  3182, -3182, -3182,
-     2552,  2552, -2552, -2552,  1483,  1483, -1483, -1483,
-     2727,  2727, -2727, -2727,  1119,  1119, -1119, -1119,
-     1739,  1739, -1739, -1739,   644,   644,  -644,  -644,
-     2457,  2457, -2457, -2457,   349,   349,  -349,  -349,
-      418,   418,  -418,  -418,   329,   329,  -329,  -329,
-     3173,  3173, -3173, -3173,  3254,  3254, -3254, -3254,
-      817,   817,  -817,  -817,  1097,  1097, -1097, -1097,
-      603,   603,  -603,  -603,   610,   610,  -610,  -610,
-     1322,  1322, -1322, -1322,  2044,  2044, -2044, -2044,
-     1864,  1864, -1864, -1864,   384,   384,  -384,  -384,
-     2114,  2114, -2114, -2114,  3193,  3193, -3193, -3193,
-     1218,  1218, -1218, -1218,  1994,  1994, -1994, -1994,
-     2455,  2455, -2455, -2455,   220,   220,  -220,  -220,
-     2142,  2142, -2142, -2142,  1670,  1670, -1670, -1670,
-     2144,  2144, -2144, -2144,  1799,  1799, -1799, -1799,
-     2051,  2051, -2051, -2051,   794,   794,  -794,  -794,
-     1819,  1819, -1819, -1819,  2475,  2475, -2475, -2475,
-     2459,  2459, -2459, -2459,   478,   478,  -478,  -478,
-     3221,  3221, -3221, -3221,  3021,  3021, -3021, -3021,
-      996,   996,  -996,  -996,   991,   991,  -991,  -991,
-      958,   958,  -958,  -958,  1869,  1869, -1869, -1869,
-     1522,  1522, -1522, -1522,  1628,  1628, -1628, -1628,
-};
-
-__attribute__((target("avx2")))
+__attribute__((target("avx2,avx512f,avx512vl,avx512bw")))
 static void s_poly_mulcache_compute_avx2(int16_t * restrict a_cache,
                                           const int16_t * restrict a_b)
 {
     const __m256i l_qinv = _mm256_set1_epi16((int16_t)MLKEM_QINV);
     const __m256i l_q    = _mm256_set1_epi16(MLKEM_Q);
-    for (unsigned i = 0; i < MLKEM_N; i += 16) {
-        __m256i b = _mm256_loadu_si256((const __m256i *)(a_b + i));
-        __m256i z = _mm256_load_si256((const __m256i *)(s_mulcache_zetas_expanded + i));
-        __m256i lo = _mm256_mullo_epi16(b, z);
-        __m256i hi = _mm256_mulhi_epi16(b, z);
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        __m256i l_be = _mm256_loadu_si256((const __m256i *)(a_b + 32 * l_p));
+        __m256i l_bo = _mm256_loadu_si256((const __m256i *)(a_b + 32 * l_p + 16));
+        __m256i l_z  = _mm256_load_si256((const __m256i *)(s_basemul_zetas_nttpack + 16 * l_p));
+        __m256i lo = _mm256_mullo_epi16(l_bo, l_z);
+        __m256i hi = _mm256_mulhi_epi16(l_bo, l_z);
         __m256i u  = _mm256_mullo_epi16(lo, l_qinv);
         __m256i uq = _mm256_mulhi_epi16(u, l_q);
-        __m256i prod = _mm256_sub_epi16(hi, uq);
-        _mm256_storeu_si256((__m256i *)(a_cache + i),
-                            _mm256_blend_epi16(b, prod, 0xAA));
+        __m256i l_boz = _mm256_sub_epi16(hi, uq);
+        _mm256_storeu_si256((__m256i *)(a_cache + 32 * l_p), l_be);
+        _mm256_storeu_si256((__m256i *)(a_cache + 32 * l_p + 16), l_boz);
     }
 }
 #endif
@@ -557,11 +542,15 @@ void MLKEM_NAMESPACE(_poly_mulcache_compute)(dap_mlkem_poly_mulcache *a_cache,
         return;
     }
 #endif
-    const int16_t *l_z = MLKEM_NAMESPACE(_get_zetas)() + 64;
-    for (unsigned i = 0; i < MLKEM_N / 4; i++) {
-        a_cache->coeffs[4 * i]     = a_b->coeffs[4 * i];
-        a_cache->coeffs[4 * i + 1] = dap_mlkem_fqmul(a_b->coeffs[4 * i + 1], l_z[i]);
-        a_cache->coeffs[4 * i + 2] = a_b->coeffs[4 * i + 2];
-        a_cache->coeffs[4 * i + 3] = dap_mlkem_fqmul(a_b->coeffs[4 * i + 3], (int16_t)-l_z[i]);
+    const int16_t *l_z = s_basemul_zetas_nttpack;
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        const int16_t *l_be = a_b->coeffs + 32 * l_p;
+        const int16_t *l_bo = a_b->coeffs + 32 * l_p + 16;
+        int16_t *l_ce = a_cache->coeffs + 32 * l_p;
+        int16_t *l_co = a_cache->coeffs + 32 * l_p + 16;
+        for (unsigned l_j = 0; l_j < 16; l_j++) {
+            l_ce[l_j] = l_be[l_j];
+            l_co[l_j] = dap_mlkem_fqmul(l_bo[l_j], l_z[16 * l_p + l_j]);
+        }
     }
 }

@@ -15,3 +15,6 @@ void MLKEM_NAMESPACE(_ntt)(int16_t a_coeffs[MLKEM_N]);
 void MLKEM_NAMESPACE(_invntt)(int16_t a_coeffs[MLKEM_N]);
 void MLKEM_NAMESPACE(_basemul)(int16_t a_r[2], const int16_t a_a[2],
                                 const int16_t a_b[2], int16_t a_zeta);
+
+void MLKEM_NAMESPACE(_nttpack)(int16_t a_coeffs[MLKEM_N]);
+void MLKEM_NAMESPACE(_nttunpack)(int16_t a_coeffs[MLKEM_N]);

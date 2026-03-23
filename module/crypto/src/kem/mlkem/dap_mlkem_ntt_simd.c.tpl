@@ -367,3 +367,100 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
     }
 #endif
 }
+
+/* ======== nttpack (even/odd deinterleave) ======== */
+
+{{TARGET_ATTR}} __attribute__((noinline))
+void dap_mlkem_ntt_nttpack_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
+{
+#if VEC_LANES == 16
+#ifdef __AVX512BW__
+    const __m256i l_even = _mm256_setr_epi16(
+         0,  2,  4,  6,  8, 10, 12, 14,
+        16, 18, 20, 22, 24, 26, 28, 30);
+    const __m256i l_odd = _mm256_setr_epi16(
+         1,  3,  5,  7,  9, 11, 13, 15,
+        17, 19, 21, 23, 25, 27, 29, 31);
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        __m256i l_a = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p));
+        __m256i l_b = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p + 16));
+        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p),
+                            _mm256_permutex2var_epi16(l_a, l_even, l_b));
+        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p + 16),
+                            _mm256_permutex2var_epi16(l_a, l_odd, l_b));
+    }
+#else
+    const __m256i l_mask = _mm256_set1_epi32(0x0000FFFF);
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        __m256i l_a = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p));
+        __m256i l_b = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p + 16));
+        __m256i l_ea = _mm256_and_si256(l_a, l_mask);
+        __m256i l_oa = _mm256_srli_epi32(l_a, 16);
+        __m256i l_eb = _mm256_and_si256(l_b, l_mask);
+        __m256i l_ob = _mm256_srli_epi32(l_b, 16);
+        __m256i l_ep = _mm256_packus_epi32(l_ea, l_eb);
+        __m256i l_op = _mm256_packus_epi32(l_oa, l_ob);
+        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p),
+                            _mm256_permute4x64_epi64(l_ep, _MM_SHUFFLE(3,1,2,0)));
+        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p + 16),
+                            _mm256_permute4x64_epi64(l_op, _MM_SHUFFLE(3,1,2,0)));
+    }
+#endif
+#else
+    int16_t l_tmp[32];
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        int16_t *l_blk = a_coeffs + 32 * l_p;
+        for (unsigned l_j = 0; l_j < 16; l_j++) {
+            l_tmp[l_j]      = l_blk[2 * l_j];
+            l_tmp[16 + l_j] = l_blk[2 * l_j + 1];
+        }
+        memcpy(l_blk, l_tmp, 64);
+    }
+#endif
+}
+
+/* ======== nttunpack (even/odd interleave) ======== */
+
+{{TARGET_ATTR}} __attribute__((noinline))
+void dap_mlkem_ntt_nttunpack_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
+{
+#if VEC_LANES == 16
+#ifdef __AVX512BW__
+    const __m256i l_lo = _mm256_setr_epi16(
+         0, 16,  1, 17,  2, 18,  3, 19,
+         4, 20,  5, 21,  6, 22,  7, 23);
+    const __m256i l_hi = _mm256_setr_epi16(
+         8, 24,  9, 25, 10, 26, 11, 27,
+        12, 28, 13, 29, 14, 30, 15, 31);
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        __m256i l_evens = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p));
+        __m256i l_odds  = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p + 16));
+        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p),
+                            _mm256_permutex2var_epi16(l_evens, l_lo, l_odds));
+        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p + 16),
+                            _mm256_permutex2var_epi16(l_evens, l_hi, l_odds));
+    }
+#else
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        __m256i l_evens = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p));
+        __m256i l_odds  = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p + 16));
+        __m256i l_lo = _mm256_unpacklo_epi16(l_evens, l_odds);
+        __m256i l_hi = _mm256_unpackhi_epi16(l_evens, l_odds);
+        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p),
+                            _mm256_permute2x128_si256(l_lo, l_hi, 0x20));
+        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p + 16),
+                            _mm256_permute2x128_si256(l_lo, l_hi, 0x31));
+    }
+#endif
+#else
+    int16_t l_tmp[32];
+    for (unsigned l_p = 0; l_p < 8; l_p++) {
+        int16_t *l_blk = a_coeffs + 32 * l_p;
+        for (unsigned l_j = 0; l_j < 16; l_j++) {
+            l_tmp[2 * l_j]     = l_blk[l_j];
+            l_tmp[2 * l_j + 1] = l_blk[16 + l_j];
+        }
+        memcpy(l_blk, l_tmp, 64);
+    }
+#endif
+}

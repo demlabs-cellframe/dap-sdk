@@ -107,6 +107,11 @@ static pthread_once_t s_chacha20_once = PTHREAD_ONCE_INIT;
 
 static int s_has_avx512_ifma = 0;
 
+#if defined(__x86_64__) || defined(_M_X64)
+extern void dap_chacha20_encrypt_asm(uint8_t *, const uint8_t *, size_t,
+        const uint8_t[32], const uint8_t[12], uint32_t);
+#endif
+
 static void s_chacha20_dispatch_init(void)
 {
     s_chacha20_simd_fn = NULL;
@@ -114,7 +119,7 @@ static void s_chacha20_dispatch_init(void)
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     dap_cpu_arch_t l_arch = dap_cpu_arch_get_best();
     if (l_arch >= DAP_CPU_ARCH_AVX512) {
-        s_chacha20_simd_fn = dap_chacha20_encrypt_avx2_512vl;
+        s_chacha20_simd_fn = dap_chacha20_encrypt_asm;
         dap_cpu_features_t l_feat = dap_cpu_detect_features();
         s_has_avx512_ifma = l_feat.has_avx512_ifma && l_feat.has_avx512vl;
     } else if (l_arch >= DAP_CPU_ARCH_AVX2)

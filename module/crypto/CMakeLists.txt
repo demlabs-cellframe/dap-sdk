@@ -398,6 +398,16 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR})
 
+# --- ChaCha20 hand-tuned AVX-512VL assembly ---
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
+    enable_language(ASM)
+    set(CHACHA20_ASM_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/asm/x86_64/dap_chacha20_avx512vl.S)
+    target_sources(${PROJECT_NAME} PRIVATE ${CHACHA20_ASM_SRC})
+    set_source_files_properties(${CHACHA20_ASM_SRC}
+        PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
+    )
+endif()
+
 # --- Poly1305 multi-block SIMD ---
 set(POLY1305_SIMD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/simd)
 set(POLY1305_GEN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/poly1305_arch_gen)

@@ -10,6 +10,7 @@
 #include "dap_mlkem_indcpa.h"
 #include "dap_mlkem_poly.h"
 #include "dap_mlkem_polyvec.h"
+#include "dap_mlkem_ntt.h"
 #include "dap_mlkem_symmetric.h"
 #include "dap_rand.h"
 
@@ -506,6 +507,8 @@ void MLKEM_NAMESPACE(_indcpa_keypair)(uint8_t a_pk[MLKEM_INDCPA_PUBLICKEYBYTES],
     dap_mlkem_hash_g(l_buf, l_buf, MLKEM_SYMBYTES);
 
     s_gen_matrix(l_a, l_publicseed, 0);
+    for (unsigned i = 0; i < MLKEM_K; i++)
+        MLKEM_NAMESPACE(_polyvec_nttpack)(&l_a[i]);
 
     /* Batch noise sampling: skpv[0..K-1] then e[0..K-1], all eta1 — always x4 */
     dap_mlkem_poly *l_npolys[2 * MLKEM_K];
@@ -553,6 +556,8 @@ void MLKEM_NAMESPACE(_indcpa_keypair)(uint8_t a_pk[MLKEM_INDCPA_PUBLICKEYBYTES],
     MLKEM_NAMESPACE(_polyvec_add)(&l_pkpv, &l_pkpv, &l_e);
     MLKEM_NAMESPACE(_polyvec_reduce)(&l_pkpv);
 
+    MLKEM_NAMESPACE(_polyvec_nttunpack)(&l_skpv);
+    MLKEM_NAMESPACE(_polyvec_nttunpack)(&l_pkpv);
     s_pack_sk(a_sk, &l_skpv);
     s_pack_pk(a_pk, &l_pkpv, l_publicseed);
 }
@@ -568,8 +573,11 @@ void MLKEM_NAMESPACE(_indcpa_enc)(uint8_t a_c[MLKEM_INDCPA_BYTES],
     dap_mlkem_poly l_v, l_k, l_epp;
 
     s_unpack_pk(&l_pkpv, l_seed, a_pk);
+    MLKEM_NAMESPACE(_polyvec_nttpack)(&l_pkpv);
     MLKEM_NAMESPACE(_poly_frommsg)(&l_k, a_m);
     s_gen_matrix(l_at, l_seed, 1);
+    for (unsigned i = 0; i < MLKEM_K; i++)
+        MLKEM_NAMESPACE(_polyvec_nttpack)(&l_at[i]);
 
     /* sp: K polys with eta1 — always x4 (pad with dummy if K < 4) */
     {
@@ -660,6 +668,7 @@ void MLKEM_NAMESPACE(_indcpa_dec)(uint8_t a_m[MLKEM_INDCPA_MSGBYTES],
 
     s_unpack_ciphertext(&l_bp, &l_v, a_c);
     s_unpack_sk(&l_skpv, a_sk);
+    MLKEM_NAMESPACE(_polyvec_nttpack)(&l_skpv);
 
     MLKEM_NAMESPACE(_polyvec_ntt)(&l_bp);
     dap_mlkem_polyvec_mulcache l_bp_cache;

@@ -30,3 +30,5 @@ void MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(
     const dap_mlkem_polyvec *a_a,
     const dap_mlkem_polyvec *a_b,
     const dap_mlkem_polyvec_mulcache *a_b_cache);
+void MLKEM_NAMESPACE(_polyvec_nttpack)(dap_mlkem_polyvec *a_r);
+void MLKEM_NAMESPACE(_polyvec_nttunpack)(dap_mlkem_polyvec *a_r);

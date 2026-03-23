@@ -25,11 +25,31 @@ typedef struct { uint64_t s[25]; } dap_mlkem_xof_state;
  * Absorb + pad + permute in one go.  Handles arbitrary input length.
  * Full blocks are XOR'd word-at-a-time; the last partial block gets
  * the domain suffix and pad10*1 appended before the final permute.
+ *
+ * When AVX-512VL is available, dispatches to register-resident assembly
+ * that keeps state in xmm0-24 across all blocks (no intermediate load/store).
  */
+
+#if defined(__x86_64__) || defined(_M_X64)
+#define DAP_KECCAK_HAS_SPONGE_ASM 1
+#endif
+
 static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
                                     const uint8_t *a_data, size_t a_len,
                                     uint8_t a_suffix)
 {
+#if DAP_KECCAK_HAS_SPONGE_ASM
+    static int s_avx512 = -1;
+    if (__builtin_expect(s_avx512 < 0, 0))
+        s_avx512 = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512);
+    if (__builtin_expect(s_avx512, 1)) {
+        switch (a_rate) {
+        case 136: dap_keccak_absorb_136_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
+        case 168: dap_keccak_absorb_168_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
+        case 72:  dap_keccak_absorb_72_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
+        }
+    }
+#endif
     memset(a_state, 0, 200);
     unsigned rate_words = a_rate / 8;
 
@@ -65,6 +85,18 @@ static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
 static inline void s_keccak_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
                                            uint64_t *a_state, unsigned a_rate)
 {
+#if DAP_KECCAK_HAS_SPONGE_ASM
+    static int s_avx512_sq = -1;
+    if (__builtin_expect(s_avx512_sq < 0, 0))
+        s_avx512_sq = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512);
+    if (__builtin_expect(s_avx512_sq, 1)) {
+        switch (a_rate) {
+        case 136: dap_keccak_squeeze_136_avx512vl_asm(a_state, a_out, a_nblocks); return;
+        case 168: dap_keccak_squeeze_168_avx512vl_asm(a_state, a_out, a_nblocks); return;
+        case 72:  dap_keccak_squeeze_72_avx512vl_asm(a_state, a_out, a_nblocks); return;
+        }
+    }
+#endif
     for (size_t i = 0; i < a_nblocks; i++) {
         dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);
         memcpy(a_out, a_state, a_rate);

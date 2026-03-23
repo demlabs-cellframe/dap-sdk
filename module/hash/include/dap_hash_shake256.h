@@ -61,6 +61,24 @@ extern "C" {
 DAP_STATIC_INLINE void dap_hash_shake256(uint8_t *a_output, size_t a_outlen,
                                      const uint8_t *a_input, size_t a_inlen)
 {
+#if defined(__x86_64__) || defined(_M_X64)
+    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1)) {
+        uint64_t l_st[25];
+        dap_keccak_absorb_136_avx512vl_asm(l_st, a_input, a_inlen, DAP_KECCAK_SHAKE_SUFFIX);
+        size_t l_nblocks = a_outlen / DAP_SHAKE256_RATE;
+        if (l_nblocks) {
+            dap_keccak_squeeze_136_avx512vl_asm(l_st, a_output, l_nblocks);
+            a_output += l_nblocks * DAP_SHAKE256_RATE;
+            a_outlen -= l_nblocks * DAP_SHAKE256_RATE;
+        }
+        if (a_outlen) {
+            uint8_t l_tmp[DAP_SHAKE256_RATE];
+            dap_keccak_squeeze_136_avx512vl_asm(l_st, l_tmp, 1);
+            memcpy(a_output, l_tmp, a_outlen);
+        }
+        return;
+    }
+#endif
     dap_hash_keccak_ctx_t l_ctx;
     dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHAKE256_RATE, DAP_KECCAK_SHAKE_SUFFIX);
     dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
@@ -79,6 +97,12 @@ DAP_STATIC_INLINE void dap_hash_shake256(uint8_t *a_output, size_t a_outlen,
  */
 DAP_STATIC_INLINE void dap_hash_shake256_absorb(uint64_t *a_state, const uint8_t *a_input, size_t a_inlen)
 {
+#if defined(__x86_64__) || defined(_M_X64)
+    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1)) {
+        dap_keccak_absorb_136_avx512vl_asm(a_state, a_input, a_inlen, DAP_KECCAK_SHAKE_SUFFIX);
+        return;
+    }
+#endif
     dap_hash_keccak_ctx_t l_ctx;
     dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHAKE256_RATE, DAP_KECCAK_SHAKE_SUFFIX);
     dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
@@ -94,6 +118,12 @@ DAP_STATIC_INLINE void dap_hash_shake256_absorb(uint64_t *a_state, const uint8_t
  */
 DAP_STATIC_INLINE void dap_hash_shake256_squeezeblocks(uint8_t *a_output, size_t a_nblocks, uint64_t *a_state)
 {
+#if defined(__x86_64__) || defined(_M_X64)
+    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1)) {
+        dap_keccak_squeeze_136_avx512vl_asm(a_state, a_output, a_nblocks);
+        return;
+    }
+#endif
     dap_hash_keccak_state_t *l_state = (dap_hash_keccak_state_t *)a_state;
     for (size_t i = 0; i < a_nblocks; i++) {
         dap_hash_keccak_permute(l_state);
