@@ -135,6 +135,7 @@ static void s_ntt_inverse_avx2_packed(int16_t *a_coeffs)
     dap_mlkem_ntt_nttunpack_avx2(a_coeffs);
     dap_mlkem_ntt_inverse_avx2(a_coeffs);
 }
+/* ASM NTT already includes nttpack/nttunpack internally (SHUFFLE1 stage) */
 #endif
 #if DAP_CPU_DETECT_ARM
 static void s_ntt_forward_neon_packed(int16_t *a_coeffs)
@@ -165,10 +166,10 @@ static void s_resolve_ntt(void)
 
 #if DAP_CPU_DETECT_X86
     if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
-        s_ntt_forward_fn  = s_ntt_forward_avx2_512vl_packed;
-        s_ntt_inverse_fn  = s_ntt_inverse_avx2_512vl_packed;
-        s_ntt_nttpack_fn  = dap_mlkem_ntt_nttpack_avx2_512vl;
-        s_ntt_nttunpack_fn = dap_mlkem_ntt_nttunpack_avx2_512vl;
+        s_ntt_forward_fn  = dap_mlkem_ntt_forward_asm;
+        s_ntt_inverse_fn  = dap_mlkem_ntt_inverse_asm;
+        s_ntt_nttpack_fn  = dap_mlkem_ntt_nttpack_asm;
+        s_ntt_nttunpack_fn = dap_mlkem_ntt_nttunpack_asm;
     } else if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
         s_ntt_forward_fn  = s_ntt_forward_avx2_packed;
         s_ntt_inverse_fn  = s_ntt_inverse_avx2_packed;

@@ -144,6 +144,10 @@ target_link_libraries(benchmark_stage1_multi_arch PRIVATE
     dap_math
 )
 
+if(UNIX AND NOT ANDROID)
+    target_link_libraries(benchmark_stage1_multi_arch PRIVATE pthread)
+endif()
+
 target_include_directories(benchmark_stage1_multi_arch PRIVATE
     ${CMAKE_SOURCE_DIR}/module/core/include
     ${CMAKE_SOURCE_DIR}/module/json/include
