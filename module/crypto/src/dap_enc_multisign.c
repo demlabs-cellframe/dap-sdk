@@ -23,6 +23,7 @@
 */
 
 #include <string.h>
+#include <stdint.h>
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -47,10 +48,17 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
 {
 // sanity check
     dap_return_if_pass(a_key->type < DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM || a_key->type > DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED || !a_kex_buf || !a_kex_size);
+    if (a_kex_size > UINT8_MAX) {
+        log_it(L_ERROR, "Multisign key count %zu exceeds supported maximum %u", a_kex_size, UINT8_MAX);
+        return;
+    }
 // memory alloc
     const dap_enc_key_type_t *l_key_types = a_kex_buf;
-    dap_enc_key_t *l_keys[a_kex_size];
-    memset(l_keys, 0, sizeof(l_keys));
+    dap_enc_key_t **l_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, a_kex_size);
+    if (!l_keys) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
     for (size_t i = 0; i < a_kex_size; i++) {
         l_keys[i] = dap_enc_key_new_generate(l_key_types[i], NULL, 0, a_seed, a_seed_size, 0);
         if (!l_keys[i]) {
@@ -58,26 +66,30 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
             for (size_t j = 0; j < a_kex_size; j++) {
                 dap_enc_key_delete(l_keys[j]);
             }
+            DAP_DEL_Z(l_keys);
             return;
         }
     }
-    dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_keys, a_kex_size, NULL, a_kex_size);
+    dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_keys, (uint8_t)a_kex_size, NULL, (uint8_t)a_kex_size);
     if (!l_params) {
         log_it(L_ERROR, "Can't create multisign params");
         for (size_t i = 0; i < a_kex_size; i++) {
             dap_enc_key_delete(l_keys[i]);
         }
+        DAP_DEL_Z(l_keys);
         return;
     }
     int l_forming_res = dap_enc_sig_multisign_forming_keys(a_key, l_params);
     if (l_forming_res != 0) {
         log_it(L_ERROR, "Can't form multisign key, error code %d", l_forming_res);
         dap_multi_sign_params_delete(l_params);
+        DAP_DEL_Z(l_keys);
         return;
     }
     dap_multi_sign_params_t *l_prev_params = (dap_multi_sign_params_t*)a_key->_pvt;
     a_key->_pvt = l_params;
     dap_multi_sign_params_delete(l_prev_params);
+    DAP_DEL_Z(l_keys);
 }
 
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)
