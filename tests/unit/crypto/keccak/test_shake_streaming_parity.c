@@ -120,6 +120,53 @@ static void s_test_shake256_kat_empty_64bytes(void)
     TEST_PASS("SHAKE256 KAT (empty, 64 bytes)");
 }
 
+static void s_test_shake128_kat_empty_64bytes(void)
+{
+    static const char *s_expected_hex =
+        "7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26"
+        "3cb1eea988004b93103cfb0aeefd2a686e01fa4a58e8a3639ca8a1e3f9ae57e2";
+    uint8_t l_expected[64];
+    uint8_t l_out[64];
+
+    s_hex_to_bytes(s_expected_hex, l_expected, sizeof(l_expected));
+    dap_hash_shake128(l_out, sizeof(l_out), (const uint8_t *)"", 0);
+
+    TEST_CHECK(memcmp(l_out, l_expected, sizeof(l_out)) == 0, "SHAKE128 KAT (empty, 64 bytes)");
+    TEST_PASS("SHAKE128 KAT (empty, 64 bytes)");
+}
+
+static void s_test_cshake256_kat_custom_42_64bytes(void)
+{
+    static const char *s_expected_hex =
+        "9e484d6d808a194e0f82ac6b89ec75fcb98344d25c2ddc461fc950fbaffb4812"
+        "0f1e581a2ee1369df2333cdd03d5d844e619886f1e774d5ff0b23eb0920b5f47";
+    static const uint8_t s_input[] = "integration-cshake256-flow";
+    uint8_t l_expected[64];
+    uint8_t l_out[64];
+
+    s_hex_to_bytes(s_expected_hex, l_expected, sizeof(l_expected));
+    dap_hash_cshake256_simple(l_out, sizeof(l_out), 42, s_input, sizeof(s_input) - 1);
+
+    TEST_CHECK(memcmp(l_out, l_expected, sizeof(l_out)) == 0, "cSHAKE256 KAT (custom=42, 64 bytes)");
+    TEST_PASS("cSHAKE256 KAT (custom=42, 64 bytes)");
+}
+
+static void s_test_cshake128_kat_custom_42_64bytes(void)
+{
+    static const char *s_expected_hex =
+        "38a6331c4dbe92b50e786096350d7088ef28671882df5e8e6cebe602a514f05f"
+        "a77dd527b9786a16d4cbfd18f5520bfa7a02a9106060abbf411bfaae2c1554ba";
+    static const uint8_t s_input[] = "integration-cshake128-flow";
+    uint8_t l_expected[64];
+    uint8_t l_out[64];
+
+    s_hex_to_bytes(s_expected_hex, l_expected, sizeof(l_expected));
+    dap_hash_cshake128_simple(l_out, sizeof(l_out), 42, s_input, sizeof(s_input) - 1);
+
+    TEST_CHECK(memcmp(l_out, l_expected, sizeof(l_out)) == 0, "cSHAKE128 KAT (custom=42, 64 bytes)");
+    TEST_PASS("cSHAKE128 KAT (custom=42, 64 bytes)");
+}
+
 static void s_test_shake256_parity(void)
 {
     static const size_t s_outlens[] = {0, 1, 16, 32, 64, 136, 137, 200, 272};
@@ -247,6 +294,9 @@ int main(void)
     printf("========================================\n\n");
 
     s_test_shake256_kat_empty_64bytes();
+    s_test_shake128_kat_empty_64bytes();
+    s_test_cshake256_kat_custom_42_64bytes();
+    s_test_cshake128_kat_custom_42_64bytes();
     s_test_shake256_parity();
     s_test_shake128_parity();
     s_test_cshake256_parity();
