@@ -449,7 +449,7 @@ ret_n_clear:
     DAP_DELETE(l_arg);
 }
 
-static int s_stream_ch_place_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+static int s_stream_ch_place_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
                                       dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
                                       void *a_callback_arg, bool a_add)
 {
@@ -464,14 +464,14 @@ static int s_stream_ch_place_notifier(dap_stream_node_addr_t *a_stream_addr, uin
     return 0;
 }
 
-int dap_stream_ch_add_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+int dap_stream_ch_add_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
                              dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
                              void *a_callback_arg)
 {
     return s_stream_ch_place_notifier(a_stream_addr, a_ch_id, a_direction, a_callback, a_callback_arg, true);
 }
 
-int dap_stream_ch_del_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+int dap_stream_ch_del_notifier(dap_cluster_node_addr_t *a_stream_addr, uint8_t a_ch_id,
                              dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
                              void *a_callback_arg)
 {

@@ -439,7 +439,7 @@ void dap_timerfd_reset(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid)
     if (a_worker == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_uuid, a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_uuid, a_worker->id);
             return;
         }
         return dap_timerfd_reset_unsafe(l_es->_inheritor);

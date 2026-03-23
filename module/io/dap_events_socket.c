@@ -82,6 +82,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_worker.h"
 #include "dap_uuid.h"
 #include "dap_events.h"
+#include "dap_net.h"
 
 #include "dap_timerfd.h"
 #include "dap_context.h"
@@ -491,7 +492,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
     if (a_worker_old == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker_old->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker_old->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker_old->id);
             return;
         }
         dap_events_socket_reassign_between_workers_unsafe(l_es, a_worker_new);
@@ -602,6 +603,90 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
     l_es->type = a_type;
     debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Created socket %"DAP_FORMAT_SOCKET" type %d", l_sock,l_es->type);
     return l_es;
+}
+
+/**
+ * @brief dap_events_socket_create_platform Create socket with explicit domain/type/protocol
+ */
+dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type, int a_protocol,
+                                                       dap_events_socket_callbacks_t *a_callbacks)
+{
+    if (!a_callbacks)
+        return NULL;
+#ifdef DAP_OS_WINDOWS
+    SOCKET l_sock = socket(a_domain, a_type, a_protocol);
+    if (l_sock == INVALID_SOCKET) {
+        log_it(L_ERROR, "socket() failed: %d", WSAGetLastError());
+        return NULL;
+    }
+    u_long l_flags = 1;
+    if (ioctlsocket(l_sock, (long)FIONBIO, &l_flags)) {
+        log_it(L_ERROR, "FIONBIO failed: %d", WSAGetLastError());
+        closesocket(l_sock);
+        return NULL;
+    }
+#else
+    int l_sock = socket(a_domain, a_type, a_protocol);
+    if (l_sock == INVALID_SOCKET) {
+        log_it(L_ERROR, "socket() failed: errno=%d", errno);
+        return NULL;
+    }
+    int l_flags = fcntl(l_sock, F_GETFL);
+    if (l_flags >= 0)
+        fcntl(l_sock, F_SETFL, l_flags | O_NONBLOCK);
+#endif
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_sock, a_callbacks);
+    if (!l_es) {
+        closesocket(l_sock);
+        return NULL;
+    }
+    l_es->type = (a_type == SOCK_DGRAM) ? DESCRIPTOR_TYPE_SOCKET_UDP : DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    return l_es;
+}
+
+/**
+ * @brief dap_events_socket_resolve_and_set_addr Resolve host and set address for connect
+ */
+int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port)
+{
+    if (!a_es || !a_host)
+        return -1;
+    int l_ret = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &a_es->addr_storage, NULL);
+    if (l_ret < 0) {
+        log_it(L_ERROR, "dap_net_resolve_host failed for %s:%u", a_host, a_port);
+        return -1;
+    }
+    a_es->addr_size = (socklen_t)l_ret;
+    dap_strncpy(a_es->remote_addr_str, a_host, DAP_HOSTADDR_STRLEN - 1);
+    a_es->remote_addr_str[DAP_HOSTADDR_STRLEN - 1] = '\0';
+    a_es->remote_port = a_port;
+    return 0;
+}
+
+/**
+ * @brief dap_events_socket_connect Initiate non-blocking connect
+ * @return 0 on success or EINPROGRESS, -1 on immediate failure (a_err_out set)
+ */
+int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_err_out)
+{
+    if (!a_es || !a_err_out)
+        return -1;
+    *a_err_out = 0;
+    int l_ret = connect(a_es->socket, (struct sockaddr *)&a_es->addr_storage, a_es->addr_size);
+    if (l_ret == 0)
+        return 0;
+#ifdef DAP_OS_WINDOWS
+    int l_err = WSAGetLastError();
+    if (l_err == WSAEWOULDBLOCK || l_err == WSAEINPROGRESS)
+        return 0;
+    *a_err_out = l_err;
+    return -1;
+#else
+    if (errno == EINPROGRESS || errno == EINTR)
+        return 0;
+    *a_err_out = errno;
+    return -1;
+#endif
 }
 
 /**
@@ -1822,7 +1907,7 @@ void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_sock
             goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             goto lb_exit;
         }
         dap_events_socket_remove_and_delete_unsafe(l_es, false);
@@ -1885,7 +1970,7 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
             goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             goto lb_exit;
         }
         dap_events_socket_set_readable_unsafe(l_es, a_is_ready);
@@ -1953,7 +2038,7 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
             goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             goto lb_exit;
         }
         dap_events_socket_set_writable_unsafe(l_es, a_is_ready);
@@ -2026,7 +2111,7 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         l_result = l_es
             ? dap_events_socket_write_unsafe(l_es, a_data, a_data_size)
-            : ( log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id), 0 );
+            : ( log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id), 0 );
         goto lb_exit;
     }
 
@@ -2141,7 +2226,7 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
         }
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             DAP_DEL_MULTY(l_msg->data, l_msg);
             goto lb_exit;
         }
@@ -2160,6 +2245,41 @@ lb_exit:
         s_queue_ops_leave();
 #endif
     return l_result;
+}
+
+/**
+ * @brief dap_events_socket_sendto_unsafe Send UDP datagram to explicit address
+ * @param a_es UDP esocket (DESCRIPTOR_TYPE_SOCKET_UDP)
+ * @param a_data Data to send
+ * @param a_size Data size
+ * @param a_addr Destination address
+ * @param a_addr_len Address length
+ * @return Number of bytes sent, or 0 on error
+ */
+size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_size,
+                                       const struct sockaddr_storage *a_addr, socklen_t a_addr_len)
+{
+    if (!a_es || !a_data || !a_addr) {
+        log_it(L_ERROR, "dap_events_socket_sendto_unsafe: invalid args");
+        return 0;
+    }
+    if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && a_es->type != DESCRIPTOR_TYPE_SOCKET_RAW) {
+        log_it(L_WARNING, "dap_events_socket_sendto_unsafe: socket type %d not UDP/RAW", a_es->type);
+        return 0;
+    }
+#ifdef DAP_EVENTS_CAPS_IOCP
+    log_it(L_WARNING, "dap_events_socket_sendto_unsafe: IOCP UDP sendto not implemented");
+    return 0;
+#else
+    ssize_t l_sent = sendto(a_es->socket, (const char *)a_data, a_size,
+                            MSG_DONTWAIT | MSG_NOSIGNAL,
+                            (const struct sockaddr *)a_addr, a_addr_len);
+    if (l_sent < 0) {
+        log_it(L_DEBUG, "dap_events_socket_sendto_unsafe: sendto failed errno=%d", errno);
+        return 0;
+    }
+    return (size_t)l_sent;
+#endif
 }
 
 /**
