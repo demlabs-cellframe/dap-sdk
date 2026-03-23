@@ -7,7 +7,7 @@
 
 typedef struct {
   uint32_t coeffs[NN];
-} poly __attribute__((aligned(32)));
+} poly __attribute__((aligned(64)));
 
 void poly_reduce(poly *a);
 void poly_csubq(poly *a);

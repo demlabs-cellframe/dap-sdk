@@ -154,21 +154,16 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
         dilithium_kind_t kind, const void * seed, size_t seed_size)
 {
 
-    dilithium_param_t *p = malloc(sizeof(dilithium_param_t));
+    dilithium_param_t l_p_buf;
+    dilithium_param_t *p = &l_p_buf;
 
-    if (!p) return -1;
-
-    if (!dilithium_params_init(p, kind)) {
-        free(p);
+    if (!dilithium_params_init(p, kind))
         return -1;
-    }
 
     assert(private_key != NULL);
 
-    if(dilithium_private_and_public_keys_init( private_key, public_key, p) != 0) {
-        free(p);
+    if(dilithium_private_and_public_keys_init( private_key, public_key, p) != 0)
         return -1;
-    }
 
     unsigned int i;
     unsigned char seedbuf[3*SEEDBYTES];
@@ -229,23 +224,16 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
     dap_hash_shake256(tr, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
     dilithium_pack_sk(private_key->data, rho, key, tr, &s1, &s2, &t0, p);
 
-    free(p);
-    p = NULL;
-
     return 0;
 }
 
 /*************************************************/
 int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, unsigned long long mlen, const dilithium_private_key_t *private_key)
 {
-    dilithium_param_t *p = DAP_NEW_Z(dilithium_param_t);
-    if (!p) {
-        return -1;
-    }
-    if (! dilithium_params_init( p, private_key->kind)) {
-        free(p);
+    dilithium_param_t l_p_buf;
+    dilithium_param_t *p = &l_p_buf;
+    if (!dilithium_params_init(p, private_key->kind))
         return 1;
-    }
 
     unsigned long long i, j;
     unsigned int n;
@@ -350,9 +338,6 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
         }
     }
 
-    free(p);
-    p = NULL;
-
     return 0;
 }
 #include "dap_hash.h"
@@ -362,19 +347,13 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     if(public_key->kind != sig->kind)
         return -1;
 
-    dilithium_param_t *p = malloc(sizeof(dilithium_param_t));
-    if (!p) {
-        return -7;
-    }
-    if (! dilithium_params_init( p, public_key->kind)) {
-        free(p);
+    dilithium_param_t l_p_buf;
+    dilithium_param_t *p = &l_p_buf;
+    if (!dilithium_params_init(p, public_key->kind))
         return -2;
-    }
 
-    if (sig->sig_len < p->CRYPTO_BYTES ) {
-        free(p);
+    if (sig->sig_len < p->CRYPTO_BYTES)
         return -3;
-    }
 
     unsigned long long i;
     unsigned char rho[SEEDBYTES];
@@ -383,36 +362,23 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     polyvecl mat[p->PARAM_K], z;
     polyveck t1, w1, h, tmp1, tmp2;
 
-    if((sig->sig_len - p->CRYPTO_BYTES) != mlen) {
-        free(p);
+    if((sig->sig_len - p->CRYPTO_BYTES) != mlen)
         return -4;
-    }
 
     dilithium_unpack_pk(rho, &t1, public_key->data, p);
-    if(dilithium_unpack_sig(&z, &h, &c, sig->sig_data, p)) {
-        free(p);
+    if(dilithium_unpack_sig(&z, &h, &c, sig->sig_data, p))
         return -5;
-    }
 
-    if(polyvecl_chknorm(&z, GAMMA1 - p->PARAM_BETA, p)) {
-        free(p);
+    if(polyvecl_chknorm(&z, GAMMA1 - p->PARAM_BETA, p))
         return -6;
-    }
 
-    unsigned char *tmp_m = malloc(CRHBYTES + mlen);
-    if (!tmp_m) {
-        free(p);
-        return -8;
-    }
+    unsigned char tmp_m[CRHBYTES + mlen];
     if(sig->sig_data != m)
         for(i = 0; i < mlen; ++i)
             tmp_m[CRHBYTES + i] = m[i];
 
-    //SHAKE256(tmp_m, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
-    //SHAKE256(mu, CRHBYTES, tmp_m, CRHBYTES + mlen);
     dap_hash_shake256(tmp_m, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
     dap_hash_shake256(mu, CRHBYTES, tmp_m, CRHBYTES + mlen);
-    free(tmp_m);
 
     expand_mat(mat, rho, p);
     polyvecl_ntt(&z, p);
@@ -435,12 +401,9 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
 
     challenge(&cp, mu, &w1, p);
     for(i = 0; i < NN; ++i)
-        if(c.coeffs[i] != cp.coeffs[i]) {
-            free(p);
+        if(c.coeffs[i] != cp.coeffs[i])
             return -7;
-        }
 
-    free(p);
     return 0;
 }
 

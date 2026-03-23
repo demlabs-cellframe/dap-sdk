@@ -38,9 +38,9 @@ static void s_dil_dispatch_init(void)
 {
 #if DAP_CPU_DETECT_X86
     if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
-        s_dil_ntt_fwd = dap_dilithium_ntt_forward_avx2_512vl;
-        s_dil_ntt_inv = dap_dilithium_ntt_inverse_avx2_512vl;
-        s_dil_pw_mont = dap_dilithium_pointwise_mont_avx2_512vl;
+        s_dil_ntt_fwd = dap_dilithium_ntt_forward_avx512;
+        s_dil_ntt_inv = dap_dilithium_ntt_inverse_avx512;
+        s_dil_pw_mont = dap_dilithium_pointwise_mont_avx512;
     } else if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
         s_dil_ntt_fwd = dap_dilithium_ntt_forward_avx2;
         s_dil_ntt_inv = dap_dilithium_ntt_inverse_avx2;
@@ -61,21 +61,47 @@ static void s_dil_dispatch_init(void)
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 
+__attribute__((target("avx512f")))
+static void s_poly_reduce_avx512(poly *a) {
+    const __m512i mask23 = _mm512_set1_epi32(0x7FFFFF);
+    for (unsigned i = 0; i < NN; i += 16) {
+        __m512i v = _mm512_load_si512(a->coeffs + i);
+        __m512i lo = _mm512_and_si512(v, mask23);
+        __m512i hi = _mm512_srli_epi32(v, 23);
+        _mm512_store_si512(a->coeffs + i,
+            _mm512_add_epi32(lo, _mm512_sub_epi32(_mm512_slli_epi32(hi, 13), hi)));
+    }
+}
 __attribute__((target("avx2")))
-void poly_reduce(poly *a) {
+static void s_poly_reduce_avx2(poly *a) {
     const __m256i mask23 = _mm256_set1_epi32(0x7FFFFF);
     for (unsigned i = 0; i < NN; i += 8) {
         __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
         __m256i lo = _mm256_and_si256(v, mask23);
         __m256i hi = _mm256_srli_epi32(v, 23);
-        __m256i r = _mm256_add_epi32(lo,
-            _mm256_sub_epi32(_mm256_slli_epi32(hi, 13), hi));
-        _mm256_store_si256((__m256i *)(a->coeffs + i), r);
+        _mm256_store_si256((__m256i *)(a->coeffs + i),
+            _mm256_add_epi32(lo, _mm256_sub_epi32(_mm256_slli_epi32(hi, 13), hi)));
     }
 }
+void poly_reduce(poly *a) {
+    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
+        s_poly_reduce_avx512(a);
+    else
+        s_poly_reduce_avx2(a);
+}
 
+__attribute__((target("avx512f")))
+static void s_poly_csubq_avx512(poly *a) {
+    const __m512i vq = _mm512_set1_epi32(Q);
+    for (unsigned i = 0; i < NN; i += 16) {
+        __m512i v = _mm512_load_si512(a->coeffs + i);
+        __m512i t = _mm512_sub_epi32(v, vq);
+        __m512i m = _mm512_srai_epi32(t, 31);
+        _mm512_store_si512(a->coeffs + i, _mm512_add_epi32(t, _mm512_and_si512(m, vq)));
+    }
+}
 __attribute__((target("avx2")))
-void poly_csubq(poly *a) {
+static void s_poly_csubq_avx2(poly *a) {
     const __m256i vq = _mm256_set1_epi32(Q);
     for (unsigned i = 0; i < NN; i += 8) {
         __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
@@ -85,9 +111,29 @@ void poly_csubq(poly *a) {
             _mm256_add_epi32(t, _mm256_and_si256(m, vq)));
     }
 }
+void poly_csubq(poly *a) {
+    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
+        s_poly_csubq_avx512(a);
+    else
+        s_poly_csubq_avx2(a);
+}
 
+__attribute__((target("avx512f")))
+static void s_poly_freeze_avx512(poly *a) {
+    const __m512i mask23 = _mm512_set1_epi32(0x7FFFFF);
+    const __m512i vq = _mm512_set1_epi32(Q);
+    for (unsigned i = 0; i < NN; i += 16) {
+        __m512i v = _mm512_load_si512(a->coeffs + i);
+        __m512i lo = _mm512_and_si512(v, mask23);
+        __m512i hi = _mm512_srli_epi32(v, 23);
+        __m512i r = _mm512_add_epi32(lo, _mm512_sub_epi32(_mm512_slli_epi32(hi, 13), hi));
+        __m512i t = _mm512_sub_epi32(r, vq);
+        __m512i m = _mm512_srai_epi32(t, 31);
+        _mm512_store_si512(a->coeffs + i, _mm512_add_epi32(t, _mm512_and_si512(m, vq)));
+    }
+}
 __attribute__((target("avx2")))
-void poly_freeze(poly *a) {
+static void s_poly_freeze_avx2(poly *a) {
     const __m256i mask23 = _mm256_set1_epi32(0x7FFFFF);
     const __m256i vq = _mm256_set1_epi32(Q);
     for (unsigned i = 0; i < NN; i += 8) {
@@ -102,18 +148,48 @@ void poly_freeze(poly *a) {
             _mm256_add_epi32(t, _mm256_and_si256(m, vq)));
     }
 }
+void poly_freeze(poly *a) {
+    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
+        s_poly_freeze_avx512(a);
+    else
+        s_poly_freeze_avx2(a);
+}
 
+__attribute__((target("avx512f")))
+static void s_poly_add_avx512(poly *c, const poly *a, const poly *b) {
+    for (unsigned i = 0; i < NN; i += 16) {
+        __m512i va = _mm512_load_si512(a->coeffs + i);
+        __m512i vb = _mm512_load_si512(b->coeffs + i);
+        _mm512_store_si512(c->coeffs + i, _mm512_add_epi32(va, vb));
+    }
+}
 __attribute__((target("avx2")))
-void dilithium_poly_add(poly *c, const poly *a, const poly *b) {
+static void s_poly_add_avx2(poly *c, const poly *a, const poly *b) {
     for (unsigned i = 0; i < NN; i += 8) {
         __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
         __m256i vb = _mm256_load_si256((__m256i *)(b->coeffs + i));
         _mm256_store_si256((__m256i *)(c->coeffs + i), _mm256_add_epi32(va, vb));
     }
 }
+void dilithium_poly_add(poly *c, const poly *a, const poly *b) {
+    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
+        s_poly_add_avx512(c, a, b);
+    else
+        s_poly_add_avx2(c, a, b);
+}
 
+__attribute__((target("avx512f")))
+static void s_poly_sub_avx512(poly *c, const poly *a, const poly *b) {
+    const __m512i v2q = _mm512_set1_epi32(2 * Q);
+    for (unsigned i = 0; i < NN; i += 16) {
+        __m512i va = _mm512_load_si512(a->coeffs + i);
+        __m512i vb = _mm512_load_si512(b->coeffs + i);
+        _mm512_store_si512(c->coeffs + i,
+            _mm512_sub_epi32(_mm512_add_epi32(va, v2q), vb));
+    }
+}
 __attribute__((target("avx2")))
-void dilithium_poly_sub(poly *c, const poly *a, const poly *b) {
+static void s_poly_sub_avx2(poly *c, const poly *a, const poly *b) {
     const __m256i v2q = _mm256_set1_epi32(2 * Q);
     for (unsigned i = 0; i < NN; i += 8) {
         __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
@@ -121,6 +197,12 @@ void dilithium_poly_sub(poly *c, const poly *a, const poly *b) {
         _mm256_store_si256((__m256i *)(c->coeffs + i),
             _mm256_sub_epi32(_mm256_add_epi32(va, v2q), vb));
     }
+}
+void dilithium_poly_sub(poly *c, const poly *a, const poly *b) {
+    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
+        s_poly_sub_avx512(c, a, b);
+    else
+        s_poly_sub_avx2(c, a, b);
 }
 
 __attribute__((target("avx2")))
