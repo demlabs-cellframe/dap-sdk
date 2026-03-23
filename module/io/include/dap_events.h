@@ -22,6 +22,7 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
+
 #include <pthread.h>
 #include "dap_worker.h"
 #define DAP_MAX_EVENTS_COUNT    8192
@@ -66,3 +67,4 @@ void dap_cpu_assign_thread_on(uint32_t a_cpu_id);
 #ifdef __cplusplus
 }
 #endif
+

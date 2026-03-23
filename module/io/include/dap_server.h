@@ -45,6 +45,9 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #define EPOLL_HANDLE  int
+#elif defined(DAP_OS_WASM)
+#include <netinet/in.h>
+#include <stdint.h>
 #else
 #error "No poll headers for your platform"
 #endif

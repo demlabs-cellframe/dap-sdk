@@ -195,6 +195,11 @@ int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
     dap_return_val_if_fail(a_context && a_arg, -1);
     dap_worker_t *l_worker = a_arg;
     assert(l_worker);
+    if (a_context->event_exit) {
+        dap_context_remove(a_context->event_exit);
+        dap_events_socket_delete_unsafe(a_context->event_exit, false);
+        a_context->event_exit = NULL;
+    }
 
 #ifndef DAP_EVENTS_CAPS_IOCP
     // Stop cross-thread producers first to prevent enqueue into queues that are being freed below.

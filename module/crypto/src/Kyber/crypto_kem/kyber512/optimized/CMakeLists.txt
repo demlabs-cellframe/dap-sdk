@@ -53,7 +53,7 @@ add_library(${PROJECT_NAME} STATIC ${DAP_CRYPTO_KYBER512_HEADERS} ${DAP_CRYPTO_K
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_hash dap_math)
 
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT APPLE)
     target_link_libraries(${PROJECT_NAME} pthread)
 endif()
 

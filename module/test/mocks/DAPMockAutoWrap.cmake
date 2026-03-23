@@ -109,10 +109,14 @@ function(dap_mock_autowrap TARGET_NAME)
     set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
         message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
+        # Replace CMake list separator (;) with space in env var value —
+        # otherwise execute_process splits it into separate COMMAND arguments,
+        # treating the second source path as a program to execute.
+        string(REPLACE ";" " " _DAP_MOCK_SRC_FILES "${ALL_SOURCES}")
         set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env 
             "DAP_TPL_DIR=${DAP_TPL_DIR}" 
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
-            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES}"
+            "DAP_MOCK_SOURCE_FILES=${_DAP_MOCK_SRC_FILES}"
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     endif()
     
@@ -133,7 +137,7 @@ function(dap_mock_autowrap TARGET_NAME)
         set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env 
             "DAP_TPL_DIR=${DAP_TPL_DIR}"
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
-            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES}"
+            "DAP_MOCK_SOURCE_FILES=${_DAP_MOCK_SRC_FILES}"
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     else()
         set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
@@ -182,26 +186,34 @@ function(dap_mock_autowrap TARGET_NAME)
                 set(MOCK_OBJ_LIB "${TARGET_NAME}_mock_override")
                 add_library(${MOCK_OBJ_LIB} OBJECT ${MOCK_SRC_PATH})
                 
-                # Inherit include directories from target (which should have all SDK includes)
-                # Also add common SDK includes as fallback
+                # Inherit include directories from test target
                 get_target_property(TARGET_INCLUDES ${TARGET_NAME} INCLUDE_DIRECTORIES)
                 if(TARGET_INCLUDES)
                     target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${TARGET_INCLUDES})
                 endif()
                 
-                # Add SDK include directories (in case target doesn't have them yet)
-                if(TARGET cellframe_sdk)
-                    get_target_property(SDK_INCLUDES cellframe_sdk INTERFACE_INCLUDE_DIRECTORIES)
-                    if(SDK_INCLUDES)
-                        target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${SDK_INCLUDES})
-                    endif()
+                # Propagate includes from all libraries the test links against
+                get_target_property(TARGET_LINK_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+                if(TARGET_LINK_LIBS)
+                    foreach(_LINK_LIB ${TARGET_LINK_LIBS})
+                        if(TARGET ${_LINK_LIB})
+                            get_target_property(_LIB_INCLUDES ${_LINK_LIB} INTERFACE_INCLUDE_DIRECTORIES)
+                            if(_LIB_INCLUDES)
+                                target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${_LIB_INCLUDES})
+                            endif()
+                        endif()
+                    endforeach()
                 endif()
-                if(TARGET dap-sdk)
-                    get_target_property(DAP_SDK_INCLUDES dap-sdk INTERFACE_INCLUDE_DIRECTORIES)
-                    if(DAP_SDK_INCLUDES)
-                        target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${DAP_SDK_INCLUDES})
+                
+                # Also try well-known SDK targets by both naming conventions
+                foreach(_SDK_TARGET dap_sdk dap-sdk cellframe_sdk)
+                    if(TARGET ${_SDK_TARGET})
+                        get_target_property(_SDK_INCLUDES ${_SDK_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+                        if(_SDK_INCLUDES)
+                            target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${_SDK_INCLUDES})
+                        endif()
                     endif()
-                endif()
+                endforeach()
                 
                 # Add object files to test target - they link before libraries
                 target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MOCK_OBJ_LIB}>)
@@ -597,16 +609,17 @@ endfunction()
 function(dap_mock_manual_wrap TARGET_NAME)
     set(WRAP_OPTIONS "")
     
-    # Detect compiler and linker type
-    if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_C_SIMULATE_ID MATCHES "MSVC")
-        # MSVC does not support --wrap, use /ALTERNATENAME instead
+    if(APPLE)
+        # macOS: mock_interpose.c + flat_namespace handles overrides; no linker flags needed
+        list(LENGTH ARGN FUNC_COUNT)
+        message(STATUS " Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME} (macOS: interpose)")
+        return()
+    elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_C_SIMULATE_ID MATCHES "MSVC")
         message(WARNING "MSVC does not support --wrap. Please use MinGW/Clang for mock testing.")
-        message(WARNING "Alternative: Use /ALTERNATENAME:_function_name=_mock_function_name")
         foreach(FUNC ${ARGN})
             list(APPEND WRAP_OPTIONS "/ALTERNATENAME:_${FUNC}=_mock_${FUNC}")
         endforeach()
     else()
-        # GCC, Clang, MinGW - all support GNU ld --wrap
         foreach(FUNC ${ARGN})
             list(APPEND WRAP_OPTIONS "-Wl,--wrap=${FUNC}")
         endforeach()
@@ -615,7 +628,7 @@ function(dap_mock_manual_wrap TARGET_NAME)
     target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS})
     
     list(LENGTH ARGN FUNC_COUNT)
-    message(STATUS "✅ Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME}")
+    message(STATUS " Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME}")
 endfunction()
 
 #

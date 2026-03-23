@@ -9,7 +9,7 @@ dap_add_library(${PROJECT_NAME} ${STREAM_EVENT_SRCS} HEADERS ${STREAM_EVENT_HDRS
 
 # Minimal dependencies - only net_common for types
 # target_link_libraries automatically propagates includes for OBJECT libraries (see main CMakeLists.txt)
-target_link_libraries(${PROJECT_NAME} dap_core dap_net_common)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_net_common)
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)

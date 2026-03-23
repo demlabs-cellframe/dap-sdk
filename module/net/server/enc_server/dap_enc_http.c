@@ -55,8 +55,6 @@
 
 #define LOG_TAG "dap_enc_http"
 
-dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
-
 static dap_enc_acl_callback_t s_acl_callback = NULL;
 
 int enc_http_init()
@@ -168,8 +166,8 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                 return;
             }
             l_bias += dap_sign_get_size(l_sign);
-            dap_stream_node_addr_t l_client_pkey_node_addr = dap_stream_node_addr_from_sign(l_sign);
-            const char *l_client_node_addr_str = dap_stream_node_addr_to_str_static(l_client_pkey_node_addr);
+            dap_cluster_node_addr_t l_client_pkey_node_addr = dap_cluster_node_addr_from_sign(l_sign);
+            const char *l_client_node_addr_str = dap_cluster_node_addr_to_str(l_client_pkey_node_addr);
             if (dap_http_ban_list_client_check(l_client_node_addr_str, NULL, NULL)) {
                 log_it(L_ERROR, "Client %s is banned.", l_client_node_addr_str);
                 *return_code = DAP_HTTP_STATUS_FORBIDDEN;
@@ -221,7 +219,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         // save verified node addr and generate own sign
         char* l_node_sign_msg = NULL;
         if (l_protocol_version && l_sign_count) {
-            l_enc_key_ks->node_addr = dap_stream_node_addr_from_sign(l_sign);
+            l_enc_key_ks->node_addr = dap_cluster_node_addr_from_sign(l_sign);
 
             dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size);

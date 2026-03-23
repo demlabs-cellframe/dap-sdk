@@ -23,12 +23,14 @@
 */
 #pragma once
 
-#include "dap_net.h"
+#include "dap_events.h"
 #include <stdint.h>
 #include "dap_enc_key.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
+#include "dap_net_trans.h"
 #include "dap_cert.h"
+#include "dap_net.h"  // dap_link_info_t (avoids redefinition with dap_net_common.h)
 
 /**
  * @brief The dap_client_stage enum. Top level of client's state machine
@@ -40,7 +42,8 @@ typedef enum dap_client_stage {
     STAGE_STREAM_CTL=2,
     STAGE_STREAM_SESSION=3,
     STAGE_STREAM_CONNECTED=4,
-    STAGE_STREAM_STREAMING=5
+    STAGE_STREAM_STREAMING=5,
+    STAGE_QOS_PROBE=100
 } dap_client_stage_t;
 
 typedef enum dap_client_stage_status {
@@ -77,6 +80,8 @@ typedef void (*dap_client_callback_t) (dap_client_t *, void *);
 typedef void (*dap_client_callback_int_t) (dap_client_t *, void *, int);
 typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t);
 
+/* dap_link_info_t defined in dap_net.h */
+
 /**
  * @brief The dap_client struct
  */
@@ -95,6 +100,8 @@ typedef struct dap_client {
     dap_client_callback_t stage_target_done_callback;
     dap_client_callback_t stage_status_error_callback;
     void *callbacks_arg;
+
+    dap_net_trans_type_t trans_type; // Transport layer to use for stream
 
     void *_internal;
     void *_inheritor;
@@ -121,22 +128,19 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
 DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_addr; }
 DAP_STATIC_INLINE uint16_t dap_client_get_uplink_port_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_port; }
 
-void dap_client_set_uplink_unsafe(dap_client_t *a_client, dap_stream_node_addr_t *a_node, const char *a_addr, uint16_t a_port);
+void dap_client_set_uplink_unsafe(dap_client_t *a_client, dap_cluster_node_addr_t *a_node, const char *a_addr, uint16_t a_port);
+void dap_client_set_trans_type(dap_client_t *a_client, dap_net_trans_type_t a_trans_type);
+dap_net_trans_type_t dap_client_get_trans_type(dap_client_t *a_client);
 dap_enc_key_t * dap_client_get_key_stream(dap_client_t * a_client);
 
 void dap_client_go_stage(dap_client_t * a_client, dap_client_stage_t a_stage_end, dap_client_callback_t a_stage_end_callback);
-void dap_client_delete(dap_client_t * a_client);
+void dap_client_delete_mt(dap_client_t * a_client);
 void dap_client_delete_unsafe(dap_client_t * a_client);
+#define dap_client_delete dap_client_delete_mt
 
 ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
-int dap_client_write(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
+int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
 void dap_client_queue_clear(dap_client_t *a_client);
-
-void dap_client_request_enc_unsafe(dap_client_t * a_client, const char * a_path,const char * a_suburl,const char* a_query, void * a_request, size_t a_request_size,
-                                dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
-
-void dap_client_request_unsafe(dap_client_t * a_client, const char * a_full_path, void * a_request, size_t a_request_size,
-                                dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
 
 //int dap_client_disconnect(dap_client_t * a_client);
 
@@ -163,6 +167,48 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name);
 
 dap_client_stage_t dap_client_get_stage(dap_client_t * a_client);
 dap_client_stage_status_t dap_client_get_stage_status(dap_client_t * a_client);
+
+/**
+ * @brief Send unencrypted HTTP request (thread-safe)
+ * 
+ * This function sends an unencrypted HTTP request through the transport layer.
+ * The request is executed on the client's worker thread for thread safety.
+ * 
+ * @param a_client Client instance
+ * @param a_path HTTP path
+ * @param a_request Request data (can be NULL for GET requests)
+ * @param a_request_size Request data size
+ * @param a_response_proc Response callback
+ * @param a_response_error Error callback
+ * @param a_callback_arg Argument passed to callbacks
+ * @return 0 on success, -1 on failure
+ */
+int dap_client_request(dap_client_t *a_client, const char *a_path, void *a_request, size_t a_request_size,
+                       dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error,
+                       void *a_callback_arg);
+
+/**
+ * @brief Send encrypted HTTP request (thread-safe)
+ * 
+ * This function sends an encrypted HTTP request through the transport layer.
+ * The request is executed on the client's worker thread for thread safety.
+ * Requires an established session (session_key must be set).
+ * 
+ * @param a_client Client instance
+ * @param a_path HTTP path
+ * @param a_sub_url Sub-URL (will be encrypted, can be NULL)
+ * @param a_query Query string (will be encrypted, can be NULL)
+ * @param a_request Request data (will be encrypted, can be NULL for GET requests)
+ * @param a_request_size Request data size
+ * @param a_response_proc Response callback
+ * @param a_response_error Error callback
+ * @param a_callback_arg Argument passed to callbacks
+ * @return 0 on success, -1 on failure
+ */
+int dap_client_request_enc(dap_client_t *a_client, const char *a_path, const char *a_sub_url, const char *a_query,
+                           void *a_request, size_t a_request_size,
+                           dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error,
+                           void *a_callback_arg);
 
 #ifdef __cplusplus
 }

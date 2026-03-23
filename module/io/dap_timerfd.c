@@ -40,6 +40,10 @@
 #endif
 #endif
 
+#ifdef DAP_OS_WASM
+#include <emscripten.h>
+#endif
+
 #include "dap_common.h"
 #include "dap_events.h"
 #include "dap_worker.h"
@@ -435,7 +439,7 @@ void dap_timerfd_reset(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid)
     if (a_worker == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_uuid, a_worker->id);
             return;
         }
         return dap_timerfd_reset_unsafe(l_es->_inheritor);
@@ -454,6 +458,12 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
     if (!a_timerfd || !a_timerfd->events_socket)
         return; 
     debug_if(dap_events_debug_reactor_get(), L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
+#ifdef DAP_OS_WASM
+    if (a_timerfd->interval_id) {
+        emscripten_clear_interval(a_timerfd->interval_id);
+        a_timerfd->interval_id = 0;
+    }
+#endif
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else

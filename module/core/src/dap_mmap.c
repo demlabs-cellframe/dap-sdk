@@ -5,6 +5,7 @@
  *   Linux/Android -- mmap() / mremap() / msync() / madvise()
  *   macOS/BSD     -- mmap() / munmap()+mmap() / msync() / madvise()
  *   Windows       -- CreateFileMapping / MapViewOfFile / FlushViewOfFile
+ *   WASM          -- heap buffer (malloc/realloc) + WASMFS/OPFS file I/O
  *
  * Authors:
  * DAP SDK Team
@@ -13,11 +14,19 @@
 
 #include "dap_mmap.h"
 #include "dap_common.h"
+#include "dap_strfuncs.h"
 
 #include <string.h>
 #include <errno.h>
 
-#ifdef DAP_OS_WINDOWS
+#if defined(DAP_OS_WASM)
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <unistd.h>
+#elif defined(DAP_OS_WINDOWS)
 #include <windows.h>
 #include <io.h>
 #else
@@ -30,8 +39,11 @@
 
 #define LOG_TAG "dap_mmap"
 
-// Page-align a size upward (to system page size, typically 4096)
-#ifdef DAP_OS_WINDOWS
+#define DAP_MMAP_PAGE_SIZE 4096
+
+#ifdef DAP_OS_WASM
+#define PAGE_ALIGN_UP(sz) (((sz) + (DAP_MMAP_PAGE_SIZE - 1)) & ~((size_t)(DAP_MMAP_PAGE_SIZE - 1)))
+#elif defined(DAP_OS_WINDOWS)
 #define PAGE_ALIGN_UP(sz) (((sz) + 4095ULL) & ~4095ULL)
 #else
 static inline size_t s_page_align_up(size_t sz) {
@@ -42,7 +54,6 @@ static inline size_t s_page_align_up(size_t sz) {
 #define PAGE_ALIGN_UP(sz) s_page_align_up(sz)
 #endif
 
-// Minimum mapping size: 1 page
 #define MIN_MAP_SIZE PAGE_ALIGN_UP(1)
 
 // ============================================================================
@@ -50,11 +61,14 @@ static inline size_t s_page_align_up(size_t sz) {
 // ============================================================================
 
 struct dap_mmap {
-    void   *base;           // Mapped memory pointer
+    void   *base;           // Mapped memory pointer (heap-allocated on WASM)
     size_t  map_size;       // Current mapped region size (page-aligned)
     int     flags;          // DAP_MMAP_* flags from open
 
-#ifdef DAP_OS_WINDOWS
+#if defined(DAP_OS_WASM)
+    char   *file_path;      // File path for persistence (WASMFS/OPFS)
+    size_t  file_size;      // Actual data size on disk (may be < map_size)
+#elif defined(DAP_OS_WINDOWS)
     HANDLE  hFile;          // File handle
     HANDLE  hMapping;       // File mapping handle
 #else
@@ -64,10 +78,192 @@ struct dap_mmap {
 };
 
 // ============================================================================
+// WASM implementation: heap buffer backed by WASMFS/OPFS file
+// ============================================================================
+
+#if defined(DAP_OS_WASM)
+
+dap_mmap_t *dap_mmap_open(const char *a_path, int a_flags, size_t a_initial_size)
+{
+    if (!a_path) {
+        log_it(L_ERROR, "NULL path");
+        return NULL;
+    }
+
+    struct stat l_st;
+    size_t l_file_size = 0;
+    bool l_file_exists = (stat(a_path, &l_st) == 0);
+
+    if (l_file_exists)
+        l_file_size = (size_t)l_st.st_size;
+    else if (!(a_flags & DAP_MMAP_CREATE)) {
+        log_it(L_ERROR, "File '%s' does not exist and DAP_MMAP_CREATE not set", a_path);
+        return NULL;
+    }
+
+    size_t l_map_size = a_initial_size > 0 ? a_initial_size : l_file_size;
+    if (l_map_size == 0)
+        l_map_size = PAGE_ALIGN_UP(1);
+    l_map_size = PAGE_ALIGN_UP(l_map_size);
+
+    void *l_base = DAP_NEW_SIZE(void, l_map_size);
+    if (!l_base) {
+        log_it(L_ERROR, "Failed to allocate %zu bytes for mmap emulation", l_map_size);
+        return NULL;
+    }
+    memset(l_base, 0, l_map_size);
+
+    if (l_file_exists && l_file_size > 0) {
+        FILE *l_fp = fopen(a_path, "rb");
+        if (l_fp) {
+            size_t l_read_size = l_file_size < l_map_size ? l_file_size : l_map_size;
+            size_t l_read = fread(l_base, 1, l_read_size, l_fp);
+            fclose(l_fp);
+            if (l_read != l_read_size)
+                log_it(L_WARNING, "Partial read from '%s': %zu of %zu bytes", a_path, l_read, l_read_size);
+        } else {
+            log_it(L_WARNING, "Can't open '%s' for reading: %s", a_path, strerror(errno));
+        }
+    }
+
+    dap_mmap_t *l_mmap = DAP_NEW_Z(dap_mmap_t);
+    if (!l_mmap) {
+        DAP_DELETE(l_base);
+        return NULL;
+    }
+
+    l_mmap->base = l_base;
+    l_mmap->map_size = l_map_size;
+    l_mmap->flags = a_flags;
+    l_mmap->file_path = dap_strdup(a_path);
+    l_mmap->file_size = l_file_size;
+
+    return l_mmap;
+}
+
+void *dap_mmap_get_ptr(dap_mmap_t *a_mmap)
+{
+    return a_mmap ? a_mmap->base : NULL;
+}
+
+size_t dap_mmap_get_size(dap_mmap_t *a_mmap)
+{
+    return a_mmap ? a_mmap->map_size : 0;
+}
+
+int dap_mmap_get_fd(dap_mmap_t *a_mmap)
+{
+    (void)a_mmap;
+    return -1;
+}
+
+int dap_mmap_resize(dap_mmap_t *a_mmap, size_t a_new_size)
+{
+    if (!a_mmap || a_new_size == 0) return -1;
+
+    a_new_size = PAGE_ALIGN_UP(a_new_size);
+    if (a_new_size == a_mmap->map_size)
+        return 0;
+
+    void *l_new = DAP_REALLOC(a_mmap->base, a_new_size);
+    if (!l_new) {
+        log_it(L_ERROR, "realloc(%zu -> %zu) failed", a_mmap->map_size, a_new_size);
+        return -1;
+    }
+
+    if (a_new_size > a_mmap->map_size)
+        memset((uint8_t *)l_new + a_mmap->map_size, 0, a_new_size - a_mmap->map_size);
+
+    a_mmap->base = l_new;
+    a_mmap->map_size = a_new_size;
+    return 0;
+}
+
+static int s_mmap_write_file(dap_mmap_t *a_mmap, size_t a_offset, size_t a_length)
+{
+    if (!(a_mmap->flags & DAP_MMAP_WRITE) || !a_mmap->file_path)
+        return 0;
+
+    if (a_offset == 0 && a_length >= a_mmap->map_size) {
+        FILE *l_fp = fopen(a_mmap->file_path, "wb");
+        if (!l_fp) {
+            log_it(L_ERROR, "Can't open '%s' for writing: %s", a_mmap->file_path, strerror(errno));
+            return -1;
+        }
+        size_t l_written = fwrite(a_mmap->base, 1, a_mmap->map_size, l_fp);
+        fclose(l_fp);
+        if (l_written != a_mmap->map_size) {
+            log_it(L_ERROR, "Partial write to '%s': %zu of %zu", a_mmap->file_path, l_written, a_mmap->map_size);
+            return -1;
+        }
+    } else {
+        FILE *l_fp = fopen(a_mmap->file_path, "r+b");
+        if (!l_fp) {
+            l_fp = fopen(a_mmap->file_path, "wb");
+            if (!l_fp) {
+                log_it(L_ERROR, "Can't open '%s' for writing: %s", a_mmap->file_path, strerror(errno));
+                return -1;
+            }
+            fwrite(a_mmap->base, 1, a_mmap->map_size, l_fp);
+            fclose(l_fp);
+            return 0;
+        }
+        if (fseeko(l_fp, (off_t)a_offset, SEEK_SET) != 0) {
+            log_it(L_ERROR, "fseeko to %zu failed: %s", a_offset, strerror(errno));
+            fclose(l_fp);
+            return -1;
+        }
+        size_t l_written = fwrite((uint8_t *)a_mmap->base + a_offset, 1, a_length, l_fp);
+        fclose(l_fp);
+        if (l_written != a_length) {
+            log_it(L_ERROR, "Partial range write to '%s': %zu of %zu", a_mmap->file_path, l_written, a_length);
+            return -1;
+        }
+    }
+    a_mmap->file_size = a_mmap->map_size;
+    return 0;
+}
+
+int dap_mmap_sync(dap_mmap_t *a_mmap, int a_flags)
+{
+    (void)a_flags;
+    if (!a_mmap || !a_mmap->base) return -1;
+    return s_mmap_write_file(a_mmap, 0, a_mmap->map_size);
+}
+
+int dap_mmap_sync_range(dap_mmap_t *a_mmap, size_t a_offset, size_t a_length, int a_flags)
+{
+    (void)a_flags;
+    if (!a_mmap || !a_mmap->base) return -1;
+    if (a_offset + a_length > a_mmap->map_size) return -1;
+    return s_mmap_write_file(a_mmap, a_offset, a_length);
+}
+
+int dap_mmap_advise(dap_mmap_t *a_mmap, int a_advice)
+{
+    (void)a_mmap; (void)a_advice;
+    return 0;
+}
+
+int dap_mmap_advise_range(dap_mmap_t *a_mmap, size_t a_offset, size_t a_length, int a_advice)
+{
+    (void)a_mmap; (void)a_offset; (void)a_length; (void)a_advice;
+    return 0;
+}
+
+void dap_mmap_close(dap_mmap_t *a_mmap)
+{
+    if (!a_mmap) return;
+    DAP_DEL_Z(a_mmap->base);
+    DAP_DEL_Z(a_mmap->file_path);
+    DAP_DELETE(a_mmap);
+}
+
+// ============================================================================
 // POSIX implementation
 // ============================================================================
 
-#ifndef DAP_OS_WINDOWS
+#elif !defined(DAP_OS_WINDOWS)
 
 dap_mmap_t *dap_mmap_open(const char *a_path, int a_flags, size_t a_initial_size)
 {

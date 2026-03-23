@@ -491,7 +491,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
     if (a_worker_old == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker_old->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker_old->id);
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker_old->id);
             return;
         }
         dap_events_socket_reassign_between_workers_unsafe(l_es, a_worker_new);
@@ -1822,7 +1822,7 @@ void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_sock
             goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             goto lb_exit;
         }
         dap_events_socket_remove_and_delete_unsafe(l_es, false);
@@ -1885,7 +1885,7 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
             goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             goto lb_exit;
         }
         dap_events_socket_set_readable_unsafe(l_es, a_is_ready);
@@ -1953,7 +1953,7 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
             goto lb_exit;
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             goto lb_exit;
         }
         dap_events_socket_set_writable_unsafe(l_es, a_is_ready);
@@ -2026,7 +2026,7 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         l_result = l_es
             ? dap_events_socket_write_unsafe(l_es, a_data, a_data_size)
-            : ( log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id), 0 );
+            : ( log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id), 0 );
         goto lb_exit;
     }
 
@@ -2036,7 +2036,7 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
     *ol = (dap_overlapped_t) { .op = io_write };
     memcpy(ol->buf, a_data, a_data_size);
-    debug_if(dap_events_debug_reactor_get(), L_INFO, "Write %lu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_worker->id);
+    debug_if(dap_events_debug_reactor_get(), L_INFO, "Write %zu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_worker->id);
     l_result = PostQueuedCompletionStatus(a_worker->context->iocp, a_data_size, (ULONG_PTR)a_es_uuid, (OVERLAPPED*)ol)
         ? a_data_size
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
@@ -2141,7 +2141,7 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
         }
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             DAP_DEL_MULTY(l_msg->data, l_msg);
             goto lb_exit;
         }

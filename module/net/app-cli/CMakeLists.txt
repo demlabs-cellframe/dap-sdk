@@ -4,6 +4,8 @@ project (dap_app_cli)
 file(GLOB DAP_APP_CLI_SRCS *.c)
 file(GLOB DAP_APP_CLI_HEADERS include/*.h)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
+
 # Use dap_add_library to register as OBJECT library in DAP_INTERNAL_MODULES
 dap_add_library(${PROJECT_NAME} ${DAP_APP_CLI_SRCS} HEADERS ${DAP_APP_CLI_HEADERS})
 
@@ -11,7 +13,7 @@ dap_add_library(${PROJECT_NAME} ${DAP_APP_CLI_SRCS} HEADERS ${DAP_APP_CLI_HEADER
 # Note: dap_json_rpc depends on dap_enc_server and dap_client_http
 # dap_enc_server depends on dap_http_server
 # For STATIC builds these must be explicitly listed here
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_cli_server dap_json_rpc dap_enc_server dap_client_http dap_http_server m)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_cli_server dap_json_rpc dap_enc_server dap_client dap_http_server $<$<NOT:$<PLATFORM_ID:Darwin>>:m>)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(INSTALL_DAP_SDK)

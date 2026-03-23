@@ -4,12 +4,6 @@ project (dap_http_server C)
 file(GLOB HTTP_SERVER_SRCS FILES *.c http_client/*.c)
 file(GLOB HTTP_SERVER_HDRS FILES include/*.h http_client/include/*.h)
 
-if (ANDROID)
-  list(FILTER HTTP_SERVER_SRCS EXCLUDE REGEX ".*dap_http_folder\\.c$")
-  list(FILTER HTTP_SERVER_HDRS EXCLUDE REGEX ".*dap_http_folder\\.h$")
-  message(${HTTP_SERVER_SRCS})
-endif()
-
 if(WIN32)
     add_definitions ("-DUNDEBUG")
     add_definitions ("-DNDEBUG")
@@ -20,6 +14,8 @@ if(WIN32)
 endif()
 
 include_directories(${PROJECT_NAME} include http_client/include)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../cmake/LibraryHelpers.cmake)
+
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${HTTP_SERVER_SRCS} HEADERS ${HTTP_SERVER_HDRS})
 target_include_directories(${PROJECT_NAME} INTERFACE . http_client/include/)
@@ -34,9 +30,9 @@ if (UNIX)
     target_include_directories(${PROJECT_NAME} PUBLIC ${IPUTILS_INCLUDE_DIRS})
 endif()
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_io dap_json)
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME}
+    dap_link_libraries(${PROJECT_NAME} INTERFACE
     intl iconv
     kernel32
     user32
