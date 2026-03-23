@@ -350,7 +350,7 @@ basemul_zetas:
     vpsubw  %ymm16, %ymm17, \dst
 .endm
 
-/* Shuffle macros for inner layer transposition */
+/* Shuffle macros for inner layer transposition (hardcoded ymm2 scratch) */
 .macro SHUFFLE8 a, b
     vmovdqa32 \a, %ymm2
     vshufi32x4 $0, \b, \a, \a
@@ -379,10 +379,47 @@ basemul_zetas:
     vmovdqa32 %ymm2, \a
 .endm
 
+/*
+ * Parametric shuffle macros using EVEX-only instructions.
+ * k1 = 0xAA (dword blend mask), k2 = 0xAAAA (word blend mask).
+ * Must be set up before use.
+ */
+.macro SH8 a, b, t
+    vmovdqa32 \a, \t
+    vshufi32x4 $0, \b, \a, \a
+    vshufi32x4 $3, \b, \t, \b
+.endm
+
+.macro SH4 a, b, t
+    vmovdqa32 \a, \t
+    vpunpcklqdq \b, \a, \a
+    vpunpckhqdq \b, \t, \b
+.endm
+
+.macro SH2 a, b, t
+    vmovsldup \b, \t
+    vpblendmd \t, \a, \t{%k1}
+    vpsrlq  $32, \a, \a
+    vpblendmd \b, \a, \b{%k1}
+    vmovdqa32 \t, \a
+.endm
+
+.macro SH1 a, b, t
+    vpslld  $16, \b, \t
+    vpblendmw \t, \a, \t{%k2}
+    vpsrld  $16, \a, \a
+    vpblendmw \b, \a, \b{%k2}
+    vmovdqa32 \t, \a
+.endm
+
 
 /* ═══════════════════════════════════════════════════════════════════
- * FORWARD NTT
+ * FORWARD NTT — fully in-register (no intermediate store/reload)
  * void dap_mlkem_ntt_forward_asm(int16_t coeffs[256]);
+ *
+ * All 7 layers execute with ymm0-15 resident in registers.
+ * Inner layers (3-1) + nttpack are fully unrolled across all 8 pairs.
+ * ymm25 = shuffle scratch, ymm20 = zeta, ymm28/30/31 = constants.
  * ═══════════════════════════════════════════════════════════════════ */
 
 .text
@@ -393,6 +430,10 @@ CDECL(dap_mlkem_ntt_forward_asm):
     vmovdqa32 ntt_q(%rip), %ymm31
     vmovdqa32 ntt_qinv(%rip), %ymm30
     vmovdqa32 ntt_barrett_v(%rip), %ymm28
+    movl    $0xAA, %eax
+    kmovd   %eax, %k1
+    movl    $0xAAAA, %eax
+    kmovd   %eax, %k2
 
     /* Load 256 coefficients into ymm0-ymm15 */
     vmovdqu     (%rdi), %ymm0
@@ -455,7 +496,122 @@ CDECL(dap_mlkem_ntt_forward_asm):
     vmovdqa32 fwd_z4_7(%rip), %ymm20
     CT_BF %ymm14, %ymm15, %ymm20
 
-    /* ── Store all 16 vectors to memory ── */
+    /* ═══ Inner layers fully in-register (no store/reload) ═══ */
+
+    /* ── SHUFFLE8 all 8 pairs: separate 128-bit halves ── */
+    SH8 %ymm0,  %ymm1,  %ymm25
+    SH8 %ymm2,  %ymm3,  %ymm25
+    SH8 %ymm4,  %ymm5,  %ymm25
+    SH8 %ymm6,  %ymm7,  %ymm25
+    SH8 %ymm8,  %ymm9,  %ymm25
+    SH8 %ymm10, %ymm11, %ymm25
+    SH8 %ymm12, %ymm13, %ymm25
+    SH8 %ymm14, %ymm15, %ymm25
+
+    /* ── Layer 3 (len=8): half-broadcast zetas ── */
+    leaq    fwd_inner_zetas(%rip), %rsi
+    vmovdqa32    (%rsi), %ymm20
+    CT_BF %ymm0,  %ymm1,  %ymm20
+    vmovdqa32  96(%rsi), %ymm20
+    CT_BF %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 192(%rsi), %ymm20
+    CT_BF %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 288(%rsi), %ymm20
+    CT_BF %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 384(%rsi), %ymm20
+    CT_BF %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 480(%rsi), %ymm20
+    CT_BF %ymm10, %ymm11, %ymm20
+    vmovdqa32 576(%rsi), %ymm20
+    CT_BF %ymm12, %ymm13, %ymm20
+    vmovdqa32 672(%rsi), %ymm20
+    CT_BF %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE4 all 8 pairs: separate 64-bit groups ── */
+    SH4 %ymm0,  %ymm1,  %ymm25
+    SH4 %ymm2,  %ymm3,  %ymm25
+    SH4 %ymm4,  %ymm5,  %ymm25
+    SH4 %ymm6,  %ymm7,  %ymm25
+    SH4 %ymm8,  %ymm9,  %ymm25
+    SH4 %ymm10, %ymm11, %ymm25
+    SH4 %ymm12, %ymm13, %ymm25
+    SH4 %ymm14, %ymm15, %ymm25
+
+    /* ── Layer 2 (len=4): quad-broadcast zetas ── */
+    vmovdqa32  32(%rsi), %ymm20
+    CT_BF %ymm0,  %ymm1,  %ymm20
+    vmovdqa32 128(%rsi), %ymm20
+    CT_BF %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 224(%rsi), %ymm20
+    CT_BF %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 320(%rsi), %ymm20
+    CT_BF %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 416(%rsi), %ymm20
+    CT_BF %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 512(%rsi), %ymm20
+    CT_BF %ymm10, %ymm11, %ymm20
+    vmovdqa32 608(%rsi), %ymm20
+    CT_BF %ymm12, %ymm13, %ymm20
+    vmovdqa32 704(%rsi), %ymm20
+    CT_BF %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE2 all 8 pairs: separate 32-bit pairs ── */
+    SH2 %ymm0,  %ymm1,  %ymm25
+    SH2 %ymm2,  %ymm3,  %ymm25
+    SH2 %ymm4,  %ymm5,  %ymm25
+    SH2 %ymm6,  %ymm7,  %ymm25
+    SH2 %ymm8,  %ymm9,  %ymm25
+    SH2 %ymm10, %ymm11, %ymm25
+    SH2 %ymm12, %ymm13, %ymm25
+    SH2 %ymm14, %ymm15, %ymm25
+
+    /* ── Layer 1 (len=2): pair-broadcast zetas ── */
+    vmovdqa32  64(%rsi), %ymm20
+    CT_BF %ymm0,  %ymm1,  %ymm20
+    vmovdqa32 160(%rsi), %ymm20
+    CT_BF %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 256(%rsi), %ymm20
+    CT_BF %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 352(%rsi), %ymm20
+    CT_BF %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 448(%rsi), %ymm20
+    CT_BF %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 544(%rsi), %ymm20
+    CT_BF %ymm10, %ymm11, %ymm20
+    vmovdqa32 640(%rsi), %ymm20
+    CT_BF %ymm12, %ymm13, %ymm20
+    vmovdqa32 736(%rsi), %ymm20
+    CT_BF %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE1 all 8 pairs: nttpack transposition ── */
+    SH1 %ymm0,  %ymm1,  %ymm25
+    SH1 %ymm2,  %ymm3,  %ymm25
+    SH1 %ymm4,  %ymm5,  %ymm25
+    SH1 %ymm6,  %ymm7,  %ymm25
+    SH1 %ymm8,  %ymm9,  %ymm25
+    SH1 %ymm10, %ymm11, %ymm25
+    SH1 %ymm12, %ymm13, %ymm25
+    SH1 %ymm14, %ymm15, %ymm25
+
+    /* ── Barrett reduce all 16 vectors ── */
+    BARRETT %ymm0
+    BARRETT %ymm1
+    BARRETT %ymm2
+    BARRETT %ymm3
+    BARRETT %ymm4
+    BARRETT %ymm5
+    BARRETT %ymm6
+    BARRETT %ymm7
+    BARRETT %ymm8
+    BARRETT %ymm9
+    BARRETT %ymm10
+    BARRETT %ymm11
+    BARRETT %ymm12
+    BARRETT %ymm13
+    BARRETT %ymm14
+    BARRETT %ymm15
+
+    /* ── Store all 16 vectors ── */
     vmovdqu %ymm0,      (%rdi)
     vmovdqu %ymm1,   32(%rdi)
     vmovdqu %ymm2,   64(%rdi)
@@ -473,58 +629,17 @@ CDECL(dap_mlkem_ntt_forward_asm):
     vmovdqu %ymm14, 448(%rdi)
     vmovdqu %ymm15, 480(%rdi)
 
-    /* ── Inner layers 3→1 + nttpack: loop over 8 pairs ── */
-    leaq    fwd_inner_zetas(%rip), %rsi
-    xorl    %ecx, %ecx
-
-.Lfwd_inner:
-    vmovdqu (%rdi,%rcx), %ymm0
-    vmovdqu 32(%rdi,%rcx), %ymm1
-
-    /* shuffle8: separate 128-bit halves for layer 3 */
-    SHUFFLE8 %ymm0, %ymm1
-
-    /* Layer 3 (len=8): half-broadcast zeta */
-    vmovdqa32 (%rsi), %ymm20
-    CT_BF %ymm0, %ymm1, %ymm20
-
-    /* shuffle4: separate 64-bit groups for layer 2 */
-    SHUFFLE4 %ymm0, %ymm1
-
-    /* Layer 2 (len=4): quad-broadcast zeta */
-    vmovdqa32 32(%rsi), %ymm20
-    CT_BF %ymm0, %ymm1, %ymm20
-
-    /* shuffle2: separate 32-bit pairs for layer 1 */
-    SHUFFLE2 %ymm0, %ymm1
-
-    /* Layer 1 (len=2): dword-pair zeta */
-    vmovdqa32 64(%rsi), %ymm20
-    CT_BF %ymm0, %ymm1, %ymm20
-
-    /* shuffle1: final nttpack transposition */
-    SHUFFLE1 %ymm0, %ymm1
-
-    /* Barrett reduce both */
-    BARRETT %ymm0
-    BARRETT %ymm1
-
-    vmovdqu %ymm0, (%rdi,%rcx)
-    vmovdqu %ymm1, 32(%rdi,%rcx)
-
-    addl    $64, %ecx
-    addq    $96, %rsi
-    cmpl    $512, %ecx
-    jl      .Lfwd_inner
-
     vzeroupper
     ret
 .size CDECL(dap_mlkem_ntt_forward_asm), .-CDECL(dap_mlkem_ntt_forward_asm)
 
 
 /* ═══════════════════════════════════════════════════════════════════
- * INVERSE NTT
+ * INVERSE NTT — fully in-register (no intermediate store/reload)
  * void dap_mlkem_ntt_inverse_asm(int16_t coeffs[256]);
+ *
+ * All 7 layers execute with ymm0-15 resident in registers.
+ * Inner layers (1-3) + nttunpack are fully unrolled across all 8 pairs.
  * ═══════════════════════════════════════════════════════════════════ */
 
 .balign 64
@@ -534,48 +649,12 @@ CDECL(dap_mlkem_ntt_inverse_asm):
     vmovdqa32 ntt_q(%rip), %ymm31
     vmovdqa32 ntt_qinv(%rip), %ymm30
     vmovdqa32 ntt_barrett_v(%rip), %ymm28
+    movl    $0xAA, %eax
+    kmovd   %eax, %k1
+    movl    $0xAAAA, %eax
+    kmovd   %eax, %k2
 
-    /* ── Inner layers 1→3 + nttunpack: loop over 8 pairs ── */
-    leaq    inv_inner_zetas(%rip), %rsi
-    xorl    %ecx, %ecx
-
-.Linv_inner:
-    vmovdqu (%rdi,%rcx), %ymm0
-    vmovdqu 32(%rdi,%rcx), %ymm1
-
-    /* shuffle1: undo nttpack first level */
-    SHUFFLE1 %ymm0, %ymm1
-
-    /* Inverse layer 1 (GS, len=2): dword-pair zeta */
-    vmovdqa32 (%rsi), %ymm20
-    GS_BF %ymm0, %ymm1, %ymm20
-
-    /* shuffle2: undo second level */
-    SHUFFLE2 %ymm0, %ymm1
-
-    /* Inverse layer 2 (GS, len=4): quad-broadcast zeta */
-    vmovdqa32 32(%rsi), %ymm20
-    GS_BF %ymm0, %ymm1, %ymm20
-
-    /* shuffle4: undo third level */
-    SHUFFLE4 %ymm0, %ymm1
-
-    /* Inverse layer 3 (GS, len=8): half-broadcast zeta */
-    vmovdqa32 64(%rsi), %ymm20
-    GS_BF %ymm0, %ymm1, %ymm20
-
-    /* shuffle8: back to standard layout */
-    SHUFFLE8 %ymm0, %ymm1
-
-    vmovdqu %ymm0, (%rdi,%rcx)
-    vmovdqu %ymm1, 32(%rdi,%rcx)
-
-    addl    $64, %ecx
-    addq    $96, %rsi
-    cmpl    $512, %ecx
-    jl      .Linv_inner
-
-    /* ── Load all 16 vectors ── */
+    /* Load 256 coefficients into ymm0-ymm15 */
     vmovdqu     (%rdi), %ymm0
     vmovdqu  32(%rdi), %ymm1
     vmovdqu  64(%rdi), %ymm2
@@ -592,6 +671,106 @@ CDECL(dap_mlkem_ntt_inverse_asm):
     vmovdqu 416(%rdi), %ymm13
     vmovdqu 448(%rdi), %ymm14
     vmovdqu 480(%rdi), %ymm15
+
+    /* ═══ Inner layers fully in-register: nttunpack + layers 1→3 ═══ */
+
+    leaq    inv_inner_zetas(%rip), %rsi
+
+    /* ── SHUFFLE1 all 8 pairs: undo nttpack ── */
+    SH1 %ymm0,  %ymm1,  %ymm25
+    SH1 %ymm2,  %ymm3,  %ymm25
+    SH1 %ymm4,  %ymm5,  %ymm25
+    SH1 %ymm6,  %ymm7,  %ymm25
+    SH1 %ymm8,  %ymm9,  %ymm25
+    SH1 %ymm10, %ymm11, %ymm25
+    SH1 %ymm12, %ymm13, %ymm25
+    SH1 %ymm14, %ymm15, %ymm25
+
+    /* ── Inverse layer 1 (GS, len=2): pair-broadcast zetas ── */
+    vmovdqa32    (%rsi), %ymm20
+    GS_BF %ymm0,  %ymm1,  %ymm20
+    vmovdqa32  96(%rsi), %ymm20
+    GS_BF %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 192(%rsi), %ymm20
+    GS_BF %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 288(%rsi), %ymm20
+    GS_BF %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 384(%rsi), %ymm20
+    GS_BF %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 480(%rsi), %ymm20
+    GS_BF %ymm10, %ymm11, %ymm20
+    vmovdqa32 576(%rsi), %ymm20
+    GS_BF %ymm12, %ymm13, %ymm20
+    vmovdqa32 672(%rsi), %ymm20
+    GS_BF %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE2 all 8 pairs ── */
+    SH2 %ymm0,  %ymm1,  %ymm25
+    SH2 %ymm2,  %ymm3,  %ymm25
+    SH2 %ymm4,  %ymm5,  %ymm25
+    SH2 %ymm6,  %ymm7,  %ymm25
+    SH2 %ymm8,  %ymm9,  %ymm25
+    SH2 %ymm10, %ymm11, %ymm25
+    SH2 %ymm12, %ymm13, %ymm25
+    SH2 %ymm14, %ymm15, %ymm25
+
+    /* ── Inverse layer 2 (GS, len=4): quad-broadcast zetas ── */
+    vmovdqa32  32(%rsi), %ymm20
+    GS_BF %ymm0,  %ymm1,  %ymm20
+    vmovdqa32 128(%rsi), %ymm20
+    GS_BF %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 224(%rsi), %ymm20
+    GS_BF %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 320(%rsi), %ymm20
+    GS_BF %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 416(%rsi), %ymm20
+    GS_BF %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 512(%rsi), %ymm20
+    GS_BF %ymm10, %ymm11, %ymm20
+    vmovdqa32 608(%rsi), %ymm20
+    GS_BF %ymm12, %ymm13, %ymm20
+    vmovdqa32 704(%rsi), %ymm20
+    GS_BF %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE4 all 8 pairs ── */
+    SH4 %ymm0,  %ymm1,  %ymm25
+    SH4 %ymm2,  %ymm3,  %ymm25
+    SH4 %ymm4,  %ymm5,  %ymm25
+    SH4 %ymm6,  %ymm7,  %ymm25
+    SH4 %ymm8,  %ymm9,  %ymm25
+    SH4 %ymm10, %ymm11, %ymm25
+    SH4 %ymm12, %ymm13, %ymm25
+    SH4 %ymm14, %ymm15, %ymm25
+
+    /* ── Inverse layer 3 (GS, len=8): half-broadcast zetas ── */
+    vmovdqa32  64(%rsi), %ymm20
+    GS_BF %ymm0,  %ymm1,  %ymm20
+    vmovdqa32 160(%rsi), %ymm20
+    GS_BF %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 256(%rsi), %ymm20
+    GS_BF %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 352(%rsi), %ymm20
+    GS_BF %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 448(%rsi), %ymm20
+    GS_BF %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 544(%rsi), %ymm20
+    GS_BF %ymm10, %ymm11, %ymm20
+    vmovdqa32 640(%rsi), %ymm20
+    GS_BF %ymm12, %ymm13, %ymm20
+    vmovdqa32 736(%rsi), %ymm20
+    GS_BF %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE8 all 8 pairs: back to standard layout ── */
+    SH8 %ymm0,  %ymm1,  %ymm25
+    SH8 %ymm2,  %ymm3,  %ymm25
+    SH8 %ymm4,  %ymm5,  %ymm25
+    SH8 %ymm6,  %ymm7,  %ymm25
+    SH8 %ymm8,  %ymm9,  %ymm25
+    SH8 %ymm10, %ymm11, %ymm25
+    SH8 %ymm12, %ymm13, %ymm25
+    SH8 %ymm14, %ymm15, %ymm25
+
+    /* ═══ Outer layers 4→7 (GS) ═══ */
 
     /* ── Layer 4 (GS, len=16): 8 zetas ── */
     vmovdqa32 inv_z4_0(%rip), %ymm20
