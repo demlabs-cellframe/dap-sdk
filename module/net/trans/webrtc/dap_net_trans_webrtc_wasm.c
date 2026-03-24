@@ -238,9 +238,13 @@ static void s_proxy_dc_send(void *a) { rtc_send_args_t *p = a; p->result = js_rt
 static void s_proxy_close(void *a) { rtc_close_args_t *p = a; js_rtc_close(p->peer_id); }
 static void s_proxy_init_callbacks(void *a) { (void)a; js_rtc_init_callbacks(); }
 
-#define RTC_PROXY_SYNC(fn, args) \
-    emscripten_proxy_sync(emscripten_proxy_get_system_queue(), \
-                          emscripten_main_runtime_thread_id(), fn, args)
+#define RTC_PROXY_SYNC(fn, args) do { \
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) \
+        fn(args); \
+    else \
+        emscripten_proxy_sync(emscripten_proxy_get_system_queue(), \
+                              emscripten_main_runtime_thread_id(), fn, args); \
+} while (0)
 
 static void *s_recv_thread_func(void *a_arg)
 {
@@ -330,7 +334,11 @@ static int s_rtc_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
 {
     (void)a_trans; (void)a_config;
 #ifdef DAP_WASM_PTHREADS
-    RTC_PROXY_SYNC(s_proxy_init_callbacks, NULL);
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
+        s_proxy_init_callbacks(NULL);
+    } else {
+        RTC_PROXY_SYNC(s_proxy_init_callbacks, NULL);
+    }
     log_it(L_NOTICE, "WebRTC transport initialized (multi-threaded)");
 #else
     js_rtc_init_callbacks();

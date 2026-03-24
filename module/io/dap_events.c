@@ -318,10 +318,27 @@ void dap_events_deinit( )
 }
 
 
-/* ─── WASM: main-thread event loop + emscripten main loop ────────────── */
+/* ─── WASM: event loop ───────────────────────────────────────────────── */
 #if defined(DAP_OS_WASM)
 
+#ifdef DAP_WASM_PTHREADS
+#include <unistd.h>
+
+static void *s_wasm_worker_thread_func(void *a_arg)
+{
+    (void)a_arg;
+    log_it(L_NOTICE, "WASM worker thread started (tid=%p)", (void *)pthread_self());
+    while (s_workers[0] && s_workers[0]->context && s_workers[0]->context->is_running) {
+        dap_worker_poll_step(s_workers[0]->context);
+        dap_proc_thread_poll_step();
+        usleep(1000);
+    }
+    log_it(L_NOTICE, "WASM worker thread exiting");
+    return NULL;
+}
+#else
 static void s_wasm_main_loop_step(void);
+#endif
 
 int dap_events_start()
 {
@@ -356,24 +373,29 @@ int dap_events_start()
         return -4;
     }
 
-    emscripten_set_main_loop(s_wasm_main_loop_step, 0, 0);
-
-    log_it(L_NOTICE, "WASM event loop started via emscripten_set_main_loop (pthreads=%s)",
 #ifdef DAP_WASM_PTHREADS
-           "yes"
+    pthread_t l_thread;
+    if (pthread_create(&l_thread, NULL, s_wasm_worker_thread_func, NULL) != 0) {
+        log_it(L_CRITICAL, "Failed to create WASM worker thread");
+        return -5;
+    }
+    pthread_detach(l_thread);
+    log_it(L_NOTICE, "WASM event loop: worker on dedicated pthread (main thread free for JS)");
 #else
-           "no"
+    emscripten_set_main_loop(s_wasm_main_loop_step, 0, 0);
+    log_it(L_NOTICE, "WASM event loop started via emscripten_set_main_loop (single-threaded)");
 #endif
-    );
     return 0;
 }
 
+#ifndef DAP_WASM_PTHREADS
 static void s_wasm_main_loop_step(void)
 {
     if (s_workers[0] && s_workers[0]->context && s_workers[0]->context->is_running)
         dap_worker_poll_step(s_workers[0]->context);
     dap_proc_thread_poll_step();
 }
+#endif
 
 #else
 /* ─── Normal multi-threaded path ─────────────────────────────────────── */

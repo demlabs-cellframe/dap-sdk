@@ -39,11 +39,7 @@
 #include "dap_plugin.h"
 #endif
 
-#ifdef DAP_WASM_PTHREADS
-#include <emscripten/wasmfs.h>
-#include <emscripten/em_asm.h>
-#include <errno.h>
-#elif defined(DAP_OS_WASM)
+#if defined(DAP_WASM_PTHREADS) || defined(DAP_OS_WASM)
 #include <sys/stat.h>
 #endif
 
@@ -93,33 +89,7 @@ static void s_deinit_plugin(void);
 /*  WASM filesystem bootstrap                                                */
 /* ========================================================================= */
 
-#ifdef DAP_WASM_PTHREADS
-#define DAP_WASM_SYS_DIR "/dap"
-
-static int s_init_wasmfs(void)
-{
-    const char *l_mount = g_sys_dir_path ? g_sys_dir_path : DAP_WASM_SYS_DIR;
-    int l_has_opfs = EM_ASM_INT({
-        return (typeof navigator !== 'undefined' &&
-                navigator.storage &&
-                typeof navigator.storage.getDirectory === 'function') ? 1 : 0;
-    });
-    if (l_has_opfs) {
-        backend_t l_opfs = wasmfs_create_opfs_backend();
-        if (l_opfs && wasmfs_create_directory(l_mount, 0777, l_opfs) == 0) {
-            if (!g_sys_dir_path)
-                g_sys_dir_path = dap_strdup(l_mount);
-            log_it(L_NOTICE, "WASMFS/OPFS persistent storage mounted at %s", g_sys_dir_path);
-            return 0;
-        }
-    }
-    log_it(L_WARNING, "OPFS unavailable, falling back to WASMFS memory backend");
-    if (!g_sys_dir_path)
-        g_sys_dir_path = dap_strdup(l_mount);
-    wasmfs_create_directory(l_mount, 0777, wasmfs_create_memory_backend());
-    return 0;
-}
-#elif defined(DAP_OS_WASM)
+#ifdef DAP_OS_WASM
 static void s_init_memfs(void)
 {
     if (!g_sys_dir_path) {
@@ -229,10 +199,7 @@ static int s_init_core(const dap_sdk_config_t *a_config)
     int l_rc = 0;
     dap_log_level_set(a_config->log_level);
 
-#ifdef DAP_WASM_PTHREADS
-    if ((l_rc = s_init_wasmfs()) != 0)
-        return l_rc;
-#elif defined(DAP_OS_WASM)
+#ifdef DAP_OS_WASM
     s_init_memfs();
 #endif
 

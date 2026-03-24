@@ -142,20 +142,30 @@ static void s_proxy_ws_close(void *a_arg)   { ws_close_args_t *l = a_arg; js_ws_
 static void s_proxy_ws_destroy(void *a_arg) { ws_close_args_t *l = a_arg; js_ws_destroy(l->handle); }
 
 static int s_ws_create_on_main(const char *a_url) {
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
+        return js_ws_create(a_url);
     ws_create_args_t l = { .url = a_url, .result = -1 };
     emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_create, &l);
     return l.result;
 }
 static int s_ws_send_on_main(int a_h, const void *d, int n) {
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
+        return js_ws_send(a_h, d, n);
     ws_send_args_t l = { .handle = a_h, .data = d, .len = n, .result = -1 };
     emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_send, &l);
     return l.result;
 }
 static void s_ws_close_on_main(int a_h, int c) {
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
+        js_ws_close(a_h, c); return;
+    }
     ws_close_args_t l = { .handle = a_h, .code = c };
     emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_close, &l);
 }
 static void s_ws_destroy_on_main(int a_h) {
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
+        js_ws_destroy(a_h); return;
+    }
     ws_close_args_t l = { .handle = a_h, .code = 0 };
     emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_destroy, &l);
 }
@@ -295,9 +305,13 @@ static int s_ws_system_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
 {
     (void)a_config; (void)a_trans;
 #ifdef DAP_WASM_PTHREADS
-    emscripten_proxy_sync(emscripten_proxy_get_system_queue(),
-                          emscripten_main_runtime_thread_id(),
-                          s_proxy_init_callbacks, NULL);
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
+        s_proxy_init_callbacks(NULL);
+    } else {
+        emscripten_proxy_sync(emscripten_proxy_get_system_queue(),
+                              emscripten_main_runtime_thread_id(),
+                              s_proxy_init_callbacks, NULL);
+    }
     log_it(L_NOTICE, "WebSocket System transport initialized (multi-threaded)");
 #else
     js_ws_init_callbacks();

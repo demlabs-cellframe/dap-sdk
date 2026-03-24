@@ -309,11 +309,12 @@ addToLibrary({
     },
 
     js_rtc_init_callbacks: function() {
-        Module.__rtc_on_connected  = Module.cwrap('_rtc_on_connected', null, ['number']);
-        Module.__rtc_on_closed     = Module.cwrap('_rtc_on_closed', null, ['number']);
-        Module.__rtc_on_dc_open    = Module.cwrap('_rtc_on_dc_open', null, ['number']);
-        Module.__rtc_on_dc_close   = Module.cwrap('_rtc_on_dc_close', null, ['number']);
-        Module.__rtc_on_dc_message = Module.cwrap('_rtc_on_dc_message', null, ['number', 'number', 'number']);
+        var e = wasmExports || Module.asm;
+        Module.__rtc_on_connected  = e['_rtc_on_connected']  || Module['__rtc_on_connected'];
+        Module.__rtc_on_closed     = e['_rtc_on_closed']     || Module['__rtc_on_closed'];
+        Module.__rtc_on_dc_open    = e['_rtc_on_dc_open']    || Module['__rtc_on_dc_open'];
+        Module.__rtc_on_dc_close   = e['_rtc_on_dc_close']   || Module['__rtc_on_dc_close'];
+        Module.__rtc_on_dc_message = e['_rtc_on_dc_message'] || Module['__rtc_on_dc_message'];
     },
 
     /* ==================================================================
@@ -388,9 +389,10 @@ addToLibrary({
     },
 
     js_ws_init_callbacks: function() {
-        Module.__ws_on_open    = Module.cwrap('_ws_on_open', null, ['number']);
-        Module.__ws_on_close   = Module.cwrap('_ws_on_close', null, ['number', 'number']);
-        Module.__ws_on_error   = Module.cwrap('_ws_on_error', null, ['number']);
-        Module.__ws_on_message = Module.cwrap('_ws_on_message', null, ['number', 'number', 'number']);
+        var e = wasmExports || Module.asm;
+        Module.__ws_on_open    = e['_ws_on_open']    || Module['__ws_on_open'];
+        Module.__ws_on_close   = e['_ws_on_close']   || Module['__ws_on_close'];
+        Module.__ws_on_error   = e['_ws_on_error']   || Module['__ws_on_error'];
+        Module.__ws_on_message = e['_ws_on_message'] || Module['__ws_on_message'];
     },
 });
