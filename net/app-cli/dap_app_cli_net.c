@@ -298,14 +298,30 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
             l_status = l_prev_status;
         }
     }
+    if (l_status == DAP_CLI_ERROR_INCOMPLETE
+            && a_cmd->hdr_len > 0
+            && a_cmd->cmd_res_len + a_cmd->hdr_len <= a_cmd->cmd_res_cur) {
+        *(a_cmd->cmd_res + a_cmd->cmd_res_cur) = '\0';
+        l_status = 0;
+    }
     fprintf(stderr, "[CLI-DIAG] recv: done, status=%d received=%zu\n", l_status, a_cmd->cmd_res_cur);
-    // process result
     if (!l_status && a_cmd->cmd_res) {
         dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res + a_cmd->hdr_len);
+        if (!response) {
+            fprintf(stderr, "[CLI-DIAG] JSON parse failed, body offset=%zu body='%.200s'\n",
+                    a_cmd->hdr_len, a_cmd->cmd_res + a_cmd->hdr_len);
+            printf("Error: failed to parse server response\n");
+            dap_json_rpc_request_free(a_request);
+            dap_string_free(l_post_data, true);
+            DAP_DELETE(a_cmd->cmd_res);
+            return -1;
+        }
         if (l_id_response != response->id) {
             printf("Wrong response from server\n");
             dap_json_rpc_request_free(a_request);
             dap_json_rpc_response_free(response);
+            DAP_DELETE(a_cmd->cmd_res);
+            dap_string_free(l_post_data, true);
             return -1;
         }
         if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name, a_cmd->cmd_param, a_cmd->cmd_param_count) != 0) {
