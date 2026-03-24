@@ -148,16 +148,26 @@ void dap_mlkem_poly_decompress_d5_{{ARCH_LOWER}}(int16_t *a_r, const uint8_t *a_
 {{TARGET_ATTR}}
 void dap_mlkem_poly_tobytes_{{ARCH_LOWER}}(uint8_t *a_r, const int16_t *a_coeffs)
 {
-    const __m256i v_mix = _mm256_set1_epi32(0x10000001);
+    const __m256i v_mix  = _mm256_set1_epi32(0x10000001);
     const __m256i v_shuf = _mm256_setr_epi8(
         0,1,2, 4,5,6, 8,9,10, 12,13,14, -1,-1,-1,-1,
         0,1,2, 4,5,6, 8,9,10, 12,13,14, -1,-1,-1,-1);
 
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 15; i++) {
         __m256i f = _mm256_loadu_si256((const __m256i *)&a_coeffs[16 * i]);
         __m256i t = _mm256_madd_epi16(f, v_mix);
         t = _mm256_shuffle_epi8(t, v_shuf);
         uint8_t *out = a_r + 24 * i;
+        __m128i lo = _mm256_castsi256_si128(t);
+        __m128i hi = _mm256_extracti128_si256(t, 1);
+        _mm_storeu_si128((__m128i *)out, lo);
+        _mm_storeu_si128((__m128i *)(out + 12), hi);
+    }
+    {
+        __m256i f = _mm256_loadu_si256((const __m256i *)&a_coeffs[16 * 15]);
+        __m256i t = _mm256_madd_epi16(f, v_mix);
+        t = _mm256_shuffle_epi8(t, v_shuf);
+        uint8_t *out = a_r + 24 * 15;
         __m128i lo = _mm256_castsi256_si128(t);
         __m128i hi = _mm256_extracti128_si256(t, 1);
         _mm_storel_epi64((__m128i *)out, lo);

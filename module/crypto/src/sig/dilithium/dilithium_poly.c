@@ -129,16 +129,16 @@ __attribute__((target("avx2")))
 void poly_neg(poly *a) {
     const __m256i vq = _mm256_set1_epi32(Q);
     for (unsigned i = 0; i < NN; i += 8) {
-        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
-        _mm256_store_si256((__m256i *)(a->coeffs + i), _mm256_sub_epi32(vq, v));
+        __m256i v = _mm256_loadu_si256((__m256i *)(a->coeffs + i));
+        _mm256_storeu_si256((__m256i *)(a->coeffs + i), _mm256_sub_epi32(vq, v));
     }
 }
 
 __attribute__((target("avx2")))
 void poly_shiftl(poly *a, unsigned int k) {
     for (unsigned i = 0; i < NN; i += 8) {
-        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
-        _mm256_store_si256((__m256i *)(a->coeffs + i), _mm256_slli_epi32(v, k));
+        __m256i v = _mm256_loadu_si256((__m256i *)(a->coeffs + i));
+        _mm256_storeu_si256((__m256i *)(a->coeffs + i), _mm256_slli_epi32(v, k));
     }
 }
 
@@ -152,7 +152,7 @@ void poly_decompose(poly *a1, poly *a0, const poly *a) {
     const __m256i v1 = _mm256_set1_epi32(1);
     const __m256i v0xF = _mm256_set1_epi32(0xF);
     for (unsigned i = 0; i < NN; i += 8) {
-        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i va = _mm256_loadu_si256((__m256i *)(a->coeffs + i));
         __m256i t = _mm256_and_si256(va, mask19);
         t = _mm256_add_epi32(t, _mm256_slli_epi32(_mm256_srli_epi32(va, 19), 9));
         t = _mm256_sub_epi32(t, vhalf_plus1);
@@ -164,9 +164,9 @@ void poly_decompose(poly *a1, poly *a0, const poly *a) {
         u = _mm256_srai_epi32(u, 31);
         a_val = _mm256_add_epi32(_mm256_srli_epi32(a_val, 19), v1);
         a_val = _mm256_sub_epi32(a_val, _mm256_and_si256(u, v1));
-        _mm256_store_si256((__m256i *)(a0->coeffs + i),
+        _mm256_storeu_si256((__m256i *)(a0->coeffs + i),
             _mm256_sub_epi32(_mm256_add_epi32(vq, t), _mm256_srli_epi32(a_val, 4)));
-        _mm256_store_si256((__m256i *)(a1->coeffs + i),
+        _mm256_storeu_si256((__m256i *)(a1->coeffs + i),
             _mm256_and_si256(a_val, v0xF));
     }
 }
@@ -179,14 +179,14 @@ void poly_power2round(poly *a1, poly *a0, const poly *a) {
     const __m256i vd_half_m1 = _mm256_set1_epi32((1 << (D - 1)) - 1);
     const __m256i vq = _mm256_set1_epi32(Q);
     for (unsigned i = 0; i < NN; i += 8) {
-        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
+        __m256i va = _mm256_loadu_si256((__m256i *)(a->coeffs + i));
         __m256i t = _mm256_and_si256(va, vd_mask);
         t = _mm256_sub_epi32(t, vd_half_p1);
         __m256i tm = _mm256_srai_epi32(t, 31);
         t = _mm256_add_epi32(t, _mm256_and_si256(tm, vd_full));
         t = _mm256_sub_epi32(t, vd_half_m1);
-        _mm256_store_si256((__m256i *)(a0->coeffs + i), _mm256_add_epi32(vq, t));
-        _mm256_store_si256((__m256i *)(a1->coeffs + i),
+        _mm256_storeu_si256((__m256i *)(a0->coeffs + i), _mm256_add_epi32(vq, t));
+        _mm256_storeu_si256((__m256i *)(a1->coeffs + i),
             _mm256_srli_epi32(_mm256_sub_epi32(va, t), D));
     }
 }
@@ -201,8 +201,8 @@ unsigned int poly_make_hint(poly *h, const poly *a, const poly *b) {
     const __m256i v1 = _mm256_set1_epi32(1);
     const __m256i v0xF = _mm256_set1_epi32(0xF);
     for (unsigned i = 0; i < NN; i += 8) {
-        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
-        __m256i vb = _mm256_load_si256((__m256i *)(b->coeffs + i));
+        __m256i va = _mm256_loadu_si256((__m256i *)(a->coeffs + i));
+        __m256i vb = _mm256_loadu_si256((__m256i *)(b->coeffs + i));
         /* Inline decompose for a */
         __m256i ta = _mm256_and_si256(va, mask19);
         ta = _mm256_add_epi32(ta, _mm256_slli_epi32(_mm256_srli_epi32(va, 19), 9));
@@ -228,10 +228,10 @@ unsigned int poly_make_hint(poly *h, const poly *a, const poly *b) {
         /* hint = (decompose(a) != decompose(b)) ? 1 : 0 */
         __m256i cmp = _mm256_cmpeq_epi32(a1a, a1b);
         __m256i hint = _mm256_andnot_si256(cmp, v1);
-        _mm256_store_si256((__m256i *)(h->coeffs + i), hint);
+        _mm256_storeu_si256((__m256i *)(h->coeffs + i), hint);
         /* Horizontal sum: extract and sum via movemask or store+add */
         uint32_t buf[8] __attribute__((aligned(32)));
-        _mm256_store_si256((__m256i *)buf, hint);
+        _mm256_storeu_si256((__m256i *)buf, hint);
         for (int j = 0; j < 8; j++) s += buf[j];
     }
     return s;
@@ -248,8 +248,8 @@ void poly_use_hint(poly *a, const poly *b, const poly *h) {
     const __m256i v0xF = _mm256_set1_epi32(0xF);
     const __m256i vzero = _mm256_setzero_si256();
     for (unsigned i = 0; i < NN; i += 8) {
-        __m256i vb_val = _mm256_load_si256((__m256i *)(b->coeffs + i));
-        __m256i vh = _mm256_load_si256((__m256i *)(h->coeffs + i));
+        __m256i vb_val = _mm256_loadu_si256((__m256i *)(b->coeffs + i));
+        __m256i vh = _mm256_loadu_si256((__m256i *)(h->coeffs + i));
         /* Inline decompose(b) → a1, a0 */
         __m256i t = _mm256_and_si256(vb_val, mask19);
         t = _mm256_add_epi32(t, _mm256_slli_epi32(_mm256_srli_epi32(vb_val, 19), 9));
@@ -273,7 +273,7 @@ void poly_use_hint(poly *a, const poly *b, const poly *h) {
         __m256i minus1 = _mm256_and_si256(_mm256_sub_epi32(a1, v1), v0xF);
         __m256i hint_result = _mm256_blendv_epi8(minus1, plus1, a0_gt_q);
         __m256i result = _mm256_blendv_epi8(hint_result, a1, hint_is_zero);
-        _mm256_store_si256((__m256i *)(a->coeffs + i), result);
+        _mm256_storeu_si256((__m256i *)(a->coeffs + i), result);
     }
 }
 
@@ -282,7 +282,7 @@ int poly_chknorm(const poly *a, uint32_t B) {
     const __m256i vhalf = _mm256_set1_epi32((Q - 1) / 2);
     const __m256i vbound = _mm256_set1_epi32((int32_t)B);
     for (unsigned i = 0; i < NN; i += 8) {
-        __m256i v = _mm256_load_si256((const __m256i *)(a->coeffs + i));
+        __m256i v = _mm256_loadu_si256((const __m256i *)(a->coeffs + i));
         __m256i t = _mm256_sub_epi32(vhalf, v);
         __m256i m = _mm256_srai_epi32(t, 31);
         t = _mm256_xor_si256(t, m);

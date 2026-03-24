@@ -546,6 +546,7 @@ void MLKEM_NAMESPACE(_indcpa_keypair)(uint8_t a_pk[MLKEM_INDCPA_PUBLICKEYBYTES],
     }
 
     MLKEM_NAMESPACE(_polyvec_ntt)(&l_skpv);
+    MLKEM_NAMESPACE(_polyvec_reduce)(&l_skpv);
     MLKEM_NAMESPACE(_polyvec_ntt)(&l_e);
 
     dap_mlkem_polyvec_mulcache l_skpv_cache;

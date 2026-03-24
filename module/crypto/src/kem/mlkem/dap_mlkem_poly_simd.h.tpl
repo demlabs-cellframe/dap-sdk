@@ -99,8 +99,10 @@ static inline void s_mlkem_poly_csubq_ref(int16_t *a)
 
 static inline void s_mlkem_poly_reduce_ref(int16_t *a)
 {
-    for (unsigned i = 0; i < 256; i++)
+    for (unsigned i = 0; i < 256; i++) {
         a[i] = dap_mlkem_barrett_reduce(a[i]);
+        a[i] = dap_mlkem_caddq(a[i]);
+    }
 }
 
 static inline void s_mlkem_poly_tomont_ref(int16_t *a)
@@ -120,6 +122,34 @@ static inline void s_mlkem_poly_sub_ref(int16_t *r, const int16_t *a, const int1
 {
     for (unsigned i = 0; i < 256; i++)
         r[i] = a[i] - b[i];
+}
+
+static inline void s_mlkem_cbd2_ref(int16_t *r, const uint8_t *buf)
+{
+    for (unsigned i = 0; i < 256 / 8; i++) {
+        uint32_t t = (uint32_t)buf[4*i] | ((uint32_t)buf[4*i+1] << 8)
+                   | ((uint32_t)buf[4*i+2] << 16) | ((uint32_t)buf[4*i+3] << 24);
+        uint32_t d = (t & 0x55555555) + ((t >> 1) & 0x55555555);
+        for (unsigned j = 0; j < 8; j++) {
+            int16_t a = (int16_t)((d >> (4 * j))     & 0x3);
+            int16_t b = (int16_t)((d >> (4 * j + 2)) & 0x3);
+            r[8 * i + j] = a - b;
+        }
+    }
+}
+
+static inline void s_mlkem_cbd3_ref(int16_t *r, const uint8_t *buf)
+{
+    for (unsigned i = 0; i < 256 / 4; i++) {
+        uint32_t t = (uint32_t)buf[3*i] | ((uint32_t)buf[3*i+1] << 8)
+                   | ((uint32_t)buf[3*i+2] << 16);
+        uint32_t d = (t & 0x00249249) + ((t >> 1) & 0x00249249) + ((t >> 2) & 0x00249249);
+        for (unsigned j = 0; j < 4; j++) {
+            int16_t a = (int16_t)((d >> (6 * j))     & 0x7);
+            int16_t b = (int16_t)((d >> (6 * j + 3)) & 0x7);
+            r[4 * i + j] = a - b;
+        }
+    }
 }
 
 /* ============================================================================
@@ -159,6 +189,24 @@ static inline void dap_mlkem_poly_{{fn}}_fast(int16_t *r, const int16_t *a, cons
     s_mlkem_poly_{{fn}}_neon(r, a, b);
 #else
     s_mlkem_poly_{{fn}}_ref(r, a, b);
+#endif
+}
+{{/for}}
+
+{{#for fn in cbd2|cbd3}}
+static inline void dap_mlkem_{{fn}}_fast(int16_t *r, const uint8_t *buf) {
+#if defined(__x86_64__) || defined(_M_X64)
+    static int s_ok = -1;
+    if (__builtin_expect(s_ok < 0, 0))
+        s_ok = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2);
+    if (__builtin_expect(s_ok, 1))
+        s_mlkem_{{fn}}_avx2(r, buf);
+    else
+        s_mlkem_{{fn}}_ref(r, buf);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    s_mlkem_{{fn}}_neon(r, buf);
+#else
+    s_mlkem_{{fn}}_ref(r, buf);
 #endif
 }
 {{/for}}

@@ -94,6 +94,21 @@
 .endm
 
 /*
+ * GS butterfly WITHOUT Barrett: t=a-b; a'=a+b; b'=fqmul(z,t)
+ * Caller must Barrett-reduce periodically to prevent int16 overflow.
+ * Scratch: ymm16, ymm17, ymm25
+ */
+.macro GS_NR a, b, z
+    vpsubw  \b, \a, %ymm25
+    vpaddw  \b, \a, \a
+    vpmullw \z, %ymm25, %ymm16
+    vpmulhw \z, %ymm25, %ymm17
+    vpmullw %ymm30, %ymm16, %ymm16
+    vpmulhw %ymm31, %ymm16, %ymm16
+    vpsubw  %ymm16, %ymm17, \b
+.endm
+
+/*
  * 4-wide interleaved GS butterfly.
  * Scratch: ymm16-ymm19, ymm21-ymm27, ymm29
  */
@@ -130,6 +145,64 @@
     vpsubw  %ymm17, %ymm22, \b1
     vpsubw  %ymm18, %ymm23, \b2
     vpsubw  %ymm19, %ymm24, \b3
+.endm
+
+/*
+ * 4-wide GS butterfly WITHOUT Barrett.
+ * Scratch: ymm16-ymm19, ymm21-ymm27, ymm29
+ */
+.macro GS_NR4 a0, b0, a1, b1, a2, b2, a3, b3, z
+    vpsubw  \b0, \a0, %ymm25
+    vpsubw  \b1, \a1, %ymm26
+    vpsubw  \b2, \a2, %ymm27
+    vpsubw  \b3, \a3, %ymm29
+    vpaddw  \b0, \a0, \a0
+    vpaddw  \b1, \a1, \a1
+    vpaddw  \b2, \a2, \a2
+    vpaddw  \b3, \a3, \a3
+    vpmullw \z, %ymm25, %ymm16
+    vpmullw \z, %ymm26, %ymm17
+    vpmullw \z, %ymm27, %ymm18
+    vpmullw \z, %ymm29, %ymm19
+    vpmulhw \z, %ymm25, %ymm21
+    vpmulhw \z, %ymm26, %ymm22
+    vpmulhw \z, %ymm27, %ymm23
+    vpmulhw \z, %ymm29, %ymm24
+    vpmullw %ymm30, %ymm16, %ymm16
+    vpmullw %ymm30, %ymm17, %ymm17
+    vpmullw %ymm30, %ymm18, %ymm18
+    vpmullw %ymm30, %ymm19, %ymm19
+    vpmulhw %ymm31, %ymm16, %ymm16
+    vpmulhw %ymm31, %ymm17, %ymm17
+    vpmulhw %ymm31, %ymm18, %ymm18
+    vpmulhw %ymm31, %ymm19, %ymm19
+    vpsubw  %ymm16, %ymm21, \b0
+    vpsubw  %ymm17, %ymm22, \b1
+    vpsubw  %ymm18, %ymm23, \b2
+    vpsubw  %ymm19, %ymm24, \b3
+.endm
+
+/*
+ * Barrett-reduce 4 independent vectors (better ILP than sequential).
+ * Scratch: ymm16-ymm19
+ */
+.macro BARRETT4 r0, r1, r2, r3
+    vpmulhw %ymm28, \r0, %ymm16
+    vpmulhw %ymm28, \r1, %ymm17
+    vpmulhw %ymm28, \r2, %ymm18
+    vpmulhw %ymm28, \r3, %ymm19
+    vpsraw  $10, %ymm16, %ymm16
+    vpsraw  $10, %ymm17, %ymm17
+    vpsraw  $10, %ymm18, %ymm18
+    vpsraw  $10, %ymm19, %ymm19
+    vpmullw %ymm31, %ymm16, %ymm16
+    vpmullw %ymm31, %ymm17, %ymm17
+    vpmullw %ymm31, %ymm18, %ymm18
+    vpmullw %ymm31, %ymm19, %ymm19
+    vpsubw  %ymm16, \r0, \r0
+    vpsubw  %ymm17, \r1, \r1
+    vpsubw  %ymm18, \r2, \r2
+    vpsubw  %ymm19, \r3, \r3
 .endm
 
 .macro BARRETT reg
@@ -391,22 +464,10 @@ CDECL(dap_mlkem_ntt_forward_asm):
     SH1 %ymm14, %ymm15, %ymm25
 
     /* ── Barrett reduce all 16 vectors ── */
-    BARRETT %ymm0
-    BARRETT %ymm1
-    BARRETT %ymm2
-    BARRETT %ymm3
-    BARRETT %ymm4
-    BARRETT %ymm5
-    BARRETT %ymm6
-    BARRETT %ymm7
-    BARRETT %ymm8
-    BARRETT %ymm9
-    BARRETT %ymm10
-    BARRETT %ymm11
-    BARRETT %ymm12
-    BARRETT %ymm13
-    BARRETT %ymm14
-    BARRETT %ymm15
+    BARRETT4 %ymm0, %ymm1, %ymm2, %ymm3
+    BARRETT4 %ymm4, %ymm5, %ymm6, %ymm7
+    BARRETT4 %ymm8, %ymm9, %ymm10, %ymm11
+    BARRETT4 %ymm12, %ymm13, %ymm14, %ymm15
 
     /* ── Store all 16 vectors ── */
     vmovdqu %ymm0,      (%rdi)
@@ -432,11 +493,21 @@ CDECL(dap_mlkem_ntt_forward_asm):
 
 
 /* ═══════════════════════════════════════════════════════════════════
- * INVERSE NTT — fully in-register (no intermediate store/reload)
+ * INVERSE NTT — fully in-register, pre-scaled, minimal Barrett
  * void dap_mlkem_ntt_inverse_asm(int16_t coeffs[256]);
  *
- * All 7 layers execute with ymm0-15 resident in registers.
- * Inner layers (1-3) + nttunpack are fully unrolled across all 8 pairs.
+ * Pre-scales all coefficients by f=1441 at load time: since the
+ * invNTT is linear over Z_q, fqmul(f, inputs) yields the same result
+ * as scaling outputs. After fqmul, |coeff| ≤ (q+1)/2 ≈ 1665.
+ *
+ * Overflow budget with pre-scaling (GS sums double per layer):
+ *   After 3 layers: ≤ 8×1665 = 13320 < 32767  ✓
+ *   After 4 layers: ≤ 16×1665 = 26640 < 32767  ✓ (tight)
+ *   After 5 layers: ≤ 53280 > 32767 ✗ → Barrett after layer 4
+ *   After Barrett + 3 layers: ≤ 8×3329 = 26632 < 32767  ✓
+ *
+ * Barrett reduction points: after layer 3 (safety margin), after layer 5.
+ * Total Barrett: 2×16 = 32 ops (was 56×4 = 224 inside every butterfly).
  * ═══════════════════════════════════════════════════════════════════ */
 
 .balign 64
@@ -469,150 +540,7 @@ CDECL(dap_mlkem_ntt_inverse_asm):
     vmovdqu 448(%rdi), %ymm14
     vmovdqu 480(%rdi), %ymm15
 
-    /* ═══ Inner layers fully in-register: nttunpack + layers 1→3 ═══ */
-
-    leaq    inv_inner_zetas(%rip), %rsi
-
-    /* ── SHUFFLE1 all 8 pairs: undo nttpack ── */
-    SH1 %ymm0,  %ymm1,  %ymm25
-    SH1 %ymm2,  %ymm3,  %ymm25
-    SH1 %ymm4,  %ymm5,  %ymm25
-    SH1 %ymm6,  %ymm7,  %ymm25
-    SH1 %ymm8,  %ymm9,  %ymm25
-    SH1 %ymm10, %ymm11, %ymm25
-    SH1 %ymm12, %ymm13, %ymm25
-    SH1 %ymm14, %ymm15, %ymm25
-
-    /* ── Inverse layer 1 (GS, len=2): pair-broadcast zetas ── */
-    vmovdqa32    (%rsi), %ymm20
-    GS_BF %ymm0,  %ymm1,  %ymm20
-    vmovdqa32  96(%rsi), %ymm20
-    GS_BF %ymm2,  %ymm3,  %ymm20
-    vmovdqa32 192(%rsi), %ymm20
-    GS_BF %ymm4,  %ymm5,  %ymm20
-    vmovdqa32 288(%rsi), %ymm20
-    GS_BF %ymm6,  %ymm7,  %ymm20
-    vmovdqa32 384(%rsi), %ymm20
-    GS_BF %ymm8,  %ymm9,  %ymm20
-    vmovdqa32 480(%rsi), %ymm20
-    GS_BF %ymm10, %ymm11, %ymm20
-    vmovdqa32 576(%rsi), %ymm20
-    GS_BF %ymm12, %ymm13, %ymm20
-    vmovdqa32 672(%rsi), %ymm20
-    GS_BF %ymm14, %ymm15, %ymm20
-
-    /* ── SHUFFLE2 all 8 pairs ── */
-    SH2 %ymm0,  %ymm1,  %ymm25
-    SH2 %ymm2,  %ymm3,  %ymm25
-    SH2 %ymm4,  %ymm5,  %ymm25
-    SH2 %ymm6,  %ymm7,  %ymm25
-    SH2 %ymm8,  %ymm9,  %ymm25
-    SH2 %ymm10, %ymm11, %ymm25
-    SH2 %ymm12, %ymm13, %ymm25
-    SH2 %ymm14, %ymm15, %ymm25
-
-    /* ── Inverse layer 2 (GS, len=4): quad-broadcast zetas ── */
-    vmovdqa32  32(%rsi), %ymm20
-    GS_BF %ymm0,  %ymm1,  %ymm20
-    vmovdqa32 128(%rsi), %ymm20
-    GS_BF %ymm2,  %ymm3,  %ymm20
-    vmovdqa32 224(%rsi), %ymm20
-    GS_BF %ymm4,  %ymm5,  %ymm20
-    vmovdqa32 320(%rsi), %ymm20
-    GS_BF %ymm6,  %ymm7,  %ymm20
-    vmovdqa32 416(%rsi), %ymm20
-    GS_BF %ymm8,  %ymm9,  %ymm20
-    vmovdqa32 512(%rsi), %ymm20
-    GS_BF %ymm10, %ymm11, %ymm20
-    vmovdqa32 608(%rsi), %ymm20
-    GS_BF %ymm12, %ymm13, %ymm20
-    vmovdqa32 704(%rsi), %ymm20
-    GS_BF %ymm14, %ymm15, %ymm20
-
-    /* ── SHUFFLE4 all 8 pairs ── */
-    SH4 %ymm0,  %ymm1,  %ymm25
-    SH4 %ymm2,  %ymm3,  %ymm25
-    SH4 %ymm4,  %ymm5,  %ymm25
-    SH4 %ymm6,  %ymm7,  %ymm25
-    SH4 %ymm8,  %ymm9,  %ymm25
-    SH4 %ymm10, %ymm11, %ymm25
-    SH4 %ymm12, %ymm13, %ymm25
-    SH4 %ymm14, %ymm15, %ymm25
-
-    /* ── Inverse layer 3 (GS, len=8): half-broadcast zetas ── */
-    vmovdqa32  64(%rsi), %ymm20
-    GS_BF %ymm0,  %ymm1,  %ymm20
-    vmovdqa32 160(%rsi), %ymm20
-    GS_BF %ymm2,  %ymm3,  %ymm20
-    vmovdqa32 256(%rsi), %ymm20
-    GS_BF %ymm4,  %ymm5,  %ymm20
-    vmovdqa32 352(%rsi), %ymm20
-    GS_BF %ymm6,  %ymm7,  %ymm20
-    vmovdqa32 448(%rsi), %ymm20
-    GS_BF %ymm8,  %ymm9,  %ymm20
-    vmovdqa32 544(%rsi), %ymm20
-    GS_BF %ymm10, %ymm11, %ymm20
-    vmovdqa32 640(%rsi), %ymm20
-    GS_BF %ymm12, %ymm13, %ymm20
-    vmovdqa32 736(%rsi), %ymm20
-    GS_BF %ymm14, %ymm15, %ymm20
-
-    /* ── SHUFFLE8 all 8 pairs: back to standard layout ── */
-    SH8 %ymm0,  %ymm1,  %ymm25
-    SH8 %ymm2,  %ymm3,  %ymm25
-    SH8 %ymm4,  %ymm5,  %ymm25
-    SH8 %ymm6,  %ymm7,  %ymm25
-    SH8 %ymm8,  %ymm9,  %ymm25
-    SH8 %ymm10, %ymm11, %ymm25
-    SH8 %ymm12, %ymm13, %ymm25
-    SH8 %ymm14, %ymm15, %ymm25
-
-    /* ═══ Outer layers 4→7 (GS) ═══ */
-
-    /* ── Layer 4 (GS, len=16): 8 zetas ── */
-    vmovdqa32 inv_z4_0(%rip), %ymm20
-    GS_BF %ymm0,  %ymm1,  %ymm20
-    vmovdqa32 inv_z4_1(%rip), %ymm20
-    GS_BF %ymm2,  %ymm3,  %ymm20
-    vmovdqa32 inv_z4_2(%rip), %ymm20
-    GS_BF %ymm4,  %ymm5,  %ymm20
-    vmovdqa32 inv_z4_3(%rip), %ymm20
-    GS_BF %ymm6,  %ymm7,  %ymm20
-    vmovdqa32 inv_z4_4(%rip), %ymm20
-    GS_BF %ymm8,  %ymm9,  %ymm20
-    vmovdqa32 inv_z4_5(%rip), %ymm20
-    GS_BF %ymm10, %ymm11, %ymm20
-    vmovdqa32 inv_z4_6(%rip), %ymm20
-    GS_BF %ymm12, %ymm13, %ymm20
-    vmovdqa32 inv_z4_7(%rip), %ymm20
-    GS_BF %ymm14, %ymm15, %ymm20
-
-    /* ── Layer 5 (GS, len=32): 4 zetas ── */
-    vmovdqa32 inv_z5_0(%rip), %ymm20
-    GS_BF %ymm0,  %ymm2,  %ymm20
-    GS_BF %ymm1,  %ymm3,  %ymm20
-    vmovdqa32 inv_z5_1(%rip), %ymm20
-    GS_BF %ymm4,  %ymm6,  %ymm20
-    GS_BF %ymm5,  %ymm7,  %ymm20
-    vmovdqa32 inv_z5_2(%rip), %ymm20
-    GS_BF %ymm8,  %ymm10, %ymm20
-    GS_BF %ymm9,  %ymm11, %ymm20
-    vmovdqa32 inv_z5_3(%rip), %ymm20
-    GS_BF %ymm12, %ymm14, %ymm20
-    GS_BF %ymm13, %ymm15, %ymm20
-
-    /* ── Layer 6 (GS, len=64): 2 zetas ── */
-    vmovdqa32 inv_z6_0(%rip), %ymm20
-    GS_BF4 %ymm0, %ymm4, %ymm1, %ymm5, %ymm2, %ymm6, %ymm3, %ymm7, %ymm20
-    vmovdqa32 inv_z6_1(%rip), %ymm20
-    GS_BF4 %ymm8, %ymm12, %ymm9, %ymm13, %ymm10, %ymm14, %ymm11, %ymm15, %ymm20
-
-    /* ── Layer 7 (GS, len=128): 1 zeta ── */
-    vmovdqa32 inv_z7(%rip), %ymm20
-    GS_BF4 %ymm0, %ymm8,  %ymm1, %ymm9,  %ymm2, %ymm10, %ymm3, %ymm11, %ymm20
-    GS_BF4 %ymm4, %ymm12, %ymm5, %ymm13, %ymm6, %ymm14, %ymm7, %ymm15, %ymm20
-
-    /* ── Scale by f = 1441 ── */
+    /* ── Pre-scale by f=1441: reduces |coeff| to ≤ 1665 ── */
     vmovdqa32 ntt_f_scale(%rip), %ymm20
     FQMUL %ymm0,  %ymm20, %ymm0
     FQMUL %ymm1,  %ymm20, %ymm1
@@ -631,7 +559,162 @@ CDECL(dap_mlkem_ntt_inverse_asm):
     FQMUL %ymm14, %ymm20, %ymm14
     FQMUL %ymm15, %ymm20, %ymm15
 
-    /* ── Store results ── */
+    /* ═══ Inner layers: nttunpack + layers 1→3 (NO Barrett) ═══ */
+
+    leaq    inv_inner_zetas(%rip), %rsi
+
+    /* ── SHUFFLE1 all 8 pairs: undo nttpack ── */
+    SH1 %ymm0,  %ymm1,  %ymm25
+    SH1 %ymm2,  %ymm3,  %ymm25
+    SH1 %ymm4,  %ymm5,  %ymm25
+    SH1 %ymm6,  %ymm7,  %ymm25
+    SH1 %ymm8,  %ymm9,  %ymm25
+    SH1 %ymm10, %ymm11, %ymm25
+    SH1 %ymm12, %ymm13, %ymm25
+    SH1 %ymm14, %ymm15, %ymm25
+
+    /* ── Inverse layer 1 (GS, len=2): pair-broadcast zetas ── */
+    vmovdqa32    (%rsi), %ymm20
+    GS_NR %ymm0,  %ymm1,  %ymm20
+    vmovdqa32  96(%rsi), %ymm20
+    GS_NR %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 192(%rsi), %ymm20
+    GS_NR %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 288(%rsi), %ymm20
+    GS_NR %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 384(%rsi), %ymm20
+    GS_NR %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 480(%rsi), %ymm20
+    GS_NR %ymm10, %ymm11, %ymm20
+    vmovdqa32 576(%rsi), %ymm20
+    GS_NR %ymm12, %ymm13, %ymm20
+    vmovdqa32 672(%rsi), %ymm20
+    GS_NR %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE2 all 8 pairs ── */
+    SH2 %ymm0,  %ymm1,  %ymm25
+    SH2 %ymm2,  %ymm3,  %ymm25
+    SH2 %ymm4,  %ymm5,  %ymm25
+    SH2 %ymm6,  %ymm7,  %ymm25
+    SH2 %ymm8,  %ymm9,  %ymm25
+    SH2 %ymm10, %ymm11, %ymm25
+    SH2 %ymm12, %ymm13, %ymm25
+    SH2 %ymm14, %ymm15, %ymm25
+
+    /* ── Inverse layer 2 (GS, len=4): quad-broadcast zetas ── */
+    vmovdqa32  32(%rsi), %ymm20
+    GS_NR %ymm0,  %ymm1,  %ymm20
+    vmovdqa32 128(%rsi), %ymm20
+    GS_NR %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 224(%rsi), %ymm20
+    GS_NR %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 320(%rsi), %ymm20
+    GS_NR %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 416(%rsi), %ymm20
+    GS_NR %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 512(%rsi), %ymm20
+    GS_NR %ymm10, %ymm11, %ymm20
+    vmovdqa32 608(%rsi), %ymm20
+    GS_NR %ymm12, %ymm13, %ymm20
+    vmovdqa32 704(%rsi), %ymm20
+    GS_NR %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE4 all 8 pairs ── */
+    SH4 %ymm0,  %ymm1,  %ymm25
+    SH4 %ymm2,  %ymm3,  %ymm25
+    SH4 %ymm4,  %ymm5,  %ymm25
+    SH4 %ymm6,  %ymm7,  %ymm25
+    SH4 %ymm8,  %ymm9,  %ymm25
+    SH4 %ymm10, %ymm11, %ymm25
+    SH4 %ymm12, %ymm13, %ymm25
+    SH4 %ymm14, %ymm15, %ymm25
+
+    /* ── Inverse layer 3 (GS, len=8): half-broadcast zetas ── */
+    vmovdqa32  64(%rsi), %ymm20
+    GS_NR %ymm0,  %ymm1,  %ymm20
+    vmovdqa32 160(%rsi), %ymm20
+    GS_NR %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 256(%rsi), %ymm20
+    GS_NR %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 352(%rsi), %ymm20
+    GS_NR %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 448(%rsi), %ymm20
+    GS_NR %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 544(%rsi), %ymm20
+    GS_NR %ymm10, %ymm11, %ymm20
+    vmovdqa32 640(%rsi), %ymm20
+    GS_NR %ymm12, %ymm13, %ymm20
+    vmovdqa32 736(%rsi), %ymm20
+    GS_NR %ymm14, %ymm15, %ymm20
+
+    /* ── SHUFFLE8 all 8 pairs: back to standard layout ── */
+    SH8 %ymm0,  %ymm1,  %ymm25
+    SH8 %ymm2,  %ymm3,  %ymm25
+    SH8 %ymm4,  %ymm5,  %ymm25
+    SH8 %ymm6,  %ymm7,  %ymm25
+    SH8 %ymm8,  %ymm9,  %ymm25
+    SH8 %ymm10, %ymm11, %ymm25
+    SH8 %ymm12, %ymm13, %ymm25
+    SH8 %ymm14, %ymm15, %ymm25
+
+    /* ── Strategic Barrett: after 3 layers, max ≤ 8×1665=13320 ── */
+    BARRETT4 %ymm0, %ymm1, %ymm2, %ymm3
+    BARRETT4 %ymm4, %ymm5, %ymm6, %ymm7
+    BARRETT4 %ymm8, %ymm9, %ymm10, %ymm11
+    BARRETT4 %ymm12, %ymm13, %ymm14, %ymm15
+
+    /* ═══ Outer layers 4→7 (GS, no per-butterfly Barrett) ═══ */
+
+    /* ── Layer 4 (GS, len=16): 8 zetas ── */
+    vmovdqa32 inv_z4_0(%rip), %ymm20
+    GS_NR %ymm0,  %ymm1,  %ymm20
+    vmovdqa32 inv_z4_1(%rip), %ymm20
+    GS_NR %ymm2,  %ymm3,  %ymm20
+    vmovdqa32 inv_z4_2(%rip), %ymm20
+    GS_NR %ymm4,  %ymm5,  %ymm20
+    vmovdqa32 inv_z4_3(%rip), %ymm20
+    GS_NR %ymm6,  %ymm7,  %ymm20
+    vmovdqa32 inv_z4_4(%rip), %ymm20
+    GS_NR %ymm8,  %ymm9,  %ymm20
+    vmovdqa32 inv_z4_5(%rip), %ymm20
+    GS_NR %ymm10, %ymm11, %ymm20
+    vmovdqa32 inv_z4_6(%rip), %ymm20
+    GS_NR %ymm12, %ymm13, %ymm20
+    vmovdqa32 inv_z4_7(%rip), %ymm20
+    GS_NR %ymm14, %ymm15, %ymm20
+
+    /* ── Layer 5 (GS, len=32): 4 zetas ── */
+    vmovdqa32 inv_z5_0(%rip), %ymm20
+    GS_NR %ymm0,  %ymm2,  %ymm20
+    GS_NR %ymm1,  %ymm3,  %ymm20
+    vmovdqa32 inv_z5_1(%rip), %ymm20
+    GS_NR %ymm4,  %ymm6,  %ymm20
+    GS_NR %ymm5,  %ymm7,  %ymm20
+    vmovdqa32 inv_z5_2(%rip), %ymm20
+    GS_NR %ymm8,  %ymm10, %ymm20
+    GS_NR %ymm9,  %ymm11, %ymm20
+    vmovdqa32 inv_z5_3(%rip), %ymm20
+    GS_NR %ymm12, %ymm14, %ymm20
+    GS_NR %ymm13, %ymm15, %ymm20
+
+    /* ── Strategic Barrett: after layer 5, max ≤ 4×3329=13316 ── */
+    BARRETT4 %ymm0, %ymm1, %ymm2, %ymm3
+    BARRETT4 %ymm4, %ymm5, %ymm6, %ymm7
+    BARRETT4 %ymm8, %ymm9, %ymm10, %ymm11
+    BARRETT4 %ymm12, %ymm13, %ymm14, %ymm15
+
+    /* ── Layer 6 (GS, len=64): 2 zetas ── */
+    vmovdqa32 inv_z6_0(%rip), %ymm20
+    GS_NR4 %ymm0, %ymm4, %ymm1, %ymm5, %ymm2, %ymm6, %ymm3, %ymm7, %ymm20
+    vmovdqa32 inv_z6_1(%rip), %ymm20
+    GS_NR4 %ymm8, %ymm12, %ymm9, %ymm13, %ymm10, %ymm14, %ymm11, %ymm15, %ymm20
+
+    /* ── Layer 7 (GS, len=128): 1 zeta ── */
+    vmovdqa32 inv_z7(%rip), %ymm20
+    GS_NR4 %ymm0, %ymm8,  %ymm1, %ymm9,  %ymm2, %ymm10, %ymm3, %ymm11, %ymm20
+    GS_NR4 %ymm4, %ymm12, %ymm5, %ymm13, %ymm6, %ymm14, %ymm7, %ymm15, %ymm20
+
+    /* ── Store results (no final scale — already pre-scaled) ── */
     vmovdqu %ymm0,      (%rdi)
     vmovdqu %ymm1,   32(%rdi)
     vmovdqu %ymm2,   64(%rdi)

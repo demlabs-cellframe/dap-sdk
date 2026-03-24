@@ -158,7 +158,6 @@ static void s_mlkem_polyvec_dispatch_init(void)
 void MLKEM_NAMESPACE(_polyvec_compress)(uint8_t *a_r, dap_mlkem_polyvec *a_a)
 {
     PV_ENSURE();
-    MLKEM_NAMESPACE(_polyvec_csubq)(a_a);
     for (unsigned i = 0; i < MLKEM_K; i++) {
 #if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
         s_pv_compress_d11_ptr(a_r, a_a->vec[i].coeffs);

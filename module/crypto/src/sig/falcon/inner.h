@@ -74,7 +74,7 @@
  */
 
 // yyyPQCLEAN+0 yyyNIST+0 yyySUPERCOP+0
-#include "config.h"
+#include "falcon_config.h"
 // yyyPQCLEAN- yyyNIST- yyySUPERCOP-
 // yyySUPERCOP+1
 // yyyCONF*

@@ -80,6 +80,8 @@ static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
     {
         uint64_t tail = 0;
         size_t rem = a_len - i;
+        if (__builtin_expect(rem > 7, 0))
+            __builtin_unreachable();
         if (rem)
             memcpy(&tail, a_data + i, rem);
         tail |= (uint64_t)a_suffix << (rem * 8);

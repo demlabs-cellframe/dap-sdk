@@ -234,7 +234,6 @@ static void s_mlkem_poly_dispatch_init(void)
 void MLKEM_NAMESPACE(_poly_compress)(uint8_t *a_r, dap_mlkem_poly *a_a)
 {
     POLY_ENSURE();
-    MLKEM_NAMESPACE(_poly_csubq)(a_a);
 #if MLKEM_POLYCOMPRESSEDBYTES == 128
     s_compress_d4_ptr(a_r, a_a->coeffs);
 #elif MLKEM_POLYCOMPRESSEDBYTES == 160
@@ -255,7 +254,6 @@ void MLKEM_NAMESPACE(_poly_decompress)(dap_mlkem_poly *a_r, const uint8_t *a_a)
 void MLKEM_NAMESPACE(_poly_tobytes)(uint8_t *a_r, dap_mlkem_poly *a_a)
 {
     POLY_ENSURE();
-    MLKEM_NAMESPACE(_poly_csubq)(a_a);
     s_tobytes_ptr(a_r, a_a->coeffs);
 }
 
@@ -274,15 +272,15 @@ void MLKEM_NAMESPACE(_poly_frommsg)(dap_mlkem_poly *a_r, const uint8_t a_msg[MLK
 void MLKEM_NAMESPACE(_poly_tomsg)(uint8_t a_msg[MLKEM_INDCPA_MSGBYTES], dap_mlkem_poly *a_a)
 {
     POLY_ENSURE();
-    MLKEM_NAMESPACE(_poly_csubq)(a_a);
     s_tomsg_ptr(a_msg, a_a->coeffs);
 }
 
 void MLKEM_NAMESPACE(_poly_getnoise_eta1)(dap_mlkem_poly *a_r,
                                            const uint8_t a_seed[MLKEM_SYMBYTES], uint8_t a_nonce)
 {
-    uint8_t l_buf[MLKEM_ETA1 * MLKEM_N / 4];
-    dap_mlkem_prf(l_buf, sizeof(l_buf), a_seed, a_nonce);
+    enum { DATA_LEN = MLKEM_ETA1 * MLKEM_N / 4, SIMD_PAD = 8 };
+    uint8_t l_buf[DATA_LEN + SIMD_PAD];
+    dap_mlkem_prf(l_buf, DATA_LEN, a_seed, a_nonce);
     MLKEM_NAMESPACE(_cbd_eta1)(a_r, l_buf);
 }
 
@@ -292,10 +290,10 @@ void MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(dap_mlkem_poly *a_r0, dap_mlkem_pol
                                                uint8_t a_n0, uint8_t a_n1,
                                                uint8_t a_n2, uint8_t a_n3)
 {
-    enum { BUFLEN = MLKEM_ETA1 * MLKEM_N / 4 };
-    uint8_t l_buf[4][BUFLEN];
+    enum { DATA_LEN = MLKEM_ETA1 * MLKEM_N / 4, SIMD_PAD = 8 };
+    uint8_t l_buf[4][DATA_LEN + SIMD_PAD];
     dap_mlkem_prf_x4(l_buf[0], l_buf[1], l_buf[2], l_buf[3],
-                      BUFLEN, a_seed, a_n0, a_n1, a_n2, a_n3);
+                      DATA_LEN, a_seed, a_n0, a_n1, a_n2, a_n3);
     MLKEM_NAMESPACE(_cbd_eta1)(a_r0, l_buf[0]);
     MLKEM_NAMESPACE(_cbd_eta1)(a_r1, l_buf[1]);
     MLKEM_NAMESPACE(_cbd_eta1)(a_r2, l_buf[2]);

@@ -28,6 +28,12 @@ static inline int16_t dap_mlkem_csubq(int16_t a)
     return a;
 }
 
+static inline int16_t dap_mlkem_caddq(int16_t a)
+{
+    a += (a >> 15) & MLKEM_Q;
+    return a;
+}
+
 static inline int16_t dap_mlkem_fqmul(int16_t a, int16_t b)
 {
     return dap_mlkem_montgomery_reduce((int32_t)a * b);
