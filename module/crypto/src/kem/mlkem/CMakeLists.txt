@@ -30,14 +30,7 @@ dap_arch_generate_variant(
              "REDUCE_FILE=${MLKEM_REDUCE_TPL}"
              "NTT_INNER_FILE=${M}/arch/x86/ntt_inner_avx2.tpl"
 )
-dap_arch_generate_variant(
-    TEMPLATE ${M}/dap_mlkem_ntt_simd.c.tpl
-    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_ntt_avx2_512vl.c
-    ARCH     avx2_512vl
-    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int16_avx2.tpl"
-             "REDUCE_FILE=${MLKEM_REDUCE_TPL}"
-             "NTT_INNER_FILE=${M}/arch/x86/ntt_inner_avx2_512bw.tpl"
-)
+# avx2_512vl NTT removed — not dispatched, ASM NTT used at AVX-512 level instead
 dap_arch_generate_variant(
     TEMPLATE ${M}/dap_mlkem_ntt_simd.c.tpl
     OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_ntt_neon.c
@@ -45,6 +38,43 @@ dap_arch_generate_variant(
     ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/arm/int16_neon.tpl"
              "REDUCE_FILE=${MLKEM_REDUCE_TPL}"
              "NTT_INNER_FILE=${M}/arch/generic/ntt_inner_scalar.tpl"
+)
+
+# Master SIMD header: declarations + static fast bodies + dispatch — all generated
+dap_tpl_generate(
+    TEMPLATE ${M}/dap_mlkem_poly_simd.h.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_poly_simd.h
+    ARGS     "AVX2_FAST_BODIES=${M}/arch/x86/poly_fast_avx2.inc"
+             "NEON_FAST_BODIES=${M}/arch/arm/poly_fast_neon.inc"
+)
+
+# Poly I/O operations (compress, decompress, tobytes, frombytes, msg, mulcache)
+# Per-variant: arch-specific IMPL_FILE with full implementations
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_poly_ops_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_poly_ops_avx2.c
+    ARCH     avx2
+    ARGS     "IMPL_FILE=${M}/arch/x86/poly_ops_avx2.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_poly_ops_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_poly_ops_neon.c
+    ARCH     neon
+    ARGS     "IMPL_FILE=${M}/arch/arm/poly_ops_neon.tpl"
+)
+
+# Polyvec SIMD operations (compress d10/d11, decompress, basemul_acc_cached)
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_polyvec_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_polyvec_avx2.c
+    ARCH     avx2
+    ARGS     "IMPL_FILE=${M}/arch/x86/polyvec_avx2.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_polyvec_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_polyvec_neon.c
+    ARCH     neon
+    ARGS     "IMPL_FILE=${M}/arch/arm/polyvec_neon.tpl"
 )
 
 # =============================================================================
@@ -71,6 +101,7 @@ set(MLKEM_COMMON_SOURCES
 
 set(MLKEM_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MLKEM_SIMD_GEN_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../crypto/include
@@ -92,11 +123,14 @@ macro(mlkem_add_variant target_name k_value)
         TARGET     ${target_name}
         OUTPUT_DIR ${MLKEM_SIMD_GEN_DIR}
         SOURCES
-            dap_mlkem_poly_avx2.c       avx2
-            dap_mlkem_poly_neon.c       neon
-            dap_mlkem_ntt_avx2.c        avx2
-            dap_mlkem_ntt_avx2_512vl.c  avx2_512vl
-            dap_mlkem_ntt_neon.c        neon
+            dap_mlkem_poly_avx2.c        avx2
+            dap_mlkem_poly_neon.c        neon
+            dap_mlkem_poly_ops_avx2.c    avx2
+            dap_mlkem_poly_ops_neon.c    neon
+            dap_mlkem_polyvec_avx2.c     avx2
+            dap_mlkem_polyvec_neon.c     neon
+            dap_mlkem_ntt_avx2.c         avx2
+            dap_mlkem_ntt_neon.c         neon
     )
 
     # NTT assembly (AVX2+AVX-512VL EVEX, 32 YMM registers, generated from .S.tpl)
@@ -106,6 +140,13 @@ macro(mlkem_add_variant target_name k_value)
             PROPERTIES COMPILE_FLAGS "-mavx2 -mavx512f -mavx512vl -mavx512bw"
         )
     endif()
+
+    # Unity build: merge common .c into one TU for cross-file inlining.
+    # SIMD files excluded — they need per-file compile flags.
+    set_target_properties(${target_name} PROPERTIES
+        UNITY_BUILD ON
+        UNITY_BUILD_BATCH_SIZE 0
+    )
 endmacro()
 
 mlkem_add_variant(dap_mlkem_512  2)

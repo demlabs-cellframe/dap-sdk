@@ -7,10 +7,18 @@
 {{!          VEC_SET1_16 already defined via PRIMITIVES_FILE.        }}
 {{! ================================================================ }}
 
+#ifndef MLKEM_Q
 #define MLKEM_Q     3329
+#endif
+#ifndef MLKEM_QINV
 #define MLKEM_QINV  ((int16_t)-3327)
+#endif
+#ifndef MLKEM_N
 #define MLKEM_N     256
+#endif
+#ifndef MLKEM_BARRETT_V
 #define MLKEM_BARRETT_V 20159
+#endif
 
 {{TARGET_ATTR}}
 static inline VEC_T s_fqmul(VEC_T a_a, VEC_T a_b)

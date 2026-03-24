@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 #include "dap_mlkem_params.h"
 #include "dap_hash_keccak.h"
 #include "dap_hash_shake_x4.h"
@@ -44,9 +45,15 @@ static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
         s_avx512 = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512);
     if (__builtin_expect(s_avx512, 1)) {
         switch (a_rate) {
-        case 136: dap_keccak_absorb_136_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
-        case 168: dap_keccak_absorb_168_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
-        case 72:  dap_keccak_absorb_72_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
+        case DAP_KECCAK_SHA3_256_RATE:
+            dap_keccak_absorb_136_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
+        case DAP_KECCAK_SHAKE128_RATE:
+            dap_keccak_absorb_168_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
+        case DAP_KECCAK_SHA3_512_RATE:
+            dap_keccak_absorb_72_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
+        default:
+            assert(0 && "s_keccak_absorb: unsupported rate for ASM sponge path");
+            break;
         }
     }
 #endif
@@ -91,9 +98,15 @@ static inline void s_keccak_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
         s_avx512_sq = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512);
     if (__builtin_expect(s_avx512_sq, 1)) {
         switch (a_rate) {
-        case 136: dap_keccak_squeeze_136_avx512vl_asm(a_state, a_out, a_nblocks); return;
-        case 168: dap_keccak_squeeze_168_avx512vl_asm(a_state, a_out, a_nblocks); return;
-        case 72:  dap_keccak_squeeze_72_avx512vl_asm(a_state, a_out, a_nblocks); return;
+        case DAP_KECCAK_SHA3_256_RATE:
+            dap_keccak_squeeze_136_avx512vl_asm(a_state, a_out, a_nblocks); return;
+        case DAP_KECCAK_SHAKE128_RATE:
+            dap_keccak_squeeze_168_avx512vl_asm(a_state, a_out, a_nblocks); return;
+        case DAP_KECCAK_SHA3_512_RATE:
+            dap_keccak_squeeze_72_avx512vl_asm(a_state, a_out, a_nblocks); return;
+        default:
+            assert(0 && "s_keccak_squeezeblocks: unsupported rate for ASM sponge path");
+            break;
         }
     }
 #endif
@@ -274,33 +287,28 @@ static inline void dap_mlkem_prf_x4(uint8_t *a_out0, uint8_t *a_out1,
     dap_hash_shake256_x4_absorb(&l_state, l_ext[0], l_ext[1], l_ext[2], l_ext[3],
                                  MLKEM_SYMBYTES + 1);
 
-    unsigned l_rate = DAP_KECCAK_SHAKE256_RATE;
-    size_t l_pos = 0;
-    size_t l_first = (a_outlen < l_rate) ? a_outlen : l_rate;
-    if (l_first <= l_rate) {
-        uint8_t l_tmp[4][DAP_KECCAK_SHAKE256_RATE];
-        dap_keccak_x4_extract_bytes_all(&l_state, l_tmp[0], l_tmp[1], l_tmp[2], l_tmp[3], l_rate);
-        memcpy(a_out0, l_tmp[0], l_first);
-        memcpy(a_out1, l_tmp[1], l_first);
-        memcpy(a_out2, l_tmp[2], l_first);
-        memcpy(a_out3, l_tmp[3], l_first);
-        l_pos = l_first;
+    const unsigned l_rate = DAP_KECCAK_SHAKE256_RATE;
+
+    if (a_outlen <= l_rate) {
+        dap_keccak_x4_extract_bytes_all(&l_state, a_out0, a_out1, a_out2, a_out3,
+                                         a_outlen);
+        return;
     }
+
+    dap_keccak_x4_extract_bytes_all(&l_state, a_out0, a_out1, a_out2, a_out3, l_rate);
+    size_t l_pos = l_rate;
+
     while (l_pos < a_outlen) {
         dap_keccak_x4_permute(&l_state);
         size_t l_rem = a_outlen - l_pos;
-        size_t l_copy = (l_rem < l_rate) ? l_rem : l_rate;
-        if (l_copy == l_rate) {
+        if (l_rem >= l_rate) {
             dap_keccak_x4_extract_bytes_all(&l_state, a_out0 + l_pos, a_out1 + l_pos,
                                              a_out2 + l_pos, a_out3 + l_pos, l_rate);
+            l_pos += l_rate;
         } else {
-            uint8_t l_tmp[4][DAP_KECCAK_SHAKE256_RATE];
-            dap_keccak_x4_extract_bytes_all(&l_state, l_tmp[0], l_tmp[1], l_tmp[2], l_tmp[3], l_rate);
-            memcpy(a_out0 + l_pos, l_tmp[0], l_copy);
-            memcpy(a_out1 + l_pos, l_tmp[1], l_copy);
-            memcpy(a_out2 + l_pos, l_tmp[2], l_copy);
-            memcpy(a_out3 + l_pos, l_tmp[3], l_copy);
+            dap_keccak_x4_extract_bytes_all(&l_state, a_out0 + l_pos, a_out1 + l_pos,
+                                             a_out2 + l_pos, a_out3 + l_pos, l_rem);
+            l_pos += l_rem;
         }
-        l_pos += l_copy;
     }
 }

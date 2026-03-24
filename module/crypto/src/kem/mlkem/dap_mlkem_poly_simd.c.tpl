@@ -1,7 +1,9 @@
 /**
  * @file dap_mlkem_poly_{{ARCH_LOWER}}.c
- * @brief {{ARCH_NAME}} SIMD-optimized ML-KEM polynomial helpers.
+ * @brief {{ARCH_NAME}} SIMD-optimized ML-KEM polynomial helpers (heavy ops).
  * @details Generated from dap_mlkem_poly_simd.c.tpl by dap_tpl.
+ *          Light ops (csubq, reduce, tomont, add, sub) are in the
+ *          generated header dap_mlkem_poly_fast_{{ARCH_LOWER}}.h.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  * @generated
@@ -12,89 +14,9 @@
 
 {{#include PRIMITIVES_FILE}}
 
-{{#include REDUCE_FILE}}
-
 #include "dap_mlkem_poly_simd.h"
 
-/* ============================================================================
- * poly_csubq
- * ============================================================================ */
-
-{{TARGET_ATTR}}
-void dap_mlkem_poly_csubq_{{ARCH_LOWER}}(int16_t *a_coeffs)
-{
-    const VEC_T l_q = VEC_SET1_16(MLKEM_Q);
-    for (unsigned i = 0; i < MLKEM_N; i += VEC_LANES) {
-        VEC_T v = VEC_LOAD(a_coeffs + i);
-        v = VEC_SUB16(v, l_q);
-        VEC_T mask = VEC_SRAI16(v, 15);
-        v = VEC_ADD16(v, VEC_AND(mask, l_q));
-        VEC_STORE(a_coeffs + i, v);
-    }
-}
-
-/* ============================================================================
- * poly_reduce: Barrett reduction
- * ============================================================================ */
-
-{{TARGET_ATTR}}
-void dap_mlkem_poly_reduce_{{ARCH_LOWER}}(int16_t *a_coeffs)
-{
-    const VEC_T l_v = VEC_SET1_16(20159);
-    const VEC_T l_q = VEC_SET1_16(MLKEM_Q);
-    for (unsigned i = 0; i < MLKEM_N; i += VEC_LANES) {
-        VEC_T v = VEC_LOAD(a_coeffs + i);
-        VEC_T t = VEC_MULHI16(v, l_v);
-        t = VEC_SRAI16(t, 10);
-        v = VEC_SUB16(v, VEC_MULLO16(t, l_q));
-        VEC_STORE(a_coeffs + i, v);
-    }
-}
-
-/* ============================================================================
- * poly_tomont
- * ============================================================================ */
-
-{{TARGET_ATTR}}
-void dap_mlkem_poly_tomont_{{ARCH_LOWER}}(int16_t *a_coeffs)
-{
-    const VEC_T l_f    = VEC_SET1_16((int16_t)((1ULL << 32) % MLKEM_Q));
-    const VEC_T l_qinv = VEC_SET1_16((int16_t)MLKEM_QINV);
-    const VEC_T l_q    = VEC_SET1_16(MLKEM_Q);
-    for (unsigned i = 0; i < MLKEM_N; i += VEC_LANES) {
-        VEC_T v = VEC_LOAD(a_coeffs + i);
-        v = s_fqmul_ext(v, l_f, l_qinv, l_q);
-        VEC_STORE(a_coeffs + i, v);
-    }
-}
-
-/* ============================================================================
- * poly_add / poly_sub
- * ============================================================================ */
-
-{{TARGET_ATTR}}
-void dap_mlkem_poly_add_{{ARCH_LOWER}}(int16_t * restrict a_r,
-                                         const int16_t * restrict a_a,
-                                         const int16_t * restrict a_b)
-{
-    for (unsigned i = 0; i < MLKEM_N; i += VEC_LANES) {
-        VEC_T va = VEC_LOAD(a_a + i);
-        VEC_T vb = VEC_LOAD(a_b + i);
-        VEC_STORE(a_r + i, VEC_ADD16(va, vb));
-    }
-}
-
-{{TARGET_ATTR}}
-void dap_mlkem_poly_sub_{{ARCH_LOWER}}(int16_t * restrict a_r,
-                                         const int16_t * restrict a_a,
-                                         const int16_t * restrict a_b)
-{
-    for (unsigned i = 0; i < MLKEM_N; i += VEC_LANES) {
-        VEC_T va = VEC_LOAD(a_a + i);
-        VEC_T vb = VEC_LOAD(a_b + i);
-        VEC_STORE(a_r + i, VEC_SUB16(va, vb));
-    }
-}
+{{#include REDUCE_FILE}}
 
 /* ============================================================================
  * basemul_montgomery: NTT-domain polynomial multiply (nttpack layout)
@@ -153,9 +75,6 @@ void dap_mlkem_poly_basemul_montgomery_{{ARCH_LOWER}}(
 
 /* ============================================================================
  * basemul_acc_montgomery: fused K basemul + accumulate + Barrett reduce
- *
- * Computes r = sum(basemul(a[k], b[k])) for k=0..count-1.
- * For K≤9, int16 accumulation doesn't overflow (each fqmul ∈ [-q/2, q/2]).
  * ============================================================================ */
 
 {{TARGET_ATTR}} __attribute__((optimize("O3")))
@@ -215,4 +134,3 @@ void dap_mlkem_poly_compress_coeffs_{{ARCH_LOWER}}(int16_t *a_coeffs,
         VEC_STORE(a_coeffs + i, v);
     }
 }
-

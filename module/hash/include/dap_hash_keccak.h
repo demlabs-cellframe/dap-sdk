@@ -85,6 +85,14 @@ void dap_keccak_absorb_72_avx512vl_asm(uint64_t *state, const uint8_t *data, siz
 void dap_keccak_squeeze_136_avx512vl_asm(uint64_t *state, uint8_t *out, size_t nblocks);
 void dap_keccak_squeeze_168_avx512vl_asm(uint64_t *state, uint8_t *out, size_t nblocks);
 void dap_keccak_squeeze_72_avx512vl_asm(uint64_t *state, uint8_t *out, size_t nblocks);
+
+void dap_hash_keccak_permute_scalar_bmi2(dap_hash_keccak_state_t *state);
+void dap_keccak_absorb_136_scalar_bmi2(uint64_t *state, const uint8_t *data, size_t len, uint8_t suffix);
+void dap_keccak_absorb_168_scalar_bmi2(uint64_t *state, const uint8_t *data, size_t len, uint8_t suffix);
+void dap_keccak_absorb_72_scalar_bmi2(uint64_t *state, const uint8_t *data, size_t len, uint8_t suffix);
+void dap_keccak_squeeze_136_scalar_bmi2(uint64_t *state, uint8_t *out, size_t nblocks);
+void dap_keccak_squeeze_168_scalar_bmi2(uint64_t *state, uint8_t *out, size_t nblocks);
+void dap_keccak_squeeze_72_scalar_bmi2(uint64_t *state, uint8_t *out, size_t nblocks);
 #endif
 
 #if defined(__arm__) || defined(__aarch64__)

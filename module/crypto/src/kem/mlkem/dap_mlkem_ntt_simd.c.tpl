@@ -63,7 +63,7 @@ static const int16_t s_zetas_inv[128] = {
 
 /* ======== Forward NTT (Cooley-Tukey) ======== */
 
-{{TARGET_ATTR}} __attribute__((optimize("Os"), noinline))
+{{TARGET_ATTR}} __attribute__((noinline))
 void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
     unsigned l_k = 1;
@@ -122,7 +122,7 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 
 /* ======== Inverse NTT (Gentleman-Sande) ======== */
 
-{{TARGET_ATTR}} __attribute__((optimize("Os"), noinline))
+{{TARGET_ATTR}} __attribute__((noinline))
 void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
 #ifdef MLKEM_HAS_NTT_INNER
