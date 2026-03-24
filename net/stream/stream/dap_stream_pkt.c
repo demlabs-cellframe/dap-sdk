@@ -56,8 +56,8 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
         return 0;
     }
     
-    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
-        log_it(L_ERROR, "Stream has no trans_ctx or esocket");
+    if (!a_stream->esocket) {
+        log_it(L_ERROR, "Stream has no esocket");
         return 0;
     }
     
@@ -66,7 +66,7 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
         return 0;
     }
     
-    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    dap_events_socket_t *l_es = a_stream->esocket;
     dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t*)a_stream->flow;
     
     // Get destination address from datagram flow callback
@@ -189,8 +189,8 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
         ssize_t l_ret = l_trans->ops->write(a_stream, s_pkt_buf, l_full_size);
         debug_if(s_debug_more, L_DEBUG, "stream_pkt_write: trans->ops->write returned %zd", l_ret);
         return (size_t)l_ret;
-    } else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
-        dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    } else if (a_stream->esocket) {
+        dap_events_socket_t *l_es = a_stream->esocket;
         
         if (dap_events_socket_is_datagram(l_es)) {
             return s_stream_send_datagram_unsafe(a_stream, s_pkt_buf, l_full_size);

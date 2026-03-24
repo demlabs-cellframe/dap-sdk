@@ -191,8 +191,7 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
 
 static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
-    if (!a_stream || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket
-        || !a_data || a_size == 0)
+    if (!a_stream || !a_stream->esocket || !a_data || a_size == 0)
         return -1;
 
     void *l_wrapped = NULL;
@@ -207,21 +206,20 @@ static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_
             return -1;
         }
         ssize_t l_ret = dap_events_socket_write_unsafe(
-            a_stream->trans_ctx->esocket, l_wrapped, l_wrapped_size);
+            a_stream->esocket, l_wrapped, l_wrapped_size);
         DAP_DELETE(l_wrapped);
         return l_ret >= 0 ? (ssize_t)a_size : -1;
     }
 
-    return dap_events_socket_write_unsafe(a_stream->trans_ctx->esocket, a_data, a_size);
+    return dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
 }
 
 static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
-    if (!a_stream || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket
-        || !a_buffer || a_size == 0)
+    if (!a_stream || !a_stream->esocket || !a_buffer || a_size == 0)
         return -1;
 
-    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    dap_events_socket_t *l_es = a_stream->esocket;
     size_t l_avail = l_es->buf_in_size;
     if (l_avail == 0)
         return 0;

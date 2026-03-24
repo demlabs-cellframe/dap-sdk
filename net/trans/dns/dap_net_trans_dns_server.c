@@ -197,8 +197,11 @@ void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
 
     dns_server_client_session_t *l_session, *l_tmp;
     HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
-        if (l_session->trans_ctx)
-            l_session->trans_ctx->esocket = NULL;
+        if (l_session->stream) {
+            l_session->stream->esocket = NULL;
+            l_session->stream->esocket_uuid = 0;
+            l_session->stream->esocket_worker = NULL;
+        }
         if (l_session->stream)
             l_session->stream->trans_ctx = NULL;
     }
@@ -394,10 +397,11 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
         DAP_DELETE(l_session);
         return;
     }
-    l_trans_ctx->esocket = a_es;
-    l_trans_ctx->esocket_worker = a_es->worker;
     l_trans_ctx->trans = a_dns_server->trans;
     l_trans_ctx->stream = l_stream;
+    l_stream->esocket = a_es;
+    l_stream->esocket_uuid = a_es->uuid;
+    l_stream->esocket_worker = a_es->worker;
     l_stream->trans = a_dns_server->trans;
     l_stream->trans_ctx = l_trans_ctx;
     l_stream->_server_session = l_session;
@@ -448,13 +452,13 @@ static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_da
 
     dns_server_client_session_t *l_session =
         (dns_server_client_session_t *)a_stream->_server_session;
-    if (!l_session || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
+    if (!l_session || !a_stream->esocket) {
         log_it(L_ERROR, "DNS server write: no session or esocket");
         return -1;
     }
 
     size_t l_sent = dap_events_socket_sendto_unsafe(
-        a_stream->trans_ctx->esocket,
+        a_stream->esocket,
         a_data, a_size,
         &l_session->remote_addr,
         l_session->remote_addr_len);

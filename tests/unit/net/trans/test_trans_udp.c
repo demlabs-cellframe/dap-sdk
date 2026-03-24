@@ -670,9 +670,9 @@ static void test_11_stream_connect(void)
     l_mock_stream->trans = l_trans;
     dap_net_trans_ctx_t *l_mock_trans_ctx = dap_trans_test_get_mock_trans_ctx();
     *l_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    l_mock_trans_ctx->esocket = dap_trans_test_get_mock_esocket(); // Set mock esocket for operations
+    l_mock_stream->esocket = dap_trans_test_get_mock_esocket();
     l_mock_stream->trans_ctx = l_mock_trans_ctx;
-    
+
     // Test connect operation
     int l_ret = l_trans->ops->connect(l_mock_stream, "127.0.0.1", 8080, NULL);
     TEST_ASSERT(l_ret == 0, "Connect operation should succeed");
@@ -701,9 +701,9 @@ static void test_12_stream_read(void)
     l_mock_stream->trans = l_trans;
     dap_net_trans_ctx_t *l_mock_trans_ctx = dap_trans_test_get_mock_trans_ctx();
     *l_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    l_mock_trans_ctx->esocket = dap_trans_test_get_mock_esocket(); // Set mock esocket for operations
+    l_mock_stream->esocket = dap_trans_test_get_mock_esocket();
     l_mock_stream->trans_ctx = l_mock_trans_ctx;
-    
+
     // Test read operation
     char l_buffer[1024];
     ssize_t l_bytes_read = l_trans->ops->read(l_mock_stream, l_buffer, sizeof(l_buffer));
@@ -803,9 +803,9 @@ static void test_13_stream_write(void)
     TEST_ASSERT_NOT_NULL(l_trans->ops, "Trans ops should not be NULL");
     TEST_ASSERT_NOT_NULL(l_trans->ops->write, "Trans ops->write should not be NULL");
     
-    TEST_INFO("DEBUG: stream->trans_ctx=%p, trans_ctx->esocket=%p, trans_ctx->_inheritor=%p",
-              l_mock_stream->trans_ctx, 
-              l_mock_stream->trans_ctx ? l_mock_stream->trans_ctx->esocket : NULL,
+    TEST_INFO("DEBUG: stream->trans_ctx=%p, stream->esocket=%p, trans_ctx->_inheritor=%p",
+              l_mock_stream->trans_ctx,
+              l_mock_stream->esocket,
               l_mock_stream->trans_ctx ? l_mock_stream->trans_ctx->_inheritor : NULL);
     
     // CRITICAL DEBUG: Check encryption key STATE BEFORE WRITE

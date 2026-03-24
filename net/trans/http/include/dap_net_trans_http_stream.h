@@ -64,6 +64,7 @@
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_client_http.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 
@@ -330,7 +331,7 @@ dap_http_client_t* dap_stream_trans_http_get_client(dap_stream_t *a_stream);
  * @param a_response_error Error callback
  * @return 0 on success, -1 on failure
  */
-int dap_net_trans_http_request(dap_client_esocket_t * a_client_internal, const char * a_path, void * a_request,
+int dap_net_trans_http_request(dap_client_trans_ctx_t * a_client_internal, const char * a_path, void * a_request,
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error);
 
@@ -349,7 +350,7 @@ int dap_net_trans_http_request(dap_client_esocket_t * a_client_internal, const c
  * @param a_response_proc Response callback
  * @param a_response_error Error callback
  */
-void dap_net_trans_http_request_enc(dap_client_esocket_t * a_client_internal, const char *a_path,
+void dap_net_trans_http_request_enc(dap_client_trans_ctx_t * a_client_internal, const char *a_path,
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
                         dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
 

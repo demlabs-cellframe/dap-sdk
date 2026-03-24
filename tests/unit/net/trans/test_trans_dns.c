@@ -748,7 +748,7 @@ static void test_12_stream_write(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
-    s_mock_stream.trans_ctx->esocket = &s_mock_events_socket;  // Set esocket for write operation
+    s_mock_stream.esocket = &s_mock_events_socket;
     
     // Test write operation
     const char l_test_data[] = "test data";
@@ -779,7 +779,7 @@ static void test_13_stream_handshake(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
-    s_mock_stream.trans_ctx->esocket = &s_mock_events_socket;  // Set esocket for handshake operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     
     // Test handshake_init operation (requires a non-empty alice_pub_key)
     uint8_t l_fake_pub_key[32] = {1, 2, 3};

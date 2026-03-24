@@ -55,7 +55,6 @@
 #include "dap_stream.h"
 #include "dap_server.h"
 #include "dap_enc_server.h"
-#include "dap_client.h"
 #include "rand/dap_rand.h"
 #include "dap_enc_key.h"
 #include "dap_enc.h"
@@ -415,7 +414,7 @@ static int s_client_flow_ctrl_packet_send_cb(
     
     // Get trans_ctx and esocket from stream
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_udp_ctx->stream->trans_ctx;
-    if (!l_trans_ctx || !l_trans_ctx->esocket) {
+    if (!l_trans_ctx || !l_udp_ctx->stream->esocket) {
         log_it(L_ERROR, "CLIENT FC send: no trans_ctx or esocket");
         return -1;
     }
@@ -437,7 +436,7 @@ static int s_client_flow_ctrl_packet_send_cb(
     
     // CRITICAL: Use udp_ctx->remote_addr (server address), NOT esocket->addr_storage!
     // esocket->addr_storage is overwritten by recvfrom() on every incoming packet!
-    size_t l_written = dap_events_socket_sendto_unsafe(l_trans_ctx->esocket, a_packet, a_packet_size,
+    size_t l_written = dap_events_socket_sendto_unsafe(l_udp_ctx->stream->esocket, a_packet, a_packet_size,
                                                        &l_udp_ctx->remote_addr,
                                                        l_udp_ctx->remote_addr_len);
     
@@ -778,7 +777,7 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
     }
     
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_udp_ctx->stream->trans_ctx;
-    if (!l_trans_ctx->esocket) {
+    if (!l_udp_ctx->stream->esocket) {
         log_it(L_ERROR, "HANDSHAKE RETRANS: no esocket");
         l_udp_ctx->handshake_timer = NULL;
         return false;
@@ -797,7 +796,7 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
     }
     
     // Send obfuscated handshake
-    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_trans_ctx->esocket,
+    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_udp_ctx->stream->esocket,
                                                       l_obfuscated, l_obfuscated_size,
                                                       &l_udp_ctx->remote_addr,
                                                       l_udp_ctx->remote_addr_len);
@@ -848,7 +847,7 @@ static void s_cancel_handshake_timer(dap_net_trans_udp_ctx_t *a_udp_ctx)
  * @brief UDP read callback for processing incoming packets
  * 
  * This callback is invoked when data arrives on a UDP socket (client or server virtual).
- * The trans_ctx is stored in esocket->_inheritor (always dap_net_trans_ctx_t).
+ * Client path: dap_net_trans_ctx_t is passed via esocket->callbacks.arg (not _inheritor).
  * 
  * Used by both:
  * - UDP client esockets (direct physical socket)
@@ -1079,7 +1078,7 @@ dap_events_socket_t *dap_stream_trans_udp_get_esocket(const dap_stream_t *a_stre
     if (!dap_stream_trans_is_udp(a_stream))
         return NULL;
 
-    return a_stream->trans_ctx ? a_stream->trans_ctx->esocket : NULL;
+    return a_stream->esocket;
 }
 
 /**
@@ -1364,6 +1363,7 @@ static dap_net_trans_ctx_t *s_udp_get_or_create_ctx(dap_stream_t *a_stream) {
             a_stream->trans_ctx->trans = a_stream->trans;
         }
     }
+    a_stream->trans_ctx->stream = a_stream;
     debug_if(s_debug_more, L_INFO, "s_udp_get_or_create_ctx: Returning trans_ctx=%p", a_stream->trans_ctx);
     return a_stream->trans_ctx;
 }
@@ -1404,28 +1404,27 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         return -1;
     }
     
-    // Set up read callback for client esocket and link stream
-    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE INIT: esocket=%p", (void *)l_ctx->esocket);
-    if (l_ctx->esocket) {
+    l_udp_ctx->stream = a_stream;
+    
+    // Set up read callback for client esocket and link stream (esocket lives on stream)
+    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE INIT: esocket=%p", (void *)(l_ctx->stream ? l_ctx->stream->esocket : NULL));
+    if (l_ctx->stream && l_ctx->stream->esocket) {
+        dap_events_socket_t *l_es = l_ctx->stream->esocket;
         debug_if(s_debug_more, L_DEBUG, "Setting up UDP client esocket %p (fd=%d) for handshake_init",
-                 (void *)l_ctx->esocket, l_ctx->esocket->fd);
-        
-        // Store stream pointer
-        l_udp_ctx->stream = a_stream;
-        l_ctx->stream = a_stream;
+                 (void *)l_es, l_es->fd);
         
         // IMPORTANT: Store trans_ctx in callbacks.arg (NOT _inheritor!)
         // _inheritor is owned by client infrastructure (may be dap_client_t or NULL)
         // We use callbacks.arg to pass trans_ctx to read callback
-        l_ctx->esocket->callbacks.arg = l_ctx;
+        l_es->callbacks.arg = l_ctx;
         
         debug_if(s_debug_more, L_DEBUG, "trans_ctx %p stored in callbacks.arg, trans_ctx->stream = %p, esocket->_inheritor=%p (client)", 
-                 l_ctx, a_stream, l_ctx->esocket->_inheritor);
+                 l_ctx, a_stream, l_es->_inheritor);
         
         // Set read callback
-        if (!l_ctx->esocket->callbacks.read_callback) {
-            l_ctx->esocket->callbacks.read_callback = dap_stream_trans_udp_read_callback;
-            debug_if(s_debug_more, L_DEBUG, "Set UDP client read callback for esocket %p", l_ctx->esocket);
+        if (!l_es->callbacks.read_callback) {
+            l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
+            debug_if(s_debug_more, L_DEBUG, "Set UDP client read callback for esocket %p", l_es);
         }
     }
     
@@ -1473,9 +1472,10 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     }
     
     // Start handshake retransmission timer
-    dap_worker_t *l_worker = l_ctx->esocket ? l_ctx->esocket->worker : dap_worker_get_current();
+    dap_events_socket_t *l_handshake_es = l_ctx->stream ? l_ctx->stream->esocket : NULL;
+    dap_worker_t *l_worker = l_handshake_es ? l_handshake_es->worker : dap_worker_get_current();
     debug_if(s_debug_more, L_DEBUG, "HANDSHAKE: esocket=%p, esocket->worker=%p, worker_current=%p",
-             (void *)l_ctx->esocket, l_ctx->esocket ? (void *)l_ctx->esocket->worker : NULL, (void *)dap_worker_get_current());
+             (void *)l_handshake_es, l_handshake_es ? (void *)l_handshake_es->worker : NULL, (void *)dap_worker_get_current());
     if (l_worker) {
         l_udp_ctx->handshake_timer = dap_timerfd_start_on_worker(
             l_worker,
@@ -1490,7 +1490,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
             log_it(L_ERROR, "HANDSHAKE: FAILED to start retransmission timer!");
         }
     } else {
-        log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", l_ctx->esocket);
+        log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", (void *)l_handshake_es);
     }
     
     debug_if(s_debug_more, L_DEBUG, "UDP handshake init sent: %zd bytes (session_id=%lu)",
@@ -2028,12 +2028,9 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     debug_if(s_debug_more, L_DEBUG, "s_udp_read: stream=%p, buffer=%p, size=%zu", 
              a_stream, a_buffer, a_size);
     
-    // Get esocket from trans_ctx
-    dap_events_socket_t *l_es = NULL;
+    // Get esocket from stream (owned by stream, not trans_ctx)
+    dap_events_socket_t *l_es = a_stream->esocket;
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
-    if (l_ctx) {
-        l_es = l_ctx->esocket;
-    }
 
     debug_if(s_debug_more, L_DEBUG, "s_udp_read: ctx=%p, es=%p, buf_in=%p, buf_in_size=%zu", 
              l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0);
@@ -2361,9 +2358,9 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     }
 
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
-    if (!l_ctx || !l_ctx->esocket) {
+    if (!l_ctx || !l_ctx->stream || !l_ctx->stream->esocket) {
         log_it(L_ERROR, "UDP write: No trans ctx or esocket for write (ctx=%p, esocket=%p)", 
-               l_ctx, l_ctx ? l_ctx->esocket : NULL);
+               l_ctx, (l_ctx && l_ctx->stream) ? (void *)l_ctx->stream->esocket : NULL);
         return -1;
     }
 
@@ -2413,7 +2410,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         
         // Send obfuscated handshake (CLIENT UDP)
         // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
-        ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->esocket, 
+        ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->stream->esocket, 
                                                          l_obfuscated, l_obfuscated_size,
                                                          &l_udp_ctx->remote_addr,
                                                          l_udp_ctx->remote_addr_len);
@@ -2561,7 +2558,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     
     // Send encrypted blob (no headers, no magic, just encrypted data) - CLIENT UDP
     // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
-    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->esocket, l_encrypted, l_encrypted_size,
+    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->stream->esocket, l_encrypted, l_encrypted_size,
                                                      &l_udp_ctx->remote_addr,
                                                      l_udp_ctx->remote_addr_len);
     
@@ -2677,28 +2674,30 @@ static void s_udp_close(dap_stream_t *a_stream)
     // No need to check worker - _mt handles it correctly
     
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
-    if (l_ctx && l_ctx->esocket_uuid && l_ctx->esocket_worker) {
+    // Esocket fields live on the stream being closed; use a_stream (not trans_ctx->stream,
+    // which may already be NULL during partial teardown).
+    if (l_ctx && a_stream->esocket_uuid && a_stream->esocket_worker) {
         debug_if(s_debug_more, L_DEBUG, 
                "UDP close: queueing esocket deletion (UUID 0x%016lx) on its worker",
-               l_ctx->esocket_uuid);
+               a_stream->esocket_uuid);
         
         // CRITICAL: Clear callbacks BEFORE async delete to prevent use-after-free!
         // Esocket may still receive events between now and actual deletion
         // Setting callbacks to NULL prevents them from accessing freed trans_ctx/stream
-        if (l_ctx->esocket) {
-            l_ctx->esocket->callbacks.read_callback = NULL;
-            l_ctx->esocket->callbacks.write_callback = NULL;
-            l_ctx->esocket->callbacks.error_callback = NULL;
-            l_ctx->esocket->callbacks.arg = NULL;  // Critical: prevents use-after-free in callbacks
+        if (a_stream->esocket) {
+            a_stream->esocket->callbacks.read_callback = NULL;
+            a_stream->esocket->callbacks.write_callback = NULL;
+            a_stream->esocket->callbacks.error_callback = NULL;
+            a_stream->esocket->callbacks.arg = NULL;  // Critical: prevents use-after-free in callbacks
         }
         
         // ALWAYS use _mt method - 100% safe from any thread
-        dap_events_socket_remove_and_delete_mt(l_ctx->esocket_worker, l_ctx->esocket_uuid);
+        dap_events_socket_remove_and_delete_mt(a_stream->esocket_worker, a_stream->esocket_uuid);
         
         // Clear pointers (esocket will be deleted asynchronously on its worker)
-        l_ctx->esocket = NULL;
-        l_ctx->esocket_uuid = 0;
-        l_ctx->esocket_worker = NULL;
+        a_stream->esocket = NULL;
+        a_stream->esocket_uuid = 0;
+        a_stream->esocket_worker = NULL;
     }
     
     if (l_ctx) {
@@ -2835,7 +2834,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     l_stream->trans = a_trans;
     
-    // Initialize trans_ctx and link esocket
+    // Initialize trans_ctx and link stream (esocket fields live on stream)
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(l_stream);
     if (!l_ctx) {
         log_it(L_CRITICAL, "Failed to create trans_ctx for UDP stream");
@@ -2844,10 +2843,9 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
-    // Set esocket reference with UUID and worker for thread-safe access
-    l_ctx->esocket = l_es;
-    l_ctx->esocket_uuid = l_es->uuid;
-    l_ctx->esocket_worker = l_es->worker;
+    l_stream->esocket = l_es;
+    l_stream->esocket_uuid = l_es->uuid;
+    l_stream->esocket_worker = l_es->worker;
     l_ctx->stream = l_stream;
     
     // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
@@ -2923,7 +2921,7 @@ static uint32_t s_udp_get_capabilities(dap_net_trans_t *a_trans)
  * @brief Get client context from UDP stream's trans_ctx
  * @param a_stream Stream to extract client context from
  * @return Client context (dap_client_t*) or NULL
- * @note For UDP trans, trans_ctx->_inheritor contains dap_udp_client_esocket_ctx_t wrapper
+ * @note For UDP trans, trans_ctx->_inheritor holds dap_net_trans_udp_ctx_t (UDP stream state).
  */
 static void* s_udp_get_client_context(dap_stream_t *a_stream)
 {

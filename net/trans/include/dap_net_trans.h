@@ -76,8 +76,7 @@ typedef struct dap_worker dap_worker_t;
 
 // Forward declarations for client types (to avoid circular dependencies)
 typedef struct dap_client dap_client_t;
-// struct dap_client_pvt is defined in dap_client_esocket.h; type alias for API clarity
-typedef struct dap_client_pvt dap_client_esocket_t;
+struct dap_client_trans_ctx;
 
 // Forward declarations for client callback types (defined in dap_client.h)
 typedef void (*dap_client_callback_t)(dap_client_t *, void *);
@@ -191,7 +190,7 @@ typedef struct dap_net_stage_prepare_params {
     const dap_stream_node_addr_t *node_addr; ///< Node address for stream creation (NULL if not needed)
     bool authorized;                       ///< Stream authorization flag (for STAGE_STREAM_SESSION)
     dap_events_socket_callbacks_t *callbacks; ///< Socket callbacks to use
-    void *client_ctx;                  ///< Client ctx (dap_client_esocket_t*)
+    void *client_ctx;                  ///< Client pointer (typically dap_client_t* for esocket _inheritor)
     dap_worker_t *worker;                  ///< Worker thread to add esocket to (required for connection)
 } dap_net_stage_prepare_params_t;
 
