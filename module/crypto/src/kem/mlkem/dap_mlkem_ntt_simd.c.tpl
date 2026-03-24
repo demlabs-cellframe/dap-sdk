@@ -2,9 +2,23 @@
  * @file dap_mlkem_ntt_{{ARCH_LOWER}}.c
  * @brief {{ARCH_NAME}} specialized NTT16 for ML-KEM (Kyber)
  * @details Compile-time constants: Q=3329, QINV=-3327, N=256.
- *          Hybrid NTT: loop-based outer layers (128/64/32/16) with L1D
- *          round-trips + shuffle-based inner layers (8/4/2) per-block.
- *          Compact code (~400B each) fits in L1I; data (512B) in L1D.
+ *          Pure algorithmic template: ALL architecture-specific code lives in
+ *          NTT_INNER_FILE (following the Keccak pattern). This file contains
+ *          ZERO intrinsics and ZERO #if VEC_LANES branches.
+ *
+ *          Primitives contract — PRIMITIVES_FILE must provide:
+ *            Types:  VEC_T, HVEC_T (optional)
+ *            Macros: VEC_LANES, VEC_LOAD, VEC_STORE, VEC_SET1_16,
+ *                    VEC_ADD16, VEC_SUB16
+ *
+ *          NTT_INNER_FILE may provide (Keccak-pattern opt-in):
+ *            MLKEM_HAS_NTT_INNER  — enables per-block SIMD inner layers
+ *            MLKEM_NTT_FWD_INNER(v, zetas, blk)
+ *            MLKEM_NTT_INV_INNER(v, zetas_inv, blk)
+ *            MLKEM_NTT_INV_OUTER_K — starting zeta index for outer inverse
+ *            MLKEM_HAS_NTTPACK    — enables SIMD nttpack/nttunpack
+ *            MLKEM_NTTPACK(coeffs), MLKEM_NTTUNPACK(coeffs)
+ *
  *          Generated from dap_mlkem_ntt_simd.c.tpl by dap_tpl.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -18,6 +32,8 @@
 {{#include PRIMITIVES_FILE}}
 
 {{#include REDUCE_FILE}}
+
+{{#include NTT_INNER_FILE}}
 
 static const int16_t s_zetas[128] = {
   2285, 2571, 2970, 1812, 1493, 1422, 287, 202, 3158, 622, 1577, 182, 962,
@@ -50,15 +66,6 @@ static const int16_t s_zetas_inv[128] = {
 {{TARGET_ATTR}} __attribute__((optimize("Os"), noinline))
 void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
-#if VEC_LANES == 16 && defined(HVEC_LANES) && HVEC_LANES == 8
-    /*
-     * Hybrid NTT: loop-based outer layers + shuffle-based inner layers.
-     * Outer layers (128/64/32/16) do cross-block butterflies via L1D;
-     * inner layers (8/4/2) use per-block shuffles in a tight loop.
-     * Data (512B) stays hot in L1D; code (~400B) fits easily in L1I.
-     */
-
-    /* Phase 1: outer layers via L1D round-trips */
     unsigned l_k = 1;
     for (unsigned l_len = 128; l_len >= VEC_LANES; l_len >>= 1) {
         for (unsigned l_s = 0; l_s < MLKEM_N; l_s += 2 * l_len) {
@@ -73,70 +80,20 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
         }
     }
 
-    /* Phase 2: inner layers 8/4/2 via per-block shuffles */
+#ifdef MLKEM_HAS_NTT_INNER
     for (unsigned l_blk = 0; l_blk < MLKEM_N / VEC_LANES; l_blk++) {
         VEC_T v = VEC_LOAD(a_coeffs + l_blk * VEC_LANES);
-
-        /* Layer 8: CT butterfly across 128-bit halves */
-        {
-            HVEC_T l_lo = VEC_LO_HALF(v), l_hi = VEC_HI_HALF(v);
-            HVEC_T l_t = s_fqmul_hvec(HVEC_SET1_16(s_zetas[16 + l_blk]), l_hi);
-            v = VEC_FROM_HALVES(HVEC_ADD16(l_lo, l_t), HVEC_SUB16(l_lo, l_t));
-        }
-
-        /* Layer 4: CT butterfly across 64-bit groups within 128-bit lanes */
-        {
-            VEC_T l_lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(1,0,1,0));
-            VEC_T l_hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,2,3,2));
-            VEC_T l_zv = _mm256_setr_m128i(
-                _mm_set1_epi16(s_zetas[32 + 2 * l_blk]),
-                _mm_set1_epi16(s_zetas[33 + 2 * l_blk]));
-            VEC_T l_t = s_fqmul(l_zv, l_hi);
-            v = _mm256_blend_epi32(VEC_ADD16(l_lo, l_t),
-                                   VEC_SUB16(l_lo, l_t), 0xCC);
-        }
-
-        /* Layer 2: CT butterfly across 32-bit groups */
-        {
-            VEC_T l_lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(2,2,0,0));
-            VEC_T l_hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,3,1,1));
-            unsigned l_z2 = 64 + 4 * l_blk;
-            __m128i l_z4  = _mm_loadl_epi64((const __m128i *)(s_zetas + l_z2));
-            __m128i l_zd  = _mm_unpacklo_epi16(l_z4, l_z4);
-            VEC_T l_zv = _mm256_setr_m128i(
-                _mm_unpacklo_epi32(l_zd, l_zd),
-                _mm_unpackhi_epi32(l_zd, l_zd));
-            VEC_T l_t = s_fqmul(l_zv, l_hi);
-            v = _mm256_blend_epi32(VEC_ADD16(l_lo, l_t),
-                                   VEC_SUB16(l_lo, l_t), 0xAA);
-        }
-
-        VEC_STORE(a_coeffs + l_blk * VEC_LANES, s_barrett_reduce(v));
+        MLKEM_NTT_FWD_INNER(v, s_zetas, l_blk);
+        VEC_STORE(a_coeffs + l_blk * VEC_LANES, v);
     }
-
 #else
-    /* Generic loop-based NTT for non-AVX2 architectures */
-    unsigned l_start, l_j, l_k = 1;
-
-    for (unsigned l_len = 128; l_len >= VEC_LANES; l_len >>= 1) {
-        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
-            VEC_T l_zv = VEC_SET1_16(s_zetas[l_k++]);
-            for (l_j = l_start; l_j < l_start + l_len; l_j += VEC_LANES) {
-                VEC_T l_a = VEC_LOAD(a_coeffs + l_j);
-                VEC_T l_b = VEC_LOAD(a_coeffs + l_j + l_len);
-                VEC_T l_t = s_fqmul(l_zv, l_b);
-                VEC_STORE(a_coeffs + l_j,         VEC_ADD16(l_a, l_t));
-                VEC_STORE(a_coeffs + l_j + l_len, VEC_SUB16(l_a, l_t));
-            }
-        }
-    }
-
+    /* Generic scalar inner layers for sub-VEC_LANES butterflies */
 #ifdef HVEC_LANES
     {
         unsigned l_len = HVEC_LANES;
-        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
+        for (unsigned l_start = 0; l_start < MLKEM_N; l_start += 2 * l_len) {
             HVEC_T l_zv = HVEC_SET1_16(s_zetas[l_k++]);
-            for (l_j = l_start; l_j < l_start + l_len; l_j += HVEC_LANES) {
+            for (unsigned l_j = l_start; l_j < l_start + l_len; l_j += HVEC_LANES) {
                 HVEC_T l_a = HVEC_LOAD(a_coeffs + l_j);
                 HVEC_T l_b = HVEC_LOAD(a_coeffs + l_j + l_len);
                 HVEC_T l_t = s_fqmul_hvec(l_zv, l_b);
@@ -149,16 +106,15 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 #else
     for (unsigned l_len = VEC_LANES >> 1; l_len >= 2; l_len >>= 1) {
 #endif
-        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
+        for (unsigned l_start = 0; l_start < MLKEM_N; l_start += 2 * l_len) {
             int16_t l_zeta = s_zetas[l_k++];
-            for (l_j = l_start; l_j < l_start + l_len; l_j++) {
+            for (unsigned l_j = l_start; l_j < l_start + l_len; l_j++) {
                 int16_t l_t = s_fqmul_scalar(l_zeta, a_coeffs[l_j + l_len]);
                 a_coeffs[l_j + l_len] = a_coeffs[l_j] - l_t;
                 a_coeffs[l_j]         = a_coeffs[l_j] + l_t;
             }
         }
     }
-    /* Fused Barrett reduction for generic path */
     for (unsigned l_i = 0; l_i < MLKEM_N; l_i++)
         a_coeffs[l_i] = s_barrett_reduce_scalar(a_coeffs[l_i]);
 #endif
@@ -169,60 +125,47 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {{TARGET_ATTR}} __attribute__((optimize("Os"), noinline))
 void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
-#if VEC_LANES == 16 && defined(HVEC_LANES) && HVEC_LANES == 8
-    /*
-     * Hybrid inverse NTT: shuffle-based inner layers + loop-based outer.
-     * Mirror of forward: inner 2/4/8 per-block, then outer 16/32/64/128.
-     */
-
-    /* Phase 1: inner layers 2/4/8 via per-block GS shuffles */
+#ifdef MLKEM_HAS_NTT_INNER
     for (unsigned l_blk = 0; l_blk < MLKEM_N / VEC_LANES; l_blk++) {
         VEC_T v = VEC_LOAD(a_coeffs + l_blk * VEC_LANES);
-
-        /* Layer 2 (GS): merge 32-bit groups */
-        {
-            VEC_T l_lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(2,2,0,0));
-            VEC_T l_hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,3,1,1));
-            VEC_T l_sum = VEC_ADD16(l_lo, l_hi);
-            VEC_T l_dif = VEC_SUB16(l_lo, l_hi);
-            unsigned l_z2 = 4 * l_blk;
-            __m128i l_z4  = _mm_loadl_epi64((const __m128i *)(s_zetas_inv + l_z2));
-            __m128i l_zd  = _mm_unpacklo_epi16(l_z4, l_z4);
-            VEC_T l_zv = _mm256_setr_m128i(
-                _mm_unpacklo_epi32(l_zd, l_zd),
-                _mm_unpackhi_epi32(l_zd, l_zd));
-            v = _mm256_blend_epi32(s_barrett_reduce(l_sum),
-                                   s_fqmul(l_zv, l_dif), 0xAA);
-        }
-
-        /* Layer 4 (GS): merge 64-bit groups within 128-bit lanes */
-        {
-            VEC_T l_lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(1,0,1,0));
-            VEC_T l_hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,2,3,2));
-            VEC_T l_sum = VEC_ADD16(l_lo, l_hi);
-            VEC_T l_dif = VEC_SUB16(l_lo, l_hi);
-            VEC_T l_zv = _mm256_setr_m128i(
-                _mm_set1_epi16(s_zetas_inv[64 + 2 * l_blk]),
-                _mm_set1_epi16(s_zetas_inv[65 + 2 * l_blk]));
-            v = _mm256_blend_epi32(s_barrett_reduce(l_sum),
-                                   s_fqmul(l_zv, l_dif), 0xCC);
-        }
-
-        /* Layer 8 (GS): merge 128-bit halves */
-        {
-            HVEC_T l_lo = VEC_LO_HALF(v), l_hi = VEC_HI_HALF(v);
-            HVEC_T l_sum = HVEC_ADD16(l_lo, l_hi);
-            HVEC_T l_dif = HVEC_SUB16(l_lo, l_hi);
-            v = VEC_FROM_HALVES(
-                s_barrett_reduce_hvec(l_sum),
-                s_fqmul_hvec(HVEC_SET1_16(s_zetas_inv[96 + l_blk]), l_dif));
-        }
-
+        MLKEM_NTT_INV_INNER(v, s_zetas_inv, l_blk);
         VEC_STORE(a_coeffs + l_blk * VEC_LANES, v);
     }
+    unsigned l_k = MLKEM_NTT_INV_OUTER_K;
+#else
+    unsigned l_k = 0;
+    unsigned l_simd_start = VEC_LANES;
+#ifdef HVEC_LANES
+    l_simd_start = HVEC_LANES;
+#endif
+    for (unsigned l_len = 2; l_len < l_simd_start; l_len <<= 1) {
+        for (unsigned l_start = 0; l_start < MLKEM_N; l_start += 2 * l_len) {
+            int16_t l_zeta = s_zetas_inv[l_k++];
+            for (unsigned l_j = l_start; l_j < l_start + l_len; l_j++) {
+                int16_t l_t = a_coeffs[l_j];
+                a_coeffs[l_j]         = s_barrett_reduce_scalar(l_t + a_coeffs[l_j + l_len]);
+                a_coeffs[l_j + l_len] = s_fqmul_scalar(l_zeta, l_t - a_coeffs[l_j + l_len]);
+            }
+        }
+    }
+#ifdef HVEC_LANES
+    {
+        unsigned l_len = HVEC_LANES;
+        for (unsigned l_start = 0; l_start < MLKEM_N; l_start += 2 * l_len) {
+            HVEC_T l_zv = HVEC_SET1_16(s_zetas_inv[l_k++]);
+            for (unsigned l_j = l_start; l_j < l_start + l_len; l_j += HVEC_LANES) {
+                HVEC_T l_a   = HVEC_LOAD(a_coeffs + l_j);
+                HVEC_T l_b   = HVEC_LOAD(a_coeffs + l_j + l_len);
+                HVEC_T l_sum = HVEC_ADD16(l_a, l_b);
+                HVEC_T l_dif = HVEC_SUB16(l_a, l_b);
+                HVEC_STORE(a_coeffs + l_j,         s_barrett_reduce_hvec(l_sum));
+                HVEC_STORE(a_coeffs + l_j + l_len, s_fqmul_hvec(l_zv, l_dif));
+            }
+        }
+    }
+#endif
+#endif
 
-    /* Phase 2: outer layers 16/32/64/128 via L1D round-trips */
-    unsigned l_k = 112;
     for (unsigned l_len = VEC_LANES; l_len <= 128; l_len <<= 1) {
         for (unsigned l_s = 0; l_s < MLKEM_N; l_s += 2 * l_len) {
             VEC_T l_zv = VEC_SET1_16(s_zetas_inv[l_k++]);
@@ -237,7 +180,6 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
         }
     }
 
-    /* Final scaling by zetas_inv[127] = 1441 */
     {
         VEC_T l_sv = VEC_SET1_16(s_zetas_inv[127]);
         for (unsigned l_j = 0; l_j < MLKEM_N; l_j += VEC_LANES) {
@@ -245,64 +187,6 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
             VEC_STORE(a_coeffs + l_j, s_fqmul(l_c, l_sv));
         }
     }
-
-#else
-    /* Generic loop-based inverse NTT for non-AVX2 architectures */
-    unsigned l_start, l_j, l_k = 0;
-
-    unsigned l_simd_start = VEC_LANES;
-#ifdef HVEC_LANES
-    l_simd_start = HVEC_LANES;
-#endif
-    for (unsigned l_len = 2; l_len < l_simd_start; l_len <<= 1) {
-        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
-            int16_t l_zeta = s_zetas_inv[l_k++];
-            for (l_j = l_start; l_j < l_start + l_len; l_j++) {
-                int16_t l_t = a_coeffs[l_j];
-                a_coeffs[l_j]         = s_barrett_reduce_scalar(l_t + a_coeffs[l_j + l_len]);
-                a_coeffs[l_j + l_len] = s_fqmul_scalar(l_zeta, l_t - a_coeffs[l_j + l_len]);
-            }
-        }
-    }
-#ifdef HVEC_LANES
-    {
-        unsigned l_len = HVEC_LANES;
-        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
-            HVEC_T l_zv = HVEC_SET1_16(s_zetas_inv[l_k++]);
-            for (l_j = l_start; l_j < l_start + l_len; l_j += HVEC_LANES) {
-                HVEC_T l_a   = HVEC_LOAD(a_coeffs + l_j);
-                HVEC_T l_b   = HVEC_LOAD(a_coeffs + l_j + l_len);
-                HVEC_T l_sum = HVEC_ADD16(l_a, l_b);
-                HVEC_T l_dif = HVEC_SUB16(l_a, l_b);
-                HVEC_STORE(a_coeffs + l_j,         s_barrett_reduce_hvec(l_sum));
-                HVEC_STORE(a_coeffs + l_j + l_len, s_fqmul_hvec(l_zv, l_dif));
-            }
-        }
-    }
-#endif
-
-    for (unsigned l_len = VEC_LANES; l_len <= 128; l_len <<= 1) {
-        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
-            VEC_T l_zv = VEC_SET1_16(s_zetas_inv[l_k++]);
-            for (l_j = l_start; l_j < l_start + l_len; l_j += VEC_LANES) {
-                VEC_T l_a   = VEC_LOAD(a_coeffs + l_j);
-                VEC_T l_b   = VEC_LOAD(a_coeffs + l_j + l_len);
-                VEC_T l_sum = VEC_ADD16(l_a, l_b);
-                VEC_T l_dif = VEC_SUB16(l_a, l_b);
-                VEC_STORE(a_coeffs + l_j,         s_barrett_reduce(l_sum));
-                VEC_STORE(a_coeffs + l_j + l_len, s_fqmul(l_zv, l_dif));
-            }
-        }
-    }
-
-    {
-        VEC_T l_sv = VEC_SET1_16(s_zetas_inv[127]);
-        for (unsigned l_i = 0; l_i < MLKEM_N; l_i += VEC_LANES) {
-            VEC_T l_c = VEC_LOAD(a_coeffs + l_i);
-            VEC_STORE(a_coeffs + l_i, s_fqmul(l_c, l_sv));
-        }
-    }
-#endif
 }
 
 /* ======== nttpack (even/odd deinterleave) ======== */
@@ -310,39 +194,8 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {{TARGET_ATTR}} __attribute__((noinline))
 void dap_mlkem_ntt_nttpack_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
-#if VEC_LANES == 16
-#ifdef __AVX512BW__
-    const __m256i l_even = _mm256_setr_epi16(
-         0,  2,  4,  6,  8, 10, 12, 14,
-        16, 18, 20, 22, 24, 26, 28, 30);
-    const __m256i l_odd = _mm256_setr_epi16(
-         1,  3,  5,  7,  9, 11, 13, 15,
-        17, 19, 21, 23, 25, 27, 29, 31);
-    for (unsigned l_p = 0; l_p < 8; l_p++) {
-        __m256i l_a = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p));
-        __m256i l_b = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p + 16));
-        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p),
-                            _mm256_permutex2var_epi16(l_a, l_even, l_b));
-        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p + 16),
-                            _mm256_permutex2var_epi16(l_a, l_odd, l_b));
-    }
-#else
-    const __m256i l_mask = _mm256_set1_epi32(0x0000FFFF);
-    for (unsigned l_p = 0; l_p < 8; l_p++) {
-        __m256i l_a = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p));
-        __m256i l_b = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p + 16));
-        __m256i l_ea = _mm256_and_si256(l_a, l_mask);
-        __m256i l_oa = _mm256_srli_epi32(l_a, 16);
-        __m256i l_eb = _mm256_and_si256(l_b, l_mask);
-        __m256i l_ob = _mm256_srli_epi32(l_b, 16);
-        __m256i l_ep = _mm256_packus_epi32(l_ea, l_eb);
-        __m256i l_op = _mm256_packus_epi32(l_oa, l_ob);
-        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p),
-                            _mm256_permute4x64_epi64(l_ep, _MM_SHUFFLE(3,1,2,0)));
-        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p + 16),
-                            _mm256_permute4x64_epi64(l_op, _MM_SHUFFLE(3,1,2,0)));
-    }
-#endif
+#ifdef MLKEM_HAS_NTTPACK
+    MLKEM_NTTPACK(a_coeffs);
 #else
     int16_t l_tmp[32];
     for (unsigned l_p = 0; l_p < 8; l_p++) {
@@ -361,34 +214,8 @@ void dap_mlkem_ntt_nttpack_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {{TARGET_ATTR}} __attribute__((noinline))
 void dap_mlkem_ntt_nttunpack_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
-#if VEC_LANES == 16
-#ifdef __AVX512BW__
-    const __m256i l_lo = _mm256_setr_epi16(
-         0, 16,  1, 17,  2, 18,  3, 19,
-         4, 20,  5, 21,  6, 22,  7, 23);
-    const __m256i l_hi = _mm256_setr_epi16(
-         8, 24,  9, 25, 10, 26, 11, 27,
-        12, 28, 13, 29, 14, 30, 15, 31);
-    for (unsigned l_p = 0; l_p < 8; l_p++) {
-        __m256i l_evens = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p));
-        __m256i l_odds  = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p + 16));
-        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p),
-                            _mm256_permutex2var_epi16(l_evens, l_lo, l_odds));
-        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p + 16),
-                            _mm256_permutex2var_epi16(l_evens, l_hi, l_odds));
-    }
-#else
-    for (unsigned l_p = 0; l_p < 8; l_p++) {
-        __m256i l_evens = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p));
-        __m256i l_odds  = _mm256_loadu_si256((const __m256i *)(a_coeffs + 32 * l_p + 16));
-        __m256i l_lo = _mm256_unpacklo_epi16(l_evens, l_odds);
-        __m256i l_hi = _mm256_unpackhi_epi16(l_evens, l_odds);
-        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p),
-                            _mm256_permute2x128_si256(l_lo, l_hi, 0x20));
-        _mm256_storeu_si256((__m256i *)(a_coeffs + 32 * l_p + 16),
-                            _mm256_permute2x128_si256(l_lo, l_hi, 0x31));
-    }
-#endif
+#ifdef MLKEM_HAS_NTTPACK
+    MLKEM_NTTUNPACK(a_coeffs);
 #else
     int16_t l_tmp[32];
     for (unsigned l_p = 0; l_p < 8; l_p++) {

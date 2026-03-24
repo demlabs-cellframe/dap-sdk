@@ -7,6 +7,8 @@
  * AArch64 NEON: vmull_u32 / vmlal_u32 for widening multiply-accumulate.
  */
 
+#if defined(__SIZEOF_INT128__)
+
 #include <arm_neon.h>
 
 {{TARGET_ATTR}}
@@ -166,3 +168,5 @@ void dap_poly1305_blocks_{{ARCH_LOWER}}(s_poly1305_state_t *st,
         msg += 16;
     }
 }
+
+#endif /* __SIZEOF_INT128__ */

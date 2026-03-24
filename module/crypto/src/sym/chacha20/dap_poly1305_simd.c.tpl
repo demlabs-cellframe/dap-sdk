@@ -14,8 +14,4 @@
 {{ARCH_INCLUDES}}
 #include "dap_poly1305_internal.h"
 
-#if defined(__SIZEOF_INT128__) && (defined(__x86_64__) || defined(__aarch64__))
-
 {{#include IMPL_FILE}}
-
-#endif

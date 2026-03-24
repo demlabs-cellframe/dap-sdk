@@ -336,15 +336,34 @@ set(DIL_TPL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sig/dilithium)
 set(DIL_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/dilithium_ntt_gen)
 set(DIL_REDUCE_TPL "${DIL_TPL_DIR}/dap_dilithium_simd_reduce.tpl")
 
-dap_arch_generate(
-    TEMPLATE   ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
-    OUTPUT_DIR ${DIL_GEN_DIR}
-    PREFIX     dap_dilithium_ntt
-    VARIANTS
-        avx2         "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
-        avx2_512vl   "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
-        avx512       "${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
-        neon         "${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
+# Per-variant NTT generation: each arch gets its own NTT_INNER_FILE (Keccak pattern)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_avx2.c
+    ARCH     avx2
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+             "NTT_INNER_FILE=${DIL_TPL_DIR}/arch/x86/ntt_inner_avx2.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_avx2_512vl.c
+    ARCH     avx2_512vl
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+             "NTT_INNER_FILE=${DIL_TPL_DIR}/arch/x86/ntt_inner_avx2.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_avx512.c
+    ARCH     avx512
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
+             "NTT_INNER_FILE=${DIL_TPL_DIR}/arch/x86/ntt_inner_avx512.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_neon.c
+    ARCH     neon
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
+             "NTT_INNER_FILE=${DIL_TPL_DIR}/arch/generic/ntt_inner_scalar.tpl"
 )
 dap_arch_generate(
     TEMPLATE   ${DIL_TPL_DIR}/dap_dilithium_poly_simd.c.tpl

@@ -1,6 +1,8 @@
 /* Poly1305 AVX2 4-block parallel implementation snippet.
  * Included by dap_poly1305_simd.c.tpl — do not compile standalone. */
 
+#if defined(__SIZEOF_INT128__)
+
 {{TARGET_ATTR}}
 void dap_poly1305_blocks_{{ARCH_LOWER}}(s_poly1305_state_t *st,
     const uint8_t *msg, size_t nblocks)
@@ -162,3 +164,5 @@ void dap_poly1305_blocks_{{ARCH_LOWER}}(s_poly1305_state_t *st,
         msg += 16;
     }
 }
+
+#endif /* __SIZEOF_INT128__ */

@@ -2,6 +2,8 @@
  * Uses vpmadd52lo/vpmadd52hi for radix-2^44 arithmetic.
  * Included by dap_poly1305_simd.c.tpl — do not compile standalone. */
 
+#if defined(__SIZEOF_INT128__)
+
 static inline void s_donna44_mul(uint64_t out[3], const uint64_t a[3], const uint64_t b[3])
 {
     uint64_t bs1 = 20 * b[1], bs2 = 20 * b[2];
@@ -135,3 +137,5 @@ void dap_poly1305_blocks_{{ARCH_LOWER}}(s_poly1305_state_t *st,
         msg += 16;
     }
 }
+
+#endif /* __SIZEOF_INT128__ */

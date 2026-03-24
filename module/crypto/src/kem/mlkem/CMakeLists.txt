@@ -21,15 +21,30 @@ dap_arch_generate(
 )
 
 # Specialized NTT16 for Kyber (Q=3329, N=256, hardcoded zetas)
-dap_arch_generate(
-    TEMPLATE   ${M}/dap_mlkem_ntt_simd.c.tpl
-    OUTPUT_DIR ${MLKEM_SIMD_GEN_DIR}
-    PREFIX     dap_mlkem_ntt
-    VARIANTS
-        avx2         "${DAP_PRIMITIVES_DIR}/x86/int16_avx2.tpl"
-        avx2_512vl   "${DAP_PRIMITIVES_DIR}/x86/int16_avx2.tpl"
-        neon         "${DAP_PRIMITIVES_DIR}/arm/int16_neon.tpl"
-    EXTRA_ARGS "REDUCE_FILE=${MLKEM_REDUCE_TPL}"
+# Per-variant generation: each arch gets its own NTT_INNER_FILE (Keccak pattern)
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_ntt_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_ntt_avx2.c
+    ARCH     avx2
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int16_avx2.tpl"
+             "REDUCE_FILE=${MLKEM_REDUCE_TPL}"
+             "NTT_INNER_FILE=${M}/arch/x86/ntt_inner_avx2.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_ntt_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_ntt_avx2_512vl.c
+    ARCH     avx2_512vl
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int16_avx2.tpl"
+             "REDUCE_FILE=${MLKEM_REDUCE_TPL}"
+             "NTT_INNER_FILE=${M}/arch/x86/ntt_inner_avx2_512bw.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_ntt_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_ntt_neon.c
+    ARCH     neon
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/arm/int16_neon.tpl"
+             "REDUCE_FILE=${MLKEM_REDUCE_TPL}"
+             "NTT_INNER_FILE=${M}/arch/generic/ntt_inner_scalar.tpl"
 )
 
 # =============================================================================

@@ -2,7 +2,21 @@
  * @file dap_dilithium_ntt_{{ARCH_LOWER}}.c
  * @brief {{ARCH_NAME}} specialized NTT32 for Dilithium/ML-DSA
  * @details Compile-time constants: Q=8380417, QINV=4236238847, N=256.
- *          Fused inner layers + fused inverse NTT Montgomery scaling.
+ *          Pure algorithmic template: ALL architecture-specific code lives in
+ *          NTT_INNER_FILE (following the Keccak pattern). This file contains
+ *          ZERO intrinsics and ZERO #if VEC_LANES branches.
+ *
+ *          Primitives contract — PRIMITIVES_FILE must provide:
+ *            Types:  VEC_T, HVEC_T (optional)
+ *            Macros: VEC_LANES, VEC_LOAD, VEC_STORE, VEC_SET1_32,
+ *                    VEC_ADD32, VEC_SUB32, VEC_MULLO32
+ *                    VEC_MONT_REDUCE_MUL(a, b, qinv, q)
+ *
+ *          NTT_INNER_FILE may provide (Keccak-pattern opt-in):
+ *            DIL_HAS_NTT_INNER  — enables per-block SIMD inner layers
+ *            DIL_NTT_FWD_INNER(v, zetas, k_base, blk, qinv_v, q_v)
+ *            DIL_NTT_INV_INNER(v, zetas_inv, k_base, blk, qinv_v, q_v)
+ *
  *          Generated from dap_dilithium_ntt_simd.c.tpl by dap_tpl.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -19,6 +33,8 @@
 #define DIL_Q    8380417
 #define DIL_QINV 4236238847U
 #define DIL_MONT 4193792U
+
+{{#include NTT_INNER_FILE}}
 
 static const int32_t s_zetas[DIL_N] = {
     0, 25847, 5771523, 7861508, 237124, 7602457, 7504169, 466468,
@@ -140,107 +156,12 @@ void dap_dilithium_ntt_forward_{{ARCH_LOWER}}(int32_t a_coeffs[DIL_N])
         }
     }
 
-#if VEC_LANES == 16 && defined(HVEC_LANES) && HVEC_LANES == 8
-    /* Fused inner 4 layers (len=8,4,2,1) using ZMM shuffles + mask blends.
-     * Processes 16 coefficients per iteration, eliminating all scalar layers. */
-    {
-        unsigned l_k8 = l_k;
-        unsigned l_k4 = l_k + DIL_N / 16;
-        unsigned l_k2 = l_k + DIL_N / 16 + DIL_N / 8;
-        unsigned l_k1 = l_k + DIL_N / 16 + DIL_N / 8 + DIL_N / 4;
-        const HVEC_T l_hqinv = HVEC_SET1_32((int32_t)DIL_QINV);
-        const HVEC_T l_hq    = HVEC_SET1_32(DIL_Q);
-        for (l_start = 0; l_start < DIL_N; l_start += VEC_LANES) {
-            VEC_T v = VEC_LOAD(a_coeffs + l_start);
-            /* len=8: butterfly [0..7] <-> [8..15] via 256-bit halves */
-            {
-                HVEC_T _lo = VEC_LO_HALF(v), _hi = VEC_HI_HALF(v);
-                HVEC_T _t = s_mont_reduce_mul_hvec(HVEC_SET1_32(s_zetas[l_k8++]),
-                                                    _hi, l_hqinv, l_hq);
-                v = VEC_FROM_HALVES(HVEC_ADD32(_lo, _t), HVEC_SUB32(_lo, _t));
-            }
-            /* len=4: butterfly lanes 0<->1, 2<->3 via 128-bit shuffle */
-            {
-                VEC_T _lo = _mm512_shuffle_i32x4(v, v, _MM_SHUFFLE(2,2,0,0));
-                VEC_T _hi = _mm512_shuffle_i32x4(v, v, _MM_SHUFFLE(3,3,1,1));
-                VEC_T _zv = VEC_FROM_HALVES(
-                    HVEC_SET1_32(s_zetas[l_k4]),
-                    HVEC_SET1_32(s_zetas[l_k4 + 1]));
-                l_k4 += 2;
-                VEC_T _t = s_mont_reduce_mul_vec(_zv, _hi, l_qinv_vec, l_q_vec);
-                v = _mm512_mask_blend_epi32((__mmask16)0xF0F0,
-                    VEC_ADD32(_lo, _t), VEC_SUB32(_lo, _t));
-            }
-            /* len=2: butterfly within each 128-bit lane, stride=2 */
-            {
-                VEC_T _lo = _mm512_shuffle_epi32(v, _MM_SHUFFLE(1,0,1,0));
-                VEC_T _hi = _mm512_shuffle_epi32(v, _MM_SHUFFLE(3,2,3,2));
-                VEC_T _zv = _mm512_setr_epi32(
-                    s_zetas[l_k2],   s_zetas[l_k2],   s_zetas[l_k2],   s_zetas[l_k2],
-                    s_zetas[l_k2+1], s_zetas[l_k2+1], s_zetas[l_k2+1], s_zetas[l_k2+1],
-                    s_zetas[l_k2+2], s_zetas[l_k2+2], s_zetas[l_k2+2], s_zetas[l_k2+2],
-                    s_zetas[l_k2+3], s_zetas[l_k2+3], s_zetas[l_k2+3], s_zetas[l_k2+3]);
-                l_k2 += 4;
-                VEC_T _t = s_mont_reduce_mul_vec(_zv, _hi, l_qinv_vec, l_q_vec);
-                v = _mm512_mask_blend_epi32((__mmask16)0xCCCC,
-                    VEC_ADD32(_lo, _t), VEC_SUB32(_lo, _t));
-            }
-            /* len=1: butterfly within each pair */
-            {
-                VEC_T _lo = _mm512_shuffle_epi32(v, _MM_SHUFFLE(2,2,0,0));
-                VEC_T _hi = _mm512_shuffle_epi32(v, _MM_SHUFFLE(3,3,1,1));
-                VEC_T _zv = _mm512_setr_epi32(
-                    s_zetas[l_k1],   s_zetas[l_k1],   s_zetas[l_k1+1], s_zetas[l_k1+1],
-                    s_zetas[l_k1+2], s_zetas[l_k1+2], s_zetas[l_k1+3], s_zetas[l_k1+3],
-                    s_zetas[l_k1+4], s_zetas[l_k1+4], s_zetas[l_k1+5], s_zetas[l_k1+5],
-                    s_zetas[l_k1+6], s_zetas[l_k1+6], s_zetas[l_k1+7], s_zetas[l_k1+7]);
-                l_k1 += 8;
-                VEC_T _t = s_mont_reduce_mul_vec(_zv, _hi, l_qinv_vec, l_q_vec);
-                v = _mm512_mask_blend_epi32((__mmask16)0xAAAA,
-                    VEC_ADD32(_lo, _t), VEC_SUB32(_lo, _t));
-            }
-            VEC_STORE(a_coeffs + l_start, v);
-        }
-    }
-#elif VEC_LANES == 8 && defined(HVEC_LANES) && HVEC_LANES == 4
-    {
-        unsigned l_k4 = l_k;
-        unsigned l_k2 = l_k + DIL_N / 8;
-        unsigned l_k1 = l_k + DIL_N / 8 + DIL_N / 4;
-        const HVEC_T l_hqinv = HVEC_SET1_32((int32_t)DIL_QINV);
-        const HVEC_T l_hq    = HVEC_SET1_32(DIL_Q);
-        for (l_start = 0; l_start < DIL_N; l_start += VEC_LANES) {
-            VEC_T v = VEC_LOAD(a_coeffs + l_start);
-            {
-                HVEC_T _lo = VEC_LO_HALF(v), _hi = VEC_HI_HALF(v);
-                HVEC_T _t = s_mont_reduce_mul_hvec(HVEC_SET1_32(s_zetas[l_k4++]),
-                                                    _hi, l_hqinv, l_hq);
-                v = VEC_FROM_HALVES(HVEC_ADD32(_lo, _t), HVEC_SUB32(_lo, _t));
-            }
-            {
-                VEC_T _lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(1,0,1,0));
-                VEC_T _hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,2,3,2));
-                VEC_T _zv = _mm256_setr_m128i(
-                    _mm_set1_epi32(s_zetas[l_k2]),
-                    _mm_set1_epi32(s_zetas[l_k2 + 1]));
-                l_k2 += 2;
-                VEC_T _t = s_mont_reduce_mul_vec(_zv, _hi, l_qinv_vec, l_q_vec);
-                v = _mm256_blend_epi32(VEC_ADD32(_lo, _t),
-                                       VEC_SUB32(_lo, _t), 0xCC);
-            }
-            {
-                VEC_T _lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(2,2,0,0));
-                VEC_T _hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,3,1,1));
-                VEC_T _zv = _mm256_setr_epi32(
-                    s_zetas[l_k1], s_zetas[l_k1], s_zetas[l_k1+1], s_zetas[l_k1+1],
-                    s_zetas[l_k1+2], s_zetas[l_k1+2], s_zetas[l_k1+3], s_zetas[l_k1+3]);
-                l_k1 += 4;
-                VEC_T _t = s_mont_reduce_mul_vec(_zv, _hi, l_qinv_vec, l_q_vec);
-                v = _mm256_blend_epi32(VEC_ADD32(_lo, _t),
-                                       VEC_SUB32(_lo, _t), 0xAA);
-            }
-            VEC_STORE(a_coeffs + l_start, v);
-        }
+#ifdef DIL_HAS_NTT_INNER
+    for (l_start = 0; l_start < DIL_N; l_start += VEC_LANES) {
+        VEC_T v = VEC_LOAD(a_coeffs + l_start);
+        DIL_NTT_FWD_INNER(v, s_zetas, l_k, l_start / VEC_LANES,
+                           l_qinv_vec, l_q_vec);
+        VEC_STORE(a_coeffs + l_start, v);
     }
 #else
     for (; l_len >= 1; l_len >>= 1) {
@@ -261,9 +182,6 @@ void dap_dilithium_ntt_forward_{{ARCH_LOWER}}(int32_t a_coeffs[DIL_N])
 
 /* ============================================================================
  * Inverse NTT with fused Montgomery scaling — Gentleman–Sande
- *
- * Combines INTT + final f*coeff Montgomery reduction in a single function.
- * Eliminates the separate 256-element scaling loop from invntt_frominvmont.
  * ============================================================================ */
 
 {{TARGET_ATTR}}
@@ -271,122 +189,24 @@ void dap_dilithium_ntt_inverse_{{ARCH_LOWER}}(int32_t a_coeffs[DIL_N])
 {
     unsigned int l_start, l_len, l_j, l_k = 0;
 
-#if VEC_LANES == 16 && defined(HVEC_LANES) && HVEC_LANES == 8
-    /* Fused inner 4 layers (len=1,2,4,8) — Gentleman-Sande butterfly */
+#ifdef DIL_HAS_NTT_INNER
     {
-        unsigned l_k1 = 0;
-        unsigned l_k2 = DIL_N / 2;
-        unsigned l_k4 = DIL_N / 2 + DIL_N / 4;
-        unsigned l_k8 = DIL_N / 2 + DIL_N / 4 + DIL_N / 8;
-        const HVEC_T l_hqinv = HVEC_SET1_32((int32_t)DIL_QINV);
-        const HVEC_T l_hq    = HVEC_SET1_32(DIL_Q);
         const VEC_T l_qinv_vec = VEC_SET1_32((int32_t)DIL_QINV);
         const VEC_T l_q_vec    = VEC_SET1_32(DIL_Q);
         for (l_start = 0; l_start < DIL_N; l_start += VEC_LANES) {
             VEC_T v = VEC_LOAD(a_coeffs + l_start);
-            /* len=1: butterfly within each pair */
-            {
-                VEC_T _lo = _mm512_shuffle_epi32(v, _MM_SHUFFLE(2,2,0,0));
-                VEC_T _hi = _mm512_shuffle_epi32(v, _MM_SHUFFLE(3,3,1,1));
-                VEC_T _sum = VEC_ADD32(_lo, _hi);
-                VEC_T _dif = VEC_SUB32(_lo, _hi);
-                VEC_T _zv = _mm512_setr_epi32(
-                    s_zetas_inv[l_k1],   s_zetas_inv[l_k1],   s_zetas_inv[l_k1+1], s_zetas_inv[l_k1+1],
-                    s_zetas_inv[l_k1+2], s_zetas_inv[l_k1+2], s_zetas_inv[l_k1+3], s_zetas_inv[l_k1+3],
-                    s_zetas_inv[l_k1+4], s_zetas_inv[l_k1+4], s_zetas_inv[l_k1+5], s_zetas_inv[l_k1+5],
-                    s_zetas_inv[l_k1+6], s_zetas_inv[l_k1+6], s_zetas_inv[l_k1+7], s_zetas_inv[l_k1+7]);
-                l_k1 += 8;
-                v = _mm512_mask_blend_epi32((__mmask16)0xAAAA, _sum,
-                    s_mont_reduce_mul_vec(_zv, _dif, l_qinv_vec, l_q_vec));
-            }
-            /* len=2: butterfly within each 128-bit lane, stride=2 */
-            {
-                VEC_T _lo = _mm512_shuffle_epi32(v, _MM_SHUFFLE(1,0,1,0));
-                VEC_T _hi = _mm512_shuffle_epi32(v, _MM_SHUFFLE(3,2,3,2));
-                VEC_T _sum = VEC_ADD32(_lo, _hi);
-                VEC_T _dif = VEC_SUB32(_lo, _hi);
-                VEC_T _zv = _mm512_setr_epi32(
-                    s_zetas_inv[l_k2],   s_zetas_inv[l_k2],   s_zetas_inv[l_k2],   s_zetas_inv[l_k2],
-                    s_zetas_inv[l_k2+1], s_zetas_inv[l_k2+1], s_zetas_inv[l_k2+1], s_zetas_inv[l_k2+1],
-                    s_zetas_inv[l_k2+2], s_zetas_inv[l_k2+2], s_zetas_inv[l_k2+2], s_zetas_inv[l_k2+2],
-                    s_zetas_inv[l_k2+3], s_zetas_inv[l_k2+3], s_zetas_inv[l_k2+3], s_zetas_inv[l_k2+3]);
-                l_k2 += 4;
-                v = _mm512_mask_blend_epi32((__mmask16)0xCCCC, _sum,
-                    s_mont_reduce_mul_vec(_zv, _dif, l_qinv_vec, l_q_vec));
-            }
-            /* len=4: butterfly lanes 0<->1, 2<->3 */
-            {
-                VEC_T _lo = _mm512_shuffle_i32x4(v, v, _MM_SHUFFLE(2,2,0,0));
-                VEC_T _hi = _mm512_shuffle_i32x4(v, v, _MM_SHUFFLE(3,3,1,1));
-                VEC_T _sum = VEC_ADD32(_lo, _hi);
-                VEC_T _dif = VEC_SUB32(_lo, _hi);
-                VEC_T _zv = VEC_FROM_HALVES(
-                    HVEC_SET1_32(s_zetas_inv[l_k4]),
-                    HVEC_SET1_32(s_zetas_inv[l_k4 + 1]));
-                l_k4 += 2;
-                v = _mm512_mask_blend_epi32((__mmask16)0xF0F0, _sum,
-                    s_mont_reduce_mul_vec(_zv, _dif, l_qinv_vec, l_q_vec));
-            }
-            /* len=8: butterfly [0..7] <-> [8..15] */
-            {
-                HVEC_T _lo = VEC_LO_HALF(v), _hi = VEC_HI_HALF(v);
-                HVEC_T _sum = HVEC_ADD32(_lo, _hi);
-                HVEC_T _dif = HVEC_SUB32(_lo, _hi);
-                v = VEC_FROM_HALVES(_sum,
-                    s_mont_reduce_mul_hvec(HVEC_SET1_32(s_zetas_inv[l_k8++]),
-                                           _dif, l_hqinv, l_hq));
-            }
+            DIL_NTT_INV_INNER(v, s_zetas_inv, l_k, l_start / VEC_LANES,
+                               l_qinv_vec, l_q_vec);
             VEC_STORE(a_coeffs + l_start, v);
         }
-        l_k = l_k8;
-        l_len = VEC_LANES;
     }
-#elif VEC_LANES == 8 && defined(HVEC_LANES) && HVEC_LANES == 4
     {
-        unsigned l_k1 = 0;
-        unsigned l_k2 = DIL_N / 2;
-        unsigned l_k4 = DIL_N / 2 + DIL_N / 4;
-        const HVEC_T l_hqinv = HVEC_SET1_32((int32_t)DIL_QINV);
-        const HVEC_T l_hq    = HVEC_SET1_32(DIL_Q);
-        const VEC_T l_qinv_vec = VEC_SET1_32((int32_t)DIL_QINV);
-        const VEC_T l_q_vec    = VEC_SET1_32(DIL_Q);
-        for (l_start = 0; l_start < DIL_N; l_start += VEC_LANES) {
-            VEC_T v = VEC_LOAD(a_coeffs + l_start);
-            {
-                VEC_T _lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(2,2,0,0));
-                VEC_T _hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,3,1,1));
-                VEC_T _sum = VEC_ADD32(_lo, _hi);
-                VEC_T _dif = VEC_SUB32(_lo, _hi);
-                VEC_T _zv = _mm256_setr_epi32(
-                    s_zetas_inv[l_k1], s_zetas_inv[l_k1], s_zetas_inv[l_k1+1], s_zetas_inv[l_k1+1],
-                    s_zetas_inv[l_k1+2], s_zetas_inv[l_k1+2], s_zetas_inv[l_k1+3], s_zetas_inv[l_k1+3]);
-                l_k1 += 4;
-                v = _mm256_blend_epi32(_sum,
-                    s_mont_reduce_mul_vec(_zv, _dif, l_qinv_vec, l_q_vec), 0xAA);
-            }
-            {
-                VEC_T _lo = _mm256_shuffle_epi32(v, _MM_SHUFFLE(1,0,1,0));
-                VEC_T _hi = _mm256_shuffle_epi32(v, _MM_SHUFFLE(3,2,3,2));
-                VEC_T _sum = VEC_ADD32(_lo, _hi);
-                VEC_T _dif = VEC_SUB32(_lo, _hi);
-                VEC_T _zv = _mm256_setr_m128i(
-                    _mm_set1_epi32(s_zetas_inv[l_k2]),
-                    _mm_set1_epi32(s_zetas_inv[l_k2 + 1]));
-                l_k2 += 2;
-                v = _mm256_blend_epi32(_sum,
-                    s_mont_reduce_mul_vec(_zv, _dif, l_qinv_vec, l_q_vec), 0xCC);
-            }
-            {
-                HVEC_T _lo = VEC_LO_HALF(v), _hi = VEC_HI_HALF(v);
-                HVEC_T _sum = HVEC_ADD32(_lo, _hi);
-                HVEC_T _dif = HVEC_SUB32(_lo, _hi);
-                v = VEC_FROM_HALVES(_sum,
-                    s_mont_reduce_mul_hvec(HVEC_SET1_32(s_zetas_inv[l_k4++]),
-                                           _dif, l_hqinv, l_hq));
-            }
-            VEC_STORE(a_coeffs + l_start, v);
-        }
-        l_k = l_k4;
+        unsigned _nblk = DIL_N / VEC_LANES;
+        l_k = _nblk * (VEC_LANES / 2)
+            + _nblk * (VEC_LANES / 4)
+            + _nblk * (VEC_LANES / 8);
+        if (VEC_LANES >= 16)
+            l_k += _nblk * (VEC_LANES / 16);
         l_len = VEC_LANES;
     }
 #else
@@ -424,8 +244,6 @@ void dap_dilithium_ntt_inverse_{{ARCH_LOWER}}(int32_t a_coeffs[DIL_N])
             }
         }
 
-        /* Fused final Montgomery scaling: coeffs[i] = mont_reduce(f * coeffs[i])
-         * where f = MONT^2 * (Q-1) * ((Q-1)/256) mod Q */
         VEC_T l_fv = VEC_SET1_32(s_intt_scale);
         for (unsigned l_i = 0; l_i < DIL_N; l_i += VEC_LANES) {
             VEC_T v = VEC_LOAD(a_coeffs + l_i);
