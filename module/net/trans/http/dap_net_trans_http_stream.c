@@ -995,7 +995,6 @@ static int s_http_request(dap_client_esocket_t * a_client_esocket, dap_net_trans
     
     if (l_http_client == NULL) {
         log_it(L_ERROR, "s_http_request: dap_client_http_request returned NULL for path='%s'", a_path);
-        DAP_DELETE(l_ctx);
     } else {
         log_it(L_INFO, "s_http_request: dap_client_http_request succeeded for path='%s', http_client=%p", a_path, (void*)l_http_client);
         // Store HTTP client instance in trans private

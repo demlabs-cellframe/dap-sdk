@@ -1371,7 +1371,8 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_client_http->chunked_error_count = 0;
 
     // Resolve host
-    if (0 > dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL)) {
+    int l_addr_len = dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL);
+    if (l_addr_len < 0) {
         *a_error_code = EHOSTUNREACH;
         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
         s_client_http_delete(l_client_http);
@@ -1379,6 +1380,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
         dap_events_socket_delete_unsafe(l_ev_socket, true);
         return NULL;
     }
+    l_ev_socket->addr_size = (socklen_t)l_addr_len;
 
     dap_strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN - 1);
     l_ev_socket->remote_port = a_uplink_port;
