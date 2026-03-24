@@ -39,9 +39,6 @@
 #include "dap_plugin.h"
 #endif
 
-#if defined(DAP_WASM_PTHREADS) || (! defined(DAP_OS_WASM))
-#include <sys/stat.h>
-#endif
 
 #define LOG_TAG "dap_sdk"
 
@@ -94,7 +91,7 @@ static void s_init_memfs(void)
 {
     if (!g_sys_dir_path) {
         g_sys_dir_path = dap_strdup("/dap");
-        mkdir(g_sys_dir_path, 0777);
+        dap_mkdir_with_parents(g_sys_dir_path);
     }
     log_it(L_NOTICE, "WASM using MEMFS at %s (non-persistent)", g_sys_dir_path);
 }
