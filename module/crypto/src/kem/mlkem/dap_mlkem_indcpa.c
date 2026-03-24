@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "dap_mlkem_indcpa.h"
+#include "dap_mlkem_ctx.h"
 #include "dap_mlkem_poly.h"
 #include "dap_mlkem_polyvec.h"
 #include "dap_mlkem_ntt.h"
@@ -679,5 +680,135 @@ void MLKEM_NAMESPACE(_indcpa_dec)(uint8_t a_m[MLKEM_INDCPA_MSGBYTES],
     MLKEM_NAMESPACE(_poly_sub)(&l_mp, &l_v, &l_mp);
     MLKEM_NAMESPACE(_poly_reduce)(&l_mp);
 
+    MLKEM_NAMESPACE(_poly_tomsg)(a_m, &l_mp);
+}
+
+/* =========================================================================
+ * Context-based variants — use pre-computed NTT state from dap_mlkem_ctx_t
+ * ========================================================================= */
+
+void MLKEM_NAMESPACE(_indcpa_ctx_init_pk)(dap_mlkem_ctx_t *a_ctx,
+                                           const uint8_t a_pk[MLKEM_INDCPA_PUBLICKEYBYTES])
+{
+    s_unpack_pk(&a_ctx->pk_ntt, a_ctx->seed, a_pk);
+    MLKEM_NAMESPACE(_polyvec_nttpack)(&a_ctx->pk_ntt);
+
+    s_gen_matrix(a_ctx->mat_t, a_ctx->seed, 1);
+    for (unsigned i = 0; i < MLKEM_K; i++)
+        MLKEM_NAMESPACE(_polyvec_nttpack)(&a_ctx->mat_t[i]);
+}
+
+void MLKEM_NAMESPACE(_indcpa_ctx_init_sk)(dap_mlkem_ctx_t *a_ctx,
+                                           const uint8_t a_sk[MLKEM_INDCPA_SECRETKEYBYTES])
+{
+    s_unpack_sk(&a_ctx->sk_ntt, a_sk);
+    MLKEM_NAMESPACE(_polyvec_nttpack)(&a_ctx->sk_ntt);
+    MLKEM_NAMESPACE(_polyvec_mulcache_compute)(&a_ctx->sk_cache, &a_ctx->sk_ntt);
+}
+
+void MLKEM_NAMESPACE(_indcpa_enc_ctx)(uint8_t a_c[MLKEM_INDCPA_BYTES],
+                                       const uint8_t a_m[MLKEM_INDCPA_MSGBYTES],
+                                       const dap_mlkem_ctx_t *a_ctx,
+                                       const uint8_t a_coins[MLKEM_SYMBYTES])
+{
+    uint8_t l_nonce = 0;
+    dap_mlkem_polyvec l_sp, l_ep, l_bp;
+    dap_mlkem_poly l_v, l_k, l_epp;
+
+    MLKEM_NAMESPACE(_poly_frommsg)(&l_k, a_m);
+
+    {
+        dap_mlkem_poly l_dummy;
+        unsigned i = 0;
+        for (; i + 4 <= MLKEM_K; i += 4, l_nonce += 4)
+            MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(&l_sp.vec[i], &l_sp.vec[i + 1],
+                                                      &l_sp.vec[i + 2], &l_sp.vec[i + 3],
+                                                      a_coins, l_nonce, (uint8_t)(l_nonce + 1),
+                                                      (uint8_t)(l_nonce + 2), (uint8_t)(l_nonce + 3));
+        if (i < MLKEM_K) {
+            dap_mlkem_poly *l_ptrs[4];
+            uint8_t l_nonces[4];
+            unsigned k = 0;
+            for (; i + k < MLKEM_K; k++) {
+                l_ptrs[k] = &l_sp.vec[i + k];
+                l_nonces[k] = (uint8_t)(l_nonce + k);
+            }
+            for (; k < 4; k++) {
+                l_ptrs[k] = &l_dummy;
+                l_nonces[k] = l_nonces[0];
+            }
+            MLKEM_NAMESPACE(_poly_getnoise_eta1_x4)(l_ptrs[0], l_ptrs[1], l_ptrs[2], l_ptrs[3],
+                                                      a_coins, l_nonces[0], l_nonces[1],
+                                                      l_nonces[2], l_nonces[3]);
+            l_nonce += (uint8_t)(MLKEM_K - i);
+        }
+    }
+    {
+        dap_mlkem_poly l_dummy;
+        dap_mlkem_poly *l_eta2[MLKEM_K + 1];
+        for (unsigned j = 0; j < MLKEM_K; j++)
+            l_eta2[j] = &l_ep.vec[j];
+        l_eta2[MLKEM_K] = &l_epp;
+        unsigned i = 0;
+        for (; i + 4 <= MLKEM_K + 1; i += 4, l_nonce += 4)
+            MLKEM_NAMESPACE(_poly_getnoise_eta2_x4)(l_eta2[i], l_eta2[i + 1],
+                                                      l_eta2[i + 2], l_eta2[i + 3],
+                                                      a_coins, l_nonce, (uint8_t)(l_nonce + 1),
+                                                      (uint8_t)(l_nonce + 2), (uint8_t)(l_nonce + 3));
+        if (i < MLKEM_K + 1) {
+            dap_mlkem_poly *l_ptrs[4];
+            uint8_t l_nonces[4];
+            unsigned k = 0;
+            for (; i + k < MLKEM_K + 1; k++) {
+                l_ptrs[k] = l_eta2[i + k];
+                l_nonces[k] = (uint8_t)(l_nonce + k);
+            }
+            for (; k < 4; k++) {
+                l_ptrs[k] = &l_dummy;
+                l_nonces[k] = l_nonces[0];
+            }
+            MLKEM_NAMESPACE(_poly_getnoise_eta2_x4)(l_ptrs[0], l_ptrs[1], l_ptrs[2], l_ptrs[3],
+                                                      a_coins, l_nonces[0], l_nonces[1],
+                                                      l_nonces[2], l_nonces[3]);
+        }
+    }
+
+    MLKEM_NAMESPACE(_polyvec_ntt)(&l_sp);
+
+    dap_mlkem_polyvec_mulcache l_sp_cache;
+    MLKEM_NAMESPACE(_polyvec_mulcache_compute)(&l_sp_cache, &l_sp);
+    for (unsigned i = 0; i < MLKEM_K; i++)
+        MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(&l_bp.vec[i], &a_ctx->mat_t[i], &l_sp, &l_sp_cache);
+    MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(&l_v, &a_ctx->pk_ntt, &l_sp, &l_sp_cache);
+
+    MLKEM_NAMESPACE(_polyvec_invntt_tomont)(&l_bp);
+    MLKEM_NAMESPACE(_poly_invntt_tomont)(&l_v);
+
+    MLKEM_NAMESPACE(_polyvec_add)(&l_bp, &l_bp, &l_ep);
+    MLKEM_NAMESPACE(_poly_add)(&l_v, &l_v, &l_epp);
+    MLKEM_NAMESPACE(_poly_add)(&l_v, &l_v, &l_k);
+    MLKEM_NAMESPACE(_polyvec_reduce)(&l_bp);
+    MLKEM_NAMESPACE(_poly_reduce)(&l_v);
+
+    s_pack_ciphertext(a_c, &l_bp, &l_v);
+}
+
+void MLKEM_NAMESPACE(_indcpa_dec_ctx)(uint8_t a_m[MLKEM_INDCPA_MSGBYTES],
+                                       const uint8_t a_c[MLKEM_INDCPA_BYTES],
+                                       const dap_mlkem_ctx_t *a_ctx)
+{
+    dap_mlkem_polyvec l_bp;
+    dap_mlkem_poly l_v, l_mp;
+
+    s_unpack_ciphertext(&l_bp, &l_v, a_c);
+    MLKEM_NAMESPACE(_polyvec_ntt)(&l_bp);
+
+    /* basemul(a,b) is commutative: use pre-computed sk_cache instead of per-call bp_cache */
+    MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(
+        &l_mp, &l_bp, &a_ctx->sk_ntt, &a_ctx->sk_cache);
+
+    MLKEM_NAMESPACE(_poly_invntt_tomont)(&l_mp);
+    MLKEM_NAMESPACE(_poly_sub)(&l_mp, &l_v, &l_mp);
+    MLKEM_NAMESPACE(_poly_reduce)(&l_mp);
     MLKEM_NAMESPACE(_poly_tomsg)(a_m, &l_mp);
 }

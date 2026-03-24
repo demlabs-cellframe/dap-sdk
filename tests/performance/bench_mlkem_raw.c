@@ -1,39 +1,13 @@
 /**
- * Raw ML-KEM microbenchmark — measures keygen/encaps/decaps without
- * any allocation overhead, for direct comparison with liboqs speed_kem.
+ * Raw ML-KEM microbenchmark — measures keygen/encaps/decaps via dap_kem.h
+ * generic API. Benchmarks both stateless and persistent-context paths.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
-
-/* ML-KEM-768 */
-#define PK_BYTES  1184
-#define SK_BYTES  2400
-#define CT_BYTES  1088
-#define SS_BYTES  32
-
-int dap_mlkem768_kem_keypair(uint8_t *pk, uint8_t *sk);
-int dap_mlkem768_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-int dap_mlkem768_kem_dec(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
-
-/* ML-KEM-512 */
-#define PK512  800
-#define SK512  1632
-#define CT512  768
-
-int dap_mlkem512_kem_keypair(uint8_t *pk, uint8_t *sk);
-int dap_mlkem512_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-int dap_mlkem512_kem_dec(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
-
-/* ML-KEM-1024 */
-#define PK1024  1568
-#define SK1024  3168
-#define CT1024  1568
-
-int dap_mlkem1024_kem_keypair(uint8_t *pk, uint8_t *sk);
-int dap_mlkem1024_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-int dap_mlkem1024_kem_dec(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
+#include "dap_kem.h"
 
 static uint64_t now_ns(void) {
     struct timespec ts;
@@ -55,38 +29,48 @@ static uint64_t now_ns(void) {
            label, ITERS, (double)_dt / (ITERS * 1000.0));        \
 } while(0)
 
-int main(void) {
+static void s_bench_variant(dap_kem_alg_t a_alg)
+{
+    const char *name = dap_kem_alg_name(a_alg);
+    size_t pk_sz = dap_kem_publickey_size(a_alg);
+    size_t sk_sz = dap_kem_secretkey_size(a_alg);
+    size_t ct_sz = dap_kem_ciphertext_size(a_alg);
+    size_t ss_sz = dap_kem_sharedsecret_size(a_alg);
 
-    printf("=== ML-KEM-512 raw ===\n");
-    {
-        uint8_t pk[PK512], sk[SK512], ct[CT512], ss1[SS_BYTES], ss2[SS_BYTES];
-        BENCH("keygen", dap_mlkem512_kem_keypair(pk, sk));
-        dap_mlkem512_kem_keypair(pk, sk);
-        BENCH("encaps", dap_mlkem512_kem_enc(ct, ss1, pk));
-        dap_mlkem512_kem_enc(ct, ss1, pk);
-        BENCH("decaps", dap_mlkem512_kem_dec(ss2, ct, sk));
-    }
-    printf("\n=== ML-KEM-768 raw ===\n");
-    {
-        uint8_t pk[PK_BYTES], sk[SK_BYTES], ct[CT_BYTES], ss1[SS_BYTES], ss2[SS_BYTES];
-        BENCH("keygen", dap_mlkem768_kem_keypair(pk, sk));
-        dap_mlkem768_kem_keypair(pk, sk);
-        BENCH("encaps", dap_mlkem768_kem_enc(ct, ss1, pk));
-        dap_mlkem768_kem_enc(ct, ss1, pk);
-        BENCH("decaps", dap_mlkem768_kem_dec(ss2, ct, sk));
-        if (memcmp(ss1, ss2, SS_BYTES) != 0)
-            printf("  !!! CORRECTNESS FAILURE: ss1 != ss2 !!!\n");
-        else
-            printf("  Correctness: OK (shared secrets match)\n");
-    }
-    printf("\n=== ML-KEM-1024 raw ===\n");
-    {
-        uint8_t pk[PK1024], sk[SK1024], ct[CT1024], ss1[SS_BYTES], ss2[SS_BYTES];
-        BENCH("keygen", dap_mlkem1024_kem_keypair(pk, sk));
-        dap_mlkem1024_kem_keypair(pk, sk);
-        BENCH("encaps", dap_mlkem1024_kem_enc(ct, ss1, pk));
-        dap_mlkem1024_kem_enc(ct, ss1, pk);
-        BENCH("decaps", dap_mlkem1024_kem_dec(ss2, ct, sk));
-    }
+    uint8_t *pk = malloc(pk_sz), *sk = malloc(sk_sz);
+    uint8_t *ct = malloc(ct_sz), *ss1 = malloc(ss_sz), *ss2 = malloc(ss_sz);
+
+    printf("=== %s raw ===\n", name);
+    BENCH("keygen", dap_kem_keypair(a_alg, pk, sk));
+    dap_kem_keypair(a_alg, pk, sk);
+    BENCH("encaps", dap_kem_encaps(a_alg, ct, ss1, pk));
+    dap_kem_encaps(a_alg, ct, ss1, pk);
+    BENCH("decaps", dap_kem_decaps(a_alg, ss2, ct, sk));
+    if (memcmp(ss1, ss2, ss_sz) != 0)
+        printf("  !!! CORRECTNESS FAILURE: ss1 != ss2 !!!\n");
+    else
+        printf("  Correctness: OK\n");
+
+    printf("\n=== %s ctx ===\n", name);
+    dap_kem_ctx_t ctx;
+    dap_kem_keypair(a_alg, pk, sk);
+    dap_kem_ctx_create(&ctx, a_alg, pk, sk);
+    BENCH("enc_ctx", dap_kem_ctx_encaps(ct, ss1, &ctx));
+    dap_kem_ctx_encaps(ct, ss1, &ctx);
+    BENCH("dec_ctx", dap_kem_ctx_decaps(ss2, ct, &ctx));
+    if (memcmp(ss1, ss2, ss_sz) != 0)
+        printf("  !!! CORRECTNESS FAILURE: ss1 != ss2 !!!\n");
+    else
+        printf("  Correctness: OK\n");
+    dap_kem_ctx_destroy(&ctx);
+
+    free(pk); free(sk); free(ct); free(ss1); free(ss2);
+    printf("\n");
+}
+
+int main(void) {
+    s_bench_variant(DAP_KEM_ALG_ML_KEM_512);
+    s_bench_variant(DAP_KEM_ALG_ML_KEM_768);
+    s_bench_variant(DAP_KEM_ALG_ML_KEM_1024);
     return 0;
 }

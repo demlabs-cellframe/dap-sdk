@@ -17,6 +17,7 @@
 #include "dap_rand.h"
 #include "dap_enc_key.h"
 #include "dap_sign.h"
+#include "dap_kem.h"
 #include "dap_chacha20_poly1305.h"
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
@@ -55,6 +56,7 @@ typedef struct {
     const char *name;
     double us_per_op;
     double ops_per_sec;
+    double enc_us, dec_us;
 } bench_result_t;
 
 static void s_print_header(const char *a_title)
@@ -66,55 +68,33 @@ static void s_print_header(const char *a_title)
 
 static void s_print_result(const bench_result_t *r)
 {
-    printf("%-40s %12.2f %12.0f\n", r->name, r->us_per_op, r->ops_per_sec);
+    printf("%-40s %12.2f %12.0f", r->name, r->us_per_op, r->ops_per_sec);
+    if (r->enc_us > 0 && getenv("BENCH_DETAIL"))
+        printf("  (enc=%.2f dec=%.2f)", r->enc_us, r->dec_us);
+    printf("\n");
 }
 
-/* ---- ML-KEM raw (no-alloc) benchmark ---- */
+/* ---- ML-KEM raw benchmark via dap_kem.h ---- */
 
-int dap_mlkem512_kem_keypair(uint8_t *pk, uint8_t *sk);
-int dap_mlkem512_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-int dap_mlkem512_kem_dec(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
-int dap_mlkem768_kem_keypair(uint8_t *pk, uint8_t *sk);
-int dap_mlkem768_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-int dap_mlkem768_kem_dec(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
-int dap_mlkem1024_kem_keypair(uint8_t *pk, uint8_t *sk);
-int dap_mlkem1024_kem_enc(uint8_t *ct, uint8_t *ss, const uint8_t *pk);
-int dap_mlkem1024_kem_dec(uint8_t *ss, const uint8_t *ct, const uint8_t *sk);
-
-typedef struct {
-    int (*keypair)(uint8_t *, uint8_t *);
-    int (*enc)(uint8_t *, uint8_t *, const uint8_t *);
-    int (*dec)(uint8_t *, const uint8_t *, const uint8_t *);
-    size_t pk, sk, ct, ss;
-} s_mlkem_raw_t;
-
-static const s_mlkem_raw_t s_mlkem_raw[] = {
-    { dap_mlkem512_kem_keypair, dap_mlkem512_kem_enc, dap_mlkem512_kem_dec,
-      800, 1632, 768, 32 },
-    { dap_mlkem768_kem_keypair, dap_mlkem768_kem_enc, dap_mlkem768_kem_dec,
-      1184, 2400, 1088, 32 },
-    { dap_mlkem1024_kem_keypair, dap_mlkem1024_kem_enc, dap_mlkem1024_kem_dec,
-      1568, 3168, 1568, 32 },
-};
-
-static bench_result_t s_bench_mlkem_raw(int a_variant, const char *a_name)
+static bench_result_t s_bench_mlkem_raw(dap_kem_alg_t a_alg, const char *a_name)
 {
     bench_result_t l_res = { .name = a_name };
-    const s_mlkem_raw_t *v = &s_mlkem_raw[a_variant];
-    uint8_t *pk = calloc(1, v->pk), *sk = calloc(1, v->sk);
-    uint8_t *ct = calloc(1, v->ct), *ss_enc = calloc(1, v->ss), *ss_dec = calloc(1, v->ss);
-    v->keypair(pk, sk);
+    size_t pk_sz = dap_kem_publickey_size(a_alg),  sk_sz = dap_kem_secretkey_size(a_alg);
+    size_t ct_sz = dap_kem_ciphertext_size(a_alg), ss_sz = dap_kem_sharedsecret_size(a_alg);
+    uint8_t *pk = calloc(1, pk_sz), *sk = calloc(1, sk_sz);
+    uint8_t *ct = calloc(1, ct_sz), *ss_enc = calloc(1, ss_sz), *ss_dec = calloc(1, ss_sz);
+    dap_kem_keypair(a_alg, pk, sk);
 
     for (int w = 0; w < BENCH_WARMUP; w++) {
-        v->enc(ct, ss_enc, pk);
-        v->dec(ss_dec, ct, sk);
+        dap_kem_encaps(a_alg, ct, ss_enc, pk);
+        dap_kem_decaps(a_alg, ss_dec, ct, sk);
     }
     uint64_t l_total = 0, l_enc_total = 0, l_dec_total = 0;
     for (int i = 0; i < BENCH_ITERS; i++) {
         uint64_t t0 = s_rdtsc_or_clock();
-        v->enc(ct, ss_enc, pk);
+        dap_kem_encaps(a_alg, ct, ss_enc, pk);
         uint64_t t1 = s_rdtsc_or_clock();
-        v->dec(ss_dec, ct, sk);
+        dap_kem_decaps(a_alg, ss_dec, ct, sk);
         uint64_t t2 = s_rdtsc_or_clock();
         l_total += t2 - t0;
         l_enc_total += t1 - t0;
@@ -124,10 +104,45 @@ static bench_result_t s_bench_mlkem_raw(int a_variant, const char *a_name)
     double us = (double)l_total / BENCH_ITERS / 1000.0;
     l_res.us_per_op = us;
     l_res.ops_per_sec = 1000000.0 / us;
-    if (getenv("BENCH_DETAIL"))
-        printf("    enc=%.2f us  dec=%.2f us\n",
-               (double)l_enc_total / BENCH_ITERS / 1000.0,
-               (double)l_dec_total / BENCH_ITERS / 1000.0);
+    l_res.enc_us = (double)l_enc_total / BENCH_ITERS / 1000.0;
+    l_res.dec_us = (double)l_dec_total / BENCH_ITERS / 1000.0;
+    return l_res;
+}
+
+static bench_result_t s_bench_mlkem_ctx(dap_kem_alg_t a_alg, const char *a_name)
+{
+    bench_result_t l_res = { .name = a_name };
+    size_t pk_sz = dap_kem_publickey_size(a_alg),  sk_sz = dap_kem_secretkey_size(a_alg);
+    size_t ct_sz = dap_kem_ciphertext_size(a_alg), ss_sz = dap_kem_sharedsecret_size(a_alg);
+    uint8_t *pk = calloc(1, pk_sz), *sk = calloc(1, sk_sz);
+    uint8_t *ct = calloc(1, ct_sz), *ss_enc = calloc(1, ss_sz), *ss_dec = calloc(1, ss_sz);
+    dap_kem_keypair(a_alg, pk, sk);
+
+    dap_kem_ctx_t ctx;
+    dap_kem_ctx_create(&ctx, a_alg, pk, sk);
+
+    for (int w = 0; w < BENCH_WARMUP; w++) {
+        dap_kem_ctx_encaps(ct, ss_enc, &ctx);
+        dap_kem_ctx_decaps(ss_dec, ct, &ctx);
+    }
+    uint64_t l_total = 0, l_enc_total = 0, l_dec_total = 0;
+    for (int i = 0; i < BENCH_ITERS; i++) {
+        uint64_t t0 = s_rdtsc_or_clock();
+        dap_kem_ctx_encaps(ct, ss_enc, &ctx);
+        uint64_t t1 = s_rdtsc_or_clock();
+        dap_kem_ctx_decaps(ss_dec, ct, &ctx);
+        uint64_t t2 = s_rdtsc_or_clock();
+        l_total += t2 - t0;
+        l_enc_total += t1 - t0;
+        l_dec_total += t2 - t1;
+    }
+    dap_kem_ctx_destroy(&ctx);
+    free(pk); free(sk); free(ct); free(ss_enc); free(ss_dec);
+    double us = (double)l_total / BENCH_ITERS / 1000.0;
+    l_res.us_per_op = us;
+    l_res.ops_per_sec = 1000000.0 / us;
+    l_res.enc_us = (double)l_enc_total / BENCH_ITERS / 1000.0;
+    l_res.dec_us = (double)l_dec_total / BENCH_ITERS / 1000.0;
     return l_res;
 }
 
@@ -211,10 +226,8 @@ static bench_result_t s_bench_mlkem_oqs(const char *a_alg_name, const char *a_la
     double us = (double)l_total / BENCH_ITERS / 1000.0;
     l_res.us_per_op = us;
     l_res.ops_per_sec = 1000000.0 / us;
-    if (getenv("BENCH_DETAIL"))
-        printf("    enc=%.2f us  dec=%.2f us\n",
-               (double)l_enc_total / BENCH_ITERS / 1000.0,
-               (double)l_dec_total / BENCH_ITERS / 1000.0);
+    l_res.enc_us = (double)l_enc_total / BENCH_ITERS / 1000.0;
+    l_res.dec_us = (double)l_dec_total / BENCH_ITERS / 1000.0;
 
     DAP_DELETE(pk); DAP_DELETE(sk);
     DAP_DELETE(ct); DAP_DELETE(ss_enc); DAP_DELETE(ss_dec);
@@ -225,30 +238,59 @@ static bench_result_t s_bench_mlkem_oqs(const char *a_alg_name, const char *a_la
 
 static void s_benchmark_mlkem(void)
 {
-    s_print_header("ML-KEM (encaps + decaps)");
-
-    bench_result_t r;
-    if (!getenv("BENCH_OQS_ONLY")) {
-        r = s_bench_mlkem_raw(0, "DAP ML-KEM-512");
-        s_print_result(&r);
-        r = s_bench_mlkem_raw(1, "DAP ML-KEM-768");
-        s_print_result(&r);
-        r = s_bench_mlkem_raw(2, "DAP ML-KEM-1024");
-        s_print_result(&r);
-    }
-
+    static const struct { dap_kem_alg_t alg; const char *dap; const char *oqs_alg; const char *oqs_label; }
+    s_variants[] = {
+        { DAP_KEM_ALG_ML_KEM_512,  "DAP ML-KEM-512",
 #ifdef HAVE_LIBOQS
-    if (!getenv("BENCH_DAP_ONLY")) {
-        r = s_bench_mlkem_oqs(OQS_KEM_alg_kyber_512, "liboqs ML-KEM-512");
-        if (r.us_per_op >= 0) s_print_result(&r);
-        r = s_bench_mlkem_oqs(OQS_KEM_alg_kyber_768, "liboqs ML-KEM-768");
-        if (r.us_per_op >= 0) s_print_result(&r);
-        r = s_bench_mlkem_oqs(OQS_KEM_alg_kyber_1024, "liboqs ML-KEM-1024");
-        if (r.us_per_op >= 0) s_print_result(&r);
-    }
+          OQS_KEM_alg_kyber_512,
 #else
+          NULL,
+#endif
+          "liboqs ML-KEM-512" },
+        { DAP_KEM_ALG_ML_KEM_768,  "DAP ML-KEM-768",
+#ifdef HAVE_LIBOQS
+          OQS_KEM_alg_kyber_768,
+#else
+          NULL,
+#endif
+          "liboqs ML-KEM-768" },
+        { DAP_KEM_ALG_ML_KEM_1024, "DAP ML-KEM-1024",
+#ifdef HAVE_LIBOQS
+          OQS_KEM_alg_kyber_1024,
+#else
+          NULL,
+#endif
+          "liboqs ML-KEM-1024" },
+    };
+
+    s_print_header("ML-KEM (encaps + decaps) — raw stateless comparison");
+    bench_result_t r;
+    for (size_t i = 0; i < sizeof(s_variants)/sizeof(s_variants[0]); i++) {
+        if (!getenv("BENCH_OQS_ONLY")) {
+            r = s_bench_mlkem_raw(s_variants[i].alg, s_variants[i].dap);
+            s_print_result(&r);
+        }
+#ifdef HAVE_LIBOQS
+        if (!getenv("BENCH_DAP_ONLY") && s_variants[i].oqs_alg) {
+            r = s_bench_mlkem_oqs(s_variants[i].oqs_alg, s_variants[i].oqs_label);
+            if (r.us_per_op >= 0) s_print_result(&r);
+        }
+#endif
+    }
+#ifndef HAVE_LIBOQS
     printf("  (liboqs not available — run download_competitors.sh)\n");
 #endif
+
+    if (!getenv("BENCH_OQS_ONLY")) {
+        s_print_header("ML-KEM (encaps + decaps) — DAP persistent context");
+        printf("  (pre-computed NTT state; not applicable to competitors)\n");
+        for (size_t i = 0; i < sizeof(s_variants)/sizeof(s_variants[0]); i++) {
+            char l_name[64];
+            snprintf(l_name, sizeof(l_name), "DAP %s (ctx)", dap_kem_alg_name(s_variants[i].alg));
+            r = s_bench_mlkem_ctx(s_variants[i].alg, l_name);
+            s_print_result(&r);
+        }
+    }
 }
 
 /* ---- ML-DSA benchmark ---- */
