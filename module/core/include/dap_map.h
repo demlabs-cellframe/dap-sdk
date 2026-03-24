@@ -124,7 +124,7 @@ DAP_STATIC_INLINE dap_map_node_t *s_dap_map_new_node(const char *a_key, void *a_
                                                        dap_map_node_t *a_parent)
 {
     dap_map_node_t *l_node = DAP_NEW_Z(dap_map_node_t);
-    dap_return_val_if_fail(l_node, NULL);
+    if (!l_node) return NULL;
     l_node->key    = dap_strdup(a_key);
     l_node->val    = a_val;
     l_node->color  = DAP_MAP_RED;
