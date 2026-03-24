@@ -12,22 +12,9 @@
 
 {{#include PRIMITIVES_FILE}}
 
+{{#include REDUCE_FILE}}
+
 #include "dap_mlkem_poly_simd.h"
-
-#define MLKEM_Q     3329
-#define MLKEM_QINV  62209
-#define MLKEM_N     256
-
-{{TARGET_ATTR}}
-static inline VEC_T
-s_fqmul_vec(VEC_T a_a, VEC_T a_b, VEC_T a_qinv, VEC_T a_q)
-{
-    VEC_T l_lo = VEC_MULLO16(a_a, a_b);
-    VEC_T l_hi = VEC_MULHI16(a_a, a_b);
-    VEC_T l_u  = VEC_MULLO16(l_lo, a_qinv);
-    VEC_T l_uq = VEC_MULHI16(l_u, a_q);
-    return VEC_SUB16(l_hi, l_uq);
-}
 
 /* ============================================================================
  * poly_csubq
@@ -76,7 +63,7 @@ void dap_mlkem_poly_tomont_{{ARCH_LOWER}}(int16_t *a_coeffs)
     const VEC_T l_q    = VEC_SET1_16(MLKEM_Q);
     for (unsigned i = 0; i < MLKEM_N; i += VEC_LANES) {
         VEC_T v = VEC_LOAD(a_coeffs + i);
-        v = s_fqmul_vec(v, l_f, l_qinv, l_q);
+        v = s_fqmul_ext(v, l_f, l_qinv, l_q);
         VEC_STORE(a_coeffs + i, v);
     }
 }
@@ -153,11 +140,11 @@ void dap_mlkem_poly_basemul_montgomery_{{ARCH_LOWER}}(
         VEC_T l_z  = VEC_LOAD(s_basemul_zetas_nttpack + VEC_LANES * l_p);
 
         VEC_T l_re = VEC_ADD16(
-            s_fqmul_vec(l_ae, l_be, l_qinv, l_q),
-            s_fqmul_vec(s_fqmul_vec(l_ao, l_bo, l_qinv, l_q), l_z, l_qinv, l_q));
+            s_fqmul_ext(l_ae, l_be, l_qinv, l_q),
+            s_fqmul_ext(s_fqmul_ext(l_ao, l_bo, l_qinv, l_q), l_z, l_qinv, l_q));
         VEC_T l_ro = VEC_ADD16(
-            s_fqmul_vec(l_ae, l_bo, l_qinv, l_q),
-            s_fqmul_vec(l_ao, l_be, l_qinv, l_q));
+            s_fqmul_ext(l_ae, l_bo, l_qinv, l_q),
+            s_fqmul_ext(l_ao, l_be, l_qinv, l_q));
 
         VEC_STORE(a_r + 32 * l_p, l_re);
         VEC_STORE(a_r + 32 * l_p + VEC_LANES, l_ro);
@@ -193,13 +180,13 @@ void dap_mlkem_poly_basemul_acc_montgomery_{{ARCH_LOWER}}(
             VEC_T l_be = VEC_LOAD(a_polys_b[k] + 32 * l_p);
             VEC_T l_bo = VEC_LOAD(a_polys_b[k] + 32 * l_p + VEC_LANES);
 
-            VEC_T l_boz = s_fqmul_vec(l_bo, l_z, l_qinv, l_q);
+            VEC_T l_boz = s_fqmul_ext(l_bo, l_z, l_qinv, l_q);
             l_acc_e = VEC_ADD16(l_acc_e, VEC_ADD16(
-                s_fqmul_vec(l_ae, l_be, l_qinv, l_q),
-                s_fqmul_vec(l_ao, l_boz, l_qinv, l_q)));
+                s_fqmul_ext(l_ae, l_be, l_qinv, l_q),
+                s_fqmul_ext(l_ao, l_boz, l_qinv, l_q)));
             l_acc_o = VEC_ADD16(l_acc_o, VEC_ADD16(
-                s_fqmul_vec(l_ae, l_bo, l_qinv, l_q),
-                s_fqmul_vec(l_ao, l_be, l_qinv, l_q)));
+                s_fqmul_ext(l_ae, l_bo, l_qinv, l_q),
+                s_fqmul_ext(l_ao, l_be, l_qinv, l_q)));
         }
 
         VEC_T l_bt_e = VEC_SRAI16(VEC_MULHI16(l_acc_e, l_bv), 10);

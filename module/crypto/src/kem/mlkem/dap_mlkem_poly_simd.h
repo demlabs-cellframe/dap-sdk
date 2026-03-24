@@ -2,11 +2,15 @@
  * @file dap_mlkem_poly_simd.h
  * @brief SIMD-accelerated ML-KEM polynomial helpers — declarations & dispatch.
  *
+ * Dispatch uses dap_cpu_arch_get() from DAP infrastructure for consistency
+ * with NTT dispatch (DAP_DISPATCH). ARM NEON is always-on.
+ *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #pragma once
 
 #include <stdint.h>
+#include "dap_cpu_arch.h"
 
 #if defined(__x86_64__) || defined(_M_X64)
 void dap_mlkem_poly_csubq_avx2(int16_t *a_coeffs);
@@ -30,20 +34,11 @@ void dap_mlkem_poly_sub_neon(int16_t *a_r, const int16_t *a_a, const int16_t *a_
 void dap_mlkem_poly_basemul_acc_montgomery_neon(int16_t *a_r, const int16_t * const *a_polys_a, const int16_t * const *a_polys_b, unsigned a_count);
 #endif
 
-/* Cached dispatch — resolved once instead of per-call __builtin_cpu_supports */
-
 #if defined(__x86_64__) || defined(_M_X64)
-
-static int s_mlkem_simd_resolved = 0;
-static int s_mlkem_simd_avail    = 0;
 
 static inline int dap_mlkem_poly_simd_available(void)
 {
-    if (__builtin_expect(!s_mlkem_simd_resolved, 0)) {
-        s_mlkem_simd_avail = __builtin_cpu_supports("avx2");
-        s_mlkem_simd_resolved = 1;
-    }
-    return s_mlkem_simd_avail;
+    return dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2;
 }
 
 #define MLKEM_SIMD_DISPATCH(func, ...) \

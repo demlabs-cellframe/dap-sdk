@@ -4,6 +4,7 @@
 #include "dilithium_polyvec.h"
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
+#include "dap_arch_dispatch.h"
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
@@ -122,27 +123,37 @@ static void s_polyvecl_pw_acc_avx2(
 }
 #endif
 
+DAP_DISPATCH_LOCAL(s_pw_acc, void,
+    int32_t *, const polyvecl *, const polyvecl *, unsigned);
+
+static void s_polyvecl_pw_acc_ref(
+    int32_t *w, const polyvecl *u, const polyvecl *v, unsigned count)
+{
+    poly *l_w = (poly *)w;
+    poly l_t;
+    poly_pointwise_invmontgomery(l_w, u->vec + 0, v->vec + 0);
+    for (unsigned i = 1; i < count; i++) {
+        poly_pointwise_invmontgomery(&l_t, u->vec + i, v->vec + i);
+        dilithium_poly_add(l_w, l_w, &l_t);
+    }
+}
+
+static void s_pw_acc_dispatch_init(void)
+{
+    dap_algo_class_t l_pw_acc32 = dap_algo_class_register("PW_ACC32");
+
+    DAP_DISPATCH_DEFAULT(s_pw_acc, s_polyvecl_pw_acc_ref);
+
+    DAP_DISPATCH_ARCH_SELECT_FOR(l_pw_acc32);
+
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_pw_acc, s_polyvecl_pw_acc_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_pw_acc, s_polyvecl_pw_acc_avx512);
+}
+
 void polyvecl_pointwise_acc_invmontgomery(poly *w, const polyvecl *u, const polyvecl *v, dilithium_param_t *p)
 {
-#if DAP_CPU_DETECT_X86
-    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
-        s_polyvecl_pw_acc_avx512((int32_t *)w->coeffs, u, v, p->PARAM_L);
-        return;
-    }
-    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
-        s_polyvecl_pw_acc_avx2((int32_t *)w->coeffs, u, v, p->PARAM_L);
-        return;
-    }
-#endif
-  unsigned int i;
-  poly t;
-
-  poly_pointwise_invmontgomery(w, u->vec+0, v->vec+0);
-
-  for(i = 1; i < p->PARAM_L; ++i) {
-    poly_pointwise_invmontgomery(&t, u->vec+i, v->vec+i);
-    dilithium_poly_add(w, w, &t);
-  }
+    DAP_DISPATCH_ENSURE(s_pw_acc, s_pw_acc_dispatch_init);
+    s_pw_acc_ptr((int32_t *)w->coeffs, u, v, p->PARAM_L);
 }
 
 /*************************************************/

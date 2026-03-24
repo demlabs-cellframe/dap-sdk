@@ -331,13 +331,14 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     )
 endif()
 
-# --- Dilithium specialized NTT SIMD ---
-set(DIL_NTT_TPL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sig/dilithium)
-set(DIL_NTT_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/dilithium_ntt_gen)
+# --- Dilithium specialized SIMD ---
+set(DIL_TPL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sig/dilithium)
+set(DIL_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/dilithium_ntt_gen)
+set(DIL_REDUCE_TPL "${DIL_TPL_DIR}/dap_dilithium_simd_reduce.tpl")
 
 dap_arch_generate(
-    TEMPLATE   ${DIL_NTT_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
-    OUTPUT_DIR ${DIL_NTT_GEN_DIR}
+    TEMPLATE   ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT_DIR ${DIL_GEN_DIR}
     PREFIX     dap_dilithium_ntt
     VARIANTS
         avx2         "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
@@ -345,48 +346,61 @@ dap_arch_generate(
         avx512       "${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
         neon         "${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
 )
-dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_NTT_GEN_DIR}
+dap_arch_generate(
+    TEMPLATE   ${DIL_TPL_DIR}/dap_dilithium_poly_simd.c.tpl
+    OUTPUT_DIR ${DIL_GEN_DIR}
+    PREFIX     dap_dilithium_poly
+    VARIANTS
+        avx2         "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+        avx512       "${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
+        neon         "${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
+    EXTRA_ARGS "REDUCE_FILE=${DIL_REDUCE_TPL}"
+)
+dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
     SOURCES
         dap_dilithium_ntt_avx2.c        avx2
         dap_dilithium_ntt_avx2_512vl.c  avx2_512vl
         dap_dilithium_ntt_avx512.c      avx512
         dap_dilithium_ntt_neon.c        neon
+        dap_dilithium_poly_avx2.c       avx2
+        dap_dilithium_poly_avx512.c     avx512
+        dap_dilithium_poly_neon.c       neon
 )
-target_include_directories(${PROJECT_NAME} PRIVATE ${DIL_NTT_GEN_DIR})
+target_include_directories(${PROJECT_NAME} PRIVATE ${DIL_GEN_DIR})
 
-# --- ChaCha20 multi-block SIMD ---
-set(CHACHA_SIMD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/simd)
-set(CHACHA_GEN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/chacha20_arch_gen)
+# --- ChaCha20 multi-block SIMD (Keccak-pattern layout) ---
+set(CHACHA_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20)
+set(CHACHA_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/chacha20_arch_gen)
 
 dap_arch_generate_variant(
-    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_sse2.c
     ARCH     sse2
-    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/x86/sse2_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/x86/sse2_primitives.tpl"
 )
 dap_arch_generate_variant(
-    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx2.c
     ARCH     avx2
-    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/x86/avx2_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/x86/avx2_primitives.tpl"
 )
 dap_arch_generate_variant(
-    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx2_512vl.c
     ARCH     avx2_512vl
-    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/x86/avx512vl_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/x86/avx512vl_primitives.tpl"
 )
 dap_arch_generate_variant(
-    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx512.c
     ARCH     avx512
-    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/x86/avx512_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/x86/avx512_primitives.tpl"
 )
 dap_arch_generate_variant(
-    TEMPLATE ${CHACHA_SIMD_DIR}/dap_chacha20_simd.c.tpl
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
     OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_neon.c
     ARCH     neon
-    ARGS     "PRIMITIVES_FILE=${CHACHA_SIMD_DIR}/arch/arm/neon_primitives.tpl"
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/arm/neon_primitives.tpl"
 )
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
     SOURCES
@@ -398,37 +412,40 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR})
 
-# --- ChaCha20 hand-tuned AVX-512VL assembly ---
+# --- ChaCha20 hand-tuned assembly — shared framework + arch impl (Keccak pattern) ---
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
     enable_language(ASM)
-    set(CHACHA20_ASM_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/asm/x86_64/dap_chacha20_avx512vl.S)
-    target_sources(${PROJECT_NAME} PRIVATE ${CHACHA20_ASM_SRC})
-    set_source_files_properties(${CHACHA20_ASM_SRC}
+    dap_tpl_generate(
+        TEMPLATE ${CHACHA_DIR}/dap_chacha20_asm.S.tpl
+        OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S
+        ARGS     "ARCH_IMPL=${CHACHA_DIR}/arch/x86/chacha20_asm_avx512vl.tpl"
+    )
+    target_sources(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S)
+    set_source_files_properties(${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S
         PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
     )
 endif()
 
 # --- Poly1305 multi-block SIMD ---
-set(POLY1305_SIMD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20/simd)
-set(POLY1305_GEN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/poly1305_arch_gen)
+set(POLY1305_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/poly1305_arch_gen)
 
 dap_arch_generate_variant(
-    TEMPLATE ${POLY1305_SIMD_DIR}/dap_poly1305_simd.c.tpl
+    TEMPLATE ${CHACHA_DIR}/dap_poly1305_simd.c.tpl
     OUTPUT   ${POLY1305_GEN_DIR}/dap_poly1305_avx2.c
     ARCH     avx2
-    ARGS     "IMPL_FILE=${POLY1305_SIMD_DIR}/arch/x86/avx2_poly1305_impl.tpl"
+    ARGS     "IMPL_FILE=${CHACHA_DIR}/arch/x86/avx2_poly1305_impl.tpl"
 )
 dap_arch_generate_variant(
-    TEMPLATE ${POLY1305_SIMD_DIR}/dap_poly1305_simd.c.tpl
+    TEMPLATE ${CHACHA_DIR}/dap_poly1305_simd.c.tpl
     OUTPUT   ${POLY1305_GEN_DIR}/dap_poly1305_avx512_ifma.c
     ARCH     avx512_ifma
-    ARGS     "IMPL_FILE=${POLY1305_SIMD_DIR}/arch/x86/avx512_ifma_poly1305_impl.tpl"
+    ARGS     "IMPL_FILE=${CHACHA_DIR}/arch/x86/avx512_ifma_poly1305_impl.tpl"
 )
 dap_arch_generate_variant(
-    TEMPLATE ${POLY1305_SIMD_DIR}/dap_poly1305_simd.c.tpl
+    TEMPLATE ${CHACHA_DIR}/dap_poly1305_simd.c.tpl
     OUTPUT   ${POLY1305_GEN_DIR}/dap_poly1305_neon.c
     ARCH     neon
-    ARGS     "IMPL_FILE=${POLY1305_SIMD_DIR}/arch/arm/neon_poly1305_impl.tpl"
+    ARGS     "IMPL_FILE=${CHACHA_DIR}/arch/arm/neon_poly1305_impl.tpl"
 )
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${POLY1305_GEN_DIR}
     SOURCES

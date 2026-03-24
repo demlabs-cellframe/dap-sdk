@@ -17,9 +17,7 @@
 
 {{#include PRIMITIVES_FILE}}
 
-#define KYBER_N    256
-#define KYBER_Q    3329
-#define KYBER_QINV ((int16_t)-3327)
+{{#include REDUCE_FILE}}
 
 static const int16_t s_zetas[128] = {
   2285, 2571, 2970, 1812, 1493, 1422, 287, 202, 3158, 622, 1577, 182, 962,
@@ -47,71 +45,10 @@ static const int16_t s_zetas_inv[128] = {
   3127, 3042, 1907, 1836, 1517, 359, 758, 1441
 };
 
-{{TARGET_ATTR}}
-static inline VEC_T s_fqmul(VEC_T a_a, VEC_T a_b)
-{
-    const VEC_T l_qinv = VEC_SET1_16(KYBER_QINV);
-    const VEC_T l_q    = VEC_SET1_16(KYBER_Q);
-    VEC_T l_lo  = VEC_MULLO16(a_a, a_b);
-    VEC_T l_hi  = VEC_MULHI16(a_a, a_b);
-    VEC_T l_u   = VEC_MULLO16(l_lo, l_qinv);
-    VEC_T l_uq  = VEC_MULHI16(l_u, l_q);
-    return VEC_SUB16(l_hi, l_uq);
-}
-
-{{TARGET_ATTR}}
-static inline VEC_T s_barrett_reduce(VEC_T a_val)
-{
-    const VEC_T l_v = VEC_SET1_16(20159);
-    const VEC_T l_q = VEC_SET1_16(KYBER_Q);
-    VEC_T l_bt = VEC_MULHI16(l_v, a_val);
-    l_bt = VEC_SRAI16(l_bt, 10);
-    l_bt = VEC_MULLO16(l_bt, l_q);
-    return VEC_SUB16(a_val, l_bt);
-}
-
-static inline int16_t s_fqmul_scalar(int16_t a, int16_t b)
-{
-    int32_t t = (int32_t)a * b;
-    int16_t u = (int16_t)t * KYBER_QINV;
-    return (int16_t)((t - (int32_t)u * KYBER_Q) >> 16);
-}
-
-static inline int16_t s_barrett_reduce_scalar(int16_t a)
-{
-    int16_t t = (int16_t)((int32_t)20159 * a >> 26);
-    return a - t * KYBER_Q;
-}
-
-#ifdef HVEC_LANES
-{{TARGET_ATTR}}
-static inline HVEC_T s_fqmul_hvec(HVEC_T a_a, HVEC_T a_b)
-{
-    const HVEC_T l_qinv = HVEC_SET1_16(KYBER_QINV);
-    const HVEC_T l_q    = HVEC_SET1_16(KYBER_Q);
-    HVEC_T l_lo = HVEC_MULLO16(a_a, a_b);
-    HVEC_T l_hi = HVEC_MULHI16(a_a, a_b);
-    HVEC_T l_u  = HVEC_MULLO16(l_lo, l_qinv);
-    HVEC_T l_uq = HVEC_MULHI16(l_u, l_q);
-    return HVEC_SUB16(l_hi, l_uq);
-}
-
-{{TARGET_ATTR}}
-static inline HVEC_T s_barrett_reduce_hvec(HVEC_T a_val)
-{
-    const HVEC_T l_v = HVEC_SET1_16(20159);
-    const HVEC_T l_q = HVEC_SET1_16(KYBER_Q);
-    HVEC_T l_bt = HVEC_MULHI16(l_v, a_val);
-    l_bt = HVEC_SRAI16(l_bt, 10);
-    l_bt = HVEC_MULLO16(l_bt, l_q);
-    return HVEC_SUB16(a_val, l_bt);
-}
-#endif
-
 /* ======== Forward NTT (Cooley-Tukey) ======== */
 
 {{TARGET_ATTR}} __attribute__((optimize("Os"), noinline))
-void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
+void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
 #if VEC_LANES == 16 && defined(HVEC_LANES) && HVEC_LANES == 8
     /*
@@ -124,7 +61,7 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
     /* Phase 1: outer layers via L1D round-trips */
     unsigned l_k = 1;
     for (unsigned l_len = 128; l_len >= VEC_LANES; l_len >>= 1) {
-        for (unsigned l_s = 0; l_s < KYBER_N; l_s += 2 * l_len) {
+        for (unsigned l_s = 0; l_s < MLKEM_N; l_s += 2 * l_len) {
             VEC_T l_zv = VEC_SET1_16(s_zetas[l_k++]);
             for (unsigned l_j = l_s; l_j < l_s + l_len; l_j += VEC_LANES) {
                 VEC_T l_a = VEC_LOAD(a_coeffs + l_j);
@@ -137,7 +74,7 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
     }
 
     /* Phase 2: inner layers 8/4/2 via per-block shuffles */
-    for (unsigned l_blk = 0; l_blk < KYBER_N / VEC_LANES; l_blk++) {
+    for (unsigned l_blk = 0; l_blk < MLKEM_N / VEC_LANES; l_blk++) {
         VEC_T v = VEC_LOAD(a_coeffs + l_blk * VEC_LANES);
 
         /* Layer 8: CT butterfly across 128-bit halves */
@@ -182,7 +119,7 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
     unsigned l_start, l_j, l_k = 1;
 
     for (unsigned l_len = 128; l_len >= VEC_LANES; l_len >>= 1) {
-        for (l_start = 0; l_start < KYBER_N; l_start = l_j + l_len) {
+        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
             VEC_T l_zv = VEC_SET1_16(s_zetas[l_k++]);
             for (l_j = l_start; l_j < l_start + l_len; l_j += VEC_LANES) {
                 VEC_T l_a = VEC_LOAD(a_coeffs + l_j);
@@ -197,7 +134,7 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
 #ifdef HVEC_LANES
     {
         unsigned l_len = HVEC_LANES;
-        for (l_start = 0; l_start < KYBER_N; l_start = l_j + l_len) {
+        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
             HVEC_T l_zv = HVEC_SET1_16(s_zetas[l_k++]);
             for (l_j = l_start; l_j < l_start + l_len; l_j += HVEC_LANES) {
                 HVEC_T l_a = HVEC_LOAD(a_coeffs + l_j);
@@ -212,7 +149,7 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
 #else
     for (unsigned l_len = VEC_LANES >> 1; l_len >= 2; l_len >>= 1) {
 #endif
-        for (l_start = 0; l_start < KYBER_N; l_start = l_j + l_len) {
+        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
             int16_t l_zeta = s_zetas[l_k++];
             for (l_j = l_start; l_j < l_start + l_len; l_j++) {
                 int16_t l_t = s_fqmul_scalar(l_zeta, a_coeffs[l_j + l_len]);
@@ -222,7 +159,7 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
         }
     }
     /* Fused Barrett reduction for generic path */
-    for (unsigned l_i = 0; l_i < KYBER_N; l_i++)
+    for (unsigned l_i = 0; l_i < MLKEM_N; l_i++)
         a_coeffs[l_i] = s_barrett_reduce_scalar(a_coeffs[l_i]);
 #endif
 }
@@ -230,7 +167,7 @@ void dap_mlkem_ntt_forward_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
 /* ======== Inverse NTT (Gentleman-Sande) ======== */
 
 {{TARGET_ATTR}} __attribute__((optimize("Os"), noinline))
-void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
+void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
 #if VEC_LANES == 16 && defined(HVEC_LANES) && HVEC_LANES == 8
     /*
@@ -239,7 +176,7 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
      */
 
     /* Phase 1: inner layers 2/4/8 via per-block GS shuffles */
-    for (unsigned l_blk = 0; l_blk < KYBER_N / VEC_LANES; l_blk++) {
+    for (unsigned l_blk = 0; l_blk < MLKEM_N / VEC_LANES; l_blk++) {
         VEC_T v = VEC_LOAD(a_coeffs + l_blk * VEC_LANES);
 
         /* Layer 2 (GS): merge 32-bit groups */
@@ -287,7 +224,7 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
     /* Phase 2: outer layers 16/32/64/128 via L1D round-trips */
     unsigned l_k = 112;
     for (unsigned l_len = VEC_LANES; l_len <= 128; l_len <<= 1) {
-        for (unsigned l_s = 0; l_s < KYBER_N; l_s += 2 * l_len) {
+        for (unsigned l_s = 0; l_s < MLKEM_N; l_s += 2 * l_len) {
             VEC_T l_zv = VEC_SET1_16(s_zetas_inv[l_k++]);
             for (unsigned l_j = l_s; l_j < l_s + l_len; l_j += VEC_LANES) {
                 VEC_T l_a   = VEC_LOAD(a_coeffs + l_j);
@@ -303,7 +240,7 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
     /* Final scaling by zetas_inv[127] = 1441 */
     {
         VEC_T l_sv = VEC_SET1_16(s_zetas_inv[127]);
-        for (unsigned l_j = 0; l_j < KYBER_N; l_j += VEC_LANES) {
+        for (unsigned l_j = 0; l_j < MLKEM_N; l_j += VEC_LANES) {
             VEC_T l_c = VEC_LOAD(a_coeffs + l_j);
             VEC_STORE(a_coeffs + l_j, s_fqmul(l_c, l_sv));
         }
@@ -318,7 +255,7 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
     l_simd_start = HVEC_LANES;
 #endif
     for (unsigned l_len = 2; l_len < l_simd_start; l_len <<= 1) {
-        for (l_start = 0; l_start < KYBER_N; l_start = l_j + l_len) {
+        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
             int16_t l_zeta = s_zetas_inv[l_k++];
             for (l_j = l_start; l_j < l_start + l_len; l_j++) {
                 int16_t l_t = a_coeffs[l_j];
@@ -330,7 +267,7 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
 #ifdef HVEC_LANES
     {
         unsigned l_len = HVEC_LANES;
-        for (l_start = 0; l_start < KYBER_N; l_start = l_j + l_len) {
+        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
             HVEC_T l_zv = HVEC_SET1_16(s_zetas_inv[l_k++]);
             for (l_j = l_start; l_j < l_start + l_len; l_j += HVEC_LANES) {
                 HVEC_T l_a   = HVEC_LOAD(a_coeffs + l_j);
@@ -345,7 +282,7 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
 #endif
 
     for (unsigned l_len = VEC_LANES; l_len <= 128; l_len <<= 1) {
-        for (l_start = 0; l_start < KYBER_N; l_start = l_j + l_len) {
+        for (l_start = 0; l_start < MLKEM_N; l_start = l_j + l_len) {
             VEC_T l_zv = VEC_SET1_16(s_zetas_inv[l_k++]);
             for (l_j = l_start; l_j < l_start + l_len; l_j += VEC_LANES) {
                 VEC_T l_a   = VEC_LOAD(a_coeffs + l_j);
@@ -360,7 +297,7 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
 
     {
         VEC_T l_sv = VEC_SET1_16(s_zetas_inv[127]);
-        for (unsigned l_i = 0; l_i < KYBER_N; l_i += VEC_LANES) {
+        for (unsigned l_i = 0; l_i < MLKEM_N; l_i += VEC_LANES) {
             VEC_T l_c = VEC_LOAD(a_coeffs + l_i);
             VEC_STORE(a_coeffs + l_i, s_fqmul(l_c, l_sv));
         }
@@ -371,7 +308,7 @@ void dap_mlkem_ntt_inverse_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
 /* ======== nttpack (even/odd deinterleave) ======== */
 
 {{TARGET_ATTR}} __attribute__((noinline))
-void dap_mlkem_ntt_nttpack_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
+void dap_mlkem_ntt_nttpack_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
 #if VEC_LANES == 16
 #ifdef __AVX512BW__
@@ -422,7 +359,7 @@ void dap_mlkem_ntt_nttpack_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
 /* ======== nttunpack (even/odd interleave) ======== */
 
 {{TARGET_ATTR}} __attribute__((noinline))
-void dap_mlkem_ntt_nttunpack_{{ARCH_LOWER}}(int16_t a_coeffs[KYBER_N])
+void dap_mlkem_ntt_nttunpack_{{ARCH_LOWER}}(int16_t a_coeffs[MLKEM_N])
 {
 #if VEC_LANES == 16
 #ifdef __AVX512BW__

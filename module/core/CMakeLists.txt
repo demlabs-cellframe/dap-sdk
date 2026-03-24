@@ -100,6 +100,12 @@ if(APPLE)
     )
 endif()
 
+# Propagate pthread to all consumers of dap_core (dap_cpu_detect uses pthread_once)
+if(UNIX AND NOT ANDROID)
+    list(APPEND CORE_LIBRARIES pthread)
+    target_link_libraries(${PROJECT_NAME} INTERFACE pthread)
+endif()
+
 # Store dependencies for final library - no linking of OBJECT targets
 set(DAP_CORE_DEPS "${CORE_LIBRARIES}" CACHE INTERNAL "dap_core external dependencies")
 

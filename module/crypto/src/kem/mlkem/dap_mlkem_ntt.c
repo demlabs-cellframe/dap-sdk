@@ -1,6 +1,10 @@
 /**
  * @file dap_mlkem_ntt.c
- * @brief ML-KEM NTT — specialized dispatch to arch-specific implementations.
+ * @brief ML-KEM NTT — profile-aware dispatch to arch-specific implementations.
+ *
+ * Uses DAP_DISPATCH_* macros with NTT16 algo class for per-workload tuning.
+ * On AMD Zen4: ASM NTT (EVEX YMM, 32 regs) dispatches at AVX-512 level
+ * but executes as 256-bit — no double-pumping penalty.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -9,6 +13,7 @@
 #include "dap_ntt.h"
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
+#include "dap_arch_dispatch.h"
 
 #include <string.h>
 
@@ -33,10 +38,6 @@ void dap_mlkem_ntt_forward_avx2(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_avx2(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_nttpack_avx2(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_nttunpack_avx2(int16_t a_coeffs[256]);
-void dap_mlkem_ntt_forward_avx2_512vl(int16_t a_coeffs[256]);
-void dap_mlkem_ntt_inverse_avx2_512vl(int16_t a_coeffs[256]);
-void dap_mlkem_ntt_nttpack_avx2_512vl(int16_t a_coeffs[256]);
-void dap_mlkem_ntt_nttunpack_avx2_512vl(int16_t a_coeffs[256]);
 /* Hand-written AVX2+AVX-512VL assembly NTT (32 YMM registers, zero spills) */
 void dap_mlkem_ntt_forward_asm(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_asm(int16_t a_coeffs[256]);
@@ -51,13 +52,11 @@ void dap_mlkem_ntt_nttpack_neon(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_nttunpack_neon(int16_t a_coeffs[256]);
 #endif
 
-typedef void (*mlkem_ntt_fn_t)(int16_t *);
-static mlkem_ntt_fn_t s_ntt_forward_fn = NULL;
-static mlkem_ntt_fn_t s_ntt_inverse_fn = NULL;
-static mlkem_ntt_fn_t s_ntt_nttpack_fn = NULL;
-static mlkem_ntt_fn_t s_ntt_nttunpack_fn = NULL;
+DAP_DISPATCH_LOCAL(s_mlkem_ntt_fwd,    void, int16_t *);
+DAP_DISPATCH_LOCAL(s_mlkem_ntt_inv,    void, int16_t *);
+DAP_DISPATCH_LOCAL(s_mlkem_ntt_pack,   void, int16_t *);
+DAP_DISPATCH_LOCAL(s_mlkem_ntt_unpack, void, int16_t *);
 
-/* Scalar fallback using generic NTT */
 static dap_ntt_params16_t s_ntt_params;
 
 static const int16_t s_zetas_inv[128] = {
@@ -115,16 +114,6 @@ static void s_ntt_inverse_generic(int16_t *a_coeffs)
  * Callers (indcpa) rely on _ntt() returning nttpacked data.
  */
 #if DAP_CPU_DETECT_X86
-static void s_ntt_forward_avx2_512vl_packed(int16_t *a_coeffs)
-{
-    dap_mlkem_ntt_forward_avx2_512vl(a_coeffs);
-    dap_mlkem_ntt_nttpack_avx2_512vl(a_coeffs);
-}
-static void s_ntt_inverse_avx2_512vl_packed(int16_t *a_coeffs)
-{
-    dap_mlkem_ntt_nttunpack_avx2_512vl(a_coeffs);
-    dap_mlkem_ntt_inverse_avx2_512vl(a_coeffs);
-}
 static void s_ntt_forward_avx2_packed(int16_t *a_coeffs)
 {
     dap_mlkem_ntt_forward_avx2(a_coeffs);
@@ -150,7 +139,7 @@ static void s_ntt_inverse_neon_packed(int16_t *a_coeffs)
 }
 #endif
 
-static void s_resolve_ntt(void)
+static void s_mlkem_ntt_dispatch_init(void)
 {
     s_ntt_params.n         = MLKEM_N;
     s_ntt_params.q         = MLKEM_Q;
@@ -159,62 +148,53 @@ static void s_resolve_ntt(void)
     s_ntt_params.zetas_inv = s_zetas_inv;
     s_ntt_params.zetas_len = 128;
 
-    s_ntt_forward_fn  = s_ntt_forward_generic;
-    s_ntt_inverse_fn  = s_ntt_inverse_generic;
-    s_ntt_nttpack_fn  = s_nttpack_scalar;
-    s_ntt_nttunpack_fn = s_nttunpack_scalar;
+    dap_algo_class_t l_ntt16 = dap_algo_class_register("NTT16");
 
-#if DAP_CPU_DETECT_X86
-    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
-        s_ntt_forward_fn  = dap_mlkem_ntt_forward_asm;
-        s_ntt_inverse_fn  = dap_mlkem_ntt_inverse_asm;
-        s_ntt_nttpack_fn  = dap_mlkem_ntt_nttpack_asm;
-        s_ntt_nttunpack_fn = dap_mlkem_ntt_nttunpack_asm;
-    } else if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
-        s_ntt_forward_fn  = s_ntt_forward_avx2_packed;
-        s_ntt_inverse_fn  = s_ntt_inverse_avx2_packed;
-        s_ntt_nttpack_fn  = dap_mlkem_ntt_nttpack_avx2;
-        s_ntt_nttunpack_fn = dap_mlkem_ntt_nttunpack_avx2;
-    }
-#endif
-#if DAP_CPU_DETECT_ARM
-    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_NEON) {
-        s_ntt_forward_fn  = s_ntt_forward_neon_packed;
-        s_ntt_inverse_fn  = s_ntt_inverse_neon_packed;
-        s_ntt_nttpack_fn  = dap_mlkem_ntt_nttpack_neon;
-        s_ntt_nttunpack_fn = dap_mlkem_ntt_nttunpack_neon;
-    }
-#endif
-}
+    DAP_DISPATCH_DEFAULT(s_mlkem_ntt_fwd,    s_ntt_forward_generic);
+    DAP_DISPATCH_DEFAULT(s_mlkem_ntt_inv,    s_ntt_inverse_generic);
+    DAP_DISPATCH_DEFAULT(s_mlkem_ntt_pack,   s_nttpack_scalar);
+    DAP_DISPATCH_DEFAULT(s_mlkem_ntt_unpack, s_nttunpack_scalar);
 
-static inline void s_ensure_init(void)
-{
-    if (__builtin_expect(!s_ntt_forward_fn, 0))
-        s_resolve_ntt();
+    DAP_DISPATCH_ARCH_SELECT_FOR(l_ntt16);
+
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_mlkem_ntt_fwd,    s_ntt_forward_avx2_packed);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_mlkem_ntt_inv,    s_ntt_inverse_avx2_packed);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_mlkem_ntt_pack,   dap_mlkem_ntt_nttpack_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_mlkem_ntt_unpack, dap_mlkem_ntt_nttunpack_avx2);
+
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_mlkem_ntt_fwd,    dap_mlkem_ntt_forward_asm);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_mlkem_ntt_inv,    dap_mlkem_ntt_inverse_asm);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_mlkem_ntt_pack,   dap_mlkem_ntt_nttpack_asm);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_mlkem_ntt_unpack, dap_mlkem_ntt_nttunpack_asm);
+
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_mlkem_ntt_fwd,    s_ntt_forward_neon_packed);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_mlkem_ntt_inv,    s_ntt_inverse_neon_packed);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_mlkem_ntt_pack,   dap_mlkem_ntt_nttpack_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_mlkem_ntt_unpack, dap_mlkem_ntt_nttunpack_neon);
 }
 
 void MLKEM_NAMESPACE(_ntt)(int16_t a_coeffs[MLKEM_N])
 {
-    s_ensure_init();
-    s_ntt_forward_fn(a_coeffs);
+    DAP_DISPATCH_ENSURE(s_mlkem_ntt_fwd, s_mlkem_ntt_dispatch_init);
+    s_mlkem_ntt_fwd_ptr(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_invntt)(int16_t a_coeffs[MLKEM_N])
 {
-    s_ensure_init();
-    s_ntt_inverse_fn(a_coeffs);
+    DAP_DISPATCH_ENSURE(s_mlkem_ntt_inv, s_mlkem_ntt_dispatch_init);
+    s_mlkem_ntt_inv_ptr(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_nttpack)(int16_t a_coeffs[MLKEM_N])
 {
-    s_ensure_init();
-    s_ntt_nttpack_fn(a_coeffs);
+    DAP_DISPATCH_ENSURE(s_mlkem_ntt_pack, s_mlkem_ntt_dispatch_init);
+    s_mlkem_ntt_pack_ptr(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_nttunpack)(int16_t a_coeffs[MLKEM_N])
 {
-    s_ensure_init();
-    s_ntt_nttunpack_fn(a_coeffs);
+    DAP_DISPATCH_ENSURE(s_mlkem_ntt_unpack, s_mlkem_ntt_dispatch_init);
+    s_mlkem_ntt_unpack_ptr(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_basemul)(int16_t a_r[2], const int16_t a_a[2],

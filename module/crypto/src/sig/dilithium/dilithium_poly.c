@@ -8,6 +8,7 @@
 #include "dap_hash_shake_x4.h"
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
+#include "dap_arch_dispatch.h"
 
 extern const dap_ntt_params_t g_dilithium_ntt_params;
 
@@ -28,32 +29,49 @@ extern void dap_dilithium_ntt_inverse_neon(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_neon(int32_t *c, const int32_t *a, const int32_t *b);
 #endif
 
-typedef void (*dil_ntt_fn_t)(int32_t *);
-typedef void (*dil_pw_fn_t)(int32_t *, const int32_t *, const int32_t *);
-static dil_ntt_fn_t s_dil_ntt_fwd = NULL;
-static dil_ntt_fn_t s_dil_ntt_inv = NULL;
-static dil_pw_fn_t  s_dil_pw_mont = NULL;
+DAP_DISPATCH_LOCAL(s_dil_ntt_fwd,  void, int32_t *);
+DAP_DISPATCH_LOCAL(s_dil_ntt_inv,  void, int32_t *);
+DAP_DISPATCH_LOCAL(s_dil_pw_mont,  void, int32_t *, const int32_t *, const int32_t *);
+
+static void s_dil_ntt_fwd_ref(int32_t *pp)
+{
+    dap_ntt_forward_mont(pp, &g_dilithium_ntt_params);
+}
+
+static void s_dil_ntt_inv_ref(int32_t *pp)
+{
+    dap_ntt_inverse_mont(pp, &g_dilithium_ntt_params);
+    const int32_t f = (int32_t)((((uint64_t)MONT * MONT % Q) * (Q - 1) % Q) * ((Q - 1) >> 8) % Q);
+    for (unsigned j = 0; j < NN; j++)
+        pp[j] = (int32_t)dap_ntt_montgomery_reduce((int64_t)f * pp[j], &g_dilithium_ntt_params);
+}
+
+static void s_dil_pw_mont_ref(int32_t *c, const int32_t *a, const int32_t *b)
+{
+    dap_ntt_pointwise_montgomery(c, a, b, &g_dilithium_ntt_params);
+}
 
 static void s_dil_dispatch_init(void)
 {
-#if DAP_CPU_DETECT_X86
-    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512) {
-        s_dil_ntt_fwd = dap_dilithium_ntt_forward_avx512;
-        s_dil_ntt_inv = dap_dilithium_ntt_inverse_avx512;
-        s_dil_pw_mont = dap_dilithium_pointwise_mont_avx512;
-    } else if (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2) {
-        s_dil_ntt_fwd = dap_dilithium_ntt_forward_avx2;
-        s_dil_ntt_inv = dap_dilithium_ntt_inverse_avx2;
-        s_dil_pw_mont = dap_dilithium_pointwise_mont_avx2;
-    }
-#endif
-#if DAP_CPU_DETECT_ARM
-    if (dap_cpu_arch_get() >= DAP_CPU_ARCH_NEON) {
-        s_dil_ntt_fwd = dap_dilithium_ntt_forward_neon;
-        s_dil_ntt_inv = dap_dilithium_ntt_inverse_neon;
-        s_dil_pw_mont = dap_dilithium_pointwise_mont_neon;
-    }
-#endif
+    dap_algo_class_t l_ntt32 = dap_algo_class_register("NTT32");
+
+    DAP_DISPATCH_DEFAULT(s_dil_ntt_fwd,  s_dil_ntt_fwd_ref);
+    DAP_DISPATCH_DEFAULT(s_dil_ntt_inv,  s_dil_ntt_inv_ref);
+    DAP_DISPATCH_DEFAULT(s_dil_pw_mont,  s_dil_pw_mont_ref);
+
+    DAP_DISPATCH_ARCH_SELECT_FOR(l_ntt32);
+
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_fwd,  dap_dilithium_ntt_forward_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_inv,  dap_dilithium_ntt_inverse_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_pw_mont,  dap_dilithium_pointwise_mont_avx2);
+
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_ntt_fwd,  dap_dilithium_ntt_forward_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_ntt_inv,  dap_dilithium_ntt_inverse_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_pw_mont,  dap_dilithium_pointwise_mont_avx512);
+
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_fwd,  dap_dilithium_ntt_forward_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_inv,  dap_dilithium_ntt_inverse_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_pw_mont,  dap_dilithium_pointwise_mont_neon);
 }
 
 /*************************************************/
@@ -61,148 +79,50 @@ static void s_dil_dispatch_init(void)
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 
-__attribute__((target("avx512f")))
-static void s_poly_reduce_avx512(poly *a) {
-    const __m512i mask23 = _mm512_set1_epi32(0x7FFFFF);
-    for (unsigned i = 0; i < NN; i += 16) {
-        __m512i v = _mm512_load_si512(a->coeffs + i);
-        __m512i lo = _mm512_and_si512(v, mask23);
-        __m512i hi = _mm512_srli_epi32(v, 23);
-        _mm512_store_si512(a->coeffs + i,
-            _mm512_add_epi32(lo, _mm512_sub_epi32(_mm512_slli_epi32(hi, 13), hi)));
-    }
-}
-__attribute__((target("avx2")))
-static void s_poly_reduce_avx2(poly *a) {
-    const __m256i mask23 = _mm256_set1_epi32(0x7FFFFF);
-    for (unsigned i = 0; i < NN; i += 8) {
-        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
-        __m256i lo = _mm256_and_si256(v, mask23);
-        __m256i hi = _mm256_srli_epi32(v, 23);
-        _mm256_store_si256((__m256i *)(a->coeffs + i),
-            _mm256_add_epi32(lo, _mm256_sub_epi32(_mm256_slli_epi32(hi, 13), hi)));
-    }
-}
+extern void dap_dilithium_poly_reduce_avx2(int32_t coeffs[256]);
+extern void dap_dilithium_poly_reduce_avx512(int32_t coeffs[256]);
+extern void dap_dilithium_poly_csubq_avx2(int32_t coeffs[256]);
+extern void dap_dilithium_poly_csubq_avx512(int32_t coeffs[256]);
+extern void dap_dilithium_poly_freeze_avx2(int32_t coeffs[256]);
+extern void dap_dilithium_poly_freeze_avx512(int32_t coeffs[256]);
+extern void dap_dilithium_poly_add_avx2(int32_t *r, const int32_t *a, const int32_t *b);
+extern void dap_dilithium_poly_add_avx512(int32_t *r, const int32_t *a, const int32_t *b);
+extern void dap_dilithium_poly_sub_avx2(int32_t *r, const int32_t *a, const int32_t *b);
+extern void dap_dilithium_poly_sub_avx512(int32_t *r, const int32_t *a, const int32_t *b);
+
 void poly_reduce(poly *a) {
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
-        s_poly_reduce_avx512(a);
+        dap_dilithium_poly_reduce_avx512((int32_t *)a->coeffs);
     else
-        s_poly_reduce_avx2(a);
+        dap_dilithium_poly_reduce_avx2((int32_t *)a->coeffs);
 }
 
-__attribute__((target("avx512f")))
-static void s_poly_csubq_avx512(poly *a) {
-    const __m512i vq = _mm512_set1_epi32(Q);
-    for (unsigned i = 0; i < NN; i += 16) {
-        __m512i v = _mm512_load_si512(a->coeffs + i);
-        __m512i t = _mm512_sub_epi32(v, vq);
-        __m512i m = _mm512_srai_epi32(t, 31);
-        _mm512_store_si512(a->coeffs + i, _mm512_add_epi32(t, _mm512_and_si512(m, vq)));
-    }
-}
-__attribute__((target("avx2")))
-static void s_poly_csubq_avx2(poly *a) {
-    const __m256i vq = _mm256_set1_epi32(Q);
-    for (unsigned i = 0; i < NN; i += 8) {
-        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
-        __m256i t = _mm256_sub_epi32(v, vq);
-        __m256i m = _mm256_srai_epi32(t, 31);
-        _mm256_store_si256((__m256i *)(a->coeffs + i),
-            _mm256_add_epi32(t, _mm256_and_si256(m, vq)));
-    }
-}
 void poly_csubq(poly *a) {
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
-        s_poly_csubq_avx512(a);
+        dap_dilithium_poly_csubq_avx512((int32_t *)a->coeffs);
     else
-        s_poly_csubq_avx2(a);
+        dap_dilithium_poly_csubq_avx2((int32_t *)a->coeffs);
 }
 
-__attribute__((target("avx512f")))
-static void s_poly_freeze_avx512(poly *a) {
-    const __m512i mask23 = _mm512_set1_epi32(0x7FFFFF);
-    const __m512i vq = _mm512_set1_epi32(Q);
-    for (unsigned i = 0; i < NN; i += 16) {
-        __m512i v = _mm512_load_si512(a->coeffs + i);
-        __m512i lo = _mm512_and_si512(v, mask23);
-        __m512i hi = _mm512_srli_epi32(v, 23);
-        __m512i r = _mm512_add_epi32(lo, _mm512_sub_epi32(_mm512_slli_epi32(hi, 13), hi));
-        __m512i t = _mm512_sub_epi32(r, vq);
-        __m512i m = _mm512_srai_epi32(t, 31);
-        _mm512_store_si512(a->coeffs + i, _mm512_add_epi32(t, _mm512_and_si512(m, vq)));
-    }
-}
-__attribute__((target("avx2")))
-static void s_poly_freeze_avx2(poly *a) {
-    const __m256i mask23 = _mm256_set1_epi32(0x7FFFFF);
-    const __m256i vq = _mm256_set1_epi32(Q);
-    for (unsigned i = 0; i < NN; i += 8) {
-        __m256i v = _mm256_load_si256((__m256i *)(a->coeffs + i));
-        __m256i lo = _mm256_and_si256(v, mask23);
-        __m256i hi = _mm256_srli_epi32(v, 23);
-        __m256i r = _mm256_add_epi32(lo,
-            _mm256_sub_epi32(_mm256_slli_epi32(hi, 13), hi));
-        __m256i t = _mm256_sub_epi32(r, vq);
-        __m256i m = _mm256_srai_epi32(t, 31);
-        _mm256_store_si256((__m256i *)(a->coeffs + i),
-            _mm256_add_epi32(t, _mm256_and_si256(m, vq)));
-    }
-}
 void poly_freeze(poly *a) {
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
-        s_poly_freeze_avx512(a);
+        dap_dilithium_poly_freeze_avx512((int32_t *)a->coeffs);
     else
-        s_poly_freeze_avx2(a);
+        dap_dilithium_poly_freeze_avx2((int32_t *)a->coeffs);
 }
 
-__attribute__((target("avx512f")))
-static void s_poly_add_avx512(poly *c, const poly *a, const poly *b) {
-    for (unsigned i = 0; i < NN; i += 16) {
-        __m512i va = _mm512_load_si512(a->coeffs + i);
-        __m512i vb = _mm512_load_si512(b->coeffs + i);
-        _mm512_store_si512(c->coeffs + i, _mm512_add_epi32(va, vb));
-    }
-}
-__attribute__((target("avx2")))
-static void s_poly_add_avx2(poly *c, const poly *a, const poly *b) {
-    for (unsigned i = 0; i < NN; i += 8) {
-        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
-        __m256i vb = _mm256_load_si256((__m256i *)(b->coeffs + i));
-        _mm256_store_si256((__m256i *)(c->coeffs + i), _mm256_add_epi32(va, vb));
-    }
-}
 void dilithium_poly_add(poly *c, const poly *a, const poly *b) {
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
-        s_poly_add_avx512(c, a, b);
+        dap_dilithium_poly_add_avx512((int32_t *)c->coeffs, (const int32_t *)a->coeffs, (const int32_t *)b->coeffs);
     else
-        s_poly_add_avx2(c, a, b);
+        dap_dilithium_poly_add_avx2((int32_t *)c->coeffs, (const int32_t *)a->coeffs, (const int32_t *)b->coeffs);
 }
 
-__attribute__((target("avx512f")))
-static void s_poly_sub_avx512(poly *c, const poly *a, const poly *b) {
-    const __m512i v2q = _mm512_set1_epi32(2 * Q);
-    for (unsigned i = 0; i < NN; i += 16) {
-        __m512i va = _mm512_load_si512(a->coeffs + i);
-        __m512i vb = _mm512_load_si512(b->coeffs + i);
-        _mm512_store_si512(c->coeffs + i,
-            _mm512_sub_epi32(_mm512_add_epi32(va, v2q), vb));
-    }
-}
-__attribute__((target("avx2")))
-static void s_poly_sub_avx2(poly *c, const poly *a, const poly *b) {
-    const __m256i v2q = _mm256_set1_epi32(2 * Q);
-    for (unsigned i = 0; i < NN; i += 8) {
-        __m256i va = _mm256_load_si256((__m256i *)(a->coeffs + i));
-        __m256i vb = _mm256_load_si256((__m256i *)(b->coeffs + i));
-        _mm256_store_si256((__m256i *)(c->coeffs + i),
-            _mm256_sub_epi32(_mm256_add_epi32(va, v2q), vb));
-    }
-}
 void dilithium_poly_sub(poly *c, const poly *a, const poly *b) {
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1))
-        s_poly_sub_avx512(c, a, b);
+        dap_dilithium_poly_sub_avx512((int32_t *)c->coeffs, (const int32_t *)a->coeffs, (const int32_t *)b->coeffs);
     else
-        s_poly_sub_avx2(c, a, b);
+        dap_dilithium_poly_sub_avx2((int32_t *)c->coeffs, (const int32_t *)a->coeffs, (const int32_t *)b->coeffs);
 }
 
 __attribute__((target("avx2")))
@@ -462,16 +382,9 @@ void poly_invntt_montgomery(poly *a) {
 
 /*************************************************/
 void poly_pointwise_invmontgomery(poly *c, const poly *a, const poly *b) {
-  if (__builtin_expect(!s_dil_pw_mont, 0))
-      s_dil_dispatch_init();
-  if (s_dil_pw_mont) {
-      s_dil_pw_mont((int32_t *)c->coeffs, (const int32_t *)a->coeffs,
-                    (const int32_t *)b->coeffs);
-      return;
-  }
-  dap_ntt_pointwise_montgomery(
-      (int32_t *)c->coeffs, (const int32_t *)a->coeffs,
-      (const int32_t *)b->coeffs, &g_dilithium_ntt_params);
+    DAP_DISPATCH_ENSURE(s_dil_pw_mont, s_dil_dispatch_init);
+    s_dil_pw_mont_ptr((int32_t *)c->coeffs, (const int32_t *)a->coeffs,
+                      (const int32_t *)b->coeffs);
 }
 
 /*************************************************/
@@ -983,28 +896,14 @@ const dap_ntt_params_t g_dilithium_ntt_params = {
 /*************************************************/
 void dilithium_ntt(uint32_t pp[NN])
 {
-    if (__builtin_expect(!s_dil_ntt_fwd, 0))
-        s_dil_dispatch_init();
-    if (s_dil_ntt_fwd) {
-        s_dil_ntt_fwd((int32_t *)pp);
-        return;
-    }
-    dap_ntt_forward_mont((int32_t *)pp, &g_dilithium_ntt_params);
+    DAP_DISPATCH_ENSURE(s_dil_ntt_fwd, s_dil_dispatch_init);
+    s_dil_ntt_fwd_ptr((int32_t *)pp);
 }
 
 /*************************************************/
 void invntt_frominvmont(uint32_t pp[NN])
 {
-    if (__builtin_expect(!s_dil_ntt_inv, 0))
-        s_dil_dispatch_init();
-    if (s_dil_ntt_inv) {
-        s_dil_ntt_inv((int32_t *)pp);
-        return;
-    }
-    dap_ntt_inverse_mont((int32_t *)pp, &g_dilithium_ntt_params);
-    const int32_t f = (int32_t)((((uint64_t)MONT * MONT % Q) * (Q - 1) % Q) * ((Q - 1) >> 8) % Q);
-    for (unsigned int j = 0; j < NN; j++)
-        pp[j] = (uint32_t)dap_ntt_montgomery_reduce(
-                    (int64_t)f * (int32_t)pp[j], &g_dilithium_ntt_params);
+    DAP_DISPATCH_ENSURE(s_dil_ntt_inv, s_dil_dispatch_init);
+    s_dil_ntt_inv_ptr((int32_t *)pp);
 }
 
