@@ -684,7 +684,7 @@ static void test_10_stream_connect(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test connect operation
@@ -716,7 +716,7 @@ static void test_11_stream_read(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test read operation
@@ -823,7 +823,7 @@ static void test_14_stream_session(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test session_create operation

@@ -495,7 +495,7 @@ static void test_11_stream_read(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for read
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test read operation (HTTP trans may return 0 for event-driven reading)
@@ -528,7 +528,7 @@ static void test_12_stream_write(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for write
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test write operation
