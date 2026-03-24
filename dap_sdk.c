@@ -39,7 +39,7 @@
 #include "dap_plugin.h"
 #endif
 
-#if defined(DAP_WASM_PTHREADS) || defined(DAP_OS_WASM)
+#if defined(DAP_WASM_PTHREADS) || (! defined(DAP_OS_WASM))
 #include <sys/stat.h>
 #endif
 
