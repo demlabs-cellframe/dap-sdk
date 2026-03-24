@@ -593,7 +593,12 @@ static void s_stream_es_callback_connected(dap_events_socket_t *a_es)
 
 static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg)
 {
-    debug_if(s_debug_more, L_INFO, "Stream esocket delete callback");
+    log_it(L_WARNING, "Stream esocket delete callback (socket fd=%d, flags=0x%x, buf_out=%zu, buf_in=%zu)"
+           " — stream connection lost",
+           a_es ? a_es->socket : -1,
+           a_es ? a_es->flags : 0,
+           a_es ? a_es->buf_out_size : 0,
+           a_es ? a_es->buf_in_size : 0);
     if (!a_es)
         return;
 
@@ -608,14 +613,23 @@ static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG vo
         return;
     }
 
-    if (l_es->stream && l_es->stream->trans_ctx)
-        l_es->stream->trans_ctx->esocket = NULL;
+    if(l_es->stream)
+    {
+        log_it(L_WARNING, "Stream state at delete: session=%p, channel_count=%zu, stream_size=%zu",
+               l_es->stream->session,
+               l_es->stream->channel_count,
+               l_es->stream->stream_size);
+    }
 
-    // Notify FSM of stream abort
+    if(l_es->stream && l_es->stream->trans_ctx)
+        l_es->stream->trans_ctx->esocket = NULL;
+    l_es->stream = NULL;
+    l_es->stream_es = NULL;
+
     dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
                           STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
 
-    a_es->_inheritor = NULL; // Prevent reactor from freeing dap_client_t
+    a_es->_inheritor = NULL;
 }
 
 static void s_stream_es_callback_read(dap_events_socket_t *a_es, void *arg)
@@ -664,6 +678,8 @@ static bool s_stream_es_callback_write(dap_events_socket_t *a_es, UNUSED_ARG voi
     dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
     if (!l_es || !l_es->stream) return false;
 
+    l_es->ts_last_active = dap_time_now();
+
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
     dap_client_stage_t l_stage = l_fsm ? (dap_client_stage_t)atomic_load(&l_fsm->stage_readable) : STAGE_UNDEFINED;
     dap_client_stage_status_t l_status = l_fsm ? (dap_client_stage_status_t)atomic_load(&l_fsm->stage_status_readable) : STAGE_STATUS_NONE;
@@ -700,8 +716,10 @@ static void s_stream_es_callback_error(dap_events_socket_t *a_es, int a_error)
     dap_client_error_t l_err = (a_error == ETIMEDOUT)
         ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_STREAM_RESPONSE_WRONG;
 
-    if (l_es->stream && l_es->stream->trans_ctx)
+    if(l_es->stream && l_es->stream->trans_ctx)
         l_es->stream->trans_ctx->esocket = NULL;
+    l_es->stream = NULL;
+    l_es->stream_es = NULL;
 
     dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
                           STAGE_STATUS_ERROR, l_err);

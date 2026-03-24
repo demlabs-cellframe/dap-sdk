@@ -1184,9 +1184,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
             // Possibly have data to read despite EPOLLRDHUP
             if (l_flag_rdhup){
-                debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_WARNING,
-                         "CLI RDHUP: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" buf_out %zu — client disconnected before response",
-                         l_cur->socket, l_cur->uuid, l_cur->buf_out_size);
+                log_it(L_INFO, "RDHUP on socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
+                       " type %d buf_out %zu — remote closed write side",
+                       l_cur->socket, l_cur->uuid, l_cur->type, l_cur->buf_out_size);
                 switch (l_cur->type ){
                     case DESCRIPTOR_TYPE_SOCKET_RAW:
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
@@ -1194,6 +1194,25 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:
                             dap_events_socket_set_readable_unsafe(l_cur, false);
+                            if(l_cur->buf_out_size > 0 && l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)
+                            {
+                                size_t l_pending = l_cur->buf_out_size;
+                                ssize_t l_flushed = send(l_cur->socket, (const char *)l_cur->buf_out,
+                                                         l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+                                if(l_flushed > 0)
+                                {
+                                    l_cur->buf_out_size -= (size_t)l_flushed;
+                                    if(l_cur->buf_out_size)
+                                        memmove(l_cur->buf_out, &l_cur->buf_out[l_flushed], l_cur->buf_out_size);
+                                    log_it(L_INFO, "RDHUP: flushed %zd/%zu bytes before close (fd=%"DAP_FORMAT_SOCKET", remaining=%zu)",
+                                           l_flushed, l_pending, l_cur->socket, l_cur->buf_out_size);
+                                }
+                                else
+                                {
+                                    log_it(L_WARNING, "RDHUP: flush failed for %zu bytes (fd=%"DAP_FORMAT_SOCKET", errno=%d: %s)",
+                                           l_pending, l_cur->socket, errno, dap_strerror(errno));
+                                }
+                            }
                             dap_events_socket_set_writable_unsafe(l_cur, false);
                             l_cur->buf_out_size = 0;
                             l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;

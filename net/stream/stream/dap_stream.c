@@ -711,16 +711,21 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     // After close(), trans_ctx->esocket may be NULL (managed by transport)
     // Only delete esocket if trans didn't handle it
     if (a_stream->trans_ctx && a_stream->trans_ctx->esocket && a_stream->trans_ctx->esocket_worker) {
-        dap_worker_t *l_current = dap_worker_get_current();
-        if (l_current == a_stream->trans_ctx->esocket_worker) {
-            dap_events_socket_remove_and_delete_unsafe(a_stream->trans_ctx->esocket, false);
-        } else {
-            dap_events_socket_remove_and_delete_mt(a_stream->trans_ctx->esocket_worker,
-                                                   a_stream->trans_ctx->esocket_uuid);
-        }
+        dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+        dap_worker_t *l_es_worker = a_stream->trans_ctx->esocket_worker;
+        // Prevent recursive dap_stream_delete_unsafe via s_esocket_callback_delete:
+        // clearing delete_callback and _inheritor so the callback won't re-enter
+        l_es->callbacks.delete_callback = NULL;
+        l_es->_inheritor = NULL;
         a_stream->trans_ctx->esocket = NULL;
         a_stream->trans_ctx->esocket_uuid = 0;
         a_stream->trans_ctx->esocket_worker = NULL;
+        dap_worker_t *l_current = dap_worker_get_current();
+        if (l_current == l_es_worker) {
+            dap_events_socket_remove_and_delete_unsafe(l_es, false);
+        } else {
+            dap_events_socket_remove_and_delete_mt(l_es_worker, l_es->uuid);
+        }
     }
     DAP_DELETE(a_stream->trans_ctx);
     a_stream->trans_ctx = NULL;
@@ -728,6 +733,12 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
 #endif
+
+    if(a_stream->client_stream_ref)
+    {
+        *a_stream->client_stream_ref = NULL;
+        a_stream->client_stream_ref = NULL;
+    }
 
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DELETE(a_stream);

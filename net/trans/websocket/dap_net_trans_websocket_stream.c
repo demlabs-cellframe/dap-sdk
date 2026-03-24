@@ -965,10 +965,9 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     }
     debug_if(s_debug_more, L_DEBUG, "WebSocket upgrade request sent (%zd bytes)", l_sent);
 
-    // Invoke ready callback (same as HTTP transport — request sent, response is async)
-    if (a_callback) {
-        a_callback(a_stream, 0);
-    }
+    // Defer ready callback until 101 Switching Protocols response is received
+    l_priv->ready_callback = a_callback;
+    l_priv->ready_callback_stream = a_stream;
 
     return 0;
 }
@@ -1034,10 +1033,23 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                 l_priv->ping_timer = dap_timerfd_start_on_worker(l_es->worker,
                     l_priv->config.ping_interval_ms, s_ws_ping_timer_callback, a_stream);
             }
+
+            // Fire deferred session_start callback now that upgrade is complete
+            if (l_priv->ready_callback) {
+                dap_net_trans_ready_cb_t l_cb = l_priv->ready_callback;
+                l_priv->ready_callback = NULL;
+                l_cb(l_priv->ready_callback_stream, 0);
+            }
         } else {
             log_it(L_ERROR, "WebSocket upgrade failed: %.40s", (char *)l_es->buf_in);
             l_priv->state = DAP_WS_STATE_CLOSED;
             dap_events_socket_shrink_buf_in(l_es, l_headers_size);
+            // Fire callback with error so FSM knows the stage failed
+            if (l_priv->ready_callback) {
+                dap_net_trans_ready_cb_t l_cb = l_priv->ready_callback;
+                l_priv->ready_callback = NULL;
+                l_cb(l_priv->ready_callback_stream, -1);
+            }
             return -1;
         }
 
@@ -1272,6 +1284,13 @@ static void s_ws_close(dap_stream_t *a_stream)
     if (l_priv->ping_timer) {
         dap_timerfd_delete_mt(l_priv->ping_timer->worker, l_priv->ping_timer->esocket_uuid);
         l_priv->ping_timer = NULL;
+    }
+
+    // Fire pending callback if close happened before upgrade completed
+    if (l_priv->ready_callback) {
+        dap_net_trans_ready_cb_t l_cb = l_priv->ready_callback;
+        l_priv->ready_callback = NULL;
+        l_cb(l_priv->ready_callback_stream, -1);
     }
 
     l_priv->state = DAP_WS_STATE_CLOSED;
