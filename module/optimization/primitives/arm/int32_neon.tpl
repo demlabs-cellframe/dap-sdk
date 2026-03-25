@@ -13,6 +13,22 @@ typedef int32x4_t VEC_T;
 #define VEC_SUB32(a, b)    vsubq_s32(a, b)
 #define VEC_MULLO32(a, b)  vmulq_s32(a, b)
 
+#define VEC_AND(a, b)      vandq_s32(a, b)
+#define VEC_OR(a, b)       vorrq_s32(a, b)
+#define VEC_XOR(a, b)      veorq_s32(a, b)
+#define VEC_ANDNOT(a, b)   vbicq_s32(b, a)
+#define VEC_ZERO()         vdupq_n_s32(0)
+
+#define VEC_SLLI32(a, n)   vshlq_n_s32(a, n)
+#define VEC_SRLI32(a, n)   vreinterpretq_s32_u32(vshrq_n_u32(vreinterpretq_u32_s32(a), n))
+#define VEC_SRAI32(a, n)   vshrq_n_s32(a, n)
+
+#define VEC_CMPEQ_32(a, b) vreinterpretq_s32_u32(vceqq_s32(a, b))
+#define VEC_CMPGT_32(a, b) vreinterpretq_s32_u32(vcgtq_s32(a, b))
+#define VEC_BLENDV_32(mask, t, f) \
+    vbslq_s32(vreinterpretq_u32_s32(mask), t, f)
+#define VEC_ANY_TRUE_32(v) (vmaxvq_u32(vreinterpretq_u32_s32(v)) != 0)
+
 // Montgomery reduce multiply: (a * b) * R^{-1} mod q, R = 2^32.
 // qinv = -q^{-1} mod R, formula: result = (a*b + u*q) >> 32
 //

@@ -66,6 +66,10 @@ typedef __m256i VEC_T;
 #define VEC_SRLI32(a, n)        _mm256_srli_epi32(a, n)
 #define VEC_SRAI32(a, n)        _mm256_srai_epi32(a, n)
 #define VEC_SET_32(h,g,f,e,d,c,b,a)  _mm256_set_epi32(h,g,f,e,d,c,b,a)
+#define VEC_CMPEQ_32(a, b)         _mm256_cmpeq_epi32(a, b)
+#define VEC_CMPGT_32(a, b)         _mm256_cmpgt_epi32(a, b)
+#define VEC_BLENDV_32(mask, t, f)  _mm256_blendv_epi8(f, t, mask)
+#define VEC_ANY_TRUE_32(v)         (_mm256_movemask_epi8(v) != 0)
 
 // === 64-bit element ops =====================================================
 

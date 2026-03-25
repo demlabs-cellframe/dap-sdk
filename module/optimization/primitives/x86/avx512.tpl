@@ -61,6 +61,11 @@ typedef __m512i VEC_T;
 #define VEC_SLLI32(a, n)    _mm512_slli_epi32(a, n)
 #define VEC_SRLI32(a, n)    _mm512_srli_epi32(a, n)
 #define VEC_SRAI32(a, n)    _mm512_srai_epi32(a, n)
+#define VEC_CMPEQ_32(a, b) _mm512_maskz_set1_epi32(_mm512_cmpeq_epi32_mask(a, b), -1)
+#define VEC_CMPGT_32(a, b) _mm512_maskz_set1_epi32(_mm512_cmpgt_epi32_mask(a, b), -1)
+#define VEC_BLENDV_32(mask, t, f) \
+    _mm512_mask_blend_epi32(_mm512_movepi32_mask(mask), f, t)
+#define VEC_ANY_TRUE_32(v) (_mm512_test_epi32_mask(v, v) != 0)
 
 // === 64-bit element ops =====================================================
 

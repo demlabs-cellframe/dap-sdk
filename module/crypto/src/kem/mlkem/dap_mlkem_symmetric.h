@@ -40,10 +40,13 @@ static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
                                     uint8_t a_suffix)
 {
 #if DAP_KECCAK_HAS_SPONGE_ASM
-    static int s_avx512 = -1;
-    if (__builtin_expect(s_avx512 < 0, 0))
-        s_avx512 = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512);
-    if (__builtin_expect(s_avx512, 1)) {
+    static int s_sponge_tier = -1;
+    if (__builtin_expect(s_sponge_tier < 0, 0)) {
+        dap_cpu_arch_t arch = dap_cpu_arch_get();
+        s_sponge_tier = (arch >= DAP_CPU_ARCH_AVX512) ? 2
+                      : (arch >= DAP_CPU_ARCH_AVX2)   ? 1 : 0;
+    }
+    if (__builtin_expect(s_sponge_tier == 2, 1)) {
         switch (a_rate) {
         case DAP_KECCAK_SHA3_256_RATE:
             dap_keccak_absorb_136_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
@@ -51,9 +54,17 @@ static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
             dap_keccak_absorb_168_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
         case DAP_KECCAK_SHA3_512_RATE:
             dap_keccak_absorb_72_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
-        default:
-            assert(0 && "s_keccak_absorb: unsupported rate for ASM sponge path");
-            break;
+        default: break;
+        }
+    } else if (s_sponge_tier == 1) {
+        switch (a_rate) {
+        case DAP_KECCAK_SHA3_256_RATE:
+            dap_keccak_absorb_136_scalar_bmi2(a_state, a_data, a_len, a_suffix); return;
+        case DAP_KECCAK_SHAKE128_RATE:
+            dap_keccak_absorb_168_scalar_bmi2(a_state, a_data, a_len, a_suffix); return;
+        case DAP_KECCAK_SHA3_512_RATE:
+            dap_keccak_absorb_72_scalar_bmi2(a_state, a_data, a_len, a_suffix); return;
+        default: break;
         }
     }
 #endif
@@ -95,10 +106,13 @@ static inline void s_keccak_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
                                            uint64_t *a_state, unsigned a_rate)
 {
 #if DAP_KECCAK_HAS_SPONGE_ASM
-    static int s_avx512_sq = -1;
-    if (__builtin_expect(s_avx512_sq < 0, 0))
-        s_avx512_sq = (dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512);
-    if (__builtin_expect(s_avx512_sq, 1)) {
+    static int s_squeeze_tier = -1;
+    if (__builtin_expect(s_squeeze_tier < 0, 0)) {
+        dap_cpu_arch_t arch = dap_cpu_arch_get();
+        s_squeeze_tier = (arch >= DAP_CPU_ARCH_AVX512) ? 2
+                       : (arch >= DAP_CPU_ARCH_AVX2)   ? 1 : 0;
+    }
+    if (__builtin_expect(s_squeeze_tier == 2, 1)) {
         switch (a_rate) {
         case DAP_KECCAK_SHA3_256_RATE:
             dap_keccak_squeeze_136_avx512vl_asm(a_state, a_out, a_nblocks); return;
@@ -106,9 +120,17 @@ static inline void s_keccak_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
             dap_keccak_squeeze_168_avx512vl_asm(a_state, a_out, a_nblocks); return;
         case DAP_KECCAK_SHA3_512_RATE:
             dap_keccak_squeeze_72_avx512vl_asm(a_state, a_out, a_nblocks); return;
-        default:
-            assert(0 && "s_keccak_squeezeblocks: unsupported rate for ASM sponge path");
-            break;
+        default: break;
+        }
+    } else if (s_squeeze_tier == 1) {
+        switch (a_rate) {
+        case DAP_KECCAK_SHA3_256_RATE:
+            dap_keccak_squeeze_136_scalar_bmi2(a_state, a_out, a_nblocks); return;
+        case DAP_KECCAK_SHAKE128_RATE:
+            dap_keccak_squeeze_168_scalar_bmi2(a_state, a_out, a_nblocks); return;
+        case DAP_KECCAK_SHA3_512_RATE:
+            dap_keccak_squeeze_72_scalar_bmi2(a_state, a_out, a_nblocks); return;
+        default: break;
         }
     }
 #endif
@@ -213,6 +235,22 @@ static inline void dap_mlkem_kdf(uint8_t *a_out, const uint8_t *a_in, size_t a_l
 {
     uint64_t l_st[25];
     s_keccak_absorb(l_st, DAP_KECCAK_SHAKE256_RATE, a_in, a_len,
+                    DAP_KECCAK_SHAKE_SUFFIX);
+    memcpy(a_out, l_st, MLKEM_SSBYTES);
+}
+
+/* ---------- J (SHAKE256): implicit rejection hash, FIPS 203 -------------- */
+/* J(z || ct) → 32 bytes.  Used in decapsulation for implicit rejection.     */
+static inline void dap_mlkem_hash_j(uint8_t *a_out,
+                                     const uint8_t a_z[MLKEM_SYMBYTES],
+                                     const uint8_t *a_ct)
+{
+    uint8_t l_in[MLKEM_SYMBYTES + MLKEM_CIPHERTEXTBYTES];
+    memcpy(l_in, a_z, MLKEM_SYMBYTES);
+    memcpy(l_in + MLKEM_SYMBYTES, a_ct, MLKEM_CIPHERTEXTBYTES);
+
+    uint64_t l_st[25];
+    s_keccak_absorb(l_st, DAP_KECCAK_SHAKE256_RATE, l_in, sizeof(l_in),
                     DAP_KECCAK_SHAKE_SUFFIX);
     memcpy(a_out, l_st, MLKEM_SSBYTES);
 }

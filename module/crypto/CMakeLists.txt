@@ -374,6 +374,20 @@ dap_arch_generate(
         avx512       "${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
         neon         "${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
     EXTRA_ARGS "REDUCE_FILE=${DIL_REDUCE_TPL}"
+               "OPS_FILE=${DIL_TPL_DIR}/dap_dilithium_simd_poly_ops.tpl"
+)
+# Per-variant rejection sampling generation
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_sample_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_sample_avx2.c
+    ARCH     avx2
+    ARGS     "SAMPLE_BODY=${DIL_TPL_DIR}/arch/x86/rej_uniform_avx2.inc"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_sample_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_sample_neon.c
+    ARCH     neon
+    ARGS     "SAMPLE_BODY=${DIL_TPL_DIR}/arch/arm/rej_uniform_neon.inc"
 )
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
     SOURCES
@@ -384,6 +398,8 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
         dap_dilithium_poly_avx2.c       avx2
         dap_dilithium_poly_avx512.c     avx512
         dap_dilithium_poly_neon.c       neon
+        dap_dilithium_sample_avx2.c     avx2
+        dap_dilithium_sample_neon.c     neon
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${DIL_GEN_DIR})
 

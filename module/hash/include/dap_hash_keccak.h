@@ -130,7 +130,7 @@ static inline dap_hash_keccak_permute_fn_t s_keccak_resolve_permute(void)
     switch (arch) {
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
         case DAP_CPU_ARCH_AVX512: return dap_hash_keccak_permute_avx512vl_asm;
-        case DAP_CPU_ARCH_AVX2:   return dap_hash_keccak_permute_avx2;
+        case DAP_CPU_ARCH_AVX2:   return dap_hash_keccak_permute_scalar_bmi2;
         case DAP_CPU_ARCH_SSE2:   return dap_hash_keccak_permute_sse2;
 #elif defined(__arm__) || defined(__aarch64__)
 #if defined(__aarch64__)

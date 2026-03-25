@@ -31,15 +31,13 @@ int MLKEM_NAMESPACE(_kem_enc)(uint8_t *a_ct, uint8_t *a_ss, const uint8_t *a_pk)
     uint8_t l_kr[2 * MLKEM_SYMBYTES];
 
     dap_random_bytes(l_buf, MLKEM_SYMBYTES);
-    dap_mlkem_hash_h(l_buf, l_buf, MLKEM_SYMBYTES);
 
     dap_mlkem_hash_h(l_buf + MLKEM_SYMBYTES, a_pk, MLKEM_PUBLICKEYBYTES);
     dap_mlkem_hash_g(l_kr, l_buf, 2 * MLKEM_SYMBYTES);
 
     MLKEM_NAMESPACE(_indcpa_enc)(a_ct, l_buf, a_pk, l_kr + MLKEM_SYMBYTES);
 
-    dap_mlkem_hash_h(l_kr + MLKEM_SYMBYTES, a_ct, MLKEM_CIPHERTEXTBYTES);
-    dap_mlkem_kdf(a_ss, l_kr, 2 * MLKEM_SYMBYTES);
+    memcpy(a_ss, l_kr, MLKEM_SSBYTES);
     return 0;
 }
 
@@ -61,10 +59,11 @@ int MLKEM_NAMESPACE(_kem_dec)(uint8_t *a_ss, const uint8_t *a_ct, const uint8_t 
 
     int l_fail = dap_mlkem_verify(a_ct, l_cmp, MLKEM_CIPHERTEXTBYTES);
 
-    dap_mlkem_hash_h(l_kr + MLKEM_SYMBYTES, a_ct, MLKEM_CIPHERTEXTBYTES);
-    dap_mlkem_cmov(l_kr, a_sk + MLKEM_SECRETKEYBYTES - MLKEM_SYMBYTES,
+    dap_mlkem_hash_j(l_kr + MLKEM_SYMBYTES,
+                     a_sk + MLKEM_SECRETKEYBYTES - MLKEM_SYMBYTES, a_ct);
+    dap_mlkem_cmov(l_kr, l_kr + MLKEM_SYMBYTES,
                    MLKEM_SYMBYTES, (uint8_t)l_fail);
-    dap_mlkem_kdf(a_ss, l_kr, 2 * MLKEM_SYMBYTES);
+    memcpy(a_ss, l_kr, MLKEM_SSBYTES);
     return 0;
 }
 
@@ -107,15 +106,13 @@ int MLKEM_NAMESPACE(_kem_enc_ctx)(uint8_t *a_ct, uint8_t *a_ss,
     uint8_t l_kr[2 * MLKEM_SYMBYTES];
 
     dap_random_bytes(l_buf, MLKEM_SYMBYTES);
-    dap_mlkem_hash_h(l_buf, l_buf, MLKEM_SYMBYTES);
 
     memcpy(l_buf + MLKEM_SYMBYTES, a_ctx->h_pk, MLKEM_SYMBYTES);
     dap_mlkem_hash_g(l_kr, l_buf, 2 * MLKEM_SYMBYTES);
 
     MLKEM_NAMESPACE(_indcpa_enc_ctx)(a_ct, l_buf, a_ctx, l_kr + MLKEM_SYMBYTES);
 
-    dap_mlkem_hash_h(l_kr + MLKEM_SYMBYTES, a_ct, MLKEM_CIPHERTEXTBYTES);
-    dap_mlkem_kdf(a_ss, l_kr, 2 * MLKEM_SYMBYTES);
+    memcpy(a_ss, l_kr, MLKEM_SSBYTES);
     return 0;
 }
 
@@ -135,8 +132,9 @@ int MLKEM_NAMESPACE(_kem_dec_ctx)(uint8_t *a_ss, const uint8_t *a_ct,
 
     int l_fail = dap_mlkem_verify(a_ct, l_cmp, MLKEM_CIPHERTEXTBYTES);
 
-    dap_mlkem_hash_h(l_kr + MLKEM_SYMBYTES, a_ct, MLKEM_CIPHERTEXTBYTES);
-    dap_mlkem_cmov(l_kr, a_ctx->z, MLKEM_SYMBYTES, (uint8_t)l_fail);
-    dap_mlkem_kdf(a_ss, l_kr, 2 * MLKEM_SYMBYTES);
+    dap_mlkem_hash_j(l_kr + MLKEM_SYMBYTES, a_ctx->z, a_ct);
+    dap_mlkem_cmov(l_kr, l_kr + MLKEM_SYMBYTES,
+                   MLKEM_SYMBYTES, (uint8_t)l_fail);
+    memcpy(a_ss, l_kr, MLKEM_SSBYTES);
     return 0;
 }

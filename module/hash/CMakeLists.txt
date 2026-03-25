@@ -144,9 +144,9 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
     )
 
-    # Scalar BMI2 Keccak-f[1600] assembly — optimized for 1x single-state operations
-    set(KECCAK_SCALAR_BMI2_ASM ${K}/arch/x86/keccak_f1600_scalar_bmi2.S)
-    set(KECCAK_SCALAR_BMI2_C   ${K}/arch/x86/keccak_scalar_bmi2_sponge.c)
+    # Scalar BMI2 Keccak-f[1600] — hand-tuned ASM + C sponge wrappers
+    set(KECCAK_SCALAR_BMI2_ASM  ${K}/arch/x86/keccak_f1600_scalar_bmi2.S)
+    set(KECCAK_SCALAR_BMI2_C    ${K}/arch/x86/keccak_scalar_bmi2_sponge.c)
     target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_SCALAR_BMI2_ASM} ${KECCAK_SCALAR_BMI2_C})
     set_source_files_properties(${KECCAK_SCALAR_BMI2_ASM}
         PROPERTIES COMPILE_FLAGS "-mbmi -mbmi2"
