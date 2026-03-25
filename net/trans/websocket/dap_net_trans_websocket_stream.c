@@ -927,6 +927,11 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     log_it(L_INFO, "WebSocket session start: session_id=%u, sending upgrade to %s:%u",
            a_session_id, l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
 
+    if (l_priv->esocket->flags & DAP_SOCK_SIGNAL_CLOSE) {
+        log_it(L_ERROR, "WebSocket session_start: esocket has SIGNAL_CLOSE flag, cannot send upgrade!");
+        return -6;
+    }
+
     // Set state to CONNECTING (upgrade in progress)
     l_priv->state = DAP_WS_STATE_CONNECTING;
 
@@ -1288,6 +1293,8 @@ static void s_ws_close(dap_stream_t *a_stream)
 
     // Fire pending callback if close happened before upgrade completed
     if (l_priv->ready_callback) {
+        log_it(L_WARNING, "WebSocket closed while upgrade pending (state=%d), firing error callback",
+               l_priv->state);
         dap_net_trans_ready_cb_t l_cb = l_priv->ready_callback;
         l_priv->ready_callback = NULL;
         l_cb(l_priv->ready_callback_stream, -1);
@@ -1295,8 +1302,11 @@ static void s_ws_close(dap_stream_t *a_stream)
 
     l_priv->state = DAP_WS_STATE_CLOSED;
 
-    log_it(L_INFO, "WebSocket connection closed (sent=%lu frames, received=%lu frames)",
-           l_priv->frames_sent, l_priv->frames_received);
+    log_it(L_INFO, "WebSocket connection closed (sent=%lu frames, received=%lu frames, "
+           "esocket fd=%d flags=0x%x)",
+           l_priv->frames_sent, l_priv->frames_received,
+           l_priv->esocket ? (int)l_priv->esocket->fd : -1,
+           l_priv->esocket ? l_priv->esocket->flags : 0);
 
     // Free per-stream WS state (allocated in s_ws_connect)
     if (a_stream->is_client_to_uplink && a_stream->trans_ctx
