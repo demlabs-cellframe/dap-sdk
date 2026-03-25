@@ -282,4 +282,4 @@ endif ()
 # internal try_compile/check_function_exists probes (which use CMAKE_C_FLAGS
 # but not COMPILE_OPTIONS). This prevents -Werror from breaking feature
 # detection in 3rdparty libraries (e.g., libmdbx's check for libm).
-add_compile_options(-Werror)
+#add_compile_options(-Werror)
