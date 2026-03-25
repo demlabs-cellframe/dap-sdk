@@ -92,6 +92,7 @@ typedef struct dap_cpu_features {
     bool has_avx512bw;             /**< AVX-512 Byte/Word */
     bool has_avx512vl;             /**< AVX-512 Vector Length */
     bool has_avx512_ifma;          /**< AVX-512 IFMA (52-bit int FMA) */
+    bool has_avx512_vbmi2;         /**< AVX-512 VBMI2 (compress/expand) */
     bool has_bmi;                  /**< BMI */
     bool has_bmi2;                 /**< BMI2 */
     bool has_popcnt;               /**< POPCNT */

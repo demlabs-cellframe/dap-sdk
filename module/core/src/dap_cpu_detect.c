@@ -124,6 +124,7 @@ static void s_detect_x86_features(dap_cpu_features_t *a_features)
         a_features->has_avx512vl = (ebx & (1U << 31)) != 0;
         a_features->has_sha_ni = (ebx & (1 << 29)) != 0;
         a_features->has_avx512_ifma = (ebx & (1 << 21)) != 0;
+        a_features->has_avx512_vbmi2 = (ecx & (1 << 6)) != 0;
     }
 }
 
@@ -253,12 +254,13 @@ static void s_detect_features_impl(void)
     log_it(L_DEBUG, "  AVX: %s, AVX2: %s",
            s_cached_features.has_avx ? "yes" : "no",
            s_cached_features.has_avx2 ? "yes" : "no");
-    log_it(L_DEBUG, "  AVX-512F: %s, AVX-512DQ: %s, AVX-512BW: %s, AVX-512VL: %s, AVX-512IFMA: %s",
+    log_it(L_DEBUG, "  AVX-512F: %s, AVX-512DQ: %s, AVX-512BW: %s, AVX-512VL: %s, AVX-512IFMA: %s, AVX-512VBMI2: %s",
            s_cached_features.has_avx512f ? "yes" : "no",
            s_cached_features.has_avx512dq ? "yes" : "no",
            s_cached_features.has_avx512bw ? "yes" : "no",
            s_cached_features.has_avx512vl ? "yes" : "no",
-           s_cached_features.has_avx512_ifma ? "yes" : "no");
+           s_cached_features.has_avx512_ifma ? "yes" : "no",
+           s_cached_features.has_avx512_vbmi2 ? "yes" : "no");
     log_it(L_DEBUG, "  BMI: %s, BMI2: %s, POPCNT: %s",
            s_cached_features.has_bmi ? "yes" : "no",
            s_cached_features.has_bmi2 ? "yes" : "no",

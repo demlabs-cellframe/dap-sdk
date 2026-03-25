@@ -78,7 +78,13 @@ endmacro()
 
 add_crypto_bench(bench_mlkem_raw)
 add_crypto_bench(bench_mlkem_components)
-add_crypto_bench(bench_mlkem_breakdown)
-add_crypto_bench(bench_mlkem_hash_wrappers)
 add_crypto_bench(bench_ntt_micro)
 add_crypto_bench(bench_rng_overhead)
+
+# bench_mlkem_breakdown needs hash wrapper TU for inline function access
+add_executable(bench_mlkem_breakdown bench_mlkem_breakdown.c bench_mlkem_hash_wrappers.c)
+target_link_libraries(bench_mlkem_breakdown dap_sdk)
+target_include_directories(bench_mlkem_breakdown PRIVATE ${MLKEM_BENCH_INCLUDES})
+set_target_properties(bench_mlkem_breakdown PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+)
