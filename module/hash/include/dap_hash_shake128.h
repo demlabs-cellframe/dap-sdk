@@ -61,7 +61,7 @@ extern "C" {
 DAP_STATIC_INLINE void dap_hash_shake128(uint8_t *a_output, size_t a_outlen,
                                      const uint8_t *a_input, size_t a_inlen)
 {
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1)) {
         uint64_t l_st[25];
         dap_keccak_absorb_168_avx512vl_asm(l_st, a_input, a_inlen, DAP_KECCAK_SHAKE_SUFFIX);
@@ -97,7 +97,7 @@ DAP_STATIC_INLINE void dap_hash_shake128(uint8_t *a_output, size_t a_outlen,
  */
 DAP_STATIC_INLINE void dap_hash_shake128_absorb(uint64_t *a_state, const uint8_t *a_input, size_t a_inlen)
 {
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1)) {
         dap_keccak_absorb_168_avx512vl_asm(a_state, a_input, a_inlen, DAP_KECCAK_SHAKE_SUFFIX);
         return;
@@ -118,7 +118,7 @@ DAP_STATIC_INLINE void dap_hash_shake128_absorb(uint64_t *a_state, const uint8_t
  */
 DAP_STATIC_INLINE void dap_hash_shake128_squeezeblocks(uint8_t *a_output, size_t a_nblocks, uint64_t *a_state)
 {
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1)) {
         dap_keccak_squeeze_168_avx512vl_asm(a_state, a_output, a_nblocks);
         return;

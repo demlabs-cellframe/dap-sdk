@@ -9,8 +9,9 @@
 #pragma once
 
 #include "dap_enc_key.h"
+#include "dap_cpu_arch.h"
 
-#if defined(__aarch64__) || (defined(__arm__) && defined(__ARM_FEATURE_CRYPTO))
+#if DAP_PLATFORM_ARM
 
 size_t dap_aes_armce_cbc_encrypt_fast(struct dap_enc_key *a_key, const void *a_in,
                                       size_t a_in_size, void *a_out, size_t a_out_size);

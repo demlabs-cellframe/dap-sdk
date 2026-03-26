@@ -8,7 +8,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#include "dap_cpu_arch.h"
+#if DAP_PLATFORM_X86
 
 #include "dap_aes_ni.h"
 #include "dap_enc_iaes.h"

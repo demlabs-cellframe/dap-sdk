@@ -1,11 +1,13 @@
 /**
  * @file dap_enc_mldsa.c
- * @brief ML-DSA (FIPS 204) wrapper over Dilithium.
+ * @brief ML-DSA (FIPS 204) wrapper over Dilithium core.
  *
- * Maps security levels (sign_params) to Dilithium modes:
- *   Category 2 (ML-DSA-44) -> MODE_1
- *   Category 3 (ML-DSA-65) -> MODE_2  (NIST recommended, default)
- *   Category 5 (ML-DSA-87) -> MODE_3
+ * Maps security levels to FIPS 204 parameter sets:
+ *   Category 2 (ML-DSA-44) -> MLDSA_44  (k=4, l=4, eta=2)
+ *   Category 3 (ML-DSA-65) -> MLDSA_65  (k=6, l=5, eta=4)
+ *   Category 5 (ML-DSA-87) -> MLDSA_87  (k=8, l=7, eta=2)
+ *
+ * Legacy Dilithium is separate: dap_enc_dilithium.c uses MODE_0..MODE_3.
  *
  * @authors naeper
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -22,13 +24,13 @@ dilithium_kind_t dap_enc_mldsa_resolve_mode(uint8_t a_sign_params)
 {
     switch (a_sign_params & DAP_SIGN_PARAMS_SECURITY_MASK) {
     case DAP_SIGN_PARAMS_SECURITY_2:
-        return MODE_1;
+        return MLDSA_44;
     case DAP_SIGN_PARAMS_SECURITY_5:
-        return MODE_3;
+        return MLDSA_87;
     case DAP_SIGN_PARAMS_SECURITY_3:
     case DAP_SIGN_PARAMS_DEFAULT:
     default:
-        return MODE_2;
+        return MLDSA_65;
     }
 }
 
@@ -53,7 +55,6 @@ void dap_enc_sig_mldsa_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_
 
     uint8_t l_sign_params = (uint8_t)(a_key_size & 0xFF);
     dilithium_kind_t l_mode = dap_enc_mldsa_resolve_mode(l_sign_params);
-    dap_enc_sig_dilithium_set_type((enum DAP_DILITHIUM_SIGN_SECURITY)l_mode);
 
     a_key->priv_key_data_size = sizeof(dilithium_private_key_t);
     a_key->pub_key_size = sizeof(dilithium_public_key_t);

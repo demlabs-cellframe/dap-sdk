@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "../ecdsa_field.h"
+#include "dap_cpu_arch.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,24 +107,19 @@ static inline void ecdsa_field_sqr_dispatch(ecdsa_field_t *r, const ecdsa_field_
 void ecdsa_field_mul_generic(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
 void ecdsa_field_sqr_generic(ecdsa_field_t *r, const ecdsa_field_t *a);
 
-#if defined(__x86_64__) || defined(_M_X64)
-// x86-64 ASM
+#if DAP_PLATFORM_X86_64
 void ecdsa_field_mul_x86_64_asm(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
 void ecdsa_field_sqr_x86_64_asm(ecdsa_field_t *r, const ecdsa_field_t *a);
 
-// AVX2 + BMI2
 void ecdsa_field_mul_avx2_bmi2(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
 void ecdsa_field_sqr_avx2_bmi2(ecdsa_field_t *r, const ecdsa_field_t *a);
-// NOTE: AVX-512 IFMA removed - doesn't benefit interleaved reduction pattern
 #endif
 
-#if defined(__aarch64__)
-// ARM64 NEON
+#if DAP_PLATFORM_ARM64
 void ecdsa_field_mul_neon(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
 void ecdsa_field_sqr_neon(ecdsa_field_t *r, const ecdsa_field_t *a);
 
 #if !defined(__APPLE__)
-// ARM64 SVE (servers: Graviton3, Neoverse, Ampere)
 void ecdsa_field_mul_sve(ecdsa_field_t *r, const ecdsa_field_t *a, const ecdsa_field_t *b);
 void ecdsa_field_sqr_sve(ecdsa_field_t *r, const ecdsa_field_t *a);
 #endif

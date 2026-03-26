@@ -28,6 +28,7 @@
  * @date 2025-01-08
  */
 
+#include <string.h>
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
 #include "dap_common.h"
@@ -133,6 +134,10 @@ static uint32_t    s_algo_class_next_id = 1;
 
 dap_algo_class_t dap_algo_class_register(const char *a_name)
 {
+    for (uint32_t i = 1; i < s_algo_class_next_id; i++) {
+        if (s_algo_class_names[i] && strcmp(s_algo_class_names[i], a_name) == 0)
+            return (dap_algo_class_t)i;
+    }
     uint32_t l_id = s_algo_class_next_id;
     if (l_id >= DAP_ALGO_CLASS_MAX_REGISTERED) {
         log_it(L_ERROR, "Algorithm class registry full (max %d)", DAP_ALGO_CLASS_MAX_REGISTERED);

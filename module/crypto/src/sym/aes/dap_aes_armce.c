@@ -8,7 +8,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#if defined(__aarch64__) || (defined(__arm__) && defined(__ARM_FEATURE_CRYPTO))
+#include "dap_cpu_arch.h"
+#if DAP_PLATFORM_ARM
 
 #include "dap_aes_armce.h"
 #include "dap_enc_iaes.h"

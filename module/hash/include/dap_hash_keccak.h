@@ -73,7 +73,7 @@ void dap_hash_keccak_extract_bytes(const dap_hash_keccak_state_t *state, uint8_t
 // SIMD implementation declarations (conditionally compiled)
 // ============================================================================
 
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if DAP_PLATFORM_X86
 void dap_hash_keccak_permute_sse2(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_avx2(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_avx512(dap_hash_keccak_state_t *state);
@@ -95,11 +95,10 @@ void dap_keccak_squeeze_168_scalar_bmi2(uint64_t *state, uint8_t *out, size_t nb
 void dap_keccak_squeeze_72_scalar_bmi2(uint64_t *state, uint8_t *out, size_t nblocks);
 #endif
 
-#if defined(__arm__) || defined(__aarch64__)
+#if DAP_PLATFORM_ARM
 void dap_hash_keccak_permute_neon(dap_hash_keccak_state_t *state);
 #if defined(__aarch64__)
 void dap_hash_keccak_permute_neon_sha3_asm(dap_hash_keccak_state_t *state);
-// SVE/SVE2 are NOT supported on Apple Silicon
 #if !defined(__APPLE__)
 void dap_hash_keccak_permute_sve(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_sve2(dap_hash_keccak_state_t *state);
@@ -123,28 +122,31 @@ typedef void (*dap_hash_keccak_permute_fn_t)(dap_hash_keccak_state_t *);
 
 /**
  * @brief Resolve best Keccak permutation once, cache the function pointer.
+ *
+ * Uses KECCAK algo class for vendor-aware dispatch via tune rules.
+ * Fallback logic uses >= (not ==) so AVX-512 machines correctly
+ * pick the best available implementation even if no exact match.
  */
 static inline dap_hash_keccak_permute_fn_t s_keccak_resolve_permute(void)
 {
-    dap_cpu_arch_t arch = dap_cpu_arch_get();
-    switch (arch) {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-        case DAP_CPU_ARCH_AVX512: return dap_hash_keccak_permute_avx512vl_asm;
-        case DAP_CPU_ARCH_AVX2:   return dap_hash_keccak_permute_scalar_bmi2;
-        case DAP_CPU_ARCH_SSE2:   return dap_hash_keccak_permute_sse2;
-#elif defined(__arm__) || defined(__aarch64__)
+    dap_algo_class_t l_class = dap_algo_class_register("KECCAK");
+    dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
+#if DAP_PLATFORM_X86
+    if (arch >= DAP_CPU_ARCH_AVX512) return dap_hash_keccak_permute_avx512vl_asm;
+    if (arch >= DAP_CPU_ARCH_AVX2)   return dap_hash_keccak_permute_scalar_bmi2;
+    if (arch >= DAP_CPU_ARCH_SSE2)   return dap_hash_keccak_permute_sse2;
+#elif DAP_PLATFORM_ARM
 #if defined(__aarch64__)
-        case DAP_CPU_ARCH_NEON:   return dap_hash_keccak_permute_neon_sha3_asm;
+#if !defined(__APPLE__)
+    if (arch >= DAP_CPU_ARCH_SVE2)   return dap_hash_keccak_permute_sve2;
+    if (arch >= DAP_CPU_ARCH_SVE)    return dap_hash_keccak_permute_sve;
+#endif
+    if (arch >= DAP_CPU_ARCH_NEON)   return dap_hash_keccak_permute_neon_sha3_asm;
 #else
-        case DAP_CPU_ARCH_NEON:   return dap_hash_keccak_permute_neon;
-#endif
-#if defined(__aarch64__) && !defined(__APPLE__)
-        case DAP_CPU_ARCH_SVE:    return dap_hash_keccak_permute_sve;
-        case DAP_CPU_ARCH_SVE2:   return dap_hash_keccak_permute_sve2;
+    if (arch >= DAP_CPU_ARCH_NEON)   return dap_hash_keccak_permute_neon;
 #endif
 #endif
-        default: return dap_hash_keccak_permute_ref;
-    }
+    return dap_hash_keccak_permute_ref;
 }
 
 /**

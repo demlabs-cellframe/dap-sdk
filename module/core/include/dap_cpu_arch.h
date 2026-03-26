@@ -37,6 +37,34 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* ========================================================================== */
+/*                     PLATFORM DETECTION MACROS                              */
+/* ========================================================================== */
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#  define DAP_PLATFORM_X86 1
+#else
+#  define DAP_PLATFORM_X86 0
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64)
+#  define DAP_PLATFORM_X86_64 1
+#else
+#  define DAP_PLATFORM_X86_64 0
+#endif
+
+#if defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64)
+#  define DAP_PLATFORM_ARM 1
+#else
+#  define DAP_PLATFORM_ARM 0
+#endif
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+#  define DAP_PLATFORM_ARM64 1
+#else
+#  define DAP_PLATFORM_ARM64 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

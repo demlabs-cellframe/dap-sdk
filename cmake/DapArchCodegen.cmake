@@ -63,6 +63,12 @@ set(_DAP_ARCH_FLAGS_avx512_ifma    "-mavx512f -mavx512ifma -mavx512vl")
 set(_DAP_ARCH_INCLUDES_avx512_ifma "#include <immintrin.h>")
 set(_DAP_ARCH_TARGET_ATTR_avx512_ifma "__attribute__((target(\"avx512f,avx512ifma,avx512vl\")))")
 
+set(_DAP_ARCH_NAME_avx512_vbmi2     "AVX-512 VBMI2")
+set(_DAP_ARCH_GUARD_avx512_vbmi2    "x86")
+set(_DAP_ARCH_FLAGS_avx512_vbmi2    "-mavx512f -mavx512bw -mavx512vl -mavx512vbmi2 -mpopcnt")
+set(_DAP_ARCH_INCLUDES_avx512_vbmi2 "#include <immintrin.h>")
+set(_DAP_ARCH_TARGET_ATTR_avx512_vbmi2 "__attribute__((target(\"avx2,avx512bw,avx512vl,avx512vbmi2,popcnt\")))")
+
 set(_DAP_ARCH_NAME_x86_64_asm "x86-64 ASM")
 set(_DAP_ARCH_GUARD_x86_64_asm "x86")
 set(_DAP_ARCH_FLAGS_x86_64_asm "")
@@ -97,7 +103,7 @@ set(_DAP_ARCH_INCLUDES_generic "")
 set(_DAP_ARCH_TARGET_ATTR_generic "")
 
 # Guard-family mapping for platform filtering
-set(_DAP_ARCH_FAMILY_x86   "sse2;avx2;avx2_bmi2;avx2_512vl;avx512;avx512_ifma;x86_64_asm")
+set(_DAP_ARCH_FAMILY_x86   "sse2;avx2;avx2_bmi2;avx2_512vl;avx512;avx512_ifma;avx512_vbmi2;x86_64_asm")
 set(_DAP_ARCH_FAMILY_arm   "neon")
 set(_DAP_ARCH_FAMILY_sve   "sve;sve2")
 
@@ -317,6 +323,8 @@ function(dap_arch_add_sources)
         if(_flags)
             set_source_files_properties("${_src}" PROPERTIES COMPILE_FLAGS "${_flags}")
         endif()
+
+        set_source_files_properties("${_src}" PROPERTIES SKIP_UNITY_BUILD_INCLUSION TRUE)
 
         list(APPEND _added_sources "${_src}")
     endwhile()

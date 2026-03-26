@@ -9,8 +9,9 @@
 #pragma once
 
 #include "dap_enc_key.h"
+#include "dap_cpu_arch.h"
 
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if DAP_PLATFORM_X86
 
 size_t dap_aes_ni_cbc_encrypt_fast(struct dap_enc_key *a_key, const void *a_in,
                                    size_t a_in_size, void *a_out, size_t a_out_size);

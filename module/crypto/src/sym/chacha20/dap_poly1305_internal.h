@@ -9,8 +9,9 @@
 
 #include <stdint.h>
 #include <string.h>
+#include "dap_cpu_arch.h"
 
-#if defined(__SIZEOF_INT128__) && (defined(__x86_64__) || defined(__aarch64__))
+#if defined(__SIZEOF_INT128__) && (DAP_PLATFORM_X86_64 || DAP_PLATFORM_ARM64)
 
 /* ─── 64-bit donna: 3 limbs (44-44-42), 9 muls via __uint128_t ─── */
 

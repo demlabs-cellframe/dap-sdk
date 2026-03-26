@@ -120,14 +120,20 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     endif()
 endif()
 
-# AVX2 x4 transpose helpers (extract/xor with 4×4 uint64 SIMD transpose)
+# x4 transpose helpers — arch-specific extract/xor
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     set(X4_TRANSPOSE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/keccak/dap_keccak_x4_transpose_avx2.c)
     target_sources(${PROJECT_NAME} PRIVATE ${X4_TRANSPOSE_SRC})
     set_source_files_properties(${X4_TRANSPOSE_SRC}
         PROPERTIES COMPILE_FLAGS "-mavx2"
     )
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/keccak/dap_keccak_x4_transpose_neon.c
+    )
+endif()
 
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     # AVX-512VL Keccak-f[1600] assembly — shared framework + x86 arch impl
     enable_language(ASM)
     set(KECCAK_AVX512VL_ASM ${KECCAK_GEN_DIR}/dap_keccak_f1600_avx512vl.S)

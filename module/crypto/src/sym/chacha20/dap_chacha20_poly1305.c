@@ -9,7 +9,7 @@
 #include "dap_chacha20_poly1305.h"
 #include "dap_chacha20_internal.h"
 #include "dap_poly1305_internal.h"
-#include "dap_cpu_arch.h"
+#include "dap_arch_dispatch.h"
 #include "dap_cpu_detect.h"
 
 /* ─── helpers ──────────────────────────────────────────────────────── */
@@ -107,7 +107,7 @@ static pthread_once_t s_chacha20_once = PTHREAD_ONCE_INIT;
 
 static int s_has_avx512_ifma = 0;
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
 extern void dap_chacha20_encrypt_asm(uint8_t *, const uint8_t *, size_t,
         const uint8_t[32], const uint8_t[12], uint32_t);
 #endif
@@ -116,8 +116,10 @@ static void s_chacha20_dispatch_init(void)
 {
     s_chacha20_simd_fn = NULL;
     s_has_avx512_ifma = 0;
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-    dap_cpu_arch_t l_arch = dap_cpu_arch_get_best();
+    dap_algo_class_t l_class = dap_algo_class_register("CHACHA20");
+    dap_cpu_arch_t l_arch = dap_cpu_arch_get_best_for(l_class);
+    (void)l_class; (void)l_arch;
+#if DAP_PLATFORM_X86
     if (l_arch >= DAP_CPU_ARCH_AVX512) {
         s_chacha20_simd_fn = dap_chacha20_encrypt_asm;
         dap_cpu_features_t l_feat = dap_cpu_detect_features();
@@ -126,8 +128,7 @@ static void s_chacha20_dispatch_init(void)
         s_chacha20_simd_fn = dap_chacha20_encrypt_avx2;
     else if (l_arch >= DAP_CPU_ARCH_SSE2)
         s_chacha20_simd_fn = dap_chacha20_encrypt_sse2;
-#elif defined(__aarch64__) || defined(__arm__)
-    dap_cpu_arch_t l_arch = dap_cpu_arch_get_best();
+#elif DAP_PLATFORM_ARM
     if (l_arch >= DAP_CPU_ARCH_NEON)
         s_chacha20_simd_fn = dap_chacha20_encrypt_neon;
 #endif
@@ -148,12 +149,12 @@ void dap_chacha20_encrypt(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
 
 /* ─── Poly1305 (RFC 8439 §2.5) — streaming ──────────────────────── */
 
-#if defined(__SIZEOF_INT128__) && (defined(__x86_64__) || defined(__aarch64__))
+#if defined(__SIZEOF_INT128__) && (DAP_PLATFORM_X86_64 || DAP_PLATFORM_ARM64)
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
 extern void dap_poly1305_blocks_avx2(s_poly1305_state_t *, const uint8_t *, size_t);
 extern void dap_poly1305_blocks_avx512_ifma(s_poly1305_state_t *, const uint8_t *, size_t);
-#elif defined(__aarch64__)
+#elif DAP_PLATFORM_ARM
 extern void dap_poly1305_blocks_neon(s_poly1305_state_t *, const uint8_t *, size_t);
 #endif
 
@@ -191,7 +192,7 @@ static void s_poly1305_update(s_poly1305_state_t *st, const uint8_t *data, size_
         len  -= want;
         st->buf_used = 0;
     }
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
     pthread_once(&s_chacha20_once, s_chacha20_dispatch_init);
     {
         size_t nblocks = len >> 4;
@@ -211,7 +212,7 @@ static void s_poly1305_update(s_poly1305_state_t *st, const uint8_t *data, size_
             }
         }
     }
-#elif defined(__aarch64__)
+#elif DAP_PLATFORM_ARM
     {
         size_t nblocks = len >> 4;
         if (nblocks >= 4) {

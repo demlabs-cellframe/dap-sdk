@@ -77,6 +77,26 @@ dap_arch_generate_variant(
     ARGS     "IMPL_FILE=${M}/arch/arm/polyvec_neon.tpl"
 )
 
+# Rejection sampling (rej_uniform) — per-arch with vendor-aware dispatch
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_rej_uniform_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_rej_uniform_generic.c
+    ARCH     generic
+    ARGS     "SAMPLE_BODY=${M}/arch/generic/rej_uniform_scalar.inc"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_rej_uniform_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_rej_uniform_avx2.c
+    ARCH     avx2
+    ARGS     "SAMPLE_BODY=${M}/arch/x86/rej_uniform_avx2.inc"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${M}/dap_mlkem_rej_uniform_simd.c.tpl
+    OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_rej_uniform_avx512_vbmi2.c
+    ARCH     avx512_vbmi2
+    ARGS     "SAMPLE_BODY=${M}/arch/x86/rej_uniform_avx512.inc"
+)
+
 # =============================================================================
 
 # AVX2+AVX-512VL NTT assembly — shared framework + x86 arch impl
@@ -131,6 +151,9 @@ macro(mlkem_add_variant target_name k_value)
             dap_mlkem_polyvec_neon.c     neon
             dap_mlkem_ntt_avx2.c         avx2
             dap_mlkem_ntt_neon.c         neon
+            dap_mlkem_rej_uniform_generic.c    generic
+            dap_mlkem_rej_uniform_avx2.c       avx2
+            dap_mlkem_rej_uniform_avx512_vbmi2.c  avx512_vbmi2
     )
 
     # NTT assembly (AVX2+AVX-512VL EVEX, 32 YMM registers, generated from .S.tpl)

@@ -6,7 +6,7 @@
 #include "dap_cpu_detect.h"
 #include "dap_arch_dispatch.h"
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
 #include <immintrin.h>
 #endif
 
@@ -36,7 +36,7 @@ void polyvecl_ntt(polyvecl *v, dilithium_param_t *p) {
 
 /*************************************************/
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
 #define DIL_Q    8380417
 #define DIL_QINV 4236238847U
 
@@ -294,4 +294,29 @@ void polyveck_use_hint(polyveck *w, const polyveck *u, const polyveck *h, dilith
 
   for(i = 0; i < p->PARAM_K; ++i)
     poly_use_hint(w->vec+i, u->vec+i, h->vec+i);
+}
+
+/*
+ * Parameterized variants for FIPS 204
+ */
+void polyveck_power2round_p(polyveck *v1, polyveck *v0, const polyveck *v, const dilithium_param_t *p) {
+  for (unsigned i = 0; i < p->PARAM_K; ++i)
+    poly_power2round_p(v1->vec+i, v0->vec+i, v->vec+i, p);
+}
+
+void polyveck_decompose_p(polyveck *v1, polyveck *v0, const polyveck *v, const dilithium_param_t *p) {
+  for (unsigned i = 0; i < p->PARAM_K; ++i)
+    poly_decompose_p(v1->vec+i, v0->vec+i, v->vec+i, p);
+}
+
+unsigned int polyveck_make_hint_p(polyveck *h, const polyveck *u, const polyveck *v, const dilithium_param_t *p) {
+  unsigned int s = 0;
+  for (unsigned i = 0; i < p->PARAM_K; ++i)
+    s += poly_make_hint_p(h->vec+i, u->vec+i, v->vec+i, p);
+  return s;
+}
+
+void polyveck_use_hint_p(polyveck *w, const polyveck *u, const polyveck *h, const dilithium_param_t *p) {
+  for (unsigned i = 0; i < p->PARAM_K; ++i)
+    poly_use_hint_p(w->vec+i, u->vec+i, h->vec+i, p);
 }

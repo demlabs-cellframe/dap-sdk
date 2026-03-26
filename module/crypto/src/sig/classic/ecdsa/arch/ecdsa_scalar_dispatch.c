@@ -28,8 +28,7 @@ static ecdsa_scalar_impl_info_t s_implementations[] = {
         .mul = ecdsa_scalar_mul_generic,
     },
     
-#if defined(__x86_64__) || defined(_M_X64)
-    // x86-64 ASM
+#if DAP_PLATFORM_X86_64
     {
         .name = "x86_64_asm",
         .description = "x86-64 inline assembly (MULQ)",
@@ -66,8 +65,7 @@ static ecdsa_scalar_impl_info_t s_implementations[] = {
     },
 #endif
 
-#if defined(__aarch64__)
-    // ARM64 NEON
+#if DAP_PLATFORM_ARM64
     {
         .name = "arm64_neon",
         .description = "ARM64 NEON (MUL/UMULH)",
@@ -134,7 +132,7 @@ static void s_scalar_dispatch_impl(void) {
     // Update availability and select implementation based on dap_cpu_arch
     for (size_t i = 0; i < s_num_implementations; i++) {
         switch (s_implementations[i].id) {
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
             case ECDSA_SCALAR_IMPL_AVX2_BMI2:
                 s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX2);
                 break;
@@ -142,7 +140,7 @@ static void s_scalar_dispatch_impl(void) {
                 s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX512);
                 break;
 #endif
-#if defined(__aarch64__) && !defined(__APPLE__)
+#if DAP_PLATFORM_ARM64 && !defined(__APPLE__)
             case ECDSA_SCALAR_IMPL_ARM64_SVE:
                 s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_SVE);
                 break;
@@ -154,7 +152,7 @@ static void s_scalar_dispatch_impl(void) {
     
     // Select best implementation based on detected architecture
     switch (best) {
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
         case DAP_CPU_ARCH_AVX512:
             s_current_impl = ECDSA_SCALAR_IMPL_AVX512;
             break;
@@ -165,7 +163,7 @@ static void s_scalar_dispatch_impl(void) {
             s_current_impl = ECDSA_SCALAR_IMPL_X86_64_ASM;
             break;
 #endif
-#if defined(__aarch64__)
+#if DAP_PLATFORM_ARM64
     #if !defined(__APPLE__)
         case DAP_CPU_ARCH_SVE2:
         case DAP_CPU_ARCH_SVE:

@@ -189,6 +189,8 @@ static void s_poly_basemul_ref(int16_t *a_r, const int16_t *a_a, const int16_t *
 
 static void s_mlkem_poly_dispatch_init(void)
 {
+    dap_algo_class_t l_class = dap_algo_class_register("MLKEM_POLY");
+
     DAP_DISPATCH_DEFAULT(s_compress_d4,      s_compress_d4_ref);
     DAP_DISPATCH_DEFAULT(s_compress_d5,      s_compress_d5_ref);
     DAP_DISPATCH_DEFAULT(s_decompress_d4,    s_decompress_d4_ref);
@@ -200,7 +202,7 @@ static void s_mlkem_poly_dispatch_init(void)
     DAP_DISPATCH_DEFAULT(s_mulcache_compute, s_mulcache_compute_ref);
     DAP_DISPATCH_DEFAULT(s_poly_basemul,     s_poly_basemul_ref);
 
-    DAP_DISPATCH_ARCH_SELECT;
+    DAP_DISPATCH_ARCH_SELECT_FOR(l_class);
 
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_compress_d4,      dap_mlkem_poly_compress_d4_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_compress_d5,      dap_mlkem_poly_compress_d5_avx2);

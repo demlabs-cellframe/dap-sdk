@@ -74,6 +74,29 @@ static void s_print_result(const bench_result_t *r)
     printf("\n");
 }
 
+static void s_print_cmp_header(const char *a_title, const char *a_comp)
+{
+    printf("\n=== %s ===\n", a_title);
+    printf("%-18s %10s %12s %10s\n", "Algorithm", "DAP (us)", a_comp, "Delta");
+    printf("%-18s %10s %12s %10s\n",
+           "------------------", "----------", "------------", "----------");
+}
+
+static void s_print_cmp_row(const char *a_algo, double a_dap_us, double a_comp_us)
+{
+    if (a_dap_us < 0 && a_comp_us < 0) return;
+    if (a_comp_us <= 0) {
+        printf("%-18s %10.2f %12s %10s\n", a_algo, a_dap_us, "n/a", "");
+        return;
+    }
+    if (a_dap_us <= 0) {
+        printf("%-18s %10s %12.2f %10s\n", a_algo, "n/a", a_comp_us, "");
+        return;
+    }
+    double delta = (a_comp_us - a_dap_us) / a_comp_us * 100.0;
+    printf("%-18s %10.2f %12.2f  %+8.1f%%\n", a_algo, a_dap_us, a_comp_us, delta);
+}
+
 /* ---- ML-KEM raw benchmark via dap_kem.h ---- */
 
 static bench_result_t s_bench_mlkem_raw(dap_kem_alg_t a_alg, const char *a_name)
@@ -238,46 +261,55 @@ static bench_result_t s_bench_mlkem_oqs(const char *a_alg_name, const char *a_la
 
 static void s_benchmark_mlkem(void)
 {
-    static const struct { dap_kem_alg_t alg; const char *dap; const char *oqs_alg; const char *oqs_label; }
-    s_variants[] = {
-        { DAP_KEM_ALG_ML_KEM_512,  "DAP ML-KEM-512",
+    static const struct {
+        dap_kem_alg_t alg;
+        const char *name;
+        const char *oqs_alg;
+    } s_variants[] = {
+        { DAP_KEM_ALG_ML_KEM_512,  "ML-KEM-512",
 #ifdef HAVE_LIBOQS
-          OQS_KEM_alg_kyber_512,
+          OQS_KEM_alg_kyber_512
 #else
-          NULL,
+          NULL
 #endif
-          "liboqs ML-KEM-512" },
-        { DAP_KEM_ALG_ML_KEM_768,  "DAP ML-KEM-768",
+        },
+        { DAP_KEM_ALG_ML_KEM_768,  "ML-KEM-768",
 #ifdef HAVE_LIBOQS
-          OQS_KEM_alg_kyber_768,
+          OQS_KEM_alg_kyber_768
 #else
-          NULL,
+          NULL
 #endif
-          "liboqs ML-KEM-768" },
-        { DAP_KEM_ALG_ML_KEM_1024, "DAP ML-KEM-1024",
+        },
+        { DAP_KEM_ALG_ML_KEM_1024, "ML-KEM-1024",
 #ifdef HAVE_LIBOQS
-          OQS_KEM_alg_kyber_1024,
+          OQS_KEM_alg_kyber_1024
 #else
-          NULL,
+          NULL
 #endif
-          "liboqs ML-KEM-1024" },
+        },
     };
 
-    s_print_header("ML-KEM (encaps + decaps) — raw stateless comparison");
-    bench_result_t r;
-    for (size_t i = 0; i < sizeof(s_variants)/sizeof(s_variants[0]); i++) {
-        if (!getenv("BENCH_OQS_ONLY")) {
-            r = s_bench_mlkem_raw(s_variants[i].alg, s_variants[i].dap);
-            s_print_result(&r);
-        }
 #ifdef HAVE_LIBOQS
-        if (!getenv("BENCH_DAP_ONLY") && s_variants[i].oqs_alg) {
-            r = s_bench_mlkem_oqs(s_variants[i].oqs_alg, s_variants[i].oqs_label);
-            if (r.us_per_op >= 0) s_print_result(&r);
+    s_print_cmp_header("ML-KEM (encaps + decaps)", "liboqs (us)");
+    for (size_t i = 0; i < sizeof(s_variants)/sizeof(s_variants[0]); i++) {
+        bench_result_t dap = s_bench_mlkem_raw(s_variants[i].alg, s_variants[i].name);
+        bench_result_t oqs = { .us_per_op = -1 };
+        if (s_variants[i].oqs_alg)
+            oqs = s_bench_mlkem_oqs(s_variants[i].oqs_alg, s_variants[i].name);
+        s_print_cmp_row(s_variants[i].name, dap.us_per_op, oqs.us_per_op);
+        if (dap.enc_us > 0 && oqs.enc_us > 0 && getenv("BENCH_DETAIL")) {
+            printf("  enc: DAP %.2f vs liboqs %.2f   dec: DAP %.2f vs liboqs %.2f\n",
+                   dap.enc_us, oqs.enc_us, dap.dec_us, oqs.dec_us);
         }
-#endif
     }
-#ifndef HAVE_LIBOQS
+#else
+    s_print_header("ML-KEM (encaps + decaps)");
+    for (size_t i = 0; i < sizeof(s_variants)/sizeof(s_variants[0]); i++) {
+        char l_name[64];
+        snprintf(l_name, sizeof(l_name), "DAP %s", s_variants[i].name);
+        bench_result_t r = s_bench_mlkem_raw(s_variants[i].alg, l_name);
+        s_print_result(&r);
+    }
     printf("  (liboqs not available — run download_competitors.sh)\n");
 #endif
 
@@ -287,7 +319,7 @@ static void s_benchmark_mlkem(void)
         for (size_t i = 0; i < sizeof(s_variants)/sizeof(s_variants[0]); i++) {
             char l_name[64];
             snprintf(l_name, sizeof(l_name), "DAP %s (ctx)", dap_kem_alg_name(s_variants[i].alg));
-            r = s_bench_mlkem_ctx(s_variants[i].alg, l_name);
+            bench_result_t r = s_bench_mlkem_ctx(s_variants[i].alg, l_name);
             s_print_result(&r);
         }
     }
@@ -423,24 +455,51 @@ static bench_result_t s_bench_mldsa_dap_raw(uint8_t a_level, const char *a_name)
 
 static void s_benchmark_mldsa(void)
 {
-    s_print_header("ML-DSA (verify)");
-
-    bench_result_t r;
-    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_2, "DAP ML-DSA-44");
-    if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_3, "DAP ML-DSA-65");
-    if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_dap_raw(DAP_SIGN_PARAMS_SECURITY_5, "DAP ML-DSA-87");
-    if (r.us_per_op >= 0) s_print_result(&r);
+    static const struct {
+        uint8_t level;
+        const char *name;
+        const char *oqs_alg;
+    } s_variants[] = {
+        { DAP_SIGN_PARAMS_SECURITY_2, "ML-DSA-44",
+#ifdef HAVE_LIBOQS
+          OQS_SIG_alg_ml_dsa_44
+#else
+          NULL
+#endif
+        },
+        { DAP_SIGN_PARAMS_SECURITY_3, "ML-DSA-65",
+#ifdef HAVE_LIBOQS
+          OQS_SIG_alg_ml_dsa_65
+#else
+          NULL
+#endif
+        },
+        { DAP_SIGN_PARAMS_SECURITY_5, "ML-DSA-87",
+#ifdef HAVE_LIBOQS
+          OQS_SIG_alg_ml_dsa_87
+#else
+          NULL
+#endif
+        },
+    };
 
 #ifdef HAVE_LIBOQS
-    r = s_bench_mldsa_oqs(OQS_SIG_alg_ml_dsa_44, "liboqs ML-DSA-44");
-    if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_oqs(OQS_SIG_alg_ml_dsa_65, "liboqs ML-DSA-65");
-    if (r.us_per_op >= 0) s_print_result(&r);
-    r = s_bench_mldsa_oqs(OQS_SIG_alg_ml_dsa_87, "liboqs ML-DSA-87");
-    if (r.us_per_op >= 0) s_print_result(&r);
+    s_print_cmp_header("ML-DSA (verify)", "liboqs (us)");
+    for (size_t i = 0; i < sizeof(s_variants)/sizeof(s_variants[0]); i++) {
+        bench_result_t dap = s_bench_mldsa_dap_raw(s_variants[i].level, s_variants[i].name);
+        bench_result_t oqs = { .us_per_op = -1 };
+        if (s_variants[i].oqs_alg)
+            oqs = s_bench_mldsa_oqs(s_variants[i].oqs_alg, s_variants[i].name);
+        s_print_cmp_row(s_variants[i].name, dap.us_per_op, oqs.us_per_op);
+    }
 #else
+    s_print_header("ML-DSA (verify)");
+    for (size_t i = 0; i < sizeof(s_variants)/sizeof(s_variants[0]); i++) {
+        char l_name[64];
+        snprintf(l_name, sizeof(l_name), "DAP %s", s_variants[i].name);
+        bench_result_t r = s_bench_mldsa_dap_raw(s_variants[i].level, l_name);
+        if (r.us_per_op >= 0) s_print_result(&r);
+    }
     printf("  (liboqs not available)\n");
 #endif
 }
@@ -449,8 +508,6 @@ static void s_benchmark_mldsa(void)
 
 static void s_benchmark_chacha20(void)
 {
-    s_print_header("ChaCha20-Poly1305 (encrypt 4096 bytes)");
-
     const size_t MSG_LEN = 4096;
     uint8_t *l_msgs[BENCH_POOL];
     for (int j = 0; j < BENCH_POOL; j++) {
@@ -480,8 +537,8 @@ static void s_benchmark_chacha20(void)
                                     NULL, 0, l_keys[j]->priv_key_data, l_nonce);
     }
 
-    uint64_t l_total = 0;
     int iters = BENCH_ITERS * 10;
+    uint64_t l_total = 0;
     for (int i = 0; i < iters; i++) {
         int j = i % BENCH_POOL;
         uint64_t t0 = s_rdtsc_or_clock();
@@ -490,11 +547,8 @@ static void s_benchmark_chacha20(void)
         uint64_t t1 = s_rdtsc_or_clock();
         l_total += t1 - t0;
     }
-    double us = (double)l_total / iters / 1000.0;
-    bench_result_t r = { .name = "DAP ChaCha20-Poly1305", .us_per_op = us, .ops_per_sec = 1000000.0 / us };
-    s_print_result(&r);
-    double mbps = (double)MSG_LEN * iters / ((double)l_total / 1e9) / (1024 * 1024);
-    printf("  Throughput: %.1f MB/s\n", mbps);
+    double dap_us = (double)l_total / iters / 1000.0;
+    double dap_mbps = (double)MSG_LEN * iters / ((double)l_total / 1e9) / (1024 * 1024);
 
     if (getenv("BENCH_DETAIL")) {
         uint8_t l_key32[32], l_poly_tag[16];
@@ -516,6 +570,15 @@ static void s_benchmark_chacha20(void)
 
     for (int j = 0; j < BENCH_POOL; j++) dap_enc_key_delete(l_keys[j]);
 
+#if defined(HAVE_OPENSSL) || defined(HAVE_LIBSODIUM)
+    s_print_cmp_header("ChaCha20-Poly1305 (4096 B)", "Competitor");
+#else
+    s_print_header("ChaCha20-Poly1305 (encrypt 4096 bytes)");
+    bench_result_t r = { .name = "DAP ChaCha20-Poly1305", .us_per_op = dap_us, .ops_per_sec = 1000000.0 / dap_us };
+    s_print_result(&r);
+    printf("  Throughput: %.1f MB/s\n", dap_mbps);
+#endif
+
 #ifdef HAVE_OPENSSL
     {
         EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
@@ -533,11 +596,8 @@ static void s_benchmark_chacha20(void)
             uint64_t t1 = s_rdtsc_or_clock();
             l_total += t1 - t0;
         }
-        us = (double)l_total / iters / 1000.0;
-        r = (bench_result_t){ .name = "OpenSSL ChaCha20-Poly1305", .us_per_op = us, .ops_per_sec = 1000000.0 / us };
-        s_print_result(&r);
-        mbps = (double)MSG_LEN * iters / ((double)l_total / 1e9) / (1024 * 1024);
-        printf("  Throughput: %.1f MB/s\n", mbps);
+        double ossl_us = (double)l_total / iters / 1000.0;
+        s_print_cmp_row("vs OpenSSL", dap_us, ossl_us);
         EVP_CIPHER_CTX_free(ctx);
     }
 #else
@@ -559,14 +619,15 @@ static void s_benchmark_chacha20(void)
             uint64_t t1 = s_rdtsc_or_clock();
             l_total += t1 - t0;
         }
-        us = (double)l_total / iters / 1000.0;
-        r = (bench_result_t){ .name = "libsodium ChaCha20-Poly1305", .us_per_op = us, .ops_per_sec = 1000000.0 / us };
-        s_print_result(&r);
-        mbps = (double)MSG_LEN * iters / ((double)l_total / 1e9) / (1024 * 1024);
-        printf("  Throughput: %.1f MB/s\n", mbps);
+        double sodium_us = (double)l_total / iters / 1000.0;
+        s_print_cmp_row("vs libsodium", dap_us, sodium_us);
     }
 #else
     printf("  (libsodium not available)\n");
+#endif
+
+#if defined(HAVE_OPENSSL) || defined(HAVE_LIBSODIUM)
+    printf("  DAP throughput: %.1f MB/s\n", dap_mbps);
 #endif
 
     for (int j = 0; j < BENCH_POOL; j++) DAP_DELETE(l_msgs[j]);
@@ -577,8 +638,6 @@ static void s_benchmark_chacha20(void)
 
 static void s_benchmark_aes(void)
 {
-    s_print_header("AES-256-CBC (encrypt 4096 bytes)");
-
     const size_t MSG_LEN = 4096;
     uint8_t *l_msgs[BENCH_POOL];
     for (int j = 0; j < BENCH_POOL; j++) {
@@ -619,16 +678,14 @@ static void s_benchmark_aes(void)
         uint64_t t1 = s_rdtsc_or_clock();
         l_total += t1 - t0;
     }
-    double us = (double)l_total / iters / 1000.0;
-    bench_result_t r = { .name = "DAP AES-256-CBC", .us_per_op = us, .ops_per_sec = 1000000.0 / us };
-    s_print_result(&r);
-    double mbps = (double)MSG_LEN * iters / ((double)l_total / 1e9) / (1024 * 1024);
-    printf("  Throughput: %.1f MB/s\n", mbps);
+    double dap_us = (double)l_total / iters / 1000.0;
+    double dap_mbps = (double)MSG_LEN * iters / ((double)l_total / 1e9) / (1024 * 1024);
 
     for (int j = 0; j < BENCH_POOL; j++) dap_enc_key_delete(l_keys[j]);
 
 #ifdef HAVE_OPENSSL
     {
+        s_print_cmp_header("AES-256-CBC (4096 B)", "OpenSSL(us)");
         EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
         uint8_t key[32], iv[16];
         RAND_bytes(key, 32);
@@ -643,14 +700,16 @@ static void s_benchmark_aes(void)
             uint64_t t1 = s_rdtsc_or_clock();
             l_total += t1 - t0;
         }
-        us = (double)l_total / iters / 1000.0;
-        r = (bench_result_t){ .name = "OpenSSL AES-256-CBC", .us_per_op = us, .ops_per_sec = 1000000.0 / us };
-        s_print_result(&r);
-        mbps = (double)MSG_LEN * iters / ((double)l_total / 1e9) / (1024 * 1024);
-        printf("  Throughput: %.1f MB/s\n", mbps);
+        double ossl_us = (double)l_total / iters / 1000.0;
+        s_print_cmp_row("AES-256-CBC", dap_us, ossl_us);
+        printf("  DAP throughput: %.1f MB/s\n", dap_mbps);
         EVP_CIPHER_CTX_free(ctx);
     }
 #else
+    s_print_header("AES-256-CBC (encrypt 4096 bytes)");
+    bench_result_t r = { .name = "DAP AES-256-CBC", .us_per_op = dap_us, .ops_per_sec = 1000000.0 / dap_us };
+    s_print_result(&r);
+    printf("  Throughput: %.1f MB/s\n", dap_mbps);
     printf("  (OpenSSL not available)\n");
 #endif
 

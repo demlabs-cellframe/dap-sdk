@@ -39,13 +39,15 @@
 extern const dap_ntt_params_t g_dilithium_ntt_params;
 extern void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_param_t *p);
 extern void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, dilithium_param_t *p);
+extern void mldsa_sample_in_ball(poly *c, const unsigned char *c_tilde, const dilithium_param_t *p);
 
 typedef struct {
     polyvecl z;
     polyveck t1, h;
     poly c, chat;
     unsigned char rho[SEEDBYTES];
-    unsigned char mu[CRHBYTES];
+    unsigned char mu[64]; /* max(CRHBYTES, CRHBYTES_FIPS) = 64 */
+    unsigned char c_tilde[64];
     uint8_t valid;
 } s_sig_ctx_t;
 
@@ -147,22 +149,30 @@ int dilithium_crypto_sign_open_batch(
 
         dilithium_unpack_pk(l_ctx[i].rho, &l_ctx[i].t1,
                             a_pub_keys[i]->data, &l_params);
-        if (dilithium_unpack_sig(&l_ctx[i].z, &l_ctx[i].h, &l_ctx[i].c,
+        if (l_params.is_fips204) {
+            if (mldsa_unpack_sig(l_ctx[i].c_tilde, &l_ctx[i].z, &l_ctx[i].h,
                                   a_sigs[i]->sig_data, &l_params))
-            continue;
-        if (polyvecl_chknorm(&l_ctx[i].z, GAMMA1 - l_params.PARAM_BETA, &l_params))
+                continue;
+            mldsa_sample_in_ball(&l_ctx[i].c, l_ctx[i].c_tilde, &l_params);
+        } else {
+            if (dilithium_unpack_sig(&l_ctx[i].z, &l_ctx[i].h, &l_ctx[i].c,
+                                      a_sigs[i]->sig_data, &l_params))
+                continue;
+        }
+        if (polyvecl_chknorm(&l_ctx[i].z, dil_gamma1(&l_params) - l_params.PARAM_BETA, &l_params))
             continue;
 
-        unsigned char *l_tmp = malloc(CRHBYTES + a_msg_lens[i]);
+        uint32_t l_crh = dil_crhbytes(&l_params);
+        unsigned char *l_tmp = malloc(l_crh + a_msg_lens[i]);
         if (!l_tmp) { free(l_ctx); return -1; }
-        dap_hash_shake256(l_tmp, CRHBYTES,
+        dap_hash_shake256(l_tmp, l_crh,
                           a_pub_keys[i]->data, l_params.CRYPTO_PUBLICKEYBYTES);
-        memcpy(l_tmp + CRHBYTES, a_msgs[i], a_msg_lens[i]);
-        dap_hash_shake256(l_ctx[i].mu, CRHBYTES, l_tmp, CRHBYTES + a_msg_lens[i]);
+        memcpy(l_tmp + l_crh, a_msgs[i], a_msg_lens[i]);
+        dap_hash_shake256(l_ctx[i].mu, l_crh, l_tmp, l_crh + a_msg_lens[i]);
         free(l_tmp);
 
         l_ctx[i].chat = l_ctx[i].c;
-        polyveck_shiftl(&l_ctx[i].t1, D, &l_params);
+        polyveck_shiftl(&l_ctx[i].t1, dil_d(&l_params), &l_params);
         l_ctx[i].valid = 1;
         l_valid_count++;
     }
@@ -274,15 +284,32 @@ int dilithium_crypto_sign_open_batch(
                     (int64_t)l_f * (int32_t)l_tmp1.vec[j].coeffs[c], l_ntt);
 
         polyveck_csubq(&l_tmp1, &l_params);
-        polyveck_use_hint(&l_w1, &l_tmp1, &l_ctx[i].h, &l_params);
+        if (l_params.is_fips204) {
+            polyveck_use_hint_p(&l_w1, &l_tmp1, &l_ctx[i].h, &l_params);
+        } else {
+            polyveck_use_hint(&l_w1, &l_tmp1, &l_ctx[i].h, &l_params);
+        }
 
-        challenge(&l_cp, l_ctx[i].mu, &l_w1, &l_params);
-
-        int l_ok = 1;
-        for (uint32_t c = 0; c < NN; c++) {
-            if (l_ctx[i].c.coeffs[c] != l_cp.coeffs[c]) {
-                l_ok = 0;
-                break;
+        int l_ok;
+        if (l_params.is_fips204) {
+            uint32_t l_crh = dil_crhbytes(&l_params);
+            uint32_t l_ctilde_bytes = dil_ctildebytes(&l_params);
+            unsigned char l_inbuf[l_crh + K * l_params.PARAM_POLW1_SIZE_PACKED];
+            unsigned char l_ctilde_check[64];
+            memcpy(l_inbuf, l_ctx[i].mu, l_crh);
+            for (uint32_t j = 0; j < K; j++)
+                polyw1_pack_p(l_inbuf + l_crh + j * l_params.PARAM_POLW1_SIZE_PACKED,
+                              l_w1.vec + j, &l_params);
+            dap_hash_shake256(l_ctilde_check, l_ctilde_bytes, l_inbuf, sizeof(l_inbuf));
+            l_ok = (memcmp(l_ctx[i].c_tilde, l_ctilde_check, l_ctilde_bytes) == 0) ? 1 : 0;
+        } else {
+            challenge(&l_cp, l_ctx[i].mu, &l_w1, &l_params);
+            l_ok = 1;
+            for (uint32_t c = 0; c < NN; c++) {
+                if (l_ctx[i].c.coeffs[c] != l_cp.coeffs[c]) {
+                    l_ok = 0;
+                    break;
+                }
             }
         }
         a_results[i] = l_ok ? 0 : -7;

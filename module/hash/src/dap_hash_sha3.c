@@ -50,7 +50,7 @@ bool dap_hash_sha3_256(const void *a_data_in, size_t a_data_in_size, dap_hash_sh
     if (a_data_in == NULL && a_data_in_size > 0)
         return false;
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1)) {
         uint64_t l_st[25];
         dap_keccak_absorb_136_avx512vl_asm(l_st,

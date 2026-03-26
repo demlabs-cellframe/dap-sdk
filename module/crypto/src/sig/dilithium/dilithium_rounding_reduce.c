@@ -42,64 +42,71 @@ uint32_t freeze(uint32_t a)
 }
 
 /*************************************************/
-uint32_t power2round(uint32_t a, uint32_t *a0)
+uint32_t power2round_p(uint32_t a, uint32_t *a0, const dilithium_param_t *p)
 {
+    uint32_t d_val = dil_d(p);
     int32_t t;
-
-    /* Centralized remainder mod 2^D */
-    t = a & ((1 << D) - 1);
-    t -= (1 << (D-1)) + 1;
-    t += (t >> 31) & (1 << D);
-    t -= (1 << (D-1)) - 1;
+    t = a & ((1 << d_val) - 1);
+    t -= (1 << (d_val-1)) + 1;
+    t += (t >> 31) & (1 << d_val);
+    t -= (1 << (d_val-1)) - 1;
     *a0 = Q + t;
-    a = (a - t) >> D;
-    return a;
+    return (a - t) >> d_val;
 }
 
 /*************************************************/
-uint32_t decompose(uint32_t a, uint32_t *a0)
+uint32_t decompose_p(uint32_t a, uint32_t *a0, const dilithium_param_t *p)
 {
-#if ALPHA != (Q-1)/16
-#error "decompose assumes ALPHA == (Q-1)/16"
-#endif
-    int32_t t, u;
+    int32_t a1;
+    uint32_t gamma2 = dil_gamma2(p);
 
-    t = a & 0x7FFFF;
-    t += (a >> 19) << 9;
-    t -= ALPHA/2 + 1;
-    t += (t >> 31) & ALPHA;
-    t -= ALPHA/2 - 1;
-    a -= t;
+    a1 = (a + 127) >> 7;
 
-    u = a - 1;
-    u >>= 31;
-    a = (a >> 19) + 1;
-    a -= u & 1;
+    if (gamma2 == (Q - 1) / 32) {
+        a1 = (a1 * 1025 + (1 << 21)) >> 22;
+        a1 &= 15;
+    } else {
+        /* gamma2 == (Q - 1) / 88 */
+        a1 = (a1 * 11275 + (1 << 23)) >> 24;
+        a1 ^= ((43 - a1) >> 31) & a1;
+    }
 
-    *a0 = Q + t - (a >> 4);
-    a &= 0xF;
-    return a;
+    /* Compute centered remainder, store as Q + centered for our convention */
+    int32_t r0 = (int32_t)a - a1 * (int32_t)(2 * gamma2);
+    r0 -= (((int32_t)(Q - 1) / 2 - r0) >> 31) & (int32_t)Q;
+    *a0 = (uint32_t)((int32_t)Q + r0);
+    return (uint32_t)a1;
 }
 
 /*************************************************/
-unsigned int make_hint(const uint32_t a, const uint32_t b)
+unsigned int make_hint_p(uint32_t a, uint32_t b, const dilithium_param_t *p)
 {
     uint32_t t;
-
-    return decompose(a, &t) != decompose(b, &t);
+    return decompose_p(a, &t, p) != decompose_p(b, &t, p);
 }
 
 /*************************************************/
-uint32_t use_hint(const uint32_t a, const unsigned int hint)
+uint32_t use_hint_p(uint32_t a, unsigned int hint, const dilithium_param_t *p)
 {
     uint32_t a0, a1;
+    uint32_t gamma2 = dil_gamma2(p);
 
-    a1 = decompose(a, &a0);
-    if(hint == 0)
+    a1 = decompose_p(a, &a0, p);
+    if (hint == 0)
         return a1;
-    else if(a0 > Q)
-        return (a1 + 1) & 0xF;
-    else
-        return (a1 - 1) & 0xF;
+
+    /* a0 stored as Q + centered: a0 > Q means positive centered value */
+    if (gamma2 == (Q - 1) / 32) {
+        if (a0 > Q)
+            return (a1 + 1) & 15;
+        else
+            return (a1 - 1) & 15;
+    } else {
+        /* gamma2 == (Q - 1) / 88 */
+        if (a0 > Q)
+            return (a1 == 43) ? 0 : a1 + 1;
+        else
+            return (a1 == 0) ? 43 : a1 - 1;
+    }
 }
 

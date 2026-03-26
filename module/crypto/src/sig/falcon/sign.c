@@ -30,6 +30,7 @@
  */
 
 #include "inner.h"
+#include "dap_cpu_arch.h"
 
 /* =================================================================== */
 
@@ -1175,7 +1176,7 @@ Zf(gaussian0_sampler)(prng *p)
 	 * On 32-bit systems, 'lo' really is two registers, requiring
 	 * some extra code.
 	 */
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
 	xlo = _mm256_broadcastq_epi64(_mm_cvtsi64_si128(*(int64_t *)&lo));
 #else
 	{

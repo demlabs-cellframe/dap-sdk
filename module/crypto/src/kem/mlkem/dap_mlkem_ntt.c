@@ -33,19 +33,18 @@ static const int16_t s_zetas[128] = {
 const int16_t *MLKEM_NAMESPACE(_get_zetas)(void) { return s_zetas; }
 
 /* Specialized NTT — generated from dap_mlkem_ntt_simd.c.tpl */
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
 void dap_mlkem_ntt_forward_avx2(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_avx2(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_nttpack_avx2(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_nttunpack_avx2(int16_t a_coeffs[256]);
-/* Hand-written AVX2+AVX-512VL assembly NTT (32 YMM registers, zero spills) */
 void dap_mlkem_ntt_forward_asm(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_asm(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_nttpack_asm(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_nttunpack_asm(int16_t a_coeffs[256]);
 #endif
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if DAP_PLATFORM_ARM
 void dap_mlkem_ntt_forward_neon(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_inverse_neon(int16_t a_coeffs[256]);
 void dap_mlkem_ntt_nttpack_neon(int16_t a_coeffs[256]);

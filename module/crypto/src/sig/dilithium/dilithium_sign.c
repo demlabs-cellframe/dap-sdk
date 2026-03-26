@@ -96,6 +96,60 @@ void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, di
 }
 
 /********************************************************************************************/
+void mldsa_sample_in_ball(poly *c, const unsigned char *c_tilde, const dilithium_param_t *p)
+{
+    unsigned int i, b, pos;
+    uint32_t tau = dil_tau(p);
+    uint32_t ctilde_bytes = dil_ctildebytes(p);
+    unsigned char outbuf[DAP_SHAKE256_RATE];
+    uint64_t state[25] = {0}, signs, mask;
+
+    dap_hash_shake256_absorb(state, c_tilde, ctilde_bytes);
+    dap_hash_shake256_squeezeblocks(outbuf, 1, state);
+
+    signs = 0;
+    for (i = 0; i < 8; ++i)
+        signs |= (uint64_t)outbuf[i] << 8 * i;
+
+    pos = 8;
+    mask = 1;
+
+    for (i = 0; i < NN; ++i)
+        c->coeffs[i] = 0;
+
+    for (i = NN - tau; i < NN; ++i) {
+        do {
+            if (pos >= DAP_SHAKE256_RATE) {
+                dap_hash_shake256_squeezeblocks(outbuf, 1, state);
+                pos = 0;
+            }
+            b = outbuf[pos++];
+        } while (b > i);
+
+        c->coeffs[i] = c->coeffs[b];
+        c->coeffs[b] = (signs & mask) ? Q - 1 : 1;
+        mask <<= 1;
+    }
+}
+
+/* FIPS 204: compute c_tilde = H(mu || w1_encode) — returns c_tilde and challenge poly */
+static void mldsa_challenge_hash(unsigned char *c_tilde, poly *c,
+                                  const unsigned char *mu, const polyveck *w1,
+                                  const dilithium_param_t *p)
+{
+    uint32_t crh = dil_crhbytes(p);
+    uint32_t ctilde_bytes = dil_ctildebytes(p);
+    unsigned char inbuf[crh + p->PARAM_K * p->PARAM_POLW1_SIZE_PACKED];
+
+    memcpy(inbuf, mu, crh);
+    for (unsigned i = 0; i < p->PARAM_K; ++i)
+        polyw1_pack_p(inbuf + crh + i * p->PARAM_POLW1_SIZE_PACKED, w1->vec + i, p);
+
+    dap_hash_shake256(c_tilde, ctilde_bytes, inbuf, sizeof(inbuf));
+    mldsa_sample_in_ball(c, c_tilde, p);
+}
+
+/********************************************************************************************/
 void dilithium_private_key_delete(void *private_key)
 {
     dap_return_if_pass(!private_key);
@@ -168,7 +222,8 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
 
     unsigned int i;
     unsigned char seedbuf[3*SEEDBYTES];
-    unsigned char tr[CRHBYTES];
+    uint32_t crh = dil_crhbytes(p);
+    unsigned char tr[crh];
     unsigned char *rho, *rhoprime, *key;
     uint16_t nonce = 0;
     polyvecl mat[p->PARAM_K];
@@ -183,7 +238,6 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
         dap_random_bytes(seedbuf, SEEDBYTES);
     }
 
-    //SHAKE256(seedbuf, 3*SEEDBYTES, seedbuf, SEEDBYTES);
     dap_hash_shake256(seedbuf, 3*SEEDBYTES, seedbuf, SEEDBYTES);
     rho = seedbuf;
     rhoprime = rho + SEEDBYTES;
@@ -216,14 +270,23 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
     }
 
     polyveck_add(&t, &t, &s2, p);
-
     polyveck_freeze(&t, p);
-    polyveck_power2round(&t1, &t0, &t, p);
+
+    if (p->is_fips204) {
+        polyveck_power2round_p(&t1, &t0, &t, p);
+    } else {
+        polyveck_power2round(&t1, &t0, &t, p);
+    }
+
     dilithium_pack_pk(public_key->data, rho, &t1, p);
 
-    //SHAKE256(tr, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
-    dap_hash_shake256(tr, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
-    dilithium_pack_sk(private_key->data, rho, key, tr, &s1, &s2, &t0, p);
+    dap_hash_shake256(tr, crh, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
+
+    if (p->is_fips204) {
+        mldsa_pack_sk(private_key->data, rho, key, tr, &s1, &s2, &t0, p);
+    } else {
+        dilithium_pack_sk(private_key->data, rho, key, tr, &s1, &s2, &t0, p);
+    }
 
     return 0;
 }
@@ -236,30 +299,40 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
     if (!dilithium_params_init(p, private_key->kind))
         return 1;
 
+    const int fips = p->is_fips204;
+    const uint32_t crh = dil_crhbytes(p);
+    const uint32_t gamma1 = dil_gamma1(p);
+    const uint32_t gamma2 = dil_gamma2(p);
+
     unsigned long long i, j;
     unsigned int n;
-    byte_t seedbuf[2*SEEDBYTES + CRHBYTES]={0};
-    byte_t tr[CRHBYTES]={0};
+    byte_t seedbuf[2*SEEDBYTES + 64]={0};
+    byte_t tr[64]={0};
     unsigned char *rho, *key, *mu;
     uint16_t nonce = 0;
     poly c, chat;
     polyvecl mat[p->PARAM_K], s1, y, yhat, z;
     polyveck s2, t0, w, w1;
     polyveck h, wcs2, wcs20, ct0, tmp;
+    unsigned char c_tilde[64];
 
     rho = seedbuf;
     key = seedbuf + SEEDBYTES;
     mu = seedbuf + 2*SEEDBYTES;
-    dilithium_unpack_sk(rho, key, tr, &s1, &s2, &t0, private_key->data, p);
+
+    if (fips) {
+        mldsa_unpack_sk(rho, key, tr, &s1, &s2, &t0, private_key->data, p);
+    } else {
+        dilithium_unpack_sk(rho, key, tr, &s1, &s2, &t0, private_key->data, p);
+    }
 
     sig->sig_len = mlen + p->CRYPTO_BYTES;
     sig->sig_data = DAP_NEW_Z_SIZE(unsigned char, sig->sig_len);
 
     memcpy(sig->sig_data + p->CRYPTO_BYTES, m, mlen);
-    memcpy(sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, tr, CRHBYTES);
+    memcpy(sig->sig_data + p->CRYPTO_BYTES - crh, tr, crh);
 
-    //SHAKE256(mu, CRHBYTES, sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, CRHBYTES + mlen);
-    dap_hash_shake256(mu, CRHBYTES, sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, CRHBYTES + mlen);
+    dap_hash_shake256(mu, crh, sig->sig_data + p->CRYPTO_BYTES - crh, crh + mlen);
 
     expand_mat(mat, rho, p);
     polyvecl_ntt(&s1, p);
@@ -267,13 +340,18 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
     polyveck_ntt(&t0, p);
 
     while(1){
-        for(i = 0; i + 4 <= p->PARAM_L; i += 4) {
-            poly_uniform_gamma1m1_x4(&y.vec[i], &y.vec[i+1], &y.vec[i+2], &y.vec[i+3],
-                                      key, nonce, nonce+1, nonce+2, nonce+3);
-            nonce += 4;
+        if (fips) {
+            for (i = 0; i < p->PARAM_L; ++i)
+                poly_uniform_gamma1m1_p(y.vec + i, key, nonce++, p);
+        } else {
+            for(i = 0; i + 4 <= p->PARAM_L; i += 4) {
+                poly_uniform_gamma1m1_x4(&y.vec[i], &y.vec[i+1], &y.vec[i+2], &y.vec[i+3],
+                                          key, nonce, nonce+1, nonce+2, nonce+3);
+                nonce += 4;
+            }
+            for(; i < p->PARAM_L; ++i)
+                poly_uniform_gamma1m1(y.vec+i, key, nonce++);
         }
-        for(; i < p->PARAM_L; ++i)
-            poly_uniform_gamma1m1(y.vec+i, key, nonce++);
 
         yhat = y;
         polyvecl_ntt(&yhat, p);
@@ -284,8 +362,13 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
         }
 
         polyveck_csubq(&w, p);
-        polyveck_decompose(&w1, &tmp, &w, p);
-        challenge(&c, mu, &w1, p);
+        if (fips) {
+            polyveck_decompose_p(&w1, &tmp, &w, p);
+            mldsa_challenge_hash(c_tilde, &c, mu, &w1, p);
+        } else {
+            polyveck_decompose(&w1, &tmp, &w, p);
+            challenge(&c, mu, &w1, p);
+        }
 
         chat = c;
         dilithium_poly_ntt(&chat);
@@ -295,7 +378,7 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
         }
         polyvecl_add(&z, &z, &y, p);
         polyvecl_freeze(&z, p);
-        if(!polyvecl_chknorm(&z, GAMMA1 - p->PARAM_BETA, p)){
+        if(!polyvecl_chknorm(&z, gamma1 - p->PARAM_BETA, p)){
 
             for(i = 0; i < p->PARAM_K; ++i) {
                 poly_pointwise_invmontgomery(wcs2.vec + i, &chat, s2.vec + i);
@@ -303,9 +386,13 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
             }
             polyveck_sub(&wcs2, &w, &wcs2, p);
             polyveck_freeze(&wcs2, p);
-            polyveck_decompose(&tmp, &wcs20, &wcs2, p);
+            if (fips) {
+                polyveck_decompose_p(&tmp, &wcs20, &wcs2, p);
+            } else {
+                polyveck_decompose(&tmp, &wcs20, &wcs2, p);
+            }
             polyveck_csubq(&wcs20, p);
-            if(!polyveck_chknorm(&wcs20, GAMMA2 - p->PARAM_BETA, p)){
+            if(!polyveck_chknorm(&wcs20, gamma2 - p->PARAM_BETA, p)){
 
                 unsigned int S = 0;
                 for(i = 0; i < p->PARAM_K; ++i)
@@ -320,14 +407,22 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
                     }
 
                     polyveck_csubq(&ct0, p);
-                    if(!polyveck_chknorm(&ct0, GAMMA2, p)){
+                    if(!polyveck_chknorm(&ct0, gamma2, p)){
 
                         polyveck_add(&tmp, &wcs2, &ct0, p);
                         polyveck_csubq(&tmp, p);
-                        n = polyveck_make_hint(&h, &wcs2, &tmp, p);
+                        if (fips) {
+                            n = polyveck_make_hint_p(&h, &wcs2, &tmp, p);
+                        } else {
+                            n = polyveck_make_hint(&h, &wcs2, &tmp, p);
+                        }
                         if(n <= p->PARAM_OMEGA){
 
-                            dilithium_pack_sig(sig->sig_data, &z, &h, &c, p);
+                            if (fips) {
+                                mldsa_pack_sig(sig->sig_data, c_tilde, &z, &h, p);
+                            } else {
+                                dilithium_pack_sig(sig->sig_data, &z, &h, &c, p);
+                            }
 
                             sig->kind = p->kind;
 
@@ -357,6 +452,11 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
         return -2;
     }
 
+    const int fips = p->is_fips204;
+    const uint32_t crh = dil_crhbytes(p);
+    const uint32_t gamma1 = dil_gamma1(p);
+    const uint32_t d_val = dil_d(p);
+
     if (sig->sig_len < p->CRYPTO_BYTES) {
         log_it(L_ERROR, "Verify failed: sig_len=%zu < CRYPTO_BYTES=%u", sig->sig_len, p->CRYPTO_BYTES);
         return -3;
@@ -364,10 +464,11 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
 
     unsigned long long i;
     unsigned char rho[SEEDBYTES];
-    unsigned char mu[CRHBYTES];    
+    unsigned char mu[crh];
     poly c, chat, cp;
     polyvecl mat[p->PARAM_K], z;
     polyveck t1, w1, h, tmp1, tmp2;
+    unsigned char c_tilde[64];
 
     if((sig->sig_len - p->CRYPTO_BYTES) != mlen) {
         log_it(L_ERROR, "Verify failed: length mismatch sig_len=%zu CRYPTO_BYTES=%u mlen=%llu",
@@ -376,32 +477,42 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     }
 
     dilithium_unpack_pk(rho, &t1, public_key->data, p);
-    if(dilithium_unpack_sig(&z, &h, &c, sig->sig_data, p)) {
-        log_it(L_ERROR, "Verify failed: unpack_sig failed");
-        return -5;
+
+    if (fips) {
+        if (mldsa_unpack_sig(c_tilde, &z, &h, sig->sig_data, p)) {
+            log_it(L_ERROR, "Verify failed: mldsa_unpack_sig failed");
+            return -5;
+        }
+        mldsa_sample_in_ball(&c, c_tilde, p);
+    } else {
+        if (dilithium_unpack_sig(&z, &h, &c, sig->sig_data, p)) {
+            log_it(L_ERROR, "Verify failed: unpack_sig failed");
+            return -5;
+        }
     }
 
-    if(polyvecl_chknorm(&z, GAMMA1 - p->PARAM_BETA, p)) {
+    if(polyvecl_chknorm(&z, gamma1 - p->PARAM_BETA, p)) {
         log_it(L_ERROR, "Verify failed: z norm check failed");
         return -6;
     }
 
-    unsigned char tmp_m[CRHBYTES + mlen];
+    unsigned char tmp_m[crh + mlen];
     if(sig->sig_data != m)
         for(i = 0; i < mlen; ++i)
-            tmp_m[CRHBYTES + i] = m[i];
+            tmp_m[crh + i] = m[i];
 
-    dap_hash_shake256(tmp_m, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
-    dap_hash_shake256(mu, CRHBYTES, tmp_m, CRHBYTES + mlen);
+    dap_hash_shake256(tmp_m, crh, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
+    dap_hash_shake256(mu, crh, tmp_m, crh + mlen);
 
     expand_mat(mat, rho, p);
+
     polyvecl_ntt(&z, p);
     for(i = 0; i < p->PARAM_K ; ++i)
         polyvecl_pointwise_acc_invmontgomery(tmp1.vec + i, mat+i, &z, p);
 
     chat = c;
     dilithium_poly_ntt(&chat);
-    polyveck_shiftl(&t1, D, p);
+    polyveck_shiftl(&t1, d_val, p);
     polyveck_ntt(&t1, p);
     for(i = 0; i < p->PARAM_K; ++i)
         poly_pointwise_invmontgomery(tmp2.vec + i, &chat, t1.vec + i);
@@ -411,15 +522,36 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     polyveck_invntt_montgomery(&tmp1, p);
 
     polyveck_csubq(&tmp1, p);
-    polyveck_use_hint(&w1, &tmp1, &h, p);
+    if (fips) {
+        polyveck_use_hint_p(&w1, &tmp1, &h, p);
+    } else {
+        polyveck_use_hint(&w1, &tmp1, &h, p);
+    }
 
-    challenge(&cp, mu, &w1, p);
-    for(i = 0; i < NN; ++i)
-        if(c.coeffs[i] != cp.coeffs[i]) {
-            log_it(L_ERROR, "Verify failed: challenge mismatch at i=%llu c=%d cp=%d (K=%u L=%u)",
-                   i, c.coeffs[i], cp.coeffs[i], p->PARAM_K, p->PARAM_L);
+    if (fips) {
+        uint32_t ctilde_bytes = dil_ctildebytes(p);
+        unsigned char inbuf[crh + p->PARAM_K * p->PARAM_POLW1_SIZE_PACKED];
+        unsigned char c_tilde_check[64];
+
+        memcpy(inbuf, mu, crh);
+        for (i = 0; i < p->PARAM_K; ++i)
+            polyw1_pack_p(inbuf + crh + i * p->PARAM_POLW1_SIZE_PACKED, w1.vec + i, p);
+
+        dap_hash_shake256(c_tilde_check, ctilde_bytes, inbuf, sizeof(inbuf));
+
+        if (memcmp(c_tilde, c_tilde_check, ctilde_bytes) != 0) {
+            log_it(L_ERROR, "Verify failed: c_tilde mismatch (K=%u L=%u)", p->PARAM_K, p->PARAM_L);
             return -7;
         }
+    } else {
+        challenge(&cp, mu, &w1, p);
+        for(i = 0; i < NN; ++i)
+            if(c.coeffs[i] != cp.coeffs[i]) {
+                log_it(L_ERROR, "Verify failed: challenge mismatch at i=%llu c=%d cp=%d (K=%u L=%u)",
+                       i, c.coeffs[i], cp.coeffs[i], p->PARAM_K, p->PARAM_L);
+                return -7;
+            }
+    }
 
     return 0;
 }

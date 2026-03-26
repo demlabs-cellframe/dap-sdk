@@ -9,7 +9,7 @@
 #include "ecdsa_field_arch.h"
 #include "dap_cpu_arch.h"
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
 #include <cpuid.h>
 #endif
 
@@ -33,7 +33,7 @@ static ecdsa_field_impl_info_t s_impls[ECDSA_FIELD_IMPL_COUNT] = {
         .mul = ecdsa_field_mul_generic,
         .sqr = ecdsa_field_sqr_generic
     },
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
     [ECDSA_FIELD_IMPL_X86_64_ASM] = {
         .name = "x86_64_asm",
         .description = "x86-64 inline assembly (MULQ)",
@@ -51,7 +51,7 @@ static ecdsa_field_impl_info_t s_impls[ECDSA_FIELD_IMPL_COUNT] = {
         .sqr = ecdsa_field_sqr_avx2_bmi2
     },
 #endif
-#if defined(__aarch64__)
+#if DAP_PLATFORM_ARM64
     [ECDSA_FIELD_IMPL_ARM64_NEON] = {
         .name = "neon",
         .description = "ARM64 NEON",
@@ -81,7 +81,7 @@ static pthread_once_t s_field_once = PTHREAD_ONCE_INIT;
 // CPU Feature Detection
 // ============================================================================
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
 static void detect_x86_features(void) {
     unsigned int eax, ebx, ecx, edx;
     
@@ -111,11 +111,11 @@ static void detect_x86_features(void) {
 // ============================================================================
 
 static void s_field_dispatch_impl(void) {
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
     detect_x86_features();
 #endif
 
-#if defined(__aarch64__)
+#if DAP_PLATFORM_ARM64
     s_impls[ECDSA_FIELD_IMPL_ARM64_NEON].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_NEON);
     #if !defined(__APPLE__)
     s_impls[ECDSA_FIELD_IMPL_ARM64_SVE].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_SVE);
@@ -126,13 +126,15 @@ static void s_field_dispatch_impl(void) {
 
     dap_cpu_arch_t best = dap_cpu_arch_get_best();
     switch (best) {
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
+        case DAP_CPU_ARCH_AVX512:
+            /* no dedicated AVX-512 field impl yet, fall through to AVX2 */
         case DAP_CPU_ARCH_AVX2:
             if (s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available)
                 s_current_impl = ECDSA_FIELD_IMPL_AVX2_BMI2;
             break;
 #endif
-#if defined(__aarch64__)
+#if DAP_PLATFORM_ARM64
     #if !defined(__APPLE__)
         case DAP_CPU_ARCH_SVE2:
         case DAP_CPU_ARCH_SVE:
@@ -151,7 +153,7 @@ static void s_field_dispatch_impl(void) {
             break;
     }
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86_64
     if (s_current_impl == ECDSA_FIELD_IMPL_GENERIC &&
         s_impls[ECDSA_FIELD_IMPL_X86_64_ASM].available) {
         s_current_impl = ECDSA_FIELD_IMPL_X86_64_ASM;

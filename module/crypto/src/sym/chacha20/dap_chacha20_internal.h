@@ -8,12 +8,13 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "dap_arch_dispatch.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if DAP_PLATFORM_X86
 void dap_chacha20_encrypt_sse2(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);
 void dap_chacha20_encrypt_avx2(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
@@ -22,7 +23,7 @@ void dap_chacha20_encrypt_avx2_512vl(uint8_t *a_out, const uint8_t *a_in, size_t
         const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);
 void dap_chacha20_encrypt_avx512(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);
-#elif defined(__aarch64__) || defined(__arm__)
+#elif DAP_PLATFORM_ARM
 void dap_chacha20_encrypt_neon(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         const uint8_t a_key[32], const uint8_t a_nonce[12], uint32_t a_counter);
 #endif

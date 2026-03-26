@@ -12,11 +12,12 @@
 #include <stddef.h>
 #include <pthread.h>
 
-/* Backend headers (guarded by platform ifdefs internally) */
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#include "dap_cpu_arch.h"
+
+#if DAP_PLATFORM_X86
 #include "dap_aes_ni.h"
 #endif
-#if defined(__aarch64__) || (defined(__arm__) && defined(__ARM_FEATURE_CRYPTO))
+#if DAP_PLATFORM_ARM
 #include "dap_aes_armce.h"
 #endif
 
@@ -34,13 +35,13 @@ static void s_aes_dispatch_init(void)
     s_decrypt_fast = dap_enc_iaes256_cbc_decrypt_fast;
 
     dap_cpu_features_t l_cpu = dap_cpu_detect_features();
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if DAP_PLATFORM_X86
     if (l_cpu.has_aes_ni) {
         s_encrypt_fast = dap_aes_ni_cbc_encrypt_fast;
         s_decrypt_fast = dap_aes_ni_cbc_decrypt_fast;
     }
 #endif
-#if defined(__aarch64__) || (defined(__arm__) && defined(__ARM_FEATURE_CRYPTO))
+#if DAP_PLATFORM_ARM
     if (l_cpu.has_arm_ce) {
         s_encrypt_fast = dap_aes_armce_cbc_encrypt_fast;
         s_decrypt_fast = dap_aes_armce_cbc_decrypt_fast;

@@ -11,7 +11,7 @@ void dilithium_pack_pk(unsigned char pk[], const unsigned char rho[],
     pk += SEEDBYTES;
 
     for(i = 0; i < p->PARAM_K; ++i)
-        polyt1_pack(pk + i * p->PARAM_POLT1_SIZE_PACKED, t1->vec + i);
+        polyt1_pack_p(pk + i * p->PARAM_POLT1_SIZE_PACKED, t1->vec + i, p);
 }
 
 /*************************************************/
@@ -25,7 +25,7 @@ void dilithium_unpack_pk(unsigned char rho[], polyveck *t1,
     pk += SEEDBYTES;
 
     for(i = 0; i < p->PARAM_K; ++i)
-        polyt1_unpack(t1->vec + i, pk + i * p->PARAM_POLT1_SIZE_PACKED);
+        polyt1_unpack_p(t1->vec + i, pk + i * p->PARAM_POLT1_SIZE_PACKED, p);
 }
 
 /*************************************************/
@@ -193,6 +193,124 @@ int dilithium_unpack_sig(polyvecl *z, polyveck *h, poly *c,
             }
         }
     }
+
+    return 0;
+}
+
+/*
+ * =========================================================================
+ * FIPS 204 ML-DSA packing variants
+ * =========================================================================
+ */
+
+void mldsa_pack_sk(unsigned char sk[], const unsigned char rho[],
+                   const unsigned char key[], const unsigned char tr[],
+                   const polyvecl *s1, const polyveck *s2,
+                   const polyveck *t0, const dilithium_param_t *p)
+{
+    uint32_t crh = dil_crhbytes(p);
+
+    memcpy(sk, rho, SEEDBYTES);
+    sk += SEEDBYTES;
+    memcpy(sk, key, SEEDBYTES);
+    sk += SEEDBYTES;
+    memcpy(sk, tr, crh);
+    sk += crh;
+
+    for (unsigned i = 0; i < p->PARAM_L; ++i)
+        polyeta_pack(sk + i * p->PARAM_POLETA_SIZE_PACKED, s1->vec + i, (dilithium_param_t *)p);
+    sk += p->PARAM_L * p->PARAM_POLETA_SIZE_PACKED;
+
+    for (unsigned i = 0; i < p->PARAM_K; ++i)
+        polyeta_pack(sk + i * p->PARAM_POLETA_SIZE_PACKED, s2->vec + i, (dilithium_param_t *)p);
+    sk += p->PARAM_K * p->PARAM_POLETA_SIZE_PACKED;
+
+    for (unsigned i = 0; i < p->PARAM_K; ++i)
+        polyt0_pack_p(sk + i * p->PARAM_POLT0_SIZE_PACKED, t0->vec + i, p);
+}
+
+void mldsa_unpack_sk(unsigned char rho[], unsigned char key[],
+                     unsigned char tr[], polyvecl *s1,
+                     polyveck *s2, polyveck *t0,
+                     const unsigned char sk[], const dilithium_param_t *p)
+{
+    uint32_t crh = dil_crhbytes(p);
+
+    memcpy(rho, sk, SEEDBYTES);
+    sk += SEEDBYTES;
+    memcpy(key, sk, SEEDBYTES);
+    sk += SEEDBYTES;
+    memcpy(tr, sk, crh);
+    sk += crh;
+
+    for (unsigned i = 0; i < p->PARAM_L; ++i)
+        polyeta_unpack(s1->vec + i, sk + i * p->PARAM_POLETA_SIZE_PACKED, (dilithium_param_t *)p);
+    sk += p->PARAM_L * p->PARAM_POLETA_SIZE_PACKED;
+
+    for (unsigned i = 0; i < p->PARAM_K; ++i)
+        polyeta_unpack(s2->vec + i, sk + i * p->PARAM_POLETA_SIZE_PACKED, (dilithium_param_t *)p);
+    sk += p->PARAM_K * p->PARAM_POLETA_SIZE_PACKED;
+
+    for (unsigned i = 0; i < p->PARAM_K; ++i)
+        polyt0_unpack_p(t0->vec + i, sk + i * p->PARAM_POLT0_SIZE_PACKED, p);
+}
+
+void mldsa_pack_sig(unsigned char sig[], const unsigned char *c_tilde,
+                    const polyvecl *z, const polyveck *h, const dilithium_param_t *p)
+{
+    uint32_t ctilde_bytes = dil_ctildebytes(p);
+
+    memcpy(sig, c_tilde, ctilde_bytes);
+    sig += ctilde_bytes;
+
+    for (unsigned i = 0; i < p->PARAM_L; ++i)
+        polyz_pack_p(sig + i * p->PARAM_POLZ_SIZE_PACKED, z->vec + i, p);
+    sig += p->PARAM_L * p->PARAM_POLZ_SIZE_PACKED;
+
+    /* Encode h — same format as legacy */
+    unsigned int k = 0;
+    for (unsigned i = 0; i < p->PARAM_K; ++i) {
+        for (unsigned j = 0; j < NN; ++j)
+            if (h->vec[i].coeffs[j] != 0)
+                sig[k++] = (unsigned char)j;
+        sig[p->PARAM_OMEGA + i] = (unsigned char)k;
+    }
+    while (k < p->PARAM_OMEGA)
+        sig[k++] = 0;
+}
+
+int mldsa_unpack_sig(unsigned char *c_tilde, polyvecl *z, polyveck *h,
+                     const unsigned char sig[], const dilithium_param_t *p)
+{
+    uint32_t ctilde_bytes = dil_ctildebytes(p);
+
+    memcpy(c_tilde, sig, ctilde_bytes);
+    sig += ctilde_bytes;
+
+    for (unsigned i = 0; i < p->PARAM_L; ++i)
+        polyz_unpack_p(z->vec + i, sig + i * p->PARAM_POLZ_SIZE_PACKED, p);
+    sig += p->PARAM_L * p->PARAM_POLZ_SIZE_PACKED;
+
+    /* Decode h — same format as legacy */
+    unsigned int k = 0;
+    for (unsigned i = 0; i < p->PARAM_K; ++i) {
+        for (unsigned j = 0; j < NN; ++j)
+            h->vec[i].coeffs[j] = 0;
+
+        if (sig[p->PARAM_OMEGA + i] < k || sig[p->PARAM_OMEGA + i] > p->PARAM_OMEGA)
+            return 1;
+
+        for (unsigned j = k; j < sig[p->PARAM_OMEGA + i]; ++j) {
+            if (j > k && sig[j] <= sig[j-1])
+                return 1;
+            h->vec[i].coeffs[sig[j]] = 1;
+        }
+        k = sig[p->PARAM_OMEGA + i];
+    }
+
+    for (unsigned j = k; j < p->PARAM_OMEGA; ++j)
+        if (sig[j])
+            return 1;
 
     return 0;
 }

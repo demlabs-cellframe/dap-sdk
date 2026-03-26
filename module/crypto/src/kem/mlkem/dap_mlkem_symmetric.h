@@ -31,7 +31,7 @@ typedef struct { uint64_t s[25]; } dap_mlkem_xof_state;
  * that keeps state in xmm0-24 across all blocks (no intermediate load/store).
  */
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
 #define DAP_KECCAK_HAS_SPONGE_ASM 1
 #endif
 
@@ -42,7 +42,8 @@ static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
 #if DAP_KECCAK_HAS_SPONGE_ASM
     static int s_sponge_tier = -1;
     if (__builtin_expect(s_sponge_tier < 0, 0)) {
-        dap_cpu_arch_t arch = dap_cpu_arch_get();
+        dap_algo_class_t l_c = dap_algo_class_register("KECCAK_SPONGE");
+        dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_c);
         s_sponge_tier = (arch >= DAP_CPU_ARCH_AVX512) ? 2
                       : (arch >= DAP_CPU_ARCH_AVX2)   ? 1 : 0;
     }
@@ -108,7 +109,8 @@ static inline void s_keccak_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
 #if DAP_KECCAK_HAS_SPONGE_ASM
     static int s_squeeze_tier = -1;
     if (__builtin_expect(s_squeeze_tier < 0, 0)) {
-        dap_cpu_arch_t arch = dap_cpu_arch_get();
+        dap_algo_class_t l_c = dap_algo_class_register("KECCAK_SPONGE");
+        dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_c);
         s_squeeze_tier = (arch >= DAP_CPU_ARCH_AVX512) ? 2
                        : (arch >= DAP_CPU_ARCH_AVX2)   ? 1 : 0;
     }

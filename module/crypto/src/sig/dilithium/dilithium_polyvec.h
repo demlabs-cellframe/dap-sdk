@@ -5,7 +5,7 @@
 #include "dilithium_poly.h"
 
 typedef struct {
-  poly vec[5];
+  poly vec[7]; /* max L across all modes (MLDSA-87: L=7) */
 } polyvecl;
 
 void polyvecl_freeze(polyvecl *v, dilithium_param_t *p);
@@ -19,7 +19,7 @@ int polyvecl_chknorm(const polyvecl *v, uint32_t B, dilithium_param_t *p);
 
 
 typedef struct {
-  poly vec[6];
+  poly vec[8]; /* max K across all modes (MLDSA-87: K=8) */
 } polyveck;
 
 void polyveck_reduce(polyveck *v, dilithium_param_t *p);
@@ -39,5 +39,11 @@ void polyveck_power2round(polyveck *v1, polyveck *v0, const polyveck *v, dilithi
 void polyveck_decompose(polyveck *v1, polyveck *v0, const polyveck *v, dilithium_param_t *p);
 unsigned int polyveck_make_hint(polyveck *h, const polyveck *u, const polyveck *v, dilithium_param_t *p);
 void polyveck_use_hint(polyveck *w, const polyveck *v, const polyveck *h, dilithium_param_t *p);
+
+/* Parameterized variants for FIPS 204 */
+void polyveck_power2round_p(polyveck *v1, polyveck *v0, const polyveck *v, const dilithium_param_t *p);
+void polyveck_decompose_p(polyveck *v1, polyveck *v0, const polyveck *v, const dilithium_param_t *p);
+unsigned int polyveck_make_hint_p(polyveck *h, const polyveck *u, const polyveck *v, const dilithium_param_t *p);
+void polyveck_use_hint_p(polyveck *w, const polyveck *v, const polyveck *h, const dilithium_param_t *p);
 
 #endif

@@ -128,13 +128,15 @@ static void s_pv_basemul_acc_ref(
 
 static void s_mlkem_polyvec_dispatch_init(void)
 {
+    dap_algo_class_t l_class = dap_algo_class_register("MLKEM_POLYVEC");
+
     DAP_DISPATCH_DEFAULT(s_pv_compress_d10,   s_pv_compress_d10_ref);
     DAP_DISPATCH_DEFAULT(s_pv_compress_d11,   s_pv_compress_d11_ref);
     DAP_DISPATCH_DEFAULT(s_pv_decompress_d10, s_pv_decompress_d10_ref);
     DAP_DISPATCH_DEFAULT(s_pv_decompress_d11, s_pv_decompress_d11_ref);
     DAP_DISPATCH_DEFAULT(s_pv_basemul_acc,    s_pv_basemul_acc_ref);
 
-    DAP_DISPATCH_ARCH_SELECT;
+    DAP_DISPATCH_ARCH_SELECT_FOR(l_class);
 
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_pv_compress_d10,   dap_mlkem_polyvec_compress_d10_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_pv_compress_d11,   dap_mlkem_polyvec_compress_d11_avx2);

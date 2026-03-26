@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "../ecdsa_scalar.h"
+#include "dap_cpu_arch.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -128,35 +129,30 @@ void ecdsa_scalar_mul_shift_384_generic(ecdsa_scalar_t *r, const ecdsa_scalar_t 
 void ecdsa_scalar_reduce_512_generic(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_generic(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 
-#if defined(__x86_64__) || defined(_M_X64)
-// x86-64 ASM
+#if DAP_PLATFORM_X86_64
 void ecdsa_scalar_mul_512_x86_64_asm(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_mul_shift_384_x86_64_asm(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_reduce_512_x86_64_asm(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_x86_64_asm(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 
-// AVX2 + BMI2
 void ecdsa_scalar_mul_512_avx2_bmi2(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_mul_shift_384_avx2_bmi2(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_reduce_512_avx2_bmi2(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_avx2_bmi2(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 
-// AVX-512 IFMA
 void ecdsa_scalar_mul_512_avx512(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_mul_shift_384_avx512(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_reduce_512_avx512(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_avx512(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 #endif
 
-#if defined(__aarch64__)
-// ARM64 NEON
+#if DAP_PLATFORM_ARM64
 void ecdsa_scalar_mul_512_neon(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_mul_shift_384_neon(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_reduce_512_neon(ecdsa_scalar_t *r, const uint64_t l[8]);
 void ecdsa_scalar_mul_neon(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 
 #if !defined(__APPLE__)
-// ARM64 SVE (servers: Graviton3, Neoverse, Ampere)
 void ecdsa_scalar_mul_512_sve(uint64_t l[8], const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_mul_shift_384_sve(ecdsa_scalar_t *r, const ecdsa_scalar_t *a, const ecdsa_scalar_t *b);
 void ecdsa_scalar_reduce_512_sve(ecdsa_scalar_t *r, const uint64_t l[8]);

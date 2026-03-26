@@ -12,7 +12,7 @@
 
 extern const dap_ntt_params_t g_dilithium_ntt_params;
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
 extern void dap_dilithium_ntt_forward_avx2(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_avx2(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_avx2(int32_t *c, const int32_t *a, const int32_t *b);
@@ -23,7 +23,7 @@ extern void dap_dilithium_ntt_forward_avx512(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_avx512(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_avx512(int32_t *c, const int32_t *a, const int32_t *b);
 #endif
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if DAP_PLATFORM_ARM
 extern void dap_dilithium_ntt_forward_neon(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_neon(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_neon(int32_t *c, const int32_t *a, const int32_t *b);
@@ -76,7 +76,7 @@ static void s_dil_dispatch_init(void)
 
 /*************************************************/
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
 
 extern void dap_dilithium_poly_reduce_avx2(int32_t[256]);
 extern void dap_dilithium_poly_reduce_avx512(int32_t[256]);
@@ -151,7 +151,7 @@ int poly_chknorm(const poly *a, uint32_t B) {
 
 #undef DIL_512
 
-#elif defined(__aarch64__) || defined(_M_ARM64)
+#elif DAP_PLATFORM_ARM
 
 extern void dap_dilithium_poly_reduce_neon(int32_t[256]);
 extern void dap_dilithium_poly_csubq_neon(int32_t[256]);
@@ -292,12 +292,12 @@ static void s_poly_uniform_scalar(poly *a, const unsigned char *buf) {
 }
 
 void dilithium_poly_uniform(poly *a, const unsigned char *buf) {
-#if defined(__x86_64__) || defined(_M_X64)
+#if DAP_PLATFORM_X86
     if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX2, 1)) {
         dap_dilithium_rej_uniform_avx2(a->coeffs, (const uint8_t *)buf);
         return;
     }
-#elif defined(__aarch64__) || defined(_M_ARM64)
+#elif DAP_PLATFORM_ARM
     extern void dap_dilithium_rej_uniform_neon(uint32_t *, const uint8_t *);
     dap_dilithium_rej_uniform_neon(a->coeffs, (const uint8_t *)buf);
     return;
@@ -583,6 +583,41 @@ void polyeta_unpack(poly *r, const unsigned char *a, dilithium_param_t *p)
 }
 
 /*************************************************/
+void polyt1_pack_p(unsigned char *r, const poly *a, const dilithium_param_t *p) {
+    uint32_t d_val = dil_d(p);
+    uint32_t bits = 23 - d_val;  /* bitlen(q-1) - d */
+
+    if (bits == 10) {
+        /* d=13: 4 coefficients → 5 bytes (10 bits each) */
+        for (unsigned i = 0; i < NN / 4; ++i) {
+            r[5*i+0]  = (uint8_t)(a->coeffs[4*i+0]);
+            r[5*i+1]  = (uint8_t)((a->coeffs[4*i+0] >> 8) | (a->coeffs[4*i+1] << 2));
+            r[5*i+2]  = (uint8_t)((a->coeffs[4*i+1] >> 6) | (a->coeffs[4*i+2] << 4));
+            r[5*i+3]  = (uint8_t)((a->coeffs[4*i+2] >> 4) | (a->coeffs[4*i+3] << 6));
+            r[5*i+4]  = (uint8_t)(a->coeffs[4*i+3] >> 2);
+        }
+    } else {
+        polyt1_pack(r, a);
+    }
+}
+
+void polyt1_unpack_p(poly *r, const unsigned char *a, const dilithium_param_t *p) {
+    uint32_t d_val = dil_d(p);
+    uint32_t bits = 23 - d_val;
+
+    if (bits == 10) {
+        /* d=13: 5 bytes → 4 coefficients (10 bits each) */
+        for (unsigned i = 0; i < NN / 4; ++i) {
+            r->coeffs[4*i+0]  = (a[5*i+0]      | ((uint32_t)(a[5*i+1] & 0x03) << 8));
+            r->coeffs[4*i+1]  = (a[5*i+1] >> 2) | ((uint32_t)(a[5*i+2] & 0x0F) << 6);
+            r->coeffs[4*i+2]  = (a[5*i+2] >> 4) | ((uint32_t)(a[5*i+3] & 0x3F) << 4);
+            r->coeffs[4*i+3]  = (a[5*i+3] >> 6) | ((uint32_t)(a[5*i+4])        << 2);
+        }
+    } else {
+        polyt1_unpack(r, a);
+    }
+}
+
 void polyt1_pack(unsigned char *r, const poly *a) {
 #if D != 14
 #error "polyt1_pack() assumes D == 14"
@@ -811,5 +846,371 @@ void invntt_frominvmont(uint32_t pp[NN])
 {
     DAP_DISPATCH_ENSURE(s_dil_ntt_inv, s_dil_dispatch_init);
     s_dil_ntt_inv_ptr((int32_t *)pp);
+}
+
+/*
+ * =========================================================================
+ * Parameterized poly operations for FIPS 204 (generic scalar, all platforms)
+ * =========================================================================
+ */
+
+void poly_power2round_p(poly *a1, poly *a0, const poly *a, const dilithium_param_t *p)
+{
+    for (unsigned i = 0; i < NN; ++i)
+        a1->coeffs[i] = power2round_p(a->coeffs[i], a0->coeffs + i, p);
+}
+
+void poly_decompose_p(poly *a1, poly *a0, const poly *a, const dilithium_param_t *p)
+{
+    for (unsigned i = 0; i < NN; ++i)
+        a1->coeffs[i] = decompose_p(a->coeffs[i], a0->coeffs + i, p);
+}
+
+unsigned int poly_make_hint_p(poly *h, const poly *a, const poly *b, const dilithium_param_t *p)
+{
+    unsigned int s = 0;
+    for (unsigned i = 0; i < NN; ++i) {
+        h->coeffs[i] = make_hint_p(a->coeffs[i], b->coeffs[i], p);
+        s += h->coeffs[i];
+    }
+    return s;
+}
+
+void poly_use_hint_p(poly *a, const poly *b, const poly *h, const dilithium_param_t *p)
+{
+    uint32_t gamma2 = dil_gamma2(p);
+
+    if (gamma2 == (Q - 1) / 88) {
+        for (unsigned i = 0; i < NN; ++i) {
+            uint32_t val = b->coeffs[i];
+            int32_t a1 = (val + 127) >> 7;
+            a1 = (a1 * 11275 + (1 << 23)) >> 24;
+            a1 ^= ((43 - a1) >> 31) & a1;
+
+            int32_t r0 = (int32_t)val - a1 * (int32_t)(2 * gamma2);
+            r0 -= (((int32_t)(Q - 1) / 2 - r0) >> 31) & (int32_t)Q;
+
+            if (h->coeffs[i] == 0) {
+                a->coeffs[i] = (uint32_t)a1;
+            } else if (r0 > 0) {
+                a->coeffs[i] = (a1 == 43) ? 0 : (uint32_t)(a1 + 1);
+            } else {
+                a->coeffs[i] = (a1 == 0) ? 43 : (uint32_t)(a1 - 1);
+            }
+        }
+    } else {
+        /* gamma2 == (Q - 1) / 32 */
+        for (unsigned i = 0; i < NN; ++i) {
+            uint32_t val = b->coeffs[i];
+            int32_t a1 = (val + 127) >> 7;
+            a1 = (a1 * 1025 + (1 << 21)) >> 22;
+            a1 &= 15;
+
+            int32_t r0 = (int32_t)val - a1 * (int32_t)(2 * gamma2);
+            r0 -= (((int32_t)(Q - 1) / 2 - r0) >> 31) & (int32_t)Q;
+
+            if (h->coeffs[i] == 0) {
+                a->coeffs[i] = (uint32_t)a1;
+            } else if (r0 > 0) {
+                a->coeffs[i] = (a1 + 1) & 15;
+            } else {
+                a->coeffs[i] = (a1 - 1) & 15;
+            }
+        }
+    }
+}
+
+/*************************************************/
+void polyz_pack_p(unsigned char *r, const poly *a, const dilithium_param_t *p)
+{
+    uint32_t gamma1 = dil_gamma1(p);
+    unsigned gbits = dil_gamma1_bits(p) + 1;  /* bits per coefficient */
+
+    if (gbits == 18) {
+        /* gamma1 = 2^17: pack 18 bits per coefficient, 4 coefficients in 9 bytes */
+        for (unsigned i = 0; i < NN / 4; ++i) {
+            uint32_t t[4];
+            for (int j = 0; j < 4; j++) {
+                t[j] = gamma1 - 1 - a->coeffs[4*i+j];
+                t[j] += ((int32_t)t[j] >> 31) & Q;
+            }
+            r[9*i+0]  = (uint8_t)t[0];
+            r[9*i+1]  = (uint8_t)(t[0] >> 8);
+            r[9*i+2]  = (uint8_t)((t[0] >> 16) | (t[1] << 2));
+            r[9*i+3]  = (uint8_t)(t[1] >> 6);
+            r[9*i+4]  = (uint8_t)((t[1] >> 14) | (t[2] << 4));
+            r[9*i+5]  = (uint8_t)(t[2] >> 4);
+            r[9*i+6]  = (uint8_t)((t[2] >> 12) | (t[3] << 6));
+            r[9*i+7]  = (uint8_t)(t[3] >> 2);
+            r[9*i+8]  = (uint8_t)(t[3] >> 10);
+        }
+    } else {
+        /* gamma1 = 2^19: pack 20 bits per coefficient, 2 coefficients in 5 bytes */
+        for (unsigned i = 0; i < NN / 2; ++i) {
+            uint32_t t[2];
+            t[0] = gamma1 - 1 - a->coeffs[2*i+0];
+            t[0] += ((int32_t)t[0] >> 31) & Q;
+            t[1] = gamma1 - 1 - a->coeffs[2*i+1];
+            t[1] += ((int32_t)t[1] >> 31) & Q;
+            r[5*i+0]  = (uint8_t)t[0];
+            r[5*i+1]  = (uint8_t)(t[0] >> 8);
+            r[5*i+2]  = (uint8_t)((t[0] >> 16) | (t[1] << 4));
+            r[5*i+3]  = (uint8_t)(t[1] >> 4);
+            r[5*i+4]  = (uint8_t)(t[1] >> 12);
+        }
+    }
+}
+
+/*************************************************/
+void polyz_unpack_p(poly *r, const unsigned char *a, const dilithium_param_t *p)
+{
+    uint32_t gamma1 = dil_gamma1(p);
+    unsigned gbits = dil_gamma1_bits(p) + 1;
+
+    if (gbits == 18) {
+        for (unsigned i = 0; i < NN / 4; ++i) {
+            r->coeffs[4*i+0]  = a[9*i+0];
+            r->coeffs[4*i+0] |= (uint32_t)a[9*i+1] << 8;
+            r->coeffs[4*i+0] |= (uint32_t)(a[9*i+2] & 0x03) << 16;
+
+            r->coeffs[4*i+1]  = a[9*i+2] >> 2;
+            r->coeffs[4*i+1] |= (uint32_t)a[9*i+3] << 6;
+            r->coeffs[4*i+1] |= (uint32_t)(a[9*i+4] & 0x0F) << 14;
+
+            r->coeffs[4*i+2]  = a[9*i+4] >> 4;
+            r->coeffs[4*i+2] |= (uint32_t)a[9*i+5] << 4;
+            r->coeffs[4*i+2] |= (uint32_t)(a[9*i+6] & 0x3F) << 12;
+
+            r->coeffs[4*i+3]  = a[9*i+6] >> 6;
+            r->coeffs[4*i+3] |= (uint32_t)a[9*i+7] << 2;
+            r->coeffs[4*i+3] |= (uint32_t)a[9*i+8] << 10;
+
+            for (int j = 0; j < 4; j++) {
+                r->coeffs[4*i+j] = gamma1 - 1 - r->coeffs[4*i+j];
+                r->coeffs[4*i+j] += ((int32_t)r->coeffs[4*i+j] >> 31) & Q;
+            }
+        }
+    } else {
+        for (unsigned i = 0; i < NN / 2; ++i) {
+            r->coeffs[2*i+0]  = a[5*i+0];
+            r->coeffs[2*i+0] |= (uint32_t)a[5*i+1] << 8;
+            r->coeffs[2*i+0] |= (uint32_t)(a[5*i+2] & 0x0F) << 16;
+
+            r->coeffs[2*i+1]  = a[5*i+2] >> 4;
+            r->coeffs[2*i+1] |= (uint32_t)a[5*i+3] << 4;
+            r->coeffs[2*i+1] |= (uint32_t)a[5*i+4] << 12;
+
+            r->coeffs[2*i+0] = gamma1 - 1 - r->coeffs[2*i+0];
+            r->coeffs[2*i+0] += ((int32_t)r->coeffs[2*i+0] >> 31) & Q;
+            r->coeffs[2*i+1] = gamma1 - 1 - r->coeffs[2*i+1];
+            r->coeffs[2*i+1] += ((int32_t)r->coeffs[2*i+1] >> 31) & Q;
+        }
+    }
+}
+
+/*************************************************/
+void polyw1_pack_p(unsigned char *r, const poly *a, const dilithium_param_t *p)
+{
+    uint32_t gamma2 = dil_gamma2(p);
+
+    if (gamma2 == (Q - 1) / 88) {
+        /* ML-DSA-44: w1 in [0..43], 6 bits per coeff → 3 bytes per 4 coefficients */
+        for (unsigned i = 0; i < NN / 4; ++i) {
+            r[3*i+0]  = (uint8_t)(a->coeffs[4*i+0] | (a->coeffs[4*i+1] << 6));
+            r[3*i+1]  = (uint8_t)((a->coeffs[4*i+1] >> 2) | (a->coeffs[4*i+2] << 4));
+            r[3*i+2]  = (uint8_t)((a->coeffs[4*i+2] >> 4) | (a->coeffs[4*i+3] << 2));
+        }
+    } else {
+        /* ML-DSA-65/87 and legacy: w1 in [0..15], 4 bits per coeff → 1 byte per 2 */
+        for (unsigned i = 0; i < NN / 2; ++i)
+            r[i] = (uint8_t)(a->coeffs[2*i+0] | (a->coeffs[2*i+1] << 4));
+    }
+}
+
+/*************************************************/
+void polyt0_pack_p(unsigned char *r, const poly *a, const dilithium_param_t *p)
+{
+    uint32_t d_val = dil_d(p);
+    uint32_t half = 1U << (d_val - 1);
+
+    if (d_val == 13) {
+        /* d=13: 8 coefficients → 13 bytes */
+        for (unsigned i = 0; i < NN / 8; ++i) {
+            uint32_t t[8];
+            for (int j = 0; j < 8; j++)
+                t[j] = (Q + half - a->coeffs[8*i+j]) & 0x1FFF;
+
+            r[13*i+ 0]  = (uint8_t)(t[0]);
+            r[13*i+ 1]  = (uint8_t)((t[0] >> 8) | (t[1] << 5));
+            r[13*i+ 2]  = (uint8_t)(t[1] >> 3);
+            r[13*i+ 3]  = (uint8_t)((t[1] >> 11) | (t[2] << 2));
+            r[13*i+ 4]  = (uint8_t)((t[2] >> 6) | (t[3] << 7));
+            r[13*i+ 5]  = (uint8_t)(t[3] >> 1);
+            r[13*i+ 6]  = (uint8_t)((t[3] >> 9) | (t[4] << 4));
+            r[13*i+ 7]  = (uint8_t)(t[4] >> 4);
+            r[13*i+ 8]  = (uint8_t)((t[4] >> 12) | (t[5] << 1));
+            r[13*i+ 9]  = (uint8_t)((t[5] >> 7) | (t[6] << 6));
+            r[13*i+10]  = (uint8_t)(t[6] >> 2);
+            r[13*i+11]  = (uint8_t)((t[6] >> 10) | (t[7] << 3));
+            r[13*i+12]  = (uint8_t)(t[7] >> 5);
+        }
+    } else {
+        /* d=14: 4 coefficients → 7 bytes (legacy layout) */
+        for (unsigned i = 0; i < NN / 4; ++i) {
+            uint32_t t[4];
+            for (int j = 0; j < 4; j++)
+                t[j] = Q + half - a->coeffs[4*i+j];
+
+            r[7*i+0]  = (uint8_t)t[0];
+            r[7*i+1]  = (uint8_t)((t[0] >> 8) | (t[1] << 6));
+            r[7*i+2]  = (uint8_t)(t[1] >> 2);
+            r[7*i+3]  = (uint8_t)((t[1] >> 10) | (t[2] << 4));
+            r[7*i+4]  = (uint8_t)(t[2] >> 4);
+            r[7*i+5]  = (uint8_t)((t[2] >> 12) | (t[3] << 2));
+            r[7*i+6]  = (uint8_t)(t[3] >> 6);
+        }
+    }
+}
+
+/*************************************************/
+void polyt0_unpack_p(poly *r, const unsigned char *a, const dilithium_param_t *p)
+{
+    uint32_t d_val = dil_d(p);
+    uint32_t half = 1U << (d_val - 1);
+
+    if (d_val == 13) {
+        /* d=13: 13 bytes → 8 coefficients */
+        for (unsigned i = 0; i < NN / 8; ++i) {
+            r->coeffs[8*i+0]  = a[13*i+0];
+            r->coeffs[8*i+0] |= (uint32_t)(a[13*i+1] & 0x1F) << 8;
+
+            r->coeffs[8*i+1]  = a[13*i+1] >> 5;
+            r->coeffs[8*i+1] |= (uint32_t)a[13*i+2] << 3;
+            r->coeffs[8*i+1] |= (uint32_t)(a[13*i+3] & 0x03) << 11;
+
+            r->coeffs[8*i+2]  = a[13*i+3] >> 2;
+            r->coeffs[8*i+2] |= (uint32_t)(a[13*i+4] & 0x7F) << 6;
+
+            r->coeffs[8*i+3]  = a[13*i+4] >> 7;
+            r->coeffs[8*i+3] |= (uint32_t)a[13*i+5] << 1;
+            r->coeffs[8*i+3] |= (uint32_t)(a[13*i+6] & 0x0F) << 9;
+
+            r->coeffs[8*i+4]  = a[13*i+6] >> 4;
+            r->coeffs[8*i+4] |= (uint32_t)a[13*i+7] << 4;
+            r->coeffs[8*i+4] |= (uint32_t)(a[13*i+8] & 0x01) << 12;
+
+            r->coeffs[8*i+5]  = a[13*i+8] >> 1;
+            r->coeffs[8*i+5] |= (uint32_t)(a[13*i+9] & 0x3F) << 7;
+
+            r->coeffs[8*i+6]  = a[13*i+9] >> 6;
+            r->coeffs[8*i+6] |= (uint32_t)a[13*i+10] << 2;
+            r->coeffs[8*i+6] |= (uint32_t)(a[13*i+11] & 0x07) << 10;
+
+            r->coeffs[8*i+7]  = a[13*i+11] >> 3;
+            r->coeffs[8*i+7] |= (uint32_t)a[13*i+12] << 5;
+
+            for (int j = 0; j < 8; j++)
+                r->coeffs[8*i+j] = Q + half - r->coeffs[8*i+j];
+        }
+    } else {
+        /* d=14: 7 bytes → 4 coefficients (legacy layout) */
+        for (unsigned i = 0; i < NN / 4; ++i) {
+            r->coeffs[4*i+0]  = a[7*i+0];
+            r->coeffs[4*i+0] |= (uint32_t)(a[7*i+1] & 0x3F) << 8;
+
+            r->coeffs[4*i+1]  = a[7*i+1] >> 6;
+            r->coeffs[4*i+1] |= (uint32_t)a[7*i+2] << 2;
+            r->coeffs[4*i+1] |= (uint32_t)(a[7*i+3] & 0x0F) << 10;
+
+            r->coeffs[4*i+2]  = a[7*i+3] >> 4;
+            r->coeffs[4*i+2] |= (uint32_t)a[7*i+4] << 4;
+            r->coeffs[4*i+2] |= (uint32_t)(a[7*i+5] & 0x03) << 12;
+
+            r->coeffs[4*i+3]  = a[7*i+5] >> 2;
+            r->coeffs[4*i+3] |= (uint32_t)a[7*i+6] << 6;
+
+            for (int j = 0; j < 4; j++)
+                r->coeffs[4*i+j] = Q + half - r->coeffs[4*i+j];
+        }
+    }
+}
+
+/*************************************************/
+static unsigned int rej_gamma1m1_p(uint32_t *a, unsigned int len,
+                                   const unsigned char *buf, unsigned int buflen,
+                                   const dilithium_param_t *p)
+{
+    uint32_t gamma1 = dil_gamma1(p);
+    uint32_t bound = 2 * gamma1 - 2;
+    unsigned gbits = dil_gamma1_bits(p) + 1;
+    unsigned ctr, pos;
+
+    ctr = pos = 0;
+
+    if (gbits == 18) {
+        /* 18-bit samples from 9-byte groups, 4 samples each */
+        while (ctr < len && pos + 9 <= buflen) {
+            uint32_t t[4];
+            t[0]  = buf[pos];
+            t[0] |= (uint32_t)buf[pos+1] << 8;
+            t[0] &= 0x3FFFF;
+            t[1]  = buf[pos+2] >> 2;
+            t[1] |= (uint32_t)buf[pos+3] << 6;
+            t[1] |= (uint32_t)(buf[pos+4] & 0x0F) << 14;
+            t[2]  = buf[pos+4] >> 4;
+            t[2] |= (uint32_t)buf[pos+5] << 4;
+            t[2] |= (uint32_t)(buf[pos+6] & 0x3F) << 12;
+            t[3]  = buf[pos+6] >> 6;
+            t[3] |= (uint32_t)buf[pos+7] << 2;
+            t[3] |= (uint32_t)buf[pos+8] << 10;
+            pos += 9;
+            for (int j = 0; j < 4 && ctr < len; j++) {
+                if (t[j] <= bound)
+                    a[ctr++] = Q + gamma1 - 1 - t[j];
+            }
+        }
+    } else {
+        /* 20-bit samples from 5-byte groups, 2 samples each */
+        while (ctr < len && pos + 5 <= buflen) {
+            uint32_t t0, t1;
+            t0  = buf[pos];
+            t0 |= (uint32_t)buf[pos+1] << 8;
+            t0 |= (uint32_t)buf[pos+2] << 16;
+            t0 &= 0xFFFFF;
+            t1  = buf[pos+2] >> 4;
+            t1 |= (uint32_t)buf[pos+3] << 4;
+            t1 |= (uint32_t)buf[pos+4] << 12;
+            pos += 5;
+            if (t0 <= bound)
+                a[ctr++] = Q + gamma1 - 1 - t0;
+            if (t1 <= bound && ctr < len)
+                a[ctr++] = Q + gamma1 - 1 - t1;
+        }
+    }
+    return ctr;
+}
+
+/*************************************************/
+void poly_uniform_gamma1m1_p(poly *a, const unsigned char *seed, uint16_t nonce,
+                              const dilithium_param_t *p)
+{
+    unsigned int ctr;
+    uint32_t crh = dil_crhbytes(p);
+    unsigned char inbuf[SEEDBYTES + 66 + 2];
+    unsigned char outbuf[5 * DAP_SHAKE256_RATE];
+    uint64_t state[25] = {0};
+
+    memcpy(inbuf, seed, SEEDBYTES + crh);
+    inbuf[SEEDBYTES + crh]     = nonce & 0xFF;
+    inbuf[SEEDBYTES + crh + 1] = nonce >> 8;
+
+    dap_hash_shake256_absorb(state, inbuf, SEEDBYTES + crh + 2);
+    dap_hash_shake256_squeezeblocks(outbuf, 5, state);
+
+    ctr = rej_gamma1m1_p(a->coeffs, NN, outbuf, 5 * DAP_SHAKE256_RATE, p);
+    if (ctr < NN) {
+        dap_hash_shake256_squeezeblocks(outbuf, 1, state);
+        rej_gamma1m1_p(a->coeffs + ctr, NN - ctr, outbuf, DAP_SHAKE256_RATE, p);
+    }
 }
 

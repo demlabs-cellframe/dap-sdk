@@ -71,17 +71,7 @@ extern "C" {
 /*                        Platform detection guards                           */
 /* ========================================================================== */
 
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
-#  define DAP_PLATFORM_X86 1
-#else
-#  define DAP_PLATFORM_X86 0
-#endif
-
-#if defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64)
-#  define DAP_PLATFORM_ARM 1
-#else
-#  define DAP_PLATFORM_ARM 0
-#endif
+/* DAP_PLATFORM_X86 / DAP_PLATFORM_ARM defined in dap_cpu_arch.h */
 
 /* ========================================================================== */
 /*          Function pointer declaration (header) / definition (source)       */
