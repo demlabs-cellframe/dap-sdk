@@ -1,4 +1,4 @@
-﻿/*
+/*
  * AUTHORS:
  * Ruslan R. (The BadAss SysMan) Laishev  <ruslan.laishev@demlabs.net>
  * DeM Labs Ltd.   https://demlabs.net
@@ -145,6 +145,159 @@ int     buflen;
 #define dap_assert(expr)  s_dap_assert_fail( (bool) (expr), #expr, __FILE__, __LINE__)
 
 
+/*
+ *  DESCRIPTION: Validate that a buffer contains a valid group name.
+ *      Must be non-empty, contain only printable ASCII (0x21..0x7E),
+ *      and be null-terminated within the given length.
+ */
+static bool s_is_valid_group_name(const void *a_data, size_t a_len)
+{
+    if (!a_data || a_len < 2)
+        return false;
+    const uint8_t *l_bytes = (const uint8_t *)a_data;
+    if (l_bytes[a_len - 1] != '\0')
+        return false;
+    for (size_t i = 0; i < a_len - 1; i++) {
+        if (l_bytes[i] < 0x21 || l_bytes[i] > 0x7E)
+            return false;
+    }
+    return true;
+}
+
+/*
+ *  DESCRIPTION: Check MDBX$MASTER integrity and rebuild from MDBX's internal
+ *      MAIN DBI catalog if corrupted entries are detected. The MAIN DBI is the
+ *      authoritative source of truth for subDB names.
+ *
+ *  RETURNS:
+ *       0  - no corruption detected
+ *      >0  - number of groups recovered
+ *      <0  - error
+ */
+static int s_db_mdbx_check_and_repair_master(void)
+{
+int     rc;
+MDBX_txn    *l_txn = NULL;
+MDBX_cursor *l_cursor = NULL;
+MDBX_val    l_key, l_data;
+int         l_total = 0, l_corrupted = 0;
+
+    /* Phase 1: read-only scan for corrupted entries */
+    if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)))
+        return  log_it(L_ERROR, "Repair: mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+
+    if (MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, s_db_master_dbi, &l_cursor))) {
+        mdbx_txn_abort(l_txn);
+        return  log_it(L_ERROR, "Repair: mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+    }
+
+    while (!(rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))) {
+        l_total++;
+        if (!s_is_valid_group_name(l_data.iov_base, l_data.iov_len)) {
+            if (!l_corrupted)
+                log_it(L_WARNING, "--- Corrupted MDBX$MASTER entries detected ---");
+            log_it(L_WARNING, "MDBX$MASTER entry #%d [%zu bytes]: non-ASCII or malformed name",
+                   l_total - 1, l_data.iov_len);
+            l_corrupted++;
+        }
+    }
+    mdbx_cursor_close(l_cursor);
+    l_cursor = NULL;
+
+    if (!l_corrupted) {
+        mdbx_txn_commit(l_txn);
+        log_it(L_NOTICE, "MDBX$MASTER integrity check passed: all %d entries valid", l_total);
+        return  0;
+    }
+    log_it(L_WARNING, "MDBX$MASTER: %d of %d entries corrupted, rebuilding from MDBX catalog...",
+           l_corrupted, l_total);
+
+    /* Phase 2a: collect valid subDB names from MAIN DBI (authoritative catalog) */
+    MDBX_dbi l_main_dbi;
+    if (MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, NULL, 0, &l_main_dbi))) {
+        mdbx_txn_commit(l_txn);
+        return  log_it(L_ERROR, "Repair: cannot open MAIN DBI: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+    }
+    if (MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_main_dbi, &l_cursor))) {
+        mdbx_txn_commit(l_txn);
+        return  log_it(L_ERROR, "Repair: mdbx_cursor_open(MAIN): (%d) %s", rc, mdbx_strerror(rc)), -EIO;
+    }
+
+    dap_list_t  *l_names = NULL;
+    int         l_catalog_count = 0;
+    char        l_name_buf[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 1];
+
+    while (!(rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))) {
+        if (!l_key.iov_len || l_key.iov_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX)
+            continue;
+        memcpy(l_name_buf, l_key.iov_base, l_key.iov_len);
+        l_name_buf[l_key.iov_len] = '\0';
+
+        if (!strcmp(l_name_buf, s_db_master_tbl))
+            continue;
+        if (!s_is_valid_group_name(l_name_buf, l_key.iov_len + 1)) {
+            log_it(L_ERROR, "MAIN DBI catalog also contains corrupted entry [%zu bytes], skipping",
+                   l_key.iov_len);
+            continue;
+        }
+        l_names = dap_list_append(l_names, dap_strdup(l_name_buf));
+        l_catalog_count++;
+    }
+    mdbx_cursor_close(l_cursor);
+    mdbx_txn_commit(l_txn);
+    l_txn = NULL;
+
+    log_it(L_NOTICE, "Found %d valid subDB names in MDBX internal catalog", l_catalog_count);
+
+    /* Phase 2b: rebuild MDBX$MASTER in a write transaction */
+    int l_recovered = 0, l_result = -EIO;
+
+    if (MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &l_txn))) {
+        log_it(L_ERROR, "Repair: mdbx_txn_begin(rw): (%d) %s", rc, mdbx_strerror(rc));
+        goto cleanup;
+    }
+
+    if (MDBX_SUCCESS != (rc = mdbx_drop(l_txn, s_db_master_dbi, false))) {
+        log_it(L_ERROR, "Repair: mdbx_drop(MASTER): (%d) %s", rc, mdbx_strerror(rc));
+        mdbx_txn_abort(l_txn);
+        goto cleanup;
+    }
+
+    for (dap_list_t *l_el = l_names; l_el; l_el = l_el->next) {
+        const char *l_name = (const char *)l_el->data;
+        size_t l_len = strlen(l_name) + 1;
+        MDBX_val l_mk = { .iov_base = (void *)l_name, .iov_len = l_len };
+        MDBX_val l_mv = l_mk;
+
+        rc = mdbx_put(l_txn, s_db_master_dbi, &l_mk, &l_mv, MDBX_NOOVERWRITE);
+        if (rc == MDBX_SUCCESS) {
+            l_recovered++;
+            log_it(L_NOTICE, "Recovered group '%s'", l_name);
+        } else if (rc != MDBX_KEYEXIST) {
+            log_it(L_ERROR, "Repair: mdbx_put('%s'): (%d) %s", l_name, rc, mdbx_strerror(rc));
+        }
+    }
+
+    if (MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn))) {
+        log_it(L_ERROR, "Repair: mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc));
+        goto cleanup;
+    }
+    log_it(L_WARNING, "MDBX$MASTER repair complete: recovered %d groups from MDBX catalog", l_recovered);
+    l_result = l_recovered;
+
+cleanup:
+    {
+        dap_list_t *l_el, *l_tmp;
+        DL_FOREACH_SAFE(l_names, l_el, l_tmp) {
+            DL_DELETE(l_names, l_el);
+            DAP_DELETE(l_el->data);
+            DAP_DELETE(l_el);
+        }
+    }
+    return  l_result;
+}
+
+
 #ifdef  DAP_SYS_DEBUG   /* cmake ../ -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-DDAP_SYS_DEBUG=1" */
 /*
  *  DESCRIPTION: Dump all records from the table . Is supposed to be used at debug time.
@@ -228,7 +381,8 @@ MDBX_val    l_key_iov, l_data_iov;
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
-    if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) ) {
+    rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi);
+    if  ( MDBX_SUCCESS != rc ) {
         DAP_DEL_Z(l_db_ctx);
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
@@ -239,12 +393,18 @@ MDBX_val    l_key_iov, l_data_iov;
     if (MDBX_SUCCESS != (rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE))
          && (rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", rc, mdbx_strerror(rc));
-        if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) )
+        if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) ) {
+            DAP_DEL_Z(l_db_ctx);
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+        }
+        DAP_DEL_Z(l_db_ctx);
+        return NULL;
     }
 
-    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) )
+    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) ) {
+        DAP_DEL_Z(l_db_ctx);
         return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+    }
 
     return l_db_ctx;
 }
@@ -307,6 +467,11 @@ size_t     l_upper_limit_of_db_size = 16;
     log_it(L_INFO, "Set MDBX Upper Limit of DB Size to %zu bytes", l_upper_limit_of_db_size);
 
     snprintf(s_db_path, sizeof(s_db_path), "%s/%s", a_mdbx_path, s_subdir );/* Make a path to MDBX root */
+    dap_path_to_native_inplace(s_db_path);
+    /* Strip trailing dir separator — MDBX/Wine chokes on paths like "C:\foo\bar\" */
+    size_t l_path_len = strlen(s_db_path);
+    while (l_path_len > 1 && DAP_IS_DIR_SEPARATOR(s_db_path[l_path_len - 1]))
+        s_db_path[--l_path_len] = '\0';
     dap_mkdir_with_parents(s_db_path);                                      /* Create directory for the MDBX storage */
 
     log_it(L_NOTICE, "Directory '%s' will be used as an location for MDBX database files", s_db_path);
@@ -325,14 +490,29 @@ size_t     l_upper_limit_of_db_size = 16;
                                                                               according to number of supported groups */
 
                                                                             /* We set "unlim" for all MDBX characteristics at the moment */
-
-    if ( MDBX_SUCCESS != (rc = mdbx_env_set_geometry(s_mdbx_env, -1, -1, l_upper_limit_of_db_size, -1, -1, -1)) )
+    MDBX_env_flags_t l_env_flags = MDBX_CREATE | MDBX_SAFE_NOSYNC;
+#ifdef DAP_OS_WINDOWS
+    bool l_is_wine = dap_is_wine();
+    if (l_is_wine) {
+        log_it(L_WARNING, "Running under Wine — applying MDBX compatibility workarounds");
+        /* Wine cannot extend memory-mapped files (MDBX_UNABLE_EXTEND_MAPSIZE)
+         * and lacks shared-memory/locking APIs (error 775), so pre-allocate
+         * the full map and open in exclusive mode */
+        rc = mdbx_env_set_geometry(s_mdbx_env,
+                l_upper_limit_of_db_size, l_upper_limit_of_db_size,
+                l_upper_limit_of_db_size, 0, 0, -1);
+        l_env_flags |= MDBX_EXCLUSIVE;
+    } else
+#endif
+        rc = mdbx_env_set_geometry(s_mdbx_env, -1, -1, l_upper_limit_of_db_size, -1, -1, -1);
+    if (MDBX_SUCCESS != rc)
         return  log_it (L_CRITICAL, "mdbx_env_set_geometry (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
 
     /* Use MDBX_NOMETASYNC instead of MDBX_SAFE_NOSYNC for better durability on macOS.
      * MDBX_SAFE_NOSYNC skips fsync on commit, which can cause data loss on macOS/APFS.
      * MDBX_NOMETASYNC syncs data pages but defers meta-page sync for better performance. */
-    if ( MDBX_SUCCESS != (rc = mdbx_env_open(s_mdbx_env, s_db_path, MDBX_CREATE | MDBX_NOMETASYNC, 0664)) )
+     //l_env_flags = l_env_flags | MDBX_NOMETASYNC;
+    if ( MDBX_SUCCESS != (rc = mdbx_env_open(s_mdbx_env, s_db_path, l_env_flags, 0664)) )
         return  log_it (L_CRITICAL, "mdbx_env_open (%s): (%d) %s", s_db_path, rc, mdbx_strerror(rc)),  -EINVAL;
 
     /*
@@ -348,6 +528,9 @@ size_t     l_upper_limit_of_db_size = 16;
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), -EIO;
 
     dap_assert ( MDBX_SUCCESS == (rc = mdbx_txn_commit (l_txn)) );
+
+    /* Check MDBX$MASTER integrity and repair from MDBX catalog if needed */
+    s_db_mdbx_check_and_repair_master();
 
     /*
      * Run over records in the  MASTER table to get subDB names
@@ -380,7 +563,9 @@ size_t     l_upper_limit_of_db_size = 16;
     dap_list_t *l_el, *l_tmp;
     DL_FOREACH_SAFE(l_slist, l_el, l_tmp) {
         l_data_iov.iov_base = l_el->data;
-        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
+        dap_db_ctx_t *l_db_ctx = s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
+        if (l_db_ctx)
+            DAP_DELETE(l_db_ctx);
         DL_DELETE(l_slist, l_el);
         DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
@@ -445,7 +630,8 @@ static  dap_db_ctx_t  *s_get_db_ctx_for_group(const char *a_group, MDBX_txn *a_t
 
     memcpy(l_db_ctx->name, a_group, l_db_ctx->namelen = l_name_len);
 
-    if ( MDBX_SUCCESS != (rc = mdbx_dbi_open(a_txn, a_group, 0, &l_db_ctx->dbi)) ) {
+    rc = mdbx_dbi_open(a_txn, a_group, 0, &l_db_ctx->dbi);
+    if ( MDBX_SUCCESS != rc ) {
         if (rc != MDBX_NOTFOUND)
             log_it(L_ERROR, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc));
         DAP_DEL_Z(l_db_ctx);
@@ -727,6 +913,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
     int rc;
     dap_db_ctx_t *l_db_ctx = NULL;
     MDBX_txn *l_txn = s_txn;
+    dap_global_db_pkt_pack_t *l_ret = NULL;
 
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
@@ -734,7 +921,6 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group, l_txn)) )
         goto cleanup;
     MDBX_val l_key, l_data;
-    dap_global_db_pkt_pack_t *l_ret = NULL;
     for (size_t i = 0; i < a_count; i++) {
         l_key.iov_base = a_hashes + i;                                    /* Fill IOV for MDBX key */
         l_key.iov_len =  sizeof(dap_global_db_driver_hash_t);
@@ -862,7 +1048,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
 
     l_obj_arr = DAP_NEW_Z_SIZE(byte_t, (l_count_out + 1) * l_element_size + l_addition_size);
     if (!l_obj_arr) {
-        log_it(L_CRITICAL, "Can't allocate memory l_count_out %lu, l_element_size %lu, l_addition_size %lu", l_count_out, l_element_size, l_addition_size);
+        log_it(L_CRITICAL, "Can't allocate memory l_count_out %zu, l_element_size %zu, l_addition_size %zu", l_count_out, l_element_size, l_addition_size);
         goto safe_ret;
     }
     if (a_keys_only_read) {
@@ -1052,9 +1238,11 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
     dap_return_val_if_fail(a_store_obj->key || l_type_erase, -EINVAL);
 
     dap_db_ctx_t *l_db_ctx;
-    if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group, a_txn)) ) {
-        if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn)) )
-            return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
+    l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group, a_txn);
+    if (!l_db_ctx) {
+        l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn);
+        if (!l_db_ctx)
+            return log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
         if (l_type_erase) {
             DAP_DELETE(l_db_ctx);
@@ -1242,7 +1430,7 @@ MDBX_txn *l_txn = s_txn;
          * Allocate memory for array[l_count_out] of returned objects
         */
         if ( !(l_obj_arr = (dap_store_obj_t *)DAP_NEW_Z_SIZE(char, l_count_out * sizeof(dap_store_obj_t))) ) {
-            log_it(L_ERROR, "Cannot allocate %zu bytes for %" DAP_UINT64_FORMAT_U " store objects", l_count_out * sizeof(dap_store_obj_t), l_count_out);
+            log_it(L_ERROR, "Cannot allocate %zu bytes for %zu store objects", l_count_out * sizeof(dap_store_obj_t), l_count_out);
             goto safe_ret;
         }
         /* Iterate cursor to retrieve records from DB */

@@ -689,7 +689,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ( (l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos) ) {
-                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
+                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %zu", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
             } else
                 break;
@@ -698,7 +698,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
         } else
             ++l_pos;
     }
-    debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %lu / %lu bytes",
+    debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %zu / %zu bytes",
               l_processed_size, (size_t)(l_end - a_stream->esocket->buf_in) );
     return l_processed_size;
 }
@@ -868,9 +868,11 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
             : 0;
 
     if (l_count_lost_packets) {
-        log_it(L_WARNING, l_count_lost_packets > 0
-               ? "Packet loss detected. Current seq_id: %"DAP_UINT64_FORMAT_U", last seq_id: %zu"
-               : "Packet replay detected, seq_id: %"DAP_UINT64_FORMAT_U, l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);
+        if (l_count_lost_packets > 0)
+            log_it(L_WARNING, "Packet loss detected. Current seq_id: %"DAP_UINT64_FORMAT_U", last seq_id: %zu",
+                l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);
+        else
+            log_it(L_WARNING, "Packet replay detected, seq_id: %"DAP_UINT64_FORMAT_U, l_ch_pkt->hdr.seq_id);
     }
     debug_if(s_debug, L_DEBUG, "Current seq_id: %"DAP_UINT64_FORMAT_U", last: %zu",
                                 l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);

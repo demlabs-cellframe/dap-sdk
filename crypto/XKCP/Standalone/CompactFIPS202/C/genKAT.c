@@ -117,6 +117,7 @@ genShortMsgHash(unsigned int rate, unsigned int capacity, unsigned char delimite
 
     if ( (fp_out = fopen(fileName, "w")) == NULL ) {
         printf("Couldn't open <%s> for write\n", fileName);
+        fclose(fp_in);
         return KAT_FILE_OPEN_ERROR;
     }
     fprintf(fp_out, "# %s\n", description);

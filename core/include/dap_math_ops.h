@@ -723,6 +723,8 @@ static inline int compare256(uint256_t a, uint256_t b)
               -    (( compare128(a.hi, b.hi) == -1 || (compare128(a.hi, b.hi) == 0 && compare128(a.lo, b.lo) == -1)) ? 1 : 0);
 }
 
+static inline int compare256_ptr(uint256_t *a, uint256_t *b) { return compare256(*a, *b); }
+
 static inline int nlz64(uint64_t N)
 {
     uint64_t I;
@@ -825,7 +827,7 @@ static inline void divmod_impl_256(uint256_t a_dividend, uint256_t a_divisor, ui
 {
     assert( compare256(a_divisor, uint256_0) ); // a_divisor != 0
     if (!compare256(a_divisor, uint256_0)) {
-        _log_it(NULL, 0, "dap_math_ops", L_ERROR, "An error occurred when trying to divide by 0.");
+        _log_it(L_ERROR, _LOG_LVL_L_ERROR "[dap_math_ops] An error occurred when trying to divide by 0.");
         raise(SIGFPE);
     }
     if ( compare256(a_divisor, a_dividend) == 1 ) { // a_divisor > a_dividend

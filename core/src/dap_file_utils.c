@@ -57,6 +57,26 @@
 #define LOG_TAG "file_utils"
 
 /**
+ * Normalize path separators to the OS-native form in place.
+ */
+void dap_path_to_native_inplace(char *path)
+{
+    if (!path)
+        return;
+#ifdef DAP_OS_WINDOWS
+    for (; *path; path++) {
+        if (*path == '/')
+            *path = DAP_DIR_SEPARATOR;
+    }
+#else
+    for (; *path; path++) {
+        if (*path == '\\')
+            *path = DAP_DIR_SEPARATOR;
+    }
+#endif
+}
+
+/**
  * Check the directory path for unsupported symbols
  *
  * @string
@@ -94,13 +114,16 @@ bool dap_file_test(const char * a_file_path)
 {
     if(!a_file_path)
         return false;
+    char path[strlen(a_file_path) + 1];
+    memcpy(path, a_file_path, sizeof(path));
+    dap_path_to_native_inplace(path);
 #ifdef DAP_OS_WINDOWS
-    int attr = GetFileAttributesA(a_file_path);
+    int attr = GetFileAttributesA(path);
     if(attr != -1 && (attr & FILE_ATTRIBUTE_NORMAL))
         return true;
 #else
     struct stat st;
-    if (!stat(a_file_path, &st)) {
+    if (!stat(path, &st)) {
         if (S_ISREG(st.st_mode))
         return true;
     }
@@ -118,13 +141,16 @@ bool dap_file_simple_test(const char * a_file_path)
 {
     if(!a_file_path)
         return false;
+    char path[strlen(a_file_path) + 1];
+    memcpy(path, a_file_path, sizeof(path));
+    dap_path_to_native_inplace(path);
 #ifdef DAP_OS_WINDOWS
-    int attr = GetFileAttributesA(a_file_path);
+    int attr = GetFileAttributesA(path);
     if(attr != -1)
         return true;
 #else
     struct stat st;
-    if (!stat(a_file_path, &st)) {
+    if (!stat(path, &st)) {
         if (S_ISREG(st.st_mode))
         return true;
     }
@@ -142,13 +168,16 @@ bool dap_dir_test(const char * a_dir_path)
 {
     if(!a_dir_path)
         return false;
+    char path[strlen(a_dir_path) + 1];
+    memcpy(path, a_dir_path, sizeof(path));
+    dap_path_to_native_inplace(path);
 #ifdef DAP_OS_WINDOWS
-    int attr = GetFileAttributesA(a_dir_path);
+    int attr = GetFileAttributesA(path);
     if(attr != -1 && (attr & FILE_ATTRIBUTE_DIRECTORY))
         return true;
 #else
     struct stat st;
-    if(!stat(a_dir_path, &st)) {
+    if(!stat(path, &st)) {
         if(S_ISDIR(st.st_mode))
             return true;
     }
@@ -173,6 +202,7 @@ int dap_mkdir_with_parents(const char *a_dir_path)
     }
     char path[strlen(a_dir_path) + 1], *p;
     dap_strncpy(path, a_dir_path, sizeof(path) - 1);
+    dap_path_to_native_inplace(path);
     // skip the root component if it is present, i.e. the "/" in Unix or "C:\" in Windows
 #ifdef DAP_OS_WINDOWS
     if(((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
@@ -366,7 +396,7 @@ const char *dap_path_skip_root (const char *file_name)
  */
 char* dap_path_get_dirname(const char *a_file_name)
 {
-    char *l_base;
+    const char *l_base;
     size_t l_len;
 
     dap_return_val_if_fail(a_file_name != NULL, NULL);
@@ -375,7 +405,7 @@ char* dap_path_get_dirname(const char *a_file_name)
 
 #ifdef DAP_OS_WINDOWS
     {
-        char *l_q;
+        const char *l_q;
         l_q = strrchr (a_file_name, '/');
         if (l_base == NULL || (l_q != NULL && l_q > l_base))
         l_base = l_q;
@@ -433,11 +463,11 @@ char* dap_path_get_dirname(const char *a_file_name)
         if (l_p == l_base + 1)
         {
             l_len = (uint32_t) strlen (a_file_name) + 1;
-            l_base = DAP_NEW_SIZE (char, l_len + 1);
-            strncpy (l_base, a_file_name, l_len - 1);
-            l_base[l_len-1] = DAP_DIR_SEPARATOR;
-            l_base[l_len] = 0;
-            return l_base;
+            char *l_ret = DAP_NEW_SIZE (char, l_len + 1);
+            strncpy (l_ret, a_file_name, l_len - 1);
+            l_ret[l_len-1] = DAP_DIR_SEPARATOR;
+            l_ret[l_len] = 0;
+            return l_ret;
         }
         if (DAP_IS_DIR_SEPARATOR (*l_p))
         {
@@ -451,10 +481,10 @@ char* dap_path_get_dirname(const char *a_file_name)
 #endif
 
     l_len = (uint32_t) 1 + l_base - a_file_name;
-    l_base = DAP_NEW_SIZE(char, l_len + 1);
-    memcpy(l_base, a_file_name, l_len);
-    l_base[l_len] = 0;
-    return l_base;
+    char *l_result = DAP_NEW_SIZE(char, l_len + 1);
+    memcpy(l_result, a_file_name, l_len);
+    l_result[l_len] = 0;
+    return l_result;
 }
 
 void dap_subs_free(dap_list_name_directories_t *subs_list){
@@ -472,10 +502,13 @@ void dap_subs_free(dap_list_name_directories_t *subs_list){
 dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     dap_list_name_directories_t *list = NULL;
     dap_list_name_directories_t *element;
+    char path_native[strlen(a_path_dir) + 1];
+    memcpy(path_native, a_path_dir, sizeof(path_native));
+    dap_path_to_native_inplace(path_native);
 #ifdef DAP_OS_WINDOWS
-    size_t m_size = strlen(a_path_dir);
+    size_t m_size = strlen(path_native);
     char *m_path = DAP_NEW_SIZE(char, m_size + 2);
-    memcpy(m_path, a_path_dir, m_size);
+    memcpy(m_path, path_native, m_size);
     m_path[m_size] = '*';
     m_path[m_size + 1] = '\0';
     WIN32_FIND_DATA info_file;
@@ -491,7 +524,7 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     FindClose(h_find_file);
     DAP_FREE(m_path);
 #else
-    DIR *dir = opendir(a_path_dir);
+    DIR *dir = opendir(path_native);
     struct dirent *entry = readdir(dir);
     while (entry != NULL){
         if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0 && entry->d_type == DT_DIR){
@@ -731,10 +764,14 @@ bool dap_file_get_contents(const char *filename, char **contents, size_t *length
     if(length)
         *length = 0;
 
+    char path[strlen(filename) + 1];
+    memcpy(path, filename, sizeof(path));
+    dap_path_to_native_inplace(path);
+
 #ifdef DAP_OS_WINDOWS
-  return dap_get_contents_win32 (filename, contents, length);
+  return dap_get_contents_win32 (path, contents, length);
 #else
-    return dap_get_contents_posix(filename, contents, length);
+    return dap_get_contents_posix(path, contents, length);
 #endif
 }
 #endif
@@ -742,22 +779,25 @@ bool dap_file_get_contents(const char *filename, char **contents, size_t *length
 char *dap_file_get_contents2(const char *a_filename, size_t *length)
 {
     dap_return_val_if_fail(length, NULL);
-    if ( !dap_file_test(a_filename) )
-        return log_it(L_ERROR, "File \"%s\" not found", a_filename), NULL;
+    char path[strlen(a_filename) + 1];
+    memcpy(path, a_filename, sizeof(path));
+    dap_path_to_native_inplace(path);
+    if ( !dap_file_test(path) )
+        return log_it(L_ERROR, "File \"%s\" not found", path), NULL;
     int l_err = 0;
-    FILE *f = fopen(a_filename, "rb");
+    FILE *f = fopen(path, "rb");
     if (!f) {
 #ifdef DAP_OS_WINDOWS
         l_err = GetLastError();
 #else
         l_err = errno;
 #endif
-        return log_it(L_ERROR, "Can't open file \"%s\", error %d: %s", a_filename, l_err, dap_strerror(l_err)), NULL;
+        return log_it(L_ERROR, "Can't open file \"%s\", error %d: %s", path, l_err, dap_strerror(l_err)), NULL;
     }
     off_t l_size = !fseeko(f, 0, SEEK_END) ? ftello(f) : -1;
     char *l_buffer = NULL;
     if (l_size <= 0) {
-        log_it(L_ERROR, "Can't get file %s size or file is empty", a_filename);
+        log_it(L_ERROR, "Can't get file %s size or file is empty", path);
         l_err = -3;
     } else if (!( l_buffer = DAP_NEW_Z_SIZE(char, l_size + 1)) ) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -765,7 +805,7 @@ char *dap_file_get_contents2(const char *a_filename, size_t *length)
     } else {
         rewind(f);
         if ( fread(l_buffer, 1, l_size, f) < (size_t)l_size ) {
-            log_it(L_ERROR, "Can't read full file %s", a_filename);
+            log_it(L_ERROR, "Can't read full file %s", path);
             l_err = -5;
         }
     }
@@ -1106,6 +1146,7 @@ char* dap_build_filename(const char *first_element, ...)
     str = dap_build_filename_va(first_element, &args, NULL);
     va_end(args);
 
+    dap_path_to_native_inplace(str);
     return str;
 }
 
@@ -1243,6 +1284,7 @@ char* dap_canonicalize_filename(const char *filename, const char *relative_to)
 {
     char buf[MAX_PATH + 1];
     snprintf(buf, sizeof(buf), "%s/%s", relative_to, filename);
+    dap_path_to_native_inplace(buf);
     return realpath(buf, NULL);
 #if 0
     char *canon, *input, *output, *after_root, *output_start;
@@ -1515,25 +1557,34 @@ void dap_rm_rf(const char *path)
 {
     DIR *dir = NULL;
     const char *entry;
+    size_t n = strlen(path) + 1;
+    char *path_native = DAP_NEW_SIZE(char, n);
 
-    dir = opendir(path);
+    if (!path_native)
+        return;
+    memcpy(path_native, path, n);
+    dap_path_to_native_inplace(path_native);
+
+    dir = opendir(path_native);
     if(dir == NULL)
     {
         /* Assume it’s a file. Ignore failure. */
-        remove(path);
+        remove(path_native);
+        DAP_DELETE(path_native);
         return;
     }
 
     while((entry = dap_dir_read_name(dir)) != NULL)
     {
-        char *sub_path = dap_build_filename(path, entry, NULL);
+        char *sub_path = dap_build_filename(path_native, entry, NULL);
         dap_rm_rf(sub_path);
         DAP_DELETE(sub_path);
     }
 
     closedir(dir);
 
-    rmdir(path);
+    rmdir(path_native);
+    DAP_DELETE(path_native);
 }
 
 #ifdef DAP_BUILD_WITH_ZIP
@@ -1593,20 +1644,26 @@ static bool walk_directory(const char *a_startdir, const char *a_inputdir, zip_t
  */
 bool dap_zip_directory(const char *a_inputdir, const char *a_output_filename)
 {
+    char inputdir[strlen(a_inputdir) + 1];
+    memcpy(inputdir, a_inputdir, sizeof(inputdir));
+    dap_path_to_native_inplace(inputdir);
+    char outfile[strlen(a_output_filename) + 1];
+    memcpy(outfile, a_output_filename, sizeof(outfile));
+    dap_path_to_native_inplace(outfile);
     int l_errorp;
-    zip_t *l_zipper = zip_open(a_output_filename, ZIP_CREATE | ZIP_EXCL, &l_errorp);
+    zip_t *l_zipper = zip_open(outfile, ZIP_CREATE | ZIP_EXCL, &l_errorp);
     if(l_zipper == NULL) {
         zip_error_t l_ziperror;
         zip_error_init_with_code(&l_ziperror, l_errorp);
         if(l_errorp == ZIP_ER_EXISTS) {
-            if(!remove(a_output_filename))
-                return dap_zip_directory(a_inputdir, a_output_filename);
+            if(!remove(outfile))
+                return dap_zip_directory(inputdir, outfile);
         }
-        log_it(L_ERROR, "Failed to open output file %s: %s ", a_output_filename, zip_error_strerror(&l_ziperror));
+        log_it(L_ERROR, "Failed to open output file %s: %s ", outfile, zip_error_strerror(&l_ziperror));
         return false;
     }
 
-    bool l_ret = walk_directory(a_inputdir, a_inputdir, l_zipper);
+    bool l_ret = walk_directory(inputdir, inputdir, l_zipper);
 
     zip_close(l_zipper);
     return l_ret;
@@ -1848,13 +1905,18 @@ static bool s_tar_walk_directory(const char *a_start_path, const char *a_cur_pat
  */
 bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename)
 {
-    int l_outfile = open(a_output_tar_filename, O_CREAT | O_WRONLY | O_BINARY, 0644);
+    char inputdir[strlen(a_inputdir) + 1];
+    memcpy(inputdir, a_inputdir, sizeof(inputdir));
+    dap_path_to_native_inplace(inputdir);
+    char outfile[strlen(a_output_tar_filename) + 1];
+    memcpy(outfile, a_output_tar_filename, sizeof(outfile));
+    dap_path_to_native_inplace(outfile);
+    int l_outfile = open(outfile, O_CREAT | O_WRONLY | O_BINARY, 0644);
     if(l_outfile < 0) {
         log_it(L_ERROR, "Failed to open output file");
         return false;
     }
-    // Pack all files to l_outfile
-    bool l_ret = s_tar_walk_directory(a_inputdir, a_inputdir, l_outfile);
+    bool l_ret = s_tar_walk_directory(inputdir, inputdir, l_outfile);
 
     // Write two empty blocks to the end
     union tar_buffer buffer;

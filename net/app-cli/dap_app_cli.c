@@ -55,7 +55,7 @@ static char** split_word(char *line, int *argc)
             *argc = 0;
         return NULL ;
     }
-    char **argv = calloc(sizeof(char*), strlen(line));
+    char **argv = calloc(strlen(line), sizeof(char*));
     if (!argv) {
         return NULL;
     }

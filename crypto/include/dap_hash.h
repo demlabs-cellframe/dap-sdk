@@ -70,9 +70,7 @@ DAP_STATIC_INLINE bool dap_hash_fast( const void *a_data_in, size_t a_data_in_si
 {
     if ( (a_data_in == NULL) || (a_data_in_size == 0) || (a_hash_out == NULL) )
         return false;
-
-    //            dap_hash_keccak( a_data_in, a_data_in_size, a_data_out, a_data_out_size );
-
+    //dap_hash_keccak( a_data_in, a_data_in_size, a_data_out, a_data_out_size );
     SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)a_data_in, a_data_in_size );
 
     return true;

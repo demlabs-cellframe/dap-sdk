@@ -105,8 +105,8 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     if (s_worker)
-        return log_it(L_ERROR, "Worker %d is already assigned to current thread %ld",
-                               s_worker->id, s_worker->context->thread_id),
+        return log_it(L_ERROR, "Worker %d is already assigned to current thread %p",
+                               s_worker->id, (void*)(uintptr_t)s_worker->context->thread_id),
             -1;
     s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
@@ -361,7 +361,7 @@ void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
         return;
     }
     int l_err = dap_worker_add_events_socket_unsafe(l_es->worker, l_es);
-    debug_if(l_err || g_debug_reactor, l_err ? L_ERROR : L_DEBUG, "%s es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d in context %d",
+    debug_if(l_err || g_debug_reactor, L_INFO, "%s es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d in context %d",
                                        l_err ? "Can't add" : "Added", l_es->uuid, dap_events_socket_get_type_str(l_es),
                                        l_es->socket == INVALID_SOCKET ? "" : dap_itoa(l_es->socket),
                                        l_es->worker->id, a_c->id);
@@ -432,7 +432,7 @@ static bool s_socket_all_check_activity(void * a_arg)
     DL_FOREACH_SAFE(l_del_list, l_cur, l_tmp_list) {
         l_es = (dap_events_socket_t*)l_cur->data;
         log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
-                    l_es->socket, l_curtime - (time_t)l_es->last_time_active - s_connection_timeout);
+                    l_es->socket, (uint64_t)(l_curtime - (time_t)l_es->last_time_active - s_connection_timeout));
             
         // Call error callback if set
         if (l_es->callbacks.error_callback)

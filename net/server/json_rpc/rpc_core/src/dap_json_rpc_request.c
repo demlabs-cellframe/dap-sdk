@@ -382,14 +382,18 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
 
     char * l_enc_request = dap_json_rpc_enc_request(a_client_internal, l_request_data_str, l_request_data_size, &l_path, &l_enc_request_size, &l_custom_header);
     DAP_DELETE(l_request_data_str);
-    if (!l_enc_request || !l_path)
-        return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
+    if (!l_enc_request || !l_path) {
+        DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path);
+        return -1;
+    }
 
     struct exec_cmd_request* l_exec_cmd_request = s_exec_cmd_request_init(a_client_internal);
-    if (!l_exec_cmd_request)
-        return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
+    if (!l_exec_cmd_request) {
+        DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path);
+        return -1;
+    }
 
-    log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
+    log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %zu",
                      a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_path, l_enc_request_size);
 
     a_client_internal->http_client = dap_client_http_request(a_client_internal->worker,
@@ -409,7 +413,7 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
                 *a_response = json_object_new_string(l_err);
                 break;
             }
-            log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
+            log_it(L_DEBUG, "Get response from %s:%d, response size = %zu",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_response_size);
             break;
         }

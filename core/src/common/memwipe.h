@@ -1,5 +1,4 @@
-// Copyright (c) 2017, The Monero Project
-// Copyrught (c) 2018, DapCash Project
+// Copyright (c) 2018, DapCash Project
 // 
 // All rights reserved.
 // 

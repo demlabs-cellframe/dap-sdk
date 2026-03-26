@@ -23,8 +23,7 @@
  */
 bool dap_isstralnum(const char *c)
 {
-    if (!c)
-        return false;
+    dap_ret_val_if_any(false, !c);
     
     size_t str_len = strlen(c);
 
@@ -386,11 +385,10 @@ DAP_PRINTF_ATTR(1,2) char *dap_strdup_printf(const char *a_format, ...)
  **/
 char* dap_stpcpy(char *a_dest, const char *a_src)
 {
+    dap_ret_val_if_any(NULL, !a_dest, !a_src);
     char *l_d = a_dest;
     const char *l_s = a_src;
 
-    dap_return_val_if_fail(a_dest != NULL, NULL);
-    dap_return_val_if_fail(a_src != NULL, NULL);
     do
         *l_d++ = *l_s;
     while(*l_s++ != '\0');
@@ -413,16 +411,9 @@ char* dap_stpcpy(char *a_dest, const char *a_src)
  **/
 char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit)
 {
-    dap_return_val_if_fail(a_dst && a_src, NULL);
-    do {
-        if (a_limit--)
-            *a_dst++ = *a_src;
-        else {
-            *a_dst++ = '\0';
-            break;
-        }
-    } while (*a_src++ != '\0');
-    return --a_dst;
+    dap_ret_val_if_any(NULL, !a_dst, !a_src);
+    for ( ; (*a_dst = (a_limit-- ? *a_src : '\0')); ++a_src, ++a_dst );
+    return a_dst;
 }
 
 /**
@@ -446,7 +437,7 @@ char* dap_strstr_len(const char *a_haystack, ssize_t a_haystack_len, const char 
     dap_return_val_if_fail(a_needle != NULL, NULL);
 
     if(a_haystack_len < 0)
-        return strstr(a_haystack, a_needle);
+        return (char *)strstr(a_haystack, a_needle);
     else
     {
         const char *l_p = a_haystack;
@@ -640,7 +631,8 @@ char* dap_strjoin(const char *a_separator, ...)
 char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tokens)
 {
     dap_list_t *l_string_list = NULL, *l_slist;
-    char **l_str_array, *l_s;
+    char **l_str_array;
+    const char *l_s;
     uint32_t l_n = 1;
 
     dap_return_val_if_fail(a_string != NULL, NULL);
@@ -799,6 +791,7 @@ char** dap_strdupv(const char **a_str_array)
 
 void dap_strfreev(char **a_str_array)
 {
+    dap_ret_if_any( !a_str_array);
     if(a_str_array)
     {
         int l_i;
