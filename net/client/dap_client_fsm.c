@@ -744,7 +744,7 @@ static void s_worker_execute_stage(void *a_arg)
 
         dap_net_stage_prepare_result_t l_prepare_result;
         int l_ret = dap_net_trans_stage_prepare(l_client->trans_type, &l_prepare_params, &l_prepare_result);
-        if (l_ret != 0 || !l_prepare_result.esocket) {
+        if (l_ret != 0) {
             log_it(L_ERROR, "Stage prepare failed for QoS probe: transport %d, error %d",
                    l_client->trans_type, l_prepare_result.error_code);
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
@@ -754,7 +754,8 @@ static void s_worker_execute_stage(void *a_arg)
 
         if (!l_prepare_result.stream) {
             log_it(L_CRITICAL, "Transport failed to create stream for QoS probe");
-            dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
+            if (l_prepare_result.esocket)
+                dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
             break;
@@ -1137,7 +1138,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     dap_net_stage_prepare_result_t l_prepare_result;
     int l_ret = dap_net_trans_stage_prepare(l_ctx->trans_type, &l_prepare_params, &l_prepare_result);
 
-    if (l_ret != 0 || !l_prepare_result.esocket) {
+    if (l_ret != 0) {
         log_it(L_ERROR, "Stage prepare failed: transport %d, error %d", l_ctx->trans_type,
                l_prepare_result.error_code);
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
@@ -1149,7 +1150,8 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
     if (!l_prepare_result.stream) {
         log_it(L_CRITICAL, "Transport failed to create stream for handshake");
-        dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
+        if (l_prepare_result.esocket)
+            dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
@@ -1158,7 +1160,6 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     }
 
     l_tc->stream = l_prepare_result.stream;
-    // Adopt transport-specific data from stage_prepare's trans_ctx before replacing
     dap_net_trans_ctx_t *l_old_ctx = l_prepare_result.stream->trans_ctx;
     if (l_old_ctx) {
         l_tc->transport_priv = l_old_ctx->transport_priv;

@@ -90,6 +90,10 @@ static void s_free_user_agents_list( void );
 
 int dap_http_simple_module_init( )
 {
+    if (s_http_proc_pool) {
+        log_it(L_DEBUG, "HTTP proc thread pool already initialized, skipping");
+        return 0;
+    }
     s_http_proc_pool = dap_thread_pool_create(0, 256);
     if (!s_http_proc_pool) {
         log_it(L_CRITICAL, "Failed to create HTTP proc thread pool");
@@ -323,6 +327,15 @@ inline static void s_copy_reply_and_mime_to_response( dap_http_simple_t *a_simpl
     return;
 }
 
+inline static void s_write_response_busy(dap_http_simple_t *a_http_simple)
+{
+    a_http_simple->http_client->reply_status_code = Http_Status_ServiceUnavailable;
+    const char l_body[] = "{\"error\":\"Server busy, try again later\"}";
+    dap_http_simple_reply(a_http_simple, (void *)l_body, sizeof(l_body) - 1);
+    dap_strncpy(a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime) - 1);
+    s_copy_reply_and_mime_to_response(a_http_simple);
+}
+
 inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simple,
                                                const char* error_msg )
 {
@@ -473,8 +486,13 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
         log_it( L_DEBUG, "No data section, execution proc callback" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
-
+        int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
+        if (l_submit_rc != 0) {
+            log_it(L_ERROR, "HTTP proc pool submit failed (rc=%d), sending 503", l_submit_rc);
+            a_http_client->esocket->_inheritor = a_http_client;
+            s_write_response_busy(l_http_simple);
+            s_write_data_to_socket(l_http_simple);
+        }
     }
 }
 
@@ -522,7 +540,13 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
         log_it( L_INFO,"Data for http_simple_request collected" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
+        int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
+        if (l_submit_rc != 0) {
+            log_it(L_ERROR, "HTTP proc pool submit failed (rc=%d), sending 503", l_submit_rc);
+            a_http_client->esocket->_inheritor = a_http_client;
+            s_write_response_busy(l_http_simple);
+            s_write_data_to_socket(l_http_simple);
+        }
     }
 }
 

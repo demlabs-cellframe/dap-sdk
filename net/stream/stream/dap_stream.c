@@ -644,14 +644,14 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
 #endif
-    // Esocket owned by stream
     l_ret->esocket = a_esocket;
-    l_ret->esocket_uuid = a_esocket->uuid;
-    l_ret->esocket_worker = a_esocket->worker;
-
     l_ret->is_client_to_uplink = true;
-    l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
-    l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
+    if (a_esocket) {
+        l_ret->esocket_uuid = a_esocket->uuid;
+        l_ret->esocket_worker = a_esocket->worker;
+        a_esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
+        a_esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
+    }
     if (a_addr)
         l_ret->node = *a_addr;
     l_ret->authorized = a_authorized;

@@ -1336,65 +1336,25 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     
-    // Initialize result
     a_result->esocket = NULL;
     a_result->stream = NULL;
     a_result->error_code = 0;
-    
-    // Create TCP socket using platform-independent function
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, a_params->callbacks);
-    if (!l_es) {
-        log_it(L_ERROR, "Failed to create HTTP TCP socket");
-        a_result->error_code = -1;
-        return -1;
-    }
-    
-    l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-    l_es->_inheritor = a_params->client_ctx;
-    
-    // Resolve host and set address using centralized function
-    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
-        log_it(L_ERROR, "Failed to resolve address for HTTP trans");
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-    
-    // Set CONNECTING flag and initiate connection
-    l_es->flags |= DAP_SOCK_CONNECTING;
-#ifndef DAP_EVENTS_CAPS_IOCP
-    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
-#endif
-    l_es->is_initalized = false; // Ensure new_callback will be called
-    
-    // Initiate connection using platform-independent function
-    int l_connect_err = 0;
-    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
-        log_it(L_ERROR, "Failed to connect HTTP socket: error %d", l_connect_err);
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-    
-    // Add socket to worker - connection will complete asynchronously
-    dap_worker_add_events_socket(a_params->worker, l_es);
-    
-    // Create stream for this connection
-    dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);
+
+    dap_stream_t *l_stream = dap_stream_new_es_client(NULL,
+                                (dap_stream_node_addr_t *)a_params->node_addr,
+                                a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for HTTP trans");
-        dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
         return -1;
     }
     
-    // Set transport reference
     l_stream->trans = a_trans;
     
-    a_result->esocket = l_es;
+    a_result->esocket = NULL;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    debug_if(s_debug_more, L_DEBUG, "HTTP TCP socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared (no TCP socket — dap_client_http_request manages connection)");
     return 0;
 }
 
