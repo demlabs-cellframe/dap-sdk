@@ -389,6 +389,20 @@ dap_arch_generate_variant(
     ARCH     neon
     ARGS     "SAMPLE_BODY=${DIL_TPL_DIR}/arch/arm/rej_uniform_neon.inc"
 )
+# FIPS 204 ML-DSA SIMD — hand-tuned assembly via dap_tpl
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_fips204_avx2.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_fips204_avx2.S
+    ARCH     avx2
+    GUARD    none
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_fips204_avx512.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_fips204_avx512.S
+    ARCH     avx512
+    GUARD    none
+)
+
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
     SOURCES
         dap_dilithium_ntt_avx2.c        avx2
@@ -400,6 +414,8 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
         dap_dilithium_poly_neon.c       neon
         dap_dilithium_sample_avx2.c     avx2
         dap_dilithium_sample_neon.c     neon
+        dap_dilithium_fips204_avx2.S    avx2
+        dap_dilithium_fips204_avx512.S  avx512
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${DIL_GEN_DIR})
 
