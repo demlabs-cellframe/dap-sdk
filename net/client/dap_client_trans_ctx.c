@@ -237,20 +237,30 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
 {
     debug_if(s_debug_more, L_DEBUG, "Handshake callback: stream=%p, data=%p, size=%zu, error=%d",
            a_stream, a_data, a_data_size, a_error);
-    
-    if (!a_stream)
+
+    if (!a_stream) {
+        log_it(L_WARNING, "Handshake callback: stream is NULL, cannot notify FSM");
         return;
-    
+    }
+
     dap_client_t *l_client = s_get_client_from_stream(a_stream);
 
-    if (!l_client)
+    if (!l_client) {
+        log_it(L_WARNING, "Handshake callback: client not found from stream %p (trans_ctx=%p), "
+               "FSM should have been notified via esocket delete callback",
+               (void*)a_stream, (void*)a_stream->trans_ctx);
         return;
-    
+    }
+
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
     dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-    if (!l_ctx || !l_fsm || !l_tc)
+    if (!l_ctx || !l_fsm || !l_tc) {
+        log_it(L_WARNING, "Handshake callback: FSM context incomplete (fsm=%p ctx=%p tc=%p), "
+               "FSM should have been notified via esocket delete callback",
+               (void*)l_fsm, (void*)l_ctx, (void*)l_tc);
         return;
+    }
     
     if (a_error != 0) {
         log_it(L_WARNING, "Handshake failed with error %d, trying fallback", a_error);
@@ -282,16 +292,22 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
 void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id,
                                         const char *a_response_data, size_t a_response_size, int a_error)
 {
-    if (!a_stream || !a_stream->trans_ctx)
+    if (!a_stream || !a_stream->trans_ctx) {
+        log_it(L_WARNING, "Session create callback: stream=%p trans_ctx=%p invalid",
+               (void*)a_stream, a_stream ? (void*)a_stream->trans_ctx : NULL);
         return;
+    }
     
     dap_client_t *l_client = s_get_client_from_stream(a_stream);
 
     dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
     dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-    if (!l_ctx || !l_fsm || !l_tc)
+    if (!l_ctx || !l_fsm || !l_tc) {
+        log_it(L_WARNING, "Session create callback: FSM context incomplete, "
+               "FSM should have been notified via esocket delete callback");
         return;
+    }
 
     if (a_error != 0) {
         dap_client_error_t l_err = (a_error == ETIMEDOUT)
@@ -325,15 +341,21 @@ void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_sessio
 
 void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_code)
 {
-    if (!a_stream || !a_stream->trans_ctx)
+    if (!a_stream || !a_stream->trans_ctx) {
+        log_it(L_WARNING, "Transport connect callback: stream=%p trans_ctx=%p invalid",
+               (void*)a_stream, a_stream ? (void*)a_stream->trans_ctx : NULL);
         return;
+    }
     
     dap_client_t *l_client = s_get_client_from_stream(a_stream);
     
     dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
     dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
-    if (!l_ctx || !l_fsm)
+    if (!l_ctx || !l_fsm) {
+        log_it(L_WARNING, "Transport connect callback: FSM context incomplete, "
+               "FSM should have been notified via esocket delete callback");
         return;
+    }
     
     if (a_error_code != 0) {
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,

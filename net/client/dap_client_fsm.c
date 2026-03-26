@@ -1067,6 +1067,15 @@ static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_ar
             l_tc->stream->esocket_uuid = 0;
             l_tc->stream->esocket_worker = NULL;
         }
+        if (l_fsm && l_fsm->stage_status == STAGE_STATUS_IN_PROGRESS) {
+            dap_client_trans_ctx_t *l_ctx = l_fsm->client_trans_ctx;
+            if (l_ctx) {
+                log_it(L_WARNING, "Handshake esocket deleted while stage %s in progress, notifying FSM",
+                       dap_client_stage_str(l_fsm->stage));
+                dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                      STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+            }
+        }
     }
     a_es->_inheritor = NULL;
 }

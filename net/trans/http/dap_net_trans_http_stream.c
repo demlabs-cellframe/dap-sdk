@@ -131,12 +131,14 @@ static dap_net_trans_t *s_http_trans = NULL;
 static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error)
 {
     if (!a_client) {
+        log_it(L_WARNING, "s_http_handshake_error_wrapper: client is NULL, error=%d", a_error);
         return;
     }
-    
+
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
     if (!l_fsm || !l_fsm->callback_arg) {
-        log_it(L_WARNING, "s_http_handshake_error_wrapper: no ctx in callback_arg");
+        log_it(L_WARNING, "s_http_handshake_error_wrapper: no ctx in callback_arg, error=%d"
+               " — FSM should have been notified via esocket delete callback", a_error);
         return;
     }
 
@@ -1024,12 +1026,12 @@ static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
     
     s_http_trans_request_ctx_t *l_ctx = (s_http_trans_request_ctx_t *)a_obj;
     
-    // Validate esocket is still alive via UUID lookup
     dap_client_trans_ctx_t *l_client_esocket = dap_client_trans_ctx_find(l_ctx->client_uuid);
     dap_client_fsm_t *l_fsm = l_client_esocket ? DAP_CLIENT_FSM(l_client_esocket->client) : NULL;
     if (!l_client_esocket || !l_fsm) {
-        debug_if(s_debug_more, L_DEBUG, "HTTP request error (unencrypted) %d: client trans ctx gone (uuid=%"DAP_UINT64_FORMAT_U")",
-                 a_err_code, l_ctx->client_uuid);
+        log_it(L_WARNING, "HTTP request error (unencrypted) %d: client trans ctx gone (uuid=%"DAP_UINT64_FORMAT_U")"
+               " — FSM notified via esocket delete callback",
+               a_err_code, l_ctx->client_uuid);
         DAP_DELETE(l_ctx);
         return;
     }
