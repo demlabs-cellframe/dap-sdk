@@ -196,7 +196,7 @@ static ssize_t s_tls_write(dap_stream_t *a_stream, const void *a_data, size_t a_
 
     void *l_wrapped = NULL;
     size_t l_wrapped_size = 0;
-    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->_inheritor;
+    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
 
     if (l_ctx && l_ctx->mimicry
         && dap_tls_mimicry_get_state(l_ctx->mimicry) == DAP_TLS_MIMICRY_STATE_ESTABLISHED) {
@@ -224,7 +224,7 @@ static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     if (l_avail == 0)
         return 0;
 
-    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->_inheritor;
+    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
 
     if (l_ctx && l_ctx->mimicry
         && dap_tls_mimicry_get_state(l_ctx->mimicry) == DAP_TLS_MIMICRY_STATE_ESTABLISHED) {
@@ -258,12 +258,12 @@ static void s_tls_close(dap_stream_t *a_stream)
     debug_if(s_debug_more, L_DEBUG, "TLS Mimicry: closing stream");
 
     if (a_stream->trans_ctx) {
-        tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->_inheritor;
+        tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
         if (l_ctx) {
             dap_tls_mimicry_free(l_ctx->mimicry);
             DAP_DEL_Z(l_ctx->sni_hostname);
             DAP_DELETE(l_ctx);
-            a_stream->trans_ctx->_inheritor = NULL;
+            a_stream->trans_ctx->transport_priv = NULL;
         }
     }
 }

@@ -225,6 +225,14 @@ int dap_client_trans_ctx_queue_clear(dap_client_trans_ctx_t *a_ctx)
 // ===== Callback wrappers for transport (called on worker, notify FSM) =====
 // These are made non-static so dap_client_fsm.c can reference them via extern
 
+static dap_client_t *s_get_client_from_stream(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->trans_ctx)
+        return NULL;
+    dap_client_trans_ctx_t *l_inh = (dap_client_trans_ctx_t *)a_stream->trans_ctx->_inheritor;
+    return l_inh ? l_inh->client : NULL;
+}
+
 void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, size_t a_data_size, int a_error)
 {
     debug_if(s_debug_more, L_DEBUG, "Handshake callback: stream=%p, data=%p, size=%zu, error=%d",
@@ -233,16 +241,7 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
     if (!a_stream)
         return;
     
-    dap_client_t *l_client = NULL;
-    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
-        l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
-    else if (a_stream->esocket_worker && a_stream->esocket_uuid) {
-        dap_events_socket_t *l_found = dap_context_find(
-                a_stream->esocket_worker->context,
-                a_stream->esocket_uuid);
-        if (l_found && l_found->_inheritor)
-            l_client = (dap_client_t *)l_found->_inheritor;
-    }
+    dap_client_t *l_client = s_get_client_from_stream(a_stream);
 
     if (!l_client)
         return;
@@ -286,16 +285,7 @@ void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_sessio
     if (!a_stream || !a_stream->trans_ctx)
         return;
     
-    dap_client_t *l_client = NULL;
-    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
-        l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
-    else if (a_stream->esocket_worker && a_stream->esocket_uuid) {
-        dap_events_socket_t *l_found = dap_context_find(
-                a_stream->esocket_worker->context,
-                a_stream->esocket_uuid);
-        if (l_found && l_found->_inheritor)
-            l_client = (dap_client_t *)l_found->_inheritor;
-    }
+    dap_client_t *l_client = s_get_client_from_stream(a_stream);
 
     dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
     dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;
@@ -338,16 +328,7 @@ void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_cod
     if (!a_stream || !a_stream->trans_ctx)
         return;
     
-    dap_client_t *l_client = NULL;
-    if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
-        l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
-    else if (a_stream->esocket_worker && a_stream->esocket_uuid) {
-        dap_events_socket_t *l_found = dap_context_find(
-                a_stream->esocket_worker->context,
-                a_stream->esocket_uuid);
-        if (l_found)
-            l_client = DAP_ESOCKET_CLIENT(l_found);
-    }
+    dap_client_t *l_client = s_get_client_from_stream(a_stream);
     
     dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
     dap_client_trans_ctx_t *l_ctx = l_fsm ? l_fsm->client_trans_ctx : NULL;

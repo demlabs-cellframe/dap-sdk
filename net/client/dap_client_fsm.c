@@ -210,6 +210,12 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     l_fsm->client = a_client;
     l_fsm->worker = dap_events_worker_get_auto();
 
+    log_it(L_ATT, "DIAG fsm_new: fsm=%p sizeof=%zu worker_off=%zu client_tc_off=%zu worker=%p uuid=0x%"PRIx64,
+           (void*)l_fsm, sizeof(dap_client_fsm_t),
+           __builtin_offsetof(dap_client_fsm_t, worker),
+           __builtin_offsetof(dap_client_fsm_t, client_trans_ctx),
+           (void*)l_fsm->worker, l_fsm->uuid);
+
     // Crypto defaults
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
     l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
@@ -381,6 +387,14 @@ static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm)
     log_it(L_INFO, "Retrying handshake with fallback transport: %s (type=%d)",
            dap_net_trans_type_to_str(l_next_transport), l_next_transport);
 
+    // Clean up current stream/transport before switching
+    dap_net_trans_ctx_t *l_tc = a_fsm->trans_ctx;
+    if (l_tc && l_tc->stream) {
+        dap_stream_t *l_old_stream = l_tc->stream;
+        l_tc->stream = NULL;
+        dap_stream_delete_unsafe(l_old_stream);
+    }
+
     a_fsm->client->trans_type = l_next_transport;
 
     // Reset to BEGIN to restart with new transport
@@ -397,6 +411,13 @@ typedef struct {
     dap_client_t *client;
     dap_client_stage_t stage;
 } fsm_worker_dispatch_t;
+
+typedef struct {
+    dap_client_t *client;
+    dap_client_callback_t done_callback;
+    void *callbacks_arg;
+    dap_list_t *pkt_queue;
+} fsm_stage_done_on_worker_ctx_t;
 
 // Dispatch context for STAGE_ENC_INIT IO-only part (crypto done on FSM thread)
 typedef struct {
@@ -740,6 +761,14 @@ static void s_worker_execute_stage(void *a_arg)
         }
 
         l_tc->stream = l_prepare_result.stream;
+        // Adopt transport-specific data from stage_prepare's trans_ctx before replacing
+        dap_net_trans_ctx_t *l_old_ctx = l_prepare_result.stream->trans_ctx;
+        if (l_old_ctx) {
+            l_tc->transport_priv = l_old_ctx->transport_priv;
+            l_old_ctx->transport_priv = NULL;
+            l_old_ctx->stream = NULL;
+            DAP_DELETE(l_old_ctx);
+        }
         l_prepare_result.stream->trans_ctx = l_tc;
         if (l_prepare_result.esocket) {
             l_tc->stream->esocket = l_prepare_result.esocket;
@@ -864,6 +893,24 @@ static bool s_stream_timer_timeout_after_connected_check(void *a_arg)
 
 // ===== Main FSM process function (runs on FSM thread) =====
 
+static void s_worker_execute_stage_done(void *a_arg)
+{
+    fsm_stage_done_on_worker_ctx_t *l_ctx = a_arg;
+    if (!l_ctx) return;
+
+    if (l_ctx->done_callback)
+        l_ctx->done_callback(l_ctx->client, l_ctx->callbacks_arg);
+
+    if (l_ctx->pkt_queue) {
+        for (dap_list_t *it = l_ctx->pkt_queue; it; it = it->next) {
+            dap_client_pkt_queue_elm_t *l_pkt = it->data;
+            dap_client_write_unsafe(l_ctx->client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
+        }
+        dap_list_free_full(l_ctx->pkt_queue, NULL);
+    }
+    DAP_DELETE(l_ctx);
+}
+
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
     if (!a_fsm || !a_fsm->client)
@@ -962,20 +1009,16 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
             if (a_fsm->trans_ctx && a_fsm->trans_ctx->stream)
                 dap_stream_add_to_list(a_fsm->trans_ctx->stream);
 
-            if (a_fsm->client->stage_target_done_callback) {
-                log_it(L_NOTICE, "Stage %s achieved", dap_client_stage_str(a_fsm->stage));
-                a_fsm->client->stage_target_done_callback(a_fsm->client, a_fsm->client->callbacks_arg);
-            }
+            log_it(L_NOTICE, "Stage %s achieved", dap_client_stage_str(a_fsm->stage));
 
-            // Send queued packets (needs worker)
-            if (a_fsm->stage == STAGE_STREAM_STREAMING && a_fsm->pkt_queue) {
-                // Send queued packets on worker
-                for (dap_list_t *it = a_fsm->pkt_queue; it; it = it->next) {
-                    dap_client_pkt_queue_elm_t *l_pkt = it->data;
-                    dap_client_write_unsafe(a_fsm->client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
-                }
-                dap_list_free_full(a_fsm->pkt_queue, NULL);
+            fsm_stage_done_on_worker_ctx_t *l_done_ctx = DAP_NEW_Z(fsm_stage_done_on_worker_ctx_t);
+            if (l_done_ctx) {
+                l_done_ctx->client = a_fsm->client;
+                l_done_ctx->done_callback = a_fsm->client->stage_target_done_callback;
+                l_done_ctx->callbacks_arg = a_fsm->client->callbacks_arg;
+                l_done_ctx->pkt_queue = a_fsm->pkt_queue;
                 a_fsm->pkt_queue = NULL;
+                dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage_done, l_done_ctx);
             }
         } else {
             // Advance to next stage
@@ -1106,6 +1149,14 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     }
 
     l_tc->stream = l_prepare_result.stream;
+    // Adopt transport-specific data from stage_prepare's trans_ctx before replacing
+    dap_net_trans_ctx_t *l_old_ctx = l_prepare_result.stream->trans_ctx;
+    if (l_old_ctx) {
+        l_tc->transport_priv = l_old_ctx->transport_priv;
+        l_old_ctx->transport_priv = NULL;
+        l_old_ctx->stream = NULL;
+        DAP_DELETE(l_old_ctx);
+    }
     l_prepare_result.stream->trans_ctx = l_tc;
     if (l_prepare_result.esocket) {
         l_tc->stream->esocket = l_prepare_result.esocket;

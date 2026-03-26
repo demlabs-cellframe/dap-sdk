@@ -32,6 +32,9 @@ typedef struct dap_net_trans_ctx {
     char remote_addr_str[INET6_ADDRSTRLEN];
     uint16_t remote_port;
 
-    // Trans-specific private data (e.g., UDP session context, client context)
+    // Transport-specific per-stream data (e.g., dap_net_trans_udp_ctx_t for UDP)
+    void *transport_priv;
+
+    // Higher-level inheritor (e.g., dap_client_trans_ctx_t for client paths)
     void *_inheritor;
 } dap_net_trans_ctx_t;

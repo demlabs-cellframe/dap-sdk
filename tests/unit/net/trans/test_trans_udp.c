@@ -803,10 +803,10 @@ static void test_13_stream_write(void)
     TEST_ASSERT_NOT_NULL(l_trans->ops, "Trans ops should not be NULL");
     TEST_ASSERT_NOT_NULL(l_trans->ops->write, "Trans ops->write should not be NULL");
     
-    TEST_INFO("DEBUG: stream->trans_ctx=%p, stream->esocket=%p, trans_ctx->_inheritor=%p",
+    TEST_INFO("DEBUG: stream->trans_ctx=%p, stream->esocket=%p, trans_ctx->transport_priv=%p",
               l_mock_stream->trans_ctx,
               l_mock_stream->esocket,
-              l_mock_stream->trans_ctx ? l_mock_stream->trans_ctx->_inheritor : NULL);
+              l_mock_stream->trans_ctx ? l_mock_stream->trans_ctx->transport_priv : NULL);
     
     // CRITICAL DEBUG: Check encryption key STATE BEFORE WRITE
     TEST_INFO("=== KEY STATE BEFORE ENCRYPT (write) ===");

@@ -710,18 +710,20 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
             dap_events_socket_remove_and_delete_mt(l_es_worker, l_es->uuid);
         }
     }
-    DAP_DELETE(a_stream->trans_ctx);
-    a_stream->trans_ctx = NULL;
-
-#ifdef  DAP_SYS_DEBUG
-    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
-#endif
-
     if(a_stream->client_stream_ref)
     {
         *a_stream->client_stream_ref = NULL;
         a_stream->client_stream_ref = NULL;
+        // FSM owns trans_ctx — don't free it here, just detach
+        a_stream->trans_ctx = NULL;
+    } else {
+        DAP_DELETE(a_stream->trans_ctx);
+        a_stream->trans_ctx = NULL;
     }
+
+#ifdef  DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
+#endif
 
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DELETE(a_stream);

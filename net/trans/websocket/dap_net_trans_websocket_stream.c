@@ -400,7 +400,7 @@ static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_p
         return -4;
     }
 
-    a_stream->trans_ctx->_inheritor = l_priv;
+    a_stream->trans_ctx->transport_priv = l_priv;
 
     log_it(L_INFO, "WebSocket connecting to ws://%s:%u/stream", a_host, a_port);
 
@@ -1303,8 +1303,8 @@ static void s_ws_close(dap_stream_t *a_stream)
 
     // Free per-stream WS state (allocated in s_ws_connect)
     if (a_stream->is_client_to_uplink && a_stream->trans_ctx
-            && a_stream->trans_ctx->_inheritor == l_priv) {
-        a_stream->trans_ctx->_inheritor = NULL;
+            && a_stream->trans_ctx->transport_priv == l_priv) {
+        a_stream->trans_ctx->transport_priv = NULL;
         DAP_DEL_Z(l_priv->frame_buffer);
         DAP_DEL_Z(l_priv->sec_websocket_key);
         DAP_DEL_Z(l_priv->sec_websocket_accept);
@@ -1830,7 +1830,7 @@ static dap_net_trans_websocket_private_t *s_get_private(dap_net_trans_t *a_trans
 /**
  * @brief Get private data from stream
  *
- * Returns per-stream WS state if available (stored in trans_ctx->_inheritor
+ * Returns per-stream WS state if available (stored in trans_ctx->transport_priv
  * for client-side connections), otherwise falls back to the global transport
  * private data (trans->_inheritor). Per-stream state is allocated in s_ws_connect().
  */
@@ -1839,9 +1839,9 @@ static dap_net_trans_websocket_private_t *s_get_private_from_stream(dap_stream_t
     if (!a_stream) {
         return NULL;
     }
-    if (a_stream->trans_ctx && a_stream->trans_ctx->_inheritor
+    if (a_stream->trans_ctx && a_stream->trans_ctx->transport_priv
             && a_stream->is_client_to_uplink) {
-        return (dap_net_trans_websocket_private_t *)a_stream->trans_ctx->_inheritor;
+        return (dap_net_trans_websocket_private_t *)a_stream->trans_ctx->transport_priv;
     }
     if (!a_stream->trans) {
         return NULL;

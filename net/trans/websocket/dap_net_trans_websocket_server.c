@@ -574,7 +574,7 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
     // Create per-connection WebSocket state for de-framing
     ws_server_conn_state_t *l_conn_state = DAP_NEW_Z(ws_server_conn_state_t);
     if (l_stream->trans_ctx)
-        l_stream->trans_ctx->_inheritor = l_conn_state;
+        l_stream->trans_ctx->transport_priv = l_conn_state;
 
     // Replace esocket callbacks: HTTP layer is no longer in charge.
     // After upgrade, the esocket handles raw WebSocket frames, not HTTP.
@@ -610,8 +610,8 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
 
-    // Get per-connection state from trans_ctx->_inheritor
-    ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)l_trans_ctx->_inheritor;
+    // Get per-connection state from trans_ctx->transport_priv
+    ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)l_trans_ctx->transport_priv;
 
     size_t l_consumed = 0;
     size_t l_payload_buf_alloc = a_es->buf_in_size;
@@ -729,11 +729,11 @@ static void s_ws_server_esocket_delete(dap_events_socket_t *a_es, void *a_arg)
     }
 
     // Clean up per-connection WS state
-    ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)l_trans_ctx->_inheritor;
+    ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)l_trans_ctx->transport_priv;
     if (l_conn) {
         DAP_DEL_Z(l_conn->frame_buffer);
         DAP_DELETE(l_conn);
-        l_trans_ctx->_inheritor = NULL;
+        l_trans_ctx->transport_priv = NULL;
     }
 
     // Clean up stream (will free trans_ctx and channels/session)

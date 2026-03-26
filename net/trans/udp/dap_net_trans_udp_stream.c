@@ -2704,10 +2704,10 @@ static void s_udp_close(dap_stream_t *a_stream)
         // Clear stream pointer in trans_ctx to prevent use-after-free
         l_ctx->stream = NULL;
         
-        // Free UDP context (owned by trans_ctx, not esocket)
-        if (l_ctx->_inheritor) {
-            DAP_DELETE(l_ctx->_inheritor);
-            l_ctx->_inheritor = NULL;
+        // Free UDP context (owned by trans_ctx via transport_priv)
+        if (l_ctx->transport_priv) {
+            DAP_DELETE(l_ctx->transport_priv);
+            l_ctx->transport_priv = NULL;
         }
     }
 }
@@ -2921,21 +2921,14 @@ static uint32_t s_udp_get_capabilities(dap_net_trans_t *a_trans)
  * @brief Get client context from UDP stream's trans_ctx
  * @param a_stream Stream to extract client context from
  * @return Client context (dap_client_t*) or NULL
- * @note For UDP trans, trans_ctx->_inheritor holds dap_net_trans_udp_ctx_t (UDP stream state).
  */
 static void* s_udp_get_client_context(dap_stream_t *a_stream)
 {
-    if (!a_stream) {
+    if (!a_stream || !a_stream->trans_ctx)
         return NULL;
-    }
-    
-    // For UDP, trans_ctx->_inheritor is dap_net_trans_udp_ctx_t
-    dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
-    if (!l_udp_ctx) {
-        return NULL;
-    }
-    
-    return l_udp_ctx->client_ctx;  // Return dap_client_t*
+
+    // Client context is in _inheritor (set by FSM for client paths)
+    return a_stream->trans_ctx->_inheritor;
 }
 
 //=============================================================================
@@ -2959,7 +2952,7 @@ static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->trans_ctx)
         return NULL;
-    return (dap_net_trans_udp_ctx_t*)a_stream->trans_ctx->_inheritor;
+    return (dap_net_trans_udp_ctx_t*)a_stream->trans_ctx->transport_priv;
 }
 
 /**
@@ -2976,18 +2969,17 @@ dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream)
     
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
     
-    if (!l_trans_ctx->_inheritor) {
-        // Create new UDP context
+    if (!l_trans_ctx->transport_priv) {
         dap_net_trans_udp_ctx_t *l_udp_ctx = DAP_NEW_Z(dap_net_trans_udp_ctx_t);
         if (!l_udp_ctx) {
             log_it(L_CRITICAL, "Failed to allocate UDP stream context");
             return NULL;
-    }
-        l_trans_ctx->_inheritor = l_udp_ctx;
+        }
+        l_trans_ctx->transport_priv = l_udp_ctx;
         debug_if(s_debug_more, L_DEBUG, "Created UDP context %p for stream %p", l_udp_ctx, a_stream);
     }
-    
-    return (dap_net_trans_udp_ctx_t*)l_trans_ctx->_inheritor;
+
+    return (dap_net_trans_udp_ctx_t*)l_trans_ctx->transport_priv;
 }
 
 /**
