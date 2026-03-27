@@ -565,3 +565,123 @@ dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}:
     vzeroupper
     ret
 .size dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}, .-dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}
+
+/* ================================================================
+ * polyz_unpack_g17 — unpack 18-bit packed z coefficients (gamma1=2^17)
+ *
+ * void dap_dilithium_polyz_unpack_g17_<arch>(int32_t *r, const uint8_t *a)
+ *
+ * 9 packed bytes → 4 coefficients, process 8 per iteration via AVX2.
+ * result[i] = (gamma1-1) - raw[i], adjusted to [0, Q).
+ *
+ * Note: second vmovdqu reads up to 7 bytes past the polynomial's
+ * packed region; safe because z[] is always followed by h[] in the
+ * signature buffer.
+ * ================================================================ */
+.globl dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}
+.type  dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}, @function
+.p2align 4
+dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}:
+    vpbroadcastd .Lzu_mask18(%rip), %ymm5
+    vpbroadcastd .Lzu_gm1_17(%rip), %ymm6
+    vpbroadcastd .Lzu_q(%rip), %ymm7
+    vmovdqu .Lzu_shuf18(%rip), %ymm8
+    vmovdqu .Lzu_shift18(%rip), %ymm9
+
+    xorq    %rax, %rax
+.L_zu_g17_loop:
+    vmovdqu (%rsi), %xmm0
+    vmovdqu 9(%rsi), %xmm1
+    vinserti128 $1, %xmm1, %ymm0, %ymm0
+    vpshufb %ymm8, %ymm0, %ymm0
+    vpsrlvd %ymm9, %ymm0, %ymm0
+    vpand   %ymm5, %ymm0, %ymm0
+    vpsubd  %ymm0, %ymm6, %ymm0
+    vpsrad  $31, %ymm0, %ymm1
+    vpand   %ymm7, %ymm1, %ymm1
+    vpaddd  %ymm1, %ymm0, %ymm0
+    vmovdqu %ymm0, (%rdi,%rax)
+
+    addq    $32, %rax
+    addq    $18, %rsi
+    cmpq    $COEFF_BYTES, %rax
+    jne     .L_zu_g17_loop
+
+    vzeroupper
+    ret
+.size dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}, .-dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}
+
+/* ================================================================
+ * polyz_unpack_g19 — unpack 20-bit packed z coefficients (gamma1=2^19)
+ *
+ * void dap_dilithium_polyz_unpack_g19_<arch>(int32_t *r, const uint8_t *a)
+ *
+ * 5 packed bytes → 2 coefficients, process 8 per iteration via AVX2.
+ * ================================================================ */
+.globl dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}
+.type  dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}, @function
+.p2align 4
+dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}:
+    vpbroadcastd .Lzu_mask20(%rip), %ymm5
+    vpbroadcastd .Lzu_gm1_19(%rip), %ymm6
+    vpbroadcastd .Lzu_q(%rip), %ymm7
+    vmovdqu .Lzu_shuf20(%rip), %ymm8
+    vmovdqu .Lzu_shift20(%rip), %ymm9
+
+    xorq    %rax, %rax
+.L_zu_g19_loop:
+    vmovdqu (%rsi), %xmm0
+    vmovdqu 10(%rsi), %xmm1
+    vinserti128 $1, %xmm1, %ymm0, %ymm0
+    vpshufb %ymm8, %ymm0, %ymm0
+    vpsrlvd %ymm9, %ymm0, %ymm0
+    vpand   %ymm5, %ymm0, %ymm0
+    vpsubd  %ymm0, %ymm6, %ymm0
+    vpsrad  $31, %ymm0, %ymm1
+    vpand   %ymm7, %ymm1, %ymm1
+    vpaddd  %ymm1, %ymm0, %ymm0
+    vmovdqu %ymm0, (%rdi,%rax)
+
+    addq    $32, %rax
+    addq    $20, %rsi
+    cmpq    $COEFF_BYTES, %rax
+    jne     .L_zu_g19_loop
+
+    vzeroupper
+    ret
+.size dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}, .-dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}
+
+/* ================================================================
+ * Read-only data for polyz_unpack
+ * ================================================================ */
+.section .rodata
+.p2align 5
+
+.Lzu_mask18:
+    .long 0x3FFFF
+.Lzu_mask20:
+    .long 0xFFFFF
+.Lzu_gm1_17:
+    .long 0x1FFFF          /* (1<<17) - 1 = 131071 */
+.Lzu_gm1_19:
+    .long 0x7FFFF          /* (1<<19) - 1 = 524287 */
+.Lzu_q:
+    .long 8380417
+
+/* 18-bit shuffle: place 3 bytes per lane from 9-byte groups */
+.Lzu_shuf18:
+    .byte 0, 1, 2, 0x80,  2, 3, 4, 0x80,  4, 5, 6, 0x80,  6, 7, 8, 0x80
+    .byte 0, 1, 2, 0x80,  2, 3, 4, 0x80,  4, 5, 6, 0x80,  6, 7, 8, 0x80
+
+/* 18-bit shifts: [0, 2, 4, 6, 0, 2, 4, 6] */
+.Lzu_shift18:
+    .long 0, 2, 4, 6, 0, 2, 4, 6
+
+/* 20-bit shuffle: place 3 bytes per lane from 5-byte groups */
+.Lzu_shuf20:
+    .byte 0, 1, 2, 0x80,  2, 3, 4, 0x80,  5, 6, 7, 0x80,  7, 8, 9, 0x80
+    .byte 0, 1, 2, 0x80,  2, 3, 4, 0x80,  5, 6, 7, 0x80,  7, 8, 9, 0x80
+
+/* 20-bit shifts: [0, 4, 0, 4, 0, 4, 0, 4] */
+.Lzu_shift20:
+    .long 0, 4, 0, 4, 0, 4, 0, 4

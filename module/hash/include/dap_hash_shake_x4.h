@@ -45,31 +45,27 @@ extern "C" {
 // ============================================================================
 
 /**
- * @brief XOR a single byte at a given position within one instance
- */
-static inline void s_keccak_x4_xor_byte_at(dap_keccak_x4_state_t *a_state,
-                                            unsigned a_inst, size_t a_pos,
-                                            uint8_t a_val)
-{
-    size_t l_lane = a_pos / 8;
-    size_t l_byte = a_pos % 8;
-    size_t l_off  = (l_lane * 4 + a_inst) * 8 + l_byte;
-    ((uint8_t *)a_state->lanes)[l_off] ^= a_val;
-}
-
-/**
- * @brief Apply SHAKE padding to all 4 instances at a given position
- * @param a_state    x4 state
- * @param a_pos      Byte position within rate where padding starts
- * @param a_rate     Sponge rate in bytes
+ * @brief Apply SHAKE padding to all 4 instances simultaneously.
+ *
+ * XORs SHAKE suffix (0x1F) at byte position a_pos and
+ * end-of-rate marker (0x80) at byte position a_rate-1
+ * into all 4 interleaved instances using word-level ops.
  */
 static inline void s_shake_x4_pad(dap_keccak_x4_state_t *a_state,
                                    size_t a_pos, size_t a_rate)
 {
-    for (unsigned j = 0; j < 4; j++) {
-        s_keccak_x4_xor_byte_at(a_state, j, a_pos, DAP_KECCAK_SHAKE_SUFFIX);
-        s_keccak_x4_xor_byte_at(a_state, j, a_rate - 1, 0x80);
-    }
+    size_t l_lane_s = a_pos / 8;
+    size_t l_byte_s = a_pos & 7;
+    size_t l_lane_e = (a_rate - 1) / 8;
+    size_t l_byte_e = (a_rate - 1) & 7;
+
+    uint64_t l_suffix = (uint64_t)DAP_KECCAK_SHAKE_SUFFIX << (l_byte_s * 8);
+    uint64_t l_end    = (uint64_t)0x80 << (l_byte_e * 8);
+
+    uint64_t *l_s = &a_state->lanes[l_lane_s * 4];
+    uint64_t *l_e = &a_state->lanes[l_lane_e * 4];
+    l_s[0] ^= l_suffix; l_s[1] ^= l_suffix; l_s[2] ^= l_suffix; l_s[3] ^= l_suffix;
+    l_e[0] ^= l_end;    l_e[1] ^= l_end;    l_e[2] ^= l_end;    l_e[3] ^= l_end;
 }
 
 /**

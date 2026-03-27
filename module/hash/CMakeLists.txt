@@ -150,6 +150,20 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
     )
 
+    # AVX-512VL Keccak-f[1600] prepare-theta variant — reduced FP0/FP1 pressure
+    set(KECCAK_AVX512VL_PT_ASM ${KECCAK_GEN_DIR}/dap_keccak_f1600_avx512vl_pt.S)
+    dap_tpl_generate(
+        TEMPLATE ${K}/dap_keccak_f1600_asm.S.tpl
+        OUTPUT   ${KECCAK_AVX512VL_PT_ASM}
+        ARGS     "FUNC_SUFFIX=avx512vl_pt"
+                 "ARCH_IMPL=${K}/arch/x86/keccak_f1600_x86_pt.tpl"
+                 ${_KECCAK_ASM_ENV}
+    )
+    target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_AVX512VL_PT_ASM})
+    set_source_files_properties(${KECCAK_AVX512VL_PT_ASM}
+        PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
+    )
+
     # Scalar BMI2 Keccak-f[1600] — hand-tuned ASM + C sponge wrappers
     set(KECCAK_SCALAR_BMI2_ASM  ${K}/arch/x86/keccak_f1600_scalar_bmi2.S)
     set(KECCAK_SCALAR_BMI2_C    ${K}/arch/x86/keccak_scalar_bmi2_sponge.c)
@@ -189,7 +203,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 # Dependencies
-dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_optimization)
 
 # Add hash table submodule
 add_subdirectory(table)

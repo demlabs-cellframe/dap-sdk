@@ -25,6 +25,12 @@ extern void dap_dilithium_ntt_forward_avx512(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_avx512(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_avx512(int32_t *c, const int32_t *a, const int32_t *b);
 
+extern void dap_dilithium_ntt_forward_avx2_asm(int32_t coeffs[256]);
+extern void dap_dilithium_ntt_inverse_avx2_asm(int32_t coeffs[256]);
+extern void dap_dilithium_pointwise_mont_avx2_asm(int32_t *c, const int32_t *a, const int32_t *b);
+
+extern void dap_dilithium_ntt_fwd_fused_avx2(int32_t coeffs[256]);
+
 extern void dap_dilithium_poly_reduce_avx2(int32_t[256]);
 extern void dap_dilithium_poly_reduce_avx512(int32_t[256]);
 extern void dap_dilithium_poly_csubq_avx2(int32_t[256]);
@@ -58,6 +64,8 @@ extern void dap_dilithium_poly_decompose_g88_avx2(int32_t *, int32_t *, const in
 extern void dap_dilithium_polyw1_pack_g88_avx2(unsigned char *, const int32_t *);
 extern unsigned dap_dilithium_poly_make_hint_g32_avx2(int32_t *, const int32_t *, const int32_t *);
 extern unsigned dap_dilithium_poly_make_hint_g88_avx2(int32_t *, const int32_t *, const int32_t *);
+extern void dap_dilithium_polyz_unpack_g17_avx2(int32_t *, const uint8_t *);
+extern void dap_dilithium_polyz_unpack_g19_avx2(int32_t *, const uint8_t *);
 
 extern void dap_dilithium_poly_use_hint_g32_avx512(int32_t *, const int32_t *, const int32_t *);
 extern void dap_dilithium_poly_use_hint_g88_avx512(int32_t *, const int32_t *, const int32_t *);
@@ -66,6 +74,8 @@ extern void dap_dilithium_poly_decompose_g88_avx512(int32_t *, int32_t *, const 
 extern void dap_dilithium_polyw1_pack_g88_avx512(unsigned char *, const int32_t *);
 extern unsigned dap_dilithium_poly_make_hint_g32_avx512(int32_t *, const int32_t *, const int32_t *);
 extern unsigned dap_dilithium_poly_make_hint_g88_avx512(int32_t *, const int32_t *, const int32_t *);
+extern void dap_dilithium_polyz_unpack_g17_avx512(int32_t *, const uint8_t *);
+extern void dap_dilithium_polyz_unpack_g19_avx512(int32_t *, const uint8_t *);
 #endif
 
 #if DAP_PLATFORM_ARM
@@ -115,6 +125,9 @@ DAP_DISPATCH_LOCAL(s_dil_decompose_g88,  void, int32_t *, int32_t *, const int32
 DAP_DISPATCH_LOCAL(s_dil_w1pack_g88,     void, unsigned char *, const int32_t *);
 DAP_DISPATCH_LOCAL(s_dil_make_hint_g32,  unsigned, int32_t *, const int32_t *, const int32_t *);
 DAP_DISPATCH_LOCAL(s_dil_make_hint_g88,  unsigned, int32_t *, const int32_t *, const int32_t *);
+DAP_DISPATCH_LOCAL(s_dil_zunpack_g17,    void, int32_t *, const uint8_t *);
+DAP_DISPATCH_LOCAL(s_dil_zunpack_g19,    void, int32_t *, const uint8_t *);
+DAP_DISPATCH_LOCAL(s_dil_w1pack_g32,     void, unsigned char *, const int32_t *);
 
 /* ===== Scalar reference implementations ===== */
 
@@ -326,6 +339,48 @@ static void s_dil_w1pack_g88_ref(unsigned char *r, const int32_t *coeffs)
     }
 }
 
+static void s_dil_w1pack_g32_ref(unsigned char *r, const int32_t *coeffs)
+{
+    for (unsigned i = 0; i < NN / 2; ++i)
+        r[i] = (uint8_t)((uint32_t)coeffs[2*i+0] | ((uint32_t)coeffs[2*i+1] << 4));
+}
+
+static void s_dil_zunpack_g17_ref(int32_t *r, const uint8_t *a)
+{
+    for (unsigned i = 0; i < NN / 4; ++i) {
+        uint32_t c0  = a[9*i+0];
+        c0 |= (uint32_t)a[9*i+1] << 8;
+        c0 |= (uint32_t)(a[9*i+2] & 0x03) << 16;
+        uint32_t c1  = a[9*i+2] >> 2;
+        c1 |= (uint32_t)a[9*i+3] << 6;
+        c1 |= (uint32_t)(a[9*i+4] & 0x0F) << 14;
+        uint32_t c2  = a[9*i+4] >> 4;
+        c2 |= (uint32_t)a[9*i+5] << 4;
+        c2 |= (uint32_t)(a[9*i+6] & 0x3F) << 12;
+        uint32_t c3  = a[9*i+6] >> 6;
+        c3 |= (uint32_t)a[9*i+7] << 2;
+        c3 |= (uint32_t)a[9*i+8] << 10;
+        r[4*i+0] = (int32_t)(0x1FFFF - c0) + (((int32_t)(0x1FFFF - c0) >> 31) & Q);
+        r[4*i+1] = (int32_t)(0x1FFFF - c1) + (((int32_t)(0x1FFFF - c1) >> 31) & Q);
+        r[4*i+2] = (int32_t)(0x1FFFF - c2) + (((int32_t)(0x1FFFF - c2) >> 31) & Q);
+        r[4*i+3] = (int32_t)(0x1FFFF - c3) + (((int32_t)(0x1FFFF - c3) >> 31) & Q);
+    }
+}
+
+static void s_dil_zunpack_g19_ref(int32_t *r, const uint8_t *a)
+{
+    for (unsigned i = 0; i < NN / 2; ++i) {
+        uint32_t c0  = a[5*i+0];
+        c0 |= (uint32_t)a[5*i+1] << 8;
+        c0 |= (uint32_t)(a[5*i+2] & 0x0F) << 16;
+        uint32_t c1  = a[5*i+2] >> 4;
+        c1 |= (uint32_t)a[5*i+3] << 4;
+        c1 |= (uint32_t)a[5*i+4] << 12;
+        r[2*i+0] = (int32_t)(0x7FFFF - c0) + (((int32_t)(0x7FFFF - c0) >> 31) & Q);
+        r[2*i+1] = (int32_t)(0x7FFFF - c1) + (((int32_t)(0x7FFFF - c1) >> 31) & Q);
+    }
+}
+
 /* ===== Unified dispatch init ===== */
 
 static void s_dil_dispatch_init(void)
@@ -355,6 +410,9 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_DEFAULT(s_dil_w1pack_g88,    s_dil_w1pack_g88_ref);
     DAP_DISPATCH_DEFAULT(s_dil_make_hint_g32, s_dil_make_hint_g32_ref);
     DAP_DISPATCH_DEFAULT(s_dil_make_hint_g88, s_dil_make_hint_g88_ref);
+    DAP_DISPATCH_DEFAULT(s_dil_zunpack_g17,  s_dil_zunpack_g17_ref);
+    DAP_DISPATCH_DEFAULT(s_dil_zunpack_g19,  s_dil_zunpack_g19_ref);
+    DAP_DISPATCH_DEFAULT(s_dil_w1pack_g32,   s_dil_w1pack_g32_ref);
 
     DAP_DISPATCH_ARCH_SELECT_FOR(l_dil);
 
@@ -364,6 +422,14 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_ntt_fwd,      dap_dilithium_ntt_forward_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_ntt_inv,      dap_dilithium_ntt_inverse_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_pw_mont,      dap_dilithium_pointwise_mont_avx512);
+
+    /* Hand-tuned ASM with pre-computed zeta*QINV. Inverse NTT stays with the
+       per-block approach; pointwise is NOT overridden. */
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_inv,      dap_dilithium_ntt_inverse_avx2_asm);
+
+    /* CRYSTALS-style register-resident fused forward NTT (~420 cyc target).
+       Registered last to take highest priority for forward NTT. */
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_fwd,      dap_dilithium_ntt_fwd_fused_avx2);
 
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_reduce,       dap_dilithium_poly_reduce_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_reduce,       dap_dilithium_poly_reduce_avx512);
@@ -398,6 +464,8 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_w1pack_g88,    dap_dilithium_polyw1_pack_g88_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_make_hint_g32, dap_dilithium_poly_make_hint_g32_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_make_hint_g88, dap_dilithium_poly_make_hint_g88_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_zunpack_g17,   dap_dilithium_polyz_unpack_g17_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_zunpack_g19,   dap_dilithium_polyz_unpack_g19_avx2);
 
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_use_hint_g32,  dap_dilithium_poly_use_hint_g32_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_use_hint_g88,  dap_dilithium_poly_use_hint_g88_avx512);
@@ -406,6 +474,8 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_w1pack_g88,    dap_dilithium_polyw1_pack_g88_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_make_hint_g32, dap_dilithium_poly_make_hint_g32_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_make_hint_g88, dap_dilithium_poly_make_hint_g88_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_zunpack_g17,   dap_dilithium_polyz_unpack_g17_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_zunpack_g19,   dap_dilithium_polyz_unpack_g19_avx512);
 
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_fwd,      dap_dilithium_ntt_forward_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_inv,      dap_dilithium_ntt_inverse_neon);
@@ -1131,60 +1201,22 @@ void polyz_pack_p(unsigned char *r, const poly *a, const dilithium_param_t *p)
 /*************************************************/
 void polyz_unpack_p(poly *r, const unsigned char *a, const dilithium_param_t *p)
 {
-    uint32_t gamma1 = dil_gamma1(p);
+    DAP_DISPATCH_ENSURE(s_dil_zunpack_g17, s_dil_dispatch_init);
     unsigned gbits = dil_gamma1_bits(p) + 1;
-
-    if (gbits == 18) {
-        for (unsigned i = 0; i < NN / 4; ++i) {
-            r->coeffs[4*i+0]  = a[9*i+0];
-            r->coeffs[4*i+0] |= (uint32_t)a[9*i+1] << 8;
-            r->coeffs[4*i+0] |= (uint32_t)(a[9*i+2] & 0x03) << 16;
-
-            r->coeffs[4*i+1]  = a[9*i+2] >> 2;
-            r->coeffs[4*i+1] |= (uint32_t)a[9*i+3] << 6;
-            r->coeffs[4*i+1] |= (uint32_t)(a[9*i+4] & 0x0F) << 14;
-
-            r->coeffs[4*i+2]  = a[9*i+4] >> 4;
-            r->coeffs[4*i+2] |= (uint32_t)a[9*i+5] << 4;
-            r->coeffs[4*i+2] |= (uint32_t)(a[9*i+6] & 0x3F) << 12;
-
-            r->coeffs[4*i+3]  = a[9*i+6] >> 6;
-            r->coeffs[4*i+3] |= (uint32_t)a[9*i+7] << 2;
-            r->coeffs[4*i+3] |= (uint32_t)a[9*i+8] << 10;
-
-            for (int j = 0; j < 4; j++) {
-                r->coeffs[4*i+j] = gamma1 - 1 - r->coeffs[4*i+j];
-                r->coeffs[4*i+j] += ((int32_t)r->coeffs[4*i+j] >> 31) & Q;
-            }
-        }
-    } else {
-        for (unsigned i = 0; i < NN / 2; ++i) {
-            r->coeffs[2*i+0]  = a[5*i+0];
-            r->coeffs[2*i+0] |= (uint32_t)a[5*i+1] << 8;
-            r->coeffs[2*i+0] |= (uint32_t)(a[5*i+2] & 0x0F) << 16;
-
-            r->coeffs[2*i+1]  = a[5*i+2] >> 4;
-            r->coeffs[2*i+1] |= (uint32_t)a[5*i+3] << 4;
-            r->coeffs[2*i+1] |= (uint32_t)a[5*i+4] << 12;
-
-            r->coeffs[2*i+0] = gamma1 - 1 - r->coeffs[2*i+0];
-            r->coeffs[2*i+0] += ((int32_t)r->coeffs[2*i+0] >> 31) & Q;
-            r->coeffs[2*i+1] = gamma1 - 1 - r->coeffs[2*i+1];
-            r->coeffs[2*i+1] += ((int32_t)r->coeffs[2*i+1] >> 31) & Q;
-        }
-    }
+    if (gbits == 18)
+        s_dil_zunpack_g17_ptr((int32_t *)r->coeffs, a);
+    else
+        s_dil_zunpack_g19_ptr((int32_t *)r->coeffs, a);
 }
 
 /*************************************************/
 void polyw1_pack_p(unsigned char *r, const poly *a, const dilithium_param_t *p)
 {
-    if (dil_gamma2(p) == (Q - 1) / 88) {
-        DAP_DISPATCH_ENSURE(s_dil_w1pack_g88, s_dil_dispatch_init);
+    DAP_DISPATCH_ENSURE(s_dil_w1pack_g88, s_dil_dispatch_init);
+    if (dil_gamma2(p) == (Q - 1) / 88)
         s_dil_w1pack_g88_ptr(r, (const int32_t *)a->coeffs);
-    } else {
-        for (unsigned i = 0; i < NN / 2; ++i)
-            r[i] = (uint8_t)(a->coeffs[2*i+0] | (a->coeffs[2*i+1] << 4));
-    }
+    else
+        s_dil_w1pack_g32_ptr(r, (const int32_t *)a->coeffs);
 }
 
 /*************************************************/

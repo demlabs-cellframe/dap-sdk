@@ -50,20 +50,10 @@ bool dap_hash_sha3_256(const void *a_data_in, size_t a_data_in_size, dap_hash_sh
     if (a_data_in == NULL && a_data_in_size > 0)
         return false;
 
-#if DAP_PLATFORM_X86
-    if (__builtin_expect(dap_cpu_arch_get() >= DAP_CPU_ARCH_AVX512, 1)) {
-        uint64_t l_st[25];
-        dap_keccak_absorb_136_avx512vl_asm(l_st,
-            (const uint8_t *)a_data_in, a_data_in_size, DAP_KECCAK_SHA3_SUFFIX);
-        memcpy(a_hash_out->raw, l_st, DAP_HASH_SHA3_256_SIZE);
-        return true;
-    }
-#endif
-
-    dap_hash_keccak_ctx_t l_ctx;
-    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_256_RATE, DAP_KECCAK_SHA3_SUFFIX);
-    dap_hash_keccak_sponge_absorb(&l_ctx, (const uint8_t *)a_data_in, a_data_in_size);
-    dap_hash_keccak_sponge_squeeze(&l_ctx, a_hash_out->raw, DAP_HASH_SHA3_256_SIZE);
+    uint64_t l_st[25];
+    dap_keccak_sponge_get_ops()->absorb_136(l_st,
+        (const uint8_t *)a_data_in, a_data_in_size, DAP_KECCAK_SHA3_SUFFIX);
+    memcpy(a_hash_out->raw, l_st, DAP_HASH_SHA3_256_SIZE);
     return true;
 }
 

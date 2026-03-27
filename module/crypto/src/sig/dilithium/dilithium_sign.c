@@ -1,4 +1,8 @@
 #include <stdint.h>
+#ifdef DAP_DILITHIUM_PROFILE
+#include <stdatomic.h>
+#include <x86intrin.h>
+#endif
 #include "dilithium_sign.h"
 #include "dap_common.h"
 #include "dap_memwipe.h"
@@ -476,6 +480,12 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
         return -4;
     }
 
+#ifdef DAP_DILITHIUM_PROFILE
+    static _Atomic(uint64_t) s_prof_unpack, s_prof_mu, s_prof_expand, s_prof_ntt,
+        s_prof_hint, s_prof_chal, s_prof_total, s_prof_cnt;
+    uint64_t _pt0 = __rdtsc(), _pt1;
+#endif
+
     dilithium_unpack_pk(rho, &t1, public_key->data, p);
 
     if (fips) {
@@ -496,6 +506,10 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
         return -6;
     }
 
+#ifdef DAP_DILITHIUM_PROFILE
+    _pt1 = __rdtsc(); s_prof_unpack += _pt1 - _pt0; _pt0 = _pt1;
+#endif
+
     unsigned char tmp_m[crh + mlen];
     if(sig->sig_data != m)
         for(i = 0; i < mlen; ++i)
@@ -504,7 +518,15 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     dap_hash_shake256(tmp_m, crh, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
     dap_hash_shake256(mu, crh, tmp_m, crh + mlen);
 
+#ifdef DAP_DILITHIUM_PROFILE
+    _pt1 = __rdtsc(); s_prof_mu += _pt1 - _pt0; _pt0 = _pt1;
+#endif
+
     expand_mat(mat, rho, p);
+
+#ifdef DAP_DILITHIUM_PROFILE
+    _pt1 = __rdtsc(); s_prof_expand += _pt1 - _pt0; _pt0 = _pt1;
+#endif
 
     polyvecl_ntt(&z, p);
     for(i = 0; i < p->PARAM_K ; ++i)
@@ -521,12 +543,20 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     polyveck_reduce(&tmp1, p);
     polyveck_invntt_montgomery(&tmp1, p);
 
+#ifdef DAP_DILITHIUM_PROFILE
+    _pt1 = __rdtsc(); s_prof_ntt += _pt1 - _pt0; _pt0 = _pt1;
+#endif
+
     polyveck_csubq(&tmp1, p);
     if (fips) {
         polyveck_use_hint_p(&w1, &tmp1, &h, p);
     } else {
         polyveck_use_hint(&w1, &tmp1, &h, p);
     }
+
+#ifdef DAP_DILITHIUM_PROFILE
+    _pt1 = __rdtsc(); s_prof_hint += _pt1 - _pt0; _pt0 = _pt1;
+#endif
 
     if (fips) {
         uint32_t ctilde_bytes = dil_ctildebytes(p);
@@ -541,8 +571,8 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
 
         if (memcmp(c_tilde, c_tilde_check, ctilde_bytes) != 0) {
             log_it(L_ERROR, "Verify failed: c_tilde mismatch (K=%u L=%u)", p->PARAM_K, p->PARAM_L);
-            return -7;
-        }
+                return -7;
+            }
     } else {
         challenge(&cp, mu, &w1, p);
         for(i = 0; i < NN; ++i)
@@ -553,6 +583,28 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
             }
     }
 
+#ifdef DAP_DILITHIUM_PROFILE
+    _pt1 = __rdtsc(); s_prof_chal += _pt1 - _pt0;
+    uint64_t cnt = ++s_prof_cnt;
+    if (cnt == 500) {
+        fprintf(stderr, "\n[PROF] ML-DSA verify (K=%u L=%u, %lu calls):\n"
+                "  unpack+sib : %7lu cyc (%5.2f us)\n"
+                "  mu(shake)  : %7lu cyc (%5.2f us)\n"
+                "  expand_mat : %7lu cyc (%5.2f us)\n"
+                "  ntt+mul    : %7lu cyc (%5.2f us)\n"
+                "  hint       : %7lu cyc (%5.2f us)\n"
+                "  chal+pack  : %7lu cyc (%5.2f us)\n",
+                p->PARAM_K, p->PARAM_L, (unsigned long)cnt,
+                (unsigned long)(s_prof_unpack/cnt), (double)s_prof_unpack/cnt/4180.0,
+                (unsigned long)(s_prof_mu/cnt), (double)s_prof_mu/cnt/4180.0,
+                (unsigned long)(s_prof_expand/cnt), (double)s_prof_expand/cnt/4180.0,
+                (unsigned long)(s_prof_ntt/cnt), (double)s_prof_ntt/cnt/4180.0,
+                (unsigned long)(s_prof_hint/cnt), (double)s_prof_hint/cnt/4180.0,
+                (unsigned long)(s_prof_chal/cnt), (double)s_prof_chal/cnt/4180.0);
+        s_prof_unpack = s_prof_mu = s_prof_expand = s_prof_ntt =
+            s_prof_hint = s_prof_chal = s_prof_total = s_prof_cnt = 0;
+    }
+#endif
     return 0;
 }
 

@@ -99,6 +99,7 @@ endif()
 
 option(BUILD_DEPRECATED_CRYPTO "Build deprecated cryptographic algorithms (Bliss, Picnic, Tesla, NewHope, MSRLN, Salsa2012)" ON)
 option(BUILD_CLASSIC_CRYPTO "Build classic (non-PQ) cryptographic algorithms (GOST/Kuznyechik, Shipovnik, ECDSA)" ON)
+option(DAP_DILITHIUM_PROFILE "Enable rdtsc profiling in Dilithium verify" OFF)
 
 file( GLOB CRYPTO_SRCS
       src/*.c
@@ -376,6 +377,33 @@ dap_arch_generate(
     EXTRA_ARGS "REDUCE_FILE=${DIL_REDUCE_TPL}"
                "OPS_FILE=${DIL_TPL_DIR}/dap_dilithium_simd_poly_ops.tpl"
 )
+# x86 poly ops: hand-tuned assembly via dap_tpl (replaces C-intrinsics in sources)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_poly_ops_avx2.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_poly_ops_avx2.S
+    ARCH     avx2
+    GUARD    none
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_poly_ops_avx512.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_poly_ops_avx512.S
+    ARCH     avx512
+    GUARD    none
+)
+# x86 NTT: hand-tuned assembly with pre-computed Montgomery tables
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_ntt_avx2_asm.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_avx2_asm.S
+    ARCH     avx2
+    GUARD    none
+)
+# x86 NTT fused: CRYSTALS-style register-resident 8-layer butterfly
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_ntt_fused_avx2.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_fused_avx2.S
+    ARCH     avx2
+    GUARD    none
+)
 # Per-variant rejection sampling generation
 dap_arch_generate_variant(
     TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_sample_simd.c.tpl
@@ -409,8 +437,10 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
         dap_dilithium_ntt_avx2_512vl.c  avx2_512vl
         dap_dilithium_ntt_avx512.c      avx512
         dap_dilithium_ntt_neon.c        neon
-        dap_dilithium_poly_avx2.c       avx2
-        dap_dilithium_poly_avx512.c     avx512
+        dap_dilithium_poly_ops_avx2.S    avx2
+        dap_dilithium_poly_ops_avx512.S avx512
+        dap_dilithium_ntt_avx2_asm.S    avx2
+        dap_dilithium_ntt_fused_avx2.S  avx2
         dap_dilithium_poly_neon.c       neon
         dap_dilithium_sample_avx2.c     avx2
         dap_dilithium_sample_neon.c     neon
@@ -572,6 +602,10 @@ dap_link_libraries(dap_crypto INTERFACE dap_core dap_json dap_hash dap_hash_tabl
 if(TARGET dap_gpu)
     dap_link_libraries(dap_crypto INTERFACE dap_gpu)
     target_compile_definitions(dap_crypto PUBLIC DAP_HAS_GPU)
+endif()
+
+if(DAP_DILITHIUM_PROFILE)
+    target_compile_definitions(dap_crypto PRIVATE DAP_DILITHIUM_PROFILE)
 endif()
 
 if(UNIX)

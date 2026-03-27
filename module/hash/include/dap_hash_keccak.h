@@ -24,6 +24,7 @@
 #include <stdbool.h>
 
 #include "dap_cpu_arch.h"
+#include "dap_arch_dispatch.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,6 +79,7 @@ void dap_hash_keccak_permute_sse2(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_avx2(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_avx512(dap_hash_keccak_state_t *state);
 void dap_hash_keccak_permute_avx512vl_asm(dap_hash_keccak_state_t *state);
+void dap_hash_keccak_permute_avx512vl_pt(dap_hash_keccak_state_t *state);
 
 void dap_keccak_absorb_136_avx512vl_asm(uint64_t *state, const uint8_t *data, size_t len, uint8_t suffix);
 void dap_keccak_absorb_168_avx512vl_asm(uint64_t *state, const uint8_t *data, size_t len, uint8_t suffix);
@@ -107,7 +109,7 @@ void dap_hash_keccak_permute_sve2(dap_hash_keccak_state_t *state);
 #endif
 
 // ============================================================================
-// Dispatch API (static inline for zero-overhead dispatch)
+// Dispatch API — uses standard DAP dispatch infrastructure
 // ============================================================================
 
 /**
@@ -118,49 +120,44 @@ static inline void dap_hash_keccak_state_init(dap_hash_keccak_state_t *state)
     dap_hash_keccak_state_init_ref(state);
 }
 
-typedef void (*dap_hash_keccak_permute_fn_t)(dap_hash_keccak_state_t *);
+DAP_DISPATCH_DECLARE_RESOLVE(dap_hash_keccak_permute, void, dap_hash_keccak_state_t *);
 
 /**
- * @brief Resolve best Keccak permutation once, cache the function pointer.
+ * @brief Resolve best Keccak permutation for the current CPU.
  *
  * Uses KECCAK algo class for vendor-aware dispatch via tune rules.
- * Fallback logic uses >= (not ==) so AVX-512 machines correctly
- * pick the best available implementation even if no exact match.
+ * Highest matching arch wins (>= semantics).
  */
-static inline dap_hash_keccak_permute_fn_t s_keccak_resolve_permute(void)
+static inline dap_hash_keccak_permute_fn_t dap_hash_keccak_permute_resolve(void)
 {
     dap_algo_class_t l_class = dap_algo_class_register("KECCAK");
     dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
-#if DAP_PLATFORM_X86
-    if (arch >= DAP_CPU_ARCH_AVX512) return dap_hash_keccak_permute_avx512vl_asm;
-    if (arch >= DAP_CPU_ARCH_AVX2)   return dap_hash_keccak_permute_scalar_bmi2;
-    if (arch >= DAP_CPU_ARCH_SSE2)   return dap_hash_keccak_permute_sse2;
-#elif DAP_PLATFORM_ARM
-#if defined(__aarch64__)
+
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX512, dap_hash_keccak_permute_avx512vl_asm);
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX2,   dap_hash_keccak_permute_scalar_bmi2);
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_SSE2,   dap_hash_keccak_permute_sse2);
+
+#if DAP_PLATFORM_ARM && defined(__aarch64__)
 #if !defined(__APPLE__)
-    if (arch >= DAP_CPU_ARCH_SVE2)   return dap_hash_keccak_permute_sve2;
-    if (arch >= DAP_CPU_ARCH_SVE)    return dap_hash_keccak_permute_sve;
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_SVE2,   dap_hash_keccak_permute_sve2);
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_SVE,    dap_hash_keccak_permute_sve);
 #endif
-    if (arch >= DAP_CPU_ARCH_NEON)   return dap_hash_keccak_permute_neon_sha3_asm;
-#else
-    if (arch >= DAP_CPU_ARCH_NEON)   return dap_hash_keccak_permute_neon;
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON,   dap_hash_keccak_permute_neon_sha3_asm);
+#elif DAP_PLATFORM_ARM
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON,   dap_hash_keccak_permute_neon);
 #endif
-#endif
+
     return dap_hash_keccak_permute_ref;
 }
 
 /**
  * @brief Apply Keccak-p[1600] permutation with cached SIMD dispatch.
  *
- * The function pointer is resolved on first call and cached, avoiding
- * repeated dap_cpu_arch_get() → dap_cpu_detect_features() overhead.
+ * First call: resolve + cache. Subsequent: one predicted indirect call.
  */
 static inline void dap_hash_keccak_permute(dap_hash_keccak_state_t *state)
 {
-    static dap_hash_keccak_permute_fn_t s_fn = NULL;
-    if (__builtin_expect(s_fn == NULL, 0))
-        s_fn = s_keccak_resolve_permute();
-    s_fn(state);
+    DAP_DISPATCH_INLINE_CALL(dap_hash_keccak_permute, state);
 }
 
 /**
@@ -212,6 +209,73 @@ void dap_hash_keccak_sponge_finalize(dap_hash_keccak_ctx_t *ctx);
  * @brief Squeeze output from sponge (can be called multiple times)
  */
 void dap_hash_keccak_sponge_squeeze(dap_hash_keccak_ctx_t *ctx, uint8_t *out, size_t len);
+
+// ============================================================================
+// Fused sponge dispatch — absorb/squeeze for specific rates
+// ============================================================================
+
+typedef void (*dap_keccak_absorb_fn_t)(uint64_t *, const uint8_t *, size_t, uint8_t);
+typedef void (*dap_keccak_squeeze_fn_t)(uint64_t *, uint8_t *, size_t);
+
+void dap_keccak_absorb_136_ref(uint64_t *state, const uint8_t *data, size_t len, uint8_t suffix);
+void dap_keccak_absorb_168_ref(uint64_t *state, const uint8_t *data, size_t len, uint8_t suffix);
+void dap_keccak_absorb_72_ref(uint64_t *state, const uint8_t *data, size_t len, uint8_t suffix);
+void dap_keccak_squeeze_136_ref(uint64_t *state, uint8_t *out, size_t nblocks);
+void dap_keccak_squeeze_168_ref(uint64_t *state, uint8_t *out, size_t nblocks);
+void dap_keccak_squeeze_72_ref(uint64_t *state, uint8_t *out, size_t nblocks);
+
+typedef struct {
+    dap_keccak_absorb_fn_t  absorb_136, absorb_168, absorb_72;
+    dap_keccak_squeeze_fn_t squeeze_136, squeeze_168, squeeze_72;
+} dap_keccak_sponge_ops_t;
+
+static inline dap_keccak_sponge_ops_t dap_keccak_sponge_resolve(void)
+{
+    dap_algo_class_t l_class = dap_algo_class_register("KECCAK_SPONGE");
+    dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
+
+    dap_keccak_sponge_ops_t ops = {
+        .absorb_136  = dap_keccak_absorb_136_ref,
+        .absorb_168  = dap_keccak_absorb_168_ref,
+        .absorb_72   = dap_keccak_absorb_72_ref,
+        .squeeze_136 = dap_keccak_squeeze_136_ref,
+        .squeeze_168 = dap_keccak_squeeze_168_ref,
+        .squeeze_72  = dap_keccak_squeeze_72_ref,
+    };
+
+#if DAP_PLATFORM_X86
+    if (__builtin_expect(arch >= DAP_CPU_ARCH_AVX2, 1)) {
+        ops.absorb_136  = dap_keccak_absorb_136_scalar_bmi2;
+        ops.absorb_168  = dap_keccak_absorb_168_scalar_bmi2;
+        ops.absorb_72   = dap_keccak_absorb_72_scalar_bmi2;
+        ops.squeeze_136 = dap_keccak_squeeze_136_scalar_bmi2;
+        ops.squeeze_168 = dap_keccak_squeeze_168_scalar_bmi2;
+        ops.squeeze_72  = dap_keccak_squeeze_72_scalar_bmi2;
+    }
+    if (__builtin_expect(arch >= DAP_CPU_ARCH_AVX512, 1)) {
+        ops.absorb_136  = dap_keccak_absorb_136_avx512vl_asm;
+        ops.absorb_168  = dap_keccak_absorb_168_avx512vl_asm;
+        ops.absorb_72   = dap_keccak_absorb_72_avx512vl_asm;
+        ops.squeeze_136 = dap_keccak_squeeze_136_avx512vl_asm;
+        ops.squeeze_168 = dap_keccak_squeeze_168_avx512vl_asm;
+        ops.squeeze_72  = dap_keccak_squeeze_72_avx512vl_asm;
+    }
+#endif
+
+    return ops;
+}
+
+static dap_keccak_sponge_ops_t s_keccak_sponge_ops;
+static int s_keccak_sponge_resolved = 0;
+
+static inline const dap_keccak_sponge_ops_t *dap_keccak_sponge_get_ops(void)
+{
+    if (__builtin_expect(!s_keccak_sponge_resolved, 0)) {
+        s_keccak_sponge_ops = dap_keccak_sponge_resolve();
+        s_keccak_sponge_resolved = 1;
+    }
+    return &s_keccak_sponge_ops;
+}
 
 #ifdef __cplusplus
 }

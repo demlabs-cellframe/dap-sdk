@@ -474,3 +474,102 @@ dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}:
     vzeroupper
     ret
 .size dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}, .-dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}
+
+/* ================================================================
+ * polyz_unpack_g17 — AVX2-width in AVX512 context (18-bit, gamma1=2^17)
+ *
+ * void dap_dilithium_polyz_unpack_g17_<arch>(int32_t *r, const uint8_t *a)
+ * ================================================================ */
+.globl dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}
+.type  dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}, @function
+.p2align 4
+dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}:
+    vpbroadcastd .Lzu512_mask18(%rip), %ymm5
+    vpbroadcastd .Lzu512_gm1_17(%rip), %ymm6
+    vpbroadcastd .Lzu512_q(%rip), %ymm7
+    vmovdqu .Lzu512_shuf18(%rip), %ymm8
+    vmovdqu .Lzu512_shift18(%rip), %ymm9
+
+    xorq    %rax, %rax
+.L_zu512_g17_loop:
+    vmovdqu (%rsi), %xmm0
+    vmovdqu 9(%rsi), %xmm1
+    vinserti128 $1, %xmm1, %ymm0, %ymm0
+    vpshufb %ymm8, %ymm0, %ymm0
+    vpsrlvd %ymm9, %ymm0, %ymm0
+    vpand   %ymm5, %ymm0, %ymm0
+    vpsubd  %ymm0, %ymm6, %ymm0
+    vpsrad  $31, %ymm0, %ymm1
+    vpand   %ymm7, %ymm1, %ymm1
+    vpaddd  %ymm1, %ymm0, %ymm0
+    vmovdqu %ymm0, (%rdi,%rax)
+
+    addq    $32, %rax
+    addq    $18, %rsi
+    cmpq    $COEFF_BYTES, %rax
+    jne     .L_zu512_g17_loop
+
+    vzeroupper
+    ret
+.size dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}, .-dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}
+
+/* ================================================================
+ * polyz_unpack_g19 — AVX2-width in AVX512 context (20-bit, gamma1=2^19)
+ *
+ * void dap_dilithium_polyz_unpack_g19_<arch>(int32_t *r, const uint8_t *a)
+ * ================================================================ */
+.globl dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}
+.type  dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}, @function
+.p2align 4
+dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}:
+    vpbroadcastd .Lzu512_mask20(%rip), %ymm5
+    vpbroadcastd .Lzu512_gm1_19(%rip), %ymm6
+    vpbroadcastd .Lzu512_q(%rip), %ymm7
+    vmovdqu .Lzu512_shuf20(%rip), %ymm8
+    vmovdqu .Lzu512_shift20(%rip), %ymm9
+
+    xorq    %rax, %rax
+.L_zu512_g19_loop:
+    vmovdqu (%rsi), %xmm0
+    vmovdqu 10(%rsi), %xmm1
+    vinserti128 $1, %xmm1, %ymm0, %ymm0
+    vpshufb %ymm8, %ymm0, %ymm0
+    vpsrlvd %ymm9, %ymm0, %ymm0
+    vpand   %ymm5, %ymm0, %ymm0
+    vpsubd  %ymm0, %ymm6, %ymm0
+    vpsrad  $31, %ymm0, %ymm1
+    vpand   %ymm7, %ymm1, %ymm1
+    vpaddd  %ymm1, %ymm0, %ymm0
+    vmovdqu %ymm0, (%rdi,%rax)
+
+    addq    $32, %rax
+    addq    $20, %rsi
+    cmpq    $COEFF_BYTES, %rax
+    jne     .L_zu512_g19_loop
+
+    vzeroupper
+    ret
+.size dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}, .-dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}
+
+.section .rodata
+.p2align 5
+.Lzu512_mask18:
+    .long 0x3FFFF
+.Lzu512_mask20:
+    .long 0xFFFFF
+.Lzu512_gm1_17:
+    .long 0x1FFFF
+.Lzu512_gm1_19:
+    .long 0x7FFFF
+.Lzu512_q:
+    .long 8380417
+.Lzu512_shuf18:
+    .byte 0, 1, 2, 0x80,  2, 3, 4, 0x80,  4, 5, 6, 0x80,  6, 7, 8, 0x80
+    .byte 0, 1, 2, 0x80,  2, 3, 4, 0x80,  4, 5, 6, 0x80,  6, 7, 8, 0x80
+.Lzu512_shift18:
+    .long 0, 2, 4, 6, 0, 2, 4, 6
+.Lzu512_shuf20:
+    .byte 0, 1, 2, 0x80,  2, 3, 4, 0x80,  5, 6, 7, 0x80,  7, 8, 9, 0x80
+    .byte 0, 1, 2, 0x80,  2, 3, 4, 0x80,  5, 6, 7, 0x80,  7, 8, 9, 0x80
+.Lzu512_shift20:
+    .long 0, 4, 0, 4, 0, 4, 0, 4
