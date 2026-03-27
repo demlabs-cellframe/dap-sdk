@@ -450,6 +450,8 @@ int dap_link_manager_add_net_associate(uint64_t a_net_id, dap_cluster_t *a_link_
                                                         dap_guuid_to_hex_str(a_link_cluster->guuid), l_net->id);
             return -4;
         }
+    if (l_net->active)
+        a_link_cluster->status = DAP_CLUSTER_STATUS_ENABLED;
     l_net->link_clusters = dap_list_append(l_net->link_clusters, a_link_cluster);
     return 0;
 }
