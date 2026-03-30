@@ -142,9 +142,8 @@ static void s_node_hot_list_add(dap_stream_node_addr_t a_node_addr, uint64_t a_a
 // sanity check
     dap_return_if_pass(!a_node_addr.uint64);
 // func work
-    const char *l_node_addr_str = dap_stream_node_addr_to_str_static(a_node_addr);
     char *l_hot_group = s_hot_group_forming(a_associated_net_id);
-    dap_global_db_set_sync(l_hot_group, l_node_addr_str, NULL, 0, false);
+    dap_global_db_set_sync(l_hot_group, dap_stream_node_addr_to_str_static(a_node_addr), NULL, 0, false);
     DAP_DEL_Z(l_hot_group);
 }
 

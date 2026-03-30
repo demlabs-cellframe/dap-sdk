@@ -563,7 +563,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     if (!a_esocket->is_initalized)
         return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_DEBUG, "Skip worker assign callback for events socket "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", a_esocket->uuid);
+        return;
+    }
     dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
@@ -590,11 +593,16 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 {
     UNUSED(a_worker);
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_DEBUG, "Skip worker unassign callback for events socket "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", a_esocket->uuid);
+        return;
+    }
     s_stream_delete_from_list(l_stream);
-    DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
-    dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
-    l_stream->keepalive_timer = NULL;
+    if (l_stream->keepalive_timer) {
+        DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
+        dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
+        l_stream->keepalive_timer = NULL;
+    }
 }
 
 /**
@@ -882,22 +890,17 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
 
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
 {
-    dap_stream_t *l_stream = NULL;
+    if (!a_es)
+        return NULL;
     if (a_es->server) {
         if (a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP)
-            l_stream = DAP_STREAM(a_es);
-        else {
-            dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_es);
-            assert(l_http_client);
-            l_stream = DAP_STREAM(l_http_client);
-        }
-    } else {
-        dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-        assert(l_client);
-        dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-        l_stream = l_client_pvt->stream;
+            return DAP_STREAM(a_es);
+        dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_es);
+        return l_http_client ? DAP_STREAM(l_http_client) : NULL;
     }
-    return l_stream;
+    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    dap_client_pvt_t *l_client_pvt = l_client ? DAP_CLIENT_PVT(l_client) : NULL;
+    return l_client_pvt ? l_client_pvt->stream : NULL;
 }
 
 /**
@@ -919,7 +922,10 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     if(l_es) {
         assert(a_server_side == !!l_es->server);
         dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
-        assert(l_stream);
+        if (!l_stream) {
+            DAP_DELETE(l_es_uuid);
+            return false;
+        }
         if (l_stream->is_active) {
             l_stream->is_active = false;
             return true;
