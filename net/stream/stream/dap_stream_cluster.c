@@ -56,8 +56,7 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
     pthread_rwlock_wrlock(&s_clusters_rwlock);
     HASH_FIND(hh, s_clusters, &a_guuid, sizeof(dap_guuid_t), l_check);
     if (l_check) {
-        const char *l_guuid_str = dap_guuid_to_hex_str(a_guuid);
-        log_it(L_ERROR, "GUUID %s already in use", l_guuid_str);
+        log_it(L_ERROR, "GUUID %s already in use", dap_guuid_to_hex_str(a_guuid));
         DAP_DELETE(ret);
         return NULL;
     }
