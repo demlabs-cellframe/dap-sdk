@@ -567,6 +567,7 @@ pthread_t       l_tid;
  */
 void dap_events_stop_all( )
 {
+    log_it(L_ATT, "dap_events_stop_all() called — initiating shutdown of all workers");
     if ( !s_workers_init ) {
         debug_if(s_debug_more, L_DEBUG, "dap_events_stop_all: Event socket reactor not initialized, skipping");
         return;

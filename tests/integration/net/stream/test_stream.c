@@ -22,7 +22,8 @@
 #include "dap_enc.h"
 #include "dap_cert.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_stream.h"
 #include "dap_events.h"
 #include "dap_test_helpers.h"
@@ -160,9 +161,8 @@ static void test_03_client_creation(void) {
     // Verify client internal structure
     dap_client_fsm_t *client_fsm = DAP_CLIENT_FSM(client);
     TEST_ASSERT_NOT_NULL(client_fsm, "Client FSM should exist");
-    dap_client_esocket_t *client_esocket = client_fsm->esocket;
-    TEST_ASSERT_NOT_NULL(client_esocket, "Client esocket should exist");
-    TEST_ASSERT_NOT_NULL(client_esocket->worker, "Client should have a worker assigned");
+    TEST_ASSERT_NOT_NULL(client_fsm->client_trans_ctx, "Client trans ctx should exist");
+    TEST_ASSERT_NOT_NULL(client_fsm->worker, "Client should have a worker assigned");
     TEST_ASSERT(client_fsm->stage == STAGE_BEGIN, "Client should start at STAGE_BEGIN");
     
     // Set uplink (dummy address for this test)
@@ -213,8 +213,7 @@ static void test_04_channel_configuration(void) {
     TEST_ASSERT(l_client_ready, "Client should be properly initialized");
     
     // Verify client internal structure
-    dap_client_esocket_t *client_esocket = DAP_CLIENT_ESOCKET(client);
-    TEST_ASSERT_NOT_NULL(client_esocket, "Client internal structure should exist");
+    TEST_ASSERT_NOT_NULL(DAP_CLIENT_FSM(client)->client_trans_ctx, "Client trans ctx should exist");
     
     // Set active channels
     dap_client_set_active_channels_unsafe(client, "N");

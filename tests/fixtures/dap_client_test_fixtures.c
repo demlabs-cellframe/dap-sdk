@@ -27,7 +27,9 @@
  */
 
 #include "dap_client_test_fixtures.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
+#include "dap_net_trans_ctx.h"
 #include "dap_test_async.h"
 #include "dap_common.h"
 #include "dap_cert.h"
@@ -143,13 +145,11 @@ bool dap_test_client_check_initialized(void *a_user_data) {
     if (!client_fsm) {
         return false;
     }
-    dap_client_esocket_t *client_esocket = client_fsm->esocket;
-    if (!client_esocket) {
+    if (!client_fsm->client_trans_ctx || !client_fsm->trans_ctx) {
         return false;
     }
-    
-    // Check that internal structure is initialized
-    return (client_esocket->worker != NULL && 
+
+    return (client_fsm->worker != NULL &&
             client_fsm->stage == STAGE_BEGIN &&
             client_fsm->stage_status == STAGE_STATUS_COMPLETE);
 }
@@ -160,14 +160,12 @@ bool dap_test_client_check_ready_for_deletion(void *a_user_data) {
         return true; // Already deleted
     }
     
-    dap_client_esocket_t *client_esocket = DAP_CLIENT_ESOCKET(client);
-    if (!client_esocket) {
-        return true; // Internal structure already cleaned up
-    }
-    
-    // Check that all resources are cleaned up
-    return (client_esocket->stream == NULL && 
-            client_esocket->stream_es == NULL);
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    if (!l_fsm || !l_tc)
+        return true;
+
+    return (l_tc->stream == NULL);
 }
 
 // ============================================================================

@@ -29,7 +29,8 @@
 #include "dap_proc_thread.h"
 #include "dap_enc.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_worker.h"
@@ -291,13 +292,13 @@ static int s_setup_client(int id)
     
     // Wait for client init
     for (int i = 0; i < 20; i++) {
-        dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
-        if (esocket && esocket->worker) break;
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(ctx->client);
+        if (l_fsm && l_fsm->worker) break;
         usleep(100000);
     }
     
-    dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
-    if (!esocket || !esocket->worker) {
+    dap_client_fsm_t *l_fsm_chk = DAP_CLIENT_FSM(ctx->client);
+    if (!l_fsm_chk || !l_fsm_chk->worker) {
         log_it(L_ERROR, "Client %d: init timeout", id);
         return -2;
     }
@@ -377,8 +378,8 @@ static int s_register_receiver(int id)
         return -1;
     }
     
-    dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
-    if (!esocket || !esocket->worker) {
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(ctx->client);
+    if (!l_fsm || !l_fsm->worker) {
         log_it(L_ERROR, "Client %d: no worker", id);
         return -2;
     }
@@ -395,7 +396,7 @@ static int s_register_receiver(int id)
     args->cond = &cond;
     args->result = &result;
     
-    dap_worker_exec_callback_on(esocket->worker, s_register_notifier_callback, args);
+    dap_worker_exec_callback_on(l_fsm->worker, s_register_notifier_callback, args);
     
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);

@@ -38,10 +38,10 @@ void test_write_raw()
     
     dap_stream_t l_stream = {0};
     dap_net_trans_ctx_t l_trans_ctx = {0};
-    l_trans_ctx.esocket = &l_mock_esocket; // Use real mock esocket
+    l_stream.esocket = &l_mock_esocket;
     l_stream.trans_ctx = &l_trans_ctx;
     l_stream.session = NULL;
-    l_stream.node.uint64 = 1; // Dummy node addr
+    l_stream.node.uint64 = 1;
     
     char l_data[] = "Hello World";
     size_t l_data_size = strlen(l_data) + 1;
@@ -64,7 +64,7 @@ void test_write_encrypted()
     
     dap_stream_t l_stream = {0};
     dap_net_trans_ctx_t l_trans_ctx = {0};
-    l_trans_ctx.esocket = &l_mock_esocket; // Use real mock esocket
+    l_stream.esocket = &l_mock_esocket;
     l_stream.trans_ctx = &l_trans_ctx;
     dap_stream_session_t l_session = {0};
     dap_enc_key_t *l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SALSA2012, NULL, 0, NULL, 0, 32);

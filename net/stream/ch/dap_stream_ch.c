@@ -343,8 +343,8 @@ void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_rea
     if( a_ch->ready_to_read != a_is_ready){
         //debug_if(s_debug_more, L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         a_ch->ready_to_read=a_is_ready;
-        if (a_ch->stream->trans_ctx && a_ch->stream->trans_ctx->esocket)
-            dap_events_socket_set_readable_unsafe(a_ch->stream->trans_ctx->esocket, a_is_ready);
+        if (a_ch->stream->esocket)
+            dap_events_socket_set_readable_unsafe(a_ch->stream->esocket, a_is_ready);
     }
 }
 
@@ -358,8 +358,8 @@ void dap_stream_ch_set_ready_to_write_unsafe(dap_stream_ch_t * ch,bool is_ready)
     if(ch->ready_to_write!=is_ready){
         //debug_if(s_debug_more, L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         ch->ready_to_write=is_ready;
-        if (ch->stream->trans_ctx && ch->stream->trans_ctx->esocket)
-            dap_events_socket_set_writable_unsafe(ch->stream->trans_ctx->esocket, is_ready);
+        if (ch->stream->esocket)
+            dap_events_socket_set_writable_unsafe(ch->stream->esocket, is_ready);
     }
 }
 
