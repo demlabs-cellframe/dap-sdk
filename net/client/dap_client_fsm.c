@@ -586,7 +586,7 @@ static void s_worker_execute_stage(void *a_arg)
     case STAGE_STREAM_SESSION: {
         debug_if(s_debug_more, L_INFO, "Worker: executing STAGE_STREAM_SESSION for client %p", l_client);
 
-        if (!l_tc->stream || !l_tc->stream->esocket) {
+        if (!l_tc->stream) {
             log_it(L_ERROR, "No stream for STAGE_STREAM_SESSION");
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
@@ -631,17 +631,18 @@ static void s_worker_execute_stage(void *a_arg)
             }
             // Async; callback will notify FSM
         } else {
-            // No explicit connect needed; set up timeout
-            dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_DUP(&l_tc->stream->esocket->uuid);
-            if (!dap_timerfd_start_on_worker(l_worker,
-                                             (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                             s_stream_timer_timeout_check, l_es_uuid_ptr)) {
-                DAP_DELETE(l_es_uuid_ptr);
-                dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                                      STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
-                break;
+            // No explicit connect needed
+            if (l_tc->stream->esocket) {
+                dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_DUP(&l_tc->stream->esocket->uuid);
+                if (!dap_timerfd_start_on_worker(l_worker,
+                                                 (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                                                 s_stream_timer_timeout_check, l_es_uuid_ptr)) {
+                    DAP_DELETE(l_es_uuid_ptr);
+                    dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                          STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+                    break;
+                }
             }
-            // Immediately connected
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_DONE, ERROR_NO_ERROR);
         }
