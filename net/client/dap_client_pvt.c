@@ -1236,8 +1236,8 @@ static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG vo
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->last_error = ERROR_STREAM_ABORTED;
     l_client_pvt->stream->esocket = NULL; // Prevent to delete twice
+    a_es->_inheritor = NULL;              // Nullify before cleanup to prevent dangling pointer access
     s_stage_status_after(l_client_pvt);
-    a_es->_inheritor = NULL; // To prevent delete in reactor
 }
 
 /**
@@ -1334,6 +1334,6 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
         ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_STREAM_RESPONSE_WRONG;
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->stream->esocket = NULL;   // Prevent to delete twice
+    a_es->_inheritor = NULL;                // Nullify before cleanup to prevent dangling pointer access
     s_stage_status_after(l_client_pvt);
-    a_es->_inheritor = NULL;                // To prevent delete in reactor
 }

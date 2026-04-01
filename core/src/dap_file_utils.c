@@ -1746,13 +1746,15 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
     // Checksum calculation
     {
         memcpy(l_buffer.header.chksum, CHKBLANKS, sizeof l_buffer.header.chksum);
-        int i, unsigned_sum = 0;
+        int i;
+        unsigned int l_unsigned_sum = 0;
         char *p;
         p = (char*) &l_buffer;
         for(i = sizeof l_buffer; i-- != 0;) {
-            unsigned_sum += 0xFF & *p++;
+            l_unsigned_sum += (unsigned char)*p++;
         }
-        sprintf(l_buffer.header.chksum, "%6o", unsigned_sum);
+        snprintf(l_buffer.header.chksum, sizeof l_buffer.header.chksum, "%6o",
+                 l_unsigned_sum & 0x1FFFFu);
     }
 
     // add header
@@ -1793,13 +1795,15 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
         // Checksum calculation
         {
             memcpy(l_buffer.header.chksum, CHKBLANKS, sizeof l_buffer.header.chksum);
-            int i, unsigned_sum = 0;
+            int i;
+            unsigned int l_unsigned_sum = 0;
             char *p;
             p = (char*) &l_buffer;
             for(i = sizeof l_buffer; i-- != 0;) {
-                unsigned_sum += 0xFF & *p++;
+                l_unsigned_sum += (unsigned char)*p++;
             }
-            sprintf(l_buffer.header.chksum, "%6o", unsigned_sum);
+            snprintf(l_buffer.header.chksum, sizeof l_buffer.header.chksum, "%6o",
+                     l_unsigned_sum & 0x1FFFFu);
         }
 
         // add header

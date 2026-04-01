@@ -273,8 +273,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                 break;
             }
         } else if (!IS_ZERO_128(l_msg->cluster_id.raw)) {
-            const char *l_guuid_str = dap_guuid_to_hex_str(l_msg->cluster_id);
-            log_it(L_ERROR, "Can't find cluster with ID %s for gossip message broadcasting", l_guuid_str);
+            log_it(L_ERROR, "Can't find cluster with ID %s for gossip message broadcasting", dap_guuid_to_hex_str(l_msg->cluster_id));
             pthread_rwlock_unlock(&s_gossip_lock);
             break;
         }
