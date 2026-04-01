@@ -138,7 +138,7 @@ static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg)
     }
     dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
     if (!l_stream) {
-        log_it(L_ERROR, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID, l_es->uuid);
+        log_it(L_DEBUG, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", l_es->uuid);
         goto ret_n_clear;
     }
     dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, l_msg->ch_id);

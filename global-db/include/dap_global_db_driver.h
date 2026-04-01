@@ -113,11 +113,7 @@ DAP_STATIC_INLINE bool dap_store_obj_driver_obj_compare(dap_store_obj_t *a_obj1,
         strcmp(a_obj1->key, a_obj2->key) || strcmp(a_obj1->group, a_obj2->group);
 }
 
-
-DAP_STATIC_INLINE const char *dap_global_db_driver_hash_print(dap_global_db_driver_hash_t a_hash)
-{
-    return dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc));
-}
+#define dap_global_db_driver_hash_print(a_hash) dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc))
 
 extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank;
 
