@@ -275,8 +275,9 @@ static bool s_thread_timer_callback(void *a_arg)
 static bool s_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
-    // Repeat after exit, if not oneshot
-    return dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority), !l_arg->oneshot;
+    bool l_repeat = !l_arg->oneshot;
+    dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority);
+    return l_repeat;
 }
 
 int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority)

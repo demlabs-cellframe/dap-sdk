@@ -396,7 +396,7 @@ const char *dap_path_skip_root (const char *file_name)
  */
 char* dap_path_get_dirname(const char *a_file_name)
 {
-    char *l_base;
+    const char *l_base;
     size_t l_len;
 
     dap_return_val_if_fail(a_file_name != NULL, NULL);
@@ -405,7 +405,7 @@ char* dap_path_get_dirname(const char *a_file_name)
 
 #ifdef DAP_OS_WINDOWS
     {
-        char *l_q;
+        const char *l_q;
         l_q = strrchr (a_file_name, '/');
         if (l_base == NULL || (l_q != NULL && l_q > l_base))
         l_base = l_q;
@@ -463,11 +463,11 @@ char* dap_path_get_dirname(const char *a_file_name)
         if (l_p == l_base + 1)
         {
             l_len = (uint32_t) strlen (a_file_name) + 1;
-            l_base = DAP_NEW_SIZE (char, l_len + 1);
-            strncpy (l_base, a_file_name, l_len - 1);
-            l_base[l_len-1] = DAP_DIR_SEPARATOR;
-            l_base[l_len] = 0;
-            return l_base;
+            char *l_ret = DAP_NEW_SIZE (char, l_len + 1);
+            strncpy (l_ret, a_file_name, l_len - 1);
+            l_ret[l_len-1] = DAP_DIR_SEPARATOR;
+            l_ret[l_len] = 0;
+            return l_ret;
         }
         if (DAP_IS_DIR_SEPARATOR (*l_p))
         {
@@ -481,10 +481,10 @@ char* dap_path_get_dirname(const char *a_file_name)
 #endif
 
     l_len = (uint32_t) 1 + l_base - a_file_name;
-    l_base = DAP_NEW_SIZE(char, l_len + 1);
-    memcpy(l_base, a_file_name, l_len);
-    l_base[l_len] = 0;
-    return l_base;
+    char *l_result = DAP_NEW_SIZE(char, l_len + 1);
+    memcpy(l_result, a_file_name, l_len);
+    l_result[l_len] = 0;
+    return l_result;
 }
 
 void dap_subs_free(dap_list_name_directories_t *subs_list){
