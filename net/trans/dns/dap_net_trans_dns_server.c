@@ -291,7 +291,7 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
                                    struct sockaddr_storage *a_addr, socklen_t a_addr_len)
 {
     dns_server_client_session_t *l_session = NULL;
-    HASH_FIND(hh, a_dns_server->sessions, a_addr, a_addr_len, l_session);
+    HASH_FIND(hh, a_dns_server->sessions, a_addr, (unsigned)a_addr_len, l_session);
 
     if (l_session) {
         if (l_session->stream) {
@@ -434,7 +434,7 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     l_session->trans_ctx = l_trans_ctx;
     l_session->stream_session = l_stream_session;
 
-    HASH_ADD(hh, a_dns_server->sessions, remote_addr, a_addr_len, l_session);
+    HASH_ADD(hh, a_dns_server->sessions, remote_addr, (unsigned)a_addr_len, l_session);
 
     log_it(L_INFO, "DNS server: created stream %p with %zu channels for new client",
            l_stream, l_stream->channel_count);
