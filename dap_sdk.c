@@ -217,6 +217,10 @@ static int s_init_core(const dap_sdk_config_t *a_config)
     const char *l_app = a_config->app_name ? a_config->app_name : "DAP SDK";
     if ((l_rc = dap_common_init(l_app, a_config->log_file)) != 0)
         return log_it(L_ERROR, "dap_common_init failed: %d", l_rc), l_rc;
+
+    if (a_config->log_stdout)
+        dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+
     if ((l_rc = dap_crc64_init()) != 0)
         return log_it(L_ERROR, "dap_crc64_init failed: %d", l_rc), l_rc;
 
