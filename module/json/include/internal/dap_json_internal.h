@@ -33,11 +33,12 @@ struct dap_json {
     union {
         // IMMUTABLE mode (parsed JSON → tape)
         struct {
-            const char *input_buffer;        /**< Original JSON input buffer */
+            const char *input_buffer;        /**< JSON input buffer (used by iterator) */
             size_t input_len;                /**< Input buffer length */
             dap_json_tape_entry_t *tape;     /**< Tape array */
             size_t tape_count;               /**< Number of tape entries */
             size_t tape_offset;              /**< Starting position in tape (for sub-wrappers, 0 for root) */
+            char *owned_input_copy;          /**< Parser-owned copy of input (root only, NULL for sub-wrappers) */
         } immutable;
         
         // MUTABLE mode (created JSON → DOM)

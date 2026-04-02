@@ -406,7 +406,6 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         if (l_data_copy) {
             memcpy(l_data_copy, l_data, a_data_size);
             dap_json_t *jobj = dap_json_parse_string(l_data_copy);
-            DAP_DELETE(l_data_copy);
             if (jobj) {
                 const char *l_str;
                 l_str = dap_json_object_get_string(jobj, "encrypt_id");
@@ -434,6 +433,7 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
                 if (!l_es->remote_protocol_version)
                     l_es->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
             }
+            DAP_DELETE(l_data_copy);
         }
 
         if (l_json_parse_count < 2 || l_json_parse_count > 4) {

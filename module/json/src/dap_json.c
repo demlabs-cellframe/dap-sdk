@@ -569,27 +569,25 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
         return NULL;
     }
     
-    // Padded buffer no longer needed after tape is built
     dap_json_stage1_free(l_stage1);
-    DAP_DELETE(l_padded_input);
+    if (l_transcoded) DAP_DELETE(l_transcoded);
     
     // Create wrapper with tape (NO DOM!)
     dap_json_t *l_result = DAP_NEW_Z(dap_json_t);
     if (!l_result) {
         log_it(L_ERROR, "Failed to allocate JSON wrapper");
-        if (l_transcoded) DAP_DELETE(l_transcoded);
+        DAP_DELETE(l_padded_input);
         return NULL;
     }
     
     l_result->ref_count = 1;
     l_result->mode = DAP_JSON_MODE_IMMUTABLE;
-    l_result->mode_data.immutable.input_buffer = (const char*)l_parse_input;
+    l_result->mode_data.immutable.input_buffer = (const char*)l_padded_input;
     l_result->mode_data.immutable.input_len = l_parse_len;
     l_result->mode_data.immutable.tape = l_tape;
     l_result->mode_data.immutable.tape_count = l_tape_count;
-    l_result->mode_data.immutable.tape_offset = 0;  // Root wrapper starts at beginning
-    
-    // Tape and input_buffer managed by arenas
+    l_result->mode_data.immutable.tape_offset = 0;
+    l_result->mode_data.immutable.owned_input_copy = (char*)l_padded_input;
     
     return l_result;
 }
@@ -722,10 +720,11 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
-    // For IMMUTABLE mode (tape): arena is NOT reset here!
-    // Reason: Other parsed objects may still use the same arena
-    // Arena grows naturally and is reset manually via dap_json_tape_arena_reset()
-    // or freed at thread exit via dap_json_cleanup_thread_arena()
+    // For IMMUTABLE mode: free owned resources (root wrappers only)
+    // Note: tape is arena-allocated (dap_arena_alloc) and must NOT be freed with free()
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE) {
+        DAP_DEL_Z(a_json->mode_data.immutable.owned_input_copy);
+    }
     
     // For MUTABLE mode (DOM), free the value
     if (a_json->mode == DAP_JSON_MODE_MUTABLE && a_json->mode_data.mutable.value) {

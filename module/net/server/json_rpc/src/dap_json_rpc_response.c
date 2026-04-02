@@ -3,6 +3,7 @@
 #include "dap_json_rpc_response.h"
 #include "dap_cli_server.h"
 #include "dap_json.h"
+#include "internal/dap_json_internal.h"
 
 #define LOG_TAG "dap_json_rpc_response"
 
@@ -351,7 +352,15 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
                 dap_json_object_free(result_obj);
                 break;
             case TYPE_RESPONSE_JSON:
-                // Take ownership of the result JSON wrapper (ref_count already 1)
+                // Transfer input buffer ownership from parent to sub-wrapper so
+                // freeing jobj won't destroy the shared input buffer.
+                // Tape is arena-allocated and doesn't need ownership transfer.
+                if (result_obj->mode == DAP_JSON_MODE_IMMUTABLE &&
+                    jobj->mode == DAP_JSON_MODE_IMMUTABLE) {
+                    result_obj->mode_data.immutable.owned_input_copy =
+                        jobj->mode_data.immutable.owned_input_copy;
+                    jobj->mode_data.immutable.owned_input_copy = NULL;
+                }
                 response->result_json_object = result_obj;
                 break;
             case TYPE_RESPONSE_NULL:

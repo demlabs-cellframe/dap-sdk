@@ -1267,7 +1267,15 @@ void dap_client_fsm_advance(dap_client_t *a_client, void *a_arg)
             return;
         }
     } else {
-        assert(a_client->stage_target > l_fsm->stage);
+        if (a_client->stage_target <= l_fsm->stage) {
+            log_it(L_ERROR, "FSM advance: stage_target %s <= current stage %s, aborting advance",
+                   dap_client_stage_str(a_client->stage_target),
+                   dap_client_stage_str(l_fsm->stage));
+            s_set_stage_status(l_fsm, STAGE_STATUS_ERROR);
+            l_fsm->last_error = ERROR_WRONG_STAGE;
+            s_fsm_process(l_fsm);
+            return;
+        }
         l_next = l_fsm->stage + 1;
     }
     log_it(L_NOTICE, "FSM advance: %s -> %s (target %s)",
