@@ -70,5 +70,6 @@ void polyw1_pack(unsigned char *r, const poly *a);
 
 void dilithium_ntt(uint32_t pp[NN]);
 void invntt_frominvmont(uint32_t pp[NN]);
+void dilithium_poly_nttunpack(int32_t coeffs[NN]);
 
 #endif

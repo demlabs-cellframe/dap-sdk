@@ -434,7 +434,6 @@ static bench_result_t s_bench_mldsa_dap_raw(uint8_t a_level, const char *a_name)
         l_res.us_per_op = -1;
         return l_res;
     }
-
     for (int w = 0; w < BENCH_WARMUP; w++)
         l_key->sign_verify(l_key, l_msg, l_msg_len, l_sig_buf, l_sig_size);
 

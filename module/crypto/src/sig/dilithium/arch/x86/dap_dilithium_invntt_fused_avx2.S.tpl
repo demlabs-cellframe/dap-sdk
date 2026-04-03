@@ -1,48 +1,33 @@
 /*
- * Dilithium NTT — AVX2 register-resident fused butterfly (CRYSTALS-style).
- * All 8 layers fused into 2 phases: levels0t1 (stride 128/64) and
- * levels2t7 (stride 32..1) with shuffle-based in-register rearrangement.
+ * Dilithium inverse NTT — AVX2 register-resident fused (CRYSTALS-style).
+ * Expects input in CRYSTALS shuffled order (direct output of fused fwd NTT).
+ * Output is standard element order (de-shuffle happens inside levels 3-5).
  *
- * Output is in CRYSTALS shuffled element order — paired with the fused
- * invNTT which expects this format.  Pointwise multiply is order-agnostic.
+ * void dap_dilithium_invntt_fused_{{ARCH_LOWER}}(int32_t coeffs[256]);
  *
- * void dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}(int32_t coeffs[256]);
- * void dap_dilithium_nttunpack_{{ARCH_LOWER}}(int32_t coeffs[256]);
- *
- * @generated from dap_dilithium_ntt_fused_avx2.S.tpl
+ * @generated from dap_dilithium_invntt_fused_avx2.S.tpl
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #define DIL_Q 8380417
 
-/* ---- Signed Montgomery butterfly (CRYSTALS convention) ----
- *
- * Register convention (matching CRYSTALS exactly):
- *   ymm0 = Q (broadcast, persistent)
- *   zl0/zl1 = zetas_qinv register(s)   (#zeta group — computes zqinv*h)
- *   zh0/zh1 = zetas register(s)         (#qinv*zeta group — computes zeta*h)
- *
- * Formula: mont(zeta,h) = hi32(zeta*h) - hi32(Q * lo32(zqinv*h))
- */
-.macro butterfly l, h, zl0=1, zl1=1, zh0=2, zh1=2
-    vpmuldq     %ymm\zl0, %ymm\h, %ymm13
-    vmovshdup   %ymm\h, %ymm12
-    vpmuldq     %ymm\zl1, %ymm12, %ymm14
-    vpmuldq     %ymm\zh0, %ymm\h, %ymm\h
-    vpmuldq     %ymm\zh1, %ymm12, %ymm12
+/* Inverse butterfly: l' = l + h, h' = mont(z, h - l) */
+.macro inv_butterfly l, h, zl0=1, zl1=1, zh0=2, zh1=2
+    vpsubd      %ymm\l, %ymm\h, %ymm12
+    vpaddd      %ymm\h, %ymm\l, %ymm\l
+    vpmuldq     %ymm\zl0, %ymm12, %ymm13
+    vmovshdup   %ymm12, %ymm\h
+    vpmuldq     %ymm\zl1, %ymm\h, %ymm14
+    vpmuldq     %ymm\zh0, %ymm12, %ymm12
+    vpmuldq     %ymm\zh1, %ymm\h, %ymm\h
     vpmuldq     %ymm0, %ymm13, %ymm13
     vpmuldq     %ymm0, %ymm14, %ymm14
-    vmovshdup   %ymm\h, %ymm\h
-    vpblendd    $0xAA, %ymm12, %ymm\h, %ymm\h
-    vpsubd      %ymm\h, %ymm\l, %ymm12
-    vpaddd      %ymm\h, %ymm\l, %ymm\l
-    vmovshdup   %ymm13, %ymm13
-    vpblendd    $0xAA, %ymm14, %ymm13, %ymm13
-    vpaddd      %ymm13, %ymm12, %ymm\h
-    vpsubd      %ymm13, %ymm\l, %ymm\l
+    vpsubd      %ymm13, %ymm12, %ymm12
+    vpsubd      %ymm14, %ymm\h, %ymm\h
+    vmovshdup   %ymm12, %ymm12
+    vpblendd    $0xAA, %ymm\h, %ymm12, %ymm\h
 .endm
 
-/* ---- Shuffle macros for cross-layer data rearrangement ---- */
 .macro shuffle8 a, b, t0, t1
     vperm2i128  $0x20, %ymm\b, %ymm\a, %ymm\t0
     vperm2i128  $0x31, %ymm\b, %ymm\a, %ymm\t1
@@ -60,53 +45,8 @@
     vpblendd    $0xAA, %ymm\b, %ymm\a, %ymm\t1
 .endm
 
-/* ---- Phase 1: levels 0-1 (stride 128 and 64) ----
- * ymm0 = Q, ymm1 = zqinv (broadcast), ymm2 = zeta (broadcast)
- */
-.macro levels0t1 off
-    vmovdqu     0+32*\off(%rdi), %ymm4
-    vmovdqu     128+32*\off(%rdi), %ymm5
-    vmovdqu     256+32*\off(%rdi), %ymm6
-    vmovdqu     384+32*\off(%rdi), %ymm7
-    vmovdqu     512+32*\off(%rdi), %ymm8
-    vmovdqu     640+32*\off(%rdi), %ymm9
-    vmovdqu     768+32*\off(%rdi), %ymm10
-    vmovdqu     896+32*\off(%rdi), %ymm11
-
-    /* Level 0: stride 128, zeta[1] */
-    vpbroadcastd s_fwd_zqinv+1*4(%rip), %ymm1
-    vpbroadcastd s_fwd_zeta+1*4(%rip), %ymm2
-    butterfly 4, 8
-    butterfly 5, 9
-    butterfly 6, 10
-    butterfly 7, 11
-
-    /* Level 1: stride 64 */
-    vpbroadcastd s_fwd_zqinv+2*4(%rip), %ymm1
-    vpbroadcastd s_fwd_zeta+2*4(%rip), %ymm2
-    butterfly 4, 6
-    butterfly 5, 7
-
-    vpbroadcastd s_fwd_zqinv+3*4(%rip), %ymm1
-    vpbroadcastd s_fwd_zeta+3*4(%rip), %ymm2
-    butterfly 8, 10
-    butterfly 9, 11
-
-    vmovdqu     %ymm4,  0+32*\off(%rdi)
-    vmovdqu     %ymm5,  128+32*\off(%rdi)
-    vmovdqu     %ymm6,  256+32*\off(%rdi)
-    vmovdqu     %ymm7,  384+32*\off(%rdi)
-    vmovdqu     %ymm8,  512+32*\off(%rdi)
-    vmovdqu     %ymm9,  640+32*\off(%rdi)
-    vmovdqu     %ymm10, 768+32*\off(%rdi)
-    vmovdqu     %ymm11, 896+32*\off(%rdi)
-.endm
-
-/* ---- Phase 2: levels 2-7 with de-shuffle (one quarter = 64 coeffs) ----
- * ymm0 = Q, ymm1 = zqinv (vector), ymm2 = zeta (vector)
- * For levels 5-7: ymm10 = zqinv_odd, ymm15 = zeta_odd
- */
-.macro levels2t7 off
+/* levels 0–5: one quarter (64 coeffs), shuffled input → standard output */
+.macro levels0t5 off
     vmovdqu     256*\off+  0(%rdi), %ymm4
     vmovdqu     256*\off+ 32(%rdi), %ymm5
     vmovdqu     256*\off+ 64(%rdi), %ymm6
@@ -116,197 +56,267 @@
     vmovdqu     256*\off+192(%rdi), %ymm10
     vmovdqu     256*\off+224(%rdi), %ymm11
 
-    /* Level 2: broadcast zeta for this quarter */
-    vpbroadcastd s_fwd_zqinv+(4+\off)*4(%rip), %ymm1
-    vpbroadcastd s_fwd_zeta+(4+\off)*4(%rip), %ymm2
-    butterfly 4, 8
-    butterfly 5, 9
-    butterfly 6, 10
-    butterfly 7, 11
+    /* level 0: per-element (4 groups of 1 butterfly each) */
+    vpermq      $0x1B, s_inv_zqinv+(288-8*\off)*4(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+(288-8*\off)*4(%rip), %ymm15
+    vmovshdup   %ymm3, %ymm1
+    vmovshdup   %ymm15, %ymm2
+    inv_butterfly 4, 5, 1, 3, 2, 15
 
-    shuffle8 4, 8, 3, 8
-    shuffle8 5, 9, 4, 9
-    shuffle8 6, 10, 5, 10
-    shuffle8 7, 11, 6, 11
+    vpermq      $0x1B, s_inv_zqinv+(256-8*\off)*4(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+(256-8*\off)*4(%rip), %ymm15
+    vmovshdup   %ymm3, %ymm1
+    vmovshdup   %ymm15, %ymm2
+    inv_butterfly 6, 7, 1, 3, 2, 15
 
-    /* Level 3 */
-    vmovdqa     s_fwd_zqinv+(8+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(8+8*\off)*4(%rip), %ymm2
-    butterfly 3, 5
-    butterfly 8, 10
-    butterfly 4, 6
-    butterfly 9, 11
+    vpermq      $0x1B, s_inv_zqinv+(224-8*\off)*4(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+(224-8*\off)*4(%rip), %ymm15
+    vmovshdup   %ymm3, %ymm1
+    vmovshdup   %ymm15, %ymm2
+    inv_butterfly 8, 9, 1, 3, 2, 15
 
-    shuffle4 3, 5, 7, 5
-    shuffle4 8, 10, 3, 10
-    shuffle4 4, 6, 8, 6
-    shuffle4 9, 11, 4, 11
+    vpermq      $0x1B, s_inv_zqinv+(192-8*\off)*4(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+(192-8*\off)*4(%rip), %ymm15
+    vmovshdup   %ymm3, %ymm1
+    vmovshdup   %ymm15, %ymm2
+    inv_butterfly 10, 11, 1, 3, 2, 15
 
-    /* Level 4 */
-    vmovdqa     s_fwd_zqinv+(40+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(40+8*\off)*4(%rip), %ymm2
-    butterfly 7, 8
-    butterfly 5, 6
-    butterfly 3, 4
-    butterfly 10, 11
+    /* level 1: per-element (2 groups of 2 butterflies) */
+    vpermq      $0x1B, s_inv_zqinv+(160-8*\off)*4(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+(160-8*\off)*4(%rip), %ymm15
+    vmovshdup   %ymm3, %ymm1
+    vmovshdup   %ymm15, %ymm2
+    inv_butterfly 4, 6, 1, 3, 2, 15
+    inv_butterfly 5, 7, 1, 3, 2, 15
 
-    shuffle2 7, 8, 9, 8
-    shuffle2 5, 6, 7, 6
-    shuffle2 3, 4, 5, 4
-    shuffle2 10, 11, 3, 11
+    vpermq      $0x1B, s_inv_zqinv+(128-8*\off)*4(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+(128-8*\off)*4(%rip), %ymm15
+    vmovshdup   %ymm3, %ymm1
+    vmovshdup   %ymm15, %ymm2
+    inv_butterfly 8, 10, 1, 3, 2, 15
+    inv_butterfly 9, 11, 1, 3, 2, 15
 
-    /* Level 5: per-element zetas (even/odd split) */
-    vmovdqa     s_fwd_zqinv+(72+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(72+8*\off)*4(%rip), %ymm2
-    vpsrlq      $32, %ymm1, %ymm10
-    vmovshdup   %ymm2, %ymm15
-    butterfly 9, 5, 1, 10, 2, 15
-    butterfly 8, 4, 1, 10, 2, 15
-    butterfly 7, 3, 1, 10, 2, 15
-    butterfly 6, 11, 1, 10, 2, 15
+    /* level 2: per-element (1 group of 4 butterflies) */
+    vpermq      $0x1B, s_inv_zqinv+(96-8*\off)*4(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+(96-8*\off)*4(%rip), %ymm15
+    vmovshdup   %ymm3, %ymm1
+    vmovshdup   %ymm15, %ymm2
+    inv_butterfly 4, 8, 1, 3, 2, 15
+    inv_butterfly 5, 9, 1, 3, 2, 15
+    inv_butterfly 6, 10, 1, 3, 2, 15
+    inv_butterfly 7, 11, 1, 3, 2, 15
 
-    /* Level 6: 2 groups */
-    vmovdqa     s_fwd_zqinv+(104+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(104+8*\off)*4(%rip), %ymm2
-    vpsrlq      $32, %ymm1, %ymm10
-    vmovshdup   %ymm2, %ymm15
-    butterfly 9, 7, 1, 10, 2, 15
-    butterfly 8, 6, 1, 10, 2, 15
+    /* shuffle2 → unshuffle for level 3 */
+    shuffle2 4, 5, 3, 5
+    shuffle2 6, 7, 4, 7
+    shuffle2 8, 9, 6, 9
+    shuffle2 10, 11, 8, 11
 
-    vmovdqa     s_fwd_zqinv+(136+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(136+8*\off)*4(%rip), %ymm2
-    vpsrlq      $32, %ymm1, %ymm10
-    vmovshdup   %ymm2, %ymm15
-    butterfly 5, 3, 1, 10, 2, 15
-    butterfly 4, 11, 1, 10, 2, 15
+    /* level 3: vector zetas */
+    vpermq      $0x1B, s_inv_zqinv+(64-8*\off)*4(%rip), %ymm1
+    vpermq      $0x1B, s_inv_zeta+(64-8*\off)*4(%rip), %ymm2
+    inv_butterfly 3, 5
+    inv_butterfly 4, 7
+    inv_butterfly 6, 9
+    inv_butterfly 8, 11
 
-    /* Level 7: 4 groups */
-    vmovdqa     s_fwd_zqinv+(168+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(168+8*\off)*4(%rip), %ymm2
-    vpsrlq      $32, %ymm1, %ymm10
-    vmovshdup   %ymm2, %ymm15
-    butterfly 9, 8, 1, 10, 2, 15
+    /* shuffle4 */
+    shuffle4 3, 4, 10, 4
+    shuffle4 6, 8, 3, 8
+    shuffle4 5, 7, 6, 7
+    shuffle4 9, 11, 5, 11
 
-    vmovdqa     s_fwd_zqinv+(200+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(200+8*\off)*4(%rip), %ymm2
-    vpsrlq      $32, %ymm1, %ymm10
-    vmovshdup   %ymm2, %ymm15
-    butterfly 7, 6, 1, 10, 2, 15
+    /* level 4: vector zetas */
+    vpermq      $0x1B, s_inv_zqinv+(32-8*\off)*4(%rip), %ymm1
+    vpermq      $0x1B, s_inv_zeta+(32-8*\off)*4(%rip), %ymm2
+    inv_butterfly 10, 4
+    inv_butterfly 3, 8
+    inv_butterfly 6, 7
+    inv_butterfly 5, 11
 
-    vmovdqa     s_fwd_zqinv+(232+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(232+8*\off)*4(%rip), %ymm2
-    vpsrlq      $32, %ymm1, %ymm10
-    vmovshdup   %ymm2, %ymm15
-    butterfly 5, 4, 1, 10, 2, 15
+    /* shuffle8 */
+    shuffle8 10, 3, 9, 3
+    shuffle8 6, 5, 10, 5
+    shuffle8 4, 8, 6, 8
+    shuffle8 7, 11, 4, 11
 
-    vmovdqa     s_fwd_zqinv+(264+8*\off)*4(%rip), %ymm1
-    vmovdqa     s_fwd_zeta+(264+8*\off)*4(%rip), %ymm2
-    vpsrlq      $32, %ymm1, %ymm10
-    vmovshdup   %ymm2, %ymm15
-    butterfly 3, 11, 1, 10, 2, 15
+    /* level 5: broadcast zetas (data now in standard order) */
+    vpbroadcastd s_inv_zqinv+(7-\off)*4(%rip), %ymm1
+    vpbroadcastd s_inv_zeta+(7-\off)*4(%rip), %ymm2
+    inv_butterfly 9, 3
+    inv_butterfly 10, 5
+    inv_butterfly 6, 8
+    inv_butterfly 4, 11
 
-    /* Store in CRYSTALS shuffled order (paired with fused invNTT) */
+    /* Store (standard order within quarter) */
     vmovdqu     %ymm9,  256*\off+  0(%rdi)
-    vmovdqu     %ymm8,  256*\off+ 32(%rdi)
-    vmovdqu     %ymm7,  256*\off+ 64(%rdi)
-    vmovdqu     %ymm6,  256*\off+ 96(%rdi)
-    vmovdqu     %ymm5,  256*\off+128(%rdi)
-    vmovdqu     %ymm4,  256*\off+160(%rdi)
-    vmovdqu     %ymm3,  256*\off+192(%rdi)
+    vmovdqu     %ymm10, 256*\off+ 32(%rdi)
+    vmovdqu     %ymm6,  256*\off+ 64(%rdi)
+    vmovdqu     %ymm4,  256*\off+ 96(%rdi)
+    vmovdqu     %ymm3,  256*\off+128(%rdi)
+    vmovdqu     %ymm5,  256*\off+160(%rdi)
+    vmovdqu     %ymm8,  256*\off+192(%rdi)
     vmovdqu     %ymm11, 256*\off+224(%rdi)
+.endm
+
+/* levels 6–7: stride 64/128 + final Montgomery scaling by f=mont^2/256 */
+.macro levels6t7 off
+    vmovdqu     0+32*\off(%rdi), %ymm4
+    vmovdqu     128+32*\off(%rdi), %ymm5
+    vmovdqu     256+32*\off(%rdi), %ymm6
+    vmovdqu     384+32*\off(%rdi), %ymm7
+    vmovdqu     512+32*\off(%rdi), %ymm8
+    vmovdqu     640+32*\off(%rdi), %ymm9
+    vmovdqu     768+32*\off(%rdi), %ymm10
+    vmovdqu     896+32*\off(%rdi), %ymm11
+
+    /* level 6: stride 64, 2 groups */
+    vpbroadcastd s_inv_zqinv+3*4(%rip), %ymm1
+    vpbroadcastd s_inv_zeta+3*4(%rip), %ymm2
+    inv_butterfly 4, 6
+    inv_butterfly 5, 7
+
+    vpbroadcastd s_inv_zqinv+2*4(%rip), %ymm1
+    vpbroadcastd s_inv_zeta+2*4(%rip), %ymm2
+    inv_butterfly 8, 10
+    inv_butterfly 9, 11
+
+    /* level 7: stride 128 (zeta[0] includes scaling for h') */
+    vpbroadcastd s_inv_zqinv+0*4(%rip), %ymm1
+    vpbroadcastd s_inv_zeta+0*4(%rip), %ymm2
+    inv_butterfly 4, 8
+    inv_butterfly 5, 9
+    inv_butterfly 6, 10
+    inv_butterfly 7, 11
+
+    /* Normalize h' (signed → [0,Q)): add Q if negative, then csubq */
+    .irp reg, 8, 9, 10, 11
+        vpsrad      $31, %ymm\reg, %ymm12
+        vpand       %ymm0, %ymm12, %ymm12
+        vpaddd      %ymm12, %ymm\reg, %ymm\reg
+        vpsubd      %ymm0, %ymm\reg, %ymm12
+        vpsrad      $31, %ymm12, %ymm13
+        vpand       %ymm0, %ymm13, %ymm13
+        vpaddd      %ymm13, %ymm12, %ymm\reg
+    .endr
+
+    /* Store h' */
+    vmovdqu     %ymm8,  512+32*\off(%rdi)
+    vmovdqu     %ymm9,  640+32*\off(%rdi)
+    vmovdqu     %ymm10, 768+32*\off(%rdi)
+    vmovdqu     %ymm11, 896+32*\off(%rdi)
+
+    /* Montgomery multiply l' by DIV = mont^2/256 */
+    vmovdqa     s_inv_div_qinv(%rip), %ymm1
+    vmovdqa     s_inv_div(%rip), %ymm2
+
+    vpmuldq     %ymm1, %ymm4, %ymm12
+    vpmuldq     %ymm1, %ymm5, %ymm13
+    vmovshdup   %ymm4, %ymm8
+    vmovshdup   %ymm5, %ymm9
+    vpmuldq     %ymm1, %ymm8, %ymm14
+    vpmuldq     %ymm1, %ymm9, %ymm15
+    vpmuldq     %ymm2, %ymm4, %ymm4
+    vpmuldq     %ymm2, %ymm5, %ymm5
+    vpmuldq     %ymm2, %ymm8, %ymm8
+    vpmuldq     %ymm2, %ymm9, %ymm9
+    vpmuldq     %ymm0, %ymm12, %ymm12
+    vpmuldq     %ymm0, %ymm13, %ymm13
+    vpmuldq     %ymm0, %ymm14, %ymm14
+    vpmuldq     %ymm0, %ymm15, %ymm15
+    vpsubd      %ymm12, %ymm4, %ymm4
+    vpsubd      %ymm13, %ymm5, %ymm5
+    vpsubd      %ymm14, %ymm8, %ymm8
+    vpsubd      %ymm15, %ymm9, %ymm9
+    vmovshdup   %ymm4, %ymm4
+    vmovshdup   %ymm5, %ymm5
+    vpblendd    $0xAA, %ymm8, %ymm4, %ymm4
+    vpblendd    $0xAA, %ymm9, %ymm5, %ymm5
+
+    vpmuldq     %ymm1, %ymm6, %ymm12
+    vpmuldq     %ymm1, %ymm7, %ymm13
+    vmovshdup   %ymm6, %ymm8
+    vmovshdup   %ymm7, %ymm9
+    vpmuldq     %ymm1, %ymm8, %ymm14
+    vpmuldq     %ymm1, %ymm9, %ymm15
+    vpmuldq     %ymm2, %ymm6, %ymm6
+    vpmuldq     %ymm2, %ymm7, %ymm7
+    vpmuldq     %ymm2, %ymm8, %ymm8
+    vpmuldq     %ymm2, %ymm9, %ymm9
+    vpmuldq     %ymm0, %ymm12, %ymm12
+    vpmuldq     %ymm0, %ymm13, %ymm13
+    vpmuldq     %ymm0, %ymm14, %ymm14
+    vpmuldq     %ymm0, %ymm15, %ymm15
+    vpsubd      %ymm12, %ymm6, %ymm6
+    vpsubd      %ymm13, %ymm7, %ymm7
+    vpsubd      %ymm14, %ymm8, %ymm8
+    vpsubd      %ymm15, %ymm9, %ymm9
+    vmovshdup   %ymm6, %ymm6
+    vmovshdup   %ymm7, %ymm7
+    vpblendd    $0xAA, %ymm8, %ymm6, %ymm6
+    vpblendd    $0xAA, %ymm9, %ymm7, %ymm7
+
+    /* Normalize signed int32 → [0, Q): add Q if negative, then csubq */
+    .irp reg, 4, 5, 6, 7
+        vpsrad      $31, %ymm\reg, %ymm12
+        vpand       %ymm0, %ymm12, %ymm12
+        vpaddd      %ymm12, %ymm\reg, %ymm\reg
+        vpsubd      %ymm0, %ymm\reg, %ymm12
+        vpsrad      $31, %ymm12, %ymm13
+        vpand       %ymm0, %ymm13, %ymm13
+        vpaddd      %ymm13, %ymm12, %ymm\reg
+    .endr
+
+    /* Store normalized output in [0, Q) */
+    vmovdqu     %ymm4, 0+32*\off(%rdi)
+    vmovdqu     %ymm5, 128+32*\off(%rdi)
+    vmovdqu     %ymm6, 256+32*\off(%rdi)
+    vmovdqu     %ymm7, 384+32*\off(%rdi)
 .endm
 
 
 .text
-.globl dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}
-.type  dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}, @function
+.globl dap_dilithium_invntt_fused_{{ARCH_LOWER}}
+.type  dap_dilithium_invntt_fused_{{ARCH_LOWER}}, @function
 .p2align 4
-dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}:
-    vpbroadcastd s_fwd_q(%rip), %ymm0
+dap_dilithium_invntt_fused_{{ARCH_LOWER}}:
+    vpbroadcastd s_inv_q(%rip), %ymm0
 
-    levels0t1 0
-    levels0t1 1
-    levels0t1 2
-    levels0t1 3
+    levels0t5 0
+    levels0t5 1
+    levels0t5 2
+    levels0t5 3
 
-    levels2t7 0
-    levels2t7 1
-    levels2t7 2
-    levels2t7 3
+    levels6t7 0
+    levels6t7 1
+    levels6t7 2
+    levels6t7 3
 
     vzeroupper
     ret
-.size dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}, .-dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}
-
-/* ---- nttunpack: convert standard order → CRYSTALS shuffled order ----
- * Applies shuffle8→shuffle4→shuffle2 to each quarter (64 coeffs).
- * Must be called on NTT-domain data generated in standard order
- * (e.g. expand_mat output) before pointwise with shuffled NTT output.
- */
-.macro nttunpack128
-    vmovdqu       0(%rdi), %ymm4
-    vmovdqu      32(%rdi), %ymm5
-    vmovdqu      64(%rdi), %ymm6
-    vmovdqu      96(%rdi), %ymm7
-    vmovdqu     128(%rdi), %ymm8
-    vmovdqu     160(%rdi), %ymm9
-    vmovdqu     192(%rdi), %ymm10
-    vmovdqu     224(%rdi), %ymm11
-
-    shuffle8 4, 8, 3, 8
-    shuffle8 5, 9, 4, 9
-    shuffle8 6, 10, 5, 10
-    shuffle8 7, 11, 6, 11
-
-    shuffle4 3, 5, 7, 5
-    shuffle4 8, 10, 3, 10
-    shuffle4 4, 6, 8, 6
-    shuffle4 9, 11, 4, 11
-
-    shuffle2 7, 8, 9, 8
-    shuffle2 5, 6, 7, 6
-    shuffle2 3, 4, 5, 4
-    shuffle2 10, 11, 3, 11
-
-    vmovdqu     %ymm9,    0(%rdi)
-    vmovdqu     %ymm8,   32(%rdi)
-    vmovdqu     %ymm7,   64(%rdi)
-    vmovdqu     %ymm6,   96(%rdi)
-    vmovdqu     %ymm5,  128(%rdi)
-    vmovdqu     %ymm4,  160(%rdi)
-    vmovdqu     %ymm3,  192(%rdi)
-    vmovdqu     %ymm11, 224(%rdi)
-.endm
-
-.globl dap_dilithium_nttunpack_{{ARCH_LOWER}}
-.type  dap_dilithium_nttunpack_{{ARCH_LOWER}}, @function
-.p2align 4
-dap_dilithium_nttunpack_{{ARCH_LOWER}}:
-    nttunpack128
-    add     $256, %rdi
-    nttunpack128
-    add     $256, %rdi
-    nttunpack128
-    add     $256, %rdi
-    nttunpack128
-    vzeroupper
-    ret
-.size dap_dilithium_nttunpack_{{ARCH_LOWER}}, .-dap_dilithium_nttunpack_{{ARCH_LOWER}}
+.size dap_dilithium_invntt_fused_{{ARCH_LOWER}}, .-dap_dilithium_invntt_fused_{{ARCH_LOWER}}
 
 .section .note.GNU-stack,"",@progbits
 
 /* ================================================================
- * Constants and zeta tables — CRYSTALS layout, signed Montgomery form.
- * Generated by tools/gen_ntt_consts.py from reference Dilithium zetas.
+ * Constants — same zeta table as fwd NTT + DIV scaling constants.
  * ================================================================ */
 .section .rodata
 .p2align 5
 
-s_fwd_q:
+s_inv_q:
     .long DIL_Q
 
 .p2align 5
-s_fwd_zqinv:
+s_inv_div_qinv:
+    .long  -8395782,  -8395782,  -8395782,  -8395782,  -8395782,  -8395782,  -8395782,  -8395782
+
+.p2align 5
+s_inv_div:
+    .long     41978,     41978,     41978,     41978,     41978,     41978,     41978,     41978
+
+.p2align 5
+s_inv_zqinv:
     .long   -151046689,   1830765815,  -1929875198,  -1927777021,   1640767044,   1477910808,   1612161320,   1640734244
     .long    308362795,    308362795,    308362795,    308362795,  -1815525077,  -1815525077,  -1815525077,  -1815525077
     .long  -1374673747,  -1374673747,  -1374673747,  -1374673747,  -1091570561,  -1091570561,  -1091570561,  -1091570561
@@ -346,7 +356,7 @@ s_fwd_zqinv:
     .long  -1547952704,    394851342,    283780712,    776003547,   1123958025,    201262505,   1934038751,    374860238
 
 .p2align 5
-s_fwd_zeta:
+s_inv_zeta:
     .long     -3975713,        25847,     -2608894,      -518909,       237124,      -777960,      -876248,       466468
     .long      1826347,      1826347,      1826347,      1826347,      2353451,      2353451,      2353451,      2353451
     .long      -359251,      -359251,      -359251,      -359251,     -2091905,     -2091905,     -2091905,     -2091905

@@ -30,6 +30,8 @@ extern void dap_dilithium_ntt_inverse_avx2_asm(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_avx2_asm(int32_t *c, const int32_t *a, const int32_t *b);
 
 extern void dap_dilithium_ntt_fwd_fused_avx2(int32_t coeffs[256]);
+extern void dap_dilithium_invntt_fused_avx2(int32_t coeffs[256]);
+extern void dap_dilithium_nttunpack_avx2(int32_t coeffs[256]);
 
 extern void dap_dilithium_poly_reduce_avx2(int32_t[256]);
 extern void dap_dilithium_poly_reduce_avx512(int32_t[256]);
@@ -102,6 +104,7 @@ extern void dap_dilithium_rej_uniform_neon(uint32_t[256], const uint8_t *);
 
 DAP_DISPATCH_LOCAL(s_dil_ntt_fwd,      void, int32_t *);
 DAP_DISPATCH_LOCAL(s_dil_ntt_inv,      void, int32_t *);
+DAP_DISPATCH_LOCAL(s_dil_nttunpack,    void, int32_t *);
 DAP_DISPATCH_LOCAL(s_dil_pw_mont,      void, int32_t *, const int32_t *, const int32_t *);
 
 DAP_DISPATCH_LOCAL(s_dil_reduce,       void, int32_t *);
@@ -389,6 +392,7 @@ static void s_dil_dispatch_init(void)
 
     DAP_DISPATCH_DEFAULT(s_dil_ntt_fwd,      s_dil_ntt_fwd_ref);
     DAP_DISPATCH_DEFAULT(s_dil_ntt_inv,      s_dil_ntt_inv_ref);
+    DAP_DISPATCH_DEFAULT(s_dil_nttunpack,    NULL);
     DAP_DISPATCH_DEFAULT(s_dil_pw_mont,      s_dil_pw_mont_ref);
     DAP_DISPATCH_DEFAULT(s_dil_reduce,       s_dil_reduce_ref);
     DAP_DISPATCH_DEFAULT(s_dil_csubq,        s_dil_csubq_ref);
@@ -430,6 +434,8 @@ static void s_dil_dispatch_init(void)
     /* CRYSTALS-style register-resident fused forward NTT (~420 cyc target).
        Registered last to take highest priority for forward NTT. */
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_fwd,      dap_dilithium_ntt_fwd_fused_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_inv,      dap_dilithium_invntt_fused_avx2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_nttunpack,    dap_dilithium_nttunpack_avx2);
 
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_reduce,       dap_dilithium_poly_reduce_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_reduce,       dap_dilithium_poly_reduce_avx512);
@@ -1116,6 +1122,14 @@ void invntt_frominvmont(uint32_t pp[NN])
 {
     DAP_DISPATCH_ENSURE(s_dil_ntt_inv, s_dil_dispatch_init);
     s_dil_ntt_inv_ptr((int32_t *)pp);
+}
+
+/*************************************************/
+void dilithium_poly_nttunpack(int32_t coeffs[NN])
+{
+    DAP_DISPATCH_ENSURE(s_dil_nttunpack, s_dil_dispatch_init);
+    if (s_dil_nttunpack_ptr)
+        s_dil_nttunpack_ptr(coeffs);
 }
 
 /*

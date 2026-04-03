@@ -4,6 +4,7 @@
 #include <x86intrin.h>
 #endif
 #include "dilithium_sign.h"
+#include "dilithium_poly.h"
 #include "dap_common.h"
 #include "dap_memwipe.h"
 
@@ -43,6 +44,7 @@ void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_pa
           unsigned int ii = (idx + k) / p->PARAM_L;
           unsigned int jj = (idx + k) % p->PARAM_L;
           dilithium_poly_uniform(mat[ii].vec + jj, outbuf[k]);
+          dilithium_poly_nttunpack((int32_t *)mat[ii].vec[jj].coeffs);
       }
       idx += 4;
   }
@@ -53,6 +55,7 @@ void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_pa
       inbuf[0][SEEDBYTES] = ii + (jj << 4);
       dap_hash_shake128(outbuf[0], sizeof(outbuf[0]), inbuf[0], SEEDBYTES + 1);
       dilithium_poly_uniform(mat[ii].vec + jj, outbuf[0]);
+      dilithium_poly_nttunpack((int32_t *)mat[ii].vec[jj].coeffs);
       idx++;
   }
 }
