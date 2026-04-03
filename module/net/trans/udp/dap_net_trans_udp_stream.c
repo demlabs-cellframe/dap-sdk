@@ -1450,7 +1450,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         dap_enc_key_delete(l_udp_ctx->alice_key);
     }
     
-    l_udp_ctx->alice_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
+    l_udp_ctx->alice_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, 0);
     if (!l_udp_ctx->alice_key) {
         log_it(L_ERROR, "Failed to generate Alice key for UDP handshake");
         return -1;
@@ -1678,8 +1678,7 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
         log_it(L_INFO, "SERVER received Alice public key (first 16 bytes): %s", l_hex);
     }
     
-    // Generate ephemeral Bob key (Kyber512)
-    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, 0);
     if (!l_bob_key) {
         log_it(L_ERROR, "Failed to generate Bob key");
         return -1;

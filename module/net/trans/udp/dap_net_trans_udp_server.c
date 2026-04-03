@@ -23,7 +23,7 @@
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
-#include "dap_enc_kyber.h"
+#include "dap_enc_key.h"
 #include "dap_rand.h"  // For randombytes
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "dap_string.h"
@@ -1550,8 +1550,7 @@ static void* s_kem_task_func(void *a_arg)
     l_result->session_id = l_ctx->session->session_id;
     l_result->error_code = 0;
     
-    // Generate ephemeral Bob key (Kyber512)
-    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, 0);
     
     if (!l_bob_key) {
         log_it(L_ERROR, "[KEM Task] Failed to generate Bob KEM key");

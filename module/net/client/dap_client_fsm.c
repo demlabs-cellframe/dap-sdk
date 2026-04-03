@@ -203,7 +203,7 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
 
     // Crypto defaults
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
-    l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
+    l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_ML_KEM;
     l_fsm->session_key_block_size = 32;
 
     // FSM state
