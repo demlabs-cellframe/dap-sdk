@@ -19,7 +19,8 @@ typedef int32x4_t VEC_T;
 #define VEC_ANDNOT(a, b)   vbicq_s32(b, a)
 #define VEC_ZERO()         vdupq_n_s32(0)
 
-#define VEC_SLLI32(a, n)   vshlq_n_s32(a, n)
+/* vshlq_n_s32 requires a compile-time shift; Dilithium shiftl uses runtime k. */
+#define VEC_SLLI32(a, n)   vshlq_s32((a), vdupq_n_s32((int32_t)(n)))
 #define VEC_SRLI32(a, n)   vreinterpretq_s32_u32(vshrq_n_u32(vreinterpretq_u32_s32(a), n))
 #define VEC_SRAI32(a, n)   vshrq_n_s32(a, n)
 
