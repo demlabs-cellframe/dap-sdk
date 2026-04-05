@@ -553,7 +553,7 @@ dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}:
     ret
 FUNC_SIZE(dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}})
 
-.section .rodata
+SECTION_RODATA
 .p2align 5
 .Lzu512_mask18:
     .long 0x3FFFF

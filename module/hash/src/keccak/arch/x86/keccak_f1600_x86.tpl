@@ -489,7 +489,7 @@ FUNC_SIZE(dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}})
 {{/for}}
 
 {{! ===== Round constants ===== }}
-.section .rodata
+SECTION_RODATA
 .balign 64
 .Lrc:
 {{#for rc in RC_LIST}}

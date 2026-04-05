@@ -25,13 +25,7 @@
  * @generated
  */
 
-#ifdef __ELF__
-# define FUNC_TYPE(name) .type name, @function
-# define FUNC_SIZE(name) .size name, .-name
-#else
-# define FUNC_TYPE(name)
-# define FUNC_SIZE(name)
-#endif
+{{#include ASM_MACROS}}
 
 .text
 
@@ -557,13 +551,11 @@ FUNC_SIZE(dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}})
 {{/for}}
 
 {{! ===== Round constants ===== }}
-.section .rodata
+SECTION_RODATA
 .balign 64
 .Lrc:
 {{#for rc in RC_LIST}}
     .quad   {{rc}}
 {{/for}}
 
-#ifdef __ELF__
-.section .note.GNU-stack,"",@progbits
-#endif
+GNU_STACK

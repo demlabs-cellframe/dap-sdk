@@ -46,59 +46,78 @@
 .endm
 
 /* levels 0–5: one quarter (64 coeffs), shuffled input → standard output */
+/* Fold displacements: Darwin llvm-mc rejects many additive memory expressions. */
 .macro levels0t5 off
-    vmovdqu     256*\off+  0(%rdi), %ymm4
-    vmovdqu     256*\off+ 32(%rdi), %ymm5
-    vmovdqu     256*\off+ 64(%rdi), %ymm6
-    vmovdqu     256*\off+ 96(%rdi), %ymm7
-    vmovdqu     256*\off+128(%rdi), %ymm8
-    vmovdqu     256*\off+160(%rdi), %ymm9
-    vmovdqu     256*\off+192(%rdi), %ymm10
-    vmovdqu     256*\off+224(%rdi), %ymm11
+    .set _l05_m0, 256*\off+0
+    .set _l05_m1, 256*\off+32
+    .set _l05_m2, 256*\off+64
+    .set _l05_m3, 256*\off+96
+    .set _l05_m4, 256*\off+128
+    .set _l05_m5, 256*\off+160
+    .set _l05_m6, 256*\off+192
+    .set _l05_m7, 256*\off+224
+    .set _l05_r288, (288-8*\off)*4
+    .set _l05_r256, (256-8*\off)*4
+    .set _l05_r224, (224-8*\off)*4
+    .set _l05_r192, (192-8*\off)*4
+    .set _l05_r160, (160-8*\off)*4
+    .set _l05_r128, (128-8*\off)*4
+    .set _l05_r96, (96-8*\off)*4
+    .set _l05_r64, (64-8*\off)*4
+    .set _l05_r32, (32-8*\off)*4
+    .set _l05_r7, (7-\off)*4
+    vmovdqu     _l05_m0(%rdi), %ymm4
+    vmovdqu     _l05_m1(%rdi), %ymm5
+    vmovdqu     _l05_m2(%rdi), %ymm6
+    vmovdqu     _l05_m3(%rdi), %ymm7
+    vmovdqu     _l05_m4(%rdi), %ymm8
+    vmovdqu     _l05_m5(%rdi), %ymm9
+    vmovdqu     _l05_m6(%rdi), %ymm10
+    vmovdqu     _l05_m7(%rdi), %ymm11
 
     /* level 0: per-element (4 groups of 1 butterfly each) */
-    vpermq      $0x1B, s_inv_zqinv+(288-8*\off)*4(%rip), %ymm3
-    vpermq      $0x1B, s_inv_zeta+(288-8*\off)*4(%rip), %ymm15
+    vpermq      $0x1B, s_inv_zqinv+_l05_r288(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+_l05_r288(%rip), %ymm15
     vmovshdup   %ymm3, %ymm1
     vmovshdup   %ymm15, %ymm2
     inv_butterfly 4, 5, 1, 3, 2, 15
 
-    vpermq      $0x1B, s_inv_zqinv+(256-8*\off)*4(%rip), %ymm3
-    vpermq      $0x1B, s_inv_zeta+(256-8*\off)*4(%rip), %ymm15
+    vpermq      $0x1B, s_inv_zqinv+_l05_r256(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+_l05_r256(%rip), %ymm15
     vmovshdup   %ymm3, %ymm1
     vmovshdup   %ymm15, %ymm2
     inv_butterfly 6, 7, 1, 3, 2, 15
 
-    vpermq      $0x1B, s_inv_zqinv+(224-8*\off)*4(%rip), %ymm3
-    vpermq      $0x1B, s_inv_zeta+(224-8*\off)*4(%rip), %ymm15
+    vpermq      $0x1B, s_inv_zqinv+_l05_r224(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+_l05_r224(%rip), %ymm15
     vmovshdup   %ymm3, %ymm1
     vmovshdup   %ymm15, %ymm2
     inv_butterfly 8, 9, 1, 3, 2, 15
 
-    vpermq      $0x1B, s_inv_zqinv+(192-8*\off)*4(%rip), %ymm3
-    vpermq      $0x1B, s_inv_zeta+(192-8*\off)*4(%rip), %ymm15
+    vpermq      $0x1B, s_inv_zqinv+_l05_r192(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+_l05_r192(%rip), %ymm15
     vmovshdup   %ymm3, %ymm1
     vmovshdup   %ymm15, %ymm2
     inv_butterfly 10, 11, 1, 3, 2, 15
 
     /* level 1: per-element (2 groups of 2 butterflies) */
-    vpermq      $0x1B, s_inv_zqinv+(160-8*\off)*4(%rip), %ymm3
-    vpermq      $0x1B, s_inv_zeta+(160-8*\off)*4(%rip), %ymm15
+    vpermq      $0x1B, s_inv_zqinv+_l05_r160(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+_l05_r160(%rip), %ymm15
     vmovshdup   %ymm3, %ymm1
     vmovshdup   %ymm15, %ymm2
     inv_butterfly 4, 6, 1, 3, 2, 15
     inv_butterfly 5, 7, 1, 3, 2, 15
 
-    vpermq      $0x1B, s_inv_zqinv+(128-8*\off)*4(%rip), %ymm3
-    vpermq      $0x1B, s_inv_zeta+(128-8*\off)*4(%rip), %ymm15
+    vpermq      $0x1B, s_inv_zqinv+_l05_r128(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+_l05_r128(%rip), %ymm15
     vmovshdup   %ymm3, %ymm1
     vmovshdup   %ymm15, %ymm2
     inv_butterfly 8, 10, 1, 3, 2, 15
     inv_butterfly 9, 11, 1, 3, 2, 15
 
     /* level 2: per-element (1 group of 4 butterflies) */
-    vpermq      $0x1B, s_inv_zqinv+(96-8*\off)*4(%rip), %ymm3
-    vpermq      $0x1B, s_inv_zeta+(96-8*\off)*4(%rip), %ymm15
+    vpermq      $0x1B, s_inv_zqinv+_l05_r96(%rip), %ymm3
+    vpermq      $0x1B, s_inv_zeta+_l05_r96(%rip), %ymm15
     vmovshdup   %ymm3, %ymm1
     vmovshdup   %ymm15, %ymm2
     inv_butterfly 4, 8, 1, 3, 2, 15
@@ -113,8 +132,8 @@
     shuffle2 10, 11, 8, 11
 
     /* level 3: vector zetas */
-    vpermq      $0x1B, s_inv_zqinv+(64-8*\off)*4(%rip), %ymm1
-    vpermq      $0x1B, s_inv_zeta+(64-8*\off)*4(%rip), %ymm2
+    vpermq      $0x1B, s_inv_zqinv+_l05_r64(%rip), %ymm1
+    vpermq      $0x1B, s_inv_zeta+_l05_r64(%rip), %ymm2
     inv_butterfly 3, 5
     inv_butterfly 4, 7
     inv_butterfly 6, 9
@@ -127,8 +146,8 @@
     shuffle4 9, 11, 5, 11
 
     /* level 4: vector zetas */
-    vpermq      $0x1B, s_inv_zqinv+(32-8*\off)*4(%rip), %ymm1
-    vpermq      $0x1B, s_inv_zeta+(32-8*\off)*4(%rip), %ymm2
+    vpermq      $0x1B, s_inv_zqinv+_l05_r32(%rip), %ymm1
+    vpermq      $0x1B, s_inv_zeta+_l05_r32(%rip), %ymm2
     inv_butterfly 10, 4
     inv_butterfly 3, 8
     inv_butterfly 6, 7
@@ -141,34 +160,43 @@
     shuffle8 7, 11, 4, 11
 
     /* level 5: broadcast zetas (data now in standard order) */
-    vpbroadcastd s_inv_zqinv+(7-\off)*4(%rip), %ymm1
-    vpbroadcastd s_inv_zeta+(7-\off)*4(%rip), %ymm2
+    vpbroadcastd s_inv_zqinv+_l05_r7(%rip), %ymm1
+    vpbroadcastd s_inv_zeta+_l05_r7(%rip), %ymm2
     inv_butterfly 9, 3
     inv_butterfly 10, 5
     inv_butterfly 6, 8
     inv_butterfly 4, 11
 
     /* Store (standard order within quarter) */
-    vmovdqu     %ymm9,  256*\off+  0(%rdi)
-    vmovdqu     %ymm10, 256*\off+ 32(%rdi)
-    vmovdqu     %ymm6,  256*\off+ 64(%rdi)
-    vmovdqu     %ymm4,  256*\off+ 96(%rdi)
-    vmovdqu     %ymm3,  256*\off+128(%rdi)
-    vmovdqu     %ymm5,  256*\off+160(%rdi)
-    vmovdqu     %ymm8,  256*\off+192(%rdi)
-    vmovdqu     %ymm11, 256*\off+224(%rdi)
+    vmovdqu     %ymm9,  _l05_m0(%rdi)
+    vmovdqu     %ymm10, _l05_m1(%rdi)
+    vmovdqu     %ymm6,  _l05_m2(%rdi)
+    vmovdqu     %ymm4,  _l05_m3(%rdi)
+    vmovdqu     %ymm3,  _l05_m4(%rdi)
+    vmovdqu     %ymm5,  _l05_m5(%rdi)
+    vmovdqu     %ymm8,  _l05_m6(%rdi)
+    vmovdqu     %ymm11, _l05_m7(%rdi)
 .endm
 
 /* levels 6–7: stride 64/128 + final Montgomery scaling by f=mont^2/256 */
+/* Darwin llvm-mc rejects disp like 256+32*3(%rdi); fold via .set to one integer. */
 .macro levels6t7 off
-    vmovdqu     0+32*\off(%rdi), %ymm4
-    vmovdqu     128+32*\off(%rdi), %ymm5
-    vmovdqu     256+32*\off(%rdi), %ymm6
-    vmovdqu     384+32*\off(%rdi), %ymm7
-    vmovdqu     512+32*\off(%rdi), %ymm8
-    vmovdqu     640+32*\off(%rdi), %ymm9
-    vmovdqu     768+32*\off(%rdi), %ymm10
-    vmovdqu     896+32*\off(%rdi), %ymm11
+    .set _l6_ld0, 0+32*\off
+    .set _l6_ld1, 128+32*\off
+    .set _l6_ld2, 256+32*\off
+    .set _l6_ld3, 384+32*\off
+    .set _l6_ld4, 512+32*\off
+    .set _l6_ld5, 640+32*\off
+    .set _l6_ld6, 768+32*\off
+    .set _l6_ld7, 896+32*\off
+    vmovdqu     _l6_ld0(%rdi), %ymm4
+    vmovdqu     _l6_ld1(%rdi), %ymm5
+    vmovdqu     _l6_ld2(%rdi), %ymm6
+    vmovdqu     _l6_ld3(%rdi), %ymm7
+    vmovdqu     _l6_ld4(%rdi), %ymm8
+    vmovdqu     _l6_ld5(%rdi), %ymm9
+    vmovdqu     _l6_ld6(%rdi), %ymm10
+    vmovdqu     _l6_ld7(%rdi), %ymm11
 
     /* level 6: stride 64, 2 groups */
     vpbroadcastd s_inv_zqinv+3*4(%rip), %ymm1
@@ -201,10 +229,14 @@
     .endr
 
     /* Store h' */
-    vmovdqu     %ymm8,  512+32*\off(%rdi)
-    vmovdqu     %ymm9,  640+32*\off(%rdi)
-    vmovdqu     %ymm10, 768+32*\off(%rdi)
-    vmovdqu     %ymm11, 896+32*\off(%rdi)
+    .set _l6_sh0, 512+32*\off
+    .set _l6_sh1, 640+32*\off
+    .set _l6_sh2, 768+32*\off
+    .set _l6_sh3, 896+32*\off
+    vmovdqu     %ymm8,  _l6_sh0(%rdi)
+    vmovdqu     %ymm9,  _l6_sh1(%rdi)
+    vmovdqu     %ymm10, _l6_sh2(%rdi)
+    vmovdqu     %ymm11, _l6_sh3(%rdi)
 
     /* Montgomery multiply l' by DIV = mont^2/256 */
     vmovdqa     s_inv_div_qinv(%rip), %ymm1
@@ -268,10 +300,14 @@
     .endr
 
     /* Store normalized output in [0, Q) */
-    vmovdqu     %ymm4, 0+32*\off(%rdi)
-    vmovdqu     %ymm5, 128+32*\off(%rdi)
-    vmovdqu     %ymm6, 256+32*\off(%rdi)
-    vmovdqu     %ymm7, 384+32*\off(%rdi)
+    .set _l6_st0, 0+32*\off
+    .set _l6_st1, 128+32*\off
+    .set _l6_st2, 256+32*\off
+    .set _l6_st3, 384+32*\off
+    vmovdqu     %ymm4, _l6_st0(%rdi)
+    vmovdqu     %ymm5, _l6_st1(%rdi)
+    vmovdqu     %ymm6, _l6_st2(%rdi)
+    vmovdqu     %ymm7, _l6_st3(%rdi)
 .endm
 
 
@@ -303,7 +339,7 @@ GNU_STACK
 /* ================================================================
  * Constants — same zeta table as fwd NTT + DIV scaling constants.
  * ================================================================ */
-.section .rodata
+SECTION_RODATA
 .p2align 5
 
 s_inv_q:

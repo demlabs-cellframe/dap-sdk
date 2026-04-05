@@ -656,7 +656,7 @@ FUNC_SIZE(dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}})
 /* ================================================================
  * Read-only data for polyz_unpack
  * ================================================================ */
-.section .rodata
+SECTION_RODATA
 .p2align 5
 
 .Lzu_mask18:

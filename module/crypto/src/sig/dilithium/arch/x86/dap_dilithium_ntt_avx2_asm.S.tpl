@@ -81,7 +81,9 @@
     vpbroadcastd s_zetas_inv+4*(k)(%rip), %ymm14; \
     vpbroadcastd s_zetas_inv_qinv+4*(k)(%rip), %ymm13
 
-.section .rodata
+{{#include ASM_MACROS}}
+
+SECTION_RODATA
 .p2align 5
 
 s_zetas:
@@ -383,9 +385,6 @@ s_intt_f_qinv: .long 8395782
     .long 3937738, 3937738, 1400424, 1400424, 7534263, 7534263, 1976782, 1976782
 .L_fwd_zq1_blk31:
     .long 973777462, 973777462, -400711272, -400711272, 540420425, 540420425, -374860238, -374860238
-
-
-{{#include ASM_MACROS}}
 
 .text
 

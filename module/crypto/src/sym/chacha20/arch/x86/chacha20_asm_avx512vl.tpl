@@ -40,7 +40,9 @@
 #define STKOFF_NONCEPTR (33*32+8)
 #define STACK_SIZE      (34*32)
 
-.section .rodata
+{{#include ASM_MACROS}}
+
+SECTION_RODATA
 .balign 64
 .Lsigma:
     .long {{SIGMA_0}}, {{SIGMA_1}}, {{SIGMA_2}}, {{SIGMA_3}}
@@ -48,8 +50,6 @@
 {{#for ci in CTR_INC}}
     .long {{ci}}
 {{/for}}
-
-{{#include ASM_MACROS}}
 
 .text
 

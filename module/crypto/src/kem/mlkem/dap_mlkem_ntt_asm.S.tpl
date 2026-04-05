@@ -22,7 +22,7 @@
  * Q = 3329, QINV = -3327, Barrett V = 20159, f_scale = 1441
  * All tables are architecture-independent.
  * ═══════════════════════════════════════════════════════════════════ */
-.section .rodata
+SECTION_RODATA
 .align 32
 
 .macro BCAST16 name, val
