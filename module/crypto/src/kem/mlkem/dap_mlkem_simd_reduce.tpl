@@ -23,7 +23,7 @@
 {{TARGET_ATTR}}
 static inline VEC_T s_fqmul(VEC_T a_a, VEC_T a_b)
 {
-    const VEC_T l_qinv = VEC_SET1_16(MLKEM_QINV);
+    const VEC_T l_qinv = VEC_SET1_16((int16_t)MLKEM_QINV);
     const VEC_T l_q    = VEC_SET1_16(MLKEM_Q);
     VEC_T l_lo  = VEC_MULLO16(a_a, a_b);
     VEC_T l_hi  = VEC_MULHI16(a_a, a_b);
@@ -70,7 +70,7 @@ static inline int16_t s_barrett_reduce_scalar(int16_t a)
 {{TARGET_ATTR}}
 static inline HVEC_T s_fqmul_hvec(HVEC_T a_a, HVEC_T a_b)
 {
-    const HVEC_T l_qinv = HVEC_SET1_16(MLKEM_QINV);
+    const HVEC_T l_qinv = HVEC_SET1_16((int16_t)MLKEM_QINV);
     const HVEC_T l_q    = HVEC_SET1_16(MLKEM_Q);
     HVEC_T l_lo = HVEC_MULLO16(a_a, a_b);
     HVEC_T l_hi = HVEC_MULHI16(a_a, a_b);

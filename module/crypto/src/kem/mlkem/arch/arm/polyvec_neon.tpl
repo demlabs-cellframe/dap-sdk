@@ -173,7 +173,7 @@ void dap_mlkem_polyvec_basemul_acc_cached_{{ARCH_LOWER}}(
     const int16_t * const *a_caches,
     unsigned a_count)
 {
-    const int16x8_t l_qinv = vdupq_n_s16(MLKEM_QINV);
+    const int16x8_t l_qinv = vdupq_n_s16((int16_t)MLKEM_QINV);
     const int32x4_t l_q32  = vdupq_n_s32(MLKEM_Q);
 
     for (unsigned l_p = 0; l_p < 8; l_p++) {

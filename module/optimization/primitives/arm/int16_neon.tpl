@@ -6,6 +6,8 @@
 typedef int16x8_t VEC_T;
 #define VEC_LANES 8
 
+#define VEC_ZERO()         vdupq_n_s16(0)
+
 #define VEC_LOAD(p)        VEC_LOAD_S16(p)
 #define VEC_STORE(p, v)    VEC_STORE_S16(p, v)
 #define VEC_AND(a, b)      VEC_AND_S16(a, b)

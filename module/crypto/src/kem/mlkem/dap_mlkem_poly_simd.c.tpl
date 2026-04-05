@@ -10,6 +10,14 @@
  */
 
 #include <stdint.h>
+
+/* Clang treats GCC's optimize() as unknown attribute (-Werror on Android NDK). */
+#if defined(__clang__)
+#define DAP_MLKEM_POLY_FN_OPT
+#else
+#define DAP_MLKEM_POLY_FN_OPT __attribute__((optimize("O3")))
+#endif
+
 {{ARCH_INCLUDES}}
 
 {{#include PRIMITIVES_FILE}}
@@ -46,7 +54,7 @@ static const int16_t s_basemul_zetas_nttpack[128] = {
       958,  -958,  1869, -1869,  1522, -1522,  1628, -1628,
 };
 
-{{TARGET_ATTR}} __attribute__((optimize("O3")))
+{{TARGET_ATTR}} DAP_MLKEM_POLY_FN_OPT
 void dap_mlkem_poly_basemul_montgomery_{{ARCH_LOWER}}(
     int16_t *a_r, const int16_t *a_a, const int16_t *a_b, const int16_t *a_zetas)
 {
@@ -77,7 +85,7 @@ void dap_mlkem_poly_basemul_montgomery_{{ARCH_LOWER}}(
  * basemul_acc_montgomery: fused K basemul + accumulate + Barrett reduce
  * ============================================================================ */
 
-{{TARGET_ATTR}} __attribute__((optimize("O3")))
+{{TARGET_ATTR}} DAP_MLKEM_POLY_FN_OPT
 void dap_mlkem_poly_basemul_acc_montgomery_{{ARCH_LOWER}}(
     int16_t *a_r,
     const int16_t * const *a_polys_a,

@@ -1,5 +1,5 @@
 /* NEON static fast-function bodies for ML-KEM poly ops.
- * Included by generated dap_mlkem_poly_simd.h inside AArch64 section. */
+ * Included by generated dap_mlkem_poly_simd.h when DAP_MLKEM_HAVE_NEON. */
 
 static void s_mlkem_poly_csubq_neon(int16_t *a)
 {

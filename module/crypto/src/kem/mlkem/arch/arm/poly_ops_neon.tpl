@@ -10,6 +10,20 @@ static inline int16x8_t s_neon_mulhi_s16(int16x8_t a, int16x8_t b) {
     return vcombine_s16(vshrn_n_s32(p_lo, 16), vshrn_n_s32(p_hi, 16));
 }
 
+/* vaddvq_u16 is AArch64-only; ARMv7 needs pairwise reduction. */
+static inline uint16_t s_neon_vaddvq_u16(uint16x8_t a_v) {
+#if defined(__aarch64__) || defined(_M_ARM64)
+    return vaddvq_u16(a_v);
+#else
+    uint16x4_t a_lo = vget_low_u16(a_v);
+    uint16x4_t a_hi = vget_high_u16(a_v);
+    a_lo = vpadd_u16(a_lo, a_hi);
+    a_lo = vpadd_u16(a_lo, a_lo);
+    a_lo = vpadd_u16(a_lo, a_lo);
+    return vget_lane_u16(a_lo, 0);
+#endif
+}
+
 /* ============================================================================
  * compress_d4: polynomial → 128 bytes (4 bits per coefficient)
  *
@@ -230,7 +244,7 @@ void dap_mlkem_poly_tomsg_{{ARCH_LOWER}}(uint8_t *a_msg, const int16_t *a_coeffs
         uint16x8_t shifted = vshrq_n_u16(valid, 15);
         static const uint16_t s_weights[8] = {1, 2, 4, 8, 16, 32, 64, 128};
         uint16x8_t weighted = vmulq_u16(shifted, vld1q_u16(s_weights));
-        a_msg[i] = (uint8_t)vaddvq_u16(weighted);
+        a_msg[i] = (uint8_t)s_neon_vaddvq_u16(weighted);
     }
 }
 

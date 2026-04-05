@@ -16,6 +16,11 @@
 #include "dap_cpu_arch.h"
 #include "dap_mlkem_reduce.h"
 
+/* AArch64 hosts, or ARMv7 with NEON (Android armeabi-v7a). */
+#if defined(__aarch64__) || defined(_M_ARM64) || (defined(__ARM_NEON) && defined(__arm__))
+#define DAP_MLKEM_HAVE_NEON 1
+#endif
+
 /* ============================================================================
  *  x86_64 — AVX2 section
  * ============================================================================ */
@@ -57,10 +62,10 @@ void dap_mlkem_polyvec_basemul_acc_cached_avx2(int16_t *, const int16_t * const 
 #endif /* x86_64 */
 
 /* ============================================================================
- *  AArch64 — NEON section
+ *  ARM NEON — AArch64 and ARMv7-a (when NEON is enabled)
  * ============================================================================ */
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if DAP_MLKEM_HAVE_NEON
 #include <arm_neon.h>
 
 /* --- Extern heavy-function declarations --- */
@@ -85,7 +90,7 @@ void dap_mlkem_polyvec_basemul_acc_cached_neon(int16_t *, const int16_t * const 
 /* --- Static fast-function bodies (inlinable at call site) --- */
 {{#include NEON_FAST_BODIES}}
 
-#endif /* aarch64 */
+#endif /* DAP_MLKEM_HAVE_NEON */
 
 /* ============================================================================
  *  Scalar references — always available
@@ -167,7 +172,7 @@ static inline void dap_mlkem_poly_{{fn}}_fast(int16_t *a) {
         s_mlkem_poly_{{fn}}_avx2(a);
     else
         s_mlkem_poly_{{fn}}_ref(a);
-#elif defined(__aarch64__) || defined(_M_ARM64)
+#elif DAP_MLKEM_HAVE_NEON
     s_mlkem_poly_{{fn}}_neon(a);
 #else
     s_mlkem_poly_{{fn}}_ref(a);
@@ -185,7 +190,7 @@ static inline void dap_mlkem_poly_{{fn}}_fast(int16_t *r, const int16_t *a, cons
         s_mlkem_poly_{{fn}}_avx2(r, a, b);
     else
         s_mlkem_poly_{{fn}}_ref(r, a, b);
-#elif defined(__aarch64__) || defined(_M_ARM64)
+#elif DAP_MLKEM_HAVE_NEON
     s_mlkem_poly_{{fn}}_neon(r, a, b);
 #else
     s_mlkem_poly_{{fn}}_ref(r, a, b);
@@ -203,7 +208,7 @@ static inline void dap_mlkem_{{fn}}_fast(int16_t *r, const uint8_t *buf) {
         s_mlkem_{{fn}}_avx2(r, buf);
     else
         s_mlkem_{{fn}}_ref(r, buf);
-#elif defined(__aarch64__) || defined(_M_ARM64)
+#elif DAP_MLKEM_HAVE_NEON
     s_mlkem_{{fn}}_neon(r, buf);
 #else
     s_mlkem_{{fn}}_ref(r, buf);
