@@ -217,9 +217,11 @@
 .endm
 
 
+{{#include ASM_MACROS}}
+
 .text
 .globl dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}
-.type  dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}:
     vpbroadcastd s_fwd_q(%rip), %ymm0
@@ -236,7 +238,7 @@ dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}:
 
     vzeroupper
     ret
-.size dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}, .-dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}})
 
 /* ---- nttunpack: convert standard order → CRYSTALS shuffled order ----
  * Applies shuffle8→shuffle4→shuffle2 to each quarter (64 coeffs).
@@ -279,7 +281,7 @@ dap_dilithium_ntt_fwd_fused_{{ARCH_LOWER}}:
 .endm
 
 .globl dap_dilithium_nttunpack_{{ARCH_LOWER}}
-.type  dap_dilithium_nttunpack_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_nttunpack_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_nttunpack_{{ARCH_LOWER}}:
     nttunpack128
@@ -291,9 +293,9 @@ dap_dilithium_nttunpack_{{ARCH_LOWER}}:
     nttunpack128
     vzeroupper
     ret
-.size dap_dilithium_nttunpack_{{ARCH_LOWER}}, .-dap_dilithium_nttunpack_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_nttunpack_{{ARCH_LOWER}})
 
-.section .note.GNU-stack,"",@progbits
+GNU_STACK
 
 /* ================================================================
  * Constants and zeta tables — CRYSTALS layout, signed Montgomery form.

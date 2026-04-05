@@ -18,15 +18,12 @@
 #define LANE_OR(a, b)       vorrq_u64((a), (b))
 #define LANE_SET1_64(x)     VEC_SET1_U64(x)
 
-/* AArch64: SRI (shift-right-insert) gives efficient rotate */
+/* Variable-shift rotate via vshlq_u64 (works with runtime n) */
 static inline uint64x2_t lane_rol64(uint64x2_t x, int n)
 {
-#ifdef __aarch64__
     if (__builtin_constant_p(n) && n == 0) return x;
-    return vsriq_n_u64(vshlq_n_u64(x, n), x, 64 - n);
-#else
-    if (n == 0) return x;
-    return vorrq_u64(vshlq_n_u64(x, n), vshrq_n_u64(x, 64 - n));
-#endif
+    int64x2_t vn = vdupq_n_s64(n);
+    int64x2_t vneg = vdupq_n_s64(n - 64);
+    return vorrq_u64(vshlq_u64(x, vn), vshlq_u64(x, vneg));
 }
 #define LANE_ROL64(x, n) lane_rol64((x), (n))

@@ -507,6 +507,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
         TEMPLATE ${CHACHA_DIR}/dap_chacha20_asm.S.tpl
         OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S
         ARGS     "ARCH_IMPL=${CHACHA_DIR}/arch/x86/chacha20_asm_avx512vl.tpl"
+                 "ASM_MACROS=${DAP_ASM_MACROS}"
     )
     target_sources(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S)
     set_source_files_properties(${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S

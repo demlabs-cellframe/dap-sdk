@@ -144,6 +144,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         OUTPUT   ${KECCAK_AVX512VL_ASM}
         ARGS     "FUNC_SUFFIX=avx512vl_asm"
                  "ARCH_IMPL=${K}/arch/x86/keccak_f1600_x86.tpl"
+                 "ASM_MACROS=${DAP_ASM_MACROS}"
                  ${_KECCAK_ASM_ENV}
     )
     target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_AVX512VL_ASM})
@@ -158,6 +159,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         OUTPUT   ${KECCAK_AVX512VL_PT_ASM}
         ARGS     "FUNC_SUFFIX=avx512vl_pt"
                  "ARCH_IMPL=${K}/arch/x86/keccak_f1600_x86_pt.tpl"
+                 "ASM_MACROS=${DAP_ASM_MACROS}"
                  ${_KECCAK_ASM_ENV}
     )
     target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_AVX512VL_PT_ASM})
@@ -183,6 +185,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
         TEMPLATE ${K}/dap_keccak_f1600_asm.S.tpl
         OUTPUT   ${KECCAK_NEON_SHA3_ASM}
         ARGS     "ARCH_IMPL=${K}/arch/arm/keccak_f1600_arm.tpl"
+                 "ASM_MACROS=${DAP_ASM_MACROS}"
                  ${_KECCAK_ARM_ENV}
     )
     target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_NEON_SHA3_ASM})

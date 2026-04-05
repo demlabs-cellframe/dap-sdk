@@ -23,6 +23,8 @@
  * @generated
  */
 
+{{#include ASM_MACROS}}
+
 .text
 
 /* ===== 1x permutation: scalar 64-bit lanes in d-registers ===== */
@@ -63,8 +65,7 @@ dap_keccak_x2_permute_{{FUNC_SUFFIX}}:
 /* eor3/bcax/rax1/xar operate on .16b/.2d regardless of active width */
 .p2align 6
 .Lpermute_f1600_arm:
-    adrp    x9, .Lrc_arm@PAGE
-    add     x9, x9, .Lrc_arm@PAGEOFF
+    ADRP_LO(x9, .Lrc_arm)
 {{#for rnd in ROUNDS}}
 {{#set M}}{{rnd|resolve|MAP_}}{{/set}}
     /* ---- Round {{rnd}} ---- */
@@ -120,6 +121,4 @@ dap_keccak_x2_permute_{{FUNC_SUFFIX}}:
     .quad   {{rc}}
 {{/for}}
 
-#if !defined(__APPLE__)
-.section .note.GNU-stack,"",@progbits
-#endif
+GNU_STACK

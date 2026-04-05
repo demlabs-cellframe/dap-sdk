@@ -107,6 +107,9 @@ set(_DAP_ARCH_FAMILY_x86   "sse2;avx2;avx2_bmi2;avx2_512vl;avx512;avx512_ifma;av
 set(_DAP_ARCH_FAMILY_arm   "neon")
 set(_DAP_ARCH_FAMILY_sve   "sve;sve2")
 
+# Portable ASM macros (ELF/Mach-O/PE-COFF compatibility)
+set(DAP_ASM_MACROS "${DAP_PRIMITIVES_DIR}/asm_portable.tpl" CACHE INTERNAL "")
+
 # Shared primitive library paths (auto-injected as PRIM_LIB template variable)
 # Templates live in module/optimization/primitives/, exposed via DAP_PRIMITIVES_DIR
 set(_DAP_ARCH_PRIM_LIB_sse2       "${DAP_PRIMITIVES_DIR}/x86/sse2.tpl")
@@ -176,6 +179,11 @@ function(dap_arch_generate_variant)
     # Auto-inject shared primitive library path for this architecture
     if(DEFINED _DAP_ARCH_PRIM_LIB_${_arch})
         list(APPEND _tpl_args "PRIM_LIB=${_DAP_ARCH_PRIM_LIB_${_arch}}")
+    endif()
+
+    # Auto-inject portable ASM macros for .S templates
+    if(ARG_OUTPUT MATCHES "\\.S$" AND DEFINED DAP_ASM_MACROS)
+        list(APPEND _tpl_args "ASM_MACROS=${DAP_ASM_MACROS}")
     endif()
 
     if(ARG_ARGS)

@@ -9,6 +9,8 @@
 {{! that uses the data labels below (ntt_q, ntt_qinv, fwd_z7, etc) }}
 {{! ================================================================ }}
 
+{{#include ASM_MACROS}}
+
 #ifdef __APPLE__
 #define CDECL(x) _##x
 #else
@@ -209,6 +211,4 @@ basemul_zetas:
 {{#include ARCH_IMPL}}
 
 
-#if defined(__ELF__)
-.section .note.GNU-stack, "", @progbits
-#endif
+GNU_STACK

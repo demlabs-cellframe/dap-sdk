@@ -385,6 +385,8 @@ s_intt_f_qinv: .long 8395782
     .long 973777462, 973777462, -400711272, -400711272, 540420425, 540420425, -374860238, -374860238
 
 
+{{#include ASM_MACROS}}
+
 .text
 
 /* ============================================================================
@@ -392,7 +394,7 @@ s_intt_f_qinv: .long 8395782
  * void dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm(int32_t coeffs[256]);
  * ============================================================================ */
 .globl dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm
-.type  dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm, @function
+FUNC_TYPE(dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm)
 .p2align 4
 dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm:
     /* Q broadcast constant */
@@ -2153,7 +2155,7 @@ dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm:
 
     vzeroupper
     ret
-.size dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm, .-dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm
+FUNC_SIZE(dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm)
 
 
 /* ============================================================================
@@ -2165,7 +2167,7 @@ dap_dilithium_ntt_forward_{{ARCH_LOWER}}_asm:
  * void dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm(int32_t coeffs[256]);
  * ============================================================================ */
 .globl dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm
-.type  dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm, @function
+FUNC_TYPE(dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm)
 .p2align 4
 dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm:
     movl    $DIL_Q, %eax
@@ -2375,7 +2377,7 @@ dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm:
 
     vzeroupper
     ret
-.size dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm, .-dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm
+FUNC_SIZE(dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm)
 
 
 /* ============================================================================
@@ -2384,7 +2386,7 @@ dap_dilithium_ntt_inverse_{{ARCH_LOWER}}_asm:
  *     int32_t *c, const int32_t *a, const int32_t *b);
  * ============================================================================ */
 .globl dap_dilithium_pointwise_mont_{{ARCH_LOWER}}_asm
-.type  dap_dilithium_pointwise_mont_{{ARCH_LOWER}}_asm, @function
+FUNC_TYPE(dap_dilithium_pointwise_mont_{{ARCH_LOWER}}_asm)
 .p2align 4
 dap_dilithium_pointwise_mont_{{ARCH_LOWER}}_asm:
     movl    $DIL_Q, %eax
@@ -2423,5 +2425,5 @@ dap_dilithium_pointwise_mont_{{ARCH_LOWER}}_asm:
     jne      .L_pw_loop
     vzeroupper
     ret
-.size dap_dilithium_pointwise_mont_{{ARCH_LOWER}}_asm, .-dap_dilithium_pointwise_mont_{{ARCH_LOWER}}_asm
+FUNC_SIZE(dap_dilithium_pointwise_mont_{{ARCH_LOWER}}_asm)
 

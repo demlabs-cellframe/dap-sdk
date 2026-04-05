@@ -26,11 +26,13 @@
  * @generated
  */
 
+{{#include ASM_MACROS}}
+
 .text
 
 {{! ===== 1x permutation wrapper ===== }}
 .globl  dap_hash_keccak_permute_{{FUNC_SUFFIX}}
-.type   dap_hash_keccak_permute_{{FUNC_SUFFIX}}, @function
+FUNC_TYPE(dap_hash_keccak_permute_{{FUNC_SUFFIX}})
 .balign 32
 dap_hash_keccak_permute_{{FUNC_SUFFIX}}:
 {{#for i in LANES}}
@@ -43,11 +45,11 @@ dap_hash_keccak_permute_{{FUNC_SUFFIX}}:
     {{INSN_STORE_1X}}   {{REG_1X_PREFIX}}{{i}},  ({{STRIDE_1X}}*{{i}})(%rdi)
 {{/for}}
     ret
-.size   dap_hash_keccak_permute_{{FUNC_SUFFIX}}, .-dap_hash_keccak_permute_{{FUNC_SUFFIX}}
+FUNC_SIZE(dap_hash_keccak_permute_{{FUNC_SUFFIX}})
 
 {{! ===== 4x permutation wrapper (interleaved layout) ===== }}
 .globl  dap_keccak_x4_permute_{{FUNC_SUFFIX}}
-.type   dap_keccak_x4_permute_{{FUNC_SUFFIX}}, @function
+FUNC_TYPE(dap_keccak_x4_permute_{{FUNC_SUFFIX}})
 .balign 32
 dap_keccak_x4_permute_{{FUNC_SUFFIX}}:
 {{#for i in LANES}}
@@ -60,7 +62,7 @@ dap_keccak_x4_permute_{{FUNC_SUFFIX}}:
     {{INSN_STORE_4X}}   {{REG_PREFIX}}{{i}},  ({{STRIDE_4X}}*{{i}})(%rdi)
 {{/for}}
     ret
-.size   dap_keccak_x4_permute_{{FUNC_SUFFIX}}, .-dap_keccak_x4_permute_{{FUNC_SUFFIX}}
+FUNC_SIZE(dap_keccak_x4_permute_{{FUNC_SUFFIX}})
 
 {{! ===== Core permutation: 2-round unrolled loop (12 iters), fused Rho+Pi ===== }}
 .balign 64
@@ -378,7 +380,7 @@ dap_keccak_x4_permute_{{FUNC_SUFFIX}}:
     jnz     .Lround
 
     ret
-.size   .Lpermute_f1600, .-.Lpermute_f1600
+FUNC_SIZE(.Lpermute_f1600)
 
 {{! ===== Register-resident sponge absorb functions ===== }}
 
@@ -391,7 +393,7 @@ dap_keccak_x4_permute_{{FUNC_SUFFIX}}:
 {{#set SWORDS}}{{SRATE|resolve|WORDS_}}{{/set}}
 
 .globl  dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}}
-.type   dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}}, @function
+FUNC_TYPE(dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}})
 .balign 32
 dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}}:
     pushq   %rbp
@@ -449,10 +451,10 @@ dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}}:
     popq    %rbx
     popq    %rbp
     ret
-.size   dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}}, .-dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}}
+FUNC_SIZE(dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}})
 
 .globl  dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}
-.type   dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}, @function
+FUNC_TYPE(dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}})
 .balign 32
 dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}:
     pushq   %rbp
@@ -482,7 +484,7 @@ dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}:
     popq    %rbx
     popq    %rbp
     ret
-.size   dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}, .-dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}
+FUNC_SIZE(dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}})
 
 {{/for}}
 
@@ -494,4 +496,4 @@ dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}:
     .quad   {{rc}}
 {{/for}}
 
-.section .note.GNU-stack,"",@progbits
+GNU_STACK

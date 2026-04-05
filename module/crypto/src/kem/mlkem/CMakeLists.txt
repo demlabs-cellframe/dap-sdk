@@ -106,6 +106,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
         TEMPLATE ${M}/dap_mlkem_ntt_asm.S.tpl
         OUTPUT   ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_ntt_asm.S
         ARGS     "ARCH_IMPL=${M}/arch/x86/mlkem_ntt_asm_x86.tpl"
+                 "ASM_MACROS=${DAP_ASM_MACROS}"
     )
     set(MLKEM_ASM_NTT_SRC ${MLKEM_SIMD_GEN_DIR}/dap_mlkem_ntt_asm.S)
 endif()

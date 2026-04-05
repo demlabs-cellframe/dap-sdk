@@ -16,13 +16,15 @@
 #define DIL_Q       8380417
 #define COEFF_BYTES (DIL_N * 4)
 
+{{#include ASM_MACROS}}
+
 .text
 
 /* ================================================================
  * poly_reduce
  * ================================================================ */
 .globl dap_dilithium_poly_reduce_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_reduce_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_reduce_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_reduce_{{ARCH_LOWER}}:
     movl    $0x7FFFFF, %eax
@@ -42,14 +44,14 @@ dap_dilithium_poly_reduce_{{ARCH_LOWER}}:
     jne     .L_reduce512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_reduce_{{ARCH_LOWER}}, .-dap_dilithium_poly_reduce_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_reduce_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_csubq
  * ================================================================ */
 .globl dap_dilithium_poly_csubq_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_csubq_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_csubq_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_csubq_{{ARCH_LOWER}}:
     movl    $(-DIL_Q), %eax
@@ -69,14 +71,14 @@ dap_dilithium_poly_csubq_{{ARCH_LOWER}}:
     jne     .L_csubq512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_csubq_{{ARCH_LOWER}}, .-dap_dilithium_poly_csubq_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_csubq_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_freeze: reduce then csubq
  * ================================================================ */
 .globl dap_dilithium_poly_freeze_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_freeze_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_freeze_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_freeze_{{ARCH_LOWER}}:
     movl    $0x7FFFFF, %ecx
@@ -112,14 +114,14 @@ dap_dilithium_poly_freeze_{{ARCH_LOWER}}:
     jne     .L_freeze512_csubq
     vzeroupper
     ret
-.size dap_dilithium_poly_freeze_{{ARCH_LOWER}}, .-dap_dilithium_poly_freeze_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_freeze_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_add
  * ================================================================ */
 .globl dap_dilithium_poly_add_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_add_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_add_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_add_{{ARCH_LOWER}}:
     xorl    %eax, %eax
@@ -133,14 +135,14 @@ dap_dilithium_poly_add_{{ARCH_LOWER}}:
     jne     .L_add512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_add_{{ARCH_LOWER}}, .-dap_dilithium_poly_add_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_add_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_sub
  * ================================================================ */
 .globl dap_dilithium_poly_sub_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_sub_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_sub_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_sub_{{ARCH_LOWER}}:
     movl    $(2 * DIL_Q), %ecx
@@ -156,14 +158,14 @@ dap_dilithium_poly_sub_{{ARCH_LOWER}}:
     jne     .L_sub512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_sub_{{ARCH_LOWER}}, .-dap_dilithium_poly_sub_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_sub_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_neg
  * ================================================================ */
 .globl dap_dilithium_poly_neg_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_neg_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_neg_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_neg_{{ARCH_LOWER}}:
     movl    $DIL_Q, %eax
@@ -178,14 +180,14 @@ dap_dilithium_poly_neg_{{ARCH_LOWER}}:
     jne     .L_neg512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_neg_{{ARCH_LOWER}}, .-dap_dilithium_poly_neg_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_neg_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_shiftl
  * ================================================================ */
 .globl dap_dilithium_poly_shiftl_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_shiftl_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_shiftl_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_shiftl_{{ARCH_LOWER}}:
     leaq    COEFF_BYTES(%rdi), %rax
@@ -200,14 +202,14 @@ dap_dilithium_poly_shiftl_{{ARCH_LOWER}}:
     jne     .L_shiftl512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_shiftl_{{ARCH_LOWER}}, .-dap_dilithium_poly_shiftl_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_shiftl_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_power2round (legacy D=14)
  * ================================================================ */
 .globl dap_dilithium_poly_power2round_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_power2round_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_power2round_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_power2round_{{ARCH_LOWER}}:
     movl    $0x3FFF, %ecx
@@ -240,7 +242,7 @@ dap_dilithium_poly_power2round_{{ARCH_LOWER}}:
     jne     .L_p2r512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_power2round_{{ARCH_LOWER}}, .-dap_dilithium_poly_power2round_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_power2round_{{ARCH_LOWER}})
 
 
 /* ================================================================
@@ -248,7 +250,7 @@ dap_dilithium_poly_power2round_{{ARCH_LOWER}}:
  * int dap_dilithium_poly_chknorm_{{ARCH_LOWER}}(const int32_t *, int32_t bound);
  * ================================================================ */
 .globl dap_dilithium_poly_chknorm_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_chknorm_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_chknorm_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_chknorm_{{ARCH_LOWER}}:
     movl    $((DIL_Q - 1) / 2), %edx
@@ -280,7 +282,7 @@ dap_dilithium_poly_chknorm_{{ARCH_LOWER}}:
     movl    $1, %eax
     vzeroupper
     ret
-.size dap_dilithium_poly_chknorm_{{ARCH_LOWER}}, .-dap_dilithium_poly_chknorm_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_chknorm_{{ARCH_LOWER}})
 
 
 /* ================================================================
@@ -289,7 +291,7 @@ dap_dilithium_poly_chknorm_{{ARCH_LOWER}}:
  *     int32_t *a1, int32_t *a0, const int32_t *a);
  * ================================================================ */
 .globl dap_dilithium_poly_decompose_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_decompose_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_decompose_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_decompose_{{ARCH_LOWER}}:
     xorl    %eax, %eax
@@ -342,7 +344,7 @@ dap_dilithium_poly_decompose_{{ARCH_LOWER}}:
     jne     .L_decompose512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_decompose_{{ARCH_LOWER}}, .-dap_dilithium_poly_decompose_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_decompose_{{ARCH_LOWER}})
 
 
 /* ================================================================
@@ -351,7 +353,7 @@ dap_dilithium_poly_decompose_{{ARCH_LOWER}}:
  *     int32_t *h, const int32_t *a, const int32_t *b);
  * ================================================================ */
 .globl dap_dilithium_poly_make_hint_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_make_hint_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_make_hint_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     movq    %rdi, %r8
@@ -441,7 +443,7 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vmovd   %xmm0, %eax
     vzeroupper
     ret
-.size dap_dilithium_poly_make_hint_{{ARCH_LOWER}}, .-dap_dilithium_poly_make_hint_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_make_hint_{{ARCH_LOWER}})
 
 
 /* ================================================================
@@ -450,7 +452,7 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
  *     int32_t *r, const int32_t *b, const int32_t *h);
  * ================================================================ */
 .globl dap_dilithium_poly_use_hint_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_use_hint_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_use_hint_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     movq    %rsi, %rcx
@@ -518,4 +520,4 @@ dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     jne     .L_usehint512_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_use_hint_{{ARCH_LOWER}}, .-dap_dilithium_poly_use_hint_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_use_hint_{{ARCH_LOWER}})

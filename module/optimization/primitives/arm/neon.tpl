@@ -31,8 +31,17 @@ static inline uint16_t neon_movemask_u8(uint8x16_t a_vec) {
         1, 2, 4, 8, 16, 32, 64, 128
     };
     uint8x16_t l_weighted = vmulq_u8(l_shifted, vld1q_u8(l_weights));
+#ifdef __aarch64__
     uint8_t l_lo = vaddv_u8(vget_low_u8(l_weighted));
     uint8_t l_hi = vaddv_u8(vget_high_u8(l_weighted));
+#else
+    uint8x8_t lo8 = vget_low_u8(l_weighted);
+    uint8x8_t hi8 = vget_high_u8(l_weighted);
+    lo8 = vpadd_u8(lo8, lo8); lo8 = vpadd_u8(lo8, lo8); lo8 = vpadd_u8(lo8, lo8);
+    hi8 = vpadd_u8(hi8, hi8); hi8 = vpadd_u8(hi8, hi8); hi8 = vpadd_u8(hi8, hi8);
+    uint8_t l_lo = vget_lane_u8(lo8, 0);
+    uint8_t l_hi = vget_lane_u8(hi8, 0);
+#endif
     return (uint16_t)l_lo | ((uint16_t)l_hi << 8);
 }
 #define VEC_MOVEMASK_U8(v)    neon_movemask_u8(v)

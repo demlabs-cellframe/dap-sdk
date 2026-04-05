@@ -9,10 +9,22 @@
  * or less efficient (e.g., some Intel client cores).
  */
 
+#ifdef __ELF__
+# define FUNC_TYPE(name) .type name, @function
+# define FUNC_SIZE(name) .size name, .-name
+# define OBJ_TYPE(name)  .type name, @object
+# define OBJ_SIZE(name, sz)  .size name, sz
+#else
+# define FUNC_TYPE(name)
+# define FUNC_SIZE(name)
+# define OBJ_TYPE(name)
+# define OBJ_SIZE(name, sz)
+#endif
+
 	.text
 	.balign 64
 	.globl	dap_hash_keccak_permute_scalar_bmi2
-	.type	dap_hash_keccak_permute_scalar_bmi2, @function
+	FUNC_TYPE(dap_hash_keccak_permute_scalar_bmi2)
 dap_hash_keccak_permute_scalar_bmi2:
 	pushq	%r15
 	movq	%rdi, %rdx
@@ -526,11 +538,11 @@ dap_hash_keccak_permute_scalar_bmi2:
 	popq	%r14
 	popq	%r15
 	ret
-	.size	dap_hash_keccak_permute_scalar_bmi2, .-dap_hash_keccak_permute_scalar_bmi2
+	FUNC_SIZE(dap_hash_keccak_permute_scalar_bmi2)
 	.section	.rodata
 	.balign 64
-	.type	.Lrc, @object
-	.size	.Lrc, 192
+	OBJ_TYPE(.Lrc)
+	OBJ_SIZE(.Lrc, 192)
 .Lrc:
 	.quad	1
 	.quad	32898
@@ -556,4 +568,6 @@ dap_hash_keccak_permute_scalar_bmi2:
 	.quad	-9223372036854742912
 	.quad	2147483649
 	.quad	-9223372034707259384
+#ifdef __ELF__
 	.section	.note.GNU-stack,"",@progbits
+#endif

@@ -49,6 +49,8 @@
     .long {{ci}}
 {{/for}}
 
+{{#include ASM_MACROS}}
+
 .text
 
 /* Dual-block interleaved quarter-round: a += b; d ^= a; d <<<= {16,12,8,7} */
@@ -130,7 +132,7 @@
 /* ══════════════════════════════════════════════════════════════════ */
 
 .globl  dap_chacha20_encrypt_asm
-.type   dap_chacha20_encrypt_asm, @function
+FUNC_TYPE(dap_chacha20_encrypt_asm)
 .balign 64
 dap_chacha20_encrypt_asm:
     pushq   %rbx
@@ -366,8 +368,6 @@ dap_chacha20_encrypt_asm:
     popq    %rbx
     ret
 
-.size   dap_chacha20_encrypt_asm, .-dap_chacha20_encrypt_asm
+FUNC_SIZE(dap_chacha20_encrypt_asm)
 
-#if defined(__linux__) && defined(__ELF__)
-.section .note.GNU-stack,"",@progbits
-#endif
+GNU_STACK

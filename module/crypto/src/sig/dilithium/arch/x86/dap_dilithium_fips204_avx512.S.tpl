@@ -16,6 +16,8 @@
 #define DIL_Q       8380417
 #define COEFF_BYTES (DIL_N * 4)
 
+{{#include ASM_MACROS}}
+
 .text
 
 /* ================================================================
@@ -25,7 +27,7 @@
  *     int32_t *r, const int32_t *b, const int32_t *h);
  * ================================================================ */
 .globl dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}}:
     movq    %rdi, %rcx
@@ -92,7 +94,7 @@ dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}}:
     jne     .L_uh512_g32_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}}, .-dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}})
 
 
 /* ================================================================
@@ -102,7 +104,7 @@ dap_dilithium_poly_use_hint_g32_{{ARCH_LOWER}}:
  *     int32_t *r, const int32_t *b, const int32_t *h);
  * ================================================================ */
 .globl dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}}:
     movq    %rdi, %rcx
@@ -180,7 +182,7 @@ dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}}:
     jne     .L_uh512_g88_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}}, .-dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}})
 
 
 /* ================================================================
@@ -190,7 +192,7 @@ dap_dilithium_poly_use_hint_g88_{{ARCH_LOWER}}:
  *     int32_t *a1, int32_t *a0, const int32_t *a);
  * ================================================================ */
 .globl dap_dilithium_poly_decompose_g32_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_decompose_g32_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_decompose_g32_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_decompose_g32_{{ARCH_LOWER}}:
     movl    $127, %eax
@@ -235,14 +237,14 @@ dap_dilithium_poly_decompose_g32_{{ARCH_LOWER}}:
     jne     .L_dc512_g32_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_decompose_g32_{{ARCH_LOWER}}, .-dap_dilithium_poly_decompose_g32_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_decompose_g32_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_decompose_p — gamma2 = (Q-1)/88  (ML-DSA-44)
  * ================================================================ */
 .globl dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}}:
     movl    $127, %eax
@@ -291,7 +293,7 @@ dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}}:
     jne     .L_dc512_g88_loop
     vzeroupper
     ret
-.size dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}}, .-dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}})
 
 
 /* ================================================================
@@ -303,7 +305,7 @@ dap_dilithium_poly_decompose_g88_{{ARCH_LOWER}}:
  *     unsigned char *r, const int32_t *coeffs);
  * ================================================================ */
 .globl dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}}
-.type  dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}}:
     xorl    %eax, %eax
@@ -336,7 +338,7 @@ dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}}:
     cmpq    $DIL_N, %rax
     jne     .L_w1p512_88_loop
     ret
-.size dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}}, .-dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}})
 
 
 /* ================================================================
@@ -345,7 +347,7 @@ dap_dilithium_polyw1_pack_g88_{{ARCH_LOWER}}:
  *     int32_t *h, const int32_t *a, const int32_t *b);
  * ================================================================ */
 .globl dap_dilithium_poly_make_hint_g32_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_make_hint_g32_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_make_hint_g32_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_make_hint_g32_{{ARCH_LOWER}}:
     movq    %rdi, %rcx
@@ -403,14 +405,14 @@ dap_dilithium_poly_make_hint_g32_{{ARCH_LOWER}}:
     vmovd   %xmm0, %eax
     vzeroupper
     ret
-.size dap_dilithium_poly_make_hint_g32_{{ARCH_LOWER}}, .-dap_dilithium_poly_make_hint_g32_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_make_hint_g32_{{ARCH_LOWER}})
 
 
 /* ================================================================
  * poly_make_hint_p — gamma2 = (Q-1)/88  (ML-DSA-44)
  * ================================================================ */
 .globl dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}
-.type  dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}:
     movq    %rdi, %rcx
@@ -473,7 +475,7 @@ dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}:
     vmovd   %xmm0, %eax
     vzeroupper
     ret
-.size dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}, .-dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}})
 
 /* ================================================================
  * polyz_unpack_g17 — AVX2-width in AVX512 context (18-bit, gamma1=2^17)
@@ -481,7 +483,7 @@ dap_dilithium_poly_make_hint_g88_{{ARCH_LOWER}}:
  * void dap_dilithium_polyz_unpack_g17_<arch>(int32_t *r, const uint8_t *a)
  * ================================================================ */
 .globl dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}
-.type  dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}:
     vpbroadcastd .Lzu512_mask18(%rip), %ymm5
@@ -511,7 +513,7 @@ dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}:
 
     vzeroupper
     ret
-.size dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}, .-dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}})
 
 /* ================================================================
  * polyz_unpack_g19 — AVX2-width in AVX512 context (20-bit, gamma1=2^19)
@@ -519,7 +521,7 @@ dap_dilithium_polyz_unpack_g17_{{ARCH_LOWER}}:
  * void dap_dilithium_polyz_unpack_g19_<arch>(int32_t *r, const uint8_t *a)
  * ================================================================ */
 .globl dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}
-.type  dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}:
     vpbroadcastd .Lzu512_mask20(%rip), %ymm5
@@ -549,7 +551,7 @@ dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}:
 
     vzeroupper
     ret
-.size dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}, .-dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_polyz_unpack_g19_{{ARCH_LOWER}})
 
 .section .rodata
 .p2align 5

@@ -294,7 +294,7 @@
 
 .text
 .globl CDECL(dap_mlkem_ntt_forward_asm)
-.type  CDECL(dap_mlkem_ntt_forward_asm), @function
+FUNC_TYPE(CDECL(dap_mlkem_ntt_forward_asm))
 .balign 64
 CDECL(dap_mlkem_ntt_forward_asm):
     vmovdqa32 ntt_q(%rip), %ymm31
@@ -489,7 +489,7 @@ CDECL(dap_mlkem_ntt_forward_asm):
 
     vzeroupper
     ret
-.size CDECL(dap_mlkem_ntt_forward_asm), .-CDECL(dap_mlkem_ntt_forward_asm)
+FUNC_SIZE(CDECL(dap_mlkem_ntt_forward_asm))
 
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -512,7 +512,7 @@ CDECL(dap_mlkem_ntt_forward_asm):
 
 .balign 64
 .globl CDECL(dap_mlkem_ntt_inverse_asm)
-.type  CDECL(dap_mlkem_ntt_inverse_asm), @function
+FUNC_TYPE(CDECL(dap_mlkem_ntt_inverse_asm))
 CDECL(dap_mlkem_ntt_inverse_asm):
     vmovdqa32 ntt_q(%rip), %ymm31
     vmovdqa32 ntt_qinv(%rip), %ymm30
@@ -734,7 +734,7 @@ CDECL(dap_mlkem_ntt_inverse_asm):
 
     vzeroupper
     ret
-.size CDECL(dap_mlkem_ntt_inverse_asm), .-CDECL(dap_mlkem_ntt_inverse_asm)
+FUNC_SIZE(CDECL(dap_mlkem_ntt_inverse_asm))
 
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -744,7 +744,7 @@ CDECL(dap_mlkem_ntt_inverse_asm):
 
 .balign 32
 .globl CDECL(dap_mlkem_ntt_nttpack_asm)
-.type  CDECL(dap_mlkem_ntt_nttpack_asm), @function
+FUNC_TYPE(CDECL(dap_mlkem_ntt_nttpack_asm))
 CDECL(dap_mlkem_ntt_nttpack_asm):
     vmovdqa32 nttpack_even_idx(%rip), %ymm2
     vmovdqa32 nttpack_odd_idx(%rip), %ymm3
@@ -762,7 +762,7 @@ CDECL(dap_mlkem_ntt_nttpack_asm):
     jl      .Lpack_loop
     vzeroupper
     ret
-.size CDECL(dap_mlkem_ntt_nttpack_asm), .-CDECL(dap_mlkem_ntt_nttpack_asm)
+FUNC_SIZE(CDECL(dap_mlkem_ntt_nttpack_asm))
 
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -772,7 +772,7 @@ CDECL(dap_mlkem_ntt_nttpack_asm):
 
 .balign 32
 .globl CDECL(dap_mlkem_ntt_nttunpack_asm)
-.type  CDECL(dap_mlkem_ntt_nttunpack_asm), @function
+FUNC_TYPE(CDECL(dap_mlkem_ntt_nttunpack_asm))
 CDECL(dap_mlkem_ntt_nttunpack_asm):
     vmovdqa32 nttunpack_lo_idx(%rip), %ymm2
     vmovdqa32 nttunpack_hi_idx(%rip), %ymm3
@@ -790,7 +790,7 @@ CDECL(dap_mlkem_ntt_nttunpack_asm):
     jl      .Lunpack_loop
     vzeroupper
     ret
-.size CDECL(dap_mlkem_ntt_nttunpack_asm), .-CDECL(dap_mlkem_ntt_nttunpack_asm)
+FUNC_SIZE(CDECL(dap_mlkem_ntt_nttunpack_asm))
 
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -802,7 +802,7 @@ CDECL(dap_mlkem_ntt_nttunpack_asm):
 
 .balign 64
 .globl CDECL(dap_mlkem_basemul_asm)
-.type  CDECL(dap_mlkem_basemul_asm), @function
+FUNC_TYPE(CDECL(dap_mlkem_basemul_asm))
 CDECL(dap_mlkem_basemul_asm):
     vmovdqa32 ntt_q(%rip), %ymm31
     vmovdqa32 ntt_qinv(%rip), %ymm30
@@ -877,7 +877,7 @@ CDECL(dap_mlkem_basemul_asm):
 
     vzeroupper
     ret
-.size CDECL(dap_mlkem_basemul_asm), .-CDECL(dap_mlkem_basemul_asm)
+FUNC_SIZE(CDECL(dap_mlkem_basemul_asm))
 
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -890,7 +890,7 @@ CDECL(dap_mlkem_basemul_asm):
 
 .balign 64
 .globl CDECL(dap_mlkem_basemul_acc_asm)
-.type  CDECL(dap_mlkem_basemul_acc_asm), @function
+FUNC_TYPE(CDECL(dap_mlkem_basemul_acc_asm))
 CDECL(dap_mlkem_basemul_acc_asm):
     vmovdqa32 ntt_q(%rip), %ymm31
     vmovdqa32 ntt_qinv(%rip), %ymm30
@@ -992,4 +992,4 @@ CDECL(dap_mlkem_basemul_acc_asm):
 
     vzeroupper
     ret
-.size CDECL(dap_mlkem_basemul_acc_asm), .-CDECL(dap_mlkem_basemul_acc_asm)
+FUNC_SIZE(CDECL(dap_mlkem_basemul_acc_asm))

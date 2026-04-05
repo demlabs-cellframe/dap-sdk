@@ -275,9 +275,11 @@
 .endm
 
 
+{{#include ASM_MACROS}}
+
 .text
 .globl dap_dilithium_invntt_fused_{{ARCH_LOWER}}
-.type  dap_dilithium_invntt_fused_{{ARCH_LOWER}}, @function
+FUNC_TYPE(dap_dilithium_invntt_fused_{{ARCH_LOWER}})
 .p2align 4
 dap_dilithium_invntt_fused_{{ARCH_LOWER}}:
     vpbroadcastd s_inv_q(%rip), %ymm0
@@ -294,9 +296,9 @@ dap_dilithium_invntt_fused_{{ARCH_LOWER}}:
 
     vzeroupper
     ret
-.size dap_dilithium_invntt_fused_{{ARCH_LOWER}}, .-dap_dilithium_invntt_fused_{{ARCH_LOWER}}
+FUNC_SIZE(dap_dilithium_invntt_fused_{{ARCH_LOWER}})
 
-.section .note.GNU-stack,"",@progbits
+GNU_STACK
 
 /* ================================================================
  * Constants — same zeta table as fwd NTT + DIV scaling constants.
