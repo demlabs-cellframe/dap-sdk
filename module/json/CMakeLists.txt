@@ -81,7 +81,8 @@ file(RENAME ${SIMD_GEN_DIR}/movemask_neon.tpl ${SIMD_GEN_DIR}/dap_json_stage1_ne
 dap_arch_generate_variant(TEMPLATE ${S1}/dap_json_stage1_simd.c.tpl
     OUTPUT ${SIMD_GEN_DIR}/dap_json_stage1_sve.c  ARCH sve
     ARGS "TARGET_ATTR=+sve" "USE_SVE_PREDICATES=YES"
-         "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve(void) { return svcntb(); }\n#define CHUNK_SIZE_VALUE get_chunk_size_sve()"
+         "ARCH_INCLUDES=#include <arm_sve.h>"
+         "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE svcntb()"
          "VECTOR_TYPE=svuint8_t" "MASK_TYPE=uint64_t" "LOADU=svld1_u8"
          "SET1_EPI8=svdup_u8" "CMPEQ_EPI8=svcmpeq_u8" "OR=svorr_u8_z"
          "MOVEMASK_EPI8=dap_sve_movemask_u8" "USE_SVE_HELPER=1")
@@ -96,7 +97,8 @@ file(RENAME ${SIMD_GEN_DIR}/movemask_sve.tpl ${SIMD_GEN_DIR}/dap_json_stage1_sve
 dap_arch_generate_variant(TEMPLATE ${S1}/dap_json_stage1_simd.c.tpl
     OUTPUT ${SIMD_GEN_DIR}/dap_json_stage1_sve2.c  ARCH sve2
     ARGS "TARGET_ATTR=+sve2" "USE_SVE_PREDICATES=YES"
-         "CHUNK_SIZE_MACRO=static inline size_t get_chunk_size_sve2(void) { return svcntb(); }\n#define CHUNK_SIZE_VALUE get_chunk_size_sve2()"
+         "ARCH_INCLUDES=#include <arm_sve.h>"
+         "CHUNK_SIZE_MACRO=#define CHUNK_SIZE_VALUE svcntb()"
          "VECTOR_TYPE=svuint8_t" "MASK_TYPE=uint64_t" "LOADU=svld1_u8"
          "SET1_EPI8=svdup_u8" "CMPEQ_EPI8=svcmpeq_u8" "OR=svorr_u8_z"
          "MOVEMASK_EPI8=dap_sve2_movemask_u8" "USE_SVE2_HELPER=1")

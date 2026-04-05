@@ -8,9 +8,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/PackageComponents.cmake)
 file(GLOB HASH_HEADERS include/*.h)
 file(GLOB HASH_SRCS src/*.c)
 
-# Keccak reference implementation
+# Keccak reference implementation (exclude arch-specific files added conditionally below)
 file(GLOB KECCAK_SRCS src/keccak/*.c)
 file(GLOB KECCAK_HDRS src/keccak/*.h)
+list(FILTER KECCAK_SRCS EXCLUDE REGEX "x4_transpose_(avx2|neon)\\.c$")
 
 # SHA2-256 implementation
 file(GLOB SHA2_SRCS src/sha2-256/*.c)
