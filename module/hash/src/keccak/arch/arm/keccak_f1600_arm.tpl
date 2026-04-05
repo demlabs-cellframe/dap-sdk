@@ -114,7 +114,7 @@ dap_keccak_x2_permute_{{FUNC_SUFFIX}}:
     ret
 
 /* ===== Round constants ===== */
-.section .rodata
+SECTION_RODATA
 .p2align 6
 .Lrc_arm:
 {{#for rc in RC_LIST}}

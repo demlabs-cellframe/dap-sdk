@@ -20,6 +20,15 @@
 # define GNU_STACK
 #endif
 
+/* Read-only data: ELF .rodata is invalid on Mach-O (use __TEXT,__const). */
+#if defined(__APPLE__)
+# define SECTION_RODATA .section __TEXT,__const
+#elif defined(__ELF__)
+# define SECTION_RODATA .section .rodata
+#else
+# define SECTION_RODATA .section .rdata
+#endif
+
 #if defined(__APPLE__)
 # define ADRP_LO(reg, sym) adrp reg, sym@PAGE ; add reg, reg, sym@PAGEOFF
 #elif defined(__ELF__)
