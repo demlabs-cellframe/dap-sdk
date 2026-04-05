@@ -73,6 +73,8 @@ extern "C" {
     #define _ARM64_
 #elif DAP_PLATFORM_X86
     #define _X86_
+#elif DAP_PLATFORM_ARM
+    #define _ARM_
 #endif
 
 #if defined(_AMD64_)

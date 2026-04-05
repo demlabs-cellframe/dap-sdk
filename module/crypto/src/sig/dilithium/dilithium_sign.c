@@ -467,7 +467,8 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     const uint32_t d_val = dil_d(p);
 
     if (sig->sig_len < p->CRYPTO_BYTES) {
-        log_it(L_ERROR, "Verify failed: sig_len=%zu < CRYPTO_BYTES=%u", sig->sig_len, p->CRYPTO_BYTES);
+        log_it(L_ERROR, "Verify failed: sig_len=%" DAP_UINT64_FORMAT_U " < CRYPTO_BYTES=%u",
+               sig->sig_len, p->CRYPTO_BYTES);
         return -3;
     }
 
@@ -480,7 +481,7 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     unsigned char c_tilde[64];
 
     if((sig->sig_len - p->CRYPTO_BYTES) != mlen) {
-        log_it(L_ERROR, "Verify failed: length mismatch sig_len=%zu CRYPTO_BYTES=%u mlen=%llu",
+        log_it(L_ERROR, "Verify failed: length mismatch sig_len=%" DAP_UINT64_FORMAT_U " CRYPTO_BYTES=%u mlen=%llu",
                sig->sig_len, p->CRYPTO_BYTES, mlen);
         return -4;
     }
