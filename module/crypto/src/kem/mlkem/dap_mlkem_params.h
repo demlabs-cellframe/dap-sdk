@@ -32,7 +32,7 @@
 #define MLKEM_POLYBYTES  384
 
 #define MLKEM_MONT       2285      /* 2^16 mod Q */
-#define MLKEM_QINV       62209     /* Q^{-1} mod 2^16 */
+#define MLKEM_QINV       ((int16_t)62209) /* Q^{-1} mod 2^16 (62209 ≡ -3327 mod 2^16) */
 
 #define MLKEM_POLYVECBYTES (MLKEM_K * MLKEM_POLYBYTES)
 
