@@ -33,8 +33,8 @@ void dap_mlkem_polyvec_compress_d11_{{ARCH_LOWER}}(uint8_t *a_r, const int16_t *
         int16x8_t fh = s_neon_mulhi_s16(vshlq_n_s16(f, 3), l_v);
         f2 = vsubq_s16(f1, f2);
         f1 = vandq_s16(vmvnq_s16(f1), f2);
-        f1 = vshrq_n_u16(vreinterpretq_u16_s16(f1), 15);
-        fh = vsubq_s16(fh, vreinterpretq_s16_u16(f1));
+        uint16x8_t f1u = vshrq_n_u16(vreinterpretq_u16_s16(f1), 15);
+        fh = vsubq_s16(fh, vreinterpretq_s16_u16(f1u));
         fh = vqrdmulhq_s16(fh, l_shift1);
         fh = vandq_s16(fh, l_mask11);
 
@@ -78,8 +78,8 @@ void dap_mlkem_polyvec_compress_d10_{{ARCH_LOWER}}(uint8_t *a_r, const int16_t *
         int16x8_t fh = s_neon_mulhi_s16(vshlq_n_s16(f, 3), l_v);
         f2 = vsubq_s16(f1, f2);
         f1 = vandq_s16(vmvnq_s16(f1), f2);
-        f1 = vshrq_n_u16(vreinterpretq_u16_s16(f1), 15);
-        fh = vsubq_s16(fh, vreinterpretq_s16_u16(f1));
+        uint16x8_t f1u = vshrq_n_u16(vreinterpretq_u16_s16(f1), 15);
+        fh = vsubq_s16(fh, vreinterpretq_s16_u16(f1u));
         fh = vqrdmulhq_s16(fh, l_shift1);
         fh = vandq_s16(fh, l_mask10);
 
