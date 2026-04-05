@@ -97,8 +97,10 @@ static void s_mlkem_cbd2_neon(int16_t *r, const uint8_t *buf)
         int8x16_t s0 = vsubq_s8(vreinterpretq_s8_u8(f0), vreinterpretq_s8_u8(mask03));
         int8x16_t s1 = vsubq_s8(vreinterpretq_s8_u8(f1), vreinterpretq_s8_u8(mask03));
 
-        int8x16_t lo = vzip1q_s8(s0, s1);
-        int8x16_t hi = vzip2q_s8(s0, s1);
+        /* vzip1q_s8/vzip2q_s8 are AArch64-only; vzipq_s8 works on ARMv7 and AArch64. */
+        int8x16x2_t z = vzipq_s8(s0, s1);
+        int8x16_t lo = z.val[0];
+        int8x16_t hi = z.val[1];
 
         vst1q_s16(r + 32 * i +  0, vmovl_s8(vget_low_s8(lo)));
         vst1q_s16(r + 32 * i +  8, vmovl_s8(vget_high_s8(lo)));
