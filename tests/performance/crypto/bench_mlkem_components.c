@@ -245,6 +245,7 @@ int main(void) {
         uint64_t prf_st[25];
         uint8_t extkey[33]; memcpy(extkey, seed, 32); extkey[32] = 0;
         uint8_t prf_single[128];
+#if defined(__x86_64__)
         BENCH_CYC("absorb_136_avx512vl (1x sponge)",
                    (void)0,
                    dap_keccak_absorb_136_avx512vl_asm(prf_st, extkey, 33, 0x1F));
@@ -252,6 +253,15 @@ int main(void) {
                    (void)0,
                    ({ dap_keccak_absorb_136_avx512vl_asm(prf_st, extkey, 33, 0x1F);
                       memcpy(prf_single, prf_st, 128); }));
+#else
+        BENCH_CYC("absorb_136_ref (1x sponge, PRF-sized)",
+                   (void)0,
+                   dap_keccak_absorb_136_ref(prf_st, extkey, 33, 0x1F));
+        BENCH_CYC("prf_single (SHAKE256, 33->128, ref absorb)",
+                   (void)0,
+                   ({ dap_keccak_absorb_136_ref(prf_st, extkey, 33, 0x1F);
+                      memcpy(prf_single, prf_st, 128); }));
+#endif
     }
 
     printf("\n--- Noise x4 (amortized per 4 polys) ---\n");
