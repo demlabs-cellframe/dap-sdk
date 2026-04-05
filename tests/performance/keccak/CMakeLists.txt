@@ -249,6 +249,7 @@ endmacro()
 
 add_keccak_bench(bench_keccak_scalar)
 if(BUILD_BENCHMARKS AND HAVE_XKCP)
+    target_compile_definitions(bench_keccak_scalar PRIVATE HAVE_XKCP)
     target_link_libraries(bench_keccak_scalar xkcp_competitor)
 endif()
 add_keccak_bench(bench_keccak_micro)

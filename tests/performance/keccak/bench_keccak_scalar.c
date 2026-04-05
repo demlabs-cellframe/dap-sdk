@@ -9,10 +9,12 @@ extern void dap_hash_keccak_permute_scalar_bmi2(dap_hash_keccak_state_t *state);
 extern void dap_hash_keccak_permute_avx512vl_asm(dap_hash_keccak_state_t *state);
 extern void dap_hash_keccak_permute_avx512vl_pt(dap_hash_keccak_state_t *state);
 
+#ifdef HAVE_XKCP
 extern void KeccakP1600_Permute_24rounds(void *state);
 extern void KeccakP1600_plain64_Permute_24rounds(void *state);
 extern void KeccakP1600_AVX2_Permute_24rounds(void *state);
 extern void KeccakP1600_AVX512_Permute_24rounds(void *state);
+#endif
 
 static inline uint64_t rdtsc(void) {
     unsigned lo, hi;
@@ -74,11 +76,15 @@ int main(void) {
     bench_permute("avx512vl_asm (1x)", dap_hash_keccak_permute_avx512vl_asm);
     bench_permute("avx512vl_pt (1x)", dap_hash_keccak_permute_avx512vl_pt);
 
+#ifdef HAVE_XKCP
     printf("\n--- XKCP comparison ---\n");
     bench_permute("XKCP dispatch",    (void(*)(dap_hash_keccak_state_t*))KeccakP1600_Permute_24rounds);
     bench_permute("XKCP plain64",     (void(*)(dap_hash_keccak_state_t*))KeccakP1600_plain64_Permute_24rounds);
     bench_permute("XKCP AVX2",        (void(*)(dap_hash_keccak_state_t*))KeccakP1600_AVX2_Permute_24rounds);
     bench_permute("XKCP AVX512",      (void(*)(dap_hash_keccak_state_t*))KeccakP1600_AVX512_Permute_24rounds);
+#else
+    printf("\n--- XKCP not available (run download_competitors.sh) ---\n");
+#endif
 
     printf("\n--- Fused absorb (SHA3-256 rate=136, 32B input) ---\n");
 
