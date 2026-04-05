@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
+#include "bench_perf_ticks.h"
 
 #define PK_BYTES  1184
 #define SK_BYTES  2400
@@ -36,21 +37,15 @@ void dap_keccak_x4_init(keccak_x4_t *state);
 
 int dap_common_init(const char *, const char **, const char *);
 
-static inline uint64_t rdtsc(void) {
-    unsigned lo, hi;
-    __asm__ volatile("lfence; rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)hi << 32) | lo;
-}
-
 #define BARRIER() __asm__ volatile("" ::: "memory")
 #define WARMUP 2000
 #define ITERS  50000
 
 #define BENCH_CYCLES(label, code) do {                               \
     for (int _w = 0; _w < WARMUP; _w++) { code; BARRIER(); }        \
-    uint64_t _c0 = rdtsc();                                          \
+    uint64_t _c0 = bench_perf_ticks();                                \
     for (int _i = 0; _i < ITERS; _i++) { code; BARRIER(); }         \
-    uint64_t _dc = rdtsc() - _c0;                                    \
+    uint64_t _dc = bench_perf_ticks() - _c0;                        \
     double _cyc = (double)_dc / ITERS;                               \
     printf("  %-30s %7.0f cycles  %7.1f ns\n", label, _cyc, _cyc * ns_per_cycle); \
 } while(0)
@@ -61,10 +56,10 @@ int main(void) {
     /* Calibrate */
     struct timespec t0_ts, t1_ts;
     uint64_t c0, c1;
-    clock_gettime(CLOCK_MONOTONIC, &t0_ts); c0 = rdtsc();
+    clock_gettime(CLOCK_MONOTONIC, &t0_ts); c0 = bench_perf_ticks();
     volatile int sink = 0;
     for (int i = 0; i < 2000000; i++) sink += i;
-    clock_gettime(CLOCK_MONOTONIC, &t1_ts); c1 = rdtsc();
+    clock_gettime(CLOCK_MONOTONIC, &t1_ts); c1 = bench_perf_ticks();
     uint64_t dt_ns = (t1_ts.tv_sec - t0_ts.tv_sec) * 1000000000ULL + (t1_ts.tv_nsec - t0_ts.tv_nsec);
     double ns_per_cycle = (double)dt_ns / (c1 - c0);
     printf("CPU: %.2f GHz\n\n", 1.0 / ns_per_cycle);

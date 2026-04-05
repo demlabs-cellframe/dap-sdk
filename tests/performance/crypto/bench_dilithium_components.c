@@ -1,12 +1,13 @@
 /**
  * ML-DSA (Dilithium) component-level profiling — identifies bottlenecks
- * in the verify path by timing individual operations with rdtsc.
+ * in the verify path by timing individual operations (RDTSC / CNTVCT / clock).
  */
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include "bench_perf_ticks.h"
 #include "dap_common.h"
 #include "dap_cpu_arch.h"
 #include "dilithium_params.h"
@@ -16,12 +17,6 @@
 #include "dilithium_packing.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake256.h"
-
-static inline uint64_t rdtsc(void) {
-    unsigned lo, hi;
-    __asm__ volatile("lfence; rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)hi << 32) | lo;
-}
 
 #define BARRIER() __asm__ volatile("" ::: "memory")
 #define ITERS    10000
@@ -37,9 +32,9 @@ static int32_t crystals_mont_reduce(int64_t a) {
 do {                                                                       \
     setup;                                                                 \
     for (int _w = 0; _w < WARMUP; _w++) { call; BARRIER(); }              \
-    uint64_t _t0 = rdtsc();                                                \
+    uint64_t _t0 = bench_perf_ticks();                                      \
     for (int _i = 0; _i < ITERS; _i++) { call; BARRIER(); }               \
-    uint64_t _dc = rdtsc() - _t0;                                         \
+    uint64_t _dc = bench_perf_ticks() - _t0;                              \
     printf("  %-42s %8.0f cyc  %7.1f ns\n",                               \
            label, (double)_dc / ITERS, (double)_dc / ITERS * ns_cyc);     \
 } while(0)
@@ -51,10 +46,10 @@ int main(void) {
     {
         struct timespec t0, t1;
         uint64_t c0, c1;
-        clock_gettime(CLOCK_MONOTONIC, &t0); c0 = rdtsc();
+        clock_gettime(CLOCK_MONOTONIC, &t0); c0 = bench_perf_ticks();
         volatile int sink = 0;
         for (int i = 0; i < 2000000; i++) sink += i;
-        clock_gettime(CLOCK_MONOTONIC, &t1); c1 = rdtsc();
+        clock_gettime(CLOCK_MONOTONIC, &t1); c1 = bench_perf_ticks();
         uint64_t dt = (t1.tv_sec - t0.tv_sec) * 1000000000ULL + (t1.tv_nsec - t0.tv_nsec);
         ns_cyc = (double)dt / (c1 - c0);
     }
