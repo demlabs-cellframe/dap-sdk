@@ -239,7 +239,7 @@ dap_dilithium_poly_power2round_{{ARCH_LOWER}}:
     movl    $16384, %ecx
     vpbroadcastd %xmm7, %ymm7
     vmovd   %ecx, %xmm5
-    movl    $(DIL_Q - 1 - 8191), %ecx
+    movl    $(DIL_Q - 8191), %ecx
     vpbroadcastd %xmm6, %ymm6
     vmovd   %ecx, %xmm4
     movl    $8191, %ecx

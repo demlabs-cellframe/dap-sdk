@@ -377,6 +377,8 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
             challenge(&c, mu, &w1, p);
         }
 
+        /* DEBUG removed */
+
         chat = c;
         dilithium_poly_ntt(&chat);
         for(i = 0; i < p->PARAM_L; ++i) {
@@ -556,6 +558,8 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     } else {
         polyveck_use_hint(&w1, &tmp1, &h, p);
     }
+
+    /* DEBUG removed */
 
 #ifdef DAP_DILITHIUM_PROFILE
     _pt1 = __rdtsc(); s_prof_hint += _pt1 - _pt0; _pt0 = _pt1;

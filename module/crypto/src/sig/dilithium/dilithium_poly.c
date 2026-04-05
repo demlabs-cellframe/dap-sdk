@@ -432,10 +432,10 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_inv,      dap_dilithium_ntt_inverse_avx2_asm);
 
     /* CRYSTALS-style register-resident fused forward NTT (~420 cyc target).
-       Registered last to take highest priority for forward NTT. */
-    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_fwd,      dap_dilithium_ntt_fwd_fused_avx2);
-    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_inv,      dap_dilithium_invntt_fused_avx2);
-    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_nttunpack,    dap_dilithium_nttunpack_avx2);
+       Temporarily disabled for regression testing. */
+    //DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_fwd,      dap_dilithium_ntt_fwd_fused_avx2);
+    //DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_inv,      dap_dilithium_invntt_fused_avx2);
+    //DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_nttunpack,    dap_dilithium_nttunpack_avx2);
 
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_reduce,       dap_dilithium_poly_reduce_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_reduce,       dap_dilithium_poly_reduce_avx512);
