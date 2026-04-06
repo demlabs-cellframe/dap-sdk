@@ -130,7 +130,7 @@ dap_http_header_t *l_new_header;
     for ( l_ht = ht_fields; l_ht->namelen; l_ht++)
         {
             if ( l_namelen == l_ht->namelen )
-                if ( !memcmp(l_pname, l_ht->name, l_namelen) )
+                if ( !strncasecmp(l_pname, l_ht->name, l_namelen) )
                     break;
             }
 
@@ -265,8 +265,9 @@ void print_dap_http_headers(dap_http_header_t * a_ht)
  */
 dap_http_header_t *dap_http_header_find( dap_http_header_t *ht, const char *name )
 {
+    size_t l_name_len = strlen(name);
     for(; ht; ht = ht->next)
-        if( strncmp(ht->name, name, ht->namesz) == 0 )
+        if( ht->namesz == l_name_len && strncasecmp(ht->name, name, ht->namesz) == 0 )
             return ht;
 
     return  NULL;
