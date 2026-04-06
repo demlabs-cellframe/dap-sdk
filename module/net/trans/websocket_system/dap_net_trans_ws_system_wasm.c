@@ -68,9 +68,16 @@
  * Connection context
  * ======================================================================== */
 
+/* Document URL is only reliable on the main browser thread. Emscripten pthread workers
+ * expose a blob: location, so reading protocol there yields non-https and breaks
+ * enc_init / WS URL scheme vs a real https: page (mixed content). */
 EM_JS(int, js_page_is_secure, (void), {
     return (typeof location !== 'undefined' && location.protocol === 'https:') ? 1 : 0;
 });
+
+#ifdef DAP_WASM_PTHREADS
+static int s_wasm_main_document_https = -1;
+#endif
 
 typedef struct ws_system_conn {
     int                     js_handle;
@@ -368,7 +375,11 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
+#ifdef DAP_WASM_PTHREADS
+    l_conn->use_tls = (a_params->port == 443) || (s_wasm_main_document_https > 0);
+#else
     l_conn->use_tls = (a_params->port == 443) || js_page_is_secure();
+#endif
     l_conn->client_ctx = a_params->client_ctx;
 
     dap_stream_t *l_stream = DAP_NEW_Z(dap_stream_t);
@@ -807,6 +818,10 @@ dap_net_trans_ws_system_config_t dap_net_trans_ws_system_config_default(void)
 
 int dap_net_trans_websocket_system_register(void)
 {
+#ifdef DAP_WASM_PTHREADS
+    if (s_wasm_main_document_https < 0)
+        s_wasm_main_document_https = js_page_is_secure();
+#endif
     return dap_net_trans_register(
         "websocket-system",
         DAP_NET_TRANS_WEBSOCKET_SYSTEM,
