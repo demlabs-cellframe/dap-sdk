@@ -36,6 +36,7 @@ if(OPENSSL_FOUND)
         else()
             target_link_libraries(benchmark_crypto z)
         endif()
+        target_link_libraries(benchmark_crypto crypt32)
     endif()
 endif()
 

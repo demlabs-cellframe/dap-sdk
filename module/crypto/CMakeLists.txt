@@ -213,6 +213,11 @@ endif()
 get_filename_component(full_path_src ${CMAKE_CURRENT_SOURCE_DIR}/src/sig/classic/shipovnik/streebog/gost3411-2012.c ABSOLUTE)
 list(REMOVE_ITEM CRYPTO_SRCS "${full_path_src}")
 
+# ARMv7 / generic ARM32: no AArch64 crypto intrinsics (vqtbl1q_u8, vaeseq_u8, ...).
+if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    list(FILTER CRYPTO_SRCS EXCLUDE REGEX ".*/dap_aes_armce\\.c$")
+endif()
+
 file( GLOB CRYPTO_HEADERS
       src/*.h
       src/sig/dilithium/*.h

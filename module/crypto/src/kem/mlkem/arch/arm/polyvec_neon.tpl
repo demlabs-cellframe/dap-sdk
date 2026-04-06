@@ -207,13 +207,24 @@ void dap_mlkem_polyvec_basemul_acc_cached_{{ARCH_LOWER}}(
                 l_cross_hi = vmlal_s16(l_cross_hi, vget_high_s16(l_ao), vget_high_s16(l_ce));
             }
 
+            /* vgetq_lane_s32 requires a compile-time constant index with Clang. */
             int16_t re_lo_a[4], re_hi_a[4], ro_lo_a[4], ro_hi_a[4];
-            for (int li = 0; li < 4; li++) {
-                re_lo_a[li]  = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, li));
-                re_hi_a[li]  = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, li));
-                ro_lo_a[li] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, li));
-                ro_hi_a[li] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, li));
-            }
+            re_lo_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 0));
+            re_lo_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 1));
+            re_lo_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 2));
+            re_lo_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 3));
+            re_hi_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 0));
+            re_hi_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 1));
+            re_hi_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 2));
+            re_hi_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 3));
+            ro_lo_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 0));
+            ro_lo_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 1));
+            ro_lo_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 2));
+            ro_lo_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 3));
+            ro_hi_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 0));
+            ro_hi_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 1));
+            ro_hi_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 2));
+            ro_hi_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 3));
             int16x4_t re_lo = vld1_s16(re_lo_a);
             int16x4_t re_hi = vld1_s16(re_hi_a);
             int16x4_t ro_lo = vld1_s16(ro_lo_a);

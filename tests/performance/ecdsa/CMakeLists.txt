@@ -95,6 +95,7 @@ if(HAVE_OPENSSL_COMPETITOR)
         else()
             target_link_libraries(benchmark_ecdsa PRIVATE z)
         endif()
+        target_link_libraries(benchmark_ecdsa PRIVATE crypt32)
     endif()
 endif()
 

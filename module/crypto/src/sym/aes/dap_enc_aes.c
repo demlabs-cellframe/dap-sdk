@@ -17,7 +17,7 @@
 #if DAP_PLATFORM_X86
 #include "dap_aes_ni.h"
 #endif
-#if DAP_PLATFORM_ARM
+#if DAP_PLATFORM_ARM64
 #include "dap_aes_armce.h"
 #endif
 
@@ -41,7 +41,7 @@ static void s_aes_dispatch_init(void)
         s_decrypt_fast = dap_aes_ni_cbc_decrypt_fast;
     }
 #endif
-#if DAP_PLATFORM_ARM
+#if DAP_PLATFORM_ARM64
     if (l_cpu.has_arm_ce) {
         s_encrypt_fast = dap_aes_armce_cbc_encrypt_fast;
         s_decrypt_fast = dap_aes_armce_cbc_decrypt_fast;
