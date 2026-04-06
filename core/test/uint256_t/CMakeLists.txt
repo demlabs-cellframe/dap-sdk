@@ -11,7 +11,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
  
 set(BOOST_REQUESTED_VERSION 1.65)
 
-cmake_policy(SET CMP0167 OLD)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+endif()
 if (NOT Boost_INCLUDE_DIR)
         find_package(Boost REQUIRED)
 endif()

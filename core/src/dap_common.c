@@ -1327,7 +1327,7 @@ static void s_bsd_callback(void *a_arg)
 {
      void *l_timer_ptr = &a_arg;
 #else
-#error "Timaer callback is undefined for your platform"
+#error "Timer callback is undefined for your platform"
 #endif
     if (!l_timer_ptr) {
         log_it(L_ERROR, "Timer cb arg is NULL");

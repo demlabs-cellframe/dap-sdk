@@ -59,6 +59,13 @@ add_subdirectory(../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
 target_compile_options(dap_json-c PRIVATE -Wno-error)
 target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_json-c)
 
+option(BUILD_DAP_MATH_BITINT_BENCH
+    "Build dap_math_bitint_bench (C23 _BitInt vs dap_math_ops.h; optional, not CTest)"
+    OFF)
+if(BUILD_DAP_MATH_BITINT_BENCH)
+    add_subdirectory(test/bitint_bench)
+endif()
+
 if(BUILD_DAP_TESTS)
     add_definitions ("-DDAP_CORE_TESTS")
     message("Enabled dap_core test")

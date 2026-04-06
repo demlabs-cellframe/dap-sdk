@@ -2916,7 +2916,8 @@ TEST(MathTests, Div256Zeroes) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    ASSERT_DEATH(DIV_256(a, b, &c), "");
+    DIV_256(a, b, &c);
+    ASSERT_TRUE(IS_ZERO_256(c));
 }
 
 TEST(MathTests, Div256OneZero) {
@@ -2928,7 +2929,8 @@ TEST(MathTests, Div256OneZero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    ASSERT_DEATH(DIV_256(a, b, &c), "");
+    DIV_256(a, b, &c);
+    ASSERT_TRUE(IS_ZERO_256(c));
 }
 
 TEST(MathTests, Div256ZeroOne) {
@@ -2968,7 +2970,8 @@ TEST(MathTests, Div256Min128Zero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    ASSERT_DEATH(DIV_256(a, b, &c), "");
+    DIV_256(a, b, &c);
+    ASSERT_TRUE(IS_ZERO_256(c));
 }
 
 TEST(MathTests, Div256ZeroMin128) {
@@ -3050,7 +3053,8 @@ TEST(MathTests, Div256Max128Zero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    ASSERT_DEATH(DIV_256(a, b, &c), "");
+    DIV_256(a, b, &c);
+    ASSERT_TRUE(IS_ZERO_256(c));
 }
 
 TEST(MathTests, Div256ZeroMax128) {
@@ -3132,7 +3136,8 @@ TEST(MathTests, Div256Min256Zero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    ASSERT_DEATH(DIV_256(a, b, &c), "");
+    DIV_256(a, b, &c);
+    ASSERT_TRUE(IS_ZERO_256(c));
 }
 
 TEST(MathTests, Div256ZeroMin256) {
@@ -3215,7 +3220,8 @@ TEST(MathTests, Div256Max256Zero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    ASSERT_DEATH(DIV_256(a, b, &c), "");
+    DIV_256(a, b, &c);
+    ASSERT_TRUE(IS_ZERO_256(c));
 }
 
 TEST(MathTests, Div256ZeroMax256) {

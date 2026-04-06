@@ -110,6 +110,10 @@ extern const uint256_t uint256_max;
 
 extern const uint512_t uint512_0;
 
+/* ------------------------------------------------------------------------- */
+/* Pack integers into uint128 / uint256                                       */
+/* ------------------------------------------------------------------------- */
+
 static inline uint128_t GET_128_FROM_64(uint64_t n) {
 #ifdef DAP_GLOBAL_IS_INT128
     return (uint128_t) n;
@@ -133,6 +137,10 @@ static inline uint256_t GET_256_FROM_64(uint64_t n) {
 static inline uint256_t GET_256_FROM_128(uint128_t n) {
     return (uint256_t) {{{ .hi = uint128_0, .lo = n }}};
 }
+
+/* ------------------------------------------------------------------------- */
+/* Equality / zero tests                                                      */
+/* ------------------------------------------------------------------------- */
 
 static inline bool EQUAL_128(uint128_t a_128_bit, uint128_t b_128_bit){
 #ifdef DAP_GLOBAL_IS_INT128
@@ -166,6 +174,36 @@ static inline bool IS_ZERO_256(uint256_t a_256_bit){
     return !(a_256_bit.hi.hi | a_256_bit.hi.lo | a_256_bit.lo.hi | a_256_bit.lo.lo);
 #endif
 }
+
+/* ------------------------------------------------------------------------- */
+/* Compare (order: > / == / <  ->  1 / 0 / -1)                                */
+/* ------------------------------------------------------------------------- */
+
+static inline int compare128(uint128_t a, uint128_t b)
+{
+#ifdef DAP_GLOBAL_IS_INT128
+    return (a > b) ? 1 : (a < b) ? -1 : 0;
+#else
+    return (a.hi > b.hi) ? 1 : (a.hi < b.hi) ? -1 : (a.lo > b.lo) ? 1 : (a.lo < b.lo) ? -1 : 0;
+#endif
+}
+
+static inline int compare256(uint256_t a, uint256_t b)
+{
+#ifdef DAP_GLOBAL_IS_INT128
+    int c = (a.hi > b.hi) ? 1 : (a.hi < b.hi) ? -1 : 0;
+    return c ? c : ((a.lo > b.lo) ? 1 : (a.lo < b.lo) ? -1 : 0);
+#else
+    int c = compare128(a.hi, b.hi);
+    return c ? c : compare128(a.lo, b.lo);
+#endif
+}
+
+static inline int compare256_ptr(uint256_t *a, uint256_t *b) { return compare256(*a, *b); }
+
+/* ------------------------------------------------------------------------- */
+/* Bitwise AND / OR                                                           */
+/* ------------------------------------------------------------------------- */
 
 static inline uint128_t AND_128(uint128_t a_128_bit,uint128_t b_128_bit){
 
@@ -205,6 +243,10 @@ static inline uint256_t OR_256(uint256_t a_256_bit,uint256_t b_256_bit){
         .lo = OR_128(a_256_bit.lo, b_256_bit.lo)
     }}};
 }
+
+/* ------------------------------------------------------------------------- */
+/* Shifts                                                                     */
+/* ------------------------------------------------------------------------- */
 
 static inline void LEFT_SHIFT_128(uint128_t a_128_bit,uint128_t* b_128_bit,int n){
     assert (n <= 128);
@@ -280,6 +322,10 @@ static inline void RIGHT_SHIFT_256(uint256_t a_256_bit, uint256_t *b_256_bit, in
     }
 }
 
+/* ------------------------------------------------------------------------- */
+/* Increment / decrement                                                      */
+/* ------------------------------------------------------------------------- */
+
 static inline void INCR_128(uint128_t *a_128_bit){
 
 #ifdef DAP_GLOBAL_IS_INT128
@@ -339,6 +385,10 @@ static inline void DECR_256(uint256_t* a_256_bit) {
     DECR_128(&a_256_bit->lo);
 #endif
 }
+
+/* ------------------------------------------------------------------------- */
+/* Add / subtract (64 .. 512)                                                 */
+/* ------------------------------------------------------------------------- */
 
 static inline int SUM_64_64(uint64_t a_64_bit,uint64_t b_64_bit,uint64_t* c_64_bit )
 {
@@ -435,6 +485,25 @@ static inline int ADD_128_INTO_256(uint128_t a_128_bit,uint256_t* c_256_bit) {
     return overflow_flag;
 }
 
+/*
+ * SUM_256_256 -- unsigned 256 + 256 -> 256 bits.
+ *
+ * Returns 1 if the sum does not fit in 256 bits (unsigned overflow), else 0.
+ * The low 256 bits of the sum are stored in *c_256_bit.
+ *
+ * x86-64 (GCC/Clang): one addq/adcq chain over four 64-bit limbs (least significant first).
+ * Overflow flag via sbbq/negq: after the final adcq, CF==1 iff there was a carry out of the
+ * top limb (sum wider than 256 bits). Tighter and more scheduler-friendly than re-deriving
+ * overflow from C compares on the widened result.
+ *
+ * AArch64: adds/adcs over four limbs; cset %0,cs sets `of` to 1 if C is set after the last adcs
+ * (same meaning: carry out of the MS limb).
+ *
+ * Other targets with __int128: add lo halves, then hi halves with a uint128 carry-in -- portable
+ * when no target-specific asm is used.
+ *
+ * Without __int128: two SUM_128_128 steps on the half-words, propagating carry into the high half.
+ */
 static inline int SUM_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t* c_256_bit)
 {
 #ifdef DAP_GLOBAL_IS_INT128
@@ -483,6 +552,21 @@ static inline int SUM_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t*
 #endif
 }
 
+/*
+ * SUBTRACT_256_256 -- unsigned a - b -> 256 bits.
+ *
+ * Returns 1 if a < b (underflow in the unsigned sense), else 0. *c_256_bit always receives
+ * the 256-bit difference modulo 2^256.
+ *
+ * x86-64: subq/sbbq across four limbs; the same sbbq/negq epilogue yields uf==1 when the final
+ * limb needed a borrow (correct full 256-bit ordering of a vs b, not borrow-from-lo only).
+ *
+ * AArch64: subs/sbcs; cset %0,cc -- "carry clear" after the chain means a borrow out of the
+ * top limb, i.e. a < b as unsigned 256-bit integers.
+ *
+ * Using only the low-limb borrow as the underflow flag would wrongly return 0 when a.hi < b.hi but
+ * the lo halves subtract without borrow; these asm and C paths use the full 256-bit borrow-out.
+ */
 static inline int SUBTRACT_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t* c_256_bit)
 {
 #ifdef DAP_GLOBAL_IS_INT128
@@ -568,6 +652,19 @@ static inline int ADD_256_INTO_512(uint256_t a_256_bit,uint512_t* c_512_bit) {
     return overflow_flag;
 }
 
+/* ------------------------------------------------------------------------- */
+/* Multiply                                                                   */
+/* ------------------------------------------------------------------------- */
+/*
+ * 128x128->256 (MULT_128_256) is on the hot path for MULT_256_512 and COIN. On x86-64 and AArch64
+ * under GCC/Clang we use explicit asm: a single large uint128_t expression often lowers to the same
+ * four 64x64->128 multiplies but with a longer carry-dependent chain between them.
+ * Manual scheduling: two independent "corner" muls (a0*b0 and a1*b1), then two cross terms with a
+ * short add/adc chain -- better instruction-level parallelism on out-of-order cores.
+ * Without target asm: schoolbook on uint128_t using 64-bit halves; without __int128: MULT_64_128
+ * and explicit carry handling.
+ */
+
 static inline void MULT_64_128(uint64_t a_64_bit, uint64_t b_64_bit, uint128_t* c_128_bit)
 {
 #ifdef DAP_GLOBAL_IS_INT128
@@ -593,6 +690,21 @@ static inline void MULT_64_128(uint64_t a_64_bit, uint64_t b_64_bit, uint128_t* 
 #endif
 }
 
+/*
+ * MULT_128_256 -- full unsigned 128x128 product (256 bits in *c_256_bit).
+ * Decomposition: a = a1*2^64 + a0, b = b1*2^64 + b0; schoolbook multiply on 64-bit half-limbs.
+ *
+ * x86-64: mulq implicitly uses %rax and writes the 128-bit product to %rax:%rdx.
+ *  - First two mulq: a0*b0 -> r0:r1, a1*b1 -> r2:r3 -- distinct operand sets so the core can
+ *    issue the second multiply while the first retires (plus cheap movs into named outputs).
+ *  - Third and fourth mulq: a0*b1 and a1*b0; partial sums fold into r1,r2,r3 via addq/adcq/adcq --
+ *    only three adc-class ops per cross term; carries are not spread across extra temps.
+ *  "rm" on b0/b1 allows a memory operand where the compiler chooses (mulq allows it).
+ *
+ * AArch64: mul is the low 64 bits of the product, umulh the high 64. Same idea: two corners as
+ * independent mul/umulh pairs, then two cross terms with adds/adcs/adc into r1..r3.
+ * adc ..., xzr adds zero with carry (same role as adc $0 on x86).
+ */
 static inline void MULT_128_256(uint128_t a_128_bit,uint128_t b_128_bit,uint256_t* c_256_bit ) {
 #ifdef DAP_GLOBAL_IS_INT128
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
@@ -700,7 +812,11 @@ static inline void MULT_128_256(uint128_t a_128_bit,uint128_t b_128_bit,uint256_
 #endif
 }
 
-
+/*
+ * MULT_128_128 -- low 128 bits of the product; returns 1 if the full product exceeds 2^128-1.
+ * Overflow test with __int128: compare against UINT128_MAX/b (b==0 is safe: short-circuit).
+ * Without __int128: full MULT_128_256 then require the high half to be zero.
+ */
 static inline int MULT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128_t* c_128_bit){
     int overflow_flag=0;
 
@@ -720,9 +836,22 @@ static inline int MULT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128
     return overflow_flag;
 }
 
-/* Full 512-bit product: four independent MULT_128_256 blocks + cross-term carry assembly.
- * O3 enables aggressive instruction scheduling that interleaves mulq chains from different
- * MULT_128_256 calls, recovering ILP without manual interleaving or extra register pressure. */
+/*
+ * MULT_256_512 -- full unsigned 256x256 -> 512 bits.
+ *
+ * Split on 128-bit halves (Karatsubo-style layout):
+ *   (a.hi*2^128 + a.lo) * (b.hi*2^128 + b.lo)
+ * = a.lo*b.lo + (a.hi*b.lo + a.lo*b.hi)*2^128 + a.hi*b.hi*2^256.
+ *
+ * Four MULT_128_256 calls (ll, hh, hl, lh) are separate inline instances on purpose: at -O3 the
+ * compiler can interleave independent multiply chains from different asm blocks, recovering
+ * instruction-level parallelism. A single flat 64-bit limb loop serializes carry along each row
+ * and is usually slower on out-of-order cores.
+ *
+ * hl+lh may sum to 257 bits (cc into the high half); packing into uint512_t must propagate cc and
+ * the c1/c2 carries when adding ll.hi+cross.lo, hh.lo+cross.hi+c1, etc. Dropping those carries
+ * corrupts the upper 256 bits of the product.
+ */
 static inline void MULT_256_512(uint256_t a_256_bit,uint256_t b_256_bit,uint512_t* c_512_bit) {
     uint256_t ll, hh, hl, lh;
     MULT_128_256(a_256_bit.lo, b_256_bit.lo, &ll);
@@ -752,11 +881,10 @@ static inline void MULT_256_512(uint256_t a_256_bit,uint256_t b_256_bit,uint512_
 #endif
 }
 
-/* Multiplicates 256-bit value to fixed-point value, represented as 256-bit value
- * @param a_val
- * @param a_mult
- * @param result is a fixed-point value, represented as 256-bit value
- * @return
+/*
+ * MULT_256_256 -- low 256 bits of the product; overflow==1 if the high 256 bits of the full
+ * 512-bit product are non-zero. Implemented only via a correct MULT_256_512; older code that
+ * dropped cross-term carries could report overflow==0 when the product was actually wider than 256 bits.
  */
 static inline int MULT_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t* accum_256_bit){
     int overflow=0;
@@ -772,28 +900,56 @@ static inline int MULT_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t
     return overflow;
 }
 
-// > ret 1
-// == ret 0
-// < ret -1
-static inline int compare128(uint128_t a, uint128_t b)
+/* ------------------------------------------------------------------------- */
+/* Leading zeros / bit-scan (nlz, fls)                                        */
+/* ------------------------------------------------------------------------- */
+
+static inline int nlz64(uint64_t N)
 {
-#ifdef DAP_GLOBAL_IS_INT128
-    return ( a > b ? 1 : 0 ) - ( a < b ? 1 : 0 );
+#if defined(__GNUC__) || defined(__clang__)
+    return N ? __builtin_clzll(N) : 64;
 #else
-    return    (((a.hi > b.hi) || ((a.hi == b.hi) && (a.lo > b.lo))) ? 1 : 0)
-         -    (((a.hi < b.hi) || ((a.hi == b.hi) && (a.lo < b.lo))) ? 1 : 0);
+    int c = 0;
+    if (N == 0) return 64;
+    while ((N & ((uint64_t)1 << 63)) == 0) { N <<= 1; c++; }
+    return c;
 #endif
 }
 
-static inline int compare256(uint256_t a, uint256_t b)
+static inline int nlz128(uint128_t N)
 {
-    int c = compare128(a.hi, b.hi);
-    return c ? c : compare128(a.lo, b.lo);
+#ifdef DAP_GLOBAL_IS_INT128
+    return ( (N >> 64) == 0) ? nlz64((uint64_t)N) + 64 : nlz64((uint64_t)(N >> 64));
+#else
+    return (N.hi == 0) ? nlz64(N.lo) + 64 : nlz64(N.hi);
+#endif
 }
 
-static inline int compare256_ptr(uint256_t *a, uint256_t *b) { return compare256(*a, *b); }
+static inline int nlz256(uint256_t N)
+{
+    return EQUAL_128(N.hi, uint128_0) ? nlz128(N.lo) + 128 : nlz128(N.hi);
+}
 
-/* ---------- Multi-word division (Knuth Algorithm D, TAOCP vol.2 §4.3.1) & helpers ---------- */
+static inline int fls256(uint256_t n) {
+    if ( compare128(n.hi, uint128_0) != 0 ) {
+        return 255 - nlz128(n.hi);
+    }
+    return 127 - nlz128(n.lo);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Multi-word division: limb types, Knuth Algorithm D (TAOCP vol.2 §4.3.1),   */
+/* dap_divmod_* API                                                           */
+/* ------------------------------------------------------------------------- */
+/*
+ * dap_math_kw_t is one "digit" for Knuth algorithm D: with __int128 it is uint64_t (256 bits = 4
+ * words), else uint32_t (8 words). dap_math_kw2_t is a double digit for products and the trial
+ * quotient inside each step.
+ *
+ * dap_u256_to_kw / dap_kw_to_u256 pack into little-endian limbs (w[0] is least significant).
+ * Fast paths such as dap_divmod_u256_u64 for divisors that fit in 64 bits reduce to schoolbook
+ * division one limb at a time (on x86-64 using a divq chain via dap_div_u128_u64).
+ */
 
 #ifdef DAP_GLOBAL_IS_INT128
 typedef uint64_t dap_math_kw_t;
@@ -862,7 +1018,21 @@ static inline uint512_t dap_kw_to_u512(const dap_math_kw_t w[DAP_MATH_KW_N512])
     return r;
 }
 
-/* (hi:lo) / d -> quotient; *rem = remainder. Precondition: hi < d (quotient fits in 64 bits). */
+/*
+ * dap_div_u128_u64 -- divide 128-bit dividend (hi:lo) by 64-bit d; quotient returned, remainder in *rem.
+ * Knuth precondition: high part of dividend < d, otherwise divq faults (#DE) or the trial quotient is wrong.
+ * Used from dap_knuth_divmnu and dap_divmod_by_single_kw on 64-bit limbs.
+ *
+ * x86-64: single divq divides (rdx:rax) by the operand; we pass lo in rax, hi in rdx.
+ * Fastest and simplest on this ISA.
+ *
+ * AArch64: no single-instruction 128/64 in user mode; plain (uint128_t)/(uint64_t) often lowers to a
+ * costly libcall __udivti3. The Hacker's Delight §9-4 style path on 32-bit half-digits uses only
+ * hardware 64-bit divides and avoids libgcc for this hotspot.
+ *
+ * Other targets with __int128: native widened division is portable; may become a runtime call but stays
+ * correct without platform asm.
+ */
 #if defined(DAP_GLOBAL_IS_INT128) && defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
 static inline uint64_t dap_div_u128_u64(uint64_t hi, uint64_t lo, uint64_t d, uint64_t *rem)
 {
@@ -908,9 +1078,16 @@ static inline uint64_t dap_div_u128_u64(uint64_t hi, uint64_t lo, uint64_t d, ui
 #endif
 
 /*
- * Knuth Algorithm D: q[0..m-n] = floor(u/v), r = u mod v.
- * Little-endian words: w[0] = least significant. Requires m >= n >= 2, v[n-1] != 0.
- * Normalizes v, trial quotient via dap_div_u128_u64 on 64-bit limbs; guards qhat so divq / wide mul never overflow.
+ * dap_knuth_divmnu -- Knuth's Algorithm D (TAOCP vol.2 §4.3.1): quotient q and remainder r for
+ * unsigned u (m limbs) and v (n limbs), m >= n >= 2, v[n-1] != 0.
+ *
+ * Limbs are little-endian: u[0], v[0] are least significant. Left-shifting v by CLZ(v[n-1]) normalizes
+ * so the top bit of v[n-1] is 1; then the trial quotient from two limbs of u and one of v stays
+ * bounded, and Knuth's correction loops fix any overestimate. With 64-bit limbs the trial step uses
+ * dap_div_u128_u64; with 32-bit limbs it uses native 64/32 (dividend in dap_math_kw2_t).
+ *
+ * The guard un[j+n] >= vn[n-1] avoids trial qhat == 2^KW_BITS-1 followed by multiply overflow in the
+ * inner steps. The rhat < B check in the correction loop prevents shifting rhat past the digit width.
  */
 static inline void dap_knuth_divmnu(dap_math_kw_t q[], dap_math_kw_t r[],
     const dap_math_kw_t u[], const dap_math_kw_t v[], int m, int n)
@@ -1225,6 +1402,10 @@ static inline bool dap_divmod_u512_u256(uint512_t a_num, uint256_t a_den, uint25
     return false;
 }
 
+/* ------------------------------------------------------------------------- */
+/* Widen 256×64 -> 512 (used by DIV_256_COIN)                                 */
+/* ------------------------------------------------------------------------- */
+
 /* 256-bit value times 64-bit -> full 512-bit product (for fixed-point COIN scaling). */
 static inline void dap_mult256_u64_to_512(uint256_t a, uint64_t d, uint512_t *c)
 {
@@ -1260,61 +1441,19 @@ static inline void dap_mult256_u64_to_512(uint256_t a, uint64_t d, uint512_t *c)
 #endif
 }
 
-
-static inline int nlz64(uint64_t N)
-{
-#if defined(__GNUC__) || defined(__clang__)
-    return N ? __builtin_clzll(N) : 64;
-#else
-    int c = 0;
-    if (N == 0) return 64;
-    while ((N & ((uint64_t)1 << 63)) == 0) { N <<= 1; c++; }
-    return c;
-#endif
-}
-
-static inline int nlz128(uint128_t N)
-{
-#ifdef DAP_GLOBAL_IS_INT128
-    return ( (N >> 64) == 0) ? nlz64((uint64_t)N) + 64 : nlz64((uint64_t)(N >> 64));
-#else
-    return (N.hi == 0) ? nlz64(N.lo) + 64 : nlz64(N.hi);
-#endif
-}
-
-static inline int nlz256(uint256_t N)
-{
-    return EQUAL_128(N.hi, uint128_0) ? nlz128(N.lo) + 128 : nlz128(N.hi);
-}
-
+/* ------------------------------------------------------------------------- */
+/* Legacy divmod / DIV (thin wrappers over dap_divmod_*)                      */
+/* ------------------------------------------------------------------------- */
 
 #ifndef DAP_GLOBAL_IS_INT128
 static inline void divmod_impl_128(uint128_t a_dividend, uint128_t a_divisor, uint128_t *a_quotient, uint128_t *a_remainder)
 {
-    assert(compare128(a_divisor, uint128_0));
-    if (!compare128(a_divisor, uint128_0)) {
-        _log_it(L_ERROR, _LOG_LVL_L_ERROR "[dap_math_ops] An error occurred when trying to divide by 0.");
-        raise(SIGFPE);
-    }
     (void)dap_divmod_u128(a_dividend, a_divisor, a_quotient, a_remainder);
 }
 #endif
 
-
-static inline int fls256(uint256_t n) {
-    if ( compare128(n.hi, uint128_0) != 0 ) {
-        return 255 - nlz128(n.hi);
-    }
-    return 127 - nlz128(n.lo);
-}
-
 static inline void divmod_impl_256(uint256_t a_dividend, uint256_t a_divisor, uint256_t *a_quotient, uint256_t *a_remainder)
 {
-    assert(compare256(a_divisor, uint256_0));
-    if (!compare256(a_divisor, uint256_0)) {
-        _log_it(L_ERROR, _LOG_LVL_L_ERROR "[dap_math_ops] An error occurred when trying to divide by 0.");
-        raise(SIGFPE);
-    }
     (void)dap_divmod_u256(a_dividend, a_divisor, a_quotient, a_remainder);
 }
 
@@ -1340,6 +1479,10 @@ static inline void DIV_256(uint256_t a_256_bit, uint256_t b_256_bit, uint256_t* 
     divmod_impl_256(a_256_bit, b_256_bit, &l_ret, &l_remainder);
     *c_256_bit = l_ret;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Fixed-point COIN (10^18)                                                   */
+/* ------------------------------------------------------------------------- */
 
 /**
  * Multiplicates to fixed-point values, represented as 256-bit values
