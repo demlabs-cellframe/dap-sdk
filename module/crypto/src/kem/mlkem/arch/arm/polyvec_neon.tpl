@@ -180,58 +180,67 @@ void dap_mlkem_polyvec_basemul_acc_cached_{{ARCH_LOWER}}(
     const int16_t * const *a_caches,
     unsigned a_count)
 {
+    /* Match arch/x86/polyvec_avx2.tpl: one block of 32 coeffs per l_p (no overlap).
+     * AVX _mm256_madd_epi16 after unpack is: ae[i]*ce[i] + ao[i]*co[i] per lane (diag),
+     * and ae[i]*bo[i] + ao[i]*ce[i] (cross). Pairwise vmull + add, not vmlal on lows only. */
     for (unsigned l_p = 0; l_p < 8; l_p++) {
-        for (unsigned l_h = 0; l_h < 2; l_h++) {
-            unsigned l_off = 32 * l_p + 8 * l_h;
+        const unsigned l_off = 32 * l_p;
 
-            int32x4_t l_diag_lo  = vdupq_n_s32(0);
-            int32x4_t l_diag_hi  = vdupq_n_s32(0);
-            int32x4_t l_cross_lo = vdupq_n_s32(0);
-            int32x4_t l_cross_hi = vdupq_n_s32(0);
+        int32x4_t l_diag_lo  = vdupq_n_s32(0);
+        int32x4_t l_diag_hi  = vdupq_n_s32(0);
+        int32x4_t l_cross_lo = vdupq_n_s32(0);
+        int32x4_t l_cross_hi = vdupq_n_s32(0);
 
-            for (unsigned k = 0; k < a_count; k++) {
-                int16x8_t l_ae = vld1q_s16(a_polys_a[k] + l_off);
-                int16x8_t l_ao = vld1q_s16(a_polys_a[k] + l_off + 16);
-                int16x8_t l_ce = vld1q_s16(a_caches[k] + l_off);
-                int16x8_t l_co = vld1q_s16(a_caches[k] + l_off + 16);
-                int16x8_t l_bo = vld1q_s16(a_polys_b[k] + l_off + 16);
+        for (unsigned k = 0; k < a_count; k++) {
+            int16x8_t l_ae = vld1q_s16(a_polys_a[k] + l_off);
+            int16x8_t l_ao = vld1q_s16(a_polys_a[k] + l_off + 16);
+            int16x8_t l_ce = vld1q_s16(a_caches[k] + l_off);
+            int16x8_t l_co = vld1q_s16(a_caches[k] + l_off + 16);
+            int16x8_t l_bo = vld1q_s16(a_polys_b[k] + l_off + 16);
 
-                l_diag_lo = vmlal_s16(l_diag_lo, vget_low_s16(l_ae), vget_low_s16(l_ce));
-                l_diag_lo = vmlal_s16(l_diag_lo, vget_low_s16(l_ao), vget_low_s16(l_co));
-                l_diag_hi = vmlal_s16(l_diag_hi, vget_high_s16(l_ae), vget_high_s16(l_ce));
-                l_diag_hi = vmlal_s16(l_diag_hi, vget_high_s16(l_ao), vget_high_s16(l_co));
+            int32x4_t l_t0, l_t1;
 
-                l_cross_lo = vmlal_s16(l_cross_lo, vget_low_s16(l_ae), vget_low_s16(l_bo));
-                l_cross_lo = vmlal_s16(l_cross_lo, vget_low_s16(l_ao), vget_low_s16(l_ce));
-                l_cross_hi = vmlal_s16(l_cross_hi, vget_high_s16(l_ae), vget_high_s16(l_bo));
-                l_cross_hi = vmlal_s16(l_cross_hi, vget_high_s16(l_ao), vget_high_s16(l_ce));
-            }
+            l_t0 = vmull_s16(vget_low_s16(l_ae), vget_low_s16(l_ce));
+            l_t1 = vmull_s16(vget_low_s16(l_ao), vget_low_s16(l_co));
+            l_diag_lo = vaddq_s32(l_diag_lo, vaddq_s32(l_t0, l_t1));
 
-            /* vgetq_lane_s32 requires a compile-time constant index with Clang. */
-            int16_t re_lo_a[4], re_hi_a[4], ro_lo_a[4], ro_hi_a[4];
-            re_lo_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 0));
-            re_lo_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 1));
-            re_lo_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 2));
-            re_lo_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 3));
-            re_hi_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 0));
-            re_hi_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 1));
-            re_hi_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 2));
-            re_hi_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 3));
-            ro_lo_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 0));
-            ro_lo_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 1));
-            ro_lo_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 2));
-            ro_lo_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 3));
-            ro_hi_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 0));
-            ro_hi_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 1));
-            ro_hi_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 2));
-            ro_hi_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 3));
-            int16x4_t re_lo = vld1_s16(re_lo_a);
-            int16x4_t re_hi = vld1_s16(re_hi_a);
-            int16x4_t ro_lo = vld1_s16(ro_lo_a);
-            int16x4_t ro_hi = vld1_s16(ro_hi_a);
+            l_t0 = vmull_s16(vget_high_s16(l_ae), vget_high_s16(l_ce));
+            l_t1 = vmull_s16(vget_high_s16(l_ao), vget_high_s16(l_co));
+            l_diag_hi = vaddq_s32(l_diag_hi, vaddq_s32(l_t0, l_t1));
 
-            vst1q_s16(a_r + l_off, vcombine_s16(re_lo, re_hi));
-            vst1q_s16(a_r + l_off + 16, vcombine_s16(ro_lo, ro_hi));
+            l_t0 = vmull_s16(vget_low_s16(l_ae), vget_low_s16(l_bo));
+            l_t1 = vmull_s16(vget_low_s16(l_ao), vget_low_s16(l_ce));
+            l_cross_lo = vaddq_s32(l_cross_lo, vaddq_s32(l_t0, l_t1));
+
+            l_t0 = vmull_s16(vget_high_s16(l_ae), vget_high_s16(l_bo));
+            l_t1 = vmull_s16(vget_high_s16(l_ao), vget_high_s16(l_ce));
+            l_cross_hi = vaddq_s32(l_cross_hi, vaddq_s32(l_t0, l_t1));
         }
+
+        /* vgetq_lane_s32 requires a compile-time constant index with Clang. */
+        int16_t re_lo_a[4], re_hi_a[4], ro_lo_a[4], ro_hi_a[4];
+        re_lo_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 0));
+        re_lo_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 1));
+        re_lo_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 2));
+        re_lo_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, 3));
+        re_hi_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 0));
+        re_hi_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 1));
+        re_hi_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 2));
+        re_hi_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, 3));
+        ro_lo_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 0));
+        ro_lo_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 1));
+        ro_lo_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 2));
+        ro_lo_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, 3));
+        ro_hi_a[0] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 0));
+        ro_hi_a[1] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 1));
+        ro_hi_a[2] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 2));
+        ro_hi_a[3] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, 3));
+        int16x4_t re_lo = vld1_s16(re_lo_a);
+        int16x4_t re_hi = vld1_s16(re_hi_a);
+        int16x4_t ro_lo = vld1_s16(ro_lo_a);
+        int16x4_t ro_hi = vld1_s16(ro_hi_a);
+
+        vst1q_s16(a_r + l_off, vcombine_s16(re_lo, re_hi));
+        vst1q_s16(a_r + l_off + 16, vcombine_s16(ro_lo, ro_hi));
     }
 }

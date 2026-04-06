@@ -447,18 +447,24 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
         dap_dilithium_ntt_avx2.c        avx2
         dap_dilithium_ntt_avx2_512vl.c  avx2_512vl
         dap_dilithium_ntt_avx512.c      avx512
-        dap_dilithium_ntt_neon.c        neon
         dap_dilithium_poly_ops_avx2.S    avx2
         dap_dilithium_poly_ops_avx512.S avx512
         dap_dilithium_ntt_avx2_asm.S    avx2
         dap_dilithium_ntt_fused_avx2.S  avx2
         dap_dilithium_invntt_fused_avx2.S  avx2
-        dap_dilithium_poly_neon.c       neon
         dap_dilithium_sample_avx2.c     avx2
-        dap_dilithium_sample_neon.c     neon
         dap_dilithium_fips204_avx2.S    avx2
         dap_dilithium_fips204_avx512.S  avx512
 )
+# Dilithium NEON TU uses AArch64-only intrinsics (e.g. vqtbl1q_u8, vmaxvq_u32).
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
+        SOURCES
+            dap_dilithium_ntt_neon.c        neon
+            dap_dilithium_poly_neon.c       neon
+            dap_dilithium_sample_neon.c     neon
+    )
+endif()
 target_include_directories(${PROJECT_NAME} PRIVATE ${DIL_GEN_DIR})
 
 # --- ChaCha20 multi-block SIMD (Keccak-pattern layout) ---

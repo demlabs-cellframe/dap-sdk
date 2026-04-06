@@ -80,7 +80,7 @@ extern void dap_dilithium_polyz_unpack_g17_avx512(int32_t *, const uint8_t *);
 extern void dap_dilithium_polyz_unpack_g19_avx512(int32_t *, const uint8_t *);
 #endif
 
-#if DAP_PLATFORM_ARM
+#if DAP_PLATFORM_ARM64
 extern void dap_dilithium_ntt_forward_neon(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_neon(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_neon(int32_t *c, const int32_t *a, const int32_t *b);
@@ -483,6 +483,7 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_zunpack_g17,   dap_dilithium_polyz_unpack_g17_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_zunpack_g19,   dap_dilithium_polyz_unpack_g19_avx512);
 
+#if DAP_PLATFORM_ARM64
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_fwd,      dap_dilithium_ntt_forward_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_inv,      dap_dilithium_ntt_inverse_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_pw_mont,      dap_dilithium_pointwise_mont_neon);
@@ -499,6 +500,7 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_use_hint,     dap_dilithium_poly_use_hint_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_chknorm,      dap_dilithium_poly_chknorm_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_rej_uniform,  dap_dilithium_rej_uniform_neon);
+#endif
 }
 
 /* ===== Public API — thin dispatch wrappers ===== */
