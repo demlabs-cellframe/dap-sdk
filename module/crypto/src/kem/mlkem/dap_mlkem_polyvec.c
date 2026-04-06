@@ -144,11 +144,13 @@ static void s_mlkem_polyvec_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_pv_decompress_d11, dap_mlkem_polyvec_decompress_d11_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_pv_basemul_acc,    dap_mlkem_polyvec_basemul_acc_cached_avx2);
 
+#if !defined(__APPLE__)
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_pv_compress_d10,   dap_mlkem_polyvec_compress_d10_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_pv_compress_d11,   dap_mlkem_polyvec_compress_d11_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_pv_decompress_d10, dap_mlkem_polyvec_decompress_d10_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_pv_decompress_d11, dap_mlkem_polyvec_decompress_d11_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_pv_basemul_acc,    dap_mlkem_polyvec_basemul_acc_cached_neon);
+#endif
 }
 
 #define PV_ENSURE() DAP_DISPATCH_ENSURE(s_pv_compress_d10, s_mlkem_polyvec_dispatch_init)
