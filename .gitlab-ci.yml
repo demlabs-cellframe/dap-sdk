@@ -66,8 +66,21 @@ tests:amd64.windows:
     before_script:
       - set -eo pipefail
       - /opt/buildtools/prepare_environment.sh amd64-windows
+      # Wine needs a virtual framebuffer in headless Docker (nodrv_CreateWindow / explorer crash).
+      - apt-get update -qq
+      - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb
     script:
       - set -eo pipefail
+      - export DISPLAY=:99
+      - Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
+      - XPID=$!
+      - trap 'kill ${XPID} 2>/dev/null || true' EXIT
+      - sleep 3
+      - export WINEDLLOVERRIDES="winemenubuilder.exe=d"
+      - export WINEARCH=win64
+      - export WINEDEBUG=-all
+      - export WINEPREFIX="${CI_PROJECT_DIR}/.wine-ci-win64"
+      - rm -rf "${WINEPREFIX}"
       - mkdir build
       - cd build
       - export PATH=${MXE_ROOT}/usr/bin:$PATH
