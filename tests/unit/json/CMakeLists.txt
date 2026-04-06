@@ -241,7 +241,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 # Coverage: Детальная отладка SSE2 tokenization
 # Tests: 3 focused debug tests with detailed token comparison
 # NOTE: x86-only test (requires SSE2)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64|i686")
     project(test_json_stage1_sse2_debug)
 
     add_executable(${PROJECT_NAME}
@@ -324,7 +324,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 # Tests: Correctness tests + Performance benchmarks
 # Target: 4-5 GB/s throughput (AVX2), 6-8 GB/s (AVX-512)
 # NOTE: x86-only test (requires AVX2)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64|i686")
     project(test_simdjson_stage1)
 
     add_executable(${PROJECT_NAME}

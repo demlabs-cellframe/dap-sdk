@@ -215,6 +215,15 @@ static void s_poly1305_update(s_poly1305_state_t *st, const uint8_t *data, size_
 #elif DAP_PLATFORM_ARM
     {
         size_t nblocks = len >> 4;
+#if defined(__APPLE__)
+        /* Multi-block NEON Poly1305 fails RFC 8439 KAT on Apple Clang/arm64 (job 420390). */
+        (void)nblocks;
+        while (len >= 16) {
+            s_poly1305_block(st, data, 1);
+            data += 16;
+            len  -= 16;
+        }
+#else
         if (nblocks >= 4) {
             dap_poly1305_blocks_neon(st, data, nblocks);
             data += nblocks << 4;
@@ -226,6 +235,7 @@ static void s_poly1305_update(s_poly1305_state_t *st, const uint8_t *data, size_
                 len  -= 16;
             }
         }
+#endif
     }
 #else
     while (len >= 16) {

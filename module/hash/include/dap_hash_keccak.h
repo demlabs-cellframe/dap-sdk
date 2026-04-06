@@ -141,8 +141,17 @@ static inline dap_hash_keccak_permute_fn_t dap_hash_keccak_permute_resolve(void)
 #if !defined(__APPLE__)
     DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_SVE2,   dap_hash_keccak_permute_sve2);
     DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_SVE,    dap_hash_keccak_permute_sve);
-#endif
+    /* Linux/BSD: hand-tuned eor3/bcax/xar permute with -march=armv8.2-a+sha3 */
     DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON,   dap_hash_keccak_permute_neon_sha3_asm);
+#elif defined(__APPLE__)
+    /*
+     * Apple Clang builds the SHA3 assembly without the Linux-style -march=armv8.2-a+sha3
+     * hook (see module/hash/CMakeLists.txt). That mismatch produced wrong permutations on
+     * Apple Silicon CI (SHA3 KAT, ML-KEM, Keccak-x4 _opt vs ref). Use the portable NEON lane
+     * implementation until the Mach-O / flags path for neon_sha3_asm is unified.
+     */
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON,   dap_hash_keccak_permute_neon);
+#endif
 #elif DAP_PLATFORM_ARM
     DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON,   dap_hash_keccak_permute_neon);
 #endif

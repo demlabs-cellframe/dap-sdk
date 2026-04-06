@@ -189,7 +189,13 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
                  ${_KECCAK_ARM_ENV}
     )
     target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_NEON_SHA3_ASM})
-    if(NOT APPLE)
+    # Apple: enable SHA3 crypto ext asm like Linux (-march=armv8.2-a+sha3); permute dispatch on Darwin
+    # still prefers C+NEON (see dap_hash_keccak.h) until validated on all toolchains.
+    if(APPLE)
+        set_source_files_properties(${KECCAK_NEON_SHA3_ASM}
+            PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+crypto+sha3"
+        )
+    else()
         set_source_files_properties(${KECCAK_NEON_SHA3_ASM}
             PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+sha3"
         )
