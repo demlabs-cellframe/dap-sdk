@@ -376,7 +376,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #endif
 
 #define DAP_DEL_MULTY(...) \
-    for (void *_ptrs[] = { NULL, __VA_ARGS__ }, **_pp = _ptrs; _pp < _ptrs + sizeof(_ptrs) / sizeof(void*) - 1; DAP_DELETE(*++_pp))
+    for (void *_ptrs[] = { NULL, __VA_ARGS__ }, **_pp = _ptrs; _pp < _ptrs + sizeof(_ptrs) / sizeof(void*) - 1; DAP_DELETE(*++_pp)) {}
 
 // Evaluates all conditions (NO short-circuit evaluation)
 #define dap_do_if_any(_action, ...) \
