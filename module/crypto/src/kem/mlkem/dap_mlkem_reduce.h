@@ -11,7 +11,8 @@
 
 static inline int16_t dap_mlkem_montgomery_reduce(int32_t a)
 {
-    int16_t u = (int16_t)(a * MLKEM_QINV);
+    /* uint32 path: signed int32 * int16 exceeds INT_MAX — UB with plain int multiply (Clang vs GCC). */
+    int16_t u = (int16_t)((uint32_t)a * (uint32_t)(uint16_t)MLKEM_QINV);
     return (int16_t)((a - (int32_t)u * MLKEM_Q) >> 16);
 }
 

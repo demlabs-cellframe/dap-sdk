@@ -10,6 +10,7 @@
  */
 
 #include "dap_mlkem_ntt.h"
+#include "dap_mlkem_reduce.h"
 #include "dap_ntt.h"
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
@@ -199,18 +200,17 @@ void MLKEM_NAMESPACE(_nttunpack)(int16_t a_coeffs[MLKEM_N])
 void MLKEM_NAMESPACE(_basemul)(int16_t a_r[2], const int16_t a_a[2],
                                 const int16_t a_b[2], int16_t a_zeta)
 {
-    int16_t l_qinv = MLKEM_QINV;
     int32_t t;
 
     t = (int32_t)a_a[1] * a_b[1];
-    a_r[0] = (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
+    a_r[0] = dap_mlkem_montgomery_reduce(t);
     t = (int32_t)a_r[0] * a_zeta;
-    a_r[0] = (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
+    a_r[0] = dap_mlkem_montgomery_reduce(t);
     t = (int32_t)a_a[0] * a_b[0];
-    a_r[0] += (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
+    a_r[0] += dap_mlkem_montgomery_reduce(t);
 
     t = (int32_t)a_a[0] * a_b[1];
-    a_r[1] = (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
+    a_r[1] = dap_mlkem_montgomery_reduce(t);
     t = (int32_t)a_a[1] * a_b[0];
-    a_r[1] += (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
+    a_r[1] += dap_mlkem_montgomery_reduce(t);
 }
