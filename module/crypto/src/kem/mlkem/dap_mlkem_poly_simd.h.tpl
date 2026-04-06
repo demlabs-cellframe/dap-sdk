@@ -16,11 +16,8 @@
 #include "dap_cpu_arch.h"
 #include "dap_mlkem_reduce.h"
 
-/* AArch64 hosts, or ARMv7 with NEON (Android armeabi-v7a).
- * Apple Silicon: disable inline NEON fast paths until parity is proven on all
- * Xcode/clang combos (shared-secret ML-KEM failures in CI vs Linux AArch64). */
-#if (defined(__aarch64__) || defined(_M_ARM64) || (defined(__ARM_NEON) && defined(__arm__))) \
-    && !defined(__APPLE__)
+/* AArch64 hosts, or ARMv7 with NEON (Android armeabi-v7a). */
+#if defined(__aarch64__) || defined(_M_ARM64) || (defined(__ARM_NEON) && defined(__arm__))
 #define DAP_MLKEM_HAVE_NEON 1
 #endif
 

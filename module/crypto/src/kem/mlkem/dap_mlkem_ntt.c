@@ -166,12 +166,10 @@ static void s_mlkem_ntt_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_mlkem_ntt_pack,   dap_mlkem_ntt_nttpack_asm);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_mlkem_ntt_unpack, dap_mlkem_ntt_nttunpack_asm);
 
-#if !defined(__APPLE__)
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_mlkem_ntt_fwd,    s_ntt_forward_neon_packed);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_mlkem_ntt_inv,    s_ntt_inverse_neon_packed);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_mlkem_ntt_pack,   dap_mlkem_ntt_nttpack_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_mlkem_ntt_unpack, dap_mlkem_ntt_nttunpack_neon);
-#endif
 }
 
 void MLKEM_NAMESPACE(_ntt)(int16_t a_coeffs[MLKEM_N])

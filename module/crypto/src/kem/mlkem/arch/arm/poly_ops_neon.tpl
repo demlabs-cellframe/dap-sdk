@@ -262,9 +262,10 @@ void dap_mlkem_poly_mulcache_compute_{{ARCH_LOWER}}(int16_t * restrict a_cache,
     const int16x8_t l_q    = vdupq_n_s16(MLKEM_Q);
 
     for (unsigned l_p = 0; l_p < 8; l_p++) {
+        /* Match scalar/AVX2: even lane b[0..15], odd lane b[16..31], per 32-coeff block. */
         int16x8_t l_be = vld1q_s16(a_b + 32 * l_p);
-        int16x8_t l_bo = vld1q_s16(a_b + 32 * l_p + 8);
-        int16x8_t l_z  = vld1q_s16(s_basemul_zetas_nttpack + 8 * l_p);
+        int16x8_t l_bo = vld1q_s16(a_b + 32 * l_p + 16);
+        int16x8_t l_z  = vld1q_s16(s_basemul_zetas_nttpack + 16 * l_p);
 
         int16x8_t lo = vmulq_s16(l_bo, l_z);
         int16x8_t hi = s_neon_mulhi_s16(l_bo, l_z);
@@ -273,11 +274,11 @@ void dap_mlkem_poly_mulcache_compute_{{ARCH_LOWER}}(int16_t * restrict a_cache,
         int16x8_t l_boz = vsubq_s16(hi, uq);
 
         vst1q_s16(a_cache + 32 * l_p, l_be);
-        vst1q_s16(a_cache + 32 * l_p + 8, l_boz);
+        vst1q_s16(a_cache + 32 * l_p + 16, l_boz);
 
-        l_be = vld1q_s16(a_b + 32 * l_p + 16);
+        l_be = vld1q_s16(a_b + 32 * l_p + 8);
         l_bo = vld1q_s16(a_b + 32 * l_p + 24);
-        l_z  = vld1q_s16(s_basemul_zetas_nttpack + 8 * l_p + 8);
+        l_z  = vld1q_s16(s_basemul_zetas_nttpack + 16 * l_p + 8);
 
         lo = vmulq_s16(l_bo, l_z);
         hi = s_neon_mulhi_s16(l_bo, l_z);
@@ -285,7 +286,7 @@ void dap_mlkem_poly_mulcache_compute_{{ARCH_LOWER}}(int16_t * restrict a_cache,
         uq = s_neon_mulhi_s16(u, l_q);
         l_boz = vsubq_s16(hi, uq);
 
-        vst1q_s16(a_cache + 32 * l_p + 16, l_be);
+        vst1q_s16(a_cache + 32 * l_p + 8, l_be);
         vst1q_s16(a_cache + 32 * l_p + 24, l_boz);
     }
 }

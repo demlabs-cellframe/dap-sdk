@@ -215,7 +215,6 @@ static void s_mlkem_poly_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_mulcache_compute, dap_mlkem_poly_mulcache_compute_avx2);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_poly_basemul,     dap_mlkem_poly_basemul_montgomery_avx2);
 
-#if !defined(__APPLE__)
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_compress_d4,      dap_mlkem_poly_compress_d4_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_compress_d5,      dap_mlkem_poly_compress_d5_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_decompress_d4,    dap_mlkem_poly_decompress_d4_neon);
@@ -226,7 +225,6 @@ static void s_mlkem_poly_dispatch_init(void)
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_tomsg,            dap_mlkem_poly_tomsg_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_mulcache_compute, dap_mlkem_poly_mulcache_compute_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_poly_basemul,     dap_mlkem_poly_basemul_montgomery_neon);
-#endif
 }
 
 #define POLY_ENSURE() DAP_DISPATCH_ENSURE(s_compress_d4, s_mlkem_poly_dispatch_init)
