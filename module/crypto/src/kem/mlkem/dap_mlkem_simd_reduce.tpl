@@ -56,7 +56,8 @@ static inline VEC_T s_barrett_reduce(VEC_T a_val)
 static inline int16_t s_fqmul_scalar(int16_t a, int16_t b)
 {
     int32_t t = (int32_t)a * b;
-    int16_t u = (int16_t)t * MLKEM_QINV;
+    /* Must match dap_mlkem_montgomery_reduce: u from full int32 product, not (int16_t)t. */
+    int16_t u = (int16_t)(t * MLKEM_QINV);
     return (int16_t)((t - (int32_t)u * MLKEM_Q) >> 16);
 }
 
