@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <string.h>
 #include <time.h>
 #include "dap_hash_keccak.h"
@@ -41,7 +42,7 @@ static void bench_permute(const char *name, void (*fn)(dap_hash_keccak_state_t *
         uint64_t cyc = (t1 - t0) / ITERS;
         if (cyc < best) best = cyc;
     }
-    printf("  %-30s  %4lu cycles/permute (best of 5)\n", name, best);
+    printf("  %-30s  %4" PRIu64 " cycles/permute (best of 5)\n", name, best);
 }
 
 static void bench_absorb_136(const char *name,
@@ -63,7 +64,7 @@ static void bench_absorb_136(const char *name,
         uint64_t cyc = (t1 - t0) / ITERS;
         if (cyc < best) best = cyc;
     }
-    printf("  %-30s  %4lu cycles (32B absorb, best of 5)\n", name, best);
+    printf("  %-30s  %4" PRIu64 " cycles (32B absorb, best of 5)\n", name, best);
 }
 
 int main(void) {

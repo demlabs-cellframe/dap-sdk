@@ -28,6 +28,15 @@ if(OPENSSL_FOUND)
     message(STATUS "[benchmark_crypto] OpenSSL ${OPENSSL_VERSION} found")
     target_compile_definitions(benchmark_crypto PRIVATE HAVE_OPENSSL=1)
     target_link_libraries(benchmark_crypto OpenSSL::Crypto)
+    # Static libcrypto on Windows/MXE references zlib (e.g. zError); link explicitly.
+    if(WIN32 OR MINGW)
+        find_package(ZLIB QUIET)
+        if(ZLIB_FOUND)
+            target_link_libraries(benchmark_crypto ZLIB::ZLIB)
+        else()
+            target_link_libraries(benchmark_crypto z)
+        endif()
+    endif()
 endif()
 
 # libsodium

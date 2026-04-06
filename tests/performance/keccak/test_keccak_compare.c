@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include "dap_hash_keccak.h"
 
 extern void dap_hash_keccak_permute_avx512vl_asm(dap_hash_keccak_state_t *state);
@@ -20,7 +21,7 @@ int main(void)
     int mismatch = 0;
     for (int i = 0; i < 25; i++) {
         if (ref_state.lanes[i] != asm_state.lanes[i]) {
-            printf("MISMATCH lane %2d: ref=%016lx  asm=%016lx\n",
+            printf("MISMATCH lane %2d: ref=%016" PRIx64 "  asm=%016" PRIx64 "\n",
                    i, ref_state.lanes[i], asm_state.lanes[i]);
             mismatch++;
         }
@@ -42,7 +43,7 @@ int main(void)
 
         for (int i = 0; i < 25; i++) {
             if (ref_state.lanes[i] != asm_state.lanes[i]) {
-                printf("  lane %2d: ref=%016lx  asm=%016lx\n",
+                printf("  lane %2d: ref=%016" PRIx64 "  asm=%016" PRIx64 "\n",
                        i, ref_state.lanes[i], asm_state.lanes[i]);
             }
         }

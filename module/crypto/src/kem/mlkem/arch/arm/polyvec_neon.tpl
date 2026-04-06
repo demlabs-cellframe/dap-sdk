@@ -4,6 +4,13 @@
 {{! Full NEON intrinsics — 128-bit (8 x int16) per iteration          }}
 {{! ================================================================ }}
 
+/* Deferred-accumulator Montgomery (int32 → int16): match dap_mlkem_montgomery_reduce. */
+static inline int16_t s_mlkem_montgomery_from_acc(int32_t a)
+{
+    int16_t u = (int16_t)((uint32_t)a * (uint32_t)(uint16_t)MLKEM_QINV);
+    return (int16_t)((a - (int32_t)u * MLKEM_Q) >> 16);
+}
+
 static inline int16x8_t s_neon_mulhi_s16(int16x8_t a, int16x8_t b) {
     int32x4_t p_lo = vmull_s16(vget_low_s16(a), vget_low_s16(b));
     int32x4_t p_hi = vmull_s16(vget_high_s16(a), vget_high_s16(b));
@@ -173,9 +180,6 @@ void dap_mlkem_polyvec_basemul_acc_cached_{{ARCH_LOWER}}(
     const int16_t * const *a_caches,
     unsigned a_count)
 {
-    const int16x8_t l_qinv = vdupq_n_s16((int16_t)MLKEM_QINV);
-    const int32x4_t l_q32  = vdupq_n_s32(MLKEM_Q);
-
     for (unsigned l_p = 0; l_p < 8; l_p++) {
         for (unsigned l_h = 0; l_h < 2; l_h++) {
             unsigned l_off = 32 * l_p + 8 * l_h;
@@ -203,25 +207,17 @@ void dap_mlkem_polyvec_basemul_acc_cached_{{ARCH_LOWER}}(
                 l_cross_hi = vmlal_s16(l_cross_hi, vget_high_s16(l_ao), vget_high_s16(l_ce));
             }
 
-            int16x4_t ud_lo = vmovn_s32(l_diag_lo);
-            ud_lo = vmul_s16(ud_lo, vget_low_s16(l_qinv));
-            int32x4_t tqd_lo = vmull_s16(ud_lo, vmovn_s32(l_q32));
-            int16x4_t re_lo = vmovn_s32(vshrq_n_s32(vsubq_s32(l_diag_lo, tqd_lo), 16));
-
-            int16x4_t ud_hi = vmovn_s32(l_diag_hi);
-            ud_hi = vmul_s16(ud_hi, vget_high_s16(l_qinv));
-            int32x4_t tqd_hi = vmull_s16(ud_hi, vmovn_s32(l_q32));
-            int16x4_t re_hi = vmovn_s32(vshrq_n_s32(vsubq_s32(l_diag_hi, tqd_hi), 16));
-
-            int16x4_t uc_lo = vmovn_s32(l_cross_lo);
-            uc_lo = vmul_s16(uc_lo, vget_low_s16(l_qinv));
-            int32x4_t tqc_lo = vmull_s16(uc_lo, vmovn_s32(l_q32));
-            int16x4_t ro_lo = vmovn_s32(vshrq_n_s32(vsubq_s32(l_cross_lo, tqc_lo), 16));
-
-            int16x4_t uc_hi = vmovn_s32(l_cross_hi);
-            uc_hi = vmul_s16(uc_hi, vget_high_s16(l_qinv));
-            int32x4_t tqc_hi = vmull_s16(uc_hi, vmovn_s32(l_q32));
-            int16x4_t ro_hi = vmovn_s32(vshrq_n_s32(vsubq_s32(l_cross_hi, tqc_hi), 16));
+            int16_t re_lo_a[4], re_hi_a[4], ro_lo_a[4], ro_hi_a[4];
+            for (int li = 0; li < 4; li++) {
+                re_lo_a[li]  = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_lo, li));
+                re_hi_a[li]  = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_diag_hi, li));
+                ro_lo_a[li] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_lo, li));
+                ro_hi_a[li] = s_mlkem_montgomery_from_acc(vgetq_lane_s32(l_cross_hi, li));
+            }
+            int16x4_t re_lo = vld1_s16(re_lo_a);
+            int16x4_t re_hi = vld1_s16(re_hi_a);
+            int16x4_t ro_lo = vld1_s16(ro_lo_a);
+            int16x4_t ro_hi = vld1_s16(ro_hi_a);
 
             vst1q_s16(a_r + l_off, vcombine_s16(re_lo, re_hi));
             vst1q_s16(a_r + l_off + 16, vcombine_s16(ro_lo, ro_hi));
