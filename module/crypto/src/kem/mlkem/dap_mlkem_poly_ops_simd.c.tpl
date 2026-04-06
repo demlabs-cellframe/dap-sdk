@@ -18,7 +18,7 @@
 static inline int16_t s_fqmul_scalar(int16_t a, int16_t b)
 {
     int32_t t = (int32_t)a * b;
-    int16_t u = (int16_t)t * MLKEM_QINV;
+    int16_t u = (int16_t)(t * MLKEM_QINV);
     return (int16_t)((t - (int32_t)u * MLKEM_Q) >> 16);
 }
 

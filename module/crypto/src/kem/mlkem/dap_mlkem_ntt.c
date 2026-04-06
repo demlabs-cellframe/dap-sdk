@@ -203,14 +203,14 @@ void MLKEM_NAMESPACE(_basemul)(int16_t a_r[2], const int16_t a_a[2],
     int32_t t;
 
     t = (int32_t)a_a[1] * a_b[1];
-    a_r[0] = (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+    a_r[0] = (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
     t = (int32_t)a_r[0] * a_zeta;
-    a_r[0] = (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+    a_r[0] = (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
     t = (int32_t)a_a[0] * a_b[0];
-    a_r[0] += (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+    a_r[0] += (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
 
     t = (int32_t)a_a[0] * a_b[1];
-    a_r[1] = (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+    a_r[1] = (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
     t = (int32_t)a_a[1] * a_b[0];
-    a_r[1] += (int16_t)((t - (int32_t)((int16_t)t * l_qinv) * MLKEM_Q) >> 16);
+    a_r[1] += (int16_t)((t - (int32_t)((int16_t)(t * l_qinv)) * MLKEM_Q) >> 16);
 }
