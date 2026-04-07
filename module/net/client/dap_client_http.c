@@ -1602,7 +1602,10 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
  */
 static bool s_timer_timeout_after_connected_check(void * a_arg)
 {
-    assert(a_arg);
+    if (!a_arg) {
+        log_it(L_ERROR, "Timer callback called with NULL argument");
+        return false;
+    }
     dap_events_socket_uuid_t * l_es_uuid_ptr = (dap_events_socket_uuid_t *) a_arg;
 
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
