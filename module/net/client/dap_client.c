@@ -58,7 +58,7 @@ int dap_client_init()
     static bool s_is_first_time = true;
     if (s_is_first_time) {
         int err = 0;
-        log_it(L_INFO, "Init DAP client module");
+        log_it(L_NOTICE, "Init DAP client module");
 
         extern dap_config_t *g_config;
         if (g_config)
