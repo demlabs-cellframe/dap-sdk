@@ -84,6 +84,20 @@ static inline dap_nanotime_t dap_nanotime_now(void) {
     return (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
 }
 
+/**
+ * @brief dap_clock_gettime_monotonic Get monotonic time in nanoseconds
+ * @return Returns monotonic time in nanoseconds for timeout measurements.
+ */
+static inline dap_nanotime_t dap_nanotime_monotonic_now(void) {
+    struct timespec cur_time;
+#ifdef CLOCK_MONOTONIC
+    clock_gettime(CLOCK_MONOTONIC, &cur_time);
+#else
+    clock_gettime(CLOCK_REALTIME, &cur_time);
+#endif
+    return (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
+}
+
 // crossplatform usleep
 void dap_usleep(uint64_t a_microseconds);
 
