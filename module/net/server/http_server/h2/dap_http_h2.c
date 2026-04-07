@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "dap_common.h"
+#include "dap_strfuncs.h"
 #include "dap_events_socket.h"
 #include "dap_http_h2.h"
 #include "dap_http_h2_frame.h"
@@ -53,8 +54,7 @@ static void s_dispatch_h2_request(dap_h2_connection_t *a_conn, dap_h2_stream_t *
 
     /* Work on a mutable copy of the path (may contain query string) */
     char l_full_path[1024];
-    strncpy(l_full_path, a_stream->path, sizeof(l_full_path) - 1);
-    l_full_path[sizeof(l_full_path) - 1] = '\0';
+    dap_strncpy(l_full_path, a_stream->path, sizeof(l_full_path));
 
     /* Split off query string: "/enc_init/abc?foo=bar" → path "/enc_init/abc", qs "foo=bar" */
     char *l_qs = "";
@@ -115,15 +115,15 @@ static void s_dispatch_h2_request(dap_h2_connection_t *a_conn, dap_h2_stream_t *
     l_cl->h2         = a_conn;
 
     /* Method */
-    strncpy(l_cl->action, a_stream->method, sizeof(l_cl->action) - 1);
+    dap_strncpy(l_cl->action, a_stream->method, sizeof(l_cl->action));
     l_cl->action_len = strlen(l_cl->action);
 
     /* URL path (basename only, matching HTTP/1.1 convention) */
-    strncpy(l_cl->url_path, l_basename, sizeof(l_cl->url_path) - 1);
+    dap_strncpy(l_cl->url_path, l_basename, sizeof(l_cl->url_path));
     l_cl->url_path_len = strlen(l_cl->url_path);
 
     /* Query string */
-    strncpy(l_cl->in_query_string, l_qs, sizeof(l_cl->in_query_string) - 1);
+    dap_strncpy(l_cl->in_query_string, l_qs, sizeof(l_cl->in_query_string));
     l_cl->in_query_string_len = strlen(l_cl->in_query_string);
 
     /* Headers from h2 stream → linked list */
@@ -133,7 +133,7 @@ static void s_dispatch_h2_request(dap_h2_connection_t *a_conn, dap_h2_stream_t *
     /* Content-Type from stream headers */
     dap_http_header_t *l_ct = dap_http_header_find(l_cl->in_headers, "Content-Type");
     if (l_ct)
-        strncpy(l_cl->in_content_type, l_ct->value, sizeof(l_cl->in_content_type) - 1);
+        dap_strncpy(l_cl->in_content_type, l_ct->value, sizeof(l_cl->in_content_type));
 
     log_it(L_INFO, "H2 dispatch: stream %u, %s %s (qs '%s')",
            a_stream->id, l_cl->action, l_cl->url_path, l_cl->in_query_string);
