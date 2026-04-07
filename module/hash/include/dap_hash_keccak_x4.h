@@ -183,17 +183,18 @@ static inline void dap_keccak_x4_xor_bytes_all(dap_keccak_x4_state_t *a_state,
 #endif
     const size_t l_full_lanes = a_len / 8;
     const size_t l_tail       = a_len & 7;
-    const uint64_t *l_w0 = (const uint64_t *)a_in0;
-    const uint64_t *l_w1 = (const uint64_t *)a_in1;
-    const uint64_t *l_w2 = (const uint64_t *)a_in2;
-    const uint64_t *l_w3 = (const uint64_t *)a_in3;
-
+    /* Inputs may be unaligned; avoid uint64_t* indexed loads (UBSan). */
     for (size_t i = 0; i < l_full_lanes; i++) {
         size_t l_base = i * 4;
-        a_state->lanes[l_base + 0] ^= l_w0[i];
-        a_state->lanes[l_base + 1] ^= l_w1[i];
-        a_state->lanes[l_base + 2] ^= l_w2[i];
-        a_state->lanes[l_base + 3] ^= l_w3[i];
+        uint64_t u0 = 0, u1 = 0, u2 = 0, u3 = 0;
+        memcpy(&u0, a_in0 + i * 8, 8);
+        memcpy(&u1, a_in1 + i * 8, 8);
+        memcpy(&u2, a_in2 + i * 8, 8);
+        memcpy(&u3, a_in3 + i * 8, 8);
+        a_state->lanes[l_base + 0] ^= u0;
+        a_state->lanes[l_base + 1] ^= u1;
+        a_state->lanes[l_base + 2] ^= u2;
+        a_state->lanes[l_base + 3] ^= u3;
     }
 
     if (l_tail) {
@@ -237,17 +238,17 @@ static inline void dap_keccak_x4_extract_bytes_all(const dap_keccak_x4_state_t *
 #endif
     const size_t l_full_lanes = a_len / 8;
     const size_t l_tail       = a_len & 7;
-    uint64_t *l_w0 = (uint64_t *)a_out0;
-    uint64_t *l_w1 = (uint64_t *)a_out1;
-    uint64_t *l_w2 = (uint64_t *)a_out2;
-    uint64_t *l_w3 = (uint64_t *)a_out3;
-
+    /* a_out* may be unaligned; avoid uint64_t* indexed writes (UBSan). */
     for (size_t i = 0; i < l_full_lanes; i++) {
         size_t l_base = i * 4;
-        l_w0[i] = a_state->lanes[l_base + 0];
-        l_w1[i] = a_state->lanes[l_base + 1];
-        l_w2[i] = a_state->lanes[l_base + 2];
-        l_w3[i] = a_state->lanes[l_base + 3];
+        uint64_t u0 = a_state->lanes[l_base + 0];
+        uint64_t u1 = a_state->lanes[l_base + 1];
+        uint64_t u2 = a_state->lanes[l_base + 2];
+        uint64_t u3 = a_state->lanes[l_base + 3];
+        memcpy(a_out0 + i * 8, &u0, 8);
+        memcpy(a_out1 + i * 8, &u1, 8);
+        memcpy(a_out2 + i * 8, &u2, 8);
+        memcpy(a_out3 + i * 8, &u3, 8);
     }
 
     if (l_tail) {

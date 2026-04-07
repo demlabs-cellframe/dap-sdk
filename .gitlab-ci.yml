@@ -114,7 +114,8 @@ tests:amd64.debian.asan-ubsan:
       - cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON
             -DDAP_SANITIZE_ADDRESS=ON -DDAP_SANITIZE_UNDEFINED=ON
       - make -j$(nproc)
-      - ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
+      # detect_odr_violation=0: unit tests link libdap-sdk.so and also embed some of the same TU globals (e.g. dap_common.c) — ASan reports duplicate globals as ODR violation.
+      - ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:detect_odr_violation=0
         UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
         ctest --verbose --label-regex "unit|crypto"
 
