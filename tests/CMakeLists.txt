@@ -192,6 +192,30 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/net/test_link_manager_hot_list.c)
     register_dap_test(test_unit_net_link_manager_hot_list "unit;net;link_manager")
 endif()
 
+# HTTP/2 connection handler (unit + in-memory integration)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/net/h2/test_dap_http_h2_conn.c)
+    add_dap_test(test_unit_dap_http_h2_conn unit/net/h2/test_dap_http_h2_conn.c)
+    target_include_directories(test_unit_dap_http_h2_conn PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/net/server/http_server/h2/include)
+    register_dap_test(test_unit_dap_http_h2_conn "unit;net;http2")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/net/h2/test_dap_http_h2_integration.c)
+    add_dap_test(test_unit_dap_http_h2_integration unit/net/h2/test_dap_http_h2_integration.c)
+    target_include_directories(test_unit_dap_http_h2_integration PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/net/server/http_server/h2/include)
+    register_dap_test(test_unit_dap_http_h2_integration "integration;unit;net;http2")
+endif()
+
+# HTTP/2 HPACK + frame layer (http_server/h2)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/net/h2/test_dap_http_h2_hpack.c)
+    add_dap_test(test_unit_net_h2_hpack unit/net/h2/test_dap_http_h2_hpack.c)
+    target_include_directories(test_unit_net_h2_hpack PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../module/net/server/http_server/h2/include
+    )
+    register_dap_test(test_unit_net_h2_hpack "unit;net;http2;hpack")
+endif()
+
 # Build Integration Tests
 message("[+] Configuring Integration Tests")
 
