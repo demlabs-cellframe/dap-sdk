@@ -93,6 +93,17 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 static bool s_debug_more = false;
 
+#ifdef DAP_OS_ANDROID
+static dap_events_socket_pre_connect_callback_t s_pre_connect_cb = NULL;
+static void *s_pre_connect_ctx = NULL;
+
+void dap_events_socket_set_pre_connect_callback(dap_events_socket_pre_connect_callback_t a_cb, void *a_ctx)
+{
+    s_pre_connect_cb = a_cb;
+    s_pre_connect_ctx = a_ctx;
+}
+#endif
+
 // =============================================================================
 // DATAGRAM PACKET QUEUE (for non-blocking sendto on UDP, SCTP, etc.)
 // =============================================================================
@@ -735,6 +746,10 @@ int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
         return -1;
     }
     
+#ifdef DAP_OS_ANDROID
+    if(s_pre_connect_cb)
+        s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
+#endif
     // Initiate non-blocking connection
     int l_err = connect(a_es->socket, (struct sockaddr *) &a_es->addr_storage, sizeof(struct sockaddr_in));
     if (l_err == 0) {
