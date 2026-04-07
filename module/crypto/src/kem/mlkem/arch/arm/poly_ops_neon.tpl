@@ -98,19 +98,28 @@ void dap_mlkem_poly_compress_d5_{{ARCH_LOWER}}(uint8_t *a_r, const int16_t *a_co
 
 void dap_mlkem_poly_decompress_d4_{{ARCH_LOWER}}(int16_t *a_r, const uint8_t *a_a)
 {
-    const int16x8_t l_q = vdupq_n_s16(MLKEM_Q);
-    const int16x8_t l_half = vdupq_n_s16(8);
+    /* Ref: (uint16_t)(x & 15) * MLKEM_Q + 8 — product must not use int16×int16 (15*3329 overflows). */
+    const uint16x8_t l_q = vdupq_n_u16(MLKEM_Q);
 
+    /* Four bytes → eight 4-bit values (see s_decompress_d4_ref). Do not vld1 8 bytes here:
+     * that would overlap iterations and read past the 128-byte compressed poly. */
     for (unsigned i = 0; i < MLKEM_N / 8; i++) {
-        uint8x8_t raw = vld1_u8(a_a + 4 * i);
+        uint8_t l_b[8];
+        l_b[0] = a_a[4 * i + 0];
+        l_b[1] = a_a[4 * i + 1];
+        l_b[2] = a_a[4 * i + 2];
+        l_b[3] = a_a[4 * i + 3];
+        l_b[4] = l_b[5] = l_b[6] = l_b[7] = 0;
+        uint8x8_t raw = vld1_u8(l_b);
         uint8x8_t lo_nib = vand_u8(raw, vdup_n_u8(0x0F));
         uint8x8_t hi_nib = vshr_n_u8(raw, 4);
         uint8x8x2_t zipped = vzip_u8(lo_nib, hi_nib);
-        uint16x8_t vals = vmovl_u8(zipped.val[0]);
-        int16x8_t v = vreinterpretq_s16_u16(vals);
-        v = vaddq_s16(vmulq_s16(v, l_q), l_half);
-        v = vshrq_n_s16(v, 4);
-        vst1q_s16(a_r + 8 * i, v);
+        uint16x8_t x = vandq_u16(vmovl_u8(zipped.val[0]), vdupq_n_u16(15));
+        uint32x4_t p0 = vaddq_u32(vmull_u16(vget_low_u16(x), vget_low_u16(l_q)), vdupq_n_u32(8));
+        uint32x4_t p1 = vaddq_u32(vmull_u16(vget_high_u16(x), vget_high_u16(l_q)), vdupq_n_u32(8));
+        int16x4_t r0 = vmovn_s32(vreinterpretq_s32_u32(vshrq_n_u32(p0, 4)));
+        int16x4_t r1 = vmovn_s32(vreinterpretq_s32_u32(vshrq_n_u32(p1, 4)));
+        vst1q_s16(a_r + 8 * i, vcombine_s16(r0, r1));
     }
 }
 
@@ -122,23 +131,29 @@ void dap_mlkem_poly_decompress_d4_{{ARCH_LOWER}}(int16_t *a_r, const uint8_t *a_
 
 void dap_mlkem_poly_decompress_d5_{{ARCH_LOWER}}(int16_t *a_r, const uint8_t *a_a)
 {
+    /* Bit-identical to s_decompress_d5_ref: uint8_t intermediates (wrap/trunc), then &31. */
     for (unsigned i = 0; i < MLKEM_N / 8; i++) {
-        uint16_t t[8];
-        t[0] =  a_a[0]       & 31;
-        t[1] = (a_a[0] >> 5) | ((a_a[1] << 3) & 31);
-        t[2] = (a_a[1] >> 2) & 31;
-        t[3] = (a_a[1] >> 7) | ((a_a[2] << 1) & 31);
-        t[4] = (a_a[2] >> 4) | ((a_a[3] << 4) & 31);
-        t[5] = (a_a[3] >> 1) & 31;
-        t[6] = (a_a[3] >> 6) | ((a_a[4] << 2) & 31);
-        t[7] = (a_a[4] >> 3) & 31;
+        uint8_t t[8];
+        t[0] = a_a[0];
+        t[1] = (uint8_t)((a_a[0] >> 5) | (a_a[1] << 3));
+        t[2] = (uint8_t)(a_a[1] >> 2);
+        t[3] = (uint8_t)((a_a[1] >> 7) | (a_a[2] << 1));
+        t[4] = (uint8_t)((a_a[2] >> 4) | (a_a[3] << 4));
+        t[5] = (uint8_t)(a_a[3] >> 1);
+        t[6] = (uint8_t)((a_a[3] >> 6) | (a_a[4] << 2));
+        t[7] = (uint8_t)(a_a[4] >> 3);
         a_a += 5;
 
-        uint16x8_t v = vld1q_u16(t);
-        int16x8_t vq = vmulq_s16(vreinterpretq_s16_u16(v), vdupq_n_s16(MLKEM_Q));
-        vq = vaddq_s16(vq, vdupq_n_s16(16));
-        vq = vshrq_n_s16(vq, 5);
-        vst1q_s16(a_r + 8 * i, vq);
+        uint16_t w[8];
+        for (unsigned j = 0; j < 8; j++)
+            w[j] = (uint16_t)(t[j] & 31);
+        /* Ref: ((uint32_t)(x & 31) * MLKEM_Q + 16) >> 5 — 31*3329 does not fit int16. */
+        uint16x8_t xv = vld1q_u16(w);
+        uint32x4_t p0 = vaddq_u32(vmull_u16(vget_low_u16(xv), vdup_n_u16(MLKEM_Q)), vdupq_n_u32(16));
+        uint32x4_t p1 = vaddq_u32(vmull_u16(vget_high_u16(xv), vdup_n_u16(MLKEM_Q)), vdupq_n_u32(16));
+        int16x4_t r0 = vmovn_s32(vreinterpretq_s32_u32(vshrq_n_u32(p0, 5)));
+        int16x4_t r1 = vmovn_s32(vreinterpretq_s32_u32(vshrq_n_u32(p1, 5)));
+        vst1q_s16(a_r + 8 * i, vcombine_s16(r0, r1));
     }
 }
 

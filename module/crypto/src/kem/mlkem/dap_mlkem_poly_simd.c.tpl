@@ -62,22 +62,28 @@ void dap_mlkem_poly_basemul_montgomery_{{ARCH_LOWER}}(
     const VEC_T l_qinv = VEC_SET1_16((int16_t)MLKEM_QINV);
     const VEC_T l_q    = VEC_SET1_16(MLKEM_Q);
 
+    /* Odd half of each 32-coeff nttpack block starts at +16 (not +VEC_LANES: NEON VEC_LANES=8
+     * would wrongly use +8 and read ae[8..15] as "odd"). Cover 16/VEC_LANES sub-blocks. */
     for (unsigned l_p = 0; l_p < 8; l_p++) {
-        VEC_T l_ae = VEC_LOAD(a_a + 32 * l_p);
-        VEC_T l_ao = VEC_LOAD(a_a + 32 * l_p + VEC_LANES);
-        VEC_T l_be = VEC_LOAD(a_b + 32 * l_p);
-        VEC_T l_bo = VEC_LOAD(a_b + 32 * l_p + VEC_LANES);
-        VEC_T l_z  = VEC_LOAD(s_basemul_zetas_nttpack + VEC_LANES * l_p);
+        const unsigned l_base = 32 * l_p;
+        for (unsigned l_sub = 0; l_sub < 16 / VEC_LANES; l_sub++) {
+            const unsigned l_off = VEC_LANES * l_sub;
+            VEC_T l_ae = VEC_LOAD(a_a + l_base + l_off);
+            VEC_T l_ao = VEC_LOAD(a_a + l_base + 16 + l_off);
+            VEC_T l_be = VEC_LOAD(a_b + l_base + l_off);
+            VEC_T l_bo = VEC_LOAD(a_b + l_base + 16 + l_off);
+            VEC_T l_z  = VEC_LOAD(s_basemul_zetas_nttpack + 16 * l_p + l_off);
 
-        VEC_T l_re = VEC_ADD16(
-            s_fqmul_ext(l_ae, l_be, l_qinv, l_q),
-            s_fqmul_ext(s_fqmul_ext(l_ao, l_bo, l_qinv, l_q), l_z, l_qinv, l_q));
-        VEC_T l_ro = VEC_ADD16(
-            s_fqmul_ext(l_ae, l_bo, l_qinv, l_q),
-            s_fqmul_ext(l_ao, l_be, l_qinv, l_q));
+            VEC_T l_re = VEC_ADD16(
+                s_fqmul_ext(l_ae, l_be, l_qinv, l_q),
+                s_fqmul_ext(s_fqmul_ext(l_ao, l_bo, l_qinv, l_q), l_z, l_qinv, l_q));
+            VEC_T l_ro = VEC_ADD16(
+                s_fqmul_ext(l_ae, l_bo, l_qinv, l_q),
+                s_fqmul_ext(l_ao, l_be, l_qinv, l_q));
 
-        VEC_STORE(a_r + 32 * l_p, l_re);
-        VEC_STORE(a_r + 32 * l_p + VEC_LANES, l_ro);
+            VEC_STORE(a_r + l_base + l_off, l_re);
+            VEC_STORE(a_r + l_base + 16 + l_off, l_ro);
+        }
     }
 }
 
@@ -97,31 +103,35 @@ void dap_mlkem_poly_basemul_acc_montgomery_{{ARCH_LOWER}}(
     const VEC_T l_bv   = VEC_SET1_16(20159);
 
     for (unsigned l_p = 0; l_p < 8; l_p++) {
-        VEC_T l_acc_e = VEC_ZERO();
-        VEC_T l_acc_o = VEC_ZERO();
-        VEC_T l_z = VEC_LOAD(s_basemul_zetas_nttpack + VEC_LANES * l_p);
+        const unsigned l_base = 32 * l_p;
+        for (unsigned l_sub = 0; l_sub < 16 / VEC_LANES; l_sub++) {
+            const unsigned l_off = VEC_LANES * l_sub;
+            VEC_T l_acc_e = VEC_ZERO();
+            VEC_T l_acc_o = VEC_ZERO();
+            VEC_T l_z = VEC_LOAD(s_basemul_zetas_nttpack + 16 * l_p + l_off);
 
-        for (unsigned k = 0; k < a_count; k++) {
-            VEC_T l_ae = VEC_LOAD(a_polys_a[k] + 32 * l_p);
-            VEC_T l_ao = VEC_LOAD(a_polys_a[k] + 32 * l_p + VEC_LANES);
-            VEC_T l_be = VEC_LOAD(a_polys_b[k] + 32 * l_p);
-            VEC_T l_bo = VEC_LOAD(a_polys_b[k] + 32 * l_p + VEC_LANES);
+            for (unsigned k = 0; k < a_count; k++) {
+                VEC_T l_ae = VEC_LOAD(a_polys_a[k] + l_base + l_off);
+                VEC_T l_ao = VEC_LOAD(a_polys_a[k] + l_base + 16 + l_off);
+                VEC_T l_be = VEC_LOAD(a_polys_b[k] + l_base + l_off);
+                VEC_T l_bo = VEC_LOAD(a_polys_b[k] + l_base + 16 + l_off);
 
-            VEC_T l_boz = s_fqmul_ext(l_bo, l_z, l_qinv, l_q);
-            l_acc_e = VEC_ADD16(l_acc_e, VEC_ADD16(
-                s_fqmul_ext(l_ae, l_be, l_qinv, l_q),
-                s_fqmul_ext(l_ao, l_boz, l_qinv, l_q)));
-            l_acc_o = VEC_ADD16(l_acc_o, VEC_ADD16(
-                s_fqmul_ext(l_ae, l_bo, l_qinv, l_q),
-                s_fqmul_ext(l_ao, l_be, l_qinv, l_q)));
+                VEC_T l_boz = s_fqmul_ext(l_bo, l_z, l_qinv, l_q);
+                l_acc_e = VEC_ADD16(l_acc_e, VEC_ADD16(
+                    s_fqmul_ext(l_ae, l_be, l_qinv, l_q),
+                    s_fqmul_ext(l_ao, l_boz, l_qinv, l_q)));
+                l_acc_o = VEC_ADD16(l_acc_o, VEC_ADD16(
+                    s_fqmul_ext(l_ae, l_bo, l_qinv, l_q),
+                    s_fqmul_ext(l_ao, l_be, l_qinv, l_q)));
+            }
+
+            VEC_T l_bt_e = VEC_SRAI16(VEC_MULHI16(l_acc_e, l_bv), 10);
+            VEC_STORE(a_r + l_base + l_off,
+                      VEC_SUB16(l_acc_e, VEC_MULLO16(l_bt_e, l_q)));
+            VEC_T l_bt_o = VEC_SRAI16(VEC_MULHI16(l_acc_o, l_bv), 10);
+            VEC_STORE(a_r + l_base + 16 + l_off,
+                      VEC_SUB16(l_acc_o, VEC_MULLO16(l_bt_o, l_q)));
         }
-
-        VEC_T l_bt_e = VEC_SRAI16(VEC_MULHI16(l_acc_e, l_bv), 10);
-        VEC_STORE(a_r + 32 * l_p,
-                  VEC_SUB16(l_acc_e, VEC_MULLO16(l_bt_e, l_q)));
-        VEC_T l_bt_o = VEC_SRAI16(VEC_MULHI16(l_acc_o, l_bv), 10);
-        VEC_STORE(a_r + 32 * l_p + VEC_LANES,
-                  VEC_SUB16(l_acc_o, VEC_MULLO16(l_bt_o, l_q)));
     }
 }
 
