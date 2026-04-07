@@ -569,8 +569,7 @@ uint32_t dap_events_thread_get_count()
 dap_worker_t *dap_events_worker_get_auto( )
 {
     if ( !s_workers_init ) {
-        log_it(L_CRITICAL, "Event socket reactor has not been fired (s_workers_init=%d, s_workers=%p, thread=%p)",
-               (int)s_workers_init, (void *)s_workers, (void *)(uintptr_t)pthread_self());
+        log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         return NULL;
     }
 

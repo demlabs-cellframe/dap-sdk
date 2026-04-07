@@ -311,6 +311,8 @@ dap_cert_t* dap_cert_file_load(const char * a_cert_file_path)
 {
     dap_cert_t * l_ret = NULL;
     int l_err = 0;
+    if (!dap_file_test(a_cert_file_path))
+        return NULL;
     FILE *l_file = fopen(a_cert_file_path, "rb");
     if ( !l_file ) {
 #ifdef DAP_OS_WINDOWS

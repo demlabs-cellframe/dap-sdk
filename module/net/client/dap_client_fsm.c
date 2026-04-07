@@ -68,8 +68,7 @@ static void s_fsm_thread_callback_add(uint32_t a_thread_idx,
                                        s_fsm_callback_t a_callback, void *a_arg)
 {
     if (!s_fsm_pool) {
-        log_it(L_ERROR, "FSM thread pool not initialized (s_fsm_pool=%p, caller thread=%p)",
-               (void *)s_fsm_pool, (void *)(uintptr_t)pthread_self());
+        log_it(L_ERROR, "FSM thread pool not initialized");
         DAP_DELETE(a_arg);
         return;
     }
@@ -166,8 +165,8 @@ int dap_client_fsm_init(void)
         return -1;
     }
     s_fsm_thread_count = dap_thread_pool_get_thread_count(s_fsm_pool);
-    log_it(L_NOTICE, "Client FSM module initialized (max_attempts=%d, timeout=%d, fsm_threads=%u, pool=%p)",
-           s_max_attempts, s_timeout, s_fsm_thread_count, (void *)s_fsm_pool);
+    log_it(L_NOTICE, "Client FSM module initialized (max_attempts=%d, timeout=%d, fsm_threads=%u)",
+           s_max_attempts, s_timeout, s_fsm_thread_count);
     return 0;
 }
 
