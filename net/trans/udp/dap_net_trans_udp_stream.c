@@ -22,6 +22,7 @@
 */
 
 #include <string.h>
+#include <inttypes.h>
 #include <arpa/inet.h>
 
 #include "dap_common.h"
@@ -268,7 +269,7 @@ static int s_client_flow_ctrl_packet_prepare_cb(
     *a_packet_size_out = l_final_encrypted_size;
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC prepare: seq=%lu, ack=%lu, type=%u, payload=%zu → packet=%zu bytes",
+             "CLIENT FC prepare: seq=%" PRIu64 ", ack=%" PRIu64 ", type=%u, payload=%zu → packet=%zu bytes",
              a_metadata->seq_num, a_metadata->ack_seq, l_hdr.type, a_payload_size, l_final_encrypted_size);
     
     return 0;
@@ -348,7 +349,7 @@ static int s_client_flow_ctrl_packet_parse_cb(
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC parse: AFTER deserialize: seq_num=%lu, ack_seq=%lu, type=%u",
+             "CLIENT FC parse: AFTER deserialize: seq_num=%" PRIu64 ", ack_seq=%" PRIu64 ", type=%u",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type);
     
     if (l_deser_result.error_code != 0) {
@@ -390,7 +391,7 @@ static int s_client_flow_ctrl_packet_parse_cb(
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT FC parse: seq=%lu, ack=%lu, type=%u, payload=%zu bytes",
+             "CLIENT FC parse: seq=%" PRIu64 ", ack=%" PRIu64 ", type=%u, payload=%zu bytes",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type, *a_payload_size_out);
     
     return 0;
@@ -429,7 +430,7 @@ static int s_client_flow_ctrl_packet_send_cb(
         static uint64_t s_addr_log_count = 0;
         s_addr_log_count++;
         if (s_addr_log_count % 100 == 0 || s_addr_log_count < 5) {
-            debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: dest=%s:%u (count=%lu)",
+            debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: dest=%s:%u (count=%" PRIu64 ")",
                      l_addr_str, ntohs(l_sin->sin_port), s_addr_log_count);
         }
     }
@@ -450,7 +451,7 @@ static int s_client_flow_ctrl_packet_send_cb(
     static uint64_t s_send_count = 0;
     s_send_count++;
     if (s_send_count % 50 == 0 || s_send_count < 10) {
-        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%lu)", l_written, s_send_count);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%" PRIu64 ")", l_written, s_send_count);
     }
     
     return 0;
@@ -509,7 +510,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             uint64_t l_kdf_counter = be64toh(l_counter_be);
             
             debug_if(s_debug_more, L_DEBUG,
-                     "CLIENT FC deliver: KDF counter=%lu", l_kdf_counter);
+                     "CLIENT FC deliver: KDF counter=%" PRIu64, l_kdf_counter);
             
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
@@ -544,7 +545,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             l_stream->session->key = l_session_key;
             l_stream->session->id = l_ctx->session_id;
             
-            debug_if(s_debug_more, L_DEBUG, "CLIENT FC deliver: session key installed (session_id=0x%lx)", l_ctx->session_id);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT FC deliver: session key installed (session_id=0x%" PRIx64 ")", l_ctx->session_id);
             
             // Call session_create callback
             if (l_trans_ctx->session_create_cb) {
@@ -1493,7 +1494,7 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", (void *)l_handshake_es);
     }
     
-    debug_if(s_debug_more, L_DEBUG, "UDP handshake init sent: %zd bytes (session_id=%lu)",
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake init sent: %zd bytes (session_id=%" PRIu64 ")",
              l_sent, l_udp_ctx->session_id);
     
     return 0;
@@ -1551,7 +1552,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     uint64_t l_server_session_id = be64toh(l_session_id_be);
     
     debug_if(s_debug_more, L_DEBUG,
-             "HANDSHAKE response: ciphertext=%zu bytes, server_session_id=0x%lx (replacing client's 0x%lx)",
+             "HANDSHAKE response: ciphertext=%zu bytes, server_session_id=0x%" PRIx64 " (replacing client's 0x%" PRIx64 ")",
              (size_t)CRYPTO_CIPHERTEXTBYTES, l_server_session_id, l_udp_ctx->session_id);
     
     // CRITICAL: Replace client's session_id with server's session_id!
@@ -1634,7 +1635,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     s_cancel_handshake_timer(l_udp_ctx);
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT: stored handshake_key=%p for session_id=0x%lx",
+             "CLIENT: stored handshake_key=%p for session_id=0x%" PRIx64 "",
              l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
     // Create session if it doesn't exist
@@ -1851,7 +1852,7 @@ static int s_udp_session_create(dap_stream_t *a_stream,
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "CLIENT: encrypting SESSION_CREATE with handshake_key=%p (session_id=0x%lx)",
+             "CLIENT: encrypting SESSION_CREATE with handshake_key=%p (session_id=0x%" PRIx64 ")",
              l_udp_ctx->handshake_key, l_udp_ctx->session_id);
     
     // Prepare JSON payload (NO session_id - it's already in internal header!)
@@ -2202,7 +2203,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             memcpy(&l_kdf_counter_be, l_payload, sizeof(l_kdf_counter_be));
             uint64_t l_kdf_counter = be64toh(l_kdf_counter_be);
             
-            debug_if(s_debug_more, L_DEBUG, "CLIENT: Deriving session key with KDF counter=%lu", l_kdf_counter);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: Deriving session key with KDF counter=%" PRIu64, l_kdf_counter);
             
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
@@ -2244,7 +2245,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             a_stream->session->key = l_session_key;
             a_stream->session->id = l_udp_ctx->session_id;
             
-            debug_if(s_debug_more, L_DEBUG, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%lx)",
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%" PRIx64 ")",
                      (void *)a_stream, (void *)a_stream->session, (void *)a_stream->session->key, l_udp_ctx->session_id);
             
             // Call session_create_cb for client stage transition
@@ -2570,7 +2571,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     }
 
     debug_if(s_debug_more, L_DEBUG,
-             "Encrypted packet sent: type=%u, session=0x%lx, encrypted_size=%zu",
+             "Encrypted packet sent: type=%u, session=0x%" PRIx64 ", encrypted_size=%zu",
              a_pkt_type, l_udp_ctx->session_id, l_encrypted_size);
     
     return l_sent;
@@ -2608,7 +2609,7 @@ static void s_udp_close(dap_stream_t *a_stream)
     // Get UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (l_udp_ctx) {
-        debug_if(s_debug_more, L_DEBUG, "Closing UDP trans session 0x%lx", l_udp_ctx->session_id);
+        debug_if(s_debug_more, L_DEBUG, "Closing UDP trans session 0x%" PRIx64, l_udp_ctx->session_id);
         
         // Clean up Flow Control if present
         if (l_udp_ctx->flow_ctrl) {
@@ -2678,7 +2679,7 @@ static void s_udp_close(dap_stream_t *a_stream)
     // which may already be NULL during partial teardown).
     if (l_ctx && a_stream->esocket_uuid && a_stream->esocket_worker) {
         debug_if(s_debug_more, L_DEBUG, 
-               "UDP close: queueing esocket deletion (UUID 0x%016lx) on its worker",
+               "UDP close: queueing esocket deletion (UUID 0x%016" PRIx64 ") on its worker",
                a_stream->esocket_uuid);
         
         // CRITICAL: Clear callbacks BEFORE async delete to prevent use-after-free!

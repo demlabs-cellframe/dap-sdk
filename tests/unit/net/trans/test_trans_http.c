@@ -685,10 +685,10 @@ static void test_14_stream_session(void)
     TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
     
     // Create mock stream with esocket and client ctx (required for session_create)
+    dap_trans_test_get_mock_client();
     s_mock_stream.trans = l_trans;
     s_mock_stream.esocket = dap_trans_test_get_mock_esocket();
-    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
-    s_mock_trans_ctx._inheritor = (void*)dap_trans_test_get_mock_client();
+    s_mock_stream.trans_ctx = dap_trans_test_get_mock_net_trans_ctx();
 
     // Test session_create operation
     dap_net_session_params_t l_session_params = {0};

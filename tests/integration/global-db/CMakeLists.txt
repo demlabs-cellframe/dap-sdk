@@ -3,11 +3,11 @@
 
 project(test_global_db)
 
-# Skip when cross-compiling without any DB driver
-if(CMAKE_CROSSCOMPILING AND NOT BUILD_WITH_GDB_DRIVER_MDBX
-                        AND NOT BUILD_WITH_GDB_DRIVER_SQLITE
-                        AND NOT BUILD_WITH_GDB_DRIVER_PGSQL)
-    message(STATUS "Skipping ${PROJECT_NAME}: cross-compiling without DB driver")
+# Skip when no DB driver is configured
+if(NOT BUILD_WITH_GDB_DRIVER_MDBX
+   AND NOT BUILD_WITH_GDB_DRIVER_SQLITE
+   AND NOT BUILD_WITH_GDB_DRIVER_PGSQL)
+    message(STATUS "Skipping ${PROJECT_NAME}: no DB driver configured")
     return()
 endif()
 
