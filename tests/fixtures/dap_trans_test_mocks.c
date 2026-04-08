@@ -257,8 +257,8 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_http_client_t*, dap_http_client_new,
     return dap_trans_test_get_mock_http_client();
 }
 
-// Wrapper for dap_http_client_delete
-DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_client_delete, (dap_http_client_t *a_client), (a_client));
+// Wrapper for dap_http_client_delete (SDK: void dap_http_client_delete(dap_events_socket_t *, void *))
+DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_http_client_delete, (dap_events_socket_t *a_esocket, void *a_arg), (a_esocket, a_arg));
 
 // Wrapper for dap_http_client_write
 DAP_MOCK_WRAPPER_CUSTOM(ssize_t, dap_http_client_write,

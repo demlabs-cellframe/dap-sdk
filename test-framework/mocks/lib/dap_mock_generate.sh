@@ -102,11 +102,12 @@ generate_wrap_file() {
                 echo ""
             }
             
-            # Generate C file for symbol override with proper types
+            # Generate C file as DYLD interpose dylib source
             cat > "$interpose_c" << 'INTERPOSE_HEADER'
-// Auto-generated mock override library for macOS
-// Linked BEFORE cellframe_sdk with -flat_namespace for symbol override
-// Uses TYPED functions for proper ARM64 ABI (critical for struct returns!)
+// Auto-generated DYLD interpose library for macOS
+// Built as a shared library (dylib), loaded via DYLD_INSERT_LIBRARIES
+// Uses __DATA,__interpose section for runtime function replacement
+// Provides __real_func via dlsym(RTLD_NEXT) for PASSTHROUGH/DEFAULT macros
 #ifdef __APPLE__
 #include <stddef.h>
 #include <dlfcn.h>
@@ -121,6 +122,11 @@ generate_wrap_file() {
 #include "dap_chain_datum_tx.h"
 #include "dap_chain_ledger.h"
 #include "dap_math_ops.h"
+
+typedef struct {
+    const void *replacement;
+    const void *replacee;
+} dap_interpose_t;
 
 INTERPOSE_HEADER
 
@@ -185,56 +191,100 @@ INTERPOSE_HEADER
                     param_names=$(echo "$param_list" | awk -F',' '{for(i=1;i<=NF;i++){gsub(/^[[:space:]]+|[[:space:]]+$/,"",$i); n=split($i,a," "); name=a[n]; gsub(/^\*+/,"",name); printf "%s%s", name, (i<NF?", ":"")}}')
                 fi
                 
-                if [ "$is_struct_return" -eq 1 ]; then
-                    # Struct return type - generate fully typed wrapper
-                    cat >> "$interpose_c" << STRUCT_FUNC_TPL
+                if [ "$ret_type" = "void" ]; then
+                    # Void return type
+                    cat >> "$interpose_c" << VOID_FUNC_TPL
 
-// === Typed override for: ${func} (struct return: ${ret_type}) ===
-// CRITICAL: Struct returns on ARM64 use hidden pointer parameter (x8 register)
-// Cannot use variadic forwarding - must have exact signature!
+// === DYLD interpose for: ${func} (void return) ===
+typedef void (*${func}_func_t)(${param_decl});
 
-// Forward declaration of wrapper (defined in test)
-extern ${ret_type} __wrap_${func}(${param_decl});
+// Original function declaration (resolved from SDK at dylib load time)
+extern void ${func}(${param_decl});
 
-// The override function that replaces original
+// __real_${func} for DAP_MOCK_WRAPPER_* macros
 __attribute__((visibility("default")))
-${ret_type} ${func}(${param_decl}) {
-    // Always call the mock wrapper
-    return __wrap_${func}(${param_names});
-}
-
-STRUCT_FUNC_TPL
-                else
-                    # Pointer/scalar return type - can use variadic approach for __real_
-                    cat >> "$interpose_c" << PTR_FUNC_TPL
-
-// === Override for: ${func} (pointer/scalar return: ${ret_type}) ===
-typedef ${ret_type} (*${func}_func_t)(${param_decl});
-static ${func}_func_t s_real_${func} = NULL;
-
-// Forward declaration of wrapper (defined in test)
-extern ${ret_type} __wrap_${func}(${param_decl});
-
-// Provide __real_${func} for DAP_MOCK_WRAPPER_* macros
-__attribute__((visibility("default")))
-${ret_type} __real_${func}(${param_decl}) {
-    if (!s_real_${func}) {
-        s_real_${func} = (${func}_func_t)dlsym(RTLD_NEXT, "${func}");
-        if (!s_real_${func}) {
-            fprintf(stderr, "FATAL: dlsym(RTLD_NEXT, \"${func}\") failed: %s\\n", dlerror());
+void __real_${func}(${param_decl}) {
+    static ${func}_func_t s_real = NULL;
+    if (!s_real) {
+        s_real = (${func}_func_t)dlsym(RTLD_NEXT, "${func}");
+        if (!s_real) {
+            fprintf(stderr, "FATAL: dlsym(RTLD_NEXT, \\"${func}\\") failed: %s\\n", dlerror());
             abort();
         }
     }
-    return s_real_${func}(${param_names});
+    s_real(${param_names});
 }
 
-// Override function - replaces ${func} due to link order + flat_namespace
+// Interpose replacement - redirects ${func} to __wrap_${func}
+__attribute__((used))
+static void _dap_interpose_${func}(${param_decl}) {
+    static ${func}_func_t s_wrap = NULL;
+    if (!s_wrap) {
+        s_wrap = (${func}_func_t)dlsym(RTLD_DEFAULT, "__wrap_${func}");
+        if (!s_wrap) {
+            ${func}_func_t s_orig = (${func}_func_t)dlsym(RTLD_NEXT, "${func}");
+            if (s_orig) { s_orig(${param_names}); return; }
+            fprintf(stderr, "FATAL: __wrap_${func} not found\\n");
+            abort();
+        }
+    }
+    s_wrap(${param_names});
+}
+
+__attribute__((used, section("__DATA,__interpose")))
+static const dap_interpose_t _dap_ip_${func} = {
+    (const void *)_dap_interpose_${func},
+    (const void *)${func}
+};
+
+VOID_FUNC_TPL
+                else
+                    # Non-void return type (both scalar and struct)
+                    cat >> "$interpose_c" << TYPED_FUNC_TPL
+
+// === DYLD interpose for: ${func} (return: ${ret_type}) ===
+typedef ${ret_type} (*${func}_func_t)(${param_decl});
+
+// Original function declaration (resolved from SDK at dylib load time)
+extern ${ret_type} ${func}(${param_decl});
+
+// __real_${func} for DAP_MOCK_WRAPPER_* macros
 __attribute__((visibility("default")))
-${ret_type} ${func}(${param_decl}) {
-    return __wrap_${func}(${param_names});
+${ret_type} __real_${func}(${param_decl}) {
+    static ${func}_func_t s_real = NULL;
+    if (!s_real) {
+        s_real = (${func}_func_t)dlsym(RTLD_NEXT, "${func}");
+        if (!s_real) {
+            fprintf(stderr, "FATAL: dlsym(RTLD_NEXT, \\"${func}\\") failed: %s\\n", dlerror());
+            abort();
+        }
+    }
+    return s_real(${param_names});
 }
 
-PTR_FUNC_TPL
+// Interpose replacement - redirects ${func} to __wrap_${func}
+__attribute__((used))
+static ${ret_type} _dap_interpose_${func}(${param_decl}) {
+    static ${func}_func_t s_wrap = NULL;
+    if (!s_wrap) {
+        s_wrap = (${func}_func_t)dlsym(RTLD_DEFAULT, "__wrap_${func}");
+        if (!s_wrap) {
+            ${func}_func_t s_orig = (${func}_func_t)dlsym(RTLD_NEXT, "${func}");
+            if (s_orig) return s_orig(${param_names});
+            fprintf(stderr, "FATAL: __wrap_${func} not found\\n");
+            abort();
+        }
+    }
+    return s_wrap(${param_names});
+}
+
+__attribute__((used, section("__DATA,__interpose")))
+static const dap_interpose_t _dap_ip_${func} = {
+    (const void *)_dap_interpose_${func},
+    (const void *)${func}
+};
+
+TYPED_FUNC_TPL
                 fi
             done <<< "$mock_functions"
             echo "#endif // __APPLE__" >> "$interpose_c"
@@ -242,8 +292,8 @@ PTR_FUNC_TPL
             # Save C file path for CMake to compile (CMake has proper include paths)
             echo "$interpose_c" > "$dylib_path_file"
             
-            print_success "Generated $func_count typed mock override functions (macOS .c)"
-            print_info "C file: $interpose_c (will be compiled by CMake)"
+            print_success "Generated $func_count DYLD interpose entries (macOS dylib source)"
+            print_info "C file: $interpose_c (will be compiled as shared library by CMake)"
             
             # wrap file stays empty on macOS - no linker options needed
             > "$wrap_file"

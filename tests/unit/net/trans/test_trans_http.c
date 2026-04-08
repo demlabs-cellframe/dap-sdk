@@ -88,6 +88,8 @@ DAP_MOCK_DECLARE(dap_stream_new_es_client);
 static dap_events_socket_t s_stage_mock_esocket = {0};
 static dap_stream_t s_stage_mock_stream_obj = {0};
 
+static bool s_socket_create_force_null = false;
+
 DAP_MOCK_WRAPPER_CUSTOM(dap_events_socket_t*, dap_events_socket_create_platform,
     PARAM(int, a_domain),
     PARAM(int, a_type),
@@ -96,6 +98,8 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_events_socket_t*, dap_events_socket_create_platform,
 )
 {
     UNUSED(a_domain); UNUSED(a_type); UNUSED(a_protocol); UNUSED(a_callbacks);
+    if(s_socket_create_force_null)
+        return NULL;
     if(g_mock_dap_events_socket_create_platform && g_mock_dap_events_socket_create_platform->return_value.ptr)
         return (dap_events_socket_t*)g_mock_dap_events_socket_create_platform->return_value.ptr;
     return &s_stage_mock_esocket;
@@ -824,7 +828,7 @@ static void test_17_http_stage_prepare_socket_create_fail(void)
 
     dap_worker_t *l_worker = dap_events_worker_get_auto();
 
-    DAP_MOCK_SET_RETURN(dap_events_socket_create_platform, NULL);
+    s_socket_create_force_null = true;
 
     dap_events_socket_callbacks_t l_cbs = {0};
     dap_stream_node_addr_t l_node_addr = {0};
@@ -842,6 +846,8 @@ static void test_17_http_stage_prepare_socket_create_fail(void)
     dap_net_stage_prepare_result_t l_result = {0};
 
     l_ret = l_trans->ops->stage_prepare(l_trans, &l_params, &l_result);
+
+    s_socket_create_force_null = false;
 
     TEST_ASSERT(l_ret != 0, "stage_prepare should fail when socket creation fails");
     TEST_ASSERT(l_result.esocket == NULL, "esocket should be NULL on failure");

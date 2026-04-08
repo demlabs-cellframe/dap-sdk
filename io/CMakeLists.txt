@@ -60,6 +60,10 @@ elseif (LINUX OR ANDROID)
 elseif(MACOS)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/macos)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/darwin)
+    target_link_libraries(${PROJECT_NAME} INTERFACE
+        "-framework CoreFoundation"
+        "-framework SystemConfiguration"
+    )
 endif()
 
 if (${BUILD_DAP_IO_TESTS} MATCHES ON)

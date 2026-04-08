@@ -2925,11 +2925,8 @@ static uint32_t s_udp_get_capabilities(dap_net_trans_t *a_trans)
  */
 static void* s_udp_get_client_context(dap_stream_t *a_stream)
 {
-    if (!a_stream || !a_stream->trans_ctx)
-        return NULL;
-
-    // Client context is in _inheritor (set by FSM for client paths)
-    return a_stream->trans_ctx->_inheritor;
+    dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
+    return l_udp_ctx ? l_udp_ctx->client_ctx : NULL;
 }
 
 //=============================================================================

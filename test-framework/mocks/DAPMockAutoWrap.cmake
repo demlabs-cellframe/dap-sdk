@@ -176,48 +176,51 @@ function(dap_mock_autowrap TARGET_NAME)
     target_compile_definitions(${TARGET_NAME} PRIVATE 
         DAP_MOCK_GENERATED_MACROS_H)
     
-    # macOS: Compile and link mock override C file
-    # CMake compiles with proper include paths, then links before cellframe_sdk
+    # macOS: Build mock interpose as SHARED library (dylib) for DYLD_INSERT_LIBRARIES
+    # Uses __DATA,__interpose section for runtime function replacement
     if(APPLE)
         set(MOCK_SRC_PATH_FILE "${MOCK_GEN_DIR}/mock_dylib_path.txt")
         if(EXISTS ${MOCK_SRC_PATH_FILE})
             file(READ ${MOCK_SRC_PATH_FILE} MOCK_SRC_PATH)
             string(STRIP "${MOCK_SRC_PATH}" MOCK_SRC_PATH)
             if(MOCK_SRC_PATH AND EXISTS "${MOCK_SRC_PATH}")
-                # Create object library for the mock override C file
-                # This allows CMake to compile with proper include directories
-                set(MOCK_OBJ_LIB "${TARGET_NAME}_mock_override")
-                add_library(${MOCK_OBJ_LIB} OBJECT ${MOCK_SRC_PATH})
-                
-                # Inherit include directories from target (which should have all SDK includes)
-                # Also add common SDK includes as fallback
+                set(MOCK_DYLIB "${TARGET_NAME}_mock_interpose")
+                add_library(${MOCK_DYLIB} SHARED ${MOCK_SRC_PATH})
+
+                # Inherit include directories from target
                 get_target_property(TARGET_INCLUDES ${TARGET_NAME} INCLUDE_DIRECTORIES)
                 if(TARGET_INCLUDES)
-                    target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${TARGET_INCLUDES})
+                    target_include_directories(${MOCK_DYLIB} PRIVATE ${TARGET_INCLUDES})
                 endif()
-                
-                # Add SDK include directories (in case target doesn't have them yet)
+
                 if(TARGET cellframe_sdk)
                     get_target_property(SDK_INCLUDES cellframe_sdk INTERFACE_INCLUDE_DIRECTORIES)
                     if(SDK_INCLUDES)
-                        target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${SDK_INCLUDES})
+                        target_include_directories(${MOCK_DYLIB} PRIVATE ${SDK_INCLUDES})
                     endif()
                 endif()
                 if(TARGET dap-sdk)
                     get_target_property(DAP_SDK_INCLUDES dap-sdk INTERFACE_INCLUDE_DIRECTORIES)
                     if(DAP_SDK_INCLUDES)
-                        target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${DAP_SDK_INCLUDES})
+                        target_include_directories(${MOCK_DYLIB} PRIVATE ${DAP_SDK_INCLUDES})
                     endif()
                 endif()
-                
-                # Add object files to test target - they link before libraries
-                target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MOCK_OBJ_LIB}>)
-                
-                # Add dependency to ensure mock C file is generated first
-                add_dependencies(${MOCK_OBJ_LIB} ${TARGET_NAME}_mock_gen)
-                
-                set_target_properties(${TARGET_NAME} PROPERTIES DAP_MOCK_OBJ_LIB "${MOCK_OBJ_LIB}")
-                message(STATUS " macOS: mock override compiled: ${MOCK_SRC_PATH}")
+
+                target_link_options(${MOCK_DYLIB} PRIVATE
+                    "-Wl,-undefined,dynamic_lookup"
+                    "-Wl,-flat_namespace"
+                )
+                set_target_properties(${MOCK_DYLIB} PROPERTIES
+                    LIBRARY_OUTPUT_DIRECTORY "${MOCK_GEN_DIR}"
+                )
+
+                add_dependencies(${MOCK_DYLIB} ${TARGET_NAME}_mock_gen)
+
+                set_target_properties(${TARGET_NAME} PROPERTIES
+                    DAP_MOCK_DYLIB_PATH "${MOCK_GEN_DIR}/lib${MOCK_DYLIB}.dylib"
+                )
+
+                message(STATUS " macOS: mock interpose dylib: ${MOCK_SRC_PATH}")
             endif()
         endif()
     endif()
@@ -320,12 +323,11 @@ endfunction()
 function(dap_mock_setup_test_env TEST_NAME TARGET_NAME)
     if(APPLE)
         get_target_property(MOCK_DYLIB_PATH ${TARGET_NAME} DAP_MOCK_DYLIB_PATH)
-        if(MOCK_DYLIB_PATH AND EXISTS "${MOCK_DYLIB_PATH}")
-            # Set DYLD_INSERT_LIBRARIES to inject mock interpose dylib
+        if(MOCK_DYLIB_PATH)
             set_tests_properties(${TEST_NAME} PROPERTIES
                 ENVIRONMENT "DYLD_INSERT_LIBRARIES=${MOCK_DYLIB_PATH}"
             )
-            message(STATUS " Test ${TEST_NAME}: DYLD_INSERT_LIBRARIES configured")
+            message(STATUS " Test ${TEST_NAME}: DYLD_INSERT_LIBRARIES=${MOCK_DYLIB_PATH}")
         else()
             message(STATUS " Test ${TEST_NAME}: no mock dylib (mocks may not work)")
         endif()
