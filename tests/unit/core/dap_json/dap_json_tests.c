@@ -187,7 +187,7 @@ static bool s_test_wrapper_invalidation_add_object(void) {
     log_it(L_DEBUG, "Wrapper invalidation after add_object test passed");
     
 cleanup:
-    // l_retrieved_child is borrowed - freed automatically with parent
+    dap_json_object_free(l_retrieved_child);
     dap_json_object_free(l_child);
     dap_json_object_free(l_parent);
     return result;
@@ -233,6 +233,7 @@ static bool s_test_wrapper_invalidation_add_array(void) {
     log_it(L_DEBUG, "Wrapper invalidation after add_array test passed");
     
 cleanup:
+    dap_json_object_free(l_retrieved_array);
     dap_json_object_free(l_item2);
     dap_json_object_free(l_item1);
     dap_json_object_free(l_array);
@@ -273,11 +274,11 @@ cleanup:
 }
 
 /**
- * @brief Test borrowed references for get_object 
- * After get_object, returned wrapper is borrowed and freed with parent
+ * @brief Test get_object wrapper shells
+ * @note Each get allocates a lightweight wrapper (borrow_source); free shells with dap_json_object_free.
  */
 static bool s_test_refcount_get_object(void) {
-    log_it(L_DEBUG, "Testing borrowed references for get_object");
+    log_it(L_DEBUG, "Testing get_object wrapper shells");
     bool result = false;
     dap_json_t *l_parent = NULL;
     dap_json_t *l_child_obj = NULL;
@@ -295,13 +296,10 @@ static bool s_test_refcount_get_object(void) {
     dap_json_object_free(l_child_obj);
     l_child_obj = NULL;
     
-    // Get child object - this returns borrowed reference
     l_retrieved = dap_json_object_get_object(l_parent, "child");
     DAP_TEST_FAIL_IF_NULL(l_retrieved, "Retrieved child object");
-    // Verify child data
     const char *l_name = dap_json_object_get_string(l_retrieved, "name");
     DAP_TEST_FAIL_IF_STRING_NOT_EQUAL("test_child", l_name, "Child data correct");
-    // NO free for borrowed reference!
     
     // Parent should still be valid, verify via another get
     l_retrieved2 = dap_json_object_get_object(l_parent, "child");
@@ -309,19 +307,21 @@ static bool s_test_refcount_get_object(void) {
     const char *l_name2 = dap_json_object_get_string(l_retrieved2, "name");
     DAP_TEST_FAIL_IF_STRING_NOT_EQUAL("test_child", l_name2, "Child data still correct");
     result = true;
-    log_it(L_DEBUG, "Borrowed references for get_object test passed");
+    log_it(L_DEBUG, "get_object wrapper shell test passed");
     
 cleanup:
+    dap_json_object_free(l_retrieved2);
+    dap_json_object_free(l_retrieved);
     dap_json_object_free(l_child_obj);
     dap_json_object_free(l_parent);
     return result;
 }
 
 /**
- * @brief Test borrowed references for array_get_idx 
+ * @brief Test array_get_idx wrapper shells (mutable DOM allocates a borrowed wrapper per index)
  */
 static bool s_test_refcount_array_get_idx(void) {
-    log_it(L_DEBUG, "Testing borrowed references for array_get_idx");
+    log_it(L_DEBUG, "Testing array_get_idx wrapper shells");
     bool result = false;
     dap_json_t *l_array = NULL;
     dap_json_t *l_s1 = NULL, *l_s2 = NULL, *l_s3 = NULL;
@@ -346,21 +346,20 @@ static bool s_test_refcount_array_get_idx(void) {
     // Get array length
     size_t len = dap_json_array_length(l_array);
     DAP_TEST_FAIL_IF_NOT(3 == len, "Array length");
-    // Get items - returns borrowed references
     l_item1 = dap_json_array_get_idx(l_array, 0);
     DAP_TEST_FAIL_IF_NULL(l_item1, "First item retrieved");
     DAP_TEST_FAIL_IF_NOT(dap_json_is_string(l_item1), "First item is string");
-    // l_item1 is borrowed - no free needed
     
     l_item2 = dap_json_array_get_idx(l_array, 1);
     DAP_TEST_FAIL_IF_NULL(l_item2, "Second item retrieved");
     DAP_TEST_FAIL_IF_NOT(dap_json_is_string(l_item2), "Second item is string");
-    // l_item2 is borrowed - no free needed
     
     result = true;
-    log_it(L_DEBUG, "Borrowed references for array_get_idx test passed");
+    log_it(L_DEBUG, "array_get_idx wrapper shell test passed");
     
 cleanup:
+    dap_json_object_free(l_item2);
+    dap_json_object_free(l_item1);
     dap_json_object_free(l_s3);
     dap_json_object_free(l_s2);
     dap_json_object_free(l_s1);
@@ -445,12 +444,12 @@ static bool s_test_array_operations(void) {
     l_retrieved = dap_json_array_get_idx(l_array, 1);
     DAP_TEST_FAIL_IF_NULL(l_retrieved, "Get array item");
     DAP_TEST_FAIL_IF_NOT(dap_json_is_int(l_retrieved), "Item is int");
-    // l_retrieved is borrowed - no free needed
     
     result = true;
     log_it(L_DEBUG, "Array operations test passed");
     
 cleanup:
+    dap_json_object_free(l_retrieved);
     dap_json_object_free(l_item3);
     dap_json_object_free(l_item2);
     dap_json_object_free(l_item1);
@@ -585,6 +584,8 @@ static bool s_test_nested_structures(void) {
     dap_json_t *l_tags = NULL;
     dap_json_t *l_tag1 = NULL;
     dap_json_t *l_tag2 = NULL;
+    dap_json_t *l_retrieved_user = NULL;
+    dap_json_t *l_retrieved_tags = NULL;
     
     // Create complex nested structure
     l_root = dap_json_object_new();
@@ -623,14 +624,14 @@ static bool s_test_nested_structures(void) {
     dap_json_object_free(l_user);
     l_user = NULL;
     
-    // Verify structure by retrieving (borrowed references - don't free!);
-    dap_json_t *l_retrieved_user = dap_json_object_get_object(l_root, "user");
+    // Verify structure by retrieving (getter allocates a lightweight wrapper shell)
+    l_retrieved_user = dap_json_object_get_object(l_root, "user");
     DAP_TEST_FAIL_IF_NULL(l_retrieved_user, "Retrieved nested object");
     
     const char *l_name = dap_json_object_get_string(l_retrieved_user, "name");
     DAP_TEST_FAIL_IF_STRING_NOT_EQUAL("Alice", l_name, "Nested string value");
     
-    dap_json_t *l_retrieved_tags = dap_json_object_get_array(l_retrieved_user, "tags");
+    l_retrieved_tags = dap_json_object_get_array(l_retrieved_user, "tags");
     DAP_TEST_FAIL_IF_NULL(l_retrieved_tags, "Retrieved nested array");
     
     size_t l_tags_len = dap_json_array_length(l_retrieved_tags);
@@ -640,7 +641,8 @@ static bool s_test_nested_structures(void) {
     log_it(L_DEBUG, "Nested structures test passed");
     
 cleanup:
-    // Note: l_retrieved_* are borrowed references, freed with l_root
+    dap_json_object_free(l_retrieved_tags);
+    dap_json_object_free(l_retrieved_user);
     dap_json_object_free(l_root);
     dap_json_object_free(l_user);    // NULL if transferred
     dap_json_object_free(l_tags);    // NULL if transferred
@@ -761,6 +763,8 @@ static bool s_test_large_data(void) {
     bool result = false;
     dap_json_t *l_large_array = NULL;
     dap_json_t *l_item = NULL;
+    dap_json_t *l_first = NULL;
+    dap_json_t *l_last = NULL;
     
     // Create array with many elements
     l_large_array = dap_json_array_new();
@@ -778,17 +782,18 @@ static bool s_test_large_data(void) {
     size_t l_len = dap_json_array_length(l_large_array);
     DAP_TEST_FAIL_IF_NOT(ITEM_COUNT == l_len, "Large array length");
     
-    // Retrieve and verify some items (borrowed references - don't free!);
-    dap_json_t *l_first = dap_json_array_get_idx(l_large_array, 0);
+    l_first = dap_json_array_get_idx(l_large_array, 0);
     DAP_TEST_FAIL_IF_NULL(l_first, "First item");
     
-    dap_json_t *l_last = dap_json_array_get_idx(l_large_array, ITEM_COUNT - 1);
+    l_last = dap_json_array_get_idx(l_large_array, ITEM_COUNT - 1);
     DAP_TEST_FAIL_IF_NULL(l_last, "Last item");
     
     result = true;
     log_it(L_DEBUG, "Large data volumes test passed");
     
 cleanup:
+    dap_json_object_free(l_last);
+    dap_json_object_free(l_first);
     dap_json_object_free(l_large_array);
     dap_json_object_free(l_item);  // NULL if transferred
     return result;
@@ -1028,6 +1033,9 @@ static bool s_test_memory_multiple_gets(void) {
     bool result = false;
     dap_json_t *l_parent = NULL;
     dap_json_t *l_child = NULL;
+    dap_json_t *l_get1 = NULL;
+    dap_json_t *l_get2 = NULL;
+    dap_json_t *l_get3 = NULL;
     
     l_parent = dap_json_object_new();
     DAP_TEST_FAIL_IF_NULL(l_parent, "Parent object creation");
@@ -1041,10 +1049,9 @@ static bool s_test_memory_multiple_gets(void) {
     dap_json_object_free(l_child);
     l_child = NULL;
     
-    // Multiple get operations return borrowed references - DON'T free them!
-    dap_json_t *l_get1 = dap_json_object_get_object(l_parent, "child");
-    dap_json_t *l_get2 = dap_json_object_get_object(l_parent, "child");
-    dap_json_t *l_get3 = dap_json_object_get_object(l_parent, "child");
+    l_get1 = dap_json_object_get_object(l_parent, "child");
+    l_get2 = dap_json_object_get_object(l_parent, "child");
+    l_get3 = dap_json_object_get_object(l_parent, "child");
     
     DAP_TEST_FAIL_IF_NULL(l_get1, "First get successful");
     DAP_TEST_FAIL_IF_NULL(l_get2, "Second get successful");
@@ -1054,7 +1061,9 @@ static bool s_test_memory_multiple_gets(void) {
     log_it(L_DEBUG, "Memory safety: multiple gets - passed");
     
 cleanup:
-    // Note: l_get* are borrowed references, freed with l_parent
+    dap_json_object_free(l_get3);
+    dap_json_object_free(l_get2);
+    dap_json_object_free(l_get1);
     dap_json_object_free(l_parent);
     dap_json_object_free(l_child);  // NULL if transferred
     return result;
@@ -1071,6 +1080,9 @@ static bool s_test_memory_complex_nested(void) {
     dap_json_t *l_level2 = NULL;
     dap_json_t *l_array = NULL;
     dap_json_t *l_item = NULL;
+    dap_json_t *l_retrieved_l1 = NULL;
+    dap_json_t *l_retrieved_l2 = NULL;
+    dap_json_t *l_retrieved_arr = NULL;
     
     // Create complex nested structure
     l_root = dap_json_object_new();
@@ -1109,14 +1121,13 @@ static bool s_test_memory_complex_nested(void) {
     dap_json_object_free(l_level1);
     l_level1 = NULL;
     
-    // Retrieve and verify (borrowed references - DON'T free!);
-    dap_json_t *l_retrieved_l1 = dap_json_object_get_object(l_root, "level1");
+    l_retrieved_l1 = dap_json_object_get_object(l_root, "level1");
     DAP_TEST_FAIL_IF_NULL(l_retrieved_l1, "Retrieved level1");
     
-    dap_json_t *l_retrieved_l2 = dap_json_object_get_object(l_retrieved_l1, "level2");
+    l_retrieved_l2 = dap_json_object_get_object(l_retrieved_l1, "level2");
     DAP_TEST_FAIL_IF_NULL(l_retrieved_l2, "Retrieved level2");
     
-    dap_json_t *l_retrieved_arr = dap_json_object_get_array(l_retrieved_l2, "numbers");
+    l_retrieved_arr = dap_json_object_get_array(l_retrieved_l2, "numbers");
     DAP_TEST_FAIL_IF_NULL(l_retrieved_arr, "Retrieved array");
     
     size_t arr_len = dap_json_array_length(l_retrieved_arr);
@@ -1126,6 +1137,9 @@ static bool s_test_memory_complex_nested(void) {
     log_it(L_DEBUG, "Memory safety: complex nested - passed");
     
 cleanup:
+    dap_json_object_free(l_retrieved_arr);
+    dap_json_object_free(l_retrieved_l2);
+    dap_json_object_free(l_retrieved_l1);
     dap_json_object_free(l_item);
     dap_json_object_free(l_array);
     dap_json_object_free(l_level2);
@@ -1136,7 +1150,7 @@ cleanup:
 
 /**
  * @brief Test automatic cleanup of borrowed wrappers
- * Verifies that borrowed references are automatically freed with parent
+ * Verifies DOM data stays valid while getter wrapper shells are freed explicitly
  */
 static bool s_test_borrowed_wrapper_cleanup(void) {
     log_it(L_DEBUG, "Testing: automatic cleanup of borrowed wrappers");
@@ -1159,26 +1173,24 @@ static bool s_test_borrowed_wrapper_cleanup(void) {
     dap_json_object_free(l_nested);
     l_nested = NULL;
     
-    // Get borrowed references - these should NOT be freed manually
     l_child1 = dap_json_object_get_object(l_parent, "nested");
-    DAP_TEST_FAIL_IF_NULL(l_child1, "First borrowed reference");
+    DAP_TEST_FAIL_IF_NULL(l_child1, "First getter wrapper");
     
     l_child2 = dap_json_object_get_object(l_parent, "nested");
-    DAP_TEST_FAIL_IF_NULL(l_child2, "Second borrowed reference");
+    DAP_TEST_FAIL_IF_NULL(l_child2, "Second getter wrapper");
     
-    // Get nested borrowed reference from borrowed reference
     const char *l_type = dap_json_object_get_string(l_child1, "type");
     DAP_TEST_FAIL_IF_STRING_NOT_EQUAL("nested", l_type, "Nested value");
     
-    // Free parent - all borrowed wrappers should be automatically freed
+    dap_json_object_free(l_child2);
+    l_child2 = NULL;
+    dap_json_object_free(l_child1);
+    l_child1 = NULL;
     dap_json_object_free(l_parent);
     l_parent = NULL;
     
-    // DO NOT free borrowed references - they're already freed!
-    // l_child1, l_child2 are now invalid
-    
     result = true;
-    log_it(L_DEBUG, "Verified: borrowed wrappers automatically cleaned up");
+    log_it(L_DEBUG, "Verified: getter wrapper shells freed explicitly");
     
 cleanup:
     dap_json_object_free(l_nested);
