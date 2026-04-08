@@ -48,7 +48,9 @@
 #include <uthash.h>
 #include <stdatomic.h>
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include "dap_global_db.h"
 #include "dap_config.h"
