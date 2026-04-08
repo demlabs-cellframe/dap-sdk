@@ -9,6 +9,28 @@
  */
 
 #include "dap_ntt_internal.h"
+#include "dap_cpu_arch.h"
+#include "dap_cpu_detect.h"
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
+/* Wine + MinGW: AVX-512 NTT triggers page faults on some CI hosts; cap at AVX2. */
+#if defined(_WIN32) && DAP_PLATFORM_X86
+static void s_ntt_wine_avx512_workaround(void)
+{
+    HMODULE l_ntdll = GetModuleHandleA("ntdll.dll");
+    if (!l_ntdll || !GetProcAddress(l_ntdll, "wine_get_version"))
+        return;
+    dap_cpu_features_t l_f = dap_cpu_detect_features();
+    if (!l_f.has_avx512f || !l_f.has_avx512bw)
+        return;
+    if (dap_cpu_arch_set(DAP_CPU_ARCH_AVX2) != 0)
+        (void) dap_cpu_arch_set(DAP_CPU_ARCH_SSE2);
+}
+#else
+static void s_ntt_wine_avx512_workaround(void) { }
+#endif
 
 /* ===== Extern function pointer storage ===== */
 
@@ -62,6 +84,7 @@ static void s_register_ntt_tune_rules(void)
 
 void dap_ntt_dispatch_init(void)
 {
+    s_ntt_wine_avx512_workaround();
     s_register_ntt_tune_rules();
 
     DAP_DISPATCH_DEFAULT(dap_ntt_forward,               dap_ntt_forward_ref);

@@ -20,5 +20,5 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 add_test(NAME test_pqc_algorithms COMMAND ${PROJECT_NAME})
 set_tests_properties(test_pqc_algorithms PROPERTIES
     LABELS "unit;crypto;pqc"
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
 )

@@ -28,7 +28,7 @@ add_test(NAME dap_async
 )
 
 set_tests_properties(dap_async PROPERTIES
-    TIMEOUT 60
+    TIMEOUT ${DAP_T60}
     LABELS "mock;unit"
 )
 
@@ -56,7 +56,7 @@ add_test(NAME dap_mock
 )
 
 set_tests_properties(dap_mock PROPERTIES
-        TIMEOUT 60
+        TIMEOUT ${DAP_T60}
         LABELS "mock;unit"
 )
 

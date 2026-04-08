@@ -155,8 +155,9 @@ void dap_ntt_forward_mont_{{ARCH_LOWER}}(int32_t *a_coeffs,
                                * a_params->qinv;
                 int32_t l_t = (int32_t)(((int64_t)l_zeta * a_coeffs[l_j + l_len]
                                + (int64_t)l_u * a_params->q) >> 32);
-                a_coeffs[l_j + l_len] = a_coeffs[l_j] - l_t;
-                a_coeffs[l_j]         = a_coeffs[l_j] + l_t;
+                int32_t l_aj = a_coeffs[l_j];
+                a_coeffs[l_j + l_len] = dap_ntt_i32_sub_wrap(l_aj, l_t);
+                a_coeffs[l_j]         = dap_ntt_i32_add_wrap(l_aj, l_t);
             }
         }
     }
@@ -244,8 +245,8 @@ void dap_ntt_inverse_mont_{{ARCH_LOWER}}(int32_t *a_coeffs,
             for (l_j = l_start; l_j < l_start + l_len; l_j++) {
                 int32_t l_t    = a_coeffs[l_j];
                 int32_t l_b    = a_coeffs[l_j + l_len];
-                a_coeffs[l_j]          = l_t + l_b;
-                int64_t l_diff = (int64_t)l_zeta * (l_t - l_b);
+                a_coeffs[l_j]          = dap_ntt_i32_add_wrap(l_t, l_b);
+                int64_t l_diff = (int64_t)l_zeta * (int64_t)dap_ntt_i32_sub_wrap(l_t, l_b);
                 uint32_t l_u = (uint32_t)l_diff * a_params->qinv;
                 a_coeffs[l_j + l_len]  = (int32_t)((l_diff + (int64_t)l_u * a_params->q) >> 32);
             }

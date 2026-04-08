@@ -14,6 +14,7 @@
 #include "dap_test.h"
 #include "dap_common.h"
 #include "dap_enc_key.h"
+#include "dilithium_params.h"
 #include "dap_sign.h"
 #include "dap_enc_mldsa.h"
 #include "dap_enc_mlkem.h"
@@ -50,7 +51,7 @@ static void s_test_mldsa_sign_verify(uint8_t a_security_level, const char *a_lev
     l_rc = l_key->sign_verify(l_key, l_msg, l_msg_len, l_sig, l_sig_size);
     dap_assert(l_rc != 0, "ML-DSA verify rejects corrupted signature");
 
-    DAP_DELETE(l_sig);
+    dap_enc_key_signature_delete(DAP_ENC_KEY_TYPE_SIG_ML_DSA, l_sig);
     dap_enc_key_delete(l_key);
 }
 
@@ -362,7 +363,7 @@ static void s_test_integration_pipeline(void)
 
     DAP_DELETE(l_cypher);
     DAP_DELETE(l_ct);
-    DAP_DELETE(l_sig);
+    dap_enc_key_signature_delete(DAP_ENC_KEY_TYPE_SIG_ML_DSA, l_sig);
     DAP_DELETE(l_dec);
     dap_enc_key_delete(l_kem_alice);
     dap_enc_key_delete(l_kem_bob);
@@ -374,13 +375,13 @@ static void s_test_integration_pipeline(void)
 
 static dap_enc_key_t *s_bench_mldsa_key = NULL;
 static dap_enc_key_t *s_bench_chacha_key = NULL;
+static uint8_t s_bench_mldsa_sig[4096];
 
 static void s_bench_mldsa_sign(void)
 {
     static const char l_msg[] = "benchmark message for ML-DSA sign";
-    uint8_t l_sig[4096];
     s_bench_mldsa_key->sign_get(s_bench_mldsa_key, l_msg, sizeof(l_msg) - 1,
-                                l_sig, sizeof(l_sig));
+                                s_bench_mldsa_sig, sizeof(s_bench_mldsa_sig));
 }
 
 static void s_bench_chacha20_encrypt(void)
@@ -416,6 +417,8 @@ int main(void)
 
     benchmark_mgs_time("ML-DSA-65 sign", benchmark_test_time(s_bench_mldsa_sign, 100));
     benchmark_mgs_time("ChaCha20 encrypt 1KB", benchmark_test_time(s_bench_chacha20_encrypt, 10000));
+
+    dilithium_signature_delete(s_bench_mldsa_sig);
 
     dap_enc_key_delete(s_bench_mldsa_key);
     dap_enc_key_delete(s_bench_chacha_key);

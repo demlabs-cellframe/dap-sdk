@@ -103,7 +103,7 @@ endif()
 add_test(NAME ecdsa_benchmark COMMAND benchmark_ecdsa)
 set_tests_properties(ecdsa_benchmark PROPERTIES
     LABELS "performance;crypto"
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
 )
 
 # Custom target to run benchmark

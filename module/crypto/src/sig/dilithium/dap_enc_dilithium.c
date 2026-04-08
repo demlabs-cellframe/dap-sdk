@@ -81,7 +81,13 @@ int dap_enc_sig_dilithium_get_sign(dap_enc_key_t *a_key, const void *a_msg,
         return -1;
     }
 
-    return dilithium_crypto_sign((dilithium_signature_t *)a_sig, (const unsigned char *) a_msg, a_msg_size, a_key->priv_key_data);
+    dilithium_signature_t *l_sig = (dilithium_signature_t *)a_sig;
+    if (l_sig->sig_data) {
+        DAP_DEL_Z(l_sig->sig_data);
+        l_sig->sig_data = NULL;
+    }
+
+    return dilithium_crypto_sign(l_sig, (const unsigned char *) a_msg, a_msg_size, a_key->priv_key_data);
 }
 
 int dap_enc_sig_dilithium_verify_sign(dap_enc_key_t *a_key, const void *a_msg,

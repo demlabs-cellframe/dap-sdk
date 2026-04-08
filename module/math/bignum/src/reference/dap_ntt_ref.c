@@ -131,10 +131,11 @@ void dap_ntt_forward_mont_ref(int32_t *a_coeffs, const dap_ntt_params_t *a_param
         for (l_start = 0; l_start < a_params->n; l_start = l_j + l_len) {
             int32_t l_zeta = l_zetas[l_k++];
             for (l_j = l_start; l_j < l_start + l_len; l_j++) {
+                int32_t l_aj = a_coeffs[l_j];
                 int32_t l_t = s_montgomery_reduce_raw(
                         (int64_t)l_zeta * a_coeffs[l_j + l_len], a_params);
-                a_coeffs[l_j + l_len] = a_coeffs[l_j] - l_t;
-                a_coeffs[l_j]         = a_coeffs[l_j] + l_t;
+                a_coeffs[l_j + l_len] = dap_ntt_i32_sub_wrap(l_aj, l_t);
+                a_coeffs[l_j] = dap_ntt_i32_add_wrap(l_aj, l_t);
             }
         }
     }
@@ -155,10 +156,11 @@ void dap_ntt_inverse_mont_ref(int32_t *a_coeffs, const dap_ntt_params_t *a_param
         for (l_start = 0; l_start < a_params->n; l_start = l_j + l_len) {
             int32_t l_zeta = l_zinv[l_k++];
             for (l_j = l_start; l_j < l_start + l_len; l_j++) {
-                int32_t l_t    = a_coeffs[l_j];
-                a_coeffs[l_j]        = l_t + a_coeffs[l_j + l_len];
+                int32_t l_top = a_coeffs[l_j];
+                int32_t l_bot = a_coeffs[l_j + l_len];
+                a_coeffs[l_j] = dap_ntt_i32_add_wrap(l_top, l_bot);
                 a_coeffs[l_j + l_len] = s_montgomery_reduce_raw(
-                        (int64_t)l_zeta * (l_t - a_coeffs[l_j + l_len]), a_params);
+                        (int64_t)l_zeta * (int64_t)dap_ntt_i32_sub_wrap(l_top, l_bot), a_params);
             }
         }
     }

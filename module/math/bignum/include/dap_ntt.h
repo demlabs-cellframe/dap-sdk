@@ -157,6 +157,20 @@ static inline int16_t dap_ntt16_fqmul(int16_t a_a, int16_t a_b, const dap_ntt_pa
     return dap_ntt16_montgomery_reduce((int32_t)a_a * a_b, a_params);
 }
 
+/**
+ * 32-bit butterfly add/sub with two's-complement wrap (matches SIMD vpadd/vpsub).
+ * Avoids signed-int overflow UB while preserving Dilithium Montgomery NTT semantics.
+ */
+static inline int32_t dap_ntt_i32_add_wrap(int32_t a_a, int32_t a_b)
+{
+    return (int32_t)((uint32_t)a_a + (uint32_t)a_b);
+}
+
+static inline int32_t dap_ntt_i32_sub_wrap(int32_t a_a, int32_t a_b)
+{
+    return (int32_t)((uint32_t)a_a - (uint32_t)a_b);
+}
+
 #ifdef __cplusplus
 }
 #endif

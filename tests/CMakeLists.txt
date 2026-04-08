@@ -29,8 +29,26 @@ if(NOT DAP_NPROC OR DAP_NPROC EQUAL 0)
     set(DAP_NPROC 4)
 endif()
 
+# MinGW tests run under Wine in CI: much slower per test; avoid dozens of concurrent Wine VMs.
+set(DAP_CTEST_TIMEOUT_SCALE 1)
+set(DAP_CTEST_PARALLEL ${DAP_NPROC})
+if(CMAKE_CROSSCOMPILING AND WIN32)
+    set(DAP_CTEST_TIMEOUT_SCALE 12)
+    set(DAP_CTEST_PARALLEL 4)
+endif()
+foreach(_base 10 30 60 120 300 600 1200)
+    math(EXPR DAP_T${_base} "${_base} * ${DAP_CTEST_TIMEOUT_SCALE}")
+endforeach()
+set(DAP_T_PERF ${DAP_T1200})
+if(DAP_T_PERF GREATER 10800)
+    set(DAP_T_PERF 10800)
+endif()
+if(CMAKE_CROSSCOMPILING AND WIN32)
+    message(STATUS "[Tests] MinGW+Wine: CTest timeout scale ${DAP_CTEST_TIMEOUT_SCALE}, parallel ${DAP_CTEST_PARALLEL}")
+endif()
+
 # `make test` and `cmake --build . --target test` run CTest in parallel
-set(CMAKE_CTEST_ARGUMENTS "--output-on-failure" "--parallel" "${DAP_NPROC}" CACHE STRING "")
+set(CMAKE_CTEST_ARGUMENTS "--output-on-failure" "--parallel" "${DAP_CTEST_PARALLEL}" CACHE STRING "" FORCE)
 
 message("[+] DAP SDK Test Infrastructure:")
 message("[+] - Unit tests: ${CMAKE_CURRENT_SOURCE_DIR}/unit")
@@ -97,7 +115,7 @@ function(register_dap_test TEST_NAME TEST_CATEGORY)
     # Set test labels for filtering
     set_tests_properties(${TEST_NAME} PROPERTIES
         LABELS "${TEST_CATEGORY}"
-        TIMEOUT 300  # 5 minutes timeout
+        TIMEOUT ${DAP_T300}
         
         # ✅ Fail fast on critical errors in test output
         FAIL_REGULAR_EXPRESSION "CRITICAL ERROR|FATAL|SEGMENTATION FAULT"
@@ -255,7 +273,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/performance/test_crypto_benchmarks.c)
     register_dap_test(test_performance_crypto "performance;crypto;benchmark")
     
     # Performance tests need longer timeout
-    set_tests_properties(test_performance_crypto PROPERTIES TIMEOUT 1200)
+    set_tests_properties(test_performance_crypto PROPERTIES TIMEOUT ${DAP_T_PERF})
 endif()
 
 # JSON performance benchmarks (dap_json vs competitors)

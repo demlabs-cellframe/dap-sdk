@@ -18,5 +18,5 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 add_test(NAME test_crypto_kat COMMAND ${PROJECT_NAME})
 set_tests_properties(test_crypto_kat PROPERTIES
     LABELS "unit;crypto;kat"
-    TIMEOUT 120
+    TIMEOUT ${DAP_T120}
 )

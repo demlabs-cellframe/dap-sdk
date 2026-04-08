@@ -334,6 +334,8 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
     }
 
     sig->sig_len = mlen + p->CRYPTO_BYTES;
+    if (sig->sig_data)
+        DAP_DEL_Z(sig->sig_data);
     sig->sig_data = DAP_NEW_Z_SIZE(unsigned char, sig->sig_len);
 
     memcpy(sig->sig_data + p->CRYPTO_BYTES, m, mlen);

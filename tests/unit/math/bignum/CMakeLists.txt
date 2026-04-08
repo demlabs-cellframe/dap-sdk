@@ -26,5 +26,5 @@ set_target_properties(test_bignum PROPERTIES
 add_test(NAME test_bignum COMMAND test_bignum)
 set_tests_properties(test_bignum PROPERTIES
     LABELS "unit;math;bignum"
-    TIMEOUT 120
+    TIMEOUT ${DAP_T120}
 )
