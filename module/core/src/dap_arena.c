@@ -25,6 +25,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdatomic.h>
+#include <stddef.h>
 
 #include "dap_arena.h"
 #include "dap_common.h"
@@ -63,9 +64,15 @@ typedef struct dap_arena_page {
     // ⭐ Refcounting support (only used if arena->use_refcount=true)
     atomic_int refcount;          // Atomic reference count (thread-safe)
     bool is_refcounted;           // Flag to check if this page uses refcount
-    
+    /* Without padding, offsetof(..., data) is 29 → bump pointers are misaligned
+     * and UBSan (-fsanitize=alignment) aborts on uint64_t / struct stores. */
+    uint8_t _pad_align_data[3];
+
     uint8_t data[];               // Flexible array member for data
 } dap_arena_page_t;
+
+_Static_assert(offsetof(dap_arena_page_t, data) % DAP_ARENA_ALIGNMENT == 0,
+               "arena page data[] must be DAP_ARENA_ALIGNMENT-aligned");
 
 /**
  * @brief Arena allocator structure

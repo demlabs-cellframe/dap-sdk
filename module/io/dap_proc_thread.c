@@ -67,6 +67,10 @@ int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id)
 
 int dap_proc_thread_init(uint32_t a_threads_count)
 {
+    if (s_threads) {
+        log_it(L_WARNING, "dap_proc_thread_init: already initialized");
+        return 0;
+    }
     if (!(s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count())) {
         log_it(L_CRITICAL, "Unknown threads count");
         return -1;
@@ -251,6 +255,7 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
     pthread_cond_destroy(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
     pthread_mutex_destroy(&l_thread->queue_lock);
+    l_thread->context = NULL;
     return 0;
 }
 
@@ -279,7 +284,7 @@ int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_
 {
     dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
-    dap_return_val_if_fail(l_thread, -1);
+    dap_return_val_if_fail(l_thread && l_thread->context, -1);
     dap_worker_t *l_worker = dap_events_worker_get(l_thread->context->cpu_id);
     if (!l_worker) {
         log_it(L_CRITICAL, "Worker with ID corresonding to specified processing thread ID %u doesn't exists", l_thread->context->id);

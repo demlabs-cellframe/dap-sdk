@@ -74,13 +74,17 @@ static bool s_test_init(void)
         return false;
     }
     
+    // Start event loop first to create workers (proc threads need workers)
+    if (dap_events_start() != 0) {
+        log_it(L_ERROR, "Failed to start events");
+        return false;
+    }
+    
+    // Now initialize proc threads (they will link to workers)
     if (dap_proc_thread_init(l_cpu_count) != 0) {
         log_it(L_ERROR, "Failed to initialize proc threads");
         return false;
     }
-    
-    // Start event loop in async mode
-    dap_events_start();
     
     // Give some time for threads to start
     sleep(1);

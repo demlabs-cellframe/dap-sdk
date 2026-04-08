@@ -2472,8 +2472,9 @@ static int s_btree_insert_impl(dap_global_db_t *a_tree,
                     l_ent->sign_len = a_sign_len;
                     l_ent->flags = a_flags | DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE;
                     uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_leaf_entry_t);
-                    memcpy(l_dst, a_text_key, a_text_key_len);
-                *(uint64_t *)(l_dst + a_text_key_len) = l_ov_id;
+                    if (a_text_key && a_text_key_len > 0)
+                        memcpy(l_dst, a_text_key, a_text_key_len);
+                    *(uint64_t *)(l_dst + a_text_key_len) = l_ov_id;
                     hl->header.entries_count = l_count + 1;
                     hl->header.free_space -= (l_entry_size + LEAF_OFFSET_SIZE);
                     LEAF_LOWEST_OFFSET(hl->data) = l_new_offset;
@@ -2495,7 +2496,8 @@ static int s_btree_insert_impl(dap_global_db_t *a_tree,
                 l_ent->sign_len = a_sign_len;
                 l_ent->flags = a_flags;
                 uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_leaf_entry_t);
-                memcpy(l_dst, a_text_key, a_text_key_len);
+                if (a_text_key && a_text_key_len > 0)
+                    memcpy(l_dst, a_text_key, a_text_key_len);
                 if (a_value_len > 0)
                     memmove(l_dst + a_text_key_len, a_value, a_value_len);
                 if (a_sign_len > 0)

@@ -839,11 +839,15 @@ prng_get_u64(prng *p)
 	p->ptr = u + 8;
 
 	/*
-	 * On systems that use little-endian encoding and allow
-	 * unaligned accesses, we can simply read the data where it is.
+	 * Little-endian: use memcpy so u need not be 8-byte aligned (UB with a direct
+	 * uint64_t * load under -fsanitize=undefined).
 	 */
 #if FALCON_LE && FALCON_UNALIGNED  // yyyLEU+1
-	return *(uint64_t *)(p->buf.d + u);
+	{
+		uint64_t v;
+		memcpy(&v, p->buf.d + u, sizeof v);
+		return v;
+	}
 #else  // yyyLEU+0
 	return (uint64_t)p->buf.d[u + 0]
 		| ((uint64_t)p->buf.d[u + 1] << 8)

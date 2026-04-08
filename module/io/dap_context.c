@@ -229,8 +229,11 @@ static void *s_context_thread(void *a_arg)
     struct dap_context_msg_run * l_msg = (struct dap_context_msg_run*) a_arg;
     dap_context_t * l_context = l_msg->context;
     assert(l_context);
-    if (s_context)
-        return log_it( L_ERROR, "Context %d already bound to current thread", s_context->id ), NULL;
+    if (s_context) {
+        log_it(L_ERROR, "Context %d already bound to current thread", s_context->id);
+        DAP_DELETE(l_msg);
+        return NULL;
+    }
     s_context = l_context;
     l_context->cpu_id = l_msg->cpu_id;
     int l_priority = l_msg->priority;
@@ -303,8 +306,16 @@ static void *s_context_thread(void *a_arg)
         pthread_cond_broadcast(&l_context->started_cond);
         pthread_mutex_unlock(&l_context->started_mutex);
     }
-    if (l_context->signal_exit)
+    if (l_context->signal_exit) {
+        if (l_msg->callback_stopped)
+            l_msg->callback_stopped(l_context, l_msg->callback_arg);
+        log_it(L_NOTICE, "Exiting context #%u (early exit)", l_context->id);
+        pthread_cond_destroy(&l_context->started_cond);
+        pthread_mutex_destroy(&l_context->started_mutex);
+        DAP_DELETE(l_context);
+        DAP_DELETE(l_msg);
         return NULL;
+    }
     // Initialization success
     switch (l_context->type) {
     case DAP_CONTEXT_TYPE_WORKER:
