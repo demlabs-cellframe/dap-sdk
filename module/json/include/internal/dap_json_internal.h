@@ -28,6 +28,8 @@ extern "C" {
 struct dap_json {
     int ref_count;                   /**< Reference counter */
     dap_json_mode_t mode;            /**< Current mode */
+    /** If non-NULL: MUTABLE wrapper created by s_wrap_value_borrowed(); value is owned by parent DOM */
+    dap_json_t *borrow_source;
     
     // Mode-specific data (union to save memory)
     union {

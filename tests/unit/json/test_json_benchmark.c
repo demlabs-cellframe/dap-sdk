@@ -95,9 +95,11 @@ static bool s_benchmark_parse_medium(void) {
         dap_json_object_add_double(l_item, "value", 123.456);
         dap_json_object_add_bool(l_item, "active", i % 2 == 0);
         dap_json_array_add(l_array, l_item);
+        dap_json_object_free(l_item);  // Value transferred to array
     }
     
     dap_json_object_add_array(l_root, "items", l_array);
+    dap_json_object_free(l_array);  // Value transferred to root
     l_medium_json = dap_json_to_string(l_root);  // Creates new string (must be freed)
     dap_json_object_free(l_root);
     
@@ -155,9 +157,12 @@ static bool s_benchmark_serialization(void) {
     // Add array
     dap_json_t *l_array = dap_json_array_new();
     for (int i = 0; i < 50; i++) {
-        dap_json_array_add(l_array, dap_json_object_new_int(i));
+        dap_json_t *l_num = dap_json_object_new_int(i);
+        dap_json_array_add(l_array, l_num);
+        dap_json_object_free(l_num);  // Value transferred
     }
     dap_json_object_add_array(l_json, "numbers", l_array);
+    dap_json_object_free(l_array);  // Value transferred
     
     const int l_iterations = 10000;  // Reduced from 50000 - serialization is expensive
     uint64_t l_start = get_time_usec();
@@ -287,6 +292,90 @@ cleanup:
 }
 
 /**
+ * @brief Benchmark parsing plus object/array/index API (tape-backed sub-wrappers must be freed)
+ *
+ * dap_json_object_get_object(), dap_json_object_get_array(), and dap_json_array_get_idx()
+ * return new wrappers; each must be released with dap_json_object_free().
+ */
+static bool s_benchmark_api_subwrappers(void) {
+    log_it(L_DEBUG, "Benchmarking parse + get_object/get_array/array_get_idx (wrapper lifetime)");
+    bool result = false;
+
+    static const char *l_json =
+        "{\"user\":{\"id\":42},\"tags\":[10,20,30]}";
+
+    const int l_iterations = 5000;
+    uint64_t l_start = get_time_usec();
+
+    for (int i = 0; i < l_iterations; i++) {
+        dap_json_t *l_root = dap_json_parse_string(l_json);
+        if (!l_root) {
+            log_it(L_ERROR, "Parse failed at iteration %d", i);
+            goto cleanup;
+        }
+
+        dap_json_t *l_user = dap_json_object_get_object(l_root, "user");
+        if (!l_user) {
+            log_it(L_ERROR, "get_object(user) failed at iteration %d", i);
+            dap_json_object_free(l_root);
+            goto cleanup;
+        }
+
+        dap_json_t *l_tags = dap_json_object_get_array(l_root, "tags");
+        if (!l_tags) {
+            log_it(L_ERROR, "get_array(tags) failed at iteration %d", i);
+            dap_json_object_free(l_user);
+            dap_json_object_free(l_root);
+            goto cleanup;
+        }
+
+        dap_json_t *l_t0 = dap_json_array_get_idx(l_tags, 0);
+        dap_json_t *l_t1 = dap_json_array_get_idx(l_tags, 1);
+        if (!l_t0 || !l_t1) {
+            log_it(L_ERROR, "array_get_idx failed at iteration %d", i);
+            if (l_t0) {
+                dap_json_object_free(l_t0);
+            }
+            if (l_t1) {
+                dap_json_object_free(l_t1);
+            }
+            dap_json_object_free(l_tags);
+            dap_json_object_free(l_user);
+            dap_json_object_free(l_root);
+            goto cleanup;
+        }
+
+        int l_id = dap_json_object_get_int(l_user, "id");
+        int l_a = dap_json_get_int(l_t0);
+        int l_b = dap_json_get_int(l_t1);
+
+        dap_json_object_free(l_t1);
+        dap_json_object_free(l_t0);
+        dap_json_object_free(l_tags);
+        dap_json_object_free(l_user);
+        dap_json_object_free(l_root);
+
+        if (l_id != 42 || l_a != 10 || l_b != 20) {
+            log_it(L_ERROR, "Unexpected values at iteration %d (id=%d a=%d b=%d)", i, l_id, l_a, l_b);
+            goto cleanup;
+        }
+    }
+
+    uint64_t l_end = get_time_usec();
+    uint64_t l_elapsed = l_end - l_start;
+    double l_ops_per_sec = (double)l_iterations / ((double)l_elapsed / 1000000.0);
+    double l_usec_per_op = (double)l_elapsed / (double)l_iterations;
+
+    log_it(L_INFO, "API sub-wrapper traversal: %.2f ops/sec, %.2f µs/op",
+           l_ops_per_sec, l_usec_per_op);
+
+    result = true;
+
+cleanup:
+    return result;
+}
+
+/**
  * @brief Main test runner for performance baseline benchmarks
  */
 int dap_json_benchmark_tests_run(void) {
@@ -294,13 +383,14 @@ int dap_json_benchmark_tests_run(void) {
     log_it(L_INFO, "NOTE: These establish baseline with json-c for Phase 2 comparisons");
     
     int tests_passed = 0;
-    int tests_total = 5;
+    int tests_total = 6;
     
     tests_passed += s_benchmark_parse_small() ? 1 : 0;
     tests_passed += s_benchmark_parse_medium() ? 1 : 0;
     tests_passed += s_benchmark_serialization() ? 1 : 0;
     tests_passed += s_benchmark_object_manipulation() ? 1 : 0;
     tests_passed += s_benchmark_memory_usage() ? 1 : 0;
+    tests_passed += s_benchmark_api_subwrappers() ? 1 : 0;
     
     log_it(L_INFO, "Performance benchmarks: %d/%d passed", tests_passed, tests_total);
     

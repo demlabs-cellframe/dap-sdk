@@ -142,7 +142,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 project(test_json_benchmark)
 
 add_executable(${PROJECT_NAME}
-    benchmark_baseline.c
+    test_json_benchmark.c
 )
 
 dap_test_add_includes(${PROJECT_NAME})

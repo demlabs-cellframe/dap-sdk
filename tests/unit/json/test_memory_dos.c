@@ -269,13 +269,20 @@ static bool s_test_stack_exhaustion(void) {
     if (l_json) {
         log_it(L_INFO, "Parser handled deep nesting successfully");
         
-        // Verify structure is parseable - traverse first 10 levels
-        dap_json_t *l_nested = l_json;
+        /* Traverse first 10 levels. Parsed JSON is IMMUTABLE: each
+         * dap_json_object_get_object() allocates a sub-wrapper; free each
+         * except the parse root (l_json). */
+        dap_json_t *l_cur = l_json;
         int depth = 0;
-        while (l_nested && depth < 10) {  // Check first 10 levels
-            l_nested = dap_json_object_get_object(l_nested, "a");
+        while (l_cur && depth < 10) {
+            dap_json_t *l_next = dap_json_object_get_object(l_cur, "a");
+            if (depth > 0) {
+                dap_json_object_free(l_cur);
+            }
+            l_cur = l_next;
             depth++;
         }
+        dap_json_object_free(l_cur);
         DAP_TEST_FAIL_IF(depth < 10, "Nested structure accessible");
     } else {
         log_it(L_INFO, "Parser rejected deep nesting (acceptable if limits enforced)");

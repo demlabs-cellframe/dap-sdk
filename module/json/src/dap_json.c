@@ -241,9 +241,9 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
     if (a_parent->mode == DAP_JSON_MODE_MUTABLE) {
         l_json->mode_data.mutable.value = a_value;
         l_json->mode_data.mutable.stage2 = NULL; // Don't copy stage2 (parent owns it)
-        
-        // Increment parent refcount to keep parent alive
-        a_parent->ref_count++;
+        l_json->borrow_source = a_parent;
+        // Note: borrowed wrappers don't increment parent ref_count
+        // User must ensure parent outlives borrowed wrappers
     } else {
         // IMMUTABLE mode: not supported yet (tape doesn't need borrowed refs)
         log_it(L_ERROR, "Borrowed references for IMMUTABLE mode not yet implemented");
@@ -686,11 +686,18 @@ void dap_json_object_free(dap_json_t* a_json)
         return;
     }
     
-    // Decrement reference count
+    // Borrowed wrapper: free shell only (value stays in parent DOM)
+    // Note: borrowed wrappers are lightweight views, don't affect parent ref_count
+    if (a_json->borrow_source) {
+        DAP_DELETE(a_json);
+        return;
+    }
+    
+    // For owned wrappers: check reference count
     if (a_json->ref_count > 0) {
         a_json->ref_count--;
         if (a_json->ref_count > 0) {
-            return; // Still referenced
+            return; // Still has owning references (from dap_json_object_ref)
         }
     }
     
@@ -810,7 +817,16 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
         return -1;
     }
     
-    return dap_json_array_v2_add(l_array, l_item) ? 0 : -1;
+    if (!dap_json_array_v2_add(l_array, l_item)) {
+        return -1;
+    }
+    
+    // Value transferred to array - detach from wrapper to prevent double-free
+    if (a_item->mode == DAP_JSON_MODE_MUTABLE && !a_item->borrow_source) {
+        a_item->mode_data.mutable.value = NULL;
+    }
+    
+    return 0;
 }
 
 /**
@@ -1685,7 +1701,17 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
         return -1;
     }
     
-    return dap_json_object_v2_add(l_obj, a_key, l_value) ? 0 : -1;
+    if (!dap_json_object_v2_add(l_obj, a_key, l_value)) {
+        return -1;
+    }
+    
+    // Value transferred to parent - detach from wrapper to prevent double-free
+    // Wrapper can still be freed by caller but won't free the value
+    if (a_value->mode == DAP_JSON_MODE_MUTABLE && !a_value->borrow_source) {
+        a_value->mode_data.mutable.value = NULL;
+    }
+    
+    return 0;
 }
 
 /**
