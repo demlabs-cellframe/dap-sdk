@@ -289,7 +289,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         return;
     }
     if (a_stream->stat_packets_lost || a_stream->stat_packets_replayed)
-        log_it(L_WARNING, "Stream closed: %zu packets lost, %zu replayed",
+        log_it(L_NOTICE, "Stream closed: %zu packets lost, %zu replayed",
                a_stream->stat_packets_lost, a_stream->stat_packets_replayed);
     dap_stream_delete_from_list(a_stream);
     // a_stream->esocket_uuid = 0;
