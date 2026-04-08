@@ -353,26 +353,47 @@ dap_cert_t* dap_cert_file_load(const char * a_cert_file_path)
 dap_cert_t* dap_cert_mem_load(const void *a_data, size_t a_data_size)
 {
     dap_return_val_if_fail_err(!!a_data, NULL, "No data provided to load cert from");
-    dap_return_val_if_fail_err(a_data_size > sizeof(dap_cert_file_hdr_t), NULL, "Inconsistent cert data");
+    size_t l_hdr_size = sizeof(dap_cert_file_hdr_t);
+    dap_return_val_if_fail_err(a_data_size > l_hdr_size, NULL, "Inconsistent cert data");
     dap_cert_t *l_ret = NULL;
     const uint8_t *l_data = (const uint8_t*)a_data;
-    dap_cert_file_hdr_t l_hdr = *(dap_cert_file_hdr_t*)l_data;
-    l_data += sizeof(l_hdr);
+    dap_cert_file_hdr_t l_hdr;
+    memcpy(&l_hdr, l_data, l_hdr_size);
     if ( l_hdr.sign != dap_cert_FILE_HDR_SIGN )
         return log_it(L_ERROR, "Wrong cert signature, corrupted header!"), NULL;
     else if ( l_hdr.version < 1 )
         return log_it(L_ERROR, "Unrecognizable certificate version, corrupted file or your software is deprecated"), NULL;
+
+    size_t l_hdr_on_disk = l_hdr_size;
+    size_t l_size_req = l_hdr_on_disk + DAP_CERT_ITEM_NAME_MAX + l_hdr.data_size + l_hdr.data_pvt_size + l_hdr.metadata_size;
+
+    /* Backward compat: cert written with 8-byte time_t (64-bit build) has
+       4 extra bytes compared to a 4-byte time_t build (32-bit ARM).
+       Detect by checking the total size mismatch. */
+    if(l_size_req != a_data_size && sizeof(time_t) < 8)
+    {
+        size_t l_alt_hdr = l_hdr_on_disk + (8 - sizeof(time_t));
+        size_t l_alt_req = l_alt_hdr + DAP_CERT_ITEM_NAME_MAX + l_hdr.data_size + l_hdr.data_pvt_size + l_hdr.metadata_size;
+        if(l_alt_req == a_data_size)
+        {
+            l_hdr_on_disk = l_alt_hdr;
+            l_size_req = l_alt_req;
+            log_it(L_DEBUG, "Detected cert with larger time_t, on-disk header %zu bytes vs struct %zu bytes", l_hdr_on_disk, l_hdr_size);
+        }
+    }
+
     debug_if( dap_enc_debug_more(), L_DEBUG,"sizeof(l_hdr)=%zu "
                                             "l_hdr.data_pvt_size=%"DAP_UINT64_FORMAT_U" "
                                             "l_hdr.data_size=%"DAP_UINT64_FORMAT_U" "
                                             "l_hdr.metadata_size=%"DAP_UINT64_FORMAT_U" "
                                             "a_data_size=%zu ",
-                                            sizeof(l_hdr), l_hdr.data_pvt_size, l_hdr.data_size,
+                                            l_hdr_on_disk, l_hdr.data_pvt_size, l_hdr.data_size,
                                             l_hdr.metadata_size, a_data_size );
-    size_t l_size_req = sizeof(l_hdr) + DAP_CERT_ITEM_NAME_MAX + l_hdr.data_size + l_hdr.data_pvt_size + l_hdr.metadata_size;
 
     if ( l_size_req > a_data_size )
         return log_it(L_ERROR, "Cert data size exeeds file size, %zu > %zu", l_size_req, a_data_size), NULL;
+
+    l_data += l_hdr_on_disk;
 
     char l_name[DAP_CERT_ITEM_NAME_MAX];
     dap_strncpy(l_name, (const char*)l_data, DAP_CERT_ITEM_NAME_MAX - 1);
