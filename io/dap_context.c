@@ -1294,7 +1294,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 /*
                  * Socket is ready to write and not going to close
                  */
-                if ( l_cur->context && l_cur->buf_out_size ){ // esocket wasn't unassigned in callback, we need some other ops with it
+                bool l_has_udp_queue = l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP
+                                      && l_cur->packet_queue && l_cur->packet_queue->count > 0;
+                if ( l_cur->context && (l_cur->buf_out_size || l_has_udp_queue) ){
                     switch (l_cur->type){
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
@@ -1541,8 +1543,10 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
     // There's no proper way, neither a need to do this when running IOCP
 #elif defined (DAP_EVENTS_CAPS_EPOLL)
     int events = a_esocket->ev_base_flags | EPOLLERR;
+#ifdef EPOLLEXCLUSIVE
+    events &= ~EPOLLEXCLUSIVE; // EPOLLEXCLUSIVE is only valid for EPOLL_CTL_ADD
+#endif
 
-    // Check & add
     if( a_esocket->flags & DAP_SOCK_READY_TO_READ )
         events |= EPOLLIN;
 

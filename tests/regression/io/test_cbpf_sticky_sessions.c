@@ -339,6 +339,7 @@ static int s_setup_test(void)
         s_ctx.client_es[i] = dap_events_socket_create_platform(AF_INET, SOCK_DGRAM, 0, &l_callbacks);
         if (!s_ctx.client_es[i]) return -1;
         
+        s_ctx.client_es[i]->type = DESCRIPTOR_TYPE_SOCKET_UDP;
         s_ctx.client_es[i]->_inheritor = &s_ctx.client_ctx[i];
         
         // Assign to worker (spread across workers)
@@ -357,9 +358,12 @@ static void s_cleanup_test(void)
     atomic_store(&s_ctx.test_complete, true);
     dap_test_sleep_ms(500);
 
+    // Server first to stop accepting traffic
     if (s_ctx.server) {
         dap_io_flow_server_stop(s_ctx.server);
         dap_io_flow_delete_all_flows(s_ctx.server);
+        dap_io_flow_server_delete(s_ctx.server);
+        s_ctx.server = NULL;
     }
 
     for (int i = 0; i < NUM_CLIENTS; i++) {
@@ -373,14 +377,8 @@ static void s_cleanup_test(void)
         }
     }
 
-    // Wait for async deletions to complete on worker threads
     dap_test_sleep_ms(500);
 
-    if (s_ctx.server) {
-        dap_io_flow_server_delete(s_ctx.server);
-        s_ctx.server = NULL;
-    }
-    
     dap_events_deinit();
 }
 

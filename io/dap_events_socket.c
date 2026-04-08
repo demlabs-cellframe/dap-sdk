@@ -686,6 +686,10 @@ dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type,
         return NULL;
     }
 
+    // Set correct descriptor type based on socket type
+    if (a_type == SOCK_DGRAM)
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+
     return l_es;
 }
 

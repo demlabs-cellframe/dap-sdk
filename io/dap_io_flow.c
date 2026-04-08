@@ -480,13 +480,12 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     pthread_cond_destroy(&a_server->cross_worker_cond);
     
     // Step 6: Stop and delete dap_server (listeners)
-    // Use async delete and wait for completion
+    // Use synchronous delete to ensure all listener sockets are fully removed
+    // before freeing the server struct (prevents use-after-free in callbacks)
     debug_if(s_debug_more, L_DEBUG, "Deleting dap_server (listeners)");
     if (a_server->dap_server) {
-        dap_server_delete(a_server->dap_server);
+        dap_server_delete_sync(a_server->dap_server);
         a_server->dap_server = NULL;
-        // Give workers time to process delete requests
-        usleep(100000);  // 100ms
     }
     
     // Step 7: Final cleanup
