@@ -156,7 +156,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
     if( a_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED){
         pthread_condattr_t attr;
         pthread_condattr_init(&attr);
-#if !defined(DAP_OS_DARWIN) && !defined(DAP_OS_ANDROID)
+#if !defined(DAP_OS_DARWIN) && !defined(DAP_OS_ANDROID) && !defined(DAP_OS_WASM)
         pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
 #endif
         pthread_mutex_init(&a_context->started_mutex, NULL);
