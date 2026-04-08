@@ -231,8 +231,13 @@ function(dap_mock_autowrap TARGET_NAME)
         # Only apply wrap options if file is not empty
         if(WRAP_CONTENT_STRIPPED)
             if(APPLE)
-                # macOS: Don't add linker flags - we use DYLD_INSERT_LIBRARIES instead
-                # Apple ld does not support GNU --wrap; interposition dylib is injected at runtime
+                # macOS: Don't add GNU --wrap linker flags.
+                # Use -flat_namespace so that mock .o symbol overrides resolve at link time,
+                # and -undefined dynamic_lookup for __real_ / dlsym fallback symbols.
+                target_link_options(${TARGET_NAME} PRIVATE
+                    "-Wl,-flat_namespace"
+                    "-Wl,-undefined,dynamic_lookup"
+                )
             elseif(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
                    CMAKE_C_COMPILER_ID MATCHES "Clang")
                 # GCC and Clang with GNU ld support -Wl,@file for response files with --wrap options

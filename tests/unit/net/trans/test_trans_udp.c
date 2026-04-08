@@ -45,6 +45,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <arpa/inet.h>
 
 #include "dap_common.h"
@@ -761,7 +762,7 @@ static void test_13_stream_write(void)
     TEST_ASSERT(l_udp_ctx->session_id == l_session_id, "Session ID should be set");
     TEST_ASSERT(l_udp_ctx->seq_num == 1, "Initial sequence number should be 1");
     
-    TEST_INFO("✅ UDP context created with session_id=0x%016lX, seq_num=%u",
+    TEST_INFO("UDP context created with session_id=0x%016" PRIx64 ", seq_num=%u",
               l_udp_ctx->session_id, l_udp_ctx->seq_num);
     
     // ========================================================================
@@ -975,19 +976,19 @@ static void test_13_stream_write(void)
         return;
     }
     
-    TEST_INFO("Decrypted header: type=0x%02x, seq_num=%lu, session_id=0x%016lx, fc_flags=0x%02x",
+    TEST_INFO("Decrypted header: type=0x%02x, seq_num=%" PRIu64 ", session_id=0x%016" PRIx64 ", fc_flags=0x%02x",
               l_hdr.type, l_hdr.seq_num, l_hdr.session_id, l_hdr.fc_flags);
     
     // Validate header fields
     TEST_ASSERT(l_hdr.type == DAP_STREAM_UDP_PKT_DATA,
                 "Packet type should be DATA (0x03), got 0x%02x", l_hdr.type);
     TEST_ASSERT(l_hdr.seq_num == 1,
-                "Sequence number should be 1 (first packet), got %lu", l_hdr.seq_num);
+                "Sequence number should be 1 (first packet), got %" PRIu64, l_hdr.seq_num);
     TEST_ASSERT(l_hdr.session_id == l_session_id,
-                "Session ID should match (expected 0x%016lX, got 0x%016lX)",
+                "Session ID should match (expected 0x%016" PRIx64 ", got 0x%016" PRIx64 ")",
                 l_session_id, l_hdr.session_id);
     
-    TEST_INFO("✅ Internal header validated: type=%u, seq=%lu, session=0x%016lX",
+    TEST_INFO("Internal header validated: type=%u, seq=%" PRIu64 ", session=0x%016" PRIx64,
               l_hdr.type, l_hdr.seq_num, l_hdr.session_id);
     
     // Validate payload
@@ -1050,7 +1051,7 @@ static void test_15_encrypted_internal_header(void)
     TEST_ASSERT_NOT_NULL(l_udp_ctx, "UDP context creation should succeed");
     
     uint32_t l_initial_seq = l_udp_ctx->seq_num;
-    TEST_INFO("✅ UDP context created: session=0x%016lX, seq=%u", l_session_id, l_initial_seq);
+    TEST_INFO("UDP context created: session=0x%016" PRIx64 ", seq=%u", l_session_id, l_initial_seq);
     
     // ========================================================================
     // STEP 2: Setup mock stream with session and send packet
@@ -1126,11 +1127,11 @@ static void test_15_encrypted_internal_header(void)
     TEST_ASSERT(l_hdr.type == DAP_STREAM_UDP_PKT_DATA,
                 "Packet type should be DATA (%u), got %u", DAP_STREAM_UDP_PKT_DATA, l_hdr.type);
     TEST_ASSERT(l_hdr.seq_num == l_initial_seq,
-                "Sequence number should match initial (expected %u, got %lu)", l_initial_seq, l_hdr.seq_num);
+                "Sequence number should match initial (expected %u, got %" PRIu64 ")", l_initial_seq, l_hdr.seq_num);
     TEST_ASSERT(l_hdr.session_id == l_session_id,
-                "Session ID should match (expected 0x%016lX, got 0x%016lX)", l_session_id, l_hdr.session_id);
+                "Session ID should match (expected 0x%016" PRIx64 ", got 0x%016" PRIx64 ")", l_session_id, l_hdr.session_id);
     
-    TEST_INFO("✅ Internal header validated: type=%u, seq=%lu, session=0x%016lX",
+    TEST_INFO("Internal header validated: type=%u, seq=%" PRIu64 ", session=0x%016" PRIx64,
               l_hdr.type, l_hdr.seq_num, l_hdr.session_id);
     
     // ========================================================================
@@ -1387,7 +1388,7 @@ static void test_17_replay_protection(void)
     TEST_ASSERT_NOT_NULL(l_udp_ctx, "UDP context creation should succeed");
     
     uint32_t l_initial_seq = l_udp_ctx->seq_num;
-    TEST_INFO("✅ UDP context created: session=0x%016lX, initial_seq=%u",
+    TEST_INFO("UDP context created: session=0x%016" PRIx64 ", initial_seq=%u",
               l_session_id, l_initial_seq);
     
     // ========================================================================
@@ -1460,8 +1461,8 @@ static void test_17_replay_protection(void)
         uint64_t l_sess_id = l_hdr.session_id;
         
         TEST_ASSERT(l_seq_num == l_expected_seq_nums[i],
-                    "Packet %d seq_num should be %lu (got %lu)",
-                    i + 1, (unsigned long)l_expected_seq_nums[i], (unsigned long)l_seq_num);
+                    "Packet %d seq_num should be %" PRIu64 " (got %" PRIu64 ")",
+                    i + 1, l_expected_seq_nums[i], l_seq_num);
         
         DAP_DELETE(l_decrypted);
     }

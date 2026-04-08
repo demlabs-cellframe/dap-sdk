@@ -91,6 +91,11 @@ dap_client_t* dap_trans_test_get_mock_client(void)
     return &s_mock_client;
 }
 
+dap_net_trans_ctx_t* dap_trans_test_get_mock_net_trans_ctx(void)
+{
+    return &s_mock_net_trans_ctx;
+}
+
 // ============================================================================
 // Common Mock Wrappers
 // ============================================================================

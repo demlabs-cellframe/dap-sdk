@@ -640,12 +640,11 @@ static void test_13_stream_handshake(void)
     int l_ret = l_trans->ops->init(l_trans, NULL);
     TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
     
-    // Create mock stream
+    // Create mock stream with proper trans_ctx chain
+    dap_trans_test_get_mock_client();
     s_mock_stream.trans = l_trans;
-    s_mock_trans_ctx = (dap_net_trans_ctx_t){0};
     s_mock_stream.esocket = &s_mock_events_socket;
-    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
-    s_mock_trans_ctx._inheritor = (void*)dap_trans_test_get_mock_client();
+    s_mock_stream.trans_ctx = dap_trans_test_get_mock_net_trans_ctx();
     
     // Set esocket in private data for WebSocket
     dap_net_trans_websocket_private_t *l_priv = 

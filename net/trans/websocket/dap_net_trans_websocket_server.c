@@ -536,12 +536,21 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
         if (a_http_client->esocket->worker) {
             l_stream->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
         }
-        l_stream->is_client_to_uplink = false;  // This is server-side
-        // Set esocket->_inheritor to trans_ctx (dap_stream_new_es_client doesn't do this)
+        l_stream->is_client_to_uplink = false;
+        // Allocate trans_ctx (dap_stream_new_es_client doesn't do this)
+        if (!l_stream->trans_ctx) {
+            l_stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+            if (!l_stream->trans_ctx) {
+                log_it(L_CRITICAL, "Failed to allocate trans_ctx for WebSocket stream");
+                DAP_DELETE(l_stream);
+                return -5;
+            }
+            l_stream->trans_ctx->stream = l_stream;
+            if (l_stream->trans)
+                l_stream->trans_ctx->trans = l_stream->trans;
+        }
         a_http_client->esocket->_inheritor = l_stream->trans_ctx;
-        // Save http_client reference for cleanup
-        if (l_stream->trans_ctx)
-            l_stream->trans_ctx->http_client = a_http_client;
+        l_stream->trans_ctx->http_client = a_http_client;
         a_http_client->_inheritor = l_stream;
     }
 

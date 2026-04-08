@@ -620,9 +620,6 @@ static void test_multiclient_udp(void)
     dap_assert(data_fail == 0, "All clients should complete data exchange");
     
 cleanup:
-    for (int i = 0; i < NUM_CLIENTS; i++) {
-        s_cleanup_client(i);
-    }
     if (s_server) {
         dap_net_trans_server_stop(s_server);
         dap_net_trans_server_delete(s_server);
@@ -631,6 +628,9 @@ cleanup:
     
     // Reset tier forcing
     dap_io_flow_set_forced_tier(-1);
+    
+    // Wait for async operations to drain before stopping events
+    dap_test_sleep_ms(1000);
 }
 
 //===================================================================
@@ -777,9 +777,14 @@ int main(int argc, char **argv)
     // Run test
     test_multiclient_udp();
     
-    // Cleanup
-    dap_client_deinit();
+    // Stop event loop first (join worker threads) to avoid race with client cleanup
     dap_events_deinit();
+    
+    // Now safe to clean up clients — no worker threads running
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        s_cleanup_client(i);
+    }
+    dap_client_deinit();
     if (g_config) {
         dap_config_close(g_config);
         g_config = NULL;

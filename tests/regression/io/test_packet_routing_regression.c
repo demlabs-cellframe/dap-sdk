@@ -605,7 +605,7 @@ static void test_packet_routing_multiclient(void)
     
     // Signal all callbacks to stop, wait for worker queues to drain
     atomic_store(&s_ctx.test_complete, true);
-    dap_test_sleep_ms(500);
+    dap_test_sleep_ms(1000);
     
     // Cleanup: server first to stop accepting traffic, then clients
     s_cleanup_server();
@@ -614,6 +614,9 @@ static void test_packet_routing_multiclient(void)
 #ifdef DAP_OS_LINUX
     dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_APPLICATION);
 #endif
+    
+    // Wait for async deletions to complete on worker threads
+    dap_test_sleep_ms(1000);
     
     dap_events_deinit();
     pthread_mutex_destroy(&s_ctx.mutex);

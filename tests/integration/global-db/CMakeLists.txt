@@ -3,6 +3,14 @@
 
 project(test_global_db)
 
+# Skip when cross-compiling without any DB driver
+if(CMAKE_CROSSCOMPILING AND NOT BUILD_WITH_GDB_DRIVER_MDBX
+                        AND NOT BUILD_WITH_GDB_DRIVER_SQLITE
+                        AND NOT BUILD_WITH_GDB_DRIVER_PGSQL)
+    message(STATUS "Skipping ${PROJECT_NAME}: cross-compiling without DB driver")
+    return()
+endif()
+
 # Include DAP Mock Framework
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework/mocks/DAPMockAutoWrap.cmake)
 # Include test helpers

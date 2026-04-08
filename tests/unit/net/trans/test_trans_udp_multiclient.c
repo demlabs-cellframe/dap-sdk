@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <errno.h>
@@ -142,7 +143,7 @@ static void s_tracker_record_recv(uint32_t client_id, uint32_t worker_id)
     } else if (sess->assigned_worker != (int8_t)worker_id) {
         atomic_fetch_add(&sess->worker_violations, 1);
         atomic_fetch_add(&s_tracker.total_violations, 1);
-        log_it(L_ERROR, "STICKY VIOLATION: Session %u (0x%lX) -> W%u (expected W%d)",
+        log_it(L_ERROR, "STICKY VIOLATION: Session %u (0x%" PRIx64 ") -> W%u (expected W%d)",
                client_id, sess->session_id, worker_id, sess->assigned_worker);
     }
     
@@ -179,11 +180,11 @@ static void s_tracker_print_report(void)
         uint32_t v = atomic_load(&sess->worker_violations);
         
         if (r > 0) {
-            dap_test_msg("  Session %2u (0x%08lX): W%d, recv=%u%s",
+            dap_test_msg("  Session %2u (0x%08" PRIx64 "): W%d, recv=%u%s",
                          c, sess->session_id, sess->assigned_worker, r,
                          v > 0 ? " [VIOLATIONS!]" : "");
         } else {
-            dap_test_msg("  Session %2u (0x%08lX): NO DATA", c, sess->session_id);
+            dap_test_msg("  Session %2u (0x%08" PRIx64 "): NO DATA", c, sess->session_id);
         }
     }
 }
@@ -257,7 +258,7 @@ static void s_server_packet_received(dap_io_flow_server_t *a_server,
     // Debug first few
     static _Atomic uint32_t s_logged = 0;
     if (atomic_fetch_add(&s_logged, 1) < 5) {
-        printf("PKT: session=0x%lX, client=%u, seq=%u, worker=%u\n",
+        printf("PKT: session=0x%" PRIx64 ", client=%u, seq=%u, worker=%u\n",
                pkt->session_id, pkt->client_id, pkt->seq_num, worker_id);
     }
     

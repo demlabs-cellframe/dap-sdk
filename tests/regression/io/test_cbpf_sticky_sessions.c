@@ -355,7 +355,7 @@ static int s_setup_test(void)
 static void s_cleanup_test(void)
 {
     atomic_store(&s_ctx.test_complete, true);
-    dap_test_sleep_ms(500);
+    dap_test_sleep_ms(1000);
 
     if (s_ctx.server) {
         dap_io_flow_server_stop(s_ctx.server);
@@ -373,7 +373,8 @@ static void s_cleanup_test(void)
         }
     }
 
-    dap_test_sleep_ms(500);
+    // Wait for async deletions to complete on worker threads
+    dap_test_sleep_ms(1000);
 
     if (s_ctx.server) {
         dap_io_flow_server_delete(s_ctx.server);

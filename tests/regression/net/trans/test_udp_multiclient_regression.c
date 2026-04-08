@@ -411,13 +411,8 @@ cleanup:
         }
     }
     
-    // Wait for disconnects
-    usleep(500000);
-    
-    TEST_INFO("Cleanup: deleting clients...");
-    for (int i = 0; i < NUM_CLIENTS; i++) {
-        s_cleanup_client(i);
-    }
+    // Wait for disconnects and async operations
+    usleep(1000000);
     
     TEST_INFO("Cleanup: stopping server...");
     s_cleanup_server();
@@ -461,8 +456,14 @@ int main(int argc, char **argv)
     
     TEST_RUN(test_multiclient_udp);
     
-    dap_client_deinit();
+    // Stop event loop first (join worker threads) before client cleanup
     dap_events_deinit();
+    
+    // Now safe to clean up clients — no worker threads running
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        s_cleanup_client(i);
+    }
+    dap_client_deinit();
     dap_common_deinit();
     
     return 0;
