@@ -33,6 +33,10 @@
 #include "dap_cpu_detect.h"
 #include "dap_common.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define LOG_TAG "dap_cpu_arch"
 
 /* ========================================================================== */
@@ -99,12 +103,31 @@ bool dap_cpu_arch_is_available(dap_cpu_arch_t a_arch)
 /*                       BEST ARCHITECTURE SELECTION                          */
 /* ========================================================================== */
 
+/* Wine + AVX-512: Wine cannot emulate AVX-512 correctly, cap at AVX2 */
+static dap_cpu_arch_t s_arch_cap = DAP_CPU_ARCH_AVX512;
+static int s_arch_cap_checked = 0;
+
+static void s_check_wine_cap(void)
+{
+    if (s_arch_cap_checked)
+        return;
+    s_arch_cap_checked = 1;
+#ifdef _WIN32
+    HMODULE l_ntdll = GetModuleHandleA("ntdll.dll");
+    if (l_ntdll && GetProcAddress(l_ntdll, "wine_get_version")) {
+        s_arch_cap = DAP_CPU_ARCH_AVX2;
+        log_it(L_WARNING, "Wine detected: capping CPU arch at AVX2 (AVX-512 unsupported)");
+    }
+#endif
+}
+
 dap_cpu_arch_t dap_cpu_arch_get_best(void)
 {
+    s_check_wine_cap();
     dap_cpu_features_t features = dap_cpu_detect_features();
     
 #if DAP_CPU_DETECT_X86
-    if (features.has_avx512f && features.has_avx512bw)
+    if (features.has_avx512f && features.has_avx512bw && s_arch_cap >= DAP_CPU_ARCH_AVX512)
         return DAP_CPU_ARCH_AVX512;
     if (features.has_avx2)
         return DAP_CPU_ARCH_AVX2;

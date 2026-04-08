@@ -558,9 +558,10 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     l_result->mode_data.immutable.input_len = l_parse_len;
     l_result->mode_data.immutable.tape = l_tape;
     l_result->mode_data.immutable.tape_count = l_tape_count;
-    l_result->mode_data.immutable.tape_offset = 0;  // Root wrapper starts at beginning
+    l_result->mode_data.immutable.tape_offset = 0;
+    l_result->mode_data.immutable.transcoded_buf = l_transcoded;
     
-    // Tape and input_buffer managed by arenas
+    dap_json_stage1_free(l_stage1);
     
     return l_result;
 }
@@ -693,10 +694,13 @@ void dap_json_object_free(dap_json_t* a_json)
         }
     }
     
-    // For IMMUTABLE mode (tape): arena is NOT reset here!
-    // Reason: Other parsed objects may still use the same arena
-    // Arena grows naturally and is reset manually via dap_json_tape_arena_reset()
-    // or freed at thread exit via dap_json_cleanup_thread_arena()
+    // For IMMUTABLE mode: free transcoded buffer (only root wrapper owns it)
+    // Note: tape is allocated from thread-local arena, not freed here
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE && a_json->mode_data.immutable.tape_offset == 0) {
+        if (a_json->mode_data.immutable.transcoded_buf) {
+            DAP_DELETE(a_json->mode_data.immutable.transcoded_buf);
+        }
+    }
     
     // For MUTABLE mode (DOM), free the value
     if (a_json->mode == DAP_JSON_MODE_MUTABLE && a_json->mode_data.mutable.value) {

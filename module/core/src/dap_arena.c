@@ -64,15 +64,14 @@ typedef struct dap_arena_page {
     // ⭐ Refcounting support (only used if arena->use_refcount=true)
     atomic_int refcount;          // Atomic reference count (thread-safe)
     bool is_refcounted;           // Flag to check if this page uses refcount
-    /* Without padding, offsetof(..., data) is 29 → bump pointers are misaligned
-     * and UBSan (-fsanitize=alignment) aborts on uint64_t / struct stores. */
-    uint8_t _pad_align_data[3];
+    
+    /* Padding to ensure data[] starts at DAP_ARENA_ALIGNMENT boundary.
+     * 64-bit: 8+8+8+4+1 = 29, need 3 bytes → 32
+     * 32-bit: 4+4+4+4+1 = 17, need 7 bytes → 24  */
+    uint8_t _pad_align_data[DAP_ARENA_ALIGNMENT - 1];
 
-    uint8_t data[];               // Flexible array member for data
+    _Alignas(DAP_ARENA_ALIGNMENT) uint8_t data[];
 } dap_arena_page_t;
-
-_Static_assert(offsetof(dap_arena_page_t, data) % DAP_ARENA_ALIGNMENT == 0,
-               "arena page data[] must be DAP_ARENA_ALIGNMENT-aligned");
 
 /**
  * @brief Arena allocator structure

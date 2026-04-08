@@ -38,6 +38,7 @@ struct dap_json {
             dap_json_tape_entry_t *tape;     /**< Tape array */
             size_t tape_count;               /**< Number of tape entries */
             size_t tape_offset;              /**< Starting position in tape (for sub-wrappers, 0 for root) */
+            uint8_t *transcoded_buf;         /**< Transcoded buffer (owned, must be freed) or NULL */
         } immutable;
         
         // MUTABLE mode (created JSON → DOM)
