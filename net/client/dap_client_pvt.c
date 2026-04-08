@@ -1250,6 +1250,8 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
     (void) arg;
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    if (!l_client_pvt)
+        return;
 
     l_client_pvt->ts_last_active = time(NULL);
     switch (l_client_pvt->stage) {
@@ -1296,6 +1298,8 @@ static bool s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
 {
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    if (!l_client_pvt)
+        return false;
     bool l_ret = false;
     if (l_client_pvt->stage_status == STAGE_STATUS_ERROR || !l_client_pvt->stream)
         return false;
