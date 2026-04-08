@@ -105,6 +105,7 @@ static void *s_parse_thread(void *a_arg)
                 } else {
                     atomic_fetch_add(args->failure_count, 1);
                 }
+                dap_json_object_free(l_user);
             } else {
                 atomic_fetch_add(args->failure_count, 1);
             }

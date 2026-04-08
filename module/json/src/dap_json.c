@@ -1912,19 +1912,30 @@ const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
             return NULL;
         }
         
-        // Get string
-        const char *l_result = dap_json_get_string(l_value);
-        char *l_copy = NULL;
-        if (l_result) {
-            size_t len = strlen(l_result);
-            l_copy = DAP_NEW_Z_SIZE(char, len + 1);
-            if (l_copy) {
-                memcpy(l_copy, l_result, len);
-            }
+        // Get unescaped string via iterator, copy to arena
+        dap_json_iterator_t *l_iter = dap_json_iterator_new(l_value);
+        if (!l_iter) {
+            dap_json_object_free(l_value);
+            return NULL;
         }
+        
+        char *l_unescaped = dap_json_iterator_get_string_dup(l_iter);
+        const char *l_result = NULL;
+        
+        if (l_unescaped) {
+            size_t l_len = strlen(l_unescaped);
+            char *l_buf = (char*)dap_json_tape_arena_alloc(l_len + 1);
+            if (l_buf) {
+                memcpy(l_buf, l_unescaped, l_len + 1);
+                l_result = l_buf;
+            }
+            free(l_unescaped);
+        }
+        
+        dap_json_iterator_free(l_iter);
         dap_json_object_free(l_value);
         
-        return l_copy;
+        return l_result;
     }
     
     // MUTABLE mode (DOM): use value-based access
@@ -2716,18 +2727,26 @@ const char* dap_json_get_string(dap_json_t* a_json)
         return dap_json_get_string_value(l_value);
     }
     
-    // For IMMUTABLE mode, use iterator
+    // For IMMUTABLE mode, get unescaped string and copy to arena (no caller free)
     dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
     if (!l_iter) {
         return NULL;
     }
     
-    // Get string via iterator (handles escapes properly)
-    char *l_result = dap_json_iterator_get_string_dup(l_iter);
+    char *l_unescaped = dap_json_iterator_get_string_dup(l_iter);
+    const char *l_result = NULL;
+    
+    if (l_unescaped) {
+        size_t l_len = strlen(l_unescaped);
+        char *l_buf = (char*)dap_json_tape_arena_alloc(l_len + 1);
+        if (l_buf) {
+            memcpy(l_buf, l_unescaped, l_len + 1);
+            l_result = l_buf;
+        }
+        free(l_unescaped);
+    }
     
     dap_json_iterator_free(l_iter);
-    
-    // WARNING: Caller must free() this string!
     return l_result;
 }
 
