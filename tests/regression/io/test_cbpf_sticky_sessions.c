@@ -539,7 +539,7 @@ int main(int argc, char **argv)
     
     test_cbpf_sticky_sessions();
 
-    dap_test_sleep_ms(200);
-    dap_common_deinit();
-    return 0;
+    fflush(stdout);
+    fflush(stderr);
+    _exit(0);
 }

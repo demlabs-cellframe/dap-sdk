@@ -196,16 +196,18 @@ function(dap_mock_autowrap TARGET_NAME)
             file(READ ${MOCK_SRC_PATH_FILE} MOCK_SRC_PATH)
             string(STRIP "${MOCK_SRC_PATH}" MOCK_SRC_PATH)
             if(MOCK_SRC_PATH AND EXISTS "${MOCK_SRC_PATH}")
+                # macOS interpose dylib is EXCLUDE_FROM_ALL: it is only built on
+                # explicit request (cmake --build . --target <dylib>).
+                # Tests run without DYLD_INSERT_LIBRARIES and exercise real
+                # code paths instead of mocked ones.
                 set(MOCK_DYLIB "${TARGET_NAME}_mock_interpose")
-                add_library(${MOCK_DYLIB} SHARED ${MOCK_SRC_PATH})
+                add_library(${MOCK_DYLIB} SHARED EXCLUDE_FROM_ALL ${MOCK_SRC_PATH})
 
-                # Inherit include directories from target
                 get_target_property(TARGET_INCLUDES ${TARGET_NAME} INCLUDE_DIRECTORIES)
                 if(TARGET_INCLUDES)
                     target_include_directories(${MOCK_DYLIB} PRIVATE ${TARGET_INCLUDES})
                 endif()
 
-                # Get include directories from ALL SDK modules (static libs)
                 get_property(_SDK_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
                 if(_SDK_MODULES)
                     foreach(_MOD ${_SDK_MODULES})
@@ -226,7 +228,6 @@ function(dap_mock_autowrap TARGET_NAME)
                     endforeach()
                 endif()
 
-                # Also try SDK umbrella targets
                 foreach(_SDK_TGT cellframe_sdk dap-sdk dap_sdk_object)
                     if(TARGET ${_SDK_TGT})
                         get_target_property(_INC ${_SDK_TGT} INTERFACE_INCLUDE_DIRECTORIES)
@@ -243,20 +244,9 @@ function(dap_mock_autowrap TARGET_NAME)
                 set_target_properties(${MOCK_DYLIB} PROPERTIES
                     LIBRARY_OUTPUT_DIRECTORY "${MOCK_GEN_DIR}"
                 )
-
                 add_dependencies(${MOCK_DYLIB} ${TARGET_NAME}_mock_gen)
 
-                set_target_properties(${TARGET_NAME} PROPERTIES
-                    DAP_MOCK_DYLIB_PATH "${MOCK_GEN_DIR}/lib${MOCK_DYLIB}.dylib"
-                )
-
-                # Track target for dap_mock_finalize_tests()
-                set(_EXISTING "${DAP_MOCK_TARGETS_NEEDING_ENV}")
-                list(APPEND _EXISTING "${TARGET_NAME}")
-                set(DAP_MOCK_TARGETS_NEEDING_ENV "${_EXISTING}" CACHE INTERNAL
-                    "Targets needing DYLD_INSERT_LIBRARIES for mock interpose" FORCE)
-
-                message(STATUS " macOS: mock interpose dylib: ${MOCK_SRC_PATH}")
+                message(STATUS " macOS: mock interpose dylib (EXCLUDE_FROM_ALL): ${MOCK_SRC_PATH}")
             endif()
         endif()
     endif()

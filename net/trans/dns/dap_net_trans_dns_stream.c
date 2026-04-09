@@ -575,32 +575,68 @@ static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
  * @note Uses UDP-like approach: writes directly to esocket
  *       Full DNS query generation with encoding can be added later
  */
+typedef struct dns_client_sendto_args {
+    dap_events_socket_t *esocket;
+    void *data;
+    size_t size;
+    struct sockaddr_storage addr;
+    socklen_t addr_len;
+} dns_client_sendto_args_t;
+
+static void s_dns_client_sendto_callback(void *a_arg)
+{
+    dns_client_sendto_args_t *l_args = (dns_client_sendto_args_t *)a_arg;
+    if(l_args->esocket)
+        dap_events_socket_sendto_unsafe(l_args->esocket,
+            l_args->data, l_args->size,
+            &l_args->addr, l_args->addr_len);
+    DAP_DELETE(l_args->data);
+    DAP_DELETE(l_args);
+}
+
+/**
+ * @brief Write data to DNS tunnel
+ * @note Worker-aware: if called from a different worker thread,
+ *       marshals the sendto onto the esocket's owner worker via callback.
+ */
 static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
-    if (!a_stream || !a_data || a_size == 0) {
+    if(!a_stream || !a_data || a_size == 0) {
         log_it(L_ERROR, "Invalid arguments for DNS write");
         return -1;
     }
 
-    if (!a_stream->esocket) {
-        log_it(L_ERROR, "Stream has no esocket");
-        return -1;
-    }
-
     dap_events_socket_t *l_es = a_stream->esocket;
-    if (!l_es) {
+    if(!l_es) {
         log_it(L_ERROR, "DNS write: no esocket");
         return -1;
     }
-    
-    size_t l_sent = dap_events_socket_sendto_unsafe(l_es, a_data, a_size,
-                                                    &l_es->addr_storage, l_es->addr_size);
 
-    if (l_sent != a_size) {
-        log_it(L_WARNING, "DNS write incomplete: %zu of %zu bytes (flags=0x%x)", l_sent, a_size, l_es->flags);
+    dap_worker_t *l_current = dap_worker_get_current();
+    dap_worker_t *l_target = l_es->worker;
+
+    if(l_current == l_target) {
+        size_t l_sent = dap_events_socket_sendto_unsafe(l_es, a_data, a_size,
+                                                        &l_es->addr_storage, l_es->addr_size);
+        if(l_sent != a_size)
+            log_it(L_WARNING, "DNS write incomplete: %zu of %zu bytes (flags=0x%x)", l_sent, a_size, l_es->flags);
+        return (ssize_t)l_sent;
     }
-    
-    return (ssize_t)l_sent;
+
+    dns_client_sendto_args_t *l_args = DAP_NEW_Z(dns_client_sendto_args_t);
+    if(!l_args)
+        return -1;
+    l_args->esocket = l_es;
+    l_args->data = DAP_DUP_SIZE(a_data, a_size);
+    if(!l_args->data) {
+        DAP_DELETE(l_args);
+        return -1;
+    }
+    l_args->size = a_size;
+    memcpy(&l_args->addr, &l_es->addr_storage, l_es->addr_size);
+    l_args->addr_len = l_es->addr_size;
+    dap_worker_exec_callback_on(l_target, s_dns_client_sendto_callback, l_args);
+    return (ssize_t)a_size;
 }
 
 /**

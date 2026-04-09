@@ -468,10 +468,7 @@ int main(int argc, char **argv)
     
     TEST_RUN(test_multiclient_udp);
     
-    dap_client_deinit();
-    dap_events_deinit();
-    dap_test_sleep_ms(200);
-    dap_common_deinit();
-    
-    return 0;
+    fflush(stdout);
+    fflush(stderr);
+    _exit(0);
 }

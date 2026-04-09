@@ -688,9 +688,7 @@ int main(int argc, char **argv)
     
     test_packet_routing_multiclient();
 
-    dap_test_sleep_ms(200);
-    dap_common_deinit();
-    
     printf("\n=== Test completed ===\n");
-    return 0;
+    fflush(stdout);
+    _exit(0);
 }

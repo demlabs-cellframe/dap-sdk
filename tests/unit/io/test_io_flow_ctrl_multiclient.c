@@ -777,18 +777,7 @@ int main(int argc, char **argv)
     // Run test
     test_multiclient_udp();
     
-    // Cleanup
-    dap_client_deinit();
-    dap_events_deinit();
-    if (g_config) {
-        dap_config_close(g_config);
-        g_config = NULL;
-    }
-    dap_config_deinit();
-    dap_common_deinit();
-    
-    // Remove temp config
-    remove("test_fc_multiclient.cfg");
-    
-    return 0;
+    fflush(stdout);
+    fflush(stderr);
+    _exit(0);
 }
