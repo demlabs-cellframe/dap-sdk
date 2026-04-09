@@ -311,8 +311,10 @@ static void *s_context_thread(void *a_arg)
         if (l_msg->callback_stopped)
             l_msg->callback_stopped(l_context, l_msg->callback_arg);
         log_it(L_NOTICE, "Exiting context #%u (early exit)", l_context->id);
-        pthread_cond_destroy(&l_context->started_cond);
-        pthread_mutex_destroy(&l_context->started_mutex);
+        if (l_context->running_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED) {
+            pthread_cond_destroy(&l_context->started_cond);
+            pthread_mutex_destroy(&l_context->started_mutex);
+        }
         pthread_rwlock_destroy(&l_context->esockets_lock);
         DAP_DELETE(l_context);
         DAP_DELETE(l_msg);
@@ -335,8 +337,10 @@ static void *s_context_thread(void *a_arg)
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
 
     // Free memory. Because nobody expected to work with context outside itself it have to be safe
-    pthread_cond_destroy(&l_context->started_cond);
-    pthread_mutex_destroy(&l_context->started_mutex);
+    if (l_context->running_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED) {
+        pthread_cond_destroy(&l_context->started_cond);
+        pthread_mutex_destroy(&l_context->started_mutex);
+    }
     pthread_rwlock_destroy(&l_context->esockets_lock);
     DAP_DELETE(l_context);
     DAP_DELETE(l_msg);
