@@ -313,6 +313,7 @@ static void *s_context_thread(void *a_arg)
         log_it(L_NOTICE, "Exiting context #%u (early exit)", l_context->id);
         pthread_cond_destroy(&l_context->started_cond);
         pthread_mutex_destroy(&l_context->started_mutex);
+        pthread_rwlock_destroy(&l_context->esockets_lock);
         DAP_DELETE(l_context);
         DAP_DELETE(l_msg);
         return NULL;
@@ -336,6 +337,7 @@ static void *s_context_thread(void *a_arg)
     // Free memory. Because nobody expected to work with context outside itself it have to be safe
     pthread_cond_destroy(&l_context->started_cond);
     pthread_mutex_destroy(&l_context->started_mutex);
+    pthread_rwlock_destroy(&l_context->esockets_lock);
     DAP_DELETE(l_context);
     DAP_DELETE(l_msg);
 
