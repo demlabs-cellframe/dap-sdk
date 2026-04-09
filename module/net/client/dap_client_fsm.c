@@ -257,6 +257,9 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
 
     debug_if(s_debug_more, L_INFO, "FSM delete: %p (uuid=0x%016" PRIx64 ")", a_fsm, a_fsm->uuid);
 
+    a_fsm->is_removing = true;
+    a_fsm->client = NULL;
+
     dap_client_fsm_unregister(a_fsm);
 
     if (a_fsm->esocket) {
@@ -327,7 +330,7 @@ static bool s_is_transport_tried(dap_client_fsm_t *a_fsm, dap_net_trans_type_t a
 
 static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm)
 {
-    if (!a_fsm || !a_fsm->client)
+    if (!a_fsm || !a_fsm->client || a_fsm->is_removing)
         return -1;
 
     dap_list_t *l_all_transports = dap_net_trans_list_all();
@@ -838,7 +841,7 @@ static bool s_stream_timer_timeout_after_connected_check(void *a_arg)
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
-    if (!a_fsm || !a_fsm->client)
+    if (!a_fsm || !a_fsm->client || a_fsm->is_removing)
         return;
 
     dap_client_stage_status_t l_stage_status = a_fsm->stage_status;
@@ -852,36 +855,47 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
 
     case STAGE_STATUS_ERROR: {
         bool l_is_last_attempt = a_fsm->reconnect_attempts >= s_max_attempts;
+        dap_client_t *l_client = a_fsm->client;
 
         if (!l_is_last_attempt) {
             if (!a_fsm->reconnect_attempts) {
                 log_it(L_ERROR, "Error state(%s), doing callback",
                        dap_client_error_str(a_fsm->last_error));
-                if (a_fsm->client->stage_status_error_callback)
-                    a_fsm->client->stage_status_error_callback(a_fsm->client, (void *)(intptr_t)l_is_last_attempt);
+                if (l_client && l_client->stage_status_error_callback)
+                    l_client->stage_status_error_callback(l_client, (void *)(intptr_t)l_is_last_attempt);
             }
+            if (a_fsm->is_removing || !a_fsm->client)
+                return;
             s_set_stage_status(a_fsm, STAGE_STATUS_IN_PROGRESS);
         } else {
             if (s_retry_handshake_with_fallback(a_fsm) == 0) {
-                log_it(L_NOTICE, "Switching to fallback transport %s after %d failed attempts",
-                       dap_net_trans_type_to_str(a_fsm->client->trans_type),
-                       a_fsm->reconnect_attempts);
+                l_client = a_fsm->client;
+                if (l_client)
+                    log_it(L_NOTICE, "Switching to fallback transport %s after %d failed attempts",
+                           dap_net_trans_type_to_str(l_client->trans_type),
+                           a_fsm->reconnect_attempts);
                 a_fsm->reconnect_attempts = 0;
                 return;
             }
             log_it(L_ERROR, "Disconnect state(%s), all transports exhausted, doing callback",
                    dap_client_error_str(a_fsm->last_error));
-            if (a_fsm->client->stage_status_error_callback)
-                a_fsm->client->stage_status_error_callback(a_fsm->client, (void *)(intptr_t)l_is_last_attempt);
-            if (a_fsm->client->always_reconnect) {
+            l_client = a_fsm->client;
+            if (!l_client || a_fsm->is_removing)
+                return;
+            if (l_client->stage_status_error_callback)
+                l_client->stage_status_error_callback(l_client, (void *)(intptr_t)l_is_last_attempt);
+            l_client = a_fsm->client;
+            if (!l_client || a_fsm->is_removing)
+                return;
+            if (l_client->always_reconnect) {
                 log_it(L_INFO, "Too many attempts, reconnect in %d seconds (reset tried transports)", s_timeout);
                 s_set_stage_status(a_fsm, STAGE_STATUS_IN_PROGRESS);
                 a_fsm->reconnect_attempts = 0;
                 a_fsm->tried_transport_count = 0;
-                s_add_tried_transport(a_fsm, a_fsm->client->trans_type);
+                s_add_tried_transport(a_fsm, l_client->trans_type);
             } else {
                 log_it(L_ERROR, "Connect to %s:%u failed",
-                       a_fsm->client->link_info.uplink_addr, a_fsm->client->link_info.uplink_port);
+                       l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             }
         }
 
@@ -908,12 +922,15 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
             }
         } else {
             // Final error, clean up on worker
+            l_client = a_fsm->client;
+            if (!l_client || a_fsm->is_removing)
+                return;
             // Dispatch STAGE_BEGIN to clean resources
             fsm_worker_dispatch_t *l_dispatch = DAP_NEW_Z(fsm_worker_dispatch_t);
             if (l_dispatch) {
                 l_dispatch->fsm_uuid = a_fsm->uuid;
                 l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
-                l_dispatch->client = a_fsm->client;
+                l_dispatch->client = l_client;
                 l_dispatch->stage = STAGE_BEGIN;
                 dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
             }
@@ -921,29 +938,38 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
     } break;
 
     case STAGE_STATUS_DONE: {
+        dap_client_t *l_client = a_fsm->client;
+        if (!l_client || a_fsm->is_removing)
+            return;
         debug_if(s_debug_more, L_INFO, "Stage %s done for client %p (target: %s)",
                dap_client_stage_str(a_fsm->stage),
-               a_fsm->client,
-               dap_client_stage_str(a_fsm->client->stage_target));
+               l_client,
+               dap_client_stage_str(l_client->stage_target));
 
-        bool l_is_last_stage = (a_fsm->stage == a_fsm->client->stage_target);
+        bool l_is_last_stage = (a_fsm->stage == l_client->stage_target);
         if (l_is_last_stage) {
             s_set_stage_status(a_fsm, STAGE_STATUS_COMPLETE);
 
             if (a_fsm->esocket && a_fsm->esocket->stream)
                 dap_stream_add_to_list(a_fsm->esocket->stream);
 
-            if (a_fsm->client->stage_target_done_callback) {
+            l_client = a_fsm->client;
+            if (!l_client || a_fsm->is_removing)
+                return;
+            if (l_client->stage_target_done_callback) {
                 log_it(L_NOTICE, "Stage %s achieved", dap_client_stage_str(a_fsm->stage));
-                a_fsm->client->stage_target_done_callback(a_fsm->client, a_fsm->client->callbacks_arg);
+                l_client->stage_target_done_callback(l_client, l_client->callbacks_arg);
             }
 
+            l_client = a_fsm->client;
+            if (!l_client || a_fsm->is_removing)
+                return;
             // Send queued packets (needs worker)
             if (a_fsm->stage == STAGE_STREAM_STREAMING && a_fsm->esocket && a_fsm->esocket->pkt_queue) {
                 // Send queued packets on worker
                 for (dap_list_t *it = a_fsm->esocket->pkt_queue; it; it = it->next) {
                     dap_client_pkt_queue_elm_t *l_pkt = it->data;
-                    dap_client_write_unsafe(a_fsm->client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
+                    dap_client_write_unsafe(l_client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
                 }
                 dap_list_free_full(a_fsm->esocket->pkt_queue, NULL);
                 a_fsm->esocket->pkt_queue = NULL;
@@ -955,18 +981,24 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                 s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
                 a_fsm->last_error = ERROR_STREAM_ABORTED;
             } else {
-                a_fsm->stage_status_done_callback(a_fsm->client, NULL);
+                l_client = a_fsm->client;
+                if (!l_client || a_fsm->is_removing)
+                    return;
+                a_fsm->stage_status_done_callback(l_client, NULL);
             }
         }
     } break;
 
     case STAGE_STATUS_COMPLETE: {
-        if (a_fsm->stage < a_fsm->client->stage_target) {
+        dap_client_t *l_client = a_fsm->client;
+        if (!l_client || a_fsm->is_removing)
+            return;
+        if (a_fsm->stage < l_client->stage_target) {
             debug_if(s_debug_more, L_DEBUG, "Stage %s COMPLETE but target is %s, advancing",
                    dap_client_stage_str(a_fsm->stage),
-                   dap_client_stage_str(a_fsm->client->stage_target));
+                   dap_client_stage_str(l_client->stage_target));
             if (a_fsm->stage_status_done_callback)
-                a_fsm->stage_status_done_callback(a_fsm->client, NULL);
+                a_fsm->stage_status_done_callback(l_client, NULL);
             else
                 dap_client_fsm_stage_transaction_begin(a_fsm, a_fsm->stage + 1, dap_client_fsm_advance);
         }
@@ -1223,7 +1255,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
 void dap_client_fsm_stage_transaction_begin(dap_client_fsm_t *a_fsm, dap_client_stage_t a_stage_next,
                                              dap_client_callback_t a_done_callback)
 {
-    assert(a_fsm);
+    if (!a_fsm || !a_fsm->client || a_fsm->is_removing)
+        return;
 
     debug_if(s_debug_more, L_DEBUG, "FSM transaction begin: %s -> %s",
              dap_client_stage_str(a_fsm->stage), dap_client_stage_str(a_stage_next));
@@ -1238,9 +1271,10 @@ void dap_client_fsm_stage_transaction_begin(dap_client_fsm_t *a_fsm, dap_client_
 void dap_client_fsm_advance(dap_client_t *a_client, void *a_arg)
 {
     (void)a_arg;
-    assert(a_client);
+    if (!a_client)
+        return;
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm) {
+    if (!l_fsm || l_fsm->is_removing) {
         log_it(L_ERROR, "No FSM in dap_client_fsm_advance");
         return;
     }
