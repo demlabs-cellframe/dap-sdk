@@ -747,6 +747,9 @@ void dap_json_cleanup_thread_arena(void)
         DAP_DELETE(s_arena_list);
         s_arena_list = l_next;
     }
+    
+    // Also cleanup tape arena (prevents use-after-free in pthread destructor)
+    dap_json_tape_arena_free();
 }
 
 /* ========================================================================== */

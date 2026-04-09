@@ -18,7 +18,6 @@
 #include "dap_common.h"
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #define LOG_TAG "dap_json_tape"
 
@@ -26,26 +25,17 @@
 /*                      THREAD-LOCAL TAPE ARENA                               */
 /* ========================================================================== */
 
-static pthread_key_t s_arena_key;
-static pthread_once_t s_arena_key_once = PTHREAD_ONCE_INIT;
-
-static void s_arena_destructor(void *a_arena)
-{
-    if (a_arena) {
-        dap_arena_free((dap_arena_t*)a_arena);
-    }
-}
-
-static void s_arena_key_init(void)
-{
-    pthread_key_create(&s_arena_key, s_arena_destructor);
-}
-
 /**
  * @brief Thread-local arena for tape allocation
  * @details Shared arena for all JSON parsing in this thread.
  *          Auto-initialized on first use, thread-safe via _Thread_local.
- *          Auto-freed when thread exits via pthread destructor.
+ *          Must be explicitly freed via dap_json_tape_arena_free() or
+ *          dap_json_cleanup_thread_arena() before thread exit.
+ * 
+ * @note We don't use pthread destructors because they are unreliable:
+ *       - Wine (Windows emulation) has incomplete pthread support
+ *       - QEMU (ARM emulation) may call destructors in wrong order
+ *       - Destructors can run after logging is disabled, causing crashes
  */
 static _Thread_local dap_arena_t *s_thread_tape_arena = NULL;
 
@@ -110,8 +100,6 @@ bool dap_json_build_tape(
     
     // Initialize thread-local arena on first use
     if (!s_thread_tape_arena) {
-        pthread_once(&s_arena_key_once, s_arena_key_init);
-        
         dap_arena_opt_t opts = {
             .initial_size = 64 * 1024,  // 64KB initial (good for most JSON)
             .max_page_size = 16 * 1024 * 1024,  // 16MB max
@@ -123,9 +111,6 @@ bool dap_json_build_tape(
             log_it(L_ERROR, "Failed to create thread-local tape arena");
             return false;
         }
-        
-        // Register for auto-cleanup when thread exits
-        pthread_setspecific(s_arena_key, s_thread_tape_arena);
         
         debug_if(dap_json_get_debug(), L_DEBUG,
                  "Created thread-local tape arena (64KB initial, 16MB max)");
@@ -474,7 +459,6 @@ void dap_json_tape_arena_reset(void)
 void dap_json_tape_arena_free(void)
 {
     if (s_thread_tape_arena) {
-        pthread_setspecific(s_arena_key, NULL);  // Prevent double-free by destructor
         dap_arena_free(s_thread_tape_arena);
         s_thread_tape_arena = NULL;
         debug_if(dap_json_get_debug(), L_DEBUG,
@@ -485,8 +469,6 @@ void dap_json_tape_arena_free(void)
 void* dap_json_tape_arena_alloc(size_t a_size)
 {
     if (!s_thread_tape_arena) {
-        pthread_once(&s_arena_key_once, s_arena_key_init);
-        
         dap_arena_opt_t opts = {
             .initial_size = 64 * 1024,
             .max_page_size = 16 * 1024 * 1024,
@@ -496,7 +478,6 @@ void* dap_json_tape_arena_alloc(size_t a_size)
         if (!s_thread_tape_arena) {
             return NULL;
         }
-        pthread_setspecific(s_arena_key, s_thread_tape_arena);
     }
     return dap_arena_alloc(s_thread_tape_arena, a_size);
 }
