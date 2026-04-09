@@ -48,6 +48,10 @@ int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id)
 {
     dap_return_val_if_pass(!a_thread || a_thread->context, -1);
 
+    // Initialize mutex/cond BEFORE starting context to avoid race conditions
+    pthread_mutex_init(&a_thread->queue_lock, NULL);
+    pthread_cond_init(&a_thread->queue_event, NULL);
+    
     a_thread->context = dap_context_new(DAP_CONTEXT_TYPE_PROC_THREAD);
     a_thread->context->_inheritor = a_thread;
     int l_ret = dap_context_run(a_thread->context, a_cpu_id, DAP_CONTEXT_POLICY_TIMESHARING,
@@ -225,8 +229,8 @@ static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void 
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
-    pthread_mutex_init(&l_thread->queue_lock, NULL);
-    pthread_cond_init(&l_thread->queue_event, NULL);
+    // Note: queue_lock and queue_event are already initialized in dap_proc_thread_create()
+    // to avoid race conditions during context startup
     // Init proc_queue for related worker
     dap_worker_t * l_worker_related = dap_events_worker_get(l_thread->context->cpu_id);
     if (!l_worker_related) {

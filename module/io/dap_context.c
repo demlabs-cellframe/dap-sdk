@@ -119,6 +119,7 @@ dap_context_t *dap_context_new(dap_context_type_t a_type)
    dap_context_t * l_context = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_context_t, NULL);
    l_context->id = s_context_id_max;
    l_context->type = a_type;
+   pthread_rwlock_init(&l_context->esockets_lock, NULL);
    s_context_id_max++;
    return l_context;
 }
@@ -617,13 +618,15 @@ lb_exit:
     a_es->context = a_context;
     a_es->worker = DAP_WORKER(a_context);
     //if (a_es->socket && a_es->socket != INVALID_SOCKET) {
-        // Add in context HT
+        // Add in context HT (protected by rwlock for thread-safety)
         dap_events_socket_t *l_es_sought = NULL;
+        pthread_rwlock_wrlock(&a_context->esockets_lock);
         dap_ht_find(a_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_es_sought);
         if (!l_es_sought) {
             dap_ht_add(a_context->esockets, uuid, a_es);
             a_context->event_sockets_count++;
         }
+        pthread_rwlock_unlock(&a_context->esockets_lock);
     //}
     return 0;
 }
@@ -642,6 +645,7 @@ int dap_context_remove( dap_events_socket_t * a_es)
         return -1;
     }
     dap_events_socket_t *l_es = NULL;
+    pthread_rwlock_wrlock(&l_context->esockets_lock);
     dap_ht_find(l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_es);
     if (!l_es || l_es != a_es)
         log_it(L_ERROR, "Try to remove unexistent socket %p", a_es);
@@ -649,6 +653,7 @@ int dap_context_remove( dap_events_socket_t * a_es)
         l_context->event_sockets_count--;
         dap_ht_del(l_context->esockets, a_es);
     }
+    pthread_rwlock_unlock(&l_context->esockets_lock);
 
 #if defined DAP_EVENTS_CAPS_IOCP
     /* TODO: there's a weird undocumented technique of "removing" from IOCP, but we barely need it */
@@ -760,8 +765,11 @@ int dap_context_remove( dap_events_socket_t * a_es)
 dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_socket_uuid_t a_es_uuid )
 {
     dap_events_socket_t *l_es = NULL;
-    if (a_context && a_context->esockets)
+    if (a_context && a_context->esockets) {
+        pthread_rwlock_rdlock(&a_context->esockets_lock);
         dap_ht_find(a_context->esockets, &a_es_uuid, sizeof(a_es_uuid), l_es);
+        pthread_rwlock_unlock(&a_context->esockets_lock);
+    }
     return l_es;
 }
 

@@ -115,6 +115,7 @@ static void *s_parse_thread(void *a_arg)
         }
     }
     
+    dap_json_cleanup_thread_arena();
     return NULL;
 }
 
@@ -198,6 +199,7 @@ static void *s_parse_different_json_thread(void *a_arg)
         }
     }
     
+    dap_json_cleanup_thread_arena();
     return NULL;
 }
 
@@ -273,6 +275,7 @@ static void *s_arena_stress_thread(void *a_arg)
         }
     }
     
+    dap_json_cleanup_thread_arena();
     return NULL;
 }
 
@@ -343,6 +346,7 @@ static void *s_string_pool_stress_thread(void *a_arg)
         }
     }
     
+    dap_json_cleanup_thread_arena();
     return NULL;
 }
 
