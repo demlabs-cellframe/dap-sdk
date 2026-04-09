@@ -5655,7 +5655,10 @@ static uint64_t s_count_at_root_impl(dap_global_db_t *a_tree, uint64_t a_root, i
 
 uint64_t dap_global_db_count_at_root(dap_global_db_t *a_tree, uint64_t a_root)
 {
+    // Read tree_height under lock to avoid TSan race with writers
+    pthread_rwlock_rdlock(&a_tree->lock);
     int l_max_depth = (int)a_tree->header.tree_height + 2;
+    pthread_rwlock_unlock(&a_tree->lock);
     if (l_max_depth < 4) l_max_depth = 4;
     return s_count_at_root_impl(a_tree, a_root, l_max_depth);
 }

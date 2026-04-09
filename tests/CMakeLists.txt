@@ -30,11 +30,15 @@ if(NOT DAP_NPROC OR DAP_NPROC EQUAL 0)
 endif()
 
 # MinGW tests run under Wine in CI: much slower per test; avoid dozens of concurrent Wine VMs.
+# ThreadSanitizer: tests run 5-15x slower due to instrumentation overhead.
 set(DAP_CTEST_TIMEOUT_SCALE 1)
 set(DAP_CTEST_PARALLEL ${DAP_NPROC})
 if(CMAKE_CROSSCOMPILING AND WIN32)
     set(DAP_CTEST_TIMEOUT_SCALE 12)
     set(DAP_CTEST_PARALLEL 4)
+elseif(DAP_SANITIZE_THREAD)
+    set(DAP_CTEST_TIMEOUT_SCALE 10)
+    message(STATUS "[Tests] ThreadSanitizer: timeout scale ${DAP_CTEST_TIMEOUT_SCALE}")
 endif()
 foreach(_base 10 30 60 120 300 600 1200)
     math(EXPR DAP_T${_base} "${_base} * ${DAP_CTEST_TIMEOUT_SCALE}")
