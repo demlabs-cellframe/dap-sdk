@@ -100,6 +100,15 @@ static void dap_enc_chipmunk_key_generate_callback(dap_enc_key_t *key, const voi
     (void) key_size; // Unused
     dap_enc_key_t *new_key = dap_enc_chipmunk_key_generate(kex_buf, kex_size, seed, seed_size, NULL, 0);
     if (new_key) {
+        // Free existing key data before overwriting (prevents memory leak)
+        if (key->priv_key_data) {
+            dap_memwipe(key->priv_key_data, key->priv_key_data_size);
+            DAP_DELETE(key->priv_key_data);
+        }
+        if (key->pub_key_data) {
+            DAP_DELETE(key->pub_key_data);
+        }
+        
         // Copy data to the provided key
         key->type = new_key->type;
         key->dec_na = new_key->dec_na;
