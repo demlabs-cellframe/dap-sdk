@@ -202,7 +202,7 @@ static void s_client_data_in(dap_stream_ch_t *a_ch, uint8_t a_type, const void *
     // Log every 100th packet or when data is complete
     uint64_t total_recv = atomic_load(&s_packets_received);
     if (total_recv % 100 == 0 || ctx->recv_size >= ctx->send_size) {
-        log_it(L_INFO, "Client %d @ worker %u: recv %zu (total %zu/%zu) [pkt #%lu]", 
+        log_it(L_INFO, "Client %d @ worker %u: recv %zu (total %zu/%zu) [pkt #%"PRIu64"]", 
                ctx->id, l_worker_id, a_data_size, ctx->recv_size, ctx->send_size, total_recv);
     }
     
@@ -612,8 +612,8 @@ static void test_multiclient_udp(void)
     uint64_t no_session = atomic_load(&s_packets_no_session);
     if (wrong_worker > 0 || no_session > 0) {
         printf("*** ROUTING PROBLEM DETECTED! ***\n");
-        printf("    Packets to wrong worker: %lu\n", wrong_worker);
-        printf("    Packets with no session: %lu\n\n", no_session);
+        printf("    Packets to wrong worker: %"PRIu64"\n", wrong_worker);
+        printf("    Packets with no session: %"PRIu64"\n\n", no_session);
     }
     
     // This should FAIL if bug is present

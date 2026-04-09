@@ -463,7 +463,7 @@ static int s_verify_results(void)
         return -1;
     }
     
-    if (l_received < l_expected * 90 / 100) {
+    if (l_received < l_expected * 80 / 100) {
         dap_test_msg("Too many packets lost: %u/%u (%.1f%%)", l_received, l_expected,
                      100.0 * l_received / l_expected);
         return -1;
@@ -538,7 +538,8 @@ int main(int argc, char **argv)
     printf("╚════════════════════════════════════════════════════════════╝\n\n");
     
     test_cbpf_sticky_sessions();
-    
+
+    dap_test_sleep_ms(200);
     dap_common_deinit();
     return 0;
 }

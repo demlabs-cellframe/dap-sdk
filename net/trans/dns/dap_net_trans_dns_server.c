@@ -53,8 +53,15 @@ static bool s_debug_more = false;
 static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg);
 static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 
+static size_t s_dns_server_get_max_packet_size(dap_net_trans_t *a_trans)
+{
+    UNUSED(a_trans);
+    return 1200;
+}
+
 static const dap_net_trans_ops_t s_dns_server_trans_ops = {
-    .write = s_dns_server_trans_write
+    .write = s_dns_server_trans_write,
+    .get_max_packet_size = s_dns_server_get_max_packet_size
 };
 
 static void* s_dns_server_new(const char *a_server_name)

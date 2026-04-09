@@ -59,6 +59,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 30
     LABELS "unit;net;trans;common"
 )
+dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
 # ============================================================================
 # Test: HTTP Trans Server
@@ -99,6 +100,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 30
     LABELS "unit;net;trans;http"
 )
+dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
 # ============================================================================
 # Test: WebSocket Trans Server
@@ -174,6 +176,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 30
     LABELS "unit;net;trans;websocket"
 )
+dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
 # ============================================================================
 # Test: UDP Trans Server
@@ -213,6 +216,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 30
     LABELS "unit;net;trans;udp"
 )
+dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
 # ============================================================================
 # Test: DNS Trans Server
@@ -249,6 +253,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 30
     LABELS "unit;net;trans;dns"
 )
+dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
 # ============================================================================
 # Test: UDP Trans Multi-Client Regression Test
@@ -291,6 +296,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 120
     LABELS "unit;net;trans;udp;multiclient;regression"
 )
+dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
 message("[+] UDP Trans Multi-Client test - regression test for handshake + encryption")
 

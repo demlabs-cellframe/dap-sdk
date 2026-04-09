@@ -86,6 +86,7 @@ static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static void s_dns_close(dap_stream_t *a_stream);
 static uint32_t s_dns_get_capabilities(dap_net_trans_t *a_trans);
+static size_t s_dns_get_max_packet_size(dap_net_trans_t *a_trans);
 static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
                                const dap_net_stage_prepare_params_t *a_params,
                                dap_net_stage_prepare_result_t *a_result);
@@ -106,7 +107,8 @@ static const dap_net_trans_ops_t s_dns_ops = {
     .close = s_dns_close,
     .get_capabilities = s_dns_get_capabilities,
     .register_server_handlers = NULL,
-    .stage_prepare = s_dns_stage_prepare
+    .stage_prepare = s_dns_stage_prepare,
+    .get_max_packet_size = s_dns_get_max_packet_size
 };
 
 // Helper functions
@@ -712,6 +714,15 @@ static uint32_t s_dns_get_capabilities(dap_net_trans_t *a_trans)
     return DAP_NET_TRANS_CAP_OBFUSCATION |
            DAP_NET_TRANS_CAP_LOW_LATENCY |
            DAP_NET_TRANS_CAP_BIDIRECTIONAL;
+}
+
+/**
+ * @brief Max packet size for DNS tunnel (UDP-based, same conservative limit as UDP transport)
+ */
+static size_t s_dns_get_max_packet_size(dap_net_trans_t *a_trans)
+{
+    UNUSED(a_trans);
+    return 1200;
 }
 
 static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)

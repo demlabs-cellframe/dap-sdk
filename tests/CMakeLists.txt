@@ -125,3 +125,6 @@ else()
     message(STATUS "[TESTS] Added test-framework tests (AWK/Shell)")
 endif()
 
+# macOS: set DYLD_INSERT_LIBRARIES for all mock-using tests
+include(${CMAKE_CURRENT_SOURCE_DIR}/../test-framework/mocks/DAPMockAutoWrap.cmake)
+dap_mock_finalize_tests()

@@ -687,7 +687,8 @@ int main(int argc, char **argv)
     dap_print_module_name("packet_routing_regression");
     
     test_packet_routing_multiclient();
-    
+
+    dap_test_sleep_ms(200);
     dap_common_deinit();
     
     printf("\n=== Test completed ===\n");

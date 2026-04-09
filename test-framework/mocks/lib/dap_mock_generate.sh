@@ -102,12 +102,34 @@ generate_wrap_file() {
                 echo ""
             }
             
+            # Collect #include directives from test source files
+            local _src_includes=""
+            local source_files_str_tmp="${DAP_MOCK_SOURCE_FILES:-}"
+            if [ -n "$source_files_str_tmp" ]; then
+                local IFS_OLD="$IFS"
+                IFS=';'
+                for _sf in $source_files_str_tmp; do
+                    IFS="$IFS_OLD"
+                    if [ -f "$_sf" ]; then
+                        local _file_includes
+                        _file_includes=$(grep -E '^\s*#\s*include\s+"' "$_sf" 2>/dev/null | \
+                            grep -v '_custom_mocks\|_mock_macros\|mock_linker_wrapper' || true)
+                        if [ -n "$_file_includes" ]; then
+                            _src_includes="${_src_includes}${_file_includes}"$'\n'
+                        fi
+                    fi
+                done
+                IFS="$IFS_OLD"
+            fi
+            # Deduplicate includes
+            _src_includes=$(echo "$_src_includes" | sort -u | grep -v '^$' || true)
+
             # Generate C file as DYLD interpose dylib source
-            cat > "$interpose_c" << 'INTERPOSE_HEADER'
+            {
+                cat << 'INTERPOSE_HEADER'
 // Auto-generated DYLD interpose library for macOS
 // Built as a shared library (dylib), loaded via DYLD_INSERT_LIBRARIES
 // Uses __DATA,__interpose section for runtime function replacement
-// Provides __real_func via dlsym(RTLD_NEXT) for PASSTHROUGH/DEFAULT macros
 #ifdef __APPLE__
 #include <stddef.h>
 #include <dlfcn.h>
@@ -116,19 +138,25 @@ generate_wrap_file() {
 #include <stdlib.h>
 #include <stdbool.h>
 
-// Include SDK headers for type definitions
-#include "dap_common.h"
-#include "dap_chain_common.h"
-#include "dap_chain_datum_tx.h"
-#include "dap_chain_ledger.h"
-#include "dap_math_ops.h"
+INTERPOSE_HEADER
 
+                # Add includes extracted from test sources
+                if [ -n "$_src_includes" ]; then
+                    echo "// Headers from test source files"
+                    echo "$_src_includes"
+                else
+                    echo '#include "dap_common.h"'
+                fi
+                echo ""
+
+                cat << 'INTERPOSE_TYPES'
 typedef struct {
     const void *replacement;
     const void *replacee;
 } dap_interpose_t;
 
-INTERPOSE_HEADER
+INTERPOSE_TYPES
+            } > "$interpose_c"
 
             # Get source files from environment (passed from CMake)
             local source_files_str="${DAP_MOCK_SOURCE_FILES:-}"
@@ -198,9 +226,6 @@ INTERPOSE_HEADER
 // === DYLD interpose for: ${func} (void return) ===
 typedef void (*${func}_func_t)(${param_decl});
 
-// Original function declaration (resolved from SDK at dylib load time)
-extern void ${func}(${param_decl});
-
 // __real_${func} for DAP_MOCK_WRAPPER_* macros
 __attribute__((visibility("default")))
 void __real_${func}(${param_decl}) {
@@ -244,9 +269,6 @@ VOID_FUNC_TPL
 
 // === DYLD interpose for: ${func} (return: ${ret_type}) ===
 typedef ${ret_type} (*${func}_func_t)(${param_decl});
-
-// Original function declaration (resolved from SDK at dylib load time)
-extern ${ret_type} ${func}(${param_decl});
 
 // __real_${func} for DAP_MOCK_WRAPPER_* macros
 __attribute__((visibility("default")))
