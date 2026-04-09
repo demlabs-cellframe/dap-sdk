@@ -29,6 +29,7 @@
  */
 
 #include <string.h>
+#include <pthread.h>
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
 #include "dap_common.h"
@@ -105,13 +106,10 @@ bool dap_cpu_arch_is_available(dap_cpu_arch_t a_arch)
 
 /* Wine + AVX-512: Wine cannot emulate AVX-512 correctly, cap at AVX2 */
 static dap_cpu_arch_t s_arch_cap = DAP_CPU_ARCH_AVX512;
-static int s_arch_cap_checked = 0;
+static pthread_once_t s_wine_check_once = PTHREAD_ONCE_INIT;
 
-static void s_check_wine_cap(void)
+static void s_wine_check_init(void)
 {
-    if (s_arch_cap_checked)
-        return;
-    s_arch_cap_checked = 1;
 #ifdef _WIN32
     HMODULE l_ntdll = GetModuleHandleA("ntdll.dll");
     if (l_ntdll && GetProcAddress(l_ntdll, "wine_get_version")) {
@@ -119,6 +117,11 @@ static void s_check_wine_cap(void)
         log_it(L_WARNING, "Wine detected: capping CPU arch at AVX2 (AVX-512 unsupported)");
     }
 #endif
+}
+
+static void s_check_wine_cap(void)
+{
+    pthread_once(&s_wine_check_once, s_wine_check_init);
 }
 
 dap_cpu_arch_t dap_cpu_arch_get_best(void)

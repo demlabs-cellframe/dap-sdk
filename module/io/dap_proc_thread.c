@@ -22,6 +22,7 @@
 */
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include "dap_dl.h"
 #include "dap_strfuncs.h"
 #include "dap_events.h"
@@ -32,6 +33,7 @@
 
 static uint32_t s_threads_count = 0;
 static dap_proc_thread_t *s_threads = NULL;
+static atomic_bool s_deiniting = false;  // Flag to prevent use-after-free during deinit
 
 static int s_context_callback_started(dap_context_t *a_context, void *a_arg);
 static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
@@ -75,6 +77,10 @@ int dap_proc_thread_init(uint32_t a_threads_count)
         log_it(L_WARNING, "dap_proc_thread_init: already initialized");
         return 0;
     }
+    
+    // Reset deinit flag for new initialization
+    atomic_store(&s_deiniting, false);
+    
     if (!(s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count())) {
         log_it(L_CRITICAL, "Unknown threads count");
         return -1;
@@ -95,6 +101,9 @@ void dap_proc_thread_deinit()
     if (!s_threads || !s_threads_count)
         return;
 
+    // Set flag BEFORE stopping threads to prevent use-after-free in timer callbacks
+    atomic_store(&s_deiniting, true);
+    
     for (uint32_t i = s_threads_count; i--; ) {
         if (s_threads[i].context) {
             dap_context_stop_n_kill(s_threads[i].context);
@@ -160,7 +169,21 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
                                      void *a_callback_arg, dap_queue_msg_priority_t a_priority)
 {
     dap_return_val_if_fail(a_callback && a_priority >= DAP_QUEUE_MSG_PRIORITY_MIN && a_priority <= DAP_QUEUE_MSG_PRIORITY_MAX, -1);
+    
+    // Check if proc_thread module is being deinitialized (prevents use-after-free)
+    if (atomic_load(&s_deiniting)) {
+        debug_if(g_debug_reactor, L_DEBUG, "Proc thread module is deinitializing, skipping callback add");
+        return -3;
+    }
+    
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    
+    // Check if thread is still valid (not destroyed during deinit)
+    if (!l_thread || !l_thread->context) {
+        debug_if(g_debug_reactor, L_DEBUG, "Proc thread %p is already stopped, skipping callback add", l_thread);
+        return -3;
+    }
+    
     dap_proc_queue_item_t *l_item = DAP_NEW_Z(dap_proc_queue_item_t);
     if (!l_item) {
         log_it(L_CRITICAL, "Insufficient memory");
