@@ -110,55 +110,7 @@ static dap_stream_t s_mock_stream = {0};
 static dap_net_trans_ctx_t s_mock_trans_ctx;
 static dap_events_socket_t s_mock_events_socket = {0};
 
-// Wrapper for dap_server_new
-DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_server_new,
-    PARAM(const char*, a_cfg_section),
-    PARAM(dap_events_socket_callbacks_t*, a_server_callbacks),
-    PARAM(dap_events_socket_callbacks_t*, a_client_callbacks)
-)
-{
-    UNUSED(a_cfg_section);
-    UNUSED(a_server_callbacks);
-    UNUSED(a_client_callbacks);
-    
-    // Return mock server if set, otherwise return NULL
-    if (g_mock_dap_server_new && g_mock_dap_server_new->return_value.ptr) {
-        return (dap_server_t*)g_mock_dap_server_new->return_value.ptr;
-    }
-    
-    // Return default mock server
-    return &s_mock_server;
-}
-
-// Wrapper for dap_server_listen_addr_add
-DAP_MOCK_WRAPPER_CUSTOM(int, dap_server_listen_addr_add,
-    PARAM(dap_server_t*, a_server),
-    PARAM(const char*, a_addr),
-    PARAM(uint16_t, a_port),
-    PARAM(dap_events_desc_type_t, a_type),
-    PARAM(dap_events_socket_callbacks_t*, a_callbacks)
-)
-{
-    UNUSED(a_server);
-    UNUSED(a_addr);
-    UNUSED(a_port);
-    UNUSED(a_type);
-    UNUSED(a_callbacks);
-    
-    // Return mock value if set, otherwise return 0 (success)
-    if (g_mock_dap_server_listen_addr_add && g_mock_dap_server_listen_addr_add->return_value.i != 0) {
-        return g_mock_dap_server_listen_addr_add->return_value.i;
-    }
-    return 0;
-}
-
-// Mock wrapper for dap_server_delete - just verify it's called, don't actually delete
-DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete,
-    PARAM(dap_server_t *, a_server)
-)
-{
-    (void)a_server;
-}
+// Server wrappers are provided by dap_trans_test_mocks.c
 
 DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete_sync,
     PARAM(dap_server_t *, a_server)

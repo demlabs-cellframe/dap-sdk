@@ -453,8 +453,8 @@ static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_da
     dns_server_client_session_t *l_session =
         (dns_server_client_session_t *)a_stream->_server_session;
     if (!l_session || !a_stream->esocket) {
-        log_it(L_ERROR, "DNS server write: no session or esocket");
-        return -1;
+        log_it(L_WARNING, "DNS server write: no session or esocket (likely during teardown)");
+        return 0;
     }
 
     size_t l_sent = dap_events_socket_sendto_unsafe(

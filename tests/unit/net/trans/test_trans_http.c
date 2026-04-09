@@ -54,6 +54,7 @@
 #include "dap_stream.h"
 #include "dap_stream_handshake.h"
 #include "dap_stream_session.h"
+#include "dap_trans_test_fixtures.h"
 #include "dap_trans_test_mocks.h"
 
 #define LOG_TAG "test_trans_http"

@@ -2,8 +2,8 @@
  * @file test_udp_multiclient_regression.c
  * @brief UDP Multi-client regression test
  * 
- * Minimal test to reproduce multi-client UDP bug.
- * This test should FAIL to demonstrate the problem.
+ * Validates that 100 simultaneous UDP clients can complete full handshake
+ * and parallel 64KB data exchange via CBPF routing without data loss.
  * 
  * @date 2026-02-03
  */
@@ -251,11 +251,11 @@ static int s_setup_client(int id)
 
 static void s_cleanup_client(int id)
 {
+    test_stream_ch_ctx_cleanup(&s_stream_ctxs[id]);
     if (s_clients[id]) {
-        dap_client_delete_unsafe(s_clients[id]);
+        dap_client_delete_mt(s_clients[id]);
         s_clients[id] = NULL;
     }
-    test_stream_ch_ctx_cleanup(&s_stream_ctxs[id]);
 }
 
 //===================================================================
@@ -411,12 +411,19 @@ cleanup:
         }
     }
     
-    // Wait for disconnects
+    // Give workers time to process stage transitions before deletion.
     usleep(500000);
     
     TEST_INFO("Cleanup: deleting clients...");
     for (int i = 0; i < NUM_CLIENTS; i++) {
         s_cleanup_client(i);
+        if ((i + 1) % 10 == 0)
+            dap_test_sleep_ms(50);
+    }
+
+    // Ensure asynchronous stream cleanup is complete before server teardown.
+    if (!test_wait_for_all_streams_closed(10000)) {
+        TEST_WARN("Cleanup: some streams still active after timeout");
     }
     
     TEST_INFO("Cleanup: stopping server...");

@@ -181,60 +181,8 @@ static void suite_cleanup(void)
 // Original mock wrappers removed - now using dap_trans_test_mocks.c
 
 // ============================================================================
-// Server Tests (these will be moved to test_trans.c)
+// Server wrappers are provided by dap_trans_test_mocks.c
 // ============================================================================
-
-// Wrapper for dap_server_new
-DAP_MOCK_WRAPPER_CUSTOM(dap_server_t*, dap_server_new,
-    PARAM(const char*, a_cfg_section),
-    PARAM(dap_events_socket_callbacks_t*, a_server_callbacks),
-    PARAM(dap_events_socket_callbacks_t*, a_client_callbacks)
-)
-{
-    UNUSED(a_cfg_section);
-    UNUSED(a_server_callbacks);
-    UNUSED(a_client_callbacks);
-    
-    // Return mock server if set, otherwise return NULL
-    if (g_mock_dap_server_new && g_mock_dap_server_new->return_value.ptr) {
-        return (dap_server_t*)g_mock_dap_server_new->return_value.ptr;
-    }
-    
-    // Return default mock server
-    return dap_trans_test_get_mock_server();
-}
-
-// Wrapper for dap_server_listen_addr_add
-DAP_MOCK_WRAPPER_CUSTOM(int, dap_server_listen_addr_add,
-    PARAM(dap_server_t*, a_server),
-    PARAM(const char*, a_addr),
-    PARAM(uint16_t, a_port),
-    PARAM(dap_events_desc_type_t, a_type),
-    PARAM(dap_events_socket_callbacks_t*, a_callbacks)
-)
-{
-    UNUSED(a_server);
-    UNUSED(a_addr);
-    UNUSED(a_port);
-    UNUSED(a_type);
-    UNUSED(a_callbacks);
-    
-    // Return mock value if set, otherwise return 0 (success)
-    if (g_mock_dap_server_listen_addr_add && g_mock_dap_server_listen_addr_add->return_value.i != 0) {
-        return g_mock_dap_server_listen_addr_add->return_value.i;
-    }
-    return 0;
-}
-
-// Mock wrapper for dap_server_delete - just verify it's called, don't actually delete
-DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete,
-    PARAM(dap_server_t *, a_server)
-)
-{
-    // Just verify the call, don't actually delete anything
-    // In real implementation this would free the server, but in tests we use static mocks
-    (void)a_server;
-}
 
 // dap_net_trans_find is not mocked - using real implementation
 

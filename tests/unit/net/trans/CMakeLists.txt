@@ -107,6 +107,7 @@ project(test_trans_websocket)
 
 add_executable(${PROJECT_NAME}
     test_trans_websocket.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_fixtures.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.c
     # Add header file for mock scanner (it won't be compiled, just scanned for DAP_MOCK_DECLARE)
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures/dap_trans_test_mocks.h

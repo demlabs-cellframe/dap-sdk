@@ -56,6 +56,7 @@
 #include "dap_stream_session.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
+#include "dap_trans_test_fixtures.h"
 #include "dap_trans_test_mocks.h"
 
 #define LOG_TAG "test_trans_websocket"
