@@ -25,7 +25,7 @@
 #include "dap_common.h"
 #include <string.h>
 #include <stdio.h>
-#include <pthread.h>
+#include <stdatomic.h>
 
 #if DAP_CPU_DETECT_X86
     #include <cpuid.h>
@@ -42,7 +42,8 @@
 static dap_cpu_features_t s_cached_features = {0};
 static bool s_features_detected = false;
 static char s_cpu_name[64] = "Unknown CPU";
-static pthread_once_t s_detect_once = PTHREAD_ONCE_INIT;
+static atomic_flag s_detect_flag = ATOMIC_FLAG_INIT;
+static atomic_bool s_detect_done = false;
 
 #if DAP_CPU_DETECT_X86
 
@@ -281,7 +282,21 @@ static void s_detect_features_impl(void)
 
 dap_cpu_features_t dap_cpu_detect_features(void)
 {
-    pthread_once(&s_detect_once, s_detect_features_impl);
+    // Fast path: already detected
+    if (atomic_load_explicit(&s_detect_done, memory_order_acquire))
+        return s_cached_features;
+    
+    // Slow path: use atomic_flag as spinlock for one-time init
+    if (!atomic_flag_test_and_set_explicit(&s_detect_flag, memory_order_acq_rel)) {
+        // We got the flag, do the detection
+        s_detect_features_impl();
+        atomic_store_explicit(&s_detect_done, true, memory_order_release);
+    } else {
+        // Another thread is doing detection, spin-wait for completion
+        while (!atomic_load_explicit(&s_detect_done, memory_order_acquire)) {
+            // Busy wait (should be brief)
+        }
+    }
     return s_cached_features;
 }
 
