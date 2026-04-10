@@ -35,6 +35,7 @@
 FUNC_TYPE(dap_hash_keccak_permute_{{FUNC_SUFFIX}})
 .balign 32
 dap_hash_keccak_permute_{{FUNC_SUFFIX}}:
+    WIN64_SYSV_PROLOG_1ARG
 {{#for i in LANES}}
     {{INSN_LOAD_1X}}   ({{STRIDE_1X}}*{{i}})(%rdi),  {{REG_1X_PREFIX}}{{i}}
 {{/for}}
@@ -44,6 +45,7 @@ dap_hash_keccak_permute_{{FUNC_SUFFIX}}:
 {{#for i in LANES}}
     {{INSN_STORE_1X}}   {{REG_1X_PREFIX}}{{i}},  ({{STRIDE_1X}}*{{i}})(%rdi)
 {{/for}}
+    WIN64_SYSV_EPILOG_1ARG
     ret
 FUNC_SIZE(dap_hash_keccak_permute_{{FUNC_SUFFIX}})
 
@@ -52,6 +54,7 @@ FUNC_SIZE(dap_hash_keccak_permute_{{FUNC_SUFFIX}})
 FUNC_TYPE(dap_keccak_x4_permute_{{FUNC_SUFFIX}})
 .balign 32
 dap_keccak_x4_permute_{{FUNC_SUFFIX}}:
+    WIN64_SYSV_PROLOG_1ARG
 {{#for i in LANES}}
     {{INSN_LOAD_4X}}   ({{STRIDE_4X}}*{{i}})(%rdi),  {{REG_PREFIX}}{{i}}
 {{/for}}
@@ -61,6 +64,7 @@ dap_keccak_x4_permute_{{FUNC_SUFFIX}}:
 {{#for i in LANES}}
     {{INSN_STORE_4X}}   {{REG_PREFIX}}{{i}},  ({{STRIDE_4X}}*{{i}})(%rdi)
 {{/for}}
+    WIN64_SYSV_EPILOG_1ARG
     ret
 FUNC_SIZE(dap_keccak_x4_permute_{{FUNC_SUFFIX}})
 
@@ -396,6 +400,7 @@ FUNC_SIZE(.Lpermute_f1600)
 FUNC_TYPE(dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}})
 .balign 32
 dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}}:
+    WIN64_SYSV_PROLOG_4ARG
     pushq   %rbp
     pushq   %rbx
     pushq   %r12
@@ -450,6 +455,7 @@ dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}}:
     popq    %r12
     popq    %rbx
     popq    %rbp
+    WIN64_SYSV_EPILOG_4ARG
     ret
 FUNC_SIZE(dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}})
 
@@ -457,6 +463,7 @@ FUNC_SIZE(dap_keccak_absorb_{{SRATE}}_{{FUNC_SUFFIX}})
 FUNC_TYPE(dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}})
 .balign 32
 dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}:
+    WIN64_SYSV_PROLOG_4ARG
     pushq   %rbp
     pushq   %rbx
     pushq   %r12
@@ -483,6 +490,7 @@ dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}:
     popq    %r12
     popq    %rbx
     popq    %rbp
+    WIN64_SYSV_EPILOG_4ARG
     ret
 FUNC_SIZE(dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}})
 

@@ -21,11 +21,25 @@
 # define OBJ_SIZE(name, sz)
 #endif
 
+/* Windows x64 ABI: first arg in RCX, RDI/RSI callee-saved */
+/* System V ABI:    first arg in RDI, RDI/RSI caller-saved */
+#if defined(_WIN32) || defined(__CYGWIN__)
+# define WIN64_SYSV_PROLOG \
+	pushq	%rdi ; \
+	movq	%rcx, %rdi
+# define WIN64_SYSV_EPILOG \
+	popq	%rdi
+#else
+# define WIN64_SYSV_PROLOG
+# define WIN64_SYSV_EPILOG
+#endif
+
 	.text
 	.balign 64
 	.globl	dap_hash_keccak_permute_scalar_bmi2
 	FUNC_TYPE(dap_hash_keccak_permute_scalar_bmi2)
 dap_hash_keccak_permute_scalar_bmi2:
+	WIN64_SYSV_PROLOG
 	pushq	%r15
 	movq	%rdi, %rdx
 	pushq	%r14
@@ -537,6 +551,7 @@ dap_hash_keccak_permute_scalar_bmi2:
 	popq	%r13
 	popq	%r14
 	popq	%r15
+	WIN64_SYSV_EPILOG
 	ret
 	FUNC_SIZE(dap_hash_keccak_permute_scalar_bmi2)
 	.section	.rodata

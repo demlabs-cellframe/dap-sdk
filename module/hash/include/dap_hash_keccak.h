@@ -252,8 +252,8 @@ static inline dap_keccak_sponge_ops_t dap_keccak_sponge_resolve(void)
         .squeeze_72  = dap_keccak_squeeze_72_ref,
     };
 
-    // x86 ASM uses System V AMD64 ABI - not available on Windows
-#if DAP_PLATFORM_X86 && !defined(_WIN32)
+    // x86 ASM with cross-platform ABI support
+#if DAP_PLATFORM_X86
     if (__builtin_expect(arch >= DAP_CPU_ARCH_AVX2, 1)) {
         ops.absorb_136  = dap_keccak_absorb_136_scalar_bmi2;
         ops.absorb_168  = dap_keccak_absorb_168_scalar_bmi2;
