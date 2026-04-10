@@ -25,6 +25,8 @@ extern void dap_dilithium_ntt_forward_avx512(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_avx512(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_avx512(int32_t *c, const int32_t *a, const int32_t *b);
 
+/* x86 ASM functions - System V ABI only, not available on Windows */
+#if !defined(_WIN32)
 extern void dap_dilithium_ntt_forward_avx2_asm(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_avx2_asm(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_avx2_asm(int32_t *c, const int32_t *a, const int32_t *b);
@@ -78,7 +80,8 @@ extern unsigned dap_dilithium_poly_make_hint_g32_avx512(int32_t *, const int32_t
 extern unsigned dap_dilithium_poly_make_hint_g88_avx512(int32_t *, const int32_t *, const int32_t *);
 extern void dap_dilithium_polyz_unpack_g17_avx512(int32_t *, const uint8_t *);
 extern void dap_dilithium_polyz_unpack_g19_avx512(int32_t *, const uint8_t *);
-#endif
+#endif /* !_WIN32 */
+#endif /* DAP_PLATFORM_X86 */
 
 #if DAP_PLATFORM_ARM64
 extern void dap_dilithium_ntt_forward_neon(int32_t coeffs[256]);
@@ -427,6 +430,8 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_ntt_inv,      dap_dilithium_ntt_inverse_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_pw_mont,      dap_dilithium_pointwise_mont_avx512);
 
+    /* x86 ASM functions - System V ABI only, not available on Windows */
+#if !defined(_WIN32)
     /* Hand-tuned ASM with pre-computed zeta*QINV. Inverse NTT stays with the
        per-block approach; pointwise is NOT overridden. */
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2,   s_dil_ntt_inv,      dap_dilithium_ntt_inverse_avx2_asm);
@@ -482,6 +487,7 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_make_hint_g88, dap_dilithium_poly_make_hint_g88_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_zunpack_g17,   dap_dilithium_polyz_unpack_g17_avx512);
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_zunpack_g19,   dap_dilithium_polyz_unpack_g19_avx512);
+#endif /* !_WIN32 */
 
 #if DAP_PLATFORM_ARM64
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_fwd,      dap_dilithium_ntt_forward_neon);

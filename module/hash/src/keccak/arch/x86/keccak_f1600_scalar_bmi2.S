@@ -23,11 +23,15 @@
 
 /* Windows x64 ABI: first arg in RCX, RDI/RSI callee-saved */
 /* System V ABI:    first arg in RDI, RDI/RSI caller-saved */
+/* NOTE: This function uses RSI as a scratch register internally, */
+/*       so we must save/restore it on Windows where RSI is callee-saved. */
 #if defined(_WIN32) || defined(__CYGWIN__)
 # define WIN64_SYSV_PROLOG \
 	pushq	%rdi ; \
+	pushq	%rsi ; \
 	movq	%rcx, %rdi
 # define WIN64_SYSV_EPILOG \
+	popq	%rsi ; \
 	popq	%rdi
 #else
 # define WIN64_SYSV_PROLOG

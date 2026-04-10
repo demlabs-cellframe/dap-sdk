@@ -107,7 +107,8 @@ static pthread_once_t s_chacha20_once = PTHREAD_ONCE_INIT;
 
 static int s_has_avx512_ifma = 0;
 
-#if DAP_PLATFORM_X86
+/* x86 ASM function - System V ABI only, not available on Windows */
+#if DAP_PLATFORM_X86 && !defined(_WIN32)
 extern void dap_chacha20_encrypt_asm(uint8_t *, const uint8_t *, size_t,
         const uint8_t[32], const uint8_t[12], uint32_t);
 #endif
@@ -120,11 +121,14 @@ static void s_chacha20_dispatch_init(void)
     dap_cpu_arch_t l_arch = dap_cpu_arch_get_best_for(l_class);
     (void)l_class; (void)l_arch;
 #if DAP_PLATFORM_X86
+#if !defined(_WIN32)
     if (l_arch >= DAP_CPU_ARCH_AVX512) {
         s_chacha20_simd_fn = dap_chacha20_encrypt_asm;
         dap_cpu_features_t l_feat = dap_cpu_detect_features();
         s_has_avx512_ifma = l_feat.has_avx512_ifma && l_feat.has_avx512vl;
-    } else if (l_arch >= DAP_CPU_ARCH_AVX2)
+    } else
+#endif
+    if (l_arch >= DAP_CPU_ARCH_AVX2)
         s_chacha20_simd_fn = dap_chacha20_encrypt_avx2;
     else if (l_arch >= DAP_CPU_ARCH_SSE2)
         s_chacha20_simd_fn = dap_chacha20_encrypt_sse2;
