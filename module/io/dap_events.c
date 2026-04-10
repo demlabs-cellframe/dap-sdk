@@ -380,7 +380,8 @@ int dap_events_start()
         return -5;
     }
     pthread_detach(l_thread);
-    log_it(L_NOTICE, "WASM mode: MULTI-THREADED (pthreads enabled, %d event workers)", s_threads_count);
+    log_it(L_NOTICE, "WASM mode: MULTI-THREADED (pthreads enabled, %d I/O worker, %u CPU cores available)",
+           s_threads_count, dap_get_cpu_count());
     log_it(L_NOTICE, "WASM event loop: dedicated pthread worker (main thread free for JS)");
 #else
     emscripten_set_main_loop(s_wasm_main_loop_step, 0, 0);
