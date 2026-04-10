@@ -35,6 +35,7 @@
 #include <inttypes.h>
 
 #include <emscripten.h>
+#include <emscripten/html5.h>
 
 #include "dap_common.h"
 #include "dap_cbuf.h"
