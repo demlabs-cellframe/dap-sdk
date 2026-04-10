@@ -99,8 +99,9 @@ static void *s_opfs_mount_thread(void *a_arg)
         log_it(L_WARNING, "wasmfs_create_opfs_backend() returned NULL");
         return (void *)(intptr_t)-1;
     }
+    rmdir(l_mount);
     int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
-    if (l_rc != 0 && errno != EEXIST) {
+    if (l_rc != 0) {
         log_it(L_WARNING, "wasmfs_create_directory('%s') failed: rc=%d errno=%d (%s)",
                l_mount, l_rc, errno, strerror(errno));
         return (void *)(intptr_t)-1;
@@ -108,9 +109,15 @@ static void *s_opfs_mount_thread(void *a_arg)
     return (void *)(intptr_t)0;
 }
 
-static int s_init_wasmfs(void)
+static bool s_wasmfs_done = false;
+
+int dap_sdk_wasmfs_init(const char *a_mount)
 {
-    const char *l_mount = g_sys_dir_path ? g_sys_dir_path : "/dap";
+    if (s_wasmfs_done)
+        return 0;
+    s_wasmfs_done = true;
+
+    const char *l_mount = a_mount ? a_mount : (g_sys_dir_path ? g_sys_dir_path : "/dap");
     if (!g_sys_dir_path)
         g_sys_dir_path = dap_strdup(l_mount);
 
@@ -241,7 +248,7 @@ static int s_init_core(const dap_sdk_config_t *a_config)
 
 #ifdef DAP_OS_WASM
 #ifdef DAP_WASM_PTHREADS
-    if (s_init_wasmfs() != 0)
+    if (dap_sdk_wasmfs_init(a_config->sys_dir) != 0)
         return -1;
 #else
     s_init_memfs();
