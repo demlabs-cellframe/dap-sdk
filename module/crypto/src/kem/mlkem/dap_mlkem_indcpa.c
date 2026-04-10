@@ -116,9 +116,11 @@ static void s_gen_matrix(dap_mlkem_polyvec *a_mat, const uint8_t a_seed[MLKEM_SY
             l_x[k] = a_transposed ? (uint8_t)ii : (uint8_t)jj;
             l_y[k] = a_transposed ? (uint8_t)jj : (uint8_t)ii;
         }
-        for (unsigned k = l_count; k < 4; k++) {
-            l_x[k] = l_x[0];
-            l_y[k] = l_y[0];
+        if (l_count < 4) {
+            for (unsigned k = l_count; k < 4; k++) {
+                l_x[k] = l_x[0];
+                l_y[k] = l_y[0];
+            }
         }
 
         dap_keccak_x4_state_t l_x4;
