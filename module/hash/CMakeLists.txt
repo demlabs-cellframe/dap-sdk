@@ -134,7 +134,8 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")
     )
 endif()
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+# x86 ASM uses System V AMD64 ABI - not compatible with Windows x64 calling convention
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64" AND NOT WIN32)
     # AVX-512VL Keccak-f[1600] assembly — shared framework + x86 arch impl
     enable_language(ASM)
     set(KECCAK_AVX512VL_ASM ${KECCAK_GEN_DIR}/dap_keccak_f1600_avx512vl.S)
