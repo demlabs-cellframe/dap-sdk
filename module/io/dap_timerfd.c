@@ -50,6 +50,10 @@
 #ifdef DAP_OS_WASM
 #include <emscripten.h>
 #include <emscripten/eventloop.h>
+#ifdef DAP_WASM_PTHREADS
+#include <emscripten/threading.h>
+#include <fcntl.h>
+#endif
 #endif
 
 #ifdef DAP_OS_ANDROID
@@ -177,7 +181,22 @@ static void s_es_callback_timer(struct dap_events_socket *a_es);
 
 static bool l_debug_timer = false;
 
-#ifdef DAP_OS_WASM
+#if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
+#include <pthread.h>
+
+static void *s_wasm_timer_thread(void *a_arg)
+{
+    dap_timerfd_t *l_timerfd = (dap_timerfd_t *)a_arg;
+    while (l_timerfd->active) {
+        emscripten_thread_sleep(l_timerfd->timeout_ms);
+        if (!l_timerfd->active)
+            break;
+        uint8_t l_byte = 1;
+        write(l_timerfd->pipe_fd[1], &l_byte, 1);
+    }
+    return NULL;
+}
+#elif defined(DAP_OS_WASM)
 static void s_wasm_timer_callback(void *a_arg)
 {
     dap_timerfd_t *l_timerfd = (dap_timerfd_t *)a_arg;
@@ -360,6 +379,27 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     }
     l_events_socket->socket = INVALID_SOCKET;
 #endif
+#elif defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
+    if (pipe(l_timerfd->pipe_fd) != 0) {
+        log_it(L_ERROR, "Failed to create timer pipe: %s", strerror(errno));
+        DAP_DELETE(l_timerfd);
+        DAP_DELETE(l_events_socket);
+        return NULL;
+    }
+    int l_flags = fcntl(l_timerfd->pipe_fd[0], F_GETFL, 0);
+    if (l_flags != -1)
+        fcntl(l_timerfd->pipe_fd[0], F_SETFL, l_flags | O_NONBLOCK);
+    l_events_socket->socket = l_timerfd->pipe_fd[0];
+    l_timerfd->active = true;
+    if (pthread_create(&l_timerfd->timer_thread, NULL, s_wasm_timer_thread, l_timerfd) != 0) {
+        log_it(L_ERROR, "Failed to create timer thread: %s", strerror(errno));
+        close(l_timerfd->pipe_fd[0]);
+        close(l_timerfd->pipe_fd[1]);
+        DAP_DELETE(l_timerfd);
+        DAP_DELETE(l_events_socket);
+        return NULL;
+    }
+    pthread_detach(l_timerfd->timer_thread);
 #elif defined(DAP_OS_WASM)
     l_events_socket->socket = INVALID_SOCKET;
     l_timerfd->interval_id = emscripten_set_interval(s_wasm_timer_callback,
@@ -398,6 +438,8 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
     if ( !CreateTimerQueueTimer(&a_timerfd->th, hTimerQueue, (WAITORTIMERCALLBACK)TimerCallback,
                                 a_timerfd, (DWORD)a_timerfd->timeout_ms, 0, WT_EXECUTEONLYONCE) )
         log_it(L_CRITICAL, "Timer not reset, error %lu", GetLastError());
+#elif defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
+    (void)a_timerfd;
 #elif defined(DAP_OS_WASM)
     emscripten_clear_interval(a_timerfd->interval_id);
     a_timerfd->interval_id = emscripten_set_interval(s_wasm_timer_callback,
@@ -426,6 +468,13 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
         debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
+#if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
+        l_timer_fd->active = false;
+        if (l_timer_fd->pipe_fd[1] >= 0) {
+            close(l_timer_fd->pipe_fd[1]);
+            l_timer_fd->pipe_fd[1] = -1;
+        }
+#endif
 #if defined DAP_EVENTS_CAPS_KQUEUE
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
@@ -480,7 +529,13 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
     if (!a_timerfd || !a_timerfd->events_socket)
         return; 
     debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
-#ifdef DAP_OS_WASM
+#if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
+    a_timerfd->active = false;
+    if (a_timerfd->pipe_fd[1] >= 0) {
+        close(a_timerfd->pipe_fd[1]);
+        a_timerfd->pipe_fd[1] = -1;
+    }
+#elif defined(DAP_OS_WASM)
     if (a_timerfd->interval_id) {
         emscripten_clear_interval(a_timerfd->interval_id);
         a_timerfd->interval_id = 0;
