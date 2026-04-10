@@ -48,6 +48,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/ioctl.h>
 #elif defined (DAP_OS_BSD)
 #include <sys/types.h>
 #include <sys/select.h>
@@ -900,6 +901,13 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     l_flag_hup?"hup":"", l_flag_rdhup?"rdhup":"", l_flag_msg?"msg":"", l_flag_nval?"nval":"",
                        l_flag_pri?"pri":"");
             }
+            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT && (l_flag_read || l_flag_error || l_flag_hup || l_flag_rdhup))
+                log_it(L_WARNING, "TCP_EVENT: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
+                       " epoll_ev=0x%x flags=0x%x R=%d W=%d ERR=%d HUP=%d RDHUP=%d CLOSE=%d buf_in=%zu read_cb=%p",
+                       l_cur->fd, l_cur->uuid, l_cur_flags, l_cur->flags,
+                       !!l_flag_read, !!l_flag_write, !!l_flag_error, !!l_flag_hup, !!l_flag_rdhup,
+                       !!(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE), l_cur->buf_in_size,
+                       (void*)l_cur->callbacks.read_callback);
 
             int l_sock_err = 0, l_sock_err_size = sizeof(l_sock_err);
             //connection already closed (EPOLLHUP - shutdown has been made in both directions)
@@ -1133,7 +1141,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         } else {
                             l_cur->buf_in_size += l_bytes_read;  // APPEND for TCP
                         }
-                        if(g_debug_reactor)
+                        if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)
+                            log_it(L_WARNING, "TCP_RECV_OK: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x" bytes=%zd total_buf=%zu read_cb=%p",
+                                   l_cur->fd, l_cur->uuid, l_bytes_read, l_cur->buf_in_size, (void*)l_cur->callbacks.read_callback);
+                        else if(g_debug_reactor)
                             debug_if(s_debug_more, L_DEBUG, "Received %zd bytes for fd %d ", l_bytes_read, l_cur->fd);
                         if (l_cur->callbacks.read_callback) {
                             // Call callback to process read event. At the end of callback buf_in_size should be zero if everything was read well
@@ -1175,9 +1186,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     }
                     else if (!l_flag_rdhup && !l_flag_error && !(l_cur->flags & DAP_SOCK_CONNECTING )) {
+                        if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT) {
+                            log_it(L_WARNING, "EPOLLIN_EOF: recv()=0 on TCP socket: esocket=%p fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
+                                   " buf_in_size=%zu flags=0x%x read_cb=%p inheritor=%p",
+                                   (void*)l_cur, l_cur->fd, l_cur->uuid,
+                                   l_cur->buf_in_size, l_cur->flags,
+                                   (void*)l_cur->callbacks.read_callback,
+                                   (void*)l_cur->_inheritor);
+                        }
                         debug_if(s_debug_more, L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d", 
                                l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur->socket, l_cur->type);
-                        //dap_events_socket_set_readable_unsafe(l_cur,false);
                     }
                 }
             }
@@ -1320,14 +1338,20 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #else
                             l_errno = errno;
 #endif
-                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_WARNING,
-                                     "CLI send failed: socket %"DAP_FORMAT_SOCKET" errno=%d (%s)",
+                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT)
+                                log_it(L_WARNING, "CLI send failed: socket %"DAP_FORMAT_SOCKET" errno=%d (%s)",
                                      l_cur->socket, l_errno, dap_strerror(l_errno));
+                            else if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)
+                                log_it(L_WARNING, "TCP_SEND_FAIL: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x" buf=%zu errno=%d (%s)",
+                                       l_cur->fd, l_cur->uuid, l_cur->buf_out_size, l_errno, dap_strerror(l_errno));
                         } else {
                             l_errno = 0;
-                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
-                                     "CLI send OK: socket %"DAP_FORMAT_SOCKET" sent %zd/%zu bytes",
+                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT)
+                                debug_if(s_debug_more, L_INFO, "CLI send OK: socket %"DAP_FORMAT_SOCKET" sent %zd/%zu bytes",
                                      l_cur->socket, l_bytes_sent, l_cur->buf_out_size);
+                            else if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)
+                                log_it(L_WARNING, "TCP_SEND_OK: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x" sent=%zd/%zu",
+                                       l_cur->fd, l_cur->uuid, l_bytes_sent, l_cur->buf_out_size);
                         }
                     }
                     break;
@@ -1434,6 +1458,26 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 if (!l_cur->buf_out_size) {
                     if (l_cur->type != DESCRIPTOR_TYPE_SOCKET_UDP || !l_cur->packet_queue || !l_cur->packet_queue->count)
                         dap_events_socket_set_writable_unsafe(l_cur, false);
+                    if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT) {
+                        int l_pending = 0, l_sockerr = 0;
+                        socklen_t l_sockerr_len = sizeof(l_sockerr);
+#ifdef DAP_OS_LINUX
+                        ioctl(l_cur->fd, FIONREAD, &l_pending);
+#endif
+                        getsockopt(l_cur->fd, SOL_SOCKET, SO_ERROR, &l_sockerr, &l_sockerr_len);
+                        log_it(L_WARNING, "TCP_WRITE_DONE: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
+                               " flags=0x%x CLOSE=%d READY_READ=%d read_cb=%p"
+                               " pending_in=%d so_error=%d epoll_fd=%"DAP_FORMAT_HANDLE
+                               " ev_events=0x%x ev_base=0x%x context=%p",
+                               l_cur->fd, l_cur->uuid, l_cur->flags,
+                               !!(l_cur->flags & DAP_SOCK_SIGNAL_CLOSE),
+                               !!(l_cur->flags & DAP_SOCK_READY_TO_READ),
+                               (void*)l_cur->callbacks.read_callback,
+                               l_pending, l_sockerr,
+                               l_cur->context ? l_cur->context->epoll_fd : -1,
+                               l_cur->ev.events, l_cur->ev_base_flags,
+                               (void*)l_cur->context);
+                    }
                 }
             } else if (l_flag_write && !(l_cur->flags & (DAP_SOCK_READY_TO_WRITE | DAP_SOCK_CONNECTING | DAP_SOCK_SIGNAL_CLOSE))) {
                 dap_context_poll_update(l_cur);
@@ -1581,6 +1625,11 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
             debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
                      "CLI poll_update OK: epoll_ctl MOD fd=%d epoll_fd=%"DAP_FORMAT_HANDLE,
                      l_fd, a_esocket->context->epoll_fd);
+            if (a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)
+                log_it(L_WARNING, "TCP_POLL_UPDATE: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
+                       " flags=0x%x events=0x%x EPOLLIN=%d EPOLLOUT=%d",
+                       l_fd, a_esocket->uuid, a_esocket->flags, events,
+                       !!(events & EPOLLIN), !!(events & EPOLLOUT));
             debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Successfully updated CONNECTING socket %"DAP_FORMAT_SOCKET" in epoll", 
                      a_esocket->socket);
         }
@@ -2002,6 +2051,10 @@ int dap_context_remove_from_polling(dap_events_socket_t * a_es)
  */
 int dap_context_remove(dap_events_socket_t * a_es)
 {
+    if (a_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)
+        log_it(L_WARNING, "TCP_CONTEXT_REMOVE: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
+               " flags=0x%x context=%p",
+               a_es->fd, a_es->uuid, a_es->flags, (void*)a_es->context);
     dap_context_t * l_context = a_es->context;
     if (!l_context) {
         log_it(L_WARNING, "No context assigned to esocket %"DAP_FORMAT_SOCKET, a_es->socket);

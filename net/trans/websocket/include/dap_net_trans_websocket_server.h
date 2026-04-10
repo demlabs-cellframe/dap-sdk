@@ -116,3 +116,18 @@ void dap_net_trans_websocket_server_delete(dap_net_trans_websocket_server_t *a_w
  */
 int dap_net_trans_websocket_server_add_upgrade_handler(dap_net_trans_websocket_server_t *a_ws_server, const char *a_url_path);
 
+/**
+ * @brief Try to handle HTTP request as WebSocket upgrade
+ *
+ * Checks if the HTTP client has WebSocket upgrade headers. If yes, performs
+ * the full upgrade (101 Switching Protocols) and switches to WebSocket protocol.
+ * If not a WebSocket request, returns without modifying the HTTP client.
+ *
+ * Designed to be called at the beginning of HTTP stream handler's headers_read
+ * callback, allowing WebSocket and HTTP streams to coexist on the same port/path.
+ *
+ * @param a_http_client HTTP client with headers already read
+ * @return 0 if WebSocket upgrade was performed, -1 if not a WebSocket request
+ */
+int dap_net_trans_websocket_try_upgrade(dap_http_client_t *a_http_client);
+

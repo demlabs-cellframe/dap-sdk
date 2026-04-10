@@ -355,6 +355,11 @@ static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm)
     if (!a_fsm || !a_fsm->client)
         return -1;
 
+    if (a_fsm->client->no_transport_fallback) {
+        log_it(L_INFO, "Transport fallback disabled for this client, giving up");
+        return -1;
+    }
+
     dap_list_t *l_all_transports = dap_net_trans_list_all();
     if (!l_all_transports) {
         log_it(L_ERROR, "No transports available in registry");
@@ -586,7 +591,7 @@ static void s_worker_execute_stage(void *a_arg)
     case STAGE_STREAM_SESSION: {
         debug_if(s_debug_more, L_INFO, "Worker: executing STAGE_STREAM_SESSION for client %p", l_client);
 
-        if (!l_tc->stream || !l_tc->stream->esocket) {
+        if (!l_tc->stream) {
             log_it(L_ERROR, "No stream for STAGE_STREAM_SESSION");
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
@@ -661,12 +666,10 @@ static void s_worker_execute_stage(void *a_arg)
         for (size_t i = 0; i < l_count_channels; i++)
             dap_stream_ch_new(l_tc->stream, (uint8_t)l_client->active_channels[i]);
 
-        // Install stream callbacks on the esocket BEFORE session_start sends data
-        // This ensures read/write/error/delete are handled when server responds
-        // CRITICAL: For datagram transports (UDP/DNS), the transport layer has already
-        // installed its own read_callback that handles decryption, Flow Control, etc.
-        // Overwriting it would break the transport's read path!
         if (l_tc->stream->esocket) {
+            l_tc->stream->esocket->no_close = false;
+            l_tc->stream->esocket->last_time_active = time(NULL);
+
             dap_events_socket_callbacks_t l_stream_cbs;
             dap_client_trans_ctx_get_stream_callbacks(&l_stream_cbs);
             bool l_is_datagram = (l_tc->stream->esocket->type == DESCRIPTOR_TYPE_SOCKET_UDP);
@@ -771,6 +774,7 @@ static void s_worker_execute_stage(void *a_arg)
             DAP_DELETE(l_old_ctx);
         }
         l_prepare_result.stream->trans_ctx = l_tc;
+        l_tc->trans = l_transport;
         if (l_prepare_result.esocket) {
             l_tc->stream->esocket = l_prepare_result.esocket;
             l_tc->stream->esocket_uuid = l_prepare_result.esocket->uuid;
@@ -1168,6 +1172,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
         DAP_DELETE(l_old_ctx);
     }
     l_prepare_result.stream->trans_ctx = l_tc;
+    l_tc->trans = l_transport;
     if (l_prepare_result.esocket) {
         l_tc->stream->esocket = l_prepare_result.esocket;
         l_tc->stream->esocket_uuid = l_prepare_result.esocket->uuid;

@@ -606,14 +606,8 @@ int dap_net_trans_stage_prepare(dap_net_trans_type_t a_trans_type,
         return l_ret;
     }
     
-    // Fail-fast: trans must return valid socket
-    if (!a_result->esocket) {
-        log_it(L_ERROR, "Trans stage_prepare returned success but esocket is NULL for type %d", a_trans_type);
-        a_result->error_code = -3;
-        return -3;
-    }
-    
-    debug_if(s_debug_more, L_DEBUG, "Trans %d prepared socket via stage_prepare callback", a_trans_type);
+    debug_if(s_debug_more, L_DEBUG, "Trans %d stage_prepare OK (esocket %s)",
+             a_trans_type, a_result->esocket ? "set" : "NULL, transport manages own connection");
     return 0;
 }
 

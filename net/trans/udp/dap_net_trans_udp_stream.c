@@ -2432,8 +2432,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     debug_if(s_debug_more, L_DEBUG, "Checking encryption keys for packet type %u", a_pkt_type);
     
     if (!l_udp_ctx->handshake_key) {
-        log_it(L_ERROR, "No encryption key for sending encrypted packet (type=%u)", a_pkt_type);
-        return -1;
+        debug_if(s_debug_more, L_DEBUG, "Dropping packet type=%u: handshake not complete yet", a_pkt_type);
+        return 0;
     }
     
     // FLOW CONTROL PATH (NEW): Send via FC

@@ -2023,6 +2023,9 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     
     memcpy(l_write_pos, a_data, a_data_size);
     s_events_socket_finalize_write(a_es, a_data_size);
+    if (a_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT && a_data_size > 0)
+        log_it(L_WARNING, "TCP_WRITE_UNSAFE: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x" wrote=%zu total_buf=%zu ctx=%p flags=0x%x",
+               a_es->fd, a_es->uuid, a_data_size, a_es->buf_out_size, (void*)a_es->context, a_es->flags);
     return a_data_size;
 }
 
