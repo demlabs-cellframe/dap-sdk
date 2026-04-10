@@ -95,8 +95,17 @@ static void *s_opfs_mount_thread(void *a_arg)
 {
     const char *l_mount = (const char *)a_arg;
     backend_t l_opfs = wasmfs_create_opfs_backend();
+    if (!l_opfs) {
+        log_it(L_WARNING, "wasmfs_create_opfs_backend() returned NULL");
+        return (void *)(intptr_t)-1;
+    }
     int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
-    return (void *)(intptr_t)((l_rc != 0 && errno != EEXIST) ? -1 : 0);
+    if (l_rc != 0 && errno != EEXIST) {
+        log_it(L_WARNING, "wasmfs_create_directory('%s') failed: rc=%d errno=%d (%s)",
+               l_mount, l_rc, errno, strerror(errno));
+        return (void *)(intptr_t)-1;
+    }
+    return (void *)(intptr_t)0;
 }
 
 static int s_init_wasmfs(void)

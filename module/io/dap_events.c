@@ -312,6 +312,9 @@ void dap_events_deinit( )
     dap_proc_thread_deinit();
     dap_events_socket_deinit();
     dap_worker_deinit();
+    DAP_DEL_Z(s_threads_id);
+    DAP_DEL_Z(s_workers);
+    s_workers_init = 0;
 #ifdef DAP_OS_WINDOWS
     WSACleanup();
 #endif
