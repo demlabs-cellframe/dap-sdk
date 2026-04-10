@@ -442,20 +442,27 @@ dap_arch_generate_variant(
     GUARD    none
 )
 
+# Dilithium SIMD C sources (cross-platform)
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
     SOURCES
         dap_dilithium_ntt_avx2.c        avx2
         dap_dilithium_ntt_avx2_512vl.c  avx2_512vl
         dap_dilithium_ntt_avx512.c      avx512
-        dap_dilithium_poly_ops_avx2.S    avx2
-        dap_dilithium_poly_ops_avx512.S avx512
-        dap_dilithium_ntt_avx2_asm.S    avx2
-        dap_dilithium_ntt_fused_avx2.S  avx2
-        dap_dilithium_invntt_fused_avx2.S  avx2
         dap_dilithium_sample_avx2.c     avx2
-        dap_dilithium_fips204_avx2.S    avx2
-        dap_dilithium_fips204_avx512.S  avx512
 )
+# Dilithium x86 ASM (System V ABI only - not available on Windows)
+if(NOT WIN32)
+    dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
+        SOURCES
+            dap_dilithium_poly_ops_avx2.S    avx2
+            dap_dilithium_poly_ops_avx512.S avx512
+            dap_dilithium_ntt_avx2_asm.S    avx2
+            dap_dilithium_ntt_fused_avx2.S  avx2
+            dap_dilithium_invntt_fused_avx2.S  avx2
+            dap_dilithium_fips204_avx2.S    avx2
+            dap_dilithium_fips204_avx512.S  avx512
+    )
+endif()
 # Dilithium NEON TU uses AArch64-only intrinsics (e.g. vqtbl1q_u8, vmaxvq_u32).
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
@@ -512,7 +519,8 @@ dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
 target_include_directories(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR})
 
 # --- ChaCha20 hand-tuned assembly — shared framework + arch impl (Keccak pattern) ---
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
+# x86 ASM uses System V ABI - not available on Windows
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64" AND NOT WIN32)
     enable_language(ASM)
     dap_tpl_generate(
         TEMPLATE ${CHACHA_DIR}/dap_chacha20_asm.S.tpl
