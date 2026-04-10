@@ -90,7 +90,8 @@ int main(void) {
 
     printf("--- AVX2 vs AVX512 NTT variant comparison ---\n");
 
-#if DAP_PLATFORM_X86
+/* x86 ASM benchmarks - System V ABI only, not available on Windows */
+#if DAP_PLATFORM_X86 && !defined(_WIN32)
     {
         extern void dap_dilithium_ntt_forward_avx2(int32_t [256]);
         extern void dap_dilithium_ntt_inverse_avx2(int32_t [256]);
