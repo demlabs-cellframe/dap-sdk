@@ -2472,8 +2472,9 @@ static int s_btree_insert_impl(dap_global_db_t *a_tree,
                     l_ent->sign_len = a_sign_len;
                     l_ent->flags = a_flags | DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE;
                     uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_leaf_entry_t);
-                    memcpy(l_dst, a_text_key, a_text_key_len);
-                *(uint64_t *)(l_dst + a_text_key_len) = l_ov_id;
+                    if (a_text_key && a_text_key_len > 0)
+                        memcpy(l_dst, a_text_key, a_text_key_len);
+                    *(uint64_t *)(l_dst + a_text_key_len) = l_ov_id;
                     hl->header.entries_count = l_count + 1;
                     hl->header.free_space -= (l_entry_size + LEAF_OFFSET_SIZE);
                     LEAF_LOWEST_OFFSET(hl->data) = l_new_offset;
@@ -2495,7 +2496,8 @@ static int s_btree_insert_impl(dap_global_db_t *a_tree,
                 l_ent->sign_len = a_sign_len;
                 l_ent->flags = a_flags;
                 uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_leaf_entry_t);
-                memcpy(l_dst, a_text_key, a_text_key_len);
+                if (a_text_key && a_text_key_len > 0)
+                    memcpy(l_dst, a_text_key, a_text_key_len);
                 if (a_value_len > 0)
                     memmove(l_dst + a_text_key_len, a_value, a_value_len);
                 if (a_sign_len > 0)
@@ -5653,7 +5655,10 @@ static uint64_t s_count_at_root_impl(dap_global_db_t *a_tree, uint64_t a_root, i
 
 uint64_t dap_global_db_count_at_root(dap_global_db_t *a_tree, uint64_t a_root)
 {
+    // Read tree_height under lock to avoid TSan race with writers
+    pthread_rwlock_rdlock(&a_tree->lock);
     int l_max_depth = (int)a_tree->header.tree_height + 2;
+    pthread_rwlock_unlock(&a_tree->lock);
     if (l_max_depth < 4) l_max_depth = 4;
     return s_count_at_root_impl(a_tree, a_root, l_max_depth);
 }

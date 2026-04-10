@@ -1,8 +1,8 @@
 #ifndef _DAP_ENC_SHIPOVNIK_H_
 #define _DAP_ENC_SHIPOVNIK_H_
 
-#include "sig_shipovnik/shipovnik.h"
-#include "sig_shipovnik/shipovnik_params.h"
+#include "shipovnik.h"
+#include "shipovnik_params.h"
 #include "dap_enc_key.h"
 
 

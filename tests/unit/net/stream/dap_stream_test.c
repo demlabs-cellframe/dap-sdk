@@ -1,6 +1,6 @@
 #include "dap_stream_test.h"
 #include "dap_client.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_cli_server.h"
 #include "dap_strfuncs.h"
 
@@ -48,7 +48,7 @@ void dap_stream_test_run(const char *a_ip_addr_str, uint16_t a_port, size_t a_da
     dap_client_go_stage(l_client, STAGE_STREAM_STREAMING, NULL);
     for (int i = 0; i < a_pkt_count; i++) {
         byte_t *l_test_data = DAP_NEW_SIZE(byte_t, a_data_size);
-        randombytes(l_test_data, a_data_size);
+        dap_random_bytes(l_test_data, a_data_size);
         char l_data_hash_str[DAP_HASH_SHA3_256_STR_SIZE];
         dap_hash_sha3_256_t l_data_hash;
         dap_hash_sha3_256(l_test_data, a_data_size, &l_data_hash); \

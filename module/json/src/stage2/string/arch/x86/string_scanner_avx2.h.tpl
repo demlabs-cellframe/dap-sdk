@@ -5,24 +5,14 @@
  * TEMPLATE FRAGMENT - included by parent template
  */
 
-// AVX2 intrinsics
-#include <immintrin.h>
+{{#include PRIM_LIB}}
 
-#define SIMD_VEC_TYPE __m256i
-#define SIMD_CHUNK_SIZE 32
-#define SIMD_MASK_TYPE uint32_t  // AVX2: 32 bytes → 32-bit mask
+#define SIMD_VEC_TYPE  VEC_T
+#define SIMD_CHUNK_SIZE VEC_LANES_8
+#define SIMD_MASK_TYPE uint32_t
 
-// Load unaligned chunk
-#define SIMD_LOAD(ptr) _mm256_loadu_si256((__m256i*)(ptr))
-
-// Set all bytes to same value
-#define SIMD_SET1(val) _mm256_set1_epi8(val)
-
-// Compare bytes for equality
-#define SIMD_CMP_EQ(a, b) _mm256_cmpeq_epi8((a), (b))
-
-// Bitwise OR
-#define SIMD_OR(a, b) _mm256_or_si256((a), (b))
-
-// Convert comparison result to bitmask
-#define SIMD_MOVEMASK(vec) ((SIMD_MASK_TYPE)_mm256_movemask_epi8(vec))
+#define SIMD_LOAD(ptr)      VEC_LOAD(ptr)
+#define SIMD_SET1(val)      VEC_SET1_8(val)
+#define SIMD_CMP_EQ(a, b)   VEC_CMPEQ_8(a, b)
+#define SIMD_OR(a, b)        VEC_OR(a, b)
+#define SIMD_MOVEMASK(vec)   ((SIMD_MASK_TYPE)VEC_MOVEMASK_8(vec))

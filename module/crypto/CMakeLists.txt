@@ -27,108 +27,134 @@ if(NOT DEFINED SPHINCSPLUS_FLEX)
     add_definitions ("-DTHASH=${SPHINCS_THASH}")
     
     file( GLOB SPHINCS_BASE_SRCS
-        src/sphincsplus/address.c 
-        src/sphincsplus/randombytes.c 
-        src/sphincsplus/merkle.c 
-        src/sphincsplus/wots.c 
-        src/sphincsplus/wotsx1.c 
-        src/sphincsplus/utils.c 
-        src/sphincsplus/utilsx1.c 
-        src/sphincsplus/fors.c 
-        src/sphincsplus/sign.c
-        src/sphincsplus/sphincsplus_params.c
+        src/sig/sphincsplus/address.c 
+        src/sig/sphincsplus/randombytes.c 
+        src/sig/sphincsplus/merkle.c 
+        src/sig/sphincsplus/wots.c 
+        src/sig/sphincsplus/wotsx1.c 
+        src/sig/sphincsplus/utils.c 
+        src/sig/sphincsplus/utilsx1.c 
+        src/sig/sphincsplus/fors.c 
+        src/sig/sphincsplus/sign.c
+        src/sig/sphincsplus/sphincsplus_params.c
     )
 
     file( GLOB SPHINCS_BASE_HEADERS
-        src/sphincsplus/params.h 
-        src/sphincsplus/address.h 
-        src/sphincsplus/randombytes.h 
-        src/sphincsplus/merkle.h 
-        src/sphincsplus/wots.h 
-        src/sphincsplus/wotsx1.h 
-        src/sphincsplus/utils.h 
-        src/sphincsplus/utilsx1.h 
-        src/sphincsplus/fors.h 
-        src/sphincsplus/api.h  
-        src/sphincsplus/hash.h 
-        src/sphincsplus/thash.h
-        src/sphincsplus/sphincsplus_params.h
+        src/sig/sphincsplus/params.h 
+        src/sig/sphincsplus/address.h 
+        src/sig/sphincsplus/randombytes.h 
+        src/sig/sphincsplus/merkle.h 
+        src/sig/sphincsplus/wots.h 
+        src/sig/sphincsplus/wotsx1.h 
+        src/sig/sphincsplus/utils.h 
+        src/sig/sphincsplus/utilsx1.h 
+        src/sig/sphincsplus/fors.h 
+        src/sig/sphincsplus/api.h  
+        src/sig/sphincsplus/hash.h 
+        src/sig/sphincsplus/thash.h
+        src/sig/sphincsplus/sphincsplus_params.h
     )
 
     # add needed files
     if(SPHINCS_HASH_TYPE MATCHES "shake")
         file( GLOB SPHINCS_SRCS
-            src/sphincsplus/spx_fips202.c
-            src/sphincsplus/hash_shake.c 
-            src/sphincsplus/thash_shake_${SPHINCS_THASH}.c
+            src/sig/sphincsplus/spx_fips202.c
+            src/sig/sphincsplus/hash_shake.c 
+            src/sig/sphincsplus/thash_shake_${SPHINCS_THASH}.c
         )
 
         file( GLOB SPHINCS_HEADERS
-            src/sphincsplus/spx_fips202.h
+            src/sig/sphincsplus/spx_fips202.h
         )
     elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
         file( GLOB SPHINCS_SRCS
-            src/sphincsplus/haraka.c 
-            src/sphincsplus/hash_haraka.c 
-            src/sphincsplus/thash_haraka_${SPHINCS_THASH}.c
+            src/sig/sphincsplus/haraka.c 
+            src/sig/sphincsplus/hash_haraka.c 
+            src/sig/sphincsplus/thash_haraka_${SPHINCS_THASH}.c
         )
 
         file( GLOB SPHINCS_HEADERS
-            src/sphincsplus/haraka.h
+            src/sig/sphincsplus/haraka.h
         )
     elseif(SPHINCS_HASH_TYPE MATCHES "sha2")
         file( GLOB SPHINCS_SRCS
-            src/sphincsplus/sha2.c 
-            src/sphincsplus/hash_sha2.c 
-            src/sphincsplus/thash_sha2_${SPHINCS_THASH}.c
+            src/sig/sphincsplus/sha2.c 
+            src/sig/sphincsplus/hash_sha2.c 
+            src/sig/sphincsplus/thash_sha2_${SPHINCS_THASH}.c
         )
 
         file( GLOB SPHINCS_HEADERS
-            src/sphincsplus/sha2.h
+            src/sig/sphincsplus/sha2.h
         )
     endif()
 else()
     add_definitions("-DSPHINCSPLUS_FLEX")
     file( GLOB SPHINCS_SRCS
-        src/sphincsplus/*.c
+        src/sig/sphincsplus/*.c
     )
     file( GLOB SPHINCS_HEADERS
-        src/sphincsplus/*.h
+        src/sig/sphincsplus/*.h
     )
 endif()
 
+option(BUILD_DEPRECATED_CRYPTO "Build deprecated cryptographic algorithms (Bliss, Picnic, Tesla, NewHope, MSRLN, Salsa2012)" ON)
+option(BUILD_CLASSIC_CRYPTO "Build classic (non-PQ) cryptographic algorithms (GOST/Kuznyechik, Shipovnik, ECDSA)" ON)
+option(DAP_DILITHIUM_PROFILE "Enable rdtsc profiling in Dilithium verify" OFF)
+
 file( GLOB CRYPTO_SRCS
       src/*.c
-      src/rand/*.c
-      src/iaes/*.c
-      src/oaes/*.c
-      src/blowfish/*.c
-      src/GOST/*.c
-      src/salsa2012/*.c
-      src/seed/*.c
-      # keccak moved to module/hash
-      src/msrln/*.c
-      src/newhope/*.c
-      src/sig_bliss/*.c
-      src/sig_tesla/*.c
-      src/sig_picnic/*.c
-      src/sig_dilithium/*.c
-      # src/ringct20/*.c # REMOVED: ringct20 module deleted
-      src/falcon/codec.c
-      src/falcon/common.c
-      src/falcon/falcon.c
-      src/falcon/fft.c
-      src/falcon/fpr.c
-      src/falcon/keygen.c
-      src/falcon/rng.c
-      src/falcon/shake.c
-      src/falcon/sign.c
-      src/falcon/vrfy.c
-      src/chipmunk/*.c
-      src/hash/sha2-256/*.c
+      # --- sig (active PQ) ---
+      src/sig/dilithium/*.c
+      src/sig/falcon/codec.c
+      src/sig/falcon/common.c
+      src/sig/falcon/dap_enc_falcon.c
+      src/sig/falcon/falcon.c
+      src/sig/falcon/fft.c
+      src/sig/falcon/fpr.c
+      src/sig/falcon/keygen.c
+      src/sig/falcon/rng.c
+      src/sig/falcon/shake.c
+      src/sig/falcon/sign.c
+      src/sig/falcon/vrfy.c
+      src/sig/chipmunk/*.c
+      src/sig/ntru_prime/*.c
+      # --- sym (active) ---
+      src/sym/aes/*.c
+      src/sym/seed/*.c
+      src/sym/chacha20/*.c
+      # --- kem (active) ---
+      src/kem/kyber/dap_enc_kyber.c
+      src/kem/mlkem/dap_enc_mlkem.c
+      src/kem/mlkem/dap_mlkem_batch.c
+      src/kem/ntru_prime/*.c
+      # --- sphincsplus ---
+      src/sig/sphincsplus/dap_enc_sphincsplus.c
       ${SPHINCS_BASE_SRCS}
       ${SPHINCS_SRCS}
 )
+
+# Deprecated algorithms (OFF by default — legacy, not recommended for new code)
+if(BUILD_DEPRECATED_CRYPTO)
+    file(GLOB DEPRECATED_SRCS
+        src/sig/deprecated/bliss/*.c
+        src/sig/deprecated/tesla/*.c
+        src/sig/deprecated/picnic/*.c
+        src/kem/deprecated/msrln/*.c
+        src/kem/deprecated/newhope/*.c
+        src/sym/deprecated/salsa2012/*.c
+    )
+    set(CRYPTO_SRCS ${CRYPTO_SRCS} ${DEPRECATED_SRCS})
+    message("[+] DAP Crypto: Deprecated algorithms enabled")
+endif()
+
+# Classic (non-PQ) algorithms (ON by default)
+if(BUILD_CLASSIC_CRYPTO)
+    file(GLOB CLASSIC_SRCS
+        src/sym/classic/gost/*.c
+    )
+    set(CRYPTO_SRCS ${CRYPTO_SRCS} ${CLASSIC_SRCS})
+    message("[+] DAP Crypto: Classic algorithms enabled (GOST)")
+endif()
 
 # ECDSA is now native implementation, enable by default
 option(BUILD_WITH_ECDSA "Build with native secp256k1/ECDSA support" ON)
@@ -148,7 +174,7 @@ if (BUILD_WITH_ECDSA)
     # =========================================================================
     
     # Generate arch-specific implementations and collect all ECDSA sources
-    add_subdirectory(src/sig_ecdsa)
+    add_subdirectory(src/sig/classic/ecdsa)
     
     # Add all ECDSA sources (static + generated)
     set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SOURCES})
@@ -175,8 +201,8 @@ endif()
 
 if (BUILD_WITH_SHIPOVNIK)
     file (GLOB SHIPOVNIK_SRC
-        src/sig_shipovnik/*.c
-        src/sig_shipovnik/streebog/*.c
+        src/sig/classic/shipovnik/*.c
+        src/sig/classic/shipovnik/streebog/*.c
     )
     set (CRYPTO_SRCS ${CRYPTO_SRCS} ${SHIPOVNIK_SRC})
     add_definitions("-DDAP_SHIPOVNIK")
@@ -184,35 +210,47 @@ else()
     list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*shipovnik.c")
 endif()
 
-get_filename_component(full_path_src ${CMAKE_CURRENT_SOURCE_DIR}/src/sig_shipovnik/streebog/gost3411-2012.c ABSOLUTE)
+get_filename_component(full_path_src ${CMAKE_CURRENT_SOURCE_DIR}/src/sig/classic/shipovnik/streebog/gost3411-2012.c ABSOLUTE)
 list(REMOVE_ITEM CRYPTO_SRCS "${full_path_src}")
+
+# ARMv7 / generic ARM32: no AArch64 crypto intrinsics (vqtbl1q_u8, vaeseq_u8, ...).
+if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    list(FILTER CRYPTO_SRCS EXCLUDE REGEX ".*/dap_aes_armce\\.c$")
+endif()
 
 file( GLOB CRYPTO_HEADERS
       src/*.h
-      src/rand/*.h
-      src/iaes/*.h
-      src/oaes/*.h
-      src/blowfish/*.h
-      src/GOST/*.h
-      src/salsa2012/*.h
-      src/seed/*.h
-      # keccak moved to module/hash
-      src/msrln/*.h
-      src/newhope/*.h
-      src/sig_bliss/*.h
-      src/sig_tesla/*.h
-      src/sig_picnic/*.h
-      src/sig_dilithium/*.h
-      # src/ringct20/*.h # REMOVED: ringct20 module deleted
-      src/falcon/*.h
-      src/chipmunk/*.h
-      src/hash/sha2-256/*.h
+      src/sig/dilithium/*.h
+      src/sig/falcon/*.h
+      src/sig/chipmunk/*.h
+      src/sym/aes/*.h
+      src/sym/seed/*.h
+      src/sym/chacha20/*.h
       ${SPHINCS_BASE_HEADERS}
       ${SPHINCS_HEADERS}
       include/*.h
 )
+
+if(BUILD_DEPRECATED_CRYPTO)
+    file(GLOB DEPRECATED_HDRS
+        src/sig/deprecated/bliss/*.h
+        src/sig/deprecated/tesla/*.h
+        src/sig/deprecated/picnic/*.h
+        src/kem/deprecated/msrln/*.h
+        src/kem/deprecated/newhope/*.h
+        src/sym/deprecated/salsa2012/*.h
+    )
+    set(CRYPTO_HEADERS ${CRYPTO_HEADERS} ${DEPRECATED_HDRS})
+endif()
+
+if(BUILD_CLASSIC_CRYPTO)
+    file(GLOB CLASSIC_HDRS
+        src/sym/classic/gost/*.h
+    )
+    set(CRYPTO_HEADERS ${CRYPTO_HEADERS} ${CLASSIC_HDRS})
+endif()
 if (BUILD_WITH_ECDSA)
-    file (GLOB ECDSA_HDR src/sig_ecdsa/*.h)
+    file (GLOB ECDSA_HDR src/sig/classic/ecdsa/*.h)
     set (CRYPTO_HEADERS ${CRYPTO_HEADERS} ${ECDSA_HDR})
 else()
     list (FILTER CRYPTO_HEADERS EXCLUDE REGEX ".*ecdsa.h")
@@ -220,8 +258,8 @@ endif()
 
 if (BUILD_WITH_SHIPOVNIK)
     file (GLOB SHIPOVNIK_HDR
-        src/sig_shipovnik/*.h
-        src/sig_shipovnik/streebog/*.h
+        src/sig/classic/shipovnik/*.h
+        src/sig/classic/shipovnik/streebog/*.h
     )
     set (CRYPTO_HEADERS ${CRYPTO_HEADERS} ${SHIPOVNIK_HDR})
 else()
@@ -235,7 +273,29 @@ endif()
 enable_language(ASM)
 
 
-set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src/chipmunk src/hash/sha2-256 src include)
+set( CRYPTO_INCLUDE_PRIVATE
+    src/sig src/sig/dilithium src/sig/falcon src/sig/chipmunk src/sig/ntru_prime src/sig/sphincsplus
+    src/sig/classic/ecdsa src/sig/classic/ecdsa/arch
+    src/sym src/sym/aes src/sym/seed src/sym/chacha20
+    src/kem src/kem/mlkem src/kem/ntru_prime
+    src include
+)
+
+if(BUILD_DEPRECATED_CRYPTO)
+    list(APPEND CRYPTO_INCLUDE_PRIVATE
+        src/sig/deprecated src/sig/deprecated/bliss src/sig/deprecated/tesla src/sig/deprecated/picnic
+        src/kem/deprecated src/kem/deprecated/msrln src/kem/deprecated/newhope
+        src/sym/deprecated src/sym/deprecated/salsa2012
+    )
+endif()
+
+if(BUILD_CLASSIC_CRYPTO)
+    list(APPEND CRYPTO_INCLUDE_PRIVATE src/sym/classic/gost)
+endif()
+
+if(BUILD_WITH_SHIPOVNIK)
+    list(APPEND CRYPTO_INCLUDE_PRIVATE src/sig/classic/shipovnik src/sig/classic/shipovnik/streebog)
+endif()
 
 # XKCP removed - using native DAP Keccak implementation (now in module/hash)
 # secp256k1 removed - using native DAP ECDSA implementation (sig_ecdsa/)
@@ -252,7 +312,7 @@ if ( DAP_PQLR)
     message ("[ ] Include dir: ${PQLR_INCLUDE_DIR}")
     INCLUDE_DIRECTORIES(${PQLR_INCLUDE_DIR})
 
-    file(GLOB DAP_PQLR_SRC src/pqlr/*.c src/pqlr/*.h)
+    file(GLOB DAP_PQLR_SRC src/deprecated/pqlr/*.c src/deprecated/pqlr/*.h)
     #set(CRYPTO_INCLUDE_PRIVATE ${CRYPTO_INCLUDE_PRIVATE} ${DAP_PQRL}/include )
     add_definitions("-DDAP_PQLR")
 endif()
@@ -262,6 +322,246 @@ endif()
 
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${CRYPTO_SRCS} HEADERS ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
+
+# --- AES hardware acceleration compile flags ---
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686|i386")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/aes/dap_aes_ni.c
+        PROPERTIES COMPILE_FLAGS "-maes -msse2"
+    )
+endif()
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/aes/dap_aes_armce.c
+        PROPERTIES COMPILE_FLAGS "-march=armv8-a+crypto"
+    )
+endif()
+
+# --- Dilithium specialized SIMD ---
+set(DIL_TPL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/sig/dilithium)
+set(DIL_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/dilithium_ntt_gen)
+set(DIL_REDUCE_TPL "${DIL_TPL_DIR}/dap_dilithium_simd_reduce.tpl")
+
+# Per-variant NTT generation: each arch gets its own NTT_INNER_FILE (Keccak pattern)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_avx2.c
+    ARCH     avx2
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+             "NTT_INNER_FILE=${DIL_TPL_DIR}/arch/x86/ntt_inner_avx2.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_avx2_512vl.c
+    ARCH     avx2_512vl
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+             "NTT_INNER_FILE=${DIL_TPL_DIR}/arch/x86/ntt_inner_avx2.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_avx512.c
+    ARCH     avx512
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
+             "NTT_INNER_FILE=${DIL_TPL_DIR}/arch/x86/ntt_inner_avx512.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_ntt_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_neon.c
+    ARCH     neon
+    ARGS     "PRIMITIVES_FILE=${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
+             "NTT_INNER_FILE=${DIL_TPL_DIR}/arch/generic/ntt_inner_scalar.tpl"
+)
+dap_arch_generate(
+    TEMPLATE   ${DIL_TPL_DIR}/dap_dilithium_poly_simd.c.tpl
+    OUTPUT_DIR ${DIL_GEN_DIR}
+    PREFIX     dap_dilithium_poly
+    VARIANTS
+        avx2         "${DAP_PRIMITIVES_DIR}/x86/int32_avx2.tpl"
+        avx512       "${DAP_PRIMITIVES_DIR}/x86/int32_avx512.tpl"
+        neon         "${DAP_PRIMITIVES_DIR}/arm/int32_neon.tpl"
+    EXTRA_ARGS "REDUCE_FILE=${DIL_REDUCE_TPL}"
+               "OPS_FILE=${DIL_TPL_DIR}/dap_dilithium_simd_poly_ops.tpl"
+)
+# x86 poly ops: hand-tuned assembly via dap_tpl (replaces C-intrinsics in sources)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_poly_ops_avx2.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_poly_ops_avx2.S
+    ARCH     avx2
+    GUARD    none
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_poly_ops_avx512.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_poly_ops_avx512.S
+    ARCH     avx512
+    GUARD    none
+)
+# x86 NTT: hand-tuned assembly with pre-computed Montgomery tables
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_ntt_avx2_asm.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_avx2_asm.S
+    ARCH     avx2
+    GUARD    none
+)
+# x86 NTT fused: CRYSTALS-style register-resident 8-layer butterfly
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_ntt_fused_avx2.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_ntt_fused_avx2.S
+    ARCH     avx2
+    GUARD    none
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_invntt_fused_avx2.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_invntt_fused_avx2.S
+    ARCH     avx2
+    GUARD    none
+)
+# Per-variant rejection sampling generation
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_sample_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_sample_avx2.c
+    ARCH     avx2
+    ARGS     "SAMPLE_BODY=${DIL_TPL_DIR}/arch/x86/rej_uniform_avx2.inc"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/dap_dilithium_sample_simd.c.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_sample_neon.c
+    ARCH     neon
+    ARGS     "SAMPLE_BODY=${DIL_TPL_DIR}/arch/arm/rej_uniform_neon.inc"
+)
+# FIPS 204 ML-DSA SIMD — hand-tuned assembly via dap_tpl
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_fips204_avx2.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_fips204_avx2.S
+    ARCH     avx2
+    GUARD    none
+)
+dap_arch_generate_variant(
+    TEMPLATE ${DIL_TPL_DIR}/arch/x86/dap_dilithium_fips204_avx512.S.tpl
+    OUTPUT   ${DIL_GEN_DIR}/dap_dilithium_fips204_avx512.S
+    ARCH     avx512
+    GUARD    none
+)
+
+# Dilithium SIMD C sources (cross-platform)
+dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
+    SOURCES
+        dap_dilithium_ntt_avx2.c        avx2
+        dap_dilithium_ntt_avx2_512vl.c  avx2_512vl
+        dap_dilithium_ntt_avx512.c      avx512
+        dap_dilithium_sample_avx2.c     avx2
+)
+# Dilithium x86 ASM (System V ABI only - not available on Windows)
+if(NOT WIN32)
+    dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
+        SOURCES
+            dap_dilithium_poly_ops_avx2.S    avx2
+            dap_dilithium_poly_ops_avx512.S avx512
+            dap_dilithium_ntt_avx2_asm.S    avx2
+            dap_dilithium_ntt_fused_avx2.S  avx2
+            dap_dilithium_invntt_fused_avx2.S  avx2
+            dap_dilithium_fips204_avx2.S    avx2
+            dap_dilithium_fips204_avx512.S  avx512
+    )
+endif()
+# Dilithium NEON TU uses AArch64-only intrinsics (e.g. vqtbl1q_u8, vmaxvq_u32).
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
+    dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${DIL_GEN_DIR}
+        SOURCES
+            dap_dilithium_ntt_neon.c        neon
+            dap_dilithium_poly_neon.c       neon
+            dap_dilithium_sample_neon.c     neon
+    )
+endif()
+target_include_directories(${PROJECT_NAME} PRIVATE ${DIL_GEN_DIR})
+
+# --- ChaCha20 multi-block SIMD (Keccak-pattern layout) ---
+set(CHACHA_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/src/sym/chacha20)
+set(CHACHA_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/chacha20_arch_gen)
+
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_sse2.c
+    ARCH     sse2
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/x86/sse2_primitives.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx2.c
+    ARCH     avx2
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/x86/avx2_primitives.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx2_512vl.c
+    ARCH     avx2_512vl
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/x86/avx512vl_primitives.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx512.c
+    ARCH     avx512
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/x86/avx512_primitives.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_DIR}/dap_chacha20_simd.c.tpl
+    OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_neon.c
+    ARCH     neon
+    ARGS     "PRIMITIVES_FILE=${CHACHA_DIR}/arch/arm/neon_primitives.tpl"
+)
+dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${CHACHA_GEN_DIR}
+    SOURCES
+        dap_chacha20_sse2.c  sse2
+        dap_chacha20_avx2.c  avx2
+        dap_chacha20_avx2_512vl.c  avx2_512vl
+        dap_chacha20_avx512.c  avx512
+        dap_chacha20_neon.c  neon
+)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR})
+
+# --- ChaCha20 hand-tuned assembly — shared framework + arch impl (Keccak pattern) ---
+# x86 ASM uses System V ABI - not available on Windows
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64" AND NOT WIN32)
+    enable_language(ASM)
+    dap_tpl_generate(
+        TEMPLATE ${CHACHA_DIR}/dap_chacha20_asm.S.tpl
+        OUTPUT   ${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S
+        ARGS     "ARCH_IMPL=${CHACHA_DIR}/arch/x86/chacha20_asm_avx512vl.tpl"
+                 "ASM_MACROS=${DAP_ASM_MACROS}"
+    )
+    target_sources(${PROJECT_NAME} PRIVATE ${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S)
+    set_source_files_properties(${CHACHA_GEN_DIR}/dap_chacha20_avx512vl.S
+        PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512vl"
+    )
+endif()
+
+# --- Poly1305 multi-block SIMD ---
+set(POLY1305_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/poly1305_arch_gen)
+
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_DIR}/dap_poly1305_simd.c.tpl
+    OUTPUT   ${POLY1305_GEN_DIR}/dap_poly1305_avx2.c
+    ARCH     avx2
+    ARGS     "IMPL_FILE=${CHACHA_DIR}/arch/x86/avx2_poly1305_impl.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_DIR}/dap_poly1305_simd.c.tpl
+    OUTPUT   ${POLY1305_GEN_DIR}/dap_poly1305_avx512_ifma.c
+    ARCH     avx512_ifma
+    ARGS     "IMPL_FILE=${CHACHA_DIR}/arch/x86/avx512_ifma_poly1305_impl.tpl"
+)
+dap_arch_generate_variant(
+    TEMPLATE ${CHACHA_DIR}/dap_poly1305_simd.c.tpl
+    OUTPUT   ${POLY1305_GEN_DIR}/dap_poly1305_neon.c
+    ARCH     neon
+    ARGS     "IMPL_FILE=${CHACHA_DIR}/arch/arm/neon_poly1305_impl.tpl"
+)
+dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${POLY1305_GEN_DIR}
+    SOURCES
+        dap_poly1305_avx2.c  avx2
+        dap_poly1305_avx512_ifma.c  avx512_ifma
+        dap_poly1305_neon.c  neon
+)
+target_include_directories(${PROJECT_NAME} PRIVATE ${POLY1305_GEN_DIR})
 
 ## Get all properties that cmake supports
 execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
@@ -286,15 +586,11 @@ function(print_target_properties tgt)
     endforeach(prop)
 endfunction(print_target_properties)
 
-option(BUILD_DAP_CRYPTO_KYBER512 "Build Kyber512 crypto module" ON) # default KEM for assymetric crypto
-if(BUILD_DAP_CRYPTO_KYBER512)
-    add_subdirectory(src/Kyber/crypto_kem/kyber512/optimized kyber512_build)
-    add_dependencies(${PROJECT_NAME} dap_crypto_kyber512)
-    target_link_libraries(${PROJECT_NAME} INTERFACE dap_crypto_kyber512)
-    message("[+] DAP Crypto: Kyber512 support enabled")
-else()
-    message("[!] DAP Crypto: Kyber512 support disabled ")
-endif()
+# --- ML-KEM (FIPS 203) — single codebase compiled 3× with MLKEM_K=2/3/4
+add_subdirectory(src/kem/mlkem mlkem_build)
+add_dependencies(${PROJECT_NAME} dap_mlkem_512 dap_mlkem_768 dap_mlkem_1024)
+target_link_libraries(${PROJECT_NAME} INTERFACE dap_mlkem_512 dap_mlkem_768 dap_mlkem_1024)
+message("[+] DAP Crypto: ML-KEM-512/768/1024 support enabled")
 
 if (DAP_PQRL)
 
@@ -310,10 +606,10 @@ endif()
 
 
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
-target_include_directories(dap_crypto PUBLIC 
+target_include_directories(dap_crypto PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/rand
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CRYPTO_INCLUDE_PRIVATE}
 )
 
 
@@ -322,13 +618,22 @@ target_include_directories(dap_crypto PUBLIC
 
 
 # Store dependencies for final library - no linking of OBJECT targets  
-set(CRYPTO_LIBS "dap_crypto_kyber512")
+set(CRYPTO_LIBS "dap_mlkem_512" "dap_mlkem_768" "dap_mlkem_1024")
 # secp256k1 removed - using native DAP ECDSA implementation
 if(UNIX)
     list(APPEND CRYPTO_LIBS "m")
 endif()
 
-dap_link_libraries(dap_crypto INTERFACE dap_core dap_json dap_hash dap_hash_table dap_config dap_math)
+dap_link_libraries(dap_crypto INTERFACE dap_core dap_json dap_hash dap_hash_table dap_config dap_math dap_math_bignum)
+
+if(TARGET dap_gpu)
+    dap_link_libraries(dap_crypto INTERFACE dap_gpu)
+    target_compile_definitions(dap_crypto PUBLIC DAP_HAS_GPU)
+endif()
+
+if(DAP_DILITHIUM_PROFILE)
+    target_compile_definitions(dap_crypto PRIVATE DAP_DILITHIUM_PROFILE)
+endif()
 
 if(UNIX)
   target_link_libraries(dap_crypto INTERFACE m)
@@ -337,8 +642,7 @@ endif()
 # Export dependencies for main SDK build
 set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external dependencies")
 
-target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/rand/shishua)
-target_include_directories(dap_crypto PUBLIC src/Kyber/crypto_kem/kyber512/optimized)
+target_include_directories(dap_crypto PUBLIC src/kem/mlkem)
 # Native ECDSA implementation in sig_ecdsa/ - no external includes needed
 
 if(BUILD_CRYPTO_TESTS)
@@ -356,7 +660,5 @@ INSTALL(TARGETS ${PROJECT_NAME}
         PUBLIC_HEADER DESTINATION include/dap/crypto/
 )
 
-INSTALL(DIRECTORY src/rand/ DESTINATION include/dap/crypto/rand/)
-INSTALL(DIRECTORY src/msrln/ DESTINATION include/dap/crypto/msrln/)
-INSTALL(DIRECTORY src/sig_dilithium/ DESTINATION include/dap/crypto/sig_dilithium/)
+INSTALL(DIRECTORY src/sig/dilithium/ DESTINATION include/dap/crypto/sig/dilithium/)
 endif()

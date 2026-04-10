@@ -29,12 +29,13 @@
  * @brief Thread-local arena for tape allocation
  * @details Shared arena for all JSON parsing in this thread.
  *          Auto-initialized on first use, thread-safe via _Thread_local.
+ *          Must be explicitly freed via dap_json_tape_arena_free() or
+ *          dap_json_cleanup_thread_arena() before thread exit.
  * 
- * **Design:**
- * - Single arena per thread (not per-parse like Stage 2)
- * - Reused across multiple parse operations
- * - Reset between parses for memory efficiency
- * - Initial size: 64KB (good for most JSON documents)
+ * @note We don't use pthread destructors because they are unreliable:
+ *       - Wine (Windows emulation) has incomplete pthread support
+ *       - QEMU (ARM emulation) may call destructors in wrong order
+ *       - Destructors can run after logging is disabled, causing crashes
  */
 static _Thread_local dap_arena_t *s_thread_tape_arena = NULL;
 
@@ -104,7 +105,7 @@ bool dap_json_build_tape(
             .max_page_size = 16 * 1024 * 1024,  // 16MB max
             .allow_small_pages = false
         };
-        s_thread_tape_arena = dap_arena_new_opt(opts);  // Pass by value
+        s_thread_tape_arena = dap_arena_new_opt(opts);
         
         if (!s_thread_tape_arena) {
             log_it(L_ERROR, "Failed to create thread-local tape arena");
@@ -463,6 +464,22 @@ void dap_json_tape_arena_free(void)
         debug_if(dap_json_get_debug(), L_DEBUG,
                  "Freed thread-local tape arena (thread cleanup)");
     }
+}
+
+void* dap_json_tape_arena_alloc(size_t a_size)
+{
+    if (!s_thread_tape_arena) {
+        dap_arena_opt_t opts = {
+            .initial_size = 64 * 1024,
+            .max_page_size = 16 * 1024 * 1024,
+            .allow_small_pages = false
+        };
+        s_thread_tape_arena = dap_arena_new_opt(opts);
+        if (!s_thread_tape_arena) {
+            return NULL;
+        }
+    }
+    return dap_arena_alloc(s_thread_tape_arena, a_size);
 }
 
 /**

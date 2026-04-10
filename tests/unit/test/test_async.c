@@ -24,6 +24,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 #define LOG_TAG "test_async"
 
@@ -31,7 +32,7 @@
 // TEST HELPERS
 // =============================================================================
 
-static bool s_condition_met = false;
+static atomic_bool s_condition_met = false;
 static int s_condition_check_count = 0;
 
 static bool test_condition_always_true(void *a_data)
@@ -283,7 +284,7 @@ static void* test_macro_thread(void *a_arg)
 {
     UNUSED(a_arg);
     dap_test_sleep_ms(300);
-    s_condition_met = true;
+    atomic_store(&s_condition_met, true);
     return NULL;
 }
 
@@ -291,7 +292,7 @@ static void test_wait_until_macro(void)
 {
     log_it(L_INFO, "=== Test 8: DAP_TEST_WAIT_UNTIL Macro ===");
     
-    s_condition_met = false;
+    atomic_store(&s_condition_met, false);
     
     // Start thread that sets condition after 300ms
     pthread_t l_thread;
@@ -301,7 +302,7 @@ static void test_wait_until_macro(void)
     
     // Use macro to wait
     DAP_TEST_WAIT_UNTIL(
-        s_condition_met == true,
+        atomic_load(&s_condition_met) == true,
         2000,
         "Condition should be met"
     );

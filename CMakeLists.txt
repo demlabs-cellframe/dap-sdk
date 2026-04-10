@@ -27,6 +27,8 @@ endif()
 
 # Build type (Debug / Release / Asan) and DAP_* build variables
 include(cmake/DapBuild.cmake)
+# Compiler sanitizers (ASan, UBSan, TSan, MSan)
+include(cmake/Sanitizers.cmake)
 # Common includes and definitions (uses DAP_DEBUG, DAP_RELEASE, DAP_ASAN_BUILD from DapBuild)
 include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)
@@ -49,6 +51,7 @@ option(BUILD_STATIC "Also build static version of DAP SDK library" OFF)
 option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
 
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
+option(BUILD_WITH_GPU  "Build GPU compute acceleration module (Vulkan/Metal/CUDA/OpenCL)" OFF)
 
 # Internal modules are ALWAYS static, final can be SHARED or STATIC
 if(BUILD_SHARED)
@@ -75,11 +78,22 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
+# Optimization module - arch dispatch macros (header-only, depends on core)
+add_subdirectory(module/optimization)
+message("[+] Module 'optimization'")
+
 # Set DAP_TPL_DIR for dap_json SIMD code generation (if not already set by parent)
 if(NOT DEFINED DAP_TPL_DIR)
     set(DAP_TPL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/test/dap_tpl" CACHE PATH "Path to dap_tpl template engine")
     message("[+] DAP SDK: DAP_TPL_DIR set to ${DAP_TPL_DIR}")
 endif()
+
+# Arch-optimized code generation infrastructure (used by hash, json, crypto, math modules)
+if(NOT DEFINED DAP_ARCH_DIR)
+    set(DAP_ARCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/arch" CACHE PATH "Path to arch codegen infrastructure")
+endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapTplGenerate.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapArchCodegen.cmake)
 
 # Math module - uint128_t/uint256_t operations (must be before json)
 add_subdirectory(module/math)
@@ -107,7 +121,18 @@ endif()
 add_subdirectory(module/config)
 message("[+] Module 'config'")
 
-# Optional modules with UPDATED PATHS
+# Bignum library — independent of dap_math, used only by crypto algorithms
+if (DAPSDK_MODULES MATCHES "crypto")
+    add_subdirectory(module/math/bignum)
+    message("[+] Module 'math/bignum' (NTT, poly, multi-precision)")
+endif()
+
+# GPU compute module (Vulkan, Metal, CUDA, OpenCL backends) — before crypto for DAP_HAS_GPU
+if (BUILD_WITH_GPU AND DAPSDK_MODULES MATCHES "crypto" AND NOT DAP_WASM)
+    add_subdirectory(module/gpu)
+    message("[+] Module 'gpu' (GPU compute acceleration)")
+endif()
+
 if (DAPSDK_MODULES MATCHES "crypto")
     add_subdirectory(module/crypto)
     message("[+] Module 'crypto'")

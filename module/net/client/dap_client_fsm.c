@@ -38,7 +38,7 @@
 #include "dap_net_trans.h"
 #include "dap_net_trans_qos.h"
 #include "dap_stream_handshake.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_worker.h"
 #include "dap_events.h"
 #include "dap_thread_pool.h"
@@ -203,7 +203,7 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
 
     // Crypto defaults
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
-    l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
+    l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_ML_KEM;
     l_fsm->session_key_block_size = 32;
 
     // FSM state
@@ -729,10 +729,10 @@ static void s_worker_execute_stage(void *a_arg)
         dap_qos_probe_pkt_t *l_probe = (dap_qos_probe_pkt_t *)l_probe_buf;
         l_probe->magic = DAP_QOS_PROBE_MAGIC;
         l_probe->type  = DAP_QOS_TYPE_PROBE;
-        randombytes((uint8_t *)&l_probe->probe_id, sizeof(l_probe->probe_id));
+        dap_random_bytes((uint8_t *)&l_probe->probe_id, sizeof(l_probe->probe_id));
         l_probe->client_ts = 0;
         if (DAP_QOS_PROBE_PAYLOAD_SIZE > sizeof(dap_qos_probe_pkt_t))
-            randombytes(l_probe_buf + sizeof(dap_qos_probe_pkt_t),
+            dap_random_bytes(l_probe_buf + sizeof(dap_qos_probe_pkt_t),
                         DAP_QOS_PROBE_PAYLOAD_SIZE - sizeof(dap_qos_probe_pkt_t));
 
         dap_net_handshake_params_t l_hs_params = {

@@ -128,11 +128,11 @@ static bool test_sign_verify_basic(void) {
     
     // Use known private key
     uint8_t seckey[32];
-    randombytes(seckey, 32);
+    dap_random_bytes(seckey, 32);
     
     // Ensure valid key
     while (!dap_sig_ecdsa_seckey_verify(NULL, seckey)) {
-        randombytes(seckey, 32);
+        dap_random_bytes(seckey, 32);
     }
     
     // Create public key
@@ -144,7 +144,7 @@ static bool test_sign_verify_basic(void) {
     
     // Message hash
     uint8_t msghash[32];
-    randombytes(msghash, 32);
+    dap_random_bytes(msghash, 32);
     
     // Sign
     dap_sig_ecdsa_signature_t sig;
