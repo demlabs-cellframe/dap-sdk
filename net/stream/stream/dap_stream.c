@@ -1227,7 +1227,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             size_t l_duplicates = 0;
             for(size_t j=0;j<a_stream->channel_count;j++){
                 if(a_stream->channel[j]->proc && a_stream->channel[j]->proc->id == l_ch_pkt->hdr.id) {
-                    debug_if(s_dump_packet_headers, L_DEBUG, "s_stream_proc_pkt_in: channel '%c' at index %zu: %p (notifiers=%zu)",
+                    debug_if(s_dump_packet_headers, L_DEBUG, "s_stream_proc_pkt_in: channel '%c' at index %zu: %p (notifiers=%"PRIu64")",
                            (char)l_ch_pkt->hdr.id, j, a_stream->channel[j], 
                            dap_list_length(a_stream->channel[j]->packet_in_notifiers));
                     l_duplicates++;

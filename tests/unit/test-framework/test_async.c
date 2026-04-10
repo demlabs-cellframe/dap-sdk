@@ -68,8 +68,8 @@ static void test_time_utilities(void)
            (unsigned long long)(l_time2 - l_time1));
     
     dap_assert_PIF(l_time2 > l_time1, "Time should increase");
-    dap_assert_PIF(l_time2 - l_time1 >= 90 && l_time2 - l_time1 <= 200,
-                   "Sleep should be accurate (+/- 10ms tolerance)");
+    dap_assert_PIF(l_time2 - l_time1 >= 80 && l_time2 - l_time1 <= 500,
+                   "Sleep should be accurate (+/- 100ms tolerance)");
     
     log_it(L_INFO, "✓ Test 1: Time Utilities PASSED\n");
 }

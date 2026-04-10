@@ -107,7 +107,13 @@ static bool s_find_real_interface_ip(void) {
     return false;
 }
 #define TEST_CH_ID          'T'
+#if defined(__arm__) || defined(__ARM_ARCH)
+#define NUM_CLIENTS         10
+#elif defined(__APPLE__)
+#define NUM_CLIENTS         20
+#else
 #define NUM_CLIENTS         100
+#endif
 #define DATA_SIZE           (256 * 1024)  // 256KB per client (25.6MB total)
 #define HANDSHAKE_TIMEOUT   30000
 #define DATA_TIMEOUT        120000

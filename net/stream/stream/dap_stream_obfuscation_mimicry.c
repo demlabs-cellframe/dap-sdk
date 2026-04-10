@@ -799,7 +799,7 @@ static int s_unwrap_websocket(dap_stream_mimicry_t *a_mimicry,
     *a_out_data = l_payload;
     *a_out_size = l_payload_len;
 
-    debug_if(s_debug_more, L_DEBUG, "Unwrapped %lu bytes from WebSocket frame", l_payload_len);
+    debug_if(s_debug_more, L_DEBUG, "Unwrapped %"PRIu64" bytes from WebSocket frame", l_payload_len);
     return 0;
 }
 

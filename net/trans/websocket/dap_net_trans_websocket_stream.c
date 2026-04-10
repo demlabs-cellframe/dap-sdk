@@ -1305,7 +1305,7 @@ static void s_ws_close(dap_stream_t *a_stream)
 
     l_priv->state = DAP_WS_STATE_CLOSED;
 
-    log_it(L_INFO, "WebSocket connection closed (sent=%lu frames, received=%lu frames, "
+    log_it(L_INFO, "WebSocket connection closed (sent=%"PRIu64" frames, received=%"PRIu64" frames, "
            "esocket fd=%d flags=0x%x)",
            l_priv->frames_sent, l_priv->frames_received,
            l_priv->esocket ? (int)l_priv->esocket->fd : -1,

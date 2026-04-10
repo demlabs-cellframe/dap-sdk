@@ -1636,7 +1636,7 @@ dap_enc_key_t* dap_enc_kem_derive_key(
     );
     
     if (l_ret != 0) {
-        log_it(L_ERROR, "KDF derivation failed: context=%s, counter=%lu",
+        log_it(L_ERROR, "KDF derivation failed: context=%s, counter=%"PRIu64,
                a_context, a_counter);
         DAP_DELETE(l_derived_key);
         return NULL;
@@ -1658,7 +1658,7 @@ dap_enc_key_t* dap_enc_kem_derive_key(
         return NULL;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Derived %s key: context=%s, counter=%lu, size=%zu",
+    debug_if(s_debug_more, L_DEBUG, "Derived %s key: context=%s, counter=%"PRIu64", size=%zu",
            dap_enc_get_type_name(a_cipher_type), a_context, a_counter, a_key_size);
     
     return l_key;

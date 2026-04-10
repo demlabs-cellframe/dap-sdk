@@ -1367,6 +1367,10 @@ static void test_02_sequential_trans_testing(void)
                 if (!test_wait_for_cleanup_complete(l_cleanup_timeout)) {
                     log_it(L_ERROR, "Cleanup did not complete for scenario '%s'", l_scenario->name);
                 }
+#ifdef __APPLE__
+                // macOS: extra delay for port release after SO_REUSEPORT socket close
+                dap_test_sleep_ms(1000);
+#endif
                 
                 printf("\n");
             }

@@ -1409,7 +1409,7 @@ static void test_17_replay_protection(void)
         uint64_t l_sess_id = l_hdr.session_id;
         
         TEST_ASSERT(l_seq_num == l_expected_seq_nums[i],
-                    "Packet %d seq_num should be %" PRIu64 " (got %" PRIu64 ")",
+                    "Packet %d seq_num should be %u (got %" PRIu64 ")",
                     i + 1, l_expected_seq_nums[i], l_seq_num);
         
         DAP_DELETE(l_decrypted);
