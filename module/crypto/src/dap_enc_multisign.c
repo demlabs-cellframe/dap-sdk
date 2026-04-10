@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "dap_common.h"
+#include "dap_memwipe.h"
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
 #include "dap_enc_multisign.h"
@@ -61,6 +62,8 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
+    if (a_key->priv_key_data && a_key->priv_key_data_size)
+        dap_memwipe(a_key->priv_key_data, a_key->priv_key_data_size);
     DAP_DEL_MULTY(a_key->priv_key_data, a_key->pub_key_data);
     a_key->priv_key_data_size = a_key->pub_key_data_size = 0;
     dap_multi_sign_params_delete((dap_multi_sign_params_t*)a_key->_pvt);

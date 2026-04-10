@@ -1,9 +1,8 @@
 /*
  * Authors:
  * Dmitriy A. Gearasimov <gerasimov.dmitriy@demlabs.net>
- * DeM Labs Inc.   https://demlabs.net    https:/gitlab.com/demlabs
- * Kelvin Project https://github.com/kelvinblockchain
- * Copyright  (c) 2017-2018
+ * DeM Labs Inc.   https://demlabs.net   
+ * Copyright  (c) 2018
  * All rights reserved.
 
  This file is part of DAP (Distributed Applications Platform) the open source project
@@ -43,6 +42,8 @@ enum dap_sign_type_enum {
     SIG_TYPE_ECDSA = 0x105,
     SIG_TYPE_SHIPOVNIK = 0x0106,
     SIG_TYPE_CHIPMUNK = 0x0107, /// @brief Chipmunk signature
+    SIG_TYPE_NTRU_PRIME = 0x0113,
+    SIG_TYPE_ML_DSA = 0x0201,
 #ifdef DAP_PQLR
     SIG_TYPE_PQLR_DILITHIUM = 0x1102,
     SIG_TYPE_PQLR_FALCON = 0x1103,
@@ -70,10 +71,22 @@ typedef union dap_sign_type {
     uint32_t raw;
 } DAP_ALIGN_PACKED dap_sign_type_t;
 
+/**
+ * @brief NIST security category for parameterized algorithms (ML-DSA, ML-KEM, etc.)
+ * Stored in dap_sign_hdr_t.sign_params. Zero means NIST-recommended default.
+ */
+#define DAP_SIGN_PARAMS_DEFAULT      0x00
+#define DAP_SIGN_PARAMS_SECURITY_2   0x01  ///< Category 2 — ML-DSA-44, ML-KEM-512
+#define DAP_SIGN_PARAMS_SECURITY_3   0x02  ///< Category 3 — ML-DSA-65, ML-KEM-768 (NIST recommended)
+#define DAP_SIGN_PARAMS_SECURITY_5   0x03  ///< Category 5 — ML-DSA-87, ML-KEM-1024
+
+#define DAP_SIGN_PARAMS_SECURITY_MASK  0x03
+#define DAP_SIGN_PARAMS_SECURITY_DEFAULT  DAP_SIGN_PARAMS_SECURITY_3
+
 typedef struct dap_sign_hdr {
         dap_sign_type_t type; /// Signature type
         uint8_t hash_type;
-        uint8_t padding;
+        uint8_t sign_params; /// Algorithm parameters (security level flags, etc.)
         uint32_t sign_size; /// Signature size
         uint32_t sign_pkey_size; /// Signature serialized public key size
 } DAP_ALIGN_PACKED dap_sign_hdr_t;

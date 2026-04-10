@@ -66,8 +66,21 @@ tests:amd64.windows:
     before_script:
       - set -eo pipefail
       - /opt/buildtools/prepare_environment.sh amd64-windows
+      # Wine needs a virtual framebuffer in headless Docker (nodrv_CreateWindow / explorer crash).
+      - apt-get update -qq
+      - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb
     script:
       - set -eo pipefail
+      - export DISPLAY=:99
+      - Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
+      - XPID=$!
+      - trap 'kill ${XPID} 2>/dev/null || true' EXIT
+      - sleep 3
+      - export WINEDLLOVERRIDES="winemenubuilder.exe=d"
+      - export WINEARCH=win64
+      - export WINEDEBUG=-all
+      - export WINEPREFIX="${CI_PROJECT_DIR}/.wine-ci-win64"
+      - rm -rf "${WINEPREFIX}"
       - mkdir build
       - cd build
       - export PATH=${MXE_ROOT}/usr/bin:$PATH
@@ -86,6 +99,46 @@ tests:arm64.macos:
       - cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_DAP_SDK_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_PGSQL=0 ..
       - make -j$(sysctl -n hw.ncpu)
       - ctest --verbose
+
+tests:amd64.debian.asan-ubsan:
+    extends: .tests
+    when: manual
+    allow_failure: true
+    image: demlabs/debian/amd64:qt6
+    before_script:
+      - set -eo pipefail
+      - apt-get update -qq
+      - apt-get install -y -qq gawk
+      - /opt/buildtools/prepare_environment.sh amd64-linux
+    script:
+      - set -eo pipefail
+      - mkdir build && cd build
+      - cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON
+            -DDAP_SANITIZE_ADDRESS=ON -DDAP_SANITIZE_UNDEFINED=ON
+      - make -j$(nproc)
+      # detect_odr_violation=0: tests + libdap-sdk duplicate some globals (ODR false positives).
+      - ASAN_OPTIONS=halt_on_error=1:detect_odr_violation=0
+        UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+        ctest --verbose --label-regex "unit|crypto"
+
+tests:amd64.debian.tsan:
+    extends: .tests
+    when: manual
+    allow_failure: true
+    image: demlabs/debian/amd64:qt6
+    before_script:
+      - set -eo pipefail
+      - apt-get update -qq
+      - apt-get install -y -qq gawk
+      - /opt/buildtools/prepare_environment.sh amd64-linux
+    script:
+      - set -eo pipefail
+      - mkdir build && cd build
+      - cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON
+            -DDAP_SANITIZE_THREAD=ON
+      - make -j$(nproc)
+      - TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1
+        ctest --verbose --label-regex "unit|crypto"
 
 build:any.android:
     extends: .tests

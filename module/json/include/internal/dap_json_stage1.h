@@ -19,7 +19,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "dap_cpu_detect.h"  // Runtime CPU feature detection
+#include "dap_cpu_detect.h"
+#include "dap_cpu_arch.h"
 
 // Import dap_json.h for dap_cpu_arch_t and manual selection API
 // This header already includes dap_cpu_arch.h from core
@@ -521,15 +522,14 @@ static inline int dap_json_utf8_sequence_length(uint8_t first_byte)
 // These must be included AFTER all typedefs are complete
 #include "dap_json_stage1_ref.h"
 
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if DAP_PLATFORM_X86
 #include "dap_json_stage1_sse2.h"
 #include "dap_json_stage1_avx2.h"
 #include "dap_json_stage1_avx512.h"
 
-#elif defined(__arm__) || defined(__aarch64__)
+#elif DAP_PLATFORM_ARM
 #include "dap_json_stage1_neon.h"
-// SVE/SVE2 are ARM64-only (ARMv8-A 64-bit) and NOT supported on Apple Silicon
-#if defined(__aarch64__) && !defined(__APPLE__)
+#if DAP_PLATFORM_ARM64 && !defined(__APPLE__)
 #include "dap_json_stage1_sve.h"
 #include "dap_json_stage1_sve2.h"
 #endif
@@ -583,7 +583,7 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
     
     int result;
     switch (arch) {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if DAP_PLATFORM_X86
         case DAP_CPU_ARCH_SSE2:
             result = dap_json_stage1_run_sse2(a_stage1);
             break;
@@ -593,11 +593,11 @@ static inline int dap_json_stage1_run(dap_json_stage1_t *a_stage1)
         case DAP_CPU_ARCH_AVX512:
             result = dap_json_stage1_run_avx512(a_stage1);
             break;
-#elif defined(__arm__) || defined(__aarch64__)
+#elif DAP_PLATFORM_ARM
         case DAP_CPU_ARCH_NEON:
             result = dap_json_stage1_run_neon(a_stage1);
             break;
-#if defined(__aarch64__) && !defined(__APPLE__)
+#if DAP_PLATFORM_ARM64 && !defined(__APPLE__)
         case DAP_CPU_ARCH_SVE:
             result = dap_json_stage1_run_sve(a_stage1);
             break;

@@ -172,6 +172,13 @@ void dap_json_tape_arena_reset(void);
  */
 void dap_json_tape_arena_free(void);
 
+/**
+ * @brief Allocate memory from thread-local tape arena
+ * @param[in] a_size Size in bytes
+ * @return Pointer to allocated memory, or NULL on failure
+ */
+void* dap_json_tape_arena_alloc(size_t a_size);
+
 /* ========================================================================== */
 /*                            TAPE VALIDATION                                 */
 /* ========================================================================== */

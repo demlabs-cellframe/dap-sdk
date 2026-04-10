@@ -3,7 +3,7 @@
 #include "dap_pkey.h"
 #include "dap_test.h"
 #include "dap_enc_test.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_ht.h"
 #define LOG_TAG "dap_crypto_benchmark_tests"
 
@@ -107,7 +107,7 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
 {
     size_t seed_size = sizeof(uint8_t);
     uint8_t seed[sizeof(uint8_t)];
-    randombytes(seed, seed_size);
+    dap_random_bytes(seed, seed_size);
     uint8_t *l_signs[a_times], *l_source[a_times];
     dap_enc_key_t *l_keys[a_times];
     size_t l_source_size[a_times];
@@ -119,19 +119,19 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
     int l_t1 = 0;
     *a_sig_time = 0;
     for (int i = 0; i < a_times; ++i) {
-        randombytes(seed, seed_size);
+        dap_random_bytes(seed, seed_size);
         // used only in multisign
         dap_enc_key_type_t l_key[KEYS_TOTAL_COUNT];
         for (int j = 0; j < KEYS_TOTAL_COUNT; j++) {
-            int l_step = random_uint32_t(c_keys_count);
+            int l_step = dap_random_uint32(c_keys_count);
             l_key[j] = c_key_type_arr[l_step];
         }
         // ----------
         
         l_signs[i] = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, max_signature_size);
-        l_source_size[i] = 1 + random_uint32_t(20);
+        l_source_size[i] = 1 + dap_random_uint32(20);
         l_source[i] = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, l_source_size[i]);
-        randombytes(l_source[i], l_source_size[i]);
+        dap_random_bytes(l_source[i], l_source_size[i]);
 
         l_t1 = get_cur_time_msec();
         int l_signed = 0;
@@ -179,18 +179,18 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
     int l_t1 = 0;
     *a_sig_time = 0;
     for (int i = 0; i < a_times; ++i) {
-        randombytes(seed, seed_size);
+        dap_random_bytes(seed, seed_size);
 
         // used only in multisign
         dap_enc_key_type_t l_key[KEYS_TOTAL_COUNT];
         for (int j = 0; j < KEYS_TOTAL_COUNT; j++) {
-            int l_step = random_uint32_t(c_keys_count);
+            int l_step = dap_random_uint32(c_keys_count);
             l_key[j] = c_key_type_arr[l_step];
         }
         // ----------
-        l_source_size[i] = 1 + random_uint32_t(20);
+        l_source_size[i] = 1 + dap_random_uint32(20);
         l_source[i] = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, l_source_size[i]);
-        randombytes(l_source[i], l_source_size[i]);
+        dap_random_bytes(l_source[i], l_source_size[i]);
         
         l_t1 = get_cur_time_msec();
         dap_enc_key_t *key = dap_enc_key_new_generate(a_key_type, l_key, KEYS_TOTAL_COUNT, seed, seed_size, 0);

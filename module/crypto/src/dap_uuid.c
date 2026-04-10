@@ -54,10 +54,10 @@ static atomic_uint_fast32_t s_global_counter = 0;
 uint128_t dap_uuid_generate_uint128()
 {
     uint32_t l_input[4] ={
-        [0] = random_uint32_t(UINT32_MAX),
+        [0] = dap_random_uint32(UINT32_MAX),
         [1] = (uint32_t)dap_time_now(),
         [2] = atomic_fetch_add(&s_global_counter, 1),
-        [3] = random_uint32_t(UINT32_MAX)
+        [3] = dap_random_uint32(UINT32_MAX)
     };
     uint128_t l_output;
     dap_hash_shake128((unsigned char *) &l_output, sizeof(l_output), (unsigned char*) &l_input, sizeof(l_input));
@@ -91,10 +91,10 @@ void dap_uuid_generate_nonce(void *a_nonce, size_t a_nonce_size)
     if (!a_nonce || !a_nonce_size)
         return;
     uint32_t l_input[4] ={
-        [0] = random_uint32_t(UINT32_MAX),
+        [0] = dap_random_uint32(UINT32_MAX),
         [1] = (uint32_t)dap_time_now(),
         [2] = atomic_fetch_add(&s_global_counter, 1),
-        [3] = random_uint32_t(UINT32_MAX)
+        [3] = dap_random_uint32(UINT32_MAX)
     };
     dap_hash_shake128((unsigned char *)a_nonce, a_nonce_size, (unsigned char *)l_input, sizeof(l_input));
 }

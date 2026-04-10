@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sig_tesla/tesla_params.h"
+#include "tesla_params.h"
 #include "dap_enc_key.h"
 
 

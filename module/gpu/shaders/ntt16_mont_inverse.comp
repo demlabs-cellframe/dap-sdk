@@ -1,0 +1,117 @@
+#version 450
+
+/*
+ * Batch 16-bit Montgomery NTT inverse transform (Gentleman-Sande).
+ *
+ * For ML-KEM/Kyber: N=256, q=3329, R=2^16.
+ * Includes final scaling by zetas_inv[zetas_len-1].
+ *
+ * Butterfly: t = coeff[j]
+ *            coeff[j]     = barrett_reduce(t + coeff[j+len])
+ *            coeff[j+len] = fqmul(zeta, t - coeff[j+len])
+ *
+ * Sequential zeta walk: k starts at 0.
+ * Loop: len = 2 up to n/2.
+ *
+ * Optimization: barrier elision for small len (< subgroup size),
+ * where all data dependencies are within a single lockstep subgroup.
+ */
+
+#extension GL_KHR_shader_subgroup_basic : enable
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint POLY_N = 256;
+
+layout(set = 0, binding = 0) buffer CoeffsBuffer { int coeffs[]; };
+layout(set = 0, binding = 1) buffer ZetasBuffer  { int zetas_inv[];  };
+
+layout(push_constant) uniform PushConstants {
+    int  q;
+    int  qinv16;
+    uint n;
+    uint batch_size;
+};
+
+shared int s_coeffs[256];
+shared int s_zetas[128];
+
+int fqmul(int a, int b)
+{
+    int prod = a * b;
+    int u = (prod * qinv16) & 0xFFFF;
+    u = (u >= 32768) ? (u - 65536) : u;
+    int t = prod - u * q;
+    return t >> 16;
+}
+
+int barrett_reduce16(int a)
+{
+    int v = 20159;
+    int t = (a * v) >> 26;
+    t *= q;
+    return a - t;
+}
+
+void main()
+{
+    uint poly_idx = gl_WorkGroupID.x;
+    if (poly_idx >= batch_size)
+        return;
+
+    uint tid = gl_LocalInvocationID.x;
+    uint threads = gl_WorkGroupSize.x;
+    uint base = poly_idx * n;
+
+    for (uint i = tid; i < n; i += threads)
+        s_coeffs[i] = coeffs[base + i];
+
+    uint zlen = 128u;
+    for (uint i = tid; i < zlen; i += threads)
+        s_zetas[i] = zetas_inv[i];
+
+    barrier();
+
+    uint zeta_k = 0u;
+    uint sg = gl_SubgroupSize;
+
+    for (uint len = 2; len <= n / 2; len <<= 1) {
+        uint num_groups = n / (2 * len);
+        uint half_ops = n / 2;
+
+        for (uint i = tid; i < half_ops; i += threads) {
+            uint group = i / len;
+            uint pos   = i - group * len;
+            uint idx_lo = group * 2 * len + pos;
+            uint idx_hi = idx_lo + len;
+
+            int lo = s_coeffs[idx_lo];
+            int hi = s_coeffs[idx_hi];
+
+            s_coeffs[idx_lo] = barrett_reduce16(lo + hi);
+            s_coeffs[idx_hi] = fqmul(s_zetas[zeta_k + group], lo - hi);
+        }
+
+        zeta_k += num_groups;
+
+        /* Barrier elision: for inverse NTT (ascending len),
+         * the PREVIOUS layer's butterfly stride was len/2.
+         * If current len >= sg, cross-subgroup data may be
+         * involved → need barrier.  Otherwise subgroup lockstep
+         * guarantees visibility. */
+        if (len >= sg)
+            barrier();
+    }
+
+    barrier();
+
+    /* Final scaling: multiply all coefficients by zetas_inv[zetas_len-1] */
+    int scale = s_zetas[zlen - 1];
+    for (uint i = tid; i < n; i += threads)
+        s_coeffs[i] = fqmul(s_coeffs[i], scale);
+
+    barrier();
+
+    for (uint i = tid; i < n; i += threads)
+        coeffs[base + i] = s_coeffs[i];
+}

@@ -11,7 +11,7 @@
  * The function fills an array with random integer non-negative values
 */
 void generate_random_byte_array(uint8_t* array, const size_t size) {
-    randombytes(array, size);
+    dap_random_bytes(array, size);
 
     // Last byte not should be 0
     if (array[size - 1] == 0)
