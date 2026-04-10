@@ -241,9 +241,9 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
     if (a_parent->mode == DAP_JSON_MODE_MUTABLE) {
         l_json->mode_data.mutable.value = a_value;
         l_json->mode_data.mutable.stage2 = NULL; // Don't copy stage2 (parent owns it)
-        
-        // Increment parent refcount to keep parent alive
-        a_parent->ref_count++;
+        l_json->borrow_source = a_parent;
+        // Note: borrowed wrappers don't increment parent ref_count
+        // User must ensure parent outlives borrowed wrappers
     } else {
         // IMMUTABLE mode: not supported yet (tape doesn't need borrowed refs)
         log_it(L_ERROR, "Borrowed references for IMMUTABLE mode not yet implemented");
@@ -558,9 +558,10 @@ dap_json_t* dap_json_parse_buffer(const char *a_json_buffer, size_t a_buffer_len
     l_result->mode_data.immutable.input_len = l_parse_len;
     l_result->mode_data.immutable.tape = l_tape;
     l_result->mode_data.immutable.tape_count = l_tape_count;
-    l_result->mode_data.immutable.tape_offset = 0;  // Root wrapper starts at beginning
+    l_result->mode_data.immutable.tape_offset = 0;
+    l_result->mode_data.immutable.transcoded_buf = l_transcoded;
     
-    // Tape and input_buffer managed by arenas
+    dap_json_stage1_free(l_stage1);
     
     return l_result;
 }
@@ -685,18 +686,28 @@ void dap_json_object_free(dap_json_t* a_json)
         return;
     }
     
-    // Decrement reference count
+    // Borrowed wrapper: free shell only (value stays in parent DOM)
+    // Note: borrowed wrappers are lightweight views, don't affect parent ref_count
+    if (a_json->borrow_source) {
+        DAP_DELETE(a_json);
+        return;
+    }
+    
+    // For owned wrappers: check reference count
     if (a_json->ref_count > 0) {
         a_json->ref_count--;
         if (a_json->ref_count > 0) {
-            return; // Still referenced
+            return; // Still has owning references (from dap_json_object_ref)
         }
     }
     
-    // For IMMUTABLE mode (tape): arena is NOT reset here!
-    // Reason: Other parsed objects may still use the same arena
-    // Arena grows naturally and is reset manually via dap_json_tape_arena_reset()
-    // or freed at thread exit via dap_json_cleanup_thread_arena()
+    // For IMMUTABLE mode: free transcoded buffer (only root wrapper owns it)
+    // Note: tape is allocated from thread-local arena, not freed here
+    if (a_json->mode == DAP_JSON_MODE_IMMUTABLE && a_json->mode_data.immutable.tape_offset == 0) {
+        if (a_json->mode_data.immutable.transcoded_buf) {
+            DAP_DELETE(a_json->mode_data.immutable.transcoded_buf);
+        }
+    }
     
     // For MUTABLE mode (DOM), free the value
     if (a_json->mode == DAP_JSON_MODE_MUTABLE && a_json->mode_data.mutable.value) {
@@ -736,6 +747,9 @@ void dap_json_cleanup_thread_arena(void)
         DAP_DELETE(s_arena_list);
         s_arena_list = l_next;
     }
+    
+    // Also cleanup tape arena (prevents use-after-free in pthread destructor)
+    dap_json_tape_arena_free();
 }
 
 /* ========================================================================== */
@@ -806,7 +820,16 @@ int dap_json_array_add(dap_json_t* a_array, dap_json_t* a_item)
         return -1;
     }
     
-    return dap_json_array_v2_add(l_array, l_item) ? 0 : -1;
+    if (!dap_json_array_v2_add(l_array, l_item)) {
+        return -1;
+    }
+    
+    // Value transferred to array - detach from wrapper to prevent double-free
+    if (a_item->mode == DAP_JSON_MODE_MUTABLE && !a_item->borrow_source) {
+        a_item->mode_data.mutable.value = NULL;
+    }
+    
+    return 0;
 }
 
 /**
@@ -1681,7 +1704,17 @@ int dap_json_object_add_object(dap_json_t* a_json, const char* a_key, dap_json_t
         return -1;
     }
     
-    return dap_json_object_v2_add(l_obj, a_key, l_value) ? 0 : -1;
+    if (!dap_json_object_v2_add(l_obj, a_key, l_value)) {
+        return -1;
+    }
+    
+    // Value transferred to parent - detach from wrapper to prevent double-free
+    // Wrapper can still be freed by caller but won't free the value
+    if (a_value->mode == DAP_JSON_MODE_MUTABLE && !a_value->borrow_source) {
+        a_value->mode_data.mutable.value = NULL;
+    }
+    
+    return 0;
 }
 
 /**
@@ -1908,19 +1941,30 @@ const char* dap_json_object_get_string(dap_json_t* a_json, const char* a_key)
             return NULL;
         }
         
-        // Get string
-        const char *l_result = dap_json_get_string(l_value);
-        char *l_copy = NULL;
-        if (l_result) {
-            size_t len = strlen(l_result);
-            l_copy = DAP_NEW_Z_SIZE(char, len + 1);
-            if (l_copy) {
-                memcpy(l_copy, l_result, len);
-            }
+        // Get unescaped string via iterator, copy to arena
+        dap_json_iterator_t *l_iter = dap_json_iterator_new(l_value);
+        if (!l_iter) {
+            dap_json_object_free(l_value);
+            return NULL;
         }
+        
+        char *l_unescaped = dap_json_iterator_get_string_dup(l_iter);
+        const char *l_result = NULL;
+        
+        if (l_unescaped) {
+            size_t l_len = strlen(l_unescaped);
+            char *l_buf = (char*)dap_json_tape_arena_alloc(l_len + 1);
+            if (l_buf) {
+                memcpy(l_buf, l_unescaped, l_len + 1);
+                l_result = l_buf;
+            }
+            free(l_unescaped);
+        }
+        
+        dap_json_iterator_free(l_iter);
         dap_json_object_free(l_value);
         
-        return l_copy;
+        return l_result;
     }
     
     // MUTABLE mode (DOM): use value-based access
@@ -2712,18 +2756,26 @@ const char* dap_json_get_string(dap_json_t* a_json)
         return dap_json_get_string_value(l_value);
     }
     
-    // For IMMUTABLE mode, use iterator
+    // For IMMUTABLE mode, get unescaped string and copy to arena (no caller free)
     dap_json_iterator_t *l_iter = dap_json_iterator_new(a_json);
     if (!l_iter) {
         return NULL;
     }
     
-    // Get string via iterator (handles escapes properly)
-    char *l_result = dap_json_iterator_get_string_dup(l_iter);
+    char *l_unescaped = dap_json_iterator_get_string_dup(l_iter);
+    const char *l_result = NULL;
+    
+    if (l_unescaped) {
+        size_t l_len = strlen(l_unescaped);
+        char *l_buf = (char*)dap_json_tape_arena_alloc(l_len + 1);
+        if (l_buf) {
+            memcpy(l_buf, l_unescaped, l_len + 1);
+            l_result = l_buf;
+        }
+        free(l_unescaped);
+    }
     
     dap_json_iterator_free(l_iter);
-    
-    // WARNING: Caller must free() this string!
     return l_result;
 }
 

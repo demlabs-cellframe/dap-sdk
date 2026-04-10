@@ -413,8 +413,8 @@ static int s_http_trans_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
     // Set defaults from config
     l_priv->protocol_version = DAP_PROTOCOL_VERSION;
     l_priv->enc_type = DAP_ENC_KEY_TYPE_IAES;
-    l_priv->pkey_exchange_type = DAP_ENC_KEY_TYPE_MSRLN;
-    l_priv->pkey_exchange_size = 1184; // MSRLN_PKA_BYTES
+    l_priv->pkey_exchange_type = DAP_ENC_KEY_TYPE_ML_KEM;
+    l_priv->pkey_exchange_size = 800;
     l_priv->block_key_size = 32;
     l_priv->sign_count = 0;
     
@@ -1496,8 +1496,8 @@ int dap_stream_trans_http_parse_query_params(
     
     // Initialize with defaults
     a_params->enc_type = DAP_ENC_KEY_TYPE_IAES;
-    a_params->pkey_exchange_type = DAP_ENC_KEY_TYPE_MSRLN;
-    a_params->pkey_exchange_size = 1184;
+    a_params->pkey_exchange_type = DAP_ENC_KEY_TYPE_ML_KEM;
+    a_params->pkey_exchange_size = 800;
     a_params->block_key_size = 32;
     a_params->protocol_version = DAP_PROTOCOL_VERSION;
     

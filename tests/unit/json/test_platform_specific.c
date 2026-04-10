@@ -217,6 +217,7 @@ static bool s_test_locale_independence(void) {
     DAP_TEST_FAIL_IF(val_c < 3.13 || val_c > 3.15, "Value correct in C locale");
     
     dap_json_object_free(l_json);
+    l_json = NULL;
     
     // Try setting a locale that uses ',' as decimal separator (e.g., de_DE)
     // Note: This may fail if locale is not installed, which is OK

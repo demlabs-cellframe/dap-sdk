@@ -26,7 +26,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;io;context"
 )
 
@@ -49,7 +49,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;io;events"
 )
 
@@ -72,7 +72,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;io;events;socket"
 )
 
@@ -95,7 +95,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;io;net"
 )
 
@@ -118,7 +118,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;io;proc_thread"
 )
 
@@ -141,7 +141,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;io;server"
 )
 
@@ -165,7 +165,7 @@ if(UNIX AND NOT APPLE)
     )
 
     set_tests_properties(${PROJECT_NAME} PROPERTIES 
-        TIMEOUT 300
+        TIMEOUT ${DAP_T300}
         LABELS "unit;io;timerfd"
     )
 endif()
@@ -189,7 +189,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;io;worker"
 )
 

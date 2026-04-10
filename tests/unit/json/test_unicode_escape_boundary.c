@@ -17,6 +17,7 @@
 
 #include "dap_common.h"
 #include "dap_json.h"
+#include "dap_cpu_arch.h"
 #include "dap_test.h"
 #include "../../fixtures/utilities/test_helpers.h"
 
@@ -30,8 +31,12 @@
 static bool s_test_with_arch(const char *a_json, dap_cpu_arch_t a_arch, const char *a_desc) {
     const char *l_arch_name = dap_json_get_arch_name(a_arch);
     log_it(L_DEBUG, "Testing with %s: %s", l_arch_name, a_desc);
-    
-    dap_cpu_arch_set(a_arch);
+
+    if (dap_cpu_arch_set(a_arch) != 0) {
+        log_it(L_WARNING, "%s not available for: %s", l_arch_name, a_desc);
+        return false;
+    }
+
     dap_json_t *l_json = dap_json_parse_string(a_json);
     
     bool l_success = (l_json != NULL);
@@ -55,22 +60,33 @@ static bool s_test_with_arch(const char *a_json, dap_cpu_arch_t a_arch, const ch
 static bool s_test_exact_boundary_sizes(void) {
     log_it(L_DEBUG, "Testing Unicode escapes at exact SIMD chunk boundaries");
     bool result = false;
-    
-    // Test at 16-byte boundary (SSE2)
-    const char *l_json_16 = "{\"a\":\"\\u0041\\u0042\"}"; // 19 bytes
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+    const char *l_json_16 = "{\"a\":\"\\u0041\\u0042\"}";
     DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_16, DAP_CPU_ARCH_SSE2, "16-byte boundary"),
                      "SSE2: 16-byte boundary with \\u escapes");
-    
-    // Test at 32-byte boundary (AVX2)
-    const char *l_json_32 = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\"}"; // 40 bytes
+
+    const char *l_json_32 = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\"}";
     DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_32, DAP_CPU_ARCH_AVX2, "32-byte boundary"),
                      "AVX2: 32-byte boundary with \\u escapes");
-    
-    // Test at 64-byte boundary (AVX-512) - THIS IS KNOWN TO FAIL
-    const char *l_json_64 = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\",\"d\":\"\\u0044\"}"; // 53 bytes - OK
+
+    const char *l_json_64 = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\",\"d\":\"\\u0044\"}";
     DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_64, DAP_CPU_ARCH_AVX512, "53 bytes (under 64)"),
                      "AVX-512: 53 bytes with \\u escapes (should work)");
-    
+#elif defined(__arm__) || defined(__aarch64__)
+    const char *l_json_16 = "{\"a\":\"\\u0041\\u0042\"}";
+    DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_16, DAP_CPU_ARCH_NEON, "NEON 16-byte chunk \\u escapes"),
+                     "NEON: 16-byte boundary with \\u escapes");
+
+    const char *l_json_32 = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\"}";
+    DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_32, DAP_CPU_ARCH_NEON, "NEON multi-field \\u"),
+                     "NEON: multi-field \\u escapes");
+
+    const char *l_json_64 = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\",\"d\":\"\\u0044\"}";
+    DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_64, DAP_CPU_ARCH_NEON, "NEON four-field \\u"),
+                     "NEON: four-field \\u escapes");
+#endif
+
     result = true;
     log_it(L_DEBUG, "Exact boundary test passed");
     
@@ -95,25 +111,25 @@ static bool s_test_66_byte_bug(void) {
     // Test with Reference (should always work)
     DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_66, DAP_CPU_ARCH_REFERENCE, "66 bytes - Reference"),
                      "Reference: 66 bytes with 5 fields");
-    
-    // Test with AVX2 (should work - AVX2 doesn't have this bug)
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_66, DAP_CPU_ARCH_AVX2, "66 bytes - AVX2"),
                      "AVX2: 66 bytes with 5 fields");
-    
-    // Test with AVX-512 (KNOWN TO FAIL - this is the bug we're tracking)
+
     bool l_avx512_result = s_test_with_arch(l_json_66, DAP_CPU_ARCH_AVX512, "66 bytes - AVX-512");
     if (!l_avx512_result) {
         log_it(L_WARNING, "AVX-512: 66-byte bug CONFIRMED (expected failure)");
-        // Don't fail the test - this is a known issue
     }
-    
-    // Test with SSE2 (also KNOWN TO FAIL)
+
     bool l_sse2_result = s_test_with_arch(l_json_66, DAP_CPU_ARCH_SSE2, "66 bytes - SSE2");
     if (!l_sse2_result) {
         log_it(L_WARNING, "SSE2: 66-byte bug CONFIRMED (expected failure)");
-        // Don't fail the test - this is a known issue
     }
-    
+#elif defined(__arm__) || defined(__aarch64__)
+    DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_66, DAP_CPU_ARCH_NEON, "66 bytes - NEON"),
+                     "NEON: 66 bytes with 5 fields");
+#endif
+
     result = true;
     log_it(L_DEBUG, "66-byte bug case test passed (known failures documented)");
     
@@ -149,34 +165,41 @@ static bool s_test_progressive_complexity(void) {
                          "Reference implementation should handle all cases");
     }
     
-    // Test all with AVX2 (should all pass - AVX2 doesn't have this bug)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     for (int i = 0; i < l_num_tests; i++) {
         char l_desc[128];
-        snprintf(l_desc, sizeof(l_desc), "AVX2: %zu bytes, %d fields", 
+        snprintf(l_desc, sizeof(l_desc), "AVX2: %zu bytes, %d fields",
                  strlen(l_tests[i]), i + 1);
-        
+
         DAP_TEST_FAIL_IF(!s_test_with_arch(l_tests[i], DAP_CPU_ARCH_AVX2, l_desc),
                          "AVX2 should handle all cases");
     }
-    
-    // Test with AVX-512 (will fail at index 4 - 66 bytes)
+
     log_it(L_DEBUG, "Testing AVX-512 progressive (expecting failure at 66+ bytes)...");
     for (int i = 0; i < l_num_tests; i++) {
         bool l_avx512_result = s_test_with_arch(l_tests[i], DAP_CPU_ARCH_AVX512, "");
-        
+
         if (i < 4) {
-            // Should pass for < 66 bytes
-            DAP_TEST_FAIL_IF(!l_avx512_result, 
+            DAP_TEST_FAIL_IF(!l_avx512_result,
                              "AVX-512 should handle < 66 bytes");
         } else {
-            // May fail for >= 66 bytes (known bug)
             if (!l_avx512_result) {
                 log_it(L_WARNING, "AVX-512: Failed at %d fields (%zu bytes) - known bug",
                        i + 1, strlen(l_tests[i]));
             }
         }
     }
-    
+#elif defined(__arm__) || defined(__aarch64__)
+    for (int i = 0; i < l_num_tests; i++) {
+        char l_desc[128];
+        snprintf(l_desc, sizeof(l_desc), "NEON: %zu bytes, %d fields",
+                 strlen(l_tests[i]), i + 1);
+
+        DAP_TEST_FAIL_IF(!s_test_with_arch(l_tests[i], DAP_CPU_ARCH_NEON, l_desc),
+                         "NEON should handle all cases");
+    }
+#endif
+
     result = true;
     log_it(L_DEBUG, "Progressive complexity test passed");
     
@@ -190,20 +213,33 @@ cleanup:
 static bool s_test_unicode_vs_regular(void) {
     log_it(L_DEBUG, "Testing Unicode escapes vs regular strings at 66-byte boundary");
     bool result = false;
-    
-    // 66 bytes WITHOUT Unicode escapes - should work
-    const char *l_json_regular = "{\"a\":\"ABC\",\"b\":\"DEF\",\"c\":\"GHI\",\"d\":\"JKL\",\"e\":\"MNO12345678\"}"; // 61 bytes
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+    const char *l_json_regular = "{\"a\":\"ABC\",\"b\":\"DEF\",\"c\":\"GHI\",\"d\":\"JKL\",\"e\":\"MNO12345678\"}";
+    const char *l_json_unicode = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\",\"d\":\"\\u0044\",\"e\":\"\\u0045\"}";
+
     DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_regular, DAP_CPU_ARCH_AVX512, "Regular strings, 61 bytes"),
                      "AVX-512 should handle regular strings");
-    
-    // 66 bytes WITH Unicode escapes - fails (known bug)
-    const char *l_json_unicode = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\",\"d\":\"\\u0044\",\"e\":\"\\u0045\"}"; // 66 bytes
+
     bool l_unicode_result = s_test_with_arch(l_json_unicode, DAP_CPU_ARCH_AVX512, "Unicode escapes, 66 bytes");
-    
+
     if (!l_unicode_result) {
         log_it(L_WARNING, "AVX-512: Unicode escape boundary bug confirmed (regular strings work, Unicode fails)");
     }
-    
+#elif defined(__arm__) || defined(__aarch64__)
+    const char *l_json_regular = "{\"a\":\"ABC\",\"b\":\"DEF\",\"c\":\"GHI\",\"d\":\"JKL\",\"e\":\"MNO12345678\"}";
+    const char *l_json_unicode = "{\"a\":\"\\u0041\",\"b\":\"\\u0042\",\"c\":\"\\u0043\",\"d\":\"\\u0044\",\"e\":\"\\u0045\"}";
+
+    DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_regular, DAP_CPU_ARCH_NEON, "Regular strings, 61 bytes"),
+                     "NEON should handle regular strings");
+
+    bool l_unicode_result = s_test_with_arch(l_json_unicode, DAP_CPU_ARCH_NEON, "Unicode escapes, 66 bytes");
+
+    if (!l_unicode_result) {
+        log_it(L_WARNING, "NEON: Unicode escape boundary issue (regular vs Unicode)");
+    }
+#endif
+
     result = true;
     log_it(L_DEBUG, "Unicode vs regular test passed");
     
@@ -227,17 +263,20 @@ static bool s_test_original_failing_case(void) {
     // Should work with Reference
     DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_original, DAP_CPU_ARCH_REFERENCE, "Original - Reference"),
                      "Reference: Original failing case");
-    
-    // Should work with AVX2
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_original, DAP_CPU_ARCH_AVX2, "Original - AVX2"),
                      "AVX2: Original failing case");
-    
-    // Will fail with AVX-512 (known bug)
+
     bool l_avx512_result = s_test_with_arch(l_json_original, DAP_CPU_ARCH_AVX512, "Original - AVX-512");
     if (!l_avx512_result) {
         log_it(L_WARNING, "AVX-512: Original case FAILED (known bug)");
     }
-    
+#elif defined(__arm__) || defined(__aarch64__)
+    DAP_TEST_FAIL_IF(!s_test_with_arch(l_json_original, DAP_CPU_ARCH_NEON, "Original - NEON"),
+                     "NEON: Original failing case");
+#endif
+
     result = true;
     log_it(L_DEBUG, "Original failing case test passed");
     
@@ -285,7 +324,9 @@ int main(void) {
         log_it(L_WARNING, "⚠️  Some tests failed - please investigate");
     }
     log_it(L_NOTICE, "================================================");
-    
+
+    dap_cpu_arch_set(DAP_CPU_ARCH_AUTO);
+
     return (l_tests_passed == l_tests_total) ? 0 : 255;
 }
 

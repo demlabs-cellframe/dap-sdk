@@ -98,3 +98,5 @@ DAP_STATIC_INLINE uint64_t dap_global_db_store_obj_checksum(dap_global_db_store_
 }
 
 bool dap_global_db_pkt_check_sign_crc(dap_global_db_store_obj_t *a_obj);
+int dap_global_db_pkt_batch_check_sign_crc(dap_global_db_store_obj_t *a_objs,
+                                           uint32_t a_count, bool *a_results);

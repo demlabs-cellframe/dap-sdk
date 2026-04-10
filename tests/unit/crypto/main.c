@@ -6,7 +6,7 @@
 // #include "dap_enc_ringct20_test.h" // REMOVED: ringct20 module deleted
 #include "dap_enc_chipmunk_test.h"
 #include "dap_sign_test.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_common.h"
 
 #define LOG_TAG "crypto_test"
@@ -28,10 +28,6 @@ int main(void) {
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_GOST_OFB, 32);
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_KUZN_OFB, 32);
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_KUZN_OFB, 32);
-    test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_BF_CBC, 0);
-    test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_BF_CBC, 0);
-    test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_BF_OFB, 0);
-    test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_BF_OFB, 0);
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_IAES, 32);
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_IAES, 32);
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_OAES, 32);

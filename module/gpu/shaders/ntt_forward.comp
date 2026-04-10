@@ -1,0 +1,153 @@
+#version 450
+
+/*
+ * Batch forward NTT (Cooley-Tukey) with plain modular reduction.
+ *
+ * For Chipmunk (q=3168257, N=512) and other schemes that use
+ * non-Montgomery NTT.  Butterfly: u' = (u + s*v) mod q,
+ *                                 v' = (u - s*v) mod q.
+ *
+ * Each workgroup = one polynomial (N coefficients in shared memory).
+ * gl_WorkGroupID.x selects the polynomial index within the batch.
+ */
+
+#extension GL_KHR_shader_subgroup_basic : enable
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint POLY_N = 512;
+
+layout(set = 0, binding = 0) buffer CoeffsBuffer { int coeffs[]; };
+layout(set = 0, binding = 1) buffer ZetasBuffer  { int zetas[];  };
+
+layout(push_constant) uniform PushConstants {
+    int  q;
+    uint unused;
+    uint n;
+    uint batch_size;
+};
+
+shared int s_coeffs[512];
+shared int s_zetas[512];
+
+#ifdef GL_EXT_shader_explicit_arithmetic_types_int64
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+
+int mod_mul(int a, int b, int a_q)
+{
+    int64_t prod = int64_t(a) * int64_t(b);
+    return int(prod - (prod / int64_t(a_q)) * int64_t(a_q));
+}
+
+int mod_reduce(int a, int a_q)
+{
+    int r = a % a_q;
+    return r < 0 ? r + a_q : r;
+}
+
+#else
+
+/*
+ * Modular multiply without int64.
+ *
+ * For |a|,|b| < q < 2^22:  product = |a|*|b| < 2^44.
+ * product = (hi << 32) + lo.
+ *
+ * We reduce via:  product mod q = ((hi * R32) + lo) mod q
+ *   where R32 = 2^32 mod q  (precomputable, but for generality
+ *   we compute it at runtime using the identity
+ *     R32 = (0xFFFFFFFF % q + 1) % q).
+ *
+ * Since hi < 2^12 and R32 < q < 2^22, hi*R32 < 2^34.
+ * We split hi*R32 into (h2 << 32) + l2 via umulExtended,
+ * and iterate once more (h2 <= 3, so h2*R32 + l2 < 2^32).
+ */
+int mod_mul(int a, int b, int a_q)
+{
+    uint a_u = uint(abs(a));
+    uint b_u = uint(abs(b));
+    uint hi, lo;
+    umulExtended(a_u, b_u, hi, lo);
+
+    uint uq = uint(a_q);
+    uint r32 = (0xFFFFFFFFu % uq + 1u) % uq;
+
+    /* Fold hi into lo:  val = hi * r32 + lo */
+    uint h2, l2;
+    umulExtended(hi, r32, h2, l2);
+    /* Add lo with carry detection */
+    uint sum = l2 + lo;
+    uint carry = (sum < l2) ? 1u : 0u;
+    h2 += carry;
+
+    /* h2 is at most ~4, fold once more */
+    uint rem = h2 * r32 + sum;
+
+    /* Final modular reduction (rem < 2*q^2/2^32 + q ≈ small) */
+    rem %= uq;
+
+    int result = int(rem);
+    bool neg = (a < 0) != (b < 0);
+    return (neg && result != 0) ? (a_q - result) : result;
+}
+
+int mod_reduce(int a, int a_q)
+{
+    int r = a - (a / a_q) * a_q;
+    return r < 0 ? r + a_q : r;
+}
+
+#endif
+
+void main()
+{
+    uint poly_idx = gl_WorkGroupID.x;
+    if (poly_idx >= batch_size)
+        return;
+
+    uint tid = gl_LocalInvocationID.x;
+    uint threads = gl_WorkGroupSize.x;
+    uint base = poly_idx * n;
+
+    for (uint i = tid; i < n; i += threads)
+        s_coeffs[i] = coeffs[base + i];
+
+    for (uint i = tid; i < n; i += threads)
+        s_zetas[i] = zetas[i];
+
+    barrier();
+
+    uint half_n = n >> 1;
+    uint zeta_k = 1;
+    uint len_log2 = findMSB(half_n);
+
+    for (uint len = half_n; len >= 1; len >>= 1) {
+        uint num_groups = n >> (len_log2 + 1);
+
+        for (uint i = tid; i < half_n; i += threads) {
+            uint group = i >> len_log2;
+            uint pos   = i & (len - 1);
+            uint idx_lo = (group << (len_log2 + 1)) + pos;
+            uint idx_hi = idx_lo + len;
+
+            int u = s_coeffs[idx_lo];
+            int v = s_coeffs[idx_hi];
+
+            int sv = mod_mul(s_zetas[zeta_k + group], v, q);
+
+            s_coeffs[idx_lo] = mod_reduce(u + sv, q);
+            s_coeffs[idx_hi] = mod_reduce(u + q - sv, q);
+        }
+
+        zeta_k += num_groups;
+        len_log2--;
+
+        if (len >= gl_SubgroupSize)
+            barrier();
+    }
+
+    barrier();
+
+    for (uint i = tid; i < n; i += threads)
+        coeffs[base + i] = s_coeffs[i];
+}

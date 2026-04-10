@@ -182,20 +182,29 @@ void dap_hash_keccak_permute_ref(dap_hash_keccak_state_t *state)
 
 void dap_hash_keccak_xor_bytes(dap_hash_keccak_state_t *state, const uint8_t *data, size_t len)
 {
-    uint8_t *state_bytes = (uint8_t *)state->lanes;
-    
-    for (size_t i = 0; i < len && i < DAP_KECCAK_STATE_BYTES; i++) {
-        state_bytes[i] ^= data[i];
+    if (len > DAP_KECCAK_STATE_BYTES)
+        len = DAP_KECCAK_STATE_BYTES;
+    size_t n_words = len / 8;
+    for (size_t i = 0; i < n_words; i++) {
+        uint64_t w;
+        memcpy(&w, data + i * 8, 8);
+        state->lanes[i] ^= w;
     }
+    uint8_t *state_bytes = (uint8_t *)state->lanes;
+    for (size_t i = n_words * 8; i < len; i++)
+        state_bytes[i] ^= data[i];
 }
 
 void dap_hash_keccak_extract_bytes(const dap_hash_keccak_state_t *state, uint8_t *out, size_t len)
 {
+    if (len > DAP_KECCAK_STATE_BYTES)
+        len = DAP_KECCAK_STATE_BYTES;
+    size_t n_words = len / 8;
+    for (size_t i = 0; i < n_words; i++)
+        memcpy(out + i * 8, &state->lanes[i], 8);
     const uint8_t *state_bytes = (const uint8_t *)state->lanes;
-    
-    for (size_t i = 0; i < len && i < DAP_KECCAK_STATE_BYTES; i++) {
+    for (size_t i = n_words * 8; i < len; i++)
         out[i] = state_bytes[i];
-    }
 }
 
 // ============================================================================
@@ -213,24 +222,33 @@ void dap_hash_keccak_sponge_init(dap_hash_keccak_ctx_t *ctx, size_t rate, uint8_
 
 void dap_hash_keccak_sponge_absorb(dap_hash_keccak_ctx_t *ctx, const uint8_t *data, size_t len)
 {
-    if (!ctx->absorbing) {
+    if (!ctx->absorbing)
         return;
-    }
-    
+
     uint8_t *state_bytes = (uint8_t *)ctx->state.lanes;
-    
+
     while (len > 0) {
         size_t remaining = ctx->rate - ctx->block_idx;
         size_t to_absorb = (len < remaining) ? len : remaining;
-        
-        for (size_t i = 0; i < to_absorb; i++) {
-            state_bytes[ctx->block_idx + i] ^= data[i];
+        size_t off = ctx->block_idx;
+        size_t i = 0;
+
+        while (i < to_absorb && (off + i) % 8 != 0)
+            state_bytes[off + i] ^= data[i], i++;
+
+        for (; i + 8 <= to_absorb; i += 8) {
+            uint64_t w;
+            memcpy(&w, data + i, 8);
+            ctx->state.lanes[(off + i) / 8] ^= w;
         }
-        
+
+        for (; i < to_absorb; i++)
+            state_bytes[off + i] ^= data[i];
+
         ctx->block_idx += to_absorb;
         data += to_absorb;
         len -= to_absorb;
-        
+
         if (ctx->block_idx == ctx->rate) {
             dap_hash_keccak_permute(&ctx->state);
             ctx->block_idx = 0;
@@ -280,3 +298,50 @@ void dap_hash_keccak_sponge_squeeze(dap_hash_keccak_ctx_t *ctx, uint8_t *out, si
         }
     }
 }
+
+// ============================================================================
+// Reference sponge functions (absorb/squeeze for specific rates)
+// These use the dispatched dap_hash_keccak_permute() for portability.
+// ============================================================================
+
+#define KECCAK_ABSORB_REF_IMPL(RATE, NWORDS)                                   \
+void dap_keccak_absorb_##RATE##_ref(uint64_t *a_state,                         \
+    const uint8_t *a_data, size_t a_len, uint8_t a_suffix)                     \
+{                                                                              \
+    memset(a_state, 0, 25 * sizeof(uint64_t));                                 \
+    while (a_len >= RATE) {                                                    \
+        const uint64_t *l_src = (const uint64_t *)a_data;                      \
+        for (int i = 0; i < NWORDS; i++)                                       \
+            a_state[i] ^= l_src[i];                                            \
+        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);           \
+        a_data += RATE;                                                        \
+        a_len  -= RATE;                                                        \
+    }                                                                          \
+    uint8_t l_pad[200] = {0};                                                  \
+    memcpy(l_pad, a_data, a_len);                                              \
+    l_pad[a_len] = a_suffix;                                                   \
+    l_pad[RATE - 1] |= 0x80;                                                  \
+    const uint64_t *l_pad64 = (const uint64_t *)l_pad;                         \
+    for (int i = 0; i < NWORDS; i++)                                           \
+        a_state[i] ^= l_pad64[i];                                             \
+    dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);               \
+}
+
+KECCAK_ABSORB_REF_IMPL(136, 17)
+KECCAK_ABSORB_REF_IMPL(168, 21)
+KECCAK_ABSORB_REF_IMPL(72, 9)
+
+#define KECCAK_SQUEEZE_REF_IMPL(RATE)                                          \
+void dap_keccak_squeeze_##RATE##_ref(uint64_t *a_state,                        \
+    uint8_t *a_out, size_t a_nblocks)                                          \
+{                                                                              \
+    for (size_t i = 0; i < a_nblocks; i++) {                                   \
+        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);           \
+        memcpy(a_out, a_state, RATE);                                          \
+        a_out += RATE;                                                         \
+    }                                                                          \
+}
+
+KECCAK_SQUEEZE_REF_IMPL(136)
+KECCAK_SQUEEZE_REF_IMPL(168)
+KECCAK_SQUEEZE_REF_IMPL(72)

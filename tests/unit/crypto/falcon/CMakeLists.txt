@@ -33,5 +33,5 @@ add_test(
     COMMAND ${PROJECT_NAME}
 )
 
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 300)
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T300})
 
