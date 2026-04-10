@@ -213,11 +213,16 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
 }
 
 /**
- * @brief Send keepalive packet to keep connection alive
- * @param a_stream Stream instance
+ * @brief Send keepalive packet to keep connection alive.
+ *
+ * Sends a raw header-only packet (no encryption) matching the native
+ * keepalive mechanism in dap_stream.c:s_keepalive_callback.
  */
 void dap_stream_send_keepalive(dap_stream_t *a_stream)
 {
     if (!a_stream) return;
-    dap_stream_pkt_write_unsafe(a_stream, STREAM_PKT_TYPE_KEEPALIVE, NULL, 0);
+    dap_stream_pkt_hdr_t l_pkt = {};
+    l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
+    memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
+    dap_stream_send_unsafe(a_stream, &l_pkt, sizeof(l_pkt));
 }
