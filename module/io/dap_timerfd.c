@@ -184,18 +184,81 @@ static bool l_debug_timer = false;
 #if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
 #include <pthread.h>
 
-static void *s_wasm_timer_thread(void *a_arg)
+#define WASM_TIMER_MAX 64
+
+static struct {
+    pthread_mutex_t lock;
+    pthread_t       thread;
+    bool            running;
+    dap_timerfd_t  *timers[WASM_TIMER_MAX];
+    int             count;
+} s_timer_hub = { .lock = PTHREAD_MUTEX_INITIALIZER };
+
+static double s_get_time_ms(void)
 {
-    dap_timerfd_t *l_timerfd = (dap_timerfd_t *)a_arg;
-    while (l_timerfd->active) {
-        emscripten_thread_sleep(l_timerfd->timeout_ms);
-        if (!l_timerfd->active)
-            break;
-        uint8_t l_byte = 1;
-        write(l_timerfd->pipe_fd[1], &l_byte, 1);
+    return emscripten_performance_now();
+}
+
+static void *s_timer_hub_thread(void *a_unused)
+{
+    (void)a_unused;
+    while (s_timer_hub.running) {
+        double l_now = s_get_time_ms();
+        double l_min_wait = 50.0;
+
+        pthread_mutex_lock(&s_timer_hub.lock);
+        for (int i = 0; i < s_timer_hub.count; i++) {
+            dap_timerfd_t *t = s_timer_hub.timers[i];
+            if (!t || !t->active)
+                continue;
+            double l_remain = (double)t->next_fire_ms - l_now;
+            if (l_remain <= 0) {
+                uint8_t l_byte = 1;
+                write(t->pipe_fd[1], &l_byte, 1);
+                t->next_fire_ms = (uint64_t)(l_now + t->timeout_ms);
+            } else if (l_remain < l_min_wait) {
+                l_min_wait = l_remain;
+            }
+        }
+        pthread_mutex_unlock(&s_timer_hub.lock);
+
+        if (l_min_wait > 0)
+            emscripten_thread_sleep(l_min_wait);
     }
     return NULL;
 }
+
+static void s_timer_hub_ensure_started(void)
+{
+    if (s_timer_hub.running)
+        return;
+    s_timer_hub.running = true;
+    pthread_create(&s_timer_hub.thread, NULL, s_timer_hub_thread, NULL);
+    pthread_detach(s_timer_hub.thread);
+}
+
+static void s_timer_hub_add(dap_timerfd_t *a_timer)
+{
+    pthread_mutex_lock(&s_timer_hub.lock);
+    s_timer_hub_ensure_started();
+    if (s_timer_hub.count < WASM_TIMER_MAX)
+        s_timer_hub.timers[s_timer_hub.count++] = a_timer;
+    pthread_mutex_unlock(&s_timer_hub.lock);
+}
+
+static void s_timer_hub_remove(dap_timerfd_t *a_timer)
+{
+    pthread_mutex_lock(&s_timer_hub.lock);
+    for (int i = 0; i < s_timer_hub.count; i++) {
+        if (s_timer_hub.timers[i] == a_timer) {
+            s_timer_hub.timers[i] = s_timer_hub.timers[--s_timer_hub.count];
+            s_timer_hub.timers[s_timer_hub.count] = NULL;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_timer_hub.lock);
+}
+
 #elif defined(DAP_OS_WASM)
 static void s_wasm_timer_callback(void *a_arg)
 {
@@ -391,15 +454,8 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
         fcntl(l_timerfd->pipe_fd[0], F_SETFL, l_flags | O_NONBLOCK);
     l_events_socket->socket = l_timerfd->pipe_fd[0];
     l_timerfd->active = true;
-    if (pthread_create(&l_timerfd->timer_thread, NULL, s_wasm_timer_thread, l_timerfd) != 0) {
-        log_it(L_ERROR, "Failed to create timer thread: %s", strerror(errno));
-        close(l_timerfd->pipe_fd[0]);
-        close(l_timerfd->pipe_fd[1]);
-        DAP_DELETE(l_timerfd);
-        DAP_DELETE(l_events_socket);
-        return NULL;
-    }
-    pthread_detach(l_timerfd->timer_thread);
+    l_timerfd->next_fire_ms = (uint64_t)(s_get_time_ms() + a_timeout_ms);
+    s_timer_hub_add(l_timerfd);
 #elif defined(DAP_OS_WASM)
     l_events_socket->socket = INVALID_SOCKET;
     l_timerfd->interval_id = emscripten_set_interval(s_wasm_timer_callback,
@@ -439,7 +495,7 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
                                 a_timerfd, (DWORD)a_timerfd->timeout_ms, 0, WT_EXECUTEONLYONCE) )
         log_it(L_CRITICAL, "Timer not reset, error %lu", GetLastError());
 #elif defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
-    (void)a_timerfd;
+    a_timerfd->next_fire_ms = (uint64_t)(s_get_time_ms() + a_timerfd->timeout_ms);
 #elif defined(DAP_OS_WASM)
     emscripten_clear_interval(a_timerfd->interval_id);
     a_timerfd->interval_id = emscripten_set_interval(s_wasm_timer_callback,
@@ -470,6 +526,7 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
         debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
 #if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
         l_timer_fd->active = false;
+        s_timer_hub_remove(l_timer_fd);
         if (l_timer_fd->pipe_fd[1] >= 0) {
             close(l_timer_fd->pipe_fd[1]);
             l_timer_fd->pipe_fd[1] = -1;
@@ -531,6 +588,7 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
     debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
 #if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
     a_timerfd->active = false;
+    s_timer_hub_remove(a_timerfd);
     if (a_timerfd->pipe_fd[1] >= 0) {
         close(a_timerfd->pipe_fd[1]);
         a_timerfd->pipe_fd[1] = -1;

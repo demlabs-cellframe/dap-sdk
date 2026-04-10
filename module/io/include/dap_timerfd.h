@@ -42,9 +42,6 @@
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_proc_thread.h"
-#if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
-#include <pthread.h>
-#endif
 
 typedef bool (*dap_timerfd_callback_t)(void* ); // Callback for timer. If return true,
                                                 // it will be called after next timeout
@@ -63,8 +60,8 @@ typedef struct dap_timerfd {
 #elif defined(DAP_OS_WASM)
 #ifdef DAP_WASM_PTHREADS
     int pipe_fd[2];
-    pthread_t timer_thread;
     volatile bool active;
+    uint64_t next_fire_ms;
 #else
     long interval_id;
 #endif
