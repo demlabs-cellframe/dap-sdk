@@ -135,22 +135,21 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
              a_stream, a_stream->session, l_key, a_type, a_data_size);
     
     size_t l_full_size;
-    
-    if (l_key) {
+    dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)s_pkt_buf;
+
+    if (a_data_size == 0 || !a_data) {
+        l_full_size = sizeof(dap_stream_pkt_hdr_t);
+        *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = 0,
+                                              .timestamp = dap_time_now(), .type = a_type,
+                                              .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
+    } else if (l_key) {
         l_full_size = dap_enc_key_get_enc_size(l_key->type, a_data_size) + sizeof(dap_stream_pkt_hdr_t);
+        *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( l_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
+                                                                    l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ),
+                                              .timestamp = dap_time_now(), .type = a_type,
+                                              .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
     } else {
         l_full_size = a_data_size + sizeof(dap_stream_pkt_hdr_t);
-    }
-    
-    dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)s_pkt_buf;
-    
-    if (l_key) {
-    *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( l_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
-                                                                l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ),
-                                          .timestamp = dap_time_now(), .type = a_type,
-                                          .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
-    } else {
-        // No encryption
         memcpy(s_pkt_buf + sizeof(*l_pkt_hdr), a_data, a_data_size);
         *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = (uint32_t)a_data_size,
                                               .timestamp = dap_time_now(), .type = a_type,
@@ -213,16 +212,11 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
 }
 
 /**
- * @brief Send keepalive packet to keep connection alive.
- *
- * Sends a raw header-only packet (no encryption) matching the native
- * keepalive mechanism in dap_stream.c:s_keepalive_callback.
+ * @brief Send keepalive packet to keep connection alive
+ * @param a_stream Stream instance
  */
 void dap_stream_send_keepalive(dap_stream_t *a_stream)
 {
     if (!a_stream) return;
-    dap_stream_pkt_hdr_t l_pkt = {};
-    l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
-    memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
-    dap_stream_send_unsafe(a_stream, &l_pkt, sizeof(l_pkt));
+    dap_stream_pkt_write_unsafe(a_stream, STREAM_PKT_TYPE_KEEPALIVE, NULL, 0);
 }
