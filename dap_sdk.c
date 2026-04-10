@@ -87,14 +87,32 @@ static void s_deinit_plugin(void);
 /* ========================================================================= */
 
 #ifdef DAP_OS_WASM
+#ifdef DAP_WASM_PTHREADS
+#include <emscripten/wasmfs.h>
+
+static int s_init_wasmfs(void)
+{
+    backend_t l_opfs = wasmfs_create_opfs_backend();
+    const char *l_mount = g_sys_dir_path ? g_sys_dir_path : "/dap";
+    if (wasmfs_create_directory(l_mount, 0777, l_opfs) != 0 && errno != EEXIST) {
+        log_it(L_ERROR, "Failed to mount OPFS at %s: %s", l_mount, strerror(errno));
+        return -1;
+    }
+    if (!g_sys_dir_path)
+        g_sys_dir_path = dap_strdup(l_mount);
+    log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage mounted at %s", g_sys_dir_path);
+    return 0;
+}
+#else
 static void s_init_memfs(void)
 {
     if (!g_sys_dir_path) {
         g_sys_dir_path = dap_strdup("/dap");
         dap_mkdir_with_parents(g_sys_dir_path);
     }
-    log_it(L_NOTICE, "WASM using MEMFS at %s (non-persistent)", g_sys_dir_path);
+    log_it(L_NOTICE, "Filesystem: Emscripten MEMFS at %s (in-memory, non-persistent)", g_sys_dir_path);
 }
+#endif
 #endif
 
 /* ========================================================================= */
@@ -197,7 +215,12 @@ static int s_init_core(const dap_sdk_config_t *a_config)
     dap_log_level_set(a_config->log_level);
 
 #ifdef DAP_OS_WASM
+#ifdef DAP_WASM_PTHREADS
+    if (s_init_wasmfs() != 0)
+        return -1;
+#else
     s_init_memfs();
+#endif
 #endif
 
     if (a_config->sys_dir && !g_sys_dir_path)

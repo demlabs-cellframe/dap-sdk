@@ -322,23 +322,66 @@ void dap_events_deinit( )
 #if defined(DAP_OS_WASM)
 
 #ifdef DAP_WASM_PTHREADS
-#include <unistd.h>
-
-static void *s_wasm_worker_thread_func(void *a_arg)
+/*
+ * WASM MT: use the standard native dap_context_run / dap_proc_thread_init
+ * path — each worker and proc thread gets its own pthread with poll()-based
+ * event loop, identical to Linux/BSD.
+ */
+int dap_events_start()
 {
-    (void)a_arg;
-    log_it(L_NOTICE, "WASM worker thread started (tid=%p)", (void *)pthread_self());
-    while (s_workers[0] && s_workers[0]->context && s_workers[0]->context->is_running) {
-        dap_worker_poll_step(s_workers[0]->context);
-        dap_proc_thread_poll_step();
-        usleep(1000);
+    int l_ret = -1;
+    if (!s_workers_init) {
+        log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+        return -1;
     }
-    log_it(L_NOTICE, "WASM worker thread exiting");
-    return NULL;
+    if (s_threads_id) {
+        log_it(L_ERROR, "Threads id already initialized");
+        return -1;
+    }
+    s_threads_id = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(pthread_t, s_threads_count, -2);
+    for (uint32_t i = 0; i < s_threads_count; i++) {
+        dap_worker_t *l_worker = DAP_NEW_Z(dap_worker_t);
+        if (!l_worker) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            l_ret = -6;
+            goto lb_err;
+        }
+        l_worker->id = i;
+        l_worker->context = dap_context_new(DAP_CONTEXT_TYPE_WORKER);
+        l_worker->context->_inheritor = l_worker;
+        s_workers[i] = l_worker;
+
+        l_ret = dap_context_run(l_worker->context, i, DAP_CONTEXT_POLICY_FIFO, DAP_CONTEXT_PRIORITY_HIGH,
+                                DAP_CONTEXT_FLAG_WAIT_FOR_STARTED, dap_worker_context_callback_started,
+                                dap_worker_context_callback_stopped, l_worker);
+        s_threads_id[i] = l_worker->context->thread_id;
+        if (l_ret != 0) {
+            log_it(L_CRITICAL, "Can't run worker #%u", i);
+            goto lb_err;
+        }
+    }
+    if (dap_proc_thread_init(s_threads_count) != 0) {
+        log_it(L_CRITICAL, "Can't init proc threads");
+        l_ret = -4;
+        goto lb_err;
+    }
+
+    log_it(L_NOTICE, "WASM mode: MULTI-THREADED (pthreads enabled, %u workers)", s_threads_count);
+    return 0;
+
+lb_err:
+    log_it(L_CRITICAL, "WASM events init failed with code %d", l_ret);
+    for (uint32_t j = 0; j < s_threads_count; j++)
+        DAP_DEL_Z(s_workers[j]);
+    DAP_DEL_Z(s_threads_id);
+    return l_ret;
 }
 #else
+/*
+ * WASM ST: single-threaded fallback — one worker inlined on the main thread,
+ * driven by emscripten_set_main_loop.
+ */
 static void s_wasm_main_loop_step(void);
-#endif
 
 int dap_events_start()
 {
@@ -354,7 +397,6 @@ int dap_events_start()
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -6;
     }
-
     l_worker->id = 0;
     l_worker->context = dap_context_new(DAP_CONTEXT_TYPE_WORKER);
     l_worker->context->_inheritor = l_worker;
@@ -373,25 +415,12 @@ int dap_events_start()
         return -4;
     }
 
-#ifdef DAP_WASM_PTHREADS
-    pthread_t l_thread;
-    if (pthread_create(&l_thread, NULL, s_wasm_worker_thread_func, NULL) != 0) {
-        log_it(L_CRITICAL, "Failed to create WASM worker thread");
-        return -5;
-    }
-    pthread_detach(l_thread);
-    log_it(L_NOTICE, "WASM mode: MULTI-THREADED (pthreads enabled, %d I/O worker, %u CPU cores available)",
-           s_threads_count, dap_get_cpu_count());
-    log_it(L_NOTICE, "WASM event loop: dedicated pthread worker (main thread free for JS)");
-#else
     emscripten_set_main_loop(s_wasm_main_loop_step, 0, 0);
     log_it(L_NOTICE, "WASM mode: SINGLE-THREADED (no SharedArrayBuffer support)");
     log_it(L_NOTICE, "WASM event loop: emscripten_set_main_loop polling");
-#endif
     return 0;
 }
 
-#ifndef DAP_WASM_PTHREADS
 static void s_wasm_main_loop_step(void)
 {
     if (s_workers[0] && s_workers[0]->context && s_workers[0]->context->is_running)
