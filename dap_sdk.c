@@ -89,41 +89,14 @@ static void s_deinit_plugin(void);
 #ifdef DAP_OS_WASM
 #ifdef DAP_WASM_PTHREADS
 #include <emscripten/wasmfs.h>
-#include <pthread.h>
-
-static volatile int s_opfs_result = -1;
-
-static void *s_opfs_mount_thread(void *a_arg)
-{
-    const char *l_mount = (const char *)a_arg;
-    backend_t l_opfs = wasmfs_create_opfs_backend();
-    if (wasmfs_create_directory(l_mount, 0777, l_opfs) != 0 && errno != EEXIST) {
-        log_it(L_ERROR, "OPFS mount failed at %s: %s", l_mount, strerror(errno));
-        s_opfs_result = -1;
-    } else {
-        log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage mounted at %s", l_mount);
-        s_opfs_result = 0;
-    }
-    return NULL;
-}
 
 static int s_init_wasmfs(void)
 {
     const char *l_mount = g_sys_dir_path ? g_sys_dir_path : "/dap";
     if (!g_sys_dir_path)
         g_sys_dir_path = dap_strdup(l_mount);
-
-    pthread_t l_tid;
-    if (pthread_create(&l_tid, NULL, s_opfs_mount_thread, (void *)l_mount) != 0) {
-        log_it(L_ERROR, "Failed to create OPFS mount thread");
-        return -1;
-    }
-    pthread_join(l_tid, NULL);
-
-    if (s_opfs_result != 0) {
-        log_it(L_WARNING, "OPFS unavailable, falling back to in-memory MEMFS at %s", l_mount);
-        dap_mkdir_with_parents(g_sys_dir_path);
-    }
+    dap_mkdir_with_parents(g_sys_dir_path);
+    log_it(L_NOTICE, "Filesystem: WASMFS (in-memory) at %s", g_sys_dir_path);
     return 0;
 }
 #else
