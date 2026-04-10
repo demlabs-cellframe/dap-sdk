@@ -50,12 +50,14 @@
 #include "dap_http_client_simple.h"
 #include "dap_stream.h"
 #include "dap_stream_session.h"
+#include "dap_stream_pkt.h"
 
 #define LOG_TAG "ws_system_wasm"
 
 #define WS_RECV_BUF_SIZE    (256 * 1024)
 #define WS_READ_CHUNK       (64 * 1024)
 #define WS_MAX_CONNECTIONS  256
+#define WS_KEEPALIVE_INTERVAL_MS  25000
 
 #ifdef DAP_WASM_PTHREADS
 #include <pthread.h>
@@ -91,6 +93,8 @@ typedef struct ws_system_conn {
     uint16_t                port;
     bool                    use_tls;
     uint32_t                session_id;
+    
+    long                    keepalive_timer_id;
 
 #ifdef DAP_WASM_PTHREADS
     pthread_t               recv_thread;
@@ -187,6 +191,34 @@ static void s_ws_destroy_on_main(int a_h) {
 #endif /* DAP_WASM_PTHREADS */
 
 /* ========================================================================
+ * Keepalive mechanism for WASM WebSocket
+ * ======================================================================== */
+
+static void s_keepalive_callback(void *a_arg)
+{
+    ws_system_conn_t *l_conn = (ws_system_conn_t *)a_arg;
+    if (!l_conn || l_conn->state != DAP_WS_SYSTEM_STATE_OPEN || !l_conn->stream) {
+        return;
+    }
+    dap_stream_send_keepalive(l_conn->stream);
+}
+
+static void s_start_keepalive_timer(ws_system_conn_t *a_conn)
+{
+    if (a_conn->keepalive_timer_id > 0) return;
+    a_conn->keepalive_timer_id = emscripten_set_interval(s_keepalive_callback, WS_KEEPALIVE_INTERVAL_MS, a_conn);
+    log_it(L_DEBUG, "Keepalive timer started (interval=%dms)", WS_KEEPALIVE_INTERVAL_MS);
+}
+
+static void s_stop_keepalive_timer(ws_system_conn_t *a_conn)
+{
+    if (a_conn->keepalive_timer_id > 0) {
+        emscripten_clear_interval(a_conn->keepalive_timer_id);
+        a_conn->keepalive_timer_id = 0;
+    }
+}
+
+/* ========================================================================
  * C callbacks from JavaScript (always run on main thread)
  * ======================================================================== */
 
@@ -201,6 +233,7 @@ void _ws_on_open(int a_handle)
 #ifdef DAP_WASM_PTHREADS
     sem_post(&l_conn->recv_sem);
 #else
+    s_start_keepalive_timer(l_conn);
     if (l_conn->ready_callback) {
         l_conn->ready_callback(l_conn->stream, 0);
         l_conn->ready_callback = NULL;
@@ -213,6 +246,7 @@ void _ws_on_close(int a_handle, int a_code)
 {
     ws_system_conn_t *l_conn = s_find_conn(a_handle);
     if (!l_conn) return;
+    s_stop_keepalive_timer(l_conn);
     l_conn->state = DAP_WS_SYSTEM_STATE_CLOSED;
     log_it(L_INFO, "WebSocket closed (handle=%d, code=%d)", a_handle, a_code);
 
@@ -631,6 +665,8 @@ static void *s_session_start_thread(void *a_arg)
     l_conn->recv_running = true;
     pthread_create(&l_conn->recv_thread, NULL, s_recv_thread_func, l_conn);
 
+    s_start_keepalive_timer(l_conn);
+
     log_it(L_NOTICE, "WebSocket streaming started (session_id=%u)", l_a->session_id);
     if (l_a->callback) l_a->callback(l_a->stream, 0);
     DAP_DELETE(l_a);
@@ -745,6 +781,8 @@ static void s_ws_system_close(dap_stream_t *a_stream)
     if (!a_stream || !a_stream->_server_session) return;
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
 
+    s_stop_keepalive_timer(l_conn);
+
 #ifdef DAP_WASM_PTHREADS
     if (l_conn->recv_running) {
         l_conn->recv_running = false;
@@ -810,7 +848,7 @@ dap_net_trans_ws_system_config_t dap_net_trans_ws_system_config_default(void)
 {
     return (dap_net_trans_ws_system_config_t) {
         .max_message_size   = 1024 * 1024,
-        .ping_interval_ms   = 0,
+        .ping_interval_ms   = 25000,  // 25 seconds (below server's 60s timeout)
         .connect_timeout_ms = 10000,
         .subprotocol        = "dap-stream"
     };
