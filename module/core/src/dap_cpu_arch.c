@@ -29,13 +29,15 @@
  */
 
 #include <string.h>
-#include <stdatomic.h>
 #include "dap_cpu_arch.h"
 #include "dap_cpu_detect.h"
 #include "dap_common.h"
 
 #ifdef _WIN32
 #include <windows.h>
+#include <pthread.h>
+#else
+#include <stdatomic.h>
 #endif
 
 #define LOG_TAG "dap_cpu_arch"
@@ -106,6 +108,22 @@ bool dap_cpu_arch_is_available(dap_cpu_arch_t a_arch)
 
 /* Wine + AVX-512: Wine cannot emulate AVX-512 correctly, cap at AVX2 */
 static dap_cpu_arch_t s_arch_cap = DAP_CPU_ARCH_AVX512;
+
+#ifdef _WIN32
+static pthread_once_t s_wine_check_once = PTHREAD_ONCE_INIT;
+static void s_wine_check_init(void)
+{
+    HMODULE l_ntdll = GetModuleHandleA("ntdll.dll");
+    if (l_ntdll && GetProcAddress(l_ntdll, "wine_get_version")) {
+        s_arch_cap = DAP_CPU_ARCH_AVX2;
+        log_it(L_WARNING, "Wine detected: capping CPU arch at AVX2 (AVX-512 unsupported)");
+    }
+}
+static void s_check_wine_cap(void)
+{
+    pthread_once(&s_wine_check_once, s_wine_check_init);
+}
+#else
 static atomic_flag s_wine_check_flag = ATOMIC_FLAG_INIT;
 static atomic_bool s_wine_check_done = false;
 
@@ -117,14 +135,7 @@ static void s_check_wine_cap(void)
     
     // Slow path: use atomic_flag as spinlock for one-time init
     if (!atomic_flag_test_and_set_explicit(&s_wine_check_flag, memory_order_acq_rel)) {
-        // We got the flag, do the initialization
-#ifdef _WIN32
-        HMODULE l_ntdll = GetModuleHandleA("ntdll.dll");
-        if (l_ntdll && GetProcAddress(l_ntdll, "wine_get_version")) {
-            s_arch_cap = DAP_CPU_ARCH_AVX2;
-            log_it(L_WARNING, "Wine detected: capping CPU arch at AVX2 (AVX-512 unsupported)");
-        }
-#endif
+        // Wine check only applies to Windows, no-op here
         atomic_store_explicit(&s_wine_check_done, true, memory_order_release);
     } else {
         // Another thread is doing init, spin-wait for completion
@@ -133,6 +144,7 @@ static void s_check_wine_cap(void)
         }
     }
 }
+#endif
 
 dap_cpu_arch_t dap_cpu_arch_get_best(void)
 {
