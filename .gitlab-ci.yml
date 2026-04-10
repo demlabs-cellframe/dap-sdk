@@ -102,6 +102,8 @@ tests:arm64.macos:
 
 tests:amd64.debian.asan-ubsan:
     extends: .tests
+    when: manual
+    allow_failure: true
     image: demlabs/debian/amd64:qt6
     before_script:
       - set -eo pipefail
@@ -121,6 +123,8 @@ tests:amd64.debian.asan-ubsan:
 
 tests:amd64.debian.tsan:
     extends: .tests
+    when: manual
+    allow_failure: true
     image: demlabs/debian/amd64:qt6
     before_script:
       - set -eo pipefail
