@@ -380,10 +380,12 @@ int dap_events_start()
         return -5;
     }
     pthread_detach(l_thread);
-    log_it(L_NOTICE, "WASM event loop: worker on dedicated pthread (main thread free for JS)");
+    log_it(L_NOTICE, "WASM mode: MULTI-THREADED (pthreads enabled, %d event workers)", s_threads_count);
+    log_it(L_NOTICE, "WASM event loop: dedicated pthread worker (main thread free for JS)");
 #else
     emscripten_set_main_loop(s_wasm_main_loop_step, 0, 0);
-    log_it(L_NOTICE, "WASM event loop started via emscripten_set_main_loop (single-threaded)");
+    log_it(L_NOTICE, "WASM mode: SINGLE-THREADED (no SharedArrayBuffer support)");
+    log_it(L_NOTICE, "WASM event loop: emscripten_set_main_loop polling");
 #endif
     return 0;
 }
