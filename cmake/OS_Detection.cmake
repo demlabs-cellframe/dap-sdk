@@ -279,7 +279,6 @@ if(UNIX)
         if(WASM_ENABLE_PTHREADS)
             set(_LOPT "${_LOPT} -sWASMFS -lopfs.js")
         endif()
-        endif()
     endif()
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT}")
