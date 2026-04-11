@@ -54,8 +54,9 @@ int dap_random_bytes(void *a_buf, unsigned int a_nbytes)
 {
 #if defined(DAP_OS_WASM)
     EM_ASM({
-        var buf = new Uint8Array(Module.HEAPU8.buffer, $0, $1);
-        crypto.getRandomValues(buf);
+        var tmp = new Uint8Array($1);
+        crypto.getRandomValues(tmp);
+        Module.HEAPU8.set(tmp, $0);
     }, a_buf, a_nbytes);
     return 0;
 #elif defined(_WIN32)

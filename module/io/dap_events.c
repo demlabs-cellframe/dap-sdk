@@ -338,8 +338,13 @@ int dap_events_start()
         return -1;
     }
     if (s_threads_id) {
+#ifdef DAP_OS_WASM
+        log_it(L_WARNING, "Threads already running (WASM hot reload?), reusing");
+        return 0;
+#else
         log_it(L_ERROR, "Threads id already initialized");
         return -1;
+#endif
     }
     s_threads_id = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(pthread_t, s_threads_count, -2);
     for (uint32_t i = 0; i < s_threads_count; i++) {
@@ -447,8 +452,13 @@ int dap_events_start()
         goto lb_err;
     }
     if (s_threads_id) {
+#ifdef DAP_OS_WASM
+        log_it(L_WARNING, "Threads already running (WASM hot reload?), reusing");
+        return 0;
+#else
         log_it(L_ERROR, "Threads id already initialized");
         goto lb_err;
+#endif
     }
     s_threads_id = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(pthread_t, s_threads_count, -2);
     for( uint32_t i = 0; i < s_threads_count; i++) {
