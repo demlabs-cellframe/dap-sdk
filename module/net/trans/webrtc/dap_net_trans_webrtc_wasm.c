@@ -86,6 +86,10 @@ EM_JS(int, js_rtc_page_is_secure, (void), {
     return (typeof location !== 'undefined' && location.protocol === 'https:') ? 1 : 0;
 });
 
+#ifdef DAP_WASM_PTHREADS
+static int s_rtc_main_document_https = -1;
+#endif
+
 typedef struct rtc_conn {
     int                     js_peer_id;
     dap_webrtc_state_t      state;
@@ -393,7 +397,15 @@ static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
+#ifdef DAP_WASM_PTHREADS
+    if (s_rtc_main_document_https < 0) {
+        log_it(L_WARNING, "WebRTC: HTTPS detection not initialized, assuming secure context");
+        s_rtc_main_document_https = 1;
+    }
+    l_conn->use_tls = (a_params->port == 443) || (s_rtc_main_document_https > 0);
+#else
     l_conn->use_tls = (a_params->port == 443) || js_rtc_page_is_secure();
+#endif
     l_conn->client_ctx = a_params->client_ctx;
 
     dap_stream_t *l_stream = DAP_NEW_Z(dap_stream_t);
@@ -836,6 +848,10 @@ dap_net_trans_webrtc_config_t dap_net_trans_webrtc_config_default(void)
 
 int dap_net_trans_webrtc_register(void)
 {
+#ifdef DAP_WASM_PTHREADS
+    if (s_rtc_main_document_https < 0)
+        s_rtc_main_document_https = js_rtc_page_is_secure();
+#endif
     return dap_net_trans_register("webrtc", DAP_NET_TRANS_WEBRTC,
                                   &s_rtc_ops, DAP_NET_TRANS_SOCKET_OTHER, NULL);
 }

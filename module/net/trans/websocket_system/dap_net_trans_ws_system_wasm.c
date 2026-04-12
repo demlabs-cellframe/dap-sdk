@@ -411,6 +411,10 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
 #ifdef DAP_WASM_PTHREADS
+    if (s_wasm_main_document_https < 0) {
+        log_it(L_WARNING, "HTTPS detection not initialized, assuming secure context");
+        s_wasm_main_document_https = 1;
+    }
     l_conn->use_tls = (a_params->port == 443) || (s_wasm_main_document_https > 0);
 #else
     l_conn->use_tls = (a_params->port == 443) || js_page_is_secure();
