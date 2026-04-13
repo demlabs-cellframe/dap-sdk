@@ -105,19 +105,28 @@ function(dap_mock_autowrap TARGET_NAME)
     string(REPLACE ";" "\\;" SOURCES_ESCAPED "${ALL_SOURCES}")
     
     # Prepare command for mock generation
-    # For STAGE 1 (execute_process) - use list
-    set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+    # Escape semicolons in source file list for env variable value;
+    # unescaped ';' splits the cmake list, causing the 2nd file path
+    # to be treated as a separate command argument
+    string(REPLACE ";" "\\;" ALL_SOURCES_ENV "${ALL_SOURCES}")
+
+    # Auto-detect DAP_TPL_DIR from test-framework/dap_tpl relative to module
+    if(NOT DEFINED DAP_TPL_DIR)
+        get_filename_component(_MOCK_PARENT "${DAP_MOCK_AUTOWRAP_MODULE_DIR}" DIRECTORY)
+        if(EXISTS "${_MOCK_PARENT}/dap_tpl/dap_tpl.sh")
+            set(DAP_TPL_DIR "${_MOCK_PARENT}/dap_tpl" CACHE INTERNAL "Path to dap_tpl scripts")
+        endif()
+    endif()
+
+    # For STAGE 1 (execute_process) - always pass CMAKE_SYSTEM_NAME
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
-        # message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
-        # Escape semicolons in source file list for env variable value;
-        # unescaped ';' splits the cmake list, causing the 2nd file path
-        # to be treated as a separate command argument (→ "permission denied")
-        string(REPLACE ";" "\\;" ALL_SOURCES_ENV "${ALL_SOURCES}")
-        # Use cmake -E env to set environment variables (works with CMake 3.10+)
-        # Pass CMAKE_SYSTEM_NAME so script can detect target platform (not just host)
-        # Pass source files for __wrap_ signature extraction on macOS
-        set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env 
-            "DAP_TPL_DIR=${DAP_TPL_DIR}" 
+        set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env
+            "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
+            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES_ENV}"
+            "DAP_TPL_DIR=${DAP_TPL_DIR}"
+            ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+    else()
+        set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
             "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES_ENV}"
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
@@ -135,15 +144,18 @@ function(dap_mock_autowrap TARGET_NAME)
         message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\nEXIT CODE: ${MOCK_GEN_RESULT}\nSTDOUT:\n${MOCK_GEN_OUTPUT}\nSTDERR:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
     endif()
     
-    # For STAGE 2 (add_custom_command) - prepare separate command
+    # For STAGE 2 (add_custom_command)
     if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
-        set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env 
+        set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env
+            "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
+            "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES_ENV}"
             "DAP_TPL_DIR=${DAP_TPL_DIR}"
+            ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+    else()
+        set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env
             "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
             "DAP_MOCK_SOURCE_FILES=${ALL_SOURCES_ENV}"
             ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
-    else()
-        set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
     endif()
     
     # STAGE 2: Setup re-generation on source file changes
@@ -176,48 +188,65 @@ function(dap_mock_autowrap TARGET_NAME)
     target_compile_definitions(${TARGET_NAME} PRIVATE 
         DAP_MOCK_GENERATED_MACROS_H)
     
-    # macOS: Compile and link mock override C file
-    # CMake compiles with proper include paths, then links before cellframe_sdk
+    # macOS: Build mock interpose as SHARED library (dylib) for DYLD_INSERT_LIBRARIES
+    # Uses __DATA,__interpose section for runtime function replacement
     if(APPLE)
         set(MOCK_SRC_PATH_FILE "${MOCK_GEN_DIR}/mock_dylib_path.txt")
         if(EXISTS ${MOCK_SRC_PATH_FILE})
             file(READ ${MOCK_SRC_PATH_FILE} MOCK_SRC_PATH)
             string(STRIP "${MOCK_SRC_PATH}" MOCK_SRC_PATH)
             if(MOCK_SRC_PATH AND EXISTS "${MOCK_SRC_PATH}")
-                # Create object library for the mock override C file
-                # This allows CMake to compile with proper include directories
-                set(MOCK_OBJ_LIB "${TARGET_NAME}_mock_override")
-                add_library(${MOCK_OBJ_LIB} OBJECT ${MOCK_SRC_PATH})
-                
-                # Inherit include directories from target (which should have all SDK includes)
-                # Also add common SDK includes as fallback
+                # macOS interpose dylib is EXCLUDE_FROM_ALL: it is only built on
+                # explicit request (cmake --build . --target <dylib>).
+                # Tests run without DYLD_INSERT_LIBRARIES and exercise real
+                # code paths instead of mocked ones.
+                set(MOCK_DYLIB "${TARGET_NAME}_mock_interpose")
+                add_library(${MOCK_DYLIB} SHARED EXCLUDE_FROM_ALL ${MOCK_SRC_PATH})
+
                 get_target_property(TARGET_INCLUDES ${TARGET_NAME} INCLUDE_DIRECTORIES)
                 if(TARGET_INCLUDES)
-                    target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${TARGET_INCLUDES})
+                    target_include_directories(${MOCK_DYLIB} PRIVATE ${TARGET_INCLUDES})
                 endif()
-                
-                # Add SDK include directories (in case target doesn't have them yet)
-                if(TARGET cellframe_sdk)
-                    get_target_property(SDK_INCLUDES cellframe_sdk INTERFACE_INCLUDE_DIRECTORIES)
-                    if(SDK_INCLUDES)
-                        target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${SDK_INCLUDES})
+
+                get_property(_SDK_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
+                if(_SDK_MODULES)
+                    foreach(_MOD ${_SDK_MODULES})
+                        foreach(_SUFFIX "_static" "")
+                            set(_TGT "${_MOD}${_SUFFIX}")
+                            if(TARGET ${_TGT})
+                                get_target_property(_INC ${_TGT} INTERFACE_INCLUDE_DIRECTORIES)
+                                if(_INC)
+                                    target_include_directories(${MOCK_DYLIB} PRIVATE ${_INC})
+                                endif()
+                                get_target_property(_INC2 ${_TGT} INCLUDE_DIRECTORIES)
+                                if(_INC2)
+                                    target_include_directories(${MOCK_DYLIB} PRIVATE ${_INC2})
+                                endif()
+                                break()
+                            endif()
+                        endforeach()
+                    endforeach()
+                endif()
+
+                foreach(_SDK_TGT cellframe_sdk dap-sdk dap_sdk_object)
+                    if(TARGET ${_SDK_TGT})
+                        get_target_property(_INC ${_SDK_TGT} INTERFACE_INCLUDE_DIRECTORIES)
+                        if(_INC)
+                            target_include_directories(${MOCK_DYLIB} PRIVATE ${_INC})
+                        endif()
                     endif()
-                endif()
-                if(TARGET dap-sdk)
-                    get_target_property(DAP_SDK_INCLUDES dap-sdk INTERFACE_INCLUDE_DIRECTORIES)
-                    if(DAP_SDK_INCLUDES)
-                        target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${DAP_SDK_INCLUDES})
-                    endif()
-                endif()
-                
-                # Add object files to test target - they link before libraries
-                target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MOCK_OBJ_LIB}>)
-                
-                # Add dependency to ensure mock C file is generated first
-                add_dependencies(${MOCK_OBJ_LIB} ${TARGET_NAME}_mock_gen)
-                
-                set_target_properties(${TARGET_NAME} PROPERTIES DAP_MOCK_OBJ_LIB "${MOCK_OBJ_LIB}")
-                message(STATUS " macOS: mock override compiled: ${MOCK_SRC_PATH}")
+                endforeach()
+
+                target_link_options(${MOCK_DYLIB} PRIVATE
+                    "-Wl,-undefined,dynamic_lookup"
+                    "-Wl,-flat_namespace"
+                )
+                set_target_properties(${MOCK_DYLIB} PROPERTIES
+                    LIBRARY_OUTPUT_DIRECTORY "${MOCK_GEN_DIR}"
+                )
+                add_dependencies(${MOCK_DYLIB} ${TARGET_NAME}_mock_gen)
+
+                message(STATUS " macOS: mock interpose dylib (EXCLUDE_FROM_ALL): ${MOCK_SRC_PATH}")
             endif()
         endif()
     endif()
@@ -228,13 +257,20 @@ function(dap_mock_autowrap TARGET_NAME)
         file(READ ${WRAP_RESPONSE_FILE} WRAP_CONTENT)
         string(STRIP "${WRAP_CONTENT}" WRAP_CONTENT_STRIPPED)
         
-        # Only apply wrap options if file is not empty
+        if(APPLE)
+            # macOS: wrap file is empty (--wrap not supported by ld64).
+            # Use -flat_namespace + -undefined dynamic_lookup so that
+            # __real_* symbols resolve at runtime via DYLD_INSERT_LIBRARIES.
+            target_link_options(${TARGET_NAME} PRIVATE
+                "-Wl,-flat_namespace"
+                "-Wl,-undefined,dynamic_lookup"
+            )
+        endif()
+
+        # Only apply wrap options if file is not empty (Linux/BSD)
         if(WRAP_CONTENT_STRIPPED)
-            if(APPLE)
-                # macOS: Don't add linker flags - we use DYLD_INSERT_LIBRARIES instead
-                # Apple ld does not support GNU --wrap; interposition dylib is injected at runtime
-            elseif(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
-                   CMAKE_C_COMPILER_ID MATCHES "Clang")
+            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
+               CMAKE_C_COMPILER_ID MATCHES "Clang")
                 # GCC and Clang with GNU ld support -Wl,@file for response files with --wrap options
                 target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
             else()
@@ -315,16 +351,36 @@ endfunction()
 function(dap_mock_setup_test_env TEST_NAME TARGET_NAME)
     if(APPLE)
         get_target_property(MOCK_DYLIB_PATH ${TARGET_NAME} DAP_MOCK_DYLIB_PATH)
-        if(MOCK_DYLIB_PATH AND EXISTS "${MOCK_DYLIB_PATH}")
-            # Set DYLD_INSERT_LIBRARIES to inject mock interpose dylib
+        if(MOCK_DYLIB_PATH)
             set_tests_properties(${TEST_NAME} PROPERTIES
                 ENVIRONMENT "DYLD_INSERT_LIBRARIES=${MOCK_DYLIB_PATH}"
             )
-            message(STATUS " Test ${TEST_NAME}: DYLD_INSERT_LIBRARIES configured")
+            message(STATUS " Test ${TEST_NAME}: DYLD_INSERT_LIBRARIES=${MOCK_DYLIB_PATH}")
         else()
             message(STATUS " Test ${TEST_NAME}: no mock dylib (mocks may not work)")
         endif()
     endif()
+endfunction()
+
+#
+# dap_mock_finalize_tests()
+#
+# Call once at the end of the top-level tests/CMakeLists.txt.
+# Iterates all targets registered by dap_mock_autowrap() and sets
+# DYLD_INSERT_LIBRARIES for each corresponding CTest test on macOS.
+#
+function(dap_mock_finalize_tests)
+    if(NOT APPLE)
+        return()
+    endif()
+    if(NOT DAP_MOCK_TARGETS_NEEDING_ENV)
+        return()
+    endif()
+    foreach(_TARGET ${DAP_MOCK_TARGETS_NEEDING_ENV})
+        if(TEST ${_TARGET})
+            dap_mock_setup_test_env(${_TARGET} ${_TARGET})
+        endif()
+    endforeach()
 endfunction()
 
 #

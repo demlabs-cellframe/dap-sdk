@@ -47,6 +47,7 @@
 #include "dap_net_trans_ctx.h"
 #include "dap_cert.h"
 #include "dap_worker.h"
+#include "dap_events.h"
 
 #define LOG_TAG "dap_stream_trans_http"
 
@@ -487,7 +488,7 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
 
     dap_worker_t *l_worker = a_stream->stream_worker
                              ? a_stream->stream_worker->worker
-                             : NULL;
+                             : dap_events_worker_get_auto();
     if (!l_worker) {
         log_it(L_ERROR, "HTTP connect: no worker available");
         return -1;
@@ -954,9 +955,11 @@ static int s_http_trans_session_start(dap_stream_t *a_stream,
     debug_if(s_debug_more, L_DEBUG, "HTTP trans session start: session_id=%u, esocket fd=%d",
              a_session_id, a_stream->esocket->fd);
 
+    // Construct HTTP GET request for streaming
     char l_full_path[2048];
     snprintf(l_full_path, sizeof(l_full_path), "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM, a_session_id);
-    
+
+    // Write request to socket
     size_t l_sent = dap_events_socket_write_f_unsafe(a_stream->esocket, 
                                      "GET /%s HTTP/1.1\r\n"
                                      "Host: %s:%d\r\n"
@@ -1513,7 +1516,43 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
     a_result->stream = NULL;
     a_result->error_code = 0;
 
-    dap_stream_t *l_stream = dap_stream_new_es_client(NULL,
+    // Create TCP socket for streaming phase (GET /stream long-lived connection).
+    // ENC and STREAM_CTL stages use dap_client_http_request() with their own
+    // temporary sockets; this esocket is only used from session_start onwards.
+    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, a_params->callbacks);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to create HTTP streaming TCP socket");
+        a_result->error_code = -1;
+        return -1;
+    }
+
+    l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    l_es->_inheritor = a_params->client_ctx;
+
+    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
+        log_it(L_ERROR, "Failed to resolve address for HTTP trans");
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+
+    l_es->flags |= DAP_SOCK_CONNECTING;
+#ifndef DAP_EVENTS_CAPS_IOCP
+    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#endif
+    l_es->is_initalized = false;
+
+    int l_connect_err = 0;
+    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
+        log_it(L_ERROR, "Failed to connect HTTP streaming socket: error %d", l_connect_err);
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+
+    dap_worker_add_events_socket(a_params->worker, l_es);
+
+    dap_stream_t *l_stream = dap_stream_new_es_client(l_es,
                                 (dap_stream_node_addr_t *)a_params->node_addr,
                                 a_params->authorized);
     if (!l_stream) {
@@ -1524,10 +1563,10 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
 
     l_stream->trans = a_trans;
 
-    a_result->esocket = NULL;
+    a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared (esocket deferred to connect phase)");
+    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared with TCP socket (fd=%d) for streaming", l_es->fd);
     return 0;
 }
 

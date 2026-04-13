@@ -34,6 +34,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_stream_worker.h"
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
+#include "dap_worker.h"
 #include "dap_enc_key.h"
 #include "dap_net_trans_qos.h"
 #include "dap_enc_kdf.h"
@@ -53,8 +54,15 @@ static bool s_debug_more = false;
 static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg);
 static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 
+static size_t s_dns_server_get_max_packet_size(dap_net_trans_t *a_trans)
+{
+    UNUSED(a_trans);
+    return 1200;
+}
+
 static const dap_net_trans_ops_t s_dns_server_trans_ops = {
-    .write = s_dns_server_trans_write
+    .write = s_dns_server_trans_write,
+    .get_max_packet_size = s_dns_server_get_max_packet_size
 };
 
 static void* s_dns_server_new(const char *a_server_name)
@@ -291,7 +299,7 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
                                    struct sockaddr_storage *a_addr, socklen_t a_addr_len)
 {
     dns_server_client_session_t *l_session = NULL;
-    HASH_FIND(hh, a_dns_server->sessions, a_addr, a_addr_len, l_session);
+    HASH_FIND(hh, a_dns_server->sessions, a_addr, (unsigned)a_addr_len, l_session);
 
     if (l_session) {
         if (l_session->stream) {
@@ -434,7 +442,7 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     l_session->trans_ctx = l_trans_ctx;
     l_session->stream_session = l_stream_session;
 
-    HASH_ADD(hh, a_dns_server->sessions, remote_addr, a_addr_len, l_session);
+    HASH_ADD(hh, a_dns_server->sessions, remote_addr, (unsigned)a_addr_len, l_session);
 
     log_it(L_INFO, "DNS server: created stream %p with %zu channels for new client",
            l_stream, l_stream->channel_count);
@@ -442,30 +450,67 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     dap_enc_key_delete(l_bob_key);
 }
 
+typedef struct dns_sendto_args {
+    dap_events_socket_t *esocket;
+    void *data;
+    size_t size;
+    struct sockaddr_storage addr;
+    socklen_t addr_len;
+} dns_sendto_args_t;
+
+static void s_dns_sendto_callback(void *a_arg)
+{
+    dns_sendto_args_t *l_args = (dns_sendto_args_t *)a_arg;
+    if(l_args->esocket)
+        dap_events_socket_sendto_unsafe(l_args->esocket,
+            l_args->data, l_args->size,
+            &l_args->addr, l_args->addr_len);
+    DAP_DELETE(l_args->data);
+    DAP_DELETE(l_args);
+}
+
 /**
- * @brief Server-side write: send data back to DNS client via sendto_unsafe
+ * @brief Server-side write: send data back to DNS client
+ * @note Worker-aware: if called from a different worker thread,
+ *       marshals the sendto onto the esocket's owner worker via callback.
  */
 static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
-    if (!a_stream || !a_data || a_size == 0)
+    if(!a_stream || !a_data || a_size == 0)
         return -1;
 
     dns_server_client_session_t *l_session =
         (dns_server_client_session_t *)a_stream->_server_session;
-    if (!l_session || !a_stream->esocket) {
-        log_it(L_ERROR, "DNS server write: no session or esocket");
+    if(!l_session || !a_stream->esocket) {
+        log_it(L_WARNING, "DNS server write: no session or esocket (likely during teardown)");
+        return 0;
+    }
+
+    dap_events_socket_t *l_es = a_stream->esocket;
+    dap_worker_t *l_current = dap_worker_get_current();
+    dap_worker_t *l_target = l_es->worker;
+
+    if(l_current == l_target) {
+        size_t l_sent = dap_events_socket_sendto_unsafe(l_es,
+            a_data, a_size,
+            &l_session->remote_addr, l_session->remote_addr_len);
+        if(l_sent != a_size)
+            log_it(L_WARNING, "DNS server write incomplete: %zu of %zu bytes", l_sent, a_size);
+        return (ssize_t)l_sent;
+    }
+
+    dns_sendto_args_t *l_args = DAP_NEW_Z(dns_sendto_args_t);
+    if(!l_args)
+        return -1;
+    l_args->esocket = l_es;
+    l_args->data = DAP_DUP_SIZE(a_data, a_size);
+    if(!l_args->data) {
+        DAP_DELETE(l_args);
         return -1;
     }
-
-    size_t l_sent = dap_events_socket_sendto_unsafe(
-        a_stream->esocket,
-        a_data, a_size,
-        &l_session->remote_addr,
-        l_session->remote_addr_len);
-
-    if (l_sent != a_size) {
-        log_it(L_WARNING, "DNS server write incomplete: %zu of %zu bytes", l_sent, a_size);
-    }
-
-    return (ssize_t)l_sent;
+    l_args->size = a_size;
+    memcpy(&l_args->addr, &l_session->remote_addr, l_session->remote_addr_len);
+    l_args->addr_len = l_session->remote_addr_len;
+    dap_worker_exec_callback_on(l_target, s_dns_sendto_callback, l_args);
+    return (ssize_t)a_size;
 }

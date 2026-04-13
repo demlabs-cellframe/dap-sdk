@@ -25,6 +25,7 @@ This file is part of DAP SDK the open source project
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include <string.h>
+#include <inttypes.h>
 #include <arpa/inet.h>  // for htonl, ntohl
 
 #define LOG_TAG "dap_serialize"

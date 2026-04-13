@@ -27,6 +27,15 @@
 #include <string.h>
 #include <inttypes.h>
 
+#ifdef DAP_OS_ANDROID
+#include <malloc.h>
+#define dap_aligned_alloc(alignment, size) memalign((alignment), (size))
+#elif defined(_MSC_VER)
+#define dap_aligned_alloc(alignment, size) _aligned_malloc((size), (alignment))
+#else
+#define dap_aligned_alloc(alignment, size) aligned_alloc((alignment), (size))
+#endif
+
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 #include <immintrin.h>
 #define DAP_SPIN_PAUSE() _mm_pause()
@@ -72,7 +81,7 @@ dap_ring_buffer_t *dap_ring_buffer_create(size_t a_capacity) {
     // aligned_alloc requires size to be a multiple of alignment (C11 7.22.3.1)
     size_t l_size = sizeof(dap_ring_buffer_t) + l_capacity * sizeof(void*);
     l_size = (l_size + DAP_RING_BUFFER_CACHE_LINE - 1) & ~(size_t)(DAP_RING_BUFFER_CACHE_LINE - 1);
-    dap_ring_buffer_t *l_rb = (dap_ring_buffer_t*)aligned_alloc(DAP_RING_BUFFER_CACHE_LINE, l_size);
+    dap_ring_buffer_t *l_rb = (dap_ring_buffer_t*)dap_aligned_alloc(DAP_RING_BUFFER_CACHE_LINE, l_size);
     
     if (!l_rb) {
         log_it(L_CRITICAL, "Failed to allocate ring buffer of size %zu", l_size);

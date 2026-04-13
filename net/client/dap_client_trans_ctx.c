@@ -622,7 +622,7 @@ static void s_stream_es_callback_connected(dap_events_socket_t *a_es)
 
 static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg)
 {
-    log_it(L_WARNING, "Stream esocket delete callback (socket fd=%d, flags=0x%x, buf_out=%zu, buf_in=%zu)"
+    debug_if(s_debug_more, L_DEBUG, "Stream esocket delete callback (socket fd=%d, flags=0x%x, buf_out=%zu, buf_in=%zu)"
            " — stream connection lost",
            a_es ? a_es->socket : -1,
            a_es ? a_es->flags : 0,

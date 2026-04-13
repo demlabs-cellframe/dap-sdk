@@ -10,8 +10,12 @@
 #include <errno.h>
 
 // Platform-specific includes for CPU affinity
-#if defined(__linux__) || defined(__ANDROID__)
-    #include <sched.h>  // For cpu_set_t, CPU_ZERO, CPU_SET
+#if defined(__ANDROID__)
+    #include <sched.h>
+    #include <unistd.h>
+    #include <sys/syscall.h>
+#elif defined(__linux__)
+    #include <sched.h>
 #elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
     #include <sys/param.h>
     #include <sys/cpuset.h>
@@ -127,7 +131,27 @@ int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id)
         return -1;
     }
     
-#if defined(__linux__) || defined(__ANDROID__)
+#if defined(__ANDROID__)
+    // Android Bionic lacks pthread_setaffinity_np, use sched_setaffinity
+    cpu_set_t l_cpuset;
+    CPU_ZERO(&l_cpuset);
+    CPU_SET(a_cpu_id, &l_cpuset);
+
+    pid_t l_tid = (pthread_equal(a_thread, pthread_self())) ? syscall(__NR_gettid) : 0;
+    if(l_tid == 0)
+    {
+        log_it(L_WARNING, "Cannot set CPU affinity for non-current thread on Android");
+        return -2;
+    }
+    int l_ret = sched_setaffinity(l_tid, sizeof(cpu_set_t), &l_cpuset);
+    if(l_ret != 0)
+    {
+        log_it(L_WARNING, "Failed to set CPU affinity to core %u: %s", a_cpu_id, strerror(errno));
+        return -2;
+    }
+    debug_if(s_debug_more, L_DEBUG, "Thread (tid %d) bound to CPU core %u", l_tid, a_cpu_id);
+
+#elif defined(__linux__)
     // Linux: pthread_setaffinity_np
     cpu_set_t l_cpuset;
     CPU_ZERO(&l_cpuset);

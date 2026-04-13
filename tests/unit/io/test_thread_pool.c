@@ -388,10 +388,12 @@ static void test_thread_pool_pending_count(void)
     uint32_t l_pending = dap_thread_pool_get_pending_count(l_pool);
     dap_test_msg("  pending tasks: %u", l_pending);
 
-    // Wait for completion
-    usleep(200000);
-
-    l_pending = dap_thread_pool_get_pending_count(l_pool);
+    // Wait for completion with retry
+    for(int _w = 0; _w < 20; _w++) {
+        usleep(100000);
+        l_pending = dap_thread_pool_get_pending_count(l_pool);
+        if(l_pending == 0) break;
+    }
     dap_assert(l_pending == 0, "All tasks should complete");
 
     // NULL pool

@@ -22,6 +22,7 @@
  */
 
 #include <string.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -414,7 +415,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         // Timeout check
         uint64_t l_elapsed_ns = dap_nanotime_now() - l_drain_start;
         if (l_elapsed_ns > l_max_drain_time_ns) {
-            log_it(L_WARNING, "Drain timeout after %lu ms, %u packets remaining",
+            log_it(L_WARNING, "Drain timeout after %" PRIu64 " ms, %u packets remaining",
                    l_elapsed_ns / 1000000, l_current);
             break;
         }
@@ -425,9 +426,9 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     uint64_t l_drain_time_ms = (dap_nanotime_now() - l_drain_start) / 1000000;
     uint32_t l_final_count = atomic_load(&a_server->cross_worker_packets);
     if (l_final_count == 0) {
-        log_it(L_INFO, "Natural drain complete in %lu ms", l_drain_time_ms);
+        log_it(L_INFO, "Natural drain complete in %" PRIu64 " ms", l_drain_time_ms);
     } else {
-        log_it(L_WARNING, "Drain finished with %u packets remaining after %lu ms", 
+        log_it(L_WARNING, "Drain finished with %u packets remaining after %" PRIu64 " ms", 
                l_final_count, l_drain_time_ms);
     }
     
@@ -479,13 +480,12 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     pthread_cond_destroy(&a_server->cross_worker_cond);
     
     // Step 6: Stop and delete dap_server (listeners)
-    // Use async delete and wait for completion
+    // Use synchronous delete to ensure all listener sockets are fully removed
+    // before freeing the server struct (prevents use-after-free in callbacks)
     debug_if(s_debug_more, L_DEBUG, "Deleting dap_server (listeners)");
     if (a_server->dap_server) {
-        dap_server_delete(a_server->dap_server);
+        dap_server_delete_sync(a_server->dap_server);
         a_server->dap_server = NULL;
-        // Give workers time to process delete requests
-        usleep(100000);  // 100ms
     }
     
     // Step 7: Final cleanup

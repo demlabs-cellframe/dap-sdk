@@ -54,7 +54,7 @@ endfunction()
 # Usage: dap_link_libraries(TARGET_NAME [PUBLIC|PRIVATE|INTERFACE] lib1 lib2 ...)
 function(dap_link_libraries TARGET_NAME)
     get_target_property(TGT_TYPE ${TARGET_NAME} TYPE)
-    if(TGT_TYPE STREQUAL "OBJECT_LIBRARY")
+    if(TGT_TYPE STREQUAL "OBJECT_LIBRARY" OR TGT_TYPE STREQUAL "STATIC_LIBRARY")
         set(LIBS_TO_PROCESS "")
         set(CURRENT_SCOPE "")
 
@@ -68,6 +68,22 @@ function(dap_link_libraries TARGET_NAME)
 
         if(NOT CURRENT_SCOPE AND LIBS_TO_PROCESS)
             set(CURRENT_SCOPE "INTERFACE")
+        endif()
+
+        # For STATIC libraries (Xcode mode): promote INTERFACE to PUBLIC
+        # so that include directories are available during compilation
+        if(TGT_TYPE STREQUAL "STATIC_LIBRARY" AND CURRENT_SCOPE STREQUAL "INTERFACE")
+            set(ADJUSTED_ARGS "")
+            foreach(ARG ${ARGN})
+                if(ARG STREQUAL "INTERFACE")
+                    list(APPEND ADJUSTED_ARGS "PUBLIC")
+                else()
+                    list(APPEND ADJUSTED_ARGS "${ARG}")
+                endif()
+            endforeach()
+            target_link_libraries(${TARGET_NAME} ${ADJUSTED_ARGS})
+        else()
+            target_link_libraries(${TARGET_NAME} ${ARGN})
         endif()
 
         # Propagate DAP_BUILD_DEPENDENCIES (e.g. BuildXKCP) so build order is correct
@@ -85,12 +101,12 @@ function(dap_link_libraries TARGET_NAME)
                 endif()
             endforeach()
         endif()
+    else()
+        target_link_libraries(${TARGET_NAME} ${ARGN})
     endif()
 
-    target_link_libraries(${TARGET_NAME} ${ARGN})
-
     # Transitive build dependency propagation (includes are handled by post_process)
-    if(TGT_TYPE STREQUAL "OBJECT_LIBRARY" AND LIBS_TO_PROCESS AND (CURRENT_SCOPE STREQUAL "INTERFACE" OR CURRENT_SCOPE STREQUAL "PUBLIC"))
+    if((TGT_TYPE STREQUAL "OBJECT_LIBRARY" OR TGT_TYPE STREQUAL "STATIC_LIBRARY") AND LIBS_TO_PROCESS AND (CURRENT_SCOPE STREQUAL "INTERFACE" OR CURRENT_SCOPE STREQUAL "PUBLIC"))
         _dap_create_visited_set(${TARGET_NAME} VISITED_SET_BUILD)
         foreach(DEP ${LIBS_TO_PROCESS})
             if(TARGET ${DEP})
@@ -247,8 +263,13 @@ endfunction()
 macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     cmake_parse_arguments(OBJ_LIB "" "" "HEADERS" ${ARGN})
     
-    # Create OBJECT library
-    add_library(${TARGET_NAME} OBJECT ${OBJ_LIB_UNPARSED_ARGUMENTS} ${OBJ_LIB_HEADERS})
+    # Xcode generator: use STATIC instead of OBJECT to avoid libtool collisions
+    # when multiple source files share the same name across directories
+    if(CMAKE_GENERATOR MATCHES "Xcode")
+        add_library(${TARGET_NAME} STATIC ${OBJ_LIB_UNPARSED_ARGUMENTS} ${OBJ_LIB_HEADERS})
+    else()
+        add_library(${TARGET_NAME} OBJECT ${OBJ_LIB_UNPARSED_ARGUMENTS} ${OBJ_LIB_HEADERS})
+    endif()
     
     # Enable position independent code for shared library
     set_property(TARGET ${TARGET_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -394,17 +415,6 @@ function(create_final_shared_library)
     endif()
     message(STATUS "========================================")
     
-    # Collect all object files
-    set(ALL_OBJECTS "")
-    foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
-        if(TARGET ${MODULE})
-            list(APPEND ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
-        else()
-            message(WARNING "[SDK] Module ${MODULE} is registered but target does not exist")
-        endif()
-    endforeach()
-    
-    # Create final library (SHARED or STATIC based on BUILD_SHARED option)
     # CMake doesn't allow hyphens in target names, so use underscores for target
     # but set OUTPUT_NAME to the desired name with hyphens
     string(REPLACE "-" "_" TARGET_NAME "${FINAL_LIB_LIBRARY_NAME}")
@@ -418,8 +428,34 @@ function(create_final_shared_library)
         message(STATUS "[LibraryHelpers] Creating STATIC library target: ${TARGET_NAME}")
     endif()
     
-    message(STATUS "[LibraryHelpers] Target name: ${TARGET_NAME} with OUTPUT_NAME: ${FINAL_LIB_LIBRARY_NAME}")
-    add_library(${TARGET_NAME} ${LIB_TYPE} ${ALL_OBJECTS} ${FINAL_LIB_ADDITIONAL_SOURCES})
+    if(CMAKE_GENERATOR MATCHES "Xcode")
+        # Xcode: create library from additional sources only, link STATIC modules
+        message(STATUS "[LibraryHelpers] Target name: ${TARGET_NAME} with OUTPUT_NAME: ${FINAL_LIB_LIBRARY_NAME}")
+        if(FINAL_LIB_ADDITIONAL_SOURCES)
+            add_library(${TARGET_NAME} ${LIB_TYPE} ${FINAL_LIB_ADDITIONAL_SOURCES})
+        else()
+            add_library(${TARGET_NAME} ${LIB_TYPE} "")
+        endif()
+        foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
+            if(TARGET ${MODULE})
+                target_link_libraries(${TARGET_NAME} PUBLIC ${MODULE})
+            else()
+                message(WARNING "[SDK] Module ${MODULE} is registered but target does not exist")
+            endif()
+        endforeach()
+    else()
+        # Other generators: embed OBJECT library files directly
+        set(ALL_OBJECTS "")
+        foreach(MODULE ${${FINAL_LIB_MODULE_LIST_VAR}})
+            if(TARGET ${MODULE})
+                list(APPEND ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
+            else()
+                message(WARNING "[SDK] Module ${MODULE} is registered but target does not exist")
+            endif()
+        endforeach()
+        message(STATUS "[LibraryHelpers] Target name: ${TARGET_NAME} with OUTPUT_NAME: ${FINAL_LIB_LIBRARY_NAME}")
+        add_library(${TARGET_NAME} ${LIB_TYPE} ${ALL_OBJECTS} ${FINAL_LIB_ADDITIONAL_SOURCES})
+    endif()
     
     # If we have additional sources, inherit include directories from all modules
     if(FINAL_LIB_ADDITIONAL_SOURCES)
@@ -590,16 +626,24 @@ function(dap_link_all_sdk_modules TARGET MODULE_LIST_VAR)
         message(FATAL_ERROR "dap_link_all_sdk_modules: No modules found in ${MODULE_LIST_VAR}")
     endif()
     
-    # Collect object files from all SDK modules
-    set(ALL_OBJECTS "")
-    foreach(MODULE ${SDK_MODULES})
-        if(TARGET ${MODULE})
-            list(APPEND ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
-        endif()
-    endforeach()
-    
-    # Add all SDK object files to the target
-    target_sources(${TARGET} PRIVATE ${ALL_OBJECTS})
+    # Collect and link SDK modules
+    if(CMAKE_GENERATOR MATCHES "Xcode")
+        # Xcode: link STATIC libraries directly
+        foreach(MODULE ${SDK_MODULES})
+            if(TARGET ${MODULE})
+                target_link_libraries(${TARGET} PRIVATE ${MODULE})
+            endif()
+        endforeach()
+    else()
+        # Other generators: embed OBJECT library files
+        set(ALL_OBJECTS "")
+        foreach(MODULE ${SDK_MODULES})
+            if(TARGET ${MODULE})
+                list(APPEND ALL_OBJECTS $<TARGET_OBJECTS:${MODULE}>)
+            endif()
+        endforeach()
+        target_sources(${TARGET} PRIVATE ${ALL_OBJECTS})
+    endif()
     
     # Collect and link all external libraries from SDK modules
     collect_external_libraries_from_modules("${SDK_MODULES}" ALL_EXTERNAL_LIBS)

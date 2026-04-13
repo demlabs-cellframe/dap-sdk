@@ -636,17 +636,18 @@ static void s_worker_execute_stage(void *a_arg)
             }
             // Async; callback will notify FSM
         } else {
-            // No explicit connect needed; set up timeout
-            dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_DUP(&l_tc->stream->esocket->uuid);
-            if (!dap_timerfd_start_on_worker(l_worker,
-                                             (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                             s_stream_timer_timeout_check, l_es_uuid_ptr)) {
-                DAP_DELETE(l_es_uuid_ptr);
-                dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                                      STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
-                break;
+            // No explicit connect needed
+            if (l_tc->stream->esocket) {
+                dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_DUP(&l_tc->stream->esocket->uuid);
+                if (!dap_timerfd_start_on_worker(l_worker,
+                                                 (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                                                 s_stream_timer_timeout_check, l_es_uuid_ptr)) {
+                    DAP_DELETE(l_es_uuid_ptr);
+                    dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                          STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+                    break;
+                }
             }
-            // Immediately connected
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_DONE, ERROR_NO_ERROR);
         }
@@ -666,6 +667,11 @@ static void s_worker_execute_stage(void *a_arg)
         for (size_t i = 0; i < l_count_channels; i++)
             dap_stream_ch_new(l_tc->stream, (uint8_t)l_client->active_channels[i]);
 
+        // Install stream callbacks on the esocket BEFORE session_start sends data
+        // This ensures read/write/error/delete are handled when server responds
+        // CRITICAL: For datagram transports (UDP/DNS), the transport layer has already
+        // installed its own read_callback that handles decryption, Flow Control, etc.
+        // Overwriting it would break the transport's read path!
         if (l_tc->stream->esocket) {
             l_tc->stream->esocket->no_close = false;
             l_tc->stream->esocket->last_time_active = time(NULL);
@@ -681,11 +687,16 @@ static void s_worker_execute_stage(void *a_arg)
             l_tc->stream->esocket->callbacks.delete_callback = l_stream_cbs.delete_callback;
         }
 
-        // Session start
+        // Session start — pass a real callback so the transport can signal
+        // readiness asynchronously (WebSocket waits for 101 Switching Protocols).
+        // For HTTP the callback fires synchronously inside session_start.
         dap_net_trans_t *l_transport = l_tc->stream->trans;
         int l_start_ret = 0;
-        if (l_transport && l_transport->ops && l_transport->ops->session_start) {
-            l_start_ret = l_transport->ops->session_start(l_tc->stream, l_tc->stream_id, NULL);
+        bool l_has_session_start = (l_transport && l_transport->ops && l_transport->ops->session_start);
+
+        if (l_has_session_start) {
+            l_start_ret = l_transport->ops->session_start(l_tc->stream, l_tc->stream_id,
+                                                          s_stream_transport_connect_callback);
         }
         if (l_start_ret != 0) {
             log_it(L_ERROR, "Session start failed: %d", l_start_ret);
@@ -705,8 +716,10 @@ static void s_worker_execute_stage(void *a_arg)
             }
         }
 
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                              STAGE_STATUS_DONE, ERROR_NO_ERROR);
+        if (!l_has_session_start) {
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_DONE, ERROR_NO_ERROR);
+        }
     } break;
 
     case STAGE_STREAM_STREAMING: {

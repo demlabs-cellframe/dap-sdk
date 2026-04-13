@@ -643,7 +643,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
                 int l_actual_size = 0;
                 socklen_t l_optlen = sizeof(l_actual_size);
                 if (getsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_actual_size, &l_optlen) == 0) {
-                    log_it(L_INFO, "Set SO_RCVBUF for UDP listener %u: requested=%d, actual=%d",
+                    debug_if(s_debug_more, L_DEBUG, "Set SO_RCVBUF for UDP listener %u: requested=%d, actual=%d",
                            i, l_buffer_size, l_actual_size);
                 } else {
                     log_it(L_INFO, "Set SO_RCVBUF to %d bytes (64 MB) for UDP listener %u", l_buffer_size, i);
@@ -657,7 +657,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
                 int l_actual_size = 0;
                 socklen_t l_optlen = sizeof(l_actual_size);
                 if (getsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_actual_size, &l_optlen) == 0) {
-                    log_it(L_INFO, "Set SO_SNDBUF for UDP listener %u: requested=%d, actual=%d",
+                    debug_if(s_debug_more, L_DEBUG, "Set SO_SNDBUF for UDP listener %u: requested=%d, actual=%d",
                            i, l_buffer_size, l_actual_size);
                 } else {
                     log_it(L_INFO, "Set SO_SNDBUF to %d bytes (64 MB) for UDP listener %u", l_buffer_size, i);

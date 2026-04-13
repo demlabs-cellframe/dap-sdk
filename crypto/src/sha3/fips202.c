@@ -12,8 +12,15 @@
 *********************************************************************************************/
 
 #include <stdint.h>
+#include <string.h>
 #include <assert.h>
 #include "fips202.h"
+
+#if defined(__arm__) || defined(__ARM_ARCH)
+#define KECCAK_ALIGN __attribute__((aligned(8)))
+#else
+#define KECCAK_ALIGN
+#endif
 
 #define NROUNDS 24
 #define ROL(a, offset) ((a << offset) ^ (a >> (64-offset)))
@@ -398,7 +405,7 @@ void shake128_squeezeblocks(unsigned char *output, unsigned long long nblocks, u
 
 void shake128(unsigned char *output, unsigned long long outlen, const unsigned char *input,  unsigned long long inlen)
 {
-  uint64_t s[25] = {0};
+  uint64_t s[25] KECCAK_ALIGN = {0};
   unsigned char t[SHAKE128_RATE];
   unsigned long long nblocks = outlen/SHAKE128_RATE;
   size_t i;
@@ -452,9 +459,8 @@ void cshake128_simple_squeezeblocks(unsigned char *output, unsigned long long nb
 
 void cshake128_simple(unsigned char *output, unsigned long long outlen, uint16_t cstm, const unsigned char *in, unsigned long long inlen)
 {
-  uint64_t s[25];
-  for(int i = 0; i < 25; ++i)
-      s[i] = 0;
+  uint64_t s[25] KECCAK_ALIGN;
+  memset(s, 0, sizeof(s));
   unsigned char t[SHAKE128_RATE];
   unsigned int i;
 
@@ -489,7 +495,7 @@ void shake256_squeezeblocks(unsigned char *output, unsigned long long nblocks, u
 
 void shake256(unsigned char *output, unsigned long long outlen, const unsigned char *input,  unsigned long long inlen)
 {
-  uint64_t s[25] = {0};
+  uint64_t s[25] KECCAK_ALIGN = {0};
   unsigned char t[SHAKE256_RATE];
   unsigned long long nblocks = outlen/SHAKE256_RATE;
   size_t i;
@@ -543,7 +549,7 @@ void cshake256_simple_squeezeblocks(unsigned char *output, unsigned long long nb
 
 void cshake256_simple(unsigned char *output, unsigned long long outlen, uint16_t cstm, const unsigned char *in, unsigned long long inlen)
 {
-  uint64_t s[25] = {0};
+  uint64_t s[25] KECCAK_ALIGN = {0};
   unsigned char t[SHAKE256_RATE];
   unsigned int i;
 
@@ -563,7 +569,7 @@ void cshake256_simple(unsigned char *output, unsigned long long outlen, uint16_t
 
 void sha3_256(unsigned char *output, const unsigned char *input, unsigned int inputByteLen)
 {
-  uint64_t s[25] = {0};
+  uint64_t s[25] KECCAK_ALIGN = {0};
   unsigned char t[SHA3_256_RATE];
   int i;
 
@@ -575,7 +581,7 @@ void sha3_256(unsigned char *output, const unsigned char *input, unsigned int in
 
 void sha3_512(unsigned char *output, const unsigned char *input, unsigned int inputByteLen)
 {
-  uint64_t s[25] = {0};
+  uint64_t s[25] KECCAK_ALIGN = {0};
   unsigned char t[SHA3_512_RATE];
   uint32_t i;
 

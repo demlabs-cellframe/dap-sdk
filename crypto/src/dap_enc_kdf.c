@@ -17,7 +17,7 @@
 #define LOG_TAG "dap_enc_kdf"
 
 // SHAKE256 wrapper (from XKCP library)
-extern void shake256(unsigned char *output, size_t outlen, const unsigned char *input, size_t inlen);
+extern void shake256(unsigned char *output, unsigned long long outlen, const unsigned char *input, unsigned long long inlen);
 
 /**
  * @brief Extract shared secret from dap_enc_key_t (universal for all KEM types)

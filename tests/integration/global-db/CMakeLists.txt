@@ -3,6 +3,14 @@
 
 project(test_global_db)
 
+# Skip when no DB driver is configured
+if(NOT BUILD_WITH_GDB_DRIVER_MDBX
+   AND NOT BUILD_WITH_GDB_DRIVER_SQLITE
+   AND NOT BUILD_WITH_GDB_DRIVER_PGSQL)
+    message(STATUS "Skipping ${PROJECT_NAME}: no DB driver configured")
+    return()
+endif()
+
 # Include DAP Mock Framework
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework/mocks/DAPMockAutoWrap.cmake)
 # Include test helpers

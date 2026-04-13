@@ -52,7 +52,7 @@ static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
         debug_if(s_debug_more, L_DEBUG, "Context queue fd=%d: processed %zu items (eventfd_value=%"PRIu64")",
                  a_es->fd, l_processed, a_value);
     } else if (a_value > 0) {
-        log_it(L_WARNING, "Context queue fd=%d: EMPTY wakeup (eventfd_value=%"PRIu64", rb_size=%zu)",
+        debug_if(s_debug_more, L_INFO, "Context queue fd=%d: EMPTY wakeup (eventfd_value=%"PRIu64", rb_size=%zu)",
                a_es->fd, a_value,
                l_queue->ring_buffer ? dap_ring_buffer_size(l_queue->ring_buffer) : 0);
     }
