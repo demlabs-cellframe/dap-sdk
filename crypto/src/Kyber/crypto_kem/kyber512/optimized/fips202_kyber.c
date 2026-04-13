@@ -7,7 +7,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include "fips202_kyber.h"
+
+#if defined(__arm__) || defined(__ARM_ARCH)
+#define KECCAK_ALIGN __attribute__((aligned(8)))
+#else
+#define KECCAK_ALIGN
+#endif
 
 #define NROUNDS 24
 #define ROL(a, offset) ((a << offset) ^ (a >> (64-offset)))
@@ -496,7 +503,8 @@ void shake128(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
   unsigned int i;
   size_t nblocks = outlen/SHAKE128_RATE;
   uint8_t t[SHAKE128_RATE];
-  keccak_state state;
+  keccak_state state KECCAK_ALIGN;
+  memset(&state, 0, sizeof(state));
 
   shake128_absorb(&state, in, inlen);
   shake128_squeezeblocks(out, nblocks, &state);
@@ -526,7 +534,8 @@ void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
   unsigned int i;
   size_t nblocks = outlen/SHAKE256_RATE;
   uint8_t t[SHAKE256_RATE];
-  keccak_state state;
+  keccak_state state KECCAK_ALIGN;
+  memset(&state, 0, sizeof(state));
 
   shake256_absorb(&state, in, inlen);
   shake256_squeezeblocks(out, nblocks, &state);
@@ -553,8 +562,9 @@ void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen)
 void sha3_256(uint8_t h[32], const uint8_t *in, size_t inlen)
 {
   unsigned int i;
-  uint64_t s[25];
+  uint64_t s[25] KECCAK_ALIGN;
   uint8_t t[SHA3_256_RATE];
+  memset(s, 0, sizeof(s));
 
   keccak_absorb(s, SHA3_256_RATE, in, inlen, 0x06);
   keccak_squeezeblocks(t, 1, s, SHA3_256_RATE);
@@ -575,8 +585,9 @@ void sha3_256(uint8_t h[32], const uint8_t *in, size_t inlen)
 void sha3_512(uint8_t *h, const uint8_t *in, size_t inlen)
 {
   unsigned int i;
-  uint64_t s[25];
+  uint64_t s[25] KECCAK_ALIGN;
   uint8_t t[SHA3_512_RATE];
+  memset(s, 0, sizeof(s));
 
   keccak_absorb(s, SHA3_512_RATE, in, inlen, 0x06);
   keccak_squeezeblocks(t, 1, s, SHA3_512_RATE);

@@ -503,11 +503,8 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
  * 
  * Note: For DAP_MOCK_DECLARE, wrappers are auto-generated - no need to write this manually!
  */
-// Both platforms define __wrap_func_name as the mock implementation.
 // On Linux: GNU ld --wrap=func redirects calls and provides __real_ automatically.
-// On macOS: DYLD_INSERT interpose dylib redirects calls and provides __real_ via dlsym.
-// __real_ is available on both platforms when mocking is properly configured.
-#ifdef __APPLE__
+// On macOS: DYLD interpose dylib redirects func->__wrap_func and provides __real_ via dlsym.
 #define DAP_MOCK_WRAPPER_DEFAULT(return_type, func_name, params_with_types, params_names) \
     extern return_type __real_##func_name params_with_types; \
     return_type __wrap_##func_name params_with_types { \
@@ -519,24 +516,7 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
         } \
         return __real_##func_name params_names; \
     }
-#else
-#define DAP_MOCK_WRAPPER_DEFAULT(return_type, func_name, params_with_types, params_names) \
-    extern return_type __real_##func_name params_with_types; \
-    return_type __wrap_##func_name params_with_types { \
-        if (g_mock_##func_name && g_mock_##func_name->enabled) { \
-            dap_mock_execute_delay(g_mock_##func_name); \
-            return_type l_result = (return_type)(intptr_t)g_mock_##func_name->return_value.ptr; \
-            dap_mock_record_call(g_mock_##func_name, NULL, 0, (void*)(intptr_t)l_result); \
-            return l_result; \
-        } \
-        return __real_##func_name params_names; \
-    }
-#endif
 
-/**
- * Default wrapper for void functions - UNIVERSAL
- */
-#ifdef __APPLE__
 #define DAP_MOCK_WRAPPER_DEFAULT_VOID(func_name, params_with_types, params_names) \
     extern void __real_##func_name params_with_types; \
     void __wrap_##func_name params_with_types { \
@@ -547,18 +527,6 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
         } \
         __real_##func_name params_names; \
     }
-#else
-#define DAP_MOCK_WRAPPER_DEFAULT_VOID(func_name, params_with_types, params_names) \
-    extern void __real_##func_name params_with_types; \
-    void __wrap_##func_name params_with_types { \
-        if (g_mock_##func_name && g_mock_##func_name->enabled) { \
-            dap_mock_execute_delay(g_mock_##func_name); \
-            dap_mock_record_call(g_mock_##func_name, NULL, 0, NULL); \
-            return; \
-        } \
-        __real_##func_name params_names; \
-    }
-#endif
 
 /**
  * Passthrough wrapper for integration tests - UNIVERSAL, works with ANY types!
@@ -570,11 +538,12 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
  * - call_original_after=true: records call, then calls __real_ (for parameter modification)
  * - both false: pure mock without calling original
  * 
- * ⚠️ CRITICAL: Does NOT use void *l_args[], so it works with size_t, int, bool, etc!
- * 
  * Usage:
  *   DAP_MOCK_DECLARE(my_func, DAP_MOCK_CONFIG_PASSTHROUGH);
  *   DAP_MOCK_WRAPPER_PASSTHROUGH(size_t, my_func, (void *a, size_t b), (a, b))
+ *
+ * On Linux/GNU ld: uses --wrap mechanism (__wrap_func / __real_func)
+ * On macOS: uses -flat_namespace symbol override (func / dlsym for original)
  */
 #define DAP_MOCK_WRAPPER_PASSTHROUGH(return_type, func_name, params_with_types, params_names) \
     extern return_type __real_##func_name params_with_types; \
@@ -583,62 +552,44 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
         bool l_called_original = false; \
         \
         if (g_mock_##func_name) { \
-            /* Call original BEFORE mock logic if configured */ \
             if (g_mock_##func_name->call_original_before) { \
                 l_result = __real_##func_name params_names; \
                 l_called_original = true; \
             } \
-            \
-            /* Execute mock logic (delay + record) */ \
             if (g_mock_##func_name->enabled) { \
                 dap_mock_execute_delay(g_mock_##func_name); \
                 dap_mock_record_call(g_mock_##func_name, NULL, 0, (void*)(intptr_t)l_result); \
             } \
-            \
-            /* Call original AFTER mock logic if configured */ \
             if (g_mock_##func_name->call_original_after) { \
                 l_result = __real_##func_name params_names; \
                 l_called_original = true; \
             } \
         } \
-        \
-        /* Fallback: if no mock or original not called yet, call it now */ \
         if (!l_called_original) { \
             l_result = __real_##func_name params_names; \
         } \
-        \
         return l_result; \
     }
 
-/**
- * Passthrough wrapper for void functions - UNIVERSAL
- */
 #define DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(func_name, params_with_types, params_names) \
     extern void __real_##func_name params_with_types; \
     void __wrap_##func_name params_with_types { \
         bool l_called_original = false; \
         \
         if (g_mock_##func_name) { \
-            /* Call original BEFORE mock logic if configured */ \
             if (g_mock_##func_name->call_original_before) { \
                 __real_##func_name params_names; \
                 l_called_original = true; \
             } \
-            \
-            /* Execute mock logic (delay + record) */ \
             if (g_mock_##func_name->enabled) { \
                 dap_mock_execute_delay(g_mock_##func_name); \
                 dap_mock_record_call(g_mock_##func_name, NULL, 0, NULL); \
             } \
-            \
-            /* Call original AFTER mock logic if configured */ \
             if (g_mock_##func_name->call_original_after) { \
                 __real_##func_name params_names; \
                 l_called_original = true; \
             } \
         } \
-        \
-        /* Fallback: if no mock or original not called yet, call it now */ \
         if (!l_called_original) { \
             __real_##func_name params_names; \
         } \

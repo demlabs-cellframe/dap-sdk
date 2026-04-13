@@ -93,6 +93,17 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 static bool s_debug_more = false;
 
+#ifdef DAP_OS_ANDROID
+static dap_events_socket_pre_connect_callback_t s_pre_connect_cb = NULL;
+static void *s_pre_connect_ctx = NULL;
+
+void dap_events_socket_set_pre_connect_callback(dap_events_socket_pre_connect_callback_t a_cb, void *a_ctx)
+{
+    s_pre_connect_cb = a_cb;
+    s_pre_connect_ctx = a_ctx;
+}
+#endif
+
 // =============================================================================
 // DATAGRAM PACKET QUEUE (for non-blocking sendto on UDP, SCTP, etc.)
 // =============================================================================
@@ -675,6 +686,10 @@ dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type,
         return NULL;
     }
 
+    // Set correct descriptor type based on socket type
+    if (a_type == SOCK_DGRAM)
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+
     return l_es;
 }
 
@@ -735,6 +750,10 @@ int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
         return -1;
     }
     
+#ifdef DAP_OS_ANDROID
+    if(s_pre_connect_cb)
+        s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
+#endif
     // Initiate non-blocking connection
     int l_err = connect(a_es->socket, (struct sockaddr *) &a_es->addr_storage, sizeof(struct sockaddr_in));
     if (l_err == 0) {
@@ -1609,7 +1628,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS ){
                 if (l_errno == EBADF){
-                    log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
+                    log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %zu:%zu"
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
                     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
@@ -1656,7 +1675,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS && l_errno != ENOENT ){
                 if (l_errno == EBADF){
-                    log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
+                    log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %zu:%zu"
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
                     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
@@ -2023,9 +2042,6 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     
     memcpy(l_write_pos, a_data, a_data_size);
     s_events_socket_finalize_write(a_es, a_data_size);
-    if (a_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT && a_data_size > 0)
-        log_it(L_WARNING, "TCP_WRITE_UNSAFE: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x" wrote=%zu total_buf=%zu ctx=%p flags=0x%x",
-               a_es->fd, a_es->uuid, a_data_size, a_es->buf_out_size, (void*)a_es->context, a_es->flags);
     return a_data_size;
 }
 
@@ -2066,7 +2082,7 @@ size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es,
     // Only for datagram sockets
     if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
         a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT) {
-        log_it(L_ERROR, "sendto_unsafe called on non-datagram socket (type=%d, fd=%d, uuid=0x%016lx, flags=0x%08x)", 
+        log_it(L_ERROR, "sendto_unsafe called on non-datagram socket (type=%d, fd=%d, uuid=0x%016"DAP_UINT64_FORMAT_x", flags=0x%08x)", 
                a_es->type, a_es->fd, a_es->uuid, a_es->flags);
         return 0;
     }

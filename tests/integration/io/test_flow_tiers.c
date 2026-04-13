@@ -796,6 +796,9 @@ static void test_ebpf_sticky_sessions(void)
 
 int main(void)
 {
+    dap_common_init("test_flow_tiers", NULL);
+    dap_log_level_set(L_NOTICE);
+
     dap_test_msg("=== IO Flow Tiers Integration Test (Full DAP SDK) ===");
     dap_test_msg("Testing dap_io_flow_server with dap_events_socket clients");
     dap_test_msg("Each packet tracked individually to detect routing violations");

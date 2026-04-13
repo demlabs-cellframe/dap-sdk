@@ -78,26 +78,37 @@ function(dap_test_link_libraries TARGET_NAME)
         message(FATAL_ERROR "dap_test_link_libraries: No modules found in DAP_INTERNAL_MODULES")
     endif()
     
-    # Link all SDK modules as STATIC libraries ONLY
-    # This is REQUIRED for --wrap to work correctly with mocking
-    # Object files added via target_sources or target_link_libraries do NOT work with --wrap
-    # Use ${MODULE}_static which are created from object libraries in main CMakeLists.txt
+    # On macOS, auto-register constructors from static libraries are stripped by ld64
+    # unless we force-load the libraries that contain them.
+    # DAP_MODULE_REGISTERED_TARGETS is populated by dap_register_module() in DapModule.cmake.
+    set(_FORCE_LOAD_TARGETS "")
+    if(APPLE AND DAP_MODULE_REGISTERED_TARGETS)
+        foreach(_MOD_TARGET ${DAP_MODULE_REGISTERED_TARGETS})
+            if(TARGET ${_MOD_TARGET}_static)
+                list(APPEND _FORCE_LOAD_TARGETS "${_MOD_TARGET}_static")
+            elseif(TARGET ${_MOD_TARGET})
+                list(APPEND _FORCE_LOAD_TARGETS "${_MOD_TARGET}")
+            endif()
+        endforeach()
+    endif()
+
     foreach(MODULE ${SDK_MODULES})
-        # ONLY use static version - fail if it doesn't exist
         if(TARGET ${MODULE}_static)
-            target_link_libraries(${TARGET_NAME} PRIVATE ${MODULE}_static)
+            list(FIND _FORCE_LOAD_TARGETS "${MODULE}_static" _FL_IDX)
+            if(APPLE AND _FL_IDX GREATER -1)
+                target_link_options(${TARGET_NAME} PRIVATE
+                    "SHELL:-Wl,-force_load $<TARGET_FILE:${MODULE}_static>")
+            else()
+                target_link_libraries(${TARGET_NAME} PRIVATE ${MODULE}_static)
+            endif()
         else()
             message(WARNING "dap_test_link_libraries: Static library ${MODULE}_static not found, skipping ${MODULE}")
         endif()
     endforeach()
-    
-    # Link test framework if it exists
+
     if(TARGET dap_test)
         target_link_libraries(${TARGET_NAME} PRIVATE dap_test)
     endif()
-    
-    # Note: External libraries (sqlite3, json-c, ssl, etc.) are linked transitively
-    # through INTERFACE_LINK_LIBRARIES of static library modules
 endfunction()
 
 # =========================================

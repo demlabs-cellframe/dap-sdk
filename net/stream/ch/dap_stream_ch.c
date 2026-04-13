@@ -270,7 +270,7 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
  */
 void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
 {
-    debug_if(s_debug_more, L_DEBUG, "Channel '%c' DELETE: %p (stream=%p, notifiers=%zu)",
+    debug_if(s_debug_more, L_DEBUG, "Channel '%c' DELETE: %p (stream=%p, notifiers=%"PRIu64")",
            a_ch->proc ? a_ch->proc->id : '?', (void *)a_ch, (void *)a_ch->stream,
            dap_list_length(a_ch->packet_in_notifiers));
     

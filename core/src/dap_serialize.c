@@ -25,6 +25,7 @@ This file is part of DAP SDK the open source project
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include <string.h>
+#include <inttypes.h>
 #include <arpa/inet.h>  // for htonl, ntohl
 
 #define LOG_TAG "dap_serialize"
@@ -44,12 +45,12 @@ const dap_serialize_arg_t* dap_serialize_get_arg_by_index(const dap_serialize_si
 uint64_t dap_serialize_get_arg_uint_by_index(const dap_serialize_size_params_t *a_params, size_t a_index, uint64_t a_default) {
     const dap_serialize_arg_t *arg = dap_serialize_get_arg_by_index(a_params, a_index);
     if (!arg || arg->type != 0) { // type 0 = uint
-        debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, arg=%p, returning default=%lu", 
+        debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, arg=%p, returning default=%" PRIu64 "", 
                  a_index, arg, a_default);
         return a_default;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, value=%lu", 
+    debug_if(s_debug_more, L_DEBUG, "dap_serialize_get_arg_uint_by_index: index=%zu, value=%" PRIu64 "", 
              a_index, arg->value.uint_value);
     return arg->value.uint_value;
 }

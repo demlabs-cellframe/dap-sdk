@@ -9,6 +9,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 #include <time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -295,7 +296,7 @@ static ssize_t s_udp_server_trans_write(dap_stream_t *a_stream, const void *a_da
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Server trans write: sent %zu bytes for session 0x%lx",
+             "Server trans write: sent %zu bytes for session 0x%" PRIx64,
              a_size, l_session->session_id);
     
     return (ssize_t)a_size;
@@ -762,7 +763,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
             // Initialize session_id
             randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
             debug_if(s_debug_more, L_DEBUG,
-                     "HANDSHAKE: generated session_id=0x%lx for session %p",
+                     "HANDSHAKE: generated session_id=0x%" PRIx64 " for session %p",
                      l_session->session_id, l_session);
             
             // Process deobfuscated handshake
@@ -776,7 +777,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         // Continue to try decryption with session key
     } else {
         debug_if(s_debug_more, L_DEBUG,
-                 "SERVER: Packet size %zu not in obfuscated range OR session already established (session_id=0x%lx)",
+                 "SERVER: Packet size %zu not in obfuscated range OR session already established (session_id=0x%" PRIx64 ")",
                  a_size, l_session->session_id);
     }
     
@@ -1153,7 +1154,7 @@ static ssize_t s_stream_udp_stream_packet_send_cb(dap_io_flow_t *a_flow, void *a
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Sent stream packet: %zu bytes for session 0x%lx",
+             "Sent stream packet: %zu bytes for session 0x%" PRIx64,
              a_packet_size, l_session->session_id);
     
     return (ssize_t)a_packet_size;
@@ -1186,7 +1187,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
                  inet_ntoa(l_sin->sin_addr), ntohs(l_sin->sin_port));
     }
     
-    debug_if(s_debug_more,L_DEBUG, "s_send_udp_packet: type=%u, size=%zu, session=0x%lx, dest=%s, flow=%p",
+    debug_if(s_debug_more,L_DEBUG, "s_send_udp_packet: type=%u, size=%zu, session=0x%" PRIx64 ", dest=%s, flow=%p",
            a_type, a_payload_size, a_session->session_id, l_dest_addr, (void*)&a_session->base);
     
     // Get sequence number from UDP flow
@@ -1261,7 +1262,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         }
         
         debug_if(s_debug_more, L_DEBUG,
-                 "Payload sent via FC: type=%u, seq=%u, session=0x%lx",
+                 "Payload sent via FC: type=%u, seq=%u, session=0x%" PRIx64,
                  a_type, l_seq_num, a_session->session_id);
         return 0;
     }
@@ -1343,7 +1344,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Encrypted packet sent: type=%u, seq=%u, session=0x%lx, encrypted_size=%zu",
+             "Encrypted packet sent: type=%u, seq=%u, session=0x%" PRIx64 ", encrypted_size=%zu",
              a_type, l_seq_num, a_session->session_id, l_encrypted_size);
     
     return 0;
@@ -1442,7 +1443,7 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     
     // Validate session_id
     if (a_session->session_id != 0 && a_session->session_id != l_session_id) {
-        log_it(L_ERROR, "Session ID mismatch: packet=0x%lx, session=0x%lx",
+        log_it(L_ERROR, "Session ID mismatch: packet=0x%" PRIx64 ", session=0x%" PRIx64,
                l_session_id, a_session->session_id);
         DAP_DELETE(l_decrypted);
         return -8;
@@ -1460,7 +1461,7 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
         
         if (l_seq_diff <= 0 && l_last_seq != 0) {
             // seq_num is less than or equal to last seen seq_num (possible replay)
-            log_it(L_WARNING, "Replay attack detected: seq_num=%lu, last_seq=%lu (session=0x%lx)",
+            log_it(L_WARNING, "Replay attack detected: seq_num=%" PRIu64 ", last_seq=%" PRIu64 " (session=0x%" PRIx64 ")",
                    l_seq_num, l_last_seq, l_session_id);
             DAP_DELETE(l_decrypted);
             return -9;
@@ -1471,7 +1472,7 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Decrypted packet: type=%u, seq=%lu, session=0x%lx",
+             "Decrypted packet: type=%u, seq=%" PRIu64 ", session=0x%" PRIx64,
              l_type, l_seq_num, l_session_id);
     
     // Extract payload (after full header)
@@ -1651,7 +1652,7 @@ static void s_kem_reactor_callback(void *a_arg)
     l_session->encryption_key = l_result->handshake_key;
     
     debug_if(s_debug_more, L_DEBUG,
-             "[KEM Reactor] Stored encryption_key=%p for session %p (session_id=0x%lx)",
+             "[KEM Reactor] Stored encryption_key=%p for session %p (session_id=0x%" PRIx64 ")",
              l_session->encryption_key, l_session, l_session->session_id);
     
     // Build handshake response: Bob's ciphertext + session_id
@@ -1667,7 +1668,7 @@ static void s_kem_reactor_callback(void *a_arg)
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "[KEM Reactor] HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%lx)",
+             "[KEM Reactor] HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%" PRIx64 ")",
              l_result->bob_ciphertext_size, l_result->session_id);
     
     // Send handshake response (NOW SAFE - in reactor thread!)
@@ -1899,7 +1900,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "HANDSHAKE: KEM task submitted to thread pool for session %p (session_id=0x%lx)",
+             "HANDSHAKE: KEM task submitted to thread pool for session %p (session_id=0x%" PRIx64 ")",
              a_session, a_session->session_id);
     
     // Return immediately - response will be sent from callback
@@ -1973,7 +1974,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     // Derive session key from handshake key using KDF ratcheting
     uint64_t l_kdf_counter = 1;  // Counter = 1 for first session
     
-    debug_if(s_debug_more, L_DEBUG, "SERVER: Deriving session key with KDF counter=%lu", l_kdf_counter);
+    debug_if(s_debug_more, L_DEBUG, "SERVER: Deriving session key with KDF counter=%" PRIu64, l_kdf_counter);
     
     dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
         a_session->encryption_key,
@@ -2003,7 +2004,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
                a_session->stream, a_session->stream ? a_session->stream->session : NULL);
     }
     
-    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
+    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE completed: session_id=0x%" PRIx64, a_session->session_id);
     
     // CRITICAL: Send SESSION_CREATE response using HANDSHAKE key (still in a_session->encryption_key)!
     // Client will derive session key after receiving this counter, so response must use handshake key
@@ -2073,7 +2074,7 @@ static int s_handle_keepalive(stream_udp_session_t *a_session)
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Processing KEEPALIVE for session 0x%lx", a_session->session_id);
+    debug_if(s_debug_more, L_DEBUG, "Processing KEEPALIVE for session 0x%" PRIx64, a_session->session_id);
     
     // Update session activity time (done automatically by UDP flow layer)
     
@@ -2138,7 +2139,7 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
     UNUSED(a_arg);
     
     debug_if(s_debug_more, L_DEBUG,
-             "FC prepare_cb ENTRY: a_metadata=%p, seq=%lu, ack=%lu, ts=%u, keepalive=%d, retrans=%d",
+             "FC prepare_cb ENTRY: a_metadata=%p, seq=%" PRIu64 ", ack=%" PRIu64 ", ts=%u, keepalive=%d, retrans=%d",
              a_metadata, a_metadata ? a_metadata->seq_num : 0,
              a_metadata ? a_metadata->ack_seq : 0,
              a_metadata ? a_metadata->timestamp_ms : 0,
@@ -2242,7 +2243,7 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
     *a_packet_size_out = l_encrypted_size;
     
     debug_if(s_debug_more, L_DEBUG, 
-             "Prepared ENCRYPTED FC packet: seq=%lu, ack=%lu, type=%u, encrypted_size=%zu",
+             "Prepared ENCRYPTED FC packet: seq=%" PRIu64 ", ack=%" PRIu64 ", type=%u, encrypted_size=%zu",
              l_full_hdr.seq_num, l_full_hdr.ack_seq, l_full_hdr.type, l_encrypted_size);
     
     return 0;
@@ -2354,7 +2355,7 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
     // NOTE: l_decrypted will be freed by FC after delivery via metadata->private_ctx
     
     debug_if(s_debug_more, L_DEBUG,
-             "Parsed DECRYPTED FC packet: seq=%lu, ack=%lu, type=%u, session=0x%lx, payload_size=%zu",
+             "Parsed DECRYPTED FC packet: seq=%" PRIu64 ", ack=%" PRIu64 ", type=%u, session=0x%" PRIx64 ", payload_size=%zu",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type, l_hdr.session_id, *a_payload_size_out);
     
     return 0;
@@ -2448,7 +2449,7 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
     uint8_t l_type = atomic_load(&l_session->last_recv_type);
     
     debug_if(s_debug_more, L_DEBUG,
-             "Delivering payload: type=%u, session=0x%lx, size=%zu",
+             "Delivering payload: type=%u, session=0x%" PRIx64 ", size=%zu",
              l_type, l_session->session_id, a_payload_size);
     
     // Dispatch to protocol handlers (payload is PURE DATA, no headers!)
@@ -2495,7 +2496,7 @@ static void s_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void *a_arg)
         return;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Flow Control keep-alive timeout for session 0x%lx",
+    debug_if(s_debug_more, L_DEBUG, "Flow Control keep-alive timeout for session 0x%" PRIx64,
              l_session->session_id);
     
     // For DAP Stream: do nothing, stream handles its own keep-alive
