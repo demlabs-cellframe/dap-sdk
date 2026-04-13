@@ -53,11 +53,6 @@ static dap_client_fsm_t s_mock_client_fsm = {0};
 static dap_net_trans_ctx_t s_mock_net_trans_ctx = {0};
 static dap_client_trans_ctx_t s_mock_client_trans_ctx = {0};
 
-dap_server_t* dap_trans_test_get_mock_server(void)
-{
-    return &s_mock_server;
-}
-
 dap_http_server_t* dap_trans_test_get_mock_http_server(void)
 {
     return &s_mock_http_server;
@@ -66,11 +61,6 @@ dap_http_server_t* dap_trans_test_get_mock_http_server(void)
 dap_http_client_t* dap_trans_test_get_mock_http_client(void)
 {
     return &s_mock_http_client;
-}
-
-dap_events_socket_t* dap_trans_test_get_mock_esocket(void)
-{
-    return &s_mock_esocket;
 }
 
 dap_client_t* dap_trans_test_get_mock_client(void)
