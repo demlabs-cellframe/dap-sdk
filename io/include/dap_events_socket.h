@@ -413,6 +413,11 @@ dap_events_socket_t * dap_events_socket_create_platform(int a_domain, int a_type
                                                           dap_events_socket_callbacks_t *a_callbacks);
 int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
 int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code);
+
+#ifdef DAP_OS_ANDROID
+typedef void (*dap_events_socket_pre_connect_callback_t)(int a_fd, void *a_ctx);
+void dap_events_socket_set_pre_connect_callback(dap_events_socket_pre_connect_callback_t a_cb, void *a_ctx);
+#endif
 dap_events_socket_t * dap_events_socket_create_type_event_unsafe(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
 dap_events_socket_t * dap_events_socket_create_type_event_mt(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
 void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket);

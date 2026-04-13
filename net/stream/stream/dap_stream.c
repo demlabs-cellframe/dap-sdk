@@ -615,34 +615,6 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         l_ret->esocket->callbacks.error_callback = s_esocket_callback_error;
         l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
         l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
-        {
-            int l_pending = 0, l_sockerr = 0;
-            socklen_t l_sockerr_len = sizeof(l_sockerr);
-#ifdef DAP_OS_LINUX
-            ioctl(l_ret->esocket->fd, FIONREAD, &l_pending);
-#endif
-            getsockopt(l_ret->esocket->fd, SOL_SOCKET, SO_ERROR, &l_sockerr, &l_sockerr_len);
-            log_it(L_WARNING, "STREAM_TAKEOVER_COMPLETE: esocket=%p fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
-                   " flags=0x%x READY_TO_READ=%d context=%p ev_events=0x%x read_cb=%p"
-                   " pending_in=%d so_error=%d epoll_fd=%"DAP_FORMAT_HANDLE" ev_base=0x%x",
-                   (void*)l_ret->esocket, l_ret->esocket->fd, l_ret->esocket->uuid,
-                   l_ret->esocket->flags, !!(l_ret->esocket->flags & DAP_SOCK_READY_TO_READ),
-                   (void*)l_ret->esocket->context,
-#ifdef DAP_EVENTS_CAPS_EPOLL
-                   l_ret->esocket->ev.events,
-#else
-                   0,
-#endif
-                   (void*)l_ret->esocket->callbacks.read_callback,
-                   l_pending, l_sockerr,
-#ifdef DAP_EVENTS_CAPS_EPOLL
-                   l_ret->esocket->context ? l_ret->esocket->context->epoll_fd : -1,
-                   l_ret->esocket->ev_base_flags
-#else
-                   -1, 0
-#endif
-                   );
-        }
     }
     debug_if(s_debug, L_DEBUG, "s_stream_new: callbacks set");
     if (a_addr && !dap_stream_node_addr_is_blank(a_addr)) {
@@ -766,7 +738,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         return;
     }
     if (a_stream->is_client_to_uplink)
-        log_it(L_WARNING, "P2P stream DELETE (client): stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" keepalive=%s",
+        debug_if(s_debug_more, L_DEBUG, "P2P stream DELETE (client): stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" keepalive=%s",
                a_stream, (void*)a_stream->esocket,
                a_stream->esocket ? a_stream->esocket->socket : -1,
                a_stream->keepalive_timer ? "active" : "none");
@@ -775,9 +747,12 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
                a_stream, (void*)a_stream->esocket,
                a_stream->esocket ? a_stream->esocket->socket : -1);
     if (a_stream->keepalive_timer) {
-        DAP_DEL_Z(a_stream->keepalive_timer->callback_arg);
-        dap_timerfd_delete_unsafe(a_stream->keepalive_timer);
+        dap_timerfd_t *l_timer = a_stream->keepalive_timer;
         a_stream->keepalive_timer = NULL;
+        void *l_arg = l_timer->callback_arg;
+        l_timer->callback_arg = NULL; // neutralize in-flight callback
+        dap_timerfd_delete_mt(l_timer->worker, l_timer->esocket_uuid);
+        DAP_DELETE(l_arg);
     }
     s_stream_delete_from_list(a_stream);
     // a_stream->esocket_uuid = 0;
@@ -1062,9 +1037,14 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
     assert(l_stream);
     s_stream_delete_from_list(l_stream);
-    DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
-    dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
-    l_stream->keepalive_timer = NULL;
+    if (l_stream->keepalive_timer) {
+        dap_timerfd_t *l_timer = l_stream->keepalive_timer;
+        l_stream->keepalive_timer = NULL;
+        void *l_arg = l_timer->callback_arg;
+        l_timer->callback_arg = NULL;
+        dap_timerfd_delete_unsafe(l_timer);
+        DAP_DELETE(l_arg);
+    }
 }
 
 /**
@@ -1201,16 +1181,16 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
         
         if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
-            log_it(L_INFO, "proc_read_ext: SIG FOUND type=0x%02x size=%u at offset=%zu",
+            debug_if(s_debug_more, L_DEBUG, "proc_read_ext: SIG FOUND type=0x%02x size=%u at offset=%zu",
                    l_pkt->hdr.type, l_pkt->hdr.size, (size_t)(l_pos - (byte_t*)a_data));
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
-                log_it(L_INFO, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
+                debug_if(s_debug_more, L_DEBUG, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
             } else {
-                log_it(L_INFO, "proc_read_ext: incomplete packet need=%zu have=%zu",
+                debug_if(s_debug_more, L_DEBUG, "proc_read_ext: incomplete packet need=%zu have=%zu",
                        l_shift, (size_t)(l_end - l_pos));
                 break;
             }
@@ -1364,7 +1344,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             size_t l_duplicates = 0;
             for(size_t j=0;j<a_stream->channel_count;j++){
                 if(a_stream->channel[j]->proc && a_stream->channel[j]->proc->id == l_ch_pkt->hdr.id) {
-                    debug_if(s_dump_packet_headers, L_DEBUG, "s_stream_proc_pkt_in: channel '%c' at index %zu: %p (notifiers=%zu)",
+                    debug_if(s_dump_packet_headers, L_DEBUG, "s_stream_proc_pkt_in: channel '%c' at index %zu: %p (notifiers=%"PRIu64")",
                            (char)l_ch_pkt->hdr.id, j, a_stream->channel[j], 
                            dap_list_length(a_stream->channel[j]->packet_in_notifiers));
                     l_duplicates++;
@@ -1566,8 +1546,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         dap_stream_send_unsafe(l_stream, &l_pkt, sizeof(l_pkt));
         return true;
     }else{
-        log_it(L_WARNING, "Keepalive %s: esocket uuid 0x%016"DAP_UINT64_FORMAT_x" NOT FOUND on worker #%u — timer stopped",
-               a_server_side ? "srv" : "cli", *l_es_uuid, l_worker->id);
+        debug_if(s_debug_more, L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
         DAP_DELETE(l_es_uuid);
         return false;
     }

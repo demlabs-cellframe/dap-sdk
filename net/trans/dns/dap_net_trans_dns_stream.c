@@ -86,6 +86,7 @@ static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static void s_dns_close(dap_stream_t *a_stream);
 static uint32_t s_dns_get_capabilities(dap_net_trans_t *a_trans);
+static size_t s_dns_get_max_packet_size(dap_net_trans_t *a_trans);
 static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
                                const dap_net_stage_prepare_params_t *a_params,
                                dap_net_stage_prepare_result_t *a_result);
@@ -106,7 +107,8 @@ static const dap_net_trans_ops_t s_dns_ops = {
     .close = s_dns_close,
     .get_capabilities = s_dns_get_capabilities,
     .register_server_handlers = NULL,
-    .stage_prepare = s_dns_stage_prepare
+    .stage_prepare = s_dns_stage_prepare,
+    .get_max_packet_size = s_dns_get_max_packet_size
 };
 
 // Helper functions
@@ -573,32 +575,68 @@ static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
  * @note Uses UDP-like approach: writes directly to esocket
  *       Full DNS query generation with encoding can be added later
  */
+typedef struct dns_client_sendto_args {
+    dap_events_socket_t *esocket;
+    void *data;
+    size_t size;
+    struct sockaddr_storage addr;
+    socklen_t addr_len;
+} dns_client_sendto_args_t;
+
+static void s_dns_client_sendto_callback(void *a_arg)
+{
+    dns_client_sendto_args_t *l_args = (dns_client_sendto_args_t *)a_arg;
+    if(l_args->esocket)
+        dap_events_socket_sendto_unsafe(l_args->esocket,
+            l_args->data, l_args->size,
+            &l_args->addr, l_args->addr_len);
+    DAP_DELETE(l_args->data);
+    DAP_DELETE(l_args);
+}
+
+/**
+ * @brief Write data to DNS tunnel
+ * @note Worker-aware: if called from a different worker thread,
+ *       marshals the sendto onto the esocket's owner worker via callback.
+ */
 static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
 {
-    if (!a_stream || !a_data || a_size == 0) {
+    if(!a_stream || !a_data || a_size == 0) {
         log_it(L_ERROR, "Invalid arguments for DNS write");
         return -1;
     }
 
-    if (!a_stream->esocket) {
-        log_it(L_ERROR, "Stream has no esocket");
-        return -1;
-    }
-
     dap_events_socket_t *l_es = a_stream->esocket;
-    if (!l_es) {
+    if(!l_es) {
         log_it(L_ERROR, "DNS write: no esocket");
         return -1;
     }
-    
-    size_t l_sent = dap_events_socket_sendto_unsafe(l_es, a_data, a_size,
-                                                    &l_es->addr_storage, l_es->addr_size);
 
-    if (l_sent != a_size) {
-        log_it(L_WARNING, "DNS write incomplete: %zu of %zu bytes (flags=0x%x)", l_sent, a_size, l_es->flags);
+    dap_worker_t *l_current = dap_worker_get_current();
+    dap_worker_t *l_target = l_es->worker;
+
+    if(l_current == l_target) {
+        size_t l_sent = dap_events_socket_sendto_unsafe(l_es, a_data, a_size,
+                                                        &l_es->addr_storage, l_es->addr_size);
+        if(l_sent != a_size)
+            log_it(L_WARNING, "DNS write incomplete: %zu of %zu bytes (flags=0x%x)", l_sent, a_size, l_es->flags);
+        return (ssize_t)l_sent;
     }
-    
-    return (ssize_t)l_sent;
+
+    dns_client_sendto_args_t *l_args = DAP_NEW_Z(dns_client_sendto_args_t);
+    if(!l_args)
+        return -1;
+    l_args->esocket = l_es;
+    l_args->data = DAP_DUP_SIZE(a_data, a_size);
+    if(!l_args->data) {
+        DAP_DELETE(l_args);
+        return -1;
+    }
+    l_args->size = a_size;
+    memcpy(&l_args->addr, &l_es->addr_storage, l_es->addr_size);
+    l_args->addr_len = l_es->addr_size;
+    dap_worker_exec_callback_on(l_target, s_dns_client_sendto_callback, l_args);
+    return (ssize_t)a_size;
 }
 
 /**
@@ -712,6 +750,15 @@ static uint32_t s_dns_get_capabilities(dap_net_trans_t *a_trans)
     return DAP_NET_TRANS_CAP_OBFUSCATION |
            DAP_NET_TRANS_CAP_LOW_LATENCY |
            DAP_NET_TRANS_CAP_BIDIRECTIONAL;
+}
+
+/**
+ * @brief Max packet size for DNS tunnel (UDP-based, same conservative limit as UDP transport)
+ */
+static size_t s_dns_get_max_packet_size(dap_net_trans_t *a_trans)
+{
+    UNUSED(a_trans);
+    return 1200;
 }
 
 static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)

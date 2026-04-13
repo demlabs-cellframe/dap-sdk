@@ -344,7 +344,7 @@ static void s_register_notifier_in_worker_callback(void *a_arg)
         return;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "s_register_notifier_in_worker_callback: found channel '%c' (%p), notifiers_before=%zu",
+    debug_if(s_debug_more, L_DEBUG, "s_register_notifier_in_worker_callback: found channel '%c' (%p), notifiers_before=%"PRIu64,
            l_args->channel_id, l_ch, dap_list_length(l_ch->packet_in_notifiers));
     
     // Register notifier directly on the channel (в worker потоке!)
@@ -353,7 +353,7 @@ static void s_register_notifier_in_worker_callback(void *a_arg)
     if (l_ret != 0) {
         log_it(L_ERROR, "s_register_notifier_in_worker_callback: test_stream_ch_add_notifier_direct failed with code %d", l_ret);
     } else {
-        debug_if(s_debug_more, L_DEBUG, "s_register_notifier_in_worker_callback: notifier registered, notifiers_after=%zu",
+        debug_if(s_debug_more, L_DEBUG, "s_register_notifier_in_worker_callback: notifier registered, notifiers_after=%"PRIu64,
                dap_list_length(l_ch->packet_in_notifiers));
     }
     

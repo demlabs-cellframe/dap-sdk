@@ -441,8 +441,8 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
         }
     }
     if (!l_server->es_listeners) {
-        log_it(L_INFO, "Server with no listeners created. "
-                       "You may add them later with dap_server_listen_addr_add()");
+        debug_if(s_debug_more, L_DEBUG, "Server with no listeners created. "
+                         "You may add them later with dap_server_listen_addr_add()");
     }
     l_server->ext_log = dap_config_get_item_bool_default(g_config, a_cfg_section, "debug-more", false);
     return l_server;

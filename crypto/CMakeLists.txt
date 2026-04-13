@@ -233,6 +233,33 @@ endif()
 # Include LibraryHelpers for object library creation
 include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/LibraryHelpers.cmake)
 
+# Xcode libtool fails when multiple source files share the same base name (sign.c).
+# Split sub-modules with conflicting names into separate STATIC libraries.
+if(CMAKE_GENERATOR MATCHES "Xcode")
+    file(GLOB _XCODE_SIG_TESLA_SRCS src/sig_tesla/*.c)
+    add_library(dap_crypto_sig_tesla STATIC ${_XCODE_SIG_TESLA_SRCS})
+    target_include_directories(dap_crypto_sig_tesla PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
+    set_property(TARGET dap_crypto_sig_tesla PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+    file(GLOB _XCODE_FALCON_SRCS src/falcon/*.c)
+    list(FILTER _XCODE_FALCON_SRCS EXCLUDE REGEX ".*test_falcon\\.c$")
+    list(FILTER _XCODE_FALCON_SRCS EXCLUDE REGEX ".*speed\\.c$")
+    add_library(dap_crypto_falcon STATIC ${_XCODE_FALCON_SRCS})
+    target_include_directories(dap_crypto_falcon PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
+    set_property(TARGET dap_crypto_falcon PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+    set(_XCODE_SPHINCS_SRCS ${SPHINCS_BASE_SRCS} ${SPHINCS_SRCS})
+    add_library(dap_crypto_sphincsplus STATIC ${_XCODE_SPHINCS_SRCS})
+    target_include_directories(dap_crypto_sphincsplus PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
+    set_property(TARGET dap_crypto_sphincsplus PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+    list(FILTER CRYPTO_SRCS EXCLUDE REGEX ".*/sig_tesla/.*")
+    list(FILTER CRYPTO_SRCS EXCLUDE REGEX ".*/falcon/.*")
+    foreach(_sf ${SPHINCS_BASE_SRCS} ${SPHINCS_SRCS})
+        list(REMOVE_ITEM CRYPTO_SRCS "${_sf}")
+    endforeach()
+endif()
+
 # Create OBJECT library instead of STATIC
 create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${CRYPTO_SRCS} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC})
 
@@ -295,6 +322,30 @@ endif()
 
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/ src/rand)
+
+# Link Xcode sub-libraries for split crypto sub-modules
+if(CMAKE_GENERATOR MATCHES "Xcode")
+    target_link_libraries(${PROJECT_NAME} PUBLIC
+        dap_crypto_sig_tesla dap_crypto_falcon dap_crypto_sphincsplus)
+    foreach(_sub dap_crypto_sig_tesla dap_crypto_falcon dap_crypto_sphincsplus)
+        get_target_property(_inc ${PROJECT_NAME} INCLUDE_DIRECTORIES)
+        if(_inc)
+            target_include_directories(${_sub} PRIVATE ${_inc})
+        endif()
+        if(TARGET BuildXKCP)
+            add_dependencies(${_sub} BuildXKCP)
+        endif()
+        add_dependencies(${_sub} dap_crypto_XKCP)
+        get_target_property(_xkcp_inc dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
+        if(_xkcp_inc)
+            target_include_directories(${_sub} PRIVATE ${_xkcp_inc})
+        endif()
+        get_target_property(_core_inc dap_core INTERFACE_INCLUDE_DIRECTORIES)
+        if(_core_inc)
+            target_include_directories(${_sub} PRIVATE ${_core_inc})
+        endif()
+    endforeach()
+endif()
 # Add XKCP include directories for KeccakHash.h
 get_target_property(XKCP_INCLUDE_DIR dap_crypto_XKCP INTERFACE_INCLUDE_DIRECTORIES)
 if(XKCP_INCLUDE_DIR)

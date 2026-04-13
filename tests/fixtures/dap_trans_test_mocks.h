@@ -130,8 +130,8 @@ dap_http_server_t* dap_trans_test_get_mock_http_server(void);
  * @return Pointer to static mock HTTP client
  */
 dap_http_client_t* dap_trans_test_get_mock_http_client(void);
-dap_events_socket_t* dap_trans_test_get_mock_esocket(void);
 dap_client_t* dap_trans_test_get_mock_client(void);
+dap_net_trans_ctx_t* dap_trans_test_get_mock_net_trans_ctx(void);
 
 #ifdef __cplusplus
 }

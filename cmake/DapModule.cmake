@@ -203,6 +203,13 @@ static void s_${MODULE_ID}_auto_register(void)
         # The generated file will inherit include directories from the target
         # since it's added via target_sources(), so no need to set COMPILE_FLAGS
         
+        # Track targets with auto-register constructors for macOS -force_load
+        set(EXISTING_TARGETS "${DAP_MODULE_REGISTERED_TARGETS}")
+        list(APPEND EXISTING_TARGETS "${CURRENT_TARGET}")
+        list(REMOVE_DUPLICATES EXISTING_TARGETS)
+        set(DAP_MODULE_REGISTERED_TARGETS "${EXISTING_TARGETS}" CACHE INTERNAL
+            "List of targets with dap_module auto-register constructors" FORCE)
+
         message(STATUS "[DapModule] Registered module '${DAP_MODULE_MODULE_NAME}' for target ${CURRENT_TARGET}")
     else()
         message(WARNING "[DapModule] Could not find target for module '${DAP_MODULE_MODULE_NAME}', file generated at ${AUTO_REGISTER_FILE}")

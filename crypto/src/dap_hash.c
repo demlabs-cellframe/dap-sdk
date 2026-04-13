@@ -107,16 +107,57 @@ int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inl
  */
 bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out )
 {
-    // Allow empty input (a_data_in_size == 0) - SHA3 can hash empty data
-    // For empty input, a_data_in can be NULL, but a_hash_out must be valid
     if (a_hash_out == NULL)
         return false;
-    
-    // For non-empty input, a_data_in must not be NULL
     if (a_data_in_size > 0 && a_data_in == NULL)
         return false;
 
-    // Handle empty input case in order with each other cases
+#if defined(DAP_OS_ANDROID) && defined(__arm__) && !defined(__aarch64__)
+    /* ARM32 XKCP (K1600-plain-64bits-lcua) performs 64-bit loads/stores via
+     * pointer casts requiring 8-byte alignment.  Stack-allocated dap_hash_fast_t
+     * or fields in DAP_ALIGN_PACKED structs may only be 4-byte aligned,
+     * causing SIGBUS.  Use heap-aligned bounce buffers when needed. */
+    bool l_out_misaligned = ((uintptr_t)a_hash_out & 7) != 0;
+    bool l_in_misaligned  = a_data_in_size > 0 && ((uintptr_t)a_data_in & 7) != 0;
+
+    if(l_out_misaligned || l_in_misaligned)
+    {
+        const unsigned char *l_in = (const unsigned char *)a_data_in;
+        unsigned char *l_in_buf = NULL;
+        if(l_in_misaligned)
+        {
+            l_in_buf = (unsigned char *)malloc(a_data_in_size);
+            if(!l_in_buf)
+                return false;
+            memcpy(l_in_buf, a_data_in, a_data_in_size);
+            l_in = l_in_buf;
+        }
+
+        dap_hash_fast_t *l_out = a_hash_out;
+        dap_hash_fast_t *l_out_buf = NULL;
+        if(l_out_misaligned)
+        {
+            l_out_buf = (dap_hash_fast_t *)malloc(sizeof(dap_hash_fast_t));
+            if(!l_out_buf)
+            {
+                free(l_in_buf);
+                return false;
+            }
+            l_out = l_out_buf;
+        }
+
+        SHA3_256((unsigned char *)l_out, l_in, a_data_in_size);
+
+        if(l_out_misaligned)
+        {
+            memcpy(a_hash_out, l_out_buf, sizeof(dap_hash_fast_t));
+            free(l_out_buf);
+        }
+        free(l_in_buf);
+        return true;
+    }
+#endif
+
     SHA3_256( (unsigned char *)a_hash_out, (const unsigned char *)a_data_in, a_data_in_size );
 
     return true;

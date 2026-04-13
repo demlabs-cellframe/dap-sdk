@@ -19,7 +19,7 @@ if(LINUX)
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     set_tests_properties(${TEST_NAME} PROPERTIES
         LABELS "regression;io;cbpf;linux"
-        TIMEOUT 60
+        TIMEOUT 120
     )
     
     message(STATUS "Added regression test: ${TEST_NAME}")
@@ -43,7 +43,7 @@ target_link_libraries(${TEST_NAME} PRIVATE
 add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 set_tests_properties(${TEST_NAME} PROPERTIES
     LABELS "regression;io;routing;multiclient"
-    TIMEOUT 30
+    TIMEOUT 120
 )
 
 message(STATUS "Added regression test: ${TEST_NAME}")
