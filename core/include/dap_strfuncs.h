@@ -105,7 +105,12 @@ char *_strndup(const char *str, unsigned long len);
 #endif
 
 
+#if defined(__APPLE__) && defined(__OBJC__)
+/* Apple Foundation defines unichar as unsigned short;
+ * avoid redefinition when compiling Obj-C/Obj-C++ */
+#else
 typedef uint32_t unichar;
+#endif
 typedef uint16_t unichar2;
 
 /**
