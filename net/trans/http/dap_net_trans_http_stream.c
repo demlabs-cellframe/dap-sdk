@@ -47,6 +47,7 @@
 #include "dap_net_trans_ctx.h"
 #include "dap_cert.h"
 #include "dap_worker.h"
+#include "dap_events.h"
 
 #define LOG_TAG "dap_stream_trans_http"
 
@@ -487,7 +488,7 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
 
     dap_worker_t *l_worker = a_stream->stream_worker
                              ? a_stream->stream_worker->worker
-                             : NULL;
+                             : dap_events_worker_get_auto();
     if (!l_worker) {
         log_it(L_ERROR, "HTTP connect: no worker available");
         return -1;

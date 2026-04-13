@@ -747,9 +747,12 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
                a_stream, (void*)a_stream->esocket,
                a_stream->esocket ? a_stream->esocket->socket : -1);
     if (a_stream->keepalive_timer) {
-        DAP_DEL_Z(a_stream->keepalive_timer->callback_arg);
-        dap_timerfd_delete_unsafe(a_stream->keepalive_timer);
+        dap_timerfd_t *l_timer = a_stream->keepalive_timer;
         a_stream->keepalive_timer = NULL;
+        void *l_arg = l_timer->callback_arg;
+        l_timer->callback_arg = NULL; // neutralize in-flight callback
+        dap_timerfd_delete_mt(l_timer->worker, l_timer->esocket_uuid);
+        DAP_DELETE(l_arg);
     }
     s_stream_delete_from_list(a_stream);
     // a_stream->esocket_uuid = 0;
@@ -1034,9 +1037,14 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
     assert(l_stream);
     s_stream_delete_from_list(l_stream);
-    DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
-    dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
-    l_stream->keepalive_timer = NULL;
+    if (l_stream->keepalive_timer) {
+        dap_timerfd_t *l_timer = l_stream->keepalive_timer;
+        l_stream->keepalive_timer = NULL;
+        void *l_arg = l_timer->callback_arg;
+        l_timer->callback_arg = NULL;
+        dap_timerfd_delete_unsafe(l_timer);
+        DAP_DELETE(l_arg);
+    }
 }
 
 /**
