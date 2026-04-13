@@ -31,6 +31,7 @@
 
 #define LOG_TAG "dap_stream_mimicry"
 
+static bool s_debug_more = false;
 // TLS content types
 #define TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC  0x14
 #define TLS_CONTENT_TYPE_ALERT               0x15
@@ -148,7 +149,7 @@ void dap_stream_mimicry_destroy(dap_stream_mimicry_t *a_mimicry)
     }
 
     DAP_DELETE(a_mimicry);
-    log_it(L_DEBUG, "Protocol mimicry engine destroyed");
+    debug_if(s_debug_more, L_DEBUG, "Protocol mimicry engine destroyed");
 }
 
 /**
@@ -324,7 +325,7 @@ int dap_stream_mimicry_generate_client_hello(dap_stream_mimicry_t *a_mimicry,
     *a_client_hello = l_hello;
     *a_hello_size = l_offset;
 
-    log_it(L_DEBUG, "Generated TLS ClientHello: %zu bytes", l_offset);
+    debug_if(s_debug_more, L_DEBUG, "Generated TLS ClientHello: %zu bytes", l_offset);
     return 0;
 }
 
@@ -391,7 +392,7 @@ int dap_stream_mimicry_generate_server_hello(dap_stream_mimicry_t *a_mimicry,
     *a_server_hello = l_hello;
     *a_hello_size = l_offset;
 
-    log_it(L_DEBUG, "Generated TLS ServerHello: %zu bytes", l_offset);
+    debug_if(s_debug_more, L_DEBUG, "Generated TLS ServerHello: %zu bytes", l_offset);
     return 0;
 }
 
@@ -607,7 +608,7 @@ static int s_wrap_https(dap_stream_mimicry_t *a_mimicry,
 
     a_mimicry->internal->packet_count++;
     
-    log_it(L_DEBUG, "Wrapped %zu bytes in TLS record", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "Wrapped %zu bytes in TLS record", a_data_size);
     return 0;
 }
 
@@ -638,7 +639,7 @@ static int s_unwrap_https(dap_stream_mimicry_t *a_mimicry,
     *a_out_data = DAP_DUP_SIZE((uint8_t*)l_payload, l_payload_length);
     *a_out_size = l_payload_length;
 
-    log_it(L_DEBUG, "Unwrapped %u bytes from TLS record", l_payload_length);
+    debug_if(s_debug_more, L_DEBUG, "Unwrapped %u bytes from TLS record", l_payload_length);
     return 0;
 }
 
@@ -717,7 +718,7 @@ static int s_wrap_websocket(dap_stream_mimicry_t *a_mimicry,
 
     a_mimicry->internal->packet_count++;
     
-    log_it(L_DEBUG, "Wrapped %zu bytes in WebSocket frame (masked=%d)", a_data_size, l_mask);
+    debug_if(s_debug_more, L_DEBUG, "Wrapped %zu bytes in WebSocket frame (masked=%d)", a_data_size, l_mask);
     return 0;
 }
 
@@ -798,7 +799,7 @@ static int s_unwrap_websocket(dap_stream_mimicry_t *a_mimicry,
     *a_out_data = l_payload;
     *a_out_size = l_payload_len;
 
-    log_it(L_DEBUG, "Unwrapped %lu bytes from WebSocket frame", l_payload_len);
+    debug_if(s_debug_more, L_DEBUG, "Unwrapped %lu bytes from WebSocket frame", l_payload_len);
     return 0;
 }
 

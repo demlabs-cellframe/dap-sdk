@@ -22,6 +22,7 @@
 
 #define LOG_TAG "dap_io_flow_darwin_gcd"
 
+static bool s_debug_more = false;
 /**
  * @brief Check if GCD load balancing is available
  */
@@ -65,8 +66,8 @@ int dap_io_flow_darwin_gcd_configure(int socket_fd)
         return -1;
     }
     
-    log_it(L_DEBUG, "✅ macOS socket configured: SO_REUSEADDR + SO_REUSEPORT");
-    log_it(L_DEBUG, "Load distribution via application-level hash (GCD manages I/O)");
+    debug_if(s_debug_more, L_DEBUG, "✅ macOS socket configured: SO_REUSEADDR + SO_REUSEPORT");
+    debug_if(s_debug_more, L_DEBUG, "Load distribution via application-level hash (GCD manages I/O)");
     
     return 0;
 #else

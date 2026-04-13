@@ -64,10 +64,10 @@ function process_escape_name(base_value, func_arg,    result, replacement, parts
 
 # Process escape_char function: escapes specific character to replacement
 # func_arg format: "char|replacement" or "char replacement"
-function process_escape_char(base_value, func_arg,    result, char, replacement, parts, n) {
+function process_escape_char(base_value, func_arg,    result, char, replacement, parts, n, escaped) {
     result = base_value
     if (func_arg == "") return result
-    
+
     if (index(func_arg, "|") > 0) {
         n = split(func_arg, parts, "|")
         char = parts[1]
@@ -77,7 +77,9 @@ function process_escape_char(base_value, func_arg,    result, char, replacement,
         char = parts[1]
         replacement = (n > 1) ? parts[2] : ""
     }
-    gsub(char, replacement, result)
+    escaped = char
+    gsub(/[][\\.*+?^${}()|]/, "\\\\&", escaped)
+    gsub(escaped, replacement, result)
     return result
 }
 

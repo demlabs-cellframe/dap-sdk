@@ -32,6 +32,7 @@
 
 #include "dap_common.h"
 #include "dap_test.h"
+#include "dap_test_async.h"
 #include "dap_events.h"
 #include "dap_worker.h"
 #include "dap_events_socket.h"
@@ -149,6 +150,8 @@ static void s_packet_received(dap_io_flow_server_t *a_server,
     (void)a_remote_addr;
     (void)a_listener_es;
     
+    if (atomic_load(&s_ctx.test_complete)) return;
+    
     if (a_size < sizeof(test_packet_t)) {
         atomic_fetch_add(&s_ctx.invalid_packets, 1);
         return;
@@ -238,6 +241,8 @@ static void s_client_send_packet(void *a_arg)
     dap_events_socket_t *l_es = (dap_events_socket_t *)a_arg;
     if (!l_es || !l_es->_inheritor) return;
     
+    if (atomic_load(&s_ctx.test_complete)) return;
+    
     client_ctx_t *l_ctx = (client_ctx_t *)l_es->_inheritor;
     
     if (l_ctx->packets_sent >= s_ctx.packets_per_client) {
@@ -275,6 +280,8 @@ static void s_client_send_packet(void *a_arg)
 static bool s_start_sending(void *a_arg)
 {
     (void)a_arg;
+    
+    if (atomic_load(&s_ctx.test_complete)) return false;
     
     dap_test_msg("Starting packet transmission...");
     
@@ -444,11 +451,17 @@ static void s_cleanup_clients(void)
 {
     for (uint32_t i = 0; i < s_ctx.num_clients; i++) {
         if (s_ctx.client_es[i]) {
-            s_ctx.client_es[i]->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            dap_worker_t *l_worker = s_ctx.client_es[i]->worker;
+            dap_events_socket_uuid_t l_uuid = s_ctx.client_es[i]->uuid;
+            s_ctx.client_es[i]->_inheritor = NULL;
             s_ctx.client_es[i] = NULL;
+            if (l_worker)
+                dap_events_socket_remove_and_delete_mt(l_worker, l_uuid);
         }
     }
-    
+
+    dap_test_sleep_ms(500);
+
     DAP_DEL_Z(s_ctx.client_es);
     DAP_DEL_Z(s_ctx.client_ctx);
     DAP_DEL_Z(s_ctx.packet_worker);
@@ -590,9 +603,13 @@ static void test_packet_routing_multiclient(void)
     uint32_t l_expected = NUM_CLIENTS * PACKETS_PER_CLIENT;
     uint32_t l_threshold = l_expected * 90 / 100;
     
-    // Cleanup
-    s_cleanup_clients();
+    // Signal all callbacks to stop, wait for worker queues to drain
+    atomic_store(&s_ctx.test_complete, true);
+    dap_test_sleep_ms(500);
+    
+    // Cleanup: server first to stop accepting traffic, then clients
     s_cleanup_server();
+    s_cleanup_clients();
     
 #ifdef DAP_OS_LINUX
     dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_APPLICATION);

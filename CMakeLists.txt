@@ -73,10 +73,6 @@ if (CELLFRAME_MODULES MATCHES "network")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} app-cli plugin network-core network-link_manager network-client network-server")
 endif()
 
-if (CELLFRAME_MODULES MATCHES "avrestream")
-    set(DAPSDK_MODULES "${DAPSDK_MODULES} avrestream")
-endif()
-
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
     set(DAPSDK_MODULES "core crypto io network-core network-link_manager network-client network-server")
     set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m)
@@ -194,11 +190,6 @@ if (DAPSDK_MODULES MATCHES "global-db")
     message("[+] Module 'global-db'")
 endif()
 
-if (DAPSDK_MODULES MATCHES "avrestream")
-    add_subdirectory(avrestream)
-    message("[+] Module 'av-restream'")
-endif()
-
 if(ANDROID)
     include_directories(3rdparty/)
 endif()
@@ -291,7 +282,6 @@ if(ENABLE_CPPCHECK_ANALYSIS)
                 --suppress=missingIncludeSystem
                 --suppress=*:3rdparty/*
                 --suppress=*:_deps/*
-                ${CMAKE_SOURCE_DIR}/avrestream
                 ${CMAKE_SOURCE_DIR}/core
                 ${CMAKE_SOURCE_DIR}/crypto
                 ${CMAKE_SOURCE_DIR}/examples

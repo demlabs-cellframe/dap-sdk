@@ -743,13 +743,6 @@ static void s_deinit_plugin(void) {
 }
 
 /**
- * @brief Deinitialize AVRestream system
- */
-static void s_deinit_avrestream(void) {
-    log_it(L_INFO, "DAP SDK AVRestream System deinitialized (stub implementation)");
-}
-
-/**
  * @brief Deinitialize test framework
  */
 static void s_deinit_test(void) {

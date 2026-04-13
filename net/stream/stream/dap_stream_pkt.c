@@ -56,8 +56,8 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
         return 0;
     }
     
-    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
-        log_it(L_ERROR, "Stream has no trans_ctx or esocket");
+    if (!a_stream->esocket) {
+        log_it(L_ERROR, "Stream has no esocket");
         return 0;
     }
     
@@ -66,7 +66,7 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
         return 0;
     }
     
-    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    dap_events_socket_t *l_es = a_stream->esocket;
     dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t*)a_stream->flow;
     
     // Get destination address from datagram flow callback
@@ -169,7 +169,6 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
     
-    // NEW ARCHITECTURE: Use trans->ops->write if available (for UDP dispatcher)
     // Try trans_ctx->trans first (SERVER), then fall back to stream->trans (CLIENT)
     dap_net_trans_t *l_trans = NULL;
     if (a_stream->trans_ctx && a_stream->trans_ctx->trans) {
@@ -177,20 +176,36 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     } else if (a_stream->trans) {
         l_trans = a_stream->trans;
     }
-    
+
+    debug_if(s_debug_more, L_DEBUG, "stream_pkt_write: type=0x%02x full_size=%zu trans=%p trans_ctx=%p "
+             "ctx_trans=%p stream_trans=%p has_write=%d",
+             a_type, l_full_size, (void*)l_trans,
+             (void*)a_stream->trans_ctx,
+             a_stream->trans_ctx ? (void*)a_stream->trans_ctx->trans : NULL,
+             (void*)a_stream->trans,
+             l_trans && l_trans->ops ? (l_trans->ops->write != NULL) : 0);
+
     if (l_trans && l_trans->ops && l_trans->ops->write) {
-        return l_trans->ops->write(a_stream, s_pkt_buf, l_full_size);
-    } else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket) {
-        dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+        ssize_t l_ret = l_trans->ops->write(a_stream, s_pkt_buf, l_full_size);
+        debug_if(s_debug_more, L_DEBUG, "stream_pkt_write: trans->ops->write returned %zd", l_ret);
+        return (size_t)l_ret;
+    } else if (a_stream->esocket) {
+        dap_events_socket_t *l_es = a_stream->esocket;
         
-        // Check if this is a datagram transport (UDP, SCTP, etc)
         if (dap_events_socket_is_datagram(l_es)) {
+            if (!l_trans || !l_trans->ops || !l_trans->ops->write) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "stream_pkt_write: datagram esocket but transport write not ready, dropping");
+                return 0;
+            }
             return s_stream_send_datagram_unsafe(a_stream, s_pkt_buf, l_full_size);
         }
         
-        // Stream-oriented transport (TCP, etc)
-        return dap_events_socket_write_unsafe(l_es, s_pkt_buf, l_full_size);
+        size_t l_ret = dap_events_socket_write_unsafe(l_es, s_pkt_buf, l_full_size);
+        debug_if(s_debug_more, L_DEBUG, "stream_pkt_write: direct esocket write returned %zu", l_ret);
+        return l_ret;
     }
+    log_it(L_ERROR, "stream_pkt_write: no transport path available, data lost!");
     return 0;
 }
 

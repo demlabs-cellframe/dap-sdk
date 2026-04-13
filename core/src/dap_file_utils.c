@@ -57,6 +57,7 @@
 
 #define LOG_TAG "file_utils"
 
+static bool s_debug_more = false;
 /**
  * Check the directory path for unsupported symbols
  *
@@ -478,7 +479,7 @@ char* dap_path_get_dirname(const char *a_file_name)
             return dap_strdup (l_drive_colon_dot);
         }
 #endif
-        log_it(L_DEBUG,"l_base is NULL, return dup of .");
+        debug_if(s_debug_more, L_DEBUG,"l_base is NULL, return dup of .");
         return dap_strdup(".");
     }
 

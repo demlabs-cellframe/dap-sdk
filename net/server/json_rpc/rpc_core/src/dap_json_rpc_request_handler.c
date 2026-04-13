@@ -7,6 +7,8 @@
 
 #define LOG_TAG "dap_json_rpc_request_handler"
 
+static bool s_debug_more = false;
+
 static dap_json_rpc_request_handler_t *s_handler_hash_table = NULL;
 
 int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t *a_func)
@@ -48,7 +50,7 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
         log_it(L_ERROR, "Empty request");
         return NULL;
     }
-    log_it(L_INFO, "Processing exec_cmd request");
+    debug_if(s_debug_more, L_INFO, "Processing exec_cmd request");
     dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request, a_request_size);
     if (!l_http_request) {
         log_it(L_ERROR, "Can't read request");

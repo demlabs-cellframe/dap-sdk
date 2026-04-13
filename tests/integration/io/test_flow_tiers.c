@@ -25,6 +25,7 @@
 #include <pthread.h>
 
 #include "dap_test.h"
+#include "dap_test_async.h"
 #include "dap_common.h"
 #include "dap_events.h"
 #include "dap_worker.h"
@@ -306,6 +307,8 @@ static void s_packet_received(dap_io_flow_server_t *a_server,
     (void)a_remote_addr;
     (void)a_listener_es;
     
+    if (atomic_load(&s_test_ctx.test_complete)) return;
+    
     if (a_size != sizeof(test_packet_t)) {
         return;
     }
@@ -388,6 +391,8 @@ static void s_client_send_packet_callback(void *a_arg)
     dap_events_socket_t *l_es = (dap_events_socket_t*)a_arg;
     if (!l_es || !l_es->_inheritor) return;
     
+    if (atomic_load(&s_test_ctx.test_complete)) return;
+    
     client_ctx_t *l_ctx = (client_ctx_t*)l_es->_inheritor;
     
     if (l_ctx->packets_sent >= PACKETS_PER_CLIENT) {
@@ -425,6 +430,8 @@ static void s_client_send_packet_callback(void *a_arg)
 static bool s_start_sending_timer_callback(void *a_arg)
 {
     (void)a_arg;
+    
+    if (atomic_load(&s_test_ctx.test_complete)) return false;
     
     dap_test_msg("Starting packet transmission: %d clients x %d packets = %d total",
                 NUM_CLIENTS, PACKETS_PER_CLIENT, NUM_CLIENTS * PACKETS_PER_CLIENT);
@@ -502,7 +509,7 @@ static void s_cleanup_client_esockets_partial(int a_created_count)
 {
     for (int i = 0; i < a_created_count; i++) {
         if (s_test_ctx.client_es[i]) {
-            // Mark for close - worker will handle actual cleanup
+            s_test_ctx.client_es[i]->_inheritor = NULL;
             s_test_ctx.client_es[i]->flags |= DAP_SOCK_SIGNAL_CLOSE;
             s_test_ctx.client_es[i] = NULL;
         }
@@ -568,6 +575,7 @@ static int s_create_client_esockets(void)
         dap_worker_t *l_worker = dap_worker_add_events_socket_auto(l_es);
         if (!l_worker) {
             dap_test_msg("Failed to add client socket %d to worker", i);
+            l_es->_inheritor = NULL;
             dap_events_socket_delete_unsafe(l_es, false);
             s_cleanup_client_esockets_partial(i);
             return -1;
@@ -590,17 +598,12 @@ static int s_create_client_esockets(void)
  */
 static void s_cleanup_client_esockets(void)
 {
-    // First, mark all for close
     for (int i = 0; i < NUM_CLIENTS; i++) {
         if (s_test_ctx.client_es[i]) {
+            s_test_ctx.client_es[i]->_inheritor = NULL;
             s_test_ctx.client_es[i]->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            s_test_ctx.client_es[i] = NULL;
         }
-    }
-    
-    // Clear our pointers after marking all - workers will handle the actual close
-    // We don't access esocket data after this point
-    for (int i = 0; i < NUM_CLIENTS; i++) {
-        s_test_ctx.client_es[i] = NULL;
     }
 }
 
@@ -732,28 +735,33 @@ static void s_run_sticky_test(const char *a_tier_name)
     l_ret = s_verify_sticky_sessions();
     dap_assert(l_ret == 0, "Sticky sessions verified");
     
-    // Full cleanup sequence
+    // Signal shutdown and wait for worker queues to drain
+    atomic_store(&s_test_ctx.test_complete, true);
+    dap_test_sleep_ms(500);
     
-    // Phase 1: Mark client sockets for close
-    s_cleanup_client_esockets();
-    
-    // Phase 2: Stop flow server (prevents new packets)
+    // Phase 1: Stop flow server (prevents new packets)
     dap_io_flow_server_stop(s_test_ctx.server);
     
-    // Phase 3: Delete all flows (protocol cleanup)
+    // Phase 2: Mark client sockets for close
+    s_cleanup_client_esockets();
+    
+    // Phase 3: Wait for close signals to be processed
+    dap_test_sleep_ms(500);
+    
+    // Phase 4: Delete all flows (protocol cleanup)
     dap_io_flow_delete_all_flows(s_test_ctx.server);
     
-    // Phase 4: Delete flow server
+    // Phase 5: Delete flow server
     dap_io_flow_server_delete(s_test_ctx.server);
     s_test_ctx.server = NULL;
     
-    // Phase 5: Local test context cleanup (before deinit)
+    // Phase 6: Local test context cleanup (before deinit)
     s_cleanup_test_context();
     
     dap_test_msg("%s sticky sessions test passed", a_tier_name);
     dap_pass_msg("Sticky sessions test passed");
     
-    // Phase 6: Deinit events system
+    // Phase 7: Deinit events system
     dap_events_deinit();
 }
 

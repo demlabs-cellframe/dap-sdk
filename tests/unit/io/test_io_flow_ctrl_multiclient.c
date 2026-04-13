@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <stdatomic.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -28,7 +29,8 @@
 #include "dap_proc_thread.h"
 #include "dap_enc.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_worker.h"
@@ -126,12 +128,12 @@ static void s_print_stats(void) {
     printf("\n╔══════════════════════════════════════════╗\n");
     printf("║        PACKET TRACKING STATISTICS        ║\n");
     printf("╠══════════════════════════════════════════╣\n");
-    printf("║ Packets sent:         %10lu        ║\n", atomic_load(&s_packets_sent));
-    printf("║ Packets received:     %10lu        ║\n", atomic_load(&s_packets_received));
-    printf("║ Wrong worker:         %10lu        ║\n", atomic_load(&s_packets_wrong_worker));
-    printf("║ No session:           %10lu        ║\n", atomic_load(&s_packets_no_session));
-    printf("║ ACKs sent:            %10lu        ║\n", atomic_load(&s_acks_sent));
-    printf("║ ACKs received:        %10lu        ║\n", atomic_load(&s_acks_received));
+    printf("║ Packets sent:         %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_packets_sent));
+    printf("║ Packets received:     %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_packets_received));
+    printf("║ Wrong worker:         %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_packets_wrong_worker));
+    printf("║ No session:           %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_packets_no_session));
+    printf("║ ACKs sent:            %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_acks_sent));
+    printf("║ ACKs received:        %10" PRIu64 "        ║\n", (uint64_t)atomic_load(&s_acks_received));
     printf("╚══════════════════════════════════════════╝\n\n");
 }
 
@@ -290,13 +292,13 @@ static int s_setup_client(int id)
     
     // Wait for client init
     for (int i = 0; i < 20; i++) {
-        dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
-        if (esocket && esocket->worker) break;
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(ctx->client);
+        if (l_fsm && l_fsm->worker) break;
         usleep(100000);
     }
     
-    dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
-    if (!esocket || !esocket->worker) {
+    dap_client_fsm_t *l_fsm_chk = DAP_CLIENT_FSM(ctx->client);
+    if (!l_fsm_chk || !l_fsm_chk->worker) {
         log_it(L_ERROR, "Client %d: init timeout", id);
         return -2;
     }
@@ -376,8 +378,8 @@ static int s_register_receiver(int id)
         return -1;
     }
     
-    dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(ctx->client);
-    if (!esocket || !esocket->worker) {
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(ctx->client);
+    if (!l_fsm || !l_fsm->worker) {
         log_it(L_ERROR, "Client %d: no worker", id);
         return -2;
     }
@@ -394,7 +396,7 @@ static int s_register_receiver(int id)
     args->cond = &cond;
     args->result = &result;
     
-    dap_worker_exec_callback_on(esocket->worker, s_register_notifier_callback, args);
+    dap_worker_exec_callback_on(l_fsm->worker, s_register_notifier_callback, args);
     
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);

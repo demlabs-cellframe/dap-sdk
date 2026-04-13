@@ -266,11 +266,8 @@ dap_stream_t* dap_udp_test_setup_mock_stream_with_session(
     // Reset trans_ctx to clean state (critical for test isolation!)
     memset(l_trans_ctx, 0, sizeof(*l_trans_ctx));
     
-    // Setup trans_ctx with UDP context
-    l_trans_ctx->esocket = a_udp_ctx->esocket;
-    l_trans_ctx->_inheritor = a_udp_ctx;  // UDP context is in _inheritor
-    
-    // Link stream to trans and trans_ctx
+    l_trans_ctx->transport_priv = a_udp_ctx;
+    l_stream->esocket = a_udp_ctx->esocket;
     l_stream->trans = a_trans;
     l_stream->trans_ctx = l_trans_ctx;
     

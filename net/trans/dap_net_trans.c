@@ -47,6 +47,7 @@
 
 #define LOG_TAG "dap_net_trans"
 
+static bool s_debug_more = false;
 // Global trans registry (hash table keyed by trans type)
 static dap_net_trans_t *s_trans_registry = NULL;
 
@@ -123,7 +124,7 @@ int dap_net_trans_register(const char *a_name,
     dap_net_trans_t *l_existing = NULL;
     HASH_FIND_INT(s_trans_registry, &a_type, l_existing);
     if (l_existing) {
-        log_it(L_DEBUG, "Trans type 0x%02X already registered as '%s' (idempotent: returning success)", 
+        debug_if(s_debug_more, L_DEBUG, "Trans type 0x%02X already registered as '%s' (idempotent: returning success)", 
                a_type, l_existing->name);
         return 0;  // Idempotent: return success if already registered
     }
@@ -161,7 +162,7 @@ int dap_net_trans_register(const char *a_name,
         // Try to get global config if available
         dap_config_t *l_cfg = g_config;
         
-        log_it(L_DEBUG, "Calling trans '%s' init() with config=%p", a_name, l_cfg);
+        debug_if(s_debug_more, L_DEBUG, "Calling trans '%s' init() with config=%p", a_name, l_cfg);
         int l_ret = a_ops->init(l_trans, l_cfg);
         if (l_ret != 0) {
             log_it(L_ERROR, "Trans '%s' init() failed with code %d", a_name, l_ret);
@@ -190,7 +191,7 @@ int dap_net_trans_unregister(dap_net_trans_type_t a_type)
     // silently return success (idempotent operation)
     // Check both flags to ensure safety in all scenarios
     if (!s_trans_registry_initialized || !s_trans_registry) {
-        log_it(L_DEBUG, "Trans registry not initialized or already cleared, skipping unregister for type 0x%02X", a_type);
+        debug_if(s_debug_more, L_DEBUG, "Trans registry not initialized or already cleared, skipping unregister for type 0x%02X", a_type);
         return 0;
     }
     
@@ -199,7 +200,7 @@ int dap_net_trans_unregister(dap_net_trans_type_t a_type)
     HASH_FIND_INT(s_trans_registry, &a_type, l_trans);
     
     if (!l_trans) {
-        log_it(L_DEBUG, "Trans type 0x%02X not registered (already unregistered)", a_type);
+        debug_if(s_debug_more, L_DEBUG, "Trans type 0x%02X not registered (already unregistered)", a_type);
         return 0;  // Idempotent: return success if already unregistered
     }
     
@@ -217,7 +218,7 @@ int dap_net_trans_unregister(dap_net_trans_type_t a_type)
     // Free trans structure
     DAP_DELETE(l_trans);
     
-    log_it(L_DEBUG, "Trans type 0x%02X unregistered successfully", a_type);
+    debug_if(s_debug_more, L_DEBUG, "Trans type 0x%02X unregistered successfully", a_type);
     return 0;
 }
 
@@ -232,7 +233,7 @@ dap_net_trans_t *dap_net_trans_find(dap_net_trans_type_t a_type)
     HASH_FIND_INT(s_trans_registry, &a_type, l_trans);
     
     if (!l_trans) {
-        log_it(L_DEBUG, "Trans type 0x%02X not found in registry", a_type);
+        debug_if(s_debug_more, L_DEBUG, "Trans type 0x%02X not found in registry", a_type);
     }
     
     return l_trans;
@@ -261,7 +262,7 @@ dap_net_trans_t *dap_net_trans_find_by_name(const char *a_name)
         }
     }
     
-    log_it(L_DEBUG, "Trans '%s' not found in registry", a_name);
+    debug_if(s_debug_more, L_DEBUG, "Trans '%s' not found in registry", a_name);
     return NULL;
 }
 
@@ -390,7 +391,7 @@ void dap_net_trans_detach_obfuscation(dap_net_trans_t *a_trans)
     }
     
     if (!a_trans->obfuscation) {
-        log_it(L_DEBUG, "Trans '%s' has no obfuscation attached", a_trans->name);
+        debug_if(s_debug_more, L_DEBUG, "Trans '%s' has no obfuscation attached", a_trans->name);
         return;
     }
     
@@ -456,7 +457,7 @@ ssize_t dap_net_trans_write_obfuscated(dap_stream_t *a_stream,
         }
         
         // Return original data size (not obfuscated size) for caller transparency
-        log_it(L_DEBUG, "Wrote %zu bytes (obfuscated to %zu)", a_size, l_obfuscated_size);
+        debug_if(s_debug_more, L_DEBUG, "Wrote %zu bytes (obfuscated to %zu)", a_size, l_obfuscated_size);
         return (ssize_t)a_size;
     }
     
@@ -545,7 +546,7 @@ ssize_t dap_net_trans_read_deobfuscated(dap_stream_t *a_stream,
         
         DAP_DELETE(l_clean_data);
         
-        log_it(L_DEBUG, "Read %zu bytes (deobfuscated from %zd)", l_copy_size, l_read);
+        debug_if(s_debug_more, L_DEBUG, "Read %zu bytes (deobfuscated from %zd)", l_copy_size, l_read);
         return (ssize_t)l_copy_size;
     }
     
@@ -605,14 +606,8 @@ int dap_net_trans_stage_prepare(dap_net_trans_type_t a_trans_type,
         return l_ret;
     }
     
-    // Fail-fast: trans must return valid socket
-    if (!a_result->esocket) {
-        log_it(L_ERROR, "Trans stage_prepare returned success but esocket is NULL for type %d", a_trans_type);
-        a_result->error_code = -3;
-        return -3;
-    }
-    
-    log_it(L_DEBUG, "Trans %d prepared socket via stage_prepare callback", a_trans_type);
+    debug_if(s_debug_more, L_DEBUG, "Trans %d stage_prepare OK (esocket %s)",
+             a_trans_type, a_result->esocket ? "set" : "NULL, transport manages own connection");
     return 0;
 }
 

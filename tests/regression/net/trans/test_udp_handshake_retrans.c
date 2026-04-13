@@ -41,7 +41,8 @@
 #include "dap_proc_thread.h"
 #include "dap_enc.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
@@ -212,8 +213,12 @@ static int s_init_sdk(void)
 {
     log_it(L_INFO, "Initializing DAP SDK...");
     
-    // Force CBPF tier for consistent testing
+    // Force a non-application tier for consistent testing
+#if defined(__linux__) || defined(ANDROID)
     dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_CLASSIC_BPF);
+#elif defined(__APPLE__) && defined(__MACH__)
+    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_DARWIN_GCD);
+#endif
     
     int ret = dap_events_init(0, 0);
     if (ret != 0) {
@@ -305,8 +310,8 @@ static void test_handshake_retransmission(void)
     // Wait for client to initialize
     bool l_ready = false;
     for (int i = 0; i < 20 && !l_ready; i++) {
-        dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(l_client);
-        if (esocket && esocket->worker) l_ready = true;
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+        if (l_fsm && l_fsm->worker) l_ready = true;
         else usleep(100000);
     }
     dap_assert(l_ready, "Client initialized with worker");

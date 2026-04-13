@@ -14,8 +14,9 @@
  *
  * Architecture:
  *   dap_client_t (public API, any thread)
- *       -> dap_client_fsm_t (FSM + crypto, dedicated FSM thread)
- *           -> dap_client_esocket_t (IO, worker thread)
+ *       -> dap_client_fsm_t (FSM + crypto + flags, dedicated FSM thread)
+ *           -> dap_net_trans_ctx_t (session keys, stream ownership)
+ *               -> dap_client_trans_ctx_t (_inheritor, client backref)
  *
  * This file is part of DAP SDK the open source project
  *    DAP SDK is free software: you can redistribute it and/or modify
@@ -33,22 +34,26 @@
 #include "dap_net_trans.h"
 #include "uthash.h"
 
-// Forward declarations (dap_client_esocket_t from dap_net_trans.h)
 typedef struct dap_worker dap_worker_t;
+typedef struct dap_net_trans_ctx dap_net_trans_ctx_t;
+typedef struct dap_client_trans_ctx dap_client_trans_ctx_t;
 
 /**
  * @brief Client FSM - manages connection state machine
  *
  * Lifecycle: created by dap_client_new(), deleted by dap_client_delete_mt().
  * Thread model: FSM state is only modified from the bound FSM thread.
- * The esocket pointer is valid only while FSM is active.
+ *
+ * Owns trans_ctx (dap_net_trans_ctx_t) which in turn owns stream.
+ * Navigation: client -> FSM -> trans_ctx -> stream -> esocket
  */
 typedef struct dap_client_fsm {
     uint64_t uuid;                    // UTHASH key
 
     // References
     dap_client_t *client;             // Owning client
-    dap_client_esocket_t *esocket;    // Current esocket (NULL if not connected)
+    dap_net_trans_ctx_t *trans_ctx;   // Owned transport context (owns stream)
+    dap_client_trans_ctx_t *client_trans_ctx; // IO-context in trans_ctx._inheritor
     dap_worker_t *worker;             // Worker for IO dispatch
 
     // FSM state (modified only from bound FSM thread)
@@ -70,10 +75,24 @@ typedef struct dap_client_fsm {
     size_t tried_transport_count;
     size_t tried_transport_capacity;
 
-    // Crypto parameters (for key generation, not actual keys)
+    // Crypto parameters (for key generation, not actual keys — keys in trans_ctx)
     dap_enc_key_type_t session_key_type;
     dap_enc_key_type_t session_key_open_type;
     size_t session_key_block_size;
+
+    // Protocol flags
+    bool is_encrypted;
+    bool is_encrypted_headers;
+    bool is_close_session;
+    bool is_closed_by_timeout;
+
+    // Callbacks for HTTP request/response
+    dap_client_callback_data_size_t request_response_callback;
+    dap_client_callback_int_t request_error_callback;
+    void *callback_arg;
+
+    // Packet queue for connect-on-demand
+    dap_list_t *pkt_queue;
 
     // FSM thread binding
     uint32_t fsm_thread_idx;         // = uuid % fsm_thread_count
@@ -161,10 +180,3 @@ void dap_client_fsm_notify(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx,
  */
 void dap_client_fsm_notify_timer_fired(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx);
 
-// ===== Backward compatibility =====
-
-// These redirect to FSM functions
-#define dap_client_pvt_stage_transaction_begin(esocket, stage, cb) \
-    dap_client_fsm_stage_transaction_begin(DAP_CLIENT_FSM((esocket)->client), (stage), (cb))
-
-void dap_client_pvt_stage_fsm_advance(dap_client_t *a_client, void *a_arg);

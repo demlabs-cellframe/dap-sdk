@@ -254,8 +254,8 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         }
 
         a_stream->channel[a_stream->channel_count++] = l_ch_new;
-        log_it(L_NOTICE, "Channel '%c' CREATED: %p (stream=%p, total_channels=%zu, notifiers=0)", 
-               a_id, l_ch_new, a_stream, a_stream->channel_count);
+        debug_if(s_debug_more, L_DEBUG, "Channel '%c' CREATED: %p (stream=%p, total_channels=%zu, notifiers=0)",
+                 a_id, (void *)l_ch_new, (void *)a_stream, a_stream->channel_count);
 
         return l_ch_new;
     }else{
@@ -270,8 +270,8 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
  */
 void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
 {
-    log_it(L_NOTICE, "Channel '%c' DELETE: %p (stream=%p, notifiers=%zu)", 
-           a_ch->proc ? a_ch->proc->id : '?', a_ch, a_ch->stream,
+    debug_if(s_debug_more, L_DEBUG, "Channel '%c' DELETE: %p (stream=%p, notifiers=%zu)",
+           a_ch->proc ? a_ch->proc->id : '?', (void *)a_ch, (void *)a_ch->stream,
            dap_list_length(a_ch->packet_in_notifiers));
     
     dap_stream_worker_t * l_stream_worker = a_ch->stream_worker;
@@ -341,10 +341,10 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
 void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_ready)
 {
     if( a_ch->ready_to_read != a_is_ready){
-        //log_it(L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
+        //debug_if(s_debug_more, L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         a_ch->ready_to_read=a_is_ready;
-        if (a_ch->stream->trans_ctx && a_ch->stream->trans_ctx->esocket)
-            dap_events_socket_set_readable_unsafe(a_ch->stream->trans_ctx->esocket, a_is_ready);
+        if (a_ch->stream->esocket)
+            dap_events_socket_set_readable_unsafe(a_ch->stream->esocket, a_is_ready);
     }
 }
 
@@ -356,10 +356,10 @@ void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_rea
 void dap_stream_ch_set_ready_to_write_unsafe(dap_stream_ch_t * ch,bool is_ready)
 {
     if(ch->ready_to_write!=is_ready){
-        //log_it(L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
+        //debug_if(s_debug_more, L_DEBUG,"Change channel '%c' to %s", (char) ch->proc->id, is_ready?"true":"false");
         ch->ready_to_write=is_ready;
-        if (ch->stream->trans_ctx && ch->stream->trans_ctx->esocket)
-            dap_events_socket_set_writable_unsafe(ch->stream->trans_ctx->esocket, is_ready);
+        if (ch->stream->esocket)
+            dap_events_socket_set_writable_unsafe(ch->stream->esocket, is_ready);
     }
 }
 
@@ -391,10 +391,10 @@ static void s_print_workers_channels()
         dap_stream_worker_t* l_stream_worker = DAP_STREAM_WORKER(l_worker);
         if (l_stream_worker->channels)
             HASH_ITER(hh_worker, l_stream_worker->channels, l_msg_ch, l_msg_ch_tmp) {
-                //log_it(L_DEBUG, "Worker id = %d, channel uuid = 0x%llx", l_worker->id, l_msg_ch->uuid);
+                //debug_if(s_debug_more, L_DEBUG, "Worker id = %d, channel uuid = 0x%llx", l_worker->id, l_msg_ch->uuid);
                 l_channel_count += 1;
         }
-        log_it(L_DEBUG, "Active workers l_channel_count = %d on worker %d", l_channel_count, l_stream_worker->worker->id);
+        debug_if(s_debug_more, L_DEBUG, "Active workers l_channel_count = %d on worker %d", l_channel_count, l_stream_worker->worker->id);
     }
     return;
 }
@@ -430,7 +430,7 @@ static void s_place_notifier_callback(void *a_arg)
     }
     dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_arg->es_uuid);
     if (!l_es) {
-        log_it(L_DEBUG, "We got place notifier request for client thats now not in list");
+        debug_if(s_debug_more, L_DEBUG, "We got place notifier request for client thats now not in list");
         goto ret_n_clear;
     }
     dap_stream_t *l_stream = dap_stream_get_from_es(l_es);

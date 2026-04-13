@@ -61,6 +61,8 @@
 
 #define LOG_TAG "db_driver"
 
+static bool s_debug_more = false;
+
 const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank = { 0 };
 
 // A selected database driver.
@@ -291,7 +293,7 @@ dap_store_obj_t *l_store_obj_cur;
                 break;
             }
             if ( DAP_GLOBAL_DB_RC_NOT_FOUND == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
-                log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key
+                debug_if(s_debug_more, L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key
                                          ? l_store_obj_cur->key : dap_global_db_driver_hash_print(dap_global_db_driver_hash_get(l_store_obj_cur)));
             else if (l_ret)
                 log_it(L_ERROR, "[%p] Can't write item %s/%s (code %d)", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key, l_ret);

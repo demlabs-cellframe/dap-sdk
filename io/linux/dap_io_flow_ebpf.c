@@ -30,6 +30,7 @@
 
 #define LOG_TAG "dap_io_flow_ebpf"
 
+static bool s_debug_more = false;
 // eBPF availability flag
 static bool s_ebpf_available = false;
 static bool s_ebpf_checked = false;

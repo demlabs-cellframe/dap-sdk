@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
@@ -193,8 +194,8 @@ static void print_test_statistics(void)
     printf("📊 Overall Results:\n");
     printf("   Total Scenarios: %zu passed, %zu failed\n",
            s_test_stats.total_scenarios_passed, s_test_stats.total_scenarios_failed);
-    printf("   Total Duration: %lu seconds (%.1f minutes)\n",
-           total_duration_sec, total_duration_sec / 60.0);
+    printf("   Total Duration: %" PRIu64 " seconds (%.1f minutes)\n",
+           total_duration_sec, (double)total_duration_sec / 60.0);
     printf("\n");
     
     // Per-transport statistics
@@ -314,13 +315,11 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     // By deleting flows immediately, we ensure hash tables are cleared before
     // the next test starts.
     if (a_ctx->servers && a_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) {
-        log_it(L_DEBUG, "Phase 0: Immediately deleting all server flows to prevent address reuse...");
+        log_it(L_DEBUG, "Phase 0: Marking all server flows as deleting...");
         for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
             if (a_ctx->servers[i] && a_ctx->servers[i]->trans_specific) {
                 dap_net_trans_udp_server_t *l_udp_server = 
                     (dap_net_trans_udp_server_t*)a_ctx->servers[i]->trans_specific;
-                
-                // Mark all flow servers as deleting (stops accepting new packets)
                 if (l_udp_server->flow_servers) {
                     for (size_t j = 0; j < l_udp_server->flow_servers_count; j++) {
                         if (l_udp_server->flow_servers[j]) {
@@ -328,30 +327,34 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
                         }
                     }
                 }
-                
-                // IMMEDIATELY delete all flows (synchronous, removes from hash tables)
-                if (l_udp_server->flow_servers) {
-                    for (size_t j = 0; j < l_udp_server->flow_servers_count; j++) {
-                        if (l_udp_server->flow_servers[j]) {
-                            int l_deleted = dap_io_flow_delete_all_flows(l_udp_server->flow_servers[j]);
-                            log_it(L_DEBUG, "Phase 0: Server #%zu flow_server[%zu] - deleted %d flows", i, j, l_deleted);
-                        }
-                    }
-                }
             }
         }
-        log_it(L_DEBUG, "Phase 0 complete: all server flows deleted, hash tables cleared");
+        log_it(L_DEBUG, "Phase 0 complete: all flow servers marked as deleting");
     }
     
     // ============================================================================
-    // PHASE 1: Prepare for client shutdown
+    // PHASE 1: Stop servers FIRST for connection-oriented transports (HTTP/WS)
     // ============================================================================
-    if (a_ctx->clients) {
-        log_it(L_DEBUG, "Phase 1: Preparing %zu clients for shutdown...", a_ctx->scenario.num_clients);
-        // NOTE: dap_client_disconnect is not available, clients will be closed during deletion
-        // Wait a bit for any pending operations to complete
-        dap_test_sleep_ms(100);
-        log_it(L_DEBUG, "Phase 1 complete: clients prepared for shutdown");
+    // For HTTP/WebSocket: server-side write callbacks can fire on client esockets
+    // after client deletion, causing double-free. Stopping servers first ensures
+    // no new server-side callbacks are scheduled.
+    if (a_ctx->servers && a_ctx->config.trans_type != DAP_NET_TRANS_UDP_BASIC) {
+        log_it(L_DEBUG, "Phase 1: Stopping %zu servers (connection-oriented transport)...",
+               a_ctx->scenario.num_servers);
+        for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
+            if (a_ctx->servers[i]) {
+                dap_net_trans_server_stop(a_ctx->servers[i]);
+            }
+        }
+        uint32_t l_drain_ms = 500 + (uint32_t)a_ctx->scenario.num_clients * 50;
+        if (l_drain_ms > 5000) l_drain_ms = 5000;
+        dap_test_sleep_ms(l_drain_ms);
+        test_wait_for_all_streams_closed(l_drain_ms);
+        log_it(L_DEBUG, "Phase 1 complete: servers stopped, pending callbacks drained");
+    } else {
+        uint32_t l_udp_drain_ms = 300 + (uint32_t)a_ctx->scenario.num_clients * 20;
+        if (l_udp_drain_ms > 2000) l_udp_drain_ms = 2000;
+        dap_test_sleep_ms(l_udp_drain_ms);
     }
     
     // ============================================================================
@@ -369,22 +372,20 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     }
     
     // ============================================================================
-    // PHASE 3: Delete clients (now synchronous, but parallelized per client)
+    // PHASE 3: Delete clients (synchronous per-client via worker callbacks)
     // ============================================================================
     if (a_ctx->clients) {
         log_it(L_DEBUG, "Phase 3: Deleting %zu clients (synchronous per-client)...", a_ctx->scenario.num_clients);
         uint64_t l_phase3_start = dap_test_get_time_ms();
         
-        // Start all deletions in parallel
-        // Since dap_client_delete_mt() is now synchronous, we need to call it from each client's worker
-        // This is already done inside delete_mt via dap_worker_exec_callback_on_sync()
-        // So we can safely call them sequentially from this thread
         size_t l_deleted_count = 0;
         for (size_t i = 0; i < a_ctx->scenario.num_clients; i++) {
             if (a_ctx->clients[i]) {
                 dap_client_delete_mt(a_ctx->clients[i]);
                 a_ctx->clients[i] = NULL;
                 l_deleted_count++;
+                if (l_deleted_count % 10 == 0)
+                    dap_test_sleep_ms(50);
             }
         }
         
@@ -393,9 +394,9 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
                l_deleted_count, a_ctx->scenario.num_clients, 
                dap_test_get_time_ms() - l_phase3_start);
         
-        // Allow server-side workers to process disconnect events from closed client connections
-        // This prevents use-after-free when server HTTP write callbacks fire on stale connections
-        dap_test_sleep_ms(100);
+        uint32_t l_settle_ms = 200 + (uint32_t)l_deleted_count * 20;
+        if (l_settle_ms > 3000) l_settle_ms = 3000;
+        dap_test_sleep_ms(l_settle_ms);
     }
     
     // ============================================================================
@@ -418,10 +419,10 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     }
     
     // ============================================================================
-    // PHASE 5: Stop servers (closes listeners, stops accepting)
+    // PHASE 5: Stop servers if not already stopped in Phase 1
     // ============================================================================
-    if (a_ctx->servers) {
-        log_it(L_DEBUG, "Phase 5: Stopping %zu servers...", a_ctx->scenario.num_servers);
+    if (a_ctx->servers && a_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) {
+        log_it(L_DEBUG, "Phase 5: Stopping %zu UDP servers...", a_ctx->scenario.num_servers);
         for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
             if (a_ctx->servers[i]) {
                 dap_net_trans_server_stop(a_ctx->servers[i]);
@@ -513,9 +514,14 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     // ============================================================================
     // PHASE 8: Final stabilization (let event loops settle)
     // ============================================================================
-    log_it(L_DEBUG, "Phase 8: Final stabilization...");
-    dap_test_sleep_ms(200);
-    log_it(L_DEBUG, "Phase 8 complete: system stabilized");
+    {
+        uint32_t l_stabilize_ms = 500 + (uint32_t)a_ctx->scenario.num_clients * 30
+                                      + (uint32_t)a_ctx->scenario.num_servers * 30;
+        if (l_stabilize_ms > 3000) l_stabilize_ms = 3000;
+        log_it(L_DEBUG, "Phase 8: Final stabilization (%u ms)...", l_stabilize_ms);
+        dap_test_sleep_ms(l_stabilize_ms);
+        log_it(L_DEBUG, "Phase 8 complete: system stabilized");
+    }
     
     // Cleanup node addresses array
     DAP_DEL_Z(a_ctx->client_node_addrs);

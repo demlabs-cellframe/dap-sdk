@@ -21,6 +21,7 @@
 
 #define LOG_TAG "dap_io_flow_cbpf"
 
+static bool s_debug_more = false;
 // Classic BPF availability flag
 static bool s_cbpf_available = false;
 static bool s_cbpf_checked = false;
@@ -129,7 +130,7 @@ int dap_io_flow_cbpf_detach_socket(int socket_fd)
         return -1;
     }
     
-    log_it(L_DEBUG, "Classic BPF detached from socket %d", socket_fd);
+    debug_if(s_debug_more, L_DEBUG, "Classic BPF detached from socket %d", socket_fd);
     return 0;
 #else
     log_it(L_WARNING, "SO_DETACH_REUSEPORT_BPF not available");

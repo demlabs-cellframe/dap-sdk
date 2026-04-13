@@ -45,6 +45,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_proc_thread.h"
 
 #define LOG_TAG "db_sqlite"
+
+static bool s_debug_more = false;
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_SQLITE
 
 typedef struct conn_pool_item {
@@ -70,7 +72,7 @@ static void s_connection_destructor(UNUSED_ARG void *a_conn) {
     if (!s_conn)
         return;
     sqlite3_close(s_conn->conn);
-    log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
+    debug_if(s_debug_more, L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
     DAP_DEL_Z(s_conn);
 }
 
@@ -89,7 +91,7 @@ static sqlite3* s_db_sqlite_open(const char *a_filename_utf8, int a_flags, char 
     int l_rc = sqlite3_open_v2(a_filename_utf8, &l_db, a_flags, NULL); // SQLITE_OPEN_FULLMUTEX by default set with sqlite3_config SERIALIZED
     // if unable to open the database file
     if(l_rc == SQLITE_CANTOPEN) {
-        log_it(L_DEBUG,"No database on path %s, creating one from scratch", a_filename_utf8);
+        debug_if(s_debug_more, L_DEBUG,"No database on path %s, creating one from scratch", a_filename_utf8);
         if(l_db)
             sqlite3_close(l_db);
         // try to create database
@@ -114,7 +116,7 @@ static sqlite3* s_db_sqlite_open(const char *a_filename_utf8, int a_flags, char 
 static inline void s_db_sqlite_free_connection(conn_list_item_t *a_conn, bool a_trans)
 {
     if (g_dap_global_db_debug_more)
-        log_it(L_DEBUG, "Free  l_conn: @%p/%p, usage: %llu", a_conn, a_conn->conn, a_conn->usage);
+        debug_if(s_debug_more, L_DEBUG, "Free  l_conn: @%p/%p, usage: %llu", a_conn, a_conn->conn, a_conn->usage);
     if (a_trans)
         atomic_flag_clear(&a_conn->busy_trans);  
     else
@@ -264,7 +266,7 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
             log_it(L_ERROR, "can't set new journal mode\n");
         if(s_db_sqlite_exec(s_conn->conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
             log_it(L_ERROR, "can't set page_size\n");
-        log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
+        debug_if(s_debug_more, L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
     }
     // busy check
     if (a_trans) {
@@ -280,7 +282,7 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
     }
     atomic_fetch_add(&s_conn->usage, 1);
     if (g_dap_global_db_debug_more )
-        log_it(L_DEBUG, "Start use connection %p, usage %llu, idx %d", s_conn, s_conn->usage, s_conn->idx);
+        debug_if(s_debug_more, L_DEBUG, "Start use connection %p, usage %llu, idx %d", s_conn, s_conn->usage, s_conn->idx);
     return s_conn;
 }
 
@@ -1008,7 +1010,7 @@ static int s_db_sqlite_flush()
     dap_return_val_if_pass(!l_conn, -1);
 // preparing
     char *l_error_message = NULL;
-    log_it(L_DEBUG, "Start flush sqlite data base.");
+    debug_if(s_debug_more, L_DEBUG, "Start flush sqlite data base.");
     sqlite3_close(l_conn->conn);
     if ( !(l_conn->conn = s_db_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
         log_it(L_ERROR, "Can't init sqlite err: \"%s\"", l_error_message ? l_error_message: "UNKNOWN");
@@ -1035,7 +1037,7 @@ static int s_db_sqlite_transaction_start()
     dap_return_val_if_pass(!(l_conn = s_db_sqlite_get_connection(true)), 0);
 // func work
     if ( g_dap_global_db_debug_more )
-        log_it(L_DEBUG, "Start TX: @%p", l_conn->conn);
+        debug_if(s_debug_more, L_DEBUG, "Start TX: @%p", l_conn->conn);
     
     int l_ret = s_db_sqlite_exec(l_conn->conn, "BEGIN", NULL, NULL, 0, NULL);
     if ( l_ret != SQLITE_OK ) {
@@ -1054,7 +1056,7 @@ static int s_db_sqlite_transaction_end(bool a_commit)
     dap_return_val_if_pass_err(!s_conn || !s_conn->conn, -1, "Outstanding connection not exist");
 // func work
     if ( g_dap_global_db_debug_more )
-        log_it(L_DEBUG, "End TX l_conn: @%p", s_conn->conn);
+        debug_if(s_debug_more, L_DEBUG, "End TX l_conn: @%p", s_conn->conn);
     int l_ret = 0;
     if (a_commit)
         l_ret = s_db_sqlite_exec(s_conn->conn, "COMMIT", NULL, NULL, 0, NULL);

@@ -33,6 +33,7 @@
 #include "dap_common.h"
 #include "dap_time.h"
 #include "dap_test.h"
+#include "dap_test_async.h"
 #include "dap_events.h"
 #include "dap_worker.h"
 #include "dap_events_socket.h"
@@ -291,6 +292,8 @@ static void s_packet_received(dap_io_flow_server_t *a_server,
     
     atomic_fetch_add(&s_pkt_recv_count, 1);
     
+    if (atomic_load(&s_ctx.test_complete)) return;
+    
     if (a_size < sizeof(test_packet_t)) {
         atomic_fetch_add(&s_pkt_invalid_count, 1);
         return;
@@ -354,6 +357,8 @@ static void s_client_send_packet(void *a_arg)
     dap_events_socket_t *es = (dap_events_socket_t*)a_arg;
     if (!es || !es->_inheritor) return;
     
+    if (atomic_load(&s_ctx.test_complete)) return;
+    
     client_ctx_t *ctx = (client_ctx_t*)es->_inheritor;
     
     if (ctx->packets_sent >= s_ctx.packets_per_client) {
@@ -390,6 +395,8 @@ static void s_client_send_packet(void *a_arg)
 static bool s_start_sending(void *a_arg)
 {
     (void)a_arg;
+    
+    if (atomic_load(&s_ctx.test_complete)) return false;
     
     dap_test_msg("Starting packet transmission...");
     
@@ -501,10 +508,13 @@ static void s_cleanup_clients(void)
 {
     for (uint32_t i = 0; i < s_ctx.num_clients; i++) {
         if (s_ctx.client_es[i]) {
+            s_ctx.client_es[i]->_inheritor = NULL;
             s_ctx.client_es[i]->flags |= DAP_SOCK_SIGNAL_CLOSE;
             s_ctx.client_es[i] = NULL;
         }
     }
+    
+    dap_test_sleep_ms(300);
     
     DAP_DEL_Z(s_ctx.client_es);
     DAP_DEL_Z(s_ctx.client_ctx);
@@ -615,7 +625,7 @@ static bool s_wait_for_test_complete(uint32_t timeout_sec)
 {
     time_t start = time(NULL);
     
-    while ((time(NULL) - start) < timeout_sec) {
+    while ((time(NULL) - start) < (time_t)timeout_sec) {
         if (atomic_load(&s_ctx.test_complete)) return true;
         usleep(POLL_INTERVAL_US * 10);  // 50ms
     }
@@ -692,9 +702,13 @@ static void test_realudp_multiclient(void)
     dap_test_msg("\nTest %s: violations=%u, sticky=%u, recv=%u/%u",
                  completed ? "COMPLETED" : "TIMEOUT", violations, sticky, recv, expected);
     
+    // Signal shutdown and wait for callbacks to drain
+    atomic_store(&s_ctx.test_complete, true);
+    dap_test_sleep_ms(500);
+    
     // Cleanup
-    s_cleanup_clients();
     s_cleanup_server();
+    s_cleanup_clients();
     s_tracker_deinit(&s_ctx.tracker);
     
     dap_events_deinit();
@@ -795,9 +809,13 @@ static void test_realudp_scaling(void)
             s_tracker_print_report(&s_ctx.tracker);
         }
         
+        // Signal shutdown and wait for callbacks to drain
+        atomic_store(&s_ctx.test_complete, true);
+        dap_test_sleep_ms(500);
+        
         // Cleanup
-        s_cleanup_clients();
         s_cleanup_server();
+        s_cleanup_clients();
         s_tracker_deinit(&s_ctx.tracker);
         dap_events_deinit();
         

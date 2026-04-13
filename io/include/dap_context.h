@@ -167,9 +167,6 @@ int dap_context_remove_from_polling(dap_events_socket_t * a_es);  // Remove from
 int dap_context_remove(dap_events_socket_t * a_es);  // Complete removal (hash + polling)
 int dap_context_poll_update(dap_events_socket_t * a_es);
 dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_socket_uuid_t a_es_uuid );
-dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_events_socket_callback_queue_ptr_t a_callback);
 dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_events_socket_callback_event_t a_callback);
 dap_events_socket_t * dap_context_create_pipe(dap_context_t * a_context, dap_events_socket_callback_t a_callback, uint32_t a_flags);
 
-// Create queues and inputs for them for all contexts
-void dap_context_create_queues( dap_events_socket_callback_queue_ptr_t a_callback);

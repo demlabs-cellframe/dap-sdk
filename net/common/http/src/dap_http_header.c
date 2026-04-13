@@ -30,6 +30,7 @@
 
 #define LOG_TAG "http_header"
 
+static bool s_debug_more = false;
 /**
  * @brief dap_http_header_add - Add HTTP header to list
  * @param a_top Pointer to top of list
@@ -177,9 +178,9 @@ int dap_http_header_parse_line(const char *a_line, size_t a_line_len,
  */
 void dap_http_header_print(dap_http_header_t *a_headers)
 {
-    log_it(L_DEBUG, "HTTP headers:");
+    debug_if(s_debug_more, L_DEBUG, "HTTP headers:");
     
     for(dap_http_header_t *l_hdr = a_headers; l_hdr; l_hdr = l_hdr->next) {
-        log_it(L_DEBUG, "  %s: %s", l_hdr->name, l_hdr->value);
+        debug_if(s_debug_more, L_DEBUG, "  %s: %s", l_hdr->name, l_hdr->value);
     }
 } 
