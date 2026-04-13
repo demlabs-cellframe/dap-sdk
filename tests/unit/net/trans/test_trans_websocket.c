@@ -529,7 +529,7 @@ static void test_10_stream_connect(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test connect operation
@@ -561,7 +561,7 @@ static void test_11_stream_read(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Set esocket in private data for WebSocket (it uses l_priv->esocket)
@@ -601,7 +601,7 @@ static void test_12_stream_write(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Initialize stream trans private data and set state to OPEN for write test
@@ -642,10 +642,10 @@ static void test_13_stream_handshake(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
-    s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0};
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
-    s_mock_stream.trans_ctx->esocket->_inheritor = (void*)dap_trans_test_get_mock_client();  // WebSocket handshake needs client_pvt
+    s_mock_trans_ctx._inheritor = (void*)dap_trans_test_get_mock_client();
     
     // Set esocket in private data for WebSocket
     dap_net_trans_websocket_private_t *l_priv = 
@@ -708,9 +708,9 @@ static void test_14_stream_session(void)
     // Create mock stream with esocket and client ctx (required for session_create)
     s_mock_stream.trans = l_trans;
     s_mock_stream.is_client_to_uplink = true;
-    s_mock_trans_ctx.esocket = dap_trans_test_get_mock_esocket();
+    s_mock_stream.esocket = dap_trans_test_get_mock_esocket();
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
-    s_mock_stream.trans_ctx->esocket->_inheritor = (void*)dap_trans_test_get_mock_client();
+    s_mock_trans_ctx._inheritor = (void*)dap_trans_test_get_mock_client();
     
     // Test session_create operation
     dap_net_session_params_t l_session_params = {0};

@@ -48,11 +48,13 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_server.h"
 #include "dap_enc_kdf.h"
 #include "dap_client.h"
-#include "dap_client_esocket.h"
+#include "dap_client_fsm.h"
+#include "dap_net_trans_ctx.h"
 #include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_stream_trans_dns"
 
+static bool s_debug_more = false;
 // DNS Trans Protocol Version
 #define DAP_STREAM_DNS_VERSION 1
 
@@ -355,7 +357,7 @@ static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
     }
 
     l_priv->remote_addr_len = sizeof(struct sockaddr_in);
-    l_priv->esocket = a_stream->trans_ctx->esocket;  // Store esocket from trans_ctx
+    l_priv->esocket = a_stream->esocket;
     
     // Update esocket address storage for sendto
     if (l_priv->esocket) {
@@ -404,7 +406,7 @@ static int s_dns_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream
     
     // DNS is connectionless, so "accept" creates a new stream for DNS query source
     // Stream is created by server layer and associated with socket
-    log_it(L_DEBUG, "DNS tunnel trans accept");
+    debug_if(s_debug_more, L_DEBUG, "DNS tunnel trans accept");
     return 0;
 }
 
@@ -424,7 +426,7 @@ static int s_dns_handshake_init(dap_stream_t *a_stream,
         return -1;
     }
 
-    if (!a_stream->trans || !a_stream->trans_ctx || !a_stream->trans_ctx->esocket) {
+    if (!a_stream->trans || !a_stream->esocket) {
         log_it(L_ERROR, "Stream has no trans or esocket");
         return -1;
     }
@@ -437,7 +439,7 @@ static int s_dns_handshake_init(dap_stream_t *a_stream,
     log_it(L_INFO, "DNS handshake init: enc_type=%d, pkey_type=%d, key_size=%zu",
            a_params->enc_type, a_params->pkey_exchange_type, a_params->alice_pub_key_size);
 
-    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    dap_events_socket_t *l_es = a_stream->esocket;
 
     a_stream->trans_ctx->handshake_cb = a_callback;
     l_es->callbacks.read_callback = s_dns_client_read_cb;
@@ -477,7 +479,7 @@ static int s_dns_handshake_process(dap_stream_t *a_stream,
         return -1;
     }
 
-    log_it(L_DEBUG, "DNS handshake process: %zu bytes (delegated to dap_stream_handshake)", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "DNS handshake process: %zu bytes (delegated to dap_stream_handshake)", a_data_size);
 
     // The handshake data is raw alice_pub_key sent by the client.
     // On the server, this is processed by dap_stream_handshake module.
@@ -530,7 +532,7 @@ static int s_dns_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         return -1;
     }
 
-    log_it(L_DEBUG, "DNS session start: session_id=%u", a_session_id);
+    debug_if(s_debug_more, L_DEBUG, "DNS session start: session_id=%u", a_session_id);
     
     // Call callback immediately (DNS session ready, similar to UDP)
     if (a_callback) {
@@ -543,7 +545,7 @@ static int s_dns_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 /**
  * @brief Read data from DNS tunnel
  *
- * Called by dap_client_esocket with (NULL, 0). Reads from esocket->buf_in
+ * Called from client read path with (NULL, 0). Reads from esocket->buf_in
  * and processes the data as raw DAP stream packets via dap_stream_data_proc_read.
  * Returns the number of bytes consumed so the caller can shrink buf_in.
  */
@@ -556,8 +558,7 @@ static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return -1;
     }
 
-    if (!a_stream->trans_ctx || !a_stream->trans_ctx->esocket ||
-        a_stream->trans_ctx->esocket->buf_in_size == 0) {
+    if (!a_stream->esocket || a_stream->esocket->buf_in_size == 0) {
         return 0;
     }
 
@@ -579,12 +580,12 @@ static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         return -1;
     }
 
-    if (!a_stream->trans_ctx->esocket) {
+    if (!a_stream->esocket) {
         log_it(L_ERROR, "Stream has no esocket");
         return -1;
     }
 
-    dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
+    dap_events_socket_t *l_es = a_stream->esocket;
     if (!l_es) {
         log_it(L_ERROR, "DNS write: no esocket");
         return -1;
@@ -622,7 +623,7 @@ static void s_dns_close(dap_stream_t *a_stream)
         }
     }
 
-    log_it(L_DEBUG, "DNS tunnel trans closed");
+    debug_if(s_debug_more, L_DEBUG, "DNS tunnel trans closed");
 }
 
 /**
@@ -691,7 +692,7 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "DNS socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    debug_if(s_debug_more, L_DEBUG, "DNS socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 
@@ -723,10 +724,10 @@ static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)
  * @brief Client read callback — processes server's KEM response
  *
  * When the DNS server responds with bob_ciphertext, this callback:
- * 1. Retrieves alice's KEM key from dap_client_esocket
+ * 1. Retrieves alice's KEM key from dap_net_trans_ctx (FSM-owned)
  * 2. Performs KEM decapsulation to derive the shared secret
  * 3. Derives a symmetric handshake_key via KDF
- * 4. Sets the stream_key on dap_client_esocket
+ * 4. Sets the stream_key on dap_net_trans_ctx
  * 5. Calls the stored handshake callback to progress the FSM
  */
 static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
@@ -743,14 +744,15 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
 
-    dap_client_esocket_t *l_client_es = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_client_es || !l_client_es->stream) {
-        log_it(L_ERROR, "DNS client read: no client esocket or stream");
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    if (!l_fsm || !l_tc || !l_tc->stream) {
+        log_it(L_ERROR, "DNS client read: no trans_ctx or stream");
         a_es->buf_in_size = 0;
         return;
     }
 
-    dap_stream_t *l_stream = l_client_es->stream;
+    dap_stream_t *l_stream = l_tc->stream;
     if (!l_stream->trans_ctx) {
         log_it(L_ERROR, "DNS client read: no trans_ctx");
         a_es->buf_in_size = 0;
@@ -767,7 +769,7 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
 
     log_it(L_INFO, "DNS client: received server handshake response (%zu bytes)", a_es->buf_in_size);
 
-    dap_enc_key_t *l_alice_key = l_client_es->session_key_open;
+    dap_enc_key_t *l_alice_key = l_tc->session_key_open;
     if (!l_alice_key || !l_alice_key->gen_alice_shared_key) {
         log_it(L_ERROR, "DNS client: no alice KEM key for decapsulation");
         l_stream->trans_ctx->handshake_cb(l_stream, NULL, 0, -1);
@@ -801,9 +803,9 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
 
-    if (l_client_es->stream_key)
-        dap_enc_key_delete(l_client_es->stream_key);
-    l_client_es->stream_key = dap_enc_key_dup(l_handshake_key);
+    if (l_tc->stream_key)
+        dap_enc_key_delete(l_tc->stream_key);
+    l_tc->stream_key = dap_enc_key_dup(l_handshake_key);
     dap_enc_key_delete(l_handshake_key);
 
     log_it(L_INFO, "DNS client: handshake complete, stream_key established");

@@ -30,6 +30,7 @@
 
 #define LOG_TAG "dap_tls_apple"
 
+static bool s_debug_more = false;
 struct dap_tls_context {
     SSLProtocol min_version;
     SSLProtocol max_version;
@@ -117,7 +118,7 @@ int dap_tls_init(void)
 
 void dap_tls_deinit(void)
 {
-    log_it(L_DEBUG, "TLS backend deinitialized");
+    debug_if(s_debug_more, L_DEBUG, "TLS backend deinitialized");
 }
 
 const char *dap_tls_backend_name(void)
@@ -229,7 +230,7 @@ int dap_tls_context_set_verify(dap_tls_context_t *a_ctx, bool a_verify)
 int dap_tls_context_set_ciphers(dap_tls_context_t *a_ctx, const char *a_ciphers)
 {
     UNUSED(a_ctx); UNUSED(a_ciphers);
-    log_it(L_DEBUG, "Secure Transport uses system cipher configuration");
+    debug_if(s_debug_more, L_DEBUG, "Secure Transport uses system cipher configuration");
     return 0;
 }
 
@@ -237,7 +238,7 @@ int dap_tls_context_load_ca(dap_tls_context_t *a_ctx,
                              const char *a_ca_file, const char *a_ca_dir)
 {
     UNUSED(a_ctx); UNUSED(a_ca_file); UNUSED(a_ca_dir);
-    log_it(L_DEBUG, "Secure Transport uses system Keychain for CA verification");
+    debug_if(s_debug_more, L_DEBUG, "Secure Transport uses system Keychain for CA verification");
     return 0;
 }
 

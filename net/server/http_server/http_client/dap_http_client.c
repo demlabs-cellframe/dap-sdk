@@ -41,6 +41,7 @@
 
 #define LOG_TAG "dap_http_client"
 
+static bool s_debug_more = false;
 
 int s_debug_http = 1;                                                       /* Non-static, can be used in other modules */
 
@@ -84,7 +85,7 @@ void dap_http_client_new( dap_events_socket_t *a_esocket, void *a_arg )
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
     l_http_client->esocket = a_esocket;
     l_http_client->http = DAP_HTTP_SERVER( a_esocket->server );
-    log_it(L_DEBUG, "dap_http_client_new: created HTTP client, server=%p, http_server=%p (name='%s')", 
+    debug_if(s_debug_more, L_DEBUG, "dap_http_client_new: created HTTP client, server=%p, http_server=%p (name='%s')", 
            (void*)a_esocket->server, (void*)l_http_client->http,
            l_http_client->http ? l_http_client->http->server_name : "NULL");
     l_http_client->state_read = DAP_HTTP_CLIENT_STATE_START;
@@ -381,7 +382,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                                                                             /* url_path = '/p1/p2/p3/target' */
                 l_ret = z_dirname( l_http_client->url_path, l_http_client->url_path_len );
                                                                             /* url_path = '/p1/p2/p3/ */
-                log_it(L_DEBUG, "Searching for URL processor with path '%s' (len=%d, original_len=%u)", 
+                debug_if(s_debug_more, L_DEBUG, "Searching for URL processor with path '%s' (len=%d, original_len=%u)", 
                        l_http_client->url_path, l_ret, l_http_client->url_path_len);
                 HASH_FIND_STR( l_http_client->http->url_proc, l_http_client->url_path, url_proc );
                 l_http_client->proc = url_proc;
@@ -491,8 +492,9 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         debug_if (s_debug_http, L_DEBUG, "Cache is present, don't call underlying callbacks");
                     }
 
-                    // If no headers callback we go to the DATA processing
-                    if( l_http_client->in_content_length ) {
+                    if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_DATA) {
+                        log_it(L_INFO, "HTTP: stream takeover detected, buf_in_size=%zu after headers", a_esocket->buf_in_size);
+                    } else if( l_http_client->in_content_length ) {
                         debug_if (s_debug_http, L_DEBUG, "headers -> DAP_HTTP_CLIENT_STATE_DATA" );
                         l_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
                     } else if (l_http_client->proc->cache)
@@ -507,12 +509,15 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
             } break;
 
             case DAP_HTTP_CLIENT_STATE_DATA:{
-                debug_if (s_debug_http, L_DEBUG, "dap_http_client_read: DAP_HTTP_CLIENT_STATE_DATA");
+                log_it(L_INFO, "HTTP DATA: buf_in_size=%zu, has_data_read_cb=%d",
+                       a_esocket->buf_in_size,
+                       l_http_client->proc && l_http_client->proc->data_read_callback ? 1 : 0);
 
                 pthread_rwlock_rdlock(&l_http_client->proc->cache_rwlock);
                 if ( l_http_client->proc->cache == NULL && l_http_client->proc->data_read_callback ) {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
                     l_http_client->proc->data_read_callback( l_http_client, &l_len );
+                    log_it(L_INFO, "HTTP DATA: data_read_callback returned l_len=%d", l_len);
                     dap_events_socket_shrink_buf_in( a_esocket, l_len );
                 } else {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
@@ -623,19 +628,19 @@ void dap_http_client_out_header_generate(dap_http_client_t *a_http_client)
 
     if ( a_http_client->reply_status_code == Http_Status_OK ) {
         if (s_debug_http)
-            log_it(L_DEBUG, "Out headers generate for sock %"DAP_FORMAT_SOCKET, a_http_client->socket_num);
+            debug_if(s_debug_more, L_DEBUG, "Out headers generate for sock %"DAP_FORMAT_SOCKET, a_http_client->socket_num);
         if ( a_http_client->out_last_modified ) {
             dap_time_to_str_rfc822( buf, sizeof(buf), a_http_client->out_last_modified );
             dap_http_header_add( &a_http_client->out_headers, "Last-Modified", buf );
         }
         if ( a_http_client->out_content_type[0] ) {
             dap_http_header_add(&a_http_client->out_headers,"Content-Type",a_http_client->out_content_type);
-            log_it(L_DEBUG,"Output: Content-Type = '%s'",a_http_client->out_content_type);
+            debug_if(s_debug_more, L_DEBUG,"Output: Content-Type = '%s'",a_http_client->out_content_type);
         }
         if ( a_http_client->out_content_length ) {
             snprintf(buf,sizeof(buf),"%zu",a_http_client->out_content_length);
             dap_http_header_add(&a_http_client->out_headers,"Content-Length",buf);
-            log_it(L_DEBUG,"Output: Content-Length = %zu",a_http_client->out_content_length);
+            debug_if(s_debug_more, L_DEBUG,"Output: Content-Length = %zu",a_http_client->out_content_length);
         }
     }else
         if (s_debug_http)

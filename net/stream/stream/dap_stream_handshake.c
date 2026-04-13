@@ -37,6 +37,7 @@
 
 #define LOG_TAG "dap_stream_handshake"
 
+static bool s_debug_more = false;
 // Helper macros for network byte order conversion
 #define HTON16(x) htons(x)
 #define NTOH16(x) ntohs(x)
@@ -282,7 +283,7 @@ int dap_stream_handshake_request_create(const dap_stream_handshake_request_t *a_
     *a_data_out = l_buffer;
     *a_data_size_out = l_offset;
     
-    log_it(L_DEBUG, "Created handshake request: %zu bytes", l_offset);
+    debug_if(s_debug_more, L_DEBUG, "Created handshake request: %zu bytes", l_offset);
     return 0;
 }
 
@@ -380,7 +381,7 @@ int dap_stream_handshake_request_parse(const void *a_data,
                 
             default:
                 // Unknown type - skip (forward compatibility)
-                log_it(L_DEBUG, "Skipping unknown TLV type 0x%04X", l_type);
+                debug_if(s_debug_more, L_DEBUG, "Skipping unknown TLV type 0x%04X", l_type);
                 break;
         }
     }
@@ -398,7 +399,7 @@ int dap_stream_handshake_request_parse(const void *a_data,
     }
     
     *a_request_out = l_req;
-    log_it(L_DEBUG, "Parsed handshake request successfully");
+    debug_if(s_debug_more, L_DEBUG, "Parsed handshake request successfully");
     return 0;
 }
 
@@ -525,7 +526,7 @@ int dap_stream_handshake_response_create(const dap_stream_handshake_response_t *
     *a_data_out = l_buffer;
     *a_data_size_out = l_offset;
     
-    log_it(L_DEBUG, "Created handshake response: %zu bytes", l_offset);
+    debug_if(s_debug_more, L_DEBUG, "Created handshake response: %zu bytes", l_offset);
     return 0;
 }
 
@@ -719,7 +720,7 @@ int dap_stream_session_create_request_create(const dap_stream_session_create_req
     *a_data_out = l_buffer;
     *a_data_size_out = l_offset;
     
-    log_it(L_DEBUG, "Created session create request (%zu bytes, channels: %s)", 
+    debug_if(s_debug_more, L_DEBUG, "Created session create request (%zu bytes, channels: %s)", 
            l_offset, a_request->channels ? a_request->channels : "none");
     return 0;
 }
@@ -794,7 +795,7 @@ int dap_stream_session_create_request_parse(const void *a_data,
                 }
                 break;
             default:
-                log_it(L_DEBUG, "Unknown TLV type 0x%04x, skipping", l_type);
+                debug_if(s_debug_more, L_DEBUG, "Unknown TLV type 0x%04x, skipping", l_type);
                 break;
         }
         
@@ -809,7 +810,7 @@ int dap_stream_session_create_request_parse(const void *a_data,
     }
     
     *a_request_out = l_req;
-    log_it(L_DEBUG, "Parsed session create request (channels: %s)", 
+    debug_if(s_debug_more, L_DEBUG, "Parsed session create request (channels: %s)", 
            l_req->channels ? l_req->channels : "none");
     return 0;
 }
@@ -899,7 +900,7 @@ int dap_stream_session_create_response_create(const dap_stream_session_create_re
     *a_data_out = l_buffer;
     *a_data_size_out = l_offset;
     
-    log_it(L_DEBUG, "Created session create response (%zu bytes, status: %u)", 
+    debug_if(s_debug_more, L_DEBUG, "Created session create response (%zu bytes, status: %u)", 
            l_offset, a_response->status);
     return 0;
 }
@@ -979,7 +980,7 @@ int dap_stream_session_create_response_parse(const void *a_data,
                 }
                 break;
             default:
-                log_it(L_DEBUG, "Unknown TLV type 0x%04x, skipping", l_type);
+                debug_if(s_debug_more, L_DEBUG, "Unknown TLV type 0x%04x, skipping", l_type);
                 break;
         }
         
@@ -994,7 +995,7 @@ int dap_stream_session_create_response_parse(const void *a_data,
     }
     
     *a_response_out = l_resp;
-    log_it(L_DEBUG, "Parsed session create response (status: %u, session_id: %u)", 
+    debug_if(s_debug_more, L_DEBUG, "Parsed session create response (status: %u, session_id: %u)", 
            l_resp->status, l_resp->session_id);
     return 0;
 }

@@ -537,18 +537,10 @@ bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, in
         log_it(L_DEBUG, "dap_mock_prepare_call: mock '%s' is disabled, passing through", a_state->name);
         return false;
     }
-    
-    // Record the call BEFORE delay/async execution
-    // This ensures call_count is incremented immediately, not after async completion
-    int l_call_count_before = a_state->call_count;
-    dap_mock_record_call(a_state, a_args, a_arg_count, NULL);
-    int l_call_count_after = a_state->call_count;
-    log_it(L_DEBUG, "dap_mock_prepare_call: mock '%s' call_count: %d -> %d", 
-           a_state->name, l_call_count_before, l_call_count_after);
-    
+
     // Execute configured delay (may be async)
     dap_mock_execute_delay(a_state);
-    
+
     return true;
 }
 

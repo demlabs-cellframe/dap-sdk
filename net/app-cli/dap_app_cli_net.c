@@ -25,6 +25,9 @@
 
 //#include <dap_client.h>
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <stdlib.h>
 #include <sys/types.h>
 #include <assert.h>
@@ -41,6 +44,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
+#include <poll.h>
+#include <unistd.h>
 #endif
 
 #include "dap_common.h"
@@ -61,12 +67,25 @@ int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_st
 {
     ssize_t l_recv_len = recv(socket, l_cmd->cmd_res + l_cmd->cmd_res_cur, DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
     switch (l_recv_len) {
-    case 0: return DAP_CLI_ERROR_INCOMPLETE;
-    case -1:
+    case 0:
+        fprintf(stderr, "[CLI-DIAG] recv: EOF (peer closed), fd=%d\n", (int)socket);
+        return DAP_CLI_ERROR_INCOMPLETE;
+    case -1: {
 #ifdef DAP_OS_WINDOWS
         _set_errno(WSAGetLastError());
 #endif
-        return errno == EAGAIN || errno == EWOULDBLOCK ? DAP_CLI_ERROR_TIMEOUT : DAP_CLI_ERROR_SOCKET;
+        int l_err = errno;
+        if (l_err != EAGAIN && l_err != EWOULDBLOCK) {
+            fprintf(stderr, "[CLI-DIAG] recv: error %d (%s), fd=%d\n", l_err, strerror(l_err), (int)socket);
+            return DAP_CLI_ERROR_SOCKET;
+        }
+        int l_sock_err = 0;
+        socklen_t l_err_len = sizeof(l_sock_err);
+        getsockopt(socket, SOL_SOCKET, SO_ERROR, &l_sock_err, &l_err_len);
+        if (l_sock_err)
+            fprintf(stderr, "[CLI-DIAG] recv: EAGAIN + SO_ERROR=%d (%s), fd=%d\n", l_sock_err, strerror(l_sock_err), (int)socket);
+        return DAP_CLI_ERROR_TIMEOUT;
+    }
     default: 
         break;
     }
@@ -121,9 +140,11 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
     uint16_t l_array_count;
     struct sockaddr_storage l_saddr = { };
     char *l_addr = NULL;
+    fprintf(stderr, "[CLI-DIAG] connect: resolving socket path\n");
     if (( l_addr = dap_config_get_item_str_path_default(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH, NULL) )) {
 #if defined(DAP_OS_WINDOWS) || defined(DAP_OS_ANDROID)
 #else
+        fprintf(stderr, "[CLI-DIAG] connect: socket path=%s\n", l_addr);
         if ( -1 == (l_socket = socket(AF_UNIX, SOCK_STREAM, 0)) )
             return printf ("socket() error %d: \"%s\"\r\n", errno, dap_strerror(errno)), ~0;
         struct sockaddr_un l_saddr_un = { .sun_family = AF_UNIX };
@@ -147,6 +168,7 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
     } else
         return printf("CLI server is not set, check config"), ~0;
     
+    fprintf(stderr, "[CLI-DIAG] connect: calling connect() on fd=%d\n", (int)l_socket);
     if ( connect(l_socket, (struct sockaddr*)&l_saddr, l_arg_len) == SOCKET_ERROR ) {
 #ifdef DAP_OS_WINDOWS
             _set_errno(WSAGetLastError());
@@ -154,6 +176,20 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
         printf("connect() error %d: \"%s\"\n", errno, dap_strerror(errno));
         closesocket(l_socket);
         return ~0;
+    }
+    {
+#ifdef SO_PEERCRED
+        struct ucred cr;
+        socklen_t cr_len = sizeof(cr);
+        if (!getsockopt(l_socket, SOL_SOCKET, SO_PEERCRED, &cr, &cr_len))
+            fprintf(stderr, "[CLI-DIAG] connect: OK fd=%d peer_pid=%d peer_uid=%d my_pid=%d\n",
+                    (int)l_socket, (int)cr.pid, (int)cr.uid, (int)getpid());
+        else
+            fprintf(stderr, "[CLI-DIAG] connect: OK fd=%d SO_PEERCRED failed errno=%d\n",
+                    (int)l_socket, errno);
+#else
+        fprintf(stderr, "[CLI-DIAG] connect: connected successfully fd=%d\n", (int)l_socket);
+#endif
     }
     return (dap_app_cli_connect_param_t)l_socket;
 }
@@ -220,29 +256,72 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
                                    "\r\n"
                                    "%s", strlen(request_str), request_str);
     DAP_DELETE(request_str);
+    fprintf(stderr, "[CLI-DIAG] send: %zu bytes to fd=%d\n", l_post_data->len, (int)a_socket);
     size_t res = send(a_socket, l_post_data->str, l_post_data->len, 0);
     if (res != l_post_data->len) {
         dap_json_rpc_request_free(a_request);
         printf("Error sending to server");
         return -1;
     }
+    fprintf(stderr, "[CLI-DIAG] send: OK, waiting for response\n");
 
-    //wait for command execution
+#ifndef _WIN32
+    {
+        struct pollfd pfd = { .fd = (int)a_socket, .events = POLLIN };
+        int pr = poll(&pfd, 1, 2000);
+        int avail = 0;
+        ioctl((int)a_socket, FIONREAD, &avail);
+        fprintf(stderr, "[CLI-DIAG] poll(2s): ret=%d revents=0x%x FIONREAD=%d\n", pr, pfd.revents, avail);
+    }
+#endif
+
+    a_cmd->cmd_res = DAP_NEW_Z_SIZE(char, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
+#ifdef _WIN32
+    DWORD l_rcv_timeout_ms = 5000;
+    setsockopt(a_socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&l_rcv_timeout_ms, sizeof(l_rcv_timeout_ms));
+#else
+    struct timeval l_rcv_timeout = { .tv_sec = 5 };
+    setsockopt(a_socket, SOL_SOCKET, SO_RCVTIMEO, &l_rcv_timeout, sizeof(l_rcv_timeout));
+#endif
     time_t l_start_time = time(NULL);
     int l_status = 1;
-    a_cmd->cmd_res = DAP_NEW_Z_SIZE(char, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
     while (l_status > 0) {
+        int l_prev_status = l_status;
         l_status = dap_app_cli_http_read(a_socket, a_cmd, l_status);
-        if ((time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT)&&!a_cmd->cmd_res)
-            l_status = DAP_CLI_ERROR_TIMEOUT;
+        if (l_status == DAP_CLI_ERROR_TIMEOUT) {
+            time_t l_elapsed = time(NULL) - l_start_time;
+            int avail = 0;
+            ioctl((int)a_socket, FIONREAD, &avail);
+            fprintf(stderr, "[CLI-DIAG] recv: timeout cycle, elapsed=%lds FIONREAD=%d\n", (long)l_elapsed, avail);
+            if (l_elapsed > DAP_CLI_HTTP_TIMEOUT)
+                break;
+            l_status = l_prev_status;
+        }
     }
-    // process result
+    if (l_status == DAP_CLI_ERROR_INCOMPLETE
+            && a_cmd->hdr_len > 0
+            && a_cmd->cmd_res_len + a_cmd->hdr_len <= a_cmd->cmd_res_cur) {
+        *(a_cmd->cmd_res + a_cmd->cmd_res_cur) = '\0';
+        l_status = 0;
+    }
+    fprintf(stderr, "[CLI-DIAG] recv: done, status=%d received=%zu\n", l_status, a_cmd->cmd_res_cur);
     if (!l_status && a_cmd->cmd_res) {
         dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res + a_cmd->hdr_len);
+        if (!response) {
+            fprintf(stderr, "[CLI-DIAG] JSON parse failed, body offset=%zu body='%.200s'\n",
+                    a_cmd->hdr_len, a_cmd->cmd_res + a_cmd->hdr_len);
+            printf("Error: failed to parse server response\n");
+            dap_json_rpc_request_free(a_request);
+            dap_string_free(l_post_data, true);
+            DAP_DELETE(a_cmd->cmd_res);
+            return -1;
+        }
         if (l_id_response != response->id) {
             printf("Wrong response from server\n");
             dap_json_rpc_request_free(a_request);
             dap_json_rpc_response_free(response);
+            DAP_DELETE(a_cmd->cmd_res);
+            dap_string_free(l_post_data, true);
             return -1;
         }
         if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name, a_cmd->cmd_param, a_cmd->cmd_param_count) != 0) {

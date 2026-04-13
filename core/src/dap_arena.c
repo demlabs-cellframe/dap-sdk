@@ -31,6 +31,7 @@
 
 #define LOG_TAG "dap_arena"
 
+static bool s_debug_more = false;
 // Default page size: 64KB (good balance between allocation count and memory overhead)
 #define DAP_ARENA_DEFAULT_PAGE_SIZE (64 * 1024)
 
@@ -116,7 +117,7 @@ static dap_arena_page_t *s_arena_page_new(size_t a_size, bool a_use_refcount)
     // Initialize refcount (start at 1 if refcounting enabled)
     if (a_use_refcount) {
         atomic_init(&l_page->refcount, 1);
-        log_it(L_DEBUG, "Created refcounted page %p (size: %zu, refcount: 1)", l_page, a_size);
+        debug_if(s_debug_more, L_DEBUG, "Created refcounted page %p (size: %zu, refcount: 1)", l_page, a_size);
     }
     
     return l_page;
@@ -181,7 +182,7 @@ dap_arena_t *dap_arena_new_opt(dap_arena_opt_t a_opt)
     l_arena->is_thread_local = a_opt.thread_local;
     l_arena->use_refcount = a_opt.use_refcount;
     
-    log_it(L_DEBUG, "Arena created (page size: %zu, refcount: %s, thread_local: %s)", 
+    debug_if(s_debug_more, L_DEBUG, "Arena created (page size: %zu, refcount: %s, thread_local: %s)", 
            l_initial_size, 
            a_opt.use_refcount ? "yes" : "no",
            a_opt.thread_local ? "yes" : "no");
@@ -264,7 +265,7 @@ static inline void *s_arena_alloc_internal(dap_arena_t *a_arena, size_t a_size, 
         
         l_page = l_new_page;
         
-        log_it(L_DEBUG, "Arena: new page allocated (%zu bytes, total pages: %zu)", 
+        debug_if(s_debug_more, L_DEBUG, "Arena: new page allocated (%zu bytes, total pages: %zu)", 
                l_new_page_size, a_arena->total_allocated / (sizeof(dap_arena_page_t) + a_arena->page_size));
     }
     
@@ -322,7 +323,7 @@ bool dap_arena_alloc_ex(dap_arena_t *a_arena, size_t a_size, dap_arena_alloc_ex_
     a_result->ptr = l_ptr;
     a_result->page_handle = (void*)l_page;
     
-    log_it(L_DEBUG, "Arena alloc_ex: %p from page %p (refcount: %d)", 
+    debug_if(s_debug_more, L_DEBUG, "Arena alloc_ex: %p from page %p (refcount: %d)", 
            l_ptr, l_page, atomic_load(&l_page->refcount));
     
     return true;
@@ -426,7 +427,7 @@ void dap_arena_reset(dap_arena_t *a_arena)
             } else {
                 // Active references exist, skip this page
                 l_skipped++;
-                log_it(L_DEBUG, "Arena reset: skipping page %p (refcount: %d)", l_page, l_refcount);
+                debug_if(s_debug_more, L_DEBUG, "Arena reset: skipping page %p (refcount: %d)", l_page, l_refcount);
             }
         }
         
@@ -444,7 +445,7 @@ void dap_arena_reset(dap_arena_t *a_arena)
     a_arena->current_page = a_arena->first_page;
     a_arena->allocation_count = 0;
     
-    log_it(L_DEBUG, "Arena reset (%zu total allocated remains available for reuse)",
+    debug_if(s_debug_more, L_DEBUG, "Arena reset (%zu total allocated remains available for reuse)",
            a_arena->total_allocated);
 }
 
@@ -471,7 +472,7 @@ void dap_arena_page_ref(void *a_page_handle)
     
     int l_old_refcount = atomic_fetch_add(&l_page->refcount, 1);
     
-    log_it(L_DEBUG, "Arena page_ref: %p (refcount: %d -> %d)", 
+    debug_if(s_debug_more, L_DEBUG, "Arena page_ref: %p (refcount: %d -> %d)", 
            l_page, l_old_refcount, l_old_refcount + 1);
 }
 
@@ -494,7 +495,7 @@ void dap_arena_page_unref(void *a_page_handle)
     
     int l_old_refcount = atomic_fetch_sub(&l_page->refcount, 1);
     
-    log_it(L_DEBUG, "Arena page_unref: %p (refcount: %d -> %d)", 
+    debug_if(s_debug_more, L_DEBUG, "Arena page_unref: %p (refcount: %d -> %d)", 
            l_page, l_old_refcount, l_old_refcount - 1);
     
     if (l_old_refcount <= 0) {
@@ -573,6 +574,6 @@ void dap_arena_free(dap_arena_t *a_arena)
     s_arena_free_pages(a_arena->first_page);
     DAP_DELETE(a_arena);
     
-    log_it(L_DEBUG, "Arena freed");
+    debug_if(s_debug_more, L_DEBUG, "Arena freed");
 }
 

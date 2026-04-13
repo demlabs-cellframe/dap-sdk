@@ -126,10 +126,8 @@ typedef struct queue_entry {
 #define DAP_SOCK_KEEP_INHERITOR     BIT( 6 )
 #define FLAG_KEEP_INHERITOR(f)  (f & DAP_SOCK_KEEP_INHERITOR)
 #endif
-// If set - queue limited to sizeof(void*) size of data transmitted
 #define DAP_SOCK_FILE_MAPPED       BIT( 7 )
-#define DAP_SOCK_QUEUE_PTR         BIT( 8 )
-#define DAP_SOCK_MSG_ORIENTED      BIT( 9 )
+#define DAP_SOCK_MSG_ORIENTED      BIT( 8 )
 
 #define FLAG_CLOSE(f)           (f & DAP_SOCK_SIGNAL_CLOSE)
 #define FLAG_READ_NOCLOSE(f)    (!(f & DAP_SOCK_SIGNAL_CLOSE) && (f & DAP_SOCK_READY_TO_READ))
@@ -180,7 +178,6 @@ typedef void (*dap_events_socket_callback_error_t) (dap_events_socket_t *, int )
 typedef void (*dap_events_socket_callback_queue_t) (dap_events_socket_t *,const void * , size_t); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_event_t) (dap_events_socket_t *, uint64_t); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_pipe_t) (dap_events_socket_t *,const void * , size_t); // Callback for specific client operations
-typedef void (*dap_events_socket_callback_queue_ptr_t) (dap_events_socket_t *, void *); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_timer_t) (dap_events_socket_t * ); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_accept_t) (dap_events_socket_t *, SOCKET, struct sockaddr_storage *); // Callback for accept of new connection
 typedef void (*dap_events_socket_callback_connected_t) (dap_events_socket_t * ); // Callback for connected client connection
@@ -206,7 +203,6 @@ typedef struct dap_events_socket_callbacks {
         dap_events_socket_callback_accept_t accept_callback;                /* Accept callback for listening socket */
         dap_events_socket_callback_event_t event_callback;                  /* Event callback for listening socket */
         dap_events_socket_callback_queue_t queue_callback;                  /* Queue callback for listening socket */
-        dap_events_socket_callback_queue_ptr_t queue_ptr_callback;          /* queue_ptr callback for listening socket */
     };
 
     dap_events_socket_callback_timer_t timer_callback;                      /* Timer callback for listening socket */
@@ -243,7 +239,6 @@ typedef enum {
     DESCRIPTOR_TYPE_SOCKET_RAW,
     DESCRIPTOR_TYPE_FILE,
     DESCRIPTOR_TYPE_PIPE,
-    DESCRIPTOR_TYPE_QUEUE,
     /* all above are readable/writeable */
     DESCRIPTOR_TYPE_TIMER,
     DESCRIPTOR_TYPE_EVENT,
@@ -418,10 +413,6 @@ dap_events_socket_t * dap_events_socket_create_platform(int a_domain, int a_type
                                                           dap_events_socket_callbacks_t *a_callbacks);
 int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
 int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code);
-dap_events_socket_t * dap_events_socket_create_type_queue_ptr_mt(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback);
-dap_events_socket_t * dap_events_socket_create_type_queue_ptr_unsafe(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback);
-int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket);
-
 dap_events_socket_t * dap_events_socket_create_type_event_unsafe(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
 dap_events_socket_t * dap_events_socket_create_type_event_mt(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
 void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket);
@@ -555,9 +546,6 @@ DAP_INLINE int dap_close_socket(SOCKET s) {
     close(s);
 #endif
 }
-
-int dap_events_socket_queue_data_send               (dap_events_socket_t*, const void*, size_t);
-#define dap_events_socket_queue_ptr_send(es, arg)               dap_events_socket_queue_data_send(es, arg, 0)
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 

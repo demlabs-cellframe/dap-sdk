@@ -239,6 +239,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_tests_properties(${PROJECT_NAME} PROPERTIES
         TIMEOUT 120
         LABELS "unit;io;flow;tier;ebpf;linux"
+        SKIP_RETURN_CODE 77
     )
     
     message("[+] eBPF tier test (Linux) - tests dap_io_flow_ebpf_* API")

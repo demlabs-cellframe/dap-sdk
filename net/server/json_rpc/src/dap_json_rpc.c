@@ -11,6 +11,8 @@
 #include "dap_enc_ks.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
+
+static bool s_debug_more = false;
 #define DAP_EXEC_CMD_URL "/exec_cmd"
 
 #define KEX_KEY_STR_SIZE 128
@@ -89,7 +91,7 @@ void dap_json_rpc_deinit()
 
 void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
 {
-    log_it(L_DEBUG,"Proc enc http exec_cmd request");
+    debug_if(s_debug_more, L_DEBUG,"Proc enc http exec_cmd request");
     http_status_code_t *return_code = (http_status_code_t *)a_arg;
     dap_stream_session_t *l_stream_session = NULL;
     bool l_new_session = false;
@@ -127,7 +129,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             l_tok = strtok_r(NULL, ",", &l_tok_tmp);
         }
         *return_code = Http_Status_OK;
-        log_it(L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
+        debug_if(s_debug_more, L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
         UNUSED(l_is_legacy);
         dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
         dap_enc_ks_key_t *l_ks_key = NULL;

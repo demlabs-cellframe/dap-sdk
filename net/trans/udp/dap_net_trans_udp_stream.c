@@ -55,7 +55,6 @@
 #include "dap_stream.h"
 #include "dap_server.h"
 #include "dap_enc_server.h"
-#include "dap_client.h"
 #include "rand/dap_rand.h"
 #include "dap_enc_key.h"
 #include "dap_enc.h"
@@ -415,7 +414,7 @@ static int s_client_flow_ctrl_packet_send_cb(
     
     // Get trans_ctx and esocket from stream
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_udp_ctx->stream->trans_ctx;
-    if (!l_trans_ctx || !l_trans_ctx->esocket) {
+    if (!l_trans_ctx || !l_udp_ctx->stream->esocket) {
         log_it(L_ERROR, "CLIENT FC send: no trans_ctx or esocket");
         return -1;
     }
@@ -430,14 +429,14 @@ static int s_client_flow_ctrl_packet_send_cb(
         static uint64_t s_addr_log_count = 0;
         s_addr_log_count++;
         if (s_addr_log_count % 100 == 0 || s_addr_log_count < 5) {
-            log_it(L_INFO, "CLIENT FC send: dest=%s:%u (count=%lu)",
-                   l_addr_str, ntohs(l_sin->sin_port), s_addr_log_count);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: dest=%s:%u (count=%lu)",
+                     l_addr_str, ntohs(l_sin->sin_port), s_addr_log_count);
         }
     }
     
     // CRITICAL: Use udp_ctx->remote_addr (server address), NOT esocket->addr_storage!
     // esocket->addr_storage is overwritten by recvfrom() on every incoming packet!
-    size_t l_written = dap_events_socket_sendto_unsafe(l_trans_ctx->esocket, a_packet, a_packet_size,
+    size_t l_written = dap_events_socket_sendto_unsafe(l_udp_ctx->stream->esocket, a_packet, a_packet_size,
                                                        &l_udp_ctx->remote_addr,
                                                        l_udp_ctx->remote_addr_len);
     
@@ -451,7 +450,7 @@ static int s_client_flow_ctrl_packet_send_cb(
     static uint64_t s_send_count = 0;
     s_send_count++;
     if (s_send_count % 50 == 0 || s_send_count < 10) {
-        log_it(L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%lu)", l_written, s_send_count);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: successfully sent %zu bytes (count=%lu)", l_written, s_send_count);
     }
     
     return 0;
@@ -545,7 +544,7 @@ static int s_client_flow_ctrl_payload_deliver_cb(
             l_stream->session->key = l_session_key;
             l_stream->session->id = l_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT FC deliver: session key installed (session_id=0x%lx)", l_ctx->session_id);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT FC deliver: session key installed (session_id=0x%lx)", l_ctx->session_id);
             
             // Call session_create callback
             if (l_trans_ctx->session_create_cb) {
@@ -654,7 +653,7 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
             log_it(L_ERROR, "Failed to allocate base flow for client UDP");
             return -2;
         }
-        log_it(L_DEBUG, "CLIENT: Created base flow for Flow Control");
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: Created base flow for Flow Control");
     }
     
     // Initialize base flow fields (for Flow Control)
@@ -700,8 +699,8 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
         return -3;
     }
     
-    log_it(L_NOTICE, "Client-side Flow Control created: retransmit=%dms, max_retries=%d",
-           l_fc_config.retransmit_timeout_ms, l_fc_config.max_retransmit_count);
+    debug_if(s_debug_more, L_DEBUG, "Client-side Flow Control created: retransmit=%dms, max_retries=%d",
+             l_fc_config.retransmit_timeout_ms, l_fc_config.max_retransmit_count);
     
     return 0;
 }
@@ -726,7 +725,7 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
     
     // Check if handshake completed or context is being destroyed
     if (l_udp_ctx->handshake_complete) {
-        log_it(L_DEBUG, "HANDSHAKE RETRANS: handshake completed, stopping timer");
+        debug_if(s_debug_more, L_DEBUG, "HANDSHAKE RETRANS: handshake completed, stopping timer");
         // Clear saved payload
         if (l_udp_ctx->handshake_payload) {
             DAP_DELETE(l_udp_ctx->handshake_payload);
@@ -778,7 +777,7 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
     }
     
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_udp_ctx->stream->trans_ctx;
-    if (!l_trans_ctx->esocket) {
+    if (!l_udp_ctx->stream->esocket) {
         log_it(L_ERROR, "HANDSHAKE RETRANS: no esocket");
         l_udp_ctx->handshake_timer = NULL;
         return false;
@@ -797,7 +796,7 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
     }
     
     // Send obfuscated handshake
-    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_trans_ctx->esocket,
+    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_udp_ctx->stream->esocket,
                                                       l_obfuscated, l_obfuscated_size,
                                                       &l_udp_ctx->remote_addr,
                                                       l_udp_ctx->remote_addr_len);
@@ -808,7 +807,7 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
         return true;  // Keep timer running, try again
     }
     
-    log_it(L_DEBUG, "HANDSHAKE RETRANS: sent %zd bytes (attempt %u)",
+    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE RETRANS: sent %zd bytes (attempt %u)",
            l_sent, l_udp_ctx->handshake_retries);
     
     return true;  // Keep timer running
@@ -833,7 +832,7 @@ static void s_cancel_handshake_timer(dap_net_trans_udp_ctx_t *a_udp_ctx)
     if (a_udp_ctx->handshake_timer) {
         dap_timerfd_delete_unsafe(a_udp_ctx->handshake_timer);
         a_udp_ctx->handshake_timer = NULL;
-        log_it(L_DEBUG, "HANDSHAKE: retransmission timer cancelled");
+        debug_if(s_debug_more, L_DEBUG, "HANDSHAKE: retransmission timer cancelled");
     }
     
     // Free saved payload
@@ -848,7 +847,7 @@ static void s_cancel_handshake_timer(dap_net_trans_udp_ctx_t *a_udp_ctx)
  * @brief UDP read callback for processing incoming packets
  * 
  * This callback is invoked when data arrives on a UDP socket (client or server virtual).
- * The trans_ctx is stored in esocket->_inheritor (always dap_net_trans_ctx_t).
+ * Client path: dap_net_trans_ctx_t is passed via esocket->callbacks.arg (not _inheritor).
  * 
  * Used by both:
  * - UDP client esockets (direct physical socket)
@@ -1079,7 +1078,7 @@ dap_events_socket_t *dap_stream_trans_udp_get_esocket(const dap_stream_t *a_stre
     if (!dap_stream_trans_is_udp(a_stream))
         return NULL;
 
-    return a_stream->trans_ctx ? a_stream->trans_ctx->esocket : NULL;
+    return a_stream->esocket;
 }
 
 /**
@@ -1351,7 +1350,7 @@ static int s_udp_accept(dap_events_socket_t *a_listener, dap_stream_t **a_stream
     
     // UDP is connectionless, so "accept" creates a new stream for datagram source
     // Stream is created by server layer and associated with socket
-    log_it(L_DEBUG, "UDP trans accept");
+    debug_if(s_debug_more, L_DEBUG, "UDP trans accept");
     return 0;
 }
 
@@ -1364,6 +1363,7 @@ static dap_net_trans_ctx_t *s_udp_get_or_create_ctx(dap_stream_t *a_stream) {
             a_stream->trans_ctx->trans = a_stream->trans;
         }
     }
+    a_stream->trans_ctx->stream = a_stream;
     debug_if(s_debug_more, L_INFO, "s_udp_get_or_create_ctx: Returning trans_ctx=%p", a_stream->trans_ctx);
     return a_stream->trans_ctx;
 }
@@ -1385,8 +1385,8 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         return -1;
     }
 
-    log_it(L_INFO, "UDP handshake init: enc_type=%d, pkey_type=%d",
-           a_params->enc_type, a_params->pkey_exchange_type);
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake init: enc_type=%d, pkey_type=%d",
+             a_params->enc_type, a_params->pkey_exchange_type);
     
     // Get or create trans_ctx
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
@@ -1404,28 +1404,27 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         return -1;
     }
     
-    // Set up read callback for client esocket and link stream
-    log_it(L_NOTICE, "HANDSHAKE INIT: esocket=%p", l_ctx->esocket);
-    if (l_ctx->esocket) {
-        log_it(L_NOTICE, "Setting up UDP client esocket %p (fd=%d) for handshake_init", 
-                 l_ctx->esocket, l_ctx->esocket->fd);
-        
-        // Store stream pointer
-        l_udp_ctx->stream = a_stream;
-        l_ctx->stream = a_stream;
+    l_udp_ctx->stream = a_stream;
+    
+    // Set up read callback for client esocket and link stream (esocket lives on stream)
+    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE INIT: esocket=%p", (void *)(l_ctx->stream ? l_ctx->stream->esocket : NULL));
+    if (l_ctx->stream && l_ctx->stream->esocket) {
+        dap_events_socket_t *l_es = l_ctx->stream->esocket;
+        debug_if(s_debug_more, L_DEBUG, "Setting up UDP client esocket %p (fd=%d) for handshake_init",
+                 (void *)l_es, l_es->fd);
         
         // IMPORTANT: Store trans_ctx in callbacks.arg (NOT _inheritor!)
         // _inheritor is owned by client infrastructure (may be dap_client_t or NULL)
         // We use callbacks.arg to pass trans_ctx to read callback
-        l_ctx->esocket->callbacks.arg = l_ctx;
+        l_es->callbacks.arg = l_ctx;
         
         debug_if(s_debug_more, L_DEBUG, "trans_ctx %p stored in callbacks.arg, trans_ctx->stream = %p, esocket->_inheritor=%p (client)", 
-                 l_ctx, a_stream, l_ctx->esocket->_inheritor);
+                 l_ctx, a_stream, l_es->_inheritor);
         
         // Set read callback
-        if (!l_ctx->esocket->callbacks.read_callback) {
-            l_ctx->esocket->callbacks.read_callback = dap_stream_trans_udp_read_callback;
-            debug_if(s_debug_more, L_DEBUG, "Set UDP client read callback for esocket %p", l_ctx->esocket);
+        if (!l_es->callbacks.read_callback) {
+            l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
+            debug_if(s_debug_more, L_DEBUG, "Set UDP client read callback for esocket %p", l_es);
         }
     }
     
@@ -1473,9 +1472,10 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
     }
     
     // Start handshake retransmission timer
-    dap_worker_t *l_worker = l_ctx->esocket ? l_ctx->esocket->worker : dap_worker_get_current();
-    log_it(L_NOTICE, "HANDSHAKE: esocket=%p, esocket->worker=%p, worker_current=%p",
-           l_ctx->esocket, l_ctx->esocket ? l_ctx->esocket->worker : NULL, dap_worker_get_current());
+    dap_events_socket_t *l_handshake_es = l_ctx->stream ? l_ctx->stream->esocket : NULL;
+    dap_worker_t *l_worker = l_handshake_es ? l_handshake_es->worker : dap_worker_get_current();
+    debug_if(s_debug_more, L_DEBUG, "HANDSHAKE: esocket=%p, esocket->worker=%p, worker_current=%p",
+             (void *)l_handshake_es, l_handshake_es ? (void *)l_handshake_es->worker : NULL, (void *)dap_worker_get_current());
     if (l_worker) {
         l_udp_ctx->handshake_timer = dap_timerfd_start_on_worker(
             l_worker,
@@ -1484,17 +1484,17 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
             l_udp_ctx
         );
         if (l_udp_ctx->handshake_timer) {
-            log_it(L_NOTICE, "HANDSHAKE: retransmission timer STARTED (timeout=%dms, max_retries=%d)",
-                   HANDSHAKE_RETRANSMIT_TIMEOUT_MS, HANDSHAKE_RETRANSMIT_MAX_RETRIES);
+            debug_if(s_debug_more, L_DEBUG, "HANDSHAKE: retransmission timer STARTED (timeout=%dms, max_retries=%d)",
+                     HANDSHAKE_RETRANSMIT_TIMEOUT_MS, HANDSHAKE_RETRANSMIT_MAX_RETRIES);
         } else {
             log_it(L_ERROR, "HANDSHAKE: FAILED to start retransmission timer!");
         }
     } else {
-        log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", l_ctx->esocket);
+        log_it(L_ERROR, "HANDSHAKE: NO WORKER AVAILABLE, timer NOT started (esocket=%p)", (void *)l_handshake_es);
     }
     
-    log_it(L_INFO, "UDP handshake init sent: %zd bytes (session_id=%lu)", 
-           l_sent, l_udp_ctx->session_id);
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake init sent: %zd bytes (session_id=%lu)",
+             l_sent, l_udp_ctx->session_id);
     
     return 0;
 }
@@ -1514,7 +1514,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         return -1;
     }
 
-    log_it(L_DEBUG, "UDP handshake response: processing %zu bytes", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake response: processing %zu bytes", a_data_size);
     
     // Validate size: Bob's ciphertext (768 bytes) + session_id (8 bytes) = 776 bytes
     const size_t EXPECTED_SIZE = CRYPTO_CIPHERTEXTBYTES + sizeof(uint64_t);
@@ -1564,7 +1564,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         for (int i = 0; i < 16; i++) {
             sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_udp_ctx->alice_key->pub_key_data)[i]);
         }
-        log_it(L_DEBUG, "CLIENT sent Alice public key (first 16 bytes): %s", l_hex);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT sent Alice public key (first 16 bytes): %s", l_hex);
     }
     
     // DEBUG: Log received ciphertext (first 16 bytes)
@@ -1573,11 +1573,11 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         for (int i = 0; i < 16; i++) {
             sprintf(l_hex + i*3, "%02x ", ((uint8_t*)a_data)[i]);
         }
-        log_it(L_DEBUG, "CLIENT received ciphertext from server (first 16 bytes): %s", l_hex);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT received ciphertext from server (first 16 bytes): %s", l_hex);
     }
     
     dap_enc_key_t *l_alice_key = l_udp_ctx->alice_key;
-    log_it(L_DEBUG, "UDP handshake response: alice_key=%p, gen_alice_shared_key=%p", 
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake response: alice_key=%p, gen_alice_shared_key=%p", 
            l_alice_key, l_alice_key->gen_alice_shared_key);
     
     // UDP uses BINARY protocol, not JSON!
@@ -1602,8 +1602,8 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         return -1;
     }
     
-    log_it(L_INFO, "CLIENT: derived shared key via KEM decapsulation (%zu bytes)", 
-           l_shared_key_size);
+    debug_if(s_debug_more, L_DEBUG, "CLIENT: derived shared key via KEM decapsulation (%zu bytes)",
+             l_shared_key_size);
     
     // Derive HANDSHAKE cipher key from shared secret using KDF-SHAKE256
     dap_enc_key_t *l_handshake_key = dap_enc_kdf_create_cipher_key(
@@ -1620,12 +1620,12 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
         return -1;
     }
     
-    log_it(L_INFO, "CLIENT: handshake key derived via KDF-SHAKE256");
+    debug_if(s_debug_more, L_DEBUG, "CLIENT: handshake key derived via KDF-SHAKE256");
     
     // Store handshake key in UDP context (will be used for encryption/decryption)
     if (l_udp_ctx->handshake_key) {
-        log_it(L_WARNING, "CLIENT: replacing existing handshake_key %p with new one %p",
-               l_udp_ctx->handshake_key, l_handshake_key);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: replacing existing handshake_key %p with new one %p",
+                 (void *)l_udp_ctx->handshake_key, (void *)l_handshake_key);
         dap_enc_key_delete(l_udp_ctx->handshake_key);
     }
     l_udp_ctx->handshake_key = l_handshake_key;
@@ -1649,7 +1649,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     // DO NOT create session key here! It will be received and decrypted during SESSION_CREATE
     a_stream->session->key = NULL;
     
-    log_it(L_INFO, "UDP handshake complete: CLIENT handshake key established, waiting for session key from server");
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake complete: CLIENT handshake key established, waiting for session key from server");
     return 0;
 }
 
@@ -1665,7 +1665,7 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
         return -1;
     }
 
-    log_it(L_DEBUG, "UDP handshake process: %zu bytes", a_data_size);
+    debug_if(s_debug_more, L_DEBUG, "UDP handshake process: %zu bytes", a_data_size);
     
     // DEBUG: Log Alice's public key (first 16 bytes)
     if (a_data && a_data_size >= 16) {
@@ -1719,7 +1719,7 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
             for (int i = 0; i < 16; i++) {
                 sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_bob_pub)[i]);
             }
-            log_it(L_DEBUG, "SERVER sending ciphertext to Alice (first 16 bytes): %s", l_hex);
+            debug_if(s_debug_more, L_DEBUG, "SERVER sending ciphertext to Alice (first 16 bytes): %s", l_hex);
         }
         
         // DEBUG: Log first 16 bytes of shared secret
@@ -1729,7 +1729,7 @@ static int s_udp_handshake_process(dap_stream_t *a_stream,
             for (int i = 0; i < 16; i++) {
                 sprintf(l_hex + i*3, "%02x ", ((uint8_t*)l_shared_key)[i]);
             }
-            log_it(L_DEBUG, "SERVER shared secret (first 16 bytes): %s", l_hex);
+            debug_if(s_debug_more, L_DEBUG, "SERVER shared secret (first 16 bytes): %s", l_hex);
         }
         
         // Create HANDSHAKE key from shared secret using KDF (NOT session key yet!)
@@ -1964,12 +1964,12 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
              l_udp_ctx->buffered_packets, l_udp_ctx->buffered_count);
     
     if (l_udp_ctx->buffered_packets && l_udp_ctx->buffered_count > 0) {
-        log_it(L_NOTICE, "SESSION_START: Processing %zu buffered packets through FC",
-               l_udp_ctx->buffered_count);
-        
+        debug_if(s_debug_more, L_DEBUG, "SESSION_START: Processing %zu buffered packets through FC",
+                 l_udp_ctx->buffered_count);
+
         for (size_t i = 0; i < l_udp_ctx->buffered_count; i++) {
-            log_it(L_NOTICE, "SESSION_START: Processing buffered packet #%zu (%zu bytes)",
-                   i + 1, l_udp_ctx->buffered_packet_sizes[i]);
+            debug_if(s_debug_more, L_DEBUG, "SESSION_START: Processing buffered packet #%zu (%zu bytes)",
+                     i + 1, l_udp_ctx->buffered_packet_sizes[i]);
             
             int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, 
                                               l_udp_ctx->buffered_packets[i], 
@@ -1983,7 +1983,7 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
             DAP_DELETE(l_udp_ctx->buffered_packets[i]);
         }
         
-        log_it(L_NOTICE, "SESSION_START: All %zu buffered packets processed", l_udp_ctx->buffered_count);
+        debug_if(s_debug_more, L_DEBUG, "SESSION_START: All %zu buffered packets processed", l_udp_ctx->buffered_count);
         
         // Free buffer arrays
         DAP_DELETE(l_udp_ctx->buffered_packets);
@@ -1996,7 +1996,7 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     
     // Clear fc_creating flag - FC is ready now!
     l_udp_ctx->fc_creating = false;
-    log_it(L_NOTICE, "SESSION_START: Cleared fc_creating flag - FC is ready");
+    debug_if(s_debug_more, L_DEBUG, "SESSION_START: Cleared fc_creating flag - FC is ready");
     
     // Call callback immediately (UDP session ready)
     if (a_callback) {
@@ -2028,12 +2028,9 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     debug_if(s_debug_more, L_DEBUG, "s_udp_read: stream=%p, buffer=%p, size=%zu", 
              a_stream, a_buffer, a_size);
     
-    // Get esocket from trans_ctx
-    dap_events_socket_t *l_es = NULL;
+    // Get esocket from stream (owned by stream, not trans_ctx)
+    dap_events_socket_t *l_es = a_stream->esocket;
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
-    if (l_ctx) {
-        l_es = l_ctx->esocket;
-    }
 
     debug_if(s_debug_more, L_DEBUG, "s_udp_read: ctx=%p, es=%p, buf_in=%p, buf_in_size=%zu", 
              l_ctx, l_es, l_es ? l_es->buf_in : NULL, l_es ? l_es->buf_in_size : 0);
@@ -2076,7 +2073,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         return -1;
     }
     
-    log_it(L_DEBUG, "UDP_READ: udp_ctx=%p, stream=%p, flow_ctrl=%p", 
+    debug_if(s_debug_more, L_DEBUG, "UDP_READ: udp_ctx=%p, stream=%p, flow_ctrl=%p", 
            l_udp_ctx, a_stream, l_udp_ctx->flow_ctrl);
     
     // TRY DEOBFUSCATE AS HANDSHAKE (size 600-900 bytes)
@@ -2126,14 +2123,14 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     
     // ENCRYPTED PACKET: Process via Flow Control OR buffer (if FC not ready)
     
-    log_it(L_DEBUG, "CLIENT: udp_ctx=%p, flow_ctrl=%p, fc_creating=%d, buf_in_size=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "CLIENT: udp_ctx=%p, flow_ctrl=%p, fc_creating=%d, buf_in_size=%zu", 
            l_udp_ctx, l_udp_ctx ? l_udp_ctx->flow_ctrl : NULL, l_udp_ctx ? l_udp_ctx->fc_creating : 0,
            l_es->buf_in_size);
     
     // BUFFER PATH: FC is being created (after SESSION_CREATE, before SESSION_START complete)
     if (l_udp_ctx->fc_creating || !l_udp_ctx->flow_ctrl) {
-        log_it(L_NOTICE, "CLIENT: FC not ready (fc_creating=%d, flow_ctrl=%p) - checking packet type", 
-               l_udp_ctx->fc_creating, l_udp_ctx->flow_ctrl);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: FC not ready (fc_creating=%d, flow_ctrl=%p) - checking packet type",
+                 l_udp_ctx->fc_creating, (void *)l_udp_ctx->flow_ctrl);
         
         // Decrypt packet to check type
         if (!l_udp_ctx->handshake_key) {
@@ -2184,8 +2181,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
         const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
         
-        log_it(L_NOTICE, "CLIENT: First packet type=%u (SESSION_CREATE=0x%02x, DATA=0x%02x)",
-               l_type, DAP_STREAM_UDP_PKT_SESSION_CREATE, DAP_STREAM_UDP_PKT_DATA);
+        debug_if(s_debug_more, L_DEBUG, "CLIENT: First packet type=%u (SESSION_CREATE=0x%02x, DATA=0x%02x)",
+                 l_type, DAP_STREAM_UDP_PKT_SESSION_CREATE, DAP_STREAM_UDP_PKT_DATA);
         
         if (l_type == DAP_STREAM_UDP_PKT_SESSION_CREATE) {
             // SESSION_CREATE response - process immediately to establish session key!
@@ -2205,7 +2202,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             memcpy(&l_kdf_counter_be, l_payload, sizeof(l_kdf_counter_be));
             uint64_t l_kdf_counter = be64toh(l_kdf_counter_be);
             
-            log_it(L_INFO, "CLIENT: Deriving session key with KDF counter=%lu", l_kdf_counter);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: Deriving session key with KDF counter=%lu", l_kdf_counter);
             
             // Derive session key
             dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
@@ -2247,8 +2244,8 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             a_stream->session->key = l_session_key;
             a_stream->session->id = l_udp_ctx->session_id;
             
-            log_it(L_INFO, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%lx)",
-                   a_stream, a_stream->session, a_stream->session->key, l_udp_ctx->session_id);
+            debug_if(s_debug_more, L_DEBUG, "CLIENT: session key installed (stream=%p, session=%p, key=%p, session_id=0x%lx)",
+                     (void *)a_stream, (void *)a_stream->session, (void *)a_stream->session->key, l_udp_ctx->session_id);
             
             // Call session_create_cb for client stage transition
             dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
@@ -2361,9 +2358,9 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     }
 
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
-    if (!l_ctx || !l_ctx->esocket) {
+    if (!l_ctx || !l_ctx->stream || !l_ctx->stream->esocket) {
         log_it(L_ERROR, "UDP write: No trans ctx or esocket for write (ctx=%p, esocket=%p)", 
-               l_ctx, l_ctx ? l_ctx->esocket : NULL);
+               l_ctx, (l_ctx && l_ctx->stream) ? (void *)l_ctx->stream->esocket : NULL);
         return -1;
     }
 
@@ -2378,7 +2375,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        log_it(L_DEBUG, "UDP write: remote_addr=%s:%u, addr_len=%u",
+        debug_if(s_debug_more, L_DEBUG, "UDP write: remote_addr=%s:%u, addr_len=%u",
                l_addr_str, ntohs(l_sin->sin_port), l_udp_ctx->remote_addr_len);
     } else {
         log_it(L_WARNING, "UDP write: remote_addr has INVALID family: %d",
@@ -2413,7 +2410,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         
         // Send obfuscated handshake (CLIENT UDP)
         // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
-        ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->esocket, 
+        ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->stream->esocket, 
                                                          l_obfuscated, l_obfuscated_size,
                                                          &l_udp_ctx->remote_addr,
                                                          l_udp_ctx->remote_addr_len);
@@ -2435,8 +2432,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     debug_if(s_debug_more, L_DEBUG, "Checking encryption keys for packet type %u", a_pkt_type);
     
     if (!l_udp_ctx->handshake_key) {
-        log_it(L_ERROR, "No encryption key for sending encrypted packet (type=%u)", a_pkt_type);
-        return -1;
+        debug_if(s_debug_more, L_DEBUG, "Dropping packet type=%u: handshake not complete yet", a_pkt_type);
+        return 0;
     }
     
     // FLOW CONTROL PATH (NEW): Send via FC
@@ -2548,8 +2545,8 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     debug_if(s_debug_more, L_DEBUG, "Encrypted: %zu bytes (expected ~%zu)",
              l_encrypted_size, l_cleartext_size + 8);
     
-    log_it(L_WARNING, "UDP write: cleartext_size=%zu, encrypted_size=%zu", 
-           l_cleartext_size, l_encrypted_size);
+    debug_if(s_debug_more, L_DEBUG, "UDP write: cleartext_size=%zu, encrypted_size=%zu",
+             l_cleartext_size, l_encrypted_size);
     
     DAP_DELETE(l_cleartext);
     
@@ -2561,7 +2558,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     
     // Send encrypted blob (no headers, no magic, just encrypted data) - CLIENT UDP
     // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
-    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->esocket, l_encrypted, l_encrypted_size,
+    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->stream->esocket, l_encrypted, l_encrypted_size,
                                                      &l_udp_ctx->remote_addr,
                                                      l_udp_ctx->remote_addr_len);
     
@@ -2611,7 +2608,7 @@ static void s_udp_close(dap_stream_t *a_stream)
     // Get UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (l_udp_ctx) {
-        log_it(L_INFO, "Closing UDP trans session 0x%lx", l_udp_ctx->session_id);
+        debug_if(s_debug_more, L_DEBUG, "Closing UDP trans session 0x%lx", l_udp_ctx->session_id);
         
         // Clean up Flow Control if present
         if (l_udp_ctx->flow_ctrl) {
@@ -2677,38 +2674,40 @@ static void s_udp_close(dap_stream_t *a_stream)
     // No need to check worker - _mt handles it correctly
     
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
-    if (l_ctx && l_ctx->esocket_uuid && l_ctx->esocket_worker) {
+    // Esocket fields live on the stream being closed; use a_stream (not trans_ctx->stream,
+    // which may already be NULL during partial teardown).
+    if (l_ctx && a_stream->esocket_uuid && a_stream->esocket_worker) {
         debug_if(s_debug_more, L_DEBUG, 
                "UDP close: queueing esocket deletion (UUID 0x%016lx) on its worker",
-               l_ctx->esocket_uuid);
+               a_stream->esocket_uuid);
         
         // CRITICAL: Clear callbacks BEFORE async delete to prevent use-after-free!
         // Esocket may still receive events between now and actual deletion
         // Setting callbacks to NULL prevents them from accessing freed trans_ctx/stream
-        if (l_ctx->esocket) {
-            l_ctx->esocket->callbacks.read_callback = NULL;
-            l_ctx->esocket->callbacks.write_callback = NULL;
-            l_ctx->esocket->callbacks.error_callback = NULL;
-            l_ctx->esocket->callbacks.arg = NULL;  // Critical: prevents use-after-free in callbacks
+        if (a_stream->esocket) {
+            a_stream->esocket->callbacks.read_callback = NULL;
+            a_stream->esocket->callbacks.write_callback = NULL;
+            a_stream->esocket->callbacks.error_callback = NULL;
+            a_stream->esocket->callbacks.arg = NULL;  // Critical: prevents use-after-free in callbacks
         }
         
         // ALWAYS use _mt method - 100% safe from any thread
-        dap_events_socket_remove_and_delete_mt(l_ctx->esocket_worker, l_ctx->esocket_uuid);
+        dap_events_socket_remove_and_delete_mt(a_stream->esocket_worker, a_stream->esocket_uuid);
         
         // Clear pointers (esocket will be deleted asynchronously on its worker)
-        l_ctx->esocket = NULL;
-        l_ctx->esocket_uuid = 0;
-        l_ctx->esocket_worker = NULL;
+        a_stream->esocket = NULL;
+        a_stream->esocket_uuid = 0;
+        a_stream->esocket_worker = NULL;
     }
     
     if (l_ctx) {
         // Clear stream pointer in trans_ctx to prevent use-after-free
         l_ctx->stream = NULL;
         
-        // Free UDP context (owned by trans_ctx, not esocket)
-        if (l_ctx->_inheritor) {
-            DAP_DELETE(l_ctx->_inheritor);
-            l_ctx->_inheritor = NULL;
+        // Free UDP context (owned by trans_ctx via transport_priv)
+        if (l_ctx->transport_priv) {
+            DAP_DELETE(l_ctx->transport_priv);
+            l_ctx->transport_priv = NULL;
         }
     }
 }
@@ -2761,7 +2760,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // NO write_callback needed - reactor handles packet_queue automatically!
     l_es->callbacks.read_callback = dap_stream_trans_udp_read_callback;
     
-    log_it(L_DEBUG, "Created UDP socket %p", l_es);
+    debug_if(s_debug_more, L_DEBUG, "Created UDP socket %p", l_es);
     
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
@@ -2771,7 +2770,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
 
-    log_it(L_DEBUG, "Resolved UDP address: family=%d, size=%zu", l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
+    debug_if(s_debug_more, L_DEBUG, "Resolved UDP address: family=%d, size=%zu", l_es->addr_storage.ss_family, (size_t)l_es->addr_size);
 
     // NOTE: DO NOT connect() for Flow Control scenarios!
     // Flow Control needs bidirectional communication with server's listener port.
@@ -2799,20 +2798,20 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
-        log_it(L_INFO, "Set SO_RCVBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
+        debug_if(s_debug_more, L_DEBUG, "Set SO_RCVBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
     }
-    
+
     if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
-        log_it(L_INFO, "Set SO_SNDBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
+        debug_if(s_debug_more, L_DEBUG, "Set SO_SNDBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
     }
-    
+
     // Get local port assigned by OS
     struct sockaddr_in l_local_addr;
     socklen_t l_local_addr_len = sizeof(l_local_addr);
     if (getsockname(l_es->socket, (struct sockaddr *)&l_local_addr, &l_local_addr_len) == 0) {
-        log_it(L_INFO, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
+        debug_if(s_debug_more, L_DEBUG, "UDP socket fd=%d bound to local port %u", l_es->socket, ntohs(l_local_addr.sin_port));
     }
     
     // CRITICAL: Add socket to worker AFTER bind() so reactor monitors properly configured socket!
@@ -2835,7 +2834,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     l_stream->trans = a_trans;
     
-    // Initialize trans_ctx and link esocket
+    // Initialize trans_ctx and link stream (esocket fields live on stream)
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(l_stream);
     if (!l_ctx) {
         log_it(L_CRITICAL, "Failed to create trans_ctx for UDP stream");
@@ -2844,16 +2843,15 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
-    // Set esocket reference with UUID and worker for thread-safe access
-    l_ctx->esocket = l_es;
-    l_ctx->esocket_uuid = l_es->uuid;
-    l_ctx->esocket_worker = l_es->worker;
+    l_stream->esocket = l_es;
+    l_stream->esocket_uuid = l_es->uuid;
+    l_stream->esocket_worker = l_es->worker;
     l_ctx->stream = l_stream;
     
     // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
     l_es->callbacks.arg = l_ctx;
-    log_it(L_INFO, "UDP CLIENT CREATED: esocket=%p (fd=%d), stream=%p, trans_ctx=%p", 
-           l_es, l_es->socket, l_stream, l_ctx);
+    debug_if(s_debug_more, L_DEBUG, "UDP CLIENT CREATED: esocket=%p (fd=%d), stream=%p, trans_ctx=%p",
+             (void *)l_es, l_es->socket, (void *)l_stream, (void *)l_ctx);
     
     // Create UDP per-stream context and store client_ctx
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(l_stream);
@@ -2879,8 +2877,8 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         struct sockaddr_in *l_sin = (struct sockaddr_in*)&l_udp_ctx->remote_addr;
         char l_addr_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &l_sin->sin_addr, l_addr_str, sizeof(l_addr_str));
-        log_it(L_INFO, "UDP CLIENT: initialized remote_addr=%s:%u",
-               l_addr_str, ntohs(l_sin->sin_port));
+        debug_if(s_debug_more, L_DEBUG, "UDP CLIENT: initialized remote_addr=%s:%u",
+                 l_addr_str, ntohs(l_sin->sin_port));
     }
     
     // CRITICAL: Create CLIENT datagram flow for address resolution callback
@@ -2900,12 +2898,12 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     // _inheritor is for client infrastructure ownership, we use callbacks.arg for trans_ctx
     l_es->callbacks.arg = l_ctx;
     
-    log_it(L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
+    debug_if(s_debug_more, L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    log_it(L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
+    debug_if(s_debug_more, L_DEBUG, "UDP socket and stream prepared for %s:%u", a_params->host, a_params->port);
     return 0;
 }
 
@@ -2923,21 +2921,14 @@ static uint32_t s_udp_get_capabilities(dap_net_trans_t *a_trans)
  * @brief Get client context from UDP stream's trans_ctx
  * @param a_stream Stream to extract client context from
  * @return Client context (dap_client_t*) or NULL
- * @note For UDP trans, trans_ctx->_inheritor contains dap_udp_client_esocket_ctx_t wrapper
  */
 static void* s_udp_get_client_context(dap_stream_t *a_stream)
 {
-    if (!a_stream) {
+    if (!a_stream || !a_stream->trans_ctx)
         return NULL;
-    }
-    
-    // For UDP, trans_ctx->_inheritor is dap_net_trans_udp_ctx_t
-    dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
-    if (!l_udp_ctx) {
-        return NULL;
-    }
-    
-    return l_udp_ctx->client_ctx;  // Return dap_client_t*
+
+    // Client context is in _inheritor (set by FSM for client paths)
+    return a_stream->trans_ctx->_inheritor;
 }
 
 //=============================================================================
@@ -2961,7 +2952,7 @@ static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->trans_ctx)
         return NULL;
-    return (dap_net_trans_udp_ctx_t*)a_stream->trans_ctx->_inheritor;
+    return (dap_net_trans_udp_ctx_t*)a_stream->trans_ctx->transport_priv;
 }
 
 /**
@@ -2978,18 +2969,17 @@ dap_net_trans_udp_ctx_t *s_get_or_create_udp_ctx(dap_stream_t *a_stream)
     
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
     
-    if (!l_trans_ctx->_inheritor) {
-        // Create new UDP context
+    if (!l_trans_ctx->transport_priv) {
         dap_net_trans_udp_ctx_t *l_udp_ctx = DAP_NEW_Z(dap_net_trans_udp_ctx_t);
         if (!l_udp_ctx) {
             log_it(L_CRITICAL, "Failed to allocate UDP stream context");
             return NULL;
-    }
-        l_trans_ctx->_inheritor = l_udp_ctx;
+        }
+        l_trans_ctx->transport_priv = l_udp_ctx;
         debug_if(s_debug_more, L_DEBUG, "Created UDP context %p for stream %p", l_udp_ctx, a_stream);
     }
-    
-    return (dap_net_trans_udp_ctx_t*)l_trans_ctx->_inheritor;
+
+    return (dap_net_trans_udp_ctx_t*)l_trans_ctx->transport_priv;
 }
 
 /**

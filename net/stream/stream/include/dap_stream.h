@@ -72,21 +72,23 @@ typedef struct dap_stream {
 
     UT_hash_handle hh;
     struct dap_stream *prev, *next;
-    
+
+    // Esocket: platform IO socket owned by stream.
+    // For thread-safe access, ALWAYS check if dap_worker_get_current() == esocket_worker.
+    // If different worker, use UUID-based access (_mt methods).
+    // For WASM single-threaded model, esocket is absent entirely (compile-time).
+    dap_events_socket_t *esocket;          // UNSAFE: Only access in esocket's worker context!
+    dap_events_socket_uuid_t esocket_uuid; // SAFE: UUID for cross-thread references
+    dap_worker_t *esocket_worker;          // Worker that owns the esocket
+
     /**
      * @brief Transport layer abstraction
-     * 
-     * This field provides access to the pluggable transport layer
-     * interface that supports HTTP, UDP, WebSocket, and other transports.
-     * 
-     * For HTTP transport, use dap_stream_transport_http_get_client()
-     * to get the underlying http_client if needed.
-     * 
-     * @see dap_stream_trans.h
-     * @see dap_stream_trans_http.h
+     *
+     * Shared transport operations table (read/write/close/connect).
+     * Stream uses but does NOT own this pointer.
      */
     struct dap_net_trans *trans;
-    dap_net_trans_ctx_t *trans_ctx;
+    dap_net_trans_ctx_t *trans_ctx; // Back-reference to owning trans_ctx (trans_ctx owns stream)
     
     /**
      * @brief Datagram flow (for UDP, SCTP, etc)
@@ -109,6 +111,11 @@ typedef struct dap_stream {
      * NULL on client side.
      */
     void *_server_session;
+
+    // Client-side: pointer to dap_net_trans_ctx_t->stream (via FSM).
+    // On stream destruction, *client_stream_ref is set to NULL
+    // to prevent dangling pointers and double-free.
+    dap_stream_t **client_stream_ref;
 } dap_stream_t;
 
 typedef struct dap_stream_info {
@@ -176,6 +183,7 @@ void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
 void dap_stream_add_proc_dns(dap_server_t *a_dns_server);
 
 dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_stream_node_addr_t *a_addr, bool a_authorized);
+int dap_stream_start_keepalive(dap_stream_t *a_stream);
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_read_ext(dap_stream_t * a_stream, const void *a_data, size_t a_data_size);
 size_t dap_stream_data_proc_write(dap_stream_t * a_stream);

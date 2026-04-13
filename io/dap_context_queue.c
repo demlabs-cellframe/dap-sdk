@@ -30,6 +30,7 @@
 
 #define LOG_TAG "dap_context_queue"
 
+static bool s_debug_more = false;
 // Default ring buffer capacity (power of 2)
 // INCREASED for high-throughput scenarios with cross-worker packet forwarding
 #define DAP_CONTEXT_QUEUE_DEFAULT_CAPACITY 65536  // Was 16384, now 64K
@@ -38,8 +39,6 @@
  * @brief Callback from reactor when event is signaled (items available in queue)
  */
 static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
-    (void)a_value; // Unused - we just process all available items
-    
     dap_context_queue_t *l_queue = (dap_context_queue_t *)a_es->_inheritor;
     
     if (!l_queue) {
@@ -47,12 +46,15 @@ static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
         return;
     }
     
-    // Process all available items in queue
     size_t l_processed = dap_context_queue_process(l_queue);
     
     if (l_processed > 0) {
-        debug_if(g_debug_reactor, L_DEBUG, "Context queue processed %zu items (event value=%"PRIu64")",
-                 l_processed, a_value);
+        debug_if(s_debug_more, L_DEBUG, "Context queue fd=%d: processed %zu items (eventfd_value=%"PRIu64")",
+                 a_es->fd, l_processed, a_value);
+    } else if (a_value > 0) {
+        log_it(L_WARNING, "Context queue fd=%d: EMPTY wakeup (eventfd_value=%"PRIu64", rb_size=%zu)",
+               a_es->fd, a_value,
+               l_queue->ring_buffer ? dap_ring_buffer_size(l_queue->ring_buffer) : 0);
     }
 }
 
@@ -99,8 +101,8 @@ dap_context_queue_t *dap_context_queue_create(dap_context_t *a_context, size_t a
     // Add event socket to context's reactor (already done in dap_context_create_event for worker context)
     // Event socket is already added to context during creation
     
-    log_it(L_INFO, "Created context queue: context=%p, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
-           a_context, l_capacity, l_queue->event_socket->fd);
+    debug_if(s_debug_more, L_DEBUG, "Created context queue: context=%p, capacity=%zu, event_fd=%"DAP_FORMAT_SOCKET,
+             (void *)a_context, l_capacity, l_queue->event_socket->fd);
     
     return l_queue;
 }
@@ -118,8 +120,8 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue) {
         uint64_t l_pushes, l_pops, l_full, l_empty;
         dap_ring_buffer_get_stats(a_queue->ring_buffer, &l_pushes, &l_pops, &l_full, &l_empty);
         
-        log_it(L_INFO, "Deleting context queue %p: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
-               a_queue, l_pushes, l_pops, l_full, l_empty);
+        debug_if(s_debug_more, L_DEBUG, "Deleting context queue %p: pushes=%"PRIu64", pops=%"PRIu64", full=%"PRIu64", empty=%"PRIu64,
+                 (void *)a_queue, l_pushes, l_pops, l_full, l_empty);
         
         if (l_full > 0) {
             log_it(L_WARNING, "Context queue was full %"PRIu64" times - consider increasing capacity", l_full);
@@ -159,9 +161,11 @@ bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
     // Signal event socket to wake up reactor (cross-platform)
     int l_ret = dap_events_socket_event_signal(a_queue->event_socket, 1);
     if (l_ret != 0) {
-        // Signal failed, but item is already in ring buffer
-        // Reactor will eventually process it on next wakeup
-        log_it(L_WARNING, "Failed to signal event socket: error %d", l_ret);
+        log_it(L_WARNING, "Failed to signal event socket fd=%d context=%p: error %d",
+               a_queue->event_socket ? a_queue->event_socket->fd : -1, a_queue->context, l_ret);
+    } else {
+        debug_if(s_debug_more, L_DEBUG, "Queue push OK: signaled eventfd=%d context=%p",
+               a_queue->event_socket ? a_queue->event_socket->fd : -1, a_queue->context);
     }
     
     return true;
@@ -191,8 +195,14 @@ int dap_context_queue_process(dap_context_queue_t *a_queue) {
         l_count++;
     }
     
-    if (!dap_ring_buffer_is_empty(a_queue->ring_buffer)) {
+    bool l_has_more = !dap_ring_buffer_is_empty(a_queue->ring_buffer);
+    if (l_has_more) {
         dap_events_socket_event_signal(a_queue->event_socket, 1);
+    }
+    
+    if (l_count == 0) {
+        debug_if(g_debug_reactor, L_DEBUG, "Context queue: empty wakeup (spurious signal), fd=%"DAP_FORMAT_SOCKET,
+                 a_queue->event_socket ? a_queue->event_socket->fd : -1);
     }
     
     return l_count;

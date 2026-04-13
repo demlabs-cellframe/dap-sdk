@@ -72,6 +72,7 @@ DAP_MOCK_DECLARE(dap_server_create);
 DAP_MOCK_DECLARE(dap_server_new);
 DAP_MOCK_DECLARE(dap_server_listen_addr_add);
 DAP_MOCK_DECLARE(dap_server_delete);
+DAP_MOCK_DECLARE(dap_server_delete_sync);
 
 // Mock dap_stream_trans functions
 // Don't mock dap_net_trans_find - use real implementation
@@ -156,8 +157,13 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete,
     PARAM(dap_server_t *, a_server)
 )
 {
-    // Just verify the call, don't actually delete anything
-    // In real implementation this would free the server, but in tests we use static mocks
+    (void)a_server;
+}
+
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete_sync,
+    PARAM(dap_server_t *, a_server)
+)
+{
     (void)a_server;
 }
 
@@ -678,7 +684,7 @@ static void test_10_stream_connect(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test connect operation
@@ -710,7 +716,7 @@ static void test_11_stream_read(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test read operation
@@ -742,7 +748,7 @@ static void test_12_stream_write(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
-    s_mock_stream.trans_ctx->esocket = &s_mock_events_socket;  // Set esocket for write operation
+    s_mock_stream.esocket = &s_mock_events_socket;
     
     // Test write operation
     const char l_test_data[] = "test data";
@@ -773,7 +779,7 @@ static void test_13_stream_handshake(void)
     
     // Create mock stream
     s_mock_stream.trans = l_trans;
-    s_mock_stream.trans_ctx->esocket = &s_mock_events_socket;  // Set esocket for handshake operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     
     // Test handshake_init operation (requires a non-empty alice_pub_key)
     uint8_t l_fake_pub_key[32] = {1, 2, 3};
@@ -817,7 +823,7 @@ static void test_14_stream_session(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
-    s_mock_trans_ctx.esocket = &s_mock_events_socket; // Set mock esocket for operations
+    s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
     // Test session_create operation

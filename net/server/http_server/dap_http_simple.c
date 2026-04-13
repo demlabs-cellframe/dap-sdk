@@ -57,6 +57,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #define LOG_TAG "dap_http_simple"
 
+static bool s_debug_more = false;
 static void s_http_client_new( dap_http_client_t *a_http_client, void *arg );
 static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg );
 static void s_http_simple_delete( dap_http_simple_t *a_http_simple);
@@ -89,6 +90,10 @@ static void s_free_user_agents_list( void );
 
 int dap_http_simple_module_init( )
 {
+    if (s_http_proc_pool) {
+        log_it(L_DEBUG, "HTTP proc thread pool already initialized, skipping");
+        return 0;
+    }
     s_http_proc_pool = dap_thread_pool_create(0, 256);
     if (!s_http_proc_pool) {
         log_it(L_CRITICAL, "Failed to create HTTP proc thread pool");
@@ -187,7 +192,7 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
 
   const char* str = user_agents;
 
-//  log_it(L_DEBUG,"dap_http_simple_set_supported_user_agents");
+//  debug_if(s_debug_more, L_DEBUG,"dap_http_simple_set_supported_user_agents");
 //  Sleep(300);
 
   while ( str != NULL )
@@ -278,7 +283,7 @@ static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg)
 
     for (dap_http_header_t *i = l_hs->ext_headers; i; i = i->next) {
         dap_http_out_header_add(cl_ht, i->name, i->value);
-        log_it(L_DEBUG, "Added http header. %s: %s", i->name, i->value);
+        debug_if(s_debug_more, L_DEBUG, "Added http header. %s: %s", i->name, i->value);
     }
 
     return !l_hs->generate_default_header;
@@ -311,7 +316,7 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
 
 inline static void s_copy_reply_and_mime_to_response( dap_http_simple_t *a_simple )
 {
-//  log_it(L_DEBUG,"_copy_reply_and_mime_to_response");
+//  debug_if(s_debug_more, L_DEBUG,"_copy_reply_and_mime_to_response");
 //  Sleep(300);
 
     if( !a_simple->reply_size )
@@ -322,10 +327,19 @@ inline static void s_copy_reply_and_mime_to_response( dap_http_simple_t *a_simpl
     return;
 }
 
+inline static void s_write_response_busy(dap_http_simple_t *a_http_simple)
+{
+    a_http_simple->http_client->reply_status_code = Http_Status_ServiceUnavailable;
+    const char l_body[] = "{\"error\":\"Server busy, try again later\"}";
+    dap_http_simple_reply(a_http_simple, (void *)l_body, sizeof(l_body) - 1);
+    dap_strncpy(a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime) - 1);
+    s_copy_reply_and_mime_to_response(a_http_simple);
+}
+
 inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simple,
                                                const char* error_msg )
 {
-    //  log_it(L_DEBUG,"_write_response_bad_request");
+    //  debug_if(s_debug_more, L_DEBUG,"_write_response_bad_request");
     //  Sleep(300);
 
     struct json_object *jobj = json_object_new_object( );
@@ -353,7 +367,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
 static void *s_proc_pool_task(void *a_arg)
 {
     dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
-    log_it(L_DEBUG, "dap http simple proc");
+    debug_if(s_debug_more, L_DEBUG, "dap http simple proc");
     if (!l_http_simple->http_client) {
         log_it(L_ERROR, "[!] HTTP client is already deleted!");
         return NULL;
@@ -376,7 +390,7 @@ static void *s_proc_pool_task(void *a_arg)
         }
 
         if (l_header && s_is_user_agent_supported(l_header->value) == false) {
-            log_it(L_DEBUG, "Not supported user agent in request: %s", l_header->value);
+            debug_if(s_debug_more, L_DEBUG, "Not supported user agent in request: %s", l_header->value);
             const char *l_error_msg = "User-Agent version not supported. Update your software";
             s_write_response_bad_request(l_http_simple, l_error_msg);
             return l_http_simple;
@@ -386,7 +400,7 @@ static void *s_proc_pool_task(void *a_arg)
     DAP_HTTP_SIMPLE_URL_PROC(l_http_simple->http_client->proc)->proc_callback(l_http_simple, &return_code);
 
     if(return_code) {
-        log_it(L_DEBUG, "Request was processed well return_code=%d", return_code);
+        debug_if(s_debug_more, L_DEBUG, "Request was processed well return_code=%d", return_code);
         l_http_simple->http_client->reply_status_code = (uint16_t)return_code;
         s_copy_reply_and_mime_to_response(l_http_simple);
     } else {
@@ -472,8 +486,13 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
         log_it( L_DEBUG, "No data section, execution proc callback" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
-
+        int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
+        if (l_submit_rc != 0) {
+            log_it(L_ERROR, "HTTP proc pool submit failed (rc=%d), sending 503", l_submit_rc);
+            a_http_client->esocket->_inheritor = a_http_client;
+            s_write_response_busy(l_http_simple);
+            s_write_data_to_socket(l_http_simple);
+        }
     }
 }
 
@@ -481,7 +500,7 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
 {
     int *ret = (int *)a_arg;
 
-    //log_it(L_DEBUG,"dap_http_simple_data_read");
+    //debug_if(s_debug_more, L_DEBUG,"dap_http_simple_data_read");
     //  Sleep(300);
 
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
@@ -521,7 +540,13 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
         log_it( L_INFO,"Data for http_simple_request collected" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
+        int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
+        if (l_submit_rc != 0) {
+            log_it(L_ERROR, "HTTP proc pool submit failed (rc=%d), sending 503", l_submit_rc);
+            a_http_client->esocket->_inheritor = a_http_client;
+            s_write_response_busy(l_http_simple);
+            s_write_data_to_socket(l_http_simple);
+        }
     }
 }
 

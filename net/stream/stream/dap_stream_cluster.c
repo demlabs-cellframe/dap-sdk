@@ -30,6 +30,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_cluster"
 
+static bool s_debug_more = false;
 static dap_cluster_t *s_clusters = NULL, *s_cluster_mnemonims = NULL;
 static pthread_rwlock_t s_clusters_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
@@ -136,7 +137,7 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
         // Member already exists - return existing member (idempotent operation)
         // This is safe and expected when stream is added to existing link
         pthread_rwlock_unlock(&a_cluster->members_lock);
-        log_it(L_DEBUG, "Member "NODE_ADDR_FP_STR" already present in cluster, returning existing member",
+        debug_if(s_debug_more, L_DEBUG, "Member "NODE_ADDR_FP_STR" already present in cluster, returning existing member",
                NODE_ADDR_FP_ARGS(a_addr));
         return l_member;
     }

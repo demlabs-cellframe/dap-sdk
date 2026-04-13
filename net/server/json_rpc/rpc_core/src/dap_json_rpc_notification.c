@@ -2,6 +2,7 @@
 
 #define LOG_TAG "dap_json_rpc_notification"
 
+static bool s_debug_more = false;
 static dap_json_rpc_notification_handler_t *s_handler_notifications = NULL;
 
 
@@ -41,7 +42,7 @@ void dap_json_rpc_notification_handler(const char *a_name_method, dap_json_rpc_p
     HASH_FIND_STR(s_handler_notifications, a_name_method, l_handler);
     if (l_handler != NULL){
         l_handler->func(a_params);
-        log_it(L_DEBUG, "Call method handling notfication: %s", a_name_method);
+        debug_if(s_debug_more, L_DEBUG, "Call method handling notfication: %s", a_name_method);
     } else {
         log_it(L_NOTICE, "Not found method %s. This method handler notification", a_name_method);
     }

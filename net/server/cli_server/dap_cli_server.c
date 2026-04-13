@@ -50,6 +50,7 @@
 
 #define LOG_TAG "dap_cli_server"
 
+static bool s_debug_more = false;
 #define MAX_CONSOLE_CLIENTS 16
 
 static dap_server_t *s_cli_server = NULL;
@@ -152,12 +153,14 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
 
     dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 500 Internal Server Error\r\n");
     char *buf_dump = dap_dump_hex(a_es->buf_in, dap_min(a_es->buf_in_size, (size_t)65536));
-    log_it(L_DEBUG, "Incomplete cmd request:\r\n%s", buf_dump);
+    debug_if(s_debug_more, L_DEBUG, "Incomplete cmd request:\r\n%s", buf_dump);
     DAP_DELETE(buf_dump);
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
 
 DAP_STATIC_INLINE void s_cli_cmd_delete(dap_events_socket_t *a_es, void UNUSED_ARG *a_arg) {
+    log_it(L_INFO, "CLI esocket delete: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" buf_out_remain %zu flags 0x%x",
+           a_es->socket, a_es->uuid, a_es->buf_out_size, a_es->flags);
     DAP_DELETE(a_es->callbacks.arg);
 }
 
@@ -246,7 +249,7 @@ static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cm
     }
     l_cmd_item->func_rpc = a_func_rpc;
     l_cmd_item->arg_func_rpc = NULL;
-    log_it(L_DEBUG, "%s command %s", l_is_replace ? "Replaced" : "Added", l_cmd_item->name);
+    debug_if(s_debug_more, L_DEBUG, "%s command %s", l_is_replace ? "Replaced" : "Added", l_cmd_item->name);
     return l_cmd_item;
 }
 
@@ -274,7 +277,7 @@ bool dap_cli_server_cmd_remove(const char *a_name)
         l_cmd_item->doc_ex = NULL;
     }
     HASH_DEL(cli_commands, l_cmd_item);
-    log_it(L_DEBUG, "Removed command %s", l_cmd_item->name);
+    debug_if(s_debug_more, L_DEBUG, "Removed command %s", l_cmd_item->name);
     DAP_DELETE(l_cmd_item);
     return true;
 }
@@ -489,6 +492,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
 
 static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
+    dap_nanotime_t l_exec_start = dap_nanotime_now();
     char    *l_ret = s_cli_cmd_exec_ex(l_arg->buf, l_arg->restricted),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n"
@@ -503,8 +507,14 @@ static void *s_cli_cmd_exec(void *a_arg) {
                                             "CellframeNode, " DAP_VERSION ", " BUILD_TS ", " BUILD_HASH, 
                                              l_ret);
     DAP_DELETE(l_ret);
-    dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
-    // TODO: pagination
+    size_t l_full_ret_len = dap_strlen(l_full_ret);
+    uint64_t l_exec_us = (dap_nanotime_now() - l_exec_start) / 1000;
+    log_it(L_INFO, "CLI cmd done in %"DAP_UINT64_FORMAT_U" us, response %zu bytes, queuing to worker %u es_uid 0x%"DAP_UINT64_FORMAT_x,
+           l_exec_us, l_full_ret_len, l_arg->worker ? l_arg->worker->id : (unsigned)-1, l_arg->es_uid);
+    size_t l_sent = dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, l_full_ret_len);
+    if (l_sent != l_full_ret_len)
+        log_it(L_ERROR, "CLI response delivery failed: tried %zu, queued %zu, es_uid 0x%"DAP_UINT64_FORMAT_x" worker %u",
+               l_full_ret_len, l_sent, l_arg->es_uid, l_arg->worker ? l_arg->worker->id : (unsigned)-1);
     DAP_DEL_MULTY(l_arg->buf, /* l_full_ret, */ l_arg);
     return NULL;
 }

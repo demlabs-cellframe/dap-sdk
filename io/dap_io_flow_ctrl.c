@@ -346,7 +346,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
             if (!l_ctrl->retransmit_timer) {
                 log_it(L_WARNING, "Failed to start retransmission timer");
             } else {
-                log_it(L_INFO, "FC: Retransmit timer started on worker %u (interval=%ums)",
+                debug_if(s_debug_more, L_INFO, "FC: Retransmit timer started on worker %u (interval=%ums)",
                        l_worker->id, l_ctrl->config.retransmit_timeout_ms / 2);
             }
         } else {
@@ -371,7 +371,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
         }
     }
     
-    log_it(L_DEBUG, "Flow Control created: flags=0x%02x, send_window=%zu, recv_window=%zu",
+    debug_if(s_debug_more, L_DEBUG, "Flow Control created: flags=0x%02x, send_window=%zu, recv_window=%zu",
            a_flags, l_ctrl->send_window_size, l_ctrl->recv_window_size);
     
     return l_ctrl;
@@ -460,7 +460,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     pthread_cond_destroy(&a_ctrl->lifecycle_cond);
     pthread_mutex_destroy(&a_ctrl->lifecycle_mutex);
     
-    log_it(L_DEBUG, "Flow Control deleted: sent=%lu, retrans=%lu, recv=%lu, lost=%lu",
+    debug_if(s_debug_more, L_DEBUG, "Flow Control deleted: sent=%lu, retrans=%lu, recv=%lu, lost=%lu",
            atomic_load(&a_ctrl->stats_sent), atomic_load(&a_ctrl->stats_retransmitted),
            atomic_load(&a_ctrl->stats_recv), atomic_load(&a_ctrl->stats_lost));
     
@@ -541,7 +541,7 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
         }
     }
     
-    log_it(L_DEBUG, "Flow Control flags updated: 0x%02x → 0x%02x", l_old_flags, a_flags);
+    debug_if(s_debug_more, L_DEBUG, "Flow Control flags updated: 0x%02x → 0x%02x", l_old_flags, a_flags);
     
     return 0;
 }
@@ -810,7 +810,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 // Check if already received (duplicate)
                 if (a_ctrl->recv_window[l_idx].received && 
                     a_ctrl->recv_window[l_idx].seq_num == l_seq) {
-                    log_it(L_WARNING, "Duplicate packet: seq=%lu", l_seq);
+                    debug_if(s_debug_more, L_DEBUG, "Duplicate packet: seq=%lu", l_seq);
                     atomic_fetch_add(&a_ctrl->stats_duplicate, 1);
                 } else {
                     // Buffer packet
@@ -833,7 +833,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                             a_ctrl->recv_seq_highest = l_seq;
                         }
                         
-                        log_it(L_DEBUG, "Buffered out-of-order packet: seq=%lu, expected=%lu", 
+                        debug_if(s_debug_more, L_DEBUG, "Buffered out-of-order packet: seq=%lu, expected=%lu", 
                                l_seq, a_ctrl->recv_seq_expected);
                         atomic_fetch_add(&a_ctrl->stats_out_of_order, 1);
                     } else {
@@ -1024,7 +1024,7 @@ static bool s_retransmit_timer_callback(void *a_arg)
                 l_entry->retransmit_count++;
                 atomic_fetch_add(&l_ctrl->stats_retransmitted, 1);
                 
-                log_it(L_DEBUG, "Retransmitted packet: seq=%lu, retry=%u",
+                debug_if(s_debug_more, L_DEBUG, "Retransmitted packet: seq=%lu, retry=%u",
                        seq, l_entry->retransmit_count);
             } else {
                 log_it(L_WARNING, "Failed to retransmit packet: seq=%lu, ret=%d", seq, l_ret);
@@ -1093,7 +1093,7 @@ static bool s_keepalive_timer_callback(void *a_arg)
             
             if (l_ret == 0) {
                 l_ctrl->last_activity_ns = l_now;
-                log_it(L_DEBUG, "Sent keep-alive packet");
+                debug_if(s_debug_more, L_DEBUG, "Sent keep-alive packet");
             }
         }
     }

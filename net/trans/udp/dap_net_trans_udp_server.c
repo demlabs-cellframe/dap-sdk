@@ -1071,7 +1071,7 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
         log_it(L_ERROR, "Failed to create Flow Control for session");
         // Continue without flow control (fallback to unreliable UDP)
     } else {
-        log_it(L_INFO, "Flow Control enabled for session (RELIABLE mode: retransmit + reorder)");
+        debug_if(s_debug_more, L_DEBUG, "Flow Control enabled for session (RELIABLE mode: retransmit + reorder)");
     }
     
     return l_stream_session;
@@ -1093,7 +1093,7 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     if (l_flow_ctrl) {
         l_session->base.base.flow_ctrl = NULL;  // Clear pointer first
         dap_io_flow_ctrl_delete(l_flow_ctrl);   // Then delete (waits for operations)
-        log_it(L_DEBUG, "Flow Control deleted for session");
+        debug_if(s_debug_more, L_DEBUG, "Flow Control deleted for session");
     }
     
     // Close session using session ID
@@ -1833,7 +1833,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
 
     // QoS probe detection: payload starts with DAP_QOS_PROBE_MAGIC → echo, skip KEM
     if (dap_qos_is_probe(a_payload, a_payload_size)) {
-        log_it(L_DEBUG, "QoS probe detected (%zu bytes), building echo", a_payload_size);
+        debug_if(s_debug_more, L_DEBUG, "QoS probe detected (%zu bytes), building echo", a_payload_size);
         atomic_store(&a_session->kem_task_pending, false);
 
         void  *l_echo = NULL;
@@ -2003,7 +2003,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
                a_session->stream, a_session->stream ? a_session->stream->session : NULL);
     }
     
-    log_it(L_INFO, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
+    debug_if(s_debug_more, L_DEBUG, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
     
     // CRITICAL: Send SESSION_CREATE response using HANDSHAKE key (still in a_session->encryption_key)!
     // Client will derive session key after receiving this counter, so response must use handshake key

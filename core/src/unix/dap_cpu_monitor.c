@@ -16,6 +16,7 @@
 
 #define LOG_TAG "dap_cpu_monitor"
 
+static bool s_debug_more = false;
 #ifndef DAP_OS_DARWIN
 static FILE * _proc_stat = NULL;
 #endif
@@ -53,7 +54,7 @@ int dap_cpu_monitor_init()
 {
     _cpu_stats.cpu_cores_count = (unsigned) sysconf(_SC_NPROCESSORS_ONLN);
 
-    log_it(L_DEBUG, "Cpu core count: %d", _cpu_stats.cpu_cores_count);
+    debug_if(s_debug_more, L_DEBUG, "Cpu core count: %d", _cpu_stats.cpu_cores_count);
 
     dap_cpu_get_stats(); // init prev parameters
 

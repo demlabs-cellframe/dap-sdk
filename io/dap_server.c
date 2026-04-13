@@ -76,6 +76,7 @@
 
 #define LOG_TAG "dap_server"
 
+static bool s_debug_more = false;
 static void s_es_server_new     (dap_events_socket_t *a_es, void *a_arg);
 static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
 static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
@@ -454,7 +455,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
  */
 static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
 {
-    log_it(L_DEBUG, "Created server socket %d with uuid "DAP_FORMAT_ESOCKET_UUID" on worker %u", a_es->socket, a_es->uuid, a_es->worker->id);
+    debug_if(s_debug_more, L_DEBUG, "Created server socket %d with uuid "DAP_FORMAT_ESOCKET_UUID" on worker %u", a_es->socket, a_es->uuid, a_es->worker->id);
 }
 
 /**
@@ -498,8 +499,21 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #ifdef DAP_OS_UNIX
     case AF_UNIX:
         l_es_type = DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT;
-        debug_if(l_server->ext_log, L_INFO, "Connection accepted at \"%s\", socket %"DAP_FORMAT_SOCKET,
-                                            a_es_listener->remote_addr_str, a_remote_socket);
+        {
+            int l_peer_pid = 0;
+#ifdef SO_PEERCRED
+            struct ucred l_ucred;
+            socklen_t l_ucred_len = sizeof(l_ucred);
+            if (!getsockopt(a_remote_socket, SOL_SOCKET, SO_PEERCRED, &l_ucred, &l_ucred_len))
+                l_peer_pid = l_ucred.pid;
+#endif
+            if (l_server->ext_log)
+                log_it(L_INFO, "Connection accepted at \"%s\", socket %"DAP_FORMAT_SOCKET" peer_pid=%d",
+                       a_es_listener->remote_addr_str, a_remote_socket, l_peer_pid);
+            else
+                debug_if(s_debug_more, L_DEBUG, "Connection accepted at \"%s\", socket %"DAP_FORMAT_SOCKET" peer_pid=%d",
+                       a_es_listener->remote_addr_str, a_remote_socket, l_peer_pid);
+        }
         break;
 #endif
     case AF_INET:

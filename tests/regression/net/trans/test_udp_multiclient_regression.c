@@ -25,7 +25,8 @@
 #include "dap_proc_thread.h"
 #include "dap_enc.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
@@ -84,9 +85,13 @@ static const trans_test_config_t s_udp_config = {
 
 static int s_init_all(void)
 {
-    // Force CBPF tier for reliable testing
+    // Force a non-application tier for reliable testing
     // Application tier has race conditions with multiple clients
+#if defined(__linux__) || defined(ANDROID)
     dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_CLASSIC_BPF);
+#elif defined(__APPLE__) && defined(__MACH__)
+    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_DARWIN_GCD);
+#endif
     
     log_it(L_INFO, "Init: events_init...");
     int ret = dap_events_init(0, 0);
@@ -225,8 +230,8 @@ static int s_setup_client(int id)
     // Wait for client init with polling
     bool ready = false;
     for (int i = 0; i < 20 && !ready; i++) {
-        dap_client_esocket_t *esocket = DAP_CLIENT_ESOCKET(s_clients[id]);
-        if (esocket && esocket->worker) ready = true;
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(s_clients[id]);
+        if (l_fsm && l_fsm->worker) ready = true;
         else usleep(100000);
     }
     

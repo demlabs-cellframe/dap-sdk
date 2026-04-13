@@ -56,7 +56,7 @@ generate_wrap_file() {
             
             # Helper to extract __wrap_func signature from source files
             # Returns: return_type|param_list
-            # BSD-compatible (no gawk-specific features)
+            # BSD-compatible (no gawk-specific features, uses plain awk)
             # Searches for:
             # 1. Explicit __wrap_func_name definitions
             # 2. DAP_MOCK_WRAPPER_DEFAULT(ret_type, func_name, (params), ...)
@@ -600,7 +600,7 @@ EOF
                 
                 param_decl_parts+=("$param")
                 param_name_parts+=("$param_name")
-                param_array_parts+=("(void*)(intptr_t)$param_name")
+                param_array_parts+=("({ void *_p = NULL; __builtin_memcpy(&_p, &$param_name, sizeof($param_name)); _p; })")
             done
             
             # Join parameters with proper formatting
@@ -661,7 +661,7 @@ EOF
                 echo "            __wrap_result = *($return_type*)__wrap_mock_state->return_value.ptr;"
                 echo "        }"
             } > "$return_value_override_file"
-            echo "        dap_mock_record_call(__wrap_mock_state, __wrap_args, __wrap_args_count, (void*)(intptr_t)__wrap_result);" > "$record_call_file"
+            echo "        { void *_rr = NULL; __builtin_memcpy(&_rr, &__wrap_result, sizeof(__wrap_result)); dap_mock_record_call(__wrap_mock_state, __wrap_args, __wrap_args_count, _rr); }" > "$record_call_file"
             return_value_override="@$return_value_override_file"
             record_call="@$record_call_file"
             return_statement="    return __wrap_result;"
@@ -734,10 +734,11 @@ prepare_map_impl_cond_1_data() {
     [ -z "$max_args_count" ] && max_args_count=0
     [ "$max_args_count" -lt 0 ] && max_args_count=0
     
-    declare -A HAS_PARAM_COUNT
+    # POSIX-compatible set membership (no associative arrays — bash 3.2 on macOS)
+    _has_param_count_str=""
     for count in "${param_counts_array[@]}"; do
         [ -z "$count" ] && continue
-        HAS_PARAM_COUNT["$count"]=1
+        _has_param_count_str="${_has_param_count_str}|${count}|"
     done
     
     MAP_IMPL_COND_1_DATA=""
@@ -751,7 +752,7 @@ prepare_map_impl_cond_1_data() {
         done
         
         has_count=0
-        if [ "${HAS_PARAM_COUNT[$param_count]:-0}" = "1" ] || [ "$param_count" -eq 0 ]; then
+        if echo "$_has_param_count_str" | grep -q "|${param_count}|" || [ "$param_count" -eq 0 ]; then
             has_count=1
             fallback_count="$param_count"
         else

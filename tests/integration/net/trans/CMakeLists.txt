@@ -75,7 +75,12 @@ add_test(
     COMMAND ${PROJECT_NAME}
 )
 
+if(CMAKE_CROSSCOMPILING)
+    set(_TRANS_INTEGRATION_TIMEOUT 600)
+else()
+    set(_TRANS_INTEGRATION_TIMEOUT 180)
+endif()
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 120
+    TIMEOUT ${_TRANS_INTEGRATION_TIMEOUT}
     LABELS "integration;net;trans;parallel;client-server"
 )

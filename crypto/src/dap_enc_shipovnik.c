@@ -6,6 +6,7 @@
 
 #define LOG_TAG "dap_enc_sig_shipovnik"
 
+static bool s_debug_more = false;
 static enum DAP_SHIPOVNIK_SIGN_SECURITY _shipovnik_type = SHIPOVNIK_MAX_SPEED; // by default
 
 void dap_enc_sig_shipovnik_key_new(dap_enc_key_t *a_key) {
@@ -27,7 +28,7 @@ void dap_enc_sig_shipovnik_key_new_generate(dap_enc_key_t * key, UNUSED_ARG cons
     key->priv_key_data_size = SHIPOVNIK_SECRETKEYBYTES;
     key->pub_key_data_size = SHIPOVNIK_PUBLICKEYBYTES;
     if (!seed || !seed_size) {
-        log_it(L_DEBUG, "Generate key with random seed");
+        debug_if(s_debug_more, L_DEBUG, "Generate key with random seed");
         shipovnik_generate_keys(key->priv_key_data, key->pub_key_data);
     } else {
         uint32_t l_seed_buf[N_shipovnik] = { 0 };

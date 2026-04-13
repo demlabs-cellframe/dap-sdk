@@ -34,6 +34,7 @@
 
 #define LOG_TAG "dap_cert_file"
 
+static bool s_debug_more = false;
 static const char s_key_inheritor[] = "inheritor";
 
 /**
@@ -133,7 +134,7 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
         case DAP_CERT_META_CUSTOM:
             if ( !strcmp(l_key_str, s_key_inheritor) ) {
                 if (a_cert->enc_key->_inheritor) {
-                    log_it(L_DEBUG, "Few inheritor records in cert metadata");
+                    debug_if(s_debug_more, L_DEBUG, "Few inheritor records in cert metadata");
                     l_err = -2;
                     break;
                 }

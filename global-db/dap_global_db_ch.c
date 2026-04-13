@@ -32,6 +32,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_ch"
 
+static bool s_debug_more = false;
 static void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg);
 static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
@@ -224,7 +225,7 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
         dap_hash_fast_t l_sign_hash;
         if (a_obj->sign && dap_sign_get_pkey_hash(a_obj->sign, &l_sign_hash))
            dap_stream_node_addr_from_hash(&l_sign_hash, &l_signer_addr);
-        log_it(L_DEBUG, "Unpacked object: type='%c', group=\"%s\" key=\"%s\""
+        debug_if(s_debug_more, L_DEBUG, "Unpacked object: type='%c', group=\"%s\" key=\"%s\""
                 " timestamp=\"%s\" value_len=%zu signer_addr=%s",
                     dap_store_obj_get_type(a_obj),
                         a_obj->group, a_obj->key, l_ts_str, a_obj->value_len,

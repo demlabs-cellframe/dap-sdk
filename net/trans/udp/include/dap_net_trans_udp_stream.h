@@ -229,7 +229,7 @@ typedef struct dap_stream_trans_udp_private {
 } dap_stream_trans_udp_private_t;
 
 /**
- * @brief UDP stream context (per-stream, stored in trans_ctx->_inheritor)
+ * @brief UDP stream context (per-stream, stored in trans_ctx->transport_priv)
  * 
  * Each stream has its own UDP context with unique session_id, seq_num, etc.
  * This allows multiple concurrent UDP connections to share one transport.

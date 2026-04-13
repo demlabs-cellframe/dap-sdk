@@ -43,6 +43,7 @@
 
 #define LOG_TAG "dap_uuid"
 
+static bool s_debug_more = false;
 static atomic_uint_fast32_t s_global_counter = 0;
 
 /**
@@ -61,7 +62,7 @@ uint128_t dap_uuid_generate_uint128()
     uint128_t l_output;
     SHAKE128((unsigned char *) &l_output,sizeof (l_output), (unsigned char*) &l_input,sizeof (l_input));
  //   uint64_t *l_output_u64 =(uint64_t*) &l_output;
-   // log_it(L_DEBUG,"UUID generated 0x%016X%016X (0x%08X%08X%08X%08X",l_output_u64[0],l_output_u64[1],
+   // debug_if(s_debug_more, L_DEBUG,"UUID generated 0x%016X%016X (0x%08X%08X%08X%08X",l_output_u64[0],l_output_u64[1],
    //         l_input[0],l_input[1],l_input[2],l_input[3]);
     return l_output;
 }
@@ -80,7 +81,7 @@ uint64_t dap_uuid_generate_uint64()
     };
     uint64_t l_output;
     SHAKE128((unsigned char *) &l_output,sizeof (l_output), (unsigned char*) &l_input,sizeof (l_input));
-   // log_it(L_DEBUG,"UUID generated 0x%016X%016X (0x%08X%08X%08X%08X",l_output_u64[0],l_output_u64[1],
+   // debug_if(s_debug_more, L_DEBUG,"UUID generated 0x%016X%016X (0x%08X%08X%08X%08X",l_output_u64[0],l_output_u64[1],
    //         l_input[0],l_input[1],l_input[2],l_input[3]);
     return l_output;
 }

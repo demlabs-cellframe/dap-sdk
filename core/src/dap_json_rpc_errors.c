@@ -2,6 +2,7 @@
 
 #define LOG_TAG "dap_json_rpc_errors"
 
+static bool s_debug_more = false;
 // static _Thread_local dap_json_rpc_error_t *s_errors;
 // int _dap_json_rpc_error_cmp_by_code(dap_json_rpc_error_t *a_error, int a_code_error);
 
@@ -164,7 +165,7 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json(const char *a_json)
 
 // void dap_json_rpc_add_standart_erros(void)
 // {
-//     log_it(L_DEBUG, "Registration standart type erros");
+//     debug_if(s_debug_more, L_DEBUG, "Registration standart type erros");
 //     dap_json_rpc_error_add(*a_json_arr_reply, 0, "Unknown error");
 //     dap_json_rpc_error_add(*a_json_arr_reply, 1, "Not found handler for this request");
 // }

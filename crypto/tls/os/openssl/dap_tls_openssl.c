@@ -21,6 +21,7 @@
 
 #define LOG_TAG "dap_tls_openssl"
 
+static bool s_debug_more = false;
 struct dap_tls_context {
     SSL_CTX *ssl_ctx;
 };
