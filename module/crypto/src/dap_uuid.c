@@ -22,9 +22,12 @@
 */
 #include <time.h>
 
-#include "KeccakHash.h"
-#include "SimpleFIPS202.h"
+#include "dap_hash_keccak.h"
+#include "dap_hash_sha3.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 #include "dap_uuid.h"
+#include "dap_time.h"
 #include "dap_guuid.h"
 #include "dap_rand.h"
 #include "dap_strfuncs.h"
@@ -51,13 +54,13 @@ static atomic_uint_fast32_t s_global_counter = 0;
 uint128_t dap_uuid_generate_uint128()
 {
     uint32_t l_input[4] ={
-        [0] = random_uint32_t(UINT32_MAX),
-        [1] = time(NULL),
+        [0] = dap_random_uint32(UINT32_MAX),
+        [1] = (uint32_t)dap_time_now(),
         [2] = atomic_fetch_add(&s_global_counter, 1),
-        [3] = random_uint32_t(UINT32_MAX)
+        [3] = dap_random_uint32(UINT32_MAX)
     };
     uint128_t l_output;
-    SHAKE128((unsigned char *) &l_output,sizeof (l_output), (unsigned char*) &l_input,sizeof (l_input));
+    dap_hash_shake128((unsigned char *) &l_output, sizeof(l_output), (unsigned char*) &l_input, sizeof(l_input));
  //   uint64_t *l_output_u64 =(uint64_t*) &l_output;
    // log_it(L_DEBUG,"UUID generated 0x%016X%016X (0x%08X%08X%08X%08X",l_output_u64[0],l_output_u64[1],
    //         l_input[0],l_input[1],l_input[2],l_input[3]);
@@ -72,12 +75,12 @@ uint64_t dap_uuid_generate_uint64()
 {
     uint16_t l_input[4] = {
         [0] = dap_random_uint16(),
-        [1] = time(NULL) & UINT16_MAX,      /*  time(NULL) % UINT16_MAX */
+        [1] = (uint16_t)(dap_time_now() & UINT16_MAX),      /*  time(NULL) % UINT16_MAX */
         [2] = (uint16_t) atomic_fetch_add(&s_global_counter, 1),
         [3] = dap_random_uint16()
     };
     uint64_t l_output;
-    SHAKE128((unsigned char *) &l_output,sizeof (l_output), (unsigned char*) &l_input,sizeof (l_input));
+    dap_hash_shake128((unsigned char *) &l_output, sizeof(l_output), (unsigned char*) &l_input, sizeof(l_input));
    // log_it(L_DEBUG,"UUID generated 0x%016X%016X (0x%08X%08X%08X%08X",l_output_u64[0],l_output_u64[1],
    //         l_input[0],l_input[1],l_input[2],l_input[3]);
     return l_output;
@@ -88,12 +91,12 @@ void dap_uuid_generate_nonce(void *a_nonce, size_t a_nonce_size)
     if (!a_nonce || !a_nonce_size)
         return;
     uint32_t l_input[4] ={
-        [0] = random_uint32_t(UINT32_MAX),
-        [1] = time(NULL),
+        [0] = dap_random_uint32(UINT32_MAX),
+        [1] = (uint32_t)dap_time_now(),
         [2] = atomic_fetch_add(&s_global_counter, 1),
-        [3] = random_uint32_t(UINT32_MAX)
+        [3] = dap_random_uint32(UINT32_MAX)
     };
-    SHAKE128((unsigned char *)a_nonce, a_nonce_size, (unsigned char *)l_input, sizeof(l_input));
+    dap_hash_shake128((unsigned char *)a_nonce, a_nonce_size, (unsigned char *)l_input, sizeof(l_input));
 }
 
 dap_guuid_str_t dap_guuid_to_hex_str_(dap_guuid_t a_guuid)

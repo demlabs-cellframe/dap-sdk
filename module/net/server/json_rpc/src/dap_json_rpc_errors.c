@@ -41,8 +41,8 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_create()
 }
 void dap_json_rpc_error_JSON_free(dap_json_rpc_error_JSON_t *a_error_json)
 {
-//    json_object_put(a_error_json->obj_code);
-//    json_object_put(a_error_json->obj_msg);
+//    dap_json_object_free(a_error_json->obj_code);
+//    dap_json_object_free(a_error_json->obj_msg);
     DAP_FREE(a_error_json);
 }
 dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const char *msg)
@@ -70,26 +70,23 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
     }
 
     int l_array_length = dap_json_array_length(a_json_arr_reply);
-    dap_json_t *l_json_obj_errors = NULL;
     dap_json_t *l_json_arr_errors = NULL;
     for (int i = 0; i < l_array_length; i++) {
         dap_json_t *l_json_obj = dap_json_array_get_idx(a_json_arr_reply, i);
         if (l_json_obj && dap_json_get_type(l_json_obj) == DAP_JSON_TYPE_OBJECT) {
             l_json_arr_errors = dap_json_object_get_array(l_json_obj, "errors");
-            if (l_json_arr_errors) {
-                l_json_obj_errors = l_json_obj;
-                break;
-            }
+            if (l_json_arr_errors)
+                break;  // Keep l_json_arr_errors is borrowed ref
         }
+        // l_json_obj is borrowed - no free needed
     }
 
-    if (!l_json_obj_errors) {
-        l_json_obj_errors = dap_json_object_new();
+    if (!l_json_arr_errors) {
+        dap_json_t *l_json_obj_errors = dap_json_object_new();
+        dap_json_array_add(a_json_arr_reply, l_json_obj_errors);
         l_json_arr_errors = dap_json_array_new();
         dap_json_object_add_array(l_json_obj_errors, "errors", l_json_arr_errors);
-        dap_json_array_add(a_json_arr_reply, l_json_obj_errors);
     } 
-
     dap_json_t* l_obj_error = dap_json_object_new();
     dap_json_object_add_int(l_obj_error, "code", a_code_error);
     dap_json_object_add_string(l_obj_error, "message", l_msg);
@@ -101,15 +98,15 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 }
 
 // json_object * dap_json_rpc_error_get(){
-//     json_object* json_arr_errors = json_object_new_array();
+//     json_object* json_arr_errors = dap_json_array_new();
 //     dap_json_rpc_error_t * error = NULL;
 //     LL_FOREACH(s_errors, error) {
-//         json_object_array_add(json_arr_errors, dap_json_rpc_error_get_json(error));
+//         dap_json_array_add(json_arr_errors, dap_json_rpc_error_get_json(error));
 //     }
 //     if (dap_json_array_length(json_arr_errors) > 0) {
 //         return json_arr_errors;
 //     } else {
-//         json_object_put(json_arr_errors);
+//         dap_json_object_free(json_arr_errors);
 //         return NULL;
 //     }
 // }
@@ -134,12 +131,12 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 
 // json_object *dap_json_rpc_error_get_json(dap_json_rpc_error_t *a_error)
 // {
-//     json_object *l_jobj_code = json_object_new_int64(a_error->code_error);
+//     json_object *l_jobj_code = dap_json_object_new_int(a_error->code_error);
 //     json_object *l_jobj_msg = dap_json_object_new_string(a_error->msg);
-//     json_object *l_jobj = json_object_new_object();
+//     json_object *l_jobj = dap_json_object_new();
 //     json_object_object_add(l_jobj, "code", l_jobj_code);
 //     json_object_object_add(l_jobj, "message", l_jobj_msg);
-//     json_object *l_jobj_err = json_object_new_object();
+//     json_object *l_jobj_err = dap_json_object_new();
 //     json_object_object_add(l_jobj_err, "error", l_jobj);
 //     return l_jobj_err;
 // }
@@ -147,15 +144,15 @@ int dap_json_rpc_error_add(dap_json_t* a_json_arr_reply, int a_code_error, const
 // char *dap_json_rpc_error_get_json_str(dap_json_rpc_error_t *a_error)
 // {
 //     log_it(L_NOTICE, "Translation JSON string to struct dap_json_rpc_error");
-//     json_object *l_jobj_code = json_object_new_int64(a_error->code_error);
+//     json_object *l_jobj_code = dap_json_object_new_int(a_error->code_error);
 //     json_object *l_jobj_msg = dap_json_object_new_string(a_error->msg);
-//     json_object *l_jobj = json_object_new_object();
+//     json_object *l_jobj = dap_json_object_new();
 //     json_object_object_add(l_jobj, "code", l_jobj_code);
 //     json_object_object_add(l_jobj, "message", l_jobj_msg);
-//     json_object *l_jobj_err = json_object_new_object();
+//     json_object *l_jobj_err = dap_json_object_new();
 //     json_object_object_add(l_jobj_err, "error", l_jobj);
-//     char *l_json_str = dap_strdup(json_object_to_json_string(l_jobj_err));
-//     json_object_put(l_jobj);
+//     char *l_json_str = dap_strdup(dap_json_to_string(l_jobj_err));
+//     dap_json_object_free(l_jobj);
 //     return l_json_str;
 // }
 
@@ -171,8 +168,8 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json(const char *a_json)
 // void dap_json_rpc_add_standart_erros(void)
 // {
 //     log_it(L_DEBUG, "Registration standart type erros");
-//     dap_json_rpc_error_add(*a_json_arr_reply, 0, "Unknown error");
-//     dap_json_rpc_error_add(*a_json_arr_reply, 1, "Not found handler for this request");
+//     dap_json_rpc_error_add(a_json_arr_reply, 0, "Unknown error");
+//     dap_json_rpc_error_add(a_json_arr_reply, 1, "Not found handler for this request");
 // }
 
 dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(dap_json_t *a_jobj)
@@ -197,12 +194,12 @@ void dap_json_rpc_sign_get_information(dap_json_t* a_json_arr_reply, dap_sign_t*
         return;
     }
     
-    dap_hash_fast_t l_hash_pkey;
+    dap_hash_sha3_256_t l_hash_pkey;
     dap_json_object_add_string(a_json_out, a_version == 1 ? "Type" : "sig_type", dap_sign_type_to_str(a_sign->header.type));
     if (dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
         const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
              ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-             : dap_hash_fast_to_str_static(&l_hash_pkey);
+             : dap_hash_sha3_256_to_str_static(&l_hash_pkey);
         dap_json_object_add_string(a_json_out, a_version == 1 ? "Public key hash" : "pkey_hash", l_hash_str);             
     }
     dap_json_object_add_int(a_json_out, a_version == 1 ? "Public key size" : "pkey_size", (int)a_sign->header.sign_pkey_size);

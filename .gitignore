@@ -86,4 +86,15 @@ debug/
 
 # Context working files
 context/.local/
+.context/
+slc
+.cursorrules
+# Downloaded/temporary files
+*.tmp
+*.download
 
+# Downloaded competitor libraries for benchmarks
+tests/performance/hashtable/competitors/
+tests/performance/keccak/competitors/
+tests/performance/ecdsa/competitors/
+tests/performance/global_db/competitors/

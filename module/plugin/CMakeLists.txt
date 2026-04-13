@@ -8,6 +8,8 @@ set(CMAKE_C_STANDARD 11)
 file(GLOB DAP_PLUGIN_SRCS src/*.c)
 file(GLOB DAP_PLUGIN_HEADERS include/*.h)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/LibraryHelpers.cmake)
+
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${DAP_PLUGIN_SRCS} HEADERS ${DAP_PLUGIN_HEADERS})
 
@@ -19,26 +21,9 @@ endif()
 
 set(DAP_PLUGIN_DEPS "${PLUGIN_LIBS}" CACHE INTERNAL "dap_plugin external dependencies")
 
-target_include_directories(${PROJECT_NAME} PUBLIC 
-    include/ 
-    ../core/include/
-    ../../3rdparty/uthash/src/
-    ../net/server/cli_server/include/
-    ../io/include/
-    ../../3rdparty/json-c/
-)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Include paths for json_config.h - support both standalone and embedded builds  
-# Removed hardcoded path - now handled via DAP_SDK_PATH_BUILD logic below
-if(DEFINED DAP_SDK_PATH_BUILD)
-    # When built as submodule (e.g., in python-cellframe)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${DAP_SDK_PATH_BUILD}/module/core/json-c)
-    message("[+] DAP Plugin: Using external build path for json-c: ${DAP_SDK_PATH_BUILD}/module/core/json-c")
-else()
-    # Fallback paths for standalone builds
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/module/core/json-c)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_BINARY_DIR}/dap-sdk/module/core/json-c)
-endif()
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_json_rpc dap_cli_server dap_http_server dap_io dap_json dap_hash_table dap_core dap_config dap_crypto dap_net_common)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_PLUGIN_HEADERS}")

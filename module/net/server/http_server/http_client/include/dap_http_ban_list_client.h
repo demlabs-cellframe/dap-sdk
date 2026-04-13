@@ -4,7 +4,7 @@
 #include "dap_hash.h"
 #include "dap_time.h"
 #include "dap_string.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "dap_ht.h"
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
 #include <in6addr.h>
@@ -19,8 +19,8 @@ typedef struct dap_json dap_json_t;
 int dap_http_ban_list_client_init();
 void dap_http_ban_list_client_deinit();
 
-bool dap_http_ban_list_client_check(const char *a_addr, dap_hash_fast_t *a_decree_hash, dap_time_t *a_ts);
-int dap_http_ban_list_client_add(const char *a_addr, dap_hash_fast_t a_decree_hash, dap_time_t a_ts);
+bool dap_http_ban_list_client_check(const char *a_addr, dap_hash_sha3_256_t *a_decree_hash, dap_time_t *a_ts);
+int dap_http_ban_list_client_add(const char *a_addr, dap_hash_sha3_256_t a_decree_hash, dap_time_t a_ts);
 int dap_http_ban_list_client_remove(const char *a_addr);
 dap_json_t  *dap_http_ban_list_client_dump(const char *a_addr);
 

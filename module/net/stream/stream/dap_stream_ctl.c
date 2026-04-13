@@ -187,6 +187,9 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
                 }
                 l_stream_session->acl = l_ks_key->acl_list;
                 l_stream_session->node = l_ks_key->node_addr;
+                log_it(L_INFO, "stream_ctl: session %u node_addr=" NODE_ADDR_FP_STR " (blank=%d)",
+                       l_stream_session->id, NODE_ADDR_FP_ARGS_S(l_ks_key->node_addr),
+                       dap_cluster_node_addr_is_blank(&l_ks_key->node_addr));
             }
             if (l_is_legacy)
                 enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);
@@ -205,7 +208,11 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
         }
 
         enc_http_reply_encode(a_http_simple,l_dg);
-        dap_enc_ks_delete(l_hdr_key_id->value);
+        // NOTE: Do NOT delete key immediately after STREAM_CTL
+        // The key must remain in storage until stream session closes
+        // Multiple parallel clients may use the same KeyID (though each should have unique KeyID)
+        // Key will be cleaned up automatically when session expires or is closed
+        // dap_enc_ks_delete(l_hdr_key_id->value);
         enc_http_delegate_delete(l_dg);
     }else{
         log_it(L_ERROR,"No encryption layer was initialized well");

@@ -22,20 +22,22 @@
 */
 #include <errno.h>
 #include <pthread.h>
-#include <utlist.h>
+#include <stdatomic.h>
+#include "dap_dl.h"
 #include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
 #include "dap_context.h"
 #include "dap_timerfd.h"
-
 #define LOG_TAG "dap_proc_thread"
 
 static uint32_t s_threads_count = 0;
 static dap_proc_thread_t *s_threads = NULL;
+static atomic_bool s_deiniting = false;  // Flag to prevent use-after-free during deinit
 
 static int s_context_callback_started(dap_context_t *a_context, void *a_arg);
 static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
+static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int *a_priority);
 
 /**
  * @brief add and run context to thread
@@ -48,6 +50,10 @@ int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id)
 {
     dap_return_val_if_pass(!a_thread || a_thread->context, -1);
 
+    // Initialize mutex/cond BEFORE starting context to avoid race conditions
+    pthread_mutex_init(&a_thread->queue_lock, NULL);
+    pthread_cond_init(&a_thread->queue_event, NULL);
+    
     a_thread->context = dap_context_new(DAP_CONTEXT_TYPE_PROC_THREAD);
     a_thread->context->_inheritor = a_thread;
     int l_ret = dap_context_run(a_thread->context, a_cpu_id, DAP_CONTEXT_POLICY_TIMESHARING,
@@ -67,6 +73,14 @@ int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id)
 
 int dap_proc_thread_init(uint32_t a_threads_count)
 {
+    if (s_threads) {
+        log_it(L_WARNING, "dap_proc_thread_init: already initialized");
+        return 0;
+    }
+    
+    // Reset deinit flag for new initialization
+    atomic_store(&s_deiniting, false);
+    
     if (!(s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count())) {
         log_it(L_CRITICAL, "Unknown threads count");
         return -1;
@@ -84,9 +98,19 @@ int dap_proc_thread_init(uint32_t a_threads_count)
  */
 void dap_proc_thread_deinit()
 {
-    for (uint32_t i = s_threads_count; i--; )
-        dap_context_stop_n_kill(s_threads[i].context);
+    if (!s_threads || !s_threads_count)
+        return;
+
+    // Set flag BEFORE stopping threads to prevent use-after-free in timer callbacks
+    atomic_store(&s_deiniting, true);
+    
+    for (uint32_t i = s_threads_count; i--; ) {
+        if (s_threads[i].context) {
+            dap_context_stop_n_kill(s_threads[i].context);
+        }
+    }
     DAP_DEL_Z(s_threads);
+    s_threads_count = 0;
 }
 
 /**
@@ -114,6 +138,10 @@ DAP_INLINE uint32_t dap_proc_thread_get_count()
  */
 dap_proc_thread_t *dap_proc_thread_get_auto()
 {
+    if (!s_threads_count) {
+        log_it(L_CRITICAL, "proc_thread subsystem not initialized (s_threads_count == 0)");
+        return NULL;
+    }
     uint32_t l_id_start = rand() % s_threads_count,
              l_id_min = l_id_start,
              l_size_min = UINT32_MAX;
@@ -141,7 +169,21 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
                                      void *a_callback_arg, dap_queue_msg_priority_t a_priority)
 {
     dap_return_val_if_fail(a_callback && a_priority >= DAP_QUEUE_MSG_PRIORITY_MIN && a_priority <= DAP_QUEUE_MSG_PRIORITY_MAX, -1);
+    
+    // Check if proc_thread module is being deinitialized (prevents use-after-free)
+    if (atomic_load(&s_deiniting)) {
+        debug_if(g_debug_reactor, L_DEBUG, "Proc thread module is deinitializing, skipping callback add");
+        return -3;
+    }
+    
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    
+    // Check if thread is still valid (not destroyed during deinit)
+    if (!l_thread || !l_thread->context) {
+        debug_if(g_debug_reactor, L_DEBUG, "Proc thread %p is already stopped, skipping callback add", l_thread);
+        return -3;
+    }
+    
     dap_proc_queue_item_t *l_item = DAP_NEW_Z(dap_proc_queue_item_t);
     if (!l_item) {
         log_it(L_CRITICAL, "Insufficient memory");
@@ -151,7 +193,7 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
                                        .callback_arg = a_callback_arg };
     debug_if(g_debug_reactor, L_DEBUG, "Add callback %p with arg %p to thread %p", a_callback, a_callback_arg, l_thread);
     pthread_mutex_lock(&l_thread->queue_lock);
-    DL_APPEND(l_thread->queue[a_priority], l_item);
+    dap_dl_append(l_thread->queue[a_priority], l_item);
     l_thread->proc_queue_size++;
     pthread_cond_signal(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
@@ -168,7 +210,7 @@ static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int
         if ((l_item = a_thread->queue[i]))
             break;
     if (l_item) {
-        DL_DELETE(a_thread->queue[i], l_item);
+        dap_dl_delete(a_thread->queue[i], l_item);
         a_thread->proc_queue_size--;
         if (a_priority)
             *a_priority = i;
@@ -210,8 +252,8 @@ static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void 
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
-    pthread_mutex_init(&l_thread->queue_lock, NULL);
-    pthread_cond_init(&l_thread->queue_event, NULL);
+    // Note: queue_lock and queue_event are already initialized in dap_proc_thread_create()
+    // to avoid race conditions during context startup
     // Init proc_queue for related worker
     dap_worker_t * l_worker_related = dap_events_worker_get(l_thread->context->cpu_id);
     if (!l_worker_related) {
@@ -240,6 +282,7 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
     pthread_cond_destroy(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
     pthread_mutex_destroy(&l_thread->queue_lock);
+    l_thread->context = NULL;
     return 0;
 }
 
@@ -268,6 +311,7 @@ int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_
 {
     dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    dap_return_val_if_fail(l_thread && l_thread->context, -1);
     dap_worker_t *l_worker = dap_events_worker_get(l_thread->context->cpu_id);
     if (!l_worker) {
         log_it(L_CRITICAL, "Worker with ID corresonding to specified processing thread ID %u doesn't exists", l_thread->context->id);

@@ -22,11 +22,13 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifndef DAP_JSON_RPC_ERRORS_H
+#define DAP_JSON_RPC_ERRORS_H
 #pragma once
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
-#include "../../../3rdparty/uthash/src/utlist.h"
+#include "dap_sl.h"
 #include "dap_json.h"
 
 #define DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED 1
@@ -91,6 +93,8 @@ typedef struct dap_sign dap_sign_t;
 
 // Utility function for sign information in JSON RPC context
 void dap_json_rpc_sign_get_information(dap_json_t* a_json_arr_reply, dap_sign_t* a_sign, dap_json_t *a_json_out, const char *a_hash_out_type, int a_version);
+
+#endif // DAP_JSON_RPC_ERRORS_H
 
 #ifdef __cplusplus
 }

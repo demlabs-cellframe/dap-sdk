@@ -6,38 +6,38 @@ set(CMAKE_C_STANDARD 11)
 
 add_definitions ("-D_GNU_SOURCE")
 
-file(GLOB DAP_IO_SOURCES *.c)
 file(GLOB DAP_IO_HEADERS include/*.h)
-if(WIN32)
-    set(DAP_IO_SOURCES ${DAP_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll/wepoll.c)
-    set(DAP_IO_HEADERS ${DAP_IO_HEADERS} ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll/wepoll.h)
-    include_directories(../../3rdparty/wepoll)
+
+file(GLOB DAP_IO_SOURCES *.c)
+list(FILTER DAP_IO_SOURCES EXCLUDE REGEX ".*_wasm\\.c$")
+
+if(DAP_WASM)
+    # WASM compiles the same native .c files with #ifdef DAP_OS_WASM
+    # for platform-specific syscalls (emscripten timers, no threading, etc.)
+elseif(WIN32)
+    # wepoll removed - using native IOCP (DAP_EVENTS_CAPS_IOCP) since 2026
 elseif(LINUX OR ANDROID)
     file(GLOB DAP_IO_LINUX_SRCS linux/*.c)
     file(GLOB DAP_IO_LINUX_HEADERS linux/*.h)
-    set (DAP_IO_HEADERS ${DAP_IO_HEADERS} ${DAP_IO_LINUX_HEADERS})
+    set(DAP_IO_HEADERS ${DAP_IO_HEADERS} ${DAP_IO_LINUX_HEADERS})
 endif()
 
 # Use universal DAP library macro  
 dap_add_library(${PROJECT_NAME} ${DAP_IO_SOURCES} ${DAP_IO_LINUX_SRCS} HEADERS ${DAP_IO_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto)
+dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto dap_hash_table dap_math dap_net_common)
 if(DAPSDK_MODULES MATCHES "ssl-support")
 endif()
 
-if(UNIX)
-  if(NOT ANDROID)
-      target_link_libraries(${PROJECT_NAME} pthread)
-  endif()
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} INTERFACE pthread)
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC include
-                                                ../../3rdparty/uthash/src)
-target_include_directories(${PROJECT_NAME} PRIVATE src)
-target_include_directories(${PROJECT_NAME} PUBLIC ../core/src/unix)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 if (WIN32)
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll)
+    # wepoll include removed - using native IOCP
     # Add WIN32 dependencies to final library deps
     list(APPEND IO_LIBS "ws2_32")
     set(DAP_IO_DEPS "${IO_LIBS}" CACHE INTERNAL "dap_io external dependencies")

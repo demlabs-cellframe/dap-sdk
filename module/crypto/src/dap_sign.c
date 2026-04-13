@@ -39,6 +39,8 @@
 #include "dap_enc_chipmunk_ring.h"  // For Chipmunk ring signatures
 #include "chipmunk/chipmunk_ring.h"  // For ring signature structures
 #include "chipmunk/chipmunk_aggregation.h"  // For aggregation functions
+#include "dap_enc_dilithium.h"
+#include "dilithium_params.h"
 
 #define LOG_TAG "dap_sign"
 
@@ -62,6 +64,7 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     uint32_t a_signers_count);
 
 static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify_ctx_t *a_ctx);
+static int dap_sign_dilithium_batch_verify_execute_internal(dap_sign_batch_verify_ctx_t *a_ctx);
 
 /**
  * @brief dap_sign_init
@@ -102,8 +105,10 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
         case DAP_ENC_KEY_TYPE_SIG_PICNIC: l_sign_type.type = SIG_TYPE_PICNIC; break;
         case DAP_ENC_KEY_TYPE_SIG_TESLA: l_sign_type.type = SIG_TYPE_TESLA; break;
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_type.type = SIG_TYPE_DILITHIUM; break;
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA: l_sign_type.type = SIG_TYPE_ML_DSA; break;
         case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_type.type = SIG_TYPE_FALCON; break;
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_type.type = SIG_TYPE_SPHINCSPLUS; break;
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME: l_sign_type.type = SIG_TYPE_NTRU_PRIME; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK: l_sign_type.type = SIG_TYPE_CHIPMUNK; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING: l_sign_type.type = SIG_TYPE_CHIPMUNK_RING; break;
 #ifdef DAP_ECDSA
@@ -131,8 +136,10 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_TESLA: return DAP_ENC_KEY_TYPE_SIG_TESLA;
         case SIG_TYPE_PICNIC: return DAP_ENC_KEY_TYPE_SIG_PICNIC;
         case SIG_TYPE_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
+        case SIG_TYPE_ML_DSA: return DAP_ENC_KEY_TYPE_SIG_ML_DSA;
         case SIG_TYPE_FALCON: return DAP_ENC_KEY_TYPE_SIG_FALCON;
         case SIG_TYPE_SPHINCSPLUS: return DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
+        case SIG_TYPE_NTRU_PRIME: return DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME;
         case SIG_TYPE_CHIPMUNK: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
         case SIG_TYPE_CHIPMUNK_RING: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING;
 #ifdef DAP_ECDSA
@@ -162,8 +169,10 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_TESLA: return "sig_tesla";
         case SIG_TYPE_PICNIC: return "sig_picnic";
         case SIG_TYPE_DILITHIUM: return "sig_dil";
+        case SIG_TYPE_ML_DSA: return "sig_ml_dsa";
         case SIG_TYPE_FALCON: return "sig_falcon";
         case SIG_TYPE_SPHINCSPLUS: return "sig_sphincs";
+        case SIG_TYPE_NTRU_PRIME: return "sig_ntru_prime";
         case SIG_TYPE_CHIPMUNK: return "sig_chipmunk";
         case SIG_TYPE_CHIPMUNK_RING: return "sig_chipmunk_ring";
 #ifdef DAP_ECDSA
@@ -197,10 +206,14 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
         l_sign_type.type = SIG_TYPE_PICNIC;
     } else if ( !dap_strcmp (a_type_str,"sig_dil") ){
         l_sign_type.type = SIG_TYPE_DILITHIUM;
+    } else if ( !dap_strcmp (a_type_str, "sig_ml_dsa") ){
+        l_sign_type.type = SIG_TYPE_ML_DSA;
     } else if ( !dap_strcmp (a_type_str, "sig_falcon") ) {
         l_sign_type.type = SIG_TYPE_FALCON;
     } else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
          l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
+    } else if ( !dap_strcmp (a_type_str, "sig_ntru_prime") ) {
+         l_sign_type.type = SIG_TYPE_NTRU_PRIME;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk") ) {
          l_sign_type.type = SIG_TYPE_CHIPMUNK;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_ring") ) {
@@ -230,7 +243,7 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
  * @param a_sign_type
  * @return bool
  */
-bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type){
+bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type){
     if (a_sign_type.type == SIG_TYPE_PICNIC || a_sign_type.type == SIG_TYPE_BLISS || a_sign_type.type == SIG_TYPE_TESLA)
         return true;
     return false;
@@ -258,7 +271,9 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
         case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING:
 #ifdef DAP_ECDSA
@@ -290,7 +305,7 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
     dap_return_val_if_fail(a_key && a_key->priv_key_data && a_key->priv_key_data_size, NULL);
     const void *l_sign_data = NULL;
     size_t l_sign_data_size = 0;
-    dap_chain_hash_fast_t l_sign_data_hash = {};
+    dap_hash_sha3_256_t l_sign_data_hash = {};
     uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_hash_type);
     bool l_use_pkey_hash = DAP_SIGN_GET_PKEY_HASHING_FLAG(a_hash_type);
     if (dap_enc_key_is_insign_hashing(a_key->type)) {
@@ -314,7 +329,7 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
         l_sign_data = &l_sign_data_hash;
         l_sign_data_size = sizeof(l_sign_data_hash);
         switch(l_hash_type){
-            case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_fast(a_data,a_data_size,&l_sign_data_hash); break;
+            case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_sha3_256(a_data,a_data_size,&l_sign_data_hash); break;
             default: log_it(L_CRITICAL, "We can't hash with hash type 0x%02x", l_hash_type);
         }
     }
@@ -326,9 +341,9 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
         uint8_t *l_sign_unserialized = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sign_unserialized_size, NULL),
                 *l_pub_key = NULL;   
         if (l_use_pkey_hash) {
-            l_pub_key = DAP_NEW_Z(dap_hash_fast_t);
-            dap_enc_key_get_pkey_hash(a_key, (dap_hash_fast_t*)l_pub_key);
-            l_pub_key_size = DAP_HASH_FAST_SIZE;
+            l_pub_key_size = DAP_HASH_SHA3_256_SIZE;
+            l_pub_key = DAP_NEW_Z_SIZE(uint8_t, l_pub_key_size);
+            dap_enc_key_get_pkey_hash(a_key, DAP_HASH_TYPE_SHA3_256, l_pub_key, l_pub_key_size);
         } else {
             l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
         }
@@ -517,17 +532,17 @@ uint8_t *dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
  * @return true 
  * @return false 
  */
-bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash)
+bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_hash_sha3_256_t *a_sign_hash)
 {
     dap_return_val_if_fail(a_sign && a_sign->header.sign_pkey_size, false);
     if (DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type)) {
-        if (a_sign->header.sign_pkey_size > DAP_HASH_FAST_SIZE) {
-            log_it(L_ERROR, "Error in pkey size check, expected <= %zu, in sign %u", sizeof(dap_chain_hash_fast_t), a_sign->header.sign_pkey_size);
+        if (a_sign->header.sign_pkey_size > DAP_HASH_SHA3_256_SIZE) {
+            log_it(L_ERROR, "Error in pkey size check, expected <= %zu, in sign %u", sizeof(dap_hash_sha3_256_t), a_sign->header.sign_pkey_size);
             return false;
         }
         return memcpy(a_sign_hash, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size) ? true : false;
     }
-    return  dap_hash_fast(a_sign->pkey_n_sign, a_sign->header.sign_pkey_size, a_sign_hash);
+    return  dap_hash_sha3_256(a_sign->pkey_n_sign, a_sign->header.sign_pkey_size, a_sign_hash);
 }
 
 /**
@@ -630,7 +645,7 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
     int l_ret = 0;
     const void *l_verify_data;
     size_t l_verify_data_size;
-    dap_chain_hash_fast_t l_verify_data_hash;
+    dap_hash_sha3_256_t l_verify_data_hash;
     uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
     if(l_hash_type == DAP_SIGN_HASH_TYPE_DEFAULT)
         log_it(L_WARNING, "Detected DAP_SIGN_HASH_TYPE_DEFAULT (0x%02x) hash type in sign ", DAP_SIGN_HASH_TYPE_DEFAULT);
@@ -640,9 +655,9 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
         l_verify_data_size = a_data_size;
     } else {
         l_verify_data = &l_verify_data_hash;
-        l_verify_data_size = DAP_CHAIN_HASH_FAST_SIZE;
+        l_verify_data_size = DAP_HASH_SHA3_256_SIZE;
         switch(l_hash_type){
-            case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_fast(a_data,a_data_size,&l_verify_data_hash); break;
+            case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_sha3_256(a_data,a_data_size,&l_verify_data_hash); break;
             default: log_it(L_CRITICAL, "Incorrect signature: we can't check hash with hash type 0x%02x", s_sign_hash_type_default);
             dap_enc_key_signature_delete(l_key->type, l_sign_data);
             dap_enc_key_delete(l_key);
@@ -654,8 +669,10 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
@@ -742,13 +759,13 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
         dap_string_append_printf(a_str_out, "! Corrupted signature data\n");
         return;
     }
-    dap_chain_hash_fast_t l_hash_pkey;
+    dap_hash_sha3_256_t l_hash_pkey;
     dap_string_append_printf(a_str_out, "\tType: %s\n",
                              dap_sign_type_to_str(a_sign->header.type));
     if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
         const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
              ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-             : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
+             : dap_hash_sha3_256_to_str_static(&l_hash_pkey);
              dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_str);
     }
     dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
@@ -764,7 +781,7 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
  */
 DAP_INLINE const char *dap_sign_get_str_recommended_types()
 {
-    return "sig_dil\nsig_falcon\n"
+    return "sig_dil\nsig_falcon\nsig_ntru_prime\n"
 #ifdef DAP_ECDSA
     "sig_ecdsa\n"
     "sig_multi_ecdsa_dil\n"
@@ -809,8 +826,9 @@ bool dap_sign_type_supports_batch_verification(dap_sign_type_t a_signature_type)
     switch (a_signature_type.type) {
         case SIG_TYPE_CHIPMUNK:
         case SIG_TYPE_CHIPMUNK_RING:
+        case SIG_TYPE_DILITHIUM:
+        case SIG_TYPE_ML_DSA:
             return true;
-        // Add other batch verification capable signature types here
         default:
             return false;
     }
@@ -1282,7 +1300,9 @@ int dap_sign_batch_verify_execute(dap_sign_batch_verify_ctx_t *a_ctx)
     switch (a_ctx->signature_type.type) {
         case SIG_TYPE_CHIPMUNK:
             return dap_sign_chipmunk_batch_verify_execute_internal(a_ctx);
-        // Add other signature types here
+        case SIG_TYPE_DILITHIUM:
+        case SIG_TYPE_ML_DSA:
+            return dap_sign_dilithium_batch_verify_execute_internal(a_ctx);
         default:
             log_it(L_ERROR, "Batch verification not implemented for signature type %s", 
                    dap_sign_type_to_str(a_ctx->signature_type));
@@ -1375,8 +1395,8 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
             memcpy(multi_sigs[i].message_hash, a_ctx->messages[i], 32);
         } else {
             // Хешируем короткое сообщение
-            dap_hash_fast_t msg_hash;
-            dap_hash_fast(a_ctx->messages[i], a_ctx->message_sizes[i], &msg_hash);
+            dap_hash_sha3_256_t msg_hash;
+            dap_hash_sha3_256(a_ctx->messages[i], a_ctx->message_sizes[i], &msg_hash);
             memcpy(multi_sigs[i].message_hash, &msg_hash, 32);
         }
         
@@ -1413,6 +1433,118 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
     
     debug_if(s_debug_more, L_INFO, "Chipmunk batch verification completed successfully: %u signatures verified", added_count);
     return 0;
+}
+
+static int dap_sign_dilithium_batch_verify_execute_internal(dap_sign_batch_verify_ctx_t *a_ctx)
+{
+    if (!a_ctx || a_ctx->signatures_count == 0) {
+        log_it(L_ERROR, "Invalid Dilithium batch verification context");
+        return -1;
+    }
+
+    uint32_t l_count = a_ctx->signatures_count;
+    log_it(L_INFO, "Starting Dilithium batch verification of %u signatures", l_count);
+
+    unsigned char **l_msgs = NULL;
+    unsigned long long *l_msg_lens = NULL;
+    dilithium_signature_t **l_sigs = NULL;
+    const dilithium_public_key_t **l_pkeys = NULL;
+    int *l_results = NULL;
+    void **l_deserialized_sigs = NULL;
+    void **l_deserialized_pkeys = NULL;
+    void **l_hash_bufs = NULL;
+    int l_ret = -1;
+
+    l_msgs = DAP_NEW_Z_COUNT(unsigned char *, l_count);
+    l_msg_lens = DAP_NEW_Z_COUNT(unsigned long long, l_count);
+    l_sigs = DAP_NEW_Z_COUNT(dilithium_signature_t *, l_count);
+    l_pkeys = DAP_NEW_Z_COUNT(const dilithium_public_key_t *, l_count);
+    l_results = DAP_NEW_Z_COUNT(int, l_count);
+    l_deserialized_sigs = DAP_NEW_Z_COUNT(void *, l_count);
+    l_deserialized_pkeys = DAP_NEW_Z_COUNT(void *, l_count);
+    l_hash_bufs = DAP_NEW_Z_COUNT(void *, l_count);
+
+    if (!l_msgs || !l_msg_lens || !l_sigs || !l_pkeys || !l_results ||
+        !l_deserialized_sigs || !l_deserialized_pkeys || !l_hash_bufs) {
+        log_it(L_ERROR, "Memory allocation failed for Dilithium batch verify");
+        goto cleanup;
+    }
+
+    for (uint32_t i = 0; i < l_count; i++) {
+        dap_sign_t *l_dap_sig = a_ctx->signatures[i];
+        if (!l_dap_sig) continue;
+
+        size_t l_sign_ser_size = l_dap_sig->header.sign_size;
+        uint8_t *l_sign_ser = l_dap_sig->pkey_n_sign + l_dap_sig->header.sign_pkey_size;
+
+        l_deserialized_sigs[i] = dap_enc_sig_dilithium_read_signature(l_sign_ser, l_sign_ser_size);
+        if (!l_deserialized_sigs[i]) {
+            log_it(L_WARNING, "Failed to deserialize Dilithium signature %u", i);
+            continue;
+        }
+        l_sigs[i] = (dilithium_signature_t *)l_deserialized_sigs[i];
+
+        size_t l_pkey_ser_size = l_dap_sig->header.sign_pkey_size;
+        uint8_t *l_pkey_ser = l_dap_sig->pkey_n_sign;
+
+        l_deserialized_pkeys[i] = dap_enc_sig_dilithium_read_public_key(l_pkey_ser, l_pkey_ser_size);
+        if (!l_deserialized_pkeys[i]) {
+            log_it(L_WARNING, "Failed to deserialize Dilithium public key %u", i);
+            continue;
+        }
+        l_pkeys[i] = (const dilithium_public_key_t *)l_deserialized_pkeys[i];
+
+        uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(l_dap_sig->header.hash_type);
+        if (l_hash_type == DAP_SIGN_HASH_TYPE_NONE || l_hash_type == DAP_SIGN_HASH_TYPE_SIGN) {
+            l_msgs[i] = (unsigned char *)a_ctx->messages[i];
+            l_msg_lens[i] = a_ctx->message_sizes[i];
+        } else {
+            dap_hash_sha3_256_t *l_hash = DAP_NEW(dap_hash_sha3_256_t);
+            if (!l_hash) continue;
+            dap_hash_sha3_256(a_ctx->messages[i], a_ctx->message_sizes[i], l_hash);
+            l_hash_bufs[i] = l_hash;
+            l_msgs[i] = (unsigned char *)l_hash;
+            l_msg_lens[i] = sizeof(dap_hash_sha3_256_t);
+        }
+    }
+
+    int l_passed = dilithium_crypto_sign_open_batch(
+        l_msgs, l_msg_lens, l_sigs, l_pkeys, l_count, l_results);
+
+    if (l_passed < 0) {
+        log_it(L_ERROR, "Dilithium batch verify internal error: %d", l_passed);
+        l_ret = -2;
+        goto cleanup;
+    }
+
+    int l_all_ok = 1;
+    for (uint32_t i = 0; i < l_count; i++) {
+        if (l_results[i] != 0) {
+            l_all_ok = 0;
+            break;
+        }
+    }
+
+    log_it(L_INFO, "Dilithium batch verification: %d/%u passed", l_passed, l_count);
+    l_ret = l_all_ok ? 0 : -3;
+
+cleanup:
+    for (uint32_t i = 0; i < l_count; i++) {
+        if (l_deserialized_sigs[i])
+            dilithium_signature_delete(l_deserialized_sigs[i]);
+        if (l_deserialized_pkeys[i])
+            dilithium_public_key_delete(l_deserialized_pkeys[i]);
+        DAP_DEL_Z(l_hash_bufs[i]);
+    }
+    DAP_DEL_Z(l_msgs);
+    DAP_DEL_Z(l_msg_lens);
+    DAP_DEL_Z(l_sigs);
+    DAP_DEL_Z(l_pkeys);
+    DAP_DEL_Z(l_results);
+    DAP_DEL_Z(l_deserialized_sigs);
+    DAP_DEL_Z(l_deserialized_pkeys);
+    DAP_DEL_Z(l_hash_bufs);
+    return l_ret;
 }
 
 // Universal benchmarking functions
@@ -1638,6 +1770,7 @@ int dap_sign_benchmark_batch_verification(
 }
 
 /**
+<<<<<<< HEAD
  * @brief Verify Chipmunk_Ring signature
  * @param a_sign Ring signature to verify
  * @param a_data Data that was signed
@@ -1766,5 +1899,42 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
     debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: cleanup completed");
 
     return l_result;
+}
+
+/**
+ * @brief dap_sign_get_information_json - Get signature information as JSON
+ * @param a_sign Signature to extract information from
+ * @param a_json_out JSON object to add information to
+ * @param a_hash_out_type Hash output format ("hex" or "base58")
+ * @param a_version JSON format version (1 or 2)
+ * @return 0 on success, negative error code otherwise
+ */
+int dap_sign_get_information_json(dap_sign_t* a_sign, dap_json_t *a_json_out, const char *a_hash_out_type, int a_version)
+{
+    if (!a_sign || !a_json_out)
+        return -1;
+    
+    // Get signature type string
+    const char *l_sign_type_str = dap_sign_type_to_str(a_sign->header.type);
+    if (a_version == 1) {
+        dap_json_object_add_object(a_json_out, "sig_type", dap_json_object_new_string(l_sign_type_str));
+        dap_json_object_add_object(a_json_out, "sig_size", dap_json_object_new_uint64(a_sign->header.sign_size));
+    } else {
+        dap_json_object_add_object(a_json_out, "type", dap_json_object_new_string(l_sign_type_str));
+        dap_json_object_add_object(a_json_out, "size", dap_json_object_new_uint64(a_sign->header.sign_size));
+    }
+    
+    // Get public key hash
+    dap_hash_sha3_256_t l_pkey_hash = {0};
+    if (dap_sign_get_pkey_hash(a_sign, &l_pkey_hash)) {
+        char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
+                               ? dap_enc_base58_encode_hash_to_str(&l_pkey_hash)
+                               : dap_hash_sha3_256_to_str_new(&l_pkey_hash);
+        dap_json_object_add_object(a_json_out, a_version == 1 ? "pkey_hash" : "sig_pkey_hash", 
+                                   dap_json_object_new_string(l_hash_str));
+        DAP_DELETE(l_hash_str);
+    }
+    
+    return 0;
 }
 

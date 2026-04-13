@@ -21,8 +21,11 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
+
 #ifndef DAP_OS_WINDOWS
 #include "unistd.h"
+#include <sys/socket.h>
+#include <arpa/inet.h>
 typedef int SOCKET;
 #define closesocket close
 #define INVALID_SOCKET  -1  // for win32 =  (SOCKET)(~0)
@@ -33,9 +36,10 @@ typedef int SOCKET;
 #endif
 
 #include <pthread.h>
-#include "uthash.h"
+#include "dap_ht.h"
 #include "dap_common.h"
 #include "dap_math_ops.h"
+#include "dap_time.h"
 
 #define DAP_EVENTS_SOCKET_MAX 8194
 
@@ -71,6 +75,13 @@ typedef int SOCKET;
     #include <sys/socket.h>
     #include <sys/types.h>
     #include <sys/un.h>
+#elif defined(DAP_OS_WASM)
+    #define DAP_EVENTS_CAPS_POLL
+    #define DAP_EVENTS_CAPS_PIPE_POSIX
+    #define DAP_EVENTS_CAPS_QUEUE_PIPE2
+    #define DAP_EVENTS_CAPS_EVENT_PIPE
+    #include <sys/types.h>
+    #include <netinet/in.h>
 #elif defined (DAP_OS_UNIX)
     #define DAP_EVENTS_CAPS_POLL
     #define DAP_EVENTS_CAPS_PIPE_POSIX
@@ -96,11 +107,8 @@ typedef struct queue_entry {
 } queue_entry_t;
 #endif
 
-#if defined(DAP_EVENTS_CAPS_WEPOLL)
-#define DAP_EVENTS_CAPS_EPOLL
-#define EPOLL_HANDLE HANDLE
-#include "wepoll.h"
-#elif defined (DAP_EVENTS_CAPS_IOCP)
+// wepoll support removed - using native IOCP on Windows
+#if defined (DAP_EVENTS_CAPS_IOCP)
 #include <mswsock.h>
 #define MAX_IOCP_ENTRIES 255 // Maximum count of IOCP entries to fetch at once
 #elif defined (DAP_EVENTS_CAPS_EPOLL)
@@ -194,11 +202,8 @@ typedef struct dap_events_socket_callbacks {
 } dap_events_socket_callbacks_t;
 
 #define DAP_STREAM_PKT_FRAGMENT_SIZE    (16 * 1024)
-#ifdef DAP_TPS_TEST
+// DAP_TPS_TEST removed: Use larger size always for better performance
 #define DAP_STREAM_PKT_SIZE_MAX         (128 * 1024 * 1024)
-#else
-#define DAP_STREAM_PKT_SIZE_MAX         (4 * 1024 * 1024)
-#endif
 #define DAP_EVENTS_SOCKET_BUF_SIZE      (DAP_STREAM_PKT_FRAGMENT_SIZE * 16)
 #define DAP_EVENTS_SOCKET_BUF_LIMIT     DAP_STREAM_PKT_SIZE_MAX
 #define DAP_QUEUE_MAX_MSGS              1024
@@ -334,13 +339,13 @@ typedef struct dap_events_socket {
 
     dap_events_socket_callbacks_t callbacks;
 
-    time_t time_connection;
-    time_t last_time_active;
-    time_t last_ping_request;
+    dap_time_t time_connection;
+    dap_time_t last_time_active;
+    dap_time_t last_ping_request;
 
     void *_inheritor; // Inheritor data to specific client type, usualy states for state machine
     void *_pvt; //Private section, different for different types
-    UT_hash_handle hh, hh2; // Handle for local CPU storage on worker or proc_thread AND for total amount
+    dap_ht_handle_t hh, hh2; // Handle for local CPU storage on worker or proc_thread AND for total amount
 } dap_events_socket_t; // Node of bidirectional list of clients
 typedef dap_events_socket_t dap_esocket_t;
 
@@ -360,7 +365,7 @@ typedef struct dap_events_socket_handler_hh{
     dap_events_socket_t * esocket;
     dap_events_socket_uuid_t uuid;
     uint32_t worker_id;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_events_socket_handler_hh_t;
 
 #ifdef DAP_EVENTS_CAPS_IOCP
@@ -401,6 +406,18 @@ void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t *a_es
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
 
+/** UDP sendto with explicit address (5.8 compatibility - used by DNS server, io_flow_socket) */
+size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_size,
+                                       const struct sockaddr_storage *a_addr, socklen_t a_addr_len);
+
+/** Create TCP/UDP socket with explicit domain/type/protocol (5.8 compatibility) */
+dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type, int a_protocol,
+                                                        dap_events_socket_callbacks_t *a_callbacks);
+/** Resolve host and set addr_storage for client connection */
+int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
+/** Initiate non-blocking connect (returns 0 on success or EINPROGRESS, -1 on immediate failure) */
+int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_err_out);
+
 // MT variants less
 void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
 void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
@@ -425,6 +442,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t * a_es, void* a_arg);
 #endif
 
 void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid);
+#define dap_events_socket_remove_and_delete_mt dap_events_socket_remove_and_delete
 
 // Delayed removed
 void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_es, bool a_preserve_inheritor);
@@ -443,6 +461,12 @@ size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_dat
 DAP_STATIC_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t *a_es)
 {
     return a_es && a_es->type >= 0 && a_es->type < DESCRIPTOR_TYPE_MAX ? s_socket_type_to_str[a_es->type] : "UNKNOWN";
+}
+
+/** 5.8 compatibility: check if socket is datagram (UDP) transport */
+DAP_STATIC_INLINE bool dap_events_socket_is_datagram(dap_events_socket_t *a_es)
+{
+    return a_es && a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP;
 }
 
 DAP_INLINE int dap_close_socket(SOCKET s) {

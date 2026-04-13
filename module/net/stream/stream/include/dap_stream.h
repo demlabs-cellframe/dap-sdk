@@ -24,9 +24,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <pthread.h>
-#include <stdbool.h>
-#include <pthread.h>
-#include "dap_http_server.h"
 #include "dap_events_socket.h"
 #include "dap_config.h"
 #include "dap_stream_session.h"
@@ -36,24 +33,27 @@
 #include "dap_pkey.h"
 #include "dap_strfuncs.h"
 #include "dap_enc_ks.h"
+#include "dap_net_trans.h"
+#include "dap_net_trans_ctx.h"
+#include "dap_ht.h"
+#include "dap_hash_compat.h"
 
-#define STREAM_KEEPALIVE_HEARTBEAT  3   // How often send keeplive messages (seconds)
-#define STREAM_KEEPALIVE_DELAY      10  // Minimum seconds to wait before send 1st keepalive message (maximum is 2*DELAY) after stream reading last activity
+#define STREAM_KEEPALIVE_TIMEOUT    3   // How  often send keeplive messages (seconds)
+
+/** Stream creation counter (incremented by transport modules) */
+extern _Atomic uint64_t dap_stream_created_count;
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
-typedef struct dap_cluster dap_cluster_t;
 
 typedef struct dap_stream {
-    dap_stream_node_addr_t node;
+    dap_cluster_node_addr_t node;
     bool authorized;
     bool primary;
     int id;
     dap_stream_session_t *session;
-    dap_events_socket_t *esocket; // Connection
-    dap_events_socket_uuid_t esocket_uuid;
     dap_stream_worker_t *stream_worker;
-    struct dap_http_client *conn_http; // HTTP-specific
+    dap_events_socket_t *esocket;
 
     dap_timerfd_t *keepalive_timer;
     bool is_active;
@@ -72,12 +72,49 @@ typedef struct dap_stream {
     size_t stream_size;
     size_t client_last_seq_id_packet;
 
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
     struct dap_stream *prev, *next;
+    
+    /**
+     * @brief Transport layer abstraction
+     * 
+     * This field provides access to the pluggable transport layer
+     * interface that supports HTTP, UDP, WebSocket, and other transports.
+     * 
+     * For HTTP transport, use dap_stream_transport_http_get_client()
+     * to get the underlying http_client if needed.
+     * 
+     * @see dap_stream_trans.h
+     * @see dap_stream_trans_http.h
+     */
+    struct dap_net_trans *trans;
+    dap_net_trans_ctx_t *trans_ctx;
+    
+    /**
+     * @brief Datagram flow (for UDP, SCTP, etc)
+     * 
+     * For datagram-based transports, points to dap_io_flow_datagram_t.
+     * Used for both CLIENT and SERVER to get remote address via callback.
+     * NULL for stream-oriented transports (TCP, HTTP).
+     * 
+     * @see dap_io_flow_datagram.h
+     */
+    void *flow;
+    
+    /**
+     * @brief Server-side session backlink
+     * 
+     * On server, points to the protocol-specific session structure
+     * (e.g., stream_udp_session_t for UDP). This allows trans->ops->write
+     * to find the session and call the appropriate send callback.
+     * 
+     * NULL on client side.
+     */
+    void *_server_session;
 } dap_stream_t;
 
 typedef struct dap_stream_info {
-    dap_stream_node_addr_t node_addr;
+    dap_cluster_node_addr_t node_addr;
     char *remote_addr_str;
     uint16_t remote_port;
     char *channels;
@@ -85,80 +122,86 @@ typedef struct dap_stream_info {
     bool is_uplink;
 } dap_stream_info_t;
 
-DAP_STATIC_INLINE bool dap_stream_node_addr_str_check(const char *a_addr_str)
-{
-    if (!a_addr_str)
-        return false;
-    size_t l_str_len = strlen(a_addr_str);
-    if (l_str_len == 22) {
-        for (int n =0; n < 22; n+= 6) {
-            if (!dap_is_xdigit(a_addr_str[n]) || !dap_is_xdigit(a_addr_str[n + 1]) ||
-                !dap_is_xdigit(a_addr_str[n + 2]) || !dap_is_xdigit(a_addr_str[n + 3])) {
-                return false;
-            }
-        }
-        for (int n = 4; n < 18; n += 6) {
-            if (a_addr_str[n] != ':' || a_addr_str[n + 1] != ':')
-                return false;
-        }
-        return true;
-    }
-    return false;
-}
-
-
-DAP_STATIC_INLINE char* dap_stream_node_addr_to_str(dap_stream_node_addr_t a_addr, bool a_hex)
-{
-    if (a_hex)
-        return dap_strdup_printf("0x%016" DAP_UINT64_FORMAT_x, a_addr.uint64);
-    return dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_addr));
-}
-
-
-DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
-{
-    // Copy fist four and last four octets of hash to fill node addr
-    a_node_addr->words[3] = *(uint16_t *)a_hash->raw;
-    a_node_addr->words[2] = *(uint16_t *)(a_hash->raw + sizeof(uint16_t));
-    a_node_addr->words[1] = *(uint16_t *)(a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint16_t) * 2);
-    a_node_addr->words[0] = *(uint16_t *)(a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint16_t));
-}
-
 #define DAP_STREAM(a) ((dap_stream_t *) (a)->_inheritor )
-
-extern dap_stream_node_addr_t g_node_addr;
 
 int dap_stream_init(dap_config_t * g_config);
 
 bool dap_stream_get_dump_packet_headers();
+bool dap_stream_get_debug();
 
 void dap_stream_deinit();
 
-void dap_stream_add_proc_http(dap_http_server_t * sh, const char * url);
+dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_cluster_node_addr_t *a_addr, bool a_authorized);
 
-void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
-
-dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_stream_node_addr_t *a_addr, bool a_authorized);
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
+size_t dap_stream_data_proc_read_ext(dap_stream_t * a_stream, const void *a_data, size_t a_data_size);
 size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
+
+/**
+ * @brief Send raw data to stream (datagram-aware)
+ * 
+ * Sends raw data to the stream, handling datagram (UDP, SCTP, etc) destination resolution automatically.
+ * For datagram streams, uses flow callback to get destination address.
+ * For stream-oriented (TCP), uses direct esocket write.
+ * 
+ * @param a_stream Stream instance
+ * @param a_data Data to send
+ * @param a_size Data size
+ * @return Number of bytes sent, or 0 on error
+ */
+ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size);
+
+/**
+ * @brief Write data via transport layer (wrapper for trans->ops->write)
+ * 
+ * Generic wrapper to call transport-specific write callback.
+ * For UDP this goes through Flow Control for reliable delivery.
+ * FAIL-FAST: No fallback, returns error if trans->ops->write is not set.
+ * 
+ * @param a_stream Stream instance
+ * @param a_data Data to write
+ * @param a_size Data size
+ * @return Number of bytes written, or 0 on error
+ */
+ssize_t dap_stream_trans_write_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size);
+
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
+void dap_stream_delete_from_list(dap_stream_t *a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
 
-// autorization stream block
-int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id);
+bool dap_stream_callback_server_keepalive(void *a_arg);
+bool dap_stream_callback_client_keepalive(void *a_arg);
+
+int dap_stream_add_addr(dap_cluster_node_addr_t a_addr, void *a_id);
 int dap_stream_add_to_list(dap_stream_t *a_stream);
-int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
+int dap_stream_delete_addr(dap_cluster_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 
-dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr, dap_worker_t **a_worker);
-dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr);
-dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
-dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
-dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
-dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
+dap_stream_t *dap_stream_find_stream_ptr_by_addr(dap_cluster_node_addr_t *a_addr);
+dap_events_socket_uuid_t dap_stream_find_by_addr(dap_cluster_node_addr_t *a_addr, dap_worker_t **a_worker);
+dap_list_t *dap_stream_find_all_by_addr(dap_cluster_node_addr_t *a_addr);
+dap_stream_info_t *dap_stream_get_all_links_info(size_t *a_count);
+dap_stream_info_t *dap_stream_get_links_info_by_addrs(dap_cluster_node_addr_t *a_addrs,
+                                                       size_t a_addrs_count, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
-int32_t dap_stream_get_links_count();
+
+static inline size_t dap_stream_get_links_count(void) {
+    size_t l_count = 0;
+    dap_stream_info_t *l_info = dap_stream_get_all_links_info(&l_count);
+    if (l_info)
+        dap_stream_delete_links_info(l_info, l_count);
+    return l_count;
+}
+
+typedef void (*dap_stream_member_callback_t)(dap_cluster_node_addr_t *a_addr);
+void dap_stream_set_member_callbacks(dap_stream_member_callback_t a_add,
+                                     dap_stream_member_callback_t a_del);
+
+typedef dap_stream_t *(*dap_stream_from_esocket_callback_t)(dap_events_socket_t *a_es);
+void dap_stream_set_client_esocket_callback(dap_stream_from_esocket_callback_t a_callback);
+
+

@@ -72,7 +72,7 @@
 #ifdef __MACH__
 #include <dispatch/dispatch.h>
 #endif
-#include "portable_endian.h"
+#include "dap_bit_ops.h"
 
 #define BIT( x ) ( 1 << x )
 
@@ -97,6 +97,20 @@
   #define DAP_PACKED  __attribute__((packed))
 #endif
 
+// Constructor/Destructor attributes for auto-init/cleanup
+#if defined(__GNUC__) || defined(__clang__)
+  #define DAP_CONSTRUCTOR __attribute__((constructor))
+  #define DAP_DESTRUCTOR __attribute__((destructor))
+#elif defined(_MSC_VER)
+  // MSVC doesn't have __attribute__((constructor))
+  // Will need pragma section or manual init
+  #define DAP_CONSTRUCTOR
+  #define DAP_DESTRUCTOR
+#else
+  #define DAP_CONSTRUCTOR
+  #define DAP_DESTRUCTOR
+#endif
+
 #ifdef _MSC_VER
   #define DAP_STATIC_INLINE static __forceinline
   #define DAP_INLINE __forceinline
@@ -119,8 +133,7 @@
 #define UNUSED_ARG __attribute__((__unused__))
 #define LAST_ERROR_MAX  256
 
-// TODO pipelines fix to enable this macros
-/*#ifndef likely
+#ifndef likely
 #   if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
 #       define likely(cond) __builtin_expect(!!(cond), 1)
 #   else
@@ -135,7 +148,7 @@
 #       define unlikely(x) (!!(x))
 #   endif
 #endif // unlikely
- */
+ 
 
 #ifndef ROUNDUP
   #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
@@ -149,7 +162,16 @@
 #define DAP_CAST_PTR(t,v) v
 #endif
 
-#define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
+// Constructor/Destructor attributes for automatic initialization/cleanup
+#ifdef _MSC_VER
+    // MSVC doesn't support __attribute__ constructor/destructor
+    #define DAP_CONSTRUCTOR
+    #define DAP_DESTRUCTOR
+#else
+    // GCC/Clang constructor/destructor attributes
+    #define DAP_CONSTRUCTOR __attribute__((constructor))
+    #define DAP_DESTRUCTOR __attribute__((destructor))
+#endif
 
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */
@@ -160,7 +182,7 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...);
 #if   DAP_SYS_DEBUG
 #include    <assert.h>
 
-#define     MEMSTAT$SZ_NAME     63            dap_global_db_del_sync(l_gdb_group, l_objs[i].key);
+#define     MEMSTAT$SZ_NAME     63
 #define     MEMSTAT$K_MAXNR     8192
 #define     MEMSTAT$K_MINTOLOG  (32*1024)
 
@@ -189,9 +211,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 
     #define DAP_MALLOC(a)       s_vm_get(__func__, __LINE__, a)
     #define DAP_CALLOC(a, b)    s_vm_get_z(__func__, __LINE__, a, b)
-    #define DAP_ALMALLOC(a, b)    _dap_aligned_alloc(a, b)
-    #define DAP_ALREALLOC(a, b)   _dap_aligned_realloc(a, b)
-    #define DAP_ALFREE(a)         _dap_aligned_free(a, b)
+    #define DAP_ALMALLOC(a, b)      _dap_aligned_alloc(a, b)
+    #define DAP_ALREALLOC(a, p, s)  _dap_aligned_realloc(a, p, s)
+    #define DAP_ALFREE(a)           _dap_aligned_free(a)
     #define DAP_NEW( a )          DAP_CAST_REINT(a, s_vm_get(__func__, __LINE__, sizeof(a)) )
     #define DAP_NEW_SIZE(a, b)    DAP_CAST_REINT(a, s_vm_get(__func__, __LINE__, b) )
     #define DAP_NEW_STACK( a )        DAP_CAST_REINT(a, alloca(sizeof(a)) )
@@ -204,16 +226,14 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_DUP_SIZE(a, s)    memcpy(s_vm_get(__func__, __LINE__, s), a, s)
 
 #else
-#ifdef DAP_USE_RPMALLOC
-#include "rpmalloc.h"
-#endif
+// Standard allocator (rpmalloc removed - was optional, never used)
 #define DAP_TYPE_SIZE(p)      (intmax_t)sizeof( *(__typeof__(p)){ 0 } )
 #define DAP_MALLOC(s)         ({ intmax_t _s = (intmax_t)(s); _s > 0 ? malloc(_s) : NULL; })
 #define DAP_FREE(p)           free((void*)(p))
 #define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); _s > 0 && _n > 0 ? calloc(_n, _s) : NULL; })
 #define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s > 0 ? realloc(p, _s) : NULL; })
 #define DAP_ALMALLOC(a, s)    ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s > 0 && _a >= 0 ? _dap_aligned_alloc(_a, _s) : NULL; })
-#define DAP_ALREALLOC(p, s)   ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? _dap_aligned_realloc(p, _s) : NULL; })
+#define DAP_ALREALLOC(a, p, s) ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s >= DAP_TYPE_SIZE(p) && _a > 0 ? _dap_aligned_realloc(_a, p, _s) : NULL; })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
@@ -230,8 +250,18 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
 #define DAP_DEL_ARRAY(p, c)   for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );
-#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); __typeof__(p) _p = ( (uintptr_t)(p) && _s >= DAP_TYPE_SIZE(p) ) ? DAP_CAST(__typeof__(p), calloc(1, _s)) : NULL; _p ? DAP_CAST(__typeof__(p), memcpy(_p, (p), _s)) : NULL; })
-#define DAP_DUP(p)            ({ __typeof__(p) _p = p; _p = (uintptr_t)_p ? calloc(1, sizeof(*(p))) : NULL; if (_p) *_p = *(p); _p; })
+#define DAP_DUP_SIZE(p, s)    ({ \
+    intmax_t _s = (intmax_t)(s); \
+    void *volatile _vp = (void*)(p); /* volatile предотвращает -Werror=address для стековых переменных */ \
+    __typeof__(p) _p = (_vp && _s >= DAP_TYPE_SIZE(p)) ? DAP_CAST(__typeof__(p), calloc(1, _s)) : NULL; \
+    _p ? DAP_CAST(__typeof__(p), memcpy((void*)_p, _vp, _s)) : NULL; \
+})
+#define DAP_DUP(p)            ({ \
+    void *volatile _vp = (void*)(p); /* volatile предотвращает -Werror=address для стековых переменных */ \
+    __typeof__(p) _p = _vp ? calloc(1, sizeof(*(p))) : NULL; \
+    if (_p) *_p = *((__typeof__(*(p))*)_vp); \
+    _p; \
+})
 
 #endif
 
@@ -288,31 +318,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
 #endif
 
-/**
-  * @struct Node address
-  */
-typedef union dap_stream_node_addr {
-    uint64_t uint64;
-    uint16_t words[sizeof(uint64_t)/2];
-    uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
-} DAP_ALIGN_PACKED dap_stream_node_addr_t;
 
 #define DAP_STRINGIFY_1(s) #s
 #define DAP_STRINGIFY(s) DAP_STRINGIFY_1(s)
-
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
-#define NODE_ADDR_FP_ARGS(a)  a->words[2],a->words[3],a->words[0],a->words[1]
-#define NODE_ADDR_FPS_ARGS(a)  &a->words[2],&a->words[3],&a->words[0],&a->words[1]
-#define NODE_ADDR_FP_ARGS_S(a)  a.words[2],a.words[3],a.words[0],a.words[1]
-#define NODE_ADDR_FPS_ARGS_S(a)  &a.words[2],&a.words[3],&a.words[0],&a.words[1]
-#else
-#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
-#define NODE_ADDR_FP_ARGS(a)  (a)->words[3],(a)->words[2],(a)->words[1],(a)->words[0]
-#define NODE_ADDR_FPS_ARGS(a)  &(a)->words[3],&(a)->words[2],&(a)->words[1],&(a)->words[0]
-#define NODE_ADDR_FP_ARGS_S(a)  (a).words[3],(a).words[2],(a).words[1],(a).words[0]
-#define NODE_ADDR_FPS_ARGS_S(a)  &(a).words[3],&(a).words[2],&(a).words[1],&(a).words[0]
-#endif
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
@@ -361,15 +369,42 @@ typedef int dap_errnum_t;
 #define dap_fileclose close
 #endif
 
-ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
-ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
+// dap_readv/dap_writev moved to module/io/dap_io_ops.h
+
+/* Returns non-zero only for valid non-zero power-of-two alignments. */
+DAP_STATIC_INLINE int _dap_alignment_is_power_of_two( uintptr_t alignment )
+{
+    return alignment && !( alignment & ( alignment - 1 ) );
+}
+
+/*
+ * Validates aligned allocation size math and computes total block size:
+ * user size + extra space for alignment padding and hidden base pointer.
+ */
+DAP_STATIC_INLINE int _dap_aligned_block_size_ok( uintptr_t alignment, uintptr_t size, uintptr_t *total_size )
+{
+    if ( alignment > ( UINTPTR_MAX - sizeof(void *) ) / 2 )
+        return 0;
+
+    uintptr_t l_extra = ( alignment * 2 ) + sizeof(void *);
+    if ( size > UINTPTR_MAX - l_extra )
+        return 0;
+
+    *total_size = size + l_extra;
+    return 1;
+}
 
 DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size )
 {
-    uintptr_t ptr = (uintptr_t) DAP_MALLOC( size + (alignment * 2) + sizeof(void *) );
+    uintptr_t l_total_size = 0;
+    if ( !_dap_alignment_is_power_of_two( alignment ) ||
+         !_dap_aligned_block_size_ok( alignment, size, &l_total_size ) )
+        return NULL;
+
+    uintptr_t ptr = (uintptr_t) DAP_MALLOC( l_total_size );
 
     if ( !ptr )
-        return (void *)ptr;
+        return NULL;
 
     uintptr_t al_ptr = ( ptr + sizeof(void *) + alignment) & ~(alignment - 1 );
     ((uintptr_t *)al_ptr)[-1] = ptr;
@@ -379,10 +414,22 @@ DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size 
 
 DAP_STATIC_INLINE void *_dap_aligned_realloc( uintptr_t alignment, void *bptr, uintptr_t size )
 {
-    uintptr_t ptr = (uintptr_t) DAP_REALLOC((uint8_t*)bptr, size + (alignment * 2) + sizeof(void *) );
+    uintptr_t l_total_size = 0;
+    if ( !_dap_alignment_is_power_of_two( alignment ) ||
+         !_dap_aligned_block_size_ok( alignment, size, &l_total_size ) )
+        return NULL;
+
+    if ( !bptr )
+        return _dap_aligned_alloc( alignment, size );
+
+    uintptr_t l_base_ptr = ((uintptr_t *)bptr)[-1];
+    if ( !l_base_ptr )
+        return NULL;
+
+    uintptr_t ptr = (uintptr_t) DAP_REALLOC( (uint8_t*)l_base_ptr, l_total_size );
 
     if ( !ptr )
-        return (void *)ptr;
+        return NULL;
 
     uintptr_t al_ptr = ( ptr + sizeof(void *) + alignment) & ~(alignment - 1 );
     ((uintptr_t *)al_ptr)[-1] = ptr;
@@ -516,14 +563,10 @@ typedef enum dap_log_level {
   L_ATT       = 6,
   L_ERROR     = 7,
   L_CRITICAL  = 8,
-  L_TOTAL,
-#ifdef DAP_TPS_TEST
-  L_TPS  = 15,
-#endif
+  L_TOTAL
 } dap_log_level_t;
 
-typedef void *dap_interval_timer_t;
-typedef void (*dap_timer_callback_t)(void *param);
+// Interval timer moved to module/timer/dap_interval_timer.h
 
 #ifdef __cplusplus
 extern "C" {
@@ -588,7 +631,7 @@ extern "C" {
 #define DAP_HUGE_SIGNED_SIZE __SIZEOF_LONG_LONG__
 #define DAP_HUGE_NATURAL_SIZE __SIZEOF_LONG_DOUBLE__
 
-#if !defined (DAP_CORE_TESTS) && (defined (__GNUC__) || defined (__clang__))
+#if (defined (__GNUC__) || defined (__clang__))
     #define dap_add(a,b)                                        \
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
@@ -616,70 +659,8 @@ extern "C" {
         _a;                                                     \
     })
 #else
-    #ifdef DAP_CORE_TESTS
-        #if defined(__has_builtin) && __has_builtin(__builtin_add_overflow_p)
-        // GCC-style builtin functions (Linux)
-        #define dap_add_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_add_overflow_p(_a,_b,_a)) {          \
-                (_a += b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
-
-        #define dap_sub_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_sub_overflow_p(_a,_b,_a)) {          \
-                (_a -= b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
-
-        #define dap_mul_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            if (!__builtin_mul_overflow_p(_a,_b,_a)) {          \
-                (_a *= b);                                        \
-            }                                                   \
-            (_a);                                                 \
-        })
-        #else
-        // macOS/Clang compatible version using __builtin_*_overflow
-        #define dap_add_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            __typeof__(a) _result;                              \
-            if (!__builtin_add_overflow(_a, _b, &_result)) {    \
-                (_a = _result);                                 \
-            }                                                   \
-            (_a);                                                 \
-        })
-
-        #define dap_sub_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            __typeof__(a) _result;                              \
-            if (!__builtin_sub_overflow(_a, _b, &_result)) {    \
-                (_a = _result);                                 \
-            }                                                   \
-            (_a);                                                 \
-        })
-
-        #define dap_mul_builtin(a,b)                            \
-        ({                                                      \
-            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-            __typeof__(a) _result;                              \
-            if (!__builtin_mul_overflow(_a, _b, &_result)) {    \
-                (_a = _result);                                 \
-            }                                                   \
-            (_a);                                                 \
-        })
-        #endif
-    #endif
-    
-    #if !defined(DAP_CORE_TESTS) && ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
+    // Alternative overflow-safe implementations for platforms without GCC/Clang builtins
+    #if ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
         #define dap_add(a,b)                                \
         ({                                                          \
             __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
@@ -778,6 +759,56 @@ extern "C" {
             )) { (_a *= _b); } \
             (_a); \
         })
+    #else
+        // Universal overflow-safe arithmetic for compilers without builtins
+        // Uses portable overflow detection via range checks
+        
+        #define dap_add(a,b) \
+            __extension__ ({ \
+                __auto_type _a = (a); \
+                __auto_type _b = (b); \
+                /* Check for overflow: a + b > MAX or a + b < MIN */ \
+                if ((_b > 0 && _a > dap_maxval(_a) - _b) || \
+                    (_b < 0 && _a < dap_minval(_a) - _b)) { \
+                    /* Overflow detected - keep original value */ \
+                } else { \
+                    _a += _b; \
+                } \
+                _a; \
+            })
+        
+        #define dap_sub(a,b) \
+            __extension__ ({ \
+                __auto_type _a = (a); \
+                __auto_type _b = (b); \
+                /* Check for overflow: a - b > MAX or a - b < MIN */ \
+                /* Equivalent to: a + (-b), so check if -b would overflow first */ \
+                if ((_b < 0 && _a > dap_maxval(_a) + _b) || \
+                    (_b > 0 && _a < dap_minval(_a) + _b)) { \
+                    /* Overflow detected - keep original value */ \
+                } else { \
+                    _a -= _b; \
+                } \
+                _a; \
+            })
+        
+        #define dap_mul(a,b) \
+            __extension__ ({ \
+                __auto_type _a = (a); \
+                __auto_type _b = (b); \
+                /* Multiplication overflow check via division */ \
+                if (_b != 0 && ( \
+                    (_a > 0 && _b > 0 && _a > dap_maxval(_a) / _b) || \
+                    (_a > 0 && _b < 0 && _b < dap_minval(_a) / _a) || \
+                    (_a < 0 && _b > 0 && _a < dap_minval(_a) / _b) || \
+                    (_a < 0 && _b < 0 && _a < dap_maxval(_a) / _b) \
+                )) { \
+                    /* Overflow detected - keep original value */ \
+                } else { \
+                    _a *= _b; \
+                } \
+                _a; \
+            })
     #endif
 #endif
 
@@ -905,7 +936,9 @@ extern char *g_sys_dir_path;
 
 //int dap_common_init( const char * a_log_file );
 int dap_common_init( const char *console_title, const char *a_log_file );
+#ifdef DAP_OS_WINDOWS
 int wdap_common_init( const char *console_title, const wchar_t *a_wlog_file );
+#endif
 
 typedef enum 
 {
@@ -924,6 +957,11 @@ void dap_log_set_external_output (LOGGER_EXTERNAL_OUTPUT output, void *param);
 
 void dap_common_deinit(void);
 
+// Get current log file handle (for log rotation checks)
+FILE *dap_log_get_file(void);
+// Reopen log file (for log rotation)
+int dap_log_reopen(void);
+
 // set max items in log list
 void dap_log_set_max_item(unsigned int a_max);
 // get logs from list
@@ -935,7 +973,12 @@ int dap_log_clear_file(const char *filename);
 DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const char * log_tag, enum dap_log_level, const char * format, ... );
 #define log_it_fl(_log_level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__)
 #define log_it(_log_level, ...) (_log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__))
-#define debug_if(flg, lvl, ...) _log_it(NULL, 0, ((flg) ? LOG_TAG : NULL), (lvl), ##__VA_ARGS__)
+
+#ifdef DAP_DEBUG
+#define debug_if(flg, lvl, ...) (__builtin_expect(!!(flg), 0) ? _log_it(NULL, 0, LOG_TAG, lvl, ##__VA_ARGS__) : (void)0)
+#else
+#define debug_if(flg, lvl, ...) ((void)0)
+#endif
 
 char *dap_dump_hex(byte_t *a_data, size_t a_size);
 
@@ -945,7 +988,13 @@ void    _dump_it    (const char *, unsigned, const char *a_var_name, const void 
 #undef  log_it
 #define log_it( _log_level, ...)        _log_it_ext( __func__, __LINE__, (_log_level), ##__VA_ARGS__)
 #undef  debug_if
-#define debug_if(flg, _log_level, ...)  _log_it_ext( __func__, __LINE__, (flg) ? (_log_level) : -1 , ##__VA_ARGS__)
+#ifdef DAP_DEBUG
+// Debug build: debug_if with branch prediction hint and extended logging
+#define debug_if(flg, _log_level, ...)  (__builtin_expect(!!(flg), 0) ? _log_it_ext( __func__, __LINE__, (_log_level), ##__VA_ARGS__) : (void)0)
+#else
+// Release build: debug_if compiles to ((void)0) for comma expressions
+#define debug_if(flg, _log_level, ...)  ((void)0)
+#endif
 
 #define dump_it(v,s,l)                  _dump_it( __func__, __LINE__, (v), (s), (l))
 
@@ -1068,7 +1117,9 @@ dap_maxint_str_t dap_utoa_(unsigned long long i);
 #define dap_itoa(i) (char*)dap_itoa_(i).s
 #define dap_utoa(i) (char*)dap_utoa_(i).s
 
+#ifdef DAP_SYS_DEBUG
 unsigned dap_gettid();
+#endif
 
 int get_select_breaker(void);
 int send_select_break(void);
@@ -1083,11 +1134,8 @@ int dap_is_hex_string(const char *a_in, size_t a_len);
 void dap_digit_from_string(const char *num_str, void *raw, size_t raw_len);
 void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len);
 
-dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param);
-void dap_interval_timer_delete(dap_interval_timer_t a_timer);
-int dap_interval_timer_disable(dap_interval_timer_t a_timer);
-void dap_interval_timer_init();
-void dap_interval_timer_deinit();
+// Interval timer functions moved to module/timer/include/dap_interval_timer.h
+// Use #include "dap_interval_timer.h" if you need dap_interval_timer_create, etc.
 
 static inline void *dap_mempcpy(void *a_dest, const void *a_src, size_t n)
 {
@@ -1148,27 +1196,16 @@ static inline const char *dap_get_arch()
     #endif
 }
 
-#ifdef __MINGW32__
 int exec_silent(const char *a_cmd);
-#endif
 
 #ifdef __cplusplus
 }
 #endif
 
-int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str);
+// Node address types and functions moved to module/net/common/include/dap_net_common.h
+// Use #include "dap_net_common.h" if you need dap_cluster_node_addr_t and related functions
 
-
-DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
-
-#define DAP_NODE_ADDR_LEN 23
-typedef union dap_node_addr_str {
-    const char s[DAP_NODE_ADDR_LEN];
-} dap_node_addr_str_t;
-dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a_address);
-#define dap_stream_node_addr_to_str_static(a) dap_stream_node_addr_to_str_static_(a).s
-
-void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);
+// dap_common_enable_cleaner_log moved to module/daemon/dap_daemon.h as dap_daemon_enable_log_cleaner
 
 /**
  * @brief Log format control functions

@@ -55,7 +55,7 @@ static char** split_word(char *line, int *argc)
             *argc = 0;
         return NULL ;
     }
-    char **argv = calloc(sizeof(char*), strlen(line));
+    char **argv = DAP_NEW_Z_COUNT(char*, strlen(line));
     if (!argv) {
         return NULL;
     }
@@ -182,7 +182,7 @@ JNIEXPORT jstring JNICALL Java_com_CellframeWallet_Node_cellframeNodeCliMain(JNI
     //g_sys_dir_path = dap_strdup_printf("/storage/emulated/0/Android/data/com.CellframeWallet/files/node");
     dap_cli_cmd_t *l1 = NULL, *l2 = NULL;
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Config %p", g_config);
-    HASH_ITER(hh, dap_cli_server_cmd_get_first(), l1, l2) {
+    dap_ht_foreach(dap_cli_server_cmd_get_first(), l1, l2) {
          __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Command %s", l1->name);
     }
     jsize argc = (*javaEnv)->GetArrayLength(javaEnv, argvStr);

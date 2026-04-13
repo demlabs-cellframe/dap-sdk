@@ -20,8 +20,8 @@
 void dap_list_free(dap_list_t *a_list)
 {
     dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
-        DL_DELETE(a_list, l_el);
+    dap_dl_foreach_safe(a_list, l_el, l_tmp) {
+        dap_dl_delete(a_list, l_el);
         DAP_DELETE(l_el);
     }
 }
@@ -37,8 +37,8 @@ void dap_list_free(dap_list_t *a_list)
 void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func)
 {
     dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
-        DL_DELETE(a_list, l_el);
+    dap_dl_foreach_safe(a_list, l_el, l_tmp) {
+        dap_dl_delete(a_list, l_el);
         if (l_el->data)
             a_free_func ? a_free_func(l_el->data) : DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
@@ -75,7 +75,8 @@ dap_list_t *dap_list_append(dap_list_t *a_list, void *a_data)
         return a_list;
     dap_list_t *l_el = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_list_t, a_list);
     l_el->data = a_data;
-    return ({ DL_APPEND(a_list, l_el); a_list; });
+    dap_dl_append(a_list, l_el);
+    return a_list;
 }
 
 /**
@@ -107,7 +108,8 @@ dap_list_t *dap_list_prepend(dap_list_t *a_list, void *a_data)
     dap_return_val_if_pass(!a_data, a_list);
     dap_list_t *l_el = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_list_t, a_list);
     l_el->data = a_data;
-    return ({ DL_PREPEND(a_list, l_el); a_list; });
+    dap_dl_prepend(a_list, l_el);
+    return a_list;
 }
 
 /**
@@ -129,7 +131,8 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
     dap_list_t *l_el = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_list_t, a_list);
     dap_list_t *l_pos = dap_list_nth(a_list, a_position);
     l_el->data = a_data;
-    return ({ DL_PREPEND_ELEM(a_list, l_pos, l_el); a_list; });
+    dap_dl_insert_before(a_list, l_pos, l_el);
+    return a_list;
 }
 
 /**
@@ -153,7 +156,8 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
  */
 dap_list_t *dap_list_concat(dap_list_t *a_list1, dap_list_t *a_list2)
 {
-    return ({ DL_CONCAT(a_list1, a_list2); a_list1; });
+    dap_dl_concat(a_list1, a_list2);
+    return a_list1;
 }
 
 /**
@@ -170,9 +174,9 @@ dap_list_t *dap_list_concat(dap_list_t *a_list1, dap_list_t *a_list2)
 dap_list_t *dap_list_remove(dap_list_t *a_list, const void *a_data)
 {
     dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+    dap_dl_foreach_safe(a_list, l_el, l_tmp) {
         if (l_el->data == a_data) {
-            DL_DELETE(a_list, l_el);
+            dap_dl_delete(a_list, l_el);
             DAP_DELETE(l_el);
             break;
         }
@@ -195,9 +199,9 @@ dap_list_t *dap_list_remove(dap_list_t *a_list, const void *a_data)
 dap_list_t *dap_list_remove_all(dap_list_t *a_list, const void *a_data)
 {
     dap_list_t *l_el, *l_tmp;
-    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+    dap_dl_foreach_safe(a_list, l_el, l_tmp) {
         if (l_el->data == a_data) {
-            DL_DELETE(a_list, l_el);
+            dap_dl_delete(a_list, l_el);
             DAP_DELETE(l_el);
         }
     }
@@ -226,7 +230,8 @@ dap_list_t *dap_list_remove_all(dap_list_t *a_list, const void *a_data)
  */
 inline dap_list_t *dap_list_remove_link(dap_list_t *a_list, dap_list_t *a_link)
 {
-    return ({ DL_DELETE(a_list, a_link); a_list; });
+    dap_dl_delete(a_list, a_link);
+    return a_list;
 }
 
 /**
@@ -242,7 +247,9 @@ inline dap_list_t *dap_list_remove_link(dap_list_t *a_list, dap_list_t *a_link)
  */
 dap_list_t *dap_list_delete_link(dap_list_t *a_list, dap_list_t *a_link)
 {
-    return ({ DL_DELETE(a_list, a_link); DAP_DELETE(a_link); a_list; });
+    dap_dl_delete(a_list, a_link);
+    DAP_DELETE(a_link);
+    return a_list;
 }
 
 /**
@@ -295,8 +302,9 @@ dap_list_t *dap_list_copy(dap_list_t *a_list)
 dap_list_t *dap_list_copy_deep(dap_list_t *a_list, dap_callback_copy_t a_func, void *a_user_data)
 {
     dap_list_t *l_deep_copy = NULL, *l_el;
-    DL_FOREACH(a_list, l_el)
+    dap_dl_foreach(a_list, l_el) {
         l_deep_copy = dap_list_append(l_deep_copy, a_func ? a_func(l_el->data, a_user_data) : l_el->data);
+    }
     return l_deep_copy;
 }
 
@@ -330,9 +338,13 @@ dap_list_t *dap_list_nth(dap_list_t *a_list, uint64_t n)
 dap_list_t *dap_list_find(dap_list_t *a_list, const void *a_data, dap_callback_compare_t a_cmp)
 {
     dap_list_t *l_el = NULL;
-    return a_cmp
-            ? ({ dap_list_t l_sought = { .data = (void*)a_data }; DL_SEARCH(a_list, l_el, &l_sought, a_cmp); l_el; })
-            : ({ DL_SEARCH_SCALAR(a_list, l_el, data, a_data); l_el; });
+    if (a_cmp) {
+        dap_list_t l_sought = { .data = (void*)a_data };
+        dap_dl_search_cmp(a_list, l_el, &l_sought, a_cmp);
+    } else {
+        dap_dl_search_scalar(a_list, l_el, data, a_data);
+    }
+    return l_el;
 }
 
 /**
@@ -350,7 +362,7 @@ int dap_list_position(dap_list_t *a_list, dap_list_t *a_link)
 {
     int i = 0;
     dap_list_t *l_el;
-    DL_FOREACH(a_list, l_el) {
+    dap_dl_foreach(a_list, l_el) {
         if (l_el == a_link)
             return i;
         ++i;
@@ -373,7 +385,7 @@ int dap_list_index(dap_list_t *a_list, const void *a_data)
 {
     int i = 0;
     dap_list_t *l_el;
-    DL_FOREACH(a_list, l_el) {
+    dap_dl_foreach(a_list, l_el) {
         if (l_el->data == a_data)
             return i;
         ++i;
@@ -428,8 +440,10 @@ dap_list_t *dap_list_first(dap_list_t *a_list)
 uint64_t dap_list_length(dap_list_t *a_list)
 {
     dap_list_t *l_el;
-    uint64_t l_len;
-    return ({ DL_COUNT(a_list, l_el, l_len); l_len; });
+    uint64_t l_len = 0;
+    dap_dl_count(a_list, l_len);
+    (void)l_el;  // Unused in our implementation
+    return l_len;
 }
 
 /**
@@ -455,7 +469,8 @@ dap_list_t *dap_list_insert_sorted(dap_list_t *a_list, void *a_data, dap_callbac
 {
     dap_list_t *l_new_el = DAP_NEW_Z(dap_list_t);
     l_new_el->data = a_data;
-    return ({ DL_INSERT_INORDER(a_list, l_new_el, a_func); a_list; });
+    dap_dl_insert_inorder(a_list, l_new_el, a_func);
+    return a_list;
 }
 
 /**
@@ -487,7 +502,8 @@ dap_list_t *dap_list_insert_sorted(dap_list_t *a_list, void *a_data, dap_callbac
  */
 dap_list_t *dap_list_sort(dap_list_t *a_list, dap_callback_compare_t a_cmp)
 {
-    return ({ DL_SORT(a_list, a_cmp); a_list; });
+    dap_dl_sort(a_list, a_cmp);
+    return a_list;
 }
 
 static int s_random_compare(dap_list_t UNUSED_ARG *a_list1, dap_list_t UNUSED_ARG *a_list2)

@@ -1,0 +1,776 @@
+/**
+ * @file dap_mock_framework.h
+ * @brief Generic mock framework for DAP SDK dependencies
+ * @details Provides infrastructure for mocking DAP SDK functions in unit tests.
+ *          Uses function pointer replacement pattern with call tracking.
+ * 
+ * @date 2025-10-26
+ * @copyright (c) 2025 Cellframe Network
+ */
+
+#pragma once
+#include "dap_common.h"
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <pthread.h>
+
+// ===========================================================================
+// DELAY CONFIGURATION
+// ===========================================================================
+
+/**
+ * @brief Mock execution delay types
+ */
+typedef enum dap_mock_delay_type {
+    DAP_MOCK_DELAY_NONE = 0,      /**< No delay */
+    DAP_MOCK_DELAY_FIXED,          /**< Fixed delay in microseconds */
+    DAP_MOCK_DELAY_RANGE,          /**< Random delay in range [min, max] */
+    DAP_MOCK_DELAY_VARIANCE        /**< Delay with center ± variance (e.g., 2.3ms ± 0.07ms) */
+} dap_mock_delay_type_t;
+
+/**
+ * @brief Mock delay configuration
+ */
+typedef struct dap_mock_delay {
+    dap_mock_delay_type_t type;
+    union {
+        uint64_t fixed_us;         /**< Fixed delay in microseconds */
+        struct {
+            uint64_t min_us;       /**< Minimum delay in microseconds */
+            uint64_t max_us;       /**< Maximum delay in microseconds */
+        } range;
+        struct {
+            uint64_t center_us;    /**< Center delay in microseconds */
+            uint64_t variance_us;  /**< Variance (±) in microseconds */
+        } variance;
+    };
+} dap_mock_delay_t;
+
+// ===========================================================================
+// MOCK RETURN VALUE TYPES
+// ===========================================================================
+
+/**
+ * @brief Union for different return value types
+ */
+typedef union dap_mock_return_value {
+    int i;              /**< int return value */
+    long l;             /**< long return value */
+    uint64_t u64;       /**< uint64_t return value */
+    void *ptr;          /**< void* return value */
+    char *str;          /**< char* return value */
+} dap_mock_return_value_t;
+
+// ===========================================================================
+// MOCK CONFIGURATION STRUCTURE
+// ===========================================================================
+
+/**
+ * @brief Mock configuration passed to DAP_MOCK_DECLARE
+ * 
+ * Usage examples:
+ *   DAP_MOCK_DECLARE(func, { .return_value.l = 0xDEAD });
+ *   DAP_MOCK_DECLARE(func, { .enabled = false });
+ *   DAP_MOCK_DECLARE(func, { .return_value.ptr = NULL, .delay.type = DAP_MOCK_DELAY_FIXED, .delay.fixed_us = 1000 });
+ *   DAP_MOCK_DECLARE(func, { .async = true });  // Execute callback asynchronously
+ *   DAP_MOCK_DECLARE(func, { .call_original_before = true });  // Passthrough: call original, then track
+ *   DAP_MOCK_DECLARE(func, { .call_original_after = true });   // Mock first, then call original
+ */
+typedef struct dap_mock_config {
+    bool enabled;                       /**< Enable mock (default: true) */
+    dap_mock_return_value_t return_value;  /**< Return value (default: all zeros) */
+    dap_mock_delay_t delay;             /**< Execution delay (default: none) */
+    bool async;                         /**< Execute callback asynchronously (default: false) */
+    bool call_original_before;          /**< Call original function before mock logic (default: false) */
+    bool call_original_after;           /**< Call original function after mock logic (default: false) */
+} dap_mock_config_t;
+
+// Default config: enabled=true, return=0, no delay, sync, no original call
+static const dap_mock_config_t DAP_MOCK_CONFIG_DEFAULT = {
+    .enabled = true,
+    .return_value = {0},
+    .delay = {.type = DAP_MOCK_DELAY_NONE},
+    .async = false,
+    .call_original_before = false,
+    .call_original_after = false
+};
+
+// Passthrough config: track calls but always call original before mock (for integration tests)
+static const dap_mock_config_t DAP_MOCK_CONFIG_PASSTHROUGH = {
+    .enabled = true,
+    .return_value = {0},
+    .delay = {.type = DAP_MOCK_DELAY_NONE},
+    .async = false,
+    .call_original_before = true,
+    .call_original_after = false
+};
+
+// ===========================================================================
+// MOCK SYSTEM SETTINGS
+// ===========================================================================
+
+/**
+ * @brief Global mock system settings
+ * 
+ * Configured via DAP_MOCK_SETTINGS() macro before any mock usage.
+ * Settings are applied during automatic initialization.
+ */
+typedef struct dap_mock_settings {
+    uint32_t async_worker_threads;   /**< Number of async worker threads (0 = auto-detect CPUs) */
+    dap_mock_delay_t default_delay;  /**< Default delay for all mocks (can be overridden per mock) */
+    bool enable_logging;             /**< Enable detailed mock call logging */
+    bool log_timestamps;             /**< Include timestamps in mock logs */
+} dap_mock_settings_t;
+
+/**
+ * @brief Set global mock system settings
+ * @param a_settings Settings structure
+ * 
+ * Must be called BEFORE any mocks are used (typically at program start).
+ * If not called, defaults are used:
+ *   - async_worker_threads = 0 (auto-detect CPUs)
+ *   - default_delay = none
+ *   - enable_logging = false
+ *   - log_timestamps = false
+ */
+void dap_mock_apply_settings(const dap_mock_settings_t *a_settings);
+
+/**
+ * @brief Get current mock system settings
+ * @return Pointer to current settings
+ */
+const dap_mock_settings_t* dap_mock_get_settings(void);
+
+/**
+ * Convenience macro for setting mock system configuration
+ * 
+ * Usage example:
+ *   DAP_MOCK_SETTINGS({
+ *       .async_worker_threads = 4,
+ *       .default_delay = {.type = DAP_MOCK_DELAY_FIXED, .value_us = 1000},
+ *       .enable_logging = true,
+ *       .log_timestamps = true
+ *   });
+ */
+// Declarative settings (use at global scope, auto-applied at program start via constructor)
+#define DAP_MOCK_SETTINGS(...) \
+    DAP_CONSTRUCTOR \
+    static void __dap_mock_settings_init(void) { \
+        dap_mock_settings_t __settings = {__VA_ARGS__}; \
+        dap_mock_apply_settings(&__settings); \
+    }
+
+// Runtime settings application (use in functions for dynamic configuration)
+#define DAP_MOCK_SETTINGS_SET(...) \
+    do { \
+        dap_mock_settings_t __settings = {__VA_ARGS__}; \
+        dap_mock_apply_settings(&__settings); \
+    } while(0)
+
+// ===========================================================================
+// CUSTOM CALLBACK SUPPORT
+// ===========================================================================
+
+/**
+ * @brief Custom mock callback function signature
+ * @param a_args Array of arguments passed to the mocked function
+ * @param a_arg_count Number of arguments
+ * @param a_user_data User-provided context data
+ * @return Return value for the mocked function
+ * 
+ * Example:
+ *   void* my_custom_mock(void **a_args, int a_arg_count, void *a_user_data) {
+ *       int arg1 = (int)(intptr_t)a_args[0];
+ *       char *arg2 = (char*)a_args[1];
+ *       // Custom logic here
+ *       return (void*)(intptr_t)result;
+ *   }
+ */
+typedef void* (*dap_mock_callback_t)(void **a_args, int a_arg_count, void *a_user_data);
+
+// ===========================================================================
+// MOCK CALL TRACKING
+// ===========================================================================
+
+#define DAP_MOCK_MAX_CALLS 100
+
+typedef struct dap_mock_call_record {
+    const char *function_name;
+    uint64_t timestamp;
+    void *args[10];
+    void *return_value;
+    int call_count;
+} dap_mock_call_record_t;
+
+typedef struct dap_mock_function_state {
+    const char *name;
+    bool enabled;
+    dap_mock_return_value_t return_value;  // Return value with type union
+    dap_mock_callback_t callback;    // Custom callback function (overrides return_value if set)
+    void *callback_user_data;        // User data passed to callback
+    dap_mock_delay_t delay;          // Execution delay configuration
+    bool async;                      // Execute callback asynchronously (requires dap_mock_async_init)
+    bool call_original_before;       // Call original function before mock logic
+    bool call_original_after;        // Call original function after mock logic
+    int call_count;
+    int max_calls;
+    dap_mock_call_record_t calls[DAP_MOCK_MAX_CALLS];
+    pthread_mutex_t lock;
+} dap_mock_function_state_t;
+
+// ===========================================================================
+// MOCK FRAMEWORK API
+// ===========================================================================
+
+int dap_mock_init(void);
+void dap_mock_deinit(void);
+void dap_mock_reset_all(void);
+dap_mock_function_state_t* dap_mock_register(const char *a_name);
+dap_mock_function_state_t* dap_mock_find(const char *a_name);
+void dap_mock_set_enabled(dap_mock_function_state_t *a_state, bool a_enabled);
+void dap_mock_set_return_value(dap_mock_function_state_t *a_state, void *a_value);
+void dap_mock_record_call(dap_mock_function_state_t *a_state, void **a_args, int a_arg_count, void *a_return_value);
+int dap_mock_get_call_count(dap_mock_function_state_t *a_state);
+dap_mock_call_record_t* dap_mock_get_last_call(dap_mock_function_state_t *a_state);
+void **dap_mock_get_call_args(dap_mock_function_state_t *a_state, int a_call_index);
+void dap_mock_reset(dap_mock_function_state_t *a_state);
+bool dap_mock_was_called_with(dap_mock_function_state_t *a_state, int a_arg_index, void *a_expected_value);
+
+// Custom callback functions
+void dap_mock_set_callback(dap_mock_function_state_t *a_state, dap_mock_callback_t a_callback, void *a_user_data);
+void dap_mock_clear_callback(dap_mock_function_state_t *a_state);
+void* dap_mock_execute_callback(dap_mock_function_state_t *a_state, void **a_args, int a_arg_count);
+
+// Delay configuration functions
+void dap_mock_set_delay_fixed(dap_mock_function_state_t *a_state, uint64_t a_delay_us);
+void dap_mock_set_delay_range(dap_mock_function_state_t *a_state, uint64_t a_min_us, uint64_t a_max_us);
+void dap_mock_set_delay_variance(dap_mock_function_state_t *a_state, uint64_t a_center_us, uint64_t a_variance_us);
+void dap_mock_clear_delay(dap_mock_function_state_t *a_state);
+void dap_mock_execute_delay(dap_mock_function_state_t *a_state);  // Internal: execute configured delay
+
+/**
+ * @brief Prepare mock call - executes delay, records call, and checks if mock is enabled
+ * @param a_state Mock function state
+ * @param a_args Array of function arguments
+ * @param a_arg_count Number of arguments
+ * @return true if mock is enabled and should intercept the call, false to call real function
+ * 
+ * This function should be called at the beginning of every wrapper function.
+ * It automatically:
+ * - Checks if mock is enabled
+ * - Executes configured delay (simulating latency)
+ * - Records the call with arguments
+ * 
+ * Usage in wrapper:
+ *   void *l_args[] = {arg1, arg2, arg3};
+ *   if (dap_mock_prepare_call(g_mock_my_func, l_args, 3)) {
+ *       // mock logic here
+ *   } else {
+ *       return __real_my_func(...);
+ *   }
+ */
+bool dap_mock_prepare_call(dap_mock_function_state_t *a_state, void **a_args, int a_arg_count);
+
+// ===========================================================================
+// MOCK DECLARATION MACROS
+// ===========================================================================
+
+// Macro overloading helper - counts arguments (supports up to 4 args)
+#define DAP_MOCK_GET_MACRO(_1, _2, _3, _4, NAME, ...) NAME
+
+/**
+ * Universal mock declaration macro with structure-based configuration:
+ * 
+ * 1. DAP_MOCK_DECLARE(func_name)
+ *    - Default: enabled=true, return=0, no delay
+ *    - Auto-generates wrapper (no need to write DAP_MOCK_WRAPPER_DEFAULT)
+ * 
+ * 2. DAP_MOCK_DECLARE(func_name, return_value)
+ *    - Simple return value (intptr_t cast) - convenience syntax
+ *    - Auto-generates wrapper (no need to write DAP_MOCK_WRAPPER_DEFAULT)
+ *    - Example: DAP_MOCK_DECLARE(dap_net_tun_create, 0xABCDEF00)
+ * 
+ * 3. DAP_MOCK_DECLARE(func_name, { .return_value.l = 0xDEAD })
+ *    - Config struct with designated initializers
+ *    - Auto-generates wrapper (no need to write DAP_MOCK_WRAPPER_DEFAULT)
+ * 
+ * 4. DAP_MOCK_DECLARE(func_name, { .enabled = false }, callback_body)
+ *    - Config struct + custom callback body
+ *    - Auto-generates wrapper (no need to write DAP_MOCK_WRAPPER_DEFAULT)
+ * 
+ * Examples:
+ *   DAP_MOCK_DECLARE(dap_stream_write);
+ *   DAP_MOCK_DECLARE(dap_net_tun_create, 0xABCDEF00);
+ *   DAP_MOCK_DECLARE(dap_net_tun_create, { .return_value.l = 0xABCDEF00 });
+ *   DAP_MOCK_DECLARE(dap_hash, { .return_value.i = 0 }, { 
+ *       // Custom callback code
+ *       return (void*)(intptr_t)123;
+ *   });
+ * 
+ * Note: For simple return values, use DAP_MOCK_DECLARE_WITH_RETURN(func_name, return_value)
+ *       if DAP_MOCK_DECLARE(func_name, return_value) doesn't work due to macro limitations
+ */
+#define DAP_MOCK_DECLARE(...) \
+    DAP_MOCK_GET_MACRO(__VA_ARGS__, DAP_MOCK_DECLARE_4, DAP_MOCK_DECLARE_3, DAP_MOCK_DECLARE_2, DAP_MOCK_DECLARE_1)(__VA_ARGS__)
+
+/**
+ * Convenience macro for simple return value
+ * Equivalent to: DAP_MOCK_DECLARE(func_name, { .return_value.ptr = (void*)(intptr_t)(return_value) })
+ */
+#define DAP_MOCK_DECLARE_WITH_RETURN(func_name, return_value) \
+    DAP_MOCK_DECLARE_2(func_name, ((dap_mock_config_t){.enabled=true, .return_value={.ptr=(void*)(intptr_t)(return_value)}, .delay={.type=DAP_MOCK_DELAY_NONE}, .async=false, .call_original_before=false, .call_original_after=false}))
+
+// Variant 1: Simple stub (func_name only) - default config
+#define DAP_MOCK_DECLARE_1(func_name) \
+    DAP_MOCK_DECLARE_2(func_name, DAP_MOCK_CONFIG_DEFAULT)
+
+// Variant 2: With config struct
+// Also generates auto-wrapper macro that will be expanded by generated code
+#define DAP_MOCK_DECLARE_2(func_name, config) \
+    static dap_mock_function_state_t *g_mock_##func_name = NULL; \
+    static void dap_mock_auto_init_##func_name(void) DAP_CONSTRUCTOR; \
+    static void dap_mock_auto_init_##func_name(void) { \
+        if (g_mock_##func_name == NULL) { \
+            g_mock_##func_name = dap_mock_register(#func_name); \
+            if (g_mock_##func_name) { \
+                dap_mock_config_t l_cfg = config; \
+                g_mock_##func_name->enabled = l_cfg.enabled; \
+                g_mock_##func_name->return_value = l_cfg.return_value; \
+                g_mock_##func_name->delay = l_cfg.delay; \
+                g_mock_##func_name->async = l_cfg.async; \
+                g_mock_##func_name->call_original_before = l_cfg.call_original_before; \
+                g_mock_##func_name->call_original_after = l_cfg.call_original_after; \
+            } \
+        } \
+    }
+
+// Variant 3: With config struct + custom callback
+#define DAP_MOCK_DECLARE_3(func_name, config, callback_body) \
+    static void* dap_mock_callback_##func_name(void **a_args, int a_arg_count, void *a_user_data) { UNUSED(a_user_data); callback_body } \
+    static dap_mock_function_state_t *g_mock_##func_name = NULL; \
+    static void dap_mock_auto_init_##func_name(void) DAP_CONSTRUCTOR; \
+    static void dap_mock_auto_init_##func_name(void) { \
+        if (g_mock_##func_name == NULL) { \
+            g_mock_##func_name = dap_mock_register(#func_name); \
+            if (g_mock_##func_name) { \
+                dap_mock_config_t l_cfg = config; \
+                g_mock_##func_name->enabled = l_cfg.enabled; \
+                g_mock_##func_name->return_value = l_cfg.return_value; \
+                g_mock_##func_name->delay = l_cfg.delay; \
+                g_mock_##func_name->async = l_cfg.async; \
+                g_mock_##func_name->call_original_before = l_cfg.call_original_before; \
+                g_mock_##func_name->call_original_after = l_cfg.call_original_after; \
+                g_mock_##func_name->callback = dap_mock_callback_##func_name; \
+            } \
+        } \
+    }
+
+/**
+ * DAP_MOCK_DECLARE_CUSTOM - For use with DAP_MOCK_WRAPPER_CUSTOM
+ * 
+ * Use this when you need to write a custom linker wrapper (DAP_MOCK_WRAPPER_CUSTOM)
+ * but still want to register the mock with configuration (delays, etc.)
+ * 
+ * This only creates the registration/initialization, NOT the wrapper itself.
+ * You must provide the wrapper separately using DAP_MOCK_WRAPPER_CUSTOM.
+ * 
+ * Example:
+ *   // In header:
+ *   DAP_MOCK_DECLARE_CUSTOM(my_func, { .delay = {.type = DAP_MOCK_DELAY_RANGE, .min = 50000, .max = 150000} });
+ *   
+ *   // In source:
+ *   DAP_MOCK_WRAPPER_CUSTOM(int, my_func, (int a, int b), {
+ *       // custom wrapper logic
+ *       if (g_mock_my_func && g_mock_my_func->enabled) {
+ *           dap_mock_execute_delay(g_mock_my_func);
+ *           // ... custom logic ...
+ *           return my_result;
+ *       }
+ *       return __real_my_func(a, b);
+ *   })
+ */
+#define DAP_MOCK_DECLARE_CUSTOM(func_name, config) \
+    static dap_mock_function_state_t *g_mock_##func_name = NULL; \
+    static void dap_mock_auto_init_##func_name(void) DAP_CONSTRUCTOR; \
+    static void dap_mock_auto_init_##func_name(void) { \
+        if (g_mock_##func_name == NULL) { \
+            g_mock_##func_name = dap_mock_register(#func_name); \
+            if (g_mock_##func_name) { \
+                dap_mock_config_t l_cfg = config; \
+                g_mock_##func_name->enabled = l_cfg.enabled; \
+                g_mock_##func_name->return_value = l_cfg.return_value; \
+                g_mock_##func_name->delay = l_cfg.delay; \
+                g_mock_##func_name->call_original_before = l_cfg.call_original_before; \
+                g_mock_##func_name->call_original_after = l_cfg.call_original_after; \
+            } \
+        } \
+    }
+
+/**
+ * G_MOCK - Convenience macro to access mock state variable
+ * 
+ * Usage inside DAP_MOCK_CUSTOM wrapper:
+ *   DAP_MOCK_CUSTOM(return_type, func_name, ...) {
+ *       if (G_MOCK && G_MOCK->enabled) {
+ *           return (return_type)(intptr_t)G_MOCK->return_value.ptr;
+ *       }
+ *   }
+ * 
+ * This macro expands to the appropriate g_mock_##func_name variable.
+ * It's automatically defined as a local pointer variable at the start of the wrapper.
+ */
+#define G_MOCK(func_name) g_mock_##func_name
+
+/**
+ * DAP_MOCK_CUSTOM - Unified macro for custom mocks
+ * 
+ * Combines mock declaration and custom wrapper implementation in one macro.
+ * No need to write DAP_MOCK_DECLARE_CUSTOM separately!
+ * 
+ * Usage:
+ *   DAP_MOCK_CUSTOM(return_type, func_name,
+ *       (type1 name1, type2 name2, ...))
+ *       // G_MOCK is automatically available (points to g_mock_func_name)
+ *       return custom_value;
+ *   }
+ * 
+ * Examples:
+ *   DAP_MOCK_CUSTOM(size_t, dap_enc_code_out_size,
+ *       (dap_enc_key_t *a_key, size_t a_buf_in_size, dap_enc_data_type_t type))
+ *       size_t l_result = (type == DAP_ENC_DATA_TYPE_RAW) ? a_buf_in_size : (a_buf_in_size * 4 / 3 + 100);
+ *       return l_result;
+ *   }
+ *
+ *   DAP_MOCK_CUSTOM(uint256_t, dap_ledger_calc_balance,
+ *       (dap_ledger_t *a_ledger, const dap_chain_addr_t *a_addr, const char *a_token_ticker))
+ *       UNUSED(a_ledger); UNUSED(a_addr); UNUSED(a_token_ticker);
+ *       return GET_256_FROM_64(1000000);
+ *   }
+ */
+#define DAP_MOCK_CUSTOM(return_type, func_name, ...) \
+    DAP_MOCK_DECLARE_CUSTOM(func_name, DAP_MOCK_CONFIG_DEFAULT); \
+    DAP_MOCK_WRAPPER_CUSTOM(return_type, func_name, ##__VA_ARGS__) \
+    { \
+        dap_mock_function_state_t *G_MOCK = g_mock_##func_name;
+
+// ===========================================================================
+// WRAPPER MACROS FOR LINKER (v2.1 - Universal Passthrough Wrappers)
+// ===========================================================================
+
+/**
+ * Simple mock declaration macro with optional return value
+ * 
+ * Usage:
+ *   DAP_MOCK(func_name)                    // Default: enabled=true, return=0
+ *   DAP_MOCK(func_name, return_value)      // Simple return value (intptr_t cast)
+ * 
+ * Examples:
+ *   DAP_MOCK(dap_stream_write);
+ *   DAP_MOCK(dap_net_tun_create, 0xABCDEF00);
+ * 
+ * Note: Wrappers are automatically generated by the mock framework.
+ *       No need to write DAP_MOCK_WRAPPER_DEFAULT manually!
+ */
+#define DAP_MOCK(...) \
+    DAP_MOCK_GET_MACRO(__VA_ARGS__, DAP_MOCK_2, DAP_MOCK_1, DAP_MOCK_1, DAP_MOCK_1)(__VA_ARGS__)
+
+// Variant 1: Simple stub (func_name only) - default config
+#define DAP_MOCK_1(func_name) \
+    DAP_MOCK_DECLARE_1(func_name)
+
+// Variant 2: With simple return value (intptr_t cast)
+#define DAP_MOCK_2(func_name, return_value) \
+    DAP_MOCK_DECLARE_WITH_RETURN(func_name, return_value)
+
+/**
+ * Default wrapper for pure mocks - UNIVERSAL, works with ANY types!
+ * 
+ * Automatically generated for DAP_MOCK_DECLARE functions.
+ * Returns mock value if mock is enabled, otherwise calls original.
+ * 
+ * Usage:
+ *   DAP_MOCK_DECLARE(my_func);
+ *   DAP_MOCK_WRAPPER_DEFAULT(return_type, my_func, (params_with_types), (params_names))
+ * 
+ * Note: For DAP_MOCK_DECLARE, wrappers are auto-generated - no need to write this manually!
+ */
+// Both platforms define __wrap_func_name as the mock implementation.
+// On Linux: GNU ld --wrap=func redirects calls and provides __real_ automatically.
+// On macOS: DYLD_INSERT interpose dylib redirects calls and provides __real_ via dlsym.
+// __real_ is available on both platforms when mocking is properly configured.
+#ifdef __APPLE__
+#define DAP_MOCK_WRAPPER_DEFAULT(return_type, func_name, params_with_types, params_names) \
+    extern return_type __real_##func_name params_with_types; \
+    return_type __wrap_##func_name params_with_types { \
+        if (g_mock_##func_name && g_mock_##func_name->enabled) { \
+            dap_mock_execute_delay(g_mock_##func_name); \
+            return_type l_result = (return_type)(intptr_t)g_mock_##func_name->return_value.ptr; \
+            dap_mock_record_call(g_mock_##func_name, NULL, 0, (void*)(intptr_t)l_result); \
+            return l_result; \
+        } \
+        return __real_##func_name params_names; \
+    }
+#else
+#define DAP_MOCK_WRAPPER_DEFAULT(return_type, func_name, params_with_types, params_names) \
+    extern return_type __real_##func_name params_with_types; \
+    return_type __wrap_##func_name params_with_types { \
+        if (g_mock_##func_name && g_mock_##func_name->enabled) { \
+            dap_mock_execute_delay(g_mock_##func_name); \
+            return_type l_result = (return_type)(intptr_t)g_mock_##func_name->return_value.ptr; \
+            dap_mock_record_call(g_mock_##func_name, NULL, 0, (void*)(intptr_t)l_result); \
+            return l_result; \
+        } \
+        return __real_##func_name params_names; \
+    }
+#endif
+
+/**
+ * Default wrapper for void functions - UNIVERSAL
+ */
+#ifdef __APPLE__
+#define DAP_MOCK_WRAPPER_DEFAULT_VOID(func_name, params_with_types, params_names) \
+    extern void __real_##func_name params_with_types; \
+    void __wrap_##func_name params_with_types { \
+        if (g_mock_##func_name && g_mock_##func_name->enabled) { \
+            dap_mock_execute_delay(g_mock_##func_name); \
+            dap_mock_record_call(g_mock_##func_name, NULL, 0, NULL); \
+            return; \
+        } \
+        __real_##func_name params_names; \
+    }
+#else
+#define DAP_MOCK_WRAPPER_DEFAULT_VOID(func_name, params_with_types, params_names) \
+    extern void __real_##func_name params_with_types; \
+    void __wrap_##func_name params_with_types { \
+        if (g_mock_##func_name && g_mock_##func_name->enabled) { \
+            dap_mock_execute_delay(g_mock_##func_name); \
+            dap_mock_record_call(g_mock_##func_name, NULL, 0, NULL); \
+            return; \
+        } \
+        __real_##func_name params_names; \
+    }
+#endif
+
+/**
+ * Passthrough wrapper for integration tests - UNIVERSAL, works with ANY types!
+ * 
+ * Uses call_original_before/call_original_after flags from config to control
+ * when the original function is called.
+ * 
+ * - call_original_before=true: calls __real_, then records call (for spy/tracking)
+ * - call_original_after=true: records call, then calls __real_ (for parameter modification)
+ * - both false: pure mock without calling original
+ * 
+ * ⚠️ CRITICAL: Does NOT use void *l_args[], so it works with size_t, int, bool, etc!
+ * 
+ * Usage:
+ *   DAP_MOCK_DECLARE(my_func, DAP_MOCK_CONFIG_PASSTHROUGH);
+ *   DAP_MOCK_WRAPPER_PASSTHROUGH(size_t, my_func, (void *a, size_t b), (a, b))
+ */
+#define DAP_MOCK_WRAPPER_PASSTHROUGH(return_type, func_name, params_with_types, params_names) \
+    extern return_type __real_##func_name params_with_types; \
+    return_type __wrap_##func_name params_with_types { \
+        return_type l_result = (return_type){0}; \
+        bool l_called_original = false; \
+        \
+        if (g_mock_##func_name) { \
+            /* Call original BEFORE mock logic if configured */ \
+            if (g_mock_##func_name->call_original_before) { \
+                l_result = __real_##func_name params_names; \
+                l_called_original = true; \
+            } \
+            \
+            /* Execute mock logic (delay + record) */ \
+            if (g_mock_##func_name->enabled) { \
+                dap_mock_execute_delay(g_mock_##func_name); \
+                dap_mock_record_call(g_mock_##func_name, NULL, 0, (void*)(intptr_t)l_result); \
+            } \
+            \
+            /* Call original AFTER mock logic if configured */ \
+            if (g_mock_##func_name->call_original_after) { \
+                l_result = __real_##func_name params_names; \
+                l_called_original = true; \
+            } \
+        } \
+        \
+        /* Fallback: if no mock or original not called yet, call it now */ \
+        if (!l_called_original) { \
+            l_result = __real_##func_name params_names; \
+        } \
+        \
+        return l_result; \
+    }
+
+/**
+ * Passthrough wrapper for void functions - UNIVERSAL
+ */
+#define DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(func_name, params_with_types, params_names) \
+    extern void __real_##func_name params_with_types; \
+    void __wrap_##func_name params_with_types { \
+        bool l_called_original = false; \
+        \
+        if (g_mock_##func_name) { \
+            /* Call original BEFORE mock logic if configured */ \
+            if (g_mock_##func_name->call_original_before) { \
+                __real_##func_name params_names; \
+                l_called_original = true; \
+            } \
+            \
+            /* Execute mock logic (delay + record) */ \
+            if (g_mock_##func_name->enabled) { \
+                dap_mock_execute_delay(g_mock_##func_name); \
+                dap_mock_record_call(g_mock_##func_name, NULL, 0, NULL); \
+            } \
+            \
+            /* Call original AFTER mock logic if configured */ \
+            if (g_mock_##func_name->call_original_after) { \
+                __real_##func_name params_names; \
+                l_called_original = true; \
+            } \
+        } \
+        \
+        /* Fallback: if no mock or original not called yet, call it now */ \
+        if (!l_called_original) { \
+            __real_##func_name params_names; \
+        } \
+    }
+
+
+// ===========================================================================
+// MOCK CONTROL MACROS
+// ===========================================================================
+
+/**
+ * Enable mock for a function (intercept calls)
+ * Usage: DAP_MOCK_ENABLE(dap_stream_write);
+ */
+#define DAP_MOCK_ENABLE(func_name) \
+    dap_mock_set_enabled(g_mock_##func_name, true)
+
+/**
+ * Disable mock for a function (call real function)
+ * Usage: DAP_MOCK_DISABLE(dap_stream_write);
+ */
+#define DAP_MOCK_DISABLE(func_name) \
+    dap_mock_set_enabled(g_mock_##func_name, false)
+
+/**
+ * Set return value for mock
+ * Usage: DAP_MOCK_SET_RETURN(dap_stream_write, (void*)(intptr_t)0);
+ */
+#define DAP_MOCK_SET_RETURN(func_name, value) \
+    dap_mock_set_return_value(g_mock_##func_name, (void*)(value))
+
+/**
+ * Get call count for mock
+ * Usage: int count = DAP_MOCK_GET_CALL_COUNT(dap_stream_write);
+ */
+#define DAP_MOCK_GET_CALL_COUNT(func_name) \
+    dap_mock_get_call_count(g_mock_##func_name)
+
+/**
+ * Check if mock was called
+ * Usage: if (DAP_MOCK_WAS_CALLED(dap_stream_write)) { ... }
+ */
+#define DAP_MOCK_WAS_CALLED(func_name) \
+    (dap_mock_get_call_count(g_mock_##func_name) > 0)
+
+/**
+ * Call original (real) function from wrapper
+ * Usage in wrapper: DAP_MOCK_CALL_ORIGINAL(dap_stream_write, a_stream, a_data, a_size);
+ */
+#define DAP_MOCK_CALL_ORIGINAL(func_name, ...) \
+    __real_##func_name(__VA_ARGS__)
+
+/**
+ * Get specific argument from a call
+ * Usage: void *arg = DAP_MOCK_GET_ARG(dap_stream_write, 0, 1);
+ */
+#define DAP_MOCK_GET_ARG(func_name, call_idx, arg_idx) \
+    dap_mock_get_call_args(g_mock_##func_name, call_idx)[arg_idx]
+
+/**
+ * Check if mock was called with specific argument
+ * Usage: assert(DAP_MOCK_WAS_CALLED_WITH(func, 0, expected_ptr));
+ */
+#define DAP_MOCK_WAS_CALLED_WITH(func_name, call_idx, expected_value) \
+    dap_mock_was_called_with(g_mock_##func_name, call_idx, (void*)(expected_value))
+
+/**
+ * Reset mock (clear call history)
+ * Usage: DAP_MOCK_RESET(dap_stream_write);
+ */
+#define DAP_MOCK_RESET(func_name) \
+    dap_mock_reset(g_mock_##func_name)
+
+/**
+ * Set custom callback function for mock
+ * Usage: DAP_MOCK_SET_CALLBACK(dap_stream_write, my_custom_callback, user_data);
+ */
+#define DAP_MOCK_SET_CALLBACK(func_name, callback, user_data) \
+    dap_mock_set_callback(g_mock_##func_name, callback, user_data)
+
+/**
+ * Clear custom callback (return to simple return_value mode)
+ * Usage: DAP_MOCK_CLEAR_CALLBACK(dap_stream_write);
+ */
+#define DAP_MOCK_CLEAR_CALLBACK(func_name) \
+    dap_mock_clear_callback(g_mock_##func_name)
+
+// ===========================================================================
+// DELAY CONFIGURATION MACROS
+// ===========================================================================
+
+/**
+ * Set fixed delay for mock execution
+ * Usage: DAP_MOCK_SET_DELAY_FIXED(dap_stream_write, 1000);  // 1ms delay
+ */
+#define DAP_MOCK_SET_DELAY_FIXED(func_name, delay_us) \
+    dap_mock_set_delay_fixed(g_mock_##func_name, delay_us)
+
+/**
+ * Set random delay in range [min, max] microseconds
+ * Usage: DAP_MOCK_SET_DELAY_RANGE(dap_stream_write, 500, 1500);  // 0.5-1.5ms
+ */
+#define DAP_MOCK_SET_DELAY_RANGE(func_name, min_us, max_us) \
+    dap_mock_set_delay_range(g_mock_##func_name, min_us, max_us)
+
+/**
+ * Set delay with variance (center ± variance) in microseconds
+ * Usage: DAP_MOCK_SET_DELAY_VARIANCE(dap_stream_write, 2300, 70);  // 2.3ms ± 0.07ms
+ */
+#define DAP_MOCK_SET_DELAY_VARIANCE(func_name, center_us, variance_us) \
+    dap_mock_set_delay_variance(g_mock_##func_name, center_us, variance_us)
+
+/**
+ * Clear delay (no delay, instant execution)
+ * Usage: DAP_MOCK_CLEAR_DELAY(dap_stream_write);
+ */
+#define DAP_MOCK_CLEAR_DELAY(func_name) \
+    dap_mock_clear_delay(g_mock_##func_name)
+
+// Convenience macros for millisecond delays
+#define DAP_MOCK_SET_DELAY_MS(func_name, delay_ms) \
+    DAP_MOCK_SET_DELAY_FIXED(func_name, (delay_ms) * 1000)
+
+#define DAP_MOCK_SET_DELAY_RANGE_MS(func_name, min_ms, max_ms) \
+    DAP_MOCK_SET_DELAY_RANGE(func_name, (min_ms) * 1000, (max_ms) * 1000)
+
+#define DAP_MOCK_SET_DELAY_VARIANCE_MS(func_name, center_ms, variance_ms) \
+    DAP_MOCK_SET_DELAY_VARIANCE(func_name, (center_ms) * 1000, (variance_ms) * 1000)
+
+// ===========================================================================
+// LINKER WRAPPER MACROS (automatically included)
+// ===========================================================================
+
+// Include generated linker wrapper header (contains DAP_MOCK_WRAPPER_CUSTOM macros)
+// This header is generated from templates/dap_mock_linker_wrapper.h.tpl by the mock generator
+// and placed in mock_gen directory. The mock_gen directory is added to include paths.
+// Use conditional include - file may not exist if mocks are not used
+#ifndef DAP_MOCK_LINKER_WRAPPER_H
+    #if __has_include("dap_mock_linker_wrapper.h")
+        #include "dap_mock_linker_wrapper.h"
+        #define DAP_MOCK_LINKER_WRAPPER_H
+    #endif
+#endif

@@ -1,0 +1,693 @@
+# DAP Mock AutoWrap CMake Module
+# Provides automatic linker wrapping for DAP mock framework
+#
+# Usage:
+#   include(DAPMockAutoWrap.cmake)
+#   dap_mock_autowrap(my_test_target)
+#   dap_mock_autowrap_with_static(my_test_target dap_client dap_stream)
+#
+# This module automatically:
+# 1. Scans source files for DAP_MOCK_DECLARE macros
+# 2. Generates linker --wrap options
+# 3. Applies them to the target
+#
+# For static libraries, use dap_mock_autowrap_with_static to wrap with --whole-archive
+
+# Save module directory for script paths
+# Use CACHE INTERNAL to persist across multiple include() calls
+get_filename_component(DAP_MOCK_AUTOWRAP_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY CACHE)
+set(DAP_MOCK_AUTOWRAP_MODULE_DIR "${DAP_MOCK_AUTOWRAP_MODULE_DIR}" CACHE INTERNAL "Directory containing DAPMockAutoWrap.cmake")
+
+# Debug: print module directory
+if(NOT DAP_MOCK_AUTOWRAP_MODULE_DIR)
+    message(FATAL_ERROR "DAPMockAutoWrap: Failed to determine module directory from ${CMAKE_CURRENT_LIST_FILE}")
+endif()
+#message(STATUS "DAPMockAutoWrap module directory: ${DAP_MOCK_AUTOWRAP_MODULE_DIR}")
+
+# Detect script executor (bash on Unix, PowerShell on Windows)
+# Note: PowerShell version (ps1) is basic and may not support all features
+# Full functionality is available in bash version (sh)
+if(NOT DEFINED SCRIPT_EXECUTOR)
+    if(UNIX)
+        find_program(BASH_EXECUTABLE bash)
+        if(BASH_EXECUTABLE)
+            set(SCRIPT_EXECUTOR ${BASH_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+            set(SCRIPT_EXT "sh" CACHE INTERNAL "Script extension for mock autowrap")
+        else()
+            message(FATAL_ERROR "Bash required for dap_mock_autowrap() on Unix. Please install bash.")
+        endif()
+    elseif(WIN32)
+        find_program(POWERSHELL_EXECUTABLE powershell)
+        if(POWERSHELL_EXECUTABLE)
+            set(SCRIPT_EXECUTOR ${POWERSHELL_EXECUTABLE} CACHE INTERNAL "Script executor for mock autowrap")
+            set(SCRIPT_EXT "ps1" CACHE INTERNAL "Script extension for mock autowrap")
+            message(WARNING "Using PowerShell version of dap_mock_autowrap - basic functionality only. Full features require bash.")
+        else()
+            message(FATAL_ERROR "PowerShell required for dap_mock_autowrap() on Windows. Please install PowerShell.")
+        endif()
+    endif()
+endif()
+
+#
+# dap_mock_autowrap(target_name)
+#
+# Automatically detect DAP_MOCK_DECLARE in target sources and generate --wrap options
+#
+function(dap_mock_autowrap TARGET_NAME)
+    # Get all source files from the target
+    get_target_property(TARGET_SOURCES ${TARGET_NAME} SOURCES)
+    if(NOT TARGET_SOURCES)
+        #message(WARNING "No sources found for target ${TARGET_NAME}")
+        return()
+    endif()
+    
+    # Collect all .c and .h files from sources only (not from include directories)
+    # This ensures we only scan files explicitly added to the target, not all headers
+    set(ALL_SOURCES "")
+    foreach(SOURCE_FILE ${TARGET_SOURCES})
+        get_filename_component(SOURCE_ABS ${SOURCE_FILE} ABSOLUTE)
+        get_filename_component(SOURCE_EXT ${SOURCE_ABS} EXT)
+        if(SOURCE_EXT MATCHES "\\.(c|h)$")
+            list(APPEND ALL_SOURCES ${SOURCE_ABS})
+        endif()
+    endforeach()
+    
+    if(NOT ALL_SOURCES)
+        #message(WARNING "No C/H sources found for target ${TARGET_NAME}")
+        return()
+    endif()
+    
+    # Use target name as basename for output files
+    set(SOURCE_BASENAME ${TARGET_NAME})
+    
+    # Output files go to build directory (CMAKE_CURRENT_BINARY_DIR)
+    # This keeps generated files separate from source files
+    # Use target-specific directory to avoid conflicts between multiple test targets
+    set(MOCK_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/mock_gen/${TARGET_NAME}")
+    file(MAKE_DIRECTORY ${MOCK_GEN_DIR})
+    
+    set(WRAP_RESPONSE_FILE "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_wrap.txt")
+    set(CMAKE_FRAGMENT "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_mocks.cmake")
+    set(WRAPPER_TEMPLATE "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_wrappers_template.c")
+    set(MACROS_HEADER "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_mock_macros.h")
+    set(CUSTOM_MOCKS_HEADER "${MOCK_GEN_DIR}/${SOURCE_BASENAME}_custom_mocks.h")
+    set(LINKER_WRAPPER_HEADER "${MOCK_GEN_DIR}/dap_mock_linker_wrapper.h")
+    
+    # Path to generator script (use saved module directory)
+    set(GENERATOR_SCRIPT "${DAP_MOCK_AUTOWRAP_MODULE_DIR}/dap_mock_autowrap.${SCRIPT_EXT}")
+    
+    if(NOT EXISTS ${GENERATOR_SCRIPT})
+        message(FATAL_ERROR "Mock generator script not found: ${GENERATOR_SCRIPT}")
+    endif()
+    
+    # STAGE 1: Generate wrap file at configure time
+    #message(STATUS "🔧 Generating mock wrappers for ${TARGET_NAME}...")
+    #message(STATUS "   Scanning ${list_length_result} source files...")
+    
+    # Prepare command for mock generation
+    # For STAGE 1 (execute_process) - use list
+    set(MOCK_GEN_CMD_STAGE1 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+    if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
+        message(STATUS " Using centralized dap_tpl: ${DAP_TPL_DIR}")
+        # Replace CMake list separator (;) with space in env var value —
+        # otherwise execute_process splits it into separate COMMAND arguments,
+        # treating the second source path as a program to execute.
+        string(REPLACE ";" " " _DAP_MOCK_SRC_FILES "${ALL_SOURCES}")
+        set(MOCK_GEN_CMD_STAGE1 ${CMAKE_COMMAND} -E env 
+            "DAP_TPL_DIR=${DAP_TPL_DIR}" 
+            "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
+            "DAP_MOCK_SOURCE_FILES=${_DAP_MOCK_SRC_FILES}"
+            ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+    endif()
+    
+    execute_process(
+        COMMAND ${MOCK_GEN_CMD_STAGE1}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        RESULT_VARIABLE MOCK_GEN_RESULT
+        OUTPUT_VARIABLE MOCK_GEN_OUTPUT
+        ERROR_VARIABLE MOCK_GEN_ERROR
+    )
+    
+    if(NOT MOCK_GEN_RESULT EQUAL 0)
+        message(FATAL_ERROR "Mock generator failed for ${TARGET_NAME}:\nEXIT CODE: ${MOCK_GEN_RESULT}\nSTDOUT:\n${MOCK_GEN_OUTPUT}\nSTDERR:\n${MOCK_GEN_ERROR}\n\nMock generator failure is fatal - build aborted.")
+    endif()
+    
+    # For STAGE 2 (add_custom_command) - prepare separate command
+    if(DEFINED DAP_TPL_DIR AND EXISTS "${DAP_TPL_DIR}/dap_tpl.sh")
+        set(MOCK_GEN_CMD_STAGE2 ${CMAKE_COMMAND} -E env 
+            "DAP_TPL_DIR=${DAP_TPL_DIR}"
+            "CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}"
+            "DAP_MOCK_SOURCE_FILES=${_DAP_MOCK_SRC_FILES}"
+            ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+    else()
+        set(MOCK_GEN_CMD_STAGE2 ${SCRIPT_EXECUTOR} ${GENERATOR_SCRIPT} ${MOCK_GEN_DIR} ${SOURCE_BASENAME} ${ALL_SOURCES})
+    endif()
+    
+    # STAGE 2: Setup re-generation on source file changes
+    add_custom_command(
+        OUTPUT ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT} ${MACROS_HEADER} ${CUSTOM_MOCKS_HEADER} ${LINKER_WRAPPER_HEADER}
+        COMMAND ${MOCK_GEN_CMD_STAGE2}
+        DEPENDS ${ALL_SOURCES}
+        COMMENT "Regenerating mock wrappers for ${TARGET_NAME}"
+        VERBATIM
+    )
+    
+    add_custom_target(${TARGET_NAME}_mock_gen
+        DEPENDS ${WRAP_RESPONSE_FILE} ${CMAKE_FRAGMENT} ${CUSTOM_MOCKS_HEADER} ${LINKER_WRAPPER_HEADER}
+    )
+    add_dependencies(${TARGET_NAME} ${TARGET_NAME}_mock_gen)
+
+    # STAGE 2.5: Add include directory for generated headers
+    target_include_directories(${TARGET_NAME} PRIVATE ${MOCK_GEN_DIR})
+    
+    # Include generated headers via compiler flag -include
+    # Use SHELL: to prevent CMake from de-duplicating -include flags
+    # This ensures the macros and custom mocks are available before dap_mock.h is processed
+    get_filename_component(CUSTOM_MOCKS_HEADER_NAME "${CUSTOM_MOCKS_HEADER}" NAME)
+    
+    # Include custom mocks header (contains function-specific macros)
+    # Use "SHELL:" to keep -include and filename together
+    target_compile_options(${TARGET_NAME} PRIVATE "SHELL:-include ${CUSTOM_MOCKS_HEADER_NAME}")
+    # Also define macro flag to indicate macros are available (for conditional inclusion)
+    # This is a flag, not a macro with value - used for #ifdef checks
+    target_compile_definitions(${TARGET_NAME} PRIVATE 
+        DAP_MOCK_GENERATED_MACROS_H)
+    
+    # macOS: Compile and link mock override C file
+    # CMake compiles with proper include paths, then links before cellframe_sdk
+    if(APPLE)
+        set(MOCK_SRC_PATH_FILE "${MOCK_GEN_DIR}/mock_dylib_path.txt")
+        if(EXISTS ${MOCK_SRC_PATH_FILE})
+            file(READ ${MOCK_SRC_PATH_FILE} MOCK_SRC_PATH)
+            string(STRIP "${MOCK_SRC_PATH}" MOCK_SRC_PATH)
+            if(MOCK_SRC_PATH AND EXISTS "${MOCK_SRC_PATH}")
+                # Create object library for the mock override C file
+                # This allows CMake to compile with proper include directories
+                set(MOCK_OBJ_LIB "${TARGET_NAME}_mock_override")
+                add_library(${MOCK_OBJ_LIB} OBJECT ${MOCK_SRC_PATH})
+                
+                # Inherit include directories from test target
+                get_target_property(TARGET_INCLUDES ${TARGET_NAME} INCLUDE_DIRECTORIES)
+                if(TARGET_INCLUDES)
+                    target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${TARGET_INCLUDES})
+                endif()
+                
+                # Propagate includes from all libraries the test links against
+                get_target_property(TARGET_LINK_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+                if(TARGET_LINK_LIBS)
+                    foreach(_LINK_LIB ${TARGET_LINK_LIBS})
+                        if(TARGET ${_LINK_LIB})
+                            get_target_property(_LIB_INCLUDES ${_LINK_LIB} INTERFACE_INCLUDE_DIRECTORIES)
+                            if(_LIB_INCLUDES)
+                                target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${_LIB_INCLUDES})
+                            endif()
+                        endif()
+                    endforeach()
+                endif()
+                
+                # Also try well-known SDK targets by both naming conventions
+                foreach(_SDK_TARGET dap_sdk dap-sdk cellframe_sdk)
+                    if(TARGET ${_SDK_TARGET})
+                        get_target_property(_SDK_INCLUDES ${_SDK_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+                        if(_SDK_INCLUDES)
+                            target_include_directories(${MOCK_OBJ_LIB} PRIVATE ${_SDK_INCLUDES})
+                        endif()
+                    endif()
+                endforeach()
+                
+                # Add object files to test target - they link before libraries
+                target_sources(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MOCK_OBJ_LIB}>)
+                
+                # Add dependency to ensure mock C file is generated first
+                add_dependencies(${MOCK_OBJ_LIB} ${TARGET_NAME}_mock_gen)
+                
+                set_target_properties(${TARGET_NAME} PROPERTIES DAP_MOCK_OBJ_LIB "${MOCK_OBJ_LIB}")
+                message(STATUS " macOS: mock override compiled: ${MOCK_SRC_PATH}")
+            endif()
+        endif()
+    endif()
+
+    # STAGE 3: Apply wrap options (file should exist now)
+    if(EXISTS ${WRAP_RESPONSE_FILE})
+        # Check if file is empty (no mocks)
+        file(READ ${WRAP_RESPONSE_FILE} WRAP_CONTENT)
+        string(STRIP "${WRAP_CONTENT}" WRAP_CONTENT_STRIPPED)
+        
+        # Only apply wrap options if file is not empty
+        if(WRAP_CONTENT_STRIPPED)
+            # Detect if compiler supports response files
+            if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR
+               CMAKE_C_COMPILER_ID MATCHES "Clang" OR
+               CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+                # GCC and Clang support -Wl,@file for response files
+                # Note: macOS generates -Wl,-alias options, Linux generates --wrap options
+                target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_RESPONSE_FILE}")
+                # macOS: Don't add linker flags - we use DYLD_INSERT_LIBRARIES instead
+                # The interposition dylib is injected at runtime via ctest ENVIRONMENT
+                #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (via @file)")
+            else()
+                # Fallback: read file and add options individually
+                string(REPLACE "\n" ";" WRAP_OPTIONS_LIST "${WRAP_CONTENT}")
+                target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS_LIST})
+                #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME}")
+            endif()
+            
+            # Count wrapped functions
+            string(REGEX MATCHALL "--wrap=" WRAP_MATCHES "${WRAP_CONTENT}")
+            list(LENGTH WRAP_MATCHES WRAP_COUNT)
+            
+            if(WRAP_COUNT GREATER 0)
+                message(STATUS " Mocked ${WRAP_COUNT} functions (GNU --wrap)")
+            endif()
+        else()
+            # File is empty - don't apply to linker
+            #message(STATUS "   No mocks found - empty wrap file (not applied to linker)")
+        endif()
+        #message(STATUS "   Output: ${MOCK_GEN_DIR}")
+    else()
+        # File was not generated - create empty stub file (truly empty, no comments)
+        # Linker response files cannot contain comments - they are interpreted as options
+        file(WRITE ${WRAP_RESPONSE_FILE} "")
+        #message(STATUS "   No mocks found for ${TARGET_NAME} - created empty wrap file")
+        
+        # Don't apply empty file to linker - it will cause errors
+        # Empty file is created only for consistency and to avoid file-not-found errors
+        #message(STATUS "✅ Mock autowrap enabled for ${TARGET_NAME} (empty wrap file - no mocks)")
+    endif()
+    
+    # AUTOMATIC --whole-archive wrapping for static libraries
+    # After generating --wrap flags, automatically wrap all *_static libraries
+    # with --whole-archive to ensure --wrap works correctly
+    # This eliminates the need for manual dap_mock_autowrap_with_static() calls
+    
+    # Get list of linked libraries
+    get_target_property(LINKED_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+    if(LINKED_LIBS)
+        # Collect all *_static libraries that need wrapping
+        set(STATIC_LIBS_TO_WRAP "")
+        foreach(LIB ${LINKED_LIBS})
+            if(LIB MATCHES "_static$" AND TARGET ${LIB})
+                # This is a static library - add it to wrap list
+                list(APPEND STATIC_LIBS_TO_WRAP ${LIB})
+            endif()
+        endforeach()
+        
+        # If we found static libraries, wrap them automatically
+        if(STATIC_LIBS_TO_WRAP)
+            # Remove _static suffix to get base names for dap_mock_autowrap_with_static
+            set(BASE_LIBS "")
+            foreach(LIB ${STATIC_LIBS_TO_WRAP})
+                string(REGEX REPLACE "_static$" "" BASE_LIB "${LIB}")
+                list(APPEND BASE_LIBS ${BASE_LIB})
+            endforeach()
+            
+            # Call dap_mock_autowrap_with_static automatically
+            dap_mock_autowrap_with_static(${TARGET_NAME} ${BASE_LIBS})
+            #message(STATUS "✅ Auto-wrapped ${BASE_LIBS} with --whole-archive for ${TARGET_NAME}")
+        endif()
+    endif()
+endfunction()
+
+#
+# dap_mock_setup_test_env(test_name target_name)
+#
+# dap_mock_setup_test_env(TEST_NAME TARGET_NAME)
+#
+# Setup DYLD_INSERT_LIBRARIES for macOS test.
+# Must be called AFTER add_test() and dap_mock_autowrap().
+#
+# Example:
+#   add_test(NAME my_test COMMAND my_test)
+#   dap_mock_autowrap(my_test)
+#   dap_mock_setup_test_env(my_test my_test)
+#
+function(dap_mock_setup_test_env TEST_NAME TARGET_NAME)
+    if(APPLE)
+        get_target_property(MOCK_DYLIB_PATH ${TARGET_NAME} DAP_MOCK_DYLIB_PATH)
+        if(MOCK_DYLIB_PATH AND EXISTS "${MOCK_DYLIB_PATH}")
+            # Set DYLD_INSERT_LIBRARIES to inject mock interpose dylib
+            set_tests_properties(${TEST_NAME} PROPERTIES
+                ENVIRONMENT "DYLD_INSERT_LIBRARIES=${MOCK_DYLIB_PATH}"
+            )
+            message(STATUS " Test ${TEST_NAME}: DYLD_INSERT_LIBRARIES configured")
+        else()
+            message(STATUS " Test ${TEST_NAME}: no mock dylib (mocks may not work)")
+        endif()
+    endif()
+endfunction()
+
+#
+# dap_mock_autowrap_with_static(target_name library1 library2 ...)
+#
+# Wrap specified static libraries with --whole-archive and --start-group/--end-group
+# to make --wrap work correctly with circular dependencies.
+# This forces linker to process all symbols from static libraries and resolve
+# circular dependencies properly.
+#
+# Example:
+#   target_link_libraries(test_http dap_core dap_http_server dap_test)
+#   dap_mock_autowrap_with_static(test_http dap_http_server)
+#
+# Result:
+#   Links as: dap_core -Wl,--start-group -Wl,--whole-archive dap_http_server -Wl,--no-whole-archive -Wl,--end-group dap_test
+#
+function(dap_mock_autowrap_with_static TARGET_NAME)
+    set(LIBS_TO_WRAP ${ARGN})
+    
+    if(NOT LIBS_TO_WRAP)
+        message(WARNING "dap_mock_autowrap_with_static: No libraries specified")
+        return()
+    endif()
+    
+    # Get current link libraries
+    get_target_property(CURRENT_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+    
+    # Also check if libraries are added via target_sources (for OBJECT libraries)
+    # This handles the case when dap_test_link_libraries uses target_sources
+    # to add object files from dap_sdk_object or individual object libraries
+    get_target_property(SOURCES ${TARGET_NAME} SOURCES)
+    set(OBJECT_LIBS_TO_WRAP "")
+    set(OBJECT_SOURCES_TO_REMOVE "")
+    if(SOURCES)
+        foreach(SOURCE ${SOURCES})
+            # Check if source is a generator expression for object files: $<TARGET_OBJECTS:lib_name>
+            if(SOURCE MATCHES "\\$<TARGET_OBJECTS:([^>]+)>")
+                set(OBJ_LIB ${CMAKE_MATCH_1})
+                # Check if this object library should be wrapped
+                # Also check if it's dap_sdk_object which contains all modules
+                if(OBJ_LIB STREQUAL "dap_sdk_object")
+                    # dap_sdk_object contains all modules - check if any of the requested libs are in it
+                    # We need to extract individual object libraries from DAP_INTERNAL_MODULES
+                    # and link them separately to enable --wrap
+                    get_property(DAP_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
+                    if(DAP_MODULES)
+                        foreach(MODULE ${DAP_MODULES})
+                            list(FIND LIBS_TO_WRAP ${MODULE} MODULE_INDEX)
+                            if(MODULE_INDEX GREATER -1)
+                                list(APPEND OBJECT_LIBS_TO_WRAP ${MODULE})
+                            endif()
+                        endforeach()
+                        # Always remove dap_sdk_object source if we need to wrap any modules
+                        # We'll link individual modules via target_link_libraries instead
+                        if(OBJECT_LIBS_TO_WRAP)
+                            list(APPEND OBJECT_SOURCES_TO_REMOVE ${SOURCE})
+                            # Also need to add remaining modules that are NOT being wrapped
+                            # to maintain functionality
+                            foreach(MODULE ${DAP_MODULES})
+                                list(FIND OBJECT_LIBS_TO_WRAP ${MODULE} MODULE_WRAP_INDEX)
+                                if(MODULE_WRAP_INDEX LESS 0)
+                                    # This module is not being wrapped - add it to sources to keep it
+                                    # Actually, we'll link all modules via target_link_libraries
+                                    # to ensure --wrap works for all internal calls
+                                endif()
+                            endforeach()
+                        endif()
+                    endif()
+                else()
+                    # Individual object library
+                    list(FIND LIBS_TO_WRAP ${OBJ_LIB} OBJ_LIB_INDEX)
+                    if(OBJ_LIB_INDEX GREATER -1)
+                        list(APPEND OBJECT_LIBS_TO_WRAP ${OBJ_LIB})
+                        # Mark this source for removal - we'll link it via target_link_libraries instead
+                        list(APPEND OBJECT_SOURCES_TO_REMOVE ${SOURCE})
+                    endif()
+                endif()
+            endif()
+        endforeach()
+    endif()
+    
+    if(NOT CURRENT_LIBS AND NOT OBJECT_LIBS_TO_WRAP)
+        message(WARNING "dap_mock_autowrap_with_static: No libraries linked to ${TARGET_NAME}")
+        return()
+    endif()
+    
+    # Remove duplicates first
+    if(CURRENT_LIBS)
+        list(REMOVE_DUPLICATES CURRENT_LIBS)
+    else()
+        set(CURRENT_LIBS "")
+    endif()
+    
+    # Collect libraries that need wrapping and their dependencies
+    set(WRAPPED_LIBS "")
+    set(OTHER_LIBS "")
+    
+    # Process libraries from LINK_LIBRARIES
+    # Automatically add _static suffix to library names for proper mocking
+    foreach(LIB ${CURRENT_LIBS})
+        # Check if this lib should be wrapped (try both with and without _static suffix)
+        set(LIB_BASE_NAME ${LIB})
+        # Remove _static suffix if present
+        string(REGEX REPLACE "_static$" "" LIB_BASE_NAME "${LIB}")
+        
+        list(FIND LIBS_TO_WRAP ${LIB_BASE_NAME} LIB_INDEX)
+        if(LIB_INDEX GREATER -1)
+            # This library should be wrapped
+            # Use _static version if it exists in CURRENT_LIBS
+            if(LIB MATCHES "_static$")
+                list(APPEND WRAPPED_LIBS ${LIB})
+            elseif(TARGET ${LIB}_static)
+                # Static version exists, use it
+                list(APPEND WRAPPED_LIBS ${LIB}_static)
+            else()
+                # No static version, use as is
+                list(APPEND WRAPPED_LIBS ${LIB})
+            endif()
+        else()
+            list(APPEND OTHER_LIBS ${LIB})
+        endif()
+    endforeach()
+    
+    # Process object libraries from target_sources
+    # For object libraries, we need to link them explicitly to enable --wrap
+    foreach(OBJ_LIB ${OBJECT_LIBS_TO_WRAP})
+        # Remove _static suffix if present
+        string(REGEX REPLACE "_static$" "" OBJ_LIB_BASE "${OBJ_LIB}")
+        list(FIND LIBS_TO_WRAP ${OBJ_LIB_BASE} WRAP_BASE_INDEX)
+        if(WRAP_BASE_INDEX GREATER -1)
+            # Try to use static version first
+            if(TARGET ${OBJ_LIB}_static)
+                list(FIND WRAPPED_LIBS ${OBJ_LIB}_static WRAP_INDEX)
+                if(WRAP_INDEX LESS 0)
+                    list(APPEND WRAPPED_LIBS ${OBJ_LIB}_static)
+                endif()
+            else()
+                list(FIND WRAPPED_LIBS ${OBJ_LIB} WRAP_INDEX)
+                if(WRAP_INDEX LESS 0)
+                    list(APPEND WRAPPED_LIBS ${OBJ_LIB})
+                endif()
+            endif()
+        endif()
+    endforeach()
+    
+    # Rebuild link libraries list:
+    # Linux: Put wrapped libraries in --start-group with --whole-archive for --wrap to work
+    # macOS: No special handling needed - our mock function definitions override library functions
+    set(NEW_LIBS "")
+    set(OBJECT_LIBS_TO_LINK "")
+    
+    if(APPLE)
+        # macOS: No --wrap, no --whole-archive needed
+        # Mock functions are defined with original names and override library versions at link time
+        # Just add all libraries normally
+        foreach(LIB ${CURRENT_LIBS})
+            list(APPEND NEW_LIBS ${LIB})
+        endforeach()
+    elseif(WRAPPED_LIBS)
+        # Linux: Use GNU ld specific options for --wrap to work
+        list(APPEND NEW_LIBS "-Wl,--start-group")
+        
+        # Add wrapped libraries with --whole-archive
+        foreach(LIB ${WRAPPED_LIBS})
+            # Check if this is an object library that was found in target_sources
+            list(FIND OBJECT_LIBS_TO_WRAP ${LIB} IS_OBJECT_LIB)
+            if(IS_OBJECT_LIB GREATER -1)
+                # Object libraries: collect them for linking at the end
+                list(APPEND OBJECT_LIBS_TO_LINK ${LIB})
+            else()
+                # For static libraries, use --whole-archive
+                list(APPEND NEW_LIBS "-Wl,--whole-archive")
+                list(APPEND NEW_LIBS ${LIB})
+                list(APPEND NEW_LIBS "-Wl,--no-whole-archive")
+            endif()
+        endforeach()
+        
+        # Add ALL other libraries inside the group
+        foreach(LIB ${CURRENT_LIBS})
+            list(FIND WRAPPED_LIBS ${LIB} WRAP_INDEX)
+            if(WRAP_INDEX LESS 0)
+                list(APPEND NEW_LIBS ${LIB})
+            endif()
+        endforeach()
+        
+        list(APPEND NEW_LIBS "-Wl,--end-group")
+    else()
+        # No libraries to wrap - just add all libraries normally
+        foreach(LIB ${CURRENT_LIBS})
+            list(APPEND NEW_LIBS ${LIB})
+        endforeach()
+    endif()
+    
+    # Check if we're removing dap_sdk_object before removing sources
+    set(HAD_DAP_SDK_OBJECT FALSE)
+    if(OBJECT_SOURCES_TO_REMOVE)
+        foreach(OBJ_SOURCE ${OBJECT_SOURCES_TO_REMOVE})
+            if(OBJ_SOURCE MATCHES "\\$<TARGET_OBJECTS:dap_sdk_object>")
+                set(HAD_DAP_SDK_OBJECT TRUE)
+                break()
+            endif()
+        endforeach()
+    endif()
+    
+    # Remove object libraries from target_sources if they need to be wrapped
+    # Object libraries must be linked via target_link_libraries (not target_sources)
+    # for --wrap to work correctly
+    if(OBJECT_SOURCES_TO_REMOVE)
+        foreach(OBJ_SOURCE ${OBJECT_SOURCES_TO_REMOVE})
+            get_target_property(CURRENT_SOURCES ${TARGET_NAME} SOURCES)
+            if(CURRENT_SOURCES)
+                list(REMOVE_ITEM CURRENT_SOURCES ${OBJ_SOURCE})
+                set_target_properties(${TARGET_NAME} PROPERTIES SOURCES "${CURRENT_SOURCES}")
+            endif()
+        endforeach()
+    endif()
+    
+    # Clear and reset link libraries
+    # Note: We always use PRIVATE keyword to match dap_test_link_libraries pattern
+    # which uses PRIVATE in dap_link_all_sdk_modules
+    set_target_properties(${TARGET_NAME} PROPERTIES LINK_LIBRARIES "")
+    target_link_libraries(${TARGET_NAME} PRIVATE ${NEW_LIBS})
+    
+    # Link object libraries explicitly to enable --wrap for internal calls
+    # Object libraries must be linked via target_link_libraries (not target_sources)
+    # for --wrap to work correctly
+    # IMPORTANT: When dap_sdk_object is removed, we need to link ALL modules from DAP_INTERNAL_MODULES
+    # to maintain functionality, but wrap only the requested ones
+    if(OBJECT_LIBS_TO_LINK OR HAD_DAP_SDK_OBJECT)
+        # If we had dap_sdk_object and removed it, link all modules from DAP_INTERNAL_MODULES
+        # Otherwise, just link the requested object libraries
+        if(HAD_DAP_SDK_OBJECT)
+            get_property(DAP_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
+            if(DAP_MODULES)
+                foreach(MODULE ${DAP_MODULES})
+                    if(TARGET ${MODULE})
+                        target_link_libraries(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MODULE}>)
+                    endif()
+                endforeach()
+            endif()
+        else()
+            # Link only requested object libraries
+            foreach(OBJ_LIB ${OBJECT_LIBS_TO_LINK})
+                if(TARGET ${OBJ_LIB})
+                    target_link_libraries(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${OBJ_LIB}>)
+                endif()
+            endforeach()
+        endif()
+    endif()
+    
+    # Linux: Add --allow-multiple-definition to handle duplicate symbols from --whole-archive
+    # macOS: Not needed - Apple linker handles this differently
+    if(NOT APPLE)
+        target_link_options(${TARGET_NAME} PRIVATE "-Wl,--allow-multiple-definition")
+    endif()
+    
+    #message(STATUS "✅ Enabled --whole-archive with --start-group/--end-group for ${LIBS_TO_WRAP} in ${TARGET_NAME}")
+endfunction()
+
+#
+# dap_mock_manual_wrap(target_name function1 function2 ...)
+#
+# Manually specify functions to wrap (if you don't want auto-detection)
+#
+# Example:
+#   dap_mock_manual_wrap(test_vpn 
+#       dap_stream_write
+#       dap_net_tun_create
+#       dap_config_get_item_str
+#   )
+#
+function(dap_mock_manual_wrap TARGET_NAME)
+    set(WRAP_OPTIONS "")
+    
+    if(APPLE)
+        # macOS: mock_interpose.c + flat_namespace handles overrides; no linker flags needed
+        list(LENGTH ARGN FUNC_COUNT)
+        message(STATUS " Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME} (macOS: interpose)")
+        return()
+    elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_C_SIMULATE_ID MATCHES "MSVC")
+        message(WARNING "MSVC does not support --wrap. Please use MinGW/Clang for mock testing.")
+        foreach(FUNC ${ARGN})
+            list(APPEND WRAP_OPTIONS "/ALTERNATENAME:_${FUNC}=_mock_${FUNC}")
+        endforeach()
+    else()
+        foreach(FUNC ${ARGN})
+            list(APPEND WRAP_OPTIONS "-Wl,--wrap=${FUNC}")
+        endforeach()
+    endif()
+    
+    target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS})
+    
+    list(LENGTH ARGN FUNC_COUNT)
+    message(STATUS " Manual mock wrap: ${FUNC_COUNT} functions for ${TARGET_NAME}")
+endfunction()
+
+#
+# dap_mock_wrap_from_file(target_name wrap_file)
+#
+# Apply wrap options from a text file (one function per line)
+#
+# Example:
+#   dap_mock_wrap_from_file(test_vpn mocks/vpn_wraps.txt)
+#
+function(dap_mock_wrap_from_file TARGET_NAME WRAP_FILE)
+    get_filename_component(WRAP_FILE_ABS ${WRAP_FILE} ABSOLUTE)
+    
+    if(NOT EXISTS ${WRAP_FILE_ABS})
+        #message(FATAL_ERROR "Wrap file not found: ${WRAP_FILE_ABS}")
+    endif()
+    
+    # Detect if compiler supports response files directly
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR 
+       CMAKE_C_COMPILER_ID MATCHES "Clang" OR
+       CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+        # GCC/Clang: use -Wl,@file directly (most efficient)
+        target_link_options(${TARGET_NAME} PRIVATE "-Wl,@${WRAP_FILE_ABS}")
+        #message(STATUS "✅ Mock wrap from file: ${WRAP_FILE} (via @file)")
+        return()
+    endif()
+    
+    # Fallback: parse file manually for other compilers
+    file(READ ${WRAP_FILE_ABS} WRAP_CONTENT)
+    string(REPLACE "\n" ";" WRAP_LINES "${WRAP_CONTENT}")
+    
+    set(WRAP_OPTIONS "")
+    set(FUNC_LIST "")
+    
+    foreach(LINE ${WRAP_LINES})
+        string(STRIP "${LINE}" LINE_TRIMMED)
+        if(LINE_TRIMMED AND NOT LINE_TRIMMED MATCHES "^#")
+            string(REGEX REPLACE "^-Wl,--wrap=" "" FUNC_NAME "${LINE_TRIMMED}")
+            list(APPEND FUNC_LIST ${FUNC_NAME})
+        endif()
+    endforeach()
+    
+    # Build options based on compiler
+    if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_C_SIMULATE_ID MATCHES "MSVC")
+        message(WARNING "MSVC does not support --wrap. Please use MinGW/Clang for mock testing.")
+        foreach(FUNC ${FUNC_LIST})
+            list(APPEND WRAP_OPTIONS "/ALTERNATENAME:_${FUNC}=_mock_${FUNC}")
+        endforeach()
+    else()
+        foreach(FUNC ${FUNC_LIST})
+            list(APPEND WRAP_OPTIONS "-Wl,--wrap=${FUNC}")
+        endforeach()
+    endif()
+    
+    target_link_options(${TARGET_NAME} PRIVATE ${WRAP_OPTIONS})
+    
+    list(LENGTH WRAP_OPTIONS FUNC_COUNT)
+    message(STATUS "✅ Mock wrap from file: ${FUNC_COUNT} functions from ${WRAP_FILE}")
+endfunction()
+
+# Print helpful info
+#message(STATUS "DAP Mock AutoWrap CMake module loaded")

@@ -47,7 +47,7 @@ typedef struct dap_multi_sign {
 /*** Unhashed metadata ***/
     dap_multi_sign_meta_t *meta;        // Sizes of keys and signatures
 /*** Key hashes ***/
-    dap_chain_hash_fast_t *key_hashes;  // Total key hashes
+    dap_hash_sha3_256_t *key_hashes;  // Total key hashes
 /*** Serialized signatures chain ***/
     uint8_t *sign_data;                 // Signatures data
 } dap_multi_sign_t;

@@ -8,13 +8,13 @@ static _Atomic(uint64_t) s_delta = 0;
 int dap_json_rpc_response_registration_with_id(uint64_t a_id, dap_json_rpc_response_handler_func_t *func)
 {
     dap_json_rpc_response_handler_t *l_handler = NULL;
-    HASH_FIND_INT(s_response_handlers, &a_id, l_handler);
+    dap_ht_find_int(s_response_handlers, a_id, l_handler);
     if (l_handler)
         return 1;
     l_handler = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_response_handler_t, -1);
     l_handler->id = a_id;
     l_handler->func = func;
-    HASH_ADD_INT(s_response_handlers, id, l_handler);
+    dap_ht_add_int(s_response_handlers, id, l_handler);
     log_it(L_NOTICE, "Registration handler response with id: %"DAP_UINT64_FORMAT_U, a_id);
     return 0;
 }
@@ -25,9 +25,9 @@ uint64_t dap_json_rpc_response_registration(dap_json_rpc_response_handler_func_t
 void dap_json_rpc_response_unregistration(uint64_t a_id)
 {
     dap_json_rpc_response_handler_t *l_handler = NULL;
-    HASH_FIND_INT(s_response_handlers, &a_id, l_handler);
+    dap_ht_find_int(s_response_handlers, a_id, l_handler);
     if (l_handler) {
-        HASH_DEL(s_response_handlers, l_handler);
+        dap_ht_del(s_response_handlers, l_handler);
         DAP_FREE(l_handler);
         log_it(L_NOTICE, "Unregistration handler response with id: %"DAP_UINT64_FORMAT_U, a_id);
     }
@@ -69,9 +69,9 @@ uint64_t dap_json_rpc_response_get_new_id(void)
     return ++s_delta;
 }
 
-void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, UNUSED_ARG void *a_obj, http_status_code_t http_status)
+void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, UNUSED_ARG void *a_obj, dap_http_status_code_t http_status)
 {
-    if (http_status != Http_Status_OK)
+    if (http_status != DAP_HTTP_STATUS_OK)
         return log_it(L_ERROR, "Reponse error %d", (int)http_status);
     log_it(L_NOTICE, "Pre handling response");
     dap_json_rpc_response_t *l_response;

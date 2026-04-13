@@ -25,7 +25,6 @@
 
 #include "dap_enc_iaes.h"
 #include "dap_enc_oaes.h"
-#include "dap_enc_bf.h"
 #include "dap_enc_GOST.h"
 #include "dap_enc_salsa2012.h"
 #include "dap_enc_SEED.h"
@@ -41,9 +40,15 @@
 #include "dap_enc_sphincsplus.h"
 #include "dap_enc_multisign.h"
 #include "dap_enc_multisign_prepared.h"
-#include "dap_enc_ringct20.h"
+// #include "dap_enc_ringct20.h" // REMOVED: ringct20 module deleted
 #include "dap_enc_chipmunk.h"
 #include "dap_enc_chipmunk_ring.h"
+#include "dap_enc_mldsa.h"
+#include "dap_enc_mlkem.h"
+#include "dap_enc_chacha20_poly1305.h"
+#include "dap_enc_aes.h"
+#include "dap_enc_ntru_prime.h"
+#include "dap_enc_ntru_prime_sig.h"
 
 #ifdef DAP_ECDSA
 #include "dap_enc_ecdsa.h"
@@ -56,9 +61,11 @@
 #endif
 
 #include "dap_enc_key.h"
+#include "dap_memwipe.h"
 
 #undef LOG_TAG
 #define LOG_TAG "dap_enc_key"
+
 
 // Wrapper functions for Chipmunk callbacks
 static void dap_enc_chipmunk_key_new_callback(dap_enc_key_t *key)
@@ -94,6 +101,15 @@ static void dap_enc_chipmunk_key_generate_callback(dap_enc_key_t *key, const voi
     (void) key_size; // Unused
     dap_enc_key_t *new_key = dap_enc_chipmunk_key_generate(kex_buf, kex_size, seed, seed_size, NULL, 0);
     if (new_key) {
+        // Free existing key data before overwriting (prevents memory leak)
+        if (key->priv_key_data) {
+            dap_memwipe(key->priv_key_data, key->priv_key_data_size);
+            DAP_DELETE(key->priv_key_data);
+        }
+        if (key->pub_key_data) {
+            DAP_DELETE(key->pub_key_data);
+        }
+        
         // Copy data to the provided key
         key->type = new_key->type;
         key->dec_na = new_key->dec_na;
@@ -149,38 +165,6 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_oaes_calc_encode_size,
         .dec_out_size =                     dap_enc_oaes_calc_decode_size,
-        .sign_get =                         NULL,
-        .sign_verify =                      NULL
-    },
-    [DAP_ENC_KEY_TYPE_BF_CBC]={
-        .name =                             "BF_CBC",
-        .enc =                              dap_enc_bf_cbc_encrypt,
-        .enc_na =                           dap_enc_bf_cbc_encrypt_fast ,
-        .dec =                              dap_enc_bf_cbc_decrypt,
-        .dec_na =                           dap_enc_bf_cbc_decrypt_fast ,
-        .new_callback =                     dap_enc_bf_cbc_key_new,
-        .delete_callback =                  dap_enc_bf_key_delete,
-        .new_generate_callback =            dap_enc_bf_key_generate,
-        .gen_key_public =                   NULL,
-        .ser_pub_key_size =                 NULL,
-        .enc_out_size =                     dap_enc_bf_cbc_calc_encode_size,
-        .dec_out_size =                     dap_enc_bf_cbc_calc_decode_max_size,
-        .sign_get =                         NULL,
-        .sign_verify =                      NULL
-    },
-    [DAP_ENC_KEY_TYPE_BF_OFB]={
-        .name =                             "BF_OFB",
-        .enc =                              dap_enc_bf_ofb_encrypt,
-        .enc_na =                           dap_enc_bf_ofb_encrypt_fast ,
-        .dec =                              dap_enc_bf_ofb_decrypt,
-        .dec_na =                           dap_enc_bf_ofb_decrypt_fast ,
-        .new_callback =                     dap_enc_bf_ofb_key_new,
-        .delete_callback =                  dap_enc_bf_key_delete,
-        .new_generate_callback =            dap_enc_bf_key_generate,
-        .gen_key_public =                   NULL,
-        .ser_pub_key_size =                 NULL,
-        .enc_out_size =                     dap_enc_bf_ofb_calc_encode_size,
-        .dec_out_size =                     dap_enc_bf_ofb_calc_decode_size,
         .sign_get =                         NULL,
         .sign_verify =                      NULL
     },
@@ -248,6 +232,38 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .sign_get =                         NULL,
         .sign_verify =                      NULL
     },
+    [DAP_ENC_KEY_TYPE_CHACHA20_POLY1305]={
+        .name =                             "CHACHA20_POLY1305",
+        .enc =                              dap_enc_chacha20_poly1305_encrypt,
+        .dec =                              dap_enc_chacha20_poly1305_decrypt,
+        .enc_na =                           NULL,
+        .dec_na =                           NULL,
+        .new_callback =                     dap_enc_chacha20_poly1305_key_new,
+        .delete_callback =                  dap_enc_chacha20_poly1305_key_delete,
+        .new_generate_callback =            dap_enc_chacha20_poly1305_key_generate,
+        .gen_key_public =                   NULL,
+        .ser_pub_key_size =                 NULL,
+        .enc_out_size =                     dap_enc_chacha20_poly1305_calc_encode_size,
+        .dec_out_size =                     dap_enc_chacha20_poly1305_calc_decode_size,
+        .sign_get =                         NULL,
+        .sign_verify =                      NULL
+    },
+    [DAP_ENC_KEY_TYPE_AES256_CBC]={
+        .name =                             "AES256_CBC",
+        .enc =                              (dap_enc_callback_dataop_t)dap_enc_aes256_cbc_encrypt,
+        .enc_na =                           (dap_enc_callback_dataop_na_t)dap_enc_aes256_cbc_encrypt_fast,
+        .dec =                              (dap_enc_callback_dataop_t)dap_enc_aes256_cbc_decrypt,
+        .dec_na =                           (dap_enc_callback_dataop_na_t)dap_enc_aes256_cbc_decrypt_fast,
+        .new_callback =                     dap_enc_aes256_key_new,
+        .delete_callback =                  dap_enc_aes256_key_delete,
+        .new_generate_callback =            dap_enc_aes256_key_generate,
+        .gen_key_public =                   NULL,
+        .ser_pub_key_size =                 NULL,
+        .enc_out_size =                     dap_enc_aes256_cbc_calc_encode_size,
+        .dec_out_size =                     dap_enc_aes256_cbc_calc_decode_size,
+        .sign_get =                         NULL,
+        .sign_verify =                      NULL
+    },
 
     //-KEMs(Key Exchange Mechanism)----------------------
     [DAP_ENC_KEY_TYPE_MSRLN] = {
@@ -277,6 +293,40 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_bob_shared_key =               dap_enc_kyber512_gen_bob_shared_key,
         .gen_alice_shared_key =             dap_enc_kyber512_gen_alice_shared_key,
         .new_from_data_public_callback =    dap_enc_kyber512_key_new_from_data_public,
+        .gen_key_public =                   NULL,
+        .ser_pub_key_size =                 NULL,
+        .enc_out_size =                     NULL,
+        .dec_out_size =                     NULL,
+        .sign_get =                         NULL,
+        .sign_verify =                      NULL
+    },
+    [DAP_ENC_KEY_TYPE_ML_KEM] = {
+        .name =                             "ML_KEM",
+        .enc =                              NULL,
+        .dec =                              NULL,
+        .new_callback =                     dap_enc_mlkem_key_new,
+        .delete_callback =                  dap_enc_mlkem_key_delete,
+        .new_generate_callback =            dap_enc_mlkem_key_generate,
+        .gen_bob_shared_key =               dap_enc_mlkem_gen_bob_shared_key,
+        .gen_alice_shared_key =             dap_enc_mlkem_gen_alice_shared_key,
+        .new_from_data_public_callback =    dap_enc_mlkem_key_new_from_data_public,
+        .gen_key_public =                   NULL,
+        .ser_pub_key_size =                 NULL,
+        .enc_out_size =                     NULL,
+        .dec_out_size =                     NULL,
+        .sign_get =                         NULL,
+        .sign_verify =                      NULL
+    },
+    [DAP_ENC_KEY_TYPE_KEM_NTRU_PRIME] = {
+        .name =                             "NTRU_PRIME",
+        .enc =                              NULL,
+        .dec =                              NULL,
+        .new_callback =                     dap_enc_ntru_prime_key_new,
+        .delete_callback =                  dap_enc_ntru_prime_key_delete,
+        .new_generate_callback =            dap_enc_ntru_prime_key_generate,
+        .gen_bob_shared_key =               dap_enc_ntru_prime_gen_bob_shared_key,
+        .gen_alice_shared_key =             dap_enc_ntru_prime_gen_alice_shared_key,
+        .new_from_data_public_callback =    dap_enc_ntru_prime_key_new_from_data_public,
         .gen_key_public =                   NULL,
         .ser_pub_key_size =                 NULL,
         .enc_out_size =                     NULL,
@@ -430,6 +480,28 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .deser_priv_key_size =              dap_enc_sig_dilithium_deser_private_key_size,
     },
 
+    [DAP_ENC_KEY_TYPE_SIG_ML_DSA]={
+        .name =                             "SIG_ML_DSA",
+        .new_callback =                     dap_enc_sig_mldsa_key_new,
+        .new_generate_callback =            dap_enc_sig_mldsa_key_new_generate,
+        .delete_callback =                  dap_enc_sig_dilithium_key_delete,
+        .del_sign =                         dilithium_signature_delete,
+        .del_pub_key =                      dilithium_public_key_delete,
+        .del_priv_key =                     dilithium_private_key_delete,
+        .sign_get =                         dap_enc_sig_dilithium_get_sign,
+        .sign_verify =                      dap_enc_sig_dilithium_verify_sign,
+        .ser_sign =                         dap_enc_sig_dilithium_write_signature,
+        .ser_priv_key =                     dap_enc_sig_dilithium_write_private_key,
+        .ser_pub_key =                      dap_enc_sig_dilithium_write_public_key,
+        .ser_pub_key_size =                 dap_enc_sig_dilithium_ser_public_key_size,
+        .ser_priv_key_size =                dap_enc_sig_dilithium_ser_private_key_size,
+        .deser_sign =                       dap_enc_sig_dilithium_read_signature,
+        .deser_priv_key =                   dap_enc_sig_dilithium_read_private_key,
+        .deser_pub_key =                    dap_enc_sig_dilithium_read_public_key,
+        .deser_sign_size =                  dap_enc_sig_dilithium_deser_sig_size,
+        .deser_pub_key_size =               dap_enc_sig_dilithium_deser_public_key_size,
+        .deser_priv_key_size =              dap_enc_sig_dilithium_deser_private_key_size,
+    },
 
   [DAP_ENC_KEY_TYPE_SIG_ECDSA]={
         .name =                             "SIG_ECDSA",
@@ -543,20 +615,21 @@ dap_enc_key_callbacks_t s_callbacks[]={
       },
 
 
+    // REMOVED: DAP_ENC_KEY_TYPE_SIG_RINGCT20 - module deleted
     [DAP_ENC_KEY_TYPE_SIG_RINGCT20]={
-        .name =                             "SIG_RINGCT20",
+        .name =                             "SIG_RINGCT20_REMOVED",
         .enc =                              NULL,
         .dec =                              NULL,
-        .enc_na =                           dap_enc_sig_ringct20_get_sign_with_pb_list,//dap_enc_sig_ringct20_get_sign,
-        .dec_na =                           dap_enc_sig_ringct20_verify_sign,
-        .dec_na_ext =                       dap_enc_sig_ringct20_verify_sign_with_pbk_list,
+        .enc_na =                           NULL,
+        .dec_na =                           NULL,
+        .dec_na_ext =                       NULL,
         .gen_key_public =                   NULL,
         .ser_pub_key_size =                 NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_ringct20_key_new,
-        .delete_callback =                  dap_enc_sig_ringct20_key_delete,
-        .new_generate_callback =            dap_enc_sig_ringct20_key_new_generate,
+        .new_callback =                     NULL,
+        .delete_callback =                  NULL,
+        .new_generate_callback =            NULL,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         NULL,
@@ -680,6 +753,28 @@ dap_enc_key_callbacks_t s_callbacks[]={
     [DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE] = {0},
 #endif
 
+    [DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME]={
+        .name = "SIG_NTRU_PRIME",
+        .new_callback =                     dap_enc_ntru_prime_sig_key_new,
+        .new_generate_callback =            dap_enc_ntru_prime_sig_key_new_generate,
+        .delete_callback =                  dap_enc_ntru_prime_sig_key_delete,
+        .del_sign =                         dap_enc_ntru_prime_sig_signature_delete,
+        .del_pub_key =                      dap_enc_ntru_prime_sig_public_key_delete,
+        .del_priv_key =                     dap_enc_ntru_prime_sig_private_key_delete,
+        .sign_get =                         dap_enc_ntru_prime_sig_get_sign,
+        .sign_verify =                      dap_enc_ntru_prime_sig_verify_sign,
+        .ser_sign =                         dap_enc_ntru_prime_sig_write_signature,
+        .ser_priv_key =                     dap_enc_ntru_prime_sig_write_private_key,
+        .ser_pub_key =                      dap_enc_ntru_prime_sig_write_public_key,
+        .ser_priv_key_size =                dap_enc_ntru_prime_sig_ser_key_size,
+        .ser_pub_key_size =                 dap_enc_ntru_prime_sig_ser_pkey_size,
+        .deser_sign =                       dap_enc_ntru_prime_sig_read_signature,
+        .deser_priv_key =                   dap_enc_ntru_prime_sig_read_private_key,
+        .deser_pub_key =                    dap_enc_ntru_prime_sig_read_public_key,
+        .deser_sign_size =                  dap_enc_ntru_prime_sig_signature_size,
+        .deser_pub_key_size =               dap_enc_ntru_prime_sig_deser_pkey_size,
+        .deser_priv_key_size =              dap_enc_ntru_prime_sig_deser_key_size,
+    },
     [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK]={
         .name = "CHIPMUNK",
         .enc = NULL,
@@ -799,9 +894,11 @@ uint8_t *dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
@@ -835,9 +932,11 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
@@ -870,8 +969,10 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key->type].ser_priv_key) {
@@ -905,8 +1006,10 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key->type].ser_pub_key) {
@@ -939,8 +1042,10 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key->type].deser_priv_key) {
@@ -997,8 +1102,10 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key->type].deser_pub_key) {
@@ -1174,6 +1281,48 @@ dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
     return l_ret;
 }
 
+dap_enc_key_t *dap_enc_key_new_from_raw_bytes(dap_enc_key_type_t a_key_type,
+                                              const uint8_t *a_raw_bytes,
+                                              size_t a_raw_bytes_size)
+{
+    if (!a_raw_bytes) return NULL;
+    if (a_key_type != DAP_ENC_KEY_TYPE_SALSA2012) return NULL;
+    /* SALSA2012: need 40 bytes = [nonce(8)][key(32)], we use key from [8:39] */
+    if (a_raw_bytes_size < 40) return NULL;
+
+    dap_enc_key_t *l_key = dap_enc_key_new(a_key_type);
+    if (!l_key) return NULL;
+
+    l_key->priv_key_data_size = 32;
+    l_key->priv_key_data = DAP_NEW_SIZE(uint8_t, 32);
+    if (!l_key->priv_key_data) {
+        dap_enc_key_delete(l_key);
+        return NULL;
+    }
+    memcpy(l_key->priv_key_data, a_raw_bytes + 8, 32);
+    return l_key;
+}
+
+int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
+                                     const uint8_t *a_raw_bytes,
+                                     size_t a_raw_bytes_size)
+{
+    if (!a_key || !a_raw_bytes) return -1;
+    if (a_key->type != DAP_ENC_KEY_TYPE_SALSA2012) return -1;
+    if (a_raw_bytes_size < 40) return -1;
+
+    if (a_key->priv_key_data) {
+        DAP_DELETE(a_key->priv_key_data);
+        a_key->priv_key_data = NULL;
+        a_key->priv_key_data_size = 0;
+    }
+    a_key->priv_key_data_size = 32;
+    a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, 32);
+    if (!a_key->priv_key_data) return -1;
+    memcpy(a_key->priv_key_data, a_raw_bytes + 8, 32);
+    return 0;
+}
+
 /**
  * @brief dap_enc_key_new_generate
  * @param a_key_type
@@ -1278,9 +1427,11 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
@@ -1310,8 +1461,13 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
         s_callbacks[a_key->type].delete_callback(a_key);
     } else {
         log_it(L_WARNING, "No callback for key delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key->type));
+        if (a_key->priv_key_data && a_key->priv_key_data_size)
+            dap_memwipe(a_key->priv_key_data, a_key->priv_key_data_size);
+        if (a_key->_inheritor && a_key->_inheritor_size)
+            dap_memwipe(a_key->_inheritor, a_key->_inheritor_size);
         DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key->_inheritor, a_key->pbk_list_data, a_key);
     }
+    dap_memwipe(a_key, sizeof(dap_enc_key_t));
     DAP_DELETE(a_key);
 }
 
@@ -1343,9 +1499,10 @@ size_t dap_enc_key_get_dec_size(dap_enc_key_type_t a_key_type, const size_t a_bu
 
 const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type)
 {
-    return a_key_type >= DAP_ENC_KEY_TYPE_NULL && a_key_type <= DAP_ENC_KEY_TYPE_LAST && *s_callbacks[a_key_type].name
-        ? s_callbacks[a_key_type].name
-        : ( log_it(L_WARNING, "Name was not set for key type %d", a_key_type), "undefined");
+    return a_key_type >= DAP_ENC_KEY_TYPE_NULL && a_key_type <= DAP_ENC_KEY_TYPE_LAST &&
+           s_callbacks[a_key_type].name && *s_callbacks[a_key_type].name
+               ? s_callbacks[a_key_type].name
+               : ( log_it(L_WARNING, "Name was not set for key type %d", a_key_type), "undefined");
 }
 
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){ // TODO: use uthash
@@ -1368,9 +1525,11 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: 
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
@@ -1412,27 +1571,17 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_
     return l_ret;
 }
 
-int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
+int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_type_t a_hash_type, byte_t *a_hash_out, size_t a_hash_out_size)
 {
     dap_return_val_if_fail(a_key && a_key->pub_key_data && a_key->pub_key_data_size && a_hash_out, -1);
+    size_t l_required_size = dap_hash_size(a_hash_type);
+    if (!l_required_size || a_hash_out_size < l_required_size)
+        return -2;
     size_t l_pub_key_size = 0;
-    int l_ret = -2;
     uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
     if (!l_pub_key)
-        return l_ret;
-    switch (a_key->type) {
-        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-#ifdef DAP_ECDSA
-            l_ret = !dap_enc_sig_ecdsa_hash_fast((const unsigned char *)l_pub_key, l_pub_key_size, a_hash_out);
-            break;
-#else
-            log_it(L_ERROR, "Using DAP_ENC_KEY_TYPE_SIG_ECDSA hash without DAP_ECDSA defining");
-            break;
-#endif
-        default:
-            l_ret = !dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
-            break;
-    }
+        return -3;
+    int l_ret = dap_hash(a_hash_type, l_pub_key, l_pub_key_size, a_hash_out, a_hash_out_size) ? 0 : -4;
     DAP_DELETE(l_pub_key);
     return l_ret;
 }

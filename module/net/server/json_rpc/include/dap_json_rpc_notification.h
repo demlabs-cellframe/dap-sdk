@@ -24,7 +24,7 @@
 #pragma once
 
 #include "dap_json_rpc_request.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "dap_ht.h"
 
 #ifdef __cplusplus
 extern "C"{
@@ -36,7 +36,7 @@ typedef struct dap_json_rpc_notification_handler
 {
     char *method;
     notification_handler_func_t *func;
-    UT_hash_handle  hh;
+    dap_ht_handle_t hh;
 }dap_json_rpc_notification_handler_t;
 
 int dap_json_rpc_notification_registration(const char *a_method, notification_handler_func_t *a_notification_func);

@@ -22,7 +22,7 @@
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <stdbool.h>
-#include "../../../3rdparty/uthash/src/utlist.h"
+#include "dap_sl.h"
 #include <dirent.h>
 
 #include "dap_common.h"
@@ -110,6 +110,15 @@ bool dap_dir_test(const char * a_dir_path);
  * @return 0, if the directory was created or already exist, else -1
  */
 int dap_mkdir_with_parents(const char *a_dir_path);
+
+/**
+ * @brief Create a uniquely-named temporary directory
+ *
+ * @param a_prefix prefix for the directory name (e.g. "dap_test"), may be NULL
+ * @return heap-allocated path to the created directory, or NULL on failure.
+ *         Caller must free with DAP_DELETE().
+ */
+char *dap_mkdir_tmp(const char *a_prefix);
 
 
 char* dap_path_get_basename(const char *a_file_name);

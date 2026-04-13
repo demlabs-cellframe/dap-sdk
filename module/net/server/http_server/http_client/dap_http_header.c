@@ -36,7 +36,7 @@
 #endif
 
 #include <pthread.h>
-#include <utlist.h>
+#include "dap_dl.h"
 #include <ctype.h>
 
 #include "dap_common.h"
@@ -185,7 +185,7 @@ dap_http_header_t *l_new_header;
     memcpy(l_new_header->value, l_pval, l_new_header->valuesz = l_valuelen);
     l_new_header->value[l_new_header->valuesz] = '\0';
 
-    DL_APPEND(cl_ht->in_headers, l_new_header);
+    dap_dl_append(cl_ht->in_headers, l_new_header);
 
     return 0;
 }
@@ -203,13 +203,17 @@ inline dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const c
 {
     dap_http_header_t *l_new_header = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_header_t, NULL);
 
-    l_new_header->namesz = strnlen(a_name, DAP_HTTP$SZ_FIELD_NAME);
+    l_new_header->namesz = strlen(a_name);
+    if (l_new_header->namesz > DAP_HTTP$SZ_FIELD_NAME)
+        l_new_header->namesz = DAP_HTTP$SZ_FIELD_NAME;
     memcpy(l_new_header->name, a_name, l_new_header->namesz);
 
-    l_new_header->valuesz = strnlen(a_value, DAP_HTTP$SZ_FIELD_VALUE);
+    l_new_header->valuesz = strlen(a_value);
+    if (l_new_header->valuesz > DAP_HTTP$SZ_FIELD_VALUE)
+        l_new_header->valuesz = DAP_HTTP$SZ_FIELD_VALUE;
     memcpy(l_new_header->value, a_value, l_new_header->valuesz);
 
-    DL_APPEND(*a_top, l_new_header);
+    dap_dl_append(*a_top, l_new_header);
 
     return l_new_header;
 }
@@ -244,7 +248,7 @@ void dap_http_header_remove(dap_http_header_t **a_top, dap_http_header_t *a_hdr)
 {
     if (!a_top)
         return;
-    DL_DELETE(*a_top, a_hdr);
+    dap_dl_delete(*a_top, a_hdr);
     DAP_DELETE(a_hdr);
 
 }
@@ -281,11 +285,11 @@ dap_http_header_t * dap_http_headers_dup(dap_http_header_t * a_top)
 {
     dap_http_header_t *l_hdr = NULL, *l_ret = NULL;
 
-    DL_FOREACH(a_top, l_hdr) {
+    dap_dl_foreach(a_top, l_hdr) {
         dap_http_header_t * l_hdr_copy = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_header_t, l_ret);
         memcpy(l_hdr_copy->name, l_hdr->name, l_hdr_copy->namesz = l_hdr->namesz);
         memcpy(l_hdr_copy->value, l_hdr->value, l_hdr_copy->valuesz = l_hdr->valuesz);
-        DL_APPEND(l_ret, l_hdr_copy);
+        dap_dl_append(l_ret, l_hdr_copy);
     }
 
     return l_ret;

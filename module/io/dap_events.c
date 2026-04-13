@@ -71,10 +71,15 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 
 
-#if defined(DAP_OS_ANDROID)
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_WASM)
 #define NO_POSIX_SHED
+#endif
+#if defined(DAP_OS_ANDROID)
 #define NO_TIMER
-#else
+#endif
+#ifdef DAP_OS_WASM
+#include <emscripten.h>
+#include <emscripten/threading.h>
 #endif
 
 #ifdef DAP_OS_WINDOWS
@@ -85,7 +90,6 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include <io.h>
 #endif
 
-#include <utlist.h>
 #include <pthread.h>
 
 #include "dap_common.h"
@@ -106,9 +110,11 @@ pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError  = NULL;
 #endif
 
 bool g_debug_reactor = false;
-static int s_workers_init = 0;
+static atomic_int_fast32_t  s_workers_init = 0;
 static uint32_t s_threads_count = 1;
+static pthread_t *s_threads_id = NULL;
 static dap_worker_t **s_workers = NULL;
+
 
 /**
  * @brief
@@ -126,7 +132,10 @@ bool dap_events_workers_init_status(){
  */
 uint32_t dap_get_cpu_count( )
 {
-#ifdef DAP_OS_WINDOWS
+#ifdef DAP_OS_WASM
+  int l_cores = emscripten_num_logical_cores();
+  return l_cores > 0 ? (uint32_t)l_cores : 1;
+#elif defined(DAP_OS_WINDOWS)
   SYSTEM_INFO si;
 
   GetSystemInfo( &si );
@@ -171,7 +180,9 @@ uint32_t dap_get_cpu_count( )
  */
 void dap_cpu_assign_thread_on(uint32_t a_cpu_id)
 {
-#ifndef DAP_OS_WINDOWS
+#ifdef DAP_OS_WASM
+    (void)a_cpu_id;
+#elif !defined(DAP_OS_WINDOWS)
 #ifndef NO_POSIX_SHED
 
 #ifdef DAP_OS_DARWIN
@@ -226,7 +237,7 @@ int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
             -1;
 #ifdef DAP_EVENTS_CAPS_IOCP
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
-    if ( !ntdll || !(pfnRtlNtStatusToDosError = (pfn_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError")) )
+    if ( !ntdll || !(pfnRtlNtStatusToDosError = (pfn_RtlNtStatusToDosError)(void*)GetProcAddress(ntdll, "RtlNtStatusToDosError")) )
         return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), -1;
 
     SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -300,13 +311,6 @@ void dap_events_deinit( )
     dap_proc_thread_deinit();
     dap_events_socket_deinit();
     dap_worker_deinit();
-
-    dap_events_wait();
-
-    if ( s_workers )
-        DAP_DELETE( s_workers );
-
-    s_workers_init = 0;
 #ifdef DAP_OS_WINDOWS
     WSACleanup();
 #endif
@@ -324,7 +328,11 @@ int dap_events_start()
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         goto lb_err;
     }
-
+    if (s_threads_id) {
+        log_it(L_ERROR, "Threads id already initialized");
+        goto lb_err;
+    }
+    s_threads_id = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(pthread_t, s_threads_count, -2);
     for( uint32_t i = 0; i < s_threads_count; i++) {
         dap_worker_t * l_worker = DAP_NEW_Z(dap_worker_t);
         if (!l_worker) {
@@ -342,6 +350,7 @@ int dap_events_start()
         l_ret = dap_context_run(l_worker->context, i, DAP_CONTEXT_POLICY_FIFO, DAP_CONTEXT_PRIORITY_HIGH,
                                 DAP_CONTEXT_FLAG_WAIT_FOR_STARTED, dap_worker_context_callback_started,
                                 dap_worker_context_callback_stopped, l_worker);
+        s_threads_id[i] = l_worker->context->thread_id;
         if(l_ret != 0){
             log_it(L_CRITICAL, "Can't run worker #%u",i);
             goto lb_err;
@@ -359,6 +368,7 @@ lb_err:
     log_it(L_CRITICAL,"Events init failed with code %d", l_ret);
     for( uint32_t j = 0; j < s_threads_count; j++)
         DAP_DEL_Z(s_workers[j]);
+    DAP_DEL_Z(s_threads_id);
     return l_ret;
 }
 
@@ -384,7 +394,10 @@ void    *s_th_memstat_show  (void *a_arg)
  */
 int dap_events_wait( )
 {
-#ifdef  DAP_SYS_DEBUG                                                    /* @RRL: 6901, 7202 Start of memstat show at interval basis */
+#ifdef DAP_OS_WASM
+    return 0;
+#else
+#ifdef  DAP_SYS_DEBUG
 pthread_attr_t  l_tattr;
 pthread_t       l_tid;
 
@@ -394,24 +407,26 @@ pthread_t       l_tid;
 
 #endif
 
-    // Check if workers are properly initialized before waiting
     if (!s_workers_init || !s_workers) {
         log_it(L_WARNING, "dap_events_wait(): Workers not initialized, skipping wait");
         return 0;
     }
 
-    for( uint32_t i = 0; i < s_threads_count; i++ ) {
-        // Check if worker and context are valid
-        if (!s_workers[i] || !s_workers[i]->context) {
-            log_it(L_WARNING, "dap_events_wait(): Worker %u or context is NULL, skipping", i);
-            continue;
+    if (!s_threads_id) {
+        log_it(L_WARNING, "dap_events_wait(): Worker threads have not been started; nothing to join");
+    } else {
+        for( uint32_t i = 0; i < s_threads_count; i++ ) {
+            pthread_join(s_threads_id[i] , NULL );
         }
-        
-        void *ret;
-        pthread_t l_thread_id = s_workers[i]->context->thread_id;
-        pthread_join(l_thread_id , &ret );
+        DAP_DEL_Z(s_threads_id);
+        s_threads_id = NULL;
     }
+    // Mark as stopped and free workers after threads are joined
+    s_workers_init = 0;
+    DAP_DEL_Z(s_workers);
+    s_workers = NULL;
     return 0;
+#endif // !DAP_OS_WASM
 }
 
 /**
@@ -420,10 +435,19 @@ pthread_t       l_tid;
  */
 void dap_events_stop_all( )
 {
-    if ( !s_workers_init )
+    if ( !s_workers_init ) {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+        return;
+    }
+
+    if (!s_workers) {
+        log_it(L_WARNING, "dap_events_stop_all(): workers array is NULL");
+        return;
+    }
 
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
+        if (!s_workers[i] || !s_workers[i]->context || !s_workers[i]->context->event_exit)
+            continue;
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
 }
@@ -459,8 +483,10 @@ uint32_t dap_events_thread_get_count()
  */
 dap_worker_t *dap_events_worker_get_auto( )
 {
-    if ( !s_workers_init )
+    if ( !s_workers_init ) {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
+        return NULL;
+    }
 
     return s_workers[dap_events_worker_get_index_min()];
 }

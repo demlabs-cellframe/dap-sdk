@@ -18,7 +18,7 @@ extern "C" {
 // #include "SimpleFIPS202.h"
 //#include "SP800-185.h"
 
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 
 
 // Definition of operating system
@@ -29,6 +29,8 @@ extern "C" {
 
 #if defined(_WIN32)        // Microsoft Windows OS
     #define OS_TARGET OS_WIN
+#elif defined(__EMSCRIPTEN__)   // WebAssembly (Emscripten)
+    #define OS_TARGET OS_LINUX
 #elif defined(__linux__)        // Linux OS
     #define OS_TARGET OS_LINUX
 #elif defined(__APPLE__)         // MACOS
@@ -64,12 +66,15 @@ extern "C" {
 #define TARGET_ARM          3
 #define TARGET_ARM64        4
 
-#if (defined(__x86_64__) || defined(__x86_64) || defined(__arch64__) || defined(_M_AMD64) || defined(_M_X64) || defined(_WIN64) || !defined(__LP64__))
+#include "dap_cpu_arch.h"
+#if DAP_PLATFORM_X86_64
     #define _AMD64_
-#elif (defined(__aarch64__))
+#elif DAP_PLATFORM_ARM64
     #define _ARM64_
-#else
+#elif DAP_PLATFORM_X86
     #define _X86_
+#elif DAP_PLATFORM_ARM
+    #define _ARM_
 #endif
 
 #if defined(_AMD64_)

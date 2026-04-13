@@ -23,7 +23,6 @@
 #pragma once
 
 #include <pthread.h>
-#include <uthash.h>
 #include "dap_common.h"
 #include "dap_events_socket.h"
 
@@ -90,6 +89,7 @@ struct {
 
     atomic_uint event_sockets_count;
     dap_events_socket_t *esockets; // Hashmap of event sockets
+    pthread_rwlock_t esockets_lock; // Lock for esockets hash table (TSan-safe)
     dap_events_socket_t *event_exit;
 };
 } dap_context_t;

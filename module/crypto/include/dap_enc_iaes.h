@@ -3,13 +3,24 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "iaes/dap_iaes_proto.h"
+#include "dap_iaes_proto.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct dap_enc_key;
+
+#define DAP_AES256_SCHEDULE_SIZE 240  /* 15 round keys * 16 bytes */
+
+typedef struct dap_enc_aes_key {
+    unsigned char ivec[IAES_BLOCK_SIZE];
+    __attribute__((aligned(16))) uint8_t hw_enc_schedule[DAP_AES256_SCHEDULE_SIZE];
+    __attribute__((aligned(16))) uint8_t hw_dec_schedule[DAP_AES256_SCHEDULE_SIZE];
+    uint8_t hw_schedule_ready;   /* 0 = not ready, 1 = enc, 3 = enc+dec */
+} dap_enc_aes_key_t;
+
+#define DAP_ENC_AES_KEY(a) ((dap_enc_aes_key_t *)((a)->_inheritor))
 
 void dap_enc_aes_key_new(struct dap_enc_key * a_key);
 

@@ -32,10 +32,12 @@
 #endif
 #include <fcntl.h>
 #include <sys/types.h>
-#ifdef DAP_OS_UNIX
+#if defined(DAP_OS_UNIX)
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#ifndef DAP_OS_WASM
 #include <sys/resource.h>
+#endif
 #elif defined DAP_OS_WINDOWS
 #include <ws2tcpip.h>
 #endif
@@ -57,6 +59,7 @@
 #define LOG_TAG "dap_context"
 
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_uuid.h"
 #include "dap_context.h"
 #include "dap_events.h"
@@ -83,7 +86,7 @@ static void *s_context_thread(void *arg); // Context thread
  */
 int dap_context_init()
 {
-#ifdef DAP_OS_UNIX
+#if defined(DAP_OS_UNIX) && !defined(DAP_OS_WASM)
     struct rlimit l_fdlimit;
     if (getrlimit(RLIMIT_NOFILE, &l_fdlimit))
         return -1;
@@ -92,7 +95,8 @@ int dap_context_init()
     l_fdlimit.rlim_cur = l_fdlimit.rlim_max;
     if (setrlimit(RLIMIT_NOFILE, &l_fdlimit))
         return -2;
-    log_it(L_INFO, "Set maximum opened descriptors from %" DAP_UINT64_FORMAT_U " to %"DAP_UINT64_FORMAT_U, l_oldlimit, l_fdlimit.rlim_cur);
+    log_it(L_INFO, "Set maximum opened descriptors from %" DAP_UINT64_FORMAT_U " to %"DAP_UINT64_FORMAT_U, 
+           (uint64_t)l_oldlimit, (uint64_t)l_fdlimit.rlim_cur);
 #endif
     return 0;
 }
@@ -115,6 +119,7 @@ dap_context_t *dap_context_new(dap_context_type_t a_type)
    dap_context_t * l_context = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_context_t, NULL);
    l_context->id = s_context_id_max;
    l_context->type = a_type;
+   pthread_rwlock_init(&l_context->esockets_lock, NULL);
    s_context_id_max++;
    return l_context;
 }
@@ -140,7 +145,6 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
     struct dap_context_msg_run * l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct dap_context_msg_run, ENOMEM);
     int l_ret;
 
-    // Prefill message structure for new context's thread
     l_msg->context = a_context;
     l_msg->priority = a_priority;
     l_msg->sched_policy = a_sched_policy;
@@ -150,9 +154,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
     l_msg->callback_stopped = a_callback_loop_after;
     l_msg->callback_arg = a_callback_arg;
 
-    // If we have to wait for started thread (and initialization inside )
     if( a_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED){
-        // Init kernel objects
         pthread_condattr_t attr;
         pthread_condattr_init(&attr);
 #if !defined(DAP_OS_DARWIN) && !defined(DAP_OS_ANDROID)
@@ -161,32 +163,30 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         pthread_mutex_init(&a_context->started_mutex, NULL);
         pthread_cond_init( &a_context->started_cond, &attr);
 
-        // Prepare timer
         struct timespec l_timeout;
         clock_gettime(CLOCK_REALTIME, &l_timeout);
         l_timeout.tv_sec += DAP_CONTEXT_WAIT_FOR_STARTED_TIME;
-        // Lock started mutex and try to run a thread
         pthread_mutex_lock(&a_context->started_mutex);
 
         l_ret = pthread_create(&a_context->thread_id, NULL, s_context_thread, l_msg);
 
-        if(l_ret == 0){ // If everything is good we're waiting for DAP_CONTEXT_WAIT_FOR_STARTED_TIME seconds
+        if(l_ret == 0){
             while (!a_context->started && !l_ret)
                 l_ret = pthread_cond_timedwait(&a_context->started_cond, &a_context->started_mutex, &l_timeout);
-            if ( l_ret== ETIMEDOUT ){ // Timeout
+            if ( l_ret== ETIMEDOUT ){
                 log_it(L_CRITICAL, "Timeout %d seconds is out: context #%u thread don't respond", DAP_CONTEXT_WAIT_FOR_STARTED_TIME, a_context->id);
-            } else if (l_ret != 0){ // Another error
+            } else if (l_ret != 0){
                 log_it(L_CRITICAL, "Can't wait on condition: %d error code", l_ret);
-            } else // All is good
+            } else
                 log_it(L_NOTICE, "Context %u started", a_context->id);
-        }else{ // Thread haven't started
+        }else{
             log_it(L_ERROR,"Can't create new thread for context %u", a_context->id );
             DAP_DELETE(l_msg);
         }
         pthread_mutex_unlock(&a_context->started_mutex);
-    }else{ // Here we wait for nothing, just run it
+    }else{
         l_ret = pthread_create( &a_context->thread_id , NULL, s_context_thread, l_msg);
-        if(l_ret != 0){ // Check for error, if present lets cleanup the memory for l_msg
+        if(l_ret != 0){
             log_it(L_ERROR,"Can't create new thread for context %u", a_context->id );
             DAP_DELETE(l_msg);
         }
@@ -230,8 +230,11 @@ static void *s_context_thread(void *a_arg)
     struct dap_context_msg_run * l_msg = (struct dap_context_msg_run*) a_arg;
     dap_context_t * l_context = l_msg->context;
     assert(l_context);
-    if (s_context)
-        return log_it( L_ERROR, "Context %d already bound to current thread", s_context->id ), NULL;
+    if (s_context) {
+        log_it(L_ERROR, "Context %d already bound to current thread", s_context->id);
+        DAP_DELETE(l_msg);
+        return NULL;
+    }
     s_context = l_context;
     l_context->cpu_id = l_msg->cpu_id;
     int l_priority = l_msg->priority;
@@ -248,11 +251,11 @@ static void *s_context_thread(void *a_arg)
         l_priority = THREAD_PRIORITY_NORMAL;
     }
     if ( !DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &l_context->th, 0, FALSE, DUPLICATE_SAME_ACCESS) )
-        log_it(L_ERROR, "DuplicateHandle() failed, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "DuplicateHandle() failed, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
     if ( !SetThreadAffinityMask( l_context->th, (DWORD_PTR)(1 << l_msg->cpu_id) ) ) 
-        log_it(L_ERROR, "SetThreadAffinityMask() failed, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "SetThreadAffinityMask() failed, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
     if ( !SetThreadPriority(l_context->th, l_priority) )
-        log_it(L_ERROR, "Couldn't set thread priority, error %d: \"%s\"", GetLastError(), dap_strerror(GetLastError()));
+        log_it(L_ERROR, "Couldn't set thread priority, error %lu: \"%s\"", (unsigned long)GetLastError(), dap_strerror(GetLastError()));
 #else
     if(l_msg->cpu_id!=-1)
         dap_cpu_assign_thread_on(l_msg->cpu_id );
@@ -304,8 +307,19 @@ static void *s_context_thread(void *a_arg)
         pthread_cond_broadcast(&l_context->started_cond);
         pthread_mutex_unlock(&l_context->started_mutex);
     }
-    if (l_context->signal_exit)
+    if (l_context->signal_exit) {
+        if (l_msg->callback_stopped)
+            l_msg->callback_stopped(l_context, l_msg->callback_arg);
+        log_it(L_NOTICE, "Exiting context #%u (early exit)", l_context->id);
+        if (l_context->running_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED) {
+            pthread_cond_destroy(&l_context->started_cond);
+            pthread_mutex_destroy(&l_context->started_mutex);
+        }
+        pthread_rwlock_destroy(&l_context->esockets_lock);
+        DAP_DELETE(l_context);
+        DAP_DELETE(l_msg);
         return NULL;
+    }
     // Initialization success
     switch (l_context->type) {
     case DAP_CONTEXT_TYPE_WORKER:
@@ -323,8 +337,11 @@ static void *s_context_thread(void *a_arg)
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
 
     // Free memory. Because nobody expected to work with context outside itself it have to be safe
-    pthread_cond_destroy(&l_context->started_cond);
-    pthread_mutex_destroy(&l_context->started_mutex);
+    if (l_context->running_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED) {
+        pthread_cond_destroy(&l_context->started_cond);
+        pthread_mutex_destroy(&l_context->started_mutex);
+    }
+    pthread_rwlock_destroy(&l_context->esockets_lock);
     DAP_DELETE(l_context);
     DAP_DELETE(l_msg);
 
@@ -469,6 +486,19 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
         return -2;
     }
 
+    /* Prevent putting the same esocket into two context hash tables at once.
+     * If it is already registered on another context, detach it first.
+     * If it is already on the target context, skip re-adding. */
+    if (a_es->context) {
+        if (a_es->context == a_context) {
+            debug_if(g_debug_reactor, L_DEBUG, "Es %p already attached to context #%u, skip add", a_es, a_context->id);
+            return 0;
+        }
+        log_it(L_WARNING, "Context switch detected on es %p : %" DAP_FORMAT_SOCKET ", moving from context %u to %u",
+               a_es, a_es->socket, a_es->context->id, a_context->id);
+        dap_context_remove(a_es);
+    }
+
 #ifdef DAP_EVENTS_CAPS_IOCP
     // TODO: reassignment requires some extra calls to WDK. Also there must be no pending I/O ops
     /*
@@ -580,7 +610,7 @@ lb_exit:
 #endif
     if (l_is_error && l_errno != EEXIST) {
 #ifdef DAP_EVENTS_CAPS_IOCP
-        log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_errno, a_es->socket);
+        log_it(L_ERROR, "IOCP update failed, errno %d socket %"DAP_FORMAT_SOCKET, l_errno, a_es->socket);
 #else
         log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ", error %d: \"%s\"",
             a_es->socket, l_errno, dap_strerror(l_errno) );
@@ -594,13 +624,15 @@ lb_exit:
     a_es->context = a_context;
     a_es->worker = DAP_WORKER(a_context);
     //if (a_es->socket && a_es->socket != INVALID_SOCKET) {
-        // Add in context HT
+        // Add in context HT (protected by rwlock for thread-safety)
         dap_events_socket_t *l_es_sought = NULL;
-        HASH_FIND_BYHASHVALUE(hh, a_context->esockets, &a_es->uuid, sizeof(a_es->uuid), a_es->uuid, l_es_sought);
+        pthread_rwlock_wrlock(&a_context->esockets_lock);
+        dap_ht_find(a_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_es_sought);
         if (!l_es_sought) {
-            HASH_ADD_BYHASHVALUE(hh, a_context->esockets, uuid, sizeof(a_es->uuid), a_es->uuid, a_es);
+            dap_ht_add(a_context->esockets, uuid, a_es);
             a_context->event_sockets_count++;
         }
+        pthread_rwlock_unlock(&a_context->esockets_lock);
     //}
     return 0;
 }
@@ -619,13 +651,15 @@ int dap_context_remove( dap_events_socket_t * a_es)
         return -1;
     }
     dap_events_socket_t *l_es = NULL;
-    HASH_FIND_BYHASHVALUE(hh, l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), a_es->uuid, l_es);
+    pthread_rwlock_wrlock(&l_context->esockets_lock);
+    dap_ht_find(l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_es);
     if (!l_es || l_es != a_es)
         log_it(L_ERROR, "Try to remove unexistent socket %p", a_es);
     else {
         l_context->event_sockets_count--;
-        HASH_DELETE(hh, l_context->esockets, a_es);
+        dap_ht_del(l_context->esockets, a_es);
     }
+    pthread_rwlock_unlock(&l_context->esockets_lock);
 
 #if defined DAP_EVENTS_CAPS_IOCP
     /* TODO: there's a weird undocumented technique of "removing" from IOCP, but we barely need it */
@@ -737,8 +771,11 @@ int dap_context_remove( dap_events_socket_t * a_es)
 dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_socket_uuid_t a_es_uuid )
 {
     dap_events_socket_t *l_es = NULL;
-    if (a_context && a_context->esockets)
-        HASH_FIND_BYHASHVALUE(hh, a_context->esockets, &a_es_uuid, sizeof(a_es_uuid), a_es_uuid, l_es);
+    if (a_context && a_context->esockets) {
+        pthread_rwlock_rdlock(&a_context->esockets_lock);
+        dap_ht_find(a_context->esockets, &a_es_uuid, sizeof(a_es_uuid), l_es);
+        pthread_rwlock_unlock(&a_context->esockets_lock);
+    }
     return l_es;
 }
 
@@ -792,7 +829,11 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     int l_pipe[2];
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-    if( pipe2(l_pipe,O_DIRECT | O_NONBLOCK ) < 0 ){
+#ifdef O_DIRECT
+    if( pipe2(l_pipe, O_DIRECT | O_NONBLOCK ) < 0 ){
+#else
+    if( pipe2(l_pipe, O_NONBLOCK ) < 0 ){
+#endif
 #elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     if( pipe(l_pipe) < 0 ){
 #endif
@@ -817,13 +858,19 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     }
 #endif
 
-#if !defined (DAP_OS_ANDROID)
+#if !defined(DAP_OS_ANDROID) && !defined(DAP_OS_WASM)
     FILE* l_sys_max_pipe_size_fd = fopen("/proc/sys/fs/pipe-max-size", "r");
     if (l_sys_max_pipe_size_fd) {
         char l_file_buf[64] = "";
-        fread(l_file_buf, sizeof(l_file_buf), 1, l_sys_max_pipe_size_fd);
-        uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
-        fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
+        size_t l_read = fread(l_file_buf, 1, sizeof(l_file_buf) - 1, l_sys_max_pipe_size_fd);
+        if (l_read > 0) {
+            l_file_buf[l_read] = '\0';
+            uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
+            if (l_sys_max_pipe_size > 0)
+                fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
+        } else if (ferror(l_sys_max_pipe_size_fd)) {
+            log_it(L_WARNING, "Failed to read /proc/sys/fs/pipe-max-size");
+        }
         fclose(l_sys_max_pipe_size_fd);
     }
 #endif
@@ -970,6 +1017,20 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
     // Do nothing ...
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
     // nothing to do
+#elif defined(DAP_EVENTS_CAPS_EVENT_PIPE)
+    {
+        int l_pipe[2];
+        if (pipe(l_pipe) < 0)
+            return DAP_DELETE(l_es), log_it(L_ERROR, "pipe() for event failed, error %d: '%s'", errno, dap_strerror(errno)), NULL;
+        int l_flags = fcntl(l_pipe[0], F_GETFL, 0);
+        if (l_flags != -1)
+            fcntl(l_pipe[0], F_SETFL, l_flags | O_NONBLOCK);
+        l_flags = fcntl(l_pipe[1], F_GETFL, 0);
+        if (l_flags != -1)
+            fcntl(l_pipe[1], F_SETFL, l_flags | O_NONBLOCK);
+        l_es->fd  = l_pipe[0];
+        l_es->fd2 = l_pipe[1];
+    }
 #else
 #error "Not defined dap_context_create_event() on your platform"
 #endif

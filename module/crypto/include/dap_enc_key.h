@@ -31,14 +31,7 @@
 #include <stdint.h>
 #include "dap_common.h"
 #include "dap_hash.h"
-
-typedef enum dap_enc_data_type{DAP_ENC_DATA_TYPE_RAW,
-
-                               DAP_ENC_DATA_TYPE_B64,
-
-                               DAP_ENC_DATA_TYPE_B64_URLSAFE,
-
-                               } dap_enc_data_type_t;
+#include "dap_data.h"  // dap_data_type_t (and legacy dap_enc_data_type_t alias)
 
 
 typedef enum dap_enc_key_type {
@@ -47,9 +40,6 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_NULL = 0, // avoid using it: 0 is a DAP_ENC_KEY_TYPE_NULL and DAP_ENC_KEY_TYPE_IAES at the same time
     DAP_ENC_KEY_TYPE_IAES = 0, // Symmetric AES
     DAP_ENC_KEY_TYPE_OAES = 1,// from https://github.com/monero-project/monero/tree/master/src/crypto
-
-    DAP_ENC_KEY_TYPE_BF_CBC = 2,// BlowFish CBCmode
-    DAP_ENC_KEY_TYPE_BF_OFB = 3,//BlowFish OFBmode
 
     DAP_ENC_KEY_TYPE_GOST_OFB = 4,//GOST28147_89
     DAP_ENC_KEY_TYPE_KUZN_OFB = 5,//GOST28147_14
@@ -116,6 +106,12 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
     DAP_ENC_KEY_TYPE_SIG_ECDSA = 26,
     DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK=27,
+    DAP_ENC_KEY_TYPE_SIG_ML_DSA = 28,
+    DAP_ENC_KEY_TYPE_ML_KEM = 29,
+    DAP_ENC_KEY_TYPE_CHACHA20_POLY1305 = 34,
+    DAP_ENC_KEY_TYPE_AES256_CBC = 35,
+    DAP_ENC_KEY_TYPE_KEM_NTRU_PRIME = 36,
+    DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME = 37,
     DAP_ENC_KEY_TYPE_SIG_CHIPMUNK=0x0108,
     DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING=0x0109,
 
@@ -323,6 +319,31 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t *a_key);
 // allocate memory for key struct
 dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type);
 
+/**
+ * @brief Create encryption key from raw bytes (6.0 compatibility)
+ * For SALSA2012: a_raw_bytes should be 40 bytes = [nonce(8)][key(32)].
+ * Only the key part [8:39] is used; nonce is per-message in encrypt/decrypt.
+ * @param a_key_type Cipher type (e.g. DAP_ENC_KEY_TYPE_SALSA2012)
+ * @param a_raw_bytes Raw key material
+ * @param a_raw_bytes_size Size (must be >= 40 for SALSA2012)
+ * @return New key or NULL on error
+ */
+dap_enc_key_t *dap_enc_key_new_from_raw_bytes(dap_enc_key_type_t a_key_type,
+                                              const uint8_t *a_raw_bytes,
+                                              size_t a_raw_bytes_size);
+
+/**
+ * @brief Update existing key with raw bytes (6.0 compatibility)
+ * For SALSA2012: a_raw_bytes should be 40 bytes = [nonce(8)][key(32)].
+ * Only the key part [8:39] is used.
+ * @param a_key Existing key to update
+ * @param a_raw_bytes Raw key material
+ * @param a_raw_bytes_size Size (must be >= 40 for SALSA2012)
+ * @return 0 on success, -1 on error
+ */
+int dap_enc_key_update_from_raw_bytes(dap_enc_key_t *a_key,
+                                     const uint8_t *a_raw_bytes,
+                                     size_t a_raw_bytes_size);
 
 // default gen key
 dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
@@ -345,7 +366,15 @@ void dap_enc_key_delete(dap_enc_key_t *a_key);
 
 dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_t a_count);
 
-int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out);
+/**
+ * @brief Get hash of public key
+ * @param a_key Encryption key
+ * @param a_hash_type Hash algorithm to use
+ * @param a_hash_out Output buffer for hash
+ * @param a_hash_out_size Size of output buffer (must be >= dap_hash_size(a_hash_type))
+ * @return 0 on success, negative on error
+ */
+int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_type_t a_hash_type, byte_t *a_hash_out, size_t a_hash_out_size);
 
 /**
  * @brief check if this key type use insign hashing

@@ -188,6 +188,14 @@ typedef struct dap_serialize_result {
 } dap_serialize_result_t;
 
 /**
+ * @brief Semantic alias for deserialization results
+ * 
+ * Same as dap_serialize_result_t but used for deserialization functions
+ * to improve code readability and semantic clarity.
+ */
+typedef dap_serialize_result_t dap_deserialize_result_t;
+
+/**
  * @brief Argument for schema calculations
  */
 typedef struct dap_serialize_arg {
@@ -264,6 +272,36 @@ dap_serialize_result_t dap_serialize_to_buffer(const dap_serialize_schema_t *a_s
                                                void *a_context);
 
 /**
+ * @brief Serialize object to buffer WITHOUT metadata header (raw fields only)
+ * @details Serializes only field data without magic/version/field_count header.
+ *          Useful for network protocols where metadata is external.
+ * @param a_schema Serialization schema
+ * @param a_object Object to serialize
+ * @param a_buffer Output buffer
+ * @param a_buffer_size Buffer size
+ * @param a_context User context (optional)
+ * @return Serialization result
+ */
+dap_serialize_result_t dap_serialize_to_buffer_raw(const dap_serialize_schema_t *a_schema,
+                                                   const void *a_object,
+                                                   uint8_t *a_buffer,
+                                                   size_t a_buffer_size,
+                                                   void *a_context);
+
+/**
+ * @brief Calculate size for raw serialization (fields only, no header)
+ * @param a_schema Serialization schema
+ * @param a_params Size parameters (optional)
+ * @param a_object Object to calculate size for (optional)
+ * @param a_context User context (optional)
+ * @return Size in bytes, or 0 on error
+ */
+size_t dap_serialize_calc_size_raw(const dap_serialize_schema_t *a_schema,
+                                   const dap_serialize_size_params_t *a_params,
+                                   const void *a_object,
+                                   void *a_context);
+
+/**
  * @brief Deserialize object from buffer
  * @param a_schema Serialization schema
  * @param a_buffer Input buffer
@@ -277,6 +315,68 @@ dap_serialize_result_t dap_serialize_from_buffer(const dap_serialize_schema_t *a
                                                  size_t a_buffer_size,
                                                  void *a_object,
                                                  void *a_context);
+
+/**
+ * @brief Deserialize object from buffer WITHOUT metadata header (raw fields only)
+ * @details Deserializes only field data, assumes no magic/version/field_count header.
+ * @param a_schema Serialization schema
+ * @param a_buffer Input buffer
+ * @param a_buffer_size Buffer size
+ * @param a_object Output object (must be pre-allocated)
+ * @param a_context User context (optional)
+ * @return Deserialization result
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_t *a_schema,
+                                                     const uint8_t *a_buffer,
+                                                     size_t a_buffer_size,
+                                                     void *a_object,
+                                                     void *a_context);
+
+/**
+ * @brief Semantic alias for dap_serialize_from_buffer
+ * 
+ * Deserialize object from buffer with metadata header.
+ * Improves code readability by using "deserialize" naming for clarity.
+ * 
+ * @param a_schema Serialization schema
+ * @param a_buffer Input buffer
+ * @param a_buffer_size Buffer size
+ * @param a_object Output object (must be pre-allocated)
+ * @param a_context User context (optional)
+ * @return Deserialization result
+ */
+static inline dap_deserialize_result_t dap_deserialize_from_buffer(
+    const dap_serialize_schema_t *a_schema,
+    const uint8_t *a_buffer,
+    size_t a_buffer_size,
+    void *a_object,
+    void *a_context)
+{
+    return dap_serialize_from_buffer(a_schema, a_buffer, a_buffer_size, a_object, a_context);
+}
+
+/**
+ * @brief Semantic alias for dap_serialize_from_buffer_raw
+ * 
+ * Deserialize object from buffer WITHOUT metadata header (raw fields only).
+ * Improves code readability by using "deserialize" naming for clarity.
+ * 
+ * @param a_schema Serialization schema
+ * @param a_buffer Input buffer
+ * @param a_buffer_size Buffer size
+ * @param a_object Output object (must be pre-allocated)
+ * @param a_context User context (optional)
+ * @return Deserialization result
+ */
+static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw(
+    const dap_serialize_schema_t *a_schema,
+    const uint8_t *a_buffer,
+    size_t a_buffer_size,
+    void *a_object,
+    void *a_context)
+{
+    return dap_serialize_from_buffer_raw(a_schema, a_buffer, a_buffer_size, a_object, a_context);
+}
 
 /**
  * @brief Validate serialized data
@@ -351,6 +451,68 @@ dap_serialize_result_t dap_serialize_copy_object(const dap_serialize_schema_t *a
         .fields = fields_array, \
         .magic = DAP_SERIALIZE_MAGIC_NUMBER \
     }
+
+/**
+ * @brief Extend existing schema with additional fields
+ * 
+ * This macro creates a new schema that inherits all fields from a base schema
+ * and adds new fields. Useful for protocol extensions.
+ * 
+ * @param schema_name Name of the new extended schema
+ * @param struct_type Type of the extended structure
+ * @param base_fields Base schema fields array
+ * @param base_field_count Number of base fields
+ * @param extended_fields Extended fields array (new fields only)
+ * @param magic Magic number for the extended schema
+ * 
+ * Example:
+ * @code
+ * // Base schema
+ * static const dap_serialize_field_t s_base_fields[] = { ... };
+ * 
+ * // Extended fields (only new ones)
+ * static const dap_serialize_field_t s_extended_fields[] = { ... };
+ * 
+ * // Merged fields array (base + extended)
+ * static const dap_serialize_field_t s_merged_fields[] = {
+ *     // Copy all base_fields here manually or use helper
+ *     ...base_fields...,
+ *     ...extended_fields...
+ * };
+ * 
+ * DAP_SERIALIZE_SCHEMA_EXTEND(my_extended_schema, my_extended_struct_t,
+ *                             s_merged_fields, 0xMYMAGIC);
+ * @endcode
+ */
+#define DAP_SERIALIZE_SCHEMA_EXTEND(schema_name, struct_type, merged_fields_array, schema_magic) \
+    const dap_serialize_schema_t schema_name = { \
+        .name = #schema_name, \
+        .version = 1, \
+        .struct_size = sizeof(struct_type), \
+        .field_count = sizeof(merged_fields_array) / sizeof(merged_fields_array[0]), \
+        .fields = merged_fields_array, \
+        .magic = schema_magic \
+    }
+
+/**
+ * @brief Helper macro to copy base fields into extended schema
+ * 
+ * Use this inside your merged_fields_array initialization to copy all base fields.
+ * 
+ * Example:
+ * @code
+ * static const dap_serialize_field_t s_merged_fields[] = {
+ *     DAP_SERIALIZE_FIELDS_COPY(s_base_fields),  // Expands base fields
+ *     // Now add extended fields:
+ *     {.name = "new_field", .type = DAP_SERIALIZE_TYPE_UINT32, ...},
+ * };
+ * @endcode
+ * 
+ * NOTE: This is a C99 trick using compound literals. For C11+, use designated
+ *       initializers or explicit field copying.
+ */
+#define DAP_SERIALIZE_FIELDS_MERGE(base_array, base_count, extended_array, extended_count) \
+    (base_count + extended_count)
 
 // Constants
 #define DAP_SERIALIZE_MAGIC_NUMBER              0xDAC5E412  ///< DAP Serialize magic number

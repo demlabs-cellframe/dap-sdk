@@ -86,18 +86,18 @@ static bool s_test_hash_consistency_regression(void) {
     
     // Test with specific input that previously showed inconsistency
     const char* l_test_input = "DAP SDK cross-platform test string";
-    dap_hash_fast_t l_hash1 = {0};
-    dap_hash_fast_t l_hash2 = {0};
+    dap_hash_sha3_256_t l_hash1 = {0};
+    dap_hash_sha3_256_t l_hash2 = {0};
     
     // Calculate hash twice to ensure consistency
-    bool l_ret1 = dap_hash_fast(l_test_input, strlen(l_test_input), &l_hash1);
-    bool l_ret2 = dap_hash_fast(l_test_input, strlen(l_test_input), &l_hash2);
+    bool l_ret1 = dap_hash_sha3_256(l_test_input, strlen(l_test_input), &l_hash1);
+    bool l_ret2 = dap_hash_sha3_256(l_test_input, strlen(l_test_input), &l_hash2);
     
     DAP_TEST_ASSERT(l_ret1 == true, "First hash calculation should succeed");
     DAP_TEST_ASSERT(l_ret2 == true, "Second hash calculation should succeed");
     
     // Hashes should be identical
-    int l_compare = memcmp(&l_hash1, &l_hash2, sizeof(dap_hash_fast_t));
+    int l_compare = memcmp(&l_hash1, &l_hash2, sizeof(dap_hash_sha3_256_t));
     DAP_TEST_ASSERT(l_compare == 0, "Hash results should be consistent");
     
     // Test with edge cases that previously caused issues
@@ -112,18 +112,18 @@ static bool s_test_hash_consistency_regression(void) {
     size_t l_num_cases = sizeof(l_edge_cases) / sizeof(l_edge_cases[0]);
     
     for (size_t i = 0; i < l_num_cases; i++) {
-        dap_hash_fast_t l_hash_a = {0};
-        dap_hash_fast_t l_hash_b = {0};
+        dap_hash_sha3_256_t l_hash_a = {0};
+        dap_hash_sha3_256_t l_hash_b = {0};
         
         size_t l_input_len = (i == 3) ? 4 : strlen(l_edge_cases[i]); // Binary data case
         
-        bool l_ret_a = dap_hash_fast(l_edge_cases[i], l_input_len, &l_hash_a);
-        bool l_ret_b = dap_hash_fast(l_edge_cases[i], l_input_len, &l_hash_b);
+        bool l_ret_a = dap_hash_sha3_256(l_edge_cases[i], l_input_len, &l_hash_a);
+        bool l_ret_b = dap_hash_sha3_256(l_edge_cases[i], l_input_len, &l_hash_b);
         
         DAP_TEST_ASSERT(l_ret_a == l_ret_b, "Hash return codes should match");
         
         if (l_ret_a == true) {
-            int l_edge_compare = memcmp(&l_hash_a, &l_hash_b, sizeof(dap_hash_fast_t));
+            int l_edge_compare = memcmp(&l_hash_a, &l_hash_b, sizeof(dap_hash_sha3_256_t));
             DAP_TEST_ASSERT(l_edge_compare == 0, "Edge case hash should be consistent");
         }
     }
@@ -138,38 +138,54 @@ static bool s_test_hash_consistency_regression(void) {
  */
 static bool s_test_memory_management_regression(void) {
     log_it(L_INFO, "Testing memory management regression");
-    
-    // This test simulates the scenario that previously caused memory leaks
+
     const size_t l_iterations = 50;
-    
+    int l_direct_failures = 0;
+    int l_dapsign_failures = 0;
+
     for (size_t i = 0; i < l_iterations; i++) {
-        // Generate key
         dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
         if (!l_key) {
             log_it(L_WARNING, "Key generation failed at iteration %zu", i);
             continue;
         }
-        
-        // Create signature
+
         const char* l_data = "Memory management test data";
-        size_t l_sig_size = 0;
-        dap_sign_t* l_signature = dap_sign_create(l_key, l_data, strlen(l_data));
-        
+        size_t l_data_len = strlen(l_data);
+
+        /* Direct sign + verify through enc_key (no serialization) */
+        size_t l_sig_size = 8192;
+        uint8_t *l_sig_buf = DAP_NEW_Z_SIZE(uint8_t, l_sig_size);
+        int l_sign_ret = l_key->sign_get(l_key, l_data, l_data_len, l_sig_buf, l_sig_size);
+        if (l_sign_ret == 0) {
+            int l_verify_ret = l_key->sign_verify(l_key, l_data, l_data_len, l_sig_buf, l_sig_size);
+            if (l_verify_ret != 0) {
+                log_it(L_ERROR, "DIRECT verify failed at iter %zu ret=%d", i, l_verify_ret);
+                l_direct_failures++;
+            }
+        }
+        DAP_DELETE(l_sig_buf);
+
+        /* Serialized sign + verify through dap_sign (full pipeline) */
+        dap_sign_t* l_signature = dap_sign_create(l_key, l_data, l_data_len);
         if (l_signature) {
-            // Verify signature
-            int l_verify = dap_sign_verify(l_signature, l_data, strlen(l_data));
-            
-            // This verification step previously caused issues if not cleaned up properly
-            DAP_TEST_ASSERT(l_verify == 0, "Signature verification in memory test");
-            
-            // Clean up signature
+            int l_verify = dap_sign_verify(l_signature, l_data, l_data_len);
+            if (l_verify != 0) {
+                log_it(L_ERROR, "DAP_SIGN verify failed at iter %zu ret=%d", i, l_verify);
+                l_dapsign_failures++;
+            }
             DAP_DELETE(l_signature);
         }
-        
-        // Clean up key - this step previously had memory leaks
+
         dap_enc_key_delete(l_key);
     }
-    
+
+    log_it(L_INFO, "Memory test: direct_failures=%d dapsign_failures=%d (of %zu)",
+           l_direct_failures, l_dapsign_failures, l_iterations);
+
+    DAP_TEST_ASSERT(l_direct_failures == 0, "Direct sign/verify (no serialization)");
+    DAP_TEST_ASSERT(l_dapsign_failures == 0, "Serialized sign/verify (dap_sign)");
+
     log_it(L_INFO, "Memory management regression test completed (%zu iterations)", l_iterations);
     return true;
 }
@@ -195,7 +211,7 @@ static bool s_test_json_parsing_edge_cases_regression(void) {
         {"{\"null\":null}", true, "Object with null"},
         {"{\"nested\":{\"inner\":\"value\"}}", true, "Nested object"},
         {"{\"array\":[1,2,3]}", true, "Object with array"},
-        {"{\"key\":\"value\",}", true, "Trailing comma (json-c tolerates this)"},
+        {"{\"key\":\"value\",}", false, "Trailing comma (strict JSON: invalid)"},
         {"{\"key\":}", false, "Missing value (invalid)"},
         {"{\"key\":\"unclosed string}", false, "Unclosed string (invalid)"},
         {"", false, "Empty string (invalid)"},

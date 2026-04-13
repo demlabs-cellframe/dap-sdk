@@ -28,7 +28,6 @@
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_string.h"
-#include "dap_client.h"
 
 #define LOG_TAG "dap_chain_node_dns_server"
 #define BUF_SIZE 1024
@@ -45,11 +44,11 @@ static char s_root_alias[] = "dnsroot";
  */
 int dap_dns_zone_register(char *zone, dap_dns_zone_callback_t callback) {
     dap_dns_zone_hash_t *new_zone = NULL;
-    HASH_FIND_STR(s_dns_server->hash_table, zone, new_zone);
+    dap_ht_find_str(s_dns_server->hash_table, zone, new_zone);
     if ( !new_zone ) {      // zone is not present
         new_zone = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_dns_zone_hash_t, DNS_ERROR_FAILURE);
         new_zone->zone = dap_strdup(zone);
-        HASH_ADD_KEYPTR(hh, s_dns_server->hash_table, new_zone->zone, strlen(new_zone->zone), new_zone);
+        dap_ht_add_keyptr(s_dns_server->hash_table, new_zone->zone, strlen(new_zone->zone), new_zone);
     }                           // if zone present, just reassign callback
     new_zone->callback = callback;
     return DNS_ERROR_NONE;
@@ -62,11 +61,11 @@ int dap_dns_zone_register(char *zone, dap_dns_zone_callback_t callback) {
  */
 int dap_dns_zone_unregister(char *zone) {
     dap_dns_zone_hash_t *asked_zone = NULL;
-    HASH_FIND_STR(s_dns_server->hash_table, zone, asked_zone);
+    dap_ht_find_str(s_dns_server->hash_table, zone, asked_zone);
     if (asked_zone == NULL) {
         return DNS_ERROR_NAME;
     }
-    HASH_DEL(s_dns_server->hash_table, asked_zone);
+    dap_ht_del(s_dns_server->hash_table, asked_zone);
     DAP_DELETE(asked_zone->zone);
     DAP_DELETE(asked_zone);
     return DNS_ERROR_NONE;
@@ -79,7 +78,7 @@ int dap_dns_zone_unregister(char *zone) {
  */
 dap_dns_zone_callback_t dap_dns_zone_find(char *hostname) {
     dap_dns_zone_hash_t *asked_zone = NULL;
-    HASH_FIND_STR(s_dns_server->hash_table, hostname, asked_zone);
+    dap_ht_find_str(s_dns_server->hash_table, hostname, asked_zone);
     if (asked_zone == NULL) {
         if (!strcmp(hostname, &s_root_alias[0])) {
             return NULL;
@@ -256,9 +255,9 @@ void dap_dns_server_stop() {
         return;
 
     dap_dns_zone_hash_t *current_zone, *tmp;
-    HASH_ITER(hh, s_dns_server->hash_table, current_zone, tmp) {
+    dap_ht_foreach(s_dns_server->hash_table, current_zone, tmp) {
         // Clang bug at this, current_zone should change at every loop cycle
-        HASH_DEL(s_dns_server->hash_table, current_zone);
+        dap_ht_del(s_dns_server->hash_table, current_zone);
         DAP_DELETE(current_zone->zone);
         DAP_DELETE(current_zone);
     }

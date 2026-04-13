@@ -29,7 +29,7 @@
 #include <pthread.h>
 #endif
 #include "dap_server.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "dap_ht.h"
 #include "dap_client.h"
 
 #define DNS_TIME_TO_LIVE 600    // Seconds
@@ -86,14 +86,14 @@ typedef enum _dap_dns_class_type_t {
 } dap_dns_class_type_t;
 
 typedef struct _dap_dns_message_flags_bits_t {
-    int rcode : 4;          // response code, answer only: 0 - no error, 1 - format error, 2 - server failure, 3 - name error, 4 - not supported, 5 - refused
-    int z : 3;              // reserved, must be zero
-    int ra : 1;             // 1 - recursion available (answer only)
-    int rd : 1;             // 1 - recursion desired (query set, copied to answer)
-    int tc : 1;             // 1 - message truncated
-    int aa : 1;             // 1 - authoritative answer (answer only)
-    int opcode : 4;         // type of query, copied to answer: 0 - standard, 1 - inverse, 2 - status, 3-15 - reserved
-    int qr : 1;             // 0 - query, 1 - response
+    unsigned int rcode : 4;     // response code, answer only: 0 - no error, 1 - format error, 2 - server failure, 3 - name error, 4 - not supported, 5 - refused
+    unsigned int z : 3;         // reserved, must be zero
+    unsigned int ra : 1;        // 1 - recursion available (answer only)
+    unsigned int rd : 1;        // 1 - recursion desired (query set, copied to answer)
+    unsigned int tc : 1;        // 1 - message truncated
+    unsigned int aa : 1;        // 1 - authoritative answer (answer only)
+    unsigned int opcode : 4;    // type of query, copied to answer: 0 - standard, 1 - inverse, 2 - status, 3-15 - reserved
+    unsigned int qr : 1;        // 0 - query, 1 - response
 } dap_dns_message_flags_bits_t;
 
 
@@ -107,7 +107,7 @@ typedef dap_link_info_t *(*dap_dns_zone_callback_t) (const char *zonename); // C
 typedef struct _dap_dns_zone_hash_t {
     char *zone;
     dap_dns_zone_callback_t callback;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 } dap_dns_zone_hash_t;
 
 typedef struct _dap_dns_server_t {

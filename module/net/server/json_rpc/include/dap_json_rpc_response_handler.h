@@ -25,8 +25,8 @@
 #pragma once
 
 #include "dap_json_rpc_response.h"
-#include "http_status_code.h"
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "dap_http_status_code.h"
+#include "dap_ht.h"
 
 #ifdef __cplusplus
 extern "C"{
@@ -38,7 +38,7 @@ typedef struct dap_json_rpc_response_handler
 {
     dap_json_rpc_response_handler_func_t *func;
     uint64_t id;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 }dap_json_rpc_response_handler_t;
 
 int dap_json_rpc_response_registration_with_id(uint64_t a_id, dap_json_rpc_response_handler_func_t *func);
@@ -49,7 +49,7 @@ void dap_json_rpc_response_handler(dap_json_rpc_response_t *a_response);
 
 uint64_t dap_json_rpc_response_get_new_id(void);
 
-void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_code);
+void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, dap_http_status_code_t http_code);
 
 #ifdef __cplusplus
 }

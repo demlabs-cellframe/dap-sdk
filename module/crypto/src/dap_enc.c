@@ -31,6 +31,7 @@
 #include "dap_enc_base64.h"
 #include "dap_enc_key.h"
 #include "dap_common.h"
+#include "dap_time.h"
 #include "dap_config.h"
 #include "dap_cert.h"
 #include "dap_crc64.h"
@@ -49,7 +50,7 @@ static bool s_debug_more = false;
 
 int dap_enc_init()
 {
-    srand(time(NULL));
+    srand((unsigned int)dap_time_now());
     dap_enc_key_init();
     dap_cert_init();
     dap_crc64_init();

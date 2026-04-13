@@ -1,5 +1,4 @@
 #include "dap_json_rpc_request_handler.h"
-#include "dap_cli_server.h"
 #include "dap_hash.h"
 #include "dap_sign.h"
 #include "dap_json_rpc.h"
@@ -11,7 +10,7 @@ static dap_json_rpc_request_handler_t *s_handler_hash_table = NULL;
 int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t *a_func)
 {
     dap_json_rpc_request_handler_t *l_handler = NULL;
-    HASH_FIND_STR(s_handler_hash_table, a_name, l_handler);
+    dap_ht_find_str(s_handler_hash_table, a_name, l_handler);
     if (l_handler == NULL){
         l_handler = DAP_NEW(dap_json_rpc_request_handler_t);
         if (!l_handler) {
@@ -20,7 +19,7 @@ int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t
         }
         l_handler->name = dap_strdup(a_name);
         l_handler->func = a_func;
-        HASH_ADD_STR(s_handler_hash_table, name, l_handler);
+        dap_ht_add_str(s_handler_hash_table, name, l_handler);
         log_it(L_NOTICE, "Registration handler for request name: %s", a_name);
         return 0;
     }
@@ -49,7 +48,7 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
     char * l_data_str = DAP_NEW_Z_COUNT(char, l_http_request->header.data_size);
     dap_mempcpy(l_data_str, l_http_request->request_n_signs, l_http_request->header.data_size);
 
-    dap_hash_fast_t l_sign_pkey_hash;
+    dap_hash_sha3_256_t l_sign_pkey_hash;
     bool l_sign_correct = false;
     dap_sign_t * l_sign = (dap_sign_t*)DAP_DUP_SIZE(l_http_request->request_n_signs + l_http_request->header.data_size, l_http_request->header.signs_size);
     dap_sign_get_pkey_hash(l_sign, &l_sign_pkey_hash);
@@ -63,7 +62,7 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
         DAP_DEL_MULTY(l_sign);
         return l_no_rights_res_str;
     }
-    char* l_response = dap_cli_cmd_exec(l_data_str);
+    char* l_response = dap_json_rpc_process_request(l_data_str, "/exec_cmd");
     dap_json_rpc_http_request_free(l_http_request);
     DAP_DEL_MULTY(l_data_str, l_sign);
     return l_response;

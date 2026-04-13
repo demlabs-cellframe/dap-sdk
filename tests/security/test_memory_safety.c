@@ -112,18 +112,18 @@ static bool s_test_crypto_input_validation(void) {
     log_it(L_INFO, "Testing crypto input validation");
     
     // Test 1: NULL pointer handling
-    dap_hash_fast_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     
     // Hash with NULL input should fail gracefully
-    bool l_ret1 = dap_hash_fast(NULL, 100, &l_hash);
+    bool l_ret1 = dap_hash_sha3_256(NULL, 100, &l_hash);
     DAP_TEST_ASSERT(l_ret1 == false, "Hash with NULL input should fail");
     
     // Hash with NULL output should fail gracefully
-    bool l_ret2 = dap_hash_fast("test", 4, NULL);
+    bool l_ret2 = dap_hash_sha3_256("test", 4, NULL);
     DAP_TEST_ASSERT(l_ret2 == false, "Hash with NULL output should fail");
     
     // Test 2: Zero-length input handling
-    bool l_ret3 = dap_hash_fast("", 0, &l_hash);
+    bool l_ret3 = dap_hash_sha3_256("", 0, &l_hash);
     // Zero-length input might be valid, so we just check it doesn't crash
     log_it(L_DEBUG, "Zero-length hash result: %d", l_ret3);
     
@@ -132,7 +132,6 @@ static bool s_test_crypto_input_validation(void) {
     DAP_TEST_ASSERT_NULL(l_invalid_key, "Invalid key type should return NULL");
     
     // Test 4: Signing with NULL key
-    size_t l_sig_size = 0;
     dap_sign_t* l_signature = dap_sign_create(NULL, "test", 4);
     DAP_TEST_ASSERT_NULL(l_signature, "Signing with NULL key should fail");
     
@@ -169,7 +168,6 @@ static bool s_test_crypto_memory_leaks(void) {
         
         // Test signing and cleanup
         const char* l_data = "Memory leak test data";
-        size_t l_sig_size = 0;
         dap_sign_t* l_signature = dap_sign_create(l_key, l_data, strlen(l_data));
         
         if (l_signature) {
@@ -184,8 +182,8 @@ static bool s_test_crypto_memory_leaks(void) {
         dap_enc_key_delete(l_key);
         
         // Test hash operations
-        dap_hash_fast_t l_hash = {0};
-        dap_hash_fast(l_data, strlen(l_data), &l_hash);
+        dap_hash_sha3_256_t l_hash = {0};
+        dap_hash_sha3_256(l_data, strlen(l_data), &l_hash);
     }
     
     log_it(L_INFO, "Crypto memory leak test completed (%zu iterations)", l_iterations);
@@ -269,7 +267,6 @@ static bool s_test_sensitive_data_wiping(void) {
         
         // Use the key for operations
         const char* l_test_data = "Sensitive test data";
-        size_t l_sig_size = 0;
         dap_sign_t* l_signature = dap_sign_create(l_key, l_test_data, strlen(l_test_data));
         
         if (l_signature) {
@@ -288,10 +285,10 @@ static bool s_test_sensitive_data_wiping(void) {
     }
     
     // Test 2: Hash context wiping (conceptual)
-    dap_hash_fast_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     const char* l_sensitive_input = "Secret message that should not remain in memory";
     
-    dap_hash_fast(l_sensitive_input, strlen(l_sensitive_input), &l_hash);
+    dap_hash_sha3_256(l_sensitive_input, strlen(l_sensitive_input), &l_hash);
     
     // In a real implementation, the hash context should be wiped after use
     log_it(L_DEBUG, "Hash operation completed - intermediate state should be wiped");

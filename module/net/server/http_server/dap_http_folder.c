@@ -43,7 +43,7 @@
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_folder.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 
 typedef struct dap_http_url_proc_folder {
     char local_path[4096];
@@ -244,11 +244,11 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
 
   if ( cl_ht_file->fd == NULL ) {
     log_it(L_ERROR, "Can't open %s: %s",cl_ht_file->local_path,strerror(errno));
-    cl_ht->reply_status_code = Http_Status_NotFound;
+    cl_ht->reply_status_code = DAP_HTTP_STATUS_NOT_FOUND;
     strncpy( cl_ht->reply_reason_phrase, "Not Found", sizeof(cl_ht->reply_reason_phrase)-1 );
   }
   else {
-    cl_ht->reply_status_code = Http_Status_OK;
+    cl_ht->reply_status_code = DAP_HTTP_STATUS_OK;
     strncpy( cl_ht->reply_reason_phrase,"OK",sizeof(cl_ht->reply_reason_phrase)-1 );
 
     const char *mime_type = "application/octet-stream";/* magic_file( up_folder->mime_detector, cl_ht_file->local_path );
@@ -268,7 +268,7 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
 err:
 
   log_it( L_WARNING, "Can't get file info: %s", strerror(errno) );
-  cl_ht->reply_status_code = Http_Status_NotFound;
+  cl_ht->reply_status_code = DAP_HTTP_STATUS_NOT_FOUND;
   strncpy( cl_ht->reply_reason_phrase, "Not Found", sizeof(cl_ht->reply_reason_phrase)-1 );
 
   return false;

@@ -1,0 +1,109 @@
+#version 450
+
+/*
+ * Batch 16-bit Montgomery NTT forward transform (Cooley-Tukey).
+ *
+ * For ML-KEM/Kyber: N=256, q=3329, R=2^16.
+ * Coefficients stored as int32 (sign-extended from int16); host
+ * widens int16->int32 before upload and narrows after download.
+ *
+ * Butterfly: t = fqmul(zeta, coeff[j+len])
+ *            coeff[j+len] = coeff[j] - t
+ *            coeff[j]     = coeff[j] + t
+ *
+ * Sequential zeta walk: k starts at 1, increments per group.
+ * Loop: len = n/2 down to 2 (stops one level early — basemul layer).
+ *
+ * Optimization: when butterfly stride (len) < subgroup size,
+ * all data dependencies are within a single subgroup.  Subgroup
+ * invocations execute in lockstep, so shared memory writes are
+ * immediately visible without an explicit barrier().
+ */
+
+#extension GL_KHR_shader_subgroup_basic : enable
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint POLY_N = 256;
+
+layout(set = 0, binding = 0) buffer CoeffsBuffer { int coeffs[]; };
+layout(set = 0, binding = 1) buffer ZetasBuffer  { int zetas[];  };
+
+layout(push_constant) uniform PushConstants {
+    int  q;
+    int  qinv16;
+    uint n;
+    uint batch_size;
+};
+
+shared int s_coeffs[256];
+shared int s_zetas[128];
+
+int fqmul(int a, int b)
+{
+    int prod = a * b;
+    int u = (prod * qinv16) & 0xFFFF;
+    u = (u >= 32768) ? (u - 65536) : u;
+    int t = prod - u * q;
+    return t >> 16;
+}
+
+void main()
+{
+    uint poly_idx = gl_WorkGroupID.x;
+    if (poly_idx >= batch_size)
+        return;
+
+    uint tid = gl_LocalInvocationID.x;
+    uint threads = gl_WorkGroupSize.x;
+    uint base = poly_idx * n;
+
+    for (uint i = tid; i < n; i += threads)
+        s_coeffs[i] = coeffs[base + i];
+
+    uint zlen = 128u;
+    for (uint i = tid; i < zlen; i += threads)
+        s_zetas[i] = zetas[i];
+
+    barrier();
+
+    uint zeta_k = 1u;
+    uint sg = gl_SubgroupSize;
+
+    for (uint len = n / 2; len >= 2; len >>= 1) {
+        uint num_groups = n / (2 * len);
+        uint half_ops = n / 2;
+
+        for (uint i = tid; i < half_ops; i += threads) {
+            uint group = i / len;
+            uint pos   = i - group * len;
+            uint idx_lo = group * 2 * len + pos;
+            uint idx_hi = idx_lo + len;
+
+            int lo = s_coeffs[idx_lo];
+            int hi = s_coeffs[idx_hi];
+
+            int t = fqmul(s_zetas[zeta_k + group], hi);
+
+            s_coeffs[idx_hi] = lo - t;
+            s_coeffs[idx_lo] = lo + t;
+        }
+
+        zeta_k += num_groups;
+
+        /*
+         * Full barrier only when next layer reads data written by
+         * threads outside the current subgroup.  When len < sg,
+         * the butterfly partner distance (len/2 in next layer)
+         * is within the subgroup, so lockstep execution guarantees
+         * visibility.
+         */
+        if (len >= sg)
+            barrier();
+    }
+
+    barrier();
+
+    for (uint i = tid; i < n; i += threads)
+        coeffs[base + i] = s_coeffs[i];
+}

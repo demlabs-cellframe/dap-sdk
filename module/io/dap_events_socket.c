@@ -29,7 +29,10 @@
 #include <assert.h>
 #include <errno.h>
 
-#if defined (DAP_OS_LINUX)
+#if defined(DAP_OS_WASM)
+#include <sys/types.h>
+#include <unistd.h>
+#elif defined (DAP_OS_LINUX)
 #include <sys/epoll.h>
 #include <sys/types.h>
 #include <sys/select.h>
@@ -77,6 +80,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #include "dap_common.h"
 #include "dap_config.h"
+#include "dap_time.h"
 #include "dap_list.h"
 #include "dap_worker.h"
 #include "dap_uuid.h"
@@ -85,6 +89,8 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_timerfd.h"
 #include "dap_context.h"
 #include "dap_events_socket.h"
+#include "dap_net.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_events_socket"
 
@@ -158,7 +164,7 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
     l_es->uuid = dap_new_es_id();
 #ifdef DAP_SYS_DEBUG
     pthread_rwlock_wrlock(&s_evsocks_lock);                             /* Add new record into the hash table */
-    HASH_ADD(hh2, s_esockets, uuid, sizeof(l_es->uuid), l_es);
+    dap_ht_add_hh(hh2, s_esockets, uuid, l_es);
     pthread_rwlock_unlock(&s_evsocks_lock);
 #endif
     debug_if(g_debug_reactor, L_DEBUG, "Created blank es %p, uuid " DAP_FORMAT_ESOCKET_UUID,
@@ -219,8 +225,8 @@ int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_d
     }
     return InterlockedPushEntrySList((PSLIST_HEADER)a_es->buf_out, &(l_entry->entry))
         ? a_size : PostQueuedCompletionStatus(a_es->context->iocp, a_size, (ULONG_PTR)a_es, NULL)
-            ? a_size : ( DAP_ALFREE(l_entry), log_it(L_ERROR, "Enqueue into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %d",
-                                                              a_es->uuid, GetLastError()), 0 );
+            ? a_size : ( DAP_ALFREE(l_entry), log_it(L_ERROR, "Enqueue into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %lu",
+                                                              a_es->uuid, (unsigned long)GetLastError()), 0 );
 }
 #endif
 
@@ -248,9 +254,9 @@ static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
 #ifdef DAP_SYS_DEBUG
     pthread_rwlock_wrlock(&s_evsocks_lock);
     dap_events_socket_t *l_es = NULL;
-    HASH_FIND(hh2, s_esockets, &a_es->uuid, sizeof(l_es->uuid), l_es);
+    dap_ht_find_hh(hh2, s_esockets, &a_es->uuid, sizeof(a_es->uuid), l_es);
     if (l_es)
-        HASH_DELETE(hh2, s_esockets, l_es); /* Remove record from the table */
+        dap_ht_del_hh(hh2, s_esockets, l_es); /* Remove record from the table */
     pthread_rwlock_unlock(&s_evsocks_lock);
     if (!l_es)
         log_it(L_ERROR, "dap_events_socket:%p - uuid %zu not found", a_es, a_es->uuid);
@@ -275,11 +281,6 @@ int dap_events_socket_init( void )
         dap_memstat_reg(&s_memstat[i]);
 #endif
 
-
-    /*
-     * @RRL: #6157
-     * Use this thread's attribute to eliminate resource consuming by terminated threads
-     */
     pthread_attr_init(&s_attr_detached);
     pthread_attr_setdetachstate(&s_attr_detached, PTHREAD_CREATE_DETACHED);
 
@@ -372,7 +373,7 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
  */
 void dap_events_socket_assign_on_worker(dap_events_socket_t * a_es, struct dap_worker * a_worker)
 {
-    a_es->last_ping_request = time(NULL);
+    a_es->last_ping_request = dap_time_now();
    // log_it(L_DEBUG, "Assigned %p on worker %u", a_es, a_worker->id);
     dap_worker_add_events_socket(a_worker, a_es);
 }
@@ -407,7 +408,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
     if (a_worker_old == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker_old->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker_old->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker_old->id);
             return;
         }
         dap_events_socket_reassign_between_workers_unsafe(l_es, a_worker_new);
@@ -418,7 +419,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
     ol->ol.Internal = a_es_uuid;
     ol->op = io_call;
     if ( !PostQueuedCompletionStatus(a_worker_old->context->iocp, 0, (ULONG_PTR)s_es_reassign, (OVERLAPPED*)ol) ) {
-        log_it(L_ERROR, "Can't reassign es % " DAP_UINT64_FORMAT_x ",  error %d", a_es_uuid, GetLastError());
+        log_it(L_ERROR, "Can't reassign es %"DAP_UINT64_FORMAT_x",  error %lu", a_es_uuid, (unsigned long)GetLastError());
         dap_overlapped_free(ol);
     }
     return;
@@ -432,7 +433,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
     l_msg->worker_new = a_worker_new;
     if( dap_events_socket_queue_ptr_send(a_worker_old->queue_es_reassign, l_msg) != 0 ){
 #ifdef DAP_OS_WINDOWS
-        log_it(L_ERROR,"Haven't sent reassign message with esocket %"DAP_UINT64_FORMAT_U, a_es ? a_es->socket : (SOCKET)-1);
+        log_it(L_ERROR,"Haven't sent reassign message with esocket %" DAP_FORMAT_SOCKET, a_es ? a_es->socket : (SOCKET)-1);
 #else
         log_it(L_ERROR,"Haven't sent reassign message with esocket %" DAP_UINT64_FORMAT_x, a_es_uuid);
 #endif
@@ -452,7 +453,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
  */
 dap_events_socket_t * dap_events_socket_create_type_pipe(dap_worker_t *a_w, dap_events_socket_callback_t a_callback, uint32_t a_flags)
 {
-    dap_events_socket_t *l_es = dap_context_create_pipe(NULL, a_callback, a_flags);
+    dap_events_socket_t *l_es = dap_context_create_pipe(a_w ? a_w->context : NULL, a_callback, a_flags);
     // If no worker - don't assign
     if (a_w)
         dap_events_socket_assign_on_worker(l_es, a_w);
@@ -521,6 +522,84 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
 }
 
 /**
+ * @brief dap_events_socket_create_platform Create socket with explicit domain/type/protocol
+ */
+dap_events_socket_t *dap_events_socket_create_platform(int a_domain, int a_type, int a_protocol,
+                                                       dap_events_socket_callbacks_t *a_callbacks)
+{
+    if (!a_callbacks) return NULL;
+#ifdef DAP_OS_WINDOWS
+    SOCKET l_sock = socket(a_domain, a_type, a_protocol);
+    if (l_sock == INVALID_SOCKET) {
+        log_it(L_ERROR, "socket() failed: %d", WSAGetLastError());
+        return NULL;
+    }
+    u_long l_flags = 1;
+    if (ioctlsocket(l_sock, (long)FIONBIO, &l_flags)) {
+        log_it(L_ERROR, "FIONBIO failed: %d", WSAGetLastError());
+        closesocket(l_sock);
+        return NULL;
+    }
+#else
+    int l_sock = socket(a_domain, a_type, a_protocol);
+    if (l_sock == INVALID_SOCKET) {
+        log_it(L_ERROR, "socket() failed: errno=%d", errno);
+        return NULL;
+    }
+    int l_flags = fcntl(l_sock, F_GETFL);
+    if (l_flags >= 0)
+        fcntl(l_sock, F_SETFL, l_flags | O_NONBLOCK);
+#endif
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_sock, a_callbacks);
+    if (!l_es) {
+        closesocket(l_sock);
+        return NULL;
+    }
+    l_es->type = (a_type == SOCK_DGRAM) ? DESCRIPTOR_TYPE_SOCKET_UDP : DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    return l_es;
+}
+
+/**
+ * @brief dap_events_socket_resolve_and_set_addr Resolve host and set address for connect
+ */
+int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port)
+{
+    if (!a_es || !a_host) return -1;
+    int l_ret = dap_net_resolve_host(a_host, dap_itoa(a_port), false, &a_es->addr_storage, NULL);
+    if (l_ret < 0) {
+        log_it(L_ERROR, "dap_net_resolve_host failed for %s:%u", a_host, a_port);
+        return -1;
+    }
+    a_es->addr_size = (socklen_t)l_ret;
+    dap_strncpy(a_es->remote_addr_str, a_host, DAP_HOSTADDR_STRLEN - 1);
+    a_es->remote_addr_str[DAP_HOSTADDR_STRLEN - 1] = '\0';
+    a_es->remote_port = a_port;
+    return 0;
+}
+
+/**
+ * @brief dap_events_socket_connect Initiate non-blocking connect
+ * @return 0 on success or EINPROGRESS, -1 on immediate failure (a_err_out set)
+ */
+int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_err_out)
+{
+    if (!a_es || !a_err_out) return -1;
+    *a_err_out = 0;
+    int l_ret = connect(a_es->socket, (struct sockaddr *)&a_es->addr_storage, a_es->addr_size);
+    if (l_ret == 0) return 0;
+#ifdef DAP_OS_WINDOWS
+    int l_err = WSAGetLastError();
+    if (l_err == WSAEWOULDBLOCK || l_err == WSAEINPROGRESS) return 0;
+    *a_err_out = l_err;
+    return -1;
+#else
+    if (errno == EINPROGRESS || errno == EINTR) return 0;
+    *a_err_out = errno;
+    return -1;
+#endif
+}
+
+/**
  * @brief s_socket_type_queue_ptr_input_callback_delete
  * @param a_es
  * @param a_arg
@@ -545,7 +624,7 @@ static void s_socket_type_queue_ptr_input_callback_delete(dap_events_socket_t * 
  */
 dap_events_socket_t * dap_events_socket_create_type_queue_ptr(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback)
 {
-    dap_events_socket_t * l_es = dap_context_create_queue(NULL, a_callback);
+    dap_events_socket_t * l_es = dap_context_create_queue(a_w ? a_w->context : NULL, a_callback);
     assert(l_es);
     // If no worker - don't assign
     if ( a_w)
@@ -603,7 +682,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             if (l_ret == -1) {
                 switch (errno) {
                 case EAGAIN:
-                    debug_if(g_debug_reactor, L_INFO, "Received and processed %lu callbacks in 1 pass", l_shift / 8);
+                    debug_if(g_debug_reactor, L_INFO, "Received and processed %zd callbacks in 1 pass", l_shift / 8);
                     break;
                 default:
                     return log_it(L_ERROR, "mq_receive error in esocket queue_ptr:\"%s\" code %d", dap_strerror(errno), errno), -1;
@@ -657,7 +736,9 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
 
             a_esocket->callbacks.queue_callback(a_esocket, l_queue_ptr, l_queue_ptr_size);
 #elif !defined(DAP_OS_WINDOWS)
-            read(a_esocket->socket, a_esocket->buf_in, a_esocket->buf_in_size_max );
+            if (read(a_esocket->socket, a_esocket->buf_in, a_esocket->buf_in_size_max) < 0 &&
+                    errno != EAGAIN && errno != EWOULDBLOCK)
+                log_it(L_ERROR, "Queue socket read failed: %s", dap_strerror(errno));
 #endif
         }
     }else{
@@ -679,7 +760,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
  */
 dap_events_socket_t * dap_events_socket_create_type_event(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback)
 {
-    dap_events_socket_t * l_es = dap_context_create_event(NULL, a_callback);
+    dap_events_socket_t * l_es = dap_context_create_event(a_w ? a_w->context : NULL, a_callback);
     // If no worker - don't assign
     if ( a_w)
         dap_events_socket_assign_on_worker(l_es,a_w);
@@ -718,6 +799,15 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
     a_esocket->callbacks.event_callback(a_esocket, a_esocket->kqueue_event_catched_data.value);
 #elif defined DAP_EVENTS_CAPS_IOCP
     a_esocket->callbacks.event_callback(a_esocket, 1);
+#elif defined(DAP_EVENTS_CAPS_EVENT_PIPE)
+        {
+            uint64_t l_value;
+            ssize_t l_ret = read(a_esocket->fd, &l_value, sizeof(l_value));
+            if (l_ret == (ssize_t)sizeof(l_value))
+                a_esocket->callbacks.event_callback(a_esocket, l_value);
+            else if (errno != EAGAIN && errno != EWOULDBLOCK)
+                log_it(L_WARNING, "Can't read from event pipe, error %d: \"%s\"", errno, dap_strerror(errno));
+        }
 #else
 #error "No Queue fetch mechanism implemented on your platform"
 #endif
@@ -926,6 +1016,14 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
         DAP_DELETE(l_es_w_data);
     }
     return l_n;
+#elif defined(DAP_EVENTS_CAPS_EVENT_PIPE)
+    {
+        uint64_t l_val = a_value;
+        ssize_t l_ret = write(a_es->fd2, &l_val, sizeof(l_val));
+        if (l_ret == (ssize_t)sizeof(l_val))
+            return 0;
+        return errno;
+    }
 #else
 #error "Not implemented dap_events_socket_event_signal() for this platform"
 #endif
@@ -958,7 +1056,7 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOC
 #endif
 
     l_es->flags = DAP_SOCK_READY_TO_READ;
-    l_es->last_time_active = l_es->last_ping_request = time( NULL );
+    l_es->last_time_active = l_es->last_ping_request = dap_time_now();
     l_es->buf_in = DAP_NEW_Z_SIZE(byte_t, 2 * sizeof(struct sockaddr_storage) + 32);
     return l_es;
 }
@@ -1046,6 +1144,7 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 #ifdef DAP_EVENTS_CAPS_IOCP
     int l_res = 0;
     const char *func = "Delete";
+    (void)func; // Used only in debug/error messages
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     if (preserve_inheritor)
         a_es->flags |= DAP_SOCK_KEEP_INHERITOR;
@@ -1129,7 +1228,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
             *ol = (dap_overlapped_t){ .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL) };
         }
         ol->op = io_read;
-        WSABUF wsabuf = { .buf = a_es->buf_in + a_es->buf_in_size, .len = a_es->buf_in_size_max - a_es->buf_in_size };
+        WSABUF wsabuf = { .buf = (char*)(a_es->buf_in + a_es->buf_in_size), .len = a_es->buf_in_size_max - a_es->buf_in_size };
 
         switch (a_es->type) {
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
@@ -1155,7 +1254,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
             u_long l_option = 1;
             if ( setsockopt(a_es->socket2, SOL_SOCKET, SO_REUSEADDR, (const char*)&l_option, sizeof(int)) < 0 ) {
                 _set_errno( WSAGetLastError() );
-                log_it(L_ERROR, "setsockopt(SO_REUSEADDR) on socket %d failed, error %d: \"%s\"",
+                log_it(L_ERROR, "setsockopt(SO_REUSEADDR) on socket %"DAP_FORMAT_SOCKET" failed, error %d: \"%s\"",
                                 a_es->socket2, errno, dap_strerror(errno));
             }
             l_err = pfnAcceptEx( a_es->socket, a_es->socket2, (LPVOID)(a_es->buf_in), 0,
@@ -1288,8 +1387,8 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_es, bool a
         return;
     default:
         --a_es->pending_write;
-        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %ld: \"%s\"",
-                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err, dap_strerror(l_err));
+        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %lu: \"%s\"",
+                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, (unsigned long)l_err, dap_strerror(l_err));
         if ( a_es->callbacks.error_callback )
             a_es->callbacks.error_callback(a_es, l_err);
         if ( !a_es->no_close )
@@ -1329,7 +1428,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS ){
                 if (l_errno == EBADF){
-                    log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
+                    log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %zu:%zu"
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
                     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
@@ -1377,7 +1476,7 @@ void dap_events_socket_set_writable_unsafe(dap_events_socket_t *a_esocket, bool 
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS && l_errno != ENOENT ){
                 if (l_errno == EBADF){
-                    log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
+                    log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %zu:%zu"
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
                     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
@@ -1445,8 +1544,9 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         l_ret = -l_ret;
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
     struct timespec l_timeout;
-    clock_gettime(CLOCK_REALTIME, &l_timeout);
-    l_timeout.tv_sec+=2; // Not wait more than 1 second to get and 2 to send
+    dap_nanotime_t now_ns = dap_nanotime_now();
+    l_timeout.tv_sec = dap_nanotime_to_sec(now_ns) + 2; // Not wait more than 1 second to get and 2 to send
+    l_timeout.tv_nsec = now_ns % DAP_NSEC_PER_SEC;
     int ret = mq_timedsend(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0, &l_timeout );
     int l_errno = errno;
     if (ret == sizeof(a_arg) )
@@ -1472,7 +1572,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     int l_n;
     if(a_es->pipe_out){ // If we have pipe out - we send events directly to the pipe out kqueue fd
         if(a_es->pipe_out->context){
-            if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to pipe_out worker on esocket %d",a_arg,a_es);
+            if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to pipe_out worker on esocket %p",a_arg,a_es);
             l_n = kevent(a_es->pipe_out->context->kqueue_fd,&l_event,1,NULL,0,NULL);
         }
         else {
@@ -1482,7 +1582,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         }
     }else if(a_es->context){
         l_n = kevent(a_es->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %d",a_arg,a_es);
+        if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %p",a_arg,a_es);
     }else {
         log_it(L_WARNING,"Trying to send pointer in queue thats not assigned to any worker or proc thread");
         l_n = 0;
@@ -1537,7 +1637,7 @@ void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_sock
     if (a_worker == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             return;
         }
         dap_events_socket_remove_and_delete_unsafe(l_es, false);
@@ -1549,8 +1649,8 @@ void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_sock
     ol->ol.OffsetHigh = 1;
     ol->op = io_call;
     if ( !PostQueuedCompletionStatus(a_worker->context->iocp, 0, (ULONG_PTR)s_es_set_flag, (OVERLAPPED*)ol) ) {
-        log_it(L_ERROR, "Can't schedule deletion of %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
-               a_es_uuid, a_worker->context->id, GetLastError());
+        log_it(L_ERROR, "Can't schedule deletion of %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
+               a_es_uuid, a_worker->context->id, (unsigned long)GetLastError());
         dap_overlapped_free(ol);
     }
 #else
@@ -1580,7 +1680,7 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
     if (a_worker == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             return;
         }
         return dap_events_socket_set_readable_unsafe(l_es, a_is_ready);
@@ -1592,8 +1692,8 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
     ol->ol.OffsetHigh = (DWORD)a_is_ready;
     ol->op = io_call;
     if ( !PostQueuedCompletionStatus(a_worker->context->iocp, 0, (ULONG_PTR)s_es_set_flag, (OVERLAPPED*)ol) ) {
-        log_it(L_ERROR, "Can't schedule reading from %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
-               a_es_uuid, a_worker->context->id, GetLastError());
+        log_it(L_ERROR, "Can't schedule reading from %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
+               a_es_uuid, a_worker->context->id, (unsigned long)GetLastError());
         dap_overlapped_free(ol);
     }
 #else
@@ -1624,7 +1724,7 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
     if (a_worker == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             return;
         }
         return dap_events_socket_set_writable_unsafe(l_es, a_is_ready);
@@ -1636,8 +1736,8 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
     ol->ol.OffsetHigh = (DWORD)a_is_ready;
     ol->op = io_call;
     if ( !PostQueuedCompletionStatus(a_worker->context->iocp, 0, (ULONG_PTR)s_es_set_flag, (OVERLAPPED*)ol) ) {
-        log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
-               a_es_uuid, a_worker->context->id, GetLastError());
+        log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
+               a_es_uuid, a_worker->context->id, (unsigned long)GetLastError());
         dap_overlapped_free(ol);
     }
 #else
@@ -1679,11 +1779,11 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
     *ol = (dap_overlapped_t) { .op = io_write };
     memcpy(ol->buf, a_data, a_data_size);
-    debug_if(g_debug_reactor, L_INFO, "Write %lu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_worker->id);
+    debug_if(g_debug_reactor, L_INFO, "Write %zu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_worker->id);
     return PostQueuedCompletionStatus(a_worker->context->iocp, a_data_size, (ULONG_PTR)a_es_uuid, (OVERLAPPED*)ol)
         ? a_data_size
-        : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
-                                   a_es_uuid, a_worker->context->id, GetLastError()), 0 );
+        : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
+                                   a_es_uuid, a_worker->context->id, (unsigned long)GetLastError()), 0 );
 #else
     dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
     l_msg->esocket_uuid = a_es_uuid;
@@ -1724,8 +1824,8 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
     vsprintf(ol->buf, a_format, ap_copy);
     return PostQueuedCompletionStatus(a_worker->context->iocp, l_data_size, a_es_uuid, (OVERLAPPED*)ol)
         ? l_data_size
-        : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
-               a_es_uuid, a_worker->context->id, GetLastError()), 0 );
+        : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %lu",
+               a_es_uuid, a_worker->context->id, (unsigned long)GetLastError()), 0 );
 #else
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     if (!l_msg) {
@@ -1749,7 +1849,7 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
     if (a_worker == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
         if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            log_it(L_WARNING, "UUID %" DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_es_uuid, a_worker->id);
             return 0;
         }
         size_t ret = dap_events_socket_write_unsafe(l_es, l_msg->data, l_msg->data_size);
@@ -1769,6 +1869,41 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
  * @param a_data_size Size of data to write
  * @return Number of bytes that were placed into the buffer
  */
+/**
+ * @brief dap_events_socket_sendto_unsafe Send UDP datagram to explicit address
+ * @param a_es UDP esocket (DESCRIPTOR_TYPE_SOCKET_UDP)
+ * @param a_data Data to send
+ * @param a_size Data size
+ * @param a_addr Destination address
+ * @param a_addr_len Address length
+ * @return Number of bytes sent, or 0 on error
+ */
+size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_size,
+                                        const struct sockaddr_storage *a_addr, socklen_t a_addr_len)
+{
+    if (!a_es || !a_data || !a_addr) {
+        log_it(L_ERROR, "dap_events_socket_sendto_unsafe: invalid args");
+        return 0;
+    }
+    if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && a_es->type != DESCRIPTOR_TYPE_SOCKET_RAW) {
+        log_it(L_WARNING, "dap_events_socket_sendto_unsafe: socket type %d not UDP/RAW", a_es->type);
+        return 0;
+    }
+#ifdef DAP_EVENTS_CAPS_IOCP
+    log_it(L_WARNING, "dap_events_socket_sendto_unsafe: IOCP UDP sendto not implemented");
+    return 0;
+#else
+    ssize_t l_sent = sendto(a_es->socket, (const char *)a_data, a_size,
+                            MSG_DONTWAIT | MSG_NOSIGNAL,
+                            (const struct sockaddr *)a_addr, a_addr_len);
+    if (l_sent < 0) {
+        log_it(L_DEBUG, "dap_events_socket_sendto_unsafe: sendto failed errno=%d", errno);
+        return 0;
+    }
+    return (size_t)l_sent;
+#endif
+}
+
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size)
 {
     if (!a_es) {

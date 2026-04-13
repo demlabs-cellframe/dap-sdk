@@ -29,7 +29,7 @@ extern "C"{
 #endif
 
 #include <stdbool.h>
-#include "../../../3rdparty/uthash/src/uthash.h"
+#include "dap_ht.h"
 #include "dap_config.h"
 
 typedef struct dap_plugin_manifest{
@@ -55,14 +55,14 @@ typedef struct dap_plugin_manifest{
     // Builtin plugin
     bool is_builtin; // Doesn't allow to unload if true
 
-    // uthash handle
-    UT_hash_handle hh;
+    // hash table handle
+    dap_ht_handle_t hh;
 }dap_plugin_manifest_t;
 
 typedef struct dap_plugin_manifest_dependence{
     char name[64];
     dap_plugin_manifest_t * manifest;
-    UT_hash_handle hh;
+    dap_ht_handle_t hh;
 }dap_plugin_manifest_dependence_t;
 
 int dap_plugin_manifest_init();

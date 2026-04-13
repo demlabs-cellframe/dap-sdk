@@ -1,9 +1,8 @@
 /*
  * Authors:
  * Dmitriy A. Gearasimov <gerasimov.dmitriy@demlabs.net>
- * DeM Labs Inc.   https://demlabs.net    https:/gitlab.com/demlabs
- * Kelvin Project https://github.com/kelvinblockchain
- * Copyright  (c) 2017-2018
+ * DeM Labs Inc.   https://demlabs.net   
+ * Copyright  (c) 2018
  * All rights reserved.
 
  This file is part of DAP (Distributed Applications Platform) the open source project
@@ -44,6 +43,8 @@ enum dap_sign_type_enum {
     SIG_TYPE_SHIPOVNIK = 0x0106,
     SIG_TYPE_CHIPMUNK = 0x0107, /// @brief Chipmunk signature
     SIG_TYPE_CHIPMUNK_RING = 0x0108, /// @brief Chipmunk ring signature
+    SIG_TYPE_NTRU_PRIME = 0x0113,
+    SIG_TYPE_ML_DSA = 0x0201,
 #ifdef DAP_PQLR
     SIG_TYPE_PQLR_DILITHIUM = 0x1102,
     SIG_TYPE_PQLR_FALCON = 0x1103,
@@ -71,10 +72,22 @@ typedef union dap_sign_type {
     uint32_t raw;
 } DAP_ALIGN_PACKED dap_sign_type_t;
 
+/**
+ * @brief NIST security category for parameterized algorithms (ML-DSA, ML-KEM, etc.)
+ * Stored in dap_sign_hdr_t.sign_params. Zero means NIST-recommended default.
+ */
+#define DAP_SIGN_PARAMS_DEFAULT      0x00
+#define DAP_SIGN_PARAMS_SECURITY_2   0x01  ///< Category 2 — ML-DSA-44, ML-KEM-512
+#define DAP_SIGN_PARAMS_SECURITY_3   0x02  ///< Category 3 — ML-DSA-65, ML-KEM-768 (NIST recommended)
+#define DAP_SIGN_PARAMS_SECURITY_5   0x03  ///< Category 5 — ML-DSA-87, ML-KEM-1024
+
+#define DAP_SIGN_PARAMS_SECURITY_MASK  0x03
+#define DAP_SIGN_PARAMS_SECURITY_DEFAULT  DAP_SIGN_PARAMS_SECURITY_3
+
 typedef struct dap_sign_hdr {
         dap_sign_type_t type; /// Signature type
         uint8_t hash_type;
-        uint8_t padding;
+        uint8_t sign_params; /// Algorithm parameters (security level flags, etc.)
         uint32_t sign_size; /// Signature size
         uint32_t sign_pkey_size; /// Signature serialized public key size
 } DAP_ALIGN_PACKED dap_sign_hdr_t;
@@ -184,7 +197,7 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
 
 uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size);
 uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_size);
-bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_hash_fast_t *a_sign_hash);
+bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_hash_sha3_256_t *a_sign_hash);
 bool dap_sign_compare_pkeys(dap_sign_t *a_sign1, dap_sign_t *a_sign2);
 
 dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t *a_pkey);
@@ -197,7 +210,7 @@ DAP_STATIC_INLINE dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
 
 const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type);
 dap_sign_type_t dap_sign_type_from_str(const char * a_type_str);
-bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type);
+bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type);
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count);
 
 void dap_sign_get_information(dap_sign_t *a_sign, dap_string_t *a_str_out, const char *a_hash_out_type);

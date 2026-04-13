@@ -93,7 +93,7 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *a_response);
  * @return A pointer to the created dap_json_rpc_response_t string representation, 
  *         or NULL if parsing or memory allocation fails.
  */
-char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response);
+char *dap_json_rpc_response_to_string(dap_json_rpc_response_t *a_response);
 
 /**
  * Convert a JSON string representation to a dap_json_rpc_response_t structure.
@@ -117,7 +117,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
  *         -2 if the JSON object is NULL,
  *         and -3 if the JSON object length is 0.
  */
-int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name);
+int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt);
 
 #ifdef __cplusplus
 }

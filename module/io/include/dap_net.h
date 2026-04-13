@@ -23,17 +23,14 @@
 #pragma once
 
 #ifdef WIN32
-// for Windows
 #include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>
 #include <ws2tcpip.h>
 #include <io.h>
-
 #define s6_addr32 s6_addr
 #define herror perror
 #else
-// for Unix-like systems
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -42,6 +39,7 @@
 #endif
 
 #include "dap_events_socket.h"
+#include "dap_net_common.h"
 
 #define DAP_CFG_PARAM_LISTEN_ADDRS      "listen-address"
 #define DAP_CFG_PARAM_SOCK_PATH         "listen-path"
@@ -51,7 +49,7 @@
 #define DAP_CFG_PARAM_BLACK_LIST        "black-list"
 
 typedef struct dap_link_info {
-    dap_stream_node_addr_t node_addr;
+    dap_cluster_node_addr_t node_addr;
     char uplink_addr[DAP_HOSTADDR_STRLEN];
     uint16_t uplink_port;
 } DAP_ALIGN_PACKED dap_link_info_t;

@@ -55,176 +55,7 @@ char* dap_strcat2(const char* s1, const char* s2)
 
 
 
-/**
- * @brief s_strdigit
- * @param c
- * @return
- */
-static int s_strdigit(char c)
-{
-    /* This is ASCII / UTF-8 specific, would not work for EBCDIC */
-    return (c >= '0' && c <= '9') ? c - '0'
-        :  (c >= 'a' && c <= 'z') ? c - 'a' + 10
-        :  (c >= 'A' && c <= 'Z') ? c - 'A' + 10
-        :  255;
-}
-
-#ifdef DAP_GLOBAL_IS_INT128
-
-/**
- * @brief s_strtou128
- * @param p
- * @param endp
- * @param base
- * @return
- */
-static uint128_t s_strtou128(const char *p, char **endp, int base)
-{
-    uint128_t v = 0;
-    int digit;
-
-    if (base == 0) {    /* handle octal and hexadecimal syntax */
-        base = 10;
-        if (*p == '0') {
-            base = 8;
-            if ((p[1] == 'x' || p[1] == 'X') && s_strdigit(p[2]) < 16) {
-                p += 2;
-                base = 16;
-            }
-        }
-    }
-    if (base < 2 || base > 36) {
-        errno = EINVAL;
-    } else
-    if ((digit = s_strdigit(*p)) < base) {
-        v = digit;
-        /* convert to unsigned 128 bit with overflow control */
-        while ((digit = s_strdigit(*++p)) < base) {
-            uint128_t v0 = v;
-            v = v * base + digit;
-            if (v < v0) {
-                v = ~(uint128_t)0;
-                errno = ERANGE;
-            }
-        }
-        if (endp) {
-            *endp = (char *)p;
-        }
-    }
-    return v;
-}
-
-/**
- * @brief dap_strtou128
- * @param p
- * @param endp
- * @param base
- * @return
- */
-uint128_t dap_strtou128(const char *p, char **endp, int base)
-{
-    if (endp) {
-        *endp = (char *)p;
-    }
-    while (isspace((unsigned char)*p)) {
-        p++;
-    }
-    if (*p == '-') {
-        p++;
-        return -s_strtou128(p, endp, base);
-    } else {
-        if (*p == '+')
-            p++;
-        return s_strtou128(p, endp, base);
-    }
-}
-
-/**
- * @brief dap_strtoi128
- * @param p
- * @param endp
- * @param base
- * @return
- */
-int128_t dap_strtoi128(const char *p, char **endp, int base)
-{
-    uint128_t v;
-
-    if (endp) {
-        *endp = (char *)p;
-    }
-    while (isspace((unsigned char)*p)) {
-        p++;
-    }
-    if (*p == '-') {
-        p++;
-        v = s_strtou128(p, endp, base);
-        if (v >= (uint128_t)1 << 127) {
-            if (v > (uint128_t)1 << 127)
-                errno = ERANGE;
-            return -(int128_t)(((uint128_t)1 << 127) - 1) - 1;
-        }
-        return -(int128_t)v;
-    } else {
-        if (*p == '+')
-            p++;
-        v = s_strtou128(p, endp, base);
-        if (v >= (uint128_t)1 << 127) {
-            errno = ERANGE;
-            return (int128_t)(((uint128_t)1 << 127) - 1);
-        }
-        return (int128_t)v;
-    }
-}
-/**
- * @brief dap_utoa128 convert unsigned integer to ASCII 
- * @param dest
- * @param v
- * @param base
- * @return
- */
-char *dap_utoa128(char *dest, uint128_t v, int base)
-{
-    char buf[129], *p = buf + 128;
-    const char *digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-    *p = '\0';
-    if (base >= 2 && base <= 36) {
-        while (v > (unsigned)base - 1) {
-            *--p = digits[v % base];
-            v /= base;
-        }
-        *--p = digits[v];
-    }
-    return strcpy(dest, p);
-}
-
-/**
- * @brief dap_itoa128
- * 
- * @param a_str 
- * @param a_value 
- * @param a_base 
- * @return char* 
- */
-char *dap_itoa128(char *a_str, int128_t a_value, int a_base)
-{
-    char *p = a_str;
-    uint128_t uv = (uint128_t)a_value;
-    if (a_value < 0) {
-        *p++ = '-';
-        uv = -uv;
-    }
-    if (a_base == 10)
-        dap_utoa128(p, uv, 10);
-    else
-    if (a_base == 16)
-        dap_utoa128(p, uv, 16);
-    else
-        dap_utoa128(p, uv, a_base);
-    return a_str;
-}
-#endif
+// Note: 128-bit string conversion functions moved to dap_math_str.c in module/math
 
 /**
  * dap_strlen:
@@ -624,6 +455,7 @@ char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tok
 {
     dap_list_t *l_string_list = NULL, *l_slist;
     char **l_str_array, *l_s;
+    size_t l_delimiter_len;
     uint32_t l_n = 1;
 
     dap_return_val_if_fail(a_string != NULL, NULL);
@@ -632,26 +464,30 @@ char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tok
     if(a_max_tokens < 1)
         a_max_tokens = INT_MAX;
 
+    l_delimiter_len = strlen(a_delimiter);
+    if(l_delimiter_len == 0) {
+        l_str_array = DAP_NEW_SIZE(char*, 2 * sizeof(char*));
+        dap_return_val_if_fail(l_str_array != NULL, NULL);
+        l_str_array[0] = dap_strdup(a_string);
+        l_str_array[1] = NULL;
+        return l_str_array;
+    }
+
     l_s = strstr(a_string, a_delimiter);
-    if(l_s)
+    while(l_s && a_max_tokens > 1)
     {
-        uint32_t delimiter_len = (uint32_t) strlen(a_delimiter);
+        size_t len;
+        char *new_string;
 
-        do
-        {
-            uint32_t len;
-            char *new_string;
-
-            len = (uint32_t) (l_s - a_string);
-            new_string = DAP_NEW_Z_SIZE(char, len + 1);
-            strncpy(new_string, a_string, len);
-            new_string[len] = 0;
-            l_string_list = dap_list_prepend(l_string_list, new_string);
-            l_n++;
-            a_string = l_s + delimiter_len;
-            l_s = strstr(a_string, a_delimiter);
-        }
-        while(--a_max_tokens && l_s);
+        len = (size_t) (l_s - a_string);
+        new_string = DAP_NEW_Z_SIZE(char, len + 1);
+        strncpy(new_string, a_string, len);
+        new_string[len] = 0;
+        l_string_list = dap_list_prepend(l_string_list, new_string);
+        l_n++;
+        a_string = l_s + l_delimiter_len;
+        l_s = strstr(a_string, a_delimiter);
+        a_max_tokens--;
     }
     l_string_list = dap_list_prepend(l_string_list, dap_strdup(a_string));
 
@@ -972,6 +808,8 @@ char *_strndup(const char *str, unsigned long len) {
     if (buf)
         len = buf - str;
     buf = (char*)malloc(len + 1);
+    if (!buf)
+        return NULL;
     memcpy(buf, str, len);
     buf[len] = '\0';
     return buf;
@@ -1197,12 +1035,14 @@ char* dap_utf16_to_utf8(const unichar2 *str, long len, long *items_read, long *i
  * @param a_ch1 - char to replace
  * @return Returns a string with the replaced character
  */
-char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2)
+char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2, bool a_str_dup)
 {
 // sanity check
     dap_return_val_if_pass(!a_src, NULL);
 // func work
-    char *l_dst = dap_strdup(a_src), *l_str;
+    char 
+        *l_dst = a_str_dup ? dap_strdup(a_src) : (char *)a_src, 
+        *l_str;
     for ( l_str = l_dst; (l_str = strchr(l_str, a_ch1)); l_str++)
         *l_str = a_ch2;
     return l_dst;

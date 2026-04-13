@@ -30,10 +30,16 @@
  * @details Common JSON test data and utilities for unit tests
  */
 
-// Sample JSON strings for testing
-static const char* JSON_SAMPLE_SIMPLE = "{\"name\":\"test\",\"value\":123}";
+#ifdef __GNUC__
+#define DAP_TEST_UNUSED __attribute__((unused))
+#else
+#define DAP_TEST_UNUSED
+#endif
 
-static const char* JSON_SAMPLE_NESTED = "{"
+// Sample JSON strings for testing
+DAP_TEST_UNUSED static const char* JSON_SAMPLE_SIMPLE = "{\"name\":\"test\",\"value\":123}";
+
+DAP_TEST_UNUSED static const char* JSON_SAMPLE_NESTED = "{"
     "\"user\":{"
         "\"id\":1,"
         "\"name\":\"John\","
@@ -42,12 +48,12 @@ static const char* JSON_SAMPLE_NESTED = "{"
     "\"status\":\"active\""
 "}";
 
-static const char* JSON_SAMPLE_ARRAY = "{"
+DAP_TEST_UNUSED static const char* JSON_SAMPLE_ARRAY = "{"
     "\"numbers\":[1,2,3,4,5],"
     "\"strings\":[\"a\",\"b\",\"c\"]"
 "}";
 
-static const char* JSON_SAMPLE_COMPLEX = "{"
+DAP_TEST_UNUSED static const char* JSON_SAMPLE_COMPLEX = "{"
     "\"crypto\":{"
         "\"algorithm\":\"dilithium\","
         "\"key_size\":2048,"
@@ -63,11 +69,10 @@ static const char* JSON_SAMPLE_COMPLEX = "{"
 "}";
 
 // Invalid JSON samples for error testing
-static const char* JSON_SAMPLE_INVALID_SYNTAX = "{\"name\":\"test\",\"value\":}";
-static const char* JSON_SAMPLE_INVALID_EMPTY = "";
-static const char* JSON_SAMPLE_INVALID_NULL = NULL;
+DAP_TEST_UNUSED static const char* JSON_SAMPLE_INVALID_SYNTAX = "{\"name\":\"test\",\"value\":}";
+DAP_TEST_UNUSED static const char* JSON_SAMPLE_INVALID_EMPTY = "";
+DAP_TEST_UNUSED static const char* JSON_SAMPLE_INVALID_NULL = NULL;
 
 // Crypto test data samples
-static const char* CRYPTO_SAMPLE_HASH_INPUT = "DAP SDK test data for hashing";
-static const char* CRYPTO_SAMPLE_SIGN_MESSAGE = "Message to be signed with post-quantum algorithms";
-
+DAP_TEST_UNUSED static const char* CRYPTO_SAMPLE_HASH_INPUT = "DAP SDK test data for hashing";
+DAP_TEST_UNUSED static const char* CRYPTO_SAMPLE_SIGN_MESSAGE = "Message to be signed with post-quantum algorithms";

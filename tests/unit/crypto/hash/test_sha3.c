@@ -26,6 +26,7 @@
 #include "dap_hash.h"
 #include "../../../fixtures/utilities/test_helpers.h"
 #include "../../../fixtures/json_samples.h"
+#include <inttypes.h>
 
 #define LOG_TAG "test_sha3"
 
@@ -37,10 +38,10 @@ static bool s_test_sha3_256_basic(void) {
     
     const char* l_input = CRYPTO_SAMPLE_HASH_INPUT;
     size_t l_input_size = strlen(l_input);
-    dap_hash_fast_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     
     // Test hash calculation
-    bool l_ret = dap_hash_fast(l_input, l_input_size, &l_hash);
+    bool l_ret = dap_hash_sha3_256(l_input, l_input_size, &l_hash);
     DAP_TEST_ASSERT(l_ret == true, "SHA3-256 hash calculation should succeed");
     
     // Verify hash is not all zeros
@@ -65,18 +66,18 @@ static bool s_test_sha3_256_consistency(void) {
     
     const char* l_input = "DAP SDK consistent hash test";
     size_t l_input_size = strlen(l_input);
-    dap_hash_fast_t l_hash1 = {0};
-    dap_hash_fast_t l_hash2 = {0};
+    dap_hash_sha3_256_t l_hash1 = {0};
+    dap_hash_sha3_256_t l_hash2 = {0};
     
     // Calculate hash twice
-    bool l_ret1 = dap_hash_fast(l_input, l_input_size, &l_hash1);
-    bool l_ret2 = dap_hash_fast(l_input, l_input_size, &l_hash2);
+    bool l_ret1 = dap_hash_sha3_256(l_input, l_input_size, &l_hash1);
+    bool l_ret2 = dap_hash_sha3_256(l_input, l_input_size, &l_hash2);
     
     DAP_TEST_ASSERT(l_ret1 == true, "First hash calculation should succeed");
     DAP_TEST_ASSERT(l_ret2 == true, "Second hash calculation should succeed");
     
     // Verify hashes are identical
-    int l_cmp = memcmp(&l_hash1, &l_hash2, sizeof(dap_hash_fast_t));
+    int l_cmp = memcmp(&l_hash1, &l_hash2, sizeof(dap_hash_sha3_256_t));
     DAP_TEST_ASSERT(l_cmp == 0, "Consistent input should produce identical hashes");
     
     log_it(L_DEBUG, "SHA3-256 consistency test passed");
@@ -89,10 +90,10 @@ static bool s_test_sha3_256_consistency(void) {
 static bool s_test_sha3_256_empty(void) {
     log_it(L_DEBUG, "Testing SHA3-256 with empty input");
     
-    dap_hash_fast_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     
-    // Test with empty string
-    bool l_ret = dap_hash_fast("", 0, &l_hash);
+    // Test with empty string (NULL pointer with size 0)
+    bool l_ret = dap_hash_sha3_256(NULL, 0, &l_hash);
     DAP_TEST_ASSERT(l_ret == true, "Hash of empty string should succeed");
     
     log_it(L_DEBUG, "SHA3-256 empty input test passed");
@@ -108,20 +109,20 @@ static bool s_test_sha3_256_performance(void) {
     const size_t l_iterations = 1000;
     const char* l_input = CRYPTO_SAMPLE_HASH_INPUT;
     size_t l_input_size = strlen(l_input);
-    dap_hash_fast_t l_hash = {0};
+    dap_hash_sha3_256_t l_hash = {0};
     
     dap_test_timer_t l_timer;
     dap_test_timer_start(&l_timer);
     
     for (size_t i = 0; i < l_iterations; i++) {
-        bool l_ret = dap_hash_fast(l_input, l_input_size, &l_hash);
+        bool l_ret = dap_hash_sha3_256(l_input, l_input_size, &l_hash);
         DAP_TEST_ASSERT(l_ret == true, "Hash calculation should succeed in performance test");
     }
     
     uint64_t l_elapsed = dap_test_timer_stop(&l_timer);
     double l_hashes_per_sec = (double)l_iterations / (l_elapsed / 1000000.0);
     
-    log_it(L_INFO, "SHA3-256 performance: %.2f hashes/sec (%lu iterations in %lu us)", 
+    log_it(L_INFO, "SHA3-256 performance: %.2f hashes/sec (%zu iterations in %" PRIu64 " us)", 
            l_hashes_per_sec, l_iterations, l_elapsed);
     
     // Basic performance threshold (should be able to do at least 100 hashes/sec)

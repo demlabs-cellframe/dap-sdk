@@ -47,6 +47,11 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
+#elif defined(DAP_OS_WASM)
+#include <sys/types.h>
+#include <fcntl.h>
+#include <emscripten.h>
+#include <emscripten/eventloop.h>
 #elif defined (DAP_OS_WINDOWS)
 #include <winsock2.h>
 #include <windows.h>
@@ -70,7 +75,7 @@ typedef struct dap_worker_msg_callback {
 
 static _Thread_local dap_worker_t* s_worker = NULL;
 
-static time_t s_connection_timeout = 60;    // seconds
+static dap_time_t s_connection_timeout = 60;    // seconds
 
 static bool s_socket_all_check_activity( void * a_arg);
 #ifndef DAP_EVENTS_CAPS_IOCP
@@ -127,8 +132,8 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     if (s_worker)
-        return log_it(L_ERROR, "Worker %u is already assigned to current thread %ld",
-                               s_worker->id, s_worker->context->thread_id),
+        return log_it(L_ERROR, "Worker %u is already assigned to current thread %llu",
+                               s_worker->id, (unsigned long long)s_worker->context->thread_id),
             -1;
     s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
@@ -157,8 +162,8 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
     }
 #elif defined DAP_EVENTS_CAPS_IOCP
     if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1)) )
-        return log_it(L_CRITICAL, "Creating IOCP failed! Error %d: \"%s\"",
-                                  GetLastError(), dap_strerror(GetLastError())), -1;
+        return log_it(L_CRITICAL, "Creating IOCP failed! Error %lu: \"%s\"",
+                                  (unsigned long)GetLastError(), dap_strerror(GetLastError())), -1;
 #else
 #error "Unimplemented dap_context_init for this platform"
 #endif
@@ -187,9 +192,8 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
 int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 {
     dap_return_val_if_fail(a_context && a_arg, -1);
-    //TODO add deinit code for queues and others
     dap_context_remove(a_context->event_exit);
-    dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
+    dap_events_socket_delete_unsafe(a_context->event_exit, false);
 
     dap_worker_t *l_worker = a_arg;
     assert(l_worker);
@@ -206,7 +210,7 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:
-            a_esocket->last_time_active = time(NULL);
+            a_esocket->last_time_active = dap_time_now();
 #ifdef SO_INCOMING_CPU
             int l_cpu = a_worker->context->cpu_id;
             setsockopt(a_esocket->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
@@ -282,8 +286,15 @@ static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg
 {
     assert(a_arg);
     dap_events_socket_uuid_t * l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
-    dap_events_socket_t * l_es;
-    if ( (l_es = dap_context_find(a_es->context, *l_es_uuid_ptr)) != NULL ){
+
+    dap_context_t *l_ctx = a_es ? a_es->context : NULL;
+    if (!l_ctx || l_ctx->signal_exit || !l_ctx->esockets) {
+        debug_if(g_debug_reactor, L_INFO, "Skip delete for es %"DAP_UINT64_FORMAT_U" because context is gone", *l_es_uuid_ptr);
+        DAP_DELETE(l_es_uuid_ptr);
+        return;
+    }
+    dap_events_socket_t * l_es = dap_context_find(l_ctx, *l_es_uuid_ptr);
+    if (l_es && l_es->context == l_ctx){
         //l_es->flags |= DAP_SOCK_SIGNAL_CLOSE; // Send signal to socket to kill
         dap_events_socket_remove_and_delete_unsafe(l_es, false);
     }else
@@ -368,7 +379,7 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
 void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
     dap_events_socket_t *l_es = (dap_events_socket_t*)a_ol->Pointer;
     if (!l_es->worker)
-        return log_it(L_ERROR, "Es %p error: worker unset");
+        return log_it(L_ERROR, "Es %p error: worker unset", l_es);
     dap_events_socket_t *l_sought_es = dap_context_find(a_c, l_es->uuid);
     if ( l_sought_es ) {
         if ( l_sought_es == l_es )
@@ -423,7 +434,7 @@ static bool s_socket_all_check_activity( void * a_arg)
 {
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
-    time_t l_curtime = time(NULL); // + 1000;
+    dap_time_t l_curtime = dap_time_now(); // + 1000;
     //dap_ctime_r(&l_curtime, l_curtimebuf);
     //log_it(L_DEBUG,"Check sockets activity on worker #%u at %s", l_worker->id, l_curtimebuf);
     bool l_removed;
@@ -431,8 +442,8 @@ static bool s_socket_all_check_activity( void * a_arg)
         l_removed = false;
         size_t l_esockets_counter = 0;
         dap_events_socket_t *l_es, *l_tmp;
-        HASH_ITER(hh, l_worker->context->esockets, l_es, l_tmp) {
-            u_int l_esockets_count = HASH_CNT(hh, l_worker->context->esockets);
+        dap_ht_foreach(l_worker->context->esockets, l_es, l_tmp) {
+            unsigned l_esockets_count = dap_ht_count(l_worker->context->esockets);
             if (l_esockets_counter >= l_worker->context->event_sockets_count || l_esockets_counter++ >= l_esockets_count){
                 log_it(L_ERROR, "Something wrong with context's esocket table: %u esockets in context, %u in table but we're on %zu iteration",
                        l_worker->context->event_sockets_count, l_esockets_count, l_esockets_counter);
@@ -442,8 +453,9 @@ static bool s_socket_all_check_activity( void * a_arg)
                     !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
                      l_curtime >= l_es->last_time_active + s_connection_timeout &&
                     !l_es->no_close) {
+                dap_time_t l_diff = l_curtime - l_es->last_time_active - s_connection_timeout;
                 log_it( L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
-                                l_es->socket, l_curtime -  (time_t)l_es->last_time_active - s_connection_timeout );
+                                l_es->socket, l_diff );
                 if (l_es->callbacks.error_callback) {
                     l_es->callbacks.error_callback(l_es, ETIMEDOUT);
                 }
@@ -468,7 +480,7 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
     const char *l_type_str = dap_events_socket_get_type_str(a_events_socket);
     SOCKET l_s = a_events_socket->socket;
     dap_events_socket_uuid_t l_uuid = a_events_socket->uuid;
-#ifdef DAP_EVENTS_CAPS_IOCP
+#if defined(DAP_EVENTS_CAPS_IOCP)
     a_events_socket->worker = a_worker;
     if ( dap_worker_get_current() == a_worker )
         s_es_assign_to_context(a_worker->context, &(OVERLAPPED){ .Pointer = a_events_socket });
@@ -511,7 +523,43 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
     if ( dap_events_socket_queue_ptr_send( a_worker->queue_callback, l_msg ) )
         log_it(L_ERROR, "Cant send pointer to queue input: \"%s\"(code %d)",
                         dap_strerror(errno), errno);
+}
 
+typedef struct {
+    dap_worker_callback_t callback;
+    void *arg;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool done;
+} dap_worker_sync_msg_t;
+
+static void s_worker_exec_callback_on_sync_wrapper(void *a_arg)
+{
+    dap_worker_sync_msg_t *l_msg = (dap_worker_sync_msg_t *)a_arg;
+    l_msg->callback(l_msg->arg);
+    pthread_mutex_lock(&l_msg->mutex);
+    l_msg->done = true;
+    pthread_cond_signal(&l_msg->cond);
+    pthread_mutex_unlock(&l_msg->mutex);
+}
+
+void dap_worker_exec_callback_on_sync(dap_worker_t *a_worker, dap_worker_callback_t a_callback, void *a_arg)
+{
+    dap_return_if_fail(a_worker && a_callback);
+    if (dap_context_current() == a_worker->context) {
+        a_callback(a_arg);
+        return;
+    }
+    dap_worker_sync_msg_t l_msg = { .callback = a_callback, .arg = a_arg, .done = false };
+    pthread_mutex_init(&l_msg.mutex, NULL);
+    pthread_cond_init(&l_msg.cond, NULL);
+    dap_worker_exec_callback_on(a_worker, s_worker_exec_callback_on_sync_wrapper, &l_msg);
+    pthread_mutex_lock(&l_msg.mutex);
+    while (!l_msg.done)
+        pthread_cond_wait(&l_msg.cond, &l_msg.mutex);
+    pthread_mutex_unlock(&l_msg.mutex);
+    pthread_mutex_destroy(&l_msg.mutex);
+    pthread_cond_destroy(&l_msg.cond);
 }
 
 /**
@@ -624,7 +672,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     log_it(L_ERROR, "\"AcceptEx\" on "DAP_FORMAT_ESOCKET_UUID" : %zu failed, ntstatus 0x%llx : %s",
                                     l_cur->uuid, l_cur->socket, ol->ol.Internal, dap_str_ntstatus(ol->ol.Internal));
                     closesocket(l_cur->socket2);
-                    if ( ol->ol.Internal == STATUS_CONNECTION_RESET ) {
+                    if ( (NTSTATUS)ol->ol.Internal == STATUS_CONNECTION_RESET ) {
                         l_errno = WSAECONNRESET; // It's ok, just continue accept()'ing
                         dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
                         ol = NULL;
@@ -722,7 +770,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             l_cur->buf_in_size += l_bytes;
                     }
                     if (l_cur->callbacks.read_callback) {
-                        l_cur->last_time_active = time(NULL);
+                        l_cur->last_time_active = dap_time_now();
                         debug_if(g_debug_reactor, L_DEBUG, "Received %lu bytes from socket %zu", l_bytes, l_cur->socket);
                         l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
                         if (!l_cur->context) {
@@ -907,7 +955,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         }
 
         a_context->esockets_selected = l_selected_sockets;
-        time_t l_cur_time = time( NULL);
+        dap_time_t l_cur_time = dap_time_now();
         for (a_context->esocket_current = 0; a_context->esocket_current < l_sockets_max; a_context->esocket_current++) {
             ssize_t n = a_context->esocket_current;
             bool l_flag_hup, l_flag_rdhup, l_flag_read, l_flag_write, l_flag_error, l_flag_nval, l_flag_msg, l_flag_pri;
@@ -1224,7 +1272,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_bytes_read = dap_recvfrom(l_cur->socket, NULL, 0);
 #elif defined(DAP_OS_LINUX)
                         uint64_t val;
-                        read( l_cur->fd, &val, 8);
+                        if (read(l_cur->fd, &val, sizeof(val)) < 0)
+                            log_it(L_ERROR, "Timer fd read failed: %s", dap_strerror(errno));
 #endif
                         if (l_cur->callbacks.timer_callback)
                             l_cur->callbacks.timer_callback(l_cur);

@@ -23,8 +23,6 @@
 #pragma once
 
 #include <pthread.h>
-#include "uthash.h"
-#include "utlist.h"
 #include "dap_events_socket.h"
 #include "dap_list.h"
 #include "dap_cpu_monitor.h"
@@ -47,6 +45,9 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #define EPOLL_HANDLE  int
+#elif defined(DAP_OS_WASM)
+#include <netinet/in.h>
+#include <stdint.h>
 #else
 #error "No poll headers for your platform"
 #endif

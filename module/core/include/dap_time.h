@@ -2,10 +2,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <time.h>
+#include "dap_strptime.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #ifdef DAP_OS_WINDOWS
 #define localtime_r(a, b) localtime_s((b), (a))
-extern char *strptime(const char *s, const char *format, struct tm *tm);
 #endif
 
 #define DAP_TIME_STR_SIZE 32
@@ -82,9 +86,19 @@ static inline dap_time_t dap_time_now() {
  * @return Returns current UTC time in nanoseconds.
  */
 static inline dap_nanotime_t dap_nanotime_now(void) {
+#ifdef _WIN32
+    // Windows-specific implementation using GetSystemTimeAsFileTime
+    uint64_t ft;
+    GetSystemTimeAsFileTime((FILETIME*)&ft); // 100-nanosecond intervals since January 1, 1601 (UTC)
+    ft -= 116444736000000000ULL; // Convert from 1 Jan 1601 to 1 Jan 1970
+    uint64_t sec = ft / 10000000ULL;
+    uint64_t nsec = (ft % 10000000ULL) * 100ULL;
+    return (dap_nanotime_t)(sec * DAP_NSEC_PER_SEC + nsec);
+#else
     struct timespec cur_time;
     clock_gettime(CLOCK_REALTIME, &cur_time);
     return (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
+#endif
 }
 
 // crossplatform usleep

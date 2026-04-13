@@ -27,9 +27,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <time.h>
 
-#ifndef _WIN32
-#include <sys/queue.h>
-#else
+#ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>
@@ -38,7 +36,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #endif
 
 #include <pthread.h>
-#include "../../../3rdparty/uthash/src/utlist.h"
+#include "dap_dl.h"
+#include "dap_sl.h"
 #include "dap_json.h"
 #include "dap_common.h"
 #include "dap_context.h"
@@ -51,7 +50,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_http_simple.h"
 #include "dap_http_user_agent.h"
 #include "dap_context.h"
-#include "http_status_code.h"
+#include "dap_http_status_code.h"
 
 #define LOG_TAG "dap_http_simple"
 
@@ -124,9 +123,9 @@ static void s_free_user_agents_list()
 {
 user_agents_item_t *elt, *tmp;
 
-    LL_FOREACH_SAFE( user_agents_list, elt, tmp )
+    dap_sl_foreach_safe(user_agents_list, elt, tmp)
     {
-        LL_DELETE( user_agents_list, elt );
+        dap_sl_delete(user_agents_list, elt);
         dap_http_user_agent_delete( elt->user_agent );
         free( elt );
     }
@@ -143,7 +142,7 @@ static int s_is_user_agent_supported( const char *user_agent )
   const char* find_agent_name = dap_http_user_agent_get_name( find_agent );
 
   user_agents_item_t *elt;
-  LL_FOREACH( user_agents_list, elt ) {
+  dap_sl_foreach(user_agents_list, elt) {
 
     const char* user_agent_name = dap_http_user_agent_get_name( elt->user_agent );
 
@@ -195,7 +194,7 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
     }
 
     item->user_agent = user_agent;
-    LL_APPEND( user_agents_list, item );
+    dap_sl_append(user_agents_list, item);
 
     str = va_arg( argptr, const char * );
   }
@@ -303,7 +302,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
     dap_json_object_add_string(jobj, "error", error_msg);
 
     log_it(L_DEBUG, "error message %s", dap_json_to_string(jobj));
-    a_http_simple->http_client->reply_status_code = Http_Status_BadRequest;
+    a_http_simple->http_client->reply_status_code = DAP_HTTP_STATUS_BAD_REQUEST;
 
     const char* json_str = dap_json_to_string(jobj);
     dap_http_simple_reply(a_http_simple, (void*) json_str, (size_t) strlen(json_str));
@@ -331,11 +330,11 @@ static bool s_proc_queue_callback(void *a_arg)
         log_it(L_ERROR, "[!] HTTP client is corrupted!");
         return false;
     }
-    http_status_code_t return_code = (http_status_code_t)0;
+    dap_http_status_code_t return_code = (dap_http_status_code_t)0;
 
     user_agents_item_t *l_tmp;
     int l_cnt = 0;
-    LL_COUNT(user_agents_list, l_tmp, l_cnt);
+    dap_sl_count(user_agents_list, l_cnt);
     if (l_cnt) {
         dap_http_header_t *l_header = dap_http_header_find(l_http_simple->http_client->in_headers, "User-Agent");
         if (!l_header && !is_unknown_user_agents_pass) {
@@ -362,7 +361,7 @@ static bool s_proc_queue_callback(void *a_arg)
         s_copy_reply_and_mime_to_response(l_http_simple);
     } else {
         log_it(L_ERROR, "Request was processed with ERROR");
-        l_http_simple->http_client->reply_status_code = Http_Status_InternalServerError;
+        l_http_simple->http_client->reply_status_code = DAP_HTTP_STATUS_INTERNAL_SERVER_ERROR;
     }
     s_write_data_to_socket(l_http_simple);
     return false;
@@ -505,7 +504,7 @@ dap_http_cache_t * dap_http_simple_make_cache_from_reply(dap_http_simple_t * a_h
 {
     // Because we call it from callback, we have no headers ready for output
     s_copy_reply_and_mime_to_response(a_http_simple);
-    a_http_simple->http_client->reply_status_code = Http_Status_OK;
+    a_http_simple->http_client->reply_status_code = DAP_HTTP_STATUS_OK;
     dap_http_client_out_header_generate(a_http_simple->http_client);
     return dap_http_cache_update(a_http_simple->http_client->proc,
                                  a_http_simple->reply_byte,
