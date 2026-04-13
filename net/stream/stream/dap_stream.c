@@ -1173,16 +1173,16 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
         
         if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
-            log_it(L_INFO, "proc_read_ext: SIG FOUND type=0x%02x size=%u at offset=%zu",
+            debug_if(s_debug_more, L_DEBUG, "proc_read_ext: SIG FOUND type=0x%02x size=%u at offset=%zu",
                    l_pkt->hdr.type, l_pkt->hdr.size, (size_t)(l_pos - (byte_t*)a_data));
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
-                log_it(L_INFO, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
+                debug_if(s_debug_more, L_DEBUG, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
             } else {
-                log_it(L_INFO, "proc_read_ext: incomplete packet need=%zu have=%zu",
+                debug_if(s_debug_more, L_DEBUG, "proc_read_ext: incomplete packet need=%zu have=%zu",
                        l_shift, (size_t)(l_end - l_pos));
                 break;
             }
