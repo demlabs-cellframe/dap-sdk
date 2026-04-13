@@ -334,6 +334,77 @@ void dap_net_trans_websocket_server_delete(dap_net_trans_websocket_server_t *a_w
     DAP_DELETE(a_ws_server);
 }
 
+/**
+ * @brief Try to handle HTTP request as WebSocket upgrade
+ *
+ * Called at the top of the HTTP /stream handler. If the request carries
+ * WebSocket upgrade headers, the full 101 handshake + protocol switch
+ * is performed here. Otherwise returns -1 so the caller can proceed
+ * with normal HTTP stream processing.
+ */
+int dap_net_trans_websocket_try_upgrade(dap_http_client_t *a_http_client)
+{
+    if (!a_http_client)
+        return -1;
+
+    dap_http_header_t *l_upgrade    = dap_http_header_find(a_http_client->in_headers, "Upgrade");
+    dap_http_header_t *l_connection = dap_http_header_find(a_http_client->in_headers, "Connection");
+    dap_http_header_t *l_ws_key     = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Key");
+    dap_http_header_t *l_ws_version = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Version");
+
+    if (!l_upgrade || !l_connection || !l_ws_key || !l_ws_version)
+        return -1;
+
+    if (!strcasestr(l_upgrade->value, "websocket") ||
+        !strcasestr(l_connection->value, "Upgrade"))
+        return -1;
+
+    dap_net_trans_t *l_ws_trans = dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
+    if (!l_ws_trans) {
+        log_it(L_ERROR, "WebSocket upgrade requested but transport not registered");
+        return -1;
+    }
+
+    if (strcmp(l_ws_version->value, "13") != 0) {
+        log_it(L_WARNING, "Unsupported WebSocket version: %s", l_ws_version->value);
+        a_http_client->reply_status_code = 426;
+        dap_http_out_header_add(a_http_client, "Sec-WebSocket-Version", "13");
+        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
+        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        return 0;
+    }
+
+    char l_accept_key[128] = {0};
+    if (!s_generate_accept_key(l_ws_key->value, l_accept_key, sizeof(l_accept_key))) {
+        log_it(L_ERROR, "Failed to generate Sec-WebSocket-Accept key");
+        a_http_client->reply_status_code = 500;
+        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
+        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+        return 0;
+    }
+
+    log_it(L_INFO, "WebSocket upgrade request accepted from %s",
+           a_http_client->esocket->remote_addr_str);
+
+    a_http_client->reply_status_code = 101;
+    dap_events_socket_write_f_unsafe(a_http_client->esocket,
+        "HTTP/1.1 101 Switching Protocols\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Accept: %s\r\n"
+        "\r\n",
+        l_accept_key);
+
+    if (s_switch_to_websocket_protocol(a_http_client) != 0) {
+        log_it(L_ERROR, "Failed to switch to WebSocket protocol after upgrade");
+        a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return 0;
+    }
+
+    dap_events_socket_set_readable_unsafe(a_http_client->esocket, true);
+    return 0;
+}
+
 // ============================================================================
 // WebSocket Upgrade Handlers
 // ============================================================================
@@ -536,21 +607,22 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
         if (a_http_client->esocket->worker) {
             l_stream->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
         }
-        l_stream->is_client_to_uplink = false;
-        // Allocate trans_ctx (dap_stream_new_es_client doesn't do this)
-        if (!l_stream->trans_ctx) {
-            l_stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
-            if (!l_stream->trans_ctx) {
-                log_it(L_CRITICAL, "Failed to allocate trans_ctx for WebSocket stream");
-                DAP_DELETE(l_stream);
-                return -5;
-            }
-            l_stream->trans_ctx->stream = l_stream;
-            if (l_stream->trans)
-                l_stream->trans_ctx->trans = l_stream->trans;
+        l_stream->is_client_to_uplink = false;  // This is server-side
+
+        // dap_stream_new_es_client does NOT create trans_ctx — create it here
+        // It is needed by s_ws_server_esocket_read (reads a_es->_inheritor as trans_ctx)
+        dap_net_trans_ctx_t *l_new_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+        if (!l_new_ctx) {
+            log_it(L_CRITICAL, "Failed to allocate trans_ctx for WebSocket stream");
+            return -6;
         }
+        l_new_ctx->trans = l_ws_trans;
+        l_new_ctx->stream = l_stream;
+        l_new_ctx->http_client = a_http_client;
+        l_stream->trans_ctx = l_new_ctx;
+
+        // Point esocket->_inheritor at trans_ctx so WebSocket read callback can find the stream
         a_http_client->esocket->_inheritor = l_stream->trans_ctx;
-        l_stream->trans_ctx->http_client = a_http_client;
         a_http_client->_inheritor = l_stream;
     }
 

@@ -193,6 +193,11 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
         dap_events_socket_t *l_es = a_stream->esocket;
         
         if (dap_events_socket_is_datagram(l_es)) {
+            if (!l_trans || !l_trans->ops || !l_trans->ops->write) {
+                debug_if(s_debug_more, L_DEBUG,
+                         "stream_pkt_write: datagram esocket but transport write not ready, dropping");
+                return 0;
+            }
             return s_stream_send_datagram_unsafe(a_stream, s_pkt_buf, l_full_size);
         }
         
