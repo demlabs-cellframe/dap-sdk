@@ -738,7 +738,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         return;
     }
     if (a_stream->is_client_to_uplink)
-        log_it(L_WARNING, "P2P stream DELETE (client): stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" keepalive=%s",
+        debug_if(s_debug_more, L_DEBUG, "P2P stream DELETE (client): stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" keepalive=%s",
                a_stream, (void*)a_stream->esocket,
                a_stream->esocket ? a_stream->esocket->socket : -1,
                a_stream->keepalive_timer ? "active" : "none");
