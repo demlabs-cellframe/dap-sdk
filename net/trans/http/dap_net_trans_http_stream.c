@@ -31,6 +31,7 @@
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_stream.h"
+#include "dap_stream_worker.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_http_stream.h"
 #include "dap_net_trans_http_server.h"
@@ -46,6 +47,7 @@
 #include "dap_net_trans_ctx.h"
 #include "dap_cert.h"
 #include "dap_worker.h"
+#include "dap_events.h"
 
 #define LOG_TAG "dap_stream_trans_http"
 
@@ -78,6 +80,17 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
 // Session callback wrappers (forward declarations)
 static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size);
 static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error);
+
+// Context for deferred TCP connect (esocket creation happens in connect(), not stage_prepare())
+typedef struct {
+    dap_stream_t *stream;
+    dap_net_trans_connect_cb_t fsm_callback;
+} s_http_connect_ctx_t;
+
+static void s_http_connect_es_connected(dap_events_socket_t *a_es);
+static void s_http_connect_es_error(dap_events_socket_t *a_es, int a_errno);
+static void s_http_connect_es_delete(dap_events_socket_t *a_es, void *a_arg);
+static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
 
 // Ctx for HTTP requests (to avoid race conditions in client_esocket)
 typedef struct {
@@ -450,7 +463,12 @@ static void s_http_trans_deinit(dap_net_trans_t *a_trans)
 }
 
 /**
- * @brief Connect HTTP trans (client-side)
+ * @brief Connect HTTP trans (client-side): create persistent TCP esocket
+ *
+ * Deferred from stage_prepare so the socket doesn't sit idle during the
+ * handshake phase (/enc_init, /stream_ctl use separate HTTP connections).
+ * The esocket is created here and associated with the stream once TCP
+ * connect completes.
  */
 static int s_http_trans_connect(dap_stream_t *a_stream,
                                      const char *a_host,
@@ -461,21 +479,164 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         log_it(L_ERROR, "Invalid parameters");
         return -1;
     }
-    
-    // In HTTP trans, connection is handled by HTTP client
-    // We just store the parameters for later use
-    log_it(L_INFO, "HTTP trans connecting to %s:%u", a_host, a_port);
-    
-    // Connection is established by HTTP layer
-    // We mark it as connected when we get the first HTTP callback
-    // UNUSED(a_callback);
-    
-    // Notify client that we are "connected" (ready to send requests)
-    if (a_callback) {
-        a_callback(a_stream, 0);
+
+    dap_client_t *l_client = NULL;
+    if (a_stream->trans_ctx && a_stream->trans_ctx->_inheritor) {
+        dap_client_trans_ctx_t *l_io = (dap_client_trans_ctx_t *)a_stream->trans_ctx->_inheritor;
+        l_client = l_io ? l_io->client : NULL;
     }
-    
+
+    dap_worker_t *l_worker = a_stream->stream_worker
+                             ? a_stream->stream_worker->worker
+                             : dap_events_worker_get_auto();
+    if (!l_worker) {
+        log_it(L_ERROR, "HTTP connect: no worker available");
+        return -1;
+    }
+
+    s_http_connect_ctx_t *l_ctx = DAP_NEW_Z(s_http_connect_ctx_t);
+    if (!l_ctx) {
+        log_it(L_CRITICAL, "HTTP connect: OOM");
+        return -1;
+    }
+    l_ctx->stream = a_stream;
+    l_ctx->fsm_callback = a_callback;
+
+    dap_events_socket_callbacks_t l_cbs = {
+        .connected_callback = s_http_connect_es_connected,
+        .error_callback     = s_http_connect_es_error,
+        .delete_callback    = s_http_connect_es_delete,
+        .arg                = l_ctx
+    };
+
+    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, &l_cbs);
+    if (!l_es) {
+        log_it(L_ERROR, "HTTP connect: failed to create TCP socket");
+        DAP_DELETE(l_ctx);
+        return -1;
+    }
+
+    l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    l_es->_inheritor = l_client;
+    l_es->no_close = true;
+
+    if (dap_events_socket_resolve_and_set_addr(l_es, a_host, a_port) < 0) {
+        log_it(L_ERROR, "HTTP connect: failed to resolve %s:%u", a_host, a_port);
+        dap_events_socket_delete_unsafe(l_es, true);
+        DAP_DELETE(l_ctx);
+        return -1;
+    }
+
+    l_es->flags |= DAP_SOCK_CONNECTING;
+#ifndef DAP_EVENTS_CAPS_IOCP
+    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#endif
+    l_es->is_initalized = false;
+
+    int l_connect_err = 0;
+    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
+        log_it(L_ERROR, "HTTP connect: TCP connect failed: error %d", l_connect_err);
+        dap_events_socket_delete_unsafe(l_es, true);
+        DAP_DELETE(l_ctx);
+        return -1;
+    }
+
+    dap_worker_add_events_socket(l_worker, l_es);
+
+    debug_if(s_debug_more, L_INFO, "HTTP trans: TCP connect initiated to %s:%u", a_host, a_port);
     return 0;
+}
+
+static void s_http_stream_client_read(dap_events_socket_t *a_es, void *a_arg)
+{
+    (void)a_arg;
+    dap_client_t *l_client = (dap_client_t *)a_es->_inheritor;
+    if (!l_client) return;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    dap_stream_t *l_stream = l_tc ? l_tc->stream : NULL;
+    if (!l_stream) return;
+
+    ssize_t l_processed = s_http_trans_read(l_stream, NULL, 0);
+    if (l_processed > 0)
+        dap_events_socket_shrink_buf_in(a_es, (size_t)l_processed);
+}
+
+static void s_http_connect_es_connected(dap_events_socket_t *a_es)
+{
+    s_http_connect_ctx_t *l_ctx = (s_http_connect_ctx_t *)a_es->callbacks.arg;
+    if (!l_ctx) return;
+
+    dap_stream_t *l_stream = l_ctx->stream;
+    dap_net_trans_connect_cb_t l_cb = l_ctx->fsm_callback;
+    DAP_DELETE(l_ctx);
+    a_es->callbacks.arg = NULL;
+    a_es->callbacks.connected_callback = NULL;
+
+    a_es->callbacks.read_callback = s_http_stream_client_read;
+
+    l_stream->esocket = a_es;
+    l_stream->esocket_uuid = a_es->uuid;
+    l_stream->esocket_worker = a_es->worker;
+
+    dap_stream_start_keepalive(l_stream);
+
+    debug_if(s_debug_more, L_INFO, "HTTP TCP connected, esocket fd=%d associated with stream", a_es->fd);
+
+    if (l_cb)
+        l_cb(l_stream, 0);
+}
+
+static void s_http_connect_es_error(dap_events_socket_t *a_es, int a_errno)
+{
+    s_http_connect_ctx_t *l_ctx = (s_http_connect_ctx_t *)a_es->callbacks.arg;
+    log_it(L_ERROR, "HTTP TCP connect error: %d", a_errno);
+
+    dap_stream_t *l_stream = NULL;
+    dap_net_trans_connect_cb_t l_cb = NULL;
+    if (l_ctx) {
+        l_stream = l_ctx->stream;
+        l_cb = l_ctx->fsm_callback;
+        DAP_DELETE(l_ctx);
+        a_es->callbacks.arg = NULL;
+    }
+
+    if (l_cb && l_stream)
+        l_cb(l_stream, -1);
+}
+
+static void s_http_connect_es_delete(dap_events_socket_t *a_es, void *a_arg)
+{
+    (void)a_arg;
+    if (!a_es) return;
+
+    s_http_connect_ctx_t *l_ctx = (s_http_connect_ctx_t *)a_es->callbacks.arg;
+
+    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    if (l_client) {
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+        dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+        if (l_tc && l_tc->stream && l_tc->stream->esocket == a_es) {
+            l_tc->stream->esocket = NULL;
+            l_tc->stream->esocket_uuid = 0;
+            l_tc->stream->esocket_worker = NULL;
+        }
+        if (l_fsm && l_fsm->stage_status == STAGE_STATUS_IN_PROGRESS) {
+            dap_client_trans_ctx_t *l_client_ctx = l_fsm->client_trans_ctx;
+            if (l_client_ctx) {
+                log_it(L_WARNING, "HTTP connect esocket deleted while stage %s in progress",
+                       dap_client_stage_str(l_fsm->stage));
+                dap_client_fsm_notify(l_client_ctx->fsm_uuid, l_client_ctx->fsm_thread_idx,
+                                      STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+            }
+        }
+    }
+
+    if (l_ctx) {
+        DAP_DELETE(l_ctx);
+        a_es->callbacks.arg = NULL;
+    }
+    a_es->_inheritor = NULL;
 }
 
 /**
@@ -786,12 +947,18 @@ static int s_http_trans_session_start(dap_stream_t *a_stream,
         return -1;
     }
 
-    debug_if(s_debug_more, L_DEBUG, "HTTP trans session start: session_id=%u", a_session_id);
-    
+    if (!a_stream->esocket) {
+        log_it(L_ERROR, "HTTP trans session start: esocket is NULL (connect phase incomplete?)");
+        return -1;
+    }
+
+    debug_if(s_debug_more, L_DEBUG, "HTTP trans session start: session_id=%u, esocket fd=%d",
+             a_session_id, a_stream->esocket->fd);
+
     // Construct HTTP GET request for streaming
     char l_full_path[2048];
     snprintf(l_full_path, sizeof(l_full_path), "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM, a_session_id);
-    
+
     // Write request to socket
     size_t l_sent = dap_events_socket_write_f_unsafe(a_stream->esocket, 
                                      "GET /%s HTTP/1.1\r\n"
@@ -1317,9 +1484,18 @@ static void s_http_trans_close(dap_stream_t *a_stream)
 
 /**
  * @brief Prepare TCP socket for HTTP trans (client-side stage preparation)
- * 
- * Fully prepares esocket: creates, sets callbacks, connects, and adds to worker.
- * Trans is responsible for complete esocket lifecycle management.
+ *
+ * Creates a TCP esocket for the persistent /stream connection.
+ * Handshake requests (/enc_init, /stream_ctl) use dap_client_http_request
+ * which manages its own transient connections.
+ */
+/**
+ * @brief HTTP stage_prepare: create stream object only, no TCP socket.
+ *
+ * The persistent TCP socket is created later in s_http_trans_connect(),
+ * AFTER the handshake (/enc_init, /stream_ctl) completes on separate
+ * transient HTTP connections.  This prevents the persistent socket from
+ * sitting idle and being killed by either side's connection timeout.
  */
 static int s_http_stage_prepare(dap_net_trans_t *a_trans,
                                 const dap_net_stage_prepare_params_t *a_params,
@@ -1381,7 +1557,6 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
                                 a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for HTTP trans");
-        dap_events_socket_delete_unsafe(l_es, true);
         a_result->error_code = -1;
         return -1;
     }

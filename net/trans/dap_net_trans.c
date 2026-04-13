@@ -606,7 +606,8 @@ int dap_net_trans_stage_prepare(dap_net_trans_type_t a_trans_type,
         return l_ret;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Trans %d stage_prepare OK (esocket=%p)", a_trans_type, (void *)a_result->esocket);
+    debug_if(s_debug_more, L_DEBUG, "Trans %d stage_prepare OK (esocket %s)",
+             a_trans_type, a_result->esocket ? "set" : "NULL, transport manages own connection");
     return 0;
 }
 

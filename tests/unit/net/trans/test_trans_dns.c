@@ -110,8 +110,6 @@ static dap_stream_t s_mock_stream = {0};
 static dap_net_trans_ctx_t s_mock_trans_ctx;
 static dap_events_socket_t s_mock_events_socket = {0};
 
-// Server wrappers are provided by dap_trans_test_mocks.c
-
 DAP_MOCK_WRAPPER_CUSTOM(void, dap_server_delete_sync,
     PARAM(dap_server_t *, a_server)
 )

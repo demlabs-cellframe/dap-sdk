@@ -133,17 +133,17 @@ static int dap_io_flow_ebpf_load_prog(void)
     int prog_fd = bpf_syscall(BPF_PROG_LOAD, &attr, sizeof(attr));
     
     if (prog_fd < 0) {
-        log_it(L_ERROR, "Failed to load eBPF program: %s (errno=%d)", 
+        log_it(L_NOTICE, "Failed to load eBPF program: %s (errno=%d)",
                strerror(errno), errno);
         if (log_buf[0]) {
-            log_it(L_WARNING, "eBPF verifier log:\n%s", log_buf);
+            log_it(L_DEBUG, "eBPF verifier log:\n%s", log_buf);
         }
         
         if (errno == EPERM || errno == EACCES) {
-            log_it(L_ERROR, "Permission denied - need CAP_BPF or CAP_NET_ADMIN");
+            log_it(L_NOTICE, "Permission denied - need CAP_BPF or CAP_NET_ADMIN");
             log_it(L_NOTICE, "Run as root or: sudo setcap cap_bpf,cap_net_admin=ep <binary>");
         } else if (errno == ENOSYS) {
-            log_it(L_ERROR, "BPF syscall not available - kernel too old (need 4.15+)");
+            log_it(L_NOTICE, "BPF syscall not available - kernel too old (need 4.15+)");
         }
     } else {
         log_it(L_NOTICE, "✅ eBPF program loaded successfully (fd=%d, %u instructions)",
@@ -172,7 +172,7 @@ bool dap_io_flow_ebpf_is_available(void)
     int prog_fd = dap_io_flow_ebpf_load_prog();
     if (prog_fd < 0) {
         s_ebpf_available = false;
-        log_it(L_WARNING, "❌ eBPF program load failed");
+        log_it(L_NOTICE, "❌ eBPF program load failed");
         return false;
     }
     

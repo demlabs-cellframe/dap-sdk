@@ -460,7 +460,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     pthread_cond_destroy(&a_ctrl->lifecycle_cond);
     pthread_mutex_destroy(&a_ctrl->lifecycle_mutex);
     
-    debug_if(s_debug_more, L_DEBUG, "Flow Control deleted: sent=%lu, retrans=%lu, recv=%lu, lost=%lu",
+    debug_if(s_debug_more, L_DEBUG, "Flow Control deleted: sent=%"PRIu64", retrans=%"PRIu64", recv=%"PRIu64", lost=%"PRIu64,
            atomic_load(&a_ctrl->stats_sent), atomic_load(&a_ctrl->stats_retransmitted),
            atomic_load(&a_ctrl->stats_recv), atomic_load(&a_ctrl->stats_lost));
     
@@ -579,7 +579,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         
         
         debug_if(s_debug_more, L_DEBUG,
-                 "FC send: assigned seq=%lu (flags=0x%02x, send_seq_next=%lu)",
+                 "FC send: assigned seq=%"PRIu64" (flags=0x%02x, send_seq_next=%"PRIu64")",
                  l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next);
     } else {
         
@@ -598,7 +598,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
     };
     
     debug_if(s_debug_more, L_DEBUG,
-             "FC send: metadata prepared: seq=%lu, ack=%lu, ts=%u, &l_metadata=%p",
+             "FC send: metadata prepared: seq=%"PRIu64", ack=%"PRIu64", ts=%u, &l_metadata=%p",
              l_metadata.seq_num, l_metadata.ack_seq, l_metadata.timestamp_ms, &l_metadata);
     
     // Prepare packet (add header)
@@ -695,7 +695,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                                                 &l_metadata, &l_payload, &l_payload_size,
                                                 a_ctrl->callbacks.arg);
     
-    debug_if(s_debug_more, L_DEBUG, "packet_parse returned: ret=%d, seq=%lu, payload_size=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "packet_parse returned: ret=%d, seq=%"PRIu64", payload_size=%zu", 
              l_ret, l_metadata.seq_num, l_payload_size);
     
     if (l_ret != 0) {
@@ -705,7 +705,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "FC recv: seq=%lu, ack_seq=%lu, is_keepalive=%d, payload_size=%zu, reorder_enabled=%d",
+             "FC recv: seq=%"PRIu64", ack_seq=%"PRIu64", is_keepalive=%d, payload_size=%zu, reorder_enabled=%d",
              l_metadata.seq_num, l_metadata.ack_seq, l_metadata.is_keepalive, l_payload_size,
              (a_ctrl->flags & DAP_IO_FLOW_CTRL_REORDER) ? 1 : 0);
     
@@ -730,7 +730,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
         }
         
         if (l_metadata.ack_seq > a_ctrl->send_seq_acked) {
-            debug_if(s_debug_more, L_DEBUG, "FC recv: UPDATING send_seq_acked: %lu → %lu",
+            debug_if(s_debug_more, L_DEBUG, "FC recv: UPDATING send_seq_acked: %"PRIu64" -> %"PRIu64,
                    a_ctrl->send_seq_acked, l_metadata.ack_seq);
             a_ctrl->send_seq_acked = l_metadata.ack_seq;
         }
@@ -753,7 +753,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             
             uint64_t l_seq = l_metadata.seq_num;
             
-            debug_if(s_debug_more, L_DEBUG, "FC recv: REORDER CHECK: seq=%lu, recv_seq_expected=%lu", 
+            debug_if(s_debug_more, L_DEBUG, "FC recv: REORDER CHECK: seq=%"PRIu64", recv_seq_expected=%"PRIu64, 
                    l_seq, a_ctrl->recv_seq_expected);
             
             // Check if this is the expected sequence
@@ -803,14 +803,14 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 }
             } else if (l_seq > a_ctrl->recv_seq_expected) {
                 // OUT-OF-ORDER: Buffer for later delivery
-                debug_if(s_debug_more, L_INFO, "FC recv: BUFFERING OUT-OF-ORDER seq=%lu (expected=%lu)", 
+                debug_if(s_debug_more, L_INFO, "FC recv: BUFFERING OUT-OF-ORDER seq=%"PRIu64" (expected=%"PRIu64")", 
                        l_seq, a_ctrl->recv_seq_expected);
                 size_t l_idx = (l_seq - 1) % a_ctrl->recv_window_size;
                 
                 // Check if already received (duplicate)
                 if (a_ctrl->recv_window[l_idx].received && 
                     a_ctrl->recv_window[l_idx].seq_num == l_seq) {
-                    debug_if(s_debug_more, L_DEBUG, "Duplicate packet: seq=%lu", l_seq);
+                    debug_if(s_debug_more, L_DEBUG, "Duplicate packet: seq=%"PRIu64, l_seq);
                     atomic_fetch_add(&a_ctrl->stats_duplicate, 1);
                 } else {
                     // Buffer packet
@@ -833,7 +833,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                             a_ctrl->recv_seq_highest = l_seq;
                         }
                         
-                        debug_if(s_debug_more, L_DEBUG, "Buffered out-of-order packet: seq=%lu, expected=%lu", 
+                        debug_if(s_debug_more, L_DEBUG, "Buffered out-of-order packet: seq=%"PRIu64", expected=%"PRIu64, 
                                l_seq, a_ctrl->recv_seq_expected);
                         atomic_fetch_add(&a_ctrl->stats_out_of_order, 1);
                     } else {
@@ -846,7 +846,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 }
             } else {
                 // DUPLICATE or REPLAY: seq < expected
-                debug_if(s_debug_more, L_NOTICE, "Old/duplicate packet: seq=%lu, expected=%lu", 
+                debug_if(s_debug_more, L_NOTICE, "Old/duplicate packet: seq=%"PRIu64", expected=%"PRIu64, 
                        l_seq, a_ctrl->recv_seq_expected);
                 atomic_fetch_add(&a_ctrl->stats_duplicate, 1);
             }
@@ -875,7 +875,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             // REORDERING enabled: Send ACK ONLY if we delivered in-order packets
             // (recv_seq_expected increased beyond initial state)
             pthread_mutex_lock(&a_ctrl->recv_mutex);
-            debug_if(s_debug_more, L_DEBUG, "FC recv: ACK decision: recv_seq_expected=%lu, should_send=%s",
+            debug_if(s_debug_more, L_DEBUG, "FC recv: ACK decision: recv_seq_expected=%"PRIu64", should_send=%s",
                    a_ctrl->recv_seq_expected, (a_ctrl->recv_seq_expected > 1) ? "YES" : "NO");
             if (a_ctrl->recv_seq_expected > 1) {
                 l_should_send_ack = true;
@@ -886,7 +886,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             // Don't send ACK for OUT-OF-ORDER packets - wait until missing packets arrive
             if (!l_should_send_ack) {
                 debug_if(s_debug_more, L_DEBUG,
-                         "FC recv: NOT sending ACK for out-of-order seq=%lu (expected=1, will ACK after delivery)",
+                         "FC recv: NOT sending ACK for out-of-order seq=%"PRIu64" (expected=1, will ACK after delivery)",
                          l_metadata.seq_num);
             }
         } else {
@@ -905,7 +905,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 .is_retransmit = false,
             };
             
-            debug_if(s_debug_more, L_DEBUG, "FC recv: Preparing ACK for seq_num up to %lu", l_ack_seq_to_send);
+            debug_if(s_debug_more, L_DEBUG, "FC recv: Preparing ACK for seq_num up to %"PRIu64, l_ack_seq_to_send);
             
             void *l_ack_packet = NULL;
             size_t l_ack_packet_size = 0;
@@ -922,7 +922,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 a_ctrl->callbacks.packet_free(l_ack_packet, a_ctrl->callbacks.arg);
                 
                 if (l_ack_ret == 0) {
-                    debug_if(s_debug_more, L_DEBUG, "Sent ACK: ack_seq=%lu", l_ack_seq_to_send);
+                    debug_if(s_debug_more, L_DEBUG, "Sent ACK: ack_seq=%"PRIu64, l_ack_seq_to_send);
                 } else {
                     log_it(L_WARNING, "Failed to send ACK packet: ret=%d", l_ack_ret);
                 }
@@ -1005,7 +1005,7 @@ static bool s_retransmit_timer_callback(void *a_arg)
         if (l_now - l_entry->timestamp_ns > l_timeout_ns) {
             // Check max retries
             if (l_entry->retransmit_count >= l_ctrl->config.max_retransmit_count) {
-                log_it(L_WARNING, "Packet lost after %u retries: seq=%lu",
+                log_it(L_WARNING, "Packet lost after %u retries: seq=%"PRIu64,
                        l_entry->retransmit_count, seq);
                 atomic_fetch_add(&l_ctrl->stats_lost, 1);
                 
@@ -1024,10 +1024,10 @@ static bool s_retransmit_timer_callback(void *a_arg)
                 l_entry->retransmit_count++;
                 atomic_fetch_add(&l_ctrl->stats_retransmitted, 1);
                 
-                debug_if(s_debug_more, L_DEBUG, "Retransmitted packet: seq=%lu, retry=%u",
+                debug_if(s_debug_more, L_DEBUG, "Retransmitted packet: seq=%"PRIu64", retry=%u",
                        seq, l_entry->retransmit_count);
             } else {
-                log_it(L_WARNING, "Failed to retransmit packet: seq=%lu, ret=%d", seq, l_ret);
+                log_it(L_WARNING, "Failed to retransmit packet: seq=%"PRIu64", ret=%d", seq, l_ret);
             }
         }
     }
@@ -1057,8 +1057,8 @@ static bool s_keepalive_timer_callback(void *a_arg)
     
     // Check if connection timed out
     if (l_silence_ns > l_timeout_ns) {
-        log_it(L_WARNING, "Keep-alive timeout: %lu ms silence",
-               l_silence_ns / 1000000);
+        log_it(L_WARNING, "Keep-alive timeout: %"PRIu64" ms silence",
+               (uint64_t)(l_silence_ns / 1000000));
         
         // Call timeout callback
         if (l_ctrl->callbacks.keepalive_timeout) {

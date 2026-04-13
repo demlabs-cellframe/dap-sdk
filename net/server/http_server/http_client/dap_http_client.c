@@ -326,7 +326,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 //  log_it( L_DEBUG, "dap_http_client_read..." );
     unsigned l_iter_count = 0;
     do{
-        debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %"DAP_UINT64_FORMAT_U, 
+        debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %zu", 
                                         l_http_client->state_read, a_esocket->buf_in_size );
 
         switch( l_http_client->state_read )
@@ -492,8 +492,9 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         debug_if (s_debug_http, L_DEBUG, "Cache is present, don't call underlying callbacks");
                     }
 
-                    // If no headers callback we go to the DATA processing
-                    if( l_http_client->in_content_length ) {
+                    if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_DATA) {
+                        log_it(L_INFO, "HTTP: stream takeover detected, buf_in_size=%zu after headers", a_esocket->buf_in_size);
+                    } else if( l_http_client->in_content_length ) {
                         debug_if (s_debug_http, L_DEBUG, "headers -> DAP_HTTP_CLIENT_STATE_DATA" );
                         l_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
                     } else if (l_http_client->proc->cache)
@@ -508,12 +509,15 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
             } break;
 
             case DAP_HTTP_CLIENT_STATE_DATA:{
-                debug_if (s_debug_http, L_DEBUG, "dap_http_client_read: DAP_HTTP_CLIENT_STATE_DATA");
+                log_it(L_INFO, "HTTP DATA: buf_in_size=%zu, has_data_read_cb=%d",
+                       a_esocket->buf_in_size,
+                       l_http_client->proc && l_http_client->proc->data_read_callback ? 1 : 0);
 
                 pthread_rwlock_rdlock(&l_http_client->proc->cache_rwlock);
                 if ( l_http_client->proc->cache == NULL && l_http_client->proc->data_read_callback ) {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
                     l_http_client->proc->data_read_callback( l_http_client, &l_len );
+                    log_it(L_INFO, "HTTP DATA: data_read_callback returned l_len=%d", l_len);
                     dap_events_socket_shrink_buf_in( a_esocket, l_len );
                 } else {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);

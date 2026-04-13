@@ -1628,7 +1628,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS ){
                 if (l_errno == EBADF){
-                    log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
+                    log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %zu:%zu"
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
                     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
@@ -1675,7 +1675,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS && l_errno != ENOENT ){
                 if (l_errno == EBADF){
-                    log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
+                    log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %zu:%zu"
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
                     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
@@ -2082,7 +2082,7 @@ size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es,
     // Only for datagram sockets
     if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
         a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT) {
-        log_it(L_ERROR, "sendto_unsafe called on non-datagram socket (type=%d, fd=%d, uuid=0x%016lx, flags=0x%08x)", 
+        log_it(L_ERROR, "sendto_unsafe called on non-datagram socket (type=%d, fd=%d, uuid=0x%016"DAP_UINT64_FORMAT_x", flags=0x%08x)", 
                a_es->type, a_es->fd, a_es->uuid, a_es->flags);
         return 0;
     }
