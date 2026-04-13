@@ -61,9 +61,9 @@ struct dap_string_pool {
     size_t capacity;                         // Table capacity
     size_t count;                            // Number of strings
     dap_arena_t *arena;                      // Arena for string storage
+    pthread_mutex_t mutex;                   // Mutex for thread safety
     bool owns_arena;                         // True if arena should be freed on cleanup
     bool thread_safe;                        // Thread-safe flag
-    pthread_mutex_t mutex;                   // Mutex for thread safety
     
     // Statistics
     size_t lookup_count;

@@ -1353,7 +1353,7 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
 #ifndef DAP_EVENTS_CAPS_IOCP
     l_es->flags |= DAP_SOCK_READY_TO_WRITE;
 #endif
-    l_es->is_initalized = false; // Ensure new_callback will be called
+    l_es->is_initalized = 0; // Ensure new_callback will be called
     
     // Initiate connection using platform-independent function
     int l_connect_err = 0;

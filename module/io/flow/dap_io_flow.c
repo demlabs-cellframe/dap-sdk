@@ -181,7 +181,7 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     pthread_cond_init(&l_server->cleanup_cond, NULL);
     atomic_init(&l_server->pending_cleanups, 0);
     atomic_init(&l_server->active_callbacks, 0);  // Track callbacks in execution
-    atomic_init(&l_server->is_deleting, false);   // Server is valid initially
+    atomic_init(&l_server->is_deleting, 0);   // Server is valid initially
     
     // Initialize cross-worker packet drain coordination (for natural drain during cleanup)
     pthread_mutex_init(&l_server->cross_worker_mutex, NULL);
@@ -349,7 +349,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     
     // CRITICAL: Mark server as deleting BEFORE stopping
     // This invalidates all queued packets that reference this server
-    atomic_store(&a_server->is_deleting, true);
+    atomic_store(&a_server->is_deleting, 1);
     log_it(L_INFO, "=== Server '%s' deletion START (marked is_deleting=true) ===", 
            a_server->name ? a_server->name : "unknown");
     log_it(L_INFO, "Server '%s' marked for deletion - draining queues", a_server->name);

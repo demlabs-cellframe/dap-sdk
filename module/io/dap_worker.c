@@ -271,7 +271,7 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
     if (l_es_new->callbacks.worker_assign_callback)
         l_es_new->callbacks.worker_assign_callback(l_es_new, l_worker);
 
-    l_es_new->is_initalized = true;
+    l_es_new->is_initalized = 1;
     return 0;
 }
 
@@ -400,7 +400,7 @@ void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
     if (l_es->callbacks.worker_assign_callback)
         l_es->callbacks.worker_assign_callback(l_es, l_es->worker);
 
-    l_es->is_initalized = true;
+    l_es->is_initalized = 1;
     if (l_es->type >= DESCRIPTOR_TYPE_FILE)
         return;
 

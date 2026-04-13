@@ -651,8 +651,12 @@ static void s_stream_es_callback_read(dap_events_socket_t *a_es, void *arg)
 
     l_es->ts_last_active = dap_time_now();
 
-    // Read stage from FSM (atomic)
+    // Read stage from FSM (atomic) - check is_removing to avoid use-after-free
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    if (l_fsm && l_fsm->is_removing) {
+        debug_if(s_debug_more, L_DEBUG, "FSM is removing, skipping read callback");
+        return;
+    }
     dap_client_stage_t l_stage = l_fsm ? (dap_client_stage_t)atomic_load(&l_fsm->stage_readable) : STAGE_UNDEFINED;
 
     // Delegate reading to transport
@@ -688,6 +692,10 @@ static bool s_stream_es_callback_write(dap_events_socket_t *a_es, UNUSED_ARG voi
     if (!l_es || !l_es->stream) return false;
 
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    if (l_fsm && l_fsm->is_removing) {
+        debug_if(s_debug_more, L_DEBUG, "FSM is removing, skipping write callback");
+        return false;
+    }
     dap_client_stage_t l_stage = l_fsm ? (dap_client_stage_t)atomic_load(&l_fsm->stage_readable) : STAGE_UNDEFINED;
     dap_client_stage_status_t l_status = l_fsm ? (dap_client_stage_status_t)atomic_load(&l_fsm->stage_status_readable) : STAGE_STATUS_NONE;
 

@@ -109,7 +109,7 @@ struct dap_io_flow_ctrl {
     
     // Lifecycle management (prevents use-after-free in multithreaded scenarios)
     _Atomic(int32_t) active_ops;        // Count of active operations (send/recv)
-    _Atomic(bool) deleting;             // Flag: deletion in progress
+    _Atomic(int32_t) deleting;          // Flag: deletion in progress (int for WASM atomic alignment)
     pthread_mutex_t lifecycle_mutex;    // Mutex for lifecycle synchronization
     pthread_cond_t lifecycle_cond;      // Condition: wait for operations to complete
     
@@ -273,7 +273,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
     
     // Initialize lifecycle management
     atomic_init(&l_ctrl->active_ops, 0);
-    atomic_init(&l_ctrl->deleting, false);
+    atomic_init(&l_ctrl->deleting, 0);
     pthread_mutex_init(&l_ctrl->lifecycle_mutex, NULL);
     pthread_cond_init(&l_ctrl->lifecycle_cond, NULL);
     
@@ -392,7 +392,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     
     // STEP 1: Signal that deletion is in progress
     // This will cause new operations to fail fast via s_op_begin()
-    atomic_store_explicit(&a_ctrl->deleting, true, memory_order_release);
+    atomic_store_explicit(&a_ctrl->deleting, 1, memory_order_release);
     
     // STEP 2: Wait for all active operations to complete
     // Any thread currently inside send/recv will finish and call s_op_end()

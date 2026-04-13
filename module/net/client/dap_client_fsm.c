@@ -94,12 +94,29 @@ static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm);
 
 static inline void s_set_stage(dap_client_fsm_t *a_fsm, dap_client_stage_t a_stage)
 {
+    if (!a_fsm) {
+        log_it(L_CRITICAL, "s_set_stage: NULL fsm!");
+        return;
+    }
+    // Check alignment before atomic operation
+    if ((uintptr_t)&a_fsm->stage_readable % sizeof(int) != 0) {
+        log_it(L_CRITICAL, "s_set_stage: unaligned stage_readable at %p", (void *)&a_fsm->stage_readable);
+        return;
+    }
     a_fsm->stage = a_stage;
     atomic_store(&a_fsm->stage_readable, (int)a_stage);
 }
 
 static inline void s_set_stage_status(dap_client_fsm_t *a_fsm, dap_client_stage_status_t a_status)
 {
+    if (!a_fsm) {
+        log_it(L_CRITICAL, "s_set_stage_status: NULL fsm!");
+        return;
+    }
+    if ((uintptr_t)&a_fsm->stage_status_readable % sizeof(int) != 0) {
+        log_it(L_CRITICAL, "s_set_stage_status: unaligned stage_status_readable at %p", (void *)&a_fsm->stage_status_readable);
+        return;
+    }
     a_fsm->stage_status = a_status;
     atomic_store(&a_fsm->stage_status_readable, (int)a_status);
 }
@@ -107,6 +124,15 @@ static inline void s_set_stage_status(dap_client_fsm_t *a_fsm, dap_client_stage_
 static inline void s_set_stage_and_status(dap_client_fsm_t *a_fsm, dap_client_stage_t a_stage,
                                            dap_client_stage_status_t a_status)
 {
+    if (!a_fsm) {
+        log_it(L_CRITICAL, "s_set_stage_and_status: NULL fsm!");
+        return;
+    }
+    if ((uintptr_t)&a_fsm->stage_readable % sizeof(int) != 0 ||
+        (uintptr_t)&a_fsm->stage_status_readable % sizeof(int) != 0) {
+        log_it(L_CRITICAL, "s_set_stage_and_status: unaligned atomics at fsm=%p", (void *)a_fsm);
+        return;
+    }
     a_fsm->stage = a_stage;
     a_fsm->stage_status = a_status;
     atomic_store(&a_fsm->stage_readable, (int)a_stage);

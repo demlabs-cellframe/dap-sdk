@@ -1308,7 +1308,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     }
     
     // Ensure is_initalized is false so new_callback will be called
-    l_ev_socket->is_initalized = false;
+    l_ev_socket->is_initalized = 0;
 
     log_it(L_DEBUG,"Created client request socket %"DAP_FORMAT_SOCKET, l_ev_socket->socket);
     

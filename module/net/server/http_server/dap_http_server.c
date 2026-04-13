@@ -144,7 +144,7 @@ void dap_http_delete( dap_server_t *a_server, void * a_arg )
  * if ( ! l_es_new->is_initalized ){
         if (l_es_new->callbacks.new_callback)
             l_es_new->callbacks.new_callback(l_es_new, NULL);
-        l_es_new->is_initalized = true;
+        l_es_new->is_initalized = 1;
     }
  * @param a_delete_callback             callback which is called, when HTTP server object is deleted
  * @param a_headers_read_callback       Callback for read HTTP headers callback

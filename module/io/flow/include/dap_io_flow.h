@@ -366,9 +366,8 @@ struct dap_io_flow_server {
     _Atomic size_t remote_hits;             ///< Remote flow lookups
     
     bool is_running;                        ///< Server is running
-    _Atomic bool is_deleting;               ///< Server is being deleted (invalidate queued packets)
-    
-    // Cross-worker packet tracking (for natural drain during cleanup)
+
+    _Atomic int is_deleting;                ///< Server is being deleted (int for WASM atomic alignment)
     _Atomic uint32_t cross_worker_packets;     ///< Number of packets being forwarded between workers
     pthread_mutex_t cross_worker_mutex;        ///< Mutex for cross-worker drain wait
     pthread_cond_t cross_worker_cond;          ///< Condition variable for cross-worker drain

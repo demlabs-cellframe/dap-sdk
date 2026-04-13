@@ -39,9 +39,9 @@
 typedef struct {
     dap_client_t *client;
     const char *expected_channels;
-    bool is_ready;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    bool is_ready;
 } channels_ready_ctx_t;
 
 /**

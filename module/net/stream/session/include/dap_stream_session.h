@@ -47,8 +47,8 @@ struct dap_stream_session {
 
     dap_enc_key_t * key;
 
-    bool open_preview;
     pthread_mutex_t mutex;
+    bool open_preview;
     int opened;
     dap_time_t time_created;
 

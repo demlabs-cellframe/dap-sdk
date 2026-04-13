@@ -72,10 +72,19 @@
  * ======================================================================== */
 
 /* Document URL is only reliable on the main browser thread. Emscripten pthread workers
- * expose a blob: location, so reading protocol there yields non-https and breaks
- * enc_init / WS URL scheme vs a real https: page (mixed content). */
+ * expose a blob: location (e.g. blob:https://example.com/...), so we need to parse
+ * the actual origin from the blob URL to detect HTTPS properly. */
 EM_JS(int, js_page_is_secure, (void), {
-    return (typeof location !== 'undefined' && location.protocol === 'https:') ? 1 : 0;
+    if (typeof location === 'undefined') return 0;
+    // Main thread: check protocol directly
+    if (location.protocol === 'https:') return 1;
+    // Worker with blob: URL — parse the origin from blob:https://...
+    if (location.protocol === 'blob:' && location.href) {
+        // blob:https://example.com/uuid -> extract https://example.com
+        var blobUrl = location.href;
+        if (blobUrl.startsWith('blob:https://')) return 1;
+    }
+    return 0;
 });
 
 #ifdef DAP_WASM_PTHREADS
@@ -98,10 +107,10 @@ typedef struct ws_system_conn {
     long                    keepalive_timer_id;
 
 #ifdef DAP_WASM_PTHREADS
-    pthread_t               recv_thread;
-    bool                    recv_running;
     pthread_mutex_t         recv_mutex;
     sem_t                   recv_sem;
+    pthread_t               recv_thread;
+    bool                    recv_running;
 #endif
 
     /* ST mode: deferred callback for session_start */
@@ -416,6 +425,8 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
         s_wasm_main_document_https = 1;
     }
     l_conn->use_tls = (a_params->port == 443) || (s_wasm_main_document_https > 0);
+    log_it(L_DEBUG, "WS connect: port=%u, https_flag=%d, use_tls=%d",
+           a_params->port, s_wasm_main_document_https, l_conn->use_tls);
 #else
     l_conn->use_tls = (a_params->port == 443) || js_page_is_secure();
 #endif
@@ -864,6 +875,8 @@ int dap_net_trans_websocket_system_register(void)
 #ifdef DAP_WASM_PTHREADS
     if (s_wasm_main_document_https < 0)
         s_wasm_main_document_https = js_page_is_secure();
+    log_it(L_NOTICE, "WS transport register: https_detection=%d (thread=%p)",
+           s_wasm_main_document_https, (void *)pthread_self());
 #endif
     return dap_net_trans_register(
         "websocket-system",

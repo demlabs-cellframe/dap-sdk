@@ -2760,7 +2760,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
-    l_es->is_initalized = true;  // CRITICAL: Mark as initialized for write operations!
+    l_es->is_initalized = 1;  // CRITICAL: Mark as initialized for write operations!
     
     // Set UDP read callback for client esocket
     // NO write_callback needed - reactor handles packet_queue automatically!

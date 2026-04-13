@@ -324,7 +324,7 @@ dap_client_stage_t dap_client_get_stage(dap_client_t *a_client)
 {
     if (!a_client) return STAGE_UNDEFINED;
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm) return STAGE_UNDEFINED;
+    if (!l_fsm || l_fsm->is_removing) return STAGE_UNDEFINED;
     return (dap_client_stage_t)atomic_load(&l_fsm->stage_readable);
 }
 
@@ -332,7 +332,7 @@ const char *dap_client_get_stage_status_str(dap_client_t *a_client)
 {
     if (!a_client) return NULL;
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm) return NULL;
+    if (!l_fsm || l_fsm->is_removing) return NULL;
     return dap_client_stage_status_str(
         (dap_client_stage_status_t)atomic_load(&l_fsm->stage_status_readable));
 }
@@ -373,7 +373,7 @@ dap_client_stage_status_t dap_client_get_stage_status(dap_client_t *a_client)
 {
     if (!a_client) return STAGE_STATUS_NONE;
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    if (!l_fsm) return STAGE_STATUS_NONE;
+    if (!l_fsm || l_fsm->is_removing) return STAGE_STATUS_NONE;
     return (dap_client_stage_status_t)atomic_load(&l_fsm->stage_status_readable);
 }
 

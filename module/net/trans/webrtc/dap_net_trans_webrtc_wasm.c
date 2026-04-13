@@ -83,7 +83,14 @@ extern int js_http_post_sync(const char *a_url_ptr, const char *a_content_type_p
  * ======================================================================== */
 
 EM_JS(int, js_rtc_page_is_secure, (void), {
-    return (typeof location !== 'undefined' && location.protocol === 'https:') ? 1 : 0;
+    if (typeof location === 'undefined') return 0;
+    // Main thread: check protocol directly
+    if (location.protocol === 'https:') return 1;
+    // Worker with blob: URL — parse the origin from blob:https://...
+    if (location.protocol === 'blob:' && location.href) {
+        if (location.href.startsWith('blob:https://')) return 1;
+    }
+    return 0;
 });
 
 #ifdef DAP_WASM_PTHREADS
@@ -104,10 +111,10 @@ typedef struct rtc_conn {
     uint32_t                session_id;
 
 #ifdef DAP_WASM_PTHREADS
-    pthread_t               recv_thread;
-    bool                    recv_running;
     pthread_mutex_t         recv_mutex;
     sem_t                   recv_sem;
+    pthread_t               recv_thread;
+    bool                    recv_running;
 #endif
 
     dap_net_trans_ready_cb_t  ready_callback;
@@ -403,6 +410,8 @@ static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
         s_rtc_main_document_https = 1;
     }
     l_conn->use_tls = (a_params->port == 443) || (s_rtc_main_document_https > 0);
+    log_it(L_DEBUG, "RTC connect: port=%u, https_flag=%d, use_tls=%d",
+           a_params->port, s_rtc_main_document_https, l_conn->use_tls);
 #else
     l_conn->use_tls = (a_params->port == 443) || js_rtc_page_is_secure();
 #endif

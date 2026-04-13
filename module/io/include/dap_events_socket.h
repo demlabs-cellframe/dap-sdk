@@ -276,8 +276,8 @@ typedef struct dap_events_socket {
     // Flags. TODO  - rework in bool fields
     uint32_t flags;
     bool no_close;
-    atomic_bool is_initalized;
     bool was_reassigned; // Was reassigment at least once
+    _Atomic int is_initalized; // int instead of bool for WASM atomic alignment
 
     byte_t *buf_in, *buf_out;
     dap_events_socket_clear_buf cb_buf_cleaner;
