@@ -26,7 +26,7 @@
 #include "../../../../module/test/dap_test.h"
 #include "../../../fixtures/utilities/test_helpers.h"
 #include <dap_enc_base64.h>
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 
 #define LOG_TAG "test_base64_encoding"
 
@@ -42,9 +42,9 @@ static bool s_test_base64_standard(void) {
 
     for (int l_iteration = 0; l_iteration < TEST_ITERATIONS; l_iteration++) {
         // Random size between 1 and MAX_TEST_SIZE
-        size_t l_test_size = (random_uint32_t(MAX_TEST_SIZE)) + 1;
+        size_t l_test_size = (dap_random_uint32(MAX_TEST_SIZE)) + 1;
         uint8_t l_source_data[l_test_size];
-        randombytes(l_source_data, l_test_size);
+        dap_random_bytes(l_source_data, l_test_size);
 
         // Encode
         size_t l_encoded_size = DAP_ENC_BASE64_ENCODE_SIZE(l_test_size);
@@ -77,9 +77,9 @@ static bool s_test_base64_urlsafe(void) {
 
     for (int l_iteration = 0; l_iteration < TEST_ITERATIONS; l_iteration++) {
         // Random size between 1 and MAX_TEST_SIZE
-        size_t l_test_size = (random_uint32_t(MAX_TEST_SIZE)) + 1;
+        size_t l_test_size = (dap_random_uint32(MAX_TEST_SIZE)) + 1;
         uint8_t l_source_data[l_test_size];
-        randombytes(l_source_data, l_test_size);
+        dap_random_bytes(l_source_data, l_test_size);
 
         // Encode
         size_t l_encoded_size = DAP_ENC_BASE64_ENCODE_SIZE(l_test_size);

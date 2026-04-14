@@ -9,6 +9,7 @@
 #include "dap_events.h"
 #include "dap_proc_thread.h"
 #include "dap_hash.h"
+#include "dap_hash_compat.h"
 
 #include "dap_global_db.h"
 #include "dap_global_db_driver.h"

@@ -4,7 +4,8 @@
 #include <dap_enc_chipmunk_ring.h>
 #include <dap_sign.h>
 #include <dap_hash.h>
-#include "rand/dap_rand.h"
+#include <dap_hash_compat.h>
+#include "dap_rand.h"
 #include "chipmunk/chipmunk_ring.h"
 #include <sys/time.h>
 #include <unistd.h>

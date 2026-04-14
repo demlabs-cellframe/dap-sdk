@@ -27,6 +27,7 @@
 #include <dap_sign.h>
 #include <dap_enc_key.h>
 #include <dap_hash.h>
+#include <dap_hash_compat.h>
 #include <dap_enc_chipmunk_ring.h>
 #include "test_helpers.h"
 

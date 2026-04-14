@@ -106,7 +106,7 @@ DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
     }
 }
 
-DAP_STATIC_INLINE void s_randombytes(unsigned char *a_array, uint64_t a_len)
+DAP_STATIC_INLINE void s_dap_random_bytes(unsigned char *a_array, uint64_t a_len)
 {
     static int l_rand_add = 0;
     srand(time(NULL)  + l_rand_add);
@@ -1246,7 +1246,7 @@ static void s_test_overflow_diff_types_rand(uint64_t a_times)
     dap_print_module_name("dap_overflow_add_diff_types_rand");
     unsigned long long l_a[2], *l_b = l_a + 1;
     for (uint64_t i = 0; i < a_times; ++i) {
-        s_randombytes((unsigned char*)l_a, sizeof(l_a) * 2);
+        s_dap_random_bytes((unsigned char*)l_a, sizeof(l_a) * 2);
         s_test_overflow_diff_types(l_a, l_b);
     }
     char l_msg[100];
@@ -1265,8 +1265,8 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
             l_custom = 0;
             l_builtin = 0;
             for (uint64_t total = 0; total < a_times; ) {
-                s_randombytes(l_chars_array_a, s_array_size);
-                s_randombytes(l_chars_array_b, s_array_size);
+                s_dap_random_bytes(l_chars_array_a, s_array_size);
+                s_dap_random_bytes(l_chars_array_b, s_array_size);
                 l_cur_1 = get_cur_time_msec();
                 for (uint64_t i = 0; i < s_el_count; ++i)
                     a_custom_func(l_chars_array_a, l_chars_array_b, i, t);

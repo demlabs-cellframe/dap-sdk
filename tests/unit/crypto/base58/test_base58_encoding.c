@@ -26,7 +26,7 @@
 #include "../../../../module/test/dap_test.h"
 #include "../../../fixtures/utilities/test_helpers.h"
 #include <dap_enc_base58.h>
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 
 #define LOG_TAG "test_base58_encoding"
 
@@ -43,7 +43,7 @@ static bool s_test_base58_encode_decode(void) {
     // Test with various data sizes
     for (size_t l_test_size = 1; l_test_size <= MAX_TEST_SIZE; l_test_size *= 2) {
         uint8_t l_source_data[l_test_size];
-        randombytes(l_source_data, l_test_size);
+        dap_random_bytes(l_source_data, l_test_size);
 
         // Calculate encoded size
         size_t l_encoded_size = DAP_ENC_BASE58_ENCODE_SIZE(l_test_size);
@@ -117,9 +117,9 @@ static bool s_test_base58_random_data(void) {
 
     for (int i = 0; i < TEST_ITERATIONS; i++) {
         // Random size between 1 and 256
-        size_t l_test_size = (random_uint32_t(256)) + 1;
+        size_t l_test_size = (dap_random_uint32(256)) + 1;
         uint8_t l_source_data[l_test_size];
-        randombytes(l_source_data, l_test_size);
+        dap_random_bytes(l_source_data, l_test_size);
 
         // Encode
         size_t l_encoded_size = DAP_ENC_BASE58_ENCODE_SIZE(l_test_size);

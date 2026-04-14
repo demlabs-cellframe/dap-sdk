@@ -28,8 +28,9 @@
 #include <dap_enc_chipmunk_ring.h>
 #include <dap_sign.h>
 #include <dap_hash.h>
+#include <dap_hash_compat.h>
 #include "../fixtures/utilities/test_helpers.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 
 #define LOG_TAG "test_ring_signature_zkp"
 

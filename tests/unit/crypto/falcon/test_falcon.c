@@ -4577,7 +4577,7 @@ aes256_DRBG_update(const uint8_t *provided_data, uint8_t *key, uint8_t *V)
 }
 
 static void
-nist_randombytes_init(uint8_t *entropy_input)
+nist_dap_random_bytes_init(uint8_t *entropy_input)
 {
 	memset(DRBG_key, 0x00, sizeof DRBG_key);
 	memset(DRBG_V, 0x00, sizeof DRBG_V);
@@ -4585,7 +4585,7 @@ nist_randombytes_init(uint8_t *entropy_input)
 }
 
 static void
-nist_randombytes(uint8_t *buf, size_t len)
+nist_dap_random_bytes(uint8_t *buf, size_t len)
 {
 	while (len > 0) {
 		unsigned cc;
@@ -4652,7 +4652,7 @@ test_nist_KAT(unsigned logn, const char *srefhash)
 	for (i = 0; i < 48; i ++) {
 		entropy_input[i] = i;
 	}
-	nist_randombytes_init(entropy_input);
+	nist_dap_random_bytes_init(entropy_input);
 
 	for (i = 0; i < 100; i ++) {
 		uint8_t seed[48], seed2[48], nonce[40];
@@ -4677,21 +4677,21 @@ test_nist_KAT(unsigned logn, const char *srefhash)
 		/*
 		 * Generate test seed and message.
 		 */
-		nist_randombytes(seed, 48);
+		nist_dap_random_bytes(seed, 48);
 		mlen = 33 * (i + 1);
-		nist_randombytes(msg, mlen);
+		nist_dap_random_bytes(msg, mlen);
 
 		/*
 		 * Save DRBG state, and reinitialize it with the seed.
 		 */
 		memcpy(drbg_sav, DRBG_key, 32);
 		memcpy(drbg_sav + 32, DRBG_V, 16);
-		nist_randombytes_init(seed);
+		nist_dap_random_bytes_init(seed);
 
 		/*
 		 * Do keygen.
 		 */
-		nist_randombytes(seed2, 48);
+		nist_dap_random_bytes(seed2, 48);
 		inner_shake256_init(&sc);
 		inner_shake256_inject(&sc, seed2, 48);
 		inner_shake256_flip(&sc);
@@ -4742,14 +4742,14 @@ test_nist_KAT(unsigned logn, const char *srefhash)
 		/*
 		 * Sign the message.
 		 */
-		nist_randombytes(nonce, 40);
+		nist_dap_random_bytes(nonce, 40);
 		inner_shake256_init(&sc);
 		inner_shake256_inject(&sc, nonce, 40);
 		inner_shake256_inject(&sc, msg, mlen);
 		inner_shake256_flip(&sc);
 		Zf(hash_to_point_vartime)(&sc, hm, logn);
 
-		nist_randombytes(seed2, 48);
+		nist_dap_random_bytes(seed2, 48);
 		inner_shake256_init(&sc);
 		inner_shake256_inject(&sc, seed2, 48);
 		inner_shake256_flip(&sc);
