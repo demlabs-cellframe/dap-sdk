@@ -21,8 +21,8 @@ typedef enum {
 typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
 
 static const uint64_t s_times = 100;
-static const uint64_t s_el_count = 100;
-static const uint64_t s_array_size = s_el_count * sizeof(long long) / sizeof(char); // benchmarks array size 8MB
+enum { s_el_count = 100 };
+enum { s_array_size = s_el_count * sizeof(long long) / sizeof(char) }; // benchmarks array size 8MB
 
 DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
 {
@@ -59,9 +59,8 @@ static void s_test_put_int()
 
     const long long ten = 10, minus_twenty = -20, maxv = LLONG_MAX, minv = LLONG_MIN;
     const char ten_str[] = "10", minus_twenty_str[] = "-20", maxv_str[] = "9223372036854775807", minv_str[] = "-9223372036854775808";
-    char *res_ten = dap_itoa(ten), *res_minus_20 = dap_itoa(minus_twenty), *res_maxv = dap_itoa(maxv), *res_minv = dap_itoa(minv);
-    dap_assert(!strcmp(res_ten, ten_str) && !strcmp(minus_twenty_str, res_minus_20) 
-            && !strcmp(maxv_str, res_maxv) && !strcmp(minv_str, res_minv), "Check string result from itoa");
+    dap_assert(!strcmp(dap_itoa(ten), ten_str) && !strcmp(minus_twenty_str, dap_itoa(minus_twenty)) 
+            && !strcmp(maxv_str, dap_itoa(maxv)) && !strcmp(minv_str, dap_itoa(minv)), "Check string result from itoa");
 }
 
 DAP_STATIC_INLINE void s_overflow_add_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
