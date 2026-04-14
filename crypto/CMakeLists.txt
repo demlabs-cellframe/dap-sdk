@@ -211,6 +211,8 @@ add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 add_subdirectory(./XKCP)
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
     add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
+    target_compile_options(secp256k1 PRIVATE -Wno-unterminated-string-initialization)
+    target_compile_options(secp256k1_precomputed PRIVATE -Wno-unterminated-string-initialization)
 endif()
 
 
