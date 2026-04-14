@@ -34,9 +34,53 @@
 
 #define LOG_TAG "chipmunk_ring_acorn"
 
+static bool s_debug_more = false;
 
-
-bool s_debug_more = false;
+/**
+ * @brief Internal helper for domain-separated SHA3-256 hashing
+ */
+static int s_domain_hash(const char *a_domain, 
+                        const void *a_salt, size_t a_salt_size,
+                        const void *a_input, size_t a_input_size,
+                        void *a_output, size_t a_output_size,
+                        uint32_t a_iterations)
+{
+    if (!a_domain || !a_input || !a_output || a_input_size == 0 || a_output_size == 0)
+        return -1;
+    
+    size_t domain_len = strlen(a_domain);
+    size_t combined_size = domain_len + a_salt_size + a_input_size;
+    uint8_t *combined = DAP_NEW_SIZE(uint8_t, combined_size);
+    if (!combined) return -ENOMEM;
+    
+    size_t offset = 0;
+    memcpy(combined + offset, a_domain, domain_len);
+    offset += domain_len;
+    if (a_salt && a_salt_size > 0) {
+        memcpy(combined + offset, a_salt, a_salt_size);
+        offset += a_salt_size;
+    }
+    memcpy(combined + offset, a_input, a_input_size);
+    
+    uint8_t hash_buf[32];
+    if (!dap_hash(DAP_HASH_TYPE_SHA3_256, combined, combined_size, hash_buf, sizeof(hash_buf))) {
+        DAP_DELETE(combined);
+        return -1;
+    }
+    
+    uint32_t iterations = a_iterations > 0 ? a_iterations : 1;
+    for (uint32_t i = 1; i < iterations; i++) {
+        dap_hash(DAP_HASH_TYPE_SHA3_256, hash_buf, sizeof(hash_buf), hash_buf, sizeof(hash_buf));
+    }
+    
+    memcpy(a_output, hash_buf, a_output_size < 32 ? a_output_size : 32);
+    if (a_output_size > 32) {
+        memset((uint8_t*)a_output + 32, 0, a_output_size - 32);
+    }
+    
+    DAP_DELETE(combined);
+    return 0;
+}
 
 
 /**
@@ -108,7 +152,7 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
     // Generate random seed for true randomness
     uint8_t participant_seed[64];
     uint8_t random_bytes[32];
-    randombytes(random_bytes, sizeof(random_bytes));
+    dap_random_bytes(random_bytes, sizeof(random_bytes));
     
     // Combine public key pointer, message size and random bytes for unique seed
     snprintf((char*)participant_seed, sizeof(participant_seed), "acorn_%p_%zu_", 
@@ -118,17 +162,15 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
         memcpy(participant_seed + prefix_len, random_bytes, sizeof(random_bytes));
     }
     
-    // Generate randomness of exact required size using dap_hash with domain separation
-    dap_hash_params_t randomness_params = {
-        .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_RANDOMNESS
-    };
+    // Generate randomness of exact required size using domain-separated SHA3-256
     // Use full seed length including random bytes
     size_t seed_len = (prefix_len + sizeof(random_bytes) <= sizeof(participant_seed)) ? 
                       prefix_len + sizeof(random_bytes) : sizeof(participant_seed);
-    int randomness_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
-                                    participant_seed, seed_len,
-                                    a_acorn->randomness, a_acorn->randomness_size,
-                                    DAP_HASH_FLAG_DOMAIN_SEPARATION, &randomness_params);
+    int randomness_result = s_domain_hash(CHIPMUNK_RING_DOMAIN_ACORN_RANDOMNESS,
+                                          NULL, 0,
+                                          participant_seed, seed_len,
+                                          a_acorn->randomness, a_acorn->randomness_size,
+                                          1);
     if (randomness_result != 0) {
         log_it(L_ERROR, "Failed to generate participant randomness: %d", randomness_result);
         chipmunk_ring_acorn_free(a_acorn);
@@ -165,14 +207,11 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
     acorn_input_size = l_input_result.bytes_written;
     
     // Generate Acorn proof using parameterized iterations from signature context
-    dap_hash_params_t l_acorn_params = {
-        .iterations = a_zk_iterations, // Use context parameter instead of hardcoded maximum
-        .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT
-    };
-    
-    int l_acorn_result = dap_hash(DAP_HASH_TYPE_SHAKE256, acorn_input, acorn_input_size,
-                                 a_acorn->acorn_proof, a_acorn->acorn_proof_size,
-                                 DAP_HASH_FLAG_ITERATIVE | DAP_HASH_FLAG_DOMAIN_SEPARATION, &l_acorn_params);
+    int l_acorn_result = s_domain_hash(CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT,
+                                       NULL, 0,
+                                       acorn_input, acorn_input_size,
+                                       a_acorn->acorn_proof, a_acorn->acorn_proof_size,
+                                       a_zk_iterations);
     DAP_DELETE(acorn_input);
     
     if (l_acorn_result != 0) {
@@ -181,14 +220,12 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
         return -1;
     }
     
-    // Generate linkability tag of exact required size using dap_hash with domain separation
-    dap_hash_params_t linkability_params = {
-        .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_LINKABILITY
-    };
-    int linkability_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
-                                     a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE,
-                                     a_acorn->linkability_tag, a_acorn->linkability_tag_size,
-                                     DAP_HASH_FLAG_DOMAIN_SEPARATION, &linkability_params);
+    // Generate linkability tag using domain-separated SHA3-256
+    int linkability_result = s_domain_hash(CHIPMUNK_RING_DOMAIN_ACORN_LINKABILITY,
+                                           NULL, 0,
+                                           a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE,
+                                           a_acorn->linkability_tag, a_acorn->linkability_tag_size,
+                                           1);
     if (linkability_result != 0) {
         log_it(L_ERROR, "Failed to generate linkability tag: %d", linkability_result);
         chipmunk_ring_acorn_free(a_acorn);

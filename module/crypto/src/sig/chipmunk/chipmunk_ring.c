@@ -42,9 +42,10 @@
 #include "dap_crypto_common.h"
 #include "dap_enc_key.h"
 #include "dap_hash.h"
+#include "dap_hash_compat.h"
 #include "dap_rand.h"
+#include "dap_math_ops.h"
 #include "chipmunk_hash.h"
-#include "../sha3/fips202.h"
 #include "dap_enc_chipmunk_ring.h"
 #include "dap_enc_chipmunk_ring_params.h"
 #include "chipmunk_ring_serialize_schema.h"
@@ -676,35 +677,26 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
             }
             response_input_size = l_response_result.bytes_written;
             
-            // Generate ZK proof using same algorithm as verification
-            dap_hash_params_t response_params = {
-                .iterations = a_signature->zk_iterations,
-                .domain_separator = CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER,
-                .salt = challenge_verification_input,
-                .salt_size = challenge_verification_input_size
-            };
-            
-            // Debug ZK proof generation parameters
+            // Generate ZK proof using domain-separated SHA3-256
             debug_if(s_debug_more, L_INFO, "ZK proof generation: input=%p, input_size=%zu, output=%p, output_size=%u",
                      response_input, response_input_size, current_proof, a_signature->zk_proof_size_per_participant);
-            debug_if(s_debug_more, L_INFO, "ZK params: iterations=%u, domain='%s', salt=%p, salt_size=%zu",
-                     response_params.iterations, response_params.domain_separator,
-                     response_params.salt, response_params.salt_size);
+            debug_if(s_debug_more, L_INFO, "ZK params: iterations=%u, domain='%s', salt_size=%zu",
+                     a_signature->zk_iterations, CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER, challenge_verification_input_size);
 
-            int zk_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
-                                   response_input, response_input_size,
-                                   current_proof, a_signature->zk_proof_size_per_participant,
-                                   DAP_HASH_FLAG_DOMAIN_SEPARATION | DAP_HASH_FLAG_SALT | DAP_HASH_FLAG_ITERATIVE,
-                                   &response_params);
+            int zk_result = s_domain_hash(CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER,
+                                          challenge_verification_input, challenge_verification_input_size,
+                                          response_input, response_input_size,
+                                          current_proof, a_signature->zk_proof_size_per_participant,
+                                          a_signature->zk_iterations);
             
             DAP_DELETE(response_input);
             DAP_DELETE(challenge_verification_input);
             
             if (zk_result != 0) {
                 log_it(L_ERROR, "Failed to generate ZK proof for multi-signer participant %u: hash error %d", i, zk_result);
-                log_it(L_ERROR, "ZK params: iterations=%u, domain='%s', salt_size=%zu, proof_size=%u", 
-                       response_params.iterations, response_params.domain_separator, 
-                       response_params.salt_size, a_signature->zk_proof_size_per_participant);
+                log_it(L_ERROR, "ZK params: iterations=%u, domain='%s', proof_size=%u", 
+                       a_signature->zk_iterations, CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER, 
+                       a_signature->zk_proof_size_per_participant);
                 chipmunk_ring_signature_free(a_signature);
                 return -1;
             }
@@ -1090,14 +1082,11 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                     return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
                 }
                 
-                dap_hash_params_t l_acorn_params = {
-                    .iterations = a_signature->zk_iterations, // Use signature parameters for consistency
-                    .domain_separator = CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT
-                };
-                
-                int l_acorn_result = dap_hash(DAP_HASH_TYPE_SHAKE256, l_acorn_input, l_acorn_input_size,
-                                             l_expected_acorn_proof, a_signature->acorn_proofs[l_i].acorn_proof_size,
-                                             DAP_HASH_FLAG_ITERATIVE | DAP_HASH_FLAG_DOMAIN_SEPARATION, &l_acorn_params);
+                int l_acorn_result = s_domain_hash(CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT,
+                                                   NULL, 0,
+                                                   l_acorn_input, l_acorn_input_size,
+                                                   l_expected_acorn_proof, a_signature->acorn_proofs[l_i].acorn_proof_size,
+                                                   a_signature->zk_iterations);
                 DAP_DELETE(l_acorn_input);
                 
                 if (l_acorn_result == 0) {
@@ -1237,25 +1226,19 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                             continue;
                         }
                         
-                        dap_hash_params_t verify_params = {
-                            .iterations = a_signature->zk_iterations,
-                            .domain_separator = CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER,
-                            .salt = challenge_salt,
-                            .salt_size = l_salt_result.bytes_written
-                        };
-                        
                         // Use dynamic proof size from signature (not constant)
                         uint8_t *expected_proof = DAP_NEW_Z_SIZE(uint8_t, a_signature->zk_proof_size_per_participant);
                         if (!expected_proof) {
                             debug_if(s_debug_more, L_WARNING, "ZK proof %u: failed to allocate expected proof", i);
                             DAP_DELETE(verify_input);
+                            DAP_DELETE(challenge_salt);
                             l_zk_valid = false;
                         } else {
-                            int hash_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
-                                                      verify_input, verify_input_size,
-                                                      expected_proof, a_signature->zk_proof_size_per_participant,
-                                                  DAP_HASH_FLAG_DOMAIN_SEPARATION | DAP_HASH_FLAG_SALT | DAP_HASH_FLAG_ITERATIVE,
-                                                  &verify_params);
+                            int hash_result = s_domain_hash(CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER,
+                                                           challenge_salt, l_salt_result.bytes_written,
+                                                           verify_input, verify_input_size,
+                                                           expected_proof, a_signature->zk_proof_size_per_participant,
+                                                           a_signature->zk_iterations);
                         
                             if (hash_result == 0) {
                                 // Constant-time comparison (security critical)

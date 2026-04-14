@@ -29,6 +29,7 @@
 #include "chipmunk_ntt.h"
 #include "chipmunk_hash.h"
 #include "dap_hash.h"
+#include "dap_hash_compat.h"
 #include "dap_rand.h"
 
 // Optimized modular arithmetic helper functions
