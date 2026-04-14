@@ -143,7 +143,7 @@
 #define CHIPMUNK_RING_SECURITY_LEVEL_ENTERPRISE 1024  ///< Security level for enterprise mode
 
 // Hash algorithm preferences
-#define CHIPMUNK_RING_HASH_ALGORITHM_UNIVERSAL  DAP_HASH_TYPE_SHAKE256  ///< Universal hash for all ZK proofs
+#define CHIPMUNK_RING_HASH_ALGORITHM_UNIVERSAL  DAP_HASH_TYPE_SHA3_256  ///< Universal hash for all ZK proofs
 
 // Domain separators for different contexts
 #define CHIPMUNK_RING_DOMAIN_ZK_PROOF           "ChipmunkRing-ZK-Proof"

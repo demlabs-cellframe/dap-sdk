@@ -42,7 +42,7 @@
 #include "dap_crypto_common.h"
 #include "dap_enc_key.h"
 #include "dap_hash.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "chipmunk_hash.h"
 #include "../sha3/fips202.h"
 #include "dap_enc_chipmunk_ring.h"
@@ -63,6 +63,54 @@ static chipmunk_ring_pq_params_t s_pq_params = {
     // Computed sizes (will be calculated in update_layer_sizes)
     .computed = {0}
 };
+
+/**
+ * @brief Internal helper for domain-separated SHA3-256 hashing
+ * @details Concatenates domain separator with input and hashes the result.
+ *          Supports optional salt and iterative hashing.
+ */
+static int s_domain_hash(const char *a_domain, 
+                        const void *a_salt, size_t a_salt_size,
+                        const void *a_input, size_t a_input_size,
+                        void *a_output, size_t a_output_size,
+                        uint32_t a_iterations)
+{
+    if (!a_domain || !a_input || !a_output || a_input_size == 0 || a_output_size == 0)
+        return -1;
+    
+    size_t domain_len = strlen(a_domain);
+    size_t combined_size = domain_len + a_salt_size + a_input_size;
+    uint8_t *combined = DAP_NEW_SIZE(uint8_t, combined_size);
+    if (!combined) return -ENOMEM;
+    
+    size_t offset = 0;
+    memcpy(combined + offset, a_domain, domain_len);
+    offset += domain_len;
+    if (a_salt && a_salt_size > 0) {
+        memcpy(combined + offset, a_salt, a_salt_size);
+        offset += a_salt_size;
+    }
+    memcpy(combined + offset, a_input, a_input_size);
+    
+    uint8_t hash_buf[32];
+    if (!dap_hash(DAP_HASH_TYPE_SHA3_256, combined, combined_size, hash_buf, sizeof(hash_buf))) {
+        DAP_DELETE(combined);
+        return -1;
+    }
+    
+    uint32_t iterations = a_iterations > 0 ? a_iterations : 1;
+    for (uint32_t i = 1; i < iterations; i++) {
+        dap_hash(DAP_HASH_TYPE_SHA3_256, hash_buf, sizeof(hash_buf), hash_buf, sizeof(hash_buf));
+    }
+    
+    memcpy(a_output, hash_buf, a_output_size < 32 ? a_output_size : 32);
+    if (a_output_size > 32) {
+        memset((uint8_t*)a_output + 32, 0, a_output_size - 32);
+    }
+    
+    DAP_DELETE(combined);
+    return 0;
+}
 
 /**
  * @brief Get current PQ parameters

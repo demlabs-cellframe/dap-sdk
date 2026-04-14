@@ -26,7 +26,7 @@
 #include "chipmunk_ring_serialize_schema.h"
 #include "dap_common.h"
 #include "dap_hash.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_enc_chipmunk_ring.h"
 #include "dap_enc_chipmunk_ring_params.h"
 

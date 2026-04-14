@@ -29,7 +29,7 @@
 #include "chipmunk_ntt.h"
 #include "chipmunk_hash.h"
 #include "dap_hash.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 
 // Optimized modular arithmetic helper functions
 // NOTE: Modular inverse moved to dap_math module as dap_mod_inverse_u64
@@ -624,21 +624,24 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
             return -1;
         }
         
-        // Step 4: Generate proper challenge using parameters from signature
-        dap_hash_params_t l_challenge_params = {
-            .iterations = a_signature->zk_iterations,
-            .domain_separator = CHIPMUNK_RING_ZK_DOMAIN_SINGLE_SIGNER,
-            .salt = a_message,
-            .salt_size = a_message_size
-        };
+        // Step 4: Generate proper challenge using SHA3-256 with domain separation
+        const char *domain = CHIPMUNK_RING_ZK_DOMAIN_SINGLE_SIGNER;
+        size_t domain_len = strlen(domain);
+        size_t combined_size = domain_len + a_message_size;
+        uint8_t *combined = DAP_NEW_SIZE(uint8_t, combined_size);
+        if (!combined) {
+            DAP_DELETE(a_signature->signature);
+            return -ENOMEM;
+        }
+        memcpy(combined, domain, domain_len);
+        memcpy(combined + domain_len, a_message, a_message_size);
         
-        int l_challenge_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
-                                         a_message, a_message_size,
-                                         a_signature->challenge, sizeof(a_signature->challenge),
-                                         DAP_HASH_FLAG_DOMAIN_SEPARATION | DAP_HASH_FLAG_SALT | DAP_HASH_FLAG_ITERATIVE,
-                                         &l_challenge_params);
+        bool l_challenge_ok = dap_hash(DAP_HASH_TYPE_SHA3_256,
+                                       combined, combined_size,
+                                       a_signature->challenge, sizeof(a_signature->challenge));
+        DAP_DELETE(combined);
         
-        if (l_challenge_result != 0) {
+        if (!l_challenge_ok) {
             log_it(L_ERROR, "Failed to generate challenge for aggregated signature");
             DAP_DELETE(a_signature->signature);
             return -1;
@@ -879,21 +882,25 @@ int chipmunk_ring_aggregate_signatures(const chipmunk_ring_share_t *a_shares,
             return -1;
         }
         
-        // Generate challenge using universal hash with signature parameters
-        dap_hash_params_t l_challenge_params = {
-            .iterations = a_signature->zk_iterations,
-            .domain_separator = CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER,
-            .salt = a_message,
-            .salt_size = a_message_size
-        };
+        // Generate challenge using SHA3-256 with domain separation
+        const char *multi_domain = CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER;
+        size_t multi_domain_len = strlen(multi_domain);
+        size_t multi_combined_size = multi_domain_len + a_message_size;
+        uint8_t *multi_combined = DAP_NEW_SIZE(uint8_t, multi_combined_size);
+        if (!multi_combined) {
+            DAP_DELETE(a_signature->signature);
+            DAP_DELETE(a_signature->threshold_zk_proofs);
+            return -ENOMEM;
+        }
+        memcpy(multi_combined, multi_domain, multi_domain_len);
+        memcpy(multi_combined + multi_domain_len, a_message, a_message_size);
         
-        int l_challenge_result = dap_hash(DAP_HASH_TYPE_SHAKE256,
-                                         a_message, a_message_size,
-                                         a_signature->challenge, sizeof(a_signature->challenge),
-                                         DAP_HASH_FLAG_DOMAIN_SEPARATION | DAP_HASH_FLAG_SALT | DAP_HASH_FLAG_ITERATIVE,
-                                         &l_challenge_params);
+        bool l_multi_challenge_ok = dap_hash(DAP_HASH_TYPE_SHA3_256,
+                                             multi_combined, multi_combined_size,
+                                             a_signature->challenge, sizeof(a_signature->challenge));
+        DAP_DELETE(multi_combined);
         
-        if (l_challenge_result != 0) {
+        if (!l_multi_challenge_ok) {
             log_it(L_ERROR, "Failed to generate challenge for aggregated signature");
             DAP_DELETE(a_signature->signature);
             DAP_DELETE(a_signature->threshold_zk_proofs);
@@ -943,7 +950,8 @@ void chipmunk_ring_share_free(chipmunk_ring_share_t *a_share) {
 
 /**
  * @brief Generate ZK proof using signature parameters
- * @details Universal function that uses all parameters from signature structure
+ * @details Universal function that uses all parameters from signature structure.
+ *          Uses iterative SHA3-256 hashing with domain separation.
  */
 int chipmunk_ring_generate_zk_proof(const uint8_t *a_input, size_t a_input_size,
                                    const chipmunk_ring_signature_t *a_signature,
@@ -954,26 +962,44 @@ int chipmunk_ring_generate_zk_proof(const uint8_t *a_input, size_t a_input_size,
     dap_return_val_if_fail(a_signature->zk_proof_size_per_participant >= CHIPMUNK_RING_ZK_PROOF_SIZE_MIN, -EINVAL);
     dap_return_val_if_fail(a_signature->zk_proof_size_per_participant <= CHIPMUNK_RING_ZK_PROOF_SIZE_MAX, -EINVAL);
     
-    // Use universal hash algorithm
-    dap_hash_type_t hash_type = CHIPMUNK_RING_HASH_ALGORITHM_UNIVERSAL;
+    size_t proof_size = a_signature->zk_proof_size_per_participant;
+    uint32_t iterations = a_signature->zk_iterations > 0 ? a_signature->zk_iterations : 1;
     
-    // Create hash parameters using signature parameters
-    dap_hash_params_t hash_params = {
-        .salt = a_salt,
-        .salt_size = a_salt_size,
-        .domain_separator = (a_signature->required_signers == 1) ? 
-                           CHIPMUNK_RING_ZK_DOMAIN_SINGLE_SIGNER : 
-                           CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER,
-        .iterations = a_signature->zk_iterations,
-        .security_level = (a_signature->required_signers == 1) ? 
-                         CHIPMUNK_RING_SECURITY_LEVEL_SINGLE : 
-                         CHIPMUNK_RING_SECURITY_LEVEL_ENTERPRISE
-    };
+    // Prepare domain-separated input: domain || salt || input
+    const char *domain = (a_signature->required_signers == 1) ? 
+                         CHIPMUNK_RING_ZK_DOMAIN_SINGLE_SIGNER : 
+                         CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER;
+    size_t domain_len = strlen(domain);
+    size_t total_input_size = domain_len + a_salt_size + a_input_size;
     
-    // Generate ZK proof with signature parameters
-    return dap_hash(hash_type, a_input, a_input_size, a_output, a_signature->zk_proof_size_per_participant,
-                   DAP_HASH_FLAG_DOMAIN_SEPARATION | DAP_HASH_FLAG_ITERATIVE | 
-                   (a_salt ? DAP_HASH_FLAG_SALT : 0), &hash_params);
+    uint8_t *combined_input = DAP_NEW_SIZE(uint8_t, total_input_size);
+    if (!combined_input) return -ENOMEM;
+    
+    size_t offset = 0;
+    memcpy(combined_input + offset, domain, domain_len);
+    offset += domain_len;
+    if (a_salt && a_salt_size > 0) {
+        memcpy(combined_input + offset, a_salt, a_salt_size);
+        offset += a_salt_size;
+    }
+    memcpy(combined_input + offset, a_input, a_input_size);
+    
+    // Iterative hashing
+    uint8_t hash_buf[32];
+    dap_hash(DAP_HASH_TYPE_SHA3_256, combined_input, total_input_size, hash_buf, sizeof(hash_buf));
+    
+    for (uint32_t i = 1; i < iterations; i++) {
+        dap_hash(DAP_HASH_TYPE_SHA3_256, hash_buf, sizeof(hash_buf), hash_buf, sizeof(hash_buf));
+    }
+    
+    // Copy result (truncate or pad as needed)
+    memcpy(a_output, hash_buf, proof_size < 32 ? proof_size : 32);
+    if (proof_size > 32) {
+        memset(a_output + 32, 0, proof_size - 32);
+    }
+    
+    DAP_DELETE(combined_input);
+    return 0;
 }
 
 
@@ -984,36 +1010,6 @@ int chipmunk_ring_generate_zk_proof_from_signature(const uint8_t *a_input, size_
                                                   const chipmunk_ring_signature_t *a_signature,
                                                   const uint8_t *a_salt, size_t a_salt_size,
                                                   uint8_t *a_output) {
-    dap_return_val_if_fail(a_input && a_signature && a_output, -EINVAL);
-    dap_return_val_if_fail(a_input_size > 0, -EINVAL);
-    
-    // Use parameters from signature
-    size_t proof_size = a_signature->zk_proof_size_per_participant;
-    uint32_t iterations = a_signature->zk_iterations;
-    
-    debug_if(s_debug_more, L_DEBUG, "Generating ZK proof from signature params: size=%zu, iterations=%u",
-           proof_size, iterations);
-    
-    // Use universal hash algorithm
-    dap_hash_type_t hash_type = CHIPMUNK_RING_HASH_ALGORITHM_UNIVERSAL;
-    
-    // Create hash parameters from signature
-    dap_hash_params_t hash_params = {
-        .salt = a_salt,
-        .salt_size = a_salt_size,
-        .domain_separator = CHIPMUNK_RING_DOMAIN_SIGNATURE_ZK,
-        .iterations = iterations,
-        .security_level = (a_signature->required_signers == 1) ? 
-                         CHIPMUNK_RING_SECURITY_LEVEL_SINGLE : CHIPMUNK_RING_SECURITY_LEVEL_MULTI
-    };
-    
-    // Determine flags
-    dap_hash_flags_t flags = DAP_HASH_FLAG_DOMAIN_SEPARATION | DAP_HASH_FLAG_ITERATIVE;
-    if (a_salt && a_salt_size > 0) {
-        flags |= DAP_HASH_FLAG_SALT;
-    }
-    
-    // Generate ZK proof with signature-specific parameters
-    return dap_hash(hash_type, a_input, a_input_size, a_output, proof_size,
-                   flags, &hash_params);
+    return chipmunk_ring_generate_zk_proof(a_input, a_input_size, a_signature, 
+                                          a_salt, a_salt_size, a_output);
 }
