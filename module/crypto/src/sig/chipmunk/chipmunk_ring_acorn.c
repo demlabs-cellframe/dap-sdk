@@ -37,7 +37,8 @@
 static bool s_debug_more = false;
 
 /**
- * @brief Internal helper for domain-separated SHA3-256 hashing
+ * @brief Internal helper for domain-separated SHA3-256 hashing with XOF-like expansion
+ * @details For outputs > 32 bytes, uses counter mode expansion (HKDF-Expand style).
  */
 static int s_domain_hash(const char *a_domain, 
                         const void *a_salt, size_t a_salt_size,
@@ -49,36 +50,76 @@ static int s_domain_hash(const char *a_domain,
         return -1;
     
     size_t domain_len = strlen(a_domain);
-    size_t combined_size = domain_len + a_salt_size + a_input_size;
-    uint8_t *combined = DAP_NEW_SIZE(uint8_t, combined_size);
-    if (!combined) return -ENOMEM;
+    
+    // Phase 1: Create PRK from input
+    size_t prk_input_size = domain_len + a_salt_size + a_input_size;
+    uint8_t *prk_input = DAP_NEW_SIZE(uint8_t, prk_input_size);
+    if (!prk_input) return -ENOMEM;
     
     size_t offset = 0;
-    memcpy(combined + offset, a_domain, domain_len);
+    memcpy(prk_input + offset, a_domain, domain_len);
     offset += domain_len;
     if (a_salt && a_salt_size > 0) {
-        memcpy(combined + offset, a_salt, a_salt_size);
+        memcpy(prk_input + offset, a_salt, a_salt_size);
         offset += a_salt_size;
     }
-    memcpy(combined + offset, a_input, a_input_size);
+    memcpy(prk_input + offset, a_input, a_input_size);
     
-    uint8_t hash_buf[32];
-    if (!dap_hash(DAP_HASH_TYPE_SHA3_256, combined, combined_size, hash_buf, sizeof(hash_buf))) {
-        DAP_DELETE(combined);
+    uint8_t prk[32];
+    if (!dap_hash(DAP_HASH_TYPE_SHA3_256, prk_input, prk_input_size, prk, sizeof(prk))) {
+        DAP_DELETE(prk_input);
         return -1;
     }
+    DAP_DELETE(prk_input);
     
+    // Phase 2: Key stretching
     uint32_t iterations = a_iterations > 0 ? a_iterations : 1;
     for (uint32_t i = 1; i < iterations; i++) {
-        dap_hash(DAP_HASH_TYPE_SHA3_256, hash_buf, sizeof(hash_buf), hash_buf, sizeof(hash_buf));
+        dap_hash(DAP_HASH_TYPE_SHA3_256, prk, sizeof(prk), prk, sizeof(prk));
     }
     
-    memcpy(a_output, hash_buf, a_output_size < 32 ? a_output_size : 32);
-    if (a_output_size > 32) {
-        memset((uint8_t*)a_output + 32, 0, a_output_size - 32);
+    // Phase 3: Counter mode expansion
+    uint8_t *out = (uint8_t *)a_output;
+    size_t remaining = a_output_size;
+    uint8_t counter = 1;
+    uint8_t prev_block[32] = {0};
+    
+    while (remaining > 0) {
+        uint8_t expand_input[32 + 32 + 1];
+        size_t expand_len = 0;
+        
+        memcpy(expand_input + expand_len, prk, 32);
+        expand_len += 32;
+        
+        if (counter > 1) {
+            memcpy(expand_input + expand_len, prev_block, 32);
+            expand_len += 32;
+        }
+        
+        expand_input[expand_len] = counter;
+        expand_len += 1;
+        
+        uint8_t block[32];
+        if (!dap_hash(DAP_HASH_TYPE_SHA3_256, expand_input, expand_len, block, sizeof(block))) {
+            memset(prk, 0, sizeof(prk));
+            return -1;
+        }
+        
+        size_t to_copy = remaining < 32 ? remaining : 32;
+        memcpy(out, block, to_copy);
+        memcpy(prev_block, block, 32);
+        
+        out += to_copy;
+        remaining -= to_copy;
+        counter++;
+        
+        if (counter == 0) {
+            memset(prk, 0, sizeof(prk));
+            return -1;
+        }
     }
     
-    DAP_DELETE(combined);
+    memset(prk, 0, sizeof(prk));
     return 0;
 }
 
