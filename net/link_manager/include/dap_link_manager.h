@@ -104,6 +104,7 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
 int dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, uint64_t a_associated_net_id);
 int dap_link_manager_link_update(dap_stream_node_addr_t *a_link, const char *a_host, uint16_t a_port);
 bool dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr, uint64_t a_net_id);
+bool dap_link_manager_link_is_established(dap_stream_node_addr_t *a_node_addr);
 int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_uplink);
 void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr);
 void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr, bool a_no_error);

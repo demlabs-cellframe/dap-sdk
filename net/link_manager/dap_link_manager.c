@@ -963,6 +963,18 @@ bool dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr, uint64_t a_
     return NULL;
 }
 
+bool dap_link_manager_link_is_established(dap_stream_node_addr_t *a_node_addr)
+{
+    dap_return_val_if_pass_err(!s_link_manager, false, s_init_error);
+    dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, false);
+    dap_link_t *l_link = NULL;
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+    HASH_FIND(hh, s_link_manager->links, a_node_addr, sizeof(*a_node_addr), l_link);
+    bool l_ret = l_link && l_link->uplink.state == LINK_STATE_ESTABLISHED;
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    return l_ret;
+}
+
 struct link_moving_args {
     dap_stream_node_addr_t addr;
     bool uplink;
