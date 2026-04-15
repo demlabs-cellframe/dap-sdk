@@ -22,7 +22,11 @@
 */
 
 #include <string.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <arpa/inet.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"

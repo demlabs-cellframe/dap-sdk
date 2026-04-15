@@ -48,9 +48,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
 # Link dependencies as INTERFACE for OBJECT library
+if(WIN32)
+    set(DAP_CORE_PLATFORM dap_core_win32)
+else()
+    set(DAP_CORE_PLATFORM dap_core_unix)
+endif()
 dap_link_libraries(${PROJECT_NAME} INTERFACE 
     dap_core 
-    dap_core_unix
+    ${DAP_CORE_PLATFORM}
     dap_io 
     dap_crypto 
     dap_http_server

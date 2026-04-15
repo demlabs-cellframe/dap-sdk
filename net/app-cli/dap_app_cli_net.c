@@ -81,7 +81,7 @@ int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_st
         }
         int l_sock_err = 0;
         socklen_t l_err_len = sizeof(l_sock_err);
-        getsockopt(socket, SOL_SOCKET, SO_ERROR, &l_sock_err, &l_err_len);
+        getsockopt(socket, SOL_SOCKET, SO_ERROR, (char *)&l_sock_err, &l_err_len);
         if (l_sock_err)
             fprintf(stderr, "[CLI-DIAG] recv: EAGAIN + SO_ERROR=%d (%s), fd=%d\n", l_sock_err, strerror(l_sock_err), (int)socket);
         return DAP_CLI_ERROR_TIMEOUT;
@@ -291,7 +291,11 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
         if (l_status == DAP_CLI_ERROR_TIMEOUT) {
             time_t l_elapsed = time(NULL) - l_start_time;
             int avail = 0;
+#ifdef _WIN32
+            ioctlsocket(a_socket, FIONREAD, (u_long *)&avail);
+#else
             ioctl((int)a_socket, FIONREAD, &avail);
+#endif
             fprintf(stderr, "[CLI-DIAG] recv: timeout cycle, elapsed=%lds FIONREAD=%d\n", (long)l_elapsed, avail);
             if (l_elapsed > DAP_CLI_HTTP_TIMEOUT)
                 break;

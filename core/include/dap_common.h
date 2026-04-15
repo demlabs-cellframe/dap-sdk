@@ -64,7 +64,7 @@
 #include <atomic>
 #define _Atomic(X) std::atomic< X >
 #define atomic_bool _Atomic(bool)
-#define atomic_uint _Atomic(uint)
+#define atomic_uint _Atomic(unsigned int)
 #define atomic_int _Atomic(int)
 #endif
 

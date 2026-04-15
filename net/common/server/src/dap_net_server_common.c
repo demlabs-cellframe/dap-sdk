@@ -22,10 +22,15 @@ See more details here <http://www.gnu.org/licenses/>.
 */
 
 #include <string.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#endif
 #include <errno.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
