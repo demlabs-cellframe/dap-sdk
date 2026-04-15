@@ -44,6 +44,10 @@ typedef struct dap_enc_ks_key{
     UT_hash_handle hh; // makes this structure hashable with UTHASH library
 } dap_enc_ks_key_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void dap_enc_ks_deinit();
 
 dap_enc_ks_key_t * dap_enc_ks_find(const char * v_id);
@@ -54,5 +58,9 @@ dap_enc_ks_key_t * dap_enc_ks_add(struct dap_enc_key * key);
 
 bool dap_enc_ks_save_in_storage(dap_enc_ks_key_t* key);
 void dap_enc_ks_delete(const char *id);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

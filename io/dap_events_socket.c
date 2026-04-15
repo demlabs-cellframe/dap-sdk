@@ -93,7 +93,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 static bool s_debug_more = false;
 
-#ifdef DAP_OS_ANDROID
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
 static dap_events_socket_pre_connect_callback_t s_pre_connect_cb = NULL;
 static void *s_pre_connect_ctx = NULL;
 
@@ -750,7 +750,7 @@ int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
         return -1;
     }
     
-#ifdef DAP_OS_ANDROID
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
     if(s_pre_connect_cb)
         s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
 #endif

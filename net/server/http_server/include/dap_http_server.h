@@ -66,6 +66,10 @@ typedef struct dap_http_server {
 
 #define DAP_HTTP_SERVER(a) ((dap_http_server_t *) (a)->_inheritor)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int dap_http_init( ); // Init module
 void dap_http_deinit( ); // Deinit module
 
@@ -80,3 +84,7 @@ dap_http_url_proc_t * dap_http_add_proc(dap_http_server_t *sh, const char *url_p
                              , dap_http_client_callback_t data_read_callback
                              , dap_http_client_callback_write_t data_write_callback
                              , dap_http_client_callback_error_t error_callback ); // Add custom procesor for the HTTP server
+
+#ifdef __cplusplus
+}
+#endif

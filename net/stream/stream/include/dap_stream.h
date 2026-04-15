@@ -170,6 +170,10 @@ DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, d
 
 extern dap_stream_node_addr_t g_node_addr;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int dap_stream_init(dap_config_t * g_config);
 
 bool dap_stream_get_dump_packet_headers();
@@ -236,4 +240,8 @@ dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
 dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
+
+#ifdef __cplusplus
+}
+#endif
 

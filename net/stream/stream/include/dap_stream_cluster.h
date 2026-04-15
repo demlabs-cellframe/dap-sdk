@@ -75,6 +75,10 @@ typedef struct dap_cluster {
     UT_hash_handle hh, hh_str;      // Handles for uuid and mnemonim storages
 } dap_cluster_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Cluster common funcs
 dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_type_t a_type);
 void dap_cluster_delete(dap_cluster_t *a_cluster);
@@ -97,3 +101,7 @@ void dap_cluster_link_delete_from_all(dap_list_t *a_cluster_list, dap_stream_nod
 dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster);
 dap_stream_node_addr_t *dap_cluster_get_all_members_addrs(dap_cluster_t *a_cluster, size_t *a_count, int a_role);
 void dap_cluster_members_register(dap_cluster_t *a_cluster);
+
+#ifdef __cplusplus
+}
+#endif

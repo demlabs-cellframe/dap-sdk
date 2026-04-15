@@ -414,7 +414,7 @@ dap_events_socket_t * dap_events_socket_create_platform(int a_domain, int a_type
 int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
 int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code);
 
-#ifdef DAP_OS_ANDROID
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
 typedef void (*dap_events_socket_pre_connect_callback_t)(int a_fd, void *a_ctx);
 void dap_events_socket_set_pre_connect_callback(dap_events_socket_pre_connect_callback_t a_cb, void *a_ctx);
 #endif
