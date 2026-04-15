@@ -23,7 +23,11 @@
 
 #include <string.h>
 #include <inttypes.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <arpa/inet.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -2796,13 +2800,13 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // Set LARGE socket buffers (64 MB) to prevent packet loss under high load with many clients
     int l_buffer_size = 64 * 1024 * 1024;  // 64 MB
-    if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+    if (setsockopt(l_es->socket, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
         debug_if(s_debug_more, L_DEBUG, "Set SO_RCVBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);
     }
 
-    if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+    if (setsockopt(l_es->socket, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
         log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes: %s", l_buffer_size, strerror(errno));
     } else {
         debug_if(s_debug_more, L_DEBUG, "Set SO_SNDBUF to %d bytes (64 MB) for UDP client socket", l_buffer_size);

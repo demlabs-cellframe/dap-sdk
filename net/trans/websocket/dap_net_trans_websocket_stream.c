@@ -23,15 +23,14 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <arpa/inet.h>
-#include <sys/time.h>
-
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>

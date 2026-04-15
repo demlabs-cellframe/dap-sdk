@@ -272,7 +272,7 @@ ssize_t s_packet_queue_pop_and_send(dap_events_socket_packet_queue_t *a_queue, i
 
 const char *s_socket_type_to_str[DESCRIPTOR_TYPE_MAX] = { 
     "CLIENT", "LOCAL CLIENT", "SERVER", "LOCAL SERVER", "UDP CLIENT", "SSL CLIENT", "RAW", 
-    "FILE", "PIPE", "QUEUE", "TIMER", "EVENT"
+    "FILE", "PIPE", "TIMER", "EVENT"
 };
 
 // Item for QUEUE_PTR input esocket
@@ -805,7 +805,7 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
 #ifdef DAP_OS_UNIX
         l_fam = AF_LOCAL;
 #elif defined DAP_OS_WINDOWS
-        l_fam = AF_INET;  // Windows doesn't support AF_LOCAL, use AF_INET as fallback
+        l_fam = AF_INET;
 #endif
         // Use platform-independent function for local socket
         {

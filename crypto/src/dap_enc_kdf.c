@@ -8,7 +8,12 @@
 
 #include <string.h>
 #include <stdint.h>
-#include <arpa/inet.h>  // For htobe64 (network byte order)
+#ifdef _WIN32
+#include <winsock2.h>
+#define htobe64(x) htonll(x)
+#else
+#include <arpa/inet.h>
+#endif
 
 #include "dap_enc_kdf.h"
 #include "dap_common.h"
