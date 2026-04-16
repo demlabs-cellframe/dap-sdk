@@ -1,6 +1,9 @@
 # DAP SDK Test Framework
 # Contains reusable test utilities, mocks, and fixtures
 cmake_minimum_required(VERSION 3.10)
+if(TARGET dap_test)
+    return() # The project has already been built.
+endif()
 
 project(dap_test_framework C)
 

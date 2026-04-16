@@ -145,10 +145,10 @@ extern int fnmatch (const char *pattern, const char *string, int flags);
 static char *
 __strchrnul (const char *s, int c)
 {
-  char *result = strchr (s, c);
+  const char *result = strchr (s, c);
   if (result == NULL)
     result = strchr (s, '\0');
-  return result;
+  return (char *)result;
 }
 # endif
 

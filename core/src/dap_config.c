@@ -47,6 +47,7 @@ int dap_config_init(const char *a_configs_path)
     if(dap_dir_test(a_configs_path)) {
         DAP_DEL_Z(s_configs_path);
         s_configs_path = dap_strdup(a_configs_path);
+        dap_path_to_native_inplace(s_configs_path);
         return 0;
     } else {
         log_it(L_ERROR, "Invalid path %s!", a_configs_path);
@@ -310,6 +311,10 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     debug_if(s_debug_more, L_DEBUG, "Looking for config name %s...", a_file_path);
     
     bool l_is_abs = dap_path_is_absolute(a_file_path);
+    if (!l_is_abs && !s_configs_path) {
+        log_it(L_ERROR, "Config not initialized - call dap_config_init first");
+        return NULL;
+    }
     const char *l_check = l_is_abs ? dap_path_skip_root(a_file_path) : a_file_path;
     if (!l_check || !*l_check) {
         log_it(L_ERROR, "Invalid config path: %s", a_file_path);
@@ -337,6 +342,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         log_it(L_ERROR, "Too long config name!");
         return NULL;
     }
+    dap_path_to_native_inplace(l_path);
  
     char *l_basic_name = dap_strdup_printf("%.*s", l_pos - 4, l_path);
 #if 0

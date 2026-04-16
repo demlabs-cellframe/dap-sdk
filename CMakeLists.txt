@@ -3,6 +3,7 @@ project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(CheckFunctionExists)
+option(DAP_MANAGE_CFLAGS "Let dap-sdk manage compiler and linker flags internally" ON)
 include(cmake/OS_Detection.cmake)
 # Include LibraryHelpers for object library creation
 # This must be included early to override target_link_libraries
@@ -101,7 +102,9 @@ if (BUILD_DAP_SDK_TESTS)
     if(NOT DEFINED BUILD_WITH_GDB_DRIVER_PGSQL)
         set(BUILD_WITH_GDB_DRIVER_PGSQL ON)
     endif()
-    set(BUILD_WITH_GDB_DRIVER_MDBX ON)
+    if(NOT DEFINED BUILD_WITH_GDB_DRIVER_MDBX)
+        set(BUILD_WITH_GDB_DRIVER_MDBX ON)
+    endif()
     foreach(_test_mod crypto io network-core network-server network-link_manager network-client global-db test-framework)
         if(NOT DAPSDK_MODULES MATCHES "${_test_mod}")
             set(DAPSDK_MODULES "${DAPSDK_MODULES} ${_test_mod}")
@@ -284,7 +287,6 @@ if(ENABLE_CPPCHECK_ANALYSIS)
                 --suppress=*:_deps/*
                 ${CMAKE_SOURCE_DIR}/core
                 ${CMAKE_SOURCE_DIR}/crypto
-                ${CMAKE_SOURCE_DIR}/examples
                 ${CMAKE_SOURCE_DIR}/global-db
                 ${CMAKE_SOURCE_DIR}/io
                 ${CMAKE_SOURCE_DIR}/net

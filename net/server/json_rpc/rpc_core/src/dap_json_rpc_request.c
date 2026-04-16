@@ -432,7 +432,7 @@ int dap_json_rpc_request_send(dap_client_trans_ctx_t*  a_client_ctx, dap_json_rp
                 *a_response = json_object_new_string(l_err);
                 break;
             }
-            debug_if(s_debug_more, L_DEBUG, "Get response from %s:%d, response size = %lu",
+    debug_if(s_debug_more, L_DEBUG, "Get response from %s:%d, response size = %lu",
                             a_client_ctx->client->link_info.uplink_addr, a_client_ctx->client->link_info.uplink_port, l_response_size);
             break;
         }

@@ -33,6 +33,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_client_fsm.h"
 #include "dap_net_trans_ctx.h"
 #include "dap_net.h"
+#include "dap_stream_ch_proc.h"
 
 #define LOG_TAG "dap_link_manager"
 
@@ -56,6 +57,7 @@ static uint32_t s_max_attempts_num = 1;
 static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
 static dap_proc_thread_t *s_query_thread = NULL;
+static char s_active_channels[256] = {0};
 
 static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
@@ -141,9 +143,8 @@ static void s_node_hot_list_add(dap_stream_node_addr_t a_node_addr, uint64_t a_a
 // sanity check
     dap_return_if_pass(!a_node_addr.uint64);
 // func work
-    const char *l_node_addr_str = dap_stream_node_addr_to_str_static(a_node_addr);
     char *l_hot_group = s_hot_group_forming(a_associated_net_id);
-    dap_global_db_set_sync(l_hot_group, l_node_addr_str, NULL, 0, false);
+    dap_global_db_set_sync(l_hot_group, dap_stream_node_addr_to_str_static(a_node_addr), NULL, 0, false);
     DAP_DEL_Z(l_hot_group);
 }
 
@@ -199,6 +200,8 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
     dap_return_val_if_pass_err(s_link_manager, -2, "Link manager actualy inited");
+// init default active channels
+    dap_stpcpy(s_active_channels, "RCGEND");
 // get config
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_max_attempts_num = dap_config_get_item_uint32_default(g_config, "link_manager", "max_attempts_num", s_max_attempts_num);
@@ -873,7 +876,7 @@ static bool s_link_update_callback(void *a_arg)
     dap_client_t *l_client = l_link->uplink.client;
     dap_client_set_uplink_unsafe(l_client, &l_link->addr, l_args->host, l_args->port);
     dap_client_set_is_always_reconnect(l_client, false);
-    dap_client_set_active_channels_unsafe(l_client, "RCGEND");
+    dap_client_set_active_channels_unsafe(l_client, s_active_channels);
     log_it(L_INFO, "Validate link to node " NODE_ADDR_FP_STR " with address %s : %d", NODE_ADDR_FP_ARGS_S(l_link->addr),
                                                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
     if (l_link->uplink.ready) {
@@ -1354,4 +1357,62 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     if (a_ignored_count)
         *a_ignored_count = l_node_count;
     return l_ret;
+}
+
+/**
+ * @brief Add a channel to the active channels used for inter-node links.
+ *   Must be called before connections are established (e.g. from plugin preinit).
+ *   The channel processor for a_ch_id should already be registered via dap_stream_ch_proc_add().
+ * @param a_ch_id single-byte channel identifier (ASCII character)
+ * @return 0 on success, negative on error
+ */
+int dap_link_manager_add_active_channel(char a_ch_id)
+{
+    dap_return_val_if_pass_err(!s_link_manager, -1, s_init_error);
+    size_t l_len = dap_strlen(s_active_channels);
+    if (l_len + 1 >= sizeof(s_active_channels)) {
+        log_it(L_ERROR, "Active channels buffer is full, can't add '%c'", a_ch_id);
+        return -2;
+    }
+    if (memchr(s_active_channels, (unsigned char)a_ch_id, l_len)) {
+        log_it(L_WARNING, "Channel '%c' already in active channels list", a_ch_id);
+        return 0;
+    }
+    dap_stream_ch_proc_t *l_proc = dap_stream_ch_proc_find((uint8_t)a_ch_id);
+    if (!l_proc || !l_proc->id) {
+        log_it(L_ERROR, "No channel processor registered for id '%c', register it before adding to active channels", a_ch_id);
+        return -3;
+    }
+    s_active_channels[l_len] = a_ch_id;
+    s_active_channels[l_len + 1] = '\0';
+    log_it(L_NOTICE, "Channel '%c' added to active channels, current set: \"%s\"", a_ch_id, s_active_channels);
+    return 0;
+}
+
+/**
+ * @brief Remove a channel from the active channels used for inter-node links
+ * @param a_ch_id single-byte channel identifier to remove
+ * @return 0 on success, negative on error
+ */
+int dap_link_manager_remove_active_channel(char a_ch_id)
+{
+    dap_return_val_if_pass_err(!s_link_manager, -1, s_init_error);
+    size_t l_len = dap_strlen(s_active_channels);
+    char *l_pos = memchr(s_active_channels, (unsigned char)a_ch_id, l_len);
+    if (!l_pos) {
+        log_it(L_WARNING, "Channel '%c' not found in active channels list", a_ch_id);
+        return -2;
+    }
+    memmove(l_pos, l_pos + 1, l_len - (size_t)(l_pos - s_active_channels));
+    log_it(L_NOTICE, "Channel '%c' removed from active channels, current set: \"%s\"", a_ch_id, s_active_channels);
+    return 0;
+}
+
+/**
+ * @brief Get the current active channels string used for inter-node links
+ * @return pointer to the active channels string (read-only)
+ */
+const char *dap_link_manager_get_active_channels(void)
+{
+    return s_active_channels;
 }

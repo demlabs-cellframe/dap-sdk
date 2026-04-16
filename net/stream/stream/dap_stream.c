@@ -812,6 +812,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 #endif
 
     DAP_DEL_Z(a_stream->buf_fragments);
+    DAP_DEL_Z(a_stream->pkt_cache);
     DAP_DELETE(a_stream);
     debug_if(s_debug, L_DEBUG, "Stream connection is over");
 }
@@ -1008,7 +1009,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     if (!a_esocket->is_initalized)
         return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_DEBUG, "Skip worker assign callback for events socket "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", a_esocket->uuid);
+        return;
+    }
     dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
@@ -1035,7 +1039,10 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 {
     UNUSED(a_worker);
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_DEBUG, "Skip worker unassign callback for events socket "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", a_esocket->uuid);
+        return;
+    }
     s_stream_delete_from_list(l_stream);
     if (l_stream->keepalive_timer) {
         dap_timerfd_t *l_timer = l_stream->keepalive_timer;
@@ -1166,6 +1173,7 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
         return 0;
     }
     
+    dap_events_socket_t *l_es = a_stream->esocket;
     byte_t *l_pos = (byte_t*)a_data;
     byte_t *l_end = l_pos + a_data_size;
     size_t l_shift = 0, l_processed_size = 0;
@@ -1189,6 +1197,10 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
+                if (l_es && !l_es->_inheritor) {
+                    l_processed_size += l_shift;
+                    break;
+                }
             } else {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: incomplete packet need=%zu have=%zu",
                        l_shift, (size_t)(l_end - l_pos));
@@ -1204,9 +1216,9 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
         log_it(L_WARNING, "proc_read_ext: no sig[0]=0x%02x found in %zu bytes (first byte=0x%02x)",
                c_dap_stream_sig[0], a_data_size, ((byte_t*)a_data)[0]);
     
-    debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG, 
-             "Processed %lu / %lu bytes", l_processed_size, a_data_size);
-    
+    debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG,
+             "Processed %zu / %zu bytes", l_processed_size, a_data_size);
+
     return l_processed_size;
 }
 
@@ -1237,6 +1249,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
+    dap_events_socket_t *l_es = a_stream->esocket;
 
     debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u", 
            a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
@@ -1370,6 +1383,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
                     
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
+                    if (!l_es->_inheritor)
+                        return;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type,
@@ -1387,6 +1402,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
+                        if (!l_es->_inheritor)
+                            return;
                     }
                     if (l_ch->closing)
                         break;
@@ -1469,6 +1486,8 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
 
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
 {
+    if (!a_es)
+        return NULL;
     if (a_es->server) {
         // Server-side: unified trans_ctx approach
         dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;

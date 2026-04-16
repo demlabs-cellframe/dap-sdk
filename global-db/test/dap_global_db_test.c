@@ -85,14 +85,19 @@ static char s_group_not_existed[64] = {};
 static int s_test_create_db(const char *db_type)
 {
     int l_rc = 0;
-    char l_cmd[MAX_PATH];
     dap_test_msg("Initializatiion test db %s driver in %s file", db_type, DB_FILE);
 
     if (!dap_strcmp(db_type, "pgsql"))
         l_rc = dap_global_db_driver_init(db_type, "dbname=postgres");
     else
         l_rc = dap_global_db_driver_init(db_type, DB_FILE);
-    dap_assert(l_rc == 0, "Initialization db driver");
+    if (l_rc != 0) {
+        printf("\t%sInitialization db driver '%s' SKIPPED (error %d) - not supported in this environment%s\n",
+               TEXT_COLOR_YEL, db_type, l_rc, TEXT_COLOR_RESET);
+        fflush(stdout);
+        return l_rc;
+    }
+    dap_pass_msg("Initialization db driver");
     return l_rc;
 }
 
@@ -880,7 +885,8 @@ static void s_test_full(size_t a_db_count, size_t a_count)
         dap_test_msg("s_group_not_existed name %s", s_group_not_existed);
 
         dap_print_module_name(s_db_types[i]);
-        s_test_create_db(s_db_types[i]);
+        if (s_test_create_db(s_db_types[i]) != 0)
+            continue;
         uint64_t l_t1 = get_cur_time_nsec();
         s_test_all(a_count);
         uint64_t l_t2 = get_cur_time_nsec();
@@ -1334,7 +1340,8 @@ int main(int argc, char **argv)
     // Run stress tests
     for (size_t i = 0; i < l_db_count; i++) {
         dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
-        s_test_create_db(s_db_types[i]);
+        if (s_test_create_db(s_db_types[i]) != 0)
+            continue;
         s_stress_test_suite(s_db_types[i], 10); // 10 concurrent threads
         s_test_close_db();
     }

@@ -109,6 +109,7 @@ void convertShortMsgToPureLSB(void)
 
     if ( (fp_out = fopen("ShortMsgKAT-PureLSB.txt", "w")) == NULL ) {
         printf("Couldn't open <%s> for write\n", "ShortMsgKAT-PureLSB.txt");
+        fclose(fp_in);
         return;
     }
 

@@ -435,7 +435,7 @@ static void s_place_notifier_callback(void *a_arg)
     }
     dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
     if (!l_stream) {
-        log_it(L_ERROR, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID, l_es->uuid);
+        log_it(L_DEBUG, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", l_es->uuid);
         goto ret_n_clear;
     }
     debug_if(s_debug_more, L_DEBUG, "s_place_notifier_callback: stream=%p, channel_count=%zu, ch_id='%c'", 

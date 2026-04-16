@@ -437,7 +437,7 @@ char* dap_strstr_len(const char *a_haystack, ssize_t a_haystack_len, const char 
     dap_return_val_if_fail(a_needle != NULL, NULL);
 
     if(a_haystack_len < 0)
-        return strstr(a_haystack, a_needle);
+        return (char *)strstr(a_haystack, a_needle);
     else
     {
         const char *l_p = a_haystack;
@@ -631,7 +631,8 @@ char* dap_strjoin(const char *a_separator, ...)
 char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tokens)
 {
     dap_list_t *l_string_list = NULL, *l_slist;
-    char **l_str_array, *l_s;
+    char **l_str_array;
+    const char *l_s;
     uint32_t l_n = 1;
 
     dap_return_val_if_fail(a_string != NULL, NULL);

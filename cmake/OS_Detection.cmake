@@ -1,5 +1,11 @@
 include_guard(GLOBAL)
 
+# This is only for safety if the flag was not set for some odd reason
+# and therefore would not be compatible with the earlier build configuration.
+if(NOT DEFINED DAP_MANAGE_CFLAGS)
+    set(DAP_MANAGE_CFLAGS ON)
+endif()
+
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(OS_TYPE_DESKTOP ON)
     set(LINUX ON)
@@ -11,7 +17,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     message("[ ] Debian OS ${DEBIAN_OS_VERSION} (${DEBIAN_OS_NAME})")
 # check if we're building natively on Android (TERMUX)
     EXECUTE_PROCESS( COMMAND uname -o COMMAND tr -d '\n' OUTPUT_VARIABLE OPERATING_SYSTEM)
-    
+
     execute_process (
                     COMMAND bash -c "awk -F= '/^ID=/{print $2}' /etc/os-release |tr -d '\n' | tr -d '\"'"
                     OUTPUT_VARIABLE DEBIAN_OS_RELEASE_NAME
@@ -92,7 +98,7 @@ message(STATUS "[*] Building for a ${ARCH_WIDTH}-bit system")
 if(UNIX)
     add_definitions ("-DDAP_OS_UNIX")
     if (APPLE)
-        
+
         EXECUTE_PROCESS( COMMAND whoami COMMAND tr -d '\n' OUTPUT_VARIABLE L_USER)
         EXECUTE_PROCESS( COMMAND echo -n /Users/${L_USER} OUTPUT_VARIABLE L_USERDIR_PATH)
         set (USERDIR_PATH "${L_USERDIR_PATH}")
@@ -119,7 +125,7 @@ if(UNIX)
             add_definitions("-DDAP_OS_MAC -DDAP_OS_MAC_ARCH=${MACOS_ARCH}")
         endif()
     endif()
-    
+
     if (${CMAKE_SYSTEM_NAME} MATCHES "BSD" )
         add_definitions ("-DDAP_OS_BSD")
         set(BSD ON)
@@ -128,10 +134,30 @@ if(UNIX)
     if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" )
         add_definitions ("-DDAP_OS_LINUX")
     endif()
-    
+
+    # Preprocessor defines that must be set regardless of flag management
+    if(DAP_DEBUG)
+        add_definitions("-DDAP_DEBUG")
+    endif()
+
+    if (ANDROID)
+        add_definitions ("-DDAP_OS_ANDROID")
+        add_definitions ("-DDAP_OS_LINUX")
+    endif()
+
+  if(DAP_MANAGE_CFLAGS)
     # Base warning flags (compatible with both GCC and Clang)
-    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Werror=sign-compare -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
-    
+    # NOTE: -Werror is applied via add_compile_options() at the end of this file,
+    # NOT here in CMAKE_C_FLAGS, to avoid breaking CMake's check_function_exists()
+    # and other try_compile-based detection (e.g., libmdbx's libm check).
+    set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
+
+    include(CheckCCompilerFlag)
+    check_c_compiler_flag("-Wno-unused-but-set-variable" HAS_WNO_UNUSED_BUT_SET_VARIABLE)
+    if (HAS_WNO_UNUSED_BUT_SET_VARIABLE)
+        set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-but-set-variable")
+    endif()
+
     # Add Clang-specific warning flags
     if (CMAKE_C_COMPILER_ID MATCHES ".*[Cc][Ll][Aa][Nn][Gg].*")
         set(CFLAGS_WARNINGS "${CFLAGS_WARNINGS} -Wno-unused-command-line-argument")
@@ -140,9 +166,9 @@ if(UNIX)
         set(CCOPT_SYSTEM "")
         set(LDOPT_SYSTEM "")
         if(DAP_DEBUG)
-            set(_CCOPT "-DDAP_DEBUG ${CFLAGS_WARNINGS} -g3 -ggdb -fno-eliminate-unused-debug-symbols -fno-strict-aliasing -std=gnu1x")
-            
-            if (DAP_ASAN)
+            set(_CCOPT "${CFLAGS_WARNINGS} -g3 -ggdb -fno-eliminate-unused-debug-symbols -fno-strict-aliasing -std=gnu1x")
+
+            if (DAP_ASAN OR DEFINED ENV{DAP_ASAN})
                 message("[!] Address Sanitizer enabled")
                 set(_CCOPT "${_CCOPT} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -fno-common -O1")
                 set(_LOPT "${_LOPT} -fsanitize=address")
@@ -199,19 +225,31 @@ if(UNIX)
         set(LDOPT_SYSTEM "-L/usr/local/lib -L/opt/homebrew/lib -lintl -flat_namespace")
         set(CCFLAGS_COMMON "-std=gnu11 ${CFLAGS_WARNINGS}")
         if(DAP_DEBUG)
-          set(_CCOPT "${CCOPT_SYSTEM} -DDAP_DEBUG ${CCFLAGS_COMMON} -g3 -ggdb -fno-eliminate-unused-debug-symbols -fno-strict-aliasing")
+          set(_CCOPT "${CCOPT_SYSTEM} ${CCFLAGS_COMMON} -g3 -ggdb -fno-eliminate-unused-debug-symbols -fno-strict-aliasing")
           set(_LOPT "${LDOPT_SYSTEM}")
+          if (DEFINED ENV{DAP_ASAN})
+              message("[!] Address Sanitizer enabled")
+              set(_CCOPT "${_CCOPT} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -fno-common -O1")
+              set(_LOPT "${_LOPT} -fsanitize=address")
+          endif()
           SET(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
         else()
-          set(_CCOPT "${CCOPT_SYSTEM} ${CCFLAGS_COMMON} -O3 -fPIC -fno-strict-aliasing -fno-ident -ffast-math -ftree-vectorize -fno-asynchronous-unwind-tables -ffunction-sections")
+          set(_CCOPT "${CCOPT_SYSTEM} ${CCFLAGS_COMMON} -fPIC -fno-strict-aliasing -fno-ident -ffast-math -ftree-vectorize -fno-asynchronous-unwind-tables -ffunction-sections")
           set(_LOPT "${LDOPT_SYSTEM}")
+          if (DEFINED ENV{DAP_ASAN})
+              message("[!] Address Sanitizer enabled")
+              set(_CCOPT "${_CCOPT} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -fno-common -O2")
+              set(_LOPT "${_LOPT} -fsanitize=address")
+          else()
+              set(_CCOPT "${_CCOPT} -O3")
+          endif()
           SET(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
         endif()
     elseif(BSD)
         set(CCOPT_SYSTEM "-L/usr/local/lib -I/usr/local/include")
         set(LDOPT_SYSTEM "-L/usr/local/lib")
         if(DAP_DEBUG)
-          set(_CCOPT "${CCOPT_SYSTEM} -DDAP_DEBUG ${CFLAGS_WARNINGS} -g3 -ggdb -fno-eliminate-unused-debug-symbols -fno-strict-aliasing")
+          set(_CCOPT "${CCOPT_SYSTEM} ${CFLAGS_WARNINGS} -g3 -ggdb -fno-eliminate-unused-debug-symbols -fno-strict-aliasing")
         else()
           set(_CCOPT "${CCOPT_SYSTEM} ${CFLAGS_WARNINGS} -O3 -fPIC -fno-strict-aliasing -fno-ident -ffast-math -ftree-vectorize -fno-asynchronous-unwind-tables -ffunction-sections -std=gnu11")
           set(_LOPT "${LDOPT_SYSTEM} ")
@@ -222,15 +260,20 @@ if(UNIX)
     if (ANDROID)
         set(_CCOPT "-std=gnu11 ${CFLAGS_WARNINGS} -fno-strict-aliasing")
         if(DAP_DEBUG)
-            set(_CCOPT "${_CCOPT} -DDAP_DEBUG -g3 -ggdb -fno-eliminate-unused-debug-symbols")
+            set(_CCOPT "${_CCOPT} -g3 -ggdb -fno-eliminate-unused-debug-symbols")
         endif()
-        #set (_LOPT "${LDOPT_SYSTEM} -rdynamic")
-        add_definitions ("-DDAP_OS_ANDROID")
-        add_definitions ("-DDAP_OS_LINUX")
     endif()
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT}")
     set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${_LOPT}")
+
+    if (DEFINED ENV{DAP_ASAN})
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -fno-common")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
+    endif()
+
+  endif() # DAP_MANAGE_CFLAGS
 
 endif()
 
@@ -250,6 +293,11 @@ if(WIN32)
     add_compile_definitions(WINVER=0x0601 _WIN32_WINNT=0x0601)
     add_compile_definitions(__USE_MINGW_ANSI_STDIO=1)
 
+    if(DAP_DEBUG)
+        add_definitions("-DDAP_DEBUG")
+    endif()
+
+  if(DAP_MANAGE_CFLAGS)
     set(CCOPT_SYSTEM "")
     set(LDOPT_SYSTEM "")
 
@@ -266,6 +314,7 @@ if(WIN32)
 
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT} ")
     set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${_LOPT}")
+  endif() # DAP_MANAGE_CFLAGS
 
     include_directories(../../dap-sdk/3rdparty/uthash/src/)
     include_directories(../../dap-sdk/3rdparty/json-c)
@@ -302,3 +351,12 @@ if ( CELLFRAME_NO_OPTIMIZATION)
     set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
 
+# Apply -Werror to all actual compilation targets, but NOT to CMake's
+# internal try_compile/check_function_exists probes (which use CMAKE_C_FLAGS
+# but not COMPILE_OPTIONS). This prevents -Werror from breaking feature
+# detection in 3rdparty libraries (e.g., libmdbx's check for libm).
+
+# downstream packagers (especially with new compilers) may want to disable this -> guard it with DAP_MANAGE_CFLAGS
+if(DAP_MANAGE_CFLAGS)
+    add_compile_options(-Werror)
+endif()
