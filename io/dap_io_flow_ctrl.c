@@ -424,13 +424,21 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     }
     
     // STEP 4: Stop timers (any running callbacks will exit due to magic=0)
+    // MUST use _mt: this function can be called from any thread (e.g. FSM thread pool)
+    // while timers were created on the UDP socket's worker thread.
+    // Nullify callback_arg BEFORE queuing deletion so any in-flight callbacks see NULL
+    // and exit immediately, preventing use-after-free after a_ctrl is freed.
     if (a_ctrl->retransmit_timer) {
-        dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
+        dap_timerfd_t *l_rt = a_ctrl->retransmit_timer;
         a_ctrl->retransmit_timer = NULL;
+        l_rt->callback_arg = NULL;
+        dap_timerfd_delete_mt(l_rt->worker, l_rt->esocket_uuid);
     }
     if (a_ctrl->keepalive_timer) {
-        dap_timerfd_delete_unsafe(a_ctrl->keepalive_timer);
+        dap_timerfd_t *l_kt = a_ctrl->keepalive_timer;
         a_ctrl->keepalive_timer = NULL;
+        l_kt->callback_arg = NULL;
+        dap_timerfd_delete_mt(l_kt->worker, l_kt->esocket_uuid);
     }
     
     // STEP 5: Clean send window
@@ -517,8 +525,10 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
     } else if (!(a_flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && (l_old_flags & DAP_IO_FLOW_CTRL_RETRANSMIT)) {
         // Disable retransmit - stop timer
         if (a_ctrl->retransmit_timer) {
-            dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
+            dap_timerfd_t *l_rt = a_ctrl->retransmit_timer;
             a_ctrl->retransmit_timer = NULL;
+            l_rt->callback_arg = NULL;
+            dap_timerfd_delete_mt(l_rt->worker, l_rt->esocket_uuid);
         }
     }
     
@@ -536,8 +546,10 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
     } else if (!(a_flags & DAP_IO_FLOW_CTRL_KEEPALIVE) && (l_old_flags & DAP_IO_FLOW_CTRL_KEEPALIVE)) {
         // Disable keepalive - stop timer
         if (a_ctrl->keepalive_timer) {
-            dap_timerfd_delete_unsafe(a_ctrl->keepalive_timer);
+            dap_timerfd_t *l_kt = a_ctrl->keepalive_timer;
             a_ctrl->keepalive_timer = NULL;
+            l_kt->callback_arg = NULL;
+            dap_timerfd_delete_mt(l_kt->worker, l_kt->esocket_uuid);
         }
     }
     

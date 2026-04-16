@@ -55,6 +55,7 @@ typedef struct dap_stream {
 
     dap_timerfd_t *keepalive_timer;
     bool is_active;
+    _Atomic bool is_deleting; // Prevents double-free: set to true on first dap_stream_delete_unsafe call
 
     char *service_key;
     bool is_client_to_uplink;

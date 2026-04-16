@@ -395,9 +395,13 @@ static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm)
     // Clean up current stream/transport before switching
     dap_net_trans_ctx_t *l_tc = a_fsm->trans_ctx;
     if (l_tc && l_tc->stream) {
-        dap_stream_t *l_old_stream = l_tc->stream;
-        l_tc->stream = NULL;
-        dap_stream_delete_unsafe(l_old_stream);
+        // ATOMIC exchange: prevents double-free race with s_esocket_callback_delete.
+        // Worker thread may concurrently fire delete_callback on the stream's esocket,
+        // reading trans_ctx->stream at the same time we do here.
+        // Only the side that wins the atomic exchange will call dap_stream_delete_unsafe.
+        dap_stream_t *l_old_stream = __atomic_exchange_n(&l_tc->stream, NULL, __ATOMIC_ACQ_REL);
+        if (l_old_stream)
+            dap_stream_delete_unsafe(l_old_stream);
     }
 
     a_fsm->client->trans_type = l_next_transport;

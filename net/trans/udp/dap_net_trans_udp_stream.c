@@ -829,10 +829,15 @@ static void s_cancel_handshake_timer(dap_net_trans_udp_ctx_t *a_udp_ctx)
     // Mark handshake as complete to stop timer callback
     a_udp_ctx->handshake_complete = true;
     
-    // Delete timer if exists
+    // Delete timer if exists.
+    // MUST use _mt variant: this function can be called from any worker thread
+    // (e.g. FSM notification worker != timer owner worker), so delete_unsafe would
+    // race against the timer's own worker and cause a use-after-free on events_socket.
     if (a_udp_ctx->handshake_timer) {
-        dap_timerfd_delete_unsafe(a_udp_ctx->handshake_timer);
+        dap_timerfd_t *l_timer = a_udp_ctx->handshake_timer;
         a_udp_ctx->handshake_timer = NULL;
+        l_timer->callback_arg = NULL; // neutralize any in-flight callback
+        dap_timerfd_delete_mt(l_timer->worker, l_timer->esocket_uuid);
         debug_if(s_debug_more, L_DEBUG, "HANDSHAKE: retransmission timer cancelled");
     }
     
@@ -2682,14 +2687,18 @@ static void s_udp_close(dap_stream_t *a_stream)
                "UDP close: queueing esocket deletion (UUID 0x%016" PRIx64 ") on its worker",
                a_stream->esocket_uuid);
         
-        // CRITICAL: Clear callbacks BEFORE async delete to prevent use-after-free!
-        // Esocket may still receive events between now and actual deletion
-        // Setting callbacks to NULL prevents them from accessing freed trans_ctx/stream
+        // CRITICAL: Clear callbacks AND _inheritor BEFORE async delete to prevent use-after-free!
+        // Esocket may still receive events between now and actual deletion.
+        // delete_callback and _inheritor MUST be cleared: trans_ctx (l_tc) can be freed
+        // by the FSM before the worker processes the async esocket deletion, so
+        // s_esocket_callback_delete must not dereference _inheritor after this point.
         if (a_stream->esocket) {
             a_stream->esocket->callbacks.read_callback = NULL;
             a_stream->esocket->callbacks.write_callback = NULL;
             a_stream->esocket->callbacks.error_callback = NULL;
-            a_stream->esocket->callbacks.arg = NULL;  // Critical: prevents use-after-free in callbacks
+            a_stream->esocket->callbacks.delete_callback = NULL;
+            a_stream->esocket->callbacks.arg = NULL;
+            a_stream->esocket->_inheritor = NULL;
         }
         
         // ALWAYS use _mt method - 100% safe from any thread

@@ -737,6 +737,14 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         log_it(L_ERROR,"stream delete NULL instance");
         return;
     }
+    // Prevent double-free: atomically claim ownership for deletion.
+    // Worker thread (s_esocket_callback_delete) and FSM thread (s_retry_handshake_with_fallback)
+    // can race to delete the same stream. The atomic_exchange ensures only one proceeds.
+    bool l_already_deleting = __atomic_exchange_n(&a_stream->is_deleting, true, __ATOMIC_ACQ_REL);
+    if (l_already_deleting) {
+        log_it(L_CRITICAL, "DOUBLE FREE prevented for stream %p — skipping", a_stream);
+        return;
+    }
     if (a_stream->is_client_to_uplink)
         debug_if(s_debug_more, L_DEBUG, "P2P stream DELETE (client): stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" keepalive=%s",
                a_stream, (void*)a_stream->esocket,
@@ -835,7 +843,11 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
     if (!l_trans_ctx)
         return;
     
-    dap_stream_t *l_stm = l_trans_ctx->stream;
+    // ATOMIC exchange: prevents double-free race with FSM thread.
+    // s_retry_handshake_with_fallback and dap_client_trans_ctx_clean_unsafe both read
+    // trans_ctx->stream on the FSM thread. If this delete callback fires concurrently
+    // (worker thread), only one side must win the stream pointer.
+    dap_stream_t *l_stm = __atomic_exchange_n(&l_trans_ctx->stream, NULL, __ATOMIC_ACQ_REL);
     dap_http_client_t *l_http_client = l_trans_ctx->http_client;
     
     if (l_stm) {
@@ -1038,11 +1050,15 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
     assert(l_stream);
     s_stream_delete_from_list(l_stream);
     if (l_stream->keepalive_timer) {
+        // MUST use _mt: dap_stream_delete_unsafe() can race here from FSM thread —
+        // it may have already nullified keepalive_timer and queued dap_timerfd_delete_mt().
+        // If the worker processes that deletion before we call _unsafe, we crash on a
+        // freed timer.  Using _mt is safe: redundant UUIDs are silently ignored.
         dap_timerfd_t *l_timer = l_stream->keepalive_timer;
         l_stream->keepalive_timer = NULL;
         void *l_arg = l_timer->callback_arg;
         l_timer->callback_arg = NULL;
-        dap_timerfd_delete_unsafe(l_timer);
+        dap_timerfd_delete_mt(l_timer->worker, l_timer->esocket_uuid);
         DAP_DELETE(l_arg);
     }
 }

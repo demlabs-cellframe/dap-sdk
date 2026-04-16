@@ -151,11 +151,13 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
 
     if (l_tc && l_tc->stream) {
-        dap_stream_t *l_stream = l_tc->stream;
-        l_tc->stream = NULL;
-        l_tc->stream_key = NULL;
-        l_tc->stream_id = 0;
-        dap_stream_delete_unsafe(l_stream);
+        // ATOMIC exchange: prevents double-free race with s_esocket_callback_delete.
+        dap_stream_t *l_stream = __atomic_exchange_n(&l_tc->stream, NULL, __ATOMIC_ACQ_REL);
+        if (l_stream) {
+            l_tc->stream_key = NULL;
+            l_tc->stream_id = 0;
+            dap_stream_delete_unsafe(l_stream);
+        }
     }
 
     if (l_tc) {
