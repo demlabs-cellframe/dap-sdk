@@ -1383,7 +1383,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
                     
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
-                    if (!l_es->_inheritor)
+                    if (l_es && !l_es->_inheritor)
                         return;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
@@ -1402,7 +1402,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
-                        if (!l_es->_inheritor)
+                        if (l_es && !l_es->_inheritor)
                             return;
                     }
                     if (l_ch->closing)
