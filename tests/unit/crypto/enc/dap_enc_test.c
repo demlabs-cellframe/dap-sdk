@@ -64,7 +64,7 @@ void test_encypt_decrypt(int count_steps, const dap_enc_key_type_t key_type, con
         dap_assert_PIF(memcmp(source, buf_decrypted, source_size) == 0,
                 "Check source and encode->decode data");
 
-        DAP_DEL_MULTY(source, buf_encrypted, buf_decrypted);
+        DAP_DEL_MULTY(source, buf_encrypted, buf_decrypted) {}
         dap_enc_key_delete(key);
     }
     int time_end = get_cur_time_msec();
@@ -76,10 +76,10 @@ void test_encypt_decrypt(int count_steps, const dap_enc_key_type_t key_type, con
 
 void test_encypt_decrypt_fast(int count_steps, const dap_enc_key_type_t key_type, const int cipher_key_size)
 {
-    const int max_source_size = 10000;
+    enum { MAX_SOURCE_SIZE = 10000 };
     dap_print_module_name(dap_enc_get_type_name(key_type));
-    char buf_encrypt_out[max_source_size+128];
-    char buf_decrypt_out[max_source_size+32];
+    char buf_encrypt_out[MAX_SOURCE_SIZE + 128];
+    char buf_decrypt_out[MAX_SOURCE_SIZE + 32];
     int time_beg = get_cur_time_msec();
 
 
@@ -97,16 +97,16 @@ void test_encypt_decrypt_fast(int count_steps, const dap_enc_key_type_t key_type
     size_t source_size = 0;
 
     for(int i = 0; i < count_steps; i++) {
-        source_size = 1 + random_uint32_t(max_source_size);
+        source_size = 1 + random_uint32_t(MAX_SOURCE_SIZE);
 //        printf("ss = %d\n", source_size);fflush(stdout);
 
         uint8_t *source = DAP_NEW_SIZE(uint8_t,source_size + 0);
         randombytes(source, source_size);//randombase64(source, source_size);
 
 
-        size_t encrypted_size = key->enc_na(key, source, source_size, buf_encrypt_out, max_source_size+128);
+        size_t encrypted_size = key->enc_na(key, source, source_size, buf_encrypt_out, MAX_SOURCE_SIZE + 128);
 
-        size_t result_size = key->dec_na(key, buf_encrypt_out, encrypted_size, buf_decrypt_out, max_source_size+32);
+        size_t result_size = key->dec_na(key, buf_encrypt_out, encrypted_size, buf_decrypt_out, MAX_SOURCE_SIZE + 32);
 
 
 
@@ -130,7 +130,7 @@ static void _encrypt_decrypt(enum dap_enc_key_type key_type,
                              size_t count_steps)
 {
     size_t source_size = 1;
-    const int MAX_SEED_SIZE = 100;
+    enum { MAX_SEED_SIZE = 100 };
     uint8_t seed[MAX_SEED_SIZE];
     for (size_t i = 0; i < count_steps; i++) {
         source_size = 1 + random_uint32_t(2000);
@@ -182,7 +182,7 @@ static void _encrypt_decrypt(enum dap_enc_key_type key_type,
 
 
 //#endif
-        DAP_DEL_MULTY(decode_result, encrypt_result, source);
+        DAP_DEL_MULTY(decode_result, encrypt_result, source) {}
         dap_enc_key_delete(key);
     }
 }
@@ -323,7 +323,7 @@ static void test_key_generate_by_seed(dap_enc_key_type_t a_key_type)
                     l_priv_key_data_2, l_pub_key_data_2,
                     l_priv_key_data_3, l_pub_key_data_3,
                     l_priv_key_data_4, l_pub_key_data_4,
-                    l_priv_key_data_5, l_pub_key_data_5);
+                    l_priv_key_data_5, l_pub_key_data_5) {}
     dap_assert(true, s_key_type_to_str(a_key_type));
 }
 
@@ -409,7 +409,7 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type, bool enc_tes
 
     dap_pass_msg("Key serialize->deserialize");
     unlink(TEST_SER_FILE_NAME);
-    DAP_DEL_MULTY(l_ser_key, l_deser_key, l_ser_skey_1, l_ser_skey_2, l_ser_pkey_1, l_ser_pkey_2);
+    DAP_DEL_MULTY(l_ser_key, l_deser_key, l_ser_skey_1, l_ser_skey_2, l_ser_pkey_1, l_ser_pkey_2) {}
 }
 
 /**
@@ -442,7 +442,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     dap_assert(!dap_enc_key_deserialize_pub_key(key2, l_data_pub_read, l_data_pub_size), "Pub key deserialize");
     dap_assert(!dap_enc_key_deserialize_priv_key(key2, l_data_priv_read, l_data_priv_size), "Priv key deserialize");
 
-    DAP_DEL_MULTY(l_data_pub, l_data_pub_read, l_data_priv, l_data_priv_read);
+    DAP_DEL_MULTY(l_data_pub, l_data_pub_read, l_data_priv, l_data_priv_read) {}
 
     dap_assert(key->priv_key_data_size == key2->priv_key_data_size, "Priv key data size");
     dap_assert(key->pub_key_data_size == key2->pub_key_data_size, "Pub key data size");
