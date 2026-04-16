@@ -210,7 +210,7 @@ static int crypto_hashblocks_sha256(uint8_t *statebytes,const uint8_t *in,size_t
   store_bigendian(statebytes + 24,state[6]);
   store_bigendian(statebytes + 28,state[7]);
 
-  return inlen;
+  return (int)inlen;
 }
 
 #define blocks crypto_hashblocks_sha256
@@ -244,7 +244,7 @@ void sha256(uint8_t *out,const uint8_t *in,size_t inlen)
   padded[inlen] = 0x80;
 
   if (inlen < 56) {
-    for (i = inlen + 1;i < 56;++i) padded[i] = 0;
+    for (i = (unsigned int)(inlen + 1);i < 56;++i) padded[i] = 0;
     padded[56] = bits >> 56;
     padded[57] = bits >> 48;
     padded[58] = bits >> 40;
@@ -255,7 +255,7 @@ void sha256(uint8_t *out,const uint8_t *in,size_t inlen)
     padded[63] = bits;
     blocks(h,padded,64);
   } else {
-    for (i = inlen + 1;i < 120;++i) padded[i] = 0;
+    for (i = (unsigned int)(inlen + 1);i < 120;++i) padded[i] = 0;
     padded[120] = bits >> 56;
     padded[121] = bits >> 48;
     padded[122] = bits >> 40;

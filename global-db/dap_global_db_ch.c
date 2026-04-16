@@ -377,7 +377,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                                                                                                 l_objs->group, l_objs_count);
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
         struct processing_arg *l_arg = DAP_NEW_Z(struct processing_arg);
-        *l_arg = (struct processing_arg) { .count = l_objs_count, .objs = l_objs, .addr = a_ch->stream->node };
+        *l_arg = (struct processing_arg) { .count = (uint32_t)l_objs_count, .objs = l_objs, .addr = a_ch->stream->node };
         dap_proc_thread_callback_add_pri(NULL, s_process_records, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
 #else
         for (uint32_t i = 0; i < l_objs_count; i++)

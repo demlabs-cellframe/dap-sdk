@@ -495,8 +495,8 @@ static inline int SUBTRACT_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint2
     int underflow_flag=0;
     c_256_bit->lo = a_256_bit.lo - b_256_bit.lo;
     uint64_t carry = (((c_256_bit->lo & b_256_bit.lo) & 1) + (b_256_bit.lo >> 1) + (c_256_bit->lo >> 1)) >> 127;
-    c_256_bit->hi = a_256_bit.hi - (b_256_bit.hi + carry);
-    underflow_flag=carry;
+    c_256_bit->hi = a_256_bit.hi - (b_256_bit.hi + (uint128_t)carry);
+    underflow_flag = (carry != 0);
     return underflow_flag;
 
 #else
@@ -528,7 +528,7 @@ static inline int SUBTRACT_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint2
     borrow |= (r > t);
     c_256_bit->hi.hi = r;
 
-    return borrow;
+    return (borrow != 0);
 #endif
 }
 
@@ -728,34 +728,40 @@ static inline int compare256_ptr(uint256_t *a, uint256_t *b) { return compare256
 static inline int nlz64(uint64_t N)
 {
     uint64_t I;
-    size_t C;
+    unsigned int C;
 
     I = ~N;
-    C = ((I ^ (I + 1)) & I) >> 63;
+    C = (unsigned int)(((I ^ (I + 1)) & I) >> 63);
 
     I = (N >> 32) + 0xffffffff;
     I = ((I & 0x100000000) ^ 0x100000000) >> 27;
-    C += I;  N <<= I;
+    C += (unsigned int)I;
+    N <<= I;
 
     I = (N >> 48) + 0xffff;
     I = ((I & 0x10000) ^ 0x10000) >> 12;
-    C += I;  N <<= I;
+    C += (unsigned int)I;
+    N <<= I;
 
     I = (N >> 56) + 0xff;
     I = ((I & 0x100) ^ 0x100) >> 5;
-    C += I;  N <<= I;
+    C += (unsigned int)I;
+    N <<= I;
 
     I = (N >> 60) + 0xf;
     I = ((I & 0x10) ^ 0x10) >> 2;
-    C += I;  N <<= I;
+    C += (unsigned int)I;
+    N <<= I;
 
     I = (N >> 62) + 3;
     I = ((I & 4) ^ 4) >> 1;
-    C += I;  N <<= I;
+    C += (unsigned int)I;
+    N <<= I;
 
-    C += (N >> 63) ^ 1;
+    C += (unsigned int)((N >> 63) ^ 1);
 
-    return C;
+    /* Result is in 0..64; uint8_t avoids -Wshorten on wider unsigned types -> int (e.g. AppleClang). */
+    return (int)(uint8_t)(C & 0x7Fu);
 }
 
 static inline int nlz128(uint128_t N)

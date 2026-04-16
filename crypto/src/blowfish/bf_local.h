@@ -6,21 +6,21 @@
                         c+=n; \
                         l1=l2=0; \
                         switch (n) { \
-                        case 8: l2 =((unsigned long)(*(--(c))))    ; \
-                        /* fall thru */                              \
-                        case 7: l2|=((unsigned long)(*(--(c))))<< 8; \
-                        /* fall thru */                              \
-                        case 6: l2|=((unsigned long)(*(--(c))))<<16; \
-                        /* fall thru */                              \
-                        case 5: l2|=((unsigned long)(*(--(c))))<<24; \
-                        /* fall thru */                              \
-                        case 4: l1 =((unsigned long)(*(--(c))))    ; \
-                        /* fall thru */                              \
-                        case 3: l1|=((unsigned long)(*(--(c))))<< 8; \
-                        /* fall thru */                              \
-                        case 2: l1|=((unsigned long)(*(--(c))))<<16; \
-                        /* fall thru */                              \
-                        case 1: l1|=((unsigned long)(*(--(c))))<<24; \
+                        case 8: l2 =((BF_LONG)(*(--(c))))    ; \
+                        /* fall thru */                         \
+                        case 7: l2|=((BF_LONG)(*(--(c))))<< 8; \
+                        /* fall thru */                         \
+                        case 6: l2|=((BF_LONG)(*(--(c))))<<16; \
+                        /* fall thru */                         \
+                        case 5: l2|=((BF_LONG)(*(--(c))))<<24; \
+                        /* fall thru */                         \
+                        case 4: l1 =((BF_LONG)(*(--(c))))    ; \
+                        /* fall thru */                         \
+                        case 3: l1|=((BF_LONG)(*(--(c))))<< 8; \
+                        /* fall thru */                         \
+                        case 2: l1|=((BF_LONG)(*(--(c))))<<16; \
+                        /* fall thru */                         \
+                        case 1: l1|=((BF_LONG)(*(--(c))))<<24; \
                                 } \
                         }
 
@@ -47,10 +47,10 @@
                         }
 
 # undef n2l
-# define n2l(c,l)        (l =((unsigned long)(*((c)++)))<<24L, \
-                         l|=((unsigned long)(*((c)++)))<<16L, \
-                         l|=((unsigned long)(*((c)++)))<< 8L, \
-                         l|=((unsigned long)(*((c)++))))
+# define n2l(c,l)        (l =((BF_LONG)(*((c)++)))<<24, \
+                         l|=((BF_LONG)(*((c)++)))<<16, \
+                         l|=((BF_LONG)(*((c)++)))<< 8, \
+                         l|=((BF_LONG)(*((c)++))))
 
 # undef l2n
 # define l2n(l,c)        (*((c)++)=(unsigned char)(((l)>>24L)&0xff), \

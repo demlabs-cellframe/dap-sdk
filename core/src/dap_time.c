@@ -135,7 +135,7 @@ int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct time
         l_result->tv_nsec = a_stop->tv_nsec - a_start->tv_nsec;
     }
 
-    return (l_result->tv_sec * 1000 + l_result->tv_nsec / 1000000);
+    return (int)(l_result->tv_sec * 1000 + l_result->tv_nsec / 1000000);
 }
 
 /**
@@ -155,7 +155,7 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
     if ( !localtime_r(&(const time_t){ a_time }, &l_tm) )
 #endif
         return log_it(L_ERROR, "Can't convert UNIX timestamp %"DAP_UINT64_FORMAT_U, a_time), -2;
-    int l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %Y %H:%M:%S"
+    int l_ret = (int)strftime(a_out, a_out_size_max, "%a, %d %b %Y %H:%M:%S"
                      #ifndef DAP_OS_WINDOWS
                                                 " %z"
                      #endif

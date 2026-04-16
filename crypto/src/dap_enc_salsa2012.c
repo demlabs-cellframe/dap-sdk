@@ -39,7 +39,7 @@ void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_
     a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);
 
     Keccak_HashInstance Keccak_ctx;
-    Keccak_HashInitialize(&Keccak_ctx, 1088,  512, a_key->priv_key_data_size*8, 0x06);
+    Keccak_HashInitialize(&Keccak_ctx, 1088,  512, (unsigned int)(a_key->priv_key_data_size * 8), 0x06);
     Keccak_HashUpdate(&Keccak_ctx, kex_buf, kex_size*8);
     if(seed_size)
         Keccak_HashUpdate(&Keccak_ctx, seed, seed_size*8);
@@ -55,7 +55,7 @@ void dap_enc_salsa2012_key_delete(struct dap_enc_key *a_key)
 {
     if(a_key->priv_key_data)
     {
-        randombytes(a_key->priv_key_data,a_key->priv_key_data_size);
+        randombytes(a_key->priv_key_data, (unsigned int)a_key->priv_key_data_size);
         DAP_DEL_Z(a_key->priv_key_data);
     }
     a_key->priv_key_data_size = 0;

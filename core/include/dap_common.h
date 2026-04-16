@@ -450,9 +450,9 @@ DAP_STATIC_INLINE unsigned long dap_pagesize() {
 #ifdef DAP_OS_WINDOWS
     SYSTEM_INFO si;
     GetSystemInfo(&si);
-    l_s = si.dwPageSize;
+    l_s = (int)si.dwPageSize;
 #else
-    l_s = sysconf(_SC_PAGESIZE);
+    l_s = (int)sysconf(_SC_PAGESIZE);
 #endif
     s = l_s = l_s ? l_s : 4096;
     return l_s;

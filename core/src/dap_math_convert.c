@@ -247,7 +247,7 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger)
         l_eptr = strchr(a_str_uninteger, 'E');
     if (l_eptr) {
         /* Compute & check length */
-        if ( (l_strlen = strnlen(a_str_uninteger, DAP_SZ_MAX256SCINOT + 1) ) > DAP_SZ_MAX256SCINOT)
+        if ( (l_strlen = (int)strnlen(a_str_uninteger, DAP_SZ_MAX256SCINOT + 1) ) > DAP_SZ_MAX256SCINOT)
             return  log_it(L_ERROR, "Too many digits in `%s` (%d > %d)", a_str_uninteger, l_strlen, DAP_SZ_MAX256SCINOT), l_nul;
 
         const char *l_exp_ptr = l_eptr + 1;
@@ -259,10 +259,10 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger)
         const char *l_dot_ptr = strchr(a_str_uninteger, '.');
         if (!l_dot_ptr || l_dot_ptr > l_eptr)
             return  log_it(L_ERROR, "Invalid number format with exponent %d", l_exp), uint256_0;
-        int l_dot_len = l_dot_ptr - a_str_uninteger;
+        int l_dot_len = (int)(l_dot_ptr - a_str_uninteger);
         if (l_dot_len >= DATOSHI_POW256)
             return log_it(L_ERROR, "Too many digits in '%s'", a_str_uninteger), uint256_0;
-        int l_exp_len = l_eptr - a_str_uninteger - l_dot_len - 1;
+        int l_exp_len = (int)((l_eptr - a_str_uninteger) - l_dot_len - 1);
         if (l_exp_len + l_dot_len + 1 >= DAP_SZ_MAX256SCINOT)
             return log_it(L_ERROR, "Too many digits in '%s'", a_str_uninteger), uint256_0;
         if (l_exp < l_exp_len) {
@@ -281,12 +281,12 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger)
         for (int i = l_zero_cnt; i && l_pos < DATOSHI_POW256; i--)
             l_256bit_num[l_pos++] = '0';
         l_256bit_num[l_pos] = '\0';
-        l_strlen = l_pos;
+        l_strlen = (int)l_pos;
 
     } else {
         // We have a decimal string, not sci notation
         /* Compute & check length */
-        if ( (l_strlen = strnlen(a_str_uninteger, DATOSHI_POW256 + 1) ) > DATOSHI_POW256)
+        if ( (l_strlen = (int)strnlen(a_str_uninteger, DATOSHI_POW256 + 1) ) > DATOSHI_POW256)
             return  log_it(L_ERROR, "Too many digits in `%s` (%d > %d)", a_str_uninteger, l_strlen, DATOSHI_POW256), l_nul;
         memcpy(l_256bit_num, a_str_uninteger, l_strlen);
         l_256bit_num[l_strlen] = '\0';
@@ -383,7 +383,7 @@ uint256_t dap_uint256_scan_decimal(const char *a_str_decimal)
     char    l_buf  [DAP_CHAIN$SZ_MAX256DEC + 8] = {0}, *l_point;
 
     /* "12300000000.0000456" */
-    if ( (l_len = strnlen(a_str_decimal, DATOSHI_POW256 + 2)) > DATOSHI_POW256 + 1)/* Check for legal length */ /* 1 symbol for \0, one for '.', if more, there is an error */
+    if ( (l_len = (int)strnlen(a_str_decimal, DATOSHI_POW256 + 2)) > DATOSHI_POW256 + 1)/* Check for legal length */ /* 1 symbol for \0, one for '.', if more, there is an error */
         return  log_it(L_WARNING, "Incorrect balance format of '%s' - too long (%d > %d)", a_str_decimal,
                        l_len, DATOSHI_POW256 + 1), uint256_0;
 
@@ -393,7 +393,7 @@ uint256_t dap_uint256_scan_decimal(const char *a_str_decimal)
         return  log_it(L_WARNING, "Incorrect balance format of '%s' - no precision mark", a_str_decimal),
                 uint256_0;
 
-    l_pos = l_len - (l_point - l_buf) - 1;                                      /* Check number of decimals after dot */
+    l_pos = l_len - (int)(l_point - l_buf) - 1;                                      /* Check number of decimals after dot */
     if ( l_pos > DATOSHI_DEGREE )
         return  log_it(L_WARNING, "Incorrect balance format of '%s' - too much precision", l_buf), uint256_0;
 
@@ -430,7 +430,7 @@ const char *dap_uint256_to_char(uint256_t a_uint256, const char **a_frac)
 #endif
     } while (!IS_ZERO_256(l_value));
     *l_c1 = '\0';
-    int l_strlen = l_c1 - s_buf;
+    int l_strlen = (int)(l_c1 - s_buf);
     --l_c1;
 
     do {
@@ -483,11 +483,11 @@ const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_
     _Thread_local static char s_buf[DATOSHI_POW256 + 3];
     memset(s_buf, 0, sizeof(s_buf));
     char *l_dot_pos = strchr(a_str_decimal, '.'), *l_res = s_buf;
-    int l_len = strlen(a_str_decimal);
-    if (!l_dot_pos || a_round_pos >= DATOSHI_DEGREE || ( l_len - (l_dot_pos - a_str_decimal) <= a_round_pos ))
+    int l_len = (int)strlen(a_str_decimal);
+    if (!l_dot_pos || a_round_pos >= DATOSHI_DEGREE || ( l_len - (int)(l_dot_pos - a_str_decimal) <= a_round_pos ))
         return memcpy(l_res, a_str_decimal, l_len + 1);
 
-    int l_new_len = (l_dot_pos - a_str_decimal) + a_round_pos + 1;
+    int l_new_len = (int)(l_dot_pos - a_str_decimal) + a_round_pos + 1;
     *l_res = '0';
     char    *l_src_c = a_str_decimal + l_new_len,
             *l_dst_c = l_res + l_new_len,
@@ -603,7 +603,7 @@ char *dap_uint128_uninteger_to_char(uint128_t a_uninteger)
         l_buf[l_pos++] = q + '0';
     } while (l_tmp[2]);
 #endif
-    int l_strlen = strlen(l_buf) - 1;
+    int l_strlen = (int)strlen(l_buf) - 1;
     for (int i = 0; i < (l_strlen + 1) / 2; i++) {
         char c = l_buf[i];
         l_buf[i] = l_buf[l_strlen - i];
@@ -615,7 +615,7 @@ char *dap_uint128_uninteger_to_char(uint128_t a_uninteger)
 char *dap_uint128_decimal_to_char(uint128_t a_decimal)
 {
     char *l_buf = dap_uint128_uninteger_to_char(a_decimal);
-    int l_strlen = strlen(l_buf);
+    int l_strlen = (int)strlen(l_buf);
     int l_pos;
     if (l_strlen > DATOSHI_DEGREE) {
         for (l_pos = l_strlen; l_pos > l_strlen - DATOSHI_DEGREE; l_pos--) {
@@ -634,7 +634,7 @@ char *dap_uint128_decimal_to_char(uint128_t a_decimal)
 
 uint128_t dap_uint128_scan_uninteger(const char *a_str_uninteger)
 {
-    int l_strlen = strlen(a_str_uninteger);
+    int l_strlen = (int)strlen(a_str_uninteger);
     uint128_t l_ret = uint128_0, l_nul = uint128_0;
     if (l_strlen > DATOSHI_POW)
         return l_nul;
@@ -702,10 +702,10 @@ uint128_t dap_uint128_scan_decimal(const char *a_str_decimal)
     strcpy(l_buf, a_str_decimal);
     char *l_point = strchr(l_buf, '.');
     int l_tail = 0;
-    int l_pos = strlen(l_buf);
+    int l_pos = (int)strlen(l_buf);
     if (l_point) {
-        l_tail = l_pos - 1 - (l_point - l_buf);
-        l_pos = l_point - l_buf;
+        l_tail = l_pos - 1 - (int)(l_point - l_buf);
+        l_pos = (int)(l_point - l_buf);
         if (l_tail > DATOSHI_DEGREE) {
             log_it(L_WARNING, "Incorrect balance format - too much precision");
             return l_nul;

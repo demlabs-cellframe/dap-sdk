@@ -823,7 +823,7 @@ char *dap_file_get_contents2(const char *a_filename, size_t *length)
 static char* dap_build_path_va(const char *separator, const char *first_element, va_list *args, char **str_array)
 {
     dap_string_t *result;
-    int separator_len = dap_strlen(separator);
+    int separator_len = (int)dap_strlen(separator);
     bool is_first = TRUE;
     bool have_leading = FALSE;
     const char *single_element = NULL;
@@ -1730,7 +1730,7 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
     char *l_filebuf = NULL;
     size_t l_filelen = 0;
     struct stat l_stat_info;
-    int remaining = l_filelen; // how much is left to write
+    int remaining = (int)l_filelen; // how much is left to write
     // fill header
     memset(&l_buffer, 0, BLOCKSIZE);
     // Trim a directory name if it's over 100 bytes
@@ -1781,7 +1781,7 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
     char *l_filebuf = dap_file_get_contents2(a_fpath, &l_filelen);
     if(l_filebuf) {
         struct stat l_stat_info;
-        int remaining = l_filelen; // how much is left to write
+        int remaining = (int)l_filelen; // how much is left to write
         // fill header
         memset(&l_buffer, 0, BLOCKSIZE);
         // Trim filename if it's over 100 bytes

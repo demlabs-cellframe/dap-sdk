@@ -93,7 +93,7 @@ int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_po
     switch (l_type) {
     case 4:
     case 6:
-        l_len = strlen(a_src);
+        l_len = (int)strlen(a_src);
         if (a_port)
             *a_port = 0;
         break;
@@ -101,8 +101,8 @@ int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_po
         l_bpos = l_cpos;
     case 7:
         if (a_port)
-            *a_port = strtoul(l_cpos + 1, NULL, 10);
-        l_len = l_bpos - a_src;
+            *a_port = (uint16_t)strtoul(l_cpos + 1, NULL, 10);
+        l_len = (int)(l_bpos - a_src);
         break;
     default:
         log_it(L_ERROR, "Couldn't define address \"%s\" type", a_src);
@@ -141,7 +141,7 @@ int res;
     if(res < 1)
         return -1;
 
-    if ( 0 >= (res = recv(sd, (char *)buf, bufsize, 0)) )
+    if ( 0 >= (res = (int)recv(sd, (char *)buf, bufsize, 0)) )
         printf("[s_recv] recv()->%d, errno: %d\n", res, errno);
 
     return res;

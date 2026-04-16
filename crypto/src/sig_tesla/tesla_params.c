@@ -183,15 +183,15 @@ void ntt(poly *a, const poly *w, tesla_param_t *p) { // Forward NTT transform
     for (; NumoProblems > 0; NumoProblems >>= 1) {
         uint32_t jFirst, j = 0;
         for (jFirst = 0; jFirst < p->PARAM_N; jFirst = j + NumoProblems) {
-            int W = w[jTwiddle++];
+            int W = (int)w[jTwiddle++];
             for (j = jFirst; j < jFirst + NumoProblems; j++) {
                 if(p->kind <= 3) {
-                    int temp = reduce(W * a[j + NumoProblems], p);
+                    int temp = (int)reduce(W * a[j + NumoProblems], p);
                     a[j + NumoProblems] = a[j] + (Par_Q - temp);
                     a[j] = temp + a[j];
                 }
                 else {
-                    int temp = barr_reduce(reduce(W * a[j + NumoProblems], p), p);
+                    int temp = (int)barr_reduce(reduce(W * a[j + NumoProblems], p), p);
                     a[j + NumoProblems] = barr_reduce(a[j] + (2LL * Par_Q - temp), p);
                     a[j] = barr_reduce(temp + a[j], p);
                 }
@@ -207,9 +207,9 @@ void nttinv(poly *a, const poly *w, tesla_param_t *p) { // Inverse NTT transform
         unsigned int jFirst, j = 0;
         if(p->kind == 0) {
             for (jFirst = 0; jFirst < p->PARAM_N; jFirst = j + NumoProblems) {
-                int W = w[jTwiddle++];
+                int W = (int)w[jTwiddle++];
                 for (j = jFirst; j < jFirst + NumoProblems; j++) {
-                    int temp = a[j];
+                    int temp = (int)a[j];
                     a[j] = barr_reduce(temp + a[j + NumoProblems], p);
                     a[j + NumoProblems] = reduce(W * (temp + (2 * p->PARAM_Q - a[j + NumoProblems])), p);
                 }
@@ -218,18 +218,18 @@ void nttinv(poly *a, const poly *w, tesla_param_t *p) { // Inverse NTT transform
 
         if(p->kind >= 1 && p->kind <= 3) {
             for (jFirst = 0; jFirst < p->PARAM_N; jFirst = j + NumoProblems) {
-                int W = w[jTwiddle++];
+                int W = (int)w[jTwiddle++];
                 for (j = jFirst; j < jFirst + NumoProblems; j++) {
-                    int temp = a[j];
+                    int temp = (int)a[j];
                     a[j] = (temp + a[j + NumoProblems]);
                     a[j + NumoProblems] = reduce(W * (temp + (2 * (int64_t)(p->PARAM_Q) - a[j + NumoProblems])), p);
                 }
             }
             NumoProblems *= 2;
             for (jFirst = 0; jFirst < p->PARAM_N; jFirst = j + NumoProblems) {
-                int W = w[jTwiddle++];
+                int W = (int)w[jTwiddle++];
                 for (j = jFirst; j < jFirst + NumoProblems; j++) {
-                    int temp = a[j];
+                    int temp = (int)a[j];
                     a[j] = barr_reduce(temp + a[j + NumoProblems], p);
                     a[j + NumoProblems] = reduce(W * (temp + (2 * (int64_t)(p->PARAM_Q) - a[j + NumoProblems])), p);
                 }
@@ -238,9 +238,9 @@ void nttinv(poly *a, const poly *w, tesla_param_t *p) { // Inverse NTT transform
 
         if(p->kind == 4) {
             for (jFirst = 0; jFirst < p->PARAM_N; jFirst = j + NumoProblems) {
-                int W = w[jTwiddle++];
+                int W = (int)w[jTwiddle++];
                 for (j = jFirst; j < jFirst + NumoProblems; j++) {
-                    int temp = a[j];
+                    int temp = (int)a[j];
                     a[j] = barr_reduce((temp + a[j + NumoProblems]), p);
                     a[j + NumoProblems] = barr_reduce(reduce(W * (temp + (2LL * p->PARAM_Q - a[j + NumoProblems])), p), p);
                 }

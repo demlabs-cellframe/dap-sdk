@@ -36,7 +36,7 @@ void dap_enc_bf_key_delete(struct dap_enc_key *a_key)
 {
     if(a_key->priv_key_data != NULL)
     {
-        randombytes(a_key->priv_key_data,a_key->priv_key_data_size);
+        randombytes(a_key->priv_key_data, (unsigned int)a_key->priv_key_data_size);
         DAP_DEL_Z(a_key->priv_key_data);
     }
     a_key->priv_key_data_size = 0;

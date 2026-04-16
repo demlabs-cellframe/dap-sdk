@@ -127,7 +127,7 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
     if (l_str_size < 0) {
         va_end(ap_copy);
         log_it(L_ERROR,"Can't write out formatted data '%s'", a_format);
-        return l_str_size;
+        return (int)l_str_size;
     }
     l_str_size++; // include trailing 0
     char *l_str = DAP_NEW_SIZE(char, l_str_size);
@@ -175,7 +175,7 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
     if (l_str_size < 0) {
         va_end(ap_copy);
         log_it(L_ERROR,"Can't write out formatted data '%s'", a_format);
-        return l_str_size;
+        return (int)l_str_size;
     }
     l_str_size++; // include trailing 0
     char *l_str = DAP_NEW_SIZE(char, l_str_size);

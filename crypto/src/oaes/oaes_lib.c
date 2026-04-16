@@ -514,7 +514,7 @@ static uint32_t oaes_get_seed(void)
 	_test = (char *) calloc( timer.millitm, sizeof( char ) );
 	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
 			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.millitm +
-			(uintptr_t) ( _test + timer.millitm ) + GETPID();
+			(uint32_t)(uintptr_t)( _test + timer.millitm ) + GETPID();
 	#else
 	struct timeval timer;
 	struct tm *gmTimer;
@@ -526,7 +526,7 @@ static uint32_t oaes_get_seed(void)
 	_test = (char *) calloc( timer.tv_usec/1000, sizeof( char ) );
 	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
 			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.tv_usec/1000 +
-			(uintptr_t) ( _test + timer.tv_usec/1000 ) + GETPID();
+			(uint32_t)(uintptr_t)( _test + timer.tv_usec/1000 ) + GETPID();
 	#endif
 
 	if( _test )

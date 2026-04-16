@@ -11,7 +11,7 @@ uint32_t montgomery_reduce(uint64_t a)
     t *= Q;
     t = a + t;
     t >>= 32;
-    return t;
+    return (uint32_t)t;
 }
 
 /*************************************************/

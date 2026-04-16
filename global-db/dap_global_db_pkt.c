@@ -77,10 +77,10 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     l_pkt->timestamp = a_store_obj->timestamp;
     l_pkt->group_len = l_group_len;
     l_pkt->key_len = l_key_len;
-    l_pkt->value_len = a_store_obj->value_len;
+    l_pkt->value_len = (uint32_t)a_store_obj->value_len;
     l_pkt->crc = a_store_obj->crc;
     l_pkt->flags = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_DEL;
-    l_pkt->data_len = l_data_size_out;
+    l_pkt->data_len = (uint32_t)l_data_size_out;
 
     /* Put serialized data into the payload part of the packet */
     char *l_data_ptr = (char *)l_pkt->data;
@@ -120,7 +120,7 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
             dap_global_db_pkt_t *l_new_pkt = DAP_REALLOC_RET_VAL_IF_FAIL(l_pkt, dap_global_db_pkt_get_size(l_pkt) + l_sign_len, NULL, l_sign);
             l_pkt = l_new_pkt;
             memcpy(l_pkt->data + l_pkt->data_len, l_sign, l_sign_len);
-            l_pkt->data_len += l_sign_len;
+            l_pkt->data_len += (uint32_t)l_sign_len;
         }
         *a_checksum = crc64((uint8_t *)l_pkt + sizeof(uint64_t),
                             dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
@@ -138,14 +138,14 @@ bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
         return false;
     size_t l_signed_data_size = l_pkt->group_len + l_pkt->key_len + l_pkt->value_len;
     size_t l_full_data_len = l_pkt->data_len;
-    l_pkt->data_len = l_signed_data_size;
+    l_pkt->data_len = (uint32_t)l_signed_data_size;
     dap_sign_t *l_sign = (dap_sign_t *)(l_pkt->data + l_signed_data_size);
     if (a_obj->sign && dap_sign_verify(l_sign, (uint8_t *)l_pkt + sizeof(uint64_t),
                                         dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t))) {
         DAP_DELETE(l_pkt);
         return false;
     }
-    l_pkt->data_len = l_full_data_len;
+    l_pkt->data_len = (uint32_t)l_full_data_len;
     uint64_t l_checksum = crc64((uint8_t *)l_pkt + sizeof(uint64_t),
                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
     bool ret = l_checksum == l_pkt->crc;

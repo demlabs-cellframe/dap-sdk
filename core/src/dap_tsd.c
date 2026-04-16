@@ -28,7 +28,7 @@ byte_t *dap_tsd_write(byte_t *a_ptr, uint16_t a_type, const void *a_data, size_t
     dap_return_val_if_fail(a_ptr, NULL);
     dap_tsd_t *l_tsd = (dap_tsd_t *)a_ptr;
     l_tsd->type = a_type;
-    l_tsd->size = a_data_size;
+    l_tsd->size = (uint32_t)a_data_size;
     return (a_data && a_data_size) ? dap_mempcpy(l_tsd->data, a_data, a_data_size) : l_tsd->data;
 }
 

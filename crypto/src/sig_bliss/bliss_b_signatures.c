@@ -509,7 +509,7 @@ int32_t bliss_b_sign(bliss_signature_t *signature,  const bliss_private_key_t *p
   /* 0: compute the hash of the msg */
 
     //SHA3_512(hash, msg, msg_sz);
-	sha3_512(hash, msg, msg_sz);
+	sha3_512(hash, msg, (unsigned int)msg_sz);
   // for debugging
   if (false) {
     printf("sign hash\n");
@@ -865,7 +865,7 @@ int32_t bliss_b_verify(const bliss_signature_t *signature,  const bliss_public_k
   /* hash the message into the first SHA3_512_DIGEST_LENGTH bytes of the hash */
 
     //SHA3_512(hash, msg, msg_sz);
-	sha3_512(hash, msg, msg_sz);
+	sha3_512(hash, msg, (unsigned int)msg_sz);
   if (false) {
     printf("verify hash\n");
     for (i=0; i<SHA3_512_DIGEST_LENGTH; i++) {
@@ -936,7 +936,7 @@ int32_t bliss_b_verify(const bliss_signature_t *signature,  const bliss_public_k
     }
     printf("\n");
   }
-    generateC(indices, kappa, v, n, hash, hash_sz);
+    generateC(indices, kappa, v, (uint32_t)n, hash, (uint32_t)hash_sz);
 
   if (false) {
     printf("verify: indices after generateC\n");

@@ -289,7 +289,7 @@ void dap_http_folder_data_read(dap_http_client_t * cl_ht, void * arg)
 {
     int * bytes_return = (int*) arg; // Return number of read bytes
     //Do nothing
-    *bytes_return=cl_ht->esocket->buf_in_size;
+    *bytes_return = (int)cl_ht->esocket->buf_in_size;
 }
 
 /**

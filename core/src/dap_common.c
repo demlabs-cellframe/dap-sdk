@@ -811,7 +811,7 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
     fseek(fp, l_start_pos, SEEK_SET);
 
     // Finaly read required data from file to buf
-    l_len = l_end_pos - l_start_pos - 1;
+    l_len = (unsigned)(l_end_pos - l_start_pos - 1);
     char *l_buf = DAP_NEW_Z_SIZE(char, l_len + 1);
     fread(l_buf, l_len, 1, fp);
 	fclose(fp);
@@ -833,7 +833,7 @@ dap_error_str_t dap_strerror_(long long err) {
         *(s_error + l_len - 1) = '\0';
     else
 #else
-    if ( strerror_r(err, s_error, LAST_ERROR_MAX) )
+    if ( strerror_r((int)err, s_error, LAST_ERROR_MAX) )
 #endif
         snprintf(s_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
     return l_ret;
@@ -1169,7 +1169,7 @@ size_t dap_hex2bin(uint8_t *a_out, const char *a_in, size_t a_len)
     // '0'-'9' = 0x30-0x39
     // 'a'-'f' = 0x61-0x66
     // 'A'-'F' = 0x41-0x46
-    int ct = a_len;
+    int ct = (int)a_len;
     if (!a_in || !a_out)
         return 0;
     while(ct > 0) {
@@ -1621,7 +1621,7 @@ static void s_dap_common_log_cleanner_interval(void *a_max_size) {
     
 }
 void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
-    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
+    dap_interval_timer_create((unsigned int)a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
 }
 
 #ifdef __cplusplus

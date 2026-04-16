@@ -44,7 +44,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
     if(a_seed && a_seed_size > 0) {
         shake256(l_seed_buf, l_seed_buf_size, (const unsigned char *) a_seed, a_seed_size);
     } else {
-        randombytes(l_seed_buf, l_seed_buf_size);
+        randombytes(l_seed_buf, (unsigned int)l_seed_buf_size);
     }
     // creating key pair
     dap_enc_sig_sphincsplus_key_new(a_key);
@@ -99,7 +99,7 @@ size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_
         return 0;
     }
 
-    uint32_t l_sign_bytes = dap_enc_sig_sphincsplus_crypto_sign_bytes();
+    uint32_t l_sign_bytes = (uint32_t)dap_enc_sig_sphincsplus_crypto_sign_bytes();
     
     if(a_out_size_max < l_sign_bytes) {
         log_it(L_ERROR, "Bad signature size");

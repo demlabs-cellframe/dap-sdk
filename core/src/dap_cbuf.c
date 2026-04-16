@@ -196,7 +196,7 @@ int dap_cbuf_write_in_socket(dap_cbuf_t cBuf, int sockfd)
             if(rdLen < (ssize_t)countBytesToEnd) {
                 log_it(L_WARNING, "rdLen < countBytesToEnd");
                 dap_cbuf_pop(cBuf, rdLen, NULL);
-                return rdLen;
+                return (int)rdLen;
             }
 
             cBuf->data_size -= countBytesToEnd;
@@ -209,7 +209,7 @@ int dap_cbuf_write_in_socket(dap_cbuf_t cBuf, int sockfd)
 
             if(rdLen2 < 0) {
                 log_it(L_ERROR, "Can't write data in socket. %s", strerror(errno));
-                return rdLen;
+                return (int)rdLen;
             }
 
             cBuf->offset_head = rdLen2;
@@ -219,11 +219,11 @@ int dap_cbuf_write_in_socket(dap_cbuf_t cBuf, int sockfd)
                 cBuf->offset_tail = -1;
                 cBuf->data_size = 0;
             }
-            return countBytesToEnd + rdLen2;
+            return (int)(countBytesToEnd + (size_t)rdLen2);
         }
     }
 
-    return rdLen;
+    return (int)rdLen;
 
 }
 

@@ -188,15 +188,15 @@ char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_re
         return NULL;
     dap_enc_data_type_t l_enc_type = a_client_internal->uplink_protocol_version >= 21
         ? DAP_ENC_DATA_TYPE_B64_URLSAFE : DAP_ENC_DATA_TYPE_B64;
-    int l_suburl_enc_len = dap_enc_code_out_size(a_client_internal->session_key, l_suburl_len, l_enc_type),
-        l_query_enc_len = dap_enc_code_out_size(a_client_internal->session_key, l_query_len, l_enc_type),
-        l_req_enc_len = dap_enc_code_out_size(a_client_internal->session_key, a_request_data_size, DAP_ENC_DATA_TYPE_RAW);
+    int l_suburl_enc_len = (int)dap_enc_code_out_size(a_client_internal->session_key, l_suburl_len, l_enc_type),
+        l_query_enc_len = (int)dap_enc_code_out_size(a_client_internal->session_key, l_query_len, l_enc_type),
+        l_req_enc_len = (int)dap_enc_code_out_size(a_client_internal->session_key, a_request_data_size, DAP_ENC_DATA_TYPE_RAW);
 
     char l_suburl_enc[ l_suburl_enc_len + 1 ], l_query_enc[ l_query_enc_len + 1 ], *l_req_enc = DAP_NEW_Z_SIZE(char, l_req_enc_len + 1);
 
     a_client_internal->is_encrypted = true;
-    l_suburl_enc_len = dap_enc_code(a_client_internal->session_key, s_suburl,             l_suburl_len,       l_suburl_enc, l_suburl_enc_len + 1, l_enc_type);
-    l_query_enc_len  = dap_enc_code(a_client_internal->session_key, s_query,              l_query_len,        l_query_enc,  l_query_enc_len + 1,  l_enc_type);
+    l_suburl_enc_len = (int)dap_enc_code(a_client_internal->session_key, s_suburl,             l_suburl_len,       l_suburl_enc, l_suburl_enc_len + 1, l_enc_type);
+    l_query_enc_len  = (int)dap_enc_code(a_client_internal->session_key, s_query,              l_query_len,        l_query_enc,  l_query_enc_len + 1,  l_enc_type);
     *a_enc_request_size = dap_enc_code(a_client_internal->session_key, a_request_data_str,a_request_data_size,l_req_enc,    l_req_enc_len + 1,    DAP_ENC_DATA_TYPE_RAW);
 
     l_suburl_enc[l_suburl_enc_len] = l_query_enc[l_query_enc_len] = '\0';
@@ -251,7 +251,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
                 break;
             }
             if (json_object_object_get_ex(jobj, "version", &jobj_version))
-                request->version = json_object_get_int64(jobj_version);
+                request->version = (int)json_object_get_int64(jobj_version);
             else {
                 log_it(L_DEBUG, "Can't find request version, apply version %d", a_version_default);
                 request->version = a_version_default;
@@ -338,7 +338,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     char *l_str = dap_json_rpc_request_to_json_string(a_request);
     if (!l_str)
         return log_it(L_ERROR, "Can't convert JSON-request to string!"), NULL;
-    int l_len = strlen(l_str);
+    int l_len = (int)strlen(l_str);
     dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len);
     if (!l_sign)
         return log_it(L_ERROR, "JSON request signing failed"), NULL;
@@ -348,7 +348,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
         = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_len + 1 + l_sign_size, NULL, l_sign);
     *l_ret = (dap_json_rpc_http_request_t) {
         .header.data_size = l_len + 1,
-        .header.signs_size = l_sign_size,
+        .header.signs_size = (uint32_t)l_sign_size,
     };
     byte_t* l_cur =  (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
     dap_mempcpy(l_cur + 1, l_sign, l_sign_size);

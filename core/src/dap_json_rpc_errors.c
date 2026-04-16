@@ -65,7 +65,7 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
         return -1;
     }
 
-    int l_array_length = json_object_array_length(a_json_arr_reply);
+    int l_array_length = (int)json_object_array_length(a_json_arr_reply);
     json_object *l_json_obj_errors = NULL, *l_json_arr_errors = NULL;
     for (int i = 0; i < l_array_length; i++) {
         json_object *l_json_obj = json_object_array_get_idx(a_json_arr_reply, i);
@@ -178,7 +178,7 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(json_object *a_jobj)
     }
     json_object *l_jobj_code_eror = json_object_object_get(a_jobj, "code");
     json_object *l_jobj_msg = json_object_object_get(a_jobj, "message");
-    l_error->code_error = json_object_get_int64(l_jobj_code_eror);
+    l_error->code_error = (int)json_object_get_int64(l_jobj_code_eror);
     l_error->msg = dap_strdup(json_object_get_string(l_jobj_msg));
     json_object_put(l_jobj_code_eror);
     json_object_put(l_jobj_msg);

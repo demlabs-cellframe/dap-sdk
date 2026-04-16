@@ -304,7 +304,7 @@ int ringct20_crypto_sign( ringct20_signature_t *sig, const unsigned char *m, uns
     }
 
     free(bt);
-    LRCT_SigGen(&c1, t, &h, p->A, p->H, S, u, p->mLen, aList, p->wLen, Pi, m, mlen);
+    LRCT_SigGen(&c1, t, &h, p->A, p->H, S, u, p->mLen, aList, p->wLen, Pi, m, (int)mlen);
     sig->sig_len = p->RINGCT20_SIG_SIZE;// + mlen;
     sig->sig_data = malloc(sig->sig_len);
 //  memcpy(sig->sig_data,m,mlen);//TOCORRECT
@@ -403,7 +403,7 @@ int ringct20_crypto_sign_open_with_pbkList(const unsigned char * msg, const unsi
     }
     int result = 1;
 
-    result = 1 ^ LRCT_SigVer(&c1, t, p->A, p->H, p->mLen, &h, aList, wLenSig, msg, msg_size);
+    result = 1 ^ LRCT_SigVer(&c1, t, p->A, p->H, p->mLen, &h, aList, wLenSig, msg, (int)msg_size);
 
     if(aList)
        free(aList);
@@ -458,7 +458,7 @@ int ringct20_crypto_sign_open( const unsigned char * msg, const unsigned long lo
     int result = 1;
 
     if(pbk_in_aList)
-        result = 1 ^ LRCT_SigVer(&c1, t, p->A, p->H, p->mLen, &h, aList, wLenSig, msg, msg_size);
+        result = 1 ^ LRCT_SigVer(&c1, t, p->A, p->H, p->mLen, &h, aList, wLenSig, msg, (int)msg_size);
 
     if(aList)
        free(aList);
@@ -672,7 +672,7 @@ int ringct20_crypto_sign_with_pbk_list( ringct20_signature_t *sig, const unsigne
     }
 
     free(bt);
-    LRCT_SigGen(&c1, t, &h, p->A, p->H, S, u, p->mLen, aList, wLen, Pi, m, mlen);
+    LRCT_SigGen(&c1, t, &h, p->A, p->H, S, u, p->mLen, aList, wLen, Pi, m, (int)mlen);
     sig->sig_len = p->RINGCT20_SIG_SIZE;// + mlen;
     sig->sig_data = malloc(sig->sig_len);
 //  memcpy(sig->sig_data,m,mlen);//TOCORRECT
@@ -699,7 +699,7 @@ size_t dap_enc_sig_ringct20_get_sign_with_pb_list(struct dap_enc_key * a_key, co
         return 0;
     }
 
-    if(!ringct20_crypto_sign_with_pbk_list((ringct20_signature_t *) signature, (const unsigned char *) msg, msg_size, a_key->priv_key_data, a_key->pbk_list_data, a_key->pbk_list_size))
+    if(!ringct20_crypto_sign_with_pbk_list((ringct20_signature_t *) signature, (const unsigned char *) msg, (unsigned long long)msg_size, a_key->priv_key_data, a_key->pbk_list_data, (int)a_key->pbk_list_size))
         return signature_size;
     else
         return 0;

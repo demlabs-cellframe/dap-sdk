@@ -50,7 +50,7 @@ static void * session_check(void * data);
 void dap_stream_session_init()
 {
     log_it(L_INFO,"Init module");
-    srand ( time(NULL) );
+    srand((unsigned int)time(NULL));
 }
 
 void dap_stream_session_deinit()

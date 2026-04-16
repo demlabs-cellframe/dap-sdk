@@ -85,7 +85,7 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
     if (a_array_list == NULL)
         return NULL;
     dap_json_rpc_params_t *params = dap_json_rpc_params_create();
-    int length = json_object_array_length(a_array_list);
+    int length = (int)json_object_array_length(a_array_list);
 
     for (int i = 0; i < length; i++){
         json_object *jobj = json_object_array_get_idx(a_array_list, i);
@@ -132,7 +132,7 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_obj
     if(a_subcmd){
         enum json_type l_subcmd_type = json_object_get_type(a_subcmd);
         if(l_subcmd_type == json_type_array){
-            int length = json_object_array_length(a_subcmd);
+            int length = (int)json_object_array_length(a_subcmd);
             
             for (int i = 0; i < length; i++){
                 json_object *jobj = json_object_array_get_idx(a_subcmd, i);
@@ -169,7 +169,7 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_obj
                 l_key_str = key;
                 l_val_str = json_object_get_string(val);
             } else if(l_arg_type == json_type_array){
-                int length = json_object_array_length(val);
+                int length = (int)json_object_array_length(val);
                 dap_string_append_printf(l_str_tmp, "-%s;", key);
 
                 for (int i = 0; i < length; i++){

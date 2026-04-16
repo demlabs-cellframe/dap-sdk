@@ -966,8 +966,8 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
                 break;
             }
             l_pkt->key_len = l_record->key_len;
-            l_pkt->value_len = l_record->value_len;
-            l_pkt->data_len = l_data_len;
+            l_pkt->value_len = (uint32_t)l_record->value_len;
+            l_pkt->data_len = (uint32_t)l_data_len;
             l_pkt->flags = l_record->flags & DAP_GLOBAL_DB_RECORD_DEL;
 
             /* Put serialized data into the payload part of the packet */
@@ -1103,7 +1103,7 @@ safe_ret:
     if (a_count_out)
         *a_count_out = l_count_current;
     if (a_keys_only_read && l_obj_arr)
-        ((dap_global_db_hash_pkt_t *)l_obj_arr)->hashes_count = l_count_current;
+        ((dap_global_db_hash_pkt_t *)l_obj_arr)->hashes_count = (uint32_t)l_count_current;
     return l_obj_arr;
 }
 

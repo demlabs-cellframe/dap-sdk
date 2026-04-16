@@ -64,10 +64,10 @@ int randombytes(void* random_array, unsigned int nbytes)
     
     int bytes_read = 0;
     while (bytes_read < (int)nbytes) {
-        int r = read(s_urandom_fd, (char*)random_array + bytes_read, 
-                    nbytes - bytes_read);
+        ssize_t r = read(s_urandom_fd, (char*)random_array + bytes_read,
+                    nbytes - (size_t)bytes_read);
         if (r > 0) {
-            bytes_read += r;
+            bytes_read += (int)r;
         } else if (r == 0) {
             // EOF on /dev/urandom should never happen, this is a critical error
             log_it(L_CRITICAL, "Unexpected EOF on /dev/urandom");
@@ -100,7 +100,7 @@ int randombase64(void*random_array, unsigned int size)
                                                       l_temp_base64, DAP_ENC_DATA_TYPE_B64);
         
         // Copy only what fits in user buffer (including null-terminator)
-        unsigned int l_copy_size = dap_min(l_encoded_size, size - 1);
+        unsigned int l_copy_size = (unsigned int)dap_min(l_encoded_size, (size_t)(size - 1));
         memcpy(random_array, l_temp_base64, l_copy_size);
         ((char*)random_array)[l_copy_size] = '\0';
         return passed;

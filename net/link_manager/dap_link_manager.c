@@ -524,7 +524,7 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
                     continue;
                 }
                 bool l_is_permanent_link = a_link->link_manager->callbacks.disconnected(
-                            a_link, l_net->id, dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
+                            a_link, l_net->id, (int)dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
                 if (l_is_permanent_link)
                     continue;
                 DL_DELETE(a_link->uplink.associated_nets, it);
@@ -730,7 +730,7 @@ void s_links_request(dap_link_manager_t *a_link_manager)
     DL_FOREACH(a_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
         if (l_net->active ) {
-            l_net->uplinks = dap_link_manager_links_count(l_net->id);
+            l_net->uplinks = (uint32_t)dap_link_manager_links_count(l_net->id);
             if (a_link_manager->callbacks.link_request && l_net->uplinks < l_net->min_links_num)
                     a_link_manager->callbacks.link_request(l_net->id);
         }
@@ -1158,7 +1158,7 @@ static bool s_link_accounting_callback(void *a_arg)
         l_link->uplink.start_after = dap_time_now() + l_link->link_manager->reconnect_delay;
         if (l_link->link_manager->callbacks.disconnected) {
             bool l_is_permanent_link = l_link->link_manager->callbacks.disconnected(
-                        l_link, l_net->id, dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
+                        l_link, l_net->id, (int)dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
             if (l_is_permanent_link) {
                 pthread_rwlock_unlock(&s_link_manager->links_lock);
                 DAP_DELETE(l_args);

@@ -298,7 +298,7 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
                                            l_pub_key_data, (uint64_t)l_pub_key_data_size, l_priv_key_data, (uint64_t)l_priv_key_data_size,
                                            l_metadata, (uint64_t)l_metadata_size );
     if (a_cert_size_out)
-        *a_cert_size_out = l_data ? l_total_size : 0;
+        *a_cert_size_out = l_data ? (uint32_t)l_total_size : 0;
     DAP_DEL_MULTY(l_pub_key_data, l_priv_key_data, l_metadata);
     return l_data;
 }

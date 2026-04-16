@@ -52,7 +52,7 @@ uint128_t dap_uuid_generate_uint128()
 {
     uint32_t l_input[4] ={
         [0] = random_uint32_t(UINT32_MAX),
-        [1] = time(NULL),
+        [1] = (uint32_t)time(NULL),
         [2] = atomic_fetch_add(&s_global_counter, 1),
         [3] = random_uint32_t(UINT32_MAX)
     };
@@ -89,7 +89,7 @@ void dap_uuid_generate_nonce(void *a_nonce, size_t a_nonce_size)
         return;
     uint32_t l_input[4] ={
         [0] = random_uint32_t(UINT32_MAX),
-        [1] = time(NULL),
+        [1] = (uint32_t)time(NULL),
         [2] = atomic_fetch_add(&s_global_counter, 1),
         [3] = random_uint32_t(UINT32_MAX)
     };

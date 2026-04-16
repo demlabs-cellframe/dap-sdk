@@ -333,7 +333,7 @@ void LRCT_Spend(IW *iwOA, poly_ringct20 *ckOA, poly_ringct20 *c1, poly_ringct20 
 	LRCT_SampleKey(u, mLen + 1);
 	LRCT_MatrixAddMatrix(S, skPai, ckPai, mLen);
 	LRCT_MatrixSubMatrix(S, S, ckOA, mLen);
-	LRCT_SigGen(c1, t, h, A, H, S, u, mLen, L, iwsLen, PaiInd, bSignMess, sigMsgLen);
+	LRCT_SigGen(c1, t, h, A, H, S, u, mLen, L, (int)iwsLen, PaiInd, bSignMess, (int)sigMsgLen);
 
 	free(u);
 	free(S);
@@ -342,7 +342,7 @@ int LRCT_Verify(poly_ringct20 *c1, poly_ringct20 **t, poly_ringct20 *h, poly_rin
     unsigned char* bSignMess, size_t sigMsgLen, poly_ringct20 *L, int iwsLen)
 {
 	int result = 0;
-	result = LRCT_SigVer(c1, t, A, H, mLen, h, L, iwsLen, bSignMess, sigMsgLen);
+	result = LRCT_SigVer(c1, t, A, H, mLen, h, L, iwsLen, bSignMess, (int)sigMsgLen);
 	return result;
 }
 /////multiple

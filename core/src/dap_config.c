@@ -135,7 +135,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
     for (uint16_t l_line_counter = 0, l_line_counter2 = 0; fgets(l_line + l_shift, MAX_CONFIG_LINE_LEN, f); ++l_line_counter) {
         if (!l_shift)
             l_line = DAP_REALLOC(l_line, MAX_CONFIG_LINE_LEN);
-        unsigned l_eol = strcspn(l_line + l_shift, "\r\n") + l_shift;
+        unsigned l_eol = (unsigned)(strcspn(l_line + l_shift, "\r\n") + (size_t)l_shift);
         if (l_eol == l_len - 1) {
             if (l_line_counter != l_line_counter2) {
                 log_it(L_WARNING, "Config \"%s\": line %d is too long, preserving the tail ...", a_abs_path, l_line_counter);
@@ -150,7 +150,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
             l_len = MAX_CONFIG_LINE_LEN;
             l_shift = 0;
         }
-        l_eol = strcspn(l_line, "#\r\n");
+        l_eol = (unsigned)strcspn(l_line, "#\r\n");
         l_line[l_eol] = '\0';
         {
             char *l_read = l_line, *l_write = l_line;
@@ -230,7 +230,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                 ++l_val;
             if (l_type != 'r') {
                 l_type = DAP_CONFIG_ITEM_ARRAY;
-                int l_pos = dap_strlen(l_val) - 1;
+                int l_pos = (int)dap_strlen(l_val) - 1;
                 char l_term = l_val[l_pos];
                 if (l_term == ']') {
                     l_val[l_pos] = '\0';

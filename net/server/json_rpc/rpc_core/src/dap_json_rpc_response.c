@@ -140,7 +140,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
 
     json_object* version_obj = NULL;
     if (json_object_object_get_ex(jobj, "version", &version_obj))
-        response->version = json_object_get_int64(version_obj);
+        response->version = (int)json_object_get_int64(version_obj);
     else {
         log_it(L_DEBUG, "Can't find response version, apply version 1");
         response->version = 1;
@@ -187,7 +187,7 @@ int json_print_commands(const char * a_name) {
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[i]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
-            return i+1;
+            return (int)(i + 1);
         }
     }
     return 0;
@@ -209,7 +209,7 @@ void json_print_object(json_object *obj, int indent_level) {
             break;
         }
         case json_type_array: {
-            int length = json_object_array_length(obj);
+            int length = (int)json_object_array_length(obj);
             for (int i = 0; i < length; i++) {
                 for (int j = 0; j <= indent_level; j++) {
                     printf(INDENTATION_LEVEL); // indentation level
@@ -257,7 +257,7 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
         return;
     }
     if (json_object_get_type(response->result_json_object) == json_type_array) {
-        int result_count = json_object_array_length(response->result_json_object);
+        int result_count = (int)json_object_array_length(response->result_json_object);
         if (result_count <= 0) {
             printf("Response array is empty\n");
             return;

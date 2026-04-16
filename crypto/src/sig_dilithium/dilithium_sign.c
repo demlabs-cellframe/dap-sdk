@@ -42,7 +42,7 @@ void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, di
     for(i = 0; i < p->PARAM_K; ++i)
         polyw1_pack(inbuf + CRHBYTES + i * p->PARAM_POLW1_SIZE_PACKED, w1->vec + i);
 
-    shake256_absorb(state, inbuf, sizeof(inbuf));
+    shake256_absorb(state, inbuf, (unsigned int)sizeof(inbuf));
     shake256_squeezeblocks(outbuf, 1, state);
 
     //Keccak_HashInitialize_SHAKE256( &ks );

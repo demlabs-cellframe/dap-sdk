@@ -1698,7 +1698,7 @@ lb_exit:
         dap_events_socket_t *l_es_sought = NULL;
         HASH_FIND_BYHASHVALUE(hh, a_context->esockets, &a_es->uuid, sizeof(a_es->uuid), a_es->uuid, l_es_sought);
         if (!l_es_sought) {
-            HASH_ADD_BYHASHVALUE(hh, a_context->esockets, uuid, sizeof(a_es->uuid), a_es->uuid, a_es);
+            HASH_ADD_BYHASHVALUE(hh, a_context->esockets, uuid, sizeof(a_es->uuid), (unsigned int)a_es->uuid, a_es);
             a_context->event_sockets_count++;
         }
     //}

@@ -46,7 +46,7 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
     uint8_t *l_pkey = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
     if ( l_pkey && l_pub_key_size ) {
         l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_pkey_t, sizeof(dap_pkey_t) + l_pub_key_size, NULL, l_pkey);
-        *l_ret = (dap_pkey_t) { .header.type = l_type, .header.size = l_pub_key_size };
+        *l_ret = (dap_pkey_t) { .header.type = l_type, .header.size = (uint32_t)l_pub_key_size };
         memcpy(l_ret->pkey, l_pkey, l_pub_key_size);
     } else
         log_it(L_ERROR, "Pub key serialization failed");
@@ -75,7 +75,7 @@ dap_pkey_t *dap_pkey_get_from_sign(dap_sign_t *a_sign)
 dap_pkey_t *dap_pkey_get_from_hex_str(const char *a_hex_str)
 {
     dap_return_val_if_pass(!a_hex_str, NULL);
-    int l_str_len = dap_strlen(a_hex_str) - 2;
+    int l_str_len = (int)dap_strlen(a_hex_str) - 2;
     // from hex to binary 
     if (l_str_len < 1 || dap_strncmp(a_hex_str, "0x", 2) || dap_is_hex_string(a_hex_str + 2, l_str_len)) {
         return NULL;

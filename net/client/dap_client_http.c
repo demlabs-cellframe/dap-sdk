@@ -567,7 +567,7 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
             a_client_http->path ? a_client_http->path : "",
             a_client_http->uplink_addr,
             l_request_headers) + 
-            a_client_http->request_size + 
+            (int)a_client_http->request_size +
             ((a_client_http->method == HTTP_GET) ? 1 : 0) + // +1 for '?' in GET request with params
             1; // +1 for null terminator
         // Allocate memory for request
@@ -603,9 +603,9 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
             l_data_offset += l_ret;
             
             // Add binary data (buffer size already verified)
-            l_data_offset = (char*)(dap_mempcpy(l_data + l_data_offset, 
-                                              a_client_http->request, 
-                                              a_client_http->request_size)) - l_data;
+            l_data_offset = (int)((char *)(dap_mempcpy(l_data + l_data_offset,
+                                              a_client_http->request,
+                                              a_client_http->request_size)) - l_data);
             
             // Add HTTP/1.1 and headers
             l_ret = snprintf(l_data + l_data_offset, l_size - l_data_offset, 
@@ -626,9 +626,9 @@ static int s_send_http_request(dap_events_socket_t *a_es, dap_client_http_t *a_c
             l_data_offset += l_ret;
             
             // Add request body (buffer size already verified)
-            l_data_offset = (char*)(dap_mempcpy(l_data + l_data_offset, 
-                                             a_client_http->request, 
-                                             a_client_http->request_size)) - l_data;
+            l_data_offset = (int)((char *)(dap_mempcpy(l_data + l_data_offset,
+                                             a_client_http->request,
+                                             a_client_http->request_size)) - l_data);
         }
         
         debug_if(s_debug_more, L_DEBUG, "Sending binary request (%d bytes)", l_data_offset);

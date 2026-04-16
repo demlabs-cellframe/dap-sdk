@@ -619,7 +619,7 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 
     debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_read: ready_to_write=%s, client->buf_in_size=%zu",
                (a_esocket->flags & DAP_SOCK_READY_TO_WRITE) ? "true" : "false", a_esocket->buf_in_size);
-    *l_ret = dap_stream_data_proc_read(l_stream);
+    *l_ret = (int)dap_stream_data_proc_read(l_stream);
 }
 
 

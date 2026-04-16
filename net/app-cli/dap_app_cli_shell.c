@@ -111,7 +111,7 @@ unsigned char rl_getc(FILE *stream)
 #endif
         result = 0;
         if(result >= 0)
-            result = read(fileno(stream), &c, sizeof(unsigned char));
+            result = (int)read(fileno(stream), &c, sizeof(unsigned char));
         if(result == sizeof(unsigned char))
             return (c);
 
@@ -152,7 +152,7 @@ char *rl_readline(const char *prompt)
     // Set up the prompt
     rl_set_prompt(prompt);
     while ( fgets(value + l_shift, l_basic_len, rl_instream) ) {
-        unsigned l_eol = strcspn(value + l_shift, "\r\n") + l_shift;
+        unsigned l_eol = (unsigned)(strcspn(value + l_shift, "\r\n") + (size_t)l_shift);
         if (l_eol == l_value_len - 1) {
             l_shift = l_eol;
             l_value_len += (l_basic_len - 1);

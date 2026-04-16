@@ -644,7 +644,7 @@ dap_cert_metadata_t *dap_cert_new_meta(const char *a_key, dap_cert_metadata_type
     dap_return_val_if_pass(!a_key || a_type > DAP_CERT_META_CUSTOM || (!a_value && a_value_size), NULL);
     size_t l_meta_item_size = sizeof(dap_cert_metadata_t) + a_value_size + strlen(a_key) + 1;
     dap_cert_metadata_t *l_new_meta = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_cert_metadata_t, l_meta_item_size, NULL);
-    l_new_meta->length = a_value_size;
+    l_new_meta->length = (uint32_t)a_value_size;
     l_new_meta->type = a_type;
     l_new_meta->key = dap_strdup(a_key);
     dap_mempcpy(l_new_meta->value, a_value, a_value_size);
@@ -699,7 +699,7 @@ void dap_cert_add_meta_scalar(dap_cert_t *a_cert, const char *a_key, dap_cert_me
             uval.l_tmp16 = a_value;
             break;
         case 4:
-            uval.l_tmp32 = a_value;
+            uval.l_tmp32 = (uint32_t)a_value;
             break;
         case 8:
         default:

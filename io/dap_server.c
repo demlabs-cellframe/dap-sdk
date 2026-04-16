@@ -141,7 +141,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         unlink(a_addr);
         struct sockaddr_un l_unaddr = { .sun_family = AF_UNIX };
         dap_strncpy(l_unaddr.sun_path, a_addr, sizeof(l_unaddr.sun_path) - 1);
-        l_len = SUN_LEN(&l_unaddr);
+        l_len = (int)SUN_LEN(&l_unaddr);
         memcpy(&l_saddr, &l_unaddr, sizeof(l_unaddr));
         l_fam = AF_UNIX;
     } break;

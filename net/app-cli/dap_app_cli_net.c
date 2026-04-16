@@ -59,7 +59,7 @@
 
 int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_state_t *l_cmd, int a_status)
 {
-    ssize_t l_recv_len = recv(socket, l_cmd->cmd_res + l_cmd->cmd_res_cur, DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
+    ssize_t l_recv_len = recv((SOCKET)socket, l_cmd->cmd_res + l_cmd->cmd_res_cur, DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
     switch (l_recv_len) {
     case 0: return DAP_CLI_ERROR_INCOMPLETE;
     case -1:
@@ -128,7 +128,7 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
             return printf ("socket() error %d: \"%s\"\r\n", errno, dap_strerror(errno)), ~0;
         struct sockaddr_un l_saddr_un = { .sun_family = AF_UNIX };
         strncpy(l_saddr_un.sun_path, l_addr, sizeof(l_saddr_un.sun_path) - 1);
-        l_arg_len = SUN_LEN(&l_saddr_un);
+        l_arg_len = (int)SUN_LEN(&l_saddr_un);
         memcpy(&l_saddr, &l_saddr_un, l_arg_len);
         DAP_DELETE(l_addr);
 #endif
@@ -220,7 +220,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
                                    "\r\n"
                                    "%s", strlen(request_str), request_str);
     DAP_DELETE(request_str);
-    size_t res = send(a_socket, l_post_data->str, l_post_data->len, 0);
+    size_t res = (size_t)send((SOCKET)a_socket, l_post_data->str, l_post_data->len, 0);
     if (res != l_post_data->len) {
         dap_json_rpc_request_free(a_request);
         printf("Error sending to server");
@@ -259,6 +259,6 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
 
 int dap_app_cli_disconnect(dap_app_cli_connect_param_t a_socket)
 {
-    closesocket(a_socket);
+    closesocket((SOCKET)a_socket);
     return 0;
 }

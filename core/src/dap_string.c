@@ -97,7 +97,7 @@ dap_string_t* dap_string_new(const char *a_init)
     {
         int len;
 
-        len = strlen(a_init);
+        len = (int)strlen(a_init);
         l_string = dap_string_sized_new(len + 2);
 
         dap_string_append_len(l_string, a_init, len);

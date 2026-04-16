@@ -5550,7 +5550,7 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline bool cursor_is_core(c
 
 MDBX_MAYBE_UNUSED static inline int cursor_dbi_dbg(const MDBX_cursor *mc) {
   /* Debugging output value of a cursor's DBI: Negative for a sub-cursor. */
-  const int dbi = cursor_dbi(mc);
+  const int dbi = (int)cursor_dbi(mc);
   return (mc->flags & z_inner) ? -dbi : dbi;
 }
 
@@ -8261,7 +8261,7 @@ MDBX_cursor *mdbx_cursor_create(void *context) {
 }
 
 int mdbx_cursor_renew(MDBX_txn *txn, MDBX_cursor *mc) {
-  return likely(mc) ? mdbx_cursor_bind(txn, mc, (kvx_t *)mc->clc - txn->env->kvs) : LOG_IFERR(MDBX_EINVAL);
+  return likely(mc) ? mdbx_cursor_bind(txn, mc, (MDBX_dbi)((kvx_t *)mc->clc - txn->env->kvs)) : LOG_IFERR(MDBX_EINVAL);
 }
 
 int mdbx_cursor_reset(MDBX_cursor *mc) {
@@ -8443,7 +8443,7 @@ int mdbx_cursor_copy(const MDBX_cursor *src, MDBX_cursor *dest) {
   if (unlikely(rc != MDBX_SUCCESS))
     return LOG_IFERR(rc);
 
-  rc = mdbx_cursor_bind(src->txn, dest, cursor_dbi(src));
+  rc = mdbx_cursor_bind(src->txn, dest, (MDBX_dbi)cursor_dbi(src));
   if (unlikely(rc != MDBX_SUCCESS))
     return rc;
 
@@ -8943,7 +8943,7 @@ MDBX_txn *mdbx_cursor_txn(const MDBX_cursor *mc) {
 MDBX_dbi mdbx_cursor_dbi(const MDBX_cursor *mc) {
   if (unlikely(!mc || mc->signature != cur_signature_live))
     return UINT_MAX;
-  return cursor_dbi(mc);
+  return (MDBX_dbi)cursor_dbi(mc);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -17673,7 +17673,7 @@ __hot int cursor_del(MDBX_cursor *mc, unsigned flags) {
 
 del_key:
   mc->tree->items -= 1;
-  const MDBX_dbi dbi = cursor_dbi(mc);
+  const MDBX_dbi dbi = (MDBX_dbi)cursor_dbi(mc);
   indx_t ki = mc->ki[mc->top];
   mp = mc->pg[mc->top];
   cASSERT(mc, is_leaf(mp));
@@ -20699,7 +20699,7 @@ int dxb_sync_locked(MDBX_env *env, unsigned flags, meta_t *const pending, troika
          * могут быть равны */
         if (prev_discarded_bytes > discard_edge_bytes) {
           NOTICE("shrink-MADV_%s %zu..%zu", "DONTNEED", discard_edge_pgno, prev_discarded_pgno);
-          munlock_after(env, discard_edge_pgno, bytes_align2os_bytes(env, env->dxb_mmap.current));
+          munlock_after(env, (pgno_t)discard_edge_pgno, bytes_align2os_bytes(env, env->dxb_mmap.current));
           const uint32_t munlocks_before = atomic_load32(&env->lck->mlcnt[1], mo_Relaxed);
 #if defined(MADV_DONTNEED)
           int advise = MADV_DONTNEED;
@@ -20730,7 +20730,7 @@ int dxb_sync_locked(MDBX_env *env, unsigned flags, meta_t *const pending, troika
               return err;
             }
           } else
-            env->lck->discarded_tail.weak = discard_edge_pgno;
+            env->lck->discarded_tail.weak = (pgno_t)discard_edge_pgno;
         }
       }
 #endif /* MADV_DONTNEED || POSIX_MADV_DONTNEED */
@@ -21671,7 +21671,7 @@ static bool mincore_fetch(MDBX_env *const env, const size_t unit_begin) {
     lck->mincore_cache.begin[i] = lck->mincore_cache.begin[i - 1];
     lck->mincore_cache.mask[i] = lck->mincore_cache.mask[i - 1];
   }
-  lck->mincore_cache.begin[0] = unit_begin;
+  lck->mincore_cache.begin[0] = (pgno_t)unit_begin;
 
   uint64_t mask = 0;
 #ifdef MINCORE_INCORE
@@ -31139,7 +31139,7 @@ void osal_ctor(void) {
   globals.sys_pagesize = si.dwPageSize;
   globals.sys_allocation_granularity = si.dwAllocationGranularity;
 #else
-  globals.sys_pagesize = sysconf(_SC_PAGE_SIZE);
+  globals.sys_pagesize = (unsigned)sysconf(_SC_PAGE_SIZE);
   globals.sys_allocation_granularity = (MDBX_WORDBITS > 32) ? 65536 : 4096;
   globals.sys_allocation_granularity = (globals.sys_allocation_granularity > globals.sys_pagesize)
                                            ? globals.sys_allocation_granularity
@@ -37098,7 +37098,7 @@ __cold static int walk_pgno(walk_ctx_t *ctx, walk_tbl_t *tbl, const pgno_t pgno,
       const size_t npages = ((err = lp.err) == MDBX_SUCCESS) ? lp.page->pages : 1;
       const size_t pagesize = pgno2bytes(ctx->txn->env, npages);
       const size_t over_unused = pagesize - over_payload - over_header;
-      const int rc = ctx->visitor(large_pgno, npages, ctx->userctx, ctx->deep, tbl, pagesize, page_large, err, 1,
+      const int rc = ctx->visitor(large_pgno, (unsigned)npages, ctx->userctx, ctx->deep, tbl, pagesize, page_large, err, 1,
                                   over_payload, over_header, over_unused);
       if (unlikely(rc != MDBX_SUCCESS))
         return (rc == MDBX_RESULT_TRUE) ? MDBX_SUCCESS : rc;

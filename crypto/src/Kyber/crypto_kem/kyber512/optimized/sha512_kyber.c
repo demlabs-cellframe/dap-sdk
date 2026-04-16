@@ -239,7 +239,7 @@ static int crypto_hashblocks_sha512(uint8_t *statebytes,const uint8_t *in,size_t
   store_bigendian(statebytes + 48,state[6]);
   store_bigendian(statebytes + 56,state[7]);
 
-  return inlen;
+  return (int)inlen;
 }
 
 #define blocks crypto_hashblocks_sha512
@@ -273,7 +273,7 @@ void sha512(uint8_t *out,const uint8_t *in,size_t inlen)
   padded[inlen] = 0x80;
 
   if (inlen < 112) {
-    for (i = inlen + 1;i < 119;++i) padded[i] = 0;
+    for (i = (unsigned int)(inlen + 1);i < 119;++i) padded[i] = 0;
     padded[119] = bytes >> 61;
     padded[120] = bytes >> 53;
     padded[121] = bytes >> 45;
@@ -285,7 +285,7 @@ void sha512(uint8_t *out,const uint8_t *in,size_t inlen)
     padded[127] = bytes << 3;
     blocks(h,padded,128);
   } else {
-    for (i = inlen + 1;i < 247;++i) padded[i] = 0;
+    for (i = (unsigned int)(inlen + 1);i < 247;++i) padded[i] = 0;
     padded[247] = bytes >> 61;
     padded[248] = bytes >> 53;
     padded[249] = bytes >> 45;

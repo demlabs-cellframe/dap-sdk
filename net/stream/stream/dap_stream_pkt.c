@@ -61,7 +61,7 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     dap_enc_key_t *l_key = a_stream->session->key;
     size_t l_full_size = dap_enc_key_get_enc_size(l_key->type, a_data_size) + sizeof(dap_stream_pkt_hdr_t);
     dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)s_pkt_buf;
-    *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( l_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
+    *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = (uint32_t)dap_enc_code( l_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
                                                                 l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ),
                                           .timestamp = dap_time_now(), .type = a_type,
                                           .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
