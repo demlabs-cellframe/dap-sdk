@@ -103,6 +103,7 @@ option(DAP_DILITHIUM_PROFILE "Enable rdtsc profiling in Dilithium verify" OFF)
 
 file( GLOB CRYPTO_SRCS
       src/*.c
+      src/rand/*.c
       # --- sig (active PQ) ---
       src/sig/dilithium/*.c
       src/sig/falcon/codec.c
@@ -278,6 +279,7 @@ set( CRYPTO_INCLUDE_PRIVATE
     src/sig/classic/ecdsa src/sig/classic/ecdsa/arch
     src/sym src/sym/aes src/sym/seed src/sym/chacha20
     src/kem src/kem/mlkem src/kem/ntru_prime
+    src/rand/shishua
     src include
 )
 
