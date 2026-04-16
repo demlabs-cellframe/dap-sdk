@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <unistd.h>
 
@@ -544,7 +545,7 @@ static void test_flow_ctrl_retransmit_regression(void)
     }
     
     uint64_t l_sent_after_send = atomic_load(&l_sender_ctx->packets_sent);
-    dap_test_msg("Packets sent: %lu", l_sent_after_send);
+    dap_test_msg("Packets sent: %" PRIu64, l_sent_after_send);
     
     // Step 2: Wait for retransmit timer to fire (polling until retransmits > 0)
     dap_test_msg("Step 2: Waiting for retransmit timer (no ACKs)...");
@@ -555,7 +556,7 @@ static void test_flow_ctrl_retransmit_regression(void)
     dap_io_flow_ctrl_get_stats(l_sender, &l_sent_stats, &l_retrans_stats, &l_recv, &l_ooo, &l_dup, &l_lost);
     
     uint64_t l_packets_after_wait = atomic_load(&l_sender_ctx->packets_sent);
-    dap_test_msg("After wait: packets_sent=%lu (was 20), retrans_stats=%lu, timer_fired=%d", 
+    dap_test_msg("After wait: packets_sent=%" PRIu64 " (was 20), retrans_stats=%" PRIu64 ", timer_fired=%d",
                  l_packets_after_wait, l_retrans_stats, l_timer_fired);
     
     dap_assert(l_timer_fired && l_retrans_stats > 0, 
@@ -574,7 +575,7 @@ static void test_flow_ctrl_retransmit_regression(void)
     uint64_t l_retrans_after_ack;
     dap_io_flow_ctrl_get_stats(l_sender, &l_sent_stats, &l_retrans_after_ack, &l_recv, &l_ooo, &l_dup, &l_lost);
     uint64_t l_packets_after_ack = atomic_load(&l_sender_ctx->packets_sent);
-    dap_test_msg("After ACK: packets_sent=%lu, retrans_stats=%lu", l_packets_after_ack, l_retrans_after_ack);
+    dap_test_msg("After ACK: packets_sent=%" PRIu64 ", retrans_stats=%" PRIu64, l_packets_after_ack, l_retrans_after_ack);
     
     // Step 6: Wait for multiple timer cycles AFTER ACK (polling, checking no new retrans)
     dap_test_msg("Step 6: Waiting for timer cycles after ACK...");
@@ -593,9 +594,9 @@ static void test_flow_ctrl_retransmit_regression(void)
     uint64_t l_new_retrans = l_retrans_final - l_retrans_after_ack;
     uint64_t l_new_packets = l_packets_final - l_packets_after_ack;
     
-    dap_test_msg("Final: retrans_stats=%lu (was %lu), packets_sent=%lu (was %lu)", 
+    dap_test_msg("Final: retrans_stats=%" PRIu64 " (was %" PRIu64 "), packets_sent=%" PRIu64 " (was %" PRIu64 ")",
                  l_retrans_final, l_retrans_after_ack, l_packets_final, l_packets_after_ack);
-    dap_test_msg("NEW after ACK: retrans=%lu, packets=%lu (both expected 0)", 
+    dap_test_msg("NEW after ACK: retrans=%" PRIu64 ", packets=%" PRIu64 " (both expected 0)",
                  l_new_retrans, l_new_packets);
     
     // CRITICAL REGRESSION CHECK
@@ -701,7 +702,7 @@ static void test_flow_ctrl_lost_ack_isolation(void)
     
     uint64_t l_s1_sent, l_s1_retrans, l_tmp1, l_tmp2, l_tmp3, l_tmp4;
     dap_io_flow_ctrl_get_stats(l_sender1, &l_s1_sent, &l_s1_retrans, &l_tmp1, &l_tmp2, &l_tmp3, &l_tmp4);
-    dap_test_msg("Sender1 stats: sent=%lu, retrans=%lu (retransmitting)", l_s1_sent, l_s1_retrans);
+    dap_test_msg("Sender1 stats: sent=%" PRIu64 ", retrans=%" PRIu64 " (retransmitting)", l_s1_sent, l_s1_retrans);
     
     // Step 4: NOW sender 2 tries to work (while sender1 is still retransmitting)
     dap_test_msg("Step 4: Sender 2 sends 5 packets (while sender1 retransmits)...");
@@ -721,7 +722,7 @@ static void test_flow_ctrl_lost_ack_isolation(void)
     // Step 6: Verify sender2 completed successfully
     uint64_t l_s2_sent, l_s2_retrans, l_s2_recv;
     dap_io_flow_ctrl_get_stats(l_sender2, &l_s2_sent, &l_s2_retrans, &l_s2_recv, &l_tmp1, &l_tmp2, &l_tmp3);
-    dap_test_msg("Sender2 stats: sent=%lu, retrans=%lu", l_s2_sent, l_s2_retrans);
+    dap_test_msg("Sender2 stats: sent=%" PRIu64 ", retrans=%" PRIu64, l_s2_sent, l_s2_retrans);
     
     // CRITICAL CHECK: Sender 2 should complete WITHOUT excessive retransmits
     // (Sender 1's retransmissions should NOT affect Sender 2)
@@ -741,7 +742,7 @@ static void test_flow_ctrl_lost_ack_isolation(void)
     
     uint64_t l_s1_retrans_final;
     dap_io_flow_ctrl_get_stats(l_sender1, &l_s1_sent, &l_s1_retrans_final, &l_tmp1, &l_tmp2, &l_tmp3, &l_tmp4);
-    dap_test_msg("Sender1 final retrans: %lu (was %lu)", l_s1_retrans_final, l_s1_retrans_before);
+    dap_test_msg("Sender1 final retrans: %" PRIu64 " (was %" PRIu64 ")", l_s1_retrans_final, l_s1_retrans_before);
     
     dap_assert(l_more_retrans && l_s1_retrans_final > l_s1_retrans_before, 
                "Sender1 should still be retransmitting (ACK never delivered)");
@@ -839,7 +840,7 @@ static void test_flow_ctrl_multiple_senders(void)
     for (int s = 0; s < NUM_SENDERS; s++) {
         l_total_retrans += atomic_load(&l_sender_ctxs[s]->retransmits_count);
     }
-    dap_test_msg("Total retransmits: %lu", l_total_retrans);
+    dap_test_msg("Total retransmits: %" PRIu64, l_total_retrans);
     
     // Cleanup
     dap_io_flow_ctrl_delete(l_receiver);
@@ -961,7 +962,7 @@ static void test_flow_ctrl_delete_race(void)
     dap_assert(l_sends_started, "Sender thread should start sending");
     
     uint64_t l_sends_before_delete = atomic_load(&l_race_ctx.sends_attempted);
-    dap_test_msg("Sends before delete: %lu", l_sends_before_delete);
+    dap_test_msg("Sends before delete: %" PRIu64, l_sends_before_delete);
     
     // Now delete the flow_ctrl while sender is active
     // This is the critical race condition!
@@ -977,7 +978,7 @@ static void test_flow_ctrl_delete_race(void)
     uint64_t l_ok = atomic_load(&l_race_ctx.sends_succeeded);
     uint64_t l_rejected = atomic_load(&l_race_ctx.sends_rejected);
     
-    dap_test_msg("Results: total=%lu, succeeded=%lu, rejected=%lu", l_total, l_ok, l_rejected);
+    dap_test_msg("Results: total=%" PRIu64 ", succeeded=%" PRIu64 ", rejected=%" PRIu64, l_total, l_ok, l_rejected);
     
     // Key assertions:
     // 1. No crash occurred (if we get here, we passed!)

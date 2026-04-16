@@ -266,12 +266,16 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #include "rpmalloc.h"
 #endif
 #define DAP_TYPE_SIZE(p)      (intmax_t)sizeof(*(p))
-#define DAP_MALLOC(s)         ({ intmax_t _s = (intmax_t)(s); _s > 0 ? malloc(_s) : NULL; })
+#define DAP_MALLOC(s)         ({ uintmax_t _s = (uintmax_t)(s); size_t _sz = (size_t)_s; \
+    (_s > 0 && _s <= (uintmax_t)SIZE_MAX && _s <= (uintmax_t)PTRDIFF_MAX) ? malloc(_sz) : NULL; })
 #define DAP_FREE(p)           free((void*)(p))
-#define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); _s > 0 && _n > 0 ? calloc(_n, _s) : NULL; })
-#define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? realloc(p, _s) : NULL; })
+#define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); \
+    (_s > 0 && _n > 0 && (uintmax_t)_s <= (uintmax_t)SIZE_MAX && (uintmax_t)_n <= (uintmax_t)SIZE_MAX / (uintmax_t)_s) ? calloc((size_t)_n, (size_t)_s) : NULL; })
+#define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); \
+    (_s >= DAP_TYPE_SIZE(p) && (uintmax_t)_s <= (uintmax_t)SIZE_MAX && (uintmax_t)_s <= (uintmax_t)PTRDIFF_MAX) ? realloc(p, (size_t)_s) : NULL; })
 #define DAP_NEW(t)            DAP_CAST_PTR( t, malloc(sizeof(t)) )
-#define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); _s >= (intmax_t)(sizeof(t)) ? DAP_CAST_PTR(t, malloc(_s)) : NULL; })
+#define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); \
+    (_s >= (intmax_t)(sizeof(t)) && (uintmax_t)_s <= (uintmax_t)SIZE_MAX && (uintmax_t)_s <= (uintmax_t)PTRDIFF_MAX) ? DAP_CAST_PTR(t, malloc((size_t)_s)) : NULL; })
 /* Auto memory! Do not inline! Do not modify the size in-call! */
 #define DAP_NEW_STACK(t)       &(t){ }
 #define DAP_NEW_STACK_SIZE(t, s) ({ intmax_t _s = (intmax_t)(s); DAP_CAST_PTR(t, _s >= (intmax_t)(sizeof(t)) && _s < (1 << 15) ? alloca(_s) : NULL); })

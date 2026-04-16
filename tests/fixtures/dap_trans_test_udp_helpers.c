@@ -30,6 +30,7 @@
 #include "dap_enc_kdf.h"
 #include "dap_transport_obfuscation.h"
 #include "dap_mock.h"
+#include <inttypes.h>
 #include <string.h>
 #include <arpa/inet.h>
 
@@ -125,7 +126,7 @@ dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_client_ctx(
     memcpy(&l_ctx->remote_addr, &l_ctx->esocket->addr_storage, sizeof(struct sockaddr_in));
     l_ctx->remote_addr_len = sizeof(struct sockaddr_in);
     
-    log_it(L_DEBUG, "Created mock client UDP context: session_id=0x%lx, dest=%s:%u",
+    log_it(L_DEBUG, "Created mock client UDP context: session_id=0x%" PRIx64 ", dest=%s:%u",
            a_session_id, a_dest_addr, a_dest_port);
     
     return l_ctx;
@@ -210,7 +211,7 @@ dap_net_trans_udp_ctx_t* dap_udp_test_create_mock_server_ctx(
     l_ctx->listener_esocket->socket = 200; // Mock FD
     l_ctx->listener_esocket->flags = DAP_SOCK_READY_TO_WRITE;
     
-    log_it(L_DEBUG, "Created mock server UDP context: session_id=0x%lx, remote=%s:%u",
+    log_it(L_DEBUG, "Created mock server UDP context: session_id=0x%" PRIx64 ", remote=%s:%u",
            a_session_id, a_remote_addr, a_remote_port);
     
     return l_ctx;
@@ -284,7 +285,7 @@ dap_stream_t* dap_udp_test_setup_mock_stream_with_session(
     l_stream->session->key = a_udp_ctx->handshake_key;  // Link to UDP context key
     l_stream->session->id = (uint32_t)a_udp_ctx->session_id;
     
-    log_it(L_DEBUG, "Setup mock stream with session: session_id=0x%lx, key=%p",
+    log_it(L_DEBUG, "Setup mock stream with session: session_id=0x%" PRIx64 ", key=%p",
            a_udp_ctx->session_id, a_udp_ctx->handshake_key);
     
     return l_stream;
@@ -435,7 +436,7 @@ int dap_udp_test_decrypt_and_parse_packet(
     
     DAP_DELETE(l_decrypted);
     
-    log_it(L_DEBUG, "Decrypted packet: type=%u, seq=%u, session=0x%lx, payload=%zu bytes",
+    log_it(L_DEBUG, "Decrypted packet: type=%u, seq=%u, session=0x%" PRIx64 ", payload=%zu bytes",
            *a_out_type, *a_out_seq_num, *a_out_session_id, *a_out_payload_size);
     
     return 0;
@@ -551,7 +552,7 @@ int dap_udp_test_create_encrypted_packet(
     
     DAP_DELETE(l_encrypted);
     
-    log_it(L_DEBUG, "Created encrypted packet: type=%u, seq=%u, session=0x%lx, size=%zu",
+    log_it(L_DEBUG, "Created encrypted packet: type=%u, seq=%u, session=0x%" PRIx64 ", size=%zu",
            a_type, a_seq_num, a_session_id, *a_out_packet_size);
     
     return 0;
@@ -707,7 +708,7 @@ dap_enc_key_t* dap_udp_test_derive_session_key(
         return NULL;
     }
     
-    log_it(L_DEBUG, "Derived session key: context=%s, counter=%lu", a_context, a_counter);
+    log_it(L_DEBUG, "Derived session key: context=%s, counter=%" PRIu64, a_context, a_counter);
     
     return l_session_key;
 }
