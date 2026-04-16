@@ -173,7 +173,7 @@ int dap_stream_mimicry_wrap(dap_stream_mimicry_t *a_mimicry,
         
         case DAP_STREAM_MIMICRY_NONE:
             // No wrapping - just copy
-            *a_out_data = DAP_DUP_SIZE(a_data, a_data_size);
+            *a_out_data = DAP_DUP_SIZE((void*)a_data, a_data_size);
             *a_out_size = a_data_size;
             return 0;
         
@@ -204,7 +204,7 @@ int dap_stream_mimicry_unwrap(dap_stream_mimicry_t *a_mimicry,
         
         case DAP_STREAM_MIMICRY_NONE:
             // No unwrapping - just copy
-            *a_out_data = DAP_DUP_SIZE(a_data, a_data_size);
+            *a_out_data = DAP_DUP_SIZE((void*)a_data, a_data_size);
             *a_out_size = a_data_size;
             return 0;
         
@@ -636,7 +636,7 @@ static int s_unwrap_https(dap_stream_mimicry_t *a_mimicry,
 
     // Extract payload
     const uint8_t *l_payload = (const uint8_t*)a_data + sizeof(dap_stream_tls_record_header_t);
-    *a_out_data = DAP_DUP_SIZE((uint8_t*)l_payload, l_payload_length);
+    *a_out_data = DAP_DUP_SIZE((void*)l_payload, l_payload_length);
     *a_out_size = l_payload_length;
 
     debug_if(s_debug_more, L_DEBUG, "Unwrapped %u bytes from TLS record", l_payload_length);

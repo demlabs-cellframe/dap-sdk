@@ -1768,20 +1768,15 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     l_es_w_data->ptr = a_arg;
     EV_SET(&l_event,a_es->socket+arc4random()  , EVFILT_USER,EV_ADD | EV_ONESHOT, NOTE_FFNOP | NOTE_TRIGGER ,0, l_es_w_data);
     int l_n;
-    if(a_es->pipe_out){ // If we have pipe out - we send events directly to the pipe out kqueue fd
-        if(a_es->pipe_out->context){
-            if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to pipe_out worker on esocket %p",a_arg,a_es);
-            l_n = kevent(a_es->pipe_out->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        }
-        else {
-            log_it(L_WARNING,"Trying to send pointer in pipe out queue thats not assigned to any worker or proc thread");
-            l_n = 0;
-            DAP_DELETE(l_es_w_data);
-        }
-    }else if(a_es->context){
-        l_n = kevent(a_es->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        if( g_debug_reactor) log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %p",a_arg,a_es);
-    }else {
+    dap_context_t *l_target_context = a_es->context;
+    if (!l_target_context && a_es->worker) {
+        l_target_context = a_es->worker->context;
+    }
+    if (l_target_context) {
+        l_n = kevent(l_target_context->kqueue_fd, &l_event, 1, NULL, 0, NULL);
+        if (g_debug_reactor)
+            log_it(L_DEBUG, "Sent kevent() with ptr %p to worker on esocket %p", a_arg, a_es);
+    } else {
         log_it(L_WARNING,"Trying to send pointer in queue thats not assigned to any worker or proc thread");
         l_n = 0;
         DAP_DELETE(l_es_w_data);

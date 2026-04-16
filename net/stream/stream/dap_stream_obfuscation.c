@@ -439,7 +439,7 @@ static int s_obfuscate_impl(dap_stream_obfuscation_t *a_obfs,
 {
     if (!a_obfs->config.enabled_techniques) {
         // No obfuscation - just copy data
-        *a_out_data = DAP_DUP_SIZE(a_data, a_data_size);
+        *a_out_data = DAP_DUP_SIZE((void*)a_data, a_data_size);
         *a_out_size = a_data_size;
         return 0;
     }
@@ -497,7 +497,7 @@ static int s_deobfuscate_impl(dap_stream_obfuscation_t *a_obfs,
 {
     if (!a_obfs->config.enabled_techniques) {
         // No obfuscation - just copy data
-        *a_out_data = DAP_DUP_SIZE(a_data, a_data_size);
+        *a_out_data = DAP_DUP_SIZE((void*)a_data, a_data_size);
         *a_out_size = a_data_size;
         return 0;
     }
@@ -506,7 +506,7 @@ static int s_deobfuscate_impl(dap_stream_obfuscation_t *a_obfs,
         (dap_stream_obfuscation_internal_t*)a_obfs->internal;
 
     // Allocate working buffer
-    uint8_t *l_buffer = DAP_DUP_SIZE(a_data, a_data_size);
+    uint8_t *l_buffer = DAP_DUP_SIZE((void*)a_data, a_data_size);
     if (!l_buffer) {
         log_it(L_CRITICAL, "Memory allocation failed for deobfuscation");
         return -1;
