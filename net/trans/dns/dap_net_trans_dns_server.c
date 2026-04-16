@@ -503,11 +503,12 @@ static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_da
     if(!l_args)
         return -1;
     l_args->esocket = l_es;
-    l_args->data = DAP_DUP_SIZE(a_data, a_size);
+    l_args->data = DAP_NEW_SIZE(byte_t, a_size);
     if(!l_args->data) {
         DAP_DELETE(l_args);
         return -1;
     }
+    memcpy(l_args->data, a_data, a_size);
     l_args->size = a_size;
     memcpy(&l_args->addr, &l_session->remote_addr, l_session->remote_addr_len);
     l_args->addr_len = l_session->remote_addr_len;

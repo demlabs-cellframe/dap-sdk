@@ -627,11 +627,12 @@ static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_
     if(!l_args)
         return -1;
     l_args->esocket = l_es;
-    l_args->data = DAP_DUP_SIZE(a_data, a_size);
+    l_args->data = DAP_NEW_SIZE(byte_t, a_size);
     if(!l_args->data) {
         DAP_DELETE(l_args);
         return -1;
     }
+    memcpy(l_args->data, a_data, a_size);
     l_args->size = a_size;
     memcpy(&l_args->addr, &l_es->addr_storage, l_es->addr_size);
     l_args->addr_len = l_es->addr_size;
@@ -876,4 +877,3 @@ static dap_stream_trans_dns_private_t *s_get_private(dap_net_trans_t *a_trans)
     
     return (dap_stream_trans_dns_private_t*)a_trans->_inheritor;
 }
-
