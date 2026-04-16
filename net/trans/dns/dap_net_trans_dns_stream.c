@@ -713,6 +713,19 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
+
+#ifdef DAP_OS_WINDOWS
+    {
+        struct sockaddr_in l_bind_addr = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY, .sin_port = 0 };
+        if(bind(l_es->socket, (struct sockaddr *)&l_bind_addr, sizeof(l_bind_addr)) < 0) {
+            log_it(L_ERROR, "Failed to bind UDP socket for DNS trans: %d", WSAGetLastError());
+            dap_events_socket_delete_unsafe(l_es, true);
+            a_result->error_code = -1;
+            return -1;
+        }
+        l_es->addr_size = sizeof(struct sockaddr_in);
+    }
+#endif
     
     // DNS tunneling uses UDP (connectionless) - just add to worker
     dap_worker_add_events_socket(a_params->worker, l_es);

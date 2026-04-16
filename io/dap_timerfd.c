@@ -80,10 +80,14 @@ dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a
 
 #ifdef DAP_OS_WINDOWS
 void CALLBACK TimerCallback(void* arg, BOOLEAN flag) {
+    (void)flag;
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
-    if ( l_timerfd->events_socket ) {
-        l_timerfd->events_socket->pending_read = 1;
-        PostQueuedCompletionStatus(l_timerfd->events_socket->worker->context->iocp, 0, (ULONG_PTR)l_timerfd->events_socket, NULL);
+    if(!l_timerfd)
+        return;
+    dap_events_socket_t *l_es = l_timerfd->events_socket;
+    if(l_es && l_es->worker && l_es->worker->context && l_es->worker->context->iocp) {
+        l_es->pending_read = 1;
+        PostQueuedCompletionStatus(l_es->worker->context->iocp, 0, (ULONG_PTR)l_es, NULL);
     }
 }
 #endif
@@ -319,6 +323,12 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
     if (!a_timerfd || !a_timerfd->events_socket)
         return; 
     debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
+#ifdef DAP_EVENTS_CAPS_IOCP
+    if(a_timerfd->th) {
+        DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, INVALID_HANDLE_VALUE);
+        a_timerfd->th = NULL;
+    }
+#endif
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else
@@ -334,6 +344,11 @@ void dap_timerfd_delete_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uu
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 DWORD dap_del_queuetimer(HANDLE h) {
-    return h ? DeleteTimerQueueTimer(hTimerQueue, h, NULL) ? 0 : GetLastError() : 0;
+    if(!h)
+        return 0;
+    if(DeleteTimerQueueTimer(hTimerQueue, h, INVALID_HANDLE_VALUE))
+        return 0;
+    DWORD l_err = GetLastError();
+    return l_err == ERROR_IO_PENDING ? 0 : l_err;
 }
 #endif

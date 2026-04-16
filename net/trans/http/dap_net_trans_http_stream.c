@@ -527,12 +527,10 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         return -1;
     }
 
-    l_es->flags |= DAP_SOCK_CONNECTING;
-#ifndef DAP_EVENTS_CAPS_IOCP
-    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
-#endif
-    l_es->is_initalized = false;
-
+    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
+#else
     int l_connect_err = 0;
     if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
         log_it(L_ERROR, "HTTP connect: TCP connect failed: error %d", l_connect_err);
@@ -540,6 +538,8 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         DAP_DELETE(l_ctx);
         return -1;
     }
+#endif
+    l_es->is_initalized = false;
 
     dap_worker_add_events_socket(l_worker, l_es);
 
@@ -1536,12 +1536,10 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
 
-    l_es->flags |= DAP_SOCK_CONNECTING;
-#ifndef DAP_EVENTS_CAPS_IOCP
-    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
-#endif
-    l_es->is_initalized = false;
-
+    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
+#else
     int l_connect_err = 0;
     if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
         log_it(L_ERROR, "Failed to connect HTTP streaming socket: error %d", l_connect_err);
@@ -1549,6 +1547,8 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
+#endif
+    l_es->is_initalized = false;
 
     dap_worker_add_events_socket(a_params->worker, l_es);
 

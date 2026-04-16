@@ -1180,7 +1180,9 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
 #elif defined DAP_EVENTS_CAPS_WEPOLL
     return dap_sendto(a_es->socket, a_es->port, NULL, 0) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
 #elif defined (DAP_EVENTS_CAPS_IOCP)
-    return PostQueuedCompletionStatus(a_es->context->iocp, a_value, (ULONG_PTR)a_es, NULL) ? GetLastError() : NO_ERROR;
+    if (!a_es->context || !a_es->context->iocp)
+        return ERROR_INVALID_HANDLE;
+    return PostQueuedCompletionStatus(a_es->context->iocp, (DWORD)a_value, (ULONG_PTR)a_es, NULL) ? NO_ERROR : (int)GetLastError();
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     struct kevent l_event={0};
     dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
@@ -1403,6 +1405,12 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
         debug_if(g_debug_reactor, L_DEBUG, "Attempt to %sset read flag on closed socket %p, dump it",
                                            a_is_ready ? "" : "un", a_es);
+        return dap_overlapped_free(a_ol);
+    }
+    if (a_is_ready && (a_es->flags & DAP_SOCK_CONNECTING) &&
+        (a_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || a_es->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT))
+    {
+        debug_if(g_debug_reactor, L_DEBUG, "Skip WSARecv on connecting socket %p", a_es);
         return dap_overlapped_free(a_ol);
     }
     if (!a_is_ready) {

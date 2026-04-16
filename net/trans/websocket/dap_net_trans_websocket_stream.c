@@ -1370,13 +1370,10 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     }
     
     // Set CONNECTING flag and initiate connection
-    l_es->flags |= DAP_SOCK_CONNECTING;
-#ifndef DAP_EVENTS_CAPS_IOCP
-    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
-#endif
-    l_es->is_initalized = false; // Ensure new_callback will be called
-    
-    // Initiate connection using platform-independent function
+    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
+#else
     int l_connect_err = 0;
     if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
         log_it(L_ERROR, "Failed to connect WebSocket socket: error %d", l_connect_err);
@@ -1384,6 +1381,8 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
+#endif
+    l_es->is_initalized = false;
     
     // Add socket to worker - connection will complete asynchronously
     dap_worker_add_events_socket(a_params->worker, l_es);

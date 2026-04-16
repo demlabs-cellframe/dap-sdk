@@ -167,11 +167,10 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
 
     l_es->_inheritor = a_params->client_ctx;
     dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port);
-    l_es->flags |= DAP_SOCK_CONNECTING;
-
-    if (a_params->worker)
-        dap_worker_add_events_socket(a_params->worker, l_es);
-
+    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
+#else
     int l_err = 0;
     dap_events_socket_connect(l_es, &l_err);
     if (l_err) {
@@ -179,6 +178,10 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = l_err;
         return -1;
     }
+#endif
+
+    if (a_params->worker)
+        dap_worker_add_events_socket(a_params->worker, l_es);
 
     a_result->esocket = l_es;
     a_result->error_code = 0;
