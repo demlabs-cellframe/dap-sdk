@@ -130,6 +130,21 @@ bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
 static int s_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 
+typedef struct s_keepalive_timer_cleanup_ctx {
+    dap_timerfd_t *timer;
+    void *arg_to_free;
+} s_keepalive_timer_cleanup_ctx_t;
+
+static void s_keepalive_timer_cleanup_cb(void *a_arg)
+{
+    s_keepalive_timer_cleanup_ctx_t *l_ctx = (s_keepalive_timer_cleanup_ctx_t *)a_arg;
+    if (!l_ctx || !l_ctx->timer)
+        return;
+    l_ctx->arg_to_free = l_ctx->timer->callback_arg;
+    l_ctx->timer->callback_arg = NULL;
+    dap_timerfd_delete_unsafe(l_ctx->timer);
+}
+
 /**
  * @brief Write data via transport layer (wrapper for trans->ops->write)
  * 
@@ -749,10 +764,12 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     if (a_stream->keepalive_timer) {
         dap_timerfd_t *l_timer = a_stream->keepalive_timer;
         a_stream->keepalive_timer = NULL;
-        void *l_arg = l_timer->callback_arg;
-        l_timer->callback_arg = NULL; // neutralize in-flight callback
-        dap_timerfd_delete_mt(l_timer->worker, l_timer->esocket_uuid);
-        DAP_DELETE(l_arg);
+        s_keepalive_timer_cleanup_ctx_t l_cleanup_ctx = { .timer = l_timer, .arg_to_free = NULL };
+        if (l_timer->worker)
+            dap_worker_exec_callback_on_sync(l_timer->worker, s_keepalive_timer_cleanup_cb, &l_cleanup_ctx);
+        else
+            s_keepalive_timer_cleanup_cb(&l_cleanup_ctx);
+        DAP_DELETE(l_cleanup_ctx.arg_to_free);
     }
     s_stream_delete_from_list(a_stream);
     // a_stream->esocket_uuid = 0;
@@ -1047,10 +1064,9 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
     if (l_stream->keepalive_timer) {
         dap_timerfd_t *l_timer = l_stream->keepalive_timer;
         l_stream->keepalive_timer = NULL;
-        void *l_arg = l_timer->callback_arg;
-        l_timer->callback_arg = NULL;
-        dap_timerfd_delete_unsafe(l_timer);
-        DAP_DELETE(l_arg);
+        s_keepalive_timer_cleanup_ctx_t l_cleanup_ctx = { .timer = l_timer, .arg_to_free = NULL };
+        s_keepalive_timer_cleanup_cb(&l_cleanup_ctx);
+        DAP_DELETE(l_cleanup_ctx.arg_to_free);
     }
 }
 
@@ -1527,7 +1543,6 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         if (!l_stream) {
             log_it(L_WARNING, "Keepalive %s: esocket uuid 0x%016"DAP_UINT64_FORMAT_x" found but stream detached on worker #%u — timer stopped",
                    a_server_side ? "srv" : "cli", *l_es_uuid, l_worker->id);
-            DAP_DELETE(l_es_uuid);
             return false;
         }
         if (a_server_side) {
@@ -1566,7 +1581,6 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         return true;
     }else{
         debug_if(s_debug_more, L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
-        DAP_DELETE(l_es_uuid);
         return false;
     }
 }
