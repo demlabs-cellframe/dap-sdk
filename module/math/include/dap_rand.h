@@ -24,6 +24,9 @@ uint16_t dap_random_uint16(void);
 void dap_pseudo_random_seed(uint256_t a_seed);
 uint256_t dap_pseudo_random_get(uint256_t a_rand_max, uint256_t *a_raw_result);
 
+#define dap_random_mem(buf, len) dap_random_bytes((buf), (len))
+#define randombytes(buf, len)    dap_random_bytes((buf), (len))
+
 #ifdef __cplusplus
 }
 #endif
