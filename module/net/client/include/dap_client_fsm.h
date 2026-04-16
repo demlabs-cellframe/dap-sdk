@@ -15,7 +15,7 @@
  * Architecture:
  *   dap_client_t (public API, any thread)
  *       -> dap_client_fsm_t (FSM + crypto, dedicated FSM thread)
- *           -> dap_client_esocket_t (IO, worker thread)
+ *           -> dap_client_trans_ctx_t (IO, worker thread; DAP_CLIENT_TRANS_CTX)
  *
  * This file is part of DAP SDK the open source project
  *    DAP SDK is free software: you can redistribute it and/or modify
@@ -32,53 +32,60 @@
 #include "dap_enc_key.h"
 #include "dap_net_trans.h"
 #include "dap_ht.h"
+#include "dap_client_trans_ctx.h"
 
-// Forward declarations (dap_client_esocket_t from dap_net_trans.h)
 typedef struct dap_worker dap_worker_t;
+typedef struct dap_net_trans_ctx dap_net_trans_ctx_t;
 
 /**
  * @brief Client FSM - manages connection state machine
  *
  * Lifecycle: created by dap_client_new(), deleted by dap_client_delete_mt().
  * Thread model: FSM state is only modified from the bound FSM thread.
- * The esocket pointer is valid only while FSM is active.
+ *
+ * Owns trans_ctx (dap_net_trans_ctx_t) which in turn owns stream.
+ * Navigation: client -> FSM -> trans_ctx -> stream -> esocket
  */
 typedef struct dap_client_fsm {
-    uint64_t uuid;                    // UTHASH key
+    uint64_t uuid;
 
-    // References
-    dap_client_t *client;             // Owning client
-    dap_client_esocket_t *esocket;    // Current esocket (NULL if not connected)
-    dap_worker_t *worker;             // Worker for IO dispatch
+    dap_client_t *client;
+    dap_net_trans_ctx_t *trans_ctx;
+    dap_client_trans_ctx_t *client_trans_ctx;
+    dap_worker_t *worker;
 
-    // FSM state (modified only from bound FSM thread)
     dap_client_stage_t stage;
     dap_client_stage_status_t stage_status;
     dap_client_error_t last_error;
     dap_client_callback_t stage_status_done_callback;
 
-    // Atomic copies for cross-thread reads (updated alongside stage/stage_status)
     _Atomic int stage_readable;
     _Atomic int stage_status_readable;
 
-    // Reconnect state
     int reconnect_attempts;
     bool reconnect_pending;
 
-    // Transport fallback
     dap_net_trans_type_t *tried_transports;
     size_t tried_transport_count;
     size_t tried_transport_capacity;
 
-    // Crypto parameters (for key generation, not actual keys)
     dap_enc_key_type_t session_key_type;
     dap_enc_key_type_t session_key_open_type;
     size_t session_key_block_size;
 
-    // FSM thread binding
-    uint32_t fsm_thread_idx;         // = uuid % fsm_thread_count
+    bool is_encrypted;
+    bool is_encrypted_headers;
+    bool is_close_session;
+    bool is_closed_by_timeout;
 
-    // Lifecycle
+    dap_client_callback_data_size_t request_response_callback;
+    dap_client_callback_int_t request_error_callback;
+    void *callback_arg;
+
+    dap_list_t *pkt_queue;
+
+    uint32_t fsm_thread_idx;
+
     bool is_removing;
 
     dap_ht_handle_t hh;
@@ -90,6 +97,9 @@ typedef struct dap_client_fsm {
  * @brief Get FSM from client pointer
  */
 #define DAP_CLIENT_FSM(a) ((a) ? (dap_client_fsm_t *)(a)->_internal : NULL)
+
+/** Client pointer → trans context (IO identity). */
+#define DAP_CLIENT_TRANS_CTX(a) (DAP_CLIENT_FSM(a) ? DAP_CLIENT_FSM(a)->client_trans_ctx : NULL)
 
 // ===== Module lifecycle =====
 
@@ -106,7 +116,7 @@ void dap_client_fsm_deinit(void);
 dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client);
 
 /**
- * @brief Delete FSM and its esocket (unsafe - must be called from correct context)
+ * @brief Delete FSM and its client trans context (unsafe - must be called from correct context)
  * @param a_fsm FSM to delete
  */
 void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm);
@@ -163,8 +173,7 @@ void dap_client_fsm_notify_timer_fired(uint64_t a_fsm_uuid, uint32_t a_fsm_threa
 
 // ===== Backward compatibility =====
 
-// These redirect to FSM functions
-#define dap_client_pvt_stage_transaction_begin(esocket, stage, cb) \
-    dap_client_fsm_stage_transaction_begin(DAP_CLIENT_FSM((esocket)->client), (stage), (cb))
+#define dap_client_pvt_stage_transaction_begin(ctx, stage, cb) \
+    dap_client_fsm_stage_transaction_begin(DAP_CLIENT_FSM((ctx)->client), (stage), (cb))
 
 void dap_client_pvt_stage_fsm_advance(dap_client_t *a_client, void *a_arg);

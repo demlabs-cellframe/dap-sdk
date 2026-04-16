@@ -25,10 +25,66 @@
 #endif
 
 #include <errno.h>
+#include <stddef.h>
 #include <string.h>
 #include "dap_net.h"
 #include "dap_strfuncs.h"
+#include "dap_serialize.h"
 #define LOG_TAG "dap_net"
+
+const dap_serialize_field_t g_dap_net_links_fields[] = {
+    {
+        .name = "count_node",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_net_links_mem_t, count_node),
+        .size = sizeof(uint64_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_net_links_schema = {
+    .name = "dap_net_links",
+    .version = 1,
+    .struct_size = sizeof(dap_net_links_mem_t),
+    .field_count = sizeof(g_dap_net_links_fields) / sizeof(g_dap_net_links_fields[0]),
+    .fields = g_dap_net_links_fields,
+    .magic = DAP_NET_LINKS_MAGIC,
+    .validate_func = NULL,
+};
+
+const dap_serialize_field_t g_dap_link_info_fields[] = {
+    {
+        .name = "node_addr",
+        .type = DAP_SERIALIZE_TYPE_BYTES_FIXED,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_link_info_mem_t, node_addr),
+        .size = sizeof(dap_cluster_node_addr_t),
+    },
+    {
+        .name = "uplink_addr",
+        .type = DAP_SERIALIZE_TYPE_BYTES_FIXED,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_link_info_mem_t, uplink_addr),
+        .size = DAP_HOSTADDR_STRLEN,
+    },
+    {
+        .name = "uplink_port",
+        .type = DAP_SERIALIZE_TYPE_UINT16,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_link_info_mem_t, uplink_port_wire),
+        .size = sizeof(uint16_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_link_info_schema = {
+    .name = "dap_link_info",
+    .version = 1,
+    .struct_size = sizeof(dap_link_info_mem_t),
+    .field_count = sizeof(g_dap_link_info_fields) / sizeof(g_dap_link_info_fields[0]),
+    .fields = g_dap_link_info_fields,
+    .magic = DAP_LINK_INFO_SERIALIZE_MAGIC,
+    .validate_func = NULL,
+};
 
 int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_only, struct sockaddr_storage *a_addr_out, int *a_family)
 {

@@ -41,7 +41,8 @@
 #include "dap_json.h"
 #include "dap_events_socket.h"
 #include "dap_net.h"
-#include "dap_client_esocket.h"
+#include "dap_client_trans_ctx.h"
+#include "dap_client_fsm.h"
 #include "dap_cert.h"
 #include "dap_worker.h"
 #include "dap_http_client.h"
@@ -89,8 +90,8 @@ static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, in
 
 // Ctx for HTTP requests (to avoid race conditions in client_esocket)
 typedef struct {
-    dap_client_esocket_t *client_esocket;  // May become dangling; always validate via client_uuid
-    uint64_t client_uuid;          // UUID for safe lookup via dap_client_esocket_find()
+    dap_client_trans_ctx_t *client_esocket;  // May become dangling; always validate via client_uuid
+    uint64_t client_uuid;          // UUID for safe lookup via dap_client_trans_ctx_find()
     dap_client_callback_data_size_t callback;
     dap_client_callback_int_t error_callback;
     void *callback_arg; // Ctx for the callback
@@ -100,10 +101,10 @@ typedef struct {
 // HTTP request callbacks (forward declarations)
 static void s_http_request_error(int a_err_code, void * a_obj);
 static void s_http_request_response(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code);
-static void s_http_request_enc(dap_client_esocket_t * a_client_esocket, dap_net_trans_t *a_trans, const char *a_path,
+static void s_http_request_enc(dap_client_trans_ctx_t * a_client_esocket, dap_net_trans_t *a_trans, const char *a_path,
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
                         dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error, void *a_callbacks_arg);
-static int s_http_request(dap_client_esocket_t * a_client_esocket, dap_net_trans_t *a_trans, const char * a_path, void * a_request,
+static int s_http_request(dap_client_trans_ctx_t * a_client_esocket, dap_net_trans_t *a_trans, const char * a_path, void * a_request,
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error);
 static void s_http_request_error_unencrypted(int a_err_code, void * a_obj);
@@ -142,14 +143,14 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
         return;
     }
     
-    // Get per-request ctx from callback_arg
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(a_client);
-    if (!l_client_esocket || !l_client_esocket->callback_arg) {
+    // Get per-request ctx from callback_arg (FSM)
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    if (!l_fsm || !l_fsm->callback_arg) {
         log_it(L_WARNING, "s_http_handshake_error_wrapper: no ctx in callback_arg");
         return;
     }
     
-    s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_client_esocket->callback_arg;
+    s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_fsm->callback_arg;
     
     // Verify that the ctx matches this client
     if (l_ctx->client != a_client || !l_ctx->stream) {
@@ -165,7 +166,7 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
     // Free ctx and restore old callback_arg
     void *l_old_arg = l_ctx->old_callback_arg;
     DAP_DELETE(l_ctx);
-    l_client_esocket->callback_arg = l_old_arg;
+    l_fsm->callback_arg = l_old_arg;
 }
 
 /**
@@ -180,14 +181,14 @@ static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_da
         return;
     }
     
-    // Get per-request ctx from callback_arg
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(a_client);
-    if (!l_client_esocket || !l_client_esocket->callback_arg) {
+    // Get per-request ctx from callback_arg (FSM)
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    if (!l_fsm || !l_fsm->callback_arg) {
         log_it(L_ERROR, "s_http_handshake_response_wrapper: no ctx in callback_arg");
         return;
     }
     
-    s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_client_esocket->callback_arg;
+    s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_fsm->callback_arg;
     
     if (l_ctx->client != a_client) {
         log_it(L_WARNING, "s_http_handshake_response_wrapper: client mismatch");
@@ -210,7 +211,7 @@ static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_da
     // Free ctx and restore old callback_arg
     void *l_old_arg = l_ctx->old_callback_arg;
     DAP_DELETE(l_ctx);
-    l_client_esocket->callback_arg = l_old_arg;
+    l_fsm->callback_arg = l_old_arg;
 }
 
 /**
@@ -244,15 +245,15 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
         return;
     }
     
-    // Get per-request ctx from callback_arg
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(a_client);
-    if (!l_client_esocket || !l_client_esocket->callback_arg) {
-        log_it(L_ERROR, "s_http_session_response_wrapper: no ctx in callback_arg. Pvt: %p, Arg: %p", 
-               l_client_esocket, l_client_esocket ? l_client_esocket->callback_arg : NULL);
+    // Get per-request ctx from callback_arg (FSM)
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    if (!l_fsm || !l_fsm->callback_arg) {
+        log_it(L_ERROR, "s_http_session_response_wrapper: no ctx in callback_arg. FSM: %p, Arg: %p", 
+               (void*)l_fsm, l_fsm ? l_fsm->callback_arg : NULL);
         return;
     }
     
-    s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_client_esocket->callback_arg;
+    s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_fsm->callback_arg;
     
     // Verify that the ctx matches this client (prevent race conditions)
     if (l_session_ctx->client != a_client) {
@@ -269,13 +270,13 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
     
     debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: received response, data_size=%zu", a_data_size);
     
-    // Get encryption ctx from client_esocket (session_key is stored there after handshake)
-    // ALWAYS use session_key from client_esocket. Trans session_key is shared/global and unsafe for parallel clients.
-    if (l_client_esocket && l_client_esocket->session_key) {
-        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: using session_key from client_esocket");
+    // Get encryption ctx from FSM trans_ctx (session_key after handshake)
+    // ALWAYS use session_key from FSM trans_ctx. Trans session_key is shared/global and unsafe for parallel clients.
+    if (l_fsm->trans_ctx && l_fsm->trans_ctx->session_key) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: using session_key from FSM trans_ctx");
     } else {
         dap_net_trans_t *l_trans = l_session_ctx->stream->trans;
-        log_it(L_WARNING, "s_http_session_response_wrapper: no session_key found in client_esocket (trans=%p)", 
+        log_it(L_WARNING, "s_http_session_response_wrapper: no session_key found in FSM trans_ctx (trans=%p)", 
                l_trans);
     }
     
@@ -334,12 +335,12 @@ static void s_http_session_response_wrapper(dap_client_t *a_client, void *a_data
     // Free per-request ctx and restore old callback_arg AFTER callback completes
     // Note: callback should not use ctx after this point
     // Note: l_response_data is freed by callback (s_session_create_callback_wrapper), don't free it here
-    if (l_client_esocket && l_session_ctx) {
+    if (l_fsm && l_session_ctx) {
         debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: freeing ctx and restoring callback_arg");
         DAP_DELETE(l_session_ctx);
-        l_client_esocket->callback_arg = l_old_callback_arg;  // Restore old value
+        l_fsm->callback_arg = l_old_callback_arg;  // Restore old value
     } else if (l_session_ctx) {
-        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: freeing ctx (no client_esocket)");
+        debug_if(s_debug_more, L_DEBUG, "s_http_session_response_wrapper: freeing ctx (no FSM)");
         DAP_DELETE(l_session_ctx);
     }
 }
@@ -353,14 +354,14 @@ static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, in
         return;
     }
     
-    // Get per-request ctx from callback_arg
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(a_client);
-    if (!l_client_esocket || !l_client_esocket->callback_arg) {
+    // Get per-request ctx from callback_arg (FSM)
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    if (!l_fsm || !l_fsm->callback_arg) {
         log_it(L_WARNING, "s_http_session_error_wrapper: no ctx in callback_arg");
         return;
     }
     
-    s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_client_esocket->callback_arg;
+    s_http_session_ctx_t *l_session_ctx = (s_http_session_ctx_t *)l_fsm->callback_arg;
     
     // Verify that the ctx matches this client
     if (l_session_ctx->client != a_client || !l_session_ctx->stream || !l_session_ctx->callback) {
@@ -375,10 +376,10 @@ static void s_http_session_error_wrapper(dap_client_t *a_client, void *a_arg, in
     }
     
     // Free per-request ctx and restore old callback_arg
-    if (l_client_esocket && l_session_ctx) {
+    if (l_fsm && l_session_ctx) {
         void *l_old_callback_arg = l_session_ctx->old_callback_arg;
         DAP_DELETE(l_session_ctx);
-        l_client_esocket->callback_arg = l_old_callback_arg;  // Restore old value
+        l_fsm->callback_arg = l_old_callback_arg;  // Restore old value
     } else if (l_session_ctx) {
         DAP_DELETE(l_session_ctx);
     }
@@ -542,7 +543,7 @@ static int s_http_trans_accept(dap_events_socket_t *a_listener, dap_stream_t **a
  * @brief Initialize handshake (client-side)
  * 
  * For HTTP trans, handshake is performed via HTTP POST to /enc_init endpoint.
- * This function wraps the legacy HTTP infrastructure (dap_client_esocket_request) 
+ * This function wraps the legacy HTTP infrastructure (client trans_ctx HTTP request path) 
  * behind the trans abstraction layer.
  */
 static int s_http_trans_handshake_init(dap_stream_t *a_stream,
@@ -561,9 +562,10 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     }
     
     dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_client_esocket) {
-        log_it(L_ERROR, "Invalid client esocket");
+    dap_client_trans_ctx_t *l_client_esocket = (DAP_CLIENT_FSM(l_client) ? DAP_CLIENT_FSM(l_client)->client_trans_ctx : NULL);
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    if (!l_client_esocket || !l_fsm) {
+        log_it(L_ERROR, "Invalid client esocket or FSM");
         return -3;
     }
     
@@ -621,17 +623,17 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     l_ctx->stream = a_stream;
     l_ctx->callback = a_callback;
     l_ctx->client = l_client;
-    l_ctx->old_callback_arg = l_client_esocket->callback_arg;
+    l_ctx->old_callback_arg = l_fsm->callback_arg;
     
     // Set ctx as callback arg
-    l_client_esocket->callback_arg = l_ctx;
+    l_fsm->callback_arg = l_ctx;
     
     // Use static HTTP trans instance
     dap_net_trans_t *l_trans = s_http_trans;
     if (!l_trans) {
         log_it(L_ERROR, "HTTP trans not initialized");
         DAP_DELETE(l_data_str);
-        l_client_esocket->callback_arg = l_ctx->old_callback_arg;
+        l_fsm->callback_arg = l_ctx->old_callback_arg;
         DAP_DELETE(l_ctx);
         return -6;
     }
@@ -646,7 +648,7 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     
     if (l_res < 0) {
         log_it(L_ERROR, "Failed to create HTTP request for enc_init (return code: %d)", l_res);
-        l_client_esocket->callback_arg = l_ctx->old_callback_arg;
+        l_fsm->callback_arg = l_ctx->old_callback_arg;
         DAP_DELETE(l_ctx);
         return -6;
     }
@@ -703,9 +705,10 @@ static int s_http_trans_session_create(dap_stream_t *a_stream,
     }
     
     dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_client_esocket) {
-        log_it(L_ERROR, "Invalid client esocket");
+    dap_client_trans_ctx_t *l_client_esocket = (DAP_CLIENT_FSM(l_client) ? DAP_CLIENT_FSM(l_client)->client_trans_ctx : NULL);
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    if (!l_client_esocket || !l_fsm || !l_fsm->trans_ctx) {
+        log_it(L_ERROR, "Invalid client esocket or FSM trans_ctx");
         return -3;
     }
     
@@ -714,8 +717,8 @@ static int s_http_trans_session_create(dap_stream_t *a_stream,
     size_t l_request_size = snprintf(l_request, sizeof(l_request), "%d", DAP_CLIENT_PROTOCOL_VERSION);
     
     // Prepare sub_url based on protocol version
-    uint32_t l_least_common_dap_protocol = dap_min(l_client_esocket->remote_protocol_version,
-                                                   l_client_esocket->uplink_protocol_version);
+    uint32_t l_least_common_dap_protocol = dap_min(l_fsm->trans_ctx->remote_protocol_version,
+                                                   l_fsm->trans_ctx->uplink_protocol_version);
     
     char *l_suburl;
     if (l_least_common_dap_protocol < 23) {
@@ -753,9 +756,9 @@ static int s_http_trans_session_create(dap_stream_t *a_stream,
     
     // Store ctx in callback_arg temporarily for s_http_request_enc
     // It will be passed to dap_client_http_request via callbacks_arg
-    void *l_old_callback_arg = l_client_esocket->callback_arg;
+    void *l_old_callback_arg = l_fsm->callback_arg;
     l_session_ctx->old_callback_arg = l_old_callback_arg; // Save old callback arg
-    l_client_esocket->callback_arg = l_session_ctx;
+    l_fsm->callback_arg = l_session_ctx;
     
     // Make HTTP request using legacy infrastructure
     // Pass ctx through callbacks_arg parameter
@@ -909,7 +912,7 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
  * @param a_response_error Error callback
  * @return 0 on success, -1 on failure
  */
-int dap_net_trans_http_request(dap_client_esocket_t * a_client_esocket, const char * a_path, void * a_request,
+int dap_net_trans_http_request(dap_client_trans_ctx_t * a_client_esocket, const char * a_path, void * a_request,
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error)
 {
@@ -938,7 +941,7 @@ int dap_net_trans_http_request(dap_client_esocket_t * a_client_esocket, const ch
  * @param a_response_proc Response callback
  * @param a_response_error Error callback
  */
-void dap_net_trans_http_request_enc(dap_client_esocket_t * a_client_esocket, const char *a_path,
+void dap_net_trans_http_request_enc(dap_client_trans_ctx_t * a_client_esocket, const char *a_path,
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
                         dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error)
 {
@@ -947,7 +950,9 @@ void dap_net_trans_http_request_enc(dap_client_esocket_t * a_client_esocket, con
     if (!l_trans) {
         log_it(L_ERROR, "HTTP trans not initialized");
         if (a_response_error) {
-            a_response_error(a_client_esocket->client, a_client_esocket->callback_arg, -1);
+            dap_client_t *l_client = a_client_esocket->client;
+            dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+            a_response_error(l_client, l_fsm ? l_fsm->callback_arg : NULL, -1);
         }
         return;
     }
@@ -961,12 +966,15 @@ void dap_net_trans_http_request_enc(dap_client_esocket_t * a_client_esocket, con
  * This function is HTTP-specific and encapsulates the unencrypted HTTP request logic.
  * It's used internally by HTTP trans for handshake (unencrypted requests).
  */
-static int s_http_request(dap_client_esocket_t * a_client_esocket, dap_net_trans_t *a_trans, const char * a_path, void * a_request,
+static int s_http_request(dap_client_trans_ctx_t * a_client_esocket, dap_net_trans_t *a_trans, const char * a_path, void * a_request,
         size_t a_request_size, dap_client_callback_data_size_t a_response_proc,
         dap_client_callback_int_t a_response_error)
 {
+    dap_client_t *l_client = a_client_esocket->client;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+
     log_it(L_INFO, "s_http_request: CALLED! path='%s', request_size=%zu, worker=%p", 
-             a_path, a_request_size, a_client_esocket->worker);
+             a_path, a_request_size, (void*)(l_fsm ? l_fsm->worker : NULL));
     debug_if(s_debug_more, L_DEBUG, "s_http_request: response_proc=%p, response_error=%p", 
              (void*)a_response_proc, (void*)a_response_error);
     
@@ -976,7 +984,7 @@ static int s_http_request(dap_client_esocket_t * a_client_esocket, dap_net_trans
     l_ctx->client_uuid = a_client_esocket->uuid;
     l_ctx->callback = a_response_proc;
     l_ctx->error_callback = a_response_error;
-    l_ctx->callback_arg = a_client_esocket->callback_arg; // Store current callback arg
+    l_ctx->callback_arg = l_fsm ? l_fsm->callback_arg : NULL; // Store current callback arg
     l_ctx->is_encrypted = false;
     
     // Get HTTP trans private from trans parameter
@@ -986,7 +994,7 @@ static int s_http_request(dap_client_esocket_t * a_client_esocket, dap_net_trans
     }
     
     log_it(L_INFO, "s_http_request: calling dap_client_http_request for path='%s'", a_path);
-    dap_client_http_t *l_http_client = dap_client_http_request(a_client_esocket->worker, 
+    dap_client_http_t *l_http_client = dap_client_http_request(l_fsm ? l_fsm->worker : NULL, 
                                             a_client_esocket->client->link_info.uplink_addr,
                                             a_client_esocket->client->link_info.uplink_port,
                                             a_request ? "POST" : "GET", "text/text", a_path, a_request,
@@ -1019,7 +1027,7 @@ static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
     s_http_trans_request_ctx_t *l_ctx = (s_http_trans_request_ctx_t *)a_obj;
     
     // Validate esocket is still alive via UUID lookup
-    dap_client_esocket_t *l_client_esocket = dap_client_esocket_find(l_ctx->client_uuid);
+    dap_client_trans_ctx_t *l_client_esocket = dap_client_trans_ctx_find(l_ctx->client_uuid);
     if (!l_client_esocket) {
         debug_if(s_debug_more, L_DEBUG, "HTTP request error (unencrypted) %d: client esocket already deleted (uuid=%"DAP_UINT64_FORMAT_U")",
                  a_err_code, l_ctx->client_uuid);
@@ -1027,13 +1035,16 @@ static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
         return;
     }
     
-    if (l_ctx->error_callback && l_client_esocket->client) {
-          void *l_old_callback_arg = l_client_esocket->callback_arg;
-          l_client_esocket->callback_arg = l_ctx->callback_arg;
+    dap_client_t *l_client = l_client_esocket->client;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+
+    if (l_ctx->error_callback && l_client && l_fsm) {
+          void *l_old_callback_arg = l_fsm->callback_arg;
+          l_fsm->callback_arg = l_ctx->callback_arg;
           
-          l_ctx->error_callback(l_client_esocket->client, l_client_esocket->callback_arg, a_err_code);
+          l_ctx->error_callback(l_client, l_fsm->callback_arg, a_err_code);
           
-          l_client_esocket->callback_arg = l_old_callback_arg;
+          l_fsm->callback_arg = l_old_callback_arg;
     }
           
     DAP_DELETE(l_ctx);
@@ -1048,16 +1059,24 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
     assert(l_ctx);
     
     // Validate esocket is still alive via UUID lookup
-    dap_client_esocket_t *l_client_esocket = dap_client_esocket_find(l_ctx->client_uuid);
-    if (!l_client_esocket || !l_client_esocket->client) {
+    dap_client_trans_ctx_t *l_client_esocket = dap_client_trans_ctx_find(l_ctx->client_uuid);
+    if (!l_client_esocket) {
         debug_if(s_debug_more, L_DEBUG, "HTTP response (unencrypted): client esocket already deleted (uuid=%"DAP_UINT64_FORMAT_U")",
+                 l_ctx->client_uuid);
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    dap_client_t *l_client = l_client_esocket->client;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+    if (!l_client || !l_fsm) {
+        debug_if(s_debug_more, L_DEBUG, "HTTP response (unencrypted): no client or FSM (uuid=%"DAP_UINT64_FORMAT_U")",
                  l_ctx->client_uuid);
         DAP_DELETE(l_ctx);
         return;
     }
     
     log_it(L_INFO, "s_http_request_response_unencrypted: CALLED! response_size=%zu, callback=%p, client=%p", 
-             a_response_size, (void*)l_ctx->callback, l_client_esocket->client);
+             a_response_size, (void*)l_ctx->callback, l_client);
     
     debug_if(s_debug_more, L_DEBUG, "s_http_request_response_unencrypted: is_encrypted=%d", l_ctx->is_encrypted);
     
@@ -1068,18 +1087,18 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
     }
     
     // Temporarily set callback_arg for the callback execution
-    void *l_old_callback_arg = l_client_esocket->callback_arg;
-    l_client_esocket->callback_arg = l_ctx->callback_arg;
+    void *l_old_callback_arg = l_fsm->callback_arg;
+    l_fsm->callback_arg = l_ctx->callback_arg;
     
     if (a_response && a_response_size) {
         log_it(L_INFO, "s_http_request_response_unencrypted: calling callback with response (size=%zu)", a_response_size);
-        l_ctx->callback(l_client_esocket->client, a_response, a_response_size);
+        l_ctx->callback(l_client, a_response, a_response_size);
     } else {
         log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu)", a_response, a_response_size);
     }
     
     // Restore callback_arg
-    l_client_esocket->callback_arg = l_old_callback_arg;
+    l_fsm->callback_arg = l_old_callback_arg;
     
     DAP_DELETE(l_ctx);
 }
@@ -1090,45 +1109,51 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
  * This function is HTTP-specific and encapsulates the encryption and HTTP request logic.
  * It's used internally by HTTP trans for session creation and other encrypted requests.
  */
-static void s_http_request_enc(dap_client_esocket_t * a_client_esocket, dap_net_trans_t *a_trans, const char *a_path,
+static void s_http_request_enc(dap_client_trans_ctx_t * a_client_esocket, dap_net_trans_t *a_trans, const char *a_path,
                         const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
                         dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error, void *a_callbacks_arg)
 {
+    dap_client_t *l_client = a_client_esocket->client;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+    dap_net_trans_ctx_t *l_ntc = l_fsm ? l_fsm->trans_ctx : NULL;
+
     bool is_query_enc = true; // if true, then encode a_query string  [Why do we even need this?]
     debug_if(s_debug_more, L_DEBUG, "Encrypt request: sub_url '%s' query '%s'",
              a_sub_url ? a_sub_url : "", a_query ? a_query : "");
-    dap_enc_data_type_t l_enc_type = a_client_esocket->uplink_protocol_version >= 21
+    dap_enc_data_type_t l_enc_type = (l_ntc && l_ntc->uplink_protocol_version >= 21)
         ? DAP_ENC_DATA_TYPE_B64_URLSAFE : DAP_ENC_DATA_TYPE_B64;
     char *l_path = NULL, *l_request_enc = NULL;
     if (a_path && *a_path) {
         size_t l_suburl_len = a_sub_url && *a_sub_url ? dap_strlen(a_sub_url) : 0,
-               l_suburl_enc_size = dap_enc_code_out_size(a_client_esocket->session_key, l_suburl_len, l_enc_type),
+               l_suburl_enc_size = l_ntc && l_ntc->session_key
+                   ? dap_enc_code_out_size(l_ntc->session_key, l_suburl_len, l_enc_type) : 0,
                l_query_len = a_query && *a_query ? dap_strlen(a_query) : 0,
-               l_query_enc_size = dap_enc_code_out_size(a_client_esocket->session_key, l_query_len, l_enc_type),
+               l_query_enc_size = l_ntc && l_ntc->session_key
+                   ? dap_enc_code_out_size(l_ntc->session_key, l_query_len, l_enc_type) : 0,
                l_path_size = dap_strlen(a_path) + l_suburl_enc_size + l_query_enc_size + 3;
         l_path = DAP_NEW_Z_SIZE(char, l_path_size);
         char *l_offset = dap_strncpy(l_path, a_path, l_path_size);
         *l_offset++ = '/';
-        if (l_suburl_enc_size) {
-            l_offset += dap_enc_code(a_client_esocket->session_key, a_sub_url, l_suburl_len,
+        if (l_suburl_enc_size && l_ntc && l_ntc->session_key) {
+            l_offset += dap_enc_code(l_ntc->session_key, a_sub_url, l_suburl_len,
                                      l_offset, l_suburl_enc_size, l_enc_type);
             if (l_query_enc_size) {
                 *l_offset++ = '?';
-                dap_enc_code(a_client_esocket->session_key, a_query, l_query_len,
+                dap_enc_code(l_ntc->session_key, a_query, l_query_len,
                              l_offset, l_query_enc_size, l_enc_type);
             }
         }
     }
     size_t l_req_enc_size = 0;
-    if (a_request && a_request_size) {
-        l_req_enc_size = dap_enc_code_out_size(a_client_esocket->session_key, a_request_size, l_enc_type) + 1;
+    if (a_request && a_request_size && l_ntc && l_ntc->session_key) {
+        l_req_enc_size = dap_enc_code_out_size(l_ntc->session_key, a_request_size, l_enc_type) + 1;
         l_request_enc = DAP_NEW_Z_SIZE(char, l_req_enc_size);
-        dap_enc_code(a_client_esocket->session_key, a_request, a_request_size,
+        dap_enc_code(l_ntc->session_key, a_request, a_request_size,
                      l_request_enc, l_req_enc_size, DAP_ENC_DATA_TYPE_RAW);
     }
     char *l_custom = dap_strdup_printf("KeyID: %s\r\n%s",
-        a_client_esocket->session_key_id ? a_client_esocket->session_key_id : "NULL",
-        a_client_esocket->is_close_session ? "SessionCloseAfterRequest: true\r\n" : "");
+        (l_ntc && l_ntc->session_key_id) ? l_ntc->session_key_id : "NULL",
+        (l_fsm && l_fsm->is_close_session) ? "SessionCloseAfterRequest: true\r\n" : "");
 
     // Create per-request ctx to avoid race conditions
     s_http_trans_request_ctx_t *l_ctx = DAP_NEW_Z(s_http_trans_request_ctx_t);
@@ -1145,13 +1170,13 @@ static void s_http_request_enc(dap_client_esocket_t * a_client_esocket, dap_net_
         l_priv = (dap_stream_trans_http_private_t*)a_trans->_inheritor;
     }
     
-    dap_client_http_t *l_http_client = dap_client_http_request(a_client_esocket->worker,
+    dap_client_http_t *l_http_client = dap_client_http_request(l_fsm ? l_fsm->worker : NULL,
         a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port,
         a_request ? "POST" : "GET", "text/text", l_path, l_request_enc, l_req_enc_size, NULL,
         s_http_request_response, s_http_request_error, l_ctx, l_custom);
     
     // NOTE: a_callbacks_arg parameter is ignored here because we use l_ctx for callback ctx.
-    // The actual ctx needed by callback (like session_ctx) should be stored in client_esocket->callback_arg
+    // The actual ctx needed by callback (like session_ctx) should be stored in FSM->callback_arg
     // or added to s_http_trans_request_ctx_t if thread safety requires it.
     UNUSED(a_callbacks_arg);
     
@@ -1181,7 +1206,7 @@ static void s_http_request_error(int a_err_code, void * a_obj)
     s_http_trans_request_ctx_t *l_ctx = (s_http_trans_request_ctx_t *)a_obj;
     
     // Validate esocket is still alive via UUID lookup (client may have been deleted)
-    dap_client_esocket_t *l_client_esocket = dap_client_esocket_find(l_ctx->client_uuid);
+    dap_client_trans_ctx_t *l_client_esocket = dap_client_trans_ctx_find(l_ctx->client_uuid);
     if (!l_client_esocket) {
         debug_if(s_debug_more, L_DEBUG, "HTTP request error %d: client esocket already deleted (uuid=%"DAP_UINT64_FORMAT_U")",
                  a_err_code, l_ctx->client_uuid);
@@ -1189,13 +1214,16 @@ static void s_http_request_error(int a_err_code, void * a_obj)
         return;
     }
     
-    if (l_ctx->error_callback && l_client_esocket->client) {
-          void *l_old_callback_arg = l_client_esocket->callback_arg;
-          l_client_esocket->callback_arg = l_ctx->callback_arg;
+    dap_client_t *l_client = l_client_esocket->client;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+
+    if (l_ctx->error_callback && l_client && l_fsm) {
+          void *l_old_callback_arg = l_fsm->callback_arg;
+          l_fsm->callback_arg = l_ctx->callback_arg;
           
-          l_ctx->error_callback(l_client_esocket->client, l_client_esocket->callback_arg, a_err_code);
+          l_ctx->error_callback(l_client, l_fsm->callback_arg, a_err_code);
           
-          l_client_esocket->callback_arg = l_old_callback_arg;
+          l_fsm->callback_arg = l_old_callback_arg;
     }
           
     DAP_DELETE(l_ctx);
@@ -1210,9 +1238,18 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
     assert(l_ctx);
     
     // Validate esocket is still alive via UUID lookup
-    dap_client_esocket_t *l_client_esocket = dap_client_esocket_find(l_ctx->client_uuid);
-    if (!l_client_esocket || !l_client_esocket->client) {
+    dap_client_trans_ctx_t *l_client_esocket = dap_client_trans_ctx_find(l_ctx->client_uuid);
+    if (!l_client_esocket) {
         debug_if(s_debug_more, L_DEBUG, "HTTP response (encrypted): client esocket already deleted (uuid=%"DAP_UINT64_FORMAT_U")",
+                 l_ctx->client_uuid);
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    dap_client_t *l_client = l_client_esocket->client;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+    dap_net_trans_ctx_t *l_ntc = l_fsm ? l_fsm->trans_ctx : NULL;
+    if (!l_client || !l_fsm) {
+        debug_if(s_debug_more, L_DEBUG, "HTTP response (encrypted): no client or FSM (uuid=%"DAP_UINT64_FORMAT_U")",
                  l_ctx->client_uuid);
         DAP_DELETE(l_ctx);
         return;
@@ -1228,14 +1265,14 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
     }
     
     // Temporarily set callback_arg for the callback execution
-    void *l_old_callback_arg = l_client_esocket->callback_arg;
-    l_client_esocket->callback_arg = l_ctx->callback_arg;
+    void *l_old_callback_arg = l_fsm->callback_arg;
+    l_fsm->callback_arg = l_ctx->callback_arg;
     
     if (a_response && a_response_size) {
         if (l_ctx->is_encrypted) {
-            if (!l_client_esocket->session_key) {
+            if (!l_ntc || !l_ntc->session_key) {
                 log_it(L_ERROR, "No session key in encrypted client!");
-                l_client_esocket->callback_arg = l_old_callback_arg; // Restore
+                l_fsm->callback_arg = l_old_callback_arg; // Restore
                 DAP_DELETE(l_ctx);
                 return;
             }
@@ -1244,7 +1281,7 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
             dap_enc_data_type_t l_enc_type = DAP_ENC_DATA_TYPE_RAW;
 
             // Calculate expected output size
-            size_t l_len_calc = dap_enc_decode_out_size(l_client_esocket->session_key, a_response_size, l_enc_type);
+            size_t l_len_calc = dap_enc_decode_out_size(l_ntc->session_key, a_response_size, l_enc_type);
             // Allocate slightly more to be safe (some implementations might require alignment or check buffer > required)
             // Using a_response_size as lower bound for allocation if it's larger than calc (unlikely for B64 but safe)
             size_t l_len_buf = dap_max(l_len_calc, a_response_size) + 32; 
@@ -1252,7 +1289,7 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
             char *l_response = DAP_NEW_Z_SIZE(char, l_len_buf);
             
             // Pass buffer size, not just expected size
-            size_t l_len = dap_enc_decode(l_client_esocket->session_key, a_response, a_response_size,
+            size_t l_len = dap_enc_decode(l_ntc->session_key, a_response, a_response_size,
                                    l_response, l_len_buf, l_enc_type);
             
             // Ensure null-termination (dap_enc_decode might not do it)
@@ -1260,7 +1297,7 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
             else l_response[l_len_buf - 1] = '\0'; // Should not happen if size matches
             
             debug_if(s_debug_more, L_DEBUG, "s_http_request_response: calling request_response_callback client=%p, callback=%p, len=%zu (buf=%zu)", 
-                   l_client_esocket->client, (void*)l_ctx->callback, l_len, l_len_buf);
+                   (void*)l_client, (void*)l_ctx->callback, l_len, l_len_buf);
             // Log first few bytes of response to debug "garbage" issue
             if (s_debug_more && l_len > 0) {
                 char l_preview[64] = {0};
@@ -1273,19 +1310,19 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
                 debug_if(s_debug_more, L_DEBUG, "Decrypted response preview: '%s'", l_preview);
             }
 
-            l_ctx->callback(l_client_esocket->client, l_response, l_len);
+            l_ctx->callback(l_client, l_response, l_len);
             debug_if(s_debug_more, L_DEBUG, "s_http_request_response: request_response_callback returned");
             DAP_DELETE(l_response);
         } else {
             debug_if(s_debug_more, L_DEBUG, "s_http_request_response: calling callback with unencrypted response (size=%zu)", a_response_size);
-            l_ctx->callback(l_client_esocket->client, a_response, a_response_size);
+            l_ctx->callback(l_client, a_response, a_response_size);
         }
     } else {
         log_it(L_WARNING, "s_http_request_response: empty response (response=%p, size=%zu)", a_response, a_response_size);
     }
     
     // Restore callback_arg
-    l_client_esocket->callback_arg = l_old_callback_arg;
+    l_fsm->callback_arg = l_old_callback_arg;
     
     DAP_DELETE(l_ctx);
 }

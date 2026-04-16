@@ -48,34 +48,44 @@ const dap_serialize_field_t g_dap_io_flow_ctrl_base_fields[] = {
         .name = "seq_num",
         .type = DAP_SERIALIZE_TYPE_UINT64,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, seq_num),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, seq_num),
         .size = sizeof(uint64_t),
     },
     {
         .name = "ack_seq",
         .type = DAP_SERIALIZE_TYPE_UINT64,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, ack_seq),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, ack_seq),
         .size = sizeof(uint64_t),
     },
     {
         .name = "timestamp_ms",
         .type = DAP_SERIALIZE_TYPE_UINT32,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, timestamp_ms),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, timestamp_ms),
         .size = sizeof(uint32_t),
     },
     {
         .name = "flags",
         .type = DAP_SERIALIZE_TYPE_UINT8,
         .flags = DAP_SERIALIZE_FLAG_NONE,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, flags),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, flags),
         .size = sizeof(uint8_t),
     },
 };
 
 const size_t g_dap_io_flow_ctrl_base_field_count = 
     sizeof(g_dap_io_flow_ctrl_base_fields) / sizeof(g_dap_io_flow_ctrl_base_fields[0]);
+
+const dap_serialize_schema_t g_dap_io_flow_ctrl_base_schema = {
+    .name = "io_flow_ctrl_base_header",
+    .version = 1,
+    .struct_size = sizeof(dap_io_flow_ctrl_base_header_mem_t),
+    .field_count = g_dap_io_flow_ctrl_base_field_count,
+    .fields = g_dap_io_flow_ctrl_base_fields,
+    .magic = DAP_IO_FLOW_CTRL_BASE_MAGIC,
+    .validate_func = NULL,
+};
 
 //===================================================================
 // INTERNAL STRUCTURES

@@ -60,6 +60,7 @@ typedef struct dap_global_db_hash {
     dap_nanotime_t bets;    // Timestamp in big-endian
     uint64_t becrc;         // CRC in big-endian
 } DAP_ALIGN_PACKED dap_global_db_hash_t;
+_Static_assert(sizeof(dap_global_db_hash_t) == 16, "db_hash must be 16 bytes");
 
 /**
  * @brief Store object - main data record structure

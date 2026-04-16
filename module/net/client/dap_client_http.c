@@ -48,7 +48,8 @@
 #include "dap_context.h"
 #include "dap_server.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_enc_base64.h"
 #include "dap_http_header.h"
 

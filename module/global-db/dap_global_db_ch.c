@@ -82,7 +82,14 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void UNUSED_ARG *a_arg)
 
 bool s_proc_thread_reader(void *a_arg)
 {
-    dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t) + sizeof(byte_t));
+    byte_t *l_spkt_base = (byte_t *)a_arg + sizeof(dap_cluster_node_addr_t) + sizeof(byte_t);
+    dap_global_db_start_pkt_hdr_mem_t l_st_mem;
+    if (dap_global_db_start_pkt_hdr_unpack(l_spkt_base, DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE, &l_st_mem) != 0) {
+        log_it(L_WARNING, "Invalid GLOBAL_DB start packet header in worker");
+        DAP_DELETE(a_arg);
+        return false;
+    }
+    dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)l_spkt_base;
     byte_t l_type = *((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
     const char *l_group = (const char *)l_pkt->group;
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
@@ -148,6 +155,12 @@ bool s_proc_thread_reader(void *a_arg)
 static bool s_process_hashes(void *a_arg)
 {
     dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
+    dap_global_db_hash_pkt_hdr_mem_t l_hmem;
+    if (dap_global_db_hash_pkt_hdr_unpack((const uint8_t *)l_pkt, DAP_GLOBAL_DB_HASH_PKT_HDR_WIRE_SIZE, &l_hmem) != 0) {
+        log_it(L_WARNING, "Invalid GLOBAL_DB hash packet header in worker");
+        DAP_DELETE(a_arg);
+        return false;
+    }
     const char *l_group = (const char *)l_pkt->group_n_hashses;
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
     if (!l_cluster) {
@@ -180,6 +193,12 @@ static bool s_process_hashes(void *a_arg)
 static bool s_process_request(void *a_arg)
 {
     dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_cluster_node_addr_t));
+    dap_global_db_hash_pkt_hdr_mem_t l_hmem;
+    if (dap_global_db_hash_pkt_hdr_unpack((const uint8_t *)l_pkt, DAP_GLOBAL_DB_HASH_PKT_HDR_WIRE_SIZE, &l_hmem) != 0) {
+        log_it(L_WARNING, "Invalid GLOBAL_DB hash packet header in worker");
+        DAP_DELETE(a_arg);
+        return false;
+    }
     const char *l_group = (const char *)l_pkt->group_n_hashses;
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
     if (!l_cluster) {
@@ -310,12 +329,20 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START:
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST: {
-        dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)l_ch_pkt->data;
-        if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_start_pkt_t) ||
-                l_ch_pkt->hdr.data_size != dap_global_db_start_pkt_get_size(l_pkt)) {
+        if (l_ch_pkt->hdr.data_size < DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE) {
             log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
             return false;
         }
+        dap_global_db_start_pkt_hdr_mem_t l_st_hdr_mem;
+        if (dap_global_db_start_pkt_hdr_unpack((const uint8_t *)l_ch_pkt->data, l_ch_pkt->hdr.data_size, &l_st_hdr_mem) != 0) {
+            log_it(L_WARNING, "Invalid GLOBAL_DB start packet header");
+            return false;
+        }
+        if (l_ch_pkt->hdr.data_size != dap_global_db_start_pkt_get_size_hdr(&l_st_hdr_mem)) {
+            log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
+            return false;
+        }
+        dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)l_ch_pkt->data;
         debug_if(g_dap_global_db_debug_more, L_INFO, "IN: %s packet for group %s",
                             l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START
                             ? "GLOBAL_DB_SYNC_START" : "GLOBAL_DB_GROUP_REQUEST", l_pkt->group);
@@ -332,12 +359,20 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
-        dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_ch_pkt->data;
-        if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_hash_pkt_t) ||
-                l_ch_pkt->hdr.data_size != dap_global_db_hash_pkt_get_size(l_pkt)) {
+        if (l_ch_pkt->hdr.data_size < DAP_GLOBAL_DB_HASH_PKT_HDR_WIRE_SIZE) {
             log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
             return false;
         }
+        dap_global_db_hash_pkt_hdr_mem_t l_hash_hdr_mem;
+        if (dap_global_db_hash_pkt_hdr_unpack((const uint8_t *)l_ch_pkt->data, l_ch_pkt->hdr.data_size, &l_hash_hdr_mem) != 0) {
+            log_it(L_WARNING, "Invalid GLOBAL_DB hash packet header");
+            return false;
+        }
+        if (l_ch_pkt->hdr.data_size != dap_global_db_hash_pkt_get_size_hdr(&l_hash_hdr_mem)) {
+            log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
+            return false;
+        }
+        dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_ch_pkt->data;
         if (!l_pkt->group_name_len || l_pkt->group_name_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {
             log_it(L_WARNING, "Invalid group_name_len %u in hash packet", l_pkt->group_name_len);
             return false;

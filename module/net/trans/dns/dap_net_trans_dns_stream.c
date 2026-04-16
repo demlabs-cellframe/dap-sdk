@@ -50,7 +50,9 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_server.h"
 #include "dap_enc_kdf.h"
 #include "dap_client.h"
-#include "dap_client_esocket.h"
+#include "dap_client_trans_ctx.h"
+#include "dap_client_fsm.h"
+#include "dap_net_trans_ctx.h"
 #include "dap_rand.h"
 
 #define LOG_TAG "dap_stream_trans_dns"
@@ -547,7 +549,7 @@ static int s_dns_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 /**
  * @brief Read data from DNS tunnel
  *
- * Called by dap_client_esocket with (NULL, 0). Reads from esocket->buf_in
+ * Called by dap_client_trans_ctx with (NULL, 0). Reads from esocket->buf_in
  * and processes the data as raw DAP stream packets via dap_stream_data_proc_read.
  * Returns the number of bytes consumed so the caller can shrink buf_in.
  */
@@ -727,10 +729,10 @@ static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)
  * @brief Client read callback — processes server's KEM response
  *
  * When the DNS server responds with bob_ciphertext, this callback:
- * 1. Retrieves alice's KEM key from dap_client_esocket
+ * 1. Retrieves alice's KEM key from dap_client_trans_ctx
  * 2. Performs KEM decapsulation to derive the shared secret
  * 3. Derives a symmetric handshake_key via KDF
- * 4. Sets the stream_key on dap_client_esocket
+ * 4. Sets the stream_key on dap_client_trans_ctx
  * 5. Calls the stored handshake callback to progress the FSM
  */
 static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
@@ -747,14 +749,15 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
 
-    dap_client_esocket_t *l_client_es = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_client_es || !l_client_es->stream) {
-        log_it(L_ERROR, "DNS client read: no client esocket or stream");
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    dap_net_trans_ctx_t *l_trans_ctx = (l_fsm && l_fsm->trans_ctx) ? l_fsm->trans_ctx : NULL;
+    if (!l_trans_ctx || !l_trans_ctx->stream) {
+        log_it(L_ERROR, "DNS client read: no FSM trans_ctx or stream");
         a_es->buf_in_size = 0;
         return;
     }
 
-    dap_stream_t *l_stream = l_client_es->stream;
+    dap_stream_t *l_stream = l_trans_ctx->stream;
     if (!l_stream->trans_ctx) {
         log_it(L_ERROR, "DNS client read: no trans_ctx");
         a_es->buf_in_size = 0;
@@ -771,7 +774,7 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
 
     log_it(L_INFO, "DNS client: received server handshake response (%zu bytes)", (size_t)a_es->buf_in_size);
 
-    dap_enc_key_t *l_alice_key = l_client_es->session_key_open;
+    dap_enc_key_t *l_alice_key = l_trans_ctx->session_key_open;
     if (!l_alice_key || !l_alice_key->gen_alice_shared_key) {
         log_it(L_ERROR, "DNS client: no alice KEM key for decapsulation");
         l_stream->trans_ctx->handshake_cb(l_stream, NULL, 0, -1);
@@ -805,9 +808,9 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
         return;
     }
 
-    if (l_client_es->stream_key)
-        dap_enc_key_delete(l_client_es->stream_key);
-    l_client_es->stream_key = dap_enc_key_dup(l_handshake_key);
+    if (l_trans_ctx->stream_key)
+        dap_enc_key_delete(l_trans_ctx->stream_key);
+    l_trans_ctx->stream_key = dap_enc_key_dup(l_handshake_key);
     dap_enc_key_delete(l_handshake_key);
 
     log_it(L_INFO, "DNS client: handshake complete, stream_key established");

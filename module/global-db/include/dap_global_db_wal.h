@@ -52,7 +52,8 @@ typedef struct dap_global_db_wal_header {
     uint32_t magic;         // DAP_GLOBAL_DB_WAL_MAGIC
     uint32_t version;       // DAP_GLOBAL_DB_WAL_VERSION
     uint64_t sequence;      // Last committed sequence number
-} DAP_ALIGN_PACKED dap_global_db_wal_header_t;
+} dap_global_db_wal_header_t;
+_Static_assert(sizeof(dap_global_db_wal_header_t) == 16, "WAL header wire size");
 
 /**
  * @brief WAL record header (9 bytes + data)

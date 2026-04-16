@@ -26,6 +26,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_cluster.h"
+#include "dap_serialize.h"
 
 typedef enum dap_gossip_msg_type {
     DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH,
@@ -43,7 +44,36 @@ typedef struct dap_gossip_msg {
     dap_guuid_t cluster_id;                 // Links cluster ID to message retranslate to
     dap_hash_t  payload_hash;               // Payoad hash for doubles check
     byte_t      trace_n_payload[];          // Serialized form of message tracepath and payload itself
-} DAP_ALIGN_PACKED dap_gossip_msg_t;
+} dap_gossip_msg_t;
+_Static_assert(sizeof(dap_gossip_msg_t) == 64, "gossip msg wire size");
+
+/** Same layout as @ref dap_gossip_msg_t (fixed 64-byte prefix; wire and natural alignment match). */
+typedef dap_gossip_msg_t dap_gossip_msg_mem_t;
+
+#define DAP_GOSSIP_MSG_MAGIC 0xDA5FEEDAU
+
+extern const dap_serialize_field_t g_dap_gossip_msg_fields[];
+extern const dap_serialize_schema_t g_dap_gossip_msg_schema;
+
+#define DAP_GOSSIP_MSG_HDR_WIRE_SIZE 64
+
+static inline int dap_gossip_msg_hdr_pack(const dap_gossip_msg_mem_t *a_mem,
+                                          uint8_t *a_wire, size_t a_wire_size)
+{
+    if (a_wire_size < DAP_GOSSIP_MSG_HDR_WIRE_SIZE) return -1;
+    dap_serialize_result_t r = dap_serialize_to_buffer_raw(
+        &g_dap_gossip_msg_schema, a_mem, a_wire, a_wire_size, NULL);
+    return r.error_code;
+}
+
+static inline int dap_gossip_msg_hdr_unpack(const uint8_t *a_wire, size_t a_wire_size,
+                                            dap_gossip_msg_mem_t *a_mem)
+{
+    if (a_wire_size < DAP_GOSSIP_MSG_HDR_WIRE_SIZE) return -1;
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+        &g_dap_gossip_msg_schema, a_wire, a_wire_size, a_mem, NULL);
+    return r.error_code;
+}
 
 typedef void (*dap_gossip_callback_payload_t)(void *a_payload, size_t a_payload_size, dap_cluster_node_addr_t a_sender_addr);
 

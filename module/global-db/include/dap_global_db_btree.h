@@ -60,7 +60,8 @@ extern "C" {
 typedef struct dap_global_db_key {
     uint64_t bets;      // timestamp in big-endian
     uint64_t becrc;     // CRC in big-endian
-} DAP_ALIGN_PACKED dap_global_db_key_t;
+} dap_global_db_key_t;
+_Static_assert(sizeof(dap_global_db_key_t) == 16, "key must be 16 bytes");
 
 /**
  * @brief B-tree file header (64 bytes)
@@ -78,7 +79,7 @@ typedef struct dap_global_db_header {
     uint32_t reserved2;         // Alignment
     uint64_t free_list_head;    // Head of free page list
     uint64_t checksum;          // Header checksum
-} DAP_ALIGN_PACKED dap_global_db_header_t;
+} dap_global_db_header_t;
 
 _Static_assert(sizeof(dap_global_db_header_t) == 64, "Header must be 64 bytes");
 
@@ -92,7 +93,7 @@ typedef struct dap_global_db_page_header {
     uint64_t page_id;           // This page's ID/offset
     uint64_t right_sibling;     // Right sibling page (for forward scan, 0 = rightmost)
     uint64_t left_sibling;      // Left sibling page (for reverse scan, 0 = leftmost)
-} DAP_ALIGN_PACKED dap_global_db_page_header_t;
+} dap_global_db_page_header_t;
 
 _Static_assert(sizeof(dap_global_db_page_header_t) == 32, "Page header must be 32 bytes");
 
@@ -108,7 +109,8 @@ typedef struct dap_global_db_leaf_entry {
     uint8_t flags;                       // Record flags
     uint8_t reserved[3];                 // Alignment
     // Followed by: key_data[key_len] + value_data[value_len] + sign_data[sign_len]
-} DAP_ALIGN_PACKED dap_global_db_leaf_entry_t;
+} dap_global_db_leaf_entry_t;
+_Static_assert(sizeof(dap_global_db_leaf_entry_t) == 32, "Leaf entry header must be 32 bytes");
 
 /**
  * @brief Branch entry (24 bytes)
@@ -116,7 +118,7 @@ typedef struct dap_global_db_leaf_entry {
 typedef struct dap_global_db_branch_entry {
     dap_global_db_key_t driver_hash;    // 16 bytes - separator key
     uint64_t child_page;                 // Child page offset
-} DAP_ALIGN_PACKED dap_global_db_branch_entry_t;
+} dap_global_db_branch_entry_t;
 
 _Static_assert(sizeof(dap_global_db_branch_entry_t) == 24, "Branch entry must be 24 bytes");
 

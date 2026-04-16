@@ -26,8 +26,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#ifdef DAP_OS_WINDOWS
+#ifdef DAP_OS_ANDROID
 #include <malloc.h>
+#elif defined(DAP_OS_WINDOWS)
+#include <malloc.h>
+#endif
+
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#include <immintrin.h>
+#define DAP_SPIN_PAUSE() _mm_pause()
+#elif defined(__aarch64__) || defined(__arm__)
+#define DAP_SPIN_PAUSE() __asm__ volatile("yield" ::: "memory")
+#else
+#define DAP_SPIN_PAUSE() ((void)0)
 #endif
 
 #define LOG_TAG "dap_ring_buffer"
@@ -75,6 +86,7 @@ dap_ring_buffer_t *dap_ring_buffer_create(size_t a_capacity) {
     
     // Initialize atomics
     atomic_store_explicit(&l_rb->write_pos, 0, memory_order_relaxed);
+    atomic_flag_clear(&l_rb->write_lock);
     atomic_store_explicit(&l_rb->read_pos, 0, memory_order_relaxed);
     atomic_store_explicit(&l_rb->total_pushes, 0, memory_order_relaxed);
     atomic_store_explicit(&l_rb->total_pops, 0, memory_order_relaxed);
@@ -107,30 +119,33 @@ void dap_ring_buffer_delete(dap_ring_buffer_t *a_rb) {
 }
 
 /**
- * @brief Push pointer into ring buffer (producer side)
+ * @brief Push pointer into ring buffer (MPSC-safe: multiple producers allowed)
+ *
+ * A lightweight spinlock serializes concurrent producers. The critical section
+ * is tiny (load + store + fence), so contention is negligible in practice.
  */
 bool dap_ring_buffer_push(dap_ring_buffer_t *a_rb, void *a_ptr) {
     if (!a_rb || !a_ptr) {
         return false;
     }
     
-    // Load current positions
+    while (atomic_flag_test_and_set_explicit(&a_rb->write_lock, memory_order_acquire))
+        DAP_SPIN_PAUSE();
+    
     size_t l_write = atomic_load_explicit(&a_rb->write_pos, memory_order_relaxed);
     size_t l_read = atomic_load_explicit(&a_rb->read_pos, memory_order_acquire);
     
-    // Check if full (next write position would equal read position)
     size_t l_next_write = (l_write + 1) & a_rb->mask;
     if (l_next_write == (l_read & a_rb->mask)) {
+        atomic_flag_clear_explicit(&a_rb->write_lock, memory_order_release);
         atomic_fetch_add_explicit(&a_rb->total_full, 1, memory_order_relaxed);
-        return false;  // Buffer is full
+        return false;
     }
     
-    // Write data at current write position
     a_rb->data[l_write & a_rb->mask] = a_ptr;
-    
-    // Advance write position with release semantics
-    // This ensures all previous writes are visible before updating write_pos
     atomic_store_explicit(&a_rb->write_pos, l_next_write, memory_order_release);
+    
+    atomic_flag_clear_explicit(&a_rb->write_lock, memory_order_release);
     
     atomic_fetch_add_explicit(&a_rb->total_pushes, 1, memory_order_relaxed);
     

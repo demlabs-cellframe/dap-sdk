@@ -44,7 +44,9 @@
 #include "dap_events_socket.h"
 #include "dap_net.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_net_trans_ctx.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_client_http.h"
 #include "http_status_code.h"
 #include "dap_net_trans_http_stream.h"
@@ -477,9 +479,10 @@ static void s_ws_handshake_response_wrapper(void *a_data, size_t a_data_size, vo
     }
     
     // Restore callback arg
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_ctx->client);
-    if (l_client_esocket) {
-        l_client_esocket->callback_arg = l_ctx->old_callback_arg;
+    dap_client_t *l_client = l_ctx->client;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+    if (l_fsm) {
+        l_fsm->callback_arg = l_ctx->old_callback_arg;
     }
     
     DAP_DELETE(l_ctx);
@@ -498,9 +501,10 @@ static void s_ws_handshake_error_wrapper(int a_error, void *a_arg)
     }
     
     // Restore callback arg
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_ctx->client);
-    if (l_client_esocket) {
-        l_client_esocket->callback_arg = l_ctx->old_callback_arg;
+    dap_client_t *l_client_err = l_ctx->client;
+    dap_client_fsm_t *l_fsm_err = l_client_err ? DAP_CLIENT_FSM(l_client_err) : NULL;
+    if (l_fsm_err) {
+        l_fsm_err->callback_arg = l_ctx->old_callback_arg;
     }
     
     DAP_DELETE(l_ctx);
@@ -519,9 +523,11 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
 
     log_it(L_DEBUG, "WebSocket handshake init (via HTTP)");
     
-    dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_client_esocket) {
+    dap_client_trans_ctx_t *l_client_esocket =
+        (dap_client_trans_ctx_t *)a_stream->trans_ctx->esocket->_inheritor;
+    dap_client_t *l_client = l_client_esocket ? l_client_esocket->client : NULL;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+    if (!l_client_esocket || !l_client || !l_fsm) {
         log_it(L_ERROR, "Invalid client esocket");
         return -2;
     }
@@ -575,13 +581,13 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
     l_ctx->stream = a_stream;
     l_ctx->callback = a_callback;
     l_ctx->client = l_client;
-    l_ctx->old_callback_arg = l_client_esocket->callback_arg;
+    l_ctx->old_callback_arg = l_fsm->callback_arg;
     
-    l_client_esocket->callback_arg = l_ctx;
+    l_fsm->callback_arg = l_ctx;
     
     // Send HTTP request using dap_client_http_request
     // We use the client's worker and address
-    dap_client_http_t *l_http_client = dap_client_http_request(l_client_esocket->worker,
+    dap_client_http_t *l_http_client = dap_client_http_request(l_fsm->worker,
                                             l_client->link_info.uplink_addr,
                                             l_client->link_info.uplink_port,
                                             "POST", "text/text", l_enc_init_url, l_data_str,
@@ -592,7 +598,7 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
     
     if (!l_http_client) {
         log_it(L_ERROR, "Failed to create HTTP request for WebSocket handshake");
-        l_client_esocket->callback_arg = l_ctx->old_callback_arg;
+        l_fsm->callback_arg = l_ctx->old_callback_arg;
         DAP_DELETE(l_ctx);
         return -6;
     }
@@ -820,9 +826,11 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
         return -3;
     }
     
-    dap_client_t *l_client = (dap_client_t*)a_stream->trans_ctx->esocket->_inheritor;
-    dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_client_esocket) {
+    dap_client_trans_ctx_t *l_client_esocket =
+        (dap_client_trans_ctx_t *)a_stream->trans_ctx->esocket->_inheritor;
+    dap_client_t *l_client = l_client_esocket ? l_client_esocket->client : NULL;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+    if (!l_client_esocket || !l_client || !l_fsm || !l_fsm->trans_ctx) {
         log_it(L_ERROR, "Invalid client esocket");
         return -4;
     }
@@ -839,9 +847,9 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
     size_t l_request_size = snprintf(l_request, sizeof(l_request), "%d", DAP_CLIENT_PROTOCOL_VERSION);
     
     // Prepare sub_url based on protocol version
-    // Use client esocket values (set during enc_init), NOT trans_ctx (which may be uninitialized)
-    uint32_t l_least_common_dap_protocol = dap_min(l_client_esocket->remote_protocol_version,
-                                                   l_client_esocket->uplink_protocol_version);
+    // Use trans_ctx values (set during enc_init)
+    uint32_t l_least_common_dap_protocol = dap_min(l_fsm->trans_ctx->remote_protocol_version,
+                                                   l_fsm->trans_ctx->uplink_protocol_version);
     
     char *l_suburl;
     if (l_least_common_dap_protocol < 23) {
@@ -860,11 +868,11 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
     ws_session_ctx_t *l_ws_ctx = DAP_NEW_Z(ws_session_ctx_t);
     l_ws_ctx->stream = a_stream;
     l_ws_ctx->callback = a_callback;
-    l_ws_ctx->session_key = l_client_esocket->session_key; // Use key from client esocket
+    l_ws_ctx->session_key = l_fsm->trans_ctx->session_key;
     
-    // Use client keys directly from client esocket (populated in STAGE_ENC_INIT)
-    s_ws_send_http_request_enc(l_client_esocket->session_key, l_client_esocket->session_key_id,
-                               l_priv->http_client, l_client_esocket->worker,
+    // Use session keys from trans_ctx (populated in STAGE_ENC_INIT)
+    s_ws_send_http_request_enc(l_fsm->trans_ctx->session_key, l_fsm->trans_ctx->session_key_id,
+                               l_priv->http_client, l_fsm->worker,
                                l_client->link_info.uplink_addr, l_client->link_info.uplink_port,
                                DAP_UPLINK_PATH_STREAM_CTL,
                                l_suburl, "type=tcp,maxconn=4", l_request, l_request_size,
@@ -912,7 +920,13 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         log_it(L_ERROR, "No client context for WebSocket session start");
         return -4;
     }
-    dap_client_t *l_client = (dap_client_t *)a_stream->trans_ctx->esocket->_inheritor;
+    dap_client_trans_ctx_t *l_client_esocket_sess =
+        (dap_client_trans_ctx_t *)a_stream->trans_ctx->esocket->_inheritor;
+    dap_client_t *l_client = l_client_esocket_sess ? l_client_esocket_sess->client : NULL;
+    if (!l_client) {
+        log_it(L_ERROR, "No client context for WebSocket session start");
+        return -4;
+    }
 
     log_it(L_INFO, "WebSocket session start: session_id=%u, sending upgrade to %s:%u",
            a_session_id, l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
@@ -966,7 +980,7 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 /**
  * @brief Read data from WebSocket transport
  *
- * Called by dap_client_esocket with (NULL, 0). This function:
+ * Called by dap_client_trans_ctx with (NULL, 0). This function:
  * 1. In CONNECTING state: handles HTTP 101 Switching Protocols response
  * 2. In OPEN state: de-frames WebSocket frames, feeds raw stream data to
  *    dap_stream_data_proc_read_ext(), and manages frame_buffer for partial packets

@@ -25,7 +25,9 @@
 #include "dap_net_trans_http_stream.h"
 #include "dap_client.h"
 #include "dap_client_fsm.h"
-#include "dap_client_esocket.h"
+#include "dap_client_trans_ctx.h"
+#include "dap_net_trans_ctx.h"
+#include "dap_list.h"
 #include "dap_stream.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_pkt.h"
@@ -42,9 +44,9 @@ static dap_stream_t *s_stream_from_client_esocket(dap_events_socket_t *a_es)
 {
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     if (l_client) {
-        dap_client_esocket_t *l_client_esocket = DAP_CLIENT_ESOCKET(l_client);
-        if (l_client_esocket)
-            return l_client_esocket->stream;
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+        if (l_fsm && l_fsm->trans_ctx)
+            return l_fsm->trans_ctx->stream;
     }
     return NULL;
 }
@@ -67,7 +69,7 @@ int dap_client_init()
         dap_http_client_init();
         err = dap_client_http_init();
         if (err) return err;
-        dap_client_esocket_init();
+        dap_client_trans_ctx_init();
         dap_client_fsm_init();
         dap_stream_set_client_esocket_callback(s_stream_from_client_esocket);
 
@@ -82,7 +84,7 @@ int dap_client_init()
 void dap_client_deinit()
 {
     dap_client_fsm_deinit();
-    dap_client_esocket_deinit();
+    dap_client_trans_ctx_deinit();
     dap_http_client_deinit();
     log_it(L_INFO, "Deinit DAP client module");
 }
@@ -121,8 +123,8 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
     }
     l_client->_internal = l_fsm;
 
-    debug_if(s_debug_more, L_DEBUG, "Created client %p (fsm=%p, esocket=%p, fsm_thread=%u)",
-             l_client, l_fsm, l_fsm->esocket, l_fsm->fsm_thread_idx);
+    debug_if(s_debug_more, L_DEBUG, "Created client %p (fsm=%p, trans_ctx=%p, fsm_thread=%u)",
+             l_client, l_fsm, l_fsm->trans_ctx, l_fsm->fsm_thread_idx);
 
     return l_client;
 }
@@ -159,11 +161,16 @@ ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint
         return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
 
     if (a_client->connect_on_demand) {
-        dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
         dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-        if (!l_es || !l_fsm) return -1;
+        if (!l_fsm) return -1;
 
-        dap_client_esocket_queue_add(l_es, a_ch_id, a_type, a_data, a_data_size);
+        dap_client_pkt_queue_elm_t *l_pkt = DAP_NEW_Z_SIZE(dap_client_pkt_queue_elm_t,
+                                                            sizeof(dap_client_pkt_queue_elm_t) + a_data_size);
+        l_pkt->ch_id = a_ch_id;
+        l_pkt->type = a_type;
+        l_pkt->data_size = a_data_size;
+        memcpy(l_pkt->data, a_data, a_data_size);
+        l_fsm->pkt_queue = dap_list_append(l_fsm->pkt_queue, l_pkt);
 
         if (a_client->stage_target == STAGE_STREAM_STREAMING &&
             l_fsm->stage_status == STAGE_STATUS_IN_PROGRESS)
@@ -211,9 +218,11 @@ int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_ty
 
 static void s_client_queue_clear_on_worker(void *a_arg)
 {
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET((dap_client_t *)a_arg);
-    if (l_es)
-        dap_client_esocket_queue_clear(l_es);
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM((dap_client_t *)a_arg);
+    if (l_fsm && l_fsm->pkt_queue) {
+        dap_list_free_full(l_fsm->pkt_queue, NULL);
+        l_fsm->pkt_queue = NULL;
+    }
 }
 
 void dap_client_queue_clear(dap_client_t *a_client)
@@ -264,8 +273,6 @@ void dap_client_delete_mt(dap_client_t *a_client)
     debug_if(s_debug_more, L_DEBUG, "Deleting client %p synchronously", a_client);
 
     l_fsm->is_removing = true;
-    if (l_fsm->esocket)
-        l_fsm->esocket->is_removing = true;
 
     dap_worker_exec_callback_on_sync(l_fsm->worker, s_client_delete_on_worker, a_client);
 
@@ -379,36 +386,41 @@ dap_client_stage_status_t dap_client_get_stage_status(dap_client_t *a_client)
 
 dap_enc_key_t *dap_client_get_key_stream(dap_client_t *a_client)
 {
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
-    return l_es ? l_es->stream_key : NULL;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    return l_tc ? l_tc->stream_key : NULL;
 }
 
 dap_stream_t *dap_client_get_stream(dap_client_t *a_client)
 {
     if (!a_client) return NULL;
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
-    return l_es ? l_es->stream : NULL;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    return l_tc ? l_tc->stream : NULL;
 }
 
 dap_stream_worker_t *dap_client_get_stream_worker(dap_client_t *a_client)
 {
     if (!a_client) return NULL;
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
-    return l_es ? l_es->stream_worker : NULL;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    return l_tc && l_tc->stream ? l_tc->stream->stream_worker : NULL;
 }
 
 dap_stream_ch_t *dap_client_get_stream_ch_unsafe(dap_client_t *a_client, uint8_t a_ch_id)
 {
-    dap_client_esocket_t *l_es = a_client ? DAP_CLIENT_ESOCKET(a_client) : NULL;
-    if (l_es && l_es->stream)
-        return dap_stream_ch_by_id_unsafe(l_es->stream, a_ch_id);
+    dap_client_fsm_t *l_fsm = a_client ? DAP_CLIENT_FSM(a_client) : NULL;
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    if (l_tc && l_tc->stream)
+        return dap_stream_ch_by_id_unsafe(l_tc->stream, a_ch_id);
     return NULL;
 }
 
 uint32_t dap_client_get_stream_id(dap_client_t *a_client)
 {
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
-    return l_es ? l_es->stream_id : 0;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    return l_tc ? l_tc->stream_id : 0;
 }
 
 bool dap_client_get_is_always_reconnect(dap_client_t *a_client)
@@ -441,8 +453,9 @@ dap_client_t *dap_client_from_esocket(dap_events_socket_t *a_esocket)
 
 const char *dap_client_get_auth_cookie(dap_client_t *a_client)
 {
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
-    return l_es ? l_es->session_key_id : NULL;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    return l_tc ? l_tc->session_key_id : NULL;
 }
 
 // ===== Request functions (thread-safe) =====
@@ -472,14 +485,15 @@ struct dap_client_request_enc_args {
 static void s_client_request_on_worker(void *a_arg)
 {
     struct dap_client_request_args *l_args = (struct dap_client_request_args *)a_arg;
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_args->client);
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_args->client);
+    dap_client_trans_ctx_t *l_tc = l_fsm ? l_fsm->client_trans_ctx : NULL;
 
-    if (!l_es) {
-        log_it(L_ERROR, "Invalid client_esocket in request");
+    if (!l_tc) {
+        log_it(L_ERROR, "Invalid client trans context in request");
     } else {
-        l_es->callback_arg = l_args->callback_arg;
+        l_fsm->callback_arg = l_args->callback_arg;
         if (l_args->client->trans_type == DAP_NET_TRANS_HTTP) {
-            dap_net_trans_http_request(l_es, l_args->path,
+            dap_net_trans_http_request(l_tc, l_args->path,
                                        l_args->request, l_args->request_size,
                                        l_args->response_proc, l_args->response_error);
         }
@@ -493,14 +507,15 @@ static void s_client_request_on_worker(void *a_arg)
 static void s_client_request_enc_on_worker(void *a_arg)
 {
     struct dap_client_request_enc_args *l_args = (struct dap_client_request_enc_args *)a_arg;
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_args->client);
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_args->client);
+    dap_net_trans_ctx_t *l_net_tc = l_fsm ? l_fsm->trans_ctx : NULL;
 
-    if (!l_es || !l_es->session_key) {
+    if (!l_fsm || !l_net_tc || !l_net_tc->session_key) {
         log_it(L_ERROR, "Invalid client or no session key for enc request");
     } else {
-        l_es->callback_arg = l_args->callback_arg;
+        l_fsm->callback_arg = l_args->callback_arg;
         if (l_args->client->trans_type == DAP_NET_TRANS_HTTP) {
-            dap_net_trans_http_request_enc(l_es, l_args->path,
+            dap_net_trans_http_request_enc(l_fsm->client_trans_ctx, l_args->path,
                                             l_args->sub_url, l_args->query,
                                             l_args->request, l_args->request_size,
                                             l_args->response_proc, l_args->response_error);
@@ -543,8 +558,8 @@ int dap_client_request_enc(dap_client_t *a_client, const char *a_path, const cha
 {
     dap_return_val_if_fail(a_client && a_path, -1);
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
-    dap_client_esocket_t *l_es = l_fsm ? l_fsm->esocket : NULL;
-    if (!l_es || !l_es->session_key) return -1;
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    if (!l_tc || !l_tc->session_key) return -1;
 
     struct dap_client_request_enc_args *l_args = DAP_NEW_Z(struct dap_client_request_enc_args);
     if (!l_args) return -1;

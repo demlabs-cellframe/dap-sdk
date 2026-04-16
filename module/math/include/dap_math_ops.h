@@ -3,6 +3,12 @@
 #include <assert.h>
 #include <signal.h>
 
+#ifdef __cplusplus
+#define DAP_STATIC_ASSERT(expr, msg) static_assert(expr, msg)
+#else
+#define DAP_STATIC_ASSERT(expr, msg) _Static_assert(expr, msg)
+#endif
+
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
 #endif
@@ -32,14 +38,15 @@ typedef union uint128 {
     struct{
          uint64_t lo;
          uint64_t hi;
-    } DAP_ALIGN_PACKED;
+    };
     struct{
         uint32_t c;
         uint32_t d;
         uint32_t a;
         uint32_t b;
-    } DAP_ALIGN_PACKED u32;
+    } u32;
 } uint128_t;
+DAP_STATIC_ASSERT(sizeof(uint128_t) == 16, "uint128_t must be 16 bytes");
 
 
 typedef union int128 {
@@ -56,38 +63,40 @@ typedef struct uint256 {
         struct {
             uint128_t hi;
             uint128_t lo;
-        } DAP_ALIGN_PACKED;
+        };
         struct {
             struct {
                 uint64_t a;
                 uint64_t b;
-            } DAP_ALIGN_PACKED _hi;
+            } _hi;
             struct {
                 uint64_t a;
                 uint64_t b;
-            } DAP_ALIGN_PACKED _lo;
-        } DAP_ALIGN_PACKED;
+            } _lo;
+        };
         struct {
             struct {
                 uint32_t c;
                 uint32_t d;
                 uint32_t a;
                 uint32_t b;
-            } DAP_ALIGN_PACKED __hi;
+            } __hi;
             struct {
                 uint32_t c;
                 uint32_t d;
                 uint32_t a;
                 uint32_t b;
-            }DAP_ALIGN_PACKED __lo;
-        } DAP_ALIGN_PACKED;
-    } DAP_ALIGN_PACKED;
-} DAP_ALIGN_PACKED uint256_t;
+            } __lo;
+        };
+    };
+} uint256_t;
+DAP_STATIC_ASSERT(sizeof(uint256_t) == 32, "uint256_t must be 32 bytes");
 
 typedef struct uint512 {
     uint256_t hi;
     uint256_t lo;
-} DAP_ALIGN_PACKED  uint512_t;
+} uint512_t;
+DAP_STATIC_ASSERT(sizeof(uint512_t) == 64, "uint512_t must be 64 bytes");
 
 #endif //defined(__GNUC__) || defined (__clang__)
 

@@ -26,8 +26,46 @@
 #include "dap_pkey.h"
 #include "dap_enc_base58.h"
 #include "dap_strfuncs.h"
+#include "dap_serialize.h"
 
 #define LOG_TAG "chain_key"
+
+_Static_assert(sizeof(((dap_pkey_t *)0)->header) == DAP_PKEY_HDR_WIRE_SIZE,
+               "dap_pkey.header wire size must match DAP_PKEY_HDR_WIRE_SIZE");
+
+const dap_serialize_field_t g_dap_pkey_hdr_fields[] = {
+    {
+        .name = "type_raw",
+        .type = DAP_SERIALIZE_TYPE_UINT16,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_pkey_hdr_mem_t, type_raw),
+        .size = sizeof(uint16_t),
+    },
+    {
+        .name = "header_pad",
+        .type = DAP_SERIALIZE_TYPE_UINT16,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_pkey_hdr_mem_t, _pad),
+        .size = sizeof(uint16_t),
+    },
+    {
+        .name = "size",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_pkey_hdr_mem_t, size),
+        .size = sizeof(uint32_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_pkey_hdr_schema = {
+    .name = "pkey_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_pkey_hdr_mem_t),
+    .field_count = sizeof(g_dap_pkey_hdr_fields) / sizeof(g_dap_pkey_hdr_fields[0]),
+    .fields = g_dap_pkey_hdr_fields,
+    .magic = DAP_PKEY_HDR_MAGIC,
+    .validate_func = NULL,
+};
 
 /**
  * @brief 
@@ -46,8 +84,12 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
     uint8_t *l_pkey = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
     if ( l_pkey && l_pub_key_size ) {
         l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_pkey_t, sizeof(dap_pkey_t) + l_pub_key_size, NULL, l_pkey);
-        *l_ret = (dap_pkey_t) { .header.type = l_type, .header.size = l_pub_key_size };
-        memcpy(l_ret->pkey, l_pkey, l_pub_key_size);
+        dap_pkey_hdr_mem_t l_hdr_mem = { .type_raw = l_type.raw, ._pad = 0, .size = (uint32_t)l_pub_key_size };
+        if (dap_pkey_hdr_pack(&l_hdr_mem, (uint8_t *)&l_ret->header, DAP_PKEY_HDR_WIRE_SIZE) != 0) {
+            DAP_DELETE(l_ret);
+            l_ret = NULL;
+        } else
+            memcpy(l_ret->pkey, l_pkey, l_pub_key_size);
     } else
         log_it(L_ERROR, "Pub key serialization failed");
     return DAP_DELETE(l_pkey), l_ret;
@@ -61,9 +103,17 @@ bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_hash_sha3_256_t *a_out_hash)
 dap_pkey_t *dap_pkey_get_from_sign(dap_sign_t *a_sign)
 {
     dap_return_val_if_fail(a_sign, NULL);
-    dap_pkey_t *l_pkey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_pkey_t, sizeof(dap_pkey_t) + a_sign->header.sign_pkey_size, NULL);
-    *l_pkey = (dap_pkey_t) { .header.size = a_sign->header.sign_pkey_size, .header.type = dap_pkey_type_from_sign_type(a_sign->header.type) };
-    memcpy(l_pkey->pkey, a_sign->pkey_n_sign, l_pkey->header.size);
+    dap_sign_hdr_mem_t l_sm;
+    if (dap_sign_hdr_unpack((const uint8_t *)&a_sign->header, DAP_SIGN_HDR_WIRE_SIZE, &l_sm) != 0)
+        return NULL;
+    dap_pkey_type_t l_ptype = dap_pkey_type_from_sign_type((dap_sign_type_t){ .raw = l_sm.type_raw });
+    dap_pkey_t *l_pkey = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_pkey_t, sizeof(dap_pkey_t) + l_sm.sign_pkey_size, NULL);
+    dap_pkey_hdr_mem_t l_ph = { .type_raw = l_ptype.raw, ._pad = 0, .size = l_sm.sign_pkey_size };
+    if (dap_pkey_hdr_pack(&l_ph, (uint8_t *)&l_pkey->header, DAP_PKEY_HDR_WIRE_SIZE) != 0) {
+        DAP_DELETE(l_pkey);
+        return NULL;
+    }
+    memcpy(l_pkey->pkey, a_sign->pkey_n_sign, l_sm.sign_pkey_size);
     return l_pkey;
 }
 

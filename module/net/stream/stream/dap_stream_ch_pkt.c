@@ -51,7 +51,67 @@
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_pkt.h"
 
+#include "dap_serialize.h"
+
 #define LOG_TAG "dap_stream_ch_pkt"
+
+/*
+ * dap_serialize schema for channel packet header wire ↔ aligned conversion
+ */
+const dap_serialize_field_t g_dap_stream_ch_pkt_hdr_fields[] = {
+    {
+        .name = "id",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_stream_ch_pkt_hdr_mem_t, id),
+        .size = sizeof(uint8_t),
+    },
+    {
+        .name = "enc_type",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_stream_ch_pkt_hdr_mem_t, enc_type),
+        .size = sizeof(uint8_t),
+    },
+    {
+        .name = "type",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_stream_ch_pkt_hdr_mem_t, type),
+        .size = sizeof(uint8_t),
+    },
+    {
+        .name = "padding",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_stream_ch_pkt_hdr_mem_t, padding),
+        .size = sizeof(uint8_t),
+    },
+    {
+        .name = "seq_id",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_stream_ch_pkt_hdr_mem_t, seq_id),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "data_size",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_stream_ch_pkt_hdr_mem_t, data_size),
+        .size = sizeof(uint32_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_stream_ch_pkt_hdr_schema = {
+    .name = "stream_ch_pkt_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_stream_ch_pkt_hdr_mem_t),
+    .field_count = sizeof(g_dap_stream_ch_pkt_hdr_fields) / sizeof(g_dap_stream_ch_pkt_hdr_fields[0]),
+    .fields = g_dap_stream_ch_pkt_hdr_fields,
+    .magic = DAP_STREAM_CH_PKT_HDR_MAGIC,
+    .validate_func = NULL,
+};
 
 /**
  * @brief stream_ch_pkt_init
@@ -282,7 +342,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     size_t  l_ret = 0, l_data_size,
             l_max_size = l_data_size = a_data_size + sizeof(dap_stream_ch_pkt_hdr_t);
 
-    dap_stream_ch_pkt_hdr_t l_hdr = {
+    dap_stream_ch_pkt_hdr_mem_t l_hdr = {
         .id         = a_ch->proc->id,
         .data_size  = (uint32_t)a_data_size,
         .type       = a_type,
@@ -312,8 +372,12 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_buf_size);
 
     if (l_data_size > 0 && l_data_size <= l_max_fragm_size) {
-        *(dap_stream_ch_pkt_hdr_t*)l_buf = l_hdr;
-        memcpy(l_buf + sizeof(dap_stream_ch_pkt_hdr_t), a_data, a_data_size);
+        if (dap_stream_ch_pkt_hdr_pack(&l_hdr, l_buf, l_buf_size) != 0) {
+            log_it(L_ERROR, "dap_stream_ch_pkt_write_unsafe: channel header pack failed");
+            DAP_DELETE(l_buf);
+            return 0;
+        }
+        memcpy(l_buf + DAP_STREAM_CH_PKT_HDR_WIRE_SIZE, a_data, a_data_size);
         l_ret = dap_stream_pkt_write_unsafe(a_ch->stream, STREAM_PKT_TYPE_DATA_PACKET, l_buf, l_data_size);
 #ifndef DAP_EVENTS_CAPS_IOCP
         dap_stream_ch_set_ready_to_write_unsafe(a_ch, true);

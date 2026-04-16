@@ -31,8 +31,87 @@
 #include "dap_file_utils.h"
 #include "dap_strfuncs.h"
 #include "dap_cert_file.h"
+#include "dap_serialize.h"
 
 #define LOG_TAG "dap_cert_file"
+
+_Static_assert(sizeof(int) == 4, "dap_cert_file_hdr.version wire is 4-byte int");
+_Static_assert(sizeof(dap_sign_type_t) == 4, "dap_cert_file_hdr.sign_type wire size");
+
+const dap_serialize_field_t g_dap_cert_file_hdr_fields[] = {
+    {
+        .name = "sign",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_cert_file_hdr_mem_t, sign),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "version",
+        .type = DAP_SERIALIZE_TYPE_INT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_cert_file_hdr_mem_t, version),
+        .size = sizeof(int32_t),
+    },
+    {
+        .name = "type",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_cert_file_hdr_mem_t, type),
+        .size = sizeof(uint8_t),
+    },
+    {
+        .name = "sign_type_raw",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_cert_file_hdr_mem_t, sign_type_raw),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "data_size",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_cert_file_hdr_mem_t, data_size),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "data_pvt_size",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_cert_file_hdr_mem_t, data_pvt_size),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "metadata_size",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_cert_file_hdr_mem_t, metadata_size),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "ts_last_used",
+        .type = DAP_SERIALIZE_TYPE_BYTES_FIXED,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_cert_file_hdr_mem_t, ts_last_used),
+        .size = sizeof(time_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_cert_file_hdr_schema = {
+    .name = "cert_file_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_cert_file_hdr_mem_t),
+    .field_count = sizeof(g_dap_cert_file_hdr_fields) / sizeof(g_dap_cert_file_hdr_fields[0]),
+    .fields = g_dap_cert_file_hdr_fields,
+    .magic = DAP_CERT_FILE_HDR_MAGIC,
+    .validate_func = NULL,
+};
+
+_Static_assert(
+    sizeof(dap_cert_file_hdr_t)
+        == (sizeof(uint64_t) + sizeof(int) + sizeof(uint8_t) + sizeof(dap_sign_type_t) + 3 * sizeof(uint64_t)
+            + sizeof(time_t)),
+    "dap_cert_file_hdr_t packed layout for dap_serialize");
 
 static const char s_key_inheritor[] = "inheritor";
 
@@ -287,16 +366,31 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
         return log_it(L_ERROR, "Neither pvt, nor pub key in certificate, nothing to do"), DAP_DELETE(l_metadata), NULL;
     uint64_t l_total_size = sizeof(dap_cert_file_hdr_t) + DAP_CERT_ITEM_NAME_MAX + l_priv_key_data_size + l_pub_key_data_size + l_metadata_size;
 
-    dap_cert_file_hdr_t l_hdr = {
-        .sign = dap_cert_FILE_HDR_SIGN, .version = dap_cert_FILE_VERSION,
+    dap_cert_file_hdr_mem_t l_hdr_mem = {
+        .sign = dap_cert_FILE_HDR_SIGN,
+        .version = dap_cert_FILE_VERSION,
         .type = l_priv_key_data ? dap_cert_FILE_TYPE_PRIVATE : dap_cert_FILE_TYPE_PUBLIC,
-        .sign_type = dap_sign_type_from_key_type( l_key->type ),
-        .data_size = l_pub_key_data_size, .data_pvt_size = l_priv_key_data_size, .metadata_size = l_metadata_size,
-        .ts_last_used = l_key->last_used_timestamp
+        .sign_type_raw = dap_sign_type_from_key_type(l_key->type).raw,
+        .data_size = l_pub_key_data_size,
+        .data_pvt_size = l_priv_key_data_size,
+        .metadata_size = l_metadata_size,
+        .ts_last_used = l_key->last_used_timestamp,
     };
-    uint8_t *l_data = DAP_VA_SERIALIZE_NEW(l_total_size, &l_hdr, (uint64_t)sizeof(l_hdr), a_cert->name, (uint64_t)sizeof(a_cert->name),
-                                           l_pub_key_data, (uint64_t)l_pub_key_data_size, l_priv_key_data, (uint64_t)l_priv_key_data_size,
-                                           l_metadata, (uint64_t)l_metadata_size );
+    uint8_t *l_data = DAP_NEW_Z_SIZE(uint8_t, l_total_size);
+    if (!l_data) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return DAP_DEL_MULTY(l_pub_key_data, l_priv_key_data, l_metadata), NULL;
+    }
+    if (dap_cert_file_hdr_pack(&l_hdr_mem, l_data, DAP_CERT_FILE_HDR_WIRE_SIZE) != 0) {
+        DAP_DELETE(l_data);
+        return DAP_DEL_MULTY(l_pub_key_data, l_priv_key_data, l_metadata), NULL;
+    }
+    if (!dap_serialize_multy(l_data + DAP_CERT_FILE_HDR_WIRE_SIZE, l_total_size - DAP_CERT_FILE_HDR_WIRE_SIZE,
+                             a_cert->name, (uint64_t)sizeof(a_cert->name), l_pub_key_data, (uint64_t)l_pub_key_data_size,
+                             l_priv_key_data, (uint64_t)l_priv_key_data_size, l_metadata, (uint64_t)l_metadata_size, DOOF_PTR)) {
+        DAP_DELETE(l_data);
+        return DAP_DEL_MULTY(l_pub_key_data, l_priv_key_data, l_metadata), NULL;
+    }
     if (a_cert_size_out)
         *a_cert_size_out = l_data ? l_total_size : 0;
     return DAP_DEL_MULTY(l_pub_key_data, l_priv_key_data, l_metadata), l_data;
@@ -357,20 +451,22 @@ dap_cert_t* dap_cert_mem_load(const void *a_data, size_t a_data_size)
     dap_return_val_if_fail_err(a_data_size > sizeof(dap_cert_file_hdr_t), NULL, "Inconsistent cert data");
     dap_cert_t *l_ret = NULL;
     const uint8_t *l_data = (const uint8_t*)a_data;
-    dap_cert_file_hdr_t l_hdr = *(dap_cert_file_hdr_t*)l_data;
-    l_data += sizeof(l_hdr);
-    if ( l_hdr.sign != dap_cert_FILE_HDR_SIGN )
+    dap_cert_file_hdr_mem_t l_hdr_mem;
+    if (dap_cert_file_hdr_unpack(l_data, a_data_size, &l_hdr_mem) != 0)
+        return log_it(L_ERROR, "Corrupted cert file header"), NULL;
+    l_data += DAP_CERT_FILE_HDR_WIRE_SIZE;
+    if ( l_hdr_mem.sign != dap_cert_FILE_HDR_SIGN )
         return log_it(L_ERROR, "Wrong cert signature, corrupted header!"), NULL;
-    else if ( l_hdr.version < 1 )
+    else if ( l_hdr_mem.version < 1 )
         return log_it(L_ERROR, "Unrecognizable certificate version, corrupted file or your software is deprecated"), NULL;
     debug_if( dap_enc_debug_more(), L_DEBUG,"sizeof(l_hdr)=%zu "
                                             "l_hdr.data_pvt_size=%"DAP_UINT64_FORMAT_U" "
                                             "l_hdr.data_size=%"DAP_UINT64_FORMAT_U" "
                                             "l_hdr.metadata_size=%"DAP_UINT64_FORMAT_U" "
                                             "a_data_size=%zu ",
-                                            sizeof(l_hdr), l_hdr.data_pvt_size, l_hdr.data_size,
-                                            l_hdr.metadata_size, a_data_size );
-    size_t l_size_req = sizeof(l_hdr) + DAP_CERT_ITEM_NAME_MAX + l_hdr.data_size + l_hdr.data_pvt_size + l_hdr.metadata_size;
+                                            (size_t)DAP_CERT_FILE_HDR_WIRE_SIZE, l_hdr_mem.data_pvt_size, l_hdr_mem.data_size,
+                                            l_hdr_mem.metadata_size, a_data_size );
+    size_t l_size_req = DAP_CERT_FILE_HDR_WIRE_SIZE + DAP_CERT_ITEM_NAME_MAX + l_hdr_mem.data_size + l_hdr_mem.data_pvt_size + l_hdr_mem.metadata_size;
 
     if ( l_size_req > a_data_size )
         return log_it(L_ERROR, "Cert data size exeeds file size, %zu > %zu", l_size_req, a_data_size), NULL;
@@ -378,24 +474,25 @@ dap_cert_t* dap_cert_mem_load(const void *a_data, size_t a_data_size)
     char l_name[DAP_CERT_ITEM_NAME_MAX];
     dap_strncpy(l_name, (const char*)l_data, sizeof(l_name));
     l_data += sizeof(l_name);
+    dap_sign_type_t l_sign_type = { .raw = l_hdr_mem.sign_type_raw };
     if (!( l_ret = dap_cert_new(l_name) ))
         return log_it(L_ERROR, "Can't create cert '%s'", l_name), NULL;
-    else if (!( l_ret->enc_key = dap_enc_key_new(dap_sign_type_to_key_type(l_hdr.sign_type)) ))
+    else if (!( l_ret->enc_key = dap_enc_key_new(dap_sign_type_to_key_type(l_sign_type)) ))
         return log_it(L_ERROR, "Can't init new key with sign type %s",
-                               dap_sign_type_to_str(l_hdr.sign_type)),
+                               dap_sign_type_to_str(l_sign_type)),
             dap_cert_delete(l_ret), NULL;
-    l_ret->enc_key->last_used_timestamp = l_hdr.ts_last_used;
+    l_ret->enc_key->last_used_timestamp = l_hdr_mem.ts_last_used;
     
-    if ( l_hdr.data_size ) {
-        dap_enc_key_deserialize_pub_key(l_ret->enc_key, l_data, l_hdr.data_size);
-        l_data += l_hdr.data_size;
+    if ( l_hdr_mem.data_size ) {
+        dap_enc_key_deserialize_pub_key(l_ret->enc_key, l_data, l_hdr_mem.data_size);
+        l_data += l_hdr_mem.data_size;
     }
-    if ( l_hdr.data_pvt_size ) {
-        dap_enc_key_deserialize_priv_key(l_ret->enc_key, l_data, l_hdr.data_pvt_size);
-        l_data += l_hdr.data_pvt_size;
+    if ( l_hdr_mem.data_pvt_size ) {
+        dap_enc_key_deserialize_priv_key(l_ret->enc_key, l_data, l_hdr_mem.data_pvt_size);
+        l_data += l_hdr_mem.data_pvt_size;
     }
-    if ( l_hdr.metadata_size )
-        dap_cert_deserialize_meta(l_ret, l_data, l_hdr.metadata_size);
+    if ( l_hdr_mem.metadata_size )
+        dap_cert_deserialize_meta(l_ret, l_data, l_hdr_mem.metadata_size);
     dap_enc_key_update(l_ret->enc_key);
     return l_ret;
 }

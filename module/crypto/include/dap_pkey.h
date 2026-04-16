@@ -27,6 +27,7 @@
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "dap_sign.h"
+#include "dap_serialize.h"
 
 enum dap_pkey_type_enum {
     DAP_PKEY_TYPE_NULL = 0x0000,
@@ -184,6 +185,39 @@ typedef struct dap_pkey {
     } DAP_PACKED header;
     uint8_t pkey[];             // Raw pkey data
 } DAP_PACKED dap_pkey_t;
+
+/**
+ * Wire layout of dap_pkey_t.header: u16 type + u16 implicit padding + u32 size (8 bytes).
+ * Naturally aligned in-memory form uses uint16_t type_raw instead of the union.
+ */
+#define DAP_PKEY_HDR_WIRE_SIZE 8
+typedef struct dap_pkey_hdr_mem {
+    uint16_t type_raw;
+    uint16_t _pad;
+    uint32_t size;
+} dap_pkey_hdr_mem_t;
+
+extern const dap_serialize_field_t g_dap_pkey_hdr_fields[];
+extern const dap_serialize_schema_t g_dap_pkey_hdr_schema;
+#define DAP_PKEY_HDR_MAGIC 0xDA5FEEDCU
+
+DAP_STATIC_INLINE int dap_pkey_hdr_pack(const dap_pkey_hdr_mem_t *a_mem,
+                                        uint8_t *a_wire, size_t a_wire_size)
+{
+    if (a_wire_size < DAP_PKEY_HDR_WIRE_SIZE) return -1;
+    dap_serialize_result_t r = dap_serialize_to_buffer_raw(
+        &g_dap_pkey_hdr_schema, a_mem, a_wire, a_wire_size, NULL);
+    return r.error_code;
+}
+
+DAP_STATIC_INLINE int dap_pkey_hdr_unpack(const uint8_t *a_wire, size_t a_wire_size,
+                                          dap_pkey_hdr_mem_t *a_mem)
+{
+    if (a_wire_size < DAP_PKEY_HDR_WIRE_SIZE) return -1;
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+        &g_dap_pkey_hdr_schema, a_wire, a_wire_size, a_mem, NULL);
+    return r.error_code;
+}
 
 DAP_STATIC_INLINE size_t dap_pkey_get_size(const dap_pkey_t *a_pkey) { return a_pkey ? sizeof(dap_pkey_t) + a_pkey->header.size : 0; }
 

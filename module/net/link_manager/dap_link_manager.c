@@ -30,8 +30,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_worker.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"
-#include "dap_client_esocket.h"
 #include "dap_client_fsm.h"
+#include "dap_net_trans_ctx.h"
 #include "dap_net.h"
 #include "dap_ht.h"
 #include "dap_dl.h"
@@ -595,8 +595,10 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
         l_link->uplink.attempts_count = 0;
         l_link->uplink.state = LINK_STATE_ESTABLISHED;
-        dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
-        l_link->uplink.es_uuid = l_es && l_es->stream_es ? l_es->stream_es->uuid : 0;
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+        dap_events_socket_t *l_stream_es = (l_fsm && l_fsm->trans_ctx && l_fsm->trans_ctx->transport_priv)
+            ? (dap_events_socket_t *)l_fsm->trans_ctx->transport_priv : NULL;
+        l_link->uplink.es_uuid = l_stream_es ? l_stream_es->uuid : 0;
     } else
         log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS(l_addr));
     pthread_rwlock_unlock(&s_link_manager->links_lock);

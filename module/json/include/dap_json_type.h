@@ -100,7 +100,7 @@ typedef struct dap_json_value {
     uint8_t flags;      /**< Optimization flags (escaped, cached, etc) */
     uint16_t length;    /**< Length in source buffer (0-64KB) */
     uint32_t offset;    /**< Start offset in source buffer (0-4GB) */
-} DAP_ALIGN_PACKED dap_json_value_t;
+} dap_json_value_t;
 
 // Compile-time assertion: ensure 8 bytes
 #ifdef __cplusplus

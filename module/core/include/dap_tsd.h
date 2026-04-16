@@ -23,12 +23,50 @@ This file is part of DAP SDK the open source project
 #pragma once
 #include "dap_common.h"
 #include "dap_list.h"
+#include "dap_serialize.h"
 
+/**
+ * Wire-format TSD (Type-Size-Data) element (packed, 6-byte header + FAM).
+ */
 typedef struct dap_tsd {
     uint16_t type;
     uint32_t size;
     byte_t data[];
 } DAP_ALIGN_PACKED dap_tsd_t;
+
+#define DAP_TSD_HDR_WIRE_SIZE 6
+_Static_assert(sizeof(dap_tsd_t) == DAP_TSD_HDR_WIRE_SIZE, "dap_tsd_t header wire size");
+
+/**
+ * Aligned in-memory version of TSD header (no FAM).
+ * Use memcpy for data[] separately after unpacking the header.
+ */
+typedef struct dap_tsd_hdr_mem {
+    uint16_t type;
+    uint32_t size;
+} dap_tsd_hdr_mem_t;
+
+extern const dap_serialize_field_t g_dap_tsd_hdr_fields[];
+extern const dap_serialize_schema_t g_dap_tsd_hdr_schema;
+#define DAP_TSD_HDR_MAGIC 0xDA5FEED4U
+
+static inline int dap_tsd_hdr_pack(const dap_tsd_hdr_mem_t *a_mem,
+                                    uint8_t *a_wire, size_t a_wire_size)
+{
+    if (a_wire_size < DAP_TSD_HDR_WIRE_SIZE) return -1;
+    dap_serialize_result_t r = dap_serialize_to_buffer_raw(
+        &g_dap_tsd_hdr_schema, a_mem, a_wire, a_wire_size, NULL);
+    return r.error_code;
+}
+
+static inline int dap_tsd_hdr_unpack(const uint8_t *a_wire, size_t a_wire_size,
+                                      dap_tsd_hdr_mem_t *a_mem)
+{
+    if (a_wire_size < DAP_TSD_HDR_WIRE_SIZE) return -1;
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+        &g_dap_tsd_hdr_schema, a_wire, a_wire_size, a_mem, NULL);
+    return r.error_code;
+}
 
 byte_t     *dap_tsd_write   (byte_t *a_ptr, uint16_t a_type, const void *a_data, size_t a_data_size);
 dap_tsd_t  *dap_tsd_create  (uint16_t a_type, const void *a_data, size_t a_data_size);

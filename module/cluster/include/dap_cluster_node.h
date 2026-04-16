@@ -30,7 +30,8 @@ typedef union dap_cluster_node_addr {
     uint64_t uint64;
     uint16_t words[sizeof(uint64_t) / 2];
     uint8_t raw[sizeof(uint64_t)];
-} DAP_ALIGN_PACKED dap_cluster_node_addr_t;
+} dap_cluster_node_addr_t;
+_Static_assert(sizeof(dap_cluster_node_addr_t) == 8, "node_addr must be 8 bytes");
 
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define NODE_ADDR_FP_STR        "%04hX::%04hX::%04hX::%04hX"

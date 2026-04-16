@@ -51,7 +51,7 @@ extern "C" {
 /*  Wire formats (packed, fits into 800-byte handshake slot)                  */
 /* ========================================================================== */
 
-typedef struct DAP_ALIGN_PACKED {
+typedef struct {
     uint32_t magic;       /* DAP_QOS_PROBE_MAGIC                    */
     uint8_t  type;        /* DAP_QOS_TYPE_PROBE or DAP_QOS_TYPE_BW_REQUEST */
     uint8_t  _pad[3];
@@ -60,8 +60,9 @@ typedef struct DAP_ALIGN_PACKED {
     uint32_t bw_bytes;    /* BW_REQUEST only: how many bytes to send */
     uint32_t _reserved;
 } dap_qos_probe_pkt_t;   /* 32 bytes; rest of 800 is random padding */
+_Static_assert(sizeof(dap_qos_probe_pkt_t) == 32, "dap_qos_probe_pkt_t wire size");
 
-typedef struct DAP_ALIGN_PACKED {
+typedef struct {
     uint32_t magic;       /* DAP_QOS_ECHO_MAGIC                     */
     uint8_t  type;        /* DAP_QOS_TYPE_ECHO or DAP_QOS_TYPE_BW_DATA */
     uint8_t  _pad[3];
@@ -69,6 +70,7 @@ typedef struct DAP_ALIGN_PACKED {
     uint64_t client_ts;   /* echoed from probe                       */
     uint64_t server_ts;   /* server CLOCK_MONOTONIC nanoseconds      */
 } dap_qos_echo_pkt_t;    /* 32 bytes; rest of response is random/data */
+_Static_assert(sizeof(dap_qos_echo_pkt_t) == 32, "dap_qos_echo_pkt_t wire size");
 
 /* ========================================================================== */
 /*  Server-side handlers                                                      */

@@ -22,7 +22,8 @@
 #include "dap_strfuncs.h"
 #include "dap_config.h"
 #include "dap_client_fsm.h"
-#include "dap_client_esocket.h"
+#include "dap_client_trans_ctx.h"
+#include "dap_net_trans_ctx.h"
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc.h"
@@ -249,29 +250,32 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     // Mark initial transport as tried
     l_fsm->tried_transports[l_fsm->tried_transport_count++] = a_client->trans_type;
 
-    // Create esocket context
-    l_fsm->esocket = DAP_NEW_Z(dap_client_esocket_t);
-    if (!l_fsm->esocket) {
+    l_fsm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (!l_fsm->trans_ctx) {
         DAP_DELETE(l_fsm->tried_transports);
         DAP_DELETE(l_fsm);
         return NULL;
     }
-    l_fsm->esocket->uuid = dap_uuid_generate_uint64();
-    l_fsm->esocket->client = a_client;
-    l_fsm->esocket->worker = l_fsm->worker;
-    l_fsm->esocket->fsm_uuid = l_fsm->uuid;
-    l_fsm->esocket->fsm_thread_idx = l_fsm->fsm_thread_idx;
-    l_fsm->esocket->session_key_type = l_fsm->session_key_type;
-    l_fsm->esocket->session_key_open_type = l_fsm->session_key_open_type;
-    l_fsm->esocket->session_key_block_size = l_fsm->session_key_block_size;
-    l_fsm->esocket->uplink_protocol_version = DAP_PROTOCOL_VERSION;
-    dap_client_esocket_new(l_fsm->esocket);
+    l_fsm->trans_ctx->uplink_protocol_version = DAP_PROTOCOL_VERSION;
 
-    // Register FSM in global table
+    l_fsm->client_trans_ctx = DAP_NEW_Z(dap_client_trans_ctx_t);
+    if (!l_fsm->client_trans_ctx) {
+        DAP_DELETE(l_fsm->trans_ctx);
+        DAP_DELETE(l_fsm->tried_transports);
+        DAP_DELETE(l_fsm);
+        return NULL;
+    }
+    l_fsm->client_trans_ctx->uuid = dap_uuid_generate_uint64();
+    l_fsm->client_trans_ctx->client = a_client;
+    l_fsm->client_trans_ctx->fsm_uuid = l_fsm->uuid;
+    l_fsm->client_trans_ctx->fsm_thread_idx = l_fsm->fsm_thread_idx;
+    l_fsm->trans_ctx->_inheritor = l_fsm->client_trans_ctx;
+    dap_client_trans_ctx_new(l_fsm->client_trans_ctx);
+
     dap_client_fsm_register(l_fsm);
 
-    debug_if(s_debug_more, L_DEBUG, "FSM %p created (uuid=0x%016" PRIx64 ", proc_thread=%u, esocket=%p)",
-             l_fsm, l_fsm->uuid, l_fsm->fsm_thread_idx, l_fsm->esocket);
+    debug_if(s_debug_more, L_DEBUG, "FSM %p created (uuid=0x%016" PRIx64 ", proc_thread=%u, trans_ctx=%p)",
+             l_fsm, l_fsm->uuid, l_fsm->fsm_thread_idx, l_fsm->trans_ctx);
 
     return l_fsm;
 }
@@ -285,11 +289,26 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
 
     dap_client_fsm_unregister(a_fsm);
 
-    if (a_fsm->esocket) {
-        dap_client_esocket_delete_unsafe(a_fsm->esocket);
-        a_fsm->esocket = NULL;
+    if (a_fsm->client_trans_ctx) {
+        dap_client_trans_ctx_delete_unsafe(a_fsm->client_trans_ctx);
+        a_fsm->client_trans_ctx = NULL;
     }
-
+    if (a_fsm->trans_ctx) {
+        DAP_DEL_Z(a_fsm->trans_ctx->session_key_id);
+        if (a_fsm->trans_ctx->session_key_open)
+            dap_enc_key_delete(a_fsm->trans_ctx->session_key_open);
+        if (a_fsm->trans_ctx->session_key)
+            dap_enc_key_delete(a_fsm->trans_ctx->session_key);
+        if (a_fsm->trans_ctx->stream_key)
+            dap_enc_key_delete(a_fsm->trans_ctx->stream_key);
+        if (a_fsm->trans_ctx->stream)
+            dap_stream_delete_unsafe(a_fsm->trans_ctx->stream);
+        DAP_DEL_Z(a_fsm->trans_ctx);
+    }
+    if (a_fsm->pkt_queue) {
+        dap_list_free_full(a_fsm->pkt_queue, NULL);
+        a_fsm->pkt_queue = NULL;
+    }
     DAP_DEL_Z(a_fsm->tried_transports);
     DAP_DELETE(a_fsm);
 }
@@ -452,21 +471,21 @@ static void s_qos_handshake_callback(dap_stream_t *a_stream, const void *a_data,
     dap_client_t *l_client = NULL;
     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
         l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
-    else if (a_stream->trans_ctx && a_stream->trans_ctx->esocket && a_stream->trans_ctx->esocket->_inheritor)
-        l_client = (dap_client_t *)a_stream->trans_ctx->esocket->_inheritor;
+    else if (a_stream->trans_ctx && a_stream->trans_ctx->_inheritor)
+        l_client = ((dap_client_trans_ctx_t *)a_stream->trans_ctx->_inheritor)->client;
 
     if (!l_client)
         return;
 
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_es)
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    if (!l_fsm)
         return;
 
     if (a_error != 0) {
         log_it(L_WARNING, "QoS probe handshake error %d", a_error);
         dap_client_error_t l_err = (a_error == ETIMEDOUT)
             ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_NETWORK_CONNECTION_REFUSE;
-        dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
+        dap_client_fsm_notify(l_fsm->uuid, l_fsm->fsm_thread_idx,
                               STAGE_STATUS_ERROR, l_err);
         return;
     }
@@ -474,15 +493,51 @@ static void s_qos_handshake_callback(dap_stream_t *a_stream, const void *a_data,
     if (a_data && a_data_size >= sizeof(dap_qos_echo_pkt_t)) {
         const dap_qos_echo_pkt_t *l_echo = (const dap_qos_echo_pkt_t *)a_data;
         if (l_echo->magic == DAP_QOS_ECHO_MAGIC) {
-            dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
+            dap_client_fsm_notify(l_fsm->uuid, l_fsm->fsm_thread_idx,
                                   STAGE_STATUS_DONE, ERROR_NO_ERROR);
             return;
         }
     }
 
     log_it(L_WARNING, "QoS probe: invalid echo response (size=%zu)", a_data_size);
-    dap_client_fsm_notify(l_es->fsm_uuid, l_es->fsm_thread_idx,
+    dap_client_fsm_notify(l_fsm->uuid, l_fsm->fsm_thread_idx,
                           STAGE_STATUS_ERROR, ERROR_STREAM_RESPONSE_WRONG);
+}
+
+static void s_worker_cleanup_trans_ctx(void *a_arg)
+{
+    fsm_worker_dispatch_t *l_ctx = (fsm_worker_dispatch_t *)a_arg;
+    if (!l_ctx) return;
+
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_ctx->client);
+    if (l_fsm && l_fsm->trans_ctx) {
+        if (l_fsm->trans_ctx->stream) {
+            dap_stream_delete_unsafe(l_fsm->trans_ctx->stream);
+            l_fsm->trans_ctx->stream = NULL;
+        }
+        DAP_DEL_Z(l_fsm->trans_ctx->session_key_id);
+        if (l_fsm->trans_ctx->session_key_open) {
+            dap_enc_key_delete(l_fsm->trans_ctx->session_key_open);
+            l_fsm->trans_ctx->session_key_open = NULL;
+        }
+        if (l_fsm->trans_ctx->session_key) {
+            dap_enc_key_delete(l_fsm->trans_ctx->session_key);
+            l_fsm->trans_ctx->session_key = NULL;
+        }
+        if (l_fsm->trans_ctx->stream_key) {
+            dap_enc_key_delete(l_fsm->trans_ctx->stream_key);
+            l_fsm->trans_ctx->stream_key = NULL;
+        }
+        l_fsm->trans_ctx->stream_id = 0;
+        l_fsm->trans_ctx->authorized = false;
+    }
+    if (l_fsm) {
+        l_fsm->is_encrypted = false;
+        l_fsm->is_encrypted_headers = false;
+        l_fsm->is_close_session = false;
+        l_fsm->is_closed_by_timeout = false;
+    }
+    DAP_DELETE(l_ctx);
 }
 
 // ===== Worker-side stage execution (called on worker thread) =====
@@ -493,22 +548,48 @@ static void s_worker_execute_stage(void *a_arg)
     if (!l_ctx) return;
 
     dap_client_t *l_client = l_ctx->client;
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_es) {
-        log_it(L_ERROR, "No esocket for stage execution");
+    dap_client_fsm_t *l_fsm_w = DAP_CLIENT_FSM(l_client);
+    if (!l_fsm_w || !l_fsm_w->trans_ctx) {
+        log_it(L_ERROR, "No FSM/trans_ctx for stage execution");
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
         DAP_DELETE(l_ctx);
         return;
     }
 
-    dap_worker_t *l_worker = l_es->worker;
+    dap_net_trans_ctx_t *l_tc = l_fsm_w->trans_ctx;
+    dap_worker_t *l_worker = l_fsm_w->worker;
     dap_client_stage_t l_stage = l_ctx->stage;
 
     switch (l_stage) {
     case STAGE_BEGIN: {
-        // Clean esocket resources
-        dap_client_esocket_clean_unsafe(l_es);
+        if (l_tc->stream) {
+            dap_stream_delete_unsafe(l_tc->stream);
+            l_tc->stream = NULL;
+        }
+        DAP_DEL_Z(l_tc->session_key_id);
+        if (l_tc->session_key_open) {
+            dap_enc_key_delete(l_tc->session_key_open);
+            l_tc->session_key_open = NULL;
+        }
+        if (l_tc->session_key) {
+            dap_enc_key_delete(l_tc->session_key);
+            l_tc->session_key = NULL;
+        }
+        if (l_tc->stream_key) {
+            dap_enc_key_delete(l_tc->stream_key);
+            l_tc->stream_key = NULL;
+        }
+        l_tc->stream_id = 0;
+        l_tc->authorized = false;
+        l_tc->remote_protocol_version = 0;
+        l_tc->transport_priv = NULL;
+        l_fsm_w->is_encrypted = false;
+        l_fsm_w->is_encrypted_headers = false;
+        l_fsm_w->is_close_session = false;
+        l_fsm_w->is_closed_by_timeout = false;
+        if (l_fsm_w->client_trans_ctx)
+            l_fsm_w->client_trans_ctx->ts_last_active = 0;
         // Notify FSM: BEGIN done
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_DONE, ERROR_NO_ERROR);
@@ -535,7 +616,7 @@ static void s_worker_execute_stage(void *a_arg)
             break;
         }
 
-        if (!l_es->stream) {
+        if (!l_tc->stream) {
             log_it(L_ERROR, "No stream for session_create");
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
@@ -544,15 +625,15 @@ static void s_worker_execute_stage(void *a_arg)
 
         dap_net_session_params_t l_session_params = {
             .channels = l_client->active_channels,
-            .enc_type = l_es->session_key_type,
-            .enc_key_size = l_es->session_key_block_size,
+            .enc_type = l_fsm_w->session_key_type,
+            .enc_key_size = l_fsm_w->session_key_block_size,
             .enc_headers = false,
             .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
-            .session_key = l_es->session_key,
-            .session_key_id = l_es->session_key_id
+            .session_key = l_tc->session_key,
+            .session_key_id = l_tc->session_key_id
         };
 
-        int l_ret = l_transport->ops->session_create(l_es->stream, &l_session_params,
+        int l_ret = l_transport->ops->session_create(l_tc->stream, &l_session_params,
                                                       s_session_create_callback_wrapper);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to initiate session create: %d", l_ret);
@@ -566,32 +647,30 @@ static void s_worker_execute_stage(void *a_arg)
     case STAGE_STREAM_SESSION: {
         debug_if(s_debug_more, L_INFO, "Worker: executing STAGE_STREAM_SESSION for client %p", l_client);
 
-        if (!l_es->stream) {
+        if (!l_tc->stream) {
             log_it(L_ERROR, "No stream for STAGE_STREAM_SESSION");
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
             break;
         }
 
-        if (!l_es->stream->session || !l_es->stream->session->key) {
-            l_es->stream->session = dap_stream_session_pure_new();
-            if (!l_es->stream->session) {
+        if (!l_tc->stream->session || !l_tc->stream->session->key) {
+            l_tc->stream->session = dap_stream_session_pure_new();
+            if (!l_tc->stream->session) {
                 dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                       STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
                 break;
             }
-            l_es->stream->session->key = l_es->stream_key;
+            l_tc->stream->session->key = l_tc->stream_key;
         }
 
         if (l_worker->_inheritor) {
-            l_es->stream_worker = DAP_STREAM_WORKER(l_worker);
-            l_es->stream->stream_worker = l_es->stream_worker;
+            l_tc->stream->stream_worker = DAP_STREAM_WORKER(l_worker);
         } else {
-            l_es->stream_worker = NULL;
-            l_es->stream->stream_worker = NULL;
+            l_tc->stream->stream_worker = NULL;
         }
 
-        dap_net_trans_t *l_transport = l_es->stream->trans;
+        dap_net_trans_t *l_transport = l_tc->stream->trans;
         if (!l_transport) {
             log_it(L_ERROR, "Stream has no transport");
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
@@ -600,7 +679,7 @@ static void s_worker_execute_stage(void *a_arg)
         }
 
         if (l_transport->ops && l_transport->ops->connect) {
-            int l_ret = l_transport->ops->connect(l_es->stream,
+            int l_ret = l_transport->ops->connect(l_tc->stream,
                                                    l_client->link_info.uplink_addr,
                                                    l_client->link_info.uplink_port,
                                                    s_stream_transport_connect_callback);
@@ -610,8 +689,8 @@ static void s_worker_execute_stage(void *a_arg)
                                       STAGE_STATUS_ERROR, ERROR_STREAM_CONNECT);
                 break;
             }
-        } else if (l_es->stream_es) {
-            dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_DUP(&l_es->stream_es->uuid);
+        } else if (l_tc->stream->esocket) {
+            dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_DUP(&l_tc->stream->esocket->uuid);
             if (!dap_timerfd_start_on_worker(l_worker,
                                              (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                              s_stream_timer_timeout_check, l_es_uuid_ptr)) {
@@ -631,7 +710,7 @@ static void s_worker_execute_stage(void *a_arg)
     case STAGE_STREAM_CONNECTED: {
         debug_if(s_debug_more, L_INFO, "Worker: executing STAGE_STREAM_CONNECTED for client %p", l_client);
 
-        if (!l_es->stream) {
+        if (!l_tc->stream) {
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
             break;
@@ -640,29 +719,30 @@ static void s_worker_execute_stage(void *a_arg)
         // Create channels
         size_t l_count_channels = dap_strlen(l_client->active_channels);
         for (size_t i = 0; i < l_count_channels; i++)
-            dap_stream_ch_new(l_es->stream, (uint8_t)l_client->active_channels[i]);
+            dap_stream_ch_new(l_tc->stream, (uint8_t)l_client->active_channels[i]);
 
         // Install stream callbacks on the esocket BEFORE session_start sends data
         // This ensures read/write/error/delete are handled when server responds
         // CRITICAL: For datagram transports (UDP/DNS), the transport layer has already
         // installed its own read_callback that handles decryption, Flow Control, etc.
         // Overwriting it would break the transport's read path!
-        if (l_es->stream_es) {
+        if (l_tc->stream->esocket) {
+            dap_events_socket_t *l_stream_es = l_tc->stream->esocket;
             dap_events_socket_callbacks_t l_stream_cbs;
-            dap_client_esocket_get_stream_callbacks(&l_stream_cbs);
-            bool l_is_datagram = (l_es->stream_es->type == DESCRIPTOR_TYPE_SOCKET_UDP);
+            dap_client_trans_ctx_get_stream_callbacks(&l_stream_cbs);
+            bool l_is_datagram = (l_stream_es->type == DESCRIPTOR_TYPE_SOCKET_UDP);
             if (!l_is_datagram) {
-                l_es->stream_es->callbacks.read_callback = l_stream_cbs.read_callback;
+                l_stream_es->callbacks.read_callback = l_stream_cbs.read_callback;
             }
-            l_es->stream_es->callbacks.write_callback = l_stream_cbs.write_callback;
-            l_es->stream_es->callbacks.error_callback = l_stream_cbs.error_callback;
-            l_es->stream_es->callbacks.delete_callback = l_stream_cbs.delete_callback;
+            l_stream_es->callbacks.write_callback = l_stream_cbs.write_callback;
+            l_stream_es->callbacks.error_callback = l_stream_cbs.error_callback;
+            l_stream_es->callbacks.delete_callback = l_stream_cbs.delete_callback;
         }
 
-        dap_net_trans_t *l_transport = l_es->stream->trans;
+        dap_net_trans_t *l_transport = l_tc->stream->trans;
         if (l_transport && l_transport->ops && l_transport->ops->session_start) {
             int l_start_ret = l_transport->ops->session_start(
-                l_es->stream, l_es->stream_id, s_session_start_callback_wrapper);
+                l_tc->stream, l_tc->stream_id, s_session_start_callback_wrapper);
             if (l_start_ret != 0) {
                 log_it(L_ERROR, "Session start failed: %d", l_start_ret);
                 dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
@@ -670,10 +750,10 @@ static void s_worker_execute_stage(void *a_arg)
                 break;
             }
         } else {
-            if (l_es->stream_es) {
+            if (l_tc->stream->esocket) {
                 dap_events_socket_uuid_t *l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
                 if (l_es_uuid_ptr) {
-                    *l_es_uuid_ptr = l_es->stream_es->uuid;
+                    *l_es_uuid_ptr = l_tc->stream->esocket->uuid;
                     if (!dap_timerfd_start_on_worker(l_worker,
                                                      s_client_timeout_active_after_connect_seconds * 1024,
                                                      s_stream_timer_timeout_after_connected_check, l_es_uuid_ptr)) {
@@ -712,10 +792,12 @@ static void s_worker_execute_stage(void *a_arg)
             .connected_callback = NULL
         };
 
+        dap_cluster_node_addr_t l_node_addr;
+        memcpy(&l_node_addr, &l_client->link_info.node_addr, sizeof(l_node_addr));
         dap_net_stage_prepare_params_t l_prepare_params = {
             .host = l_client->link_info.uplink_addr,
             .port = l_client->link_info.uplink_port,
-            .node_addr = &l_client->link_info.node_addr,
+            .node_addr = &l_node_addr,
             .authorized = false,
             .callbacks = &s_qos_callbacks,
             .client_ctx = l_client,
@@ -741,8 +823,8 @@ static void s_worker_execute_stage(void *a_arg)
             break;
         }
 
-        l_es->stream = l_prepare_result.stream;
-        l_es->stream_es = l_prepare_result.esocket;
+        l_tc->stream = l_prepare_result.stream;
+        l_tc->transport_priv = l_prepare_result.esocket;
 
         #define DAP_QOS_PROBE_PAYLOAD_SIZE 800
         uint8_t *l_probe_buf = DAP_NEW_Z_SIZE(uint8_t, DAP_QOS_PROBE_PAYLOAD_SIZE);
@@ -769,7 +851,7 @@ static void s_worker_execute_stage(void *a_arg)
             .sign_count = 0
         };
 
-        int l_hs_ret = l_transport->ops->handshake_init(l_es->stream, &l_hs_params,
+        int l_hs_ret = l_transport->ops->handshake_init(l_tc->stream, &l_hs_params,
                                                          s_qos_handshake_callback);
         if (l_hs_ret != 0) {
             log_it(L_ERROR, "Failed to initiate QoS probe handshake: %d", l_hs_ret);
@@ -806,11 +888,8 @@ static bool s_stream_timer_timeout_check(void *a_arg)
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
         if (l_client) {
             dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-            if (l_fsm) {
-                dap_client_esocket_t *l_client_es = l_fsm->esocket;
-                if (l_client_es)
-                    l_client_es->is_closed_by_timeout = true;
-            }
+            if (l_fsm)
+                l_fsm->is_closed_by_timeout = true;
             log_it(L_WARNING, "Connecting timeout for stream uplink %s:%u",
                    l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
         }
@@ -840,16 +919,16 @@ static bool s_stream_timer_timeout_after_connected_check(void *a_arg)
             DAP_DELETE(l_es_uuid_ptr);
             return false;
         }
-        dap_client_esocket_t *l_client_es = DAP_CLIENT_ESOCKET(l_client);
-        if (!l_client_es || l_client_es->is_removing) {
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+        if (!l_fsm || l_fsm->is_removing || !l_fsm->client_trans_ctx) {
             DAP_DELETE(l_es_uuid_ptr);
             return false;
         }
 
-        if (dap_time_now() - l_client_es->ts_last_active >= (dap_time_t)s_client_timeout_active_after_connect_seconds) {
+        if (dap_time_now() - l_fsm->client_trans_ctx->ts_last_active >= (dap_time_t)s_client_timeout_active_after_connect_seconds) {
             log_it(L_WARNING, "Activity timeout for streaming uplink %s:%u",
                    l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
-            l_client_es->is_closed_by_timeout = true;
+            l_fsm->is_closed_by_timeout = true;
             if (l_es->callbacks.error_callback)
                 l_es->callbacks.error_callback(l_es, ETIMEDOUT);
             dap_events_socket_remove_and_delete_unsafe(l_es, true);
@@ -878,6 +957,10 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
 
     case STAGE_STATUS_ERROR: {
         bool l_is_last_attempt = a_fsm->reconnect_attempts >= s_max_attempts;
+
+        /*  NB: error callback arg is (void*)(intptr_t)is_last_attempt, NOT callbacks_arg.
+         *  Callbacks must use a_client->callbacks_arg for user data.
+         *  This differs from stage_target_done_callback which passes callbacks_arg. */
 
         if (!l_is_last_attempt) {
             if (!a_fsm->reconnect_attempts) {
@@ -933,15 +1016,11 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                 }
             }
         } else {
-            // Final error, clean up on worker
-            // Dispatch STAGE_BEGIN to clean resources
+            s_set_stage_and_status(a_fsm, STAGE_BEGIN, STAGE_STATUS_NONE);
             fsm_worker_dispatch_t *l_dispatch = DAP_NEW_Z(fsm_worker_dispatch_t);
             if (l_dispatch) {
-                l_dispatch->fsm_uuid = a_fsm->uuid;
-                l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
                 l_dispatch->client = a_fsm->client;
-                l_dispatch->stage = STAGE_BEGIN;
-                dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+                dap_worker_exec_callback_on(a_fsm->worker, s_worker_cleanup_trans_ctx, l_dispatch);
             }
         }
     } break;
@@ -956,23 +1035,21 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
         if (l_is_last_stage) {
             s_set_stage_status(a_fsm, STAGE_STATUS_COMPLETE);
 
-            if (a_fsm->esocket && a_fsm->esocket->stream)
-                dap_stream_add_to_list(a_fsm->esocket->stream);
+            if (a_fsm->trans_ctx && a_fsm->trans_ctx->stream)
+                dap_stream_add_to_list(a_fsm->trans_ctx->stream);
 
             if (a_fsm->client->stage_target_done_callback) {
                 log_it(L_NOTICE, "Stage %s achieved", dap_client_stage_str(a_fsm->stage));
                 a_fsm->client->stage_target_done_callback(a_fsm->client, a_fsm->client->callbacks_arg);
             }
 
-            // Send queued packets (needs worker)
-            if (a_fsm->stage == STAGE_STREAM_STREAMING && a_fsm->esocket && a_fsm->esocket->pkt_queue) {
-                // Send queued packets on worker
-                for (dap_list_t *it = a_fsm->esocket->pkt_queue; it; it = it->next) {
+            if (a_fsm->stage == STAGE_STREAM_STREAMING && a_fsm->pkt_queue) {
+                for (dap_list_t *it = a_fsm->pkt_queue; it; it = it->next) {
                     dap_client_pkt_queue_elm_t *l_pkt = it->data;
                     dap_client_write_unsafe(a_fsm->client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
                 }
-                dap_list_free_full(a_fsm->esocket->pkt_queue, NULL);
-                a_fsm->esocket->pkt_queue = NULL;
+                dap_list_free_full(a_fsm->pkt_queue, NULL);
+                a_fsm->pkt_queue = NULL;
             }
         } else {
             // Advance to next stage
@@ -998,6 +1075,9 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
         }
     } break;
 
+    case STAGE_STATUS_NONE:
+        break;
+
     default:
         log_it(L_ERROR, "Unknown stage status %d", l_stage_status);
         break;
@@ -1021,9 +1101,9 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     if (!l_ctx) return;
 
     dap_client_t *l_client = l_ctx->client;
-    dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(l_client);
-    if (!l_es) {
-        log_it(L_ERROR, "No esocket for ENC_INIT IO");
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    if (!l_fsm || !l_fsm->trans_ctx) {
+        log_it(L_ERROR, "No FSM/trans_ctx for ENC_INIT IO");
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
@@ -1031,7 +1111,8 @@ static void s_worker_execute_enc_init_io(void *a_arg)
         return;
     }
 
-    dap_worker_t *l_worker = l_es->worker;
+    dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
+    dap_worker_t *l_worker = l_fsm->worker;
 
     // Get transport
     dap_net_trans_t *l_transport = dap_net_trans_find(l_ctx->trans_type);
@@ -1056,10 +1137,12 @@ static void s_worker_execute_enc_init_io(void *a_arg)
         .connected_callback = NULL
     };
 
+    dap_cluster_node_addr_t l_node_addr;
+    memcpy(&l_node_addr, &l_client->link_info.node_addr, sizeof(l_node_addr));
     dap_net_stage_prepare_params_t l_prepare_params = {
         .host = l_client->link_info.uplink_addr,
         .port = l_client->link_info.uplink_port,
-        .node_addr = &l_client->link_info.node_addr,
+        .node_addr = &l_node_addr,
         .authorized = false,
         .callbacks = &s_handshake_callbacks,
         .client_ctx = l_client,
@@ -1090,11 +1173,11 @@ static void s_worker_execute_enc_init_io(void *a_arg)
         return;
     }
 
-    l_es->stream = l_prepare_result.stream;
-    l_es->stream_es = l_prepare_result.esocket;
+    l_tc->stream = l_prepare_result.stream;
+    l_tc->transport_priv = l_prepare_result.esocket;
 
     // Handshake init: async IO, transport callback will notify FSM
-    int l_handshake_ret = l_transport->ops->handshake_init(l_es->stream, &l_ctx->handshake_params,
+    int l_handshake_ret = l_transport->ops->handshake_init(l_tc->stream, &l_ctx->handshake_params,
                                                             s_handshake_callback_wrapper);
     if (l_handshake_ret != 0) {
         log_it(L_ERROR, "Failed to initiate handshake: %d", l_handshake_ret);
@@ -1132,12 +1215,10 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         return;
     }
 
-    // For STAGE_ENC_INIT: heavy crypto on FSM thread, then IO-only dispatch to worker
     if (a_fsm->stage == STAGE_ENC_INIT) {
-        dap_client_esocket_t *l_es = a_fsm->esocket;
+        dap_net_trans_ctx_t *l_tc = a_fsm->trans_ctx;
         dap_client_t *l_client = a_fsm->client;
 
-        // Validate address
         if (!*l_client->link_info.uplink_addr || !l_client->link_info.uplink_port) {
             log_it(L_ERROR, "Client remote address is empty");
             s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
@@ -1146,13 +1227,12 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             return;
         }
 
-        // Generate session_key_open (HEAVY CRYPTO - runs on FSM thread, not worker!)
         debug_if(s_debug_more, L_INFO, "FSM thread: generating session key for client %p", l_client);
-        if (l_es->session_key_open)
-            dap_enc_key_delete(l_es->session_key_open);
-        l_es->session_key_open = dap_enc_key_new_generate(l_es->session_key_open_type, NULL, 0, NULL, 0,
-                                                           l_es->session_key_block_size);
-        if (!l_es->session_key_open) {
+        if (l_tc->session_key_open)
+            dap_enc_key_delete(l_tc->session_key_open);
+        l_tc->session_key_open = dap_enc_key_new_generate(a_fsm->session_key_open_type, NULL, 0, NULL, 0,
+                                                           a_fsm->session_key_block_size);
+        if (!l_tc->session_key_open) {
             log_it(L_ERROR, "Insufficient memory for session_key_open");
             s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
             a_fsm->last_error = ERROR_OUT_OF_MEMORY;
@@ -1160,9 +1240,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             return;
         }
 
-        // Prepare alice_pub_key with signatures (crypto - on FSM thread)
-        size_t l_data_size = l_es->session_key_open->pub_key_data_size;
-        uint8_t *l_alice_pub_key = DAP_DUP_SIZE((uint8_t *)l_es->session_key_open->pub_key_data, l_data_size);
+        size_t l_data_size = l_tc->session_key_open->pub_key_data_size;
+        uint8_t *l_alice_pub_key = DAP_DUP_SIZE((uint8_t *)l_tc->session_key_open->pub_key_data, l_data_size);
         if (!l_alice_pub_key) {
             s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
             a_fsm->last_error = ERROR_OUT_OF_MEMORY;
@@ -1174,14 +1253,13 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         size_t l_sign_count = 0;
         if (l_client->auth_cert)
             l_sign_count += dap_cert_add_sign_to_data(l_client->auth_cert, &l_alice_pub_key, &l_data_size,
-                                                       l_es->session_key_open->pub_key_data,
-                                                       l_es->session_key_open->pub_key_data_size);
+                                                       l_tc->session_key_open->pub_key_data,
+                                                       l_tc->session_key_open->pub_key_data_size);
         if (l_node_cert)
             l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_alice_pub_key, &l_data_size,
-                                                      l_es->session_key_open->pub_key_data,
-                                                      l_es->session_key_open->pub_key_data_size);
+                                                      l_tc->session_key_open->pub_key_data,
+                                                      l_tc->session_key_open->pub_key_data_size);
 
-        // Build dispatch context with prepared handshake params for worker
         fsm_enc_init_io_ctx_t *l_dispatch = DAP_NEW_Z(fsm_enc_init_io_ctx_t);
         if (!l_dispatch) {
             DAP_DELETE(l_alice_pub_key);
@@ -1196,10 +1274,10 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         l_dispatch->client = l_client;
         l_dispatch->trans_type = l_client->trans_type;
         l_dispatch->handshake_params = (dap_net_handshake_params_t){
-            .enc_type = l_es->session_key_type,
-            .pkey_exchange_type = l_es->session_key_open_type,
-            .pkey_exchange_size = l_es->session_key_open->pub_key_data_size,
-            .block_key_size = l_es->session_key_block_size,
+            .enc_type = a_fsm->session_key_type,
+            .pkey_exchange_type = a_fsm->session_key_open_type,
+            .pkey_exchange_size = l_tc->session_key_open->pub_key_data_size,
+            .block_key_size = a_fsm->session_key_block_size,
             .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
             .auth_cert = l_client->auth_cert,
             .alice_pub_key = l_alice_pub_key,

@@ -206,12 +206,7 @@ static int s_client_flow_ctrl_packet_prepare_cb(
         .session_id = l_ctx->session_id,
     };
     
-    // Serialize header
-    size_t l_hdr_size = dap_serialize_calc_size_raw(&g_udp_full_header_schema, NULL, &l_hdr, NULL);
-    if (l_hdr_size == 0) {
-        log_it(L_ERROR, "CLIENT FC prepare: failed to calc header size");
-        return -2;
-    }
+    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
     
     // Allocate [header + payload]
     size_t l_cleartext_size = l_hdr_size + a_payload_size;
@@ -221,17 +216,8 @@ static int s_client_flow_ctrl_packet_prepare_cb(
         return -3;
     }
     
-    // Serialize header into cleartext
-    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
-        &g_udp_full_header_schema,
-        &l_hdr,
-        l_cleartext,
-        l_hdr_size,
-        NULL  // context
-    );
-    if (l_ser_result.error_code != 0) {
-        log_it(L_ERROR, "CLIENT FC prepare: failed to serialize header: %s",
-               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
+    if (dap_stream_trans_udp_full_header_wire_pack(&l_hdr, l_cleartext, l_cleartext_size) != 0) {
+        log_it(L_ERROR, "CLIENT FC prepare: failed to serialize UDP full header (FC base schema)");
         DAP_DELETE(l_cleartext);
         return -4;
     }
@@ -339,20 +325,9 @@ static int s_client_flow_ctrl_packet_parse_cb(
         return -4;
     }
     
-    // Deserialize full header
     dap_stream_trans_udp_full_header_t l_hdr;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
-        &g_udp_full_header_schema,
-        l_decrypted,
-        sizeof(dap_stream_trans_udp_full_header_t),
-        &l_hdr,
-        NULL
-    );
-    
-    if (l_deser_result.error_code != 0) {
-        log_it(L_ERROR, "CLIENT FC parse: deserialize failed: %s (decrypted_size=%zu)",
-               l_deser_result.error_message ? l_deser_result.error_message : "unknown",
-               l_final_decrypted_size);
+    if (dap_stream_trans_udp_full_header_wire_unpack(l_decrypted, l_final_decrypted_size, &l_hdr) != 0) {
+        log_it(L_ERROR, "CLIENT FC parse: UDP full header unpack failed (decrypted_size=%zu)", l_final_decrypted_size);
         DAP_DELETE(l_decrypted);
         return -5;
     }
@@ -360,13 +335,6 @@ static int s_client_flow_ctrl_packet_parse_cb(
     debug_if(s_debug_more, L_DEBUG,
              "CLIENT FC parse: AFTER deserialize: seq_num=%" DAP_UINT64_FORMAT_U ", ack_seq=%" DAP_UINT64_FORMAT_U ", type=%u",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type);
-    
-    if (l_deser_result.error_code != 0) {
-        log_it(L_ERROR, "CLIENT FC parse: failed to deserialize header: %s",
-               l_deser_result.error_message ? l_deser_result.error_message : "unknown");
-        DAP_DELETE(l_decrypted);
-        return -5;
-    }
     
     // Fill metadata
     a_metadata_out->seq_num = l_hdr.seq_num;
@@ -381,7 +349,7 @@ static int s_client_flow_ctrl_packet_parse_cb(
     a_metadata_out->private_ctx = l_decrypted;
     
     // Payload starts after header
-    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
+    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
     size_t l_payload_size = (l_final_decrypted_size > l_hdr_size) ? 
                             (l_final_decrypted_size - l_hdr_size) : 0;
     
@@ -2160,34 +2128,24 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                                                  l_decrypted, l_decrypted_max,
                                                  DAP_ENC_DATA_TYPE_RAW);
         
-        if (l_decrypted_size == 0 || l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
+        if (l_decrypted_size == 0 || l_decrypted_size < DAP_STREAM_UDP_FULL_HEADER_SIZE) {
             log_it(L_ERROR, "CLIENT: failed to decrypt or packet too small");
             DAP_DELETE(l_decrypted);
             dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
             return -1;
         }
         
-        // Parse header
         dap_stream_trans_udp_full_header_t l_header;
-        dap_deserialize_result_t l_deser = dap_deserialize_from_buffer_raw(
-            &g_udp_full_header_schema,
-            l_decrypted,
-            sizeof(dap_stream_trans_udp_full_header_t),
-            &l_header,
-            NULL
-        );
-        
-        if (l_deser.error_code != 0) {
-            log_it(L_ERROR, "CLIENT: failed to parse header: %s",
-                   l_deser.error_message ? l_deser.error_message : "unknown");
+        if (dap_stream_trans_udp_full_header_wire_unpack(l_decrypted, l_decrypted_size, &l_header) != 0) {
+            log_it(L_ERROR, "CLIENT: failed to parse header (FC base schema + UDP tail)");
             DAP_DELETE(l_decrypted);
             dap_events_socket_shrink_buf_in(l_es, l_es->buf_in_size);
             return -1;
         }
         
         uint8_t l_type = l_header.type;
-        size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
-        const uint8_t *l_payload = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
+        size_t l_payload_size = l_decrypted_size - DAP_STREAM_UDP_FULL_HEADER_SIZE;
+        const uint8_t *l_payload = l_decrypted + DAP_STREAM_UDP_FULL_HEADER_SIZE;
         
         log_it(L_NOTICE, "CLIENT: First packet type=%u (SESSION_CREATE=0x%02x, DATA=0x%02x)",
                l_type, DAP_STREAM_UDP_PKT_SESSION_CREATE, DAP_STREAM_UDP_PKT_DATA);
@@ -2485,21 +2443,11 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         .session_id = l_udp_ctx->session_id,
     };
     
-    // Serialize using dap_serialize
-    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
-    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
+    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
+    uint8_t l_hdr_buffer[DAP_STREAM_UDP_FULL_HEADER_SIZE];
     
-    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
-        &g_udp_full_header_schema,
-        &l_full_hdr,
-        l_hdr_buffer,
-        l_hdr_size,
-        NULL
-    );
-    
-    if (l_ser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to serialize full header: %s",
-               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
+    if (dap_stream_trans_udp_full_header_wire_pack(&l_full_hdr, l_hdr_buffer, sizeof(l_hdr_buffer)) != 0) {
+        log_it(L_ERROR, "Failed to serialize full header (FC base schema + UDP tail)");
         return -1;
     }
     
