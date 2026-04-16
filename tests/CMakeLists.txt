@@ -245,11 +245,17 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_error_handling.c)
     add_dap_test(test_unit_crypto_chipmunk_ring_error_handling unit/crypto/chipmunk_ring/test_chipmunk_ring_error_handling.c)
     register_dap_test(test_unit_crypto_chipmunk_ring_error_handling "unit;crypto;ring;error_handling")
+    # This test intentionally logs CRITICAL ERROR to verify error handling - disable fail regex
+    set_tests_properties(test_unit_crypto_chipmunk_ring_error_handling PROPERTIES
+        FAIL_REGULAR_EXPRESSION "SEGMENTATION FAULT")
 endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_input_validation.c)
     add_dap_test(test_unit_crypto_chipmunk_ring_input_validation unit/crypto/chipmunk_ring/test_chipmunk_ring_input_validation.c)
     register_dap_test(test_unit_crypto_chipmunk_ring_input_validation "unit;crypto;ring;input_validation")
+    # This test intentionally logs CRITICAL ERROR to verify input validation - disable fail regex
+    set_tests_properties(test_unit_crypto_chipmunk_ring_input_validation PROPERTIES
+        FAIL_REGULAR_EXPRESSION "SEGMENTATION FAULT")
 endif()
 
 

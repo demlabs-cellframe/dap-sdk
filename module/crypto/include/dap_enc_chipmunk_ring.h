@@ -31,6 +31,36 @@ extern "C" {
 #endif
 
 /**
+ * @brief NIST Post-Quantum Cryptography Security Levels
+ * 
+ * Based on NIST PQC standardization (FIPS 203, 204, 205):
+ * - Level I:   >= AES-128 (128-bit classical, 64-bit quantum)
+ * - Level II:  >= SHA-256 collision (128-bit quantum)
+ * - Level III: >= AES-192 (192-bit classical, 96-bit quantum)
+ * - Level IV:  >= SHA-384 collision (192-bit quantum)
+ * - Level V:   >= AES-256 (256-bit classical, 128-bit quantum)
+ * 
+ * Chipmunk Ring extends beyond NIST levels with Level V+ for 100+ year security.
+ */
+typedef enum chipmunk_ring_security_level {
+    CHIPMUNK_RING_SECURITY_LEVEL_I = 1,     ///< NIST Level I: ~128-bit classical security
+    CHIPMUNK_RING_SECURITY_LEVEL_III = 3,   ///< NIST Level III: ~192-bit classical security
+    CHIPMUNK_RING_SECURITY_LEVEL_V = 5,     ///< NIST Level V: ~256-bit classical security
+    CHIPMUNK_RING_SECURITY_LEVEL_V_PLUS = 6 ///< Extended: ~300-bit classical, 100+ year quantum resistance
+} chipmunk_ring_security_level_t;
+
+/**
+ * @brief Security level information structure
+ */
+typedef struct chipmunk_ring_security_info {
+    chipmunk_ring_security_level_t level;   ///< Current security level
+    uint32_t classical_bits;                ///< Classical security in bits
+    uint32_t quantum_bits;                  ///< Quantum security in bits (Grover-adjusted)
+    uint64_t logical_qubits_required;       ///< Estimated logical qubits for quantum attack
+    const char *description;                ///< Human-readable description
+} chipmunk_ring_security_info_t;
+
+/**
  * @brief Computed layer sizes structure (auto-calculated from base parameters)
  */
 typedef struct chipmunk_ring_computed_sizes {
@@ -113,6 +143,39 @@ int dap_enc_chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params);
  * @return 0 on success, negative on error
  */
 int dap_enc_chipmunk_ring_reset_params(void);
+
+/**
+ * @brief Initialize with specific NIST security level
+ * @param a_level Desired security level (I, III, V, or V+)
+ * @return 0 on success, negative on error
+ * 
+ * This is the recommended way to initialize Chipmunk Ring for production use.
+ * Default (dap_enc_chipmunk_ring_init) uses Level V+ for maximum security.
+ */
+int dap_enc_chipmunk_ring_init_with_security_level(chipmunk_ring_security_level_t a_level);
+
+/**
+ * @brief Get current security level information
+ * @param a_info Output structure for security information
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_get_security_info(chipmunk_ring_security_info_t *a_info);
+
+/**
+ * @brief Get parameters for a specific security level (without applying)
+ * @param a_level Desired security level
+ * @param a_params Output parameters structure
+ * @return 0 on success, negative on error
+ */
+int dap_enc_chipmunk_ring_get_params_for_level(chipmunk_ring_security_level_t a_level,
+                                               chipmunk_ring_pq_params_t *a_params);
+
+/**
+ * @brief Validate that current parameters meet minimum security level
+ * @param a_min_level Minimum required security level
+ * @return 0 if meets requirements, negative if below minimum
+ */
+int dap_enc_chipmunk_ring_validate_security_level(chipmunk_ring_security_level_t a_min_level);
 
 /**
  * @brief Generate Chipmunk_Ring keypair (same as Chipmunk)

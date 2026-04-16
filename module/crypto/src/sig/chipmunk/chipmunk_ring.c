@@ -1603,6 +1603,196 @@ int chipmunk_ring_reset_params(void) {
     return chipmunk_ring_set_params(&default_params);
 }
 
+/**
+ * @brief NIST Security Level parameter presets
+ * 
+ * Based on NIST PQC standardization and lattice security estimates.
+ * Security bits calculated as: 0.292 * n for Ring-LWE/NTRU lattice problems.
+ */
+static const struct {
+    chipmunk_ring_security_level_t level;
+    uint32_t ring_lwe_n;
+    uint32_t ring_lwe_q;
+    uint32_t ntru_n;
+    uint32_t ntru_q;
+    uint32_t code_n;
+    uint32_t code_k;
+    uint32_t code_t;
+    uint32_t classical_bits;
+    uint32_t quantum_bits;
+    uint64_t logical_qubits;
+    const char *description;
+} s_security_presets[] = {
+    {
+        .level = CHIPMUNK_RING_SECURITY_LEVEL_I,
+        .ring_lwe_n = 512, .ring_lwe_q = 12289,
+        .ntru_n = 512, .ntru_q = 32768,
+        .code_n = 1536, .code_k = 768, .code_t = 96,
+        .classical_bits = 150, .quantum_bits = 75,
+        .logical_qubits = 32000,
+        .description = "NIST Level I: AES-128 equivalent, suitable for general use"
+    },
+    {
+        .level = CHIPMUNK_RING_SECURITY_LEVEL_III,
+        .ring_lwe_n = 768, .ring_lwe_q = 25601,
+        .ntru_n = 768, .ntru_q = 49153,
+        .code_n = 2048, .code_k = 1024, .code_t = 128,
+        .classical_bits = 224, .quantum_bits = 112,
+        .logical_qubits = 65000,
+        .description = "NIST Level III: AES-192 equivalent, recommended for financial"
+    },
+    {
+        .level = CHIPMUNK_RING_SECURITY_LEVEL_V,
+        .ring_lwe_n = 1024, .ring_lwe_q = 40961,
+        .ntru_n = 1024, .ntru_q = 65537,
+        .code_n = 2560, .code_k = 1280, .code_t = 160,
+        .classical_bits = 299, .quantum_bits = 150,
+        .logical_qubits = 90000,
+        .description = "NIST Level V: AES-256 equivalent, high security applications"
+    },
+    {
+        .level = CHIPMUNK_RING_SECURITY_LEVEL_V_PLUS,
+        .ring_lwe_n = CHIPMUNK_RING_RING_LWE_N_DEFAULT,
+        .ring_lwe_q = CHIPMUNK_RING_RING_LWE_Q_DEFAULT,
+        .ntru_n = CHIPMUNK_RING_NTRU_N_DEFAULT,
+        .ntru_q = CHIPMUNK_RING_NTRU_Q_DEFAULT,
+        .code_n = CHIPMUNK_RING_CODE_N_DEFAULT,
+        .code_k = CHIPMUNK_RING_CODE_K_DEFAULT,
+        .code_t = CHIPMUNK_RING_CODE_T_DEFAULT,
+        .classical_bits = 300, .quantum_bits = 150,
+        .logical_qubits = 131000,
+        .description = "Level V+: Extended security for 100+ year quantum resistance"
+    }
+};
+
+static const size_t s_security_presets_count = sizeof(s_security_presets) / sizeof(s_security_presets[0]);
+
+/**
+ * @brief Find preset by security level
+ */
+static int s_find_preset_index(chipmunk_ring_security_level_t a_level) {
+    for (size_t i = 0; i < s_security_presets_count; i++) {
+        if (s_security_presets[i].level == a_level) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+/**
+ * @brief Initialize with specific NIST security level
+ */
+int dap_enc_chipmunk_ring_init_with_security_level(chipmunk_ring_security_level_t a_level) {
+    int idx = s_find_preset_index(a_level);
+    if (idx < 0) {
+        log_it(L_ERROR, "Unknown security level: %d", a_level);
+        return -EINVAL;
+    }
+
+    chipmunk_ring_pq_params_t params = {
+        .chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT,
+        .chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT,
+        .randomness_size = CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,
+        .ring_lwe_n = s_security_presets[idx].ring_lwe_n,
+        .ring_lwe_q = s_security_presets[idx].ring_lwe_q,
+        .ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT,
+        .ntru_n = s_security_presets[idx].ntru_n,
+        .ntru_q = s_security_presets[idx].ntru_q,
+        .code_n = s_security_presets[idx].code_n,
+        .code_k = s_security_presets[idx].code_k,
+        .code_t = s_security_presets[idx].code_t,
+        .computed = {0}
+    };
+
+    int ret = chipmunk_ring_set_params(&params);
+    if (ret == 0) {
+        log_it(L_INFO, "Chipmunk Ring initialized with %s", s_security_presets[idx].description);
+    }
+    return ret;
+}
+
+/**
+ * @brief Get current security level information
+ */
+int dap_enc_chipmunk_ring_get_security_info(chipmunk_ring_security_info_t *a_info) {
+    if (!a_info) {
+        return -EINVAL;
+    }
+
+    uint32_t classical_bits = (s_pq_params.ring_lwe_n * 292) / 1000;
+    
+    for (size_t i = s_security_presets_count; i > 0; i--) {
+        if (classical_bits >= s_security_presets[i-1].classical_bits) {
+            a_info->level = s_security_presets[i-1].level;
+            a_info->classical_bits = classical_bits;
+            a_info->quantum_bits = classical_bits / 2;
+            a_info->logical_qubits_required = (uint64_t)s_pq_params.ring_lwe_n * 4 * 15 +
+                                              (uint64_t)s_pq_params.ntru_n * 4 * 16 +
+                                              (uint64_t)s_pq_params.code_n * 2;
+            a_info->description = s_security_presets[i-1].description;
+            return 0;
+        }
+    }
+
+    a_info->level = CHIPMUNK_RING_SECURITY_LEVEL_I;
+    a_info->classical_bits = classical_bits;
+    a_info->quantum_bits = classical_bits / 2;
+    a_info->logical_qubits_required = 0;
+    a_info->description = "Below NIST Level I - NOT RECOMMENDED";
+    return 0;
+}
+
+/**
+ * @brief Get parameters for a specific security level
+ */
+int dap_enc_chipmunk_ring_get_params_for_level(chipmunk_ring_security_level_t a_level,
+                                               chipmunk_ring_pq_params_t *a_params) {
+    if (!a_params) {
+        return -EINVAL;
+    }
+
+    int idx = s_find_preset_index(a_level);
+    if (idx < 0) {
+        return -EINVAL;
+    }
+
+    a_params->chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT;
+    a_params->chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT;
+    a_params->randomness_size = CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT;
+    a_params->ring_lwe_n = s_security_presets[idx].ring_lwe_n;
+    a_params->ring_lwe_q = s_security_presets[idx].ring_lwe_q;
+    a_params->ring_lwe_sigma_numerator = CHIPMUNK_RING_RING_LWE_SIGMA_NUMERATOR_DEFAULT;
+    a_params->ntru_n = s_security_presets[idx].ntru_n;
+    a_params->ntru_q = s_security_presets[idx].ntru_q;
+    a_params->code_n = s_security_presets[idx].code_n;
+    a_params->code_k = s_security_presets[idx].code_k;
+    a_params->code_t = s_security_presets[idx].code_t;
+    memset(&a_params->computed, 0, sizeof(a_params->computed));
+
+    return 0;
+}
+
+/**
+ * @brief Validate that current parameters meet minimum security level
+ */
+int dap_enc_chipmunk_ring_validate_security_level(chipmunk_ring_security_level_t a_min_level) {
+    int idx = s_find_preset_index(a_min_level);
+    if (idx < 0) {
+        return -EINVAL;
+    }
+
+    uint32_t required_bits = s_security_presets[idx].classical_bits;
+    uint32_t current_bits = (s_pq_params.ring_lwe_n * 292) / 1000;
+
+    if (current_bits < required_bits) {
+        log_it(L_WARNING, "Security level validation failed: current %u bits < required %u bits for level %d",
+               current_bits, required_bits, a_min_level);
+        return -1;
+    }
+
+    return 0;
+}
+
 // REMOVED: get_layer_sizes - quantum layers replaced by Acorn Verification
 
 
