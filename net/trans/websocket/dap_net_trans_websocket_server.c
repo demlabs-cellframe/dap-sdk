@@ -23,7 +23,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-#include <strings.h>  // For strcasestr
+#include <strings.h>  // For strncasecmp
 #include <openssl/sha.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -100,6 +100,26 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
 static bool s_websocket_upgrade_headers_write(dap_http_client_t *a_http_client, void *a_arg);
 static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, size_t a_accept_key_size);
 static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client);
+static bool s_str_contains_case_insensitive(const char *a_haystack, const char *a_needle);
+
+static bool s_str_contains_case_insensitive(const char *a_haystack, const char *a_needle)
+{
+    if (!a_haystack || !a_needle) {
+        return false;
+    }
+
+    size_t l_needle_len = strlen(a_needle);
+    if (!l_needle_len) {
+        return true;
+    }
+
+    for (const char *l_pos = a_haystack; *l_pos; l_pos++) {
+        if (strncasecmp(l_pos, a_needle, l_needle_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
 
 /**
  * @brief Initialize WebSocket server module
@@ -355,8 +375,8 @@ int dap_net_trans_websocket_try_upgrade(dap_http_client_t *a_http_client)
     if (!l_upgrade || !l_connection || !l_ws_key || !l_ws_version)
         return -1;
 
-    if (!strcasestr(l_upgrade->value, "websocket") ||
-        !strcasestr(l_connection->value, "Upgrade"))
+    if (!s_str_contains_case_insensitive(l_upgrade->value, "websocket") ||
+        !s_str_contains_case_insensitive(l_connection->value, "Upgrade"))
         return -1;
 
     dap_net_trans_t *l_ws_trans = dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
@@ -435,7 +455,7 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
     }
 
     // Validate upgrade headers
-    if (strcasestr(l_upgrade->value, "websocket") == NULL) {
+    if (!s_str_contains_case_insensitive(l_upgrade->value, "websocket")) {
         log_it(L_WARNING, "Invalid Upgrade header: %s", l_upgrade->value);
         a_http_client->reply_status_code = 400; // Bad Request
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
@@ -443,7 +463,7 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
         return;
     }
 
-    if (strcasestr(l_connection->value, "Upgrade") == NULL) {
+    if (!s_str_contains_case_insensitive(l_connection->value, "Upgrade")) {
         log_it(L_WARNING, "Invalid Connection header: %s", l_connection->value);
         a_http_client->reply_status_code = 400; // Bad Request
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
@@ -879,4 +899,3 @@ static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, 
     debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", a_accept_key);
     return true;
 }
-

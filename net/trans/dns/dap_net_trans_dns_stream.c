@@ -512,7 +512,7 @@ static int s_dns_session_create(dap_stream_t *a_stream,
 
     // Generate session ID (similar to UDP)
     uint64_t l_session_id = (uint64_t)time(NULL) | ((uint64_t)m_dap_random_u32() << 32);
-    log_it(L_INFO, "DNS session created: ID=0x%lx", l_session_id);
+    log_it(L_INFO, "DNS session created: ID=0x%" DAP_UINT64_FORMAT_x, l_session_id);
     
     // Call callback with session ID (no full response data for DNS trans)
     if (a_callback) {

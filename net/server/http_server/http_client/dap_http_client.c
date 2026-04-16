@@ -517,7 +517,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 if ( l_http_client->proc->cache == NULL && l_http_client->proc->data_read_callback ) {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
                     l_http_client->proc->data_read_callback( l_http_client, &l_len );
-                    log_it(L_INFO, "HTTP DATA: data_read_callback returned l_len=%d", l_len);
+                    log_it(L_INFO, "HTTP DATA: data_read_callback returned l_len=%zu", l_len);
                     dap_events_socket_shrink_buf_in( a_esocket, l_len );
                 } else {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);

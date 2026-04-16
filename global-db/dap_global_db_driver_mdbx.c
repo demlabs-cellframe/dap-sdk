@@ -946,7 +946,6 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
 
-    dap_global_db_pkt_pack_t *l_ret = NULL;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group, l_txn)) )
         goto cleanup;
     MDBX_val l_key, l_data;
