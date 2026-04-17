@@ -169,7 +169,7 @@ int dap_global_db_init()
     int l_rc = 0;
 
     // Debug config
-    g_dap_global_db_debug_more = dap_config_get_item_bool_default(g_config, "global_db", "debug_more", false);
+    g_dap_global_db_debug_more = g_dap_debug_mode && dap_config_get_item_bool_default(g_config, "global_db", "debug_more", false);
 
     // Create and run its own context
     if (s_dbi == NULL) {

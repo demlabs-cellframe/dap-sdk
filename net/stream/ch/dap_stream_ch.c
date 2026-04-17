@@ -66,7 +66,7 @@ int dap_stream_ch_init()
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
 #endif
-    s_debug_more = dap_config_get_item_bool_default(g_config, "stream", "debug_channels", false);
+    s_debug_more = g_dap_debug_mode && dap_config_get_item_bool_default(g_config, "stream", "debug_channels", false);
     log_it(L_NOTICE,"Module stream channel initialized");
     return 0;
 }

@@ -74,7 +74,7 @@ static bool s_debug_more = false;
  */
 int dap_cert_init() // TODO deinit too
 {
-    s_debug_more = dap_config_get_item_bool_default(g_config, "cert", "debug_more", false);
+    s_debug_more = g_dap_debug_mode && dap_config_get_item_bool_default(g_config, "cert", "debug_more", false);
     debug_if(s_debug_more, L_DEBUG, "dap_cert_init: debug_more=%d", s_debug_more);
     uint16_t l_ca_folders_size = 0;
     char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);

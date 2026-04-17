@@ -28,6 +28,7 @@
 */
 
 #include "dap_common.h"
+#include "dap_config.h"
 #include "dap_tsd.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
@@ -41,7 +42,7 @@
 
 
 #define LOG_TAG "avrs"
-int g_avrs_debug_more = 1;
+int g_avrs_debug_more = 0;
 
 static  dap_stream_ch_t *s_ch;
 
@@ -142,6 +143,8 @@ int dap_avrs_init   (dap_config_t * g_config)
                             dap_stream_ch_callback_t packet_in_callback,
                             dap_stream_ch_callback_t packet_out_callback);
      */
+    g_avrs_debug_more = g_dap_debug_mode && dap_config_get_item_bool_default(g_config, "avrestream", "debug_more", false);
+
     dap_stream_ch_proc_add(DAP_AVRS$K_CH_RETCODE,
                            s_ch_new,
                            s_ch_delete,

@@ -51,7 +51,7 @@ int dap_enc_init()
     dap_enc_key_init();
     dap_cert_init();
     dap_crc64_init();
-    s_debug_more = g_config ? dap_config_get_item_bool_default(g_config, "crypto", "debug_more", false) : false;
+    s_debug_more = g_dap_debug_mode && (g_config ? dap_config_get_item_bool_default(g_config, "crypto", "debug_more", false) : false);
     dap_sign_init(DAP_SIGN_HASH_TYPE_SHA3);
     return 0;
 }

@@ -57,7 +57,7 @@ static bool s_debug_more = false;
  */
 int dap_stream_ch_gossip_init()
 {
-    s_debug_more = dap_config_get_item_bool_default(g_config, "gossip", "debug_more", s_debug_more);
+    s_debug_more = g_dap_debug_mode && dap_config_get_item_bool_default(g_config, "gossip", "debug_more", s_debug_more);
     log_it(L_NOTICE, "GOSSIP epidemic protocol channel initialized");
     dap_stream_ch_proc_add(DAP_STREAM_CH_GOSSIP_ID, NULL, NULL, s_stream_ch_packet_in, NULL);
     s_gossip_timer = dap_timerfd_start(1000, s_callback_hashtable_maintenance, NULL);

@@ -163,6 +163,7 @@ char* g_sys_dir_path = NULL;
 static char s_log_file_path[MAX_PATH + 1], s_log_tag_fmt_str[10];
 
 enum dap_log_level g_dap_log_level = L_DEBUG;
+bool g_dap_debug_mode = false;
 static FILE *s_log_file = NULL;
 
 static void print_it_stdout (enum dap_log_level a_ll, const char *a_buf, size_t a_len);

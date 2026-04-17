@@ -103,7 +103,7 @@ int dap_client_pvt_init()
 {
     s_max_attempts = dap_config_get_item_int32_default(g_config, "dap_client", "max_tries", s_max_attempts);
     s_timeout = dap_config_get_item_int32_default(g_config, "dap_client", "timeout", s_timeout);
-    s_debug_more = dap_config_get_item_bool_default(g_config, "dap_client", "debug_more", false);
+    s_debug_more = g_dap_debug_mode && dap_config_get_item_bool_default(g_config, "dap_client", "debug_more", false);
     s_client_timeout_active_after_connect_seconds = (time_t) dap_config_get_item_uint32_default(g_config,
                                                   "dap_client","timeout_active_after_connect", s_client_timeout_active_after_connect_seconds);
     return 0;

@@ -548,11 +548,11 @@ DAP_PRINTF_ATTR(3, 4) void _log_it_tag(enum dap_log_level, const char *tag, cons
     return log_it(_lvl, _fmt, ##__VA_ARGS__), (_ret)
 
 #define debug_if(_flg, _lvl, _fmt, ... ) (void)\
-    ((_flg) && (log_it(_lvl, _fmt, ##__VA_ARGS__), 1))
+    (g_dap_debug_mode && (_flg) && (log_it(_lvl, _fmt, ##__VA_ARGS__), 1))
 #define debug_if_f(_flg, _lvl, _fmt, ... ) (void)\
-    ((_flg) && (log_it_f(_lvl, _fmt, ##__VA_ARGS__), 1))
+    (g_dap_debug_mode && (_flg) && (log_it_f(_lvl, _fmt, ##__VA_ARGS__), 1))
 #define debug_if_fl(_flg, _lvl, _fmt, ... ) (void)\
-    ((_flg) && (log_it_fl(_lvl, _fmt, ##__VA_ARGS__), 1))
+    (g_dap_debug_mode && (_flg) && (log_it_fl(_lvl, _fmt, ##__VA_ARGS__), 1))
 
 
 ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
@@ -1123,8 +1123,8 @@ void    _dump_it    (const char *, unsigned, const char *a_var_name, const void 
 #define log_it_fl(_log_level, _fmt, ...)    _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__)
 #undef  debug_if
 #undef  debug_if_fl
-#define debug_if(flg, _log_level, _fmt, ...)    do { if (flg) _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__); } while(0)
-#define debug_if_fl(flg, _log_level, _fmt, ...) do { if (flg) _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__); } while(0)
+#define debug_if(flg, _log_level, _fmt, ...)    do { if (g_dap_debug_mode && (flg)) _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__); } while(0)
+#define debug_if_fl(flg, _log_level, _fmt, ...) do { if (g_dap_debug_mode && (flg)) _log_it_ext( __func__, __LINE__, (_log_level), _fmt, ##__VA_ARGS__); } while(0)
 
 #define dump_it(v,s,l)                  _dump_it( __func__, __LINE__, (v), (s), (l))
 
@@ -1232,6 +1232,7 @@ dap_error_str_t dap_str_ntstatus_(DWORD err);
 #define dap_str_ntstatus(e) dap_str_ntstatus_(e).s
 #endif
 extern enum dap_log_level g_dap_log_level;
+extern bool g_dap_debug_mode;
 void dap_log_level_set(enum dap_log_level ll);
 enum dap_log_level dap_log_level_get(void);
 void dap_set_log_tag_width(size_t width);

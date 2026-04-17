@@ -2118,7 +2118,7 @@ int dap_client_http_set_params(uint64_t a_timeout_ms, uint64_t a_timeout_read_af
  */
 int dap_client_http_init()
 {
-    s_debug_more = dap_config_get_item_bool_default(g_config,"dap_client","debug_more", false);
+    s_debug_more = g_dap_debug_mode && dap_config_get_item_bool_default(g_config,"dap_client","debug_more", false);
     s_max_attempts = dap_config_get_item_uint32_default(g_config,"dap_client","max_tries",5);
     if ( s_client_timeout_ms == 0 ) {
         s_client_timeout_ms = dap_config_get_item_uint32_default(g_config, "dap_client", "timeout", 20) * 1000;

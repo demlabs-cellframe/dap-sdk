@@ -205,7 +205,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_max_attempts_num = dap_config_get_item_uint32_default(g_config, "link_manager", "max_attempts_num", s_max_attempts_num);
     s_reconnect_delay = dap_config_get_item_uint32_default(g_config, "link_manager", "reconnect_delay", s_reconnect_delay);
-    s_debug_more = dap_config_get_item_bool_default(g_config,"link_manager","debug_more", s_debug_more);
+    s_debug_more = g_dap_debug_mode && dap_config_get_item_bool_default(g_config,"link_manager","debug_more", s_debug_more);
     if (!(s_query_thread = dap_proc_thread_get_auto())) {
         log_it(L_ERROR, "Can't choose query thread on link manager");
         return -1;
