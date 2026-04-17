@@ -1470,19 +1470,32 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
 {
     if (a_es->server) {
-        // Server-side: unified trans_ctx approach
         dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;
         return l_trans_ctx ? l_trans_ctx->stream : NULL;
     } else {
-        // Client-side: dap_client hierarchy
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-        if (l_client) {
-            dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-            dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-            if (l_tc)
-                return l_tc->stream;
-        }
-        return NULL;
+        if(!l_client)
+            return NULL;
+#ifdef DAP_OS_WINDOWS
+        // Guard against use-after-free: on Windows debug heap freed memory
+        // is filled with 0xFEEE, and even in release builds a freed pointer
+        // may land outside valid user-mode address space
+        uintptr_t l_client_val = (uintptr_t)l_client;
+        if(l_client_val < 0x10000 || l_client_val > 0x00007FFFFFFFFFFFULL)
+            return NULL;
+#endif
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+        if(!l_fsm)
+            return NULL;
+#ifdef DAP_OS_WINDOWS
+        uintptr_t l_fsm_val = (uintptr_t)l_fsm;
+        if(l_fsm_val < 0x10000 || l_fsm_val > 0x00007FFFFFFFFFFFULL)
+            return NULL;
+#endif
+        if(l_fsm->is_removing)
+            return NULL;
+        dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
+        return l_tc ? l_tc->stream : NULL;
     }
 }
 

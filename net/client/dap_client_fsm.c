@@ -48,6 +48,16 @@
 
 #define LOG_TAG "dap_client_fsm"
 
+#ifdef DAP_OS_WINDOWS
+static inline bool s_is_valid_ptr(const void *a_ptr)
+{
+    uintptr_t l_val = (uintptr_t)a_ptr;
+    return l_val >= 0x10000 && l_val <= 0x00007FFFFFFFFFFFULL;
+}
+#else
+#define s_is_valid_ptr(p) ((p) != NULL)
+#endif
+
 // ===== Module state =====
 
 static dap_client_fsm_t *s_fsm_table = NULL;
@@ -276,6 +286,13 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
         return;
 
     debug_if(s_debug_more, L_INFO, "FSM delete: %p (uuid=0x%016" PRIx64 ")", a_fsm, a_fsm->uuid);
+
+    a_fsm->is_removing = true;
+    a_fsm->worker = NULL;
+
+    // Detach FSM from client so DAP_CLIENT_FSM() returns NULL on stale references
+    if(a_fsm->client)
+        a_fsm->client->_internal = NULL;
 
     dap_client_fsm_unregister(a_fsm);
 
@@ -931,7 +948,7 @@ static void s_worker_execute_stage_done(void *a_arg)
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
-    if (!a_fsm || !a_fsm->client)
+    if (!a_fsm || !s_is_valid_ptr(a_fsm->client) || a_fsm->is_removing || !s_is_valid_ptr(a_fsm->worker))
         return;
 
     dap_client_stage_status_t l_stage_status = a_fsm->stage_status;
@@ -1077,21 +1094,39 @@ static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_ar
         return;
 
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-    if (l_client) {
-        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-        dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-        if (l_tc && l_tc->stream) {
-            l_tc->stream->esocket = NULL;
-            l_tc->stream->esocket_uuid = 0;
-            l_tc->stream->esocket_worker = NULL;
+    if(l_client) {
+#ifdef DAP_OS_WINDOWS
+        uintptr_t l_client_val = (uintptr_t)l_client;
+        if(l_client_val < 0x10000 || l_client_val > 0x00007FFFFFFFFFFFULL) {
+            a_es->_inheritor = NULL;
+            return;
         }
-        if (l_fsm && l_fsm->stage_status == STAGE_STATUS_IN_PROGRESS) {
-            dap_client_trans_ctx_t *l_ctx = l_fsm->client_trans_ctx;
-            if (l_ctx) {
-                log_it(L_WARNING, "Handshake esocket deleted while stage %s in progress, notifying FSM",
-                       dap_client_stage_str(l_fsm->stage));
-                dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                                      STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+#endif
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+#ifdef DAP_OS_WINDOWS
+        if(l_fsm) {
+            uintptr_t l_fsm_val = (uintptr_t)l_fsm;
+            if(l_fsm_val < 0x10000 || l_fsm_val > 0x00007FFFFFFFFFFFULL) {
+                a_es->_inheritor = NULL;
+                return;
+            }
+        }
+#endif
+        if(l_fsm && !l_fsm->is_removing) {
+            dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
+            if (l_tc && l_tc->stream) {
+                l_tc->stream->esocket = NULL;
+                l_tc->stream->esocket_uuid = 0;
+                l_tc->stream->esocket_worker = NULL;
+            }
+            if (l_fsm->stage_status == STAGE_STATUS_IN_PROGRESS) {
+                dap_client_trans_ctx_t *l_ctx = l_fsm->client_trans_ctx;
+                if (l_ctx) {
+                    log_it(L_WARNING, "Handshake esocket deleted while stage %s in progress, notifying FSM",
+                           dap_client_stage_str(l_fsm->stage));
+                    dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                          STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+                }
             }
         }
     }
@@ -1211,6 +1246,9 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
 static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
 {
+    if(a_fsm->is_removing || !s_is_valid_ptr(a_fsm->worker))
+        return;
+
     log_it(L_INFO, "FSM dispatching stage %s (transport: %s)",
            dap_client_stage_str(a_fsm->stage),
            dap_net_trans_type_to_str(a_fsm->client->trans_type));
@@ -1491,7 +1529,7 @@ static void *s_fsm_notify_on_fsm_thread(void *a_arg)
     if (!l_ctx) return NULL;
 
     dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
-    if (!l_fsm || l_fsm->is_removing) {
+    if (!l_fsm || l_fsm->is_removing || !s_is_valid_ptr(l_fsm->worker)) {
         DAP_DELETE(l_ctx);
         return NULL;
     }
