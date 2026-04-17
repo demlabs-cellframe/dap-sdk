@@ -39,6 +39,7 @@
 #include <string.h>
 
 #include "dap_common.h"
+#include "dap_config.h"
 #include "dap_crypto_common.h"
 #include "dap_enc_key.h"
 #include "dap_hash.h"
@@ -53,7 +54,7 @@
 #define LOG_TAG "chipmunk_ring"
 
 // Детальное логирование для Chipmunk Ring модуля
-static bool s_debug_more = true;
+static bool s_debug_more = false;
 
 // Acorn-only parameters
 static chipmunk_ring_pq_params_t s_pq_params = {
@@ -249,6 +250,7 @@ int chipmunk_ring_init(void) {
 
     // Initialize module parameters and layer sizes
     chipmunk_ring_module_init();
+    s_debug_more = dap_config_get_item_bool_default(g_config, "chipmunk_ring", "debug_more", false);
 
     // Modular arithmetic will use direct DIV_256 operations
     // No need for separate dap_math_mod initialization
@@ -778,9 +780,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
                 size_t l_copy_size = (a_signature->signature_size < sizeof(l_test_signature)) ?
                                    a_signature->signature_size : sizeof(l_test_signature);
                 memcpy(a_signature->signature, l_test_signature, l_copy_size);
-                debug_if(s_debug_more, L_DEBUG, "Copied signature data: size=%zu, first_bytes=%02x%02x%02x%02x", 
-                         l_copy_size, l_test_signature[0], l_test_signature[1], 
-                         l_test_signature[2], l_test_signature[3]);
+                debug_if(s_debug_more, L_DEBUG, "Copied signature data: size=%zu", l_copy_size);
                 break;
             }
         }
@@ -792,7 +792,7 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         return -1;
     }
     
-    debug_if(s_debug_more, L_INFO, "Found real signer at index %u (internal only)", l_real_signer_index);
+    debug_if(s_debug_more, L_INFO, "Found real signer in provided ring context");
 
     // All verification happens through acorn_proof in commitments, no separate responses needed
     
@@ -1006,11 +1006,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     
     debug_if(s_debug_more, L_INFO, "Challenge verification input sizes: message=%zu, ring_hash=%zu, commitments=%zu, total=%zu",
              l_message_size, l_ring_to_use->ring_hash_size, l_commitments_size, l_total_size);
-    debug_if(s_debug_more, L_INFO, "Ring hash: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
-             l_ring_to_use->ring_hash[0], l_ring_to_use->ring_hash[1], l_ring_to_use->ring_hash[2], l_ring_to_use->ring_hash[3],
-             l_ring_to_use->ring_hash[4], l_ring_to_use->ring_hash[5], l_ring_to_use->ring_hash[6], l_ring_to_use->ring_hash[7],
-             l_ring_to_use->ring_hash[8], l_ring_to_use->ring_hash[9], l_ring_to_use->ring_hash[10], l_ring_to_use->ring_hash[11],
-             l_ring_to_use->ring_hash[12], l_ring_to_use->ring_hash[13], l_ring_to_use->ring_hash[14], l_ring_to_use->ring_hash[15]);
+    debug_if(s_debug_more, L_INFO, "Ring hash size=%zu", l_ring_to_use->ring_hash_size);
 
     // Use universal serializer for challenge verification data (SAME AS SIGN)
     chipmunk_ring_combined_data_t l_combined_data_struct = {
@@ -1051,29 +1047,15 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
 
     // Debug: Log expected vs actual challenge
     debug_if(s_debug_more, L_INFO, "=== CHALLENGE VERIFICATION DEBUG (anonymous) ===");
-    debug_if(s_debug_more, L_INFO, "Expected challenge: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
-             ((uint8_t*)&l_expected_challenge_hash)[0], ((uint8_t*)&l_expected_challenge_hash)[1], ((uint8_t*)&l_expected_challenge_hash)[2], ((uint8_t*)&l_expected_challenge_hash)[3],
-             ((uint8_t*)&l_expected_challenge_hash)[4], ((uint8_t*)&l_expected_challenge_hash)[5], ((uint8_t*)&l_expected_challenge_hash)[6], ((uint8_t*)&l_expected_challenge_hash)[7],
-             ((uint8_t*)&l_expected_challenge_hash)[8], ((uint8_t*)&l_expected_challenge_hash)[9], ((uint8_t*)&l_expected_challenge_hash)[10], ((uint8_t*)&l_expected_challenge_hash)[11],
-             ((uint8_t*)&l_expected_challenge_hash)[12], ((uint8_t*)&l_expected_challenge_hash)[13], ((uint8_t*)&l_expected_challenge_hash)[14], ((uint8_t*)&l_expected_challenge_hash)[15]);
-    debug_if(s_debug_more, L_INFO, "Signature challenge (%zu bytes): %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
-             a_signature->challenge_size,
-             a_signature->challenge[0], a_signature->challenge[1], a_signature->challenge[2], a_signature->challenge[3],
-             a_signature->challenge[4], a_signature->challenge[5], a_signature->challenge[6], a_signature->challenge[7],
-             a_signature->challenge[8], a_signature->challenge[9], a_signature->challenge[10], a_signature->challenge[11],
-             a_signature->challenge[12], a_signature->challenge[13], a_signature->challenge[14], a_signature->challenge[15]);
+    debug_if(s_debug_more, L_INFO, "Challenge verification inputs prepared (%zu bytes)", l_total_size);
+    debug_if(s_debug_more, L_INFO, "Signature challenge size=%zu", a_signature->challenge_size);
 
     // Compare with challenge from signature (use minimum of both sizes for safety)
     size_t l_compare_size = (a_signature->challenge_size < sizeof(l_expected_challenge_hash)) ? 
                            a_signature->challenge_size : sizeof(l_expected_challenge_hash);
     if (memcmp(a_signature->challenge, &l_expected_challenge_hash, l_compare_size) != 0) {
         debug_if(s_debug_more, L_ERROR, "Challenge verification failed - message doesn't match signature");
-        debug_if(s_debug_more, L_ERROR, "Expected challenge hash: %02x%02x%02x%02x...",
-                 ((uint8_t*)&l_expected_challenge_hash)[0], ((uint8_t*)&l_expected_challenge_hash)[1],
-                 ((uint8_t*)&l_expected_challenge_hash)[2], ((uint8_t*)&l_expected_challenge_hash)[3]);
-        debug_if(s_debug_more, L_ERROR, "Actual signature challenge: %02x%02x%02x%02x...",
-                 a_signature->challenge[0], a_signature->challenge[1],
-                 a_signature->challenge[2], a_signature->challenge[3]);
+        debug_if(s_debug_more, L_ERROR, "Expected challenge does not match signature challenge");
         // Cleanup allocated memory for embedded mode
         if (a_signature->use_embedded_keys && l_effective_ring.ring_hash) {
             DAP_DELETE(l_effective_ring.ring_hash);
@@ -1146,12 +1128,8 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                         debug_if(s_debug_more, L_INFO, "Acorn proof %u verified successfully", l_i);
                     } else {
                         debug_if(s_debug_more, L_WARNING, "Acorn proof %u verification failed - proof mismatch", l_i);
-                        debug_if(s_debug_more, L_DEBUG, "Expected: %02x%02x%02x%02x...", 
-                                 l_expected_acorn_proof[0], l_expected_acorn_proof[1], 
-                                 l_expected_acorn_proof[2], l_expected_acorn_proof[3]);
-                        debug_if(s_debug_more, L_DEBUG, "Actual: %02x%02x%02x%02x...", 
-                                 a_signature->acorn_proofs[l_i].acorn_proof[0], a_signature->acorn_proofs[l_i].acorn_proof[1],
-                                 a_signature->acorn_proofs[l_i].acorn_proof[2], a_signature->acorn_proofs[l_i].acorn_proof[3]);
+                        debug_if(s_debug_more, L_DEBUG, "Acorn proof size=%zu",
+                                 a_signature->acorn_proofs[l_i].acorn_proof_size);
                     }
                 } else {
                     debug_if(s_debug_more, L_WARNING, "Acorn proof %u hash generation failed: %d", l_i, l_acorn_result);
@@ -1504,6 +1482,15 @@ void chipmunk_ring_signature_free(chipmunk_ring_signature_t *a_signature) {
  */
 int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
                                    uint8_t *a_output, size_t a_output_size) {
+    if (!a_sig || !a_output || a_output_size == 0) {
+        return -EINVAL;
+    }
+
+    size_t l_required_size = chipmunk_ring_signature_calc_size(a_sig);
+    if (l_required_size == 0 || a_output_size < l_required_size) {
+        return -EINVAL;
+    }
+
     // Debug: Check signature parameters before serialization
     debug_if(s_debug_more, L_DEBUG, "Serializing signature: ring_size=%u, required_signers=%u, embedded_keys=%s, buffer_size=%zu",
              a_sig->ring_size, a_sig->required_signers, a_sig->use_embedded_keys ? "true" : "false", a_output_size);
@@ -1526,6 +1513,10 @@ int chipmunk_ring_signature_to_bytes(const chipmunk_ring_signature_t *a_sig,
  */
 int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
                                      const uint8_t *a_input, size_t a_input_size) {
+    if (!a_sig || !a_input || a_input_size == 0) {
+        return -EINVAL;
+    }
+
     // Use universal deserializer with schema-based approach
     dap_serialize_result_t result = chipmunk_ring_signature_deserialize(a_input, a_input_size, a_sig);
     
@@ -1592,15 +1583,7 @@ int chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params) {
  * @return 0 on success, negative on error
  */
 int chipmunk_ring_reset_params(void) {
-    chipmunk_ring_pq_params_t default_params = {
-        .chipmunk_n = CHIPMUNK_RING_CHIPMUNK_N_DEFAULT,
-        .chipmunk_gamma = CHIPMUNK_RING_CHIPMUNK_GAMMA_DEFAULT,
-        .randomness_size = CHIPMUNK_RING_RANDOMNESS_SIZE_DEFAULT,
-        // Legacy quantum layer parameters removed - Acorn handles all security
-        .computed = {0} // Will be recalculated in set_params
-    };
-
-    return chipmunk_ring_set_params(&default_params);
+    return dap_enc_chipmunk_ring_init_with_security_level(CHIPMUNK_RING_SECURITY_LEVEL_V_PLUS);
 }
 
 /**
@@ -1680,6 +1663,29 @@ static int s_find_preset_index(chipmunk_ring_security_level_t a_level) {
 }
 
 /**
+ * @brief Try to match current parameters against an exact preset.
+ */
+static int s_find_exact_preset_index(const chipmunk_ring_pq_params_t *params) {
+    if (!params) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < s_security_presets_count; i++) {
+        if (params->ring_lwe_n == s_security_presets[i].ring_lwe_n &&
+            params->ring_lwe_q == s_security_presets[i].ring_lwe_q &&
+            params->ntru_n == s_security_presets[i].ntru_n &&
+            params->ntru_q == s_security_presets[i].ntru_q &&
+            params->code_n == s_security_presets[i].code_n &&
+            params->code_k == s_security_presets[i].code_k &&
+            params->code_t == s_security_presets[i].code_t) {
+            return (int)i;
+        }
+    }
+
+    return -1;
+}
+
+/**
  * @brief Initialize with specific NIST security level
  */
 int dap_enc_chipmunk_ring_init_with_security_level(chipmunk_ring_security_level_t a_level) {
@@ -1717,6 +1723,18 @@ int dap_enc_chipmunk_ring_init_with_security_level(chipmunk_ring_security_level_
 int dap_enc_chipmunk_ring_get_security_info(chipmunk_ring_security_info_t *a_info) {
     if (!a_info) {
         return -EINVAL;
+    }
+
+    int exact_idx = s_find_exact_preset_index(&s_pq_params);
+    if (exact_idx >= 0) {
+        a_info->level = s_security_presets[exact_idx].level;
+        a_info->classical_bits = s_security_presets[exact_idx].classical_bits;
+        a_info->quantum_bits = s_security_presets[exact_idx].quantum_bits;
+        a_info->logical_qubits_required = (uint64_t)s_pq_params.ring_lwe_n * 4 * 15 +
+                                          (uint64_t)s_pq_params.ntru_n * 4 * 16 +
+                                          (uint64_t)s_pq_params.code_n * 2;
+        a_info->description = s_security_presets[exact_idx].description;
+        return 0;
     }
 
     uint32_t classical_bits = (s_pq_params.ring_lwe_n * 292) / 1000;
@@ -1776,16 +1794,21 @@ int dap_enc_chipmunk_ring_get_params_for_level(chipmunk_ring_security_level_t a_
  * @brief Validate that current parameters meet minimum security level
  */
 int dap_enc_chipmunk_ring_validate_security_level(chipmunk_ring_security_level_t a_min_level) {
-    int idx = s_find_preset_index(a_min_level);
-    if (idx < 0) {
+    int min_idx = s_find_preset_index(a_min_level);
+    if (min_idx < 0) {
         return -EINVAL;
     }
 
-    uint32_t required_bits = s_security_presets[idx].classical_bits;
-    uint32_t current_bits = (s_pq_params.ring_lwe_n * 292) / 1000;
+    chipmunk_ring_security_info_t current_info = {0};
+    if (dap_enc_chipmunk_ring_get_security_info(&current_info) != 0) {
+        return -1;
+    }
+    uint32_t current_bits = current_info.classical_bits;
+    uint32_t required_bits = s_security_presets[min_idx].classical_bits;
 
     if (current_bits < required_bits) {
-        log_it(L_WARNING, "Security level validation failed: current %u bits < required %u bits for level %d",
+        log_it(L_WARNING,
+               "Security level validation failed: current %u bits < required %u bits for level %d",
                current_bits, required_bits, a_min_level);
         return -1;
     }

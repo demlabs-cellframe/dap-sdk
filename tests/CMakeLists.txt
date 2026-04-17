@@ -258,6 +258,15 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ri
         FAIL_REGULAR_EXPRESSION "SEGMENTATION FAULT")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_security_levels.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_security_levels unit/crypto/chipmunk_ring/test_chipmunk_ring_security_levels.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_security_levels "unit;crypto;ring;security_levels")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_implementation_correctness.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_implementation_correctness unit/crypto/chipmunk_ring/test_chipmunk_ring_implementation_correctness.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_implementation_correctness "unit;crypto;ring;implementation;correctness")
+endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)

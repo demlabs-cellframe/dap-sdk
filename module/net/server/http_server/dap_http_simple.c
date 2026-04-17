@@ -520,21 +520,21 @@ dap_http_cache_t * dap_http_simple_make_cache_from_reply(dap_http_simple_t * a_h
  */
 size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_format, ... )
 {
-    va_list ap, ap_copy;
+    va_list ap;
+    char *l_buf = NULL;
+    int l_buf_size;
+
+    if (!a_format)
+        return 0;
+
     va_start(ap, a_format);
-    va_copy(ap_copy, ap);
-    ssize_t l_buf_size = vsnprintf(NULL, 0, a_format, ap);
+    l_buf_size = vasprintf(&l_buf, a_format, ap);
     va_end(ap);
 
-    if (l_buf_size++ < 0) {
-        va_end(ap_copy);
+    if (l_buf_size < 0 || !l_buf)
         return 0;
-    }
-    char *l_buf = DAP_NEW_SIZE(char, l_buf_size);
-    vsnprintf(l_buf, l_buf_size, a_format, ap_copy);
-    va_end(ap_copy);
 
-    size_t l_ret = dap_http_simple_reply(a_http_simple, l_buf, l_buf_size);
+    size_t l_ret = dap_http_simple_reply(a_http_simple, l_buf, (size_t)l_buf_size + 1);
     DAP_DELETE(l_buf);
     return l_ret;
 }

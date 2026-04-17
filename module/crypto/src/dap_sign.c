@@ -1770,7 +1770,6 @@ int dap_sign_benchmark_batch_verification(
 }
 
 /**
-<<<<<<< HEAD
  * @brief Verify Chipmunk_Ring signature
  * @param a_sign Ring signature to verify
  * @param a_data Data that was signed
@@ -1785,7 +1784,7 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
     // Allow empty messages (a_data can be NULL if a_data_size is 0)
     dap_return_val_if_fail(a_data || a_data_size == 0, -EINVAL);
     dap_return_val_if_fail(a_ring_keys, -EINVAL);
-    dap_return_val_if_fail(a_ring_size > 0, -EINVAL);
+    dap_return_val_if_fail(a_ring_size >= 2 && a_ring_size <= CHIPMUNK_RING_MAX_RING_SIZE, -EINVAL);
 
     // Check signature type
     if (a_sign->header.type.type != SIG_TYPE_CHIPMUNK_RING) {
@@ -1815,13 +1814,14 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
 
     // Copy public keys with enhanced safety checks
     for (size_t i = 0; i < a_ring_size; i++) {
-        if (!a_ring_keys) {
-            log_it(L_ERROR, "Ring keys array is NULL");
+        if (!a_ring_keys[i]) {
+            log_it(L_ERROR, "Ring key at index %zu is NULL", i);
             DAP_FREE(l_public_keys);
             return -EINVAL;
         }
-        if (!a_ring_keys[i]) {
-            log_it(L_ERROR, "Ring key at index %zu is NULL", i);
+        if (a_ring_keys[i]->type != DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING) {
+            log_it(L_ERROR, "Ring key at index %zu has invalid type %d for ring verification",
+                   i, a_ring_keys[i]->type);
             DAP_FREE(l_public_keys);
             return -EINVAL;
         }

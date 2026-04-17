@@ -186,6 +186,217 @@ static bool s_test_boundary_conditions(void) {
 }
 
 /**
+ * @brief Test that verification validates key type for every ring key
+ */
+static bool s_test_verify_rejects_invalid_key_type(void) {
+    log_it(L_INFO, "Testing verification key type validation...");
+
+    const size_t l_ring_size = 3;
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
+
+    for (size_t i = 0; i < l_ring_size; i++) {
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
+    }
+
+    dap_hash_fast_t l_message_hash;
+    dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
+
+    dap_sign_t* l_signature = dap_sign_create_ring(
+        l_ring_keys[0],
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, l_ring_size, 1
+    );
+    dap_assert(l_signature != NULL, "Valid signature creation should succeed");
+
+    // Wrong key type should be rejected during verification
+    dap_enc_key_type_t l_original_type = l_ring_keys[1]->type;
+    l_ring_keys[1]->type = DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
+    int l_result = dap_sign_verify_ring(l_signature, &l_message_hash, sizeof(l_message_hash),
+                                        l_ring_keys, l_ring_size);
+    dap_assert(l_result != 0, "Verification should fail with invalid ring key type");
+
+    l_ring_keys[1]->type = l_original_type;
+
+    // Restore all-valid ring keys for cleanup
+    int l_recheck = dap_sign_verify_ring(l_signature, &l_message_hash, sizeof(l_message_hash),
+                                         l_ring_keys, l_ring_size);
+    dap_assert(l_recheck == 0, "Verification should succeed with all valid keys");
+
+    DAP_DELETE(l_signature);
+    for (size_t i = 0; i < l_ring_size; i++) {
+        dap_enc_key_delete(l_ring_keys[i]);
+    }
+
+    log_it(L_INFO, "Key type validation test passed");
+    return true;
+}
+
+/**
+ * @brief Test size and boundary limits in ring signing/verification APIs
+ */
+static bool s_test_size_boundaries(void) {
+    log_it(L_INFO, "Testing size and boundary limits...");
+
+    const size_t l_small_ring_size = 2;
+    dap_enc_key_t* l_ring_keys[l_small_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
+    for (size_t i = 0; i < l_small_ring_size; i++) {
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
+    }
+
+    uint8_t l_message[32] = {0};
+
+    // Create a valid baseline signature for repeated checks
+    dap_sign_t* l_signature = dap_sign_create_ring(
+        l_ring_keys[0],
+        l_message, sizeof(l_message),
+        l_ring_keys, l_small_ring_size, 1
+    );
+    dap_assert(l_signature != NULL, "Baseline signature should be created");
+
+    // TC-02: ring_size above CHIPMUNK_RING_MAX_RING_SIZE must fail in signing path
+    size_t l_oversize_ring = CHIPMUNK_RING_MAX_RING_SIZE + 1;
+    dap_enc_key_t **l_oversize_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, l_oversize_ring);
+    dap_assert(l_oversize_keys != NULL, "Oversize key array allocation should succeed");
+    for (size_t i = 0; i < l_oversize_ring; i++) {
+        l_oversize_keys[i] = l_ring_keys[0];
+    }
+
+    dap_sign_t* l_signature_over = dap_sign_create_ring(
+        l_ring_keys[0],
+        l_message, sizeof(l_message),
+        l_oversize_keys, l_oversize_ring, 1
+    );
+    dap_assert(l_signature_over == NULL, "Signing with oversized ring must fail");
+
+    // TC-02: oversized ring_size must fail in verification path
+    int l_verify_over_size = dap_sign_verify_ring(
+        l_signature,
+        l_message, sizeof(l_message),
+        l_oversize_keys, l_oversize_ring
+    );
+    dap_assert(l_verify_over_size != 0, "Verification with oversized ring_size must fail");
+    DAP_DELETE(l_oversize_keys);
+
+    // TC-05: message_size above CHIPMUNK_RING_MAX_MESSAGE_SIZE must fail safely
+    size_t l_oversize_message_size = CHIPMUNK_RING_MAX_MESSAGE_SIZE + 1;
+    uint8_t *l_oversize_message = DAP_NEW_SIZE(uint8_t, l_oversize_message_size);
+    dap_assert(l_oversize_message != NULL, "Oversize message allocation should succeed");
+    memset(l_oversize_message, 0xAA, l_oversize_message_size);
+
+    dap_sign_t* l_signature_over_message = dap_sign_create_ring(
+        l_ring_keys[0],
+        l_oversize_message, l_oversize_message_size,
+        l_ring_keys, l_small_ring_size, 1
+    );
+    dap_assert(l_signature_over_message == NULL, "Signing with oversize message must fail");
+    DAP_DELETE(l_oversize_message);
+
+    int l_recheck = dap_sign_verify_ring(
+        l_signature,
+        l_message, sizeof(l_message),
+        l_ring_keys, l_small_ring_size
+    );
+    dap_assert(l_recheck == 0, "Baseline signature must still verify after negative checks");
+
+    DAP_DELETE(l_signature);
+    for (size_t i = 0; i < l_small_ring_size; i++) {
+        dap_enc_key_delete(l_ring_keys[i]);
+    }
+
+    log_it(L_INFO, "Size and boundary limits test passed");
+    return true;
+}
+
+/**
+ * @brief Test negative verification paths consistency for side-channel resistance
+ */
+static bool s_test_verify_error_paths_consistency(void) {
+    log_it(L_INFO, "Testing verify error-path consistency...");
+
+    const size_t l_ring_size = 2;
+    dap_enc_key_t* l_ring_keys[l_ring_size];
+    memset(l_ring_keys, 0, sizeof(l_ring_keys));
+
+    for (size_t i = 0; i < l_ring_size; i++) {
+        l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
+    }
+
+    dap_hash_fast_t l_message_hash = {0};
+    bool l_hash_result = dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_message_hash);
+    dap_assert(l_hash_result == true, "Message hashing should succeed");
+
+    dap_sign_t* l_signature = dap_sign_create_ring(
+        l_ring_keys[0],
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, l_ring_size, 1
+    );
+    dap_assert(l_signature != NULL, "Baseline signature creation should succeed");
+
+    // TC-07: invalid verify inputs should fail safely without dereferencing sensitive state
+    int l_invalid_values[5];
+    size_t l_invalid_count = 0;
+
+    l_invalid_values[l_invalid_count++] = dap_sign_verify_ring(
+        NULL,
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, l_ring_size
+    );
+    l_invalid_values[l_invalid_count++] = dap_sign_verify_ring(
+        l_signature,
+        NULL, 10,
+        l_ring_keys, l_ring_size
+    );
+    l_invalid_values[l_invalid_count++] = dap_sign_verify_ring(
+        l_signature,
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, 0
+    );
+    l_invalid_values[l_invalid_count++] = dap_sign_verify_ring(
+        l_signature,
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, 1
+    );
+    l_invalid_values[l_invalid_count++] = dap_sign_verify_ring(
+        l_signature,
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, CHIPMUNK_RING_MAX_RING_SIZE + 1
+    );
+
+    for (size_t i = 0; i < l_invalid_count; i++) {
+        dap_assert(l_invalid_values[i] != 0, "Invalid verify path must return failure code");
+    }
+
+    // TC-07 additional case: invalid key type should fail and still preserve behavioral failure mode
+    dap_enc_key_type_t l_original_type = l_ring_keys[1]->type;
+    l_ring_keys[1]->type = DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
+    int l_invalid_key_type = dap_sign_verify_ring(
+        l_signature, &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, l_ring_size
+    );
+    l_ring_keys[1]->type = l_original_type;
+    dap_assert(l_invalid_key_type != 0, "Verify should fail for invalid key type");
+
+    dap_assert(dap_sign_verify_ring(
+        l_signature,
+        &l_message_hash, sizeof(l_message_hash),
+        l_ring_keys, l_ring_size
+    ) == 0, "Baseline verification should succeed after invalid-path checks");
+
+    DAP_DELETE(l_signature);
+    for (size_t i = 0; i < l_ring_size; i++) {
+        dap_enc_key_delete(l_ring_keys[i]);
+    }
+
+    log_it(L_INFO, "Verify error-path consistency test passed");
+    return true;
+}
+
+/**
  * @brief Test error handling and recovery
  */
 static bool s_test_error_handling_recovery(void) {
@@ -282,6 +493,9 @@ int main(int argc, char** argv) {
     l_all_passed &= s_test_signature_creation_validation();
     l_all_passed &= s_test_signature_verification_validation();
     l_all_passed &= s_test_boundary_conditions();
+    l_all_passed &= s_test_verify_rejects_invalid_key_type();
+    l_all_passed &= s_test_size_boundaries();
+    l_all_passed &= s_test_verify_error_paths_consistency();
     l_all_passed &= s_test_error_handling_recovery();
     l_all_passed &= s_test_comprehensive_validation();
     

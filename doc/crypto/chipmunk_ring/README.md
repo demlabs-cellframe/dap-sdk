@@ -75,7 +75,14 @@ int result = dap_sign_verify_ring(
 
 ## Documentation
 
+📄 **[CR-0 Security Review: подготовка и рамка](security_review_cr0_preparation_pack.md)** - Threat model, attack surface и критерии готовности к CR-1..CR-5  
+📋 **[CR-1 Security Review: классические уязвимости](security_review_cr1_classic_vuln_plan.md)** - API hardening, memory safety и negative/fuzz матрица  
+🔐 **[CR-2 Security Review: анонимность и утечки](security_review_cr2_anonymity_leakage_plan.md)** - Логи, leakage-анализ и поведенческие проверки  
+🛡 **[CR-3 Security Review: квантовая устойчивость и параметры](security_review_cr3_quantum_resilience_plan.md)** - Уровни NIST/PQ, квантовые метрики, downgrade-проверки  
+⚙️ **[CR-4 Security Review: корректность реализации](security_review_cr4_implementation_correctness_plan.md)** - API/serialize invariant и sign/verify корректность  
 📚 **[API Reference](api_reference.md)** - Complete API documentation  
+🧪 **[CR-5 Security Review: финальная валидация и закрытие](security_review_cr5_final_validation_and_closure_plan.md)** - Финальные прогоны и закрытие рисков  
+✅ **[Сводка findings CR-0..CR-5](security_review_findings_and_closure_summary.md)** - Финальный статус рисков, фикс-паки и результаты валидации  
 🔗 **[Cellframe Integration Guide](cellframe_integration_guide.md)** - Blockchain integration  
 🔬 **[Technical Specification](technical_specification.md)** - Implementation details  
 📄 **[Scientific Paper](../papers/chipmunk_ring_scientific_paper.tex)** - Academic publication  

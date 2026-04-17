@@ -50,9 +50,8 @@ static bool s_test_ring_anonymity(void) {
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
     }
 
-    // Use the first ring key as signer (must be one of the ring participants)
-    dap_enc_key_t* l_signer_key = l_ring_keys[0];
-    dap_assert(l_signer_key != NULL, "Signer key should be valid");
+    // Use different ring participants as signer to check indistinguishability
+    size_t l_signers_to_test[POSITIONS_TO_TEST] = {0, 2, TEST_RING_SIZE - 1};
 
     // Hash the test message
     dap_hash_fast_t l_message_hash = {0};
@@ -62,9 +61,10 @@ static bool s_test_ring_anonymity(void) {
     // Test different signer positions
     dap_sign_t* l_signatures[POSITIONS_TO_TEST];
     memset(l_signatures, 0, sizeof(l_signatures));
-    size_t l_positions[POSITIONS_TO_TEST] = {0, 2, TEST_RING_SIZE - 1};
-
     for (size_t i = 0; i < POSITIONS_TO_TEST; i++) {
+        dap_enc_key_t *l_signer_key = l_ring_keys[l_signers_to_test[i]];
+        dap_assert(l_signer_key != NULL, "Signer key should be valid");
+
         l_signatures[i] = dap_sign_create_ring(
             l_signer_key,
             &l_message_hash, sizeof(l_message_hash),
@@ -207,6 +207,7 @@ static bool s_test_linkability_prevention(void) {
     // Additional check: signatures may be different (due to random commitments)
     // This is good for unlinkability - observer cannot link signatures
     bool l_all_different = true;
+    size_t l_repeated_to_first = 0;
     for (size_t i = 0; i < l_num_attempts - 1; i++) {
         for (size_t j = i + 1; j < l_num_attempts; j++) {
             if (memcmp(l_signatures[i]->pkey_n_sign, l_signatures[j]->pkey_n_sign,
@@ -216,6 +217,16 @@ static bool s_test_linkability_prevention(void) {
             }
         }
     }
+
+    // At least one signature should differ for same signer + same message (nonce/zk randomization)
+    for (size_t i = 1; i < l_num_attempts; i++) {
+        if (memcmp(l_signatures[i]->pkey_n_sign, l_signatures[0]->pkey_n_sign,
+                   l_signatures[i]->header.sign_size) == 0) {
+            l_repeated_to_first++;
+        }
+    }
+    dap_assert(l_repeated_to_first < l_num_attempts - 1,
+               "At least one signature should differ for repeated signing with same signer/message");
     
     if (l_all_different) {
         log_it(L_INFO, "LINKABILITY PREVENTION: All signatures different (excellent unlinkability)");
