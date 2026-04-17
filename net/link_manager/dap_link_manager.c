@@ -89,7 +89,7 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
     dap_list_t *l_item = s_find_net_item_by_id(a_net_id);
     if (l_item)
         return (dap_managed_net_t *)l_item->data;
-    log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
+    debug_if(s_debug_more,L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
     return NULL;
 }
 
