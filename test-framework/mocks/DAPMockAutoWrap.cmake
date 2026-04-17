@@ -408,6 +408,16 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
     
     # Get current link libraries
     get_target_property(CURRENT_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+
+    # Guard against repeated wrapping (dap_mock_autowrap() + manual call).
+    # Rebuilding an already wrapped link line can corrupt --start/--end-group balance.
+    if(CURRENT_LIBS)
+        foreach(_CUR_LIB ${CURRENT_LIBS})
+            if(_CUR_LIB STREQUAL "-Wl,--start-group")
+                return()
+            endif()
+        endforeach()
+    endif()
     
     # Also check if libraries are added via target_sources (for OBJECT libraries)
     # This handles the case when dap_test_link_libraries uses target_sources

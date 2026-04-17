@@ -204,6 +204,17 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     endif()
 endif()
 
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    file(GLOB FALCON_DETERMINISTIC_SRCS src/falcon/*.c)
+    list(FILTER FALCON_DETERMINISTIC_SRCS EXCLUDE REGEX ".*test_falcon\\.c$")
+    list(FILTER FALCON_DETERMINISTIC_SRCS EXCLUDE REGEX ".*speed\\.c$")
+    if(FALCON_DETERMINISTIC_SRCS)
+        set_source_files_properties(
+            ${FALCON_DETERMINISTIC_SRCS}
+            PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
+    endif()
+endif()
+
 enable_language(ASM)
 
 
@@ -399,4 +410,3 @@ INSTALL(DIRECTORY src/msrln/ DESTINATION include/dap/crypto/msrln/)
 INSTALL(DIRECTORY src/sig_dilithium/ DESTINATION include/dap/crypto/sig_dilithium/)
 INSTALL(DIRECTORY src/sha3/ DESTINATION include/dap/crypto/sha3/)
 endif()
-

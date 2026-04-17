@@ -221,7 +221,7 @@ static void _write_key_in_file(void* key, size_t key_size,
 {
     FILE *f = fopen(file_name, "wb");
     dap_assert(f, "Create file");
-    fwrite(key, key_size, 1, f);
+    dap_assert(fwrite(key, key_size, 1, f) == 1, "Write key to file");
     fclose(f);
 }
 
@@ -230,7 +230,7 @@ void* _read_key_from_file(const char* file_name, size_t key_size)
     FILE *f = fopen(file_name, "rb");
     dap_assert(f, "Open key file");
     void* resut_key = calloc(1, key_size);//sizeof(dap_enc_key_serialize_t)
-    fread(resut_key, key_size, 1, f);// sizeof(dap_enc_key_serialize_t)
+    dap_assert(fread(resut_key, key_size, 1, f) == 1, "Read key from file");
     fclose(f);
     return resut_key;
 }

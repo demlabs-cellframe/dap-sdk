@@ -668,7 +668,7 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
         .retransmit_timeout_ms = 100,   // 100ms for localhost (was 1000ms - TOO SLOW!)
         .max_retransmit_count = 20,     // Increased for large transfers
         .send_window_size = 65536,      // 64K packets in-flight (~64MB for 1KB packets)
-        .recv_window_size = 65536,      // 64K packets reorder buffer
+        .recv_window_size = 65536,      // 64K packets receive window
         .max_out_of_order_delay_ms = 10000,  // 10 seconds out-of-order window
         .keepalive_interval_ms = 0,     // Not used (dap_stream has own keepalive)
         .keepalive_timeout_ms = 0,      // Not used
@@ -684,8 +684,7 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
         .arg = a_udp_ctx,
     };
     
-    dap_io_flow_ctrl_flags_t l_fc_flags = DAP_IO_FLOW_CTRL_RETRANSMIT | 
-                                           DAP_IO_FLOW_CTRL_REORDER;
+    dap_io_flow_ctrl_flags_t l_fc_flags = DAP_IO_FLOW_CTRL_RELIABLE;
     // NOTE: No KEEPALIVE flag - dap_stream has its own keep-alive!
     
     a_udp_ctx->flow_ctrl = dap_io_flow_ctrl_create(
@@ -2449,12 +2448,12 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         // FC will call s_client_flow_ctrl_packet_prepare_cb to add headers + encrypt
         int l_ret = dap_io_flow_ctrl_send(l_udp_ctx->flow_ctrl, a_data, a_size);
         if (l_ret != 0) {
-            debug_if(s_debug_more, L_DEBUG,
-                     "CLIENT: Flow Control send failed: ret=%d, type=%u%s",
-                     l_ret, a_pkt_type, l_ret == -10 ? " (FC deleting)" : "");
+            log_it(L_WARNING,
+                   "CLIENT: Flow Control send failed: ret=%d, type=%u%s, packet dropped to keep FC protocol consistency",
+                   l_ret, a_pkt_type, l_ret == -10 ? " (FC deleting)" : "");
             return -1;
         }
-        
+
         debug_if(s_debug_more, L_DEBUG,
                  "CLIENT: Flow Control sent %zu bytes (type=%u)", a_size, a_pkt_type);
         

@@ -14,6 +14,10 @@ target_link_libraries(${PROJECT_NAME}
     dap_test
 )
 
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(${PROJECT_NAME} PRIVATE -fno-fast-math -ffp-contract=off)
+endif()
+
 if(UNIX)
     target_link_libraries(${PROJECT_NAME} m pthread)
 endif()
@@ -34,4 +38,3 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 300)
-

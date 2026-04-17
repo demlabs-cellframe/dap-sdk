@@ -38,6 +38,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_key.h"
 #include "dap_net_trans_qos.h"
 #include "dap_enc_kdf.h"
+#include "dap_io_flow_datagram.h"
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
@@ -53,6 +54,9 @@ See more details here <http://www.gnu.org/licenses/>.
 static bool s_debug_more = false;
 static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg);
 static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
+static bool s_dns_server_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
+                                            struct sockaddr_storage *a_addr_out,
+                                            socklen_t *a_addr_len_out);
 
 static size_t s_dns_server_get_max_packet_size(dap_net_trans_t *a_trans)
 {
@@ -224,6 +228,10 @@ void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
         if (l_session->handshake_key)
             dap_enc_key_delete(l_session->handshake_key);
         if (l_session->stream) {
+            if (l_session->stream->flow) {
+                dap_io_flow_datagram_delete(l_session->stream->flow);
+                l_session->stream->flow = NULL;
+            }
             l_session->stream->trans_ctx = NULL;
             DAP_DEL_Z(l_session->stream->buf_fragments);
             DAP_DEL_Z(l_session->stream->pkt_cache);
@@ -393,6 +401,8 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     if (!l_stream) {
         log_it(L_ERROR, "DNS server: failed to allocate stream");
         dap_enc_key_delete(l_bob_key);
+        dap_enc_key_delete(l_session->handshake_key);
+        l_session->handshake_key = NULL;
         DAP_DELETE(l_session);
         return;
     }
@@ -401,6 +411,8 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     if (!l_trans_ctx) {
         log_it(L_ERROR, "DNS server: failed to allocate trans_ctx");
         dap_enc_key_delete(l_bob_key);
+        dap_enc_key_delete(l_session->handshake_key);
+        l_session->handshake_key = NULL;
         DAP_DELETE(l_stream);
         DAP_DELETE(l_session);
         return;
@@ -414,11 +426,26 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     l_stream->trans_ctx = l_trans_ctx;
     l_stream->_server_session = l_session;
     l_stream->stream_worker = DAP_STREAM_WORKER(a_es->worker);
+    l_stream->flow = dap_io_flow_datagram_new(s_dns_server_get_remote_addr_cb, l_session);
+    if (!l_stream->flow) {
+        log_it(L_ERROR, "DNS server: failed to create datagram flow");
+        dap_enc_key_delete(l_bob_key);
+        dap_enc_key_delete(l_session->handshake_key);
+        l_session->handshake_key = NULL;
+        DAP_DELETE(l_trans_ctx);
+        DAP_DELETE(l_stream);
+        DAP_DELETE(l_session);
+        return;
+    }
 
     dap_stream_session_t *l_stream_session = dap_stream_session_new(0, false);
     if (!l_stream_session) {
         log_it(L_ERROR, "DNS server: failed to create stream session");
         dap_enc_key_delete(l_bob_key);
+        dap_enc_key_delete(l_session->handshake_key);
+        l_session->handshake_key = NULL;
+        dap_io_flow_datagram_delete(l_stream->flow);
+        l_stream->flow = NULL;
         DAP_DELETE(l_trans_ctx);
         DAP_DELETE(l_stream);
         DAP_DELETE(l_session);
@@ -448,6 +475,24 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
            l_stream, l_stream->channel_count);
 
     dap_enc_key_delete(l_bob_key);
+}
+
+static bool s_dns_server_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
+                                             struct sockaddr_storage *a_addr_out,
+                                             socklen_t *a_addr_len_out)
+{
+    if (!a_flow || !a_addr_out || !a_addr_len_out) {
+        return false;
+    }
+
+    dns_server_client_session_t *l_session = (dns_server_client_session_t *)a_flow->protocol_data;
+    if (!l_session || l_session->remote_addr_len == 0) {
+        return false;
+    }
+
+    memcpy(a_addr_out, &l_session->remote_addr, sizeof(struct sockaddr_storage));
+    *a_addr_len_out = l_session->remote_addr_len;
+    return true;
 }
 
 typedef struct dns_sendto_args {

@@ -58,6 +58,30 @@
 #define LOG_TAG "file_utils"
 
 static bool s_debug_more = false;
+
+static bool s_write_all(int a_fd, const void *a_buf, size_t a_size)
+{
+    const uint8_t *l_cur = a_buf;
+    size_t l_left = a_size;
+    while (l_left) {
+#ifdef DAP_OS_WINDOWS
+        unsigned int l_chunk = (unsigned int)dap_min(l_left, (size_t)UINT_MAX);
+        int l_written = write(a_fd, l_cur, l_chunk);
+#else
+        ssize_t l_written = write(a_fd, l_cur, l_left);
+#endif
+        if (l_written < 0) {
+            if (errno == EINTR)
+                continue;
+            return false;
+        }
+        if (l_written == 0)
+            return false;
+        l_cur += (size_t)l_written;
+        l_left -= (size_t)l_written;
+    }
+    return true;
+}
 /**
  * Normalize path separators to the OS-native form in place.
  */
@@ -1840,7 +1864,10 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
     }
 
     // add header
-    write(a_outfile, &l_buffer, BLOCKSIZE);
+    if (!s_write_all(a_outfile, &l_buffer, BLOCKSIZE)) {
+        log_it(L_ERROR, "Failed to write tar directory header for '%s': %s", a_fpath, strerror(errno));
+        return false;
+    }
 
     return true;
 }
@@ -1889,18 +1916,30 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
         }
 
         // add header
-        write(a_outfile, &l_buffer, BLOCKSIZE);
+        if (!s_write_all(a_outfile, &l_buffer, BLOCKSIZE)) {
+            log_it(L_ERROR, "Failed to write tar file header for '%s': %s", a_fpath, strerror(errno));
+            DAP_DELETE(l_filebuf);
+            return false;
+        }
         // add file body
         while(remaining)
         {
             unsigned int bytes = (remaining > BLOCKSIZE) ? BLOCKSIZE : remaining;
             memcpy(&l_buffer, l_filebuf + l_filelen - remaining, bytes);
-            write(a_outfile, &l_buffer, bytes);
+            if (!s_write_all(a_outfile, &l_buffer, bytes)) {
+                log_it(L_ERROR, "Failed to write tar file body for '%s': %s", a_fpath, strerror(errno));
+                DAP_DELETE(l_filebuf);
+                return false;
+            }
             remaining -= bytes;
             // the file is already written, but not aligned to the BLOCKSIZE boundary
             if(bytes != BLOCKSIZE && !remaining) {
                 memset(&l_buffer, 0, BLOCKSIZE - bytes);
-                write(a_outfile, &l_buffer, BLOCKSIZE - bytes);
+                if (!s_write_all(a_outfile, &l_buffer, BLOCKSIZE - bytes)) {
+                    log_it(L_ERROR, "Failed to write tar padding for '%s': %s", a_fpath, strerror(errno));
+                    DAP_DELETE(l_filebuf);
+                    return false;
+                }
             }
         }
         DAP_DELETE(l_filebuf);
@@ -2007,8 +2046,10 @@ bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename
     // Write two empty blocks to the end
     union tar_buffer buffer;
     memset(&buffer, 0, BLOCKSIZE);
-    write(l_outfile, &buffer, BLOCKSIZE);
-    write(l_outfile, &buffer, BLOCKSIZE);
+    if (!s_write_all(l_outfile, &buffer, BLOCKSIZE) || !s_write_all(l_outfile, &buffer, BLOCKSIZE)) {
+        log_it(L_ERROR, "Failed to write tar trailer blocks to '%s': %s", outfile, strerror(errno));
+        l_ret = false;
+    }
     close(l_outfile);
     return l_ret;
 }

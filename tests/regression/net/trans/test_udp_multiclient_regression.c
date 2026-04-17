@@ -74,6 +74,8 @@ static dap_client_t *s_clients[NUM_CLIENTS] = {NULL};
 static test_stream_ch_ctx_t s_stream_ctxs[NUM_CLIENTS];
 
 static dap_stream_node_addr_t s_server_node_addr = {0};
+static int s_forced_tier = -1;
+static const char *s_forced_tier_name = "auto";
 
 // UDP trans config
 static const trans_test_config_t s_udp_config = {
@@ -83,19 +85,48 @@ static const trans_test_config_t s_udp_config = {
     .address = TEST_TRANS_SERVER_ADDR
 };
 
+static bool s_is_loopback_addr(const char *a_addr)
+{
+    if (!a_addr) {
+        return false;
+    }
+    return strcmp(a_addr, "127.0.0.1") == 0
+        || strcmp(a_addr, "::1") == 0
+        || strcmp(a_addr, "localhost") == 0;
+}
+
+static void s_configure_lb_tier(void)
+{
+#if defined(__linux__) || defined(ANDROID)
+    if (s_is_loopback_addr(s_udp_config.address)) {
+        s_forced_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+        s_forced_tier_name = "Application (loopback fallback)";
+        dap_io_flow_set_forced_tier(s_forced_tier);
+        log_it(L_NOTICE, "Init: loopback address '%s', forcing %s tier",
+               s_udp_config.address, s_forced_tier_name);
+    } else {
+        s_forced_tier = DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
+        s_forced_tier_name = "CBPF";
+        dap_io_flow_set_forced_tier(s_forced_tier);
+        log_it(L_NOTICE, "Init: forcing %s tier for address '%s'",
+               s_forced_tier_name, s_udp_config.address);
+    }
+#elif defined(__APPLE__) && defined(__MACH__)
+    s_forced_tier = DAP_IO_FLOW_LB_TIER_DARWIN_GCD;
+    s_forced_tier_name = "Darwin GCD";
+    dap_io_flow_set_forced_tier(s_forced_tier);
+    log_it(L_NOTICE, "Init: forcing %s tier for address '%s'",
+           s_forced_tier_name, s_udp_config.address);
+#endif
+}
+
 //===================================================================
 // INITIALIZATION
 //===================================================================
 
 static int s_init_all(void)
 {
-    // Force a non-application tier for reliable testing
-    // Application tier has race conditions with multiple clients
-#if defined(__linux__) || defined(ANDROID)
-    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_CLASSIC_BPF);
-#elif defined(__APPLE__) && defined(__MACH__)
-    dap_io_flow_set_forced_tier(DAP_IO_FLOW_LB_TIER_DARWIN_GCD);
-#endif
+    s_configure_lb_tier();
     
     log_it(L_INFO, "Init: events_init...");
     int ret = dap_events_init(0, 0);
@@ -269,6 +300,7 @@ static void s_cleanup_client(int id)
 static void test_multiclient_udp(void)
 {
     TEST_INFO("UDP Multi-Client Regression Test");
+    TEST_INFO("Forced LB tier: %s (%d)", s_forced_tier_name, s_forced_tier);
     TEST_INFO("Clients: %d, Data: %d MB each", NUM_CLIENTS, DATA_SIZE / (1024 * 1024));
     
     // Server
@@ -352,16 +384,22 @@ static void test_multiclient_udp(void)
     }
     TEST_INFO("All sends initiated, waiting for responses...");
     
-    // Step 3: Wait for ALL clients to receive data
+    // Step 3: Wait for ALL clients to receive data.
+    // Use a single deadline for the whole phase to avoid ctest wall-time timeouts.
+    struct timespec data_deadline;
+    clock_gettime(CLOCK_REALTIME, &data_deadline);
+    data_deadline.tv_sec += DATA_TIMEOUT / 1000;
+    data_deadline.tv_nsec += (DATA_TIMEOUT % 1000) * 1000000;
+    if (data_deadline.tv_nsec >= 1000000000) {
+        data_deadline.tv_sec++;
+        data_deadline.tv_nsec -= 1000000000;
+    }
+
     for (int i = 0; i < NUM_CLIENTS; i++) {
         bool success = false;
         
-        // Wait for this client's data
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += DATA_TIMEOUT / 1000;
-        ts.tv_nsec += (DATA_TIMEOUT % 1000) * 1000000;
-        if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+        // Wait for this client's data until the shared data-phase deadline.
+        struct timespec ts = data_deadline;
         
         pthread_mutex_lock(&s_stream_ctxs[i].mutex);
         while (!s_stream_ctxs[i].data_received) {

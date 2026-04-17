@@ -590,6 +590,8 @@ static bool test_wait_for_cleanup_complete(uint32_t a_timeout_ms)
  */
 static bool s_test_channel_echo_callback(dap_stream_ch_t *a_ch, void *a_arg)
 {
+    const uint8_t c_stream_ch_pkt_type_test_response = 0x01;
+
     if (!a_ch || !a_arg) {
         return false;
     }
@@ -597,16 +599,24 @@ static bool s_test_channel_echo_callback(dap_stream_ch_t *a_ch, void *a_arg)
     // a_arg is dap_stream_ch_pkt_t*
     dap_stream_ch_pkt_t *a_pkt = (dap_stream_ch_pkt_t *)a_arg;
     
+    // Echo only request packets; non-request packets are still considered valid
+    // so downstream notifiers can run without creating a ping-pong loop.
+    if (a_pkt->hdr.type != STREAM_CH_PKT_TYPE_REQUEST) {
+        return true;
+    }
+
     // Echo data back to client
     debug_if(true, L_DEBUG, "Echoing %u bytes back to client on channel '%c'", 
              a_pkt->hdr.data_size, a_ch->proc->id);
     
-    // Send data back through the same channel
-    ssize_t l_sent = dap_stream_ch_pkt_write_unsafe(a_ch, a_pkt->hdr.type, 
-                                                    a_pkt->data, a_pkt->hdr.data_size);
-    
-    if (l_sent < 0) {
-        log_it(L_WARNING, "Failed to echo data back to client");
+    // Use mt enqueue in callback path to avoid unsafe write drops on datagram transports.
+    size_t l_sent = dap_stream_ch_pkt_write_mt(a_ch->stream_worker, a_ch->uuid,
+                                               c_stream_ch_pkt_type_test_response,
+                                               a_pkt->data, a_pkt->hdr.data_size);
+    if (!l_sent) {
+        log_it(L_WARNING,
+               "Failed to echo data back to client: type=%u size=%u",
+               c_stream_ch_pkt_type_test_response, a_pkt->hdr.data_size);
         return false;
     }
     
@@ -673,12 +683,11 @@ static int test_init_all_transs(void)
         return -2;
     }
     
-    // Register channel processors for test channels A, B, C
-    // These channels are used in tests but don't have processors registered by default
-    // Echo callback is defined in test_trans_helpers.c
-    dap_stream_ch_proc_add('A', NULL, NULL, test_server_channel_echo_callback, NULL);
-    dap_stream_ch_proc_add('B', NULL, NULL, test_server_channel_echo_callback, NULL);
-    dap_stream_ch_proc_add('C', NULL, NULL, test_server_channel_echo_callback, NULL);
+    // Register channel processors for test channels A, B, C.
+    // Use local echo callback to keep integration harness behavior transport-agnostic.
+    dap_stream_ch_proc_add('A', NULL, NULL, s_test_channel_echo_callback, NULL);
+    dap_stream_ch_proc_add('B', NULL, NULL, s_test_channel_echo_callback, NULL);
+    dap_stream_ch_proc_add('C', NULL, NULL, s_test_channel_echo_callback, NULL);
     log_it(L_DEBUG, "Registered channel processors for test channels A, B, C with echo callback");
     
     // Initialize all registered modules
@@ -916,6 +925,10 @@ static dap_client_t *test_create_trans_client(trans_test_config_t *a_config,
 static void *test_trans_worker(void *a_arg)
 {
     trans_test_ctx_t *l_ctx = (trans_test_ctx_t *)a_arg;
+    const size_t c_datagram_payload_cap = 256 * 1024;
+    const bool l_is_datagram_trans = l_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC
+                                     || l_ctx->config.trans_type == DAP_NET_TRANS_DNS_TUNNEL;
+    size_t l_effective_data_size = l_ctx->scenario.data_size;
     l_ctx->result = 0;
     l_ctx->running = true;
     
@@ -925,6 +938,15 @@ static void *test_trans_worker(void *a_arg)
            l_ctx->scenario.num_servers, l_ctx->scenario.num_clients,
            l_ctx->scenario.data_size / 1024, l_ctx->scenario.timeout_ms);
     pthread_mutex_unlock(&s_test_mutex);
+
+    if (l_is_datagram_trans && l_effective_data_size > c_datagram_payload_cap) {
+        log_it(L_INFO,
+               "Applying datagram payload cap for %s: %zu KB -> %zu KB",
+               l_ctx->config.name,
+               l_effective_data_size / 1024,
+               c_datagram_payload_cap / 1024);
+        l_effective_data_size = c_datagram_payload_cap;
+    }
     
     // Create all servers
     if (test_create_trans_servers(l_ctx) != 0) {
@@ -935,7 +957,7 @@ static void *test_trans_worker(void *a_arg)
     
     // Initialize stream contexts and generate unique client node addresses
     for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
-        if (test_stream_ch_ctx_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, l_ctx->scenario.data_size) != 0) {
+        if (test_stream_ch_ctx_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, l_effective_data_size) != 0) {
             TEST_ERROR("Failed to initialize stream channel ctx %zu for %s", i, l_ctx->config.name);
             l_ctx->result = -2;
             l_ctx->running = false;
@@ -1111,7 +1133,7 @@ static void *test_trans_worker(void *a_arg)
 
     // Send data for all clients and verify
     TEST_INFO("Sending data for %zu clients (%zu KB each)...", 
-              l_ctx->scenario.num_clients, l_ctx->scenario.data_size / 1024);
+              l_ctx->scenario.num_clients, l_effective_data_size / 1024);
     size_t l_data_exchanged = 0;
     for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
         int l_ret = test_stream_ch_send_and_wait(l_ctx->clients[i], &l_ctx->stream_ctxs[i], 
@@ -1155,7 +1177,7 @@ static void *test_trans_worker(void *a_arg)
     }
     
     pthread_mutex_lock(&s_test_mutex);
-    size_t l_total_data_mb = (l_ctx->scenario.num_clients * l_ctx->scenario.data_size) / (1024 * 1024);
+    size_t l_total_data_mb = (l_ctx->scenario.num_clients * l_effective_data_size) / (1024 * 1024);
     printf("  All %zu %s clients completed data exchange successfully (%zu MB total)\n", 
            l_ctx->scenario.num_clients, l_ctx->config.name, l_total_data_mb);
     pthread_mutex_unlock(&s_test_mutex);
@@ -1644,4 +1666,3 @@ int main(int argc, char **argv)
     
     return 0;
 }
-

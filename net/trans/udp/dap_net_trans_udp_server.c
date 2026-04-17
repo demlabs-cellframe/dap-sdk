@@ -737,10 +737,10 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         }
     }
     
-    // OBFUSCATED HANDSHAKE DETECTION: Size in range [MIN, MAX] AND session not established
-    // CRITICAL: Only try deobfuscation if session_id == 0 (handshake not completed)!
-    // Otherwise FC packets (which may be in same size range) will be incorrectly treated as obfuscated.
-    if (l_session->session_id == 0 && dap_transport_is_obfuscated_handshake_size(a_size)) {
+    // OBFUSCATED HANDSHAKE DETECTION.
+    // While encryption_key is not established, packets in handshake-size range are treated
+    // as potential handshake retransmits and routed through HANDSHAKE path.
+    if (!l_session->encryption_key && dap_transport_is_obfuscated_handshake_size(a_size)) {
         // Try to deobfuscate as handshake
         uint8_t *l_handshake = NULL;
         size_t l_handshake_size = 0;
@@ -759,13 +759,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
             debug_if(s_debug_more, L_DEBUG,
                      "Deobfuscated HANDSHAKE: %zu bytes → %zu bytes",
                      a_size, l_handshake_size);
-            
-            // Initialize session_id
-            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
-            debug_if(s_debug_more, L_DEBUG,
-                     "HANDSHAKE: generated session_id=0x%" PRIx64 " for session %p",
-                     l_session->session_id, l_session);
-            
+
             // Process deobfuscated handshake
             int l_result = s_handle_handshake(l_session, l_handshake, l_handshake_size);
             DAP_DELETE(l_handshake);
@@ -777,13 +771,22 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         // Continue to try decryption with session key
     } else {
         debug_if(s_debug_more, L_DEBUG,
-                 "SERVER: Packet size %zu not in obfuscated range OR session already established (session_id=0x%" PRIx64 ")",
+                 "SERVER: Packet size %zu not in obfuscated range OR encryption key already established (session_id=0x%" PRIx64 ")",
                  a_size, l_session->session_id);
+    }
+
+    // During async KEM, ignore non-handshake packets until key is installed.
+    // This prevents malformed pre-key traffic from entering FC/decrypt paths.
+    if (!l_session->encryption_key && atomic_load(&l_session->kem_task_pending)) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: ignoring pre-key packet while KEM is pending (size=%zu, session=%p)",
+                 a_size, l_session);
+        return 0;
     }
     
     // ALL OTHER PACKETS: Must be encrypted!
     // 
-    // If Flow Control is enabled: pass to flow control for retransmission/reordering
+    // If Flow Control is enabled: pass to flow control for retransmission/ACK handling
     // Otherwise: decrypt + dispatch directly
     
     // Flow control from base flow structure (lifecycle tied to flow)
@@ -791,8 +794,8 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
     
     if (l_flow_ctrl) {
         // FLOW CONTROL ENABLED: Pass packet to flow control layer
-        // Flow control will handle retransmission, reordering, ACKs
-        // and eventually call s_flow_ctrl_payload_deliver_cb for in-order delivery
+        // Flow control will handle retransmission and ACKs
+        // and eventually call s_flow_ctrl_payload_deliver_cb for payload delivery
         
         debug_if(s_debug_more, L_DEBUG,
                  "Passing packet to Flow Control: size=%zu", a_size);
@@ -1042,7 +1045,7 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
         }
     }
     
-    // Create Flow Control (DAP_IO_FLOW_CTRL_RELIABLE: retransmit + reorder, NO keepalive)
+    // Create Flow Control (retransmit + reorder, no keepalive)
     // DAP Stream has its own keep-alive mechanism, so we don't enable flow control keep-alive
     // CRITICAL: Window sizes must be large enough to handle fragmented packets!
     // For 10MB @ 988 bytes/fragment = ~10,600 fragments. Use 64K window for safety.
@@ -1072,7 +1075,7 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
         log_it(L_ERROR, "Failed to create Flow Control for session");
         // Continue without flow control (fallback to unreliable UDP)
     } else {
-        debug_if(s_debug_more, L_DEBUG, "Flow Control enabled for session (RELIABLE mode: retransmit + reorder)");
+        debug_if(s_debug_more, L_DEBUG, "Flow Control enabled for session (reliable mode: retransmit + reorder)");
     }
     
     return l_stream_session;
@@ -1255,9 +1258,9 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         l_ret = dap_io_flow_ctrl_send(l_flow_ctrl, a_payload, a_payload_size);
         
         if (l_ret != 0) {
-            debug_if(s_debug_more, L_DEBUG,
-                     "Flow Control send failed (type=%u): ret=%d%s",
-                     a_type, l_ret, l_ret == -10 ? " (FC deleting)" : "");
+            log_it(L_WARNING,
+                   "Flow Control send failed (type=%u): ret=%d%s, packet dropped to keep FC protocol consistency",
+                   a_type, l_ret, l_ret == -10 ? " (FC deleting)" : "");
             return -8;
         }
         
@@ -1831,6 +1834,12 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     }
     
     // Now kem_task_pending is true, and we have exclusive ownership to create KEM task
+    if (a_session->session_id == 0) {
+        randombytes((uint8_t*)&a_session->session_id, sizeof(a_session->session_id));
+        debug_if(s_debug_more, L_DEBUG,
+                 "HANDSHAKE: generated session_id=0x%" PRIx64 " for session %p",
+                 a_session->session_id, a_session);
+    }
 
     // QoS probe detection: payload starts with DAP_QOS_PROBE_MAGIC → echo, skip KEM
     if (dap_qos_is_probe(a_payload, a_payload_size)) {
@@ -2443,7 +2452,7 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Delivering DECRYPTED reordered payload: size=%zu", a_payload_size);
+    debug_if(s_debug_more, L_DEBUG, "Delivering DECRYPTED payload: size=%zu", a_payload_size);
     
     // Get type from session (stored by parse_cb)
     uint8_t l_type = atomic_load(&l_session->last_recv_type);
@@ -2502,6 +2511,3 @@ static void s_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void *a_arg)
     // For DAP Stream: do nothing, stream handles its own keep-alive
     // For other protocols: might close connection, reconnect, or notify upper layer
 }
-
-
-

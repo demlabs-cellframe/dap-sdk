@@ -31,6 +31,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_events_socket.h"
 #include "dap_worker.h"
 #include "dap_net.h"
+#include "dap_io_flow_datagram.h"
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
@@ -115,6 +116,9 @@ static const dap_net_trans_ops_t s_dns_ops = {
 static dap_stream_trans_dns_private_t *s_get_private(dap_net_trans_t *a_trans);
 static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream);
 static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg);
+static bool s_dns_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
+                                     struct sockaddr_storage *a_addr_out,
+                                     socklen_t *a_addr_len_out);
 
 /**
  * @brief Register DNS tunnel trans adapter
@@ -651,6 +655,11 @@ static void s_dns_close(dap_stream_t *a_stream)
     if (!a_stream)
         return;
 
+    if (a_stream->flow) {
+        dap_io_flow_datagram_delete(a_stream->flow);
+        a_stream->flow = NULL;
+    }
+
     if (a_stream->trans) {
         dap_stream_trans_dns_private_t *l_priv = s_get_private(a_stream->trans);
         if (l_priv) {
@@ -727,6 +736,15 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     l_stream->trans = a_trans;
+
+    // DNS transport is datagram-based; keepalive/data send path expects stream->flow.
+    l_stream->flow = dap_io_flow_datagram_new(s_dns_get_remote_addr_cb, l_stream);
+    if (!l_stream->flow) {
+        log_it(L_CRITICAL, "Failed to create DNS datagram flow for stream");
+        dap_stream_delete_unsafe(l_stream);
+        a_result->error_code = -1;
+        return -1;
+    }
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;
@@ -766,6 +784,24 @@ static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)
 {
     (void)a_stream;
     return NULL;
+}
+
+static bool s_dns_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
+                                     struct sockaddr_storage *a_addr_out,
+                                     socklen_t *a_addr_len_out)
+{
+    if (!a_flow || !a_addr_out || !a_addr_len_out) {
+        return false;
+    }
+
+    dap_stream_t *l_stream = (dap_stream_t *)a_flow->protocol_data;
+    if (!l_stream || !l_stream->esocket || l_stream->esocket->addr_size == 0) {
+        return false;
+    }
+
+    memcpy(a_addr_out, &l_stream->esocket->addr_storage, sizeof(struct sockaddr_storage));
+    *a_addr_len_out = l_stream->esocket->addr_size;
+    return true;
 }
 
 /**

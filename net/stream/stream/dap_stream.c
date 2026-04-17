@@ -218,6 +218,14 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
     return dap_stream_trans_write_unsafe(a_stream, a_data, a_size);
 }
 
+static bool s_stream_esocket_is_detached(const dap_events_socket_t *a_es)
+{
+    if (!a_es) {
+        return false;
+    }
+    return a_es->_inheritor == NULL;
+}
+
 /**
  * @brief Send raw data to stream (datagram-aware, public API)
  * 
@@ -1213,7 +1221,7 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
-                if (l_es && !l_es->_inheritor) {
+                if (s_stream_esocket_is_detached(l_es)) {
                     l_processed_size += l_shift;
                     break;
                 }
@@ -1399,7 +1407,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
                     
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
-                    if (l_es && !l_es->_inheritor)
+                    if (s_stream_esocket_is_detached(l_es))
                         return;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
@@ -1418,7 +1426,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
-                        if (l_es && !l_es->_inheritor)
+                        if (s_stream_esocket_is_detached(l_es))
                             return;
                     }
                     if (l_ch->closing)
@@ -1517,7 +1525,18 @@ dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
             if (l_tc)
                 return l_tc->stream;
         }
-        return NULL;
+        // Transport fallback (UDP and others may keep trans_ctx in callbacks.arg
+        // and leave _inheritor for client infra). Resolve by esocket UUID.
+        dap_stream_t *l_stream = NULL;
+        pthread_rwlock_rdlock(&s_streams_lock);
+        for (dap_stream_t *l_it = s_streams; l_it; l_it = l_it->next) {
+            if (l_it->esocket_uuid == a_es->uuid) {
+                l_stream = l_it;
+                break;
+            }
+        }
+        pthread_rwlock_unlock(&s_streams_lock);
+        return l_stream;
     }
 }
 

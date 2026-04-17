@@ -150,7 +150,13 @@ int     buflen;
         return;
 
     buflen = snprintf(buf, sizeof(buf), "\n[%s:%d] <%s> expresion return false\n", a_file, a_line, a_expr);
-    write(STDOUT_FILENO, buf, buflen);
+    size_t l_msg_len = buflen < 0 ? 0 : dap_min((size_t)buflen, sizeof(buf) - 1);
+    if (l_msg_len) {
+        ssize_t l_write_rc;
+        do {
+            l_write_rc = write(STDOUT_FILENO, buf, l_msg_len);
+        } while (l_write_rc < 0 && errno == EINTR);
+    }
     abort();
 }
 

@@ -1107,7 +1107,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_bytes_read = dap_recvfrom(l_cur->socket, NULL, 0);
 #elif defined(DAP_OS_LINUX)
                         uint64_t val;
-                        read( l_cur->fd, &val, 8);
+                        ssize_t l_timer_read = read(l_cur->fd, &val, sizeof(val));
+                        if (l_timer_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+                            log_it(L_WARNING, "Can't read timerfd %d, errno %d: \"%s\"", l_cur->fd, errno, dap_strerror(errno));
 #endif
                         if (l_cur->callbacks.timer_callback)
                             l_cur->callbacks.timer_callback(l_cur);
@@ -2180,4 +2182,3 @@ dap_events_socket_t * dap_context_create_pipe(dap_context_t * a_context, dap_eve
     return l_es;
 #endif
 }
-
