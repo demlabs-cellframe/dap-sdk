@@ -49,11 +49,7 @@
 #define LOG_TAG "dap_client_fsm"
 
 #ifdef DAP_OS_WINDOWS
-static inline bool s_is_valid_ptr(const void *a_ptr)
-{
-    uintptr_t l_val = (uintptr_t)a_ptr;
-    return l_val >= 0x10000 && l_val <= 0x00007FFFFFFFFFFFULL;
-}
+#define s_is_valid_ptr(p) dap_is_valid_heap_ptr(p)
 #else
 #define s_is_valid_ptr(p) ((p) != NULL)
 #endif
@@ -1095,23 +1091,17 @@ static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_ar
 
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     if(l_client) {
-#ifdef DAP_OS_WINDOWS
-        uintptr_t l_client_val = (uintptr_t)l_client;
-        if(l_client_val < 0x10000 || l_client_val > 0x00007FFFFFFFFFFFULL) {
+        if(!s_is_valid_ptr(l_client)) {
+            log_it(L_WARNING, "Handshake esocket delete: invalid client pointer %p, skipping", l_client);
             a_es->_inheritor = NULL;
             return;
         }
-#endif
         dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-#ifdef DAP_OS_WINDOWS
-        if(l_fsm) {
-            uintptr_t l_fsm_val = (uintptr_t)l_fsm;
-            if(l_fsm_val < 0x10000 || l_fsm_val > 0x00007FFFFFFFFFFFULL) {
-                a_es->_inheritor = NULL;
-                return;
-            }
+        if(l_fsm && !s_is_valid_ptr(l_fsm)) {
+            log_it(L_WARNING, "Handshake esocket delete: invalid FSM pointer %p (client %p), skipping", l_fsm, l_client);
+            a_es->_inheritor = NULL;
+            return;
         }
-#endif
         if(l_fsm && !l_fsm->is_removing) {
             dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
             if (l_tc && l_tc->stream) {

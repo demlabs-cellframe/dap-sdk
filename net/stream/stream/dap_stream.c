@@ -1477,19 +1477,14 @@ dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
         if(!l_client)
             return NULL;
 #ifdef DAP_OS_WINDOWS
-        // Guard against use-after-free: on Windows debug heap freed memory
-        // is filled with 0xFEEE, and even in release builds a freed pointer
-        // may land outside valid user-mode address space
-        uintptr_t l_client_val = (uintptr_t)l_client;
-        if(l_client_val < 0x10000 || l_client_val > 0x00007FFFFFFFFFFFULL)
+        if(!dap_is_valid_heap_ptr(l_client))
             return NULL;
 #endif
         dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
         if(!l_fsm)
             return NULL;
 #ifdef DAP_OS_WINDOWS
-        uintptr_t l_fsm_val = (uintptr_t)l_fsm;
-        if(l_fsm_val < 0x10000 || l_fsm_val > 0x00007FFFFFFFFFFFULL)
+        if(!dap_is_valid_heap_ptr(l_fsm))
             return NULL;
 #endif
         if(l_fsm->is_removing)

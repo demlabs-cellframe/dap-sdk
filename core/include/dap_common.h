@@ -1369,3 +1369,21 @@ dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a
 #define dap_stream_node_addr_to_str_static(a) dap_stream_node_addr_to_str_static_(a).s
 
 void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);
+
+#ifdef DAP_OS_WINDOWS
+// Check if a pointer refers to committed, writable (heap) memory.
+// Returns false for freed, code-segment or otherwise invalid pointers.
+DAP_STATIC_INLINE bool dap_is_valid_heap_ptr(const void *a_ptr)
+{
+    uintptr_t l_val = (uintptr_t)a_ptr;
+    if(l_val < 0x10000 || l_val > 0x00007FFFFFFFFFFFULL)
+        return false;
+    MEMORY_BASIC_INFORMATION l_mbi;
+    if(VirtualQuery(a_ptr, &l_mbi, sizeof(l_mbi)) != sizeof(l_mbi))
+        return false;
+    if(l_mbi.State != MEM_COMMIT)
+        return false;
+    DWORD l_prot = l_mbi.Protect & ~(PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE);
+    return l_prot == PAGE_READWRITE || l_prot == PAGE_EXECUTE_READWRITE;
+}
+#endif
