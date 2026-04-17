@@ -944,7 +944,7 @@ static void s_worker_execute_stage_done(void *a_arg)
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
-    if (!a_fsm || !s_is_valid_ptr(a_fsm->client) || a_fsm->is_removing || !s_is_valid_ptr(a_fsm->worker))
+    if (!a_fsm || !s_is_valid_ptr(a_fsm->client) || a_fsm->is_removing)
         return;
 
     dap_client_stage_status_t l_stage_status = a_fsm->stage_status;
@@ -1007,7 +1007,8 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                 unsigned long l_delay_ms = l_is_last_attempt ? (s_timeout * 1000) : 300;
                 log_it(L_INFO, "Reconnect attempt %d in %lu ms", a_fsm->reconnect_attempts, l_delay_ms);
 
-                if (!dap_timerfd_start_on_worker(a_fsm->worker, l_delay_ms,
+                dap_worker_t *l_worker = a_fsm->worker ? a_fsm->worker : dap_events_worker_get_auto();
+                if (!l_worker || !dap_timerfd_start_on_worker(l_worker, l_delay_ms,
                                                  s_timer_reconnect_callback, l_timer_ctx)) {
                     log_it(L_ERROR, "Can't start reconnect timer");
                     DAP_DELETE(l_timer_ctx);
@@ -1022,7 +1023,11 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                 l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
                 l_dispatch->client = a_fsm->client;
                 l_dispatch->stage = STAGE_BEGIN;
-                dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+                dap_worker_t *l_wd = a_fsm->worker ? a_fsm->worker : dap_events_worker_get_auto();
+                if(l_wd)
+                    dap_worker_exec_callback_on(l_wd, s_worker_execute_stage, l_dispatch);
+                else
+                    DAP_DELETE(l_dispatch);
             }
         }
     } break;
@@ -1049,7 +1054,11 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
                 l_done_ctx->callbacks_arg = a_fsm->client->callbacks_arg;
                 l_done_ctx->pkt_queue = a_fsm->pkt_queue;
                 a_fsm->pkt_queue = NULL;
-                dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage_done, l_done_ctx);
+                dap_worker_t *l_wd2 = a_fsm->worker ? a_fsm->worker : dap_events_worker_get_auto();
+                if(l_wd2)
+                    dap_worker_exec_callback_on(l_wd2, s_worker_execute_stage_done, l_done_ctx);
+                else
+                    DAP_DELETE(l_done_ctx);
             }
         } else {
             // Advance to next stage
@@ -1236,7 +1245,13 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
 static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
 {
-    if(a_fsm->is_removing || !s_is_valid_ptr(a_fsm->worker))
+    if(a_fsm->is_removing)
+        return;
+
+    dap_worker_t *l_worker = a_fsm->worker;
+    if(!l_worker || !s_is_valid_ptr(l_worker))
+        l_worker = dap_events_worker_get_auto();
+    if(!l_worker)
         return;
 
     log_it(L_INFO, "FSM dispatching stage %s (transport: %s)",
@@ -1252,7 +1267,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         l_dispatch->client = a_fsm->client;
         l_dispatch->stage = STAGE_BEGIN;
         a_fsm->reconnect_attempts = 0;
-        dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+        dap_worker_exec_callback_on(l_worker, s_worker_execute_stage, l_dispatch);
         return;
     }
 
@@ -1348,7 +1363,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         };
 
         debug_if(s_debug_more, L_INFO, "FSM thread: ENC_INIT crypto done, dispatching IO to worker");
-        dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_enc_init_io, l_dispatch);
+        dap_worker_exec_callback_on(l_worker, s_worker_execute_enc_init_io, l_dispatch);
         return;
     }
 
@@ -1370,7 +1385,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
         l_dispatch->client = l_client;
         l_dispatch->stage = STAGE_QOS_PROBE;
-        dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+        dap_worker_exec_callback_on(l_worker, s_worker_execute_stage, l_dispatch);
         return;
     }
 
@@ -1382,8 +1397,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
     l_dispatch->client = a_fsm->client;
     l_dispatch->stage = a_fsm->stage;
     debug_if(s_debug_more, L_INFO, "FSM dispatch: stage %d -> worker #%u (fsm_uuid=0x%"DAP_UINT64_FORMAT_x")",
-           a_fsm->stage, a_fsm->worker->id, a_fsm->uuid);
-    dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
+           a_fsm->stage, l_worker->id, a_fsm->uuid);
+    dap_worker_exec_callback_on(l_worker, s_worker_execute_stage, l_dispatch);
 }
 
 // ===== FSM stage transaction =====
@@ -1519,7 +1534,7 @@ static void *s_fsm_notify_on_fsm_thread(void *a_arg)
     if (!l_ctx) return NULL;
 
     dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
-    if (!l_fsm || l_fsm->is_removing || !s_is_valid_ptr(l_fsm->worker)) {
+    if (!l_fsm || l_fsm->is_removing) {
         DAP_DELETE(l_ctx);
         return NULL;
     }
