@@ -127,6 +127,53 @@ endif()
 # ============================================================================
 # Test: DAP Process Memory (Unix-specific)
 # ============================================================================
+# ============================================================================
+# Test: DAP Ring Buffer
+# ============================================================================
+project(test_dap_ring_buffer)
+
+add_executable(${PROJECT_NAME}
+    test_dap_ring_buffer.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;ring-buffer"
+)
+
+# ============================================================================
+# Test: DAP Serialize
+# ============================================================================
+project(test_dap_serialize)
+
+add_executable(${PROJECT_NAME}
+    test_dap_serialize.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+dap_test_link_libraries(${PROJECT_NAME})
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES 
+    TIMEOUT 300
+    LABELS "unit;core;serialize"
+)
+
+# ============================================================================
+# Test: DAP Process Memory (Unix-specific)
+# ============================================================================
 if(UNIX)
     project(test_dap_process_memory)
 
