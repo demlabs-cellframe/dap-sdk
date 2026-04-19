@@ -2351,15 +2351,34 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
     a_metadata->is_keepalive = (l_hdr.fc_flags & DAP_IO_FLOW_CTRL_HDR_FLAG_KEEPALIVE) != 0;
     a_metadata->is_retransmit = (l_hdr.fc_flags & DAP_IO_FLOW_CTRL_HDR_FLAG_RETRANSMIT) != 0;
     
-    // CRITICAL: Store l_decrypted for FC to free after delivery!
-    a_metadata->private_ctx = l_decrypted;
-    
-    // Store UDP-specific info in session (для payload_deliver callback)
-    atomic_store(&l_session->last_recv_type, l_hdr.type);
-    
-    // Payload starts after full header
-    *a_payload_out = l_decrypted + sizeof(dap_stream_trans_udp_full_header_t);
-    *a_payload_size_out = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
+    // Build per-packet delivery buffer:
+    // [1 byte type][raw payload].
+    // This avoids cross-callback coupling via session-global last_recv_type.
+    size_t l_payload_size = l_decrypted_size - sizeof(dap_stream_trans_udp_full_header_t);
+    if (l_payload_size == 0) {
+        // ACK/control packet without payload: nothing to deliver.
+        *a_payload_out = NULL;
+        *a_payload_size_out = 0;
+        a_metadata->private_ctx = NULL;
+        DAP_DELETE(l_decrypted);
+    } else {
+        size_t l_deliver_size = l_payload_size + 1;
+        uint8_t *l_deliver_buf = DAP_NEW_SIZE(uint8_t, l_deliver_size);
+        if (!l_deliver_buf) {
+            log_it(L_ERROR, "Failed to allocate FC delivery buffer");
+            DAP_DELETE(l_decrypted);
+            return -7;
+        }
+        l_deliver_buf[0] = l_hdr.type;
+        memcpy(l_deliver_buf + 1,
+               l_decrypted + sizeof(dap_stream_trans_udp_full_header_t),
+               l_payload_size);
+        DAP_DELETE(l_decrypted);
+
+        *a_payload_out = l_deliver_buf;
+        *a_payload_size_out = l_deliver_size;
+        a_metadata->private_ctx = l_deliver_buf;
+    }
     
     // NOTE: l_decrypted will be freed by FC after delivery via metadata->private_ctx
     
@@ -2448,27 +2467,27 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
     UNUSED(a_arg);
     
     stream_udp_session_t *l_session = (stream_udp_session_t *)a_flow;
-    if (!l_session || !a_payload) {
+    if (!l_session || !a_payload || a_payload_size < 1) {
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Delivering DECRYPTED payload: size=%zu", a_payload_size);
-    
-    // Get type from session (stored by parse_cb)
-    uint8_t l_type = atomic_load(&l_session->last_recv_type);
+    const uint8_t *l_payload_u8 = (const uint8_t *)a_payload;
+    uint8_t l_type = l_payload_u8[0];
+    const uint8_t *l_data = l_payload_u8 + 1;
+    size_t l_data_size = a_payload_size - 1;
     
     debug_if(s_debug_more, L_DEBUG,
              "Delivering payload: type=%u, session=0x%" PRIx64 ", size=%zu",
-             l_type, l_session->session_id, a_payload_size);
+             l_type, l_session->session_id, l_data_size);
     
-    // Dispatch to protocol handlers (payload is PURE DATA, no headers!)
+    // Dispatch to protocol handlers (payload is raw transport data)
     int l_ret = 0;
     switch (l_type) {
         case DAP_STREAM_UDP_PKT_SESSION_CREATE:
-            l_ret = s_handle_session_create(l_session, a_payload, a_payload_size);
+            l_ret = s_handle_session_create(l_session, l_data, l_data_size);
             break;
         case DAP_STREAM_UDP_PKT_DATA:
-            l_ret = s_handle_data(l_session, a_payload, a_payload_size);
+            l_ret = s_handle_data(l_session, l_data, l_data_size);
             break;
         case DAP_STREAM_UDP_PKT_KEEPALIVE:
             l_ret = s_handle_keepalive(l_session);
