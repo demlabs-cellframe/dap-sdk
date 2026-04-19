@@ -123,9 +123,14 @@ endif()
 
 # x4 transpose helpers — arch-specific extract/xor
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
-    set(X4_TRANSPOSE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/keccak/dap_keccak_x4_transpose_avx2.c)
-    target_sources(${PROJECT_NAME} PRIVATE ${X4_TRANSPOSE_SRC})
-    set_source_files_properties(${X4_TRANSPOSE_SRC}
+    set(KECCAK_X4_TRANSPOSE_AVX2 ${KECCAK_GEN_DIR}/dap_keccak_x4_transpose_avx2.c)
+    dap_tpl_generate(
+        TEMPLATE ${K}/arch/x86/keccak_x4_transpose_avx2.tpl
+        OUTPUT   ${KECCAK_X4_TRANSPOSE_AVX2}
+        ARGS     ""
+    )
+    target_sources(${PROJECT_NAME} PRIVATE ${KECCAK_X4_TRANSPOSE_AVX2})
+    set_source_files_properties(${KECCAK_X4_TRANSPOSE_AVX2}
         PROPERTIES COMPILE_FLAGS "-mavx2"
     )
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")

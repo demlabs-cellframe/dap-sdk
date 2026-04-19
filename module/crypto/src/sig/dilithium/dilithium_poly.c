@@ -7,7 +7,6 @@
 #include "dap_hash_shake256.h"
 #include "dap_hash_shake_x4.h"
 #include "dap_cpu_arch.h"
-#include "dap_cpu_detect.h"
 #include "dap_arch_dispatch.h"
 
 extern const dap_ntt_params_t g_dilithium_ntt_params;
@@ -83,7 +82,7 @@ extern void dap_dilithium_polyz_unpack_g19_avx512(int32_t *, const uint8_t *);
 #endif /* !_WIN32 */
 #endif /* DAP_PLATFORM_X86 */
 
-#if DAP_PLATFORM_ARM64
+#if DAP_PLATFORM_ARM
 extern void dap_dilithium_ntt_forward_neon(int32_t coeffs[256]);
 extern void dap_dilithium_ntt_inverse_neon(int32_t coeffs[256]);
 extern void dap_dilithium_pointwise_mont_neon(int32_t *c, const int32_t *a, const int32_t *b);
@@ -489,7 +488,7 @@ static void s_dil_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, s_dil_zunpack_g19,   dap_dilithium_polyz_unpack_g19_avx512);
 #endif /* !_WIN32 */
 
-#if DAP_PLATFORM_ARM64
+#if DAP_PLATFORM_ARM
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_fwd,      dap_dilithium_ntt_forward_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_ntt_inv,      dap_dilithium_ntt_inverse_neon);
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON,   s_dil_pw_mont,      dap_dilithium_pointwise_mont_neon);

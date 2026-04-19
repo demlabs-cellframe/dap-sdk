@@ -18,6 +18,23 @@
 #include "dap_hash_keccak.h"
 #include "dap_hash_shake_x4.h"
 
+#if DAP_PLATFORM_X86
+void dap_keccak_absorb_136_avx512vl_asm(uint64_t *a_state, const uint8_t *a_data, size_t a_len, uint8_t a_suffix);
+void dap_keccak_absorb_168_avx512vl_asm(uint64_t *a_state, const uint8_t *a_data, size_t a_len, uint8_t a_suffix);
+void dap_keccak_absorb_72_avx512vl_asm(uint64_t *a_state, const uint8_t *a_data, size_t a_len, uint8_t a_suffix);
+void dap_keccak_absorb_136_scalar_bmi2(uint64_t *a_state, const uint8_t *a_data, size_t a_len, uint8_t a_suffix);
+void dap_keccak_absorb_168_scalar_bmi2(uint64_t *a_state, const uint8_t *a_data, size_t a_len, uint8_t a_suffix);
+void dap_keccak_absorb_72_avx512vl_asm(uint64_t *a_state, const uint8_t *a_data, size_t a_len, uint8_t a_suffix);
+void dap_keccak_absorb_72_scalar_bmi2(uint64_t *a_state, const uint8_t *a_data, size_t a_len, uint8_t a_suffix);
+
+void dap_keccak_squeeze_136_avx512vl_asm(uint64_t *a_state, uint8_t *a_out, size_t a_nblocks);
+void dap_keccak_squeeze_168_avx512vl_asm(uint64_t *a_state, uint8_t *a_out, size_t a_nblocks);
+void dap_keccak_squeeze_72_avx512vl_asm(uint64_t *a_state, uint8_t *a_out, size_t a_nblocks);
+void dap_keccak_squeeze_136_scalar_bmi2(uint64_t *a_state, uint8_t *a_out, size_t a_nblocks);
+void dap_keccak_squeeze_168_scalar_bmi2(uint64_t *a_state, uint8_t *a_out, size_t a_nblocks);
+void dap_keccak_squeeze_72_scalar_bmi2(uint64_t *a_state, uint8_t *a_out, size_t a_nblocks);
+#endif
+
 typedef struct { uint64_t s[25]; } dap_mlkem_xof_state;
 
 #define MLKEM_XOF_BLOCKBYTES DAP_KECCAK_SHAKE128_RATE
@@ -31,44 +48,10 @@ typedef struct { uint64_t s[25]; } dap_mlkem_xof_state;
  * that keeps state in xmm0-24 across all blocks (no intermediate load/store).
  */
 
-#if DAP_PLATFORM_X86
-#define DAP_KECCAK_HAS_SPONGE_ASM 1
-#endif
-
-static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
-                                    const uint8_t *a_data, size_t a_len,
-                                    uint8_t a_suffix)
+static inline void s_keccak_absorb_ref(uint64_t *a_state, unsigned a_rate,
+                                      const uint8_t *a_data, size_t a_len,
+                                      uint8_t a_suffix)
 {
-#if DAP_KECCAK_HAS_SPONGE_ASM
-    static int s_sponge_tier = -1;
-    if (__builtin_expect(s_sponge_tier < 0, 0)) {
-        dap_algo_class_t l_c = dap_algo_class_register("KECCAK_SPONGE");
-        dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_c);
-        s_sponge_tier = (arch >= DAP_CPU_ARCH_AVX512) ? 2
-                      : (arch >= DAP_CPU_ARCH_AVX2)   ? 1 : 0;
-    }
-    if (__builtin_expect(s_sponge_tier == 2, 1)) {
-        switch (a_rate) {
-        case DAP_KECCAK_SHA3_256_RATE:
-            dap_keccak_absorb_136_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
-        case DAP_KECCAK_SHAKE128_RATE:
-            dap_keccak_absorb_168_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
-        case DAP_KECCAK_SHA3_512_RATE:
-            dap_keccak_absorb_72_avx512vl_asm(a_state, a_data, a_len, a_suffix); return;
-        default: break;
-        }
-    } else if (s_sponge_tier == 1) {
-        switch (a_rate) {
-        case DAP_KECCAK_SHA3_256_RATE:
-            dap_keccak_absorb_136_scalar_bmi2(a_state, a_data, a_len, a_suffix); return;
-        case DAP_KECCAK_SHAKE128_RATE:
-            dap_keccak_absorb_168_scalar_bmi2(a_state, a_data, a_len, a_suffix); return;
-        case DAP_KECCAK_SHA3_512_RATE:
-            dap_keccak_absorb_72_scalar_bmi2(a_state, a_data, a_len, a_suffix); return;
-        default: break;
-        }
-    }
-#endif
     memset(a_state, 0, 200);
     unsigned rate_words = a_rate / 8;
 
@@ -103,43 +86,54 @@ static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
     dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);
 }
 
-static inline void s_keccak_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
-                                           uint64_t *a_state, unsigned a_rate)
+static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
+                                  const uint8_t *a_data, size_t a_len,
+                                  uint8_t a_suffix)
 {
-#if DAP_KECCAK_HAS_SPONGE_ASM
-    static int s_squeeze_tier = -1;
-    if (__builtin_expect(s_squeeze_tier < 0, 0)) {
-        dap_algo_class_t l_c = dap_algo_class_register("KECCAK_SPONGE");
-        dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_c);
-        s_squeeze_tier = (arch >= DAP_CPU_ARCH_AVX512) ? 2
-                       : (arch >= DAP_CPU_ARCH_AVX2)   ? 1 : 0;
+    const dap_keccak_sponge_ops_t *l_ops = dap_keccak_sponge_get_ops();
+
+    switch (a_rate) {
+    case DAP_KECCAK_SHA3_256_RATE:
+        l_ops->absorb_136(a_state, a_data, a_len, a_suffix);
+        return;
+    case DAP_KECCAK_SHAKE128_RATE:
+        l_ops->absorb_168(a_state, a_data, a_len, a_suffix);
+        return;
+    case DAP_KECCAK_SHA3_512_RATE:
+        l_ops->absorb_72(a_state, a_data, a_len, a_suffix);
+        return;
+    default:
+        s_keccak_absorb_ref(a_state, a_rate, a_data, a_len, a_suffix);
     }
-    if (__builtin_expect(s_squeeze_tier == 2, 1)) {
-        switch (a_rate) {
-        case DAP_KECCAK_SHA3_256_RATE:
-            dap_keccak_squeeze_136_avx512vl_asm(a_state, a_out, a_nblocks); return;
-        case DAP_KECCAK_SHAKE128_RATE:
-            dap_keccak_squeeze_168_avx512vl_asm(a_state, a_out, a_nblocks); return;
-        case DAP_KECCAK_SHA3_512_RATE:
-            dap_keccak_squeeze_72_avx512vl_asm(a_state, a_out, a_nblocks); return;
-        default: break;
-        }
-    } else if (s_squeeze_tier == 1) {
-        switch (a_rate) {
-        case DAP_KECCAK_SHA3_256_RATE:
-            dap_keccak_squeeze_136_scalar_bmi2(a_state, a_out, a_nblocks); return;
-        case DAP_KECCAK_SHAKE128_RATE:
-            dap_keccak_squeeze_168_scalar_bmi2(a_state, a_out, a_nblocks); return;
-        case DAP_KECCAK_SHA3_512_RATE:
-            dap_keccak_squeeze_72_scalar_bmi2(a_state, a_out, a_nblocks); return;
-        default: break;
-        }
-    }
-#endif
+}
+
+static inline void s_keccak_squeezeblocks_ref(uint8_t *a_out, size_t a_nblocks,
+                                            uint64_t *a_state, unsigned a_rate)
+{
     for (size_t i = 0; i < a_nblocks; i++) {
         dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);
         memcpy(a_out, a_state, a_rate);
         a_out += a_rate;
+    }
+}
+
+static inline void s_keccak_squeezeblocks(uint8_t *a_out, size_t a_nblocks,
+                                           uint64_t *a_state, unsigned a_rate)
+{
+    const dap_keccak_sponge_ops_t *l_ops = dap_keccak_sponge_get_ops();
+
+    switch (a_rate) {
+    case DAP_KECCAK_SHA3_256_RATE:
+        l_ops->squeeze_136(a_state, a_out, a_nblocks);
+        return;
+    case DAP_KECCAK_SHAKE128_RATE:
+        l_ops->squeeze_168(a_state, a_out, a_nblocks);
+        return;
+    case DAP_KECCAK_SHA3_512_RATE:
+        l_ops->squeeze_72(a_state, a_out, a_nblocks);
+        return;
+    default:
+        s_keccak_squeezeblocks_ref(a_out, a_nblocks, a_state, a_rate);
     }
 }
 

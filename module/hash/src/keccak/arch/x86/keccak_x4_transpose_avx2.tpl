@@ -1,14 +1,8 @@
 /**
- * @file dap_keccak_x4_transpose_avx2.c
- * @brief AVX2 4×4 uint64 transpose for x4 Keccak state extract/xor operations.
+ * @file keccak_x4_transpose_avx2.tpl
+ * @brief AVX2 4×4 uint64 transpose for x4 Keccak state extract/xor.
  *
- * The x4 Keccak state uses interleaved layout: lanes[lane_idx * 4 + inst].
- * Extract = deinterleave (state → 4 output buffers).
- * XOR = interleave + XOR (4 input buffers → state).
- *
- * The 4×4 transpose uses vpunpcklqdq/vpunpckhqdq + vperm2i128.
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
+ * Generated through `dap_tpl` for x86 Keccak x4 helper path.
  */
 
 #include <stdint.h>
@@ -18,10 +12,8 @@
 #include "dap_hash_keccak_x4.h"
 
 void dap_keccak_x4_xor_bytes_all_avx2(dap_keccak_x4_state_t *a_state,
-                                       const uint8_t *a_in0,
-                                       const uint8_t *a_in1,
-                                       const uint8_t *a_in2,
-                                       const uint8_t *a_in3,
+                                       const uint8_t *a_in0, const uint8_t *a_in1,
+                                       const uint8_t *a_in2, const uint8_t *a_in3,
                                        size_t a_len)
 {
     const size_t l_full = a_len / 8;

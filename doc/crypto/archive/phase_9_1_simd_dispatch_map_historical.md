@@ -1,7 +1,5 @@
 # Phase 9.1 — Карта SIMD-точек входа и dispatch (PQC & Symmetric)
 
-**СТАТУС:** `historical` (архивная копия: `doc/crypto/archive/phase_9_1_simd_dispatch_map_historical.md`)
-
 Документ фиксирует текущую карту SIMD-ландшафта для `task_5828bd04` (Phase 9.1), чтобы быстро перейти к 9.2 — базовому замеру и сравнительному бенчмарку с liboqs.
 
 ## 1) ML-KEM (FIPS 203): hot-path и runtime-dispatch
