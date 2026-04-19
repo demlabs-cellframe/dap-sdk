@@ -222,12 +222,19 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     bool l_enable_socket_sharding = false;
     if (a_type == DESCRIPTOR_TYPE_SOCKET_UDP) {
 #ifdef SO_REUSEPORT
-        // Socket sharding only if SO_REUSEPORT worked and we have multiple workers
+        // Socket sharding is opt-in because multi-socket UDP fanout can break
+        // ordering/affinity assumptions in higher-level transports.
+        bool l_sharding_enabled_cfg =
+            dap_config_get_item_bool_default(g_config, "server", "udp_socket_sharding", false);
+        // Socket sharding only if explicitly enabled and we have multiple workers
         uint32_t l_worker_count = dap_events_thread_get_count();
-        l_enable_socket_sharding = (l_worker_count > 1);
+        l_enable_socket_sharding = l_sharding_enabled_cfg && (l_worker_count > 1);
         
         if (l_enable_socket_sharding) {
             log_it(L_NOTICE, "Enabling UDP socket sharding: %u listener sockets (one per worker)", l_worker_count);
+        } else if (l_worker_count > 1) {
+            debug_if(a_server->ext_log, L_INFO,
+                     "UDP socket sharding disabled (set [server].udp_socket_sharding=true to enable)");
         }
 #endif
     }
@@ -316,7 +323,11 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
 #ifdef DAP_EVENTS_CAPS_EPOLL
             l_es_sharded->ev_base_flags = EPOLLIN;
 #ifdef EPOLLEXCLUSIVE
-            l_es_sharded->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
+            // UDP listeners can toggle writable state (datagram send queue flush path).
+            // EPOLLEXCLUSIVE sockets can't be safely MOD-ed, so keep UDP non-exclusive.
+            l_es_sharded->ev_base_flags |= EPOLLET;
+            if (a_type != DESCRIPTOR_TYPE_SOCKET_UDP)
+                l_es_sharded->ev_base_flags |= EPOLLEXCLUSIVE;
 #endif
 #endif
             l_es_sharded->addr_size = l_len;
@@ -365,7 +376,9 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
 #ifdef DAP_EVENTS_CAPS_EPOLL
     l_es->ev_base_flags = EPOLLIN;
 #ifdef EPOLLEXCLUSIVE
-    l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
+    l_es->ev_base_flags |= EPOLLET;
+    if (a_type != DESCRIPTOR_TYPE_SOCKET_UDP)
+        l_es->ev_base_flags |= EPOLLEXCLUSIVE;
 #endif
 #endif
     l_es->addr_size = l_len;

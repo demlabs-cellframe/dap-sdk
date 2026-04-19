@@ -223,7 +223,24 @@ static bool s_stream_esocket_is_detached(const dap_events_socket_t *a_es)
     if (!a_es) {
         return false;
     }
-    return a_es->_inheritor == NULL;
+    if (a_es->_inheritor != NULL) {
+        return false;
+    }
+
+    // UDP and other datagram paths may keep esocket->_inheritor unset and
+    // resolve stream by UUID (see dap_stream_get_from_es fallback).
+    // Treat such esockets as attached while stream entry is still present.
+    bool l_stream_found = false;
+    pthread_rwlock_rdlock(&s_streams_lock);
+    for (dap_stream_t *l_it = s_streams; l_it; l_it = l_it->next) {
+        if (l_it->esocket_uuid == a_es->uuid) {
+            l_stream_found = true;
+            break;
+        }
+    }
+    pthread_rwlock_unlock(&s_streams_lock);
+
+    return !l_stream_found;
 }
 
 /**

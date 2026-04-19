@@ -1544,25 +1544,25 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 #if defined DAP_EVENTS_CAPS_IOCP
     // There's no proper way, neither a need to do this when running IOCP
 #elif defined (DAP_EVENTS_CAPS_EPOLL)
-    int events = a_esocket->ev_base_flags | EPOLLERR;
+    int l_events_mod = a_esocket->ev_base_flags | EPOLLERR;
 #ifdef EPOLLEXCLUSIVE
-    events &= ~EPOLLEXCLUSIVE; // EPOLLEXCLUSIVE is only valid for EPOLL_CTL_ADD
+    l_events_mod &= ~EPOLLEXCLUSIVE; // EPOLLEXCLUSIVE is only valid for EPOLL_CTL_ADD
 #endif
 
     if( a_esocket->flags & DAP_SOCK_READY_TO_READ )
-        events |= EPOLLIN;
+        l_events_mod |= EPOLLIN;
 
     if( a_esocket->flags & DAP_SOCK_READY_TO_WRITE || a_esocket->flags &DAP_SOCK_CONNECTING )
-        events |= EPOLLOUT;
+        l_events_mod |= EPOLLOUT;
 
-    a_esocket->ev.events = events;
+    a_esocket->ev.events = l_events_mod;
 
-    debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Updating CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, events=0x%x, EPOLLOUT=%d)", 
-             a_esocket->socket, a_esocket->flags, events, !!(events & EPOLLOUT));
+    debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Updating CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, events=0x%x, EPOLLOUT=%d)",
+             a_esocket->socket, a_esocket->flags, l_events_mod, !!(l_events_mod & EPOLLOUT));
 
     debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
              "CLI poll_update: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" flags=0x%x events=0x%x EPOLLOUT=%d",
-             a_esocket->socket, a_esocket->uuid, a_esocket->flags, events, !!(events & EPOLLOUT));
+             a_esocket->socket, a_esocket->uuid, a_esocket->flags, l_events_mod, !!(l_events_mod & EPOLLOUT));
 
     if( a_esocket->context){
         int l_fd;
@@ -1581,15 +1581,34 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 #else
             int l_errno = errno;
 #endif
-            return log_it(L_CRITICAL, "Error updating client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
-                a_esocket->context->epoll_fd, dap_strerror(l_errno), l_errno), -1;
-        } else {
-            debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
-                     "CLI poll_update OK: epoll_ctl MOD fd=%d epoll_fd=%"DAP_FORMAT_HANDLE,
-                     l_fd, a_esocket->context->epoll_fd);
-            debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Successfully updated CONNECTING socket %"DAP_FORMAT_SOCKET" in epoll", 
-                     a_esocket->socket);
+            if (l_errno == ENOENT) {
+                // Socket can legitimately be removed/reassigned between update requests.
+                if (!epoll_ctl(a_esocket->context->epoll_fd, EPOLL_CTL_ADD, l_fd, &a_esocket->ev))
+                    goto l_update_ok;
+#ifdef DAP_OS_WINDOWS
+                l_errno = WSAGetLastError();
+#else
+                l_errno = errno;
+#endif
+                if (l_errno == EEXIST && !epoll_ctl(a_esocket->context->epoll_fd, EPOLL_CTL_MOD, l_fd, &a_esocket->ev))
+                    goto l_update_ok;
+#ifdef DAP_OS_WINDOWS
+                l_errno = WSAGetLastError();
+#else
+                l_errno = errno;
+#endif
+            }
+            return log_it(L_CRITICAL, "Error updating socket state in epoll_fd %"DAP_FORMAT_HANDLE" for fd %d (type=%d, flags=0x%x, base=0x%x, mod=0x%x): \"%s\" (%d)",
+                          a_esocket->context->epoll_fd, l_fd, a_esocket->type,
+                          a_esocket->flags, a_esocket->ev_base_flags, l_events_mod,
+                          dap_strerror(l_errno), l_errno), -1;
         }
+l_update_ok:
+        debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+                 "CLI poll_update OK: fd=%d epoll_fd=%"DAP_FORMAT_HANDLE,
+                 l_fd, a_esocket->context->epoll_fd);
+        debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Successfully updated CONNECTING socket %"DAP_FORMAT_SOCKET" in epoll",
+                 a_esocket->socket);
     } else {
         debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_WARNING,
                  "CLI poll_update: no context! socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x,
