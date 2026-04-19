@@ -1035,7 +1035,8 @@ void polyw1_pack(unsigned char *r, const poly *a) {
   unsigned int i;
 
   for(i = 0; i < NN/2; ++i)
-    r[i] = a->coeffs[2*i+0] | (a->coeffs[2*i+1] << 4);
+    r[i] = (unsigned char)((uint32_t)a->coeffs[2*i+0]
+                           | ((uint32_t)a->coeffs[2*i+1] << 4));
 }
 
 /**************************************************/

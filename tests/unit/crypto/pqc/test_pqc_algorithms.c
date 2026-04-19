@@ -23,6 +23,74 @@
 #include "dap_enc_ntru_prime_sig.h"
 #include "dap_ntru_prime_sig.h"
 #include "dap_enc_aes.h"
+#include "dilithium_poly.h"
+#include "dilithium_rounding_reduce.h"
+#include "dap_enc_dilithium.h"
+
+#define LOG_TAG "test_pqc"
+
+/* ===== Legacy Dilithium decompose cross-check ===== */
+
+static void s_test_dilithium_decompose_crosscheck(void)
+{
+    dap_print_module_name("Dilithium decompose AVX-vs-ref cross-check");
+
+    poly l_a, l_a1_dispatch, l_a0_dispatch;
+
+    for (unsigned i = 0; i < NN; ++i)
+        l_a.coeffs[i] = i * 32771 % Q;
+    l_a.coeffs[0] = 0;
+    l_a.coeffs[1] = 100;
+    l_a.coeffs[2] = Q - 1;
+    l_a.coeffs[3] = ALPHA;
+    l_a.coeffs[4] = ALPHA - 1;
+    l_a.coeffs[5] = ALPHA / 2;
+    l_a.coeffs[6] = Q / 2;
+
+    poly_decompose(&l_a1_dispatch, &l_a0_dispatch, &l_a);
+
+    unsigned l_mismatches = 0;
+    for (unsigned i = 0; i < NN; ++i) {
+        uint32_t l_a0_ref;
+        uint32_t l_a1_ref = decompose(l_a.coeffs[i], &l_a0_ref);
+        if (l_a1_dispatch.coeffs[i] != l_a1_ref) {
+            if (l_mismatches < 5)
+                log_it(L_ERROR, "a1 mismatch at %u: dispatch=%u ref=%u (input=%u)",
+                       i, l_a1_dispatch.coeffs[i], l_a1_ref, l_a.coeffs[i]);
+            l_mismatches++;
+        }
+        if (l_a0_dispatch.coeffs[i] != l_a0_ref) {
+            if (l_mismatches < 10)
+                log_it(L_ERROR, "a0 mismatch at %u: dispatch=%u ref=%u (input=%u)",
+                       i, l_a0_dispatch.coeffs[i], l_a0_ref, l_a.coeffs[i]);
+            l_mismatches++;
+        }
+    }
+    dap_assert(l_mismatches == 0, "poly_decompose matches reference for all 256 coefficients");
+}
+
+static void s_test_dilithium_sign_verify(void)
+{
+    dap_print_module_name("Legacy Dilithium sign/verify");
+
+    dap_enc_key_t *l_key = dap_enc_key_new_generate(
+            DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
+    dap_assert(l_key != NULL, "Dilithium keygen succeeded");
+
+    const char *l_msg = "Dilithium cross-platform verification test";
+    size_t l_msg_len = strlen(l_msg);
+    size_t l_sig_size = sizeof(dilithium_signature_t);
+    uint8_t *l_sig = DAP_NEW_Z_SIZE(uint8_t, l_sig_size);
+
+    int l_rc = l_key->sign_get(l_key, l_msg, l_msg_len, l_sig, l_sig_size);
+    dap_assert(l_rc == 0, "Dilithium sign succeeded");
+
+    l_rc = l_key->sign_verify(l_key, l_msg, l_msg_len, l_sig, l_sig_size);
+    dap_assert(l_rc == 0, "Dilithium verify succeeded");
+
+    dap_enc_key_signature_delete(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, l_sig);
+    dap_enc_key_delete(l_key);
+}
 
 /* ===== ML-DSA (FIPS 204) ===== */
 
@@ -400,6 +468,8 @@ int main(void)
 {
     dap_print_module_name("PQC & New Symmetric Algorithms");
 
+    s_test_dilithium_decompose_crosscheck();
+    s_test_dilithium_sign_verify();
     s_test_mldsa();
     s_test_mlkem();
     s_test_chacha20_poly1305();

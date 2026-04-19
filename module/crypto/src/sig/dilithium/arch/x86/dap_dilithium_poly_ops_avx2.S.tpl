@@ -344,10 +344,6 @@ dap_dilithium_poly_decompose_{{ARCH_LOWER}}:
     vmovd   %edi, %xmm6
     vpbroadcastd %xmm6, %ymm6          /* 2*gamma2 */
 
-    movl    $261887, %edi
-    vmovd   %edi, %xmm5
-    vpbroadcastd %xmm5, %ymm5          /* gamma2-1 */
-
     movl    $1, %edi
     vmovd   %edi, %xmm2
     vpbroadcastd %xmm2, %ymm2
@@ -360,21 +356,25 @@ dap_dilithium_poly_decompose_{{ARCH_LOWER}}:
     vmovd   %edi, %xmm3
     vpbroadcastd %xmm3, %ymm3
 
+    movl    $261887, %edi
+    vmovd   %edi, %xmm5
+    vpbroadcastd %xmm5, %ymm5          /* ALPHA/2 - 1 */
+
     .p2align 4
 .L_decompose_loop:
     vmovdqu (%rdx,%rax), %ymm0
 
     vpsrld  $19, %ymm0, %ymm1
     vpand   %ymm8, %ymm0, %ymm10
-    vpaddd  %ymm5, %ymm0, %ymm0
     vpslld  $9, %ymm1, %ymm1
     vpaddd  %ymm7, %ymm1, %ymm1
     vpaddd  %ymm10, %ymm1, %ymm1
     vpsrad  $31, %ymm1, %ymm10
     vpand   %ymm6, %ymm10, %ymm10
-    vpaddd  %ymm10, %ymm1, %ymm1       /* a0 intermediate */
+    vpaddd  %ymm10, %ymm1, %ymm1       /* t_4 (centered in [0, ALPHA)) */
 
-    vpsubd  %ymm1, %ymm0, %ymm0        /* remainder */
+    vpsubd  %ymm1, %ymm0, %ymm0        /* remainder = a - t_4 */
+    vpaddd  %ymm5, %ymm0, %ymm0        /* += ALPHA/2-1 → remainder = a - t_5 (ref-compatible) */
 
     vpaddd  %ymm9, %ymm0, %ymm10       /* remainder - 1 */
     vpsrld  $19, %ymm0, %ymm0
@@ -445,7 +445,6 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vmovdqu (%rsi,%rax), %ymm9
     vpsrld  $19, %ymm9, %ymm10
     vpand   %ymm7, %ymm9, %ymm11
-    vpaddd  %ymm5, %ymm9, %ymm9
     vpslld  $9, %ymm10, %ymm10
     vpaddd  %ymm6, %ymm10, %ymm10
     vpaddd  %ymm11, %ymm10, %ymm10
@@ -453,6 +452,7 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vpand   %ymm4, %ymm11, %ymm11
     vpaddd  %ymm11, %ymm10, %ymm10
     vpsubd  %ymm10, %ymm9, %ymm9
+    vpaddd  %ymm5, %ymm9, %ymm9         /* += ALPHA/2-1 (ref-compatible remainder) */
     vpaddd  %ymm8, %ymm9, %ymm11
     vpsrld  $19, %ymm9, %ymm9
     vpsrad  $31, %ymm11, %ymm11
@@ -465,7 +465,6 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vmovdqu (%rdx,%rax), %ymm0
     vpsrld  $19, %ymm0, %ymm10
     vpand   %ymm7, %ymm0, %ymm12
-    vpaddd  %ymm5, %ymm0, %ymm0
     vpslld  $9, %ymm10, %ymm10
     vpaddd  %ymm6, %ymm10, %ymm10
     vpaddd  %ymm12, %ymm10, %ymm10
@@ -473,6 +472,7 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vpand   %ymm4, %ymm12, %ymm12
     vpaddd  %ymm12, %ymm10, %ymm10
     vpsubd  %ymm10, %ymm0, %ymm0
+    vpaddd  %ymm5, %ymm0, %ymm0         /* += ALPHA/2-1 (ref-compatible remainder) */
     vpaddd  %ymm8, %ymm0, %ymm10
     vpsrld  $19, %ymm0, %ymm0
     vpsrad  $31, %ymm10, %ymm10
@@ -534,10 +534,6 @@ dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     vmovd   %edi, %xmm7
     vpbroadcastd %xmm7, %ymm7
 
-    movl    $261887, %edi
-    vmovd   %edi, %xmm6
-    vpbroadcastd %xmm6, %ymm6
-
     movl    $1, %edi
     vmovd   %edi, %xmm2
     vpbroadcastd %xmm2, %ymm2
@@ -554,6 +550,10 @@ dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     vmovd   %edi, %xmm4
     vpbroadcastd %xmm4, %ymm4
 
+    movl    $261887, %edi
+    vmovd   %edi, %xmm6
+    vpbroadcastd %xmm6, %ymm6          /* ALPHA/2 - 1 */
+
     .p2align 4
 .L_usehint_loop:
     vmovdqu (%rsi,%rax), %ymm0
@@ -561,15 +561,15 @@ dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     /* decompose(b) → a1 in ymm12, a0 in ymm0 */
     vpsrld  $19, %ymm0, %ymm11
     vpand   %ymm9, %ymm0, %ymm12
-    vpaddd  %ymm6, %ymm0, %ymm0
     vpslld  $9, %ymm11, %ymm11
     vpaddd  %ymm8, %ymm11, %ymm11
     vpaddd  %ymm12, %ymm11, %ymm11
     vpsrad  $31, %ymm11, %ymm12
     vpand   %ymm7, %ymm12, %ymm12
-    vpaddd  %ymm12, %ymm11, %ymm11     /* a0 intermediate */
+    vpaddd  %ymm12, %ymm11, %ymm11     /* t_4 */
 
-    vpsubd  %ymm11, %ymm0, %ymm0       /* remainder */
+    vpsubd  %ymm11, %ymm0, %ymm0       /* remainder = a - t_4 */
+    vpaddd  %ymm6, %ymm0, %ymm0        /* += ALPHA/2-1 → ref-compatible remainder */
 
     vpaddd  %ymm3, %ymm0, %ymm12
     vpsrld  $19, %ymm0, %ymm0

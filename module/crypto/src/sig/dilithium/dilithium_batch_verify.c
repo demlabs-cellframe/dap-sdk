@@ -38,7 +38,7 @@
 
 extern const dap_ntt_params_t g_dilithium_ntt_params;
 extern void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_param_t *p);
-extern void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, dilithium_param_t *p);
+extern void challenge(poly *c, const unsigned char *mu, const polyveck *w1, dilithium_param_t *p);
 extern void mldsa_sample_in_ball(poly *c, const unsigned char *c_tilde, const dilithium_param_t *p);
 
 typedef struct {

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <string.h>
 #ifdef DAP_DILITHIUM_PROFILE
 #include <stdatomic.h>
 #include <x86intrin.h>
@@ -61,17 +62,18 @@ void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_pa
 }
 
 /********************************************************************************************/
-void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, dilithium_param_t *p)
+void challenge(poly *c, const unsigned char *mu, const polyveck *w1, dilithium_param_t *p)
 {
     unsigned int i, b, pos;
-    unsigned char inbuf[CRHBYTES + p->PARAM_K * p->PARAM_POLW1_SIZE_PACKED];
+    const uint32_t crh = dil_crhbytes(p);
+    unsigned char inbuf[crh + p->PARAM_K * p->PARAM_POLW1_SIZE_PACKED];
     unsigned char outbuf[DAP_SHAKE256_RATE];
     uint64_t state[25] = {0}, signs, mask;
 
-    for(i = 0; i < CRHBYTES; ++i)
+    for (i = 0; i < crh; ++i)
         inbuf[i] = mu[i];
-    for(i = 0; i < p->PARAM_K; ++i)
-        polyw1_pack(inbuf + CRHBYTES + i * p->PARAM_POLW1_SIZE_PACKED, w1->vec + i);
+    for (i = 0; i < p->PARAM_K; ++i)
+        polyw1_pack_p(inbuf + crh + i * p->PARAM_POLW1_SIZE_PACKED, w1->vec + i, p);
 
     dap_hash_shake256_absorb(state, inbuf, sizeof(inbuf));
     dap_hash_shake256_squeezeblocks(outbuf, 1, state);
@@ -519,11 +521,12 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
 #endif
 
     unsigned char tmp_m[crh + mlen];
-    if(sig->sig_data != m)
-        for(i = 0; i < mlen; ++i)
-            tmp_m[crh + i] = m[i];
-
+    /* Build tr ‖ m the same way as dilithium_batch_verify: hash pk into
+     * tmp_m[0..crh), then append the alleged message.  Always copy m when
+     * mlen>0 so SHAKE256 never reads uninitialized bytes. */
     dap_hash_shake256(tmp_m, crh, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
+    if (mlen)
+        memcpy(tmp_m + crh, m, (size_t)mlen);
     dap_hash_shake256(mu, crh, tmp_m, crh + mlen);
 
 #ifdef DAP_DILITHIUM_PROFILE

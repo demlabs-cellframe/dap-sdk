@@ -303,29 +303,29 @@ dap_dilithium_poly_decompose_{{ARCH_LOWER}}:
     vpbroadcastd %ecx, %zmm8
     movl    $523776, %ecx
     vpbroadcastd %ecx, %zmm7
-    movl    $261887, %ecx
-    vpbroadcastd %ecx, %zmm6
     movl    $1, %ecx
     vpbroadcastd %ecx, %zmm5
     movl    $8118530, %ecx
     vpbroadcastd %ecx, %zmm4
     movl    $15, %ecx
     vpbroadcastd %ecx, %zmm3
+    movl    $261887, %ecx
+    vpbroadcastd %ecx, %zmm6            /* ALPHA/2 - 1 */
 
     .p2align 4
 .L_decompose512_loop:
     vmovdqu64 (%rdx,%rax), %zmm0
     vpsrld  $19, %zmm0, %zmm1
     vpandd  %zmm0, %zmm9, %zmm2
-    vpaddd  %zmm0, %zmm6, %zmm0
     vpslld  $9, %zmm1, %zmm1
     vpaddd  %zmm8, %zmm1, %zmm1
     vpaddd  %zmm1, %zmm2, %zmm1
     vpsrad  $31, %zmm1, %zmm2
     vpandd  %zmm7, %zmm2, %zmm2
-    vpaddd  %zmm1, %zmm2, %zmm2        /* a0 intermediate */
+    vpaddd  %zmm1, %zmm2, %zmm2        /* t_4 */
 
-    vpsubd  %zmm2, %zmm0, %zmm1        /* remainder */
+    vpsubd  %zmm2, %zmm0, %zmm1        /* remainder = a - t_4 */
+    vpaddd  %zmm6, %zmm1, %zmm1        /* += ALPHA/2-1 → ref-compatible remainder */
     vpaddd  %zmm10, %zmm1, %zmm0
     vpsrld  $19, %zmm1, %zmm1
     vpsrad  $31, %zmm0, %zmm0
@@ -368,14 +368,14 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vpbroadcastd %eax, %zmm9
     movl    $(-261889), %eax
     vpbroadcastd %eax, %zmm8
-    movl    $261887, %eax
-    vpbroadcastd %eax, %zmm7
     movl    $523776, %eax
     vpbroadcastd %eax, %zmm6
     movl    $1, %eax
     vpbroadcastd %eax, %zmm4
     movl    $15, %eax
     vpbroadcastd %eax, %zmm5
+    movl    $261887, %eax
+    vpbroadcastd %eax, %zmm7            /* ALPHA/2 - 1 */
 
     vpxor   %xmm14, %xmm14, %xmm14    /* hint accumulator */
 
@@ -385,7 +385,6 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vmovdqu64 (%rdi,%rdx), %zmm1
     vpsrld  $19, %zmm1, %zmm2
     vpandd  %zmm1, %zmm9, %zmm3
-    vpaddd  %zmm1, %zmm7, %zmm1
     vpslld  $9, %zmm2, %zmm2
     vpaddd  %zmm8, %zmm2, %zmm2
     vpaddd  %zmm2, %zmm3, %zmm3
@@ -393,6 +392,7 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vpandd  %zmm6, %zmm2, %zmm2
     vpaddd  %zmm3, %zmm2, %zmm2
     vpsubd  %zmm2, %zmm1, %zmm1
+    vpaddd  %zmm7, %zmm1, %zmm1        /* += ALPHA/2-1 (ref-compatible remainder) */
     vpaddd  %zmm10, %zmm1, %zmm2
     vpsrld  $19, %zmm1, %zmm1
     vpsrad  $31, %zmm2, %zmm2
@@ -404,7 +404,6 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vmovdqu64 (%rsi,%rdx), %zmm0
     vpsrld  $19, %zmm0, %zmm2
     vpandd  %zmm0, %zmm9, %zmm11
-    vpaddd  %zmm0, %zmm7, %zmm0
     vpslld  $9, %zmm2, %zmm2
     vpaddd  %zmm8, %zmm2, %zmm2
     vpaddd  %zmm2, %zmm11, %zmm11
@@ -412,6 +411,7 @@ dap_dilithium_poly_make_hint_{{ARCH_LOWER}}:
     vpandd  %zmm6, %zmm2, %zmm2
     vpaddd  %zmm11, %zmm2, %zmm2
     vpsubd  %zmm2, %zmm0, %zmm0
+    vpaddd  %zmm7, %zmm0, %zmm0        /* += ALPHA/2-1 (ref-compatible remainder) */
     vpaddd  %zmm10, %zmm0, %zmm3
     vpsrld  $19, %zmm0, %zmm0
     vpsrad  $31, %zmm3, %zmm3
@@ -465,8 +465,6 @@ dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     vpbroadcastd %esi, %zmm10
     movl    $523776, %esi
     vpbroadcastd %esi, %zmm9
-    movl    $261887, %esi
-    vpbroadcastd %esi, %zmm8
     movl    $1, %esi
     vpbroadcastd %esi, %zmm4
     movl    $15, %esi
@@ -475,6 +473,8 @@ dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     vpbroadcastd %esi, %zmm7
     movl    $DIL_Q, %esi
     vpbroadcastd %esi, %zmm6
+    movl    $261887, %esi
+    vpbroadcastd %esi, %zmm8            /* ALPHA/2 - 1 */
 
     .p2align 4
 .L_usehint512_loop:
@@ -486,7 +486,6 @@ dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     /* decompose(b) → a1 in zmm1, a0_full in zmm0 */
     vpsrld  $19, %zmm0, %zmm1
     vpandd  %zmm0, %zmm11, %zmm2
-    vpaddd  %zmm0, %zmm8, %zmm0
     vpslld  $9, %zmm1, %zmm1
     vpaddd  %zmm10, %zmm1, %zmm1
     vpaddd  %zmm1, %zmm2, %zmm1
@@ -495,6 +494,7 @@ dap_dilithium_poly_use_hint_{{ARCH_LOWER}}:
     vpaddd  %zmm1, %zmm2, %zmm2
 
     vpsubd  %zmm2, %zmm0, %zmm1
+    vpaddd  %zmm8, %zmm1, %zmm1        /* += ALPHA/2-1 → ref-compatible remainder */
     vpaddd  %zmm5, %zmm1, %zmm0
     vpsrld  $19, %zmm1, %zmm1
     vpsrad  $31, %zmm0, %zmm0
