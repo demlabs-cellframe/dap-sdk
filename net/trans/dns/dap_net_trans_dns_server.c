@@ -39,6 +39,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_trans_qos.h"
 #include "dap_enc_kdf.h"
 #include "dap_io_flow_datagram.h"
+#include "dap_context.h"
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
@@ -50,6 +51,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #endif
 
 #define LOG_TAG "dap_net_trans_dns_server"
+#define DNS_STOP_READ_DRAIN_RETRIES 500
+#define DNS_STOP_READ_DRAIN_SLEEP_US 1000
 
 static bool s_debug_more = false;
 static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg);
@@ -57,6 +60,34 @@ static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_da
 static bool s_dns_server_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
                                             struct sockaddr_storage *a_addr_out,
                                             socklen_t *a_addr_len_out);
+static bool s_dns_server_stop_internal(dap_net_trans_dns_server_t *a_dns_server);
+
+static bool s_dns_server_is_stopping(const dap_net_trans_dns_server_t *a_dns_server)
+{
+    return a_dns_server && atomic_load(&a_dns_server->stopping);
+}
+
+static void s_dns_server_session_delete(dns_server_client_session_t *a_session)
+{
+    if (!a_session)
+        return;
+
+    if (a_session->handshake_key)
+        dap_enc_key_delete(a_session->handshake_key);
+    if (a_session->stream) {
+        if (a_session->stream->flow) {
+            dap_io_flow_datagram_delete(a_session->stream->flow);
+            a_session->stream->flow = NULL;
+        }
+        a_session->stream->trans_ctx = NULL;
+        DAP_DEL_Z(a_session->stream->buf_fragments);
+        DAP_DEL_Z(a_session->stream->pkt_cache);
+        DAP_DEL_Z(a_session->stream->channel);
+    }
+    DAP_DEL_Z(a_session->trans_ctx);
+    DAP_DEL_Z(a_session->stream);
+    DAP_DELETE(a_session);
+}
 
 static size_t s_dns_server_get_max_packet_size(dap_net_trans_t *a_trans)
 {
@@ -131,12 +162,23 @@ dap_net_trans_dns_server_t *dap_net_trans_dns_server_new(const char *a_server_na
         return NULL;
     }
 
+    int l_lock_ret = pthread_rwlock_init(&l_dns_server->sessions_lock, NULL);
+    if (l_lock_ret != 0) {
+        log_it(L_CRITICAL, "Cannot initialize DNS server sessions lock: %d (%s)",
+               l_lock_ret, dap_strerror(l_lock_ret));
+        DAP_DELETE(l_dns_server);
+        return NULL;
+    }
+    atomic_store(&l_dns_server->stopping, false);
+    atomic_store(&l_dns_server->datagram_reads_inflight, 0);
+
     dap_strncpy(l_dns_server->server_name, a_server_name, sizeof(l_dns_server->server_name) - 1);
     l_dns_server->sessions = NULL;
     
     l_dns_server->trans = DAP_NEW_Z(dap_net_trans_t);
     if (!l_dns_server->trans) {
         log_it(L_CRITICAL, "Cannot allocate DNS server trans");
+        pthread_rwlock_destroy(&l_dns_server->sessions_lock);
         DAP_DELETE(l_dns_server);
         return NULL;
     }
@@ -163,6 +205,8 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
         log_it(L_WARNING, "DNS server already started");
         return -2;
     }
+
+    atomic_store(&a_dns_server->stopping, false);
 
     dap_events_socket_callbacks_t l_dns_callbacks = {
         .read_callback = s_dns_listener_read_cb,
@@ -202,54 +246,88 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
     return 0;
 }
 
-void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
+static bool s_dns_server_stop_internal(dap_net_trans_dns_server_t *a_dns_server)
 {
     if (!a_dns_server)
-        return;
+        return true;
 
     dns_server_client_session_t *l_session, *l_tmp;
+    int l_lock_ret = pthread_rwlock_wrlock(&a_dns_server->sessions_lock);
+    if (l_lock_ret != 0) {
+        log_it(L_ERROR, "Failed to lock DNS sessions for stop: %d (%s)",
+               l_lock_ret, dap_strerror(l_lock_ret));
+        return false;
+    }
+
+    atomic_store(&a_dns_server->stopping, true);
     HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
         if (l_session->stream) {
             l_session->stream->esocket = NULL;
             l_session->stream->esocket_uuid = 0;
             l_session->stream->esocket_worker = NULL;
-        }
-        if (l_session->stream)
             l_session->stream->trans_ctx = NULL;
+        }
     }
+    pthread_rwlock_unlock(&a_dns_server->sessions_lock);
 
     if (a_dns_server->server) {
         dap_server_delete_sync(a_dns_server->server);
         a_dns_server->server = NULL;
     }
 
-    HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
-        HASH_DEL(a_dns_server->sessions, l_session);
-        if (l_session->handshake_key)
-            dap_enc_key_delete(l_session->handshake_key);
-        if (l_session->stream) {
-            if (l_session->stream->flow) {
-                dap_io_flow_datagram_delete(l_session->stream->flow);
-                l_session->stream->flow = NULL;
-            }
-            l_session->stream->trans_ctx = NULL;
-            DAP_DEL_Z(l_session->stream->buf_fragments);
-            DAP_DEL_Z(l_session->stream->pkt_cache);
-            DAP_DEL_Z(l_session->stream->channel);
-        }
-        DAP_DEL_Z(l_session->trans_ctx);
-        DAP_DEL_Z(l_session->stream);
-        DAP_DELETE(l_session);
+    for (size_t i = 0; i < DNS_STOP_READ_DRAIN_RETRIES; i++) {
+        if (atomic_load(&a_dns_server->datagram_reads_inflight) == 0)
+            break;
+        usleep(DNS_STOP_READ_DRAIN_SLEEP_US);
+    }
+    unsigned int l_reads_left = atomic_load(&a_dns_server->datagram_reads_inflight);
+    if (l_reads_left != 0) {
+        log_it(L_ERROR, "DNS server stop deferred: %u datagram read(s) still in progress",
+               l_reads_left);
+        return false;
     }
 
+    l_lock_ret = pthread_rwlock_wrlock(&a_dns_server->sessions_lock);
+    if (l_lock_ret != 0) {
+        log_it(L_ERROR, "Failed to lock DNS sessions for cleanup: %d (%s)",
+               l_lock_ret, dap_strerror(l_lock_ret));
+        return false;
+    }
+    HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
+        HASH_DEL(a_dns_server->sessions, l_session);
+        s_dns_server_session_delete(l_session);
+    }
+    pthread_rwlock_unlock(&a_dns_server->sessions_lock);
+
     log_it(L_INFO, "DNS server '%s' stopped", a_dns_server->server_name);
+    return true;
+}
+
+void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
+{
+    if (!s_dns_server_stop_internal(a_dns_server) && a_dns_server) {
+        log_it(L_WARNING, "DNS server '%s' stop did not fully complete", a_dns_server->server_name);
+    }
 }
 
 void dap_net_trans_dns_server_delete(dap_net_trans_dns_server_t *a_dns_server)
 {
     if (!a_dns_server)
         return;
-    dap_net_trans_dns_server_stop(a_dns_server);
+
+    if (!s_dns_server_stop_internal(a_dns_server)) {
+        log_it(L_ERROR, "Delete aborted for DNS server '%s': stop was incomplete",
+               a_dns_server->server_name);
+        return;
+    }
+
+    int l_lock_ret = pthread_rwlock_destroy(&a_dns_server->sessions_lock);
+    if (l_lock_ret != 0) {
+        log_it(L_ERROR, "Delete aborted for DNS server '%s': sessions lock destroy failed: %d (%s)",
+               a_dns_server->server_name, l_lock_ret, dap_strerror(l_lock_ret));
+        return;
+    }
+
     DAP_DEL_Z(a_dns_server->trans);
     log_it(L_INFO, "Deleted DNS server: %s", a_dns_server->server_name);
     DAP_DELETE(a_dns_server);
@@ -280,6 +358,10 @@ static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg)
     }
 
     dap_net_trans_dns_server_t *l_dns_server = DAP_NET_TRANS_DNS_SERVER(l_server);
+    if (s_dns_server_is_stopping(l_dns_server)) {
+        a_es->buf_in_size = 0;
+        return;
+    }
     
     struct sockaddr_storage l_remote_addr;
     socklen_t l_remote_addr_len = a_es->addr_size;
@@ -306,15 +388,34 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
                                    void *a_data, size_t a_size,
                                    struct sockaddr_storage *a_addr, socklen_t a_addr_len)
 {
+    int l_lock_ret = pthread_rwlock_rdlock(&a_dns_server->sessions_lock);
+    if (l_lock_ret != 0) {
+        log_it(L_ERROR, "DNS server: failed to lock sessions for read: %d (%s)",
+               l_lock_ret, dap_strerror(l_lock_ret));
+        return;
+    }
+    if (s_dns_server_is_stopping(a_dns_server)) {
+        pthread_rwlock_unlock(&a_dns_server->sessions_lock);
+        return;
+    }
+
     dns_server_client_session_t *l_session = NULL;
     HASH_FIND(hh, a_dns_server->sessions, a_addr, (unsigned)a_addr_len, l_session);
 
+    dap_stream_t *l_existing_stream = l_session ? l_session->stream : NULL;
+    if (l_existing_stream) {
+        atomic_fetch_add(&a_dns_server->datagram_reads_inflight, 1);
+    }
+
     if (l_session) {
-        if (l_session->stream) {
-            dap_stream_data_proc_read_ext(l_session->stream, a_data, a_size);
+        pthread_rwlock_unlock(&a_dns_server->sessions_lock);
+        if (l_existing_stream) {
+            dap_stream_data_proc_read_ext(l_existing_stream, a_data, a_size);
+            atomic_fetch_sub(&a_dns_server->datagram_reads_inflight, 1);
         }
         return;
     }
+    pthread_rwlock_unlock(&a_dns_server->sessions_lock);
 
     log_it(L_INFO, "DNS server: new client handshake, size=%zu", a_size);
 
@@ -395,6 +496,7 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     memcpy(&l_session->remote_addr, a_addr, a_addr_len);
     l_session->remote_addr_len = a_addr_len;
     l_session->handshake_key = l_handshake_key;
+    l_session->server = a_dns_server;
 
     /* Create server-side stream for bidirectional data exchange */
     dap_stream_t *l_stream = DAP_NEW_Z(dap_stream_t);
@@ -469,7 +571,33 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     l_session->trans_ctx = l_trans_ctx;
     l_session->stream_session = l_stream_session;
 
+    l_lock_ret = pthread_rwlock_wrlock(&a_dns_server->sessions_lock);
+    if (l_lock_ret != 0) {
+        log_it(L_ERROR, "DNS server: failed to lock sessions for add: %d (%s)",
+               l_lock_ret, dap_strerror(l_lock_ret));
+        dap_enc_key_delete(l_bob_key);
+        s_dns_server_session_delete(l_session);
+        return;
+    }
+
+    if (s_dns_server_is_stopping(a_dns_server)) {
+        pthread_rwlock_unlock(&a_dns_server->sessions_lock);
+        dap_enc_key_delete(l_bob_key);
+        s_dns_server_session_delete(l_session);
+        return;
+    }
+
+    dns_server_client_session_t *l_existing_session = NULL;
+    HASH_FIND(hh, a_dns_server->sessions, a_addr, (unsigned)a_addr_len, l_existing_session);
+    if (l_existing_session) {
+        pthread_rwlock_unlock(&a_dns_server->sessions_lock);
+        dap_enc_key_delete(l_bob_key);
+        s_dns_server_session_delete(l_session);
+        return;
+    }
+
     HASH_ADD(hh, a_dns_server->sessions, remote_addr, (unsigned)a_addr_len, l_session);
+    pthread_rwlock_unlock(&a_dns_server->sessions_lock);
 
     log_it(L_INFO, "DNS server: created stream %p with %zu channels for new client",
            l_stream, l_stream->channel_count);
@@ -496,7 +624,8 @@ static bool s_dns_server_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
 }
 
 typedef struct dns_sendto_args {
-    dap_events_socket_t *esocket;
+    dap_worker_t *worker;
+    dap_events_socket_uuid_t esocket_uuid;
     void *data;
     size_t size;
     struct sockaddr_storage addr;
@@ -506,10 +635,23 @@ typedef struct dns_sendto_args {
 static void s_dns_sendto_callback(void *a_arg)
 {
     dns_sendto_args_t *l_args = (dns_sendto_args_t *)a_arg;
-    if(l_args->esocket)
-        dap_events_socket_sendto_unsafe(l_args->esocket,
-            l_args->data, l_args->size,
-            &l_args->addr, l_args->addr_len);
+    if (!l_args)
+        return;
+
+    dap_events_socket_t *l_es = l_args->worker && l_args->esocket_uuid
+        ? dap_context_find(l_args->worker->context, l_args->esocket_uuid)
+        : NULL;
+    if (!l_es || l_es->fd < 0)
+        goto cleanup;
+
+    size_t l_sent = dap_events_socket_sendto_unsafe(l_es,
+        l_args->data, l_args->size,
+        &l_args->addr, l_args->addr_len);
+    if (l_sent != l_args->size) {
+        log_it(L_WARNING, "DNS async write incomplete: %zu of %zu bytes", l_sent, l_args->size);
+    }
+
+cleanup:
     DAP_DELETE(l_args->data);
     DAP_DELETE(l_args);
 }
@@ -526,10 +668,12 @@ static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_da
 
     dns_server_client_session_t *l_session =
         (dns_server_client_session_t *)a_stream->_server_session;
-    if(!l_session || !a_stream->esocket) {
+    if(!l_session || !l_session->server || !a_stream->esocket || !a_stream->esocket->worker) {
         log_it(L_WARNING, "DNS server write: no session or esocket (likely during teardown)");
         return 0;
     }
+    if (s_dns_server_is_stopping(l_session->server))
+        return 0;
 
     dap_events_socket_t *l_es = a_stream->esocket;
     dap_worker_t *l_current = dap_worker_get_current();
@@ -547,7 +691,8 @@ static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_da
     dns_sendto_args_t *l_args = DAP_NEW_Z(dns_sendto_args_t);
     if(!l_args)
         return -1;
-    l_args->esocket = l_es;
+    l_args->worker = l_target;
+    l_args->esocket_uuid = l_es->uuid;
     l_args->data = DAP_NEW_SIZE(byte_t, a_size);
     if(!l_args->data) {
         DAP_DELETE(l_args);

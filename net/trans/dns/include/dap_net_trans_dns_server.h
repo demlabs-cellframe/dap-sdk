@@ -23,6 +23,9 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include <pthread.h>
+#include <stdatomic.h>
+
 #include "dap_server.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_ctx.h"
@@ -30,6 +33,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_stream.h"
 #include "dap_stream_session.h"
 #include "uthash.h"
+
+typedef struct dap_net_trans_dns_server dap_net_trans_dns_server_t;
 
 /**
  * @brief Per-client session for DNS server address-based routing
@@ -45,18 +50,22 @@ typedef struct dns_server_client_session {
     dap_stream_t *stream;
     dap_net_trans_ctx_t *trans_ctx;
     dap_stream_session_t *stream_session;
+    dap_net_trans_dns_server_t *server;
     UT_hash_handle hh;
 } dns_server_client_session_t;
 
 /**
  * @brief DNS tunnel server structure
  */
-typedef struct dap_net_trans_dns_server {
+struct dap_net_trans_dns_server {
     dap_server_t *server;
     char server_name[256];
     dap_net_trans_t *trans;
     dns_server_client_session_t *sessions;
-} dap_net_trans_dns_server_t;
+    pthread_rwlock_t sessions_lock;
+    atomic_bool stopping;
+    atomic_uint datagram_reads_inflight;
+};
 
 #define DAP_NET_TRANS_DNS_SERVER(a) ((dap_net_trans_dns_server_t *) (a)->_inheritor)
 

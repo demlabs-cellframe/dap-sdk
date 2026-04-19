@@ -87,10 +87,22 @@ typedef struct authorized_stream {
     UT_hash_handle hh;
 } authorized_stream_t;
 
+typedef struct s_stream_uuid_index {
+    dap_events_socket_uuid_t esocket_uuid;
+    dap_stream_t *stream;
+    UT_hash_handle hh;
+} s_stream_uuid_index_t;
+
+typedef struct s_keepalive_timer_arg {
+    dap_events_socket_uuid_t esocket_uuid;
+    dap_timerfd_t *timer;
+} s_keepalive_timer_arg_t;
+
 static dap_cluster_t        *s_global_links_cluster = NULL;
 static pthread_rwlock_t     s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;    // Lock for all tables and list under
 static dap_stream_t         *s_authorized_streams = NULL;                   // Authorized streams hashtable by addr
 static dap_stream_t         *s_streams = NULL;                              // Double-linked list
+static s_stream_uuid_index_t *s_streams_by_es_uuid = NULL;                  // Stream index by esocket UUID
 static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
@@ -143,6 +155,98 @@ static void s_keepalive_timer_cleanup_cb(void *a_arg)
     l_ctx->arg_to_free = l_ctx->timer->callback_arg;
     l_ctx->timer->callback_arg = NULL;
     dap_timerfd_delete_unsafe(l_ctx->timer);
+}
+
+static dap_stream_t *s_stream_index_get_by_es_uuid_unsafe(dap_events_socket_uuid_t a_es_uuid)
+{
+    s_stream_uuid_index_t *l_idx = NULL;
+    if (!a_es_uuid)
+        return NULL;
+    HASH_FIND(hh, s_streams_by_es_uuid, &a_es_uuid, sizeof(a_es_uuid), l_idx);
+    return l_idx ? l_idx->stream : NULL;
+}
+
+static void s_stream_index_add_unsafe(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->esocket_uuid)
+        return;
+    s_stream_uuid_index_t *l_it = NULL, *l_tmp = NULL;
+    HASH_ITER(hh, s_streams_by_es_uuid, l_it, l_tmp) {
+        if (l_it->stream == a_stream) {
+            HASH_DEL(s_streams_by_es_uuid, l_it);
+            DAP_DELETE(l_it);
+        }
+    }
+    s_stream_uuid_index_t *l_idx = NULL;
+    HASH_FIND(hh, s_streams_by_es_uuid, &a_stream->esocket_uuid, sizeof(a_stream->esocket_uuid), l_idx);
+    if (!l_idx) {
+        l_idx = DAP_NEW_Z(s_stream_uuid_index_t);
+        if (!l_idx) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return;
+        }
+        l_idx->esocket_uuid = a_stream->esocket_uuid;
+        HASH_ADD(hh, s_streams_by_es_uuid, esocket_uuid, sizeof(l_idx->esocket_uuid), l_idx);
+    }
+    l_idx->stream = a_stream;
+}
+
+static void s_stream_index_remove_by_stream_unsafe(dap_stream_t *a_stream)
+{
+    if (!a_stream)
+        return;
+    s_stream_uuid_index_t *l_it = NULL, *l_tmp = NULL;
+    HASH_ITER(hh, s_streams_by_es_uuid, l_it, l_tmp) {
+        if (l_it->stream == a_stream) {
+            HASH_DEL(s_streams_by_es_uuid, l_it);
+            DAP_DELETE(l_it);
+        }
+    }
+}
+
+static dap_timerfd_t *s_keepalive_timer_start(dap_worker_t *a_worker,
+                                              dap_events_socket_uuid_t a_es_uuid,
+                                              dap_timerfd_callback_t a_callback)
+{
+    if (!a_worker || !a_es_uuid || !a_callback)
+        return NULL;
+
+    s_keepalive_timer_arg_t *l_arg = DAP_NEW_Z(s_keepalive_timer_arg_t);
+    if (!l_arg) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
+    l_arg->esocket_uuid = a_es_uuid;
+    dap_timerfd_t *l_timer = dap_timerfd_start_on_worker(a_worker,
+                                                          STREAM_KEEPALIVE_TIMEOUT * 1000,
+                                                          a_callback,
+                                                          l_arg);
+    if (!l_timer) {
+        DAP_DELETE(l_arg);
+        return NULL;
+    }
+    l_arg->timer = l_timer;
+    return l_timer;
+}
+
+static bool s_keepalive_timer_self_stop(s_keepalive_timer_arg_t *a_arg)
+{
+    if (!a_arg)
+        return false;
+    int l_lock = pthread_rwlock_wrlock(&s_streams_lock);
+    assert(l_lock != EDEADLK);
+    if (l_lock == 0) {
+        dap_stream_t *l_stream = s_stream_index_get_by_es_uuid_unsafe(a_arg->esocket_uuid);
+        if (l_stream && l_stream->keepalive_timer == a_arg->timer)
+            l_stream->keepalive_timer = NULL;
+        pthread_rwlock_unlock(&s_streams_lock);
+    } else if (l_lock == EDEADLK) {
+        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+    }
+    if (a_arg->timer && a_arg->timer->callback_arg == a_arg)
+        a_arg->timer->callback_arg = NULL;
+    DAP_DELETE(a_arg);
+    return false;
 }
 
 /**
@@ -226,18 +330,17 @@ static bool s_stream_esocket_is_detached(const dap_events_socket_t *a_es)
     if (a_es->_inheritor != NULL) {
         return false;
     }
+    dap_client_t *l_client = DAP_ESOCKET_CLIENT((dap_events_socket_t*)a_es);
+    if (l_client) {
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+        dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+        if (l_tc && l_tc->stream)
+            return false;
+    }
 
-    // UDP and other datagram paths may keep esocket->_inheritor unset and
-    // resolve stream by UUID (see dap_stream_get_from_es fallback).
-    // Treat such esockets as attached while stream entry is still present.
     bool l_stream_found = false;
     pthread_rwlock_rdlock(&s_streams_lock);
-    for (dap_stream_t *l_it = s_streams; l_it; l_it = l_it->next) {
-        if (l_it->esocket_uuid == a_es->uuid) {
-            l_stream_found = true;
-            break;
-        }
-    }
+    l_stream_found = s_stream_index_get_by_es_uuid_unsafe(a_es->uuid) != NULL;
     pthread_rwlock_unlock(&s_streams_lock);
 
     return !l_stream_found;
@@ -615,27 +718,15 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
     
-    debug_if(s_debug, L_DEBUG, "s_stream_new: allocating es_uuid");
-    // Start server keep-alive timer
-    dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
-    debug_if(s_debug, L_DEBUG, "s_stream_new: es_uuid allocated=%p", (void*)l_es_uuid);
-    if (!l_es_uuid) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        DAP_DEL_Z(l_ret);
-        return NULL;
-    }
     debug_if(s_debug, L_DEBUG, "s_stream_new: copying esocket uuid");
     if (l_ret->esocket) {
-        *l_es_uuid = l_ret->esocket_uuid;
         debug_if(s_debug, L_DEBUG, "s_stream_new: starting keepalive timer");
-        l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->esocket_worker,
-                                                              STREAM_KEEPALIVE_TIMEOUT * 1000,
-                                                              (dap_timerfd_callback_t)s_callback_server_keepalive,
-                                                              l_es_uuid);
+        l_ret->keepalive_timer = s_keepalive_timer_start(l_ret->esocket_worker,
+                                                         l_ret->esocket_uuid,
+                                                         (dap_timerfd_callback_t)s_callback_server_keepalive);
 
         if (!l_ret->keepalive_timer) {
             log_it(L_ERROR, "Failed to start keepalive timer");
-            DAP_DELETE(l_es_uuid);
         }
 
         debug_if(s_debug, L_DEBUG, "s_stream_new: keepalive timer started=%p", (void*)l_ret->keepalive_timer);
@@ -697,28 +788,20 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
         a_esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
         a_esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
         if (a_esocket->worker) {
-            dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
-            if (l_es_uuid) {
-                *l_es_uuid = a_esocket->uuid;
-                // Use server or client keepalive based on connection direction.
-                // Server-side (incoming) connections have a_esocket->server != NULL.
-                // Using the wrong callback causes assert(a_server_side == !!l_es->server) to fire.
-                dap_timerfd_callback_t l_keepalive_cb = a_esocket->server
-                    ? (dap_timerfd_callback_t)s_callback_server_keepalive
-                    : (dap_timerfd_callback_t)s_callback_client_keepalive;
-                bool l_is_server = !!a_esocket->server;
-                l_ret->keepalive_timer = dap_timerfd_start_on_worker(
-                    a_esocket->worker,
-                    STREAM_KEEPALIVE_TIMEOUT * 1000,
-                    l_keepalive_cb,
-                    l_es_uuid);
-                if (!l_ret->keepalive_timer)
-                    DAP_DELETE(l_es_uuid);
-                else
-                    log_it(L_INFO, "%s stream %p: keepalive timer started on worker #%u, es_uuid=0x%"DAP_UINT64_FORMAT_x" sock=%"DAP_FORMAT_SOCKET,
-                           l_is_server ? "Server" : "Client",
-                           l_ret, a_esocket->worker->id, a_esocket->uuid, a_esocket->socket);
-            }
+            // Use server or client keepalive based on connection direction.
+            // Server-side (incoming) connections have a_esocket->server != NULL.
+            // Using the wrong callback causes assert(a_server_side == !!l_es->server) to fire.
+            dap_timerfd_callback_t l_keepalive_cb = a_esocket->server
+                ? (dap_timerfd_callback_t)s_callback_server_keepalive
+                : (dap_timerfd_callback_t)s_callback_client_keepalive;
+            bool l_is_server = !!a_esocket->server;
+            l_ret->keepalive_timer = s_keepalive_timer_start(a_esocket->worker,
+                                                             a_esocket->uuid,
+                                                             l_keepalive_cb);
+            if (l_ret->keepalive_timer)
+                log_it(L_INFO, "%s stream %p: keepalive timer started on worker #%u, es_uuid=0x%"DAP_UINT64_FORMAT_x" sock=%"DAP_FORMAT_SOCKET,
+                       l_is_server ? "Server" : "Client",
+                       l_ret, a_esocket->worker->id, a_esocket->uuid, a_esocket->socket);
         } else {
             log_it(L_WARNING, "Client stream %p: esocket %"DAP_FORMAT_SOCKET" has no worker, keepalive NOT started",
                    l_ret, a_esocket->socket);
@@ -749,17 +832,10 @@ int dap_stream_start_keepalive(dap_stream_t *a_stream)
     if (a_stream->keepalive_timer) {
         return 0;
     }
-    dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
-    if (!l_es_uuid)
-        return -1;
-    *l_es_uuid = a_stream->esocket->uuid;
-    a_stream->keepalive_timer = dap_timerfd_start_on_worker(
-        a_stream->esocket->worker,
-        STREAM_KEEPALIVE_TIMEOUT * 1000,
-        (dap_timerfd_callback_t)s_callback_client_keepalive,
-        l_es_uuid);
+    a_stream->keepalive_timer = s_keepalive_timer_start(a_stream->esocket->worker,
+                                                        a_stream->esocket->uuid,
+                                                        (dap_timerfd_callback_t)s_callback_client_keepalive);
     if (!a_stream->keepalive_timer) {
-        DAP_DELETE(l_es_uuid);
         return -1;
     }
     log_it(L_INFO, "Stream %p: deferred keepalive started on worker #%u, es_uuid=0x%"DAP_UINT64_FORMAT_x,
@@ -1058,17 +1134,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
-        dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (!l_es_uuid) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return;
-        }
-        *l_es_uuid = a_esocket->uuid;
         dap_timerfd_callback_t l_callback = a_esocket->server ? s_callback_server_keepalive : s_callback_client_keepalive;
-        l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
-                                                                STREAM_KEEPALIVE_TIMEOUT * 1000,
-                                                                l_callback,
-                                                                l_es_uuid);
+        l_stream->keepalive_timer = s_keepalive_timer_start(a_worker,
+                                                            a_esocket->uuid,
+                                                            l_callback);
     }
 }
 
@@ -1546,12 +1615,7 @@ dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
         // and leave _inheritor for client infra). Resolve by esocket UUID.
         dap_stream_t *l_stream = NULL;
         pthread_rwlock_rdlock(&s_streams_lock);
-        for (dap_stream_t *l_it = s_streams; l_it; l_it = l_it->next) {
-            if (l_it->esocket_uuid == a_es->uuid) {
-                l_stream = l_it;
-                break;
-            }
-        }
+        l_stream = s_stream_index_get_by_es_uuid_unsafe(a_es->uuid);
         pthread_rwlock_unlock(&s_streams_lock);
         return l_stream;
     }
@@ -1566,20 +1630,21 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
 {
     if (!a_arg)
         return false;
-    dap_events_socket_uuid_t * l_es_uuid = (dap_events_socket_uuid_t*) a_arg;
+    s_keepalive_timer_arg_t *l_timer_arg = (s_keepalive_timer_arg_t*)a_arg;
+    dap_events_socket_uuid_t l_es_uuid = l_timer_arg->esocket_uuid;
     dap_worker_t * l_worker = dap_worker_get_current();
     if (!l_worker) {
         log_it(L_ERROR, "l_worker is NULL");
-        return false;
+        return s_keepalive_timer_self_stop(l_timer_arg);
     }
-    dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
+    dap_events_socket_t * l_es = dap_context_find(l_worker->context, l_es_uuid);
     if(l_es) {
         assert(a_server_side == !!l_es->server);
         dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
         if (!l_stream) {
             log_it(L_WARNING, "Keepalive %s: esocket uuid 0x%016"DAP_UINT64_FORMAT_x" found but stream detached on worker #%u — timer stopped",
-                   a_server_side ? "srv" : "cli", *l_es_uuid, l_worker->id);
-            return false;
+                   a_server_side ? "srv" : "cli", l_es_uuid, l_worker->id);
+            return s_keepalive_timer_self_stop(l_timer_arg);
         }
         if (a_server_side) {
             int l_pending = 0, l_sockerr = 0;
@@ -1609,15 +1674,15 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             return true;
         }
         debug_if(s_debug_more, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,
-                 a_server_side ? "srv" : "cli", l_es->socket, *l_es_uuid);
+                 a_server_side ? "srv" : "cli", l_es->socket, l_es_uuid);
         dap_stream_pkt_hdr_t l_pkt = {};
         l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
         memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
         dap_stream_send_unsafe(l_stream, &l_pkt, sizeof(l_pkt));
         return true;
     }else{
-        debug_if(s_debug_more, L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
-        return false;
+        debug_if(s_debug_more, L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", l_es_uuid);
+        return s_keepalive_timer_self_stop(l_timer_arg);
     }
 }
 
@@ -1660,6 +1725,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     assert(lock != EDEADLK);
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+    s_stream_index_remove_by_stream_unsafe(a_stream);
 
     // Check if stream is in the list (prev is set by DL_APPEND/DL_DELETE)
     // Client-side streams may never be added if worker_assign didn't fire
@@ -1703,11 +1769,13 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
     dap_stream_t *l_tmp = NULL;
     DL_FOREACH(s_streams, l_tmp) {
         if (l_tmp == a_stream) {
+            s_stream_index_add_unsafe(a_stream);
             pthread_rwlock_unlock(&s_streams_lock);
             return 0;
         }
     }
     DL_APPEND(s_streams, a_stream);
+    s_stream_index_add_unsafe(a_stream);
     if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
     pthread_rwlock_unlock(&s_streams_lock);

@@ -2442,21 +2442,15 @@ static void s_flow_ctrl_packet_free_cb(void *a_packet, void *a_arg)
 }
 
 /**
- * @brief Deliver in-order payload to upper layer (NEW ARCHITECTURE)
- * 
- * CRITICAL: Payload ALREADY DECRYPTED в parse_cb!
- * 
- * Payload содержит: [старый UDP encrypted header] + [data]
- * Но это УЖЕ расшифрованный блок!
- * 
- * Нам нужно:
- * 1. Парсить старый UDP header (type, session_id)
- * 2. Dispatch к protocol handlers
- * 3. ОСВОБОДИТЬ буфер (выделенный в parse_cb)
- * 
+ * @brief Deliver in-order payload to protocol handlers.
+ *
+ * Payload is already decrypted in parse_cb and has format [type][payload]:
+ * - type: 1 byte DAP_STREAM_UDP_PKT_*
+ * - payload: raw packet body for the selected handler
+ *
  * @param a_flow Flow instance (cast to stream_udp_session_t)
- * @param a_payload DECRYPTED payload ([old UDP header] + [data])
- * @param a_payload_size Payload size
+ * @param a_payload DECRYPTED buffer in format [type][payload]
+ * @param a_payload_size Total buffer size including the type byte
  * @param a_arg User argument (NULL for UDP)
  * @return 0 on success
  */
@@ -2480,7 +2474,7 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
              "Delivering payload: type=%u, session=0x%" PRIx64 ", size=%zu",
              l_type, l_session->session_id, l_data_size);
     
-    // Dispatch to protocol handlers (payload is raw transport data)
+    // Dispatch to protocol handlers using payload part from [type][payload].
     int l_ret = 0;
     switch (l_type) {
         case DAP_STREAM_UDP_PKT_SESSION_CREATE:
