@@ -23,6 +23,9 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <unistd.h>
+#ifndef DAP_OS_WINDOWS
+#include <errno.h>
+#endif
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
@@ -81,6 +84,7 @@ static void s_dns_server_session_delete(dns_server_client_session_t *a_session)
         }
         a_session->stream->trans_ctx = NULL;
         DAP_DEL_Z(a_session->stream->buf_fragments);
+        DAP_DEL_Z(a_session->stream->buf_fragments_map);
         DAP_DEL_Z(a_session->stream->pkt_cache);
         DAP_DEL_Z(a_session->stream->channel);
     }
@@ -371,15 +375,28 @@ static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg)
                            &l_remote_addr, l_remote_addr_len);
     a_es->buf_in_size = 0;
 
-    /* Drain remaining datagrams from kernel buffer to avoid multiple event loop iterations */
+    /* EPOLLET listener: drain socket until EAGAIN/EWOULDBLOCK to avoid dropped wakeups. */
     byte_t l_buf[65536];
     struct sockaddr_storage l_addr;
-    for (int i = 0; i < 256; i++) {
+    for (;;) {
         socklen_t l_addr_len = sizeof(l_addr);
         ssize_t l_read = recvfrom(a_es->fd, l_buf, sizeof(l_buf), MSG_DONTWAIT,
                                   (struct sockaddr *)&l_addr, &l_addr_len);
-        if (l_read <= 0)
+        if (l_read <= 0) {
+#ifdef DAP_OS_WINDOWS
+            int l_err = WSAGetLastError();
+            if (l_read < 0 && l_err == WSAEINTR)
+                continue;
+            if (l_read < 0 && l_err == WSAEWOULDBLOCK)
+                break;
+#else
+            if (l_read < 0 && errno == EINTR)
+                continue;
+            if (l_read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                break;
+#endif
             break;
+        }
         s_dns_process_datagram(a_es, l_dns_server, l_buf, (size_t)l_read, &l_addr, l_addr_len);
     }
 }

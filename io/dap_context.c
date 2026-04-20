@@ -1338,23 +1338,28 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                         // UDP uses packet queue (not buf_out!)
                         if (l_cur->packet_queue && l_cur->packet_queue->count > 0) {
-                            // Flush packet queue
-                            ssize_t l_queue_sent = s_packet_queue_pop_and_send(l_cur->packet_queue, l_cur->fd);
-                            if (l_queue_sent > 0) {
-                                l_bytes_sent = l_queue_sent;
-                                l_errno = 0;
-                                
-                                // Continue flushing if more packets in queue
-                                if (l_cur->packet_queue->count > 0) {
-                                    dap_events_socket_set_writable_unsafe(l_cur, true);
-                                } else {
-                                    dap_events_socket_set_writable_unsafe(l_cur, false);
+                            // Flush as much as possible in a single writable event.
+                            // Under EPOLLET one-packet flush can leave queue stuck.
+                            ssize_t l_queue_last = 0;
+                            while (l_cur->packet_queue && l_cur->packet_queue->count > 0) {
+                                l_queue_last = s_packet_queue_pop_and_send(l_cur->packet_queue, l_cur->fd);
+                                if (l_queue_last > 0) {
+                                    l_bytes_sent += l_queue_last;
+                                    l_errno = 0;
+                                    continue;
                                 }
-                            } else if (l_queue_sent == -2) {
-                                // Would block, keep writable flag and try again later
-                                l_errno = EAGAIN;
-                            } else {
-                                // Error or empty queue
+                                if (l_queue_last == -2) {
+                                    // Would block: keep writable enabled and retry on next event.
+                                    l_errno = EAGAIN;
+                                    dap_events_socket_set_writable_unsafe(l_cur, true);
+                                    break;
+                                }
+                                // Error while sending from queue, stop flush.
+                                dap_events_socket_set_writable_unsafe(l_cur, false);
+                                break;
+                            }
+
+                            if (l_cur->packet_queue && l_cur->packet_queue->count == 0 && l_queue_last != -2) {
                                 dap_events_socket_set_writable_unsafe(l_cur, false);
                             }
                         } else {

@@ -32,6 +32,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_worker.h"
 #include "dap_net.h"
 #include "dap_io_flow_datagram.h"
+#include "dap_context.h"
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
@@ -116,6 +117,7 @@ static const dap_net_trans_ops_t s_dns_ops = {
 static dap_stream_trans_dns_private_t *s_get_private(dap_net_trans_t *a_trans);
 static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream);
 static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg);
+static bool s_dns_client_process_datagram(dap_events_socket_t *a_es, const void *a_data, size_t a_size);
 static bool s_dns_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
                                      struct sockaddr_storage *a_addr_out,
                                      socklen_t *a_addr_len_out);
@@ -580,7 +582,8 @@ static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
  *       Full DNS query generation with encoding can be added later
  */
 typedef struct dns_client_sendto_args {
-    dap_events_socket_t *esocket;
+    dap_worker_t *worker;
+    dap_events_socket_uuid_t esocket_uuid;
     void *data;
     size_t size;
     struct sockaddr_storage addr;
@@ -590,10 +593,20 @@ typedef struct dns_client_sendto_args {
 static void s_dns_client_sendto_callback(void *a_arg)
 {
     dns_client_sendto_args_t *l_args = (dns_client_sendto_args_t *)a_arg;
-    if(l_args->esocket)
-        dap_events_socket_sendto_unsafe(l_args->esocket,
+    dap_events_socket_t *l_es = l_args && l_args->worker && l_args->esocket_uuid
+        ? dap_context_find(l_args->worker->context, l_args->esocket_uuid)
+        : NULL;
+    if (l_es && l_es->fd >= 0) {
+        size_t l_sent = dap_events_socket_sendto_unsafe(l_es,
             l_args->data, l_args->size,
             &l_args->addr, l_args->addr_len);
+        if (l_sent != l_args->size) {
+            log_it(L_WARNING, "DNS client async write incomplete: %zu of %zu bytes", l_sent, l_args->size);
+        }
+    } else {
+        log_it(L_WARNING, "DNS client async write dropped: esocket not found (uuid=0x%"DAP_UINT64_FORMAT_x")",
+               l_args ? l_args->esocket_uuid : 0);
+    }
     DAP_DELETE(l_args->data);
     DAP_DELETE(l_args);
 }
@@ -630,7 +643,8 @@ static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_
     dns_client_sendto_args_t *l_args = DAP_NEW_Z(dns_client_sendto_args_t);
     if(!l_args)
         return -1;
-    l_args->esocket = l_es;
+    l_args->worker = l_target;
+    l_args->esocket_uuid = l_es->uuid;
     l_args->data = DAP_NEW_SIZE(byte_t, a_size);
     if(!l_args->data) {
         DAP_DELETE(l_args);
@@ -821,55 +835,83 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
     if (!a_es || a_es->buf_in_size == 0)
         return;
 
+    bool l_continue = s_dns_client_process_datagram(a_es, a_es->buf_in, a_es->buf_in_size);
+    a_es->buf_in_size = 0;
+    if (!l_continue)
+        return;
+
+    byte_t l_buf[65536];
+    struct sockaddr_storage l_addr;
+    for (;;) {
+        socklen_t l_addr_len = sizeof(l_addr);
+        ssize_t l_read = recvfrom(a_es->fd, l_buf, sizeof(l_buf), MSG_DONTWAIT,
+                                  (struct sockaddr *)&l_addr, &l_addr_len);
+        if (l_read <= 0) {
+#ifdef DAP_OS_WINDOWS
+            int l_err = WSAGetLastError();
+            if (l_read < 0 && l_err == WSAEINTR)
+                continue;
+            if (l_read < 0 && l_err == WSAEWOULDBLOCK)
+                break;
+#else
+            if (l_read < 0 && errno == EINTR)
+                continue;
+            if (l_read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                break;
+#endif
+            break;
+        }
+        if (!s_dns_client_process_datagram(a_es, l_buf, (size_t)l_read))
+            break;
+    }
+}
+
+static bool s_dns_client_process_datagram(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+{
+    if (!a_es || !a_data || a_size == 0)
+        return false;
+
     dap_client_t *l_client = (dap_client_t *)a_es->_inheritor;
     if (!l_client) {
         log_it(L_ERROR, "DNS client read: no client context on esocket");
-        a_es->buf_in_size = 0;
-        return;
+        return false;
     }
 
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
     if (!l_fsm || !l_tc || !l_tc->stream) {
         log_it(L_ERROR, "DNS client read: no trans_ctx or stream");
-        a_es->buf_in_size = 0;
-        return;
+        return false;
     }
 
     dap_stream_t *l_stream = l_tc->stream;
     if (!l_stream->trans_ctx) {
         log_it(L_ERROR, "DNS client read: no trans_ctx");
-        a_es->buf_in_size = 0;
-        return;
+        return false;
     }
 
     if (!l_stream->trans_ctx->handshake_cb) {
-        size_t l_bytes = dap_stream_data_proc_read_ext(l_stream, a_es->buf_in, a_es->buf_in_size);
-        if (l_bytes > 0)
-            dap_events_socket_shrink_buf_in(a_es, l_bytes);
-        a_es->buf_in_size = 0;
-        return;
+        dap_stream_data_proc_read_ext(l_stream, a_data, a_size);
+        return true;
     }
 
-    log_it(L_INFO, "DNS client: received server handshake response (%zu bytes)", a_es->buf_in_size);
+    log_it(L_INFO, "DNS client: received server handshake response (%zu bytes)", a_size);
 
     dap_enc_key_t *l_alice_key = l_tc->session_key_open;
     if (!l_alice_key || !l_alice_key->gen_alice_shared_key) {
         log_it(L_ERROR, "DNS client: no alice KEM key for decapsulation");
         l_stream->trans_ctx->handshake_cb(l_stream, NULL, 0, -1);
-        a_es->buf_in_size = 0;
-        return;
+        return false;
     }
 
     size_t l_shared_size = l_alice_key->gen_alice_shared_key(l_alice_key,
                                                              l_alice_key->priv_key_data,
-                                                             a_es->buf_in_size,
-                                                             a_es->buf_in);
+                                                             a_size,
+                                                             (uint8_t *)a_data);
     if (l_shared_size == 0 || !l_alice_key->shared_key) {
         log_it(L_ERROR, "DNS client: KEM decapsulation failed (shared_size=%zu)", l_shared_size);
         l_stream->trans_ctx->handshake_cb(l_stream, NULL, 0, -1);
-        a_es->buf_in_size = 0;
-        return;
+        return false;
     }
 
     log_it(L_INFO, "DNS client: KEM decapsulation succeeded");
@@ -883,8 +925,7 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
     if (!l_handshake_key) {
         log_it(L_ERROR, "DNS client: KDF failed");
         l_stream->trans_ctx->handshake_cb(l_stream, NULL, 0, -1);
-        a_es->buf_in_size = 0;
-        return;
+        return false;
     }
 
     if (l_tc->stream_key)
@@ -898,8 +939,7 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
     l_stream->trans_ctx->handshake_cb = NULL;
 
     l_cb(l_stream, NULL, 0, 0);
-
-    a_es->buf_in_size = 0;
+    return false;
 }
 
 /**

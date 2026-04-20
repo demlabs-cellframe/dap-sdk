@@ -59,7 +59,7 @@ typedef struct dap_stream {
     char *service_key;
     bool is_client_to_uplink;
 
-    uint8_t *buf_fragments, *pkt_cache;
+    uint8_t *buf_fragments, *buf_fragments_map, *pkt_cache;
     size_t buf_fragments_size_total;// Full size of all fragments
     size_t buf_fragments_size_filled;// Received size
 
@@ -236,4 +236,3 @@ dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
 dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
-

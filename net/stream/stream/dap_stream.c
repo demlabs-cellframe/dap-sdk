@@ -419,6 +419,16 @@ int s_stream_init_node_addr_cert()
 }
 static bool s_debug_more = false;
 
+static void s_stream_fragments_reset(dap_stream_t *a_stream)
+{
+    if (!a_stream)
+        return;
+    DAP_DEL_Z(a_stream->buf_fragments);
+    DAP_DEL_Z(a_stream->buf_fragments_map);
+    a_stream->buf_fragments_size_total = 0;
+    a_stream->buf_fragments_size_filled = 0;
+}
+
 /**
  * @brief stream_init Init stream module
  * @return  0 if ok others if not
@@ -929,7 +939,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
 #endif
 
-    DAP_DEL_Z(a_stream->buf_fragments);
+    s_stream_fragments_reset(a_stream);
     DAP_DEL_Z(a_stream->pkt_cache);
     DAP_DELETE(a_stream);
     debug_if(s_debug, L_DEBUG, "Stream connection is over");
@@ -1399,20 +1409,43 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu", 
                l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
 
-        if(a_stream->buf_fragments_size_filled != l_fragm_pkt->mem_shift) {
-            debug_if(s_dump_packet_headers, L_WARNING, "Input: wrong fragment position %u, have to be %zu. Drop packet",
-                     l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
+        if (!l_fragm_pkt->full_size ||
+            l_fragm_pkt->full_size > DAP_STREAM_PKT_SIZE_MAX ||
+            (size_t)l_fragm_pkt->mem_shift + (size_t)l_fragm_pkt->size > l_fragm_pkt->full_size) {
+            debug_if(s_dump_packet_headers, L_WARNING,
+                     "Input: invalid fragment bounds shift=%u size=%u full=%u",
+                     l_fragm_pkt->mem_shift, l_fragm_pkt->size, l_fragm_pkt->full_size);
             l_is_clean_fragments = true;
             break;
-        } else {
-            if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
-                DAP_DEL_Z(a_stream->buf_fragments);
-                a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
-                a_stream->buf_fragments_size_total = l_fragm_pkt->full_size;
-            }
-            memcpy(a_stream->buf_fragments + l_fragm_pkt->mem_shift, l_fragm_pkt->data, l_fragm_pkt->size);
-            a_stream->buf_fragments_size_filled += l_fragm_pkt->size;
         }
+
+        if (!a_stream->buf_fragments || !a_stream->buf_fragments_map ||
+            a_stream->buf_fragments_size_total != l_fragm_pkt->full_size) {
+            s_stream_fragments_reset(a_stream);
+            a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
+            a_stream->buf_fragments_map = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
+            if (!a_stream->buf_fragments || !a_stream->buf_fragments_map) {
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                l_is_clean_fragments = true;
+                break;
+            }
+            a_stream->buf_fragments_size_total = l_fragm_pkt->full_size;
+            debug_if(s_dump_packet_headers, L_DEBUG,
+                     "Input: started fragment assembly (full=%u, first_shift=%u)",
+                     l_fragm_pkt->full_size, l_fragm_pkt->mem_shift);
+        }
+
+        memcpy(a_stream->buf_fragments + l_fragm_pkt->mem_shift, l_fragm_pkt->data, l_fragm_pkt->size);
+        size_t l_new_bytes = 0;
+        size_t l_begin = l_fragm_pkt->mem_shift;
+        size_t l_end = l_begin + l_fragm_pkt->size;
+        for (size_t i = l_begin; i < l_end; i++) {
+            if (!a_stream->buf_fragments_map[i]) {
+                a_stream->buf_fragments_map[i] = 1;
+                l_new_bytes++;
+            }
+        }
+        a_stream->buf_fragments_size_filled += l_new_bytes;
 
         // Not last fragment, otherwise go to parsing STREAM_PKT_TYPE_DATA_PACKET
         if(a_stream->buf_fragments_size_filled < l_fragm_pkt->full_size) {
@@ -1561,8 +1594,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     // Clean memory
     DAP_DEL_Z(a_stream->pkt_cache);
     if(l_is_clean_fragments) {
-        DAP_DEL_Z(a_stream->buf_fragments);
-        a_stream->buf_fragments_size_total = a_stream->buf_fragments_size_filled = 0;
+        s_stream_fragments_reset(a_stream);
     }
 }
 
