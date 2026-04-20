@@ -771,7 +771,7 @@ static void test_flow_ctrl_multiple_senders(void)
     dap_events_start();
     dap_assert(s_wait_for_reactor(2000), "Reactor should start within 2s");
     
-    const int NUM_SENDERS = 3;
+    enum { NUM_SENDERS = 3 };
     test_flow_ctrl_ctx_t *l_sender_ctxs[NUM_SENDERS];
     dap_io_flow_ctrl_t *l_senders[NUM_SENDERS];
     dap_io_flow_ctrl_callbacks_t l_sender_cbs[NUM_SENDERS];

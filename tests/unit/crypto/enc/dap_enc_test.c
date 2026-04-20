@@ -38,15 +38,13 @@ void test_encypt_decrypt(int count_steps, const dap_enc_key_type_t key_type, con
 
     for(int i = 0; i < count_steps; i++) {
         size_t source_size = 0;
-        const size_t seed_size = 16;
-        uint8_t seed[seed_size];
+        enum { SEED_SIZE = 16, KEX_SIZE = 32 };
+        uint8_t seed[SEED_SIZE];
+        uint8_t kex[KEX_SIZE];
+        randombytes(seed, SEED_SIZE);
+        randombytes(kex, KEX_SIZE);
 
-        const size_t kex_size = 32;
-        uint8_t kex[kex_size];
-        randombytes(seed, seed_size);
-        randombytes(kex, kex_size);
-
-        dap_enc_key_t* key = dap_enc_key_new_generate(key_type, kex, kex_size, seed, seed_size, cipher_key_size);
+        dap_enc_key_t* key = dap_enc_key_new_generate(key_type, kex, KEX_SIZE, seed, SEED_SIZE, cipher_key_size);
         source_size = 256;//1 + random_uint32_t(max_source_size);
 
         uint8_t *source = DAP_NEW_SIZE(uint8_t, source_size);
