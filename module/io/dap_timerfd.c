@@ -322,6 +322,17 @@ static void s_timer_hub_reschedule(dap_timerfd_t *a_timer, uint64_t a_next_fire_
     dap_wasm_sab_wake(&s_timer_hub.wake);
 }
 
+size_t dap_timerfd_active_count(void)
+{
+    /* Diagnostic accessor — see header. Takes the same lock the hub scan
+     * uses so the returned count is a consistent snapshot (no races with
+     * concurrent add/remove on worker threads). */
+    pthread_mutex_lock(&s_timer_hub.lock);
+    size_t l_count = s_timer_hub.count;
+    pthread_mutex_unlock(&s_timer_hub.lock);
+    return l_count;
+}
+
 #elif defined(DAP_OS_WASM)
 static void s_wasm_timer_callback(void *a_arg)
 {

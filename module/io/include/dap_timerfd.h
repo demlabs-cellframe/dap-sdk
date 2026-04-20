@@ -89,6 +89,14 @@ void dap_timerfd_reset(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid);
 void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd);
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd);
 
+#ifdef DAP_OS_WASM_MT
+/* Diagnostic accessor: number of timers currently registered in the MT
+ * timer hub. Intended for E2E tests to verify hub lifecycle (add / remove
+ * / deinit) without leaking internal types. Thread-safe; takes the hub
+ * mutex briefly. Returns 0 when the hub hasn't been initialized. */
+size_t dap_timerfd_active_count(void);
+#endif
+
 #ifdef DAP_EVENTS_CAPS_IOCP
 DWORD dap_del_queuetimer(HANDLE h);
 #endif
