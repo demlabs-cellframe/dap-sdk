@@ -39,6 +39,10 @@
 #define _MSEC -10000
 #endif
 
+#if defined(DAP_OS_WASM_MT)
+#include <stdatomic.h>
+#endif
+
 #include "dap_events_socket.h"
 #include "dap_common.h"
 #include "dap_proc_thread.h"
@@ -58,10 +62,11 @@ typedef struct dap_timerfd {
 #elif defined(DAP_OS_LINUX)
     int tfd;
 #elif defined(DAP_OS_WASM)
-#ifdef DAP_WASM_PTHREADS
-    int pipe_fd[2];
-    volatile bool active;
-    uint64_t next_fire_ms;
+#ifdef DAP_OS_WASM_MT
+    /* WASM MT timer — hub thread pushes events via SAB channel to
+     * events_socket->sab_channel; callback fires in the owning worker. */
+    _Atomic uint64_t next_fire_ms;
+    _Atomic bool     active;
 #else
     long interval_id;
 #endif

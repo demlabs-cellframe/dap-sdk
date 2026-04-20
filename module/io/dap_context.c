@@ -65,6 +65,9 @@
 #include "dap_events.h"
 #include "dap_proc_thread.h"
 #include "dap_worker.h"
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+#include "dap_wasm_sab_ipc.h"
+#endif
 
 struct dap_context_msg_run {
     dap_context_t * context;
@@ -78,6 +81,44 @@ struct dap_context_msg_run {
 };
 
 static _Thread_local dap_context_t *s_context = NULL;
+
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+/* Register SAB-backed es for fast iteration in the worker loop. */
+static void s_wasm_sab_register(dap_context_t *a_ctx, dap_events_socket_t *a_es)
+{
+    if (!a_ctx || !a_es || !a_es->sab_channel) return;
+    pthread_mutex_lock(&a_ctx->wasm_sab_esockets_lock);
+    if (a_ctx->wasm_sab_esockets_count == a_ctx->wasm_sab_esockets_capacity) {
+        size_t l_new = a_ctx->wasm_sab_esockets_capacity
+                       ? a_ctx->wasm_sab_esockets_capacity * 2 : 16;
+        dap_events_socket_t **l_arr = DAP_REALLOC(a_ctx->wasm_sab_esockets,
+                                                  l_new * sizeof(*l_arr));
+        if (!l_arr) {
+            pthread_mutex_unlock(&a_ctx->wasm_sab_esockets_lock);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return;
+        }
+        a_ctx->wasm_sab_esockets = l_arr;
+        a_ctx->wasm_sab_esockets_capacity = l_new;
+    }
+    a_ctx->wasm_sab_esockets[a_ctx->wasm_sab_esockets_count++] = a_es;
+    pthread_mutex_unlock(&a_ctx->wasm_sab_esockets_lock);
+}
+
+static void s_wasm_sab_unregister(dap_context_t *a_ctx, dap_events_socket_t *a_es)
+{
+    if (!a_ctx || !a_es) return;
+    pthread_mutex_lock(&a_ctx->wasm_sab_esockets_lock);
+    for (size_t i = 0; i < a_ctx->wasm_sab_esockets_count; i++) {
+        if (a_ctx->wasm_sab_esockets[i] == a_es) {
+            a_ctx->wasm_sab_esockets[i] =
+                a_ctx->wasm_sab_esockets[--a_ctx->wasm_sab_esockets_count];
+            break;
+        }
+    }
+    pthread_mutex_unlock(&a_ctx->wasm_sab_esockets_lock);
+}
+#endif /* DAP_EVENTS_CAPS_WASM_SAB */
 
 static void *s_context_thread(void *arg); // Context thread
 /**
@@ -120,6 +161,10 @@ dap_context_t *dap_context_new(dap_context_type_t a_type)
    l_context->id = s_context_id_max;
    l_context->type = a_type;
    pthread_rwlock_init(&l_context->esockets_lock, NULL);
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+   atomic_store(&l_context->wasm_wake_counter, 0);
+   pthread_mutex_init(&l_context->wasm_sab_esockets_lock, NULL);
+#endif
    s_context_id_max++;
    return l_context;
 }
@@ -316,6 +361,10 @@ static void *s_context_thread(void *a_arg)
             pthread_mutex_destroy(&l_context->started_mutex);
         }
         pthread_rwlock_destroy(&l_context->esockets_lock);
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+        pthread_mutex_destroy(&l_context->wasm_sab_esockets_lock);
+        DAP_DELETE(l_context->wasm_sab_esockets);
+#endif
         DAP_DELETE(l_context);
         DAP_DELETE(l_msg);
         return NULL;
@@ -342,6 +391,10 @@ static void *s_context_thread(void *a_arg)
         pthread_mutex_destroy(&l_context->started_mutex);
     }
     pthread_rwlock_destroy(&l_context->esockets_lock);
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+    pthread_mutex_destroy(&l_context->wasm_sab_esockets_lock);
+    DAP_DELETE(l_context->wasm_sab_esockets);
+#endif
     DAP_DELETE(l_context);
     DAP_DELETE(l_msg);
 
@@ -534,6 +587,17 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
         l_errno = errno;
     }
 #elif defined (DAP_EVENTS_CAPS_POLL)
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+    /* SAB-backed queue/event es are not real fds — they don't go into poll(),
+     * the worker loop dispatches them via the wake counter + SAB scan. */
+    if (a_es->sab_channel) {
+        dap_wasm_sab_channel_bind_wake(a_es->sab_channel,
+                                       &a_context->wasm_wake_counter);
+        s_wasm_sab_register(a_context, a_es);
+        a_es->poll_index = (uint32_t)-1;
+        goto lb_skip_poll;
+    }
+#endif
     if (  a_context->poll_count == a_context->poll_count_max ){ // realloc
         a_context->poll_count_max *= 2;
         log_it(L_WARNING, "Too many descriptors (%u), resizing array twice to %zu", a_context->poll_count, a_context->poll_count_max);
@@ -551,6 +615,9 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
 
     a_context->poll_esocket[a_context->poll_count] = a_es;
     a_context->poll_count++;
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+lb_skip_poll:;
+#endif
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     if ( a_es->type == DESCRIPTOR_TYPE_QUEUE ){
         goto lb_exit;
@@ -747,6 +814,11 @@ int dap_context_remove( dap_events_socket_t * a_es)
     }
 
 #elif defined (DAP_EVENTS_CAPS_POLL)
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+    if (a_es->sab_channel) {
+        s_wasm_sab_unregister(l_context, a_es);
+    } else
+#endif
     if (a_es->poll_index < l_context->poll_count ){
         l_context->poll[a_es->poll_index].fd = -1;
         a_es->context->poll_esocket[a_es->poll_index]=NULL;
@@ -803,7 +875,23 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     pthread_rwlock_init(&l_es->buf_out_lock, NULL);
 #endif
 
-#if defined DAP_EVENTS_CAPS_IOCP
+#if defined(DAP_EVENTS_CAPS_QUEUE_WASM_SAB)
+    /* WASM MT path: no pipe, SAB-backed MPSC channel. */
+    l_es->sab_channel = dap_wasm_sab_channel_new(DAP_QUEUE_MAX_MSGS,
+        a_context ? &a_context->wasm_wake_counter : NULL);
+    if (!l_es->sab_channel) {
+        DAP_DELETE(l_es);
+        log_it(L_ERROR, "Failed to create SAB channel for queue");
+        return NULL;
+    }
+    l_es->socket = dap_wasm_sab_channel_vfd(l_es->sab_channel);
+    l_es->fd2 = l_es->socket;
+    /* Still allocate in/out buffers — other code paths peek at buf_out_size. */
+    l_es->buf_in_size_max = l_es->buf_out_size_max = DAP_QUEUE_MAX_MSGS * sizeof(void*);
+    l_es->buf_in    = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
+    l_es->buf_out   = DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
+    l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
+#elif defined DAP_EVENTS_CAPS_IOCP
     l_es->socket = INVALID_SOCKET;
     l_es->buf_out = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(SLIST_HEADER));
     InitializeSListHead((PSLIST_HEADER)l_es->buf_out);
@@ -826,6 +914,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 #endif
 #endif
 
+#if !defined(DAP_EVENTS_CAPS_QUEUE_WASM_SAB)
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     int l_pipe[2];
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
@@ -936,6 +1025,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 #else
 #error "Not implemented s_create_type_queue_ptr() on your platform"
 #endif
+#endif /* !DAP_EVENTS_CAPS_QUEUE_WASM_SAB */
 
     if ( a_context) {
         if(dap_context_add(a_context, l_es)) {
@@ -964,7 +1054,20 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
     l_es->uuid = dap_new_es_id();
 
     l_es->callbacks.event_callback = a_callback; // Arm event callback
-#if defined DAP_EVENTS_CAPS_IOCP
+#if defined(DAP_EVENTS_CAPS_EVENT_WASM_SAB)
+    /* WASM MT path: SAB channel. No fd / pipe. */
+    l_es->sab_channel = dap_wasm_sab_channel_new(16,
+        a_context ? &a_context->wasm_wake_counter : NULL);
+    if (!l_es->sab_channel) {
+        DAP_DELETE(l_es->buf_out);
+        DAP_DELETE(l_es);
+        log_it(L_ERROR, "Failed to create SAB channel for event");
+        return NULL;
+    }
+    l_es->socket = dap_wasm_sab_channel_vfd(l_es->sab_channel);
+    l_es->fd2 = l_es->socket;
+    l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
+#elif defined DAP_EVENTS_CAPS_IOCP
     l_es->socket = INVALID_SOCKET;
     l_es->flags |= DAP_SOCK_READY_TO_READ;
 #elif defined(DAP_EVENTS_CAPS_EPOLL)
@@ -981,7 +1084,9 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
 #error "Not defined s_create_type_event for your platform"
 #endif
 
-#ifdef DAP_EVENTS_CAPS_EVENT_EVENTFD
+#if defined(DAP_EVENTS_CAPS_EVENT_WASM_SAB)
+    /* Nothing to allocate — the SAB channel above already has vfd. */
+#elif defined(DAP_EVENTS_CAPS_EVENT_EVENTFD)
     if ( (l_es->fd = eventfd(0,EFD_NONBLOCK) ) < 0 )
         return DAP_DELETE(l_es), log_it(L_ERROR, "Can't create eventfd, error %d: '%s'", errno, dap_strerror(errno)), NULL;
     l_es->fd2 = l_es->fd;

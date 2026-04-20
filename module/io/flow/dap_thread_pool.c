@@ -154,7 +154,7 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
         pthread_cond_init(&l_w->cond, NULL);
     }
 
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM_ST)
     l_pool->inline_mode = true;
     l_pool->threads_joined = true;
     log_it(L_NOTICE, "Created thread pool in inline mode (WASM ST, %u virtual workers)", a_num_threads);

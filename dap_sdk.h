@@ -83,7 +83,7 @@ typedef struct dap_sdk_config {
     const struct dap_link_manager_callbacks *link_manager_callbacks; ///< NULL = default no-op stubs
 } dap_sdk_config_t;
 
-#if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM_MT)
 /**
  * @brief Pre-initialize WASMFS/OPFS before any filesystem access (WASM pthreads only).
  *        Safe to call multiple times; subsequent calls are no-ops.

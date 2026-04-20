@@ -77,9 +77,19 @@ typedef int SOCKET;
     #include <sys/un.h>
 #elif defined(DAP_OS_WASM)
     #define DAP_EVENTS_CAPS_POLL
-    #define DAP_EVENTS_CAPS_PIPE_POSIX
-    #define DAP_EVENTS_CAPS_QUEUE_PIPE2
-    #define DAP_EVENTS_CAPS_EVENT_PIPE
+    #if defined(DAP_OS_WASM_MT)
+        /* Emscripten pthread workers cannot use pipe() for IPC
+         * (returns EOPNOTSUPP) nor can they rely on poll() to wake up on
+         * pipe fds cross-thread. Use SAB + Atomics.wait/notify instead. */
+        #define DAP_EVENTS_CAPS_WASM_SAB
+        #define DAP_EVENTS_CAPS_QUEUE_WASM_SAB
+        #define DAP_EVENTS_CAPS_EVENT_WASM_SAB
+        #define DAP_EVENTS_CAPS_PIPE_POSIX   /* create_pipe() rarely used in WASM */
+    #else
+        #define DAP_EVENTS_CAPS_PIPE_POSIX
+        #define DAP_EVENTS_CAPS_QUEUE_PIPE2
+        #define DAP_EVENTS_CAPS_EVENT_PIPE
+    #endif
     #include <sys/types.h>
     #include <netinet/in.h>
 #elif defined (DAP_OS_UNIX)
@@ -146,6 +156,7 @@ typedef struct queue_entry {
 typedef struct dap_events_socket dap_events_socket_t;
 typedef struct dap_worker dap_worker_t;
 typedef struct dap_context dap_context_t;
+struct dap_wasm_sab_channel;
 
 typedef struct dap_server dap_server_t;
 
@@ -335,6 +346,11 @@ typedef struct dap_events_socket {
     int64_t kqueue_data;
 #elif defined DAP_EVENTS_CAPS_IOCP
     uint_fast16_t pending_read : 1, pending_write : 15;
+#endif
+
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+    /* SAB channel used instead of pipe() for queue/event sockets in WASM MT. */
+    struct dap_wasm_sab_channel *sab_channel;
 #endif
 
     dap_events_socket_callbacks_t callbacks;

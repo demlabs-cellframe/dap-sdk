@@ -52,6 +52,11 @@
 #include <fcntl.h>
 #include <emscripten.h>
 #include <emscripten/eventloop.h>
+#ifdef DAP_OS_WASM_MT
+#include <alloca.h>
+#include <emscripten/threading.h>
+#include "dap_wasm_sab_ipc.h"
+#endif
 #elif defined (DAP_OS_WINDOWS)
 #include <winsock2.h>
 #include <windows.h>
@@ -931,10 +936,76 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         l_selected_sockets = epoll_wait(a_context->epoll_fd, l_epoll_events, DAP_EVENTS_SOCKET_MAX, -1);
         l_sockets_max = l_selected_sockets;
 #elif defined(DAP_EVENTS_CAPS_POLL)
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM_ST)
         l_selected_sockets = poll(a_context->poll, a_context->poll_count, 0);
-#elif defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
-        l_selected_sockets = poll(a_context->poll, a_context->poll_count, 100);
+#elif defined(DAP_OS_WASM_MT)
+        /* SAB-based wakeup for WASM multi-thread:
+         *   1) Snapshot the list of SAB-backed esockets under the registry
+         *      lock so later steps don't need the lock.
+         *   2) Load the context wake counter BEFORE scanning for data. This
+         *      is the critical ordering that prevents lost-wakeups: any
+         *      producer that pushes after our scan but before the futex
+         *      wait will have bumped the counter, so futex_wait sees a
+         *      mismatching value and returns immediately.
+         *   3) If the scan found pending data, skip the wait entirely.
+         *   4) Service real fds with poll(.., 0) (already waited above).
+         *   5) Dispatch all SAB-backed esockets that have data — these are
+         *      not represented in the pollfd array. */
+        pthread_mutex_lock(&a_context->wasm_sab_esockets_lock);
+        size_t l_sab_count = a_context->wasm_sab_esockets_count;
+        dap_events_socket_t **l_sab_snap = l_sab_count
+            ? (dap_events_socket_t **)alloca(l_sab_count * sizeof(void*))
+            : NULL;
+        if (l_sab_snap)
+            memcpy(l_sab_snap, a_context->wasm_sab_esockets,
+                   l_sab_count * sizeof(void*));
+        pthread_mutex_unlock(&a_context->wasm_sab_esockets_lock);
+
+        uint32_t l_sab_expected = atomic_load_explicit(
+            &a_context->wasm_wake_counter, memory_order_acquire);
+
+        bool l_sab_has_data = false;
+        for (size_t i = 0; i < l_sab_count; i++) {
+            dap_events_socket_t *l_es_sab = l_sab_snap[i];
+            if (l_es_sab && l_es_sab->sab_channel
+                && dap_wasm_sab_channel_has_data(l_es_sab->sab_channel)) {
+                l_sab_has_data = true;
+                break;
+            }
+        }
+        if (!l_sab_has_data)
+            dap_wasm_sab_wait(&a_context->wasm_wake_counter,
+                              l_sab_expected, 250);
+
+        l_selected_sockets = poll(a_context->poll, a_context->poll_count, 0);
+
+        for (size_t i = 0; i < l_sab_count; i++) {
+            dap_events_socket_t *l_es_sab = l_sab_snap[i];
+            if (!l_es_sab || !l_es_sab->sab_channel)
+                continue;
+            if (!dap_wasm_sab_channel_has_data(l_es_sab->sab_channel))
+                continue;
+            switch (l_es_sab->type) {
+            case DESCRIPTOR_TYPE_QUEUE:
+                dap_events_socket_queue_proc_input_unsafe(l_es_sab);
+                break;
+            case DESCRIPTOR_TYPE_EVENT:
+                dap_events_socket_event_proc_input_unsafe(l_es_sab);
+                break;
+            case DESCRIPTOR_TYPE_TIMER: {
+                uint64_t l_drained = 0;
+                dap_wasm_sab_channel_drain_event(l_es_sab->sab_channel,
+                                                 &l_drained);
+                if (l_drained && l_es_sab->callbacks.timer_callback)
+                    l_es_sab->callbacks.timer_callback(l_es_sab);
+                if (FLAG_CLOSE(l_es_sab->flags))
+                    dap_events_socket_remove_and_delete_unsafe(l_es_sab, false);
+                break;
+            }
+            default:
+                break;
+            }
+        }
 #else
         l_selected_sockets = poll(a_context->poll, a_context->poll_count, -1);
 #endif
@@ -1280,7 +1351,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         uint64_t val;
                         if (read(l_cur->fd, &val, sizeof(val)) < 0)
                             log_it(L_ERROR, "Timer fd read failed: %s", dap_strerror(errno));
-#elif defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
+#elif defined(DAP_OS_WASM_MT)
                         {
                             uint8_t l_drain;
                             while (read(l_cur->socket, &l_drain, 1) > 0) {}
@@ -1481,7 +1552,18 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
                     case DESCRIPTOR_TYPE_QUEUE:
                         if (l_cur->flags & DAP_SOCK_QUEUE_PTR && l_cur->buf_out_size>= sizeof (void*)) {
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#if defined(DAP_EVENTS_CAPS_QUEUE_WASM_SAB)
+                            void *l_ptr = NULL;
+                            memcpy(&l_ptr, l_cur->buf_out, sizeof(void*));
+                            int l_rc = dap_wasm_sab_channel_push_ptr(l_cur->sab_channel, l_ptr);
+                            if (l_rc == 0) {
+                                l_bytes_sent = sizeof(void*);
+                                l_errno = 0;
+                            } else {
+                                l_bytes_sent = -1;
+                                l_errno = (l_rc == -ENOSPC) ? EAGAIN : -l_rc;
+                            }
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
                             l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
                             l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
                             debug_if(l_errno, L_ERROR, "Writing to pipe %zu bytes failed, sent %zd only...", l_cur->buf_out_size, l_bytes_sent);
@@ -1651,14 +1733,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             }
         }
 #endif
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM_ST)
     } while(0);
 #else
     } while(!a_context->signal_exit);
 #endif
 #endif // IOCP
 
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM_ST)
     return 0;
 #else
     log_it(L_ATT,"Context :%u finished", a_context->id);
@@ -1666,7 +1748,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
 }
 
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM_ST)
 void dap_worker_poll_step(dap_context_t *a_context)
 {
     if (a_context && a_context->is_running && !a_context->signal_exit)

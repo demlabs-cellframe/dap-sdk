@@ -308,7 +308,7 @@ static bool s_timer_callback(void *a_arg)
 }
 
 /* ─── WASM ST: inline init & non-blocking step (main-thread polling) ── */
-#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+#if defined(DAP_OS_WASM_ST)
 
 int dap_proc_thread_init_wasm_st(uint32_t a_threads_count)
 {
@@ -364,7 +364,7 @@ void dap_proc_thread_poll_step(void)
     }
 }
 
-#endif /* DAP_OS_WASM && !DAP_WASM_PTHREADS */
+#endif /* DAP_OS_WASM_ST */
 
 int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority)
 {

@@ -87,7 +87,7 @@ static void s_deinit_plugin(void);
 /* ========================================================================= */
 
 #ifdef DAP_OS_WASM
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
 #include <emscripten/wasmfs.h>
 #include <pthread.h>
 
@@ -247,7 +247,7 @@ static int s_init_core(const dap_sdk_config_t *a_config)
     dap_log_level_set(a_config->log_level);
 
 #ifdef DAP_OS_WASM
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     if (dap_sdk_wasmfs_init(a_config->sys_dir) != 0)
         return -1;
 #else

@@ -50,7 +50,7 @@
 
 #define LOG_TAG "webrtc_wasm"
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
 #include <pthread.h>
 #include <semaphore.h>
 #include <emscripten/threading.h>
@@ -67,7 +67,7 @@ extern int js_rtc_dc_send(int a_peer_id, const void *a_data, int a_len);
 extern void js_rtc_close(int a_peer_id);
 extern void js_rtc_init_callbacks(void);
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
 extern int js_http_post_sync(const char *a_url_ptr, const char *a_content_type_ptr,
                               const void *a_body, int a_body_len,
                               const char *a_extra_headers_ptr,
@@ -93,7 +93,7 @@ EM_JS(int, js_rtc_page_is_secure, (void), {
     return 0;
 });
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
 static int s_rtc_main_document_https = -1;
 #endif
 
@@ -110,7 +110,7 @@ typedef struct rtc_conn {
     bool                    use_tls;
     uint32_t                session_id;
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     pthread_mutex_t         recv_mutex;
     sem_t                   recv_sem;
     pthread_t               recv_thread;
@@ -162,7 +162,7 @@ void _rtc_on_closed(int a_id)
     if (!l_conn) return;
     l_conn->state = DAP_WEBRTC_STATE_CLOSED;
     log_it(L_INFO, "WebRTC peer closed (id=%d)", a_id);
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
 #else
     if (l_conn->ready_callback) {
@@ -179,7 +179,7 @@ void _rtc_on_dc_open(int a_id)
     if (!l_conn) return;
     l_conn->state = DAP_WEBRTC_STATE_CONNECTED;
     log_it(L_NOTICE, "WebRTC data channel open (id=%d)", a_id);
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
 #else
     if (l_conn->ready_callback) {
@@ -196,7 +196,7 @@ void _rtc_on_dc_close(int a_id)
     if (!l_conn) return;
     l_conn->state = DAP_WEBRTC_STATE_CLOSED;
     log_it(L_INFO, "WebRTC data channel closed (id=%d)", a_id);
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
 #else
     if (l_conn->ready_callback) {
@@ -213,7 +213,7 @@ void _rtc_on_dc_message(int a_id, const uint8_t *a_data, int a_len)
     if (!l_conn || a_len <= 0) return;
     l_conn->bytes_received += (uint64_t)a_len;
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     if (!l_conn->recv_buf) return;
     pthread_mutex_lock(&l_conn->recv_mutex);
     dap_cbuf_push(l_conn->recv_buf, a_data, (size_t)a_len);
@@ -229,7 +229,7 @@ void _rtc_on_dc_message(int a_id, const uint8_t *a_data, int a_len)
  * MT: proxy wrappers + recv thread + sync signaling
  * ======================================================================== */
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
 
 typedef struct { const char *stun; int result; } rtc_create_peer_args_t;
 typedef struct { int peer_id; const char *label; int result; } rtc_create_dc_args_t;
@@ -335,7 +335,7 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     return 0;
 }
 
-#endif /* DAP_WASM_PTHREADS */
+#endif /* DAP_OS_WASM_MT */
 
 /* ========================================================================
  * Transport ops
@@ -344,7 +344,7 @@ static int s_do_signaling(rtc_conn_t *a_conn)
 static int s_rtc_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
 {
     (void)a_trans; (void)a_config;
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
         s_proxy_init_callbacks(NULL);
     } else {
@@ -364,7 +364,7 @@ static void s_rtc_deinit(dap_net_trans_t *a_trans)
     for (int i = 0; i < RTC_MAX_CONNECTIONS; i++) {
         rtc_conn_t *l_conn = s_connections[i];
         if (!l_conn) continue;
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
         if (l_conn->recv_running) {
             l_conn->recv_running = false;
             sem_post(&l_conn->recv_sem);
@@ -396,7 +396,7 @@ static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
     l_conn->recv_buf = dap_cbuf_create(RTC_RECV_BUF_SIZE);
     if (!l_conn->recv_buf) { DAP_DELETE(l_conn); a_result->error_code = -1; return -1; }
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     pthread_mutex_init(&l_conn->recv_mutex, NULL);
     sem_init(&l_conn->recv_sem, 0, 0);
 #endif
@@ -404,7 +404,7 @@ static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     if (s_rtc_main_document_https < 0) {
         log_it(L_WARNING, "WebRTC: HTTPS detection not initialized, assuming secure context");
         s_rtc_main_document_https = 1;
@@ -421,7 +421,7 @@ static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
     if (!l_stream) {
         DAP_DELETE(l_conn->host);
         dap_cbuf_delete(l_conn->recv_buf);
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
         sem_destroy(&l_conn->recv_sem);
         pthread_mutex_destroy(&l_conn->recv_mutex);
 #endif
@@ -599,7 +599,7 @@ static int s_rtc_session_create(dap_stream_t *a_stream,
  * session_start
  * ======================================================================== */
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
 
 typedef struct {
     dap_stream_t *stream; rtc_conn_t *conn;
@@ -742,7 +742,7 @@ void _rtc_answer_async_callback(int a_peer_id, int a_status)
            l_conn->js_peer_id);
 }
 
-#endif /* DAP_WASM_PTHREADS */
+#endif /* DAP_OS_WASM_MT */
 
 /* ========================================================================
  * read / write / close
@@ -760,19 +760,19 @@ static ssize_t s_rtc_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
     if (!l_conn->recv_buf) return -1;
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     pthread_mutex_lock(&l_conn->recv_mutex);
 #endif
     size_t l_avail = dap_cbuf_get_size(l_conn->recv_buf);
     if (l_avail == 0) {
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
         pthread_mutex_unlock(&l_conn->recv_mutex);
 #endif
         return 0;
     }
     size_t l_r = a_size < l_avail ? a_size : l_avail;
     size_t l_read = dap_cbuf_pop(l_conn->recv_buf, l_r, a_buffer);
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     pthread_mutex_unlock(&l_conn->recv_mutex);
 #endif
     return (ssize_t)l_read;
@@ -784,7 +784,7 @@ static ssize_t s_rtc_write(dap_stream_t *a_stream, const void *a_data, size_t a_
     rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
     if (l_conn->state != DAP_WEBRTC_STATE_CONNECTED) return -1;
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     rtc_send_args_t l_args = { .peer_id = l_conn->js_peer_id, .data = a_data, .len = (int)a_size, .result = -1 };
     RTC_PROXY_SYNC(s_proxy_dc_send, &l_args);
     int l_sent = l_args.result;
@@ -800,7 +800,7 @@ static void s_rtc_close(dap_stream_t *a_stream)
     if (!a_stream || !a_stream->_server_session) return;
     rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     if (l_conn->recv_running) {
         l_conn->recv_running = false;
         sem_post(&l_conn->recv_sem);
@@ -857,7 +857,7 @@ dap_net_trans_webrtc_config_t dap_net_trans_webrtc_config_default(void)
 
 int dap_net_trans_webrtc_register(void)
 {
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
     if (s_rtc_main_document_https < 0)
         s_rtc_main_document_https = js_rtc_page_is_secure();
 #endif
