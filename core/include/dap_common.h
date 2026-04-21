@@ -345,9 +345,11 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
         if (_pn && ((uintptr_t)_pn & (_a - 1))) { \
             void *_pa = NULL; \
             posix_memalign(&_pa, _a, _s); \
-            if (_pa) memcpy(_pa, _pn, _s); \
-            free(_pn); \
-            _pn = _pa; \
+            if (_pa) { \
+                memcpy(_pa, _pn, _s); \
+                free(_pn); \
+                _pn = _pa; \
+            } \
         } \
         _pn; \
     })

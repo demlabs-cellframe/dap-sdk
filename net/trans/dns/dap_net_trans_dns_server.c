@@ -236,6 +236,27 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
         return -2;
     }
 
+    // If previous stop timed out, finish pending reads and purge stale sessions
+    // before opening listener sockets again.
+    if (!s_dns_server_wait_reads_drain(a_dns_server, DNS_STOP_READ_DRAIN_RETRIES)) {
+        unsigned int l_reads_left = atomic_load(&a_dns_server->datagram_reads_inflight);
+        log_it(L_ERROR, "DNS server start aborted: %u datagram read(s) still in progress",
+               l_reads_left);
+        return -3;
+    }
+
+    int l_lock_ret = pthread_rwlock_wrlock(&a_dns_server->sessions_lock);
+    if (l_lock_ret != 0) {
+        log_it(L_ERROR, "Failed to lock DNS sessions for start: %d (%s)",
+               l_lock_ret, dap_strerror(l_lock_ret));
+        return -4;
+    }
+    if (a_dns_server->sessions) {
+        log_it(L_WARNING, "DNS server '%s': removing stale sessions before start", a_dns_server->server_name);
+        s_dns_server_sessions_cleanup_unsafe(a_dns_server);
+    }
+    pthread_rwlock_unlock(&a_dns_server->sessions_lock);
+
     atomic_store(&a_dns_server->stopping, false);
 
     dap_events_socket_callbacks_t l_dns_callbacks = {
@@ -249,7 +270,7 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
     a_dns_server->server = dap_server_new(a_cfg_section, NULL, &l_dns_callbacks);
     if (!a_dns_server->server) {
         log_it(L_ERROR, "Failed to create dap_server for DNS");
-        return -3;
+        return -5;
     }
 
     a_dns_server->server->_inheritor = a_dns_server;
@@ -266,7 +287,7 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to start DNS server on %s:%u", l_addr, l_port);
             dap_net_trans_dns_server_stop(a_dns_server);
-            return -4;
+            return -6;
         }
 
         log_it(L_NOTICE, "DNS server '%s' listening on %s:%u",
