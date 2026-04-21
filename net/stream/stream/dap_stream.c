@@ -1527,7 +1527,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                     
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                     if (s_stream_esocket_is_detached(l_es))
-                        return;
+                        goto cleanup;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type,
@@ -1546,7 +1546,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
                         if (s_stream_esocket_is_detached(l_es))
-                            return;
+                            goto cleanup;
                     }
                     if (l_ch->closing)
                         break;
@@ -1591,6 +1591,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     default:
         log_it(L_WARNING, "Unknown header type");
     }
+cleanup:
     // Clean memory
     DAP_DEL_Z(a_stream->pkt_cache);
     if(l_is_clean_fragments) {

@@ -167,36 +167,45 @@ int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t* a_ca
  * @brief dap_plugin_load_all
  * Load all registered plugins (dlopen/import) without calling preinit or init
  */
-void dap_plugin_load_all()
+int dap_plugin_load_all(void)
 {
+    int l_errors = 0;
     dap_plugin_manifest_t * l_manifest, *l_tmp;
     HASH_ITER(hh, dap_plugin_manifest_all(), l_manifest, l_tmp) {
-        s_load(l_manifest);
+        if (s_load(l_manifest))
+            l_errors++;
     }
+    return l_errors;
 }
 
 /**
  * @brief dap_plugin_preinit_all
  * Call preinit callback on all loaded modules (before chains load)
  */
-void dap_plugin_preinit_all()
+int dap_plugin_preinit_all(void)
 {
+    int l_errors = 0;
     struct plugin_module * l_module, *l_tmp;
     HASH_ITER(hh, s_modules, l_module, l_tmp) {
-        s_preinit(l_module);
+        if (s_preinit(l_module))
+            l_errors++;
     }
+    return l_errors;
 }
 
 /**
  * @brief dap_plugin_start_all
  * Call init callback on all loaded modules (after chains load)
  */
-void dap_plugin_start_all()
+int dap_plugin_start_all(void)
 {
+    int l_errors = 0;
     struct plugin_module * l_module, *l_tmp;
     HASH_ITER(hh, s_modules, l_module, l_tmp) {
-        s_init(l_module);
+        if (s_init(l_module))
+            l_errors++;
     }
+    return l_errors;
 }
 
 /**
@@ -398,5 +407,4 @@ dap_plugin_status_t dap_plugin_status(const char * a_name)
         return STATUS_STOPPED;
     return STATUS_NONE;
 }
-
 

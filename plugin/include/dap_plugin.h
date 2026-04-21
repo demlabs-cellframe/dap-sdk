@@ -50,9 +50,9 @@ void dap_plugin_deinit();
 const char *dap_plugin_root_path(void);
 
 int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t *a_callbacks);
-void dap_plugin_load_all();
-void dap_plugin_preinit_all();
-void dap_plugin_start_all();
+int dap_plugin_load_all(void);
+int dap_plugin_preinit_all(void);
+int dap_plugin_start_all(void);
 void dap_plugin_stop_all();
 dap_plugin_status_t dap_plugin_status(const char * a_name);
 int dap_plugin_stop(const char * a_name);
