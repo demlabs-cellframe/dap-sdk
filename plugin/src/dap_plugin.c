@@ -271,8 +271,22 @@ int dap_plugin_start(const char * a_name)
     HASH_FIND_STR(s_modules, a_name, l_module);
     if (!l_module)
         return -5;
-    s_preinit(l_module);
-    s_init(l_module);
+    l_ret = s_preinit(l_module);
+    if (l_ret) {
+        int l_stop_ret = s_stop(l_manifest);
+        if (l_stop_ret)
+            log_it(L_WARNING, "Rollback failed for plugin \"%s\" after preinit error %d, stop code %d",
+                   l_manifest->name, l_ret, l_stop_ret);
+        return l_ret;
+    }
+    l_ret = s_init(l_module);
+    if (l_ret) {
+        int l_stop_ret = s_stop(l_manifest);
+        if (l_stop_ret)
+            log_it(L_WARNING, "Rollback failed for plugin \"%s\" after init error %d, stop code %d",
+                   l_manifest->name, l_ret, l_stop_ret);
+        return l_ret;
+    }
     return 0;
 }
 
@@ -384,6 +398,5 @@ dap_plugin_status_t dap_plugin_status(const char * a_name)
         return STATUS_STOPPED;
     return STATUS_NONE;
 }
-
 
 

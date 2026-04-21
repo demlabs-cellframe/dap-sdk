@@ -527,7 +527,10 @@ typedef int dap_errnum_t;
     L_ATT       = 6,
     L_ERROR     = 7,
     L_CRITICAL  = 8,
-    L_TOTAL
+    L_TOTAL,
+#ifdef DAP_TPS_TEST
+    L_TPS  = 15,
+#endif
   } dap_log_level_t;
 
 #define _LOG_LVL_L_DEBUG    " [DBG] "
@@ -539,6 +542,9 @@ typedef int dap_errnum_t;
 #define _LOG_LVL_L_ATT      " [ATT] "
 #define _LOG_LVL_L_ERROR    " [ERR] "
 #define _LOG_LVL_L_CRITICAL " [ ! ] "
+#ifdef DAP_TPS_TEST
+#define _LOG_LVL_L_TPS      " [TPS] "
+#endif
 #define _LOG_LVL(_lvl) _LOG_LVL_##_lvl
 
 #if defined (__GNUC__) || defined (__clang__)

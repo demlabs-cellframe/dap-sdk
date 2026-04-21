@@ -1745,12 +1745,13 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec+=2; // Not wait more than 1 second to get and 2 to send
-    int ret = mq_timedsend(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0, &l_timeout );
-    int l_errno = errno;
-    if (ret == sizeof(a_arg) )
-        return  0;
-    else
-        return l_errno;
+    int l_ret_posix = mq_timedsend(a_es->mqd, (const char *)&a_arg, sizeof(a_arg), 0, &l_timeout);
+    if (l_ret_posix == 0)
+        return 0;
+    int l_errno_posix = errno;
+    if (l_errno_posix == EINVAL || l_errno_posix == EINTR || l_errno_posix == ETIMEDOUT)
+        l_errno_posix = EAGAIN;
+    return l_errno_posix;
 #elif defined DAP_EVENTS_CAPS_WEPOLL
     //return dap_sendto(a_es->socket, a_es->port, &a_arg, sizeof(void*)) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
     queue_entry_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(queue_entry_t));
