@@ -210,12 +210,6 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     l_fsm->client = a_client;
     l_fsm->worker = dap_events_worker_get_auto();
 
-    log_it(L_ATT, "DIAG fsm_new: fsm=%p sizeof=%zu worker_off=%zu client_tc_off=%zu worker=%p uuid=0x%"PRIx64,
-           (void*)l_fsm, sizeof(dap_client_fsm_t),
-           __builtin_offsetof(dap_client_fsm_t, worker),
-           __builtin_offsetof(dap_client_fsm_t, client_trans_ctx),
-           (void*)l_fsm->worker, l_fsm->uuid);
-
     // Crypto defaults
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
     l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
@@ -1226,9 +1220,9 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
     if (!a_fsm || !a_fsm->client || a_fsm->is_removing)
         return;
 
-    log_it(L_INFO, "FSM dispatching stage %s (transport: %s)",
-           dap_client_stage_str(a_fsm->stage),
-           dap_net_trans_type_to_str(a_fsm->client->trans_type));
+    debug_if(s_debug_more, L_DEBUG, "FSM dispatching stage %s (transport: %s)",
+             dap_client_stage_str(a_fsm->stage),
+             dap_net_trans_type_to_str(a_fsm->client->trans_type));
 
     // For STAGE_BEGIN: dispatch clean to worker
     if (a_fsm->stage == STAGE_BEGIN) {
