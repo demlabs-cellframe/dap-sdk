@@ -1089,6 +1089,7 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     dap_stream_session_t *l_stream_session = (dap_stream_session_t*)a_session_context;
+    dap_enc_key_t *l_stream_session_key = l_stream_session->key;
     
     // Delete Flow Control
     // NOTE: flow_ctrl is in base.base (dap_io_flow_t), not directly in session
@@ -1104,7 +1105,16 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     if (l_stream_session->id) {
         dap_stream_session_close_mt(l_stream_session->id);
     }
-    
+
+    // Session close owns and deletes stream_session->key.
+    // If encryption_key aliases that key, clear it to avoid double free in protocol_destroy.
+    if (l_session->encryption_key == l_stream_session_key) {
+        l_session->encryption_key = NULL;
+    }
+    if (l_session->stream && l_session->stream->session == l_stream_session) {
+        l_session->stream->session = NULL;
+    }
+
     l_session->session = NULL;
     l_session->base.base.session_context = NULL;
 }
