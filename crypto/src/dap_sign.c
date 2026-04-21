@@ -580,9 +580,9 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
     dap_string_append_printf(a_str_out, "\tType: %s\n",
                              dap_sign_type_to_str(a_sign->header.type));
     if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
-             dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", !dap_strcmp(a_hash_out_type, "hex")
-                ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-                : dap_chain_hash_fast_to_str_static(&l_hash_pkey));
+        dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", dap_strcmp(a_hash_out_type, "hex")
+            ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
+            : dap_chain_hash_fast_to_str_static(&l_hash_pkey));
     }
     dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
                                         "\tSignature size: %u\n",

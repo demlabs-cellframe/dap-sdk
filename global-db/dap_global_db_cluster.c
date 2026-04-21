@@ -63,13 +63,15 @@ int dap_global_db_cluster_init()
 
 void dap_global_db_cluster_deinit()
 {
-    // Reset static cluster pointers to avoid accessing freed memory
+    dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
+    if (l_dbi) {
+        dap_global_db_cluster_t *it, *tmp;
+        DL_FOREACH_SAFE(l_dbi->clusters, it, tmp)
+            dap_global_db_cluster_delete(it);
+    }
+    // Reset static pointers after explicit cluster cleanup
     s_local_cluster = NULL;
     s_global_cluster = NULL;
-    
-    // NOTE: Cluster cleanup is handled by instance_deinit
-    // Calling dap_global_db_cluster_delete here causes double-free
-    // because instance structures may already be partially freed
 }
 
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name)
