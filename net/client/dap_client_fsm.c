@@ -931,7 +931,7 @@ static void s_worker_execute_stage_done(void *a_arg)
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
-    if (!a_fsm || !a_fsm->client)
+    if (!a_fsm || !a_fsm->client || a_fsm->is_removing)
         return;
 
     dap_client_stage_status_t l_stage_status = a_fsm->stage_status;
@@ -1211,6 +1211,9 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
 static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
 {
+    if (!a_fsm || !a_fsm->client || a_fsm->is_removing)
+        return;
+
     log_it(L_INFO, "FSM dispatching stage %s (transport: %s)",
            dap_client_stage_str(a_fsm->stage),
            dap_net_trans_type_to_str(a_fsm->client->trans_type));
@@ -1364,6 +1367,8 @@ void dap_client_fsm_stage_transaction_begin(dap_client_fsm_t *a_fsm, dap_client_
                                              dap_client_callback_t a_done_callback)
 {
     assert(a_fsm);
+    if (a_fsm->is_removing)
+        return;
 
     debug_if(s_debug_more, L_DEBUG, "FSM transaction begin: %s -> %s",
              dap_client_stage_str(a_fsm->stage), dap_client_stage_str(a_stage_next));
