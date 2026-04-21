@@ -63,6 +63,17 @@ static time_t s_client_timeout_active_after_connect_seconds = 15;
 static dap_thread_pool_t *s_fsm_pool = NULL;
 static uint32_t s_fsm_thread_count = 0;
 
+#if defined(__arm__) && !defined(__aarch64__)
+// Some signing/key backends are not reliably re-entrant on arm32 under high parallelism.
+// Serialize ENC_INIT crypto preparation to avoid concurrent access to shared key internals.
+static pthread_mutex_t s_enc_init_crypto_lock = PTHREAD_MUTEX_INITIALIZER;
+#define DAP_CLIENT_FSM_ENC_INIT_CRYPTO_LOCK()   pthread_mutex_lock(&s_enc_init_crypto_lock)
+#define DAP_CLIENT_FSM_ENC_INIT_CRYPTO_UNLOCK() pthread_mutex_unlock(&s_enc_init_crypto_lock)
+#else
+#define DAP_CLIENT_FSM_ENC_INIT_CRYPTO_LOCK()   do {} while (0)
+#define DAP_CLIENT_FSM_ENC_INIT_CRYPTO_UNLOCK() do {} while (0)
+#endif
+
 /**
  * @brief Submit task to FSM thread (thread-safe, called from any thread)
  *
@@ -1272,6 +1283,12 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             return;
         }
 
+        size_t l_data_size = 0;
+        uint8_t *l_alice_pub_key = NULL;
+        size_t l_sign_count = 0;
+
+        DAP_CLIENT_FSM_ENC_INIT_CRYPTO_LOCK();
+
         // Generate session_key_open (HEAVY CRYPTO - runs on FSM thread, not worker!)
         debug_if(s_debug_more, L_INFO, "FSM thread: generating session key for client %p", l_client);
         if (l_tc->session_key_open)
@@ -1279,6 +1296,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         l_tc->session_key_open = dap_enc_key_new_generate(a_fsm->session_key_open_type, NULL, 0, NULL, 0,
                                                            a_fsm->session_key_block_size);
         if (!l_tc->session_key_open) {
+            DAP_CLIENT_FSM_ENC_INIT_CRYPTO_UNLOCK();
             log_it(L_ERROR, "Insufficient memory for session_key_open");
             s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
             a_fsm->last_error = ERROR_OUT_OF_MEMORY;
@@ -1287,9 +1305,10 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         }
 
         // Prepare alice_pub_key with signatures (crypto - on FSM thread)
-        size_t l_data_size = l_tc->session_key_open->pub_key_data_size;
-        uint8_t *l_alice_pub_key = DAP_DUP_SIZE((uint8_t *)l_tc->session_key_open->pub_key_data, l_data_size);
+        l_data_size = l_tc->session_key_open->pub_key_data_size;
+        l_alice_pub_key = DAP_DUP_SIZE((uint8_t *)l_tc->session_key_open->pub_key_data, l_data_size);
         if (!l_alice_pub_key) {
+            DAP_CLIENT_FSM_ENC_INIT_CRYPTO_UNLOCK();
             s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
             a_fsm->last_error = ERROR_OUT_OF_MEMORY;
             s_fsm_process(a_fsm);
@@ -1297,7 +1316,6 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         }
 
         dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-        size_t l_sign_count = 0;
         if (l_client->auth_cert)
             l_sign_count += dap_cert_add_sign_to_data(l_client->auth_cert, &l_alice_pub_key, &l_data_size,
                                                        l_tc->session_key_open->pub_key_data,
@@ -1306,6 +1324,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_alice_pub_key, &l_data_size,
                                                       l_tc->session_key_open->pub_key_data,
                                                       l_tc->session_key_open->pub_key_data_size);
+
+        DAP_CLIENT_FSM_ENC_INIT_CRYPTO_UNLOCK();
 
         // Build dispatch context with prepared handshake params for worker
         fsm_enc_init_io_ctx_t *l_dispatch = DAP_NEW_Z(fsm_enc_init_io_ctx_t);
