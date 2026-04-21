@@ -596,9 +596,6 @@ void dap_server_delete(dap_server_t *a_server)
  */
 typedef struct {
     dap_events_socket_uuid_t uuid;
-    pthread_mutex_t *mutex;
-    pthread_cond_t *cond;
-    bool *completed;
 } s_delete_listener_sync_ctx_t;
 
 static void s_delete_listener_sync_callback(void *a_arg)
@@ -613,12 +610,6 @@ static void s_delete_listener_sync_callback(void *a_arg)
             dap_events_socket_remove_and_delete_unsafe(l_es, false);
         }
     }
-    
-    // Signal completion
-    pthread_mutex_lock(l_ctx->mutex);
-    *l_ctx->completed = true;
-    pthread_cond_signal(l_ctx->cond);
-    pthread_mutex_unlock(l_ctx->mutex);
 }
 
 /**
@@ -646,38 +637,11 @@ void dap_server_delete_sync(dap_server_t *a_server)
                 // Same thread - delete directly
                 dap_events_socket_remove_and_delete_unsafe(l_es, false);
             } else {
-                // Different thread - use sync callback
-                pthread_mutex_t l_mutex = PTHREAD_MUTEX_INITIALIZER;
-                pthread_cond_t l_cond = PTHREAD_COND_INITIALIZER;
-                bool l_completed = false;
-                
+                // Different thread - run synchronously on owner worker.
                 s_delete_listener_sync_ctx_t l_ctx = {
-                    .uuid = l_es->uuid,
-                    .mutex = &l_mutex,
-                    .cond = &l_cond,
-                    .completed = &l_completed
+                    .uuid = l_es->uuid
                 };
-                
-                // Schedule deletion on worker
-                dap_worker_exec_callback_on(l_es->worker, s_delete_listener_sync_callback, &l_ctx);
-                
-                // Wait for completion with timeout (5 seconds max)
-                struct timespec l_timeout;
-                clock_gettime(CLOCK_REALTIME, &l_timeout);
-                l_timeout.tv_sec += 5;
-                
-                pthread_mutex_lock(&l_mutex);
-                while (!l_completed) {
-                    int l_ret = pthread_cond_timedwait(&l_cond, &l_mutex, &l_timeout);
-                    if (l_ret == ETIMEDOUT) {
-                        log_it(L_WARNING, "Timeout waiting for listener deletion on worker %u", l_es->worker->id);
-                        break;
-                    }
-                }
-                pthread_mutex_unlock(&l_mutex);
-                
-                pthread_mutex_destroy(&l_mutex);
-                pthread_cond_destroy(&l_cond);
+                dap_worker_exec_callback_on_sync(l_es->worker, s_delete_listener_sync_callback, &l_ctx);
             }
         }
         

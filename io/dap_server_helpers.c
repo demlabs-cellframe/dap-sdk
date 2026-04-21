@@ -24,9 +24,7 @@
 #include "dap_server.h"
 #include "dap_worker.h"
 #include "dap_common.h"
-#include <pthread.h>
 #include <time.h>
-#include <errno.h>
 
 #define LOG_TAG "dap_server_helpers"
 
@@ -36,8 +34,6 @@
 typedef struct {
     dap_server_t *server;
     bool is_ready;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
 } server_ready_ctx_t;
 
 /**
@@ -65,10 +61,6 @@ static void s_check_server_ready_callback(void *a_arg)
         }
     }
     
-    // Signal waiting thread
-    pthread_mutex_lock(&l_ctx->mutex);
-    pthread_cond_signal(&l_ctx->cond);
-    pthread_mutex_unlock(&l_ctx->mutex);
 }
 
 bool dap_server_is_ready(dap_server_t *a_server)
@@ -127,50 +119,24 @@ bool dap_server_wait_for_ready(dap_server_t *a_server, uint32_t a_timeout_ms)
     // Setup context for callback
     server_ready_ctx_t l_ctx = {
         .server = a_server,
-        .is_ready = false,
-        .mutex = PTHREAD_MUTEX_INITIALIZER,
-        .cond = PTHREAD_COND_INITIALIZER
+        .is_ready = false
     };
-    pthread_mutex_init(&l_ctx.mutex, NULL);
-    pthread_cond_init(&l_ctx.cond, NULL);
     
     // Now wait for server to actually be listening (socket ready)
     while (l_elapsed < a_timeout_ms) {
-        // Execute callback on worker thread
-        dap_worker_exec_callback_on(l_first_listener->worker, s_check_server_ready_callback, &l_ctx);
-        
-        // Wait for callback completion with timeout
-        pthread_mutex_lock(&l_ctx.mutex);
-        struct timespec l_timeout;
-        clock_gettime(CLOCK_REALTIME, &l_timeout);
-        l_timeout.tv_sec += (l_poll_interval_ms / 1000);
-        l_timeout.tv_nsec += ((l_poll_interval_ms % 1000) * 1000000);
-        if (l_timeout.tv_nsec >= 1000000000) {
-            l_timeout.tv_sec++;
-            l_timeout.tv_nsec -= 1000000000;
-        }
-        
-        int l_wait_result = pthread_cond_timedwait(&l_ctx.cond, &l_ctx.mutex, &l_timeout);
-        bool l_is_ready = l_ctx.is_ready;
-        pthread_mutex_unlock(&l_ctx.mutex);
-        
-        if (l_is_ready) {
-            pthread_mutex_destroy(&l_ctx.mutex);
-            pthread_cond_destroy(&l_ctx.cond);
+        // Execute callback synchronously on worker thread.
+        // This avoids use-after-scope from async callbacks with stack context.
+        l_ctx.is_ready = false;
+        dap_worker_exec_callback_on_sync(l_first_listener->worker, s_check_server_ready_callback, &l_ctx);
+
+        if (l_ctx.is_ready) {
             return true;
         }
-        
-        if (l_wait_result != ETIMEDOUT) {
-            // Error or spurious wakeup, continue waiting
-            struct timespec l_ts = { .tv_sec = l_poll_interval_ms / 1000, .tv_nsec = (l_poll_interval_ms % 1000) * 1000000 };
-            nanosleep(&l_ts, NULL);
-        }
-        
+
+        struct timespec l_ts = { .tv_sec = l_poll_interval_ms / 1000, .tv_nsec = (l_poll_interval_ms % 1000) * 1000000 };
+        nanosleep(&l_ts, NULL);
         l_elapsed += l_poll_interval_ms;
     }
-    
-    pthread_mutex_destroy(&l_ctx.mutex);
-    pthread_cond_destroy(&l_ctx.cond);
+
     return false;
 }
-
