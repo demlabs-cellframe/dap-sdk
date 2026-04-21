@@ -925,9 +925,6 @@ static dap_client_t *test_create_trans_client(trans_test_config_t *a_config,
 static void *test_trans_worker(void *a_arg)
 {
     trans_test_ctx_t *l_ctx = (trans_test_ctx_t *)a_arg;
-    const size_t c_datagram_payload_cap = 256 * 1024;
-    const bool l_is_datagram_trans = l_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC
-                                     || l_ctx->config.trans_type == DAP_NET_TRANS_DNS_TUNNEL;
     size_t l_effective_data_size = l_ctx->scenario.data_size;
     l_ctx->result = 0;
     l_ctx->running = true;
@@ -939,15 +936,6 @@ static void *test_trans_worker(void *a_arg)
            l_ctx->scenario.data_size / 1024, l_ctx->scenario.timeout_ms);
     pthread_mutex_unlock(&s_test_mutex);
 
-    if (l_is_datagram_trans && l_effective_data_size > c_datagram_payload_cap) {
-        log_it(L_INFO,
-               "Applying datagram payload cap for %s: %zu KB -> %zu KB",
-               l_ctx->config.name,
-               l_effective_data_size / 1024,
-               c_datagram_payload_cap / 1024);
-        l_effective_data_size = c_datagram_payload_cap;
-    }
-    
     // Create all servers
     if (test_create_trans_servers(l_ctx) != 0) {
         l_ctx->result = -1;

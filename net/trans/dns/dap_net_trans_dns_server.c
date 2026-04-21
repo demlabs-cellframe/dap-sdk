@@ -64,6 +64,7 @@ static bool s_dns_server_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
                                             struct sockaddr_storage *a_addr_out,
                                             socklen_t *a_addr_len_out);
 static bool s_dns_server_stop_internal(dap_net_trans_dns_server_t *a_dns_server);
+static bool s_dns_server_wait_reads_drain(dap_net_trans_dns_server_t *a_dns_server, size_t a_retries);
 
 static bool s_dns_server_is_stopping(const dap_net_trans_dns_server_t *a_dns_server)
 {
@@ -91,6 +92,31 @@ static void s_dns_server_session_delete(dns_server_client_session_t *a_session)
     DAP_DEL_Z(a_session->trans_ctx);
     DAP_DEL_Z(a_session->stream);
     DAP_DELETE(a_session);
+}
+
+static void s_dns_server_sessions_cleanup_unsafe(dap_net_trans_dns_server_t *a_dns_server)
+{
+    if (!a_dns_server)
+        return;
+
+    dns_server_client_session_t *l_session = NULL, *l_tmp = NULL;
+    HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
+        HASH_DEL(a_dns_server->sessions, l_session);
+        s_dns_server_session_delete(l_session);
+    }
+}
+
+static bool s_dns_server_wait_reads_drain(dap_net_trans_dns_server_t *a_dns_server, size_t a_retries)
+{
+    if (!a_dns_server)
+        return true;
+
+    for (size_t i = 0; i < a_retries; i++) {
+        if (atomic_load(&a_dns_server->datagram_reads_inflight) == 0)
+            return true;
+        usleep(DNS_STOP_READ_DRAIN_SLEEP_US);
+    }
+    return atomic_load(&a_dns_server->datagram_reads_inflight) == 0;
 }
 
 static size_t s_dns_server_get_max_packet_size(dap_net_trans_t *a_trans)
@@ -279,13 +305,8 @@ static bool s_dns_server_stop_internal(dap_net_trans_dns_server_t *a_dns_server)
         a_dns_server->server = NULL;
     }
 
-    for (size_t i = 0; i < DNS_STOP_READ_DRAIN_RETRIES; i++) {
-        if (atomic_load(&a_dns_server->datagram_reads_inflight) == 0)
-            break;
-        usleep(DNS_STOP_READ_DRAIN_SLEEP_US);
-    }
-    unsigned int l_reads_left = atomic_load(&a_dns_server->datagram_reads_inflight);
-    if (l_reads_left != 0) {
+    if (!s_dns_server_wait_reads_drain(a_dns_server, DNS_STOP_READ_DRAIN_RETRIES)) {
+        unsigned int l_reads_left = atomic_load(&a_dns_server->datagram_reads_inflight);
         log_it(L_ERROR, "DNS server stop deferred: %u datagram read(s) still in progress",
                l_reads_left);
         return false;
@@ -297,10 +318,7 @@ static bool s_dns_server_stop_internal(dap_net_trans_dns_server_t *a_dns_server)
                l_lock_ret, dap_strerror(l_lock_ret));
         return false;
     }
-    HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
-        HASH_DEL(a_dns_server->sessions, l_session);
-        s_dns_server_session_delete(l_session);
-    }
+    s_dns_server_sessions_cleanup_unsafe(a_dns_server);
     pthread_rwlock_unlock(&a_dns_server->sessions_lock);
 
     log_it(L_INFO, "DNS server '%s' stopped", a_dns_server->server_name);
@@ -319,17 +337,41 @@ void dap_net_trans_dns_server_delete(dap_net_trans_dns_server_t *a_dns_server)
     if (!a_dns_server)
         return;
 
-    if (!s_dns_server_stop_internal(a_dns_server)) {
-        log_it(L_ERROR, "Delete aborted for DNS server '%s': stop was incomplete",
+    bool l_stopped = s_dns_server_stop_internal(a_dns_server);
+    if (!l_stopped) {
+        log_it(L_WARNING, "DNS server '%s': stop incomplete during delete, forcing cleanup",
                a_dns_server->server_name);
-        return;
     }
 
-    int l_lock_ret = pthread_rwlock_destroy(&a_dns_server->sessions_lock);
-    if (l_lock_ret != 0) {
-        log_it(L_ERROR, "Delete aborted for DNS server '%s': sessions lock destroy failed: %d (%s)",
+    // Delete is a terminal path: guarantee no new reads and close listener if stop failed early.
+    atomic_store(&a_dns_server->stopping, true);
+    if (a_dns_server->server) {
+        dap_server_delete_sync(a_dns_server->server);
+        a_dns_server->server = NULL;
+    }
+
+    // Wait in bounded rounds until all in-flight datagram reads complete.
+    while (!s_dns_server_wait_reads_drain(a_dns_server, DNS_STOP_READ_DRAIN_RETRIES)) {
+        unsigned int l_reads_left = atomic_load(&a_dns_server->datagram_reads_inflight);
+        log_it(L_WARNING, "DNS server '%s' delete wait: %u datagram read(s) still in progress",
+               a_dns_server->server_name, l_reads_left);
+    }
+
+    int l_lock_ret = pthread_rwlock_wrlock(&a_dns_server->sessions_lock);
+    bool l_have_sessions_lock = (l_lock_ret == 0 || l_lock_ret == EDEADLK);
+    if (!l_have_sessions_lock) {
+        log_it(L_ERROR, "Delete fallback lock failed for DNS server '%s': %d (%s). Cleaning sessions without lock",
                a_dns_server->server_name, l_lock_ret, dap_strerror(l_lock_ret));
-        return;
+    }
+    s_dns_server_sessions_cleanup_unsafe(a_dns_server);
+    if (l_lock_ret == 0)
+        pthread_rwlock_unlock(&a_dns_server->sessions_lock);
+
+    // Best-effort destroy. Even if this fails, delete object to avoid orphan/leak.
+    l_lock_ret = pthread_rwlock_destroy(&a_dns_server->sessions_lock);
+    if (l_lock_ret != 0) {
+        log_it(L_WARNING, "Deleting DNS server '%s' with non-destroyed sessions lock: %d (%s)",
+               a_dns_server->server_name, l_lock_ret, dap_strerror(l_lock_ret));
     }
 
     DAP_DEL_Z(a_dns_server->trans);

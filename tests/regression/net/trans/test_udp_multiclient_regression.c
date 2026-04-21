@@ -85,32 +85,14 @@ static const trans_test_config_t s_udp_config = {
     .address = TEST_TRANS_SERVER_ADDR
 };
 
-static bool s_is_loopback_addr(const char *a_addr)
-{
-    if (!a_addr) {
-        return false;
-    }
-    return strcmp(a_addr, "127.0.0.1") == 0
-        || strcmp(a_addr, "::1") == 0
-        || strcmp(a_addr, "localhost") == 0;
-}
-
 static void s_configure_lb_tier(void)
 {
 #if defined(__linux__) || defined(ANDROID)
-    if (s_is_loopback_addr(s_udp_config.address)) {
-        s_forced_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
-        s_forced_tier_name = "Application (loopback fallback)";
-        dap_io_flow_set_forced_tier(s_forced_tier);
-        log_it(L_NOTICE, "Init: loopback address '%s', forcing %s tier",
-               s_udp_config.address, s_forced_tier_name);
-    } else {
-        s_forced_tier = DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
-        s_forced_tier_name = "CBPF";
-        dap_io_flow_set_forced_tier(s_forced_tier);
-        log_it(L_NOTICE, "Init: forcing %s tier for address '%s'",
-               s_forced_tier_name, s_udp_config.address);
-    }
+    s_forced_tier = DAP_IO_FLOW_LB_TIER_CLASSIC_BPF;
+    s_forced_tier_name = "CBPF";
+    dap_io_flow_set_forced_tier(s_forced_tier);
+    log_it(L_NOTICE, "Init: forcing %s tier for regression coverage (address '%s')",
+           s_forced_tier_name, s_udp_config.address);
 #elif defined(__APPLE__) && defined(__MACH__)
     s_forced_tier = DAP_IO_FLOW_LB_TIER_DARWIN_GCD;
     s_forced_tier_name = "Darwin GCD";

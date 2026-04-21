@@ -52,7 +52,6 @@
 #include "dap_stream_worker.h"
 
 #define LOG_TAG "dap_stream_ch_pkt"
-#define DAP_STREAM_DNS_FRAGMENT_PACE_US 200
 
 /**
  * @brief stream_ch_pkt_init
@@ -353,8 +352,6 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
                  "Fragmenting large packet: total_size=%zu, max_frag=%zu", l_data_size, l_max_fragm_size);
         
-        bool l_dns_fragment_pacing = a_ch->stream && a_ch->stream->trans
-                                     && a_ch->stream->trans->type == DAP_NET_TRANS_DNS_TUNNEL;
         for (l_fragment = (dap_stream_fragment_pkt_t*)l_buf, l_fragment_size = sizeof(dap_stream_ch_pkt_hdr_t);
              l_remaining > 0;
              l_remaining -= l_fragment_size, l_fragment_size = dap_min(l_remaining, l_max_fragm_size), l_iteration++)
@@ -386,8 +383,6 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
 #ifndef DAP_EVENTS_CAPS_IOCP
             dap_stream_ch_set_ready_to_write_unsafe(a_ch, true);
 #endif
-            if (l_dns_fragment_pacing && l_remaining > l_fragment_size)
-                dap_usleep(DAP_STREAM_DNS_FRAGMENT_PACE_US);
         }
         
         debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
