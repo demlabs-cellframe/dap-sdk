@@ -583,11 +583,6 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         }
     }
     
-    // Return tier to caller
-    if (a_lb_tier_out) {
-        *a_lb_tier_out = l_lb_tier;
-    }
-    
     // Determine if we need SO_REUSEPORT or equivalent
     // All tiers except NONE and APPLICATION require multiple sockets
     bool l_enable_reuseport = (l_lb_tier != DAP_IO_FLOW_LB_TIER_NONE &&
@@ -833,8 +828,10 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "BPF attach failed AFTER bind (tier=%d) - falling back to Application tier", 
                        l_lb_tier);
-                // Don't fail - fall back to application-level distribution
-                // The sockets are already created, they just won't have BPF-based distribution
+                // BPF attach failed, so kernel sticky distribution is not active.
+                // Force application-level tier so caller initializes inter-worker queues.
+                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                log_it(L_NOTICE, "Switching to application-level distribution on existing SO_REUSEPORT listeners");
             } else {
                 log_it(L_NOTICE, "✅ BPF attached to reuseport group AFTER all %u sockets bound (fd=%d)", 
                        l_num_listeners, l_first_es->fd);
@@ -880,6 +877,11 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     log_it(L_INFO, "✅ Created %u listener%s on %s:%u - %s",
            l_num_listeners, (l_num_listeners > 1) ? "s" : "",
            a_addr ? a_addr : "0.0.0.0", a_port, l_tier_desc);
+
+    // Return final tier to caller (may be changed after post-bind BPF attach attempt).
+    if (a_lb_tier_out) {
+        *a_lb_tier_out = l_lb_tier;
+    }
     
     return 0;
 }
@@ -968,4 +970,3 @@ uint32_t dap_io_flow_socket_addr_hash(const struct sockaddr_storage *a_addr)
     
     return hash;
 }
-
