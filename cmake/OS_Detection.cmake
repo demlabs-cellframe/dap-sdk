@@ -322,9 +322,8 @@ endif ()
 # internal try_compile/check_function_exists probes (which use CMAKE_C_FLAGS
 # but not COMPILE_OPTIONS). This prevents -Werror from breaking feature
 # detection in 3rdparty libraries (e.g., libmdbx's check for libm).
-add_compile_options(-Werror)
 
-# Note: -Werror is intentionally not set here. It prevents CMake's
-# try_compile/check_function_exists probes from working and causes
-# build failures with bundled 3rdparty code on newer compilers.
-# Consumers should set -Werror in their own build configuration.
+# downstream packagers (especially with new compilers) may want to disable this -> guard it with DAP_MANAGE_CFLAGS
+if(DAP_MANAGE_CFLAGS)
+    add_compile_options(-Werror)
+endif()
