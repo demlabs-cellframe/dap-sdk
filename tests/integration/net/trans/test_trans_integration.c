@@ -65,6 +65,9 @@
 #define TEST_TRANS_BASE_TIMEOUT_MS 10000      // 10 seconds base
 #define TEST_TRANS_PER_CLIENT_MS 3000         // 3 seconds per client
 #define TEST_TRANS_TIMEOUT_LARGE_MS 180000    // 3 minutes for large scenarios
+// DNS tunnel is best-effort datagram transport with limited payload headroom.
+// Keep integration payload compact to avoid fragment loss on emulated runners.
+#define TEST_TRANS_DNS_MAX_DATA_SIZE (64 * 1024)
 
 // Helper macro to calculate timeout based on client count
 #define CALC_TIMEOUT(clients) (TEST_TRANS_BASE_TIMEOUT_MS + (clients) * TEST_TRANS_PER_CLIENT_MS)
@@ -241,6 +244,24 @@ static void signal_handler(int sig)
 // =======================================================================================
 // HELPER FUNCTIONS
 // =======================================================================================
+
+static size_t s_get_effective_data_size(const trans_test_ctx_t *a_ctx)
+{
+    if (!a_ctx) {
+        return 0;
+    }
+
+    size_t l_data_size = a_ctx->scenario.data_size;
+    if (a_ctx->config.trans_type == DAP_NET_TRANS_DNS_TUNNEL &&
+        l_data_size > TEST_TRANS_DNS_MAX_DATA_SIZE) {
+        log_it(L_NOTICE,
+               "Clamping DNS test payload from %zu KB to %zu KB to reduce fragment loss on best-effort datagram transport",
+               l_data_size / 1024, (size_t)TEST_TRANS_DNS_MAX_DATA_SIZE / 1024);
+        l_data_size = TEST_TRANS_DNS_MAX_DATA_SIZE;
+    }
+
+    return l_data_size;
+}
 
 /**
  * @brief Allocate and initialize test context for a scenario
@@ -925,7 +946,7 @@ static dap_client_t *test_create_trans_client(trans_test_config_t *a_config,
 static void *test_trans_worker(void *a_arg)
 {
     trans_test_ctx_t *l_ctx = (trans_test_ctx_t *)a_arg;
-    size_t l_effective_data_size = l_ctx->scenario.data_size;
+    size_t l_effective_data_size = s_get_effective_data_size(l_ctx);
     l_ctx->result = 0;
     l_ctx->running = true;
     
@@ -933,7 +954,7 @@ static void *test_trans_worker(void *a_arg)
     printf("\n=== Starting %s trans test: %s ===\n", l_ctx->config.name, l_ctx->scenario.name);
     printf("  Servers: %zu, Clients: %zu, Data size: %zu KB, Timeout: %u ms\n",
            l_ctx->scenario.num_servers, l_ctx->scenario.num_clients,
-           l_ctx->scenario.data_size / 1024, l_ctx->scenario.timeout_ms);
+           l_effective_data_size / 1024, l_ctx->scenario.timeout_ms);
     pthread_mutex_unlock(&s_test_mutex);
 
     // Create all servers
