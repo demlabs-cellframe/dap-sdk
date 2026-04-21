@@ -164,10 +164,13 @@ typedef struct stream_udp_session {
  * @brief KEM task context for thread pool offload
  */
 typedef struct kem_task_ctx {
-    stream_udp_session_t *session;       // Session handle (must remain valid!)
+    dap_io_flow_server_t *server;        // Flow server for session lookup
+    struct sockaddr_storage remote_addr; // Session remote address (lookup key)
+    socklen_t remote_addr_len;           // Session remote address length
+    uint32_t owner_worker_id;            // Owner worker for reactor callback
+    uint64_t session_id;                 // Session ID snapshot for stale-result filtering
     uint8_t *alice_pub_key;              // Alice's public key (copied)
     size_t alice_pub_key_size;           // Alice's public key size
-    dap_events_socket_uuid_t session_uuid; // Session UUID for validation
 } kem_task_ctx_t;
 
 /**
@@ -1548,7 +1551,7 @@ static void* s_kem_task_func(void *a_arg)
         return NULL;
     }
     
-    l_result->session_id = l_ctx->session->session_id;
+    l_result->session_id = l_ctx->session_id;
     l_result->error_code = 0;
     
     // Generate ephemeral Bob key (Kyber512)
@@ -1620,7 +1623,10 @@ static void* s_kem_task_func(void *a_arg)
  * @brief Structure for scheduling reactor callback from KEM worker thread
  */
 typedef struct kem_reactor_callback_arg {
-    stream_udp_session_t *session;
+    dap_io_flow_server_t *server;
+    struct sockaddr_storage remote_addr;
+    socklen_t remote_addr_len;
+    uint64_t session_id;
     kem_task_result_t *result;
 } kem_reactor_callback_arg_t;
 
@@ -1640,7 +1646,8 @@ static void s_kem_reactor_callback(void *a_arg)
         return;
     }
     
-    stream_udp_session_t *l_session = l_arg->session;
+    stream_udp_session_t *l_session = NULL;
+    bool l_session_valid = false;
     kem_task_result_t *l_result = l_arg->result;
     
     if (!l_result) {
@@ -1648,13 +1655,25 @@ static void s_kem_reactor_callback(void *a_arg)
         DAP_DELETE(l_arg);
         return;
     }
+
+    if (l_arg->server) {
+        dap_io_flow_t *l_flow = dap_io_flow_find(l_arg->server, &l_arg->remote_addr);
+        if (l_flow) {
+            l_session = (stream_udp_session_t *)l_flow;
+        }
+    }
     
-    // Validate session still exists
-    if (!l_session || !l_session->base.base.stream_context || !l_session->base.listener_es) {
+    // Validate that session still exists and still refers to the same handshake attempt.
+    if (!l_session ||
+        l_session->session_id != l_arg->session_id ||
+        !l_session->base.base.stream_context ||
+        !l_session->base.listener_es) {
         debug_if(s_debug_more, L_DEBUG,
-                 "[KEM Reactor] Session %p invalid or deleted", l_session);
+                 "[KEM Reactor] Session lookup failed/stale (session=%p, expected_id=0x%" PRIx64 ")",
+                 l_session, l_arg->session_id);
         goto cleanup_reactor;
     }
+    l_session_valid = true;
     
     if (l_result->error_code != 0) {
         log_it(L_ERROR, "[KEM Reactor] KEM task failed with error %d", l_result->error_code);
@@ -1696,7 +1715,7 @@ static void s_kem_reactor_callback(void *a_arg)
 cleanup_reactor:
     // Reset kem_task_pending flag (allow retries on error)
     // NOTE: On success, encryption_key is set so duplicate check will catch retransmits
-    if (l_session) {
+    if (l_session_valid) {
         atomic_store(&l_session->kem_task_pending, false);
     }
     
@@ -1755,37 +1774,17 @@ static void s_kem_task_callback(dap_thread_pool_t *a_pool,
         return;
     }
     
-    l_reactor_arg->session = l_ctx->session;
+    l_reactor_arg->server = l_ctx->server;
+    l_reactor_arg->remote_addr = l_ctx->remote_addr;
+    l_reactor_arg->remote_addr_len = l_ctx->remote_addr_len;
+    l_reactor_arg->session_id = l_ctx->session_id;
     l_reactor_arg->result = l_result;
     
-    // Get session's OWNER worker (NOT listener's worker!)
-    // CRITICAL FIX: For Application-level LB, listener is on worker 0 but flow
-    // may be on any worker (determined by hash). Must use flow's owner_worker_id
-    // to avoid data race when modifying session fields.
-    stream_udp_session_t *l_session = l_ctx->session;
-    if (!l_session) {
-        log_it(L_ERROR, "[KEM Callback] Session invalid");
-        DAP_DELETE(l_result->bob_ciphertext);
-        DAP_DELETE(l_result);
-        DAP_DELETE(l_reactor_arg);
-        DAP_DELETE(l_ctx->alice_pub_key);
-        DAP_DELETE(l_ctx);
-        return;
-    }
-    
-    // Use flow's owner_worker_id instead of listener_es->worker
-    uint32_t l_owner_worker_id = l_session->base.base.owner_worker_id;
-    dap_worker_t *l_worker = dap_events_worker_get(l_owner_worker_id);
-    
-    // Fallback to listener's worker if owner worker not available (shouldn't happen)
-    if (!l_worker && l_session->base.listener_es && l_session->base.listener_es->worker) {
-        log_it(L_WARNING, "[KEM Callback] Owner worker %u not found, falling back to listener's worker",
-               l_owner_worker_id);
-        l_worker = l_session->base.listener_es->worker;
-    }
+    dap_worker_t *l_worker = dap_events_worker_get(l_ctx->owner_worker_id);
     
     if (!l_worker) {
-        log_it(L_ERROR, "[KEM Callback] No valid worker found for session");
+        log_it(L_ERROR, "[KEM Callback] Owner worker %u not found for KEM result",
+               l_ctx->owner_worker_id);
         DAP_DELETE(l_result->bob_ciphertext);
         DAP_DELETE(l_result);
         DAP_DELETE(l_reactor_arg);
@@ -1798,8 +1797,8 @@ static void s_kem_task_callback(dap_thread_pool_t *a_pool,
     dap_worker_exec_callback_on(l_worker, s_kem_reactor_callback, l_reactor_arg);
     
     debug_if(s_debug_more, L_DEBUG,
-             "[KEM Callback] Scheduled reactor callback for session %p on worker %p",
-             l_session, l_worker);
+             "[KEM Callback] Scheduled reactor callback for session_id=0x%" PRIx64 " on worker %p",
+             l_ctx->session_id, l_worker);
     
     // Cleanup context (result will be freed in reactor callback)
     DAP_DELETE(l_ctx->alice_pub_key);
@@ -1889,8 +1888,11 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
         return -2;
     }
     
-    l_ctx->session = a_session;
-    l_ctx->session_uuid = 0;  // UUID validation not needed - encryption_key check is sufficient
+    l_ctx->server = a_session->base.base.server;
+    l_ctx->remote_addr = a_session->base.base.remote_addr;
+    l_ctx->remote_addr_len = a_session->base.base.remote_addr_len;
+    l_ctx->owner_worker_id = a_session->base.base.owner_worker_id;
+    l_ctx->session_id = a_session->session_id;
     l_ctx->alice_pub_key_size = a_payload_size;
     l_ctx->alice_pub_key = DAP_NEW_SIZE(uint8_t, a_payload_size);
     
