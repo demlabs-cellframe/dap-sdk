@@ -369,6 +369,19 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_hypertr
         "unit;crypto;chipmunk;regression;hypertree")
 endif()
 
+# CR-D10 regression: canonical wire codec for chipmunk_multi_signature_t
+# and the dap_sign aggregate verifier bridge.  Covers round-trip, dap_sign
+# wrapper happy-path, wrong-message rejection (incl. divergent messages),
+# and every malformed-blob vector (bad magic / version / reserved /
+# signer_count / payload length / trailing bytes / legacy raw struct /
+# coefficient flip).
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_multi_sig_codec.c)
+    add_dap_test(test_unit_crypto_chipmunk_multi_sig_codec
+        unit/crypto/chipmunk/test_chipmunk_multi_sig_codec.c)
+    register_dap_test(test_unit_crypto_chipmunk_multi_sig_codec
+        "unit;crypto;chipmunk;regression;cr-d10;aggregation;codec")
+endif()
+
 # Keccak/SHA3 Known Answer Tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keccak/test_sha3_kat.c)
     add_dap_test(test_unit_crypto_sha3_kat unit/crypto/keccak/test_sha3_kat.c)

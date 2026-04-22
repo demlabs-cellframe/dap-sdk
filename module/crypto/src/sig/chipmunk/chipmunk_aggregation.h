@@ -72,7 +72,7 @@ typedef struct {
 // compatibility; it is now always recomputed from `hots_pks` on the verify
 // path and checked for equality with the stored copy to pin the link between
 // the Merkle tree and the full HOTS PKs.
-typedef struct {
+typedef struct chipmunk_multi_signature {
     chipmunk_aggregated_hots_sig_t aggregated_hots;  // Aggregated HOTS signatures
     chipmunk_hvc_poly_t tree_root;                   // Root of the Merkle tree
     chipmunk_hvc_poly_t *public_key_roots;           // HVC polynomials for each signer's public key (tree leaves)

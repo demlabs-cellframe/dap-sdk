@@ -39,6 +39,8 @@
 #include "dap_enc_chipmunk_ring.h"  // For Chipmunk ring signatures
 #include "chipmunk/chipmunk_ring.h"  // For ring signature structures
 #include "chipmunk/chipmunk_aggregation.h"  // For aggregation functions
+#include "chipmunk/chipmunk_multi_signature_codec.h"  // CR-D10 schema-driven wire codec
+#include "dap_hash_sha3.h"
 #include "dap_enc_dilithium.h"
 #include "dilithium_params.h"
 
@@ -929,28 +931,44 @@ uint32_t dap_sign_get_signers_count(dap_sign_t *a_sign)
     }
 }
 
-// Internal Chipmunk aggregation implementation.
-//
-// CR-D6/D7 note (Round-4): the previous implementation had three layers of
-// damage that together made the result worthless cryptographically — it
-// memcpy'd raw signature bytes into `individual_sigs[i].hots_sig` without
-// going through chipmunk_signature_from_bytes(), it left hots_pk / rho_seed /
-// proof / tree zeroed, and finally memcpy'd the whole multi_sig struct
-// (including heap-allocated pointer fields) into a byte buffer that the
-// remote verifier then dereferences as pointers into its own address space.
-//
-// Rebuilding this function on top of the now-correct aggregate primitive
-// requires:
-//   (a) a dedicated schema-driven serialization for chipmunk_multi_signature_t
-//       (see CR-D10 in the remediation plan — the flat `memcpy` above is
-//       undefined behaviour across processes),
-//   (b) exposing rho_seed + hots_pk on every dap_sign_t for a Chipmunk
-//       signer (already done after CR-D20 framing),
-//   (c) proper Merkle-tree plumbing (CR-D15).
-//
-// None of those are in scope for the CR-D6/D7 rewrite, so until they land
-// we refuse the aggregation request up front rather than produce a blob
-// that cannot be verified by anyone.
+/*
+ * Internal Chipmunk aggregation implementation.
+ *
+ * CR-D10 (Round-6) landed the schema-driven wire codec used by the
+ * verifier below, but the producer path that takes a vector of
+ * independent dap_sign_t Chipmunk signatures and aggregates them into
+ * a single multi-signature is NOT enabled here — the two schemes
+ * target fundamentally different trust anchors:
+ *
+ *   - each dap_sign_t Chipmunk signature is a CR-D15.B hypertree
+ *     signature.  Its leaf_pk is authorised by the signer's canonical
+ *     hypertree root.  Each signer owns a private 64-slot HOTS tree.
+ *   - chipmunk_verify_multi_signature authorises leaf_pks through a
+ *     SHARED Merkle tree that every participating signer must sign
+ *     against (see chipmunk_aggregate_signatures_with_tree).  There
+ *     is no notion of an attested hypertree inside the multi_sig.
+ *
+ * Bridging the two needs an orchestration layer (each signer must
+ * commit to the shared tree and re-sign HOTS leaves there, or the
+ * verifier must additionally check each signer's hypertree path to
+ * its canonical root).  Both options are non-trivial and intentionally
+ * out of scope for CR-D10.
+ *
+ * Callers that need aggregate signatures TODAY have a clean path:
+ *
+ *   1. Build a chipmunk_multi_signature_t via
+ *      chipmunk_aggregate_signatures_with_tree().
+ *   2. Wrap it into a dap_sign_t via
+ *      dap_sign_from_chipmunk_multi_signature() (added below).  The
+ *      resulting blob is canonically serialised by the codec and
+ *      verifies through dap_sign_verify_aggregated().
+ *
+ * We keep the producer function as a dispatch entry-point so the
+ * universal switch-case in dap_sign_aggregate_signatures() keeps
+ * compiling and so benchmark drivers that used to hit this path keep
+ * returning a clean NULL instead of silently producing an
+ * undefined-behaviour blob.
+ */
 static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     dap_sign_t **a_signatures,
     uint32_t a_signatures_count,
@@ -965,12 +983,85 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     (void)a_params;
 
     log_it(L_ERROR,
-           "dap_sign aggregation for Chipmunk is disabled pending CR-D10 "
-           "(schema-driven multi-signature serialization) and CR-D15 "
-           "(Merkle-tree-backed signer proofs).  Use the in-memory "
-           "chipmunk_aggregate_signatures_with_tree() API directly if you "
-           "need aggregation today.");
+           "dap_sign_aggregate_signatures() cannot combine independent "
+           "Chipmunk hypertree signatures — they each live under a "
+           "different per-signer Merkle root.  Build a "
+           "chipmunk_multi_signature_t via "
+           "chipmunk_aggregate_signatures_with_tree() under a shared tree "
+           "and wrap it with dap_sign_from_chipmunk_multi_signature().");
     return NULL;
+}
+
+/*
+ * CR-D10 public producer bridge: wrap an in-memory
+ * chipmunk_multi_signature_t into a canonically serialised dap_sign_t.
+ *
+ * Ownership / lifetime:
+ *   - The caller retains ownership of `a_multi_sig` and its backing
+ *     heap buffers.  The bridge makes a wire-byte copy, so the caller
+ *     may free the source immediately after this function returns.
+ *   - The returned dap_sign_t is heap-allocated via DAP_NEW_Z_SIZE and
+ *     must be released with DAP_DELETE by the caller.
+ *
+ * Wire layout:
+ *     header:        SIG_TYPE_CHIPMUNK, default hash_type, no pkey
+ *                    (sign_pkey_size = 0), sign_size = codec blob size
+ *     pkey_n_sign[]: serialised "CHMA" wire blob (see codec header)
+ *
+ * Dropping the pkey section is deliberate: a multi-signature embeds
+ * one HOTS public key per signer inside its own payload, and the
+ * verifier consumes them from there.  Attaching a single pkey at the
+ * dap_sign_t level would be both ambiguous (whose?) and redundant.
+ */
+dap_sign_t *dap_sign_from_chipmunk_multi_signature(
+    const chipmunk_multi_signature_t *a_multi_sig)
+{
+    if (!a_multi_sig) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: NULL multi_sig");
+        return NULL;
+    }
+    size_t l_blob_size = 0;
+    int l_rc = chipmunk_multi_signature_serialized_size(a_multi_sig, &l_blob_size);
+    if (l_rc != CHIPMUNK_MULTI_SIG_CODEC_OK) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: codec size "
+               "preflight failed (rc=%d)", l_rc);
+        return NULL;
+    }
+    if (l_blob_size == 0 || l_blob_size > UINT32_MAX) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: blob size %zu "
+               "out of range", l_blob_size);
+        return NULL;
+    }
+
+    dap_sign_t *l_sign = DAP_NEW_Z_SIZE(dap_sign_t, sizeof(dap_sign_t) + l_blob_size);
+    if (!l_sign) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: OOM for dap_sign_t");
+        return NULL;
+    }
+    l_sign->header.type.type      = SIG_TYPE_CHIPMUNK;
+    l_sign->header.hash_type      = s_sign_hash_type_default;
+    l_sign->header.sign_params    = 0;
+    l_sign->header.sign_size      = (uint32_t)l_blob_size;
+    l_sign->header.sign_pkey_size = 0;
+
+    size_t l_written = 0;
+    l_rc = chipmunk_multi_signature_serialize(a_multi_sig,
+                                              l_sign->pkey_n_sign,
+                                              l_blob_size,
+                                              &l_written);
+    if (l_rc != CHIPMUNK_MULTI_SIG_CODEC_OK || l_written != l_blob_size) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: serialize failed "
+               "(rc=%d, written=%zu, expected=%zu)",
+               l_rc, l_written, l_blob_size);
+        DAP_DELETE(l_sign);
+        return NULL;
+    }
+    return l_sign;
 }
 
 // Universal signature aggregation function
@@ -1050,26 +1141,41 @@ int dap_sign_verify_aggregated(
 }
 
 /*
- * Internal Chipmunk aggregated verification.
+ * Internal Chipmunk aggregated verification (CR-D10 Round-6).
  *
- * Symmetric to dap_sign_chipmunk_aggregate_signatures_internal above: the
- * wire format for an aggregated Chipmunk signature over dap_sign_t is
- * not defined yet — chipmunk_multi_signature_t carries heap-owned
- * pointers (proofs[].nodes, …) that cannot be round-tripped by a flat
- * memcpy / struct cast.  Every earlier implementation of this function
- * performed exactly such a cast and then dereferenced the embedded
- * pointers as if they were valid in the current address space, which is
- * textbook undefined behaviour on any cross-process blob.  It also
- * "verified" by checking the first message only and accepting any
- * signature with non-zero polynomial coefficients, which let arbitrary
- * gibberish pass as valid.
+ * Steps executed on every call:
  *
- * Since the aggregation producer is already refusing to emit such a
- * blob, the verifier MUST refuse to accept one too — otherwise a future
- * caller could forge acceptance by fabricating the internal layout and
- * bypassing the producer altogether.  The "fail-fast and document" rule
- * is the only sound behaviour until CR-D10 lands a schema-driven
- * (proofs, pks, leaf_indices, hots_pks, …) serialisation format.
+ *   1. Extract the aggregate payload from dap_sign_t using the public
+ *      header accessors — no more struct-cast-and-pray.
+ *   2. Deserialise the payload through chipmunk_multi_signature_deserialize.
+ *      The codec rejects wrong magic / version / reserved-bits, wrong
+ *      payload length, out-of-range signer_count or path_length, and
+ *      per-signer proof length mismatches before a single byte of
+ *      polynomial data is touched.  Any negative return short-circuits
+ *      to `-2` (malformed blob).
+ *   3. Cross-check the wire-declared signer_count against the caller's
+ *      a_signers_count parameter so a mismatch between what the verifier
+ *      expects and what the multi-signature actually covers is detected
+ *      up front (returns `-3`).
+ *   4. Re-hash a_messages[0] with SHA3-256 and compare against
+ *      multi_sig.message_hash.  Every signer in a Chipmunk
+ *      multi-signature binds the same message, so we enforce that every
+ *      entry in the a_messages/a_message_sizes arrays is byte-identical
+ *      to the first (pointer identity is NOT required — an orchestration
+ *      layer may pass independent buffers that happen to hold the same
+ *      payload).  Diverging messages fail with `-4`.
+ *   5. Dispatch to chipmunk_verify_multi_signature for the actual
+ *      cryptographic check.  Returns `0` on success, `-5` on a verify
+ *      failure (including Merkle mismatches, pk-leaf binding, and
+ *      aggregate HOTS identity), or the verifier's own negative error
+ *      code (re-mapped to `-6`).
+ *
+ * The `a_public_keys` parameter is intentionally ignored here: a
+ * Chipmunk multi-signature already ships one HOTS public key per signer
+ * inside the serialised blob, and those keys are authority-pinned
+ * against the tree root.  A future revision can cross-check the wire
+ * pks against caller-supplied dap_pkey_t entries if and when the
+ * surrounding layer provides a well-defined mapping.
  */
 static int dap_sign_chipmunk_verify_aggregated_internal(
     dap_sign_t *a_aggregated_sign,
@@ -1078,19 +1184,87 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     dap_pkey_t **a_public_keys,
     uint32_t a_signers_count)
 {
-    (void)a_aggregated_sign;
-    (void)a_messages;
-    (void)a_message_sizes;
-    (void)a_public_keys;
-    (void)a_signers_count;
+    (void)a_public_keys;  /* see rationale above */
 
-    log_it(L_ERROR,
-           "dap_sign aggregated verification for Chipmunk is disabled pending "
-           "CR-D10 (schema-driven multi-signature serialization).  Producing "
-           "side is symmetrically refused.  Use the in-memory "
-           "chipmunk_verify_multi_signature() API with a properly deserialised "
-           "chipmunk_multi_signature_t if you need aggregate verification today.");
-    return -5;
+    if (!a_aggregated_sign || !a_messages || !a_message_sizes || a_signers_count == 0) {
+        log_it(L_ERROR,
+               "chipmunk aggregate verify: invalid input parameters");
+        return -1;
+    }
+
+    size_t l_blob_size = 0;
+    uint8_t *l_blob = dap_sign_get_sign(a_aggregated_sign, &l_blob_size);
+    if (!l_blob || l_blob_size == 0) {
+        log_it(L_ERROR,
+               "chipmunk aggregate verify: empty signature payload");
+        return -2;
+    }
+
+    chipmunk_multi_signature_t l_multi_sig;
+    memset(&l_multi_sig, 0, sizeof(l_multi_sig));
+
+    int l_codec_rc = chipmunk_multi_signature_deserialize(l_blob, l_blob_size, &l_multi_sig);
+    if (l_codec_rc != CHIPMUNK_MULTI_SIG_CODEC_OK) {
+        log_it(L_WARNING,
+               "chipmunk aggregate verify: codec rejected blob (rc=%d, size=%zu)",
+               l_codec_rc, l_blob_size);
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
+        return -2;
+    }
+
+    if ((uint32_t)l_multi_sig.signer_count != a_signers_count) {
+        log_it(L_WARNING,
+               "chipmunk aggregate verify: signer count mismatch "
+               "(wire=%zu, expected=%u)",
+               l_multi_sig.signer_count, a_signers_count);
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
+        return -3;
+    }
+
+    /* Every signer committed to the same message — enforce that the */
+    /* caller passes consistent copies for every index.              */
+    const uint8_t *l_msg0 = (const uint8_t *)a_messages[0];
+    const size_t  l_len0 = a_message_sizes[0];
+    if (!l_msg0 || l_len0 == 0) {
+        log_it(L_WARNING,
+               "chipmunk aggregate verify: empty message[0]");
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
+        return -4;
+    }
+    for (uint32_t i = 1; i < a_signers_count; ++i) {
+        const uint8_t *l_msg_i = (const uint8_t *)a_messages[i];
+        const size_t  l_len_i = a_message_sizes[i];
+        if (!l_msg_i || l_len_i != l_len0 || memcmp(l_msg_i, l_msg0, l_len0) != 0) {
+            log_it(L_WARNING,
+                   "chipmunk aggregate verify: message[%u] diverges from message[0]",
+                   i);
+            chipmunk_multi_signature_deep_free(&l_multi_sig);
+            return -4;
+        }
+    }
+
+    dap_hash_sha3_256_t l_hash = {0};
+    dap_hash_sha3_256(l_msg0, l_len0, &l_hash);
+    if (memcmp(l_multi_sig.message_hash, l_hash.raw, DAP_HASH_SHA3_256_SIZE) != 0) {
+        log_it(L_WARNING,
+               "chipmunk aggregate verify: message hash does not match wire commitment");
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
+        return -4;
+    }
+
+    int l_verify_rc = chipmunk_verify_multi_signature(&l_multi_sig, l_msg0, l_len0);
+    if (l_verify_rc == 1) {
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
+        return 0;
+    }
+
+    const int l_ret = (l_verify_rc == 0) ? -5 : -6;
+    log_it(L_WARNING,
+           "chipmunk aggregate verify: chipmunk_verify_multi_signature "
+           "returned %d (mapped to %d)",
+           l_verify_rc, l_ret);
+    chipmunk_multi_signature_deep_free(&l_multi_sig);
+    return l_ret;
 }
 
 // Universal batch verification context creation
