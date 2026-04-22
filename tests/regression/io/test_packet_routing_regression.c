@@ -482,14 +482,20 @@ static void s_print_report(void)
 {
     dap_test_msg("\n=== Packet Distribution Report ===");
     
+    uint32_t l_track_workers = dap_min(s_num_workers, (uint32_t)MAX_WORKERS);
     uint32_t l_worker_counts[MAX_WORKERS] = {0};
     uint32_t l_lost = 0;
+    uint32_t l_out_of_range = 0;
     
     for (uint32_t c = 0; c < s_ctx.num_clients; c++) {
         for (uint32_t p = 0; p < s_ctx.packets_per_client; p++) {
             uint8_t l_w = s_ctx.packet_worker[c * s_ctx.packets_per_client + p];
             if (l_w != WORKER_NOT_ASSIGNED && l_w < s_num_workers) {
-                l_worker_counts[l_w]++;
+                if (l_w < l_track_workers) {
+                    l_worker_counts[l_w]++;
+                } else {
+                    l_out_of_range++;
+                }
             } else if (l_w == WORKER_NOT_ASSIGNED) {
                 l_lost++;
             }
@@ -497,9 +503,13 @@ static void s_print_report(void)
     }
     
     dap_test_msg("Worker distribution (%u workers):", s_num_workers);
-    for (uint32_t w = 0; w < s_num_workers && w < MAX_WORKERS; w++) {
+    for (uint32_t w = 0; w < l_track_workers; w++) {
         uint32_t l_recv = atomic_load(&s_ctx.worker_recv[w]);
         dap_test_msg("  Worker %u: %u packets (atomic: %u)", w, l_worker_counts[w], l_recv);
+    }
+    if (s_num_workers > l_track_workers) {
+        dap_test_msg("  NOTE: %u packets were assigned to workers >= %u (report truncated to MAX_WORKERS=%u)",
+                     l_out_of_range, l_track_workers, MAX_WORKERS);
     }
     
     uint32_t l_total_recv = atomic_load(&s_ctx.total_recv);
@@ -517,26 +527,37 @@ static void s_print_report(void)
         
         uint32_t l_client_counts[MAX_WORKERS] = {0};
         uint32_t l_client_recv = 0;
+        uint32_t l_client_out_of_range = 0;
         
         for (uint32_t p = 0; p < s_ctx.packets_per_client; p++) {
             uint8_t l_w = s_ctx.packet_worker[c * s_ctx.packets_per_client + p];
             if (l_w != WORKER_NOT_ASSIGNED && l_w < s_num_workers) {
-                l_client_counts[l_w]++;
                 l_client_recv++;
+                if (l_w < l_track_workers) {
+                    l_client_counts[l_w]++;
+                } else {
+                    l_client_out_of_range++;
+                }
             }
         }
         
         int l_active_workers = 0;
-        for (uint32_t w = 0; w < s_num_workers; w++) {
+        for (uint32_t w = 0; w < l_track_workers; w++) {
             if (l_client_counts[w] > 0) l_active_workers++;
+        }
+        if (l_client_out_of_range > 0) {
+            l_active_workers++;
         }
         
         if (l_active_workers > 1) {
             dap_test_msg("  Client %2u: SPLIT! Expected W%d:", c, l_expected);
-            for (uint32_t w = 0; w < s_num_workers; w++) {
+            for (uint32_t w = 0; w < l_track_workers; w++) {
                 if (l_client_counts[w] > 0) {
                     dap_test_msg("             W%d: %u pkts", w, l_client_counts[w]);
                 }
+            }
+            if (l_client_out_of_range > 0) {
+                dap_test_msg("             W[%u+]: %u pkts", l_track_workers, l_client_out_of_range);
             }
         } else if (l_client_recv > 0) {
             dap_test_msg("  Client %2u: W%d (%u/%u)", c, l_expected, l_client_recv, s_ctx.packets_per_client);
