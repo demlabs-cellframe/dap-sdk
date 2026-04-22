@@ -210,6 +210,12 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     l_fsm->client = a_client;
     l_fsm->worker = dap_events_worker_get_auto();
 
+    log_it(L_ATT, "DIAG fsm_new: fsm=%p sizeof=%zu worker_off=%zu client_tc_off=%zu worker=%p uuid=0x%"PRIx64,
+           (void*)l_fsm, sizeof(dap_client_fsm_t),
+           __builtin_offsetof(dap_client_fsm_t, worker),
+           __builtin_offsetof(dap_client_fsm_t, client_trans_ctx),
+           (void*)l_fsm->worker, l_fsm->uuid);
+
     // Crypto defaults
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
     l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
@@ -407,11 +413,12 @@ static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm)
 typedef struct {
     uint64_t fsm_uuid;
     uint32_t fsm_thread_idx;
+    dap_client_t *client;
     dap_client_stage_t stage;
 } fsm_worker_dispatch_t;
 
 typedef struct {
-    uint64_t fsm_uuid;
+    dap_client_t *client;
     dap_client_callback_t done_callback;
     void *callbacks_arg;
     dap_list_t *pkt_queue;
@@ -421,6 +428,7 @@ typedef struct {
 typedef struct {
     uint64_t fsm_uuid;
     uint32_t fsm_thread_idx;
+    dap_client_t *client;
     dap_net_handshake_params_t handshake_params;
     dap_net_trans_type_t trans_type;
 } fsm_enc_init_io_ctx_t;
@@ -509,16 +517,11 @@ static void s_worker_execute_stage(void *a_arg)
     debug_if(s_debug_more, L_INFO, "FSM worker exec: stage %d (fsm_uuid=0x%"DAP_UINT64_FORMAT_x") on worker #%u",
            l_ctx->stage, l_ctx->fsm_uuid, l_cur_worker ? l_cur_worker->id : 999);
 
-    dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
-    if (!l_fsm || l_fsm->is_removing || !l_fsm->client) {
-        DAP_DELETE(l_ctx);
-        return;
-    }
-
-    dap_client_t *l_client = l_fsm->client;
-    dap_client_trans_ctx_t *l_io = l_fsm->client_trans_ctx;
-    dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
-    if (!l_io || !l_tc) {
+    dap_client_t *l_client = l_ctx->client;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    dap_client_trans_ctx_t *l_io = l_fsm ? l_fsm->client_trans_ctx : NULL;
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    if (!l_fsm || !l_io || !l_tc) {
         log_it(L_ERROR, "No client trans ctx for stage execution");
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
@@ -777,7 +780,7 @@ static void s_worker_execute_stage(void *a_arg)
         l_tc->stream = l_prepare_result.stream;
         // Adopt transport-specific data from stage_prepare's trans_ctx before replacing
         dap_net_trans_ctx_t *l_old_ctx = l_prepare_result.stream->trans_ctx;
-        if (l_old_ctx && l_old_ctx != l_tc) {
+        if (l_old_ctx) {
             l_tc->transport_priv = l_old_ctx->transport_priv;
             l_old_ctx->transport_priv = NULL;
             l_old_ctx->stream = NULL;
@@ -913,17 +916,13 @@ static void s_worker_execute_stage_done(void *a_arg)
     fsm_stage_done_on_worker_ctx_t *l_ctx = a_arg;
     if (!l_ctx) return;
 
-    dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
-    dap_client_t *l_client = (l_fsm && !l_fsm->is_removing) ? l_fsm->client : NULL;
-
-    if (l_client && l_ctx->done_callback)
-        l_ctx->done_callback(l_client, l_ctx->callbacks_arg);
+    if (l_ctx->done_callback)
+        l_ctx->done_callback(l_ctx->client, l_ctx->callbacks_arg);
 
     if (l_ctx->pkt_queue) {
         for (dap_list_t *it = l_ctx->pkt_queue; it; it = it->next) {
             dap_client_pkt_queue_elm_t *l_pkt = it->data;
-            if (l_client)
-                dap_client_write_unsafe(l_client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
+            dap_client_write_unsafe(l_ctx->client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
         }
         dap_list_free_full(l_ctx->pkt_queue, NULL);
     }
@@ -1008,6 +1007,7 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
             if (l_dispatch) {
                 l_dispatch->fsm_uuid = a_fsm->uuid;
                 l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
+                l_dispatch->client = a_fsm->client;
                 l_dispatch->stage = STAGE_BEGIN;
                 dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
             }
@@ -1031,7 +1031,7 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
 
             fsm_stage_done_on_worker_ctx_t *l_done_ctx = DAP_NEW_Z(fsm_stage_done_on_worker_ctx_t);
             if (l_done_ctx) {
-                l_done_ctx->fsm_uuid = a_fsm->uuid;
+                l_done_ctx->client = a_fsm->client;
                 l_done_ctx->done_callback = a_fsm->client->stage_target_done_callback;
                 l_done_ctx->callbacks_arg = a_fsm->client->callbacks_arg;
                 l_done_ctx->pkt_queue = a_fsm->pkt_queue;
@@ -1105,16 +1105,10 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     fsm_enc_init_io_ctx_t *l_ctx = (fsm_enc_init_io_ctx_t *)a_arg;
     if (!l_ctx) return;
 
-    dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
-    if (!l_fsm || l_fsm->is_removing || !l_fsm->client) {
-        DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
-        DAP_DELETE(l_ctx);
-        return;
-    }
-
-    dap_client_t *l_client = l_fsm->client;
-    dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
-    if (!l_tc) {
+    dap_client_t *l_client = l_ctx->client;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    if (!l_fsm || !l_tc) {
         log_it(L_ERROR, "No trans ctx for ENC_INIT IO");
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
@@ -1184,7 +1178,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
     l_tc->stream = l_prepare_result.stream;
     dap_net_trans_ctx_t *l_old_ctx = l_prepare_result.stream->trans_ctx;
-    if (l_old_ctx && l_old_ctx != l_tc) {
+    if (l_old_ctx) {
         l_tc->transport_priv = l_old_ctx->transport_priv;
         l_old_ctx->transport_priv = NULL;
         l_old_ctx->stream = NULL;
@@ -1220,9 +1214,9 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
     if (!a_fsm || !a_fsm->client || a_fsm->is_removing)
         return;
 
-    debug_if(s_debug_more, L_DEBUG, "FSM dispatching stage %s (transport: %s)",
-             dap_client_stage_str(a_fsm->stage),
-             dap_net_trans_type_to_str(a_fsm->client->trans_type));
+    log_it(L_INFO, "FSM dispatching stage %s (transport: %s)",
+           dap_client_stage_str(a_fsm->stage),
+           dap_net_trans_type_to_str(a_fsm->client->trans_type));
 
     // For STAGE_BEGIN: dispatch clean to worker
     if (a_fsm->stage == STAGE_BEGIN) {
@@ -1230,6 +1224,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         if (!l_dispatch) return;
         l_dispatch->fsm_uuid = a_fsm->uuid;
         l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
+        l_dispatch->client = a_fsm->client;
         l_dispatch->stage = STAGE_BEGIN;
         a_fsm->reconnect_attempts = 0;
         dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
@@ -1313,6 +1308,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
 
         l_dispatch->fsm_uuid = a_fsm->uuid;
         l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
+        l_dispatch->client = l_client;
         l_dispatch->trans_type = l_client->trans_type;
         l_dispatch->handshake_params = (dap_net_handshake_params_t){
             .enc_type = a_fsm->session_key_type,
@@ -1347,6 +1343,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         if (!l_dispatch) return;
         l_dispatch->fsm_uuid = a_fsm->uuid;
         l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
+        l_dispatch->client = l_client;
         l_dispatch->stage = STAGE_QOS_PROBE;
         dap_worker_exec_callback_on(a_fsm->worker, s_worker_execute_stage, l_dispatch);
         return;
@@ -1357,6 +1354,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
     if (!l_dispatch) return;
     l_dispatch->fsm_uuid = a_fsm->uuid;
     l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
+    l_dispatch->client = a_fsm->client;
     l_dispatch->stage = a_fsm->stage;
     debug_if(s_debug_more, L_INFO, "FSM dispatch: stage %d -> worker #%u (fsm_uuid=0x%"DAP_UINT64_FORMAT_x")",
            a_fsm->stage, a_fsm->worker->id, a_fsm->uuid);

@@ -58,13 +58,6 @@
 #define LOG_TAG "dap_enc_key"
 
 static bool s_debug_more = false;
-
-#if defined(__arm__) && !defined(__aarch64__)
-// Kyber key generation is unstable under high parallel load on arm32 (qemu runner).
-// Serialize only Kyber new_generate path to avoid concurrent backend races.
-static pthread_mutex_t s_kyber_generate_lock = PTHREAD_MUTEX_INITIALIZER;
-#endif
-
 dap_enc_key_callbacks_t s_callbacks[]={
     //-Symmetric ciphers----------------------
     // AES
@@ -1009,27 +1002,11 @@ dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const voi
 {
 // sanity check
     dap_return_val_if_pass(DAP_ENC_KEY_TYPE_INVALID == a_key_type, NULL);
-
-#if defined(__arm__) && !defined(__aarch64__)
-    bool l_kyber_locked = false;
-    if (a_key_type == DAP_ENC_KEY_TYPE_KEM_KYBER512) {
-        pthread_mutex_lock(&s_kyber_generate_lock);
-        l_kyber_locked = true;
-    }
-#endif
-
 // func work
     dap_enc_key_t * l_ret = dap_enc_key_new(a_key_type);
     if(s_callbacks[a_key_type].new_generate_callback) {
         s_callbacks[a_key_type].new_generate_callback( l_ret, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
     }
-
-#if defined(__arm__) && !defined(__aarch64__)
-    if (l_kyber_locked) {
-        pthread_mutex_unlock(&s_kyber_generate_lock);
-    }
-#endif
-
     return l_ret;
 }
 
@@ -1686,5 +1663,6 @@ dap_enc_key_t* dap_enc_kem_derive_key(
     
     return l_key;
 }
+
 
 
