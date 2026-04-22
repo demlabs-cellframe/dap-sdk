@@ -48,14 +48,21 @@ void dap_mlkem_polyvec_decompress_d11_avx2(int16_t *, const uint8_t *);
 void dap_mlkem_polyvec_basemul_acc_cached_avx2(int16_t *, const int16_t * const *, const int16_t * const *, const int16_t * const *, unsigned);
 
 /* --- Static fast-function bodies (inlinable at call site) --- */
-#ifdef __GNUC__
+/* Clang defines __GNUC__ for compatibility but does not support
+ * #pragma GCC push_options / pop_options. It does support the
+ * equivalent via #pragma clang attribute push with target attribute. */
+#if defined(__clang__)
+#pragma clang attribute push (__attribute__((target("avx2"))), apply_to=function)
+#elif defined(__GNUC__)
 #pragma GCC push_options
 #pragma GCC target("avx2")
 #endif
 
 {{#include AVX2_FAST_BODIES}}
 
-#ifdef __GNUC__
+#if defined(__clang__)
+#pragma clang attribute pop
+#elif defined(__GNUC__)
 #pragma GCC pop_options
 #endif
 
