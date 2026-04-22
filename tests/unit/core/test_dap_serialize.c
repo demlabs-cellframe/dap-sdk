@@ -677,6 +677,265 @@ static void test_complex_nested_with_nulls(void) {
     log_it(L_INFO, "Complex nested structures with NULL test passed");
 }
 
+// ===========================================================================
+// ARRAY_FIXED and NESTED_STRUCT test structures
+// ===========================================================================
+
+typedef struct test_coeff_vec {
+    uint32_t id;
+    int32_t coeffs[8];        // ARRAY_FIXED of INT32 (endian-aware)
+    uint8_t raw_bytes[4];     // ARRAY_FIXED of UINT8 (legacy memcpy path)
+    uint16_t shorts[3];       // ARRAY_FIXED of UINT16 (endian-aware)
+    uint64_t longs[2];        // ARRAY_FIXED of UINT64 (endian-aware)
+    uint32_t trailer;
+} test_coeff_vec_t;
+
+static const dap_serialize_field_t test_coeff_vec_fields[] = {
+    DAP_SERIALIZE_FIELD_SIMPLE(test_coeff_vec_t, id, DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_FIXED_ARRAY(test_coeff_vec_t, coeffs, 8, DAP_SERIALIZE_TYPE_INT32),
+    DAP_SERIALIZE_FIELD_FIXED_ARRAY(test_coeff_vec_t, raw_bytes, 4, DAP_SERIALIZE_TYPE_UINT8),
+    DAP_SERIALIZE_FIELD_FIXED_ARRAY(test_coeff_vec_t, shorts, 3, DAP_SERIALIZE_TYPE_UINT16),
+    DAP_SERIALIZE_FIELD_FIXED_ARRAY(test_coeff_vec_t, longs, 2, DAP_SERIALIZE_TYPE_UINT64),
+    DAP_SERIALIZE_FIELD_SIMPLE(test_coeff_vec_t, trailer, DAP_SERIALIZE_TYPE_UINT32),
+};
+
+DAP_SERIALIZE_SCHEMA_DEFINE(test_coeff_vec_schema, test_coeff_vec_t, test_coeff_vec_fields);
+
+typedef struct test_leaf {
+    uint32_t tag;
+    uint16_t flags;
+} test_leaf_t;
+
+static const dap_serialize_field_t test_leaf_fields[] = {
+    DAP_SERIALIZE_FIELD_SIMPLE(test_leaf_t, tag, DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(test_leaf_t, flags, DAP_SERIALIZE_TYPE_UINT16),
+};
+
+DAP_SERIALIZE_SCHEMA_DEFINE(test_leaf_schema, test_leaf_t, test_leaf_fields);
+
+typedef struct test_nested_container {
+    uint32_t header;
+    test_leaf_t embedded;          // NESTED_STRUCT by-value
+    test_leaf_t leaves[3];         // ARRAY_FIXED of nested structs
+    uint32_t footer;
+} test_nested_container_t;
+
+static const dap_serialize_field_t test_nested_container_fields[] = {
+    DAP_SERIALIZE_FIELD_SIMPLE(test_nested_container_t, header, DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_NESTED(test_nested_container_t, embedded, &test_leaf_schema),
+    DAP_SERIALIZE_FIELD_FIXED_ARRAY_NESTED(test_nested_container_t, leaves, 3, &test_leaf_schema),
+    DAP_SERIALIZE_FIELD_SIMPLE(test_nested_container_t, footer, DAP_SERIALIZE_TYPE_UINT32),
+};
+
+DAP_SERIALIZE_SCHEMA_DEFINE(test_nested_container_schema, test_nested_container_t, test_nested_container_fields);
+
+/**
+ * @brief ARRAY_FIXED: round-trip with mixed scalar element types.
+ */
+static void test_fixed_array_scalar_round_trip(void) {
+    log_it(L_INFO, "Testing ARRAY_FIXED scalar round-trip...");
+
+    test_coeff_vec_t original = {
+        .id = 0xAABBCCDD,
+        .coeffs   = { -1, 2, -3, 4, -5, 6, -7, 8 },
+        .raw_bytes = { 0xDE, 0xAD, 0xBE, 0xEF },
+        .shorts   = { 0x1234, 0x5678, 0x9ABC },
+        .longs    = { 0x0102030405060708ULL, 0xFFEEDDCCBBAA9988ULL },
+        .trailer  = 0x5A5A5A5A,
+    };
+
+    size_t required = dap_serialize_calc_size(&test_coeff_vec_schema, NULL, &original, NULL);
+    assert(required > 0);
+    uint8_t *buffer = DAP_NEW_SIZE(uint8_t, required);
+    assert(buffer);
+
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&test_coeff_vec_schema, &original, buffer, required, NULL);
+    assert(sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+
+    test_coeff_vec_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&test_coeff_vec_schema, buffer, sr.bytes_written, &deser, NULL);
+    assert(dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+
+    assert(deser.id == original.id);
+    assert(deser.trailer == original.trailer);
+    assert(memcmp(deser.coeffs,    original.coeffs,    sizeof(original.coeffs))    == 0);
+    assert(memcmp(deser.raw_bytes, original.raw_bytes, sizeof(original.raw_bytes)) == 0);
+    assert(memcmp(deser.shorts,    original.shorts,    sizeof(original.shorts))    == 0);
+    assert(memcmp(deser.longs,     original.longs,     sizeof(original.longs))     == 0);
+
+    // Golden-wire check: int32 coeffs[0]=-1 must be encoded as FF FF FF FF in LE
+    // Header = 12 bytes (magic+version+count), then uint32 id (4 bytes),
+    // then the first int32 coeff at offset 16.
+    assert(buffer[16] == 0xFF && buffer[17] == 0xFF && buffer[18] == 0xFF && buffer[19] == 0xFF);
+    // coeffs[1]=2 LE: 02 00 00 00
+    assert(buffer[20] == 0x02 && buffer[21] == 0x00 && buffer[22] == 0x00 && buffer[23] == 0x00);
+
+    DAP_DELETE(buffer);
+    log_it(L_INFO, "ARRAY_FIXED scalar round-trip passed");
+}
+
+/**
+ * @brief NESTED_STRUCT + ARRAY_FIXED of nested schemas.
+ */
+static void test_nested_struct_and_fixed_array(void) {
+    log_it(L_INFO, "Testing NESTED_STRUCT + ARRAY_FIXED(nested) round-trip...");
+
+    test_nested_container_t original = {
+        .header = 0xAAAA5555,
+        .embedded = { .tag = 0xDEADBEEF, .flags = 0xC0DE },
+        .leaves = {
+            { .tag = 0x11111111, .flags = 0x1111 },
+            { .tag = 0x22222222, .flags = 0x2222 },
+            { .tag = 0x33333333, .flags = 0x3333 },
+        },
+        .footer = 0x55AA55AA,
+    };
+
+    size_t required = dap_serialize_calc_size(&test_nested_container_schema, NULL, &original, NULL);
+    assert(required > 0);
+
+    // Expected payload size (excluding 12-byte header):
+    //   header: 4
+    //   embedded: 4 + 2 = 6
+    //   leaves[3]: 3 * (4 + 2) = 18
+    //   footer: 4
+    // Total payload: 32, so required = 44 bytes.
+    assert(required == 44);
+
+    uint8_t *buffer = DAP_NEW_SIZE(uint8_t, required);
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&test_nested_container_schema, &original, buffer, required, NULL);
+    assert(sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(sr.bytes_written == required);
+
+    test_nested_container_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&test_nested_container_schema, buffer, sr.bytes_written, &deser, NULL);
+    assert(dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+
+    assert(deser.header == original.header);
+    assert(deser.embedded.tag == original.embedded.tag);
+    assert(deser.embedded.flags == original.embedded.flags);
+    for (int i = 0; i < 3; i++) {
+        assert(deser.leaves[i].tag == original.leaves[i].tag);
+        assert(deser.leaves[i].flags == original.leaves[i].flags);
+    }
+    assert(deser.footer == original.footer);
+
+    DAP_DELETE(buffer);
+    log_it(L_INFO, "NESTED_STRUCT + ARRAY_FIXED(nested) passed");
+}
+
+/**
+ * @brief ARRAY_FIXED: malformed buffer (truncated) must be rejected.
+ */
+static void test_fixed_array_malformed(void) {
+    log_it(L_INFO, "Testing ARRAY_FIXED malformed rejection...");
+
+    test_coeff_vec_t src = {
+        .id = 1, .coeffs = {0}, .raw_bytes = {0}, .shorts = {0}, .longs = {0}, .trailer = 0
+    };
+    size_t required = dap_serialize_calc_size(&test_coeff_vec_schema, NULL, &src, NULL);
+    uint8_t *buffer = DAP_NEW_SIZE(uint8_t, required);
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&test_coeff_vec_schema, &src, buffer, required, NULL);
+    assert(sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+
+    // Truncate buffer such that the first ARRAY_FIXED field 'coeffs' cannot be fully read.
+    // Layout after 12-byte header: id(4), coeffs[8]*4(32), ...; offset before coeffs = 16.
+    // Cut the buffer to 30 bytes so coeffs (needs 32) triggers INVALID_DATA mid-array.
+    size_t truncated = 30;
+    assert(required > truncated);
+    test_coeff_vec_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&test_coeff_vec_schema, buffer, truncated, &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    log_it(L_DEBUG, "ARRAY_FIXED truncated buffer correctly rejected (error=%d)", dr.error_code);
+
+    DAP_DELETE(buffer);
+    log_it(L_INFO, "ARRAY_FIXED malformed rejection passed");
+}
+
+/**
+ * @brief ARRAY_FIXED hostile-count attack: fixed_count > DAP_SERIALIZE_MAX_ARRAY_COUNT
+ *        must be rejected at both serialize and deserialize time.
+ */
+static void test_fixed_array_oversized_count_attack(void) {
+    log_it(L_INFO, "Testing ARRAY_FIXED oversized-count rejection...");
+
+    typedef struct { uint32_t dummy[16]; } attack_obj_t;
+    static const dap_serialize_field_t attack_fields[] = {
+        {
+            .name = "huge",
+            .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED,
+            .flags = DAP_SERIALIZE_FLAG_NONE,
+            .offset = offsetof(attack_obj_t, dummy),
+            .size = sizeof(uint32_t),
+            .fixed_count = DAP_SERIALIZE_MAX_ARRAY_COUNT + 1ULL,
+            .element_type = DAP_SERIALIZE_TYPE_UINT32,
+        },
+    };
+    static const dap_serialize_schema_t attack_schema = {
+        .name = "attack_schema",
+        .version = 1,
+        .struct_size = sizeof(attack_obj_t),
+        .field_count = 1,
+        .fields = attack_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+
+    attack_obj_t obj = {0};
+    uint8_t buf[256] = {0};
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&attack_schema, &obj, buf, sizeof(buf), NULL);
+    assert(sr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    log_it(L_DEBUG, "Oversized-count serialize rejected (error=%d)", sr.error_code);
+
+    // Craft header + at least one payload byte so the main deserialize loop
+    // enters the per-field code path and exercises the depth/sanity checks.
+    uint8_t crafted[16];
+    uint32_t magic_val = DAP_SERIALIZE_MAGIC_NUMBER;
+    uint32_t ver = 1, fcnt = 1;
+    memcpy(crafted,     &magic_val, 4);
+    memcpy(crafted + 4, &ver,       4);
+    memcpy(crafted + 8, &fcnt,      4);
+    memset(crafted + 12, 0, 4);
+    attack_obj_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&attack_schema, crafted, sizeof(crafted), &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    log_it(L_DEBUG, "Oversized-count deserialize rejected (error=%d)", dr.error_code);
+
+    log_it(L_INFO, "ARRAY_FIXED oversized-count rejection passed");
+}
+
+/**
+ * @brief NESTED_STRUCT self-referential schema must hit the nesting-depth guard
+ *        instead of recursing until stack exhaustion.
+ */
+static void test_nested_struct_self_reference_attack(void) {
+    log_it(L_INFO, "Testing NESTED_STRUCT self-reference depth guard...");
+
+    typedef struct { uint8_t pad[4]; } nest_obj_t;
+
+    static dap_serialize_field_t nest_fields[1];
+    static dap_serialize_schema_t nest_schema = {
+        .name = "self_nest",
+        .version = 1,
+        .struct_size = sizeof(nest_obj_t),
+        .field_count = 1,
+        .fields = nest_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+    nest_fields[0].name = "me";
+    nest_fields[0].type = DAP_SERIALIZE_TYPE_NESTED_STRUCT;
+    nest_fields[0].flags = DAP_SERIALIZE_FLAG_NONE;
+    nest_fields[0].offset = 0;
+    nest_fields[0].nested_schema = &nest_schema;
+
+    nest_obj_t obj = {0};
+    uint8_t buf[64] = {0};
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&nest_schema, &obj, buf, sizeof(buf), NULL);
+    assert(sr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    log_it(L_DEBUG, "Self-reference NESTED_STRUCT rejected (error=%d)", sr.error_code);
+
+    log_it(L_INFO, "NESTED_STRUCT self-reference depth guard passed");
+}
+
 /**
  * @brief Main test function
  */
@@ -692,8 +951,13 @@ int main(int argc, char *argv[]) {
     test_error_conditions();
     test_buffer_validation();
     test_performance();
-    // test_complex_nested_with_nulls();  // DISABLED: creates infinite recursion in test_acorn_schema - needs separate fix
+    test_complex_nested_with_nulls(); 
     test_robustness_with_corrupted_data();  // Test serializer robustness against garbage input
+    test_fixed_array_scalar_round_trip();
+    test_nested_struct_and_fixed_array();
+    test_fixed_array_malformed();
+    test_fixed_array_oversized_count_attack();
+    test_nested_struct_self_reference_attack();
     
     log_it(L_INFO, "All DAP Serialize tests passed successfully!");
     
