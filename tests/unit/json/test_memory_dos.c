@@ -378,7 +378,7 @@ static bool s_test_algorithmic_complexity(void) {
 
     // Larger sizes to get stable timing (milliseconds, not microseconds)
     const int sizes[] = {2000, 4000, 8000};
-    const int NUM_RUNS = 5;
+    enum { NUM_RUNS = 5 };
     double times[3];
 
     // Warmup: parse objects of similar size to stabilize CPU caches,
