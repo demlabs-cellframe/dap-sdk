@@ -27,6 +27,7 @@
 #include "chipmunk_ntt.h"
 #include "chipmunk_hash.h"
 #include "dap_hash.h"
+#include "dap_hash_shake256.h"
 #include "dap_common.h"
 #include "dap_crypto_common.h"
 #include "dap_rand.h"
@@ -371,28 +372,6 @@ int chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound) {
 }
 
 /**
- * @brief Decompose polynomial into power-of-2 base representation
- * 
- * NOTE: This function is currently not used in HOTS scheme and may be removed
- */
-int chipmunk_poly_decompose(chipmunk_poly_t *r1, chipmunk_poly_t *r0, const chipmunk_poly_t *a) {
-    if (!r1 || !r0 || !a) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_poly_decompose");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-
-    // NOTE: This decomposition is not used in HOTS, keeping placeholder
-    // Original Dilithium decomposition parameters are not applicable to Chipmunk HOTS
-    log_it(L_WARNING, "Polynomial decomposition not implemented for HOTS scheme");
-    
-    // For now, just copy input to r0 and zero r1
-    memcpy(r0, a, sizeof(chipmunk_poly_t));
-    memset(r1, 0, sizeof(chipmunk_poly_t));
-    
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
  * @brief Generate challenge polynomial from hash
  * 
  * NOTE: This function generates a sparse polynomial for HOTS challenge
@@ -408,73 +387,79 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
 
-    // Initialize to zero
-    memset(c, 0, sizeof(chipmunk_poly_t));
+    /*
+     * CR-D14 remediation: the previous implementation derived its entropy
+     * pool by XOR'ing the input hash with the byte index
+     * (extended_hash[i] = hash[i % hash_len] ^ (i + 1)) — a reversible
+     * transformation that provides no new entropy, only permutes the hash
+     * and introduces a data-dependent exit when MAX_ATTEMPTS was hit
+     * (producing fewer-than-ALPHA_H coefficients without signalling an
+     * error to the caller). Both issues are fixed here:
+     *
+     *   state = SHAKE256("CHIPMUNK/poly_challenge/v1" || hash)
+     *   pull 2 bytes → pos in [0, 2^16)
+     *   reject if pos >= (2^16 - 2^16 % N)
+     *   pos %= N
+     *   pull 1 byte, sign = (byte & 1) ? +1 : -1
+     *   if coeffs[pos] == 0 assign sign, weight++
+     *
+     * The loop runs until exactly ALPHA_H non-zero coefficients are
+     * placed. On inputs that cannot produce enough distinct positions
+     * (N too small for ALPHA_H) we return CHIPMUNK_ERROR_INTERNAL
+     * instead of silently emitting a truncated challenge.
+     */
 
-    // For HOTS scheme, we use a sparse challenge polynomial
-    // Based on ALPHA_H parameter from original implementation
-    uint16_t l_positions[CHIPMUNK_ALPHA_H];
-    int8_t l_signs[CHIPMUNK_ALPHA_H];
+    static const uint8_t k_domain[] = "CHIPMUNK/poly_challenge/v1";
 
-    // Initialize arrays
-    memset(l_positions, 0, sizeof(l_positions));
-    memset(l_signs, 0, sizeof(l_signs));
+    memset(c, 0, sizeof(*c));
 
-    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: Используем расширенную энтропию
-    // Создаем расширенный hash для большей энтропии
-    uint8_t extended_hash[256];
-    for (size_t i = 0; i < 256; i++) {
-        extended_hash[i] = hash[i % hash_len] ^ (uint8_t)(i + 1);
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
+
+    const size_t l_in_len = sizeof(k_domain) + hash_len;
+    uint8_t *l_in = (uint8_t *)malloc(l_in_len);
+    if (!l_in) {
+        return CHIPMUNK_ERROR_MEMORY;
     }
+    memcpy(l_in, k_domain, sizeof(k_domain));
+    memcpy(l_in + sizeof(k_domain), hash, hash_len);
+    dap_hash_shake256_absorb(l_state, l_in, l_in_len);
+    free(l_in);
 
-    // Generate positions and signs deterministically from extended hash
-    int l_coeffs_set = 0;
-    int l_hash_offset = 0;
-    
-    // Используем больше попыток и расширенный hash
-    const int MAX_ATTEMPTS = 1000;
-    int l_attempts = 0;
-    
-    while (l_coeffs_set < CHIPMUNK_ALPHA_H && l_attempts < MAX_ATTEMPTS) {
-        l_attempts++;
-        
-        // Get position from 2 bytes of extended hash  
-        uint16_t l_pos = ((uint16_t)extended_hash[l_hash_offset] | 
-                         ((uint16_t)extended_hash[(l_hash_offset + 1) % 256] << 8)) % CHIPMUNK_N;
-        
-        // Check if this position is already used
-        bool l_already_used = false;
-        for (int j = 0; j < l_coeffs_set; j++) {
-            if (l_positions[j] == l_pos) {
-                l_already_used = true;
-                break;
+    uint8_t l_squeeze[DAP_SHAKE256_RATE];
+    size_t l_sq_pos = DAP_SHAKE256_RATE;
+
+    const uint32_t l_range16 = 1u << 16;
+    const uint32_t l_mul_n = (l_range16 / (uint32_t)CHIPMUNK_N) * (uint32_t)CHIPMUNK_N;
+
+    int l_weight_set = 0;
+    const size_t k_max_blocks = 1u << 20;
+    size_t l_blocks_squeezed = 0;
+
+    while (l_weight_set < CHIPMUNK_ALPHA_H) {
+        if (l_sq_pos + 3 > DAP_SHAKE256_RATE) {
+            if (l_blocks_squeezed++ >= k_max_blocks) {
+                log_it(L_ERROR, "chipmunk_poly_challenge: SHAKE squeeze budget exhausted");
+                return CHIPMUNK_ERROR_INTERNAL;
             }
+            dap_hash_shake256_squeezeblocks(l_squeeze, 1, l_state);
+            l_sq_pos = 0;
         }
-        
-        if (!l_already_used) {
-            l_positions[l_coeffs_set] = l_pos;
-            // Get sign from next byte (bit 0)
-            l_signs[l_coeffs_set] = (extended_hash[(l_hash_offset + 2) % 256] & 1) ? 1 : -1;
-            l_coeffs_set++;
-        }
-        
-        // Move through extended hash more efficiently
-        l_hash_offset = (l_hash_offset + 3) % 256;
-    }
 
-    // Set coefficients in polynomial
-    for (int i = 0; i < l_coeffs_set; i++) {
-        if (l_positions[i] < CHIPMUNK_N) {  // Additional safety check
-            c->coeffs[l_positions[i]] = l_signs[i];
-        }
-    }
+        uint32_t l_pos16 = (uint32_t)l_squeeze[l_sq_pos]
+                         | ((uint32_t)l_squeeze[l_sq_pos + 1] << 8);
+        uint8_t  l_sign_byte = l_squeeze[l_sq_pos + 2];
+        l_sq_pos += 3;
 
-    if (l_coeffs_set < CHIPMUNK_ALPHA_H) {
-        log_it(L_WARNING, "Could not generate full challenge polynomial: got %d/%d coefficients in %d attempts", 
-               l_coeffs_set, CHIPMUNK_ALPHA_H, l_attempts);
-    } else {
-        log_it(L_DEBUG, "Generated full challenge polynomial with %d coefficients in %d attempts", 
-               l_coeffs_set, l_attempts);
+        if (l_pos16 >= l_mul_n) {
+            continue; // reject-sample to avoid modulo bias
+        }
+        uint32_t l_pos = l_pos16 % (uint32_t)CHIPMUNK_N;
+
+        if (c->coeffs[l_pos] == 0) {
+            c->coeffs[l_pos] = (l_sign_byte & 1u) ? 1 : -1;
+            l_weight_set++;
+        }
     }
 
     return CHIPMUNK_ERROR_SUCCESS;
@@ -498,107 +483,107 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
  * @return 0 on success, negative on error
  */
 int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, size_t a_message_len) {
-    static int call_count = 0;
-    call_count++;
-    
-    debug_if(s_debug_more, L_INFO, "chipmunk_poly_from_hash: call #%d, message=%p, len=%zu", call_count, a_message, a_message_len);
-    
+    debug_if(s_debug_more, L_INFO, "chipmunk_poly_from_hash: message=%p, len=%zu", a_message, a_message_len);
+
     if (!a_poly) {
         log_it(L_ERROR, "NULL poly parameter in chipmunk_poly_from_hash");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
+
     // Allow empty message (len=0) but require non-NULL pointer for non-empty message
     if (a_message_len > 0 && !a_message) {
         log_it(L_ERROR, "NULL message with non-zero length in chipmunk_poly_from_hash");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
 
-    // Dump input message data for analysis
-    if (s_debug_more && a_message && a_message_len > 0) {
-        dump_it(a_message, "chipmunk_poly_from_hash INPUT MESSAGE", a_message_len);
-    }
+    /*
+     * CR-D5 remediation: replace the 32-bit LCG (coeff a=1664525, c=1013904223)
+     * seeded from only 4 bytes of SHA3-256 with a SHAKE256 extendable-output
+     * function fed the full message and a domain separator. The ALPHA_H-of-N
+     * ternary polynomial is now sampled via unbiased rejection sampling:
+     *
+     *   state = SHAKE256(DOMAIN_TAG || message)
+     *   repeat:
+     *     pull 3 bytes → pos in [0, 2^24)
+     *     reject if pos >= (2^24 - 2^24 % N)   (avoids modulo bias)
+     *     pos %= N
+     *     if coeffs[pos] == 0:
+     *         pull 1 byte, sign = (byte & 1) ? +1 : -1
+     *         coeffs[pos] = sign
+     *         weight++
+     *
+     * No 32-bit cycle, no seed truncation, no unbalanced +1/-1 distribution.
+     */
 
-    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: точно следуем оригинальному Rust коду!
-    // 1. Hash message with SHA3-256
-    dap_hash_sha3_256_t l_hash_out;
-    dap_hash_sha3_256(a_message, a_message_len, &l_hash_out);
-    
-    uint8_t l_seed[32];
-    memcpy(l_seed, &l_hash_out, 32);
-    
-    /*
-    if (call_count <= 5) {
-        printf("🔍 FROM_HASH: SHA256 seed = 0x%02x%02x%02x%02x\n", 
-               l_seed[0], l_seed[1], l_seed[2], l_seed[3]);
+    static const uint8_t k_domain[] = "CHIPMUNK/poly_from_hash/v1";
+
+    memset(a_poly, 0, sizeof(*a_poly));
+
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
+
+    // Absorb domain tag and message as one contiguous SHAKE256 input.
+    // A single absorb call is sufficient because the rate (136 bytes) is
+    // already large enough to swallow the domain tag and the message in
+    // one shot.
+    const size_t l_in_len = sizeof(k_domain) + a_message_len;
+    uint8_t *l_in = (uint8_t *)malloc(l_in_len);
+    if (!l_in) {
+        log_it(L_ERROR, "chipmunk_poly_from_hash: allocation failed (len=%zu)", l_in_len);
+        return CHIPMUNK_ERROR_MEMORY;
     }
-    */
-    
-    // 2. Use seed to create ChaCha20Rng (simplified deterministic version)
-    // Initialize to zero
-    memset(a_poly, 0, sizeof(chipmunk_poly_t));
-    
-    // 3. **КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ**: генерируем rand_ternary с весом ALPHA_H = 37
-    // Original Rust: Self::rand_ternary(&mut rng, ALPHA_H)
-    
-    uint32_t l_rng_state = ((uint32_t)l_seed[0]) | 
-                          ((uint32_t)l_seed[1] << 8) |
-                          ((uint32_t)l_seed[2] << 16) |
-                          ((uint32_t)l_seed[3] << 24);
-    
-    // Simple linear congruential generator for deterministic results
-    const uint32_t l_a = 1664525;
-    const uint32_t l_c = 1013904223;
-    
+    memcpy(l_in, k_domain, sizeof(k_domain));
+    if (a_message_len > 0) {
+        memcpy(l_in + sizeof(k_domain), a_message, a_message_len);
+    }
+    dap_hash_shake256_absorb(l_state, l_in, l_in_len);
+    free(l_in);
+
+    uint8_t l_squeeze[DAP_SHAKE256_RATE];
+    size_t l_sq_pos = DAP_SHAKE256_RATE;
+
+    // Reject-sample positions in [0, N). 3 bytes → [0, 2^24).
+    const uint32_t l_range24 = 1u << 24;
+    const uint32_t l_mul_n = (l_range24 / (uint32_t)CHIPMUNK_N) * (uint32_t)CHIPMUNK_N;
+
     int l_weight_set = 0;
-    int l_max_iterations = CHIPMUNK_N * 10; // Safety limit
-    int l_iteration = 0;
-    
-    /*
-    if (call_count <= 5) {
-        printf("🔍 FROM_HASH: Generating ternary polynomial with weight %d\n", CHIPMUNK_ALPHA_H);
-    }
-    */
-    
-    while (l_weight_set < CHIPMUNK_ALPHA_H && l_iteration < l_max_iterations) {
-        l_rng_state = l_a * l_rng_state + l_c;
-        uint32_t l_tmp = l_rng_state;
-        
-        uint32_t l_index = l_tmp % CHIPMUNK_N;
-        l_tmp >>= 9;
-        
-        if (a_poly->coeffs[l_index] == 0) {
-            // Original Rust: if (tmp >> 9) & 1 == 1 { coeff = 1 } else { coeff = -1 }
-            if ((l_tmp & 1) == 1) {
-                a_poly->coeffs[l_index] = 1;
-            } else {
-                a_poly->coeffs[l_index] = -1;
+    // CHIPMUNK_ALPHA_H is small (≈37). Even adversarial inputs need only a
+    // few hundred bytes of SHAKE output in practice; we cap at 1<<20 rate
+    // blocks to fail fast on impossible parameters rather than hang.
+    const size_t k_max_blocks = 1u << 20;
+    size_t l_blocks_squeezed = 0;
+
+    while (l_weight_set < CHIPMUNK_ALPHA_H) {
+        // Refill the SHAKE buffer when we've exhausted it or when we'd
+        // need to straddle the end (we consume 4 bytes per trial: 3 for
+        // position, 1 for sign).
+        if (l_sq_pos + 4 > DAP_SHAKE256_RATE) {
+            if (l_blocks_squeezed++ >= k_max_blocks) {
+                log_it(L_ERROR, "chipmunk_poly_from_hash: SHAKE squeeze budget exhausted");
+                return CHIPMUNK_ERROR_INTERNAL;
             }
+            dap_hash_shake256_squeezeblocks(l_squeeze, 1, l_state);
+            l_sq_pos = 0;
+        }
+
+        uint32_t l_pos24 = (uint32_t)l_squeeze[l_sq_pos]
+                         | ((uint32_t)l_squeeze[l_sq_pos + 1] << 8)
+                         | ((uint32_t)l_squeeze[l_sq_pos + 2] << 16);
+        uint8_t  l_sign_byte = l_squeeze[l_sq_pos + 3];
+        l_sq_pos += 4;
+
+        if (l_pos24 >= l_mul_n) {
+            continue; // reject to avoid modulo bias
+        }
+        uint32_t l_pos = l_pos24 % (uint32_t)CHIPMUNK_N;
+
+        if (a_poly->coeffs[l_pos] == 0) {
+            a_poly->coeffs[l_pos] = (l_sign_byte & 1u) ? 1 : -1;
             l_weight_set++;
         }
-        l_iteration++;
     }
-    
-    /*
-    if (call_count <= 5) {
-        printf("🔍 FROM_HASH: Generated %d ternary coefficients (target: %d)\n", 
-               l_weight_set, CHIPMUNK_ALPHA_H);
-        printf("🔍 FROM_HASH: First coeffs: %d %d %d %d\n", 
-               a_poly->coeffs[0], a_poly->coeffs[1], a_poly->coeffs[2], a_poly->coeffs[3]);
-    }
-    */
-    
-    if (l_weight_set != CHIPMUNK_ALPHA_H) {
-        log_it(L_WARNING, "Generated weight %d differs from target %d", l_weight_set, CHIPMUNK_ALPHA_H);
-    }
-    
-    // **КРИТИЧЕСКОЕ ОГРАНИЧЕНИЕ**: останавливаем процесс при слишком большом количестве вызовов
-    if (call_count > 10000) {
-        // printf("🚨 КРИТИЧЕСКАЯ ОШИБКА: слишком много вызовов chipmunk_poly_from_hash (%d)! Возможен бесконечный цикл!\n", call_count);
-        return CHIPMUNK_ERROR_INVALID_PARAM;
-    }
-    
-    return 0;
+
+    return CHIPMUNK_ERROR_SUCCESS;
 }
 
 /**
@@ -640,26 +625,22 @@ void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_p
         log_it(L_ERROR, "NULL parameters in chipmunk_poly_add_ntt");
         return;
     }
-    
-    // Coefficient-wise addition with proper modular reduction
+
+    // CR-D16 fix (Round-3): in NTT domain the canonical representation is
+    // [0, q), not the centred [-q/2, q/2) form the legacy code produced.
+    // The previous double-normalisation (first non-negative, then centred)
+    // produced sporadic sign flips that only survived final equality checks
+    // by accident, because chipmunk_poly_equal re-lifts both operands via
+    // (x % q + q) % q.  Keep add_ntt strictly in [0, q) so intermediate
+    // NTT-domain results stay semantically consistent with
+    // chipmunk_ntt_pointwise_montgomery / chipmunk_poly_mul_ntt output and
+    // with chipmunk_poly_equal's lift convention.
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_temp = (int64_t)a_poly1->coeffs[i] + a_poly2->coeffs[i];
-        
-        // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: применяем точную нормализацию как в оригинальном Rust
-        // Rust normalize() функция: центрированное представление [-q/2, q/2]
-        int32_t l_result = (int32_t)(l_temp % CHIPMUNK_Q);
+        int64_t l_sum = (int64_t)a_poly1->coeffs[i] + (int64_t)a_poly2->coeffs[i];
+        int32_t l_result = (int32_t)(l_sum % CHIPMUNK_Q);
         if (l_result < 0) {
             l_result += CHIPMUNK_Q;
         }
-        
-        // Центрированная нормализация как в InvNTT
-        if (l_result > CHIPMUNK_Q / 2) {
-            l_result -= CHIPMUNK_Q;
-        }
-        if (l_result < -CHIPMUNK_Q / 2) {
-            l_result += CHIPMUNK_Q;
-        }
-        
         a_result->coeffs[i] = l_result;
     }
 }
@@ -743,67 +724,75 @@ int chipmunk_poly_uniform_mod_p(chipmunk_poly_t *a_poly, const uint8_t a_seed[36
     if (!a_poly || !a_seed) {
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
-    // **ИСПРАВЛЕНО**: используем точный алгоритм из оригинального Rust кода
-    // Original Rust: HOTSPoly::rand_mod_p(&mut rng, bound) генерирует коэффициенты в [-bound, bound]
-    
-    // Debug output для малых bound
-    if (a_bound <= 10) {
-        printf("  🔍 chipmunk_poly_uniform_mod_p: Generating poly with bound = %d (range [-%d, %d])\n", 
-               a_bound, a_bound, a_bound);
+    if (a_bound <= 0) {
+        return CHIPMUNK_ERROR_INVALID_PARAM;
     }
-    
-    // Use ChaCha20-like stream for deterministic random generation
-    uint32_t l_state[8];
-    for (int i = 0; i < 8; i++) {
-        l_state[i] = ((uint32_t)a_seed[i*4]) | 
-                     ((uint32_t)a_seed[i*4+1] << 8) |
-                     ((uint32_t)a_seed[i*4+2] << 16) |
-                     ((uint32_t)a_seed[i*4+3] << 24);
+
+    /*
+     * CR-D5 remediation: replace the 8×32-bit LCG (per-lane state fed from
+     * 36 seed bytes, stepped with a=1664525, c=1013904223) by SHAKE256 over
+     * a domain-separated seed. Coefficients in [-bound, bound] are drawn
+     * via unbiased rejection sampling on 2*bound+1 values:
+     *
+     *   state = SHAKE256("CHIPMUNK/uniform_mod_p/v1" || seed)
+     *   for each i in [0, N):
+     *     pull 3 bytes → r in [0, 2^24)
+     *     reject if r >= (2^24 - 2^24 % range)
+     *     r %= range; coeff = (int32)r - bound
+     *
+     * No deterministic short period, no bias (the range is small for the
+     * HOTS y-polynomial, so the rejection rate is negligible).
+     */
+
+    static const uint8_t k_domain[] = "CHIPMUNK/uniform_mod_p/v1";
+
+    memset(a_poly, 0, sizeof(*a_poly));
+
+    uint8_t l_abs_in[sizeof(k_domain) + 36];
+    memcpy(l_abs_in, k_domain, sizeof(k_domain));
+    memcpy(l_abs_in + sizeof(k_domain), a_seed, 36);
+
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
+    dap_hash_shake256_absorb(l_state, l_abs_in, sizeof(l_abs_in));
+
+    uint8_t l_squeeze[DAP_SHAKE256_RATE];
+    size_t l_sq_pos = DAP_SHAKE256_RATE;
+
+    const uint32_t l_range24 = 1u << 24;
+    const uint32_t l_range = (uint32_t)(2 * a_bound + 1);
+    if (l_range == 0 || l_range > l_range24) {
+        log_it(L_ERROR, "chipmunk_poly_uniform_mod_p: bound %d out of supported range", a_bound);
+        return CHIPMUNK_ERROR_INVALID_PARAM;
     }
-    
-    // Используем также последние 4 байта для большей энтропии
-    l_state[0] ^= ((uint32_t)a_seed[32]) | 
-                  ((uint32_t)a_seed[33] << 8) |
-                  ((uint32_t)a_seed[34] << 16) |
-                  ((uint32_t)a_seed[35] << 24);
-    
-    // Generate coefficients in range [-bound, bound]
-    int l_out_of_range = 0;
+    const uint32_t l_mul = (l_range24 / l_range) * l_range;
+
+    // Bound on SHAKE squeeze blocks for defence-in-depth; realistic worst
+    // case for the Chipmunk bounds (≤ a few thousand) is well below 2^20.
+    const size_t k_max_blocks = 1u << 20;
+    size_t l_blocks_squeezed = 0;
+
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Simple linear congruential generator for deterministic randomness
-        l_state[i % 8] = l_state[i % 8] * 1664525 + 1013904223;
-        
-        // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: правильно генерируем значения в диапазоне [-bound, bound]
-        // Диапазон: от -bound до +bound включительно = (2*bound + 1) значений
-        uint32_t l_range = 2 * a_bound + 1;
-        uint32_t l_rand = l_state[i % 8] % l_range;
-        
-        // Преобразуем в signed диапазон [-bound, bound]
-        a_poly->coeffs[i] = (int32_t)l_rand - a_bound;
-        
-        // Дополнительная проверка для отладки
-        if (a_poly->coeffs[i] < -a_bound || a_poly->coeffs[i] > a_bound) {
-            l_out_of_range++;
-            if (l_out_of_range <= 5) {
-                log_it(L_ERROR, "Generated coefficient %d out of bounds [-%d, %d] at index %d", 
-                       a_poly->coeffs[i], a_bound, a_bound, i);
+        uint32_t l_val;
+        for (;;) {
+            if (l_sq_pos + 3 > DAP_SHAKE256_RATE) {
+                if (l_blocks_squeezed++ >= k_max_blocks) {
+                    log_it(L_ERROR, "chipmunk_poly_uniform_mod_p: SHAKE squeeze budget exhausted");
+                    return CHIPMUNK_ERROR_INTERNAL;
+                }
+                dap_hash_shake256_squeezeblocks(l_squeeze, 1, l_state);
+                l_sq_pos = 0;
+            }
+            l_val = (uint32_t)l_squeeze[l_sq_pos]
+                  | ((uint32_t)l_squeeze[l_sq_pos + 1] << 8)
+                  | ((uint32_t)l_squeeze[l_sq_pos + 2] << 16);
+            l_sq_pos += 3;
+            if (l_val < l_mul) {
+                break;
             }
         }
+        a_poly->coeffs[i] = (int32_t)(l_val % l_range) - a_bound;
     }
-    
-    if (l_out_of_range > 0) {
-        log_it(L_ERROR, "Total %d coefficients out of range for bound %d", l_out_of_range, a_bound);
-    }
-    
-    // Debug output для малых bound
-    if (a_bound <= 10) {
-        printf("    First 10 coeffs: ");
-        for (int i = 0; i < 10 && i < CHIPMUNK_N; i++) {
-            printf("%d ", a_poly->coeffs[i]);
-        }
-        printf("\n");
-    }
-    
-    return 0;
-} 
+
+    return CHIPMUNK_ERROR_SUCCESS;
+}

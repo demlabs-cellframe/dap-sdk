@@ -198,9 +198,15 @@ static int test_large_scale_performance(size_t num_signers)
         goto cleanup;
     }
 
-    // Convert public keys to HVC polynomials
+    // CR-D15.A: tree leaves MUST be computed from the same HOTS pk that
+    // signs (hots_public_keys[i]) — the aggregator re-derives the leaf
+    // digest from that pk and the verifier pins the leaf in path[0].
     for (size_t i = 0; i < num_signers; i++) {
-        ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &leaf_nodes[i]);
+        chipmunk_public_key_t l_wrap_pk;
+        memset(&l_wrap_pk, 0, sizeof(l_wrap_pk));  // rho_seed=0 matches aggregator
+        memcpy(&l_wrap_pk.v0, &hots_public_keys[i].v0, sizeof(chipmunk_poly_t));
+        memcpy(&l_wrap_pk.v1, &hots_public_keys[i].v1, sizeof(chipmunk_poly_t));
+        ret = chipmunk_hots_pk_to_hvc_poly(&l_wrap_pk, &leaf_nodes[i]);
         if (ret != 0) {
             log_it(L_ERROR, "ERROR: Failed to convert HOTS pk to HVC poly for signer %zu", i);
             DAP_DEL_MULTY(leaf_nodes);
@@ -243,6 +249,7 @@ static int test_large_scale_performance(size_t num_signers)
         ret = chipmunk_create_individual_signature(
             (uint8_t*)test_message, message_len,
             &hots_secret_keys[i], &hots_public_keys[i],
+            public_keys[i].rho_seed,
             &tree, i,
             &individual_sigs[i]
         );

@@ -29,8 +29,10 @@ This file is part of DAP SDK the open source project
 #define LOG_TAG "chipmunk_ring_serialize"
 
 
-// Debug flag for detailed logging
-static bool s_debug_more = true;
+// Debug flag for detailed logging — MUST stay off in release builds,
+// serialization prints full wire payloads (including key bytes in
+// embedded-keys mode) which is a privacy leak.
+static bool s_debug_more = false;
 
 // Size helpers for parameter-based size calculation of nested fields
 static size_t s_size_acorn_proof(const void *a_object, void *a_context)
@@ -60,7 +62,8 @@ static size_t s_param_size_ring_public_keys(const dap_serialize_size_params_t *a
 {
     UNUSED(a_context);
     uint64_t ring_size = dap_serialize_get_arg_uint_by_index(a_params, CHIPMUNK_RING_ARG_RING_SIZE, 1);
-    return ring_size * CHIPMUNK_PUBLIC_KEY_SIZE;
+    // CR-D15.C: per-member ring pk is now a serialised hypertree public key.
+    return ring_size * CHIPMUNK_RING_PUBLIC_KEY_SIZE;
 }
 
 static size_t s_param_size_acorn_proofs(const dap_serialize_size_params_t *a_params, void *a_context)
@@ -96,7 +99,8 @@ static size_t s_param_size_signature(const dap_serialize_size_params_t *a_params
 {
     UNUSED(a_params);
     UNUSED(a_context);
-    return CHIPMUNK_SIGNATURE_SIZE;
+    // CR-D15.C: core signature is a full hypertree signature over the challenge.
+    return CHIPMUNK_RING_CHALLENGE_SIG_SIZE;
 }
 
 static size_t s_param_size_linkability_tag_param(const dap_serialize_size_params_t *a_params, void *a_context)
@@ -201,7 +205,7 @@ static const dap_serialize_field_t s_acorn_input_fields[] = {
         .type = DAP_SERIALIZE_TYPE_BYTES_FIXED,
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_acorn_input_t, public_key),
-        .size = CHIPMUNK_PUBLIC_KEY_SIZE
+        .size = CHIPMUNK_RING_PUBLIC_KEY_SIZE
     },
     {
         .name = "message",
@@ -498,13 +502,15 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .size = sizeof(uint64_t)
     },
 
-    // ZK proofs size (required for multi-signer mode)
+    // ZK proofs size (required for multi-signer mode).
+    // CR-D9 fix (Round-3): wire width is 8 bytes regardless of host (32/64);
+    // the in-struct field is now uint64_t (see chipmunk_ring.h) to match.
     {
         .name = "zk_proofs_size",
         .type = DAP_SERIALIZE_TYPE_UINT64,
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, zk_proofs_size),
-        .size = sizeof(size_t)
+        .size = sizeof(uint64_t)
     },
 
     // Threshold ZK proofs (conditional - only for multi-signer mode)

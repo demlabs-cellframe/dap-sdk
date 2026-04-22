@@ -221,10 +221,17 @@ typedef enum chipmunk_ring_scalability_flags {
 
 // ================ COMPUTED SIZES BASED ON PARAMETERS ================
 
-// Dynamic size calculations based on chipmunk parameters
-#define CHIPMUNK_RING_PUBLIC_KEY_SIZE(chipmunk_n)  (32 + (chipmunk_n)*4*2)  // rho_seed + v0 + v1
-#define CHIPMUNK_RING_PRIVATE_KEY_SIZE(chipmunk_n) (32 + 48 + CHIPMUNK_RING_PUBLIC_KEY_SIZE(chipmunk_n))  // key_seed + tr + public_key
-#define CHIPMUNK_RING_SIGNATURE_SIZE(chipmunk_n, chipmunk_gamma) ((chipmunk_n)*4*(chipmunk_gamma))  // sigma[GAMMA]
+/*
+ * CR-D15.C: legacy CHIPMUNK_RING_{PUBLIC,PRIVATE,SIGNATURE}_SIZE(chipmunk_n...)
+ * macros describing single-shot-Chipmunk ring key sizes were removed here.
+ * Ring keypair is now a full hypertree keypair — the authoritative
+ * constants CHIPMUNK_RING_PUBLIC_KEY_SIZE / CHIPMUNK_RING_PRIVATE_KEY_SIZE
+ * / CHIPMUNK_RING_CHALLENGE_SIG_SIZE live in chipmunk_ring.h and alias
+ * CHIPMUNK_HT_*_SIZE.  Keeping two different-shaped definitions under
+ * the same macro name (function-like vs object-like) caused redefinition
+ * errors; the legacy values were never actually consumed, so they are
+ * removed rather than renamed.
+ */
 
 // ================ PERFORMANCE CONSTANTS ================
 

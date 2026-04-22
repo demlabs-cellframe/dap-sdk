@@ -67,16 +67,24 @@ int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
     }
     
     debug_if(s_debug_more, L_INFO, "🔧 HOTS setup: Generating public parameters...");
-    
-    // Use a fixed seed for reproducible test results
+
+    // CR-D5 fix: the previous implementation zero-initialised only 4 of the 36
+    // seed bytes and left the middle 28 bytes as whatever was on the stack —
+    // a textbook reading-uninitialised-memory bug that made `chipmunk_hots_setup`
+    // silently non-deterministic across invocations (and, critically, across
+    // signers inside chipmunk_aggregate_signatures).  The aggregate HOTS
+    // identity cannot hold when distinct signers use different public matrices
+    // A, so every multi-signature verification would fail.  Use a fixed, fully
+    // initialised domain-separation seed.
+    // Use a fixed seed for reproducible, deterministic output across processes.
     uint32_t l_base_seed = 0x12345678;
-    
+
     // Generate GAMMA random polynomials for public parameters
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         debug_if(s_debug_more, L_INFO, "  Generating parameter a[%d]...", i);
-        
-        // Generate random polynomial in time domain
+
         uint8_t l_param_seed[36];
+        memset(l_param_seed, 0, sizeof(l_param_seed)); // no uninitialised bytes feeding SHA3
         memcpy(l_param_seed, &l_base_seed, 4);
         uint32_t l_param_nonce = 0x10000000 + i;  // Unique nonce for each parameter
         memcpy(l_param_seed + 32, &l_param_nonce, 4);

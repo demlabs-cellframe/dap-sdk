@@ -1,58 +1,51 @@
 /*
  * Authors:
- * Dmitriy A. Gearasimov <kahovski@gmail.com>
+ * Dmitry A. Gerasimov <ceo@cellframe.net>
  * DeM Labs Inc.   https://demlabs.net
- * DeM Labs Open source community https://gitlab.demlabs.net/cellframe
- * Copyright  (c) 2017-2024
- * All rights reserved.
+ * Copyright  (c) 2017-2026
+ *
+ * Chipmunk internal helpers shared between chipmunk.c, chipmunk_aggregation.c
+ * and chipmunk_hypertree.c.  Not part of the public API surface — do NOT
+ * expose the prototypes outside the Chipmunk implementation unit.
+ */
 
- This file is part of DAP (Distributed Applications Platform) the open source project
+#pragma once
 
-    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    DAP is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#ifndef _DAP_CHIPMUNK_INTERNAL_H_
-#define _DAP_CHIPMUNK_INTERNAL_H_
-
+#include <stdint.h>
 #include "chipmunk.h"
+#include "chipmunk_hots.h"
 
-// Internal polynomial operations
-void s_chipmunk_poly_ntt(chipmunk_poly_t *a_poly);
-void s_chipmunk_poly_invntt(chipmunk_poly_t *a_poly);
-void s_chipmunk_poly_add(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b);
-void s_chipmunk_poly_sub(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b);
-void s_chipmunk_poly_pointwise(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_a, const chipmunk_poly_t *a_b);
-void s_chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
-void s_chipmunk_poly_challenge(chipmunk_poly_t *a_poly, const uint8_t a_seed[32]);
-int s_chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// Internal hint functions
-void s_chipmunk_make_hint(uint8_t a_hint[CHIPMUNK_N/8], const chipmunk_poly_t *a_z, const chipmunk_poly_t *a_r);
-void s_chipmunk_use_hint(chipmunk_poly_t *a_out, const chipmunk_poly_t *a_a, const uint8_t a_hint[CHIPMUNK_N/8]);
+/*
+ * CR-D15.B (CR-D3 reuse): domain-separated SHA3-256 derivation of the
+ * per-leaf HOTS secret key from the master key_seed and a monotonic
+ * leaf_index.  The header shares it with chipmunk_hypertree.c so that the
+ * hypertree keygen/sign pipeline stays bit-for-bit compatible with the
+ * single-shot pipeline in chipmunk.c — any discrepancy would surface as a
+ * path-verify failure against a root that was built from a different
+ * derivation.
+ *
+ * Returns CHIPMUNK_ERROR_SUCCESS or a negative error code.  On success
+ * a_hots_sk_out is populated in NTT domain (ready to feed to
+ * chipmunk_hots_sign / dap_chipmunk_compute_hots_pk_internal).
+ */
+int dap_chipmunk_derive_hots_leaf_secret_internal(const uint8_t a_key_seed[32],
+                                                  uint32_t a_leaf_index,
+                                                  chipmunk_hots_sk_t *a_hots_sk_out);
 
-// Internal hash functions
-int dap_chipmunk_hash_to_point(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen);
-int dap_chipmunk_hash_to_seed(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen);
+/*
+ * Compute the HOTS public key (v0, v1) from (A, s0, s1).  a_params->a[i]
+ * MUST be in NTT domain (sampled + forward-NTT'd by the caller).  The
+ * output v0/v1 live in coefficient (time) domain, matching the encoding
+ * that chipmunk_hots_verify and chipmunk_hots_pk_to_hvc_poly both expect.
+ */
+void dap_chipmunk_compute_hots_pk_internal(const chipmunk_hots_params_t *a_params,
+                                           const chipmunk_hots_sk_t *a_hots_sk,
+                                           chipmunk_hots_pk_t *a_hots_pk_out);
 
-#define CHIPMUNK_ALPHA_S 37   // Weight for secret key s
-#define CHIPMUNK_ALPHA_H 37   // Weight for hash polynomial
-#define CHIPMUNK_ALPHA_E 19   // Weight for error polynomial
-
-// Modulus constants for polynomial coefficient bounds (ИСПРАВЛЕНО согласно оригинальному Rust)
-#define PHI 13                // Bound for s0 coefficients (было 1024, должно быть 13!)
-#define PHI_ALPHA_H 481       // Bound for s1 coefficients (было 512, должно быть 481!)
-
-// Error codes
-
-#endif // _DAP_CHIPMUNK_INTERNAL_H_ 
+#ifdef __cplusplus
+}
+#endif

@@ -121,9 +121,19 @@ static int test_performance_variable_signers(size_t num_signers)
         goto cleanup;
     }
 
-    // Convert public keys to HVC polynomials
+    // CR-D15.A: the Merkle tree MUST be built from the same HOTS public keys
+    // that end up in the individual signatures (`hots_public_keys[i]`), not
+    // from the unrelated `chipmunk_keypair`-derived `public_keys[i]`.  The
+    // aggregator re-derives the leaf digest on its own (via
+    // s_hots_pk_to_full_pk + chipmunk_hots_pk_to_hvc_poly with rho_seed=0)
+    // and the verifier now pins path[0] to that digest — so producing a
+    // tree from an unrelated pk would trip leaf-binding as it should.
     for (size_t i = 0; i < num_signers; i++) {
-        ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &leaf_nodes[i]);
+        chipmunk_public_key_t l_wrap_pk;
+        memset(&l_wrap_pk, 0, sizeof(l_wrap_pk));  // rho_seed stays zero to match aggregator
+        memcpy(&l_wrap_pk.v0, &hots_public_keys[i].v0, sizeof(chipmunk_poly_t));
+        memcpy(&l_wrap_pk.v1, &hots_public_keys[i].v1, sizeof(chipmunk_poly_t));
+        ret = chipmunk_hots_pk_to_hvc_poly(&l_wrap_pk, &leaf_nodes[i]);
         if (ret != 0) {
             log_it(L_ERROR, "ERROR: Failed to convert HOTS pk to HVC poly for signer %zu", i);
             DAP_DEL_MULTY(leaf_nodes);
@@ -157,6 +167,7 @@ static int test_performance_variable_signers(size_t num_signers)
         ret = chipmunk_create_individual_signature(
             (uint8_t*)test_message, message_len,
             &hots_secret_keys[i], &hots_public_keys[i],
+            public_keys[i].rho_seed,
             &tree, i,
             &individual_sigs[i]
         );

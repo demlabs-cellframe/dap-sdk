@@ -26,6 +26,7 @@
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "chipmunk.h"
+#include "chipmunk_hypertree.h"
 #include "dap_enc_chipmunk_ring.h"
 
 /**
@@ -36,18 +37,44 @@
 // with parametric form: CHIPMUNK_RING_SIGNATURE_SIZE(chipmunk_n, chipmunk_gamma)
 
 
+/*
+ * CR-D15.C (Round-3): a ring-signature keypair is now a Chipmunk hypertree
+ * keypair, not a single-shot HOTS keypair.  The ring still uses *one*
+ * underlying signature per chipmunk_ring_sign() invocation (over the
+ * Fiat-Shamir challenge), but a single hypertree keypair can back up to
+ * CHIPMUNK_HT_MAX_SIGNATURES distinct ring signatures before the CR-D3
+ * one-time-key exhaustion guard trips.  Without this migration every
+ * chipmunk_ring_sign() call exhausted the keypair in one shot, which is
+ * obviously useless for any real deployment.
+ *
+ * Canonical byte layout matches chipmunk_hypertree.h:
+ *   - chipmunk_ring_public_key_t::data  = CHIPMUNK_HT_PUBLIC_KEY_SIZE
+ *       (rho_seed[32] || hasher_seed[32] || root_poly_N*4 bytes)
+ *   - chipmunk_ring_private_key_t::data = CHIPMUNK_HT_PRIVATE_KEY_SIZE
+ *       (leaf_index_LE || key_seed[32] || tr[32] || pk_bytes)
+ *
+ * The runtime chipmunk_ht_private_key_t (which owns the materialised Merkle
+ * tree and a thread-safety mutex) is rebuilt on demand from these bytes by
+ * chipmunk_ring_sign() and re-serialised back so that the leaf_index
+ * advances monotonically in the caller's storage.
+ */
+
+#define CHIPMUNK_RING_PUBLIC_KEY_SIZE   CHIPMUNK_HT_PUBLIC_KEY_SIZE
+#define CHIPMUNK_RING_PRIVATE_KEY_SIZE  CHIPMUNK_HT_PRIVATE_KEY_SIZE
+#define CHIPMUNK_RING_CHALLENGE_SIG_SIZE CHIPMUNK_HT_SIGNATURE_SIZE
+
 /**
  * @brief Chipmunk_Ring public key structure
  */
 typedef struct chipmunk_ring_public_key {
-    uint8_t data[CHIPMUNK_PUBLIC_KEY_SIZE];  ///< Public key data from Chipmunk
+    uint8_t data[CHIPMUNK_RING_PUBLIC_KEY_SIZE];  ///< Serialised hypertree public key
 } chipmunk_ring_public_key_t;
 
 /**
  * @brief Chipmunk_Ring private key structure
  */
 typedef struct chipmunk_ring_private_key {
-    uint8_t data[CHIPMUNK_PRIVATE_KEY_SIZE];  ///< Private key data from Chipmunk
+    uint8_t data[CHIPMUNK_RING_PRIVATE_KEY_SIZE];  ///< Serialised hypertree private key (incl. leaf_index counter)
 } chipmunk_ring_private_key_t;
 
 /**
@@ -72,9 +99,18 @@ typedef struct chipmunk_ring_acorn {
     uint8_t *randomness;             ///< Randomness used in commitment (dynamic size)
     size_t randomness_size;          ///< Size of randomness in bytes
     
-    // Linkability tag for replay protection (dynamic size)
-    uint8_t *linkability_tag;                          ///< Linkability tag to prevent double-spending (dynamic)
-    size_t linkability_tag_size;                       ///< Size of linkability tag
+    /* CR-D8 fix (Round-3): the original design used this field as a
+     * per-acorn "linkability tag" computed as SHA3(CHIPMUNK_RING_DOMAIN_
+     * ACORN_LINKABILITY || pk_i).  Because the input depended only on the
+     * ring slot's public key, the value was publicly recomputable and
+     * therefore *revealed the ring slot* in every signature — the exact
+     * opposite of unlinkability.  It was also never consumed by the
+     * verifier.  The field is retained for wire-compatibility within the
+     * pre-production feature/chipmunk-ring branch; chipmunk_ring_acorn.c
+     * now zero-fills it so no information is leaked.  A real sigma-
+     * protocol-bound tag is tracked under CR-11. */
+    uint8_t *linkability_tag;                          ///< Reserved zero slot (CR-D8 mitigation)
+    size_t linkability_tag_size;                       ///< Size of linkability tag (payload is all-zero)
 
  } chipmunk_ring_acorn_t;
 
@@ -107,7 +143,11 @@ typedef struct chipmunk_ring_signature {
     
     // Multi-signer extensions (only used when required_signers > 1)
     uint8_t *threshold_zk_proofs;                      ///< ZK proofs from participating signers (dynamic)
-    size_t zk_proofs_size;                             ///< Total size of all ZK proofs data
+    /* CR-D9 fix (Round-3): explicit 64-bit width instead of size_t to keep
+     * the on-wire representation identical on 32-bit and 64-bit hosts.
+     * Schema entry in chipmunk_ring_serialize_schema.c now uses
+     * sizeof(uint64_t) to match. */
+    uint64_t zk_proofs_size;                           ///< Total size of all ZK proofs data
     uint32_t *zk_proof_lengths;                        ///< Length of each individual ZK proof (dynamic array)
     uint32_t participating_count;                      ///< Actual number of participants who signed
     
@@ -119,9 +159,18 @@ typedef struct chipmunk_ring_signature {
     uint32_t zk_proof_size_per_participant;            ///< Configurable ZK proof size (default: 64)
     uint32_t zk_iterations;                            ///< Number of SHAKE-256 iterations for ZK proofs
     
-    // Linkability control 
-    uint8_t *linkability_tag;                          ///< Linkability tag for anti-replay protection (dynamic size)
-    size_t linkability_tag_size;                       ///< Size of linkability tag
+    /* CR-D8 note (Round-3): this field is populated with H(ring_hash ||
+     * message || challenge) by chipmunk_ring_sign.  Because it depends on
+     * the message it DOES NOT provide linkability in the cryptographic
+     * sense: two signatures by the same signer over different messages
+     * have different tags, so repeat-signer detection is impossible.  It
+     * is effectively a per-signature session digest, useful only as an
+     * anti-replay nonce at the transport layer.  A proper linkability
+     * tag bound to the signer's secret via a sigma protocol is tracked
+     * under CR-11 (master-plan phase).  Do not treat this field as
+     * evidence of key reuse; doing so will produce false negatives. */
+    uint8_t *linkability_tag;                          ///< Per-signature session digest (NOT a cryptographic linkability tag)
+    size_t linkability_tag_size;                       ///< Size of session digest
 } chipmunk_ring_signature_t;
 
 /**
@@ -175,7 +224,16 @@ void chipmunk_ring_container_free(chipmunk_ring_container_t *a_ring);
  * @param signature Output signature
  * @return 0 on success, negative on error
  */
-int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
+/*
+ * CR-D15.C: a_private_key is *not* const anymore.  The hypertree sk carries
+ * a monotonic leaf_index; chipmunk_ring_sign() bumps it on every call and
+ * writes the updated serialised form back into a_private_key->data so that
+ * subsequent calls consume the next leaf.  Passing the same buffer to two
+ * concurrent signers from different threads is forbidden — callers must
+ * serialise access externally (dap_enc_chipmunk_ring_sign() already does
+ * this by only exposing one signer at a time).
+ */
+int chipmunk_ring_sign(chipmunk_ring_private_key_t *a_private_key,
                      const void *a_message, size_t a_message_size,
                      const chipmunk_ring_container_t *a_ring,
                      uint32_t a_required_signers,

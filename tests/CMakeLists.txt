@@ -268,6 +268,16 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ri
     register_dap_test(test_unit_crypto_chipmunk_ring_implementation_correctness "unit;crypto;ring;implementation;correctness")
 endif()
 
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_round3_regression.c)
+    add_dap_test(test_unit_crypto_chipmunk_round3_regression unit/crypto/chipmunk_ring/test_chipmunk_round3_regression.c)
+    register_dap_test(test_unit_crypto_chipmunk_round3_regression "unit;crypto;ring;round3;regression")
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_many_time.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_many_time unit/crypto/chipmunk_ring/test_chipmunk_ring_many_time.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_many_time "unit;crypto;ring;cr-d15c;regression")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
@@ -320,6 +330,43 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_invntt_fix.c)
     add_dap_test(test_unit_crypto_chipmunk_invntt_fix unit/crypto/chipmunk/test_chipmunk_invntt_fix.c)
     register_dap_test(test_unit_crypto_chipmunk_invntt_fix "unit;crypto;chipmunk")
+endif()
+
+# CR-D5 regression: chipmunk_hots_setup determinism against uninitialised-stack UB
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_hots_setup_determinism.c)
+    add_dap_test(test_unit_crypto_chipmunk_hots_setup_determinism
+        unit/crypto/chipmunk/test_chipmunk_hots_setup_determinism.c)
+    register_dap_test(test_unit_crypto_chipmunk_hots_setup_determinism
+        "unit;crypto;chipmunk;regression")
+endif()
+
+# CR-D3 regression: Chipmunk private keys are strictly one-time; second
+# chipmunk_sign call must fail fast with CHIPMUNK_ERROR_KEY_EXHAUSTED.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_one_time_exhaustion.c)
+    add_dap_test(test_unit_crypto_chipmunk_one_time_exhaustion
+        unit/crypto/chipmunk/test_chipmunk_one_time_exhaustion.c)
+    register_dap_test(test_unit_crypto_chipmunk_one_time_exhaustion
+        "unit;crypto;chipmunk;regression;hots")
+endif()
+
+# CR-D15.A regression: honest HVC Merkle layer (Ajtai hash, leaf binding,
+# full path verification, hasher-seed sensitivity).  Catches the four
+# "security theatre" breaks that the pre-Round-5 implementation carried.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_hvc_honest.c)
+    add_dap_test(test_unit_crypto_chipmunk_hvc_honest
+        unit/crypto/chipmunk/test_chipmunk_hvc_honest.c)
+    register_dap_test(test_unit_crypto_chipmunk_hvc_honest
+        "unit;crypto;chipmunk;regression;hvc;tree")
+endif()
+
+# CR-D15.B regression: Chipmunk Hypertree (many-time signature via
+# Merkle tree over HOTS leaves).  Exercises every leaf_index, tamper
+# detection, exhaustion fail-fast, serialise round-trips.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_hypertree.c)
+    add_dap_test(test_unit_crypto_chipmunk_hypertree
+        unit/crypto/chipmunk/test_chipmunk_hypertree.c)
+    register_dap_test(test_unit_crypto_chipmunk_hypertree
+        "unit;crypto;chipmunk;regression;hypertree")
 endif()
 
 # Keccak/SHA3 Known Answer Tests

@@ -27,6 +27,7 @@
 
 #include "dap_common.h"
 #include "dap_crypto_common.h"
+#include "dap_memwipe.h"
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_ring_serialize_schema.h"
 #include "dap_serialize.h"
@@ -88,9 +89,9 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
     // Set key type
     a_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING;
 
-    // Set key sizes to match Chipmunk specifications
-    a_key->pub_key_data_size = CHIPMUNK_PUBLIC_KEY_SIZE;   // 4128 bytes
-    a_key->priv_key_data_size = CHIPMUNK_PRIVATE_KEY_SIZE; // 4208 bytes
+    // CR-D15.C: ring keypair is now a Chipmunk hypertree keypair.
+    a_key->pub_key_data_size  = CHIPMUNK_RING_PUBLIC_KEY_SIZE;   // CHIPMUNK_HT_PUBLIC_KEY_SIZE (~2112 B)
+    a_key->priv_key_data_size = CHIPMUNK_RING_PRIVATE_KEY_SIZE;  // CHIPMUNK_HT_PRIVATE_KEY_SIZE (~4260 B)
 
     // Allocate key data
     a_key->pub_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->pub_key_data_size);
@@ -103,26 +104,22 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
         return -1;
     }
 
-    // Generate keys based on whether a seed is provided
+    // CR-D15.C: delegate to chipmunk_ring_key_new_generate / chipmunk_ring_key_new,
+    // which build a hypertree keypair via chipmunk_ht_keypair(_from_seed) and
+    // serialise the canonical byte layout into the caller's buffers.
+    int l_rc;
     if (a_seed) {
-        // Deterministic key generation
-        if (chipmunk_keypair_from_seed(a_seed,
-                                       a_key->pub_key_data, a_key->pub_key_data_size,
-                                       a_key->priv_key_data, a_key->priv_key_data_size) != 0) {
-            log_it(L_ERROR, "Failed to generate deterministic Chipmunk_Ring key");
-            free(a_key->pub_key_data);
-            free(a_key->priv_key_data);
-        return -1;
-        }
+        l_rc = chipmunk_ring_key_new_generate(a_key, a_seed, a_seed_size, a_key_size);
     } else {
-        // Random key generation
-        if (chipmunk_keypair(a_key->pub_key_data, a_key->pub_key_data_size,
-                             a_key->priv_key_data, a_key->priv_key_data_size) != 0) {
-            log_it(L_ERROR, "Failed to generate random Chipmunk_Ring key");
-            free(a_key->pub_key_data);
-            free(a_key->priv_key_data);
-            return -1;
-        }
+        l_rc = chipmunk_ring_key_new(a_key);
+    }
+    if (l_rc != 0) {
+        log_it(L_ERROR, "Failed to generate Chipmunk_Ring hypertree key (rc=%d)", l_rc);
+        free(a_key->pub_key_data);
+        a_key->pub_key_data = NULL;
+        free(a_key->priv_key_data);
+        a_key->priv_key_data = NULL;
+        return -1;
     }
 
     debug_if(s_debug_more, L_DEBUG, "Chipmunk_Ring key generated successfully");
@@ -161,7 +158,7 @@ size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size, uint32_t a_r
 /**
  * @brief Create Chipmunk_Ring signature
  */
-int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
+int dap_enc_chipmunk_ring_sign(void *a_priv_key,
                               const void *a_data,
                               size_t a_data_size,
                               uint8_t **a_ring_pub_keys,
@@ -211,13 +208,30 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return -EINVAL;
     }
 
-    // Convert private key
-    chipmunk_ring_private_key_t l_priv_key;
-    if (sizeof(l_priv_key.data) != CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_ERROR, "Private key size mismatch");
+    /*
+     * CR-D15.C: chipmunk_ring_sign bumps leaf_index inside a_private_key
+     * and serialises the result back.  The caller's buffer MUST receive
+     * that persistent update — otherwise every sign call would reuse the
+     * same leaf_index and CR-D3's one-time exhaustion guard would fire on
+     * the second call (at best) or allow silent key recovery (at worst).
+     *
+     * We therefore stage the bytes into a local chipmunk_ring_private_key_t
+     * (so we can pass a typed pointer into the pure-C API), invoke the
+     * signer, and flush the mutated bytes back into the caller's buffer
+     * via memcpy on success.  On failure we still flush if the signer
+     * managed to observe the leaf (its contract is "buffer reflects the
+     * post-sign state on return"), which prevents the buffer drifting
+     * out of sync with the actual tree state.
+     */
+    if (sizeof(((chipmunk_ring_private_key_t*)0)->data) != CHIPMUNK_RING_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR,
+               "CR-D15.C: chipmunk_ring_private_key_t.data size mismatch at compile-time (have %zu, expected %d)",
+               sizeof(((chipmunk_ring_private_key_t*)0)->data),
+               (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE);
         return -EFAULT;
     }
-    memcpy(l_priv_key.data, a_priv_key, CHIPMUNK_PRIVATE_KEY_SIZE);
+    chipmunk_ring_private_key_t l_priv_key;
+    memcpy(l_priv_key.data, a_priv_key, CHIPMUNK_RING_PRIVATE_KEY_SIZE);
 
     // Create ring container
     // debug_if(s_debug_more, L_INFO, "Creating ring container for ring_size=%zu", a_ring_size);
@@ -233,144 +247,111 @@ int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
         return -ENOMEM;
     }
 
-    size_t key_size = CHIPMUNK_PUBLIC_KEY_SIZE; // Use actual data size, not struct size
-    size_t total_size = key_size * a_ring_size;
-
-    // Check for potential issues
-    if (a_ring_size == 0) {
-        debug_if(s_debug_more, L_ERROR, "Ring size is 0 - invalid parameter");
-        return -EINVAL;
-    }
+    /*
+     * Size bookkeeping for the ring-member public keys.  Post CR-D15.C
+     * these are serialised chipmunk_ht_public_key_t blobs
+     * (CHIPMUNK_RING_PUBLIC_KEY_SIZE bytes = rho_seed||hasher_seed||root).
+     * The overflow check below keeps us fail-fast on absurd ring sizes
+     * rather than allocating a wrapped buffer.
+     */
+    const size_t key_size = CHIPMUNK_RING_PUBLIC_KEY_SIZE;
     if (key_size == 0) {
-        debug_if(s_debug_more, L_ERROR, "Key size is 0 - invalid CHIPMUNK_PUBLIC_KEY_SIZE");
+        log_it(L_ERROR, "Internal error: CHIPMUNK_RING_PUBLIC_KEY_SIZE resolved to zero");
+        DAP_DELETE(l_ring.ring_hash);
         return -EINVAL;
     }
+    const size_t total_size = key_size * a_ring_size;
     if (total_size / key_size != a_ring_size) {
-        debug_if(s_debug_more, L_ERROR, "Integer overflow in size calculation: %zu * %zu != %zu",
-                 key_size, a_ring_size, total_size);
+        log_it(L_ERROR,
+               "Integer overflow in ring pk allocation: %zu * %zu != %zu",
+               key_size, a_ring_size, total_size);
+        DAP_DELETE(l_ring.ring_hash);
         return -EINVAL;
     }
 
-    debug_if(s_debug_more, L_INFO, "About to allocate %zu public keys, key_size=%zu, total_size=%zu",
-              a_ring_size, key_size, total_size);
-
-    // Use calloc to allocate array of structs (safer than DAP_NEW_Z_SIZE for structs with padding)
-    l_ring.public_keys = (chipmunk_ring_public_key_t*)calloc(a_ring_size, sizeof(chipmunk_ring_public_key_t));
-    debug_if(s_debug_more, L_INFO, "Allocation result: %p", l_ring.public_keys);
-
+    l_ring.public_keys = (chipmunk_ring_public_key_t*)calloc(a_ring_size,
+                                                             sizeof(chipmunk_ring_public_key_t));
     if (!l_ring.public_keys) {
-        debug_if(s_debug_more, L_ERROR, "Failed to allocate memory for ring public keys");
+        log_it(L_ERROR, "Failed to allocate %zu ring public keys", a_ring_size);
+        DAP_DELETE(l_ring.ring_hash);
         return -ENOMEM;
     }
 
-    // Copy public keys to ring container
     for (size_t i = 0; i < a_ring_size; i++) {
         if (!a_ring_pub_keys[i]) {
             log_it(L_ERROR, "Null public key at index %zu", i);
-            DAP_DELETE(l_ring.public_keys);
+            free(l_ring.public_keys);
             DAP_DELETE(l_ring.ring_hash);
             return -EINVAL;
         }
-
-        memcpy(l_ring.public_keys[i].data, a_ring_pub_keys[i], CHIPMUNK_PUBLIC_KEY_SIZE);
-        
-        // Debug: show generic public key metadata in ring
-        if (s_debug_more) {
-            log_it(L_INFO, "=== RING CREATION: PUBLIC KEY STORED ===");
-            log_it(L_INFO, "StoredPubKey[%zu] has size=%d bytes", i, CHIPMUNK_PUBLIC_KEY_SIZE);
-        }
+        memcpy(l_ring.public_keys[i].data, a_ring_pub_keys[i], key_size);
     }
 
-    debug_if(s_debug_more, L_INFO, "All keys copied successfully, preparing for ring hash generation");
-
-    // Generate ring hash for verification consistency
-    // Hash all public keys together to create unique ring identifier
-    size_t l_combined_size = a_ring_size * CHIPMUNK_PUBLIC_KEY_SIZE;
-
-    // TEMPORARY: Try a smaller allocation first to test heap integrity
-    debug_if(s_debug_more, L_INFO, "Testing heap integrity with small allocation");
-    void *l_test_alloc = malloc(1024);
-    if (!l_test_alloc) {
-        log_it(L_ERROR, "Heap integrity test failed - cannot allocate 1024 bytes");
-        DAP_DELETE(l_ring.public_keys);
-        DAP_DELETE(l_ring.ring_hash);
-        return -ENOMEM;
-    }
-    free(l_test_alloc);
-    debug_if(s_debug_more, L_INFO, "Heap integrity test passed");
-
-    debug_if(s_debug_more, L_INFO, "About to allocate combined_keys: ring_size=%zu, key_size=%d, total=%zu",
-             a_ring_size, CHIPMUNK_PUBLIC_KEY_SIZE, l_combined_size);
-
-    uint8_t *l_combined_keys = DAP_NEW_SIZE(uint8_t, l_combined_size);
-    debug_if(s_debug_more, L_INFO, "Combined keys allocation result: %p", l_combined_keys);
+    /*
+     * Ring-hash = SHA3-256(pk_0 || pk_1 || ... || pk_{N-1}).  We build the
+     * concatenated buffer in a single scratch allocation and wipe it
+     * afterwards — the hash itself is a public identifier so no secret
+     * material is leaked, but keeping scratch tight matches the rest of
+     * the module's hygiene.
+     */
+    uint8_t *l_combined_keys = DAP_NEW_SIZE(uint8_t, total_size);
     if (!l_combined_keys) {
-        log_it(L_ERROR, "Failed to allocate memory for combined keys: size=%zu", l_combined_size);
-        DAP_DELETE(l_ring.public_keys);
+        log_it(L_ERROR, "Failed to allocate %zu bytes of scratch for ring hash", total_size);
+        free(l_ring.public_keys);
         DAP_DELETE(l_ring.ring_hash);
         return -ENOMEM;
     }
-
-    // Concatenate all public keys
     for (size_t i = 0; i < a_ring_size; i++) {
-        if (!a_ring_pub_keys[i]) {
-            log_it(L_ERROR, "Ring public key %zu is NULL", i);
-            DAP_DEL_MULTY(l_combined_keys);
-            DAP_DELETE(l_ring.public_keys);
-        DAP_DELETE(l_ring.ring_hash);
-            return -EINVAL;
-        }
-        memcpy(l_combined_keys + i * CHIPMUNK_PUBLIC_KEY_SIZE,
-               a_ring_pub_keys[i], CHIPMUNK_PUBLIC_KEY_SIZE);
+        memcpy(l_combined_keys + i * key_size, a_ring_pub_keys[i], key_size);
     }
-
-    // Hash all keys together
-    int l_hash_result = dap_chipmunk_hash_sha3_256(l_ring.ring_hash, l_combined_keys,
-                                                  a_ring_size * CHIPMUNK_PUBLIC_KEY_SIZE);
+    int l_hash_result = dap_chipmunk_hash_sha3_256(l_ring.ring_hash,
+                                                   l_combined_keys, total_size);
     DAP_DEL_MULTY(l_combined_keys);
-
     if (l_hash_result != 0) {
         log_it(L_ERROR, "Failed to hash ring public keys");
-        DAP_DELETE(l_ring.public_keys);
+        free(l_ring.public_keys);
         DAP_DELETE(l_ring.ring_hash);
         return -EFAULT;
     }
 
-    // Create signature
     chipmunk_ring_signature_t l_ring_sig;
     memset(&l_ring_sig, 0, sizeof(l_ring_sig));
 
-    // USER CHOICE: Always use embedded keys by default (user can override via extended API)
-    // Embedded keys provide self-contained signatures suitable for any ring size
-    bool use_embedded_keys = true; // Default: embed keys for portability and simplicity
-    
+    // Always embed ring public keys in the signature so that chipmunk_ring_verify
+    // is self-contained (no external resolver needed).
+    const bool use_embedded_keys = true;
+
     int l_result = chipmunk_ring_sign(&l_priv_key, a_data, a_data_size,
                                      &l_ring, a_required_signers, use_embedded_keys, &l_ring_sig);
 
-    // Clean up ring container
     free(l_ring.public_keys);
     DAP_DELETE(l_ring.ring_hash);
 
+    /*
+     * CR-D15.C: flush the (possibly-mutated) private-key bytes back into
+     * the caller's buffer REGARDLESS of success, because chipmunk_ring_sign
+     * may have consumed a leaf even on a later-stage failure.  Leaving the
+     * caller's buffer with a stale leaf_index is the worst outcome — it
+     * would enable silent reuse of the same HOTS one-time key.
+     */
+    memcpy(a_priv_key, l_priv_key.data, CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+    dap_memwipe(l_priv_key.data, sizeof(l_priv_key.data));
+
     if (l_result != 0) {
         log_it(L_ERROR, "Chipmunk_Ring signature creation failed: %d", l_result);
-        // Only call signature_free if chipmunk_ring_sign allocated something
-        // chipmunk_ring_sign handles its own cleanup on error, so we don't need to call free here
         return l_result;
     }
 
-    // Serialize signature to output buffer
     l_result = chipmunk_ring_signature_to_bytes(&l_ring_sig, a_signature, a_signature_size);
-
-    // Clean up signature (must be done after serialization)
     chipmunk_ring_signature_free(&l_ring_sig);
-
     if (l_result != 0) {
         log_it(L_ERROR, "Failed to serialize Chipmunk_Ring signature: %d", l_result);
         return l_result;
     }
 
-    debug_if(s_debug_more, L_INFO, "Chipmunk_Ring signature created successfully (ring size: %zu, required_signers: %u, embedded_keys: %s)",
-           a_ring_size, a_required_signers, use_embedded_keys ? "true" : "false");
+    debug_if(s_debug_more, L_INFO,
+             "Chipmunk_Ring signature created successfully (ring size: %zu, required_signers: %u, embedded_keys: %s)",
+             a_ring_size, a_required_signers, use_embedded_keys ? "true" : "false");
 
     return 0;
 }
@@ -388,23 +369,34 @@ void dap_enc_chipmunk_ring_key_generate_callback(struct dap_enc_key *a_key, cons
 }
 
 
+/*
+ * Ring signatures fundamentally need the full ring (set of public keys) at
+ * sign/verify time.  The plain dap_enc_key::sign_get / sign_verify callbacks
+ * accept only a message + key, which is insufficient to distinguish "ring
+ * of 1 (signer only)" from "ring of N".  Callers MUST go through the
+ * higher-level dap_enc_chipmunk_ring_sign / chipmunk_ring_verify entry
+ * points that take an explicit ring argument.  The callbacks below are
+ * retained for symmetry with other signature types (so dap_enc_key
+ * dispatch tables stay uniform) and return a loud, documented error.
+ */
 int dap_enc_chipmunk_ring_get_sign(struct dap_enc_key *a_key, const void *a_data,
                                   size_t a_data_size, void *a_output, size_t a_output_size) {
-    log_it(L_ERROR, "Chipmunk_Ring signing not implemented via this callback");
-    return -1;
+    (void)a_key; (void)a_data; (void)a_data_size;
+    (void)a_output; (void)a_output_size;
+    log_it(L_ERROR,
+           "Chipmunk_Ring signing cannot go through the plain dap_enc_key sign callback — "
+           "ring signatures need the explicit ring (use dap_enc_chipmunk_ring_sign())");
+    return -ENOTSUP;
 }
 
 int dap_enc_chipmunk_ring_verify_sign(struct dap_enc_key *a_key, const void *a_data,
                                      size_t a_data_size, void *a_sign, size_t a_sign_size) {
-    // For ring signatures, we need the ring public keys to be available in the signature data
-    // Since DAP SDK doesn't store ring information in the signature, ring verification
-    // is not supported through this callback mechanism.
-
-    // Ring signatures require the full ring context for verification, which is not
-    // available in the standard DAP signature verification flow.
-
-    log_it(L_ERROR, "Chipmunk_Ring verification requires ring context - not supported via standard callback");
-    return -1;
+    (void)a_key; (void)a_data; (void)a_data_size;
+    (void)a_sign; (void)a_sign_size;
+    log_it(L_ERROR,
+           "Chipmunk_Ring verification cannot go through the plain dap_enc_key verify callback — "
+           "ring signatures need the explicit ring (use chipmunk_ring_verify())");
+    return -ENOTSUP;
 }
 
 size_t dap_enc_chipmunk_ring_write_signature(const void *a_sign, size_t a_sign_size, uint8_t *a_buf) {
@@ -445,49 +437,146 @@ size_t dap_enc_chipmunk_ring_write_signature(const void *a_sign, size_t a_sign_s
     return l_result.bytes_written;
 }
 
-size_t dap_enc_chipmunk_ring_write_private_key(const void *a_private_key, size_t a_private_key_size, uint8_t *a_buf) {
-    log_it(L_ERROR, "Chipmunk_Ring private key serialization not implemented");
-    return 0;
+/*
+ * CR-D15.C / CR-D10 alignment: chipmunk_ring priv_key_data and pub_key_data
+ * already hold the canonical, fixed-layout hypertree bytes (see
+ * chipmunk_hypertree.c for the exact serialisation).  The read/write
+ * helpers below are therefore simple framed copies — no ad-hoc format,
+ * no re-encoding of internal fields.  We DO NOT try to paste a magic
+ * header or version tag here because dap_sign.c already carries an
+ * envelope around the payload (signature type id + length).  Adding a
+ * second wrapper would make the wire format strictly longer without
+ * improving parseability.
+ *
+ * Return conventions for the dap_enc_key callback table:
+ *   write_* : returns number of bytes written on success, 0 on failure.
+ *   read_*  : returns malloc'd copy on success, NULL on failure.
+ *             Caller is responsible for DAP_DELETE.
+ */
+size_t dap_enc_chipmunk_ring_write_private_key(const void *a_private_key,
+                                               size_t a_private_key_size,
+                                               uint8_t *a_buf) {
+    if (!a_private_key || !a_buf) {
+        log_it(L_ERROR, "Invalid parameters for Chipmunk_Ring private key serialization");
+        return 0;
+    }
+    if (a_private_key_size != CHIPMUNK_RING_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR,
+               "Chipmunk_Ring private key size mismatch on write: have %zu, expected %d",
+               a_private_key_size, (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+        return 0;
+    }
+    memcpy(a_buf, a_private_key, CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+    debug_if(s_debug_more, L_DEBUG, "Chipmunk_Ring private key serialised: %d bytes",
+             (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+    return CHIPMUNK_RING_PRIVATE_KEY_SIZE;
 }
 
-size_t dap_enc_chipmunk_ring_write_public_key(const void *a_public_key, size_t a_public_key_size, uint8_t *a_buf) {
-    log_it(L_ERROR, "Chipmunk_Ring public key serialization not implemented");
-    return 0;
+size_t dap_enc_chipmunk_ring_write_public_key(const void *a_public_key,
+                                              size_t a_public_key_size,
+                                              uint8_t *a_buf) {
+    if (!a_public_key || !a_buf) {
+        log_it(L_ERROR, "Invalid parameters for Chipmunk_Ring public key serialization");
+        return 0;
+    }
+    if (a_public_key_size != CHIPMUNK_RING_PUBLIC_KEY_SIZE) {
+        log_it(L_ERROR,
+               "Chipmunk_Ring public key size mismatch on write: have %zu, expected %d",
+               a_public_key_size, (int)CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+        return 0;
+    }
+    memcpy(a_buf, a_public_key, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+    debug_if(s_debug_more, L_DEBUG, "Chipmunk_Ring public key serialised: %d bytes",
+             (int)CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+    return CHIPMUNK_RING_PUBLIC_KEY_SIZE;
 }
 
 size_t dap_enc_chipmunk_ring_ser_private_key_size(struct dap_enc_key *a_key) {
-    return a_key->priv_key_data_size;
+    (void)a_key;
+    return CHIPMUNK_RING_PRIVATE_KEY_SIZE;
 }
 
 size_t dap_enc_chipmunk_ring_ser_public_key_size(struct dap_enc_key *a_key) {
-    return a_key->pub_key_data_size;
+    (void)a_key;
+    return CHIPMUNK_RING_PUBLIC_KEY_SIZE;
 }
 
+/*
+ * The ring signature itself is variable-length (depends on ring size,
+ * embedded keys, acorn proofs, etc.) and is serialised by
+ * chipmunk_ring_signature_to_bytes on the sign side via the universal
+ * dap_serialize schema.  The read helper below therefore simply hands
+ * back a freshly-allocated bytewise clone — actual parsing happens at
+ * verify time (chipmunk_ring_signature_from_bytes).  If a buffer cannot
+ * round-trip through dap_serialize at verify, the caller will see a
+ * clean rc<0 from chipmunk_ring_verify; no corrupted output reaches
+ * downstream code.
+ */
 uint8_t* dap_enc_chipmunk_ring_read_signature(const uint8_t *a_buf, size_t a_buf_size) {
-    log_it(L_ERROR, "Chipmunk_Ring signature deserialization not implemented");
-    return NULL;
+    if (!a_buf || a_buf_size == 0) {
+        log_it(L_ERROR, "Invalid buffer for Chipmunk_Ring signature deserialization");
+        return NULL;
+    }
+    uint8_t *l_sign = DAP_NEW_SIZE(uint8_t, a_buf_size);
+    if (!l_sign) {
+        log_it(L_ERROR, "Failed to allocate %zu bytes for Chipmunk_Ring signature", a_buf_size);
+        return NULL;
+    }
+    memcpy(l_sign, a_buf, a_buf_size);
+    return l_sign;
 }
 
 uint8_t* dap_enc_chipmunk_ring_read_private_key(const uint8_t *a_buf, size_t a_buf_size) {
-    log_it(L_ERROR, "Chipmunk_Ring private key deserialization not implemented");
-    return NULL;
+    if (!a_buf || a_buf_size != CHIPMUNK_RING_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR,
+               "Invalid buffer for Chipmunk_Ring private key deserialization (size=%zu, expected=%d)",
+               a_buf_size, (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+        return NULL;
+    }
+    uint8_t *l_priv_key = DAP_NEW_SIZE(uint8_t, CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+    if (!l_priv_key) {
+        log_it(L_ERROR, "Failed to allocate %d bytes for Chipmunk_Ring private key",
+               (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+        return NULL;
+    }
+    memcpy(l_priv_key, a_buf, CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+    return l_priv_key;
 }
 
 uint8_t* dap_enc_chipmunk_ring_read_public_key(const uint8_t *a_buf, size_t a_buf_size) {
-    log_it(L_ERROR, "Chipmunk_Ring public key deserialization not implemented");
-    return NULL;
+    if (!a_buf || a_buf_size != CHIPMUNK_RING_PUBLIC_KEY_SIZE) {
+        log_it(L_ERROR,
+               "Invalid buffer for Chipmunk_Ring public key deserialization (size=%zu, expected=%d)",
+               a_buf_size, (int)CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+        return NULL;
+    }
+    uint8_t *l_pub_key = DAP_NEW_SIZE(uint8_t, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+    if (!l_pub_key) {
+        log_it(L_ERROR, "Failed to allocate %d bytes for Chipmunk_Ring public key",
+               (int)CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+        return NULL;
+    }
+    memcpy(l_pub_key, a_buf, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+    return l_pub_key;
 }
 
 size_t dap_enc_chipmunk_ring_deser_sig_size(struct dap_enc_key *a_key) {
+    // Ring signature is variable-length: total size is carried in the
+    // dap_sign envelope.  The dap_enc_key dispatcher uses this hook to
+    // probe fixed-size signature types (e.g. pure Chipmunk) — returning
+    // 0 tells it to read the length from the wire instead.
+    (void)a_key;
     return 0;
 }
 
 size_t dap_enc_chipmunk_ring_deser_public_key_size(struct dap_enc_key *a_key) {
-    return a_key->pub_key_data_size;
+    (void)a_key;
+    return CHIPMUNK_RING_PUBLIC_KEY_SIZE;
 }
 
 size_t dap_enc_chipmunk_ring_deser_private_key_size(struct dap_enc_key *a_key) {
-    return a_key->priv_key_data_size;
+    (void)a_key;
+    return CHIPMUNK_RING_PRIVATE_KEY_SIZE;
 }
 
 void dap_enc_chipmunk_ring_signature_delete(uint8_t *a_sign) {

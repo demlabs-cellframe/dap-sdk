@@ -187,8 +187,15 @@ static bool s_test_invalid_inputs(void) {
     );
     dap_assert(l_signature == NULL, "Signature creation should fail with ring size 0");
 
-    // Test with invalid signer index
-    dap_enc_key_t* l_ring_keys[3] = {l_signer_key, l_signer_key, l_signer_key};
+    // CR-D2/CR-D19: each ring slot must hold a distinct public key;
+    // otherwise the signer is identifiable and chipmunk_ring_container_create
+    // rejects the input.  Build a ring of three distinct keys including the
+    // signer.
+    dap_enc_key_t* l_decoy_key_a = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_assert(l_decoy_key_a != NULL, "Decoy key A generation should succeed");
+    dap_enc_key_t* l_decoy_key_b = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+    dap_assert(l_decoy_key_b != NULL, "Decoy key B generation should succeed");
+    dap_enc_key_t* l_ring_keys[3] = {l_signer_key, l_decoy_key_a, l_decoy_key_b};
     l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
@@ -199,7 +206,8 @@ static bool s_test_invalid_inputs(void) {
     dap_assert(l_signature != NULL, "Anonymous signature creation should succeed with valid ring");
     DAP_DELETE(l_signature);  // Free first signature before creating second
 
-    // Test with negative signer index (size_t overflow)
+    // Second call with the same (distinct) ring exercises the deterministic
+    // signing path; signature must also succeed.
     l_signature = dap_sign_create_ring(
         l_signer_key,
         &l_message_hash, sizeof(l_message_hash),
@@ -212,6 +220,12 @@ static bool s_test_invalid_inputs(void) {
     // Cleanup
     DAP_DELETE(l_signature);
     dap_enc_key_delete(l_signer_key);
+    if (l_decoy_key_a) {
+        dap_enc_key_delete(l_decoy_key_a);
+    }
+    if (l_decoy_key_b) {
+        dap_enc_key_delete(l_decoy_key_b);
+    }
 
     log_it(L_INFO, "Invalid inputs test passed");
     return true;

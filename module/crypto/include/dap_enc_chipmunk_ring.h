@@ -235,7 +235,13 @@ int dap_enc_chipmunk_ring_verify_sign(struct dap_enc_key *a_key, const void *a_d
  * @param a_signature_size Size of signature buffer
  * @return 0 on success, negative on error
  */
-int dap_enc_chipmunk_ring_sign(const void *a_priv_key,
+/*
+ * CR-D15.C: a_priv_key is not const anymore.  chipmunk_ring_sign bumps the
+ * hypertree leaf_index inside the caller's buffer and we flush the update
+ * back here so that the next call consumes the next leaf.  Callers must
+ * serialise concurrent access to this buffer (one-signer-at-a-time).
+ */
+int dap_enc_chipmunk_ring_sign(void *a_priv_key,
                               const void *a_data,
                               size_t a_data_size,
                               uint8_t **a_ring_pub_keys,

@@ -147,34 +147,41 @@ static bool s_test_hots_equation_components(void) {
  * @brief Test HOTS with ring signature context data
  */
 static bool s_test_hots_with_ring_context(void) {
-    log_it(L_INFO, "Testing HOTS with ring signature context data...");
-    
-    // Generate keys similar to ring signature context
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    log_it(L_INFO, "Testing HOTS single-shot sign/verify with ring-style challenge input...");
+
+    /*
+     * CR-D15.C: the ring key type now holds a serialised hypertree sk
+     * (priv_key_data_size == CHIPMUNK_RING_PRIVATE_KEY_SIZE), which is
+     * incompatible with the single-shot chipmunk_sign()/chipmunk_verify()
+     * ABI this test exercises.  We use the plain single-shot CHIPMUNK
+     * key type here — the test's purpose is to confirm that HOTS-level
+     * sign/verify still round-trips on a challenge-shaped input, not
+     * to exercise the ring pipeline (which has its own end-to-end test
+     * via dap_sign_create_ring / dap_sign_verify_ring).
+     */
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK,
+                                                           NULL, 0, NULL, 0, 256);
     dap_assert(l_signer_key != NULL, "Signer key generation should succeed");
-    
-    // Create a challenge similar to ring signature challenge
+
     dap_hash_fast_t l_challenge_hash;
     dap_hash_fast(TEST_MESSAGE, strlen(TEST_MESSAGE), &l_challenge_hash);
-    
+
     uint8_t l_challenge[32];
     memcpy(l_challenge, &l_challenge_hash, 32);
-    
+
     log_it(L_INFO, "Generated challenge: %02x%02x%02x%02x %02x%02x%02x%02x",
            l_challenge[0], l_challenge[1], l_challenge[2], l_challenge[3],
            l_challenge[4], l_challenge[5], l_challenge[6], l_challenge[7]);
-    
-    // Create signature with challenge (similar to ring signature)
+
     uint8_t l_signature[CHIPMUNK_SIGNATURE_SIZE];
     int l_sign_result = chipmunk_sign(l_signer_key->priv_key_data, l_challenge, 32, l_signature);
     dap_assert(l_sign_result == CHIPMUNK_ERROR_SUCCESS, "Challenge signing should succeed");
-    
-    // Verify signature with challenge
+
     int l_verify_result = chipmunk_verify(l_signer_key->pub_key_data, l_challenge, 32, l_signature);
     log_it(L_INFO, "Challenge verification result: %d", l_verify_result);
-    
+
     dap_enc_key_delete(l_signer_key);
-    
+
     dap_assert(l_verify_result == CHIPMUNK_ERROR_SUCCESS, "Challenge verification should succeed");
     return l_verify_result == CHIPMUNK_ERROR_SUCCESS;
 }

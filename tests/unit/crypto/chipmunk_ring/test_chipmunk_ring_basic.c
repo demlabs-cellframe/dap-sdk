@@ -104,15 +104,21 @@ static bool s_test_basic_ring_operations(void) {
     dap_assert(l_verify_result == 0, "Ring signature verification should succeed");
     log_it(L_INFO, "Signature verification test completed");
 
-    // Test with wrong message
+    // Test with wrong message — a ring signature that verifies against
+    // the original message must NOT verify against any distinct message.
     log_it(L_INFO, "Testing signature verification with wrong message...");
-    // Temporarily disable wrong message test
-    // dap_hash_fast_t l_wrong_hash = {0};
-    // l_wrong_hash.raw[0] = 0xFF;
-    // l_verify_result = dap_sign_verify_ring(l_signature, &l_wrong_hash, sizeof(l_wrong_hash),
-    //                                       l_ring_keys, TEST_RING_SIZE);
-    // dap_assert(l_verify_result != 0, "Ring signature verification should fail with wrong message");
-    log_it(L_INFO, "Wrong message verification test temporarily disabled for debugging");
+    dap_hash_fast_t l_wrong_hash;
+    memset(&l_wrong_hash, 0, sizeof(l_wrong_hash));
+    bool l_wrong_hash_ok = dap_hash_fast("different payload — wrong message probe",
+                                         sizeof("different payload — wrong message probe") - 1,
+                                         &l_wrong_hash);
+    dap_assert(l_wrong_hash_ok == true, "Wrong-message hashing should succeed");
+    dap_assert(memcmp(&l_wrong_hash, &l_message_hash, sizeof(l_wrong_hash)) != 0,
+               "Wrong-message hash must differ from the signed message hash");
+    l_verify_result = dap_sign_verify_ring(l_signature, &l_wrong_hash, sizeof(l_wrong_hash),
+                                           l_ring_keys, TEST_RING_SIZE);
+    dap_assert(l_verify_result != 0,
+               "Ring signature verification MUST fail with a wrong message");
 
     // Test ring signature detection
     bool l_is_ring = dap_sign_is_ring(l_signature);
@@ -161,8 +167,13 @@ static bool s_test_error_handling(void) {
                                       l_ring_keys, 1, 1);
     dap_assert(l_signature == NULL, "Signature creation should fail with ring size < 2");
 
-    // Test with valid ring of size 2 (anonymous signature)
-    dap_enc_key_t* l_ring_keys_2[2] = {l_signer_key, l_signer_key};
+    // Test with valid ring of size 2 (anonymous signature).
+    // CR-D2/CR-D19: the ring must contain distinct public keys — a ring
+    // composed of N copies of the signer's own key collapses anonymity to
+    // a known signer and is rejected by chipmunk_ring_container_create.
+    dap_enc_key_t* l_decoy_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    dap_assert(l_decoy_key != NULL, "Decoy key generation should succeed");
+    dap_enc_key_t* l_ring_keys_2[2] = {l_signer_key, l_decoy_key};
     l_signature = dap_sign_create_ring(l_signer_key, &l_message_hash, sizeof(l_message_hash),
                                       l_ring_keys_2, 2, 1); // Anonymous ring signature
     dap_assert(l_signature != NULL, "Anonymous signature creation should succeed with valid ring");
@@ -183,6 +194,9 @@ static bool s_test_error_handling(void) {
 
     // Cleanup
     dap_enc_key_delete(l_signer_key);
+    if (l_decoy_key) {
+        dap_enc_key_delete(l_decoy_key);
+    }
 
     log_it(L_INFO, "Error handling test passed");
     return true;

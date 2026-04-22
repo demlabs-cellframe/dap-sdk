@@ -43,7 +43,8 @@ typedef struct chipmunk_ring_challenge_salt {
 } chipmunk_ring_challenge_salt_t;
 
 typedef struct chipmunk_ring_acorn_input {
-    uint8_t public_key[CHIPMUNK_PUBLIC_KEY_SIZE];
+    // CR-D15.C: public_key slot now sized to match the hypertree-based ring pk.
+    uint8_t public_key[CHIPMUNK_RING_PUBLIC_KEY_SIZE];
     uint8_t *message;
     size_t message_size;
     uint8_t *randomness;

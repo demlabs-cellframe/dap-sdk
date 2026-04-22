@@ -25,7 +25,12 @@
 #include "chipmunk_ring_acorn.h"
 #include "dap_enc_chipmunk_ring.h"
 #include "chipmunk_ring_serialize_schema.h"
-#include "chipmunk_ring_secret_sharing.h"
+/*
+ * CR-9 (round-4): chipmunk_ring_secret_sharing was deleted as dead-code
+ * with broken semantics (see doc/crypto/chipmunk_ring/security_review_*).
+ * It will return as a proper Shamir-over-hypertree-seed module under the
+ * CR-9 pending task.  No active sign/verify path referenced it.
+ */
 #include "dap_math.h"
 
 
@@ -50,6 +55,7 @@
 #include "dap_enc_chipmunk_ring.h"
 #include "dap_enc_chipmunk_ring_params.h"
 #include "chipmunk_ring_serialize_schema.h"
+#include "dap_memwipe.h"
 
 #define LOG_TAG "chipmunk_ring"
 
@@ -269,15 +275,78 @@ int chipmunk_ring_init(void) {
     return 0;
 }
 
+/*
+ * CR-D15.C (Round-3): small helper used by both the random and the
+ * deterministic keygen paths.  Materialises a fresh hypertree pair,
+ * serialises header + pk into the caller's dap_enc_key buffers, then
+ * releases the in-memory tree.  The materialised tree is not retained
+ * between calls — chipmunk_ring_sign() rebuilds it on demand from the
+ * serialised header (deterministic rebuild keyed by (key_seed, rho_seed,
+ * hasher_seed) so leaf-0..N derivations are bit-identical).
+ */
+static int s_chipmunk_ring_keygen_common(struct dap_enc_key *a_key,
+                                         const void *a_seed /* may be NULL */) {
+    if (!a_key || !a_key->pub_key_data || !a_key->priv_key_data) {
+        return -EINVAL;
+    }
+    if (a_key->pub_key_data_size  != CHIPMUNK_RING_PUBLIC_KEY_SIZE ||
+        a_key->priv_key_data_size != CHIPMUNK_RING_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR,
+               "CR-D15.C: ring dap_enc_key buffer sizes do not match hypertree layout "
+               "(have priv=%zu pub=%zu, expected priv=%d pub=%d)",
+               a_key->priv_key_data_size, a_key->pub_key_data_size,
+               (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE, (int)CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+        return -EINVAL;
+    }
+
+    chipmunk_ht_public_key_t  l_pk;
+    chipmunk_ht_private_key_t l_sk;
+    memset(&l_pk, 0, sizeof(l_pk));
+    memset(&l_sk, 0, sizeof(l_sk));
+
+    int l_rc;
+    if (a_seed) {
+        l_rc = chipmunk_ht_keypair_from_seed((const uint8_t *)a_seed, &l_pk, &l_sk);
+    } else {
+        l_rc = chipmunk_ht_keypair(&l_pk, &l_sk);
+    }
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "CR-D15.C: chipmunk_ht_keypair(%s) failed: %d",
+               a_seed ? "deterministic" : "random", l_rc);
+        chipmunk_ht_private_key_clear(&l_sk);
+        return l_rc;
+    }
+
+    l_rc = chipmunk_ht_public_key_to_bytes((uint8_t *)a_key->pub_key_data, &l_pk);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "CR-D15.C: failed to serialise hypertree public key: %d", l_rc);
+        chipmunk_ht_private_key_clear(&l_sk);
+        return l_rc;
+    }
+
+    l_rc = chipmunk_ht_private_key_to_bytes((uint8_t *)a_key->priv_key_data, &l_sk);
+    chipmunk_ht_private_key_clear(&l_sk);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "CR-D15.C: failed to serialise hypertree private key: %d", l_rc);
+        dap_memwipe(a_key->priv_key_data, a_key->priv_key_data_size);
+        return l_rc;
+    }
+
+    debug_if(s_debug_more, L_INFO,
+             "CR-D15.C: ring hypertree keypair materialised "
+             "(pk=%d B, sk=%d B, max_signatures/leaf_count=%d)",
+             (int)CHIPMUNK_RING_PUBLIC_KEY_SIZE,
+             (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE,
+             (int)CHIPMUNK_HT_MAX_SIGNATURES);
+    return 0;
+}
+
 /**
  * @brief Generate new Chipmunk_Ring keypair
  */
 int chipmunk_ring_key_new(struct dap_enc_key *a_key) {
     dap_return_val_if_fail(a_key, -EINVAL);
-
-    // Use standard Chipmunk key generation
-    return chipmunk_keypair(a_key->pub_key_data, a_key->pub_key_data_size,
-                           a_key->priv_key_data, a_key->priv_key_data_size);
+    return s_chipmunk_ring_keygen_common(a_key, NULL);
 }
 
 /**
@@ -290,14 +359,12 @@ int chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed
     CHIPMUNK_RING_RETURN_IF_FAIL(a_seed_size == 32, CHIPMUNK_RING_ERROR_INVALID_SIZE);
 
     // Validate key size parameter (for future extensibility)
-    if (a_key_size > 0 && a_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_WARNING, "Key size %zu may not be compatible with Chipmunk algorithm", a_key_size);
+    if (a_key_size > 0 && a_key_size != CHIPMUNK_RING_PRIVATE_KEY_SIZE) {
+        log_it(L_WARNING, "Key size %zu may not be compatible with Chipmunk_Ring (expected %d)",
+               a_key_size, (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE);
     }
 
-    // Use deterministic Chipmunk key generation
-    return chipmunk_keypair_from_seed(a_seed,
-                                     a_key->pub_key_data, a_key->pub_key_data_size,
-                                     a_key->priv_key_data, a_key->priv_key_data_size);
+    return s_chipmunk_ring_keygen_common(a_key, a_seed);
 }
 
 /**
@@ -309,14 +376,42 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
     CHIPMUNK_RING_RETURN_IF_NULL(a_ring, CHIPMUNK_RING_ERROR_NULL_PARAM);
     CHIPMUNK_RING_RETURN_IF_INVALID_SIZE(a_num_keys, 2, CHIPMUNK_RING_MAX_RING_SIZE);
 
-    // CRITICAL SECURITY FIX: Prevent integer overflow in memory allocation
-    const size_t l_key_data_size = CHIPMUNK_PUBLIC_KEY_SIZE;
+    // CR-D15.C: ring pk is now a hypertree pk — use the ring-specific constant.
+    const size_t l_key_data_size = CHIPMUNK_RING_PUBLIC_KEY_SIZE;
 
-    // Prevent integer overflow: check if a_num_keys * CHIPMUNK_PUBLIC_KEY_SIZE would overflow
+    // Prevent integer overflow: check if a_num_keys * l_key_data_size would overflow
     if (a_num_keys > (SIZE_MAX / l_key_data_size)) {
         chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_OVERFLOW, __func__, 
                                "Ring size would cause integer overflow in memory allocation");
         return CHIPMUNK_RING_ERROR_MEMORY_OVERFLOW;
+    }
+
+    // CR-D19 fix (Round-3): reject rings that contain all-zero or duplicate
+    // public keys up-front.  The legacy code accepted anything and deferred
+    // the question to the verifier, enabling a caller to submit N copies of
+    // the same pk (so the "ring" trivially collapses to a known signer) or
+    // zero-filled pks (which may be accepted by permissive sub-verifiers).
+    // All validation happens before any allocation to keep the function
+    // transactional.
+    for (size_t i = 0; i < a_num_keys; i++) {
+        uint8_t l_nonzero = 0;
+        for (size_t j = 0; j < l_key_data_size; j++) {
+            l_nonzero |= a_public_keys[i].data[j];
+        }
+        if (l_nonzero == 0) {
+            chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_INVALID_PARAM, __func__,
+                                   "Ring contains an all-zero public key (slot rejected)");
+            return CHIPMUNK_RING_ERROR_INVALID_PARAM;
+        }
+    }
+    for (size_t i = 0; i < a_num_keys; i++) {
+        for (size_t j = i + 1; j < a_num_keys; j++) {
+            if (memcmp(a_public_keys[i].data, a_public_keys[j].data, l_key_data_size) == 0) {
+                chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_INVALID_PARAM, __func__,
+                                       "Ring contains duplicate public keys (not a valid ring)");
+                return CHIPMUNK_RING_ERROR_INVALID_PARAM;
+            }
+        }
     }
 
     a_ring->size = a_num_keys;
@@ -357,10 +452,10 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
         return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
     }
 
-    // Concatenate all public keys
+    // Concatenate all public keys (CR-D15.C: ring pk size is hypertree-based).
     for (uint32_t l_i = 0; l_i < a_num_keys; l_i++) {
-        memcpy(l_combined_keys + l_i * CHIPMUNK_PUBLIC_KEY_SIZE,
-               a_public_keys[l_i].data, CHIPMUNK_PUBLIC_KEY_SIZE);
+        memcpy(l_combined_keys + l_i * CHIPMUNK_RING_PUBLIC_KEY_SIZE,
+               a_public_keys[l_i].data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
     }
 
     // Hash the combined public keys
@@ -422,7 +517,7 @@ void chipmunk_ring_container_free(chipmunk_ring_container_t *a_ring) {
 /**
  * @brief Create Chipmunk_Ring signature
  */
-int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
+int chipmunk_ring_sign(chipmunk_ring_private_key_t *a_private_key,
                      const void *a_message, size_t a_message_size,
                      const chipmunk_ring_container_t *a_ring,
                      uint32_t a_required_signers,
@@ -548,8 +643,17 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         // NOTE: responses removed - Acorn proofs in commitments handle all ZKP
     }
     
-    // Allocate chipmunk signature
-    a_signature->signature_size = CHIPMUNK_SIGNATURE_SIZE;
+    /*
+     * CR-D15.C: the per-ring "core signature" is now a serialised hypertree
+     * signature (HOTS sigma + leaf_index + leaf_pk + auth_path).  It is
+     * sized by the hypertree layer so that a_signature->signature is a
+     * standalone proof of a *specific* leaf membership under the signer's
+     * hypertree root — exactly what chipmunk_ring_verify() needs to
+     * reject universal forgeries (CR-D1) while still allowing the same
+     * signer keypair to produce up to CHIPMUNK_HT_MAX_SIGNATURES distinct
+     * ring signatures.
+     */
+    a_signature->signature_size = CHIPMUNK_RING_CHALLENGE_SIG_SIZE;
     a_signature->signature = DAP_NEW_Z_SIZE(uint8_t, a_signature->signature_size);
     debug_if(s_debug_more, L_DEBUG, "Allocated signature field: size=%zu, ptr=%p", 
              a_signature->signature_size, a_signature->signature);
@@ -674,8 +778,8 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
             return -ENOMEM;
         }
         
-        debug_if(s_debug_more, L_DEBUG, "Allocated threshold ZK proofs: size=%zu, participants=%u, proof_size=%u", 
-                 a_signature->zk_proofs_size, a_required_signers, a_signature->zk_proof_size_per_participant);
+        debug_if(s_debug_more, L_DEBUG, "Allocated threshold ZK proofs: size=%zu, participants=%u, proof_size=%u",
+                 (size_t)a_signature->zk_proofs_size, a_required_signers, a_signature->zk_proof_size_per_participant);
         
         for (uint32_t i = 0; i < a_required_signers; i++) {
             uint8_t *current_proof = a_signature->threshold_zk_proofs + i * a_signature->zk_proof_size_per_participant;
@@ -762,37 +866,163 @@ int chipmunk_ring_sign(const chipmunk_ring_private_key_t *a_private_key,
         debug_if(s_debug_more, L_INFO, "Multi-signer coordination completed successfully");
     }
 
-    // Find real signer first (needed for both modes)
+    /*
+     * CR-D2 × CR-D15.C (Round-4): resolve the signer index via constant-time
+     * comparison of the *hypertree* public-key bytes derived from the
+     * signer's private key against every ring slot.  Legacy path used
+     * plain Chipmunk pk bytes (4128 B), which no longer matches the
+     * ring-level pk layout (hypertree, 2112 B).  We:
+     *   1. Deserialise the ring-level sk (header-only; the tree is
+     *      rebuilt internally by chipmunk_ht_private_key_from_bytes, but
+     *      we don't actually need the tree here — only sk.pk).
+     *   2. Serialise sk.pk via chipmunk_ht_public_key_to_bytes to obtain
+     *      the canonical ring pk bytes.
+     *   3. Compare against every ring slot without early exit (constant
+     *      time w.r.t. signer position), reject on zero-or-multi match.
+     */
     uint32_t l_real_signer_index = UINT32_MAX;
-    for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
-        // Try to verify if this public key corresponds to our private key
-        uint8_t l_test_signature[CHIPMUNK_SIGNATURE_SIZE];
-        memset(l_test_signature, 0, sizeof(l_test_signature));
-        
-        // Create test signature with our private key
-        if (chipmunk_sign(a_private_key->data, a_signature->challenge, a_signature->challenge_size, 
-                         l_test_signature) == CHIPMUNK_ERROR_SUCCESS) {
-            // Test if it verifies against this public key
-            if (chipmunk_verify(a_ring->public_keys[l_i].data, a_signature->challenge, 
-                               a_signature->challenge_size, l_test_signature) == CHIPMUNK_ERROR_SUCCESS) {
-                l_real_signer_index = l_i;
-                // Copy the real signature
-                size_t l_copy_size = (a_signature->signature_size < sizeof(l_test_signature)) ?
-                                   a_signature->signature_size : sizeof(l_test_signature);
-                memcpy(a_signature->signature, l_test_signature, l_copy_size);
-                debug_if(s_debug_more, L_DEBUG, "Copied signature data: size=%zu", l_copy_size);
-                break;
+    {
+        chipmunk_ht_private_key_t l_ht_sk_peek;
+        memset(&l_ht_sk_peek, 0, sizeof(l_ht_sk_peek));
+        if (chipmunk_ht_private_key_from_bytes(&l_ht_sk_peek,
+                                               (const uint8_t *)a_private_key->data)
+            != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "CR-D15.C: failed to parse hypertree sk while resolving ring index");
+            chipmunk_ht_private_key_clear(&l_ht_sk_peek);
+            chipmunk_ring_signature_free(a_signature);
+            return -1;
+        }
+        uint8_t l_signer_pk_bytes[CHIPMUNK_RING_PUBLIC_KEY_SIZE];
+        if (chipmunk_ht_public_key_to_bytes(l_signer_pk_bytes, &l_ht_sk_peek.pk)
+            != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "CR-D15.C: failed to serialise signer hypertree pk while resolving ring index");
+            chipmunk_ht_private_key_clear(&l_ht_sk_peek);
+            dap_memwipe(l_signer_pk_bytes, sizeof(l_signer_pk_bytes));
+            chipmunk_ring_signature_free(a_signature);
+            return -1;
+        }
+        chipmunk_ht_private_key_clear(&l_ht_sk_peek);
+
+        uint32_t l_match_count = 0;
+        for (uint32_t l_i = 0; l_i < a_ring->size; l_i++) {
+            uint8_t l_diff = 0;
+            for (size_t j = 0; j < CHIPMUNK_RING_PUBLIC_KEY_SIZE; j++) {
+                l_diff |= (uint8_t)(l_signer_pk_bytes[j] ^ a_ring->public_keys[l_i].data[j]);
             }
+            // l_diff == 0 iff slot matches the signer's pk.  Derive a
+            // branch-free mask (((unsigned)l_diff - 1) >> 31) == 1 iff
+            // l_diff == 0 and 0 otherwise; never early-exit so the scan
+            // is oblivious to the signer's position.
+            uint32_t l_is_match = (uint32_t)(((uint32_t)l_diff - 1u) >> 31);
+            l_match_count += l_is_match;
+            uint32_t l_mask = (uint32_t)(0u - l_is_match);
+            l_real_signer_index = (l_i & l_mask) | (l_real_signer_index & ~l_mask);
+        }
+        dap_memwipe(l_signer_pk_bytes, sizeof(l_signer_pk_bytes));
+
+        if (l_real_signer_index == UINT32_MAX) {
+            log_it(L_ERROR, "Signer public key not present in ring");
+            chipmunk_ring_signature_free(a_signature);
+            return CHIPMUNK_RING_ERROR_INVALID_PARAM;
+        }
+        if (l_match_count > 1) {
+            log_it(L_ERROR, "Signer public key appears more than once in ring (%u occurrences)",
+                   l_match_count);
+            chipmunk_ring_signature_free(a_signature);
+            return CHIPMUNK_RING_ERROR_INVALID_PARAM;
         }
     }
-    
-    if (l_real_signer_index == UINT32_MAX) {
-        log_it(L_ERROR, "Failed to find matching public key for private key");
+    debug_if(s_debug_more, L_INFO,
+             "CR-D2/CR-D15.C: signer resolved via constant-time hypertree-pk compare (idx=%u)",
+             l_real_signer_index);
+
+    // Produce the hypertree signature over the Fiat-Shamir challenge exactly
+    // once.  The verifier (chipmunk_ring_verify) requires this signature in
+    // order to refuse universal forgeries (CR-D1); without it any attacker
+    // with read access to the ring and message could synthesise an acceptor.
+    if (a_signature->signature_size < CHIPMUNK_RING_CHALLENGE_SIG_SIZE) {
+        log_it(L_ERROR, "Signature buffer too small: %zu < %d",
+               a_signature->signature_size, (int)CHIPMUNK_RING_CHALLENGE_SIG_SIZE);
         chipmunk_ring_signature_free(a_signature);
         return -1;
     }
-    
-    debug_if(s_debug_more, L_INFO, "Found real signer in provided ring context");
+    /*
+     * CR-D15.C (Round-3): rebuild the hypertree sk from the serialised
+     * header, sign the challenge at the next available leaf, serialise the
+     * fresh HT signature into a_signature->signature, then persist the
+     * *bumped* leaf_index back into a_private_key->data so the next
+     * chipmunk_ring_sign() call consumes the following leaf.  The rebuild
+     * is deterministic (key_seed + rho_seed + hasher_seed) so it produces
+     * the exact same tree every time.
+     *
+     * CR-D3 guarantees (one-time-key exhaustion, monotonic leaf_index) are
+     * preserved end-to-end: chipmunk_ht_sign() serialises the sk under its
+     * own mutex, and we immediately re-serialise to bytes under the
+     * caller's buffer while the ephemeral sk is still mutex-protected —
+     * before any other thread can observe a stale leaf_index.  Callers
+     * are nevertheless REQUIRED to serialise concurrent access to the
+     * ring-level priv_key buffer themselves (see chipmunk_ring.h banner
+     * comment on chipmunk_ring_sign).
+     */
+    {
+        chipmunk_ht_private_key_t l_ht_sk;
+        chipmunk_ht_signature_t   l_ht_sig;
+        memset(&l_ht_sk,  0, sizeof(l_ht_sk));
+        memset(&l_ht_sig, 0, sizeof(l_ht_sig));
+
+        int l_rc = chipmunk_ht_private_key_from_bytes(&l_ht_sk,
+                                                      (const uint8_t *)a_private_key->data);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "CR-D15.C: chipmunk_ht_private_key_from_bytes failed: %d", l_rc);
+            chipmunk_ht_private_key_clear(&l_ht_sk);
+            chipmunk_ring_signature_free(a_signature);
+            return -1;
+        }
+
+        l_rc = chipmunk_ht_sign(&l_ht_sk, a_signature->challenge,
+                                a_signature->challenge_size, &l_ht_sig);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            if (l_rc == CHIPMUNK_ERROR_KEY_EXHAUSTED) {
+                log_it(L_ERROR,
+                       "CR-D15.C: hypertree keypair exhausted after %d signatures — rotate key",
+                       (int)CHIPMUNK_HT_MAX_SIGNATURES);
+            } else {
+                log_it(L_ERROR, "CR-D15.C: chipmunk_ht_sign failed: %d", l_rc);
+            }
+            chipmunk_ht_signature_clear(&l_ht_sig);
+            chipmunk_ht_private_key_clear(&l_ht_sk);
+            chipmunk_ring_signature_free(a_signature);
+            return l_rc;
+        }
+
+        l_rc = chipmunk_ht_signature_to_bytes((uint8_t *)a_signature->signature, &l_ht_sig);
+        chipmunk_ht_signature_clear(&l_ht_sig);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "CR-D15.C: failed to serialise hypertree signature: %d", l_rc);
+            chipmunk_ht_private_key_clear(&l_ht_sk);
+            chipmunk_ring_signature_free(a_signature);
+            return -1;
+        }
+
+        // Persist the bumped leaf_index (and unchanged key_seed/tr/pk)
+        // back into the caller's buffer so the next chipmunk_ring_sign()
+        // consumes the next leaf.  If serialisation fails here the caller
+        // is in a toxic state (we may have consumed a leaf without
+        // recording it), so we wipe the buffer to force a fail-closed
+        // rotation — that is safer than a silent reuse.
+        l_rc = chipmunk_ht_private_key_to_bytes((uint8_t *)a_private_key->data, &l_ht_sk);
+        chipmunk_ht_private_key_clear(&l_ht_sk);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_CRITICAL,
+                   "CR-D15.C: failed to persist updated hypertree sk (rc=%d); "
+                   "wiping caller buffer to force rotation", l_rc);
+            dap_memwipe(a_private_key->data, sizeof(a_private_key->data));
+            chipmunk_ring_signature_free(a_signature);
+            return -1;
+        }
+    }
+    debug_if(s_debug_more, L_DEBUG,
+             "CR-D15.C: hypertree challenge signature produced (leaf_index bumped)");
 
     // All verification happens through acorn_proof in commitments, no separate responses needed
     
@@ -911,17 +1141,17 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
         l_effective_ring.size = a_signature->ring_size;
         l_effective_ring.public_keys = a_signature->ring_public_keys;
         
-        // Generate ring hash from embedded keys for verification
-        size_t l_combined_size = a_signature->ring_size * CHIPMUNK_PUBLIC_KEY_SIZE;
+        // Generate ring hash from embedded keys for verification (CR-D15.C: hypertree pk size).
+        size_t l_combined_size = a_signature->ring_size * CHIPMUNK_RING_PUBLIC_KEY_SIZE;
         uint8_t *l_combined_keys = DAP_NEW_SIZE(uint8_t, l_combined_size);
         if (!l_combined_keys) {
             log_it(L_CRITICAL, "Failed to allocate combined keys for embedded verification");
             return -ENOMEM;
         }
-        
+
         for (uint32_t i = 0; i < a_signature->ring_size; i++) {
-            memcpy(l_combined_keys + i * CHIPMUNK_PUBLIC_KEY_SIZE,
-                   a_signature->ring_public_keys[i].data, CHIPMUNK_PUBLIC_KEY_SIZE);
+            memcpy(l_combined_keys + i * CHIPMUNK_RING_PUBLIC_KEY_SIZE,
+                   a_signature->ring_public_keys[i].data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
         }
         
         dap_hash_fast_t ring_hash;
@@ -1088,7 +1318,9 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                     .randomness = a_signature->acorn_proofs[l_i].randomness,
                     .randomness_size = a_signature->acorn_proofs[l_i].randomness_size
                 };
-                memcpy(l_acorn_input_data.public_key, l_ring_to_use->public_keys[l_i].data, CHIPMUNK_PUBLIC_KEY_SIZE);
+                memcpy(l_acorn_input_data.public_key,
+                       l_ring_to_use->public_keys[l_i].data,
+                       CHIPMUNK_RING_PUBLIC_KEY_SIZE);
                 
                 size_t l_acorn_input_size = dap_serialize_calc_size(&chipmunk_ring_acorn_input_schema, NULL, &l_acorn_input_data, NULL);
                 uint8_t *l_acorn_input = DAP_NEW_SIZE(uint8_t, l_acorn_input_size);
@@ -1139,17 +1371,93 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
             }
         }
         
-        // Threshold=1: expect at least one valid Acorn proof (ring signature allows any participant)
-        if (valid_acorn_proofs >= a_signature->required_signers) {
-            debug_if(s_debug_more, L_INFO, "Threshold=%u Acorn verification successful (%u/%u proofs valid)", 
-                     a_signature->required_signers, valid_acorn_proofs, l_ring_to_use->size);
+        // CR-D1 fix (Round-3): the Acorn-hash check by itself is publicly
+        // computable from data already carried inside the signature, so it
+        // is *not* a ring signature verification — it is a hash consistency
+        // check.  Historically the single-signer branch returned success as
+        // soon as the Acorn hash matched, producing a universal forgery: any
+        // attacker could synthesise an acceptor signature without holding any
+        // private key.  We now additionally require that a_signature->signature
+        // is a valid Chipmunk signature of a_signature->challenge under at
+        // least one public key from the ring.  Together with the CR-D2 fix in
+        // chipmunk_ring_sign (signer index resolved via pk compare, single
+        // chipmunk_sign call) this restores soundness of the single-signer
+        // mode.  True cryptographic anonymity still requires the OR-proof
+        // sigma-protocol rewrite tracked in the SLC master plan (phase CR-11);
+        // today's single-signer mode provides "soft" anonymity only (an
+        // observer can identify the signer by re-running chipmunk_verify
+        // against every ring member).
+        bool l_acorn_ok = (valid_acorn_proofs >= a_signature->required_signers);
+        uint32_t l_chipmunk_sig_matches = 0;
+        bool l_chipmunk_ok = false;
+        if (!a_signature->signature || a_signature->signature_size < CHIPMUNK_RING_CHALLENGE_SIG_SIZE ||
+            !a_signature->challenge || a_signature->challenge_size == 0) {
+            log_it(L_ERROR, "CR-D1: single-signer signature missing required hypertree signature over challenge "
+                            "(sig_ptr=%p sig_size=%zu chal_ptr=%p chal_size=%zu)",
+                   (const void *)a_signature->signature, a_signature->signature_size,
+                   (const void *)a_signature->challenge, a_signature->challenge_size);
+        } else {
+            /*
+             * CR-D15.C (Round-3): deserialise the hypertree signature ONCE
+             * (it is identical for every candidate pk), then for each ring
+             * member deserialise its hypertree pk and call
+             * chipmunk_ht_verify (HOTS check + Merkle path to that pk's
+             * root).  Deserialisation allocates auth_path.nodes — we free
+             * it unconditionally via chipmunk_ht_signature_clear on exit.
+             */
+            chipmunk_ht_signature_t l_ht_sig;
+            memset(&l_ht_sig, 0, sizeof(l_ht_sig));
+            int l_desig = chipmunk_ht_signature_from_bytes(&l_ht_sig,
+                                                           (const uint8_t *)a_signature->signature);
+            if (l_desig != CHIPMUNK_ERROR_SUCCESS) {
+                log_it(L_ERROR,
+                       "CR-D15.C: failed to deserialise hypertree challenge signature (rc=%d)",
+                       l_desig);
+            } else {
+                for (uint32_t l_i = 0; l_i < l_ring_to_use->size; l_i++) {
+                    chipmunk_ht_public_key_t l_ht_pk;
+                    memset(&l_ht_pk, 0, sizeof(l_ht_pk));
+                    if (chipmunk_ht_public_key_from_bytes(&l_ht_pk,
+                                                          (const uint8_t *)l_ring_to_use->public_keys[l_i].data)
+                        != CHIPMUNK_ERROR_SUCCESS) {
+                        continue; // malformed pk in ring — skip, not fatal
+                    }
+                    int l_chipmunk_res = chipmunk_ht_verify(&l_ht_pk,
+                                                            a_signature->challenge,
+                                                            a_signature->challenge_size,
+                                                            &l_ht_sig);
+                    if (l_chipmunk_res == CHIPMUNK_ERROR_SUCCESS) {
+                        l_chipmunk_sig_matches++;
+                    }
+                }
+                chipmunk_ht_signature_clear(&l_ht_sig);
+            }
+            l_chipmunk_ok = (l_chipmunk_sig_matches >= 1);
+            if (!l_chipmunk_ok) {
+                log_it(L_WARNING, "CR-D1: Chipmunk signature over challenge does not verify against "
+                                  "any ring public key — rejecting (likely universal-forgery attempt)");
+            } else {
+                debug_if(s_debug_more, L_INFO,
+                         "CR-D1: Chipmunk signature over challenge verified against %u/%u ring pks",
+                         l_chipmunk_sig_matches, l_ring_to_use->size);
+            }
+        }
+
+        // Threshold=1: require BOTH the Acorn-hash consistency and the real
+        // Chipmunk signature to validate.  Acorn alone is not enough (CR-D1).
+        if (l_acorn_ok && l_chipmunk_ok) {
+            debug_if(s_debug_more, L_INFO,
+                     "Threshold=%u verification successful (acorn=%u/%u, chipmunk_match=%u/%u)",
+                     a_signature->required_signers, valid_acorn_proofs, l_ring_to_use->size,
+                     l_chipmunk_sig_matches, l_ring_to_use->size);
             l_signature_verified = true;
         } else {
-            log_it(L_WARNING, "Threshold=%u Acorn verification failed - expected %u valid proofs, got %u", 
-                   a_signature->required_signers, a_signature->required_signers, valid_acorn_proofs);
+            log_it(L_WARNING, "Threshold=%u verification failed (acorn=%u/%u required=%u, chipmunk_match=%u)",
+                   a_signature->required_signers, valid_acorn_proofs, l_ring_to_use->size,
+                   a_signature->required_signers, l_chipmunk_sig_matches);
             l_signature_verified = false;
         }
-        
+
     } else {
         // Multi-signer mode: verify ZK proofs and aggregated signature
         debug_if(s_debug_more, L_INFO, "Multi-signer verification (required_signers=%u)", a_signature->required_signers);
@@ -1158,7 +1466,7 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
         size_t expected_zk_size = a_signature->required_signers * a_signature->zk_proof_size_per_participant;
         if (a_signature->zk_proofs_size < expected_zk_size) {
             log_it(L_ERROR, "Insufficient ZK proofs for multi-signer verification: got %zu, expected %zu (required_signers=%u * proof_size=%u)",
-                   a_signature->zk_proofs_size, expected_zk_size, a_signature->required_signers, a_signature->zk_proof_size_per_participant);
+                   (size_t)a_signature->zk_proofs_size, expected_zk_size, a_signature->required_signers, a_signature->zk_proof_size_per_participant);
             return -1;
         }
 
@@ -1174,8 +1482,8 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
         // Step 2: Calculate expected ZK proof size based on parameters
         size_t l_expected_zk_size = a_signature->required_signers * a_signature->zk_proof_size_per_participant;
         if (a_signature->zk_proofs_size < l_expected_zk_size) {
-            log_it(L_ERROR, "ZK proofs size mismatch: got %zu, expected at least %zu", 
-                   a_signature->zk_proofs_size, l_expected_zk_size);
+            log_it(L_ERROR, "ZK proofs size mismatch: got %zu, expected at least %zu",
+                   (size_t)a_signature->zk_proofs_size, l_expected_zk_size);
             return -1;
         }
         
@@ -1316,38 +1624,82 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
                 return -1;
             }
         
-        // Step 5: Verify aggregated signature components
-        // In multi-signer mode, verify that the signature aggregation is correct
-        bool l_aggregation_valid = true;
-        
-        // Verify signature aggregation using existing Chipmunk verification
-        // but adapted for multi-signer threshold scheme
-        for (uint32_t l_i = 0; l_i < l_ring_to_use->size && l_aggregation_valid; l_i++) {
-            // Try to verify partial contribution from this participant
-            int l_partial_result = chipmunk_verify(l_ring_to_use->public_keys[l_i].data,
-                                                  a_signature->challenge, sizeof(a_signature->challenge),
-                                                  a_signature->signature);
-            
-            if (l_partial_result == CHIPMUNK_ERROR_SUCCESS) {
-                debug_if(s_debug_more, L_INFO, "Partial verification succeeded for participant %u", l_i);
-                // In threshold schemes, we expect some partial verifications to succeed
-                // This indicates proper secret sharing reconstruction
-                break;
+        /*
+         * CR-D15.C (Round-4): replace the previous "break on first match +
+         * never reset" aggregation check with an honest per-ring-member
+         * hypertree-verify pass.  The legacy code initialised
+         * l_aggregation_valid = true and *never* set it to false, so the
+         * signature was accepted as long as the ZK-proof count passed the
+         * threshold — a clear false-positive path.  We now:
+         *   - deserialise the single hypertree signature carried in
+         *     a_signature->signature (produced by chipmunk_ring_sign),
+         *   - count how many ring public keys accept it via
+         *     chipmunk_ht_verify,
+         *   - require at least one match (membership proof) AND the ZK
+         *     threshold to pass for the overall signature to validate.
+         *
+         * NOTE: this multi-signer branch still uses ONE hypertree signature
+         * over the Fiat-Shamir challenge, not a fully aggregated multi-
+         * signer construction.  A real threshold aggregation is tracked
+         * under CR-9/CR-D10 and produces a chipmunk_multi_signature_t; the
+         * ring layer will route into it once those are landed.  Until
+         * then, accepting only on both (threshold ZK proofs) AND
+         * (membership proof) matches the soundness guarantees that the
+         * single-signer path now offers.
+         */
+        uint32_t l_aggregation_matches = 0;
+        bool l_aggregation_valid = false;
+        if (!a_signature->signature || a_signature->signature_size < CHIPMUNK_RING_CHALLENGE_SIG_SIZE ||
+            !a_signature->challenge || a_signature->challenge_size == 0) {
+            log_it(L_ERROR,
+                   "Multi-signer: missing hypertree signature over challenge (sig_size=%zu challenge_size=%zu)",
+                   a_signature->signature_size, a_signature->challenge_size);
+        } else {
+            chipmunk_ht_signature_t l_ht_sig_multi;
+            memset(&l_ht_sig_multi, 0, sizeof(l_ht_sig_multi));
+            int l_desig_multi = chipmunk_ht_signature_from_bytes(&l_ht_sig_multi,
+                                                                 (const uint8_t *)a_signature->signature);
+            if (l_desig_multi != CHIPMUNK_ERROR_SUCCESS) {
+                log_it(L_ERROR,
+                       "Multi-signer: failed to deserialise hypertree signature (rc=%d)", l_desig_multi);
+            } else {
+                for (uint32_t l_i = 0; l_i < l_ring_to_use->size; l_i++) {
+                    chipmunk_ht_public_key_t l_ht_pk_multi;
+                    memset(&l_ht_pk_multi, 0, sizeof(l_ht_pk_multi));
+                    if (chipmunk_ht_public_key_from_bytes(&l_ht_pk_multi,
+                                                          (const uint8_t *)l_ring_to_use->public_keys[l_i].data)
+                        != CHIPMUNK_ERROR_SUCCESS) {
+                        continue;
+                    }
+                    if (chipmunk_ht_verify(&l_ht_pk_multi,
+                                           a_signature->challenge,
+                                           a_signature->challenge_size,
+                                           &l_ht_sig_multi) == CHIPMUNK_ERROR_SUCCESS) {
+                        l_aggregation_matches++;
+                    }
+                }
+                chipmunk_ht_signature_clear(&l_ht_sig_multi);
+                l_aggregation_valid = (l_aggregation_matches >= 1);
             }
         }
-        
+
         // Step 6: Final verification decision
         l_signature_verified = (l_valid_zk_proofs >= a_signature->required_signers && l_aggregation_valid);
-        
+
         if (l_signature_verified) {
-            debug_if(s_debug_more, L_INFO, "Multi-signer Acorn verification completed successfully (%u/%u Acorn proofs valid)", 
-               l_valid_zk_proofs, a_signature->required_signers);
+            debug_if(s_debug_more, L_INFO,
+                     "Multi-signer verification OK (zk_valid=%u/%u, hypertree_match=%u/%u)",
+                     l_valid_zk_proofs, a_signature->required_signers,
+                     l_aggregation_matches, l_ring_to_use->size);
         } else {
-            log_it(L_ERROR, "Multi-signer ZK verification failed (aggregation: %s, ZK proofs: %u/%u)", 
-                   l_aggregation_valid ? "valid" : "invalid", l_valid_zk_proofs, a_signature->required_signers);
+            log_it(L_ERROR,
+                   "Multi-signer verification failed (zk_valid=%u/%u required=%u, hypertree_match=%u/%u)",
+                   l_valid_zk_proofs, a_signature->required_signers,
+                   a_signature->required_signers,
+                   l_aggregation_matches, l_ring_to_use->size);
         }
-        
-        debug_if(s_debug_more, L_INFO, "Multi-signer verification completed (enterprise ZK implementation)");
+
+        debug_if(s_debug_more, L_INFO, "Multi-signer verification completed (honest aggregation check)");
     }
     
     if (!l_signature_verified) {
@@ -1527,7 +1879,41 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
         }
         return result.error_code;
     }
-    
+
+    /* CR-D9 fix (Round-3): strict post-deserialisation canonicality checks.
+     *
+     *  - `use_embedded_keys` is stored on the wire as a single byte but
+     *    semantically has only two valid values (0 or 1).  Accepting the
+     *    other 254 byte values would produce two distinct wire blobs that
+     *    deserialise to the same logical signature — breaking signature
+     *    hash reproducibility and opening a malleability channel.  Read
+     *    the underlying octet through a character-pointer alias (always
+     *    well-defined even when the native _Bool holds a value other than
+     *    0/1) and reject anything outside {0x00, 0x01}.
+     *
+     *  - `zk_proofs_size` is now a uint64_t in memory matching the 8-byte
+     *    on-wire width (see struct definition).  Both single- and
+     *    multi-signer paths may legitimately populate `threshold_zk_proofs`
+     *    (traditional ring mode copies the acorn proof of the signer), so
+     *    only the multi-signer lower bound (empty ZK payload ⇒ malformed)
+     *    is enforceable without introducing a false-reject on the
+     *    single-signer traditional path.
+     */
+    {
+        const uint8_t l_embedded_byte = *(const uint8_t *)&a_sig->use_embedded_keys;
+        if (l_embedded_byte != 0u && l_embedded_byte != 1u) {
+            log_it(L_ERROR,
+                   "Signature deserialization rejected: non-canonical use_embedded_keys=0x%02x",
+                   (unsigned)l_embedded_byte);
+            return -EINVAL;
+        }
+    }
+    if (a_sig->required_signers > 1u && a_sig->zk_proofs_size == 0u) {
+        log_it(L_ERROR,
+               "Signature deserialization rejected: multi-signer blob with empty threshold_zk_proofs");
+        return -EINVAL;
+    }
+
     debug_if(s_debug_more, L_DEBUG, "Deserialized signature: %zu bytes", result.bytes_read);
     return 0;
 }

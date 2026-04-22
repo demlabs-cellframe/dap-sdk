@@ -92,16 +92,6 @@ int chipmunk_poly_pointwise(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_
 int chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
 
 /**
- * @brief Decompose polynomial into power-of-2 base representation
- * 
- * @param r1 Output polynomial for higher bits  
- * @param r0 Output polynomial for lower bits
- * @param a Input polynomial to decompose
- * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
- */
-int chipmunk_poly_decompose(chipmunk_poly_t *r1, chipmunk_poly_t *r0, const chipmunk_poly_t *a);
-
-/**
  * @brief Generate challenge polynomial from hash
  * 
  * @param c Output challenge polynomial

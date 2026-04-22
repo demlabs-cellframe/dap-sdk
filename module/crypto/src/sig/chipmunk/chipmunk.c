@@ -30,14 +30,13 @@
 #include "chipmunk_hash.h"
 #include "chipmunk_hots.h"
 #include "dap_common.h"
-#include "dap_time.h"
 #include "dap_crypto_common.h"
 #include "dap_rand.h"
+#include "dap_memwipe.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <errno.h>
@@ -46,10 +45,8 @@
 
 #define LOG_TAG "chipmunk"
 
-// Детальное логирование для Chipmunk модуля
 static bool s_debug_more = false;
 
-// Определение MIN для использования в функциях работы с массивами
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
@@ -60,8 +57,31 @@ static volatile int g_initialized = 0;
 static pthread_once_t s_chipmunk_once = PTHREAD_ONCE_INIT;
 static int s_chipmunk_init_result = 0;
 
-// Forward declarations
-static void secure_clean(volatile void* data, size_t size);
+static void secure_clean(void *data, size_t size);
+
+/* CR-D3 helpers — forward declared so chipmunk_keypair and chipmunk_sign,
+ * which both need the per-leaf HOTS derivation, can call them regardless of
+ * definition order further down this file.
+ *
+ * CR-D15.B: the derivation helpers are also exposed via chipmunk_internal.h
+ * so that chipmunk_hypertree.c uses EXACTLY the same secret→pk pipeline as
+ * chipmunk_sign — otherwise the root committed to by keygen would not match
+ * the leaf that verify re-derives. */
+#include "chipmunk_internal.h"
+
+static inline int s_chipmunk_derive_hots_leaf_secret(const uint8_t a_key_seed[32],
+                                                     uint32_t a_leaf_index,
+                                                     chipmunk_hots_sk_t *a_hots_sk_out)
+{
+    return dap_chipmunk_derive_hots_leaf_secret_internal(a_key_seed, a_leaf_index, a_hots_sk_out);
+}
+
+static inline void s_chipmunk_compute_hots_pk(const chipmunk_hots_params_t *a_params,
+                                              const chipmunk_hots_sk_t *a_hots_sk,
+                                              chipmunk_hots_pk_t *a_hots_pk_out)
+{
+    dap_chipmunk_compute_hots_pk_internal(a_params, a_hots_sk, a_hots_pk_out);
+}
 
 static void s_chipmunk_init_impl(void)
 {
@@ -90,213 +110,142 @@ int chipmunk_init(void) {
  */
 int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
                     uint8_t *a_private_key, size_t a_private_key_size) {
+    chipmunk_private_key_t *l_sk = NULL;
+    chipmunk_public_key_t  *l_pk = NULL;
+    uint8_t                *l_pk_bytes = NULL;
+    chipmunk_hots_params_t *l_hots_params = NULL;
+    chipmunk_hots_pk_t     *l_hots_pk = NULL;
+    chipmunk_hots_sk_t     *l_hots_sk = NULL;
+    uint8_t l_key_seed[32];
+    uint8_t l_rho_seed[32];
+    uint8_t l_rho_source[36];
+    dap_hash_sha3_256_t l_rho_hash;
+    int l_result = CHIPMUNK_ERROR_SUCCESS;
+
+    memset(l_key_seed, 0, sizeof(l_key_seed));
+    memset(l_rho_seed, 0, sizeof(l_rho_seed));
+
     debug_if(s_debug_more, L_DEBUG, "chipmunk_keypair: Starting HOTS key generation");
-    
-    // Check for corruption and parameter validation
-    if (a_public_key_size > 100000 || a_private_key_size > 100000) {
-        log_it(L_ERROR, "CORRUPTION: Sizes are too large! pub=%zu, priv=%zu",
-               a_public_key_size, a_private_key_size);
-        return -1;
-    }
-    
-    if (a_public_key_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
-        log_it(L_ERROR, "Public key size mismatch! Expected %d, got %zu", 
-               CHIPMUNK_PUBLIC_KEY_SIZE, a_public_key_size);
-        return -1;
-    }
-    
-    if (a_private_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_ERROR, "Private key size mismatch! Expected %d, got %zu", 
-               CHIPMUNK_PRIVATE_KEY_SIZE, a_private_key_size);
-        return -1;
-    }
-    
-    // Проверка параметров
+
     if (!a_public_key || !a_private_key) {
         log_it(L_ERROR, "NULL key buffers in chipmunk_keypair");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
-    // **ИСПРАВЛЕНИЕ STACK OVERFLOW**: выделяем большие структуры в куче вместо стека
-    debug_if(s_debug_more, L_DEBUG, "Allocating memory for key structures to prevent stack overflow");
-    
-    // Выделяем память для больших структур в куче
-    chipmunk_private_key_t *l_sk = DAP_NEW_Z(chipmunk_private_key_t);
-    chipmunk_public_key_t *l_pk = DAP_NEW_Z(chipmunk_public_key_t);
-    uint8_t *l_pk_bytes = DAP_NEW_Z_SIZE(uint8_t, CHIPMUNK_PUBLIC_KEY_SIZE);
-    chipmunk_hots_params_t *l_hots_params = DAP_NEW_Z(chipmunk_hots_params_t);
-    chipmunk_hots_pk_t *l_hots_pk = DAP_NEW_Z(chipmunk_hots_pk_t);
-    chipmunk_hots_sk_t *l_hots_sk = DAP_NEW_Z(chipmunk_hots_sk_t);
-    
-    // Проверяем успешное выделение памяти
+    if (a_public_key_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
+        log_it(L_ERROR, "Public key size mismatch! Expected %d, got %zu",
+               CHIPMUNK_PUBLIC_KEY_SIZE, a_public_key_size);
+        return CHIPMUNK_ERROR_INVALID_SIZE;
+    }
+    if (a_private_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR, "Private key size mismatch! Expected %d, got %zu",
+               CHIPMUNK_PRIVATE_KEY_SIZE, a_private_key_size);
+        return CHIPMUNK_ERROR_INVALID_SIZE;
+    }
+
+    // HOTS structures total ~52KB; allocate on the heap to avoid blowing the stack.
+    l_sk          = DAP_NEW_Z(chipmunk_private_key_t);
+    l_pk          = DAP_NEW_Z(chipmunk_public_key_t);
+    l_pk_bytes    = DAP_NEW_Z_SIZE(uint8_t, CHIPMUNK_PUBLIC_KEY_SIZE);
+    l_hots_params = DAP_NEW_Z(chipmunk_hots_params_t);
+    l_hots_pk     = DAP_NEW_Z(chipmunk_hots_pk_t);
+    l_hots_sk     = DAP_NEW_Z(chipmunk_hots_sk_t);
     if (!l_sk || !l_pk || !l_pk_bytes || !l_hots_params || !l_hots_pk || !l_hots_sk) {
         log_it(L_ERROR, "Failed to allocate memory for key structures");
-        // Освобождаем частично выделенную память
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return CHIPMUNK_ERROR_INIT_FAILED;
+        l_result = CHIPMUNK_ERROR_MEMORY;
+        goto cleanup;
     }
-    
-    debug_if(s_debug_more, L_DEBUG, "Successfully allocated ~52KB memory for key structures in heap");
-    
-    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: детерминированная генерация ключей
-    // Используем фиксированный seed для тестирования или получаем его извне
-    uint8_t l_key_seed[32];
-    // Для тестирования используем детерминированный seed
-    // В реальном применении seed должен приходить извне или генерироваться криптографически стойким образом
-    static uint32_t s_key_counter = 0;
-    s_key_counter++;
-    
-    // Генерируем детерминированный seed на основе времени и счетчика для уникальности
-    dap_hash_sha3_256_t l_hash_out;
-    uint8_t l_entropy_source[64];
-    memset(l_entropy_source, 0, sizeof(l_entropy_source));
-    
-    // Используем комбинацию счетчика и системного времени для энтропии
-    uint32_t l_time_part = (uint32_t)dap_time_now();
-    memcpy(l_entropy_source, &s_key_counter, 4);
-    memcpy(l_entropy_source + 4, &l_time_part, 4);
-    
-    // Добавляем дополнительную энтропию
-    for (int i = 8; i < 64; i++) {
-        l_entropy_source[i] = (uint8_t)(i * s_key_counter + l_time_part);
+
+    // CR-D4 fix (Round-3): seed master entropy from /dev/urandom via dap_random_bytes.
+    // Previously used `time(NULL) + static counter`, which exposed key generation to
+    // process-fork / fast-clock / multi-machine collisions and is predictable enough
+    // to enumerate the seed space.  Cryptographic keypair generation MUST use the OS RNG.
+    if (dap_random_bytes(l_key_seed, sizeof(l_key_seed)) != 0) {
+        log_it(L_ERROR, "dap_random_bytes failed while drawing %zu bytes for Chipmunk key seed",
+               sizeof(l_key_seed));
+        l_result = CHIPMUNK_ERROR_INIT_FAILED;
+        goto cleanup;
     }
-    
-    dap_hash_sha3_256(l_entropy_source, 64, &l_hash_out);
-    memcpy(l_key_seed, &l_hash_out, 32);
-    
-    debug_if(s_debug_more, L_DEBUG, "Generated deterministic key seed with counter %u", s_key_counter);
-    
-    // Генерируем rho для публичных параметров (тоже детерминированно)
-    uint8_t l_rho_seed[32];
-    uint8_t l_rho_source[36];
+
+    // rho (public-matrix seed) is derived deterministically from the secret key seed
+    // via SHA3-256 with a fixed domain separator: this lets any verifier re-sample
+    // the public matrix A from rho_seed alone.
     memcpy(l_rho_source, l_key_seed, 32);
-    uint32_t l_rho_nonce = 0xDEADBEEF; // Фиксированное значение для rho
+    const uint32_t l_rho_nonce = 0xDEADBEEFu;
     memcpy(l_rho_source + 32, &l_rho_nonce, 4);
-    
-    dap_hash_sha3_256_t l_rho_hash;
     dap_hash_sha3_256(l_rho_source, 36, &l_rho_hash);
     memcpy(l_rho_seed, &l_rho_hash, 32);
-    
-    // Генерируем HOTS параметры из rho_seed (как при подписи/верификации!)
+    secure_clean(l_rho_source, sizeof(l_rho_source));
+    secure_clean(&l_rho_hash, sizeof(l_rho_hash));
+
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         if (dap_chipmunk_hash_sample_matrix(l_hots_params->a[i].coeffs, l_rho_seed, i) != 0) {
-            debug_if(s_debug_more, L_ERROR, "Failed to generate polynomial A[%d]", i);
-            // Освобождаем память перед возвратом
-            DAP_DEL_Z(l_sk);
-            DAP_DEL_Z(l_pk);
-            DAP_DEL_Z(l_pk_bytes);
-            DAP_DEL_Z(l_hots_params);
-            DAP_DEL_Z(l_hots_pk);
-            DAP_DEL_Z(l_hots_sk);
-            return CHIPMUNK_ERROR_HASH_FAILED;
+            log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
+            l_result = CHIPMUNK_ERROR_HASH_FAILED;
+            goto cleanup;
         }
-        // Преобразуем в NTT домен
         chipmunk_poly_ntt(&l_hots_params->a[i]);
     }
-    
-    if (chipmunk_hots_keygen(l_key_seed, 0, l_hots_params, l_hots_pk, l_hots_sk) != 0) {
-        log_it(L_ERROR, "Failed to generate HOTS keys");
-        // Освобождаем память перед возвратом
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return CHIPMUNK_ERROR_INTERNAL;
+
+    /* CR-D3: derive the leaf-0 HOTS secret with the same domain-separated
+     * derivation that chipmunk_sign uses, then compute the matching public
+     * key from (s0, s1, A).  This invariant — keygen and sign agree on the
+     * HOTS secret for every leaf_index — is what makes the stored public
+     * key verify against signatures produced later. */
+    if (s_chipmunk_derive_hots_leaf_secret(l_key_seed, 0u, l_hots_sk) != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to derive HOTS leaf-0 secret");
+        l_result = CHIPMUNK_ERROR_INTERNAL;
+        goto cleanup;
     }
-    
-    // Копируем key_seed в приватный ключ
+    s_chipmunk_compute_hots_pk(l_hots_params, l_hots_sk, l_hots_pk);
+
+    l_sk->leaf_index = 0u;
     memcpy(l_sk->key_seed, l_key_seed, 32);
-    
-    // Копируем rho_seed в публичный ключ
     memcpy(l_pk->rho_seed, l_rho_seed, 32);
-    
-    // Копируем v0 и v1 из HOTS ключей
     memcpy(&l_pk->v0, &l_hots_pk->v0, sizeof(chipmunk_poly_t));
     memcpy(&l_pk->v1, &l_hots_pk->v1, sizeof(chipmunk_poly_t));
-    
-    // Сохраняем публичный ключ в приватном ключе
     memcpy(&l_sk->pk, l_pk, sizeof(*l_pk));
-    
-    // Вычисляем хеш публичного ключа для коммитмента
-    int result = chipmunk_public_key_to_bytes(l_pk_bytes, l_pk);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to serialize public key");
-        // Освобождаем память перед возвратом
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return result;
+
+    l_result = chipmunk_public_key_to_bytes(l_pk_bytes, l_pk);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to serialize public key for tr commitment");
+        goto cleanup;
     }
-    
-    // Используем SHA3-384 для tr (48 байт)
-    result = dap_chipmunk_hash_sha3_384(l_sk->tr, l_pk_bytes, CHIPMUNK_PUBLIC_KEY_SIZE);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to compute public key hash");
-        // Освобождаем память перед возвратом
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return result;
+
+    l_result = dap_chipmunk_hash_sha3_384(l_sk->tr, l_pk_bytes, CHIPMUNK_PUBLIC_KEY_SIZE);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to compute public key tr hash");
+        goto cleanup;
     }
-    
-    // Сериализуем ключи для вывода
-    result = chipmunk_private_key_to_bytes(a_private_key, l_sk);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
+
+    l_result = chipmunk_private_key_to_bytes(a_private_key, l_sk);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize private key");
-        // Освобождаем память перед возвратом
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return result;
+        goto cleanup;
     }
-    
-    result = chipmunk_public_key_to_bytes(a_public_key, l_pk);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
+
+    l_result = chipmunk_public_key_to_bytes(a_public_key, l_pk);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize public key");
-        // Освобождаем память перед возвратом
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return result;
+        goto cleanup;
     }
-    
+
     debug_if(s_debug_more, L_DEBUG, "Successfully generated Chipmunk HOTS keypair");
-    
-    // Очищаем секретные данные
-    secure_clean(l_hots_sk, sizeof(*l_hots_sk));
-    secure_clean(l_sk, sizeof(*l_sk));
+
+cleanup:
+    // CR-D13 fix (Round-3): every buffer that ever touched the secret seed must be
+    // wiped before release, on the success path AND on every failure path.
+    if (l_hots_sk) secure_clean(l_hots_sk, sizeof(*l_hots_sk));
+    if (l_sk)      secure_clean(l_sk,      sizeof(*l_sk));
     secure_clean(l_key_seed, sizeof(l_key_seed));
-    
-    // **КРИТИЧЕСКИ ВАЖНО**: освобождаем выделенную память
+    secure_clean(l_rho_seed, sizeof(l_rho_seed));
+
     DAP_DEL_Z(l_sk);
     DAP_DEL_Z(l_pk);
     DAP_DEL_Z(l_pk_bytes);
     DAP_DEL_Z(l_hots_params);
     DAP_DEL_Z(l_hots_pk);
     DAP_DEL_Z(l_hots_sk);
-    
-    debug_if(s_debug_more, L_DEBUG, "Freed allocated memory and completed key generation");
-    
-    return CHIPMUNK_ERROR_SUCCESS;
+    return l_result;
 }
 
 /**
@@ -308,132 +257,238 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
  * @param[out] a_signature Output signature buffer
  * @return Returns 0 on success, negative on error
  */
-int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message, 
+/* CR-D3: domain-separation tag for per-leaf HOTS key derivation.  Binding
+ * the master key_seed plus the monotonic leaf_index under a fixed label
+ * guarantees that every leaf_index produces an independent (s0, s1); thus
+ * two signatures taken at different counter values share no linear relation
+ * that could be exploited for HOTS key recovery. */
+static const uint8_t s_chipmunk_leaf_ds[16] = {
+    'C','H','I','P','M','U','N','K','-','L','E','A','F','-','v','1'
+};
+
+static pthread_mutex_t s_chipmunk_sign_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/**
+ * @brief Derive a HOTS secret (s0, s1) for the specified leaf_index.
+ *
+ * Both chipmunk_keypair (for leaf_index=0 during keygen) and chipmunk_sign
+ * (for the current leaf_index) call this helper, so that the public key
+ * computed at keygen time is guaranteed to match the secret key that is
+ * re-derived at signing time.  The derivation is:
+ *
+ *     leaf_seed = SHA3-256( "CHIPMUNK-LEAF-v1" || key_seed || BE32(leaf_index) )
+ *     s0[i]     = poly_uniform_mod_p( leaf_seed || BE32(i),               phi         )
+ *     s1[i]     = poly_uniform_mod_p( leaf_seed || BE32(GAMMA + i),       phi*alpha_H )
+ *
+ * The domain label prevents any other SHA3-256 use of key_seed from
+ * colliding with this derivation.  The leaf_index is included under the
+ * hash so distinct leaves produce independent (s0, s1) pairs — the
+ * invariant that, together with the exhaustion check in chipmunk_sign,
+ * closes the classical HOTS key-recovery attack.
+ */
+int dap_chipmunk_derive_hots_leaf_secret_internal(const uint8_t a_key_seed[32],
+                                                  uint32_t a_leaf_index,
+                                                  chipmunk_hots_sk_t *a_hots_sk_out)
+{
+    if (!a_key_seed || !a_hots_sk_out) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+
+    uint8_t l_leaf_source[sizeof(s_chipmunk_leaf_ds) + 32 + 4];
+    uint8_t l_leaf_seed[32];
+    dap_hash_sha3_256_t l_hash_out;
+
+    memcpy(l_leaf_source, s_chipmunk_leaf_ds, sizeof(s_chipmunk_leaf_ds));
+    memcpy(l_leaf_source + sizeof(s_chipmunk_leaf_ds), a_key_seed, 32);
+    l_leaf_source[sizeof(s_chipmunk_leaf_ds) + 32 + 0] = (uint8_t)((a_leaf_index >> 24) & 0xFFu);
+    l_leaf_source[sizeof(s_chipmunk_leaf_ds) + 32 + 1] = (uint8_t)((a_leaf_index >> 16) & 0xFFu);
+    l_leaf_source[sizeof(s_chipmunk_leaf_ds) + 32 + 2] = (uint8_t)((a_leaf_index >> 8)  & 0xFFu);
+    l_leaf_source[sizeof(s_chipmunk_leaf_ds) + 32 + 3] = (uint8_t)( a_leaf_index        & 0xFFu);
+    dap_hash_sha3_256(l_leaf_source, sizeof(l_leaf_source), &l_hash_out);
+    memcpy(l_leaf_seed, &l_hash_out, 32);
+
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        uint8_t l_s_seed[36];
+        memcpy(l_s_seed, l_leaf_seed, 32);
+
+        uint32_t l_s0_nonce = (uint32_t)i;
+        memcpy(l_s_seed + 32, &l_s0_nonce, 4);
+        chipmunk_poly_uniform_mod_p(&a_hots_sk_out->s0[i], l_s_seed, CHIPMUNK_PHI);
+        chipmunk_ntt(a_hots_sk_out->s0[i].coeffs);
+
+        uint32_t l_s1_nonce = (uint32_t)(CHIPMUNK_GAMMA + i);
+        memcpy(l_s_seed + 32, &l_s1_nonce, 4);
+        chipmunk_poly_uniform_mod_p(&a_hots_sk_out->s1[i], l_s_seed, CHIPMUNK_PHI_ALPHA_H);
+        chipmunk_ntt(a_hots_sk_out->s1[i].coeffs);
+
+        dap_memwipe(l_s_seed, sizeof(l_s_seed));
+    }
+
+    dap_memwipe(l_leaf_source, sizeof(l_leaf_source));
+    dap_memwipe(l_leaf_seed, sizeof(l_leaf_seed));
+    dap_memwipe(&l_hash_out, sizeof(l_hash_out));
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+/**
+ * @brief Compute HOTS public key v0, v1 from a fully-populated HOTS secret
+ *        and the public matrix A in NTT domain.
+ *
+ * Replicates the identity used by chipmunk_hots_keygen:
+ *     v0 = INVNTT( Σ_i  A[i] * s0[i] )   (stored in time domain)
+ *     v1 = INVNTT( Σ_i  A[i] * s1[i] )
+ * but with the caller-provided HOTS secret so we can plug in the CR-D3
+ * domain-separated derivation.
+ */
+void dap_chipmunk_compute_hots_pk_internal(const chipmunk_hots_params_t *a_params,
+                                           const chipmunk_hots_sk_t *a_hots_sk,
+                                           chipmunk_hots_pk_t *a_hots_pk_out)
+{
+    chipmunk_poly_t l_v0_time_sum;
+    chipmunk_poly_t l_v1_time_sum;
+    memset(&l_v0_time_sum, 0, sizeof(l_v0_time_sum));
+    memset(&l_v1_time_sum, 0, sizeof(l_v1_time_sum));
+
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        chipmunk_poly_t l_term_v0_ntt;
+        chipmunk_poly_mul_ntt(&l_term_v0_ntt, &a_params->a[i], &a_hots_sk->s0[i]);
+
+        chipmunk_poly_t l_term_v1_ntt;
+        chipmunk_poly_mul_ntt(&l_term_v1_ntt, &a_params->a[i], &a_hots_sk->s1[i]);
+
+        chipmunk_poly_t l_term_v0_time = l_term_v0_ntt;
+        chipmunk_poly_t l_term_v1_time = l_term_v1_ntt;
+        chipmunk_invntt(l_term_v0_time.coeffs);
+        chipmunk_invntt(l_term_v1_time.coeffs);
+
+        if (i == 0) {
+            l_v0_time_sum = l_term_v0_time;
+            l_v1_time_sum = l_term_v1_time;
+        } else {
+            chipmunk_poly_add(&l_v0_time_sum, &l_v0_time_sum, &l_term_v0_time);
+            chipmunk_poly_add(&l_v1_time_sum, &l_v1_time_sum, &l_term_v1_time);
+        }
+    }
+
+    a_hots_pk_out->v0 = l_v0_time_sum;
+    a_hots_pk_out->v1 = l_v1_time_sum;
+}
+
+int chipmunk_sign(uint8_t *a_private_key, const uint8_t *a_message,
                   size_t a_message_len, uint8_t *a_signature) {
-    debug_if(s_debug_more, L_DEBUG , "Starting Chipmunk HOTS signature generation");
-    
+    chipmunk_private_key_t l_sk = {0};
+    chipmunk_hots_params_t l_hots_params = {0};
+    chipmunk_hots_sk_t l_hots_sk = {0};
+    chipmunk_hots_signature_t l_hots_sig = {0};
+    chipmunk_signature_t l_sig = {0};
+    bool l_locked = false;
+    int l_result = CHIPMUNK_ERROR_SUCCESS;
+
+    debug_if(s_debug_more, L_DEBUG, "Starting Chipmunk HOTS signature generation (CR-D3 strict one-time)");
+
     if (!a_private_key || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_sign");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
-    // Проверка на максимальный размер сообщения
+
     if (a_message_len > 10 * 1024 * 1024) { // 10MB max message size
         log_it(L_ERROR, "Message too large for signing");
         return CHIPMUNK_ERROR_INVALID_SIZE;
     }
-    
-    // Парсим приватный ключ
-    chipmunk_private_key_t l_sk = {0};
+
+    /* CR-D3: serialize the entire check-and-increment of leaf_index so that
+     * concurrent chipmunk_sign callers against the same private-key buffer
+     * cannot both observe leaf_index=0 and both consume it (which would
+     * immediately expose the HOTS secret key). */
+    if (pthread_mutex_lock(&s_chipmunk_sign_mutex) != 0) {
+        log_it(L_ERROR, "Failed to acquire chipmunk sign mutex");
+        return CHIPMUNK_ERROR_INTERNAL;
+    }
+    l_locked = true;
+
     if (chipmunk_private_key_from_bytes(&l_sk, a_private_key) != 0) {
         log_it(L_ERROR, "Failed to parse private key");
-        return CHIPMUNK_ERROR_INVALID_PARAM;
+        l_result = CHIPMUNK_ERROR_INVALID_PARAM;
+        goto sign_cleanup;
     }
-    
-    // Debug: show public key extracted from private key
-    if (s_debug_more) {
-        log_it(L_INFO, "=== SIGNING PHASE: PUBLIC KEY FROM PRIVATE KEY ===");
-        uint8_t l_extracted_pubkey[CHIPMUNK_PUBLIC_KEY_SIZE];
-        chipmunk_public_key_to_bytes(l_extracted_pubkey, &l_sk.pk);
-        log_it(L_INFO, "ExtractedPubKey first 16 bytes: %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
-               l_extracted_pubkey[0], l_extracted_pubkey[1], l_extracted_pubkey[2], l_extracted_pubkey[3],
-               l_extracted_pubkey[4], l_extracted_pubkey[5], l_extracted_pubkey[6], l_extracted_pubkey[7],
-               l_extracted_pubkey[8], l_extracted_pubkey[9], l_extracted_pubkey[10], l_extracted_pubkey[11],
-               l_extracted_pubkey[12], l_extracted_pubkey[13], l_extracted_pubkey[14], l_extracted_pubkey[15]);
+
+    /* CR-D3 fail-fast: a Chipmunk/HOTS private key is strictly single-use
+     * until CR-D15 introduces the Merkle-tree authentication path.  Any
+     * attempt to sign a second message under the same key would leak s0
+     * and s1; refuse loudly so the caller rotates to a fresh keypair. */
+    if (l_sk.leaf_index >= CHIPMUNK_MAX_SIGNATURES) {
+        log_it(L_ERROR,
+               "CR-D3: Chipmunk private key exhausted (leaf_index=%u, max=%u). "
+               "Refusing to sign — this key has already produced a signature "
+               "and reusing it would leak the HOTS secret. Rotate to a fresh keypair.",
+               l_sk.leaf_index, CHIPMUNK_MAX_SIGNATURES);
+        l_result = CHIPMUNK_ERROR_KEY_EXHAUSTED;
+        goto sign_cleanup;
     }
-    
-    // Генерируем HOTS параметры из rho_seed
-    chipmunk_hots_params_t l_hots_params = {0};
+
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_sk.pk.rho_seed, i) != 0) {
-            log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
-        secure_clean(&l_sk, sizeof(l_sk));
-            return CHIPMUNK_ERROR_HASH_FAILED;
+            log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
+            l_result = CHIPMUNK_ERROR_HASH_FAILED;
+            goto sign_cleanup;
         }
-        // Преобразуем в NTT домен
         chipmunk_poly_ntt(&l_hots_params.a[i]);
     }
-    
-    // Восстанавливаем HOTS секретный ключ из key_seed
-    chipmunk_hots_sk_t l_hots_sk = {0};
-    
-    // Используем тот же метод что и в chipmunk_hots_keygen!
-    // Initialize the RNG with seed and counter (как в Rust)
-    uint8_t l_derived_seed[32];
-    uint8_t l_counter_bytes[4];
-    uint32_t a_counter = 0; // такой же counter как при генерации ключей
-    l_counter_bytes[0] = (a_counter >> 24) & 0xFF;
-    l_counter_bytes[1] = (a_counter >> 16) & 0xFF;
-    l_counter_bytes[2] = (a_counter >> 8) & 0xFF;
-    l_counter_bytes[3] = a_counter & 0xFF;
-    
-    // Concatenate seed and counter
-    uint8_t l_seed_and_counter[36];
-    memcpy(l_seed_and_counter, l_sk.key_seed, 32);
-    memcpy(l_seed_and_counter + 32, l_counter_bytes, 4);
-    
-    // Hash to get derived seed (точно как в chipmunk_hots_keygen)
-    dap_hash_sha3_256_t l_hash_out;
-    dap_hash_sha3_256(l_seed_and_counter, 36, &l_hash_out);
-    memcpy(l_derived_seed, &l_hash_out, 32);
-    
-    // Генерируем секретные ключи точно как в chipmunk_hots_keygen
-    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
-        // Generate s0[i] in time domain, then convert to NTT
-        uint8_t l_s0_seed[36];
-        memcpy(l_s0_seed, l_derived_seed, 32);
-        uint32_t l_s0_nonce = a_counter + i;
-        memcpy(l_s0_seed + 32, &l_s0_nonce, 4);
-        
-        chipmunk_poly_uniform_mod_p(&l_hots_sk.s0[i], l_s0_seed, CHIPMUNK_PHI);
-        // Преобразуем s0[i] в NTT домен для хранения
-        chipmunk_ntt(l_hots_sk.s0[i].coeffs);
-        
-        // Generate s1[i] in time domain, then convert to NTT  
-        uint8_t l_s1_seed[36];
-        memcpy(l_s1_seed, l_derived_seed, 32);
-        uint32_t l_s1_nonce = a_counter + CHIPMUNK_GAMMA + i;
-        memcpy(l_s1_seed + 32, &l_s1_nonce, 4);
-        
-        chipmunk_poly_uniform_mod_p(&l_hots_sk.s1[i], l_s1_seed, CHIPMUNK_PHI_ALPHA_H);
-        // Преобразуем s1[i] в NTT домен для хранения
-        chipmunk_ntt(l_hots_sk.s1[i].coeffs);
+
+    /* CR-D3: derive (s0, s1) for the current leaf_index using the
+     * domain-separated SHA3 derivation shared with chipmunk_keypair so that
+     * the stored public key necessarily matches this HOTS secret. */
+    const uint32_t l_leaf_index = l_sk.leaf_index;
+    l_result = s_chipmunk_derive_hots_leaf_secret(l_sk.key_seed, l_leaf_index, &l_hots_sk);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to derive HOTS leaf secret for leaf_index=%u", l_leaf_index);
+        goto sign_cleanup;
     }
-    
-    // Генерируем HOTS подпись
-    chipmunk_hots_signature_t l_hots_sig = {0};
-    int l_result = chipmunk_hots_sign(&l_hots_sk, a_message, a_message_len, &l_hots_sig);
-    
+
+    l_result = chipmunk_hots_sign(&l_hots_sk, a_message, a_message_len, &l_hots_sig);
     if (l_result != 0) {
         log_it(L_ERROR, "HOTS signature failed with error %d", l_result);
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_hots_sk, sizeof(l_hots_sk));
-        return l_result;
+        goto sign_cleanup;
     }
-    
-    // Конвертируем HOTS подпись в формат Chipmunk
-    chipmunk_signature_t l_sig = {0};
-    
-    // Копируем все GAMMA полиномов sigma
+
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         memcpy(&l_sig.sigma[i], &l_hots_sig.sigma[i], sizeof(chipmunk_poly_t));
     }
-    
-    // Сериализуем подпись
+
     if (chipmunk_signature_to_bytes(a_signature, &l_sig) != 0) {
         log_it(L_ERROR, "Failed to serialize signature");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_hots_sk, sizeof(l_hots_sk));
-        return CHIPMUNK_ERROR_INTERNAL;
+        l_result = CHIPMUNK_ERROR_INTERNAL;
+        goto sign_cleanup;
     }
-    
-    // Очищаем секретные данные
+
+    /* CR-D3: advance and persist the counter only after the signature has
+     * been fully produced and serialised.  Any earlier failure must leave
+     * leaf_index untouched so the caller can retry (on transient errors)
+     * or rotate the key (on hard errors) without accidentally consuming
+     * the one-time slot. */
+    l_sk.leaf_index = l_leaf_index + 1u;
+    if (chipmunk_private_key_to_bytes(a_private_key, &l_sk) != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to persist updated leaf_index counter in private key buffer");
+        l_result = CHIPMUNK_ERROR_INTERNAL;
+        goto sign_cleanup;
+    }
+
+    debug_if(s_debug_more, L_DEBUG,
+             "HOTS signature successfully generated; leaf_index advanced to %u",
+             l_sk.leaf_index);
+    l_result = CHIPMUNK_ERROR_SUCCESS;
+
+sign_cleanup:
+    /* CR-D13 fix: wipe every transient secret derived from the master key
+     * seed; otherwise pieces of the HOTS secret key (which directly
+     * recovers the master key under HOTS reuse) survive in stack memory. */
     secure_clean(&l_sk, sizeof(l_sk));
     secure_clean(&l_hots_sk, sizeof(l_hots_sk));
     secure_clean(&l_hots_sig, sizeof(l_hots_sig));
-    
-    debug_if(s_debug_more, L_DEBUG, "HOTS signature successfully generated");
-    return CHIPMUNK_ERROR_SUCCESS;
+    if (l_locked) {
+        pthread_mutex_unlock(&s_chipmunk_sign_mutex);
+    }
+    return l_result;
 }
 
 /**
@@ -589,32 +644,40 @@ int chipmunk_private_key_to_bytes(uint8_t *a_output, const chipmunk_private_key_
         log_it(L_ERROR, "NULL input parameters in chipmunk_private_key_to_bytes");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
+
     size_t l_offset = 0;
-    size_t l_total_size = 32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE;
-    
+    size_t l_total_size = CHIPMUNK_LEAF_INDEX_SIZE + 32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE;
+
     debug_if(s_debug_more, L_INFO, "=== chipmunk_private_key_to_bytes DEBUG ===");
     debug_if(s_debug_more, L_INFO, "Expected total size: %zu", l_total_size);
     debug_if(s_debug_more, L_INFO, "Output buffer pointer: %p", a_output);
-    
+
+    /* CR-D3: write monotonic leaf_index big-endian as the very first field so
+     * that the on-disk ordering matches the natural ordering of the counter. */
+    a_output[l_offset + 0] = (uint8_t)((a_key->leaf_index >> 24) & 0xFFu);
+    a_output[l_offset + 1] = (uint8_t)((a_key->leaf_index >> 16) & 0xFFu);
+    a_output[l_offset + 2] = (uint8_t)((a_key->leaf_index >> 8)  & 0xFFu);
+    a_output[l_offset + 3] = (uint8_t)( a_key->leaf_index        & 0xFFu);
+    l_offset += CHIPMUNK_LEAF_INDEX_SIZE;
+
     // Write key_seed (32 bytes)
     debug_if(s_debug_more, L_INFO, "Writing key_seed at offset %zu", l_offset);
     memcpy(a_output + l_offset, a_key->key_seed, 32);
     l_offset += 32;
-    
+
     // Write tr (48 bytes)
     debug_if(s_debug_more, L_INFO, "Writing tr at offset %zu", l_offset);
     memcpy(a_output + l_offset, a_key->tr, 48);
     l_offset += 48;
-    
+
     // Write public key
     debug_if(s_debug_more, L_INFO, "Writing public key at offset %zu", l_offset);
     debug_if(s_debug_more, L_INFO, "Calling chipmunk_public_key_to_bytes with buffer at %p", a_output + l_offset);
     int result = chipmunk_public_key_to_bytes(a_output + l_offset, &a_key->pk);
-    
+
     debug_if(s_debug_more, L_INFO, "chipmunk_public_key_to_bytes returned %d", result);
     debug_if(s_debug_more, L_INFO, "===========================================");
-    
+
     return result;
 }
 
@@ -693,24 +756,31 @@ int chipmunk_private_key_from_bytes(chipmunk_private_key_t *a_key, const uint8_t
         log_it(L_ERROR, "NULL input parameters in chipmunk_private_key_from_bytes");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
+
     size_t l_offset = 0;
-    
+
+    /* CR-D3: leaf_index is stored big-endian as the very first 4 bytes. */
+    a_key->leaf_index = ((uint32_t)a_input[l_offset + 0] << 24) |
+                        ((uint32_t)a_input[l_offset + 1] << 16) |
+                        ((uint32_t)a_input[l_offset + 2] << 8)  |
+                        ((uint32_t)a_input[l_offset + 3]);
+    l_offset += CHIPMUNK_LEAF_INDEX_SIZE;
+
     // Read key_seed (32 bytes)
     memcpy(a_key->key_seed, a_input + l_offset, 32);
     l_offset += 32;
-    
+
     // Read tr (48 bytes)
     memcpy(a_key->tr, a_input + l_offset, 48);
     l_offset += 48;
-    
+
     // Read public key
     int l_result = chipmunk_public_key_from_bytes(&a_key->pk, a_input + l_offset);
     if (l_result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to deserialize public key part in private key");
         return l_result;
     }
-    
+
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -744,13 +814,23 @@ int chipmunk_signature_from_bytes(chipmunk_signature_t *a_sig, const uint8_t *a_
     return CHIPMUNK_ERROR_SUCCESS;
 } 
 
-// Implementation of utility functions
-static void secure_clean(volatile void* data, size_t size) {
-    volatile uint8_t *p = (volatile uint8_t*)data;
-    while (size--) {
-        *p++ = 0;
+/**
+ * @brief Securely wipe a buffer, defeating dead-store elimination.
+ *
+ * CR-D25 fix (Round-3): the previous hand-rolled loop on `volatile uint8_t *`
+ * relied on the standard's allowance to eliminate stores to non-volatile
+ * memory and offered no compiler-asm barrier.  `dap_memwipe` is the project's
+ * canonical secure-erase primitive (uses `explicit_bzero` / `memset_s` /
+ * inline asm fence depending on the platform) and must be used everywhere
+ * a key, seed, nonce or signature input touches RAM.
+ */
+static void secure_clean(void *data, size_t size) {
+    if (!data || !size) {
+        return;
     }
-} 
+    dap_memwipe(data, size);
+}
+
 
 // Удалена неиспользуемая функция copy_to_hash_buffer
 
@@ -764,17 +844,30 @@ static void secure_clean(volatile void* data, size_t size) {
  * @param[in] a_private_key_size Size of private key buffer
  * @return int CHIPMUNK_ERROR_SUCCESS if successful, error code otherwise
  */
-int chipmunk_keypair_from_seed(const uint8_t a_seed[32], 
+int chipmunk_keypair_from_seed(const uint8_t a_seed[32],
                                uint8_t *a_public_key, size_t a_public_key_size,
                                uint8_t *a_private_key, size_t a_private_key_size) {
+    chipmunk_private_key_t *l_sk = NULL;
+    chipmunk_public_key_t  *l_pk = NULL;
+    uint8_t                *l_pk_bytes = NULL;
+    chipmunk_hots_params_t *l_hots_params = NULL;
+    chipmunk_hots_pk_t     *l_hots_pk = NULL;
+    chipmunk_hots_sk_t     *l_hots_sk = NULL;
+    uint8_t l_key_seed[32];
+    uint8_t l_rho_seed[32];
+    uint8_t l_rho_source[36];
+    dap_hash_sha3_256_t l_rho_hash;
+    int l_result = CHIPMUNK_ERROR_SUCCESS;
+
+    memset(l_key_seed, 0, sizeof(l_key_seed));
+    memset(l_rho_seed, 0, sizeof(l_rho_seed));
+
     debug_if(s_debug_more, L_DEBUG, "chipmunk_keypair_from_seed: Starting deterministic key generation");
-    
-    // Проверка параметров
+
     if (!a_seed || !a_public_key || !a_private_key) {
         log_it(L_ERROR, "NULL parameters in chipmunk_keypair_from_seed");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
     if (a_public_key_size != CHIPMUNK_PUBLIC_KEY_SIZE ||
         a_private_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
         log_it(L_ERROR, "Invalid key buffer sizes in chipmunk_keypair_from_seed: pub %zu (expected %d), priv %zu (expected %d)",
@@ -782,145 +875,98 @@ int chipmunk_keypair_from_seed(const uint8_t a_seed[32],
                a_private_key_size, CHIPMUNK_PRIVATE_KEY_SIZE);
         return CHIPMUNK_ERROR_INVALID_SIZE;
     }
-    
-    // Выделяем память для больших структур в куче
-    chipmunk_private_key_t *l_sk = DAP_NEW_Z(chipmunk_private_key_t);
-    chipmunk_public_key_t *l_pk = DAP_NEW_Z(chipmunk_public_key_t);
-    uint8_t *l_pk_bytes = DAP_NEW_Z_SIZE(uint8_t, CHIPMUNK_PUBLIC_KEY_SIZE);
-    chipmunk_hots_params_t *l_hots_params = DAP_NEW_Z(chipmunk_hots_params_t);
-    chipmunk_hots_pk_t *l_hots_pk = DAP_NEW_Z(chipmunk_hots_pk_t);
-    chipmunk_hots_sk_t *l_hots_sk = DAP_NEW_Z(chipmunk_hots_sk_t);
-    
+
+    l_sk          = DAP_NEW_Z(chipmunk_private_key_t);
+    l_pk          = DAP_NEW_Z(chipmunk_public_key_t);
+    l_pk_bytes    = DAP_NEW_Z_SIZE(uint8_t, CHIPMUNK_PUBLIC_KEY_SIZE);
+    l_hots_params = DAP_NEW_Z(chipmunk_hots_params_t);
+    l_hots_pk     = DAP_NEW_Z(chipmunk_hots_pk_t);
+    l_hots_sk     = DAP_NEW_Z(chipmunk_hots_sk_t);
     if (!l_sk || !l_pk || !l_pk_bytes || !l_hots_params || !l_hots_pk || !l_hots_sk) {
         log_it(L_ERROR, "Failed to allocate memory for key structures");
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return CHIPMUNK_ERROR_MEMORY;
+        l_result = CHIPMUNK_ERROR_MEMORY;
+        goto cleanup;
     }
-    
-    // Используем переданный seed как основу для генерации ключей
-    uint8_t l_key_seed[32];
+
     memcpy(l_key_seed, a_seed, 32);
-    
-    debug_if(s_debug_more, L_DEBUG, "Using provided seed for deterministic key generation");
-    debug_if(s_debug_more, L_DEBUG, "Seed: %02x%02x%02x%02x...", 
-             l_key_seed[0], l_key_seed[1], l_key_seed[2], l_key_seed[3]);
-    
-    // Генерируем rho для публичных параметров детерминированно из основного seed
-    uint8_t l_rho_seed[32];
-    uint8_t l_rho_source[36];
+
+    // Distinct domain separator from chipmunk_keypair so that, given the same
+    // raw seed, the deterministic and OS-RNG paths NEVER collapse onto the same
+    // public matrix (would otherwise create cross-context replay risks).
     memcpy(l_rho_source, l_key_seed, 32);
-    uint32_t l_rho_nonce = 0x12345678; // Фиксированное значение для rho (отличное от общей функции)
+    const uint32_t l_rho_nonce = 0x12345678u;
     memcpy(l_rho_source + 32, &l_rho_nonce, 4);
-    
-    dap_hash_sha3_256_t l_rho_hash;
     dap_hash_sha3_256(l_rho_source, 36, &l_rho_hash);
     memcpy(l_rho_seed, &l_rho_hash, 32);
-    
-    // Генерируем HOTS параметры из rho_seed детерминированно
+    secure_clean(l_rho_source, sizeof(l_rho_source));
+    secure_clean(&l_rho_hash, sizeof(l_rho_hash));
+
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         if (dap_chipmunk_hash_sample_matrix(l_hots_params->a[i].coeffs, l_rho_seed, i) != 0) {
-            log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
-            DAP_DEL_Z(l_sk);
-            DAP_DEL_Z(l_pk);
-            DAP_DEL_Z(l_pk_bytes);
-            DAP_DEL_Z(l_hots_params);
-            DAP_DEL_Z(l_hots_pk);
-            DAP_DEL_Z(l_hots_sk);
-            return CHIPMUNK_ERROR_HASH_FAILED;
+            log_it(L_ERROR, "Failed to generate public matrix polynomial A[%d]", i);
+            l_result = CHIPMUNK_ERROR_HASH_FAILED;
+            goto cleanup;
         }
         chipmunk_poly_ntt(&l_hots_params->a[i]);
     }
-    
-    // Генерируем HOTS ключи детерминированно
-    if (chipmunk_hots_keygen(l_key_seed, 0, l_hots_params, l_hots_pk, l_hots_sk) != 0) {
-        log_it(L_ERROR, "Failed to generate HOTS keys");
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return CHIPMUNK_ERROR_INTERNAL;
+
+    /* CR-D3: identical derivation as in chipmunk_keypair — the HOTS secret
+     * for leaf-0 is computed via the domain-separated SHA3 helper so that
+     * chipmunk_sign (which re-derives the same secret at signing time) can
+     * produce signatures that verify against the public key stored here. */
+    if (s_chipmunk_derive_hots_leaf_secret(l_key_seed, 0u, l_hots_sk) != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to derive HOTS leaf-0 secret (deterministic path)");
+        l_result = CHIPMUNK_ERROR_INTERNAL;
+        goto cleanup;
     }
-    
-    // Заполняем структуры ключей
+    s_chipmunk_compute_hots_pk(l_hots_params, l_hots_sk, l_hots_pk);
+
+    l_sk->leaf_index = 0u;
     memcpy(l_sk->key_seed, l_key_seed, 32);
     memcpy(l_pk->rho_seed, l_rho_seed, 32);
     memcpy(&l_pk->v0, &l_hots_pk->v0, sizeof(chipmunk_poly_t));
     memcpy(&l_pk->v1, &l_hots_pk->v1, sizeof(chipmunk_poly_t));
     memcpy(&l_sk->pk, l_pk, sizeof(*l_pk));
-    
-    // Вычисляем хеш публичного ключа для коммитмента
-    int result = chipmunk_public_key_to_bytes(l_pk_bytes, l_pk);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to serialize public key");
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return result;
+
+    l_result = chipmunk_public_key_to_bytes(l_pk_bytes, l_pk);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to serialize public key for tr commitment");
+        goto cleanup;
     }
-    
-    result = dap_chipmunk_hash_sha3_384(l_sk->tr, l_pk_bytes, CHIPMUNK_PUBLIC_KEY_SIZE);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to compute public key hash");
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return result;
+
+    l_result = dap_chipmunk_hash_sha3_384(l_sk->tr, l_pk_bytes, CHIPMUNK_PUBLIC_KEY_SIZE);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to compute public key tr hash");
+        goto cleanup;
     }
-    
-    // Сериализуем ключи для вывода
-    result = chipmunk_private_key_to_bytes(a_private_key, l_sk);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
+
+    l_result = chipmunk_private_key_to_bytes(a_private_key, l_sk);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize private key");
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return result;
+        goto cleanup;
     }
-    
-    result = chipmunk_public_key_to_bytes(a_public_key, l_pk);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
+
+    l_result = chipmunk_public_key_to_bytes(a_public_key, l_pk);
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize public key");
-        DAP_DEL_Z(l_sk);
-        DAP_DEL_Z(l_pk);
-        DAP_DEL_Z(l_pk_bytes);
-        DAP_DEL_Z(l_hots_params);
-        DAP_DEL_Z(l_hots_pk);
-        DAP_DEL_Z(l_hots_sk);
-        return result;
+        goto cleanup;
     }
-    
+
     debug_if(s_debug_more, L_DEBUG, "Successfully generated deterministic Chipmunk keypair");
-    
-    // Очищаем секретные данные
-    secure_clean(l_hots_sk, sizeof(*l_hots_sk));
-    secure_clean(l_sk, sizeof(*l_sk));
+
+cleanup:
+    if (l_hots_sk) secure_clean(l_hots_sk, sizeof(*l_hots_sk));
+    if (l_sk)      secure_clean(l_sk,      sizeof(*l_sk));
     secure_clean(l_key_seed, sizeof(l_key_seed));
-    
-    // Освобождаем память
+    secure_clean(l_rho_seed, sizeof(l_rho_seed));
+
     DAP_DEL_Z(l_sk);
     DAP_DEL_Z(l_pk);
     DAP_DEL_Z(l_pk_bytes);
     DAP_DEL_Z(l_hots_params);
     DAP_DEL_Z(l_hots_pk);
     DAP_DEL_Z(l_hots_sk);
-    
-    return CHIPMUNK_ERROR_SUCCESS;
+    return l_result;
 }
 
 

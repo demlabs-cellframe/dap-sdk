@@ -228,7 +228,7 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
         .randomness = a_acorn->randomness,
         .randomness_size = a_acorn->randomness_size
     };
-    memcpy(l_acorn_input_data.public_key, a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE);
+    memcpy(l_acorn_input_data.public_key, a_public_key->data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
     
     size_t acorn_input_size = dap_serialize_calc_size(&chipmunk_ring_acorn_input_schema, NULL, &l_acorn_input_data, NULL);
     uint8_t *acorn_input = DAP_NEW_SIZE(uint8_t, acorn_input_size);
@@ -261,16 +261,24 @@ int chipmunk_ring_acorn_create(chipmunk_ring_acorn_t *a_acorn,
         return -1;
     }
     
-    // Generate linkability tag using domain-separated SHA3-256
-    int linkability_result = s_domain_hash(CHIPMUNK_RING_DOMAIN_ACORN_LINKABILITY,
-                                           NULL, 0,
-                                           a_public_key->data, CHIPMUNK_PUBLIC_KEY_SIZE,
-                                           a_acorn->linkability_tag, a_acorn->linkability_tag_size,
-                                           1);
-    if (linkability_result != 0) {
-        log_it(L_ERROR, "Failed to generate linkability tag: %d", linkability_result);
-        chipmunk_ring_acorn_free(a_acorn);
-        return -1;
+    /* CR-D8 fix (Round-3): the previous per-acorn "linkability tag" was
+     * SHA3-256(CHIPMUNK_RING_DOMAIN_ACORN_LINKABILITY || pk_i) — i.e. a
+     * deterministic function of the ring slot's public key.  Every
+     * observer could recompute that value from the ring alone and then
+     * recognise the same ring slot across signatures, which is the exact
+     * opposite of the unlinkability an anonymous ring signature should
+     * provide.  It was also never verified.
+     *
+     * Producing a proper linkability tag requires a sigma-protocol bound
+     * to the signer's secret (e.g. tag = H(sk_signer || session_ctx) with
+     * a ZK proof of knowledge); that redesign is tracked under CR-11.
+     * Until then we zero the slot so it carries no information and leaks
+     * nothing about ring position; wire layout is preserved (size and
+     * offset unchanged) so this fix does not rev the signature format
+     * beyond what CR-D* already break on the feature/chipmunk-ring branch.
+     */
+    if (a_acorn->linkability_tag && a_acorn->linkability_tag_size > 0) {
+        memset(a_acorn->linkability_tag, 0, a_acorn->linkability_tag_size);
     }
 
     debug_if(false, L_INFO, "Acorn created successfully ");

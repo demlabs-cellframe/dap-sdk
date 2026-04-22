@@ -11,6 +11,7 @@ set(TEST_NAMES
     test_chipmunk_ring_multi_signer
     test_chipmunk_ring_threshold_coordination
     test_chipmunk_ring_lagrange_interpolation
+    test_chipmunk_round3_regression
 )
 
 set(TEST_SOURCES
@@ -23,6 +24,7 @@ set(TEST_SOURCES
     test_chipmunk_ring_multi_signer.c
     test_chipmunk_ring_threshold_coordination.c
     test_chipmunk_ring_lagrange_interpolation.c
+    test_chipmunk_round3_regression.c
 )
 
 # Create test executables
