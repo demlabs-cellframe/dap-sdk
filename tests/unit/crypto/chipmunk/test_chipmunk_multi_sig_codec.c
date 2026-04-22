@@ -28,6 +28,7 @@
 
 #include "dap_common.h"
 #include "dap_sign.h"
+#include "dap_sign_chipmunk.h"
 #include "dap_enc.h"
 #include "dap_test.h"
 #include "chipmunk/chipmunk.h"

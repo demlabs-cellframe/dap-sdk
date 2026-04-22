@@ -31,6 +31,7 @@
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
 #include "dap_sign.h"
+#include "dap_sign_chipmunk.h"  // CR-D10 Chipmunk multi-sig bridge
 #include "dap_enc_base58.h"
 
 #include "dap_config.h"
@@ -38,7 +39,6 @@
 #include "dap_enc_chipmunk.h"  // For Chipmunk implementation
 #include "dap_enc_chipmunk_ring.h"  // For Chipmunk ring signatures
 #include "chipmunk/chipmunk_ring.h"  // For ring signature structures
-#include "chipmunk/chipmunk_aggregation.h"  // For aggregation functions
 #include "chipmunk/chipmunk_multi_signature_codec.h"  // CR-D10 schema-driven wire codec
 #include "dap_hash_sha3.h"
 #include "dap_enc_dilithium.h"

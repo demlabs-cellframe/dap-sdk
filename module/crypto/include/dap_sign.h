@@ -322,26 +322,6 @@ int dap_sign_verify_aggregated(
     uint32_t a_signers_count
 );
 
-/* Forward declaration — full definition in chipmunk/chipmunk_aggregation.h. */
-struct chipmunk_multi_signature;
-typedef struct chipmunk_multi_signature chipmunk_multi_signature_t;
-
-/**
- * @brief Wrap an in-memory Chipmunk multi-signature into a dap_sign_t blob.
- * @details CR-D10 producer bridge: serialises the struct through the
- *          canonical "CHMA" wire codec and attaches it as the sig
- *          payload of a fresh dap_sign_t (type=SIG_TYPE_CHIPMUNK,
- *          sign_pkey_size=0 — every signer's HOTS pk is embedded in
- *          the blob itself).
- * @param a_multi_sig Multi-signature to wrap.  The caller retains
- *                    ownership of the source struct.
- * @return Newly-allocated dap_sign_t (caller frees via DAP_DELETE) or
- *         NULL on allocation / codec failure.
- */
-dap_sign_t *dap_sign_from_chipmunk_multi_signature(
-    const chipmunk_multi_signature_t *a_multi_sig
-);
-
 // === Batch Verification Functions ===
 
 /**
