@@ -28,6 +28,11 @@ elseif(MACOS)
     file(GLOB DAP_IO_DARWIN_HEADERS darwin/*.h)
     set (DAP_IO_HEADERS ${DAP_IO_HEADERS} ${DAP_IO_MACOS_HEADERS} ${DAP_IO_DARWIN_HEADERS})
     set (DAP_IO_SOURCES ${DAP_IO_SOURCES} ${DAP_IO_MACOS_SRCS} ${DAP_IO_DARWIN_SRCS})
+elseif(IOS)
+    file(GLOB DAP_IO_DARWIN_SRCS darwin/*.c)
+    file(GLOB DAP_IO_DARWIN_HEADERS darwin/*.h)
+    set (DAP_IO_HEADERS ${DAP_IO_HEADERS} ${DAP_IO_DARWIN_HEADERS})
+    set (DAP_IO_SOURCES ${DAP_IO_SOURCES} ${DAP_IO_DARWIN_SRCS})
 endif()
 
 # Create OBJECT library instead of STATIC
@@ -64,6 +69,12 @@ elseif (LINUX OR ANDROID)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux)
 elseif(MACOS)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/macos)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/darwin)
+    target_link_libraries(${PROJECT_NAME} INTERFACE
+        "-framework CoreFoundation"
+        "-framework SystemConfiguration"
+    )
+elseif(IOS)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/darwin)
     target_link_libraries(${PROJECT_NAME} INTERFACE
         "-framework CoreFoundation"

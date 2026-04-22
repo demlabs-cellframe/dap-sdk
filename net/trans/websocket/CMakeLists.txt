@@ -57,7 +57,7 @@ find_package(OpenSSL REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
 target_link_libraries(${PROJECT_NAME} INTERFACE ${OPENSSL_LIBRARIES})
 
-if(DARWIN)
+if(DARWIN AND NOT IOS)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)
 endif()
 
