@@ -1274,11 +1274,11 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_global_db_stor
     if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)
         l_signer_role = l_cluster->default_role;
     if (l_signer_role < DAP_GDB_MEMBER_ROLE_USER) {
-        char *l_signer_addr_str = dap_cluster_node_addr_to_str(l_signer_addr);
+        dap_node_addr_str_t l_signer_addr_str_buf = dap_cluster_node_addr_to_str_(l_signer_addr);
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
                                                         "with signer role %s with no write access to cluster. Signer addr: %s",
                                                             a_obj->group, a_obj->key,
-                                                            dap_global_db_cluster_role_str(l_signer_role), l_signer_addr_str);
+                                                            dap_global_db_cluster_role_str(l_signer_role), l_signer_addr_str_buf.s);
         return -14;
     }
 

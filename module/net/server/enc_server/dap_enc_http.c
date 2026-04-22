@@ -167,9 +167,9 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             }
             l_bias += dap_sign_get_size(l_sign);
             dap_cluster_node_addr_t l_client_pkey_node_addr = dap_cluster_node_addr_from_sign(l_sign);
-            const char *l_client_node_addr_str = dap_cluster_node_addr_to_str(l_client_pkey_node_addr);
-            if (dap_http_ban_list_client_check(l_client_node_addr_str, NULL, NULL)) {
-                log_it(L_ERROR, "Client %s is banned.", l_client_node_addr_str);
+            dap_node_addr_str_t l_client_node_addr_str = dap_cluster_node_addr_to_str_(l_client_pkey_node_addr);
+            if (dap_http_ban_list_client_check(l_client_node_addr_str.s, NULL, NULL)) {
+                log_it(L_ERROR, "Client %s is banned.", l_client_node_addr_str.s);
                 *return_code = DAP_HTTP_STATUS_FORBIDDEN;
                 return;
             }

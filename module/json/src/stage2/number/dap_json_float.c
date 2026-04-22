@@ -265,7 +265,6 @@ static bool s_eisel_lemire(uint64_t a_mantissa, int a_exponent, double *a_out_va
     
     if (l_binary_exp >= 2047) {
         // Overflow to infinity
-        // Use __builtin_inf() to avoid -ffast-math issues with INFINITY macro
         *a_out_value = __builtin_inf();
         return true;
     }

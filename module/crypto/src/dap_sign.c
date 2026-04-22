@@ -622,10 +622,13 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
     dap_string_append_printf(a_str_out, "\tType: %s\n",
                              dap_sign_type_to_str(a_sign->header.type));
     if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
-        const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
-             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-             : dap_hash_sha3_256_to_str_static(&l_hash_pkey);
-             dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_str);
+        if (dap_strcmp(a_hash_out_type, "hex")) {
+            dap_hash_sha3_256_b58_str_t l_hash_b58 = dap_hash_sha3_256_to_base58_str_static_(&l_hash_pkey);
+            dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_b58.s);
+        } else {
+            dap_hash_sha3_256_str_t l_hash_hex = dap_hash_sha3_256_to_str_struct(&l_hash_pkey);
+            dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_hex.s);
+        }
     }
     dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
                                         "\tSignature size: %u\n",

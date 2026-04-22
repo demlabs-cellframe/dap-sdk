@@ -132,9 +132,9 @@ DAP_STATIC_INLINE bool dap_global_db_store_obj_compare(dap_global_db_store_obj_t
         strcmp(a_obj1->key, a_obj2->key) || strcmp(a_obj1->group, a_obj2->group);
 }
 
-DAP_STATIC_INLINE const char *dap_global_db_hash_print(dap_global_db_hash_t a_hash)
+DAP_STATIC_INLINE dap_guuid_str_t dap_global_db_hash_print(dap_global_db_hash_t a_hash)
 {
-    return dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc));
+    return dap_guuid_to_hex_str_(dap_guuid_compose(a_hash.bets, a_hash.becrc));
 }
 
 DAP_STATIC_INLINE bool dap_global_db_hash_is_blank(dap_global_db_hash_t *a_blank_candidate)

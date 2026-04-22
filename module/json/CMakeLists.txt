@@ -215,6 +215,10 @@ set(JSON_ALL_SRCS ${JSON_SRCS} ${JSON_STAGE1_SRCS} ${JSON_STAGE2_SRCS} ${JSON_TA
 # Use universal DAP library macro
 dap_add_library(${PROJECT_NAME} ${JSON_ALL_SRCS} HEADERS ${JSON_HEADERS} ${JSON_INTERNAL_HEADERS})
 
+# JSON parser must correctly produce NaN/Infinity for JSON spec compliance,
+# override -ffinite-math-only implied by the project-wide -ffast-math.
+target_compile_options(${PROJECT_NAME} PRIVATE -fno-finite-math-only)
+
 # Add generated SIMD sources with correct compile flags
 dap_arch_add_sources(TARGET ${PROJECT_NAME} OUTPUT_DIR ${SIMD_GEN_DIR}
     SOURCES

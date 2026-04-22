@@ -56,10 +56,10 @@ int dap_http_ban_list_client_remove(const char *a_addr) {
 }
 
 static void s_dap_http_ban_list_client_dump_single(ban_record_t *a_rec, dap_json_t *a_jobj_out) {
-    const char *l_decree_hash_str = dap_hash_sha3_256_to_str_static(&a_rec->decree_hash);
+    dap_hash_sha3_256_str_t l_decree_hash_str = dap_hash_sha3_256_to_str_struct(&a_rec->decree_hash);
     char l_ts[DAP_TIME_STR_SIZE] = { '\0' };
     dap_time_to_str_rfc822(l_ts, sizeof(l_ts), a_rec->ts_created);
-    dap_json_object_add_string(a_jobj_out, "decree_hash", l_decree_hash_str);
+    dap_json_object_add_string(a_jobj_out, "decree_hash", l_decree_hash_str.s);
     dap_json_object_add_string(a_jobj_out, "address", a_rec->addr);
     dap_json_object_add_string(a_jobj_out, "created_at", l_ts);
 }

@@ -261,6 +261,29 @@ dap_hash_sha3_256_b58_str_t dap_hash_sha3_256_to_base58_str_static_(const dap_ha
 #define dap_enc_base58_encode_hash_to_str_static    dap_hash_sha3_256_to_base58_str_static
 
 /**
+ * @brief Convert SHA3 hash to hex-or-base58 string struct, chosen by a_hash_out_type.
+ *        Returns a union-by-value so that callers can safely bind the buffer's
+ *        lifetime to a local variable (avoids -Wdangling on ternary).
+ */
+DAP_STATIC_INLINE dap_hash_sha3_256_str_t dap_hash_sha3_256_to_str_static_ex(const dap_hash_sha3_256_t *a_hash, const char *a_hash_out_type)
+{
+    dap_hash_sha3_256_str_t l_ret = { };
+    if (!a_hash)
+        return l_ret;
+    if (a_hash_out_type && strcmp(a_hash_out_type, "hex") == 0) {
+        dap_hash_sha3_256_to_str(a_hash, l_ret.s, DAP_HASH_SHA3_256_STR_SIZE);
+    } else {
+        dap_hash_sha3_256_b58_str_t l_b58 = dap_hash_sha3_256_to_base58_str_static_(a_hash);
+        size_t l_len = strnlen(l_b58.s, sizeof(l_b58.s));
+        if (l_len >= DAP_HASH_SHA3_256_STR_SIZE)
+            l_len = DAP_HASH_SHA3_256_STR_SIZE - 1;
+        memcpy(l_ret.s, l_b58.s, l_len);
+        l_ret.s[l_len] = '\0';
+    }
+    return l_ret;
+}
+
+/**
  * @brief Convert SHA3 hash to newly allocated hex string
  */
 DAP_STATIC_INLINE char *dap_hash_sha3_256_to_str_new(const dap_hash_sha3_256_t *a_hash)
