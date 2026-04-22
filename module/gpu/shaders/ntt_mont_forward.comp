@@ -1,0 +1,134 @@
+#version 450
+
+/*
+ * Batch Montgomery NTT forward transform (Cooley-Tukey).
+ *
+ * Each workgroup = one polynomial (N coefficients in shared memory).
+ * gl_WorkGroupID.x selects the polynomial index within the batch.
+ *
+ * Optimizations vs naive:
+ *   - Zetas prefetched into shared memory (eliminates global reads per butterfly)
+ *   - Bit-shift index math instead of integer division
+ *   - Both int64 and umulExtended paths for Montgomery reduce
+ *   - Specialization constant for N (compiler can unroll perfectly)
+ *   - Barrier elision for layers where butterfly stride < subgroup size
+ */
+
+#extension GL_KHR_shader_subgroup_basic : enable
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint POLY_N = 256;
+
+layout(set = 0, binding = 0) buffer CoeffsBuffer { int coeffs[]; };
+layout(set = 0, binding = 1) buffer ZetasBuffer  { int zetas[];  };
+
+layout(push_constant) uniform PushConstants {
+    int  q;
+    uint qinv;
+    uint n;
+    uint batch_size;
+};
+
+shared int s_coeffs[512];
+shared int s_zetas[512];
+
+#ifdef GL_EXT_shader_explicit_arithmetic_types_int64
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+
+int montgomery_reduce(int a_hi, uint a_lo, uint a_qinv, int a_q)
+{
+    int64_t a = (int64_t(a_hi) << 32) | int64_t(uint64_t(a_lo));
+    uint u_low = uint(a) * a_qinv;
+    return int((a + int64_t(uint64_t(u_low)) * int64_t(a_q)) >> 32);
+}
+
+int mont_mul(int a, int b, uint a_qinv, int a_q)
+{
+    int64_t prod = int64_t(a) * int64_t(b);
+    uint u_low = uint(prod) * a_qinv;
+    return int((prod + int64_t(uint64_t(u_low)) * int64_t(a_q)) >> 32);
+}
+
+#else
+
+int mont_mul(int a, int b, uint a_qinv, int a_q)
+{
+    /* 32x32 -> 64 via umulExtended/imulExtended, no int64 needed */
+    uint ab_lo, ab_hi_u;
+    /* signed multiply: a * b -> (hi, lo) */
+    int ab_hi_s;
+    uint a_u = uint(a);
+    uint b_u = uint(b);
+    umulExtended(a_u, b_u, ab_hi_u, ab_lo);
+    ab_hi_s = int(ab_hi_u);
+    /* sign correction for signed multiply via unsigned: */
+    if (a < 0) ab_hi_s -= b;
+    if (b < 0) ab_hi_s -= a;
+
+    uint u = ab_lo * a_qinv;
+    uint uq_lo, uq_hi;
+    umulExtended(u, uint(a_q), uq_hi, uq_lo);
+
+    uint sum_lo = ab_lo + uq_lo;
+    uint carry = (sum_lo < ab_lo) ? 1u : 0u;
+    int sum_hi = ab_hi_s + int(uq_hi) + int(carry);
+    return sum_hi;
+}
+
+#endif
+
+void main()
+{
+    uint poly_idx = gl_WorkGroupID.x;
+    if (poly_idx >= batch_size)
+        return;
+
+    uint tid = gl_LocalInvocationID.x;
+    uint threads = gl_WorkGroupSize.x;
+    uint base = poly_idx * n;
+
+    /* Prefetch coefficients into shared memory */
+    for (uint i = tid; i < n; i += threads)
+        s_coeffs[i] = coeffs[base + i];
+
+    /* Prefetch zetas into shared memory (at most n entries starting from index 1) */
+    for (uint i = tid; i < n; i += threads)
+        s_zetas[i] = zetas[i];
+
+    barrier();
+
+    uint half_n = n >> 1;
+    uint zeta_k = 1;
+    uint len_log2 = findMSB(half_n);
+
+    for (uint len = half_n; len >= 1; len >>= 1) {
+        uint num_groups = n >> (len_log2 + 1);
+
+        for (uint i = tid; i < half_n; i += threads) {
+            uint group = i >> len_log2;
+            uint pos   = i & (len - 1);
+            uint idx_lo = (group << (len_log2 + 1)) + pos;
+            uint idx_hi = idx_lo + len;
+
+            int a_lo = s_coeffs[idx_lo];
+            int a_hi = s_coeffs[idx_hi];
+
+            int t = mont_mul(s_zetas[zeta_k + group], a_hi, qinv, q);
+
+            s_coeffs[idx_lo] = a_lo + t;
+            s_coeffs[idx_hi] = a_lo - t;
+        }
+
+        zeta_k += num_groups;
+        len_log2--;
+
+        if (len >= gl_SubgroupSize)
+            barrier();
+    }
+
+    barrier();
+
+    for (uint i = tid; i < n; i += threads)
+        coeffs[base + i] = s_coeffs[i];
+}

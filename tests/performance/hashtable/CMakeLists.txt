@@ -55,7 +55,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "performance;hashtable"
 )
 

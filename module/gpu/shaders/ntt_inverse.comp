@@ -1,0 +1,138 @@
+#version 450
+
+/*
+ * Batch inverse NTT (Gentleman-Sande) with plain modular reduction,
+ * followed by 1/n scaling.
+ *
+ * For Chipmunk (q=3168257, N=512) and other schemes that use
+ * non-Montgomery NTT.
+ *
+ * Each workgroup = one polynomial.
+ */
+
+#extension GL_KHR_shader_subgroup_basic : enable
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint POLY_N = 512;
+
+layout(set = 0, binding = 0) buffer CoeffsBuffer { int coeffs[]; };
+layout(set = 0, binding = 1) buffer ZetasBuffer  { int zetas_inv[];  };
+
+layout(push_constant) uniform PushConstants {
+    int  q;
+    int  one_over_n;
+    uint n;
+    uint batch_size;
+};
+
+shared int s_coeffs[512];
+shared int s_zetas[512];
+
+#ifdef GL_EXT_shader_explicit_arithmetic_types_int64
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+
+int mod_mul(int a, int b, int a_q)
+{
+    int64_t prod = int64_t(a) * int64_t(b);
+    return int(prod - (prod / int64_t(a_q)) * int64_t(a_q));
+}
+
+int mod_reduce(int a, int a_q)
+{
+    int r = a % a_q;
+    return r < 0 ? r + a_q : r;
+}
+
+#else
+
+int mod_mul(int a, int b, int a_q)
+{
+    uint a_u = uint(abs(a));
+    uint b_u = uint(abs(b));
+    uint hi, lo;
+    umulExtended(a_u, b_u, hi, lo);
+
+    uint uq = uint(a_q);
+    uint r32 = (0xFFFFFFFFu % uq + 1u) % uq;
+
+    uint h2, l2;
+    umulExtended(hi, r32, h2, l2);
+    uint sum = l2 + lo;
+    uint carry = (sum < l2) ? 1u : 0u;
+    h2 += carry;
+
+    uint rem = h2 * r32 + sum;
+    rem %= uq;
+
+    int result = int(rem);
+    bool neg = (a < 0) != (b < 0);
+    return (neg && result != 0) ? (a_q - result) : result;
+}
+
+int mod_reduce(int a, int a_q)
+{
+    int r = a - (a / a_q) * a_q;
+    return r < 0 ? r + a_q : r;
+}
+
+#endif
+
+void main()
+{
+    uint poly_idx = gl_WorkGroupID.x;
+    if (poly_idx >= batch_size)
+        return;
+
+    uint tid = gl_LocalInvocationID.x;
+    uint threads = gl_WorkGroupSize.x;
+    uint base = poly_idx * n;
+
+    for (uint i = tid; i < n; i += threads)
+        s_coeffs[i] = coeffs[base + i];
+
+    for (uint i = tid; i < n; i += threads)
+        s_zetas[i] = zetas_inv[i];
+
+    barrier();
+
+    uint half_n = n >> 1;
+    uint t = 1;
+    uint m = n;
+
+    while (m > 1) {
+        uint hm = m >> 1;
+        uint dt = t << 1;
+
+        for (uint i = tid; i < half_n; i += threads) {
+            uint group = i / t;
+            uint pos   = i - group * t;
+            uint idx_lo = group * dt + pos;
+            uint idx_hi = idx_lo + t;
+
+            int u = s_coeffs[idx_lo];
+            int v = s_coeffs[idx_hi];
+
+            s_coeffs[idx_lo] = mod_reduce(u + v, q);
+            int diff = mod_reduce(u + q - v, q);
+            s_coeffs[idx_hi] = mod_mul(diff, s_zetas[hm + group], q);
+        }
+
+        t = dt;
+        m = hm;
+
+        if (t >= gl_SubgroupSize)
+            barrier();
+    }
+
+    barrier();
+
+    /* Scale by 1/n mod q */
+    for (uint i = tid; i < n; i += threads) {
+        int val = mod_mul(s_coeffs[i], one_over_n, q);
+        int half_q = q >> 1;
+        if (val > half_q)  val -= q;
+        if (val < -half_q) val += q;
+        coeffs[base + i] = val;
+    }
+}

@@ -41,6 +41,7 @@ static bool s_test_empty_object(void) {
     log_it(L_DEBUG, "Testing empty object");
     bool result = false;
     dap_json_t *l_json = NULL;
+    dap_json_t *inner_obj = NULL;
     
     // Test 1: Simple empty object
     l_json = dap_json_parse_string("{}");
@@ -55,9 +56,11 @@ static bool s_test_empty_object(void) {
     l_json = dap_json_parse_string("{\"obj\":{}}");
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse object with empty object value");
     
-    dap_json_t *inner_obj = dap_json_object_get_object(l_json, "obj");
+    inner_obj = dap_json_object_get_object(l_json, "obj");
     DAP_TEST_FAIL_IF_NULL(inner_obj, "Get empty object");
     
+    dap_json_object_free(inner_obj);
+    inner_obj = NULL;
     dap_json_object_free(l_json);
     
     // Test 3: Multiple empty objects
@@ -68,6 +71,7 @@ static bool s_test_empty_object(void) {
     log_it(L_DEBUG, "Empty object test passed");
     
 cleanup:
+    dap_json_object_free(inner_obj);
     dap_json_object_free(l_json);
     return result;
 }
@@ -128,6 +132,11 @@ static bool s_test_nested_empty_objects(void) {
     log_it(L_DEBUG, "Testing nested empty objects");
     bool result = false;
     dap_json_t *l_json = NULL;
+    dap_json_t *depth1 = NULL;
+    dap_json_t *depth2 = NULL;
+    dap_json_t *depth3 = NULL;
+    dap_json_t *depth4 = NULL;
+    dap_json_t *depth5 = NULL;
     
     // Depth 5: {a:{b:{c:{d:{e:{}}}}}}
     const char *json_str = "{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{}}}}}}";
@@ -135,19 +144,19 @@ static bool s_test_nested_empty_objects(void) {
     l_json = dap_json_parse_string(json_str);
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse nested empty objects depth 5");
     
-    dap_json_t *depth1 = dap_json_object_get_object(l_json, "a");
+    depth1 = dap_json_object_get_object(l_json, "a");
     DAP_TEST_FAIL_IF_NULL(depth1, "Get depth 1");
     
-    dap_json_t *depth2 = dap_json_object_get_object(depth1, "b");
+    depth2 = dap_json_object_get_object(depth1, "b");
     DAP_TEST_FAIL_IF_NULL(depth2, "Get depth 2");
     
-    dap_json_t *depth3 = dap_json_object_get_object(depth2, "c");
+    depth3 = dap_json_object_get_object(depth2, "c");
     DAP_TEST_FAIL_IF_NULL(depth3, "Get depth 3");
     
-    dap_json_t *depth4 = dap_json_object_get_object(depth3, "d");
+    depth4 = dap_json_object_get_object(depth3, "d");
     DAP_TEST_FAIL_IF_NULL(depth4, "Get depth 4");
     
-    dap_json_t *depth5 = dap_json_object_get_object(depth4, "e");
+    depth5 = dap_json_object_get_object(depth4, "e");
     DAP_TEST_FAIL_IF_NULL(depth5, "Get depth 5");
     
     // depth5 should be empty object {}
@@ -156,6 +165,11 @@ static bool s_test_nested_empty_objects(void) {
     log_it(L_DEBUG, "Nested empty objects test passed");
     
 cleanup:
+    dap_json_object_free(depth5);
+    dap_json_object_free(depth4);
+    dap_json_object_free(depth3);
+    dap_json_object_free(depth2);
+    dap_json_object_free(depth1);
     dap_json_object_free(l_json);
     return result;
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sig_bliss/bliss_b_params.h"
+#include "bliss_b_params.h"
 #include "dap_enc_key.h"
 
 

@@ -28,11 +28,11 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_stream_obfuscation.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 
 static inline uint32_t m_dap_random_u32(void) {
     uint32_t l_val;
-    randombytes(&l_val, sizeof(l_val));
+    dap_random_bytes(&l_val, sizeof(l_val));
     return l_val;
 }
 
@@ -473,7 +473,7 @@ static int s_obfuscate_impl(dap_stream_obfuscation_t *a_obfs,
     // Add padding
     if (l_padding_size > 0) {
         // Fill padding with random data
-        randombytes(l_output + a_data_size, l_padding_size);
+        dap_random_bytes(l_output + a_data_size, l_padding_size);
     }
 
     // Apply XOR obfuscation if polymorphic enabled
@@ -562,7 +562,7 @@ static int s_generate_fake_traffic_impl(dap_stream_obfuscation_t *a_obfs,
     }
 
     // Fill with random data
-    randombytes(l_fake_data, l_size);
+    dap_random_bytes(l_fake_data, l_size);
 
     *a_fake_data = l_fake_data;
     *a_fake_size = l_size;

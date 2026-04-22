@@ -105,6 +105,7 @@ static void *s_parse_thread(void *a_arg)
                 } else {
                     atomic_fetch_add(args->failure_count, 1);
                 }
+                dap_json_object_free(l_user);
             } else {
                 atomic_fetch_add(args->failure_count, 1);
             }
@@ -114,6 +115,7 @@ static void *s_parse_thread(void *a_arg)
         }
     }
     
+    dap_json_cleanup_thread_arena();
     return NULL;
 }
 
@@ -197,6 +199,7 @@ static void *s_parse_different_json_thread(void *a_arg)
         }
     }
     
+    dap_json_cleanup_thread_arena();
     return NULL;
 }
 
@@ -272,6 +275,7 @@ static void *s_arena_stress_thread(void *a_arg)
         }
     }
     
+    dap_json_cleanup_thread_arena();
     return NULL;
 }
 
@@ -342,6 +346,7 @@ static void *s_string_pool_stress_thread(void *a_arg)
         }
     }
     
+    dap_json_cleanup_thread_arena();
     return NULL;
 }
 

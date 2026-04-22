@@ -23,7 +23,7 @@
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
-#include "dap_enc_kyber.h"
+#include "dap_enc_key.h"
 #include "dap_rand.h"  // For randombytes
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "dap_string.h"
@@ -773,7 +773,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
                      a_size, l_handshake_size);
             
             // Initialize session_id
-            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
+            dap_random_bytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
             debug_if(s_debug_more, L_DEBUG,
                      "HANDSHAKE: generated session_id=0x%" DAP_UINT64_FORMAT_x " for session %p",
                      l_session->session_id, l_session);
@@ -1550,8 +1550,7 @@ static void* s_kem_task_func(void *a_arg)
     l_result->session_id = l_ctx->session->session_id;
     l_result->error_code = 0;
     
-    // Generate ephemeral Bob key (Kyber512)
-    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, 0);
     
     if (!l_bob_key) {
         log_it(L_ERROR, "[KEM Task] Failed to generate Bob KEM key");

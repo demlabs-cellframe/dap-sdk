@@ -38,7 +38,7 @@
 #include "dap_stream.h"
 #include "dap_enc_base64.h"
 #include "dap_hash.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
 #include "dap_events_socket.h"
@@ -1394,7 +1394,7 @@ static int s_ws_generate_key(char *a_key_out, size_t a_key_size)
 
     // Generate 16 random bytes
     uint8_t l_random[16];
-    randombytes(l_random, sizeof(l_random));
+    dap_random_bytes(l_random, sizeof(l_random));
 
     // Base64 encode
     size_t l_encoded_size = dap_enc_base64_encode(l_random, sizeof(l_random),
@@ -1472,7 +1472,7 @@ int dap_net_trans_websocket_build_frame(uint8_t *a_buffer, size_t a_buffer_size,
     // Masking key (if needed)
     uint32_t l_mask_key = 0;
     if (a_mask) {
-        randombytes(&l_mask_key, sizeof(l_mask_key));
+        dap_random_bytes(&l_mask_key, sizeof(l_mask_key));
         memcpy(&a_buffer[l_offset], &l_mask_key, 4);
         l_offset += 4;
         l_header_size += 4;
