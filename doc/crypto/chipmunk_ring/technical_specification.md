@@ -40,14 +40,21 @@ typedef struct chipmunk_ring_public_key {
 ### ChipmunkRing Private Key
 ```c
 typedef struct chipmunk_ring_private_key {
-    uint8_t data[CHIPMUNK_PRIVATE_KEY_SIZE];  // 4,208 bytes
+    uint8_t data[CHIPMUNK_PRIVATE_KEY_SIZE];  // 4,212 bytes (CR-D3: +4 byte leaf_index prefix)
 } chipmunk_ring_private_key_t;
 ```
 
-**Layout**:
-- Bytes 0-31: key_seed (secret seed)
-- Bytes 32-79: tr (public key hash)
-- Bytes 80-4207: Secret polynomial data (s₀, s₁)
+**Layout** (CR-D3 strict one-time HOTS):
+- Bytes 0-3: leaf_index (big-endian monotonic counter; refuses signing once ≥ CHIPMUNK_MAX_SIGNATURES)
+- Bytes 4-35: key_seed (secret seed)
+- Bytes 36-83: tr (public key hash, SHA3-384)
+- Bytes 84-4211: embedded public key (ρ_seed || v₀ || v₁)
+
+The counter is advanced atomically by `chipmunk_sign` on every successful
+signature; the caller MUST persist the mutated buffer back to storage.
+Re-signing with an exhausted key would leak both s₀ and s₁ (classical
+HOTS key-recovery attack) and is therefore refused with
+`CHIPMUNK_ERROR_KEY_EXHAUSTED`.
 
 ### Ring Signature Structure
 ```c
