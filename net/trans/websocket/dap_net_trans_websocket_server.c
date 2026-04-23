@@ -24,11 +24,11 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdio.h>
 #include <strings.h>  // For strncasecmp
-#include <openssl/sha.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_websocket_server.h"
+#include "dap_net_trans_websocket_handshake.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
 #include "dap_http_header_server.h"  // For dap_http_out_header_add
@@ -36,7 +36,6 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_stream.h"
 #include "dap_stream_ctl.h"
 #include "dap_enc_http.h"
-#include "dap_enc_base64.h"
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
 #include "dap_net_server_common.h"
@@ -49,8 +48,6 @@ See more details here <http://www.gnu.org/licenses/>.
 #define LOG_TAG "dap_net_trans_websocket_server"
 
 static bool s_debug_more = false;
-// WebSocket GUID for Sec-WebSocket-Accept calculation (RFC 6455)
-#define WEBSOCKET_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 // Per-connection WebSocket state for server-side de-framing
 typedef struct ws_server_conn_state {
@@ -867,35 +864,10 @@ static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, 
     if (!a_client_key || !a_accept_key || a_accept_key_size < 29) {  // Base64(20 bytes) = 28 chars + null
         return false;
     }
-
-    // WebSocket client key should be exactly 24 chars (base64 of 16 bytes)
-    // GUID is 36 chars, so max concat is 24 + 36 + 1 = 61 bytes
-    // Use 128 bytes for safety, validate input length
-    size_t l_key_len = strlen(a_client_key);
-    if (l_key_len > 64) {  // RFC 6455: client key should be 24 chars
-        log_it(L_WARNING, "WebSocket client key too long (%zu bytes), truncating", l_key_len);
-        l_key_len = 64;
-    }
-    
-    // Concatenate client key with WebSocket GUID
-    char l_concat[128] = {0};
-    memcpy(l_concat, a_client_key, l_key_len);
-    strcat(l_concat, WEBSOCKET_GUID);
-
-    // Calculate SHA-1 hash using OpenSSL
-    unsigned char l_hash[SHA_DIGEST_LENGTH];  // SHA-1 = 20 bytes
-    SHA1((const unsigned char *)l_concat, strlen(l_concat), l_hash);
-
-    // Base64 encode the hash
-    size_t l_encoded_size = dap_enc_base64_encode(l_hash, SHA_DIGEST_LENGTH,
-                                                    a_accept_key, DAP_ENC_DATA_TYPE_B64);
-    if (l_encoded_size == 0) {
-        log_it(L_ERROR, "Failed to base64 encode WebSocket accept key");
+    if (dap_net_trans_websocket_build_accept_key(a_client_key, a_accept_key, a_accept_key_size) != 0) {
+        log_it(L_ERROR, "Failed to compute Sec-WebSocket-Accept");
         return false;
     }
-
-    a_accept_key[l_encoded_size] = '\0';
-
     debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", a_accept_key);
     return true;
 }

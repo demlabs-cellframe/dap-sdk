@@ -40,13 +40,13 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
+#include "dap_net_trans_websocket_handshake.h"
 #include "dap_net_trans_websocket_stream.h"
 #include "dap_net_trans_websocket_server.h"
 #include "dap_net_trans_server.h"
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
 #include "dap_enc_base64.h"
-#include "dap_hash.h"
 #include "rand/dap_rand.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
@@ -65,8 +65,6 @@
 #define LOG_TAG "dap_net_trans_websocket_stream"
 
 static bool s_debug_more = false;
-// WebSocket magic GUID for handshake (RFC 6455)
-#define WS_MAGIC_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 // Default values
 #define WS_DEFAULT_MAX_FRAME_SIZE  (1024 * 1024)  // 1MB
@@ -1454,27 +1452,7 @@ static int s_ws_generate_key(char *a_key_out, size_t a_key_size)
  */
 static int s_ws_generate_accept(const char *a_key, char *a_accept_out, size_t a_accept_size)
 {
-    if (!a_key || !a_accept_out || a_accept_size < 29) {  // Base64(20 bytes) = 28 chars + null
-        return -1;
-    }
-
-    // Concatenate key + magic GUID
-    char l_concat[256];
-    snprintf(l_concat, sizeof(l_concat), "%s%s", a_key, WS_MAGIC_GUID);
-
-    // Calculate SHA-1 hash
-    dap_chain_hash_fast_t l_hash;
-    dap_hash_fast(l_concat, strlen(l_concat), &l_hash);
-
-    // Base64 encode (first 20 bytes of hash)
-    size_t l_encoded_size = dap_enc_base64_encode(l_hash.raw, 20,
-                                                    a_accept_out, DAP_ENC_DATA_TYPE_B64);
-    if (l_encoded_size == 0) {
-        return -2;
-    }
-
-    a_accept_out[l_encoded_size] = '\0';
-    return 0;
+    return dap_net_trans_websocket_build_accept_key(a_key, a_accept_out, a_accept_size);
 }
 
 /**
@@ -1892,4 +1870,3 @@ static int s_ws_register_server_handlers(dap_net_trans_t *a_trans, void *a_trans
     log_it(L_DEBUG, "Registered WebSocket upgrade handler for stream path");
     return 0;
 }
-

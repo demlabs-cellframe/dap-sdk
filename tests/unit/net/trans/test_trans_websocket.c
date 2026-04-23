@@ -47,6 +47,7 @@
 #include "dap_net_trans.h"
 #include "dap_net_trans_server.h"
 #include "dap_net_trans_websocket_server.h"
+#include "dap_net_trans_websocket_handshake.h"
 #include "dap_net_trans_websocket_stream.h"
 #include "dap_net_server_common.h"
 #include "dap_http_server.h"
@@ -774,6 +775,25 @@ static void test_15_stream_listen(void)
     TEST_SUCCESS("WebSocket stream trans listen operation verified");
 }
 
+/**
+ * @brief Test RFC 6455 Sec-WebSocket-Accept reference vector
+ */
+static void test_16_accept_key_rfc6455(void)
+{
+    TEST_INFO("Testing RFC 6455 Sec-WebSocket-Accept reference vector");
+
+    const char *l_client_key = "dGhlIHNhbXBsZSBub25jZQ==";
+    const char *l_expected_accept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
+    char l_accept[64] = {0};
+
+    int l_ret = dap_net_trans_websocket_build_accept_key(l_client_key, l_accept, sizeof(l_accept));
+    TEST_ASSERT(l_ret == 0, "Accept key generation should succeed");
+    TEST_ASSERT(strcmp(l_accept, l_expected_accept) == 0,
+                "Accept key should match RFC 6455 reference value");
+
+    TEST_SUCCESS("RFC 6455 Sec-WebSocket-Accept vector verified");
+}
+
 // ============================================================================
 // Test Suite Definition
 // ============================================================================
@@ -805,6 +825,7 @@ int main(int argc, char *argv[])
     TEST_RUN(test_13_stream_handshake);
     TEST_RUN(test_14_stream_session);
     TEST_RUN(test_15_stream_listen);
+    TEST_RUN(test_16_accept_key_rfc6455);
     
     TEST_SUITE_END();
     

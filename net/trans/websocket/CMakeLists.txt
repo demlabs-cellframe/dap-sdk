@@ -52,11 +52,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${DAP_SDK_ROOT}/net/common/server/include  # For dap_net_server_common.h
 )
 
-# Find OpenSSL for SHA-1
-find_package(OpenSSL REQUIRED)
-target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
-target_link_libraries(${PROJECT_NAME} INTERFACE ${OPENSSL_LIBRARIES})
-
 if(DARWIN)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)
 endif()
@@ -83,4 +78,3 @@ if(INSTALL_DAP_SDK)
             PUBLIC_HEADER DESTINATION include/dap/net/trans/websocket/
     )
 endif()
-
