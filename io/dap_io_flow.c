@@ -44,6 +44,12 @@
 // Debug mode
 static bool s_debug_more = false;
 
+// Inter-worker queue sizing for application-tier packet forwarding.
+// Keep memory roughly stable as worker count grows (e.g. CI with 32 workers).
+#define DAP_IO_FLOW_IWQ_BASE_CAPACITY      1048576U  // 1M pointers at 16 workers
+#define DAP_IO_FLOW_IWQ_BASE_WORKERS       16U
+#define DAP_IO_FLOW_IWQ_MIN_CAPACITY       65536U
+
 // Thread-local arena for cross-worker packet allocations (REFCOUNTED mode)
 // Each worker has its own arena with per-page refcounting
 // Pages are freed when all references are released (thread-safe)
@@ -99,6 +105,36 @@ static void s_process_flow_packet_common(dap_io_flow_server_t *a_server,
                                          const struct sockaddr_storage *a_remote_addr,
                                          socklen_t a_remote_addr_len,
                                          dap_events_socket_t *a_listener_es);
+
+/**
+ * @brief Choose inter-worker queue capacity based on worker count.
+ *
+ * Capacity is reduced by powers of two after 16 workers (32 -> 1/2, 64 -> 1/4, ...)
+ * to avoid linear memory blow-up in high-core CI runners.
+ */
+static size_t s_get_inter_worker_queue_capacity(uint32_t a_worker_count)
+{
+    if (a_worker_count == 0) {
+        return DAP_IO_FLOW_IWQ_MIN_CAPACITY;
+    }
+
+    size_t l_capacity = DAP_IO_FLOW_IWQ_BASE_CAPACITY;
+    uint32_t l_bucket_workers = DAP_IO_FLOW_IWQ_BASE_WORKERS;
+
+    while (l_bucket_workers < a_worker_count && l_capacity > DAP_IO_FLOW_IWQ_MIN_CAPACITY) {
+        if (l_bucket_workers > UINT32_MAX / 2) {
+            break;
+        }
+        l_bucket_workers <<= 1;
+        l_capacity >>= 1;
+    }
+
+    if (l_capacity < DAP_IO_FLOW_IWQ_MIN_CAPACITY) {
+        l_capacity = DAP_IO_FLOW_IWQ_MIN_CAPACITY;
+    }
+
+    return l_capacity;
+}
 
 // =============================================================================
 // Public API - Core
@@ -1101,11 +1137,18 @@ static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg)
 static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
 {
     uint32_t l_worker_count = dap_proc_thread_get_count();
+    size_t l_queue_capacity = s_get_inter_worker_queue_capacity(l_worker_count);
+    uint64_t l_per_queue_bytes_est = (uint64_t)l_queue_capacity * sizeof(void*);
+    uint64_t l_total_bytes_est = l_per_queue_bytes_est * l_worker_count;
     
     if (l_worker_count <= 1) {
         // No need for queues with single worker
         return 0;
     }
+
+    log_it(L_INFO,
+           "Inter-worker queue capacity: %zu (workers=%u, estimated memory %.2f MiB per server)",
+           l_queue_capacity, l_worker_count, (double)l_total_bytes_est / (1024.0 * 1024.0));
     
     // Allocate queue inputs array (one per worker)
     a_server->queue_inputs = DAP_NEW_Z_COUNT(dap_context_queue_t*, l_worker_count);
@@ -1139,7 +1182,7 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
         
         // Create context queue on destination worker's context  
         a_server->queue_inputs[dst] = dap_context_queue_create(
-            l_dst_worker->context, 1048576, s_queue_ptr_callback);  // 1M capacity for cross-worker packet forwarding
+            l_dst_worker->context, l_queue_capacity, s_queue_ptr_callback);
         
         if (!a_server->queue_inputs[dst]) {
             log_it(L_ERROR, "Failed to create queue input for worker %u", dst);
@@ -1405,4 +1448,3 @@ void* dap_io_flow_server_get_inheritor(dap_io_flow_server_t *a_server)
 {
     return a_server ? a_server->_inheritor : NULL;
 }
-
