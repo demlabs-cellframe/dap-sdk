@@ -1370,4 +1370,4 @@ typedef union dap_node_addr_str {
 dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a_address);
 #define dap_stream_node_addr_to_str_static(a) dap_stream_node_addr_to_str_static_(a).s
 
-void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);
+void dap_common_enable_cleaner_log(unsigned int a_timeout, size_t a_max_size);

@@ -1620,8 +1620,9 @@ static void s_dap_common_log_cleanner_interval(void *a_max_size) {
     }
     
 }
-void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
-    dap_interval_timer_create((unsigned int)a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
+void dap_common_enable_cleaner_log(unsigned int a_timeout, size_t a_max_size)
+{
+    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
 }
 
 #ifdef __cplusplus

@@ -492,43 +492,46 @@ static inline int SUM_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t*
 static inline int SUBTRACT_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t* c_256_bit)
 {
 #ifdef DAP_GLOBAL_IS_INT128
-    int underflow_flag=0;
+    /* Borrow from lower half (128-bit): 1 if a.lo < b.lo. */
+    const unsigned borrow_lo = (a_256_bit.lo < b_256_bit.lo);
+
     c_256_bit->lo = a_256_bit.lo - b_256_bit.lo;
-    uint64_t carry = (((c_256_bit->lo & b_256_bit.lo) & 1) + (b_256_bit.lo >> 1) + (c_256_bit->lo >> 1)) >> 127;
-    c_256_bit->hi = a_256_bit.hi - (b_256_bit.hi + (uint128_t)carry);
-    underflow_flag = (carry != 0);
-    return underflow_flag;
+    c_256_bit->hi = a_256_bit.hi - b_256_bit.hi - (uint128_t)borrow_lo;
+
+    /* Unsigned 256-bit underflow: a < b. */
+    const int underflow = (a_256_bit.hi < b_256_bit.hi) ||
+                          (a_256_bit.hi == b_256_bit.hi && a_256_bit.lo < b_256_bit.lo);
+
+    return underflow;
 
 #else
-    uint64_t t, r, borrow;
+    uint64_t t, r;
+    unsigned borrow = 0;
 
     t = a_256_bit.lo.lo;
     r = t - b_256_bit.lo.lo;
     borrow = (r > t);
     c_256_bit->lo.lo = r;
 
-    t = a_256_bit.lo.hi;
-    t -= borrow;
+    t = a_256_bit.lo.hi - borrow;
     borrow = (t > a_256_bit.lo.hi);
     r = t - b_256_bit.lo.hi;
     borrow |= (r > t);
     c_256_bit->lo.hi = r;
 
-    t = a_256_bit.hi.lo;
-    t -= borrow;
+    t = a_256_bit.hi.lo - borrow;
     borrow = (t > a_256_bit.hi.lo);
     r = t - b_256_bit.hi.lo;
     borrow |= (r > t);
     c_256_bit->hi.lo = r;
 
-    t = a_256_bit.hi.hi;
-    t -= borrow;
+    t = a_256_bit.hi.hi - borrow;
     borrow = (t > a_256_bit.hi.hi);
     r = t - b_256_bit.hi.hi;
     borrow |= (r > t);
     c_256_bit->hi.hi = r;
 
-    return (borrow != 0);
+    return borrow != 0;
 #endif
 }
 
