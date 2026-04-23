@@ -1541,7 +1541,7 @@ static int s_udp_handshake_response(dap_stream_t *a_stream,
     
     int l_ret = dap_deserialize_multy(a_data, a_data_size,
                                       l_bob_ciphertext, (uint64_t)CRYPTO_CIPHERTEXTBYTES,
-                                      &l_session_id_be, sizeof(uint64_t),
+                                      &l_session_id_be, (uint64_t)sizeof(uint64_t),
                                       DOOF_PTR);
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to deserialize handshake response");

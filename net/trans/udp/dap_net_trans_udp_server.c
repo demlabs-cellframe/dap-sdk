@@ -1648,6 +1648,7 @@ static void s_kem_reactor_callback(void *a_arg)
     
     stream_udp_session_t *l_session = NULL;
     bool l_session_valid = false;
+    bool l_key_attached_to_session = false;
     kem_task_result_t *l_result = l_arg->result;
     
     if (!l_result) {
@@ -1680,19 +1681,12 @@ static void s_kem_reactor_callback(void *a_arg)
         goto cleanup_reactor;
     }
     
-    // Store handshake key in session (NOW SAFE - in reactor thread!)
-    l_session->encryption_key = l_result->handshake_key;
-    
-    debug_if(s_debug_more, L_DEBUG,
-             "[KEM Reactor] Stored encryption_key=%p for session %p (session_id=0x%" PRIx64 ")",
-             l_session->encryption_key, l_session, l_session->session_id);
-    
     // Build handshake response: Bob's ciphertext + session_id
     size_t l_response_size = l_result->bob_ciphertext_size + sizeof(uint64_t);
     uint64_t l_session_id_be = htobe64(l_result->session_id);
     uint8_t *l_response = dap_serialize_multy(NULL, l_response_size,
-                                              l_result->bob_ciphertext, l_result->bob_ciphertext_size,
-                                              &l_session_id_be, sizeof(uint64_t),
+                                              l_result->bob_ciphertext, (uint64_t)l_result->bob_ciphertext_size,
+                                              &l_session_id_be, (uint64_t)sizeof(uint64_t),
                                               DOOF_PTR);
     if (!l_response) {
         log_it(L_ERROR, "[KEM Reactor] Failed to serialize handshake response");
@@ -1709,7 +1703,20 @@ static void s_kem_reactor_callback(void *a_arg)
                                   l_response, l_response_size);
     
     DAP_DELETE(l_response);
-    
+
+    if (l_ret != 0) {
+        log_it(L_ERROR, "[KEM Reactor] Failed to send handshake response (ret=%d)", l_ret);
+        goto cleanup_reactor;
+    }
+
+    // Handshake response sent successfully; only now arm session decryption state.
+    l_session->encryption_key = l_result->handshake_key;
+    l_result->handshake_key = NULL;
+    l_key_attached_to_session = true;
+
+    debug_if(s_debug_more, L_DEBUG,
+             "[KEM Reactor] Stored encryption_key=%p for session %p (session_id=0x%" PRIx64 ")",
+             l_session->encryption_key, l_session, l_session->session_id);
     debug_if(s_debug_more, L_DEBUG, "[KEM Reactor] HANDSHAKE response sent (ret=%d)", l_ret);
     
 cleanup_reactor:
@@ -1721,6 +1728,8 @@ cleanup_reactor:
     
     // Free result
     if (l_result) {
+        if (!l_key_attached_to_session && l_result->handshake_key)
+            dap_enc_key_delete(l_result->handshake_key);
         DAP_DELETE(l_result->bob_ciphertext);
         DAP_DELETE(l_result);
     }
