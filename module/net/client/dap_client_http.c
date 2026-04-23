@@ -1661,8 +1661,11 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
  */
 static bool s_timer_timeout_check(void * a_arg)
 {
+    if (!a_arg) {
+        log_it(L_ERROR, "Timer callback called with NULL argument");
+        return false;
+    }
     dap_events_socket_uuid_t *l_es_uuid = (dap_events_socket_uuid_t*) a_arg;
-    assert(l_es_uuid);
 
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
     if (!l_worker) {
@@ -1670,7 +1673,6 @@ static bool s_timer_timeout_check(void * a_arg)
         DAP_DELETE(l_es_uuid);
         return false;
     }
-    assert(l_worker);
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es){
         if (l_es->flags & DAP_SOCK_CONNECTING ){
