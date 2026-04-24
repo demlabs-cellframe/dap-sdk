@@ -37,7 +37,12 @@
 
 #pragma once
 
+#if defined(DAP_OS_WINDOWS) || defined(_WIN32) || defined(_WIN64)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
+#endif
 #include <stdint.h>
 #include <stdbool.h>
 #include "dap_events_socket.h"
@@ -219,4 +224,3 @@ uint32_t dap_io_flow_socket_addr_hash(
 #ifdef __cplusplus
 }
 #endif
-

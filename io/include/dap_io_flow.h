@@ -57,7 +57,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdatomic.h>
+#if defined(DAP_OS_WINDOWS) || defined(_WIN32) || defined(_WIN64)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
+#endif
 #include "uthash.h"
 #include "dap_events_socket.h"
 #include "dap_server.h"
@@ -513,4 +518,3 @@ void dap_io_flow_server_get_stats(
 #ifdef __cplusplus
 }
 #endif
-

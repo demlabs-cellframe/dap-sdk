@@ -8,7 +8,6 @@
 
 #include <string.h>
 #include <stdint.h>
-#include <arpa/inet.h>  // For htobe64 (network byte order)
 
 #include "dap_enc_kdf.h"
 #include "dap_common.h"
@@ -278,4 +277,3 @@ int dap_enc_kdf_hkdf(const void *a_salt, size_t a_salt_size,
     
     return 0;
 }
-
