@@ -30,7 +30,12 @@
  */
 
 #include <string.h>
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>  // for htons/ntohs (network byte order)
+#endif
 #include "dap_stream_handshake.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -1010,4 +1015,3 @@ void dap_stream_session_create_response_free(dap_stream_session_create_response_
     }
     DAP_DELETE(a_response);
 }
-

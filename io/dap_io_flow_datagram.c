@@ -10,8 +10,13 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#endif
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_worker.h"
@@ -488,6 +493,5 @@ static void s_datagram_flow_destroy_wrapper(dap_io_flow_t *a_flow)
     // Free DATAGRAM flow
     DAP_DELETE(l_datagram_flow);
 }
-
 
 

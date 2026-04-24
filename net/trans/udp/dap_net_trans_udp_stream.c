@@ -23,7 +23,9 @@
 
 #include <string.h>
 #include <inttypes.h>
+#ifndef DAP_OS_WINDOWS
 #include <arpa/inet.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"

@@ -27,14 +27,8 @@
 #include <string.h>
 #include <inttypes.h>
 
-#ifdef DAP_OS_ANDROID
-#include <malloc.h>
-#define dap_aligned_alloc(alignment, size) memalign((alignment), (size))
-#elif defined(_MSC_VER)
-#define dap_aligned_alloc(alignment, size) _aligned_malloc((size), (alignment))
-#else
-#define dap_aligned_alloc(alignment, size) aligned_alloc((alignment), (size))
-#endif
+#define dap_aligned_alloc(alignment, size) DAP_ALMALLOC((alignment), (size))
+#define dap_aligned_free(ptr) DAP_ALFREE((ptr))
 
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 #include <immintrin.h>
@@ -124,7 +118,7 @@ void dap_ring_buffer_delete(dap_ring_buffer_t *a_rb) {
     debug_if(s_debug_more, L_DEBUG, "Deleting ring buffer: capacity=%zu, total_pushes=%" PRIu64 ", total_pops=%" PRIu64 ", total_full=%" PRIu64 ", total_empty=%" PRIu64,
            a_rb->capacity, l_pushes, l_pops, l_full, l_empty);
     
-    free(a_rb);
+    dap_aligned_free(a_rb);
 }
 
 /**

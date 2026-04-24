@@ -23,7 +23,9 @@
 
 #include <string.h>
 #include <stdlib.h>
+#ifndef DAP_OS_WINDOWS
 #include <arpa/inet.h>
+#endif
 #include <sys/time.h>
 
 #ifdef DAP_OS_WINDOWS

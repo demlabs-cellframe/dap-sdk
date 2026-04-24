@@ -24,8 +24,13 @@
 #include <string.h>
 #include <inttypes.h>
 #include <unistd.h>
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"
