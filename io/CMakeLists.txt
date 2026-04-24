@@ -54,7 +54,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE src)
 
 if (WIN32)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll)
-    target_link_libraries(${PROJECT_NAME} ws2_32)
+    target_link_libraries(${PROJECT_NAME} INTERFACE ws2_32)
 elseif (LINUX OR ANDROID)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux)
 elseif(MACOS)
