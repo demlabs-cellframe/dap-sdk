@@ -727,8 +727,8 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     l_es->_inheritor = a_params->client_ctx;
     
     int l_buf_size = 4 * 1024 * 1024;
-    setsockopt(l_es->fd, SOL_SOCKET, SO_RCVBUF, &l_buf_size, sizeof(l_buf_size));
-    setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, &l_buf_size, sizeof(l_buf_size));
+    setsockopt(l_es->fd, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
+    setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
     
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {

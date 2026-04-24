@@ -1704,7 +1704,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
 #ifdef DAP_OS_LINUX
             ioctl(l_es->fd, FIONREAD, &l_pending);
 #endif
-            getsockopt(l_es->fd, SOL_SOCKET, SO_ERROR, &l_sockerr, &l_sockerr_len);
+            getsockopt(l_es->fd, SOL_SOCKET, SO_ERROR, (char *)&l_sockerr, &l_sockerr_len);
             log_it(L_WARNING, "KEEPALIVE_CHECK: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
                    " flags=0x%x pending_in=%d so_err=%d buf_in=%zu buf_out=%zu"
                    " READY_READ=%d read_cb=%p active=%d trans=%p session=%p",

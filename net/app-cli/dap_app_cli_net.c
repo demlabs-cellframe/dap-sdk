@@ -81,7 +81,7 @@ int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_st
         }
         int l_sock_err = 0;
         socklen_t l_err_len = sizeof(l_sock_err);
-        getsockopt(socket, SOL_SOCKET, SO_ERROR, &l_sock_err, &l_err_len);
+        getsockopt(socket, SOL_SOCKET, SO_ERROR, (char *)&l_sock_err, &l_err_len);
         if (l_sock_err)
             fprintf(stderr, "[CLI-DIAG] recv: EAGAIN + SO_ERROR=%d (%s), fd=%d\n", l_sock_err, strerror(l_sock_err), (int)socket);
         return DAP_CLI_ERROR_TIMEOUT;

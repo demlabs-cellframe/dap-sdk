@@ -9,7 +9,11 @@
 
 #include <pthread.h>
 #include <errno.h>
+#ifdef DAP_OS_WINDOWS
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 #include <stdatomic.h>
 #include "dap_thread_pool.h"
 #include "dap_thread.h"
@@ -18,6 +22,19 @@
 #define LOG_TAG "dap_thread_pool"
 
 static bool s_debug_more = false;
+
+static uint32_t s_detect_cpu_count(void)
+{
+#ifdef DAP_OS_WINDOWS
+    SYSTEM_INFO l_sysinfo = { 0 };
+    GetSystemInfo(&l_sysinfo);
+    return l_sysinfo.dwNumberOfProcessors ? (uint32_t)l_sysinfo.dwNumberOfProcessors : 4;
+#else
+    long l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+    return (l_ncpus > 0) ? (uint32_t)l_ncpus : 4;
+#endif
+}
+
 /**
  * @brief Task structure (per-thread queue node)
  */
@@ -120,10 +137,8 @@ static void *s_worker_thread(void *a_arg)
 dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_queue_size)
 {
     // Auto-detect CPU count
-    if (a_num_threads == 0) {
-        long l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
-        a_num_threads = (l_ncpus > 0) ? (uint32_t)l_ncpus : 4;
-    }
+    if (a_num_threads == 0)
+        a_num_threads = s_detect_cpu_count();
 
     dap_thread_pool_t *l_pool = DAP_NEW_Z(dap_thread_pool_t);
     if (!l_pool) {
@@ -155,7 +170,7 @@ dap_thread_pool_t *dap_thread_pool_create(uint32_t a_num_threads, uint32_t a_que
     }
 
     // Get CPU count once for affinity binding
-    long l_ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+    long l_ncpus = (long)s_detect_cpu_count();
 
     // Create threads
     for (uint32_t i = 0; i < a_num_threads; i++) {
