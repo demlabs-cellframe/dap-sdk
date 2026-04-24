@@ -22,9 +22,26 @@
 #define TEST_NUM_WORKERS 4
 #define TEST_PAYLOAD_SIZE 1024
 
-// Forward declarations for BPF functions (we test these, don't mock)
-bool dap_io_flow_ebpf_is_available();
-bool dap_io_flow_cbpf_is_available();
+// BPF availability probes are only present in Linux builds.
+static bool s_ebpf_is_available(void)
+{
+#ifdef __linux__
+    extern bool dap_io_flow_ebpf_is_available(void);
+    return dap_io_flow_ebpf_is_available();
+#else
+    return false;
+#endif
+}
+
+static bool s_cbpf_is_available(void)
+{
+#ifdef __linux__
+    extern bool dap_io_flow_cbpf_is_available(void);
+    return dap_io_flow_cbpf_is_available();
+#else
+    return false;
+#endif
+}
 
 // ============================================================================
 // MOCK DECLARATIONS
@@ -271,8 +288,8 @@ static int test_tier_detection(void)
     
     test_setup();
     
-    bool l_ebpf_available = dap_io_flow_ebpf_is_available();
-    bool l_cbpf_available = dap_io_flow_cbpf_is_available();
+    bool l_ebpf_available = s_ebpf_is_available();
+    bool l_cbpf_available = s_cbpf_is_available();
     int l_euid = s_get_effective_uid();
     
     log_it(L_NOTICE, "Tier detection results:");
