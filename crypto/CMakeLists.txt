@@ -373,7 +373,9 @@ endif()
 dap_link_libraries(${PROJECT_NAME} INTERFACE dap_core dap_crypto_kyber512 dap_json-c)
 
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
-    target_link_libraries(${PROJECT_NAME} INTERFACE secp256k1)
+    # dap_crypto sources include secp256k1 headers directly; PUBLIC makes usage
+    # requirements (e.g. SECP256K1_STATIC on WIN32) apply to this target too.
+    target_link_libraries(${PROJECT_NAME} PUBLIC secp256k1)
 endif()
 
 # Ensure XKCP includes are available for compilation (not just INTERFACE)
