@@ -15,7 +15,7 @@ target_link_libraries(${PROJECT_NAME}
     dap_test
 )
 
-if(UNIX)
+if(UNIX AND NOT WIN32)
     target_link_libraries(${PROJECT_NAME} m pthread)
 endif()
 

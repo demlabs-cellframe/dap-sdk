@@ -92,17 +92,17 @@
 #define BIT( x ) ( 1 << x )
 
 // Stuffs an integer into a pointer type
-#define DAP_INT_TO_POINTER(i) ((void*) (size_t) (i))
+#define DAP_INT_TO_POINTER(i) ((void*)(intptr_t)(i))
 // Extracts an integer from a pointer
-#define DAP_POINTER_TO_INT(p) ((int)  (size_t) (void *) (p))
+#define DAP_POINTER_TO_INT(p) ((int)(intptr_t)(p))
 // Stuffs an unsigned integer into a pointer type
-#define DAP_UINT_TO_POINTER(u) ((void*) (unsigned long) (u))
+#define DAP_UINT_TO_POINTER(u) ((void*)(uintptr_t)(u))
 // Extracts an unsigned integer from a pointer
-#define DAP_POINTER_TO_UINT(p) ((unsigned int) (unsigned long) (p))
+#define DAP_POINTER_TO_UINT(p) ((unsigned int)(uintptr_t)(p))
 // Stuffs a size_t into a pointer type
-#define DAP_SIZE_TO_POINTER(s) ((void*) (size_t) (s))
+#define DAP_SIZE_TO_POINTER(s) ((void*)(uintptr_t)(s))
 // Extracts a size_t from a pointer
-#define DAP_POINTER_TO_SIZE(p) ((size_t) (p))
+#define DAP_POINTER_TO_SIZE(p) ((size_t)(uintptr_t)(p))
 
 #if defined(__GNUC__) || defined (__clang__)
   #define DAP_ALIGN_PACKED  __attribute__((aligned(1),packed))

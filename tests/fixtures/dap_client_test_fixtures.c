@@ -35,8 +35,12 @@
 #include "dap_cert.h"
 #include "dap_cert_file.h"
 #include "dap_stream.h"
+#include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 #define LOG_TAG "dap_client_test_fixtures"
 
@@ -87,7 +91,11 @@ int dap_test_setup_certificates(const char *a_test_dir) {
     // Create directory if it doesn't exist
     struct stat l_st = {0};
     if (stat(l_cert_folder, &l_st) == -1) {
-        if (mkdir(l_cert_folder, 0755) != 0) {
+#ifdef _WIN32
+        if (_mkdir(l_cert_folder) != 0 && errno != EEXIST) {
+#else
+        if (mkdir(l_cert_folder, 0755) != 0 && errno != EEXIST) {
+#endif
             log_it(L_ERROR, "Failed to create certificate folder: %s", l_cert_folder);
             return -1;
         }
@@ -223,4 +231,3 @@ bool dap_test_wait_events_ready_for_deinit(uint32_t timeout_ms) {
     
     return true; // Always return true - dap_events_deinit() will handle waiting
 }
-

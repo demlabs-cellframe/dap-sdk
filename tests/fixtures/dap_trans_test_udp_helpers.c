@@ -32,7 +32,11 @@
 #include "dap_mock.h"
 #include <inttypes.h>
 #include <string.h>
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
+#endif
 
 #define LOG_TAG "test_udp_helpers"
 

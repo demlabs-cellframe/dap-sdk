@@ -44,8 +44,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#endif
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "dap_events_socket.h"
@@ -383,4 +388,3 @@ void dap_udp_test_cleanup_mock_client_ctx(dap_net_trans_udp_ctx_t *a_ctx);
 #ifdef __cplusplus
 }
 #endif
-

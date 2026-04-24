@@ -249,6 +249,15 @@ static void test_teardown(void)
     log_it(L_NOTICE, "Test teardown complete");
 }
 
+static int s_get_effective_uid(void)
+{
+#ifdef _WIN32
+    return -1;
+#else
+    return (int)geteuid();
+#endif
+}
+
 // ============================================================================
 // TEST CASES
 // ============================================================================
@@ -264,9 +273,14 @@ static int test_tier_detection(void)
     
     bool l_ebpf_available = dap_io_flow_ebpf_is_available();
     bool l_cbpf_available = dap_io_flow_cbpf_is_available();
+    int l_euid = s_get_effective_uid();
     
     log_it(L_NOTICE, "Tier detection results:");
-    log_it(L_NOTICE, "  - eBPF: %s (uid=%d)", l_ebpf_available ? "YES" : "NO", geteuid());
+    if (l_euid >= 0) {
+        log_it(L_NOTICE, "  - eBPF: %s (uid=%d)", l_ebpf_available ? "YES" : "NO", l_euid);
+    } else {
+        log_it(L_NOTICE, "  - eBPF: %s (uid=n/a)", l_ebpf_available ? "YES" : "NO");
+    }
     log_it(L_NOTICE, "  - CBPF: %s", l_cbpf_available ? "YES" : "NO");
     
     // CBPF should always be available on modern Linux
@@ -275,11 +289,15 @@ static int test_tier_detection(void)
     #endif
     
     // eBPF should be available only with root
-    if (geteuid() == 0) {
+#ifdef _WIN32
+    dap_assert_PIF(!l_ebpf_available, "eBPF should NOT be available on Windows");
+#else
+    if (l_euid == 0) {
         log_it(L_INFO, "Running as root - eBPF may be available");
     } else {
         dap_assert_PIF(!l_ebpf_available, "eBPF should NOT be available without root");
     }
+#endif
     
     test_teardown();
     return 0;

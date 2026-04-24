@@ -9,7 +9,7 @@ add_definitions("-D_GNU_SOURCE")
 file (GLOB CORE_HEADERS include/*.h)
 file (GLOB CORE_SRCS src/*.c src/etc/*.c)
 
-if(UNIX)
+if(UNIX AND NOT WIN32)
     file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h)
     # DO NOT compile src/unix/*.c here - they are compiled in dap_core_unix
     # file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/*.c)
@@ -52,7 +52,7 @@ if(WIN32)
     endif()
 endif()
 
-if(UNIX)
+if(UNIX AND NOT WIN32)
     add_subdirectory(src/unix)
     # dap_core_unix is now OBJECT library
     if(TARGET dap_core_unix)

@@ -235,11 +235,18 @@ if(BUILD_DAP_SDK_TESTS OR BUILD_DAP_TESTS)
                     # Replace object library references with static library references
                     set(STATIC_LINK_LIBS "")
                     foreach(DEP ${MODULE_LINK_LIBS})
+                        # Unwrap simple generator expressions often used by CMake
+                        # for object/static dependency propagation.
+                        set(DEP_NORMALIZED "${DEP}")
+                        string(REGEX REPLACE "^\\$<LINK_ONLY:([^>]+)>$" "\\1" DEP_NORMALIZED "${DEP_NORMALIZED}")
+                        string(REGEX REPLACE "^\\$<BUILD_INTERFACE:([^>]+)>$" "\\1" DEP_NORMALIZED "${DEP_NORMALIZED}")
+                        string(REGEX REPLACE "^\\$<INSTALL_INTERFACE:([^>]+)>$" "\\1" DEP_NORMALIZED "${DEP_NORMALIZED}")
+
                         # Check if dependency is an object library that will have static version
-                        list(FIND DAP_INTERNAL_MODULES ${DEP} DEP_IN_MODULES)
+                        list(FIND DAP_INTERNAL_MODULES ${DEP_NORMALIZED} DEP_IN_MODULES)
                         if(DEP_IN_MODULES GREATER -1)
                             # Use static version of dependency
-                            list(APPEND STATIC_LINK_LIBS ${DEP}_static)
+                            list(APPEND STATIC_LINK_LIBS ${DEP_NORMALIZED}_static)
                         else()
                             # Keep non-module dependencies as is
                             list(APPEND STATIC_LINK_LIBS ${DEP})

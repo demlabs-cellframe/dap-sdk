@@ -46,7 +46,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <arpa/inet.h>
 
 #include "dap_common.h"
 #include "dap_test.h"

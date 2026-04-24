@@ -79,7 +79,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 # ============================================================================
 # Test: DAP Circular Buffer (Unix-specific)
 # ============================================================================
-if(UNIX)
+if(UNIX AND NOT WIN32)
     project(test_dap_circular)
 
     add_executable(${PROJECT_NAME}
@@ -103,7 +103,7 @@ endif()
 # ============================================================================
 # Test: DAP CPU Monitor (Unix-specific)
 # ============================================================================
-if(UNIX)
+if(UNIX AND NOT WIN32)
     project(test_dap_cpu_monitor)
 
     add_executable(${PROJECT_NAME}
@@ -127,7 +127,7 @@ endif()
 # ============================================================================
 # Test: DAP Process Memory (Unix-specific)
 # ============================================================================
-if(UNIX)
+if(UNIX AND NOT WIN32)
     project(test_dap_process_memory)
 
     add_executable(${PROJECT_NAME}
@@ -147,4 +147,3 @@ if(UNIX)
         LABELS "unit;core;process-memory"
     )
 endif()
-

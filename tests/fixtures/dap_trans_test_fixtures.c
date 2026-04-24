@@ -30,7 +30,6 @@
 
 #include <stddef.h>
 #include <string.h>
-#include <arpa/inet.h>
 #include "dap_trans_test_fixtures.h"
 #include "dap_test.h"
 #include "dap_mock.h"
@@ -659,4 +658,3 @@ bool dap_trans_test_has_valid_stream_signature(
 {
     return dap_trans_test_verify_stream_packet_signature(a_data, a_size);
 }
-

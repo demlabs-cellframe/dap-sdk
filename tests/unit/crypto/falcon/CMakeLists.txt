@@ -18,7 +18,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     target_compile_options(${PROJECT_NAME} PRIVATE -fno-fast-math -ffp-contract=off)
 endif()
 
-if(UNIX)
+if(UNIX AND NOT WIN32)
     target_link_libraries(${PROJECT_NAME} m pthread)
 endif()
 

@@ -47,11 +47,10 @@ dap_register_module(
 )
 
 # Link dependencies as INTERFACE for OBJECT library
-dap_link_libraries(${PROJECT_NAME} INTERFACE 
-    dap_core 
-    dap_core_unix
-    dap_io 
-    dap_crypto 
+set(DAP_TRANS_HTTP_DEPS
+    dap_core
+    dap_io
+    dap_crypto
     dap_http_server
     dap_enc_server
     dap_client
@@ -60,6 +59,10 @@ dap_link_libraries(${PROJECT_NAME} INTERFACE
     dap_net_trans
     dap_net_server_common
 )
+if(NOT WIN32)
+    list(APPEND DAP_TRANS_HTTP_DEPS dap_core_unix)
+endif()
+dap_link_libraries(${PROJECT_NAME} INTERFACE ${DAP_TRANS_HTTP_DEPS})
 
 if(INSTALL_DAP_SDK)
     set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${TRANS_HTTP_HDRS}")
@@ -69,4 +72,3 @@ if(INSTALL_DAP_SDK)
             PUBLIC_HEADER DESTINATION include/dap/net/trans/http/
     )
 endif()
-
