@@ -936,6 +936,463 @@ static void test_nested_struct_self_reference_attack(void) {
     log_it(L_INFO, "NESTED_STRUCT self-reference depth guard passed");
 }
 
+/* ====================================================================== *
+ *                     Extended security edge-case tests                   *
+ * ====================================================================== */
+
+/**
+ * @brief ARRAY_DYNAMIC deserialize: count > DAP_SERIALIZE_MAX_ARRAY_COUNT
+ *        must be rejected without any allocation attempt.
+ */
+static void test_array_dynamic_oversized_count_attack(void) {
+    log_it(L_INFO, "Testing ARRAY_DYNAMIC oversized-count rejection...");
+
+    typedef struct {
+        uint8_t *data;
+        uint32_t count;
+    } darr_obj_t;
+
+    static const dap_serialize_field_t darr_fields[] = {
+        {
+            .name = "data",
+            .type = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC,
+            .offset = offsetof(darr_obj_t, data),
+            .count_offset = offsetof(darr_obj_t, count),
+            .size = sizeof(uint8_t),
+        },
+    };
+    static const dap_serialize_schema_t darr_schema = {
+        .name = "darr_attack",
+        .version = 1,
+        .struct_size = sizeof(darr_obj_t),
+        .field_count = 1,
+        .fields = darr_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+
+    // Craft: magic + ver + field_count(1) + count_prefix = MAX+1.
+    uint8_t buf[32] = {0};
+    uint32_t magic_val = DAP_SERIALIZE_MAGIC_NUMBER, ver = 1, fcnt = 1;
+    uint32_t bad_count = DAP_SERIALIZE_MAX_ARRAY_COUNT + 1U;
+    memcpy(buf,      &magic_val, 4);
+    memcpy(buf + 4,  &ver,       4);
+    memcpy(buf + 8,  &fcnt,      4);
+    memcpy(buf + 12, &bad_count, 4);
+
+    darr_obj_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&darr_schema, buf, sizeof(buf), &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(deser.data == NULL); // no allocation must have happened
+    log_it(L_INFO, "ARRAY_DYNAMIC oversized-count rejection passed (error=%d)", dr.error_code);
+}
+
+/**
+ * @brief BYTES_DYNAMIC deserialize: length prefix > MAX_DYNAMIC_PAYLOAD must be rejected.
+ *        Covers memory-exhaustion attack via bogus 4 GB size prefix.
+ */
+static void test_bytes_dynamic_huge_size_attack(void) {
+    log_it(L_INFO, "Testing BYTES_DYNAMIC huge-size rejection...");
+
+    typedef struct {
+        uint8_t *data;
+        size_t   data_size;
+    } bd_obj_t;
+    static const dap_serialize_field_t bd_fields[] = {
+        DAP_SERIALIZE_FIELD_DYNAMIC_BYTES(bd_obj_t, data, data_size),
+    };
+    static const dap_serialize_schema_t bd_schema = {
+        .name = "bd_attack",
+        .version = 1,
+        .struct_size = sizeof(bd_obj_t),
+        .field_count = 1,
+        .fields = bd_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+
+    uint8_t buf[32] = {0};
+    uint32_t magic_val = DAP_SERIALIZE_MAGIC_NUMBER, ver = 1, fcnt = 1;
+    uint32_t crazy_len = 0xFFFFFFFFu;
+    memcpy(buf,      &magic_val, 4);
+    memcpy(buf + 4,  &ver,       4);
+    memcpy(buf + 8,  &fcnt,      4);
+    memcpy(buf + 12, &crazy_len, 4);
+
+    bd_obj_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&bd_schema, buf, sizeof(buf), &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(deser.data == NULL);
+    assert(deser.data_size == 0);
+    log_it(L_INFO, "BYTES_DYNAMIC huge-size rejection passed (error=%d)", dr.error_code);
+}
+
+/**
+ * @brief STRING_DYNAMIC deserialize: length prefix > MAX_DYNAMIC_PAYLOAD must be rejected.
+ */
+static void test_string_dynamic_huge_length_attack(void) {
+    log_it(L_INFO, "Testing STRING_DYNAMIC huge-length rejection...");
+
+    typedef struct {
+        char  *name;
+        size_t name_len;
+    } sd_obj_t;
+    static const dap_serialize_field_t sd_fields[] = {
+        {
+            .name = "name",
+            .type = DAP_SERIALIZE_TYPE_STRING_DYNAMIC,
+            .offset = offsetof(sd_obj_t, name),
+            .size_offset = offsetof(sd_obj_t, name_len),
+        },
+    };
+    static const dap_serialize_schema_t sd_schema = {
+        .name = "sd_attack",
+        .version = 1,
+        .struct_size = sizeof(sd_obj_t),
+        .field_count = 1,
+        .fields = sd_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+
+    uint8_t buf[32] = {0};
+    uint32_t magic_val = DAP_SERIALIZE_MAGIC_NUMBER, ver = 1, fcnt = 1;
+    uint32_t crazy_len = DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD + 1U;
+    memcpy(buf,      &magic_val, 4);
+    memcpy(buf + 4,  &ver,       4);
+    memcpy(buf + 8,  &fcnt,      4);
+    memcpy(buf + 12, &crazy_len, 4);
+
+    sd_obj_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&sd_schema, buf, sizeof(buf), &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(deser.name == NULL);
+    log_it(L_INFO, "STRING_DYNAMIC huge-length rejection passed (error=%d)", dr.error_code);
+}
+
+/**
+ * @brief ARRAY_DYNAMIC deserialize: (count * elem_size) overflowing size_t
+ *        must be rejected (element_size chosen via schema so the overflow is
+ *        produced during the safe_mul guard).
+ */
+static void test_array_dynamic_mul_overflow_attack(void) {
+    log_it(L_INFO, "Testing ARRAY_DYNAMIC multiply-overflow rejection...");
+
+    typedef struct {
+        uint8_t *data;
+        uint32_t count;
+    } ovf_obj_t;
+
+    // elem_size chosen so that count * elem_size overflows size_t long before
+    // DAP_SERIALIZE_MAX_ARRAY_COUNT limit fires — attacker forces massive mul.
+    static const dap_serialize_field_t ovf_fields[] = {
+        {
+            .name = "data",
+            .type = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC,
+            .offset = offsetof(ovf_obj_t, data),
+            .count_offset = offsetof(ovf_obj_t, count),
+            .size = SIZE_MAX / 2, // malicious schema element size
+        },
+    };
+    static const dap_serialize_schema_t ovf_schema = {
+        .name = "ovf_attack",
+        .version = 1,
+        .struct_size = sizeof(ovf_obj_t),
+        .field_count = 1,
+        .fields = ovf_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+
+    uint8_t buf[32] = {0};
+    uint32_t magic_val = DAP_SERIALIZE_MAGIC_NUMBER, ver = 1, fcnt = 1;
+    uint32_t count = 5; // 5 * SIZE_MAX/2 overflows
+    memcpy(buf,      &magic_val, 4);
+    memcpy(buf + 4,  &ver,       4);
+    memcpy(buf + 8,  &fcnt,      4);
+    memcpy(buf + 12, &count,     4);
+
+    ovf_obj_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&ovf_schema, buf, sizeof(buf), &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(deser.data == NULL);
+    log_it(L_INFO, "ARRAY_DYNAMIC multiply-overflow rejection passed (error=%d)", dr.error_code);
+}
+
+/**
+ * @brief ARRAY_DYNAMIC(nested) deserialize: self-referential schema must hit
+ *        nesting-depth guard in the deserialize path (previously unprotected).
+ */
+static void test_array_dynamic_nested_self_reference_attack(void) {
+    log_it(L_INFO, "Testing ARRAY_DYNAMIC(nested) self-reference depth guard...");
+
+    typedef struct { uint8_t *data; uint32_t count; } rec_obj_t;
+
+    static dap_serialize_field_t rec_fields[1];
+    static dap_serialize_schema_t rec_schema = {
+        .name = "rec_self",
+        .version = 1,
+        .struct_size = sizeof(rec_obj_t),
+        .field_count = 1,
+        .fields = rec_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+    rec_fields[0].name = "data";
+    rec_fields[0].type = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC;
+    rec_fields[0].offset = offsetof(rec_obj_t, data);
+    rec_fields[0].count_offset = offsetof(rec_obj_t, count);
+    rec_fields[0].nested_schema = &rec_schema; // self-ref
+
+    // Craft a buffer whose nested count encodes "1" forever — each level
+    // consumes 4 bytes, so the stack would recurse deep.  Produce ~64 levels.
+    uint8_t buf[12 + 4 * 64] = {0};
+    uint32_t magic_val = DAP_SERIALIZE_MAGIC_NUMBER, ver = 1, fcnt = 1;
+    memcpy(buf,     &magic_val, 4);
+    memcpy(buf + 4, &ver,       4);
+    memcpy(buf + 8, &fcnt,      4);
+    uint32_t inner_count = 1;
+    for (size_t i = 0; i < 64; i++) {
+        memcpy(buf + 12 + i * 4, &inner_count, 4);
+    }
+
+    rec_obj_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&rec_schema, buf, sizeof(buf), &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    log_it(L_INFO, "ARRAY_DYNAMIC(nested) self-ref depth guard passed (error=%d)", dr.error_code);
+}
+
+/**
+ * @brief ARRAY_DYNAMIC simple deserialize: count * elem_size > MAX_DYNAMIC_PAYLOAD
+ *        must be rejected to prevent memory exhaustion on valid-looking wire data.
+ */
+static void test_array_dynamic_payload_cap(void) {
+    log_it(L_INFO, "Testing ARRAY_DYNAMIC payload-cap enforcement...");
+
+    typedef struct {
+        uint8_t *data;
+        uint32_t count;
+    } cap_obj_t;
+    static const dap_serialize_field_t cap_fields[] = {
+        {
+            .name = "data",
+            .type = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC,
+            .offset = offsetof(cap_obj_t, data),
+            .count_offset = offsetof(cap_obj_t, count),
+            .size = 1024, // 1 KB elements
+        },
+    };
+    static const dap_serialize_schema_t cap_schema = {
+        .name = "cap_test",
+        .version = 1,
+        .struct_size = sizeof(cap_obj_t),
+        .field_count = 1,
+        .fields = cap_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+
+    // count * elem_size = 500000 * 1024 = ~488 MB, under MAX_ARRAY_COUNT (1M)
+    // but far above MAX_DYNAMIC_PAYLOAD (100 MB).  Must be rejected.
+    uint8_t buf[64] = {0};
+    uint32_t magic_val = DAP_SERIALIZE_MAGIC_NUMBER, ver = 1, fcnt = 1;
+    uint32_t count = 500000;
+    memcpy(buf,      &magic_val, 4);
+    memcpy(buf + 4,  &ver,       4);
+    memcpy(buf + 8,  &fcnt,      4);
+    memcpy(buf + 12, &count,     4);
+
+    cap_obj_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&cap_schema, buf, sizeof(buf), &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(deser.data == NULL);
+    log_it(L_INFO, "ARRAY_DYNAMIC payload-cap passed (error=%d)", dr.error_code);
+}
+
+/**
+ * @brief ARRAY_FIXED: zero-count must be legal and produce empty payload.
+ *        Regression test for the sanity-limit path: the guard rejects
+ *        count > MAX but must allow count == 0.
+ */
+static void test_fixed_array_zero_count_is_valid(void) {
+    log_it(L_INFO, "Testing ARRAY_FIXED zero-count is accepted...");
+
+    typedef struct { uint32_t tag; uint8_t pad[1]; } zcnt_obj_t;
+    static const dap_serialize_field_t zcnt_fields[] = {
+        DAP_SERIALIZE_FIELD_SIMPLE(zcnt_obj_t, tag, DAP_SERIALIZE_TYPE_UINT32),
+        {
+            .name = "empty",
+            .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED,
+            .offset = offsetof(zcnt_obj_t, pad),
+            .size = 1,
+            .fixed_count = 0,
+            .element_type = DAP_SERIALIZE_TYPE_UINT8,
+        },
+    };
+    static const dap_serialize_schema_t zcnt_schema = {
+        .name = "zcnt_schema",
+        .version = 1,
+        .struct_size = sizeof(zcnt_obj_t),
+        .field_count = 2,
+        .fields = zcnt_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+
+    zcnt_obj_t obj = { .tag = 0xABCDEF01, .pad = {0} };
+    size_t req = dap_serialize_calc_size(&zcnt_schema, NULL, &obj, NULL);
+    // Header(12) + tag(4) + empty_array(0) = 16 bytes.
+    assert(req == 16);
+    uint8_t buf[16] = {0};
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&zcnt_schema, &obj, buf, sizeof(buf), NULL);
+    assert(sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(sr.bytes_written == 16);
+
+    zcnt_obj_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&zcnt_schema, buf, sr.bytes_written, &deser, NULL);
+    assert(dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(deser.tag == obj.tag);
+    log_it(L_INFO, "ARRAY_FIXED zero-count passed");
+}
+
+/**
+ * @brief ARRAY_FIXED element_type/size mismatch must be rejected at serialize time.
+ */
+static void test_fixed_array_element_type_mismatch(void) {
+    log_it(L_INFO, "Testing ARRAY_FIXED element_type/size mismatch rejection...");
+
+    typedef struct { uint32_t arr[2]; } mis_obj_t;
+    static const dap_serialize_field_t mis_fields[] = {
+        {
+            .name = "bad",
+            .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED,
+            .offset = offsetof(mis_obj_t, arr),
+            .size = 8, // claims 8-byte elements
+            .fixed_count = 2,
+            .element_type = DAP_SERIALIZE_TYPE_UINT32, // but element_type says 4
+        },
+    };
+    static const dap_serialize_schema_t mis_schema = {
+        .name = "mis_schema",
+        .version = 1,
+        .struct_size = sizeof(mis_obj_t),
+        .field_count = 1,
+        .fields = mis_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+    mis_obj_t obj = {0};
+    uint8_t buf[64] = {0};
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&mis_schema, &obj, buf, sizeof(buf), NULL);
+    assert(sr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    log_it(L_INFO, "ARRAY_FIXED element_type/size mismatch passed (error=%d)", sr.error_code);
+}
+
+/**
+ * @brief NESTED_STRUCT deserialize: truncated buffer at nested boundary must return error.
+ */
+static void test_nested_struct_truncated_at_boundary(void) {
+    log_it(L_INFO, "Testing NESTED_STRUCT truncated-at-boundary rejection...");
+
+    test_nested_container_t original = {
+        .header = 0xDEADBEEF,
+        .embedded = { .tag = 0xFEEDFACE, .flags = 0xABBA },
+        .leaves = {
+            { .tag = 1, .flags = 1 },
+            { .tag = 2, .flags = 2 },
+            { .tag = 3, .flags = 3 },
+        },
+        .footer = 0xCAFEBABE,
+    };
+
+    size_t req = dap_serialize_calc_size(&test_nested_container_schema, NULL, &original, NULL);
+    uint8_t *buf = DAP_NEW_SIZE(uint8_t, req);
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&test_nested_container_schema,
+                                                        &original, buf, req, NULL);
+    assert(sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+
+    // Header(12) + header(4) + embedded.tag(4) → 20 bytes; cut at 19 so
+    // embedded.tag cannot be fully read.
+    test_nested_container_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&test_nested_container_schema,
+                                                          buf, 19, &deser, NULL);
+    assert(dr.error_code != DAP_SERIALIZE_ERROR_SUCCESS);
+    log_it(L_INFO, "NESTED_STRUCT truncated-at-boundary passed (error=%d)", dr.error_code);
+
+    DAP_DELETE(buf);
+}
+
+/**
+ * @brief calc_size must refuse mutually-recursive schemas without stack overflow.
+ *        Covers the calc_size_raw recursion-guard fix.
+ */
+static void test_calc_size_mutual_recursion_guard(void) {
+    log_it(L_INFO, "Testing calc_size mutual-recursion guard...");
+
+    typedef struct { uint8_t pad[4]; } mut_obj_t;
+
+    static dap_serialize_field_t a_fields[1], b_fields[1];
+    static dap_serialize_schema_t a_schema = {
+        .name = "A", .version = 1,
+        .struct_size = sizeof(mut_obj_t),
+        .field_count = 1, .fields = a_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+    static dap_serialize_schema_t b_schema = {
+        .name = "B", .version = 1,
+        .struct_size = sizeof(mut_obj_t),
+        .field_count = 1, .fields = b_fields,
+        .magic = DAP_SERIALIZE_MAGIC_NUMBER,
+    };
+    a_fields[0].name = "to_b";
+    a_fields[0].type = DAP_SERIALIZE_TYPE_NESTED_STRUCT;
+    a_fields[0].offset = 0;
+    a_fields[0].nested_schema = &b_schema;
+    b_fields[0].name = "to_a";
+    b_fields[0].type = DAP_SERIALIZE_TYPE_NESTED_STRUCT;
+    b_fields[0].offset = 0;
+    b_fields[0].nested_schema = &a_schema;
+
+    mut_obj_t obj = {0};
+    size_t req = dap_serialize_calc_size(&a_schema, NULL, &obj, NULL);
+    // Either returns 0 (guard fired) or a finite small number; must NOT hang/crash.
+    (void)req;
+    log_it(L_INFO, "calc_size mutual-recursion guard passed (req=%zu)", req);
+}
+
+/**
+ * @brief ARRAY_FIXED of UINT16/UINT32/UINT64/INT16/INT32/INT64 must be
+ *        byte-for-byte identical on LE hosts and correct after round-trip.
+ *        Regression guard against endianness regressions in the type matrix.
+ */
+static void test_fixed_array_endianness_matrix(void) {
+    log_it(L_INFO, "Testing ARRAY_FIXED endianness matrix...");
+
+    // Reuse existing schema: test_coeff_vec_schema has INT32/UINT16/UINT64 arrays.
+    test_coeff_vec_t obj = {
+        .id = 0,
+        .coeffs  = { 0x11223344, 0x55667788, -1, -2, INT32_MIN, INT32_MAX, 0, 0 },
+        .raw_bytes = {0},
+        .shorts  = { 0x0102, 0x0304, 0x0506 },
+        .longs   = { 0x1122334455667788ULL, 0xDEADBEEFCAFEBABEULL },
+        .trailer = 0,
+    };
+    size_t req = dap_serialize_calc_size(&test_coeff_vec_schema, NULL, &obj, NULL);
+    uint8_t *buf = DAP_NEW_SIZE(uint8_t, req);
+    dap_serialize_result_t sr = dap_serialize_to_buffer(&test_coeff_vec_schema, &obj, buf, req, NULL);
+    assert(sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+
+    // Locate offsets: header(12) + id(4)=16; coeffs 8*4=32 bytes -> offs 16..48;
+    // raw_bytes 4 -> 48..52; shorts 3*2=6 -> 52..58; longs 2*8=16 -> 58..74.
+    // Check first uint64 LE encoding.
+    assert(buf[58] == 0x88 && buf[59] == 0x77 && buf[60] == 0x66 && buf[61] == 0x55);
+    assert(buf[62] == 0x44 && buf[63] == 0x33 && buf[64] == 0x22 && buf[65] == 0x11);
+    // Check first uint16 LE: 0x0102 → 02 01
+    assert(buf[52] == 0x02 && buf[53] == 0x01);
+
+    test_coeff_vec_t deser = {0};
+    dap_serialize_result_t dr = dap_serialize_from_buffer(&test_coeff_vec_schema, buf, req, &deser, NULL);
+    assert(dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(memcmp(deser.coeffs, obj.coeffs, sizeof(obj.coeffs)) == 0);
+    assert(memcmp(deser.shorts, obj.shorts, sizeof(obj.shorts)) == 0);
+    assert(memcmp(deser.longs,  obj.longs,  sizeof(obj.longs))  == 0);
+
+    DAP_DELETE(buf);
+    log_it(L_INFO, "ARRAY_FIXED endianness matrix passed");
+}
+
 /**
  * @brief Main test function
  */
@@ -958,6 +1415,19 @@ int main(int argc, char *argv[]) {
     test_fixed_array_malformed();
     test_fixed_array_oversized_count_attack();
     test_nested_struct_self_reference_attack();
+    
+    // Extended security edge-case coverage
+    test_array_dynamic_oversized_count_attack();
+    test_bytes_dynamic_huge_size_attack();
+    test_string_dynamic_huge_length_attack();
+    test_array_dynamic_mul_overflow_attack();
+    test_array_dynamic_nested_self_reference_attack();
+    test_array_dynamic_payload_cap();
+    test_fixed_array_zero_count_is_valid();
+    test_fixed_array_element_type_mismatch();
+    test_nested_struct_truncated_at_boundary();
+    test_calc_size_mutual_recursion_guard();
+    test_fixed_array_endianness_matrix();
     
     log_it(L_INFO, "All DAP Serialize tests passed successfully!");
     

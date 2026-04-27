@@ -586,6 +586,27 @@ dap_serialize_result_t dap_serialize_copy_object(const dap_serialize_schema_t *a
  */
 #define DAP_SERIALIZE_MAX_ARRAY_COUNT           1000000
 
+/**
+ * @brief Maximum per-field dynamic payload size (bytes).
+ *
+ * Applies to BYTES_DYNAMIC, STRING_DYNAMIC length prefixes and to the
+ * accumulated ARRAY_DYNAMIC element data during deserialization.  Attackers
+ * that craft a blob with a multi-GB length prefix must be rejected before
+ * we attempt to allocate memory.  Matches the 100 MiB cap that was already
+ * in place on the serialize path.
+ */
+#define DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD       (100u * 1024u * 1024u)
+
+/**
+ * @brief Maximum nesting depth for runtime serialize/deserialize paths.
+ *
+ * Guards ARRAY_FIXED, ARRAY_DYNAMIC with nested_schema and NESTED_STRUCT
+ * against pathological or self-referential schemas that would otherwise
+ * smash the stack.  Exposed as a public constant so external tests and
+ * tooling can reason about the upper bound.
+ */
+#define DAP_SERIALIZE_MAX_FIELD_NESTING         16
+
 // Error codes
 #define DAP_SERIALIZE_ERROR_SUCCESS             0
 #define DAP_SERIALIZE_ERROR_INVALID_SCHEMA      -1

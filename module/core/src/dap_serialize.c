@@ -93,11 +93,12 @@ static __thread int s_recursion_depth = 0;
 #define MAX_RECURSION_DEPTH 10
 
 // Thread-local nesting depth counter used by serialize/deserialize paths for
-// ARRAY_FIXED and NESTED_STRUCT to stop stack-exhaustion from pathological
-// self-referential schemas.  Kept separate from s_recursion_depth, which guards
-// size-calculation.
+// ARRAY_FIXED, ARRAY_DYNAMIC(nested) and NESTED_STRUCT to stop stack-exhaustion
+// from pathological self-referential schemas.  Kept separate from
+// s_recursion_depth, which guards size-calculation.
+//
+// DAP_SERIALIZE_MAX_FIELD_NESTING is defined publicly in dap_serialize.h.
 static __thread int s_field_nesting_depth = 0;
-#define DAP_SERIALIZE_MAX_FIELD_NESTING 16
 
 /**
  * @brief Compute @p a * @p b with overflow detection.
@@ -195,7 +196,13 @@ size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
             log_it(L_WARNING, "Field '%s' has zero size", l_field->name);
         }
         
-        total_size += l_field_size;
+        size_t l_next = 0;
+        if (!s_safe_add_size(total_size, l_field_size, &l_next)) {
+            log_it(L_ERROR, "calc_size overflow accumulating field '%s'", l_field->name);
+            s_recursion_depth--;
+            return 0;
+        }
+        total_size = l_next;
         debug_if(s_debug_more, L_DEBUG, "Total size after field %zu: %zu", i, total_size);
     }
     
@@ -278,28 +285,33 @@ size_t dap_serialize_calc_size_ex(const dap_serialize_schema_t *a_schema,
             case DAP_SERIALIZE_TYPE_STRING_DYNAMIC:
                 field_size = sizeof(uint32_t) + a_params->data_sizes[i];
                 break;
-            case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC:
+            case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC: {
                 field_size = sizeof(uint32_t); // count prefix
+                size_t elem_sz = 0;
                 if (field->nested_schema) {
                     // Prevent infinite recursion for nested schemas
                     if (field->nested_schema == a_schema) {
                         log_it(L_ERROR, "Circular dependency detected in nested schema for field %zu", i);
-                        s_recursion_depth--;
                         return 0;
                     }
-                    // For nested structures, multiply element size by count
-                    size_t element_size = dap_serialize_calc_size(field->nested_schema, a_params, NULL, a_context);
-                    if (element_size == 0) {
+                    elem_sz = dap_serialize_calc_size(field->nested_schema, a_params, NULL, a_context);
+                    if (elem_sz == 0) {
                         log_it(L_ERROR, "Failed to calculate nested schema size for field %zu", i);
-                        s_recursion_depth--;
                         return 0;
                     }
-                    field_size += element_size * a_params->array_counts[i];
                 } else {
-                    // Simple array of fixed-size elements
-                    field_size += a_params->array_counts[i] * field->size;
+                    elem_sz = field->size;
                 }
+                size_t arr_total = 0;
+                size_t combined = 0;
+                if (!s_safe_mul_size(elem_sz, a_params->array_counts[i], &arr_total) ||
+                    !s_safe_add_size(field_size, arr_total, &combined)) {
+                    log_it(L_ERROR, "calc_size_ex overflow for field '%s'", field->name ? field->name : "?");
+                    return 0;
+                }
+                field_size = combined;
                 break;
+            }
             case DAP_SERIALIZE_TYPE_CHECKSUM:
                 field_size = field->size;
                 break;
@@ -311,7 +323,12 @@ size_t dap_serialize_calc_size_ex(const dap_serialize_schema_t *a_schema,
                 break;
         }
         
-        total_size += field_size;
+        size_t l_ex_next = 0;
+        if (!s_safe_add_size(total_size, field_size, &l_ex_next)) {
+            log_it(L_ERROR, "calc_size_ex total overflow at field '%s'", field->name ? field->name : "?");
+            return 0;
+        }
+        total_size = l_ex_next;
     }
     
     debug_if(s_debug_more, L_DEBUG, "Calculated size by params: %zu bytes for schema '%s'", 
@@ -429,6 +446,15 @@ size_t dap_serialize_calc_size_raw(const dap_serialize_schema_t *a_schema,
         return 0;
     }
     
+    // Share the size-calc recursion counter with dap_serialize_calc_size so
+    // that mutually-recursive schemas cannot bypass the guard by alternating
+    // calls between the two entry points (calc_size → nested → calc_size_raw).
+    if (s_recursion_depth >= MAX_RECURSION_DEPTH) {
+        log_it(L_ERROR, "Maximum recursion depth exceeded in calc_size_raw");
+        return 0;
+    }
+    s_recursion_depth++;
+    
     size_t l_total_size = 0;
     
     // Calculate size of each field (no header!)
@@ -441,9 +467,17 @@ size_t dap_serialize_calc_size_raw(const dap_serialize_schema_t *a_schema,
         }
         
         size_t l_field_size = s_calc_field_size(field, a_object, a_params, i, a_context, a_schema);
-        l_total_size += l_field_size;
+        size_t l_next = 0;
+        if (!s_safe_add_size(l_total_size, l_field_size, &l_next)) {
+            log_it(L_ERROR, "calc_size_raw overflow for schema '%s' field '%s'",
+                   a_schema->name ? a_schema->name : "?", field->name ? field->name : "?");
+            s_recursion_depth--;
+            return 0;
+        }
+        l_total_size = l_next;
     }
     
+    s_recursion_depth--;
     return l_total_size;
 }
 
@@ -838,6 +872,7 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
             l_size = sizeof(uint32_t);  // count prefix
             
             // Calculate array element sizes
+            size_t element_size = 0;
             if (a_field->nested_schema) {
                 // For nested structures, calculate element size using nested schema
                 debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC nested schema calculation");
@@ -845,11 +880,8 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
                 // Guard against circular dependency
                 if (a_field->nested_schema == a_parent_schema) {
                     debug_if(s_debug_more, L_DEBUG, "Circular dependency detected, using struct size");
-                    l_size += a_field->nested_schema->struct_size * l_count_value;
+                    element_size = a_field->nested_schema->struct_size;
                 } else {
-                    // Calculate exact element size using nested schema
-                    size_t element_size = 0;
-                    
                     if (a_object && l_obj_ptr) {
                         // Object-based calculation: use first element as template for size calculation
                         const void **l_array_ptr = (const void**)(l_obj_ptr + a_field->offset);
@@ -869,15 +901,29 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
                         log_it(L_ERROR, "Failed to calculate nested schema size for field '%s', using struct size fallback", a_field->name);
                         element_size = a_field->nested_schema->struct_size;
                     }
-                    
-                    l_size += element_size * l_count_value;
                 }
             } else {
-                // Simple array of fixed-size elements
                 debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC simple array: count=%zu, element_size=%zu", 
                          l_count_value, a_field->size);
-                l_size += l_count_value * a_field->size;
+                element_size = a_field->size;
             }
+            
+            // Overflow-safe total = element_size * count, then total += count_prefix.
+            size_t array_total = 0;
+            if (!s_safe_mul_size(element_size, l_count_value, &array_total)) {
+                log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' size overflow (elem=%zu * count=%zu)",
+                       a_field->name, element_size, l_count_value);
+                l_size = 0;
+                break;
+            }
+            size_t combined = 0;
+            if (!s_safe_add_size(l_size, array_total, &combined)) {
+                log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' size overflow (prefix+array)",
+                       a_field->name);
+                l_size = 0;
+                break;
+            }
+            l_size = combined;
             break;
         }
         case DAP_SERIALIZE_TYPE_ARRAY_FIXED: {
@@ -1128,16 +1174,24 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             }
             
             // Validate size is reasonable
-            if (actual_size > 100*1024*1024) {  // 100MB max per field
-                log_it(L_ERROR, "BYTES_DYNAMIC field '%s' has unreasonable size %zu (max: 100MB)", 
-                       a_field->name, actual_size);
+            if (actual_size > DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD) {
+                log_it(L_ERROR, "BYTES_DYNAMIC field '%s' has unreasonable size %zu (max: %u)",
+                       a_field->name, actual_size, (unsigned)DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD);
                 return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
             }
             
-            // Check buffer space
-            if (a_ctx->offset + sizeof(uint32_t) + actual_size > a_ctx->buffer_size) {
-                log_it(L_ERROR, "Buffer too small for field '%s': offset=%zu + field_size=%zu > buffer_size=%zu", 
-                       a_field->name, a_ctx->offset, sizeof(uint32_t) + actual_size, a_ctx->buffer_size);
+            // Check buffer space with overflow-safe arithmetic.
+            size_t l_prefix_and_data = 0;
+            size_t l_end_off = 0;
+            if (!s_safe_add_size(sizeof(uint32_t), actual_size, &l_prefix_and_data) ||
+                !s_safe_add_size(a_ctx->offset, l_prefix_and_data, &l_end_off)) {
+                log_it(L_ERROR, "BYTES_DYNAMIC field '%s' size overflow (offset=%zu size=%zu)",
+                       a_field->name, a_ctx->offset, actual_size);
+                return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
+            }
+            if (l_end_off > a_ctx->buffer_size) {
+                log_it(L_ERROR, "Buffer too small for field '%s': offset=%zu + field_size=%zu > buffer_size=%zu",
+                       a_field->name, a_ctx->offset, l_prefix_and_data, a_ctx->buffer_size);
                 return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
             }
             
@@ -1197,11 +1251,18 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             a_ctx->offset += sizeof(uint32_t);
             
             // For nested arrays, rely on per-field checks during element serialization.
-            // For simple arrays, pre-check aggregated size.
+            // For simple arrays, pre-check aggregated size with overflow-safe math.
             if (!a_field->nested_schema) {
-                size_t l_array_data_size = l_count_value_u32 * a_field->size;
-                if (a_ctx->offset + l_array_data_size > a_ctx->buffer_size) {
-                    log_it(L_ERROR, "Buffer overflow in ARRAY_DYNAMIC field '%s' data: offset=%zu + array_size=%zu > buffer_size=%zu", 
+                size_t l_array_data_size = 0;
+                size_t l_end_off = 0;
+                if (!s_safe_mul_size((size_t)l_count_value_u32, a_field->size, &l_array_data_size) ||
+                    !s_safe_add_size(a_ctx->offset, l_array_data_size, &l_end_off)) {
+                    log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' size arithmetic overflow (count=%u size=%zu)",
+                           a_field->name, l_count_value_u32, a_field->size);
+                    return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
+                }
+                if (l_end_off > a_ctx->buffer_size) {
+                    log_it(L_ERROR, "Buffer overflow in ARRAY_DYNAMIC field '%s' data: offset=%zu + array_size=%zu > buffer_size=%zu",
                            a_field->name, a_ctx->offset, l_array_data_size, a_ctx->buffer_size);
                     return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
                 }
@@ -1210,52 +1271,55 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             // Serialize array elements
             if (*l_array_ptr && l_count_value_u32 > 0) {
                 if (a_field->nested_schema) {
-                    // Nested structures - validate array pointer
+                    // Nested structures - validate array pointer and guard recursion
                     const uint8_t *l_element_ptr = (const uint8_t*)*l_array_ptr;
                     
-                    // Safety check for array pointer validity
                     if (!l_element_ptr) {
                         log_it(L_WARNING, "Array field '%s' has NULL data pointer but non-zero count %u", 
                                a_field->name, l_count_value_u32);
-                        // Write count as 0 and skip data
+                        // Rewrite count prefix as 0 and stop — byte buffer is trusted on sender side.
                         s_write_uint32_le(a_ctx->buffer + a_ctx->offset - sizeof(uint32_t), 0);
                         return DAP_SERIALIZE_ERROR_SUCCESS;
                     }
                     
+                    if (s_field_nesting_depth >= DAP_SERIALIZE_MAX_FIELD_NESTING) {
+                        log_it(L_ERROR, "ARRAY_DYNAMIC '%s' nesting depth exceeded", a_field->name);
+                        return DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
+                    }
+                    s_field_nesting_depth++;
+                    
                     for (size_t i = 0; i < l_count_value_u32; i++) {
-                        const uint8_t *l_current_element = l_element_ptr + i * a_field->nested_schema->struct_size;
-                        
-                        // Additional safety check for element pointer
-                        if (!l_current_element) {
-                            log_it(L_ERROR, "Array field '%s' element %zu is NULL", a_field->name, i);
-                            return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                        size_t elem_off = 0;
+                        if (!s_safe_mul_size(i, a_field->nested_schema->struct_size, &elem_off)) {
+                            s_field_nesting_depth--;
+                            log_it(L_ERROR, "ARRAY_DYNAMIC '%s' element offset overflow at i=%zu", a_field->name, i);
+                            return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
                         }
+                        const uint8_t *l_current_element = l_element_ptr + elem_off;
                         
-                        // Serialize nested schema fields directly without header
-                        // This avoids the overhead of schema headers for each array element
                         for (size_t f = 0; f < a_field->nested_schema->field_count; f++) {
                             const dap_serialize_field_t *l_nested_field = &a_field->nested_schema->fields[f];
                             
-                            // Check condition for nested field
                             if (!s_check_condition(l_nested_field, l_current_element, a_ctx->user_context)) {
                                 continue;
                             }
                             
                             int l_nested_result = s_serialize_field(l_nested_field, l_current_element, a_ctx);
                             if (l_nested_result != 0) {
+                                s_field_nesting_depth--;
                                 return l_nested_result;
                             }
                         }
                     }
+                    s_field_nesting_depth--;
                 } else {
-                    // Simple array of fixed-size elements
-                    size_t l_total_size = l_count_value_u32 * a_field->size;
+                    // Simple array of fixed-size elements — size already validated above.
+                    size_t l_total_size = 0;
+                    (void)s_safe_mul_size((size_t)l_count_value_u32, a_field->size, &l_total_size);
                     
-                    // Safety check for array data
                     if (!*l_array_ptr && l_total_size > 0) {
                         log_it(L_WARNING, "Array field '%s' has NULL data pointer but non-zero size %zu", 
                                a_field->name, l_total_size);
-                        // Write zeros instead
                         memset(a_ctx->buffer + a_ctx->offset, 0, l_total_size);
                     } else {
                         memcpy(a_ctx->buffer + a_ctx->offset, *l_array_ptr, l_total_size);
@@ -1495,7 +1559,9 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             break;
         }
         case DAP_SERIALIZE_TYPE_BYTES_DYNAMIC: {
-            if (a_ctx->offset + sizeof(uint32_t) > a_ctx->buffer_size) {
+            size_t l_end_hdr = 0;
+            if (!s_safe_add_size(a_ctx->offset, sizeof(uint32_t), &l_end_hdr) ||
+                l_end_hdr > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
             
@@ -1503,7 +1569,16 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             uint32_t size = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
             a_ctx->offset += sizeof(uint32_t);
             
-            if (a_ctx->offset + size > a_ctx->buffer_size) {
+            // Reject clearly malicious length prefixes before touching memory.
+            if (size > DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD) {
+                log_it(L_ERROR, "BYTES_DYNAMIC field '%s' length %u exceeds max payload %u",
+                       a_field->name, size, (unsigned)DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD);
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            
+            size_t l_end_data = 0;
+            if (!s_safe_add_size(a_ctx->offset, size, &l_end_data) ||
+                l_end_data > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
             
@@ -1526,7 +1601,9 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             break;
         }
         case DAP_SERIALIZE_TYPE_STRING_DYNAMIC: {
-            if (a_ctx->offset + sizeof(uint32_t) > a_ctx->buffer_size) {
+            size_t l_end_hdr = 0;
+            if (!s_safe_add_size(a_ctx->offset, sizeof(uint32_t), &l_end_hdr) ||
+                l_end_hdr > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
             
@@ -1534,7 +1611,15 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             uint32_t length = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
             a_ctx->offset += sizeof(uint32_t);
             
-            if (a_ctx->offset + length > a_ctx->buffer_size) {
+            if (length > DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD) {
+                log_it(L_ERROR, "STRING_DYNAMIC field '%s' length %u exceeds max payload %u",
+                       a_field->name, length, (unsigned)DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD);
+                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            }
+            
+            size_t l_end_data = 0;
+            if (!s_safe_add_size(a_ctx->offset, length, &l_end_data) ||
+                l_end_data > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
             
@@ -1565,7 +1650,9 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             break;
         }
         case DAP_SERIALIZE_TYPE_BYTES_FIXED: {
-            if (a_ctx->offset + a_field->size > a_ctx->buffer_size) {
+            size_t l_end = 0;
+            if (!s_safe_add_size(a_ctx->offset, a_field->size, &l_end) ||
+                l_end > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
             uint8_t *value = (uint8_t*)(obj_ptr + a_field->offset);
@@ -1574,7 +1661,9 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             break;
         }
         case DAP_SERIALIZE_TYPE_STRING_FIXED: {
-            if (a_ctx->offset + a_field->size > a_ctx->buffer_size) {
+            size_t l_end = 0;
+            if (!s_safe_add_size(a_ctx->offset, a_field->size, &l_end) ||
+                l_end > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
             char *value = (char*)(obj_ptr + a_field->offset);
@@ -1585,13 +1674,17 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
         case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC: {
             uint8_t *obj_ptr = (uint8_t*)a_object;
             // Read count prefix
-            if (a_ctx->offset + sizeof(uint32_t) > a_ctx->buffer_size) {
+            size_t l_end_hdr = 0;
+            if (!s_safe_add_size(a_ctx->offset, sizeof(uint32_t), &l_end_hdr) ||
+                l_end_hdr > a_ctx->buffer_size) {
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
             uint32_t count = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
             a_ctx->offset += sizeof(uint32_t);
 
-            if (count > 1000000) {
+            if (count > DAP_SERIALIZE_MAX_ARRAY_COUNT) {
+                log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' count %u exceeds limit %d",
+                       a_field->name, count, DAP_SERIALIZE_MAX_ARRAY_COUNT);
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
 
@@ -1609,9 +1702,21 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             }
 
             if (!a_field->nested_schema) {
-                // Simple array
-                size_t total_size = (size_t)count * a_field->size;
-                if (a_ctx->offset + total_size > a_ctx->buffer_size) {
+                // Simple array — overflow-safe size math + sanity cap on total.
+                size_t total_size = 0;
+                size_t l_end_data = 0;
+                if (!s_safe_mul_size((size_t)count, a_field->size, &total_size) ||
+                    !s_safe_add_size(a_ctx->offset, total_size, &l_end_data)) {
+                    log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' simple-size overflow (count=%u elem=%zu)",
+                           a_field->name, count, a_field->size);
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                }
+                if (total_size > DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD) {
+                    log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' simple-size %zu exceeds max payload %u",
+                           a_field->name, total_size, (unsigned)DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD);
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                }
+                if (l_end_data > a_ctx->buffer_size) {
                     return DAP_SERIALIZE_ERROR_INVALID_DATA;
                 }
                 *array_ptr = DAP_NEW_SIZE(uint8_t, total_size);
@@ -1621,24 +1726,50 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
                 memcpy(*array_ptr, a_ctx->buffer + a_ctx->offset, total_size);
                 a_ctx->offset += total_size;
             } else {
-                // Nested structures: allocate contiguous array of elements and deserialize each
+                // Nested structures: allocate contiguous array and deserialize each.
+                if (s_field_nesting_depth >= DAP_SERIALIZE_MAX_FIELD_NESTING) {
+                    log_it(L_ERROR, "ARRAY_DYNAMIC '%s' nesting depth exceeded", a_field->name);
+                    return DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
+                }
                 const dap_serialize_schema_t *ns = a_field->nested_schema;
                 size_t element_size = ns->struct_size;
-                size_t total_size = (size_t)count * element_size;
+                size_t total_size = 0;
+                if (!s_safe_mul_size((size_t)count, element_size, &total_size)) {
+                    log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' nested-size overflow (count=%u struct=%zu)",
+                           a_field->name, count, element_size);
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                }
+                // Cap post-deserialization memory footprint.  Wire data ≤ buffer_size
+                // but struct representation can be bigger; still enforce absolute ceiling.
+                if (total_size > DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD) {
+                    log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' nested-size %zu exceeds max payload %u",
+                           a_field->name, total_size, (unsigned)DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD);
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                }
                 *array_ptr = DAP_NEW_Z_SIZE(uint8_t, total_size);
                 if (!*array_ptr) {
                     return DAP_SERIALIZE_ERROR_MEMORY_ALLOCATION;
                 }
+                s_field_nesting_depth++;
                 for (size_t i = 0; i < count; i++) {
-                    uint8_t *element_obj = (uint8_t*)(*array_ptr) + i * element_size;
+                    size_t elem_off = 0;
+                    if (!s_safe_mul_size(i, element_size, &elem_off)) {
+                        s_field_nesting_depth--;
+                        DAP_DELETE(*array_ptr);
+                        *array_ptr = NULL;
+                        return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                    }
+                    uint8_t *element_obj = (uint8_t*)(*array_ptr) + elem_off;
                     for (size_t f = 0; f < ns->field_count; f++) {
                         const dap_serialize_field_t *nf = &ns->fields[f];
                         int r = s_deserialize_field(nf, element_obj, a_ctx);
                         if (r != 0) {
+                            s_field_nesting_depth--;
                             return r;
                         }
                     }
                 }
+                s_field_nesting_depth--;
             }
             break;
         }
