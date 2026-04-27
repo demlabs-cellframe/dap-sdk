@@ -39,6 +39,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 #include "dap_common.h"
 #include "dap_test.h"
@@ -57,6 +58,7 @@
 #include "dap_stream_session.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
+#include "dap_client_http.h"
 #include "dap_trans_test_fixtures.h"
 #include "dap_trans_test_mocks.h"
 
@@ -77,6 +79,11 @@ DAP_MOCK_DECLARE(dap_net_trans_websocket_server_add_upgrade_handler);
 // Mock dap_events_worker functions (needed for WebSocket ping timer)
 DAP_MOCK_DECLARE(dap_events_worker_get_auto);
 DAP_MOCK_DECLARE(dap_timerfd_start_on_worker);
+
+// Mock transport/IO calls that must stay isolated in unit tests
+DAP_MOCK_DECLARE(dap_client_http_request);
+DAP_MOCK_DECLARE(dap_events_socket_write_unsafe);
+DAP_MOCK_DECLARE(dap_events_socket_write_f_unsafe);
 
 // ============================================================================
 // Mock Wrappers
@@ -105,19 +112,17 @@ DAP_MOCK_WRAPPER_CUSTOM(int, dap_net_trans_websocket_server_add_upgrade_handler,
     return 0;
 }
 
-// Mock dap_worker_t for testing
-static dap_worker_t s_mock_worker = {0};
-
 // Wrapper for dap_events_worker_get_auto
 DAP_MOCK_WRAPPER_CUSTOM(dap_worker_t*, dap_events_worker_get_auto, void)
 {
-    // Return mock worker if set, otherwise return NULL (no worker available)
+    // Return explicitly configured worker when test needs strict control.
     if (g_mock_dap_events_worker_get_auto && g_mock_dap_events_worker_get_auto->return_value.ptr) {
         return (dap_worker_t*)g_mock_dap_events_worker_get_auto->return_value.ptr;
     }
-    
-    // Return default mock worker (for tests that need it)
-    return &s_mock_worker;
+
+    // No fake fallback: passthrough to real worker chooser.
+    // This avoids fake worker->context == NULL on Windows IOCP path.
+    return __real_dap_events_worker_get_auto();
 }
 
 // Mock dap_timerfd_t for testing
@@ -151,12 +156,138 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_timerfd_t*, dap_timerfd_start_on_worker,
     return &s_mock_timerfd;
 }
 
+typedef struct ws_test_http_capture {
+    dap_worker_t *worker;
+    char method[16];
+    char path[1024];
+    size_t request_size;
+    size_t last_write_size;
+    size_t last_write_f_size;
+    bool response_callback_called;
+    bool error_callback_called;
+    bool write_f_called;
+} ws_test_http_capture_t;
+
+static ws_test_http_capture_t s_http_capture = {0};
+static dap_client_http_t s_mock_http_client = {0};
+
+// Wrapper for dap_client_http_request (unit-test isolation from real network/IOCP path)
+DAP_MOCK_WRAPPER_CUSTOM(dap_client_http_t*, dap_client_http_request,
+    PARAM(dap_worker_t*, a_worker),
+    PARAM(const char*, a_uplink_addr),
+    PARAM(uint16_t, a_uplink_port),
+    PARAM(const char*, a_method),
+    PARAM(const char*, a_request_content_type),
+    PARAM(const char*, a_path),
+    PARAM(const void*, a_request),
+    PARAM(size_t, a_request_size),
+    PARAM(char*, a_cookie),
+    PARAM(dap_client_http_callback_data_t, a_response_callback),
+    PARAM(dap_client_http_callback_error_t, a_error_callback),
+    PARAM(void*, a_callbacks_arg),
+    PARAM(char*, a_custom_headers)
+)
+{
+    UNUSED(a_uplink_addr);
+    UNUSED(a_uplink_port);
+    UNUSED(a_request_content_type);
+    UNUSED(a_request);
+    UNUSED(a_cookie);
+    UNUSED(a_custom_headers);
+
+    s_http_capture.worker = a_worker;
+    s_http_capture.request_size = a_request_size;
+    dap_strncpy(s_http_capture.method, a_method ? a_method : "", sizeof(s_http_capture.method) - 1);
+    dap_strncpy(s_http_capture.path, a_path ? a_path : "", sizeof(s_http_capture.path) - 1);
+
+    // Complete request synchronously in tests to release temporary handshake ctx safely.
+    if (a_response_callback) {
+        static const char s_mock_response[] = "ok";
+        s_http_capture.response_callback_called = true;
+        a_response_callback((void*)s_mock_response, sizeof(s_mock_response) - 1, a_callbacks_arg, (http_status_code_t)200);
+    } else if (a_error_callback) {
+        s_http_capture.error_callback_called = true;
+        a_error_callback(-1, a_callbacks_arg);
+    }
+
+    if (g_mock_dap_client_http_request && g_mock_dap_client_http_request->return_value.ptr) {
+        return (dap_client_http_t*)g_mock_dap_client_http_request->return_value.ptr;
+    }
+    return &s_mock_http_client;
+}
+
+// Wrapper for dap_events_socket_write_unsafe (unit-test isolation from real socket writes)
+DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_events_socket_write_unsafe,
+    PARAM(dap_events_socket_t*, a_esocket),
+    PARAM(const void*, a_data),
+    PARAM(size_t, a_data_size)
+)
+{
+    UNUSED(a_esocket);
+    UNUSED(a_data);
+
+    s_http_capture.last_write_size = a_data_size;
+
+    if (g_mock_dap_events_socket_write_unsafe && g_mock_dap_events_socket_write_unsafe->return_value.ptr != NULL) {
+        return (size_t)(uintptr_t)g_mock_dap_events_socket_write_unsafe->return_value.ptr;
+    }
+    return a_data_size;
+}
+
+// Manual wrapper for variadic dap_events_socket_write_f_unsafe.
+// Keeps websocket unit test isolated from real IOCP/WSASend path.
+ssize_t __wrap_dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...)
+{
+    void *l_args[] = {(void*)a_es, (void*)a_format};
+    bool l_mock_enabled = dap_mock_prepare_call(g_mock_dap_events_socket_write_f_unsafe, l_args, 2);
+
+    int l_fmt_size = 0;
+    if (a_format) {
+        va_list l_ap;
+        va_start(l_ap, a_format);
+        l_fmt_size = vsnprintf(NULL, 0, a_format, l_ap);
+        va_end(l_ap);
+        if (l_fmt_size < 0) {
+            l_fmt_size = 0;
+        }
+    }
+
+    s_http_capture.write_f_called = true;
+    s_http_capture.last_write_f_size = (size_t)l_fmt_size;
+
+    if (l_mock_enabled) {
+        ssize_t l_ret = (ssize_t)l_fmt_size;
+        if (g_mock_dap_events_socket_write_f_unsafe &&
+            g_mock_dap_events_socket_write_f_unsafe->return_value.ptr != NULL) {
+            l_ret = (ssize_t)(intptr_t)g_mock_dap_events_socket_write_f_unsafe->return_value.ptr;
+        }
+        dap_mock_record_call(g_mock_dap_events_socket_write_f_unsafe, l_args, 2, (void*)(intptr_t)l_ret);
+        return l_ret;
+    }
+
+    // Varargs passthrough is intentionally not used here: this test suite enforces isolation.
+    return (ssize_t)l_fmt_size;
+}
+
 // ============================================================================
 // Test Suite State
 // ============================================================================
 
 static bool s_test_initialized = false;
 static bool s_session_callback_called = false;
+
+static dap_worker_t *s_get_real_auto_worker(void)
+{
+    bool l_prev_enabled = g_mock_dap_events_worker_get_auto ? g_mock_dap_events_worker_get_auto->enabled : false;
+    if (g_mock_dap_events_worker_get_auto) {
+        dap_mock_set_enabled(g_mock_dap_events_worker_get_auto, false);
+    }
+    dap_worker_t *l_worker = dap_events_worker_get_auto();
+    if (g_mock_dap_events_worker_get_auto) {
+        dap_mock_set_enabled(g_mock_dap_events_worker_get_auto, l_prev_enabled);
+    }
+    return l_worker;
+}
 
 static void s_session_callback(dap_stream_t *a_stream, uint32_t a_session_id, const char *a_response_data, size_t a_response_size, int a_error_code) {
     UNUSED(a_stream);
@@ -222,6 +353,7 @@ static void setup_test(void)
     
     // Reset mocks before each test
     dap_mock_reset_all();
+    memset(&s_http_capture, 0, sizeof(s_http_capture));
 }
 
 /**
@@ -231,6 +363,7 @@ static void teardown_test(void)
 {
     // Reset all mocks for next test
     dap_mock_reset_all();
+    memset(&s_http_capture, 0, sizeof(s_http_capture));
 }
 
 /**
@@ -619,6 +752,10 @@ static void test_12_stream_write(void)
     const char l_test_data[] = "test data";
     ssize_t l_bytes_written = l_trans->ops->write(&s_mock_stream, l_test_data, sizeof(l_test_data));
     TEST_ASSERT(l_bytes_written > 0, "Write operation should succeed");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_write_unsafe) >= 1,
+                "Write operation should use mocked dap_events_socket_write_unsafe");
+    TEST_ASSERT(s_http_capture.last_write_size > 0,
+                "Mocked socket write should capture frame size");
     
     // Deinitialize
     l_trans->ops->deinit(l_trans);
@@ -642,6 +779,14 @@ static void test_13_stream_handshake(void)
     int l_ret = l_trans->ops->init(l_trans, NULL);
     TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
     
+    // Use real worker from initialized event system, avoid fake worker fallback.
+    DAP_MOCK_ENABLE(dap_events_worker_get_auto);
+    dap_worker_t *l_real_worker = s_get_real_auto_worker();
+    TEST_ASSERT_NOT_NULL(l_real_worker, "Real worker should be available for handshake setup");
+    DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, l_real_worker);
+
+    DAP_MOCK_ENABLE(dap_client_http_request);
+
     // Create mock stream with proper trans_ctx chain
     dap_trans_test_get_mock_client();
     s_mock_stream.trans = l_trans;
@@ -655,10 +800,7 @@ static void test_13_stream_handshake(void)
         l_priv->esocket = &s_mock_events_socket;
     }
     
-    // Setup mocks for worker and timer (needed by dap_client_http)
-    DAP_MOCK_ENABLE(dap_events_worker_get_auto);
-    DAP_MOCK_SET_RETURN(dap_events_worker_get_auto, dap_worker_get_current());
-    
+    // Setup mock timer (needed by dap_client_http callbacks)
     DAP_MOCK_ENABLE(dap_timerfd_start_on_worker);
     DAP_MOCK_SET_RETURN(dap_timerfd_start_on_worker, &s_mock_timerfd);
     
@@ -670,6 +812,16 @@ static void test_13_stream_handshake(void)
     l_params.alice_pub_key_size = sizeof(s_mock_alice_pub_key);
     l_ret = l_trans->ops->handshake_init(&s_mock_stream, &l_params, NULL);
     TEST_ASSERT(l_ret == 0, "Handshake init should succeed");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_client_http_request) == 1,
+                "Handshake init should call mocked dap_client_http_request exactly once");
+    TEST_ASSERT(strcmp(s_http_capture.method, "POST") == 0,
+                "Handshake request method should be POST");
+    TEST_ASSERT(strstr(s_http_capture.path, DAP_UPLINK_PATH_ENC_INIT) != NULL,
+                "Handshake request path should target ENC_INIT endpoint");
+    TEST_ASSERT(s_http_capture.worker == l_real_worker,
+                "Handshake should use explicitly configured real worker handle");
+    TEST_ASSERT(s_http_capture.response_callback_called,
+                "Mocked HTTP request should trigger response callback");
     
     // Test handshake_process operation (server-side)
     uint8_t l_handshake_data[100] = {0};
@@ -683,6 +835,7 @@ static void test_13_stream_handshake(void)
     // Cleanup mocks
     DAP_MOCK_DISABLE(dap_events_worker_get_auto);
     DAP_MOCK_DISABLE(dap_timerfd_start_on_worker);
+    DAP_MOCK_DISABLE(dap_client_http_request);
     
     // Deinitialize
     l_trans->ops->deinit(l_trans);
@@ -739,6 +892,11 @@ static void test_14_stream_session(void)
     // Test session_start operation (sends WebSocket upgrade request via esocket)
     l_ret = l_trans->ops->session_start(&s_mock_stream, 12345, NULL);
     TEST_ASSERT(l_ret == 0, "Session start should succeed");
+    TEST_ASSERT(s_http_capture.write_f_called, "Session start should call mocked dap_events_socket_write_f_unsafe");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_write_f_unsafe) >= 1,
+                "Session start should use mocked formatted socket write path");
+    TEST_ASSERT(s_http_capture.last_write_f_size > 0,
+                "Mocked formatted write should capture non-zero request size");
     
     // Deinitialize
     l_trans->ops->deinit(l_trans);

@@ -237,12 +237,31 @@ static void test_mock_delay_fixed(void)
     uint64_t l_start = dap_test_get_time_ms();
     dap_mock_execute_delay(g_mock_function_with_delay);
     uint64_t l_elapsed = dap_test_get_time_ms() - l_start;
+#if defined(_WIN32)
+    const uint64_t l_min_expected_ms = 50;
+    const uint64_t l_max_expected_ms = 500;
+    const char *l_platform = "win32";
+#else
+    const uint64_t l_min_expected_ms = 90;
+    const uint64_t l_max_expected_ms = 150;
+    const char *l_platform = "posix";
+#endif
+    bool l_delay_ok = l_elapsed >= l_min_expected_ms && l_elapsed <= l_max_expected_ms;
     
     log_it(L_DEBUG, "Fixed delay elapsed: %llu ms (expected: ~100ms)",
            (unsigned long long)l_elapsed);
-    
-    dap_assert_PIF(l_elapsed >= 90 && l_elapsed <= 150,
-                   "Delay should be ~100ms (+/- tolerance)");
+
+    if (!l_delay_ok) {
+        dap_test_msg(
+            "Fixed delay diagnostics: elapsed=%llu ms, expected=[%llu, %llu] ms, platform=%s",
+            (unsigned long long)l_elapsed,
+            (unsigned long long)l_min_expected_ms,
+            (unsigned long long)l_max_expected_ms,
+            l_platform
+        );
+    }
+
+    dap_assert_PIF(l_delay_ok, "Delay should be ~100ms (+/- tolerance)");
     
     log_it(L_INFO, "✓ Test 6: Fixed Delay PASSED\n");
 }

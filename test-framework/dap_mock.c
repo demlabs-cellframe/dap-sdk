@@ -480,9 +480,8 @@ void dap_mock_execute_delay(dap_mock_function_state_t *a_state)
             return;
     }
     
-    // Execute delay
     if (l_delay_us > 0)
-        usleep(l_delay_us);
+        dap_usleep(l_delay_us);
 }
 
 // ===========================================================================
