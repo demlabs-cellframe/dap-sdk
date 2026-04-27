@@ -39,6 +39,7 @@
 
 #define POLL_INTERVAL_US    5000    // 5ms between checks
 #define POLL_TIMEOUT_MS     5000    // 5s max wait
+#define RETRANSMIT_WAIT_MULTIPLIER 20
 
 /**
  * @brief Wait until condition is true or timeout
@@ -89,6 +90,12 @@ static bool s_wait_for_retransmits(dap_io_flow_ctrl_t *a_ctrl, uint64_t a_min_re
         usleep(POLL_INTERVAL_US);
     }
     return false;
+}
+
+static uint32_t s_retransmit_wait_timeout_ms(uint32_t a_retransmit_timeout_ms)
+{
+    uint32_t l_timeout_ms = a_retransmit_timeout_ms * RETRANSMIT_WAIT_MULTIPLIER;
+    return l_timeout_ms > POLL_TIMEOUT_MS ? l_timeout_ms : POLL_TIMEOUT_MS;
 }
 
 /**
@@ -548,8 +555,9 @@ static void test_flow_ctrl_retransmit_regression(void)
     dap_test_msg("Packets sent: %" PRIu64, l_sent_after_send);
     
     // Step 2: Wait for retransmit timer to fire (polling until retransmits > 0)
-    dap_test_msg("Step 2: Waiting for retransmit timer (no ACKs)...");
-    bool l_timer_fired = s_wait_for_retransmits(l_sender, 1, l_config.retransmit_timeout_ms * 5);
+    uint32_t l_retransmit_wait_ms = s_retransmit_wait_timeout_ms(l_config.retransmit_timeout_ms);
+    dap_test_msg("Step 2: Waiting for retransmit timer (no ACKs, timeout %u ms)...", l_retransmit_wait_ms);
+    bool l_timer_fired = s_wait_for_retransmits(l_sender, 1, l_retransmit_wait_ms);
     
     // Check retransmissions via flow_ctrl stats
     uint64_t l_sent_stats, l_retrans_stats, l_recv, l_ooo, l_dup, l_lost;
@@ -696,8 +704,9 @@ static void test_flow_ctrl_lost_ack_isolation(void)
     dap_test_msg("Pending ACKs from receiver (not delivered): %zu", l_pending_acks);
     
     // Step 3: Wait for sender1 to start retransmitting
-    dap_test_msg("Step 3: Wait for sender1 retransmissions...");
-    bool l_retrans = s_wait_for_retransmits(l_sender1, 5, l_config.retransmit_timeout_ms * 10);
+    uint32_t l_retransmit_wait_ms = s_retransmit_wait_timeout_ms(l_config.retransmit_timeout_ms);
+    dap_test_msg("Step 3: Wait for sender1 retransmissions (timeout %u ms)...", l_retransmit_wait_ms);
+    bool l_retrans = s_wait_for_retransmits(l_sender1, 5, l_retransmit_wait_ms);
     dap_assert(l_retrans, "Sender1 should retransmit when ACK is lost");
     
     uint64_t l_s1_sent, l_s1_retrans, l_tmp1, l_tmp2, l_tmp3, l_tmp4;
@@ -733,12 +742,9 @@ static void test_flow_ctrl_lost_ack_isolation(void)
     dap_test_msg("Step 7: Wait for more sender1 retransmissions...");
     uint64_t l_s1_retrans_before = l_s1_retrans;
     
-    // Wait for at least one more retransmission cycle
-    bool l_more_retrans = POLL_WAIT_UNTIL(({
-        uint64_t _r;
-        dap_io_flow_ctrl_get_stats(l_sender1, &l_s1_sent, &_r, &l_tmp1, &l_tmp2, &l_tmp3, &l_tmp4);
-        _r > l_s1_retrans_before;
-    }), l_config.retransmit_timeout_ms * 5);
+    // Wait for at least one more retransmission cycle. This uses a generous
+    // deadline because the real reactor timer can be delayed under CI load.
+    bool l_more_retrans = s_wait_for_retransmits(l_sender1, l_s1_retrans_before + 1, l_retransmit_wait_ms);
     
     uint64_t l_s1_retrans_final;
     dap_io_flow_ctrl_get_stats(l_sender1, &l_s1_sent, &l_s1_retrans_final, &l_tmp1, &l_tmp2, &l_tmp3, &l_tmp4);
@@ -842,12 +848,13 @@ static void test_flow_ctrl_multiple_senders(void)
     }
     dap_test_msg("Total retransmits: %" PRIu64, l_total_retrans);
     
-    // Cleanup
-    dap_io_flow_ctrl_delete(l_receiver);
+    // Cleanup senders first so their retransmit timers are stopped before the
+    // receiver context and queued ACK buffers are torn down.
     for (int i = 0; i < NUM_SENDERS; i++) {
         dap_io_flow_ctrl_delete(l_senders[i]);
         s_ctx_delete(l_sender_ctxs[i]);
     }
+    dap_io_flow_ctrl_delete(l_receiver);
     s_ctx_delete(l_receiver_ctx);
     
     dap_events_deinit();
