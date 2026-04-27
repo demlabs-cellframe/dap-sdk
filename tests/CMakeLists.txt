@@ -382,6 +382,16 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_multi_s
         "unit;crypto;chipmunk;regression;cr-d10;aggregation;codec")
 endif()
 
+# CR-D10 stage 1: schema-driven wire layer (chipmunk_multi_signature_serialize_schema).
+# Smoke / round-trip test that exercises the new dap_serialize schemas in
+# isolation, before the production codec switches over to them.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_multi_sig_schema.c)
+    add_dap_test(test_unit_crypto_chipmunk_multi_sig_schema
+        unit/crypto/chipmunk/test_chipmunk_multi_sig_schema.c)
+    register_dap_test(test_unit_crypto_chipmunk_multi_sig_schema
+        "unit;crypto;chipmunk;cr-d10;aggregation;schema")
+endif()
+
 # Keccak/SHA3 Known Answer Tests
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/keccak/test_sha3_kat.c)
     add_dap_test(test_unit_crypto_sha3_kat unit/crypto/keccak/test_sha3_kat.c)
