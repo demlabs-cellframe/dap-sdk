@@ -166,6 +166,14 @@ typedef struct dap_serialize_schema {
 
 /**
  * @brief Serialization context
+ *
+ * @note `current_schema` tracks the schema that owns the field currently
+ *       being processed.  It is updated by the framework whenever it
+ *       descends into a nested struct / array element so that internal
+ *       helpers (e.g. count_offset boundary checks) can use the right
+ *       struct_size instead of a hard-coded heuristic.  Callers do not
+ *       need to set it manually — the public to_buffer / from_buffer
+ *       entry points populate it automatically.
  */
 typedef struct dap_serialize_context {
     uint8_t *buffer;                        ///< Output/input buffer
@@ -176,6 +184,7 @@ typedef struct dap_serialize_context {
     bool is_deserializing;                  ///< Direction flag
     size_t objects_serialized;              ///< Statistics
     size_t bytes_processed;                 ///< Statistics
+    const struct dap_serialize_schema *current_schema; ///< Schema currently being walked (auto-managed)
 } dap_serialize_context_t;
 
 /**

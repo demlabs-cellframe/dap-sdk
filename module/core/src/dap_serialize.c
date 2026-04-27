@@ -140,9 +140,14 @@ size_t dap_serialize_calc_size(const dap_serialize_schema_t *a_schema,
         s_recursion_depth--;
         return 0;
     }
-    
-    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER) {
-        log_it(L_ERROR, "Invalid schema magic number: 0x%08X (expected 0x%08X)", 
+
+    // Accept the standard magic number AND any non-zero custom magic, in
+    // line with dap_serialize_to_buffer_raw().  Without this fan-out, nested
+    // schemas that carry an application-specific magic (e.g. CHMA for the
+    // chipmunk multi-signature codec) would be rejected here even when the
+    // top-level path uses _raw() and never even consults the magic.
+    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER && a_schema->magic == 0) {
+        log_it(L_ERROR, "Invalid schema magic number: 0x%08X (expected 0x%08X or any non-zero custom value)",
                a_schema->magic, DAP_SERIALIZE_MAGIC_NUMBER);
         s_recursion_depth--;
         return 0;
@@ -225,9 +230,9 @@ size_t dap_serialize_calc_size_ex(const dap_serialize_schema_t *a_schema,
         log_it(L_ERROR, "Invalid parameters for size calculation by params");
         return 0;
     }
-    
-    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER) {
-        log_it(L_ERROR, "Invalid schema magic number: 0x%08X (expected 0x%08X)", 
+
+    if (a_schema->magic != DAP_SERIALIZE_MAGIC_NUMBER && a_schema->magic == 0) {
+        log_it(L_ERROR, "Invalid schema magic number: 0x%08X (expected 0x%08X or any non-zero custom value)",
                a_schema->magic, DAP_SERIALIZE_MAGIC_NUMBER);
         return 0;
     }
@@ -383,9 +388,10 @@ dap_serialize_result_t dap_serialize_to_buffer(const dap_serialize_schema_t *a_s
         .user_context = a_context,
         .is_deserializing = false,
         .objects_serialized = 0,
-        .bytes_processed = 0
+        .bytes_processed = 0,
+        .current_schema = a_schema
     };
-    
+
     // Write header
     if (ctx.offset + sizeof(uint32_t) * 3 > a_buffer_size) {
         result.error_code = DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
@@ -476,7 +482,7 @@ size_t dap_serialize_calc_size_raw(const dap_serialize_schema_t *a_schema,
         }
         l_total_size = l_next;
     }
-    
+
     s_recursion_depth--;
     return l_total_size;
 }
@@ -523,9 +529,10 @@ dap_serialize_result_t dap_serialize_to_buffer_raw(const dap_serialize_schema_t 
         .user_context = a_context,
         .is_deserializing = false,
         .objects_serialized = 0,
-        .bytes_processed = 0
+        .bytes_processed = 0,
+        .current_schema = a_schema
     };
-    
+
     // Serialize each field (NO HEADER!)
     for (size_t i = 0; i < a_schema->field_count; i++) {
         const dap_serialize_field_t *field = &a_schema->fields[i];
@@ -578,9 +585,10 @@ dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_
         .user_context = a_context,
         .is_deserializing = true,
         .objects_serialized = 0,
-        .bytes_processed = 0
+        .bytes_processed = 0,
+        .current_schema = a_schema
     };
-    
+
     // Initialize object memory
     memset(a_object, 0, a_schema->struct_size);
     
@@ -639,9 +647,10 @@ dap_serialize_result_t dap_serialize_from_buffer(const dap_serialize_schema_t *a
         .user_context = a_context,
         .is_deserializing = true,
         .objects_serialized = 0,
-        .bytes_processed = 0
+        .bytes_processed = 0,
+        .current_schema = a_schema
     };
-    
+
     // Read and validate header
     uint32_t magic = s_read_uint32_le(a_buffer + ctx.offset);
     ctx.offset += sizeof(uint32_t);
@@ -841,11 +850,17 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
             } else if (l_obj_ptr) {
                 // Object-based calculation - ALL count fields MUST be uint32_t for cross-platform compatibility
                 const uint32_t *l_count_ptr = (const uint32_t*)(l_obj_ptr + a_field->count_offset);
-                
-                // Validate count_ptr before dereferencing
-                if ((uintptr_t)l_count_ptr < (uintptr_t)a_object || 
-                    (uintptr_t)l_count_ptr >= (uintptr_t)a_object + 4096) {
-                    log_it(L_WARNING, "Array field '%s' count_ptr out of bounds, using 0", a_field->name);
+
+                // Validate count_ptr before dereferencing.  Use the parent
+                // schema's struct_size as the upper bound so structures
+                // larger than the historical 4 KiB heuristic (e.g. those
+                // embedding lattice polynomials) are accepted without a
+                // false-positive warning that silently drops the count.
+                const size_t l_struct_size = a_parent_schema ? a_parent_schema->struct_size : 4096u;
+                if ((uintptr_t)l_count_ptr < (uintptr_t)a_object ||
+                    (uintptr_t)l_count_ptr + sizeof(uint32_t) > (uintptr_t)a_object + l_struct_size) {
+                    log_it(L_WARNING, "Array field '%s' count_ptr out of bounds (struct_size=%zu, count_offset=%zu), using 0",
+                           a_field->name, l_struct_size, a_field->count_offset);
                     l_size = sizeof(uint32_t);  // Just count prefix
                     break;
                 }
@@ -887,13 +902,22 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
                         const void **l_array_ptr = (const void**)(l_obj_ptr + a_field->offset);
                         if (*l_array_ptr && l_count_value > 0) {
                             const uint8_t *l_first_element = (const uint8_t*)*l_array_ptr;
-                            element_size = dap_serialize_calc_size(a_field->nested_schema, NULL, l_first_element, a_context);
+                            // Nested elements are serialised as raw fields (no per-element
+                            // schema header), so size estimation must use the *_raw variant
+                            // to avoid double-counting the 12-byte header.
+                            element_size = dap_serialize_calc_size_raw(a_field->nested_schema,
+                                                                       NULL,
+                                                                       l_first_element,
+                                                                       a_context);
                         }
                     }
-                    
+
                     // If object-based calculation failed or no object, try parametric
                     if (element_size == 0 && a_params) {
-                        element_size = dap_serialize_calc_size(a_field->nested_schema, a_params, NULL, a_context);
+                        element_size = dap_serialize_calc_size_raw(a_field->nested_schema,
+                                                                   a_params,
+                                                                   NULL,
+                                                                   a_context);
                     }
                     
                     // Final fallback to struct size
@@ -1042,8 +1066,8 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
                             a_field->type == DAP_SERIALIZE_TYPE_ARRAY_FIXED ||
                             a_field->type == DAP_SERIALIZE_TYPE_NESTED_STRUCT);
     if (!l_skip_precheck) {
-        size_t l_field_size = s_calc_field_size(a_field, a_object, NULL, 0, a_ctx->user_context, NULL);
-        debug_if(s_debug_more, L_DEBUG, "s_calc_field_size returned: %zu for field '%s'", 
+        size_t l_field_size = s_calc_field_size(a_field, a_object, NULL, 0, a_ctx->user_context, a_ctx->current_schema);
+        debug_if(s_debug_more, L_DEBUG, "s_calc_field_size returned: %zu for field '%s'",
                  l_field_size, a_field->name);
         
         if (a_ctx->offset + l_field_size > a_ctx->buffer_size) {
@@ -1287,30 +1311,35 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
                         return DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
                     }
                     s_field_nesting_depth++;
-                    
+                    const dap_serialize_schema_t *l_saved_schema = a_ctx->current_schema;
+                    a_ctx->current_schema = a_field->nested_schema;
+
                     for (size_t i = 0; i < l_count_value_u32; i++) {
                         size_t elem_off = 0;
                         if (!s_safe_mul_size(i, a_field->nested_schema->struct_size, &elem_off)) {
+                            a_ctx->current_schema = l_saved_schema;
                             s_field_nesting_depth--;
                             log_it(L_ERROR, "ARRAY_DYNAMIC '%s' element offset overflow at i=%zu", a_field->name, i);
                             return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
                         }
                         const uint8_t *l_current_element = l_element_ptr + elem_off;
-                        
+
                         for (size_t f = 0; f < a_field->nested_schema->field_count; f++) {
                             const dap_serialize_field_t *l_nested_field = &a_field->nested_schema->fields[f];
-                            
+
                             if (!s_check_condition(l_nested_field, l_current_element, a_ctx->user_context)) {
                                 continue;
                             }
-                            
+
                             int l_nested_result = s_serialize_field(l_nested_field, l_current_element, a_ctx);
                             if (l_nested_result != 0) {
+                                a_ctx->current_schema = l_saved_schema;
                                 s_field_nesting_depth--;
                                 return l_nested_result;
                             }
                         }
                     }
+                    a_ctx->current_schema = l_saved_schema;
                     s_field_nesting_depth--;
                 } else {
                     // Simple array of fixed-size elements — size already validated above.
@@ -1344,9 +1373,12 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
                 }
                 s_field_nesting_depth++;
                 const dap_serialize_schema_t *ns = a_field->nested_schema;
+                const dap_serialize_schema_t *l_saved_schema = a_ctx->current_schema;
+                a_ctx->current_schema = ns;
                 for (size_t i = 0; i < count; i++) {
                     size_t elem_off;
                     if (!s_safe_mul_size(i, ns->struct_size, &elem_off)) {
+                        a_ctx->current_schema = l_saved_schema;
                         s_field_nesting_depth--;
                         return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
                     }
@@ -1358,11 +1390,13 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
                         }
                         int r = s_serialize_field(nf, l_elem, a_ctx);
                         if (r != 0) {
+                            a_ctx->current_schema = l_saved_schema;
                             s_field_nesting_depth--;
                             return r;
                         }
                     }
                 }
+                a_ctx->current_schema = l_saved_schema;
                 s_field_nesting_depth--;
             } else {
                 // Scalar element array — choose encoder based on element_type
@@ -1449,6 +1483,8 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             s_field_nesting_depth++;
             const dap_serialize_schema_t *ns = a_field->nested_schema;
             const uint8_t *l_nested = obj_ptr + a_field->offset;
+            const dap_serialize_schema_t *l_saved_schema = a_ctx->current_schema;
+            a_ctx->current_schema = ns;
             for (size_t f = 0; f < ns->field_count; f++) {
                 const dap_serialize_field_t *nf = &ns->fields[f];
                 if (!s_check_condition(nf, l_nested, a_ctx->user_context)) {
@@ -1456,10 +1492,12 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
                 }
                 int r = s_serialize_field(nf, l_nested, a_ctx);
                 if (r != 0) {
+                    a_ctx->current_schema = l_saved_schema;
                     s_field_nesting_depth--;
                     return r;
                 }
             }
+            a_ctx->current_schema = l_saved_schema;
             s_field_nesting_depth--;
             break;
         }
@@ -1751,9 +1789,12 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
                     return DAP_SERIALIZE_ERROR_MEMORY_ALLOCATION;
                 }
                 s_field_nesting_depth++;
+                const dap_serialize_schema_t *l_saved_schema = a_ctx->current_schema;
+                a_ctx->current_schema = ns;
                 for (size_t i = 0; i < count; i++) {
                     size_t elem_off = 0;
                     if (!s_safe_mul_size(i, element_size, &elem_off)) {
+                        a_ctx->current_schema = l_saved_schema;
                         s_field_nesting_depth--;
                         DAP_DELETE(*array_ptr);
                         *array_ptr = NULL;
@@ -1764,11 +1805,13 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
                         const dap_serialize_field_t *nf = &ns->fields[f];
                         int r = s_deserialize_field(nf, element_obj, a_ctx);
                         if (r != 0) {
+                            a_ctx->current_schema = l_saved_schema;
                             s_field_nesting_depth--;
                             return r;
                         }
                     }
                 }
+                a_ctx->current_schema = l_saved_schema;
                 s_field_nesting_depth--;
             }
             break;
@@ -1785,9 +1828,12 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
                 }
                 s_field_nesting_depth++;
                 const dap_serialize_schema_t *ns = a_field->nested_schema;
+                const dap_serialize_schema_t *l_saved_schema = a_ctx->current_schema;
+                a_ctx->current_schema = ns;
                 for (size_t i = 0; i < count; i++) {
                     size_t elem_off;
                     if (!s_safe_mul_size(i, ns->struct_size, &elem_off)) {
+                        a_ctx->current_schema = l_saved_schema;
                         s_field_nesting_depth--;
                         return DAP_SERIALIZE_ERROR_INVALID_DATA;
                     }
@@ -1796,11 +1842,13 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
                         const dap_serialize_field_t *nf = &ns->fields[f];
                         int r = s_deserialize_field(nf, l_elem, a_ctx);
                         if (r != 0) {
+                            a_ctx->current_schema = l_saved_schema;
                             s_field_nesting_depth--;
                             return r;
                         }
                     }
                 }
+                a_ctx->current_schema = l_saved_schema;
                 s_field_nesting_depth--;
             } else {
                 dap_serialize_field_type_t et = a_field->element_type;
@@ -1865,14 +1913,18 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
             s_field_nesting_depth++;
             const dap_serialize_schema_t *ns = a_field->nested_schema;
             uint8_t *l_nested = obj_ptr + a_field->offset;
+            const dap_serialize_schema_t *l_saved_schema = a_ctx->current_schema;
+            a_ctx->current_schema = ns;
             for (size_t f = 0; f < ns->field_count; f++) {
                 const dap_serialize_field_t *nf = &ns->fields[f];
                 int r = s_deserialize_field(nf, l_nested, a_ctx);
                 if (r != 0) {
+                    a_ctx->current_schema = l_saved_schema;
                     s_field_nesting_depth--;
                     return r;
                 }
             }
+            a_ctx->current_schema = l_saved_schema;
             s_field_nesting_depth--;
             break;
         }
