@@ -82,8 +82,17 @@ dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a
 void CALLBACK TimerCallback(void* arg, BOOLEAN flag) {
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
     if ( l_timerfd->events_socket ) {
+        dap_overlapped_t *ol = DAP_NEW_Z(dap_overlapped_t);
+        if (!ol) {
+            log_it(L_ERROR, "Can't allocate timer completion overlapped");
+            return;
+        }
         l_timerfd->events_socket->pending_read = 1;
-        PostQueuedCompletionStatus(l_timerfd->events_socket->worker->context->iocp, 0, (ULONG_PTR)l_timerfd->events_socket, NULL);
+        if (!PostQueuedCompletionStatus(l_timerfd->events_socket->worker->context->iocp,
+                                        0, (ULONG_PTR)l_timerfd->events_socket, (OVERLAPPED*)ol)) {
+            log_it(L_ERROR, "Can't post timer completion, error %d", GetLastError());
+            dap_overlapped_free(ol);
+        }
     }
 }
 #endif

@@ -375,8 +375,32 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #ifdef DAP_EVENTS_CAPS_IOCP
     DWORD l_bytes = 0, l_entries_num = 0;
     OVERLAPPED_ENTRY ol_entries[MAX_IOCP_ENTRIES] = { };
+    bool l_use_single_iocp_wait = dap_is_wine();
     do {
-        if ( !GetQueuedCompletionStatusEx(a_context->iocp, ol_entries, MAX_IOCP_ENTRIES, &l_entries_num, INFINITE, FALSE) ) {
+        if (l_use_single_iocp_wait) {
+            ULONG_PTR l_completion_key = 0;
+            LPOVERLAPPED l_overlapped = NULL;
+            l_entries_num = 0;
+            l_bytes = 0;
+            if (!GetQueuedCompletionStatus(a_context->iocp, &l_bytes, &l_completion_key, &l_overlapped, INFINITE) && !l_overlapped) {
+                switch ( l_errno = GetLastError() ) {
+                case WAIT_IO_COMPLETION:
+                    log_it(L_ERROR, "An APC fired while in non-alertable waiting");
+                    break;
+                case ERROR_ABANDONED_WAIT_0:
+                    log_it(L_ERROR, "Completion port on context %u is closed", a_context->id);
+                    break;
+                default:
+                    log_it(L_ERROR, "GetQueuedCompletionStatus() failed, error %u: \"%s\"", l_errno, dap_strerror(l_errno));
+                }
+                break;
+            }
+            memset(&ol_entries[0], 0, sizeof(ol_entries[0]));
+            ol_entries[0].lpCompletionKey = l_completion_key;
+            ol_entries[0].lpOverlapped = l_overlapped;
+            ol_entries[0].dwNumberOfBytesTransferred = l_bytes;
+            l_entries_num = 1;
+        } else if ( !GetQueuedCompletionStatusEx(a_context->iocp, ol_entries, MAX_IOCP_ENTRIES, &l_entries_num, INFINITE, FALSE) ) {
             switch ( l_errno = GetLastError() ) {
             case WAIT_IO_COMPLETION: // Soma APC fired??
                 log_it(L_ERROR, "An APC fired while in non-alertable waiting");
@@ -389,12 +413,13 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             }
             break;
         }
-        dap_overlapped_t *ol;
-        HANDLE ev; WINBOOL ev_signaled;
-        per_io_type_t op;
         DWORD flags;
         debug_if(g_debug_reactor, L_INFO, "Completed %lu items in context #%d", l_entries_num, a_context->id);
-        for ( ULONG i = 0; i < l_entries_num; dap_overlapped_free(ol), op = '\0', ev = NULL, ev_signaled = FALSE, ++i ) {
+        for ( ULONG i = 0; i < l_entries_num; ++i ) {
+            dap_overlapped_t *ol = NULL;
+            HANDLE ev = NULL;
+            WINBOOL ev_signaled = FALSE;
+            per_io_type_t op = '\0';
             l_errno = 0;
             l_bytes = ol_entries[i].dwNumberOfBytesTransferred;
             if (( ol = (dap_overlapped_t*)ol_entries[i].lpOverlapped )) {
@@ -407,7 +432,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 dap_per_io_func func = (dap_per_io_func)ol_entries[i].lpCompletionKey;
                 debug_if(g_debug_reactor, L_DEBUG, "Calling per-i/o function %zx", ol_entries[i].lpCompletionKey);
                 func(a_context, &ol->ol);
-                continue;
+                goto next_iocp_completion;
             }
             case io_read:
             case io_write:
@@ -417,14 +442,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     if (ev) log_it(L_ERROR, "Completion of op '%c', but key is null! Lost %lu bytes", op, l_bytes);
                     else    log_it(L_ERROR, "Completion of op '%c', but key "DAP_FORMAT_ESOCKET_UUID" not found! Lost %lu bytes",
                                             op, (dap_events_socket_uuid_t)ol_entries[i].lpCompletionKey, l_bytes);
-                    continue;
+                    goto next_iocp_completion;
                 }
                 break;
             default:
                 l_cur = (dap_events_socket_t*)ol_entries[i].lpCompletionKey;
                 if ( !l_cur ) {
                     log_it(L_ERROR, "Completion with null key! Dump it");
-                    continue;
+                    goto next_iocp_completion;
                 }
                 break;
             }
@@ -452,7 +477,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     l_cur->context 
                         ? dap_events_socket_remove_and_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags))
                         : dap_events_socket_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags));                    
-                continue;
+                goto next_iocp_completion;
             }
             switch (l_cur->type) {
             case DESCRIPTOR_TYPE_SOCKET_LISTENING:
@@ -533,7 +558,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         // TODO: read_mt() or read_inter() command called?
                         dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
                         ol = NULL;
-                        continue;
+                        goto next_iocp_completion;
                     } else {
                         l_cur->pending_read = 0;
                         if ( !l_bytes ) {
@@ -565,7 +590,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
                         if (!l_cur->context) {
                             debug_if(g_debug_reactor, L_DEBUG, "Es %p : %zu unattached from context %u", l_cur, l_cur->socket, a_context->id);
-                            continue;
+                            goto next_iocp_completion;
                         } else if ( FLAG_READ_NOCLOSE(l_cur->flags) ) {
                             // Continue reading
                             dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
@@ -582,7 +607,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         // Likely a cross-thread write
                         dap_events_socket_set_writable_unsafe_ex(l_cur, true, l_bytes, ol);
                         ol = NULL; // Prevent from deletion
-                        continue;
+                        goto next_iocp_completion;
                     } else if ( l_cur->pending_write )
                         --l_cur->pending_write;
                     if ( !l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING ) {
@@ -624,23 +649,19 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         ol = NULL;
                         //}
                         break;
-                    } else if ( !l_bytes ) {
-                        if ( NT_ERROR(ol->ol.Internal) ) {
-                            // l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
-                            /*  
-                                TODO: though another syscall is discouraged here, there's no way to obtain WSA last error
-                                which the cross-platform error-handling functions rely on, since NtStatusToDosError()
-                                returns irrelevant error code for completed WSA*(). NTSTATUS propagation needs tweaking
-                                error handlers for Windows. We'll probably get down to it later
-                            */
-                            WSAGetOverlappedResult(l_cur->socket, &ol->ol, &l_bytes, FALSE, &flags);
-                            l_errno = WSAGetLastError();
-                            log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with error %d: %s, ntstatus 0x%llx",
-                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, l_errno, dap_strerror(l_errno),
-                                           ol->ol.Internal);
-                        } else
-                            log_it(L_INFO, "Connection on es %zu to remote %s : %u closed",
-                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port);
+                    } else if ( NT_ERROR(ol->ol.Internal) ) {
+                        // l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                        /*
+                            TODO: though another syscall is discouraged here, there's no way to obtain WSA last error
+                            which the cross-platform error-handling functions rely on, since NtStatusToDosError()
+                            returns irrelevant error code for completed WSA*(). NTSTATUS propagation needs tweaking
+                            error handlers for Windows. We'll probably get down to it later
+                        */
+                        WSAGetOverlappedResult(l_cur->socket, &ol->ol, &l_bytes, FALSE, &flags);
+                        l_errno = WSAGetLastError();
+                        log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with error %d: %s, ntstatus 0x%llx",
+                                       l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, l_errno, dap_strerror(l_errno),
+                                       ol->ol.Internal);
                         break;
                     }
                     if (l_cur->callbacks.write_callback)
@@ -705,6 +726,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             // Final check
             if ( FLAG_CLOSE(l_cur->flags) )
                 dap_events_socket_remove_and_delete_unsafe(l_cur, false);
+next_iocp_completion:
+            dap_overlapped_free(ol);
         }
     } while (!a_context->signal_exit);
 #else  // IOCP
