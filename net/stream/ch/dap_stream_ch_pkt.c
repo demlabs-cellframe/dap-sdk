@@ -347,7 +347,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         size_t l_fragment_size;
         dap_stream_fragment_pkt_t *l_fragment;
         size_t l_iteration = 0;
-        size_t l_remaining = l_max_size;
+        size_t l_remaining = l_data_size;
         
         debug_if(dap_stream_get_dump_packet_headers(), L_DEBUG,
                  "Fragmenting large packet: total_size=%zu, max_frag=%zu", l_data_size, l_max_fragm_size);

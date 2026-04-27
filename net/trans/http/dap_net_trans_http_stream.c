@@ -527,11 +527,12 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         return -1;
     }
 
-    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
-    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
+    l_es->flags |= DAP_SOCK_CONNECTING;
+#ifndef DAP_EVENTS_CAPS_IOCP
+    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#endif
     l_es->is_initalized = false;
 
-#ifndef DAP_EVENTS_CAPS_IOCP
     int l_connect_err = 0;
     if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
         log_it(L_ERROR, "HTTP connect: TCP connect failed: error %d", l_connect_err);
@@ -539,7 +540,6 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         DAP_DELETE(l_ctx);
         return -1;
     }
-#endif
 
     dap_worker_add_events_socket(l_worker, l_es);
 
@@ -1516,9 +1516,43 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
     a_result->stream = NULL;
     a_result->error_code = 0;
 
-    // ENC and STREAM_CTL use short-lived HTTP requests. The persistent /stream
-    // socket is created later in connect(), after the encrypted session exists.
-    dap_stream_t *l_stream = dap_stream_new_es_client(NULL,
+    // Create TCP socket for streaming phase (GET /stream long-lived connection).
+    // ENC and STREAM_CTL stages use dap_client_http_request() with their own
+    // temporary sockets; this esocket is only used from session_start onwards.
+    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, a_params->callbacks);
+    if (!l_es) {
+        log_it(L_ERROR, "Failed to create HTTP streaming TCP socket");
+        a_result->error_code = -1;
+        return -1;
+    }
+
+    l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    l_es->_inheritor = a_params->client_ctx;
+
+    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
+        log_it(L_ERROR, "Failed to resolve address for HTTP trans");
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+
+    l_es->flags |= DAP_SOCK_CONNECTING;
+#ifndef DAP_EVENTS_CAPS_IOCP
+    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#endif
+    l_es->is_initalized = false;
+
+    int l_connect_err = 0;
+    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
+        log_it(L_ERROR, "Failed to connect HTTP streaming socket: error %d", l_connect_err);
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = -1;
+        return -1;
+    }
+
+    dap_worker_add_events_socket(a_params->worker, l_es);
+
+    dap_stream_t *l_stream = dap_stream_new_es_client(l_es,
                                 (dap_stream_node_addr_t *)a_params->node_addr,
                                 a_params->authorized);
     if (!l_stream) {
@@ -1529,10 +1563,10 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
 
     l_stream->trans = a_trans;
 
-    a_result->esocket = NULL;
+    a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared without TCP socket; deferred connect will create /stream socket");
+    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared with TCP socket (fd=%d) for streaming", l_es->fd);
     return 0;
 }
 
@@ -1924,3 +1958,4 @@ int dap_stream_trans_http_translate_response_from_http(
            a_size, l_decoded_size);
     return 0;
 }
+
