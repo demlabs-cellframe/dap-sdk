@@ -18,6 +18,15 @@
  *         whole point: the codec is a pure transport)
  *       * legacy raw-struct blob (flat memcpy of chipmunk_multi_signature_t)
  *         MUST be rejected before any pointer dereference.
+ *
+ *  Schema-driven decoder regression (since CR-D10 stage-3):
+ *       * per-signer path_length tampered (header common count diverges
+ *         from inner path_length[i]) — must be rejected by the post-
+ *         schema cross-check in chipmunk_multi_signature_deserialize.
+ *       * is_randomized byte set to a value outside {0,1}
+ *       * 3-byte reserved block in the body has a non-zero byte
+ *       * 8-signer fixture round-trip via the dap_sign bridge to
+ *         exercise the array-of-structs schema walk at scale.
  */
 
 #include <stdio.h>
@@ -49,14 +58,17 @@
     } while (0)
 
 /* ---------------------------------------------------------------------- *
- *  Fixture: build a real 3-signer multi-signature                        *
+ *  Fixture: build a real N-signer multi-signature                         *
  * ---------------------------------------------------------------------- */
 
+#define FIXTURE_MAX_SIGNERS 16
+
 typedef struct {
-    chipmunk_tree_t           tree;
-    chipmunk_hvc_hasher_t     hasher;
-    chipmunk_individual_sig_t individual_sigs[3];
+    chipmunk_tree_t            tree;
+    chipmunk_hvc_hasher_t      hasher;
+    chipmunk_individual_sig_t  individual_sigs[FIXTURE_MAX_SIGNERS];
     chipmunk_multi_signature_t multi_sig;
+    size_t                     num_signers;
     bool tree_ready;
     bool sigs_ready;
     bool multi_ready;
@@ -73,7 +85,7 @@ static void s_fixture_clear(fixture_t *f)
         f->multi_ready = false;
     }
     if (f->sigs_ready) {
-        for (size_t i = 0; i < 3; ++i) {
+        for (size_t i = 0; i < f->num_signers; ++i) {
             chipmunk_individual_signature_free(&f->individual_sigs[i]);
         }
         f->sigs_ready = false;
@@ -82,20 +94,24 @@ static void s_fixture_clear(fixture_t *f)
         chipmunk_tree_clear(&f->tree);
         f->tree_ready = false;
     }
+    f->num_signers = 0;
 }
 
 static const char s_fixture_message[] = "CR-D10 wire codec regression message";
 
-static bool s_fixture_build(fixture_t *f)
+static bool s_fixture_build_n(fixture_t *f, size_t num_signers)
 {
     memset(f, 0, sizeof(*f));
 
-    const size_t num_signers = 3;
+    if (num_signers == 0 || num_signers > FIXTURE_MAX_SIGNERS) {
+        return false;
+    }
+    f->num_signers = num_signers;
 
-    chipmunk_private_key_t  priv_keys[3];
-    chipmunk_public_key_t   pub_keys[3];
-    chipmunk_hots_pk_t      hots_pks[3];
-    chipmunk_hots_sk_t      hots_sks[3];
+    chipmunk_private_key_t  priv_keys[FIXTURE_MAX_SIGNERS];
+    chipmunk_public_key_t   pub_keys[FIXTURE_MAX_SIGNERS];
+    chipmunk_hots_pk_t      hots_pks[FIXTURE_MAX_SIGNERS];
+    chipmunk_hots_sk_t      hots_sks[FIXTURE_MAX_SIGNERS];
 
     for (size_t i = 0; i < num_signers; ++i) {
         int rc = chipmunk_keypair((uint8_t *)&pub_keys[i],  sizeof(pub_keys[i]),
@@ -163,6 +179,11 @@ static bool s_fixture_build(fixture_t *f)
                 "sanity: multi_sig verifies in-memory");
 
     return true;
+}
+
+static bool s_fixture_build(fixture_t *f)
+{
+    return s_fixture_build_n(f, 3);
 }
 
 /* ---------------------------------------------------------------------- *
@@ -516,6 +537,256 @@ static bool test_malformed_blobs(void)
 }
 
 /* ---------------------------------------------------------------------- *
+ *  Schema-driven decoder regression cases                                 *
+ *                                                                         *
+ *  These attack the post-decode validation layer in                       *
+ *  chipmunk_multi_signature_deserialize().  After the schema engine has   *
+ *  successfully consumed the wire bytes, the codec performs three        *
+ *  protocol-level cross-checks (each per-signer path_length matches the  *
+ *  header value, is_randomized is in {0,1}, reserved-3 is all zero).     *
+ *  Bypassing the schema reader and emitting a structurally valid blob    *
+ *  with these fields tampered must produce a deterministic rejection.   *
+ * ---------------------------------------------------------------------- */
+
+/* Body-relative offsets inside the schema-driven layout (after the
+ * 24-byte CHMA header).  Mirrors `chipmunk_multi_signature_wire_schema`
+ * exactly — keep in sync if the schema field order ever changes. */
+#define BODY_OFF_MSG_HASH        0u
+#define BODY_OFF_HASHER_SEED     32u
+#define BODY_OFF_IS_RANDOMIZED   64u
+#define BODY_OFF_RESERVED        65u
+#define BODY_OFF_TREE_ROOT       68u
+#define BODY_OFF_SIGMA           (BODY_OFF_TREE_ROOT + (size_t)CHIPMUNK_N * 4u)
+#define BODY_OFF_SIGNERS         (BODY_OFF_SIGMA + (size_t)CHIPMUNK_GAMMA * (size_t)CHIPMUNK_N * 4u)
+
+#define HDR_SIZE                 24u
+#define POLY_BYTES               ((size_t)CHIPMUNK_N * 4u)
+
+static bool test_is_randomized_invalid_value(void)
+{
+    fixture_t f;
+    TEST_ASSERT(s_fixture_build(&f), "fixture build");
+
+    size_t blob_size = 0;
+    TEST_ASSERT(chipmunk_multi_signature_serialized_size(&f.multi_sig, &blob_size)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "size");
+    uint8_t *blob = (uint8_t *)DAP_NEW_Z_SIZE(uint8_t, blob_size);
+    TEST_ASSERT(blob, "alloc blob");
+    TEST_ASSERT(chipmunk_multi_signature_serialize(&f.multi_sig, blob, blob_size, NULL)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "serialize");
+
+    chipmunk_multi_signature_t out;
+
+    /* Replace the 1-byte is_randomized flag with values outside {0,1}.
+     * Schema decode succeeds — uint8 has no codec-level validation — but
+     * the codec's post-decode check rejects it.                         */
+    static const uint8_t s_bad_values[] = { 0x02, 0x42, 0xFE, 0xFF };
+    uint8_t saved = blob[HDR_SIZE + BODY_OFF_IS_RANDOMIZED];
+    for (size_t i = 0; i < sizeof(s_bad_values) / sizeof(s_bad_values[0]); ++i) {
+        blob[HDR_SIZE + BODY_OFF_IS_RANDOMIZED] = s_bad_values[i];
+        memset(&out, 0, sizeof(out));
+        int rc = chipmunk_multi_signature_deserialize(blob, blob_size, &out);
+        TEST_ASSERT(rc == CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_FLAG,
+                    "is_randomized != {0,1} rejected with BAD_FLAG");
+        chipmunk_multi_signature_deep_free(&out);
+    }
+    blob[HDR_SIZE + BODY_OFF_IS_RANDOMIZED] = saved;
+
+    /* Sanity: untampered blob still round-trips. */
+    memset(&out, 0, sizeof(out));
+    TEST_ASSERT(chipmunk_multi_signature_deserialize(blob, blob_size, &out)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK,
+                "restored blob deserialises cleanly");
+    chipmunk_multi_signature_deep_free(&out);
+
+    DAP_DELETE(blob);
+    s_fixture_clear(&f);
+    return true;
+}
+
+static bool test_body_reserved_nonzero(void)
+{
+    fixture_t f;
+    TEST_ASSERT(s_fixture_build(&f), "fixture build");
+
+    size_t blob_size = 0;
+    TEST_ASSERT(chipmunk_multi_signature_serialized_size(&f.multi_sig, &blob_size)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "size");
+    uint8_t *blob = (uint8_t *)DAP_NEW_Z_SIZE(uint8_t, blob_size);
+    TEST_ASSERT(blob, "alloc blob");
+    TEST_ASSERT(chipmunk_multi_signature_serialize(&f.multi_sig, blob, blob_size, NULL)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "serialize");
+
+    chipmunk_multi_signature_t out;
+
+    /* Each of the three reserved bytes in the body must be zero on the
+     * wire.  Set each one independently and confirm BAD_RESERVED. */
+    for (size_t i = 0; i < 3; ++i) {
+        uint8_t saved = blob[HDR_SIZE + BODY_OFF_RESERVED + i];
+        blob[HDR_SIZE + BODY_OFF_RESERVED + i] = 0x01;
+        memset(&out, 0, sizeof(out));
+        int rc = chipmunk_multi_signature_deserialize(blob, blob_size, &out);
+        TEST_ASSERT(rc == CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_RESERVED,
+                    "reserved byte != 0 rejected with BAD_RESERVED");
+        chipmunk_multi_signature_deep_free(&out);
+        blob[HDR_SIZE + BODY_OFF_RESERVED + i] = saved;
+    }
+
+    DAP_DELETE(blob);
+    s_fixture_clear(&f);
+    return true;
+}
+
+static bool test_inner_path_length_mismatch(void)
+{
+    fixture_t f;
+    TEST_ASSERT(s_fixture_build(&f), "fixture build");
+    TEST_ASSERT(f.multi_sig.signer_count >= 2,
+                "fixture must have >= 2 signers for this test");
+
+    size_t blob_size = 0;
+    TEST_ASSERT(chipmunk_multi_signature_serialized_size(&f.multi_sig, &blob_size)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "size");
+    uint8_t *blob = (uint8_t *)DAP_NEW_Z_SIZE(uint8_t, blob_size);
+    TEST_ASSERT(blob, "alloc blob");
+    TEST_ASSERT(chipmunk_multi_signature_serialize(&f.multi_sig, blob, blob_size, NULL)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "serialize");
+
+    /* All proofs share the same path length by construction.  Compute
+     * the size of one signer record and locate signer[1]'s path_length
+     * field.                                                            */
+    const size_t l_common_path_length = f.multi_sig.proofs[0].path_length;
+    const size_t l_record_size = 3u * POLY_BYTES + 32u + 4u + 8u + 4u
+                                + l_common_path_length * 2u * POLY_BYTES;
+
+    /* Within a record, path_length sits at offset 3*N*4 + 32 + 4 + 8 = 3*N*4 + 44. */
+    const size_t l_path_len_in_record = 3u * POLY_BYTES + 32u + 4u + 8u;
+    const size_t l_signer1_record_off = BODY_OFF_SIGNERS + l_record_size;
+    const size_t l_path_len_off       = HDR_SIZE + l_signer1_record_off + l_path_len_in_record;
+
+    chipmunk_multi_signature_t out;
+
+    /* Replace path_length[1] with l_common_path_length+1.  This causes
+     * the schema reader to either read past the end of the buffer (size
+     * mismatch) or — if the buffer is large enough — finish the body
+     * but leave bytes_read != buffer_size.  Either way the codec must
+     * reject before the post-decode cross-check ever runs.            */
+    uint8_t saved[4];
+    memcpy(saved, blob + l_path_len_off, 4);
+
+    uint32_t bumped = (uint32_t)(l_common_path_length + 1);
+    blob[l_path_len_off + 0] = (uint8_t)(bumped & 0xFF);
+    blob[l_path_len_off + 1] = (uint8_t)((bumped >> 8) & 0xFF);
+    blob[l_path_len_off + 2] = (uint8_t)((bumped >> 16) & 0xFF);
+    blob[l_path_len_off + 3] = (uint8_t)((bumped >> 24) & 0xFF);
+
+    memset(&out, 0, sizeof(out));
+    int rc = chipmunk_multi_signature_deserialize(blob, blob_size, &out);
+    TEST_ASSERT(rc != CHIPMUNK_MULTI_SIG_CODEC_OK,
+                "path_length+1 rejected by codec");
+    chipmunk_multi_signature_deep_free(&out);
+
+    /* Now zero-out path_length[1] (still valid uint32, but mismatches the
+     * header value).  The schema reader will simply allocate zero nodes,
+     * succeed cleanly, and the codec's post-decode cross-check must fire
+     * with PATH_LENGTH_MISMATCH.  This requires growing the buffer to
+     * absorb the bytes the reader saved.                                */
+    memcpy(blob + l_path_len_off, saved, 4);
+
+    /* Build a synthetic blob where signer[1]'s path_length=0 by stripping
+     * its node bytes from the buffer and adjusting the header total.    */
+    {
+        const size_t l_strip = l_common_path_length * 2u * POLY_BYTES;
+        const size_t l_signer1_nodes_start =
+                HDR_SIZE + l_signer1_record_off + l_path_len_in_record + 4u;
+        size_t l_new_size = blob_size - l_strip;
+        uint8_t *clone = (uint8_t *)DAP_NEW_Z_SIZE(uint8_t, l_new_size);
+        TEST_ASSERT(clone, "alloc clone");
+        /* Copy bytes up to and including signer[1].path_length. */
+        memcpy(clone, blob, l_signer1_nodes_start);
+        /* Skip the signer[1] nodes block; copy the rest. */
+        memcpy(clone + l_signer1_nodes_start,
+               blob + l_signer1_nodes_start + l_strip,
+               blob_size - (l_signer1_nodes_start + l_strip));
+        /* Patch signer[1].path_length to 0. */
+        clone[l_path_len_off + 0] = 0;
+        clone[l_path_len_off + 1] = 0;
+        clone[l_path_len_off + 2] = 0;
+        clone[l_path_len_off + 3] = 0;
+        /* Patch payload_length in the header to the new size. */
+        uint64_t l_total = (uint64_t)l_new_size;
+        for (int i = 0; i < 8; ++i) {
+            clone[16 + i] = (uint8_t)((l_total >> (8 * i)) & 0xFF);
+        }
+
+        memset(&out, 0, sizeof(out));
+        rc = chipmunk_multi_signature_deserialize(clone, l_new_size, &out);
+        TEST_ASSERT(rc == CHIPMUNK_MULTI_SIG_CODEC_ERR_PATH_LENGTH_MISMATCH,
+                    "inner path_length=0 detected as PATH_LENGTH_MISMATCH");
+        chipmunk_multi_signature_deep_free(&out);
+        DAP_DELETE(clone);
+    }
+
+    DAP_DELETE(blob);
+    s_fixture_clear(&f);
+    return true;
+}
+
+static bool test_8_signers_dap_sign_round_trip(void)
+{
+    fixture_t f;
+    TEST_ASSERT(s_fixture_build_n(&f, 8), "fixture build (8 signers)");
+
+    dap_sign_t *sign = dap_sign_from_chipmunk_multi_signature(&f.multi_sig);
+    TEST_ASSERT(sign != NULL, "dap_sign bridge returns non-NULL (8 signers)");
+    TEST_ASSERT(sign->header.type.type == SIG_TYPE_CHIPMUNK, "SIG_TYPE_CHIPMUNK");
+    TEST_ASSERT(sign->header.sign_size > 0, "non-empty sig payload");
+
+    const void *messages[8];
+    size_t       message_sizes[8];
+    dap_pkey_t  *pubkeys[8];
+    for (size_t i = 0; i < 8; ++i) {
+        messages[i]      = s_fixture_message;
+        message_sizes[i] = sizeof(s_fixture_message) - 1;
+        pubkeys[i]       = NULL;
+    }
+
+    int rc = dap_sign_verify_aggregated(sign, messages, message_sizes, pubkeys, 8);
+    TEST_ASSERT(rc == 0,
+                "dap_sign_verify_aggregated == 0 on 8-signer happy path");
+
+    /* Round-trip via the codec — re-serialise the deserialised copy and
+     * confirm canonical (byte-identical) output, exercising the array-of-
+     * structs schema walk twice over a non-trivial signer count.         */
+    size_t expected = 0;
+    TEST_ASSERT(chipmunk_multi_signature_serialized_size(&f.multi_sig, &expected)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "size");
+    uint8_t *buf1 = (uint8_t *)DAP_NEW_Z_SIZE(uint8_t, expected);
+    TEST_ASSERT(buf1, "alloc buf1");
+    TEST_ASSERT(chipmunk_multi_signature_serialize(&f.multi_sig, buf1, expected, NULL)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "serialize");
+
+    chipmunk_multi_signature_t copy;
+    memset(&copy, 0, sizeof(copy));
+    TEST_ASSERT(chipmunk_multi_signature_deserialize(buf1, expected, &copy)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "deserialize");
+    TEST_ASSERT(copy.signer_count == 8, "signer_count == 8");
+
+    uint8_t *buf2 = (uint8_t *)DAP_NEW_Z_SIZE(uint8_t, expected);
+    TEST_ASSERT(buf2, "alloc buf2");
+    TEST_ASSERT(chipmunk_multi_signature_serialize(&copy, buf2, expected, NULL)
+                    == CHIPMUNK_MULTI_SIG_CODEC_OK, "serialize copy");
+    TEST_ASSERT(memcmp(buf1, buf2, expected) == 0, "canonical 8-signer wire");
+
+    DAP_DELETE(buf1);
+    DAP_DELETE(buf2);
+    chipmunk_multi_signature_deep_free(&copy);
+    DAP_DELETE(sign);
+    s_fixture_clear(&f);
+    return true;
+}
+
+/* ---------------------------------------------------------------------- *
  *  Driver                                                                 *
  * ---------------------------------------------------------------------- */
 
@@ -528,9 +799,13 @@ int main(void)
         const char *name;
         bool (*fn)(void);
     } tests[] = {
-        { "round_trip",              test_round_trip },
-        { "dap_sign_bridge_happy",   test_dap_sign_bridge_happy },
-        { "malformed_blobs",         test_malformed_blobs },
+        { "round_trip",                       test_round_trip },
+        { "dap_sign_bridge_happy",            test_dap_sign_bridge_happy },
+        { "malformed_blobs",                  test_malformed_blobs },
+        { "is_randomized_invalid_value",      test_is_randomized_invalid_value },
+        { "body_reserved_nonzero",            test_body_reserved_nonzero },
+        { "inner_path_length_mismatch",       test_inner_path_length_mismatch },
+        { "8_signers_dap_sign_round_trip",    test_8_signers_dap_sign_round_trip },
     };
 
     int fail = 0;
