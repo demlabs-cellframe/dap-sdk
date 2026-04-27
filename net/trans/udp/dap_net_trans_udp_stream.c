@@ -2822,8 +2822,8 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // CRITICAL: Set readable+writable state for UDP - reactor needs it to handle I/O!
     // Without this, UDP packets won't be received/sent!
-    dap_events_socket_set_readable_mt(a_params->worker, l_es->uuid, true);
-    dap_events_socket_set_writable_mt(a_params->worker, l_es->uuid, true);
+    dap_events_socket_set_readable_unsafe(l_es, true);
+    dap_events_socket_set_writable_unsafe(l_es, true);
     
     // For UDP: create stream early and return it (stream will be reused for all operations)
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);

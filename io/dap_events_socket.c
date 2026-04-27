@@ -1180,15 +1180,7 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
 #elif defined DAP_EVENTS_CAPS_WEPOLL
     return dap_sendto(a_es->socket, a_es->port, NULL, 0) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
 #elif defined (DAP_EVENTS_CAPS_IOCP)
-    dap_overlapped_t *ol = DAP_NEW_Z(dap_overlapped_t);
-    if (!ol)
-        return ERROR_NOT_ENOUGH_MEMORY;
-    if (!PostQueuedCompletionStatus(a_es->context->iocp, a_value, (ULONG_PTR)a_es, (OVERLAPPED*)ol)) {
-        int l_err = GetLastError();
-        dap_overlapped_free(ol);
-        return l_err;
-    }
-    return NO_ERROR;
+    return PostQueuedCompletionStatus(a_es->context->iocp, a_value, (ULONG_PTR)a_es, NULL) ? GetLastError() : NO_ERROR;
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     struct kevent l_event={0};
     dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
@@ -1447,9 +1439,9 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
             break;
 
         case DESCRIPTOR_TYPE_SOCKET_UDP: {
-            a_es->addr_size = sizeof(a_es->addr_storage);
+            INT l_len = sizeof(a_es->addr_storage);
             l_err = WSARecvFrom( a_es->socket, &wsabuf, 1, &bytes, &flags,
-                                (LPSOCKADDR)&a_es->addr_storage, (LPINT)&a_es->addr_size,
+                                (LPSOCKADDR)&a_es->addr_storage, &l_len, 
                                 (OVERLAPPED*)ol, NULL ) ? WSAGetLastError() : ERROR_SUCCESS;
             func = "WSARecvFrom";
         } break;
