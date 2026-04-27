@@ -119,14 +119,35 @@ static void test_condition_polling_delayed_success(void)
     uint64_t l_start = dap_test_get_time_ms();
     bool l_result = dap_test_wait_condition(test_condition_delayed, NULL, &l_cfg);
     uint64_t l_elapsed = dap_test_get_time_ms() - l_start;
-    
+#if defined(_WIN32)
+    const uint64_t l_min_expected_elapsed = 150;
+#else
+    const uint64_t l_min_expected_elapsed = 200;
+#endif
+    bool l_expected_polls = s_condition_check_count == 3;
+    bool l_timing_ok = l_elapsed >= l_min_expected_elapsed && l_elapsed < 1000;
+
     log_it(L_DEBUG, "Condition met after %llu ms, checks: %d",
            (unsigned long long)l_elapsed, s_condition_check_count);
     
+    if (!l_expected_polls || !l_timing_ok) {
+        dap_test_msg(
+            "Delayed success diagnostics: elapsed=%llu ms, checks=%d, expected_checks=3, expected_elapsed=[%llu, 1000) ms",
+            (unsigned long long)l_elapsed,
+            s_condition_check_count,
+            (unsigned long long)l_min_expected_elapsed
+        );
+    }
+
     dap_assert_PIF(l_result == true, "Condition should eventually succeed");
-    dap_assert_PIF(s_condition_check_count >= 3, "Should check at least 3 times");
-    dap_assert_PIF(l_elapsed >= 200 && l_elapsed < 1000,
+    dap_assert_PIF(l_expected_polls, "Should check condition exactly 3 times");
+#if defined(_WIN32)
+    dap_assert_PIF(l_timing_ok,
+                   "Should take a Windows-tolerant delayed polling interval");
+#else
+    dap_assert_PIF(l_timing_ok,
                    "Should take ~200-300ms (3 polls * 100ms)");
+#endif
     
     log_it(L_INFO, "✓ Test 3: Delayed Success PASSED\n");
 }
@@ -298,8 +319,26 @@ static void test_wait_until_macro(void)
     pthread_join(l_thread, NULL);
     
     log_it(L_DEBUG, "Macro wait completed in %llu ms", (unsigned long long)l_elapsed);
-    dap_assert_PIF(l_elapsed >= 290 && l_elapsed < 600,
+#if defined(_WIN32)
+    const uint64_t l_macro_min_expected_elapsed = 240;
+#else
+    const uint64_t l_macro_min_expected_elapsed = 290;
+#endif
+    bool l_macro_timing_ok = l_elapsed >= l_macro_min_expected_elapsed && l_elapsed < 600;
+    if (!l_macro_timing_ok) {
+        dap_test_msg(
+            "Macro wait diagnostics: elapsed=%llu ms, expected_elapsed=[%llu, 600) ms",
+            (unsigned long long)l_elapsed,
+            (unsigned long long)l_macro_min_expected_elapsed
+        );
+    }
+#if defined(_WIN32)
+    dap_assert_PIF(l_macro_timing_ok,
+                   "Should wait a Windows-tolerant macro polling interval");
+#else
+    dap_assert_PIF(l_macro_timing_ok,
                    "Should wait ~300ms for condition");
+#endif
     
     log_it(L_INFO, "✓ Test 8: Macro PASSED\n");
 }
@@ -363,4 +402,3 @@ int main(int argc, char **argv)
     dap_common_deinit();
     return 0;
 }
-

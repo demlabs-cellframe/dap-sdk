@@ -266,6 +266,10 @@ static int s_setup_integration_test(void) {
             "[general]\n"
             "debug_reactor=true\n"
             "\n"
+            "[dap_client]\n"
+            "timeout=20\n"
+            "timeout_read_after_connect=5\n"
+            "\n"
             "[test_http_client_server]\n"
             "listen-address=[%s:%d]\n"
             "enabled=true\n",
@@ -299,6 +303,12 @@ static int s_setup_integration_test(void) {
     }
     
     TEST_INFO("✅ Config loaded successfully");
+
+    // Initialize the outbound HTTP client used by dap_client_http_request_simple_async().
+    if (dap_client_http_init() != 0) {
+        TEST_ERROR("Failed to initialize HTTP client module");
+        return -1;
+    }
     
     // Re-initialize crypto
     dap_enc_deinit();
@@ -385,6 +395,8 @@ static void s_teardown_integration_test(void) {
     }
     s_response.received = false;
     pthread_mutex_unlock(&s_response.mutex);
+
+    dap_client_http_deinit();
     
     // Close config
     if (g_config) {
