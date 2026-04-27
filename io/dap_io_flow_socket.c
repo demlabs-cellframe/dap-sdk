@@ -106,25 +106,6 @@ const char* dap_io_flow_tier_name(dap_io_flow_lb_tier_t a_tier)
     }
 }
 
-/**
- * @brief Whether a tier requires kernel socket sharding via SO_REUSEPORT-like APIs.
- */
-static bool s_lb_tier_requires_reuseport(dap_io_flow_lb_tier_t a_tier)
-{
-    if (a_tier == DAP_IO_FLOW_LB_TIER_NONE || a_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
-        return false;
-    }
-
-#if defined(_WIN32) || defined(_WIN64)
-    // Windows RIO is application-distribution with IOCP optimizations, not SO_REUSEPORT.
-    if (a_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
-        return false;
-    }
-#endif
-
-    return true;
-}
-
 // Thread-local buffer for address formatting
 static __thread char s_addr_str_buf[INET6_ADDRSTRLEN + 8];
 
@@ -607,32 +588,25 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         }
     }
     
-    // Determine if we need SO_REUSEPORT or equivalent.
-    // Application-style tiers (APPLICATION, WIN_RIO) do not require it.
-    bool l_enable_reuseport = s_lb_tier_requires_reuseport(l_lb_tier);
+    // Determine if we need SO_REUSEPORT or equivalent
+    // All tiers except NONE and APPLICATION require multiple sockets
+    bool l_enable_reuseport = (l_lb_tier != DAP_IO_FLOW_LB_TIER_NONE &&
+                                l_lb_tier != DAP_IO_FLOW_LB_TIER_APPLICATION);
     
     // Determine number of listeners to create
     uint32_t l_num_listeners = 1;
     if (l_enable_reuseport) {
-        // Kernel-level load balancing: one listener per worker.
+        // Kernel-level load balancing (Tier 2): one listener per worker with SO_REUSEPORT + eBPF
         l_num_listeners = l_worker_count;
-        log_it(L_NOTICE, "Creating %u sharded listeners with SO_REUSEPORT",
+        log_it(L_NOTICE, "Creating %u sharded listeners with SO_REUSEPORT + eBPF",
                l_num_listeners);
     } else {
-        // Application-level tiers or no LB: single listener.
-        const char *l_single_listener_mode = "no load balancing";
-        if (l_lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
-            l_single_listener_mode = "application-level queue forwarding";
-        }
-#if defined(_WIN32) || defined(_WIN64)
-        else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
-            l_single_listener_mode = "Windows RIO (application-level distribution)";
-        }
-#endif
-
+        // Application-level (Tier 1) or no LB (Tier 0): single listener
+        // Application-level will manually forward packets via queues
         log_it(L_NOTICE, "Creating single listener (tier=%d: %s)",
                l_lb_tier,
-               l_single_listener_mode);
+               l_lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION ? 
+                   "application-level queue forwarding" : "no load balancing");
     }
     
     // Track the actual port used (for SO_REUSEPORT, all sockets must use the same port!)
@@ -703,12 +677,12 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             l_opt = 1;
             if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, (const char *)&l_opt, sizeof(l_opt)) < 0) {
                 log_it(L_ERROR, "SO_REUSEPORT failed: %s", strerror(errno));
-                dap_close_socket(l_socket);
+                close(l_socket);
                 return -6;
             }
 #else
             log_it(L_ERROR, "SO_REUSEPORT not supported on this platform");
-            dap_close_socket(l_socket);
+            close(l_socket);
             return -7;
 #endif
         }
@@ -725,7 +699,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             int config_ret = dap_io_flow_bsd_lb_enable(l_socket);
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "BSD SO_REUSEPORT_LB failed before bind");
-                dap_close_socket(l_socket);
+                close(l_socket);
                 return -98;
             }
             log_it(L_NOTICE, "✅ BSD SO_REUSEPORT_LB enabled BEFORE bind");
@@ -735,17 +709,17 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             int config_ret = dap_io_flow_darwin_gcd_configure(l_socket);
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "macOS GCD configuration failed");
-                dap_close_socket(l_socket);
+                close(l_socket);
                 return -98;
             }
             log_it(L_NOTICE, "✅ macOS GCD configured (SO_REUSEPORT + SO_REUSEADDR)");
         }
 #elif defined(_WIN32) || defined(_WIN64)
-        if (i == 0 && l_lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
+        if (i == 0 && l_enable_reuseport && l_lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
             int config_ret = dap_io_flow_win_rio_configure(l_socket);
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "Windows RIO configuration failed");
-                dap_close_socket(l_socket);
+                close(l_socket);
                 return -98;
             }
             log_it(L_NOTICE, "✅ Windows RIO configured (SO_REUSEADDR)");
@@ -784,7 +758,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         
         if (bind(l_socket, (struct sockaddr*)&l_bind_addr, l_addr_len) < 0) {
             log_it(L_ERROR, "Failed to bind socket for worker %u: %s", i, strerror(errno));
-            dap_close_socket(l_socket);
+            close(l_socket);
             return -4;
         }
         
@@ -809,7 +783,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_socket, a_callbacks);
         if (!l_es) {
             log_it(L_ERROR, "Failed to wrap socket for worker %u", i);
-            dap_close_socket(l_socket);
+            close(l_socket);
             return -5;
         }
         
