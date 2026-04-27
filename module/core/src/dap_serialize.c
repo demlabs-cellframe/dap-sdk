@@ -291,7 +291,7 @@ size_t dap_serialize_calc_size_ex(const dap_serialize_schema_t *a_schema,
                 field_size = sizeof(uint32_t) + a_params->data_sizes[i];
                 break;
             case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC: {
-                field_size = sizeof(uint32_t); // count prefix
+                field_size = (field->flags & DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX) ? 0u : sizeof(uint32_t);
                 size_t elem_sz = 0;
                 if (field->nested_schema) {
                     // Prevent infinite recursion for nested schemas
@@ -559,23 +559,22 @@ dap_serialize_result_t dap_serialize_to_buffer_raw(const dap_serialize_schema_t 
     return result;
 }
 
-/**
- * @brief Deserialize object from buffer WITHOUT metadata header (raw fields only)
- */
-dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_t *a_schema,
+/* Shared core for from_buffer_raw / from_buffer_raw_preserve. */
+static dap_serialize_result_t s_from_buffer_raw_core(const dap_serialize_schema_t *a_schema,
                                                      const uint8_t *a_buffer,
                                                      size_t a_buffer_size,
                                                      void *a_object,
-                                                     void *a_context)
+                                                     void *a_context,
+                                                     bool a_zero_init)
 {
     dap_serialize_result_t result = {0};
-    
+
     if (!a_schema || !a_buffer || !a_object) {
         result.error_code = DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
         result.error_message = "Invalid parameters";
         return result;
     }
-    
+
     // Initialize context (NO HEADER PARSING!)
     dap_serialize_context_t ctx = {
         .buffer = (uint8_t*)a_buffer,
@@ -589,16 +588,18 @@ dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_
         .current_schema = a_schema
     };
 
-    // Initialize object memory
-    memset(a_object, 0, a_schema->struct_size);
-    
+    // Initialize object memory ONLY when caller did not pre-populate it.
+    // Skipping the memset is required for schemas that use
+    // DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX, where the count slot must already
+    // hold a valid externally-framed length before the loop runs.
+    if (a_zero_init) {
+        memset(a_object, 0, a_schema->struct_size);
+    }
+
     // Deserialize each field (NO HEADER!)
     for (size_t i = 0; i < a_schema->field_count; i++) {
         const dap_serialize_field_t *field = &a_schema->fields[i];
-        
-        // Check condition (during deserialization, some conditionals might not apply)
-        // For raw deserialization, we deserialize all fields present
-        
+
         int l_field_result = s_deserialize_field(field, a_object, &ctx);
         if (l_field_result != 0) {
             result.error_code = l_field_result;
@@ -606,14 +607,38 @@ dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_
             result.failed_field = field->name;
             return result;
         }
-        
+
         ctx.objects_serialized++;
     }
-    
+
     result.error_code = DAP_SERIALIZE_ERROR_SUCCESS;
     result.bytes_read = ctx.offset;
-    
+
     return result;
+}
+
+/**
+ * @brief Deserialize object from buffer WITHOUT metadata header (raw fields only)
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_t *a_schema,
+                                                     const uint8_t *a_buffer,
+                                                     size_t a_buffer_size,
+                                                     void *a_object,
+                                                     void *a_context)
+{
+    return s_from_buffer_raw_core(a_schema, a_buffer, a_buffer_size, a_object, a_context, true);
+}
+
+/**
+ * @brief Same as @ref dap_serialize_from_buffer_raw but skips the zero-init.
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw_preserve(const dap_serialize_schema_t *a_schema,
+                                                              const uint8_t *a_buffer,
+                                                              size_t a_buffer_size,
+                                                              void *a_object,
+                                                              void *a_context)
+{
+    return s_from_buffer_raw_core(a_schema, a_buffer, a_buffer_size, a_object, a_context, false);
 }
 
 /**
@@ -861,7 +886,7 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
                     (uintptr_t)l_count_ptr + sizeof(uint32_t) > (uintptr_t)a_object + l_struct_size) {
                     log_it(L_WARNING, "Array field '%s' count_ptr out of bounds (struct_size=%zu, count_offset=%zu), using 0",
                            a_field->name, l_struct_size, a_field->count_offset);
-                    l_size = sizeof(uint32_t);  // Just count prefix
+                    l_size = (a_field->flags & DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX) ? 0u : sizeof(uint32_t);
                     break;
                 }
                 
@@ -877,14 +902,14 @@ static size_t s_calc_field_size(const dap_serialize_field_t *a_field,
                 }
             } else {
                 debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC: no object and no params, using count prefix only");
-                l_size = sizeof(uint32_t);  // Just count prefix
+                l_size = (a_field->flags & DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX) ? 0u : sizeof(uint32_t);
                 break;
             }
-            
-            
+
+
             debug_if(s_debug_more, L_DEBUG, "ARRAY_DYNAMIC count=%zu", l_count_value);
-            
-            l_size = sizeof(uint32_t);  // count prefix
+
+            l_size = (a_field->flags & DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX) ? 0u : sizeof(uint32_t);
             
             // Calculate array element sizes
             size_t element_size = 0;
@@ -1248,6 +1273,7 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
         }
         case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC: {
             const void **l_array_ptr = (const void**)(obj_ptr + a_field->offset);
+            const bool l_no_prefix = (a_field->flags & DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX) != 0;
             
             // ALL count fields MUST be uint32_t for cross-platform serialization compatibility
             const uint32_t *l_count_ptr = (const uint32_t*)(obj_ptr + a_field->count_offset);
@@ -1263,16 +1289,18 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
                 l_count_value_u32 = 0;
             }
             
-            // Check buffer space for count prefix
-            if (a_ctx->offset + sizeof(uint32_t) > a_ctx->buffer_size) {
-                log_it(L_ERROR, "Buffer overflow in ARRAY_DYNAMIC field '%s' count: offset=%zu + 4 > buffer_size=%zu", 
-                       a_field->name, a_ctx->offset, a_ctx->buffer_size);
-                return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
+            if (!l_no_prefix) {
+                // Check buffer space for count prefix
+                if (a_ctx->offset + sizeof(uint32_t) > a_ctx->buffer_size) {
+                    log_it(L_ERROR, "Buffer overflow in ARRAY_DYNAMIC field '%s' count: offset=%zu + 4 > buffer_size=%zu",
+                           a_field->name, a_ctx->offset, a_ctx->buffer_size);
+                    return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
+                }
+
+                // Write count prefix
+                s_write_uint32_le(a_ctx->buffer + a_ctx->offset, l_count_value_u32);
+                a_ctx->offset += sizeof(uint32_t);
             }
-            
-            // Write count prefix
-            s_write_uint32_le(a_ctx->buffer + a_ctx->offset, l_count_value_u32);
-            a_ctx->offset += sizeof(uint32_t);
             
             // For nested arrays, rely on per-field checks during element serialization.
             // For simple arrays, pre-check aggregated size with overflow-safe math.
@@ -1299,8 +1327,14 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
                     const uint8_t *l_element_ptr = (const uint8_t*)*l_array_ptr;
                     
                     if (!l_element_ptr) {
-                        log_it(L_WARNING, "Array field '%s' has NULL data pointer but non-zero count %u", 
+                        log_it(L_WARNING, "Array field '%s' has NULL data pointer but non-zero count %u",
                                a_field->name, l_count_value_u32);
+                        if (l_no_prefix) {
+                            // No prefix to rewrite — caller framing already
+                            // committed the count.  Treat as a hard error
+                            // rather than silently emit a desynchronised blob.
+                            return DAP_SERIALIZE_ERROR_INVALID_OBJECT;
+                        }
                         // Rewrite count prefix as 0 and stop — byte buffer is trusted on sender side.
                         s_write_uint32_le(a_ctx->buffer + a_ctx->offset - sizeof(uint32_t), 0);
                         return DAP_SERIALIZE_ERROR_SUCCESS;
@@ -1711,14 +1745,27 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
         }
         case DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC: {
             uint8_t *obj_ptr = (uint8_t*)a_object;
-            // Read count prefix
-            size_t l_end_hdr = 0;
-            if (!s_safe_add_size(a_ctx->offset, sizeof(uint32_t), &l_end_hdr) ||
-                l_end_hdr > a_ctx->buffer_size) {
-                return DAP_SERIALIZE_ERROR_INVALID_DATA;
+            const bool l_no_prefix = (a_field->flags & DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX) != 0;
+            uint32_t count = 0;
+
+            if (l_no_prefix) {
+                // Count is supplied via count_offset by the caller — no prefix on wire.
+                // count_offset == 0 is a *valid* layout (the count field can legitimately
+                // be the first member), so we cannot reject it on that basis.  The
+                // caller's contract is to ensure the count slot has been populated
+                // before calling from_buffer_raw_preserve().
+                const uint32_t *l_count_src = (const uint32_t*)(obj_ptr + a_field->count_offset);
+                count = *l_count_src;
+            } else {
+                // Read count prefix
+                size_t l_end_hdr = 0;
+                if (!s_safe_add_size(a_ctx->offset, sizeof(uint32_t), &l_end_hdr) ||
+                    l_end_hdr > a_ctx->buffer_size) {
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                }
+                count = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
+                a_ctx->offset += sizeof(uint32_t);
             }
-            uint32_t count = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
-            a_ctx->offset += sizeof(uint32_t);
 
             if (count > DAP_SERIALIZE_MAX_ARRAY_COUNT) {
                 log_it(L_ERROR, "ARRAY_DYNAMIC field '%s' count %u exceeds limit %d",
@@ -1726,8 +1773,8 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
                 return DAP_SERIALIZE_ERROR_INVALID_DATA;
             }
 
-            // Store count if needed
-            if (a_field->count_offset) {
+            // Store count if needed (only when prefix was on the wire).
+            if (!l_no_prefix && a_field->count_offset) {
                 uint32_t *count_ptr = (uint32_t*)(obj_ptr + a_field->count_offset);
                 *count_ptr = count;
             }

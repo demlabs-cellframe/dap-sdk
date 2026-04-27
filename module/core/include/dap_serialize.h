@@ -81,7 +81,22 @@ typedef enum dap_serialize_field_flags {
     DAP_SERIALIZE_FLAG_NULL_TERMINATED = (1 << 6), ///< Add null terminator for strings
     DAP_SERIALIZE_FLAG_ZERO_FILL = (1 << 7), ///< Zero-fill unused space
     DAP_SERIALIZE_FLAG_SECURE_CLEAR = (1 << 8), ///< Securely clear sensitive data
-    DAP_SERIALIZE_FLAG_CONDITIONAL = (1 << 9) ///< Field included only if condition function returns true
+    DAP_SERIALIZE_FLAG_CONDITIONAL = (1 << 9), ///< Field included only if condition function returns true
+    /**
+     * @brief ARRAY_DYNAMIC: omit the on-wire 4-byte count prefix.
+     *
+     * The element count is taken from the structure field referenced by
+     * @c count_offset on both the encode AND decode paths.  Use this when
+     * the count is already framed externally (e.g. carried in an
+     * application-level header) so that the schema does not duplicate
+     * it on the wire.
+     *
+     * Decoder contract: the destination object MUST be pre-initialised
+     * with the count value before the call.  Use
+     * dap_serialize_from_buffer_raw_preserve() to skip the implicit
+     * zero-init that the standard entry points perform.
+     */
+    DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX = (1 << 10)
 } dap_serialize_field_flags_t;
 
 /**
@@ -344,6 +359,21 @@ dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_
                                                      void *a_context);
 
 /**
+ * @brief Same as dap_serialize_from_buffer_raw but does NOT zero @p a_object.
+ *
+ * The object's memory is left in the state the caller provided.  This is
+ * required when a schema declares an ARRAY_DYNAMIC field with the
+ * DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX flag — the framework expects the
+ * @c count_offset slot to already hold the externally-framed length on
+ * the deserialise path, and an implicit memset would overwrite it.
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw_preserve(const dap_serialize_schema_t *a_schema,
+                                                              const uint8_t *a_buffer,
+                                                              size_t a_buffer_size,
+                                                              void *a_object,
+                                                              void *a_context);
+
+/**
  * @brief Semantic alias for dap_serialize_from_buffer
  * 
  * Deserialize object from buffer with metadata header.
@@ -387,6 +417,22 @@ static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw(
     void *a_context)
 {
     return dap_serialize_from_buffer_raw(a_schema, a_buffer, a_buffer_size, a_object, a_context);
+}
+
+/**
+ * @brief Semantic alias for dap_serialize_from_buffer_raw_preserve.
+ *
+ * Use when the caller has pre-populated count fields referenced by
+ * NO_COUNT_PREFIX ARRAY_DYNAMIC entries in the schema.
+ */
+static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw_preserve(
+    const dap_serialize_schema_t *a_schema,
+    const uint8_t *a_buffer,
+    size_t a_buffer_size,
+    void *a_object,
+    void *a_context)
+{
+    return dap_serialize_from_buffer_raw_preserve(a_schema, a_buffer, a_buffer_size, a_object, a_context);
 }
 
 /**

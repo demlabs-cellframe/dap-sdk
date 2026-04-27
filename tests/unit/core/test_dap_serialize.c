@@ -1393,6 +1393,235 @@ static void test_fixed_array_endianness_matrix(void) {
     log_it(L_INFO, "ARRAY_FIXED endianness matrix passed");
 }
 
+/* ---------------------------------------------------------------------- *
+ *  NO_COUNT_PREFIX coverage                                                *
+ *                                                                          *
+ *  Validates that DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX:                      *
+ *    1. Drops the 4-byte length prefix on the wire (encode + decode).     *
+ *    2. Honours the externally-framed count via count_offset.             *
+ *    3. Round-trips with from_buffer_raw_preserve() — i.e. the count      *
+ *       slot the caller wrote before the call survives the call.         *
+ *    4. Combines correctly with NESTED element schemas (analogous to     *
+ *       the chipmunk multi-signature use case).                          *
+ * ---------------------------------------------------------------------- */
+
+typedef struct test_no_prefix_obj {
+    uint32_t signer_count;
+    uint8_t *payload;          /* count * sizeof(uint32_t) raw bytes */
+} test_no_prefix_obj_t;
+
+static const dap_serialize_field_t s_no_prefix_fields[] = {
+    {
+        .name         = "signers",
+        .type         = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC,
+        .flags        = DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX,
+        .offset       = offsetof(test_no_prefix_obj_t, payload),
+        .size         = sizeof(uint32_t),
+        .count_offset = offsetof(test_no_prefix_obj_t, signer_count),
+    },
+};
+static const dap_serialize_schema_t s_no_prefix_schema = {
+    .name        = "test_no_prefix",
+    .version     = 1,
+    .struct_size = sizeof(test_no_prefix_obj_t),
+    .field_count = 1,
+    .fields      = s_no_prefix_fields,
+    .magic       = DAP_SERIALIZE_MAGIC_NUMBER,
+};
+
+static void test_array_dynamic_no_count_prefix_simple(void) {
+    log_it(L_INFO, "Testing ARRAY_DYNAMIC NO_COUNT_PREFIX (simple elements)...");
+
+    const uint32_t l_count = 4u;
+    uint32_t l_payload[4] = { 0xAABBCCDDu, 0x11223344u, 0xDEADBEEFu, 0xCAFEBABEu };
+    test_no_prefix_obj_t l_src = {
+        .signer_count = l_count,
+        .payload      = (uint8_t*)l_payload,
+    };
+
+    /* Encode size: only count * elem (4*4=16), NO 4-byte prefix. */
+    size_t l_calc = dap_serialize_calc_size_raw(&s_no_prefix_schema, NULL, &l_src, NULL);
+    assert(l_calc == 16u);
+
+    uint8_t l_wire[64] = {0};
+    dap_serialize_result_t l_sr = dap_serialize_to_buffer_raw(&s_no_prefix_schema,
+                                                              &l_src, l_wire, sizeof(l_wire), NULL);
+    assert(l_sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_sr.bytes_written == 16u);
+    /* Verify: first 4 bytes are the *first element* (LE 0xAABBCCDD), NOT a count. */
+    assert(l_wire[0] == 0xDDu && l_wire[1] == 0xCCu &&
+           l_wire[2] == 0xBBu && l_wire[3] == 0xAAu);
+
+    /* Round-trip via _preserve so the caller-set count survives. */
+    test_no_prefix_obj_t l_dst = { .signer_count = l_count, .payload = NULL };
+    dap_serialize_result_t l_dr = dap_serialize_from_buffer_raw_preserve(
+            &s_no_prefix_schema, l_wire, l_sr.bytes_written, &l_dst, NULL);
+    assert(l_dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_dr.bytes_read == 16u);
+    assert(l_dst.signer_count == l_count);
+    assert(l_dst.payload != NULL);
+    assert(memcmp(l_dst.payload, l_payload, sizeof(l_payload)) == 0);
+    DAP_DELETE(l_dst.payload);
+
+    log_it(L_INFO, "ARRAY_DYNAMIC NO_COUNT_PREFIX (simple) passed");
+}
+
+static void test_array_dynamic_no_count_prefix_zero_init_fails(void) {
+    log_it(L_INFO, "Testing ARRAY_DYNAMIC NO_COUNT_PREFIX with implicit zero-init…");
+
+    const uint32_t l_count = 3u;
+    uint32_t l_payload[3] = { 1u, 2u, 3u };
+    test_no_prefix_obj_t l_src = {
+        .signer_count = l_count,
+        .payload      = (uint8_t*)l_payload,
+    };
+
+    uint8_t l_wire[32] = {0};
+    dap_serialize_result_t l_sr = dap_serialize_to_buffer_raw(&s_no_prefix_schema,
+                                                              &l_src, l_wire, sizeof(l_wire), NULL);
+    assert(l_sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_sr.bytes_written == 12u);
+
+    /* Use the standard (zero-initialising) entry point.  The count
+     * slot is wiped, so the array decodes as zero elements and the
+     * residual buffer bytes are *not* consumed.  The round-trip is
+     * lossy by design — this is the contract that motivates the
+     * dedicated _preserve variant. */
+    test_no_prefix_obj_t l_dst = { .signer_count = 999, .payload = (uint8_t*)0xdeadbeef };
+    dap_serialize_result_t l_dr = dap_serialize_from_buffer_raw(
+            &s_no_prefix_schema, l_wire, l_sr.bytes_written, &l_dst, NULL);
+    assert(l_dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_dst.signer_count == 0u);
+    assert(l_dst.payload == NULL);
+    assert(l_dr.bytes_read == 0u);
+
+    log_it(L_INFO, "ARRAY_DYNAMIC NO_COUNT_PREFIX zero-init pitfall path passed");
+}
+
+/* Schema-magic flag: schemas with a non-zero custom magic must be accepted
+ * by from_buffer_raw_preserve so it can be wired into chipmunk's CHMA. */
+typedef struct test_no_prefix_custom {
+    uint32_t n;
+    uint8_t *data;
+} test_no_prefix_custom_t;
+static const dap_serialize_field_t s_no_prefix_custom_fields[] = {
+    {
+        .name         = "items",
+        .type         = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC,
+        .flags        = DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX,
+        .offset       = offsetof(test_no_prefix_custom_t, data),
+        .size         = 1u,
+        .count_offset = offsetof(test_no_prefix_custom_t, n),
+    },
+};
+static const dap_serialize_schema_t s_no_prefix_custom_schema = {
+    .name        = "test_no_prefix_custom",
+    .version     = 1,
+    .struct_size = sizeof(test_no_prefix_custom_t),
+    .field_count = 1,
+    .fields      = s_no_prefix_custom_fields,
+    .magic       = 0xDEADC0DEu, /* arbitrary non-zero, not the framework default */
+};
+
+static void test_array_dynamic_no_count_prefix_custom_magic(void) {
+    log_it(L_INFO, "Testing ARRAY_DYNAMIC NO_COUNT_PREFIX with custom schema magic…");
+    uint8_t l_payload[5] = { 'h', 'e', 'l', 'l', 'o' };
+    test_no_prefix_custom_t l_src = { .n = 5, .data = l_payload };
+
+    uint8_t l_wire[16] = {0};
+    dap_serialize_result_t l_sr = dap_serialize_to_buffer_raw(&s_no_prefix_custom_schema,
+                                                              &l_src, l_wire, sizeof(l_wire), NULL);
+    assert(l_sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_sr.bytes_written == 5u);
+    assert(memcmp(l_wire, l_payload, 5) == 0);
+
+    test_no_prefix_custom_t l_dst = { .n = 5, .data = NULL };
+    dap_serialize_result_t l_dr = dap_serialize_from_buffer_raw_preserve(
+            &s_no_prefix_custom_schema, l_wire, l_sr.bytes_written, &l_dst, NULL);
+    assert(l_dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_dst.n == 5u);
+    assert(l_dst.data && memcmp(l_dst.data, l_payload, 5) == 0);
+    DAP_DELETE(l_dst.data);
+    log_it(L_INFO, "Custom-magic NO_COUNT_PREFIX passed");
+}
+
+/* Nested element schema variant: analogous to chipmunk_signer_record_wire. */
+typedef struct test_no_prefix_elem {
+    uint32_t a;
+    uint16_t b;
+} test_no_prefix_elem_t;
+static const dap_serialize_field_t s_no_prefix_elem_fields[] = {
+    DAP_SERIALIZE_FIELD_SIMPLE(test_no_prefix_elem_t, a, DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(test_no_prefix_elem_t, b, DAP_SERIALIZE_TYPE_UINT16),
+};
+static const dap_serialize_schema_t s_no_prefix_elem_schema = {
+    .name        = "test_no_prefix_elem",
+    .version     = 1,
+    .struct_size = sizeof(test_no_prefix_elem_t),
+    .field_count = 2,
+    .fields      = s_no_prefix_elem_fields,
+    .magic       = DAP_SERIALIZE_MAGIC_NUMBER,
+};
+typedef struct test_no_prefix_outer {
+    uint32_t n;
+    test_no_prefix_elem_t *elems;
+} test_no_prefix_outer_t;
+static const dap_serialize_field_t s_no_prefix_outer_fields[] = {
+    {
+        .name         = "elems",
+        .type         = DAP_SERIALIZE_TYPE_ARRAY_DYNAMIC,
+        .flags        = DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX,
+        .offset       = offsetof(test_no_prefix_outer_t, elems),
+        .count_offset = offsetof(test_no_prefix_outer_t, n),
+        .nested_schema = &s_no_prefix_elem_schema,
+    },
+};
+static const dap_serialize_schema_t s_no_prefix_outer_schema = {
+    .name        = "test_no_prefix_outer",
+    .version     = 1,
+    .struct_size = sizeof(test_no_prefix_outer_t),
+    .field_count = 1,
+    .fields      = s_no_prefix_outer_fields,
+    .magic       = DAP_SERIALIZE_MAGIC_NUMBER,
+};
+
+static void test_array_dynamic_no_count_prefix_nested(void) {
+    log_it(L_INFO, "Testing ARRAY_DYNAMIC NO_COUNT_PREFIX (nested struct elements)…");
+    test_no_prefix_elem_t l_elems[3] = {
+        { .a = 0x11111111u, .b = 0xAAAA },
+        { .a = 0x22222222u, .b = 0xBBBB },
+        { .a = 0x33333333u, .b = 0xCCCC },
+    };
+    test_no_prefix_outer_t l_src = { .n = 3, .elems = l_elems };
+
+    /* element_size = 4 + 2 = 6;  total = 3 * 6 = 18, NO prefix. */
+    size_t l_calc = dap_serialize_calc_size_raw(&s_no_prefix_outer_schema, NULL, &l_src, NULL);
+    assert(l_calc == 18u);
+
+    uint8_t l_wire[64] = {0};
+    dap_serialize_result_t l_sr = dap_serialize_to_buffer_raw(&s_no_prefix_outer_schema,
+                                                              &l_src, l_wire, sizeof(l_wire), NULL);
+    assert(l_sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_sr.bytes_written == 18u);
+    /* First element a = 0x11111111 LE → 11 11 11 11 at offset 0. */
+    assert(l_wire[0] == 0x11 && l_wire[1] == 0x11 && l_wire[2] == 0x11 && l_wire[3] == 0x11);
+    /* First element b = 0xAAAA LE → AA AA at offset 4. */
+    assert(l_wire[4] == 0xAA && l_wire[5] == 0xAA);
+
+    test_no_prefix_outer_t l_dst = { .n = 3, .elems = NULL };
+    dap_serialize_result_t l_dr = dap_serialize_from_buffer_raw_preserve(
+            &s_no_prefix_outer_schema, l_wire, l_sr.bytes_written, &l_dst, NULL);
+    assert(l_dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_dr.bytes_read == 18u);
+    assert(l_dst.n == 3u);
+    for (uint32_t i = 0; i < 3u; ++i) {
+        assert(l_dst.elems[i].a == l_elems[i].a);
+        assert(l_dst.elems[i].b == l_elems[i].b);
+    }
+    DAP_DELETE(l_dst.elems);
+    log_it(L_INFO, "Nested NO_COUNT_PREFIX passed");
+}
+
 /**
  * @brief Main test function
  */
@@ -1428,7 +1657,13 @@ int main(int argc, char *argv[]) {
     test_nested_struct_truncated_at_boundary();
     test_calc_size_mutual_recursion_guard();
     test_fixed_array_endianness_matrix();
-    
+
+    /* NO_COUNT_PREFIX flag */
+    test_array_dynamic_no_count_prefix_simple();
+    test_array_dynamic_no_count_prefix_zero_init_fails();
+    test_array_dynamic_no_count_prefix_custom_magic();
+    test_array_dynamic_no_count_prefix_nested();
+
     log_it(L_INFO, "All DAP Serialize tests passed successfully!");
     
     return 0;
