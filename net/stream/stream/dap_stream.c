@@ -1294,7 +1294,8 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     }
     
     dap_events_socket_t *l_es = a_stream->esocket;
-    byte_t *l_pos = (byte_t*)a_data;
+    byte_t *l_start = (byte_t*)a_data;
+    byte_t *l_pos = l_start;
     byte_t *l_end = l_pos + a_data_size;
     size_t l_shift = 0, l_processed_size = 0;
     bool l_found_sig0 = false;
@@ -1316,9 +1317,10 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
+                size_t l_packet_end = (size_t)(l_pos - l_start) + l_shift;
                 s_stream_proc_pkt_in(a_stream, l_pkt);
                 if (s_stream_esocket_is_detached(l_es)) {
-                    l_processed_size += l_shift;
+                    l_processed_size = l_packet_end;
                     break;
                 }
             } else {
@@ -1327,7 +1329,7 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
                 break;
             }
             l_pos += l_shift;
-            l_processed_size += l_shift;
+            l_processed_size = (size_t)(l_pos - l_start);
         } else {
             ++l_pos;
         }
