@@ -22,16 +22,20 @@
 #include "chipmunk.h"
 #include "chipmunk_hots.h"
 #include "chipmunk_tree.h"
+#include "chipmunk_multi_signature_serialize_schema.h"
 #include "dap_common.h"
+#include "dap_serialize.h"
 
 #define LOG_TAG "chipmunk_multi_sig_codec"
 
 /* ---------------------------------------------------------------------- *
- *  Low-level LE helpers                                                  *
- *                                                                        *
- *  The codec is byte-level canonical on purpose — we never rely on       *
- *  host byte order or struct layout so the wire representation is        *
- *  identical on every platform the DAP SDK ships to.                     *
+ *  Low-level LE helpers (header framing only)                             *
+ *                                                                         *
+ *  The body itself is produced by dap_serialize via the wire-mirror       *
+ *  schemas.  These helpers cover only the 24-byte CHMA header that        *
+ *  prefixes every multi-signature blob — that framing is intentionally    *
+ *  hand-coded so we can structurally triage the buffer (magic, version,   *
+ *  total length) without invoking the schema engine.                      *
  * ---------------------------------------------------------------------- */
 
 static inline void s_write_u16(uint8_t *a_dst, uint16_t a_value)
@@ -78,50 +82,7 @@ static inline uint64_t s_read_u64(const uint8_t *a_src)
 }
 
 /* ---------------------------------------------------------------------- *
- *  Polynomial encoders / decoders                                        *
- *                                                                        *
- *  We intentionally pass int32 coefficients through the wire as raw      *
- *  two's-complement LE bytes.  Range validation and modular reduction    *
- *  are cryptographic concerns handled by chipmunk_verify_multi_signature *
- *  — enforcing them here would either duplicate that logic or reject     *
- *  legitimately-produced signatures whose intermediate coefficients sit  *
- *  temporarily in non-canonical form.                                    *
- * ---------------------------------------------------------------------- */
-
-static void s_write_poly_coeffs(uint8_t *a_dst, const int32_t *a_coeffs)
-{
-    for (int i = 0; i < CHIPMUNK_N; ++i) {
-        s_write_u32(a_dst + (size_t)i * 4u, (uint32_t)a_coeffs[i]);
-    }
-}
-
-static void s_read_poly_coeffs(int32_t *a_dst, const uint8_t *a_src)
-{
-    for (int i = 0; i < CHIPMUNK_N; ++i) {
-        a_dst[i] = (int32_t)s_read_u32(a_src + (size_t)i * 4u);
-    }
-}
-
-#define CHIPMUNK_CODEC_POLY_BYTES          ((size_t)CHIPMUNK_N * 4u)
-#define CHIPMUNK_CODEC_HOTS_SIGMA_BYTES    (CHIPMUNK_CODEC_POLY_BYTES * (size_t)CHIPMUNK_GAMMA)
-#define CHIPMUNK_CODEC_HOTS_PK_BYTES       (CHIPMUNK_CODEC_POLY_BYTES * 2u)
-#define CHIPMUNK_CODEC_RHO_SEED_BYTES      32u
-#define CHIPMUNK_CODEC_PATH_NODE_BYTES     (CHIPMUNK_CODEC_POLY_BYTES * 2u)
-#define CHIPMUNK_CODEC_FIXED_BODY_BYTES    ( /* message_hash     */ 32u         \
-                                           + /* hvc_hasher_seed  */ 32u         \
-                                           + /* is_randomized+rsvd */ 4u        \
-                                           + /* tree_root        */ CHIPMUNK_CODEC_POLY_BYTES \
-                                           + /* aggregated_hots  */ CHIPMUNK_CODEC_HOTS_SIGMA_BYTES)
-
-#define CHIPMUNK_CODEC_PER_SIGNER_HEADER   ( /* public_key_roots */ CHIPMUNK_CODEC_POLY_BYTES \
-                                           + /* hots_pks.v0/v1   */ CHIPMUNK_CODEC_HOTS_PK_BYTES \
-                                           + /* rho_seeds        */ CHIPMUNK_CODEC_RHO_SEED_BYTES \
-                                           + /* leaf_indices     */ 4u            \
-                                           + /* proof.index      */ 8u            \
-                                           + /* proof.path_len   */ 4u)
-
-/* ---------------------------------------------------------------------- *
- *  Deep-free                                                             *
+ *  Deep-free                                                              *
  * ---------------------------------------------------------------------- */
 
 void chipmunk_multi_signature_deep_free(chipmunk_multi_signature_t *a_multi_sig)
@@ -168,10 +129,11 @@ void chipmunk_multi_signature_deep_free(chipmunk_multi_signature_t *a_multi_sig)
 }
 
 /* ---------------------------------------------------------------------- *
- *  Size calculation + structural preflight                               *
- *                                                                        *
- *  We also use s_compute_size for the serialise path's preflight, so the *
- *  producer and the verifier reject the same set of malformed inputs.    *
+ *  Pre-flight: cross-signer invariant validation                          *
+ *                                                                         *
+ *  The schema engine has no concept of cross-element invariants, so we    *
+ *  enforce the chipmunk-protocol-level requirement (every proof has the   *
+ *  same path length) before invoking the serialiser.                      *
  * ---------------------------------------------------------------------- */
 
 static int s_preflight(const chipmunk_multi_signature_t *a_multi_sig,
@@ -209,6 +171,14 @@ static int s_preflight(const chipmunk_multi_signature_t *a_multi_sig,
     return CHIPMUNK_MULTI_SIG_CODEC_OK;
 }
 
+/* ---------------------------------------------------------------------- *
+ *  Size calculation — schema driven                                       *
+ *                                                                         *
+ *  Walks the wire-mirror schema once over a transient mirror of the      *
+ *  runtime struct.  No deep copy of polynomial data; the mirror only     *
+ *  allocates a signer_count-sized adapter array.                         *
+ * ---------------------------------------------------------------------- */
+
 static int s_compute_size(const chipmunk_multi_signature_t *a_multi_sig,
                           size_t *a_out_size,
                           uint32_t *a_out_path_length)
@@ -219,12 +189,23 @@ static int s_compute_size(const chipmunk_multi_signature_t *a_multi_sig,
         return l_rc;
     }
 
-    const size_t l_per_signer_body = CHIPMUNK_CODEC_PER_SIGNER_HEADER
-                                   + (size_t)l_path_length * CHIPMUNK_CODEC_PATH_NODE_BYTES;
+    chipmunk_multi_signature_wire_t l_wire = {0};
+    if (chipmunk_multi_signature_to_wire(a_multi_sig, &l_wire) != 0) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_NULL;
+    }
 
-    const size_t l_total = (size_t)CHIPMUNK_MULTI_SIG_HEADER_SIZE
-                         + CHIPMUNK_CODEC_FIXED_BODY_BYTES
-                         + a_multi_sig->signer_count * l_per_signer_body;
+    const size_t l_body = dap_serialize_calc_size_raw(
+            &chipmunk_multi_signature_wire_schema, NULL, &l_wire, NULL);
+    chipmunk_multi_signature_wire_release(&l_wire);
+
+    if (l_body == 0) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BUFFER_TOO_SMALL;
+    }
+    /* Header is fixed-size, never overflows by construction. */
+    const size_t l_total = (size_t)CHIPMUNK_MULTI_SIG_HEADER_SIZE + l_body;
+    if (l_total < l_body) {  /* defensive against a malformed schema */
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BUFFER_TOO_SMALL;
+    }
 
     if (a_out_size) {
         *a_out_size = l_total;
@@ -243,7 +224,79 @@ int chipmunk_multi_signature_serialized_size(
 }
 
 /* ---------------------------------------------------------------------- *
- *  Serialise                                                             *
+ *  CHMA header writer / reader                                            *
+ * ---------------------------------------------------------------------- */
+
+static void s_write_header(uint8_t *a_dst,
+                            uint32_t a_signer_count,
+                            uint32_t a_path_length,
+                            uint64_t a_total_bytes)
+{
+    a_dst[0] = CHIPMUNK_MULTI_SIG_MAGIC0;
+    a_dst[1] = CHIPMUNK_MULTI_SIG_MAGIC1;
+    a_dst[2] = CHIPMUNK_MULTI_SIG_MAGIC2;
+    a_dst[3] = CHIPMUNK_MULTI_SIG_MAGIC3;
+    s_write_u16(a_dst + 4,  CHIPMUNK_MULTI_SIG_VERSION);
+    s_write_u16(a_dst + 6,  0);
+    s_write_u32(a_dst + 8,  a_signer_count);
+    s_write_u32(a_dst + 12, a_path_length);
+    s_write_u64(a_dst + 16, a_total_bytes);
+}
+
+static int s_parse_header(const uint8_t *a_buffer,
+                           size_t a_buffer_size,
+                           uint32_t *a_out_signer_count,
+                           uint32_t *a_out_path_length,
+                           uint64_t *a_out_payload_len)
+{
+    if (a_buffer_size < (size_t)CHIPMUNK_MULTI_SIG_HEADER_SIZE) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BUFFER_TOO_SMALL;
+    }
+    const uint8_t *l_p = a_buffer;
+
+    if (l_p[0] != CHIPMUNK_MULTI_SIG_MAGIC0
+        || l_p[1] != CHIPMUNK_MULTI_SIG_MAGIC1
+        || l_p[2] != CHIPMUNK_MULTI_SIG_MAGIC2
+        || l_p[3] != CHIPMUNK_MULTI_SIG_MAGIC3) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_MAGIC;
+    }
+    const uint16_t l_version  = s_read_u16(l_p + 4);
+    const uint16_t l_reserved = s_read_u16(l_p + 6);
+    if (l_version != CHIPMUNK_MULTI_SIG_VERSION) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_VERSION;
+    }
+    if (l_reserved != 0) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_RESERVED;
+    }
+
+    const uint32_t l_signer_count = s_read_u32(l_p + 8);
+    const uint32_t l_path_length  = s_read_u32(l_p + 12);
+    const uint64_t l_payload_len  = s_read_u64(l_p + 16);
+
+    if (l_signer_count == 0
+        || l_signer_count > (uint32_t)CHIPMUNK_MULTI_SIG_MAX_SIGNERS) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_SIGNER_COUNT;
+    }
+    if (l_path_length == 0 || l_path_length >= (uint32_t)CHIPMUNK_TREE_HEIGHT_MAX) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_PATH_LENGTH;
+    }
+    if ((size_t)l_payload_len != a_buffer_size) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_SIZE_MISMATCH;
+    }
+
+    if (a_out_signer_count) *a_out_signer_count = l_signer_count;
+    if (a_out_path_length)  *a_out_path_length  = l_path_length;
+    if (a_out_payload_len)  *a_out_payload_len  = l_payload_len;
+    return CHIPMUNK_MULTI_SIG_CODEC_OK;
+}
+
+/* ---------------------------------------------------------------------- *
+ *  Public serialise                                                       *
+ *                                                                         *
+ *  Writes the 24-byte CHMA header, then dispatches the body to            *
+ *  dap_serialize via the wire-mirror schema.  No deep copy of poly data; *
+ *  the wire mirror lives on the stack and only owns the signer_count-     *
+ *  sized adapter array, which we release after the schema walk.          *
  * ---------------------------------------------------------------------- */
 
 int chipmunk_multi_signature_serialize(
@@ -266,72 +319,39 @@ int chipmunk_multi_signature_serialize(
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_BUFFER_TOO_SMALL;
     }
 
-    uint8_t *l_p = a_buffer;
+    s_write_header(a_buffer,
+                   (uint32_t)a_multi_sig->signer_count,
+                   l_path_length,
+                   (uint64_t)l_total);
 
-    /* Header */
-    l_p[0] = CHIPMUNK_MULTI_SIG_MAGIC0;
-    l_p[1] = CHIPMUNK_MULTI_SIG_MAGIC1;
-    l_p[2] = CHIPMUNK_MULTI_SIG_MAGIC2;
-    l_p[3] = CHIPMUNK_MULTI_SIG_MAGIC3;
-    l_p += 4;
-    s_write_u16(l_p, CHIPMUNK_MULTI_SIG_VERSION_V1); l_p += 2;
-    s_write_u16(l_p, 0);                             l_p += 2;
-    s_write_u32(l_p, (uint32_t)a_multi_sig->signer_count); l_p += 4;
-    s_write_u32(l_p, l_path_length);                 l_p += 4;
-    s_write_u64(l_p, (uint64_t)l_total);             l_p += 8;
-
-    /* Fixed body */
-    memcpy(l_p, a_multi_sig->message_hash, 32);    l_p += 32;
-    memcpy(l_p, a_multi_sig->hvc_hasher_seed, 32); l_p += 32;
-    *l_p++ = a_multi_sig->aggregated_hots.is_randomized ? 1 : 0;
-    l_p[0] = 0; l_p[1] = 0; l_p[2] = 0;            l_p += 3;  /* reserved */
-
-    s_write_poly_coeffs(l_p, a_multi_sig->tree_root.coeffs);
-    l_p += CHIPMUNK_CODEC_POLY_BYTES;
-
-    for (int k = 0; k < CHIPMUNK_GAMMA; ++k) {
-        s_write_poly_coeffs(l_p, a_multi_sig->aggregated_hots.sigma[k].coeffs);
-        l_p += CHIPMUNK_CODEC_POLY_BYTES;
+    chipmunk_multi_signature_wire_t l_wire = {0};
+    if (chipmunk_multi_signature_to_wire(a_multi_sig, &l_wire) != 0) {
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_NULL;
     }
 
-    /* Per-signer records */
-    for (size_t i = 0; i < a_multi_sig->signer_count; ++i) {
-        s_write_poly_coeffs(l_p, a_multi_sig->public_key_roots[i].coeffs);
-        l_p += CHIPMUNK_CODEC_POLY_BYTES;
+    dap_serialize_result_t l_ser = dap_serialize_to_buffer_raw(
+            &chipmunk_multi_signature_wire_schema,
+            &l_wire,
+            a_buffer + CHIPMUNK_MULTI_SIG_HEADER_SIZE,
+            a_buffer_size - CHIPMUNK_MULTI_SIG_HEADER_SIZE,
+            NULL);
+    chipmunk_multi_signature_wire_release(&l_wire);
 
-        s_write_poly_coeffs(l_p, a_multi_sig->hots_pks[i].v0.coeffs);
-        l_p += CHIPMUNK_CODEC_POLY_BYTES;
-        s_write_poly_coeffs(l_p, a_multi_sig->hots_pks[i].v1.coeffs);
-        l_p += CHIPMUNK_CODEC_POLY_BYTES;
-
-        memcpy(l_p, a_multi_sig->rho_seeds[i], CHIPMUNK_CODEC_RHO_SEED_BYTES);
-        l_p += CHIPMUNK_CODEC_RHO_SEED_BYTES;
-
-        s_write_u32(l_p, a_multi_sig->leaf_indices[i]);
-        l_p += 4;
-
-        s_write_u64(l_p, (uint64_t)a_multi_sig->proofs[i].index);
-        l_p += 8;
-        s_write_u32(l_p, (uint32_t)a_multi_sig->proofs[i].path_length);
-        l_p += 4;
-
-        for (size_t j = 0; j < a_multi_sig->proofs[i].path_length; ++j) {
-            s_write_poly_coeffs(l_p, a_multi_sig->proofs[i].nodes[j].left.coeffs);
-            l_p += CHIPMUNK_CODEC_POLY_BYTES;
-            s_write_poly_coeffs(l_p, a_multi_sig->proofs[i].nodes[j].right.coeffs);
-            l_p += CHIPMUNK_CODEC_POLY_BYTES;
-        }
-    }
-
-    const size_t l_actual = (size_t)(l_p - a_buffer);
-    if (l_actual != l_total) {
-        /* This is a programming error — the size calculation above must */
-        /* match the serialise walk byte-for-byte.  Fail loudly so a     */
-        /* mismatched layout surfaces in tests instead of producing a    */
-        /* silently truncated blob.                                      */
+    if (l_ser.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
         log_it(L_ERROR,
-               "chipmunk_multi_signature_serialize: internal size "
-               "mismatch (walked %zu, computed %zu) — blob rejected",
+               "chipmunk_multi_signature_serialize: schema writer failed "
+               "(error=%d, field=%s, message=%s)",
+               l_ser.error_code,
+               l_ser.failed_field ? l_ser.failed_field : "?",
+               l_ser.error_message ? l_ser.error_message : "?");
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_SIZE_MISMATCH;
+    }
+
+    const size_t l_actual = (size_t)CHIPMUNK_MULTI_SIG_HEADER_SIZE + l_ser.bytes_written;
+    if (l_actual != l_total) {
+        log_it(L_ERROR,
+               "chipmunk_multi_signature_serialize: schema-walk / size-calc "
+               "disagreement (walked %zu vs computed %zu) — blob rejected",
                l_actual, l_total);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_SIZE_MISMATCH;
     }
@@ -342,10 +362,14 @@ int chipmunk_multi_signature_serialize(
 }
 
 /* ---------------------------------------------------------------------- *
- *  Deserialise                                                           *
- *                                                                        *
- *  On every failure path we deep-free the partially populated struct so  *
- *  the caller sees a canonical, empty output.                            *
+ *  Public deserialise                                                     *
+ *                                                                         *
+ *  After the 24-byte CHMA header is validated, we hand the body to the    *
+ *  schema engine with the count fields (signer_count) pre-populated in    *
+ *  the wire mirror — hence dap_serialize_from_buffer_raw_preserve() so    *
+ *  the implicit memset() does not clobber the outer-framed counts.       *
+ *  chipmunk_multi_signature_from_wire() then transfers ownership of all   *
+ *  heap blocks into the runtime struct.                                  *
  * ---------------------------------------------------------------------- */
 
 int chipmunk_multi_signature_deserialize(
@@ -358,138 +382,75 @@ int chipmunk_multi_signature_deserialize(
     }
     memset(a_multi_sig, 0, sizeof(*a_multi_sig));
 
-    if (a_buffer_size < (size_t)CHIPMUNK_MULTI_SIG_HEADER_SIZE) {
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BUFFER_TOO_SMALL;
+    uint32_t l_signer_count = 0;
+    uint32_t l_path_length  = 0;
+    uint64_t l_payload_len  = 0;
+    int l_rc = s_parse_header(a_buffer, a_buffer_size,
+                              &l_signer_count, &l_path_length, &l_payload_len);
+    if (l_rc != CHIPMUNK_MULTI_SIG_CODEC_OK) {
+        return l_rc;
     }
 
-    const uint8_t *l_p   = a_buffer;
-    const uint8_t *l_end = a_buffer + a_buffer_size;
+    /* Pre-populate the wire-mirror count slot so the NO_COUNT_PREFIX
+     * `signers` field can find it during the schema walk.  The
+     * _preserve variant skips the framework's implicit memset(0) that
+     * would otherwise wipe this value before the array decode starts. */
+    chipmunk_multi_signature_wire_t l_wire = {0};
+    l_wire.signer_count = l_signer_count;
 
-    if (l_p[0] != CHIPMUNK_MULTI_SIG_MAGIC0
-        || l_p[1] != CHIPMUNK_MULTI_SIG_MAGIC1
-        || l_p[2] != CHIPMUNK_MULTI_SIG_MAGIC2
-        || l_p[3] != CHIPMUNK_MULTI_SIG_MAGIC3) {
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_MAGIC;
-    }
-    l_p += 4;
+    dap_serialize_result_t l_des = dap_serialize_from_buffer_raw_preserve(
+            &chipmunk_multi_signature_wire_schema,
+            a_buffer + CHIPMUNK_MULTI_SIG_HEADER_SIZE,
+            a_buffer_size - CHIPMUNK_MULTI_SIG_HEADER_SIZE,
+            &l_wire,
+            NULL);
 
-    const uint16_t l_version = s_read_u16(l_p); l_p += 2;
-    if (l_version != CHIPMUNK_MULTI_SIG_VERSION_V1) {
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_VERSION;
+    if (l_des.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+        log_it(L_ERROR,
+               "chipmunk_multi_signature_deserialize: schema reader failed "
+               "(error=%d, field=%s, message=%s)",
+               l_des.error_code,
+               l_des.failed_field ? l_des.failed_field : "?",
+               l_des.error_message ? l_des.error_message : "?");
+        chipmunk_multi_signature_wire_release(&l_wire);
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_SIZE_MISMATCH;
     }
-    const uint16_t l_reserved_hdr = s_read_u16(l_p); l_p += 2;
-    if (l_reserved_hdr != 0) {
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_RESERVED;
-    }
-
-    const uint32_t l_signer_count = s_read_u32(l_p); l_p += 4;
-    const uint32_t l_path_length  = s_read_u32(l_p); l_p += 4;
-    const uint64_t l_payload_len  = s_read_u64(l_p); l_p += 8;
-
-    if (l_signer_count == 0 || l_signer_count > (uint32_t)CHIPMUNK_MULTI_SIG_MAX_SIGNERS) {
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_SIGNER_COUNT;
-    }
-    if (l_path_length == 0 || l_path_length >= (uint32_t)CHIPMUNK_TREE_HEIGHT_MAX) {
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_PATH_LENGTH;
-    }
-
-    const size_t l_per_signer_body = CHIPMUNK_CODEC_PER_SIGNER_HEADER
-                                   + (size_t)l_path_length * CHIPMUNK_CODEC_PATH_NODE_BYTES;
-    const size_t l_expected = (size_t)CHIPMUNK_MULTI_SIG_HEADER_SIZE
-                            + CHIPMUNK_CODEC_FIXED_BODY_BYTES
-                            + (size_t)l_signer_count * l_per_signer_body;
-    if ((size_t)l_payload_len != a_buffer_size
-        || l_expected != a_buffer_size) {
+    if (l_des.bytes_read != a_buffer_size - CHIPMUNK_MULTI_SIG_HEADER_SIZE) {
+        chipmunk_multi_signature_wire_release(&l_wire);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_SIZE_MISMATCH;
     }
 
-    /* Allocate parallel arrays up front so every failure funnel can */
-    /* safely call chipmunk_multi_signature_deep_free().             */
-    a_multi_sig->public_key_roots = calloc(l_signer_count, sizeof(chipmunk_hvc_poly_t));
-    a_multi_sig->hots_pks         = calloc(l_signer_count, sizeof(chipmunk_hots_public_key_t));
-    a_multi_sig->rho_seeds        = calloc(l_signer_count, CHIPMUNK_CODEC_RHO_SEED_BYTES);
-    a_multi_sig->proofs           = calloc(l_signer_count, sizeof(chipmunk_path_t));
-    a_multi_sig->leaf_indices     = calloc(l_signer_count, sizeof(uint32_t));
-    if (!a_multi_sig->public_key_roots || !a_multi_sig->hots_pks
-        || !a_multi_sig->rho_seeds      || !a_multi_sig->proofs
-        || !a_multi_sig->leaf_indices) {
+    /* Cross-validate header counters against what the schema decoded. */
+    if (l_wire.signer_count != l_signer_count) {
+        chipmunk_multi_signature_wire_release(&l_wire);
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_SIGNER_COUNT;
+    }
+    if (!l_wire.signers) {
+        chipmunk_multi_signature_wire_release(&l_wire);
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_NULL;
+    }
+    for (uint32_t i = 0; i < l_signer_count; ++i) {
+        if (l_wire.signers[i].path_length != l_path_length) {
+            chipmunk_multi_signature_wire_release(&l_wire);
+            return CHIPMUNK_MULTI_SIG_CODEC_ERR_PATH_LENGTH_MISMATCH;
+        }
+    }
+    if (l_wire.is_randomized != 0 && l_wire.is_randomized != 1) {
+        chipmunk_multi_signature_wire_release(&l_wire);
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_FLAG;
+    }
+    if (l_wire.reserved[0] != 0 || l_wire.reserved[1] != 0 || l_wire.reserved[2] != 0) {
+        chipmunk_multi_signature_wire_release(&l_wire);
+        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_RESERVED;
+    }
+
+    /* Transfer ownership: from_wire moves the schema-allocated heap
+     * blocks (signers[i].nodes etc.) into the runtime struct and zeroes
+     * the wire mirror.  No further release needed on success. */
+    if (chipmunk_multi_signature_from_wire(&l_wire, a_multi_sig) != 0) {
+        chipmunk_multi_signature_wire_release(&l_wire);
         chipmunk_multi_signature_deep_free(a_multi_sig);
         return CHIPMUNK_MULTI_SIG_CODEC_ERR_ALLOC;
     }
-    a_multi_sig->signer_count = l_signer_count;
-
-    /* Fixed body */
-    memcpy(a_multi_sig->message_hash, l_p, 32);    l_p += 32;
-    memcpy(a_multi_sig->hvc_hasher_seed, l_p, 32); l_p += 32;
-
-    const uint8_t l_flag = *l_p++;
-    if (l_flag != 0 && l_flag != 1) {
-        chipmunk_multi_signature_deep_free(a_multi_sig);
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_FLAG;
-    }
-    a_multi_sig->aggregated_hots.is_randomized = (l_flag == 1);
-
-    /* reserved tail of the flag byte */
-    if (l_p[0] != 0 || l_p[1] != 0 || l_p[2] != 0) {
-        chipmunk_multi_signature_deep_free(a_multi_sig);
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_BAD_RESERVED;
-    }
-    l_p += 3;
-
-    s_read_poly_coeffs(a_multi_sig->tree_root.coeffs, l_p);
-    l_p += CHIPMUNK_CODEC_POLY_BYTES;
-
-    for (int k = 0; k < CHIPMUNK_GAMMA; ++k) {
-        s_read_poly_coeffs(a_multi_sig->aggregated_hots.sigma[k].coeffs, l_p);
-        l_p += CHIPMUNK_CODEC_POLY_BYTES;
-    }
-
-    /* Per-signer records */
-    for (uint32_t i = 0; i < l_signer_count; ++i) {
-        s_read_poly_coeffs(a_multi_sig->public_key_roots[i].coeffs, l_p);
-        l_p += CHIPMUNK_CODEC_POLY_BYTES;
-
-        s_read_poly_coeffs(a_multi_sig->hots_pks[i].v0.coeffs, l_p);
-        l_p += CHIPMUNK_CODEC_POLY_BYTES;
-        s_read_poly_coeffs(a_multi_sig->hots_pks[i].v1.coeffs, l_p);
-        l_p += CHIPMUNK_CODEC_POLY_BYTES;
-
-        memcpy(a_multi_sig->rho_seeds[i], l_p, CHIPMUNK_CODEC_RHO_SEED_BYTES);
-        l_p += CHIPMUNK_CODEC_RHO_SEED_BYTES;
-
-        a_multi_sig->leaf_indices[i] = s_read_u32(l_p);
-        l_p += 4;
-
-        const uint64_t l_proof_index  = s_read_u64(l_p); l_p += 8;
-        const uint32_t l_proof_length = s_read_u32(l_p); l_p += 4;
-        if (l_proof_length != l_path_length) {
-            chipmunk_multi_signature_deep_free(a_multi_sig);
-            return CHIPMUNK_MULTI_SIG_CODEC_ERR_PATH_LENGTH_MISMATCH;
-        }
-
-        a_multi_sig->proofs[i].index       = (size_t)l_proof_index;
-        a_multi_sig->proofs[i].path_length = (size_t)l_path_length;
-        a_multi_sig->proofs[i].nodes       = calloc((size_t)l_path_length,
-                                                    sizeof(chipmunk_path_node_t));
-        if (!a_multi_sig->proofs[i].nodes) {
-            chipmunk_multi_signature_deep_free(a_multi_sig);
-            return CHIPMUNK_MULTI_SIG_CODEC_ERR_ALLOC;
-        }
-
-        for (uint32_t j = 0; j < l_path_length; ++j) {
-            s_read_poly_coeffs(a_multi_sig->proofs[i].nodes[j].left.coeffs, l_p);
-            l_p += CHIPMUNK_CODEC_POLY_BYTES;
-            s_read_poly_coeffs(a_multi_sig->proofs[i].nodes[j].right.coeffs, l_p);
-            l_p += CHIPMUNK_CODEC_POLY_BYTES;
-        }
-    }
-
-    if (l_p != l_end) {
-        /* Trailing bytes — reject: either the producer is buggy or the */
-        /* blob has been tampered with.                                 */
-        chipmunk_multi_signature_deep_free(a_multi_sig);
-        return CHIPMUNK_MULTI_SIG_CODEC_ERR_SIZE_MISMATCH;
-    }
-
     return CHIPMUNK_MULTI_SIG_CODEC_OK;
 }

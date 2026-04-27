@@ -26,6 +26,7 @@
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_tree.h"
 #include "chipmunk/chipmunk_aggregation.h"
+#include "chipmunk/chipmunk_multi_signature_codec.h"
 #include "chipmunk/chipmunk_multi_signature_serialize_schema.h"
 
 #define LOG_TAG "test_chipmunk_multi_sig_schema"
@@ -184,12 +185,16 @@ static bool test_schema_roundtrip(size_t a_signer_count, size_t a_path_length)
     TEST_ASSERT(l_ser.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "to_buffer_raw");
     TEST_ASSERT(l_ser.bytes_written == l_size, "bytes_written matches");
 
-    /* Decode back into a fresh wire mirror.  The schema engine allocates
-     * the dynamic arrays and the per-signer node buffers. */
-    dap_deserialize_result_t l_des = dap_deserialize_from_buffer_raw(
+    /* Decode back into a fresh wire mirror.  The top-level signers[]
+     * array uses DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX (the count is
+     * carried out-of-band, by the codec's CHMA header in production),
+     * so the test must pre-populate the count slot and use the
+     * _preserve variant that skips the implicit memset(0). */
+    l_decoded.signer_count = (uint32_t)a_signer_count;
+    dap_deserialize_result_t l_des = dap_deserialize_from_buffer_raw_preserve(
             &chipmunk_multi_signature_wire_schema, l_buf, l_size,
             &l_decoded, NULL);
-    TEST_ASSERT(l_des.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "from_buffer_raw");
+    TEST_ASSERT(l_des.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "from_buffer_raw_preserve");
     TEST_ASSERT(l_des.bytes_read == l_size, "bytes_read matches");
 
     /* Wire mirror → runtime struct (transfers pointer ownership). */
@@ -204,6 +209,193 @@ static bool test_schema_roundtrip(size_t a_signer_count, size_t a_path_length)
     chipmunk_multi_signature_wire_release(&l_wire);
     /* l_decoded was zeroed by from_wire on success. */
     s_free_runtime(&l_rt);
+    s_free_runtime(&l_orig);
+    DAP_DEL_Z(l_buf);
+    return l_ok;
+}
+
+/* ---------------------------------------------------------------------- *
+ *  Reference v1 hand-rolled writer                                        *
+ *                                                                         *
+ *  This routine is the *source of truth* for the legacy v1 byte layout    *
+ *  that the schema-driven encoder must reproduce exactly.  It writes      *
+ *  ONLY the body (no CHMA header) so it can be diffed against the         *
+ *  schema's raw output byte-for-byte.                                     *
+ * ---------------------------------------------------------------------- */
+
+static inline void s_w32(uint8_t *a_dst, uint32_t a_v)
+{
+    a_dst[0] = (uint8_t)(a_v & 0xFF);
+    a_dst[1] = (uint8_t)((a_v >> 8)  & 0xFF);
+    a_dst[2] = (uint8_t)((a_v >> 16) & 0xFF);
+    a_dst[3] = (uint8_t)((a_v >> 24) & 0xFF);
+}
+static inline void s_w64(uint8_t *a_dst, uint64_t a_v)
+{
+    for (unsigned i = 0; i < 8; ++i) {
+        a_dst[i] = (uint8_t)((a_v >> (8u * i)) & 0xFF);
+    }
+}
+static void s_write_poly(uint8_t *a_dst, const int32_t *a_coeffs)
+{
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        s_w32(a_dst + (size_t)i * 4u, (uint32_t)a_coeffs[i]);
+    }
+}
+
+#define POLY_BYTES        ((size_t)CHIPMUNK_N * 4u)
+#define HOTS_PK_BYTES     (POLY_BYTES * 2u)
+#define HOTS_SIGMA_BYTES  (POLY_BYTES * (size_t)CHIPMUNK_GAMMA)
+#define PATH_NODE_BYTES   (POLY_BYTES * 2u)
+#define FIXED_BODY_BYTES  (32u + 32u + 4u + POLY_BYTES + HOTS_SIGMA_BYTES)
+#define PER_SIGNER_HEADER (POLY_BYTES + HOTS_PK_BYTES + 32u + 4u + 8u + 4u)
+
+static size_t s_legacy_v1_body_size(const chipmunk_multi_signature_t *a_ms)
+{
+    const size_t l_per = PER_SIGNER_HEADER
+                       + a_ms->proofs[0].path_length * PATH_NODE_BYTES;
+    return FIXED_BODY_BYTES + a_ms->signer_count * l_per;
+}
+
+static void s_legacy_v1_write_body(const chipmunk_multi_signature_t *a_ms,
+                                    uint8_t *a_buf)
+{
+    uint8_t *l_p = a_buf;
+
+    memcpy(l_p, a_ms->message_hash, 32);    l_p += 32;
+    memcpy(l_p, a_ms->hvc_hasher_seed, 32); l_p += 32;
+    *l_p++ = a_ms->aggregated_hots.is_randomized ? 1 : 0;
+    l_p[0] = 0; l_p[1] = 0; l_p[2] = 0;     l_p += 3;
+
+    s_write_poly(l_p, a_ms->tree_root.coeffs);
+    l_p += POLY_BYTES;
+
+    for (int k = 0; k < CHIPMUNK_GAMMA; ++k) {
+        s_write_poly(l_p, a_ms->aggregated_hots.sigma[k].coeffs);
+        l_p += POLY_BYTES;
+    }
+
+    for (size_t i = 0; i < a_ms->signer_count; ++i) {
+        s_write_poly(l_p, a_ms->public_key_roots[i].coeffs);
+        l_p += POLY_BYTES;
+
+        s_write_poly(l_p, a_ms->hots_pks[i].v0.coeffs);
+        l_p += POLY_BYTES;
+        s_write_poly(l_p, a_ms->hots_pks[i].v1.coeffs);
+        l_p += POLY_BYTES;
+
+        memcpy(l_p, a_ms->rho_seeds[i], 32);
+        l_p += 32;
+
+        s_w32(l_p, a_ms->leaf_indices[i]);
+        l_p += 4;
+
+        s_w64(l_p, (uint64_t)a_ms->proofs[i].index);
+        l_p += 8;
+        s_w32(l_p, (uint32_t)a_ms->proofs[i].path_length);
+        l_p += 4;
+
+        for (size_t j = 0; j < a_ms->proofs[i].path_length; ++j) {
+            s_write_poly(l_p, a_ms->proofs[i].nodes[j].left.coeffs);
+            l_p += POLY_BYTES;
+            s_write_poly(l_p, a_ms->proofs[i].nodes[j].right.coeffs);
+            l_p += POLY_BYTES;
+        }
+    }
+}
+
+/* ---------------------------------------------------------------------- *
+ *  Bit-exact equality test: schema body must equal legacy v1 body         *
+ * ---------------------------------------------------------------------- */
+
+static bool test_schema_matches_v1_layout(size_t a_signer_count, size_t a_path_length)
+{
+    chipmunk_multi_signature_t l_orig = {0};
+    chipmunk_multi_signature_wire_t l_wire = {0};
+    uint8_t *l_schema_body = NULL;
+    uint8_t *l_legacy_body = NULL;
+    bool l_ok = false;
+
+    TEST_ASSERT(s_alloc_runtime(&l_orig, a_signer_count, a_path_length) == 0,
+                "alloc runtime");
+
+    /* Reference v1 body. */
+    const size_t l_legacy_size = s_legacy_v1_body_size(&l_orig);
+    l_legacy_body = DAP_NEW_Z_SIZE(uint8_t, l_legacy_size);
+    TEST_ASSERT(l_legacy_body != NULL, "alloc legacy buf");
+    s_legacy_v1_write_body(&l_orig, l_legacy_body);
+
+    /* Schema-driven body. */
+    TEST_ASSERT(chipmunk_multi_signature_to_wire(&l_orig, &l_wire) == 0,
+                "to_wire");
+    const size_t l_schema_size = dap_serialize_calc_size_raw(
+            &chipmunk_multi_signature_wire_schema, NULL, &l_wire, NULL);
+    TEST_ASSERT(l_schema_size == l_legacy_size,
+                "schema size matches legacy v1 size");
+
+    l_schema_body = DAP_NEW_Z_SIZE(uint8_t, l_schema_size);
+    TEST_ASSERT(l_schema_body != NULL, "alloc schema buf");
+
+    dap_serialize_result_t l_ser = dap_serialize_to_buffer_raw(
+            &chipmunk_multi_signature_wire_schema, &l_wire,
+            l_schema_body, l_schema_size, NULL);
+    TEST_ASSERT(l_ser.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "to_buffer_raw");
+    TEST_ASSERT(l_ser.bytes_written == l_schema_size, "bytes_written matches");
+
+    if (memcmp(l_legacy_body, l_schema_body, l_schema_size) != 0) {
+        /* Pinpoint the first divergence to make schema bugs trivial to debug. */
+        size_t l_diff = 0;
+        while (l_diff < l_schema_size && l_legacy_body[l_diff] == l_schema_body[l_diff]) {
+            ++l_diff;
+        }
+        log_it(L_ERROR,
+               "Schema/v1 byte mismatch at offset %zu: legacy=0x%02x schema=0x%02x",
+               l_diff, l_legacy_body[l_diff], l_schema_body[l_diff]);
+        TEST_ASSERT(false, "schema body == legacy v1 body");
+    }
+    l_ok = true;
+
+    chipmunk_multi_signature_wire_release(&l_wire);
+    s_free_runtime(&l_orig);
+    DAP_DEL_Z(l_schema_body);
+    DAP_DEL_Z(l_legacy_body);
+    return l_ok;
+}
+
+/* ---------------------------------------------------------------------- *
+ *  Codec round-trip via the public API                                    *
+ * ---------------------------------------------------------------------- */
+
+static bool test_codec_roundtrip(size_t a_signer_count, size_t a_path_length)
+{
+    chipmunk_multi_signature_t l_orig = {0};
+    chipmunk_multi_signature_t l_rt   = {0};
+    uint8_t *l_buf = NULL;
+    bool l_ok = false;
+
+    TEST_ASSERT(s_alloc_runtime(&l_orig, a_signer_count, a_path_length) == 0,
+                "alloc runtime");
+
+    size_t l_size = 0;
+    TEST_ASSERT(chipmunk_multi_signature_serialized_size(&l_orig, &l_size)
+                == CHIPMUNK_MULTI_SIG_CODEC_OK, "serialized_size");
+    TEST_ASSERT(l_size > CHIPMUNK_MULTI_SIG_HEADER_SIZE,
+                "size includes header + body");
+
+    l_buf = DAP_NEW_Z_SIZE(uint8_t, l_size);
+    TEST_ASSERT(l_buf != NULL, "alloc buf");
+
+    size_t l_written = 0;
+    TEST_ASSERT(chipmunk_multi_signature_serialize(&l_orig, l_buf, l_size, &l_written)
+                == CHIPMUNK_MULTI_SIG_CODEC_OK, "serialize");
+    TEST_ASSERT(l_written == l_size, "wrote full size");
+
+    TEST_ASSERT(chipmunk_multi_signature_deserialize(l_buf, l_size, &l_rt)
+                == CHIPMUNK_MULTI_SIG_CODEC_OK, "deserialize");
+    TEST_ASSERT(s_runtime_equal(&l_orig, &l_rt), "codec round-trip equality");
+
+    l_ok = true;
+    chipmunk_multi_signature_deep_free(&l_rt);
     s_free_runtime(&l_orig);
     DAP_DEL_Z(l_buf);
     return l_ok;
@@ -233,6 +425,41 @@ int main(int argc, char **argv)
         log_it(L_ERROR, "FAIL: 10 signers / path 15");
         return 1;
     }
-    log_it(L_INFO, "All chipmunk multi-signature schema round-trip tests passed!");
+
+    /* Bit-exact comparison vs. legacy v1 hand-rolled writer. */
+    log_it(L_INFO, "Testing schema body bit-exact match vs legacy v1 layout (1/4)...");
+    if (!test_schema_matches_v1_layout(1, 4)) {
+        log_it(L_ERROR, "FAIL: schema vs legacy v1 (1/4)");
+        return 1;
+    }
+    log_it(L_INFO, "Testing schema body bit-exact match vs legacy v1 layout (3/8)...");
+    if (!test_schema_matches_v1_layout(3, 8)) {
+        log_it(L_ERROR, "FAIL: schema vs legacy v1 (3/8)");
+        return 1;
+    }
+    log_it(L_INFO, "Testing schema body bit-exact match vs legacy v1 layout (10/15)...");
+    if (!test_schema_matches_v1_layout(10, 15)) {
+        log_it(L_ERROR, "FAIL: schema vs legacy v1 (10/15)");
+        return 1;
+    }
+
+    /* Public codec round-trip. */
+    log_it(L_INFO, "Testing chipmunk_multi_signature codec round-trip (1/4)...");
+    if (!test_codec_roundtrip(1, 4)) {
+        log_it(L_ERROR, "FAIL: codec round-trip (1/4)");
+        return 1;
+    }
+    log_it(L_INFO, "Testing chipmunk_multi_signature codec round-trip (3/8)...");
+    if (!test_codec_roundtrip(3, 8)) {
+        log_it(L_ERROR, "FAIL: codec round-trip (3/8)");
+        return 1;
+    }
+    log_it(L_INFO, "Testing chipmunk_multi_signature codec round-trip (10/15)...");
+    if (!test_codec_roundtrip(10, 15)) {
+        log_it(L_ERROR, "FAIL: codec round-trip (10/15)");
+        return 1;
+    }
+
+    log_it(L_INFO, "All chipmunk multi-signature schema/codec tests passed!");
     return 0;
 }

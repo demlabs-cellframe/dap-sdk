@@ -37,8 +37,12 @@ extern "C" {
  *  let a remote attacker substitute any byte pattern for a valid        *
  *  aggregate.                                                            *
  *                                                                        *
- *  This codec replaces that path with a canonical, versioned,            *
- *  self-describing binary representation:                                *
+ *  This codec replaces that path with a single canonical, schema-driven  *
+ *  binary representation.  The 24-byte CHMA header acts as fast-fail     *
+ *  framing (magic / counters / total length); the body is produced and   *
+ *  consumed exclusively by dap_serialize via the wire-mirror schema in   *
+ *  chipmunk_multi_signature_serialize_schema.{h,c}, which is laid out    *
+ *  to match the byte stream below exactly.                               *
  *                                                                        *
  *    Header (24 bytes)                                                   *
  *      [0..3]   magic       = "CHMA"           (4 bytes, ASCII)          *
@@ -49,7 +53,7 @@ extern "C" {
  *                                                all signers)            *
  *      [16..23] payload_length                 (u64 LE, full blob size)  *
  *                                                                        *
- *    Body                                                                *
+ *    Body (produced by chipmunk_multi_signature_wire_schema)              *
  *      32B  message_hash                                                 *
  *      32B  hvc_hasher_seed                                              *
  *      1B   aggregated_hots.is_randomized      (0 or 1)                  *
@@ -57,7 +61,8 @@ extern "C" {
  *      N*4 B       tree_root.coeffs            (int32 LE each)           *
  *      GAMMA*N*4 B aggregated_hots.sigma[GAMMA]                          *
  *                                                                        *
- *    Per signer i in [0, signer_count):                                  *
+ *    Per signer i in [0, signer_count) — array-of-structs, NO inner      *
+ *    count prefix (signer_count comes from the header above):            *
  *      N*4 B   public_key_roots[i].coeffs                                *
  *      N*4 B   hots_pks[i].v0.coeffs                                     *
  *      N*4 B   hots_pks[i].v1.coeffs                                     *
@@ -85,7 +90,7 @@ extern "C" {
 #define CHIPMUNK_MULTI_SIG_MAGIC1          'H'
 #define CHIPMUNK_MULTI_SIG_MAGIC2          'M'
 #define CHIPMUNK_MULTI_SIG_MAGIC3          'A'
-#define CHIPMUNK_MULTI_SIG_VERSION_V1      0x0001
+#define CHIPMUNK_MULTI_SIG_VERSION         0x0001U  /* Single supported version — schema-driven, byte layout above. */
 #define CHIPMUNK_MULTI_SIG_HEADER_SIZE     24U
 #define CHIPMUNK_MULTI_SIG_MAX_SIGNERS     CHIPMUNK_TREE_MAX_PARTICIPANTS
 
