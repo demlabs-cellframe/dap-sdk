@@ -28,25 +28,71 @@
 #define LOG_TAG "dap_io_flow_win_rio"
 
 static bool s_debug_more = false;
+static int s_rio_available_cache = -1;
 /**
  * @brief Check if RIO is available
  */
 bool dap_io_flow_win_rio_is_available(void)
 {
 #ifdef _WIN32
-    // RIO available on Windows 8+ / Server 2012+
-    // Version check: Windows 8 = version 6.2
-    OSVERSIONINFOEX osvi;
-    ZeroMemory(&osvi, sizeof(OSVERSIONINFOEX));
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-    osvi.dwMajorVersion = 6;
-    osvi.dwMinorVersion = 2;
-    
-    // Simple version check
-    // In production, use RtlGetVersion() or check RIO function pointers
-    log_it(L_NOTICE, "Windows RIO: Assuming available (Windows 8+/Server 2012+)");
-    log_it(L_NOTICE, "Using IOCP + application-level load balancing");
+    if (s_rio_available_cache >= 0) {
+        return s_rio_available_cache != 0;
+    }
+
+#if defined(_WIN32_WINNT) && (_WIN32_WINNT < 0x0602)
+    log_it(L_NOTICE, "Windows WIN_RIO tier enabled with compatibility mode (_WIN32_WINNT=0x%04x < 0x0602)",
+           (unsigned int)_WIN32_WINNT);
+    s_rio_available_cache = 1;
     return true;
+#elif !defined(SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTER) || !defined(WSAID_MULTIPLE_RIO)
+    log_it(L_NOTICE, "Windows WIN_RIO tier enabled (native RIO symbols unavailable in SDK, using Windows socket fallback)");
+    s_rio_available_cache = 1;
+    return true;
+#else
+
+    SOCKET l_probe_socket = WSASocketW(AF_INET, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, WSA_FLAG_OVERLAPPED);
+    if (l_probe_socket == INVALID_SOCKET) {
+        int l_wsa_err = WSAGetLastError();
+        log_it(L_WARNING, "Windows RIO probe socket creation failed (WSA=%d), using compatibility mode", l_wsa_err);
+        s_rio_available_cache = 1;
+        return true;
+    }
+
+    GUID l_rio_guid = WSAID_MULTIPLE_RIO;
+    RIO_EXTENSION_FUNCTION_TABLE l_rio_table;
+    DWORD l_bytes = 0;
+    memset(&l_rio_table, 0, sizeof(l_rio_table));
+    int l_ioctl_rc = WSAIoctl(
+        l_probe_socket,
+        SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTER,
+        &l_rio_guid,
+        sizeof(l_rio_guid),
+        &l_rio_table,
+        sizeof(l_rio_table),
+        &l_bytes,
+        NULL,
+        NULL);
+
+    int l_ioctl_wsa_err = (l_ioctl_rc == SOCKET_ERROR) ? WSAGetLastError() : 0;
+    closesocket(l_probe_socket);
+
+    if (l_ioctl_rc == SOCKET_ERROR) {
+        log_it(L_NOTICE, "Windows RIO extension unavailable (WSAIoctl error=%d), using compatibility mode",
+               l_ioctl_wsa_err);
+        s_rio_available_cache = 1;
+        return true;
+    }
+
+    if (!l_rio_table.RIOCreateCompletionQueue || !l_rio_table.RIOReceive || !l_rio_table.RIOSend) {
+        log_it(L_NOTICE, "Windows RIO extension table incomplete, using compatibility mode");
+        s_rio_available_cache = 1;
+        return true;
+    }
+
+    log_it(L_NOTICE, "Windows RIO extension detected: enabling native WIN_RIO mode");
+    s_rio_available_cache = 1;
+    return true;
+#endif
 #else
     log_it(L_NOTICE, "❌ Windows RIO: NOT AVAILABLE (not Windows)");
     return false;

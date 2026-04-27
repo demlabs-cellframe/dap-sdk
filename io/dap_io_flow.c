@@ -141,6 +141,29 @@ static size_t s_get_inter_worker_queue_capacity(uint32_t a_worker_count)
     return l_capacity;
 }
 
+/**
+ * @brief Whether tier needs application-level flow forwarding/queues.
+ */
+static bool s_lb_tier_uses_app_forwarding(dap_io_flow_lb_tier_t a_lb_tier)
+{
+    if (a_lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+        return true;
+    }
+
+#if defined(__APPLE__) && defined(__MACH__)
+    if (a_lb_tier == DAP_IO_FLOW_LB_TIER_DARWIN_GCD) {
+        return true;
+    }
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+    if (a_lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO) {
+        return true;
+    }
+#endif
+
+    return false;
+}
+
 // =============================================================================
 // Public API - Core
 // =============================================================================
@@ -302,14 +325,7 @@ int dap_io_flow_server_listen(
     // Initialize inter-worker queues ONLY for Application-level LB (Tier 1)
     // Kernel-level tiers (BPF, BSD LB, etc.) distribute packets directly - no forwarding needed!
     // macOS GCD and Windows RIO also use Application tier internally but with platform optimizations
-    bool needs_queues = (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION
-#ifdef DAP_IO_FLOW_LB_TIER_DARWIN_GCD
-                         || a_server->lb_tier == DAP_IO_FLOW_LB_TIER_DARWIN_GCD
-#endif
-#ifdef DAP_IO_FLOW_LB_TIER_WIN_RIO
-                         || a_server->lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO
-#endif
-                        );
+    bool needs_queues = s_lb_tier_uses_app_forwarding(a_server->lb_tier);
     
     if (needs_queues) {
         l_ret = s_init_inter_worker_queues(a_server);
@@ -864,7 +880,7 @@ static void s_process_flow_packet_common(
     // Step 1: Determine target worker (hash-based)
     uint32_t l_target_worker_id = l_worker->id;  // Default: create locally
     
-    if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+    if (s_lb_tier_uses_app_forwarding(a_server->lb_tier)) {
         // Application-Level Load Balancing: hash (src_ip, src_port) to determine target worker
         const struct sockaddr *l_sa = (const struct sockaddr *)a_remote_addr;
         uint32_t l_hash = 0;
@@ -1309,7 +1325,7 @@ static void s_queue_ptr_callback(void *a_ptr)
     // Fallback for Tier 1 (Application-level): use ANY UDP listener
     // When we have single listener on worker 0, forwarded packets on other workers
     // need to reference that single listener for flow creation
-    if (!l_real_listener && l_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+    if (!l_real_listener && s_lb_tier_uses_app_forwarding(l_server->lb_tier)) {
         dap_list_t *l_listener_item = l_server->dap_server->es_listeners;
         while (l_listener_item) {
             dap_events_socket_t *l_listener = (dap_events_socket_t*)l_listener_item->data;

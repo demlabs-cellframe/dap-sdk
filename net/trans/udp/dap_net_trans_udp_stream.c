@@ -2360,9 +2360,10 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     }
 
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(a_stream);
-    if (!l_ctx || !l_ctx->stream || !l_ctx->stream->esocket) {
-        log_it(L_ERROR, "UDP write: No trans ctx or esocket for write (ctx=%p, esocket=%p)", 
-               l_ctx, (l_ctx && l_ctx->stream) ? (void *)l_ctx->stream->esocket : NULL);
+    dap_events_socket_t *l_es = a_stream->esocket;
+    if (!l_ctx || !l_es) {
+        log_it(L_ERROR, "UDP write: No trans ctx or esocket for write (ctx=%p, stream_esocket=%p, trans_ctx_stream=%p)",
+               l_ctx, (void *)l_es, l_ctx ? (void *)l_ctx->stream : NULL);
         return -1;
     }
 
@@ -2412,7 +2413,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
         
         // Send obfuscated handshake (CLIENT UDP)
         // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
-        ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->stream->esocket, 
+        ssize_t l_sent = dap_events_socket_sendto_unsafe(l_es,
                                                          l_obfuscated, l_obfuscated_size,
                                                          &l_udp_ctx->remote_addr,
                                                          l_udp_ctx->remote_addr_len);
@@ -2560,7 +2561,7 @@ static ssize_t s_udp_write_typed(dap_stream_t *a_stream, uint8_t a_pkt_type,
     
     // Send encrypted blob (no headers, no magic, just encrypted data) - CLIENT UDP
     // CRITICAL: Use l_udp_ctx->remote_addr, NOT esocket->addr_storage!
-    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_ctx->stream->esocket, l_encrypted, l_encrypted_size,
+    ssize_t l_sent = dap_events_socket_sendto_unsafe(l_es, l_encrypted, l_encrypted_size,
                                                      &l_udp_ctx->remote_addr,
                                                      l_udp_ctx->remote_addr_len);
     
