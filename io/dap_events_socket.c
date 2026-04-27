@@ -754,6 +754,11 @@ int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
     if(s_pre_connect_cb)
         s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
 #endif
+#ifdef DAP_EVENTS_CAPS_IOCP
+    if (a_error_code)
+        *a_error_code = 0;
+    return 0;
+#endif
     // Initiate non-blocking connection
     int l_err = connect(a_es->socket, (struct sockaddr *) &a_es->addr_storage, sizeof(struct sockaddr_in));
     if (l_err == 0) {

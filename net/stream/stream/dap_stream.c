@@ -480,7 +480,12 @@ void dap_stream_deinit()
 {
     // Transport layer is deinitialized automatically via dap_module system
     // No need to call dap_net_transport_deinit() manually
-    
+
+    if (s_global_links_cluster) {
+        dap_cluster_delete(s_global_links_cluster);
+        s_global_links_cluster = NULL;
+    }
+
     dap_stream_ch_deinit( );
 }
 

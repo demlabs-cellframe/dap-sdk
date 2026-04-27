@@ -77,6 +77,9 @@ int dap_stream_ch_init()
  */
 void dap_stream_ch_deinit()
 {
+    dap_stream_ch_gossip_deinit();
+    dap_stream_ch_pkt_deinit();
+    stream_ch_proc_deinit();
 }
 
 #ifdef  DAP_SYS_DEBUG

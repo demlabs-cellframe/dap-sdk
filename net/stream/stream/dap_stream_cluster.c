@@ -59,6 +59,7 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
     if (l_check) {
         log_it(L_ERROR, "GUUID %s already in use", dap_guuid_to_hex_str(a_guuid));
         DAP_DELETE(ret);
+        pthread_rwlock_unlock(&s_clusters_rwlock);
         return NULL;
     }
     if (a_mnemonim) {
@@ -66,12 +67,14 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
         if (l_check) {
             log_it(L_ERROR, "Mnemonim %s already in use", a_mnemonim);
             DAP_DELETE(ret);
+            pthread_rwlock_unlock(&s_clusters_rwlock);
             return NULL;
         }
         ret->mnemonim = strdup(a_mnemonim);
         if (!ret->mnemonim) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DELETE(ret);
+            pthread_rwlock_unlock(&s_clusters_rwlock);
             return NULL;
         }
         HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), ret);
