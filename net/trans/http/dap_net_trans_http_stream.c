@@ -1500,13 +1500,6 @@ static void s_http_trans_close(dap_stream_t *a_stream)
 }
 
 /**
- * @brief Prepare TCP socket for HTTP trans (client-side stage preparation)
- *
- * Creates a TCP esocket for the persistent /stream connection.
- * Handshake requests (/enc_init, /stream_ctl) use dap_client_http_request
- * which manages its own transient connections.
- */
-/**
  * @brief HTTP stage_prepare: create stream object only, no TCP socket.
  *
  * The persistent TCP socket is created later in s_http_trans_connect(),
@@ -1533,40 +1526,7 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
     a_result->stream = NULL;
     a_result->error_code = 0;
 
-    // Create TCP socket for streaming phase (GET /stream long-lived connection).
-    // ENC and STREAM_CTL stages use dap_client_http_request() with their own
-    // temporary sockets; this esocket is only used from session_start onwards.
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, a_params->callbacks);
-    if (!l_es) {
-        log_it(L_ERROR, "Failed to create HTTP streaming TCP socket");
-        a_result->error_code = -1;
-        return -1;
-    }
-
-    l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-    l_es->_inheritor = a_params->client_ctx;
-
-    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
-        log_it(L_ERROR, "Failed to resolve address for HTTP trans");
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-
-    s_http_prepare_connect_flags(l_es);
-    l_es->is_initalized = false;
-
-    int l_connect_err = 0;
-    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
-        log_it(L_ERROR, "Failed to connect HTTP streaming socket: error %d", l_connect_err);
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-
-    dap_worker_add_events_socket(a_params->worker, l_es);
-
-    dap_stream_t *l_stream = dap_stream_new_es_client(l_es,
+    dap_stream_t *l_stream = dap_stream_new_es_client(NULL,
                                 (dap_stream_node_addr_t *)a_params->node_addr,
                                 a_params->authorized);
     if (!l_stream) {
@@ -1577,10 +1537,11 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
 
     l_stream->trans = a_trans;
 
-    a_result->esocket = l_es;
+    a_result->esocket = NULL;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared with TCP socket (fd=%d) for streaming", l_es->fd);
+    debug_if(s_debug_more, L_DEBUG,
+             "HTTP stream prepared without TCP socket; TCP is created later in s_http_trans_connect()");
     return 0;
 }
 
