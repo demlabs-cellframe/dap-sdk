@@ -441,6 +441,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
             /* no break here just step to next phase */
 
             case DAP_HTTP_CLIENT_STATE_HEADERS: { // Parse input headers
+                bool l_header_line_consumed = false;
                 if ( a_esocket->buf_in_size < 2 )                          /* 2 = CRLF pair */
                     {
                         log_it( L_ERROR, "HTTP Header field is too short (%d octets) to be useful", (int) a_esocket->buf_in_size);
@@ -469,6 +470,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     log_it( L_WARNING, "Input: not a valid header '%.*s'", (int)l_len, a_esocket->buf_in );
                 }else if ( l_ret == 1 ) {
                     log_it( L_INFO, "Input: HTTP headers are over" );
+                    dap_events_socket_shrink_buf_in(a_esocket, l_len);     /* Remove final header line before protocol handoff */
+                    l_header_line_consumed = true;
 
                     if ( l_http_client->proc->access_callback )
                     {
@@ -505,7 +508,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         break;
                     }
                 }
-                dap_events_socket_shrink_buf_in(a_esocket, l_len);         /* Shrink input buffer over whole HTTP header */
+                if (!l_header_line_consumed)
+                    dap_events_socket_shrink_buf_in(a_esocket, l_len);     /* Shrink input buffer over whole HTTP header */
             } break;
 
             case DAP_HTTP_CLIENT_STATE_DATA:{

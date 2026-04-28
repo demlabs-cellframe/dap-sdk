@@ -550,14 +550,22 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 log_it(L_ERROR, "Connection to %s : %u closed with error %d: \"%s\", ntstatus 0x%llx",
                                                 l_cur->remote_addr_str, l_cur->remote_port, l_errno, dap_strerror(l_errno),
                                                 ol->ol.Internal);  
+                            } else if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+                                // A zero-byte UDP completion is not EOF; keep the datagram socket armed.
+                                dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
+                                ol = NULL;
+                                continue;
                             } else {
                                 log_it(L_INFO, "Connection to %s : %u closed", l_cur->remote_addr_str, l_cur->remote_port);
                                 if (!l_cur->no_close)
                                     l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;                        
                             }
                             break;
-                        } else //if (ev_signaled)
+                        } else { //if (ev_signaled)
+                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP)
+                                l_cur->addr_size = (socklen_t)l_cur->addr_storage_len_iocp;
                             l_cur->buf_in_size += l_bytes;
+                        }
                     }
                     if (l_cur->callbacks.read_callback) {
                         l_cur->last_time_active = time(NULL);
@@ -638,6 +646,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with error %d: %s, ntstatus 0x%llx",
                                            l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, l_errno, dap_strerror(l_errno),
                                            ol->ol.Internal);
+                        } else if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+                            debug_if(g_debug_reactor, L_DEBUG, "Zero-byte UDP write completion on socket %zu", l_cur->socket);
                         } else
                             log_it(L_INFO, "Connection on es %zu to remote %s : %u closed",
                                            l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port);

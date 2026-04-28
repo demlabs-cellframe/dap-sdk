@@ -865,33 +865,48 @@ static void s_process_flow_packet_common(
     uint32_t l_target_worker_id = l_worker->id;  // Default: create locally
     
     if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
-        // Application-Level Load Balancing: hash (src_ip, src_port) to determine target worker
-        const struct sockaddr *l_sa = (const struct sockaddr *)a_remote_addr;
-        uint32_t l_hash = 0;
-        
-        if (l_sa->sa_family == AF_INET) {
-            struct sockaddr_in *l_sin = (struct sockaddr_in *)a_remote_addr;
-            uint8_t l_hash_input[6];
-            memcpy(l_hash_input, &l_sin->sin_addr.s_addr, 4);
-            memcpy(l_hash_input + 4, &l_sin->sin_port, 2);
-            l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
-        } else if (l_sa->sa_family == AF_INET6) {
-            struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6 *)a_remote_addr;
-            uint8_t l_hash_input[18];
-            memcpy(l_hash_input, &l_sin6->sin6_addr, 16);
-            memcpy(l_hash_input + 16, &l_sin6->sin6_port, 2);
-            l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
-        } else {
-            log_it(L_WARNING, "Application LB: unknown address family %d, using local worker",
-                   l_sa->sa_family);
-            l_hash = l_worker->id;
+#ifdef DAP_EVENTS_CAPS_IOCP
+        if (a_server->boundary_type == DAP_IO_FLOW_BOUNDARY_DATAGRAM) {
+            /*
+             * Windows IOCP fallback has one UDP listener in the worker that owns it.
+             * Forwarding every datagram to a hash-selected worker overloads the
+             * cross-worker queue and breaks high-rate UDP flow-control traffic.
+             */
+            l_target_worker_id = l_worker->id;
+            debug_if(s_debug_more, L_DEBUG,
+                     "Application LB/IOCP datagram: keeping flow on worker %u",
+                     l_target_worker_id);
+        } else
+#endif
+        {
+            // Application-Level Load Balancing: hash (src_ip, src_port) to determine target worker
+            const struct sockaddr *l_sa = (const struct sockaddr *)a_remote_addr;
+            uint32_t l_hash = 0;
+
+            if (l_sa->sa_family == AF_INET) {
+                struct sockaddr_in *l_sin = (struct sockaddr_in *)a_remote_addr;
+                uint8_t l_hash_input[6];
+                memcpy(l_hash_input, &l_sin->sin_addr.s_addr, 4);
+                memcpy(l_hash_input + 4, &l_sin->sin_port, 2);
+                l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
+            } else if (l_sa->sa_family == AF_INET6) {
+                struct sockaddr_in6 *l_sin6 = (struct sockaddr_in6 *)a_remote_addr;
+                uint8_t l_hash_input[18];
+                memcpy(l_hash_input, &l_sin6->sin6_addr, 16);
+                memcpy(l_hash_input + 16, &l_sin6->sin6_port, 2);
+                l_hash = dap_hash_fnv1a_32(l_hash_input, sizeof(l_hash_input));
+            } else {
+                log_it(L_WARNING, "Application LB: unknown address family %d, using local worker",
+                       l_sa->sa_family);
+                l_hash = l_worker->id;
+            }
+
+            l_target_worker_id = l_hash % dap_proc_thread_get_count();
+
+            debug_if(s_debug_more, L_DEBUG,
+                     "Application LB: hash=%u (family=%d), target_worker=%u",
+                     l_hash, l_sa->sa_family, l_target_worker_id);
         }
-        
-        l_target_worker_id = l_hash % dap_proc_thread_get_count();
-        
-        debug_if(s_debug_more, L_DEBUG,
-                 "Application LB: hash=%u (family=%d), target_worker=%u",
-                 l_hash, l_sa->sa_family, l_target_worker_id);
     }
     
     // Step 2: ATOMIC find-or-create with write lock on target worker

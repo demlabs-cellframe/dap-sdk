@@ -1325,6 +1325,25 @@ static void s_ws_close(dap_stream_t *a_stream)
     }
 }
 
+static void s_ws_prepare_connect_flags(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return;
+
+    a_es->flags |= DAP_SOCK_CONNECTING;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    /*
+     * IOCP chooses the first overlapped operation from readiness flags when
+     * the socket is assigned to a worker. A TCP connect must post ConnectEx
+     * before any read is armed.
+     */
+    a_es->flags &= ~DAP_SOCK_READY_TO_READ;
+    a_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#else
+    a_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#endif
+}
+
 /**
  * @brief Prepare TCP socket for WebSocket trans (client-side stage preparation)
  * 
@@ -1371,10 +1390,7 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     }
     
     // Set CONNECTING flag and initiate connection
-    l_es->flags |= DAP_SOCK_CONNECTING;
-#ifndef DAP_EVENTS_CAPS_IOCP
-    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
-#endif
+    s_ws_prepare_connect_flags(l_es);
     l_es->is_initalized = false; // Ensure new_callback will be called
     
     // Initiate connection using platform-independent function

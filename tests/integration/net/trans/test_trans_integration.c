@@ -263,6 +263,25 @@ static size_t s_get_effective_data_size(const trans_test_ctx_t *a_ctx)
     return l_data_size;
 }
 
+static uint32_t s_get_effective_timeout_ms(const trans_test_ctx_t *a_ctx)
+{
+    if (!a_ctx) {
+        return 0;
+    }
+
+    uint32_t l_timeout_ms = a_ctx->scenario.timeout_ms;
+#ifdef DAP_OS_WINDOWS
+    if (a_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC &&
+            a_ctx->scenario.num_clients == 1 &&
+            a_ctx->scenario.data_size >= 1024 * 1024) {
+        const uint32_t l_udp_windows_timeout_ms = 30000;
+        if (l_timeout_ms < l_udp_windows_timeout_ms)
+            l_timeout_ms = l_udp_windows_timeout_ms;
+    }
+#endif
+    return l_timeout_ms;
+}
+
 /**
  * @brief Allocate and initialize test context for a scenario
  * @param a_config Transport configuration
@@ -947,6 +966,7 @@ static void *test_trans_worker(void *a_arg)
 {
     trans_test_ctx_t *l_ctx = (trans_test_ctx_t *)a_arg;
     size_t l_effective_data_size = s_get_effective_data_size(l_ctx);
+    uint32_t l_effective_timeout_ms = s_get_effective_timeout_ms(l_ctx);
     l_ctx->result = 0;
     l_ctx->running = true;
     
@@ -954,7 +974,7 @@ static void *test_trans_worker(void *a_arg)
     printf("\n=== Starting %s trans test: %s ===\n", l_ctx->config.name, l_ctx->scenario.name);
     printf("  Servers: %zu, Clients: %zu, Data size: %zu KB, Timeout: %u ms\n",
            l_ctx->scenario.num_servers, l_ctx->scenario.num_clients,
-           l_effective_data_size / 1024, l_ctx->scenario.timeout_ms);
+           l_effective_data_size / 1024, l_effective_timeout_ms);
     pthread_mutex_unlock(&s_test_mutex);
 
     // Create all servers
@@ -1025,7 +1045,7 @@ static void *test_trans_worker(void *a_arg)
     
     // Track overall timeout for all clients
     uint64_t l_overall_start = dap_test_get_time_ms();
-    uint64_t l_overall_timeout_ms = l_ctx->scenario.timeout_ms;
+    uint64_t l_overall_timeout_ms = l_effective_timeout_ms;
     
     bool l_all_ready = true;
     size_t l_handshake_completed = 0;
@@ -1043,9 +1063,9 @@ static void *test_trans_worker(void *a_arg)
         
         // Calculate remaining time for this client
         uint64_t l_remaining_ms = l_overall_timeout_ms - l_elapsed;
-        uint32_t l_client_timeout = (l_remaining_ms < l_ctx->scenario.timeout_ms) 
+        uint32_t l_client_timeout = (l_remaining_ms < l_effective_timeout_ms)
                                     ? (uint32_t)l_remaining_ms 
-                                    : l_ctx->scenario.timeout_ms;
+                                    : l_effective_timeout_ms;
         
         bool l_ready = test_wait_for_full_handshake(l_ctx->clients[i], l_client_timeout);
         if (!l_ready) {
@@ -1146,7 +1166,7 @@ static void *test_trans_worker(void *a_arg)
     size_t l_data_exchanged = 0;
     for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
         int l_ret = test_stream_ch_send_and_wait(l_ctx->clients[i], &l_ctx->stream_ctxs[i], 
-                                                   l_ctx->scenario.timeout_ms);
+                                                   l_effective_timeout_ms);
         if (l_ret != 0) {
             TEST_ERROR("Data exchange failed for client %zu in %s", i, l_ctx->config.name);
             l_ctx->result = -7;

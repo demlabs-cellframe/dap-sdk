@@ -32,6 +32,7 @@ static bool s_debug_more = false;
 
 // Magic number for FC structure validation (detect use-after-free)
 #define DAP_IO_FLOW_CTRL_MAGIC 0xFC10C001
+#define DAP_IO_FLOW_CTRL_RETRANSMIT_BATCH_MAX 32
 
 //===================================================================
 // BASE FLOW CONTROL HEADER SCHEMA
@@ -624,7 +625,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         s_op_end(a_ctrl);  // LIFECYCLE: End operation
         return -3;
     }
-    
+
     // Track for retransmission if enabled
     if (a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) {
         // CRITICAL: Validate send_window exists
@@ -988,8 +989,13 @@ static bool s_retransmit_timer_callback(void *a_arg)
     uint64_t l_now = dap_nanotime_now();
     uint64_t l_timeout_ns = l_ctrl->config.retransmit_timeout_ms * 1000000ULL;
     
-    // Scan send window for packets needing retransmission
-    for (uint64_t seq = l_ctrl->send_seq_acked + 1; seq < l_ctrl->send_seq_next; seq++) {
+    unsigned int l_retransmit_budget = DAP_IO_FLOW_CTRL_RETRANSMIT_BATCH_MAX;
+
+    // Scan send window for a bounded prefix of packets needing retransmission.
+    // With cumulative ACKs, retransmitting the whole outstanding window creates
+    // a burst that can starve the receiver from processing the actual gap.
+    for (uint64_t seq = l_ctrl->send_seq_acked + 1;
+            seq < l_ctrl->send_seq_next && l_retransmit_budget > 0; seq++) {
         size_t l_idx = (seq - 1) % l_ctrl->send_window_size;
         send_window_entry_t *l_entry = &l_ctrl->send_window[l_idx];
         
@@ -1013,6 +1019,7 @@ static bool s_retransmit_timer_callback(void *a_arg)
                 l_ctrl->callbacks.packet_free(l_entry->packet, l_ctrl->callbacks.arg);
                 l_entry->packet = NULL;
                 l_entry->acked = true;  // Mark as done (lost)
+                l_retransmit_budget--;
                 continue;
             }
             
@@ -1029,6 +1036,7 @@ static bool s_retransmit_timer_callback(void *a_arg)
             } else {
                 log_it(L_WARNING, "Failed to retransmit packet: seq=%"PRIu64", ret=%d", seq, l_ret);
             }
+            l_retransmit_budget--;
         }
     }
     
@@ -1100,4 +1108,3 @@ static bool s_keepalive_timer_callback(void *a_arg)
     
     return true;  // Continue timer
 }
-

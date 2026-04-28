@@ -321,6 +321,9 @@ typedef struct dap_events_socket {
 #endif
     struct sockaddr_storage addr_storage;
     socklen_t addr_size;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    INT addr_storage_len_iocp;
+#endif
     // Remote address, port and others
 
     union {

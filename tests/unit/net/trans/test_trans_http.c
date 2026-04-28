@@ -141,8 +141,14 @@ DAP_MOCK_WRAPPER_CUSTOM(void, dap_events_socket_delete_unsafe,
     UNUSED(a_es); UNUSED(a_now);
 }
 
-DAP_MOCK_WRAPPER_PASSTHROUGH_VOID(dap_worker_add_events_socket,
-    (dap_worker_t *a_worker, dap_events_socket_t *a_es), (a_worker, a_es));
+DAP_MOCK_WRAPPER_CUSTOM(void, dap_worker_add_events_socket,
+    PARAM(dap_worker_t*, a_worker),
+    PARAM(dap_events_socket_t*, a_es)
+)
+{
+    UNUSED(a_worker);
+    UNUSED(a_es);
+}
 
 DAP_MOCK_WRAPPER_CUSTOM(dap_stream_t*, dap_stream_new_es_client,
     PARAM(dap_events_socket_t*, a_es),
@@ -930,6 +936,70 @@ static void test_19_http_stage_prepare_null_params(void)
     TEST_SUCCESS("HTTP stage_prepare NULL params handling verified");
 }
 
+/**
+ * @brief Regression: IOCP must not post read before TCP connect completes.
+ */
+static void test_20_http_stage_prepare_iocp_connect_socket_not_read_ready(void)
+{
+#ifdef DAP_EVENTS_CAPS_IOCP
+    TEST_INFO("Testing HTTP IOCP stage_prepare does not arm read before connect completes");
+
+    dap_net_trans_t *l_trans =
+        dap_net_trans_find(DAP_NET_TRANS_HTTP);
+    TEST_ASSERT_NOT_NULL(l_trans, "HTTP trans should be registered");
+    TEST_ASSERT_NOT_NULL(l_trans->ops, "Trans ops should be set");
+    TEST_ASSERT_NOT_NULL(l_trans->ops->stage_prepare, "stage_prepare callback should be set");
+
+    int l_ret = l_trans->ops->init(l_trans, NULL);
+    TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
+
+    dap_worker_t *l_worker = dap_events_worker_get_auto();
+    TEST_ASSERT_NOT_NULL(l_worker, "Worker should be available");
+
+    DAP_MOCK_RESET(dap_events_socket_create_platform);
+    DAP_MOCK_RESET(dap_events_socket_resolve_and_set_addr);
+    DAP_MOCK_RESET(dap_events_socket_connect);
+    DAP_MOCK_RESET(dap_worker_add_events_socket);
+    DAP_MOCK_RESET(dap_stream_new_es_client);
+    DAP_MOCK_SET_RETURN(dap_events_socket_connect, (void*)(intptr_t)0);
+
+    memset(&s_stage_mock_esocket, 0, sizeof(s_stage_mock_esocket));
+    s_stage_mock_esocket.fd = 42;
+    s_stage_mock_esocket.type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    s_stage_mock_esocket.flags = DAP_SOCK_READY_TO_READ;
+    memset(&s_stage_mock_stream_obj, 0, sizeof(s_stage_mock_stream_obj));
+
+    dap_events_socket_callbacks_t l_cbs = {0};
+    dap_stream_node_addr_t l_node_addr = {0};
+
+    dap_net_stage_prepare_params_t l_params = {
+        .host = "127.0.0.1",
+        .port = 8080,
+        .node_addr = &l_node_addr,
+        .authorized = false,
+        .callbacks = &l_cbs,
+        .client_ctx = NULL,
+        .worker = l_worker
+    };
+    dap_net_stage_prepare_result_t l_result = {0};
+
+    l_ret = l_trans->ops->stage_prepare(l_trans, &l_params, &l_result);
+
+    TEST_ASSERT(l_ret == 0, "stage_prepare should succeed");
+    TEST_ASSERT_NOT_NULL(l_result.esocket, "esocket must be non-NULL after stage_prepare");
+    TEST_ASSERT(l_result.esocket->flags & DAP_SOCK_CONNECTING,
+                "IOCP TCP socket should still be in CONNECTING state");
+    TEST_ASSERT(!(l_result.esocket->flags & DAP_SOCK_READY_TO_READ),
+                "IOCP TCP socket must not be READ-ready while CONNECTING");
+
+    l_trans->ops->deinit(l_trans);
+
+    TEST_SUCCESS("HTTP IOCP connect/read ordering regression verified");
+#else
+    TEST_SUCCESS("HTTP IOCP connect/read ordering regression skipped on non-IOCP platform");
+#endif
+}
+
 // ============================================================================
 // Test Suite Definition
 // ============================================================================
@@ -967,6 +1037,7 @@ int main(int argc, char *argv[])
     TEST_RUN(test_17_http_stage_prepare_socket_create_fail);
     TEST_RUN(test_18_http_stage_prepare_connect_fail);
     TEST_RUN(test_19_http_stage_prepare_null_params);
+    TEST_RUN(test_20_http_stage_prepare_iocp_connect_socket_not_read_ready);
 
     TEST_SUITE_END();
     
