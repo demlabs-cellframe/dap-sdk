@@ -90,6 +90,19 @@ static dap_events_socket_t s_stage_mock_esocket = {0};
 static dap_stream_t s_stage_mock_stream_obj = {0};
 
 static bool s_socket_create_force_null = false;
+static bool s_stream_create_force_null = false;
+
+static void s_reset_stage_mocks(void)
+{
+    DAP_MOCK_RESET(dap_events_socket_create_platform);
+    DAP_MOCK_RESET(dap_events_socket_resolve_and_set_addr);
+    DAP_MOCK_RESET(dap_events_socket_connect);
+    DAP_MOCK_RESET(dap_events_socket_delete_unsafe);
+    DAP_MOCK_RESET(dap_worker_add_events_socket);
+    DAP_MOCK_RESET(dap_stream_new_es_client);
+    s_socket_create_force_null = false;
+    s_stream_create_force_null = false;
+}
 
 DAP_MOCK_WRAPPER_CUSTOM(dap_events_socket_t*, dap_events_socket_create_platform,
     PARAM(int, a_domain),
@@ -157,6 +170,8 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_stream_t*, dap_stream_new_es_client,
 )
 {
     UNUSED(a_node_addr); UNUSED(a_authorized);
+    if(s_stream_create_force_null)
+        return NULL;
     if(g_mock_dap_stream_new_es_client && g_mock_dap_stream_new_es_client->return_value.ptr)
         return (dap_stream_t*)g_mock_dap_stream_new_es_client->return_value.ptr;
     s_stage_mock_stream_obj.esocket = a_es;
@@ -240,6 +255,8 @@ static void setup_test(void)
     
     // Reset mocks before each test
     dap_mock_reset_all();
+    s_socket_create_force_null = false;
+    s_stream_create_force_null = false;
 }
 
 /**
@@ -752,20 +769,20 @@ static void test_15_stream_listen(void)
 }
 
 // ============================================================================
-// Stage Prepare Tests (HTTP creates TCP socket for streaming)
+// Stage Prepare Tests (HTTP defers TCP socket creation to connect)
 // ============================================================================
 
 /**
- * @brief Test HTTP stage_prepare creates TCP socket and stream
+ * @brief Test HTTP stage_prepare creates stream without TCP socket
  *
- * Verifies the fix: HTTP transport must create a persistent TCP socket
- * in stage_prepare for the streaming phase (GET /stream).
- * Without this, session_start writes to NULL esocket and
- * dap_client_get_stream_ch_unsafe fails to find channels.
+ * Verifies the regression fix: stage_prepare must not create the
+ * persistent /stream TCP socket. Handshake and stream_ctl use temporary
+ * HTTP connections first; the persistent socket is created later by connect().
  */
 static void test_16_http_stage_prepare_success(void)
 {
-    TEST_INFO("Testing HTTP stage_prepare creates TCP socket and stream");
+    TEST_INFO("Testing HTTP stage_prepare creates stream without TCP socket");
+    s_reset_stage_mocks();
 
     dap_net_trans_t *l_trans =
         dap_net_trans_find(DAP_NET_TRANS_HTTP);
@@ -801,30 +818,34 @@ static void test_16_http_stage_prepare_success(void)
     l_ret = l_trans->ops->stage_prepare(l_trans, &l_params, &l_result);
 
     TEST_ASSERT(l_ret == 0, "stage_prepare should succeed");
-    TEST_ASSERT_NOT_NULL(l_result.esocket, "esocket must be non-NULL after stage_prepare");
+    TEST_ASSERT_NULL(l_result.esocket, "esocket must stay NULL after stage_prepare");
     TEST_ASSERT_NOT_NULL(l_result.stream, "stream must be non-NULL after stage_prepare");
+    TEST_ASSERT_NULL(l_result.stream->esocket, "stream esocket must stay NULL after stage_prepare");
     TEST_ASSERT(l_result.error_code == 0, "error_code should be 0");
 
-    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_create_platform) >= 1,
-                "dap_events_socket_create_platform should be called");
-    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_resolve_and_set_addr) >= 1,
-                "dap_events_socket_resolve_and_set_addr should be called");
-    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_connect) >= 1,
-                "dap_events_socket_connect should be called");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_create_platform) == 0,
+                "stage_prepare must not create TCP socket");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_resolve_and_set_addr) == 0,
+                "stage_prepare must not resolve TCP socket address");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_connect) == 0,
+                "stage_prepare must not connect TCP socket");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_worker_add_events_socket) == 0,
+                "stage_prepare must not add TCP socket to worker");
     TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_stream_new_es_client) >= 1,
                 "dap_stream_new_es_client should be called");
 
     l_trans->ops->deinit(l_trans);
 
-    TEST_SUCCESS("HTTP stage_prepare creates TCP socket and stream verified");
+    TEST_SUCCESS("HTTP stage_prepare stream-only behavior verified");
 }
 
 /**
- * @brief Test HTTP stage_prepare fails gracefully when socket creation fails
+ * @brief Test HTTP stage_prepare fails gracefully when stream creation fails
  */
-static void test_17_http_stage_prepare_socket_create_fail(void)
+static void test_17_http_stage_prepare_stream_create_fail(void)
 {
-    TEST_INFO("Testing HTTP stage_prepare failure on socket creation");
+    TEST_INFO("Testing HTTP stage_prepare failure on stream creation");
+    s_reset_stage_mocks();
 
     dap_net_trans_t *l_trans =
         dap_net_trans_find(DAP_NET_TRANS_HTTP);
@@ -835,7 +856,7 @@ static void test_17_http_stage_prepare_socket_create_fail(void)
 
     dap_worker_t *l_worker = dap_events_worker_get_auto();
 
-    s_socket_create_force_null = true;
+    s_stream_create_force_null = true;
 
     dap_events_socket_callbacks_t l_cbs = {0};
     dap_stream_node_addr_t l_node_addr = {0};
@@ -854,23 +875,27 @@ static void test_17_http_stage_prepare_socket_create_fail(void)
 
     l_ret = l_trans->ops->stage_prepare(l_trans, &l_params, &l_result);
 
-    s_socket_create_force_null = false;
+    s_stream_create_force_null = false;
 
-    TEST_ASSERT(l_ret != 0, "stage_prepare should fail when socket creation fails");
-    TEST_ASSERT(l_result.esocket == NULL, "esocket should be NULL on failure");
+    TEST_ASSERT(l_ret != 0, "stage_prepare should fail when stream creation fails");
+    TEST_ASSERT_NULL(l_result.esocket, "esocket should be NULL on failure");
+    TEST_ASSERT_NULL(l_result.stream, "stream should be NULL on failure");
     TEST_ASSERT(l_result.error_code != 0, "error_code should be non-zero on failure");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_create_platform) == 0,
+                "stage_prepare failure must not create TCP socket");
 
     l_trans->ops->deinit(l_trans);
 
-    TEST_SUCCESS("HTTP stage_prepare socket creation failure handling verified");
+    TEST_SUCCESS("HTTP stage_prepare stream creation failure handling verified");
 }
 
 /**
- * @brief Test HTTP stage_prepare fails gracefully when connect fails
+ * @brief Test HTTP connect fails gracefully when TCP connect fails
  */
-static void test_18_http_stage_prepare_connect_fail(void)
+static void test_18_http_connect_fail(void)
 {
-    TEST_INFO("Testing HTTP stage_prepare failure on connect");
+    TEST_INFO("Testing HTTP connect failure on TCP connect");
+    s_reset_stage_mocks();
 
     dap_net_trans_t *l_trans =
         dap_net_trans_find(DAP_NET_TRANS_HTTP);
@@ -879,39 +904,24 @@ static void test_18_http_stage_prepare_connect_fail(void)
     int l_ret = l_trans->ops->init(l_trans, NULL);
     TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
 
-    dap_worker_t *l_worker = dap_events_worker_get_auto();
-
     memset(&s_stage_mock_esocket, 0, sizeof(s_stage_mock_esocket));
     s_stage_mock_esocket.fd = 42;
+    memset(&s_stage_mock_stream_obj, 0, sizeof(s_stage_mock_stream_obj));
+    s_stage_mock_stream_obj.trans = l_trans;
 
     DAP_MOCK_SET_RETURN(dap_events_socket_connect, (void*)(intptr_t)-1);
 
-    dap_events_socket_callbacks_t l_cbs = {0};
-    dap_stream_node_addr_t l_node_addr = {0};
+    l_ret = l_trans->ops->connect(&s_stage_mock_stream_obj, "127.0.0.1", 8080, NULL);
 
-    dap_net_stage_prepare_params_t l_params = {
-        .host = "127.0.0.1",
-        .port = 8080,
-        .node_addr = &l_node_addr,
-        .authorized = false,
-        .callbacks = &l_cbs,
-        .client_ctx = NULL,
-        .worker = l_worker
-    };
-
-    dap_net_stage_prepare_result_t l_result = {0};
-
-    l_ret = l_trans->ops->stage_prepare(l_trans, &l_params, &l_result);
-
-    TEST_ASSERT(l_ret != 0, "stage_prepare should fail when connect fails");
-    TEST_ASSERT(l_result.esocket == NULL, "esocket should be NULL on failure");
+    TEST_ASSERT(l_ret != 0, "connect should fail when TCP connect fails");
+    TEST_ASSERT_NULL(s_stage_mock_stream_obj.esocket, "stream esocket should stay NULL on connect failure");
 
     TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_events_socket_delete_unsafe) >= 1,
                 "Socket should be cleaned up on connect failure");
 
     l_trans->ops->deinit(l_trans);
 
-    TEST_SUCCESS("HTTP stage_prepare connect failure handling verified");
+    TEST_SUCCESS("HTTP connect failure handling verified");
 }
 
 /**
@@ -939,16 +949,17 @@ static void test_19_http_stage_prepare_null_params(void)
 /**
  * @brief Regression: IOCP must not post read before TCP connect completes.
  */
-static void test_20_http_stage_prepare_iocp_connect_socket_not_read_ready(void)
+static void test_20_http_connect_iocp_connect_socket_not_read_ready(void)
 {
 #ifdef DAP_EVENTS_CAPS_IOCP
-    TEST_INFO("Testing HTTP IOCP stage_prepare does not arm read before connect completes");
+    TEST_INFO("Testing HTTP IOCP connect does not arm read before connect completes");
+    s_reset_stage_mocks();
 
     dap_net_trans_t *l_trans =
         dap_net_trans_find(DAP_NET_TRANS_HTTP);
     TEST_ASSERT_NOT_NULL(l_trans, "HTTP trans should be registered");
     TEST_ASSERT_NOT_NULL(l_trans->ops, "Trans ops should be set");
-    TEST_ASSERT_NOT_NULL(l_trans->ops->stage_prepare, "stage_prepare callback should be set");
+    TEST_ASSERT_NOT_NULL(l_trans->ops->connect, "connect callback should be set");
 
     int l_ret = l_trans->ops->init(l_trans, NULL);
     TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
@@ -956,11 +967,6 @@ static void test_20_http_stage_prepare_iocp_connect_socket_not_read_ready(void)
     dap_worker_t *l_worker = dap_events_worker_get_auto();
     TEST_ASSERT_NOT_NULL(l_worker, "Worker should be available");
 
-    DAP_MOCK_RESET(dap_events_socket_create_platform);
-    DAP_MOCK_RESET(dap_events_socket_resolve_and_set_addr);
-    DAP_MOCK_RESET(dap_events_socket_connect);
-    DAP_MOCK_RESET(dap_worker_add_events_socket);
-    DAP_MOCK_RESET(dap_stream_new_es_client);
     DAP_MOCK_SET_RETURN(dap_events_socket_connect, (void*)(intptr_t)0);
 
     memset(&s_stage_mock_esocket, 0, sizeof(s_stage_mock_esocket));
@@ -969,27 +975,17 @@ static void test_20_http_stage_prepare_iocp_connect_socket_not_read_ready(void)
     s_stage_mock_esocket.flags = DAP_SOCK_READY_TO_READ;
     memset(&s_stage_mock_stream_obj, 0, sizeof(s_stage_mock_stream_obj));
 
-    dap_events_socket_callbacks_t l_cbs = {0};
-    dap_stream_node_addr_t l_node_addr = {0};
+    s_stage_mock_stream_obj.trans = l_trans;
+    s_stage_mock_stream_obj.stream_worker = l_worker->_inheritor ? DAP_STREAM_WORKER(l_worker) : NULL;
 
-    dap_net_stage_prepare_params_t l_params = {
-        .host = "127.0.0.1",
-        .port = 8080,
-        .node_addr = &l_node_addr,
-        .authorized = false,
-        .callbacks = &l_cbs,
-        .client_ctx = NULL,
-        .worker = l_worker
-    };
-    dap_net_stage_prepare_result_t l_result = {0};
+    l_ret = l_trans->ops->connect(&s_stage_mock_stream_obj, "127.0.0.1", 8080, NULL);
 
-    l_ret = l_trans->ops->stage_prepare(l_trans, &l_params, &l_result);
-
-    TEST_ASSERT(l_ret == 0, "stage_prepare should succeed");
-    TEST_ASSERT_NOT_NULL(l_result.esocket, "esocket must be non-NULL after stage_prepare");
-    TEST_ASSERT(l_result.esocket->flags & DAP_SOCK_CONNECTING,
+    TEST_ASSERT(l_ret == 0, "connect should succeed");
+    TEST_ASSERT(DAP_MOCK_GET_CALL_COUNT(dap_worker_add_events_socket) >= 1,
+                "connect should add TCP socket to worker");
+    TEST_ASSERT(s_stage_mock_esocket.flags & DAP_SOCK_CONNECTING,
                 "IOCP TCP socket should still be in CONNECTING state");
-    TEST_ASSERT(!(l_result.esocket->flags & DAP_SOCK_READY_TO_READ),
+    TEST_ASSERT(!(s_stage_mock_esocket.flags & DAP_SOCK_READY_TO_READ),
                 "IOCP TCP socket must not be READ-ready while CONNECTING");
 
     l_trans->ops->deinit(l_trans);
@@ -1032,12 +1028,12 @@ int main(int argc, char *argv[])
     TEST_RUN(test_14_stream_session);
     TEST_RUN(test_15_stream_listen);
 
-    // Stage prepare tests (TCP socket creation for streaming)
+    // Stage prepare / connect tests for HTTP streaming
     TEST_RUN(test_16_http_stage_prepare_success);
-    TEST_RUN(test_17_http_stage_prepare_socket_create_fail);
-    TEST_RUN(test_18_http_stage_prepare_connect_fail);
+    TEST_RUN(test_17_http_stage_prepare_stream_create_fail);
+    TEST_RUN(test_18_http_connect_fail);
     TEST_RUN(test_19_http_stage_prepare_null_params);
-    TEST_RUN(test_20_http_stage_prepare_iocp_connect_socket_not_read_ready);
+    TEST_RUN(test_20_http_connect_iocp_connect_socket_not_read_ready);
 
     TEST_SUITE_END();
     
