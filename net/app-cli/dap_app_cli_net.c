@@ -63,6 +63,21 @@
 
 #define CLI_SERVER_DEFAULT_PORT 12345
 
+static int s_dap_app_cli_socket_pending_bytes(dap_app_cli_connect_param_t a_socket, int *a_pending)
+{
+    if (!a_pending)
+        return -1;
+#ifdef _WIN32
+    u_long l_pending = 0;
+    int l_ret = ioctlsocket((SOCKET)a_socket, FIONREAD, &l_pending);
+    *a_pending = l_ret == SOCKET_ERROR ? -1 : (int)l_pending;
+    return l_ret;
+#else
+    *a_pending = 0;
+    return ioctl((int)a_socket, FIONREAD, a_pending);
+#endif
+}
+
 int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_state_t *l_cmd, int a_status)
 {
     ssize_t l_recv_len = recv(socket, l_cmd->cmd_res + l_cmd->cmd_res_cur, DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
@@ -72,18 +87,25 @@ int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_st
         return DAP_CLI_ERROR_INCOMPLETE;
     case -1: {
 #ifdef DAP_OS_WINDOWS
-        _set_errno(WSAGetLastError());
-#endif
-        int l_err = errno;
-        if (l_err != EAGAIN && l_err != EWOULDBLOCK) {
-            fprintf(stderr, "[CLI-DIAG] recv: error %d (%s), fd=%d\n", l_err, strerror(l_err), (int)socket);
+        int l_err = WSAGetLastError();
+        _set_errno(l_err);
+        if (l_err != WSAEWOULDBLOCK && l_err != WSAETIMEDOUT) {
+            fprintf(stderr, "[CLI-DIAG] recv: error %d (%s), fd=%d\n", l_err, dap_strerror(l_err), (int)socket);
             return DAP_CLI_ERROR_SOCKET;
         }
+#else
+        int l_err = errno;
+        if (l_err != EAGAIN && l_err != EWOULDBLOCK) {
+            fprintf(stderr, "[CLI-DIAG] recv: error %d (%s), fd=%d\n", l_err, dap_strerror(l_err), (int)socket);
+            return DAP_CLI_ERROR_SOCKET;
+        }
+#endif
         int l_sock_err = 0;
         socklen_t l_err_len = sizeof(l_sock_err);
         getsockopt(socket, SOL_SOCKET, SO_ERROR, (char *)&l_sock_err, &l_err_len);
         if (l_sock_err)
-            fprintf(stderr, "[CLI-DIAG] recv: EAGAIN + SO_ERROR=%d (%s), fd=%d\n", l_sock_err, strerror(l_sock_err), (int)socket);
+            fprintf(stderr, "[CLI-DIAG] recv: would block + SO_ERROR=%d (%s), fd=%d\n",
+                    l_sock_err, dap_strerror(l_sock_err), (int)socket);
         return DAP_CLI_ERROR_TIMEOUT;
     }
     default: 
@@ -270,7 +292,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
         struct pollfd pfd = { .fd = (int)a_socket, .events = POLLIN };
         int pr = poll(&pfd, 1, 2000);
         int avail = 0;
-        ioctl((int)a_socket, FIONREAD, &avail);
+        s_dap_app_cli_socket_pending_bytes(a_socket, &avail);
         fprintf(stderr, "[CLI-DIAG] poll(2s): ret=%d revents=0x%x FIONREAD=%d\n", pr, pfd.revents, avail);
     }
 #endif
@@ -291,7 +313,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
         if (l_status == DAP_CLI_ERROR_TIMEOUT) {
             time_t l_elapsed = time(NULL) - l_start_time;
             int avail = 0;
-            ioctl((int)a_socket, FIONREAD, &avail);
+            s_dap_app_cli_socket_pending_bytes(a_socket, &avail);
             fprintf(stderr, "[CLI-DIAG] recv: timeout cycle, elapsed=%lds FIONREAD=%d\n", (long)l_elapsed, avail);
             if (l_elapsed > DAP_CLI_HTTP_TIMEOUT)
                 break;
