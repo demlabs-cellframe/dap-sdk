@@ -56,18 +56,20 @@ struct binary_pvt_data{
     plugin_deinit_callback_t callback_deinit;
 };
 
+static void s_binary_pvt_data_close(struct binary_pvt_data * a_pvt_data);
+
 /**
  * @brief dap_plugin_binary_init
  * @return
  */
 int dap_plugin_binary_init()
 {
-    dap_plugin_type_callbacks_t l_callbacks={};
+    dap_plugin_type_callbacks_ex_t l_callbacks = { .size = sizeof(l_callbacks) };
     l_callbacks.load = s_type_callback_load;
+    l_callbacks.unload = s_type_callback_unload;
     l_callbacks.preinit = s_type_callback_preinit;
     l_callbacks.init = s_type_callback_init;
-    l_callbacks.unload = s_type_callback_unload;
-    dap_plugin_type_create("binary",&l_callbacks);
+    dap_plugin_type_create_ex("binary",&l_callbacks);
     s_manifest = dap_plugin_manifest_add_builtin("binary", "binary", "Demlabs Inc", "1.0","Binary shared library loader",NULL,0,NULL,0);
     return 0;
 }
@@ -87,6 +89,7 @@ void dap_plugin_binary_deinit()
 static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pvt_data, char ** a_error_str )
 {
     assert(a_pvt_data);
+    *a_pvt_data = NULL;
     if (a_manifest == s_manifest) // Its our own manifest, do nothing we're already loaded
         return 0;
     struct binary_pvt_data * l_pvt_data = DAP_NEW_Z(struct binary_pvt_data);
@@ -94,7 +97,6 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -1;
     }
-    *a_pvt_data = l_pvt_data;
 #if defined (DAP_OS_UNIX) && !defined (__ANDROID__)
 
 #if defined (DAP_OS_DARWIN)
@@ -102,14 +104,23 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
 #elif defined (DAP_OS_LINUX)
     char * l_path = dap_strdup_printf("%s/%s.linux-common.%s.so", a_manifest->path, a_manifest->name, dap_get_arch());
 #endif
+    if (!l_path) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        DAP_DELETE(l_pvt_data);
+        return -1;
+    }
     l_pvt_data->handle = dlopen(l_path, RTLD_NOW | RTLD_LOCAL);
     if (l_pvt_data->handle) {
         l_pvt_data->callback_preinit = dlsym(l_pvt_data->handle, "plugin_preinit");
         l_pvt_data->callback_init = dlsym(l_pvt_data->handle, "plugin_init");
         l_pvt_data->callback_deinit = dlsym(l_pvt_data->handle, "plugin_deinit");
     } else {
-        log_it(L_ERROR, "Can't load %s module: %s (expected path %s)", a_manifest->name, dlerror(), l_path);
-        *a_error_str = dap_strdup_printf("Can't load %s module: %s (expected path %s)", a_manifest->name, dlerror(), l_path);
+        const char * l_dl_error = dlerror();
+        const char * l_reason = l_dl_error ? l_dl_error : "<UNKNOWN>";
+        log_it(L_ERROR, "Can't load %s module: %s (expected path %s)", a_manifest->name, l_reason, l_path);
+        if (a_error_str)
+            *a_error_str = dap_strdup_printf("Can't load %s module: %s (expected path %s)", a_manifest->name,
+                                             l_reason, l_path);
         DAP_DELETE(l_pvt_data);
         DAP_DELETE(l_path);
         return -5;
@@ -119,14 +130,22 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
 
 #if defined (DAP_OS_WINDOWS)
     char * l_path = dap_strdup_printf("%s/%s.windows.%s.dll", a_manifest->path, a_manifest->name, dap_get_arch());
+    if (!l_path) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        DAP_DELETE(l_pvt_data);
+        return -1;
+    }
     l_pvt_data->handle = LoadLibraryA(l_path);
     if (l_pvt_data->handle) {
         l_pvt_data->callback_preinit = (plugin_preinit_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_preinit");
         l_pvt_data->callback_init = (plugin_init_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_init");
         l_pvt_data->callback_deinit = (plugin_deinit_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_deinit");
     } else {
-        log_it(L_ERROR, "Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
-        *a_error_str = dap_strdup_printf("Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
+        DWORD l_error = GetLastError();
+        log_it(L_ERROR, "Can't load %s module: %s (error code: %lu)", a_manifest->name, l_path, (unsigned long)l_error);
+        if (a_error_str)
+            *a_error_str = dap_strdup_printf("Can't load %s module: %s (error code: %lu)", a_manifest->name,
+                                             l_path, (unsigned long)l_error);
         DAP_DELETE(l_pvt_data);
         DAP_DELETE(l_path);
         return -5;
@@ -136,10 +155,13 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
 
     if (!l_pvt_data->callback_preinit && !l_pvt_data->callback_init) {
         log_it(L_ERROR, "No \"plugin_preinit\" or \"plugin_init\" entry point in binary plugin \"%s\"", a_manifest->name);
-        *a_error_str = dap_strdup_printf("No entry points in binary plugin \"%s\"", a_manifest->name);
+        if (a_error_str)
+            *a_error_str = dap_strdup_printf("No entry points in binary plugin \"%s\"", a_manifest->name);
+        s_binary_pvt_data_close(l_pvt_data);
         DAP_DELETE(l_pvt_data);
         return -5;
     }
+    *a_pvt_data = l_pvt_data;
     return 0;
 }
 
@@ -180,19 +202,28 @@ static int s_type_callback_init(dap_plugin_manifest_t * a_manifest, void * a_pvt
  */
 static int s_type_callback_unload(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str )
 {
+    (void)a_error_str;
     if(a_manifest == s_manifest) // Its our own manifest, do nothing we're can't be unloaded
         return 0;
     struct binary_pvt_data * l_pvt_data = (struct binary_pvt_data *) a_pvt_data;
     assert(l_pvt_data);
     if(l_pvt_data->callback_deinit)
         l_pvt_data->callback_deinit();
+    s_binary_pvt_data_close(l_pvt_data);
+    DAP_DELETE(l_pvt_data);
+    return 0;
+}
+
+static void s_binary_pvt_data_close(struct binary_pvt_data * a_pvt_data)
+{
+    if (!a_pvt_data || !a_pvt_data->handle)
+        return;
 #if defined (DAP_OS_UNIX) && !defined (__ANDROID__)
-    dlclose(l_pvt_data->handle);
+    dlclose(a_pvt_data->handle);
 #endif
 
 #if defined (DAP_OS_WINDOWS)
-    FreeLibrary(l_pvt_data->handle);
+    FreeLibrary(a_pvt_data->handle);
 #endif
-
-    return 0;
+    a_pvt_data->handle = NULL;
 }

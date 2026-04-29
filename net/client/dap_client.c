@@ -33,10 +33,61 @@
 #include "dap_net_trans.h"
 #include "dap_net_trans_http_stream.h"
 #include "dap_uuid.h"
+#include "uthash.h"
 
 #define LOG_TAG "dap_client"
 
 static bool s_debug_more = false;
+
+typedef struct s_client_live_rec {
+    dap_client_t *client;
+    UT_hash_handle hh;
+} s_client_live_rec_t;
+
+static pthread_rwlock_t s_clients_live_lock = PTHREAD_RWLOCK_INITIALIZER;
+static s_client_live_rec_t *s_clients_live = NULL;
+
+static void s_client_live_register(dap_client_t *a_client)
+{
+    if (!a_client)
+        return;
+    s_client_live_rec_t *l_rec = DAP_NEW_Z(s_client_live_rec_t);
+    if (!l_rec) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
+    l_rec->client = a_client;
+    pthread_rwlock_wrlock(&s_clients_live_lock);
+    HASH_ADD_PTR(s_clients_live, client, l_rec);
+    pthread_rwlock_unlock(&s_clients_live_lock);
+}
+
+static void s_client_live_unregister(dap_client_t *a_client)
+{
+    if (!a_client)
+        return;
+    pthread_rwlock_wrlock(&s_clients_live_lock);
+    s_client_live_rec_t *l_rec = NULL;
+    HASH_FIND_PTR(s_clients_live, &a_client, l_rec);
+    if (l_rec) {
+        HASH_DEL(s_clients_live, l_rec);
+        DAP_DELETE(l_rec);
+    }
+    pthread_rwlock_unlock(&s_clients_live_lock);
+}
+
+bool dap_client_is_live(dap_client_t *a_client)
+{
+    if (!a_client)
+        return false;
+    bool l_ret = false;
+    pthread_rwlock_rdlock(&s_clients_live_lock);
+    s_client_live_rec_t *l_rec = NULL;
+    HASH_FIND_PTR(s_clients_live, &a_client, l_rec);
+    l_ret = l_rec != NULL;
+    pthread_rwlock_unlock(&s_clients_live_lock);
+    return l_ret;
+}
 
 /**
  * @brief dap_client_init
@@ -71,6 +122,13 @@ void dap_client_deinit()
 {
     dap_client_fsm_deinit();
     dap_client_trans_ctx_deinit();
+    pthread_rwlock_wrlock(&s_clients_live_lock);
+    s_client_live_rec_t *l_rec = NULL, *l_tmp = NULL;
+    HASH_ITER(hh, s_clients_live, l_rec, l_tmp) {
+        HASH_DEL(s_clients_live, l_rec);
+        DAP_DELETE(l_rec);
+    }
+    pthread_rwlock_unlock(&s_clients_live_lock);
     dap_http_client_deinit();
     log_it(L_INFO, "Deinit DAP client module");
 }
@@ -104,6 +162,7 @@ dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback
         return NULL;
     }
     l_client->_internal = l_fsm;
+    s_client_live_register(l_client);
 
     debug_if(s_debug_more, L_DEBUG, "Created client %p (fsm=%p, client_trans_ctx=%p, fsm_thread=%u)",
              l_client, l_fsm, l_fsm->client_trans_ctx, l_fsm->fsm_thread_idx);
@@ -234,6 +293,7 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name)
 void dap_client_delete_unsafe(dap_client_t *a_client)
 {
     dap_return_if_fail(a_client);
+    s_client_live_unregister(a_client);
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
     if (l_fsm)
         dap_client_fsm_delete_unsafe(l_fsm);

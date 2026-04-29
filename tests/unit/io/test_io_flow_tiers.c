@@ -466,6 +466,48 @@ static int test_bpf_response_routing(void)
     return 0;
 }
 
+/**
+ * @brief Test tier routing helper classification
+ */
+static int test_tier_routing_helpers(void)
+{
+    dap_test_msg("Testing tier routing helper classification");
+
+    dap_assert_PIF(!dap_io_flow_lb_tier_uses_application_routing(DAP_IO_FLOW_LB_TIER_NONE),
+                   "NONE should not use application routing");
+    dap_assert_PIF(dap_io_flow_lb_tier_uses_application_routing(DAP_IO_FLOW_LB_TIER_APPLICATION),
+                   "APPLICATION should use application routing");
+    dap_assert_PIF(dap_io_flow_lb_tier_needs_cross_worker_queues(DAP_IO_FLOW_LB_TIER_APPLICATION),
+                   "APPLICATION should need cross-worker queues");
+
+#if defined(__linux__) || defined(ANDROID)
+    dap_assert_PIF(!dap_io_flow_lb_tier_uses_application_routing(DAP_IO_FLOW_LB_TIER_CLASSIC_BPF),
+                   "CBPF should remain kernel-routed");
+    dap_assert_PIF(!dap_io_flow_lb_tier_uses_application_routing(DAP_IO_FLOW_LB_TIER_EBPF),
+                   "eBPF should remain kernel-routed");
+    dap_assert_PIF(dap_io_flow_lb_tier_needs_cross_worker_queues(DAP_IO_FLOW_LB_TIER_CLASSIC_BPF),
+                   "CBPF should keep defensive owner-forward queues");
+    dap_assert_PIF(dap_io_flow_lb_tier_needs_cross_worker_queues(DAP_IO_FLOW_LB_TIER_EBPF),
+                   "eBPF should keep defensive owner-forward queues");
+#endif
+
+#if defined(__APPLE__) && defined(__MACH__)
+    dap_assert_PIF(dap_io_flow_lb_tier_uses_application_routing(DAP_IO_FLOW_LB_TIER_DARWIN_GCD),
+                   "DARWIN_GCD should use application routing");
+    dap_assert_PIF(dap_io_flow_lb_tier_needs_cross_worker_queues(DAP_IO_FLOW_LB_TIER_DARWIN_GCD),
+                   "DARWIN_GCD should need cross-worker queues");
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+    dap_assert_PIF(dap_io_flow_lb_tier_uses_application_routing(DAP_IO_FLOW_LB_TIER_WIN_RIO),
+                   "WIN_RIO should use application routing");
+    dap_assert_PIF(dap_io_flow_lb_tier_needs_cross_worker_queues(DAP_IO_FLOW_LB_TIER_WIN_RIO),
+                   "WIN_RIO should need cross-worker queues");
+#endif
+
+    return 0;
+}
+
 // ============================================================================
 // MAIN
 // ============================================================================
@@ -496,11 +538,15 @@ int main(int argc, char *argv[])
     dap_test_msg("\n--- Test 4: BPF Response Routing (CRITICAL) ---");
     int result4 = test_bpf_response_routing();
     dap_pass_msg(result4 == 0 ? "PASSED" : "FAILED");
+
+    dap_test_msg("\n--- Test 5: Tier Routing Helpers ---");
+    int result5 = test_tier_routing_helpers();
+    dap_pass_msg(result5 == 0 ? "PASSED" : "FAILED");
     
     // Cleanup
     dap_mock_deinit();
     
     dap_test_msg("\n=== All IO Flow Tier Tests Complete ===");
     
-    return (result1 == 0 && result2 == 0 && result3 == 0 && result4 == 0) ? 0 : 1;
+    return (result1 == 0 && result2 == 0 && result3 == 0 && result4 == 0 && result5 == 0) ? 0 : 1;
 }

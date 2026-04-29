@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "dap_enc_base64.h"
@@ -8,6 +9,8 @@
 #define DAP_WS_SHA1_BLOCK_SIZE 64U
 #define DAP_WS_SHA1_DIGEST_SIZE 20U
 #define DAP_WS_SHA1_ROUNDS 80U
+#define DAP_WS_CLIENT_KEY_SIZE 16U
+#define DAP_WS_CLIENT_KEY_B64_SIZE 24U
 
 typedef struct dap_ws_sha1_ctx {
     uint32_t state[5];
@@ -143,6 +146,48 @@ static void s_sha1_final(dap_ws_sha1_ctx_t *a_ctx, uint8_t a_digest[DAP_WS_SHA1_
     }
 }
 
+static bool s_is_base64_char(char a_ch)
+{
+    return (a_ch >= 'A' && a_ch <= 'Z') ||
+           (a_ch >= 'a' && a_ch <= 'z') ||
+           (a_ch >= '0' && a_ch <= '9') ||
+           a_ch == '+' || a_ch == '/';
+}
+
+int dap_net_trans_websocket_validate_client_key(const char *a_client_key)
+{
+    if (!a_client_key) {
+        return -1;
+    }
+
+    size_t l_key_len = strlen(a_client_key);
+    if (l_key_len != DAP_WS_CLIENT_KEY_B64_SIZE || (l_key_len % 4U) != 0U) {
+        return -2;
+    }
+
+    bool l_seen_padding = false;
+    size_t l_padding = 0;
+    for (size_t i = 0; i < l_key_len; ++i) {
+        char l_ch = a_client_key[i];
+        if (l_ch == '=') {
+            l_seen_padding = true;
+            l_padding++;
+            if (l_padding > 2U) {
+                return -3;
+            }
+            continue;
+        }
+        if (l_seen_padding || !s_is_base64_char(l_ch)) {
+            return -3;
+        }
+    }
+
+    uint8_t l_decoded[DAP_WS_CLIENT_KEY_B64_SIZE / 4U * 3U] = {0};
+    size_t l_decoded_size = dap_enc_base64_decode(a_client_key, l_key_len,
+                                                  l_decoded, DAP_ENC_DATA_TYPE_B64);
+    return l_decoded_size == DAP_WS_CLIENT_KEY_SIZE ? 0 : -4;
+}
+
 int dap_net_trans_websocket_build_accept_key(const char *a_client_key,
                                              char *a_accept_key,
                                              size_t a_accept_key_size)
@@ -151,12 +196,13 @@ int dap_net_trans_websocket_build_accept_key(const char *a_client_key,
         return -1;
     }
 
-    size_t l_key_len = strlen(a_client_key);
-    if (l_key_len > 64U) {
-        l_key_len = 64U;
+    if (dap_net_trans_websocket_validate_client_key(a_client_key) != 0) {
+        return -2;
     }
 
-    char l_concat[128] = {0};
+    size_t l_key_len = strlen(a_client_key);
+
+    char l_concat[DAP_WS_CLIENT_KEY_B64_SIZE + sizeof(DAP_WS_GUID)] = {0};
     memcpy(l_concat, a_client_key, l_key_len);
     strcat(l_concat, DAP_WS_GUID);
 
@@ -169,7 +215,7 @@ int dap_net_trans_websocket_build_accept_key(const char *a_client_key,
     size_t l_encoded_size = dap_enc_base64_encode(l_sha1, DAP_WS_SHA1_DIGEST_SIZE,
                                                   a_accept_key, DAP_ENC_DATA_TYPE_B64);
     if (l_encoded_size == 0U || l_encoded_size >= a_accept_key_size) {
-        return -2;
+        return -3;
     }
 
     a_accept_key[l_encoded_size] = '\0';

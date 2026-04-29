@@ -91,6 +91,10 @@ static void s_http_connect_es_connected(dap_events_socket_t *a_es);
 static void s_http_connect_es_error(dap_events_socket_t *a_es, int a_errno);
 static void s_http_connect_es_delete(dap_events_socket_t *a_es, void *a_arg);
 static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
+static ssize_t s_http_trans_read_checked(dap_stream_t *a_stream, void *a_buffer, size_t a_size,
+                                         bool *a_delete_requested);
+static ssize_t s_http_trans_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t a_size,
+                                          bool *a_delete_requested, bool a_finalize_delete);
 
 // Ctx for HTTP requests (to avoid race conditions in client_esocket)
 typedef struct {
@@ -558,7 +562,15 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         return -1;
     }
 
-    dap_worker_add_events_socket(l_worker, l_es);
+    int l_add_ret = dap_worker_add_events_socket(l_worker, l_es);
+    if (l_add_ret != 0) {
+        log_it(L_ERROR, "HTTP connect: failed to add socket to worker #%u: %d", l_worker->id, l_add_ret);
+        l_es->context = NULL;
+        l_es->worker = NULL;
+        dap_events_socket_delete_unsafe(l_es, true);
+        DAP_DELETE(l_ctx);
+        return -1;
+    }
 
     debug_if(s_debug_more, L_INFO, "HTTP trans: TCP connect initiated to %s:%u", a_host, a_port);
     return 0;
@@ -574,7 +586,10 @@ static void s_http_stream_client_read(dap_events_socket_t *a_es, void *a_arg)
     dap_stream_t *l_stream = l_tc ? l_tc->stream : NULL;
     if (!l_stream) return;
 
-    ssize_t l_processed = s_http_trans_read(l_stream, NULL, 0);
+    bool l_delete_requested = false;
+    ssize_t l_processed = s_http_trans_read_checked(l_stream, NULL, 0, &l_delete_requested);
+    if (l_delete_requested)
+        return;
     if (l_processed > 0)
         dap_events_socket_shrink_buf_in(a_es, (size_t)l_processed);
 }
@@ -1003,8 +1018,22 @@ static int s_http_trans_session_start(dap_stream_t *a_stream,
  */
 static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
+    return s_http_trans_read_internal(a_stream, a_buffer, a_size, NULL, false);
+}
+
+static ssize_t s_http_trans_read_checked(dap_stream_t *a_stream, void *a_buffer, size_t a_size,
+                                         bool *a_delete_requested)
+{
+    return s_http_trans_read_internal(a_stream, a_buffer, a_size, a_delete_requested, true);
+}
+
+static ssize_t s_http_trans_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t a_size,
+                                          bool *a_delete_requested, bool a_finalize_delete)
+{
     UNUSED(a_buffer);
     UNUSED(a_size);
+    if (a_delete_requested)
+        *a_delete_requested = false;
 
     if (!a_stream || !a_stream->esocket) {
         log_it(L_ERROR, "Invalid parameters");
@@ -1035,8 +1064,17 @@ static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t 
             size_t l_remaining = l_es->buf_in_size - l_headers_size;
             size_t l_stream_processed = 0;
             if (l_remaining > 0) {
-                l_stream_processed = dap_stream_data_proc_read_ext(
-                        a_stream, l_es->buf_in + l_headers_size, l_remaining);
+                bool l_delete_requested = false;
+                if (a_finalize_delete) {
+                    l_stream_processed = dap_stream_data_proc_read_ext_checked(
+                            a_stream, l_es->buf_in + l_headers_size, l_remaining, &l_delete_requested);
+                } else {
+                    l_stream_processed = dap_stream_data_proc_read_ext(
+                            a_stream, l_es->buf_in + l_headers_size, l_remaining);
+                    l_delete_requested = a_stream->delete_deferred || a_stream->delete_in_progress;
+                }
+                if (a_delete_requested)
+                    *a_delete_requested = l_delete_requested;
             }
             return (ssize_t)(l_headers_size + l_stream_processed);
         } else {
@@ -1044,7 +1082,15 @@ static ssize_t s_http_trans_read(dap_stream_t *a_stream, void *a_buffer, size_t 
         }
     }
 
-    return (ssize_t)dap_stream_data_proc_read(a_stream);
+    bool l_delete_requested = false;
+    size_t l_processed = a_finalize_delete
+            ? dap_stream_data_proc_read_checked(a_stream, &l_delete_requested)
+            : dap_stream_data_proc_read(a_stream);
+    if (!a_finalize_delete)
+        l_delete_requested = a_stream->delete_deferred || a_stream->delete_in_progress;
+    if (a_delete_requested)
+        *a_delete_requested = l_delete_requested;
+    return (ssize_t)l_processed;
 }
 
 /**

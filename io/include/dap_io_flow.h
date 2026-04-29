@@ -108,6 +108,52 @@ typedef enum {
 } dap_io_flow_lb_tier_t;
 
 /**
+ * @brief Return true when a tier relies on application/cross-worker routing.
+ *
+ * These tiers may still use platform-specific listener setup, but flow
+ * ownership is selected in userspace and packets can be forwarded to another
+ * worker.
+ */
+DAP_STATIC_INLINE bool dap_io_flow_lb_tier_uses_application_routing(dap_io_flow_lb_tier_t a_tier)
+{
+    switch (a_tier) {
+        case DAP_IO_FLOW_LB_TIER_APPLICATION:
+            return true;
+#if defined(__APPLE__) && defined(__MACH__)
+        case DAP_IO_FLOW_LB_TIER_DARWIN_GCD:
+            return true;
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+        case DAP_IO_FLOW_LB_TIER_WIN_RIO:
+            return true;
+#endif
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Return true when a tier needs inter-worker forwarding queues.
+ *
+ * Linux BPF tiers are kernel-routed, but keep queues as a defensive owner
+ * forwarding path if a packet reaches a worker that does not own the existing
+ * flow.
+ */
+DAP_STATIC_INLINE bool dap_io_flow_lb_tier_needs_cross_worker_queues(dap_io_flow_lb_tier_t a_tier)
+{
+    if (dap_io_flow_lb_tier_uses_application_routing(a_tier)) {
+        return true;
+    }
+
+#if defined(__linux__) || defined(ANDROID)
+    return a_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF ||
+           a_tier == DAP_IO_FLOW_LB_TIER_EBPF;
+#else
+    return false;
+#endif
+}
+
+/**
  * @brief Data boundary types for different protocols
  * 
  * Defines how protocol reads and processes incoming data:
@@ -373,6 +419,7 @@ struct dap_io_flow_server {
     
     bool is_running;                        ///< Server is running
     _Atomic bool is_deleting;               ///< Server is being deleted (invalidate queued packets)
+    _Atomic bool flows_deleting;            ///< Flow table teardown is in progress
     
     // Cross-worker packet tracking (for natural drain during cleanup)
     _Atomic uint32_t cross_worker_packets;     ///< Number of packets being forwarded between workers

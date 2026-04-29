@@ -28,6 +28,7 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
 extern "C"{
 #endif
 
+#include <stddef.h>
 #include "dap_config.h"
 #include "dap_plugin_manifest.h"
 
@@ -39,10 +40,18 @@ typedef int (*dap_plugin_type_callback_unload_t)(dap_plugin_manifest_t * a_manif
 typedef struct dap_plugin_type_callbacks
 {
     dap_plugin_type_callback_load_t load;
-    dap_plugin_type_callback_preinit_t preinit;
-    dap_plugin_type_callback_init_t init;
     dap_plugin_type_callback_unload_t unload;
 } dap_plugin_type_callbacks_t;
+
+typedef struct dap_plugin_type_callbacks_ex
+{
+    size_t size;
+    dap_plugin_type_callback_load_t load;
+    dap_plugin_type_callback_unload_t unload;
+    dap_plugin_type_callback_preinit_t preinit;
+    dap_plugin_type_callback_init_t init;
+} dap_plugin_type_callbacks_ex_t;
+
 typedef enum dap_plugin_status{ STATUS_RUNNING, STATUS_STOPPED, STATUS_NONE } dap_plugin_status_t;
 
 int dap_plugin_init(const char * a_root_path);
@@ -50,8 +59,10 @@ void dap_plugin_deinit();
 const char *dap_plugin_root_path(void);
 
 int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t *a_callbacks);
+int dap_plugin_type_create_ex(const char* a_name, const dap_plugin_type_callbacks_ex_t *a_callbacks);
 int dap_plugin_load_all(void);
 int dap_plugin_preinit_all(void);
+int dap_plugin_init_all(void);
 int dap_plugin_start_all(void);
 void dap_plugin_stop_all();
 dap_plugin_status_t dap_plugin_status(const char * a_name);

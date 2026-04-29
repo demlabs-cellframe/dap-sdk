@@ -9,6 +9,18 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/dap_test_helpers.cmake)
 # STATUS: FIXED - KEM callback now uses owner_worker_id instead of listener_es->worker
 # =======================================================================================
 
+function(dap_regression_register_disabled_win32_udp_test TEST_NAME SKIP_REASON)
+    add_test(
+        NAME ${TEST_NAME}
+        COMMAND ${CMAKE_COMMAND} -E echo "SKIP: ${SKIP_REASON}"
+    )
+    set_tests_properties(${TEST_NAME} PROPERTIES
+        DISABLED TRUE
+        TIMEOUT 1
+        LABELS "regression;net;trans;udp;windows;skip"
+    )
+endfunction()
+
 project(test_udp_multiclient_regression)
 
 if(NOT WIN32)
@@ -50,7 +62,10 @@ else()
     # limits rather than the regression it is meant to cover. Keep it enabled on
     # native platforms and skip it for WIN32 until there is a Windows-specific
     # transport stress scenario with stable timing/resource assumptions.
-    message(STATUS "Skipping test_udp_multiclient_regression on WIN32/MXE")
+    dap_regression_register_disabled_win32_udp_test(${PROJECT_NAME}
+        "test_udp_multiclient_regression is Linux stress-oriented; Windows uses test_udp_windows_routing_handshake_regression"
+    )
+    message(STATUS "Registering disabled test_udp_multiclient_regression on WIN32/MXE")
 endif()
 
 # =======================================================================================
@@ -97,5 +112,21 @@ if(NOT WIN32)
 
     message("[+] UDP Handshake Retransmission Test - verifies handshake retransmission works")
 else()
-    message(STATUS "Skipping test_udp_handshake_retrans on WIN32")
+    dap_regression_register_disabled_win32_udp_test(test_udp_handshake_retrans
+        "test_udp_handshake_retrans fake-server harness uses POSIX socket APIs; Windows uses test_udp_windows_routing_handshake_regression"
+    )
+    message(STATUS "Registering disabled test_udp_handshake_retrans on WIN32")
+endif()
+
+if(WIN32 AND TARGET test_trans_integration)
+    add_test(
+        NAME test_udp_windows_routing_handshake_regression
+        COMMAND test_trans_integration --trans=UDP --max-clients=10 --log-level=info
+    )
+    set_tests_properties(test_udp_windows_routing_handshake_regression PROPERTIES
+        TIMEOUT 600
+        RUN_SERIAL TRUE
+        LABELS "regression;net;trans;udp;windows;routing;handshake"
+    )
+    message("[+] Windows UDP routing/handshake regression coverage - test_trans_integration --trans=UDP")
 endif()

@@ -34,6 +34,8 @@
 #include "dap_net_trans.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
+#include "dap_context_queue.h"
+#include "dap_context.h"
 #include "dap_timerfd.h"  // For handshake retransmission timer
 #include "dap_net.h"
 #include "dap_enc_kyber.h"  // For Kyber512 KEM functions
@@ -72,6 +74,8 @@
 
 // Debug flags
 static bool s_debug_more = false;  // Extra verbose debugging
+static _Thread_local bool s_udp_stream_read_delete_requested = false;
+static _Thread_local dap_io_flow_ctrl_t *s_udp_active_flow_ctrl = NULL;
 
 // UDP Trans Protocol Version
 #define DAP_STREAM_UDP_VERSION 1
@@ -116,6 +120,11 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
                                const dap_net_stage_prepare_params_t *a_params,
                                dap_net_stage_prepare_result_t *a_result);
 static size_t s_udp_get_max_packet_size(dap_net_trans_t *a_trans);
+static int s_udp_flow_ctrl_recv_checked(dap_io_flow_ctrl_t *a_flow_ctrl,
+                                        const void *a_packet, size_t a_packet_size,
+                                        bool *a_delete_requested);
+static void s_udp_delete_registered_or_queued_es(dap_worker_t *a_worker, dap_events_socket_t *a_es);
+static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream);
 
 // UDP trans operations table
 static const dap_net_trans_ops_t s_udp_ops = {
@@ -414,11 +423,14 @@ static int s_client_flow_ctrl_packet_send_cb(
         log_it(L_ERROR, "CLIENT FC send: invalid UDP context");
         return -1;
     }
+
+    if (l_udp_ctx->stream->delete_deferred || l_udp_ctx->stream->delete_in_progress) {
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: stream is closing, dropping packet");
+        return -1;
+    }
     
-    // Get trans_ctx and esocket from stream
-    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_udp_ctx->stream->trans_ctx;
-    if (!l_trans_ctx || !l_udp_ctx->stream->esocket) {
-        log_it(L_ERROR, "CLIENT FC send: no trans_ctx or esocket");
+    if (!l_udp_ctx->stream->esocket) {
+        log_it(L_ERROR, "CLIENT FC send: no esocket");
         return -1;
     }
     
@@ -573,7 +585,13 @@ static int s_client_flow_ctrl_payload_deliver_cb(
                      "CLIENT FC deliver: DATA packet (%zu bytes)", a_payload_size);
             
             if (a_payload_size > 0) {
-                dap_stream_data_proc_read_ext(l_stream, (const uint8_t*)a_payload, a_payload_size);
+                bool l_delete_requested = false;
+                dap_stream_data_proc_read_ext_checked(l_stream, (const uint8_t*)a_payload, a_payload_size,
+                                                      &l_delete_requested);
+                if (l_delete_requested) {
+                    s_udp_stream_read_delete_requested = true;
+                    return 0;
+                }
             }
             break;
         }
@@ -611,6 +629,28 @@ static void s_client_flow_ctrl_packet_free_cb(void *a_packet, void *a_arg)
     if (a_packet) {
         DAP_DELETE(a_packet);
     }
+}
+
+static int s_udp_flow_ctrl_recv_checked(dap_io_flow_ctrl_t *a_flow_ctrl,
+                                        const void *a_packet, size_t a_packet_size,
+                                        bool *a_delete_requested)
+{
+    if (a_delete_requested)
+        *a_delete_requested = false;
+    dap_io_flow_ctrl_t *l_prev_active = s_udp_active_flow_ctrl;
+    s_udp_active_flow_ctrl = a_flow_ctrl;
+    s_udp_stream_read_delete_requested = false;
+
+    int l_ret = dap_io_flow_ctrl_recv(a_flow_ctrl, a_packet, a_packet_size);
+    bool l_delete_requested = s_udp_stream_read_delete_requested;
+    s_udp_active_flow_ctrl = l_prev_active;
+    if (a_delete_requested)
+        *a_delete_requested = l_delete_requested;
+    if (l_delete_requested) {
+        dap_io_flow_ctrl_delete(a_flow_ctrl);
+        s_udp_stream_read_delete_requested = true;
+    }
+    return l_ret;
 }
 
 /**
@@ -668,7 +708,7 @@ static int s_ensure_client_flow_ctrl(dap_net_trans_udp_ctx_t *a_udp_ctx)
     
     dap_io_flow_ctrl_config_t l_fc_config = {
         .retransmit_timeout_ms = 100,   // 100ms for localhost (was 1000ms - TOO SLOW!)
-        .max_retransmit_count = 20,     // Increased for large transfers
+        .max_retransmit_count = 200,    // Keep retrying through short UDP burst/congestion windows
         .send_window_size = 65536,      // 64K packets in-flight (~64MB for 1KB packets)
         .recv_window_size = 65536,      // 64K packets receive window
         .max_out_of_order_delay_ms = 10000,  // 10 seconds out-of-order window
@@ -755,7 +795,8 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
         l_udp_ctx->handshake_payload_size = 0;
         l_udp_ctx->handshake_timer = NULL;
         // Notify FSM about handshake timeout so it can transition to error state
-        if (l_udp_ctx->stream && l_udp_ctx->stream->trans_ctx) {
+        if (l_udp_ctx->stream && !l_udp_ctx->stream->delete_deferred &&
+                !l_udp_ctx->stream->delete_in_progress && l_udp_ctx->stream->trans_ctx) {
             dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_udp_ctx->stream->trans_ctx;
             if (l_trans_ctx->handshake_cb) {
                 log_it(L_WARNING, "HANDSHAKE RETRANS: notifying FSM of ETIMEDOUT");
@@ -771,14 +812,13 @@ static bool s_handshake_retransmit_timer_cb(void *a_arg)
     log_it(L_INFO, "HANDSHAKE RETRANS: retransmitting (attempt %u/%d)",
            l_udp_ctx->handshake_retries, HANDSHAKE_RETRANSMIT_MAX_RETRIES);
     
-    // Get trans_ctx and esocket
-    if (!l_udp_ctx->stream || !l_udp_ctx->stream->trans_ctx) {
-        log_it(L_ERROR, "HANDSHAKE RETRANS: no stream or trans_ctx");
+    // Get esocket without touching FSM-owned trans_ctx during stream teardown.
+    if (!l_udp_ctx->stream || l_udp_ctx->stream->delete_deferred || l_udp_ctx->stream->delete_in_progress) {
+        debug_if(s_debug_more, L_DEBUG, "HANDSHAKE RETRANS: stream is closing, stopping timer");
         l_udp_ctx->handshake_timer = NULL;
         return false;
     }
-    
-    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)l_udp_ctx->stream->trans_ctx;
+
     if (!l_udp_ctx->stream->esocket) {
         log_it(L_ERROR, "HANDSHAKE RETRANS: no esocket");
         l_udp_ctx->handshake_timer = NULL;
@@ -849,15 +889,13 @@ static void s_cancel_handshake_timer(dap_net_trans_udp_ctx_t *a_udp_ctx)
  * @brief UDP read callback for processing incoming packets
  * 
  * This callback is invoked when data arrives on a UDP socket (client or server virtual).
- * Client path: dap_net_trans_ctx_t is passed via esocket->callbacks.arg (not _inheritor).
+ * Client path: dap_net_trans_udp_ctx_t is passed via esocket->callbacks.arg (not _inheritor).
  * 
  * Used by both:
  * - UDP client esockets (direct physical socket)
  * - UDP server virtual esockets (demultiplexed sessions)
  */
 void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) {
-    (void)a_arg;
-
     if (!a_es || !a_es->buf_in_size) {
         return;
     }
@@ -865,32 +903,38 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     debug_if(s_debug_more, L_DEBUG, "UDP client read callback: esocket %p (fd=%d), buf_in_size=%zu, callbacks.arg=%p",
              a_es, a_es->fd, a_es->buf_in_size, a_es->callbacks.arg);
 
-    // Get trans_ctx from callbacks.arg (NOT _inheritor!)
-    // _inheritor may point to client (dap_client_t), not trans_ctx!
-    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->callbacks.arg;
+    // Get UDP context from callbacks.arg (NOT _inheritor!)
+    // _inheritor may point to client infrastructure, and trans_ctx is FSM-owned.
+    dap_net_trans_udp_ctx_t *l_udp_ctx = (dap_net_trans_udp_ctx_t *)(a_arg ? a_arg : a_es->callbacks.arg);
 
-    if (!l_trans_ctx) {
-        log_it(L_WARNING, "UDP client esocket has no trans_ctx (callbacks.arg is NULL), dropping %zu bytes", a_es->buf_in_size);
+    if (!l_udp_ctx) {
+        log_it(L_WARNING, "UDP client esocket has no UDP context (callbacks.arg is NULL), dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
     
     // CRITICAL: Validate stream pointer - may be NULL during cleanup!
-    if (!l_trans_ctx->stream) {
-        log_it(L_WARNING, "UDP client trans_ctx %p has no stream (stream is NULL), dropping %zu bytes", 
-               l_trans_ctx, a_es->buf_in_size);
+    if (!l_udp_ctx->stream) {
+        log_it(L_WARNING, "UDP client UDP context %p has no stream (stream is NULL), dropping %zu bytes",
+               l_udp_ctx, a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
     
-    debug_if(s_debug_more, L_DEBUG, ">>> UDP READ CALLBACK: l_trans_ctx=%p, stream=%p", 
-             l_trans_ctx, l_trans_ctx->stream);
+    debug_if(s_debug_more, L_DEBUG, ">>> UDP READ CALLBACK: l_udp_ctx=%p, stream=%p",
+             l_udp_ctx, l_udp_ctx->stream);
     
-    dap_stream_t *l_stream = l_trans_ctx->stream;
-    
+    dap_stream_t *l_stream = l_udp_ctx->stream;
+
     // Validate stream pointer first
     if (!l_stream) {
         log_it(L_WARNING, "UDP client stream pointer is NULL (stream closed?), dropping %zu bytes", a_es->buf_in_size);
+        a_es->buf_in_size = 0;
+        return;
+    }
+
+    if (l_stream->delete_deferred || l_stream->delete_in_progress) {
+        debug_if(s_debug_more, L_DEBUG, "UDP client stream is closing, dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -899,8 +943,6 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
     // Check if stream has been deleted (trans would be NULL or invalid)
     if (!l_stream->trans) {
         log_it(L_WARNING, "UDP client stream has NULL trans (use-after-free?), dropping %zu bytes", a_es->buf_in_size);
-        // Clear the dangling pointer to prevent future issues
-        l_trans_ctx->stream = NULL;
         a_es->buf_in_size = 0;
         return;
     }
@@ -1167,27 +1209,15 @@ static bool s_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
         return false;
     }
     
-    // Get stream from protocol_data (set in s_udp_stage_prepare or server flow creation)
-    dap_stream_t *l_stream = (dap_stream_t*)a_flow->protocol_data;
-    if (!l_stream) {
-        log_it(L_ERROR, "No stream in datagram flow protocol_data!");
-        return false;
-    }
-    
-    // CLIENT flow: get address from trans UDP context (stable copy)
-    if (l_stream->is_client_to_uplink || !l_stream->_server_session) {
-        // Use helper function to get UDP context (handles both client and server-side)
-        dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(l_stream);
-        if (!l_udp_ctx) {
-            log_it(L_ERROR, "CLIENT stream has no UDP context!");
-            return false;
-        }
-        
+    // CLIENT flow: protocol_data is the UDP context so address lookup remains
+    // valid even after FSM-owned trans_ctx begins teardown.
+    dap_net_trans_udp_ctx_t *l_udp_ctx = (dap_net_trans_udp_ctx_t *)a_flow->protocol_data;
+    if (l_udp_ctx) {
         if (l_udp_ctx->remote_addr.ss_family == 0 || l_udp_ctx->remote_addr_len == 0) {
             log_it(L_ERROR, "CLIENT UDP context has no remote_addr!");
             return false;
         }
-        
+
         memcpy(a_addr_out, &l_udp_ctx->remote_addr, sizeof(struct sockaddr_storage));
         *a_addr_len_out = l_udp_ctx->remote_addr_len;
         return true;
@@ -1361,6 +1391,10 @@ static dap_net_trans_ctx_t *s_udp_get_or_create_ctx(dap_stream_t *a_stream) {
     if (!a_stream->trans_ctx) {
         debug_if(s_debug_more,L_INFO, "s_udp_get_or_create_ctx: Creating NEW trans_ctx");
         a_stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+        if (!a_stream->trans_ctx) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return NULL;
+        }
         if (a_stream->trans) {
             a_stream->trans_ctx->trans = a_stream->trans;
         }
@@ -1415,13 +1449,13 @@ static int s_udp_handshake_init(dap_stream_t *a_stream,
         debug_if(s_debug_more, L_DEBUG, "Setting up UDP client esocket %p (fd=%d) for handshake_init",
                  (void *)l_es, l_es->fd);
         
-        // IMPORTANT: Store trans_ctx in callbacks.arg (NOT _inheritor!)
+        // IMPORTANT: Store UDP context in callbacks.arg (NOT _inheritor!)
         // _inheritor is owned by client infrastructure (may be dap_client_t or NULL)
-        // We use callbacks.arg to pass trans_ctx to read callback
-        l_es->callbacks.arg = l_ctx;
+        // We use callbacks.arg to avoid reading FSM-owned trans_ctx during teardown.
+        l_es->callbacks.arg = l_udp_ctx;
         
-        debug_if(s_debug_more, L_DEBUG, "trans_ctx %p stored in callbacks.arg, trans_ctx->stream = %p, esocket->_inheritor=%p (client)", 
-                 l_ctx, a_stream, l_es->_inheritor);
+        debug_if(s_debug_more, L_DEBUG, "UDP ctx %p stored in callbacks.arg, stream = %p, esocket->_inheritor=%p (client)",
+                 l_udp_ctx, a_stream, l_es->_inheritor);
         
         // Set read callback
         if (!l_es->callbacks.read_callback) {
@@ -1930,10 +1964,14 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
                      "SESSION_START: Processing %zu buffered packets", l_udp_ctx->buffered_count);
             
             for (size_t i = 0; i < l_udp_ctx->buffered_count; i++) {
-                dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, 
-                                      l_udp_ctx->buffered_packets[i], 
-                                      l_udp_ctx->buffered_packet_sizes[i]);
-                DAP_DELETE(l_udp_ctx->buffered_packets[i]);
+                uint8_t *l_packet = l_udp_ctx->buffered_packets[i];
+                size_t l_packet_size = l_udp_ctx->buffered_packet_sizes[i];
+                bool l_delete_requested = false;
+                s_udp_flow_ctrl_recv_checked(l_udp_ctx->flow_ctrl, l_packet, l_packet_size,
+                                             &l_delete_requested);
+                if (l_delete_requested)
+                    return 0;
+                DAP_DELETE(l_packet);
             }
             
             DAP_DELETE(l_udp_ctx->buffered_packets);
@@ -1973,16 +2011,20 @@ static int s_udp_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
             debug_if(s_debug_more, L_DEBUG, "SESSION_START: Processing buffered packet #%zu (%zu bytes)",
                      i + 1, l_udp_ctx->buffered_packet_sizes[i]);
             
-            int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, 
-                                              l_udp_ctx->buffered_packets[i], 
-                                              l_udp_ctx->buffered_packet_sizes[i]);
+            uint8_t *l_packet = l_udp_ctx->buffered_packets[i];
+            size_t l_packet_size = l_udp_ctx->buffered_packet_sizes[i];
+            bool l_delete_requested = false;
+            int l_ret = s_udp_flow_ctrl_recv_checked(l_udp_ctx->flow_ctrl, l_packet, l_packet_size,
+                                                     &l_delete_requested);
+            if (l_delete_requested)
+                return 0;
             if (l_ret != 0) {
                 log_it(L_WARNING, "SESSION_START: Failed to process buffered packet #%zu: ret=%d", 
                        i + 1, l_ret);
             }
             
             // Free buffer
-            DAP_DELETE(l_udp_ctx->buffered_packets[i]);
+            DAP_DELETE(l_packet);
         }
         
         debug_if(s_debug_more, L_DEBUG, "SESSION_START: All %zu buffered packets processed", l_udp_ctx->buffered_count);
@@ -2263,7 +2305,13 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             debug_if(s_debug_more, L_DEBUG,
                      "CLIENT: Calling s_udp_session_start to create FC (session key already set)");
             
+            size_t l_consumed = l_es->buf_in_size;
+            s_udp_stream_read_delete_requested = false;
             int l_ret = s_udp_session_start(a_stream, (uint32_t)l_udp_ctx->session_id, NULL);
+            if (s_udp_stream_read_delete_requested) {
+                DAP_DELETE(l_decrypted);
+                return (ssize_t)l_consumed;
+            }
             if (l_ret != 0) {
                 log_it(L_ERROR, "CLIENT: Failed to create FC: ret=%d", l_ret);
                 DAP_DELETE(l_decrypted);
@@ -2331,7 +2379,12 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         debug_if(s_debug_more, L_DEBUG,
                  "CLIENT: Passing packet to FC (%p), size=%zu", l_udp_ctx->flow_ctrl, l_es->buf_in_size);
         
-        int l_ret = dap_io_flow_ctrl_recv(l_udp_ctx->flow_ctrl, l_es->buf_in, l_es->buf_in_size);
+        size_t l_consumed = l_es->buf_in_size;
+        bool l_delete_requested = false;
+        int l_ret = s_udp_flow_ctrl_recv_checked(l_udp_ctx->flow_ctrl, l_es->buf_in, l_consumed,
+                                                 &l_delete_requested);
+        if (l_delete_requested)
+            return (ssize_t)l_consumed;
         
         if (l_ret != 0) {
             log_it(L_WARNING, "CLIENT: Flow Control packet processing failed: ret=%d", l_ret);
@@ -2340,7 +2393,6 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         }
         
         // Clear buffer - packet consumed by FC
-        size_t l_consumed = l_es->buf_in_size;
         dap_events_socket_shrink_buf_in(l_es, l_consumed);
         
         return l_consumed;
@@ -2603,10 +2655,6 @@ static void s_udp_close(dap_stream_t *a_stream)
         return;
     }
 
-    if (!a_stream->trans_ctx) {
-        return;
-    }
-
     // Get UDP per-stream context
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_udp_ctx(a_stream);
     if (l_udp_ctx) {
@@ -2614,8 +2662,12 @@ static void s_udp_close(dap_stream_t *a_stream)
         
         // Clean up Flow Control if present
         if (l_udp_ctx->flow_ctrl) {
-            debug_if(s_debug_more, L_DEBUG, "Deleting client-side Flow Control");
-            dap_io_flow_ctrl_delete(l_udp_ctx->flow_ctrl);
+            if (l_udp_ctx->flow_ctrl == s_udp_active_flow_ctrl) {
+                debug_if(s_debug_more, L_DEBUG, "Deferring active client-side Flow Control delete");
+            } else {
+                debug_if(s_debug_more, L_DEBUG, "Deleting client-side Flow Control");
+                dap_io_flow_ctrl_delete(l_udp_ctx->flow_ctrl);
+            }
             l_udp_ctx->flow_ctrl = NULL;
         }
         
@@ -2675,10 +2727,9 @@ static void s_udp_close(dap_stream_t *a_stream)
     // ALWAYS use _mt method for esocket deletion - works from ANY thread context
     // No need to check worker - _mt handles it correctly
     
-    dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
     // Esocket fields live on the stream being closed; use a_stream (not trans_ctx->stream,
     // which may already be NULL during partial teardown).
-    if (l_ctx && a_stream->esocket_uuid && a_stream->esocket_worker) {
+    if (a_stream->esocket_uuid && a_stream->esocket_worker) {
         debug_if(s_debug_more, L_DEBUG, 
                "UDP close: queueing esocket deletion (UUID 0x%016" PRIx64 ") on its worker",
                a_stream->esocket_uuid);
@@ -2690,7 +2741,9 @@ static void s_udp_close(dap_stream_t *a_stream)
             a_stream->esocket->callbacks.read_callback = NULL;
             a_stream->esocket->callbacks.write_callback = NULL;
             a_stream->esocket->callbacks.error_callback = NULL;
+            a_stream->esocket->callbacks.delete_callback = NULL;
             a_stream->esocket->callbacks.arg = NULL;  // Critical: prevents use-after-free in callbacks
+            a_stream->esocket->_inheritor = NULL;
         }
         
         // ALWAYS use _mt method - 100% safe from any thread
@@ -2701,6 +2754,22 @@ static void s_udp_close(dap_stream_t *a_stream)
         a_stream->esocket_uuid = 0;
         a_stream->esocket_worker = NULL;
     }
+
+    if (a_stream->is_client_to_uplink && a_stream->flow) {
+        dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t *)a_stream->flow;
+        if (l_flow->protocol_data == l_udp_ctx)
+            l_flow->protocol_data = NULL;
+        dap_io_flow_datagram_delete(l_flow);
+        a_stream->flow = NULL;
+    }
+
+    if (a_stream->is_client_to_uplink) {
+        DAP_DELETE(l_udp_ctx);
+        a_stream->client_stream_ref = NULL;
+        a_stream->trans_ctx = NULL;
+    }
+
+    dap_net_trans_ctx_t *l_ctx = a_stream->is_client_to_uplink ? NULL : (dap_net_trans_ctx_t*)a_stream->trans_ctx;
     
     if (l_ctx) {
         // Clear stream pointer in trans_ctx to prevent use-after-free
@@ -2711,6 +2780,68 @@ static void s_udp_close(dap_stream_t *a_stream)
             DAP_DELETE(l_ctx->transport_priv);
             l_ctx->transport_priv = NULL;
         }
+    }
+}
+
+typedef struct udp_es_cleanup_ctx {
+    dap_worker_t *worker;
+    dap_events_socket_t *es;
+    dap_events_socket_uuid_t uuid;
+    bool deleted;
+} udp_es_cleanup_ctx_t;
+
+static void s_udp_delete_registered_or_queued_es_cb(void *a_arg)
+{
+    udp_es_cleanup_ctx_t *l_ctx = (udp_es_cleanup_ctx_t *)a_arg;
+    if (!l_ctx || !l_ctx->worker || !l_ctx->es)
+        return;
+
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (l_worker != l_ctx->worker || !l_worker->context)
+        return;
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    while (l_worker->queue_es_new && dap_context_queue_count(l_worker->queue_es_new) > 0) {
+        int l_processed = dap_context_queue_process(l_worker->queue_es_new);
+        if (l_processed <= 0)
+            break;
+    }
+#endif
+
+    dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
+    if (l_es) {
+        dap_events_socket_remove_and_delete_unsafe(l_es, true);
+        l_ctx->deleted = true;
+        return;
+    }
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_ctx->es->worker == l_worker && !atomic_load(&l_ctx->es->is_initalized)) {
+        dap_events_socket_delete_unsafe(l_ctx->es, true);
+        l_ctx->deleted = true;
+    }
+#endif
+}
+
+static void s_udp_delete_registered_or_queued_es(dap_worker_t *a_worker, dap_events_socket_t *a_es)
+{
+    if (!a_worker || !a_es)
+        return;
+
+    udp_es_cleanup_ctx_t l_ctx = {
+        .worker = a_worker,
+        .es = a_es,
+        .uuid = a_es->uuid
+    };
+
+    if (dap_worker_get_current() == a_worker)
+        s_udp_delete_registered_or_queued_es_cb(&l_ctx);
+    else
+        dap_worker_exec_callback_on_sync(a_worker, s_udp_delete_registered_or_queued_es_cb, &l_ctx);
+
+    if (!l_ctx.deleted) {
+        log_it(L_WARNING, "UDP cleanup: socket uuid 0x%"DAP_UINT64_FORMAT_x
+               " was neither registered nor safely unqueued", l_ctx.uuid);
     }
 }
 
@@ -2818,7 +2949,15 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // CRITICAL: Add socket to worker AFTER bind() so reactor monitors properly configured socket!
     // UDP is connectionless - add to worker after bind
-    dap_worker_add_events_socket(a_params->worker, l_es);
+    int l_add_ret = dap_worker_add_events_socket(a_params->worker, l_es);
+    if (l_add_ret != 0) {
+        log_it(L_ERROR, "Failed to add UDP socket to worker #%u: %d", a_params->worker->id, l_add_ret);
+        l_es->context = NULL;
+        l_es->worker = NULL;
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = l_add_ret;
+        return -1;
+    }
     
     // CRITICAL: Set readable+writable state for UDP - reactor needs it to handle I/O!
     // Without this, UDP packets won't be received/sent!
@@ -2829,7 +2968,7 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for UDP trans");
-        dap_events_socket_delete_unsafe(l_es, true);
+        s_udp_delete_registered_or_queued_es(a_params->worker, l_es);
         a_result->error_code = -1;
         return -1;
     }
@@ -2840,8 +2979,11 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     dap_net_trans_ctx_t *l_ctx = s_udp_get_or_create_ctx(l_stream);
     if (!l_ctx) {
         log_it(L_CRITICAL, "Failed to create trans_ctx for UDP stream");
-        dap_events_socket_delete_unsafe(l_es, true);
-        DAP_DELETE(l_stream);
+        l_stream->esocket = NULL;
+        l_stream->esocket_uuid = 0;
+        l_stream->esocket_worker = NULL;
+        dap_stream_delete_unsafe(l_stream);
+        s_udp_delete_registered_or_queued_es(a_params->worker, l_es);
         a_result->error_code = -1;
         return -1;
     }
@@ -2850,8 +2992,8 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     l_stream->esocket_worker = l_es->worker;
     l_ctx->stream = l_stream;
     
-    // CRITICAL: Set callbacks.arg so read_callback can retrieve trans_ctx!
-    l_es->callbacks.arg = l_ctx;
+    // Keep callbacks.arg empty until UDP ctx exists; read events before then are dropped.
+    l_es->callbacks.arg = NULL;
     debug_if(s_debug_more, L_DEBUG, "UDP CLIENT CREATED: esocket=%p (fd=%d), stream=%p, trans_ctx=%p",
              (void *)l_es, l_es->socket, (void *)l_stream, (void *)l_ctx);
     
@@ -2859,8 +3001,11 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     dap_net_trans_udp_ctx_t *l_udp_ctx = s_get_or_create_udp_ctx(l_stream);
     if (!l_udp_ctx) {
         log_it(L_CRITICAL, "Failed to create UDP context for stream");
-        dap_events_socket_delete_unsafe(l_es, true);
-        DAP_DELETE(l_stream);
+        l_stream->esocket = NULL;
+        l_stream->esocket_uuid = 0;
+        l_stream->esocket_worker = NULL;
+        dap_stream_delete_unsafe(l_stream);
+        s_udp_delete_registered_or_queued_es(a_params->worker, l_es);
         a_result->error_code = -1;
         return -1;
     }
@@ -2885,22 +3030,25 @@ static int s_udp_stage_prepare(dap_net_trans_t *a_trans,
     
     // CRITICAL: Create CLIENT datagram flow for address resolution callback
     // This allows stream->flow to work uniformly for CLIENT and SERVER
-    l_stream->flow = dap_io_flow_datagram_new(s_get_remote_addr_cb, l_stream);
+    l_stream->flow = dap_io_flow_datagram_new(s_get_remote_addr_cb, l_udp_ctx);
     if (!l_stream->flow) {
         log_it(L_CRITICAL, "Failed to allocate CLIENT datagram flow");
-        dap_events_socket_delete_unsafe(l_es, true);
-        DAP_DELETE(l_stream);
+        l_stream->esocket = NULL;
+        l_stream->esocket_uuid = 0;
+        l_stream->esocket_worker = NULL;
+        dap_stream_delete_unsafe(l_stream);
+        s_udp_delete_registered_or_queued_es(a_params->worker, l_es);
         a_result->error_code = -1;
         return -1;
     }
     
     debug_if(s_debug_more, L_INFO, "UDP CLIENT: created datagram flow %p for stream %p", l_stream->flow, l_stream);
     
-    // CRITICAL: Store trans_ctx in callbacks.arg (NOT _inheritor!)
-    // _inheritor is for client infrastructure ownership, we use callbacks.arg for trans_ctx
-    l_es->callbacks.arg = l_ctx;
+    // CRITICAL: Store UDP context in callbacks.arg (NOT _inheritor!)
+    // _inheritor is for client infrastructure ownership; trans_ctx is FSM-owned.
+    l_es->callbacks.arg = l_udp_ctx;
     
-    debug_if(s_debug_more, L_DEBUG, "UDP trans created stream %p with trans_ctx %p (stored in callbacks.arg)", l_stream, l_ctx);
+    debug_if(s_debug_more, L_DEBUG, "UDP trans created stream %p with UDP ctx %p (stored in callbacks.arg)", l_stream, l_udp_ctx);
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;
@@ -2949,6 +3097,12 @@ static dap_stream_trans_udp_private_t *s_get_private(dap_net_trans_t *a_trans)
  */
 static dap_net_trans_udp_ctx_t *s_get_udp_ctx(dap_stream_t *a_stream)
 {
+    if (a_stream && a_stream->is_client_to_uplink && a_stream->flow) {
+        dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t *)a_stream->flow;
+        if (l_flow->protocol_data)
+            return (dap_net_trans_udp_ctx_t *)l_flow->protocol_data;
+    }
+
     if (!a_stream || !a_stream->trans_ctx)
         return NULL;
     return (dap_net_trans_udp_ctx_t*)a_stream->trans_ctx->transport_priv;

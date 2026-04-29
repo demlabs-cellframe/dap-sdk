@@ -79,7 +79,15 @@ if(DEFINED ENV{DAP_MSAN} AND NOT DAP_MSAN)
     set(DAP_MSAN ON)
 endif()
 
-add_definitions("-D_FILE_OFFSET_BITS=64")
+set(DAP_ENABLE_FILE_OFFSET_BITS_64 ON)
+if(ANDROID AND CMAKE_SIZEOF_VOID_P EQUAL 4 AND CMAKE_SYSTEM_VERSION VERSION_LESS 24)
+    # Bionic before Android API 24 cannot provide 64-bit off_t through
+    # _FILE_OFFSET_BITS on 32-bit ABIs; libmdbx rejects that combination.
+    set(DAP_ENABLE_FILE_OFFSET_BITS_64 OFF)
+endif()
+if(DAP_ENABLE_FILE_OFFSET_BITS_64)
+    add_definitions("-D_FILE_OFFSET_BITS=64")
+endif()
 
 if(CMAKE_SIZEOF_VOID_P EQUAL "8")
   set(DEFAULT_BUILD_64 ON)
@@ -147,7 +155,7 @@ if(UNIX)
 
   if(DAP_MANAGE_CFLAGS)
     # Base warning flags (compatible with both GCC and Clang)
-    # NOTE: -Werror is applied via add_compile_options() at the end of this file,
+    # NOTE: -Werror is applied target-by-target through dap_target_enable_werror(),
     # NOT here in CMAKE_C_FLAGS, to avoid breaking CMake's check_function_exists()
     # and other try_compile-based detection (e.g., libmdbx's libm check).
     set(CFLAGS_WARNINGS "-Wall -Wextra -fPIC -Wno-deprecated-declarations -Wno-unused-local-typedefs -Wno-unused-function -Wno-implicit-fallthrough -Wno-unused-variable -Wno-unused-parameter")
@@ -351,12 +359,44 @@ if ( CELLFRAME_NO_OPTIMIZATION)
     set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
 
-# Apply -Werror to all actual compilation targets, but NOT to CMake's
-# internal try_compile/check_function_exists probes (which use CMAKE_C_FLAGS
-# but not COMPILE_OPTIONS). This prevents -Werror from breaking feature
-# detection in 3rdparty libraries (e.g., libmdbx's check for libm).
+if(NOT DEFINED DAP_WERROR_DEFAULT)
+    set(DAP_WERROR_DEFAULT ${DAP_MANAGE_CFLAGS})
+endif()
+option(DAP_WERROR "Treat warnings as errors for first-party DAP targets" ${DAP_WERROR_DEFAULT})
 
-# downstream packagers (especially with new compilers) may want to disable this -> guard it with DAP_MANAGE_CFLAGS
-if(DAP_MANAGE_CFLAGS)
-    add_compile_options(-Werror)
+set(DAP_WERROR_EXCLUDED_TARGETS
+    ""
+    CACHE STRING "Semicolon-separated targets that should not receive DAP_WERROR")
+
+function(dap_target_enable_werror TARGET_NAME)
+    if(NOT TARGET ${TARGET_NAME})
+        return()
+    endif()
+    if(NOT DAP_MANAGE_CFLAGS OR NOT DAP_WERROR)
+        return()
+    endif()
+    if(TARGET_NAME IN_LIST DAP_WERROR_EXCLUDED_TARGETS)
+        return()
+    endif()
+
+    get_target_property(_dap_target_type ${TARGET_NAME} TYPE)
+    if(_dap_target_type STREQUAL "INTERFACE_LIBRARY" OR _dap_target_type STREQUAL "UTILITY")
+        return()
+    endif()
+
+    if(MSVC)
+        target_compile_options(${TARGET_NAME} PRIVATE /WX)
+    else()
+        target_compile_options(${TARGET_NAME} PRIVATE -Werror)
+    endif()
+endfunction()
+
+function(dap_target_disable_werror TARGET_NAME)
+    if(TARGET ${TARGET_NAME})
+        target_compile_options(${TARGET_NAME} PRIVATE -Wno-error)
+    endif()
+endfunction()
+
+if(DAP_MANAGE_CFLAGS AND DAP_WERROR)
+    message(STATUS "[*] DAP_WERROR enabled for first-party DAP targets")
 endif()

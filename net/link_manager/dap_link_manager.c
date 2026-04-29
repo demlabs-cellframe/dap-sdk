@@ -59,6 +59,12 @@ static dap_link_manager_t *s_link_manager = NULL;
 static dap_proc_thread_t *s_query_thread = NULL;
 static char s_active_channels[256] = {0};
 
+static void s_active_channels_ensure_default(void)
+{
+    if (!s_active_channels[0])
+        dap_stpcpy(s_active_channels, "RCGEND");
+}
+
 static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_error_callback(dap_client_t *a_client, void *a_arg);
@@ -201,7 +207,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 // sanity check
     dap_return_val_if_pass_err(s_link_manager, -2, "Link manager actualy inited");
 // init default active channels
-    dap_stpcpy(s_active_channels, "RCGEND");
+    s_active_channels_ensure_default();
 // get config
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_max_attempts_num = dap_config_get_item_uint32_default(g_config, "link_manager", "max_attempts_num", s_max_attempts_num);
@@ -1368,7 +1374,7 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
  */
 int dap_link_manager_add_active_channel(char a_ch_id)
 {
-    dap_return_val_if_pass_err(!s_link_manager, -1, s_init_error);
+    s_active_channels_ensure_default();
     size_t l_len = dap_strlen(s_active_channels);
     if (l_len + 1 >= sizeof(s_active_channels)) {
         log_it(L_ERROR, "Active channels buffer is full, can't add '%c'", a_ch_id);
@@ -1397,6 +1403,7 @@ int dap_link_manager_add_active_channel(char a_ch_id)
 int dap_link_manager_remove_active_channel(char a_ch_id)
 {
     dap_return_val_if_pass_err(!s_link_manager, -1, s_init_error);
+    s_active_channels_ensure_default();
     size_t l_len = dap_strlen(s_active_channels);
     char *l_pos = memchr(s_active_channels, (unsigned char)a_ch_id, l_len);
     if (!l_pos) {
@@ -1414,5 +1421,6 @@ int dap_link_manager_remove_active_channel(char a_ch_id)
  */
 const char *dap_link_manager_get_active_channels(void)
 {
+    s_active_channels_ensure_default();
     return s_active_channels;
 }

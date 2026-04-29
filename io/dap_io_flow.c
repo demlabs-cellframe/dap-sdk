@@ -24,6 +24,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include <unistd.h>
+#include <errno.h>
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -48,6 +49,233 @@
 
 // Debug mode
 static bool s_debug_more = false;
+
+static void s_cross_worker_packet_account_inc(dap_io_flow_server_t *a_server)
+{
+    if (a_server)
+        atomic_fetch_add(&a_server->cross_worker_packets, 1U);
+}
+
+static void s_cross_worker_packet_account_dec(dap_io_flow_server_t *a_server)
+{
+    if (!a_server)
+        return;
+
+    uint32_t l_prev = atomic_fetch_sub(&a_server->cross_worker_packets, 1U);
+    if (l_prev == 0) {
+        atomic_fetch_add(&a_server->cross_worker_packets, 1U);
+        log_it(L_WARNING, "Cross-worker packet accounting underflow avoided for server %p", a_server);
+        return;
+    }
+
+    pthread_mutex_lock(&a_server->cross_worker_mutex);
+    pthread_cond_signal(&a_server->cross_worker_cond);
+    pthread_mutex_unlock(&a_server->cross_worker_mutex);
+}
+
+static void s_flow_packet_guard_end(dap_io_flow_server_t *a_server)
+{
+    if (!a_server) {
+        return;
+    }
+
+    pthread_mutex_lock(&a_server->cleanup_mutex);
+    uint32_t l_prev = atomic_fetch_sub(&a_server->active_callbacks, 1U);
+    if (l_prev == 1U) {
+        pthread_cond_signal(&a_server->cleanup_cond);
+    } else if (l_prev == 0U) {
+        atomic_fetch_add(&a_server->active_callbacks, 1U);
+        log_it(L_WARNING, "Flow packet callback accounting underflow avoided for server %p", a_server);
+    }
+    pthread_mutex_unlock(&a_server->cleanup_mutex);
+}
+
+static bool s_flow_packet_guard_begin(dap_io_flow_server_t *a_server)
+{
+    if (!a_server) {
+        return false;
+    }
+
+    pthread_mutex_lock(&a_server->cleanup_mutex);
+    if (atomic_load(&a_server->is_deleting) ||
+        atomic_load(&a_server->flows_deleting)) {
+        pthread_mutex_unlock(&a_server->cleanup_mutex);
+        return false;
+    }
+    atomic_fetch_add(&a_server->active_callbacks, 1U);
+    pthread_mutex_unlock(&a_server->cleanup_mutex);
+    return true;
+}
+
+static void s_wait_flow_packet_callbacks_drained(dap_io_flow_server_t *a_server)
+{
+    if (!a_server) {
+        return;
+    }
+
+    pthread_mutex_lock(&a_server->cleanup_mutex);
+    while (atomic_load(&a_server->active_callbacks) > 0) {
+        pthread_cond_wait(&a_server->cleanup_cond, &a_server->cleanup_mutex);
+    }
+    pthread_mutex_unlock(&a_server->cleanup_mutex);
+}
+
+typedef struct s_queue_drain_delete_ctx {
+    dap_context_queue_t *queue;
+    uint32_t worker_id;
+    size_t processed;
+    int status;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool completed;
+} s_queue_drain_delete_ctx_t;
+
+static void s_queue_drain_delete_complete(s_queue_drain_delete_ctx_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    a_ctx->completed = true;
+    pthread_cond_signal(&a_ctx->cond);
+    pthread_mutex_unlock(&a_ctx->mutex);
+}
+
+static void s_queue_drain_delete_callback(void *a_arg)
+{
+    s_queue_drain_delete_ctx_t *l_ctx = (s_queue_drain_delete_ctx_t *)a_arg;
+    if (!l_ctx || !l_ctx->queue) {
+        if (l_ctx)
+            s_queue_drain_delete_complete(l_ctx);
+        return;
+    }
+
+    while (dap_context_queue_count(l_ctx->queue) > 0) {
+        int l_processed = dap_context_queue_process(l_ctx->queue);
+        if (l_processed < 0) {
+            l_ctx->status = l_processed;
+            break;
+        }
+        if (l_processed == 0) {
+            l_ctx->status = -EAGAIN;
+            break;
+        }
+        l_ctx->processed += (size_t)l_processed;
+    }
+
+    if (l_ctx->status == 0) {
+        dap_context_queue_delete(l_ctx->queue);
+        l_ctx->queue = NULL;
+    }
+
+    s_queue_drain_delete_complete(l_ctx);
+}
+
+static void s_queue_drain_delete_wait_if_running(s_queue_drain_delete_ctx_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    while (!a_ctx->completed) {
+        pthread_cond_wait(&a_ctx->cond, &a_ctx->mutex);
+    }
+    pthread_mutex_unlock(&a_ctx->mutex);
+}
+
+static bool s_delete_queue_input_on_worker(dap_worker_t *a_worker, dap_context_queue_t *a_queue, uint32_t a_worker_id)
+{
+    if (!a_queue) {
+        return true;
+    }
+
+    uint64_t l_started = dap_nanotime_now();
+    const uint64_t l_max_wait_ns = 5ULL * 1000000000ULL;
+
+    for (;;) {
+        s_queue_drain_delete_ctx_t l_ctx = {
+            .queue = a_queue,
+            .worker_id = a_worker_id,
+            .status = 0
+        };
+        pthread_mutex_init(&l_ctx.mutex, NULL);
+        pthread_cond_init(&l_ctx.cond, NULL);
+
+        int l_ret = 0;
+        if (a_worker) {
+            l_ret = dap_worker_exec_callback_on_sync_timed(
+                a_worker, s_queue_drain_delete_callback, &l_ctx,
+                DAP_WORKER_EXEC_CALLBACK_SYNC_DEFAULT_TIMEOUT_MS);
+            if (l_ret == -EINPROGRESS) {
+                s_queue_drain_delete_wait_if_running(&l_ctx);
+                l_ret = 0;
+            }
+        } else {
+            s_queue_drain_delete_callback(&l_ctx);
+        }
+
+        bool l_deleted = (l_ret == 0 && l_ctx.status == 0 && l_ctx.queue == NULL);
+        if (l_deleted) {
+            debug_if(s_debug_more, L_DEBUG,
+                     "Deleted inter-worker queue on worker %u after draining %zu packet(s)",
+                     a_worker_id, l_ctx.processed);
+            pthread_cond_destroy(&l_ctx.cond);
+            pthread_mutex_destroy(&l_ctx.mutex);
+            return true;
+        }
+
+        int l_status = l_ret != 0 ? l_ret : l_ctx.status;
+        log_it(L_WARNING,
+               "Inter-worker queue delete on worker %u incomplete (ret=%d, status=%d, queue=%p); retrying before server free",
+               a_worker_id, l_ret, l_ctx.status, l_ctx.queue);
+        pthread_cond_destroy(&l_ctx.cond);
+        pthread_mutex_destroy(&l_ctx.mutex);
+
+        if (dap_nanotime_now() - l_started >= l_max_wait_ns) {
+            log_it(L_CRITICAL,
+                   "Inter-worker queue delete on worker %u did not complete within 5000 ms; leaving server allocated to avoid UAF",
+                   a_worker_id);
+            return false;
+        }
+
+        if (l_status != -ETIMEDOUT && l_status != -EAGAIN) {
+            usleep(10000);
+        } else {
+            usleep(50000);
+        }
+    }
+}
+
+static bool s_cleanup_inter_worker_queue_allocations(dap_io_flow_server_t *a_server)
+{
+    if (!a_server) {
+        return true;
+    }
+
+    uint32_t l_worker_count = dap_proc_thread_get_count();
+    bool l_all_queues_deleted = true;
+
+    if (a_server->queue_inputs) {
+        for (uint32_t i = 0; i < l_worker_count; i++) {
+            if (a_server->queue_inputs[i]) {
+                dap_worker_t *l_worker = dap_events_worker_get(i);
+                if (s_delete_queue_input_on_worker(l_worker, a_server->queue_inputs[i], i)) {
+                    a_server->queue_inputs[i] = NULL;
+                } else {
+                    l_all_queues_deleted = false;
+                }
+            }
+        }
+        if (l_all_queues_deleted) {
+            DAP_DELETE(a_server->queue_inputs);
+            a_server->queue_inputs = NULL;
+        }
+    }
+
+    if (l_all_queues_deleted && a_server->inter_worker_queues) {
+        for (uint32_t i = 0; i < l_worker_count; i++) {
+            DAP_DELETE(a_server->inter_worker_queues[i]);
+        }
+        DAP_DELETE(a_server->inter_worker_queues);
+        a_server->inter_worker_queues = NULL;
+    }
+
+    return l_all_queues_deleted;
+}
 
 // Inter-worker queue sizing for application-tier packet forwarding.
 // Keep memory roughly stable as worker count grows (e.g. CI with 32 workers).
@@ -94,10 +322,19 @@ typedef struct {
 static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg);
 static void s_queue_ptr_callback(void *a_ptr);
 static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server);
+void dap_io_flow_socket_cleanup_created_listeners(dap_server_t *a_server, dap_list_t *a_previous_tail);
 static int s_forward_packet_to_worker(dap_io_flow_server_t *a_server, 
                                       uint32_t a_from_worker_id,
                                       uint32_t a_to_worker_id, 
                                       struct flow_cross_worker_packet *a_packet);
+static int s_forward_packet_copy_to_worker(dap_io_flow_server_t *a_server,
+                                           uint32_t a_from_worker_id,
+                                           uint32_t a_to_worker_id,
+                                           dap_io_flow_t *a_flow,
+                                           const uint8_t *a_data,
+                                           size_t a_data_size,
+                                           const struct sockaddr_storage *a_remote_addr,
+                                           socklen_t a_remote_addr_len);
 static void s_process_forwarded_packet(dap_io_flow_server_t *server,
                                        dap_io_flow_t *flow,
                                        const uint8_t *data,
@@ -226,6 +463,7 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     atomic_init(&l_server->pending_cleanups, 0);
     atomic_init(&l_server->active_callbacks, 0);  // Track callbacks in execution
     atomic_init(&l_server->is_deleting, false);   // Server is valid initially
+    atomic_init(&l_server->flows_deleting, false);
     
     // Initialize cross-worker packet drain coordination (for natural drain during cleanup)
     pthread_mutex_init(&l_server->cross_worker_mutex, NULL);
@@ -282,6 +520,8 @@ int dap_io_flow_server_listen(
             return -3;
         }
     }
+
+    dap_list_t *l_listeners_tail_before = dap_list_last(a_server->dap_server->es_listeners);
     
     // Create sharded listeners (or single socket if eBPF unavailable)
     // dap_io_flow_socket_create_sharded_listeners detects best LB tier
@@ -299,25 +539,24 @@ int dap_io_flow_server_listen(
         return l_ret;
     }
     
-    // Initialize inter-worker queues ONLY for Application-level LB (Tier 1)
-    // Kernel-level tiers (BPF, BSD LB, etc.) distribute packets directly - no forwarding needed!
-    // macOS GCD and Windows RIO also use Application tier internally but with platform optimizations
-    bool needs_queues = (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION
-#ifdef DAP_IO_FLOW_LB_TIER_DARWIN_GCD
-                         || a_server->lb_tier == DAP_IO_FLOW_LB_TIER_DARWIN_GCD
-#endif
-#ifdef DAP_IO_FLOW_LB_TIER_WIN_RIO
-                         || a_server->lb_tier == DAP_IO_FLOW_LB_TIER_WIN_RIO
-#endif
-                        );
+    // Initialize inter-worker queues for application-routed tiers and as a
+    // safety path for Linux BPF tiers if an existing flow is observed on
+    // another worker.
+    bool needs_queues = dap_io_flow_lb_tier_needs_cross_worker_queues(a_server->lb_tier);
     
     if (needs_queues) {
         l_ret = s_init_inter_worker_queues(a_server);
         if (l_ret != 0) {
             log_it(L_ERROR, "Failed to initialize inter-worker queues: %d", l_ret);
+            if (!s_cleanup_inter_worker_queue_allocations(a_server)) {
+                log_it(L_CRITICAL,
+                       "Inter-worker queue setup cleanup incomplete; retaining queue ownership on server");
+            }
+            dap_io_flow_socket_cleanup_created_listeners(a_server->dap_server, l_listeners_tail_before);
             return l_ret;
         }
-        log_it(L_NOTICE, "Inter-worker queues initialized for application-level distribution");
+        log_it(L_NOTICE, "Inter-worker queues initialized for tier %s",
+               dap_io_flow_tier_name(a_server->lb_tier));
     } else {
         log_it(L_NOTICE, "Skipping inter-worker queues (kernel-level tier handles distribution)");
     }
@@ -405,6 +644,10 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     }
     
     uint32_t l_worker_count = dap_proc_thread_get_count();
+
+    // Callbacks already past the is_deleting checks may still hold flow pointers.
+    // Wait them out before removing any flow from the hash tables.
+    s_wait_flow_packet_callbacks_drained(a_server);
     
     // Step 1: Cleanup all flows (user data)
     debug_if(s_debug_more, L_DEBUG, "Cleaning up flows for %u workers", l_worker_count);
@@ -473,17 +716,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
                l_final_count, l_drain_time_ms);
     }
     
-    // Step 3: Delete inter_worker_queues references (just pointer arrays, not actual queues)
-    debug_if(s_debug_more, L_DEBUG, "Freeing inter-worker queue reference arrays");
-    if (a_server->inter_worker_queues) {
-        for (uint32_t i = 0; i < l_worker_count; i++) {
-            DAP_DELETE(a_server->inter_worker_queues[i]);
-        }
-        DAP_DELETE(a_server->inter_worker_queues);
-        a_server->inter_worker_queues = NULL;
-    }
-    
-    // Step 4: Delete queue_inputs synchronously on each worker thread
+    // Step 3: Delete queue_inputs synchronously on each worker thread
     // Each queue was created on a specific worker's context and must be deleted
     // from that worker's thread to avoid race conditions
     debug_if(s_debug_more, L_DEBUG, "Deleting queue_inputs on worker threads");
@@ -491,17 +724,29 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         for (uint32_t i = 0; i < l_worker_count; i++) {
             if (a_server->queue_inputs[i]) {
                 dap_worker_t *l_worker = dap_events_worker_get(i);
-                if (l_worker) {
-                    // Use sync callback to delete queue on owning worker
-                    dap_worker_exec_callback_on_sync(l_worker, 
-                        (dap_worker_callback_t)dap_context_queue_delete, 
-                        a_server->queue_inputs[i]);
+                dap_context_queue_t *l_queue = a_server->queue_inputs[i];
+                if (!s_delete_queue_input_on_worker(l_worker, l_queue, i)) {
+                    log_it(L_CRITICAL,
+                           "Server '%s' delete stopped before freeing server because worker %u queue is still alive",
+                           a_server->name ? a_server->name : "unknown", i);
+                    atomic_store(&s_deleting_server, 0);
+                    return;
                 }
                 a_server->queue_inputs[i] = NULL;
             }
         }
         DAP_DELETE(a_server->queue_inputs);
         a_server->queue_inputs = NULL;
+    }
+
+    // Step 4: Delete inter_worker_queues references (just pointer arrays, not actual queues)
+    debug_if(s_debug_more, L_DEBUG, "Freeing inter-worker queue reference arrays");
+    if (a_server->inter_worker_queues) {
+        for (uint32_t i = 0; i < l_worker_count; i++) {
+            DAP_DELETE(a_server->inter_worker_queues[i]);
+        }
+        DAP_DELETE(a_server->inter_worker_queues);
+        a_server->inter_worker_queues = NULL;
     }
     
     // Step 5: Free structures
@@ -538,6 +783,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     // Mark server as freed (helps detect use-after-free)
     memset(a_server, 0xDE, sizeof(*a_server)); // Fill with 0xDE (dead) pattern
     DAP_DELETE(a_server);
+    atomic_store(&s_deleting_server, 0);
     
     log_it(L_INFO, "Server '%s' deleted", l_name_copy ? l_name_copy : "unknown");
     DAP_DELETE(l_name_copy);
@@ -623,6 +869,9 @@ int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server)
         log_it(L_WARNING, "dap_io_flow_delete_all_flows: No flow_destroy callback, skipping");
         return 0;
     }
+
+    atomic_store(&a_server->flows_deleting, true);
+    s_wait_flow_packet_callbacks_drained(a_server);
     
     uint32_t l_worker_count = dap_proc_thread_get_count();
     int l_total_deleted = 0;
@@ -658,6 +907,7 @@ int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server)
     
     log_it(L_INFO, "dap_io_flow_delete_all_flows: Deleted %d flows for server '%s'",
            l_total_deleted, a_server->name ? a_server->name : "NULL");
+    atomic_store(&a_server->flows_deleting, false);
     
     return l_total_deleted;
 }
@@ -748,6 +998,69 @@ static dap_arena_t* s_get_cross_worker_arena(void)
     return tl_cross_worker_arena;
 }
 
+static int s_forward_packet_copy_to_worker(dap_io_flow_server_t *a_server,
+                                           uint32_t a_from_worker_id,
+                                           uint32_t a_to_worker_id,
+                                           dap_io_flow_t *a_flow,
+                                           const uint8_t *a_data,
+                                           size_t a_data_size,
+                                           const struct sockaddr_storage *a_remote_addr,
+                                           socklen_t a_remote_addr_len)
+{
+    if (!a_server || !a_data || !a_remote_addr || a_data_size == 0) {
+        return -1;
+    }
+
+    uint32_t l_worker_count = dap_proc_thread_get_count();
+    if (a_from_worker_id >= l_worker_count || a_to_worker_id >= l_worker_count) {
+        log_it(L_ERROR, "Invalid worker IDs for packet copy: %u -> %u",
+               a_from_worker_id, a_to_worker_id);
+        return -2;
+    }
+
+    if (!a_server->inter_worker_queues || !a_server->inter_worker_queues[a_from_worker_id]) {
+        log_it(L_ERROR, "No inter-worker queues for forwarding packet %u -> %u",
+               a_from_worker_id, a_to_worker_id);
+        return -3;
+    }
+
+    if (a_data_size > SIZE_MAX - sizeof(struct flow_cross_worker_packet)) {
+        log_it(L_ERROR, "Packet too large for cross-worker allocation: %zu", a_data_size);
+        return -4;
+    }
+
+    dap_arena_t *l_arena = s_get_cross_worker_arena();
+    if (!l_arena) {
+        log_it(L_ERROR, "Cross-worker arena not available - dropping packet");
+        return -5;
+    }
+
+    dap_arena_alloc_ex_t l_packet_alloc;
+    size_t l_alloc_size = sizeof(struct flow_cross_worker_packet) + a_data_size;
+    if (!dap_arena_alloc_ex(l_arena, l_alloc_size, &l_packet_alloc)) {
+        log_it(L_ERROR, "Arena allocation failed for cross-worker packet - dropping packet");
+        return -6;
+    }
+
+    struct flow_cross_worker_packet *l_packet = l_packet_alloc.ptr;
+    uint8_t *l_data_copy = (uint8_t *)(l_packet + 1);
+
+    memcpy(l_data_copy, a_data, a_data_size);
+    l_packet->server = a_server;
+    l_packet->data = l_data_copy;
+    l_packet->size = a_data_size;
+    l_packet->flow = a_flow;
+    memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
+    l_packet->remote_addr_len = a_remote_addr_len;
+    l_packet->page_handle = l_packet_alloc.page_handle;
+
+    int l_ret = s_forward_packet_to_worker(a_server, a_from_worker_id, a_to_worker_id, l_packet);
+    if (l_ret != 0) {
+        dap_arena_page_unref(l_packet->page_handle);
+    }
+    return l_ret;
+}
+
 // =============================================================================
 // Cross-Worker Forwarding
 // =============================================================================
@@ -767,8 +1080,8 @@ static void s_process_forwarded_packet(
     dap_events_socket_t *a_listener)
 {
     debug_if(s_debug_more, L_DEBUG,
-             "Processing forwarded packet: server=%p, flow=%p, size=%zu, listener_fd=%d",
-             a_server, a_flow, a_data_size, a_listener ? a_listener->fd : -1);
+             "Processing forwarded packet: server=%p, flow=%p, size=%zu, listener_socket=%"DAP_FORMAT_SOCKET,
+             a_server, a_flow, a_data_size, a_listener ? a_listener->socket : INVALID_SOCKET);
     
     // Process the packet using common logic
     socklen_t l_addr_len = (a_remote_addr->ss_family == AF_INET) 
@@ -802,71 +1115,128 @@ static void s_process_flow_packet_common(
         log_it(L_WARNING, "s_process_flow_packet_common: no current worker");
         return;
     }
+
+    if (!s_flow_packet_guard_begin(a_server)) {
+        return;
+    }
+
+#define FLOW_PACKET_RETURN do { s_flow_packet_guard_end(a_server); return; } while (0)
     
-    // === FAST PATH for BPF tiers (Tier 2/3): NO forwarding needed! ===
-    // Kernel SO_REUSEPORT + BPF already distributed packet to correct worker.
-    // Simply create flow locally without any cross-worker logic.
+    // Linux BPF tiers normally route a remote tuple to one listener. Still,
+    // check all workers before local create so a misrouted packet cannot make
+    // a second no-key flow for an already established client.
 #if defined(__linux__) || defined(ANDROID)
     if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_EBPF ||
         a_server->lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
-        
-        // Find or create flow on LOCAL worker only
-        pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_worker->id]);
-        
         dap_io_flow_t *l_flow = NULL;
+
+        pthread_rwlock_rdlock(&a_server->flow_locks_per_worker[l_worker->id]);
         HASH_FIND(hh, a_server->flows_per_worker[l_worker->id], a_remote_addr,
                   sizeof(struct sockaddr_storage), l_flow);
-        
-        if (!l_flow) {
-            // Create flow locally (kernel already routed packet to correct worker!)
-            l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
-            
-            if (l_flow) {
-                memcpy(&l_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
-                l_flow->remote_addr_len = a_remote_addr_len;
-                l_flow->owner_worker_id = l_worker->id;
-                l_flow->server = a_server;
-                l_flow->last_activity = time(NULL);
-                l_flow->boundary_type = a_server->boundary_type;
-                
-                HASH_ADD(hh, a_server->flows_per_worker[l_worker->id], remote_addr,
-                         sizeof(struct sockaddr_storage), l_flow);
-                
-                debug_if(s_debug_more, L_DEBUG, "BPF tier: created flow locally on worker %u",
-                         l_worker->id);
-            }
-        }
-        
         pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_worker->id]);
-        
+
+        if (!l_flow) {
+            uint32_t l_worker_count = dap_proc_thread_get_count();
+            for (uint32_t i = 0; i < l_worker_count; i++) {
+                if (i == l_worker->id) {
+                    continue;
+                }
+
+                pthread_rwlock_rdlock(&a_server->flow_locks_per_worker[i]);
+                HASH_FIND(hh, a_server->flows_per_worker[i], a_remote_addr,
+                          sizeof(struct sockaddr_storage), l_flow);
+                pthread_rwlock_unlock(&a_server->flow_locks_per_worker[i]);
+
+                if (l_flow) {
+                    atomic_fetch_add(&a_server->remote_hits, 1);
+                    atomic_fetch_add(&l_flow->remote_access_count, 1);
+                    break;
+                }
+            }
+        } else {
+            atomic_fetch_add(&a_server->local_hits, 1);
+        }
+
+        if (l_flow && l_flow->owner_worker_id != l_worker->id) {
+            debug_if(s_debug_more, L_DEBUG,
+                     "BPF tier: existing flow belongs to worker %u, current worker %u - forwarding",
+                     l_flow->owner_worker_id, l_worker->id);
+
+            if (a_server->ops->should_forward && !a_server->ops->should_forward(l_flow)) {
+                debug_if(s_debug_more, L_DEBUG, "BPF tier: protocol declined forwarding");
+                FLOW_PACKET_RETURN;
+            }
+
+            int l_ret = s_forward_packet_copy_to_worker(a_server, l_worker->id,
+                                                        l_flow->owner_worker_id, NULL,
+                                                        a_data, a_data_size,
+                                                        a_remote_addr, a_remote_addr_len);
+            if (l_ret != 0) {
+                log_it(L_WARNING, "BPF tier: failed to forward packet to owner worker %u (ret=%d)",
+                       l_flow->owner_worker_id, l_ret);
+            }
+            FLOW_PACKET_RETURN;
+        }
+
+        if (!l_flow) {
+            pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_worker->id]);
+
+            HASH_FIND(hh, a_server->flows_per_worker[l_worker->id], a_remote_addr,
+                      sizeof(struct sockaddr_storage), l_flow);
+
+            if (l_flow) {
+                atomic_fetch_add(&a_server->local_hits, 1);
+            } else {
+                // Create flow locally (kernel routed the first packet here).
+                l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
+
+                if (l_flow) {
+                    memcpy(&l_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
+                    l_flow->remote_addr_len = a_remote_addr_len;
+                    l_flow->owner_worker_id = l_worker->id;
+                    l_flow->server = a_server;
+                    l_flow->last_activity = time(NULL);
+                    l_flow->boundary_type = a_server->boundary_type;
+
+                    HASH_ADD(hh, a_server->flows_per_worker[l_worker->id], remote_addr,
+                             sizeof(struct sockaddr_storage), l_flow);
+
+                    debug_if(s_debug_more, L_DEBUG, "BPF tier: created flow locally on worker %u",
+                             l_worker->id);
+                }
+            }
+
+            pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_worker->id]);
+        }
+
         if (!l_flow) {
             log_it(L_WARNING, "Failed to create flow - dropping packet");
-            return;
+            FLOW_PACKET_RETURN;
         }
-        
-        // Process packet directly (no forwarding!)
+
         if (a_server->ops->packet_received) {
             a_server->ops->packet_received(a_server, l_flow, a_data, a_data_size,
                                            a_remote_addr, a_listener_es);
         }
-        
-        return;  // BPF tier processing complete
+
+        FLOW_PACKET_RETURN;
     }
 #endif // __linux__ || ANDROID
-    
-    // === SLOW PATH for Application-level LB (Tier 1): manual forwarding === 
-    
+
+    // === SLOW PATH for Application-level LB (Tier 1): manual forwarding ===
+
     // CRITICAL FIX: Double-checked locking to prevent TOCTOU race condition
     // WITHOUT BPF, kernel SO_REUSEPORT distributes packets from SAME client to DIFFERENT workers!
     // This causes multiple workers to create duplicate flows for same client.
     // Solution: hold write lock on target_worker during entire find-or-create operation.
-    
+
     // Step 1: Determine target worker (hash-based)
     uint32_t l_target_worker_id = l_worker->id;  // Default: create locally
-    
-    if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+
+    if (dap_io_flow_lb_tier_uses_application_routing(a_server->lb_tier)) {
 #ifdef DAP_EVENTS_CAPS_IOCP
-        if (a_server->boundary_type == DAP_IO_FLOW_BOUNDARY_DATAGRAM) {
+        if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION &&
+            a_server->boundary_type == DAP_IO_FLOW_BOUNDARY_DATAGRAM) {
             /*
              * Windows IOCP fallback has one UDP listener in the worker that owns it.
              * Forwarding every datagram to a hash-selected worker overloads the
@@ -908,83 +1278,44 @@ static void s_process_flow_packet_common(
                      l_hash, l_sa->sa_family, l_target_worker_id);
         }
     }
-    
+
     // Step 2: ATOMIC find-or-create with write lock on target worker
     // This prevents race: if 2 packets from same client arrive at different workers,
     // only ONE will create the flow (the one that gets write lock first).
-    
+
     pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_target_worker_id]);
-    
+
     // Double-check: maybe someone created flow while we waited for lock
     dap_io_flow_t *l_flow = NULL;
     HASH_FIND(hh, a_server->flows_per_worker[l_target_worker_id], a_remote_addr,
               sizeof(struct sockaddr_storage), l_flow);
-    
+
     if (!l_flow) {
         // Flow still doesn't exist - create it NOW (under lock)
-        
+
         // If we're NOT on target worker, must forward packet for processing
         if (l_target_worker_id != l_worker->id) {
             pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_target_worker_id]);
-            
+
             debug_if(s_debug_more, L_DEBUG,
                      "Application LB: forwarding new flow packet to worker %u",
                      l_target_worker_id);
-            
-            // Get refcounted cross-worker arena
-            dap_arena_t *l_arena = s_get_cross_worker_arena();
-            if (!l_arena) {
-                log_it(L_ERROR, "Cross-worker arena not available - dropping packet");
-                return;
-            }
-            
-            // Allocate packet structure
-            dap_arena_alloc_ex_t l_packet_alloc;
-            if (!dap_arena_alloc_ex(l_arena, sizeof(struct flow_cross_worker_packet), &l_packet_alloc)) {
-                log_it(L_ERROR, "Arena allocation failed for packet struct - dropping packet");
-                return;
-            }
-            struct flow_cross_worker_packet *l_packet = l_packet_alloc.ptr;
-            
-            // Allocate data buffer
-            dap_arena_alloc_ex_t l_data_alloc;
-            if (!dap_arena_alloc_ex(l_arena, a_data_size, &l_data_alloc)) {
-                log_it(L_ERROR, "Arena allocation failed for data buffer - dropping packet");
-                return;
-            }
-            uint8_t *l_data_copy = l_data_alloc.ptr;
-            
-            // Fill packet
-            memcpy(l_data_copy, a_data, a_data_size);
-            l_packet->server = a_server;
-            l_packet->data = l_data_copy;
-            l_packet->size = a_data_size;
-            l_packet->flow = NULL;  // Will be created on target worker
-            memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
-            l_packet->remote_addr_len = a_remote_addr_len;
-            l_packet->page_handle = l_packet_alloc.page_handle;
-            
-            // Increment refcount before forwarding
-            dap_arena_page_ref(l_packet->page_handle);
-            
-            debug_if(s_debug_more, L_DEBUG,
-                     "Forwarding to target worker %u (packet from arena page_handle=%p)",
-                     l_target_worker_id, l_packet->page_handle);
-            
-            // Forward to target worker
-            int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
-                                                    l_target_worker_id, l_packet);
-            
+
+            int l_ret = s_forward_packet_copy_to_worker(a_server, l_worker->id,
+                                                        l_target_worker_id, NULL,
+                                                        a_data, a_data_size,
+                                                        a_remote_addr, a_remote_addr_len);
+
             if (l_ret != 0) {
-                log_it(L_WARNING, "Forward failed, releasing page reference");
-                dap_arena_page_unref(l_packet->page_handle);
+                log_it(L_WARNING, "Forward failed for new flow packet to worker %u (ret=%d)",
+                       l_target_worker_id, l_ret);
             }
-            return;
+            FLOW_PACKET_RETURN;
         }
-        
+
         // We ARE on target worker - create flow locally (still under lock)
         l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
-        
+
         if (l_flow) {
             // Add to hash table (still under lock - prevents duplicates!)
             memcpy(&l_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
@@ -993,10 +1324,10 @@ static void s_process_flow_packet_common(
             l_flow->server = a_server;
             l_flow->last_activity = time(NULL);
             l_flow->boundary_type = a_server->boundary_type;
-            
+
             HASH_ADD(hh, a_server->flows_per_worker[l_target_worker_id], remote_addr,
                      sizeof(struct sockaddr_storage), l_flow);
-            
+
             debug_if(s_debug_more, L_DEBUG, "Created new flow for %s in worker %u (ATOMIC)",
                      dap_io_flow_socket_addr_to_string(a_remote_addr), l_target_worker_id);
         }
@@ -1004,16 +1335,16 @@ static void s_process_flow_packet_common(
         debug_if(s_debug_more, L_DEBUG, "Flow already exists for %s in worker %u (double-check prevented duplicate)",
                  dap_io_flow_socket_addr_to_string(a_remote_addr), l_target_worker_id);
     }
-    
+
     pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_target_worker_id]);
-    
+
     // If flow creation failed, drop packet
     if (!l_flow) {
         log_it(L_WARNING, "Failed to create flow for %s - dropping packet",
                dap_io_flow_socket_addr_to_string(a_remote_addr));
-        return;
+        FLOW_PACKET_RETURN;
     }
-    
+
     // After releasing lock, check if we need to forward packet
     // (flow exists but on different worker than current)
     if (l_flow->owner_worker_id != l_worker->id) {
@@ -1021,75 +1352,37 @@ static void s_process_flow_packet_common(
         debug_if(s_debug_more, L_DEBUG,
                  "Flow on worker %u, current worker %u - forwarding packet size=%zu",
                  l_flow->owner_worker_id, l_worker->id, a_data_size);
-        
-        // Get refcounted cross-worker arena (fail-fast if not available)
-        dap_arena_t *l_arena = s_get_cross_worker_arena();
-        if (!l_arena) {
-            log_it(L_ERROR, "Cross-worker arena not available - dropping packet");
-            return;  // Fail-fast: no arena = no forwarding
-        }
-        
-        // Allocate packet structure (with page handle for refcounting)
-        dap_arena_alloc_ex_t l_packet_alloc;
-        if (!dap_arena_alloc_ex(l_arena, sizeof(struct flow_cross_worker_packet), &l_packet_alloc)) {
-            log_it(L_ERROR, "Arena allocation failed for packet struct - dropping");
-            return;  // Fail-fast: allocation failed
-        }
-        struct flow_cross_worker_packet *l_packet = l_packet_alloc.ptr;
-        
-        // Allocate data buffer (same page, so same page_handle)
-        dap_arena_alloc_ex_t l_data_alloc;
-        if (!dap_arena_alloc_ex(l_arena, a_data_size, &l_data_alloc)) {
-            log_it(L_ERROR, "Arena allocation failed for data buffer - dropping");
-            return;  // Fail-fast: allocation failed
-        }
-        uint8_t *l_data_copy = l_data_alloc.ptr;
-        
-        // Fill packet structure
-        memcpy(l_data_copy, a_data, a_data_size);
-        l_packet->server = a_server;  // Always set server
-        l_packet->data = l_data_copy;
-        l_packet->size = a_data_size;
-        l_packet->flow = l_flow;
-        memcpy(&l_packet->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
-        l_packet->remote_addr_len = a_remote_addr_len;
-        l_packet->page_handle = l_packet_alloc.page_handle;  // Store page handle for unref
-        
-        // Increment refcount before forwarding (thread-safe atomic operation)
-        dap_arena_page_ref(l_packet->page_handle);
-        
-        debug_if(s_debug_more, L_DEBUG,
-                 "Allocated cross-worker packet (page_handle=%p, data=%p, size=%zu)",
-                 l_packet->page_handle, l_data_copy, a_data_size);
-        
-        // Forward to correct worker
-        int l_ret = s_forward_packet_to_worker(a_server, l_worker->id, 
-                                                l_flow->owner_worker_id, l_packet);
+
+        int l_ret = s_forward_packet_copy_to_worker(a_server, l_worker->id,
+                                                    l_flow->owner_worker_id, NULL,
+                                                    a_data, a_data_size,
+                                                    a_remote_addr, a_remote_addr_len);
         if (l_ret != 0) {
-            log_it(L_WARNING, "Failed to forward packet to worker %u - releasing page", 
-                   l_flow->owner_worker_id);
-            // Forward failed - decrement refcount to free page
-            dap_arena_page_unref(l_packet->page_handle);
-            return;
+            log_it(L_WARNING, "Failed to forward packet to worker %u (ret=%d)",
+                   l_flow->owner_worker_id, l_ret);
+            FLOW_PACKET_RETURN;
         }
-        
+
         // Forwarded successfully - receiver worker will unref when done
-        return;  // Packet forwarded, done
+        FLOW_PACKET_RETURN;  // Packet forwarded, done
     }
-    
+
     // Call protocol's packet_received callback (flow is on current worker OR new flow)
     debug_if(s_debug_more, L_DEBUG, "packet_common: CALLING packet_received (flow=%p, size=%zu, worker=%u)",
            l_flow, a_data_size, l_worker->id);
-    
+
     if (a_server->ops->packet_received) {
         a_server->ops->packet_received(a_server, l_flow,
                                        a_data, a_data_size,
                                        a_remote_addr, a_listener_es);
-        
+
         debug_if(s_debug_more, L_DEBUG, "packet_common: packet_received RETURNED");
     } else {
         log_it(L_ERROR, "packet_common: packet_received is NULL!");
     }
+
+    s_flow_packet_guard_end(a_server);
+#undef FLOW_PACKET_RETURN
 }
 
 /**
@@ -1123,9 +1416,9 @@ static void s_listener_read_callback(dap_events_socket_t *a_es, void *a_arg)
     
     // Log incoming packet details
     debug_if(s_debug_more, L_DEBUG, 
-             "Listener worker=%u received %zu bytes on fd=%d, type=%d, from %s",
+             "Listener worker=%u received %zu bytes on socket=%"DAP_FORMAT_SOCKET", type=%d, from %s",
              l_worker ? l_worker->id : 999,
-             a_es->buf_in_size, a_es->fd, a_es->type,
+             a_es->buf_in_size, a_es->socket, a_es->type,
              dap_io_flow_socket_addr_to_string(&a_es->addr_storage));
     
     // Process via common handler (listener_es = a_es itself)
@@ -1181,6 +1474,7 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
     a_server->inter_worker_queues = DAP_NEW_Z_COUNT(dap_context_queue_t**, l_worker_count);
     if (!a_server->inter_worker_queues) {
         log_it(L_ERROR, "Failed to allocate queue outputs array");
+        s_cleanup_inter_worker_queue_allocations(a_server);
         return -2;
     }
     
@@ -1188,6 +1482,7 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
         a_server->inter_worker_queues[i] = DAP_NEW_Z_COUNT(dap_context_queue_t*, l_worker_count);
         if (!a_server->inter_worker_queues[i]) {
             log_it(L_ERROR, "Failed to allocate queue outputs for worker %u", i);
+            s_cleanup_inter_worker_queue_allocations(a_server);
             return -3;
         }
     }
@@ -1197,6 +1492,7 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
         dap_worker_t *l_dst_worker = dap_events_worker_get(dst);
         if (!l_dst_worker) {
             log_it(L_ERROR, "Failed to get worker %u", dst);
+            s_cleanup_inter_worker_queue_allocations(a_server);
             return -4;
         }
         
@@ -1206,6 +1502,7 @@ static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server)
         
         if (!a_server->queue_inputs[dst]) {
             log_it(L_ERROR, "Failed to create queue input for worker %u", dst);
+            s_cleanup_inter_worker_queue_allocations(a_server);
             return -5;
         }
         
@@ -1263,10 +1560,6 @@ static void s_queue_ptr_callback(void *a_ptr)
     
     dap_io_flow_server_t *l_server = l_packet->server;
     
-    // CRITICAL: Increment statistics FIRST (before any checks that might return)
-    // This ensures we decrement on ALL exit paths
-    atomic_fetch_add(&l_server->cross_worker_packets, 1);
-    
     // CRITICAL: Check if server is being deleted
     if (atomic_load(&l_server->is_deleting)) {
         debug_if(s_debug_more, L_DEBUG, 
@@ -1275,12 +1568,7 @@ static void s_queue_ptr_callback(void *a_ptr)
         if (l_packet->page_handle) {
             dap_arena_page_unref(l_packet->page_handle);
         }
-        // CRITICAL: Decrement counter (we incremented it above)
-        atomic_fetch_sub(&l_server->cross_worker_packets, 1);
-        // Signal waiters (quick lock/unlock/signal pattern)
-        pthread_mutex_lock(&l_server->cross_worker_mutex);
-        pthread_cond_signal(&l_server->cross_worker_cond);
-        pthread_mutex_unlock(&l_server->cross_worker_mutex);
+        s_cross_worker_packet_account_dec(l_server);
         return;
     }
     
@@ -1293,12 +1581,7 @@ static void s_queue_ptr_callback(void *a_ptr)
         if (l_packet->page_handle) {
             dap_arena_page_unref(l_packet->page_handle);
         }
-        // CRITICAL: Decrement counter (we incremented it above)
-        atomic_fetch_sub(&l_server->cross_worker_packets, 1);
-        // Signal waiters (quick lock/unlock/signal pattern)
-        pthread_mutex_lock(&l_server->cross_worker_mutex);
-        pthread_cond_signal(&l_server->cross_worker_cond);
-        pthread_mutex_unlock(&l_server->cross_worker_mutex);
+        s_cross_worker_packet_account_dec(l_server);
         return;
     }
     
@@ -1321,10 +1604,10 @@ static void s_queue_ptr_callback(void *a_ptr)
         }
     }
     
-    // Fallback for Tier 1 (Application-level): use ANY UDP listener
+    // Fallback for application-routed tiers: use ANY UDP listener
     // When we have single listener on worker 0, forwarded packets on other workers
     // need to reference that single listener for flow creation
-    if (!l_real_listener && l_server->lb_tier == DAP_IO_FLOW_LB_TIER_APPLICATION) {
+    if (!l_real_listener && dap_io_flow_lb_tier_uses_application_routing(l_server->lb_tier)) {
         dap_list_t *l_listener_item = l_server->dap_server->es_listeners;
         while (l_listener_item) {
             dap_events_socket_t *l_listener = (dap_events_socket_t*)l_listener_item->data;
@@ -1332,7 +1615,8 @@ static void s_queue_ptr_callback(void *a_ptr)
                               l_listener->type == DESCRIPTOR_TYPE_SOCKET_CLIENT)) {
                 l_real_listener = l_listener;
                 debug_if(s_debug_more, L_DEBUG,
-                         "Application LB: using listener from worker %u for forwarded packet",
+                         "%s LB: using listener from worker %u for forwarded packet",
+                         dap_io_flow_tier_name(l_server->lb_tier),
                          l_listener->worker ? l_listener->worker->id : 999);
                 break;
             }
@@ -1347,14 +1631,13 @@ static void s_queue_ptr_callback(void *a_ptr)
         if (l_packet->page_handle) {
             dap_arena_page_unref(l_packet->page_handle);
         }
-        // CRITICAL: Decrement counter even on error path (we incremented it above)
-        atomic_fetch_sub(&l_server->cross_worker_packets, 1);
+        s_cross_worker_packet_account_dec(l_server);
         return;
     }
     
     debug_if(s_debug_more, L_DEBUG, 
-             "Queue callback: forwarding to flow processing with real listener fd=%d (type=%d)",
-             l_real_listener->fd, l_real_listener->type);
+             "Queue callback: forwarding to flow processing with real listener socket=%"DAP_FORMAT_SOCKET" (type=%d)",
+             l_real_listener->socket, l_real_listener->type);
     
     // CRITICAL: Call s_process_flow_packet_common instead of packet_received directly!
     // s_process_flow_packet_common will:
@@ -1363,8 +1646,8 @@ static void s_queue_ptr_callback(void *a_ptr)
     // 3. Then call packet_received with valid flow
     // This ensures proper flow lifecycle for cross-worker forwarded handshakes
     debug_if(s_debug_more, L_DEBUG,
-             "Queue callback: CALLING s_process_flow_packet_common(server=%p, flow=%p, size=%zu, listener_fd=%d)",
-             l_server, l_packet->flow, l_packet->size, l_real_listener->fd);
+             "Queue callback: CALLING s_process_flow_packet_common(server=%p, flow=%p, size=%zu, listener_socket=%"DAP_FORMAT_SOCKET")",
+             l_server, l_packet->flow, l_packet->size, l_real_listener->socket);
     
     s_process_flow_packet_common(
         l_server,
@@ -1389,13 +1672,7 @@ static void s_queue_ptr_callback(void *a_ptr)
         log_it(L_WARNING, "Queue callback: packet has NULL page_handle");
     }
     
-    // CRITICAL: Decrement cross-worker packet counter after processing!
-    // This counter is used in cleanup to wait for all packets to drain.
-    atomic_fetch_sub(&l_server->cross_worker_packets, 1);
-    // Signal waiters (quick lock/unlock/signal)
-    pthread_mutex_lock(&l_server->cross_worker_mutex);
-    pthread_cond_signal(&l_server->cross_worker_cond);
-    pthread_mutex_unlock(&l_server->cross_worker_mutex);
+    s_cross_worker_packet_account_dec(l_server);
     
     debug_if(s_debug_more, L_DEBUG, 
              "Queue callback: packet processed, cross_worker_packets now: %u",
@@ -1434,9 +1711,12 @@ static int s_forward_packet_to_worker(dap_io_flow_server_t *a_server,
              "Forwarding: src_worker=%u -> dst_worker=%u, queue=%p",
              a_from_worker_id, a_to_worker_id, l_queue);
     
+    s_cross_worker_packet_account_inc(a_server);
+
     // Send packet pointer via lock-free queue (zero-copy)
     if (!dap_context_queue_push(l_queue, a_packet)) {
         log_it(L_WARNING, "Failed to send packet pointer to worker %u (queue full)", a_to_worker_id);
+        s_cross_worker_packet_account_dec(a_server);
         return -4;
     }
     

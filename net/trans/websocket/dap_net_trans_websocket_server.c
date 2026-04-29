@@ -23,7 +23,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-#include <strings.h>  // For strncasecmp
+#include <ctype.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
@@ -38,10 +38,12 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_http.h"
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
+#include "dap_worker.h"
 #include "dap_net_server_common.h"
 #include "dap_stream_session.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_worker.h"
+#include "dap_timerfd.h"
 
 #include "dap_net_trans_ctx.h"
 
@@ -56,10 +58,45 @@ typedef struct ws_server_conn_state {
     size_t frame_buffer_used;   // Used bytes
 } ws_server_conn_state_t;
 
+typedef enum ws_upgrade_result {
+    WS_UPGRADE_NOT_REQUEST = 0,
+    WS_UPGRADE_HANDLED = 1
+} ws_upgrade_result_t;
+
 // Forward declarations for server-side esocket callbacks
 static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg);
 static void s_ws_server_esocket_delete(dap_events_socket_t *a_es, void *a_arg);
 static void s_ws_server_esocket_error(dap_events_socket_t *a_es, int a_arg);
+static void s_ws_server_conn_state_cleanup(dap_net_trans_ctx_t *a_trans_ctx);
+static void s_ws_server_disable_stream_keepalive(dap_stream_t *a_stream);
+
+static void s_ws_server_conn_state_cleanup(dap_net_trans_ctx_t *a_trans_ctx)
+{
+    if (!a_trans_ctx)
+        return;
+
+    ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)a_trans_ctx->transport_priv;
+    if (!l_conn)
+        return;
+
+    DAP_DEL_Z(l_conn->frame_buffer);
+    DAP_DELETE(l_conn);
+    a_trans_ctx->transport_priv = NULL;
+}
+
+static void s_ws_server_disable_stream_keepalive(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->keepalive_timer)
+        return;
+
+    dap_timerfd_t *l_timer = a_stream->keepalive_timer;
+    a_stream->keepalive_timer = NULL;
+
+    void *l_arg_to_free = l_timer->callback_arg;
+    l_timer->callback_arg = NULL;
+    dap_timerfd_delete_unsafe(l_timer);
+    DAP_DELETE(l_arg_to_free);
+}
 
 // Trans server operations callbacks
 static void* s_websocket_server_new(const char *a_server_name)
@@ -95,27 +132,100 @@ static const dap_net_trans_server_ops_t s_websocket_server_ops = {
 
 static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, void *a_arg);
 static bool s_websocket_upgrade_headers_write(dap_http_client_t *a_http_client, void *a_arg);
-static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, size_t a_accept_key_size);
+static ws_upgrade_result_t s_websocket_handle_upgrade(dap_http_client_t *a_http_client);
 static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client);
-static bool s_str_contains_case_insensitive(const char *a_haystack, const char *a_needle);
+static bool s_http_header_has_token(const char *a_value, const char *a_token);
+static void s_websocket_set_readable(dap_events_socket_t *a_esocket, bool a_is_ready);
+static void s_websocket_set_writable(dap_events_socket_t *a_esocket, bool a_is_ready);
 
-static bool s_str_contains_case_insensitive(const char *a_haystack, const char *a_needle)
+static int s_ascii_strncasecmp(const char *a_left, const char *a_right, size_t a_len)
 {
-    if (!a_haystack || !a_needle) {
+    for (size_t i = 0; i < a_len; i++) {
+        unsigned char l_left = (unsigned char)a_left[i];
+        unsigned char l_right = (unsigned char)a_right[i];
+        int l_diff = tolower(l_left) - tolower(l_right);
+        if (l_diff || !l_left || !l_right)
+            return l_diff;
+    }
+    return 0;
+}
+
+static bool s_http_header_has_token(const char *a_value, const char *a_token)
+{
+    if (!a_value || !a_token) {
         return false;
     }
 
-    size_t l_needle_len = strlen(a_needle);
-    if (!l_needle_len) {
-        return true;
+    size_t l_token_len = strlen(a_token);
+    if (!l_token_len) {
+        return false;
     }
 
-    for (const char *l_pos = a_haystack; *l_pos; l_pos++) {
-        if (strncasecmp(l_pos, a_needle, l_needle_len) == 0) {
+    const char *l_pos = a_value;
+    while (*l_pos) {
+        while (*l_pos == ' ' || *l_pos == '\t' || *l_pos == ',') {
+            l_pos++;
+        }
+
+        const char *l_end = l_pos;
+        while (*l_end && *l_end != ',') {
+            l_end++;
+        }
+
+        const char *l_trimmed_end = l_end;
+        while (l_trimmed_end > l_pos &&
+               (l_trimmed_end[-1] == ' ' || l_trimmed_end[-1] == '\t')) {
+            l_trimmed_end--;
+        }
+
+        size_t l_value_token_len = (size_t)(l_trimmed_end - l_pos);
+        if (l_value_token_len == l_token_len &&
+            s_ascii_strncasecmp(l_pos, a_token, l_token_len) == 0) {
             return true;
+        }
+
+        l_pos = l_end;
+        if (*l_pos == ',') {
+            l_pos++;
         }
     }
     return false;
+}
+
+static bool s_esocket_has_event_backend(dap_events_socket_t *a_esocket)
+{
+    return a_esocket && (a_esocket->context ||
+                         (a_esocket->worker && a_esocket->worker->context));
+}
+
+static void s_websocket_set_readable(dap_events_socket_t *a_esocket, bool a_is_ready)
+{
+    if (!a_esocket) {
+        return;
+    }
+
+    if (s_esocket_has_event_backend(a_esocket)) {
+        dap_events_socket_set_readable_unsafe(a_esocket, a_is_ready);
+    } else if (a_is_ready) {
+        a_esocket->flags |= DAP_SOCK_READY_TO_READ;
+    } else {
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_READ;
+    }
+}
+
+static void s_websocket_set_writable(dap_events_socket_t *a_esocket, bool a_is_ready)
+{
+    if (!a_esocket) {
+        return;
+    }
+
+    if (s_esocket_has_event_backend(a_esocket)) {
+        dap_events_socket_set_writable_unsafe(a_esocket, a_is_ready);
+    } else if (a_is_ready) {
+        a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
+    } else {
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_WRITE;
+    }
 }
 
 /**
@@ -361,145 +471,80 @@ void dap_net_trans_websocket_server_delete(dap_net_trans_websocket_server_t *a_w
  */
 int dap_net_trans_websocket_try_upgrade(dap_http_client_t *a_http_client)
 {
-    if (!a_http_client)
-        return -1;
-
-    dap_http_header_t *l_upgrade    = dap_http_header_find(a_http_client->in_headers, "Upgrade");
-    dap_http_header_t *l_connection = dap_http_header_find(a_http_client->in_headers, "Connection");
-    dap_http_header_t *l_ws_key     = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Key");
-    dap_http_header_t *l_ws_version = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Version");
-
-    if (!l_upgrade || !l_connection || !l_ws_key || !l_ws_version)
-        return -1;
-
-    if (!s_str_contains_case_insensitive(l_upgrade->value, "websocket") ||
-        !s_str_contains_case_insensitive(l_connection->value, "Upgrade"))
-        return -1;
-
-    dap_net_trans_t *l_ws_trans = dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
-    if (!l_ws_trans) {
-        log_it(L_ERROR, "WebSocket upgrade requested but transport not registered");
-        return -1;
-    }
-
-    if (strcmp(l_ws_version->value, "13") != 0) {
-        log_it(L_WARNING, "Unsupported WebSocket version: %s", l_ws_version->value);
-        a_http_client->reply_status_code = 426;
-        dap_http_out_header_add(a_http_client, "Sec-WebSocket-Version", "13");
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return 0;
-    }
-
-    char l_accept_key[128] = {0};
-    if (!s_generate_accept_key(l_ws_key->value, l_accept_key, sizeof(l_accept_key))) {
-        log_it(L_ERROR, "Failed to generate Sec-WebSocket-Accept key");
-        a_http_client->reply_status_code = 500;
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return 0;
-    }
-
-    log_it(L_INFO, "WebSocket upgrade request accepted from %s",
-           a_http_client->esocket->remote_addr_str);
-
-    a_http_client->reply_status_code = 101;
-    dap_events_socket_write_f_unsafe(a_http_client->esocket,
-        "HTTP/1.1 101 Switching Protocols\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        "Sec-WebSocket-Accept: %s\r\n"
-        "\r\n",
-        l_accept_key);
-
-    if (s_switch_to_websocket_protocol(a_http_client) != 0) {
-        log_it(L_ERROR, "Failed to switch to WebSocket protocol after upgrade");
-        a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
-        return 0;
-    }
-
-    dap_events_socket_set_readable_unsafe(a_http_client->esocket, true);
-    return 0;
+    return s_websocket_handle_upgrade(a_http_client) == WS_UPGRADE_HANDLED ? 0 : -1;
 }
 
 // ============================================================================
 // WebSocket Upgrade Handlers
 // ============================================================================
 
-/**
- * @brief Handle HTTP headers and check for WebSocket upgrade request
- */
-static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, void *a_arg)
+static void s_websocket_set_http_reply(dap_http_client_t *a_http_client, uint16_t a_status_code)
 {
-    if (!a_http_client) {
-        return;
+    a_http_client->reply_status_code = a_status_code;
+    s_websocket_set_writable(a_http_client->esocket, true);
+    s_websocket_set_readable(a_http_client->esocket, false);
+}
+
+static ws_upgrade_result_t s_websocket_handle_upgrade(dap_http_client_t *a_http_client)
+{
+    if (!a_http_client || !a_http_client->esocket) {
+        return WS_UPGRADE_NOT_REQUEST;
     }
 
-    // Check for WebSocket upgrade headers
     dap_http_header_t *l_upgrade = dap_http_header_find(a_http_client->in_headers, "Upgrade");
     dap_http_header_t *l_connection = dap_http_header_find(a_http_client->in_headers, "Connection");
     dap_http_header_t *l_ws_key = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Key");
     dap_http_header_t *l_ws_version = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Version");
 
-    // Check if this is a WebSocket upgrade request
     if (!l_upgrade || !l_connection || !l_ws_key || !l_ws_version) {
-        // Not a WebSocket upgrade request - handle as regular HTTP
-        debug_if(s_debug_more, L_DEBUG, "Not a WebSocket upgrade request");
-        a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return;
+        return WS_UPGRADE_NOT_REQUEST;
     }
 
-    // Validate upgrade headers
-    if (!s_str_contains_case_insensitive(l_upgrade->value, "websocket")) {
+    if (!s_http_header_has_token(l_upgrade->value, "websocket")) {
         log_it(L_WARNING, "Invalid Upgrade header: %s", l_upgrade->value);
-        a_http_client->reply_status_code = 400; // Bad Request
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return;
+        s_websocket_set_http_reply(a_http_client, 400);
+        return WS_UPGRADE_HANDLED;
     }
 
-    if (!s_str_contains_case_insensitive(l_connection->value, "Upgrade")) {
+    if (!s_http_header_has_token(l_connection->value, "Upgrade")) {
         log_it(L_WARNING, "Invalid Connection header: %s", l_connection->value);
-        a_http_client->reply_status_code = 400; // Bad Request
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return;
+        s_websocket_set_http_reply(a_http_client, 400);
+        return WS_UPGRADE_HANDLED;
     }
 
-    // Check WebSocket version (should be 13)
     if (strcmp(l_ws_version->value, "13") != 0) {
         log_it(L_WARNING, "Unsupported WebSocket version: %s", l_ws_version->value);
-        a_http_client->reply_status_code = 426; // Upgrade Required
+        a_http_client->reply_status_code = 426;
         dap_http_out_header_add(a_http_client, "Sec-WebSocket-Version", "13");
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return;
+        s_websocket_set_writable(a_http_client->esocket, true);
+        s_websocket_set_readable(a_http_client->esocket, false);
+        return WS_UPGRADE_HANDLED;
     }
 
-    // Valid WebSocket upgrade request - prepare 101 Switching Protocols response
-    a_http_client->reply_status_code = 101;
-    
-    // Calculate Sec-WebSocket-Accept
     char l_accept_key[128] = {0};
-    if (!s_generate_accept_key(l_ws_key->value, l_accept_key, sizeof(l_accept_key))) {
-        log_it(L_ERROR, "Failed to generate Sec-WebSocket-Accept key");
-        a_http_client->reply_status_code = 500;
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        return;
+    if (dap_net_trans_websocket_build_accept_key(l_ws_key->value,
+                                                 l_accept_key,
+                                                 sizeof(l_accept_key)) != 0) {
+        log_it(L_WARNING, "Invalid Sec-WebSocket-Key header");
+        s_websocket_set_http_reply(a_http_client, 400);
+        return WS_UPGRADE_HANDLED;
     }
+    debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", l_accept_key);
 
     log_it(L_INFO, "WebSocket upgrade request accepted from %s",
            a_http_client->esocket->remote_addr_str);
-    debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", l_accept_key);
 
-    // Write 101 Switching Protocols response directly to esocket buf_out.
-    // We bypass the standard dap_http_client_write mechanism because:
-    // 1. dap_http_client_write_callback expects data_write_callback (we have none)
-    // 2. dap_http_client_write overwrites reply_status_code when out_headers are set
-    // 3. After 101, the connection is no longer HTTP — we switch to WebSocket immediately
+    int l_switch_ret = s_switch_to_websocket_protocol(a_http_client);
+    if (l_switch_ret != 0) {
+        log_it(L_ERROR, "Failed to switch to WebSocket protocol after upgrade request: %d",
+               l_switch_ret);
+        s_websocket_set_http_reply(a_http_client, l_switch_ret == -3 ? 404 : 500);
+        return WS_UPGRADE_HANDLED;
+    }
+
+    // Write 101 directly because the HTTP write path may rewrite reply_status_code
+    // before this connection leaves HTTP mode.
+    a_http_client->reply_status_code = 101;
     dap_events_socket_write_f_unsafe(a_http_client->esocket,
         "HTTP/1.1 101 Switching Protocols\r\n"
         "Upgrade: websocket\r\n"
@@ -508,16 +553,28 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
         "\r\n",
         l_accept_key);
 
-    // Switch to WebSocket protocol immediately after writing 101 response
-    if (s_switch_to_websocket_protocol(a_http_client) != 0) {
-        log_it(L_ERROR, "Failed to switch to WebSocket protocol after upgrade");
-        a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+    s_websocket_set_readable(a_http_client->esocket, true);
+    return WS_UPGRADE_HANDLED;
+}
+
+/**
+ * @brief Handle HTTP headers and check for WebSocket upgrade request
+ */
+static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, void *a_arg)
+{
+    UNUSED(a_arg);
+    if (!a_http_client) {
         return;
     }
 
-    // Callbacks are now replaced by s_switch_to_websocket_protocol.
-    // Ensure readable is set for incoming WebSocket frames.
-    dap_events_socket_set_readable_unsafe(a_http_client->esocket, true);
+    if (s_websocket_handle_upgrade(a_http_client) == WS_UPGRADE_NOT_REQUEST) {
+        // Not a WebSocket upgrade request - handle as regular HTTP
+        debug_if(s_debug_more, L_DEBUG, "Not a WebSocket upgrade request");
+        a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
+        s_websocket_set_writable(a_http_client->esocket, true);
+        s_websocket_set_readable(a_http_client->esocket, false);
+        return;
+    }
 }
 
 /**
@@ -525,25 +582,19 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
  */
 static bool s_websocket_upgrade_headers_write(dap_http_client_t *a_http_client, void *a_arg)
 {
+    UNUSED(a_arg);
     if (!a_http_client) {
         return false;
     }
 
     // After sending 101 Switching Protocols, the connection is now WebSocket
     if (a_http_client->reply_status_code == 101) {
-        log_it(L_INFO, "WebSocket upgrade complete, switching to WebSocket protocol");
-        
-        // Switch socket handlers to WebSocket read/write callbacks
-        if (s_switch_to_websocket_protocol(a_http_client) != 0) {
-            log_it(L_ERROR, "Failed to switch to WebSocket protocol");
-            a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
-            return false;
-        }
-        
+        log_it(L_INFO, "WebSocket upgrade complete");
+
         // Connection is now WebSocket, keep it open for WebSocket frames
         a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
-        dap_events_socket_set_readable_unsafe(a_http_client->esocket, true);
-        dap_events_socket_set_writable_unsafe(a_http_client->esocket, false);
+        s_websocket_set_readable(a_http_client->esocket, true);
+        s_websocket_set_writable(a_http_client->esocket, false);
         
         return true;
     }
@@ -554,10 +605,10 @@ static bool s_websocket_upgrade_headers_write(dap_http_client_t *a_http_client, 
 }
 
 /**
- * @brief Switch HTTP client to WebSocket protocol after successful Upgrade
+ * @brief Switch HTTP client to WebSocket protocol before sending successful Upgrade
  * 
  * Creates dap_stream_t from HTTP client and sets WebSocket trans.
- * This function is called after 101 Switching Protocols response is sent.
+ * This function must succeed before the 101 Switching Protocols response is sent.
  * 
  * Note: WebSocket trans's private data is shared across all streams,
  * but each stream maintains its own connection state via esocket.
@@ -578,6 +629,16 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
 
     // Check if stream already exists (from HTTP processing)
     dap_stream_t *l_stream = NULL;
+    bool l_stream_created = false;
+    bool l_trans_ctx_created = false;
+    bool l_session_opened = false;
+    bool l_session_assigned = false;
+    dap_stream_session_t *l_prev_session = NULL;
+    size_t l_initial_channel_count = 0;
+    ws_server_conn_state_t *l_conn_state = NULL;
+    char *l_service_key_value = NULL;
+    int l_ret = 0;
+
     if (a_http_client->_inheritor) {
         // Check if inheritor is already a stream
         l_stream = (dap_stream_t*)a_http_client->_inheritor;
@@ -610,6 +671,7 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
             log_it(L_ERROR, "WebSocket upgrade: failed to open session %u (ret=%d)", l_session_id, l_open_ret);
             return -4;
         }
+        l_session_opened = true;
     }
 
     // Create new stream if needed
@@ -618,39 +680,58 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
         l_stream = dap_stream_new_es_client(a_http_client->esocket, l_node_addr, false);
         if (!l_stream) {
             log_it(L_ERROR, "Failed to create stream from HTTP client");
-            return -5;
+            l_ret = -5;
+            goto cleanup;
         }
+        l_stream_created = true;
+
         // Server-side stream: set stream_worker from esocket's worker
         if (a_http_client->esocket->worker) {
             l_stream->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
         }
         l_stream->is_client_to_uplink = false;  // This is server-side
+        s_ws_server_disable_stream_keepalive(l_stream);
+    }
+    l_initial_channel_count = l_stream->channel_count;
 
-        // dap_stream_new_es_client does NOT create trans_ctx — create it here
-        // It is needed by s_ws_server_esocket_read (reads a_es->_inheritor as trans_ctx)
+    // dap_stream_new_es_client does NOT create trans_ctx — create it here
+    // It is needed by s_ws_server_esocket_read (reads a_es->_inheritor as trans_ctx)
+    if (!l_stream->trans_ctx) {
         dap_net_trans_ctx_t *l_new_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
         if (!l_new_ctx) {
             log_it(L_CRITICAL, "Failed to allocate trans_ctx for WebSocket stream");
-            return -6;
+            l_ret = -6;
+            goto cleanup;
         }
-        l_new_ctx->trans = l_ws_trans;
-        l_new_ctx->stream = l_stream;
-        l_new_ctx->http_client = a_http_client;
         l_stream->trans_ctx = l_new_ctx;
+        l_trans_ctx_created = true;
+    }
 
-        // Point esocket->_inheritor at trans_ctx so WebSocket read callback can find the stream
-        a_http_client->esocket->_inheritor = l_stream->trans_ctx;
-        a_http_client->_inheritor = l_stream;
+    // Create per-connection WebSocket state for de-framing
+    l_conn_state = DAP_NEW_Z(ws_server_conn_state_t);
+    if (!l_conn_state) {
+        log_it(L_CRITICAL, "Failed to allocate WebSocket server connection state");
+        l_ret = -7;
+        goto cleanup;
     }
 
     // Associate stream with session and create channels
     if (l_session) {
+        l_prev_session = l_stream->session;
+        l_initial_channel_count = l_stream->channel_count;
         l_stream->session = l_session;
-        
+        l_session_assigned = true;
+
         // Extract Service-Key header if present
         dap_http_header_t *l_service_key = dap_http_header_find(a_http_client->in_headers, "Service-Key");
-        if (l_service_key)
-            l_session->service_key = strdup(l_service_key->value);
+        if (l_service_key) {
+            l_service_key_value = strdup(l_service_key->value);
+            if (!l_service_key_value) {
+                log_it(L_CRITICAL, "Failed to allocate WebSocket session service key");
+                l_ret = -8;
+                goto cleanup;
+            }
+        }
 
         // Create channels from session's active_channels list
         if (l_session->active_channels[0]) {
@@ -660,19 +741,31 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
                 if (!l_ch) {
                     log_it(L_ERROR, "Failed to create channel '%c' for WebSocket session %u",
                            l_session->active_channels[i], l_session_id);
+                    l_ret = -9;
+                    goto cleanup;
                 }
             }
             log_it(L_INFO, "WebSocket: created %zu channels for session %u", l_count, l_session_id);
+        }
+
+        if (l_service_key_value) {
+            l_session->service_key = l_service_key_value;
+            l_service_key_value = NULL;
         }
     }
 
     // Set WebSocket trans for this stream
     l_stream->trans = l_ws_trans;
 
-    // Create per-connection WebSocket state for de-framing
-    ws_server_conn_state_t *l_conn_state = DAP_NEW_Z(ws_server_conn_state_t);
-    if (l_stream->trans_ctx)
-        l_stream->trans_ctx->transport_priv = l_conn_state;
+    l_stream->trans_ctx->trans = l_ws_trans;
+    l_stream->trans_ctx->stream = l_stream;
+    l_stream->trans_ctx->http_client = a_http_client;
+    l_stream->trans_ctx->transport_priv = l_conn_state;
+    l_conn_state = NULL;
+
+    // Point esocket->_inheritor at trans_ctx so WebSocket read callback can find the stream
+    a_http_client->esocket->_inheritor = l_stream->trans_ctx;
+    a_http_client->_inheritor = l_stream;
 
     // Replace esocket callbacks: HTTP layer is no longer in charge.
     // After upgrade, the esocket handles raw WebSocket frames, not HTTP.
@@ -684,6 +777,42 @@ static int s_switch_to_websocket_protocol(dap_http_client_t *a_http_client)
     log_it(L_INFO, "Successfully switched to WebSocket protocol for stream %p (socket %p)",
            l_stream, a_http_client->esocket);
     return 0;
+
+cleanup:
+    DAP_DEL_Z(l_service_key_value);
+    if (l_conn_state) {
+        DAP_DEL_Z(l_conn_state->frame_buffer);
+        DAP_DELETE(l_conn_state);
+    }
+
+    if (l_stream) {
+        if (l_stream_created && a_http_client->_inheritor == l_stream)
+            a_http_client->_inheritor = NULL;
+        if (l_stream_created && a_http_client->esocket->_inheritor == l_stream->trans_ctx)
+            a_http_client->esocket->_inheritor = NULL;
+
+        if (l_stream_created) {
+            l_stream->trans = NULL;
+            l_stream->esocket = NULL;
+            l_stream->esocket_uuid = 0;
+            l_stream->esocket_worker = NULL;
+            dap_stream_delete_unsafe(l_stream);
+        } else {
+            while (l_stream->channel_count > l_initial_channel_count)
+                dap_stream_ch_delete(l_stream->channel[l_stream->channel_count - 1]);
+            if (l_session_assigned && l_stream->session == l_session)
+                l_stream->session = l_prev_session;
+            if (l_trans_ctx_created) {
+                DAP_DELETE(l_stream->trans_ctx);
+                l_stream->trans_ctx = NULL;
+            }
+        }
+    }
+
+    if (l_session_opened && !(l_stream_created && l_session_assigned))
+        dap_stream_session_close_mt(l_session->id);
+
+    return l_ret;
 }
 
 // ============================================================================
@@ -788,6 +917,14 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
         }
 
         size_t l_processed = dap_stream_data_proc_read_ext(l_stream, l_data, l_data_size);
+        if (l_stream->delete_deferred || l_stream->delete_in_progress) {
+            if (l_data != l_payload_buf)
+                DAP_DELETE(l_data);
+            DAP_DELETE(l_payload_buf);
+            s_ws_server_conn_state_cleanup(l_trans_ctx);
+            dap_stream_delete_unsafe(l_stream);
+            return;
+        }
 
         // Save unprocessed remainder
         size_t l_remaining = l_data_size - l_processed;
@@ -827,12 +964,7 @@ static void s_ws_server_esocket_delete(dap_events_socket_t *a_es, void *a_arg)
     }
 
     // Clean up per-connection WS state
-    ws_server_conn_state_t *l_conn = (ws_server_conn_state_t *)l_trans_ctx->transport_priv;
-    if (l_conn) {
-        DAP_DEL_Z(l_conn->frame_buffer);
-        DAP_DELETE(l_conn);
-        l_trans_ctx->transport_priv = NULL;
-    }
+    s_ws_server_conn_state_cleanup(l_trans_ctx);
 
     // Clean up stream (will free trans_ctx and channels/session)
     dap_stream_t *l_stream = l_trans_ctx->stream;
@@ -850,24 +982,4 @@ static void s_ws_server_esocket_error(dap_events_socket_t *a_es, int a_arg)
     if (!a_es) return;
     log_it(L_ERROR, "WebSocket server: esocket error on fd=%d", a_es->socket);
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-}
-
-/**
- * @brief Generate Sec-WebSocket-Accept key from client key (RFC 6455)
- * 
- * The server takes the value of Sec-WebSocket-Key header, concatenates
- * it with the GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", takes SHA-1
- * hash of the result, and base64-encodes it.
- */
-static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, size_t a_accept_key_size)
-{
-    if (!a_client_key || !a_accept_key || a_accept_key_size < 29) {  // Base64(20 bytes) = 28 chars + null
-        return false;
-    }
-    if (dap_net_trans_websocket_build_accept_key(a_client_key, a_accept_key, a_accept_key_size) != 0) {
-        log_it(L_ERROR, "Failed to compute Sec-WebSocket-Accept");
-        return false;
-    }
-    debug_if(s_debug_more, L_DEBUG, "Generated Sec-WebSocket-Accept: %s", a_accept_key);
-    return true;
 }

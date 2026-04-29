@@ -11,6 +11,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include "dap_events_socket.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,7 +41,7 @@ bool dap_io_flow_win_rio_is_available(void);
  * @param socket_fd Socket handle (SOCKET)
  * @return 0 on success, -1 on error
  */
-int dap_io_flow_win_rio_configure(int socket_fd);
+int dap_io_flow_win_rio_configure(SOCKET socket_fd);
 
 #ifdef __cplusplus
 }

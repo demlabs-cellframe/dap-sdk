@@ -1,6 +1,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdatomic.h>
+#include <sys/stat.h>
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -14,9 +15,15 @@
 #include "dap_test.h"
 #include "dap_global_db_pkt.h"
 
+#ifdef DAP_CHAIN_GDB_ENGINE_MDBX
+#include "mdbx.h"
+#endif
+
 #define LOG_TAG "dap_globaldb_test"
 
 #define DB_FILE "./base.tmp"
+#define DB_FILE_MDBX_FAIL_CLOSED "./base.mdbx.fail.tmp"
+#define DB_FILE_MDBX_REPAIR "./base.mdbx.repair.tmp"
 
 static const char *s_db_types[] = {
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
@@ -27,6 +34,9 @@ static const char *s_db_types[] = {
 #endif
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     "mdbx",
+#endif
+#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
+    "pgsql",
 #endif
     "none"
 };
@@ -81,23 +91,140 @@ static char s_group[64] = {};
 static char s_group_wrong[64] = {};
 static char s_group_not_existed[64] = {};
 
+enum {
+    DAP_GDB_TEST_DRIVER_READY = 0,
+    DAP_GDB_TEST_DRIVER_SKIP = 1
+};
+
+#ifdef DAP_CHAIN_GDB_ENGINE_MDBX
+static int s_test_mdbx_open_env(const char *a_mdbx_path, MDBX_env **a_env)
+{
+    MDBX_env *l_env = NULL;
+    int rc = mdbx_env_create(&l_env);
+    if (rc != MDBX_SUCCESS)
+        return rc;
+    rc = mdbx_env_set_maxdbs(l_env, DAP_GLOBAL_DB_GROUPS_COUNT_MAX);
+    if (rc == MDBX_SUCCESS)
+        rc = mdbx_env_open(l_env, a_mdbx_path, MDBX_CREATE | MDBX_SAFE_NOSYNC, 0664);
+    if (rc != MDBX_SUCCESS) {
+        mdbx_env_close(l_env);
+        return rc;
+    }
+    *a_env = l_env;
+    return MDBX_SUCCESS;
+}
+
+static void s_test_mdbx_put_master_raw(const char *a_base_path, const char *a_key,
+                                       const void *a_value, size_t a_value_len)
+{
+    char l_mdbx_path[MAX_PATH];
+    snprintf(l_mdbx_path, sizeof(l_mdbx_path), "%s/gdb-mdbx", a_base_path);
+
+    MDBX_env *l_env = NULL;
+    int rc = s_test_mdbx_open_env(l_mdbx_path, &l_env);
+    dap_assert_PIF(rc == MDBX_SUCCESS, "Open MDBX env for master corruption");
+
+    MDBX_txn *l_txn = NULL;
+    rc = mdbx_txn_begin(l_env, NULL, MDBX_TXN_READWRITE, &l_txn);
+    dap_assert_PIF(rc == MDBX_SUCCESS, "Begin MDBX master corruption transaction");
+
+    MDBX_dbi l_master_dbi = 0;
+    rc = mdbx_dbi_open(l_txn, "MDBX$MASTER", MDBX_CREATE, &l_master_dbi);
+    dap_assert_PIF(rc == MDBX_SUCCESS, "Open MDBX$MASTER for corruption");
+
+    MDBX_val l_key = { .iov_base = (void *)a_key, .iov_len = strlen(a_key) + 1 };
+    MDBX_val l_value = { .iov_base = (void *)a_value, .iov_len = a_value_len };
+    rc = mdbx_put(l_txn, l_master_dbi, &l_key, &l_value, 0);
+    dap_assert_PIF(rc == MDBX_SUCCESS, "Write raw MDBX$MASTER entry");
+
+    rc = mdbx_txn_commit(l_txn);
+    dap_assert_PIF(rc == MDBX_SUCCESS, "Commit raw MDBX$MASTER entry");
+    mdbx_env_close(l_env);
+}
+
+static void s_test_mdbx_master_repair_preserves_spaces(void)
+{
+    const char *l_group_with_space = "group with space";
+    const char *l_key = "key";
+    char l_value[] = "value";
+    dap_rm_rf(DB_FILE_MDBX_REPAIR);
+
+    dap_assert_PIF(!dap_global_db_driver_init("mdbx", DB_FILE_MDBX_REPAIR), "Init MDBX for master repair test");
+    dap_store_obj_t l_store_obj = {
+        .group = (char *)l_group_with_space,
+        .key = (char *)l_key,
+        .value = (uint8_t *)l_value,
+        .value_len = sizeof(l_value) - 1,
+        .timestamp = dap_nanotime_now(),
+        .crc = 1
+    };
+    dap_assert_PIF(!dap_global_db_driver_add(&l_store_obj, 1), "Write group with printable space");
+    dap_global_db_driver_deinit();
+
+    const char l_bad_value[] = { 'b', 'a', 'd' };
+    s_test_mdbx_put_master_raw(DB_FILE_MDBX_REPAIR, "broken.master", l_bad_value, sizeof(l_bad_value));
+
+    dap_assert_PIF(!dap_global_db_driver_init("mdbx", DB_FILE_MDBX_REPAIR), "Repair non-NUL MDBX$MASTER entry");
+    dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask("*with space");
+    bool l_found = false;
+    for (dap_list_t *l_el = l_groups; l_el; l_el = l_el->next) {
+        if (!strcmp(l_el->data, l_group_with_space)) {
+            l_found = true;
+            break;
+        }
+    }
+    dap_assert_PIF(l_found, "MDBX master repair preserves printable spaces in group names");
+    dap_list_free_full(l_groups, NULL);
+    dap_global_db_driver_deinit();
+    dap_rm_rf(DB_FILE_MDBX_REPAIR);
+    dap_pass_msg("mdbx master repair safety");
+}
+#endif
+
+#if defined(DAP_CHAIN_GDB_ENGINE_MDBX) && defined(DAP_CHAIN_GDB_ENGINE_SQLITE)
+static void s_test_mdbx_fallback_fail_closed(void)
+{
+    char l_mdbx_path[MAX_PATH], l_sqlite_path[MAX_PATH];
+    dap_rm_rf(DB_FILE_MDBX_FAIL_CLOSED);
+    dap_mkdir_with_parents(DB_FILE_MDBX_FAIL_CLOSED);
+    snprintf(l_mdbx_path, sizeof(l_mdbx_path), "%s/gdb-mdbx", DB_FILE_MDBX_FAIL_CLOSED);
+    snprintf(l_sqlite_path, sizeof(l_sqlite_path), "%s/gdb-sqlite", DB_FILE_MDBX_FAIL_CLOSED);
+    dap_mkdir_with_parents(l_mdbx_path);
+    chmod(l_mdbx_path, 0500);
+
+    int l_rc = dap_global_db_driver_init("mdbx", DB_FILE_MDBX_FAIL_CLOSED);
+    bool l_sqlite_created = access(l_sqlite_path, F_OK) == 0;
+    dap_global_db_driver_deinit();
+    chmod(l_mdbx_path, 0700);
+    dap_rm_rf(DB_FILE_MDBX_FAIL_CLOSED);
+
+    dap_assert_PIF(l_rc != 0, "MDBX init failure must fail closed");
+    dap_assert_PIF(!l_sqlite_created, "MDBX init failure must not create SQLite fallback DB");
+    dap_pass_msg("mdbx fallback fail-closed");
+}
+#endif
+
 
 static int s_test_create_db(const char *db_type)
 {
     int l_rc = 0;
-    char l_cmd[MAX_PATH];
     dap_test_msg("Initializatiion test db %s driver in %s file", db_type, DB_FILE);
 
-    if (!dap_strcmp(db_type, "pgsql"))
+    if (!dap_strcmp(db_type, "pgsql")) {
+        if (!getenv("PG_CONNINFO")) {
+            log_it(L_WARNING, "Skipping optional PostgreSQL driver tests: PG_CONNINFO is not defined");
+            return DAP_GDB_TEST_DRIVER_SKIP;
+        }
         l_rc = dap_global_db_driver_init(db_type, "dbname=postgres");
-    else
+    } else {
         l_rc = dap_global_db_driver_init(db_type, DB_FILE);
+    }
     if(l_rc != 0) {
-        log_it(L_WARNING, "Initialization db driver '%s' FAILED (rc=%d), skipping", db_type, l_rc);
-        return l_rc;
+        log_it(L_ERROR, "Initialization db driver '%s' FAILED (rc=%d)", db_type, l_rc);
+        dap_assert_PIF(false, "Compiled DB driver initialization must fail the test gate");
     }
     dap_pass_msg("Initialization db driver");
-    return l_rc;
+    return DAP_GDB_TEST_DRIVER_READY;
 }
 
 static int s_test_write(size_t a_count)
@@ -884,8 +1011,8 @@ static void s_test_full(size_t a_db_count, size_t a_count)
         dap_test_msg("s_group_not_existed name %s", s_group_not_existed);
 
         dap_print_module_name(s_db_types[i]);
-        if(s_test_create_db(s_db_types[i]) != 0) {
-            log_it(L_WARNING, "Skipping '%s' driver tests (init failed)", s_db_types[i]);
+        if(s_test_create_db(s_db_types[i]) == DAP_GDB_TEST_DRIVER_SKIP) {
+            log_it(L_WARNING, "Skipping '%s' driver tests (optional setup missing)", s_db_types[i]);
             continue;
         }
         uint64_t l_t1 = get_cur_time_nsec();
@@ -1345,6 +1472,13 @@ int main(int argc, char **argv)
     sprintf(s_group, "%s", DAP_DB$T_GROUP_PREF);
     sprintf(s_group_wrong, "%s", DAP_DB$T_GROUP_WRONG_PREF);
     sprintf(s_group_not_existed, "%s", DAP_DB$T_GROUP_NOT_EXISTED_PREF);
+
+#ifdef DAP_CHAIN_GDB_ENGINE_MDBX
+    s_test_mdbx_master_repair_preserves_spaces();
+#endif
+#if defined(DAP_CHAIN_GDB_ENGINE_MDBX) && defined(DAP_CHAIN_GDB_ENGINE_SQLITE)
+    s_test_mdbx_fallback_fail_closed();
+#endif
     
     // Run standard functional tests
     dap_print_module_name("Tests with combined value");
@@ -1353,8 +1487,8 @@ int main(int argc, char **argv)
     // Run stress tests
     for (size_t i = 0; i < l_db_count; i++) {
         dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
-        if(s_test_create_db(s_db_types[i]) != 0) {
-            log_it(L_WARNING, "Skipping '%s' stress tests (init failed)", s_db_types[i]);
+        if(s_test_create_db(s_db_types[i]) == DAP_GDB_TEST_DRIVER_SKIP) {
+            log_it(L_WARNING, "Skipping '%s' stress tests (optional setup missing)", s_db_types[i]);
             continue;
         }
         s_stress_test_suite(s_db_types[i], 10); // 10 concurrent threads
@@ -1363,5 +1497,3 @@ int main(int argc, char **argv)
     
     return 0;
 }
-
-

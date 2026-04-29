@@ -128,6 +128,7 @@ int dap_client_init();
 void dap_client_deinit();
 
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg);
+bool dap_client_is_live(dap_client_t *a_client);
 
 DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_addr; }
 DAP_STATIC_INLINE uint16_t dap_client_get_uplink_port_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_port; }

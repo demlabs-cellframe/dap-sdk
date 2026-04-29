@@ -124,6 +124,11 @@ typedef struct dns_client_ctx {
     dap_net_trans_handshake_cb_t handshake_cb;   ///< Stored handshake callback
     dap_stream_t *handshake_stream;               ///< Stream awaiting handshake response
     dap_enc_key_t *handshake_key;                 ///< Derived symmetric key from KEM
+    dap_stream_t *stream;                         ///< Associated client stream
+    dap_events_socket_t *esocket;                 ///< Underlying UDP esocket
+    void *client_ctx;                             ///< dap_client_t* from stage_prepare
+    struct sockaddr_storage remote_addr;          ///< Stable resolved server address
+    socklen_t remote_addr_len;                    ///< Stable server address length
 } dns_client_ctx_t;
 
 /**
@@ -205,4 +210,3 @@ dap_stream_trans_dns_private_t* dap_stream_trans_dns_get_private(dap_stream_t *a
 #ifdef __cplusplus
 }
 #endif
-

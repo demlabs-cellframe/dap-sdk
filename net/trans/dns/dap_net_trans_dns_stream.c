@@ -30,6 +30,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_trans.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
+#include "dap_context_queue.h"
 #include "dap_net.h"
 #include "dap_io_flow_datagram.h"
 #include "dap_context.h"
@@ -64,6 +65,12 @@ static bool s_debug_more = false;
 #define DAP_STREAM_DNS_DEFAULT_MAX_RECORD_SIZE  255
 #define DAP_STREAM_DNS_DEFAULT_MAX_QUERY_SIZE   512
 #define DAP_STREAM_DNS_DEFAULT_TIMEOUT_MS       5000
+
+#ifdef DAP_OS_WINDOWS
+#define DAP_DNS_RECV_FLAGS 0
+#else
+#define DAP_DNS_RECV_FLAGS MSG_DONTWAIT
+#endif
 
 // Trans operations forward declarations
 static int s_dns_init(dap_net_trans_t *a_trans, dap_config_t *a_config);
@@ -116,11 +123,37 @@ static const dap_net_trans_ops_t s_dns_ops = {
 // Helper functions
 static dap_stream_trans_dns_private_t *s_get_private(dap_net_trans_t *a_trans);
 static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream);
+static dns_client_ctx_t *s_get_client_ctx(dap_stream_t *a_stream);
 static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg);
-static bool s_dns_client_process_datagram(dap_events_socket_t *a_es, const void *a_data, size_t a_size);
+static bool s_dns_client_process_datagram(dap_events_socket_t *a_es, const void *a_data, size_t a_size,
+                                          const struct sockaddr_storage *a_addr, socklen_t a_addr_len,
+                                          bool *a_delete_requested);
 static bool s_dns_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
                                      struct sockaddr_storage *a_addr_out,
                                      socklen_t *a_addr_len_out);
+static void s_dns_delete_registered_or_queued_es(dap_worker_t *a_worker, dap_events_socket_t *a_es);
+
+#ifdef _WIN32
+static SOCKET s_dns_esocket_socket(dap_events_socket_t *a_es)
+{
+    return a_es ? a_es->socket : INVALID_SOCKET;
+}
+
+static bool s_dns_esocket_is_valid(dap_events_socket_t *a_es)
+{
+    return a_es && a_es->socket != INVALID_SOCKET;
+}
+#else
+static int s_dns_esocket_socket(dap_events_socket_t *a_es)
+{
+    return a_es ? a_es->fd : -1;
+}
+
+static bool s_dns_esocket_is_valid(dap_events_socket_t *a_es)
+{
+    return a_es && a_es->fd >= 0;
+}
+#endif
 
 /**
  * @brief Register DNS tunnel trans adapter
@@ -184,6 +217,55 @@ dap_stream_trans_dns_config_t dap_stream_trans_dns_config_default(void)
         .domain_suffix = NULL  // Will be set by application
     };
     return l_config;
+}
+
+static bool s_dns_sockaddr_equal(const struct sockaddr_storage *a_left, socklen_t a_left_len,
+                                 const struct sockaddr_storage *a_right, socklen_t a_right_len)
+{
+    if (!a_left || !a_right || a_left_len == 0 || a_right_len == 0 ||
+        a_left->ss_family != a_right->ss_family)
+        return false;
+
+    if (a_left->ss_family == AF_INET) {
+        const struct sockaddr_in *l_left = (const struct sockaddr_in *)a_left;
+        const struct sockaddr_in *l_right = (const struct sockaddr_in *)a_right;
+        return l_left->sin_port == l_right->sin_port &&
+               memcmp(&l_left->sin_addr, &l_right->sin_addr, sizeof(l_left->sin_addr)) == 0;
+    }
+
+    if (a_left->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *l_left = (const struct sockaddr_in6 *)a_left;
+        const struct sockaddr_in6 *l_right = (const struct sockaddr_in6 *)a_right;
+        return l_left->sin6_port == l_right->sin6_port &&
+               l_left->sin6_scope_id == l_right->sin6_scope_id &&
+               memcmp(&l_left->sin6_addr, &l_right->sin6_addr, sizeof(l_left->sin6_addr)) == 0;
+    }
+
+    return a_left_len == a_right_len && memcmp(a_left, a_right, a_left_len) == 0;
+}
+
+static bool s_dns_get_stable_remote_addr(dap_stream_t *a_stream,
+                                         struct sockaddr_storage *a_addr_out,
+                                         socklen_t *a_addr_len_out)
+{
+    if (!a_stream || !a_addr_out || !a_addr_len_out)
+        return false;
+
+    dns_client_ctx_t *l_ctx = s_get_client_ctx(a_stream);
+    if (l_ctx && l_ctx->remote_addr_len > 0) {
+        memcpy(a_addr_out, &l_ctx->remote_addr, sizeof(struct sockaddr_storage));
+        *a_addr_len_out = l_ctx->remote_addr_len;
+        return true;
+    }
+
+    dap_stream_trans_dns_private_t *l_priv = s_get_private(a_stream->trans);
+    if (l_priv && l_priv->remote_addr_len > 0) {
+        memcpy(a_addr_out, &l_priv->remote_addr, sizeof(struct sockaddr_storage));
+        *a_addr_len_out = l_priv->remote_addr_len;
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -351,11 +433,9 @@ static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
         return -1;
     }
 
-    // DNS is connectionless like UDP, so we can store connection info
-    // and call callback immediately
-    
-    // Parse address and store in remote_addr
-    struct sockaddr_in *l_addr_in = (struct sockaddr_in*)&l_priv->remote_addr;
+    struct sockaddr_storage l_remote_addr = {0};
+    socklen_t l_remote_addr_len = sizeof(struct sockaddr_in);
+    struct sockaddr_in *l_addr_in = (struct sockaddr_in*)&l_remote_addr;
     l_addr_in->sin_family = AF_INET;
     l_addr_in->sin_port = htons(a_port);
     
@@ -364,13 +444,21 @@ static int s_dns_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_
         return -1;
     }
 
-    l_priv->remote_addr_len = sizeof(struct sockaddr_in);
+    memcpy(&l_priv->remote_addr, &l_remote_addr, sizeof(l_remote_addr));
+    l_priv->remote_addr_len = l_remote_addr_len;
     l_priv->esocket = a_stream->esocket;
+
+    dns_client_ctx_t *l_client_ctx = s_get_or_create_client_ctx(a_stream);
+    if (l_client_ctx) {
+        l_client_ctx->stream = a_stream;
+        l_client_ctx->esocket = a_stream->esocket;
+        memcpy(&l_client_ctx->remote_addr, &l_remote_addr, sizeof(l_remote_addr));
+        l_client_ctx->remote_addr_len = l_remote_addr_len;
+    }
     
-    // Update esocket address storage for sendto
     if (l_priv->esocket) {
-        memcpy(&l_priv->esocket->addr_storage, &l_priv->remote_addr, l_priv->remote_addr_len);
-        l_priv->esocket->addr_size = l_priv->remote_addr_len;
+        memcpy(&l_priv->esocket->addr_storage, &l_remote_addr, l_remote_addr_len);
+        l_priv->esocket->addr_size = l_remote_addr_len;
     }
     
     log_it(L_INFO, "DNS tunnel trans connecting to %s:%u", a_host, a_port);
@@ -447,16 +535,27 @@ static int s_dns_handshake_init(dap_stream_t *a_stream,
     log_it(L_INFO, "DNS handshake init: enc_type=%d, pkey_type=%d, key_size=%zu",
            a_params->enc_type, a_params->pkey_exchange_type, a_params->alice_pub_key_size);
 
-    dap_events_socket_t *l_es = a_stream->esocket;
+    if (!a_stream->trans_ctx) {
+        log_it(L_ERROR, "DNS handshake: stream has no trans_ctx");
+        return -1;
+    }
 
+    struct sockaddr_storage l_remote_addr = {0};
+    socklen_t l_remote_addr_len = 0;
+    if (!s_dns_get_stable_remote_addr(a_stream, &l_remote_addr, &l_remote_addr_len)) {
+        log_it(L_ERROR, "DNS handshake: no stable server address");
+        return -1;
+    }
+
+    dap_events_socket_t *l_es = a_stream->esocket;
     a_stream->trans_ctx->handshake_cb = a_callback;
     l_es->callbacks.read_callback = s_dns_client_read_cb;
 
     size_t l_sent = dap_events_socket_sendto_unsafe(l_es,
                                                    a_params->alice_pub_key,
                                                    a_params->alice_pub_key_size,
-                                                   &l_es->addr_storage,
-                                                   l_es->addr_size);
+                                                   &l_remote_addr,
+                                                   l_remote_addr_len);
     if (l_sent != a_params->alice_pub_key_size) {
         log_it(L_ERROR, "DNS handshake send failed: %zu of %zu bytes",
                l_sent, a_params->alice_pub_key_size);
@@ -573,7 +672,8 @@ static ssize_t s_dns_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     // DNS data in buf_in is raw stream data (no DNS-specific framing in current impl).
     // Delegate to dap_stream_data_proc_read which processes DAP stream packets
     // from the esocket's buf_in and returns bytes consumed.
-    return (ssize_t)dap_stream_data_proc_read(a_stream);
+    bool l_delete_requested = false;
+    return (ssize_t)dap_stream_data_proc_read_checked(a_stream, &l_delete_requested);
 }
 
 /**
@@ -593,10 +693,13 @@ typedef struct dns_client_sendto_args {
 static void s_dns_client_sendto_callback(void *a_arg)
 {
     dns_client_sendto_args_t *l_args = (dns_client_sendto_args_t *)a_arg;
+    if (!l_args)
+        return;
+
     dap_events_socket_t *l_es = l_args && l_args->worker && l_args->esocket_uuid
         ? dap_context_find(l_args->worker->context, l_args->esocket_uuid)
         : NULL;
-    if (l_es && l_es->fd >= 0) {
+    if (s_dns_esocket_is_valid(l_es)) {
         size_t l_sent = dap_events_socket_sendto_unsafe(l_es,
             l_args->data, l_args->size,
             &l_args->addr, l_args->addr_len);
@@ -605,7 +708,7 @@ static void s_dns_client_sendto_callback(void *a_arg)
         }
     } else {
         log_it(L_WARNING, "DNS client async write dropped: esocket not found (uuid=0x%"DAP_UINT64_FORMAT_x")",
-               l_args ? l_args->esocket_uuid : 0);
+               l_args->esocket_uuid);
     }
     DAP_DELETE(l_args->data);
     DAP_DELETE(l_args);
@@ -629,12 +732,19 @@ static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_
         return -1;
     }
 
+    struct sockaddr_storage l_remote_addr = {0};
+    socklen_t l_remote_addr_len = 0;
+    if (!s_dns_get_stable_remote_addr(a_stream, &l_remote_addr, &l_remote_addr_len)) {
+        log_it(L_ERROR, "DNS write: no stable server address");
+        return -1;
+    }
+
     dap_worker_t *l_current = dap_worker_get_current();
     dap_worker_t *l_target = l_es->worker;
 
     if(l_current == l_target) {
         size_t l_sent = dap_events_socket_sendto_unsafe(l_es, a_data, a_size,
-                                                        &l_es->addr_storage, l_es->addr_size);
+                                                        &l_remote_addr, l_remote_addr_len);
         if(l_sent != a_size)
             log_it(L_WARNING, "DNS write incomplete: %zu of %zu bytes (flags=0x%x)", l_sent, a_size, l_es->flags);
         return (ssize_t)l_sent;
@@ -652,9 +762,16 @@ static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_
     }
     memcpy(l_args->data, a_data, a_size);
     l_args->size = a_size;
-    memcpy(&l_args->addr, &l_es->addr_storage, l_es->addr_size);
-    l_args->addr_len = l_es->addr_size;
-    dap_worker_exec_callback_on(l_target, s_dns_client_sendto_callback, l_args);
+    memcpy(&l_args->addr, &l_remote_addr, l_remote_addr_len);
+    l_args->addr_len = l_remote_addr_len;
+    int l_ret = dap_worker_exec_callback_on(l_target, s_dns_client_sendto_callback, l_args);
+    if (l_ret != 0) {
+        log_it(L_WARNING, "DNS write: failed to enqueue async send on worker %u: %d",
+               l_target ? l_target->id : 0, l_ret);
+        DAP_DELETE(l_args->data);
+        DAP_DELETE(l_args);
+        return l_ret < 0 ? l_ret : -1;
+    }
     return (ssize_t)a_size;
 }
 
@@ -674,6 +791,14 @@ static void s_dns_close(dap_stream_t *a_stream)
         a_stream->flow = NULL;
     }
 
+    if (a_stream->trans_ctx && a_stream->trans_ctx->transport_priv) {
+        dns_client_ctx_t *l_ctx = (dns_client_ctx_t *)a_stream->trans_ctx->transport_priv;
+        if (l_ctx->handshake_key)
+            dap_enc_key_delete(l_ctx->handshake_key);
+        DAP_DELETE(l_ctx);
+        a_stream->trans_ctx->transport_priv = NULL;
+    }
+
     if (a_stream->trans) {
         dap_stream_trans_dns_private_t *l_priv = s_get_private(a_stream->trans);
         if (l_priv) {
@@ -686,6 +811,68 @@ static void s_dns_close(dap_stream_t *a_stream)
     }
 
     debug_if(s_debug_more, L_DEBUG, "DNS tunnel trans closed");
+}
+
+typedef struct dns_es_cleanup_ctx {
+    dap_worker_t *worker;
+    dap_events_socket_t *es;
+    dap_events_socket_uuid_t uuid;
+    bool deleted;
+} dns_es_cleanup_ctx_t;
+
+static void s_dns_delete_registered_or_queued_es_cb(void *a_arg)
+{
+    dns_es_cleanup_ctx_t *l_ctx = (dns_es_cleanup_ctx_t *)a_arg;
+    if (!l_ctx || !l_ctx->worker || !l_ctx->es)
+        return;
+
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (l_worker != l_ctx->worker || !l_worker->context)
+        return;
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    while (l_worker->queue_es_new && dap_context_queue_count(l_worker->queue_es_new) > 0) {
+        int l_processed = dap_context_queue_process(l_worker->queue_es_new);
+        if (l_processed <= 0)
+            break;
+    }
+#endif
+
+    dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
+    if (l_es) {
+        dap_events_socket_remove_and_delete_unsafe(l_es, true);
+        l_ctx->deleted = true;
+        return;
+    }
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_ctx->es->worker == l_worker && !atomic_load(&l_ctx->es->is_initalized)) {
+        dap_events_socket_delete_unsafe(l_ctx->es, true);
+        l_ctx->deleted = true;
+    }
+#endif
+}
+
+static void s_dns_delete_registered_or_queued_es(dap_worker_t *a_worker, dap_events_socket_t *a_es)
+{
+    if (!a_worker || !a_es)
+        return;
+
+    dns_es_cleanup_ctx_t l_ctx = {
+        .worker = a_worker,
+        .es = a_es,
+        .uuid = a_es->uuid
+    };
+
+    if (dap_worker_get_current() == a_worker)
+        s_dns_delete_registered_or_queued_es_cb(&l_ctx);
+    else
+        dap_worker_exec_callback_on_sync(a_worker, s_dns_delete_registered_or_queued_es_cb, &l_ctx);
+
+    if (!l_ctx.deleted) {
+        log_it(L_WARNING, "DNS cleanup: socket uuid 0x%"DAP_UINT64_FORMAT_x
+               " was neither registered nor safely unqueued", l_ctx.uuid);
+    }
 }
 
 /**
@@ -727,8 +914,8 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     l_es->_inheritor = a_params->client_ctx;
     
     int l_buf_size = 4 * 1024 * 1024;
-    setsockopt(l_es->fd, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
-    setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
+    setsockopt(s_dns_esocket_socket(l_es), SOL_SOCKET, SO_RCVBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
+    setsockopt(s_dns_esocket_socket(l_es), SOL_SOCKET, SO_SNDBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
     
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
@@ -739,23 +926,79 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     }
     
     // DNS tunneling uses UDP (connectionless) - just add to worker
-    dap_worker_add_events_socket(a_params->worker, l_es);
+    int l_add_ret = dap_worker_add_events_socket(a_params->worker, l_es);
+    if (l_add_ret != 0) {
+        log_it(L_ERROR, "Failed to add DNS socket to worker #%u: %d", a_params->worker->id, l_add_ret);
+        l_es->context = NULL;
+        l_es->worker = NULL;
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = l_add_ret;
+        return -1;
+    }
     
     // Create stream for this connection (same pattern as HTTP/WebSocket/UDP)
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for DNS trans");
-        dap_events_socket_delete_unsafe(l_es, true);
+        s_dns_delete_registered_or_queued_es(a_params->worker, l_es);
         a_result->error_code = -1;
         return -1;
     }
     l_stream->trans = a_trans;
 
+    dap_net_trans_ctx_t *l_trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (!l_trans_ctx) {
+        log_it(L_CRITICAL, "Failed to create DNS trans_ctx for stream");
+        l_stream->esocket = NULL;
+        l_stream->esocket_uuid = 0;
+        l_stream->esocket_worker = NULL;
+        dap_stream_delete_unsafe(l_stream);
+        s_dns_delete_registered_or_queued_es(a_params->worker, l_es);
+        a_result->error_code = -1;
+        return -1;
+    }
+    l_trans_ctx->trans = a_trans;
+    l_trans_ctx->stream = l_stream;
+    l_stream->trans_ctx = l_trans_ctx;
+
+    dns_client_ctx_t *l_dns_ctx = s_get_or_create_client_ctx(l_stream);
+    if (!l_dns_ctx) {
+        log_it(L_CRITICAL, "Failed to create DNS client context for stream");
+        l_stream->trans_ctx = NULL;
+        DAP_DELETE(l_trans_ctx);
+        l_stream->esocket = NULL;
+        l_stream->esocket_uuid = 0;
+        l_stream->esocket_worker = NULL;
+        dap_stream_delete_unsafe(l_stream);
+        s_dns_delete_registered_or_queued_es(a_params->worker, l_es);
+        a_result->error_code = -1;
+        return -1;
+    }
+    l_dns_ctx->stream = l_stream;
+    l_dns_ctx->esocket = l_es;
+    l_dns_ctx->client_ctx = a_params->client_ctx;
+    memcpy(&l_dns_ctx->remote_addr, &l_es->addr_storage, sizeof(struct sockaddr_storage));
+    l_dns_ctx->remote_addr_len = l_es->addr_size;
+
+    dap_stream_trans_dns_private_t *l_priv = s_get_private(a_trans);
+    if (l_priv) {
+        l_priv->esocket = l_es;
+        memcpy(&l_priv->remote_addr, &l_dns_ctx->remote_addr, sizeof(struct sockaddr_storage));
+        l_priv->remote_addr_len = l_dns_ctx->remote_addr_len;
+    }
+
     // DNS transport is datagram-based; keepalive/data send path expects stream->flow.
     l_stream->flow = dap_io_flow_datagram_new(s_dns_get_remote_addr_cb, l_stream);
     if (!l_stream->flow) {
         log_it(L_CRITICAL, "Failed to create DNS datagram flow for stream");
+        l_stream->trans_ctx = NULL;
+        DAP_DELETE(l_dns_ctx);
+        DAP_DELETE(l_trans_ctx);
+        l_stream->esocket = NULL;
+        l_stream->esocket_uuid = 0;
+        l_stream->esocket_worker = NULL;
         dap_stream_delete_unsafe(l_stream);
+        s_dns_delete_registered_or_queued_es(a_params->worker, l_es);
         a_result->error_code = -1;
         return -1;
     }
@@ -796,8 +1039,27 @@ static size_t s_dns_get_max_packet_size(dap_net_trans_t *a_trans)
 
 static dns_client_ctx_t *s_get_or_create_client_ctx(dap_stream_t *a_stream)
 {
-    (void)a_stream;
-    return NULL;
+    if (!a_stream || !a_stream->trans_ctx)
+        return NULL;
+
+    dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_stream->trans_ctx;
+    if (!l_trans_ctx->transport_priv) {
+        dns_client_ctx_t *l_ctx = DAP_NEW_Z(dns_client_ctx_t);
+        if (!l_ctx) {
+            log_it(L_CRITICAL, "Failed to allocate DNS client context");
+            return NULL;
+        }
+        l_trans_ctx->transport_priv = l_ctx;
+    }
+
+    return (dns_client_ctx_t *)l_trans_ctx->transport_priv;
+}
+
+static dns_client_ctx_t *s_get_client_ctx(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->trans_ctx)
+        return NULL;
+    return (dns_client_ctx_t *)a_stream->trans_ctx->transport_priv;
 }
 
 static bool s_dns_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
@@ -809,13 +1071,11 @@ static bool s_dns_get_remote_addr_cb(dap_io_flow_datagram_t *a_flow,
     }
 
     dap_stream_t *l_stream = (dap_stream_t *)a_flow->protocol_data;
-    if (!l_stream || !l_stream->esocket || l_stream->esocket->addr_size == 0) {
+    if (!l_stream) {
         return false;
     }
 
-    memcpy(a_addr_out, &l_stream->esocket->addr_storage, sizeof(struct sockaddr_storage));
-    *a_addr_len_out = l_stream->esocket->addr_size;
-    return true;
+    return s_dns_get_stable_remote_addr(l_stream, a_addr_out, a_addr_len_out);
 }
 
 /**
@@ -835,7 +1095,17 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
     if (!a_es || a_es->buf_in_size == 0)
         return;
 
-    bool l_continue = s_dns_client_process_datagram(a_es, a_es->buf_in, a_es->buf_in_size);
+    struct sockaddr_storage l_initial_addr = {0};
+    socklen_t l_initial_addr_len = a_es->addr_size;
+    if (l_initial_addr_len > 0)
+        memcpy(&l_initial_addr, &a_es->addr_storage, l_initial_addr_len);
+
+    bool l_delete_requested = false;
+    bool l_continue = s_dns_client_process_datagram(a_es, a_es->buf_in, a_es->buf_in_size,
+                                                    &l_initial_addr, l_initial_addr_len,
+                                                    &l_delete_requested);
+    if (l_delete_requested)
+        return;
     a_es->buf_in_size = 0;
     if (!l_continue)
         return;
@@ -844,7 +1114,7 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
     struct sockaddr_storage l_addr;
     for (;;) {
         socklen_t l_addr_len = sizeof(l_addr);
-        ssize_t l_read = recvfrom(a_es->fd, l_buf, sizeof(l_buf), MSG_DONTWAIT,
+        ssize_t l_read = recvfrom(s_dns_esocket_socket(a_es), l_buf, sizeof(l_buf), DAP_DNS_RECV_FLAGS,
                                   (struct sockaddr *)&l_addr, &l_addr_len);
         if (l_read <= 0) {
 #ifdef DAP_OS_WINDOWS
@@ -861,13 +1131,21 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
 #endif
             break;
         }
-        if (!s_dns_client_process_datagram(a_es, l_buf, (size_t)l_read))
+        l_continue = s_dns_client_process_datagram(a_es, l_buf, (size_t)l_read, &l_addr, l_addr_len,
+                                                   &l_delete_requested);
+        if (l_delete_requested)
+            return;
+        if (!l_continue)
             break;
     }
 }
 
-static bool s_dns_client_process_datagram(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+static bool s_dns_client_process_datagram(dap_events_socket_t *a_es, const void *a_data, size_t a_size,
+                                          const struct sockaddr_storage *a_addr, socklen_t a_addr_len,
+                                          bool *a_delete_requested)
 {
+    if (a_delete_requested)
+        *a_delete_requested = false;
     if (!a_es || !a_data || a_size == 0)
         return false;
 
@@ -890,9 +1168,23 @@ static bool s_dns_client_process_datagram(dap_events_socket_t *a_es, const void 
         return false;
     }
 
-    if (!l_stream->trans_ctx->handshake_cb) {
-        dap_stream_data_proc_read_ext(l_stream, a_data, a_size);
+    dns_client_ctx_t *l_dns_ctx = s_get_client_ctx(l_stream);
+    if (!l_dns_ctx || l_dns_ctx->remote_addr_len == 0) {
+        log_it(L_ERROR, "DNS client read: no stable server address");
+        return false;
+    }
+    if (!a_addr || a_addr_len == 0 ||
+        !s_dns_sockaddr_equal(a_addr, a_addr_len, &l_dns_ctx->remote_addr, l_dns_ctx->remote_addr_len)) {
+        debug_if(s_debug_more, L_WARNING, "DNS client read: dropped datagram from unexpected source");
         return true;
+    }
+
+    if (!l_stream->trans_ctx->handshake_cb) {
+        bool l_delete_requested = false;
+        dap_stream_data_proc_read_ext_checked(l_stream, a_data, a_size, &l_delete_requested);
+        if (a_delete_requested)
+            *a_delete_requested = l_delete_requested;
+        return !l_delete_requested;
     }
 
     log_it(L_INFO, "DNS client: received server handshake response (%zu bytes)", a_size);

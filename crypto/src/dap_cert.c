@@ -309,9 +309,9 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
 {
     if (!a_cert_name)
         return NULL;
-    
+
     debug_if(s_debug_more, L_DEBUG, "dap_cert_find_by_name: CALLED with cert_name='%s'", a_cert_name);
-    
+
     dap_cert_item_t *l_cert_item = NULL;
     dap_cert_t *l_ret = NULL;
 

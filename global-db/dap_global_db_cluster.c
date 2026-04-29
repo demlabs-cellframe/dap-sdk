@@ -29,17 +29,76 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_ch.h"
 #include "dap_strfuncs.h"
 #include "dap_proc_thread.h"
+#include "dap_timerfd.h"
+#include "dap_worker.h"
 #include "dap_hash.h"
 #include "dap_stream_ch_gossip.h"
+#include <stdatomic.h>
 
 #define LOG_TAG "dap_global_db_cluster"
 
-static void s_gdb_cluster_sync_timer_callback(void *a_arg);
+struct dap_global_db_cluster_timer_ctx {
+    dap_global_db_cluster_t *cluster;
+    dap_timerfd_t *timer;
+    dap_worker_t *worker;
+    atomic_bool shutdown;
+};
+
+static bool s_gdb_cluster_sync_timer_callback(void *a_arg);
+static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg);
 
 static dap_global_db_cluster_t *s_local_cluster = NULL, *s_global_cluster = NULL;
+static atomic_bool s_cluster_deinit_in_progress = ATOMIC_VAR_INIT(false);
+
+static bool s_gdb_cluster_is_alive(dap_global_db_cluster_t *a_cluster)
+{
+    if (!a_cluster || atomic_load(&s_cluster_deinit_in_progress))
+        return false;
+    dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
+    if (!l_dbi)
+        return false;
+    dap_global_db_cluster_t *it;
+    DL_FOREACH(l_dbi->clusters, it) {
+        if (it == a_cluster)
+            return true;
+    }
+    return false;
+}
+
+static void s_gdb_cluster_timer_delete_on_worker(void *a_arg)
+{
+    dap_global_db_cluster_timer_ctx_t *l_timer_ctx = a_arg;
+    if (l_timer_ctx && l_timer_ctx->timer)
+        dap_timerfd_delete_unsafe(l_timer_ctx->timer);
+}
+
+static bool s_gdb_cluster_sync_timer_stop(dap_global_db_cluster_t *a_cluster)
+{
+    dap_global_db_cluster_timer_ctx_t *l_timer_ctx = a_cluster ? a_cluster->sync_timer_ctx : NULL;
+    if (!l_timer_ctx)
+        return true;
+
+    atomic_store(&l_timer_ctx->shutdown, true);
+    if (l_timer_ctx->timer && l_timer_ctx->worker) {
+        int l_ret = dap_worker_exec_callback_on_sync_timed(l_timer_ctx->worker,
+                                                           s_gdb_cluster_timer_delete_on_worker,
+                                                           l_timer_ctx, 5000);
+        if (l_ret) {
+            log_it(L_ERROR, "GlobalDB cluster sync timer stop timed out or failed for mask %s (ret=%d); "
+                            "leaving cluster allocated to avoid timer UAF",
+                            a_cluster->groups_mask ? a_cluster->groups_mask : "<unknown>", l_ret);
+            return false;
+        }
+    }
+
+    a_cluster->sync_timer_ctx = NULL;
+    DAP_DELETE(l_timer_ctx);
+    return true;
+}
 
 int dap_global_db_cluster_init()
 {
+    atomic_store(&s_cluster_deinit_in_progress, false);
     dap_global_db_ch_init();
     // Pseudo-cluster for global scope
     if ( !(s_global_cluster = dap_global_db_cluster_add(
@@ -63,6 +122,7 @@ int dap_global_db_cluster_init()
 
 void dap_global_db_cluster_deinit()
 {
+    atomic_store(&s_cluster_deinit_in_progress, true);
     dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
     if (l_dbi) {
         dap_global_db_cluster_t *it, *tmp;
@@ -149,8 +209,33 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->link_manager = dap_link_manager_get_default();
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
     DL_APPEND(a_dbi->clusters, l_cluster);
-    if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
-        dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
+    if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim)) {
+        dap_global_db_cluster_timer_ctx_t *l_timer_ctx = DAP_NEW_Z(dap_global_db_cluster_timer_ctx_t);
+        if (!l_timer_ctx) {
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            DL_DELETE(a_dbi->clusters, l_cluster);
+            DAP_DELETE(l_cluster->groups_mask);
+            dap_cluster_delete(l_cluster->role_cluster);
+            dap_cluster_delete(l_cluster->links_cluster);
+            DAP_DELETE(l_cluster);
+            return NULL;
+        }
+        l_timer_ctx->cluster = l_cluster;
+        atomic_init(&l_timer_ctx->shutdown, false);
+        l_timer_ctx->timer = dap_timerfd_start(1000, s_gdb_cluster_sync_timer_callback, l_timer_ctx);
+        if (!l_timer_ctx->timer) {
+            log_it(L_ERROR, "Can't start GlobalDB cluster sync timer");
+            DAP_DELETE(l_timer_ctx);
+            DL_DELETE(a_dbi->clusters, l_cluster);
+            DAP_DELETE(l_cluster->groups_mask);
+            dap_cluster_delete(l_cluster->role_cluster);
+            dap_cluster_delete(l_cluster->links_cluster);
+            DAP_DELETE(l_cluster);
+            return NULL;
+        }
+        l_timer_ctx->worker = l_timer_ctx->timer->worker;
+        l_cluster->sync_timer_ctx = l_timer_ctx;
+    }
     log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s, TTL %s",
                     dap_guuid_to_hex_str(a_guuid), a_group_mask, l_cluster->ttl ? dap_itoa(l_cluster->ttl) : "unlimited");
     return l_cluster;
@@ -179,18 +264,30 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     //    dap_cluster_delete(a_cluster->links_cluster);
     // TODO make a reference counter for cluster mnemonims
     if (!a_cluster) return; //happens when no network connection available
-    
+
+    if (!dap_stream_node_addr_is_blank(&a_cluster->sync_context.current_link)) {
+        dap_stream_ch_del_notifier(&a_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
+                                   DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, a_cluster);
+        a_cluster->sync_context.current_link = (dap_stream_node_addr_t){};
+    }
+
+    bool l_timer_stopped = s_gdb_cluster_sync_timer_stop(a_cluster);
+
+    if (a_cluster->dbi && a_cluster->dbi->clusters) {
+        DL_DELETE(a_cluster->dbi->clusters, a_cluster);
+    }
+
+    if (!l_timer_stopped)
+        return;
+
     // CRITICAL: Only delete role_cluster if it's initialized and valid
     // Check: not NULL and dbi is still valid
     if (a_cluster->role_cluster &&
         a_cluster->dbi) {
         dap_cluster_delete(a_cluster->role_cluster);
     }
-    
+
     DAP_DELETE(a_cluster->groups_mask);
-    if (a_cluster->dbi && a_cluster->dbi->clusters) {
-        DL_DELETE(a_cluster->dbi->clusters, a_cluster);
-    }
     DAP_DELETE(a_cluster);
 }
 
@@ -230,9 +327,11 @@ int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster
 static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg)
 {
     dap_return_if_fail(a_arg);
+    dap_global_db_cluster_t *l_cluster = a_arg;
+    if (!s_gdb_cluster_is_alive(l_cluster))
+        return;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Got packet with message type %hhu size %zu from addr " NODE_ADDR_FP_STR,
                                                            a_type, a_data_size, NODE_ADDR_FP_ARGS_S(a_ch->stream->node));
-    dap_global_db_cluster_t *l_cluster = a_arg;
     switch (a_type) {
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
         dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)a_data;
@@ -249,10 +348,14 @@ static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const vo
     }
 }
 
-static void s_gdb_cluster_sync_timer_callback(void *a_arg)
+static bool s_gdb_cluster_sync_timer_callback(void *a_arg)
 {
-    assert(a_arg);
-    dap_global_db_cluster_t *l_cluster = a_arg;
+    dap_global_db_cluster_timer_ctx_t *l_timer_ctx = a_arg;
+    if (!l_timer_ctx || atomic_load(&l_timer_ctx->shutdown))
+        return false;
+    dap_global_db_cluster_t *l_cluster = l_timer_ctx->cluster;
+    if (!s_gdb_cluster_is_alive(l_cluster))
+        return false;
     switch (l_cluster->sync_context.state) {
     case DAP_GLOBAL_DB_SYNC_STATE_START: {
         dap_stream_node_addr_t l_current_link = dap_cluster_get_random_link(l_cluster->links_cluster);
@@ -298,4 +401,5 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
     default:
         break;
     }
+    return !atomic_load(&l_timer_ctx->shutdown);
 }

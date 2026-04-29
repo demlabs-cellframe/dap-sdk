@@ -24,6 +24,8 @@
 #include "dap_server.h"
 #include "dap_worker.h"
 #include "dap_common.h"
+#include <errno.h>
+#include <pthread.h>
 #include <time.h>
 
 #define LOG_TAG "dap_server_helpers"
@@ -33,8 +35,19 @@
  */
 typedef struct {
     dap_server_t *server;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool completed;
     bool is_ready;
 } server_ready_ctx_t;
+
+static void s_server_ready_ctx_complete(server_ready_ctx_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    a_ctx->completed = true;
+    pthread_cond_signal(&a_ctx->cond);
+    pthread_mutex_unlock(&a_ctx->mutex);
+}
 
 /**
  * @brief Callback executed on worker thread to check server listener socket state
@@ -42,13 +55,13 @@ typedef struct {
 static void s_check_server_ready_callback(void *a_arg)
 {
     server_ready_ctx_t *l_ctx = (server_ready_ctx_t *)a_arg;
-    if (!l_ctx || !l_ctx->server) {
+    if (!l_ctx) {
         return;
     }
     
     // SAFE: We're in worker context - can access es_listeners directly
     l_ctx->is_ready = false;
-    if (l_ctx->server->es_listeners) {
+    if (l_ctx->server && l_ctx->server->es_listeners) {
         // Check if at least one listener socket exists and is on a worker
         dap_list_t *l_iter = l_ctx->server->es_listeners;
         while (l_iter) {
@@ -60,7 +73,8 @@ static void s_check_server_ready_callback(void *a_arg)
             l_iter = l_iter->next;
         }
     }
-    
+
+    s_server_ready_ctx_complete(l_ctx);
 }
 
 bool dap_server_is_ready(dap_server_t *a_server)
@@ -116,21 +130,51 @@ bool dap_server_wait_for_ready(dap_server_t *a_server, uint32_t a_timeout_ms)
         return false;
     }
     
-    // Setup context for callback
-    server_ready_ctx_t l_ctx = {
-        .server = a_server,
-        .is_ready = false
-    };
-    
     // Now wait for server to actually be listening (socket ready)
     while (l_elapsed < a_timeout_ms) {
         // Execute callback synchronously on worker thread.
-        // This avoids use-after-scope from async callbacks with stack context.
-        l_ctx.is_ready = false;
-        dap_worker_exec_callback_on_sync(l_first_listener->worker, s_check_server_ready_callback, &l_ctx);
+        uint32_t l_remaining_ms = a_timeout_ms - l_elapsed;
+        uint32_t l_wait_ms = l_remaining_ms < l_poll_interval_ms ? l_remaining_ms : l_poll_interval_ms;
+        dap_worker_t *l_worker = l_first_listener->worker;
+        uint32_t l_worker_id = l_worker ? l_worker->id : 0;
+        server_ready_ctx_t l_ctx = {
+            .server = a_server,
+            .is_ready = false,
+            .completed = false
+        };
+        pthread_mutex_init(&l_ctx.mutex, NULL);
+        pthread_cond_init(&l_ctx.cond, NULL);
+        int l_ret = dap_worker_exec_callback_on_sync_timed(
+            l_worker, s_check_server_ready_callback, &l_ctx, l_wait_ms);
 
-        if (l_ctx.is_ready) {
-            return true;
+        if (l_ret == -EINPROGRESS) {
+            pthread_mutex_lock(&l_ctx.mutex);
+            while (!l_ctx.completed) {
+                pthread_cond_wait(&l_ctx.cond, &l_ctx.mutex);
+            }
+            pthread_mutex_unlock(&l_ctx.mutex);
+            l_ret = 0;
+        }
+
+        if (l_ret == 0) {
+            bool l_is_ready = l_ctx.is_ready;
+            pthread_cond_destroy(&l_ctx.cond);
+            pthread_mutex_destroy(&l_ctx.mutex);
+            if (l_is_ready)
+                return true;
+        } else {
+            pthread_cond_destroy(&l_ctx.cond);
+            pthread_mutex_destroy(&l_ctx.mutex);
+        }
+
+        if (l_ret != 0) {
+            if (l_ret != -ETIMEDOUT) {
+                log_it(L_WARNING, "Server readiness callback failed on worker %u: %d",
+                       l_worker_id, l_ret);
+                return false;
+            }
+            l_elapsed += l_wait_ms;
+            continue;
         }
 
         struct timespec l_ts = { .tv_sec = l_poll_interval_ms / 1000, .tv_nsec = (l_poll_interval_ms % 1000) * 1000000 };

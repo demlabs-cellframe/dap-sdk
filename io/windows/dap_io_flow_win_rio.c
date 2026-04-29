@@ -64,15 +64,14 @@ bool dap_io_flow_win_rio_is_available(void)
  * Note: Windows doesn't provide kernel-level sticky sessions.
  * We rely on Application-level LB (Tier 1) with IOCP optimization.
  */
-int dap_io_flow_win_rio_configure(int socket_fd)
+int dap_io_flow_win_rio_configure(SOCKET socket_fd)
 {
 #ifdef _WIN32
     BOOL opt = TRUE;
-    SOCKET sock = (SOCKET)socket_fd;
     
     // Allow multiple sockets to bind to same address/port (Windows UDP quirk)
     // This is different from Linux SO_REUSEPORT but achieves similar result
-    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt)) != 0) {
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt)) != 0) {
         log_it(L_ERROR, "Failed to set SO_REUSEADDR: error %d", WSAGetLastError());
         return -1;
     }

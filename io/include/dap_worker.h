@@ -77,6 +77,8 @@ typedef struct dap_worker_msg_io{
 // Message for callback execution
 typedef void (*dap_worker_callback_t)(void *a_arg);
 
+#define DAP_WORKER_EXEC_CALLBACK_SYNC_DEFAULT_TIMEOUT_MS 5000U
+
 #define DAP_WORKER(a) (dap_worker_t *)((a)->_inheritor)
 
 #ifdef __cplusplus
@@ -90,9 +92,17 @@ dap_worker_t *dap_worker_get_current();
 #define dap_worker_get_auto dap_events_worker_get_auto
 
 int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket);
-void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
+/* Adds an event socket to the target worker context. Cross-worker calls wait for
+ * the worker-side context add result; on nonzero return the caller still owns
+ * a_events_socket and may delete it. */
+int dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
 dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t * a_events_socket );
-void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
+int dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
+/* Returns -ETIMEDOUT if the callback was cancelled before start, or -EINPROGRESS
+ * if it was already running when the deadline expired. In the latter case a_arg
+ * must remain valid after return. */
+int dap_worker_exec_callback_on_sync_timed(dap_worker_t * a_worker, dap_worker_callback_t a_callback,
+                                           void * a_arg, uint32_t a_timeout_ms);
 void dap_worker_exec_callback_on_sync(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
 #ifndef DAP_EVENTS_CAPS_IOCP
 void dap_worker_add_events_socket_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_events_socket);

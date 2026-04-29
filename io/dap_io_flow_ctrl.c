@@ -113,6 +113,8 @@ struct dap_io_flow_ctrl {
     _Atomic(bool) deleting;             // Flag: deletion in progress
     pthread_mutex_t lifecycle_mutex;    // Mutex for lifecycle synchronization
     pthread_cond_t lifecycle_cond;      // Condition: wait for operations to complete
+    bool retired;                       // Internal resources are freed; shell kept as tombstone
+    struct dap_io_flow_ctrl *retired_next;
     
     // Send window (retransmission)
     send_window_entry_t *send_window;
@@ -131,6 +133,10 @@ struct dap_io_flow_ctrl {
     // Timers
     dap_timerfd_t *retransmit_timer;
     dap_timerfd_t *keepalive_timer;
+    dap_worker_t *retransmit_timer_worker;
+    dap_worker_t *keepalive_timer_worker;
+    dap_events_socket_uuid_t retransmit_timer_uuid;
+    dap_events_socket_uuid_t keepalive_timer_uuid;
     uint64_t last_activity_ns;      // Last packet send/recv time
     
     // Statistics
@@ -144,10 +150,52 @@ struct dap_io_flow_ctrl {
 
 // Global state
 static bool s_inited = false;
+static pthread_mutex_t s_retired_mutex = PTHREAD_MUTEX_INITIALIZER;
+static dap_io_flow_ctrl_t *s_retired_controls = NULL;
 
 // Forward declarations
 static bool s_retransmit_timer_callback(void *a_arg);
 static bool s_keepalive_timer_callback(void *a_arg);
+static void s_flow_ctrl_timer_delete(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid);
+static void s_retire_ctrl_shell(dap_io_flow_ctrl_t *a_ctrl);
+static void s_free_retired_ctrl_shells(void);
+
+static void s_flow_ctrl_timer_delete(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid)
+{
+    if (!a_worker || !a_uuid) {
+        return;
+    }
+
+    dap_timerfd_delete_mt(a_worker, a_uuid);
+}
+
+static void s_retire_ctrl_shell(dap_io_flow_ctrl_t *a_ctrl)
+{
+    if (!a_ctrl) {
+        return;
+    }
+
+    pthread_mutex_lock(&s_retired_mutex);
+    a_ctrl->retired_next = s_retired_controls;
+    s_retired_controls = a_ctrl;
+    pthread_mutex_unlock(&s_retired_mutex);
+}
+
+static void s_free_retired_ctrl_shells(void)
+{
+    pthread_mutex_lock(&s_retired_mutex);
+    dap_io_flow_ctrl_t *l_ctrl = s_retired_controls;
+    s_retired_controls = NULL;
+    pthread_mutex_unlock(&s_retired_mutex);
+
+    while (l_ctrl) {
+        dap_io_flow_ctrl_t *l_next = l_ctrl->retired_next;
+        pthread_cond_destroy(&l_ctrl->lifecycle_cond);
+        pthread_mutex_destroy(&l_ctrl->lifecycle_mutex);
+        DAP_DELETE(l_ctrl);
+        l_ctrl = l_next;
+    }
+}
 
 //===================================================================
 // LIFECYCLE MANAGEMENT (prevents use-after-free in multithreaded code)
@@ -237,6 +285,7 @@ void dap_io_flow_ctrl_deinit(void)
         return;
     }
     
+    s_free_retired_ctrl_shells();
     log_it(L_NOTICE, "Flow Control subsystem deinitialized");
     s_inited = false;
 }
@@ -347,6 +396,8 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
             if (!l_ctrl->retransmit_timer) {
                 log_it(L_WARNING, "Failed to start retransmission timer");
             } else {
+                l_ctrl->retransmit_timer_worker = l_worker;
+                l_ctrl->retransmit_timer_uuid = l_ctrl->retransmit_timer->esocket_uuid;
                 debug_if(s_debug_more, L_INFO, "FC: Retransmit timer started on worker %u (interval=%ums)",
                        l_worker->id, l_ctrl->config.retransmit_timeout_ms / 2);
             }
@@ -368,6 +419,9 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
             );
             if (!l_ctrl->keepalive_timer) {
                 log_it(L_WARNING, "Failed to start keep-alive timer");
+            } else {
+                l_ctrl->keepalive_timer_worker = l_worker;
+                l_ctrl->keepalive_timer_uuid = l_ctrl->keepalive_timer->esocket_uuid;
             }
         }
     }
@@ -391,9 +445,17 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         return;
     }
     
-    // STEP 1: Signal that deletion is in progress
-    // This will cause new operations to fail fast via s_op_begin()
-    atomic_store_explicit(&a_ctrl->deleting, true, memory_order_release);
+    // STEP 1: Signal that deletion is in progress.
+    // New operations fail fast via s_op_begin().  The ctrl shell is retained
+    // after cleanup so callers racing just after delete can safely observe this.
+    if (atomic_exchange_explicit(&a_ctrl->deleting, true, memory_order_acq_rel)) {
+        pthread_mutex_lock(&a_ctrl->lifecycle_mutex);
+        while (!a_ctrl->retired) {
+            pthread_cond_wait(&a_ctrl->lifecycle_cond, &a_ctrl->lifecycle_mutex);
+        }
+        pthread_mutex_unlock(&a_ctrl->lifecycle_mutex);
+        return;
+    }
     
     // STEP 2: Wait for all active operations to complete
     // Any thread currently inside send/recv will finish and call s_op_end()
@@ -426,12 +488,16 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     
     // STEP 4: Stop timers (any running callbacks will exit due to magic=0)
     if (a_ctrl->retransmit_timer) {
-        dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
+        s_flow_ctrl_timer_delete(a_ctrl->retransmit_timer_worker, a_ctrl->retransmit_timer_uuid);
         a_ctrl->retransmit_timer = NULL;
+        a_ctrl->retransmit_timer_worker = NULL;
+        a_ctrl->retransmit_timer_uuid = 0;
     }
     if (a_ctrl->keepalive_timer) {
-        dap_timerfd_delete_unsafe(a_ctrl->keepalive_timer);
+        s_flow_ctrl_timer_delete(a_ctrl->keepalive_timer_worker, a_ctrl->keepalive_timer_uuid);
         a_ctrl->keepalive_timer = NULL;
+        a_ctrl->keepalive_timer_worker = NULL;
+        a_ctrl->keepalive_timer_uuid = 0;
     }
     
     // STEP 5: Clean send window
@@ -457,15 +523,16 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         DAP_DEL_Z(a_ctrl->recv_window);
     }
     
-    // STEP 7: Destroy lifecycle synchronization primitives
-    pthread_cond_destroy(&a_ctrl->lifecycle_cond);
-    pthread_mutex_destroy(&a_ctrl->lifecycle_mutex);
-    
     debug_if(s_debug_more, L_DEBUG, "Flow Control deleted: sent=%"PRIu64", retrans=%"PRIu64", recv=%"PRIu64", lost=%"PRIu64,
            atomic_load(&a_ctrl->stats_sent), atomic_load(&a_ctrl->stats_retransmitted),
            atomic_load(&a_ctrl->stats_recv), atomic_load(&a_ctrl->stats_lost));
     
-    DAP_DELETE(a_ctrl);
+    pthread_mutex_lock(&a_ctrl->lifecycle_mutex);
+    a_ctrl->retired = true;
+    pthread_cond_broadcast(&a_ctrl->lifecycle_cond);
+    pthread_mutex_unlock(&a_ctrl->lifecycle_mutex);
+
+    s_retire_ctrl_shell(a_ctrl);
 }
 
 /**
@@ -497,6 +564,10 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
     if (!a_ctrl) {
         return -1;
     }
+
+    if (!s_op_begin(a_ctrl)) {
+        return -10;
+    }
     
     dap_io_flow_ctrl_flags_t l_old_flags = a_ctrl->flags;
     a_ctrl->flags = a_flags;
@@ -514,12 +585,18 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
                 s_retransmit_timer_callback,
                 a_ctrl
             );
+            if (a_ctrl->retransmit_timer) {
+                a_ctrl->retransmit_timer_worker = l_worker;
+                a_ctrl->retransmit_timer_uuid = a_ctrl->retransmit_timer->esocket_uuid;
+            }
         }
     } else if (!(a_flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && (l_old_flags & DAP_IO_FLOW_CTRL_RETRANSMIT)) {
         // Disable retransmit - stop timer
         if (a_ctrl->retransmit_timer) {
-            dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
+            s_flow_ctrl_timer_delete(a_ctrl->retransmit_timer_worker, a_ctrl->retransmit_timer_uuid);
             a_ctrl->retransmit_timer = NULL;
+            a_ctrl->retransmit_timer_worker = NULL;
+            a_ctrl->retransmit_timer_uuid = 0;
         }
     }
     
@@ -533,17 +610,24 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
                 s_keepalive_timer_callback,
                 a_ctrl
             );
+            if (a_ctrl->keepalive_timer) {
+                a_ctrl->keepalive_timer_worker = l_worker;
+                a_ctrl->keepalive_timer_uuid = a_ctrl->keepalive_timer->esocket_uuid;
+            }
         }
     } else if (!(a_flags & DAP_IO_FLOW_CTRL_KEEPALIVE) && (l_old_flags & DAP_IO_FLOW_CTRL_KEEPALIVE)) {
         // Disable keepalive - stop timer
         if (a_ctrl->keepalive_timer) {
-            dap_timerfd_delete_unsafe(a_ctrl->keepalive_timer);
+            s_flow_ctrl_timer_delete(a_ctrl->keepalive_timer_worker, a_ctrl->keepalive_timer_uuid);
             a_ctrl->keepalive_timer = NULL;
+            a_ctrl->keepalive_timer_worker = NULL;
+            a_ctrl->keepalive_timer_uuid = 0;
         }
     }
     
     debug_if(s_debug_more, L_DEBUG, "Flow Control flags updated: 0x%02x → 0x%02x", l_old_flags, a_flags);
-    
+
+    s_op_end(a_ctrl);
     return 0;
 }
 

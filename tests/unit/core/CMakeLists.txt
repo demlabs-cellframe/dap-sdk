@@ -33,6 +33,33 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # ============================================================================
+# Test: DAP Common Macros C++ Compatibility
+# ============================================================================
+enable_language(CXX)
+project(test_dap_common_cpp CXX)
+
+add_executable(${PROJECT_NAME}
+    test_dap_common_cpp.cpp
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS YES
+)
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 300
+    LABELS "unit;core;common;macros;cpp"
+)
+
+# ============================================================================
 # Test: DAP Config
 # ============================================================================
 project(test_dap_config)
@@ -52,6 +79,28 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 300
     LABELS "unit;core;config"
+)
+
+# ============================================================================
+# Test: DAP File Utils
+# ============================================================================
+project(test_dap_file_utils)
+
+add_executable(${PROJECT_NAME}
+    test_dap_file_utils.c
+)
+
+dap_test_add_includes(${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} PRIVATE dap_core_static dap_test)
+
+add_test(
+    NAME ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME}
+)
+
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    TIMEOUT 300
+    LABELS "unit;core;file"
 )
 
 # ============================================================================

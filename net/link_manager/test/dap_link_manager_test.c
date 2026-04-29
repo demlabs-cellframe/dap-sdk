@@ -20,6 +20,33 @@ static bool s_dummy_ch_pkt_in(dap_stream_ch_t *a_ch, void *a_arg) { (void)a_ch; 
 static bool s_dummy_ch_pkt_out(dap_stream_ch_t *a_ch, void *a_arg) { (void)a_ch; (void)a_arg; return false; }
 static int s_dummy_fill_net_info(dap_link_t *a_link) { (void)a_link; return 0; }
 
+static void s_test_active_channels_preinit_add_before_init(void)
+{
+    dap_print_module_name("dap_link_manager_active_channels_preinit_add_before_init");
+
+    dap_stream_ch_proc_add('P', s_dummy_ch_new, s_dummy_ch_delete, s_dummy_ch_pkt_in, s_dummy_ch_pkt_out);
+
+    int l_ret = dap_link_manager_add_active_channel('P');
+    dap_assert(l_ret == 0, "Preinit add channel 'P' returns 0");
+
+    const char *l_channels = dap_link_manager_get_active_channels();
+    dap_assert(dap_str_equals(l_channels, "RCGENDP"), "Preinit active channels include 'P'");
+}
+
+static void s_test_active_channels_preinit_preserved_after_init(void)
+{
+    dap_print_module_name("dap_link_manager_active_channels_preinit_preserved_after_init");
+
+    const char *l_channels = dap_link_manager_get_active_channels();
+    dap_assert(dap_str_equals(l_channels, "RCGENDP"), "Preinit active channels are preserved after init");
+
+    int l_ret = dap_link_manager_remove_active_channel('P');
+    dap_assert(l_ret == 0, "Remove preinit test channel 'P' returns 0");
+
+    l_channels = dap_link_manager_get_active_channels();
+    dap_assert(dap_str_equals(l_channels, "RCGEND"), "Active channels return to default after removing 'P'");
+}
+
 static void s_test_active_channels_default(void)
 {
     dap_print_module_name("dap_link_manager_active_channels_default");
@@ -157,6 +184,8 @@ int main(void)
     dap_events_init(0, 0);
     dap_events_start();
 
+    s_test_active_channels_preinit_add_before_init();
+
     dap_link_manager_callbacks_t l_callbacks = {0};
     l_callbacks.fill_net_info = s_dummy_fill_net_info;
     int l_ret = dap_link_manager_init(&l_callbacks);
@@ -165,6 +194,7 @@ int main(void)
         return 1;
     }
 
+    s_test_active_channels_preinit_preserved_after_init();
     s_test_active_channels_default();
     s_test_add_channel();
     s_test_add_duplicate();

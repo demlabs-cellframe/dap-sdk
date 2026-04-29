@@ -8,6 +8,14 @@ extern "C" {
 #endif
 
 /**
+ * Validate Sec-WebSocket-Key syntax and decoded nonce length (RFC 6455).
+ *
+ * @param a_client_key Base64 client key from HTTP Upgrade request
+ * @return 0 on success, negative value on error
+ */
+int dap_net_trans_websocket_validate_client_key(const char *a_client_key);
+
+/**
  * Build Sec-WebSocket-Accept value from a client Sec-WebSocket-Key (RFC 6455).
  *
  * @param a_client_key Base64 client key from HTTP Upgrade request

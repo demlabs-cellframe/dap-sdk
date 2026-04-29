@@ -9,26 +9,38 @@ file(GLOB dap_global_db_HDR include/*.h)
 
 set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_link_manager dap_json-c dap_enc_server)
 
+function(_dap_global_db_filter_mdbx_bad_linker_flags a_out_var)
+    set(l_filtered_flags)
+    foreach(l_flag IN LISTS ARGN)
+        if(l_flag MATCHES "^-Wl,.*--(gc-sections|strip-all)(,|$)")
+            continue()
+        endif()
+        list(APPEND l_filtered_flags "${l_flag}")
+    endforeach()
+    set(${a_out_var} "${l_filtered_flags}" PARENT_SCOPE)
+endfunction()
+
+function(_dap_global_db_filter_mdbx_bad_linker_flags_string a_out_var a_flags)
+    separate_arguments(l_flags UNIX_COMMAND "${a_flags}")
+    _dap_global_db_filter_mdbx_bad_linker_flags(l_filtered_flags ${l_flags})
+    string(REPLACE ";" " " l_filtered_flags "${l_filtered_flags}")
+    string(STRIP "${l_filtered_flags}" l_filtered_flags)
+    set(${a_out_var} "${l_filtered_flags}" PARENT_SCOPE)
+endfunction()
+
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
     set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
-    # Save flags that interfere with libmdbx's check_function_exists() tests
-    # The -Wl,--strip-all and -Wl,--gc-sections in CMAKE_C_FLAGS break function checks
+    # Save user/toolchain flags and only filter project-injected linker flags
+    # that interfere with libmdbx's check_function_exists() tests.
     set(SAVED_CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
     set(SAVED_CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
     set(SAVED_CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
     set(SAVED_CMAKE_REQUIRED_LINK_OPTIONS "${CMAKE_REQUIRED_LINK_OPTIONS}")
-    # Remove problematic linker flags from C flags for the duration of MDBX configuration
-    # Remove all -Wl, flags (linker flags passed via compiler) that break check_function_exists
-    # Convert to list, filter out -Wl, flags, then convert back
-    separate_arguments(CMAKE_C_FLAGS_LIST UNIX_COMMAND "${CMAKE_C_FLAGS}")
-    list(FILTER CMAKE_C_FLAGS_LIST EXCLUDE REGEX "^-Wl,")
-    string(REPLACE ";" " " CMAKE_C_FLAGS "${CMAKE_C_FLAGS_LIST}")
-    string(STRIP "${CMAKE_C_FLAGS}" CMAKE_C_FLAGS)
-    # Clear flags used by check_function_exists
-    set(CMAKE_REQUIRED_FLAGS "")
-    set(CMAKE_EXE_LINKER_FLAGS "")
-    set(CMAKE_REQUIRED_LINK_OPTIONS "")
+    _dap_global_db_filter_mdbx_bad_linker_flags_string(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    _dap_global_db_filter_mdbx_bad_linker_flags_string(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
+    _dap_global_db_filter_mdbx_bad_linker_flags_string(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    _dap_global_db_filter_mdbx_bad_linker_flags(CMAKE_REQUIRED_LINK_OPTIONS ${CMAKE_REQUIRED_LINK_OPTIONS})
     list(APPEND dap_global_db_SRC dap_global_db_driver_mdbx.c)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/libmdbx ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/libmdbx EXCLUDE_FROM_ALL)
     # Restore all flags

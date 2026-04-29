@@ -23,6 +23,7 @@
 #include <time.h>
 #include <errno.h>
 #include <unistd.h>
+#include <stdatomic.h>
 
 #include "dap_context.h"
 #include "dap_math_ops.h"
@@ -41,7 +42,6 @@
 #endif
 
 #define LOG_TAG "dap_worker"
-
 static bool s_debug_more = false;
 typedef struct dap_worker_msg_callback {
     dap_worker_callback_t callback; // Callback for specific client operations
@@ -305,7 +305,7 @@ static int s_queue_es_add(dap_worker_t *a_worker, dap_events_socket_t *a_esocket
 #endif
         if (dap_context_find(l_context, l_es_new->uuid)) {
             // Socket already present in worker, it's OK
-            return -2;
+            return 0;
         }
 
     debug_if(g_debug_reactor, L_DEBUG, "s_queue_es_add: Adding socket %"DAP_FORMAT_SOCKET" to worker %u (flags=0x%x, CONNECTING=%d, type=%d)", 
@@ -337,10 +337,56 @@ static void s_queue_add_es_callback(void *a_arg) {
     if (l_es && l_es->worker) {
         debug_if(s_debug_more, L_INFO, "Worker #%u: dequeued new esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" type %d",
                l_es->worker->id, l_es->socket, l_es->uuid, l_es->type);
-        s_queue_es_add(l_es->worker, l_es);
+        int l_ret = s_queue_es_add(l_es->worker, l_es);
+        if (l_ret != 0) {
+            log_it(L_ERROR,
+                   "Worker #%u failed to add queued esocket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" to context: %d",
+                   l_es->worker->id, l_es->socket, l_es->uuid, l_ret);
+        }
     } else {
         log_it(L_WARNING, "s_queue_add_es_callback: NULL es=%p or NULL worker", a_arg);
     }
+}
+
+typedef struct dap_worker_es_add_sync {
+    dap_worker_t *worker;
+    dap_events_socket_t *es;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    int status;
+    bool completed;
+} dap_worker_es_add_sync_t;
+
+static void s_worker_es_add_sync_complete(dap_worker_es_add_sync_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    a_ctx->completed = true;
+    pthread_cond_signal(&a_ctx->cond);
+    pthread_mutex_unlock(&a_ctx->mutex);
+}
+
+static void s_worker_es_add_sync_callback(void *a_arg)
+{
+    dap_worker_es_add_sync_t *l_ctx = (dap_worker_es_add_sync_t *)a_arg;
+    if (!l_ctx) {
+        return;
+    }
+
+    if (!l_ctx->worker || !l_ctx->es) {
+        l_ctx->status = -EINVAL;
+    } else {
+        l_ctx->status = s_queue_es_add(l_ctx->worker, l_ctx->es);
+    }
+    s_worker_es_add_sync_complete(l_ctx);
+}
+
+static void s_worker_es_add_sync_wait(dap_worker_es_add_sync_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    while (!a_ctx->completed) {
+        pthread_cond_wait(&a_ctx->cond, &a_ctx->mutex);
+    }
+    pthread_mutex_unlock(&a_ctx->mutex);
 }
 
 /**
@@ -568,9 +614,9 @@ static bool s_socket_all_check_activity(void * a_arg)
  * @param a_events_socket
  * @param a_worker
  */
-void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
+int dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
-    dap_return_if_fail(a_worker && a_events_socket);
+    dap_return_val_if_fail(a_worker && a_events_socket, -EINVAL);
     int l_ret = 0;
     const char *l_type_str = dap_events_socket_get_type_str(a_events_socket);
     SOCKET l_s = a_events_socket->socket;
@@ -588,20 +634,33 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
             ? 0 : ( DAP_DELETE(ol), GetLastError() );
     }
 #else
-    // Use lock-free worker queue instead of pipe
     if (dap_worker_get_current() == a_worker) {
         // Same worker - direct add
         l_ret = s_queue_es_add(a_worker, a_events_socket);
     } else {
-        // Cross-worker - push to queue
-        a_events_socket->worker = a_worker; // Set worker before pushing
-        debug_if(s_debug_more, L_INFO, "Cross-worker push: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" → worker #%u",
+        a_events_socket->worker = a_worker;
+        debug_if(s_debug_more, L_INFO, "Cross-worker add: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" -> worker #%u",
                a_events_socket->socket, a_events_socket->uuid, a_worker->id);
-        if (!dap_context_queue_push(a_worker->queue_es_new, a_events_socket)) {
-            l_ret = -1;
-        } else {
+
+        dap_worker_es_add_sync_t l_ctx = {
+            .worker = a_worker,
+            .es = a_events_socket
+        };
+        pthread_mutex_init(&l_ctx.mutex, NULL);
+        pthread_cond_init(&l_ctx.cond, NULL);
+
+        l_ret = dap_worker_exec_callback_on_sync_timed(
+            a_worker, s_worker_es_add_sync_callback, &l_ctx,
+            DAP_WORKER_EXEC_CALLBACK_SYNC_DEFAULT_TIMEOUT_MS);
+        if (l_ret == -EINPROGRESS) {
+            s_worker_es_add_sync_wait(&l_ctx);
             l_ret = 0;
         }
+        if (l_ret == 0)
+            l_ret = l_ctx.status;
+
+        pthread_cond_destroy(&l_ctx.cond);
+        pthread_mutex_destroy(&l_ctx.mutex);
     }
 #endif
     if (l_ret)
@@ -613,6 +672,7 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
                "%s es \"%s\" [%s], uuid "DAP_FORMAT_ESOCKET_UUID" to worker #%d",
                dap_worker_get_current() == a_worker ? "Assigned" : "Sent",
                l_type_str, dap_itoa(l_s), l_uuid, a_worker->id);
+    return l_ret;
 }
 
 #ifndef DAP_EVENTS_CAPS_IOCP
@@ -656,104 +716,234 @@ void dap_worker_exec_callback_inter(dap_events_socket_t *a_es_input, dap_worker_
     }
     
     // Use new direct callback API
-    dap_worker_exec_callback_on(l_target_worker, a_callback, a_arg);
+    int l_ret = dap_worker_exec_callback_on(l_target_worker, a_callback, a_arg);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to enqueue inter-worker callback on worker #%u: %d",
+               l_target_worker->id, l_ret);
+    }
 }
 #endif
 
 /**
  * @brief dap_worker_exec_callback_on
  */
-void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
+int dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
 {
-    dap_return_if_fail(a_worker && a_callback);
+    dap_return_val_if_fail(a_worker && a_callback, -EINVAL);
+    if (!a_worker->queue_callback) {
+        log_it(L_ERROR, "Worker #%u callback queue is not available", a_worker->id);
+        return -ENODEV;
+    }
+
     dap_worker_msg_callback_t *l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
+        return -ENOMEM;
     }
     *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };
 
     if (!dap_context_queue_push(a_worker->queue_callback, l_msg)) {
         log_it(L_ERROR, "Failed to push callback to worker #%u queue (queue full)", a_worker->id);
         DAP_DELETE(l_msg);
+        return -EAGAIN;
     } else {
-        debug_if(s_debug_more, L_INFO, "Pushed callback %p to worker #%u queue_callback (eventfd=%d)",
+        debug_if(s_debug_more, L_INFO, "Pushed callback %p to worker #%u queue_callback (eventfd=%"DAP_FORMAT_SOCKET")",
                a_callback, a_worker->id,
                a_worker->queue_callback && a_worker->queue_callback->event_socket
-                   ? a_worker->queue_callback->event_socket->fd : -1);
+                   ? a_worker->queue_callback->event_socket->socket : INVALID_SOCKET);
     }
+
+    return 0;
 }
 
 // Helper structure for synchronous callback execution
 typedef struct {
     dap_worker_callback_t callback;
     void *arg;
-    pthread_mutex_t *mutex;
-    pthread_cond_t *cond;
-    bool *completed;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    atomic_uint ref_count;
+    bool completed;
+    bool cancelled;
+    bool running;
 } dap_worker_sync_wrapper_t;
+
+static void s_worker_sync_wrapper_release(dap_worker_sync_wrapper_t *a_data)
+{
+    if (!a_data) {
+        return;
+    }
+
+    if (atomic_fetch_sub(&a_data->ref_count, 1) == 1) {
+        pthread_cond_destroy(&a_data->cond);
+        pthread_mutex_destroy(&a_data->mutex);
+        DAP_DELETE(a_data);
+    }
+}
+
+static void s_timespec_add_ms(struct timespec *a_ts, uint32_t a_timeout_ms)
+{
+    a_ts->tv_sec += a_timeout_ms / 1000U;
+    a_ts->tv_nsec += (long)(a_timeout_ms % 1000U) * 1000000L;
+    if (a_ts->tv_nsec >= 1000000000L) {
+        a_ts->tv_sec++;
+        a_ts->tv_nsec -= 1000000000L;
+    }
+}
 
 // Global wrapper callback for synchronous execution
 static void s_worker_sync_wrapper_callback(void *a_wrapper_arg) {
     dap_worker_sync_wrapper_t *l_data = (dap_worker_sync_wrapper_t*)a_wrapper_arg;
-    
+
+    pthread_mutex_lock(&l_data->mutex);
+    if (l_data->cancelled) {
+        l_data->completed = true;
+        pthread_cond_signal(&l_data->cond);
+        pthread_mutex_unlock(&l_data->mutex);
+        s_worker_sync_wrapper_release(l_data);
+        return;
+    }
+    l_data->running = true;
+    pthread_mutex_unlock(&l_data->mutex);
+
     // Execute actual callback
     l_data->callback(l_data->arg);
-    
+
     // Signal completion
-    pthread_mutex_lock(l_data->mutex);
-    *l_data->completed = true;
-    pthread_cond_signal(l_data->cond);
-    pthread_mutex_unlock(l_data->mutex);
+    pthread_mutex_lock(&l_data->mutex);
+    l_data->completed = true;
+    pthread_cond_signal(&l_data->cond);
+    pthread_mutex_unlock(&l_data->mutex);
+
+    s_worker_sync_wrapper_release(l_data);
 }
 
 /**
- * @brief dap_worker_exec_callback_on_sync - Synchronous callback execution
+ * @brief dap_worker_exec_callback_on_sync_timed - Synchronous callback execution with timeout
  * @param a_worker Worker to execute callback on
  * @param a_callback Callback function
  * @param a_arg Callback argument
+ * @param a_timeout_ms Max time to wait for queued callback to start/finish
  * 
  * This function executes a callback on a worker thread and waits for completion.
  * If called from the target worker thread, executes immediately (avoiding deadlock).
- * Otherwise, schedules the callback and blocks until it completes.
+ * If timeout fires before the callback starts, the queued heap wrapper is
+ * cancelled and the user callback is not invoked with the caller-owned a_arg.
+ * If timeout fires after the callback starts, returns -EINPROGRESS; callers
+ * must keep a_arg valid beyond return in that case.
  */
-void dap_worker_exec_callback_on_sync(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
+int dap_worker_exec_callback_on_sync_timed(dap_worker_t * a_worker, dap_worker_callback_t a_callback,
+                                           void * a_arg, uint32_t a_timeout_ms)
 {
-    dap_return_if_fail(a_worker && a_callback);
+    dap_return_val_if_fail(a_worker && a_callback, -EINVAL);
     
     // Check if we're already on the target worker - execute immediately
     dap_worker_t *l_current_worker = dap_worker_get_current();
     if (l_current_worker == a_worker) {
         a_callback(a_arg);
+        return 0;
+    }
+
+    dap_worker_sync_wrapper_t *l_wrapper_data = DAP_NEW_Z(dap_worker_sync_wrapper_t);
+    if (!l_wrapper_data) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return -ENOMEM;
+    }
+
+    pthread_mutex_init(&l_wrapper_data->mutex, NULL);
+    pthread_cond_init(&l_wrapper_data->cond, NULL);
+    atomic_init(&l_wrapper_data->ref_count, 2U); // waiter + queued callback
+    l_wrapper_data->callback = a_callback;
+    l_wrapper_data->arg = a_arg;
+
+    int l_ret = dap_worker_exec_callback_on(a_worker, s_worker_sync_wrapper_callback, l_wrapper_data);
+    if (l_ret != 0) {
+        s_worker_sync_wrapper_release(l_wrapper_data); // queued callback ref
+        s_worker_sync_wrapper_release(l_wrapper_data); // waiter ref
+        return l_ret;
+    }
+
+    struct timespec l_deadline;
+    clock_gettime(CLOCK_REALTIME, &l_deadline);
+    s_timespec_add_ms(&l_deadline, a_timeout_ms);
+
+    pthread_mutex_lock(&l_wrapper_data->mutex);
+    while (!l_wrapper_data->completed) {
+        int l_wait_ret = pthread_cond_timedwait(&l_wrapper_data->cond,
+                                                &l_wrapper_data->mutex,
+                                                &l_deadline);
+        if (l_wrapper_data->completed) {
+            l_ret = 0;
+            break;
+        }
+
+        if (l_wait_ret == ETIMEDOUT) {
+            if (!l_wrapper_data->running && !l_wrapper_data->completed) {
+                l_wrapper_data->cancelled = true;
+                l_ret = -ETIMEDOUT;
+            } else {
+                l_ret = -EINPROGRESS;
+            }
+            break;
+        } else if (l_wait_ret != 0) {
+            if (l_wrapper_data->running) {
+                l_ret = -EINPROGRESS;
+            } else if (!l_wrapper_data->completed) {
+                l_wrapper_data->cancelled = true;
+                l_ret = -l_wait_ret;
+            } else {
+                l_ret = 0;
+            }
+            break;
+        }
+    }
+    pthread_mutex_unlock(&l_wrapper_data->mutex);
+
+    s_worker_sync_wrapper_release(l_wrapper_data); // waiter ref
+    return l_ret;
+}
+
+/**
+ * @brief dap_worker_exec_callback_on_sync - Compatibility wrapper with blocking wait
+ */
+void dap_worker_exec_callback_on_sync(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
+{
+    dap_return_if_fail(a_worker && a_callback);
+
+    dap_worker_t *l_current_worker = dap_worker_get_current();
+    if (l_current_worker == a_worker) {
+        a_callback(a_arg);
         return;
     }
-    
-    // Need cross-worker synchronization
-    pthread_mutex_t l_mutex = PTHREAD_MUTEX_INITIALIZER;
-    pthread_cond_t l_cond = PTHREAD_COND_INITIALIZER;
-    bool l_completed = false;
-    
-    // Wrapper data
-    dap_worker_sync_wrapper_t l_wrapper_data = {
-        .callback = a_callback,
-        .arg = a_arg,
-        .mutex = &l_mutex,
-        .cond = &l_cond,
-        .completed = &l_completed
-    };
-    
-    // Schedule wrapper
-    dap_worker_exec_callback_on(a_worker, s_worker_sync_wrapper_callback, &l_wrapper_data);
-    
-    // Wait for completion
-    pthread_mutex_lock(&l_mutex);
-    while (!l_completed) {
-        pthread_cond_wait(&l_cond, &l_mutex);
+
+    dap_worker_sync_wrapper_t *l_wrapper_data = DAP_NEW_Z(dap_worker_sync_wrapper_t);
+    if (!l_wrapper_data) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
     }
-    pthread_mutex_unlock(&l_mutex);
-    
-    pthread_mutex_destroy(&l_mutex);
-    pthread_cond_destroy(&l_cond);
+
+    pthread_mutex_init(&l_wrapper_data->mutex, NULL);
+    pthread_cond_init(&l_wrapper_data->cond, NULL);
+    atomic_init(&l_wrapper_data->ref_count, 2U); // waiter + queued callback
+    l_wrapper_data->callback = a_callback;
+    l_wrapper_data->arg = a_arg;
+
+    int l_ret = dap_worker_exec_callback_on(a_worker, s_worker_sync_wrapper_callback, l_wrapper_data);
+    if (l_ret != 0) {
+        log_it(L_WARNING, "Synchronous worker callback enqueue on worker #%u failed: %d",
+               a_worker->id, l_ret);
+        s_worker_sync_wrapper_release(l_wrapper_data); // queued callback ref
+        s_worker_sync_wrapper_release(l_wrapper_data); // waiter ref
+        return;
+    }
+
+    pthread_mutex_lock(&l_wrapper_data->mutex);
+    while (!l_wrapper_data->completed) {
+        pthread_cond_wait(&l_wrapper_data->cond, &l_wrapper_data->mutex);
+    }
+    pthread_mutex_unlock(&l_wrapper_data->mutex);
+
+    s_worker_sync_wrapper_release(l_wrapper_data); // waiter ref
 }
 
 /**
@@ -765,7 +955,5 @@ dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t *a_es)
 {
     dap_return_val_if_fail(a_es, NULL);
     dap_worker_t *l_worker = dap_events_worker_get_auto();
-    return dap_worker_add_events_socket(l_worker, a_es), l_worker;
+    return dap_worker_add_events_socket(l_worker, a_es) == 0 ? l_worker : NULL;
 }
-
-

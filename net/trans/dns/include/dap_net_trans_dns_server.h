@@ -23,9 +23,10 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include <pthread.h>
+#include <stdbool.h>
 #include <stdatomic.h>
 
+#include "dap_common.h"
 #include "dap_server.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_ctx.h"
@@ -35,6 +36,13 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "uthash.h"
 
 typedef struct dap_net_trans_dns_server dap_net_trans_dns_server_t;
+
+#ifdef DAP_OS_WINDOWS
+typedef void *dap_net_trans_dns_sessions_lock_t;
+#else
+#include <pthread.h>
+typedef pthread_rwlock_t dap_net_trans_dns_sessions_lock_t;
+#endif
 
 /**
  * @brief Per-client session for DNS server address-based routing
@@ -62,8 +70,9 @@ struct dap_net_trans_dns_server {
     char server_name[256];
     dap_net_trans_t *trans;
     dns_server_client_session_t *sessions;
-    pthread_rwlock_t sessions_lock;
+    dap_net_trans_dns_sessions_lock_t sessions_lock;
     atomic_bool stopping;
+    atomic_uint deferred_state;
     atomic_uint datagram_reads_inflight;
 };
 
@@ -79,3 +88,19 @@ int dap_net_trans_dns_server_start(dap_net_trans_dns_server_t *a_dns_server,
                                        size_t a_count);
 void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server);
 void dap_net_trans_dns_server_delete(dap_net_trans_dns_server_t *a_dns_server);
+
+#ifdef DAP_SDK_TESTS
+bool dap_net_trans_dns_server_test_schedule_deferred_stop(dap_net_trans_dns_server_t *a_dns_server);
+bool dap_net_trans_dns_server_test_schedule_deferred_delete(dap_net_trans_dns_server_t *a_dns_server);
+void dap_net_trans_dns_server_test_run_deferred(dap_net_trans_dns_server_t *a_dns_server);
+bool dap_net_trans_dns_server_test_deferred_has_delete(dap_net_trans_dns_server_t *a_dns_server);
+bool dap_net_trans_dns_server_test_deferred_has_stop(dap_net_trans_dns_server_t *a_dns_server);
+bool dap_net_trans_dns_server_test_deferred_has_callback(dap_net_trans_dns_server_t *a_dns_server);
+bool dap_net_trans_dns_server_test_remove_deleted_session(dap_net_trans_dns_server_t *a_dns_server,
+                                                         dns_server_client_session_t *a_session);
+void dap_net_trans_dns_server_test_process_datagram(dap_events_socket_t *a_es,
+                                                   dap_net_trans_dns_server_t *a_dns_server,
+                                                   void *a_data, size_t a_size,
+                                                   struct sockaddr_storage *a_addr,
+                                                   socklen_t a_addr_len);
+#endif

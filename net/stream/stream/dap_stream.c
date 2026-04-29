@@ -74,6 +74,7 @@
 // Stream close timeout configuration (milliseconds)
 // 0 = immediate close, >0 = graceful close with timeout
 #define DAP_STREAM_CLOSE_TIMEOUT_MS 0  // Default: immediate close
+#define DAP_STREAM_KEEPALIVE_CLEANUP_TIMEOUT_MS DAP_WORKER_EXEC_CALLBACK_SYNC_DEFAULT_TIMEOUT_MS
 
 // Globaly defined node address
 dap_stream_node_addr_t g_node_addr;
@@ -107,7 +108,7 @@ static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
 
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt);
+static bool s_stream_proc_pkt_in(dap_stream_t *a_stream, dap_stream_pkt_t *l_pkt, bool a_finalize_delete);
 
 // Callbacks for HTTP client
 static void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg); // Prepare stream when all headers are read
@@ -141,20 +142,86 @@ bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
 static int s_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
+static void s_stream_delete_now_unsafe(dap_stream_t *a_stream);
+static void s_stream_delete_finalize_unsafe(dap_stream_t *a_stream);
+static size_t s_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size,
+                                          bool *a_delete_requested, bool a_finalize_delete);
 
 typedef struct s_keepalive_timer_cleanup_ctx {
-    dap_timerfd_t *timer;
-    void *arg_to_free;
+    dap_events_socket_uuid_t timer_uuid;
+    dap_stream_t *stream_to_finalize;
+    bool heap_allocated;
 } s_keepalive_timer_cleanup_ctx_t;
 
 static void s_keepalive_timer_cleanup_cb(void *a_arg)
 {
     s_keepalive_timer_cleanup_ctx_t *l_ctx = (s_keepalive_timer_cleanup_ctx_t *)a_arg;
-    if (!l_ctx || !l_ctx->timer)
+    if (!l_ctx)
         return;
-    l_ctx->arg_to_free = l_ctx->timer->callback_arg;
-    l_ctx->timer->callback_arg = NULL;
-    dap_timerfd_delete_unsafe(l_ctx->timer);
+    dap_worker_t *l_worker = dap_worker_get_current();
+    dap_events_socket_t *l_es = l_worker && l_worker->context && l_ctx->timer_uuid
+            ? dap_context_find(l_worker->context, l_ctx->timer_uuid) : NULL;
+    if (l_es) {
+        dap_timerfd_t *l_timer = (dap_timerfd_t *)l_es->_inheritor;
+        if (l_timer) {
+            void *l_arg_to_free = l_timer->callback_arg;
+            l_timer->callback_arg = NULL;
+            dap_timerfd_delete_unsafe(l_timer);
+            DAP_DELETE(l_arg_to_free);
+        }
+    }
+    if (l_ctx->stream_to_finalize)
+        s_stream_delete_finalize_unsafe(l_ctx->stream_to_finalize);
+    if (l_ctx->heap_allocated)
+        DAP_DELETE(l_ctx);
+}
+
+static void s_keepalive_timer_cleanup_direct(dap_timerfd_t *a_timer)
+{
+    if (!a_timer)
+        return;
+    void *l_arg_to_free = a_timer->callback_arg;
+    a_timer->callback_arg = NULL;
+    dap_timerfd_delete_unsafe(a_timer);
+    DAP_DELETE(l_arg_to_free);
+}
+
+static int s_keepalive_timer_cleanup_on_owner(dap_timerfd_t *a_timer, dap_stream_t *a_stream_to_finalize)
+{
+    if (!a_timer)
+        return -EINVAL;
+    dap_worker_t *l_timer_worker = a_timer->worker;
+    if (!l_timer_worker || dap_worker_get_current() == l_timer_worker) {
+        s_keepalive_timer_cleanup_direct(a_timer);
+        if (a_stream_to_finalize)
+            s_stream_delete_finalize_unsafe(a_stream_to_finalize);
+        return 0;
+    }
+    s_keepalive_timer_cleanup_ctx_t *l_ctx = DAP_NEW_Z(s_keepalive_timer_cleanup_ctx_t);
+    if (!l_ctx) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return -ENOMEM;
+    }
+    *l_ctx = (s_keepalive_timer_cleanup_ctx_t) {
+        .timer_uuid = a_timer->esocket_uuid,
+        .stream_to_finalize = a_stream_to_finalize,
+        .heap_allocated = true
+    };
+    int l_ret = dap_worker_exec_callback_on_sync_timed(l_timer_worker,
+                                                       s_keepalive_timer_cleanup_cb,
+                                                       l_ctx,
+                                                       DAP_STREAM_KEEPALIVE_CLEANUP_TIMEOUT_MS);
+    if (l_ret && l_ret != -EINPROGRESS)
+        DAP_DELETE(l_ctx);
+    return l_ret;
+}
+
+static void s_stream_delete_on_owner_cb(void *a_arg)
+{
+    dap_stream_t *l_stream = (dap_stream_t *)a_arg;
+    if (!l_stream)
+        return;
+    s_stream_delete_finalize_unsafe(l_stream);
 }
 
 static dap_stream_t *s_stream_index_get_by_es_uuid_unsafe(dap_events_socket_uuid_t a_es_uuid)
@@ -322,30 +389,6 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
     return dap_stream_trans_write_unsafe(a_stream, a_data, a_size);
 }
 
-static bool s_stream_esocket_is_detached(const dap_events_socket_t *a_es)
-{
-    if (!a_es) {
-        return false;
-    }
-    if (a_es->_inheritor != NULL) {
-        return false;
-    }
-    dap_client_t *l_client = DAP_ESOCKET_CLIENT((dap_events_socket_t*)a_es);
-    if (l_client) {
-        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-        dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-        if (l_tc && l_tc->stream)
-            return false;
-    }
-
-    bool l_stream_found = false;
-    pthread_rwlock_rdlock(&s_streams_lock);
-    l_stream_found = s_stream_index_get_by_es_uuid_unsafe(a_es->uuid) != NULL;
-    pthread_rwlock_unlock(&s_streams_lock);
-
-    return !l_stream_found;
-}
-
 /**
  * @brief Send raw data to stream (datagram-aware, public API)
  * 
@@ -427,6 +470,32 @@ static void s_stream_fragments_reset(dap_stream_t *a_stream)
     DAP_DEL_Z(a_stream->buf_fragments_map);
     a_stream->buf_fragments_size_total = 0;
     a_stream->buf_fragments_size_filled = 0;
+}
+
+static inline bool s_stream_delete_requested(const dap_stream_t *a_stream)
+{
+    return a_stream && (a_stream->delete_deferred || a_stream->delete_in_progress);
+}
+
+static bool s_stream_packet_proc_guard_enter(dap_stream_t *a_stream)
+{
+    if (!a_stream || s_stream_delete_requested(a_stream))
+        return false;
+    a_stream->packet_proc_depth++;
+    return true;
+}
+
+static bool s_stream_packet_proc_guard_leave(dap_stream_t *a_stream, bool a_finalize_delete)
+{
+    if (!a_stream)
+        return false;
+    assert(a_stream->packet_proc_depth);
+    bool l_delete_requested = s_stream_delete_requested(a_stream);
+    if (a_stream->packet_proc_depth)
+        a_stream->packet_proc_depth--;
+    if (!a_stream->packet_proc_depth && l_delete_requested && a_finalize_delete)
+        s_stream_delete_now_unsafe(a_stream);
+    return l_delete_requested;
 }
 
 /**
@@ -863,11 +932,61 @@ int dap_stream_start_keepalive(dap_stream_t *a_stream)
  * @param a_stream
  */
 void dap_stream_delete_unsafe(dap_stream_t *a_stream)
-{  
+{
     if(!a_stream) {
         log_it(L_ERROR,"stream delete NULL instance");
         return;
     }
+    if (a_stream->delete_in_progress)
+        return;
+    a_stream->delete_deferred = true;
+    a_stream->is_active = false;
+    if (a_stream->packet_proc_depth)
+        return;
+    s_stream_delete_now_unsafe(a_stream);
+}
+
+static void s_stream_delete_now_unsafe(dap_stream_t *a_stream)
+{
+    if (!a_stream) {
+        log_it(L_ERROR, "stream delete NULL instance");
+        return;
+    }
+    if (a_stream->delete_in_progress)
+        return;
+    a_stream->delete_deferred = true;
+    a_stream->is_active = false;
+    if (a_stream->keepalive_timer) {
+        dap_worker_t *l_timer_worker = a_stream->keepalive_timer->worker;
+        if (l_timer_worker && dap_worker_get_current() != l_timer_worker) {
+            a_stream->delete_in_progress = true;
+            int l_ret = dap_worker_exec_callback_on(l_timer_worker, s_stream_delete_on_owner_cb, a_stream);
+            if (!l_ret)
+                return;
+            log_it(L_WARNING, "Failed to defer stream %p delete to keepalive owner worker #%u: %d",
+                   a_stream, l_timer_worker->id, l_ret);
+            dap_timerfd_t *l_timer = a_stream->keepalive_timer;
+            a_stream->keepalive_timer = NULL;
+            int l_cleanup_ret = s_keepalive_timer_cleanup_on_owner(l_timer, a_stream);
+            if (l_cleanup_ret)
+                log_it(L_WARNING, "Stream %p final free left pending because keepalive cleanup did not complete: %d",
+                       a_stream, l_cleanup_ret);
+            return;
+        }
+    }
+    a_stream->delete_in_progress = true;
+    s_stream_delete_finalize_unsafe(a_stream);
+}
+
+static void s_stream_delete_finalize_unsafe(dap_stream_t *a_stream)
+{
+    if (!a_stream) {
+        log_it(L_ERROR, "stream delete NULL instance");
+        return;
+    }
+    a_stream->delete_deferred = true;
+    a_stream->delete_in_progress = true;
+    a_stream->is_active = false;
     if (a_stream->is_client_to_uplink)
         debug_if(s_debug_more, L_DEBUG, "P2P stream DELETE (client): stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" keepalive=%s",
                a_stream, (void*)a_stream->esocket,
@@ -877,17 +996,16 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         log_it(L_INFO, "P2P stream DELETE (server): stream=%p es=%p sock=%"DAP_FORMAT_SOCKET,
                a_stream, (void*)a_stream->esocket,
                a_stream->esocket ? a_stream->esocket->socket : -1);
+    s_stream_delete_from_list(a_stream);
     if (a_stream->keepalive_timer) {
         dap_timerfd_t *l_timer = a_stream->keepalive_timer;
         a_stream->keepalive_timer = NULL;
-        s_keepalive_timer_cleanup_ctx_t l_cleanup_ctx = { .timer = l_timer, .arg_to_free = NULL };
-        if (l_timer->worker)
-            dap_worker_exec_callback_on_sync(l_timer->worker, s_keepalive_timer_cleanup_cb, &l_cleanup_ctx);
-        else
-            s_keepalive_timer_cleanup_cb(&l_cleanup_ctx);
-        DAP_DELETE(l_cleanup_ctx.arg_to_free);
+        int l_cleanup_ret = s_keepalive_timer_cleanup_on_owner(l_timer, NULL);
+        if (l_cleanup_ret)
+            log_it(l_cleanup_ret == -EINPROGRESS ? L_DEBUG : L_WARNING,
+                   "Keepalive timer cleanup for stream %p did not complete synchronously: %d",
+                   a_stream, l_cleanup_ret);
     }
-    s_stream_delete_from_list(a_stream);
     // a_stream->esocket_uuid = 0;
     while (a_stream->channel_count)
         dap_stream_ch_delete(a_stream->channel[a_stream->channel_count - 1]);
@@ -1173,9 +1291,7 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
     if (l_stream->keepalive_timer) {
         dap_timerfd_t *l_timer = l_stream->keepalive_timer;
         l_stream->keepalive_timer = NULL;
-        s_keepalive_timer_cleanup_ctx_t l_cleanup_ctx = { .timer = l_timer, .arg_to_free = NULL };
-        s_keepalive_timer_cleanup_cb(&l_cleanup_ctx);
-        DAP_DELETE(l_cleanup_ctx.arg_to_free);
+        s_keepalive_timer_cleanup_direct(l_timer);
     }
 }
 
@@ -1191,25 +1307,30 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
     dap_stream_t *l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
 
+    byte_t *l_buf_in = a_esocket->buf_in;
+    size_t l_buf_in_size = a_esocket->buf_in_size;
     log_it(L_INFO, "s_esocket_data_read: stream=%p buf_in_size=%zu sock=%"DAP_FORMAT_SOCKET,
-           (void*)l_stream, a_esocket->buf_in_size, a_esocket->socket);
+           (void*)l_stream, l_buf_in_size, a_esocket->socket);
     if (!l_stream) {
         log_it(L_ERROR, "s_esocket_data_read: no stream! trans_ctx=%p", (void*)l_trans_ctx);
         if (l_ret) *l_ret = 0;
         return;
     }
-    if (a_esocket->buf_in_size > 0 && a_esocket->buf_in_size < 256) {
+    if (l_buf_in_size > 0 && l_buf_in_size < 256) {
         char l_hex[768];
-        size_t l_dump = a_esocket->buf_in_size < 64 ? a_esocket->buf_in_size : 64;
+        size_t l_dump = l_buf_in_size < 64 ? l_buf_in_size : 64;
         for (size_t i = 0; i < l_dump; i++)
-            snprintf(l_hex + i * 3, 4, "%02x ", a_esocket->buf_in[i]);
+            snprintf(l_hex + i * 3, 4, "%02x ", l_buf_in[i]);
         l_hex[l_dump * 3] = '\0';
         log_it(L_INFO, "s_esocket_data_read: first %zu bytes: %s", l_dump, l_hex);
     }
-    size_t l_processed = dap_stream_data_proc_read(l_stream);
-    log_it(L_INFO, "s_esocket_data_read: processed=%zu / %zu", l_processed, a_esocket->buf_in_size);
+    bool l_delete_requested = false;
+    size_t l_processed = s_stream_data_proc_read_ext(l_stream, l_buf_in, l_buf_in_size, &l_delete_requested, true);
     if (l_ret)
         *l_ret = (int)l_processed;
+    if (l_delete_requested)
+        return;
+    log_it(L_INFO, "s_esocket_data_read: processed=%zu / %zu", l_processed, l_buf_in_size);
     if (l_processed > 0)
         dap_events_socket_shrink_buf_in(a_esocket, l_processed);
 }
@@ -1290,15 +1411,17 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  * @param a_data_size Size of data buffer
  * @return Number of bytes processed
  */
-size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size)
+static size_t s_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size,
+                                          bool *a_delete_requested, bool a_finalize_delete)
 {
+    if (a_delete_requested)
+        *a_delete_requested = false;
     if (!a_stream || !a_data || a_data_size == 0) {
         log_it(L_WARNING, "proc_read_ext: early return stream=%p data=%p size=%zu",
                (void*)a_stream, a_data, a_data_size);
         return 0;
     }
     
-    dap_events_socket_t *l_es = a_stream->esocket;
     byte_t *l_pos = (byte_t*)a_data;
     byte_t *l_end = l_pos + a_data_size;
     size_t l_shift = 0, l_processed_size = 0;
@@ -1321,9 +1444,10 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
-                s_stream_proc_pkt_in(a_stream, l_pkt);
-                if (s_stream_esocket_is_detached(l_es)) {
+                if (s_stream_proc_pkt_in(a_stream, l_pkt, a_finalize_delete)) {
                     l_processed_size += l_shift;
+                    if (a_delete_requested)
+                        *a_delete_requested = true;
                     break;
                 }
             } else {
@@ -1347,6 +1471,22 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     return l_processed_size;
 }
 
+size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size)
+{
+    bool l_delete_requested = false;
+    return s_stream_data_proc_read_ext(a_stream, a_data, a_data_size, &l_delete_requested, false);
+}
+
+size_t dap_stream_data_proc_read_ext_checked(dap_stream_t *a_stream, const void *a_data, size_t a_data_size,
+                                             bool *a_delete_requested)
+{
+    bool l_delete_requested = false;
+    size_t l_ret = s_stream_data_proc_read_ext(a_stream, a_data, a_data_size, &l_delete_requested, true);
+    if (a_delete_requested)
+        *a_delete_requested = l_delete_requested;
+    return l_ret;
+}
+
 /**
  * @brief Process incoming stream data from esocket buffer (legacy wrapper)
  * @param a_stream Stream instance
@@ -1362,19 +1502,43 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
     if (!l_es->buf_in)
         return 0;
     
-    return dap_stream_data_proc_read_ext(a_stream, l_es->buf_in, l_es->buf_in_size);
+    bool l_delete_requested = false;
+    return s_stream_data_proc_read_ext(a_stream, l_es->buf_in, l_es->buf_in_size, &l_delete_requested, false);
+}
+
+size_t dap_stream_data_proc_read_checked(dap_stream_t *a_stream, bool *a_delete_requested)
+{
+    if (a_delete_requested)
+        *a_delete_requested = false;
+    if (!a_stream || !a_stream->esocket)
+        return 0;
+
+    dap_events_socket_t *l_es = a_stream->esocket;
+
+    if (!l_es->buf_in)
+        return 0;
+
+    bool l_delete_requested = false;
+    size_t l_ret = s_stream_data_proc_read_ext(a_stream, l_es->buf_in, l_es->buf_in_size,
+                                               &l_delete_requested, true);
+    if (a_delete_requested)
+        *a_delete_requested = l_delete_requested;
+    return l_ret;
 }
 
 /**
  * @brief stream_proc_pkt_in
  * @param sid
  */
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pkt)
+static bool s_stream_proc_pkt_in(dap_stream_t *a_stream, dap_stream_pkt_t *a_pkt, bool a_finalize_delete)
 {
+    if (!a_pkt)
+        return false;
+    if (!s_stream_packet_proc_guard_enter(a_stream))
+        return s_stream_delete_requested(a_stream);
     size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
-    dap_events_socket_t *l_es = a_stream->esocket;
 
     debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u", 
            a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
@@ -1550,7 +1714,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
                     
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
-                    if (s_stream_esocket_is_detached(l_es))
+                    if (s_stream_delete_requested(a_stream))
                         goto cleanup;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
@@ -1565,12 +1729,14 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                              l_security_check_passed ? "YES" : "NO",
                              l_ch->closing ? "YES" : "NO");
                     
-                    for (dap_list_t *it = l_ch->packet_in_notifiers; !l_ch->closing && it && l_security_check_passed; it = it->next) {
+                    for (dap_list_t *it = l_ch->packet_in_notifiers; !l_ch->closing && it && l_security_check_passed; ) {
+                        dap_list_t *l_next = it->next;
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
-                        if (s_stream_esocket_is_detached(l_es))
+                        if (s_stream_delete_requested(a_stream))
                             goto cleanup;
+                        it = l_next;
                     }
                     if (l_ch->closing)
                         break;
@@ -1603,6 +1769,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         if (a_stream->trans_ctx) {
             dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
         }
+        if (s_stream_delete_requested(a_stream))
+            break;
         // Reset client keepalive timer
         if (a_stream->keepalive_timer) {
             dap_timerfd_reset_unsafe(a_stream->keepalive_timer);
@@ -1617,10 +1785,13 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     }
 cleanup:
     // Clean memory
-    DAP_DEL_Z(a_stream->pkt_cache);
-    if(l_is_clean_fragments) {
-        s_stream_fragments_reset(a_stream);
+    if (!s_stream_delete_requested(a_stream) || !a_finalize_delete) {
+        DAP_DEL_Z(a_stream->pkt_cache);
+        if(l_is_clean_fragments) {
+            s_stream_fragments_reset(a_stream);
+        }
     }
+    return s_stream_packet_proc_guard_leave(a_stream, a_finalize_delete);
 }
 
 /**
@@ -1662,7 +1833,7 @@ dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
     } else {
         // Client-side: dap_client hierarchy
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-        if (l_client) {
+        if (l_client && dap_client_is_live(l_client)) {
             dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
             dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
             if (l_tc)
@@ -1697,12 +1868,19 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, l_es_uuid);
     if(l_es) {
         assert(a_server_side == !!l_es->server);
-        dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
+        dap_stream_t *l_stream = NULL;
+        pthread_rwlock_rdlock(&s_streams_lock);
+        l_stream = s_stream_index_get_by_es_uuid_unsafe(l_es_uuid);
+        pthread_rwlock_unlock(&s_streams_lock);
+        if (!l_stream)
+            l_stream = dap_stream_get_from_es(l_es);
         if (!l_stream) {
             log_it(L_WARNING, "Keepalive %s: esocket uuid 0x%016"DAP_UINT64_FORMAT_x" found but stream detached on worker #%u — timer stopped",
                    a_server_side ? "srv" : "cli", l_es_uuid, l_worker->id);
             return s_keepalive_timer_self_stop(l_timer_arg);
         }
+        if (s_stream_delete_requested(l_stream))
+            return s_keepalive_timer_self_stop(l_timer_arg);
         if (a_server_side) {
             int l_pending = 0, l_sockerr = 0;
             socklen_t l_sockerr_len = sizeof(l_sockerr);
@@ -1784,6 +1962,11 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
     s_stream_index_remove_by_stream_unsafe(a_stream);
 
+    dap_stream_t *l_primary = NULL;
+    if (a_stream->authorized)
+        HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_primary);
+    bool l_was_primary = l_primary == a_stream;
+
     // Check if stream is in the list (prev is set by DL_APPEND/DL_DELETE)
     // Client-side streams may never be added if worker_assign didn't fire
     dap_stream_t *l_stream = NULL;
@@ -1795,14 +1978,17 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         }
     }
     l_stream = NULL;
-    if (l_in_list)
+    if (l_in_list) {
         DL_DELETE(s_streams, a_stream);
-    if (a_stream->authorized) {
+        a_stream->prev = a_stream->next = NULL;
+    }
+    if (l_was_primary) {
         // It's an authorized stream, try to replace it in hastable
-        if (a_stream->primary)
-            HASH_DEL(s_authorized_streams, a_stream);
+        HASH_DEL(s_authorized_streams, a_stream);
+        a_stream->primary = false;
         DL_FOREACH(s_streams, l_stream)
-            if (l_stream->node.uint64 == a_stream->node.uint64)
+            if (l_stream != a_stream && l_stream->authorized && !s_stream_delete_requested(l_stream) &&
+                    l_stream->node.uint64 == a_stream->node.uint64)
                 break;
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);

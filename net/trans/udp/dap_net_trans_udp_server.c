@@ -159,6 +159,7 @@ typedef struct stream_udp_session {
     
     // Handshake state protection
     _Atomic bool kem_task_pending;       // KEM task in progress (prevent duplicate HANDSHAKE)
+    _Atomic bool flow_delete_queued;     // Flow was removed from routing hash and queued for destroy
     
     // Packet type tracking (for FC callbacks)
     _Atomic uint8_t last_send_type;     // Last packet type sent (for packet_prepare_cb)
@@ -351,6 +352,8 @@ static dap_io_flow_datagram_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_
                                                      dap_io_flow_datagram_t *a_flow);
 static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow);
 static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow);
+static void s_stream_udp_queue_flow_destroy(stream_udp_session_t *a_session);
+static stream_udp_session_t *s_stream_udp_find_established_route(stream_udp_session_t *a_session);
 
 // VTable for UDP flow
 static dap_io_flow_datagram_ops_t s_stream_udp_ops = {
@@ -360,6 +363,65 @@ static dap_io_flow_datagram_ops_t s_stream_udp_ops = {
     .protocol_destroy = s_udp_protocol_destroy_cb,
     .protocol_send = NULL  // We use direct send
 };
+
+static bool s_stream_udp_sockaddr_route_equal(const struct sockaddr_storage *a_left,
+                                              const struct sockaddr_storage *a_right)
+{
+    if (!a_left || !a_right || a_left->ss_family != a_right->ss_family) {
+        return false;
+    }
+
+    if (a_left->ss_family == AF_INET) {
+        const struct sockaddr_in *l_left = (const struct sockaddr_in*)a_left;
+        const struct sockaddr_in *l_right = (const struct sockaddr_in*)a_right;
+        return l_left->sin_port == l_right->sin_port &&
+               l_left->sin_addr.s_addr == l_right->sin_addr.s_addr;
+    }
+    if (a_left->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *l_left = (const struct sockaddr_in6*)a_left;
+        const struct sockaddr_in6 *l_right = (const struct sockaddr_in6*)a_right;
+        return l_left->sin6_port == l_right->sin6_port &&
+               memcmp(&l_left->sin6_addr, &l_right->sin6_addr, sizeof(l_left->sin6_addr)) == 0;
+    }
+
+    return false;
+}
+
+static stream_udp_session_t *s_stream_udp_find_established_route(stream_udp_session_t *a_session)
+{
+    if (!a_session) {
+        return NULL;
+    }
+
+    dap_io_flow_t *l_flow = &a_session->base.base;
+    dap_io_flow_server_t *l_server = l_flow->server;
+    if (!l_server || !l_server->flow_locks_per_worker || !l_server->flows_per_worker) {
+        return NULL;
+    }
+
+    uint32_t l_worker_count = dap_proc_thread_get_count();
+    for (uint32_t i = 0; i < l_worker_count; i++) {
+        pthread_rwlock_rdlock(&l_server->flow_locks_per_worker[i]);
+        dap_io_flow_t *l_candidate_flow = NULL, *l_tmp = NULL;
+        HASH_ITER(hh, l_server->flows_per_worker[i], l_candidate_flow, l_tmp) {
+            if (l_candidate_flow == l_flow ||
+                !s_stream_udp_sockaddr_route_equal(&l_candidate_flow->remote_addr, &l_flow->remote_addr)) {
+                continue;
+            }
+
+            stream_udp_session_t *l_candidate = (stream_udp_session_t*)l_candidate_flow;
+            if (l_candidate->encryption_key &&
+                l_candidate->base.base.stream_context &&
+                !atomic_load(&l_candidate->flow_delete_queued)) {
+                pthread_rwlock_unlock(&l_server->flow_locks_per_worker[i]);
+                return l_candidate;
+            }
+        }
+        pthread_rwlock_unlock(&l_server->flow_locks_per_worker[i]);
+    }
+
+    return NULL;
+}
 
 // Forward declarations for server operations
 static int s_udp_server_start_wrapper(void *a_server, const char *a_cfg_section,
@@ -791,6 +853,27 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
                  a_size, l_session);
         return 0;
     }
+
+    if (!l_session->encryption_key) {
+        stream_udp_session_t *l_established_session = s_stream_udp_find_established_route(l_session);
+        if (l_established_session) {
+            log_it(L_WARNING,
+                   "SERVER: rerouting encrypted UDP packet from no-key duplicate flow %p to established flow %p",
+                   (void*)l_session, (void*)l_established_session);
+            s_stream_udp_queue_flow_destroy(l_session);
+
+            dap_io_flow_ctrl_t *l_established_flow_ctrl = l_established_session->base.base.flow_ctrl;
+            if (l_established_flow_ctrl) {
+                int l_ret = dap_io_flow_ctrl_recv(l_established_flow_ctrl, a_data, a_size);
+                if (l_ret != 0) {
+                    log_it(L_WARNING, "Flow Control packet reroute failed: ret=%d", l_ret);
+                    return -3;
+                }
+                return 0;
+            }
+            return s_process_encrypted_udp_packet(l_established_session, a_data, a_size);
+        }
+    }
     
     // ALL OTHER PACKETS: Must be encrypted!
     // 
@@ -905,7 +988,7 @@ static dap_io_flow_datagram_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_
     // CRITICAL: Set backlink from stream to session for trans->ops->write!
     l_session->stream->_server_session = l_session;
     
-    // stream_worker will be set in finalize callback after listener_es is available
+    // stream_worker will be set in finalize callback after the flow owner is known
     l_session->stream->stream_worker = NULL;
     l_session->base.base.stream_context = l_session->stream;
     
@@ -916,6 +999,7 @@ static dap_io_flow_datagram_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_
     
     // Initialize handshake state protection
     atomic_store(&l_session->kem_task_pending, false);
+    atomic_store(&l_session->flow_delete_queued, false);
     
     debug_if(s_debug_more, L_DEBUG,
              "Allocated stream_udp_session_t at %p (stream=%p)",
@@ -936,8 +1020,15 @@ static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow)
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     
-    // Now we can set stream_worker using listener_es->worker
-    l_session->stream->stream_worker = DAP_STREAM_WORKER(a_flow->listener_es->worker);
+    dap_worker_t *l_owner_worker = dap_worker_get_current();
+    if (!l_owner_worker)
+        l_owner_worker = a_flow->listener_es->worker;
+    if (!l_owner_worker) {
+        log_it(L_ERROR, "Unable to resolve UDP flow owner worker in finalize");
+        return -2;
+    }
+
+    l_session->stream->stream_worker = DAP_STREAM_WORKER(l_owner_worker);
     
     // CRITICAL: Set callback for getting remote address (resolves circular dependencies)
     a_flow->get_remote_addr_cb = s_get_remote_addr_cb;
@@ -949,9 +1040,211 @@ static int s_udp_protocol_finalize_cb(dap_io_flow_datagram_t *a_flow)
     debug_if(s_debug_more, L_DEBUG,
              "Finalized stream_udp_session_t %p (stream=%p, worker=%u)",
              l_session, l_session->stream,
-             a_flow->listener_es->worker ? a_flow->listener_es->worker->id : 0);
+             l_owner_worker->id);
     
     return 0;
+}
+
+static void s_stream_udp_close_attached_session(stream_udp_session_t *a_session,
+                                                dap_stream_session_t *a_stream_session)
+{
+    if (!a_session || !a_stream_session) {
+        return;
+    }
+
+    dap_enc_key_t *l_stream_session_key = a_stream_session->key;
+
+    if (a_stream_session->id) {
+        dap_stream_session_close_mt(a_stream_session->id);
+    }
+
+    // Session close owns and deletes stream_session->key. If the UDP session
+    // encryption key aliases it, clear the alias before protocol_destroy.
+    if (a_session->encryption_key == l_stream_session_key) {
+        a_session->encryption_key = NULL;
+    }
+    if (a_session->stream && a_session->stream->session == a_stream_session) {
+        a_session->stream->session = NULL;
+    }
+    if (a_session->session == a_stream_session) {
+        a_session->session = NULL;
+    }
+    if (a_session->base.base.session_context == a_stream_session) {
+        a_session->base.base.session_context = NULL;
+    }
+}
+
+static dap_stream_session_t *s_stream_udp_get_attached_session(stream_udp_session_t *a_session)
+{
+    if (!a_session) {
+        return NULL;
+    }
+    if (a_session->session) {
+        return a_session->session;
+    }
+    if (a_session->base.base.session_context) {
+        return (dap_stream_session_t*)a_session->base.base.session_context;
+    }
+    return a_session->stream ? a_session->stream->session : NULL;
+}
+
+static void s_stream_udp_detach_stream_backlinks(stream_udp_session_t *a_session,
+                                                 dap_stream_t *a_stream)
+{
+    if (!a_session || !a_stream) {
+        return;
+    }
+
+    if (a_session->base.base.stream_context == a_stream) {
+        a_session->base.base.stream_context = NULL;
+    }
+    if (a_session->base.base.protocol_data == a_stream) {
+        a_session->base.base.protocol_data = NULL;
+    }
+    if (a_session->base.protocol_data == a_stream) {
+        a_session->base.protocol_data = NULL;
+    }
+
+    a_stream->_server_session = NULL;
+    a_stream->flow = NULL;
+    a_stream->esocket = NULL;
+    a_stream->esocket_uuid = 0;
+    a_stream->esocket_worker = NULL;
+}
+
+static void s_stream_udp_delete_attached_stream(stream_udp_session_t *a_session)
+{
+    if (!a_session || !a_session->stream) {
+        return;
+    }
+
+    dap_stream_t *l_stream = a_session->stream;
+    dap_stream_session_t *l_stream_session = l_stream->session
+                                           ? l_stream->session
+                                           : s_stream_udp_get_attached_session(a_session);
+    dap_enc_key_t *l_stream_session_key = l_stream_session ? l_stream_session->key : NULL;
+
+    if (!l_stream->session && l_stream_session) {
+        l_stream->session = l_stream_session;
+    }
+    if (l_stream_session_key && a_session->encryption_key == l_stream_session_key) {
+        a_session->encryption_key = NULL;
+    }
+
+    s_stream_udp_detach_stream_backlinks(a_session, l_stream);
+    dap_stream_delete_unsafe(l_stream);
+
+    a_session->stream = NULL;
+    if (a_session->session == l_stream_session) {
+        a_session->session = NULL;
+    }
+    if (a_session->base.base.session_context == l_stream_session) {
+        a_session->base.base.session_context = NULL;
+    }
+}
+
+typedef struct stream_udp_deferred_destroy {
+    dap_io_flow_t *flow;
+    void (*flow_destroy)(dap_io_flow_t *a_flow);
+} stream_udp_deferred_destroy_t;
+
+static bool s_stream_udp_remove_flow_from_hash(stream_udp_session_t *a_session)
+{
+    if (!a_session) {
+        return false;
+    }
+
+    dap_io_flow_t *l_flow = &a_session->base.base;
+    dap_io_flow_server_t *l_server = l_flow->server;
+    if (!l_server || !l_server->flow_locks_per_worker || !l_server->flows_per_worker) {
+        return false;
+    }
+
+    uint32_t l_worker_count = dap_proc_thread_get_count();
+    uint32_t l_owner_worker_id = l_flow->owner_worker_id;
+    for (uint32_t l_pass = 0; l_pass < l_worker_count + 1; l_pass++) {
+        uint32_t i = l_pass == 0 ? l_owner_worker_id : l_pass - 1;
+        if (i >= l_worker_count || (l_pass > 0 && i == l_owner_worker_id)) {
+            continue;
+        }
+        pthread_rwlock_wrlock(&l_server->flow_locks_per_worker[i]);
+        dap_io_flow_t *l_found = NULL;
+        HASH_FIND(hh, l_server->flows_per_worker[i], &l_flow->remote_addr,
+                  sizeof(struct sockaddr_storage), l_found);
+        if (l_found == l_flow) {
+            HASH_DELETE(hh, l_server->flows_per_worker[i], l_flow);
+            pthread_rwlock_unlock(&l_server->flow_locks_per_worker[i]);
+            return true;
+        }
+        pthread_rwlock_unlock(&l_server->flow_locks_per_worker[i]);
+    }
+
+    return false;
+}
+
+static void s_stream_udp_deferred_flow_destroy_cb(void *a_arg)
+{
+    stream_udp_deferred_destroy_t *l_destroy = (stream_udp_deferred_destroy_t*)a_arg;
+    if (!l_destroy) {
+        return;
+    }
+
+    if (l_destroy->flow_destroy && l_destroy->flow) {
+        l_destroy->flow_destroy(l_destroy->flow);
+    }
+    DAP_DELETE(l_destroy);
+}
+
+static void s_stream_udp_queue_flow_destroy(stream_udp_session_t *a_session)
+{
+    if (!a_session) {
+        return;
+    }
+
+    bool l_expected = false;
+    if (!atomic_compare_exchange_strong(&a_session->flow_delete_queued, &l_expected, true)) {
+        return;
+    }
+
+    dap_io_flow_t *l_flow = &a_session->base.base;
+    dap_io_flow_server_t *l_server = l_flow->server;
+    void (*l_flow_destroy)(dap_io_flow_t*) =
+            l_server && l_server->ops ? l_server->ops->flow_destroy : NULL;
+
+    bool l_removed = s_stream_udp_remove_flow_from_hash(a_session);
+    if (!l_removed) {
+        log_it(L_WARNING, "SERVER: checked-read delete could not remove UDP flow from hash (flow=%p)",
+               (void*)l_flow);
+    }
+
+    stream_udp_deferred_destroy_t *l_destroy = DAP_NEW_Z(stream_udp_deferred_destroy_t);
+    if (!l_destroy) {
+        log_it(L_CRITICAL, "SERVER: failed to allocate deferred UDP flow destroy context");
+        return;
+    }
+    l_destroy->flow = l_flow;
+    l_destroy->flow_destroy = l_flow_destroy;
+
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (!l_worker && a_session->base.listener_es) {
+        l_worker = a_session->base.listener_es->worker;
+    }
+
+    if (l_worker && dap_worker_exec_callback_on(l_worker, s_stream_udp_deferred_flow_destroy_cb, l_destroy) == 0) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: queued UDP flow destroy after checked-read delete (flow=%p)",
+                 (void*)l_flow);
+        return;
+    }
+
+    log_it(L_WARNING, "SERVER: failed to queue UDP flow destroy; destroying synchronously (flow=%p)",
+           (void*)l_flow);
+    if (l_flow->flow_ctrl) {
+        log_it(L_ERROR, "SERVER: cannot synchronously destroy UDP flow while flow control may be active");
+        DAP_DELETE(l_destroy);
+        return;
+    }
+    s_stream_udp_deferred_flow_destroy_cb(l_destroy);
 }
 
 /**
@@ -964,7 +1257,7 @@ static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow)
     }
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
-    
+
     // CRITICAL: Delete Flow Control FIRST to stop retransmits!
     // This prevents use-after-free when FC tries to send after flow is deleted.
     // Flow control is in base flow structure now
@@ -972,13 +1265,19 @@ static void s_udp_protocol_destroy_cb(dap_io_flow_datagram_t *a_flow)
         dap_io_flow_ctrl_delete(l_session->base.base.flow_ctrl);
         l_session->base.base.flow_ctrl = NULL;
     }
-    
+
     if (l_session->stream) {
-        DAP_DELETE(l_session->stream);
+        s_stream_udp_delete_attached_stream(l_session);
+    } else {
+        dap_stream_session_t *l_stream_session = s_stream_udp_get_attached_session(l_session);
+        if (l_stream_session) {
+            s_stream_udp_close_attached_session(l_session, l_stream_session);
+        }
     }
     
     if (l_session->encryption_key) {
         dap_enc_key_delete(l_session->encryption_key);
+        l_session->encryption_key = NULL;
     }
 }
 
@@ -1060,7 +1359,7 @@ static void* s_stream_udp_session_create_cb(dap_io_flow_t *a_flow, void *a_sessi
     // Retransmit timeout MUST be aggressive for high packet rate scenarios!
     dap_io_flow_ctrl_config_t l_fc_config = {
         .retransmit_timeout_ms = 100,      // 100ms for localhost (was 1000ms - TOO SLOW!)
-        .max_retransmit_count = 20,        // Increased for large transfers with many packets
+        .max_retransmit_count = 200,       // Keep retrying through short UDP burst/congestion windows
         .send_window_size = 16384*4,       // 64K packets (was 256 - CAUSED PACKET LOSS!)
         .recv_window_size = 16384*4,       // 64K packets (was 256 - CAUSED PACKET LOSS!)
         .max_out_of_order_delay_ms = 10000, // 10 seconds for large transfers
@@ -1097,7 +1396,6 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
     
     stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
     dap_stream_session_t *l_stream_session = (dap_stream_session_t*)a_session_context;
-    dap_enc_key_t *l_stream_session_key = l_stream_session->key;
     
     // Delete Flow Control
     // NOTE: flow_ctrl is in base.base (dap_io_flow_t), not directly in session
@@ -1108,23 +1406,71 @@ static void s_stream_udp_session_close_cb(dap_io_flow_t *a_flow, void *a_session
         dap_io_flow_ctrl_delete(l_flow_ctrl);   // Then delete (waits for operations)
         debug_if(s_debug_more, L_DEBUG, "Flow Control deleted for session");
     }
-    
-    // Close session using session ID
-    if (l_stream_session->id) {
-        dap_stream_session_close_mt(l_stream_session->id);
+
+    s_stream_udp_close_attached_session(l_session, l_stream_session);
+}
+
+static void s_stream_udp_prepare_stream_for_checked_read(stream_udp_session_t *a_session,
+                                                         dap_stream_t *a_stream)
+{
+    if (!a_session || !a_stream) {
+        return;
     }
 
-    // Session close owns and deletes stream_session->key.
-    // If encryption_key aliases that key, clear it to avoid double free in protocol_destroy.
-    if (l_session->encryption_key == l_stream_session_key) {
-        l_session->encryption_key = NULL;
-    }
-    if (l_session->stream && l_session->stream->session == l_stream_session) {
-        l_session->stream->session = NULL;
+    // Server UDP sessions send through dap_io_flow_datagram_t, not through a
+    // stream-owned esocket. Keep stream deletion from touching shared sockets.
+    if (a_stream->esocket || a_stream->esocket_uuid || a_stream->esocket_worker) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "SERVER: detaching stream-owned esocket fields before checked read (stream=%p, esocket=%p)",
+                 (void*)a_stream, (void*)a_stream->esocket);
+        a_stream->esocket = NULL;
+        a_stream->esocket_uuid = 0;
+        a_stream->esocket_worker = NULL;
     }
 
-    l_session->session = NULL;
-    l_session->base.base.session_context = NULL;
+    a_stream->_server_session = a_session;
+    a_stream->flow = &a_session->base;
+}
+
+static void s_stream_udp_detach_deleted_stream(stream_udp_session_t *a_session,
+                                               dap_stream_t *a_stream,
+                                               dap_stream_session_t *a_stream_session,
+                                               dap_enc_key_t *a_stream_session_key)
+{
+    if (!a_session) {
+        return;
+    }
+
+    if (a_session->stream == a_stream) {
+        a_session->stream = NULL;
+    }
+    if (a_session->base.base.stream_context == a_stream) {
+        a_session->base.base.stream_context = NULL;
+    }
+    if (a_session->base.base.protocol_data == a_stream) {
+        a_session->base.base.protocol_data = NULL;
+    }
+    if (a_session->base.protocol_data == a_stream) {
+        a_session->base.protocol_data = NULL;
+    }
+
+    if (a_session->session == a_stream_session) {
+        a_session->session = NULL;
+    }
+    if (a_session->base.base.session_context == a_stream_session) {
+        a_session->base.base.session_context = NULL;
+    }
+
+    // dap_stream_delete_unsafe() closes stream->session and owns session->key.
+    // If the UDP session key aliases it, clear the alias so flow destroy will not
+    // delete the already-owned key again.
+    if (a_stream_session_key && a_session->encryption_key == a_stream_session_key) {
+        a_session->encryption_key = NULL;
+    }
+
+    debug_if(s_debug_more, L_DEBUG,
+             "SERVER: detached stream deleted during checked read (stream=%p, session=%p)",
+             (void*)a_stream, (void*)a_stream_session);
 }
 
 static void* s_stream_udp_stream_create_cb(dap_io_flow_t *a_flow, void *a_stream_params)
@@ -1147,9 +1493,21 @@ static ssize_t s_stream_udp_stream_write_cb(dap_io_flow_t *a_flow, void *a_strea
     }
     
     dap_stream_t *l_stream = (dap_stream_t*)a_stream_context;
+    stream_udp_session_t *l_session = (stream_udp_session_t*)a_flow;
+    dap_stream_session_t *l_stream_session = l_stream->session;
+    dap_enc_key_t *l_stream_session_key = l_stream_session ? l_stream_session->key : NULL;
+
+    s_stream_udp_prepare_stream_for_checked_read(l_session, l_stream);
     
     // Use transport-agnostic stream data processing
-    size_t l_processed = dap_stream_data_proc_read_ext(l_stream, a_data, a_size);
+    bool l_delete_requested = false;
+    size_t l_processed = dap_stream_data_proc_read_ext_checked(l_stream, a_data, a_size,
+                                                               &l_delete_requested);
+    if (l_delete_requested) {
+        s_stream_udp_detach_deleted_stream(l_session, l_stream,
+                                           l_stream_session, l_stream_session_key);
+        s_stream_udp_queue_flow_destroy(l_session);
+    }
     
     return (ssize_t)l_processed;
 }
@@ -1674,6 +2032,9 @@ static void s_kem_reactor_callback(void *a_arg)
         l_session->session_id != l_arg->session_id ||
         !l_session->base.base.stream_context ||
         !l_session->base.listener_es) {
+        if (l_session && l_session->session_id == l_arg->session_id) {
+            atomic_store(&l_session->kem_task_pending, false);
+        }
         debug_if(s_debug_more, L_DEBUG,
                  "[KEM Reactor] Session lookup failed/stale (session=%p, expected_id=0x%" PRIx64 ")",
                  l_session, l_arg->session_id);

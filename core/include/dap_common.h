@@ -258,8 +258,8 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_NEW_Z_SIZE(a, b)  DAP_CAST_REINT(a, s_vm_get_z(__func__, __LINE__, 1,b))
     #define DAP_REALLOC(a, b)     s_vm_extend(__func__, __LINE__, a,b)
 
-    #define DAP_DUP(a)            memcpy(s_vm_get(__func__, __LINE__, sizeof(*a)), a, sizeof(*a))
-    #define DAP_DUP_SIZE(a, s)    memcpy(s_vm_get(__func__, __LINE__, s), a, s)
+    #define DAP_DUP(a)            DAP_CAST(__typeof__(a), memcpy(s_vm_get(__func__, __LINE__, sizeof(*a)), a, sizeof(*a)))
+    #define DAP_DUP_SIZE(a, s)    DAP_CAST(__typeof__(a), memcpy(s_vm_get(__func__, __LINE__, s), a, s))
 
 #else
 #ifdef DAP_USE_RPMALLOC
@@ -291,7 +291,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     for (intmax_t _c = _da ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(_da[--_c])); } while (0)
 #define DAP_DUP_SIZE(p, s)    ({ __typeof__(p) _src_typed = (p); const void *_src = (const void *)_src_typed; \
     intmax_t _s = (intmax_t)(s); void *_dup = ((uintptr_t)_src_typed && _s >= DAP_TYPE_SIZE(_src_typed)) ? calloc(1, _s) : NULL; \
-    _dup ? memcpy(_dup, _src, _s) : NULL; })
+    DAP_CAST(__typeof__(_src_typed), _dup ? memcpy(_dup, _src, _s) : NULL); })
 #define DAP_DUP(p)            DAP_DUP_SIZE((p), sizeof(*(p)))
 
 #endif
@@ -468,7 +468,7 @@ typedef union dap_stream_node_addr {
 #endif
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
-    static atomic_int s = 0;
+    static atomic_int s = ATOMIC_VAR_INIT(0);
     int l_s = s;
     if (l_s) return l_s;
 #ifdef DAP_OS_WINDOWS

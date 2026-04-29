@@ -135,6 +135,8 @@ static void s_http_finalize_response(dap_client_http_t *a_client_http, dap_clien
 // New header parsing functions that work directly with buf_in
 static int s_http_parse_headers_from_buf_in(dap_events_socket_t *a_es, dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx);
 static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx);
+static bool s_http_drain_socket_on_error(dap_events_socket_t *a_es);
+static bool s_http_complete_response_on_disconnect(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx);
 
 /**
  * @brief Extract HTTP status code from response
@@ -1046,47 +1048,35 @@ static dap_client_http_t* s_client_http_create_and_connect(
                 return NULL;
             }
             
-    // Add socket to worker - s_http_new will be called to set CONNECTING flag
-    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-    
-    // Check if connection completed immediately (connect() returned 0, l_connect_err == 0)
-    // In this case, EPOLLOUT won't fire, so we need to handle connection immediately
-    if (l_connect_ret == 0 && l_connect_err == 0 && l_ev_socket->context) {
-        // Connection was established immediately - verify and handle
-        int l_errno_check = 0;
-        socklen_t l_errno_len = sizeof(l_errno_check);
-        if (getsockopt(l_ev_socket->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno_check, &l_errno_len) == 0 && l_errno_check == 0) {
-            // Connection is ready - clear CONNECTING flag and call connected callback
-            l_ev_socket->flags &= ~DAP_SOCK_CONNECTING;
-            if (l_ev_socket->callbacks.connected_callback) {
-                debug_if(s_debug_more, L_DEBUG, "[HANDSHAKE DEBUG] Connection completed immediately, calling connected_callback for socket %"DAP_FORMAT_SOCKET, 
-                         l_ev_socket->socket);
-                l_ev_socket->callbacks.connected_callback(l_ev_socket);
-            }
-            dap_context_poll_update(l_ev_socket);
-        }
+    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+    if (!l_ev_uuid_ptr) {
+        *a_error_code = ENOMEM;
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        s_client_http_delete(l_client_http);
+        l_ev_socket->_inheritor = NULL;
+        dap_events_socket_delete_unsafe(l_ev_socket, true);
+        return NULL;
     }
-        
+    *l_ev_uuid_ptr = l_ev_socket->uuid;
+    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms,
+                                                        s_timer_timeout_check, l_ev_uuid_ptr);
     if (!l_client_http->timer) {
-        dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (!l_ev_uuid_ptr) {
-            *a_error_code = ENOMEM;
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            s_client_http_delete(l_client_http);
-            l_ev_socket->_inheritor = NULL;
-            dap_events_socket_delete_unsafe(l_ev_socket, true);
-            return NULL;
-        }
-        *l_ev_uuid_ptr = l_ev_socket->uuid;
-        l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms,
-                                                            s_timer_timeout_check, l_ev_uuid_ptr);
-        if (!l_client_http->timer) {
-            log_it(L_ERROR, "Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
-                   l_client_http->worker->id, *l_ev_uuid_ptr);
-            DAP_DEL_Z(l_ev_uuid_ptr);
-        } else {
-            l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
-        }
+        log_it(L_ERROR, "Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
+               l_client_http->worker->id, *l_ev_uuid_ptr);
+        DAP_DEL_Z(l_ev_uuid_ptr);
+    } else {
+        l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
+    }
+
+    // Add socket to worker - s_http_new will arm CONNECTING/EPOLLOUT and the
+    // worker context owns the connected callback from this point.
+    int l_add_ret = dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
+    if (l_add_ret) {
+        *a_error_code = l_add_ret;
+        s_client_http_delete(l_client_http);
+        l_ev_socket->_inheritor = NULL;
+        dap_events_socket_delete_unsafe(l_ev_socket, true);
+        return NULL;
     }
         *a_error_code = 0;
         return l_client_http;
@@ -1528,6 +1518,83 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
 #undef m_http_error_exit
 }
 
+static bool s_http_drain_socket_on_error(dap_events_socket_t *a_es)
+{
+#ifdef DAP_OS_WINDOWS
+    UNUSED(a_es);
+    return false;
+#else
+    if (!a_es || !a_es->buf_in || a_es->socket == INVALID_SOCKET)
+        return false;
+    if (a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT && a_es->type != DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT)
+        return false;
+
+    bool l_read_any = false;
+    while (a_es->buf_in_size < a_es->buf_in_size_max) {
+        ssize_t l_read = recv(a_es->socket, (char *)a_es->buf_in + a_es->buf_in_size,
+                              a_es->buf_in_size_max - a_es->buf_in_size, MSG_DONTWAIT);
+        if (l_read > 0) {
+            a_es->buf_in_size += (size_t)l_read;
+            l_read_any = true;
+            continue;
+        }
+        if (l_read == 0)
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+            debug_if(s_debug_more, L_DEBUG, "s_http_drain_socket_on_error: recv stopped with errno %d: %s",
+                     errno, dap_strerror(errno));
+        break;
+    }
+
+    if (l_read_any)
+        debug_if(s_debug_more, L_DEBUG, "s_http_drain_socket_on_error: drained %zu bytes before error handling",
+                 a_es->buf_in_size);
+    return l_read_any;
+#endif
+}
+
+static bool s_http_complete_response_on_disconnect(dap_client_http_t *a_client_http, dap_client_http_async_context_t *a_ctx)
+{
+    if (!a_client_http || a_client_http->were_callbacks_called)
+        return false;
+
+    if (!a_client_http->status_code)
+        return false;
+
+    if (a_client_http->is_chunked &&
+            a_client_http->current_chunk_read < a_client_http->current_chunk_size)
+        return false;
+
+    if (a_client_http->content_length &&
+            a_client_http->response_size < a_client_http->content_length)
+        return false;
+
+    void *l_body = a_client_http->response_size ? a_client_http->response : NULL;
+    size_t l_body_size = a_client_http->response_size;
+    http_status_code_t l_status_code = a_client_http->status_code;
+
+    if (a_ctx && a_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
+        l_body = NULL;
+        l_body_size = 0;
+    }
+
+    if (a_client_http->response_callback_full) {
+        a_client_http->response_callback_full(l_body, l_body_size, a_client_http->response_headers,
+                                              a_client_http->callbacks_arg, l_status_code);
+    } else if (a_client_http->response_callback) {
+        a_client_http->response_callback(l_body, l_body_size, a_client_http->callbacks_arg,
+                                         l_status_code);
+    } else {
+        return false;
+    }
+
+    a_client_http->parse_state = DAP_HTTP_PARSE_COMPLETE;
+    a_client_http->were_callbacks_called = true;
+    if (a_client_http->es)
+        a_client_http->es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+    return true;
+}
+
 
 /**
  * @brief s_http_error - Enhanced error handler with streaming support
@@ -1549,6 +1616,11 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
         log_it(L_ERROR, "s_http_error: l_client_http is NULL!");
         return;
     }
+
+    dap_client_http_async_context_t *l_ctx = NULL;
+    if (l_client_http->error_callback == s_async_error_callback) {
+        l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
+    }
     
     if (a_es->buf_in && a_es->buf_in_size > 0 && !l_client_http->were_callbacks_called) {
         s_http_read(a_es, NULL);
@@ -1559,11 +1631,17 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
         
         log_it(L_WARNING, "s_http_error: buf_in data could not be processed, continuing error handling");
     }
-    
-    dap_client_http_async_context_t *l_ctx = NULL;
-    if (l_client_http->error_callback == s_async_error_callback) {
-        l_ctx = (dap_client_http_async_context_t *)l_client_http->callbacks_arg;
+
+    if (!l_client_http->were_callbacks_called && s_http_drain_socket_on_error(a_es)) {
+        s_http_read(a_es, NULL);
+        if (l_client_http->were_callbacks_called)
+            return;
+
+        log_it(L_WARNING, "s_http_error: drained data could not be processed, continuing error handling");
     }
+
+    if (s_http_complete_response_on_disconnect(l_client_http, l_ctx))
+        return;
     
     if (l_ctx && l_ctx->streaming_mode == DAP_HTTP_STREAMING_ENABLED) {
         // Special handling for interrupted streaming
@@ -2577,5 +2655,3 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
     
     return true;
 }
-
-

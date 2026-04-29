@@ -26,7 +26,6 @@
 #ifndef DAP_OS_WINDOWS
 #include <arpa/inet.h>
 #endif
-#include <sys/time.h>
 
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
@@ -52,6 +51,8 @@
 #include "rand/dap_rand.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
+#include "dap_context_queue.h"
+#include "dap_context.h"
 #include "dap_events_socket.h"
 #include "dap_net.h"
 #include "dap_client.h"
@@ -92,9 +93,13 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
 static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
                                 dap_net_trans_ready_cb_t a_callback);
 static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size);
+static ssize_t s_ws_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t a_size,
+                                  bool *a_delete_requested, bool a_finalize_delete);
 static ssize_t s_ws_write(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 static void s_ws_close(dap_stream_t *a_stream);
 static uint32_t s_ws_get_capabilities(dap_net_trans_t *a_trans);
+static void s_ws_delete_registered_or_queued_es(dap_worker_t *a_worker, dap_events_socket_t *a_es);
+static void s_ws_client_esocket_delete(dap_events_socket_t *a_es, void *a_arg);
 static int s_ws_register_server_handlers(dap_net_trans_t *a_trans, void *a_trans_ctx);
 static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
                               const dap_net_stage_prepare_params_t *a_params,
@@ -105,6 +110,9 @@ static int s_ws_generate_key(char *a_key_out, size_t a_key_size);
 static int s_ws_generate_accept(const char *a_key, char *a_accept_out, size_t a_accept_size);
 static void s_ws_mask_unmask(uint8_t *a_data, size_t a_size, uint32_t a_mask_key);
 static bool s_ws_ping_timer_callback(void *a_user_data);
+static void s_ws_detach_client_esocket(dap_stream_t *a_stream, dap_events_socket_t *a_es);
+static void s_ws_wrap_client_delete_callback(dap_stream_t *a_stream);
+static void s_ws_client_disable_stream_keepalive(dap_stream_t *a_stream);
 
 // Helper to get private data
 static dap_net_trans_websocket_private_t *s_get_private(dap_net_trans_t *a_trans);
@@ -413,6 +421,7 @@ static int s_ws_connect(dap_stream_t *a_stream, const char *a_host, uint16_t a_p
     l_priv->sec_websocket_key = dap_strdup(l_ws_key);
 
     l_priv->esocket = a_stream->esocket;
+    s_ws_wrap_client_delete_callback(a_stream);
 
     if (a_callback) {
         a_callback(a_stream, 0);
@@ -938,6 +947,7 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
         log_it(L_ERROR, "WebSocket session_start: esocket has SIGNAL_CLOSE flag, cannot send upgrade!");
         return -6;
     }
+    s_ws_wrap_client_delete_callback(a_stream);
 
     // Set state to CONNECTING (upgrade in progress)
     l_priv->state = DAP_WS_STATE_CONNECTING;
@@ -996,8 +1006,16 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
  */
 static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
 {
+    return s_ws_read_internal(a_stream, a_buffer, a_size, NULL, false);
+}
+
+static ssize_t s_ws_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t a_size,
+                                  bool *a_delete_requested, bool a_finalize_delete)
+{
     UNUSED(a_buffer);
     UNUSED(a_size);
+    if (a_delete_requested)
+        *a_delete_requested = false;
 
     if (!a_stream) {
         return -1;
@@ -1039,6 +1057,7 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             memcmp(l_es->buf_in, "HTTP/1.0 101", 12) == 0) {
             log_it(L_INFO, "WebSocket upgrade successful (101 Switching Protocols)");
             l_priv->state = DAP_WS_STATE_OPEN;
+            s_ws_client_disable_stream_keepalive(a_stream);
 
             // Start ping timer now that we're connected
             if (l_priv->config.ping_interval_ms > 0 && l_es->worker) {
@@ -1172,7 +1191,24 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         }
 
         // Feed raw stream data to the stream processing layer
-        size_t l_processed = dap_stream_data_proc_read_ext(a_stream, l_data, l_data_size);
+        bool l_delete_requested = false;
+        size_t l_processed = 0;
+        if (a_finalize_delete) {
+            l_processed = dap_stream_data_proc_read_ext_checked(a_stream, l_data, l_data_size,
+                                                               &l_delete_requested);
+        } else {
+            l_processed = dap_stream_data_proc_read_ext(a_stream, l_data, l_data_size);
+            l_delete_requested = a_stream->delete_deferred || a_stream->delete_in_progress;
+        }
+        if (a_delete_requested)
+            *a_delete_requested = l_delete_requested;
+        if (l_delete_requested) {
+            if (l_data != l_payload_buf) {
+                DAP_DELETE(l_data);
+            }
+            DAP_DELETE(l_payload_buf);
+            return 0;
+        }
 
         // Save any unprocessed bytes (partial DAP stream packet) for next call
         size_t l_remaining = l_data_size - l_processed;
@@ -1325,6 +1361,142 @@ static void s_ws_close(dap_stream_t *a_stream)
     }
 }
 
+typedef struct ws_es_cleanup_ctx {
+    dap_worker_t *worker;
+    dap_events_socket_t *es;
+    dap_events_socket_uuid_t uuid;
+    bool deleted;
+} ws_es_cleanup_ctx_t;
+
+static void s_ws_delete_registered_or_queued_es_cb(void *a_arg)
+{
+    ws_es_cleanup_ctx_t *l_ctx = (ws_es_cleanup_ctx_t *)a_arg;
+    if (!l_ctx || !l_ctx->worker || !l_ctx->es)
+        return;
+
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (l_worker != l_ctx->worker || !l_worker->context)
+        return;
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    while (l_worker->queue_es_new && dap_context_queue_count(l_worker->queue_es_new) > 0) {
+        int l_processed = dap_context_queue_process(l_worker->queue_es_new);
+        if (l_processed <= 0)
+            break;
+    }
+#endif
+
+    dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
+    if (l_es) {
+        dap_events_socket_remove_and_delete_unsafe(l_es, true);
+        l_ctx->deleted = true;
+        return;
+    }
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    if (l_ctx->es->worker == l_worker && !atomic_load(&l_ctx->es->is_initalized)) {
+        dap_events_socket_delete_unsafe(l_ctx->es, true);
+        l_ctx->deleted = true;
+    }
+#endif
+}
+
+static void s_ws_delete_registered_or_queued_es(dap_worker_t *a_worker, dap_events_socket_t *a_es)
+{
+    if (!a_worker || !a_es)
+        return;
+
+    ws_es_cleanup_ctx_t l_ctx = {
+        .worker = a_worker,
+        .es = a_es,
+        .uuid = a_es->uuid
+    };
+
+    if (dap_worker_get_current() == a_worker)
+        s_ws_delete_registered_or_queued_es_cb(&l_ctx);
+    else
+        dap_worker_exec_callback_on_sync(a_worker, s_ws_delete_registered_or_queued_es_cb, &l_ctx);
+
+    if (!l_ctx.deleted) {
+        log_it(L_WARNING, "WebSocket cleanup: socket uuid 0x%"DAP_UINT64_FORMAT_x
+               " was neither registered nor safely unqueued", l_ctx.uuid);
+    }
+}
+
+static void s_ws_detach_client_esocket(dap_stream_t *a_stream, dap_events_socket_t *a_es)
+{
+    if (!a_stream || !a_stream->is_client_to_uplink)
+        return;
+
+    dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
+    if (!l_priv)
+        return;
+
+    if (!a_es || l_priv->esocket == a_es) {
+        l_priv->esocket = NULL;
+        l_priv->state = DAP_WS_STATE_CLOSED;
+        l_priv->ready_callback = NULL;
+        l_priv->ready_callback_stream = NULL;
+        if (l_priv->ping_timer) {
+            dap_timerfd_delete_mt(l_priv->ping_timer->worker, l_priv->ping_timer->esocket_uuid);
+            l_priv->ping_timer = NULL;
+        }
+    }
+}
+
+static void s_ws_client_esocket_delete(dap_events_socket_t *a_es, void *a_arg)
+{
+    dap_events_socket_callback_t l_original = NULL;
+    dap_client_t *l_client = a_es ? DAP_ESOCKET_CLIENT(a_es) : NULL;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    dap_stream_t *l_stream = l_tc ? l_tc->stream : NULL;
+
+    if (l_stream) {
+        dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(l_stream);
+        if (l_priv) {
+            l_original = l_priv->original_delete_callback;
+            s_ws_detach_client_esocket(l_stream, a_es);
+        }
+    }
+
+    if (l_original && l_original != s_ws_client_esocket_delete) {
+        l_original(a_es, a_arg);
+    } else if (a_es) {
+        a_es->_inheritor = NULL;
+    }
+}
+
+static void s_ws_wrap_client_delete_callback(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->is_client_to_uplink || !a_stream->esocket)
+        return;
+
+    dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(a_stream);
+    if (!l_priv)
+        return;
+
+    dap_events_socket_callback_t l_current = a_stream->esocket->callbacks.delete_callback;
+    if (l_current != s_ws_client_esocket_delete) {
+        l_priv->original_delete_callback = l_current;
+        a_stream->esocket->callbacks.delete_callback = s_ws_client_esocket_delete;
+    }
+}
+
+static void s_ws_client_disable_stream_keepalive(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->keepalive_timer)
+        return;
+
+    dap_timerfd_t *l_timer = a_stream->keepalive_timer;
+    a_stream->keepalive_timer = NULL;
+
+    void *l_arg_to_free = l_timer->callback_arg;
+    l_timer->callback_arg = NULL;
+    dap_timerfd_delete_unsafe(l_timer);
+    DAP_DELETE(l_arg_to_free);
+}
+
 static void s_ws_prepare_connect_flags(dap_events_socket_t *a_es)
 {
     if (!a_es)
@@ -1403,13 +1575,21 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     }
     
     // Add socket to worker - connection will complete asynchronously
-    dap_worker_add_events_socket(a_params->worker, l_es);
+    int l_add_ret = dap_worker_add_events_socket(a_params->worker, l_es);
+    if (l_add_ret != 0) {
+        log_it(L_ERROR, "Failed to add WebSocket socket to worker #%u: %d", a_params->worker->id, l_add_ret);
+        l_es->context = NULL;
+        l_es->worker = NULL;
+        dap_events_socket_delete_unsafe(l_es, true);
+        a_result->error_code = l_add_ret;
+        return -1;
+    }
     
     // Create stream for this connection
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_stream_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for WebSocket trans");
-        dap_events_socket_delete_unsafe(l_es, true);
+        s_ws_delete_registered_or_queued_es(a_params->worker, l_es);
         a_result->error_code = -1;
         return -1;
     }

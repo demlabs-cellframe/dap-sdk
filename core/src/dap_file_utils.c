@@ -84,6 +84,7 @@ static bool s_write_all(int a_fd, const void *a_buf, size_t a_size)
 }
 /**
  * Normalize path separators to the OS-native form in place.
+ * POSIX preserves backslashes because they are valid filename bytes.
  */
 void dap_path_to_native_inplace(char *path)
 {
@@ -92,11 +93,6 @@ void dap_path_to_native_inplace(char *path)
 #ifdef DAP_OS_WINDOWS
     for (; *path; path++) {
         if (*path == '/')
-            *path = DAP_DIR_SEPARATOR;
-    }
-#else
-    for (; *path; path++) {
-        if (*path == '\\')
             *path = DAP_DIR_SEPARATOR;
     }
 #endif
@@ -885,6 +881,7 @@ bool dap_file_get_contents(const char *filename, char **contents, size_t *length
 char *dap_file_get_contents2(const char *a_filename, size_t *length)
 {
     dap_return_val_if_fail(length, NULL);
+    dap_return_val_if_fail(a_filename, NULL);
     char path[strlen(a_filename) + 1];
     memcpy(path, a_filename, sizeof(path));
     dap_path_to_native_inplace(path);

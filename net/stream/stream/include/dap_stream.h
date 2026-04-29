@@ -70,6 +70,10 @@ typedef struct dap_stream {
     size_t stream_size;
     size_t client_last_seq_id_packet;
 
+    uint32_t packet_proc_depth;
+    bool delete_deferred;
+    bool delete_in_progress;
+
     UT_hash_handle hh;
     struct dap_stream *prev, *next;
 
@@ -186,6 +190,11 @@ dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_stream_no
 int dap_stream_start_keepalive(dap_stream_t *a_stream);
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_read_ext(dap_stream_t * a_stream, const void *a_data, size_t a_data_size);
+/* Checked read APIs set a_delete_requested when packet callbacks requested stream destruction.
+ * If true, the stream may already be freed on return and must not be dereferenced. */
+size_t dap_stream_data_proc_read_checked(dap_stream_t *a_stream, bool *a_delete_requested);
+size_t dap_stream_data_proc_read_ext_checked(dap_stream_t *a_stream, const void *a_data, size_t a_data_size,
+                                            bool *a_delete_requested);
 size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
 
 /**

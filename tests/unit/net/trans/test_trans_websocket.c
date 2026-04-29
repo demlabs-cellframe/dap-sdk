@@ -59,6 +59,7 @@
 #include "dap_timerfd.h"
 #include "dap_worker.h"
 #include "dap_client_http.h"
+#include "dap_net_trans_ctx.h"
 #include "dap_trans_test_fixtures.h"
 #include "dap_trans_test_mocks.h"
 
@@ -1053,9 +1054,117 @@ static void test_16_accept_key_rfc6455(void)
 }
 
 /**
+ * @brief Test malformed Sec-WebSocket-Key values are rejected
+ */
+static void test_17_accept_key_rejects_malformed_client_keys(void)
+{
+    TEST_INFO("Testing malformed Sec-WebSocket-Key rejection");
+
+    static const char *s_invalid_keys[] = {
+        "",
+        "dGhlIHNhbXBsZSBub25jZQ=!",
+        "AQIDBA==",
+        "QUJDREVGR0hJSktMTU5PUFE="
+    };
+    char l_accept[64] = {0};
+
+    for (size_t i = 0; i < sizeof(s_invalid_keys) / sizeof(s_invalid_keys[0]); ++i) {
+        memset(l_accept, 0, sizeof(l_accept));
+        int l_ret = dap_net_trans_websocket_validate_client_key(s_invalid_keys[i]);
+        TEST_ASSERT(l_ret != 0, "Malformed client key should fail validation");
+        l_ret = dap_net_trans_websocket_build_accept_key(s_invalid_keys[i], l_accept, sizeof(l_accept));
+        TEST_ASSERT(l_ret != 0, "Malformed client key should not produce accept key");
+        TEST_ASSERT(l_accept[0] == '\0', "Malformed client key should leave accept key empty");
+    }
+
+    TEST_ASSERT(dap_net_trans_websocket_validate_client_key(NULL) != 0,
+                "NULL client key should fail validation");
+    TEST_ASSERT(dap_net_trans_websocket_build_accept_key(NULL, l_accept, sizeof(l_accept)) != 0,
+                "NULL client key should not produce accept key");
+
+    TEST_SUCCESS("Malformed Sec-WebSocket-Key rejection verified");
+}
+
+static void s_test_ws_http_headers_clear(dap_http_client_t *a_http_client)
+{
+    while (a_http_client->in_headers) {
+        dap_http_header_remove(&a_http_client->in_headers, a_http_client->in_headers);
+    }
+    while (a_http_client->out_headers) {
+        dap_http_header_remove(&a_http_client->out_headers, a_http_client->out_headers);
+    }
+}
+
+static void s_test_ws_cleanup_upgrade_stream(dap_http_client_t *a_http_client)
+{
+    dap_net_trans_ctx_t *l_ctx = s_stage_mock_stream_obj.trans_ctx;
+    if (l_ctx) {
+        DAP_DELETE(l_ctx->transport_priv);
+        DAP_DELETE(l_ctx);
+    }
+    memset(&s_stage_mock_stream_obj, 0, sizeof(s_stage_mock_stream_obj));
+    if (a_http_client) {
+        a_http_client->_inheritor = NULL;
+        if (a_http_client->esocket) {
+            a_http_client->esocket->_inheritor = NULL;
+        }
+    }
+}
+
+static int s_test_ws_try_upgrade_with_headers(const char *a_upgrade,
+                                              const char *a_connection,
+                                              uint16_t *a_status_out)
+{
+    dap_http_client_t l_http_client = {0};
+    dap_events_socket_t l_esocket = {0};
+
+    dap_strncpy(l_esocket.remote_addr_str, "127.0.0.1", sizeof(l_esocket.remote_addr_str) - 1);
+    l_http_client.esocket = &l_esocket;
+    dap_http_header_add(&l_http_client.in_headers, "Upgrade", a_upgrade);
+    dap_http_header_add(&l_http_client.in_headers, "Connection", a_connection);
+    dap_http_header_add(&l_http_client.in_headers, "Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+    dap_http_header_add(&l_http_client.in_headers, "Sec-WebSocket-Version", "13");
+
+    int l_ret = dap_net_trans_websocket_try_upgrade(&l_http_client);
+    if (a_status_out) {
+        *a_status_out = l_http_client.reply_status_code;
+    }
+
+    s_test_ws_cleanup_upgrade_stream(&l_http_client);
+    s_test_ws_http_headers_clear(&l_http_client);
+    return l_ret;
+}
+
+/**
+ * @brief Test WebSocket Upgrade/Connection header token matching
+ */
+static void test_18_upgrade_rejects_substring_tokens(void)
+{
+    TEST_INFO("Testing WebSocket upgrade token matching");
+
+    uint16_t l_status = 0;
+    int l_ret = s_test_ws_try_upgrade_with_headers("notwebsocket", "Upgrade", &l_status);
+    TEST_ASSERT(l_ret == 0, "Malformed Upgrade header should be handled as bad upgrade");
+    TEST_ASSERT(l_status == 400, "Upgrade: notwebsocket should be rejected");
+
+    l_status = 0;
+    l_ret = s_test_ws_try_upgrade_with_headers("websocket", "XUpgrade", &l_status);
+    TEST_ASSERT(l_ret == 0, "Malformed Connection header should be handled as bad upgrade");
+    TEST_ASSERT(l_status == 400, "Connection: XUpgrade should be rejected");
+
+    l_status = 0;
+    l_ret = s_test_ws_try_upgrade_with_headers("WebSocket", "keep-alive, Upgrade", &l_status);
+    TEST_ASSERT(l_ret == 0, "Valid case-insensitive token-list upgrade should be handled");
+    TEST_ASSERT(l_status == 101, "Valid WebSocket token-list upgrade should switch protocols");
+    TEST_ASSERT(s_http_capture.write_f_called, "Valid WebSocket upgrade should write 101 response");
+
+    TEST_SUCCESS("WebSocket upgrade token matching verified");
+}
+
+/**
  * @brief Regression: IOCP must not post read before TCP connect completes.
  */
-static void test_17_stage_prepare_iocp_connect_socket_not_read_ready(void)
+static void test_19_stage_prepare_iocp_connect_socket_not_read_ready(void)
 {
 #ifdef DAP_EVENTS_CAPS_IOCP
     TEST_INFO("Testing WebSocket IOCP stage_prepare does not arm read before connect completes");
@@ -1148,7 +1257,9 @@ int main(int argc, char *argv[])
     TEST_RUN(test_14_stream_session);
     TEST_RUN(test_15_stream_listen);
     TEST_RUN(test_16_accept_key_rfc6455);
-    TEST_RUN(test_17_stage_prepare_iocp_connect_socket_not_read_ready);
+    TEST_RUN(test_17_accept_key_rejects_malformed_client_keys);
+    TEST_RUN(test_18_upgrade_rejects_substring_tokens);
+    TEST_RUN(test_19_stage_prepare_iocp_connect_socket_not_read_ready);
     
     TEST_SUITE_END();
     

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "dap_io_flow.h"  // For dap_io_flow_lb_tier_t
 
 #ifdef __cplusplus
@@ -29,13 +30,21 @@ bool dap_io_flow_ebpf_is_available(void);
 /**
  * @brief Attach eBPF sticky session program to SO_REUSEPORT socket
  * 
- * MUST be called BEFORE bind() for first socket in REUSEPORT group.
- * Loads and attaches eBPF program that returns kernel-computed hash.
+ * Loads and attaches eBPF program that returns a valid reuseport socket index.
  * 
- * @param socket_fd Unbound socket with SO_REUSEPORT set
+ * @param socket_fd SO_REUSEPORT socket in the target group
  * @return 0 on success, -1 on error
  */
 int dap_io_flow_ebpf_attach_socket(int socket_fd);
+
+/**
+ * @brief Attach eBPF sticky session program with an explicit listener count
+ *
+ * @param socket_fd SO_REUSEPORT socket in the target group
+ * @param listener_count Number of sockets in the reuseport group
+ * @return 0 on success, -1 on error
+ */
+int dap_io_flow_ebpf_attach_socket_count(int socket_fd, uint32_t listener_count);
 
 /**
  * @brief Detach eBPF program from socket (cleanup)
@@ -48,4 +57,3 @@ int dap_io_flow_ebpf_detach_socket(int socket_fd);
 #ifdef __cplusplus
 }
 #endif
-

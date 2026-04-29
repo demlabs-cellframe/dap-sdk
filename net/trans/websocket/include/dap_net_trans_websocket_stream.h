@@ -209,6 +209,7 @@ typedef struct dap_net_trans_websocket_private {
     // Events socket
     dap_events_socket_t *esocket;             ///< Underlying events socket
     dap_http_client_t *http_client;            ///< HTTP client (for upgrade)
+    dap_events_socket_callback_t original_delete_callback; ///< Wrapped client esocket delete callback
     
     // Deferred session_start callback — invoked when 101 upgrade response arrives
     void (*ready_callback)(dap_stream_t *, int);
@@ -371,4 +372,3 @@ int dap_net_trans_websocket_get_stats(const dap_stream_t *a_stream,
 #ifdef __cplusplus
 }
 #endif
-

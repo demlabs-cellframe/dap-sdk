@@ -273,6 +273,9 @@ macro(create_object_library TARGET_NAME MODULE_LIST_VAR)
     
     # Enable position independent code for shared library
     set_property(TARGET ${TARGET_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+    if(COMMAND dap_target_enable_werror)
+        dap_target_enable_werror(${TARGET_NAME})
+    endif()
     
     # Store original target_link_libraries command for later use
     # We'll override it to auto-propagate include directories
@@ -816,4 +819,3 @@ function(install_sdk_library)
     
     message(STATUS "[SDK] Installation configured for ${INSTALL_SDK_LIBRARY_NAME}")
 endfunction()
-

@@ -326,10 +326,16 @@ static void test_multiclient_udp(void)
     
     // Register receivers
     TEST_INFO("Registering receivers...");
+    int register_failed = 0;
     for (int i = 0; i < NUM_CLIENTS; i++) {
         if (test_stream_ch_register_receiver(s_clients[i], TEST_CH_ID, &s_stream_ctxs[i]) != 0) {
             TEST_ERROR("Client %d: register failed", i);
+            register_failed++;
         }
+    }
+    if (register_failed > 0) {
+        dap_assert(register_failed == 0, "REGRESSION: All receiver registrations should succeed");
+        goto cleanup;
     }
     
     // PARALLEL data exchange - THIS IS KEY TO REPRODUCING THE BUG!
@@ -393,9 +399,12 @@ static void test_multiclient_udp(void)
         pthread_mutex_unlock(&s_stream_ctxs[i].mutex);
         
         if (received && s_stream_ctxs[i].received_data) {
-            bool valid = test_trans_verify_data(s_stream_ctxs[i].sent_data,
-                                                 s_stream_ctxs[i].received_data,
-                                                 s_stream_ctxs[i].received_data_size);
+            bool valid = false;
+            if (s_stream_ctxs[i].received_data_size == s_stream_ctxs[i].sent_data_size) {
+                valid = test_trans_verify_data(s_stream_ctxs[i].sent_data,
+                                               s_stream_ctxs[i].received_data,
+                                               s_stream_ctxs[i].sent_data_size);
+            }
             if (valid) {
                 data_ok++;
                 success = true;

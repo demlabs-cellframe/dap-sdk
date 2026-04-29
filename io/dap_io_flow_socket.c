@@ -28,15 +28,19 @@
 #else
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 #endif
 #include <stdio.h>
 #include <errno.h>
+#include <stdatomic.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_config.h"
 #include "dap_list.h"
 #include "dap_io_flow_socket.h"
 #include "dap_worker.h"
+#include "dap_context.h"
+#include "dap_context_queue.h"
 
 // Platform-specific load balancing implementations
 #if defined(__linux__) || defined(ANDROID)
@@ -53,6 +57,8 @@
 #include "dap_proc_thread.h"
 
 #define LOG_TAG "dap_io_flow_socket"
+#define DAP_IO_FLOW_LISTENER_CLEANUP_MAX_ATTEMPTS 3U
+#define DAP_IO_FLOW_LISTENER_CLEANUP_RETRY_US 50000U
 
 // Debug flag for verbose logging
 static bool s_debug_more = false;
@@ -113,8 +119,7 @@ static __thread char s_addr_str_buf[INET6_ADDRSTRLEN + 8];
  * @brief Arguments for cross-worker sendto callback
  */
 typedef struct flow_sendto_args {
-    dap_io_flow_server_t *server;  ///< Server (for is_deleting check)
-    dap_events_socket_t *esocket;
+    dap_events_socket_uuid_t es_uuid;
     uint8_t *data;
     size_t size;
     struct sockaddr_storage addr;
@@ -127,29 +132,26 @@ typedef struct flow_sendto_args {
 static void s_flow_sendto_callback(void *a_arg)
 {
     flow_sendto_args_t *l_args = (flow_sendto_args_t*)a_arg;
-    if (!l_args || !l_args->esocket || !l_args->server) {
+    if (!l_args) {
+        return;
+    }
+
+    dap_worker_t *l_worker = dap_worker_get_current();
+    dap_events_socket_t *l_es = l_worker && l_worker->context
+                              ? dap_context_find(l_worker->context, l_args->es_uuid)
+                              : NULL;
+    if (!l_es) {
+        debug_if(s_debug_more, L_DEBUG,
+                 "s_flow_sendto_callback: listener "DAP_FORMAT_ESOCKET_UUID" is gone - dropping response (size=%zu)",
+                 l_args->es_uuid, l_args->size);
         if (l_args) {
             DAP_DELETE(l_args->data);
         }
         DAP_DELETE(l_args);
         return;
     }
-    
-    // CRITICAL: Check if server is being deleted
-    // If so, listener socket may have been freed - don't send!
-    if (atomic_load(&l_args->server->is_deleting)) {
-        debug_if(s_debug_more, L_DEBUG, 
-                 "s_flow_sendto_callback: server is deleting - dropping response (size=%zu)", 
-                 l_args->size);
-        DAP_DELETE(l_args->data);
-        DAP_DELETE(l_args);
-        return;
-    }
-    
-    dap_events_socket_t *l_es = l_args->esocket;
-    
-    debug_if(s_debug_more, L_DEBUG, "s_flow_sendto_callback: ENTRY esocket=%p, fd=%d, size=%zu", 
-           l_es, l_es->fd, l_args->size);
+    debug_if(s_debug_more, L_DEBUG, "s_flow_sendto_callback: ENTRY esocket=%p, socket=%"DAP_FORMAT_SOCKET", size=%zu",
+           l_es, l_es->socket, l_args->size);
     
     // Use specialized sendto function that accepts address explicitly
     // This avoids race conditions with addr_storage and properly queues packet
@@ -162,6 +164,182 @@ static void s_flow_sendto_callback(void *a_arg)
     // Cleanup
     DAP_DELETE(l_args->data);
     DAP_DELETE(l_args);
+}
+
+typedef struct listener_cleanup_ctx {
+    dap_events_socket_uuid_t uuid;
+    dap_events_socket_t *es;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    size_t processed;
+    int status;
+    bool found;
+    bool deleted;
+    bool completed;
+} listener_cleanup_ctx_t;
+
+static void s_listener_cleanup_ctx_complete(listener_cleanup_ctx_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    a_ctx->completed = true;
+    pthread_cond_signal(&a_ctx->cond);
+    pthread_mutex_unlock(&a_ctx->mutex);
+}
+
+static void s_listener_cleanup_callback(void *a_arg)
+{
+    listener_cleanup_ctx_t *l_ctx = (listener_cleanup_ctx_t*)a_arg;
+    if (!l_ctx)
+        return;
+
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (!l_worker || !l_worker->context) {
+        l_ctx->status = -ENODEV;
+        s_listener_cleanup_ctx_complete(l_ctx);
+        return;
+    }
+
+#ifndef DAP_EVENTS_CAPS_IOCP
+    while (l_worker->queue_es_new &&
+           dap_context_queue_count(l_worker->queue_es_new) > 0) {
+        int l_processed = dap_context_queue_process(l_worker->queue_es_new);
+        if (l_processed < 0) {
+            l_ctx->status = l_processed;
+            break;
+        }
+        if (l_processed == 0) {
+            l_ctx->status = -EAGAIN;
+            break;
+        }
+        l_ctx->processed += (size_t)l_processed;
+    }
+#endif
+
+    if (l_ctx->status == 0) {
+        dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
+        if (l_es) {
+            l_ctx->found = true;
+            dap_events_socket_remove_and_delete_unsafe(l_es, false);
+            l_ctx->deleted = true;
+        } else if (l_ctx->es && l_ctx->es->worker == l_worker &&
+                   !atomic_load(&l_ctx->es->is_initalized)) {
+            l_ctx->deleted = true;
+            dap_events_socket_delete_unsafe(l_ctx->es, false);
+        }
+    }
+
+    s_listener_cleanup_ctx_complete(l_ctx);
+}
+
+static void s_listener_cleanup_ctx_wait(listener_cleanup_ctx_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    while (!a_ctx->completed) {
+        pthread_cond_wait(&a_ctx->cond, &a_ctx->mutex);
+    }
+    pthread_mutex_unlock(&a_ctx->mutex);
+}
+
+static bool s_listener_cleanup_on_worker_sync(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return true;
+
+    dap_worker_t *l_worker = a_es->worker;
+    if (!l_worker) {
+        dap_events_socket_delete_unsafe(a_es, false);
+        return true;
+    }
+
+    dap_events_socket_uuid_t l_uuid = a_es->uuid;
+    uint32_t l_worker_id = l_worker->id;
+
+    for (unsigned l_attempt = 1; l_attempt <= DAP_IO_FLOW_LISTENER_CLEANUP_MAX_ATTEMPTS; ++l_attempt) {
+        listener_cleanup_ctx_t l_ctx = {
+            .uuid = l_uuid,
+            .es = a_es
+        };
+        pthread_mutex_init(&l_ctx.mutex, NULL);
+        pthread_cond_init(&l_ctx.cond, NULL);
+
+        int l_ret = 0;
+        if (dap_worker_get_current() == l_worker) {
+            s_listener_cleanup_callback(&l_ctx);
+        } else {
+            l_ret = dap_worker_exec_callback_on_sync_timed(
+                l_worker, s_listener_cleanup_callback, &l_ctx,
+                DAP_WORKER_EXEC_CALLBACK_SYNC_DEFAULT_TIMEOUT_MS);
+            if (l_ret == -EINPROGRESS) {
+                s_listener_cleanup_ctx_wait(&l_ctx);
+                l_ret = 0;
+            }
+        }
+
+        if (l_ret == 0 && l_ctx.status != 0)
+            l_ret = l_ctx.status;
+
+        bool l_done = (l_ret == 0);
+        if (l_done && !l_ctx.deleted && !l_ctx.found) {
+            log_it(L_WARNING,
+                   "Listener "DAP_FORMAT_ESOCKET_UUID" was not found on worker %u during failed setup cleanup",
+                   l_uuid, l_worker_id);
+        }
+
+        pthread_cond_destroy(&l_ctx.cond);
+        pthread_mutex_destroy(&l_ctx.mutex);
+
+        if (l_done)
+            return l_ctx.deleted || l_ctx.found;
+
+        if (l_ret == -ENODEV) {
+            log_it(L_ERROR,
+                   "Cleanup for listener "DAP_FORMAT_ESOCKET_UUID" on worker %u cannot be queued because worker callback queue is unavailable; keeping listener linked for owner cleanup",
+                   l_uuid, l_worker_id);
+            return false;
+        }
+
+        log_it(L_WARNING,
+               "Cleanup for listener "DAP_FORMAT_ESOCKET_UUID" on worker %u did not start/complete (ret=%d, attempt %u/%u)",
+               l_uuid, l_worker_id, l_ret, l_attempt, DAP_IO_FLOW_LISTENER_CLEANUP_MAX_ATTEMPTS);
+        if (l_attempt < DAP_IO_FLOW_LISTENER_CLEANUP_MAX_ATTEMPTS)
+            usleep(DAP_IO_FLOW_LISTENER_CLEANUP_RETRY_US);
+    }
+
+    log_it(L_ERROR,
+           "Cleanup for listener "DAP_FORMAT_ESOCKET_UUID" on worker %u failed after %u attempts; keeping listener linked for owner cleanup",
+           l_uuid, l_worker_id, DAP_IO_FLOW_LISTENER_CLEANUP_MAX_ATTEMPTS);
+    return false;
+}
+
+void dap_io_flow_socket_cleanup_created_listeners(dap_server_t *a_server, dap_list_t *a_previous_tail)
+{
+    if (!a_server)
+        return;
+
+    dap_list_t *l_iter = a_previous_tail ? a_previous_tail->next : a_server->es_listeners;
+    size_t l_cleaned = 0;
+    while (l_iter) {
+        dap_list_t *l_next = l_iter->next;
+        dap_events_socket_t *l_es = (dap_events_socket_t*)l_iter->data;
+        bool l_unlink = false;
+
+        if (l_es && l_es->worker) {
+            l_unlink = s_listener_cleanup_on_worker_sync(l_es);
+        } else if (l_es) {
+            dap_events_socket_delete_unsafe(l_es, false);
+            l_unlink = true;
+        }
+
+        if (l_unlink) {
+            a_server->es_listeners = dap_list_delete_link(a_server->es_listeners, l_iter);
+            l_cleaned++;
+        }
+        l_iter = l_next;
+    }
+
+    if (l_cleaned) {
+        log_it(L_INFO, "Cleaned up %zu listener(s) created by failed sharded listener setup", l_cleaned);
+    }
 }
 
 // =============================================================================
@@ -378,8 +556,8 @@ int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
     }
     
     // DEBUG: Log destination address and socket info
-    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, fd=%d, type=%d, size=%zu",
-           a_es, a_es->fd, a_es->type, a_size);
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: esocket=%p, socket=%"DAP_FORMAT_SOCKET", type=%d, size=%zu",
+           a_es, a_es->socket, a_es->type, a_size);
     
     if (s_debug_more && a_addr->ss_family == AF_INET) {
         struct sockaddr_in *l_sin = (struct sockaddr_in*)a_addr;
@@ -391,17 +569,23 @@ int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
     
     if (a_es->type != DESCRIPTOR_TYPE_SOCKET_UDP && 
         a_es->type != DESCRIPTOR_TYPE_SOCKET_CLIENT) {
-        log_it(L_ERROR, "Socket is not datagram type (esocket=%p, fd=%d, type=%d)", a_es, a_es->fd, a_es->type);
+        log_it(L_ERROR, "Socket is not datagram type (esocket=%p, socket=%"DAP_FORMAT_SOCKET", type=%d)",
+               a_es, a_es->socket, a_es->type);
         return -2;
     }
     
     // Check if we're in the esocket's worker thread
     dap_worker_t *l_current_worker = dap_worker_get_current();
     dap_worker_t *l_target_worker = a_es->worker;
+
+    if (a_server && atomic_load(&a_server->is_deleting)) {
+        debug_if(s_debug_more, L_DEBUG, "Server is deleting - dropping sendto (size=%zu)", a_size);
+        return a_size;
+    }
     
-    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: size=%zu, current_worker=%u, target_worker=%u, fd=%d", 
+    debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: size=%zu, current_worker=%u, target_worker=%u, socket=%"DAP_FORMAT_SOCKET,
            a_size, l_current_worker ? l_current_worker->id : 999, 
-           l_target_worker ? l_target_worker->id : 999, a_es->fd);
+           l_target_worker ? l_target_worker->id : 999, a_es->socket);
     
     if (l_current_worker == l_target_worker) {
         // FAST PATH: Same worker, direct sendto with explicit address
@@ -410,17 +594,14 @@ int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
         size_t l_ret = dap_events_socket_sendto_unsafe(a_es, a_data, a_size, a_addr, a_addr_len);
         
         debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: FAST PATH sendto returned %zu", l_ret);
-        return l_ret;
+        if (l_ret != a_size) {
+            log_it(L_WARNING, "Datagram sendto incomplete: requested=%zu, sent_or_queued=%zu", a_size, l_ret);
+            return -EIO;
+        }
+        return (int)l_ret;
     } else {
         // SLOW PATH: Cross-worker, use callback
         debug_if(s_debug_more, L_DEBUG, "dap_io_flow_socket_send_to: SLOW PATH (cross-worker)");
-        
-        // CRITICAL: Drop if server is deleting - prevents callback queue overflow
-        // during cleanup when we try to schedule deletion callbacks!
-        if (atomic_load(&a_server->is_deleting)) {
-            debug_if(s_debug_more, L_DEBUG, "Server is deleting - dropping sendto (size=%zu)", a_size);
-            return a_size;  // Pretend success to avoid upstream errors
-        }
         
         flow_sendto_args_t *l_args = DAP_NEW_Z(flow_sendto_args_t);
         if (!l_args) {
@@ -428,8 +609,7 @@ int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
             return -3;
         }
         
-        l_args->server = a_server;
-        l_args->esocket = a_es;
+        l_args->es_uuid = a_es->uuid;
         l_args->data = DAP_NEW_SIZE(uint8_t, a_size);
         if (!l_args->data) {
             log_it(L_ERROR, "Failed to allocate data buffer");
@@ -442,7 +622,14 @@ int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
         memcpy(&l_args->addr, a_addr, a_addr_len);
         l_args->addr_len = a_addr_len;
         
-        dap_worker_exec_callback_on(l_target_worker, s_flow_sendto_callback, l_args);
+        int l_ret = dap_worker_exec_callback_on(l_target_worker, s_flow_sendto_callback, l_args);
+        if (l_ret != 0) {
+            log_it(L_WARNING, "Failed to enqueue cross-worker sendto on worker %u: %d",
+                   l_target_worker ? l_target_worker->id : 0, l_ret);
+            DAP_DELETE(l_args->data);
+            DAP_DELETE(l_args);
+            return l_ret;
+        }
         
         return a_size;  // Queued successfully
     }
@@ -535,9 +722,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             if (l_tier_available) {
                 log_it(L_NOTICE, "⚙️  Load balancing: FORCED to %s", dap_io_flow_tier_name(l_lb_tier));
             } else {
-                log_it(L_WARNING, "⚠️  Forced tier %s not available, falling back to APPLICATION", 
+                log_it(L_ERROR, "Forced load balancing tier %s is not available",
                        dap_io_flow_tier_name(l_lb_tier));
-                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
+                return -8;
             }
         } else {
             // Auto-detect best available tier
@@ -607,8 +794,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             log_it(L_NOTICE, "Creating %u sharded listeners for Windows RIO",
                    l_num_listeners);
         } else {
-            log_it(L_NOTICE, "Creating %u sharded listeners with SO_REUSEPORT + eBPF",
-                   l_num_listeners);
+            log_it(L_NOTICE, "Creating %u sharded listeners with SO_REUSEPORT + %s",
+                   l_num_listeners, dap_io_flow_tier_name(l_lb_tier));
         }
     } else {
         // Application-level (Tier 1) or no LB (Tier 0): single listener
@@ -621,24 +808,28 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     
     // Track the actual port used (for SO_REUSEPORT, all sockets must use the same port!)
     uint16_t l_shared_port = a_port;
+    dap_list_t *l_listeners_tail_before = dap_list_last(a_server->es_listeners);
+    int l_ret = 0;
     
     // Create listener socket for each worker
     for (uint32_t i = 0; i < l_num_listeners; i++) {
         dap_worker_t *l_worker = dap_events_worker_get(i);
         if (!l_worker) {
             log_it(L_ERROR, "Failed to get worker %u", i);
-            return -2;
+            l_ret = -2;
+            goto fail_cleanup;
         }
         
         // Create socket
-        int l_socket = socket(
+        SOCKET l_socket = socket(
             (a_addr && strchr(a_addr, ':')) ? AF_INET6 : AF_INET,
             a_socket_type,
             a_protocol);
         
-        if (l_socket < 0) {
+        if (l_socket == INVALID_SOCKET) {
             log_it(L_ERROR, "Failed to create socket for worker %u", i);
-            return -3;
+            l_ret = -3;
+            goto fail_cleanup;
         }
         
         // CRITICAL: Set LARGE socket buffers (64 MB) for high-throughput UDP with many clients
@@ -688,12 +879,14 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, (const char *)&l_opt, sizeof(l_opt)) < 0) {
                 log_it(L_ERROR, "SO_REUSEPORT failed: %s", strerror(errno));
                 dap_close_socket(l_socket);
-                return -6;
+                l_ret = -6;
+                goto fail_cleanup;
             }
 #else
             log_it(L_ERROR, "SO_REUSEPORT not supported on this platform");
             dap_close_socket(l_socket);
-            return -7;
+            l_ret = -7;
+            goto fail_cleanup;
 #endif
         }
         
@@ -710,7 +903,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "BSD SO_REUSEPORT_LB failed before bind");
                 dap_close_socket(l_socket);
-                return -98;
+                l_ret = -98;
+                goto fail_cleanup;
             }
             log_it(L_NOTICE, "✅ BSD SO_REUSEPORT_LB enabled BEFORE bind");
         }
@@ -720,7 +914,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "macOS GCD configuration failed");
                 dap_close_socket(l_socket);
-                return -98;
+                l_ret = -98;
+                goto fail_cleanup;
             }
             log_it(L_NOTICE, "✅ macOS GCD configured (SO_REUSEPORT + SO_REUSEADDR)");
         }
@@ -730,7 +925,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             if (config_ret != 0) {
                 log_it(L_CRITICAL, "Windows RIO configuration failed");
                 dap_close_socket(l_socket);
-                return -98;
+                l_ret = -98;
+                goto fail_cleanup;
             }
             log_it(L_NOTICE, "✅ Windows RIO configured (SO_REUSEADDR)");
         }
@@ -769,7 +965,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         if (bind(l_socket, (struct sockaddr*)&l_bind_addr, l_addr_len) < 0) {
             log_it(L_ERROR, "Failed to bind socket for worker %u: %s", i, strerror(errno));
             dap_close_socket(l_socket);
-            return -4;
+            l_ret = -4;
+            goto fail_cleanup;
         }
         
         // Get actual bound port (if port was 0, kernel assigns ephemeral port)
@@ -794,7 +991,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         if (!l_es) {
             log_it(L_ERROR, "Failed to wrap socket for worker %u", i);
             dap_close_socket(l_socket);
-            return -5;
+            l_ret = -5;
+            goto fail_cleanup;
         }
         
         l_es->type = (a_socket_type == SOCK_DGRAM) ? DESCRIPTOR_TYPE_SOCKET_UDP : DESCRIPTOR_TYPE_SOCKET_CLIENT;
@@ -811,15 +1009,23 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         }
         
         // Add to specific worker (use thread-safe version from main thread)
-        dap_worker_add_events_socket(l_worker, l_es);
+        int l_add_ret = dap_worker_add_events_socket(l_worker, l_es);
+        if (l_add_ret != 0) {
+            log_it(L_ERROR, "Failed to enqueue listener socket for worker %u: %d",
+                   l_worker->id, l_add_ret);
+            dap_events_socket_delete_unsafe(l_es, false);
+            l_ret = -9;
+            goto fail_cleanup;
+        }
         
         debug_if(g_debug_reactor, L_DEBUG, 
-                 "Sharded listener #%u: fd=%d added to worker %u", 
+                 "Sharded listener #%u: socket=%"DAP_FORMAT_SOCKET" added to worker %u",
                  i, l_socket, l_worker->id);
         
         // Add to server's listener list
         a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
-        log_it(L_DEBUG, "Listener #%u added, fd=%d, worker=%u", i, l_socket, l_worker->id);
+        log_it(L_DEBUG, "Listener #%u added, socket=%"DAP_FORMAT_SOCKET", worker=%u",
+               i, l_socket, l_worker->id);
     }
     log_it(L_DEBUG, "Total %u listeners created", l_num_listeners);
     
@@ -835,18 +1041,17 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         if (l_first_es) {
             int config_ret = -1;
             if (l_lb_tier == DAP_IO_FLOW_LB_TIER_EBPF) {
-                config_ret = dap_io_flow_ebpf_attach_socket(l_first_es->fd);
+                config_ret = dap_io_flow_ebpf_attach_socket_count(l_first_es->fd, l_num_listeners);
             } else if (l_lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
-                config_ret = dap_io_flow_cbpf_attach_socket(l_first_es->fd);
+                config_ret = dap_io_flow_cbpf_attach_socket_count(l_first_es->fd, l_num_listeners);
             }
             
             if (config_ret != 0) {
-                log_it(L_CRITICAL, "BPF attach failed AFTER bind (tier=%d) - falling back to Application tier", 
-                       l_lb_tier);
-                // BPF attach failed, so kernel sticky distribution is not active.
-                // Force application-level tier so caller initializes inter-worker queues.
-                l_lb_tier = DAP_IO_FLOW_LB_TIER_APPLICATION;
-                log_it(L_NOTICE, "Switching to application-level distribution on existing SO_REUSEPORT listeners");
+                log_it(L_CRITICAL,
+                       "BPF attach failed AFTER bind (tier=%s, listeners=%u); refusing hybrid SO_REUSEPORT/APPLICATION topology",
+                       dap_io_flow_tier_name(l_lb_tier), l_num_listeners);
+                dap_io_flow_socket_cleanup_created_listeners(a_server, l_listeners_tail_before);
+                return -98;
             } else {
                 log_it(L_NOTICE, "✅ BPF attached to reuseport group AFTER all %u sockets bound (fd=%d)", 
                        l_num_listeners, l_first_es->fd);
@@ -899,6 +1104,10 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
     }
     
     return 0;
+
+fail_cleanup:
+    dap_io_flow_socket_cleanup_created_listeners(a_server, l_listeners_tail_before);
+    return l_ret;
 }
 
 int dap_io_flow_socket_get_remote_addr(dap_events_socket_t *a_es,

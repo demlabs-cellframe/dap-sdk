@@ -9,6 +9,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "dap_io_flow.h"
 
 #ifdef __cplusplus
@@ -34,6 +35,15 @@ bool dap_io_flow_cbpf_is_available(void);
  * @return 0 on success, -1 on error
  */
 int dap_io_flow_cbpf_attach_socket(int socket_fd);
+
+/**
+ * @brief Attach classic BPF program with an explicit reuseport listener count
+ *
+ * @param socket_fd One of the SO_REUSEPORT sockets (program attaches to entire group)
+ * @param listener_count Number of sockets in the reuseport group
+ * @return 0 on success, -1 on error
+ */
+int dap_io_flow_cbpf_attach_socket_count(int socket_fd, uint32_t listener_count);
 
 /**
  * @brief Detach classic BPF program from socket

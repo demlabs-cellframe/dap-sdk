@@ -59,7 +59,7 @@ static bool s_ebpf_checked = false;
  * Algorithm:
  * 1. Load kernel hash - if non-zero (real network), use it for full 4-tuple sticky
  * 2. If hash == 0 (loopback), read source port from UDP header
- * 3. Return hash value, kernel does socket_index = hash % num_sockets
+ * 3. Return hash % listener_count as a valid SO_REUSEPORT socket index
  * 
  * Result: STICKY SESSIONS on both real network AND localhost!
  * - Real network: full 4-tuple hash
@@ -71,38 +71,14 @@ static bool s_ebpf_checked = false;
     ((struct bpf_insn){.code = BPF_LDX | BPF_MEM | (SIZE), .dst_reg = DST, .src_reg = SRC, .off = OFF, .imm = 0})
 #define EBPF_MOV64_REG(DST, SRC) \
     ((struct bpf_insn){.code = BPF_ALU64 | BPF_MOV | BPF_X, .dst_reg = DST, .src_reg = SRC, .off = 0, .imm = 0})
+#define EBPF_ALU64_IMM(OP, DST, IMM) \
+    ((struct bpf_insn){.code = BPF_ALU64 | (OP) | BPF_K, .dst_reg = DST, .src_reg = 0, .off = 0, .imm = (int)(IMM)})
 #define EBPF_JNE_IMM(DST, IMM, OFF) \
     ((struct bpf_insn){.code = BPF_JMP | BPF_JNE | BPF_K, .dst_reg = DST, .src_reg = 0, .off = OFF, .imm = IMM})
+#define EBPF_JGT_REG(DST, SRC, OFF) \
+    ((struct bpf_insn){.code = BPF_JMP | BPF_JGT | BPF_X, .dst_reg = DST, .src_reg = SRC, .off = OFF, .imm = 0})
 #define EBPF_EXIT_INSN() \
     ((struct bpf_insn){.code = BPF_JMP | BPF_EXIT, .dst_reg = 0, .src_reg = 0, .off = 0, .imm = 0})
-
-static struct bpf_insn s_reuseport_ebpf_prog[] = {
-    // r6 = ctx (save context pointer)
-    EBPF_MOV64_REG(6, 1),
-    
-    // r0 = *(u32*)(ctx + 32) - load kernel hash
-    EBPF_LD_MEM(BPF_W, 0, 6, 32),
-    
-    // if (r0 != 0) goto exit - use kernel hash if available
-    // Jump offset: target = PC+1+offset = 2+1+3 = 6 (exit instruction)
-    EBPF_JNE_IMM(0, 0, 3),
-    
-    // Kernel hash is 0 (loopback) - read source port from UDP header
-    // r2 = *(u64*)(ctx + 0) - load data pointer (points to UDP header)
-    EBPF_LD_MEM(BPF_DW, 2, 6, 0),
-    
-    // r0 = *(u16*)(data + 0) - load source port (first 2 bytes of UDP header)
-    // Note: This is in network byte order, but that's fine for hashing
-    EBPF_LD_MEM(BPF_H, 0, 2, 0),
-    
-    // Multiply by prime for better distribution: r0 = r0 * 2654435761
-    // Using ALU64 with immediate multiplication
-    ((struct bpf_insn){.code = BPF_ALU64 | BPF_MUL | BPF_K, .dst_reg = 0, .src_reg = 0, .off = 0, .imm = (int)2654435761U}),
-    
-    // exit - return r0 (hash value)
-    // Kernel does: socket_index = r0 % num_sockets
-    EBPF_EXIT_INSN(),
-};
 
 /**
  * @brief Wrapper for BPF syscall
@@ -117,14 +93,52 @@ static int bpf_syscall(int cmd, union bpf_attr *attr, unsigned int size)
  * 
  * @return BPF program fd or -1 on error
  */
-static int dap_io_flow_ebpf_load_prog(void)
+static int dap_io_flow_ebpf_load_prog(uint32_t listener_count)
 {
+    if (listener_count == 0) {
+        log_it(L_ERROR, "eBPF load requires at least one listener");
+        return -1;
+    }
+
+    struct bpf_insn l_reuseport_ebpf_prog[] = {
+        // r6 = ctx (save context pointer)
+        EBPF_MOV64_REG(6, 1),
+
+        // r0 = *(u32*)(ctx + 32) - load kernel hash
+        EBPF_LD_MEM(BPF_W, 0, 6, 32),
+
+        // if (r0 != 0) goto mod - use kernel hash if available
+        EBPF_JNE_IMM(0, 0, 7),
+
+        // Kernel hash is 0 (loopback) - read source port from UDP header
+        // r2 = *(u64*)(ctx + 0) - load data pointer
+        EBPF_LD_MEM(BPF_DW, 2, 6, 0),
+
+        // r3 = *(u64*)(ctx + 8) - load data_end pointer
+        EBPF_LD_MEM(BPF_DW, 3, 6, 8),
+
+        // r4 = data + 2; if (r4 > data_end) skip packet read and return index 0
+        EBPF_MOV64_REG(4, 2),
+        EBPF_ALU64_IMM(BPF_ADD, 4, 2),
+        EBPF_JGT_REG(4, 3, 2),
+
+        // r0 = *(u16*)(data + 0) - load UDP source port
+        EBPF_LD_MEM(BPF_H, 0, 2, 0),
+
+        // Multiply by prime for better localhost source-port distribution
+        EBPF_ALU64_IMM(BPF_MUL, 0, 2654435761U),
+
+        // Return a valid SO_REUSEPORT socket index.
+        EBPF_ALU64_IMM(BPF_MOD, 0, listener_count),
+        EBPF_EXIT_INSN(),
+    };
+
     union bpf_attr attr = {0};
     char log_buf[8192] = {0};
     
     attr.prog_type = BPF_PROG_TYPE_SK_REUSEPORT;
-    attr.insns = (uint64_t)(uintptr_t)s_reuseport_ebpf_prog;
-    attr.insn_cnt = sizeof(s_reuseport_ebpf_prog) / sizeof(struct bpf_insn);
+    attr.insns = (uint64_t)(uintptr_t)l_reuseport_ebpf_prog;
+    attr.insn_cnt = sizeof(l_reuseport_ebpf_prog) / sizeof(struct bpf_insn);
     attr.license = (uint64_t)(uintptr_t)"GPL";
     attr.log_buf = (uint64_t)(uintptr_t)log_buf;
     attr.log_size = sizeof(log_buf);
@@ -146,8 +160,8 @@ static int dap_io_flow_ebpf_load_prog(void)
             log_it(L_NOTICE, "BPF syscall not available - kernel too old (need 4.15+)");
         }
     } else {
-        log_it(L_NOTICE, "✅ eBPF program loaded successfully (fd=%d, %u instructions)",
-               prog_fd, attr.insn_cnt);
+        log_it(L_NOTICE, "✅ eBPF program loaded successfully (fd=%d, %u instructions, listeners=%u)",
+               prog_fd, attr.insn_cnt, listener_count);
         log_it(L_NOTICE, "Kernel hash-based sticky sessions enabled (same client → same worker)");
     }
     
@@ -169,7 +183,7 @@ bool dap_io_flow_ebpf_is_available(void)
     s_ebpf_checked = true;
     
     // Step 1: Try to load eBPF program
-    int prog_fd = dap_io_flow_ebpf_load_prog();
+    int prog_fd = dap_io_flow_ebpf_load_prog(1);
     if (prog_fd < 0) {
         s_ebpf_available = false;
         log_it(L_NOTICE, "❌ eBPF program load failed");
@@ -234,13 +248,23 @@ bool dap_io_flow_ebpf_is_available(void)
  */
 int dap_io_flow_ebpf_attach_socket(int socket_fd)
 {
+    return dap_io_flow_ebpf_attach_socket_count(socket_fd, 1);
+}
+
+int dap_io_flow_ebpf_attach_socket_count(int socket_fd, uint32_t listener_count)
+{
     if (!dap_io_flow_ebpf_is_available()) {
         log_it(L_ERROR, "eBPF not available, cannot attach");
         return -1;
     }
+
+    if (listener_count == 0) {
+        log_it(L_ERROR, "eBPF attach requires at least one listener");
+        return -1;
+    }
     
     // Load eBPF program
-    int prog_fd = dap_io_flow_ebpf_load_prog();
+    int prog_fd = dap_io_flow_ebpf_load_prog(listener_count);
     if (prog_fd < 0) {
         log_it(L_ERROR, "Failed to load eBPF program for attach");
         return -1;
@@ -255,7 +279,8 @@ int dap_io_flow_ebpf_attach_socket(int socket_fd)
         return -1;
     }
     
-    log_it(L_NOTICE, "✅ eBPF program attached to SO_REUSEPORT group (socket=%d)", socket_fd);
+    log_it(L_NOTICE, "✅ eBPF program attached to SO_REUSEPORT group (socket=%d, listeners=%u)",
+           socket_fd, listener_count);
     log_it(L_NOTICE, "Sticky sessions enabled: kernel hash → consistent worker selection");
     
     // Socket now owns the program
@@ -282,4 +307,3 @@ int dap_io_flow_ebpf_detach_socket(int socket_fd)
     log_it(L_DEBUG, "eBPF program detached from socket %d", socket_fd);
     return 0;
 }
-

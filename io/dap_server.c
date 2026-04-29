@@ -56,6 +56,7 @@
 #include <stddef.h>
 #include <errno.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <utlist.h>
 #if ! defined(_GNU_SOURCE)
 #define _GNU_SOURCE
@@ -69,17 +70,22 @@
 #include "dap_server.h"
 #include "dap_worker.h"
 #include "dap_context.h"
+#include "dap_context_queue.h"
 #include "dap_events.h"
 #include "dap_net.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 
 #define LOG_TAG "dap_server"
+#define DAP_SERVER_LISTENER_DELETE_MAX_ATTEMPTS 3U
+#define DAP_SERVER_LISTENER_DELETE_RETRY_US 50000U
 
 static bool s_debug_more = false;
 static void s_es_server_new     (dap_events_socket_t *a_es, void *a_arg);
 static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
 static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
+static bool s_delete_listener_on_worker_sync(dap_events_socket_t *a_es);
+static void s_cleanup_prepended_listeners_sync(dap_server_t *a_server, dap_list_t *a_head_before);
 
 static dap_server_t* s_default_server = NULL;
 
@@ -167,7 +173,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
 #ifdef DAP_OS_WINDOWS
     _set_errno(WSAGetLastError());
 #endif
-    if (l_socket < 0) {
+    if (l_socket == INVALID_SOCKET) {
         log_it (L_ERROR,"Socket error %d: \"%s\"", errno, dap_strerror(errno));
         return 3;
     }
@@ -216,7 +222,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         close_socket_due_to_fail("bind()");
         return 6;
     }
-    log_it(L_INFO, "Socket %d \"%s : %d\" binded", l_socket, a_addr, a_port);
+    log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" \"%s : %d\" binded", l_socket, a_addr, a_port);
 
     // For UDP: Check if we should enable socket sharding with SO_REUSEPORT
     bool l_enable_socket_sharding = false;
@@ -256,6 +262,8 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     // Socket sharding for UDP: create N sockets (one per worker)
     if (l_enable_socket_sharding) {
         uint32_t l_worker_count = dap_events_thread_get_count();
+        dap_list_t *l_listeners_head_before = a_server->es_listeners;
+        int l_sharding_ret = 0;
         
         for (uint32_t i = 0; i < l_worker_count; i++) {
             SOCKET l_sharded_socket = l_socket;
@@ -263,9 +271,10 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
             // First socket already created above, create additional sockets for i > 0
             if (i > 0) {
                 l_sharded_socket = socket(l_fam, SOCK_DGRAM, IPPROTO_UDP);
-                if (l_sharded_socket < 0) {
+                if (l_sharded_socket == INVALID_SOCKET) {
                     log_it(L_ERROR, "Failed to create sharded socket %u: %s", i, dap_strerror(errno));
-                    continue;
+                    l_sharding_ret = -3;
+                    goto sharding_fail;
                 }
                 
                 // Set SO_REUSEADDR + SO_REUSEPORT
@@ -273,7 +282,8 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
                 if (setsockopt(l_sharded_socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&l_opt, sizeof(int)) < 0) {
                     log_it(L_ERROR, "setsockopt(SO_REUSEADDR) failed for sharded socket %u", i);
                     dap_close_socket(l_sharded_socket);
-                    continue;
+                    l_sharding_ret = -4;
+                    goto sharding_fail;
                 }
                 
 #ifdef SO_REUSEPORT
@@ -281,7 +291,8 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
                 if (setsockopt(l_sharded_socket, SOL_SOCKET, SO_REUSEPORT, (const char*)&l_opt, sizeof(int)) < 0) {
                     log_it(L_ERROR, "setsockopt(SO_REUSEPORT) failed for sharded socket %u", i);
                     dap_close_socket(l_sharded_socket);
-                    continue;
+                    l_sharding_ret = -5;
+                    goto sharding_fail;
                 }
 #endif
                 
@@ -298,7 +309,8 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
                 if (bind(l_sharded_socket, (struct sockaddr*)&l_saddr, l_len) < 0) {
                     log_it(L_ERROR, "bind() failed for sharded socket %u: %s", i, dap_strerror(errno));
                     dap_close_socket(l_sharded_socket);
-                    continue;
+                    l_sharding_ret = -6;
+                    goto sharding_fail;
                 }
                 
                 // Set non-blocking
@@ -314,10 +326,17 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
             dap_events_socket_t *l_es_sharded = dap_events_socket_wrap_listener(a_server, l_sharded_socket, a_callbacks);
             if (!l_es_sharded) {
                 log_it(L_ERROR, "Failed to wrap sharded listener socket %u for %s:%u", i, a_addr, a_port);
-                if (i > 0) {
-                    dap_close_socket(l_sharded_socket);
-                }
-                continue;
+                dap_close_socket(l_sharded_socket);
+                l_sharding_ret = -7;
+                goto sharding_fail;
+            }
+
+            dap_worker_t *l_worker = dap_events_worker_get(i);
+            if (!l_worker) {
+                log_it(L_ERROR, "Failed to get worker %u for sharded socket", i);
+                dap_events_socket_delete_unsafe(l_es_sharded, false);
+                l_sharding_ret = -8;
+                goto sharding_fail;
             }
             
 #ifdef DAP_EVENTS_CAPS_EPOLL
@@ -337,23 +356,18 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
             l_es_sharded->type = a_type;
             l_es_sharded->no_close = true;
             
-            // Add to server's listener list
-            a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es_sharded);
-            
-            // Add to SPECIFIC worker (not auto!)
-            dap_worker_t *l_worker = dap_events_worker_get(i);
-            if (!l_worker) {
-                log_it(L_ERROR, "Failed to get worker %u for sharded socket", i);
-                continue;
-            }
-            
             // Verify worker CPU affinity
             int l_cpu_id = l_worker->context ? l_worker->context->cpu_id : -1;
             
             if (dap_worker_add_events_socket_unsafe(l_worker, l_es_sharded) != 0) {
                 log_it(L_ERROR, "Failed to add sharded socket %u to worker %u (cpu_id=%d)", i, i, l_cpu_id);
+                dap_events_socket_delete_unsafe(l_es_sharded, false);
+                l_sharding_ret = -9;
+                goto sharding_fail;
             } else {
-                log_it(L_INFO, "Created sharded UDP listener socket #%u (fd=%d) on worker %u (cpu_id=%d) for %s:%u", 
+                // Add to server's listener list only after worker ownership is confirmed.
+                a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es_sharded);
+                log_it(L_INFO, "Created sharded UDP listener socket #%u (socket=%"DAP_FORMAT_SOCKET") on worker %u (cpu_id=%d) for %s:%u",
                        i, l_sharded_socket, i, l_cpu_id, a_addr, a_port);
 #ifdef SO_INCOMING_CPU
                 log_it(L_INFO, "  ✅ SO_INCOMING_CPU hint will be set to cpu_id=%d by dap_worker_add_events_socket_unsafe", l_cpu_id);
@@ -364,6 +378,10 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         }
         
         return 0; // Success - all sharded sockets created
+
+sharding_fail:
+        s_cleanup_prepended_listeners_sync(a_server, l_listeners_head_before);
+        return l_sharding_ret;
     }
     
     // Non-sharded path (TCP or single UDP socket)
@@ -387,8 +405,12 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     l_es->addr_storage = l_saddr;
     l_es->type = a_type;
     l_es->no_close = true;
+    if (!dap_worker_add_events_socket_auto(l_es)) {
+        dap_events_socket_delete_unsafe(l_es, false);
+        return -1;
+    }
     a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es);
-    return dap_worker_add_events_socket_auto(l_es) ? 0 : -1;
+    return 0;
 }
 
 int dap_server_callbacks_set(dap_server_t* a_server, dap_events_socket_callbacks_t *a_server_cbs, dap_events_socket_callbacks_t *a_client_cbs) {
@@ -468,7 +490,8 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
  */
 static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
 {
-    debug_if(s_debug_more, L_DEBUG, "Created server socket %d with uuid "DAP_FORMAT_ESOCKET_UUID" on worker %u", a_es->socket, a_es->uuid, a_es->worker->id);
+    debug_if(s_debug_more, L_DEBUG, "Created server socket %"DAP_FORMAT_SOCKET" with uuid "DAP_FORMAT_ESOCKET_UUID" on worker %u",
+             a_es->socket, a_es->uuid, a_es->worker->id);
 }
 
 /**
@@ -478,7 +501,8 @@ static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
  */
 static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
 {
-    log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
+    log_it(L_WARNING, "Server socket %"DAP_FORMAT_SOCKET" error %d: %s",
+           a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
 /**
@@ -497,11 +521,11 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
                                          "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
                                          a_es_listener->socket, a_es_listener->uuid,
                                          a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
-    if (a_remote_socket < 0) {
+    if (a_remote_socket == INVALID_SOCKET) {
 #ifdef DAP_OS_WINDOWS
         _set_errno(WSAGetLastError());
 #endif
-        log_it(L_ERROR, "Server socket %d accept() error %d: %s",
+        log_it(L_ERROR, "Server socket %"DAP_FORMAT_SOCKET" accept() error %d: %s",
                         a_es_listener->socket, errno, dap_strerror(errno));
         return;
     }
@@ -562,12 +586,21 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         return log_it(L_ERROR, "Unsupported protocol family %hu from accept()", a_remote_addr->ss_family);
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
+    if (!l_es_new) {
+        log_it(L_ERROR, "Failed to wrap accepted client socket %"DAP_FORMAT_SOCKET, a_remote_socket);
+        closesocket(a_remote_socket);
+        return;
+    }
     l_es_new->server = l_server;
     l_es_new->type = l_es_type;
     l_es_new->addr_storage = *a_remote_addr;
     l_es_new->remote_port = strtol(l_port_str, NULL, 10);
     dap_strncpy(l_es_new->remote_addr_str, l_remote_addr_str, INET6_ADDRSTRLEN);
-    dap_worker_add_events_socket( dap_events_worker_get_auto(), l_es_new );
+    dap_worker_t *l_worker = dap_events_worker_get_auto();
+    if (!l_worker || dap_worker_add_events_socket(l_worker, l_es_new) != 0) {
+        log_it(L_ERROR, "Failed to assign accepted client socket %"DAP_FORMAT_SOCKET" to worker", a_remote_socket);
+        dap_events_socket_delete_unsafe(l_es_new, false);
+    }
 }
 
 /**
@@ -576,19 +609,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
  */
 void dap_server_delete(dap_server_t *a_server)
 {
-    dap_return_if_pass(!a_server);
-    while (a_server->es_listeners) {
-        dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
-        dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid); // TODO unsafe moment. Replace storage to uuids
-        dap_list_t *l_tmp = a_server->es_listeners;
-        a_server->es_listeners = l_tmp->next;
-        DAP_DELETE(l_tmp);
-    }
-    if(a_server->delete_callback)
-        a_server->delete_callback(a_server,NULL);
-
-    //DAP_DELETE(a_server->_inheritor);
-    DAP_DELETE(a_server);
+    dap_server_delete_sync(a_server);
 }
 
 /**
@@ -596,7 +617,23 @@ void dap_server_delete(dap_server_t *a_server)
  */
 typedef struct {
     dap_events_socket_uuid_t uuid;
+    dap_events_socket_t *es;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    size_t processed;
+    int status;
+    bool found;
+    bool deleted;
+    bool completed;
 } s_delete_listener_sync_ctx_t;
+
+static void s_delete_listener_sync_ctx_complete(s_delete_listener_sync_ctx_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    a_ctx->completed = true;
+    pthread_cond_signal(&a_ctx->cond);
+    pthread_mutex_unlock(&a_ctx->mutex);
+}
 
 static void s_delete_listener_sync_callback(void *a_arg)
 {
@@ -605,10 +642,133 @@ static void s_delete_listener_sync_callback(void *a_arg)
     
     dap_worker_t *l_worker = dap_worker_get_current();
     if (l_worker && l_worker->context) {
-        dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
-        if (l_es) {
-            dap_events_socket_remove_and_delete_unsafe(l_es, false);
+#ifndef DAP_EVENTS_CAPS_IOCP
+        while (l_worker->queue_es_new &&
+               dap_context_queue_count(l_worker->queue_es_new) > 0) {
+            int l_processed = dap_context_queue_process(l_worker->queue_es_new);
+            if (l_processed < 0) {
+                l_ctx->status = l_processed;
+                break;
+            }
+            if (l_processed == 0) {
+                l_ctx->status = -EAGAIN;
+                break;
+            }
+            l_ctx->processed += (size_t)l_processed;
         }
+#endif
+        if (l_ctx->status == 0) {
+            dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
+            if (l_es) {
+                l_ctx->found = true;
+                dap_events_socket_remove_and_delete_unsafe(l_es, false);
+                l_ctx->deleted = true;
+            } else if (l_ctx->es && l_ctx->es->worker == l_worker &&
+                       !atomic_load(&l_ctx->es->is_initalized)) {
+                l_ctx->deleted = true;
+                dap_events_socket_delete_unsafe(l_ctx->es, false);
+            }
+        }
+    }
+
+    s_delete_listener_sync_ctx_complete(l_ctx);
+}
+
+static void s_delete_listener_sync_ctx_wait(s_delete_listener_sync_ctx_t *a_ctx)
+{
+    pthread_mutex_lock(&a_ctx->mutex);
+    while (!a_ctx->completed) {
+        pthread_cond_wait(&a_ctx->cond, &a_ctx->mutex);
+    }
+    pthread_mutex_unlock(&a_ctx->mutex);
+}
+
+static bool s_delete_listener_on_worker_sync(dap_events_socket_t *a_es)
+{
+    if (!a_es) {
+        return true;
+    }
+
+    dap_worker_t *l_worker = a_es->worker;
+    if (!l_worker) {
+        dap_events_socket_delete_unsafe(a_es, false);
+        return true;
+    }
+
+    dap_events_socket_uuid_t l_uuid = a_es->uuid;
+    uint32_t l_worker_id = l_worker->id;
+
+    for (unsigned l_attempt = 1; l_attempt <= DAP_SERVER_LISTENER_DELETE_MAX_ATTEMPTS; ++l_attempt) {
+        s_delete_listener_sync_ctx_t l_ctx = {
+            .uuid = l_uuid,
+            .es = a_es
+        };
+        pthread_mutex_init(&l_ctx.mutex, NULL);
+        pthread_cond_init(&l_ctx.cond, NULL);
+
+        int l_ret = 0;
+        if (dap_worker_get_current() == l_worker) {
+            s_delete_listener_sync_callback(&l_ctx);
+        } else {
+            l_ret = dap_worker_exec_callback_on_sync_timed(
+                l_worker, s_delete_listener_sync_callback, &l_ctx,
+                DAP_WORKER_EXEC_CALLBACK_SYNC_DEFAULT_TIMEOUT_MS);
+            if (l_ret == -EINPROGRESS) {
+                s_delete_listener_sync_ctx_wait(&l_ctx);
+                l_ret = 0;
+            }
+        }
+
+        if (l_ret == 0 && l_ctx.status != 0) {
+            l_ret = l_ctx.status;
+        }
+
+        bool l_done = (l_ret == 0);
+        if (l_done && !l_ctx.deleted && !l_ctx.found) {
+            log_it(L_WARNING,
+                   "Listener "DAP_FORMAT_ESOCKET_UUID" was not found on worker %u during sync delete",
+                   l_uuid, l_worker_id);
+        }
+
+        pthread_cond_destroy(&l_ctx.cond);
+        pthread_mutex_destroy(&l_ctx.mutex);
+
+        if (l_done) {
+            return true;
+        }
+
+        if (l_ret == -ENODEV) {
+            log_it(L_ERROR,
+                   "Sync delete for listener "DAP_FORMAT_ESOCKET_UUID" on worker %u cannot be queued because worker callback queue is unavailable; leaving listener/server allocated",
+                   l_uuid, l_worker_id);
+            return false;
+        }
+
+        log_it(L_WARNING,
+               "Sync delete for listener "DAP_FORMAT_ESOCKET_UUID" on worker %u did not start/complete (ret=%d, attempt %u/%u)",
+               l_uuid, l_worker_id, l_ret, l_attempt, DAP_SERVER_LISTENER_DELETE_MAX_ATTEMPTS);
+        if (l_attempt < DAP_SERVER_LISTENER_DELETE_MAX_ATTEMPTS)
+            usleep(DAP_SERVER_LISTENER_DELETE_RETRY_US);
+    }
+
+    log_it(L_ERROR,
+           "Sync delete for listener "DAP_FORMAT_ESOCKET_UUID" on worker %u failed after %u attempts; leaving listener/server allocated",
+           l_uuid, l_worker_id, DAP_SERVER_LISTENER_DELETE_MAX_ATTEMPTS);
+    return false;
+}
+
+static void s_cleanup_prepended_listeners_sync(dap_server_t *a_server, dap_list_t *a_head_before)
+{
+    if (!a_server) {
+        return;
+    }
+
+    while (a_server->es_listeners && a_server->es_listeners != a_head_before) {
+        dap_list_t *l_link = a_server->es_listeners;
+        dap_events_socket_t *l_es = (dap_events_socket_t *)l_link->data;
+        if (!s_delete_listener_on_worker_sync(l_es))
+            return;
+        a_server->es_listeners = dap_list_delete_link(a_server->es_listeners, l_link);
     }
 }
 
@@ -629,22 +789,12 @@ void dap_server_delete_sync(dap_server_t *a_server)
     // Delete each listener synchronously
     while (a_server->es_listeners) {
         dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
-        
-        if (l_es && l_es->worker) {
-            // Check if we're on the same worker thread
-            dap_worker_t *l_current = dap_worker_get_current();
-            if (l_current == l_es->worker) {
-                // Same thread - delete directly
-                dap_events_socket_remove_and_delete_unsafe(l_es, false);
-            } else {
-                // Different thread - run synchronously on owner worker.
-                s_delete_listener_sync_ctx_t l_ctx = {
-                    .uuid = l_es->uuid
-                };
-                dap_worker_exec_callback_on_sync(l_es->worker, s_delete_listener_sync_callback, &l_ctx);
-            }
+        if (!s_delete_listener_on_worker_sync(l_es)) {
+            log_it(L_ERROR,
+                   "Server delete stopped because listener cleanup could not be completed safely; server is intentionally left allocated");
+            return;
         }
-        
+
         // Remove from list
         dap_list_t *l_tmp = a_server->es_listeners;
         a_server->es_listeners = l_tmp->next;

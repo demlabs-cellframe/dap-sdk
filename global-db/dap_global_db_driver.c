@@ -107,18 +107,8 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     else if(!dap_strcmp(s_used_driver, "mdbx")) {
         l_ret = dap_global_db_driver_mdbx_init(l_db_path_ext, &s_drv_callback);
-#ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
-        if (l_ret) {
-            log_it(L_WARNING, "MDBX driver init failed (code %d), falling back to SQLite", l_ret);
-            s_drv_callback = (dap_global_db_driver_callbacks_t){ };
-            dap_strncpy(s_used_driver, "sqlite", sizeof(s_used_driver) - 1);
-            char l_sqlite_path[strlen(a_filename_db) + sizeof("/gdb-sqlite")];
-            snprintf(l_sqlite_path, sizeof(l_sqlite_path), "%s/gdb-sqlite", a_filename_db);
-            l_ret = dap_global_db_driver_sqlite_init(l_sqlite_path, &s_drv_callback);
-            if (!l_ret)
-                log_it(L_NOTICE, "Successfully fell back to SQLite driver");
-        }
-#endif
+        if (l_ret)
+            log_it(L_ERROR, "MDBX driver init failed (code %d); automatic SQLite fallback is disabled", l_ret);
     }
 #endif
 

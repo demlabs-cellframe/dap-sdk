@@ -269,7 +269,11 @@ typedef struct dap_events_socket_uuid_ctrl {
 typedef struct dap_events_socket {
     union {
         SOCKET socket;
+#ifdef DAP_OS_WINDOWS
+        SOCKET fd;
+#else
         int fd;
+#endif
 #if defined(DAP_EVENTS_CAPS_QUEUE_MQUEUE)
         mqd_t mqd;
     };
@@ -283,7 +287,11 @@ typedef struct dap_events_socket {
     u_short port;
     union {
         SOCKET socket2;
+#ifdef DAP_OS_WINDOWS
+        SOCKET fd2;
+#else
         int fd2;
+#endif
     };
 
 

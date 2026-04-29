@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
 
 #include "dap_common.h"
 #include "dap_io_flow_cbpf.h"
@@ -31,30 +32,18 @@ static bool s_cbpf_checked = false;
  *
  * For cBPF with SO_ATTACH_REUSEPORT_CBPF:
  * - Kernel calls pskb_pull(skb, sizeof(struct udphdr)) → data at UDP payload
- * - Return value = socket index (kernel does index % num_sockets)
+ * - Return value = socket index in the reuseport group
  *
  * Algorithm:
  * 1. Load SKF_AD_RXHASH (kernel 4-tuple hash from skb->hash)
- * 2. If non-zero (real network) → return it for sticky sessions
+ * 2. If non-zero (real network) → use it for sticky sessions
  * 3. If zero (loopback — rxhash not computed) → fallback:
  *    read UDP source port via SKF_NET_OFF (accesses the original network
  *    header regardless of pskb_pull) + IP header length (BPF_MSH)
- * 4. Return source port → kernel does % num_sockets → sticky per-client
+ * 4. Return hash % listener_count → valid socket index, sticky per-client
  *
  * Result: sticky sessions on BOTH real network AND localhost.
  */
-static struct sock_filter s_cbpf_reuseport_prog[] = {
-    /* [0] A = skb->hash (rxhash) */
-    BPF_STMT(BPF_LD  | BPF_W | BPF_ABS, SKF_AD_OFF + SKF_AD_RXHASH),
-    /* [1] if (A != 0) goto [4] — use kernel hash when available */
-    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 2),
-    /* [2] X = (ip_hdr[0] & 0xf) * 4 — IP header length via SKF_NET_OFF */
-    BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, SKF_NET_OFF),
-    /* [3] A = *(u16*)(net_hdr + X) — UDP source port (first field after IP hdr) */
-    BPF_STMT(BPF_LD  | BPF_H | BPF_IND, SKF_NET_OFF),
-    /* [4] return A */
-    BPF_STMT(BPF_RET | BPF_A, 0),
-};
 
 /**
  * @brief Check if classic BPF is available
@@ -86,15 +75,40 @@ bool dap_io_flow_cbpf_is_available(void)
  */
 int dap_io_flow_cbpf_attach_socket(int socket_fd)
 {
+    return dap_io_flow_cbpf_attach_socket_count(socket_fd, 1);
+}
+
+int dap_io_flow_cbpf_attach_socket_count(int socket_fd, uint32_t listener_count)
+{
     if (!dap_io_flow_cbpf_is_available()) {
         log_it(L_ERROR, "Classic BPF not available, cannot attach");
         return -1;
     }
+
+    if (listener_count == 0) {
+        log_it(L_ERROR, "Classic BPF attach requires at least one listener");
+        return -1;
+    }
     
 #ifdef SO_ATTACH_REUSEPORT_CBPF
+    struct sock_filter l_cbpf_reuseport_prog[] = {
+        /* [0] A = skb->hash (rxhash) */
+        BPF_STMT(BPF_LD  | BPF_W | BPF_ABS, SKF_AD_OFF + SKF_AD_RXHASH),
+        /* [1] if (A != 0) goto [4] - use kernel hash when available */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 2),
+        /* [2] X = (ip_hdr[0] & 0xf) * 4 - IP header length via SKF_NET_OFF */
+        BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, SKF_NET_OFF),
+        /* [3] A = *(u16*)(net_hdr + X) - UDP source port */
+        BPF_STMT(BPF_LD  | BPF_H | BPF_IND, SKF_NET_OFF),
+        /* [4] A %= listener_count - SO_REUSEPORT BPF expects socket index */
+        BPF_STMT(BPF_ALU | BPF_MOD | BPF_K, listener_count),
+        /* [5] return A */
+        BPF_STMT(BPF_RET | BPF_A, 0),
+    };
+
     struct sock_fprog prog = {
-        .len = sizeof(s_cbpf_reuseport_prog) / sizeof(struct sock_filter),
-        .filter = s_cbpf_reuseport_prog,
+        .len = sizeof(l_cbpf_reuseport_prog) / sizeof(struct sock_filter),
+        .filter = l_cbpf_reuseport_prog,
     };
     
     if (setsockopt(socket_fd, SOL_SOCKET, SO_ATTACH_REUSEPORT_CBPF, 
@@ -104,7 +118,8 @@ int dap_io_flow_cbpf_attach_socket(int socket_fd)
         return -1;
     }
     
-    log_it(L_NOTICE, "✅ Classic BPF attached to SO_REUSEPORT group (socket=%d)", socket_fd);
+    log_it(L_NOTICE, "✅ Classic BPF attached to SO_REUSEPORT group (socket=%d, listeners=%u)",
+           socket_fd, listener_count);
     log_it(L_NOTICE, "Sticky sessions enabled: kernel hash → consistent worker selection");
     
     return 0;

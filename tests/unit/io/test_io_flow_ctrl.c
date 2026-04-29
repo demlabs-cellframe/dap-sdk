@@ -40,6 +40,7 @@
 #define POLL_INTERVAL_US    5000    // 5ms between checks
 #define POLL_TIMEOUT_MS     5000    // 5s max wait
 #define RETRANSMIT_WAIT_MULTIPLIER 20
+#define TEST_FLOW_CTRL_MAX_CONTEXTS 256
 
 /**
  * @brief Wait until condition is true or timeout
@@ -155,6 +156,7 @@ typedef struct test_flow_ctrl_ctx {
 } test_flow_ctrl_ctx_t;
 
 static _Atomic int s_ctx_counter = 0;
+static char s_ctx_mock_names[TEST_FLOW_CTRL_MAX_CONTEXTS][2][64];
 
 /**
  * @brief Prepare packet callback
@@ -286,13 +288,16 @@ static test_flow_ctrl_ctx_t *s_ctx_create(void)
     if (!l_ctx) return NULL;
     
     int l_id = atomic_fetch_add(&s_ctx_counter, 1);
-    char l_name[64];
+    if (l_id < 0 || l_id >= TEST_FLOW_CTRL_MAX_CONTEXTS) {
+        DAP_DELETE(l_ctx);
+        return NULL;
+    }
     
-    snprintf(l_name, sizeof(l_name), "packet_send_%d", l_id);
-    l_ctx->mock_packet_send = dap_mock_register(l_name);
+    snprintf(s_ctx_mock_names[l_id][0], sizeof(s_ctx_mock_names[l_id][0]), "packet_send_%d", l_id);
+    l_ctx->mock_packet_send = dap_mock_register(s_ctx_mock_names[l_id][0]);
     
-    snprintf(l_name, sizeof(l_name), "payload_deliver_%d", l_id);
-    l_ctx->mock_payload_deliver = dap_mock_register(l_name);
+    snprintf(s_ctx_mock_names[l_id][1], sizeof(s_ctx_mock_names[l_id][1]), "payload_deliver_%d", l_id);
+    l_ctx->mock_payload_deliver = dap_mock_register(s_ctx_mock_names[l_id][1]);
     
     pthread_mutex_init(&l_ctx->pending_mutex, NULL);
     l_ctx->pending_capacity = 4096;

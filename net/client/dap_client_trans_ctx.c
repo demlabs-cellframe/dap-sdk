@@ -684,12 +684,20 @@ static void s_stream_es_callback_read(dap_events_socket_t *a_es, void *arg)
     // Delegate reading to transport
     dap_net_trans_t *l_transport = l_tc->stream ? l_tc->stream->trans : NULL;
     size_t l_bytes_read = 0;
+    bool l_delete_requested = false;
+    dap_stream_t *l_stream = l_tc->stream;
     if (l_transport && l_transport->ops && l_transport->ops->read) {
-        ssize_t l_ret = l_transport->ops->read(l_tc->stream, NULL, 0);
+        ssize_t l_ret = l_transport->ops->read(l_stream, NULL, 0);
         if (l_ret > 0) l_bytes_read = (size_t)l_ret;
-    } else if (l_tc->stream) {
-        l_bytes_read = dap_stream_data_proc_read(l_tc->stream);
+        if (l_stream && (l_stream->delete_deferred || l_stream->delete_in_progress)) {
+            dap_stream_delete_unsafe(l_stream);
+            l_delete_requested = true;
+        }
+    } else if (l_stream) {
+        l_bytes_read = dap_stream_data_proc_read_checked(l_stream, &l_delete_requested);
     }
+    if (l_delete_requested)
+        return;
 
     if (l_bytes_read > 0)
         dap_events_socket_shrink_buf_in(a_es, l_bytes_read);

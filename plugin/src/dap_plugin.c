@@ -23,6 +23,7 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
 */
 
 #include "uthash.h"
+#include <stddef.h>
 #include "dap_config.h"
 #include "dap_common.h"
 #include "dap_file_utils.h"
@@ -40,12 +41,25 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
 static bool s_debug_more = false;
 static char *s_plugins_root_path = NULL;
 
+typedef struct plugin_type_callbacks_internal{
+    dap_plugin_type_callback_load_t load;
+    dap_plugin_type_callback_unload_t unload;
+    dap_plugin_type_callback_preinit_t preinit;
+    dap_plugin_type_callback_init_t init;
+} plugin_type_callbacks_internal_t;
+
 struct plugin_type{
     char name[64];
-    dap_plugin_type_callbacks_t callbacks;
+    plugin_type_callbacks_internal_t callbacks;
     UT_hash_handle hh;
-} * s_types;
+};
 
+typedef enum plugin_module_state{
+    PLUGIN_MODULE_LOADED,
+    PLUGIN_MODULE_PREINITED,
+    PLUGIN_MODULE_RUNNING,
+    PLUGIN_MODULE_FAILED
+} plugin_module_state_t;
 
 struct plugin_module{
     char name[64];
@@ -53,6 +67,7 @@ struct plugin_module{
     dap_plugin_manifest_t *manifest;
 
     void * pvt_data; // Here are placed type-related things
+    plugin_module_state_t state;
     UT_hash_handle hh;
 };
 
@@ -62,6 +77,7 @@ static int s_stop(dap_plugin_manifest_t * a_manifest);
 static int s_load(dap_plugin_manifest_t * a_manifest);
 static int s_preinit(struct plugin_module * a_module);
 static int s_init(struct plugin_module * a_module);
+static int s_plugin_type_create_internal(const char * a_name, const plugin_type_callbacks_internal_t * a_callbacks);
 
 static void s_solve_dependencies();
 
@@ -143,13 +159,43 @@ static void s_solve_dependencies()
  */
 int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t* a_callbacks)
 {
-    if(!a_name){
-        log_it(L_CRITICAL, "Can't create plugin type without name!");
-        return -1;
-    }
     if(!a_callbacks){
         log_it(L_CRITICAL, "Can't create plugin type without callbacks!");
         return -2;
+    }
+    plugin_type_callbacks_internal_t l_callbacks = {
+        .load = a_callbacks->load,
+        .unload = a_callbacks->unload
+    };
+    return s_plugin_type_create_internal(a_name, &l_callbacks);
+}
+
+int dap_plugin_type_create_ex(const char* a_name, const dap_plugin_type_callbacks_ex_t *a_callbacks)
+{
+    if(!a_callbacks){
+        log_it(L_CRITICAL, "Can't create plugin type without callbacks!");
+        return -2;
+    }
+    if(a_callbacks->size < offsetof(dap_plugin_type_callbacks_ex_t, unload) + sizeof(a_callbacks->unload)){
+        log_it(L_CRITICAL, "Can't create plugin type with too small callback descriptor!");
+        return -2;
+    }
+    plugin_type_callbacks_internal_t l_callbacks = {
+        .load = a_callbacks->load,
+        .unload = a_callbacks->unload
+    };
+    if(a_callbacks->size >= offsetof(dap_plugin_type_callbacks_ex_t, preinit) + sizeof(a_callbacks->preinit))
+        l_callbacks.preinit = a_callbacks->preinit;
+    if(a_callbacks->size >= offsetof(dap_plugin_type_callbacks_ex_t, init) + sizeof(a_callbacks->init))
+        l_callbacks.init = a_callbacks->init;
+    return s_plugin_type_create_internal(a_name, &l_callbacks);
+}
+
+static int s_plugin_type_create_internal(const char * a_name, const plugin_type_callbacks_internal_t * a_callbacks)
+{
+    if(!a_name){
+        log_it(L_CRITICAL, "Can't create plugin type without name!");
+        return -1;
     }
     struct plugin_type * l_type = DAP_NEW_Z(struct plugin_type);
     if(!l_type){
@@ -157,7 +203,7 @@ int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t* a_ca
         return -3;
     }
     strncpy(l_type->name,a_name, sizeof(l_type->name)-1);
-    memcpy(&l_type->callbacks,a_callbacks,sizeof(l_type->callbacks));
+    l_type->callbacks = *a_callbacks;
     HASH_ADD_STR(s_types,name,l_type);
     log_it(L_NOTICE, "Plugin type \"%s\" added", a_name);
     return 0;
@@ -187,24 +233,45 @@ int dap_plugin_preinit_all(void)
     int l_errors = 0;
     struct plugin_module * l_module, *l_tmp;
     HASH_ITER(hh, s_modules, l_module, l_tmp) {
-        if (s_preinit(l_module))
+        if (s_preinit(l_module)) {
             l_errors++;
+            int l_stop_ret = s_stop(l_module->manifest);
+            if (l_stop_ret)
+                log_it(L_WARNING, "Rollback failed for plugin \"%s\" after preinit error, stop code %d",
+                       l_module->name, l_stop_ret);
+        }
+    }
+    return l_errors;
+}
+
+/**
+ * Call init callback on all loaded modules (after chains load)
+ */
+int dap_plugin_init_all(void)
+{
+    int l_errors = 0;
+    struct plugin_module * l_module, *l_tmp;
+    HASH_ITER(hh, s_modules, l_module, l_tmp) {
+        if (s_init(l_module)) {
+            l_errors++;
+            int l_stop_ret = s_stop(l_module->manifest);
+            if (l_stop_ret)
+                log_it(L_WARNING, "Rollback failed for plugin \"%s\" after init error, stop code %d",
+                       l_module->name, l_stop_ret);
+        }
     }
     return l_errors;
 }
 
 /**
  * @brief dap_plugin_start_all
- * Call init callback on all loaded modules (after chains load)
+ * Load, preinit, and init all registered plugins.
  */
 int dap_plugin_start_all(void)
 {
-    int l_errors = 0;
-    struct plugin_module * l_module, *l_tmp;
-    HASH_ITER(hh, s_modules, l_module, l_tmp) {
-        if (s_init(l_module))
-            l_errors++;
-    }
+    int l_errors = dap_plugin_load_all();
+    l_errors += dap_plugin_preinit_all();
+    l_errors += dap_plugin_init_all();
     return l_errors;
 }
 
@@ -251,7 +318,9 @@ static int s_stop(dap_plugin_manifest_t * a_manifest)
     }
     // unload plugin
     char * l_err_str = NULL;
-    int l_ret = l_module->type->callbacks.unload(a_manifest,l_module->pvt_data, &l_err_str);
+    int l_ret = l_module->type->callbacks.unload
+            ? l_module->type->callbacks.unload(a_manifest,l_module->pvt_data, &l_err_str)
+            : 0;
     if(l_ret){ // Error while unloading
         log_it(L_ERROR, "Can't unload plugin \"%s\" because of error \"%s\" (code %d)",a_manifest->name,
                l_err_str?l_err_str:"<UNKNOWN>", l_ret);
@@ -305,10 +374,21 @@ int dap_plugin_start(const char * a_name)
  */
 static int s_load(dap_plugin_manifest_t * a_manifest)
 {
+    if (!a_manifest)
+        return -4;
+    struct plugin_module * l_module = NULL;
+    HASH_FIND_STR(s_modules, a_manifest->name, l_module);
+    if (l_module)
+        return l_module->state == PLUGIN_MODULE_FAILED ? -6 : 0;
+
     struct plugin_type * l_type = NULL;
     HASH_FIND_STR(s_types, a_manifest->type, l_type);
     if (!l_type) {
         log_it(L_ERROR, "Plugin \"%s\" with type \"%s\" is not recognized", a_manifest->name, a_manifest->type);
+        return -1;
+    }
+    if (!l_type->callbacks.load) {
+        log_it(L_ERROR, "Plugin \"%s\" type \"%s\" has no load callback", a_manifest->name, a_manifest->type);
         return -1;
     }
     if (a_manifest->dependencies != NULL) {
@@ -334,9 +414,17 @@ static int s_load(dap_plugin_manifest_t * a_manifest)
                l_err_str ? l_err_str : "<UNKNOWN>", l_ret);
         DAP_DELETE(l_err_str);
     } else {
-        struct plugin_module * l_module = DAP_NEW_Z(struct plugin_module);
+        l_module = DAP_NEW_Z(struct plugin_module);
         if (!l_module) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            if (l_type->callbacks.unload && l_pvt_data) {
+                char *l_unload_err_str = NULL;
+                int l_unload_ret = l_type->callbacks.unload(a_manifest, l_pvt_data, &l_unload_err_str);
+                if (l_unload_ret)
+                    log_it(L_WARNING, "Cleanup failed for plugin \"%s\" after load bookkeeping error: \"%s\" (code %d)",
+                           a_manifest->name, l_unload_err_str ? l_unload_err_str : "<UNKNOWN>", l_unload_ret);
+                DAP_DELETE(l_unload_err_str);
+            }
             return -1;
         }
         l_module->pvt_data = l_pvt_data;
@@ -344,6 +432,7 @@ static int s_load(dap_plugin_manifest_t * a_manifest)
         l_module->name[sizeof(l_module->name) - 1] = '\0';
         l_module->type = l_type;
         l_module->manifest = a_manifest;
+        l_module->state = PLUGIN_MODULE_LOADED;
         HASH_ADD_STR(s_modules, name, l_module);
         log_it(L_NOTICE, "Plugin \"%s\" is loaded", a_manifest->name);
     }
@@ -356,15 +445,25 @@ static int s_load(dap_plugin_manifest_t * a_manifest)
  */
 static int s_preinit(struct plugin_module * a_module)
 {
-    if (!a_module || !a_module->type->callbacks.preinit)
+    if (!a_module)
+        return -4;
+    if (a_module->state == PLUGIN_MODULE_FAILED)
+        return -6;
+    if (a_module->state == PLUGIN_MODULE_PREINITED || a_module->state == PLUGIN_MODULE_RUNNING)
         return 0;
+    if (!a_module->type->callbacks.preinit) {
+        a_module->state = PLUGIN_MODULE_PREINITED;
+        return 0;
+    }
     char * l_err_str = NULL;
     int l_ret = a_module->type->callbacks.preinit(a_module->manifest, a_module->pvt_data, &l_err_str);
     if (l_ret) {
+        a_module->state = PLUGIN_MODULE_FAILED;
         log_it(L_ERROR, "Preinit failed for plugin \"%s\": \"%s\" (code %d)", a_module->name,
                l_err_str ? l_err_str : "<UNKNOWN>", l_ret);
         DAP_DELETE(l_err_str);
     } else {
+        a_module->state = PLUGIN_MODULE_PREINITED;
         log_it(L_DEBUG, "Plugin \"%s\" preinit completed", a_module->name);
     }
     return l_ret;
@@ -376,15 +475,29 @@ static int s_preinit(struct plugin_module * a_module)
  */
 static int s_init(struct plugin_module * a_module)
 {
-    if (!a_module || !a_module->type->callbacks.init)
+    if (!a_module)
+        return -4;
+    if (a_module->state == PLUGIN_MODULE_RUNNING)
         return 0;
+    if (a_module->state == PLUGIN_MODULE_FAILED)
+        return -6;
+    if (a_module->state != PLUGIN_MODULE_PREINITED) {
+        log_it(L_WARNING, "Plugin \"%s\" init skipped because preinit phase was not completed", a_module->name);
+        return -6;
+    }
+    if (!a_module->type->callbacks.init) {
+        a_module->state = PLUGIN_MODULE_RUNNING;
+        return 0;
+    }
     char * l_err_str = NULL;
     int l_ret = a_module->type->callbacks.init(a_module->manifest, a_module->pvt_data, &l_err_str);
     if (l_ret) {
+        a_module->state = PLUGIN_MODULE_FAILED;
         log_it(L_ERROR, "Init failed for plugin \"%s\": \"%s\" (code %d)", a_module->name,
                l_err_str ? l_err_str : "<UNKNOWN>", l_ret);
         DAP_DELETE(l_err_str);
     } else {
+        a_module->state = PLUGIN_MODULE_RUNNING;
         log_it(L_DEBUG, "Plugin \"%s\" init completed", a_module->name);
     }
     return l_ret;
@@ -399,7 +512,7 @@ dap_plugin_status_t dap_plugin_status(const char * a_name)
 {
     struct plugin_module * l_module = NULL;
     HASH_FIND_STR(s_modules,a_name,l_module);
-    if(l_module){
+    if(l_module && l_module->state == PLUGIN_MODULE_RUNNING){
         return STATUS_RUNNING;
     }
     dap_plugin_manifest_t * l_manifest = dap_plugin_manifest_find(a_name);
@@ -407,4 +520,3 @@ dap_plugin_status_t dap_plugin_status(const char * a_name)
         return STATUS_STOPPED;
     return STATUS_NONE;
 }
-

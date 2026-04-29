@@ -74,6 +74,8 @@ typedef struct dap_global_db_sync_context {
     dap_stream_node_addr_t current_link;
 } dap_global_db_sync_context_t;
 
+typedef struct dap_global_db_cluster_timer_ctx dap_global_db_cluster_timer_ctx_t;
+
 typedef struct dap_global_db_cluster {
     char *groups_mask;                          // GDB cluster coverage area
     dap_cluster_t *links_cluster;               // Cluster container for network links
@@ -87,6 +89,7 @@ typedef struct dap_global_db_cluster {
     dap_global_db_instance_t *dbi;              // Pointer to database instance that contains the cluster
     struct dap_global_db_cluster *prev, *next;  // Pointers to next and previous cluster instances in the global clusters list
     dap_global_db_sync_context_t sync_context;  // Cluster synchronization context for current client
+    dap_global_db_cluster_timer_ctx_t *sync_timer_ctx; // Periodic sync timer ownership context
     dap_link_manager_t *link_manager;  // Pointer to link manager
 } dap_global_db_cluster_t;
 
