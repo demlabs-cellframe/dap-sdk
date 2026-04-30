@@ -36,6 +36,9 @@
 #include "dap_net_trans_udp_server.h"
 #include "dap_io_flow.h"
 #include "dap_io_flow_socket.h"
+#if defined(__linux__) || defined(ANDROID)
+#include "dap_io_flow_cbpf.h"
+#endif
 #include "dap_stream_ctl.h"
 #include "dap_link_manager.h"
 #include "dap_global_db.h"
@@ -493,6 +496,15 @@ int main(int argc, char **argv)
     dap_log_level_set(L_DEBUG);
     
     dap_print_module_name("udp_multiclient_regression");
+
+#if defined(__linux__) || defined(ANDROID)
+    if (!dap_io_flow_cbpf_is_available()) {
+        TEST_SUCCESS("CBPF runtime attach unavailable; skipping CBPF-specific UDP regression");
+        fflush(stdout);
+        fflush(stderr);
+        return 0;
+    }
+#endif
     
     if (s_init_all() != 0) {
         log_it(L_CRITICAL, "Initialization failed");

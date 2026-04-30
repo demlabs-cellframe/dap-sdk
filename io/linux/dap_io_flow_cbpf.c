@@ -11,6 +11,7 @@
  */
 
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <linux/filter.h>
 #include <errno.h>
 #include <string.h>
@@ -26,6 +27,42 @@ static bool s_debug_more = false;
 // Classic BPF availability flag
 static bool s_cbpf_available = false;
 static bool s_cbpf_checked = false;
+
+#ifdef SO_ATTACH_REUSEPORT_CBPF
+static int s_cbpf_attach_socket_count(int socket_fd, uint32_t listener_count, bool log_errors)
+{
+    struct sock_filter l_cbpf_reuseport_prog[] = {
+        /* [0] A = skb->hash (rxhash) */
+        BPF_STMT(BPF_LD  | BPF_W | BPF_ABS, SKF_AD_OFF + SKF_AD_RXHASH),
+        /* [1] if (A != 0) goto [4] - use kernel hash when available */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 2),
+        /* [2] X = (ip_hdr[0] & 0xf) * 4 - IP header length via SKF_NET_OFF */
+        BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, SKF_NET_OFF),
+        /* [3] A = *(u16*)(net_hdr + X) - UDP source port */
+        BPF_STMT(BPF_LD  | BPF_H | BPF_IND, SKF_NET_OFF),
+        /* [4] A %= listener_count - SO_REUSEPORT BPF expects socket index */
+        BPF_STMT(BPF_ALU | BPF_MOD | BPF_K, listener_count),
+        /* [5] return A */
+        BPF_STMT(BPF_RET | BPF_A, 0),
+    };
+
+    struct sock_fprog prog = {
+        .len = sizeof(l_cbpf_reuseport_prog) / sizeof(struct sock_filter),
+        .filter = l_cbpf_reuseport_prog,
+    };
+
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_ATTACH_REUSEPORT_CBPF,
+                   &prog, sizeof(prog)) < 0) {
+        if (log_errors) {
+            log_it(L_ERROR, "Failed to attach classic BPF to SO_REUSEPORT socket %d: %s",
+                   socket_fd, strerror(errno));
+        }
+        return -1;
+    }
+
+    return 0;
+}
+#endif
 
 /**
  * @brief Classic BPF program for SO_REUSEPORT consistent hashing
@@ -56,12 +93,51 @@ bool dap_io_flow_cbpf_is_available(void)
     
     s_cbpf_checked = true;
     
-#ifdef SO_ATTACH_REUSEPORT_CBPF
+#if defined(SO_ATTACH_REUSEPORT_CBPF) && defined(SO_REUSEPORT)
+    int l_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (l_sock < 0) {
+        s_cbpf_available = false;
+        log_it(L_WARNING, "❌ Classic BPF: probe socket create failed: %s", strerror(errno));
+        return false;
+    }
+
+    int l_opt = 1;
+    if (setsockopt(l_sock, SOL_SOCKET, SO_REUSEADDR, &l_opt, sizeof(l_opt)) < 0 ||
+            setsockopt(l_sock, SOL_SOCKET, SO_REUSEPORT, &l_opt, sizeof(l_opt)) < 0) {
+        log_it(L_WARNING, "❌ Classic BPF: SO_REUSEPORT probe setup failed: %s", strerror(errno));
+        close(l_sock);
+        s_cbpf_available = false;
+        return false;
+    }
+
+    struct sockaddr_in l_addr = {
+        .sin_family = AF_INET,
+        .sin_port = 0,
+        .sin_addr.s_addr = htonl(INADDR_LOOPBACK)
+    };
+
+    if (bind(l_sock, (struct sockaddr*)&l_addr, sizeof(l_addr)) < 0) {
+        log_it(L_WARNING, "❌ Classic BPF: probe bind failed: %s", strerror(errno));
+        close(l_sock);
+        s_cbpf_available = false;
+        return false;
+    }
+
+    if (s_cbpf_attach_socket_count(l_sock, 1, false) != 0) {
+        int l_errno = errno;
+        close(l_sock);
+        s_cbpf_available = false;
+        log_it(L_WARNING, "❌ Classic BPF: SO_ATTACH_REUSEPORT_CBPF probe failed: %s (errno=%d)",
+               strerror(l_errno), l_errno);
+        return false;
+    }
+
+    close(l_sock);
     s_cbpf_available = true;
-    log_it(L_NOTICE, "✅ Classic BPF sticky sessions: AVAILABLE (kernel 3.9+)");
+    log_it(L_NOTICE, "✅ Classic BPF sticky sessions: AVAILABLE (runtime attach verified)");
 #else
     s_cbpf_available = false;
-    log_it(L_CRITICAL, "❌ Classic BPF: NOT AVAILABLE (SO_ATTACH_REUSEPORT_CBPF not defined)");
+    log_it(L_CRITICAL, "❌ Classic BPF: NOT AVAILABLE (SO_ATTACH_REUSEPORT_CBPF/SO_REUSEPORT not defined)");
 #endif
     
     return s_cbpf_available;
@@ -91,30 +167,7 @@ int dap_io_flow_cbpf_attach_socket_count(int socket_fd, uint32_t listener_count)
     }
     
 #ifdef SO_ATTACH_REUSEPORT_CBPF
-    struct sock_filter l_cbpf_reuseport_prog[] = {
-        /* [0] A = skb->hash (rxhash) */
-        BPF_STMT(BPF_LD  | BPF_W | BPF_ABS, SKF_AD_OFF + SKF_AD_RXHASH),
-        /* [1] if (A != 0) goto [4] - use kernel hash when available */
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 2),
-        /* [2] X = (ip_hdr[0] & 0xf) * 4 - IP header length via SKF_NET_OFF */
-        BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, SKF_NET_OFF),
-        /* [3] A = *(u16*)(net_hdr + X) - UDP source port */
-        BPF_STMT(BPF_LD  | BPF_H | BPF_IND, SKF_NET_OFF),
-        /* [4] A %= listener_count - SO_REUSEPORT BPF expects socket index */
-        BPF_STMT(BPF_ALU | BPF_MOD | BPF_K, listener_count),
-        /* [5] return A */
-        BPF_STMT(BPF_RET | BPF_A, 0),
-    };
-
-    struct sock_fprog prog = {
-        .len = sizeof(l_cbpf_reuseport_prog) / sizeof(struct sock_filter),
-        .filter = l_cbpf_reuseport_prog,
-    };
-    
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_ATTACH_REUSEPORT_CBPF, 
-                   &prog, sizeof(prog)) < 0) {
-        log_it(L_ERROR, "Failed to attach classic BPF to SO_REUSEPORT socket %d: %s", 
-               socket_fd, strerror(errno));
+    if (s_cbpf_attach_socket_count(socket_fd, listener_count, true) != 0) {
         return -1;
     }
     

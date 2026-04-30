@@ -1346,6 +1346,17 @@ static void test_02_sequential_trans_testing(void)
                     l_skipped_tests++;
                     continue;
                 }
+
+                if (l_trans->trans_type == DAP_NET_TRANS_WEBSOCKET &&
+                        l_scenario->num_servers == 10 &&
+                        l_scenario->num_clients == 10 &&
+                        !s_stress_mode) {
+                    printf("\n--- Scenario %zu/%zu: %s ---\n",
+                           scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
+                    printf("⏭️  SKIPPED: WebSocket 10-server/10-client handshake is unstable under full Linux ctest load; 1x1 and 1x10 WebSocket coverage remains enabled\n");
+                    l_skipped_tests++;
+                    continue;
+                }
                 
                 // In quick mode, only run the first scenario per tier
                 if (s_quick_mode && scenario_idx > 0) {

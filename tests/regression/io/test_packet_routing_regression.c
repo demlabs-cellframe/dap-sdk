@@ -574,6 +574,14 @@ static void s_print_report(void)
 static void test_packet_routing_multiclient(void)
 {
     dap_test_msg("Test: Multi-client packet routing (NO FSM, REAL reactor)");
+
+#ifdef DAP_OS_LINUX
+    if (!dap_io_flow_cbpf_is_available()) {
+        dap_test_msg("CBPF runtime attach unavailable; skipping CBPF-specific packet routing regression");
+        dap_pass_msg("Packet routing regression skipped (CBPF unavailable)");
+        return;
+    }
+#endif
     
     // Initialize
     memset(&s_ctx, 0, sizeof(s_ctx));

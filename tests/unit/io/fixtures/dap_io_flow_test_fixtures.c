@@ -25,6 +25,9 @@
 
 #include "dap_io_flow_test_fixtures.h"
 #include "dap_common.h"
+#ifdef __linux__
+#include "dap_io_flow_cbpf.h"
+#endif
 
 #define LOG_TAG "io_flow_test_fixtures"
 
@@ -132,7 +135,7 @@ bool dap_io_flow_test_tier_available(dap_io_flow_test_tier_t a_tier)
             
         case IO_FLOW_TIER_CBPF:
 #ifdef __linux__
-            return true;
+            return dap_io_flow_cbpf_is_available();
 #else
             return false;
 #endif

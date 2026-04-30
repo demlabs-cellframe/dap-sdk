@@ -280,6 +280,12 @@ static void test_cbpf_fixture_tier_available(void)
 static void test_cbpf_fixture_context(void)
 {
     dap_test_msg("Test: Fixture context for CBPF tier");
+
+    if (!dap_io_flow_cbpf_is_available()) {
+        dap_test_msg("CBPF runtime attach unavailable, skipping fixture context test");
+        dap_pass_msg("Fixture context test skipped");
+        return;
+    }
     
     dap_io_flow_test_context_t *l_ctx = dap_io_flow_test_context_create(IO_FLOW_TIER_CBPF);
     dap_assert(l_ctx != NULL, "Context creation should succeed");
@@ -302,6 +308,12 @@ static void test_cbpf_fixture_context(void)
 static void test_cbpf_fixture_transfer(void)
 {
     dap_test_msg("Test: Fixture transfer simulation for CBPF");
+
+    if (!dap_io_flow_cbpf_is_available()) {
+        dap_test_msg("CBPF runtime attach unavailable, skipping fixture transfer test");
+        dap_pass_msg("Fixture transfer test skipped");
+        return;
+    }
     
     dap_io_flow_test_context_t *l_ctx = dap_io_flow_test_context_create(IO_FLOW_TIER_CBPF);
     dap_assert(l_ctx != NULL, "Context creation should succeed");
@@ -367,6 +379,12 @@ static void test_cbpf_error_handling(void)
 static void test_cbpf_throughput(void)
 {
     dap_test_msg("Test: CBPF throughput measurement");
+
+    if (!dap_io_flow_cbpf_is_available()) {
+        dap_test_msg("CBPF runtime attach unavailable, skipping throughput test");
+        dap_pass_msg("Throughput test skipped");
+        return;
+    }
     
     dap_io_flow_test_context_t *l_ctx = dap_io_flow_test_context_create(IO_FLOW_TIER_CBPF);
     dap_assert(l_ctx != NULL, "Context creation should succeed");

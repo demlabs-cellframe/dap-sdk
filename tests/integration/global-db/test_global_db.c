@@ -184,18 +184,18 @@ static void s_test_mdbx_master_repair_preserves_spaces(void)
 #if defined(DAP_CHAIN_GDB_ENGINE_MDBX) && defined(DAP_CHAIN_GDB_ENGINE_SQLITE)
 static void s_test_mdbx_fallback_fail_closed(void)
 {
-    char l_mdbx_path[MAX_PATH], l_sqlite_path[MAX_PATH];
+    char l_mdbx_path[MAX_PATH], l_mdbx_dat_path[MAX_PATH + 16], l_sqlite_path[MAX_PATH];
     dap_rm_rf(DB_FILE_MDBX_FAIL_CLOSED);
     dap_mkdir_with_parents(DB_FILE_MDBX_FAIL_CLOSED);
     snprintf(l_mdbx_path, sizeof(l_mdbx_path), "%s/gdb-mdbx", DB_FILE_MDBX_FAIL_CLOSED);
+    snprintf(l_mdbx_dat_path, sizeof(l_mdbx_dat_path), "%s/mdbx.dat", l_mdbx_path);
     snprintf(l_sqlite_path, sizeof(l_sqlite_path), "%s/gdb-sqlite", DB_FILE_MDBX_FAIL_CLOSED);
     dap_mkdir_with_parents(l_mdbx_path);
-    chmod(l_mdbx_path, 0500);
+    dap_mkdir_with_parents(l_mdbx_dat_path);
 
     int l_rc = dap_global_db_driver_init("mdbx", DB_FILE_MDBX_FAIL_CLOSED);
     bool l_sqlite_created = access(l_sqlite_path, F_OK) == 0;
     dap_global_db_driver_deinit();
-    chmod(l_mdbx_path, 0700);
     dap_rm_rf(DB_FILE_MDBX_FAIL_CLOSED);
 
     dap_assert_PIF(l_rc != 0, "MDBX init failure must fail closed");
