@@ -2012,8 +2012,17 @@ dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_ev
 #elif defined(DAP_EVENTS_CAPS_POLL)
     l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
+#if defined(DAP_EVENTS_CAPS_QUEUE_KEVENT)
+    /* Identical to event socket: EVFILT_USER + synthetic ident; ptr delivery via kevent (see queue_proc_input). */
+    l_es->kqueue_base_flags = EV_ONESHOT;
+    l_es->kqueue_base_fflags = NOTE_FFNOP | NOTE_TRIGGER;
+    l_es->kqueue_base_filter = EVFILT_USER;
+    l_es->socket = (SOCKET)arc4random();
+    l_es->kqueue_event_catched_data.esocket = l_es;
+#else
     l_es->kqueue_base_flags = EV_ADD | EV_ENABLE;
     l_es->kqueue_base_filter = EVFILT_READ;
+#endif
 #endif
 
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
@@ -2030,6 +2039,8 @@ dap_events_socket_t * dap_context_create_queue(dap_context_t * a_context, dap_ev
     l_es->socket = INVALID_SOCKET;
     l_es->buf_out = _aligned_malloc(sizeof(SLIST_HEADER), MEMORY_ALLOCATION_ALIGNMENT);
     InitializeSListHead((PSLIST_HEADER)l_es->buf_out);
+#elif defined(DAP_EVENTS_CAPS_QUEUE_KEVENT)
+    /* kqueue user filter uses l_es->socket as ident; union shares fd/socket — do not open a pipe here */
 #else
 #error "Queue not supported on this platform"
 #endif

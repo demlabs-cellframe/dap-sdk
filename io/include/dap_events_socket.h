@@ -321,6 +321,8 @@ typedef struct dap_events_socket {
         buf_in_size,    buf_in_size_max,
         buf_out_size,   buf_out_size_max;
 
+    dap_events_socket_t *pipe_out; // Optional: target esocket for kqueue cross-context event delivery
+
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     pthread_rwlock_t buf_out_lock;
 #endif

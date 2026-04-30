@@ -765,20 +765,21 @@ static void s_process_flow_packet_common(
     // === FAST PATH for BPF tiers (Tier 2/3): NO forwarding needed! ===
     // Kernel SO_REUSEPORT + BPF already distributed packet to correct worker.
     // Simply create flow locally without any cross-worker logic.
+#if defined(__linux__) || defined(ANDROID)
     if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_EBPF ||
         a_server->lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
-        
+
         // Find or create flow on LOCAL worker only
         pthread_rwlock_wrlock(&a_server->flow_locks_per_worker[l_worker->id]);
-        
+
         dap_io_flow_t *l_flow = NULL;
         HASH_FIND(hh, a_server->flows_per_worker[l_worker->id], a_remote_addr,
                   sizeof(struct sockaddr_storage), l_flow);
-        
+
         if (!l_flow) {
             // Create flow locally (kernel already routed packet to correct worker!)
             l_flow = a_server->ops->flow_create(a_server, a_remote_addr, a_listener_es);
-            
+
             if (l_flow) {
                 memcpy(&l_flow->remote_addr, a_remote_addr, sizeof(struct sockaddr_storage));
                 l_flow->remote_addr_len = a_remote_addr_len;
@@ -786,30 +787,31 @@ static void s_process_flow_packet_common(
                 l_flow->server = a_server;
                 l_flow->last_activity = time(NULL);
                 l_flow->boundary_type = a_server->boundary_type;
-                
+
                 HASH_ADD(hh, a_server->flows_per_worker[l_worker->id], remote_addr,
                          sizeof(struct sockaddr_storage), l_flow);
-                
+
                 debug_if(s_debug_more, L_DEBUG, "BPF tier: created flow locally on worker %u",
                          l_worker->id);
             }
         }
-        
+
         pthread_rwlock_unlock(&a_server->flow_locks_per_worker[l_worker->id]);
-        
+
         if (!l_flow) {
             log_it(L_WARNING, "Failed to create flow - dropping packet");
             return;
         }
-        
+
         // Process packet directly (no forwarding!)
         if (a_server->ops->packet_received) {
             a_server->ops->packet_received(a_server, l_flow, a_data, a_data_size,
                                            a_remote_addr, a_listener_es);
         }
-        
+
         return;  // BPF tier processing complete
     }
+#endif
     
     // === SLOW PATH for Application-level LB (Tier 1): manual forwarding === 
     
