@@ -115,6 +115,25 @@ void dap_events_socket_set_pre_connect_callback(dap_events_socket_pre_connect_ca
 #ifndef DAP_UDP_MAX_DATAGRAM_SIZE
 #define DAP_UDP_MAX_DATAGRAM_SIZE 65507  // 65535 - 8 (UDP header) - 20 (IP header)
 #endif
+
+static int s_datagram_socket_error(void)
+{
+#ifdef DAP_OS_WINDOWS
+    return WSAGetLastError();
+#else
+    return errno;
+#endif
+}
+
+static bool s_datagram_socket_error_is_retryable(int a_error)
+{
+#ifdef DAP_OS_WINDOWS
+    return a_error == WSAEWOULDBLOCK || a_error == WSAENOBUFS;
+#else
+    return a_error == EAGAIN || a_error == EWOULDBLOCK || a_error == ENOBUFS;
+#endif
+}
+
 /**
  * @brief Create datagram packet queue
  */
@@ -242,11 +261,11 @@ ssize_t s_packet_queue_pop_and_send(dap_events_socket_packet_queue_t *a_queue, i
                             (struct sockaddr*)&l_pkt->addr, l_pkt->addr_len);
     
     if (l_sent < 0) {
-        int l_errno = errno;
-        if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+        int l_errno = s_datagram_socket_error();
+        if (s_datagram_socket_error_is_retryable(l_errno)) {
             return -2;  // Would block, keep packet in queue
         }
-        log_it(L_ERROR, "Datagram sendto failed: %s", strerror(l_errno));
+        log_it(L_ERROR, "Datagram sendto failed, error %d: %s", l_errno, dap_strerror(l_errno));
         // Drop this packet and continue
         DAP_DELETE(l_pkt->data);
         a_queue->head = (a_queue->head + 1) % a_queue->capacity;
@@ -2224,8 +2243,8 @@ size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es,
                             (struct sockaddr*)a_addr, a_addr_len);
     
     if (l_sent < 0) {
-        int l_errno = errno;
-        if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+        int l_errno = s_datagram_socket_error();
+        if (s_datagram_socket_error_is_retryable(l_errno)) {
             // Socket would block, create queue and add packet
             if (!a_es->packet_queue) {
                 a_es->packet_queue = s_packet_queue_create();
@@ -2247,7 +2266,7 @@ size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es,
         }
         
         // Permanent error
-        log_it(L_ERROR, "Datagram sendto failed: %s", strerror(l_errno));
+        log_it(L_ERROR, "Datagram sendto failed, error %d: %s", l_errno, dap_strerror(l_errno));
         return 0;
     }
     
