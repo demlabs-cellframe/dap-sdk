@@ -36,15 +36,44 @@ typedef struct legacy_callbacks_abi {
 } legacy_callbacks_abi_t;
 
 static test_plugin_counters_t *s_current_counters = NULL;
+static struct {
+    const char *name;
+    test_plugin_counters_t *counters;
+} s_named_counters[8];
+static size_t s_named_counters_count = 0;
+
+static void s_counter_register(const char *a_name, test_plugin_counters_t *a_counters)
+{
+    dap_assert(s_named_counters_count < sizeof(s_named_counters) / sizeof(s_named_counters[0]),
+               "test counter registry has capacity");
+    s_named_counters[s_named_counters_count].name = a_name;
+    s_named_counters[s_named_counters_count].counters = a_counters;
+    s_named_counters_count++;
+}
+
+static void s_counter_registry_clear(void)
+{
+    memset(s_named_counters, 0, sizeof(s_named_counters));
+    s_named_counters_count = 0;
+}
+
+static test_plugin_counters_t *s_counter_for_manifest(dap_plugin_manifest_t *a_manifest)
+{
+    for (size_t i = 0; i < s_named_counters_count; i++) {
+        if (!strcmp(s_named_counters[i].name, a_manifest->name))
+            return s_named_counters[i].counters;
+    }
+    return s_current_counters;
+}
 
 static int s_test_load(dap_plugin_manifest_t *a_manifest, void **a_pvt_data, char **a_error_str)
 {
-    (void)a_manifest;
     (void)a_error_str;
     dap_assert(a_pvt_data != NULL, "load receives private data pointer");
-    dap_assert(s_current_counters != NULL, "test counters are configured");
-    s_current_counters->load_count++;
-    *a_pvt_data = s_current_counters;
+    test_plugin_counters_t *l_counters = s_counter_for_manifest(a_manifest);
+    dap_assert(l_counters != NULL, "test counters are configured");
+    l_counters->load_count++;
+    *a_pvt_data = l_counters;
     return 0;
 }
 
@@ -84,6 +113,7 @@ static void s_cleanup_manifest(const char *a_name)
         dap_plugin_stop(a_name);
     dap_plugins_manifest_remove(a_name);
     s_current_counters = NULL;
+    s_counter_registry_clear();
 }
 
 static char *s_make_temp_dir(const char *a_name)
@@ -288,6 +318,55 @@ static void test_load_only_does_not_report_running(void)
     s_cleanup_manifest("test_load_only_plugin");
 }
 
+static void test_start_single_runs_dependency_lifecycle(void)
+{
+    dap_print_module_name("single start dependency lifecycle");
+
+    test_plugin_counters_t l_dependency_counters = {0};
+    test_plugin_counters_t l_dependent_counters = {0};
+    s_counter_register("test_single_start_dependency", &l_dependency_counters);
+    s_counter_register("test_single_start_dependent", &l_dependent_counters);
+
+    dap_plugin_type_callbacks_ex_t l_callbacks = { .size = sizeof(l_callbacks) };
+    l_callbacks.load = s_test_load;
+    l_callbacks.unload = s_test_unload;
+    l_callbacks.preinit = s_test_preinit;
+    l_callbacks.init = s_test_init;
+
+    dap_assert(dap_plugin_type_create_ex("test_single_start_type", &l_callbacks) == 0,
+               "single start callback descriptor is accepted");
+    dap_assert(dap_plugin_manifest_add_builtin("test_single_start_dependency", "test_single_start_type",
+                                               "test", "1.0", "single start dependency",
+                                               NULL, 0, NULL, 0) != NULL,
+               "single start dependency manifest is registered");
+    char *l_dependencies[] = { "test_single_start_dependency" };
+    dap_assert(dap_plugin_manifest_add_builtin("test_single_start_dependent", "test_single_start_type",
+                                               "test", "1.0", "single start dependent",
+                                               l_dependencies, 1, NULL, 0) != NULL,
+               "single start dependent manifest is registered");
+
+    dap_assert(dap_plugin_start("test_single_start_dependent") == 0,
+               "single plugin start starts fresh dependency first");
+    dap_assert(l_dependency_counters.load_count == 1, "dependency load called once");
+    dap_assert(l_dependency_counters.preinit_count == 1, "dependency preinit called once");
+    dap_assert(l_dependency_counters.init_count == 1, "dependency init called once");
+    dap_assert(l_dependent_counters.load_count == 1, "dependent load called once");
+    dap_assert(l_dependent_counters.preinit_count == 1, "dependent preinit called once");
+    dap_assert(l_dependent_counters.init_count == 1, "dependent init called once");
+    dap_assert(dap_plugin_status("test_single_start_dependency") == STATUS_RUNNING,
+               "dependency reports running after single dependent start");
+    dap_assert(dap_plugin_status("test_single_start_dependent") == STATUS_RUNNING,
+               "dependent reports running after single start");
+
+    dap_assert(dap_plugin_stop("test_single_start_dependent") == 0, "single start dependent stops");
+    dap_assert(dap_plugin_stop("test_single_start_dependency") == 0, "single start dependency stops");
+    dap_assert(l_dependent_counters.unload_count == 1, "dependent unload called once");
+    dap_assert(l_dependency_counters.unload_count == 1, "dependency unload called once");
+
+    s_cleanup_manifest("test_single_start_dependent");
+    s_cleanup_manifest("test_single_start_dependency");
+}
+
 static void test_preinit_failure_skips_init_and_rolls_back(void)
 {
     dap_print_module_name("preinit failure rollback");
@@ -318,6 +397,55 @@ static void test_preinit_failure_skips_init_and_rolls_back(void)
                "failed preinit plugin is not reported running");
 
     s_cleanup_manifest("test_preinit_fail_plugin");
+}
+
+static void test_dependency_preinit_failure_skips_dependent(void)
+{
+    dap_print_module_name("dependency preinit failure skips dependent");
+
+    test_plugin_counters_t l_dependency_counters = {
+        .preinit_result = -42
+    };
+    test_plugin_counters_t l_dependent_counters = {0};
+    s_counter_register("test_preinit_fail_dependency", &l_dependency_counters);
+    s_counter_register("test_preinit_fail_dependent", &l_dependent_counters);
+
+    dap_plugin_type_callbacks_ex_t l_callbacks = { .size = sizeof(l_callbacks) };
+    l_callbacks.load = s_test_load;
+    l_callbacks.unload = s_test_unload;
+    l_callbacks.preinit = s_test_preinit;
+    l_callbacks.init = s_test_init;
+
+    dap_assert(dap_plugin_type_create_ex("test_preinit_fail_dependency_type", &l_callbacks) == 0,
+               "dependency failure callback descriptor is accepted");
+    dap_assert(dap_plugin_type_create_ex("test_preinit_fail_dependent_type", &l_callbacks) == 0,
+               "dependent callback descriptor is accepted");
+    dap_assert(dap_plugin_manifest_add_builtin("test_preinit_fail_dependency", "test_preinit_fail_dependency_type",
+                                               "test", "1.0", "preinit failure dependency",
+                                               NULL, 0, NULL, 0) != NULL,
+               "preinit failure dependency manifest is registered");
+    char *l_dependencies[] = { "test_preinit_fail_dependency" };
+    dap_assert(dap_plugin_manifest_add_builtin("test_preinit_fail_dependent", "test_preinit_fail_dependent_type",
+                                               "test", "1.0", "dependent on failed preinit",
+                                               l_dependencies, 1, NULL, 0) != NULL,
+               "dependent manifest is registered");
+
+    dap_assert(dap_plugin_start_all() > 0, "start_all reports dependency preinit failure");
+    dap_assert(l_dependency_counters.load_count == 1, "dependency load called once");
+    dap_assert(l_dependency_counters.preinit_count == 1, "dependency preinit called once");
+    dap_assert(l_dependency_counters.init_count == 0, "dependency init skipped after preinit failure");
+    dap_assert(l_dependency_counters.unload_count == 1, "dependency is rolled back after preinit failure");
+    dap_assert(l_dependent_counters.load_count == 1, "dependent loads after dependency is loaded");
+    dap_assert(l_dependent_counters.preinit_count == 0, "dependent preinit skipped because dependency failed");
+    dap_assert(l_dependent_counters.init_count == 0, "dependent init skipped because dependency failed");
+    dap_assert(l_dependent_counters.unload_count == 1, "dependent is rolled back after dependency failure");
+    dap_assert(dap_plugin_status("test_preinit_fail_dependency") == STATUS_STOPPED,
+               "failed dependency is not reported running");
+    dap_assert(dap_plugin_status("test_preinit_fail_dependent") == STATUS_STOPPED,
+               "dependent is not reported running");
+
+    s_cleanup_manifest("test_preinit_fail_dependent");
+    s_cleanup_manifest("test_preinit_fail_dependency");
 }
 
 static void test_binary_load_failures_cleanup(void)
@@ -378,7 +506,9 @@ int main(void)
     test_legacy_callback_layout();
     test_start_all_runs_full_lifecycle();
     test_load_only_does_not_report_running();
+    test_start_single_runs_dependency_lifecycle();
     test_preinit_failure_skips_init_and_rolls_back();
+    test_dependency_preinit_failure_skips_dependent();
     test_binary_load_failures_cleanup();
 
     dap_plugin_manifest_deinit();

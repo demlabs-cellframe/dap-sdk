@@ -1402,7 +1402,6 @@ int dap_link_manager_add_active_channel(char a_ch_id)
  */
 int dap_link_manager_remove_active_channel(char a_ch_id)
 {
-    dap_return_val_if_pass_err(!s_link_manager, -1, s_init_error);
     s_active_channels_ensure_default();
     size_t l_len = dap_strlen(s_active_channels);
     char *l_pos = memchr(s_active_channels, (unsigned char)a_ch_id, l_len);

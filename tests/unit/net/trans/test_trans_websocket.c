@@ -170,6 +170,8 @@ typedef struct ws_test_http_capture {
     size_t request_size;
     size_t last_write_size;
     size_t last_write_f_size;
+    uint8_t last_write_prefix[16];
+    size_t last_write_prefix_size;
     bool response_callback_called;
     bool error_callback_called;
     bool write_f_called;
@@ -236,6 +238,8 @@ DAP_MOCK_WRAPPER_CUSTOM(size_t, dap_events_socket_write_unsafe,
     UNUSED(a_data);
 
     s_http_capture.last_write_size = a_data_size;
+    s_http_capture.last_write_prefix_size = dap_min(a_data_size, sizeof(s_http_capture.last_write_prefix));
+    memcpy(s_http_capture.last_write_prefix, a_data, s_http_capture.last_write_prefix_size);
 
     if (g_mock_dap_events_socket_write_unsafe && g_mock_dap_events_socket_write_unsafe->return_value.ptr != NULL) {
         return (size_t)(uintptr_t)g_mock_dap_events_socket_write_unsafe->return_value.ptr;
@@ -376,6 +380,14 @@ DAP_MOCK_WRAPPER_CUSTOM(dap_stream_t*, dap_stream_new_es_client,
 
 static bool s_test_initialized = false;
 static bool s_session_callback_called = false;
+static bool s_original_delete_callback_called = false;
+
+static void s_test_original_delete_callback(dap_events_socket_t *a_es, void *a_arg)
+{
+    UNUSED(a_es);
+    UNUSED(a_arg);
+    s_original_delete_callback_called = true;
+}
 
 static dap_worker_t *s_get_real_auto_worker(void)
 {
@@ -1225,6 +1237,308 @@ static void test_19_stage_prepare_iocp_connect_socket_not_read_ready(void)
 #endif
 }
 
+/**
+ * @brief Test WebSocket parser rejects oversized and malformed frame sizes.
+ */
+static void test_20_parse_frame_rejects_oversized_and_incomplete_frames(void)
+{
+    TEST_INFO("Testing WebSocket frame parser size validation");
+
+    dap_ws_opcode_t l_opcode = 0;
+    bool l_fin = false;
+    uint8_t *l_payload = NULL;
+    size_t l_payload_size = 0;
+    size_t l_frame_size = 0;
+
+    const uint8_t l_one_byte_header[] = { 0x82 };
+    int l_ret = dap_net_trans_websocket_parse_frame(l_one_byte_header, sizeof(l_one_byte_header),
+                                                    &l_opcode, &l_fin, &l_payload,
+                                                    &l_payload_size, &l_frame_size);
+    TEST_ASSERT(l_ret == -2, "Single-byte WebSocket header should be incomplete");
+    TEST_ASSERT_NULL(l_payload, "Incomplete single-byte header should not allocate payload");
+    TEST_ASSERT(l_payload_size == 0, "Incomplete single-byte header should report zero payload size");
+    TEST_ASSERT(l_frame_size == 0, "Incomplete single-byte header should report zero consumed size");
+
+    const uint8_t l_oversized_frame[] = {
+        0x82, 0x7f,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x01
+    };
+    l_ret = dap_net_trans_websocket_parse_frame(l_oversized_frame, sizeof(l_oversized_frame),
+                                                &l_opcode, &l_fin, &l_payload,
+                                                &l_payload_size, &l_frame_size);
+    TEST_ASSERT(l_ret == -1, "Oversized payload length should be rejected before allocation");
+    TEST_ASSERT_NULL(l_payload, "Rejected oversized frame should not allocate payload");
+    TEST_ASSERT(l_payload_size == 0, "Rejected oversized frame should report zero payload size");
+    TEST_ASSERT(l_frame_size == 0, "Rejected oversized frame should report zero consumed size");
+
+    const uint8_t l_incomplete_frame[] = { 0x82, 0x7e, 0x00, 0x04, 0xaa };
+    l_ret = dap_net_trans_websocket_parse_frame(l_incomplete_frame, sizeof(l_incomplete_frame),
+                                               &l_opcode, &l_fin, &l_payload,
+                                               &l_payload_size, &l_frame_size);
+    TEST_ASSERT(l_ret == -2, "Incomplete in-cap frame should request more data");
+    TEST_ASSERT_NULL(l_payload, "Incomplete frame should not allocate payload");
+
+    const uint8_t l_oversized_control_frame[] = { 0x89, 0x7e, 0x00, 0x7e };
+    l_ret = dap_net_trans_websocket_parse_frame(l_oversized_control_frame,
+                                               sizeof(l_oversized_control_frame),
+                                               &l_opcode, &l_fin, &l_payload,
+                                               &l_payload_size, &l_frame_size);
+    TEST_ASSERT(l_ret == -1, "Oversized control frame should be rejected");
+    TEST_ASSERT_NULL(l_payload, "Rejected control frame should not allocate payload");
+
+    const uint8_t l_close_len_one_frame[] = { 0x88, 0x01, 0x00 };
+    l_ret = dap_net_trans_websocket_parse_frame(l_close_len_one_frame,
+                                               sizeof(l_close_len_one_frame),
+                                               &l_opcode, &l_fin, &l_payload,
+                                               &l_payload_size, &l_frame_size);
+    TEST_ASSERT(l_ret == -1, "CLOSE frame with 1-byte payload should be rejected");
+    TEST_ASSERT_NULL(l_payload, "Rejected CLOSE len=1 frame should not allocate payload");
+
+    TEST_SUCCESS("WebSocket frame parser size validation verified");
+}
+
+/**
+ * @brief Regression: client CLOSE read path must not touch freed per-stream state.
+ */
+static void test_21_client_close_frame_read_unwinds_after_free(void)
+{
+    TEST_INFO("Testing WebSocket client CLOSE read unwind");
+
+    dap_net_trans_t *l_trans =
+        dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
+    TEST_ASSERT_NOT_NULL(l_trans, "WebSocket trans should be registered");
+
+    int l_ret = l_trans->ops->init(l_trans, NULL);
+    TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
+
+    uint8_t l_close_frame[] = { 0x88, 0x00 };
+    memset(&s_mock_stream, 0, sizeof(s_mock_stream));
+    memset(&s_mock_events_socket, 0, sizeof(s_mock_events_socket));
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0};
+    s_mock_events_socket.buf_in = l_close_frame;
+    s_mock_events_socket.buf_in_size = sizeof(l_close_frame);
+    s_mock_events_socket.buf_in_size_max = sizeof(l_close_frame);
+    s_mock_events_socket.callbacks.delete_callback = s_test_original_delete_callback;
+    s_mock_stream.trans = l_trans;
+    s_mock_stream.is_client_to_uplink = true;
+    s_mock_stream.esocket = &s_mock_events_socket;
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
+
+    l_ret = l_trans->ops->connect(&s_mock_stream, "127.0.0.1", 8080, NULL);
+    TEST_ASSERT(l_ret == 0, "Connect should allocate per-stream WebSocket state");
+
+    dap_net_trans_websocket_private_t *l_priv =
+        (dap_net_trans_websocket_private_t*)s_mock_trans_ctx.transport_priv;
+    TEST_ASSERT_NOT_NULL(l_priv, "Per-stream WebSocket state should exist before CLOSE");
+    l_priv->state = DAP_WS_STATE_OPEN;
+
+    TEST_ASSERT(s_mock_events_socket.callbacks.delete_callback != s_test_original_delete_callback,
+                "Connect should wrap the original esocket delete callback");
+
+    s_original_delete_callback_called = false;
+    ssize_t l_read_ret = l_trans->ops->read(&s_mock_stream, NULL, 0);
+    TEST_ASSERT(l_read_ret == 0, "CLOSE frame read should unwind successfully");
+    TEST_ASSERT_NULL(s_mock_trans_ctx.transport_priv,
+                     "CLOSE frame should release per-stream WebSocket state");
+    TEST_ASSERT(s_mock_events_socket.buf_in_size == 0,
+                "CLOSE frame bytes should be consumed before close cleanup");
+    TEST_ASSERT(s_mock_events_socket.callbacks.delete_callback != s_test_original_delete_callback,
+                "CLOSE cleanup should leave the esocket-owned delete wrapper installed");
+    s_mock_events_socket.callbacks.delete_callback(&s_mock_events_socket, NULL);
+    TEST_ASSERT(s_original_delete_callback_called,
+                "Wrapped delete callback should still call the original callback later");
+
+    l_trans->ops->deinit(l_trans);
+
+    TEST_SUCCESS("WebSocket client CLOSE read unwind verified");
+}
+
+/**
+ * @brief Regression: 1-byte WebSocket header must remain buffered in read path.
+ */
+static void test_22_read_keeps_partial_one_byte_header(void)
+{
+    TEST_INFO("Testing WebSocket read keeps partial single-byte header");
+
+    dap_net_trans_t *l_trans =
+        dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
+    TEST_ASSERT_NOT_NULL(l_trans, "WebSocket trans should be registered");
+
+    int l_ret = l_trans->ops->init(l_trans, NULL);
+    TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
+
+    uint8_t l_partial_frame[] = { 0x82 };
+    memset(&s_mock_stream, 0, sizeof(s_mock_stream));
+    memset(&s_mock_events_socket, 0, sizeof(s_mock_events_socket));
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0};
+    s_mock_events_socket.buf_in = l_partial_frame;
+    s_mock_events_socket.buf_in_size = sizeof(l_partial_frame);
+    s_mock_events_socket.buf_in_size_max = sizeof(l_partial_frame);
+    s_mock_stream.trans = l_trans;
+    s_mock_stream.is_client_to_uplink = true;
+    s_mock_stream.esocket = &s_mock_events_socket;
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
+
+    l_ret = l_trans->ops->connect(&s_mock_stream, "127.0.0.1", 8080, NULL);
+    TEST_ASSERT(l_ret == 0, "Connect should allocate per-stream WebSocket state");
+
+    dap_net_trans_websocket_private_t *l_priv =
+        (dap_net_trans_websocket_private_t*)s_mock_trans_ctx.transport_priv;
+    TEST_ASSERT_NOT_NULL(l_priv, "Per-stream WebSocket state should exist before read");
+    l_priv->state = DAP_WS_STATE_OPEN;
+
+    ssize_t l_read_ret = l_trans->ops->read(&s_mock_stream, NULL, 0);
+    TEST_ASSERT(l_read_ret == 0, "Partial frame read should wait for more bytes");
+    TEST_ASSERT(s_mock_events_socket.buf_in_size == sizeof(l_partial_frame),
+                "Partial single-byte header should not be consumed");
+    TEST_ASSERT(s_mock_events_socket.buf_in[0] == 0x82,
+                "Partial single-byte header byte should remain intact");
+
+    l_trans->ops->close(&s_mock_stream);
+    l_trans->ops->deinit(l_trans);
+
+    TEST_SUCCESS("WebSocket read partial single-byte header handling verified");
+}
+
+/**
+ * @brief Test public server-side parser helper requires client masking.
+ */
+static void test_23_parse_client_frame_requires_mask(void)
+{
+    TEST_INFO("Testing WebSocket client-frame mask validation API");
+
+    const uint8_t l_payload_in[] = { 0x10, 0x20, 0x30 };
+    uint8_t l_frame[64] = {0};
+    size_t l_frame_size = 0;
+    int l_ret = dap_net_trans_websocket_build_frame(l_frame, sizeof(l_frame),
+                                                    DAP_WS_OPCODE_BINARY, true, true,
+                                                    l_payload_in, sizeof(l_payload_in),
+                                                    &l_frame_size);
+    TEST_ASSERT(l_ret == 0, "Masked frame build should succeed");
+
+    dap_ws_opcode_t l_opcode = 0;
+    bool l_fin = false;
+    uint8_t *l_payload_out = NULL;
+    size_t l_payload_size = 0;
+    size_t l_consumed = 0;
+    l_ret = dap_net_trans_websocket_parse_client_frame(l_frame, l_frame_size,
+                                                       &l_opcode, &l_fin,
+                                                       &l_payload_out, &l_payload_size,
+                                                       &l_consumed);
+    TEST_ASSERT(l_ret == 0, "Masked client frame should parse successfully");
+    TEST_ASSERT(l_opcode == DAP_WS_OPCODE_BINARY, "Parsed opcode should be binary");
+    TEST_ASSERT(l_fin, "Parsed frame should be final");
+    TEST_ASSERT(l_payload_size == sizeof(l_payload_in), "Parsed payload size should match");
+    TEST_ASSERT(l_consumed == l_frame_size, "Parsed frame size should match");
+    TEST_ASSERT(memcmp(l_payload_out, l_payload_in, sizeof(l_payload_in)) == 0,
+                "Masked payload should be unmasked by parser");
+    DAP_DEL_Z(l_payload_out);
+
+    memset(l_frame, 0, sizeof(l_frame));
+    l_ret = dap_net_trans_websocket_build_frame(l_frame, sizeof(l_frame),
+                                                DAP_WS_OPCODE_BINARY, true, false,
+                                                l_payload_in, sizeof(l_payload_in),
+                                                &l_frame_size);
+    TEST_ASSERT(l_ret == 0, "Unmasked frame build should succeed");
+
+    l_ret = dap_net_trans_websocket_parse_client_frame(l_frame, l_frame_size,
+                                                       &l_opcode, &l_fin,
+                                                       &l_payload_out, &l_payload_size,
+                                                       &l_consumed);
+    TEST_ASSERT(l_ret == -1, "Server-side client-frame parser should reject unmasked frames");
+    TEST_ASSERT_NULL(l_payload_out, "Rejected unmasked frame should not allocate payload");
+
+    TEST_SUCCESS("WebSocket client-frame mask validation API verified");
+}
+
+/**
+ * @brief Regression: server receive path rejects unmasked client frames.
+ */
+static void test_24_server_read_rejects_unmasked_client_frame(void)
+{
+    TEST_INFO("Testing WebSocket server read rejects unmasked client frames");
+
+    dap_http_client_t l_http_client = {0};
+    dap_events_socket_t l_esocket = {0};
+    dap_strncpy(l_esocket.remote_addr_str, "127.0.0.1", sizeof(l_esocket.remote_addr_str) - 1);
+    l_http_client.esocket = &l_esocket;
+    dap_http_header_add(&l_http_client.in_headers, "Upgrade", "websocket");
+    dap_http_header_add(&l_http_client.in_headers, "Connection", "Upgrade");
+    dap_http_header_add(&l_http_client.in_headers, "Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+    dap_http_header_add(&l_http_client.in_headers, "Sec-WebSocket-Version", "13");
+
+    int l_ret = dap_net_trans_websocket_try_upgrade(&l_http_client);
+    TEST_ASSERT(l_ret == 0, "Valid WebSocket upgrade should be handled");
+    TEST_ASSERT(l_http_client.reply_status_code == 101, "Upgrade should switch protocols");
+    TEST_ASSERT_NOT_NULL(l_esocket.callbacks.read_callback,
+                         "Upgrade should install WebSocket server read callback");
+
+    s_http_capture.last_write_size = 0;
+    uint8_t l_unmasked_frame[2] = { 0x82, 0x00 };
+    l_esocket.buf_in = l_unmasked_frame;
+    l_esocket.buf_in_size = sizeof(l_unmasked_frame);
+    l_esocket.buf_in_size_max = sizeof(l_unmasked_frame);
+
+    l_esocket.callbacks.read_callback(&l_esocket, NULL);
+
+    TEST_ASSERT(l_esocket.flags & DAP_SOCK_SIGNAL_CLOSE,
+                "Unmasked client frame should close the server-side WebSocket");
+    TEST_ASSERT(s_http_capture.last_write_size > 0,
+                "Protocol close frame should be written for unmasked client frame");
+
+    s_test_ws_cleanup_upgrade_stream(&l_http_client);
+    s_test_ws_http_headers_clear(&l_http_client);
+
+    TEST_SUCCESS("WebSocket server read mask enforcement verified");
+}
+
+/**
+ * @brief Regression: generic stream send must use WebSocket framing.
+ */
+static void test_25_stream_send_uses_masked_websocket_frame(void)
+{
+    TEST_INFO("Testing generic stream send uses masked WebSocket frame");
+
+    dap_net_trans_t *l_trans = dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
+    TEST_ASSERT_NOT_NULL(l_trans, "WebSocket trans should be registered");
+
+    int l_ret = l_trans->ops->init(l_trans, NULL);
+    TEST_ASSERT(l_ret == 0, "Trans initialization should succeed");
+
+    memset(&s_mock_stream, 0, sizeof(s_mock_stream));
+    memset(&s_mock_events_socket, 0, sizeof(s_mock_events_socket));
+    s_mock_trans_ctx = (dap_net_trans_ctx_t){0};
+    s_mock_stream.trans = l_trans;
+    s_mock_stream.is_client_to_uplink = true;
+    s_mock_stream.esocket = &s_mock_events_socket;
+    s_mock_stream.trans_ctx = &s_mock_trans_ctx;
+    s_mock_trans_ctx.trans = l_trans;
+
+    l_ret = l_trans->ops->connect(&s_mock_stream, "127.0.0.1", 8080, NULL);
+    TEST_ASSERT(l_ret == 0, "Connect should allocate per-stream WebSocket state");
+
+    dap_net_trans_websocket_private_t *l_priv =
+        (dap_net_trans_websocket_private_t*)s_mock_trans_ctx.transport_priv;
+    TEST_ASSERT_NOT_NULL(l_priv, "Per-stream WebSocket state should exist before send");
+    l_priv->state = DAP_WS_STATE_OPEN;
+
+    static const uint8_t l_payload[] = { 0x01, 0x02, 0x03 };
+    ssize_t l_sent = dap_stream_send_unsafe(&s_mock_stream, l_payload, sizeof(l_payload));
+    TEST_ASSERT(l_sent == (ssize_t)sizeof(l_payload),
+                "WebSocket stream send should report payload bytes");
+    TEST_ASSERT(s_http_capture.last_write_size > sizeof(l_payload),
+                "WebSocket stream send should write a framed payload");
+    TEST_ASSERT(s_http_capture.last_write_prefix_size >= 2,
+                "Captured WebSocket frame should include header bytes");
+    TEST_ASSERT((s_http_capture.last_write_prefix[1] & 0x80) != 0,
+                "Client WebSocket stream send should mask frames");
+
+    l_trans->ops->close(&s_mock_stream);
+    l_trans->ops->deinit(l_trans);
+
+    TEST_SUCCESS("Generic WebSocket stream send framing verified");
+}
+
 // ============================================================================
 // Test Suite Definition
 // ============================================================================
@@ -1260,6 +1574,12 @@ int main(int argc, char *argv[])
     TEST_RUN(test_17_accept_key_rejects_malformed_client_keys);
     TEST_RUN(test_18_upgrade_rejects_substring_tokens);
     TEST_RUN(test_19_stage_prepare_iocp_connect_socket_not_read_ready);
+    TEST_RUN(test_20_parse_frame_rejects_oversized_and_incomplete_frames);
+    TEST_RUN(test_21_client_close_frame_read_unwinds_after_free);
+    TEST_RUN(test_22_read_keeps_partial_one_byte_header);
+    TEST_RUN(test_23_parse_client_frame_requires_mask);
+    TEST_RUN(test_24_server_read_rejects_unmasked_client_frame);
+    TEST_RUN(test_25_stream_send_uses_masked_websocket_frame);
     
     TEST_SUITE_END();
     

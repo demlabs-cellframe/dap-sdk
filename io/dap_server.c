@@ -597,8 +597,10 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     l_es_new->remote_port = strtol(l_port_str, NULL, 10);
     dap_strncpy(l_es_new->remote_addr_str, l_remote_addr_str, INET6_ADDRSTRLEN);
     dap_worker_t *l_worker = dap_events_worker_get_auto();
-    if (!l_worker || dap_worker_add_events_socket(l_worker, l_es_new) != 0) {
-        log_it(L_ERROR, "Failed to assign accepted client socket %"DAP_FORMAT_SOCKET" to worker", a_remote_socket);
+    int l_add_ret = l_worker ? dap_worker_add_events_socket_async(l_worker, l_es_new) : -ENODEV;
+    if (l_add_ret != 0) {
+        log_it(L_ERROR, "Failed to assign accepted client socket %"DAP_FORMAT_SOCKET" to worker: %d",
+               a_remote_socket, l_add_ret);
         dap_events_socket_delete_unsafe(l_es_new, false);
     }
 }

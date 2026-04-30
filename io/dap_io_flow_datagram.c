@@ -44,6 +44,7 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
                                                 dap_events_socket_t *a_listener_es);
 
 static void s_datagram_flow_destroy_wrapper(dap_io_flow_t *a_flow);
+static void s_datagram_send_es_delete(dap_io_flow_datagram_t *a_flow);
 
 /**
  * @brief Create DATAGRAM flow server
@@ -404,7 +405,15 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
         if (!l_owner_worker)
             l_owner_worker = a_listener_es->worker;
         if (l_owner_worker) {
-            dap_worker_add_events_socket(l_owner_worker, l_datagram_flow->send_es);
+            int l_add_ret = dap_worker_add_events_socket(l_owner_worker, l_datagram_flow->send_es);
+            if (l_add_ret != 0) {
+                log_it(L_ERROR, "DATAGRAM flow_create: failed to add send socket fd=%d to worker %u: %d",
+                       l_send_fd, l_owner_worker->id, l_add_ret);
+                l_datagram_flow->send_es->worker = NULL;
+                s_datagram_send_es_delete(l_datagram_flow);
+                s_datagram_ops->protocol_destroy(l_datagram_flow);
+                return NULL;
+            }
             uint16_t l_src_port = 0;
             if (a_remote_addr->ss_family == AF_INET) {
                 l_src_port = ntohs(((struct sockaddr_in*)a_remote_addr)->sin_port);
@@ -440,6 +449,7 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
     if (s_datagram_ops && s_datagram_ops->protocol_finalize) {
         if (s_datagram_ops->protocol_finalize(l_datagram_flow) != 0) {
             log_it(L_ERROR, "Protocol finalize failed");
+            s_datagram_send_es_delete(l_datagram_flow);
             s_datagram_ops->protocol_destroy(l_datagram_flow);
             return NULL;
         }
@@ -449,6 +459,20 @@ static dap_io_flow_t* s_datagram_flow_create_wrapper(dap_io_flow_server_t *a_srv
            dap_io_flow_datagram_get_remote_addr_str(l_datagram_flow));
     
     return &l_datagram_flow->base;
+}
+
+static void s_datagram_send_es_delete(dap_io_flow_datagram_t *a_flow)
+{
+    if (!a_flow || !a_flow->send_es) {
+        return;
+    }
+
+    if (a_flow->send_es->worker) {
+        dap_events_socket_remove_and_delete_mt(a_flow->send_es->worker, a_flow->send_es->uuid);
+    } else {
+        dap_events_socket_delete_unsafe(a_flow->send_es, true);
+    }
+    a_flow->send_es = NULL;
 }
 
 /**
@@ -466,19 +490,7 @@ static void s_datagram_flow_destroy_wrapper(dap_io_flow_t *a_flow)
            dap_io_flow_datagram_get_remote_addr_str(l_datagram_flow));
     
     // Close separate send socket if exists (SERVER flows)
-    if (l_datagram_flow->send_es) {
-        // Remove from worker and delete (MT-safe via UUID)
-        if (l_datagram_flow->send_es->worker) {
-            dap_events_socket_remove_and_delete_mt(l_datagram_flow->send_es->worker, 
-                                                   l_datagram_flow->send_es->uuid);
-            debug_if(s_debug_more, L_DEBUG, "Removed and deleted separate send socket from worker");
-        } else {
-            // Fallback: if no worker, delete directly
-            dap_events_socket_delete_unsafe(l_datagram_flow->send_es, true);
-            debug_if(s_debug_more, L_DEBUG, "Deleted separate send socket (no worker)");
-        }
-        l_datagram_flow->send_es = NULL;
-    }
+    s_datagram_send_es_delete(l_datagram_flow);
     
     // Call protocol-specific destruction
     if (s_datagram_ops && s_datagram_ops->protocol_destroy) {

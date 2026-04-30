@@ -1350,10 +1350,11 @@ static void test_02_sequential_trans_testing(void)
                 if (l_trans->trans_type == DAP_NET_TRANS_WEBSOCKET &&
                         l_scenario->num_servers == 10 &&
                         l_scenario->num_clients == 10 &&
-                        !s_stress_mode) {
+                        !s_stress_mode &&
+                        (!s_trans_filter || strcasecmp(s_trans_filter, l_trans->name) != 0)) {
                     printf("\n--- Scenario %zu/%zu: %s ---\n",
                            scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
-                    printf("⏭️  SKIPPED: WebSocket 10-server/10-client handshake is unstable under full Linux ctest load; 1x1 and 1x10 WebSocket coverage remains enabled\n");
+                    printf("⏭️  SKIPPED: WebSocket 10-server/10-client handshake is unstable under full Linux ctest load; run with --trans=WebSocket --max-clients=10 to exercise this focused coverage\n");
                     l_skipped_tests++;
                     continue;
                 }
@@ -1582,7 +1583,7 @@ int main(int argc, char **argv)
                                 "[dap_client]\n"
                                 "max_tries=5\n"
                                 "timeout=60\n"
-                                "timeout_read_after_connect=5\n"
+                                "timeout_read_after_connect=30\n"
                                 "timeout_active_after_connect=120\n"
                                 "debug_more=false\n"
                                "[stream]\n"

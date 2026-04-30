@@ -13,8 +13,22 @@ static void s_btc_rpc_unsupported_handler(UNUSED_ARG dap_json_rpc_params_t *a_pa
     log_it(L_WARNING, "Deprecated BTC JSON-RPC method \"%s\" is not supported", l_method);
     if (!a_response)
         return;
-    a_response->type = TYPE_RESPONSE_STRING;
-    a_response->result_string = dap_strdup_printf("BTC JSON-RPC method \"%s\" is not supported", l_method);
+    json_object *l_error = json_object_new_object();
+    json_object *l_data = json_object_new_object();
+    if (!l_error || !l_data) {
+        json_object_put(l_error);
+        json_object_put(l_data);
+        a_response->type = TYPE_RESPONSE_NULL;
+        return;
+    }
+    json_object_object_add(l_error, "code", json_object_new_int(-32601));
+    json_object_object_add(l_error, "message", json_object_new_string("Method not found"));
+    json_object_object_add(l_data, "method", json_object_new_string(l_method));
+    json_object_object_add(l_error, "data", l_data);
+
+    /* dap_json_rpc_response_t has no top-level error field; serialization wraps JSON values in "result". */
+    a_response->type = TYPE_RESPONSE_JSON;
+    a_response->result_json_object = l_error;
 }
 
 void dap_chain_btc_rpc_registration_handlers(void)

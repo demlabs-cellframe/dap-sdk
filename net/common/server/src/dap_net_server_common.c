@@ -152,8 +152,15 @@ void dap_net_server_accept_callback(dap_events_socket_t *a_es_listener,
     }
     
     debug_if(s_debug_more, L_DEBUG, "Adding client socket %"DAP_FORMAT_SOCKET" to worker", l_es_new->socket);
-    dap_worker_add_events_socket(dap_events_worker_get_auto(), l_es_new);
-    debug_if(s_debug_more, L_DEBUG, "Client socket %"DAP_FORMAT_SOCKET" added to worker", l_es_new->socket);
+    dap_worker_t *l_worker = dap_events_worker_get_auto();
+    int l_add_ret = l_worker ? dap_worker_add_events_socket_async(l_worker, l_es_new) : -ENODEV;
+    if (l_add_ret != 0) {
+        log_it(L_ERROR, "Failed to assign accepted client socket %"DAP_FORMAT_SOCKET" to worker: %d",
+               a_remote_socket, l_add_ret);
+        dap_events_socket_delete_unsafe(l_es_new, false);
+        return;
+    }
+    debug_if(s_debug_more, L_DEBUG, "Client socket %"DAP_FORMAT_SOCKET" queued/added to worker", l_es_new->socket);
 }
 
 /**

@@ -735,6 +735,46 @@ static void test_25_size_validation(void)
     teardown_test();
 }
 
+/**
+ * @brief Test aligned realloc contract for unsupported POSIX alignments
+ */
+static void test_26_aligned_realloc_contract(void)
+{
+    setup_test();
+
+    dap_print_module_name("DAP_ALREALLOC");
+
+    void *l_small = DAP_ALMALLOC(sizeof(void*), 16);
+    TEST_ASSERT_NOT_NULL(l_small, "DAP_ALMALLOC should allocate aligned memory");
+    void *l_small_realloc = DAP_ALREALLOC(l_small, sizeof(void*), 32);
+    TEST_ASSERT_NOT_NULL(l_small_realloc, "DAP_ALREALLOC should support allocator-native alignment");
+    TEST_ASSERT(((uintptr_t)l_small_realloc & (sizeof(void*) - 1)) == 0,
+                "DAP_ALREALLOC result should preserve requested native alignment");
+    DAP_ALFREE(l_small_realloc);
+
+#if defined(DAP_OS_LINUX) || defined(DAP_OS_DARWIN) || defined(DAP_OS_BSD) || defined(DAP_OS_ANDROID)
+    size_t l_large_alignment = __alignof__(max_align_t) * 2;
+    if (l_large_alignment < sizeof(void*) * 2)
+        l_large_alignment = sizeof(void*) * 2;
+    uint8_t *l_large = DAP_ALMALLOC(l_large_alignment, 16);
+    TEST_ASSERT_NOT_NULL(l_large, "DAP_ALMALLOC should allocate over-aligned memory on POSIX");
+    for (size_t i = 0; i < 16; i++)
+        l_large[i] = (uint8_t)(0xa0 + i);
+
+    void *l_large_realloc = DAP_ALREALLOC(l_large, l_large_alignment, 32);
+    TEST_ASSERT_NULL(l_large_realloc,
+                     "POSIX DAP_ALREALLOC should fail safely for unsupported over-aligned resize");
+    for (size_t i = 0; i < 16; i++)
+        TEST_ASSERT(l_large[i] == (uint8_t)(0xa0 + i),
+                    "Failed POSIX over-aligned DAP_ALREALLOC should leave original block valid");
+    DAP_ALFREE(l_large);
+#endif
+
+    TEST_SUCCESS("DAP_ALREALLOC preserves alignment contract");
+
+    teardown_test();
+}
+
 // ============================================================================
 // Main Test Runner
 // ============================================================================
@@ -789,6 +829,9 @@ int main(void)
     
     // Size validation
     TEST_RUN(test_25_size_validation);
+
+    // Aligned allocation
+    TEST_RUN(test_26_aligned_realloc_contract);
     
     TEST_SUITE_END();
     

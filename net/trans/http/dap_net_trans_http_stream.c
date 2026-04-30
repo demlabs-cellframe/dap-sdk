@@ -1121,8 +1121,8 @@ static ssize_t s_http_trans_write(dap_stream_t *a_stream, const void *a_data, si
         return (ssize_t)l_ret;
     }
 
-    log_it(L_WARNING, "HTTP trans write: _inheritor is NULL, data dropped! size=%zu", a_size);
-    return (ssize_t)a_size;
+    log_it(L_WARNING, "HTTP trans write: _inheritor is NULL, unable to write size=%zu", a_size);
+    return -1;
 }
 
 /**

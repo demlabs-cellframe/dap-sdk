@@ -414,6 +414,14 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
         debug_if(s_debug, L_DEBUG, "dap_stream_send_unsafe: stream %p using datagram path, flow=%p", a_stream, a_stream->flow);
         return s_stream_send_datagram_unsafe(a_stream, a_data, a_size);
     }
+
+    dap_net_trans_t *l_trans = a_stream->trans_ctx && a_stream->trans_ctx->trans
+                             ? a_stream->trans_ctx->trans : a_stream->trans;
+    if (l_trans && l_trans->type == DAP_NET_TRANS_WEBSOCKET &&
+            l_trans->ops && l_trans->ops->write) {
+        ssize_t l_ret = l_trans->ops->write(a_stream, a_data, a_size);
+        return l_ret > 0 ? l_ret : 0;
+    }
     
     // Stream-oriented transport (TCP, etc) - use direct write
     return dap_events_socket_write_unsafe(l_es, a_data, a_size);

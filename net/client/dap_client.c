@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <errno.h>
 
 #ifdef WIN32
 #include <winsock2.h>
@@ -254,12 +255,20 @@ int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_ty
 
     struct dap_client_write_args *l_args = DAP_NEW_SIZE(struct dap_client_write_args,
                                                          sizeof(struct dap_client_write_args) + a_data_size);
+    if (!l_args) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return -ENOMEM;
+    }
     l_args->client = a_client;
     l_args->ch_id = a_ch_id;
     l_args->type = a_type;
     l_args->data_size = a_data_size;
     memcpy(l_args->data, a_data, a_data_size);
-    dap_worker_exec_callback_on(l_fsm->worker, s_client_write_on_worker, l_args);
+    int l_ret = dap_worker_exec_callback_on(l_fsm->worker, s_client_write_on_worker, l_args);
+    if (l_ret) {
+        DAP_DELETE(l_args);
+        return l_ret;
+    }
     return 0;
 }
 

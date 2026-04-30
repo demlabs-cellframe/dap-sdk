@@ -209,7 +209,6 @@ typedef struct dap_net_trans_websocket_private {
     // Events socket
     dap_events_socket_t *esocket;             ///< Underlying events socket
     dap_http_client_t *http_client;            ///< HTTP client (for upgrade)
-    dap_events_socket_callback_t original_delete_callback; ///< Wrapped client esocket delete callback
     
     // Deferred session_start callback — invoked when 101 upgrade response arrives
     void (*ready_callback)(dap_stream_t *, int);
@@ -303,6 +302,22 @@ int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_siz
                                          dap_ws_opcode_t *a_opcode_out, bool *a_fin_out,
                                          uint8_t **a_payload_out, size_t *a_payload_size_out,
                                          size_t *a_frame_total_size_out);
+
+/**
+ * @brief Parse a client-to-server WebSocket frame and require the MASK bit
+ * @param a_data Raw data buffer
+ * @param a_data_size Size of raw data
+ * @param a_opcode_out Output: frame opcode
+ * @param a_fin_out Output: FIN bit
+ * @param a_payload_out Output: allocated payload (caller must free with DAP_DELETE)
+ * @param a_payload_size_out Output: payload size
+ * @param a_frame_total_size_out Output: total consumed frame size
+ * @return 0 on success, -1 on error, -2 if incomplete frame
+ */
+int dap_net_trans_websocket_parse_client_frame(const uint8_t *a_data, size_t a_data_size,
+                                                dap_ws_opcode_t *a_opcode_out, bool *a_fin_out,
+                                                uint8_t **a_payload_out, size_t *a_payload_size_out,
+                                                size_t *a_frame_total_size_out);
 
 /**
  * @brief Build a WebSocket frame

@@ -51,9 +51,12 @@
 
 // Protocol version
 #define DAP_STREAM_UDP_VERSION 1
+#define UDP_NO_KEY_WARN_INITIAL 16
+#define UDP_NO_KEY_WARN_PERIOD 10000
 
 // Global debug flag
 static bool s_debug_more = false;
+static _Atomic uint64_t s_no_key_packet_warn_count = 0;
 
 // Global thread pool for heavy KEM operations
 static dap_thread_pool_t *s_kem_thread_pool = NULL;
@@ -1760,7 +1763,15 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     }
     
     if (!a_session->encryption_key) {
-        log_it(L_WARNING, "Received encrypted packet but no encryption key established");
+        uint64_t l_warn_count = atomic_fetch_add(&s_no_key_packet_warn_count, 1) + 1;
+        if (l_warn_count <= UDP_NO_KEY_WARN_INITIAL || l_warn_count % UDP_NO_KEY_WARN_PERIOD == 0) {
+            log_it(L_WARNING, "Received encrypted packet but no encryption key established (count=%" PRIu64 ")",
+                   l_warn_count);
+        } else {
+            debug_if(s_debug_more, L_DEBUG,
+                     "Received encrypted packet but no encryption key established (count=%" PRIu64 ")",
+                     l_warn_count);
+        }
         return -3;
     }
     

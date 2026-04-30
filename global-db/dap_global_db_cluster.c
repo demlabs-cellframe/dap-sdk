@@ -37,17 +37,19 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_cluster"
 
-struct dap_global_db_cluster_timer_ctx {
+typedef struct dap_global_db_cluster_timer_ctx {
     dap_global_db_cluster_t *cluster;
     dap_timerfd_t *timer;
     dap_worker_t *worker;
     atomic_bool shutdown;
-};
+    struct dap_global_db_cluster_timer_ctx *prev, *next;
+} dap_global_db_cluster_timer_ctx_t;
 
 static bool s_gdb_cluster_sync_timer_callback(void *a_arg);
 static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg);
 
 static dap_global_db_cluster_t *s_local_cluster = NULL, *s_global_cluster = NULL;
+static dap_global_db_cluster_timer_ctx_t *s_cluster_timer_contexts = NULL;
 static atomic_bool s_cluster_deinit_in_progress = ATOMIC_VAR_INIT(false);
 
 static bool s_gdb_cluster_is_alive(dap_global_db_cluster_t *a_cluster)
@@ -65,6 +67,16 @@ static bool s_gdb_cluster_is_alive(dap_global_db_cluster_t *a_cluster)
     return false;
 }
 
+static dap_global_db_cluster_timer_ctx_t *s_gdb_cluster_sync_timer_ctx_find(dap_global_db_cluster_t *a_cluster)
+{
+    dap_global_db_cluster_timer_ctx_t *it;
+    DL_FOREACH(s_cluster_timer_contexts, it) {
+        if (it->cluster == a_cluster)
+            return it;
+    }
+    return NULL;
+}
+
 static void s_gdb_cluster_timer_delete_on_worker(void *a_arg)
 {
     dap_global_db_cluster_timer_ctx_t *l_timer_ctx = a_arg;
@@ -74,7 +86,7 @@ static void s_gdb_cluster_timer_delete_on_worker(void *a_arg)
 
 static bool s_gdb_cluster_sync_timer_stop(dap_global_db_cluster_t *a_cluster)
 {
-    dap_global_db_cluster_timer_ctx_t *l_timer_ctx = a_cluster ? a_cluster->sync_timer_ctx : NULL;
+    dap_global_db_cluster_timer_ctx_t *l_timer_ctx = s_gdb_cluster_sync_timer_ctx_find(a_cluster);
     if (!l_timer_ctx)
         return true;
 
@@ -91,7 +103,7 @@ static bool s_gdb_cluster_sync_timer_stop(dap_global_db_cluster_t *a_cluster)
         }
     }
 
-    a_cluster->sync_timer_ctx = NULL;
+    DL_DELETE(s_cluster_timer_contexts, l_timer_ctx);
     DAP_DELETE(l_timer_ctx);
     return true;
 }
@@ -234,7 +246,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             return NULL;
         }
         l_timer_ctx->worker = l_timer_ctx->timer->worker;
-        l_cluster->sync_timer_ctx = l_timer_ctx;
+        DL_APPEND(s_cluster_timer_contexts, l_timer_ctx);
     }
     log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s, TTL %s",
                     dap_guuid_to_hex_str(a_guuid), a_group_mask, l_cluster->ttl ? dap_itoa(l_cluster->ttl) : "unlimited");

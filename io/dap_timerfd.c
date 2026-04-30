@@ -106,7 +106,12 @@ dap_timerfd_t* dap_timerfd_start_on_worker(dap_worker_t * a_worker, uint64_t a_t
         log_it(L_CRITICAL,"Can't create timer");
         return NULL;
     }
-    dap_worker_add_events_socket(a_worker, l_timerfd->events_socket);
+    int l_add_ret = dap_worker_add_events_socket(a_worker, l_timerfd->events_socket);
+    if (l_add_ret) {
+        log_it(L_ERROR, "Can't start timer on worker #%u, error %d", a_worker->id, l_add_ret);
+        dap_events_socket_delete_unsafe(l_timerfd->events_socket, false);
+        return NULL;
+    }
     l_timerfd->worker = a_worker;
     return l_timerfd;
 }
@@ -129,6 +134,10 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     };
 
     dap_events_socket_t *l_events_socket = dap_events_socket_wrap_no_add(-1, &l_s_callbacks);
+    if (!l_events_socket) {
+        DAP_DELETE(l_timerfd);
+        return NULL;
+    }
     l_events_socket->type = DESCRIPTOR_TYPE_TIMER;
 
     // pass l_timerfd to events_socket
@@ -146,7 +155,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     int l_tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     if(l_tfd == -1) {
         log_it(L_WARNING, "dap_timerfd_start() failed: timerfd_create() errno=%d\n", errno);
-        DAP_DELETE(l_timerfd);
+        dap_events_socket_delete_unsafe(l_events_socket, false);
         return NULL;
     }
     // repeat never
@@ -158,7 +167,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     if(timerfd_settime(l_tfd, 0, &l_ts, NULL) < 0) {
         log_it(L_WARNING, "dap_timerfd_start() failed: timerfd_settime() errno=%d\n", errno);
         close(l_tfd);
-        DAP_DELETE(l_timerfd);
+        dap_events_socket_delete_unsafe(l_events_socket, false);
         return NULL;
     }
     l_events_socket->socket = l_tfd;

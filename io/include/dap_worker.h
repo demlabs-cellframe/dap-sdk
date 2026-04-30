@@ -96,6 +96,9 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
  * the worker-side context add result; on nonzero return the caller still owns
  * a_events_socket and may delete it. */
 int dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
+/* Same-worker add is direct; cross-worker add returns after enqueue. On zero
+ * return the target worker owns a_events_socket. */
+int dap_worker_add_events_socket_async(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
 dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t * a_events_socket );
 int dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
 /* Returns -ETIMEDOUT if the callback was cancelled before start, or -EINPROGRESS

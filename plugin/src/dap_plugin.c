@@ -71,13 +71,27 @@ struct plugin_module{
     UT_hash_handle hh;
 };
 
+typedef struct plugin_start_rollback_item {
+    dap_plugin_manifest_t *manifest;
+    struct plugin_start_rollback_item *next;
+} plugin_start_rollback_item_t;
+
 struct plugin_type *s_types = NULL; // List of all registred plugin types
 struct plugin_module *s_modules = NULL; // List of all loaded modules
 static int s_stop(dap_plugin_manifest_t * a_manifest);
 static int s_load(dap_plugin_manifest_t * a_manifest);
+static int s_load_with_deps(dap_plugin_manifest_t * a_manifest, size_t a_depth);
+static int s_start_with_deps(dap_plugin_manifest_t * a_manifest, size_t a_depth,
+                             plugin_start_rollback_item_t **a_rollback);
 static int s_preinit(struct plugin_module * a_module);
 static int s_init(struct plugin_module * a_module);
 static int s_plugin_type_create_internal(const char * a_name, const plugin_type_callbacks_internal_t * a_callbacks);
+static int s_check_dependencies_loaded(dap_plugin_manifest_t * a_manifest);
+static int s_check_dependencies_preinited(dap_plugin_manifest_t * a_manifest);
+static int s_check_dependencies_running(dap_plugin_manifest_t * a_manifest);
+static int s_rollback_push(plugin_start_rollback_item_t **a_rollback, dap_plugin_manifest_t *a_manifest);
+static void s_rollback_run(plugin_start_rollback_item_t **a_rollback);
+static void s_rollback_free(plugin_start_rollback_item_t **a_rollback);
 
 static void s_solve_dependencies();
 
@@ -342,30 +356,57 @@ int dap_plugin_start(const char * a_name)
     dap_plugin_manifest_t * l_manifest = dap_plugin_manifest_find(a_name);
     if (!l_manifest)
         return -4; // Not found
-    int l_ret = s_load(l_manifest);
+    plugin_start_rollback_item_t *l_rollback = NULL;
+    int l_ret = s_start_with_deps(l_manifest, 0, &l_rollback);
     if (l_ret)
-        return l_ret;
-    struct plugin_module * l_module = NULL;
-    HASH_FIND_STR(s_modules, a_name, l_module);
-    if (!l_module)
-        return -5;
-    l_ret = s_preinit(l_module);
-    if (l_ret) {
-        int l_stop_ret = s_stop(l_manifest);
-        if (l_stop_ret)
-            log_it(L_WARNING, "Rollback failed for plugin \"%s\" after preinit error %d, stop code %d",
-                   l_manifest->name, l_ret, l_stop_ret);
-        return l_ret;
+        s_rollback_run(&l_rollback);
+    else
+        s_rollback_free(&l_rollback);
+    return l_ret;
+}
+
+static int s_rollback_push(plugin_start_rollback_item_t **a_rollback, dap_plugin_manifest_t *a_manifest)
+{
+    if (!a_rollback || !a_manifest)
+        return -4;
+    for (plugin_start_rollback_item_t *l_item = *a_rollback; l_item; l_item = l_item->next)
+        if (l_item->manifest == a_manifest)
+            return 0;
+    plugin_start_rollback_item_t *l_item = DAP_NEW_Z(plugin_start_rollback_item_t);
+    if (!l_item) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return -3;
     }
-    l_ret = s_init(l_module);
-    if (l_ret) {
-        int l_stop_ret = s_stop(l_manifest);
-        if (l_stop_ret)
-            log_it(L_WARNING, "Rollback failed for plugin \"%s\" after init error %d, stop code %d",
-                   l_manifest->name, l_ret, l_stop_ret);
-        return l_ret;
-    }
+    l_item->manifest = a_manifest;
+    l_item->next = *a_rollback;
+    *a_rollback = l_item;
     return 0;
+}
+
+static void s_rollback_run(plugin_start_rollback_item_t **a_rollback)
+{
+    if (!a_rollback)
+        return;
+    while (*a_rollback) {
+        plugin_start_rollback_item_t *l_item = *a_rollback;
+        *a_rollback = l_item->next;
+        int l_stop_ret = s_stop(l_item->manifest);
+        if (l_stop_ret && l_stop_ret != -5)
+            log_it(L_WARNING, "Rollback failed for plugin \"%s\", stop code %d",
+                   l_item->manifest->name, l_stop_ret);
+        DAP_DELETE(l_item);
+    }
+}
+
+static void s_rollback_free(plugin_start_rollback_item_t **a_rollback)
+{
+    if (!a_rollback)
+        return;
+    while (*a_rollback) {
+        plugin_start_rollback_item_t *l_item = *a_rollback;
+        *a_rollback = l_item->next;
+        DAP_DELETE(l_item);
+    }
 }
 
 /**
@@ -373,6 +414,79 @@ int dap_plugin_start(const char * a_name)
  * Load a single plugin: dlopen/import, add to s_modules
  */
 static int s_load(dap_plugin_manifest_t * a_manifest)
+{
+    return s_load_with_deps(a_manifest, 0);
+}
+
+static int s_check_dependencies_loaded(dap_plugin_manifest_t * a_manifest)
+{
+    if (!a_manifest)
+        return -4;
+    for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
+        const char *l_dep_name = a_manifest->dependencies_names[i];
+        dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(l_dep_name);
+        if (!l_dep_manifest) {
+            log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"", a_manifest->name, l_dep_name);
+            return -2;
+        }
+        struct plugin_module *l_dep_module = NULL;
+        HASH_FIND_STR(s_modules, l_dep_name, l_dep_module);
+        if (!l_dep_module || l_dep_module->state == PLUGIN_MODULE_FAILED) {
+            log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" is not loaded", a_manifest->name, l_dep_name);
+            return -6;
+        }
+    }
+    return 0;
+}
+
+static int s_check_dependencies_preinited(dap_plugin_manifest_t * a_manifest)
+{
+    if (!a_manifest)
+        return -4;
+    for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
+        const char *l_dep_name = a_manifest->dependencies_names[i];
+        dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(l_dep_name);
+        if (!l_dep_manifest) {
+            log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"", a_manifest->name, l_dep_name);
+            return -2;
+        }
+        struct plugin_module *l_dep_module = NULL;
+        HASH_FIND_STR(s_modules, l_dep_name, l_dep_module);
+        if (!l_dep_module || (l_dep_module->state != PLUGIN_MODULE_PREINITED &&
+                              l_dep_module->state != PLUGIN_MODULE_RUNNING)) {
+            log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" did not complete preinit", a_manifest->name, l_dep_name);
+            return -6;
+        }
+    }
+    return 0;
+}
+
+static int s_check_dependencies_running(dap_plugin_manifest_t * a_manifest)
+{
+    if (!a_manifest)
+        return -4;
+    for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
+        const char *l_dep_name = a_manifest->dependencies_names[i];
+        dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(l_dep_name);
+        if (!l_dep_manifest) {
+            log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"", a_manifest->name, l_dep_name);
+            return -2;
+        }
+        struct plugin_module *l_dep_module = NULL;
+        HASH_FIND_STR(s_modules, l_dep_name, l_dep_module);
+        if (!l_dep_module || l_dep_module->state != PLUGIN_MODULE_RUNNING) {
+            log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" is not running", a_manifest->name, l_dep_name);
+            return -6;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief s_load_with_deps
+ * Load a single plugin and its dependencies: dlopen/import, add to s_modules
+ */
+static int s_load_with_deps(dap_plugin_manifest_t * a_manifest, size_t a_depth)
 {
     if (!a_manifest)
         return -4;
@@ -391,19 +505,29 @@ static int s_load(dap_plugin_manifest_t * a_manifest)
         log_it(L_ERROR, "Plugin \"%s\" type \"%s\" has no load callback", a_manifest->name, a_manifest->type);
         return -1;
     }
-    if (a_manifest->dependencies != NULL) {
+    if (a_depth > HASH_COUNT(dap_plugin_manifest_all())) {
+        log_it(L_ERROR, "Plugin \"%s\" has recursive dependencies", a_manifest->name);
+        return -2;
+    }
+    if (a_manifest->dependencies_count) {
         log_it(L_NOTICE, "Check for plugin %s dependencies", a_manifest->name);
-        bool l_is_unsolved = false;
         for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
-            dap_plugin_manifest_dependence_t * l_dep = NULL;
-            HASH_FIND_STR(a_manifest->dependencies, a_manifest->dependencies_names[i], l_dep);
-            if (!l_dep) {
-                log_it(L_ERROR, "Unsolved dependence \"%s\"", a_manifest->dependencies_names[i]);
-                l_is_unsolved = true;
+            dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(a_manifest->dependencies_names[i]);
+            if (!l_dep_manifest) {
+                log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"",
+                       a_manifest->name, a_manifest->dependencies_names[i]);
+                return -2;
+            }
+            int l_dep_ret = s_load_with_deps(l_dep_manifest, a_depth + 1);
+            if (l_dep_ret) {
+                log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" failed to load",
+                       a_manifest->name, a_manifest->dependencies_names[i]);
+                return l_dep_ret;
             }
         }
-        if (l_is_unsolved)
-            return -2;
+        int l_dep_state_ret = s_check_dependencies_loaded(a_manifest);
+        if (l_dep_state_ret)
+            return l_dep_state_ret;
     }
 
     char * l_err_str = NULL;
@@ -439,6 +563,74 @@ static int s_load(dap_plugin_manifest_t * a_manifest)
     return l_ret;
 }
 
+static int s_start_with_deps(dap_plugin_manifest_t * a_manifest, size_t a_depth,
+                             plugin_start_rollback_item_t **a_rollback)
+{
+    if (!a_manifest)
+        return -4;
+    if (!a_rollback)
+        return -4;
+    if (a_depth > HASH_COUNT(dap_plugin_manifest_all())) {
+        log_it(L_ERROR, "Plugin \"%s\" has recursive dependencies", a_manifest->name);
+        return -2;
+    }
+
+    for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
+        dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(a_manifest->dependencies_names[i]);
+        if (!l_dep_manifest) {
+            log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"",
+                   a_manifest->name, a_manifest->dependencies_names[i]);
+            return -2;
+        }
+        int l_dep_ret = s_start_with_deps(l_dep_manifest, a_depth + 1, a_rollback);
+        if (l_dep_ret) {
+            log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" failed to start",
+                   a_manifest->name, a_manifest->dependencies_names[i]);
+            return l_dep_ret;
+        }
+    }
+
+    int l_ret = s_load(a_manifest);
+    if (l_ret)
+        return l_ret;
+
+    struct plugin_module * l_module = NULL;
+    HASH_FIND_STR(s_modules, a_manifest->name, l_module);
+    if (!l_module)
+        return -5;
+
+    bool l_should_rollback = l_module->state != PLUGIN_MODULE_RUNNING;
+    l_ret = s_preinit(l_module);
+    if (l_ret) {
+        int l_stop_ret = s_stop(a_manifest);
+        if (l_stop_ret)
+            log_it(L_WARNING, "Rollback failed for plugin \"%s\" after preinit error %d, stop code %d",
+                   a_manifest->name, l_ret, l_stop_ret);
+        return l_ret;
+    }
+
+    l_ret = s_init(l_module);
+    if (l_ret) {
+        int l_stop_ret = s_stop(a_manifest);
+        if (l_stop_ret)
+            log_it(L_WARNING, "Rollback failed for plugin \"%s\" after init error %d, stop code %d",
+                   a_manifest->name, l_ret, l_stop_ret);
+        return l_ret;
+    }
+
+    if (l_should_rollback) {
+        l_ret = s_rollback_push(a_rollback, a_manifest);
+        if (l_ret) {
+            int l_stop_ret = s_stop(a_manifest);
+            if (l_stop_ret)
+                log_it(L_WARNING, "Rollback failed for plugin \"%s\" after rollback bookkeeping error %d, stop code %d",
+                       a_manifest->name, l_ret, l_stop_ret);
+            return l_ret;
+        }
+    }
+    return 0;
+}
+
 /**
  * @brief s_preinit
  * Call preinit callback on a loaded module (optional, skips if not set)
@@ -451,6 +643,9 @@ static int s_preinit(struct plugin_module * a_module)
         return -6;
     if (a_module->state == PLUGIN_MODULE_PREINITED || a_module->state == PLUGIN_MODULE_RUNNING)
         return 0;
+    int l_dep_ret = s_check_dependencies_preinited(a_module->manifest);
+    if (l_dep_ret)
+        return l_dep_ret;
     if (!a_module->type->callbacks.preinit) {
         a_module->state = PLUGIN_MODULE_PREINITED;
         return 0;
@@ -485,6 +680,9 @@ static int s_init(struct plugin_module * a_module)
         log_it(L_WARNING, "Plugin \"%s\" init skipped because preinit phase was not completed", a_module->name);
         return -6;
     }
+    int l_dep_ret = s_check_dependencies_running(a_module->manifest);
+    if (l_dep_ret)
+        return l_dep_ret;
     if (!a_module->type->callbacks.init) {
         a_module->state = PLUGIN_MODULE_RUNNING;
         return 0;

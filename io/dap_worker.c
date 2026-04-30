@@ -42,6 +42,10 @@
 #endif
 
 #define LOG_TAG "dap_worker"
+/* Socket assignment can sit behind worker I/O bursts under load, so use a
+ * longer add-specific deadline without changing the generic sync callback
+ * timeout used by other callers. */
+#define DAP_WORKER_ADD_EVENTS_SOCKET_TIMEOUT_MS 30000U
 static bool s_debug_more = false;
 typedef struct dap_worker_msg_callback {
     dap_worker_callback_t callback; // Callback for specific client operations
@@ -342,6 +346,7 @@ static void s_queue_add_es_callback(void *a_arg) {
             log_it(L_ERROR,
                    "Worker #%u failed to add queued esocket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" to context: %d",
                    l_es->worker->id, l_es->socket, l_es->uuid, l_ret);
+            dap_events_socket_delete_unsafe(l_es, false);
         }
     } else {
         log_it(L_WARNING, "s_queue_add_es_callback: NULL es=%p or NULL worker", a_arg);
@@ -651,7 +656,7 @@ int dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_
 
         l_ret = dap_worker_exec_callback_on_sync_timed(
             a_worker, s_worker_es_add_sync_callback, &l_ctx,
-            DAP_WORKER_EXEC_CALLBACK_SYNC_DEFAULT_TIMEOUT_MS);
+            DAP_WORKER_ADD_EVENTS_SOCKET_TIMEOUT_MS);
         if (l_ret == -EINPROGRESS) {
             s_worker_es_add_sync_wait(&l_ctx);
             l_ret = 0;
@@ -673,6 +678,29 @@ int dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_
                dap_worker_get_current() == a_worker ? "Assigned" : "Sent",
                l_type_str, dap_itoa(l_s), l_uuid, a_worker->id);
     return l_ret;
+}
+
+int dap_worker_add_events_socket_async(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
+{
+    dap_return_val_if_fail(a_worker && a_events_socket, -EINVAL);
+#ifdef DAP_EVENTS_CAPS_IOCP
+    return dap_worker_add_events_socket(a_worker, a_events_socket);
+#else
+    if (dap_worker_get_current() == a_worker)
+        return dap_worker_add_events_socket(a_worker, a_events_socket);
+    if (!a_worker->queue_es_new)
+        return -ENODEV;
+
+    dap_worker_t *l_prev_worker = a_events_socket->worker;
+    a_events_socket->worker = a_worker;
+    if (!dap_context_queue_push(a_worker->queue_es_new, a_events_socket)) {
+        a_events_socket->worker = l_prev_worker;
+        return -EAGAIN;
+    }
+    debug_if(s_debug_more, L_INFO, "Queued cross-worker add: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" -> worker #%u",
+             a_events_socket->socket, a_events_socket->uuid, a_worker->id);
+    return 0;
+#endif
 }
 
 #ifndef DAP_EVENTS_CAPS_IOCP

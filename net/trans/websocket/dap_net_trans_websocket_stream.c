@@ -74,6 +74,7 @@ static bool s_debug_more = false;
 #define WS_DEFAULT_PING_INTERVAL   30000          // 30 seconds
 #define WS_DEFAULT_PONG_TIMEOUT    10000          // 10 seconds
 #define WS_INITIAL_FRAME_BUFFER    4096           // 4KB initial buffer
+#define WS_MAX_HEADER_SIZE         14             // 2 + 8 byte len + 4 byte mask
 
 // Forward declarations
 static const dap_net_trans_ops_t s_websocket_ops;
@@ -109,14 +110,30 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
 static int s_ws_generate_key(char *a_key_out, size_t a_key_size);
 static int s_ws_generate_accept(const char *a_key, char *a_accept_out, size_t a_accept_size);
 static void s_ws_mask_unmask(uint8_t *a_data, size_t a_size, uint32_t a_mask_key);
+static int s_ws_parse_frame_ex(const uint8_t *a_data, size_t a_data_size, size_t a_max_payload_size,
+                               int a_expected_mask, dap_ws_opcode_t *a_opcode_out, bool *a_fin_out,
+                               uint8_t **a_payload_out, size_t *a_payload_size_out,
+                               size_t *a_frame_total_size_out);
 static bool s_ws_ping_timer_callback(void *a_user_data);
 static void s_ws_detach_client_esocket(dap_stream_t *a_stream, dap_events_socket_t *a_es);
 static void s_ws_wrap_client_delete_callback(dap_stream_t *a_stream);
 static void s_ws_client_disable_stream_keepalive(dap_stream_t *a_stream);
+static bool s_ws_client_delete_callback_save(dap_events_socket_t *a_es,
+                                             dap_events_socket_callback_t a_original);
+static dap_events_socket_callback_t s_ws_client_delete_callback_take(dap_events_socket_t *a_es);
 
 // Helper to get private data
 static dap_net_trans_websocket_private_t *s_get_private(dap_net_trans_t *a_trans);
 static dap_net_trans_websocket_private_t *s_get_private_from_stream(dap_stream_t *a_stream);
+
+typedef struct ws_client_delete_callback_entry {
+    dap_events_socket_t *esocket;
+    dap_events_socket_callback_t original;
+    UT_hash_handle hh;
+} ws_client_delete_callback_entry_t;
+
+static pthread_mutex_t s_ws_client_delete_callbacks_mutex = PTHREAD_MUTEX_INITIALIZER;
+static ws_client_delete_callback_entry_t *s_ws_client_delete_callbacks = NULL;
 
 // ============================================================================
 // Trans Operations Table
@@ -657,9 +674,38 @@ static int s_ws_handshake_process(dap_stream_t *a_stream, const void *a_data, si
  */
 typedef struct {
     dap_stream_t *stream;
+    uint64_t client_uuid;
     dap_net_trans_session_cb_t callback;
-    dap_enc_key_t *session_key;
 } ws_session_ctx_t;
+
+static dap_stream_t *s_ws_session_ctx_live_stream(ws_session_ctx_t *a_ctx,
+                                                  dap_net_trans_ctx_t **a_trans_ctx_out)
+{
+    if (a_trans_ctx_out)
+        *a_trans_ctx_out = NULL;
+    if (!a_ctx || !a_ctx->client_uuid || !a_ctx->callback)
+        return NULL;
+
+    dap_client_trans_ctx_t *l_client_esocket = dap_client_trans_ctx_find(a_ctx->client_uuid);
+    dap_client_t *l_client = l_client_esocket ? l_client_esocket->client : NULL;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    dap_stream_t *l_stream = l_tc ? l_tc->stream : NULL;
+    if (!l_stream || (a_ctx->stream && l_stream != a_ctx->stream)) {
+        return NULL;
+    }
+    if (a_trans_ctx_out)
+        *a_trans_ctx_out = l_tc;
+    return l_stream;
+}
+
+static void s_ws_session_ctx_error(ws_session_ctx_t *a_ctx, int a_error)
+{
+    dap_stream_t *l_stream = s_ws_session_ctx_live_stream(a_ctx, NULL);
+    if (l_stream && a_ctx->callback)
+        a_ctx->callback(l_stream, 0, NULL, 0, a_error ? a_error : -1);
+    DAP_DELETE(a_ctx);
+}
 
 /**
  * @brief WebSocket session create response callback wrapper (HTTP callback signature)
@@ -667,64 +713,76 @@ typedef struct {
 static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size, void *a_arg, http_status_code_t a_status)
 {
     ws_session_ctx_t *l_ctx = (ws_session_ctx_t *)a_arg;
-    if (!l_ctx || !l_ctx->stream) {
-        DAP_DEL_Z(l_ctx);
+    if (!l_ctx) {
         return;
     }
-    
-    // Parse session response to extract session_id
+
+    dap_net_trans_ctx_t *l_tc = NULL;
+    dap_stream_t *l_stream = s_ws_session_ctx_live_stream(l_ctx, &l_tc);
+    if (!l_stream) {
+        DAP_DELETE(l_ctx);
+        return;
+    }
+
+    if (a_status != Http_Status_OK) {
+        log_it(L_WARNING, "WebSocket session create failed: HTTP status %d", (int)a_status);
+        s_ws_session_ctx_error(l_ctx, -1);
+        return;
+    }
+    if (!a_data || a_data_size == 0) {
+        log_it(L_WARNING, "WebSocket session create failed: empty response");
+        s_ws_session_ctx_error(l_ctx, -1);
+        return;
+    }
+
     uint32_t l_session_id = 0;
     char *l_response_data = NULL;
     size_t l_response_size = 0;
-    
-    if (a_data && a_data_size > 0) {
-        // Decrypt response if encrypted
-        if (l_ctx->session_key) {
-            size_t l_len = dap_enc_decode_out_size(l_ctx->session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
-            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
-            if (l_response) {
-                l_len = dap_enc_decode(l_ctx->session_key, a_data, a_data_size,
-                                       l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
-                l_response[l_len] = '\0';
-                
-                // Parse response format: "session_id stream_key ..."
-                sscanf(l_response, "%u", &l_session_id);
-                
-                // Allocate and copy full response data for trans callback
-                l_response_data = DAP_NEW_Z_SIZE(char, l_len + 1);
-                if (l_response_data) {
-                    memcpy(l_response_data, l_response, l_len);
-                    l_response_data[l_len] = '\0';
-                    l_response_size = l_len;
-                }
-                
-                DAP_DELETE(l_response);
-            }
-        } else {
-            // Unencrypted response
-            char *l_response_str = (char*)a_data;
-            sscanf(l_response_str, "%u", &l_session_id);
-            
-            // Allocate and copy full response data for trans callback
-            l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-            if (l_response_data) {
-                memcpy(l_response_data, a_data, a_data_size);
-                l_response_data[a_data_size] = '\0';
-                l_response_size = a_data_size;
-            }
+
+    if (l_tc && l_tc->session_key) {
+        size_t l_response_size_max = dap_enc_decode_out_size(l_tc->session_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
+        if (l_response_size_max == SIZE_MAX) {
+            s_ws_session_ctx_error(l_ctx, -1);
+            return;
         }
+        l_response_data = DAP_NEW_Z_SIZE(char, l_response_size_max + 1);
+        if (!l_response_data) {
+            s_ws_session_ctx_error(l_ctx, -1);
+            return;
+        }
+        l_response_size = dap_enc_decode(l_tc->session_key, a_data, a_data_size,
+                                         l_response_data, l_response_size_max, DAP_ENC_DATA_TYPE_RAW);
+        if (l_response_size == 0 || l_response_size > l_response_size_max) {
+            log_it(L_WARNING, "WebSocket session create failed: response decrypt failed");
+            DAP_DELETE(l_response_data);
+            s_ws_session_ctx_error(l_ctx, -1);
+            return;
+        }
+        l_response_data[l_response_size] = '\0';
+    } else {
+        if (a_data_size == SIZE_MAX) {
+            s_ws_session_ctx_error(l_ctx, -1);
+            return;
+        }
+        l_response_data = DAP_NEW_Z_SIZE(char, a_data_size + 1);
+        if (!l_response_data) {
+            s_ws_session_ctx_error(l_ctx, -1);
+            return;
+        }
+        memcpy(l_response_data, a_data, a_data_size);
+        l_response_data[a_data_size] = '\0';
+        l_response_size = a_data_size;
     }
-    
-    // Call trans callback with session_id and full response data
-    if (l_ctx->callback) {
-                if (l_response_data) {
-            l_ctx->callback(l_ctx->stream, l_session_id, l_response_data, l_response_size, 0);
-        } else {
-            // Failed to parse or decrypt response, or empty response
-            l_ctx->callback(l_ctx->stream, 0, NULL, 0, -1);
+
+    int l_parsed = sscanf(l_response_data, "%u", &l_session_id);
+    if (l_parsed != 1 || l_session_id == 0) {
+        log_it(L_WARNING, "WebSocket session create failed: invalid response: %.100s", l_response_data);
+        DAP_DELETE(l_response_data);
+        s_ws_session_ctx_error(l_ctx, -1);
+        return;
     }
-    }
-    
+
+    l_ctx->callback(l_stream, l_session_id, l_response_data, l_response_size, 0);
     DAP_DELETE(l_ctx);
 }
 
@@ -734,13 +792,9 @@ static void s_ws_session_response_wrapper_http(void *a_data, size_t a_data_size,
 static void s_ws_session_error_wrapper_http(int a_error, void *a_arg)
 {
     ws_session_ctx_t *l_ctx = (ws_session_ctx_t *)a_arg;
-    if (!l_ctx) return;
-
-    if (l_ctx->stream && l_ctx->callback) {
-        l_ctx->callback(l_ctx->stream, 0, NULL, 0, a_error);
-    }
-    
-    DAP_DELETE(l_ctx);
+    if (!l_ctx)
+        return;
+    s_ws_session_ctx_error(l_ctx, a_error);
 }
 
 /**
@@ -881,9 +935,14 @@ static int s_ws_session_create(dap_stream_t *a_stream, dap_net_session_params_t 
     
     // Allocate ctx
     ws_session_ctx_t *l_ws_ctx = DAP_NEW_Z(ws_session_ctx_t);
+    if (!l_ws_ctx) {
+        DAP_DELETE(l_suburl);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return -6;
+    }
     l_ws_ctx->stream = a_stream;
+    l_ws_ctx->client_uuid = l_client_esocket->uuid;
     l_ws_ctx->callback = a_callback;
-    l_ws_ctx->session_key = l_tc->session_key;
 
     s_ws_send_http_request_enc(l_tc->session_key, l_tc->session_key_id,
                                l_priv->http_client, l_fsm->worker,
@@ -1115,8 +1174,12 @@ static ssize_t s_ws_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t
         size_t l_payload_size = 0;
         size_t l_frame_size = 0;
 
-        int l_res = dap_net_trans_websocket_parse_frame(l_es->buf_in + l_consumed,
+        size_t l_max_payload_size = l_priv->config.max_frame_size ?
+                                    l_priv->config.max_frame_size :
+                                    WS_DEFAULT_MAX_FRAME_SIZE;
+        int l_res = s_ws_parse_frame_ex(l_es->buf_in + l_consumed,
                                      l_es->buf_in_size - l_consumed,
+                                     l_max_payload_size, 0,
                                      &l_opcode, &l_fin, &l_payload,
                                      &l_payload_size, &l_frame_size);
 
@@ -1134,8 +1197,12 @@ static ssize_t s_ws_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t
             log_it(L_INFO, "WebSocket received CLOSE frame");
             DAP_DEL_Z(l_payload);
             l_consumed += l_frame_size;
+            if (l_consumed > 0) {
+                dap_events_socket_shrink_buf_in(l_es, l_consumed);
+            }
+            DAP_DELETE(l_payload_buf);
             s_ws_close(a_stream);
-            break;
+            return 0;
         }
         if (l_opcode == DAP_WS_OPCODE_PING) {
             dap_net_trans_websocket_send_pong(a_stream, l_payload, l_payload_size);
@@ -1152,10 +1219,28 @@ static ssize_t s_ws_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t
 
         // Data frame — accumulate payload
         if (l_payload && l_payload_size > 0) {
+            if (l_payload_size > SIZE_MAX - l_payload_total) {
+                DAP_DEL_Z(l_payload);
+                DAP_DELETE(l_payload_buf);
+                return -1;
+            }
+            size_t l_payload_needed = l_payload_total + l_payload_size;
             // Grow buffer if needed
-            if (l_payload_total + l_payload_size > l_payload_buf_alloc) {
-                l_payload_buf_alloc = (l_payload_total + l_payload_size) * 2;
-                l_payload_buf = DAP_REALLOC(l_payload_buf, l_payload_buf_alloc);
+            if (l_payload_needed > l_payload_buf_alloc) {
+                if (l_payload_needed > SIZE_MAX / 2) {
+                    DAP_DEL_Z(l_payload);
+                    DAP_DELETE(l_payload_buf);
+                    return -1;
+                }
+                size_t l_new_alloc = l_payload_needed * 2;
+                uint8_t *l_new_payload_buf = DAP_REALLOC(l_payload_buf, l_new_alloc);
+                if (!l_new_payload_buf) {
+                    DAP_DEL_Z(l_payload);
+                    DAP_DELETE(l_payload_buf);
+                    return -1;
+                }
+                l_payload_buf = l_new_payload_buf;
+                l_payload_buf_alloc = l_new_alloc;
             }
             memcpy(l_payload_buf + l_payload_total, l_payload, l_payload_size);
             l_payload_total += l_payload_size;
@@ -1167,29 +1252,36 @@ static ssize_t s_ws_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t
         l_consumed += l_frame_size;
     }
 
-    // Shrink buf_in by consumed frame bytes
+    // --- Phase 3: Process de-framed data as raw DAP stream packets ---
+    uint8_t *l_data = l_payload_buf;
+    size_t l_data_size = l_payload_total;
+    if (l_payload_total > 0 || l_priv->frame_buffer_used > 0) {
+        // Prepend leftover from previous call (partial DAP stream packet)
+        if (l_priv->frame_buffer_used > 0) {
+            if (l_payload_total > SIZE_MAX - l_priv->frame_buffer_used) {
+                DAP_DELETE(l_payload_buf);
+                return -1;
+            }
+            size_t l_total = l_priv->frame_buffer_used + l_payload_total;
+            uint8_t *l_combined = DAP_NEW_Z_SIZE(uint8_t, l_total);
+            if (!l_combined) {
+                DAP_DELETE(l_payload_buf);
+                return -1;
+            }
+            memcpy(l_combined, l_priv->frame_buffer, l_priv->frame_buffer_used);
+            memcpy(l_combined + l_priv->frame_buffer_used, l_payload_buf, l_payload_total);
+            l_priv->frame_buffer_used = 0;
+            l_data = l_combined;
+            l_data_size = l_total;
+        }
+    }
+
+    // Shrink buf_in only after prefix append succeeds, so OOM cannot reorder packets.
     if (l_consumed > 0) {
         dap_events_socket_shrink_buf_in(l_es, l_consumed);
     }
 
-    // --- Phase 3: Process de-framed data as raw DAP stream packets ---
-    if (l_payload_total > 0 || l_priv->frame_buffer_used > 0) {
-        uint8_t *l_data = l_payload_buf;
-        size_t l_data_size = l_payload_total;
-
-        // Prepend leftover from previous call (partial DAP stream packet)
-        if (l_priv->frame_buffer_used > 0) {
-            size_t l_total = l_priv->frame_buffer_used + l_payload_total;
-            uint8_t *l_combined = DAP_NEW_Z_SIZE(uint8_t, l_total);
-            if (l_combined) {
-                memcpy(l_combined, l_priv->frame_buffer, l_priv->frame_buffer_used);
-                memcpy(l_combined + l_priv->frame_buffer_used, l_payload_buf, l_payload_total);
-                l_priv->frame_buffer_used = 0;
-                l_data = l_combined;
-                l_data_size = l_total;
-            }
-        }
-
+    if (l_payload_total > 0 || l_data != l_payload_buf) {
         // Feed raw stream data to the stream processing layer
         bool l_delete_requested = false;
         size_t l_processed = 0;
@@ -1214,7 +1306,15 @@ static ssize_t s_ws_read_internal(dap_stream_t *a_stream, void *a_buffer, size_t
         size_t l_remaining = l_data_size - l_processed;
         if (l_remaining > 0) {
             if (l_remaining > l_priv->frame_buffer_size) {
-                l_priv->frame_buffer = DAP_REALLOC(l_priv->frame_buffer, l_remaining);
+                uint8_t *l_new_frame_buffer = DAP_REALLOC(l_priv->frame_buffer, l_remaining);
+                if (!l_new_frame_buffer) {
+                    if (l_data != l_payload_buf) {
+                        DAP_DELETE(l_data);
+                    }
+                    DAP_DELETE(l_payload_buf);
+                    return -1;
+                }
+                l_priv->frame_buffer = l_new_frame_buffer;
                 l_priv->frame_buffer_size = l_remaining;
             }
             memcpy(l_priv->frame_buffer, l_data + l_processed, l_remaining);
@@ -1423,6 +1523,64 @@ static void s_ws_delete_registered_or_queued_es(dap_worker_t *a_worker, dap_even
     }
 }
 
+static bool s_ws_client_delete_callback_save(dap_events_socket_t *a_es,
+                                             dap_events_socket_callback_t a_original)
+{
+    if (!a_es)
+        return false;
+
+    ws_client_delete_callback_entry_t *l_new_entry = NULL;
+    if (a_original) {
+        l_new_entry = DAP_NEW_Z(ws_client_delete_callback_entry_t);
+        if (!l_new_entry)
+            return false;
+        l_new_entry->esocket = a_es;
+        l_new_entry->original = a_original;
+    }
+
+    pthread_mutex_lock(&s_ws_client_delete_callbacks_mutex);
+
+    ws_client_delete_callback_entry_t *l_entry = NULL;
+    ws_client_delete_callback_entry_t *l_removed_entry = NULL;
+    HASH_FIND_PTR(s_ws_client_delete_callbacks, &a_es, l_entry);
+    if (l_entry) {
+        if (a_original) {
+            l_entry->original = a_original;
+        } else {
+            HASH_DEL(s_ws_client_delete_callbacks, l_entry);
+            l_removed_entry = l_entry;
+        }
+    } else if (l_new_entry) {
+        HASH_ADD_PTR(s_ws_client_delete_callbacks, esocket, l_new_entry);
+        l_new_entry = NULL;
+    }
+
+    pthread_mutex_unlock(&s_ws_client_delete_callbacks_mutex);
+
+    DAP_DEL_Z(l_removed_entry);
+    DAP_DEL_Z(l_new_entry);
+    return true;
+}
+
+static dap_events_socket_callback_t s_ws_client_delete_callback_take(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return NULL;
+
+    pthread_mutex_lock(&s_ws_client_delete_callbacks_mutex);
+
+    ws_client_delete_callback_entry_t *l_entry = NULL;
+    HASH_FIND_PTR(s_ws_client_delete_callbacks, &a_es, l_entry);
+    dap_events_socket_callback_t l_original = l_entry ? l_entry->original : NULL;
+    if (l_entry)
+        HASH_DEL(s_ws_client_delete_callbacks, l_entry);
+
+    pthread_mutex_unlock(&s_ws_client_delete_callbacks_mutex);
+
+    DAP_DELETE(l_entry);
+    return l_original;
+}
+
 static void s_ws_detach_client_esocket(dap_stream_t *a_stream, dap_events_socket_t *a_es)
 {
     if (!a_stream || !a_stream->is_client_to_uplink)
@@ -1446,7 +1604,7 @@ static void s_ws_detach_client_esocket(dap_stream_t *a_stream, dap_events_socket
 
 static void s_ws_client_esocket_delete(dap_events_socket_t *a_es, void *a_arg)
 {
-    dap_events_socket_callback_t l_original = NULL;
+    dap_events_socket_callback_t l_original = s_ws_client_delete_callback_take(a_es);
     dap_client_t *l_client = a_es ? DAP_ESOCKET_CLIENT(a_es) : NULL;
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
@@ -1455,7 +1613,6 @@ static void s_ws_client_esocket_delete(dap_events_socket_t *a_es, void *a_arg)
     if (l_stream) {
         dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(l_stream);
         if (l_priv) {
-            l_original = l_priv->original_delete_callback;
             s_ws_detach_client_esocket(l_stream, a_es);
         }
     }
@@ -1478,7 +1635,10 @@ static void s_ws_wrap_client_delete_callback(dap_stream_t *a_stream)
 
     dap_events_socket_callback_t l_current = a_stream->esocket->callbacks.delete_callback;
     if (l_current != s_ws_client_esocket_delete) {
-        l_priv->original_delete_callback = l_current;
+        if (!s_ws_client_delete_callback_save(a_stream->esocket, l_current)) {
+            log_it(L_ERROR, "Failed to save WebSocket client esocket delete callback");
+            return;
+        }
         a_stream->esocket->callbacks.delete_callback = s_ws_client_esocket_delete;
     }
 }
@@ -1714,76 +1874,155 @@ int dap_net_trans_websocket_build_frame(uint8_t *a_buffer, size_t a_buffer_size,
     return 0;
 }
 
-/**
- * @brief Parse WebSocket frame (simplified)
- */
-int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_size, dap_ws_opcode_t *a_opcode_out,
-                             bool *a_fin_out, uint8_t **a_payload_out, size_t *a_payload_size_out,
-                             size_t *a_frame_total_size_out)
+static bool s_ws_opcode_is_valid(uint8_t a_opcode)
 {
-    if (!a_data || a_data_size < 2) {
+    return a_opcode == DAP_WS_OPCODE_CONTINUATION ||
+           a_opcode == DAP_WS_OPCODE_TEXT ||
+           a_opcode == DAP_WS_OPCODE_BINARY ||
+           a_opcode == DAP_WS_OPCODE_CLOSE ||
+           a_opcode == DAP_WS_OPCODE_PING ||
+           a_opcode == DAP_WS_OPCODE_PONG;
+}
+
+static bool s_ws_opcode_is_control(uint8_t a_opcode)
+{
+    return a_opcode == DAP_WS_OPCODE_CLOSE ||
+           a_opcode == DAP_WS_OPCODE_PING ||
+           a_opcode == DAP_WS_OPCODE_PONG;
+}
+
+static int s_ws_parse_frame_ex(const uint8_t *a_data, size_t a_data_size, size_t a_max_payload_size,
+                               int a_expected_mask, dap_ws_opcode_t *a_opcode_out, bool *a_fin_out,
+                               uint8_t **a_payload_out, size_t *a_payload_size_out,
+                               size_t *a_frame_total_size_out)
+{
+    if (a_payload_out)
+        *a_payload_out = NULL;
+    if (a_payload_size_out)
+        *a_payload_size_out = 0;
+    if (a_frame_total_size_out)
+        *a_frame_total_size_out = 0;
+
+    if (!a_data) {
         return -1;
+    }
+    if (a_data_size < 2)
+        return -2;
+    if (a_max_payload_size == 0) {
+        a_max_payload_size = WS_DEFAULT_MAX_FRAME_SIZE;
     }
 
     size_t l_offset = 0;
 
     // Parse byte 0
     bool l_fin = (a_data[l_offset] & 0x80) != 0;
+    bool l_rsv = (a_data[l_offset] & 0x70) != 0;
     uint8_t l_opcode = a_data[l_offset] & 0x0F;
     l_offset++;
+    if (l_rsv || !s_ws_opcode_is_valid(l_opcode)) {
+        return -1;
+    }
 
     // Parse byte 1
     bool l_mask = (a_data[l_offset] & 0x80) != 0;
     uint64_t l_payload_len = a_data[l_offset] & 0x7F;
     l_offset++;
+    if ((a_expected_mask == 0 && l_mask) || (a_expected_mask == 1 && !l_mask)) {
+        return -1;
+    }
 
     // Extended payload length
     if (l_payload_len == 126) {
-        if (a_data_size < l_offset + 2) return -2;
+        if (a_data_size - l_offset < 2) return -2;
         uint16_t l_len16;
         memcpy(&l_len16, &a_data[l_offset], 2);
         l_payload_len = ntohs(l_len16);
         l_offset += 2;
     } else if (l_payload_len == 127) {
-        if (a_data_size < l_offset + 8) return -2;
+        if (a_data_size - l_offset < 8) return -2;
         uint64_t l_len64;
         memcpy(&l_len64, &a_data[l_offset], 8);
         l_payload_len = be64toh(l_len64);
         l_offset += 8;
     }
+    if (l_payload_len > (uint64_t)SIZE_MAX ||
+            l_payload_len > (uint64_t)a_max_payload_size ||
+            l_payload_len > (uint64_t)(SIZE_MAX - l_offset)) {
+        return -1;
+    }
+
+    size_t l_payload_size = (size_t)l_payload_len;
+    if (s_ws_opcode_is_control(l_opcode) && (!l_fin || l_payload_size > 125)) {
+        return -1;
+    }
+    if (l_opcode == DAP_WS_OPCODE_CLOSE && l_payload_size == 1) {
+        return -1;
+    }
+    if (l_offset + l_payload_size > a_max_payload_size + WS_MAX_HEADER_SIZE) {
+        return -1;
+    }
 
     // Masking key
     uint32_t l_mask_key = 0;
     if (l_mask) {
-        if (a_data_size < l_offset + 4) return -2;
+        if (a_data_size - l_offset < 4) return -2;
         memcpy(&l_mask_key, &a_data[l_offset], 4);
         l_offset += 4;
     }
 
     // Check if full payload available
-    if (a_data_size < l_offset + l_payload_len) {
+    if (a_data_size - l_offset < l_payload_size) {
         return -2;  // Incomplete frame
     }
 
     // Extract payload
     if (a_payload_out && a_payload_size_out) {
-        *a_payload_size_out = l_payload_len;
-        if (l_payload_len > 0) {
-            *a_payload_out = DAP_NEW_Z_SIZE(uint8_t, l_payload_len);
-            memcpy(*a_payload_out, &a_data[l_offset], l_payload_len);
+        *a_payload_size_out = l_payload_size;
+        if (l_payload_size > 0) {
+            *a_payload_out = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
+            if (!*a_payload_out) {
+                *a_payload_size_out = 0;
+                return -1;
+            }
+            memcpy(*a_payload_out, &a_data[l_offset], l_payload_size);
             
             // Unmask if needed
             if (l_mask) {
-                s_ws_mask_unmask(*a_payload_out, l_payload_len, l_mask_key);
+                s_ws_mask_unmask(*a_payload_out, l_payload_size, l_mask_key);
             }
         }
     }
 
     if (a_opcode_out) *a_opcode_out = (dap_ws_opcode_t)l_opcode;
     if (a_fin_out) *a_fin_out = l_fin;
-    if (a_frame_total_size_out) *a_frame_total_size_out = l_offset + l_payload_len;
+    if (a_frame_total_size_out) *a_frame_total_size_out = l_offset + l_payload_size;
 
     return 0;
+}
+
+/**
+ * @brief Parse WebSocket frame (default size cap, role-neutral masking)
+ */
+int dap_net_trans_websocket_parse_frame(const uint8_t *a_data, size_t a_data_size, dap_ws_opcode_t *a_opcode_out,
+                             bool *a_fin_out, uint8_t **a_payload_out, size_t *a_payload_size_out,
+                             size_t *a_frame_total_size_out)
+{
+    return s_ws_parse_frame_ex(a_data, a_data_size, WS_DEFAULT_MAX_FRAME_SIZE, -1,
+                              a_opcode_out, a_fin_out, a_payload_out,
+                              a_payload_size_out, a_frame_total_size_out);
+}
+
+/**
+ * @brief Parse client-to-server WebSocket frame, requiring RFC 6455 masking.
+ */
+int dap_net_trans_websocket_parse_client_frame(const uint8_t *a_data, size_t a_data_size,
+                             dap_ws_opcode_t *a_opcode_out, bool *a_fin_out,
+                             uint8_t **a_payload_out, size_t *a_payload_size_out,
+                             size_t *a_frame_total_size_out)
+{
+    return s_ws_parse_frame_ex(a_data, a_data_size, WS_DEFAULT_MAX_FRAME_SIZE, 1,
+                              a_opcode_out, a_fin_out, a_payload_out,
+                              a_payload_size_out, a_frame_total_size_out);
 }
 
 /**

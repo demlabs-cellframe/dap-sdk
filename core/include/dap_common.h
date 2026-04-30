@@ -255,7 +255,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_NEW_STACK( a )        DAP_CAST_REINT(a, alloca(sizeof(a)) )
     #define DAP_NEW_STACK_SIZE(a, b)  DAP_CAST_REINT(a, alloca(b) )
     #define DAP_NEW_Z( a )        DAP_CAST_REINT(a, s_vm_get_z(__func__, __LINE__, 1,sizeof(a)))
-    #define DAP_NEW_Z_SIZE(a, b)  DAP_CAST_REINT(a, s_vm_get_z(__func__, __LINE__, 1,b))
+    #define DAP_NEW_Z_SIZE(a, b)  DAP_CAST_REINT(a, DAP_CALLOC(1,b))
     #define DAP_REALLOC(a, b)     s_vm_extend(__func__, __LINE__, a,b)
 
     #define DAP_DUP(a)            DAP_CAST(__typeof__(a), memcpy(s_vm_get(__func__, __LINE__, sizeof(*a)), a, sizeof(*a)))
@@ -281,7 +281,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_STACK_SIZE(t, s) ({ intmax_t _s = (intmax_t)(s); DAP_CAST_PTR(t, _s >= (intmax_t)(sizeof(t)) && _s < (1 << 15) ? alloca(_s) : NULL); })
 /* ... */
 #define DAP_NEW_Z(t)          DAP_CAST_PTR( t, calloc(1, sizeof(t)) )
-#define DAP_NEW_Z_SIZE(t, s)  ({ intmax_t _s = (intmax_t)(s); _s >= (intmax_t)(sizeof(t)) ? DAP_CAST_PTR(t, calloc(1, _s)) : NULL; })
+#define DAP_NEW_Z_SIZE(t, s)  ({ intmax_t _nzs = (intmax_t)(s); _nzs >= (intmax_t)(sizeof(t)) ? DAP_CAST_PTR(t, DAP_CALLOC(1, _nzs)) : NULL; })
 #define DAP_NEW_Z_COUNT(t, c) DAP_CAST_PTR( t, DAP_CALLOC(c, sizeof(t)) )
 #define DAP_REALLOC_COUNT(p, c) ({ __typeof__(p) _rp = (p); intmax_t _rc = (intmax_t)(c), _ts = DAP_TYPE_SIZE(_rp); \
     (__typeof__(_rp))(_rc > 0 && _rc <= INTMAX_MAX / _ts ? DAP_REALLOC(_rp, _rc * _ts) : NULL); })
@@ -341,15 +341,14 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_ALFREE(p)           free(p)
     #define DAP_ALREALLOC(p, a, s)  ({ \
         size_t _s = (s), _a = (a); \
-        void *_p = (p), *_pn = realloc(_p, _s); \
-        if (_pn && ((uintptr_t)_pn & (_a - 1))) { \
-            void *_pa = NULL; \
-            posix_memalign(&_pa, _a, _s); \
-            if (_pa) { \
-                memcpy(_pa, _pn, _s); \
-                free(_pn); \
-                _pn = _pa; \
-            } \
+        void *_p = (p), *_pn = NULL; \
+        if (_a >= sizeof(void*) && !(_a & (_a - 1))) { \
+            if (!_p) \
+                _pn = DAP_ALMALLOC(_a, _s); \
+            else if (!_s) \
+                free(_p); \
+            else if (_a <= __alignof__(max_align_t)) \
+                _pn = realloc(_p, _s); \
         } \
         _pn; \
     })
@@ -1209,10 +1208,10 @@ static inline void *s_vm_get_z(
 {
 void    *l_ptr;
 
-        if ( !a_size || !a_nr )
+        if ( a_size <= 0 || a_nr <= 0 || (uintmax_t)a_nr > (uintmax_t)SIZE_MAX / (uintmax_t)a_size )
             return  NULL;
 
-        if ( !(l_ptr = calloc(a_nr, a_size)) )
+        if ( !(l_ptr = calloc((size_t)a_nr, (size_t)a_size)) )
         {
             assert ( l_ptr );
             return  NULL;

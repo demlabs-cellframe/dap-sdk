@@ -106,6 +106,156 @@ static void test_path_to_native_inplace(void)
 #endif
 }
 
+#ifdef _WIN32
+static char s_windows_test_root[PATH_MAX];
+
+static void windows_create_dir_checked(const char *a_path)
+{
+    if (!CreateDirectoryA(a_path, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
+        dap_test_msg("CreateDirectoryA(%s) failed: %lu", a_path, (unsigned long)GetLastError());
+        dap_fail("Create Windows test directory");
+    }
+}
+
+static void windows_write_file_checked(const char *a_path, const char *a_contents)
+{
+    FILE *l_file = fopen(a_path, "wb");
+    if (!l_file) {
+        dap_test_msg("fopen(%s) failed", a_path);
+        dap_fail("Create Windows test file");
+    }
+
+    size_t l_len = strlen(a_contents);
+    if (fwrite(a_contents, 1, l_len, l_file) != l_len) {
+        fclose(l_file);
+        dap_fail("Write Windows test file");
+    }
+
+    if (fclose(l_file) != 0)
+        dap_fail("Close Windows test file");
+
+    SetFileAttributesA(a_path, FILE_ATTRIBUTE_NORMAL);
+}
+
+static char *windows_path_with_slashes(const char *a_path)
+{
+    char *l_path = dap_strdup(a_path);
+    dap_assert_PIF(l_path != NULL, "Duplicate Windows path");
+
+    for (char *l_pos = l_path; *l_pos; l_pos++) {
+        if (*l_pos == '\\')
+            *l_pos = '/';
+    }
+    return l_path;
+}
+
+static void setup_windows_test_root(void)
+{
+    char l_temp_path[PATH_MAX];
+    DWORD l_temp_len = GetTempPathA((DWORD)sizeof(l_temp_path), l_temp_path);
+    dap_assert_PIF(l_temp_len > 0 && l_temp_len < sizeof(l_temp_path), "Get Windows temporary path");
+
+    int l_rc = snprintf(s_windows_test_root, sizeof(s_windows_test_root), "%sdap_file_utils_test_%lu_%lu",
+                        l_temp_path, (unsigned long)GetCurrentProcessId(), (unsigned long)GetTickCount());
+    dap_assert_PIF(l_rc > 0 && (size_t)l_rc < sizeof(s_windows_test_root), "Build Windows temporary test root");
+
+    dap_path_to_native_inplace(s_windows_test_root);
+    dap_rm_rf(s_windows_test_root);
+    windows_create_dir_checked(s_windows_test_root);
+}
+
+static void cleanup_windows_test_root(void)
+{
+    if (s_windows_test_root[0]) {
+        dap_rm_rf(s_windows_test_root);
+        s_windows_test_root[0] = '\0';
+    }
+}
+
+static void test_windows_path_to_native_variants(void)
+{
+    char l_drive_path[] = "C:/cellframe/data/file.txt";
+    char l_unc_path[] = "//server/share/folder/file.txt";
+    char l_mixed_relative[] = "one/two\\three/four";
+
+    dap_path_to_native_inplace(l_drive_path);
+    dap_path_to_native_inplace(l_unc_path);
+    dap_path_to_native_inplace(l_mixed_relative);
+
+    dap_assert(strcmp(l_drive_path, "C:\\cellframe\\data\\file.txt") == 0, "Windows drive path separators are normalized");
+    dap_assert(strcmp(l_unc_path, "\\\\server\\share\\folder\\file.txt") == 0, "Windows UNC path separators are normalized");
+    dap_assert(strcmp(l_mixed_relative, "one\\two\\three\\four") == 0, "Windows mixed relative separators are normalized");
+}
+
+static void test_windows_build_filename_normalizes_separators(void)
+{
+    char *l_drive_path = dap_build_filename("C:/cellframe", "data/subdir", "file.txt", NULL);
+    char *l_unc_path = dap_build_filename("//server/share", "folder/subdir", "file.txt", NULL);
+
+    dap_assert(l_drive_path != NULL, "dap_build_filename returns Windows drive path");
+    dap_assert(l_unc_path != NULL, "dap_build_filename returns Windows UNC path");
+    dap_assert(strcmp(l_drive_path, "C:\\cellframe\\data\\subdir\\file.txt") == 0, "dap_build_filename normalizes Windows drive path");
+    dap_assert(strcmp(l_unc_path, "\\\\server\\share\\folder\\subdir\\file.txt") == 0, "dap_build_filename normalizes Windows UNC path");
+
+    DAP_DELETE(l_drive_path);
+    DAP_DELETE(l_unc_path);
+}
+
+static void test_windows_file_helpers_normalize_separators(void)
+{
+    char *l_dir_path = dap_build_filename(s_windows_test_root, "helpers", NULL);
+    dap_assert_PIF(l_dir_path != NULL, "Build Windows helper directory path");
+    char *l_file_path = dap_build_filename(l_dir_path, "file.txt", NULL);
+    dap_assert_PIF(l_file_path != NULL, "Build Windows helper file path");
+
+    dap_assert(dap_mkdir_with_parents(l_dir_path) == 0, "Create Windows helper fixture directory");
+    windows_write_file_checked(l_file_path, "helper contents\n");
+
+    char *l_dir_slash_path = windows_path_with_slashes(l_dir_path);
+    char *l_file_slash_path = windows_path_with_slashes(l_file_path);
+
+    dap_assert(dap_dir_test(l_dir_slash_path), "dap_dir_test normalizes slash input on Windows");
+    dap_assert(!dap_dir_test(l_file_slash_path), "dap_dir_test rejects normalized file path on Windows");
+    dap_assert(dap_file_test(l_file_slash_path), "dap_file_test normalizes slash input on Windows");
+    dap_assert(dap_file_simple_test(l_file_slash_path), "dap_file_simple_test normalizes slash input on Windows");
+    dap_assert(!dap_file_test(l_dir_slash_path), "dap_file_test rejects normalized directory path on Windows");
+
+    size_t l_length = 0;
+    char *l_contents = dap_file_get_contents2(l_file_slash_path, &l_length);
+    dap_assert(l_contents != NULL, "dap_file_get_contents2 normalizes slash input on Windows");
+    dap_assert(l_length == strlen("helper contents\n"), "dap_file_get_contents2 reports normalized Windows file length");
+    dap_assert(strcmp(l_contents, "helper contents\n") == 0, "dap_file_get_contents2 reads normalized Windows file path");
+
+    DAP_DELETE(l_contents);
+    DAP_DELETE(l_dir_slash_path);
+    DAP_DELETE(l_file_slash_path);
+    DAP_DELETE(l_file_path);
+    DAP_DELETE(l_dir_path);
+}
+
+static void test_windows_mkdir_and_rm_rf_normalize_separators(void)
+{
+    char *l_parent_path = dap_build_filename(s_windows_test_root, "mkdir_rm", NULL);
+    dap_assert_PIF(l_parent_path != NULL, "Build Windows rm parent path");
+    char *l_nested_path = dap_build_filename(l_parent_path, "one", "two", NULL);
+    dap_assert_PIF(l_nested_path != NULL, "Build Windows mkdir nested path");
+
+    char *l_nested_slash_path = windows_path_with_slashes(l_nested_path);
+    char *l_parent_slash_path = windows_path_with_slashes(l_parent_path);
+
+    dap_assert(dap_mkdir_with_parents(l_nested_slash_path) == 0, "dap_mkdir_with_parents normalizes slash input on Windows");
+    dap_assert(dap_dir_test(l_nested_path), "dap_mkdir_with_parents creates normalized Windows nested directory");
+
+    dap_rm_rf(l_parent_slash_path);
+    dap_assert(!dap_dir_test(l_parent_path), "dap_rm_rf removes normalized Windows directory path");
+
+    DAP_DELETE(l_nested_slash_path);
+    DAP_DELETE(l_parent_slash_path);
+    DAP_DELETE(l_nested_path);
+    DAP_DELETE(l_parent_path);
+}
+#endif
+
 static void test_file_get_contents2_null_filename(void)
 {
     size_t l_length = 123;
@@ -264,6 +414,14 @@ int main(void)
     dap_print_module_name("dap_file_utils");
 
     test_path_to_native_inplace();
+#ifdef _WIN32
+    test_windows_path_to_native_variants();
+    test_windows_build_filename_normalizes_separators();
+    setup_windows_test_root();
+    test_windows_file_helpers_normalize_separators();
+    test_windows_mkdir_and_rm_rf_normalize_separators();
+    cleanup_windows_test_root();
+#endif
     test_file_get_contents2_null_filename();
 
 #ifndef _WIN32

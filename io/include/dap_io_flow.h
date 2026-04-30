@@ -419,7 +419,6 @@ struct dap_io_flow_server {
     
     bool is_running;                        ///< Server is running
     _Atomic bool is_deleting;               ///< Server is being deleted (invalidate queued packets)
-    _Atomic bool flows_deleting;            ///< Flow table teardown is in progress
     
     // Cross-worker packet tracking (for natural drain during cleanup)
     _Atomic uint32_t cross_worker_packets;     ///< Number of packets being forwarded between workers

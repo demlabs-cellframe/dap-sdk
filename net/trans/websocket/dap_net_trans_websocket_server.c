@@ -24,6 +24,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <stdint.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
@@ -822,7 +823,7 @@ cleanup:
 /**
  * @brief Server-side WebSocket read callback
  *
- * De-frames WebSocket frames from buf_in, extracts payloads,
+ * De-frames masked client WebSocket frames from buf_in, extracts payloads,
  * and passes raw DAP stream data to dap_stream_data_proc_read_ext.
  */
 static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
@@ -853,12 +854,20 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
         size_t l_payload_size = 0;
         size_t l_frame_size = 0;
 
-        int l_res = dap_net_trans_websocket_parse_frame(
+        int l_res = dap_net_trans_websocket_parse_client_frame(
             a_es->buf_in + l_consumed, a_es->buf_in_size - l_consumed,
             &l_opcode, &l_fin, &l_payload, &l_payload_size, &l_frame_size);
 
         if (l_res == -2) break;  // Incomplete frame
-        if (l_res != 0) { l_consumed++; continue; }
+        if (l_res != 0) {
+            log_it(L_WARNING, "WebSocket server: invalid client frame, closing connection");
+            if (l_consumed > 0)
+                dap_events_socket_shrink_buf_in(a_es, l_consumed);
+            DAP_DELETE(l_payload_buf);
+            dap_net_trans_websocket_send_close(l_stream, DAP_WS_CLOSE_PROTOCOL_ERROR, NULL);
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            return;
+        }
 
         // Handle control frames
         if (l_opcode == DAP_WS_OPCODE_CLOSE) {
@@ -884,9 +893,27 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
 
         // Data frame — accumulate payload
         if (l_payload && l_payload_size > 0) {
-            if (l_payload_total + l_payload_size > l_payload_buf_alloc) {
-                l_payload_buf_alloc = (l_payload_total + l_payload_size) * 2;
-                l_payload_buf = DAP_REALLOC(l_payload_buf, l_payload_buf_alloc);
+            if (l_payload_size > SIZE_MAX - l_payload_total) {
+                DAP_DEL_Z(l_payload);
+                DAP_DELETE(l_payload_buf);
+                return;
+            }
+            size_t l_payload_needed = l_payload_total + l_payload_size;
+            if (l_payload_needed > l_payload_buf_alloc) {
+                if (l_payload_needed > SIZE_MAX / 2) {
+                    DAP_DEL_Z(l_payload);
+                    DAP_DELETE(l_payload_buf);
+                    return;
+                }
+                size_t l_new_alloc = l_payload_needed * 2;
+                uint8_t *l_new_payload_buf = DAP_REALLOC(l_payload_buf, l_new_alloc);
+                if (!l_new_payload_buf) {
+                    DAP_DEL_Z(l_payload);
+                    DAP_DELETE(l_payload_buf);
+                    return;
+                }
+                l_payload_buf = l_new_payload_buf;
+                l_payload_buf_alloc = l_new_alloc;
             }
             memcpy(l_payload_buf + l_payload_total, l_payload, l_payload_size);
             l_payload_total += l_payload_size;
@@ -895,9 +922,6 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
         l_consumed += l_frame_size;
     }
 
-    if (l_consumed > 0)
-        dap_events_socket_shrink_buf_in(a_es, l_consumed);
-
     // Process de-framed data as raw DAP stream packets
     if (l_payload_total > 0 || (l_conn && l_conn->frame_buffer_used > 0)) {
         uint8_t *l_data = l_payload_buf;
@@ -905,15 +929,20 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
 
         // Prepend leftover from previous call
         if (l_conn && l_conn->frame_buffer_used > 0) {
+            if (l_payload_total > SIZE_MAX - l_conn->frame_buffer_used) {
+                DAP_DELETE(l_payload_buf);
+                return;
+            }
             size_t l_total = l_conn->frame_buffer_used + l_payload_total;
             uint8_t *l_combined = DAP_NEW_Z_SIZE(uint8_t, l_total);
-            if (l_combined) {
-                memcpy(l_combined, l_conn->frame_buffer, l_conn->frame_buffer_used);
-                memcpy(l_combined + l_conn->frame_buffer_used, l_payload_buf, l_payload_total);
-                l_conn->frame_buffer_used = 0;
-                l_data = l_combined;
-                l_data_size = l_total;
+            if (!l_combined) {
+                DAP_DELETE(l_payload_buf);
+                return;
             }
+            memcpy(l_combined, l_conn->frame_buffer, l_conn->frame_buffer_used);
+            memcpy(l_combined + l_conn->frame_buffer_used, l_payload_buf, l_payload_total);
+            l_data = l_combined;
+            l_data_size = l_total;
         }
 
         size_t l_processed = dap_stream_data_proc_read_ext(l_stream, l_data, l_data_size);
@@ -930,16 +959,29 @@ static void s_ws_server_esocket_read(dap_events_socket_t *a_es, void *a_arg)
         size_t l_remaining = l_data_size - l_processed;
         if (l_remaining > 0 && l_conn) {
             if (l_remaining > l_conn->frame_buffer_size) {
-                l_conn->frame_buffer = DAP_REALLOC(l_conn->frame_buffer, l_remaining);
+                uint8_t *l_new_frame_buffer = DAP_REALLOC(l_conn->frame_buffer, l_remaining);
+                if (!l_new_frame_buffer) {
+                    if (l_data != l_payload_buf)
+                        DAP_DELETE(l_data);
+                    DAP_DELETE(l_payload_buf);
+                    return;
+                }
+                l_conn->frame_buffer = l_new_frame_buffer;
                 l_conn->frame_buffer_size = l_remaining;
             }
             memcpy(l_conn->frame_buffer, l_data + l_processed, l_remaining);
             l_conn->frame_buffer_used = l_remaining;
+        } else if (l_conn) {
+            l_conn->frame_buffer_used = 0;
         }
 
         if (l_data != l_payload_buf)
             DAP_DELETE(l_data);
     }
+
+    if (l_consumed > 0)
+        dap_events_socket_shrink_buf_in(a_es, l_consumed);
+
     DAP_DELETE(l_payload_buf);
 }
 

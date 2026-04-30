@@ -28,6 +28,9 @@ static const char *s_db_types[] = {
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     "mdbx",
 #endif
+#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
+    "pgsql",
+#endif
     "none"
 };
 
@@ -92,13 +95,21 @@ static int s_test_create_db(const char *db_type)
     else
         l_rc = dap_global_db_driver_init(db_type, DB_FILE);
     if (l_rc != 0) {
-        printf("\t%sInitialization db driver '%s' SKIPPED (error %d) - not supported in this environment%s\n",
-               TEXT_COLOR_YEL, db_type, l_rc, TEXT_COLOR_RESET);
+        const char *l_pg_conninfo = getenv("PG_CONNINFO");
+        bool l_can_skip = !dap_strcmp(db_type, "pgsql") && (!l_pg_conninfo || !*l_pg_conninfo);
+        printf("\t%sInitialization db driver '%s' %s (error %d)%s\n",
+               l_can_skip ? TEXT_COLOR_YEL : TEXT_COLOR_RED, db_type, l_can_skip ? "SKIPPED - PG_CONNINFO is not set" : "FAILED", l_rc, TEXT_COLOR_RESET);
         fflush(stdout);
         return l_rc;
     }
     dap_pass_msg("Initialization db driver");
     return l_rc;
+}
+
+static bool s_test_db_init_can_skip(const char *db_type, int a_rc)
+{
+    const char *l_pg_conninfo = getenv("PG_CONNINFO");
+    return a_rc != 0 && !dap_strcmp(db_type, "pgsql") && (!l_pg_conninfo || !*l_pg_conninfo);
 }
 
 static int s_test_write(size_t a_count)
@@ -885,8 +896,11 @@ static void s_test_full(size_t a_db_count, size_t a_count)
         dap_test_msg("s_group_not_existed name %s", s_group_not_existed);
 
         dap_print_module_name(s_db_types[i]);
-        if (s_test_create_db(s_db_types[i]) != 0)
+        int l_init_rc = s_test_create_db(s_db_types[i]);
+        if (l_init_rc != 0) {
+            dap_assert_PIF(s_test_db_init_can_skip(s_db_types[i], l_init_rc), "Compiled local GDB driver initialization must succeed");
             continue;
+        }
         uint64_t l_t1 = get_cur_time_nsec();
         s_test_all(a_count);
         uint64_t l_t2 = get_cur_time_nsec();
@@ -1340,11 +1354,12 @@ int main(int argc, char **argv)
     // Run stress tests
     for (size_t i = 0; i < l_db_count; i++) {
         dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
-        if (s_test_create_db(s_db_types[i]) != 0)
+        int l_init_rc = s_test_create_db(s_db_types[i]);
+        if (l_init_rc != 0) {
+            dap_assert_PIF(s_test_db_init_can_skip(s_db_types[i], l_init_rc), "Compiled local GDB driver initialization must succeed");
             continue;
+        }
         s_stress_test_suite(s_db_types[i], 10); // 10 concurrent threads
         s_test_close_db();
     }
 }
-
-

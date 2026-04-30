@@ -25,9 +25,16 @@ static void s_test_active_channels_preinit_add_before_init(void)
     dap_print_module_name("dap_link_manager_active_channels_preinit_add_before_init");
 
     dap_stream_ch_proc_add('P', s_dummy_ch_new, s_dummy_ch_delete, s_dummy_ch_pkt_in, s_dummy_ch_pkt_out);
+    dap_stream_ch_proc_add('Q', s_dummy_ch_new, s_dummy_ch_delete, s_dummy_ch_pkt_in, s_dummy_ch_pkt_out);
 
     int l_ret = dap_link_manager_add_active_channel('P');
     dap_assert(l_ret == 0, "Preinit add channel 'P' returns 0");
+
+    l_ret = dap_link_manager_add_active_channel('Q');
+    dap_assert(l_ret == 0, "Preinit add channel 'Q' returns 0");
+
+    l_ret = dap_link_manager_remove_active_channel('Q');
+    dap_assert(l_ret == 0, "Preinit remove channel 'Q' returns 0");
 
     const char *l_channels = dap_link_manager_get_active_channels();
     dap_assert(dap_str_equals(l_channels, "RCGENDP"), "Preinit active channels include 'P'");

@@ -153,10 +153,19 @@ typedef struct test_flow_ctrl_ctx {
     
     // Peer flow control (for loopback)
     dap_io_flow_ctrl_t *peer_ctrl;
+
+    // Callback-owned delete regression controls
+    dap_io_flow_ctrl_t *self_ctrl;
+    bool delete_on_payload;
+    bool release_owner_after_callback_delete;
+    _Atomic bool owner_valid;
+    _Atomic uint64_t callback_delete_returns;
 } test_flow_ctrl_ctx_t;
 
 static _Atomic int s_ctx_counter = 0;
 static char s_ctx_mock_names[TEST_FLOW_CTRL_MAX_CONTEXTS][2][64];
+static _Atomic uint64_t s_packet_free_null_arg_count = 0;
+static _Atomic uint64_t s_packet_free_after_owner_release_count = 0;
 
 /**
  * @brief Prepare packet callback
@@ -259,7 +268,14 @@ static int s_packet_send(dap_io_flow_t *a_flow, const void *a_packet, size_t a_p
  */
 static void s_packet_free(void *a_packet, void *a_arg)
 {
-    (void)a_arg;
+    if (!a_arg) {
+        atomic_fetch_add(&s_packet_free_null_arg_count, 1);
+    } else {
+        test_flow_ctrl_ctx_t *l_ctx = (test_flow_ctrl_ctx_t *)a_arg;
+        if (!atomic_load(&l_ctx->owner_valid)) {
+            atomic_fetch_add(&s_packet_free_after_owner_release_count, 1);
+        }
+    }
     DAP_DELETE(a_packet);
 }
 
@@ -271,11 +287,23 @@ static int s_payload_deliver(dap_io_flow_t *a_flow, const void *a_payload, size_
     (void)a_flow;
     (void)a_payload;
     test_flow_ctrl_ctx_t *l_ctx = (test_flow_ctrl_ctx_t *)a_arg;
+    if (!l_ctx) {
+        return -1;
+    }
     
     void *l_args[] = {(void*)a_payload, (void*)(intptr_t)a_payload_size};
     dap_mock_record_call(l_ctx->mock_payload_deliver, l_args, 2, (void*)(intptr_t)0);
     
     atomic_fetch_add(&l_ctx->packets_delivered, 1);
+
+    if (l_ctx->delete_on_payload && l_ctx->self_ctrl) {
+        dap_io_flow_ctrl_delete(l_ctx->self_ctrl);
+        atomic_fetch_add(&l_ctx->callback_delete_returns, 1);
+        if (l_ctx->release_owner_after_callback_delete) {
+            atomic_store(&l_ctx->owner_valid, false);
+        }
+    }
+
     return 0;
 }
 
@@ -303,6 +331,7 @@ static test_flow_ctrl_ctx_t *s_ctx_create(void)
     l_ctx->pending_capacity = 4096;
     l_ctx->pending_packets = DAP_NEW_Z_SIZE(void*, l_ctx->pending_capacity * sizeof(void*));
     l_ctx->pending_sizes = DAP_NEW_Z_SIZE(size_t, l_ctx->pending_capacity * sizeof(size_t));
+    atomic_init(&l_ctx->owner_valid, true);
     
     return l_ctx;
 }
@@ -1017,6 +1046,86 @@ static void test_flow_ctrl_delete_race(void)
     dap_pass_msg("Delete race condition test PASSED - fix verified!");
 }
 
+/**
+ * @brief REGRESSION TEST: delete from payload callback must not deadlock
+ *
+ * The callback marks its owner state invalid immediately after callback-owned
+ * delete returns. Deferred cleanup must not pass that owner arg to packet_free.
+ */
+static void test_flow_ctrl_delete_from_payload_callback(void)
+{
+    dap_test_msg("Test: Delete from payload callback (REGRESSION)");
+
+    atomic_store(&s_packet_free_null_arg_count, 0);
+    atomic_store(&s_packet_free_after_owner_release_count, 0);
+
+    test_flow_ctrl_ctx_t *l_sender_ctx = s_ctx_create();
+    test_flow_ctrl_ctx_t *l_receiver_ctx = s_ctx_create();
+
+    dap_io_flow_ctrl_callbacks_t l_sender_cb = {
+        .packet_prepare = s_packet_prepare,
+        .packet_parse = s_packet_parse,
+        .packet_send = s_packet_send,
+        .packet_free = s_packet_free,
+        .payload_deliver = s_payload_deliver,
+        .arg = l_sender_ctx,
+    };
+
+    dap_io_flow_ctrl_callbacks_t l_receiver_cb = {
+        .packet_prepare = s_packet_prepare,
+        .packet_parse = s_packet_parse,
+        .packet_send = s_packet_send,
+        .packet_free = s_packet_free,
+        .payload_deliver = s_payload_deliver,
+        .arg = l_receiver_ctx,
+    };
+
+    dap_io_flow_ctrl_config_t l_config;
+    dap_io_flow_ctrl_get_default_config(&l_config);
+    l_config.retransmit_timeout_ms = 100;
+    l_config.send_window_size = 16;
+    l_config.recv_window_size = 16;
+
+    dap_io_flow_ctrl_t *l_sender = dap_io_flow_ctrl_create(&l_sender_ctx->dummy_flow,
+                                                           DAP_IO_FLOW_CTRL_RELIABLE, &l_config, &l_sender_cb);
+    dap_io_flow_ctrl_t *l_receiver = dap_io_flow_ctrl_create(&l_receiver_ctx->dummy_flow,
+                                                             DAP_IO_FLOW_CTRL_RELIABLE, &l_config, &l_receiver_cb);
+    dap_assert(l_sender && l_receiver, "Flow controls created");
+
+    l_receiver_ctx->self_ctrl = l_receiver;
+    l_receiver_ctx->delete_on_payload = true;
+    l_receiver_ctx->release_owner_after_callback_delete = true;
+
+    const char *l_outstanding = "receiver outstanding packet";
+    dap_assert(dap_io_flow_ctrl_send(l_receiver, l_outstanding, strlen(l_outstanding) + 1) == 0,
+               "Receiver has an outstanding send-window packet for cleanup");
+
+    const char *l_trigger = "trigger payload delete";
+    dap_assert(dap_io_flow_ctrl_send(l_sender, l_trigger, strlen(l_trigger) + 1) == 0,
+               "Sender queued trigger packet");
+
+    int l_processed = s_process_pending(l_sender_ctx, l_receiver);
+    dap_assert(l_processed == 1, "Trigger packet processed");
+    dap_assert(atomic_load(&l_receiver_ctx->callback_delete_returns) == 1,
+               "Callback-owned delete returned");
+    dap_assert(!atomic_load(&l_receiver_ctx->owner_valid),
+               "Owner state marked invalid after callback delete");
+    dap_assert(atomic_load(&s_packet_free_after_owner_release_count) == 0,
+               "Deferred cleanup did not reuse released owner arg");
+    dap_assert(atomic_load(&s_packet_free_null_arg_count) > 0,
+               "Deferred cleanup used NULL packet_free arg after callback delete");
+
+    dap_io_flow_ctrl_delete(l_receiver);
+    dap_assert(dap_io_flow_ctrl_send(l_receiver, l_trigger, strlen(l_trigger) + 1) == -10,
+               "Deleted callback-owned flow rejects later sends");
+
+    dap_io_flow_ctrl_delete(l_sender);
+    s_ctx_delete(l_sender_ctx);
+    s_ctx_delete(l_receiver_ctx);
+
+    dap_pass_msg("Delete from payload callback test passed");
+}
+
 //===================================================================
 // MAIN
 //===================================================================
@@ -1059,6 +1168,9 @@ int main(int argc, char **argv)
     // Multi-client scenario
     test_flow_ctrl_multiple_senders();
     
+    // REGRESSION TEST: delete from callback must not deadlock or reuse owner arg
+    test_flow_ctrl_delete_from_payload_callback();
+
     // REGRESSION TEST: delete race condition (verifies lifecycle management fix)
     test_flow_ctrl_delete_race();
     

@@ -50,6 +50,60 @@
 // Debug mode
 static bool s_debug_more = false;
 
+typedef struct s_flows_deleting_server {
+    dap_io_flow_server_t *server;
+    UT_hash_handle hh;
+} s_flows_deleting_server_t;
+
+// Keep flow teardown state outside dap_io_flow_server_t so the public ABI stays stable.
+static pthread_mutex_t s_flows_deleting_mutex = PTHREAD_MUTEX_INITIALIZER;
+static s_flows_deleting_server_t *s_flows_deleting_servers = NULL;
+
+static bool s_flow_server_is_flows_deleting(dap_io_flow_server_t *a_server)
+{
+    if (!a_server) {
+        return false;
+    }
+
+    pthread_mutex_lock(&s_flows_deleting_mutex);
+    s_flows_deleting_server_t *l_state = NULL;
+    HASH_FIND_PTR(s_flows_deleting_servers, &a_server, l_state);
+    bool l_is_deleting = l_state != NULL;
+    pthread_mutex_unlock(&s_flows_deleting_mutex);
+    return l_is_deleting;
+}
+
+static bool s_flow_server_set_flows_deleting(dap_io_flow_server_t *a_server, bool a_is_deleting)
+{
+    if (!a_server) {
+        return false;
+    }
+
+    s_flows_deleting_server_t *l_state = NULL;
+    pthread_mutex_lock(&s_flows_deleting_mutex);
+    HASH_FIND_PTR(s_flows_deleting_servers, &a_server, l_state);
+    if (a_is_deleting) {
+        if (!l_state) {
+            l_state = DAP_NEW_Z(s_flows_deleting_server_t);
+            if (!l_state) {
+                pthread_mutex_unlock(&s_flows_deleting_mutex);
+                return false;
+            }
+            l_state->server = a_server;
+            HASH_ADD_PTR(s_flows_deleting_servers, server, l_state);
+        }
+        pthread_mutex_unlock(&s_flows_deleting_mutex);
+        return true;
+    }
+
+    if (l_state) {
+        HASH_DEL(s_flows_deleting_servers, l_state);
+    }
+    pthread_mutex_unlock(&s_flows_deleting_mutex);
+    DAP_DELETE(l_state);
+    return true;
+}
+
 static void s_cross_worker_packet_account_inc(dap_io_flow_server_t *a_server)
 {
     if (a_server)
@@ -98,7 +152,7 @@ static bool s_flow_packet_guard_begin(dap_io_flow_server_t *a_server)
 
     pthread_mutex_lock(&a_server->cleanup_mutex);
     if (atomic_load(&a_server->is_deleting) ||
-        atomic_load(&a_server->flows_deleting)) {
+        s_flow_server_is_flows_deleting(a_server)) {
         pthread_mutex_unlock(&a_server->cleanup_mutex);
         return false;
     }
@@ -463,7 +517,6 @@ dap_io_flow_server_t* dap_io_flow_server_new(
     atomic_init(&l_server->pending_cleanups, 0);
     atomic_init(&l_server->active_callbacks, 0);  // Track callbacks in execution
     atomic_init(&l_server->is_deleting, false);   // Server is valid initially
-    atomic_init(&l_server->flows_deleting, false);
     
     // Initialize cross-worker packet drain coordination (for natural drain during cleanup)
     pthread_mutex_init(&l_server->cross_worker_mutex, NULL);
@@ -779,6 +832,7 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     
     debug_if(s_debug_more, L_DEBUG, "Freeing server name and object");
     DAP_DELETE(a_server->name);
+    s_flow_server_set_flows_deleting(a_server, false);
     
     // Mark server as freed (helps detect use-after-free)
     memset(a_server, 0xDE, sizeof(*a_server)); // Fill with 0xDE (dead) pattern
@@ -870,7 +924,10 @@ int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server)
         return 0;
     }
 
-    atomic_store(&a_server->flows_deleting, true);
+    if (!s_flow_server_set_flows_deleting(a_server, true)) {
+        log_it(L_CRITICAL, "dap_io_flow_delete_all_flows: Failed to create private teardown state");
+        return -1;
+    }
     s_wait_flow_packet_callbacks_drained(a_server);
     
     uint32_t l_worker_count = dap_proc_thread_get_count();
@@ -907,7 +964,7 @@ int dap_io_flow_delete_all_flows(dap_io_flow_server_t *a_server)
     
     log_it(L_INFO, "dap_io_flow_delete_all_flows: Deleted %d flows for server '%s'",
            l_total_deleted, a_server->name ? a_server->name : "NULL");
-    atomic_store(&a_server->flows_deleting, false);
+    s_flow_server_set_flows_deleting(a_server, false);
     
     return l_total_deleted;
 }
