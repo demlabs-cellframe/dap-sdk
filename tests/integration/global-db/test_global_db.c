@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdatomic.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
@@ -24,6 +25,7 @@
 #define DB_FILE "./base.tmp"
 #define DB_FILE_MDBX_FAIL_CLOSED "./base.mdbx.fail.tmp"
 #define DB_FILE_MDBX_REPAIR "./base.mdbx.repair.tmp"
+#define DB_FILE_MDBX_PROBE "./base.mdbx.probe.tmp"
 
 static const char *s_db_types[] = {
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
@@ -87,16 +89,82 @@ typedef struct __dap_test_record__ {
 #define DAP_DB$T_GROUP_PREF                  "group.zero."
 #define DAP_DB$T_GROUP_WRONG_PREF            "group.wrong."
 #define DAP_DB$T_GROUP_NOT_EXISTED_PREF      "group.not.existed."
+#define DAP_DB$T_GROUP_PGSQL_PREF            "group_zero_"
+#define DAP_DB$T_GROUP_PGSQL_WRONG_PREF      "group_wrong_"
+#define DAP_DB$T_GROUP_PGSQL_NOT_EXISTED_PREF "group_not_existed_"
 static char s_group[64] = {};
 static char s_group_wrong[64] = {};
 static char s_group_not_existed[64] = {};
+static size_t s_group_pref_len = 0;
+static size_t s_group_wrong_pref_len = 0;
+static size_t s_group_not_existed_pref_len = 0;
 
 enum {
     DAP_GDB_TEST_DRIVER_READY = 0,
     DAP_GDB_TEST_DRIVER_SKIP = 1
 };
 
+static void s_test_prepare_group_names(const char *a_db_type, bool a_randomize)
+{
+    const bool l_pgsql = a_db_type && !dap_strcmp(a_db_type, "pgsql");
+    const char *l_group_pref = l_pgsql ? DAP_DB$T_GROUP_PGSQL_PREF : DAP_DB$T_GROUP_PREF;
+    const char *l_group_wrong_pref = l_pgsql ? DAP_DB$T_GROUP_PGSQL_WRONG_PREF : DAP_DB$T_GROUP_WRONG_PREF;
+    const char *l_group_not_existed_pref = l_pgsql ? DAP_DB$T_GROUP_PGSQL_NOT_EXISTED_PREF
+                                                   : DAP_DB$T_GROUP_NOT_EXISTED_PREF;
+
+    s_group_pref_len = strlen(l_group_pref);
+    s_group_wrong_pref_len = strlen(l_group_wrong_pref);
+    s_group_not_existed_pref_len = strlen(l_group_not_existed_pref);
+
+    memset(s_group, 0, sizeof(s_group));
+    memset(s_group_wrong, 0, sizeof(s_group_wrong));
+    memset(s_group_not_existed, 0, sizeof(s_group_not_existed));
+    snprintf(s_group, sizeof(s_group), "%s", l_group_pref);
+    snprintf(s_group_wrong, sizeof(s_group_wrong), "%s", l_group_wrong_pref);
+    snprintf(s_group_not_existed, sizeof(s_group_not_existed), "%s", l_group_not_existed_pref);
+
+    if (a_randomize) {
+        dap_random_string_fill(s_group + s_group_pref_len, 32);
+        dap_random_string_fill(s_group_wrong + s_group_wrong_pref_len, 32);
+        dap_random_string_fill(s_group_not_existed + s_group_not_existed_pref_len, 32);
+    }
+}
+
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
+static int s_test_mdbx_open_env(const char *a_mdbx_path, MDBX_env **a_env);
+
+static bool s_test_mdbx_runtime_unsupported_rc(int a_rc)
+{
+#ifdef ENOTSUP
+    if (a_rc == ENOTSUP)
+        return true;
+#endif
+#ifdef EOPNOTSUPP
+    if (a_rc == EOPNOTSUPP)
+        return true;
+#endif
+    return a_rc == MDBX_ENOSYS;
+}
+
+static bool s_test_mdbx_master_repair_runtime_unsupported(void)
+{
+#ifdef DAP_OS_WINDOWS
+    if (dap_is_wine())
+        return true;
+#endif
+    char l_mdbx_path[MAX_PATH];
+    dap_rm_rf(DB_FILE_MDBX_PROBE);
+    snprintf(l_mdbx_path, sizeof(l_mdbx_path), "%s/gdb-mdbx", DB_FILE_MDBX_PROBE);
+    dap_mkdir_with_parents(l_mdbx_path);
+
+    MDBX_env *l_env = NULL;
+    int l_rc = s_test_mdbx_open_env(l_mdbx_path, &l_env);
+    if (l_env)
+        mdbx_env_close(l_env);
+    dap_rm_rf(DB_FILE_MDBX_PROBE);
+    return s_test_mdbx_runtime_unsupported_rc(l_rc);
+}
+
 static int s_test_mdbx_open_env(const char *a_mdbx_path, MDBX_env **a_env)
 {
     MDBX_env *l_env = NULL;
@@ -114,32 +182,44 @@ static int s_test_mdbx_open_env(const char *a_mdbx_path, MDBX_env **a_env)
     return MDBX_SUCCESS;
 }
 
-static void s_test_mdbx_put_master_raw(const char *a_base_path, const char *a_key,
-                                       const void *a_value, size_t a_value_len)
+static int s_test_mdbx_put_master_raw(const char *a_base_path, const char *a_key,
+                                      const void *a_value, size_t a_value_len)
 {
     char l_mdbx_path[MAX_PATH];
     snprintf(l_mdbx_path, sizeof(l_mdbx_path), "%s/gdb-mdbx", a_base_path);
 
     MDBX_env *l_env = NULL;
     int rc = s_test_mdbx_open_env(l_mdbx_path, &l_env);
-    dap_assert_PIF(rc == MDBX_SUCCESS, "Open MDBX env for master corruption");
+    if (rc != MDBX_SUCCESS)
+        return rc;
 
     MDBX_txn *l_txn = NULL;
     rc = mdbx_txn_begin(l_env, NULL, MDBX_TXN_READWRITE, &l_txn);
-    dap_assert_PIF(rc == MDBX_SUCCESS, "Begin MDBX master corruption transaction");
+    if (rc != MDBX_SUCCESS)
+        goto close_env;
 
     MDBX_dbi l_master_dbi = 0;
     rc = mdbx_dbi_open(l_txn, "MDBX$MASTER", MDBX_CREATE, &l_master_dbi);
-    dap_assert_PIF(rc == MDBX_SUCCESS, "Open MDBX$MASTER for corruption");
+    if (rc != MDBX_SUCCESS)
+        goto abort_txn;
 
     MDBX_val l_key = { .iov_base = (void *)a_key, .iov_len = strlen(a_key) + 1 };
     MDBX_val l_value = { .iov_base = (void *)a_value, .iov_len = a_value_len };
     rc = mdbx_put(l_txn, l_master_dbi, &l_key, &l_value, 0);
-    dap_assert_PIF(rc == MDBX_SUCCESS, "Write raw MDBX$MASTER entry");
+    if (rc != MDBX_SUCCESS)
+        goto abort_txn;
 
     rc = mdbx_txn_commit(l_txn);
-    dap_assert_PIF(rc == MDBX_SUCCESS, "Commit raw MDBX$MASTER entry");
+    l_txn = NULL;
+    if (rc != MDBX_SUCCESS)
+        goto close_env;
+
+abort_txn:
+    if (l_txn)
+        mdbx_txn_abort(l_txn);
+close_env:
     mdbx_env_close(l_env);
+    return rc;
 }
 
 static void s_test_mdbx_master_repair_preserves_spaces(void)
@@ -149,7 +229,13 @@ static void s_test_mdbx_master_repair_preserves_spaces(void)
     char l_value[] = "value";
     dap_rm_rf(DB_FILE_MDBX_REPAIR);
 
-    dap_assert_PIF(!dap_global_db_driver_init("mdbx", DB_FILE_MDBX_REPAIR), "Init MDBX for master repair test");
+    if (s_test_mdbx_master_repair_runtime_unsupported()) {
+        dap_pass_msg("mdbx master repair safety skipped (runtime unsupported)");
+        return;
+    }
+
+    int l_rc = dap_global_db_driver_init("mdbx", DB_FILE_MDBX_REPAIR);
+    dap_assert_PIF(!l_rc, "Init MDBX for master repair test");
     dap_store_obj_t l_store_obj = {
         .group = (char *)l_group_with_space,
         .key = (char *)l_key,
@@ -162,7 +248,8 @@ static void s_test_mdbx_master_repair_preserves_spaces(void)
     dap_global_db_driver_deinit();
 
     const char l_bad_value[] = { 'b', 'a', 'd' };
-    s_test_mdbx_put_master_raw(DB_FILE_MDBX_REPAIR, "broken.master", l_bad_value, sizeof(l_bad_value));
+    l_rc = s_test_mdbx_put_master_raw(DB_FILE_MDBX_REPAIR, "broken.master", l_bad_value, sizeof(l_bad_value));
+    dap_assert_PIF(l_rc == MDBX_SUCCESS, "Write raw MDBX$MASTER corruption entry");
 
     dap_assert_PIF(!dap_global_db_driver_init("mdbx", DB_FILE_MDBX_REPAIR), "Repair non-NUL MDBX$MASTER entry");
     dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask("*with space");
@@ -757,19 +844,19 @@ static void s_test_get_groups_by_mask(size_t a_count, bool a_bench)
 {
     dap_list_t *l_groups = NULL;
 
-    char *l_mask_str = dap_strdup_printf("*%s", s_group + strlen(DAP_DB$T_GROUP_PREF));
+    char *l_mask_str = dap_strdup_printf("*%s", s_group + s_group_pref_len);
     l_groups = dap_global_db_driver_get_groups_by_mask(l_mask_str);
     dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(s_group, l_groups->data), "Wrong finded group by mask");
     dap_list_free_full(l_groups, NULL);
     DAP_DELETE(l_mask_str);
 
-    l_mask_str = dap_strdup_printf("*%s", s_group_wrong + strlen(DAP_DB$T_GROUP_WRONG_PREF));
+    l_mask_str = dap_strdup_printf("*%s", s_group_wrong + s_group_wrong_pref_len);
     l_groups = dap_global_db_driver_get_groups_by_mask(l_mask_str);
     dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(s_group_wrong, l_groups->data), "Wrong finded group by mask");
     dap_list_free_full(l_groups, NULL);
     DAP_DELETE(l_mask_str);
 
-    l_mask_str = dap_strdup_printf("*%s", s_group_not_existed + strlen(DAP_DB$T_GROUP_NOT_EXISTED_PREF));
+    l_mask_str = dap_strdup_printf("*%s", s_group_not_existed + s_group_not_existed_pref_len);
     l_groups = dap_global_db_driver_get_groups_by_mask(l_mask_str);
     dap_assert_PIF(!dap_list_length(l_groups), "Finded not existed groups");
     dap_list_free_full(l_groups, NULL);
@@ -777,7 +864,7 @@ static void s_test_get_groups_by_mask(size_t a_count, bool a_bench)
 
     for (size_t i = 0; i < a_count; ++i) {
         uint64_t l_time = get_cur_time_nsec();
-        l_groups = dap_global_db_driver_get_groups_by_mask("group.*");
+        l_groups = dap_global_db_driver_get_groups_by_mask("group*");
         s_get_groups_by_mask += a_bench ? get_cur_time_nsec() - l_time : 0;
 
         dap_assert_PIF(dap_list_length(l_groups) >= 2, "Wrong finded groups by mask");
@@ -1002,9 +1089,7 @@ static void s_test_full(size_t a_db_count, size_t a_count)
         s_get_groups_by_mask = 0;
 
         srand( (unsigned int)time(NULL) );
-        dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
-        dap_random_string_fill(s_group_wrong + strlen(DAP_DB$T_GROUP_WRONG_PREF), 32);
-        dap_random_string_fill(s_group_not_existed + strlen(DAP_DB$T_GROUP_NOT_EXISTED_PREF), 32);
+        s_test_prepare_group_names(s_db_types[i], true);
 
         dap_test_msg("s_group name %s", s_group);
         dap_test_msg("s_group_wrong name %s", s_group_wrong);
@@ -1469,9 +1554,7 @@ int main(int argc, char **argv)
     size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
     dap_assert_PIF(!(l_count % DAP_DB$SZ_HOLES), "If (l_count \% DAP_DB$SZ_HOLES) != 0 tests will fail");
     
-    sprintf(s_group, "%s", DAP_DB$T_GROUP_PREF);
-    sprintf(s_group_wrong, "%s", DAP_DB$T_GROUP_WRONG_PREF);
-    sprintf(s_group_not_existed, "%s", DAP_DB$T_GROUP_NOT_EXISTED_PREF);
+    s_test_prepare_group_names(NULL, false);
 
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     s_test_mdbx_master_repair_preserves_spaces();
@@ -1486,7 +1569,7 @@ int main(int argc, char **argv)
     
     // Run stress tests
     for (size_t i = 0; i < l_db_count; i++) {
-        dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
+        s_test_prepare_group_names(s_db_types[i], true);
         if(s_test_create_db(s_db_types[i]) == DAP_GDB_TEST_DRIVER_SKIP) {
             log_it(L_WARNING, "Skipping '%s' stress tests (optional setup missing)", s_db_types[i]);
             continue;

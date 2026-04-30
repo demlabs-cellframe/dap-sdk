@@ -31,7 +31,8 @@ dap_mock_autowrap(${PROJECT_NAME})
 
 # Add database driver libraries based on build configuration (after dap_test_link_libraries)
 if(BUILD_WITH_GDB_DRIVER_MDBX)
-    if(TARGET mdbx-static AND CMAKE_CROSSCOMPILING_EMULATOR MATCHES "qemu-")
+    if(TARGET mdbx-static
+       AND CMAKE_CROSSCOMPILING_EMULATOR MATCHES "(^|/)(qemu-|run-arm32|run-arm64)")
         target_compile_definitions(mdbx-static PRIVATE MDBX_SAFE4QEMU)
     endif()
     target_link_libraries(${PROJECT_NAME} PRIVATE mdbx-static)
