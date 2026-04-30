@@ -6,6 +6,7 @@
 #include <dap_test.h>
 #include <dap_common.h>
 #include <dap_file_utils.h>
+#include <dap_strfuncs.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>

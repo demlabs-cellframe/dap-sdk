@@ -633,6 +633,9 @@ static void test_12_stream_write(void)
     // Create mock stream
     s_mock_stream.trans = l_trans;
     s_mock_trans_ctx = (dap_net_trans_ctx_t){0}; // Reset context
+    s_mock_events_socket = (dap_events_socket_t){0};
+    s_mock_events_socket.type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    s_mock_events_socket._inheritor = dap_trans_test_get_mock_client();
     s_mock_stream.esocket = &s_mock_events_socket;
     s_mock_stream.trans_ctx = &s_mock_trans_ctx;
     
@@ -642,6 +645,9 @@ static void test_12_stream_write(void)
     TEST_ASSERT(l_bytes_written > 0, "Write operation should succeed");
     TEST_ASSERT(l_bytes_written == (ssize_t)sizeof(l_test_data), 
                 "All bytes should be written");
+    DAP_DEL_Z(s_mock_events_socket.buf_out);
+    s_mock_events_socket.buf_out_size = 0;
+    s_mock_events_socket.buf_out_size_max = 0;
     
     // Deinitialize
     l_trans->ops->deinit(l_trans);
