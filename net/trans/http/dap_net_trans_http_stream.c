@@ -467,25 +467,6 @@ static void s_http_trans_deinit(dap_net_trans_t *a_trans)
     debug_if(s_debug_more, L_DEBUG, "HTTP trans deinitialized");
 }
 
-static void s_http_prepare_connect_flags(dap_events_socket_t *a_es)
-{
-    if (!a_es)
-        return;
-
-    a_es->flags |= DAP_SOCK_CONNECTING;
-#ifdef DAP_EVENTS_CAPS_IOCP
-    /*
-     * IOCP arms the initial operation from readiness flags when the socket is
-     * assigned to a worker. A connecting TCP socket must post ConnectEx first,
-     * not WSARecv inherited from dap_events_socket_wrap_no_add().
-     */
-    a_es->flags &= ~DAP_SOCK_READY_TO_READ;
-    a_es->flags |= DAP_SOCK_READY_TO_WRITE;
-#else
-    a_es->flags |= DAP_SOCK_READY_TO_WRITE;
-#endif
-}
-
 /**
  * @brief Connect HTTP trans (client-side): create persistent TCP esocket
  *
@@ -551,7 +532,7 @@ static int s_http_trans_connect(dap_stream_t *a_stream,
         return -1;
     }
 
-    s_http_prepare_connect_flags(l_es);
+    dap_net_trans_prepare_tcp_connect_flags(l_es);
     l_es->is_initalized = false;
 
     int l_connect_err = 0;

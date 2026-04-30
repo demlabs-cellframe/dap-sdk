@@ -82,6 +82,13 @@ static bool s_write_all(int a_fd, const void *a_buf, size_t a_size)
     }
     return true;
 }
+
+static void s_path_copy_to_native(char *a_path_out, const char *a_path_in, size_t a_path_size)
+{
+    memcpy(a_path_out, a_path_in, a_path_size);
+    dap_path_to_native_inplace(a_path_out);
+}
+
 /**
  * Normalize path separators to the OS-native form in place.
  * POSIX preserves backslashes because they are valid filename bytes.
@@ -137,8 +144,7 @@ bool dap_file_test(const char * a_file_path)
     if(!a_file_path)
         return false;
     char path[strlen(a_file_path) + 1];
-    memcpy(path, a_file_path, sizeof(path));
-    dap_path_to_native_inplace(path);
+    s_path_copy_to_native(path, a_file_path, sizeof(path));
 #ifdef DAP_OS_WINDOWS
     DWORD attr = GetFileAttributesA(path);
     if(attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
@@ -164,8 +170,7 @@ bool dap_file_simple_test(const char * a_file_path)
     if(!a_file_path)
         return false;
     char path[strlen(a_file_path) + 1];
-    memcpy(path, a_file_path, sizeof(path));
-    dap_path_to_native_inplace(path);
+    s_path_copy_to_native(path, a_file_path, sizeof(path));
 #ifdef DAP_OS_WINDOWS
     DWORD attr = GetFileAttributesA(path);
     if(attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
@@ -191,8 +196,7 @@ bool dap_dir_test(const char * a_dir_path)
     if(!a_dir_path)
         return false;
     char path[strlen(a_dir_path) + 1];
-    memcpy(path, a_dir_path, sizeof(path));
-    dap_path_to_native_inplace(path);
+    s_path_copy_to_native(path, a_dir_path, sizeof(path));
 #ifdef DAP_OS_WINDOWS
     int attr = GetFileAttributesA(path);
     if(attr != -1 && (attr & FILE_ATTRIBUTE_DIRECTORY))
@@ -605,8 +609,7 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     dap_list_name_directories_t *list = NULL;
     dap_list_name_directories_t *element;
     char path_native[strlen(a_path_dir) + 1];
-    memcpy(path_native, a_path_dir, sizeof(path_native));
-    dap_path_to_native_inplace(path_native);
+    s_path_copy_to_native(path_native, a_path_dir, sizeof(path_native));
 #ifdef DAP_OS_WINDOWS
     size_t m_size = strlen(path_native);
     char *m_path = DAP_NEW_SIZE(char, m_size + 2);
@@ -1665,8 +1668,7 @@ void dap_rm_rf(const char *path)
 
     if (!path_native)
         return;
-    memcpy(path_native, path, n);
-    dap_path_to_native_inplace(path_native);
+    s_path_copy_to_native(path_native, path, n);
 
     dir = opendir(path_native);
     if(dir == NULL)
@@ -1748,11 +1750,9 @@ static bool walk_directory(const char *a_startdir, const char *a_inputdir, zip_t
 bool dap_zip_directory(const char *a_inputdir, const char *a_output_filename)
 {
     char inputdir[strlen(a_inputdir) + 1];
-    memcpy(inputdir, a_inputdir, sizeof(inputdir));
-    dap_path_to_native_inplace(inputdir);
+    s_path_copy_to_native(inputdir, a_inputdir, sizeof(inputdir));
     char outfile[strlen(a_output_filename) + 1];
-    memcpy(outfile, a_output_filename, sizeof(outfile));
-    dap_path_to_native_inplace(outfile);
+    s_path_copy_to_native(outfile, a_output_filename, sizeof(outfile));
     int l_errorp;
     zip_t *l_zipper = zip_open(outfile, ZIP_CREATE | ZIP_EXCL, &l_errorp);
     if(l_zipper == NULL) {
@@ -2028,11 +2028,9 @@ static bool s_tar_walk_directory(const char *a_start_path, const char *a_cur_pat
 bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename)
 {
     char inputdir[strlen(a_inputdir) + 1];
-    memcpy(inputdir, a_inputdir, sizeof(inputdir));
-    dap_path_to_native_inplace(inputdir);
+    s_path_copy_to_native(inputdir, a_inputdir, sizeof(inputdir));
     char outfile[strlen(a_output_tar_filename) + 1];
-    memcpy(outfile, a_output_tar_filename, sizeof(outfile));
-    dap_path_to_native_inplace(outfile);
+    s_path_copy_to_native(outfile, a_output_tar_filename, sizeof(outfile));
     int l_outfile = open(outfile, O_CREAT | O_WRONLY | O_BINARY, 0644);
     if(l_outfile < 0) {
         log_it(L_ERROR, "Failed to open output file");

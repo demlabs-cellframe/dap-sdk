@@ -48,6 +48,7 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
 static int s_type_callback_preinit(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
 static int s_type_callback_init(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
 static int s_type_callback_unload(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
+static void s_set_error_str(char ** a_error_str, const char *a_format, ...) DAP_PRINTF_ATTR(2, 3);
 
 struct binary_pvt_data{
     void *handle;
@@ -90,11 +91,14 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
 {
     assert(a_pvt_data);
     *a_pvt_data = NULL;
+    if (a_error_str)
+        *a_error_str = NULL;
     if (a_manifest == s_manifest) // Its our own manifest, do nothing we're already loaded
         return 0;
     struct binary_pvt_data * l_pvt_data = DAP_NEW_Z(struct binary_pvt_data);
     if (!l_pvt_data) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        s_set_error_str(a_error_str, "%s", c_error_memory_alloc);
         return -1;
     }
 #if defined (DAP_OS_UNIX) && !defined (__ANDROID__)
@@ -106,6 +110,7 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
 #endif
     if (!l_path) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        s_set_error_str(a_error_str, "%s", c_error_memory_alloc);
         DAP_DELETE(l_pvt_data);
         return -1;
     }
@@ -118,9 +123,8 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
         const char * l_dl_error = dlerror();
         const char * l_reason = l_dl_error ? l_dl_error : "<UNKNOWN>";
         log_it(L_ERROR, "Can't load %s module: %s (expected path %s)", a_manifest->name, l_reason, l_path);
-        if (a_error_str)
-            *a_error_str = dap_strdup_printf("Can't load %s module: %s (expected path %s)", a_manifest->name,
-                                             l_reason, l_path);
+        s_set_error_str(a_error_str, "Can't load %s module: %s (expected path %s)", a_manifest->name,
+                        l_reason, l_path);
         DAP_DELETE(l_pvt_data);
         DAP_DELETE(l_path);
         return -5;
@@ -132,6 +136,7 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
     char * l_path = dap_strdup_printf("%s/%s.windows.%s.dll", a_manifest->path, a_manifest->name, dap_get_arch());
     if (!l_path) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        s_set_error_str(a_error_str, "%s", c_error_memory_alloc);
         DAP_DELETE(l_pvt_data);
         return -1;
     }
@@ -143,9 +148,8 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
     } else {
         DWORD l_error = GetLastError();
         log_it(L_ERROR, "Can't load %s module: %s (error code: %lu)", a_manifest->name, l_path, (unsigned long)l_error);
-        if (a_error_str)
-            *a_error_str = dap_strdup_printf("Can't load %s module: %s (error code: %lu)", a_manifest->name,
-                                             l_path, (unsigned long)l_error);
+        s_set_error_str(a_error_str, "Can't load %s module: %s (error code: %lu)", a_manifest->name,
+                        l_path, (unsigned long)l_error);
         DAP_DELETE(l_pvt_data);
         DAP_DELETE(l_path);
         return -5;
@@ -155,8 +159,7 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
 
     if (!l_pvt_data->callback_preinit && !l_pvt_data->callback_init) {
         log_it(L_ERROR, "No \"plugin_preinit\" or \"plugin_init\" entry point in binary plugin \"%s\"", a_manifest->name);
-        if (a_error_str)
-            *a_error_str = dap_strdup_printf("No entry points in binary plugin \"%s\"", a_manifest->name);
+        s_set_error_str(a_error_str, "No entry points in binary plugin \"%s\"", a_manifest->name);
         s_binary_pvt_data_close(l_pvt_data);
         DAP_DELETE(l_pvt_data);
         return -5;
@@ -226,4 +229,16 @@ static void s_binary_pvt_data_close(struct binary_pvt_data * a_pvt_data)
     FreeLibrary(a_pvt_data->handle);
 #endif
     a_pvt_data->handle = NULL;
+}
+
+static void s_set_error_str(char ** a_error_str, const char *a_format, ...)
+{
+    if (!a_error_str)
+        return;
+    va_list l_args;
+    va_start(l_args, a_format);
+    *a_error_str = dap_strdup_vprintf(a_format, l_args);
+    va_end(l_args);
+    if (!*a_error_str)
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
 }

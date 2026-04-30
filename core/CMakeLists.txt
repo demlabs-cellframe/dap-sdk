@@ -75,7 +75,11 @@ add_subdirectory(../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
 target_link_libraries(${PROJECT_NAME} INTERFACE ${CORE_LIBRARIES})
 # json-c is 3rdparty code: disable -Werror for this target to avoid failures
 # from warnings in vendored code we don't control.
-target_compile_options(dap_json-c PRIVATE -Wno-error)
+if(COMMAND dap_target_disable_werror)
+    dap_target_disable_werror(dap_json-c)
+else()
+    target_compile_options(dap_json-c PRIVATE -Wno-error)
+endif()
 # dap_json-c is an OBJECT library, link it as interface
 if(TARGET dap_json-c)
     target_link_libraries(${PROJECT_NAME} INTERFACE dap_json-c)

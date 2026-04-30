@@ -76,6 +76,8 @@ typedef struct plugin_start_rollback_item {
     struct plugin_start_rollback_item *next;
 } plugin_start_rollback_item_t;
 
+typedef bool (*plugin_dependency_state_check_t)(const struct plugin_module *a_module);
+
 struct plugin_type *s_types = NULL; // List of all registred plugin types
 struct plugin_module *s_modules = NULL; // List of all loaded modules
 static int s_stop(dap_plugin_manifest_t * a_manifest);
@@ -89,6 +91,12 @@ static int s_plugin_type_create_internal(const char * a_name, const plugin_type_
 static int s_check_dependencies_loaded(dap_plugin_manifest_t * a_manifest);
 static int s_check_dependencies_preinited(dap_plugin_manifest_t * a_manifest);
 static int s_check_dependencies_running(dap_plugin_manifest_t * a_manifest);
+static int s_check_dependencies(dap_plugin_manifest_t * a_manifest, plugin_dependency_state_check_t a_state_check,
+                                const char *a_failed_state_msg);
+static bool s_dependency_is_loaded(const struct plugin_module *a_module);
+static bool s_dependency_is_preinited(const struct plugin_module *a_module);
+static bool s_dependency_is_running(const struct plugin_module *a_module);
+static dap_plugin_manifest_t *s_find_dependency_or_log(dap_plugin_manifest_t *a_manifest, const char *a_dep_name);
 static int s_rollback_push(plugin_start_rollback_item_t **a_rollback, dap_plugin_manifest_t *a_manifest);
 static void s_rollback_run(plugin_start_rollback_item_t **a_rollback);
 static void s_rollback_free(plugin_start_rollback_item_t **a_rollback);
@@ -420,66 +428,63 @@ static int s_load(dap_plugin_manifest_t * a_manifest)
 
 static int s_check_dependencies_loaded(dap_plugin_manifest_t * a_manifest)
 {
-    if (!a_manifest)
-        return -4;
-    for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
-        const char *l_dep_name = a_manifest->dependencies_names[i];
-        dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(l_dep_name);
-        if (!l_dep_manifest) {
-            log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"", a_manifest->name, l_dep_name);
-            return -2;
-        }
-        struct plugin_module *l_dep_module = NULL;
-        HASH_FIND_STR(s_modules, l_dep_name, l_dep_module);
-        if (!l_dep_module || l_dep_module->state == PLUGIN_MODULE_FAILED) {
-            log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" is not loaded", a_manifest->name, l_dep_name);
-            return -6;
-        }
-    }
-    return 0;
+    return s_check_dependencies(a_manifest, s_dependency_is_loaded, "is not loaded");
 }
 
 static int s_check_dependencies_preinited(dap_plugin_manifest_t * a_manifest)
 {
+    return s_check_dependencies(a_manifest, s_dependency_is_preinited, "did not complete preinit");
+}
+
+static int s_check_dependencies_running(dap_plugin_manifest_t * a_manifest)
+{
+    return s_check_dependencies(a_manifest, s_dependency_is_running, "is not running");
+}
+
+static int s_check_dependencies(dap_plugin_manifest_t * a_manifest, plugin_dependency_state_check_t a_state_check,
+                                const char *a_failed_state_msg)
+{
     if (!a_manifest)
         return -4;
     for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
         const char *l_dep_name = a_manifest->dependencies_names[i];
-        dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(l_dep_name);
+        dap_plugin_manifest_t *l_dep_manifest = s_find_dependency_or_log(a_manifest, l_dep_name);
         if (!l_dep_manifest) {
-            log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"", a_manifest->name, l_dep_name);
             return -2;
         }
         struct plugin_module *l_dep_module = NULL;
         HASH_FIND_STR(s_modules, l_dep_name, l_dep_module);
-        if (!l_dep_module || (l_dep_module->state != PLUGIN_MODULE_PREINITED &&
-                              l_dep_module->state != PLUGIN_MODULE_RUNNING)) {
-            log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" did not complete preinit", a_manifest->name, l_dep_name);
+        if (!a_state_check(l_dep_module)) {
+            log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" %s",
+                   a_manifest->name, l_dep_name, a_failed_state_msg);
             return -6;
         }
     }
     return 0;
 }
 
-static int s_check_dependencies_running(dap_plugin_manifest_t * a_manifest)
+static bool s_dependency_is_loaded(const struct plugin_module *a_module)
 {
-    if (!a_manifest)
-        return -4;
-    for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
-        const char *l_dep_name = a_manifest->dependencies_names[i];
-        dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(l_dep_name);
-        if (!l_dep_manifest) {
-            log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"", a_manifest->name, l_dep_name);
-            return -2;
-        }
-        struct plugin_module *l_dep_module = NULL;
-        HASH_FIND_STR(s_modules, l_dep_name, l_dep_module);
-        if (!l_dep_module || l_dep_module->state != PLUGIN_MODULE_RUNNING) {
-            log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" is not running", a_manifest->name, l_dep_name);
-            return -6;
-        }
-    }
-    return 0;
+    return a_module && a_module->state != PLUGIN_MODULE_FAILED;
+}
+
+static bool s_dependency_is_preinited(const struct plugin_module *a_module)
+{
+    return a_module && (a_module->state == PLUGIN_MODULE_PREINITED ||
+                        a_module->state == PLUGIN_MODULE_RUNNING);
+}
+
+static bool s_dependency_is_running(const struct plugin_module *a_module)
+{
+    return a_module && a_module->state == PLUGIN_MODULE_RUNNING;
+}
+
+static dap_plugin_manifest_t *s_find_dependency_or_log(dap_plugin_manifest_t *a_manifest, const char *a_dep_name)
+{
+    dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(a_dep_name);
+    if (!l_dep_manifest)
+        log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"", a_manifest->name, a_dep_name);
+    return l_dep_manifest;
 }
 
 /**
@@ -512,16 +517,14 @@ static int s_load_with_deps(dap_plugin_manifest_t * a_manifest, size_t a_depth)
     if (a_manifest->dependencies_count) {
         log_it(L_NOTICE, "Check for plugin %s dependencies", a_manifest->name);
         for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
-            dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(a_manifest->dependencies_names[i]);
-            if (!l_dep_manifest) {
-                log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"",
-                       a_manifest->name, a_manifest->dependencies_names[i]);
+            const char *l_dep_name = a_manifest->dependencies_names[i];
+            dap_plugin_manifest_t *l_dep_manifest = s_find_dependency_or_log(a_manifest, l_dep_name);
+            if (!l_dep_manifest)
                 return -2;
-            }
             int l_dep_ret = s_load_with_deps(l_dep_manifest, a_depth + 1);
             if (l_dep_ret) {
                 log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" failed to load",
-                       a_manifest->name, a_manifest->dependencies_names[i]);
+                       a_manifest->name, l_dep_name);
                 return l_dep_ret;
             }
         }
@@ -576,16 +579,14 @@ static int s_start_with_deps(dap_plugin_manifest_t * a_manifest, size_t a_depth,
     }
 
     for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
-        dap_plugin_manifest_t *l_dep_manifest = dap_plugin_manifest_find(a_manifest->dependencies_names[i]);
-        if (!l_dep_manifest) {
-            log_it(L_ERROR, "Plugin \"%s\" has unresolved dependency \"%s\"",
-                   a_manifest->name, a_manifest->dependencies_names[i]);
+        const char *l_dep_name = a_manifest->dependencies_names[i];
+        dap_plugin_manifest_t *l_dep_manifest = s_find_dependency_or_log(a_manifest, l_dep_name);
+        if (!l_dep_manifest)
             return -2;
-        }
         int l_dep_ret = s_start_with_deps(l_dep_manifest, a_depth + 1, a_rollback);
         if (l_dep_ret) {
             log_it(L_ERROR, "Plugin \"%s\" dependency \"%s\" failed to start",
-                   a_manifest->name, a_manifest->dependencies_names[i]);
+                   a_manifest->name, l_dep_name);
             return l_dep_ret;
         }
     }

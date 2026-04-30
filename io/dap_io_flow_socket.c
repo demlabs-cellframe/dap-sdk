@@ -66,6 +66,17 @@ static bool s_debug_more = false;
 // Forced tier for testing (negative = auto-detect, positive = force specific tier)
 static int s_forced_lb_tier = -1;
 
+static int s_socket_last_error(void)
+{
+#ifdef DAP_OS_WINDOWS
+    int l_errno = WSAGetLastError();
+    _set_errno(l_errno);
+    return l_errno;
+#else
+    return errno;
+#endif
+}
+
 /**
  * @brief Force a specific load balancing tier (for testing)
  * @param a_tier Tier to force, or -1 to auto-detect
@@ -199,21 +210,7 @@ static void s_listener_cleanup_callback(void *a_arg)
         return;
     }
 
-#ifndef DAP_EVENTS_CAPS_IOCP
-    while (l_worker->queue_es_new &&
-           dap_context_queue_count(l_worker->queue_es_new) > 0) {
-        int l_processed = dap_context_queue_process(l_worker->queue_es_new);
-        if (l_processed < 0) {
-            l_ctx->status = l_processed;
-            break;
-        }
-        if (l_processed == 0) {
-            l_ctx->status = -EAGAIN;
-            break;
-        }
-        l_ctx->processed += (size_t)l_processed;
-    }
-#endif
+    l_ctx->status = dap_worker_drain_new_es_queue_unsafe(l_worker, &l_ctx->processed);
 
     if (l_ctx->status == 0) {
         dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
@@ -837,8 +834,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         if (a_socket_type == SOCK_DGRAM) {
             int l_buffer_size = 64 * 1024 * 1024;  // 64 MB
             if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+                int l_errno = s_socket_last_error();
                 log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes for listener %u: %s",
-                       l_buffer_size, i, strerror(errno));
+                       l_buffer_size, i, dap_strerror(l_errno));
             } else {
                 // Check actual size set by kernel (may be limited by rmem_max)
                 int l_actual_size = 0;
@@ -852,8 +850,9 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             }
             
             if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
+                int l_errno = s_socket_last_error();
                 log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes for listener %u: %s",
-                       l_buffer_size, i, strerror(errno));
+                       l_buffer_size, i, dap_strerror(l_errno));
             } else {
                 int l_actual_size = 0;
                 socklen_t l_optlen = sizeof(l_actual_size);
@@ -877,7 +876,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
 #ifdef SO_REUSEPORT
             l_opt = 1;
             if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, (const char *)&l_opt, sizeof(l_opt)) < 0) {
-                log_it(L_ERROR, "SO_REUSEPORT failed: %s", strerror(errno));
+                int l_errno = s_socket_last_error();
+                log_it(L_ERROR, "SO_REUSEPORT failed: %s", dap_strerror(l_errno));
                 dap_close_socket(l_socket);
                 l_ret = -6;
                 goto fail_cleanup;
@@ -963,7 +963,8 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         }
         
         if (bind(l_socket, (struct sockaddr*)&l_bind_addr, l_addr_len) < 0) {
-            log_it(L_ERROR, "Failed to bind socket for worker %u: %s", i, strerror(errno));
+            int l_errno = s_socket_last_error();
+            log_it(L_ERROR, "Failed to bind socket for worker %u: %s", i, dap_strerror(l_errno));
             dap_close_socket(l_socket);
             l_ret = -4;
             goto fail_cleanup;

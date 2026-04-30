@@ -436,6 +436,75 @@ bool dap_is_wine(void)
 }
 #endif
 
+typedef struct dap_log_ctx {
+    char buf[LOG_MSG_BUF_SIZE];
+    time_t cached_time;
+    struct tm cached_tm;
+} dap_log_ctx_t;
+
+static void s_log_it_v(dap_log_ctx_t *a_ctx, enum dap_log_level a_ll, const char *a_tag, const char *a_fmt, va_list a_args)
+{
+#ifdef DAP_TPS_TEST
+    if (a_ll != L_TPS) {
+        FILE *l_file = fopen("/opt/cellframe-node/share/ca/without_logs.txt", "r");
+        if (l_file) {
+            fclose(l_file);
+            return;
+        }
+    }
+#endif
+    enum { ts_len = sizeof("[mm/dd/yy-HH:MM:SS]") - 1 };
+    time_t l_time = time(NULL);
+    if (l_time != a_ctx->cached_time) {
+        if (l_time == a_ctx->cached_time + 1 && a_ctx->cached_tm.tm_sec < 59)
+            a_ctx->cached_tm.tm_sec++;
+        else
+            localtime_r(&l_time, &a_ctx->cached_tm);
+        a_ctx->cached_time = l_time;
+        strftime(a_ctx->buf, ts_len + 1, "[%m/%d/%y-%H:%M:%S]", &a_ctx->cached_tm);
+    }
+    int l_pos = ts_len;
+    if (a_tag) {
+        const char *l_lvl = ((unsigned)a_ll < sizeof(s_log_level_tag) / sizeof(s_log_level_tag[0]))
+                            ? s_log_level_tag[a_ll] : " [???] ";
+        l_pos += snprintf(a_ctx->buf + l_pos, LOG_MSG_BUF_SIZE - l_pos,
+                          "%s[%s] ", l_lvl, a_tag);
+    }
+    va_list l_args_file;
+    va_copy(l_args_file, a_args);
+    int l_len = vsnprintf(a_ctx->buf + l_pos, LOG_MSG_BUF_SIZE - l_pos, a_fmt, a_args);
+    if (l_len < 0) {
+        va_end(l_args_file);
+        return;
+    }
+    l_len += l_pos;
+    bool l_overflow = l_len > LOG_MSG_BUF_SIZE - 2;
+    if (l_overflow) {
+        l_len = LOG_MSG_BUF_SIZE - 2;
+        memcpy(a_ctx->buf + l_len - 3, "...", 3);
+    }
+    a_ctx->buf[l_len++] = '\n';
+    a_ctx->buf[l_len] = '\0';
+    s_print_callback(a_ll, a_ctx->buf, l_len);
+    FILE *l_logf = s_log_file;
+    if (!l_logf) {
+        va_end(l_args_file);
+        return;
+    }
+    if (l_overflow) {
+        flockfile(l_logf);
+        fwrite_unlocked(a_ctx->buf, l_pos, 1, l_logf);
+        vfprintf(l_logf, a_fmt, l_args_file);
+        fputc_unlocked('\n', l_logf);
+        funlockfile(l_logf);
+    } else
+        fwrite(a_ctx->buf, l_len, 1, l_logf);
+    va_end(l_args_file);
+#ifdef DAP_OS_WINDOWS
+    fflush(l_logf);
+#endif
+}
+
 /**
  * @brief _log_it Core log function. Level tag, module tag and optional location
  *        are expected to be already embedded in a_fmt by calling macros.
@@ -444,120 +513,19 @@ bool dap_is_wine(void)
  * @param a_fmt format string (pre-built by macros with all prefixes baked in)
  */
 void _log_it_tag(enum dap_log_level a_ll, const char *a_tag, const char *a_fmt, ...) {
-#ifdef DAP_TPS_TEST
-    if (a_ll != L_TPS) {
-        FILE *l_file = fopen("/opt/cellframe-node/share/ca/without_logs.txt", "r");
-        if (l_file) {
-            fclose(l_file);
-            return;
-        }
-    }
-#endif
-    enum { ts_len = sizeof("[mm/dd/yy-HH:MM:SS]") - 1 };
-    static _Thread_local char s_log_buf[LOG_MSG_BUF_SIZE];
-    static _Thread_local time_t s_cached_time = 0;
-    static _Thread_local struct tm s_cached_tm;
-    time_t l_time = time(NULL);
-    if (l_time != s_cached_time) {
-        if (l_time == s_cached_time + 1 && s_cached_tm.tm_sec < 59)
-            s_cached_tm.tm_sec++;
-        else
-            localtime_r(&l_time, &s_cached_tm);
-        s_cached_time = l_time;
-        strftime(s_log_buf, ts_len + 1, "[%m/%d/%y-%H:%M:%S]", &s_cached_tm);
-    }
-    int l_pos = ts_len;
-    const char *l_lvl = ((unsigned)a_ll < sizeof(s_log_level_tag) / sizeof(s_log_level_tag[0]))
-                        ? s_log_level_tag[a_ll] : " [???] ";
-    l_pos += snprintf(s_log_buf + l_pos, LOG_MSG_BUF_SIZE - l_pos,
-                      "%s[%s] ", l_lvl, a_tag ? a_tag : "???");
+    static _Thread_local dap_log_ctx_t s_log_ctx;
     va_list va;
     va_start(va, a_fmt);
-    int l_len = vsnprintf(s_log_buf + l_pos, LOG_MSG_BUF_SIZE - l_pos, a_fmt, va);
+    s_log_it_v(&s_log_ctx, a_ll, a_tag ? a_tag : "???", a_fmt, va);
     va_end(va);
-    if (l_len < 0)
-        return;
-    l_len += l_pos;
-    bool l_overflow = l_len > LOG_MSG_BUF_SIZE - 2;
-    if (l_overflow) {
-        l_len = LOG_MSG_BUF_SIZE - 2;
-        memcpy(s_log_buf + l_len - 3, "...", 3);
-    }
-    s_log_buf[l_len++] = '\n';
-    s_log_buf[l_len] = '\0';
-    s_print_callback(a_ll, s_log_buf, l_len);
-    FILE *l_logf = s_log_file;
-    if (!l_logf)
-        return;
-    if (l_overflow) {
-        flockfile(l_logf);
-        fwrite_unlocked(s_log_buf, l_pos, 1, l_logf);
-        va_start(va, a_fmt);
-        vfprintf(l_logf, a_fmt, va);
-        va_end(va);
-        fputc_unlocked('\n', l_logf);
-        funlockfile(l_logf);
-    } else
-        fwrite(s_log_buf, l_len, 1, l_logf);
-#ifdef DAP_OS_WINDOWS
-    fflush(l_logf);
-#endif
 }
 
 void _log_it(enum dap_log_level a_ll, const char *a_fmt, ...) {
-#ifdef DAP_TPS_TEST
-    if (a_ll != L_TPS) {
-        FILE *l_file = fopen("/opt/cellframe-node/share/ca/without_logs.txt", "r");
-        if (l_file) {
-            fclose(l_file);
-            return;
-        }
-    }
-#endif
-    enum { ts_len = sizeof("[mm/dd/yy-HH:MM:SS]") - 1 };
-    static _Thread_local char s_log_buf[LOG_MSG_BUF_SIZE];
-    static _Thread_local time_t s_cached_time = 0;
-    static _Thread_local struct tm s_cached_tm;
-    time_t l_time = time(NULL);
-    if (l_time != s_cached_time) {
-        if (l_time == s_cached_time + 1 && s_cached_tm.tm_sec < 59)
-            s_cached_tm.tm_sec++;
-        else
-            localtime_r(&l_time, &s_cached_tm);
-        s_cached_time = l_time;
-        strftime(s_log_buf, ts_len + 1, "[%m/%d/%y-%H:%M:%S]", &s_cached_tm);
-    }
+    static _Thread_local dap_log_ctx_t s_log_ctx;
     va_list va;
     va_start(va, a_fmt);
-    int l_len = vsnprintf(s_log_buf + ts_len, LOG_MSG_BUF_SIZE - ts_len, a_fmt, va);
+    s_log_it_v(&s_log_ctx, a_ll, NULL, a_fmt, va);
     va_end(va);
-    if (l_len < 0)
-        return;
-    bool l_overflow = l_len > LOG_MSG_BUF_SIZE - ts_len - 2;
-    if (l_overflow) {
-        l_len = LOG_MSG_BUF_SIZE - ts_len - 2;
-        memcpy(s_log_buf + ts_len + l_len - 3, "...", 3);
-    }
-    l_len += ts_len;
-    s_log_buf[l_len++] = '\n';
-    s_log_buf[l_len] = '\0';
-    s_print_callback(a_ll, s_log_buf, l_len);
-    FILE *l_logf = s_log_file;
-    if (!l_logf)
-        return;
-    if (l_overflow) {
-        flockfile(l_logf);
-        fwrite_unlocked(s_log_buf, ts_len, 1, l_logf);
-        va_start(va, a_fmt);
-        vfprintf(l_logf, a_fmt, va);
-        va_end(va);
-        fputc_unlocked('\n', l_logf);
-        funlockfile(l_logf);
-    } else
-        fwrite(s_log_buf, l_len, 1, l_logf);
-#ifdef DAP_OS_WINDOWS
-    fflush(l_logf);
-#endif
 }
 
 char *dap_dump_hex(byte_t *a_data, size_t a_len) {

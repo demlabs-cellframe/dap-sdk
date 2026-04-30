@@ -219,6 +219,10 @@ dap_stream_trans_dns_config_t dap_stream_trans_dns_config_default(void)
     return l_config;
 }
 
+/*
+ * DNS keeps its own comparator because it validates the stored sockaddr length
+ * and treats IPv6 scope_id as part of the resolved endpoint identity.
+ */
 static bool s_dns_sockaddr_equal(const struct sockaddr_storage *a_left, socklen_t a_left_len,
                                  const struct sockaddr_storage *a_right, socklen_t a_right_len)
 {
@@ -813,65 +817,15 @@ static void s_dns_close(dap_stream_t *a_stream)
     debug_if(s_debug_more, L_DEBUG, "DNS tunnel trans closed");
 }
 
-typedef struct dns_es_cleanup_ctx {
-    dap_worker_t *worker;
-    dap_events_socket_t *es;
-    dap_events_socket_uuid_t uuid;
-    bool deleted;
-} dns_es_cleanup_ctx_t;
-
-static void s_dns_delete_registered_or_queued_es_cb(void *a_arg)
-{
-    dns_es_cleanup_ctx_t *l_ctx = (dns_es_cleanup_ctx_t *)a_arg;
-    if (!l_ctx || !l_ctx->worker || !l_ctx->es)
-        return;
-
-    dap_worker_t *l_worker = dap_worker_get_current();
-    if (l_worker != l_ctx->worker || !l_worker->context)
-        return;
-
-#ifndef DAP_EVENTS_CAPS_IOCP
-    while (l_worker->queue_es_new && dap_context_queue_count(l_worker->queue_es_new) > 0) {
-        int l_processed = dap_context_queue_process(l_worker->queue_es_new);
-        if (l_processed <= 0)
-            break;
-    }
-#endif
-
-    dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
-    if (l_es) {
-        dap_events_socket_remove_and_delete_unsafe(l_es, true);
-        l_ctx->deleted = true;
-        return;
-    }
-
-#ifndef DAP_EVENTS_CAPS_IOCP
-    if (l_ctx->es->worker == l_worker && !atomic_load(&l_ctx->es->is_initalized)) {
-        dap_events_socket_delete_unsafe(l_ctx->es, true);
-        l_ctx->deleted = true;
-    }
-#endif
-}
-
 static void s_dns_delete_registered_or_queued_es(dap_worker_t *a_worker, dap_events_socket_t *a_es)
 {
     if (!a_worker || !a_es)
         return;
 
-    dns_es_cleanup_ctx_t l_ctx = {
-        .worker = a_worker,
-        .es = a_es,
-        .uuid = a_es->uuid
-    };
-
-    if (dap_worker_get_current() == a_worker)
-        s_dns_delete_registered_or_queued_es_cb(&l_ctx);
-    else
-        dap_worker_exec_callback_on_sync(a_worker, s_dns_delete_registered_or_queued_es_cb, &l_ctx);
-
-    if (!l_ctx.deleted) {
+    dap_events_socket_uuid_t l_uuid = a_es->uuid;
+    if (!dap_worker_delete_registered_or_queued_es_sync(a_worker, a_es, true)) {
         log_it(L_WARNING, "DNS cleanup: socket uuid 0x%"DAP_UINT64_FORMAT_x
-               " was neither registered nor safely unqueued", l_ctx.uuid);
+               " was neither registered nor safely unqueued", l_uuid);
     }
 }
 

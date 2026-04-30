@@ -45,6 +45,7 @@
 #endif
 #include <stdint.h>
 #include <stdbool.h>
+#include "dap_list.h"
 #include "dap_events_socket.h"
 #include "dap_server.h"
 #include "dap_io_flow.h"
@@ -166,6 +167,21 @@ int dap_io_flow_socket_create_sharded_listeners(
     int a_protocol,
     dap_events_socket_callbacks_t *a_callbacks,
     dap_io_flow_lb_tier_t *a_lb_tier_out);  ///< [out] Detected load balancing tier
+
+/**
+ * @brief Cleanup listeners appended by a failed sharded listener setup.
+ *
+ * Internal contract for io_flow/listener setup rollback paths. a_previous_tail
+ * must be the server listener-list tail captured before creation began, or NULL
+ * to clean from the current head. The helper deletes only listeners after that
+ * snapshot and unlinks entries only after worker-side deletion is complete.
+ *
+ * @param a_server Server whose es_listeners list owns the listener entries
+ * @param a_previous_tail Tail snapshot taken before listener creation
+ */
+void dap_io_flow_socket_cleanup_created_listeners(
+    dap_server_t *a_server,
+    dap_list_t *a_previous_tail);
 
 /**
  * @brief Get esocket's remote address

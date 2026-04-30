@@ -370,24 +370,7 @@ static dap_io_flow_datagram_ops_t s_stream_udp_ops = {
 static bool s_stream_udp_sockaddr_route_equal(const struct sockaddr_storage *a_left,
                                               const struct sockaddr_storage *a_right)
 {
-    if (!a_left || !a_right || a_left->ss_family != a_right->ss_family) {
-        return false;
-    }
-
-    if (a_left->ss_family == AF_INET) {
-        const struct sockaddr_in *l_left = (const struct sockaddr_in*)a_left;
-        const struct sockaddr_in *l_right = (const struct sockaddr_in*)a_right;
-        return l_left->sin_port == l_right->sin_port &&
-               l_left->sin_addr.s_addr == l_right->sin_addr.s_addr;
-    }
-    if (a_left->ss_family == AF_INET6) {
-        const struct sockaddr_in6 *l_left = (const struct sockaddr_in6*)a_left;
-        const struct sockaddr_in6 *l_right = (const struct sockaddr_in6*)a_right;
-        return l_left->sin6_port == l_right->sin6_port &&
-               memcmp(&l_left->sin6_addr, &l_right->sin6_addr, sizeof(l_left->sin6_addr)) == 0;
-    }
-
-    return false;
+    return dap_io_flow_socket_addr_equal(a_left, a_right);
 }
 
 static stream_udp_session_t *s_stream_udp_find_established_route(stream_udp_session_t *a_session)

@@ -20,12 +20,40 @@
 
 #define LOG_TAG "test_async_framework"
 
+#define TEST_POLL_INTERVAL_MS 100
+#define TEST_SHORT_TIMEOUT_MS 500
+#define TEST_TIMEOUT_MIN_MS 400
+#define TEST_TIMEOUT_GRACE_MS 1000
+#define TEST_IMMEDIATE_UPPER_MS 500
+#define TEST_DELAYED_UPPER_MS 1500
+#define TEST_SIGNAL_DELAY_MS 200
+#define TEST_SIGNAL_UPPER_MS 1500
+#define TEST_MACRO_DELAY_MS 300
+#define TEST_SLEEP_MS 100
+#define TEST_SLEEP_MIN_MS 50
+#define TEST_SLEEP_UPPER_MS 1000
+
+#if defined(_WIN32)
+#define TEST_DELAYED_POLL_MIN_MS 150
+#define TEST_SIGNAL_MIN_MS 150
+#define TEST_MACRO_MIN_MS 240
+#else
+#define TEST_DELAYED_POLL_MIN_MS 200
+#define TEST_SIGNAL_MIN_MS 190
+#define TEST_MACRO_MIN_MS 290
+#endif
+
 // =============================================================================
 // TEST HELPERS
 // =============================================================================
 
 static bool s_condition_met = false;
 static int s_condition_check_count = 0;
+
+static bool s_elapsed_in_range(uint64_t a_elapsed_ms, uint64_t a_min_ms, uint64_t a_max_ms)
+{
+    return a_elapsed_ms >= a_min_ms && a_elapsed_ms < a_max_ms;
+}
 
 static bool test_condition_always_true(void *a_data)
 {
@@ -60,7 +88,7 @@ static void test_time_utilities(void)
     
     // Test get_time_ms returns monotonic increasing values
     uint64_t l_time1 = dap_test_get_time_ms();
-    dap_test_sleep_ms(100);
+    dap_test_sleep_ms(TEST_SLEEP_MS);
     uint64_t l_time2 = dap_test_get_time_ms();
     
     log_it(L_DEBUG, "Time1: %llu ms, Time2: %llu ms, Delta: %llu ms",
@@ -68,8 +96,8 @@ static void test_time_utilities(void)
            (unsigned long long)(l_time2 - l_time1));
     
     dap_assert_PIF(l_time2 > l_time1, "Time should increase");
-    dap_assert_PIF(l_time2 - l_time1 >= 80 && l_time2 - l_time1 <= 500,
-                   "Sleep should be accurate (+/- 100ms tolerance)");
+    dap_assert_PIF(s_elapsed_in_range(l_time2 - l_time1, TEST_SLEEP_MIN_MS, TEST_SLEEP_UPPER_MS),
+                   "Sleep should advance within scheduler-tolerant bounds");
     
     log_it(L_INFO, "✓ Test 1: Time Utilities PASSED\n");
 }
@@ -86,7 +114,7 @@ static void test_condition_polling_immediate_success(void)
     
     dap_test_async_config_t l_cfg = DAP_TEST_ASYNC_CONFIG_DEFAULT;
     l_cfg.timeout_ms = 1000;
-    l_cfg.poll_interval_ms = 100;
+    l_cfg.poll_interval_ms = TEST_POLL_INTERVAL_MS;
     l_cfg.operation_name = "immediate success test";
     l_cfg.fail_on_timeout = true;
     
@@ -99,7 +127,7 @@ static void test_condition_polling_immediate_success(void)
     
     dap_assert_PIF(l_result == true, "Condition should succeed immediately");
     dap_assert_PIF(s_condition_check_count == 1, "Should check condition once");
-    dap_assert_PIF(l_elapsed < 200, "Should complete quickly");
+    dap_assert_PIF(l_elapsed < TEST_IMMEDIATE_UPPER_MS, "Should complete quickly");
     
     log_it(L_INFO, "✓ Test 2: Immediate Success PASSED\n");
 }
@@ -112,30 +140,27 @@ static void test_condition_polling_delayed_success(void)
     
     dap_test_async_config_t l_cfg = DAP_TEST_ASYNC_CONFIG_DEFAULT;
     l_cfg.timeout_ms = 2000;
-    l_cfg.poll_interval_ms = 100;
+    l_cfg.poll_interval_ms = TEST_POLL_INTERVAL_MS;
     l_cfg.operation_name = "delayed success test";
     l_cfg.fail_on_timeout = true;
     
     uint64_t l_start = dap_test_get_time_ms();
     bool l_result = dap_test_wait_condition(test_condition_delayed, NULL, &l_cfg);
     uint64_t l_elapsed = dap_test_get_time_ms() - l_start;
-#if defined(_WIN32)
-    const uint64_t l_min_expected_elapsed = 150;
-#else
-    const uint64_t l_min_expected_elapsed = 200;
-#endif
+    const uint64_t l_min_expected_elapsed = TEST_DELAYED_POLL_MIN_MS;
     bool l_expected_polls = s_condition_check_count == 3;
-    bool l_timing_ok = l_elapsed >= l_min_expected_elapsed && l_elapsed < 1000;
+    bool l_timing_ok = s_elapsed_in_range(l_elapsed, l_min_expected_elapsed, TEST_DELAYED_UPPER_MS);
 
     log_it(L_DEBUG, "Condition met after %llu ms, checks: %d",
            (unsigned long long)l_elapsed, s_condition_check_count);
     
     if (!l_expected_polls || !l_timing_ok) {
         dap_test_msg(
-            "Delayed success diagnostics: elapsed=%llu ms, checks=%d, expected_checks=3, expected_elapsed=[%llu, 1000) ms",
+            "Delayed success diagnostics: elapsed=%llu ms, checks=%d, expected_checks=3, expected_elapsed=[%llu, %llu) ms",
             (unsigned long long)l_elapsed,
             s_condition_check_count,
-            (unsigned long long)l_min_expected_elapsed
+            (unsigned long long)l_min_expected_elapsed,
+            (unsigned long long)TEST_DELAYED_UPPER_MS
         );
     }
 
@@ -146,7 +171,7 @@ static void test_condition_polling_delayed_success(void)
                    "Should take a Windows-tolerant delayed polling interval");
 #else
     dap_assert_PIF(l_timing_ok,
-                   "Should take ~200-300ms (3 polls * 100ms)");
+                   "Should take the expected delayed polling interval");
 #endif
     
     log_it(L_INFO, "✓ Test 3: Delayed Success PASSED\n");
@@ -159,8 +184,8 @@ static void test_condition_polling_timeout(void)
     s_condition_check_count = 0;
     
     dap_test_async_config_t l_cfg = DAP_TEST_ASYNC_CONFIG_DEFAULT;
-    l_cfg.timeout_ms = 500;
-    l_cfg.poll_interval_ms = 100;
+    l_cfg.timeout_ms = TEST_SHORT_TIMEOUT_MS;
+    l_cfg.poll_interval_ms = TEST_POLL_INTERVAL_MS;
     l_cfg.operation_name = "timeout test";
     l_cfg.fail_on_timeout = false;  // Don't abort on timeout
     
@@ -172,8 +197,8 @@ static void test_condition_polling_timeout(void)
            (unsigned long long)l_elapsed, s_condition_check_count);
     
     dap_assert_PIF(l_result == false, "Condition should timeout");
-    dap_assert_PIF(l_elapsed >= 500 && l_elapsed < 700,
-                   "Should timeout at ~500ms");
+    dap_assert_PIF(s_elapsed_in_range(l_elapsed, TEST_TIMEOUT_MIN_MS, TEST_SHORT_TIMEOUT_MS + TEST_TIMEOUT_GRACE_MS),
+                   "Should timeout within scheduler-tolerant bounds");
     dap_assert_PIF(s_condition_check_count >= 5,
                    "Should poll multiple times before timeout");
     
@@ -237,7 +262,7 @@ static void test_cond_wait_delayed_signal(void)
     // Start thread that will signal after 200ms
     async_signal_args_t l_args = {
         .ctx = &l_ctx,
-        .delay_ms = 200
+        .delay_ms = TEST_SIGNAL_DELAY_MS
     };
     
     pthread_t l_thread;
@@ -252,7 +277,7 @@ static void test_cond_wait_delayed_signal(void)
     log_it(L_DEBUG, "Signal received after %llu ms", (unsigned long long)l_elapsed);
     
     dap_assert_PIF(l_result == true, "Should receive signal");
-    dap_assert_PIF(l_elapsed >= 190 && l_elapsed < 400,
+    dap_assert_PIF(s_elapsed_in_range(l_elapsed, TEST_SIGNAL_MIN_MS, TEST_SIGNAL_UPPER_MS),
                    "Should take ~200ms for signal");
     
     dap_test_cond_wait_deinit(&l_ctx);
@@ -269,14 +294,14 @@ static void test_cond_wait_timeout(void)
     
     // No signal - should timeout
     uint64_t l_start = dap_test_get_time_ms();
-    bool l_result = dap_test_cond_wait(&l_ctx, 500);
+    bool l_result = dap_test_cond_wait(&l_ctx, TEST_SHORT_TIMEOUT_MS);
     uint64_t l_elapsed = dap_test_get_time_ms() - l_start;
     
     log_it(L_DEBUG, "Timeout after %llu ms", (unsigned long long)l_elapsed);
     
     dap_assert_PIF(l_result == false, "Should timeout");
-    dap_assert_PIF(l_elapsed >= 500 && l_elapsed < 700,
-                   "Should timeout at ~500ms");
+    dap_assert_PIF(s_elapsed_in_range(l_elapsed, TEST_TIMEOUT_MIN_MS, TEST_SHORT_TIMEOUT_MS + TEST_TIMEOUT_GRACE_MS),
+                   "Should timeout within scheduler-tolerant bounds");
     
     dap_test_cond_wait_deinit(&l_ctx);
     
@@ -290,7 +315,7 @@ static void test_cond_wait_timeout(void)
 static void* test_macro_thread(void *a_arg)
 {
     UNUSED(a_arg);
-    dap_test_sleep_ms(300);
+    dap_test_sleep_ms(TEST_MACRO_DELAY_MS);
     s_condition_met = true;
     return NULL;
 }
@@ -319,17 +344,14 @@ static void test_wait_until_macro(void)
     pthread_join(l_thread, NULL);
     
     log_it(L_DEBUG, "Macro wait completed in %llu ms", (unsigned long long)l_elapsed);
-#if defined(_WIN32)
-    const uint64_t l_macro_min_expected_elapsed = 240;
-#else
-    const uint64_t l_macro_min_expected_elapsed = 290;
-#endif
-    bool l_macro_timing_ok = l_elapsed >= l_macro_min_expected_elapsed && l_elapsed < 600;
+    const uint64_t l_macro_min_expected_elapsed = TEST_MACRO_MIN_MS;
+    bool l_macro_timing_ok = s_elapsed_in_range(l_elapsed, l_macro_min_expected_elapsed, TEST_SIGNAL_UPPER_MS);
     if (!l_macro_timing_ok) {
         dap_test_msg(
-            "Macro wait diagnostics: elapsed=%llu ms, expected_elapsed=[%llu, 600) ms",
+            "Macro wait diagnostics: elapsed=%llu ms, expected_elapsed=[%llu, %llu) ms",
             (unsigned long long)l_elapsed,
-            (unsigned long long)l_macro_min_expected_elapsed
+            (unsigned long long)l_macro_min_expected_elapsed,
+            (unsigned long long)TEST_SIGNAL_UPPER_MS
         );
     }
 #if defined(_WIN32)

@@ -101,16 +101,11 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int 
         case CMD_RESTART: {
             log_it(L_NOTICE, "Restart plugin modules");
             dap_plugin_stop_all();
-            int l_load_errors = dap_plugin_load_all();
-            int l_preinit_errors = dap_plugin_preinit_all();
-            int l_start_errors = dap_plugin_init_all();
-            int l_total_errors = l_load_errors + l_preinit_errors + l_start_errors;
+            int l_total_errors = dap_plugin_start_all();
             if (l_total_errors) {
-                log_it(L_WARNING, "Restart completed with errors: load=%d preinit=%d init=%d",
-                       l_load_errors, l_preinit_errors, l_start_errors);
+                log_it(L_WARNING, "Restart completed with %d errors", l_total_errors);
                 dap_cli_server_cmd_set_reply_text(a_str_reply,
-                                                  "Restart completed with errors: load=%d, preinit=%d, init=%d. Check logs.",
-                                                  l_load_errors, l_preinit_errors, l_start_errors);
+                                                  "Restart completed with %d errors. Check logs.", l_total_errors);
             } else {
                 log_it(L_NOTICE, "Restart completed");
                 dap_cli_server_cmd_set_reply_text(a_str_reply, "Restart completed");

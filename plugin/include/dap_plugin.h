@@ -60,6 +60,14 @@ const char *dap_plugin_root_path(void);
 
 int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t *a_callbacks);
 int dap_plugin_type_create_ex(const char* a_name, const dap_plugin_type_callbacks_ex_t *a_callbacks);
+
+/*
+ * Plugin phase API contract:
+ * call load -> preinit -> init in this order. dap_plugin_start_all() is the
+ * normal public entrypoint and performs the full sequence for all manifests.
+ * Use the low-level phase functions only when embedding code must control or
+ * observe an individual lifecycle phase.
+ */
 int dap_plugin_load_all(void);
 int dap_plugin_preinit_all(void);
 int dap_plugin_init_all(void);

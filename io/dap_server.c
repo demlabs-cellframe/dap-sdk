@@ -644,21 +644,7 @@ static void s_delete_listener_sync_callback(void *a_arg)
     
     dap_worker_t *l_worker = dap_worker_get_current();
     if (l_worker && l_worker->context) {
-#ifndef DAP_EVENTS_CAPS_IOCP
-        while (l_worker->queue_es_new &&
-               dap_context_queue_count(l_worker->queue_es_new) > 0) {
-            int l_processed = dap_context_queue_process(l_worker->queue_es_new);
-            if (l_processed < 0) {
-                l_ctx->status = l_processed;
-                break;
-            }
-            if (l_processed == 0) {
-                l_ctx->status = -EAGAIN;
-                break;
-            }
-            l_ctx->processed += (size_t)l_processed;
-        }
-#endif
+        l_ctx->status = dap_worker_drain_new_es_queue_unsafe(l_worker, &l_ctx->processed);
         if (l_ctx->status == 0) {
             dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_ctx->uuid);
             if (l_es) {

@@ -121,4 +121,13 @@ void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_
 
 int dap_link_manager_add_active_channel(char a_ch_id);
 int dap_link_manager_remove_active_channel(char a_ch_id);
+/**
+ * @brief Get the active channel identifiers used for inter-node links.
+ *
+ * The returned string is a read-only thread-local snapshot. It remains valid
+ * until the next dap_link_manager_get_active_channels() call on the same
+ * thread. Callers must not free or modify it. Updates and snapshot creation are
+ * serialized internally, so concurrent add/remove calls cannot mutate a
+ * returned snapshot in place.
+ */
 const char *dap_link_manager_get_active_channels(void);

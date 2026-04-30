@@ -68,6 +68,9 @@
 // DNS tunnel is best-effort datagram transport with limited payload headroom.
 // Keep integration payload compact to avoid fragment loss on emulated runners.
 #define TEST_TRANS_DNS_MAX_DATA_SIZE (64 * 1024)
+#define TEST_TRANS_WS_10X10_SKIP_REASON \
+    "WebSocket 10-server/10-client remains load-sensitive in the full mixed transport ctest matrix; " \
+    "focused coverage is available with --trans=WebSocket --max-clients=10"
 
 // Helper macro to calculate timeout based on client count
 #define CALC_TIMEOUT(clients) (TEST_TRANS_BASE_TIMEOUT_MS + (clients) * TEST_TRANS_PER_CLIENT_MS)
@@ -133,6 +136,16 @@ typedef struct tier_test_config {
 } tier_test_config_t;
 
 static bool s_tier_application_available(void) { return true; }
+
+static bool s_should_skip_full_matrix_websocket_10x10(const trans_test_config_t *a_trans,
+                                                      const test_scenario_t *a_scenario)
+{
+    if (s_stress_mode || (s_trans_filter && strcasecmp(s_trans_filter, a_trans->name) == 0))
+        return false;
+    return a_trans->trans_type == DAP_NET_TRANS_WEBSOCKET &&
+           a_scenario->num_servers == 10 &&
+           a_scenario->num_clients == 10;
+}
 
 static const tier_test_config_t g_tier_configs[] = {
     {DAP_IO_FLOW_LB_TIER_APPLICATION, "Application", s_tier_application_available},
@@ -1347,14 +1360,10 @@ static void test_02_sequential_trans_testing(void)
                     continue;
                 }
 
-                if (l_trans->trans_type == DAP_NET_TRANS_WEBSOCKET &&
-                        l_scenario->num_servers == 10 &&
-                        l_scenario->num_clients == 10 &&
-                        !s_stress_mode &&
-                        (!s_trans_filter || strcasecmp(s_trans_filter, l_trans->name) != 0)) {
+                if (s_should_skip_full_matrix_websocket_10x10(l_trans, l_scenario)) {
                     printf("\n--- Scenario %zu/%zu: %s ---\n",
                            scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
-                    printf("⏭️  SKIPPED: WebSocket 10-server/10-client handshake is unstable under full Linux ctest load; run with --trans=WebSocket --max-clients=10 to exercise this focused coverage\n");
+                    printf("⏭️  INTENTIONAL SKIP: %s\n", TEST_TRANS_WS_10X10_SKIP_REASON);
                     l_skipped_tests++;
                     continue;
                 }

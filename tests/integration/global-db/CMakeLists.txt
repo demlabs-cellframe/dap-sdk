@@ -29,10 +29,23 @@ dap_test_link_libraries(${PROJECT_NAME})
 # Automatic linker wrapping - scans all target sources for DAP_MOCK_DECLARE
 dap_mock_autowrap(${PROJECT_NAME})
 
+# MDBX SAFE4QEMU is a runtime-test workaround for CPU emulators. Keep AUTO as
+# the default for known QEMU wrappers, but expose a cache switch for custom ARM
+# runners instead of hiding this behind regex-only logic.
+set(DAP_GLOBAL_DB_MDBX_SAFE4QEMU "AUTO" CACHE STRING "Use MDBX_SAFE4QEMU for GlobalDB tests: AUTO, ON, or OFF")
+set_property(CACHE DAP_GLOBAL_DB_MDBX_SAFE4QEMU PROPERTY STRINGS AUTO ON OFF)
+
 # Add database driver libraries based on build configuration (after dap_test_link_libraries)
 if(BUILD_WITH_GDB_DRIVER_MDBX)
-    if(TARGET mdbx-static
-       AND CMAKE_CROSSCOMPILING_EMULATOR MATCHES "(^|/)(qemu-|run-arm32|run-arm64)")
+    set(l_mdbx_safe4qemu OFF)
+    if(DAP_GLOBAL_DB_MDBX_SAFE4QEMU STREQUAL "AUTO")
+        if(CMAKE_CROSSCOMPILING_EMULATOR MATCHES "(^|/)(qemu-|run-arm32|run-arm64)")
+            set(l_mdbx_safe4qemu ON)
+        endif()
+    elseif(DAP_GLOBAL_DB_MDBX_SAFE4QEMU)
+        set(l_mdbx_safe4qemu ON)
+    endif()
+    if(TARGET mdbx-static AND l_mdbx_safe4qemu)
         target_compile_definitions(mdbx-static PRIVATE MDBX_SAFE4QEMU)
     endif()
     target_link_libraries(${PROJECT_NAME} PRIVATE mdbx-static)

@@ -1,3 +1,26 @@
+/*
+ * Authors:
+ * Cellframe Team <https://cellframe.net>
+ * DeM Labs Inc.   https://demlabs.net
+ * Copyright  (c) 2017-2025
+ * All rights reserved.
+
+ This file is part of DAP (Distributed Applications Platform) the open source project
+
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    DAP is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -12,6 +35,12 @@
 #define DAP_WS_CLIENT_KEY_SIZE 16U
 #define DAP_WS_CLIENT_KEY_B64_SIZE 24U
 
+/*
+ * RFC6455 requires SHA-1 only for Sec-WebSocket-Accept derivation. The crypto
+ * core currently has no public SHA-1 helper, so keep this small local digest
+ * implementation private to the WebSocket handshake instead of adding a broader
+ * dependency.
+ */
 typedef struct dap_ws_sha1_ctx {
     uint32_t state[5];
     uint64_t bit_len;
@@ -40,7 +69,7 @@ static inline void s_write_u64_be(uint8_t *a_ptr, uint64_t a_value)
     }
 }
 
-static void s_sha1_process_block(dap_ws_sha1_ctx_t *a_ctx, const uint8_t a_block[DAP_WS_SHA1_BLOCK_SIZE])
+static void s_ws_sha1_process_block(dap_ws_sha1_ctx_t *a_ctx, const uint8_t a_block[DAP_WS_SHA1_BLOCK_SIZE])
 {
     uint32_t w[DAP_WS_SHA1_ROUNDS];
     for (size_t i = 0; i < 16U; ++i) {
@@ -88,7 +117,7 @@ static void s_sha1_process_block(dap_ws_sha1_ctx_t *a_ctx, const uint8_t a_block
     a_ctx->state[4] += e;
 }
 
-static void s_sha1_init(dap_ws_sha1_ctx_t *a_ctx)
+static void s_ws_sha1_init(dap_ws_sha1_ctx_t *a_ctx)
 {
     a_ctx->state[0] = 0x67452301U;
     a_ctx->state[1] = 0xEFCDAB89U;
@@ -99,7 +128,7 @@ static void s_sha1_init(dap_ws_sha1_ctx_t *a_ctx)
     a_ctx->block_used = 0U;
 }
 
-static void s_sha1_update(dap_ws_sha1_ctx_t *a_ctx, const uint8_t *a_data, size_t a_size)
+static void s_ws_sha1_update(dap_ws_sha1_ctx_t *a_ctx, const uint8_t *a_data, size_t a_size)
 {
     if (!a_size) {
         return;
@@ -118,25 +147,25 @@ static void s_sha1_update(dap_ws_sha1_ctx_t *a_ctx, const uint8_t *a_data, size_
         a_size -= l_to_copy;
 
         if (a_ctx->block_used == DAP_WS_SHA1_BLOCK_SIZE) {
-            s_sha1_process_block(a_ctx, a_ctx->block);
+            s_ws_sha1_process_block(a_ctx, a_ctx->block);
             a_ctx->block_used = 0U;
         }
     }
 }
 
-static void s_sha1_final(dap_ws_sha1_ctx_t *a_ctx, uint8_t a_digest[DAP_WS_SHA1_DIGEST_SIZE])
+static void s_ws_sha1_final(dap_ws_sha1_ctx_t *a_ctx, uint8_t a_digest[DAP_WS_SHA1_DIGEST_SIZE])
 {
     a_ctx->block[a_ctx->block_used++] = 0x80U;
 
     if (a_ctx->block_used > (DAP_WS_SHA1_BLOCK_SIZE - 8U)) {
         memset(a_ctx->block + a_ctx->block_used, 0, DAP_WS_SHA1_BLOCK_SIZE - a_ctx->block_used);
-        s_sha1_process_block(a_ctx, a_ctx->block);
+        s_ws_sha1_process_block(a_ctx, a_ctx->block);
         a_ctx->block_used = 0U;
     }
 
     memset(a_ctx->block + a_ctx->block_used, 0, DAP_WS_SHA1_BLOCK_SIZE - 8U - a_ctx->block_used);
     s_write_u64_be(a_ctx->block + DAP_WS_SHA1_BLOCK_SIZE - 8U, a_ctx->bit_len);
-    s_sha1_process_block(a_ctx, a_ctx->block);
+    s_ws_sha1_process_block(a_ctx, a_ctx->block);
 
     for (size_t i = 0; i < 5U; ++i) {
         a_digest[i * 4U + 0U] = (uint8_t)(a_ctx->state[i] >> 24U);
@@ -208,9 +237,9 @@ int dap_net_trans_websocket_build_accept_key(const char *a_client_key,
 
     uint8_t l_sha1[DAP_WS_SHA1_DIGEST_SIZE] = {0};
     dap_ws_sha1_ctx_t l_ctx;
-    s_sha1_init(&l_ctx);
-    s_sha1_update(&l_ctx, (const uint8_t *)l_concat, strlen(l_concat));
-    s_sha1_final(&l_ctx, l_sha1);
+    s_ws_sha1_init(&l_ctx);
+    s_ws_sha1_update(&l_ctx, (const uint8_t *)l_concat, strlen(l_concat));
+    s_ws_sha1_final(&l_ctx, l_sha1);
 
     size_t l_encoded_size = dap_enc_base64_encode(l_sha1, DAP_WS_SHA1_DIGEST_SIZE,
                                                   a_accept_key, DAP_ENC_DATA_TYPE_B64);

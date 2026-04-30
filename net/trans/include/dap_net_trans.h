@@ -659,3 +659,11 @@ int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_hos
                                      uint32_t a_timeout_ms,
                                      float *a_out_down_mbps, float *a_out_up_mbps);
 
+/**
+ * @brief Mark a TCP esocket as connecting before it is assigned to a worker.
+ *
+ * On IOCP builds this also clears the inherited read-ready flag so ConnectEx is
+ * armed before any receive operation. Non-IOCP builds only need write readiness
+ * to finish the non-blocking connect path.
+ */
+void dap_net_trans_prepare_tcp_connect_flags(dap_events_socket_t *a_es);

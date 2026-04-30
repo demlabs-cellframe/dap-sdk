@@ -17,6 +17,7 @@
 #define LOG_TAG "dap_globaldb_test"
 
 #define DB_FILE "./base.tmp"
+#define PG_CONNINFO_ENV "PG_CONNINFO"
 
 static const char *s_db_types[] = {
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
@@ -35,6 +36,13 @@ static const char *s_db_types[] = {
 };
 
 void dap_global_db_driver_sqlite_set_attempts_count(uint32_t a_attempts, bool a_force);
+
+static const char *s_test_pg_conninfo(void)
+{
+    // PostgreSQL is optional here; the same env value controls skip and init.
+    const char *l_pg_conninfo = getenv(PG_CONNINFO_ENV);
+    return l_pg_conninfo && *l_pg_conninfo ? l_pg_conninfo : NULL;
+}
 
 // benchmarks
 static uint64_t    s_write = 0;
@@ -90,15 +98,21 @@ static int s_test_create_db(const char *db_type)
     int l_rc = 0;
     dap_test_msg("Initializatiion test db %s driver in %s file", db_type, DB_FILE);
 
-    if (!dap_strcmp(db_type, "pgsql"))
-        l_rc = dap_global_db_driver_init(db_type, "dbname=postgres");
-    else
+    if (!dap_strcmp(db_type, "pgsql")) {
+        const char *l_pg_conninfo = s_test_pg_conninfo();
+        if (!l_pg_conninfo) {
+            printf("\t%sInitialization db driver '%s' SKIPPED - %s is not set%s\n",
+                   TEXT_COLOR_YEL, db_type, PG_CONNINFO_ENV, TEXT_COLOR_RESET);
+            fflush(stdout);
+            return -1;
+        }
+        l_rc = dap_global_db_driver_init(db_type, l_pg_conninfo);
+    } else {
         l_rc = dap_global_db_driver_init(db_type, DB_FILE);
+    }
     if (l_rc != 0) {
-        const char *l_pg_conninfo = getenv("PG_CONNINFO");
-        bool l_can_skip = !dap_strcmp(db_type, "pgsql") && (!l_pg_conninfo || !*l_pg_conninfo);
         printf("\t%sInitialization db driver '%s' %s (error %d)%s\n",
-               l_can_skip ? TEXT_COLOR_YEL : TEXT_COLOR_RED, db_type, l_can_skip ? "SKIPPED - PG_CONNINFO is not set" : "FAILED", l_rc, TEXT_COLOR_RESET);
+               TEXT_COLOR_RED, db_type, "FAILED", l_rc, TEXT_COLOR_RESET);
         fflush(stdout);
         return l_rc;
     }
@@ -108,8 +122,7 @@ static int s_test_create_db(const char *db_type)
 
 static bool s_test_db_init_can_skip(const char *db_type, int a_rc)
 {
-    const char *l_pg_conninfo = getenv("PG_CONNINFO");
-    return a_rc != 0 && !dap_strcmp(db_type, "pgsql") && (!l_pg_conninfo || !*l_pg_conninfo);
+    return a_rc != 0 && !dap_strcmp(db_type, "pgsql") && !s_test_pg_conninfo();
 }
 
 static int s_test_write(size_t a_count)

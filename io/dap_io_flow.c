@@ -376,7 +376,6 @@ typedef struct {
 static void s_flow_server_read_callback(dap_events_socket_t *a_es, void *a_arg);
 static void s_queue_ptr_callback(void *a_ptr);
 static int s_init_inter_worker_queues(dap_io_flow_server_t *a_server);
-void dap_io_flow_socket_cleanup_created_listeners(dap_server_t *a_server, dap_list_t *a_previous_tail);
 static int s_forward_packet_to_worker(dap_io_flow_server_t *a_server, 
                                       uint32_t a_from_worker_id,
                                       uint32_t a_to_worker_id, 

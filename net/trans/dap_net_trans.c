@@ -642,3 +642,21 @@ int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_hos
                                                 a_out_down_mbps, a_out_up_mbps);
 }
 
+void dap_net_trans_prepare_tcp_connect_flags(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return;
+
+    a_es->flags |= DAP_SOCK_CONNECTING;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    /*
+     * IOCP arms the first overlapped operation from readiness flags when the
+     * socket is assigned to a worker. Connecting TCP sockets must post ConnectEx
+     * before any read is armed.
+     */
+    a_es->flags &= ~DAP_SOCK_READY_TO_READ;
+    a_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#else
+    a_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#endif
+}

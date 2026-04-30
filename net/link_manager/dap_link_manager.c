@@ -58,8 +58,9 @@ static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
 static dap_proc_thread_t *s_query_thread = NULL;
 static char s_active_channels[256] = {0};
+static pthread_rwlock_t s_active_channels_lock = PTHREAD_RWLOCK_INITIALIZER;
 
-static void s_active_channels_ensure_default(void)
+static void s_active_channels_ensure_default_unsafe(void)
 {
     if (!s_active_channels[0])
         dap_stpcpy(s_active_channels, "RCGEND");
@@ -207,7 +208,9 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 // sanity check
     dap_return_val_if_pass_err(s_link_manager, -2, "Link manager actualy inited");
 // init default active channels
-    s_active_channels_ensure_default();
+    pthread_rwlock_wrlock(&s_active_channels_lock);
+    s_active_channels_ensure_default_unsafe();
+    pthread_rwlock_unlock(&s_active_channels_lock);
 // get config
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_max_attempts_num = dap_config_get_item_uint32_default(g_config, "link_manager", "max_attempts_num", s_max_attempts_num);
@@ -882,7 +885,7 @@ static bool s_link_update_callback(void *a_arg)
     dap_client_t *l_client = l_link->uplink.client;
     dap_client_set_uplink_unsafe(l_client, &l_link->addr, l_args->host, l_args->port);
     dap_client_set_is_always_reconnect(l_client, false);
-    dap_client_set_active_channels_unsafe(l_client, s_active_channels);
+    dap_client_set_active_channels_unsafe(l_client, dap_link_manager_get_active_channels());
     log_it(L_INFO, "Validate link to node " NODE_ADDR_FP_STR " with address %s : %d", NODE_ADDR_FP_ARGS_S(l_link->addr),
                                                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
     if (l_link->uplink.ready) {
@@ -1374,24 +1377,29 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
  */
 int dap_link_manager_add_active_channel(char a_ch_id)
 {
-    s_active_channels_ensure_default();
+    pthread_rwlock_wrlock(&s_active_channels_lock);
+    s_active_channels_ensure_default_unsafe();
     size_t l_len = dap_strlen(s_active_channels);
     if (l_len + 1 >= sizeof(s_active_channels)) {
         log_it(L_ERROR, "Active channels buffer is full, can't add '%c'", a_ch_id);
+        pthread_rwlock_unlock(&s_active_channels_lock);
         return -2;
     }
     if (memchr(s_active_channels, (unsigned char)a_ch_id, l_len)) {
         log_it(L_WARNING, "Channel '%c' already in active channels list", a_ch_id);
+        pthread_rwlock_unlock(&s_active_channels_lock);
         return 0;
     }
     dap_stream_ch_proc_t *l_proc = dap_stream_ch_proc_find((uint8_t)a_ch_id);
     if (!l_proc || !l_proc->id) {
         log_it(L_ERROR, "No channel processor registered for id '%c', register it before adding to active channels", a_ch_id);
+        pthread_rwlock_unlock(&s_active_channels_lock);
         return -3;
     }
     s_active_channels[l_len] = a_ch_id;
     s_active_channels[l_len + 1] = '\0';
     log_it(L_NOTICE, "Channel '%c' added to active channels, current set: \"%s\"", a_ch_id, s_active_channels);
+    pthread_rwlock_unlock(&s_active_channels_lock);
     return 0;
 }
 
@@ -1402,24 +1410,34 @@ int dap_link_manager_add_active_channel(char a_ch_id)
  */
 int dap_link_manager_remove_active_channel(char a_ch_id)
 {
-    s_active_channels_ensure_default();
+    pthread_rwlock_wrlock(&s_active_channels_lock);
+    s_active_channels_ensure_default_unsafe();
     size_t l_len = dap_strlen(s_active_channels);
     char *l_pos = memchr(s_active_channels, (unsigned char)a_ch_id, l_len);
     if (!l_pos) {
         log_it(L_WARNING, "Channel '%c' not found in active channels list", a_ch_id);
+        pthread_rwlock_unlock(&s_active_channels_lock);
         return -2;
     }
     memmove(l_pos, l_pos + 1, l_len - (size_t)(l_pos - s_active_channels));
     log_it(L_NOTICE, "Channel '%c' removed from active channels, current set: \"%s\"", a_ch_id, s_active_channels);
+    pthread_rwlock_unlock(&s_active_channels_lock);
     return 0;
 }
 
 /**
  * @brief Get the current active channels string used for inter-node links
- * @return pointer to the active channels string (read-only)
+ * @return read-only thread-local snapshot; valid until this function is called
+ *         again on the same thread
  */
 const char *dap_link_manager_get_active_channels(void)
 {
-    s_active_channels_ensure_default();
-    return s_active_channels;
+    static _Thread_local char s_active_channels_tls[sizeof(s_active_channels)] = {0};
+
+    pthread_rwlock_wrlock(&s_active_channels_lock);
+    s_active_channels_ensure_default_unsafe();
+    dap_strncpy(s_active_channels_tls, s_active_channels, sizeof(s_active_channels_tls));
+    pthread_rwlock_unlock(&s_active_channels_lock);
+
+    return s_active_channels_tls;
 }

@@ -107,6 +107,14 @@ int dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a
 int dap_worker_exec_callback_on_sync_timed(dap_worker_t * a_worker, dap_worker_callback_t a_callback,
                                            void * a_arg, uint32_t a_timeout_ms);
 void dap_worker_exec_callback_on_sync(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
+/* Worker-thread helper: process pending new-esocket assignments from the
+ * current worker context. Must only be called on the worker owner thread. */
+int dap_worker_drain_new_es_queue_unsafe(dap_worker_t *a_worker, size_t *a_processed_out);
+/* Delete an esocket that may already be registered in the worker context or
+ * still waiting in queue_es_new. Returns true only when deletion happened. */
+bool dap_worker_delete_registered_or_queued_es_sync(dap_worker_t *a_worker,
+                                                    dap_events_socket_t *a_esocket,
+                                                    bool a_preserve_inheritor);
 #ifndef DAP_EVENTS_CAPS_IOCP
 void dap_worker_add_events_socket_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_events_socket);
 void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker_callback_t a_callback, void * a_arg);
