@@ -140,8 +140,8 @@ bool dap_file_test(const char * a_file_path)
     memcpy(path, a_file_path, sizeof(path));
     dap_path_to_native_inplace(path);
 #ifdef DAP_OS_WINDOWS
-    int attr = GetFileAttributesA(path);
-    if(attr != -1 && (attr & FILE_ATTRIBUTE_NORMAL))
+    DWORD attr = GetFileAttributesA(path);
+    if(attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
         return true;
 #else
     struct stat st;
@@ -167,8 +167,8 @@ bool dap_file_simple_test(const char * a_file_path)
     memcpy(path, a_file_path, sizeof(path));
     dap_path_to_native_inplace(path);
 #ifdef DAP_OS_WINDOWS
-    int attr = GetFileAttributesA(path);
-    if(attr != -1)
+    DWORD attr = GetFileAttributesA(path);
+    if(attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY))
         return true;
 #else
     struct stat st;

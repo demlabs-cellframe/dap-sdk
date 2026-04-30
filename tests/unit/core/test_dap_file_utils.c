@@ -220,6 +220,7 @@ static void test_windows_file_helpers_normalize_separators(void)
     dap_assert(dap_file_test(l_file_slash_path), "dap_file_test normalizes slash input on Windows");
     dap_assert(dap_file_simple_test(l_file_slash_path), "dap_file_simple_test normalizes slash input on Windows");
     dap_assert(!dap_file_test(l_dir_slash_path), "dap_file_test rejects normalized directory path on Windows");
+    dap_assert(!dap_file_simple_test(l_dir_slash_path), "dap_file_simple_test rejects normalized directory path on Windows");
 
     size_t l_length = 0;
     char *l_contents = dap_file_get_contents2(l_file_slash_path, &l_length);
