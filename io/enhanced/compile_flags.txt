@@ -1,0 +1,11 @@
+# Fallback for clangd if build/compile_commands.json is missing or stale.
+# Standalone layout: shim headers in compat/ (see CMakeLists when not dap_core).
+# After `cmake -B build -S .` use compile_commands.json in build/ (see .clangd).
+-std=gnu11
+-xc
+-D_GNU_SOURCE
+-DDAP_IO_STATS
+-I
+include
+-I
+compat
