@@ -1,0 +1,12 @@
+# Use compile_commands.json from `cmake -B build` in this directory (io/enhanced only).
+---
+CompileFlags:
+  CompilationDatabase: build
+---
+# Windows-only TUs are not in the host Linux build — suppress noise.
+If:
+  PathMatch: .*[/\\]dap_worker_win\.c$
+Diagnostics:
+  Suppress: ".*"
+Index:
+  Background: Skip
