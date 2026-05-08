@@ -93,15 +93,19 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
     return NULL;
 }
 
-static size_t s_net_links_count(dap_managed_net_t *a_net, bool a_include_pending)
+static size_t s_net_uplinks_count(dap_managed_net_t *a_net, bool a_include_pending)
 {
     dap_cluster_t *l_primary_cluster = (dap_cluster_t *)a_net->link_clusters->data;
-    size_t l_links_count = dap_cluster_members_count(l_primary_cluster);
-    if (!a_include_pending)
-        return l_links_count;
+    size_t l_links_count = 0;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
+        if (l_link->is_uplink && dap_cluster_member_find_unsafe(l_primary_cluster, &l_link->addr)) {
+            ++l_links_count;
+            continue;
+        }
+        if (!a_include_pending || !l_link->uplink.client)
+            continue;
         for (dap_list_t *it = l_link->uplink.associated_nets; it; it = it->next) {
             if (it->data != a_net)
                 continue;
@@ -312,7 +316,7 @@ size_t dap_link_manager_links_count(uint64_t a_net_id)
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
     dap_return_val_if_pass(!l_net, 0);
 // func work
-    return s_net_links_count(l_net, false);
+    return s_net_uplinks_count(l_net, false);
 }
 
 /**
@@ -340,7 +344,7 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
     dap_return_val_if_pass(!l_net, 0);
 // func work
-    size_t l_links_count = s_net_links_count(l_net, true);
+    size_t l_links_count = s_net_uplinks_count(l_net, true);
     return l_links_count < l_net->min_links_num ? l_net->min_links_num - l_links_count : 0;
 }
 
