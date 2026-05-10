@@ -93,6 +93,31 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
     return NULL;
 }
 
+static size_t s_net_uplinks_count(dap_managed_net_t *a_net, bool a_include_pending)
+{
+    dap_cluster_t *l_primary_cluster = (dap_cluster_t *)a_net->link_clusters->data;
+    size_t l_links_count = 0;
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+    dap_link_t *l_link = NULL, *l_tmp = NULL;
+    HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
+        if (l_link->is_uplink && dap_cluster_member_find_unsafe(l_primary_cluster, &l_link->addr)) {
+            ++l_links_count;
+            continue;
+        }
+        if (!a_include_pending || !l_link->uplink.client)
+            continue;
+        for (dap_list_t *it = l_link->uplink.associated_nets; it; it = it->next) {
+            if (it->data != a_net)
+                continue;
+            if (!dap_cluster_member_find_unsafe(l_primary_cluster, &l_link->addr))
+                ++l_links_count;
+            break;
+        }
+    }
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    return l_links_count;
+}
+
 /**
  * @brief forming group name for each net
  * @return NULL if error other group name
@@ -319,11 +344,8 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
     dap_return_val_if_pass(!l_net, 0);
 // func work
-    if (!l_net) {
-        log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
-        return 0;
-    }
-    return l_net->uplinks < l_net->min_links_num ? l_net->min_links_num - l_net->uplinks : 0;
+    size_t l_links_count = s_net_uplinks_count(l_net, true);
+    return l_links_count < l_net->min_links_num ? l_net->min_links_num - l_links_count : 0;
 }
 
 /**
@@ -459,6 +481,8 @@ void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member, void UNU
         log_it(L_ERROR, "Try cluster adding to non-existent link");
         return;
     }
+    if (dap_list_find(l_link->active_clusters, a_member->cluster, NULL))
+        return;
     l_link->active_clusters = dap_list_append(l_link->active_clusters, a_member->cluster);
     s_debug_cluster_adding_removing(false, true, a_member->cluster, &a_member->addr);
 }
@@ -476,7 +500,7 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void 
         log_it(L_ERROR, "Try cluster deleting from non-existent link");
         return;
     }
-    l_link->active_clusters = dap_list_remove(l_link->active_clusters, a_member->cluster);
+    l_link->active_clusters = dap_list_remove_all(l_link->active_clusters, a_member->cluster);
     s_debug_cluster_adding_removing(false, false, a_member->cluster, &a_member->addr);
 }
 
@@ -1235,6 +1259,10 @@ void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, v
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         return;
     }
+    if (dap_list_find(l_link->static_clusters, l_cluster, NULL)) {
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
+        return;
+    }
     l_link->static_clusters = dap_list_append(l_link->static_clusters, l_cluster);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     s_debug_cluster_adding_removing(true, true, l_cluster, l_node_addr);
@@ -1260,7 +1288,7 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         return;
     }
-    l_link->static_clusters = dap_list_remove(l_link->static_clusters, l_cluster);
+    l_link->static_clusters = dap_list_remove_all(l_link->static_clusters, l_cluster);
     if (!l_link->static_clusters && !l_link->active_clusters)
         s_link_delete(&l_link, false, true);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
