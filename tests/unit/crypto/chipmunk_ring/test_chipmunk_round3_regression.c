@@ -1218,6 +1218,86 @@ static bool s_test_zk_size_iterations_wire_roundtrip(void)
 }
 
 // ---------------------------------------------------------------------------
+// CR-D31 (Round-4): chipmunk_ring_domain_hash_internal must defeat
+// TupleHash-style prefix-collision attacks.
+//
+// The pre-fix construction was PRK = SHA3-256( D || S || I ) with no
+// length prefixes.  Two structurally-different (D, S, I) splits whose
+// concatenation matched would produce the same PRK, opening a domain-
+// crossing oracle once any of the three components became attacker-
+// controllable.  The post-fix construction prefixes every component
+// with its little-endian uint32 length.
+//
+// The probe below crafts two triples whose raw concatenation is
+// identical and asserts that the post-fix helper distinguishes them
+// (different PRKs → different outputs).  Pre-fix this assertion would
+// have failed.
+//
+// Probe pairs:
+//   (D, S, I)   = ("DOMAIN_A", "SALT_X",  "INPUT_Y")
+//   (D', S', I') = ("DOMAIN",   "_ASALT_", "X_INPUT_Y")
+//   raw concat  = "DOMAIN_ASALT_XINPUT_Y"   (identical in both)
+// ---------------------------------------------------------------------------
+extern int chipmunk_ring_domain_hash_internal(const char *a_domain,
+                                              const void *a_salt, size_t a_salt_size,
+                                              const void *a_input, size_t a_input_size,
+                                              void *a_output, size_t a_output_size,
+                                              uint32_t a_iterations);
+
+static bool s_test_domain_hash_prefix_collision_resistance(void)
+{
+    log_it(L_INFO, "CR-D31: TupleHash-style prefix-collision resistance");
+
+    /* Both splits concatenate to "DOMAIN_ASALT_XINPUT_Y" (21 bytes). */
+    const char  *d_a = "DOMAIN_A";   /* 8 */
+    const char  *s_a = "SALT_X";     /* 6 */
+    const char  *i_a = "INPUT_Y";    /* 7 */
+
+    const char  *d_b = "DOMAIN_AS";  /* 9 */
+    const char  *s_b = "ALT_XIN";    /* 7 */
+    const char  *i_b = "PUT_Y";      /* 5 */
+
+    /* Sanity-check the construction in the test itself: the raw
+     * concatenations under the *broken* construction must collide. */
+    char l_concat_a[64], l_concat_b[64];
+    int l_n_a = snprintf(l_concat_a, sizeof(l_concat_a), "%s%s%s", d_a, s_a, i_a);
+    int l_n_b = snprintf(l_concat_b, sizeof(l_concat_b), "%s%s%s", d_b, s_b, i_b);
+    dap_assert(l_n_a > 0 && l_n_a == l_n_b, "test setup: same concatenated length");
+    dap_assert(memcmp(l_concat_a, l_concat_b, (size_t)l_n_a) == 0,
+               "test setup: identical raw concatenation under the broken construction");
+
+    /* Now run the post-fix length-prefixed helper on both splits and
+     * assert that the outputs DIFFER.  A pre-fix run would have
+     * produced bit-identical outputs in both cases. */
+    uint8_t l_out_a[64] = {0};
+    uint8_t l_out_b[64] = {0};
+
+    int rc_a = chipmunk_ring_domain_hash_internal(d_a, s_a, strlen(s_a),
+                                                  i_a, strlen(i_a),
+                                                  l_out_a, sizeof(l_out_a), 1);
+    int rc_b = chipmunk_ring_domain_hash_internal(d_b, s_b, strlen(s_b),
+                                                  i_b, strlen(i_b),
+                                                  l_out_b, sizeof(l_out_b), 1);
+    dap_assert(rc_a == 0, "domain_hash on split A must succeed");
+    dap_assert(rc_b == 0, "domain_hash on split B must succeed");
+    dap_assert(memcmp(l_out_a, l_out_b, sizeof(l_out_a)) != 0,
+               "TupleHash-style prefixing must distinguish prefix-collision splits");
+
+    /* Negative-input rejection sanity checks. */
+    dap_assert(chipmunk_ring_domain_hash_internal(NULL, NULL, 0, "x", 1, l_out_a, 32, 1) == -1,
+               "NULL domain rejected");
+    dap_assert(chipmunk_ring_domain_hash_internal("", NULL, 0, "x", 1, l_out_a, 32, 1) == -EINVAL,
+               "empty domain rejected (EINVAL)");
+    dap_assert(chipmunk_ring_domain_hash_internal("D", NULL, 0, NULL, 0, l_out_a, 32, 1) == -1,
+               "NULL/empty input rejected");
+    dap_assert(chipmunk_ring_domain_hash_internal("D", NULL, 0, "x", 1, NULL, 32, 1) == -1,
+               "NULL output rejected");
+
+    log_it(L_INFO, "CR-D31 PASS");
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Test runner
 // ---------------------------------------------------------------------------
 int main(int argc, char **argv)
@@ -1244,6 +1324,7 @@ int main(int argc, char **argv)
     if (!s_test_signature_wire_canonicality())      rc = 1;
     if (!s_test_acorn_linkability_tag_is_zero())    rc = 1;
     if (!s_test_zk_size_iterations_wire_roundtrip()) rc = 1;
+    if (!s_test_domain_hash_prefix_collision_resistance()) rc = 1;
 
     if (rc == 0) {
         dap_test_msg("ALL Round-3 regression tests PASSED");

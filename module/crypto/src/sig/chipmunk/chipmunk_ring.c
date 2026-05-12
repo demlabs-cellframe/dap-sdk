@@ -23,6 +23,7 @@
 
 #include "chipmunk_ring.h"
 #include "chipmunk_ring_acorn.h"
+#include "chipmunk_ring_internal.h"
 #include "dap_enc_chipmunk_ring.h"
 #include "chipmunk_ring_serialize_schema.h"
 /*
@@ -83,32 +84,90 @@ static chipmunk_ring_pq_params_t s_pq_params = {
  * - Counter mode ensures full entropy for outputs > 32 bytes
  * - Iterative hashing provides key stretching (not to be confused with output expansion)
  */
-static int s_domain_hash(const char *a_domain, 
-                        const void *a_salt, size_t a_salt_size,
-                        const void *a_input, size_t a_input_size,
-                        void *a_output, size_t a_output_size,
-                        uint32_t a_iterations)
+/*
+ * CR-D31 (Round-4): TupleHash-style length-prefixed domain hash.
+ *
+ * The pre-fix construction was
+ *     PRK = SHA3-256( D || S || I )
+ * where D was sized via strlen() and S, I were unprefixed.  Once any of
+ * the three components became attacker-controllable a structural
+ * prefix-collision was possible: two different splits of the same
+ * concatenation produce the same PRK.  All current call sites supply
+ * literal domains, so the immediate risk is bounded, but the
+ * construction is fragile to any future schema extension that lets
+ * the salt/input boundary slide.
+ *
+ * The single-source helper below replaces both copies (chipmunk_ring.c
+ * and chipmunk_ring_acorn.c — see CR-C18 / CR-D11) with a TupleHash-
+ * style encoding:
+ *     PRK = SHA3-256( LE32(len(D)) || D ||
+ *                     LE32(len(S)) || S ||
+ *                     LE32(len(I)) || I )
+ * Each component is preceded by its little-endian uint32 length.
+ * Cross-tuple collisions are now infeasible without a full SHA3-256
+ * collision.  Domain strings carry an explicit `/v2` suffix to
+ * guarantee that any pre-fix `/v1` artefact (none in production —
+ * feature/chipmunk-ring is pre-prod) cannot accidentally re-collide.
+ */
+static inline void s_le32_store(uint8_t *a_dst, uint32_t a_val)
+{
+    a_dst[0] = (uint8_t)( a_val        & 0xFF);
+    a_dst[1] = (uint8_t)((a_val >>  8) & 0xFF);
+    a_dst[2] = (uint8_t)((a_val >> 16) & 0xFF);
+    a_dst[3] = (uint8_t)((a_val >> 24) & 0xFF);
+}
+
+int chipmunk_ring_domain_hash_internal(const char *a_domain,
+                                       const void *a_salt, size_t a_salt_size,
+                                       const void *a_input, size_t a_input_size,
+                                       void *a_output, size_t a_output_size,
+                                       uint32_t a_iterations)
 {
     if (!a_domain || !a_input || !a_output || a_input_size == 0 || a_output_size == 0)
         return -1;
-    
-    size_t domain_len = strlen(a_domain);
-    
-    // Phase 1: Create PRK (Pseudo-Random Key) from input
-    // PRK = SHA3-256(domain || salt || input)
-    size_t prk_input_size = domain_len + a_salt_size + a_input_size;
+
+    /* Defensive: bound the domain length and refuse embedded NULs.  All
+     * known call sites pass a string literal short enough to fit, but
+     * the explicit cap prevents a runaway computation if the literal
+     * is replaced with a binary buffer in a future refactor. */
+    enum { S_DOMAIN_MAX = 1024 };
+    size_t domain_len = strnlen(a_domain, S_DOMAIN_MAX);
+    if (domain_len == S_DOMAIN_MAX || domain_len == 0)
+        return -EINVAL;
+
+    /* Length-prefix overflow guard.  size_t may be 32-bit on rare
+     * targets; UINT32_MAX is the LE32 carrier limit. */
+    if (a_salt_size > UINT32_MAX || a_input_size > UINT32_MAX || domain_len > UINT32_MAX)
+        return -EINVAL;
+
+    /* Phase 1: PRK = SHA3-256( LE32(len(D)) || D || LE32(len(S)) || S || LE32(len(I)) || I ) */
+    const size_t l_prefix_bytes = 4u * 3u;
+    if (a_salt_size > SIZE_MAX - a_input_size ||
+        domain_len   > SIZE_MAX - (a_salt_size + a_input_size) ||
+        l_prefix_bytes > SIZE_MAX - (domain_len + a_salt_size + a_input_size)) {
+        return -EINVAL;
+    }
+    size_t prk_input_size = l_prefix_bytes + domain_len + a_salt_size + a_input_size;
     uint8_t *prk_input = DAP_NEW_SIZE(uint8_t, prk_input_size);
     if (!prk_input) return -ENOMEM;
-    
+
     size_t offset = 0;
+    s_le32_store(prk_input + offset, (uint32_t)domain_len);
+    offset += 4;
     memcpy(prk_input + offset, a_domain, domain_len);
     offset += domain_len;
+
+    s_le32_store(prk_input + offset, (uint32_t)a_salt_size);
+    offset += 4;
     if (a_salt && a_salt_size > 0) {
         memcpy(prk_input + offset, a_salt, a_salt_size);
         offset += a_salt_size;
     }
+
+    s_le32_store(prk_input + offset, (uint32_t)a_input_size);
+    offset += 4;
     memcpy(prk_input + offset, a_input, a_input_size);
-    
+
     uint8_t prk[32];
     if (!dap_hash(DAP_HASH_TYPE_SHA3_256, prk_input, prk_input_size, prk, sizeof(prk))) {
         DAP_DELETE(prk_input);
@@ -167,6 +226,23 @@ static int s_domain_hash(const char *a_domain,
     
     memset(prk, 0, sizeof(prk));
     return 0;
+}
+
+/* CR-D31 (Round-4): preserve the legacy local symbol so existing call
+ * sites continue to compile while routing through the canonical
+ * length-prefixed implementation above.  All new code SHOULD call
+ * chipmunk_ring_domain_hash_internal() directly. */
+static int s_domain_hash(const char *a_domain,
+                         const void *a_salt, size_t a_salt_size,
+                         const void *a_input, size_t a_input_size,
+                         void *a_output, size_t a_output_size,
+                         uint32_t a_iterations)
+{
+    return chipmunk_ring_domain_hash_internal(a_domain,
+                                              a_salt, a_salt_size,
+                                              a_input, a_input_size,
+                                              a_output, a_output_size,
+                                              a_iterations);
 }
 
 /**

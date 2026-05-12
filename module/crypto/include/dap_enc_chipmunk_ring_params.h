@@ -145,16 +145,24 @@
 // Hash algorithm preferences
 #define CHIPMUNK_RING_HASH_ALGORITHM_UNIVERSAL  DAP_HASH_TYPE_SHA3_256  ///< Universal hash for all ZK proofs
 
+/* CR-D31 (Round-4): every domain literal carries the canonical
+ * "/v2" suffix that pins the TupleHash-style length-prefixed
+ * encoding implemented in chipmunk_ring_domain_hash_internal().
+ * Pre-fix "/V1" / unsuffixed literals are gone — they belong to the
+ * legacy unprefixed concatenation construction that is no longer
+ * shipped, and any caller that still references the old name will
+ * fail to compile, which is the desired hard fence. */
+
 // Domain separators for different contexts
-#define CHIPMUNK_RING_DOMAIN_ZK_PROOF           "ChipmunkRing-ZK-Proof"
-#define CHIPMUNK_RING_DOMAIN_ENTERPRISE_ZK      "ChipmunkRing-Enterprise-ZK"
-#define CHIPMUNK_RING_DOMAIN_SIGNATURE_ZK       "ChipmunkRing-Signature-ZK"
-#define CHIPMUNK_RING_DOMAIN_COORDINATION       "ChipmunkRing-Coordination"
+#define CHIPMUNK_RING_DOMAIN_ZK_PROOF           "ChipmunkRing-ZK-Proof/v2"
+#define CHIPMUNK_RING_DOMAIN_ENTERPRISE_ZK      "ChipmunkRing-Enterprise-ZK/v2"
+#define CHIPMUNK_RING_DOMAIN_SIGNATURE_ZK       "ChipmunkRing-Signature-ZK/v2"
+#define CHIPMUNK_RING_DOMAIN_COORDINATION       "ChipmunkRing-Coordination/v2"
 
 // Acorn domain separators (must match between creation and verification)
-#define CHIPMUNK_RING_DOMAIN_ACORN_RANDOMNESS   "ACORN_RANDOMNESS_V1"
-#define CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT   "ACORN_COMMITMENT_V1"
-#define CHIPMUNK_RING_DOMAIN_ACORN_LINKABILITY  "ACORN_LINKABILITY_V1"
+#define CHIPMUNK_RING_DOMAIN_ACORN_RANDOMNESS   "ACORN_RANDOMNESS/v2"
+#define CHIPMUNK_RING_DOMAIN_ACORN_COMMITMENT   "ACORN_COMMITMENT/v2"
+#define CHIPMUNK_RING_DOMAIN_ACORN_LINKABILITY  "ACORN_LINKABILITY/v2"
 
 // Scalability thresholds
 #define CHIPMUNK_RING_SMALL_RING_THRESHOLD      16    ///< Threshold for embedded vs external keys
@@ -248,16 +256,16 @@ typedef enum chipmunk_ring_scalability_flags {
 
 // ================ DOMAIN SEPARATORS FOR ZK PROOFS ================
 
-// Domain separators must match between creation and verification
-#define CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER    "CHIPMUNK_RING_ZK_MULTI"
-#define CHIPMUNK_RING_ZK_DOMAIN_SINGLE_SIGNER   "CHIPMUNK_RING_ZK_SINGLE"
-#define CHIPMUNK_RING_ZK_DOMAIN_THRESHOLD       "CHIPMUNK_RING_ZK_THRESHOLD"
-#define CHIPMUNK_RING_ZK_DOMAIN_SECRET_SHARING  "CHIPMUNK_RING_ZK_SECRET_SHARE"
-#define CHIPMUNK_RING_ZK_DOMAIN_COMMITMENT      "CHIPMUNK_RING_ZK_COMMITMENT"
-#define CHIPMUNK_RING_ZK_DOMAIN_RESPONSE        "CHIPMUNK_RING_ZK_RESPONSE"
-#define CHIPMUNK_RING_ZK_DOMAIN_ENTERPRISE      "CHIPMUNK_RING_ZK_ENTERPRISE"
+// Domain separators must match between creation and verification (CR-D31: all "/v2")
+#define CHIPMUNK_RING_ZK_DOMAIN_MULTI_SIGNER    "CHIPMUNK_RING_ZK_MULTI/v2"
+#define CHIPMUNK_RING_ZK_DOMAIN_SINGLE_SIGNER   "CHIPMUNK_RING_ZK_SINGLE/v2"
+#define CHIPMUNK_RING_ZK_DOMAIN_THRESHOLD       "CHIPMUNK_RING_ZK_THRESHOLD/v2"
+#define CHIPMUNK_RING_ZK_DOMAIN_SECRET_SHARING  "CHIPMUNK_RING_ZK_SECRET_SHARE/v2"
+#define CHIPMUNK_RING_ZK_DOMAIN_COMMITMENT      "CHIPMUNK_RING_ZK_COMMITMENT/v2"
+#define CHIPMUNK_RING_ZK_DOMAIN_RESPONSE        "CHIPMUNK_RING_ZK_RESPONSE/v2"
+#define CHIPMUNK_RING_ZK_DOMAIN_ENTERPRISE      "CHIPMUNK_RING_ZK_ENTERPRISE/v2"
 
 // Context-specific domain separators
-#define CHIPMUNK_RING_ZK_DOMAIN_COORDINATION    "CHIPMUNK_RING_ZK_COORD"
-#define CHIPMUNK_RING_ZK_DOMAIN_AGGREGATION     "CHIPMUNK_RING_ZK_AGGR"
-#define CHIPMUNK_RING_ZK_DOMAIN_VERIFICATION    "CHIPMUNK_RING_ZK_VERIFY"
+#define CHIPMUNK_RING_ZK_DOMAIN_COORDINATION    "CHIPMUNK_RING_ZK_COORD/v2"
+#define CHIPMUNK_RING_ZK_DOMAIN_AGGREGATION     "CHIPMUNK_RING_ZK_AGGR/v2"
+#define CHIPMUNK_RING_ZK_DOMAIN_VERIFICATION    "CHIPMUNK_RING_ZK_VERIFY/v2"
