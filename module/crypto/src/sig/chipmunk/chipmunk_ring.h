@@ -159,18 +159,26 @@ typedef struct chipmunk_ring_signature {
     uint32_t zk_proof_size_per_participant;            ///< Configurable ZK proof size (default: 64)
     uint32_t zk_iterations;                            ///< Number of SHAKE-256 iterations for ZK proofs
     
-    /* CR-D8 note (Round-3): this field is populated with H(ring_hash ||
-     * message || challenge) by chipmunk_ring_sign.  Because it depends on
-     * the message it DOES NOT provide linkability in the cryptographic
-     * sense: two signatures by the same signer over different messages
-     * have different tags, so repeat-signer detection is impossible.  It
-     * is effectively a per-signature session digest, useful only as an
-     * anti-replay nonce at the transport layer.  A proper linkability
-     * tag bound to the signer's secret via a sigma protocol is tracked
-     * under CR-11 (master-plan phase).  Do not treat this field as
-     * evidence of key reuse; doing so will produce false negatives. */
-    uint8_t *linkability_tag;                          ///< Per-signature session digest (NOT a cryptographic linkability tag)
-    size_t linkability_tag_size;                       ///< Size of session digest
+    /* CR-D8 fix (Round-3, finalized): RESERVED zero slot, identical
+     * convention to chipmunk_ring_acorn_t::linkability_tag above.  The
+     * previous version filled this with H(ring_hash || message || challenge)
+     * — a per-message session digest masquerading as a cryptographic
+     * linkability tag.  Because the digest changed with the message, two
+     * signatures by the same signer over different messages produced
+     * different tags, so the field could never be used for double-spending
+     * detection (its only legitimate purpose).  At the same time, callers
+     * that mistook it for a real tag would silently get false negatives.
+     *
+     * The current ring construction is therefore a *non-linkable* ring
+     * signature.  chipmunk_ring_sign zero-fills this slot and
+     * chipmunk_ring_verify rejects any non-zero tag (anti-malleability),
+     * giving a single canonical wire form per logical signature.  A real
+     * linkable variant requires t = PRF(sk_signer, ring_hash) plus a NIZK
+     * proof of correct derivation; that work is tracked under CR-11
+     * (master-plan phase) and will populate this slot without changing
+     * the wire layout. */
+    uint8_t *linkability_tag;                          ///< Reserved zero slot (CR-D8 mitigation)
+    size_t linkability_tag_size;                       ///< Size of reserved zero slot
 } chipmunk_ring_signature_t;
 
 /**

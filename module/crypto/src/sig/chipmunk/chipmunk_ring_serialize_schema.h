@@ -74,14 +74,14 @@ typedef struct chipmunk_ring_response_input {
     uint32_t participant_context;
 } chipmunk_ring_response_input_t;
 
-typedef struct chipmunk_ring_linkability_input {
-    uint8_t *ring_hash;
-    size_t ring_hash_size;
-    uint8_t *message;
-    size_t message_size;
-    uint8_t *challenge;
-    size_t challenge_size;
-} chipmunk_ring_linkability_input_t;
+/* CR-D8 fix (Round-3, finalized): chipmunk_ring_linkability_input_t and the
+ * matching chipmunk_ring_linkability_input_schema have been removed.  They
+ * existed solely to construct H(ring_hash || message || challenge) — a
+ * per-message session digest that was being stored in the signature's
+ * linkability_tag slot under a misleading name.  The current build keeps
+ * the linkability_tag slot all-zero (see chipmunk_ring.c::chipmunk_ring_sign
+ * and the early-reject in chipmunk_ring_verify); a true sigma-protocol-
+ * bound linkability tag is tracked under CR-11. */
 
 /**
  * @brief Serialization schemas for ChipmunkRing structures
@@ -97,7 +97,6 @@ extern const dap_serialize_schema_t chipmunk_ring_acorn_input_schema;
 extern const dap_serialize_schema_t chipmunk_ring_combined_data_schema;
 extern const dap_serialize_schema_t chipmunk_ring_proof_input_schema;
 extern const dap_serialize_schema_t chipmunk_ring_response_input_schema;
-extern const dap_serialize_schema_t chipmunk_ring_linkability_input_schema;
 
 /**
  * @brief Condition function for embedded keys

@@ -1056,47 +1056,29 @@ int chipmunk_ring_sign(chipmunk_ring_private_key_t *a_private_key,
         debug_if(s_debug_more, L_INFO, "Multi-signer coordination completed successfully");
     }
     
-    // Generate linkability tag using universal serializer
-    chipmunk_ring_linkability_input_t l_linkability_data = {
-        .ring_hash = a_ring->ring_hash,
-        .ring_hash_size = a_ring->ring_hash_size,
-        .message = (uint8_t*)a_message,
-        .message_size = a_message ? a_message_size : 0,
-        .challenge = a_signature->challenge,
-        .challenge_size = a_signature->challenge_size
-    };
-    
-    size_t l_tag_combined_size = dap_serialize_calc_size(&chipmunk_ring_linkability_input_schema, NULL, &l_linkability_data, NULL);
-    uint8_t *l_tag_combined_data = DAP_NEW_SIZE(uint8_t, l_tag_combined_size);
-    if (!l_tag_combined_data) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        chipmunk_ring_signature_free(a_signature);
-        return -ENOMEM;
+    /* CR-D8 fix (Round-3, finalized): the signature-level linkability_tag
+     * field is intentionally an all-zero slot.  The previous implementation
+     * populated it with H(ring_hash || message || challenge) — a per-message
+     * session digest masquerading as a "linkability tag".  Two signatures by
+     * the same signer over different messages produced different tags, so
+     * the field could not be used for double-spending detection (the very
+     * purpose of a linkability tag); at the same time, applications might
+     * mistake it for a true cryptographic tag and act on false negatives.
+     *
+     * The ring signature in this branch is therefore a *non-linkable* ring
+     * signature.  A proper linkable variant requires a sigma-protocol-bound
+     * tag of the form t = PRF(sk_signer, ring_hash) plus a NIZK proof that
+     * t was correctly derived; that work is tracked under CR-11 and is not
+     * yet implemented.  Until then the field stays zero so:
+     *   (a) no side-channel leakage about the signer is possible through it;
+     *   (b) any non-zero value at verify time is rejected as malleability
+     *       (see chipmunk_ring_verify), giving us a single canonical wire
+     *       form per logical signature; and
+     *   (c) the wire layout reserves the slot, so a future linkable
+     *       variant can populate it without bumping the schema version. */
+    if (a_signature->linkability_tag && a_signature->linkability_tag_size > 0) {
+        memset(a_signature->linkability_tag, 0, a_signature->linkability_tag_size);
     }
-    
-    dap_serialize_result_t l_linkability_result = dap_serialize_to_buffer(&chipmunk_ring_linkability_input_schema, &l_linkability_data, l_tag_combined_data, l_tag_combined_size, NULL);
-    if (l_linkability_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to serialize linkability input: %s", l_linkability_result.error_message);
-        DAP_FREE(l_tag_combined_data);
-        chipmunk_ring_signature_free(a_signature);
-        return -1;
-    }
-    l_tag_combined_size = l_linkability_result.bytes_written;
-
-    // Hash to get linkability tag
-    dap_hash_fast_t l_tag_hash;
-    if (!dap_hash_fast(l_tag_combined_data, l_tag_combined_size, &l_tag_hash)) {
-            log_it(L_CRITICAL, "Failed to generate linkability tag");
-        DAP_FREE(l_tag_combined_data);
-        chipmunk_ring_signature_free(a_signature);
-        return -1;
-    }
-
-    DAP_FREE(l_tag_combined_data);
-
-        // Copy hash to linkability tag
-        memcpy(a_signature->linkability_tag, &l_tag_hash, CHIPMUNK_RING_LINKABILITY_TAG_SIZE);
-        
 
     return 0;
 }
@@ -1124,7 +1106,46 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     CHIPMUNK_RING_RETURN_IF_FAIL(a_signature->ring_size <= CHIPMUNK_RING_MAX_RING_SIZE, CHIPMUNK_RING_ERROR_RING_TOO_LARGE);
     CHIPMUNK_RING_RETURN_IF_FAIL(a_signature->required_signers >= 1, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
     CHIPMUNK_RING_RETURN_IF_FAIL(a_signature->required_signers <= a_signature->ring_size, CHIPMUNK_RING_ERROR_INVALID_THRESHOLD);
-    
+
+    /* CR-D8 fix (Round-3, finalized): the linkability_tag slot is reserved
+     * and MUST be all-zero on the wire — both the signature-level slot and
+     * each per-acorn slot.  This prevents two distinct wire representations
+     * of the same logical signature (malleability) and future-proofs the
+     * slot for a real linkable variant (CR-11).  Any non-zero byte
+     * indicates either a tampered signature or a caller that is treating
+     * this branch as a linkable ring scheme — both are reject.  The
+     * per-acorn check is also enforced implicitly by the Fiat-Shamir
+     * challenge transcript (the tag bytes are absorbed via
+     * chipmunk_ring_combined_data_schema), but doing the check up-front
+     * fails fast and gives a clear error message. */
+    if (a_signature->linkability_tag && a_signature->linkability_tag_size > 0) {
+        const uint8_t *l_tag = a_signature->linkability_tag;
+        uint8_t l_acc = 0;
+        for (size_t l_i = 0; l_i < a_signature->linkability_tag_size; l_i++)
+            l_acc |= l_tag[l_i];
+        if (l_acc != 0) {
+            log_it(L_ERROR, "signature linkability_tag must be all-zero "
+                            "(CR-D8: linkable variant deferred to CR-11); "
+                            "rejecting potentially malleable signature");
+            return CHIPMUNK_RING_ERROR_VERIFY_FAILED;
+        }
+    }
+    if (a_signature->acorn_proofs) {
+        for (uint32_t l_i = 0; l_i < a_signature->ring_size; l_i++) {
+            const uint8_t *l_atag = a_signature->acorn_proofs[l_i].linkability_tag;
+            size_t l_atag_size = a_signature->acorn_proofs[l_i].linkability_tag_size;
+            if (!l_atag || l_atag_size == 0) continue;
+            uint8_t l_acc = 0;
+            for (size_t l_j = 0; l_j < l_atag_size; l_j++)
+                l_acc |= l_atag[l_j];
+            if (l_acc != 0) {
+                log_it(L_ERROR, "acorn[%u] linkability_tag must be all-zero "
+                                "(CR-D8); rejecting", l_i);
+                return CHIPMUNK_RING_ERROR_VERIFY_FAILED;
+            }
+        }
+    }
+
     // SCALABILITY: Handle different key storage modes
     chipmunk_ring_container_t l_effective_ring;
     const chipmunk_ring_container_t *l_ring_to_use = NULL;

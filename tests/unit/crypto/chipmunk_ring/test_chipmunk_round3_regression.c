@@ -1076,6 +1076,38 @@ static bool s_test_acorn_linkability_tag_is_zero(void)
         }
     }
 
+    /* CR-D8 finalized: signature-level tag is also a reserved zero slot
+     * (was a misleading per-message session digest in earlier builds). */
+    dap_assert(l_sig1.linkability_tag_size > 0 && l_sig1.linkability_tag,
+               "signature-level tag slot must be allocated (wire stability)");
+    dap_assert(l_sig1.linkability_tag_size == l_sig2.linkability_tag_size,
+               "signature-level tag slot size must be constant");
+    for (size_t j = 0; j < l_sig1.linkability_tag_size; j++) {
+        dap_assert_PIF(l_sig1.linkability_tag[j] == 0u,
+                       "signature-level tag must be zero (sig1)");
+        dap_assert_PIF(l_sig2.linkability_tag[j] == 0u,
+                       "signature-level tag must be zero (sig2)");
+    }
+
+    /* Anti-malleability: chipmunk_ring_verify must reject any signature
+     * whose linkability_tag is non-zero (single canonical wire form).  We
+     * tamper sig1 by flipping a single bit, then expect verify != 0. */
+    dap_assert(chipmunk_ring_verify(l_msg1, strlen(l_msg1), &l_sig1, &l_ring) == 0,
+               "untampered sig1 must verify");
+    l_sig1.linkability_tag[0] ^= 0x01;
+    dap_assert(chipmunk_ring_verify(l_msg1, strlen(l_msg1), &l_sig1, &l_ring) != 0,
+               "verify must reject signature-level non-zero linkability_tag (CR-D8 anti-malleability)");
+    /* Restore for clean teardown. */
+    l_sig1.linkability_tag[0] ^= 0x01;
+
+    /* Same anti-malleability check for the per-acorn slot. */
+    dap_assert(l_sig2.acorn_proofs[0].linkability_tag_size > 0,
+               "acorn[0] tag slot must be allocated");
+    l_sig2.acorn_proofs[0].linkability_tag[0] ^= 0x80;
+    dap_assert(chipmunk_ring_verify(l_msg2, strlen(l_msg2), &l_sig2, &l_ring) != 0,
+               "verify must reject per-acorn non-zero linkability_tag (CR-D8 anti-malleability)");
+    l_sig2.acorn_proofs[0].linkability_tag[0] ^= 0x80;
+
     extern void chipmunk_ring_signature_free(chipmunk_ring_signature_t *);
     chipmunk_ring_signature_free(&l_sig1);
     chipmunk_ring_signature_free(&l_sig2);

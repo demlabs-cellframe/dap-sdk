@@ -321,33 +321,10 @@ DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_response_input_schema,
                            chipmunk_ring_response_input_t,
                            s_response_input_fields);
 
-static const dap_serialize_field_t s_linkability_input_fields[] = {
-    {
-        .name = "ring_hash",
-        .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
-        .flags = DAP_SERIALIZE_FLAG_NONE,
-        .offset = offsetof(chipmunk_ring_linkability_input_t, ring_hash),
-        .size_offset = offsetof(chipmunk_ring_linkability_input_t, ring_hash_size)
-    },
-    {
-        .name = "message",
-        .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
-        .flags = DAP_SERIALIZE_FLAG_NONE,
-        .offset = offsetof(chipmunk_ring_linkability_input_t, message),
-        .size_offset = offsetof(chipmunk_ring_linkability_input_t, message_size)
-    },
-    {
-        .name = "challenge",
-        .type = DAP_SERIALIZE_TYPE_BYTES_DYNAMIC,
-        .flags = DAP_SERIALIZE_FLAG_NONE,
-        .offset = offsetof(chipmunk_ring_linkability_input_t, challenge),
-        .size_offset = offsetof(chipmunk_ring_linkability_input_t, challenge_size)
-    }
-};
-
-DAP_SERIALIZE_SCHEMA_DEFINE(chipmunk_ring_linkability_input_schema,
-                           chipmunk_ring_linkability_input_t,
-                           s_linkability_input_fields);
+/* CR-D8 fix (Round-3, finalized): chipmunk_ring_linkability_input_schema
+ * was used to derive the now-deprecated session-digest "linkability tag".
+ * Both the type and the schema have been removed; see the rationale in
+ * chipmunk_ring_serialize_schema.h. */
 
 // Field definitions for Acorn verification structure
 static const dap_serialize_field_t s_chipmunk_ring_acorn_fields[] = {
