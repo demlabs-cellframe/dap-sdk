@@ -26,7 +26,6 @@
 #include "dap_hash.h"
 #include "dap_crypto_common.h"
 #include "chipmunk.h"
-// SHA2-256 provided by native dap_hash module
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
@@ -34,21 +33,21 @@
 
 #define LOG_TAG "chipmunk_hash"
 
-/**
- * @brief Compute SHA2-256 hash using DAP wrapper
- * @param[out] a_output Output buffer (32 bytes)
- * @param[in] a_input Input data
- * @param[in] a_inlen Input length
- * @return Returns 0 on success, negative error code on failure
+/* CR-D11 (Round-3): the canonical hash surface of the Chipmunk module is
+ * SHA-3 / Keccak only.  See chipmunk_hash.h for the policy statement.
+ *
+ * The previous Round-3 audit caught five dead-code helpers that diluted
+ * this surface and acted as a foot-gun:
+ *
+ *   - dap_chipmunk_hash_sha2_256  (static SHA2-256 wrapper)
+ *   - dap_chipmunk_hash_to_seed   (SHA2-256, never called)
+ *   - dap_chipmunk_hash_challenge (SHA2-256, never called)
+ *   - dap_chipmunk_hash_to_point  (SHA3-256, never called)
+ *   - dap_chipmunk_hash_sha3_512  (SHA3-512, never called)
+ *
+ * They were removed wholesale in this patch.  Re-introducing any SHA2
+ * primitive here is forbidden — see the policy comment in the header.
  */
-static int dap_chipmunk_hash_sha2_256(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) {
-    if (!a_output || !a_input) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    dap_hash_sha2_256(a_output, a_input, a_inlen);
-    return CHIPMUNK_ERROR_SUCCESS;
-}
 
 /**
  * @brief Initialize hash functions for Chipmunk
@@ -86,19 +85,6 @@ int dap_chipmunk_hash_sha3_384(uint8_t *a_output, const uint8_t *a_input, size_t
 }
 
 /**
- * @brief SHA3-512 wrapper function implementation
- */
-int dap_chipmunk_hash_sha3_512(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) {
-    if (!a_output || !a_input) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    // Perform SHA3-512 hash
-    dap_hash_sha3_512(a_output, a_input, a_inlen);
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
  * @brief SHAKE-128 XOF wrapper over the native DAP Keccak implementation.
  *
  * CR-D10 remediation: the previous body of this function was NOT SHAKE128
@@ -123,31 +109,6 @@ int dap_chipmunk_hash_shake128(uint8_t *a_output, size_t a_outlen, const uint8_t
 
     dap_hash_shake128(a_output, a_outlen, a_input, a_inlen);
     return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Generate seed for polynomials from message
- */
-int dap_chipmunk_hash_to_seed(uint8_t a_output[32], const uint8_t *a_message, size_t a_msglen) 
-{
-    if (!a_output || !a_message) {
-        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_to_seed");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    // ИСПРАВЛЕНО: Используем SHA2-256 вместо SHA3-256
-    return dap_chipmunk_hash_sha2_256(a_output, a_message, a_msglen);
-}
-
-/**
- * @brief Generate hash for challenge function
- */
-int dap_chipmunk_hash_challenge(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen) {
-    if (!a_output || !a_input) {
-        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_challenge");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    // ИСПРАВЛЕНО: Используем SHA2-256 вместо SHA3-256
-    return dap_chipmunk_hash_sha2_256(a_output, a_input, a_inlen);
 }
 
 /**
@@ -224,18 +185,6 @@ int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uin
     }
 
     return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Generate point from hash
- */
-int dap_chipmunk_hash_to_point(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) 
-{
-    if (!a_output || !a_input) {
-        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_to_point");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    return dap_chipmunk_hash_sha3_256(a_output, a_input, a_inlen);
 }
 
 /**

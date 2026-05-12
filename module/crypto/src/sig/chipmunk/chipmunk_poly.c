@@ -678,43 +678,13 @@ bool chipmunk_poly_equal(const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *
     return true;
 }
 
-/**
- * @brief Generate random polynomial in time domain
- * @param a_poly Output polynomial
- * @param a_seed Seed for generation
- * @param a_seed_len Seed length
- * @param a_modulus Modulus for coefficients
- * @return 0 on success, negative on error
- */
-int dap_random_poly_time_domain(chipmunk_poly_t *a_poly, const uint8_t *a_seed, size_t a_seed_len, int a_modulus) {
-    if (!a_poly || !a_seed) {
-        return -1;
-    }
-    
-    // Use SHA2-256 for deterministic generation
-    uint8_t l_derived_seed[32];
-    dap_hash_sha2_256(l_derived_seed, a_seed, a_seed_len);
-    
-    memset(a_poly, 0, sizeof(*a_poly));
-    
-    // Generate coefficients using deterministic approach
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Create unique input for each coefficient
-        uint8_t l_input[36];  // 32 bytes seed + 4 bytes index
-        memcpy(l_input, l_derived_seed, 32);
-        memcpy(l_input + 32, &i, sizeof(i));
-        
-        // Hash to get random value
-        uint8_t l_hash[32];
-        dap_hash_sha2_256(l_hash, l_input, sizeof(l_input));
-        
-        // Use first 4 bytes as random value
-        uint32_t l_random = *(uint32_t*)l_hash;
-        a_poly->coeffs[i] = l_random % a_modulus;
-    }
-    
-    return 0;
-}
+/* CR-D11 (Round-3): the previous helper `dap_random_poly_time_domain`
+ * lived here as dead code that built coefficients via repeated SHA2-256
+ * (with `*(uint32_t*)hash` UB and `% modulus` bias to boot).  No active
+ * code path called it, but it kept SHA2 inside the module surface.
+ * Removed wholesale; uniform polynomial sampling for the HOTS y-poly
+ * goes through chipmunk_poly_uniform_mod_p (SHAKE256 + unbiased
+ * rejection sampling — see CR-D5 remediation block below). */
 
 /**
  * @brief Generate uniform polynomial with coefficients in range [-bound, bound]

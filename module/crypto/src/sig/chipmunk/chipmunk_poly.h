@@ -175,16 +175,6 @@ void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_p
 bool chipmunk_poly_equal(const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
 
 /**
- * @brief Generate random polynomial in time domain
- * @param a_poly Output polynomial
- * @param a_seed Seed for generation
- * @param a_seed_len Seed length
- * @param a_modulus Modulus for coefficients
- * @return 0 on success, negative on error
- */
-int dap_random_poly_time_domain(chipmunk_poly_t *a_poly, const uint8_t *a_seed, size_t a_seed_len, int a_modulus);
-
-/**
  * @brief Generate uniform polynomial with coefficients in range [-bound, bound]
  */
 int chipmunk_poly_uniform_mod_p(chipmunk_poly_t *a_poly, const uint8_t a_seed[36], int32_t a_bound);
