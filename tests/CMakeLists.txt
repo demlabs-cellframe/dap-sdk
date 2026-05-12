@@ -278,6 +278,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ri
     register_dap_test(test_unit_crypto_chipmunk_ring_many_time "unit;crypto;ring;cr-d15c;regression")
 endif()
 
+# CR-9.3 — canonical Shamir over Z_CHIPMUNK_Q (kick-off slice of CR-9 threshold rewrite)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_shamir.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_shamir unit/crypto/chipmunk_ring/test_chipmunk_ring_shamir.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_shamir "unit;crypto;ring;threshold;cr-9.3")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
