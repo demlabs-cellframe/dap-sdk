@@ -110,10 +110,12 @@ static inline void s_keccak_absorb(uint64_t *a_state, unsigned a_rate,
 static inline void s_keccak_squeezeblocks_ref(uint8_t *a_out, size_t a_nblocks,
                                             uint64_t *a_state, unsigned a_rate)
 {
+    /* FIPS 202 sponge convention — extract first, then permute.  Aligned with
+     * dap_keccak_ref.c::KECCAK_SQUEEZE_REF_IMPL. */
     for (size_t i = 0; i < a_nblocks; i++) {
-        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);
         memcpy(a_out, a_state, a_rate);
         a_out += a_rate;
+        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);
     }
 }
 
@@ -142,12 +144,12 @@ static inline void s_keccak_absorb_squeeze(uint8_t *a_out, size_t a_nblocks,
                                             const uint8_t *a_data, size_t a_len,
                                             uint8_t a_suffix)
 {
+    /* Under the FIPS-202 sponge convention squeezeblocks already extracts the
+     * first rate-sized block from the post-absorb state without performing an
+     * extra permutation, so the previous "free-first-block" memcpy fast-path
+     * (which made sense only under the old double-permute squeeze) is no
+     * longer needed and would in fact duplicate block 1 in the output. */
     s_keccak_absorb(a_state, a_rate, a_data, a_len, a_suffix);
-    if (a_nblocks > 0) {
-        memcpy(a_out, a_state, a_rate);
-        a_out += a_rate;
-        a_nblocks--;
-    }
     s_keccak_squeezeblocks(a_out, a_nblocks, a_state, a_rate);
 }
 

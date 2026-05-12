@@ -366,28 +366,47 @@ static bool s_test_chipmunk_hash_surface_canonical(void)
                "sha3_384(\"abc\") must match FIPS 202 KAT");
 
     /*
-     * SHAKE128 is intentionally NOT KAT-checked here against FIPS 202.
-     * While auditing CR-D11 we discovered that the underlying primitive
-     * `dap_hash_shake128` (module/hash/include/dap_hash_shake128.h) does
-     * NOT match the FIPS 202 SHAKE128 KAT for the empty input (it
-     * produces 767be1fda69419dfb927e9df07348b19… instead of the standard
-     * 7f9c2ba4e88f827d616045507605853e…).  This is a pre-existing
-     * non-conformance in the dap-sdk hash layer that is OUT OF SCOPE for
-     * this Chipmunk-module patch — fixing it requires changes to the
-     * shared Keccak primitive and impacts every caller of SHAKE128 in
-     * the SDK.  Tracked separately as a follow-up; the chipmunk wrapper
-     * is verified to forward correctly to the native primitive by the
-     * existing CR-D10 regression (s_test_shake128_wrapper_matches_native),
-     * so any future fix of the FIPS conformance bug will automatically
-     * propagate through the wrapper without requiring a new chipmunk-side
-     * test.
+     * SHAKE128 KATs against FIPS 202.  When CR-D11 was first landed we had
+     * to omit these because the shared `dap_keccak_squeeze_*` primitives
+     * double-permuted (one permutation in absorb + another at the start of
+     * squeeze), producing block N+1 instead of block N for every XOF call.
+     * That side-finding has now been fixed at the Keccak layer (see
+     * dap_keccak_ref.c::KECCAK_SQUEEZE_REF_IMPL and the matching update of
+     * the AVX-512vl assembly + scalar BMI2 sponge wrappers + x4 SHAKE),
+     * so the Chipmunk wrapper now forwards to a FIPS-202-conformant XOF.
+     * The exhaustive cross-rate KAT suite lives in
+     * tests/unit/crypto/keccak/test_sha3_kat.c; here we add the canonical
+     * 32-byte vectors so a Chipmunk-side regression alone is enough to
+     * detect any future re-break of the underlying primitive.
+     *
+     * FIPS 202 SHAKE128(empty)[0..32] =
+     *   7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26
+     * FIPS 202 SHAKE128("abc")[0..32] =
+     *   5881092dd818bf5cf8a3ddb793fbcba74097d5c526a6d35f97b83351940f2cc8
      */
+    static const uint8_t k_shake128_empty[32] = {
+        0x7f,0x9c,0x2b,0xa4,0xe8,0x8f,0x82,0x7d,0x61,0x60,0x45,0x50,0x76,0x05,0x85,0x3e,
+        0xd7,0x3b,0x80,0x93,0xf6,0xef,0xbc,0x88,0xeb,0x1a,0x6e,0xac,0xfa,0x66,0xef,0x26
+    };
+    static const uint8_t k_shake128_abc[32] = {
+        0x58,0x81,0x09,0x2d,0xd8,0x18,0xbf,0x5c,0xf8,0xa3,0xdd,0xb7,0x93,0xfb,0xcb,0xa7,
+        0x40,0x97,0xd5,0xc5,0x26,0xa6,0xd3,0x5f,0x97,0xb8,0x33,0x51,0x94,0x0f,0x2c,0xc8
+    };
     uint8_t out_shake128[32];
+    dap_assert(dap_chipmunk_hash_shake128(out_shake128, sizeof(out_shake128),
+                                          (const uint8_t *)"", 0) == CHIPMUNK_ERROR_SUCCESS,
+               "shake128 wrapper must succeed on empty input");
+    dap_assert(memcmp(out_shake128, k_shake128_empty, sizeof(k_shake128_empty)) == 0,
+               "shake128(\"\") must match FIPS 202 KAT");
+
     dap_assert(dap_chipmunk_hash_shake128(out_shake128, sizeof(out_shake128),
                                           (const uint8_t *)"abc", 3) == CHIPMUNK_ERROR_SUCCESS,
                "shake128 wrapper must succeed on \"abc\"");
-    /* Self-consistency: requesting fewer bytes returns a prefix of the
-     * longer output (the canonical XOF property). */
+    dap_assert(memcmp(out_shake128, k_shake128_abc, sizeof(k_shake128_abc)) == 0,
+               "shake128(\"abc\") must match FIPS 202 KAT");
+
+    /* Self-consistency / XOF prefix-stability: requesting fewer bytes
+     * returns a prefix of the longer output. */
     uint8_t out_shake128_short[8];
     dap_assert(dap_chipmunk_hash_shake128(out_shake128_short, sizeof(out_shake128_short),
                                           (const uint8_t *)"abc", 3) == CHIPMUNK_ERROR_SUCCESS,

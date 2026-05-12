@@ -532,14 +532,17 @@ dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}:
 {{#for i in LANES}}
     {{INSN_LOAD_1X}}   ({{STRIDE_1X}}*{{i}})(%rbp), {{REG_1X_PREFIX}}{{i}}
 {{/for}}
+/* See dap_keccak_ref.c::KECCAK_SQUEEZE_REF_IMPL — extract first, then permute,
+ * to comply with the FIPS 202 sponge contract.  The previous "permute →
+ * extract" loop produced a double permutation and emitted block N+1. */
 .Lsqueeze_loop_{{SRATE}}:
     testq   %rbx, %rbx
     jz      .Lsqueeze_done_{{SRATE}}
-    call    .Lpermute_f1600
 {{#for w in SWORDS}}
     {{INSN_STORE_1X}}   {{REG_1X_PREFIX}}{{w}}, {{w|math|$*8}}(%r12)
 {{/for}}
     addq    ${{SRATE}}, %r12
+    call    .Lpermute_f1600
     decq    %rbx
     jmp     .Lsqueeze_loop_{{SRATE}}
 .Lsqueeze_done_{{SRATE}}:

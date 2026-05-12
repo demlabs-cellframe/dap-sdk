@@ -27,9 +27,15 @@
  * @details All 4 inputs must have the same length (common in PQ sampling).
  *          Uses dap_keccak_x4_permute() for SIMD-accelerated permutation.
  *
- *          Convention (matching PQ reference implementations):
- *            absorb: XOR data, pad10*1 + domain sep (0x1F), permute
- *            squeeze: for each block: permute, extract
+ *          Convention (FIPS 202 sponge contract):
+ *            absorb: XOR data, pad10*1 + domain sep (0x1F), permute.
+ *                    State after absorb already contains the *first* output
+ *                    block, ready to be extracted.
+ *            squeeze: for each block: extract, then permute (so the state is
+ *                    positioned at the next block, supporting both one-shot
+ *                    and streaming callers).  See dap_keccak_ref.c
+ *                    KECCAK_SQUEEZE_REF_IMPL for the rationale and the FIPS
+ *                    202 KAT regression covering this contract.
  */
 
 #pragma once
@@ -114,13 +120,17 @@ static inline void s_shake_x4_squeezeblocks(uint8_t *a_out0,
                                               size_t a_rate)
 {
     for (size_t i = 0; i < a_nblocks; i++) {
-        dap_keccak_x4_permute(a_state);
         dap_keccak_x4_extract_bytes_all(a_state, a_out0, a_out1, a_out2, a_out3,
                                          a_rate);
         a_out0 += a_rate;
         a_out1 += a_rate;
         a_out2 += a_rate;
         a_out3 += a_rate;
+        /* Always permute after extracting so the state is positioned at the
+         * next output block (streaming-safe; trailing permute on the last
+         * block is harmless for one-shot users).  See
+         * dap_keccak_ref.c::KECCAK_SQUEEZE_REF_IMPL. */
+        dap_keccak_x4_permute(a_state);
     }
 }
 
