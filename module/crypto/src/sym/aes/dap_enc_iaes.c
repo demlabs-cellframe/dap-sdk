@@ -57,8 +57,10 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
         }
         if (seed_size) memcpy(id_concat_kex, seed, seed_size);
         if (kex_size) memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
-        dap_hash_shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, kex_size + seed_size);
-        dap_hash_shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
+        /* IAES KDF must stay byte-for-byte with master so keys derived on a
+         * peer running the legacy stack still negotiate; use legacy SHAKE. */
+        dap_hash_shake256_legacy(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, kex_size + seed_size);
+        dap_hash_shake128_legacy(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
         DAP_DELETE(id_concat_kex);
     }
 
