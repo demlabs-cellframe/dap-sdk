@@ -430,6 +430,8 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
         chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_ALLOC, __func__, 
                                "Failed to allocate memory for ring public keys");
         DAP_FREE(a_ring->ring_hash);
+        a_ring->ring_hash = NULL;
+        a_ring->ring_hash_size = 0;
         return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
     }
 
@@ -442,13 +444,32 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
     dap_hash_fast_t l_ring_hash;
     memset(&l_ring_hash, 0, sizeof(l_ring_hash));
 
-    // Create concatenated data of all public keys with overflow protection
+    /* CR-D28 (Round-4): defensive overflow guard for the size computation
+     * used to allocate the concatenation buffer.  CHIPMUNK_RING_MAX_RING_
+     * SIZE bounds a_num_keys, but l_key_data_size is sourced from the
+     * runtime selector and could in principle grow; this keeps the
+     * arithmetic safe even if either bound is widened later. */
+    if (l_key_data_size != 0 && a_num_keys > SIZE_MAX / l_key_data_size) {
+        chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_ALLOC, __func__,
+                               "Combined ring-key size overflows size_t");
+        DAP_FREE(a_ring->public_keys);
+        a_ring->public_keys = NULL;
+        DAP_FREE(a_ring->ring_hash);
+        a_ring->ring_hash = NULL;
+        a_ring->ring_hash_size = 0;
+        return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
+    }
     size_t l_total_size = a_num_keys * l_key_data_size;
     uint8_t *l_combined_keys = DAP_NEW_SIZE(uint8_t, l_total_size);
     if (!l_combined_keys) {
         chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_ALLOC, __func__, 
                                "Failed to allocate memory for combined keys");
+        /* CR-D28 (Round-4): release ring_hash too — previous code leaked it. */
         DAP_FREE(a_ring->public_keys);
+        a_ring->public_keys = NULL;
+        DAP_FREE(a_ring->ring_hash);
+        a_ring->ring_hash = NULL;
+        a_ring->ring_hash_size = 0;
         return CHIPMUNK_RING_ERROR_MEMORY_ALLOC;
     }
 
@@ -463,7 +484,12 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
         chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_HASH_FAILED, __func__, 
                                "Failed to hash ring public keys");
         DAP_FREE(l_combined_keys);
+        /* CR-D28 (Round-4): release ring_hash too — previous code leaked it. */
         DAP_FREE(a_ring->public_keys);
+        a_ring->public_keys = NULL;
+        DAP_FREE(a_ring->ring_hash);
+        a_ring->ring_hash = NULL;
+        a_ring->ring_hash_size = 0;
         return CHIPMUNK_RING_ERROR_HASH_FAILED;
     }
 
@@ -621,11 +647,13 @@ int chipmunk_ring_sign(chipmunk_ring_private_key_t *a_private_key,
         return -ENOMEM;
     }
 
-    // Additional validation: ensure ring size doesn't exceed maximum allowed
-    if (a_ring->size > CHIPMUNK_RING_MAX_RING_SIZE) {
-        log_it(L_ERROR, "Ring size %u exceeds maximum allowed size %u", a_ring->size, CHIPMUNK_RING_MAX_RING_SIZE);
-        return -EINVAL;
-    }
+    /* CR-D27 (Round-4): the ring-size guard previously living here was a
+     * dead duplicate of the up-front check at line ~536, but on the rare
+     * race where the ring grew between calls it would return without
+     * freeing the partially-initialised signature (ring_hash, challenge,
+     * linkability_tag, public_keys).  Removed in favour of the up-front
+     * validation; any future changes to ring sizing must enforce the
+     * bound before any DAP_NEW_* allocations land in a_signature. */
 
     // ADAPTIVE ALLOCATION: Based on required_signers
     if (a_required_signers == 1) {
@@ -795,16 +823,30 @@ int chipmunk_ring_sign(chipmunk_ring_private_key_t *a_private_key,
                 .ring_size = a_signature->ring_size
             };
             
+            /* CR-D29 (Round-4): every error in this loop body MUST abort the
+             * entire signing operation.  Previous code used `continue`,
+             * which left the corresponding slot in threshold_zk_proofs as
+             * the all-zero pattern from DAP_NEW_Z_SIZE — a verifier that
+             * recomputes the proof for that slot would also see an
+             * unrelated all-zero hash if the same conditions hit, and the
+             * signature would appear "valid" with structurally bogus ZK
+             * material.  Hard-aborting on any failure preserves the
+             * all-or-nothing semantics expected by callers. */
             size_t challenge_verification_input_size = dap_serialize_calc_size(&chipmunk_ring_challenge_salt_schema, NULL, &l_challenge_data, NULL);
             uint8_t *challenge_verification_input = DAP_NEW_SIZE(uint8_t, challenge_verification_input_size);
             if (!challenge_verification_input) {
-                continue;
+                log_it(L_CRITICAL, "Failed to allocate challenge verification input for participant %u", i);
+                chipmunk_ring_signature_free(a_signature);
+                return -ENOMEM;
             }
             
             dap_serialize_result_t l_challenge_result = dap_serialize_to_buffer(&chipmunk_ring_challenge_salt_schema, &l_challenge_data, challenge_verification_input, challenge_verification_input_size, NULL);
             if (l_challenge_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+                log_it(L_ERROR, "Failed to serialize challenge salt for participant %u: %s",
+                       i, l_challenge_result.error_message ? l_challenge_result.error_message : "(no message)");
                 DAP_DELETE(challenge_verification_input);
-                continue;
+                chipmunk_ring_signature_free(a_signature);
+                return -1;
             }
             challenge_verification_input_size = l_challenge_result.bytes_written;
             
@@ -820,15 +862,20 @@ int chipmunk_ring_sign(chipmunk_ring_private_key_t *a_private_key,
             size_t response_input_size = dap_serialize_calc_size(&chipmunk_ring_response_input_schema, NULL, &l_response_data, NULL);
             uint8_t *response_input = DAP_NEW_SIZE(uint8_t, response_input_size);
             if (!response_input) {
+                log_it(L_CRITICAL, "Failed to allocate response input for participant %u", i);
                 DAP_DELETE(challenge_verification_input);
-                continue;
+                chipmunk_ring_signature_free(a_signature);
+                return -ENOMEM;
             }
             
             dap_serialize_result_t l_response_result = dap_serialize_to_buffer(&chipmunk_ring_response_input_schema, &l_response_data, response_input, response_input_size, NULL);
             if (l_response_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
+                log_it(L_ERROR, "Failed to serialize response input for participant %u: %s",
+                       i, l_response_result.error_message ? l_response_result.error_message : "(no message)");
                 DAP_DELETE(challenge_verification_input);
                 DAP_DELETE(response_input);
-                continue;
+                chipmunk_ring_signature_free(a_signature);
+                return -1;
             }
             response_input_size = l_response_result.bytes_written;
             

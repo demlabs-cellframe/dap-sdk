@@ -471,12 +471,20 @@ static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
         .size = sizeof(uint32_t)
     },
     
+    /* CR-D26 (Round-4): the schema previously declared this field as UINT64
+     * with sizeof(uint64_t), but the in-struct type is uint32_t (chipmunk_
+     * ring.h:159).  On serialize the codec read 8 bytes from offset →
+     * leaked the adjacent zk_iterations onto the wire; on deserialize the
+     * codec wrote 8 bytes into a 4-byte slot → silently overwrote
+     * zk_iterations.  The valid value range is 32..128 (CHIPMUNK_RING_ZK_
+     * PROOF_SIZE_{MIN,MAX}), so 32-bit width is sufficient and matches the
+     * struct field; cross-host width stability is preserved by uint32_t. */
     {
         .name = "zk_proof_size_per_participant",
-        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .type = DAP_SERIALIZE_TYPE_UINT32,
         .flags = DAP_SERIALIZE_FLAG_NONE,
         .offset = offsetof(chipmunk_ring_signature_t, zk_proof_size_per_participant),
-        .size = sizeof(uint64_t)
+        .size = sizeof(uint32_t)
     },
 
     // ZK proofs size (required for multi-signer mode).

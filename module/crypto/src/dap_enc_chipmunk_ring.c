@@ -418,18 +418,25 @@ size_t dap_enc_chipmunk_ring_write_signature(const void *a_sign, size_t a_sign_s
         return 0;
     }
     
-    // Skip size calculation to avoid use-after-free in acorn_proofs
-    // The serializer will check buffer size internally
-    
-    // Use universal serializer
-    dap_serialize_result_t l_result = dap_serialize_to_buffer(&chipmunk_ring_signature_schema, 
-                                                             l_signature, 
-                                                             a_buf, 
-                                                             a_sign_size, 
-                                                             NULL);
+    /* CR-D30 (Round-4): the previous implementation invoked
+     *   dap_serialize_to_buffer(..., NULL)
+     * directly, which bypassed the parametric size_params required by
+     * the schema (ring_size / use_embedded_keys / required_signers).
+     * Without those args the parametric ARRAY_DYNAMIC fields fall back
+     * to in-struct counts, but for the *write_signature* path we must
+     * also propagate the public-key embedding mode (CR-D15.C) — the
+     * canonical wrapper chipmunk_ring_signature_serialize() does
+     * exactly this and is the single source of truth for the wire
+     * encoding.  Routing through it eliminates the silent divergence
+     * between dap_enc-level write and the chipmunk_ring-level codec. */
+    dap_serialize_result_t l_result = chipmunk_ring_signature_serialize(l_signature,
+                                                                        a_buf,
+                                                                        a_sign_size);
     
     if (l_result.error_code != DAP_SERIALIZE_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to serialize Chipmunk_Ring signature: %d", l_result.error_code);
+        log_it(L_ERROR, "Failed to serialize Chipmunk_Ring signature: %d (%s)",
+               l_result.error_code,
+               l_result.error_message ? l_result.error_message : "(no message)");
         return 0;
     }
     

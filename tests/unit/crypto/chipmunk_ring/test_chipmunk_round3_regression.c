@@ -42,6 +42,7 @@
 #include "chipmunk/chipmunk_hash.h"
 #include "chipmunk/chipmunk_aggregation.h"
 #include "chipmunk/chipmunk_ring.h"
+#include "chipmunk/chipmunk_ring_serialize_schema.h"
 #include "chipmunk_hypertree.h"
 
 #include <pthread.h>
@@ -1118,6 +1119,105 @@ static bool s_test_acorn_linkability_tag_is_zero(void)
 }
 
 // ---------------------------------------------------------------------------
+// CR-D26 (Round-4): zk_proof_size_per_participant / zk_iterations must
+// survive a full wire roundtrip with non-default values.
+//
+// Pre-fix the schema declared zk_proof_size_per_participant as UINT64 with
+// sizeof(uint64_t), but the in-struct type is uint32_t.  On serialize the
+// codec read 8 bytes from a 4-byte slot — the high 4 bytes were whatever
+// happened to live in zk_iterations (the next field on x86_64 padding) and
+// thus leaked onto the wire.  On deserialize the codec wrote 8 bytes into
+// the 4-byte slot — silently overwriting zk_iterations.  Either of those
+// behaviours is a memory safety / integrity bug.
+//
+// This regression sets *both* fields to non-default sentinel values, runs a
+// canonical serialize → deserialize → re-serialize cycle, and asserts:
+//   (a) the deserialised struct preserves every byte of both fields;
+//   (b) the second serialisation is bit-identical to the first (canonical
+//       encoding — no padding noise, no field bleed).
+// ---------------------------------------------------------------------------
+static bool s_test_zk_size_iterations_wire_roundtrip(void)
+{
+    log_it(L_INFO, "CR-D26: zk_proof_size_per_participant / zk_iterations wire roundtrip");
+
+    chipmunk_ring_private_key_t l_signer_priv;
+    chipmunk_ring_public_key_t  l_signer_pub;
+    chipmunk_ring_public_key_t  l_ring_pubs[2];
+    memset(&l_signer_priv, 0, sizeof(l_signer_priv));
+    memset(&l_signer_pub,  0, sizeof(l_signer_pub));
+    memset(l_ring_pubs,    0, sizeof(l_ring_pubs));
+
+    dap_assert(s_ring_keypair_inplace(&l_signer_pub, &l_signer_priv, NULL) == 0,
+               "signer hypertree keypair");
+    memcpy(l_ring_pubs[0].data, l_signer_pub.data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+    dap_assert(s_ring_pub_random(&l_ring_pubs[1]) == 0, "decoy hypertree pk");
+
+    chipmunk_ring_container_t l_ring;
+    memset(&l_ring, 0, sizeof(l_ring));
+    dap_assert(chipmunk_ring_container_create(l_ring_pubs, 2, &l_ring) == 0,
+               "ring container");
+
+    const char *l_msg = "CR-D26 wire-roundtrip probe";
+    chipmunk_ring_signature_t l_sig;
+    memset(&l_sig, 0, sizeof(l_sig));
+    dap_assert(chipmunk_ring_sign(&l_signer_priv, l_msg, strlen(l_msg),
+                                  &l_ring, 1, true /* embedded */, &l_sig) == 0,
+               "ring signature (embedded keys)");
+
+    /* Stamp non-default sentinels.  Pre-fix any deviation from the default
+     * 64 / DEFAULT_ITERATIONS would have been irrecoverable across the
+     * wire because the two fields would alias under the wrong width. */
+    const uint32_t k_size_sentinel       = 0xA55A5AA5u; /* != 64, != 96 */
+    const uint32_t k_iterations_sentinel = 0xDEADBEEFu; /* != typical default */
+    l_sig.zk_proof_size_per_participant = k_size_sentinel;
+    l_sig.zk_iterations                 = k_iterations_sentinel;
+
+    extern void chipmunk_ring_signature_free(chipmunk_ring_signature_t *);
+
+    /* First serialisation. */
+    size_t l_buf_size = chipmunk_ring_signature_calc_size(&l_sig);
+    dap_assert(l_buf_size > 0, "calc size");
+    uint8_t *l_buf1 = DAP_NEW_Z_SIZE(uint8_t, l_buf_size);
+    dap_assert(l_buf1 != NULL, "buf1 alloc");
+    dap_serialize_result_t l_r1 = chipmunk_ring_signature_serialize(&l_sig, l_buf1, l_buf_size);
+    dap_assert(l_r1.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "first serialize");
+
+    /* Roundtrip. */
+    chipmunk_ring_signature_t l_sig_round;
+    memset(&l_sig_round, 0, sizeof(l_sig_round));
+    dap_serialize_result_t l_r2 = chipmunk_ring_signature_deserialize(l_buf1, l_r1.bytes_written, &l_sig_round);
+    dap_assert(l_r2.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "deserialize");
+
+    /* (a) byte-exact preservation of both narrow fields. */
+    dap_assert(l_sig_round.zk_proof_size_per_participant == k_size_sentinel,
+               "zk_proof_size_per_participant survived roundtrip without aliasing");
+    dap_assert(l_sig_round.zk_iterations == k_iterations_sentinel,
+               "zk_iterations survived roundtrip without aliasing");
+
+    /* (b) re-serialise and demand bit-identical output. */
+    size_t l_buf_size2 = chipmunk_ring_signature_calc_size(&l_sig_round);
+    dap_assert(l_buf_size2 == l_r1.bytes_written,
+               "calc_size after roundtrip equals first serialised size");
+    uint8_t *l_buf2 = DAP_NEW_Z_SIZE(uint8_t, l_buf_size2);
+    dap_assert(l_buf2 != NULL, "buf2 alloc");
+    dap_serialize_result_t l_r3 = chipmunk_ring_signature_serialize(&l_sig_round, l_buf2, l_buf_size2);
+    dap_assert(l_r3.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "second serialize");
+    dap_assert(l_r3.bytes_written == l_r1.bytes_written,
+               "second serialised length equals first");
+    dap_assert(memcmp(l_buf1, l_buf2, l_r1.bytes_written) == 0,
+               "canonical encoding: re-serialisation is bit-identical");
+
+    DAP_DELETE(l_buf1);
+    DAP_DELETE(l_buf2);
+    chipmunk_ring_signature_free(&l_sig_round);
+    chipmunk_ring_signature_free(&l_sig);
+    chipmunk_ring_container_free(&l_ring);
+
+    log_it(L_INFO, "CR-D26 PASS");
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Test runner
 // ---------------------------------------------------------------------------
 int main(int argc, char **argv)
@@ -1143,6 +1243,7 @@ int main(int argc, char **argv)
     if (!s_test_add_ntt_range_is_positive())        rc = 1;
     if (!s_test_signature_wire_canonicality())      rc = 1;
     if (!s_test_acorn_linkability_tag_is_zero())    rc = 1;
+    if (!s_test_zk_size_iterations_wire_roundtrip()) rc = 1;
 
     if (rc == 0) {
         dap_test_msg("ALL Round-3 regression tests PASSED");
