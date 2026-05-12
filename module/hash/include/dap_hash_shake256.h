@@ -104,6 +104,42 @@ DAP_STATIC_INLINE void dap_hash_shake256_squeezeblocks(uint8_t *a_output, size_t
 }
 
 // =============================================================================
+// Legacy SHAKE256 (BACKWARD-COMPAT — DO NOT USE FOR NEW CODE)
+// =============================================================================
+//
+// See dap_hash_shake128.h for the rationale.  These wrappers reproduce the
+// pre-FIPS-202 squeeze convention (permute → extract per block) and are
+// required to keep on-wire compatibility for legacy production PQC schemes
+// (Dilithium, SPHINCS+, deprecated bliss/picnic/tesla/newhope/msrln).
+
+DAP_STATIC_INLINE void dap_hash_shake256_legacy_squeezeblocks(uint8_t *a_output, size_t a_nblocks, uint64_t *a_state)
+{
+    for (size_t i = 0; i < a_nblocks; i++) {
+        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);
+        memcpy(a_output, a_state, DAP_SHAKE256_RATE);
+        a_output += DAP_SHAKE256_RATE;
+    }
+}
+
+DAP_STATIC_INLINE void dap_hash_shake256_legacy(uint8_t *a_output, size_t a_outlen,
+                                                const uint8_t *a_input, size_t a_inlen)
+{
+    uint64_t l_st[25];
+    dap_keccak_sponge_get_ops()->absorb_136(l_st, a_input, a_inlen, DAP_KECCAK_SHAKE_SUFFIX);
+    size_t l_nblocks = a_outlen / DAP_SHAKE256_RATE;
+    if (l_nblocks) {
+        dap_hash_shake256_legacy_squeezeblocks(a_output, l_nblocks, l_st);
+        a_output += l_nblocks * DAP_SHAKE256_RATE;
+        a_outlen -= l_nblocks * DAP_SHAKE256_RATE;
+    }
+    if (a_outlen) {
+        uint8_t l_tmp[DAP_SHAKE256_RATE];
+        dap_hash_shake256_legacy_squeezeblocks(l_tmp, 1, l_st);
+        memcpy(a_output, l_tmp, a_outlen);
+    }
+}
+
+// =============================================================================
 // cSHAKE256 (Customizable SHAKE - NIST SP 800-185)
 // =============================================================================
 

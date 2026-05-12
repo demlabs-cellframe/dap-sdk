@@ -186,6 +186,58 @@ static inline void dap_hash_shake256_x4_squeezeblocks(uint8_t *a_out0,
                               a_nblocks, a_state, DAP_KECCAK_SHAKE256_RATE);
 }
 
+// ============================================================================
+// Legacy SHAKE x4 (BACKWARD-COMPAT — DO NOT USE FOR NEW CODE)
+// ============================================================================
+//
+// Reproduces the pre-FIPS-202 squeeze convention (permute → extract per
+// block) for the 4-way parallel SHAKE used by legacy production PQC
+// schemes (Dilithium expand_mat / poly_uniform_eta_x4, SPHINCS+ x4 paths).
+// Mirrors dap_hash_shake128/256_legacy_squeezeblocks so that any legacy
+// caller mixing sequential and parallel SHAKE produces a self-consistent
+// stream.
+
+static inline void s_shake_x4_legacy_squeezeblocks(uint8_t *a_out0,
+                                                     uint8_t *a_out1,
+                                                     uint8_t *a_out2,
+                                                     uint8_t *a_out3,
+                                                     size_t a_nblocks,
+                                                     dap_keccak_x4_state_t *a_state,
+                                                     size_t a_rate)
+{
+    for (size_t i = 0; i < a_nblocks; i++) {
+        dap_keccak_x4_permute(a_state);
+        dap_keccak_x4_extract_bytes_all(a_state, a_out0, a_out1, a_out2, a_out3,
+                                         a_rate);
+        a_out0 += a_rate;
+        a_out1 += a_rate;
+        a_out2 += a_rate;
+        a_out3 += a_rate;
+    }
+}
+
+static inline void dap_hash_shake128_x4_legacy_squeezeblocks(uint8_t *a_out0,
+                                                              uint8_t *a_out1,
+                                                              uint8_t *a_out2,
+                                                              uint8_t *a_out3,
+                                                              size_t a_nblocks,
+                                                              dap_keccak_x4_state_t *a_state)
+{
+    s_shake_x4_legacy_squeezeblocks(a_out0, a_out1, a_out2, a_out3,
+                                     a_nblocks, a_state, DAP_KECCAK_SHAKE128_RATE);
+}
+
+static inline void dap_hash_shake256_x4_legacy_squeezeblocks(uint8_t *a_out0,
+                                                              uint8_t *a_out1,
+                                                              uint8_t *a_out2,
+                                                              uint8_t *a_out3,
+                                                              size_t a_nblocks,
+                                                              dap_keccak_x4_state_t *a_state)
+{
+    s_shake_x4_legacy_squeezeblocks(a_out0, a_out1, a_out2, a_out3,
+                                     a_nblocks, a_state, DAP_KECCAK_SHAKE256_RATE);
+}
+
 #ifdef __cplusplus
 }
 #endif

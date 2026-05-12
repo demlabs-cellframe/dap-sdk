@@ -6,6 +6,7 @@
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
 #include "dap_hash_shake_x4.h"
+#include "dilithium_shake_compat.h"
 #include "dap_cpu_arch.h"
 #include "dap_arch_dispatch.h"
 
@@ -630,11 +631,11 @@ void poly_uniform_eta(poly *a, const unsigned char seed[SEEDBYTES], unsigned cha
     inbuf[SEEDBYTES] = nonce;
 
     dap_hash_shake256_absorb(state, inbuf, SEEDBYTES + 1);
-    dap_hash_shake256_squeezeblocks(outbuf, 2, state);  
+    dil_shake256_squeezeblocks(p, outbuf, 2, state);
 
     ctr = rej_eta(a->coeffs, NN, outbuf, 2*DAP_SHAKE256_RATE, p);
     if(ctr < NN) {
-        dap_hash_shake256_squeezeblocks(outbuf, 1, state);
+        dil_shake256_squeezeblocks(p, outbuf, 1, state);
         rej_eta(a->coeffs + ctr, NN - ctr, outbuf, DAP_SHAKE256_RATE, p);
     }
 }
@@ -659,8 +660,8 @@ void poly_uniform_eta_x4(poly *a0, poly *a1, poly *a2, poly *a3,
     dap_keccak_x4_state_t l_state;
     dap_hash_shake256_x4_absorb(&l_state, inbuf[0], inbuf[1], inbuf[2], inbuf[3],
                                  SEEDBYTES + 1);
-    dap_hash_shake256_x4_squeezeblocks(outbuf[0], outbuf[1], outbuf[2], outbuf[3],
-                                        2, &l_state);
+    dil_shake256_x4_squeezeblocks(p, outbuf[0], outbuf[1], outbuf[2], outbuf[3],
+                                   2, &l_state);
 
     poly *l_polys[4] = {a0, a1, a2, a3};
     unsigned int l_ctr[4];
@@ -672,8 +673,8 @@ void poly_uniform_eta_x4(poly *a0, poly *a1, poly *a2, poly *a3,
     }
     if (l_need_more) {
         unsigned char l_extra[4][DAP_SHAKE256_RATE];
-        dap_hash_shake256_x4_squeezeblocks(l_extra[0], l_extra[1], l_extra[2], l_extra[3],
-                                            1, &l_state);
+        dil_shake256_x4_squeezeblocks(p, l_extra[0], l_extra[1], l_extra[2], l_extra[3],
+                                       1, &l_state);
         for (int k = 0; k < 4; k++)
             if (l_ctr[k] < NN)
                 rej_eta(l_polys[k]->coeffs + l_ctr[k], NN - l_ctr[k],
@@ -725,12 +726,15 @@ void poly_uniform_gamma1m1(poly *a, const unsigned char seed[SEEDBYTES + CRHBYTE
     inbuf[SEEDBYTES + CRHBYTES] = nonce & 0xFF;
     inbuf[SEEDBYTES + CRHBYTES + 1] = nonce >> 8;
 
+    /* poly_uniform_gamma1m1 is the legacy MODE_* code path only — ML-DSA uses
+     * poly_uniform_gamma1m1_p instead.  Use legacy SHAKE unconditionally to
+     * keep the on-wire output bit-identical to pre-796227b1 SDK builds. */
     dap_hash_shake256_absorb(state, inbuf, SEEDBYTES + CRHBYTES + 2);
-    dap_hash_shake256_squeezeblocks(outbuf, 5, state);
+    dap_hash_shake256_legacy_squeezeblocks(outbuf, 5, state);
 
     ctr = rej_gamma1m1(a->coeffs, NN, outbuf, 5*DAP_SHAKE256_RATE);
     if(ctr < NN) {
-        dap_hash_shake256_squeezeblocks(outbuf, 1, state);
+        dap_hash_shake256_legacy_squeezeblocks(outbuf, 1, state);
         rej_gamma1m1(a->coeffs + ctr, NN - ctr, outbuf, DAP_SHAKE256_RATE);
     }
 }
@@ -752,11 +756,13 @@ void poly_uniform_gamma1m1_x4(poly *a0, poly *a1, poly *a2, poly *a3,
         inbuf[k][SEEDBYTES + CRHBYTES + 1] = l_nonces[k] >> 8;
     }
 
+    /* poly_uniform_gamma1m1_x4 is the legacy MODE_* parallel path; force
+     * legacy SHAKE for the same backward-compat reason. */
     dap_keccak_x4_state_t l_state;
     dap_hash_shake256_x4_absorb(&l_state, inbuf[0], inbuf[1], inbuf[2], inbuf[3],
                                  SEEDBYTES + CRHBYTES + 2);
-    dap_hash_shake256_x4_squeezeblocks(outbuf[0], outbuf[1], outbuf[2], outbuf[3],
-                                        5, &l_state);
+    dap_hash_shake256_x4_legacy_squeezeblocks(outbuf[0], outbuf[1], outbuf[2], outbuf[3],
+                                               5, &l_state);
 
     poly *l_polys[4] = {a0, a1, a2, a3};
     unsigned int l_ctr[4];
@@ -768,8 +774,8 @@ void poly_uniform_gamma1m1_x4(poly *a0, poly *a1, poly *a2, poly *a3,
     }
     if (l_need_more) {
         unsigned char l_extra[4][DAP_SHAKE256_RATE];
-        dap_hash_shake256_x4_squeezeblocks(l_extra[0], l_extra[1], l_extra[2], l_extra[3],
-                                            1, &l_state);
+        dap_hash_shake256_x4_legacy_squeezeblocks(l_extra[0], l_extra[1], l_extra[2], l_extra[3],
+                                                   1, &l_state);
         for (int k = 0; k < 4; k++)
             if (l_ctr[k] < NN)
                 rej_gamma1m1(l_polys[k]->coeffs + l_ctr[k], NN - l_ctr[k],
