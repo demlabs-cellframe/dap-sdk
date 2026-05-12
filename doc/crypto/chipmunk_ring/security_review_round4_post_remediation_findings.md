@@ -89,7 +89,7 @@ Severity legend (continued from Round-3):
 | CR-D32  | MEDIUM     | `chipmunk_ring.c`                   | `ring_hash_size` hard-pinned to `CHIPMUNK_RING_LINKABILITY_TAG_SIZE` regardless of active hash | **FIXED** (next) |
 | CR-D33  | LOW        | `tests/unit/crypto/chipmunk_ring/CMakeLists.txt` | Local CMakeLists dead-included alongside parent registration                          | **FIXED** (next) |
 | CR-D34  | (with-drawn) | (n/a)                             | (Round-4 author error — re-audit confirmed `chipmunk_ring_sign` already enforces a single, consistent contract `a_message \|\| a_message_size == 0`; both test files honour it) | **WITHDRAWN** |
-| CR-D35  | INFO       | `tests/unit/crypto/chipmunk_ring/`  | Coverage gaps: k=1, max-k, concurrent sign, allocator failure injection, embedded-vs-non-embedded full wire roundtrip | OPEN |
+| CR-D35  | INFO       | `tests/unit/crypto/chipmunk_ring/`  | Coverage gaps: embedded-vs-non-embedded full wire roundtrip + concurrent sign on independent rings — addressed in this round.  Allocator-failure injection requires a global mock-allocator and is tracked separately.  k=1 is already exercised by `chipmunk_ring_round3` and `chipmunk_ring_basic`; max-k stress is intentionally out of scope (test runtime budget). | **PARTIAL FIX** (next) |
 
 > **Conclusion of Round-4.**  The five release-blocker findings are
 > closed atomically with regression coverage that pins the most

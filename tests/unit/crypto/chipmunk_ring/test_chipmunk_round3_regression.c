@@ -1298,6 +1298,199 @@ static bool s_test_domain_hash_prefix_collision_resistance(void)
 }
 
 // ---------------------------------------------------------------------------
+// CR-D35 (Round-4): coverage uplift — embedded vs non-embedded wire
+// roundtrip parity.
+//
+// CR-D26's regression covered the embedded-keys branch of the schema.
+// The non-embedded branch encodes a different parametric layout (the
+// ring public keys are excluded from the wire, callers re-supply them
+// from an external store at verify time).  CR-D30's `write_signature`
+// fix routes through the parametric size_params wrapper for both
+// branches, but the wire encoding for the non-embedded branch was
+// previously not exercised at the chipmunk_ring-level codec.  This
+// test signs once with `embedded=true` and once with `embedded=false`,
+// runs each through the canonical serialise → deserialise → re-
+// serialise cycle, and asserts byte-exact preservation of every
+// round-tripped field plus bit-identical re-serialisation.  A future
+// silent encoding divergence between the two branches will fail one
+// of the two halves.
+// ---------------------------------------------------------------------------
+static bool s_test_wire_roundtrip_embedded_modes(void)
+{
+    log_it(L_INFO, "CR-D35: wire roundtrip parity for embedded ∈ {true, false}");
+
+    chipmunk_ring_private_key_t l_signer_priv;
+    chipmunk_ring_public_key_t  l_signer_pub;
+    chipmunk_ring_public_key_t  l_ring_pubs[2];
+    memset(&l_signer_priv, 0, sizeof(l_signer_priv));
+    memset(&l_signer_pub,  0, sizeof(l_signer_pub));
+    memset(l_ring_pubs,    0, sizeof(l_ring_pubs));
+
+    dap_assert(s_ring_keypair_inplace(&l_signer_pub, &l_signer_priv, NULL) == 0,
+               "signer hypertree keypair");
+    memcpy(l_ring_pubs[0].data, l_signer_pub.data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+    dap_assert(s_ring_pub_random(&l_ring_pubs[1]) == 0, "decoy hypertree pk");
+
+    chipmunk_ring_container_t l_ring;
+    memset(&l_ring, 0, sizeof(l_ring));
+    dap_assert(chipmunk_ring_container_create(l_ring_pubs, 2, &l_ring) == 0,
+               "ring container");
+
+    extern void chipmunk_ring_signature_free(chipmunk_ring_signature_t *);
+
+    const char *l_msg = "CR-D35 embedded-mode roundtrip probe";
+    const bool  l_modes[2] = { true, false };
+
+    for (int m = 0; m < 2; m++) {
+        const bool l_embedded = l_modes[m];
+        chipmunk_ring_signature_t l_sig;
+        memset(&l_sig, 0, sizeof(l_sig));
+
+        /* Sign in the requested mode.  HOTS leaf bumps inside the
+         * private-key buffer between calls, so we re-derive the
+         * signer keypair for each iteration to keep this test
+         * deterministic with respect to the leaf counter. */
+        if (m > 0) {
+            memset(&l_signer_priv, 0, sizeof(l_signer_priv));
+            memset(&l_signer_pub,  0, sizeof(l_signer_pub));
+            dap_assert(s_ring_keypair_inplace(&l_signer_pub, &l_signer_priv, NULL) == 0,
+                       "re-derive signer hypertree keypair");
+            memcpy(l_ring_pubs[0].data, l_signer_pub.data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+            chipmunk_ring_container_free(&l_ring);
+            memset(&l_ring, 0, sizeof(l_ring));
+            dap_assert(chipmunk_ring_container_create(l_ring_pubs, 2, &l_ring) == 0,
+                       "ring container (mode 2)");
+        }
+
+        dap_assert(chipmunk_ring_sign(&l_signer_priv, l_msg, strlen(l_msg),
+                                      &l_ring, 1, l_embedded, &l_sig) == 0,
+                   "ring signature");
+        dap_assert(l_sig.use_embedded_keys == (l_embedded ? 1 : 0),
+                   "use_embedded_keys reflects requested mode");
+
+        /* Round-trip via the canonical schema wrapper (CR-D30). */
+        size_t l_buf_size = chipmunk_ring_signature_calc_size(&l_sig);
+        dap_assert(l_buf_size > 0, "calc size > 0");
+        uint8_t *l_buf1 = DAP_NEW_Z_SIZE(uint8_t, l_buf_size);
+        dap_assert(l_buf1 != NULL, "buf1 alloc");
+        dap_serialize_result_t l_r1 = chipmunk_ring_signature_serialize(&l_sig, l_buf1, l_buf_size);
+        dap_assert(l_r1.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "serialize round 1");
+
+        chipmunk_ring_signature_t l_sig_round;
+        memset(&l_sig_round, 0, sizeof(l_sig_round));
+        dap_serialize_result_t l_r2 = chipmunk_ring_signature_deserialize(l_buf1, l_r1.bytes_written, &l_sig_round);
+        dap_assert(l_r2.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "deserialize");
+
+        dap_assert(l_sig_round.use_embedded_keys == l_sig.use_embedded_keys,
+                   "use_embedded_keys preserved across roundtrip");
+        dap_assert(l_sig_round.ring_size == l_sig.ring_size,
+                   "ring_size preserved");
+        dap_assert(l_sig_round.required_signers == l_sig.required_signers,
+                   "required_signers preserved");
+
+        /* Re-serialise must be bit-identical (canonical encoding). */
+        size_t l_buf_size2 = chipmunk_ring_signature_calc_size(&l_sig_round);
+        dap_assert(l_buf_size2 == l_r1.bytes_written,
+                   "calc_size after roundtrip equals first serialised size");
+        uint8_t *l_buf2 = DAP_NEW_Z_SIZE(uint8_t, l_buf_size2);
+        dap_assert(l_buf2 != NULL, "buf2 alloc");
+        dap_serialize_result_t l_r3 = chipmunk_ring_signature_serialize(&l_sig_round, l_buf2, l_buf_size2);
+        dap_assert(l_r3.error_code == DAP_SERIALIZE_ERROR_SUCCESS, "serialize round 2");
+        dap_assert(l_r3.bytes_written == l_r1.bytes_written,
+                   "second serialised length equals first");
+        dap_assert(memcmp(l_buf1, l_buf2, l_r1.bytes_written) == 0,
+                   "canonical encoding: re-serialisation is bit-identical");
+
+        DAP_DELETE(l_buf1);
+        DAP_DELETE(l_buf2);
+        chipmunk_ring_signature_free(&l_sig_round);
+        chipmunk_ring_signature_free(&l_sig);
+    }
+
+    chipmunk_ring_container_free(&l_ring);
+    log_it(L_INFO, "CR-D35[embedded-modes] PASS");
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// CR-D35 (Round-4): coverage uplift — concurrent sign on independent rings
+// must not deadlock or corrupt either signer's leaf-index counter.
+//
+// chipmunk_ring_sign documents that "Passing the same buffer to two
+// concurrent signers from different threads is forbidden" (chipmunk_ring.h
+// header comment around CR-D15.C).  This test confirms the *negative*:
+// when two threads sign with independent private-key buffers and
+// independent rings, both signatures complete and verify.  Catches any
+// future global-state regression (process-level mutex on the wrong
+// granularity, shared randomness pool race, etc.).
+// ---------------------------------------------------------------------------
+typedef struct {
+    chipmunk_ring_private_key_t  priv;
+    chipmunk_ring_public_key_t   pub;
+    chipmunk_ring_public_key_t   ring_pubs[2];
+    chipmunk_ring_container_t    ring;
+    chipmunk_ring_signature_t    sig;
+    const char                  *msg;
+    int                          rc_sign;
+    int                          rc_verify;
+} concurrent_signer_ctx_t;
+
+static void *s_concurrent_signer_thread(void *a_arg)
+{
+    concurrent_signer_ctx_t *ctx = (concurrent_signer_ctx_t *)a_arg;
+    ctx->rc_sign = chipmunk_ring_sign(&ctx->priv, ctx->msg, strlen(ctx->msg),
+                                      &ctx->ring, 1, true, &ctx->sig);
+    if (ctx->rc_sign == 0) {
+        ctx->rc_verify = chipmunk_ring_verify(ctx->msg, strlen(ctx->msg),
+                                              &ctx->sig, &ctx->ring);
+    } else {
+        ctx->rc_verify = -2;
+    }
+    return NULL;
+}
+
+static bool s_test_concurrent_independent_rings(void)
+{
+    log_it(L_INFO, "CR-D35: concurrent sign on independent rings (2 threads)");
+
+    concurrent_signer_ctx_t ctx_a, ctx_b;
+    memset(&ctx_a, 0, sizeof(ctx_a));
+    memset(&ctx_b, 0, sizeof(ctx_b));
+    ctx_a.msg = "CR-D35 concurrent A";
+    ctx_b.msg = "CR-D35 concurrent B";
+
+    dap_assert(s_ring_keypair_inplace(&ctx_a.pub, &ctx_a.priv, NULL) == 0, "A keypair");
+    dap_assert(s_ring_keypair_inplace(&ctx_b.pub, &ctx_b.priv, NULL) == 0, "B keypair");
+    memcpy(ctx_a.ring_pubs[0].data, ctx_a.pub.data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+    memcpy(ctx_b.ring_pubs[0].data, ctx_b.pub.data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+    dap_assert(s_ring_pub_random(&ctx_a.ring_pubs[1]) == 0, "A decoy");
+    dap_assert(s_ring_pub_random(&ctx_b.ring_pubs[1]) == 0, "B decoy");
+
+    dap_assert(chipmunk_ring_container_create(ctx_a.ring_pubs, 2, &ctx_a.ring) == 0, "A ring");
+    dap_assert(chipmunk_ring_container_create(ctx_b.ring_pubs, 2, &ctx_b.ring) == 0, "B ring");
+
+    pthread_t th_a, th_b;
+    dap_assert(pthread_create(&th_a, NULL, s_concurrent_signer_thread, &ctx_a) == 0, "spawn A");
+    dap_assert(pthread_create(&th_b, NULL, s_concurrent_signer_thread, &ctx_b) == 0, "spawn B");
+    pthread_join(th_a, NULL);
+    pthread_join(th_b, NULL);
+
+    dap_assert(ctx_a.rc_sign == 0,    "A sign rc==0");
+    dap_assert(ctx_a.rc_verify == 0,  "A verify rc==0");
+    dap_assert(ctx_b.rc_sign == 0,    "B sign rc==0");
+    dap_assert(ctx_b.rc_verify == 0,  "B verify rc==0");
+
+    extern void chipmunk_ring_signature_free(chipmunk_ring_signature_t *);
+    chipmunk_ring_signature_free(&ctx_a.sig);
+    chipmunk_ring_signature_free(&ctx_b.sig);
+    chipmunk_ring_container_free(&ctx_a.ring);
+    chipmunk_ring_container_free(&ctx_b.ring);
+
+    log_it(L_INFO, "CR-D35[concurrent-rings] PASS");
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Test runner
 // ---------------------------------------------------------------------------
 int main(int argc, char **argv)
@@ -1325,6 +1518,8 @@ int main(int argc, char **argv)
     if (!s_test_acorn_linkability_tag_is_zero())    rc = 1;
     if (!s_test_zk_size_iterations_wire_roundtrip()) rc = 1;
     if (!s_test_domain_hash_prefix_collision_resistance()) rc = 1;
+    if (!s_test_wire_roundtrip_embedded_modes())    rc = 1;
+    if (!s_test_concurrent_independent_rings())     rc = 1;
 
     if (rc == 0) {
         dap_test_msg("ALL Round-3 regression tests PASSED");
