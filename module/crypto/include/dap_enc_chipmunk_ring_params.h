@@ -115,10 +115,21 @@
 #define CHIPMUNK_RING_RESPONSE_SIZE_MIN 32                       // Minimum response size
 #define CHIPMUNK_RING_RESPONSE_SIZE_MAX 128                      // Maximum response size
 
-// Hash sizes for different components
+// Hash sizes for different components.
+//
+// CR-D32 (Round-4): the ring_hash buffer used to be sized via
+// CHIPMUNK_RING_LINKABILITY_TAG_SIZE — historically the same numeric
+// value (32) but with no semantic relationship to the active hash
+// output.  After CR-D8 the linkability tag became a reserved zero
+// slot, so binding the ring hash to its size is doubly wrong.  The
+// canonical sizing is now CHIPMUNK_RING_RING_HASH_SIZE, statically
+// pinned to DAP_HASH_FAST_SIZE (the output width of dap_hash_fast,
+// currently SHA3-256 → 32 bytes).  Any future hash swap that changes
+// the output width will fire the _Static_assert in chipmunk_ring.c
+// instead of silently truncating.
 #define CHIPMUNK_RING_HASH_SIZE 32                               // Standard hash size (SHA3-256)
 #define CHIPMUNK_RING_KEY_HASH_SIZE 32                           // Public key hash size
-#define CHIPMUNK_RING_RING_HASH_SIZE 32                          // Ring hash size
+#define CHIPMUNK_RING_RING_HASH_SIZE 32                          // Ring hash size — statically asserted == DAP_HASH_FAST_SIZE
 
 // ================ ZK PROOF PARAMETERS ================
 

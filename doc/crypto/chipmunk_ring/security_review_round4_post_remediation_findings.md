@@ -85,10 +85,10 @@ Severity legend (continued from Round-3):
 | CR-D28  | HIGH       | `chipmunk_ring.c`                   | `ring_hash` leak in two error paths of `chipmunk_ring_container_create`; missing overflow guard | **FIXED** (227a933f) |
 | CR-D29  | HIGH       | `chipmunk_ring.c`                   | Multi-signer ZK loop returns success with all-zero proof slots on intermediate failures        | **FIXED** (227a933f) |
 | CR-D30  | HIGH       | `dap_enc_chipmunk_ring.c`           | `write_signature` bypasses the canonical schema wrapper; drops parametric `size_params`        | **FIXED** (227a933f) |
-| CR-D31  | MEDIUM     | `chipmunk_ring.c` / `chipmunk_ring_acorn.c` | `s_domain_hash` uses `strlen(domain)` and concatenates domain‖salt‖input without length prefixes — domain/salt boundary inferable rather than authenticated | OPEN |
-| CR-D32  | MEDIUM     | `chipmunk_ring.c`                   | `ring_hash_size` hard-pinned to `CHIPMUNK_RING_LINKABILITY_TAG_SIZE` regardless of active hash | OPEN |
-| CR-D33  | LOW        | `tests/unit/crypto/chipmunk_ring/CMakeLists.txt` | Local CMakeLists dead-included alongside parent registration                          | OPEN |
-| CR-D34  | LOW        | `tests/unit/crypto/chipmunk_ring/`  | `test_simple` and `test_input_validation` disagree on `chipmunk_ring_sign(message_size==0)`     | OPEN |
+| CR-D31  | MEDIUM     | `chipmunk_ring.c` / `chipmunk_ring_acorn.c` | `s_domain_hash` uses `strlen(domain)` and concatenates domain‖salt‖input without length prefixes — domain/salt boundary inferable rather than authenticated | **FIXED** (695572b7) |
+| CR-D32  | MEDIUM     | `chipmunk_ring.c`                   | `ring_hash_size` hard-pinned to `CHIPMUNK_RING_LINKABILITY_TAG_SIZE` regardless of active hash | **FIXED** (next) |
+| CR-D33  | LOW        | `tests/unit/crypto/chipmunk_ring/CMakeLists.txt` | Local CMakeLists dead-included alongside parent registration                          | **FIXED** (next) |
+| CR-D34  | (with-drawn) | (n/a)                             | (Round-4 author error — re-audit confirmed `chipmunk_ring_sign` already enforces a single, consistent contract `a_message \|\| a_message_size == 0`; both test files honour it) | **WITHDRAWN** |
 | CR-D35  | INFO       | `tests/unit/crypto/chipmunk_ring/`  | Coverage gaps: k=1, max-k, concurrent sign, allocator failure injection, embedded-vs-non-embedded full wire roundtrip | OPEN |
 
 > **Conclusion of Round-4.**  The five release-blocker findings are

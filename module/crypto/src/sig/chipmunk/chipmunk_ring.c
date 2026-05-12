@@ -491,9 +491,15 @@ int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_ke
     }
 
     a_ring->size = a_num_keys;
-    
-    // Allocate dynamic ring hash (use standard hash size)
-    a_ring->ring_hash_size = CHIPMUNK_RING_LINKABILITY_TAG_SIZE; // Standard hash output size
+
+    /* CR-D32 (Round-4): pin ring_hash size to the active hash output
+     * width (CHIPMUNK_RING_RING_HASH_SIZE == DAP_HASH_FAST_SIZE) rather
+     * than to the unrelated linkability-tag constant.  The static
+     * assert below fires at compile time if anyone ever changes the
+     * underlying primitive without re-fitting the buffer. */
+    _Static_assert(CHIPMUNK_RING_RING_HASH_SIZE == DAP_HASH_FAST_SIZE,
+                   "CR-D32: ring_hash sizing must track dap_hash_fast output width");
+    a_ring->ring_hash_size = CHIPMUNK_RING_RING_HASH_SIZE;
     a_ring->ring_hash = DAP_NEW_Z_SIZE(uint8_t, a_ring->ring_hash_size);
     if (!a_ring->ring_hash) {
         chipmunk_ring_log_error(CHIPMUNK_RING_ERROR_MEMORY_ALLOC, __func__, 
