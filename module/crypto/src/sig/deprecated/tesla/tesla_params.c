@@ -337,13 +337,13 @@ void poly_uniform(poly_k *a, const unsigned char *seed, tesla_param_t *p) {
     unsigned char *buf = malloc(DAP_SHAKE128_RATE * nblocks * sizeof(unsigned char));
     uint16_t dmsp = 0;
 
-    dap_hash_cshake128_simple( buf, DAP_SHAKE128_RATE * nblocks, dmsp++, seed, CRYPTO_RANDOMBYTES);
+    dap_hash_cshake128_simple_legacy( buf, DAP_SHAKE128_RATE * nblocks, dmsp++, seed, CRYPTO_RANDOMBYTES);
 //  cSHAKE128( seed, CRYPTO_RANDOMBYTES * 8, buf, DAP_SHAKE128_RATE * nblocks * 8, NULL, 0, &dmsp, 16 );
 //  ++ dmsp;
     while (i < p->PARAM_K * p->PARAM_N) {
         if (pos > DAP_SHAKE128_RATE * nblocks - 4 * nbytes) {
             nblocks = 1;
-            dap_hash_cshake128_simple(buf, DAP_SHAKE128_RATE * nblocks, dmsp++, seed, CRYPTO_RANDOMBYTES);
+            dap_hash_cshake128_simple_legacy(buf, DAP_SHAKE128_RATE * nblocks, dmsp++, seed, CRYPTO_RANDOMBYTES);
 //          cSHAKE128( seed, CRYPTO_RANDOMBYTES * 8, buf, DAP_SHAKE128_RATE * nblocks * 8, NULL, 0, &dmsp, 16 );
 //          ++ dmsp;
             pos = 0;

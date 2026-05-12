@@ -17,7 +17,7 @@ CRYPTO_MSRLN_STATUS MSRLN_generate_a(const unsigned char* seed, unsigned int see
 
     uint64_t state[25] = {0};
     dap_hash_shake128_absorb(state, seed, seed_nbytes);
-    dap_hash_shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
+    dap_hash_shake128_legacy_squeezeblocks((unsigned char *) buf, nblocks, state);
 
     while (ctr < array_ndigits) {
         val = (buf[pos] | ((uint16_t) buf[pos + 1] << 8)) & 0x3fff;
@@ -27,7 +27,7 @@ CRYPTO_MSRLN_STATUS MSRLN_generate_a(const unsigned char* seed, unsigned int see
         pos += 2;
         if (pos > DAP_SHAKE128_RATE * nblocks - 2) {
             nblocks = 1;
-            dap_hash_shake128_squeezeblocks((unsigned char *) buf, nblocks, state);
+            dap_hash_shake128_legacy_squeezeblocks((unsigned char *) buf, nblocks, state);
             pos = 0;
         }
     }

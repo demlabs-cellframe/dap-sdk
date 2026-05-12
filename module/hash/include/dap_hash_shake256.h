@@ -155,6 +155,15 @@ void dap_hash_cshake256_simple(uint8_t *a_output, size_t a_outlen, uint16_t a_cs
                           const uint8_t *a_input, size_t a_inlen);
 
 /**
+ * @brief cSHAKE256 simple — LEGACY squeeze (permute → extract per block)
+ *
+ * Reproduces the pre-FIPS-202 byte stream emitted by master.  Use only
+ * for backward-compatible code paths (e.g. deprecated tesla).
+ */
+void dap_hash_cshake256_simple_legacy(uint8_t *a_output, size_t a_outlen, uint16_t a_cstm,
+                                       const uint8_t *a_input, size_t a_inlen);
+
+/**
  * @brief cSHAKE256 absorb with simple customization
  */
 void dap_hash_cshake256_simple_absorb(uint64_t a_state[25], uint16_t a_cstm,
