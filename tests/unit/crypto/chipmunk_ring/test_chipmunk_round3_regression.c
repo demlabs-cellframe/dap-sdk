@@ -1491,6 +1491,92 @@ static bool s_test_concurrent_independent_rings(void)
 }
 
 // ---------------------------------------------------------------------------
+// CR-D35 (Round-4): max-k stress — opt-in via CHIPMUNK_RING_RUN_MAX_K_STRESS=1.
+//
+// Default ctest budget intentionally caps the chipmunk_ring suite at
+// small ring sizes (≤ 16 in perf-focused tests).  CR-D27's removed
+// duplicate guard and CR-D28's overflow check make ring sizes up to
+// CHIPMUNK_RING_MAX_RING_SIZE = 1024 a documented operational mode,
+// but exercising 1024 hypertree keypairs (~40 ms each) inside the
+// default suite would dominate the budget without proportional
+// regression value.  This test is therefore opt-in: it runs only when
+// `CHIPMUNK_RING_RUN_MAX_K_STRESS=1` is set in the environment, so a
+// manual `CHIPMUNK_RING_RUN_MAX_K_STRESS=1 ctest -R chipmunk_round3`
+// invocation can validate the upper bound without touching CI.
+//
+// The optional `CHIPMUNK_RING_STRESS_K` env var picks the ring size
+// (default 64 when stress is enabled; clamped to MAX_RING_SIZE).
+// ---------------------------------------------------------------------------
+static bool s_test_max_k_stress(void)
+{
+    const char *l_run = getenv("CHIPMUNK_RING_RUN_MAX_K_STRESS");
+    if (!l_run || l_run[0] == '\0' || (l_run[0] == '0' && l_run[1] == '\0')) {
+        log_it(L_INFO, "CR-D35[max-k-stress]: SKIPPED (set CHIPMUNK_RING_RUN_MAX_K_STRESS=1 to run)");
+        return true; /* skip ≡ pass to avoid breaking the default ctest budget. */
+    }
+
+    uint32_t l_k = 64;
+    const char *l_k_env = getenv("CHIPMUNK_RING_STRESS_K");
+    if (l_k_env && *l_k_env) {
+        long l_parsed = strtol(l_k_env, NULL, 10);
+        if (l_parsed > 0) l_k = (uint32_t)l_parsed;
+    }
+    if (l_k > CHIPMUNK_RING_MAX_RING_SIZE) l_k = CHIPMUNK_RING_MAX_RING_SIZE;
+    if (l_k < 2)                            l_k = 2;
+
+    log_it(L_INFO, "CR-D35[max-k-stress]: ring_size = %u (CHIPMUNK_RING_MAX_RING_SIZE = %d)",
+           l_k, CHIPMUNK_RING_MAX_RING_SIZE);
+
+    /* Materialise the ring on the heap; stack arrays would blow up at
+     * k=1024 (CHIPMUNK_RING_PUBLIC_KEY_SIZE × 1024 ≈ 2 MiB on the
+     * stack is dangerous on small-stack threads). */
+    chipmunk_ring_public_key_t *l_ring_pubs = DAP_NEW_Z_COUNT(chipmunk_ring_public_key_t, l_k);
+    dap_assert(l_ring_pubs != NULL, "ring pubs alloc");
+
+    chipmunk_ring_private_key_t l_signer_priv;
+    chipmunk_ring_public_key_t  l_signer_pub;
+    memset(&l_signer_priv, 0, sizeof(l_signer_priv));
+    memset(&l_signer_pub,  0, sizeof(l_signer_pub));
+    dap_assert(s_ring_keypair_inplace(&l_signer_pub, &l_signer_priv, NULL) == 0,
+               "signer hypertree keypair");
+    memcpy(l_ring_pubs[0].data, l_signer_pub.data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
+
+    /* Decoy keypairs.  At k=1024 this is the dominant cost (~40 s). */
+    log_it(L_INFO, "CR-D35[max-k-stress]: generating %u decoy hypertree pks ...", l_k - 1);
+    for (uint32_t i = 1; i < l_k; i++) {
+        dap_assert(s_ring_pub_random(&l_ring_pubs[i]) == 0, "decoy hypertree pk");
+        if ((i % 64) == 0) {
+            log_it(L_INFO, "CR-D35[max-k-stress]: decoy progress %u / %u", i, l_k);
+        }
+    }
+
+    chipmunk_ring_container_t l_ring;
+    memset(&l_ring, 0, sizeof(l_ring));
+    dap_assert(chipmunk_ring_container_create(l_ring_pubs, l_k, &l_ring) == 0,
+               "ring container at max-k");
+
+    chipmunk_ring_signature_t l_sig;
+    memset(&l_sig, 0, sizeof(l_sig));
+    const char *l_msg = "CR-D35 max-k stress probe";
+    log_it(L_INFO, "CR-D35[max-k-stress]: signing ...");
+    dap_assert(chipmunk_ring_sign(&l_signer_priv, l_msg, strlen(l_msg),
+                                  &l_ring, 1, true, &l_sig) == 0,
+               "max-k sign succeeds");
+
+    log_it(L_INFO, "CR-D35[max-k-stress]: verifying ...");
+    dap_assert(chipmunk_ring_verify(l_msg, strlen(l_msg), &l_sig, &l_ring) == 0,
+               "max-k verify succeeds");
+
+    extern void chipmunk_ring_signature_free(chipmunk_ring_signature_t *);
+    chipmunk_ring_signature_free(&l_sig);
+    chipmunk_ring_container_free(&l_ring);
+    DAP_DELETE(l_ring_pubs);
+
+    log_it(L_INFO, "CR-D35[max-k-stress] PASS at ring_size = %u", l_k);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Test runner
 // ---------------------------------------------------------------------------
 int main(int argc, char **argv)
@@ -1520,6 +1606,7 @@ int main(int argc, char **argv)
     if (!s_test_domain_hash_prefix_collision_resistance()) rc = 1;
     if (!s_test_wire_roundtrip_embedded_modes())    rc = 1;
     if (!s_test_concurrent_independent_rings())     rc = 1;
+    if (!s_test_max_k_stress())                     rc = 1;
 
     if (rc == 0) {
         dap_test_msg("ALL Round-3 regression tests PASSED");
