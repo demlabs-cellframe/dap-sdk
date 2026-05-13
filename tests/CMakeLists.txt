@@ -284,6 +284,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ri
     register_dap_test(test_unit_crypto_chipmunk_ring_shamir "unit;crypto;ring;threshold;cr-9.3")
 endif()
 
+# CR-9.4.A — public threshold dealer/combiner API (trusted-dealer path)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_threshold.c)
+    add_dap_test(test_unit_crypto_chipmunk_ring_threshold unit/crypto/chipmunk_ring/test_chipmunk_ring_threshold.c)
+    register_dap_test(test_unit_crypto_chipmunk_ring_threshold "unit;crypto;ring;threshold;cr-9.4")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
