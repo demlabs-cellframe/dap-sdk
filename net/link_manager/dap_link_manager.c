@@ -118,6 +118,32 @@ static size_t s_net_uplinks_count(dap_managed_net_t *a_net, bool a_include_pendi
     return l_links_count;
 }
 
+size_t dap_link_manager_established_uplinks_count(uint64_t a_net_id)
+{
+    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
+    dap_return_val_if_pass(!l_net, 0);
+    dap_cluster_t *l_primary_cluster = (dap_cluster_t *)l_net->link_clusters->data;
+    size_t l_links_count = 0;
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+    dap_link_t *l_link = NULL, *l_tmp = NULL;
+    HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
+        if (!l_link->is_uplink || l_link->uplink.state != LINK_STATE_ESTABLISHED)
+            continue;
+        if (dap_cluster_member_find_unsafe(l_primary_cluster, &l_link->addr)) {
+            ++l_links_count;
+            continue;
+        }
+        for (dap_list_t *it = l_link->uplink.associated_nets; it; it = it->next) {
+            if (it->data == l_net) {
+                ++l_links_count;
+                break;
+            }
+        }
+    }
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    return l_links_count;
+}
+
 /**
  * @brief forming group name for each net
  * @return NULL if error other group name
@@ -754,7 +780,7 @@ void s_links_request(dap_link_manager_t *a_link_manager)
     DL_FOREACH(a_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
         if (l_net->active ) {
-            l_net->uplinks = dap_link_manager_links_count(l_net->id);
+            l_net->uplinks = s_net_uplinks_count(l_net, true);
             if (a_link_manager->callbacks.link_request && l_net->uplinks < l_net->min_links_num)
                     a_link_manager->callbacks.link_request(l_net->id);
         }
