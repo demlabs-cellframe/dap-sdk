@@ -748,6 +748,13 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         }
+        { size_t l_ms = (size_t)l_fragm_pkt->mem_shift, l_fs = (size_t)l_fragm_pkt->full_size, l_sz = (size_t)l_fragm_pkt->size;
+          if (!l_fs || l_fs > (size_t)DAP_STREAM_PKT_SIZE_MAX || l_sz > l_fs || l_ms > l_fs - l_sz) {
+            debug_if(s_dump_packet_headers, L_WARNING, "Input: invalid fragment bounds mem_shift=%zu size=%zu full_size=%zu", l_ms, l_sz, l_fs);
+            l_is_clean_fragments = true;
+            break;
+          }
+        }
 
         if(a_stream->buf_fragments_size_filled != l_fragm_pkt->mem_shift) {
             debug_if(s_dump_packet_headers, L_WARNING, "Input: wrong fragment position %u, have to be %zu. Drop packet",
@@ -755,6 +762,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         } else {
+            if (a_stream->buf_fragments && a_stream->buf_fragments_size_filled && a_stream->buf_fragments_size_total != l_fragm_pkt->full_size) {
+                debug_if(s_dump_packet_headers, L_WARNING, "Input: inconsistent fragment full_size %u vs buffer %zu", l_fragm_pkt->full_size, a_stream->buf_fragments_size_total);
+                l_is_clean_fragments = true;
+                break;
+            }
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
