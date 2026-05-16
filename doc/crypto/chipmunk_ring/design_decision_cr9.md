@@ -1,7 +1,7 @@
 ---
 doc: design_decision_cr9
 phase: CR-9 — Threshold (Shamir) Scheme
-status: ACTIVE — kick-off (CR-9.0 + CR-9.3 in this slice)
+status: ACTIVE — CR-9.4.A/9.5/9.6 SDK slices landed; CR-9.4.B + CR-9.7 deferred
 predecessors:
   - documentation_81adcdbaa2c7f8e3   # Round-3 audit
   - doc/crypto/chipmunk_ring/security_review_round4_post_remediation_findings.md
@@ -241,14 +241,15 @@ through a side channel in the share distribution.
 
 | Sub-phase | Status            | Notes                                                                                  |
 |-----------|-------------------|----------------------------------------------------------------------------------------|
-| CR-9.0    | **CLOSED** (this slice) | Use-case scope captured in §1 above                                                     |
-| CR-9.1    | NEXT              | CS-PRNG coefficients via `dap_random_bytes` — covered by the kick-off implementation    |
-| CR-9.2    | DEFERRED to CR-9.4 | Correct pk-offset only matters once the public threshold API exists                     |
-| CR-9.3    | **CLOSED** (this slice) | Canonical Shamir over `Z_q` + 10-test acceptance suite                                  |
-| CR-9.4    | NEXT MAJOR        | Public `threshold_deal/sign_partial/combine` API; wires to `chipmunk_ring_sign`         |
-| CR-9.5    | NEXT              | PoP against rogue-key attack                                                             |
-| CR-9.6    | DEFERRED          | Cellframe integration; needs Cellframe-team buy-in                                       |
-| CR-9.7    | DEFERRED          | Security proof sketch + peer review; needs CR-9.4 + CR-9.5 to lock the protocol         |
+| CR-9.0    | **CLOSED** | Use-case scope captured in §1 (`db86a383`)                                                |
+| CR-9.1    | **CLOSED** | CSPRNG coefficients via `dap_random_bytes` — shipped in CR-9.3 primitive                  |
+| CR-9.2    | DEFERRED to CR-9.4.B | Correct pk-offset for true threshold partial sigs                                 |
+| CR-9.3    | **CLOSED** | Canonical Shamir over `Z_q` + acceptance suite (`db86a383`)                             |
+| CR-9.4.A  | **CLOSED** | Trusted-dealer `threshold_deal/combine` API (`2e3fc016`)                                |
+| CR-9.4.B  | DEFERRED  | True `sign_partial/combine` without key reconstruction (`design_decision_cr9_4.md` §7)   |
+| CR-9.5    | **CLOSED** | PoP against rogue-key (`7a5d91de`, `design_decision_cr9_5.md`)                          |
+| CR-9.6    | **CLOSED** (SDK slice) | `dap_enc_chipmunk_ring_governance_*` + integration guide (`design_decision_cr9_6.md`) |
+| CR-9.7    | NEXT              | Security proof sketch + peer review; protocol locked by CR-9.4.A + CR-9.5               |
 
 ---
 

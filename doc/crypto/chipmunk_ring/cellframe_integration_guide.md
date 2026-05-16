@@ -365,6 +365,61 @@ extern bool s_debug_more;
 s_debug_more = true;  // Enable detailed ChipmunkRing logging
 ```
 
+## Governance Multisig (CR-9.4.A + CR-9.5 + CR-9.6)
+
+Production governance (GOV-MULTI: 3-of-5 operator decisions) uses the
+trusted-dealer threshold path plus per-member Proof-of-Possession at
+ring admission.  Include `dap_enc_chipmunk_ring_governance.h`.
+
+### Wire artefacts (cert registry)
+
+| Artefact | Magic (LE) | Size | Notes |
+|----------|--------------|------|-------|
+| Threshold share | `CRHS` `0x53485243` | 72 B | OOB per participant |
+| Proof of Possession | `CRRP` `0x50525243` | `dap_enc_chipmunk_ring_pop_wire_size()` | One-time per member pk |
+| Ring public key | — | `CHIPMUNK_RING_PUBLIC_KEY_SIZE` | Hypertree pk bytes |
+
+### Dealer: split master seed
+
+```c
+#include <dap_enc_chipmunk_ring_governance.h>
+
+uint8_t master_seed[32];   /* CSPRNG or policy-derived */
+chipmunk_ring_threshold_share_t shares[5];
+dap_enc_chipmunk_ring_governance_deal(master_seed, 5, 3, shares);
+/* Distribute shares[0..4] over confidential OOB channels */
+```
+
+### Participant: register PoP (before any production sign)
+
+```c
+dap_enc_key_t *member = dap_enc_key_new_generate(
+    DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, seed, 32, 0);
+
+uint8_t pop[dap_enc_chipmunk_ring_pop_wire_size()];
+dap_enc_chipmunk_ring_member_pop_create(member, pop, sizeof(pop));
+/* Store (member->pub_key_data, pop) in governance cert registry */
+```
+
+### Combiner: reconstruct signing key
+
+```c
+dap_enc_key_t *gov_key = NULL;
+dap_enc_chipmunk_ring_governance_combine_to_key(selected_shares, 3, &gov_key);
+/* Sign with dap_enc_chipmunk_ring_sign / dap_sign as usual */
+```
+
+### Validator: strict ring admission (PoP-enforced)
+
+```c
+chipmunk_ring_container_t ring;
+dap_enc_chipmunk_ring_container_create_with_pop(member_pub_keys, member_pops,
+                                                ring_size, &ring);
+/* Fails closed if any PoP does not match its pk (rogue-key defence) */
+```
+
+Full design: `doc/crypto/chipmunk_ring/design_decision_cr9_6.md`.
+
 ## Support
 
 For technical support and questions:
