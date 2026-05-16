@@ -22,6 +22,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* Forward declarations from the chipmunk module so this public header
+ * stays free of internal includes (the CR-9.5 PoP API needs them but
+ * the threshold dealer/combiner above does not).  Full definitions
+ * live in module/crypto/src/sig/chipmunk/chipmunk_hypertree.h. */
+struct chipmunk_ht_public_key;
+struct chipmunk_ht_private_key;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -142,6 +149,100 @@ int chipmunk_ring_threshold_combine(const chipmunk_ring_threshold_share_t *a_sha
  * share memory without including the internal memwipe header.
  */
 void chipmunk_ring_threshold_share_wipe(chipmunk_ring_threshold_share_t *a_share);
+
+/* ==================================================================
+ *  CR-9.5 — Proof of Possession (PoP) against rogue-key attack
+ * ==================================================================
+ *
+ *  See doc/crypto/chipmunk_ring/design_decision_cr9_5.md for the
+ *  full design rationale.  TL;DR: every public key admitted into a
+ *  ring container (or a future CR-9.4.B aggregate) MUST be
+ *  accompanied by a PoP — a chipmunk_ht signature under sk_i over a
+ *  fixed, domain-separated, pk-bound message.  Without a valid PoP
+ *  an attacker can publish pk_rogue = pk_target ⊕ pk_alibi (or any
+ *  algebraic combination of other pks) and claim ownership without
+ *  ever having held the matching secret.
+ */
+
+/** Magic prefix on the PoP blob, ASCII 'CRRP' little-endian
+ *  (Chipmunk Ring **R**ing-**P**roof).  Distinct from the share
+ *  magic 'CRHS' (CR-9.4.A) and the reserved partial-sig magic
+ *  'CRHP' (CR-9.4.B) so no two CR-9 wire blobs collide on the wire. */
+#define CHIPMUNK_RING_POP_MAGIC                 0x50525243u
+
+/** PoP wire-format version.  Bumps when the body layout changes
+ *  (today: serialised chipmunk_ht_signature). */
+#define CHIPMUNK_RING_POP_VERSION               1u
+
+/** Header layout: magic(4) || version(1) || reserved(3 zero bytes). */
+#define CHIPMUNK_RING_POP_HEADER_BYTES          8u
+
+/** Body layout: serialised hypertree signature.  Definition lives
+ *  in chipmunk_hypertree.h (CHIPMUNK_HT_SIGNATURE_SIZE); we surface
+ *  the *blob* constants here without dragging the chipmunk header
+ *  into the public include path.  The implementation has a
+ *  _Static_assert pinning CHIPMUNK_RING_POP_BODY_BYTES ==
+ *  CHIPMUNK_HT_SIGNATURE_SIZE so any future signature-size change is
+ *  a compile error at the exact buffer that depends on it.  Callers
+ *  that need only the total blob size should use
+ *  CHIPMUNK_RING_POP_BYTES; callers serialising directly must include
+ *  chipmunk/chipmunk_hypertree.h to learn CHIPMUNK_HT_SIGNATURE_SIZE. */
+
+/** Total wire size of a PoP blob (header + serialised ht_sig). */
+#define CHIPMUNK_RING_POP_BYTES_FROM_HT_SIG(_ht_sig_size)                       \
+    (CHIPMUNK_RING_POP_HEADER_BYTES + (size_t)(_ht_sig_size))
+
+/**
+ * Produce a Proof of Possession for the public key carried by @a a_sk.
+ *
+ * Internally:
+ *   1. extract pk_bytes via chipmunk_ht_public_key_to_bytes;
+ *   2. derive pop_message = SHA3-256("chipmunk-ring-pop/v1" ||
+ *      LE32(len(pk_bytes)) || pk_bytes) — TupleHash discipline
+ *      established in CR-D31;
+ *   3. sign pop_message under sk via chipmunk_ht_sign (consumes
+ *      leaf_index 0);
+ *   4. wrap the signature with the CR-9.5 envelope.
+ *
+ * Contract:
+ *   * @a a_sk MUST be a freshly-materialised hypertree sk with
+ *     leaf_index == 0; if any production signing already consumed
+ *     leaf 0 the function returns -EBUSY without touching @a a_sk.
+ *   * @a a_out_pop is a caller-provided buffer of at least
+ *     CHIPMUNK_RING_POP_BYTES_FROM_HT_SIG(CHIPMUNK_HT_SIGNATURE_SIZE)
+ *     bytes.
+ *
+ * @return 0 on success;
+ *         -EINVAL on NULL input;
+ *         -EBUSY  if sk->leaf_index != 0;
+ *         negative chipmunk_ht_sign / serialise errors otherwise.
+ *         On any error the output buffer is fully zeroised.
+ */
+int chipmunk_ring_pop_create(struct chipmunk_ht_private_key *a_sk,
+                             uint8_t *a_out_pop, size_t a_out_pop_size);
+
+/**
+ * Verify a PoP blob against a public key (in struct form).
+ *
+ * Validates the envelope (magic, version, reserved bytes all zero)
+ * BEFORE deserialising the signature.  Recomputes pop_message from
+ * the supplied @a a_pk — the verifier does NOT trust any message
+ * accompanying the blob.
+ *
+ * @return 0 on PoP success; -EINVAL on contract violation;
+ *         CHIPMUNK_ERROR_VERIFY_FAILED on signature mismatch.
+ */
+int chipmunk_ring_pop_verify(const struct chipmunk_ht_public_key *a_pk,
+                             const uint8_t *a_pop, size_t a_pop_size);
+
+/**
+ * Same as `chipmunk_ring_pop_verify`, but takes the serialised
+ * pk-bytes form (so a caller assembling a ring container from
+ * on-wire pk blobs does not have to round-trip through the in-memory
+ * struct).  @a a_pk_bytes_size MUST equal CHIPMUNK_HT_PUBLIC_KEY_SIZE.
+ */
+int chipmunk_ring_pop_verify_bytes(const uint8_t *a_pk_bytes, size_t a_pk_bytes_size,
+                                   const uint8_t *a_pop,     size_t a_pop_size);
 
 #ifdef __cplusplus
 }
