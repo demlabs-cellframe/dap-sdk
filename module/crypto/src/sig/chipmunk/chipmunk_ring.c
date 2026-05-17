@@ -2123,10 +2123,16 @@ int chipmunk_ring_reset_params(void) {
 }
 
 /**
- * @brief NIST Security Level parameter presets
- * 
- * Based on NIST PQC standardization and lattice security estimates.
- * Security bits calculated as: 0.292 * n for Ring-LWE/NTRU lattice problems.
+ * @brief Reference parameter presets for ChipmunkRing.
+ *
+ * CR-11.A (2026-05-17): description strings reworded to drop the
+ * "AES-N equivalent" claims that were never backed by a security
+ * proof for the shipped hypertree HOTS construction.  The
+ * `classical_bits` / `quantum_bits` / `logical_qubits` fields are
+ * retained for ABI stability but represent the historical Ring-LWE
+ * estimate (0.292 × n) for the *legacy* commitment layer, not a
+ * guarantee for the current ring signature.  Authoritative parameter
+ * vs. security mapping is tracked under CR-11.B (KAT publication).
  */
 static const struct {
     chipmunk_ring_security_level_t level;
@@ -2149,7 +2155,7 @@ static const struct {
         .code_n = 1536, .code_k = 768, .code_t = 96,
         .classical_bits = 150, .quantum_bits = 75,
         .logical_qubits = 32000,
-        .description = "NIST Level I: AES-128 equivalent, suitable for general use"
+        .description = "Reference preset I (smallest parameters) — experimental, see CR-11.B"
     },
     {
         .level = CHIPMUNK_RING_SECURITY_LEVEL_III,
@@ -2158,7 +2164,7 @@ static const struct {
         .code_n = 2048, .code_k = 1024, .code_t = 128,
         .classical_bits = 224, .quantum_bits = 112,
         .logical_qubits = 65000,
-        .description = "NIST Level III: AES-192 equivalent, recommended for financial"
+        .description = "Reference preset III (medium parameters) — experimental, see CR-11.B"
     },
     {
         .level = CHIPMUNK_RING_SECURITY_LEVEL_V,
@@ -2167,7 +2173,7 @@ static const struct {
         .code_n = 2560, .code_k = 1280, .code_t = 160,
         .classical_bits = 299, .quantum_bits = 150,
         .logical_qubits = 90000,
-        .description = "NIST Level V: AES-256 equivalent, high security applications"
+        .description = "Reference preset V (large parameters) — experimental, see CR-11.B"
     },
     {
         .level = CHIPMUNK_RING_SECURITY_LEVEL_V_PLUS,
@@ -2180,7 +2186,7 @@ static const struct {
         .code_t = CHIPMUNK_RING_CODE_T_DEFAULT,
         .classical_bits = 300, .quantum_bits = 150,
         .logical_qubits = 131000,
-        .description = "Level V+: Extended security for 100+ year quantum resistance"
+        .description = "Reference preset V+ (largest parameters, default) — experimental, see CR-11.B"
     }
 };
 
@@ -2292,7 +2298,7 @@ int dap_enc_chipmunk_ring_get_security_info(chipmunk_ring_security_info_t *a_inf
     a_info->classical_bits = classical_bits;
     a_info->quantum_bits = classical_bits / 2;
     a_info->logical_qubits_required = 0;
-    a_info->description = "Below NIST Level I - NOT RECOMMENDED";
+    a_info->description = "Below reference preset I — NOT RECOMMENDED (CR-11.A)";
     return 0;
 }
 

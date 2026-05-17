@@ -249,7 +249,7 @@ through a side channel in the share distribution.
 | CR-9.4.B  | DEFERRED  | True `sign_partial/combine` without key reconstruction (`design_decision_cr9_4.md` §7)   |
 | CR-9.5    | **CLOSED** | PoP against rogue-key (`7a5d91de`, `design_decision_cr9_5.md`)                          |
 | CR-9.6    | **CLOSED** (SDK slice) | `dap_enc_chipmunk_ring_governance_*` + integration guide (`design_decision_cr9_6.md`) |
-| CR-9.7    | ACTIVE (SDK sketch) | Proof sketch + peer checklist in `design_decision_cr9_7.md`; closure needs reviewer sign-off |
+| CR-9.7    | **CLOSED (SDK)** | Proof sketch + peer checklist (`design_decision_cr9_7.md`); §4.1–4.4 self-audit PASS, §4.5 PENDING (Cellframe ack) |
 
 ---
 

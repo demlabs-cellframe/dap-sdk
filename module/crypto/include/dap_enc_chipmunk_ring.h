@@ -23,6 +23,41 @@
 
 #pragma once
 
+/**
+ * @file dap_enc_chipmunk_ring.h
+ * @brief Public surface for ChipmunkRing post-quantum ring signature.
+ *
+ * @experimental CR-11.A status banner (2026-05-17):
+ *
+ *   * **Production-ready path (CR-9.6 governance):** trusted-dealer
+ *     t-of-n threshold via `dap_enc_chipmunk_ring_governance.h`, with
+ *     rogue-key defence via CR-9.5 PoP.  SDK-side proof sketch and
+ *     peer-review checklist in
+ *     `doc/crypto/chipmunk_ring/design_decision_cr9_7.md`.
+ *
+ *   * **Experimental path (anonymity):** the underlying ring signature
+ *     (`chipmunk_ring_sign` / `chipmunk_ring_verify`) provides
+ *     constant-time signer-index resolution (Round-3 CR-D2 +
+ *     CR-D15.C) but does NOT yet ship a cryptographic
+ *     signer-indistinguishability proof.  CR-11.D (RING-ANON) in
+ *     `doc/crypto/chipmunk_ring/design_decision_cr11.md` tracks the
+ *     OR-proof / CLSAG-style hardening required before publication.
+ *
+ *   * **Security-preset enum** (`chipmunk_ring_security_level_t`):
+ *     reference parameter presets only; the historical "NIST Level X"
+ *     description strings have been reworded under CR-11.A to stop
+ *     claiming AES-equivalent bits that are not backed by a proof for
+ *     the shipped construction.  Authoritative parameter-vs-security
+ *     mapping is tracked under CR-11.B (KAT publication).
+ *
+ *   * **Wire format:** stable across CR-9 (`'CRHS'` shares, `'CRRP'`
+ *     PoP, reserved `'CRHP'` partial sigs); no breaking change in
+ *     CR-11.A.
+ *
+ *   Do NOT use `DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING` for legally or
+ *   financially significant anonymity claims until CR-11.D closes.
+ */
+
 #include "dap_enc_key.h"
 #include "dap_enc_chipmunk_ring_params.h"
 
@@ -31,22 +66,21 @@ extern "C" {
 #endif
 
 /**
- * @brief NIST Post-Quantum Cryptography Security Levels
- * 
- * Based on NIST PQC standardization (FIPS 203, 204, 205):
- * - Level I:   >= AES-128 (128-bit classical, 64-bit quantum)
- * - Level II:  >= SHA-256 collision (128-bit quantum)
- * - Level III: >= AES-192 (192-bit classical, 96-bit quantum)
- * - Level IV:  >= SHA-384 collision (192-bit quantum)
- * - Level V:   >= AES-256 (256-bit classical, 128-bit quantum)
- * 
- * Chipmunk Ring extends beyond NIST levels with Level V+ for 100+ year security.
+ * @brief ChipmunkRing reference parameter presets.
+ *
+ * @experimental CR-11.A: enum values are STABLE, but the historical
+ *   "NIST Level X" mapping was reworded — the bit-strength claims
+ *   referenced legacy NewHope-style Ring-LWE estimates that no longer
+ *   correspond to the shipped hypertree HOTS construction.
+ *   Authoritative security analysis is tracked under CR-11.B (KAT
+ *   publication) and CR-11.C (formal model).  Treat the labels below
+ *   as preset *identifiers*, not as proofs of cryptographic strength.
  */
 typedef enum chipmunk_ring_security_level {
-    CHIPMUNK_RING_SECURITY_LEVEL_I = 1,     ///< NIST Level I: ~128-bit classical security
-    CHIPMUNK_RING_SECURITY_LEVEL_III = 3,   ///< NIST Level III: ~192-bit classical security
-    CHIPMUNK_RING_SECURITY_LEVEL_V = 5,     ///< NIST Level V: ~256-bit classical security
-    CHIPMUNK_RING_SECURITY_LEVEL_V_PLUS = 6 ///< Extended: ~300-bit classical, 100+ year quantum resistance
+    CHIPMUNK_RING_SECURITY_LEVEL_I = 1,     ///< Reference preset I (smallest parameters)
+    CHIPMUNK_RING_SECURITY_LEVEL_III = 3,   ///< Reference preset III (medium parameters)
+    CHIPMUNK_RING_SECURITY_LEVEL_V = 5,     ///< Reference preset V (large parameters)
+    CHIPMUNK_RING_SECURITY_LEVEL_V_PLUS = 6 ///< Reference preset V+ (largest, default)
 } chipmunk_ring_security_level_t;
 
 /**

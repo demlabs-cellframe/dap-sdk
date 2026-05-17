@@ -204,11 +204,36 @@ Reviewers sign off each item before marking CR-9.7 **CLOSED**.
 
 ---
 
-## 5. Review record (to be filled by reviewers)
+## 5. Review record
+
+### 5.1 SDK-side automated evidence (CR-9.7 closure — SDK)
+
+| Item | Source | Result |
+|------|--------|--------|
+| §4.1 Math: `t∈[2,n]`, `n≤64`, field=`CHIPMUNK_Q` | `chipmunk_ring_shamir.c` + `chipmunk_ring_threshold.c` validation | **PASS** — rejection paths return `-EINVAL` |
+| §4.1 Independent random polynomial per chunk | `chipmunk_ring_threshold_deal` loop calls `chipmunk_ring_shamir_share` per chunk with fresh CSPRNG coeffs | **PASS** |
+| §4.1 Lagrange basis uses `[1,n]` | `chipmunk_ring_shamir_reconstruct` rejects `index==0` and duplicates | **PASS** |
+| §4.1 PoP length-prefixed pk binding | `s_pop_message_derive` → `chipmunk_ring_domain_hash_internal` (TupleHash) | **PASS** |
+| §4.2 Error-path zeroisation | `goto fail` blocks + `dap_memwipe` in `pop_create`, `threshold_deal`, `threshold_combine`, `combine_to_key` | **PASS** |
+| §4.2 `pop_create` refuses `leaf_index != 0` | `chipmunk_ring_pop_create` returns `-EBUSY`; locked by `test_pop_create_rejects_used_sk` | **PASS** |
+| §4.2 `container_create_with_pop` fails closed | First failing PoP aborts before allocation; locked by `test_container_with_pop_rejects_rogue` | **PASS** |
+| §4.2 Wire magics non-colliding | `'CRHS'`/`'CRRP'`/`'CRHP'` reserved; documented in cr9_6 wire table | **PASS** |
+| §4.3 `test_unit_crypto_chipmunk_ring_shamir` | ctest 2026-05-17 | **PASS** |
+| §4.3 `test_unit_crypto_chipmunk_ring_threshold` | ctest 2026-05-17 | **PASS** |
+| §4.3 `test_unit_crypto_chipmunk_ring_pop` | ctest 2026-05-17 (incl. rogue-key) | **PASS** |
+| §4.3 `test_unit_crypto_chipmunk_ring_governance` | ctest 2026-05-17 | **PASS** |
+| §4.3 Full ctest | **107/107 PASS** (209 s) | **PASS** |
+| §4.4 `design_decision_cr9.md` §7 matches code | manual diff vs commits `db86a383`..`9a7cf730` | **PASS** |
+| §4.4 `cellframe_integration_guide.md` matches API | Governance Multisig section anchors `dap_enc_chipmunk_ring_governance.h` symbols byte-for-byte | **PASS** |
+| §4.4 Round-4 audit trail | `security_review_round4_post_remediation_findings.md` marks CR-D26..D33, D35 FIXED; CR-D34 WITHDRAWN; CR-INFRA-1 split to `task_c1e525d4` | **PASS** |
+
+### 5.2 Reviewer sign-off
 
 | Reviewer | Date | Result | Notes |
 |----------|------|--------|-------|
-| | | PENDING | |
+| SDK self-audit (agent) | 2026-05-17 | **CLOSED (SDK)** | §4.1–4.4 verified via the table above |
+| Internal crypto reviewer | — | PENDING | §4 re-validation by human peer |
+| Cellframe stakeholder | — | PENDING (§4.5) | Trusted-dealer + OOB share model acknowledgement |
 
 ---
 

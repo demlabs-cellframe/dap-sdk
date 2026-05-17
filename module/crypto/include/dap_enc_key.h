@@ -113,6 +113,21 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_KEM_NTRU_PRIME = 36,
     DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME = 37,
     DAP_ENC_KEY_TYPE_SIG_CHIPMUNK=0x0108,
+    /**
+     * @experimental ChipmunkRing: post-quantum ring signature.
+     *
+     * Production status (CR-11.A, 2026-05-17):
+     *   * Governance / threshold path (CR-9.4.A + CR-9.5 + CR-9.6) is
+     *     SDK-ready — see doc/crypto/chipmunk_ring/design_decision_cr9_7.md
+     *     for the proof sketch and peer-review checklist.
+     *   * True ring-signer ANONYMITY is **NOT yet claimed** — the current
+     *     implementation provides constant-time signer-index resolution
+     *     (CR-D2 / CR-D15.C) but lacks a cryptographic indistinguishability
+     *     proof.  Hardening is tracked under CR-11.D (RING-ANON) in
+     *     doc/crypto/chipmunk_ring/design_decision_cr11.md.
+     *   * Do NOT use this key type for legally / financially significant
+     *     anonymity claims until CR-11.D lands.
+     */
     DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING=0x0109,
 
     DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM = 99,
