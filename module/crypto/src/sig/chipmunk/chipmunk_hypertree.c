@@ -304,6 +304,55 @@ int chipmunk_ht_keypair_from_seed(const uint8_t a_seed[32],
  *  Sign                                                                  *
  * ---------------------------------------------------------------------- */
 
+static int s_sign_at_leaf(chipmunk_ht_private_key_t *a_sk,
+                          uint32_t a_leaf_index,
+                          const uint8_t *a_msg, size_t a_len,
+                          chipmunk_ht_signature_t *a_sig)
+{
+    chipmunk_hots_sk_t        l_leaf_sk;   memset(&l_leaf_sk, 0, sizeof(l_leaf_sk));
+    chipmunk_hots_signature_t l_hots_sig;  memset(&l_hots_sig, 0, sizeof(l_hots_sig));
+    chipmunk_path_t           l_path;      memset(&l_path, 0, sizeof(l_path));
+    int l_ret = CHIPMUNK_ERROR_SUCCESS;
+
+    memset(a_sig, 0, sizeof(*a_sig));
+
+    l_ret = dap_chipmunk_derive_hots_leaf_secret_internal(a_sk->key_seed,
+                                                          a_leaf_index,
+                                                          &l_leaf_sk);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Hypertree sign: leaf-%u secret derivation failed", a_leaf_index);
+        goto out;
+    }
+    l_ret = chipmunk_hots_sign(&l_leaf_sk, a_msg, a_len, &l_hots_sig);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Hypertree sign: HOTS sign failed at leaf %u: %d",
+               a_leaf_index, l_ret);
+        goto out;
+    }
+
+    l_ret = chipmunk_tree_gen_proof(&a_sk->tree, (size_t)a_leaf_index, &l_path);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Hypertree sign: gen_proof failed at leaf %u: %d",
+               a_leaf_index, l_ret);
+        goto out;
+    }
+
+    for (int i = 0; i < CHIPMUNK_GAMMA; ++i) {
+        memcpy(&a_sig->hots_sig.sigma[i], &l_hots_sig.sigma[i], sizeof(chipmunk_poly_t));
+    }
+    a_sig->leaf_index = a_leaf_index;
+    memcpy(&a_sig->leaf_pk, &a_sk->leaf_pks[a_leaf_index], sizeof(chipmunk_hots_pk_t));
+    a_sig->auth_path = l_path;   /* ownership transfer */
+
+out:
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        chipmunk_path_free(&l_path);
+    }
+    s_wipe(&l_leaf_sk,  sizeof(l_leaf_sk));
+    s_wipe(&l_hots_sig, sizeof(l_hots_sig));
+    return l_ret;
+}
+
 int chipmunk_ht_sign(chipmunk_ht_private_key_t *a_sk,
                       const uint8_t *a_msg, size_t a_len,
                       chipmunk_ht_signature_t *a_sig)
@@ -320,22 +369,12 @@ int chipmunk_ht_sign(chipmunk_ht_private_key_t *a_sk,
         return CHIPMUNK_ERROR_INVALID_SIZE;
     }
 
-    /*
-     * Initialise the signature to a benign state before we touch any of
-     * its owning pointers so that an early failure path below leaves the
-     * caller with a zero struct (chipmunk_ht_signature_clear is safe on
-     * zero).
-     */
-    memset(a_sig, 0, sizeof(*a_sig));
-
     int l_rc = pthread_mutex_lock(&a_sk->mutex);
     if (l_rc != 0) {
         log_it(L_ERROR, "Failed to lock hypertree sk mutex: %d", l_rc);
         return CHIPMUNK_ERROR_INTERNAL;
     }
 
-    chipmunk_hots_sk_t        l_leaf_sk;   memset(&l_leaf_sk, 0, sizeof(l_leaf_sk));
-    chipmunk_hots_signature_t l_hots_sig;  memset(&l_hots_sig, 0, sizeof(l_hots_sig));
     int l_ret = CHIPMUNK_ERROR_SUCCESS;
 
     if (a_sk->leaf_index >= CHIPMUNK_HT_MAX_SIGNATURES) {
@@ -347,56 +386,40 @@ int chipmunk_ht_sign(chipmunk_ht_private_key_t *a_sk,
     }
 
     const uint32_t l_idx = a_sk->leaf_index;
-
-    /*
-     * Derive the leaf HOTS secret exactly the way s_materialise_tree
-     * did at keygen (CR-D3 shared domain separator).  Equality of the
-     * two derivations is the invariant that makes the stored root verify
-     * against the signature we are about to emit.
-     */
-    l_ret = dap_chipmunk_derive_hots_leaf_secret_internal(a_sk->key_seed, l_idx, &l_leaf_sk);
-    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Hypertree sign: leaf-%u secret derivation failed", l_idx);
-        goto out;
-    }
-    l_ret = chipmunk_hots_sign(&l_leaf_sk, a_msg, a_len, &l_hots_sig);
-    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Hypertree sign: HOTS sign failed at leaf %u: %d", l_idx, l_ret);
-        goto out;
-    }
-
-    /*
-     * Build the auth path against the current materialised tree.  The
-     * tree build/rebuild path normalises to the same heap indices that
-     * chipmunk_path_verify later walks against the root.
-     */
-    chipmunk_path_t l_path;
-    memset(&l_path, 0, sizeof(l_path));
-    l_ret = chipmunk_tree_gen_proof(&a_sk->tree, (size_t)l_idx, &l_path);
-    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Hypertree sign: gen_proof failed at leaf %u: %d", l_idx, l_ret);
-        goto out;
-    }
-
-    /*
-     * Populate the output signature.  Note: chipmunk_tree_gen_proof
-     * already allocated l_path.nodes — we MOVE that allocation into
-     * a_sig->auth_path, so the signature now owns it.
-     */
-    for (int i = 0; i < CHIPMUNK_GAMMA; ++i) {
-        memcpy(&a_sig->hots_sig.sigma[i], &l_hots_sig.sigma[i], sizeof(chipmunk_poly_t));
-    }
-    a_sig->leaf_index = l_idx;
-    memcpy(&a_sig->leaf_pk, &a_sk->leaf_pks[l_idx], sizeof(chipmunk_hots_pk_t));
-    a_sig->auth_path = l_path;   /* ownership transfer */
+    l_ret = s_sign_at_leaf(a_sk, l_idx, a_msg, a_len, a_sig);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) goto out;
 
     /* Advance the counter AFTER every output field is committed so a
      * transient failure during the sign doesn't burn a slot. */
     a_sk->leaf_index = l_idx + 1u;
 
 out:
-    s_wipe(&l_leaf_sk,  sizeof(l_leaf_sk));
-    s_wipe(&l_hots_sig, sizeof(l_hots_sig));
+    pthread_mutex_unlock(&a_sk->mutex);
+    return l_ret;
+}
+
+int chipmunk_ht_sign_pop(chipmunk_ht_private_key_t *a_sk,
+                         const uint8_t *a_msg, size_t a_len,
+                         chipmunk_ht_signature_t *a_sig)
+{
+    if (!a_sk || !a_msg || !a_sig) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    if (!a_sk->materialised || !a_sk->leaf_pks || !a_sk->mutex_inited) {
+        log_it(L_ERROR, "Hypertree sk is not materialised; call keypair/from_bytes first");
+        return CHIPMUNK_ERROR_INTERNAL;
+    }
+    if (a_len > 10 * 1024 * 1024) {
+        log_it(L_ERROR, "Message too large for hypertree PoP sign (%zu bytes)", a_len);
+        return CHIPMUNK_ERROR_INVALID_SIZE;
+    }
+
+    int l_rc = pthread_mutex_lock(&a_sk->mutex);
+    if (l_rc != 0) {
+        log_it(L_ERROR, "Failed to lock hypertree sk mutex: %d", l_rc);
+        return CHIPMUNK_ERROR_INTERNAL;
+    }
+    int l_ret = s_sign_at_leaf(a_sk, CHIPMUNK_HT_POP_LEAF_INDEX, a_msg, a_len, a_sig);
     pthread_mutex_unlock(&a_sk->mutex);
     return l_ret;
 }
@@ -405,9 +428,9 @@ out:
  *  Verify                                                                *
  * ---------------------------------------------------------------------- */
 
-int chipmunk_ht_verify(const chipmunk_ht_public_key_t *a_pk,
-                        const uint8_t *a_msg, size_t a_len,
-                        const chipmunk_ht_signature_t *a_sig)
+static int s_verify_any_committed_leaf(const chipmunk_ht_public_key_t *a_pk,
+                                       const uint8_t *a_msg, size_t a_len,
+                                       const chipmunk_ht_signature_t *a_sig)
 {
     if (!a_pk || !a_msg || !a_sig) {
         return CHIPMUNK_ERROR_NULL_PARAM;
@@ -482,6 +505,42 @@ int chipmunk_ht_verify(const chipmunk_ht_public_key_t *a_pk,
     }
 
     return CHIPMUNK_ERROR_SUCCESS;
+}
+
+int chipmunk_ht_verify(const chipmunk_ht_public_key_t *a_pk,
+                        const uint8_t *a_msg, size_t a_len,
+                        const chipmunk_ht_signature_t *a_sig)
+{
+    if (!a_pk || !a_msg || !a_sig) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    if (a_len > 10 * 1024 * 1024) {
+        return CHIPMUNK_ERROR_INVALID_SIZE;
+    }
+    if (a_sig && a_sig->leaf_index >= CHIPMUNK_HT_MAX_SIGNATURES) {
+        log_it(L_WARNING, "Hypertree production verify: reserved/non-production leaf %u",
+               a_sig->leaf_index);
+        return CHIPMUNK_ERROR_VERIFY_FAILED;
+    }
+    return s_verify_any_committed_leaf(a_pk, a_msg, a_len, a_sig);
+}
+
+int chipmunk_ht_verify_pop(const chipmunk_ht_public_key_t *a_pk,
+                           const uint8_t *a_msg, size_t a_len,
+                           const chipmunk_ht_signature_t *a_sig)
+{
+    if (!a_pk || !a_msg || !a_sig) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    if (a_len > 10 * 1024 * 1024) {
+        return CHIPMUNK_ERROR_INVALID_SIZE;
+    }
+    if (a_sig && a_sig->leaf_index != CHIPMUNK_HT_POP_LEAF_INDEX) {
+        log_it(L_WARNING, "Hypertree PoP verify: leaf_index %u != reserved PoP leaf %u",
+               a_sig->leaf_index, CHIPMUNK_HT_POP_LEAF_INDEX);
+        return CHIPMUNK_ERROR_VERIFY_FAILED;
+    }
+    return s_verify_any_committed_leaf(a_pk, a_msg, a_len, a_sig);
 }
 
 /* ---------------------------------------------------------------------- *

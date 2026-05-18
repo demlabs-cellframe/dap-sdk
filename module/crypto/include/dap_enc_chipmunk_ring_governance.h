@@ -3,8 +3,8 @@
  * surface (CR-9.6).  Thin dap_enc_key wrappers over CR-9.4.A threshold
  * dealer/combiner and CR-9.5 Proof-of-Possession.
  *
- * See doc/crypto/chipmunk_ring/design_decision_cr9_6.md and
- * doc/crypto/chipmunk_ring/cellframe_integration_guide.md.
+ * See SLC `documentation_831b3c2fd035cada` (CR-9.6 design) and
+ * SLC `documentation_c13915924bce1940` (Cellframe integration guide).
  */
 
 #pragma once
@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 /**
- * @brief Wire size of a CR-9.5 PoP blob (8-byte header + ht signature).
+ * @brief Wire size of a CR-9.5/CR-11.E PoP blob (8-byte header + ht signature).
  *        Use this to size registry buffers in Cellframe cert storage.
  */
 size_t dap_enc_chipmunk_ring_pop_wire_size(void);
@@ -57,10 +57,11 @@ int dap_enc_chipmunk_ring_governance_combine_to_key(
     struct dap_enc_key **a_out_key);
 
 /**
- * @brief Create a Proof-of-Possession for a ring member key (CR-9.5).
+ * @brief Create a Proof-of-Possession for a ring member key (CR-11.E v2).
  *
- * @a a_member_key MUST carry private key material and
- * @c leaf_index == 0 (no prior chipmunk_ht_sign on this sk).
+ * @a a_member_key MUST carry private key material.  PoP uses the
+ * Merkle-committed reserved PoP leaf and does not mutate the production
+ * @c leaf_index counter.
  */
 int dap_enc_chipmunk_ring_member_pop_create(struct dap_enc_key *a_member_key,
                                             uint8_t *a_out_pop,

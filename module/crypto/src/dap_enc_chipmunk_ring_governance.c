@@ -99,16 +99,6 @@ int dap_enc_chipmunk_ring_member_pop_create(struct dap_enc_key *a_member_key,
 
     l_rc = chipmunk_ring_pop_create(&l_sk, a_out_pop, l_pop_sz);
 
-    /* Flush leaf_index mutation back even on -EBUSY so caller state
-     * stays consistent with the hypertree (CR-D15.C discipline). */
-    if (l_rc == 0 || l_sk.leaf_index != 0u) {
-        int l_ser = chipmunk_ht_private_key_to_bytes(a_member_key->priv_key_data,
-                                                     &l_sk);
-        if (l_ser != 0 && l_rc == 0) {
-            l_rc = l_ser;
-        }
-    }
-
     chipmunk_ht_private_key_clear(&l_sk);
     return l_rc;
 }

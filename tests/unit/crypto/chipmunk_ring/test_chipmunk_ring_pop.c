@@ -1,12 +1,12 @@
 /*
- * test_chipmunk_ring_pop.c — CR-9.5 acceptance tests
+ * test_chipmunk_ring_pop.c — CR-9.5 / CR-11.E acceptance tests
  *
  * Locks in the Proof-of-Possession primitive
  * (dap_chipmunk_ring_threshold.h / pop_create / pop_verify /
  * pop_verify_bytes).  Every row of
- * doc/crypto/chipmunk_ring/design_decision_cr9_5.md §5 has a
- * dedicated check below, including the explicit rogue-key attack
- * regression test (row #11).
+ * SLC `documentation_c17bd6bdc72b4e00` (CR-9.5 design) §5 has a
+ * dedicated check below.  CR-11.E intentionally removes v1 wire
+ * compatibility because ChipmunkRing has not shipped in production.
  */
 
 #include <dap_common.h>
@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -46,7 +47,7 @@ static void s_keypair_from_seed_byte(uint8_t a_seed_byte,
 }
 
 /* ------------------------------------------------------------------ */
-/* Tests (matching design_decision_cr9_5.md §5)                        */
+/* Tests (matching CR-9.5 + CR-11.E SLC contracts)                     */
 /* ------------------------------------------------------------------ */
 
 static bool s_test_pop_roundtrip_deterministic(void)
@@ -94,7 +95,7 @@ static bool s_test_pop_roundtrip_random(void)
     return true;
 }
 
-static bool s_test_pop_create_rejects_used_sk(void)
+static bool s_test_pop_create_accepts_used_sk_and_preserves_counter(void)
 {
     chipmunk_ht_public_key_t  l_pk;
     chipmunk_ht_private_key_t l_sk;
@@ -109,14 +110,42 @@ static bool s_test_pop_create_rejects_used_sk(void)
     dap_assert(l_sk.leaf_index == 1u, "leaf_index advanced to 1");
 
     uint8_t *l_pop = DAP_NEW_Z_SIZE(uint8_t, POP_BYTES);
-    memset(l_pop, 0xAA, POP_BYTES);   /* pre-fill to assert zeroisation */
     rc = chipmunk_ring_pop_create(&l_sk, l_pop, POP_BYTES);
-    dap_assert(rc == -EBUSY, "pop_create rejects consumed sk with -EBUSY");
+    dap_assert(rc == 0, "CR-11.E pop_create accepts already-used production sk");
+    dap_assert(l_sk.leaf_index == 1u, "CR-11.E pop_create preserves production counter");
+    dap_assert(chipmunk_ring_pop_verify(&l_pk, l_pop, POP_BYTES) == 0,
+               "CR-11.E PoP verifies under matching pk");
 
-    /* Output zeroised on the error path. */
-    for (size_t i = 0; i < POP_BYTES; ++i) {
-        dap_assert(l_pop[i] == 0u, "PoP output zeroised on -EBUSY");
+    DAP_DELETE(l_pop);
+    chipmunk_ht_private_key_clear(&l_sk);
+    return true;
+}
+
+static bool s_test_pop_preserves_full_production_budget(void)
+{
+    chipmunk_ht_public_key_t  l_pk;
+    chipmunk_ht_private_key_t l_sk;
+    s_keypair_from_seed_byte(0x12, &l_pk, &l_sk);
+
+    uint8_t *l_pop = DAP_NEW_Z_SIZE(uint8_t, POP_BYTES);
+    int rc = chipmunk_ring_pop_create(&l_sk, l_pop, POP_BYTES);
+    dap_assert(rc == 0, "PoP before production signing succeeds");
+    dap_assert(l_sk.leaf_index == 0u, "PoP does not consume production leaf 0");
+
+    for (uint32_t i = 0; i < CHIPMUNK_HT_MAX_SIGNATURES; ++i) {
+        char l_msg[32];
+        snprintf(l_msg, sizeof(l_msg), "budget-%u", (unsigned)i);
+        chipmunk_ht_signature_t l_sig;
+        memset(&l_sig, 0, sizeof(l_sig));
+        rc = chipmunk_ht_sign(&l_sk, (const uint8_t *)l_msg, strlen(l_msg), &l_sig);
+        dap_assert(rc == 0, "production sign succeeds after PoP");
+        dap_assert(l_sig.leaf_index == i, "production leaf index remains monotonic");
+        rc = chipmunk_ht_verify(&l_pk, (const uint8_t *)l_msg, strlen(l_msg), &l_sig);
+        dap_assert(rc == 0, "production signature verifies after PoP");
+        chipmunk_ht_signature_clear(&l_sig);
     }
+    dap_assert(l_sk.leaf_index == CHIPMUNK_HT_MAX_SIGNATURES,
+               "all production leaves remain available after PoP");
 
     DAP_DELETE(l_pop);
     chipmunk_ht_private_key_clear(&l_sk);
@@ -201,6 +230,10 @@ static bool s_test_pop_verify_rejects_bad_version(void)
     l_pop[4] = 0x99u;   /* unknown version */
     int rc = chipmunk_ring_pop_verify(&l_pk, l_pop, POP_BYTES);
     dap_assert(rc == -EINVAL, "unknown version -> -EINVAL");
+
+    l_pop[4] = 0x01u;   /* old CR-9.5 v1, intentionally unsupported */
+    rc = chipmunk_ring_pop_verify(&l_pk, l_pop, POP_BYTES);
+    dap_assert(rc == -EINVAL, "legacy v1 version -> -EINVAL");
 
     DAP_DELETE(l_pop);
     chipmunk_ht_private_key_clear(&l_sk);
@@ -371,7 +404,8 @@ int main(void)
     int l_rc = 0;
     if (!s_test_pop_roundtrip_deterministic())               l_rc = 1;
     if (!s_test_pop_roundtrip_random())                      l_rc = 1;
-    if (!s_test_pop_create_rejects_used_sk())                l_rc = 1;
+    if (!s_test_pop_create_accepts_used_sk_and_preserves_counter()) l_rc = 1;
+    if (!s_test_pop_preserves_full_production_budget())       l_rc = 1;
     if (!s_test_pop_create_rejects_null())                   l_rc = 1;
     if (!s_test_pop_verify_rejects_wrong_pk())               l_rc = 1;
     if (!s_test_pop_verify_rejects_bad_magic())              l_rc = 1;

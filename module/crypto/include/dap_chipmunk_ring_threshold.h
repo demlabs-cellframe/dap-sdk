@@ -1,6 +1,6 @@
 /*
  * dap_chipmunk_ring_threshold.h — public threshold dealer/combiner API
- * (CR-9.4.A).  See doc/crypto/chipmunk_ring/design_decision_cr9_4.md
+ * (CR-9.4.A).  See SLC `documentation_ef0d4cc844e1f421` (CR-9.4 design)
  * for the full design rationale.
  *
  * This header carries the *trusted-dealer* dealer/combine surface
@@ -154,7 +154,8 @@ void chipmunk_ring_threshold_share_wipe(chipmunk_ring_threshold_share_t *a_share
  *  CR-9.5 — Proof of Possession (PoP) against rogue-key attack
  * ==================================================================
  *
- *  See doc/crypto/chipmunk_ring/design_decision_cr9_5.md for the
+ *  See SLC `documentation_c17bd6bdc72b4e00` (CR-9.5 design) and the
+ *  CR-11.E section of SLC `documentation_a57a7626f6cb30b2` for the
  *  full design rationale.  TL;DR: every public key admitted into a
  *  ring container (or a future CR-9.4.B aggregate) MUST be
  *  accompanied by a PoP — a chipmunk_ht signature under sk_i over a
@@ -170,9 +171,9 @@ void chipmunk_ring_threshold_share_wipe(chipmunk_ring_threshold_share_t *a_share
  *  'CRHP' (CR-9.4.B) so no two CR-9 wire blobs collide on the wire. */
 #define CHIPMUNK_RING_POP_MAGIC                 0x50525243u
 
-/** PoP wire-format version.  Bumps when the body layout changes
- *  (today: serialised chipmunk_ht_signature). */
-#define CHIPMUNK_RING_POP_VERSION               1u
+/** PoP wire-format version.  CR-11.E intentionally bumps to v2 and
+ *  rejects v1 because ChipmunkRing has not shipped in production. */
+#define CHIPMUNK_RING_POP_VERSION               2u
 
 /** Header layout: magic(4) || version(1) || reserved(3 zero bytes). */
 #define CHIPMUNK_RING_POP_HEADER_BYTES          8u
@@ -197,24 +198,22 @@ void chipmunk_ring_threshold_share_wipe(chipmunk_ring_threshold_share_t *a_share
  *
  * Internally:
  *   1. extract pk_bytes via chipmunk_ht_public_key_to_bytes;
- *   2. derive pop_message = SHA3-256("chipmunk-ring-pop/v1" ||
+ *   2. derive pop_message = SHA3-256("chipmunk-ring-pop/v2" ||
  *      LE32(len(pk_bytes)) || pk_bytes) — TupleHash discipline
  *      established in CR-D31;
- *   3. sign pop_message under sk via chipmunk_ht_sign (consumes
- *      leaf_index 0);
+ *   3. sign pop_message under the Merkle-committed reserved PoP leaf
+ *      via chipmunk_ht_sign_pop (does NOT consume production leaves);
  *   4. wrap the signature with the CR-9.5 envelope.
  *
  * Contract:
- *   * @a a_sk MUST be a freshly-materialised hypertree sk with
- *     leaf_index == 0; if any production signing already consumed
- *     leaf 0 the function returns -EBUSY without touching @a a_sk.
+ *   * @a a_sk may have any production leaf_index in
+ *     [0, CHIPMUNK_HT_MAX_SIGNATURES]; PoP creation does not mutate it.
  *   * @a a_out_pop is a caller-provided buffer of at least
  *     CHIPMUNK_RING_POP_BYTES_FROM_HT_SIG(CHIPMUNK_HT_SIGNATURE_SIZE)
  *     bytes.
  *
  * @return 0 on success;
  *         -EINVAL on NULL input;
- *         -EBUSY  if sk->leaf_index != 0;
  *         negative chipmunk_ht_sign / serialise errors otherwise.
  *         On any error the output buffer is fully zeroised.
  */

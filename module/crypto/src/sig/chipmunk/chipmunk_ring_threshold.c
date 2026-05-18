@@ -322,25 +322,26 @@ void chipmunk_ring_threshold_share_wipe(chipmunk_ring_threshold_share_t *a_share
 }
 
 /* ==================================================================
- *  CR-9.5 — Proof of Possession (PoP) against rogue-key attack
+ *  CR-9.5 / CR-11.E — Proof of Possession (PoP) against rogue-key attack
  * ==================================================================
  *
  *  Wire envelope (LE):
  *    +0   magic    'CRRP'                            (4 B)
- *    +4   version  CHIPMUNK_RING_POP_VERSION         (1 B)
+ *    +4   version  CHIPMUNK_RING_POP_VERSION         (1 B, v2 only)
  *    +5   reserved 0x00 × 3 (must be zero on verify) (3 B)
  *    +8   sig      serialised chipmunk_ht_signature  (CHIPMUNK_HT_SIGNATURE_SIZE)
  */
 
-/** Canonical PoP domain — TupleHash discipline per CR-D31 with the
- *  /v1 suffix locked in (D-1 of design_decision_cr9_5.md §6). */
-#define S_POP_DOMAIN  "chipmunk-ring-pop/v1"
+/** Canonical PoP domain — TupleHash discipline per CR-D31.  CR-11.E
+ *  intentionally bumps to /v2 and rejects v1: ChipmunkRing has not
+ *  shipped in production, so there is no legacy PoP wire format to carry. */
+#define S_POP_DOMAIN  "chipmunk-ring-pop/v2"
 
 /** Pin the PoP body size to the chipmunk hypertree signature size at
  *  compile time.  If the underlying ht_sig grows, this assertion
  *  fires at the exact buffer that depends on it (D-8). */
 _Static_assert(CHIPMUNK_RING_POP_HEADER_BYTES == 8u,
-               "v1 PoP envelope header must be exactly 8 bytes");
+               "v2 PoP envelope header must be exactly 8 bytes");
 #define S_POP_TOTAL_BYTES                                                       \
     (CHIPMUNK_RING_POP_HEADER_BYTES + (size_t)CHIPMUNK_HT_SIGNATURE_SIZE)
 
@@ -394,12 +395,6 @@ int chipmunk_ring_pop_create(struct chipmunk_ht_private_key *a_sk,
 
     if (a_sk == NULL)                                return -EINVAL;
     if (a_out_pop_size < S_POP_TOTAL_BYTES)          return -EINVAL;
-    if (a_sk->leaf_index != 0u) {
-        /* CR-D3 guard: the PoP slot has already been consumed by
-         * production signing.  Silent re-use would replay a HOTS
-         * leaf and leak the per-leaf secret. */
-        return -EBUSY;
-    }
 
     int l_rc = 0;
     uint8_t l_pk_bytes[CHIPMUNK_HT_PUBLIC_KEY_SIZE];
@@ -413,9 +408,10 @@ int chipmunk_ring_pop_create(struct chipmunk_ht_private_key *a_sk,
     l_rc = s_pop_message_derive(l_pk_bytes, l_pop_msg);
     if (l_rc != 0) goto fail;
 
-    /* Sign the pop_message at leaf_index 0 (atomic via the mutex
-     * inside chipmunk_ht_sign). */
-    l_rc = chipmunk_ht_sign(a_sk, l_pop_msg, sizeof(l_pop_msg), &l_ht_sig);
+    /* CR-11.E: sign the pop_message at the Merkle-committed reserved
+     * PoP leaf.  This does not mutate a_sk->leaf_index and production
+     * verification rejects that leaf. */
+    l_rc = chipmunk_ht_sign_pop(a_sk, l_pop_msg, sizeof(l_pop_msg), &l_ht_sig);
     if (l_rc != 0) goto fail;
 
     s_pop_write_header(a_out_pop);
@@ -464,7 +460,7 @@ int chipmunk_ring_pop_verify(const struct chipmunk_ht_public_key *a_pk,
                                             a_pop + CHIPMUNK_RING_POP_HEADER_BYTES);
     if (l_rc != 0) goto out;
 
-    l_rc = chipmunk_ht_verify(a_pk, l_pop_msg, sizeof(l_pop_msg), &l_ht_sig);
+    l_rc = chipmunk_ht_verify_pop(a_pk, l_pop_msg, sizeof(l_pop_msg), &l_ht_sig);
 
 out:
     chipmunk_ht_signature_clear(&l_ht_sig);

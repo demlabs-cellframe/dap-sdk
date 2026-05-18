@@ -5,10 +5,12 @@
  *
  *   1. keypair_from_seed is deterministic — two calls with identical
  *      seeds produce identical (rho_seed, hasher_seed, root) pk bytes.
- *   2. Every leaf_index in [0, CHIPMUNK_HT_LEAF_COUNT) produces a
- *      verifying signature that binds to exactly that index.
+ *   2. Every production leaf_index in [0, CHIPMUNK_HT_MAX_SIGNATURES)
+ *      produces a verifying signature that binds to exactly that index.
  *   3. Exhausting the tree returns CHIPMUNK_ERROR_KEY_EXHAUSTED and
  *      does not further advance the counter.
+ *   3b. CR-11.E reserved PoP leaf signs/verifies only through the PoP
+ *       verifier and does not advance the production counter.
  *   4. Tamper detection:
  *        (a) replacing leaf_pk in a valid signature must break verify,
  *        (b) swapping two signatures' auth paths must break verify,
@@ -77,7 +79,7 @@ static void s_test_deterministic_keygen(void)
 }
 
 /* ---------------------------------------------------------------------- *
- *  2. Every leaf signs and verifies                                      *
+ *  2. Every production leaf signs and verifies                           *
  * ---------------------------------------------------------------------- */
 
 static chipmunk_ht_signature_t *s_all_sigs = NULL;
@@ -91,7 +93,7 @@ static void s_test_all_leaves_sign_verify(chipmunk_ht_public_key_t *a_pk_out,
     CHECK(chipmunk_ht_keypair_from_seed(l_seed, a_pk_out, a_sk_out) == CHIPMUNK_ERROR_SUCCESS,
           "all-leaves keypair_from_seed");
 
-    const uint32_t N = CHIPMUNK_HT_LEAF_COUNT;
+    const uint32_t N = CHIPMUNK_HT_MAX_SIGNATURES;
     s_all_sigs = DAP_NEW_Z_COUNT(chipmunk_ht_signature_t, N);
     CHECK(s_all_sigs != NULL, "alloc sigs buffer");
     if (!s_all_sigs) return;
@@ -119,9 +121,9 @@ static void s_test_all_leaves_sign_verify(chipmunk_ht_public_key_t *a_pk_out,
             break;
         }
     }
-    CHECK(l_sign_ok,   "every leaf_index in [0, LEAF_COUNT) signs successfully");
+    CHECK(l_sign_ok,   "every production leaf_index signs successfully");
     CHECK(l_verify_ok, "every produced signature verifies under its own message");
-    CHECK(a_sk_out->leaf_index == N, "after all leaves, sk->leaf_index == LEAF_COUNT");
+    CHECK(a_sk_out->leaf_index == N, "after production leaves, sk->leaf_index == MAX_SIGNATURES");
 }
 
 /* ---------------------------------------------------------------------- *
@@ -138,6 +140,35 @@ static void s_test_exhaustion(chipmunk_ht_private_key_t *a_sk)
     CHECK(l_rc == CHIPMUNK_ERROR_KEY_EXHAUSTED, "overflow attempt returns KEY_EXHAUSTED");
     CHECK(a_sk->leaf_index == l_before, "counter pinned after exhaustion");
     chipmunk_ht_signature_clear(&l_extra);
+}
+
+/* ---------------------------------------------------------------------- *
+ *  3b. Reserved PoP leaf                                                  *
+ * ---------------------------------------------------------------------- */
+
+static void s_test_reserved_pop_leaf(chipmunk_ht_public_key_t *a_pk,
+                                     chipmunk_ht_private_key_t *a_sk)
+{
+    chipmunk_ht_signature_t l_pop_sig;
+    memset(&l_pop_sig, 0, sizeof(l_pop_sig));
+    const char *l_msg = "cr-11.e pop proof";
+    const uint32_t l_before = a_sk->leaf_index;
+
+    int l_rc = chipmunk_ht_sign_pop(a_sk, (const uint8_t *)l_msg, strlen(l_msg), &l_pop_sig);
+    CHECK(l_rc == CHIPMUNK_ERROR_SUCCESS, "reserved PoP leaf signs successfully");
+    CHECK(a_sk->leaf_index == l_before, "reserved PoP sign does not advance production counter");
+    CHECK(l_pop_sig.leaf_index == CHIPMUNK_HT_POP_LEAF_INDEX,
+          "reserved PoP signature uses CHIPMUNK_HT_POP_LEAF_INDEX");
+
+    l_rc = chipmunk_ht_verify(a_pk, (const uint8_t *)l_msg, strlen(l_msg), &l_pop_sig);
+    CHECK(l_rc == CHIPMUNK_ERROR_VERIFY_FAILED,
+          "production verifier rejects reserved PoP leaf");
+
+    l_rc = chipmunk_ht_verify_pop(a_pk, (const uint8_t *)l_msg, strlen(l_msg), &l_pop_sig);
+    CHECK(l_rc == CHIPMUNK_ERROR_SUCCESS,
+          "PoP verifier accepts reserved PoP leaf");
+
+    chipmunk_ht_signature_clear(&l_pop_sig);
 }
 
 /* ---------------------------------------------------------------------- *
@@ -305,11 +336,12 @@ int main(void)
     chipmunk_ht_private_key_t l_sk;  memset(&l_sk,  0, sizeof(l_sk));
     s_test_all_leaves_sign_verify(&l_pk, &l_sk);
     s_test_exhaustion(&l_sk);
+    s_test_reserved_pop_leaf(&l_pk, &l_sk);
     s_test_tamper(&l_pk);
     s_test_sig_roundtrip(&l_pk);
 
     if (s_all_sigs) {
-        for (uint32_t i = 0; i < CHIPMUNK_HT_LEAF_COUNT; ++i) {
+        for (uint32_t i = 0; i < CHIPMUNK_HT_MAX_SIGNATURES; ++i) {
             chipmunk_ht_signature_clear(&s_all_sigs[i]);
         }
         DAP_DEL_MULTY(s_all_sigs);

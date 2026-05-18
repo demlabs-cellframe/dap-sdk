@@ -2,21 +2,22 @@
  * Authors:
  * Dmitry A. Gerasimov <ceo@cellframe.net>
  * DeM Labs Inc.   https://demlabs.net
- * Copyright  (c) 2017-2026
+ * Copyright  (c) 2026
  *
  * Chipmunk Hypertree (CR-D15.B) — stateful post-quantum signature that
  * materialises a Merkle tree over 2^(HEIGHT-1) HOTS public keys at keygen
- * time, lets the holder sign up to that many messages by walking the
- * leaves sequentially, and binds every signature to its leaf through an
- * authentication path that the verifier checks against the public root.
+ * time, lets the holder sign CHIPMUNK_HT_MAX_SIGNATURES production
+ * messages by walking the production leaves sequentially, and binds every
+ * signature to its leaf through an authentication path that the verifier
+ * checks against the public root.
  *
  * Each single-shot Chipmunk HOTS signature is existentially forgeable on
  * the SECOND signing under the same key; CR-D3 closed that hole by
  * refusing to sign a second time under the plain chipmunk_sign.  This
  * hypertree wrapper lifts the practical capacity from 1 to
- * CHIPMUNK_HT_MAX_SIGNATURES (=64 at HEIGHT=7) while retaining strict
- * one-time reuse per leaf — EXACTLY the classical "chipmunk hypertree"
- * construction from the paper.
+ * CHIPMUNK_HT_MAX_SIGNATURES (=64) while retaining strict one-time reuse
+ * per production leaf.  CR-11.E reserves one additional Merkle-committed
+ * leaf for Proof-of-Possession so PoP no longer burns production leaf 0.
  *
  * Threat model notes (CR-D15 remediation):
  *   - The leaf derivation uses the same domain-separated SHA3-256 chain
@@ -51,19 +52,24 @@ extern "C" {
  * ---------------------------------------------------------------------- */
 
 /*
- * HEIGHT=7 gives 2^(7-1) = 64 usable signing slots per keypair.  The
- * figure balances:
+ * HEIGHT=8 gives 2^(8-1) = 128 committed leaves per keypair.  Only the
+ * first 64 leaves are usable by the production signer; the last leaf is
+ * reserved for CR-11.E Proof-of-Possession.  The figure balances:
  *    - keygen cost  ~ 2^(HEIGHT-1) HOTS-keygens + tree build (≈1–2 s),
  *    - sig size     ~ 12 KiB sigma + 4 KiB leaf pk + (H-1)·4 KiB auth path,
- *    - capacity      enough for typical consensus / session usage.
+ *    - capacity      64 production signatures + one reserved PoP proof.
  *
  * Chipmunk's underlying chipmunk_tree enforces HEIGHT ∈ [5, 16]; this
  * value sits comfortably in range and can be bumped later once the tree
  * build is parallelised (CR-D15.C follow-up).
  */
-#define CHIPMUNK_HT_HEIGHT            7u
-#define CHIPMUNK_HT_LEAF_COUNT        (1u << (CHIPMUNK_HT_HEIGHT - 1u))      /* 64 */
-#define CHIPMUNK_HT_MAX_SIGNATURES    CHIPMUNK_HT_LEAF_COUNT
+#define CHIPMUNK_HT_HEIGHT                    8u
+#define CHIPMUNK_HT_LEAF_COUNT                (1u << (CHIPMUNK_HT_HEIGHT - 1u)) /* 128 */
+#define CHIPMUNK_HT_MAX_SIGNATURES            64u
+#define CHIPMUNK_HT_POP_LEAF_INDEX            (CHIPMUNK_HT_LEAF_COUNT - 1u)
+
+_Static_assert(CHIPMUNK_HT_MAX_SIGNATURES < CHIPMUNK_HT_POP_LEAF_INDEX,
+               "PoP leaf must live outside production signing range");
 
 /*
  * Serialised public key = rho_seed(32) || hasher_seed(32) || root(CHIPMUNK_N·4).
@@ -172,9 +178,9 @@ int chipmunk_ht_keypair_from_seed(const uint8_t a_seed[32],
 /**
  * @brief Sign a message at the next free leaf.
  *
- * Advances sk->leaf_index atomically.  Returns CHIPMUNK_ERROR_KEY_EXHAUSTED
- * once all CHIPMUNK_HT_MAX_SIGNATURES slots are used — the caller MUST
- * rotate keys at that point.
+ * Advances sk->leaf_index atomically through production leaves only.
+ * Returns CHIPMUNK_ERROR_KEY_EXHAUSTED once all CHIPMUNK_HT_MAX_SIGNATURES
+ * production slots are used — the caller MUST rotate keys at that point.
  *
  * @param[in,out] a_sk   Private key (leaf_index mutated on success).
  * @param[in]     a_msg  Message to sign (≤ 10 MiB).
@@ -188,10 +194,22 @@ int chipmunk_ht_sign(chipmunk_ht_private_key_t *a_sk,
                       chipmunk_ht_signature_t *a_sig);
 
 /**
+ * @brief Sign the CR-11.E Proof-of-Possession message at the reserved PoP leaf.
+ *
+ * Does NOT advance sk->leaf_index and is rejected by the production verifier.
+ * The output MUST be verified with chipmunk_ht_verify_pop, not
+ * chipmunk_ht_verify.  This keeps PoP anchored in the same Merkle root as
+ * the production key while preserving the full production leaf budget.
+ */
+int chipmunk_ht_sign_pop(chipmunk_ht_private_key_t *a_sk,
+                         const uint8_t *a_msg, size_t a_len,
+                         chipmunk_ht_signature_t *a_sig);
+
+/**
  * @brief Verify a hypertree signature.
  *
- * Steps (every one MUST succeed):
- *   1. leaf_index < CHIPMUNK_HT_LEAF_COUNT,
+ * Production verifier.  Steps (every one MUST succeed):
+ *   1. leaf_index < CHIPMUNK_HT_MAX_SIGNATURES,
  *   2. HOTS-verify (sigma, msg) against leaf_pk under the A-matrix
  *      derived from pk.rho_seed,
  *   3. chipmunk_hots_pk_to_hvc_poly(leaf_pk) hashes to the expected
@@ -201,6 +219,16 @@ int chipmunk_ht_sign(chipmunk_ht_private_key_t *a_sk,
 int chipmunk_ht_verify(const chipmunk_ht_public_key_t *a_pk,
                         const uint8_t *a_msg, size_t a_len,
                         const chipmunk_ht_signature_t *a_sig);
+
+/**
+ * @brief Verify a CR-11.E Proof-of-Possession signature.
+ *
+ * Accepts only signatures whose leaf_index is CHIPMUNK_HT_POP_LEAF_INDEX.
+ * Production signatures must continue to use chipmunk_ht_verify.
+ */
+int chipmunk_ht_verify_pop(const chipmunk_ht_public_key_t *a_pk,
+                           const uint8_t *a_msg, size_t a_len,
+                           const chipmunk_ht_signature_t *a_sig);
 
 /* ---------------------------------------------------------------------- *
  *  Serialisation                                                         *
