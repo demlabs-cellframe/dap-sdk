@@ -3,7 +3,7 @@
  *
  * Locks in the public threshold dealer/combiner API
  * (dap_chipmunk_ring_threshold.h).  Every contract row in
- * doc/crypto/chipmunk_ring/design_decision_cr9_4.md §6 has a
+ * SLC `documentation_ef0d4cc844e1f421` (CR-9.4 design) §6 has a
  * dedicated check below; the deferred CR-9.4.B sign_partial path
  * is intentionally NOT exercised here.
  */

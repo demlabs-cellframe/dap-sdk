@@ -3,7 +3,7 @@
  *
  * Exercises the Cellframe governance integration surface
  * (dap_enc_chipmunk_ring_governance.h).  See
- * doc/crypto/chipmunk_ring/design_decision_cr9_6.md §5.
+ * SLC `documentation_831b3c2fd035cada` (CR-9.6 design) §5.
  */
 
 #include <dap_common.h>

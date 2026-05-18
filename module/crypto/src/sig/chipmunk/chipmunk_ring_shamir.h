@@ -1,7 +1,7 @@
 /*
  * chipmunk_ring_shamir.h — internal Shamir secret sharing over Z_CHIPMUNK_Q
  *
- * CR-9.3 (kick-off slice).  See doc/crypto/chipmunk_ring/design_decision_cr9.md
+ * CR-9.3 (kick-off slice).  See SLC `documentation_c6a567b1d9b7e68c` (CR-9 master design)
  * for the full design rationale and acceptance criteria.
  *
  * This header is INTERNAL to the chipmunk_ring module.  Public threshold

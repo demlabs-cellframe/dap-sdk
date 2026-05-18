@@ -2,7 +2,7 @@
  * test_chipmunk_ring_shamir.c — CR-9.3 acceptance tests
  *
  * Locks in the canonical Shamir-over-Z_CHIPMUNK_Q primitive.  Every
- * contract listed in doc/crypto/chipmunk_ring/design_decision_cr9.md §5
+ * contract listed in SLC `documentation_c6a567b1d9b7e68c` (CR-9 master design) §5
  * has a dedicated test; "skip ≡ pass" stress paths are absent here so
  * the suite stays deterministic in CI.
  */

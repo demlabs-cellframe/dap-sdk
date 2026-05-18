@@ -6,7 +6,7 @@
  * `dap_enc_chipmunk_ring.h`.  Round-2 §6.1 required this marker as a
  * same-day PR; the test prevents silent rollback.
  *
- * See doc/crypto/chipmunk_ring/design_decision_cr11.md §2.
+ * See SLC `documentation_a57a7626f6cb30b2` (CR-11 master design) §2.
  */
 
 #include <dap_common.h>

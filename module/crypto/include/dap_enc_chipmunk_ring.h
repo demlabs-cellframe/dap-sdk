@@ -33,14 +33,14 @@
  *     t-of-n threshold via `dap_enc_chipmunk_ring_governance.h`, with
  *     rogue-key defence via CR-9.5 PoP.  SDK-side proof sketch and
  *     peer-review checklist in
- *     `doc/crypto/chipmunk_ring/design_decision_cr9_7.md`.
+ *     SLC `documentation_4eb4aeee002de75b` (CR-9.7 proof sketch).
  *
  *   * **Experimental path (anonymity):** the underlying ring signature
  *     (`chipmunk_ring_sign` / `chipmunk_ring_verify`) provides
  *     constant-time signer-index resolution (Round-3 CR-D2 +
  *     CR-D15.C) but does NOT yet ship a cryptographic
  *     signer-indistinguishability proof.  CR-11.D (RING-ANON) in
- *     `doc/crypto/chipmunk_ring/design_decision_cr11.md` tracks the
+ *     SLC `documentation_a57a7626f6cb30b2` (CR-11 master) tracks the
  *     OR-proof / CLSAG-style hardening required before publication.
  *
  *   * **Security-preset enum** (`chipmunk_ring_security_level_t`):
