@@ -25,7 +25,7 @@ static void test_basic_coordination(void) {
     size_t ring_size = 3;
     dap_enc_key_t **ring_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, ring_size);
     for (size_t i = 0; i < ring_size; i++) {
-        ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+        ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     }
     
     // Create test message
@@ -67,7 +67,7 @@ static void test_coordination_thresholds(void) {
     size_t ring_size = 6;
     dap_enc_key_t **ring_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, ring_size);
     for (size_t i = 0; i < ring_size; i++) {
-        ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+        ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     }
     
     const char *test_data = "Threshold coordination test";
@@ -116,7 +116,7 @@ static void test_coordination_edge_cases(void) {
     size_t ring_size = 4;
     dap_enc_key_t **ring_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, ring_size);
     for (size_t i = 0; i < ring_size; i++) {
-        ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+        ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     }
     
     const char *test_data = "Edge case coordination test";

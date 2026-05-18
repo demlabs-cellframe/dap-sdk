@@ -43,10 +43,9 @@ extern "C" {
  *
  * The length prefixes guarantee that no choice of (D, S, I) tuples with
  * different component splits can collide, even when an adversary
- * controls one or more of the components.  All call sites must pass
- * domain literals that end with the canonical `/v2` suffix; older `/v1`
- * literals are deliberately rejected by the producer call sites to
- * prevent silent format drift.
+ * controls one or more of the components.  The helper enforces the
+ * canonical `/v2` suffix itself; older `/v1` literals are rejected before
+ * hashing to prevent silent format drift.
  *
  * @param  a_domain      NUL-terminated domain string (must NOT contain
  *                       embedded NULs; `strnlen` is used defensively).

@@ -85,6 +85,11 @@ int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void
         log_it(L_ERROR, "Invalid seed size: expected 32, got %zu", a_seed_size);
         return -EINVAL;
     }
+    if (a_key_size > 0 && a_key_size != CHIPMUNK_RING_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR, "Invalid Chipmunk_Ring key size %zu (expected %d)",
+               a_key_size, (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+        return -EINVAL;
+    }
 
     // Set key type
     a_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING;

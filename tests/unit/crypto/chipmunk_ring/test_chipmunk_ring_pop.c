@@ -25,7 +25,7 @@
 
 #define LOG_TAG "test_chipmunk_ring_pop"
 
-/* PoP wire size for v1 — header + ht-sig. */
+/* PoP wire size for v2 — header + ht-sig. */
 #define POP_BYTES                                                               \
     (CHIPMUNK_RING_POP_HEADER_BYTES + (size_t)CHIPMUNK_HT_SIGNATURE_SIZE)
 
@@ -240,6 +240,24 @@ static bool s_test_pop_verify_rejects_bad_version(void)
     return true;
 }
 
+static bool s_test_pop_verify_rejects_trailing_bytes(void)
+{
+    chipmunk_ht_public_key_t  l_pk;
+    chipmunk_ht_private_key_t l_sk;
+    s_keypair_from_seed_byte(0x43, &l_pk, &l_sk);
+
+    uint8_t *l_pop = DAP_NEW_Z_SIZE(uint8_t, POP_BYTES + 1u);
+    dap_assert(chipmunk_ring_pop_create(&l_sk, l_pop, POP_BYTES) == 0, "create");
+    l_pop[POP_BYTES] = 0xA5u;
+
+    int rc = chipmunk_ring_pop_verify(&l_pk, l_pop, POP_BYTES + 1u);
+    dap_assert(rc == -EINVAL, "PoP with trailing bytes -> -EINVAL");
+
+    DAP_DELETE(l_pop);
+    chipmunk_ht_private_key_clear(&l_sk);
+    return true;
+}
+
 static bool s_test_pop_verify_rejects_nonzero_reserved(void)
 {
     chipmunk_ht_public_key_t  l_pk;
@@ -410,6 +428,7 @@ int main(void)
     if (!s_test_pop_verify_rejects_wrong_pk())               l_rc = 1;
     if (!s_test_pop_verify_rejects_bad_magic())              l_rc = 1;
     if (!s_test_pop_verify_rejects_bad_version())            l_rc = 1;
+    if (!s_test_pop_verify_rejects_trailing_bytes())         l_rc = 1;
     if (!s_test_pop_verify_rejects_nonzero_reserved())       l_rc = 1;
     if (!s_test_pop_verify_rejects_tampered_signature())     l_rc = 1;
     if (!s_test_pop_verify_bytes_equivalence())              l_rc = 1;

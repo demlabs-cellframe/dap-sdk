@@ -68,8 +68,8 @@ typedef struct {
 // (which is a SHA3-derived small-q polynomial and cannot be inverted into the
 // large-q HOTS public key), so the verifier was forced to substitute bogus
 // values and fall back to a ±10 % slack tolerance check — trivially forgeable.
-// We retain `public_key_roots` for tree-leaf and randomizer-derivation
-// compatibility; it is now always recomputed from `hots_pks` on the verify
+// We retain `public_key_roots` for tree-leaf and randomizer derivation; it
+// is now always recomputed from `hots_pks` on the verify
 // path and checked for equality with the stored copy to pin the link between
 // the Merkle tree and the full HOTS PKs.
 typedef struct chipmunk_multi_signature {

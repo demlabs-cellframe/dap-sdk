@@ -364,7 +364,7 @@ static const dap_serialize_field_t s_chipmunk_ring_acorn_fields[] = {
 
 // Field definitions for ChipmunkRing signature
 static const dap_serialize_field_t s_chipmunk_ring_signature_fields[] = {
-    // Format version for compatibility
+    // Single supported wire version; chipmunk_ring_signature_from_bytes rejects any other value.
     {
         .name = "format_version",
         .type = DAP_SERIALIZE_TYPE_VERSION,

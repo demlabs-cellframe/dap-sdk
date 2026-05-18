@@ -89,7 +89,7 @@ static bool s_test_ring_key_signs_many_messages(void)
     memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < TEST_RING_SIZE; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING,
-                                                  NULL, 0, NULL, 0, 256);
+                                                  NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "ring keygen success");
     }
     dap_enc_key_t *l_signer = l_ring_keys[0];
@@ -170,7 +170,7 @@ static bool s_test_ring_key_exhausts_after_max_sigs(void)
     memset(l_ring_keys, 0, sizeof(l_ring_keys));
     for (size_t i = 0; i < TEST_RING_SIZE; i++) {
         l_ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING,
-                                                  NULL, 0, NULL, 0, 256);
+                                                  NULL, 0, NULL, 0, 0);
         dap_assert(l_ring_keys[i] != NULL, "ring keygen success");
     }
     dap_enc_key_t *l_signer = l_ring_keys[0];

@@ -12,7 +12,7 @@ static bool test_single_key_generation() {
     log_it(L_INFO, "Testing single Chipmunk_Ring key generation...");
 
     // Generate a single key
-    dap_enc_key_t* key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    dap_enc_key_t* key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
 
     if (!key) {
         log_it(L_ERROR, "Failed to generate key");

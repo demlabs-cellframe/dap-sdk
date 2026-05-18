@@ -93,7 +93,7 @@ const dap_serialize_schema_t chipmunk_hots_pk_schema = {
 /* ---------------------------------------------------------------------- *
  *  Per-signer record schema                                              *
  *                                                                        *
- *  Wire layout (matches v1 codec byte-for-byte):                         *
+ *  Wire layout (matches canonical CHMA codec byte-for-byte):             *
  *      [N*4]   pk_root.coeffs                                            *
  *      [N*4]   hots_pk.v0.coeffs                                         *
  *      [N*4]   hots_pk.v1.coeffs                                         *
@@ -119,7 +119,7 @@ static const dap_serialize_field_t s_signer_record_fields[] = {
     DAP_SERIALIZE_FIELD_SIMPLE(chipmunk_signer_record_wire_t, path_length, DAP_SERIALIZE_TYPE_UINT32),
     /* nodes[]: the path_length field above is the on-wire count, so the
      * array MUST NOT emit its own 4-byte prefix (otherwise the wire layout
-     * would diverge from the legacy v1 codec, which wrote path_length
+     * would diverge from the canonical CHMA codec, which wrote path_length
      * exactly once before the nodes block).  NO_COUNT_PREFIX makes the
      * schema read/write count from `path_length` directly. */
     {
@@ -290,7 +290,7 @@ int chipmunk_multi_signature_from_wire(
         return -3;
     }
 
-    /* Cross-signer invariant retained from the v1 codec: every proof
+    /* Cross-signer invariant retained from the canonical CHMA codec: every proof
      * must share the same path length.  The schema engine has no
      * concept of cross-element invariants, so we assert it here. */
     const uint32_t l_common = a_wire->signers[0].path_length;

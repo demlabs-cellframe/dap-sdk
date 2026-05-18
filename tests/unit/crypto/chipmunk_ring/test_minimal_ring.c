@@ -17,7 +17,7 @@ static void test_minimal_key_generation() {
     log_it(L_INFO, "Testing minimal key generation...");
 
     // Generate a simple key
-    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     assert(l_key != NULL);
     assert(l_key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING);
 
@@ -37,7 +37,7 @@ static int test_minimal_ring_signature() {
     log_it(L_INFO, "Testing minimal ring signature...");
 
     // Generate keys - signer must be part of the ring
-    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    dap_enc_key_t* l_signer_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     if (!l_signer_key) {
         log_it(L_ERROR, "Failed to generate signer key");
         return -1;
@@ -45,7 +45,7 @@ static int test_minimal_ring_signature() {
 
     dap_enc_key_t* l_ring_keys[2];
     l_ring_keys[0] = l_signer_key;  // Signer is part of the ring (critical for anonymity)
-    l_ring_keys[1] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+    l_ring_keys[1] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
     if (!l_ring_keys[1]) {
         log_it(L_ERROR, "Failed to generate ring key");
         dap_enc_key_delete(l_signer_key);

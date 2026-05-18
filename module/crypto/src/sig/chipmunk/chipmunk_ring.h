@@ -105,9 +105,9 @@ typedef struct chipmunk_ring_acorn {
      * ring slot's public key, the value was publicly recomputable and
      * therefore *revealed the ring slot* in every signature — the exact
      * opposite of unlinkability.  It was also never consumed by the
-     * verifier.  The field is retained for wire-compatibility within the
-     * pre-production feature/chipmunk-ring branch; chipmunk_ring_acorn.c
-     * now zero-fills it so no information is leaked.  A real sigma-
+     * verifier.  The field is now a reserved zero slot in the canonical
+     * pre-production wire layout; chipmunk_ring_acorn.c zero-fills it so
+     * no information is leaked.  A real sigma-
      * protocol-bound tag is tracked under CR-11. */
     uint8_t *linkability_tag;                          ///< Reserved zero slot (CR-D8 mitigation)
     size_t linkability_tag_size;                       ///< Size of linkability tag (payload is all-zero)
@@ -199,21 +199,30 @@ int chipmunk_ring_key_new(struct dap_enc_key *a_key);
  * @param key Output key structure
  * @param seed Seed for deterministic generation
  * @param seed_size Seed size
- * @param key_size Key size (unused, kept for compatibility)
+ * @param key_size Key size; when non-zero it must equal
+ *                 CHIPMUNK_RING_PRIVATE_KEY_SIZE
  * @return 0 on success, negative on error
  */
 int chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed,
                                  size_t a_seed_size, size_t a_key_size);
 
 /**
- * @brief Create ring from public keys
+ * @brief Create ring from public keys without Proof-of-Possession checks.
+ *
+ * Unsafe/low-level constructor.  Production governance flows must use
+ * dap_enc_chipmunk_ring_container_create_with_pop() so every member key is
+ * accompanied by a valid CR-11.E PoP.  This unchecked constructor exists for
+ * tests and for verification entry points that already received their ring
+ * from a PoP-validated registry.
+ *
  * @param public_keys Array of public keys
  * @param num_keys Number of keys in ring
  * @param ring Output ring structure
  * @return 0 on success, negative on error
  */
-int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_keys,
-                           size_t a_num_keys, chipmunk_ring_container_t *a_ring);
+int chipmunk_ring_container_create_unchecked(const chipmunk_ring_public_key_t *a_public_keys,
+                                             size_t a_num_keys,
+                                             chipmunk_ring_container_t *a_ring);
 
 /**
  * @brief Free ring container resources

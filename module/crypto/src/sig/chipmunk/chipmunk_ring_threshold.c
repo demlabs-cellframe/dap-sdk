@@ -26,7 +26,6 @@
 #include <string.h>
 
 #include "chipmunk_ring_shamir.h"
-#include "chipmunk_ring_internal.h"  /* CR-9.5 PoP TupleHash-style domain hash */
 #include "chipmunk.h"                /* CHIPMUNK_Q */
 #include "chipmunk_hypertree.h"      /* CR-9.5 PoP needs ht_sign/verify + serialise */
 #include "dap_memwipe.h"
@@ -332,11 +331,6 @@ void chipmunk_ring_threshold_share_wipe(chipmunk_ring_threshold_share_t *a_share
  *    +8   sig      serialised chipmunk_ht_signature  (CHIPMUNK_HT_SIGNATURE_SIZE)
  */
 
-/** Canonical PoP domain — TupleHash discipline per CR-D31.  CR-11.E
- *  intentionally bumps to /v2 and rejects v1: ChipmunkRing has not
- *  shipped in production, so there is no legacy PoP wire format to carry. */
-#define S_POP_DOMAIN  "chipmunk-ring-pop/v2"
-
 /** Pin the PoP body size to the chipmunk hypertree signature size at
  *  compile time.  If the underlying ht_sig grows, this assertion
  *  fires at the exact buffer that depends on it (D-8). */
@@ -344,23 +338,6 @@ _Static_assert(CHIPMUNK_RING_POP_HEADER_BYTES == 8u,
                "v2 PoP envelope header must be exactly 8 bytes");
 #define S_POP_TOTAL_BYTES                                                       \
     (CHIPMUNK_RING_POP_HEADER_BYTES + (size_t)CHIPMUNK_HT_SIGNATURE_SIZE)
-
-/* ------------------------------------------------------------------
- *  Internal: build pop_message under TupleHash-style domain separation
- * ------------------------------------------------------------------ */
-static int s_pop_message_derive(const uint8_t a_pk_bytes[CHIPMUNK_HT_PUBLIC_KEY_SIZE],
-                                uint8_t a_out[32])
-{
-    /* chipmunk_ring_domain_hash_internal takes (domain, salt, input);
-     * we map pk_bytes onto `input` and leave the salt slot empty.
-     * a_iterations = 0 ≡ 1 (no stretching needed for PoP message). */
-    return chipmunk_ring_domain_hash_internal(S_POP_DOMAIN,
-                                              /* salt = */ NULL, 0,
-                                              a_pk_bytes,
-                                              CHIPMUNK_HT_PUBLIC_KEY_SIZE,
-                                              a_out, 32u,
-                                              /* iterations = */ 0u);
-}
 
 /* ------------------------------------------------------------------
  *  Internal: envelope read/write helpers
@@ -397,21 +374,13 @@ int chipmunk_ring_pop_create(struct chipmunk_ht_private_key *a_sk,
     if (a_out_pop_size < S_POP_TOTAL_BYTES)          return -EINVAL;
 
     int l_rc = 0;
-    uint8_t l_pk_bytes[CHIPMUNK_HT_PUBLIC_KEY_SIZE];
-    uint8_t l_pop_msg[32];
     chipmunk_ht_signature_t l_ht_sig;
     memset(&l_ht_sig, 0, sizeof(l_ht_sig));
 
-    l_rc = chipmunk_ht_public_key_to_bytes(l_pk_bytes, &a_sk->pk);
-    if (l_rc != 0) goto fail;
-
-    l_rc = s_pop_message_derive(l_pk_bytes, l_pop_msg);
-    if (l_rc != 0) goto fail;
-
-    /* CR-11.E: sign the pop_message at the Merkle-committed reserved
-     * PoP leaf.  This does not mutate a_sk->leaf_index and production
-     * verification rejects that leaf. */
-    l_rc = chipmunk_ht_sign_pop(a_sk, l_pop_msg, sizeof(l_pop_msg), &l_ht_sig);
+    /* CR-11.E: sign the canonical PoP transcript at the Merkle-committed
+     * reserved PoP leaf.  This does not mutate a_sk->leaf_index and
+     * production verification rejects that leaf. */
+    l_rc = chipmunk_ht_sign_pop(a_sk, &l_ht_sig);
     if (l_rc != 0) goto fail;
 
     s_pop_write_header(a_out_pop);
@@ -420,14 +389,10 @@ int chipmunk_ring_pop_create(struct chipmunk_ht_private_key *a_sk,
     if (l_rc != 0) goto fail;
 
     chipmunk_ht_signature_clear(&l_ht_sig);
-    dap_memwipe(l_pop_msg,  sizeof(l_pop_msg));
-    dap_memwipe(l_pk_bytes, sizeof(l_pk_bytes));
     return 0;
 
 fail:
     chipmunk_ht_signature_clear(&l_ht_sig);
-    dap_memwipe(l_pop_msg,  sizeof(l_pop_msg));
-    dap_memwipe(l_pk_bytes, sizeof(l_pk_bytes));
     memset(a_out_pop, 0, a_out_pop_size);
     return l_rc;
 }
@@ -439,21 +404,17 @@ int chipmunk_ring_pop_verify(const struct chipmunk_ht_public_key *a_pk,
                              const uint8_t *a_pop, size_t a_pop_size)
 {
     if (a_pk == NULL || a_pop == NULL)                return -EINVAL;
-    if (a_pop_size < S_POP_TOTAL_BYTES)               return -EINVAL;
+    if (a_pop_size != S_POP_TOTAL_BYTES)              return -EINVAL;
 
     /* Envelope integrity BEFORE crypto (D-3 of §4). */
     int l_rc = s_pop_check_header(a_pop);
     if (l_rc != 0) return l_rc;
 
-    uint8_t l_pk_bytes[CHIPMUNK_HT_PUBLIC_KEY_SIZE];
     uint8_t l_pop_msg[32];
     chipmunk_ht_signature_t l_ht_sig;
     memset(&l_ht_sig, 0, sizeof(l_ht_sig));
 
-    l_rc = chipmunk_ht_public_key_to_bytes(l_pk_bytes, a_pk);
-    if (l_rc != 0) goto out;
-
-    l_rc = s_pop_message_derive(l_pk_bytes, l_pop_msg);
+    l_rc = chipmunk_ht_pop_message_derive(a_pk, l_pop_msg);
     if (l_rc != 0) goto out;
 
     l_rc = chipmunk_ht_signature_from_bytes(&l_ht_sig,
@@ -465,7 +426,6 @@ int chipmunk_ring_pop_verify(const struct chipmunk_ht_public_key *a_pk,
 out:
     chipmunk_ht_signature_clear(&l_ht_sig);
     dap_memwipe(l_pop_msg,  sizeof(l_pop_msg));
-    dap_memwipe(l_pk_bytes, sizeof(l_pk_bytes));
     return l_rc;
 }
 

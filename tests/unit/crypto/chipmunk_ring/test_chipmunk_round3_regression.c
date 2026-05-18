@@ -603,7 +603,7 @@ static bool s_test_container_rejects_zero_and_duplicates(void)
     memset(&ring, 0, sizeof(ring));
 
     // All-zero pks → must be rejected.
-    dap_assert(chipmunk_ring_container_create(pks, 3, &ring) != 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(pks, 3, &ring) != 0,
                "container with all-zero pk must be rejected");
 
     // CR-D15.C: ring pk is a hypertree pk — random bytes inside the
@@ -615,12 +615,12 @@ static bool s_test_container_rejects_zero_and_duplicates(void)
         dap_random_bytes(pks[i].data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
     }
     memcpy(pks[2].data, pks[0].data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
-    dap_assert(chipmunk_ring_container_create(pks, 3, &ring) != 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(pks, 3, &ring) != 0,
                "container with duplicate pk must be rejected");
 
     dap_random_bytes(pks[2].data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
     memset(&ring, 0, sizeof(ring));
-    dap_assert(chipmunk_ring_container_create(pks, 3, &ring) == 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(pks, 3, &ring) == 0,
                "container with 3 distinct non-zero pks must succeed");
     dap_assert(ring.size == 3, "ring size stored");
     dap_assert(ring.public_keys != NULL, "public keys allocated");
@@ -720,7 +720,7 @@ static bool s_test_universal_forgery_rejected(void)
 
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
-    dap_assert(chipmunk_ring_container_create(l_ring_pubs, 3, &l_ring) == 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(l_ring_pubs, 3, &l_ring) == 0,
                "ring container");
 
     const char *l_msg = "CR-D1 forgery probe";
@@ -928,7 +928,7 @@ static bool s_test_signature_wire_canonicality(void)
 
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
-    dap_assert(chipmunk_ring_container_create(l_ring_pubs, 2, &l_ring) == 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(l_ring_pubs, 2, &l_ring) == 0,
                "ring container");
 
     const char *l_msg = "CR-D9 canonicality probe";
@@ -958,6 +958,21 @@ static bool s_test_signature_wire_canonicality(void)
     dap_assert(chipmunk_ring_signature_from_bytes(&l_sig_round, l_buf, l_buf_size) == 0,
                "canonical sig must round-trip");
     chipmunk_ring_signature_free(&l_sig_round);
+
+    // Signature wire version is a strict gate: no legacy/future fallback.
+    uint8_t l_version0 = l_buf[4];
+    l_buf[4] = 0x02u;
+    chipmunk_ring_signature_t l_sig_bad_version;
+    memset(&l_sig_bad_version, 0, sizeof(l_sig_bad_version));
+    dap_assert(chipmunk_ring_signature_from_bytes(&l_sig_bad_version, l_buf, l_buf_size) != 0,
+               "unsupported signature format_version rejected");
+    l_buf[4] = l_version0;
+
+    // Challenge comparison must be exact, never prefix-based.
+    chipmunk_ring_signature_t l_sig_bad_challenge = l_sig;
+    l_sig_bad_challenge.challenge_size = 1u;
+    dap_assert(chipmunk_ring_verify(l_msg, strlen(l_msg), &l_sig_bad_challenge, &l_ring) != 0,
+               "truncated challenge size rejected by verifier");
 
     // Locate the use_embedded_keys byte on the wire.  The schema emits
     // ring_size (u32) + required_signers (u32) + use_embedded_keys (u8)
@@ -1050,7 +1065,7 @@ static bool s_test_acorn_linkability_tag_is_zero(void)
 
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
-    dap_assert(chipmunk_ring_container_create(l_ring_pubs, 3, &l_ring) == 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(l_ring_pubs, 3, &l_ring) == 0,
                "ring container");
 
     const char *l_msg1 = "CR-D8 probe: first message";
@@ -1154,7 +1169,7 @@ static bool s_test_zk_size_iterations_wire_roundtrip(void)
 
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
-    dap_assert(chipmunk_ring_container_create(l_ring_pubs, 2, &l_ring) == 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(l_ring_pubs, 2, &l_ring) == 0,
                "ring container");
 
     const char *l_msg = "CR-D26 wire-roundtrip probe";
@@ -1234,9 +1249,9 @@ static bool s_test_zk_size_iterations_wire_roundtrip(void)
 // have failed.
 //
 // Probe pairs:
-//   (D, S, I)   = ("DOMAIN_A", "SALT_X",  "INPUT_Y")
-//   (D', S', I') = ("DOMAIN",   "_ASALT_", "X_INPUT_Y")
-//   raw concat  = "DOMAIN_ASALT_XINPUT_Y"   (identical in both)
+//   (D, S, I)    = ("AB/v2",      "CD/v2", "EF")
+//   (D', S', I') = ("AB/v2CD/v2", "",      "EF")
+//   raw concat   = "AB/v2CD/v2EF" (identical in both)
 // ---------------------------------------------------------------------------
 extern int chipmunk_ring_domain_hash_internal(const char *a_domain,
                                               const void *a_salt, size_t a_salt_size,
@@ -1248,14 +1263,16 @@ static bool s_test_domain_hash_prefix_collision_resistance(void)
 {
     log_it(L_INFO, "CR-D31: TupleHash-style prefix-collision resistance");
 
-    /* Both splits concatenate to "DOMAIN_ASALT_XINPUT_Y" (21 bytes). */
-    const char  *d_a = "DOMAIN_A";   /* 8 */
-    const char  *s_a = "SALT_X";     /* 6 */
-    const char  *i_a = "INPUT_Y";    /* 7 */
+    /* Both splits concatenate to "AB/v2CD/v2EF".  Both domains end with
+     * the required /v2 suffix so this still exercises the hash encoding,
+     * not just domain-policy rejection. */
+    const char  *d_a = "AB/v2";
+    const char  *s_a = "CD/v2";
+    const char  *i_a = "EF";
 
-    const char  *d_b = "DOMAIN_AS";  /* 9 */
-    const char  *s_b = "ALT_XIN";    /* 7 */
-    const char  *i_b = "PUT_Y";      /* 5 */
+    const char  *d_b = "AB/v2CD/v2";
+    const char  *s_b = "";
+    const char  *i_b = "EF";
 
     /* Sanity-check the construction in the test itself: the raw
      * concatenations under the *broken* construction must collide. */
@@ -1288,9 +1305,11 @@ static bool s_test_domain_hash_prefix_collision_resistance(void)
                "NULL domain rejected");
     dap_assert(chipmunk_ring_domain_hash_internal("", NULL, 0, "x", 1, l_out_a, 32, 1) == -EINVAL,
                "empty domain rejected (EINVAL)");
-    dap_assert(chipmunk_ring_domain_hash_internal("D", NULL, 0, NULL, 0, l_out_a, 32, 1) == -1,
+    dap_assert(chipmunk_ring_domain_hash_internal("D/v1", NULL, 0, "x", 1, l_out_a, 32, 1) == -EINVAL,
+               "non-v2 domain rejected (EINVAL)");
+    dap_assert(chipmunk_ring_domain_hash_internal("D/v2", NULL, 0, NULL, 0, l_out_a, 32, 1) == -1,
                "NULL/empty input rejected");
-    dap_assert(chipmunk_ring_domain_hash_internal("D", NULL, 0, "x", 1, NULL, 32, 1) == -1,
+    dap_assert(chipmunk_ring_domain_hash_internal("D/v2", NULL, 0, "x", 1, NULL, 32, 1) == -1,
                "NULL output rejected");
 
     log_it(L_INFO, "CR-D31 PASS");
@@ -1333,7 +1352,7 @@ static bool s_test_wire_roundtrip_embedded_modes(void)
 
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
-    dap_assert(chipmunk_ring_container_create(l_ring_pubs, 2, &l_ring) == 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(l_ring_pubs, 2, &l_ring) == 0,
                "ring container");
 
     extern void chipmunk_ring_signature_free(chipmunk_ring_signature_t *);
@@ -1358,7 +1377,7 @@ static bool s_test_wire_roundtrip_embedded_modes(void)
             memcpy(l_ring_pubs[0].data, l_signer_pub.data, CHIPMUNK_RING_PUBLIC_KEY_SIZE);
             chipmunk_ring_container_free(&l_ring);
             memset(&l_ring, 0, sizeof(l_ring));
-            dap_assert(chipmunk_ring_container_create(l_ring_pubs, 2, &l_ring) == 0,
+            dap_assert(chipmunk_ring_container_create_unchecked(l_ring_pubs, 2, &l_ring) == 0,
                        "ring container (mode 2)");
         }
 
@@ -1466,8 +1485,8 @@ static bool s_test_concurrent_independent_rings(void)
     dap_assert(s_ring_pub_random(&ctx_a.ring_pubs[1]) == 0, "A decoy");
     dap_assert(s_ring_pub_random(&ctx_b.ring_pubs[1]) == 0, "B decoy");
 
-    dap_assert(chipmunk_ring_container_create(ctx_a.ring_pubs, 2, &ctx_a.ring) == 0, "A ring");
-    dap_assert(chipmunk_ring_container_create(ctx_b.ring_pubs, 2, &ctx_b.ring) == 0, "B ring");
+    dap_assert(chipmunk_ring_container_create_unchecked(ctx_a.ring_pubs, 2, &ctx_a.ring) == 0, "A ring");
+    dap_assert(chipmunk_ring_container_create_unchecked(ctx_b.ring_pubs, 2, &ctx_b.ring) == 0, "B ring");
 
     pthread_t th_a, th_b;
     dap_assert(pthread_create(&th_a, NULL, s_concurrent_signer_thread, &ctx_a) == 0, "spawn A");
@@ -1552,7 +1571,7 @@ static bool s_test_max_k_stress(void)
 
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
-    dap_assert(chipmunk_ring_container_create(l_ring_pubs, l_k, &l_ring) == 0,
+    dap_assert(chipmunk_ring_container_create_unchecked(l_ring_pubs, l_k, &l_ring) == 0,
                "ring container at max-k");
 
     chipmunk_ring_signature_t l_sig;

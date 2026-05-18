@@ -625,9 +625,9 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
         return -1;
     }
     if (!multi_sig->hots_pks || !multi_sig->public_key_roots || !multi_sig->rho_seeds) {
-        // CR-D6/D7: legacy blobs without hots_pks / rho_seeds cannot be
-        // verified under the corrected identity.  Refuse rather than silently
-        // accepting.
+        // CR-D6/D7: incomplete blobs without hots_pks / rho_seeds cannot
+        // be verified under the corrected identity.  Refuse rather than
+        // silently accepting.
         log_it(L_ERROR, "Multi-signature missing hots_pks / rho_seeds; cannot verify");
         return 0;
     }

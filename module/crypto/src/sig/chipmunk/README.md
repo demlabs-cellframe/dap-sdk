@@ -1,14 +1,14 @@
 # Chipmunk Ring Signature
 
-Post-quantum ring signature scheme based on lattice cryptography, providing signer anonymity within a group.
+Experimental post-quantum ring-signature work based on lattice cryptography.
+CR-11.D (true ring anonymity) and CR-11.F (DKG/reshare) are still open, so
+this code must not be marketed as production-ready anonymous ring signatures.
 
 ## Security Level
 
-Default configuration provides **NIST Level V+** security:
-- ~300-bit classical security
-- ~150-bit quantum security  
-- Requires ~131,000 logical qubits for quantum attack
-- Designed for 100+ year quantum resistance
+Default configuration is an experimental parameter profile.  The historical
+level labels are retained for API compatibility, but they are not a completed
+NIST-level claim for the current Hypertree/Acorn construction.
 
 ## Quick Start
 
@@ -34,9 +34,12 @@ dap_sign_t *sig = dap_sign_create_ring(key, ring_keys, ring_size,
 int result = dap_sign_verify_ring(sig, message, msg_size, ring_keys, ring_size);
 ```
 
-## Security Levels
+## Historical Parameter Labels
 
-| Level | Classical | Quantum | Qubits | Use Case |
+These labels are retained only as parameter presets until CR-11.B publishes
+reproducible KATs and a defensible security mapping.
+
+| Label | Historical classical estimate | Historical quantum estimate | Historical qubits | Intended use |
 |-------|-----------|---------|--------|----------|
 | I | ~150 bit | ~75 bit | 32K | General |
 | III | ~224 bit | ~112 bit | 65K | Financial |
@@ -67,9 +70,9 @@ if (dap_enc_chipmunk_ring_validate_security_level(CHIPMUNK_RING_SECURITY_LEVEL_V
 
 ## Features
 
-- **Anonymity**: Signer identity hidden within ring
-- **Linkability**: Optional linkability tags for double-spend prevention
-- **Multi-signer**: Threshold signatures (M-of-N)
+- **Structural privacy guardrails**: signer index is not serialized; true ring anonymity is CR-11.D
+- **Linkability tag hard-deprecated**: the old tag slot is zero-filled and non-malleable
+- **Multi-signer experiments**: threshold/governance work is ongoing
 - **SIMD Optimized**: AVX2, AVX-512, NEON runtime dispatch
 - **Post-Quantum**: Lattice-based (Ring-LWE, NTRU, Code-based layers)
 

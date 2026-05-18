@@ -194,15 +194,26 @@ int chipmunk_ht_sign(chipmunk_ht_private_key_t *a_sk,
                       chipmunk_ht_signature_t *a_sig);
 
 /**
- * @brief Sign the CR-11.E Proof-of-Possession message at the reserved PoP leaf.
+ * @brief Derive the canonical CR-11.E Proof-of-Possession transcript.
+ *
+ * The transcript is bound to the serialised hypertree public key under the
+ * `chipmunk-ring-pop/v2` domain.  Callers must not invent their own PoP
+ * messages for the reserved leaf: HOTS remains one-time and the reserved
+ * leaf has exactly one semantic purpose.
+ */
+int chipmunk_ht_pop_message_derive(const chipmunk_ht_public_key_t *a_pk,
+                                   uint8_t a_out[32]);
+
+/**
+ * @brief Sign the canonical CR-11.E Proof-of-Possession transcript.
  *
  * Does NOT advance sk->leaf_index and is rejected by the production verifier.
- * The output MUST be verified with chipmunk_ht_verify_pop, not
- * chipmunk_ht_verify.  This keeps PoP anchored in the same Merkle root as
- * the production key while preserving the full production leaf budget.
+ * The output MUST be verified with chipmunk_ht_verify_pop over the transcript
+ * from chipmunk_ht_pop_message_derive().  This keeps PoP anchored in the
+ * same Merkle root as the production key while preserving the full production
+ * leaf budget.
  */
 int chipmunk_ht_sign_pop(chipmunk_ht_private_key_t *a_sk,
-                         const uint8_t *a_msg, size_t a_len,
                          chipmunk_ht_signature_t *a_sig);
 
 /**

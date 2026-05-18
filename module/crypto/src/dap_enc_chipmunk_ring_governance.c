@@ -112,7 +112,7 @@ int dap_enc_chipmunk_ring_member_pop_verify(struct dap_enc_key *a_member_key,
     if (a_pop == NULL) return -EINVAL;
 
     const size_t l_pop_sz = dap_enc_chipmunk_ring_pop_wire_size();
-    if (a_pop_size < l_pop_sz) return -EINVAL;
+    if (a_pop_size != l_pop_sz) return -EINVAL;
 
     return chipmunk_ring_pop_verify_bytes(a_member_key->pub_key_data,
                                          a_member_key->pub_key_data_size,
@@ -158,7 +158,7 @@ int dap_enc_chipmunk_ring_container_create_with_pop(
     }
 
     memset(a_out_ring, 0, sizeof(*a_out_ring));
-    int l_rc = chipmunk_ring_container_create(l_pks, a_ring_size, a_out_ring);
+    int l_rc = chipmunk_ring_container_create_unchecked(l_pks, a_ring_size, a_out_ring);
     DAP_DELETE(l_pks);
     return l_rc;
 }

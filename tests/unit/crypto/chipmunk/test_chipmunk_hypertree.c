@@ -151,20 +151,23 @@ static void s_test_reserved_pop_leaf(chipmunk_ht_public_key_t *a_pk,
 {
     chipmunk_ht_signature_t l_pop_sig;
     memset(&l_pop_sig, 0, sizeof(l_pop_sig));
-    const char *l_msg = "cr-11.e pop proof";
+    uint8_t l_msg[32];
     const uint32_t l_before = a_sk->leaf_index;
 
-    int l_rc = chipmunk_ht_sign_pop(a_sk, (const uint8_t *)l_msg, strlen(l_msg), &l_pop_sig);
+    int l_rc = chipmunk_ht_pop_message_derive(a_pk, l_msg);
+    CHECK(l_rc == CHIPMUNK_ERROR_SUCCESS, "reserved PoP transcript derives successfully");
+
+    l_rc = chipmunk_ht_sign_pop(a_sk, &l_pop_sig);
     CHECK(l_rc == CHIPMUNK_ERROR_SUCCESS, "reserved PoP leaf signs successfully");
     CHECK(a_sk->leaf_index == l_before, "reserved PoP sign does not advance production counter");
     CHECK(l_pop_sig.leaf_index == CHIPMUNK_HT_POP_LEAF_INDEX,
           "reserved PoP signature uses CHIPMUNK_HT_POP_LEAF_INDEX");
 
-    l_rc = chipmunk_ht_verify(a_pk, (const uint8_t *)l_msg, strlen(l_msg), &l_pop_sig);
+    l_rc = chipmunk_ht_verify(a_pk, l_msg, sizeof(l_msg), &l_pop_sig);
     CHECK(l_rc == CHIPMUNK_ERROR_VERIFY_FAILED,
           "production verifier rejects reserved PoP leaf");
 
-    l_rc = chipmunk_ht_verify_pop(a_pk, (const uint8_t *)l_msg, strlen(l_msg), &l_pop_sig);
+    l_rc = chipmunk_ht_verify_pop(a_pk, l_msg, sizeof(l_msg), &l_pop_sig);
     CHECK(l_rc == CHIPMUNK_ERROR_SUCCESS,
           "PoP verifier accepts reserved PoP leaf");
 

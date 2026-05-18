@@ -117,6 +117,14 @@ static inline void s_le32_store(uint8_t *a_dst, uint32_t a_val)
     a_dst[3] = (uint8_t)((a_val >> 24) & 0xFF);
 }
 
+static inline uint32_t s_le32_load(const uint8_t *a_src)
+{
+    return ((uint32_t)a_src[0])
+         | ((uint32_t)a_src[1] << 8)
+         | ((uint32_t)a_src[2] << 16)
+         | ((uint32_t)a_src[3] << 24);
+}
+
 int chipmunk_ring_domain_hash_internal(const char *a_domain,
                                        const void *a_salt, size_t a_salt_size,
                                        const void *a_input, size_t a_input_size,
@@ -134,6 +142,14 @@ int chipmunk_ring_domain_hash_internal(const char *a_domain,
     size_t domain_len = strnlen(a_domain, S_DOMAIN_MAX);
     if (domain_len == S_DOMAIN_MAX || domain_len == 0)
         return -EINVAL;
+    static const char l_required_suffix[] = "/v2";
+    const size_t l_required_suffix_len = sizeof(l_required_suffix) - 1u;
+    if (domain_len < l_required_suffix_len ||
+        memcmp(a_domain + domain_len - l_required_suffix_len,
+               l_required_suffix, l_required_suffix_len) != 0) {
+        log_it(L_ERROR, "ChipmunkRing domain hash rejected non-v2 domain: %s", a_domain);
+        return -EINVAL;
+    }
 
     /* Length-prefix overflow guard.  size_t may be 32-bit on rare
      * targets; UINT32_MAX is the LE32 carrier limit. */
@@ -228,9 +244,8 @@ int chipmunk_ring_domain_hash_internal(const char *a_domain,
     return 0;
 }
 
-/* CR-D31 (Round-4): preserve the legacy local symbol so existing call
- * sites continue to compile while routing through the canonical
- * length-prefixed implementation above.  All new code SHOULD call
+/* CR-D31 (Round-4): local shorthand for the canonical length-prefixed
+ * implementation above.  New shared code should call
  * chipmunk_ring_domain_hash_internal() directly. */
 static int s_domain_hash(const char *a_domain,
                          const void *a_salt, size_t a_salt_size,
@@ -434,10 +449,11 @@ int chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed
     CHIPMUNK_RING_RETURN_IF_NULL(a_seed, CHIPMUNK_RING_ERROR_NULL_PARAM);
     CHIPMUNK_RING_RETURN_IF_FAIL(a_seed_size == 32, CHIPMUNK_RING_ERROR_INVALID_SIZE);
 
-    // Validate key size parameter (for future extensibility)
+    // Strict pre-production API: there is no legacy ChipmunkRing key size.
     if (a_key_size > 0 && a_key_size != CHIPMUNK_RING_PRIVATE_KEY_SIZE) {
-        log_it(L_WARNING, "Key size %zu may not be compatible with Chipmunk_Ring (expected %d)",
+        log_it(L_ERROR, "Invalid Chipmunk_Ring key size %zu (expected %d)",
                a_key_size, (int)CHIPMUNK_RING_PRIVATE_KEY_SIZE);
+        return CHIPMUNK_RING_ERROR_INVALID_SIZE;
     }
 
     return s_chipmunk_ring_keygen_common(a_key, a_seed);
@@ -446,8 +462,9 @@ int chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed
 /**
  * @brief Create ring container from public keys
  */
-int chipmunk_ring_container_create(const chipmunk_ring_public_key_t *a_public_keys,
-                           size_t a_num_keys, chipmunk_ring_container_t *a_ring) {
+int chipmunk_ring_container_create_unchecked(const chipmunk_ring_public_key_t *a_public_keys,
+                                             size_t a_num_keys,
+                                             chipmunk_ring_container_t *a_ring) {
     CHIPMUNK_RING_RETURN_IF_NULL(a_public_keys, CHIPMUNK_RING_ERROR_NULL_PARAM);
     CHIPMUNK_RING_RETURN_IF_NULL(a_ring, CHIPMUNK_RING_ERROR_NULL_PARAM);
     CHIPMUNK_RING_RETURN_IF_INVALID_SIZE(a_num_keys, 2, CHIPMUNK_RING_MAX_RING_SIZE);
@@ -1430,10 +1447,18 @@ int chipmunk_ring_verify(const void *a_message, size_t a_message_size,
     debug_if(s_debug_more, L_INFO, "Challenge verification inputs prepared (%zu bytes)", l_total_size);
     debug_if(s_debug_more, L_INFO, "Signature challenge size=%zu", a_signature->challenge_size);
 
-    // Compare with challenge from signature (use minimum of both sizes for safety)
-    size_t l_compare_size = (a_signature->challenge_size < sizeof(l_expected_challenge_hash)) ? 
-                           a_signature->challenge_size : sizeof(l_expected_challenge_hash);
-    if (memcmp(a_signature->challenge, &l_expected_challenge_hash, l_compare_size) != 0) {
+    if (a_signature->challenge_size != CHIPMUNK_RING_CHALLENGE_SIZE ||
+        a_signature->challenge_size != sizeof(l_expected_challenge_hash)) {
+        log_it(L_ERROR, "Signature challenge has invalid size %zu (expected %u)",
+               a_signature->challenge_size, (unsigned)CHIPMUNK_RING_CHALLENGE_SIZE);
+        if (a_signature->use_embedded_keys && l_effective_ring.ring_hash) {
+            DAP_DELETE(l_effective_ring.ring_hash);
+        }
+        return -1;
+    }
+
+    if (memcmp(a_signature->challenge, &l_expected_challenge_hash,
+               CHIPMUNK_RING_CHALLENGE_SIZE) != 0) {
         debug_if(s_debug_more, L_ERROR, "Challenge verification failed - message doesn't match signature");
         debug_if(s_debug_more, L_ERROR, "Expected challenge does not match signature challenge");
         // Cleanup allocated memory for embedded mode
@@ -2018,6 +2043,15 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
     if (!a_sig || !a_input || a_input_size == 0) {
         return -EINVAL;
     }
+    if (a_input_size < sizeof(uint32_t) * 2u) {
+        return -EINVAL;
+    }
+    uint32_t l_wire_version = s_le32_load(a_input + sizeof(uint32_t));
+    if (l_wire_version != chipmunk_ring_signature_schema.version) {
+        log_it(L_ERROR, "Signature deserialization rejected: unsupported format_version=%u",
+               l_wire_version);
+        return -EINVAL;
+    }
 
     // Use universal deserializer with schema-based approach
     dap_serialize_result_t result = chipmunk_ring_signature_deserialize(a_input, a_input_size, a_sig);
@@ -2061,6 +2095,12 @@ int chipmunk_ring_signature_from_bytes(chipmunk_ring_signature_t *a_sig,
     if (a_sig->required_signers > 1u && a_sig->zk_proofs_size == 0u) {
         log_it(L_ERROR,
                "Signature deserialization rejected: multi-signer blob with empty threshold_zk_proofs");
+        return -EINVAL;
+    }
+    if (a_sig->challenge_size != CHIPMUNK_RING_CHALLENGE_SIZE) {
+        log_it(L_ERROR,
+               "Signature deserialization rejected: challenge_size=%zu (expected %u)",
+               a_sig->challenge_size, (unsigned)CHIPMUNK_RING_CHALLENGE_SIZE);
         return -EINVAL;
     }
 

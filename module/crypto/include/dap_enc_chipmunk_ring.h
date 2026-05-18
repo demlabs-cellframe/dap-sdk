@@ -223,7 +223,8 @@ int dap_enc_chipmunk_ring_key_new(struct dap_enc_key *a_key);
  * @param a_key Output key structure
  * @param a_seed Seed for deterministic generation
  * @param a_seed_size Seed size
- * @param a_key_size Key size (unused, kept for compatibility)
+ * @param a_key_size Key size; when non-zero it must equal
+ *                   CHIPMUNK_RING_PRIVATE_KEY_SIZE
  * @return 0 on success, negative on error
  */
 int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed,

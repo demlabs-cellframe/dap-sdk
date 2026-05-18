@@ -32,8 +32,8 @@ extern "C" {
  *  CR-D10 / Round-2 — Schema-driven wire layer for multi-signatures      *
  *  ------------------------------------------------------------------    *
  *  This header defines wire-mirror structures and dap_serialize schemas  *
- *  whose byte-level output is *identical* to the legacy hand-rolled CHMA *
- *  body produced by chipmunk_multi_signature_codec.c.  The migration     *
+ *  whose byte-level output is *identical* to the original hand-rolled    *
+ *  CHMA body produced by chipmunk_multi_signature_codec.c. The migration *
  *  intentionally avoided introducing a new wire version: the schema     *
  *  re-implements the existing layout, so deployed nodes never need to    *
  *  understand more than one format.                                      *
@@ -61,16 +61,16 @@ extern "C" {
  *  _t) embed `size_t` count fields that the schema engine cannot encode  *
  *  directly (uint32_t length prefixes only).  The wire mirrors below     *
  *  demote those fields to uint32_t and reorder the fields when needed,   *
- *  but every leaf byte still maps 1:1 onto the legacy layout.            *
+ *  but every leaf byte still maps 1:1 onto the canonical CHMA layout.    *
  * ---------------------------------------------------------------------- */
 
 /**
  * @brief Per-signer wire record — one element of the top-level signers[] array.
  *
- * The on-wire layout matches the legacy CHMA per-signer block byte-for-byte;
+ * The on-wire layout matches the canonical CHMA per-signer block byte-for-byte;
  * the schema ordering MUST therefore stay {pk_root, hots_pk, rho_seed,
  * leaf_index, proof}.  `proof.nodes` retains its 4-byte length prefix
- * because the v1 codec also wrote `path_length` immediately before the
+ * because the original codec also wrote `path_length` immediately before the
  * nodes block — so for the proof sub-record only `nodes` is a *normal*
  * ARRAY_DYNAMIC, not a NO_COUNT_PREFIX one.
  */
@@ -87,7 +87,7 @@ typedef struct chipmunk_signer_record_wire {
 /**
  * @brief Top-level wire mirror of chipmunk_multi_signature_t.
  *
- * Layout matches the legacy v1 body byte-for-byte: fixed prefix, then
+ * Layout matches the canonical CHMA body byte-for-byte: fixed prefix, then
  * an array-of-records with NO inner count prefix (signer_count comes
  * from the outer CHMA header set by the codec before deserialise).
  */

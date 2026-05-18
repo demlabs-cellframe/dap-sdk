@@ -36,8 +36,12 @@ typedef struct {
 static anonymity_test_fixture_t g_anonymity_fixture;
 
 /**
- * @brief Test ring anonymity - verify that signatures are indistinguishable to external observers
- * Anonymity means observer cannot determine who signed, not that signatures are identical
+ * @brief Test current structural privacy invariants for ring signatures.
+ *
+ * CR-11.D is still open: these checks do not prove full cryptographic ring
+ * anonymity.  They pin down the pre-CR-11.D behaviour: signer_index is not
+ * serialized, signatures from different signer slots verify, and the wire
+ * shape does not trivially expose a signer slot.
  */
 static bool s_test_ring_anonymity(void) {
     log_it(L_INFO, "Testing Chipmunk Ring anonymity properties...");
@@ -50,7 +54,7 @@ static bool s_test_ring_anonymity(void) {
         dap_assert(l_ring_keys[i] != NULL, "Ring key generation should succeed");
     }
 
-    // Use different ring participants as signer to check indistinguishability
+    // Use different ring participants as signers to check structural invariants.
     size_t l_signers_to_test[POSITIONS_TO_TEST] = {0, 2, TEST_RING_SIZE - 1};
 
     // Hash the test message
@@ -85,23 +89,21 @@ static bool s_test_ring_anonymity(void) {
                        "All signatures should have the same size");
     }
 
-    // ANONYMITY TEST: Verify that signatures don't reveal signer identity
-    // Check that all signatures are valid and indistinguishable to external observer
-    log_it(L_INFO, "ANONYMITY TEST: Verifying that signatures don't reveal signer identity");
+    // STRUCTURAL PRIVACY TEST: signer_index is not serialized and all
+    // signatures verify under the same ring.  This is not a CR-11.D proof.
+    log_it(L_INFO, "STRUCTURAL PRIVACY TEST: verifying pre-CR-11.D invariants");
     
     // All signatures should be valid (this proves the ring signature works)
     for (size_t i = 0; i < POSITIONS_TO_TEST; i++) {
         int l_verify_result = dap_sign_verify_ring(l_signatures[i], &l_message_hash, sizeof(l_message_hash),
                                                   l_ring_keys, TEST_RING_SIZE);
-        dap_assert(l_verify_result == 0, "All signatures should be valid for anonymity test");
+        dap_assert(l_verify_result == 0, "All signatures should be valid for privacy-invariant test");
     }
-    
-    // ANONYMITY ACHIEVED: External observer cannot determine who signed
-    // The fact that signer_index is not serialized means anonymity is preserved
-    log_it(L_INFO, "ANONYMITY VERIFIED: All signatures valid, signer identity not revealed");
+
+    log_it(L_INFO, "STRUCTURAL PRIVACY VERIFIED: signer_index absent from wire, CR-11.D still required");
     
     // Additional check: signatures should be different (due to random commitments)
-    // This ensures they are indistinguishable rather than identical
+    // This checks randomized encoding diversity, not indistinguishability.
     bool l_all_different = true;
     for (size_t i = 0; i < POSITIONS_TO_TEST - 1; i++) {
         for (size_t j = i + 1; j < POSITIONS_TO_TEST; j++) {
@@ -114,9 +116,9 @@ static bool s_test_ring_anonymity(void) {
     }
     
     if (l_all_different) {
-        log_it(L_INFO, "ANONYMITY: Signatures are different due to randomness (good for indistinguishability)");
+        log_it(L_INFO, "STRUCTURAL PRIVACY: signatures differ due to randomized commitments");
     } else {
-        log_it(L_INFO, "ANONYMITY: Some signatures are identical (acceptable for anonymity)");
+        log_it(L_INFO, "STRUCTURAL PRIVACY: some signatures are identical (not a CR-11.D claim)");
     }
 
     // Test that all signatures are properly typed
@@ -145,8 +147,10 @@ static bool s_test_ring_anonymity(void) {
 }
 
 /**
- * @brief Test linkability prevention - verify that multiple signatures from same signer are valid
- * Anonymity is preserved through randomness, not identity of signatures
+ * @brief Test pre-CR-11.D linkability guardrails for repeated signatures.
+ *
+ * This does not prove unlinkability; it verifies that repeated signatures are
+ * valid and do not reuse the removed linkability_tag slot.
  */
 static bool s_test_linkability_prevention(void) {
     log_it(L_INFO, "Testing Chipmunk Ring linkability prevention...");

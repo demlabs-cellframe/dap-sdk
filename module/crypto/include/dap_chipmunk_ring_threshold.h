@@ -197,20 +197,20 @@ void chipmunk_ring_threshold_share_wipe(chipmunk_ring_threshold_share_t *a_share
  * Produce a Proof of Possession for the public key carried by @a a_sk.
  *
  * Internally:
- *   1. extract pk_bytes via chipmunk_ht_public_key_to_bytes;
- *   2. derive pop_message = SHA3-256("chipmunk-ring-pop/v2" ||
- *      LE32(len(pk_bytes)) || pk_bytes) — TupleHash discipline
- *      established in CR-D31;
- *   3. sign pop_message under the Merkle-committed reserved PoP leaf
+ *   1. derive the canonical pop_message via
+ *      chipmunk_ht_pop_message_derive(), i.e. CR-D31 TupleHash-style
+ *      length-prefixing over domain "chipmunk-ring-pop/v2" and the
+ *      serialised hypertree public key;
+ *   2. sign pop_message under the Merkle-committed reserved PoP leaf
  *      via chipmunk_ht_sign_pop (does NOT consume production leaves);
- *   4. wrap the signature with the CR-9.5 envelope.
+ *   3. wrap the signature with the CR-9.5 envelope.
  *
  * Contract:
  *   * @a a_sk may have any production leaf_index in
  *     [0, CHIPMUNK_HT_MAX_SIGNATURES]; PoP creation does not mutate it.
  *   * @a a_out_pop is a caller-provided buffer of at least
  *     CHIPMUNK_RING_POP_BYTES_FROM_HT_SIG(CHIPMUNK_HT_SIGNATURE_SIZE)
- *     bytes.
+ *     bytes.  Verifiers require the exact total size.
  *
  * @return 0 on success;
  *         -EINVAL on NULL input;

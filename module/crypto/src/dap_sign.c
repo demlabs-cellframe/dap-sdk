@@ -1881,7 +1881,10 @@ int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_s
     chipmunk_ring_container_t l_ring;
     memset(&l_ring, 0, sizeof(l_ring));
 
-    int l_result = chipmunk_ring_container_create(l_public_keys, a_ring_size, &l_ring);
+    /* dap_sign verifies an already supplied ring.  Governance/registry code
+     * must construct admitted rings through the PoP-checked API before they
+     * reach this generic verifier. */
+    int l_result = chipmunk_ring_container_create_unchecked(l_public_keys, a_ring_size, &l_ring);
     DAP_FREE(l_public_keys);
 
     if (l_result != 0) {

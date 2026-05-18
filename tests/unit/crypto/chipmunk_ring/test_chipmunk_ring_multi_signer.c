@@ -42,7 +42,7 @@ static void setup_test_fixture(size_t ring_size, size_t keys_count) {
     // Generate ring keys
     g_fixture.ring_keys = DAP_NEW_Z_COUNT(dap_enc_key_t*, ring_size);
     for (size_t i = 0; i < ring_size; i++) {
-        g_fixture.ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 256);
+        g_fixture.ring_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
         dap_test_msg("Generated ring key %zu", i);
     }
     

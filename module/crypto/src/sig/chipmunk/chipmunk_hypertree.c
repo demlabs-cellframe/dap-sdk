@@ -30,6 +30,7 @@
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
 #include "chipmunk_internal.h"
+#include "chipmunk_ring_internal.h"
 
 /* ---------------------------------------------------------------------- *
  *  Domain separators                                                     *
@@ -43,6 +44,7 @@
 static const uint8_t s_ht_rho_label[16]    = { 'C','H','P','-','H','T','-','R','H','O','-','v','1',0,0,0 };
 static const uint8_t s_ht_hasher_label[16] = { 'C','H','P','-','H','T','-','H','S','R','-','v','1',0,0,0 };
 static const uint8_t s_ht_keyseed_label[16]= { 'C','H','P','-','H','T','-','K','S','D','-','v','1',0,0,0 };
+static const char s_ht_pop_domain[] = "chipmunk-ring-pop/v2";
 
 /* ---------------------------------------------------------------------- *
  *  Small helpers                                                         *
@@ -398,29 +400,57 @@ out:
     return l_ret;
 }
 
+int chipmunk_ht_pop_message_derive(const chipmunk_ht_public_key_t *a_pk,
+                                   uint8_t a_out[32])
+{
+    if (!a_pk || !a_out) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+
+    uint8_t l_pk_bytes[CHIPMUNK_HT_PUBLIC_KEY_SIZE];
+    int l_rc = chipmunk_ht_public_key_to_bytes(l_pk_bytes, a_pk);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+        return l_rc;
+    }
+
+    l_rc = chipmunk_ring_domain_hash_internal(s_ht_pop_domain,
+                                              /* salt = */ NULL, 0,
+                                              l_pk_bytes,
+                                              CHIPMUNK_HT_PUBLIC_KEY_SIZE,
+                                              a_out, 32u,
+                                              /* iterations = */ 0u);
+    s_wipe(l_pk_bytes, sizeof(l_pk_bytes));
+    return l_rc;
+}
+
 int chipmunk_ht_sign_pop(chipmunk_ht_private_key_t *a_sk,
-                         const uint8_t *a_msg, size_t a_len,
                          chipmunk_ht_signature_t *a_sig)
 {
-    if (!a_sk || !a_msg || !a_sig) {
+    if (!a_sk || !a_sig) {
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     if (!a_sk->materialised || !a_sk->leaf_pks || !a_sk->mutex_inited) {
         log_it(L_ERROR, "Hypertree sk is not materialised; call keypair/from_bytes first");
         return CHIPMUNK_ERROR_INTERNAL;
     }
-    if (a_len > 10 * 1024 * 1024) {
-        log_it(L_ERROR, "Message too large for hypertree PoP sign (%zu bytes)", a_len);
-        return CHIPMUNK_ERROR_INVALID_SIZE;
+
+    uint8_t l_pop_msg[32];
+    int l_ret = chipmunk_ht_pop_message_derive(&a_sk->pk, l_pop_msg);
+    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
+        s_wipe(l_pop_msg, sizeof(l_pop_msg));
+        return l_ret;
     }
 
     int l_rc = pthread_mutex_lock(&a_sk->mutex);
     if (l_rc != 0) {
         log_it(L_ERROR, "Failed to lock hypertree sk mutex: %d", l_rc);
+        s_wipe(l_pop_msg, sizeof(l_pop_msg));
         return CHIPMUNK_ERROR_INTERNAL;
     }
-    int l_ret = s_sign_at_leaf(a_sk, CHIPMUNK_HT_POP_LEAF_INDEX, a_msg, a_len, a_sig);
+    l_ret = s_sign_at_leaf(a_sk, CHIPMUNK_HT_POP_LEAF_INDEX,
+                           l_pop_msg, sizeof(l_pop_msg), a_sig);
     pthread_mutex_unlock(&a_sk->mutex);
+    s_wipe(l_pop_msg, sizeof(l_pop_msg));
     return l_ret;
 }
 
