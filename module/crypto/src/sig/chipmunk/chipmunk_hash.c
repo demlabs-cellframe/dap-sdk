@@ -23,12 +23,14 @@
 */
 
 #include "chipmunk_hash.h"
+#include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_crypto_common.h"
 #include "chipmunk.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
+#include <errno.h>
 #include <string.h>
 
 #define LOG_TAG "chipmunk_hash"
@@ -256,4 +258,119 @@ int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], u
     }
 
     return CHIPMUNK_ERROR_SUCCESS;
+}
+
+static inline void s_le32_store(uint8_t *a_dst, uint32_t a_v)
+{
+    a_dst[0] = (uint8_t)(a_v);
+    a_dst[1] = (uint8_t)(a_v >> 8);
+    a_dst[2] = (uint8_t)(a_v >> 16);
+    a_dst[3] = (uint8_t)(a_v >> 24);
+}
+
+int dap_chipmunk_domain_hash(const char *a_domain,
+                             const void *a_salt, size_t a_salt_size,
+                             const void *a_input, size_t a_input_size,
+                             void *a_output, size_t a_output_size,
+                             uint32_t a_iterations)
+{
+    if (!a_domain || !a_input || !a_output || a_input_size == 0 || a_output_size == 0) {
+        return -1;
+    }
+
+    enum { S_DOMAIN_MAX = 1024 };
+    size_t l_domain_len = strnlen(a_domain, S_DOMAIN_MAX);
+    if (l_domain_len == S_DOMAIN_MAX || l_domain_len == 0) {
+        return -EINVAL;
+    }
+    static const char l_required_suffix[] = "/v2";
+    const size_t l_required_suffix_len = sizeof(l_required_suffix) - 1u;
+    if (l_domain_len < l_required_suffix_len ||
+        memcmp(a_domain + l_domain_len - l_required_suffix_len,
+               l_required_suffix, l_required_suffix_len) != 0) {
+        log_it(L_ERROR, "Chipmunk domain hash rejected non-v2 domain: %s", a_domain);
+        return -EINVAL;
+    }
+
+    if (a_salt_size > UINT32_MAX || a_input_size > UINT32_MAX ||
+        l_domain_len > UINT32_MAX) {
+        return -EINVAL;
+    }
+
+    const size_t l_prefix_bytes = 4u * 3u;
+    if (a_salt_size > SIZE_MAX - a_input_size ||
+        l_domain_len > SIZE_MAX - (a_salt_size + a_input_size) ||
+        l_prefix_bytes > SIZE_MAX - (l_domain_len + a_salt_size + a_input_size)) {
+        return -EINVAL;
+    }
+    size_t l_prk_input_size = l_prefix_bytes + l_domain_len + a_salt_size + a_input_size;
+    uint8_t *l_prk_input = DAP_NEW_SIZE(uint8_t, l_prk_input_size);
+    if (!l_prk_input) {
+        return -ENOMEM;
+    }
+
+    size_t l_off = 0;
+    s_le32_store(l_prk_input + l_off, (uint32_t)l_domain_len);
+    l_off += 4;
+    memcpy(l_prk_input + l_off, a_domain, l_domain_len);
+    l_off += l_domain_len;
+
+    s_le32_store(l_prk_input + l_off, (uint32_t)a_salt_size);
+    l_off += 4;
+    if (a_salt && a_salt_size > 0) {
+        memcpy(l_prk_input + l_off, a_salt, a_salt_size);
+        l_off += a_salt_size;
+    }
+
+    s_le32_store(l_prk_input + l_off, (uint32_t)a_input_size);
+    l_off += 4;
+    memcpy(l_prk_input + l_off, a_input, a_input_size);
+
+    uint8_t l_prk[32];
+    if (!dap_hash(DAP_HASH_TYPE_SHA3_256, l_prk_input, l_prk_input_size,
+                  l_prk, sizeof(l_prk))) {
+        DAP_DELETE(l_prk_input);
+        return -1;
+    }
+    DAP_DELETE(l_prk_input);
+
+    uint32_t l_iters = a_iterations > 0 ? a_iterations : 1u;
+    for (uint32_t i = 1; i < l_iters; i++) {
+        dap_hash(DAP_HASH_TYPE_SHA3_256, l_prk, sizeof(l_prk), l_prk, sizeof(l_prk));
+    }
+
+    uint8_t *l_out = (uint8_t *)a_output;
+    size_t l_remaining = a_output_size;
+    uint8_t l_counter = 1u;
+    uint8_t l_prev_block[32] = { 0 };
+
+    while (l_remaining > 0) {
+        uint8_t l_expand_input[32 + 32 + 1];
+        size_t l_expand_len = 0;
+        memcpy(l_expand_input + l_expand_len, l_prk, 32); l_expand_len += 32;
+        if (l_counter > 1) {
+            memcpy(l_expand_input + l_expand_len, l_prev_block, 32);
+            l_expand_len += 32;
+        }
+        l_expand_input[l_expand_len++] = l_counter;
+
+        uint8_t l_block[32];
+        if (!dap_hash(DAP_HASH_TYPE_SHA3_256, l_expand_input, l_expand_len,
+                      l_block, sizeof(l_block))) {
+            memset(l_prk, 0, sizeof(l_prk));
+            return -1;
+        }
+        size_t l_to_copy = l_remaining < 32 ? l_remaining : 32u;
+        memcpy(l_out, l_block, l_to_copy);
+        memcpy(l_prev_block, l_block, 32);
+        l_out += l_to_copy;
+        l_remaining -= l_to_copy;
+        if (++l_counter == 0u) {
+            memset(l_prk, 0, sizeof(l_prk));
+            return -1;
+        }
+    }
+
+    memset(l_prk, 0, sizeof(l_prk));
+    return 0;
 }

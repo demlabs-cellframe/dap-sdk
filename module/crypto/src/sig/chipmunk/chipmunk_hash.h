@@ -111,4 +111,28 @@ int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uin
  */
 int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
 
+/**
+ * @brief TupleHash-style domain-separated SHA3-256 KDF.
+ *
+ * Computes:
+ *   PRK = SHA3-256( LE32(len(D)) || D ||
+ *                   LE32(len(S)) || S ||
+ *                   LE32(len(I)) || I )
+ *   (optionally iterated a_iterations times by re-hashing PRK)
+ *   OKM = HKDF-Expand-style SHA3-256 counter mode of length a_output_size.
+ *
+ * The domain string MUST end with the "/v2" suffix and contain no
+ * embedded NUL.  Lengths must fit in uint32_t.
+ *
+ * Used by Chipmunk hypertree PoP message derivation.
+ *
+ * @return 0 on success; -EINVAL on invalid arguments; -ENOMEM on alloc
+ *         failure; -1 on hash failure.
+ */
+int dap_chipmunk_domain_hash(const char *a_domain,
+                             const void *a_salt, size_t a_salt_size,
+                             const void *a_input, size_t a_input_size,
+                             void *a_output, size_t a_output_size,
+                             uint32_t a_iterations);
+
 #endif // _CHIPMUNK_HASH_H_ 

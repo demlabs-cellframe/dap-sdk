@@ -160,32 +160,6 @@ target_link_libraries(test_chipmunk_multithread PRIVATE
     pthread
 )
 
-# Test executable - Ring Signature Test
-add_executable(test_chipmunk_ring
-    test_chipmunk_ring.c
-)
-
-target_include_directories(test_chipmunk_ring PRIVATE
-    ../../../../../module/core/include
-    ../../../../../module/crypto/include
-    ../../../../../module/io/include
-    ../../../../../module/global-db/include
-    ../../../../../module/net/include
-    ../../../../../tests/fixtures/utilities
-    ../../../../../module/plugin/include
-    ../../../../../module/test/include
-)
-
-target_link_libraries(test_chipmunk_ring PRIVATE
-    dap_core
-    dap_crypto
-    dap_io
-    dap_global_db
-    dap_net
-    dap_plugin
-    dap_test
-)
-
 # Test executable - InvNTT Fix Test
 add_executable(test_chipmunk_invntt_fix
     test_chipmunk_invntt_fix.c

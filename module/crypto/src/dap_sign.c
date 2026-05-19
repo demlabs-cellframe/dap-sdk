@@ -36,9 +36,11 @@
 
 #include "dap_config.h"
 #include "dap_pkey.h"
-#include "dap_enc_chipmunk.h"  // For Chipmunk implementation
-#include "dap_enc_chipmunk_ring.h"  // For Chipmunk ring signatures
-#include "chipmunk/chipmunk_ring.h"  // For ring signature structures
+#include "dap_enc_chipmunk.h"  // For Chipmunk (aggregated) implementation
+#include "dap_enc_chipmunk_ring.h"  // For Chipmunk linkable ring signature (LRS)
+#include "dap_rand.h"
+#include "dap_memwipe.h"
+#include "chipmunk/chipmunk_lrs.h"  // LRS sign/verify primitives
 #include "chipmunk/chipmunk_multi_signature_codec.h"  // CR-D10 schema-driven wire codec
 #include "dap_hash_sha3.h"
 #include "dap_enc_dilithium.h"
@@ -381,115 +383,87 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
 }
 
 /**
- * @brief Create a ring signature using Chipmunk_Ring
+ * @brief Create an anonymous linkable ring signature (Chipmunk LRS).
+ *
+ * Native CLSAG-style construction on the Chipmunk lattice substrate.
+ * Wire payload is the canonical CLRS blob produced by chipmunk_lrs_sign.
  */
 dap_sign_t *dap_sign_create_ring(
     dap_enc_key_t *a_signer_key,
     const void *a_data,
     size_t a_data_size,
     dap_enc_key_t **a_ring_keys,
-    size_t a_ring_size,
-    uint32_t a_required_signers
+    size_t a_ring_size
 ) {
-    debug_if(s_debug_more, L_DEBUG, "dap_sign_create_ring ENTRY: ring_size=%zu, required_signers=%u", 
-             a_ring_size, a_required_signers);
     dap_return_val_if_fail(a_signer_key, NULL);
-    // Allow empty messages (a_data can be NULL if a_data_size is 0)
     dap_return_val_if_fail(a_data || a_data_size == 0, NULL);
     dap_return_val_if_fail(a_ring_keys, NULL);
-    dap_return_val_if_fail(a_ring_size >= 2, NULL);
-    dap_return_val_if_fail(a_required_signers >= 1, NULL);
-    dap_return_val_if_fail(a_required_signers <= a_ring_size, NULL);
-    // ANONYMITY: No signer index validation needed for anonymous signatures
-
-    // Verify all ring keys are of correct type (only CHIPMUNK_RING for ring signatures)
-    for (size_t i = 0; i < a_ring_size; i++) {
-        dap_return_val_if_fail(a_ring_keys[i], NULL);
-        dap_return_val_if_fail(a_ring_keys[i]->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL);
-    }
-
-    // Verify signer key type (only CHIPMUNK_RING for ring signatures)
+    dap_return_val_if_fail(a_ring_size >= CHIPMUNK_LRS_RING_MIN &&
+                           a_ring_size <= CHIPMUNK_LRS_RING_MAX, NULL);
     dap_return_val_if_fail(a_signer_key->type == DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL);
+    dap_return_val_if_fail(a_signer_key->priv_key_data &&
+                           a_signer_key->priv_key_data_size == sizeof(chipmunk_lrs_secret_key_t), NULL);
 
-    // Calculate signature size with all parameters
-    bool l_use_embedded_keys = true;  // Always use embedded keys for dap_sign interface
-    size_t l_signature_size = dap_enc_chipmunk_ring_get_signature_size(a_ring_size, a_required_signers, l_use_embedded_keys);
-    debug_if(s_debug_more, L_DEBUG, "Ring signature size for ring_size=%zu, required_signers=%u: %zu", a_ring_size, a_required_signers, l_signature_size);
-    dap_return_val_if_fail(l_signature_size > 0, NULL);
-
-    // Allocate signature buffer
-    debug_if(s_debug_more, L_INFO, "Allocating signature buffer of size %zu", l_signature_size);
-    uint8_t *l_signature_data = DAP_NEW_Z_SIZE(uint8_t, l_signature_size);
-    dap_return_val_if_fail(l_signature_data, NULL);
-    debug_if(s_debug_more, L_INFO, "Signature buffer allocated successfully");
-
-    // Extract public keys from ring keys
-    uint8_t **l_ring_pub_keys = DAP_NEW_Z_COUNT(uint8_t*, a_ring_size);
-    if (!l_ring_pub_keys) {
-        debug_if(s_debug_more, L_ERROR, "Failed to allocate ring public keys array");
-        DAP_DELETE(l_signature_data);
+    chipmunk_lrs_public_key_t *l_ring = DAP_NEW_Z_COUNT(chipmunk_lrs_public_key_t, a_ring_size);
+    if (!l_ring) {
         return NULL;
     }
-    debug_if(s_debug_more, L_INFO, "Ring public keys array allocated successfully, size: %zu", a_ring_size);
-
-    for (size_t i = 0; i < a_ring_size; i++) {
-        if (!a_ring_keys[i] || !a_ring_keys[i]->pub_key_data) {
-            log_it(L_ERROR, "Ring key %zu is NULL or has no public key data", i);
-            DAP_DELETE(l_ring_pub_keys);
-            DAP_DELETE(l_signature_data);
+    for (size_t i = 0; i < a_ring_size; ++i) {
+        if (!a_ring_keys[i] ||
+            a_ring_keys[i]->type != DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING ||
+            !a_ring_keys[i]->pub_key_data ||
+            a_ring_keys[i]->pub_key_data_size != sizeof(chipmunk_lrs_public_key_t)) {
+            log_it(L_ERROR, "Ring key %zu malformed for CHIPMUNK_RING signature", i);
+            DAP_DELETE(l_ring);
             return NULL;
         }
-        if (a_ring_keys[i]->pub_key_data_size != CHIPMUNK_RING_PUBLIC_KEY_SIZE) {
-            log_it(L_ERROR, "Ring key %zu has wrong size: expected %d, got %zu",
-                   i, (int)CHIPMUNK_RING_PUBLIC_KEY_SIZE, a_ring_keys[i]->pub_key_data_size);
-            DAP_DELETE(l_ring_pub_keys);
-            DAP_DELETE(l_signature_data);
-            return NULL;
-        }
-        l_ring_pub_keys[i] = a_ring_keys[i]->pub_key_data;
+        memcpy(&l_ring[i], a_ring_keys[i]->pub_key_data, sizeof(chipmunk_lrs_public_key_t));
     }
 
-    // Create ring signature with required_signers support
-    int l_result = dap_enc_chipmunk_ring_sign(
-        a_signer_key->priv_key_data,
-        a_data,
-        a_data_size,
-        l_ring_pub_keys,
-        a_ring_size,
-        a_required_signers,
-        l_signature_data,
-        l_signature_size
-    );
-
-    DAP_DELETE(l_ring_pub_keys);
-
-    if (l_result != 0) {
-        log_it(L_ERROR, "Failed to create Chipmunk ring signature");
-        DAP_DELETE(l_signature_data);
+    const size_t l_sig_size = chipmunk_lrs_signature_size((uint32_t)a_ring_size);
+    if (l_sig_size == 0) {
+        DAP_DELETE(l_ring);
         return NULL;
     }
 
-    // Create dap_sign_t structure
-    size_t l_total_size = sizeof(dap_sign_hdr_t) + l_signature_size;
-    dap_sign_t *l_sign = DAP_NEW_Z_SIZE(dap_sign_t, l_total_size);
+    uint8_t l_seed[CHIPMUNK_LRS_SEED_BYTES];
+    if (dap_random_bytes(l_seed, sizeof(l_seed)) != 0) {
+        log_it(L_ERROR, "dap_random_bytes failed for ring signature seed");
+        DAP_DELETE(l_ring);
+        return NULL;
+    }
 
+    uint8_t *l_sig_buf = DAP_NEW_Z_SIZE(uint8_t, l_sig_size);
+    if (!l_sig_buf) {
+        dap_memwipe(l_seed, sizeof(l_seed));
+        DAP_DELETE(l_ring);
+        return NULL;
+    }
+
+    int l_rc = chipmunk_lrs_sign(l_sig_buf, l_sig_size,
+                                 (const chipmunk_lrs_secret_key_t *)a_signer_key->priv_key_data,
+                                 l_ring, a_ring_size,
+                                 (const uint8_t *)a_data, a_data_size,
+                                 l_seed);
+    dap_memwipe(l_seed, sizeof(l_seed));
+    DAP_DELETE(l_ring);
+    if (l_rc != 0) {
+        log_it(L_ERROR, "chipmunk_lrs_sign failed: %d", l_rc);
+        DAP_DELETE(l_sig_buf);
+        return NULL;
+    }
+
+    dap_sign_t *l_sign = DAP_NEW_Z_SIZE(dap_sign_t, sizeof(dap_sign_t) + l_sig_size);
     if (!l_sign) {
-        log_it(L_CRITICAL, "Failed to allocate memory for ring signature");
-        DAP_DELETE(l_signature_data);
+        DAP_DELETE(l_sig_buf);
         return NULL;
     }
-
-    // Set signature header
-    l_sign->header.type.type = SIG_TYPE_CHIPMUNK_RING;
-    l_sign->header.hash_type = DAP_SIGN_HASH_TYPE_DEFAULT;
-    l_sign->header.sign_pkey_size = 0; // Ring signatures don't include individual public key
-    l_sign->header.sign_size = (uint32_t)l_signature_size;
-
-    // Copy signature data
-    memcpy(l_sign->pkey_n_sign, l_signature_data, l_signature_size);
-
-    DAP_DELETE(l_signature_data);
-
+    l_sign->header.type.type      = SIG_TYPE_CHIPMUNK_RING;
+    l_sign->header.hash_type      = DAP_SIGN_HASH_TYPE_DEFAULT;
+    l_sign->header.sign_pkey_size = 0;
+    l_sign->header.sign_size      = (uint32_t)l_sig_size;
+    memcpy(l_sign->pkey_n_sign, l_sig_buf, l_sig_size);
+    DAP_DELETE(l_sig_buf);
     return l_sign;
 }
 
@@ -1816,127 +1790,44 @@ int dap_sign_benchmark_batch_verification(
 int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_size,
                         dap_enc_key_t **a_ring_keys, size_t a_ring_size) {
     dap_return_val_if_fail(a_sign, -EINVAL);
-    // Allow empty messages (a_data can be NULL if a_data_size is 0)
     dap_return_val_if_fail(a_data || a_data_size == 0, -EINVAL);
     dap_return_val_if_fail(a_ring_keys, -EINVAL);
-    dap_return_val_if_fail(a_ring_size >= 2 && a_ring_size <= CHIPMUNK_RING_MAX_RING_SIZE, -EINVAL);
+    dap_return_val_if_fail(a_ring_size >= CHIPMUNK_LRS_RING_MIN &&
+                           a_ring_size <= CHIPMUNK_LRS_RING_MAX, -EINVAL);
 
-    // Check signature type
     if (a_sign->header.type.type != SIG_TYPE_CHIPMUNK_RING) {
         log_it(L_ERROR, "Invalid signature type for ring verification: expected %u, got %u",
                SIG_TYPE_CHIPMUNK_RING, a_sign->header.type.type);
         return -EINVAL;
     }
 
-    // Extract signature data
-    size_t l_signature_data_size = 0;
-    uint8_t *l_signature_data = dap_sign_get_sign(a_sign, &l_signature_data_size);
-    if (!l_signature_data || l_signature_data_size == 0) {
-        log_it(L_ERROR, "Failed to extract signature data from dap_sign_t");
+    size_t l_sig_size = 0;
+    uint8_t *l_sig_data = dap_sign_get_sign(a_sign, &l_sig_size);
+    if (!l_sig_data || l_sig_size == 0) {
         return -EINVAL;
     }
 
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: extracted signature data, size=%zu", l_signature_data_size);
-
-    // Create ring container from public keys
-    chipmunk_ring_public_key_t *l_public_keys = DAP_NEW_SIZE(chipmunk_ring_public_key_t,sizeof(chipmunk_ring_public_key_t) * a_ring_size);
-    if (!l_public_keys) {
-        log_it(L_CRITICAL, "Failed to allocate memory for ring public keys");
+    chipmunk_lrs_public_key_t *l_ring = DAP_NEW_Z_COUNT(chipmunk_lrs_public_key_t, a_ring_size);
+    if (!l_ring) {
         return -ENOMEM;
     }
-
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: allocated public keys array");
-
-    // Copy public keys with enhanced safety checks
-    for (size_t i = 0; i < a_ring_size; i++) {
-        if (!a_ring_keys[i]) {
-            log_it(L_ERROR, "Ring key at index %zu is NULL", i);
-            DAP_FREE(l_public_keys);
+    for (size_t i = 0; i < a_ring_size; ++i) {
+        if (!a_ring_keys[i] ||
+            a_ring_keys[i]->type != DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING ||
+            !a_ring_keys[i]->pub_key_data ||
+            a_ring_keys[i]->pub_key_data_size != sizeof(chipmunk_lrs_public_key_t)) {
+            log_it(L_ERROR, "Ring key %zu malformed for CHIPMUNK_RING verify", i);
+            DAP_DELETE(l_ring);
             return -EINVAL;
         }
-        if (a_ring_keys[i]->type != DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING) {
-            log_it(L_ERROR, "Ring key at index %zu has invalid type %d for ring verification",
-                   i, a_ring_keys[i]->type);
-            DAP_FREE(l_public_keys);
-            return -EINVAL;
-        }
-        if (!a_ring_keys[i]->pub_key_data) {
-            log_it(L_ERROR, "Ring key %zu has NULL pub_key_data", i);
-            DAP_FREE(l_public_keys);
-            return -EINVAL;
-        }
-        if (a_ring_keys[i]->pub_key_data_size != CHIPMUNK_RING_PUBLIC_KEY_SIZE) {
-            log_it(L_ERROR, "Ring key %zu has wrong size: expected %d, got %zu",
-                   i, (int)CHIPMUNK_RING_PUBLIC_KEY_SIZE, a_ring_keys[i]->pub_key_data_size);
-            DAP_FREE(l_public_keys);
-            return -EINVAL;
-        }
-        
-        memcpy(l_public_keys[i].data, a_ring_keys[i]->pub_key_data, sizeof(l_public_keys[i].data));
+        memcpy(&l_ring[i], a_ring_keys[i]->pub_key_data, sizeof(chipmunk_lrs_public_key_t));
     }
 
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: copied %zu public keys", a_ring_size);
-
-    // Create ring container
-    chipmunk_ring_container_t l_ring;
-    memset(&l_ring, 0, sizeof(l_ring));
-
-    /* dap_sign verifies an already supplied ring.  Governance/registry code
-     * must construct admitted rings through the PoP-checked API before they
-     * reach this generic verifier. */
-    int l_result = chipmunk_ring_container_create_unchecked(l_public_keys, a_ring_size, &l_ring);
-    DAP_FREE(l_public_keys);
-
-    if (l_result != 0) {
-        log_it(L_ERROR, "Failed to create ring container: %d", l_result);
-        return l_result;
-    }
-
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: created ring container successfully");
-
-    // Deserialize signature
-    chipmunk_ring_signature_t *l_signature = DAP_NEW_Z(chipmunk_ring_signature_t);
-    if (!l_signature) {
-        log_it(L_CRITICAL, "Failed to allocate memory for signature deserialization");
-        chipmunk_ring_container_free(&l_ring);
-        return -ENOMEM;
-    }
-
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: allocated signature structure");
-
-    l_result = chipmunk_ring_signature_from_bytes(l_signature, l_signature_data, l_signature_data_size);
-    if (l_result != 0) {
-        log_it(L_ERROR, "Failed to deserialize ring signature: %d", l_result);
-        chipmunk_ring_container_free(&l_ring);
-        DAP_FREE(l_signature);
-        return l_result;
-    }
-
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: deserialized signature successfully");
-
-    // Verify signature with adaptive key handling
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: calling chipmunk_ring_verify (embedded_keys=%s)", 
-           l_signature->use_embedded_keys ? "true" : "false");
-    
-    if (l_signature->use_embedded_keys) {
-        // Use embedded keys - pass NULL as ring parameter
-        l_result = chipmunk_ring_verify(a_data, a_data_size, l_signature, NULL);
-    } else {
-        // Use external keys - pass ring container
-        l_result = chipmunk_ring_verify(a_data, a_data_size, l_signature, &l_ring);
-    }
-    
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: chipmunk_ring_verify returned %d", l_result);
-
-    // Cleanup
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: starting cleanup");
-    chipmunk_ring_signature_free(l_signature);
-    chipmunk_ring_container_free(&l_ring);
-    // Note: chipmunk_ring_signature_free only frees internal arrays, not the structure itself
-    DAP_FREE(l_signature);
-    debug_if(s_debug_more, L_INFO, "dap_sign_verify_ring: cleanup completed");
-
-    return l_result;
+    int l_rc = chipmunk_lrs_verify(l_sig_data, l_sig_size,
+                                   l_ring, a_ring_size,
+                                   (const uint8_t *)a_data, a_data_size);
+    DAP_DELETE(l_ring);
+    return l_rc;
 }
 
 /**

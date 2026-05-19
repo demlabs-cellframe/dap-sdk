@@ -29,6 +29,7 @@
 #include <dap_hash.h>
 #include <dap_hash_compat.h>
 #include <dap_enc_chipmunk_ring.h>
+#include "chipmunk/chipmunk_lrs.h"
 #include "test_helpers.h"
 
 #define LOG_TAG "test_signatures"
@@ -201,25 +202,16 @@ static bool s_test_signature_serialization(void) {
 static bool s_test_signature_sizes(void) {
     log_it(L_INFO, "Testing signature size calculations...");
 
-    // Test various ring sizes for Chipmunk Ring
-    const size_t l_ring_sizes[] = {2, 4, 8, 16, 32, 64};
-
+    const uint32_t l_ring_sizes[] = {2, 4, 8, 16, 32, 64};
+    size_t l_prev = 0;
     for (size_t i = 0; i < sizeof(l_ring_sizes) / sizeof(l_ring_sizes[0]); i++) {
-        size_t l_ring_size = l_ring_sizes[i];
-        size_t l_sig_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size, 1, true);
-
-        DAP_TEST_ASSERT(l_sig_size > 0, "Signature size should be positive");
+        uint32_t l_ring_size = l_ring_sizes[i];
+        size_t l_sig_size = chipmunk_lrs_signature_size(l_ring_size);
+        DAP_TEST_ASSERT(l_sig_size > 0, "CLRS size should be positive");
         DAP_TEST_ASSERT(l_sig_size > 1000, "Ring signature should be large enough for anonymity");
-
-        if (l_ring_size < 64) {  // Test for reasonable ring sizes
-            size_t l_next_size = dap_enc_chipmunk_ring_get_signature_size(l_ring_size * 2, 1, true);
-            // ChipmunkRing: signature size increases only due to embedded keys array
-            // If embedded keys are used, larger ring produces larger signature
-            // If external storage is used, signature size is constant
-            DAP_TEST_ASSERT(l_next_size >= l_sig_size, "Larger ring signature size should be >= current size");
-        }
-
-        log_it(L_DEBUG, "Ring size %zu -> signature size %zu bytes", l_ring_size, l_sig_size);
+        DAP_TEST_ASSERT(l_sig_size >= l_prev, "CLRS size should be monotone non-decreasing in ring size");
+        l_prev = l_sig_size;
+        log_it(L_DEBUG, "Ring size %u -> CLRS size %zu bytes", l_ring_size, l_sig_size);
     }
 
     log_it(L_INFO, "✓ Signature size calculation tests passed");

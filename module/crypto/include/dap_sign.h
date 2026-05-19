@@ -167,22 +167,24 @@ DAP_STATIC_INLINE dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void *
 }
 
 /**
- * @brief Create a ring signature using Chipmunk_Ring (anonymous)
- * @param a_signer_key Private key of the signer
- * @param a_data Data to sign
- * @param a_data_size Size of data to sign
- * @param a_ring_keys Array of public keys in the ring (including signer's key)
- * @param a_ring_size Number of keys in the ring (must be >= 2)
- * @param a_required_signers Required signers 
- * @return New ring signature or NULL on error
+ * @brief Create an anonymous linkable ring signature (Chipmunk LRS).
+ *
+ * The signer's public key MUST already be present in @p a_ring_keys.
+ * The ring may be supplied in any order; the underlying LRS canonicalises
+ * it.  Verifiers cannot learn which ring member produced the signature,
+ * but two signatures by the same signer share a key image (linkability).
+ *
+ * @param a_signer_key       Signer's CHIPMUNK_RING dap_enc_key_t.
+ * @param a_data, a_data_size Message buffer (may be empty).
+ * @param a_ring_keys, a_ring_size  Ring members (size in [2, 64]).
+ * @return Newly allocated dap_sign_t (SIG_TYPE_CHIPMUNK_RING) or NULL.
  */
 dap_sign_t *dap_sign_create_ring(
     dap_enc_key_t *a_signer_key,
     const void *a_data,
     size_t a_data_size,
     dap_enc_key_t **a_ring_keys,
-    size_t a_ring_size,
-    uint32_t a_required_signers
+    size_t a_ring_size
 );
 
 //Create sign on raw data without hashing. Singing algorythm is key provided

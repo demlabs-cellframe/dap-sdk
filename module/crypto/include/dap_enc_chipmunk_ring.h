@@ -2,7 +2,7 @@
  * Authors:
  * Dmitry A. Gerasimov <ceo@cellframe.net>
  * DeM Labs Ltd   https://demlabs.net
- * Copyright  (c) 2025
+ * Copyright  (c) 2025-2026
  * All rights reserved.
 
  This file is part of DAP SDK the open source project
@@ -25,265 +25,75 @@
 
 /**
  * @file dap_enc_chipmunk_ring.h
- * @brief Public surface for ChipmunkRing post-quantum ring signature.
+ * @brief Public DAP-key surface for the Chipmunk linkable ring signature.
  *
- * @experimental CR-11.A status banner (2026-05-17):
+ * Backed by `chipmunk_lrs` — native, quantum-resistant, CLSAG-style
+ * linkable ring signature on the Chipmunk lattice substrate.  Single
+ * parameter profile, single canonical wire family.  Ring sign / verify
+ * are exposed through `dap_sign_create_ring` / `dap_sign_verify_ring`
+ * because they require ring context that does not fit the standard
+ * single-key sign_get / sign_verify contract.
  *
- *   * **Production-ready path (CR-9.6 governance):** trusted-dealer
- *     t-of-n threshold via `dap_enc_chipmunk_ring_governance.h`, with
- *     rogue-key defence via CR-9.5 PoP.  SDK-side proof sketch and
- *     peer-review checklist in
- *     SLC `documentation_4eb4aeee002de75b` (CR-9.7 proof sketch).
- *
- *   * **Experimental path (anonymity):** the underlying ring signature
- *     (`chipmunk_ring_sign` / `chipmunk_ring_verify`) provides
- *     constant-time signer-index resolution (Round-3 CR-D2 +
- *     CR-D15.C) but does NOT yet ship a cryptographic
- *     signer-indistinguishability proof.  CR-11.D (RING-ANON) in
- *     SLC `documentation_a57a7626f6cb30b2` (CR-11 master) tracks the
- *     OR-proof / CLSAG-style hardening required before publication.
- *
- *   * **Security-preset enum** (`chipmunk_ring_security_level_t`):
- *     reference parameter presets only; the historical "NIST Level X"
- *     description strings have been reworded under CR-11.A to stop
- *     claiming AES-equivalent bits that are not backed by a proof for
- *     the shipped construction.  Authoritative parameter-vs-security
- *     mapping is tracked under CR-11.B (KAT publication).
- *
- *   * **Wire format:** stable across CR-9 (`'CRHS'` shares, `'CRRP'`
- *     PoP, reserved `'CRHP'` partial sigs); no breaking change in
- *     CR-11.A.
- *
- *   Do NOT use `DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING` for legally or
- *   financially significant anonymity claims until CR-11.D closes.
+ * The `dap_enc_key_t` private/public buffers carry, byte-for-byte,
+ * `chipmunk_lrs_secret_key_t` / `chipmunk_lrs_public_key_t`.  Serialization
+ * callbacks store/restore those structures verbatim.
  */
 
 #include "dap_enc_key.h"
-#include "dap_enc_chipmunk_ring_params.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
- * @brief ChipmunkRing reference parameter presets.
- *
- * @experimental CR-11.A: enum values are STABLE, but the historical
- *   "NIST Level X" mapping was reworded — the bit-strength claims
- *   referenced legacy NewHope-style Ring-LWE estimates that no longer
- *   correspond to the shipped hypertree HOTS construction.
- *   Authoritative security analysis is tracked under CR-11.B (KAT
- *   publication) and CR-11.C (formal model).  Treat the labels below
- *   as preset *identifiers*, not as proofs of cryptographic strength.
- */
-typedef enum chipmunk_ring_security_level {
-    CHIPMUNK_RING_SECURITY_LEVEL_I = 1,     ///< Reference preset I (smallest parameters)
-    CHIPMUNK_RING_SECURITY_LEVEL_III = 3,   ///< Reference preset III (medium parameters)
-    CHIPMUNK_RING_SECURITY_LEVEL_V = 5,     ///< Reference preset V (large parameters)
-    CHIPMUNK_RING_SECURITY_LEVEL_V_PLUS = 6 ///< Reference preset V+ (largest, default)
-} chipmunk_ring_security_level_t;
+/* Per-key public/private buffer sizes — pinned to chipmunk_lrs CLPK/CLSK. */
+#define DAP_ENC_CHIPMUNK_RING_PUB_KEY_SIZE   1456u
+#define DAP_ENC_CHIPMUNK_RING_PRIV_KEY_SIZE  1488u
 
 /**
- * @brief Security level information structure
- */
-typedef struct chipmunk_ring_security_info {
-    chipmunk_ring_security_level_t level;   ///< Current security level
-    uint32_t classical_bits;                ///< Classical security in bits
-    uint32_t quantum_bits;                  ///< Quantum security in bits (Grover-adjusted)
-    uint64_t logical_qubits_required;       ///< Estimated logical qubits for quantum attack
-    const char *description;                ///< Human-readable description
-} chipmunk_ring_security_info_t;
-
-/**
- * @brief Computed layer sizes structure (auto-calculated from base parameters)
- */
-typedef struct chipmunk_ring_computed_sizes {
-    size_t ring_lwe_commitment_size;    // Computed: ring_lwe_n * bytes_per_coeff
-    size_t ntru_commitment_size;        // Computed: ntru_n * bytes_per_coeff
-    size_t code_commitment_size;        // Computed: code syndrome size
-    size_t binding_proof_size;          // Computed: binding proof size
-    size_t public_key_size;             // Computed: chipmunk_n dependent
-    size_t private_key_size;            // Computed: chipmunk_n dependent
-    size_t signature_size;              // Computed: chipmunk_n * gamma dependent
-} chipmunk_ring_computed_sizes_t;
-
-/**
- * @brief Post-quantum commitment parameters structure
- */
-typedef struct chipmunk_ring_pq_params {
-    // Chipmunk base parameters
-    uint32_t chipmunk_n;           // Chipmunk security parameter N
-    uint32_t chipmunk_gamma;       // Chipmunk gamma parameter
-
-    // Randomness parameters (always deterministic for anonymity)
-    uint32_t randomness_size;      // Size of randomness in bytes (default 32)
-
-    // Ring-LWE parameters
-    uint32_t ring_lwe_n;
-    uint32_t ring_lwe_q;
-    uint32_t ring_lwe_sigma_numerator;
-
-    // NTRU parameters
-    uint32_t ntru_n;
-    uint32_t ntru_q;
-
-    // Code-based parameters
-    uint32_t code_n;
-    uint32_t code_k;
-    uint32_t code_t;
-    
-    // Computed sizes (auto-updated when base parameters change)
-    chipmunk_ring_computed_sizes_t computed;
-} chipmunk_ring_pq_params_t;
-
-/**
- * @brief Initialize Chipmunk_Ring module with default post-quantum parameters
- * @return 0 on success, negative on error
+ * @brief Module-wide initialiser. Idempotent.
+ * @return 0 on success.
  */
 int dap_enc_chipmunk_ring_init(void);
 
 /**
- * @brief Initialize Chipmunk_Ring module with custom post-quantum parameters
- * @param params Custom post-quantum parameters
- * @return 0 on success, negative on error
+ * @brief Allocate an empty dap_enc_key_t of type
+ *        DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING.  Buffers are NOT populated.
  */
-int dap_enc_chipmunk_ring_init_with_params(const chipmunk_ring_pq_params_t *params);
+dap_enc_key_t *dap_enc_chipmunk_ring_key_new(void);
 
 /**
- * @brief Get current post-quantum parameters
- * @param params Output parameters structure
- * @return 0 on success, negative on error
+ * @brief Allocate and key-gen.  If @p a_seed is NULL or @p a_seed_size
+ *        is 0, a CSPRNG seed is drawn via the SDK randombytes helper.
+ *
+ * Returns a new dap_enc_key_t with both pub_key_data and priv_key_data
+ * populated (sizes DAP_ENC_CHIPMUNK_RING_PUB_KEY_SIZE /
+ * DAP_ENC_CHIPMUNK_RING_PRIV_KEY_SIZE respectively), or NULL on failure.
  */
-int dap_enc_chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params);
+dap_enc_key_t *dap_enc_chipmunk_ring_key_generate(const void *a_kex_buf, size_t a_kex_size,
+                                                  const void *a_seed,    size_t a_seed_size,
+                                                  const void *a_personalisation, size_t a_personalisation_size);
 
-/**
- * @brief Set post-quantum parameters (must be called before first use)
- * @param params New parameters to set
- * @return 0 on success, negative on error
- */
-int dap_enc_chipmunk_ring_set_params(const chipmunk_ring_pq_params_t *params);
+/* dap_enc_key callback adapters. */
+void dap_enc_chipmunk_ring_key_new_callback(dap_enc_key_t *a_key);
+void dap_enc_chipmunk_ring_key_generate_callback(dap_enc_key_t *a_key,
+                                                 const void *a_kex_buf, size_t a_kex_size,
+                                                 const void *a_seed,    size_t a_seed_size,
+                                                 size_t a_key_size);
+void dap_enc_chipmunk_ring_key_delete(dap_enc_key_t *a_key);
 
-/**
- * @brief Get current post-quantum parameters
- * @param params Output parameters structure
- * @return 0 on success, negative on error
- */
-int dap_enc_chipmunk_ring_get_params(chipmunk_ring_pq_params_t *params);
+/* Public-key serialization. */
+uint8_t *dap_enc_chipmunk_ring_write_public_key(const void *a_key, size_t *a_buflen_out);
+void    *dap_enc_chipmunk_ring_read_public_key(const uint8_t *a_buf, size_t a_buflen);
+size_t   dap_enc_chipmunk_ring_ser_public_key_size(const void *a_key);
+size_t   dap_enc_chipmunk_ring_deser_public_key_size(const void *a_buf);
+void     dap_enc_chipmunk_ring_public_key_delete(void *a_pub_key);
 
-// REMOVED: dap_enc_chipmunk_ring_get_layer_sizes - quantum layers replaced by Acorn Verification
-
-/**
- * @brief Reset parameters to defaults
- * @return 0 on success, negative on error
- */
-int dap_enc_chipmunk_ring_reset_params(void);
-
-/**
- * @brief Initialize with specific NIST security level
- * @param a_level Desired security level (I, III, V, or V+)
- * @return 0 on success, negative on error
- * 
- * This is the recommended way to initialize Chipmunk Ring for production use.
- * Default (dap_enc_chipmunk_ring_init) uses Level V+ for maximum security.
- */
-int dap_enc_chipmunk_ring_init_with_security_level(chipmunk_ring_security_level_t a_level);
-
-/**
- * @brief Get current security level information
- * @param a_info Output structure for security information
- * @return 0 on success, negative on error
- */
-int dap_enc_chipmunk_ring_get_security_info(chipmunk_ring_security_info_t *a_info);
-
-/**
- * @brief Get parameters for a specific security level (without applying)
- * @param a_level Desired security level
- * @param a_params Output parameters structure
- * @return 0 on success, negative on error
- */
-int dap_enc_chipmunk_ring_get_params_for_level(chipmunk_ring_security_level_t a_level,
-                                               chipmunk_ring_pq_params_t *a_params);
-
-/**
- * @brief Validate that current parameters meet minimum security level
- * @param a_min_level Minimum required security level
- * @return 0 if meets requirements, negative if below minimum
- */
-int dap_enc_chipmunk_ring_validate_security_level(chipmunk_ring_security_level_t a_min_level);
-
-/**
- * @brief Generate Chipmunk_Ring keypair (same as Chipmunk)
- * @param a_key Output key structure
- * @return 0 on success, negative on error
- */
-int dap_enc_chipmunk_ring_key_new(struct dap_enc_key *a_key);
-
-/**
- * @brief Generate keypair from seed
- * @param a_key Output key structure
- * @param a_seed Seed for deterministic generation
- * @param a_seed_size Seed size
- * @param a_key_size Key size; when non-zero it must equal
- *                   CHIPMUNK_RING_PRIVATE_KEY_SIZE
- * @return 0 on success, negative on error
- */
-int dap_enc_chipmunk_ring_key_new_generate(struct dap_enc_key *a_key, const void *a_seed,
-                                 size_t a_seed_size, size_t a_key_size);
-
-/**
- * @brief Delete Chipmunk_Ring key
- * @param a_key Key to delete
- */
-void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key);
-
-/**
- * @brief Get signature size for given ring parameters
- * @param a_ring_size Number of participants
- * @param a_required_signers Required signers (1=single, >1=multi-signer)
- * @param a_use_embedded_keys True if keys embedded in signature
- * @return Required signature buffer size
- */
-size_t dap_enc_chipmunk_ring_get_signature_size(size_t a_ring_size, uint32_t a_required_signers, bool a_use_embedded_keys);
-
-/* ===== CALLBACK FUNCTIONS ===== */
-
-void dap_enc_chipmunk_ring_key_new_callback(struct dap_enc_key *a_key);
-void dap_enc_chipmunk_ring_key_generate_callback(struct dap_enc_key *a_key, const void *a_kex_buf,
-                                               size_t a_kex_size, const void *a_seed,
-                                               size_t a_seed_size, size_t a_key_size);
-void dap_enc_chipmunk_ring_key_delete(struct dap_enc_key *a_key);
-
-int dap_enc_chipmunk_ring_get_sign(struct dap_enc_key *a_key, const void *a_data,
-                                  size_t a_data_size, void *a_output, size_t a_output_size);
-int dap_enc_chipmunk_ring_verify_sign(struct dap_enc_key *a_key, const void *a_data,
-                                     size_t a_data_size, void *a_sign, size_t a_sign_size);
-
-/**
- * @brief Create Chipmunk_Ring signature (anonymous)
- * @param a_priv_key Private key of the signer
- * @param a_data Data to sign
- * @param a_data_size Size of data to sign
- * @param a_ring_pub_keys Array of public keys for the ring
- * @param a_ring_size Number of participants in the ring
- * @param a_required_signers Required signers (1 = traditional ring, >1 = multi-signer)
- * @param a_signature Output buffer for signature
- * @param a_signature_size Size of signature buffer
- * @return 0 on success, negative on error
- */
-/*
- * CR-D15.C: a_priv_key is not const anymore.  chipmunk_ring_sign bumps the
- * hypertree leaf_index inside the caller's buffer and we flush the update
- * back here so that the next call consumes the next leaf.  Callers must
- * serialise concurrent access to this buffer (one-signer-at-a-time).
- */
-int dap_enc_chipmunk_ring_sign(void *a_priv_key,
-                              const void *a_data,
-                              size_t a_data_size,
-                              uint8_t **a_ring_pub_keys,
-                              size_t a_ring_size,
-                              uint32_t a_required_signers,
-                              uint8_t *a_signature,
-                              size_t a_signature_size);
+/* Private-key serialization. */
+uint8_t *dap_enc_chipmunk_ring_write_private_key(const void *a_key, size_t *a_buflen_out);
+void    *dap_enc_chipmunk_ring_read_private_key(const uint8_t *a_buf, size_t a_buflen);
+size_t   dap_enc_chipmunk_ring_ser_private_key_size(const void *a_key);
+size_t   dap_enc_chipmunk_ring_deser_private_key_size(const void *a_buf);
+void     dap_enc_chipmunk_ring_private_key_delete(void *a_priv_key);
 
 #ifdef __cplusplus
 }

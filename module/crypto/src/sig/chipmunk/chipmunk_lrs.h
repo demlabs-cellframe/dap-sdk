@@ -1,11 +1,6 @@
 /*
- * Chipmunk LRS canonical C0/RB2 primitives.
- *
- * This module is the CR-11.D Phase-3 implementation base for the native
- * linkable ring signature design.  It intentionally does not reuse the
- * old chipmunk_ring_signature_t / Acorn-era wire objects and it has no
- * wire-version compatibility layer: C0/RB2 is the only canonical LRS
- * profile implemented here.
+ * Chipmunk LRS — native linkable ring signature on the Chipmunk lattice
+ * substrate.  One parameter set, one wire family.
  */
 
 #pragma once
@@ -60,11 +55,11 @@ typedef struct chipmunk_lrs_secret_key {
 } chipmunk_lrs_secret_key_t;
 
 _Static_assert(CHIPMUNK_LRS_POLY_QPACK_BYTES == 1408u,
-               "C0 q-packed polynomial size must stay pinned");
+               "q-packed polynomial size must stay pinned");
 _Static_assert(sizeof(chipmunk_lrs_public_key_t) == 1456u,
-               "CLPK canonical size drift");
+               "CLPK size drift");
 _Static_assert(sizeof(chipmunk_lrs_secret_key_t) == 1488u,
-               "CLSK canonical size drift");
+               "CLSK size drift");
 
 #define CHIPMUNK_LRS_POP_HEADER_BYTES 96u
 #define CHIPMUNK_LRS_POP_RESPONSE_BYTES \
@@ -193,10 +188,10 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
                       const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES]);
 
 /*
- * Verify a_sig over a_message against the candidate ring.  Wire/algebra
- * gates fail closed without any fallback parser.  ring may be passed in any
- * order; the implementation canonical-sorts it and re-derives the canonical
- * ring hash.
+ * Verify a_sig over a_message against the candidate ring.  Wire and
+ * algebra gates fail closed.  ring may be passed in any order; the
+ * implementation canonical-sorts it and re-derives the canonical ring
+ * hash before any algebraic work.
  */
 int chipmunk_lrs_verify(const uint8_t *a_sig,
                         size_t a_sig_size,

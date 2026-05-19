@@ -821,8 +821,13 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_na = NULL,
         .dec_na_ext = NULL,
 
-        .sign_get = dap_enc_chipmunk_ring_get_sign,
-        .sign_verify = dap_enc_chipmunk_ring_verify_sign,
+        /*
+         * Ring sign/verify need an extra ring argument and live outside
+         * the single-key sign_get/sign_verify callback contract.  Use
+         * dap_sign_create_ring / dap_sign_verify_ring instead.
+         */
+        .sign_get = NULL,
+        .sign_verify = NULL,
 
         .gen_key_public = NULL,
 
@@ -834,21 +839,21 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback = dap_enc_chipmunk_ring_key_delete,
 
         .ser_sign = NULL,
-        .ser_priv_key = NULL,
-        .ser_pub_key = NULL,
-        .ser_priv_key_size = NULL,
-        .ser_pub_key_size = NULL,
+        .ser_priv_key = dap_enc_chipmunk_ring_write_private_key,
+        .ser_pub_key = dap_enc_chipmunk_ring_write_public_key,
+        .ser_priv_key_size = dap_enc_chipmunk_ring_ser_private_key_size,
+        .ser_pub_key_size = dap_enc_chipmunk_ring_ser_public_key_size,
 
         .deser_sign = NULL,
-        .deser_priv_key = NULL,
-        .deser_pub_key = NULL,
+        .deser_priv_key = dap_enc_chipmunk_ring_read_private_key,
+        .deser_pub_key = dap_enc_chipmunk_ring_read_public_key,
         .deser_sign_size = NULL,
-        .deser_pub_key_size = NULL,
-        .deser_priv_key_size = NULL,
+        .deser_pub_key_size = dap_enc_chipmunk_ring_deser_public_key_size,
+        .deser_priv_key_size = dap_enc_chipmunk_ring_deser_private_key_size,
 
         .del_sign = NULL,
-        .del_pub_key = NULL,
-        .del_priv_key = NULL
+        .del_pub_key = dap_enc_chipmunk_ring_public_key_delete,
+        .del_priv_key = dap_enc_chipmunk_ring_private_key_delete
     },
 
 };

@@ -1,10 +1,8 @@
 /*
- * test_chipmunk_lrs_kat.c — CR-11.D canonical C0/RB2 primitive KATs.
+ * test_chipmunk_lrs_kat.c — Chipmunk LRS canonical C0/RB2 KATs.
  *
- * These tests pin the deterministic base layer for the new Chipmunk LRS
- * implementation.  They intentionally do not exercise the old Acorn-era
- * chipmunk_ring_signature_t object and do not accept previous experimental
- * wire formats.
+ * Pins the deterministic primitive layer plus PoP and ring-signature
+ * round-trips on the canonical wire family.
  */
 
 #include <dap_common.h>

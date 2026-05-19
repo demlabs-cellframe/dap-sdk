@@ -196,128 +196,10 @@ endif()
 #    register_dap_test(test_unit_crypto_dap_hash "unit;crypto;hash")
 #endif()
 
-# Chipmunk Ring tests
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_basic.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_basic unit/crypto/chipmunk_ring/test_chipmunk_ring_basic.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_basic "unit;crypto;ring;basic")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_anonymity.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_anonymity unit/crypto/chipmunk_ring/test_chipmunk_ring_anonymity.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_anonymity "unit;crypto;ring;anonymity;statistical")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_performance.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_performance unit/crypto/chipmunk_ring/test_chipmunk_ring_performance.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_performance "unit;crypto;ring;performance")
-    
-    # ChipmunkRing parameter comparison test
-    add_dap_test(test_unit_crypto_chipmunk_ring_parameter_comparison unit/crypto/chipmunk_ring/test_chipmunk_ring_parameter_comparison.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_parameter_comparison "unit;crypto;ring;parameters")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_edge_cases.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_edge_cases unit/crypto/chipmunk_ring/test_chipmunk_ring_edge_cases.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_edge_cases "unit;crypto;ring;edge_cases")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_stress.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_stress unit/crypto/chipmunk_ring/test_chipmunk_ring_stress.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_stress "unit;crypto;ring;stress")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_minimal_ring.c)
-    add_dap_test(test_minimal_ring unit/crypto/chipmunk_ring/test_minimal_ring.c)
-    register_dap_test(test_minimal_ring "unit;crypto;ring;minimal;debug")
-endif()
-
-# New comprehensive multi-signer tests
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_multi_signer.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_multi_signer unit/crypto/chipmunk_ring/test_chipmunk_ring_multi_signer.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_multi_signer "unit;crypto;ring;multi_signer;threshold")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_coordination.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_coordination unit/crypto/chipmunk_ring/test_chipmunk_ring_coordination.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_coordination "unit;crypto;ring;coordination")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_error_handling.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_error_handling unit/crypto/chipmunk_ring/test_chipmunk_ring_error_handling.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_error_handling "unit;crypto;ring;error_handling")
-    # This test intentionally logs CRITICAL ERROR to verify error handling - disable fail regex
-    set_tests_properties(test_unit_crypto_chipmunk_ring_error_handling PROPERTIES
-        FAIL_REGULAR_EXPRESSION "SEGMENTATION FAULT")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_input_validation.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_input_validation unit/crypto/chipmunk_ring/test_chipmunk_ring_input_validation.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_input_validation "unit;crypto;ring;input_validation")
-    # This test intentionally logs CRITICAL ERROR to verify input validation - disable fail regex
-    set_tests_properties(test_unit_crypto_chipmunk_ring_input_validation PROPERTIES
-        FAIL_REGULAR_EXPRESSION "SEGMENTATION FAULT")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_security_levels.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_security_levels unit/crypto/chipmunk_ring/test_chipmunk_ring_security_levels.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_security_levels "unit;crypto;ring;security_levels")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_implementation_correctness.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_implementation_correctness unit/crypto/chipmunk_ring/test_chipmunk_ring_implementation_correctness.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_implementation_correctness "unit;crypto;ring;implementation;correctness")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_round3_regression.c)
-    add_dap_test(test_unit_crypto_chipmunk_round3_regression unit/crypto/chipmunk_ring/test_chipmunk_round3_regression.c)
-    register_dap_test(test_unit_crypto_chipmunk_round3_regression "unit;crypto;ring;round3;regression")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_many_time.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_many_time unit/crypto/chipmunk_ring/test_chipmunk_ring_many_time.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_many_time "unit;crypto;ring;cr-d15c;regression")
-endif()
-
-# CR-9.3 — canonical Shamir over Z_CHIPMUNK_Q (kick-off slice of CR-9 threshold rewrite)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_shamir.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_shamir unit/crypto/chipmunk_ring/test_chipmunk_ring_shamir.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_shamir "unit;crypto;ring;threshold;cr-9.3")
-endif()
-
-# CR-9.4.A — public threshold dealer/combiner API (trusted-dealer path)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_threshold.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_threshold unit/crypto/chipmunk_ring/test_chipmunk_ring_threshold.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_threshold "unit;crypto;ring;threshold;cr-9.4")
-endif()
-
-# CR-9.5 — Proof of Possession against rogue-key attack
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_pop.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_pop unit/crypto/chipmunk_ring/test_chipmunk_ring_pop.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_pop "unit;crypto;ring;pop;cr-9.5")
-endif()
-
-# CR-9.6 — Cellframe governance integration (dap_enc wrappers)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_governance.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_governance unit/crypto/chipmunk_ring/test_chipmunk_ring_governance.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_governance "unit;crypto;ring;governance;cr-9.6")
-endif()
-
-# CR-11.A — experimental marker locked in CI
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_experimental_marker.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_experimental_marker unit/crypto/chipmunk_ring/test_chipmunk_ring_experimental_marker.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_experimental_marker "unit;crypto;ring;marker;cr-11.a")
-endif()
-
-# CR-11.B — reproducible KAT vectors for deterministic ChipmunkRing primitives
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_kat.c)
-    add_dap_test(test_unit_crypto_chipmunk_ring_kat unit/crypto/chipmunk_ring/test_chipmunk_ring_kat.c)
-    register_dap_test(test_unit_crypto_chipmunk_ring_kat "unit;crypto;ring;kat;cr-11.b")
-endif()
-
-# CR-11.D — canonical Chipmunk LRS C0/RB2 deterministic primitive KATs
+# Chipmunk Ring (LRS) deterministic primitive KATs
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_lrs_kat.c)
     add_dap_test(test_unit_crypto_chipmunk_lrs_kat unit/crypto/chipmunk_ring/test_chipmunk_lrs_kat.c)
-    register_dap_test(test_unit_crypto_chipmunk_lrs_kat "unit;crypto;lrs;kat;cr-11.d")
+    register_dap_test(test_unit_crypto_chipmunk_lrs_kat "unit;crypto;ring;kat")
 endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
@@ -358,10 +240,6 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_hots.c)
     add_dap_test(test_unit_crypto_chipmunk_hots unit/crypto/chipmunk/test_chipmunk_hots.c)
     register_dap_test(test_unit_crypto_chipmunk_hots "unit;crypto;chipmunk")
-
-    # Extended HOTS test for ring signature context debugging
-    add_dap_test(test_unit_crypto_hots_extended unit/crypto/chipmunk_ring/test_hots_extended.c)
-    register_dap_test(test_unit_crypto_hots_extended "unit;crypto;hots;extended")
 endif()
 
 #if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk/test_chipmunk_large_scale.c)
@@ -589,11 +467,6 @@ message("[+] Configuring Security Tests")
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/security/test_memory_safety.c)
     add_dap_test(test_security_memory security/test_memory_safety.c)
     register_dap_test(test_security_memory "security;memory")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/security/test_ring_signature_zkp.c)
-    add_dap_test(test_security_ring_zkp security/test_ring_signature_zkp.c)
-    register_dap_test(test_security_ring_zkp "security;crypto;zkp")
 endif()
 
 # Custom test targets — all run in parallel by default (DAP_NPROC cores)

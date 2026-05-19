@@ -30,7 +30,7 @@
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
 #include "chipmunk_internal.h"
-#include "chipmunk_ring_internal.h"
+#include "chipmunk_hash.h"
 
 /* ---------------------------------------------------------------------- *
  *  Domain separators                                                     *
@@ -413,12 +413,12 @@ int chipmunk_ht_pop_message_derive(const chipmunk_ht_public_key_t *a_pk,
         return l_rc;
     }
 
-    l_rc = chipmunk_ring_domain_hash_internal(s_ht_pop_domain,
-                                              /* salt = */ NULL, 0,
-                                              l_pk_bytes,
-                                              CHIPMUNK_HT_PUBLIC_KEY_SIZE,
-                                              a_out, 32u,
-                                              /* iterations = */ 0u);
+    l_rc = dap_chipmunk_domain_hash(s_ht_pop_domain,
+                                    /* salt = */ NULL, 0,
+                                    l_pk_bytes,
+                                    CHIPMUNK_HT_PUBLIC_KEY_SIZE,
+                                    a_out, 32u,
+                                    /* iterations = */ 0u);
     s_wipe(l_pk_bytes, sizeof(l_pk_bytes));
     return l_rc;
 }
