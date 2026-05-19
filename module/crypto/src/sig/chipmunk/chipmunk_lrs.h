@@ -77,6 +77,19 @@ _Static_assert(CHIPMUNK_LRS_POP_RESPONSE_BYTES == 8448u,
 _Static_assert(CHIPMUNK_LRS_POP_BYTES == 8544u,
                "CLRP canonical wire size drift");
 
+#define CHIPMUNK_LRS_RING_MIN 2u
+#define CHIPMUNK_LRS_RING_MAX 64u
+
+#define CHIPMUNK_LRS_SIG_HEADER_BYTES 1504u
+#define CHIPMUNK_LRS_SIG_PER_MEMBER_BYTES \
+        ((size_t)CHIPMUNK_LRS_K * (size_t)CHIPMUNK_LRS_POLY_QPACK_BYTES)
+
+_Static_assert(CHIPMUNK_LRS_SIG_HEADER_BYTES ==
+               8u * 4u + 32u + (size_t)CHIPMUNK_LRS_POLY_QPACK_BYTES + 32u,
+               "CLRS canonical header size drift");
+_Static_assert(CHIPMUNK_LRS_SIG_PER_MEMBER_BYTES == 8448u,
+               "CLRS per-member response size drift");
+
 int chipmunk_lrs_poly_qpack(uint8_t a_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
                             const chipmunk_poly_t *a_poly);
 
@@ -155,6 +168,42 @@ int chipmunk_lrs_pop_create(uint8_t *a_pop,
 int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
                             size_t a_pop_size,
                             const chipmunk_lrs_public_key_t *a_pk);
+
+/*
+ * Canonical CLRS signature size for a given ring size.  Returns 0 if the
+ * ring size falls outside [CHIPMUNK_LRS_RING_MIN, CHIPMUNK_LRS_RING_MAX].
+ */
+size_t chipmunk_lrs_signature_size(uint32_t a_ring_size);
+
+/*
+ * Sign a_message under the given canonical sorted ring with a_sk's witness.
+ * a_ring may be passed in any order; the implementation canonical-sorts it
+ * and rejects rings that do not contain the signer's CLPK or contain
+ * duplicates.  a_randomness_seed feeds the SHAKE256 mask/simulation samplers.
+ * The output buffer must be exactly chipmunk_lrs_signature_size(ring_size).
+ * Returns -EAGAIN if the rejection loop is exhausted.
+ */
+int chipmunk_lrs_sign(uint8_t *a_sig,
+                      size_t a_sig_size,
+                      const chipmunk_lrs_secret_key_t *a_sk,
+                      const chipmunk_lrs_public_key_t *a_ring,
+                      size_t a_ring_size,
+                      const uint8_t *a_message,
+                      size_t a_message_size,
+                      const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES]);
+
+/*
+ * Verify a_sig over a_message against the candidate ring.  Wire/algebra
+ * gates fail closed without any fallback parser.  ring may be passed in any
+ * order; the implementation canonical-sorts it and re-derives the canonical
+ * ring hash.
+ */
+int chipmunk_lrs_verify(const uint8_t *a_sig,
+                        size_t a_sig_size,
+                        const chipmunk_lrs_public_key_t *a_ring,
+                        size_t a_ring_size,
+                        const uint8_t *a_message,
+                        size_t a_message_size);
 
 #ifdef __cplusplus
 }
