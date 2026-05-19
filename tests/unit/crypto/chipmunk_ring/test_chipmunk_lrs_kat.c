@@ -599,6 +599,100 @@ static bool s_test_sign_verify_and_gates(void)
     return ok;
 }
 
+static bool s_test_larger_rings_and_signer_obliviousness(void)
+{
+    /*
+     * Build an 8-key ring, sign once from every member with the same
+     * message + same randomness seed, and assert:
+     *   - all signatures verify;
+     *   - all signatures have the same canonical wire size;
+     *   - distinct signers produce distinct key images;
+     *   - the same signer's key image is independent of message.
+     */
+    enum { N = 8 };
+    chipmunk_lrs_public_key_t pk[N];
+    chipmunk_lrs_secret_key_t sk[N];
+    uint8_t x_seed[32], pks_seed[32];
+    memcpy(x_seed, k_x_seed, sizeof(x_seed));
+    memcpy(pks_seed, k_pk_seed, sizeof(pks_seed));
+    for (size_t i = 0; i < N; ++i) {
+        x_seed[31] = (uint8_t)i;
+        pks_seed[31] = (uint8_t)(0xa0 ^ i);
+        dap_assert(chipmunk_lrs_keypair_from_seeds(&pk[i], &sk[i], x_seed, pks_seed) == 0,
+                   "ring8 keypair generation");
+    }
+
+    chipmunk_lrs_public_key_t ring[N];
+    /* Reverse order so canonical sort actually reorders. */
+    for (size_t i = 0; i < N; ++i) {
+        ring[i] = pk[N - 1u - i];
+    }
+
+    const size_t sig_size = chipmunk_lrs_signature_size(N);
+    dap_assert(sig_size != 0, "ring8 signature size");
+
+    uint8_t *sigs[N];
+    for (size_t i = 0; i < N; ++i) {
+        sigs[i] = DAP_NEW_Z_SIZE(uint8_t, sig_size);
+        dap_assert(sigs[i] != NULL, "ring8 sig buffer alloc");
+    }
+
+    const uint8_t msg[] = "ring8 obliviousness regression";
+    for (size_t s = 0; s < N; ++s) {
+        int rc = chipmunk_lrs_sign(sigs[s], sig_size, &sk[s], ring, N,
+                                   msg, sizeof(msg) - 1u, k_sig_randomness_seed);
+        dap_assert(rc == 0, "ring8 sign from each member");
+        dap_assert(chipmunk_lrs_verify(sigs[s], sig_size, ring, N,
+                                       msg, sizeof(msg) - 1u) == 0,
+                   "ring8 verify from each member");
+    }
+
+    /* Cross-key-image differentiation. */
+    const size_t img_off = 8u * 4u + 32u;
+    for (size_t a = 0; a < N; ++a) {
+        for (size_t b = a + 1u; b < N; ++b) {
+            dap_assert(memcmp(sigs[a] + img_off, sigs[b] + img_off,
+                              CHIPMUNK_LRS_POLY_QPACK_BYTES) != 0,
+                       "ring8 distinct signers expose distinct key images");
+        }
+    }
+
+    /* Same-signer linkability across messages. */
+    uint8_t *sig_alt = DAP_NEW_Z_SIZE(uint8_t, sig_size);
+    dap_assert(sig_alt != NULL, "ring8 alt msg buffer");
+    const uint8_t alt_msg[] = "ring8 different payload";
+    dap_assert(chipmunk_lrs_sign(sig_alt, sig_size, &sk[3], ring, N,
+                                 alt_msg, sizeof(alt_msg) - 1u, k_sig_randomness_seed) == 0,
+               "ring8 sign sk[3] alt message");
+    dap_assert(memcmp(sigs[3] + img_off, sig_alt + img_off,
+                      CHIPMUNK_LRS_POLY_QPACK_BYTES) == 0,
+               "ring8 same signer same key image across messages");
+    /*
+     * Same key image yet distinct signatures: a replay attacker that swaps
+     * messages must not reuse the previous wire bytes verbatim.
+     */
+    dap_assert(memcmp(sigs[3], sig_alt, sig_size) != 0,
+               "ring8 distinct messages produce distinct signatures");
+    DAP_DELETE(sig_alt);
+
+    /* Header invariance: ring_size, header_bytes, response_bytes identical. */
+    for (size_t i = 1; i < N; ++i) {
+        dap_assert(memcmp(sigs[0], sigs[i], 8u * 4u) == 0,
+                   "ring8 header fields identical across signers");
+        /*
+         * ring_hash identical because canonical sort is deterministic.
+         * c0_seed and key_image and responses differ.
+         */
+        dap_assert(memcmp(sigs[0] + 8u * 4u, sigs[i] + 8u * 4u, 32u) == 0,
+                   "ring8 ring_hash identical across signers");
+    }
+
+    for (size_t i = 0; i < N; ++i) {
+        DAP_DELETE(sigs[i]);
+    }
+    return true;
+}
+
 int main(void)
 {
     dap_set_appname("test_chipmunk_lrs_kat");
@@ -611,6 +705,7 @@ int main(void)
     if (!s_test_public_key_and_ring_hash()) rc = 1;
     if (!s_test_pop_roundtrip_and_gates()) rc = 1;
     if (!s_test_sign_verify_and_gates()) rc = 1;
+    if (!s_test_larger_rings_and_signer_obliviousness()) rc = 1;
 
     if (s_dump_mode()) {
         log_it(L_WARNING, "CHIPMUNK_LRS_KAT_DUMP active: dump is not a pass");
