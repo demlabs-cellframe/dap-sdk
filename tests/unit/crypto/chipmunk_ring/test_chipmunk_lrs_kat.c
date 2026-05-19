@@ -693,6 +693,74 @@ static bool s_test_larger_rings_and_signer_obliviousness(void)
     return true;
 }
 
+static bool s_test_wide_rings(void)
+{
+    /*
+     * Exercise canonical CLRS at production-sized rings: n=32 and the
+     * maximum allowed n=64.  Validate sign+verify, size invariance, and
+     * boundary rejection (n=65 must fail, n=1 must fail).
+     */
+    const uint32_t sizes[] = { 32u, CHIPMUNK_LRS_RING_MAX };
+    const uint8_t msg[] = "wide-ring CLRS smoke";
+
+    for (size_t s_idx = 0; s_idx < sizeof(sizes) / sizeof(sizes[0]); ++s_idx) {
+        const uint32_t N = sizes[s_idx];
+        chipmunk_lrs_public_key_t *ring =
+            DAP_NEW_Z_COUNT(chipmunk_lrs_public_key_t, N);
+        chipmunk_lrs_secret_key_t signer_sk;
+        chipmunk_lrs_public_key_t signer_pk;
+        uint8_t x_seed[32], pks_seed[32];
+        dap_assert(ring != NULL, "wide ring alloc");
+
+        memcpy(x_seed, k_x_seed, sizeof(x_seed));
+        memcpy(pks_seed, k_pk_seed, sizeof(pks_seed));
+
+        /* Member 0 is the signer; members 1..N-1 are decoys. */
+        x_seed[31] = 0;
+        pks_seed[31] = 0xa0;
+        dap_assert(chipmunk_lrs_keypair_from_seeds(&signer_pk, &signer_sk,
+                                                   x_seed, pks_seed) == 0,
+                   "wide ring signer keypair");
+        ring[0] = signer_pk;
+        for (uint32_t i = 1; i < N; ++i) {
+            chipmunk_lrs_secret_key_t decoy_sk;
+            x_seed[31] = (uint8_t)i;
+            pks_seed[31] = (uint8_t)(0xa0 ^ i);
+            dap_assert(chipmunk_lrs_keypair_from_seeds(&ring[i], &decoy_sk,
+                                                       x_seed, pks_seed) == 0,
+                       "wide ring decoy keypair");
+            (void)decoy_sk;
+        }
+
+        const size_t sig_size = chipmunk_lrs_signature_size(N);
+        dap_assert(sig_size != 0, "wide ring sig size nonzero");
+        uint8_t *sig = DAP_NEW_Z_SIZE(uint8_t, sig_size);
+        dap_assert(sig != NULL, "wide ring sig buffer");
+
+        int rc = chipmunk_lrs_sign(sig, sig_size, &signer_sk, ring, N,
+                                   msg, sizeof(msg) - 1u, k_sig_randomness_seed);
+        dap_assert(rc == 0, "wide ring sign accepts");
+        dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, N,
+                                       msg, sizeof(msg) - 1u) == 0,
+                   "wide ring verify accepts");
+
+        /* Boundary: verifier must refuse claimed ring_size != on-wire ring_size. */
+        dap_assert(chipmunk_lrs_verify(sig, sig_size, ring, N - 1u,
+                                       msg, sizeof(msg) - 1u) != 0,
+                   "wide ring verify rejects shrunk ring");
+
+        DAP_DELETE(sig);
+        DAP_DELETE(ring);
+    }
+
+    /* Out-of-range ring sizes for signature_size. */
+    dap_assert(chipmunk_lrs_signature_size(0) == 0, "ring_size 0 rejected");
+    dap_assert(chipmunk_lrs_signature_size(1) == 0, "ring_size 1 rejected");
+    dap_assert(chipmunk_lrs_signature_size(CHIPMUNK_LRS_RING_MAX + 1u) == 0,
+               "ring_size > MAX rejected");
+    return true;
+}
+
 int main(void)
 {
     dap_set_appname("test_chipmunk_lrs_kat");
@@ -706,6 +774,7 @@ int main(void)
     if (!s_test_pop_roundtrip_and_gates()) rc = 1;
     if (!s_test_sign_verify_and_gates()) rc = 1;
     if (!s_test_larger_rings_and_signer_obliviousness()) rc = 1;
+    if (!s_test_wide_rings()) rc = 1;
 
     if (s_dump_mode()) {
         log_it(L_WARNING, "CHIPMUNK_LRS_KAT_DUMP active: dump is not a pass");
