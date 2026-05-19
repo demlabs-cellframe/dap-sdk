@@ -314,6 +314,12 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ri
     register_dap_test(test_unit_crypto_chipmunk_ring_kat "unit;crypto;ring;kat;cr-11.b")
 endif()
 
+# CR-11.D — canonical Chipmunk LRS C0/RB2 deterministic primitive KATs
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_lrs_kat.c)
+    add_dap_test(test_unit_crypto_chipmunk_lrs_kat unit/crypto/chipmunk_ring/test_chipmunk_lrs_kat.c)
+    register_dap_test(test_unit_crypto_chipmunk_lrs_kat "unit;crypto;lrs;kat;cr-11.d")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
