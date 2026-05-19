@@ -91,6 +91,19 @@ static const uint8_t k_expected_ring_hash_sha3[32] = {
     0x7c, 0x95, 0x94, 0x93, 0xb9, 0x06, 0xa5, 0xd0,
 };
 
+static const uint8_t k_pop_randomness_seed[32] = {
+    0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
+    0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf,
+    0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7,
+    0xd8, 0xd9, 0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf,
+};
+static const uint8_t k_expected_pop_sha3[32] = {
+    0x75, 0xc7, 0xdf, 0xff, 0xbd, 0xec, 0xa0, 0xa1,
+    0xf2, 0xc0, 0x22, 0x53, 0x3c, 0x78, 0xeb, 0x0c,
+    0xa3, 0xbf, 0x72, 0xab, 0xf9, 0xd1, 0x82, 0x2a,
+    0x77, 0x87, 0x36, 0x79, 0x29, 0x4e, 0xbd, 0x6f,
+};
+
 static bool s_dump_mode(void)
 {
     const char *e = getenv("CHIPMUNK_LRS_KAT_DUMP");
@@ -300,6 +313,98 @@ static bool s_test_public_key_and_ring_hash(void)
     return ok;
 }
 
+static bool s_test_pop_roundtrip_and_gates(void)
+{
+    chipmunk_lrs_public_key_t pk;
+    chipmunk_lrs_secret_key_t sk;
+    uint8_t *pop = DAP_NEW_Z_SIZE(uint8_t, CHIPMUNK_LRS_POP_BYTES);
+    dap_assert(pop != NULL, "PoP buffer alloc");
+    bool ok = true;
+
+    dap_assert(chipmunk_lrs_keypair_from_seeds(&pk, &sk, k_x_seed, k_pk_seed) == 0,
+               "PoP keypair generation");
+
+    dap_assert(chipmunk_lrs_pop_create(pop, CHIPMUNK_LRS_POP_BYTES, &sk,
+                                       k_pop_randomness_seed) == 0,
+               "PoP create accepts fixed randomness");
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) == 0,
+               "PoP verify accepts honest proof");
+
+    /* Wire layout self-check: header + responses must equal exactly POP_BYTES. */
+    dap_assert(CHIPMUNK_LRS_POP_BYTES == CHIPMUNK_LRS_POP_HEADER_BYTES +
+                                        CHIPMUNK_LRS_POP_RESPONSE_BYTES,
+               "PoP wire size invariant");
+
+    uint8_t h[32];
+    s_sha3_256(pop, CHIPMUNK_LRS_POP_BYTES, h);
+    ok &= s_check_or_dump("k_expected_pop_sha3", h, k_expected_pop_sha3);
+
+    /* Determinism gate: same sk + same randomness -> identical PoP bytes. */
+    uint8_t *pop2 = DAP_NEW_Z_SIZE(uint8_t, CHIPMUNK_LRS_POP_BYTES);
+    dap_assert(pop2 != NULL, "PoP buffer alloc 2");
+    dap_assert(chipmunk_lrs_pop_create(pop2, CHIPMUNK_LRS_POP_BYTES, &sk,
+                                       k_pop_randomness_seed) == 0,
+               "PoP create deterministic re-run");
+    dap_assert(memcmp(pop, pop2, CHIPMUNK_LRS_POP_BYTES) == 0,
+               "PoP create reproducible for identical inputs");
+    DAP_DELETE(pop2);
+
+    /* Negative: wrong size. */
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES - 1u, &pk) != 0,
+               "PoP verify rejects short buffer");
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES + 1u, &pk) != 0,
+               "PoP verify rejects long buffer");
+
+    /* Negative: bad magic. */
+    pop[0] ^= 0xff;
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+               "PoP verify rejects bad magic");
+    pop[0] ^= 0xff;
+
+    /* Negative: non-zero reserved. */
+    pop[20] = 1;
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+               "PoP verify rejects non-zero reserved0");
+    pop[20] = 0;
+
+    /* Negative: tamper pk_hash (offset 32..63). */
+    pop[32] ^= 0x01;
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+               "PoP verify rejects tampered pk hash");
+    pop[32] ^= 0x01;
+
+    /* Negative: tamper challenge_seed (offset 64..95). */
+    pop[64] ^= 0x01;
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+               "PoP verify rejects tampered challenge seed");
+    pop[64] ^= 0x01;
+
+    /* Negative: tamper a response coefficient (first byte of first z poly). */
+    pop[CHIPMUNK_LRS_POP_HEADER_BYTES] ^= 0x01;
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) != 0,
+               "PoP verify rejects tampered response");
+    pop[CHIPMUNK_LRS_POP_HEADER_BYTES] ^= 0x01;
+
+    /* After untampering it must verify again. */
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk) == 0,
+               "PoP verify recovers after untampering");
+
+    /* Negative: PoP bound to one key must not validate against a different key. */
+    chipmunk_lrs_public_key_t pk_other;
+    chipmunk_lrs_secret_key_t sk_other;
+    uint8_t other_x_seed[32];
+    memcpy(other_x_seed, k_x_seed, sizeof(other_x_seed));
+    other_x_seed[31] ^= 0x5a;
+    dap_assert(chipmunk_lrs_keypair_from_seeds(&pk_other, &sk_other,
+                                               other_x_seed, k_pk_seed) == 0,
+               "Other keypair generation");
+    dap_assert(chipmunk_lrs_pop_verify(pop, CHIPMUNK_LRS_POP_BYTES, &pk_other) != 0,
+               "PoP verify rejects unrelated CLPK");
+
+    DAP_DELETE(pop);
+    return ok;
+}
+
 int main(void)
 {
     dap_set_appname("test_chipmunk_lrs_kat");
@@ -310,6 +415,7 @@ int main(void)
     if (!s_test_deterministic_primitives()) rc = 1;
     if (!s_test_key_material()) rc = 1;
     if (!s_test_public_key_and_ring_hash()) rc = 1;
+    if (!s_test_pop_roundtrip_and_gates()) rc = 1;
 
     if (s_dump_mode()) {
         log_it(L_WARNING, "CHIPMUNK_LRS_KAT_DUMP active: dump is not a pass");

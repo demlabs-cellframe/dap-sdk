@@ -613,6 +613,48 @@ static int s_pk_cmp(const void *a_a, const void *a_b)
     return memcmp(a_a, a_b, sizeof(chipmunk_lrs_public_key_t));
 }
 
+static int s_h_to_wide_poly(chipmunk_poly_t *a_poly,
+                            const char *a_domain,
+                            uint32_t a_params_id,
+                            const uint8_t *a_seed_material,
+                            size_t a_seed_material_size,
+                            uint32_t a_index,
+                            int32_t a_bound)
+{
+    if (!a_poly || a_bound <= 0) {
+        return -EINVAL;
+    }
+    if (a_bound >= (int32_t)(CHIPMUNK_Q / 2)) {
+        return -EINVAL;
+    }
+
+    uint8_t *l_input = NULL;
+    size_t l_input_size = 0;
+    int l_rc = s_build_xof_input(&l_input, &l_input_size, a_domain, a_params_id,
+                                 a_seed_material, a_seed_material_size, a_index);
+    if (l_rc != 0) {
+        return l_rc;
+    }
+
+    lrs_xof_reader_t l_reader;
+    s_xof_reader_init(&l_reader, l_input, l_input_size);
+
+    const uint32_t l_range = (uint32_t)(2 * a_bound + 1);
+    const uint32_t l_threshold = UINT32_MAX - (UINT32_MAX % l_range);
+    for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+        uint32_t l_v;
+        do {
+            l_v = s_xof_u32(&l_reader);
+        } while (l_v >= l_threshold);
+        a_poly->coeffs[i] = (int32_t)(l_v % l_range) - a_bound;
+    }
+
+    dap_memwipe(&l_reader, sizeof(l_reader));
+    dap_memwipe(l_input, l_input_size);
+    DAP_DELETE(l_input);
+    return 0;
+}
+
 int chipmunk_lrs_ring_hash(uint8_t a_out[32],
                            const chipmunk_lrs_public_key_t *a_public_keys,
                            size_t a_ring_size)
@@ -674,4 +716,446 @@ int chipmunk_lrs_ring_hash(uint8_t a_out[32],
     dap_memwipe(l_sorted, sizeof(*l_sorted) * a_ring_size);
     DAP_DELETE(l_sorted);
     return l_rc;
+}
+
+/*
+ * PoP transcript helper: c_seed = H("chipmunk-lrs-pop-step" ||
+ *   LE32(params_id) || pk_hash || LE32(K) || qpack(T[0]) || ... || qpack(T[K-1]))
+ *
+ * The transcript binds every coefficient of T through canonical q-pack
+ * encoding so a verifier reconstructing T' from (c, z, P) recovers exactly
+ * the same hash input.
+ */
+static int s_pop_challenge_seed(uint8_t a_out[32],
+                                uint32_t a_params_id,
+                                const uint8_t a_pk_hash[32],
+                                const uint8_t a_T_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES])
+{
+    const size_t l_payload_size = 4u + 32u + 4u + CHIPMUNK_LRS_POLY_QPACK_BYTES;
+    uint8_t *l_payload = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
+    if (!l_payload) {
+        return -ENOMEM;
+    }
+
+    uint8_t *p = l_payload;
+    uint8_t le[4];
+    s_le32_store(le, a_params_id);
+    s_hash_update_bytes(&p, le, sizeof(le));
+    s_hash_update_bytes(&p, a_pk_hash, 32u);
+    s_le32_store(le, 1u); /* number of T polynomials packed below */
+    s_hash_update_bytes(&p, le, sizeof(le));
+    s_hash_update_bytes(&p, a_T_packed, CHIPMUNK_LRS_POLY_QPACK_BYTES);
+
+    int l_rc = s_hash_len_prefixed(a_out, "chipmunk-lrs-pop-step",
+                                   l_payload, l_payload_size);
+    dap_memwipe(l_payload, l_payload_size);
+    DAP_DELETE(l_payload);
+    return l_rc;
+}
+
+/*
+ * Compute T = Sum A[j] * y[j] mod q.
+ * y[j] is in unreduced integer space (centered values up to ~gamma),
+ * caller is responsible for reducing into [0,q) representatives before
+ * NTT.  Helper below performs the reduction on a working copy so the
+ * caller's y stays untouched.
+ */
+static int s_relation_eval_centered(chipmunk_poly_t *a_out,
+                                    const chipmunk_poly_t a_A[CHIPMUNK_LRS_K],
+                                    const chipmunk_poly_t a_y[CHIPMUNK_LRS_K])
+{
+    chipmunk_poly_t l_y_red[CHIPMUNK_LRS_K];
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            l_y_red[j].coeffs[i] = s_mod_q_i64((int64_t)a_y[j].coeffs[i]);
+        }
+    }
+    int l_rc = chipmunk_lrs_relation_eval(a_out, a_A, l_y_red);
+    dap_memwipe(l_y_red, sizeof(l_y_red));
+    return l_rc;
+}
+
+/*
+ * Compute cx = c * x mod q and return centered representatives in [-q/2, q/2].
+ * Both inputs are read-only.
+ */
+static int s_mul_challenge_witness_centered(chipmunk_poly_t a_cx[CHIPMUNK_LRS_K],
+                                            const chipmunk_poly_t *a_c,
+                                            const chipmunk_poly_t a_x[CHIPMUNK_LRS_K])
+{
+    chipmunk_poly_t l_c_red = *a_c;
+    for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+        l_c_red.coeffs[i] = s_mod_q_i64((int64_t)l_c_red.coeffs[i]);
+    }
+    int l_rc = chipmunk_poly_ntt(&l_c_red);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+        dap_memwipe(&l_c_red, sizeof(l_c_red));
+        return l_rc;
+    }
+
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        chipmunk_poly_t l_x_red = a_x[j];
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            l_x_red.coeffs[i] = s_mod_q_i64((int64_t)l_x_red.coeffs[i]);
+        }
+        l_rc = chipmunk_poly_ntt(&l_x_red);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            dap_memwipe(&l_x_red, sizeof(l_x_red));
+            dap_memwipe(&l_c_red, sizeof(l_c_red));
+            return l_rc;
+        }
+        chipmunk_poly_mul_ntt(&a_cx[j], &l_c_red, &l_x_red);
+        l_rc = chipmunk_poly_invntt(&a_cx[j]);
+        dap_memwipe(&l_x_red, sizeof(l_x_red));
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            dap_memwipe(&l_c_red, sizeof(l_c_red));
+            return l_rc;
+        }
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            int32_t l_c = a_cx[j].coeffs[i];
+            if (l_c < 0 || l_c >= CHIPMUNK_Q) {
+                l_c = s_mod_q_i64((int64_t)l_c);
+            }
+            a_cx[j].coeffs[i] = s_center_q(l_c);
+        }
+    }
+    dap_memwipe(&l_c_red, sizeof(l_c_red));
+    return 0;
+}
+
+int chipmunk_lrs_pop_create(uint8_t *a_pop,
+                            size_t a_pop_size,
+                            const chipmunk_lrs_secret_key_t *a_sk,
+                            const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES])
+{
+    if (!a_pop || a_pop_size != CHIPMUNK_LRS_POP_BYTES ||
+        !a_sk || !a_randomness_seed) {
+        return -EINVAL;
+    }
+    int l_rc = chipmunk_lrs_secret_key_validate(a_sk);
+    if (l_rc != 0) {
+        return l_rc;
+    }
+
+    chipmunk_lrs_public_key_t l_pk;
+    memset(&l_pk, 0, sizeof(l_pk));
+    l_pk.magic = CHIPMUNK_LRS_MAGIC_CLPK;
+    l_pk.params_id = CHIPMUNK_LRS_PARAMS_C0;
+    memcpy(l_pk.pk_seed, a_sk->pk_seed, CHIPMUNK_LRS_SEED_BYTES);
+    memcpy(l_pk.P, a_sk->P, CHIPMUNK_LRS_POLY_QPACK_BYTES);
+
+    uint8_t l_pk_hash[32];
+    l_rc = chipmunk_lrs_public_key_hash(l_pk_hash, &l_pk);
+    if (l_rc != 0) {
+        dap_memwipe(&l_pk, sizeof(l_pk));
+        return l_rc;
+    }
+
+    chipmunk_poly_t l_x[CHIPMUNK_LRS_K];
+    chipmunk_poly_t l_A_pk[CHIPMUNK_LRS_K];
+    l_rc = chipmunk_lrs_derive_witness(l_x, a_sk->x_seed);
+    if (l_rc == 0) {
+        l_rc = chipmunk_lrs_derive_A_pk(l_A_pk, a_sk->pk_seed);
+    }
+    if (l_rc != 0) {
+        dap_memwipe(l_x, sizeof(l_x));
+        dap_memwipe(l_A_pk, sizeof(l_A_pk));
+        dap_memwipe(&l_pk, sizeof(l_pk));
+        return l_rc;
+    }
+
+    /*
+     * Mask sampler seed binds the caller-provided randomness to the
+     * concrete LRS public key so the same randomness reused against a
+     * different key cannot collapse to the same y.
+     */
+    const size_t l_mask_seed_size =
+        CHIPMUNK_LRS_SEED_BYTES + CHIPMUNK_LRS_SEED_BYTES + CHIPMUNK_LRS_POLY_QPACK_BYTES;
+    uint8_t *l_mask_seed = DAP_NEW_Z_SIZE(uint8_t, l_mask_seed_size);
+    if (!l_mask_seed) {
+        dap_memwipe(l_x, sizeof(l_x));
+        dap_memwipe(l_A_pk, sizeof(l_A_pk));
+        dap_memwipe(&l_pk, sizeof(l_pk));
+        return -ENOMEM;
+    }
+    memcpy(l_mask_seed, a_randomness_seed, CHIPMUNK_LRS_SEED_BYTES);
+    memcpy(l_mask_seed + CHIPMUNK_LRS_SEED_BYTES, a_sk->pk_seed, CHIPMUNK_LRS_SEED_BYTES);
+    memcpy(l_mask_seed + 2u * CHIPMUNK_LRS_SEED_BYTES, a_sk->P,
+           CHIPMUNK_LRS_POLY_QPACK_BYTES);
+
+    chipmunk_poly_t l_y[CHIPMUNK_LRS_K];
+    chipmunk_poly_t l_cx[CHIPMUNK_LRS_K];
+    chipmunk_poly_t l_T;
+    chipmunk_poly_t l_challenge;
+    uint8_t l_T_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES];
+    uint8_t l_challenge_seed[32];
+    uint8_t l_z_packed[CHIPMUNK_LRS_K][CHIPMUNK_LRS_POLY_QPACK_BYTES];
+
+    int l_done = 0;
+    for (uint32_t l_attempt = 0; l_attempt < CHIPMUNK_LRS_MAX_ATTEMPTS && !l_done;
+         ++l_attempt) {
+        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+            l_rc = s_h_to_wide_poly(&l_y[j], "chipmunk-lrs-pop-mask",
+                                    CHIPMUNK_LRS_PARAMS_C0, l_mask_seed,
+                                    l_mask_seed_size,
+                                    l_attempt * CHIPMUNK_LRS_K + j,
+                                    CHIPMUNK_LRS_MASK_BOUND);
+            if (l_rc != 0) {
+                goto cleanup;
+            }
+        }
+
+        l_rc = s_relation_eval_centered(&l_T, l_A_pk, l_y);
+        if (l_rc != 0) {
+            goto cleanup;
+        }
+        l_rc = chipmunk_lrs_poly_qpack(l_T_packed, &l_T);
+        if (l_rc != 0) {
+            goto cleanup;
+        }
+
+        l_rc = s_pop_challenge_seed(l_challenge_seed,
+                                    CHIPMUNK_LRS_PARAMS_C0, l_pk_hash, l_T_packed);
+        if (l_rc != 0) {
+            goto cleanup;
+        }
+        l_rc = chipmunk_lrs_h_to_sparse_ternary(&l_challenge,
+                                                "chipmunk-lrs-challenge",
+                                                CHIPMUNK_LRS_PARAMS_C0,
+                                                l_challenge_seed);
+        if (l_rc != 0) {
+            goto cleanup;
+        }
+
+        l_rc = s_mul_challenge_witness_centered(l_cx, &l_challenge, l_x);
+        if (l_rc != 0) {
+            goto cleanup;
+        }
+
+        bool l_reject = false;
+        for (uint32_t j = 0; j < CHIPMUNK_LRS_K && !l_reject; ++j) {
+            for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+                /*
+                 * y[j][i] is centered in [-gamma, gamma], cx[j][i] is centered
+                 * in [-beta, beta], so the integer sum fits well within int32_t
+                 * and is its own centered representative modulo q (no wrap).
+                 */
+                int32_t l_zi = l_y[j].coeffs[i] + l_cx[j].coeffs[i];
+                if (l_zi < -CHIPMUNK_LRS_RESPONSE_BOUND ||
+                    l_zi > CHIPMUNK_LRS_RESPONSE_BOUND) {
+                    l_reject = true;
+                    break;
+                }
+            }
+        }
+        if (l_reject) {
+            continue;
+        }
+
+        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+            chipmunk_poly_t l_z_poly;
+            for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+                int32_t l_zi = l_y[j].coeffs[i] + l_cx[j].coeffs[i];
+                l_z_poly.coeffs[i] = s_mod_q_i64((int64_t)l_zi);
+            }
+            l_rc = chipmunk_lrs_poly_qpack(l_z_packed[j], &l_z_poly);
+            dap_memwipe(&l_z_poly, sizeof(l_z_poly));
+            if (l_rc != 0) {
+                goto cleanup;
+            }
+        }
+        l_done = 1;
+    }
+
+    if (!l_done) {
+        l_rc = -EAGAIN;
+        goto cleanup;
+    }
+
+    memset(a_pop, 0, a_pop_size);
+    uint8_t *p = a_pop;
+    s_le32_store(p, CHIPMUNK_LRS_MAGIC_CLRP); p += 4u;
+    s_le32_store(p, CHIPMUNK_LRS_PARAMS_C0); p += 4u;
+    s_le32_store(p, 0u); p += 4u; /* flags */
+    s_le32_store(p, (uint32_t)CHIPMUNK_LRS_POP_HEADER_BYTES); p += 4u;
+    s_le32_store(p, (uint32_t)CHIPMUNK_LRS_POP_RESPONSE_BYTES); p += 4u;
+    s_le32_store(p, 0u); p += 4u; /* reserved0 */
+    s_le32_store(p, 0u); p += 4u; /* reserved1 */
+    s_le32_store(p, 0u); p += 4u; /* reserved2 */
+    memcpy(p, l_pk_hash, 32u); p += 32u;
+    memcpy(p, l_challenge_seed, 32u); p += 32u;
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        memcpy(p, l_z_packed[j], CHIPMUNK_LRS_POLY_QPACK_BYTES);
+        p += CHIPMUNK_LRS_POLY_QPACK_BYTES;
+    }
+    l_rc = 0;
+
+cleanup:
+    dap_memwipe(l_x, sizeof(l_x));
+    dap_memwipe(l_A_pk, sizeof(l_A_pk));
+    dap_memwipe(l_y, sizeof(l_y));
+    dap_memwipe(l_cx, sizeof(l_cx));
+    dap_memwipe(&l_T, sizeof(l_T));
+    dap_memwipe(&l_challenge, sizeof(l_challenge));
+    dap_memwipe(l_T_packed, sizeof(l_T_packed));
+    dap_memwipe(l_challenge_seed, sizeof(l_challenge_seed));
+    dap_memwipe(l_z_packed, sizeof(l_z_packed));
+    dap_memwipe(l_pk_hash, sizeof(l_pk_hash));
+    dap_memwipe(&l_pk, sizeof(l_pk));
+    dap_memwipe(l_mask_seed, l_mask_seed_size);
+    DAP_DELETE(l_mask_seed);
+    return l_rc;
+}
+
+int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
+                            size_t a_pop_size,
+                            const chipmunk_lrs_public_key_t *a_pk)
+{
+    if (!a_pop || a_pop_size != CHIPMUNK_LRS_POP_BYTES || !a_pk) {
+        return -EINVAL;
+    }
+    int l_rc = chipmunk_lrs_public_key_validate(a_pk);
+    if (l_rc != 0) {
+        return l_rc;
+    }
+
+    /* Header gates first — fail closed without touching algebra. */
+    const uint8_t *p = a_pop;
+    uint32_t l_magic = s_le32_load(p); p += 4u;
+    uint32_t l_params = s_le32_load(p); p += 4u;
+    uint32_t l_flags = s_le32_load(p); p += 4u;
+    uint32_t l_hdr_bytes = s_le32_load(p); p += 4u;
+    uint32_t l_resp_bytes = s_le32_load(p); p += 4u;
+    uint32_t l_r0 = s_le32_load(p); p += 4u;
+    uint32_t l_r1 = s_le32_load(p); p += 4u;
+    uint32_t l_r2 = s_le32_load(p); p += 4u;
+    if (l_magic != CHIPMUNK_LRS_MAGIC_CLRP ||
+        l_params != CHIPMUNK_LRS_PARAMS_C0 ||
+        l_flags != 0u ||
+        l_hdr_bytes != CHIPMUNK_LRS_POP_HEADER_BYTES ||
+        l_resp_bytes != CHIPMUNK_LRS_POP_RESPONSE_BYTES ||
+        l_r0 != 0u || l_r1 != 0u || l_r2 != 0u) {
+        return -EINVAL;
+    }
+
+    uint8_t l_pk_hash[32];
+    l_rc = chipmunk_lrs_public_key_hash(l_pk_hash, a_pk);
+    if (l_rc != 0) {
+        return l_rc;
+    }
+    if (memcmp(p, l_pk_hash, 32u) != 0) {
+        dap_memwipe(l_pk_hash, sizeof(l_pk_hash));
+        return -EINVAL;
+    }
+    p += 32u;
+
+    uint8_t l_challenge_seed[32];
+    memcpy(l_challenge_seed, p, 32u);
+    p += 32u;
+
+    chipmunk_poly_t l_z[CHIPMUNK_LRS_K];
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        l_rc = chipmunk_lrs_poly_qunpack(&l_z[j], p);
+        if (l_rc != 0) {
+            goto vfail;
+        }
+        l_rc = chipmunk_lrs_poly_chknorm_centered(&l_z[j], CHIPMUNK_LRS_RESPONSE_BOUND);
+        if (l_rc != 0) {
+            l_rc = (l_rc == 1) ? -EINVAL : l_rc;
+            goto vfail;
+        }
+        p += CHIPMUNK_LRS_POLY_QPACK_BYTES;
+    }
+
+    chipmunk_poly_t l_challenge;
+    l_rc = chipmunk_lrs_h_to_sparse_ternary(&l_challenge, "chipmunk-lrs-challenge",
+                                            CHIPMUNK_LRS_PARAMS_C0, l_challenge_seed);
+    if (l_rc != 0) {
+        goto vfail;
+    }
+
+    chipmunk_poly_t l_A_pk[CHIPMUNK_LRS_K];
+    l_rc = chipmunk_lrs_derive_A_pk(l_A_pk, a_pk->pk_seed);
+    if (l_rc != 0) {
+        goto vfail;
+    }
+
+    chipmunk_poly_t l_P;
+    l_rc = chipmunk_lrs_poly_qunpack(&l_P, a_pk->P);
+    if (l_rc != 0) {
+        goto vfail;
+    }
+
+    /*
+     * T' = Sum A_pk[j]*z[j] - c*P, all mod q.  We compute it as a single
+     * accumulator to minimise temporaries and rely on NTT mul for both
+     * legs.
+     */
+    chipmunk_poly_t l_sum_Az;
+    l_rc = chipmunk_lrs_relation_eval(&l_sum_Az, l_A_pk, l_z);
+    if (l_rc != 0) {
+        goto vfail;
+    }
+
+    chipmunk_poly_t l_cP;
+    {
+        chipmunk_poly_t l_c_red = l_challenge;
+        chipmunk_poly_t l_P_red = l_P;
+        for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+            l_c_red.coeffs[i] = s_mod_q_i64((int64_t)l_c_red.coeffs[i]);
+        }
+        l_rc = chipmunk_poly_ntt(&l_c_red);
+        if (l_rc == CHIPMUNK_ERROR_SUCCESS) {
+            l_rc = chipmunk_poly_ntt(&l_P_red);
+        }
+        if (l_rc == CHIPMUNK_ERROR_SUCCESS) {
+            chipmunk_poly_mul_ntt(&l_cP, &l_c_red, &l_P_red);
+            l_rc = chipmunk_poly_invntt(&l_cP);
+        }
+        dap_memwipe(&l_c_red, sizeof(l_c_red));
+        dap_memwipe(&l_P_red, sizeof(l_P_red));
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            goto vfail;
+        }
+    }
+
+    chipmunk_poly_t l_T_prime;
+    for (size_t i = 0; i < CHIPMUNK_N; ++i) {
+        int64_t l_v = (int64_t)l_sum_Az.coeffs[i] - (int64_t)l_cP.coeffs[i];
+        l_T_prime.coeffs[i] = s_mod_q_i64(l_v);
+    }
+
+    uint8_t l_T_packed[CHIPMUNK_LRS_POLY_QPACK_BYTES];
+    l_rc = chipmunk_lrs_poly_qpack(l_T_packed, &l_T_prime);
+    if (l_rc != 0) {
+        goto vfail;
+    }
+
+    uint8_t l_recovered_seed[32];
+    l_rc = s_pop_challenge_seed(l_recovered_seed, CHIPMUNK_LRS_PARAMS_C0,
+                                l_pk_hash, l_T_packed);
+    if (l_rc != 0) {
+        goto vfail;
+    }
+
+    l_rc = (memcmp(l_recovered_seed, l_challenge_seed, 32u) == 0) ? 0 : -EINVAL;
+
+    dap_memwipe(&l_T_prime, sizeof(l_T_prime));
+    dap_memwipe(&l_sum_Az, sizeof(l_sum_Az));
+    dap_memwipe(&l_cP, sizeof(l_cP));
+    dap_memwipe(l_A_pk, sizeof(l_A_pk));
+    dap_memwipe(&l_P, sizeof(l_P));
+    dap_memwipe(&l_challenge, sizeof(l_challenge));
+    dap_memwipe(l_T_packed, sizeof(l_T_packed));
+    dap_memwipe(l_recovered_seed, sizeof(l_recovered_seed));
+    dap_memwipe(l_z, sizeof(l_z));
+    dap_memwipe(l_challenge_seed, sizeof(l_challenge_seed));
+    dap_memwipe(l_pk_hash, sizeof(l_pk_hash));
+    return l_rc;
+
+vfail:
+    dap_memwipe(l_z, sizeof(l_z));
+    dap_memwipe(l_challenge_seed, sizeof(l_challenge_seed));
+    dap_memwipe(l_pk_hash, sizeof(l_pk_hash));
+    return l_rc != 0 ? l_rc : -EINVAL;
 }

@@ -66,6 +66,17 @@ _Static_assert(sizeof(chipmunk_lrs_public_key_t) == 1456u,
 _Static_assert(sizeof(chipmunk_lrs_secret_key_t) == 1488u,
                "CLSK canonical size drift");
 
+#define CHIPMUNK_LRS_POP_HEADER_BYTES 96u
+#define CHIPMUNK_LRS_POP_RESPONSE_BYTES \
+        ((size_t)CHIPMUNK_LRS_K * (size_t)CHIPMUNK_LRS_POLY_QPACK_BYTES)
+#define CHIPMUNK_LRS_POP_BYTES \
+        (CHIPMUNK_LRS_POP_HEADER_BYTES + CHIPMUNK_LRS_POP_RESPONSE_BYTES)
+
+_Static_assert(CHIPMUNK_LRS_POP_RESPONSE_BYTES == 8448u,
+               "CLRP response area must equal K * qpack(poly)");
+_Static_assert(CHIPMUNK_LRS_POP_BYTES == 8544u,
+               "CLRP canonical wire size drift");
+
 int chipmunk_lrs_poly_qpack(uint8_t a_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
                             const chipmunk_poly_t *a_poly);
 
@@ -126,6 +137,24 @@ int chipmunk_lrs_public_key_hash(uint8_t a_out[32],
 int chipmunk_lrs_ring_hash(uint8_t a_out[32],
                            const chipmunk_lrs_public_key_t *a_public_keys,
                            size_t a_ring_size);
+
+/*
+ * PoP (CLRP) — proves knowledge of the LRS witness x for the public relation
+ * P = Sum A_pk[j] * x[j].  Canonical wire is exactly CHIPMUNK_LRS_POP_BYTES.
+ *
+ * a_randomness_seed feeds the SHAKE256 mask sampler; the caller is
+ * responsible for sourcing real CSPRNG entropy in production and a
+ * test-only fixed seed in KATs.  pop_create restarts the full transcript
+ * on rejection and returns -EAGAIN after CHIPMUNK_LRS_MAX_ATTEMPTS.
+ */
+int chipmunk_lrs_pop_create(uint8_t *a_pop,
+                            size_t a_pop_size,
+                            const chipmunk_lrs_secret_key_t *a_sk,
+                            const uint8_t a_randomness_seed[CHIPMUNK_LRS_SEED_BYTES]);
+
+int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
+                            size_t a_pop_size,
+                            const chipmunk_lrs_public_key_t *a_pk);
 
 #ifdef __cplusplus
 }
