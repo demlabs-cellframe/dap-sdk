@@ -78,6 +78,7 @@ typedef struct dap_client_pvt {
 
     dap_list_t *pkt_queue;
     dap_timerfd_t *reconnect_timer;
+    dap_timerfd_t *stream_activity_timer;
 } dap_client_pvt_t;
 
 typedef struct dap_client_pkt_queue_elm {

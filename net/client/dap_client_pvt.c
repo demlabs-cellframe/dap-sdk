@@ -93,6 +93,22 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error);
 static bool s_stream_timer_timeout_after_connected_check(void * a_arg);
 static bool s_stream_timer_timeout_check(void * a_arg);
 
+typedef struct s_stream_activity_timer_arg {
+    dap_events_socket_uuid_t es_uuid;
+    dap_client_pvt_t *client_pvt;
+} s_stream_activity_timer_arg_t;
+
+static void s_stream_activity_timer_stop(dap_client_pvt_t *a_client_pvt)
+{
+    if (!a_client_pvt || !a_client_pvt->stream_activity_timer)
+        return;
+    dap_timerfd_t *l_timer = a_client_pvt->stream_activity_timer;
+    void *l_arg = l_timer->callback_arg;
+    a_client_pvt->stream_activity_timer = NULL;
+    dap_timerfd_delete_unsafe(l_timer);
+    DAP_DELETE(l_arg);
+}
+
 
 
 /**
@@ -138,6 +154,7 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
         dap_timerfd_delete_unsafe(a_client_pvt->reconnect_timer);
         a_client_pvt->reconnect_timer = NULL;
     }
+    s_stream_activity_timer_stop(a_client_pvt);
     if (a_client_pvt->http_client) {
         dap_client_http_close_unsafe(a_client_pvt->http_client);
         a_client_pvt->http_client = NULL;
@@ -195,26 +212,30 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
 
     log_it(L_INFO, "[client:%p] Remote address connected for streaming on (%s:%u) with Socket #%"DAP_FORMAT_SOCKET" (assign on worker #%u)",
                             a_client_pvt->client, a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port,
-                            a_client_pvt->stream_es->socket, a_client_pvt->stream_worker->worker->id);
+                            a_client_pvt->stream_es->socket, a_client_pvt->stream_worker ? a_client_pvt->stream_worker->worker->id : 0);
 
+    a_client_pvt->ts_last_active = time(NULL);
     a_client_pvt->stage_status = STAGE_STATUS_DONE;
 
     s_stage_status_after(a_client_pvt);
-    dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-    if (!l_es_uuid_ptr) {
+    s_stream_activity_timer_arg_t *l_timer_arg = DAP_NEW_Z(s_stream_activity_timer_arg_t);
+    if (!l_timer_arg) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     assert(a_client_pvt->stream_es);
 
-    *l_es_uuid_ptr = a_client_pvt->stream_es->uuid;
+    l_timer_arg->es_uuid = a_client_pvt->stream_es->uuid;
+    l_timer_arg->client_pvt = a_client_pvt;
 
-    if( dap_timerfd_start_on_worker(a_client_pvt->stream_es->worker,
-                                    s_client_timeout_active_after_connect_seconds * 1024,
+    s_stream_activity_timer_stop(a_client_pvt);
+    a_client_pvt->stream_activity_timer = dap_timerfd_start_on_worker(a_client_pvt->stream_es->worker,
+                                    (uint64_t)s_client_timeout_active_after_connect_seconds * 1000,
                                     s_stream_timer_timeout_after_connected_check,
-                                    l_es_uuid_ptr) == NULL) {
-        log_it(L_ERROR,"Can't run timer for stream after connect check for esocket uuid %"DAP_UINT64_FORMAT_U, *l_es_uuid_ptr);
-        DAP_DEL_Z(l_es_uuid_ptr);
+                                    l_timer_arg);
+    if (!a_client_pvt->stream_activity_timer) {
+        log_it(L_ERROR,"Can't run timer for stream after connect check for esocket uuid %"DAP_UINT64_FORMAT_U, l_timer_arg->es_uuid);
+        DAP_DELETE(l_timer_arg);
     }
 }
 
@@ -235,6 +256,7 @@ static bool s_stream_timer_timeout_check(void * a_arg)
     assert(l_worker);
     if (!l_worker) {
         log_it(L_ERROR, "Invalid arguments in s_stream_timer_timeout_check");
+        DAP_DELETE(l_es_uuid_ptr);
         return false;
     }
 
@@ -243,6 +265,12 @@ static bool s_stream_timer_timeout_check(void * a_arg)
         if (l_es->flags & DAP_SOCK_CONNECTING ){
             dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
             dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+            if (!l_client_pvt) {
+                debug_if(s_debug_more, L_DEBUG, "Esocket %"DAP_UINT64_FORMAT_U" has no client, close check timer", *l_es_uuid_ptr);
+                dap_events_socket_remove_and_delete_unsafe(l_es, true);
+                DAP_DELETE(l_es_uuid_ptr);
+                return false;
+            }
             log_it(L_WARNING,"Connecting timeout for stream uplink request http://%s:%u/, possible network problems or host is down",
                    l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
@@ -268,22 +296,29 @@ static bool s_stream_timer_timeout_check(void * a_arg)
 static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
 {
     assert(a_arg);
-    dap_events_socket_uuid_t *l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
+    s_stream_activity_timer_arg_t *l_timer_arg = (s_stream_activity_timer_arg_t*) a_arg;
 
     dap_worker_t * l_worker = dap_worker_get_current();
     if (!l_worker) {
         log_it(L_ERROR, "l_worker is NULL");
+        if (l_timer_arg->client_pvt)
+            l_timer_arg->client_pvt->stream_activity_timer = NULL;
+        DAP_DELETE(l_timer_arg);
         return false;
     }
     assert(l_worker);
 
-    dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
+    dap_events_socket_t * l_es = dap_context_find(l_worker->context, l_timer_arg->es_uuid);
     if( l_es ){
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-        if (time(NULL) - l_client_pvt->ts_last_active >= s_client_timeout_active_after_connect_seconds) {
+        if (!l_client_pvt) {
+            debug_if(s_debug_more, L_DEBUG, "Streaming socket %"DAP_UINT64_FORMAT_U" has no client, close check timer", l_timer_arg->es_uuid);
+            dap_events_socket_remove_and_delete_unsafe(l_es, true);
+        } else if (time(NULL) - l_client_pvt->ts_last_active >= s_client_timeout_active_after_connect_seconds) {
             log_it(L_WARNING, "Activity timeout for streaming uplink http://%s:%u/, possible network problems or host is down",
                                 l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
+            l_client_pvt->stream_activity_timer = NULL;
             l_client_pvt->is_closed_by_timeout = true;
             if(l_es->callbacks.error_callback)
                 l_es->callbacks.error_callback(l_es, ETIMEDOUT);
@@ -291,12 +326,13 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
                    l_es->remote_addr_str, l_es->socket);
             dap_events_socket_remove_and_delete_unsafe(l_es, true);
         } else
-            if(s_debug_more)
-                log_it(L_DEBUG,"Streaming socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
+            return true;
     } else
-        debug_if(s_debug_more, L_DEBUG, "Streaming socket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
+        debug_if(s_debug_more, L_DEBUG, "Streaming socket %"DAP_UINT64_FORMAT_U" is finished, close check timer", l_timer_arg->es_uuid);
 
-    DAP_DELETE(l_es_uuid_ptr);
+    if (l_timer_arg->client_pvt)
+        l_timer_arg->client_pvt->stream_activity_timer = NULL;
+    DAP_DELETE(l_timer_arg);
     return false;
 }
 
@@ -1233,6 +1269,7 @@ static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG vo
     if (!l_client)
         return;
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    s_stream_activity_timer_stop(l_client_pvt);
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->last_error = ERROR_STREAM_ABORTED;
     l_client_pvt->stream->esocket = NULL; // Prevent to delete twice
@@ -1300,6 +1337,7 @@ static bool s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     if (!l_client_pvt)
         return false;
+    l_client_pvt->ts_last_active = time(NULL);
     bool l_ret = false;
     if (l_client_pvt->stage_status == STAGE_STATUS_ERROR || !l_client_pvt->stream)
         return false;
@@ -1329,6 +1367,7 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
 
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    s_stream_activity_timer_stop(l_client_pvt);
     log_it(L_WARNING, "STREAM error %d: \"%s\"", a_error, dap_strerror(a_error));
 #ifdef DAP_OS_WINDOWS
     if (a_error == WSAETIMEDOUT || a_error == ERROR_SEM_TIMEOUT)
