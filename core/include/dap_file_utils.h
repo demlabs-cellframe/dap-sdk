@@ -106,6 +106,13 @@ int dap_file_mv(const char* a_path_old, const char * a_path_new);
 bool dap_dir_test(const char * a_dir_path);
 
 /**
+ * Normalize path separators to the OS-native form in place.
+ * On Windows: '/' -> '\\'. On Unix: '\\' -> '/'.
+ * Use before passing paths to OS APIs if path may use the other separator.
+ */
+void dap_path_to_native_inplace(char *path);
+
+/**
  * File information structure
  */
 typedef struct {

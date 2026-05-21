@@ -393,7 +393,7 @@ int dap_json_rpc_request_send(dap_client_esocket_t*  a_client_esocket, dap_json_
     }
 
     log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
-                     a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port, l_path, l_enc_request_size);
+                a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port, l_path, l_enc_request_size);
 
     dap_client_http_t *l_http_client = dap_client_http_request(a_client_esocket->worker,
                                                              a_client_esocket->client->link_info.uplink_addr,
@@ -412,8 +412,8 @@ int dap_json_rpc_request_send(dap_client_esocket_t*  a_client_esocket, dap_json_
                 *a_response = json_object_new_string(l_err);
                 break;
             }
-            log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
-                            a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port, l_response_size);
+            log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
+                     a_client_esocket->client->link_info.uplink_addr, a_client_esocket->client->link_info.uplink_port, l_path, l_enc_request_size);
             break;
         }
         case EXEC_CMD_ERR_WAIT_TIMEOUT: {

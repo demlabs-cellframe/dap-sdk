@@ -585,7 +585,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     }
     l_ret->obj_count = i;
     if (i < l_count) {
-        log_it(L_ERROR, "Invalid pack size, only %ld / %ld pkts (%zu / %zu bytes) fit the storage",
+        log_it(L_ERROR, "Invalid pack size, only %" DAP_INT64_FORMAT " / %" DAP_INT64_FORMAT " pkts (%" DAP_UINT64_FORMAT_U " / %zu bytes) fit the storage",
                         i, l_count, l_ret->data_size, l_data_size);
         size_t l_new_size = (size_t)(l_data_pos - (byte_t*)l_ret);
         dap_global_db_pkt_pack_t *l_new_pack = DAP_REALLOC(l_ret, l_new_size);

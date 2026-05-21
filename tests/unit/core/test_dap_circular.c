@@ -200,10 +200,9 @@ static void test_circular_load(void)
 
         count_write_bytes = rand() % strlen(digits);
         dap_cbuf_push(cb, (void*)digits, count_write_bytes);
-        // Use memcpy instead of strncat to avoid truncation warning
-        memcpy(expectedBuffer + l_expected_len, digits, count_write_bytes);
-        l_expected_len += count_write_bytes;
-        expectedBuffer[l_expected_len] = '\0';
+        size_t l_cur_len = strlen(expectedBuffer);
+        memcpy(expectedBuffer + l_cur_len, digits, count_write_bytes);
+        expectedBuffer[l_cur_len + count_write_bytes] = '\0';
         count_writed_bytes += count_write_bytes;
     } while (--iterations);
     count_writed_bytes -= count_write_bytes; // last bytes will not be writed

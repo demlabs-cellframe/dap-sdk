@@ -728,6 +728,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 #endif
 
     DAP_DEL_Z(a_stream->buf_fragments);
+    DAP_DEL_Z(a_stream->pkt_cache);
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
 }
@@ -915,7 +916,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     if (!a_esocket->is_initalized)
         return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_DEBUG, "Skip worker assign callback for events socket "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", a_esocket->uuid);
+        return;
+    }
     dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
@@ -942,11 +946,16 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 {
     UNUSED(a_worker);
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_DEBUG, "Skip worker unassign callback for events socket "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", a_esocket->uuid);
+        return;
+    }
     s_stream_delete_from_list(l_stream);
-    DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
-    dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
-    l_stream->keepalive_timer = NULL;
+    if (l_stream->keepalive_timer) {
+        DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
+        dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
+        l_stream->keepalive_timer = NULL;
+    }
 }
 
 /**
@@ -1118,9 +1127,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
+    // dap_events_socket_t *l_es = a_stream->esocket;
 
     debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u", 
            a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
+
 
     switch (a_pkt->hdr.type) {
     case STREAM_PKT_TYPE_FRAGMENT_PACKET: {
@@ -1153,6 +1164,17 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         }
+        {
+          size_t l_ms = (size_t)l_fragm_pkt->mem_shift, l_fs = (size_t)l_fragm_pkt->full_size, l_sz = (size_t)l_fragm_pkt->size;
+          if (!l_fs || l_fs > (size_t)DAP_STREAM_PKT_SIZE_MAX || l_sz > l_fs || l_ms > l_fs - l_sz) {
+            debug_if(s_dump_packet_headers, L_WARNING, "Input: invalid fragment bounds mem_shift=%zu size=%zu full_size=%zu", l_ms, l_sz, l_fs);
+            l_is_clean_fragments = true;
+            break;
+          }
+        }
+
+        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu", 
+               l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
 
         debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu", 
                l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
@@ -1163,6 +1185,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_is_clean_fragments = true;
             break;
         } else {
+            if (a_stream->buf_fragments && a_stream->buf_fragments_size_filled && a_stream->buf_fragments_size_total != l_fragm_pkt->full_size) {
+                debug_if(s_dump_packet_headers, L_WARNING, "Input: inconsistent fragment full_size %u vs buffer %zu", l_fragm_pkt->full_size, a_stream->buf_fragments_size_total);
+                l_is_clean_fragments = true;
+                break;
+            }
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
                 DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_Z_SIZE(uint8_t, l_fragm_pkt->full_size);
@@ -1251,6 +1278,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
                     
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
+                    // if (!l_es->_inheritor)
+                    //     return;
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type,
@@ -1268,6 +1297,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
+                        // if (!l_es->_inheritor)
+                        //     return;
                     }
                     if (l_ch->closing)
                         break;
@@ -1385,7 +1416,10 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     if(l_es) {
         assert(a_server_side == !!l_es->server);
         dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
-        assert(l_stream);
+        if (!l_stream) {
+            DAP_DELETE(l_es_uuid);
+            return false;
+        }
         if (l_stream->is_active) {
             l_stream->is_active = false;
             return true;

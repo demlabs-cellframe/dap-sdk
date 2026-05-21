@@ -58,7 +58,9 @@ struct plugin_module{
 struct plugin_type *s_types = NULL; // List of all registred plugin types
 struct plugin_module *s_modules = NULL; // List of all loaded modules
 static int s_stop(dap_plugin_manifest_t * a_manifest);
-static int s_start(dap_plugin_manifest_t * a_manifest);
+static int s_load(dap_plugin_manifest_t * a_manifest);
+static int s_preinit(struct plugin_module * a_module);
+static int s_init(struct plugin_module * a_module);
 
 static void s_solve_dependencies();
 
@@ -112,6 +114,15 @@ void dap_plugin_deinit(){
     dap_plugin_command_deinit();
 }
 
+/**
+ * @brief dap_plugin_root_path
+ * @return Root path used for plugin discovery
+ */
+const char *dap_plugin_root_path(void)
+{
+    return s_plugins_root_path;
+}
+
 
 
 /**
@@ -152,13 +163,38 @@ int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t* a_ca
 }
 
 /**
+ * @brief dap_plugin_load_all
+ * Load all registered plugins (dlopen/import) without calling preinit or init
+ */
+void dap_plugin_load_all()
+{
+    dap_plugin_manifest_t * l_manifest, *l_tmp;
+    HASH_ITER(hh, dap_plugin_manifest_all(), l_manifest, l_tmp) {
+        s_load(l_manifest);
+    }
+}
+
+/**
+ * @brief dap_plugin_preinit_all
+ * Call preinit callback on all loaded modules (before chains load)
+ */
+void dap_plugin_preinit_all()
+{
+    struct plugin_module * l_module, *l_tmp;
+    HASH_ITER(hh, s_modules, l_module, l_tmp) {
+        s_preinit(l_module);
+    }
+}
+
+/**
  * @brief dap_plugin_start_all
+ * Call init callback on all loaded modules (after chains load)
  */
 void dap_plugin_start_all()
 {
-    dap_plugin_manifest_t * l_manifest, *l_tmp;
-    HASH_ITER(hh,dap_plugin_manifest_all(),l_manifest,l_tmp ){
-        s_start(l_manifest);
+    struct plugin_module * l_module, *l_tmp;
+    HASH_ITER(hh, s_modules, l_module, l_tmp) {
+        s_init(l_module);
     }
 }
 
@@ -225,62 +261,107 @@ static int s_stop(dap_plugin_manifest_t * a_manifest)
 int dap_plugin_start(const char * a_name)
 {
     dap_plugin_manifest_t * l_manifest = dap_plugin_manifest_find(a_name);
-    if(l_manifest)
-        return s_start(l_manifest);
-    else
+    if (!l_manifest)
         return -4; // Not found
+    int l_ret = s_load(l_manifest);
+    if (l_ret)
+        return l_ret;
+    struct plugin_module * l_module = NULL;
+    HASH_FIND_STR(s_modules, a_name, l_module);
+    if (!l_module)
+        return -5;
+    s_preinit(l_module);
+    s_init(l_module);
+    return 0;
 }
 
 /**
- * @brief l_stop
- * @param a_manifest
- * @return
+ * @brief s_load
+ * Load a single plugin: dlopen/import, add to s_modules
  */
-static int s_start(dap_plugin_manifest_t * a_manifest)
+static int s_load(dap_plugin_manifest_t * a_manifest)
 {
     struct plugin_type * l_type = NULL;
     HASH_FIND_STR(s_types, a_manifest->type, l_type);
-    if(! l_type){
+    if (!l_type) {
         log_it(L_ERROR, "Plugin \"%s\" with type \"%s\" is not recognized", a_manifest->name, a_manifest->type);
         return -1;
     }
-    if (a_manifest->dependencies != NULL){
+    if (a_manifest->dependencies != NULL) {
         log_it(L_NOTICE, "Check for plugin %s dependencies", a_manifest->name);
-        // Check for dependencies, are they loaded
         bool l_is_unsolved = false;
-        for(size_t i=0; i< a_manifest->dependencies_count; i++){
+        for (size_t i = 0; i < a_manifest->dependencies_count; i++) {
             dap_plugin_manifest_dependence_t * l_dep = NULL;
             HASH_FIND_STR(a_manifest->dependencies, a_manifest->dependencies_names[i], l_dep);
-            if (!l_dep){ // meet unsolved dependence
+            if (!l_dep) {
                 log_it(L_ERROR, "Unsolved dependence \"%s\"", a_manifest->dependencies_names[i]);
                 l_is_unsolved = true;
             }
         }
-        if(l_is_unsolved)
+        if (l_is_unsolved)
             return -2;
     }
 
-    // load plugin
     char * l_err_str = NULL;
     void * l_pvt_data = NULL;
-    int l_ret = l_type->callbacks.load(a_manifest,&l_pvt_data, &l_err_str);
-    if(l_ret){ // Error while loading
-        log_it(L_ERROR, "Can't load plugin \"%s\" because of error \"%s\" (code %d)",a_manifest->name,
-               l_err_str?l_err_str:"<UNKNOWN>", l_ret);
+    int l_ret = l_type->callbacks.load(a_manifest, &l_pvt_data, &l_err_str);
+    if (l_ret) {
+        log_it(L_ERROR, "Can't load plugin \"%s\" because of error \"%s\" (code %d)", a_manifest->name,
+               l_err_str ? l_err_str : "<UNKNOWN>", l_ret);
         DAP_DELETE(l_err_str);
-    }else{ // Successfully
+    } else {
         struct plugin_module * l_module = DAP_NEW_Z(struct plugin_module);
         if (!l_module) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
         l_module->pvt_data = l_pvt_data;
-        strncpy(l_module->name, a_manifest->name, sizeof(l_module->name)-1);
-        l_module->name[sizeof(l_module->name) - 1] = '\0';  // Warning avoid
+        strncpy(l_module->name, a_manifest->name, sizeof(l_module->name) - 1);
+        l_module->name[sizeof(l_module->name) - 1] = '\0';
         l_module->type = l_type;
         l_module->manifest = a_manifest;
-        HASH_ADD_STR(s_modules,name,l_module);
+        HASH_ADD_STR(s_modules, name, l_module);
         log_it(L_NOTICE, "Plugin \"%s\" is loaded", a_manifest->name);
+    }
+    return l_ret;
+}
+
+/**
+ * @brief s_preinit
+ * Call preinit callback on a loaded module (optional, skips if not set)
+ */
+static int s_preinit(struct plugin_module * a_module)
+{
+    if (!a_module || !a_module->type->callbacks.preinit)
+        return 0;
+    char * l_err_str = NULL;
+    int l_ret = a_module->type->callbacks.preinit(a_module->manifest, a_module->pvt_data, &l_err_str);
+    if (l_ret) {
+        log_it(L_ERROR, "Preinit failed for plugin \"%s\": \"%s\" (code %d)", a_module->name,
+               l_err_str ? l_err_str : "<UNKNOWN>", l_ret);
+        DAP_DELETE(l_err_str);
+    } else {
+        log_it(L_DEBUG, "Plugin \"%s\" preinit completed", a_module->name);
+    }
+    return l_ret;
+}
+
+/**
+ * @brief s_init
+ * Call init callback on a loaded module (optional, skips if not set)
+ */
+static int s_init(struct plugin_module * a_module)
+{
+    if (!a_module || !a_module->type->callbacks.init)
+        return 0;
+    char * l_err_str = NULL;
+    int l_ret = a_module->type->callbacks.init(a_module->manifest, a_module->pvt_data, &l_err_str);
+    if (l_ret) {
+        log_it(L_ERROR, "Init failed for plugin \"%s\": \"%s\" (code %d)", a_module->name,
+               l_err_str ? l_err_str : "<UNKNOWN>", l_ret);
+        DAP_DELETE(l_err_str);
+    } else {
+        log_it(L_DEBUG, "Plugin \"%s\" init completed", a_module->name);
     }
     return l_ret;
 }

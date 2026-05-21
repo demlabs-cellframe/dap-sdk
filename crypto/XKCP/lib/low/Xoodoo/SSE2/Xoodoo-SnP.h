@@ -19,6 +19,7 @@ http://creativecommons.org/publicdomain/zero/1.0/
 
 #include <stddef.h>
 #include <stdint.h>
+#include "align.h"
 
 /** For the documentation, see SnP-documentation.h.
  */

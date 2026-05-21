@@ -72,8 +72,8 @@ int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_
 int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_port, struct sockaddr_storage *a_saddr, int *a_family) {
     dap_return_val_if_fail_err( !!a_src && ( !!a_addr || !!a_port ), -1, "Required args are not provided");
     int l_len = 0, l_type = 0;
-    char *l_bpos = NULL, *l_cpos = NULL;
-    /*  
+    const char *l_bpos = NULL, *l_cpos = NULL;
+    /*
         type 4,5 - possibly hostname or IPv4 (no port, with port)
         type 6,7 - possibly IPv6 (no port, with port)
     */

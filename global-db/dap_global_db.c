@@ -208,6 +208,13 @@ int dap_global_db_init()
     if ( (l_rc = dap_global_db_driver_init(s_dbi->driver_name, s_dbi->storage_path)) )
         return log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
                        s_dbi->driver_name, s_dbi->storage_path, l_rc), l_rc;
+    // Update driver name in case of fallback (e.g. MDBX → SQLite)
+    const char *l_actual_driver = dap_global_db_driver_get_name();
+    if (l_actual_driver && dap_strcmp(s_dbi->driver_name, l_actual_driver)) {
+        log_it(L_NOTICE, "GlobalDB driver changed from \"%s\" to \"%s\" (fallback)", s_dbi->driver_name, l_actual_driver);
+        DAP_DELETE(s_dbi->driver_name);
+        s_dbi->driver_name = dap_strdup(l_actual_driver);
+    }
 
     // Clusters initialization
     if ( (l_rc = dap_global_db_cluster_init()) )
@@ -264,9 +271,11 @@ inline dap_global_db_instance_t *dap_global_db_instance_get_default()
  */
 void dap_global_db_deinit() {
     dap_global_db_clean_deinit();
+    // CRITICAL: cluster_deinit MUST be called BEFORE instance_deinit
+    // because cluster_deinit accesses instance memory that instance_deinit will free
+    dap_global_db_cluster_deinit();
     dap_global_db_instance_deinit();
     dap_global_db_driver_deinit();
-    dap_global_db_cluster_deinit();
 }
 
 bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)

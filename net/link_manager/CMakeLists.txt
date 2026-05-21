@@ -36,6 +36,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 # All dependency include directories (including dap_core with 3rdparty/uthash/src) are automatically propagated via dap_link_libraries
 
+if(BUILD_DAP_SDK_TESTS)
+    enable_testing()
+    add_subdirectory(test)
+endif()
+
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_LINK_MANAGER_HEADERS}")
 INSTALL(TARGETS ${PROJECT_NAME} 
