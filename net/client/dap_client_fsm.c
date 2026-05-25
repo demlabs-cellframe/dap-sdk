@@ -222,9 +222,14 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
            __builtin_offsetof(dap_client_fsm_t, client_trans_ctx),
            (void*)l_fsm->worker, l_fsm->uuid);
 
-    // Crypto defaults
+    // Crypto defaults: legacy cellframe-node master uses MSRLN (type 11, pubkey 1824 B);
+    // modern nodes use Kyber512 (type 23, pubkey 800 B).
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
-    l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
+    if (dap_client_get_legacy_enc_handshake()) {
+        l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN;
+    } else {
+        l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
+    }
     l_fsm->session_key_block_size = 32;
 
     // FSM state
@@ -1113,7 +1118,12 @@ static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_ar
         }
         if(l_fsm && !l_fsm->is_removing) {
             dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
-            if (l_tc && l_tc->stream) {
+            /* Only clear the stream's esocket reference if it still points to
+             * this (about-to-be-freed) esocket.  Earlier handshake sockets may
+             * be deleted after the stream has already been bound to a new
+             * data-channel socket; clearing it unconditionally would leave the
+             * stream unable to write any outgoing packets. */
+            if (l_tc && l_tc->stream && l_tc->stream->esocket == a_es) {
                 l_tc->stream->esocket = NULL;
                 l_tc->stream->esocket_uuid = 0;
                 l_tc->stream->esocket_worker = NULL;
@@ -1325,16 +1335,24 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             return;
         }
 
-        dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
         size_t l_sign_count = 0;
-        if (l_client->auth_cert)
-            l_sign_count += dap_cert_add_sign_to_data(l_client->auth_cert, &l_alice_pub_key, &l_data_size,
-                                                       l_tc->session_key_open->pub_key_data,
-                                                       l_tc->session_key_open->pub_key_data_size);
-        if (l_node_cert)
-            l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_alice_pub_key, &l_data_size,
-                                                      l_tc->session_key_open->pub_key_data,
-                                                      l_tc->session_key_open->pub_key_data_size);
+        uint32_t l_protocol_version = DAP_CLIENT_PROTOCOL_VERSION;
+
+        if (dap_client_get_legacy_enc_handshake()) {
+            /* Old cellframe-node master: pubkey only, no cert signature in enc_init */
+            l_protocol_version = 0;
+            log_it(L_INFO, "Legacy enc_init handshake (no signature, protocol_version=0)");
+        } else {
+            dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+            if (l_client->auth_cert)
+                l_sign_count += dap_cert_add_sign_to_data(l_client->auth_cert, &l_alice_pub_key, &l_data_size,
+                                                           l_tc->session_key_open->pub_key_data,
+                                                           l_tc->session_key_open->pub_key_data_size);
+            if (l_node_cert)
+                l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_alice_pub_key, &l_data_size,
+                                                          l_tc->session_key_open->pub_key_data,
+                                                          l_tc->session_key_open->pub_key_data_size);
+        }
 
         // Build dispatch context with prepared handshake params for worker
         fsm_enc_init_io_ctx_t *l_dispatch = DAP_NEW_Z(fsm_enc_init_io_ctx_t);
@@ -1355,7 +1373,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             .pkey_exchange_type = a_fsm->session_key_open_type,
             .pkey_exchange_size = l_tc->session_key_open->pub_key_data_size,
             .block_key_size = a_fsm->session_key_block_size,
-            .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
+            .protocol_version = l_protocol_version,
             .auth_cert = l_client->auth_cert,
             .alice_pub_key = l_alice_pub_key,
             .alice_pub_key_size = l_data_size,

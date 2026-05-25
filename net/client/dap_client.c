@@ -37,6 +37,17 @@
 #define LOG_TAG "dap_client"
 
 static bool s_debug_more = false;
+static bool s_legacy_enc_handshake = false;
+
+void dap_client_set_legacy_enc_handshake(bool a_enable)
+{
+    s_legacy_enc_handshake = a_enable;
+}
+
+bool dap_client_get_legacy_enc_handshake(void)
+{
+    return s_legacy_enc_handshake;
+}
 
 /**
  * @brief dap_client_init

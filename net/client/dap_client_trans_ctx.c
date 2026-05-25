@@ -457,6 +457,7 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
                                                     l_session_id_b64, l_bob_message_b64, l_node_sign_b64,
                                                     l_tc->session_key_id);
         l_bob_message_size = dap_enc_base64_decode(l_bob_message_b64, l_len, l_bob_message, DAP_ENC_DATA_TYPE_B64);
+
         if (!l_bob_message_size) {
             l_error = ERROR_ENC_WRONG_KEY;
             break;
@@ -470,10 +471,16 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             break;
         }
 
-        // Generate session key
+        // Generate session key: some KEM implementations (MSRLN, Kyber) store the shared
+        // secret in ->shared_key after gen_alice_shared_key; others use ->priv_key_data.
+        const void *l_kex_buf = l_tc->session_key_open->shared_key
+                                    ? l_tc->session_key_open->shared_key
+                                    : l_tc->session_key_open->priv_key_data;
+        size_t l_kex_size = l_tc->session_key_open->shared_key
+                                ? l_tc->session_key_open->shared_key_size
+                                : l_tc->session_key_open->priv_key_data_size;
         l_tc->session_key = dap_enc_key_new_generate(l_fsm->session_key_type,
-                l_tc->session_key_open->priv_key_data,
-                l_tc->session_key_open->priv_key_data_size,
+                l_kex_buf, l_kex_size,
                 l_tc->session_key_id, l_decoded_len, l_fsm->session_key_block_size);
 
         // Verify node sign
@@ -653,9 +660,15 @@ static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG vo
     }
 
     if (l_tc && l_tc->stream) {
-        l_tc->stream->esocket = NULL;
-        l_tc->stream->esocket_uuid = 0;
-        l_tc->stream->esocket_worker = NULL;
+        /* Only clear the stream's esocket if it is still referencing this
+         * (about-to-be-freed) socket.  A later stage may already have
+         * updated stream->esocket to a new data-channel socket; clobbering
+         * it would silently break all outgoing writes on that socket. */
+        if (l_tc->stream->esocket == a_es) {
+            l_tc->stream->esocket = NULL;
+            l_tc->stream->esocket_uuid = 0;
+            l_tc->stream->esocket_worker = NULL;
+        }
     }
     if (l_tc)
         l_tc->stream = NULL;
