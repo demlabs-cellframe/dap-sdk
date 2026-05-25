@@ -93,7 +93,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 static bool s_debug_more = false;
 
-#ifdef DAP_OS_ANDROID
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
 static dap_events_socket_pre_connect_callback_t s_pre_connect_cb = NULL;
 static void *s_pre_connect_ctx = NULL;
 
@@ -272,7 +272,7 @@ ssize_t s_packet_queue_pop_and_send(dap_events_socket_packet_queue_t *a_queue, i
 
 const char *s_socket_type_to_str[DESCRIPTOR_TYPE_MAX] = { 
     "CLIENT", "LOCAL CLIENT", "SERVER", "LOCAL SERVER", "UDP CLIENT", "SSL CLIENT", "RAW", 
-    "FILE", "PIPE", "QUEUE", "TIMER", "EVENT"
+    "FILE", "PIPE", "TIMER", "EVENT"
 };
 
 // Item for QUEUE_PTR input esocket
@@ -750,7 +750,7 @@ int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code)
         return -1;
     }
     
-#ifdef DAP_OS_ANDROID
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
     if(s_pre_connect_cb)
         s_pre_connect_cb((int)a_es->socket, s_pre_connect_ctx);
 #endif
@@ -805,7 +805,7 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
 #ifdef DAP_OS_UNIX
         l_fam = AF_LOCAL;
 #elif defined DAP_OS_WINDOWS
-        l_fam = AF_INET;  // Windows doesn't support AF_LOCAL, use AF_INET as fallback
+        l_fam = AF_INET;
 #endif
         // Use platform-independent function for local socket
         {
@@ -1180,7 +1180,9 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
 #elif defined DAP_EVENTS_CAPS_WEPOLL
     return dap_sendto(a_es->socket, a_es->port, NULL, 0) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
 #elif defined (DAP_EVENTS_CAPS_IOCP)
-    return PostQueuedCompletionStatus(a_es->context->iocp, a_value, (ULONG_PTR)a_es, NULL) ? GetLastError() : NO_ERROR;
+    if (!a_es->context || !a_es->context->iocp)
+        return ERROR_INVALID_HANDLE;
+    return PostQueuedCompletionStatus(a_es->context->iocp, (DWORD)a_value, (ULONG_PTR)a_es, NULL) ? NO_ERROR : (int)GetLastError();
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     struct kevent l_event={0};
     dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
@@ -1403,6 +1405,12 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
         debug_if(g_debug_reactor, L_DEBUG, "Attempt to %sset read flag on closed socket %p, dump it",
                                            a_is_ready ? "" : "un", a_es);
+        return dap_overlapped_free(a_ol);
+    }
+    if (a_is_ready && (a_es->flags & DAP_SOCK_CONNECTING) &&
+        (a_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || a_es->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT))
+    {
+        debug_if(g_debug_reactor, L_DEBUG, "Skip WSARecv on connecting socket %p", a_es);
         return dap_overlapped_free(a_ol);
     }
     if (!a_is_ready) {

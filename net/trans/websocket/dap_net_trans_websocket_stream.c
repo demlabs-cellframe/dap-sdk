@@ -23,15 +23,14 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <arpa/inet.h>
-#include <sys/time.h>
-
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -45,6 +44,7 @@
 #include "dap_net_trans_server.h"
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
+#include "dap_enc_base58.h"
 #include "dap_enc_base64.h"
 #include "dap_hash.h"
 #include "rand/dap_rand.h"
@@ -540,26 +540,28 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
         return -2;
     }
 
-    // Prepare handshake data (alice public key with signatures)
+    // Prepare handshake data (alice public key, optionally with cert signatures)
     size_t l_data_size = a_params->alice_pub_key_size;
     uint8_t *l_data = DAP_DUP_SIZE(a_params->alice_pub_key, l_data_size);
     if (!l_data) {
         log_it(L_ERROR, "Failed to allocate handshake data");
         return -4;
     }
-    
-    // Add certificates signatures
-    size_t l_sign_count = 0;
-    dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-    
-    if (a_params->auth_cert) {
-        l_sign_count += dap_cert_add_sign_to_data(a_params->auth_cert, &l_data, &l_data_size,
-                                                   a_params->alice_pub_key, a_params->alice_pub_key_size);
-    }
-    
-    if (l_node_cert) {
-        l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_data, &l_data_size,
-                                                   a_params->alice_pub_key, a_params->alice_pub_key_size);
+
+    size_t l_sign_count = a_params->sign_count;
+    if (!a_params->protocol_version) {
+        debug_if(s_debug_more, L_DEBUG, "WS handshake: legacy enc_init (sign_count=%zu)", l_sign_count);
+    } else {
+        dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+        l_sign_count = 0;
+        if (a_params->auth_cert) {
+            l_sign_count += dap_cert_add_sign_to_data(a_params->auth_cert, &l_data, &l_data_size,
+                                                       a_params->alice_pub_key, a_params->alice_pub_key_size);
+        }
+        if (l_node_cert) {
+            l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_data, &l_data_size,
+                                                       a_params->alice_pub_key, a_params->alice_pub_key_size);
+        }
     }
     
     // Encode to base64
@@ -574,10 +576,21 @@ static int s_ws_handshake_init(dap_stream_t *a_stream, dap_net_handshake_params_
     size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_data_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
     DAP_DELETE(l_data);
     
+    /* Build node address path segment.
+     * Legacy (protocol_version=0): use the anonymous placeholder. */
+    char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
+    if (a_params->protocol_version && l_client->link_info.node_addr.uint64) {
+        uint64_t l_addr_le = l_client->link_info.node_addr.uint64;
+        size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
+        if (!l_b58_len)
+            dap_strncpy(l_node_addr_b58, "gd4y5yh78w42aaagh", sizeof(l_node_addr_b58) - 1);
+    }
+
     // Build URL with query parameters
     char l_enc_init_url[1024] = { '\0' };
     snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
-                 "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
+                 "/%s" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
+                 l_node_addr_b58,
                  a_params->enc_type, a_params->pkey_exchange_type, a_params->pkey_exchange_size,
                  a_params->block_key_size, a_params->protocol_version, l_sign_count);
     
@@ -1371,13 +1384,10 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     }
     
     // Set CONNECTING flag and initiate connection
-    l_es->flags |= DAP_SOCK_CONNECTING;
-#ifndef DAP_EVENTS_CAPS_IOCP
-    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
-#endif
-    l_es->is_initalized = false; // Ensure new_callback will be called
-    
-    // Initiate connection using platform-independent function
+    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
+#else
     int l_connect_err = 0;
     if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
         log_it(L_ERROR, "Failed to connect WebSocket socket: error %d", l_connect_err);
@@ -1385,6 +1395,8 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
+#endif
+    l_es->is_initalized = false;
     
     // Add socket to worker - connection will complete asynchronously
     dap_worker_add_events_socket(a_params->worker, l_es);

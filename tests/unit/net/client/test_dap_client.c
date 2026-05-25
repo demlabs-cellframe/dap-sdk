@@ -36,7 +36,9 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#ifdef DAP_OS_UNIX
 #include <unistd.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_test.h"

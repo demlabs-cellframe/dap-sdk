@@ -23,8 +23,28 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-#include <strings.h>  // For strcasestr
+#ifndef _WIN32
+#include <strings.h>
+#endif
 #include <openssl/sha.h>
+#include <ctype.h>
+
+#ifdef _WIN32
+static char *strcasestr(const char *a_haystack, const char *a_needle)
+{
+    if(!a_needle[0])
+        return (char *)a_haystack;
+    for(; *a_haystack; a_haystack++)
+    {
+        const char *h = a_haystack, *n = a_needle;
+        for(; *h && *n && tolower((unsigned char)*h) == tolower((unsigned char)*n); h++, n++)
+            ;
+        if(!*n)
+            return (char *)a_haystack;
+    }
+    return NULL;
+}
+#endif
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"

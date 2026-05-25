@@ -127,6 +127,10 @@ extern "C" {
 int dap_client_init();
 void dap_client_deinit();
 
+/** Legacy enc_init: pubkey only, no Dilithium sign (for old cellframe-node master VPN). */
+void dap_client_set_legacy_enc_handshake(bool a_enable);
+bool dap_client_get_legacy_enc_handshake(void);
+
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg);
 
 DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_addr; }

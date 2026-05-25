@@ -65,6 +65,10 @@ typedef struct dap_timerfd {
     void *callback_arg;
 } dap_timerfd_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int dap_timerfd_init();
 dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg);
 dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *callback_arg);
@@ -76,4 +80,8 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd);
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 DWORD dap_del_queuetimer(HANDLE h);
+#endif
+
+#ifdef __cplusplus
+}
 #endif

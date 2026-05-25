@@ -43,9 +43,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.
 # IMPORTANT: Need same dependencies as UDP trans to get all include directories
 # Add dap_client, dap_http_common and other dependencies to ensure all include directories are propagated
 # These dependencies provide transitive include directories for http_server
+if(WIN32)
+    set(DAP_CORE_PLATFORM dap_core_win32)
+else()
+    set(DAP_CORE_PLATFORM dap_core_unix)
+endif()
 dap_link_libraries(${PROJECT_NAME} INTERFACE 
     dap_core 
-    dap_core_unix
+    ${DAP_CORE_PLATFORM}
     dap_io 
     dap_crypto
     dap_http_common

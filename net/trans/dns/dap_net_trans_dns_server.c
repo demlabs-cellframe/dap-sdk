@@ -22,7 +22,9 @@ See more details here <http://www.gnu.org/licenses/>.
 */
 
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"

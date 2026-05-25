@@ -1470,19 +1470,27 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
 {
     if (a_es->server) {
-        // Server-side: unified trans_ctx approach
         dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_es->_inheritor;
         return l_trans_ctx ? l_trans_ctx->stream : NULL;
     } else {
-        // Client-side: dap_client hierarchy
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-        if (l_client) {
-            dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-            dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
-            if (l_tc)
-                return l_tc->stream;
-        }
-        return NULL;
+        if(!l_client)
+            return NULL;
+#ifdef DAP_OS_WINDOWS
+        if(!dap_is_valid_heap_ptr(l_client))
+            return NULL;
+#endif
+        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
+        if(!l_fsm)
+            return NULL;
+#ifdef DAP_OS_WINDOWS
+        if(!dap_is_valid_heap_ptr(l_fsm))
+            return NULL;
+#endif
+        if(l_fsm->is_removing)
+            return NULL;
+        dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
+        return l_tc ? l_tc->stream : NULL;
     }
 }
 
@@ -1517,7 +1525,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
 #ifdef DAP_OS_LINUX
             ioctl(l_es->fd, FIONREAD, &l_pending);
 #endif
-            getsockopt(l_es->fd, SOL_SOCKET, SO_ERROR, &l_sockerr, &l_sockerr_len);
+            getsockopt(l_es->fd, SOL_SOCKET, SO_ERROR, (char *)&l_sockerr, &l_sockerr_len);
             log_it(L_WARNING, "KEEPALIVE_CHECK: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
                    " flags=0x%x pending_in=%d so_err=%d buf_in=%zu buf_out=%zu"
                    " READY_READ=%d read_cb=%p active=%d trans=%p session=%p",
