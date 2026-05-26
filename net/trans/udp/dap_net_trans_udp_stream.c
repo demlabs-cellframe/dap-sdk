@@ -2685,15 +2685,20 @@ static void s_udp_close(dap_stream_t *a_stream)
         debug_if(s_debug_more, L_DEBUG, 
                "UDP close: queueing esocket deletion (UUID 0x%016" PRIx64 ") on its worker",
                a_stream->esocket_uuid);
-        
-        // CRITICAL: Clear callbacks BEFORE async delete to prevent use-after-free!
-        // Esocket may still receive events between now and actual deletion
-        // Setting callbacks to NULL prevents them from accessing freed trans_ctx/stream
+
+        /* Save the UDP worker before clearing it.
+         * dap_client_fsm_delete_unsafe() will delay DAP_DELETE(trans_ctx) until this
+         * worker processes it, ensuring no in-flight read callbacks access freed memory. */
+        l_ctx->esocket_worker = a_stream->esocket_worker;
+
+        /* Setting read_callback = NULL prevents NEW dispatches from the epoll loop on the
+         * UDP worker.  Any callback that is already IN-FLIGHT on that worker will still
+         * complete, but l_ctx->stream == NULL (set below) guards against the stale stream. */
         if (a_stream->esocket) {
             a_stream->esocket->callbacks.read_callback = NULL;
             a_stream->esocket->callbacks.write_callback = NULL;
             a_stream->esocket->callbacks.error_callback = NULL;
-            a_stream->esocket->callbacks.arg = NULL;  // Critical: prevents use-after-free in callbacks
+            /* Keep callbacks.arg intact so delete_callback can access trans_ctx if needed. */
         }
         
         // ALWAYS use _mt method - 100% safe from any thread

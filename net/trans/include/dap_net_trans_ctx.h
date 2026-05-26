@@ -37,4 +37,9 @@ typedef struct dap_net_trans_ctx {
 
     // Higher-level inheritor (e.g., dap_client_trans_ctx_t for client paths)
     void *_inheritor;
+
+    /* Worker that owns the transport esocket (set by UDP transport in s_udp_close).
+     * Used to defer DAP_DELETE(trans_ctx) onto that worker, preventing use-after-free
+     * when a read callback on the esocket worker is in-flight during cleanup. */
+    struct dap_worker *esocket_worker;
 } dap_net_trans_ctx_t;

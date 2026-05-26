@@ -281,6 +281,8 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     return l_fsm;
 }
 
+static void s_deferred_trans_ctx_free(void *a_arg) { DAP_DELETE(a_arg); }
+
 void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
 {
     if (!a_fsm)
@@ -303,7 +305,19 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
     }
     if (a_fsm->trans_ctx) {
         a_fsm->trans_ctx->_inheritor = NULL;
-        DAP_DELETE(a_fsm->trans_ctx);
+        dap_worker_t *l_udp_worker = a_fsm->trans_ctx->esocket_worker;
+        if (l_udp_worker) {
+            /* The UDP esocket lives on l_udp_worker.  Freeing trans_ctx here (FSM worker)
+             * races with any in-flight read callback on l_udp_worker that still holds the
+             * old trans_ctx pointer.  Post the free to l_udp_worker so it runs AFTER:
+             *   (a) dap_events_socket_remove_and_delete_mt() (queued first in s_udp_close)
+             *   (b) any in-flight callback for that esocket (worker is single-threaded)
+             * Both guarantees follow from the FIFO ordering of the worker's task queue. */
+            a_fsm->trans_ctx->esocket_worker = NULL;
+            dap_worker_exec_callback_on(l_udp_worker, s_deferred_trans_ctx_free, a_fsm->trans_ctx);
+        } else {
+            DAP_DELETE(a_fsm->trans_ctx);
+        }
         a_fsm->trans_ctx = NULL;
     }
 
