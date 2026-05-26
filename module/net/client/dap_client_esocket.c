@@ -195,16 +195,28 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
 {
     debug_if(s_debug_more, L_DEBUG, "Handshake callback: stream=%p, data=%p, size=%zu, error=%d",
            a_stream, a_data, a_data_size, a_error);
-    
+
     if (!a_stream)
         return;
-    
+
     dap_client_t *l_client = NULL;
     if (a_stream->trans && a_stream->trans->ops && a_stream->trans->ops->get_client_context)
         l_client = (dap_client_t *)a_stream->trans->ops->get_client_context(a_stream);
     else {
-        if (!a_stream->trans_ctx || !a_stream->trans_ctx->_inheritor)
+        if (!a_stream->trans_ctx || !a_stream->trans_ctx->_inheritor) {
+            // Defensive: stream is fully constructed but the FSM<->stream back-
+            // reference was never wired (or has already been torn down). Bailing
+            // silently here used to mask a real bug — handshake responses with
+            // size>0 would arrive into a stream whose _inheritor was NULL
+            // (HTTP trans has no get_client_context override and stage_prepare
+            // never sets it), so the FSM was never notified and the connection
+            // hung in STAGE_ENC. The actual link is now established in
+            // s_worker_execute_enc_init_io right after stage_prepare; keep the
+            // warning so any future regression of that wiring is loud.
+            log_it(L_ERROR, "Handshake callback: stream=%p has no _inheritor; "
+                            "FSM will not be notified (transport wiring regression?)", a_stream);
             return;
+        }
         dap_client_trans_ctx_t *l_ctc = (dap_client_trans_ctx_t *)a_stream->trans_ctx->_inheritor;
         l_client = l_ctc->client;
     }
