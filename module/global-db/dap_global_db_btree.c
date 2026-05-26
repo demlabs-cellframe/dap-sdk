@@ -2047,8 +2047,21 @@ dap_global_db_t *dap_global_db_create(const char *a_filepath)
     // levels of recursion: each level uses ~1 page + overhead.
     l_tree->arena = dap_arena_new(DAP_GLOBAL_DB_PAGE_SIZE * 32);
 
-    // Initialize reader-writer lock for thread safety (Phase 3 compat)
-    pthread_rwlock_init(&l_tree->lock, NULL);
+    // Initialize reader-writer lock for thread safety (Phase 3 compat).
+    // CRITICAL: default glibc rwlock prefers readers, which starves writers
+    // when high-frequency readers (e.g., the network balancer scanning
+    // nodes.list every second) coexist with low-frequency writers
+    // (e.g., `node add`). Use writer-preference to guarantee writer progress.
+    {
+        pthread_rwlockattr_t l_attr;
+        pthread_rwlockattr_init(&l_attr);
+#ifdef __GLIBC__
+        pthread_rwlockattr_setkind_np(&l_attr,
+            PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+#endif
+        pthread_rwlock_init(&l_tree->lock, &l_attr);
+        pthread_rwlockattr_destroy(&l_attr);
+    }
 
     // Initialize MVCC state
     atomic_store(&l_tree->mvcc_root, l_tree->header.root_page);
@@ -2146,8 +2159,18 @@ dap_global_db_t *dap_global_db_open(const char *a_filepath, bool a_read_only)
     // Arena for temporary allocations during write path
     l_tree->arena = dap_arena_new(DAP_GLOBAL_DB_PAGE_SIZE * 32);
 
-    // Initialize reader-writer lock for thread safety (Phase 3 compat)
-    pthread_rwlock_init(&l_tree->lock, NULL);
+    // Initialize reader-writer lock for thread safety (Phase 3 compat).
+    // See companion init site in dap_global_db_create for rationale.
+    {
+        pthread_rwlockattr_t l_attr;
+        pthread_rwlockattr_init(&l_attr);
+#ifdef __GLIBC__
+        pthread_rwlockattr_setkind_np(&l_attr,
+            PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+#endif
+        pthread_rwlock_init(&l_tree->lock, &l_attr);
+        pthread_rwlockattr_destroy(&l_attr);
+    }
 
     // Initialize MVCC state from on-disk header
     atomic_store(&l_tree->mvcc_root, l_tree->header.root_page);
@@ -5655,10 +5678,14 @@ static uint64_t s_count_at_root_impl(dap_global_db_t *a_tree, uint64_t a_root, i
 
 uint64_t dap_global_db_count_at_root(dap_global_db_t *a_tree, uint64_t a_root)
 {
-    // Read tree_height under lock to avoid TSan race with writers
-    pthread_rwlock_rdlock(&a_tree->lock);
+    // NOTE: tree_height is read WITHOUT acquiring a_tree->lock. All real
+    // call sites (s_mvcc_commit, dap_global_db_verify) invoke this helper
+    // while already holding the write lock, so a nested rdlock here is
+    // undefined behavior per POSIX and outright deadlocks with the
+    // PREFER_WRITER_NONRECURSIVE attribute we use. tree_height is mutated
+    // only under the same write lock that surrounds every caller, so no
+    // additional synchronization is required at this point.
     int l_max_depth = (int)a_tree->header.tree_height + 2;
-    pthread_rwlock_unlock(&a_tree->lock);
     if (l_max_depth < 4) l_max_depth = 4;
     return s_count_at_root_impl(a_tree, a_root, l_max_depth);
 }
