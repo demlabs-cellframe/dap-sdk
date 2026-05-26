@@ -1388,6 +1388,20 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_FILE:
                         l_bytes_sent = write(l_cur->fd, (char *) (l_cur->buf_out), l_cur->buf_out_size );
                         l_errno = errno;
+                        /* TUN/PIPE does not support edge-triggered EPOLLOUT: the kernel never
+                         * re-arms the event after EAGAIN, so epoll_wait keeps returning
+                         * EPOLLOUT immediately on every iteration — a busy-spin that blocks
+                         * all other I/O on this worker thread.
+                         * When write() returns EAGAIN here we must drop the pending packet
+                         * and clear EPOLLOUT ourselves.  Dropping is safe: the VPN data
+                         * stream is reliable TCP; upper-level retransmission will recover. */
+                        if (l_bytes_sent < 0 && (l_errno == EAGAIN || l_errno == EWOULDBLOCK)) {
+                            log_it(L_WARNING, "TUN/PIPE fd=%d write EAGAIN — dropping %zu bytes to avoid busy loop",
+                                   l_cur->fd, l_cur->buf_out_size);
+                            l_cur->buf_out_size = 0;
+                            dap_events_socket_set_writable_unsafe(l_cur, false);
+                            l_bytes_sent = 0;
+                        }
                     break;
                     default:
                         log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" is not SOCKET, PIPE or FILE but has WRITE state on. Switching it off", l_cur->socket);
