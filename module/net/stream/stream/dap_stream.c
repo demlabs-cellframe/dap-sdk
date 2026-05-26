@@ -262,6 +262,11 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_clust
         l_ret->trans_ctx->esocket_uuid = a_esocket->uuid;
         l_ret->trans_ctx->esocket_worker = a_esocket->worker;
         l_ret->trans_ctx->stream = l_ret;  // Back-reference
+        // _inheritor is left NULL on purpose: only the FSM layer knows the
+        // FSM-internal dap_client_trans_ctx_t* that the various
+        // s_*_callback_wrapper functions cast _inheritor to. The wiring is
+        // done in s_worker_execute_enc_init_io() right after stage_prepare
+        // returns the stream.
         // Cache remote address for cross-thread access (safe snapshot)
         dap_strncpy(l_ret->trans_ctx->remote_addr_str, a_esocket->remote_addr_str, sizeof(l_ret->trans_ctx->remote_addr_str) - 1);
         l_ret->trans_ctx->remote_port = a_esocket->remote_port;

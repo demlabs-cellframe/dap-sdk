@@ -1176,13 +1176,16 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     l_tc->stream = l_prepare_result.stream;
     l_tc->transport_priv = l_prepare_result.esocket;
 
-    // Wire the freshly-created stream's per-stream trans_ctx back to the FSM's
-    // client_trans_ctx so handshake/session/stream callbacks can recover the
-    // owning dap_client_t via stream->trans_ctx->_inheritor on transports that
-    // do not implement ops->get_client_context (HTTP). Without this link the
-    // wrapper silently returns without notifying the FSM and the connection
-    // hangs forever in STAGE_ENC waiting for a DONE that never arrives.
-    if (l_tc->stream->trans_ctx && !l_tc->stream->trans_ctx->_inheritor)
+    // Stream's per-stream trans_ctx->_inheritor MUST point to our FSM's
+    // dap_client_trans_ctx_t: every s_*_callback_wrapper in dap_client_esocket.c
+    // casts it to that exact type to recover the owning dap_client_t for
+    // transports without ops->get_client_context() (HTTP). This is the only
+    // layer that owns client_trans_ctx, so the wiring belongs here and
+    // nowhere else (the transport doesn't and must not know about FSM types).
+    // Note: must be unconditional — stage_prepare may run more than once per
+    // lifetime (reconnect, transport fallback) and would otherwise leave a
+    // stale pointer from a previous attempt.
+    if (l_tc->stream->trans_ctx)
         l_tc->stream->trans_ctx->_inheritor = l_fsm->client_trans_ctx;
 
     // Handshake init: async IO, transport callback will notify FSM
