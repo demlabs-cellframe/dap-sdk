@@ -252,6 +252,20 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         if (dap_cluster_node_addr_is_blank(&l_current_link))
             break;
         dap_list_t *l_groups = dap_global_db_get_groups_by_mask(l_cluster->groups_mask);
+        // For an explicit (non-wildcard) cluster mask, initiate sync even when
+        // the local group does not exist yet. Without this, a fresh node that
+        // has never written into the group (e.g. MASTER for
+        // confcall-stagenet.nodes.list) never sends START, the peer never
+        // replies with HASHES, and the group stays empty forever
+        // (chicken-and-egg: GDB sync wants a local group, but the local group
+        // is only created on first write — which itself only comes through
+        // sync). Sending START with last_hash=blank makes the peer dump
+        // everything it has for that exact group, which is what we need on
+        // bootstrap. The "bootstrap" entry is flagged so the loop below skips
+        // the empty-group filter for it only.
+        bool l_bootstrap_literal = !l_groups && !strpbrk(l_cluster->groups_mask, "*?[");
+        if (l_bootstrap_literal)
+            l_groups = dap_list_append(NULL, dap_strdup(l_cluster->groups_mask));
         if (!l_groups) {
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
             l_cluster->sync_context.stage_last_activity = dap_time_now();
@@ -260,7 +274,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         l_cluster->sync_context.current_link = l_current_link;
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
-            if (!dap_global_db_group_count(it->data, true))
+            if (!l_bootstrap_literal && !dap_global_db_group_count(it->data, true))
                 continue;
             size_t l_group_len = dap_strlen(it->data) + 1;
             size_t l_pkt_total = DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE + l_group_len;
