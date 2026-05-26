@@ -694,10 +694,26 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: searching for duplicate");
     dap_ht_find(s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
-        log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
-        return -1;
+        // A duplicate is almost always a reconnect: peer's previous stream
+        // hasn't been torn down yet (esocket may already be closed but the
+        // close-event hasn't been processed) and a new one already landed.
+        // The original code simply refused to add the new stream, so
+        // dap_stream_find_by_addr() kept returning the dead esocket uuid
+        // forever — ANNOUNCE / pkt_send_by_addr packets vanished and
+        // active link count stayed at 0 even though peers were happily
+        // re-connecting every ~6s. Replace the stale entry with the fresh
+        // one so subsequent lookups hit a live esocket; the old stream is
+        // still tracked in s_streams and will be cleaned up by its own
+        // delete path (dap_stream_delete_from_list already tolerates a
+        // primary=false old entry).
+        log_it(L_INFO, "Stream duplicate for node "NODE_ADDR_FP_STR
+                       " - replacing stale primary %p with fresh %p",
+                       NODE_ADDR_FP_ARGS_S(a_stream->node),
+                       (void*)l_double, (void*)a_stream);
+        l_double->primary = false;
+        dap_ht_del(s_authorized_streams, l_double);
     }
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: no duplicate found, setting primary=true");
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: setting primary=true");
     a_stream->primary = true;
     debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: adding to hash table");
     dap_ht_add_keyptr(s_authorized_streams, &a_stream->node, sizeof(a_stream->node), a_stream);
