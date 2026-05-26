@@ -105,8 +105,21 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
         l_ret = dap_global_db_driver_sqlite_init(l_db_path_ext, &s_drv_callback);
 #endif
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
-    else if(!dap_strcmp(s_used_driver, "mdbx"))
+    else if(!dap_strcmp(s_used_driver, "mdbx")) {
         l_ret = dap_global_db_driver_mdbx_init(l_db_path_ext, &s_drv_callback);
+#ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
+        if (l_ret) {
+            log_it(L_WARNING, "MDBX driver init failed (code %d), falling back to SQLite", l_ret);
+            s_drv_callback = (dap_global_db_driver_callbacks_t){ };
+            dap_strncpy(s_used_driver, "sqlite", sizeof(s_used_driver) - 1);
+            char l_sqlite_path[strlen(a_filename_db) + sizeof("/gdb-sqlite")];
+            snprintf(l_sqlite_path, sizeof(l_sqlite_path), "%s/gdb-sqlite", a_filename_db);
+            l_ret = dap_global_db_driver_sqlite_init(l_sqlite_path, &s_drv_callback);
+            if (!l_ret)
+                log_it(L_NOTICE, "Successfully fell back to SQLite driver");
+        }
+#endif
+    }
 #endif
 
 #ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
@@ -142,6 +155,15 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
         log_it(L_ERROR, "Unknown global_db driver \"%s\"", a_driver_name);
 
     return l_ret;
+}
+
+/**
+ * @brief Returns the name of the currently active database driver.
+ * @return A pointer to the static driver name string (e.g. "mdbx", "sqlite").
+ */
+const char *dap_global_db_driver_get_name(void)
+{
+    return s_used_driver;
 }
 
 /**

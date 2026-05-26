@@ -3,6 +3,7 @@ project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(CheckFunctionExists)
+option(DAP_MANAGE_CFLAGS "Let dap-sdk manage compiler and linker flags internally" ON)
 include(cmake/OS_Detection.cmake)
 # Include LibraryHelpers for object library creation
 # This must be included early to override target_link_libraries
@@ -45,15 +46,18 @@ if(USE_LIBBSD_EXPLICIT_BZERO)
 endif()
 
 if (NOT DEFINED DAP_VERSION)
-    set(DAP_VERSION "0.0-1")
+    set(DAP_VERSION "0.0.0")
+    message(STATUS "DAP_VERSION is not defined, using default: ${DAP_VERSION}")
 endif()
 
 if (NOT DEFINED BUILD_TS)
-    set(BUILD_TS "0")
+    string(TIMESTAMP BUILD_TS "%s" UTC)
+    message(STATUS "BUILD_TS is not defined, using current timestamp: ${BUILD_TS}")
 endif()
 
 if (NOT DEFINED BUILD_HASH)
-    set(BUILD_HASH "0")
+    set(BUILD_HASH "unknown")
+    message(STATUS "BUILD_HASH is not defined, using default: ${BUILD_HASH}")
 endif()
 
 add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")
@@ -284,7 +288,6 @@ if(ENABLE_CPPCHECK_ANALYSIS)
                 --suppress=*:_deps/*
                 ${CMAKE_SOURCE_DIR}/core
                 ${CMAKE_SOURCE_DIR}/crypto
-                ${CMAKE_SOURCE_DIR}/examples
                 ${CMAKE_SOURCE_DIR}/global-db
                 ${CMAKE_SOURCE_DIR}/io
                 ${CMAKE_SOURCE_DIR}/net

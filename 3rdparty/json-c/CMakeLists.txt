@@ -1,5 +1,4 @@
-# CMake 3.10 is required for modern CMake features
-# Updated from 3.9 to avoid deprecation warnings
+# CMake 3.10 is the minimum required by the parent project
 cmake_minimum_required(VERSION 3.10)
 
 # The project() command manages VERSION variables.
@@ -195,12 +194,7 @@ endif()
 # https://github.com/ffainelli/uClibc/blob/266bdc1/libc/misc/locale/locale.c#L1322
 # So, if it looks like we're compiling for a system like that just disable 
 # locale handling entirely.
-execute_process(
-    COMMAND ${CMAKE_C_COMPILER} -dumpmachine
-    OUTPUT_VARIABLE CMAKE_GNU_C_MACHINE
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
+execute_process(COMMAND ${CMAKE_C_COMPILER} -dumpmachine OUTPUT_VARIABLE CMAKE_GNU_C_MACHINE OUTPUT_STRIP_TRAILING_WHITESPACE)
 if (CMAKE_GNU_C_MACHINE MATCHES "uclibc")
 	message(STATUS "Detected uClibc compiler, disabling locale handling")
 	set(HAVE_SETLOCALE 0)
