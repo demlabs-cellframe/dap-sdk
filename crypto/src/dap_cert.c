@@ -67,7 +67,6 @@ typedef struct dap_cert_pvt
 
 static dap_cert_item_t * s_certs = NULL;
 static UT_array *s_cert_folders = NULL;
-static bool s_debug_more = false;
 
 /**
  * @brief dap_cert_init empty stub for certificate init

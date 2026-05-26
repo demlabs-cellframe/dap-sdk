@@ -382,6 +382,37 @@ static void s_es_reassign(dap_context_t *a_c, OVERLAPPED *a_ol) {
         dap_events_socket_reassign_between_workers_unsafe(a_es, l_new_worker);
 }
 
+// int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size) {
+//     queue_entry_t *l_entry = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(queue_entry_t));
+//     *l_entry = (queue_entry_t) {
+//         .size = a_size,
+//         .data = a_size ? DAP_DUP_SIZE((char*)a_data, a_size) : (void*)a_data
+//     };
+//     if (g_debug_reactor) {
+//         if (a_size)
+//             log_it(L_DEBUG, "Enqueue %zu bytes into "DAP_FORMAT_ESOCKET_UUID, a_size, a_es->uuid);
+//         else
+//             log_it(L_DEBUG, "Enqueue ptr %p into "DAP_FORMAT_ESOCKET_UUID, a_data, a_es->uuid);
+//     }
+//     return InterlockedPushEntrySList((PSLIST_HEADER)a_es->buf_out, &(l_entry->entry))
+//         ? a_size : PostQueuedCompletionStatus(a_es->context->iocp, a_size, (ULONG_PTR)a_es, NULL)
+//             ? a_size : ( DAP_ALFREE(l_entry), log_it(L_ERROR, "Enqueue into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %d",
+//                                                               a_es->uuid, GetLastError()), 0 );
+// }
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+
+int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+{
+    if (!a_es)
+        return -1;
+    if (a_size != 0) {
+        log_it(L_ERROR, "pipe2 queue supports pointer-only sends (a_size must be 0)");
+        return -1;
+    }
+    ssize_t ret = write(a_es->fd2, &a_data, sizeof(void *));
+    return ret == (ssize_t)sizeof(void *) ? 0 : -1;
+}
+
 #endif
 
 /*

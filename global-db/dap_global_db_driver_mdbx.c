@@ -941,7 +941,6 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
     int rc;
     dap_db_ctx_t *l_db_ctx = NULL;
     MDBX_txn *l_txn = s_txn;
-    dap_global_db_pkt_pack_t *l_ret = NULL;
 
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;

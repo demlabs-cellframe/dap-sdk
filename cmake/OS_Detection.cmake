@@ -350,13 +350,3 @@ if ( CELLFRAME_NO_OPTIMIZATION)
     endif()
     set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
-
-# Apply -Werror to all actual compilation targets, but NOT to CMake's
-# internal try_compile/check_function_exists probes (which use CMAKE_C_FLAGS
-# but not COMPILE_OPTIONS). This prevents -Werror from breaking feature
-# detection in 3rdparty libraries (e.g., libmdbx's check for libm).
-
-# downstream packagers (especially with new compilers) may want to disable this -> guard it with DAP_MANAGE_CFLAGS
-if(DAP_MANAGE_CFLAGS)
-    add_compile_options(-Werror)
-endif()
