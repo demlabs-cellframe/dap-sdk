@@ -1035,7 +1035,8 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 {
     UNUSED(a_worker);
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream)
+        return;  /* _inheritor already NULL — stream was cleaned up in dap_stream_delete_unsafe */
     s_stream_delete_from_list(l_stream);
     if (l_stream->keepalive_timer) {
         dap_timerfd_t *l_timer = l_stream->keepalive_timer;
