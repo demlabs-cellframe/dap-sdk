@@ -56,6 +56,10 @@ typedef struct dap_client_fsm {
     dap_client_trans_ctx_t *client_trans_ctx; // IO-context in trans_ctx._inheritor
     dap_worker_t *worker;             // Worker for IO dispatch
 
+    /* Convenience shortcut: mirrors trans_ctx->esocket.
+     * Kept for cellframe-sdk compatibility; updated alongside trans_ctx. */
+    dap_events_socket_t *esocket;
+
     // FSM state (modified only from bound FSM thread)
     dap_client_stage_t stage;
     dap_client_stage_status_t stage_status;

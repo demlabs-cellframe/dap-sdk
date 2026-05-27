@@ -13,6 +13,11 @@ typedef struct dap_net_trans_ctx {
     dap_stream_t *stream;        // Owned stream (trans_ctx owns stream lifecycle)
     dap_http_client_t *http_client; // HTTP client (for HTTP path cleanup, NULL for UDP/DNS)
 
+    /* Convenience pointer to the stream's underlying event socket.
+     * Equals stream->esocket after connection; kept for legacy cellframe-sdk compatibility.
+     * Updated by s_stream_new() and cleared in s_esocket_callback_delete(). */
+    dap_events_socket_t *esocket;
+
     // Encryption ctx (canonical key storage)
     dap_enc_key_t *session_key_open; // Asymmetric key exchange (KEM)
     dap_enc_key_t *session_key;      // Symmetric session key

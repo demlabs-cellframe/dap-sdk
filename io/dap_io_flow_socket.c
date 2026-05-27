@@ -766,7 +766,29 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             close(l_socket);
             return -4;
         }
-        
+
+        // For UDP sockets: set large receive/send buffers to handle high-throughput bursts.
+        // DNS/UDP transports may receive 1000+ datagrams in rapid succession; the default
+        // kernel receive buffer (~208 KB) holds only ~200 packets and silently drops the rest.
+        // We request 16 MB (SO_RCVBUFFORCE bypasses rmem_max and requires CAP_NET_ADMIN/root).
+        if (a_socket_type == SOCK_DGRAM) {
+            int l_udp_buf = 16 * 1024 * 1024; // 16 MB
+#if defined(__linux__) && defined(SO_RCVBUFFORCE)
+            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUFFORCE, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+#endif
+            {
+                if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+                    log_it(L_WARNING, "UDP recv buffer setsockopt failed: %s", strerror(errno));
+            }
+#if defined(__linux__) && defined(SO_SNDBUFFORCE)
+            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUFFORCE, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+#endif
+            {
+                if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+                    log_it(L_WARNING, "UDP send buffer setsockopt failed: %s", strerror(errno));
+            }
+        }
+
         // Get actual bound port (if port was 0, kernel assigns ephemeral port)
         // CRITICAL: Update l_shared_port so subsequent sockets bind to SAME port!
         uint16_t l_actual_port = l_shared_port;

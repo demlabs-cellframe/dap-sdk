@@ -293,32 +293,40 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
     a_fsm->is_removing = true;
     a_fsm->worker = NULL;
 
-    // Detach FSM from client so DAP_CLIENT_FSM() returns NULL on stale references
-    if(a_fsm->client)
-        a_fsm->client->_internal = NULL;
-
     dap_client_fsm_unregister(a_fsm);
 
+    /* Clean up transport and stream FIRST, while client->_internal still points to this
+     * FSM so that dap_client_trans_ctx_clean_unsafe can reach l_fsm->trans_ctx->stream
+     * and call dap_stream_delete_unsafe on it.  The is_removing flag above guards against
+     * any callbacks that access the FSM during this cleanup. */
     if (a_fsm->client_trans_ctx) {
         dap_client_trans_ctx_delete_unsafe(a_fsm->client_trans_ctx);
         a_fsm->client_trans_ctx = NULL;
     }
+
+    /* Detach FSM from client only AFTER trans_ctx cleanup so that DAP_CLIENT_FSM() on
+     * stale esocket references returns NULL from this point forward. */
+    if (a_fsm->client)
+        a_fsm->client->_internal = NULL;
+
     if (a_fsm->trans_ctx) {
         a_fsm->trans_ctx->_inheritor = NULL;
         dap_worker_t *l_udp_worker = a_fsm->trans_ctx->esocket_worker;
         if (l_udp_worker) {
-            /* The UDP esocket lives on l_udp_worker.  Freeing trans_ctx here (FSM worker)
-             * races with any in-flight read callback on l_udp_worker that still holds the
-             * old trans_ctx pointer.  Post the free to l_udp_worker so it runs AFTER:
-             *   (a) dap_events_socket_remove_and_delete_mt() (queued first in s_udp_close)
-             *   (b) any in-flight callback for that esocket (worker is single-threaded)
-             * Both guarantees follow from the FIFO ordering of the worker's task queue. */
+            /* s_udp_close already cleared callbacks.read_callback = NULL on the esocket,
+             * so no new read callbacks can fire after this point.  We still defer the free
+             * to avoid freeing trans_ctx before any read callback already in-flight (already
+             * dispatched by epoll but not yet executed) on the worker finishes: those
+             * callbacks check l_trans_ctx->stream == NULL and return early, but only if the
+             * trans_ctx struct itself is still valid memory.  Deferring to the same worker
+             * serialises the free after all pending events on that worker complete. */
             a_fsm->trans_ctx->esocket_worker = NULL;
             dap_worker_exec_callback_on(l_udp_worker, s_deferred_trans_ctx_free, a_fsm->trans_ctx);
         } else {
             DAP_DELETE(a_fsm->trans_ctx);
         }
         a_fsm->trans_ctx = NULL;
+        a_fsm->esocket   = NULL;
     }
 
     DAP_DEL_Z(a_fsm->tried_transports);
@@ -824,6 +832,8 @@ static void s_worker_execute_stage(void *a_arg)
             l_tc->stream->esocket = l_prepare_result.esocket;
             l_tc->stream->esocket_uuid = l_prepare_result.esocket->uuid;
             l_tc->stream->esocket_worker = l_prepare_result.esocket->worker;
+            l_tc->esocket = l_prepare_result.esocket;    /* fsm convenience accessor */
+            l_fsm->esocket  = l_prepare_result.esocket;
         }
         l_prepare_result.stream->client_stream_ref = &l_tc->stream;
 
@@ -1248,6 +1258,8 @@ static void s_worker_execute_enc_init_io(void *a_arg)
         l_tc->stream->esocket = l_prepare_result.esocket;
         l_tc->stream->esocket_uuid = l_prepare_result.esocket->uuid;
         l_tc->stream->esocket_worker = l_prepare_result.esocket->worker;
+        l_tc->esocket = l_prepare_result.esocket;    /* fsm convenience accessor */
+        l_fsm->esocket  = l_prepare_result.esocket;
     }
     l_prepare_result.stream->client_stream_ref = &l_tc->stream;
 

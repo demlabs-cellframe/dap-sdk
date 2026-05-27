@@ -335,6 +335,7 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
     if ( !(l_es = DAP_NEW_Z( dap_events_socket_t )) )                   /* Allocate memory for new dap_events_socket context and the record */
         return  log_it(L_CRITICAL, "Cannot allocate memory for <dap_events_socket> context, errno=%d", errno), NULL;                                                /* Fill new track record */
     l_es->uuid = dap_new_es_id();
+    l_es->stream_es = l_es;   /* legacy self-reference for cellframe-sdk compat */
 #ifdef DAP_SYS_DEBUG
     pthread_rwlock_wrlock(&s_evsocks_lock);                             /* Add new record into the hash table */
     HASH_ADD(hh2, s_esockets, uuid, sizeof(l_es->uuid), l_es);

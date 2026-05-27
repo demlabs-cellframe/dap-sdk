@@ -50,6 +50,7 @@
 #include "rand/dap_rand.h"
 #include "dap_timerfd.h"
 #include "dap_worker.h"
+#include "dap_context.h"
 #include "dap_events_socket.h"
 #include "dap_net.h"
 #include "dap_client.h"
@@ -320,10 +321,13 @@ static void s_ws_deinit(dap_net_trans_t *a_trans)
     dap_net_trans_websocket_private_t *l_priv = 
         (dap_net_trans_websocket_private_t*)a_trans->_inheritor;
 
-    // Stop ping timer
+    // Stop ping timer (atomic exchange pattern, same as s_ws_close)
     if (l_priv->ping_timer) {
-        dap_timerfd_delete_mt(l_priv->ping_timer->worker, l_priv->ping_timer->esocket_uuid);
+        dap_timerfd_t *l_timer = l_priv->ping_timer;
         l_priv->ping_timer = NULL;
+        void *l_arg = __atomic_exchange_n(&l_timer->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
+        dap_timerfd_delete_mt(l_timer->worker, l_timer->esocket_uuid);
+        DAP_DELETE(l_arg);
     }
 
     // Free buffers
@@ -1053,10 +1057,20 @@ static ssize_t s_ws_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
             log_it(L_INFO, "WebSocket upgrade successful (101 Switching Protocols)");
             l_priv->state = DAP_WS_STATE_OPEN;
 
-            // Start ping timer now that we're connected
+            // Start ping timer now that we're connected.
+            // Pass a heap-allocated copy of the esocket UUID as callback_arg (UUID approach,
+            // same as keepalive timer) — the callback looks up the esocket dynamically, which
+            // is safe even if the stream is freed by the time the timer fires.
             if (l_priv->config.ping_interval_ms > 0 && l_es->worker) {
-                l_priv->ping_timer = dap_timerfd_start_on_worker(l_es->worker,
-                    l_priv->config.ping_interval_ms, s_ws_ping_timer_callback, a_stream);
+                dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
+                if (l_es_uuid) {
+                    *l_es_uuid = l_es->uuid;
+                    l_priv->ping_timer = dap_timerfd_start_on_worker(l_es->worker,
+                        l_priv->config.ping_interval_ms, s_ws_ping_timer_callback, l_es_uuid);
+                    if (!l_priv->ping_timer) {
+                        DAP_DELETE(l_es_uuid);
+                    }
+                }
             }
 
             // Fire deferred session_start callback now that upgrade is complete
@@ -1301,10 +1315,17 @@ static void s_ws_close(dap_stream_t *a_stream)
         dap_net_trans_websocket_send_close(a_stream, DAP_WS_CLOSE_NORMAL, "Connection closed");
     }
 
-    // Stop ping timer
+    // Stop ping timer.
+    // Atomically exchange callback_arg → NULL before scheduling async delete so that
+    // if the timer fires between now and when the deletion message is processed it will
+    // read NULL and return false immediately.  Then free the heap-allocated UUID that
+    // was stored as callback_arg (UUID approach, same as keepalive timer).
     if (l_priv->ping_timer) {
-        dap_timerfd_delete_mt(l_priv->ping_timer->worker, l_priv->ping_timer->esocket_uuid);
+        dap_timerfd_t *l_timer = l_priv->ping_timer;
         l_priv->ping_timer = NULL;
+        void *l_arg = __atomic_exchange_n(&l_timer->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
+        dap_timerfd_delete_mt(l_timer->worker, l_timer->esocket_uuid);
+        DAP_DELETE(l_arg);
     }
 
     // Fire pending callback if close happened before upgrade completed
@@ -1636,22 +1657,46 @@ static void s_ws_mask_unmask(uint8_t *a_data, size_t a_size, uint32_t a_mask_key
 /**
  * @brief Ping timer callback — fires every ping_interval_ms.
  *
- * Before sending a new ping, checks whether the previous ping received a pong.
- * If pong was not received within one full ping cycle, the connection is dead.
+ * Uses UUID-based esocket lookup (same pattern as s_callback_keepalive) so the
+ * callback is safe even if the stream or its private data was freed between the
+ * time the timer was armed and when it fires.
+ *
+ * callback_arg is a heap-allocated dap_events_socket_uuid_t.  When the timer is
+ * stopped (s_ws_close / s_ws_deinit) the UUID is freed and callback_arg is
+ * atomically set to NULL, so a concurrently-firing callback sees NULL and exits.
+ * When the esocket has already been removed from the context (connection gone),
+ * dap_context_find returns NULL, the UUID is freed here, and we return false to
+ * cancel the timer.
  */
 static bool s_ws_ping_timer_callback(void *a_user_data)
 {
-    dap_stream_t *l_stream = (dap_stream_t*)a_user_data;
+    dap_events_socket_uuid_t *l_es_uuid = (dap_events_socket_uuid_t*)a_user_data;
+    if (!l_es_uuid)
+        return false;
+
+    dap_worker_t *l_worker = dap_worker_get_current();
+    if (!l_worker)
+        return false;
+
+    dap_events_socket_t *l_es = dap_context_find(l_worker->context, *l_es_uuid);
+    if (!l_es) {
+        /* Esocket is gone — free UUID and cancel timer */
+        DAP_DELETE(l_es_uuid);
+        return false;
+    }
+
+    dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
     if (!l_stream) {
+        /* Stream detached or being removed — stop firing but keep UUID alive;
+         * it will be freed when the timer is finally deleted via s_ws_close. */
         return false;
     }
 
     dap_net_trans_websocket_private_t *l_priv = s_get_private_from_stream(l_stream);
-    if (!l_priv || l_priv->state != DAP_WS_STATE_OPEN) {
+    if (!l_priv || l_priv->state != DAP_WS_STATE_OPEN)
         return false;
-    }
 
-    int64_t l_now = time(NULL) * 1000;
+    int64_t l_now = (int64_t)time(NULL) * 1000;
 
     // If a ping was already sent, verify that a pong was received for it
     if (l_priv->last_ping_sent_time > 0 &&

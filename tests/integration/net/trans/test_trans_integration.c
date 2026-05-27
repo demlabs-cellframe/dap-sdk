@@ -21,6 +21,9 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
+#ifdef __linux__
+#include <fcntl.h>
+#endif
 
 // DAP SDK headers
 #include "dap_common.h"
@@ -111,7 +114,7 @@ const trans_test_config_t g_trans_configs[] = {
     {DAP_NET_TRANS_HTTP, "HTTP", 18101, "127.0.0.1"},
     {DAP_NET_TRANS_WEBSOCKET, "WebSocket", 18102, "127.0.0.1"},
     {DAP_NET_TRANS_UDP_BASIC, "UDP", 18103, "127.0.0.1"},
-    {DAP_NET_TRANS_DNS_TUNNEL, "DNS", 18104, "127.0.0.1"},
+    {DAP_NET_TRANS_DNS_TUNNEL, "DNS", 18120, "127.0.0.1"},
 };
 
 // Define count as compile-time constant for use in array declarations
@@ -1511,6 +1514,25 @@ int main(int argc, char **argv)
 {
     // Parse command line arguments
     s_parse_args(argc, argv);
+
+    // Increase UDP kernel receive/send buffer limits so high-throughput DNS tests
+    // (1 MB data burst ≈ 1061 × 1045-byte datagrams) don't lose packets.
+    // Default rmem_max ≈ 208 KB holds only ~200 packets; we need ~16 MB.
+    // This write requires root / CAP_NET_ADMIN and silently fails otherwise.
+#if defined(__linux__) || defined(__linux)
+    {
+        const char l_buf_val[] = "16777216\n"; // 16 MB
+        int l_fd;
+        l_fd = open("/proc/sys/net/core/rmem_max", O_WRONLY);
+        if (l_fd >= 0) { write(l_fd, l_buf_val, sizeof(l_buf_val) - 1); close(l_fd); }
+        l_fd = open("/proc/sys/net/core/wmem_max", O_WRONLY);
+        if (l_fd >= 0) { write(l_fd, l_buf_val, sizeof(l_buf_val) - 1); close(l_fd); }
+        l_fd = open("/proc/sys/net/core/rmem_default", O_WRONLY);
+        if (l_fd >= 0) { write(l_fd, l_buf_val, sizeof(l_buf_val) - 1); close(l_fd); }
+        l_fd = open("/proc/sys/net/core/wmem_default", O_WRONLY);
+        if (l_fd >= 0) { write(l_fd, l_buf_val, sizeof(l_buf_val) - 1); close(l_fd); }
+    }
+#endif
     
     // Create minimal config file for tests
     const char *config_content = "[resources]\n"

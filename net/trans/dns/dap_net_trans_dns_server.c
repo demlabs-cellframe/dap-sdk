@@ -131,7 +131,8 @@ dap_net_trans_dns_server_t *dap_net_trans_dns_server_new(const char *a_server_na
 
     dap_strncpy(l_dns_server->server_name, a_server_name, sizeof(l_dns_server->server_name) - 1);
     l_dns_server->sessions = NULL;
-    
+    pthread_mutex_init(&l_dns_server->sessions_lock, NULL);
+
     l_dns_server->trans = DAP_NEW_Z(dap_net_trans_t);
     if (!l_dns_server->trans) {
         log_it(L_CRITICAL, "Cannot allocate DNS server trans");
@@ -206,6 +207,8 @@ void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
         return;
 
     dns_server_client_session_t *l_session, *l_tmp;
+
+    pthread_mutex_lock(&a_dns_server->sessions_lock);
     HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
         if (l_session->stream) {
             l_session->stream->esocket = NULL;
@@ -215,14 +218,17 @@ void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
         if (l_session->stream)
             l_session->stream->trans_ctx = NULL;
     }
+    pthread_mutex_unlock(&a_dns_server->sessions_lock);
 
     if (a_dns_server->server) {
         dap_server_delete_sync(a_dns_server->server);
         a_dns_server->server = NULL;
     }
 
+    pthread_mutex_lock(&a_dns_server->sessions_lock);
     HASH_ITER(hh, a_dns_server->sessions, l_session, l_tmp) {
         HASH_DEL(a_dns_server->sessions, l_session);
+        pthread_mutex_unlock(&a_dns_server->sessions_lock);
         if (l_session->handshake_key)
             dap_enc_key_delete(l_session->handshake_key);
         if (l_session->stream) {
@@ -234,7 +240,9 @@ void dap_net_trans_dns_server_stop(dap_net_trans_dns_server_t *a_dns_server)
         DAP_DEL_Z(l_session->trans_ctx);
         DAP_DEL_Z(l_session->stream);
         DAP_DELETE(l_session);
+        pthread_mutex_lock(&a_dns_server->sessions_lock);
     }
+    pthread_mutex_unlock(&a_dns_server->sessions_lock);
 
     log_it(L_INFO, "DNS server '%s' stopped", a_dns_server->server_name);
 }
@@ -246,6 +254,7 @@ void dap_net_trans_dns_server_delete(dap_net_trans_dns_server_t *a_dns_server)
     dap_net_trans_dns_server_stop(a_dns_server);
     DAP_DEL_Z(a_dns_server->trans);
     log_it(L_INFO, "Deleted DNS server: %s", a_dns_server->server_name);
+    pthread_mutex_destroy(&a_dns_server->sessions_lock);
     DAP_DELETE(a_dns_server);
 }
 
@@ -279,21 +288,78 @@ static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg)
     socklen_t l_remote_addr_len = a_es->addr_size;
     memcpy(&l_remote_addr, &a_es->addr_storage, l_remote_addr_len);
 
+    char l_addr_str[64] = {0};
+    if (l_remote_addr.ss_family == AF_INET) {
+        struct sockaddr_in *s = (struct sockaddr_in*)&l_remote_addr;
+        inet_ntop(AF_INET, &s->sin_addr, l_addr_str, sizeof(l_addr_str));
+        log_it(L_INFO, "DNS listener read_cb: fd=%d size=%zu from %s:%u",
+               a_es->fd, a_es->buf_in_size, l_addr_str, ntohs(s->sin_port));
+    } else {
+        log_it(L_INFO, "DNS listener read_cb: fd=%d size=%zu (non-IPv4)", a_es->fd, a_es->buf_in_size);
+    }
+
     s_dns_process_datagram(a_es, l_dns_server, a_es->buf_in, a_es->buf_in_size,
                            &l_remote_addr, l_remote_addr_len);
     a_es->buf_in_size = 0;
 
-    /* Drain remaining datagrams from kernel buffer to avoid multiple event loop iterations */
-    byte_t l_buf[65536];
-    struct sockaddr_storage l_addr;
-    for (int i = 0; i < 256; i++) {
-        socklen_t l_addr_len = sizeof(l_addr);
-        ssize_t l_read = recvfrom(a_es->fd, l_buf, sizeof(l_buf), MSG_DONTWAIT,
-                                  (struct sockaddr *)&l_addr, &l_addr_len);
-        if (l_read <= 0)
-            break;
-        s_dns_process_datagram(a_es, l_dns_server, l_buf, (size_t)l_read, &l_addr, l_addr_len);
+    /* Two-phase drain to prevent kernel receive buffer overflow.
+     *
+     * Problem: crypto processing in s_dns_process_datagram is slow (~30 µs/pkt),
+     * while the client can send at ~100 K pkt/s.  Processing inside the read loop
+     * lets the kernel buffer fill up and silently drop packets.
+     *
+     * Fix:
+     *   Phase 1 – fast: recvfrom all pending datagrams into a heap queue (~0.5 µs/pkt).
+     *             This empties the kernel buffer before it overflows.
+     *   Phase 2 – slow: process the queued datagrams (decrypt, reassemble, etc.).
+     *
+     * Level-triggered epoll will re-fire EPOLLIN for any packets that arrive while
+     * Phase 2 is running, so nothing is permanently missed.
+     */
+    typedef struct {
+        byte_t                  data[2048]; /* DNS max PKT + header headroom */
+        size_t                  size;
+        struct sockaddr_storage addr;
+        socklen_t               addr_len;
+    } s_dns_drain_pkt_t;
+
+    s_dns_drain_pkt_t *l_queue = NULL;
+    size_t              l_q_size = 0;
+    size_t              l_q_cap  = 0;
+
+    /* Phase 1: drain kernel buffer as fast as possible (no processing here). */
+    {
+        byte_t                  l_buf[2048];
+        struct sockaddr_storage l_addr;
+        for (;;) {
+            if (l_q_size >= l_q_cap) {
+                size_t l_new_cap = l_q_cap ? l_q_cap * 2 : 128;
+                s_dns_drain_pkt_t *l_tmp = DAP_REALLOC(l_queue, l_new_cap * sizeof(s_dns_drain_pkt_t));
+                if (!l_tmp) {
+                    log_it(L_ERROR, "DNS drain: out of memory for queue (cap=%zu)", l_new_cap);
+                    break;
+                }
+                l_queue  = l_tmp;
+                l_q_cap  = l_new_cap;
+            }
+            s_dns_drain_pkt_t *l_slot = &l_queue[l_q_size];
+            l_slot->addr_len = sizeof(l_slot->addr);
+            ssize_t l_n = recvfrom(a_es->fd, l_slot->data, sizeof(l_slot->data), MSG_DONTWAIT,
+                                   (struct sockaddr *)&l_slot->addr, &l_slot->addr_len);
+            if (l_n <= 0)
+                break;
+            l_slot->size = (size_t)l_n;
+            l_q_size++;
+        }
     }
+
+    /* Phase 2: process the queued datagrams. */
+    for (size_t l_i = 0; l_i < l_q_size; l_i++) {
+        s_dns_drain_pkt_t *l_slot = &l_queue[l_i];
+        s_dns_process_datagram(a_es, l_dns_server, l_slot->data, l_slot->size,
+                               &l_slot->addr, l_slot->addr_len);
+    }
+    DAP_DELETE(l_queue);
 }
 
 static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_server_t *a_dns_server,
@@ -301,11 +367,16 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
                                    struct sockaddr_storage *a_addr, socklen_t a_addr_len)
 {
     dns_server_client_session_t *l_session = NULL;
+    pthread_mutex_lock(&a_dns_server->sessions_lock);
     HASH_FIND(hh, a_dns_server->sessions, a_addr, (unsigned)a_addr_len, l_session);
+    pthread_mutex_unlock(&a_dns_server->sessions_lock);
 
     if (l_session) {
+        log_it(L_INFO, "DNS server: session found, processing %zu bytes of data", a_size);
         if (l_session->stream) {
             dap_stream_data_proc_read_ext(l_session->stream, a_data, a_size);
+        } else {
+            log_it(L_WARNING, "DNS server: session found but stream is NULL");
         }
         return;
     }
@@ -444,10 +515,30 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
     l_session->trans_ctx = l_trans_ctx;
     l_session->stream_session = l_stream_session;
 
-    HASH_ADD(hh, a_dns_server->sessions, remote_addr, (unsigned)a_addr_len, l_session);
-
-    log_it(L_INFO, "DNS server: created stream %p with %zu channels for new client",
-           l_stream, l_stream->channel_count);
+    /* Add to sessions under lock; another worker may have raced and added the same
+     * client already (e.g. retransmitted handshake on a different shard).
+     * If that happened, discard our freshly-created session and use the existing one. */
+    pthread_mutex_lock(&a_dns_server->sessions_lock);
+    dns_server_client_session_t *l_existing = NULL;
+    HASH_FIND(hh, a_dns_server->sessions, a_addr, (unsigned)a_addr_len, l_existing);
+    if (!l_existing) {
+        HASH_ADD(hh, a_dns_server->sessions, remote_addr, (unsigned)a_addr_len, l_session);
+        pthread_mutex_unlock(&a_dns_server->sessions_lock);
+        log_it(L_INFO, "DNS server: created stream %p with %zu channels for new client",
+               l_stream, l_stream->channel_count);
+    } else {
+        pthread_mutex_unlock(&a_dns_server->sessions_lock);
+        /* Duplicate handshake — tear down the session we just built */
+        log_it(L_WARNING, "DNS server: duplicate handshake from same client, discarding");
+        dap_enc_key_delete(l_session->handshake_key);
+        for (size_t i = 0; i < l_stream->channel_count; i++)
+            DAP_DEL_Z(l_stream->channel[i]);
+        DAP_DEL_Z(l_stream->channel);
+        dap_stream_session_close_mt(l_stream_session->id);
+        DAP_DELETE(l_stream);
+        DAP_DELETE(l_trans_ctx);
+        DAP_DELETE(l_session);
+    }
 
     dap_enc_key_delete(l_bob_key);
 }

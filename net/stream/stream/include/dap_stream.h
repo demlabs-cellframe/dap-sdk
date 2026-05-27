@@ -54,6 +54,11 @@ typedef struct dap_stream {
     dap_stream_worker_t *stream_worker;
 
     dap_timerfd_t *keepalive_timer;
+    /* Safe copies of the keepalive timer's identity, stored independently so that
+     * cleanup code never needs to dereference keepalive_timer after the timer esocket
+     * may have been freed (timer returned false → SIGNAL_CLOSE → dap_timerfd_t freed). */
+    dap_events_socket_uuid_t keepalive_timer_uuid;
+    struct dap_worker *keepalive_timer_worker;
     bool is_active;
 
     char *service_key;

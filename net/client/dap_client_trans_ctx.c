@@ -24,6 +24,7 @@
 #include "dap_strfuncs.h"
 #include "dap_cert.h"
 #include "dap_context.h"
+#include "dap_worker.h"
 #include "dap_timerfd.h"
 #include "dap_client_trans_ctx.h"
 #include "dap_client_fsm.h"
@@ -40,6 +41,17 @@
 #include "dap_stream_handshake.h"
 
 #define LOG_TAG "dap_client_trans_ctx"
+
+/* Deferred stream deletion: posted to the esocket's own worker so that
+ * any in-flight read callbacks on that worker finish BEFORE the stream
+ * memory is freed, eliminating the TOCTOU race between dap_stream_delete_unsafe
+ * (called from the FSM worker) and dap_stream_trans_udp_read_callback. */
+static void s_deferred_stream_delete(void *a_arg)
+{
+    dap_stream_t *l_stream = (dap_stream_t *)a_arg;
+    if (l_stream)
+        dap_stream_delete_unsafe(l_stream);
+}
 
 // Global hash table for UUID-based lookup of client trans contexts
 static dap_client_trans_ctx_t *s_trans_ctx_table = NULL;
@@ -152,10 +164,24 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
 
     if (l_tc && l_tc->stream) {
         dap_stream_t *l_stream = l_tc->stream;
+        /* Sentinel: callbacks that check l_tc->stream will see NULL immediately,
+         * even before the stream memory is freed. */
         l_tc->stream = NULL;
         l_tc->stream_key = NULL;
         l_tc->stream_id = 0;
-        dap_stream_delete_unsafe(l_stream);
+
+        /* If the stream has an esocket on a different worker, post the actual
+         * dap_stream_delete_unsafe call to that worker.  This serialises the
+         * free after any in-flight read callbacks on the esocket worker complete,
+         * preventing the TOCTOU race where dap_stream_delete_unsafe sets
+         * stream->trans = NULL (line 777) while the UDP read callback still
+         * holds a local l_stream pointer and is about to access l_stream->trans. */
+        dap_worker_t *l_es_worker = l_stream->esocket_worker;
+        if (l_es_worker && l_es_worker != dap_worker_get_current()) {
+            dap_worker_exec_callback_on(l_es_worker, s_deferred_stream_delete, l_stream);
+        } else {
+            dap_stream_delete_unsafe(l_stream);
+        }
     }
 
     if (l_tc) {
