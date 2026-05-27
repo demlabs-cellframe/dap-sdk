@@ -1401,10 +1401,18 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     
-    // Add socket to worker - connection will complete asynchronously
-    dap_worker_add_events_socket(a_params->worker, l_es);
-    
-    // Create stream for this connection
+    // Create stream BEFORE handing the socket off to the worker so that
+    // dap_stream_new_es_client() installs worker_assign_callback (which
+    // arms the stream keepalive timer in dap_stream_esocket_worker_assign_cb)
+    // before the worker thread actually picks the esocket up and fires that
+    // callback. Reversing this order leaves the freshly accepted client
+    // esocket without a keepalive timer, so it never gets touched by the
+    // STREAM_PKT_TYPE_KEEPALIVE / _ALIVE exchange that refreshes
+    // esocket->last_time_active, and the worker's idle GC
+    // (s_connection_timeout, default 60 s in dap_worker.c) silently kills
+    // every authorized client stream ~60 s after handshake — peers see
+    // ECONNRESET (errno 104), every subsequent ANNOUNCE / GDB sync packet
+    // is sent into a dead socket, and the network never reaches ONLINE.
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_cluster_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for HTTP trans");
@@ -1412,10 +1420,11 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
-    
-    // Set transport reference
     l_stream->trans = a_trans;
-    
+
+    // Now safe to add to worker — assign callback is in place.
+    dap_worker_add_events_socket(a_params->worker, l_es);
+
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;

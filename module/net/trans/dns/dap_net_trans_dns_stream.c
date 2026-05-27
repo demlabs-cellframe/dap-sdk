@@ -681,10 +681,11 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     
-    // DNS tunneling uses UDP (connectionless) - just add to worker
-    dap_worker_add_events_socket(a_params->worker, l_es);
-    
-    // Create stream for this connection (same pattern as HTTP/WebSocket/UDP)
+    // Create stream BEFORE handing the socket off to the worker — see
+    // dap_net_trans_http_stream.c for the rationale (worker_assign_callback
+    // arms the keepalive timer; if it isn't installed before the worker
+    // picks the esocket up, keepalive never starts and the idle GC tears
+    // the connection down ~60 s after handshake).
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_cluster_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for DNS trans");
@@ -693,6 +694,9 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     l_stream->trans = a_trans;
+
+    // DNS tunneling uses UDP (connectionless) - just add to worker
+    dap_worker_add_events_socket(a_params->worker, l_es);
     
     a_result->esocket = l_es;
     a_result->stream = l_stream;

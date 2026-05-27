@@ -1358,10 +1358,13 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     
-    // Add socket to worker - connection will complete asynchronously
-    dap_worker_add_events_socket(a_params->worker, l_es);
-    
-    // Create stream for this connection
+    // Create stream BEFORE handing the socket off to the worker so that
+    // dap_stream_new_es_client() installs worker_assign_callback (which
+    // arms the stream keepalive timer) before the worker thread picks the
+    // esocket up. See dap_net_trans_http_stream.c for the full rationale —
+    // the symptom is identical: keepalive never arms, esocket->last_time_active
+    // is never refreshed, and the worker's idle GC kills the connection
+    // ~60 s after handshake with ECONNRESET on the peer side.
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_cluster_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for WebSocket trans");
@@ -1369,10 +1372,10 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
-    
-    // Set transport reference
     l_stream->trans = a_trans;
-    
+
+    dap_worker_add_events_socket(a_params->worker, l_es);
+
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;
