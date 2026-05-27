@@ -140,7 +140,8 @@ int     buflen;
         return;
 
     buflen = snprintf(buf, sizeof(buf), "\n[%s:%d] <%s> expresion return false\n", a_file, a_line, a_expr);
-    write(STDOUT_FILENO, buf, buflen);
+    if (buflen > 0 && write(STDOUT_FILENO, buf, (size_t)buflen) < 0)
+        (void)0;
     abort();
 }
 

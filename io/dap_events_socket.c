@@ -743,7 +743,13 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
 
             a_esocket->callbacks.queue_callback(a_esocket, l_queue_ptr, l_queue_ptr_size);
 #elif !defined(DAP_OS_WINDOWS)
-            read(a_esocket->socket, a_esocket->buf_in, a_esocket->buf_in_size_max );
+            {
+                ssize_t l_read = read(a_esocket->socket, a_esocket->buf_in, a_esocket->buf_in_size_max);
+                if (l_read > 0 && a_esocket->callbacks.queue_callback)
+                    a_esocket->callbacks.queue_callback(a_esocket, a_esocket->buf_in, (size_t)l_read);
+                else if (l_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+                    log_it(L_ERROR, "Can't read from queue socket");
+            }
 #endif
         }
     }else{

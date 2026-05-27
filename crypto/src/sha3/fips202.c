@@ -342,7 +342,7 @@ void KeccakF1600_StatePermute(uint64_t * state)
 void keccak_absorb(uint64_t *s, unsigned int r, const unsigned char *m, unsigned long long int mlen, unsigned char p)
 {
   unsigned long long i;
-  unsigned char t[200];
+  unsigned char t[200] = {0};
 
   while (mlen >= r)
   {
@@ -354,11 +354,9 @@ void keccak_absorb(uint64_t *s, unsigned int r, const unsigned char *m, unsigned
     m += r;
   }
 
-  for (i = 0; i < r; ++i)
-    t[i] = 0;
   for (i = 0; i < mlen; ++i)
     t[i] = m[i];
-  t[i] = p;
+  t[mlen] = p;
   t[r - 1] |= 128;
   for (i = 0; i < r / 8; ++i)
     s[i] ^= load64(t + 8 * i);
@@ -423,7 +421,7 @@ void shake128(unsigned char *output, unsigned long long outlen, const unsigned c
 
 /********** cSHAKE128 ***********/
 
-void cshake128_simple_absorb(uint64_t s[25], uint16_t cstm, const unsigned char *in, unsigned long long inlen)
+void cshake128_simple_absorb(uint64_t s[SHA3_STATESIZE], uint16_t cstm, const unsigned char *in, unsigned long long inlen)
 {
   unsigned char *sep = (unsigned char*)s;
 
@@ -514,7 +512,7 @@ void shake256(unsigned char *output, unsigned long long outlen, const unsigned c
 
 /********** cSHAKE256 ***********/
 
-void cshake256_simple_absorb(uint64_t s[25], uint16_t cstm, const unsigned char *in, unsigned long long inlen)
+void cshake256_simple_absorb(uint64_t s[SHA3_STATESIZE], uint16_t cstm, const unsigned char *in, unsigned long long inlen)
 {
   unsigned char *sep = (unsigned char*)s;
 
