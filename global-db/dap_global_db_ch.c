@@ -83,6 +83,60 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void UNUSED_ARG *a_arg)
     DAP_DEL_Z(a_ch->internal);
 }
 
+static const char *s_gdb_msg_type_to_str(uint8_t a_type)
+{
+    switch (a_type) {
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START:
+        return "GLOBAL_DB_SYNC_START";
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST:
+        return "GLOBAL_DB_GROUP_REQUEST";
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:
+        return "GLOBAL_DB_HASHES";
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST:
+        return "GLOBAL_DB_REQUEST";
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD:
+        return "GLOBAL_DB_RECORD";
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK:
+        return "GLOBAL_DB_RECORD_PACK";
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_DELETE:
+        return "GLOBAL_DB_DELETE";
+    default:
+        return "GLOBAL_DB_UNKNOWN";
+    }
+}
+
+static bool s_gdb_cluster_allows_blank_sender(dap_global_db_cluster_t *a_cluster)
+{
+    return a_cluster && a_cluster->links_cluster &&
+            a_cluster->links_cluster->type == DAP_CLUSTER_TYPE_EMBEDDED &&
+            a_cluster->links_cluster->status == DAP_CLUSTER_STATUS_ENABLED;
+}
+
+static void s_log_blank_sender(dap_stream_ch_t *a_ch, uint8_t a_type, const char *a_group, uint32_t a_hashes_count,
+        const char *a_action)
+{
+    dap_return_if_pass(!a_ch || !a_ch->stream || !dap_stream_node_addr_is_blank(&a_ch->stream->node));
+    const char *l_remote_addr = a_ch->stream->esocket ? a_ch->stream->esocket->remote_addr_str : "unknown";
+    uint16_t l_remote_port = a_ch->stream->esocket ? a_ch->stream->esocket->remote_port : 0;
+    uint32_t l_session_id = a_ch->stream->session ? a_ch->stream->session->id : 0;
+    log_it(L_WARNING, "GDB %s from blank-node stream %s: remote %s:%u, session %u, authorized=%s, primary=%s, group %s, hashes %u",
+           s_gdb_msg_type_to_str(a_type), a_action ? a_action : "detected", l_remote_addr, l_remote_port, l_session_id,
+           a_ch->stream->authorized ? "true" : "false",
+           a_ch->stream->primary ? "true" : "false",
+           a_group ? a_group : "(null)", a_hashes_count);
+}
+
+static bool s_reject_blank_sender(dap_stream_ch_t *a_ch, uint8_t a_type, const char *a_group, uint32_t a_hashes_count)
+{
+    if (!a_ch || !a_ch->stream || !dap_stream_node_addr_is_blank(&a_ch->stream->node))
+        return false;
+    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), a_group);
+    if (s_gdb_cluster_allows_blank_sender(l_cluster))
+        return false;
+    s_log_blank_sender(a_ch, a_type, a_group, a_hashes_count, "rejected");
+    return true;
+}
+
 bool s_proc_thread_reader(void *a_arg)
 {
     dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t) + sizeof(byte_t));
@@ -315,6 +369,8 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         debug_if(g_dap_global_db_debug_more, L_INFO, "IN: %s packet for group %s",
                             l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START
                             ? "GLOBAL_DB_SYNC_START" : "GLOBAL_DB_GROUP_REQUEST", l_pkt->group);
+        if (s_reject_blank_sender(a_ch, l_ch_pkt->hdr.type, (const char *)l_pkt->group, 0))
+            return false;
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + sizeof(byte_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -341,6 +397,8 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                                                 l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES
                                                 ? "GLOBAL_DB_HASHES" : "GLOBAL_DB_REQUEST",
                                                 l_pkt->group_n_hashses, l_pkt->hashes_count);
+        if (s_reject_blank_sender(a_ch, l_ch_pkt->hdr.type, (const char *)l_pkt->group_n_hashses, l_pkt->hashes_count))
+            return false;
         if (!l_pkt->hashes_count)
             // Nothnig to process
             break;
@@ -376,10 +434,24 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_RECORD_PACK packet for group %s with records count %zu",
                                                                                                 l_objs->group, l_objs_count);
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
+        for (size_t i = 0; i < l_objs_count; i++) {
+            if (!s_reject_blank_sender(a_ch, l_ch_pkt->hdr.type, l_objs[i].group, 0))
+                continue;
+            dap_store_obj_free(l_objs, l_objs_count);
+            return false;
+        }
         struct processing_arg *l_arg = DAP_NEW_Z(struct processing_arg);
         *l_arg = (struct processing_arg) { .count = l_objs_count, .objs = l_objs, .addr = a_ch->stream->node };
         dap_proc_thread_callback_add_pri(NULL, s_process_records, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
 #else
+        for (uint32_t i = 0; i < l_objs_count; i++) {
+            if (!s_reject_blank_sender(a_ch, l_ch_pkt->hdr.type, l_objs[i]->group, 0))
+                continue;
+            for (uint32_t j = 0; j < l_objs_count; j++)
+                dap_store_obj_free_one(l_objs[j]);
+            DAP_DELETE(l_objs);
+            return false;
+        }
         for (uint32_t i = 0; i < l_objs_count; i++)
             dap_proc_thread_callback_add_pri(NULL, s_process_record, l_objs[i], DAP_GLOBAL_DB_TASK_PRIORITY);
         DAP_DELETE(l_objs);
