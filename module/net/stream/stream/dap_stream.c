@@ -672,7 +672,18 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             log_it(L_ERROR, "keepalive: stream header pack failed");
             return false;
         }
-        dap_stream_send_unsafe(l_stream, l_pkt_wire, sizeof(l_pkt_wire));
+        ssize_t l_sent = dap_stream_send_unsafe(l_stream, l_pkt_wire, sizeof(l_pkt_wire));
+        // dap_worker closes DESCRIPTOR_TYPE_SOCKET_CLIENT esockets whose
+        // last_time_active is older than s_connection_timeout (default 60 s).
+        // Only read_callback bumps that timestamp today; a long-lived HTTP
+        // stream session can sit idle for minutes while the stream-layer
+        // keepalive timer fires every ~6 s and queues data into buf_out.
+        // Without this touch the worker tears the TCP session down with
+        // ETIMEDOUT/ECONNRESET (errno 104 on the peer) even though the stream
+        // is healthy — ANNOUNCE / GDB sync packets then vanish and the net
+        // never reaches ONLINE.
+        if (l_sent > 0)
+            l_es->last_time_active = dap_time_now();
         return true;
     }else{
         if(s_debug)
