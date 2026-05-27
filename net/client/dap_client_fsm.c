@@ -1138,6 +1138,11 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
 
 static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_arg)
 {
+    /* Null _inheritor FIRST so that dap_events_socket_delete_unsafe(preserve=false)
+     * will NOT free dap_client_t — the FSM/client owns its own lifetime. */
+    if (a_es)
+        a_es->_inheritor = NULL;
+
     uint64_t *l_uuid_ptr = (uint64_t *)a_arg;
     /* Free the UUID holder regardless of what happens below. */
     uint64_t l_fsm_uuid = l_uuid_ptr ? *l_uuid_ptr : 0;
