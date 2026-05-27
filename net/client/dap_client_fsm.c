@@ -780,12 +780,21 @@ static void s_worker_execute_stage(void *a_arg)
             break;
         }
 
-        static dap_events_socket_callbacks_t s_qos_callbacks = {
+        uint64_t *l_qos_uuid = DAP_NEW(uint64_t);
+        if (!l_qos_uuid) {
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
+            break;
+        }
+        *l_qos_uuid = l_fsm->uuid;
+
+        dap_events_socket_callbacks_t l_qos_callbacks = {
             .read_callback = NULL,
             .write_callback = NULL,
             .error_callback = NULL,
             .delete_callback = s_handshake_es_delete_callback,
-            .connected_callback = NULL
+            .connected_callback = NULL,
+            .arg = l_qos_uuid
         };
 
         dap_net_stage_prepare_params_t l_prepare_params = {
@@ -793,7 +802,7 @@ static void s_worker_execute_stage(void *a_arg)
             .port = l_client->link_info.uplink_port,
             .node_addr = &l_client->link_info.node_addr,
             .authorized = false,
-            .callbacks = &s_qos_callbacks,
+            .callbacks = &l_qos_callbacks,
             .client_ctx = l_client,
             .worker = l_worker
         };
@@ -803,6 +812,7 @@ static void s_worker_execute_stage(void *a_arg)
         if (l_ret != 0) {
             log_it(L_ERROR, "Stage prepare failed for QoS probe: transport %d, error %d",
                    l_client->trans_type, l_prepare_result.error_code);
+            DAP_DELETE(l_qos_uuid); /* no esocket → callback won't fire */
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
             break;
@@ -811,7 +821,9 @@ static void s_worker_execute_stage(void *a_arg)
         if (!l_prepare_result.stream) {
             log_it(L_CRITICAL, "Transport failed to create stream for QoS probe");
             if (l_prepare_result.esocket)
-                dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
+                dap_events_socket_delete_unsafe(l_prepare_result.esocket, true); /* frees l_qos_uuid */
+            else
+                DAP_DELETE(l_qos_uuid);
             dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                                   STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
             break;
@@ -1119,51 +1131,46 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
     }
 }
 
-// ===== Handshake esocket delete callback: prevent reactor from freeing dap_client_t =====
+// ===== Handshake esocket delete callback =====
+// a_arg carries a heap-allocated uint64_t* with the FSM UUID.
+// We look up the FSM by UUID — if not found, it was already destroyed and we do nothing.
+// This avoids any dereference of potentially freed pointers.
 
 static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_arg)
 {
-    (void)a_arg;
-    if(!a_es)
+    uint64_t *l_uuid_ptr = (uint64_t *)a_arg;
+    /* Free the UUID holder regardless of what happens below. */
+    uint64_t l_fsm_uuid = l_uuid_ptr ? *l_uuid_ptr : 0;
+    DAP_DELETE(l_uuid_ptr);
+
+    if (!l_fsm_uuid)
         return;
 
-    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
-    if(l_client) {
-        if(!s_is_valid_ptr(l_client)) {
-            log_it(L_WARNING, "Handshake esocket delete: invalid client pointer %p, skipping", l_client);
-            a_es->_inheritor = NULL;
-            return;
-        }
-        dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(l_client);
-        if(l_fsm && !s_is_valid_ptr(l_fsm)) {
-            log_it(L_WARNING, "Handshake esocket delete: invalid FSM pointer %p (client %p), skipping", l_fsm, l_client);
-            a_es->_inheritor = NULL;
-            return;
-        }
-        if(l_fsm && !l_fsm->is_removing) {
-            dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
-            /* Only clear the stream's esocket reference if it still points to
-             * this (about-to-be-freed) esocket.  Earlier handshake sockets may
-             * be deleted after the stream has already been bound to a new
-             * data-channel socket; clearing it unconditionally would leave the
-             * stream unable to write any outgoing packets. */
-            if (l_tc && l_tc->stream && l_tc->stream->esocket == a_es) {
-                l_tc->stream->esocket = NULL;
-                l_tc->stream->esocket_uuid = 0;
-                l_tc->stream->esocket_worker = NULL;
-            }
-            if (l_fsm->stage_status == STAGE_STATUS_IN_PROGRESS) {
-                dap_client_trans_ctx_t *l_ctx = l_fsm->client_trans_ctx;
-                if (l_ctx) {
-                    log_it(L_WARNING, "Handshake esocket deleted while stage %s in progress, notifying FSM",
-                           dap_client_stage_str(l_fsm->stage));
-                    dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                                          STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
-                }
-            }
+    /* UUID registry lookup: returns NULL if FSM was already unregistered
+     * (i.e. dap_client_fsm_delete_unsafe already ran). No pointer aliasing hazard. */
+    dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_fsm_uuid);
+    if (!l_fsm || l_fsm->is_removing)
+        return;
+
+    dap_net_trans_ctx_t *l_tc = l_fsm->trans_ctx;
+    /* Clear stale esocket back-pointers in the stream only when they still
+     * refer to this (now-deleted) esocket. A later reconnect may have
+     * already bound the stream to a new socket. */
+    if (l_tc && l_tc->stream && a_es && l_tc->stream->esocket == a_es) {
+        l_tc->stream->esocket        = NULL;
+        l_tc->stream->esocket_uuid   = 0;
+        l_tc->stream->esocket_worker = NULL;
+    }
+
+    if (l_fsm->stage_status == STAGE_STATUS_IN_PROGRESS) {
+        dap_client_trans_ctx_t *l_ctx = l_fsm->client_trans_ctx;
+        if (l_ctx) {
+            log_it(L_WARNING, "Handshake esocket deleted while stage %s in progress, notifying FSM",
+                   dap_client_stage_str(l_fsm->stage));
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
         }
     }
-    a_es->_inheritor = NULL;
 }
 
 // ===== Worker-side ENC_INIT IO (only transport calls, crypto already done on FSM thread) =====
@@ -1199,15 +1206,23 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     }
 
     // Stage prepare: create esocket/stream via transport (must be on worker)
-    // Start with minimal callbacks - stream callbacks will be installed when streaming begins
-    // connected_callback MUST be NULL here - transport handles connection flow
-    // delete_callback MUST nullify _inheritor to prevent reactor from freeing dap_client_t
-    static dap_events_socket_callbacks_t s_handshake_callbacks = {
-        .read_callback = NULL,
-        .write_callback = NULL,
-        .error_callback = NULL,
-        .delete_callback = s_handshake_es_delete_callback,
-        .connected_callback = NULL
+    uint64_t *l_hs_uuid = DAP_NEW(uint64_t);
+    if (!l_hs_uuid) {
+        DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
+        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                              STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
+        DAP_DELETE(l_ctx);
+        return;
+    }
+    *l_hs_uuid = l_fsm->uuid;
+
+    dap_events_socket_callbacks_t l_handshake_callbacks = {
+        .read_callback      = NULL,
+        .write_callback     = NULL,
+        .error_callback     = NULL,
+        .delete_callback    = s_handshake_es_delete_callback,
+        .connected_callback = NULL,
+        .arg                = l_hs_uuid
     };
 
     dap_net_stage_prepare_params_t l_prepare_params = {
@@ -1215,7 +1230,7 @@ static void s_worker_execute_enc_init_io(void *a_arg)
         .port = l_client->link_info.uplink_port,
         .node_addr = &l_client->link_info.node_addr,
         .authorized = false,
-        .callbacks = &s_handshake_callbacks,
+        .callbacks = &l_handshake_callbacks,
         .client_ctx = l_client,
         .worker = l_worker
     };
@@ -1226,6 +1241,9 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     if (l_ret != 0) {
         log_it(L_ERROR, "Stage prepare failed: transport %d, error %d", l_ctx->trans_type,
                l_prepare_result.error_code);
+        /* l_hs_uuid will NOT be freed by the delete callback because the esocket was
+         * never created — free it here. */
+        DAP_DELETE(l_hs_uuid);
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
@@ -1235,8 +1253,13 @@ static void s_worker_execute_enc_init_io(void *a_arg)
 
     if (!l_prepare_result.stream) {
         log_it(L_CRITICAL, "Transport failed to create stream for handshake");
+        /* If an esocket was returned without a stream, deleting it will fire
+         * s_handshake_es_delete_callback which frees l_hs_uuid.
+         * If no esocket either — free l_hs_uuid ourselves. */
         if (l_prepare_result.esocket)
             dap_events_socket_delete_unsafe(l_prepare_result.esocket, true);
+        else
+            DAP_DELETE(l_hs_uuid);
         DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_OUT_OF_MEMORY);
