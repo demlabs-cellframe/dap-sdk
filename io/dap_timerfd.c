@@ -230,7 +230,8 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
-    assert(a_timerfd);
+    if (!a_timerfd || !a_timerfd->events_socket)
+        return;
     debug_if(g_debug_reactor, L_DEBUG, "Reset timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
 #if defined DAP_OS_LINUX
     /* Guard against a stale epoll event firing after the timerfd was already
@@ -308,7 +309,7 @@ static void s_timerfd_reset_worker_callback(void *a_arg)
     dap_events_socket_uuid_t *l_uuid = a_arg;
     dap_worker_t *l_worker = dap_worker_get_current();
     dap_events_socket_t *l_sock = dap_context_find(l_worker->context, *l_uuid);
-    if (l_sock)
+    if (l_sock && l_sock->_inheritor)
         dap_timerfd_reset_unsafe(l_sock->_inheritor);
     DAP_DELETE(l_uuid);
 }
