@@ -3271,6 +3271,28 @@ static void s_mvcc_commit(dap_global_db_t *a_tree)
     // Seqlock: even seq signals "publish complete"
     atomic_fetch_add_explicit(&a_tree->mvcc_seq, 1, memory_order_release);
 
+    // Persist the header into the on-disk (mmap) page so the new
+    // root_page / items_count / tree_height become visible to any future
+    // dap_global_db_open() — including a fresh process after an abrupt
+    // shutdown (SIGTERM/SIGKILL without a clean s_btree_sync_impl call).
+    //
+    // Without this, every normal insert that does NOT split the root only
+    // bumps the in-memory header; the on-disk header keeps pointing at the
+    // pre-insert root_page and reports the pre-insert items_count, so all
+    // entries added since the last sync vanish on reopen even though their
+    // leaf pages are physically present in the file (a typical case is the
+    // genesis flow where stage-env immediately restarts the node after a
+    // batch of `node add` commands — only entries that happened to split
+    // the root survive).
+    //
+    // The header is a single 4 KiB page mapped MAP_SHARED, so this is a
+    // 64-byte memcpy into the kernel page cache — durable across process
+    // restarts on the same host. We deliberately do not msync() here:
+    // crash-consistency vs. power loss is provided by dap_global_db_sync()
+    // / close(), and a per-commit fsync would dominate write latency.
+    if (a_tree->mmap && !a_tree->read_only)
+        s_header_write(a_tree);
+
     if (++a_tree->mvcc_commit_counter >= 64 || a_tree->deferred_batch_count > 128) {
         s_deferred_free_reclaim(a_tree);
         a_tree->mvcc_commit_counter = 0;
