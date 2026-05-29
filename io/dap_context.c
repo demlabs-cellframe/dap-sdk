@@ -1184,9 +1184,15 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
             // Possibly have data to read despite EPOLLRDHUP
             if (l_flag_rdhup){
-                log_it(L_INFO, "RDHUP on socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
-                       " type %d buf_out %zu — remote closed write side",
-                       l_cur->socket, l_cur->uuid, l_cur->type, l_cur->buf_out_size);
+                if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT) {
+                    debug_if(s_debug_more, L_DEBUG, "RDHUP on socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
+                           " type %d buf_out %zu — remote closed write side",
+                           l_cur->socket, l_cur->uuid, l_cur->type, l_cur->buf_out_size);
+                } else {
+                    log_it(L_INFO, "RDHUP on socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
+                           " type %d buf_out %zu — remote closed write side",
+                           l_cur->socket, l_cur->uuid, l_cur->type, l_cur->buf_out_size);
+                }
                 switch (l_cur->type ){
                     case DESCRIPTOR_TYPE_SOCKET_RAW:
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
@@ -1322,12 +1328,17 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #else
                             l_errno = errno;
 #endif
-                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_WARNING,
-                                     "CLI send failed: socket %"DAP_FORMAT_SOCKET" errno=%d (%s)",
-                                     l_cur->socket, l_errno, dap_strerror(l_errno));
+                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT) {
+                                debug_if(s_debug_more, L_DEBUG,
+                                         "CLI send failed: socket %"DAP_FORMAT_SOCKET" errno=%d (%s)",
+                                         l_cur->socket, l_errno, dap_strerror(l_errno));
+                            } else {
+                                log_it(L_WARNING, "send failed: socket %"DAP_FORMAT_SOCKET" errno=%d (%s)",
+                                       l_cur->socket, l_errno, dap_strerror(l_errno));
+                            }
                         } else {
                             l_errno = 0;
-                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT && s_debug_more, L_DEBUG,
                                      "CLI send OK: socket %"DAP_FORMAT_SOCKET" sent %zd/%zu bytes",
                                      l_cur->socket, l_bytes_sent, l_cur->buf_out_size);
                         }
@@ -1572,7 +1583,7 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
     debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Updating CONNECTING socket %"DAP_FORMAT_SOCKET" (flags=0x%x, events=0x%x, EPOLLOUT=%d)", 
              a_esocket->socket, a_esocket->flags, events, !!(events & EPOLLOUT));
 
-    debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+    debug_if(s_debug_more && a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_DEBUG,
              "CLI poll_update: socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" flags=0x%x events=0x%x EPOLLOUT=%d",
              a_esocket->socket, a_esocket->uuid, a_esocket->flags, events, !!(events & EPOLLOUT));
 
@@ -1596,7 +1607,7 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
             return log_it(L_CRITICAL, "Error updating client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
                 a_esocket->context->epoll_fd, dap_strerror(l_errno), l_errno), -1;
         } else {
-            debug_if(a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+            debug_if(s_debug_more && a_esocket->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_DEBUG,
                      "CLI poll_update OK: epoll_ctl MOD fd=%d epoll_fd=%"DAP_FORMAT_HANDLE,
                      l_fd, a_esocket->context->epoll_fd);
             debug_if(g_debug_reactor && (a_esocket->flags & DAP_SOCK_CONNECTING), L_DEBUG, "dap_context_poll_update: Successfully updated CONNECTING socket %"DAP_FORMAT_SOCKET" in epoll", 

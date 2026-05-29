@@ -1266,8 +1266,8 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     while (l_pos < l_end && (l_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos)))) {
         l_found_sig0 = true;
         if ((size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t)) {
-            log_it(L_INFO, "proc_read_ext: partial header, remain=%zu need=%zu",
-                   (size_t)(l_end - l_pos), sizeof(dap_stream_pkt_hdr_t));
+            debug_if(s_debug_more, L_DEBUG, "proc_read_ext: partial header, remain=%zu need=%zu",
+                     (size_t)(l_end - l_pos), sizeof(dap_stream_pkt_hdr_t));
             break;
         }
         
