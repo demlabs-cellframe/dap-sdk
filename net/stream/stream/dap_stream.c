@@ -130,6 +130,19 @@ bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
 static int s_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 
+static void s_stream_reset_keepalive_timer_unsafe(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->keepalive_timer_uuid)
+        return;
+    dap_worker_t *l_cur = dap_worker_get_current();
+    if (!l_cur || !l_cur->context)
+        return;
+    dap_events_socket_t *l_timer_es = dap_context_find(l_cur->context, a_stream->keepalive_timer_uuid);
+    if (!l_timer_es || !l_timer_es->_inheritor)
+        return;
+    dap_timerfd_reset_unsafe((dap_timerfd_t *)l_timer_es->_inheritor);
+}
+
 /**
  * @brief Write data via transport layer (wrapper for trans->ops->write)
  * 
@@ -1498,10 +1511,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         if (a_stream->trans_ctx) {
             dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
         }
-        // Reset client keepalive timer
-        if (a_stream->keepalive_timer) {
-            dap_timerfd_reset_unsafe(a_stream->keepalive_timer);
-        }
+        // Reset client keepalive timer (UUID lookup — never dereference keepalive_timer)
+        s_stream_reset_keepalive_timer_unsafe(a_stream);
     } break;
     case STREAM_PKT_TYPE_ALIVE:
         a_stream->is_active = false; // To prevent keep-alive concurrency
