@@ -497,6 +497,9 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
         return NULL;
 
     l_es->socket = a_sock;
+#if defined(DAP_OS_UNIX)
+    l_es->fd = (int)a_sock;
+#endif
     if (a_callbacks)
         l_es->callbacks = *a_callbacks;
 
@@ -965,15 +968,24 @@ dap_events_socket_t * dap_events_socket_create_type_event_unsafe(dap_worker_t * 
  */
 void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
 {
+#if defined(DAP_EVENTS_CAPS_EVENT_EVENTFD )
+    eventfd_t l_value;
+    int l_read_ret = eventfd_read(a_esocket->fd, &l_value);
+    if (l_read_ret != 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            /* Level-triggered epoll keeps EPOLLIN armed while we cannot consume
+             * the eventfd — disable readable to break the worker busy-spin. */
+            dap_events_socket_set_readable_unsafe(a_esocket, false);
+            return;
+        }
+        log_it(L_WARNING, "Can't read packet from event fd, error %d: \"%s\"", errno, dap_strerror(errno));
+        dap_events_socket_set_readable_unsafe(a_esocket, false);
+        return;
+    }
+#endif
     if (a_esocket->callbacks.event_callback ){
 #if defined(DAP_EVENTS_CAPS_EVENT_EVENTFD )
-        eventfd_t l_value;
-        if(eventfd_read( a_esocket->fd, &l_value)==0 ){ // would block if not ready
-            a_esocket->callbacks.event_callback(a_esocket, l_value);
-        }else if ( (errno != EAGAIN) && (errno != EWOULDBLOCK) )
-            log_it(L_WARNING, "Can't read packet from event fd, error %d: \"%s\"", errno, dap_strerror(errno));
-        else
-            return; // do nothing
+        a_esocket->callbacks.event_callback(a_esocket, l_value);
 #elif defined DAP_EVENTS_CAPS_WEPOLL
         u_short l_value;
         int l_ret;
@@ -994,8 +1006,10 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
 #else
 #error "No Queue fetch mechanism implemented on your platform"
 #endif
-    } else
+    } else {
         log_it(L_ERROR, "Event socket %"DAP_FORMAT_SOCKET" accepted data but callback is NULL ", a_esocket->socket);
+        dap_events_socket_set_readable_unsafe(a_esocket, false);
+    }
 }
 
 #ifdef DAP_EVENTS_CAPS_QUEUE_PIPE2

@@ -95,6 +95,20 @@ static bool s_debug_more = false;
 // Forward declaration for packet queue helper (defined in dap_events_socket.c, NOT static)
 extern ssize_t s_packet_queue_pop_and_send(dap_events_socket_packet_queue_t *a_queue, int a_fd);
 
+/* epoll watches es->socket for most types; es->fd is only set for EVENT/PIPE.
+ * Legacy paths used es->fd for recv() — when fd stays 0, epoll fires on socket
+ * 51 but recv(0) spins with EAGAIN (busy loop). */
+static inline int s_es_io_fd(const dap_events_socket_t *a_es)
+{
+    switch (a_es->type) {
+    case DESCRIPTOR_TYPE_EVENT:
+    case DESCRIPTOR_TYPE_PIPE:
+        return a_es->fd;
+    default:
+        return (int)a_es->socket;
+    }
+}
+
 static _Thread_local dap_context_t *s_context = NULL;
 
 static void *s_context_thread(void *arg); // Context thread
@@ -735,12 +749,20 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 dap_events_socket_t *l_es0 = (dap_events_socket_t *)l_epoll_events[0].data.ptr;
                 log_it(L_WARNING, "Worker ctx #%u busy loop: %"PRIu64" iters, fd=%d type=%u epoll_ev=0x%x n_events=%d sock_flags=0x%x buf_out=%zu has_write_cb=%d",
                        a_context->id, s_busy_count,
-                       l_es0 ? l_es0->fd : -1,
+                       l_es0 ? s_es_io_fd(l_es0) : -1,
                        l_es0 ? (unsigned)l_es0->type : 0,
                        l_epoll_events[0].events, l_selected_sockets,
                        l_es0 ? l_es0->flags : 0,
                        l_es0 ? l_es0->buf_out_size : 0,
                        l_es0 ? (l_es0->callbacks.write_callback != NULL) : 0);
+                /* Break the spin: drop armed edge until explicitly re-enabled. */
+                if (l_es0) {
+                    uint32_t l_ev0 = l_epoll_events[0].events;
+                    if ((l_ev0 & EPOLLIN) && l_es0->type != DESCRIPTOR_TYPE_EVENT)
+                        dap_events_socket_set_readable_unsafe(l_es0, false);
+                    if (l_ev0 & EPOLLOUT)
+                        dap_events_socket_set_writable_unsafe(l_es0, false);
+                }
                 s_busy_count = 0;
             }
         } else {
@@ -1001,6 +1023,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 switch (l_cur->type) {
                     case DESCRIPTOR_TYPE_PIPE:
                     case DESCRIPTOR_TYPE_FILE:
+                        if (l_cur->buf_in_size >= l_cur->buf_in_size_max) {
+                            /* read(fd, buf, 0) returns 0 but leaves EPOLLIN armed → busy-spin */
+                            dap_events_socket_set_readable_unsafe(l_cur, false);
+                            break;
+                        }
                         l_must_read_smth = true;
 #ifdef DAP_OS_WINDOWS
                         l_bytes_read = dap_recvfrom(l_cur->socket, l_cur->buf_in + l_cur->buf_in_size, l_cur->buf_in_size_max - l_cur->buf_in_size);
@@ -1013,7 +1040,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                         l_must_read_smth = true;
-                        l_bytes_read = recv(l_cur->fd, (char *) (l_cur->buf_in + l_cur->buf_in_size),
+                        l_bytes_read = recv(s_es_io_fd(l_cur), (char *) (l_cur->buf_in + l_cur->buf_in_size),
                                             l_cur->buf_in_size_max - l_cur->buf_in_size, 0);
 #ifdef DAP_OS_WINDOWS
                         l_errno = WSAGetLastError();
@@ -1028,7 +1055,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         debug_if(g_debug_reactor, L_DEBUG, 
                                  "UDP recvfrom: fd=%d, buf_in=%p, buf_in_size(before)=%zu, buf_in_size_max=%zu",
                                  l_cur->fd, l_cur->buf_in, l_cur->buf_in_size, l_cur->buf_in_size_max);
-                        l_bytes_read = recvfrom(l_cur->fd, (char *)l_cur->buf_in,
+                        l_bytes_read = recvfrom(s_es_io_fd(l_cur), (char *)l_cur->buf_in,
                                                 l_cur->buf_in_size_max, 0,
                                                 (struct sockaddr*)&l_cur->addr_storage, &l_cur->addr_size);
                         debug_if(g_debug_reactor, L_DEBUG, 
@@ -1047,9 +1074,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         if ( l_cur->flags & DAP_SOCK_MSG_ORIENTED ) {
                             struct iovec iov = { l_cur->buf_in, l_cur->buf_in_size_max - l_cur->buf_in_size };
                             struct msghdr msg = { .msg_name = &l_cur->addr_storage, .msg_namelen = l_cur->addr_size, .msg_iov = &iov, .msg_iovlen = 1 };
-                            l_bytes_read = recvmsg(l_cur->fd, &msg, 0);
+                            l_bytes_read = recvmsg(s_es_io_fd(l_cur), &msg, 0);
                         } else
-                            l_bytes_read = recvfrom(l_cur->fd, (char *) (l_cur->buf_in + l_cur->buf_in_size),
+                            l_bytes_read = recvfrom(s_es_io_fd(l_cur), (char *) (l_cur->buf_in + l_cur->buf_in_size),
                                                     l_cur->buf_in_size_max - l_cur->buf_in_size, 0,
                                                     (struct sockaddr*)&l_cur->addr_storage, &l_cur->addr_size);
                         l_errno = errno;
@@ -1107,7 +1134,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_bytes_read = dap_recvfrom(l_cur->socket, NULL, 0);
 #elif defined(DAP_OS_LINUX)
                         uint64_t val;
-                        read( l_cur->fd, &val, 8);
+                        read(l_cur->socket, &val, sizeof(val));
 #endif
                         if (l_cur->callbacks.timer_callback)
                             l_cur->callbacks.timer_callback(l_cur);
@@ -1162,6 +1189,25 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                             l_cur->buf_out_size = 0;
                         }
+#if !defined(DAP_OS_WINDOWS)
+                        else if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+                            /* EPOLLIN armed but recv/read returned EAGAIN — level-triggered spin.
+                             * NOTE: DESCRIPTOR_TYPE_FILE (TUN) is intentionally excluded — it must
+                             * stay armed so the kernel re-notifies when the next packet arrives.
+                             * EAGAIN on a level-triggered fd means "not readable", so epoll will
+                             * stay silent until data arrives — no busy-spin. */
+                            switch (l_cur->type) {
+                            case DESCRIPTOR_TYPE_PIPE:
+                            case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+                            case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                            case DESCRIPTOR_TYPE_SOCKET_UDP:
+                                dap_events_socket_set_readable_unsafe(l_cur, false);
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+#endif
 #ifndef DAP_NET_CLIENT_NO_SSL
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_errno != SSL_ERROR_WANT_READ && l_errno != SSL_ERROR_WANT_WRITE) {
                             char l_err_str[80];
@@ -1177,22 +1223,52 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     else if (!l_flag_rdhup && !l_flag_error && !(l_cur->flags & DAP_SOCK_CONNECTING )) {
                         debug_if(s_debug_more, L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d", 
                                l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur->socket, l_cur->type);
-                        //dap_events_socket_set_readable_unsafe(l_cur,false);
+                        if (l_must_read_smth) {
+                            /* DESCRIPTOR_TYPE_FILE (TUN) excluded: keep it armed (level-
+                             * triggered) so future packets keep waking the worker. */
+                            switch (l_cur->type) {
+                            case DESCRIPTOR_TYPE_PIPE:
+                            case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+                            case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                            case DESCRIPTOR_TYPE_SOCKET_UDP:
+                                dap_events_socket_set_readable_unsafe(l_cur, false);
+                                break;
+                            default:
+                                break;
+                            }
+                        }
                     }
+                }
+
+                /* TUN: drain kernel queue in one epoll wakeup (avoids monopolizing worker). */
+                while (l_cur->type == DESCRIPTOR_TYPE_FILE
+                       && (l_cur->flags & DAP_SOCK_READY_TO_READ)
+                       && l_cur->buf_in_size == 0
+                       && l_cur->buf_in_size < l_cur->buf_in_size_max
+                       && l_cur->callbacks.read_callback) {
+                    ssize_t lr = read(s_es_io_fd(l_cur), (char *)l_cur->buf_in, l_cur->buf_in_size_max);
+                    if (lr <= 0) {
+                        /* EAGAIN means the kernel queue is fully drained. Keep EPOLLIN
+                         * armed (the TUN fd is level-triggered) so the next packet
+                         * wakes the worker. Disarming here permanently silenced the
+                         * TUN fd, so every subsequent packet was dropped (tx_dropped). */
+                        break;
+                    }
+                    l_cur->buf_in_size = (size_t)lr;
+                    l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
+                    if (!l_cur->context)
+                        break;
+                    l_cur->buf_in_size = 0;
                 }
             }
 
             // Possibly have data to read despite EPOLLRDHUP
             if (l_flag_rdhup){
-                if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT) {
-                    debug_if(s_debug_more, L_DEBUG, "RDHUP on socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
-                           " type %d buf_out %zu — remote closed write side",
-                           l_cur->socket, l_cur->uuid, l_cur->type, l_cur->buf_out_size);
-                } else {
-                    log_it(L_INFO, "RDHUP on socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
-                           " type %d buf_out %zu — remote closed write side",
-                           l_cur->socket, l_cur->uuid, l_cur->type, l_cur->buf_out_size);
-                }
+                /* Short-lived HTTP/IPC sockets close with RDHUP constantly;
+                 * VPN reconnect is logged at app layer (Stream connection lost). */
+                debug_if(s_debug_more, L_DEBUG, "RDHUP on socket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x
+                       " type %d buf_out %zu — remote closed write side",
+                       l_cur->socket, l_cur->uuid, l_cur->type, l_cur->buf_out_size);
                 switch (l_cur->type ){
                     case DESCRIPTOR_TYPE_SOCKET_RAW:
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
@@ -1397,7 +1473,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
                     case DESCRIPTOR_TYPE_PIPE:
                     case DESCRIPTOR_TYPE_FILE:
-                        l_bytes_sent = write(l_cur->fd, (char *) (l_cur->buf_out), l_cur->buf_out_size );
+                        l_bytes_sent = write(s_es_io_fd(l_cur), (char *) (l_cur->buf_out), l_cur->buf_out_size );
                         l_errno = errno;
                         /* TUN/PIPE does not support edge-triggered EPOLLOUT: the kernel never
                          * re-arms the event after EAGAIN, so epoll_wait keeps returning
@@ -1407,8 +1483,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                          * and clear EPOLLOUT ourselves.  Dropping is safe: the VPN data
                          * stream is reliable TCP; upper-level retransmission will recover. */
                         if (l_bytes_sent < 0 && (l_errno == EAGAIN || l_errno == EWOULDBLOCK)) {
-                            log_it(L_WARNING, "TUN/PIPE fd=%d write EAGAIN — dropping %zu bytes to avoid busy loop",
-                                   l_cur->fd, l_cur->buf_out_size);
+                            debug_if(s_debug_more, L_DEBUG, "TUN/PIPE fd=%d write EAGAIN — dropping %zu bytes to avoid busy loop",
+                                   s_es_io_fd(l_cur), l_cur->buf_out_size);
                             l_cur->buf_out_size = 0;
                             dap_events_socket_set_writable_unsafe(l_cur, false);
                             l_bytes_sent = 0;
@@ -1432,6 +1508,20 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                             l_cur->buf_out_size = 0;
                         }
+#if !defined(DAP_OS_WINDOWS)
+                        else if (l_errno == EAGAIN || l_errno == EWOULDBLOCK) {
+                            switch (l_cur->type) {
+                            case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+                            case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                            case DESCRIPTOR_TYPE_PIPE:
+                            case DESCRIPTOR_TYPE_FILE:
+                                dap_events_socket_set_writable_unsafe(l_cur, false);
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+#endif
 #ifndef DAP_NET_CLIENT_NO_SSL
                         if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_errno != SSL_ERROR_WANT_READ && l_errno != SSL_ERROR_WANT_WRITE) {
                             char l_err_str[80];
@@ -2089,7 +2179,7 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
     l_es->socket = INVALID_SOCKET;
     l_es->flags |= DAP_SOCK_READY_TO_READ;
 #elif defined(DAP_EVENTS_CAPS_EPOLL)
-    l_es->ev_base_flags = EPOLLIN | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
+    l_es->ev_base_flags = EPOLLIN | EPOLLET | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
 #elif defined(DAP_EVENTS_CAPS_POLL)
     l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
