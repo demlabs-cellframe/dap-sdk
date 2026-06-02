@@ -270,8 +270,9 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data, int a
 
             if (jobj_params)
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else 
-                request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
+            else
+                request->params = dap_json_rpc_params_create_from_subcmd_and_args(
+                    jobj_subcmd, l_arguments_obj, request->method);
 
             json_object_put(jobj);
             if (!request->params){
