@@ -422,15 +422,17 @@ static bool s_check_completion(void *a_arg)
     if (done >= s_ctx.num_clients) {
         atomic_store(&s_ctx.sending_complete, true);
     }
-    
-    // Accept 90% delivery (UDP may lose some)
-    uint32_t threshold = expected * 90 / 100;
-    if (recv >= threshold && atomic_load(&s_ctx.sending_complete)) {
-        dap_test_msg("Complete: sent=%u, recv=%u (threshold=%u)", sent, recv, threshold);
+
+    // Complete only when ALL expected packets are received.
+    // Do NOT terminate early based on clients_done alone: in-flight packets
+    // forwarded via cross-worker queues would not yet be counted and the test
+    // would report false packet loss.
+    if (recv >= expected) {
+        dap_test_msg("Complete: sent=%u, recv=%u/%u", sent, recv, expected);
         atomic_store(&s_ctx.test_complete, true);
         return false;
     }
-    
+
     return true;  // Continue checking
 }
 

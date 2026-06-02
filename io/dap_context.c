@@ -1048,26 +1048,44 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_errno = errno;
 #endif
                     break;
-                    case DESCRIPTOR_TYPE_SOCKET_UDP:
-                        l_must_read_smth = true;
-                        // UDP: ALWAYS overwrite buf_in (datagrams are independent!)
-                        // Do NOT append like TCP - each datagram is a separate message!
-                        debug_if(g_debug_reactor, L_DEBUG, 
-                                 "UDP recvfrom: fd=%d, buf_in=%p, buf_in_size(before)=%zu, buf_in_size_max=%zu",
-                                 l_cur->fd, l_cur->buf_in, l_cur->buf_in_size, l_cur->buf_in_size_max);
-                        l_bytes_read = recvfrom(s_es_io_fd(l_cur), (char *)l_cur->buf_in,
-                                                l_cur->buf_in_size_max, 0,
-                                                (struct sockaddr*)&l_cur->addr_storage, &l_cur->addr_size);
-                        debug_if(g_debug_reactor, L_DEBUG, 
-                                 "UDP recvfrom: fd=%d, bytes_read=%zd", l_cur->fd, l_bytes_read);
-
-#ifdef DAP_OS_WINDOWS
-                        l_errno = WSAGetLastError();
-#else
-                        l_errno = errno;
-#endif
-                    
-                    break;
+                    case DESCRIPTOR_TYPE_SOCKET_UDP: {
+                        /* The UDP server socket is level-triggered (EPOLLIN, no
+                         * EPOLLET).  Reading a single datagram per epoll wakeup
+                         * works but forces one epoll cycle per packet, slowing the
+                         * drain under load and letting the kernel receive buffer
+                         * overflow (RcvbufErrors).  Drain all available datagrams
+                         * in a tight loop to keep the kernel buffer from filling. */
+                        bool l_udp_removed = false;
+                        l_cur->addr_size = sizeof(l_cur->addr_storage);
+                        for (;;) {
+                            l_bytes_read = recvfrom(s_es_io_fd(l_cur),
+                                                    (char *)l_cur->buf_in,
+                                                    l_cur->buf_in_size_max, 0,
+                                                    (struct sockaddr*)&l_cur->addr_storage,
+                                                    &l_cur->addr_size);
+                            l_errno = errno;
+                            if (l_bytes_read <= 0) {
+                                /* EAGAIN/EWOULDBLOCK: socket drained — normal exit */
+                                if (l_bytes_read < 0 && (l_errno == EAGAIN || l_errno == EWOULDBLOCK))
+                                    l_errno = 0; /* suppress spurious error below */
+                                break;
+                            }
+                            l_cur->buf_in_size = (size_t)l_bytes_read;
+                            l_cur->last_time_active = l_cur_time;
+                            if (l_cur->callbacks.read_callback) {
+                                l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
+                                if (!l_cur->context) { /* socket removed in callback */
+                                    l_udp_removed = true;
+                                    break;
+                                }
+                            }
+                            l_cur->buf_in_size = 0;
+                            l_cur->addr_size = sizeof(l_cur->addr_storage);
+                        }
+                        l_must_read_smth = false; /* already handled above */
+                        if (l_udp_removed)
+                            continue; /* skip further processing for removed socket */
+                    } break;
 
                     case DESCRIPTOR_TYPE_SOCKET_RAW:
                         l_must_read_smth = true;
@@ -1195,12 +1213,13 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                              * NOTE: DESCRIPTOR_TYPE_FILE (TUN) is intentionally excluded — it must
                              * stay armed so the kernel re-notifies when the next packet arrives.
                              * EAGAIN on a level-triggered fd means "not readable", so epoll will
-                             * stay silent until data arrives — no busy-spin. */
+                             * stay silent until data arrives — no busy-spin.
+                             * NOTE: DESCRIPTOR_TYPE_SOCKET_UDP is excluded — it has its own drain
+                             * loop above and never reaches this path (l_must_read_smth=false). */
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_PIPE:
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                            case DESCRIPTOR_TYPE_SOCKET_UDP:
                                 dap_events_socket_set_readable_unsafe(l_cur, false);
                                 break;
                             default:
@@ -1224,13 +1243,13 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         debug_if(s_debug_more, L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d", 
                                l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur->socket, l_cur->type);
                         if (l_must_read_smth) {
-                            /* DESCRIPTOR_TYPE_FILE (TUN) excluded: keep it armed (level-
-                             * triggered) so future packets keep waking the worker. */
+                            /* DESCRIPTOR_TYPE_FILE (TUN) and DESCRIPTOR_TYPE_SOCKET_UDP
+                             * are excluded: TUN must stay armed for next packets;
+                             * UDP uses a drain loop and never sets l_must_read_smth. */
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_PIPE:
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                            case DESCRIPTOR_TYPE_SOCKET_UDP:
                                 dap_events_socket_set_readable_unsafe(l_cur, false);
                                 break;
                             default:
@@ -2179,7 +2198,7 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
     l_es->socket = INVALID_SOCKET;
     l_es->flags |= DAP_SOCK_READY_TO_READ;
 #elif defined(DAP_EVENTS_CAPS_EPOLL)
-    l_es->ev_base_flags = EPOLLIN | EPOLLET | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
+    l_es->ev_base_flags = EPOLLIN | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
 #elif defined(DAP_EVENTS_CAPS_POLL)
     l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
