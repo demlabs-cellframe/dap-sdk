@@ -15,3 +15,8 @@ void dap_stream_esocket_worker_unassign_cb(dap_events_socket_t *a_esocket, dap_w
 
 // Stream states update — used by transport modules after setup
 void dap_stream_states_update(dap_stream_t *a_stream);
+
+// Arm the keepalive timer for a client stream immediately after it is added
+// to a worker.  Must be called from the worker thread that owns the esocket.
+// Safe to call multiple times (no-op if timer already running).
+void dap_stream_keepalive_arm(dap_stream_t *a_stream, dap_worker_t *a_worker);

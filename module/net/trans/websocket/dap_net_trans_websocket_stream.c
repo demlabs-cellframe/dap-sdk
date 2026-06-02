@@ -36,6 +36,7 @@
 #include "dap_net_trans_server.h"
 #include "dap_stream_handshake.h"
 #include "dap_stream.h"
+#include "dap_stream_esocket_ops.h"
 #include "dap_enc_base64.h"
 #include "dap_hash.h"
 #include "dap_rand.h"
@@ -1375,6 +1376,7 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     l_stream->trans = a_trans;
 
     dap_worker_add_events_socket(a_params->worker, l_es);
+    dap_stream_keepalive_arm(l_stream, a_params->worker);
 
     a_result->esocket = l_es;
     a_result->stream = l_stream;

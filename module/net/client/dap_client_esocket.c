@@ -619,8 +619,15 @@ static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG vo
         return;
     }
 
-    if (l_fsm->trans_ctx && l_fsm->trans_ctx->stream)
+    if (l_fsm->trans_ctx && l_fsm->trans_ctx->stream) {
         l_fsm->trans_ctx->stream->esocket = NULL;
+        // Also null trans_ctx->esocket to prevent double-delete in dap_stream_delete_unsafe:
+        // dap_stream_delete_unsafe checks trans_ctx->esocket (not stream->esocket) to decide
+        // whether to call dap_events_socket_remove_and_delete. Without this, a subsequent
+        // client teardown would attempt to delete an already-deleted esocket → heap corruption.
+        if (l_fsm->trans_ctx->stream->trans_ctx)
+            l_fsm->trans_ctx->stream->trans_ctx->esocket = NULL;
+    }
 
     dap_client_fsm_notify(l_fsm->uuid, l_fsm->fsm_thread_idx,
                           STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);

@@ -697,7 +697,8 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
 
     // DNS tunneling uses UDP (connectionless) - just add to worker
     dap_worker_add_events_socket(a_params->worker, l_es);
-    
+    dap_stream_keepalive_arm(l_stream, a_params->worker);
+
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;

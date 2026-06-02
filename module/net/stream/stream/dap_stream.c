@@ -655,9 +655,18 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     }
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es) {
-        assert(a_server_side == !!l_es->server);
+        if (a_server_side != !!l_es->server) {
+            log_it(L_WARNING, "Keepalive side mismatch for uuid 0x%016"DAP_UINT64_FORMAT_x
+                   ": expected %s, got %s — skipping", *l_es_uuid,
+                   a_server_side ? "server" : "client", l_es->server ? "server" : "client");
+            DAP_DELETE(l_es_uuid);
+            return false;
+        }
         dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
-        assert(l_stream);
+        if (!l_stream) {
+            // FSM hasn't wired trans_ctx->stream yet (client stream early tick) - retry
+            return true;
+        }
         if (l_stream->is_active) {
             l_stream->is_active = false;
             return true;
@@ -823,9 +832,19 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_cluster_node_addr_t *a_addr
     dap_ht_find(s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
     if (l_auth_stream) {
         if (a_worker)
-            *a_worker = l_auth_stream->stream_worker->worker;
-        if (l_auth_stream->trans_ctx && l_auth_stream->trans_ctx->esocket)
+            *a_worker = l_auth_stream->stream_worker ? l_auth_stream->stream_worker->worker : NULL;
+        if (l_auth_stream->trans_ctx && l_auth_stream->trans_ctx->esocket) {
             l_ret = l_auth_stream->trans_ctx->esocket->uuid;
+            dap_worker_t *l_w = l_auth_stream->stream_worker ? l_auth_stream->stream_worker->worker : NULL;
+            log_it(L_INFO, "find_by_addr " NODE_ADDR_FP_STR ": uuid=0x%016" DAP_UINT64_FORMAT_x
+                   " worker=%u ctx=%u client_uplink=%d",
+                   NODE_ADDR_FP_ARGS_S(*a_addr), l_ret,
+                   l_w ? l_w->id : 0xffffu,
+                   l_w ? l_w->context->id : 0xffffu,
+                   (int)l_auth_stream->is_client_to_uplink);
+        } else
+            log_it(L_WARNING, "find_by_addr " NODE_ADDR_FP_STR ": stream %p has no esocket",
+                   NODE_ADDR_FP_ARGS_S(*a_addr), (void *)l_auth_stream);
     } else if (a_worker)
         *a_worker = NULL;
     pthread_rwlock_unlock(&s_streams_lock);
