@@ -172,7 +172,6 @@ static bool s_ch_pkt_in(dap_stream_ch_t *a_ch, void *a_data)
         return true;
     dap_stream_ch_pkt_t *l_pkt = (dap_stream_ch_pkt_t *)a_data;
     size_t l_size = l_pkt->hdr.data_size;
-    log_it(L_DEBUG, "Server: echo %zu bytes", l_size);
     dap_stream_ch_pkt_write_unsafe(a_ch, 0, l_pkt->data, l_size);
     return true;
 }
@@ -205,11 +204,11 @@ static void s_client_data_in(dap_stream_ch_t *a_ch, uint8_t a_type, const void *
     memcpy(ctx->recv_data + ctx->recv_size, a_data, a_data_size);
     ctx->recv_size = new_size;
     
-    // Log every 100th packet or when data is complete
-    uint64_t total_recv = atomic_load(&s_packets_received);
-    if (total_recv % 100 == 0 || ctx->recv_size >= ctx->send_size) {
-        log_it(L_INFO, "Client %d @ worker %u: recv %zu (total %zu/%zu) [pkt #%"PRIu64"]", 
-               ctx->id, l_worker_id, a_data_size, ctx->recv_size, ctx->send_size, total_recv);
+    // Log only once per client, when its full payload has arrived. Per-packet
+    // logging here floods the CI job log (it gets truncated, hiding failures).
+    if (ctx->recv_size >= ctx->send_size) {
+        log_it(L_INFO, "Client %d @ worker %u: complete %zu/%zu bytes",
+               ctx->id, l_worker_id, ctx->recv_size, ctx->send_size);
     }
     
     if (ctx->recv_size >= ctx->send_size) {
@@ -670,9 +669,12 @@ int main(int argc, char **argv)
         fclose(f);
     }
     
-    // 2. Set logging to stdout BEFORE dap_common_init
+    // 2. Set logging to stdout BEFORE dap_common_init.
+    // Keep at L_WARNING: at L_DEBUG this test emits tens of thousands of
+    // per-packet/per-stage lines that overflow the CI job-log size limit and
+    // get truncated, hiding the actual failure. Errors/warnings still surface.
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    dap_log_level_set(L_DEBUG);
+    dap_log_level_set(L_WARNING);
     
     // 3. Initialize config system
     dap_config_init(".");
