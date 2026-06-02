@@ -968,24 +968,22 @@ dap_events_socket_t * dap_events_socket_create_type_event_unsafe(dap_worker_t * 
  */
 void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
 {
-#if defined(DAP_EVENTS_CAPS_EVENT_EVENTFD )
-    eventfd_t l_value;
-    int l_read_ret = eventfd_read(a_esocket->fd, &l_value);
-    if (l_read_ret != 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            /* Level-triggered epoll keeps EPOLLIN armed while we cannot consume
-             * the eventfd — disable readable to break the worker busy-spin. */
-            dap_events_socket_set_readable_unsafe(a_esocket, false);
-            return;
-        }
-        log_it(L_WARNING, "Can't read packet from event fd, error %d: \"%s\"", errno, dap_strerror(errno));
-        dap_events_socket_set_readable_unsafe(a_esocket, false);
-        return;
-    }
-#endif
     if (a_esocket->callbacks.event_callback ){
 #if defined(DAP_EVENTS_CAPS_EVENT_EVENTFD )
-        a_esocket->callbacks.event_callback(a_esocket, l_value);
+        /* The eventfd is level-triggered and opened with EFD_NONBLOCK.  On EAGAIN
+         * (counter == 0) the fd is simply "not readable", so epoll stays silent
+         * until the next write — there is no busy-spin to defend against.  Do NOT
+         * disarm EPOLLIN here: eventfd_write() (the queue push signal) does not
+         * re-arm epoll, so a disarm would permanently deafen the queue and stall
+         * cross-worker packet delivery. */
+        eventfd_t l_value;
+        if (eventfd_read(a_esocket->fd, &l_value) == 0) { // would block if not ready
+            a_esocket->callbacks.event_callback(a_esocket, l_value);
+        } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            log_it(L_WARNING, "Can't read packet from event fd, error %d: \"%s\"", errno, dap_strerror(errno));
+        } else {
+            return; // counter empty — nothing to do, keep EPOLLIN armed
+        }
 #elif defined DAP_EVENTS_CAPS_WEPOLL
         u_short l_value;
         int l_ret;
@@ -1006,10 +1004,8 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
 #else
 #error "No Queue fetch mechanism implemented on your platform"
 #endif
-    } else {
+    } else
         log_it(L_ERROR, "Event socket %"DAP_FORMAT_SOCKET" accepted data but callback is NULL ", a_esocket->socket);
-        dap_events_socket_set_readable_unsafe(a_esocket, false);
-    }
 }
 
 #ifdef DAP_EVENTS_CAPS_QUEUE_PIPE2

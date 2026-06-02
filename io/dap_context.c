@@ -92,6 +92,12 @@
 
 static bool s_debug_more = false;
 
+/* Max UDP datagrams drained from one listener per epoll wakeup before yielding
+ * back to epoll (NAPI-style budget). Bounds listener CPU per cycle so co-located
+ * timers / other esockets on the same worker are not starved under inbound load,
+ * while staying large enough to sustain high throughput. */
+#define DAP_UDP_DRAIN_BUDGET 64
+
 // Forward declaration for packet queue helper (defined in dap_events_socket.c, NOT static)
 extern ssize_t s_packet_queue_pop_and_send(dap_events_socket_packet_queue_t *a_queue, int a_fd);
 
@@ -1050,12 +1056,26 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_UDP: {
                         /* The UDP server socket is level-triggered (EPOLLIN, no
-                         * EPOLLET).  Reading a single datagram per epoll wakeup
-                         * works but forces one epoll cycle per packet, slowing the
-                         * drain under load and letting the kernel receive buffer
-                         * overflow (RcvbufErrors).  Drain all available datagrams
-                         * in a tight loop to keep the kernel buffer from filling. */
+                         * EPOLLET).  Reading a single datagram per epoll wakeup is
+                         * fair to other esockets but forces one epoll cycle per
+                         * packet, slowing the drain and overflowing the kernel
+                         * receive buffer (RcvbufErrors) under load.  Draining ALL
+                         * datagrams in a tight loop maximizes throughput but lets a
+                         * busy listener monopolize its worker thread: while the loop
+                         * runs the worker never returns to epoll_wait, so timers and
+                         * other esockets on the SAME worker are starved (observed:
+                         * repeating send/keepalive timers co-located with the
+                         * listener stop firing entirely under sustained inbound load).
+                         *
+                         * Bounded drain (NAPI-style budget): read up to
+                         * DAP_UDP_DRAIN_BUDGET datagrams per wakeup, then yield back
+                         * to epoll.  Because the socket is level-triggered, epoll
+                         * immediately re-reports it readable on the next cycle (so no
+                         * packet is lost), but the worker now interleaves the
+                         * listener with its other ready fds — restoring fairness
+                         * without throttling throughput. */
                         bool l_udp_removed = false;
+                        int l_udp_drained = 0;
                         l_cur->addr_size = sizeof(l_cur->addr_storage);
                         for (;;) {
                             l_bytes_read = recvfrom(s_es_io_fd(l_cur),
@@ -1081,6 +1101,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             }
                             l_cur->buf_in_size = 0;
                             l_cur->addr_size = sizeof(l_cur->addr_storage);
+                            if (++l_udp_drained >= DAP_UDP_DRAIN_BUDGET)
+                                break; /* yield to epoll; LT socket re-fires next cycle */
                         }
                         l_must_read_smth = false; /* already handled above */
                         if (l_udp_removed)
