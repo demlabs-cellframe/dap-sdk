@@ -83,6 +83,16 @@ typedef struct dap_sdk_config {
     const struct dap_link_manager_callbacks *link_manager_callbacks; ///< NULL = default no-op stubs
 } dap_sdk_config_t;
 
+#if defined(DAP_OS_WASM) && defined(DAP_WASM_PTHREADS)
+/**
+ * @brief Pre-initialize WASMFS/OPFS before any filesystem access (WASM pthreads only).
+ *        Safe to call multiple times; subsequent calls are no-ops.
+ * @param a_mount Mount point (NULL defaults to "/dap")
+ * @return 0 on success
+ */
+int dap_sdk_wasmfs_init(const char *a_mount);
+#endif
+
 /**
  * @brief Initialize DAP SDK with specified configuration
  * @param a_config Configuration structure

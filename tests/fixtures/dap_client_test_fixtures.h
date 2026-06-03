@@ -36,7 +36,8 @@
 
 #include "dap_test_async.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_events.h"
 #include <stdbool.h>
 

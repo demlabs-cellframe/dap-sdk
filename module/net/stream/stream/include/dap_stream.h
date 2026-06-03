@@ -71,6 +71,8 @@ typedef struct dap_stream {
     size_t seq_id;
     size_t stream_size;
     size_t client_last_seq_id_packet;
+    size_t stat_packets_lost;
+    size_t stat_packets_replayed;
 
     dap_ht_handle_t hh;
     struct dap_stream *prev, *next;

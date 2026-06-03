@@ -48,34 +48,44 @@ const dap_serialize_field_t g_dap_io_flow_ctrl_base_fields[] = {
         .name = "seq_num",
         .type = DAP_SERIALIZE_TYPE_UINT64,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, seq_num),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, seq_num),
         .size = sizeof(uint64_t),
     },
     {
         .name = "ack_seq",
         .type = DAP_SERIALIZE_TYPE_UINT64,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, ack_seq),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, ack_seq),
         .size = sizeof(uint64_t),
     },
     {
         .name = "timestamp_ms",
         .type = DAP_SERIALIZE_TYPE_UINT32,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, timestamp_ms),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, timestamp_ms),
         .size = sizeof(uint32_t),
     },
     {
         .name = "flags",
         .type = DAP_SERIALIZE_TYPE_UINT8,
         .flags = DAP_SERIALIZE_FLAG_NONE,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, flags),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, flags),
         .size = sizeof(uint8_t),
     },
 };
 
 const size_t g_dap_io_flow_ctrl_base_field_count = 
     sizeof(g_dap_io_flow_ctrl_base_fields) / sizeof(g_dap_io_flow_ctrl_base_fields[0]);
+
+const dap_serialize_schema_t g_dap_io_flow_ctrl_base_schema = {
+    .name = "io_flow_ctrl_base_header",
+    .version = 1,
+    .struct_size = sizeof(dap_io_flow_ctrl_base_header_mem_t),
+    .field_count = g_dap_io_flow_ctrl_base_field_count,
+    .fields = g_dap_io_flow_ctrl_base_fields,
+    .magic = DAP_IO_FLOW_CTRL_BASE_MAGIC,
+    .validate_func = NULL,
+};
 
 //===================================================================
 // INTERNAL STRUCTURES
@@ -109,7 +119,7 @@ struct dap_io_flow_ctrl {
     
     // Lifecycle management (prevents use-after-free in multithreaded scenarios)
     _Atomic(int32_t) active_ops;        // Count of active operations (send/recv)
-    _Atomic(bool) deleting;             // Flag: deletion in progress
+    _Atomic(int32_t) deleting;          // Flag: deletion in progress (int for WASM atomic alignment)
     pthread_mutex_t lifecycle_mutex;    // Mutex for lifecycle synchronization
     pthread_cond_t lifecycle_cond;      // Condition: wait for operations to complete
     
@@ -273,7 +283,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
     
     // Initialize lifecycle management
     atomic_init(&l_ctrl->active_ops, 0);
-    atomic_init(&l_ctrl->deleting, false);
+    atomic_init(&l_ctrl->deleting, 0);
     pthread_mutex_init(&l_ctrl->lifecycle_mutex, NULL);
     pthread_cond_init(&l_ctrl->lifecycle_cond, NULL);
     
@@ -392,7 +402,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     
     // STEP 1: Signal that deletion is in progress
     // This will cause new operations to fail fast via s_op_begin()
-    atomic_store_explicit(&a_ctrl->deleting, true, memory_order_release);
+    atomic_store_explicit(&a_ctrl->deleting, 1, memory_order_release);
     
     // STEP 2: Wait for all active operations to complete
     // Any thread currently inside send/recv will finish and call s_op_end()

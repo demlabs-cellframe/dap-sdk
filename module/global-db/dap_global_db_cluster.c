@@ -222,6 +222,12 @@ static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const vo
     dap_global_db_cluster_t *l_cluster = a_arg;
     switch (a_type) {
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
+        if (a_data_size < DAP_GLOBAL_DB_HASH_PKT_HDR_WIRE_SIZE)
+            break;
+        dap_global_db_hash_pkt_hdr_mem_t l_hmem;
+        if (dap_global_db_hash_pkt_hdr_unpack((const uint8_t *)a_data, a_data_size, &l_hmem) != 0 ||
+                a_data_size != dap_global_db_hash_pkt_get_size_hdr(&l_hmem))
+            break;
         dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)a_data;
         dap_global_db_cluster_t *l_msg_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(),
                                                                                 (char *)l_pkt->group_n_hashses);
@@ -257,13 +263,18 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
             if (!dap_global_db_group_count(it->data, true))
                 continue;
             size_t l_group_len = dap_strlen(it->data) + 1;
-            dap_global_db_start_pkt_t *l_msg = DAP_NEW_STACK_SIZE(dap_global_db_start_pkt_t, sizeof(dap_global_db_start_pkt_t) + l_group_len);
-            l_msg->last_hash = c_dap_global_db_hash_blank;
-            l_msg->group_len = l_group_len;
-            memcpy(l_msg->group, it->data, l_group_len);
-            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_SYNC_START packet for group %s from first record", l_msg->group);
+            size_t l_pkt_total = DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE + l_group_len;
+            byte_t *l_msg_buf = DAP_NEW_STACK_SIZE(byte_t, l_pkt_total);
+            dap_global_db_start_pkt_hdr_mem_t l_st_hdr = { .group_len = (uint16_t)l_group_len };
+            memcpy(l_st_hdr.last_hash, &c_dap_global_db_hash_blank, sizeof(l_st_hdr.last_hash));
+            if (dap_global_db_start_pkt_hdr_pack(&l_st_hdr, l_msg_buf, DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE) != 0) {
+                log_it(L_ERROR, "GLOBAL_DB start header pack failed");
+                continue;
+            }
+            memcpy(l_msg_buf + DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE, it->data, l_group_len);
+            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_SYNC_START packet for group %s from first record", (const char *)it->data);
             dap_stream_ch_pkt_send_by_addr(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START,
-                                           l_msg, dap_global_db_start_pkt_get_size(l_msg));
+                                           l_msg_buf, l_pkt_total);
         }
 
         dap_list_free_full(l_groups, NULL);

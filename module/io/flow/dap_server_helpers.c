@@ -35,9 +35,9 @@
  */
 typedef struct {
     dap_server_t *server;
-    bool is_ready;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    bool is_ready;
 } server_ready_ctx_t;
 
 /**
