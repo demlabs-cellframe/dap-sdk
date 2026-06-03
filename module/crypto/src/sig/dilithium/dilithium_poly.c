@@ -511,56 +511,49 @@ static void s_dil_dispatch_init(void)
 
 /* ===== Public API — thin dispatch wrappers ===== */
 
+#define S_DIL_INVOKE_VOID(fn, ...) \
+    do { DAP_DISPATCH_ENSURE(fn, s_dil_dispatch_init); fn##_ptr(__VA_ARGS__); } while (0)
+#define S_DIL_INVOKE_RET(fn, ...) \
+    ({ DAP_DISPATCH_ENSURE(fn, s_dil_dispatch_init); fn##_ptr(__VA_ARGS__); })
+
 #define C(p)  ((int32_t *)(p)->coeffs)
 #define CC(p) ((const int32_t *)(p)->coeffs)
 
 void poly_reduce(poly *a) {
-    DAP_DISPATCH_ENSURE(s_dil_reduce, s_dil_dispatch_init);
-    s_dil_reduce_ptr(C(a));
+    S_DIL_INVOKE_VOID(s_dil_reduce, C(a));
 }
 void poly_csubq(poly *a) {
-    DAP_DISPATCH_ENSURE(s_dil_csubq, s_dil_dispatch_init);
-    s_dil_csubq_ptr(C(a));
+    S_DIL_INVOKE_VOID(s_dil_csubq, C(a));
 }
 void poly_freeze(poly *a) {
-    DAP_DISPATCH_ENSURE(s_dil_freeze, s_dil_dispatch_init);
-    s_dil_freeze_ptr(C(a));
+    S_DIL_INVOKE_VOID(s_dil_freeze, C(a));
 }
 void dilithium_poly_add(poly *c, const poly *a, const poly *b) {
-    DAP_DISPATCH_ENSURE(s_dil_add, s_dil_dispatch_init);
-    s_dil_add_ptr(C(c), CC(a), CC(b));
+    S_DIL_INVOKE_VOID(s_dil_add, C(c), CC(a), CC(b));
 }
 void dilithium_poly_sub(poly *c, const poly *a, const poly *b) {
-    DAP_DISPATCH_ENSURE(s_dil_sub, s_dil_dispatch_init);
-    s_dil_sub_ptr(C(c), CC(a), CC(b));
+    S_DIL_INVOKE_VOID(s_dil_sub, C(c), CC(a), CC(b));
 }
 void poly_neg(poly *a) {
-    DAP_DISPATCH_ENSURE(s_dil_neg, s_dil_dispatch_init);
-    s_dil_neg_ptr(C(a));
+    S_DIL_INVOKE_VOID(s_dil_neg, C(a));
 }
 void poly_shiftl(poly *a, unsigned int k) {
-    DAP_DISPATCH_ENSURE(s_dil_shiftl, s_dil_dispatch_init);
-    s_dil_shiftl_ptr(C(a), k);
+    S_DIL_INVOKE_VOID(s_dil_shiftl, C(a), k);
 }
 void poly_decompose(poly *a1, poly *a0, const poly *a) {
-    DAP_DISPATCH_ENSURE(s_dil_decompose, s_dil_dispatch_init);
-    s_dil_decompose_ptr(C(a1), C(a0), CC(a));
+    S_DIL_INVOKE_VOID(s_dil_decompose, C(a1), C(a0), CC(a));
 }
 void poly_power2round(poly *a1, poly *a0, const poly *a) {
-    DAP_DISPATCH_ENSURE(s_dil_p2r, s_dil_dispatch_init);
-    s_dil_p2r_ptr(C(a1), C(a0), CC(a));
+    S_DIL_INVOKE_VOID(s_dil_p2r, C(a1), C(a0), CC(a));
 }
 unsigned int poly_make_hint(poly *h, const poly *a, const poly *b) {
-    DAP_DISPATCH_ENSURE(s_dil_make_hint, s_dil_dispatch_init);
-    return s_dil_make_hint_ptr(C(h), CC(a), CC(b));
+    return S_DIL_INVOKE_RET(s_dil_make_hint, C(h), CC(a), CC(b));
 }
 void poly_use_hint(poly *a, const poly *b, const poly *h) {
-    DAP_DISPATCH_ENSURE(s_dil_use_hint, s_dil_dispatch_init);
-    s_dil_use_hint_ptr(C(a), CC(b), CC(h));
+    S_DIL_INVOKE_VOID(s_dil_use_hint, C(a), CC(b), CC(h));
 }
 int poly_chknorm(const poly *a, uint32_t B) {
-    DAP_DISPATCH_ENSURE(s_dil_chknorm, s_dil_dispatch_init);
-    return s_dil_chknorm_ptr(CC(a), (int32_t)B);
+    return S_DIL_INVOKE_RET(s_dil_chknorm, CC(a), (int32_t)B);
 }
 
 #undef C
@@ -578,15 +571,13 @@ void poly_invntt_montgomery(poly *a) {
 
 /*************************************************/
 void poly_pointwise_invmontgomery(poly *c, const poly *a, const poly *b) {
-    DAP_DISPATCH_ENSURE(s_dil_pw_mont, s_dil_dispatch_init);
-    s_dil_pw_mont_ptr((int32_t *)c->coeffs, (const int32_t *)a->coeffs,
+    S_DIL_INVOKE_VOID(s_dil_pw_mont, (int32_t *)c->coeffs, (const int32_t *)a->coeffs,
                       (const int32_t *)b->coeffs);
 }
 
 /*************************************************/
 void dilithium_poly_uniform(poly *a, const unsigned char *buf) {
-    DAP_DISPATCH_ENSURE(s_dil_rej_uniform, s_dil_dispatch_init);
-    s_dil_rej_uniform_ptr(a->coeffs, (const uint8_t *)buf);
+    S_DIL_INVOKE_VOID(s_dil_rej_uniform, a->coeffs, (const uint8_t *)buf);
 }
 
 /*************************************************/
@@ -1121,15 +1112,13 @@ const dap_ntt_params_t g_dilithium_ntt_params = {
 /*************************************************/
 void dilithium_ntt(uint32_t pp[NN])
 {
-    DAP_DISPATCH_ENSURE(s_dil_ntt_fwd, s_dil_dispatch_init);
-    s_dil_ntt_fwd_ptr((int32_t *)pp);
+    S_DIL_INVOKE_VOID(s_dil_ntt_fwd, (int32_t *)pp);
 }
 
 /*************************************************/
 void invntt_frominvmont(uint32_t pp[NN])
 {
-    DAP_DISPATCH_ENSURE(s_dil_ntt_inv, s_dil_dispatch_init);
-    s_dil_ntt_inv_ptr((int32_t *)pp);
+    S_DIL_INVOKE_VOID(s_dil_ntt_inv, (int32_t *)pp);
 }
 
 /*************************************************/
@@ -1154,29 +1143,26 @@ void poly_power2round_p(poly *a1, poly *a0, const poly *a, const dilithium_param
 
 void poly_decompose_p(poly *a1, poly *a0, const poly *a, const dilithium_param_t *p)
 {
-    DAP_DISPATCH_ENSURE(s_dil_decompose_g88, s_dil_dispatch_init);
     if (dil_gamma2(p) == (Q - 1) / 88)
-        s_dil_decompose_g88_ptr((int32_t *)a1->coeffs, (int32_t *)a0->coeffs, (const int32_t *)a->coeffs);
+        S_DIL_INVOKE_VOID(s_dil_decompose_g88, (int32_t *)a1->coeffs, (int32_t *)a0->coeffs, (const int32_t *)a->coeffs);
     else
-        s_dil_decompose_g32_ptr((int32_t *)a1->coeffs, (int32_t *)a0->coeffs, (const int32_t *)a->coeffs);
+        S_DIL_INVOKE_VOID(s_dil_decompose_g32, (int32_t *)a1->coeffs, (int32_t *)a0->coeffs, (const int32_t *)a->coeffs);
 }
 
 unsigned int poly_make_hint_p(poly *h, const poly *a, const poly *b, const dilithium_param_t *p)
 {
-    DAP_DISPATCH_ENSURE(s_dil_make_hint_g88, s_dil_dispatch_init);
     if (dil_gamma2(p) == (Q - 1) / 88)
-        return s_dil_make_hint_g88_ptr((int32_t *)h->coeffs, (const int32_t *)a->coeffs, (const int32_t *)b->coeffs);
+        return S_DIL_INVOKE_RET(s_dil_make_hint_g88, (int32_t *)h->coeffs, (const int32_t *)a->coeffs, (const int32_t *)b->coeffs);
     else
-        return s_dil_make_hint_g32_ptr((int32_t *)h->coeffs, (const int32_t *)a->coeffs, (const int32_t *)b->coeffs);
+        return S_DIL_INVOKE_RET(s_dil_make_hint_g32, (int32_t *)h->coeffs, (const int32_t *)a->coeffs, (const int32_t *)b->coeffs);
 }
 
 void poly_use_hint_p(poly *a, const poly *b, const poly *h, const dilithium_param_t *p)
 {
-    DAP_DISPATCH_ENSURE(s_dil_use_hint_g88, s_dil_dispatch_init);
     if (dil_gamma2(p) == (Q - 1) / 88)
-        s_dil_use_hint_g88_ptr((int32_t *)a->coeffs, (const int32_t *)b->coeffs, (const int32_t *)h->coeffs);
+        S_DIL_INVOKE_VOID(s_dil_use_hint_g88, (int32_t *)a->coeffs, (const int32_t *)b->coeffs, (const int32_t *)h->coeffs);
     else
-        s_dil_use_hint_g32_ptr((int32_t *)a->coeffs, (const int32_t *)b->coeffs, (const int32_t *)h->coeffs);
+        S_DIL_INVOKE_VOID(s_dil_use_hint_g32, (int32_t *)a->coeffs, (const int32_t *)b->coeffs, (const int32_t *)h->coeffs);
 }
 
 /*************************************************/
@@ -1223,22 +1209,20 @@ void polyz_pack_p(unsigned char *r, const poly *a, const dilithium_param_t *p)
 /*************************************************/
 void polyz_unpack_p(poly *r, const unsigned char *a, const dilithium_param_t *p)
 {
-    DAP_DISPATCH_ENSURE(s_dil_zunpack_g17, s_dil_dispatch_init);
     unsigned gbits = dil_gamma1_bits(p) + 1;
     if (gbits == 18)
-        s_dil_zunpack_g17_ptr((int32_t *)r->coeffs, a);
+        S_DIL_INVOKE_VOID(s_dil_zunpack_g17, (int32_t *)r->coeffs, a);
     else
-        s_dil_zunpack_g19_ptr((int32_t *)r->coeffs, a);
+        S_DIL_INVOKE_VOID(s_dil_zunpack_g19, (int32_t *)r->coeffs, a);
 }
 
 /*************************************************/
 void polyw1_pack_p(unsigned char *r, const poly *a, const dilithium_param_t *p)
 {
-    DAP_DISPATCH_ENSURE(s_dil_w1pack_g88, s_dil_dispatch_init);
     if (dil_gamma2(p) == (Q - 1) / 88)
-        s_dil_w1pack_g88_ptr(r, (const int32_t *)a->coeffs);
+        S_DIL_INVOKE_VOID(s_dil_w1pack_g88, r, (const int32_t *)a->coeffs);
     else
-        s_dil_w1pack_g32_ptr(r, (const int32_t *)a->coeffs);
+        S_DIL_INVOKE_VOID(s_dil_w1pack_g32, r, (const int32_t *)a->coeffs);
 }
 
 /*************************************************/

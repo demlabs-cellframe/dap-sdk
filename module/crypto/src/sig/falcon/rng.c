@@ -33,6 +33,10 @@
 
 #include "inner.h"
 
+#if defined(DAP_OS_WASM)
+#include "dap_rand.h"
+#endif
+
 // yyyNIST+0 yyyPQCLEAN+0
 /*
  * Include relevant system header files. For Win32, this will also need
@@ -61,10 +65,14 @@
 int
 Zf(get_seed)(void *seed, size_t len)
 {
-	(void)seed;
 	if (len == 0) {
 		return 1;
 	}
+#if defined(DAP_OS_WASM)
+	if (dap_random_bytes(seed, (unsigned int)len) == 0) {
+		return 1;
+	}
+#endif
 #if FALCON_RAND_GETENTROPY
 	if (getentropy(seed, len) == 0) {
 		return 1;

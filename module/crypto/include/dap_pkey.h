@@ -40,6 +40,7 @@ enum dap_pkey_type_enum {
     DAP_PKEY_TYPE_SIG_ECDSA = 0x0907,
     DAP_PKEY_TYPE_SIG_SHIPOVNIK = 0x0908,
     DAP_PKEY_TYPE_SIG_CHIPMUNK = 0x0909,
+    DAP_PKEY_TYPE_SIG_ML_DSA = 0x090a,
     DAP_PKEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM = 0xfffd,
     DAP_PKEY_TYPE_SIG_MULTI_CHAINED = 0xfffe,
     DAP_PKEY_TYPE_SIG_MULTI = 0xffff ///  @brief Has inside subset of different keys
@@ -64,6 +65,7 @@ DAP_STATIC_INLINE const char *dap_pkey_type_to_str(dap_pkey_type_t a_type){
         case DAP_PKEY_TYPE_SIG_ECDSA: return "DAP_PKEY_TYPE_SIG_ECDSA";
         case DAP_PKEY_TYPE_SIG_SHIPOVNIK: return "DAP_PKEY_TYPE_SIG_SHIPOVNIK";
         case DAP_PKEY_TYPE_SIG_CHIPMUNK: return "DAP_PKEY_TYPE_SIG_CHIPMUNK";
+        case DAP_PKEY_TYPE_SIG_ML_DSA: return "DAP_PKEY_TYPE_SIG_ML_DSA";
         case DAP_PKEY_TYPE_SIG_MULTI_CHAINED: return "DAP_PKEY_TYPE_SIG_MULTI_CHAINED";
         case DAP_PKEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: return "DAP_PKEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM";
         default: return "UNDEFINED";
@@ -89,6 +91,7 @@ DAP_STATIC_INLINE dap_sign_type_t dap_pkey_type_to_sign_type(dap_pkey_type_t a_p
         case DAP_PKEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
         case DAP_PKEY_TYPE_SIG_SHIPOVNIK: l_sign_type.type = SIG_TYPE_SHIPOVNIK; break;
         case DAP_PKEY_TYPE_SIG_CHIPMUNK: l_sign_type.type = SIG_TYPE_CHIPMUNK; break;
+        case DAP_PKEY_TYPE_SIG_ML_DSA: l_sign_type.type = SIG_TYPE_ML_DSA; break;
         case DAP_PKEY_TYPE_SIG_MULTI_CHAINED: l_sign_type.type = SIG_TYPE_MULTI_CHAINED; break;
         case DAP_PKEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: l_sign_type.type = SIG_TYPE_MULTI_ECDSA_DILITHIUM; break;
 
@@ -116,6 +119,7 @@ DAP_STATIC_INLINE dap_pkey_type_t dap_pkey_type_from_sign_type(dap_sign_type_t a
         case SIG_TYPE_ECDSA: l_pkey_type.type = DAP_PKEY_TYPE_SIG_ECDSA; break;
         case SIG_TYPE_SHIPOVNIK: l_pkey_type.type = DAP_PKEY_TYPE_SIG_SHIPOVNIK; break;
         case SIG_TYPE_CHIPMUNK: l_pkey_type.type = DAP_PKEY_TYPE_SIG_CHIPMUNK; break;
+        case SIG_TYPE_ML_DSA: l_pkey_type.type = DAP_PKEY_TYPE_SIG_ML_DSA; break;
         case SIG_TYPE_MULTI_CHAINED: l_pkey_type.type = DAP_PKEY_TYPE_SIG_MULTI_CHAINED; break;
         case SIG_TYPE_MULTI_ECDSA_DILITHIUM: l_pkey_type.type = DAP_PKEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM; break;
         default: l_pkey_type.type = DAP_PKEY_TYPE_NULL; break;
@@ -141,6 +145,7 @@ DAP_STATIC_INLINE dap_enc_key_type_t dap_pkey_type_to_enc_key_type(dap_pkey_type
         case DAP_PKEY_TYPE_SIG_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
         case DAP_PKEY_TYPE_SIG_SHIPOVNIK: return DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK;
         case DAP_PKEY_TYPE_SIG_CHIPMUNK: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
+        case DAP_PKEY_TYPE_SIG_ML_DSA: return DAP_ENC_KEY_TYPE_SIG_ML_DSA;
         case DAP_PKEY_TYPE_SIG_MULTI_CHAINED: return DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED;
         case DAP_PKEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM;
         default:;
@@ -167,6 +172,7 @@ DAP_STATIC_INLINE dap_pkey_type_t dap_pkey_type_from_enc_key_type(dap_enc_key_ty
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_pkey_type.type = DAP_PKEY_TYPE_SIG_ECDSA; break;
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK: l_pkey_type.type = DAP_PKEY_TYPE_SIG_SHIPOVNIK; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK: l_pkey_type.type = DAP_PKEY_TYPE_SIG_CHIPMUNK; break;
+        case DAP_ENC_KEY_TYPE_SIG_ML_DSA: l_pkey_type.type = DAP_PKEY_TYPE_SIG_ML_DSA; break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_pkey_type.type = DAP_PKEY_TYPE_SIG_MULTI_CHAINED; break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: l_pkey_type.type = DAP_PKEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM; break;
         default: l_pkey_type.type = DAP_PKEY_TYPE_NULL; break;
