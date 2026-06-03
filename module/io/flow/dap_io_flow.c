@@ -21,6 +21,7 @@
  * See more details here <http://www.gnu.org/licenses/>.
  */
 
+#include <inttypes.h>
 #include <string.h>
 #include <unistd.h>
 #include <netinet/in.h>
@@ -415,8 +416,8 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
         // Timeout check
         uint64_t l_elapsed_ns = dap_nanotime_now() - l_drain_start;
         if (l_elapsed_ns > l_max_drain_time_ns) {
-            log_it(L_WARNING, "Drain timeout after %lu ms, %u packets remaining",
-                   l_elapsed_ns / 1000000, l_current);
+            log_it(L_WARNING, "Drain timeout after %" PRIu64 " ms, %u packets remaining",
+                   (uint64_t)(l_elapsed_ns / 1000000), l_current);
             break;
         }
         
@@ -426,9 +427,9 @@ void dap_io_flow_server_delete(dap_io_flow_server_t *a_server)
     uint64_t l_drain_time_ms = (dap_nanotime_now() - l_drain_start) / 1000000;
     uint32_t l_final_count = atomic_load(&a_server->cross_worker_packets);
     if (l_final_count == 0) {
-        log_it(L_INFO, "Natural drain complete in %lu ms", l_drain_time_ms);
+        log_it(L_INFO, "Natural drain complete in %" PRIu64 " ms", l_drain_time_ms);
     } else {
-        log_it(L_WARNING, "Drain finished with %u packets remaining after %lu ms", 
+        log_it(L_WARNING, "Drain finished with %u packets remaining after %" PRIu64 " ms", 
                l_final_count, l_drain_time_ms);
     }
     
@@ -766,6 +767,7 @@ static void s_process_flow_packet_common(
     // === FAST PATH for BPF tiers (Tier 2/3): NO forwarding needed! ===
     // Kernel SO_REUSEPORT + BPF already distributed packet to correct worker.
     // Simply create flow locally without any cross-worker logic.
+#if defined(__linux__) || defined(ANDROID)
     if (a_server->lb_tier == DAP_IO_FLOW_LB_TIER_EBPF ||
         a_server->lb_tier == DAP_IO_FLOW_LB_TIER_CLASSIC_BPF) {
         
@@ -811,6 +813,7 @@ static void s_process_flow_packet_common(
         
         return;  // BPF tier processing complete
     }
+#endif
     
     // === SLOW PATH for Application-level LB (Tier 1): manual forwarding === 
     

@@ -17,6 +17,7 @@
     You should have received a copy of the GNU Lesser General Public License
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
+#include <inttypes.h>
 #include "dap_common.h"
 #include "dap_net.h"
 #include "dap_strfuncs.h"
@@ -272,7 +273,7 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
  */
 void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
 {
-    log_it(L_NOTICE, "Channel '%c' DELETE: %p (stream=%p, notifiers=%zu)", 
+    log_it(L_NOTICE, "Channel '%c' DELETE: %p (stream=%p, notifiers=%" PRIu64 ")", 
            a_ch->proc ? a_ch->proc->id : '?', a_ch, a_ch->stream,
            dap_list_length(a_ch->packet_in_notifiers));
     

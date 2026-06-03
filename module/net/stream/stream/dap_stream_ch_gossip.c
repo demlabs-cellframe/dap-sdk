@@ -21,6 +21,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
+#include <inttypes.h>
 #include <string.h>
 #include "dap_events.h"
 #include "dap_strfuncs.h"
@@ -219,7 +220,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             return false;
         }
         if (l_ch_pkt->hdr.data_size != dap_gossip_msg_get_size(l_msg)) {
-            log_it(L_WARNING, "Incorrect gossip message data size %u, expected %zu",
+            log_it(L_WARNING, "Incorrect gossip message data size %u, expected %" PRIu64,
                                                 l_ch_pkt->hdr.data_size, dap_gossip_msg_get_size(l_msg));
             return false;
         }

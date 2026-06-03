@@ -21,6 +21,7 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <inttypes.h>
 #include <string.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
@@ -1275,7 +1276,7 @@ static void s_ws_close(dap_stream_t *a_stream)
 
     l_priv->state = DAP_WS_STATE_CLOSED;
 
-    log_it(L_INFO, "WebSocket connection closed (sent=%lu frames, received=%lu frames)",
+    log_it(L_INFO, "WebSocket connection closed (sent=%" PRIu64 " frames, received=%" PRIu64 " frames)",
            l_priv->frames_sent, l_priv->frames_received);
 
     // Free per-stream WS state (allocated in s_ws_connect)
