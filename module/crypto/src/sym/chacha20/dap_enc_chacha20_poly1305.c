@@ -9,6 +9,7 @@
 #include "dap_common.h"
 #include "dap_memwipe.h"
 #include "dap_rand.h"
+#include "dap_hash_keccak.h"
 
 #define LOG_TAG "dap_enc_chacha20_poly1305"
 
@@ -22,7 +23,7 @@ void dap_enc_chacha20_poly1305_key_new(dap_enc_key_t *a_key)
 }
 
 void dap_enc_chacha20_poly1305_key_generate(dap_enc_key_t *a_key,
-        UNUSED_ARG const void *kex_buf, UNUSED_ARG size_t kex_size,
+        const void *kex_buf, size_t kex_size,
         const void *seed, size_t seed_size, UNUSED_ARG size_t key_size)
 {
     dap_return_if_pass(!a_key);
@@ -35,8 +36,14 @@ void dap_enc_chacha20_poly1305_key_generate(dap_enc_key_t *a_key,
         return;
     }
 
-    if (seed && seed_size >= DAP_CHACHA20_KEY_SIZE) {
-        memcpy(a_key->priv_key_data, seed, DAP_CHACHA20_KEY_SIZE);
+    if ((kex_buf && kex_size) || (seed && seed_size)) {
+        dap_hash_keccak_ctx_t l_ctx;
+        dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHA3_256_RATE, DAP_KECCAK_SHA3_SUFFIX);
+        if (kex_buf && kex_size)
+            dap_hash_keccak_sponge_absorb(&l_ctx, kex_buf, kex_size);
+        if (seed && seed_size)
+            dap_hash_keccak_sponge_absorb(&l_ctx, seed, seed_size);
+        dap_hash_keccak_sponge_squeeze(&l_ctx, a_key->priv_key_data, DAP_CHACHA20_KEY_SIZE);
     } else {
         dap_random_bytes(a_key->priv_key_data, DAP_CHACHA20_KEY_SIZE);
     }

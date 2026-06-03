@@ -348,13 +348,13 @@ void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_cod
 
 // ===== ENC response processing (runs on worker) =====
 
-/** Fallback when tape-based dap_json_object_get_string fails on enc_init replies. */
+/** Linear scan for enc_init JSON fields (avoids tape iterator on large base64 blobs). */
 static char *s_enc_init_json_pick_string(const char *a_json, size_t a_json_size, const char *a_key)
 {
     if (!a_json || !a_key || !a_json_size)
         return NULL;
     char l_mark[80];
-    int l_mark_len = snprintf(l_mark, sizeof(l_mark), "\"%s\":\"", a_key);
+    int l_mark_len = snprintf(l_mark, sizeof(l_mark), "\"%s\":", a_key);
     if (l_mark_len <= 0 || (size_t)l_mark_len >= sizeof(l_mark))
         return NULL;
     const char *l_end = a_json + a_json_size;
@@ -362,6 +362,8 @@ static char *s_enc_init_json_pick_string(const char *a_json, size_t a_json_size,
         if (memcmp(l_p, l_mark, (size_t)l_mark_len) != 0)
             continue;
         l_p += l_mark_len;
+        while (l_p < l_end && (*l_p == ' ' || *l_p == '\t'))
+            l_p++;
         if (l_p >= l_end || *l_p != '"')
             continue;
         l_p++;
@@ -400,67 +402,33 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         }
 
         size_t l_bob_message_size = 0;
-        int l_json_parse_count = 0;
-        char *l_data_copy = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-        if (l_data_copy) {
-            memcpy(l_data_copy, l_data, a_data_size);
-            dap_json_t *jobj = dap_json_parse_string(l_data_copy);
-            DAP_DELETE(l_data_copy);
-            if (jobj) {
-                const char *l_str;
-                l_str = dap_json_object_get_string(jobj, "encrypt_id");
-                if (l_str) {
-                    DAP_DEL_Z(l_session_id_b64);
-                    l_session_id_b64 = dap_strdup(l_str);
-                    l_json_parse_count++;
-                }
-                l_str = dap_json_object_get_string(jobj, "encrypt_msg");
-                if (l_str) {
-                    DAP_DEL_Z(l_bob_message_b64);
-                    l_bob_message_b64 = dap_strdup(l_str);
-                    l_json_parse_count++;
-                }
-                l_str = dap_json_object_get_string(jobj, "node_sign");
-                if (l_str) {
-                    DAP_DEL_Z(l_node_sign_b64);
-                    l_node_sign_b64 = dap_strdup(l_str);
-                    l_json_parse_count++;
-                }
-                l_es->remote_protocol_version = dap_json_object_get_int(jobj, "dap_protocol_version");
-                if (l_es->remote_protocol_version)
-                    l_json_parse_count++;
-                dap_json_object_free(jobj);
-                if (!l_es->remote_protocol_version)
-                    l_es->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
-            }
+        const char *l_json = (const char *)a_data;
+        size_t l_json_size = a_data_size;
+        const char *l_json_start = memchr(l_json, '{', l_json_size);
+        if (l_json_start) {
+            l_json = l_json_start;
+            l_json_size = a_data_size - (size_t)(l_json_start - (const char *)a_data);
         }
 
-        if (l_json_parse_count < 2) {
-            const char *l_json = (const char *)a_data;
-            DAP_DEL_Z(l_session_id_b64);
-            DAP_DEL_Z(l_bob_message_b64);
-            DAP_DEL_Z(l_node_sign_b64);
-            l_session_id_b64 = s_enc_init_json_pick_string(l_json, a_data_size, "encrypt_id");
-            l_bob_message_b64 = s_enc_init_json_pick_string(l_json, a_data_size, "encrypt_msg");
-            l_node_sign_b64 = s_enc_init_json_pick_string(l_json, a_data_size, "node_sign");
-            l_json_parse_count = 0;
-            if (l_session_id_b64)
-                l_json_parse_count++;
-            if (l_bob_message_b64)
-                l_json_parse_count++;
-            if (l_node_sign_b64)
-                l_json_parse_count++;
-            if (!l_es->remote_protocol_version) {
-                const char *l_ver = strstr(l_json, "\"dap_protocol_version\":");
-                if (l_ver) {
-                    unsigned l_v = 0;
-                    if (sscanf(l_ver, "\"dap_protocol_version\":%u", &l_v) == 1 && l_v)
-                        l_es->remote_protocol_version = l_v;
-                }
-            }
-            if (!l_es->remote_protocol_version)
-                l_es->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
+        l_session_id_b64 = s_enc_init_json_pick_string(l_json, l_json_size, "encrypt_id");
+        l_bob_message_b64 = s_enc_init_json_pick_string(l_json, l_json_size, "encrypt_msg");
+        l_node_sign_b64 = s_enc_init_json_pick_string(l_json, l_json_size, "node_sign");
+
+        l_es->remote_protocol_version = 0;
+        const char *l_ver = strstr(l_json, "\"dap_protocol_version\":");
+        if (l_ver && l_ver < l_json + l_json_size) {
+            unsigned l_v = 0;
+            if (sscanf(l_ver, "\"dap_protocol_version\":%u", &l_v) == 1 && l_v)
+                l_es->remote_protocol_version = l_v;
         }
+        if (!l_es->remote_protocol_version)
+            l_es->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
+
+        int l_json_parse_count = 0;
+        if (l_session_id_b64)
+            l_json_parse_count++;
+        if (l_bob_message_b64)
+            l_json_parse_count++;
 
         if (l_json_parse_count < 2 || l_json_parse_count > 4) {
             l_error = ERROR_ENC_NO_KEY;
@@ -496,10 +464,10 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             break;
         }
 
-        // Generate session key
+        // Generate session key (KDF: Kyber shared secret + session id, same as enc_http server)
         l_es->session_key = dap_enc_key_new_generate(l_es->session_key_type,
-                l_es->session_key_open->priv_key_data,
-                l_es->session_key_open->priv_key_data_size,
+                l_es->session_key_open->shared_key,
+                l_es->session_key_open->shared_key_size,
                 l_es->session_key_id, l_decoded_len, l_es->session_key_block_size);
 
         // Verify node sign
