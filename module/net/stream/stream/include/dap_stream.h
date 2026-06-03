@@ -25,7 +25,6 @@
 #include <stddef.h>
 #include <pthread.h>
 #include <stdbool.h>
-#include <pthread.h>
 #include "dap_http_server.h"
 #include "dap_events_socket.h"
 #include "dap_config.h"
