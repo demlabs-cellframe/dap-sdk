@@ -81,6 +81,8 @@ typedef struct dap_http_client
     void *_inheritor;
     void *_internal;
 
+    void *h2;                                                               /* dap_h2_connection_t* when HTTP/2, NULL for HTTP/1.x */
+
 } dap_http_client_t;
 
 #define DAP_HTTP_CLIENT(a)  ((dap_http_client_t *) (a)->_inheritor )

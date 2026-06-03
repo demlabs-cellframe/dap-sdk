@@ -66,6 +66,11 @@ int dap_proc_thread_init(uint32_t a_threads_count);
 void dap_proc_thread_deinit();
 int dap_proc_thread_loop(dap_context_t *a_context);
 
+#if defined(DAP_OS_WASM) && !defined(DAP_WASM_PTHREADS)
+int dap_proc_thread_init_wasm_st(uint32_t a_threads_count);
+void dap_proc_thread_poll_step(void);
+#endif
+
 dap_proc_thread_t *dap_proc_thread_get(uint32_t a_thread_number);
 dap_proc_thread_t *dap_proc_thread_get_auto();
 int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, dap_queue_msg_priority_t a_priority);

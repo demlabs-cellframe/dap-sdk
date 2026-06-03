@@ -424,18 +424,21 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
            a_http_client->esocket->remote_addr_str);
     log_it(L_DEBUG, "Generated Sec-WebSocket-Accept: %s", l_accept_key);
 
-    // Write 101 Switching Protocols response directly to esocket buf_out.
-    // We bypass the standard dap_http_client_write mechanism because:
-    // 1. dap_http_client_write_callback expects data_write_callback (we have none)
-    // 2. dap_http_client_write overwrites reply_status_code when out_headers are set
-    // 3. After 101, the connection is no longer HTTP — we switch to WebSocket immediately
+    dap_http_header_t *l_ws_proto = dap_http_header_find(a_http_client->in_headers, "Sec-WebSocket-Protocol");
+    char l_proto_line[DAP_HTTP$SZ_FIELD_VALUE + 64] = "";
+    if (l_ws_proto && l_ws_proto->value[0]) {
+        snprintf(l_proto_line, sizeof(l_proto_line),
+                 "Sec-WebSocket-Protocol: %s\r\n", l_ws_proto->value);
+    }
+
     dap_events_socket_write_f_unsafe(a_http_client->esocket,
         "HTTP/1.1 101 Switching Protocols\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
         "Sec-WebSocket-Accept: %s\r\n"
+        "%s"
         "\r\n",
-        l_accept_key);
+        l_accept_key, l_proto_line);
 
     // Switch to WebSocket protocol immediately after writing 101 response
     if (s_switch_to_websocket_protocol(a_http_client) != 0) {

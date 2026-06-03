@@ -157,11 +157,11 @@ typedef struct stream_udp_session {
     // This ensures FC lifecycle is tied to flow, not session
     
     // Handshake state protection
-    _Atomic bool kem_task_pending;       // KEM task in progress (prevent duplicate HANDSHAKE)
+    _Atomic int kem_task_pending;        // KEM task in progress (int for WASM atomic alignment)
     
     // Packet type tracking (for FC callbacks)
-    _Atomic uint8_t last_send_type;     // Last packet type sent (for packet_prepare_cb)
-    _Atomic uint8_t last_recv_type;     // Last packet type received (for payload_deliver_cb)
+    _Atomic int last_send_type;          // Last packet type sent (int for WASM atomic alignment)
+    _Atomic int last_recv_type;          // Last packet type received (int for WASM atomic alignment)
 } stream_udp_session_t;
 
 /**
@@ -654,7 +654,7 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
         for (size_t i = 0; i < a_server->flow_servers_count; i++) {
             dap_io_flow_server_t *l_fs = a_server->flow_servers[i];
             if (l_fs) {
-                atomic_store(&l_fs->is_deleting, true);
+                atomic_store(&l_fs->is_deleting, 1);
                 debug_if(s_debug_more, L_DEBUG, "Marked flow_server[%zu] as deleting", i);
             }
         }
@@ -916,7 +916,7 @@ static dap_io_flow_datagram_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_
     l_session->session_id = 0;
     
     // Initialize handshake state protection
-    atomic_store(&l_session->kem_task_pending, false);
+    atomic_store(&l_session->kem_task_pending, 0);
     
     debug_if(s_debug_more, L_DEBUG,
              "Allocated stream_udp_session_t at %p (stream=%p)",
@@ -1295,16 +1295,11 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         .session_id = a_session->session_id,
     };
     
-    // Serialize using dap_serialize
-    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
-    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
+    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
+    uint8_t l_hdr_buffer[DAP_STREAM_UDP_FULL_HEADER_SIZE];
     
-    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
-        &g_udp_full_header_schema, &l_full_hdr, l_hdr_buffer, l_hdr_size, NULL);
-    
-    if (l_ser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to serialize full header: %s",
-               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
+    if (dap_stream_trans_udp_full_header_wire_pack(&l_full_hdr, l_hdr_buffer, sizeof(l_hdr_buffer)) != 0) {
+        log_it(L_ERROR, "Failed to serialize full header (FC base schema + UDP tail)");
         return -6;
     }
     
@@ -1417,26 +1412,15 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
         return -5;
     }
     
-    // Parse NEW full header using dap_serialize
-    if (l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
+    if (l_decrypted_size < DAP_STREAM_UDP_FULL_HEADER_SIZE) {
         log_it(L_ERROR, "Decrypted packet too small for full header (%zu bytes)", l_decrypted_size);
         DAP_DELETE(l_decrypted);
         return -6;
     }
     
-    // Deserialize full header
     dap_stream_trans_udp_full_header_t l_hdr;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
-        &g_udp_full_header_schema,
-        l_decrypted,
-        sizeof(dap_stream_trans_udp_full_header_t),
-        &l_hdr,
-        NULL
-    );
-    
-    if (l_deser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to deserialize full header: %s",
-               l_deser_result.error_message ? l_deser_result.error_message : "unknown");
+    if (dap_stream_trans_udp_full_header_wire_unpack(l_decrypted, l_decrypted_size, &l_hdr) != 0) {
+        log_it(L_ERROR, "Failed to deserialize full header (FC base schema + UDP tail)");
         DAP_DELETE(l_decrypted);
         return -6;
     }
@@ -1695,7 +1679,7 @@ cleanup_reactor:
     // Reset kem_task_pending flag (allow retries on error)
     // NOTE: On success, encryption_key is set so duplicate check will catch retransmits
     if (l_session) {
-        atomic_store(&l_session->kem_task_pending, false);
+        atomic_store(&l_session->kem_task_pending, 0);
     }
     
     // Free result
@@ -1833,8 +1817,8 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     }
     
     // Use atomic CAS to prevent concurrent KEM task creation
-    bool l_expected = false;
-    if (!atomic_compare_exchange_strong(&a_session->kem_task_pending, &l_expected, true)) {
+    int l_expected = 0;
+    if (!atomic_compare_exchange_strong(&a_session->kem_task_pending, &l_expected, 1)) {
         debug_if(s_debug_more, L_DEBUG,
                  "SERVER: Ignoring duplicate HANDSHAKE - KEM task already pending for session %p",
                  a_session);
@@ -1846,7 +1830,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     // QoS probe detection: payload starts with DAP_QOS_PROBE_MAGIC → echo, skip KEM
     if (dap_qos_is_probe(a_payload, a_payload_size)) {
         log_it(L_DEBUG, "QoS probe detected (%zu bytes), building echo", a_payload_size);
-        atomic_store(&a_session->kem_task_pending, false);
+        atomic_store(&a_session->kem_task_pending, 0);
 
         void  *l_echo = NULL;
         size_t l_echo_size = 0;
@@ -1868,7 +1852,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     // Check if thread pool is available
     if (!s_kem_thread_pool) {
         log_it(L_WARNING, "KEM thread pool not available, falling back to synchronous processing");
-        atomic_store(&a_session->kem_task_pending, false);  // Reset flag
+        atomic_store(&a_session->kem_task_pending, 0);  // Reset flag
         // TODO: Implement synchronous fallback (same code as s_kem_task_func)
         return -10;
     }
@@ -1877,7 +1861,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     kem_task_ctx_t *l_ctx = DAP_NEW_Z(kem_task_ctx_t);
     if (!l_ctx) {
         log_it(L_ERROR, "Failed to allocate KEM task context");
-        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
+        atomic_store(&a_session->kem_task_pending, 0);  // Reset flag on failure
         return -2;
     }
     
@@ -1888,7 +1872,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     
     if (!l_ctx->alice_pub_key) {
         log_it(L_ERROR, "Failed to allocate Alice public key buffer");
-        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
+        atomic_store(&a_session->kem_task_pending, 0);  // Reset flag on failure
         DAP_DELETE(l_ctx);
         return -3;
     }
@@ -1904,7 +1888,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to submit KEM task to thread pool: %d", l_ret);
-        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
+        atomic_store(&a_session->kem_task_pending, 0);  // Reset flag on failure
         DAP_DELETE(l_ctx->alice_pub_key);
         DAP_DELETE(l_ctx);
         return -4;
@@ -1950,14 +1934,13 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     
     // Parse JSON directly from payload
     dap_json_t *l_json = dap_json_parse_string(l_json_str);
-    DAP_DELETE(l_json_str);
     
     if (!l_json) {
+        DAP_DELETE(l_json_str);
         log_it(L_ERROR, "Failed to parse SESSION_CREATE JSON (size=%zu)", a_payload_size);
         return -4;
     }
 
-    
     // Extract session ID
     if (dap_json_object_has_key(l_json, "session_id")) {
         a_session->session_id = dap_json_object_get_int64(l_json, "session_id");
@@ -1977,6 +1960,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     }
     
     dap_json_object_free(l_json);
+    DAP_DELETE(l_json_str);
     
     // Derive session key from handshake key using KDF ratcheting
     uint64_t l_kdf_counter = 1;  // Counter = 1 for first session
@@ -2188,21 +2172,11 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
         l_full_hdr.fc_flags |= DAP_IO_FLOW_CTRL_HDR_FLAG_RETRANSMIT;
     }
     
-    // Serialize full header to network byte order using dap_serialize
-    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
-    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
+    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
+    uint8_t l_hdr_buffer[DAP_STREAM_UDP_FULL_HEADER_SIZE];
     
-    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
-        &g_udp_full_header_schema,
-        &l_full_hdr,
-        l_hdr_buffer,
-        l_hdr_size,
-        NULL  // no context
-    );
-    
-    if (l_ser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to serialize UDP full header: %s", 
-               l_ser_result.error_message ? l_ser_result.error_message : "unknown error");
+    if (dap_stream_trans_udp_full_header_wire_pack(&l_full_hdr, l_hdr_buffer, sizeof(l_hdr_buffer)) != 0) {
+        log_it(L_ERROR, "Failed to serialize UDP full header (FC base schema + UDP tail)");
         return -2;
     }
     
@@ -2317,27 +2291,16 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
         return -4;
     }
     
-    // Check size
-    if (l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
+    if (l_decrypted_size < DAP_STREAM_UDP_FULL_HEADER_SIZE) {
         log_it(L_WARNING, "Decrypted packet too small for full header: %zu < %zu",
-               l_decrypted_size, sizeof(dap_stream_trans_udp_full_header_t));
+               l_decrypted_size, (size_t)DAP_STREAM_UDP_FULL_HEADER_SIZE);
         DAP_DELETE(l_decrypted);
         return -5;
     }
     
-    // Parse full header using dap_serialize (network byte order → host)
     dap_stream_trans_udp_full_header_t l_hdr;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
-        &g_udp_full_header_schema,
-        l_decrypted,
-        sizeof(dap_stream_trans_udp_full_header_t),
-        &l_hdr,
-        NULL  // no context
-    );
-    
-    if (l_deser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to deserialize UDP full header: %s",
-               l_deser_result.error_message ? l_deser_result.error_message : "unknown error");
+    if (dap_stream_trans_udp_full_header_wire_unpack(l_decrypted, l_decrypted_size, &l_hdr) != 0) {
+        log_it(L_ERROR, "Failed to deserialize UDP full header (FC base schema + UDP tail)");
         DAP_DELETE(l_decrypted);
         return -6;
     }
@@ -2453,7 +2416,7 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
     debug_if(s_debug_more, L_DEBUG, "Delivering DECRYPTED reordered payload: size=%zu", a_payload_size);
     
     // Get type from session (stored by parse_cb)
-    uint8_t l_type = atomic_load(&l_session->last_recv_type);
+    uint8_t l_type = (uint8_t)atomic_load(&l_session->last_recv_type);
     
     debug_if(s_debug_more, L_DEBUG,
              "Delivering payload: type=%u, session=0x%" DAP_UINT64_FORMAT_x ", size=%zu",

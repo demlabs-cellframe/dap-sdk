@@ -23,15 +23,7 @@
 
 /**
  * @file dap_net_trans_webrtc_wasm.c
- * @brief WebRTC Data Channel transport — WASM/Browser implementation
- *
- * Architecture (same threading model as WebSocket transport):
- *   - RTCPeerConnection + RTCDataChannel live on browser main thread
- *   - Each staged op (handshake_init, session_create, session_start) spawns a
- *     detached pthread so the DAP worker event loop is never blocked
- *   - XHR (enc_init, stream_ctl, signaling) runs synchronously inside those pthreads
- *   - Recv pthread: sem_wait -> cbuf -> dap_stream_data_proc_read_ext
- *   - Write: proxy dataChannel.send() to main thread
+ * @brief WebRTC Data Channel transport — dual mode MT/ST
  */
 
 #ifdef __EMSCRIPTEN__
@@ -39,13 +31,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#include <pthread.h>
-#include <semaphore.h>
 
 #include <emscripten.h>
-#include <emscripten/em_js.h>
-#include <emscripten/threading.h>
-#include <emscripten/proxying.h>
 
 #include "dap_common.h"
 #include "dap_cbuf.h"
@@ -63,11 +50,29 @@
 
 #define LOG_TAG "webrtc_wasm"
 
-extern int js_http_post_sync(const char *a_url_ptr,
-                              const char *a_content_type_ptr,
+#ifdef DAP_WASM_PTHREADS
+#include <pthread.h>
+#include <semaphore.h>
+#include <emscripten/threading.h>
+#include <emscripten/proxying.h>
+#endif
+
+extern int js_rtc_create_peer(const char *a_stun_ptr);
+extern int js_rtc_create_dc(int a_peer_id, const char *a_label_ptr);
+extern int js_rtc_create_offer(int a_peer_id, int a_out_ptr);
+extern int js_rtc_set_remote_answer(int a_peer_id, const char *a_sdp_ptr);
+extern int js_rtc_add_ice(int a_peer_id, const char *a_candidate_ptr);
+extern int js_rtc_get_ice_candidates(int a_peer_id, int a_out_ptr);
+extern int js_rtc_dc_send(int a_peer_id, const void *a_data, int a_len);
+extern void js_rtc_close(int a_peer_id);
+extern void js_rtc_init_callbacks(void);
+
+#ifdef DAP_WASM_PTHREADS
+extern int js_http_post_sync(const char *a_url_ptr, const char *a_content_type_ptr,
                               const void *a_body, int a_body_len,
                               const char *a_extra_headers_ptr,
                               int a_out_ptr_addr, int a_out_len_addr);
+#endif
 
 #define RTC_RECV_BUF_SIZE   (256 * 1024)
 #define RTC_READ_CHUNK      (64 * 1024)
@@ -76,6 +81,21 @@ extern int js_http_post_sync(const char *a_url_ptr,
 /* ========================================================================
  * Connection context
  * ======================================================================== */
+
+EM_JS(int, js_rtc_page_is_secure, (void), {
+    if (typeof location === 'undefined') return 0;
+    // Main thread: check protocol directly
+    if (location.protocol === 'https:') return 1;
+    // Worker with blob: URL — parse the origin from blob:https://...
+    if (location.protocol === 'blob:' && location.href) {
+        if (location.href.startsWith('blob:https://')) return 1;
+    }
+    return 0;
+});
+
+#ifdef DAP_WASM_PTHREADS
+static int s_rtc_main_document_https = -1;
+#endif
 
 typedef struct rtc_conn {
     int                     js_peer_id;
@@ -87,12 +107,17 @@ typedef struct rtc_conn {
 
     char                   *host;
     uint16_t                port;
+    bool                    use_tls;
     uint32_t                session_id;
 
-    pthread_t               recv_thread;
-    bool                    recv_running;
+#ifdef DAP_WASM_PTHREADS
     pthread_mutex_t         recv_mutex;
     sem_t                   recv_sem;
+    pthread_t               recv_thread;
+    bool                    recv_running;
+#endif
+
+    dap_net_trans_ready_cb_t  ready_callback;
 
     uint64_t                bytes_sent;
     uint64_t                bytes_received;
@@ -119,187 +144,6 @@ static void s_unregister_conn(int a_id)
 }
 
 /* ========================================================================
- * EM_JS: WebRTC operations (must run on main thread)
- * ======================================================================== */
-
-EM_JS(int, js_rtc_create_peer, (const char *a_stun_ptr), {
-    var stun = a_stun_ptr ? UTF8ToString(a_stun_ptr) : "stun:stun.l.google.com:19302";
-    if (!Module._rtc_pool) {
-        Module._rtc_pool = {};
-        Module._rtc_next_id = 1;
-    }
-    var id = Module._rtc_next_id++;
-    var config = {};
-    config.iceServers = [{}];
-    config.iceServers[0].urls = stun;
-
-    var pc;
-    try { pc = new RTCPeerConnection(config); }
-    catch (e) { return -1; }
-
-    var entry = {};
-    entry.pc = pc;
-    entry.dc = null;
-    entry.state = 0;
-    entry.ice_candidates = [];
-    entry.ice_done = false;
-    Module._rtc_pool[id] = entry;
-
-    pc.onicecandidate = function(ev) {
-        if (ev.candidate) {
-            entry.ice_candidates.push(JSON.stringify(ev.candidate));
-        } else {
-            entry.ice_done = true;
-        }
-    };
-
-    pc.onconnectionstatechange = function() {
-        if (pc.connectionState === "connected") {
-            entry.state = 2;
-            if (Module.__rtc_on_connected) Module.__rtc_on_connected(id);
-        } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-            entry.state = 5;
-            if (Module.__rtc_on_closed) Module.__rtc_on_closed(id);
-        }
-    };
-
-    return id;
-});
-
-EM_JS(int, js_rtc_create_dc, (int a_peer_id, const char *a_label_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var label = a_label_ptr ? UTF8ToString(a_label_ptr) : "dap-stream";
-    var opts = {};
-    opts.ordered = true;
-    var dc;
-    try { dc = entry.pc.createDataChannel(label, opts); }
-    catch (e) { return -1; }
-    dc.binaryType = "arraybuffer";
-    entry.dc = dc;
-
-    dc.onopen = function() {
-        entry.state = 2;
-        if (Module.__rtc_on_dc_open) Module.__rtc_on_dc_open(a_peer_id);
-    };
-    dc.onclose = function() {
-        if (Module.__rtc_on_dc_close) Module.__rtc_on_dc_close(a_peer_id);
-    };
-    dc.onmessage = function(ev) {
-        var arr = new Uint8Array(ev.data);
-        var buf = _malloc(arr.length);
-        HEAPU8.set(arr, buf);
-        if (Module.__rtc_on_dc_message) Module.__rtc_on_dc_message(a_peer_id, buf, arr.length);
-        _free(buf);
-    };
-    return 0;
-});
-
-EM_JS(int, js_rtc_create_offer, (int a_peer_id, int a_out_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var pc = entry.pc;
-
-    var done = false;
-    var result = -1;
-    pc.createOffer().then(function(offer) {
-        return pc.setLocalDescription(offer);
-    }).then(function() {
-        var sdp = pc.localDescription.sdp;
-        var len = lengthBytesUTF8(sdp) + 1;
-        var ptr = _malloc(len);
-        stringToUTF8(sdp, ptr, len);
-        setValue(a_out_ptr, ptr, '*');
-        result = 0;
-        done = true;
-    }).catch(function(e) {
-        result = -1;
-        done = true;
-    });
-
-    while (!done) {}
-    return result;
-});
-
-EM_JS(int, js_rtc_set_remote_answer, (int a_peer_id, const char *a_sdp_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var sdp = UTF8ToString(a_sdp_ptr);
-
-    var done = false;
-    var result = -1;
-    var desc = {};
-    desc.type = "answer";
-    desc.sdp = sdp;
-    entry.pc.setRemoteDescription(desc).then(function() {
-        result = 0;
-        done = true;
-    }).catch(function(e) {
-        result = -1;
-        done = true;
-    });
-
-    while (!done) {}
-    return result;
-});
-
-EM_JS(int, js_rtc_add_ice, (int a_peer_id, const char *a_candidate_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var cand_json = UTF8ToString(a_candidate_ptr);
-    var cand = JSON.parse(cand_json);
-
-    var done = false;
-    var result = -1;
-    entry.pc.addIceCandidate(cand).then(function() {
-        result = 0;
-        done = true;
-    }).catch(function(e) {
-        result = -1;
-        done = true;
-    });
-
-    while (!done) {}
-    return result;
-});
-
-EM_JS(int, js_rtc_get_ice_candidates, (int a_peer_id, int a_out_ptr), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return -1;
-    var json = "[" + entry.ice_candidates.join(",") + "]";
-    var len = lengthBytesUTF8(json) + 1;
-    var ptr = _malloc(len);
-    stringToUTF8(json, ptr, len);
-    setValue(a_out_ptr, ptr, '*');
-    return entry.ice_candidates.length;
-});
-
-EM_JS(int, js_rtc_dc_send, (int a_peer_id, const void *a_data, int a_len), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry || !entry.dc || entry.dc.readyState !== "open") return -1;
-    try {
-        entry.dc.send(HEAPU8.slice(a_data, a_data + a_len).buffer);
-        return a_len;
-    } catch (e) { return -1; }
-});
-
-EM_JS(void, js_rtc_close, (int a_peer_id), {
-    var entry = Module._rtc_pool ? Module._rtc_pool[a_peer_id] : null;
-    if (!entry) return;
-    if (entry.dc) try { entry.dc.close(); } catch(e) {}
-    try { entry.pc.close(); } catch(e) {}
-    delete Module._rtc_pool[a_peer_id];
-});
-
-EM_JS(void, js_rtc_init_callbacks, (void), {
-    Module.__rtc_on_connected  = Module.cwrap('_rtc_on_connected', null, ['number']);
-    Module.__rtc_on_closed     = Module.cwrap('_rtc_on_closed', null, ['number']);
-    Module.__rtc_on_dc_open    = Module.cwrap('_rtc_on_dc_open', null, ['number']);
-    Module.__rtc_on_dc_close   = Module.cwrap('_rtc_on_dc_close', null, ['number']);
-    Module.__rtc_on_dc_message = Module.cwrap('_rtc_on_dc_message', null, ['number', 'number', 'number']);
-});
-
-/* ========================================================================
  * C callbacks from JavaScript (run on main thread)
  * ======================================================================== */
 
@@ -318,7 +162,14 @@ void _rtc_on_closed(int a_id)
     if (!l_conn) return;
     l_conn->state = DAP_WEBRTC_STATE_CLOSED;
     log_it(L_INFO, "WebRTC peer closed (id=%d)", a_id);
+#ifdef DAP_WASM_PTHREADS
     sem_post(&l_conn->recv_sem);
+#else
+    if (l_conn->ready_callback) {
+        l_conn->ready_callback(l_conn->stream, -2);
+        l_conn->ready_callback = NULL;
+    }
+#endif
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -328,7 +179,14 @@ void _rtc_on_dc_open(int a_id)
     if (!l_conn) return;
     l_conn->state = DAP_WEBRTC_STATE_CONNECTED;
     log_it(L_NOTICE, "WebRTC data channel open (id=%d)", a_id);
+#ifdef DAP_WASM_PTHREADS
     sem_post(&l_conn->recv_sem);
+#else
+    if (l_conn->ready_callback) {
+        l_conn->ready_callback(l_conn->stream, 0);
+        l_conn->ready_callback = NULL;
+    }
+#endif
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -338,24 +196,40 @@ void _rtc_on_dc_close(int a_id)
     if (!l_conn) return;
     l_conn->state = DAP_WEBRTC_STATE_CLOSED;
     log_it(L_INFO, "WebRTC data channel closed (id=%d)", a_id);
+#ifdef DAP_WASM_PTHREADS
     sem_post(&l_conn->recv_sem);
+#else
+    if (l_conn->ready_callback) {
+        l_conn->ready_callback(l_conn->stream, -2);
+        l_conn->ready_callback = NULL;
+    }
+#endif
 }
 
 EMSCRIPTEN_KEEPALIVE
 void _rtc_on_dc_message(int a_id, const uint8_t *a_data, int a_len)
 {
     rtc_conn_t *l_conn = s_find_conn(a_id);
-    if (!l_conn || !l_conn->recv_buf || a_len <= 0) return;
+    if (!l_conn || a_len <= 0) return;
+    l_conn->bytes_received += (uint64_t)a_len;
+
+#ifdef DAP_WASM_PTHREADS
+    if (!l_conn->recv_buf) return;
     pthread_mutex_lock(&l_conn->recv_mutex);
     dap_cbuf_push(l_conn->recv_buf, a_data, (size_t)a_len);
-    l_conn->bytes_received += (uint64_t)a_len;
     pthread_mutex_unlock(&l_conn->recv_mutex);
     sem_post(&l_conn->recv_sem);
+#else
+    if (l_conn->stream)
+        dap_stream_data_proc_read_ext(l_conn->stream, a_data, (size_t)a_len);
+#endif
 }
 
 /* ========================================================================
- * Proxy wrappers for main-thread JS calls
+ * MT: proxy wrappers + recv thread + sync signaling
  * ======================================================================== */
+
+#ifdef DAP_WASM_PTHREADS
 
 typedef struct { const char *stun; int result; } rtc_create_peer_args_t;
 typedef struct { int peer_id; const char *label; int result; } rtc_create_dc_args_t;
@@ -373,17 +247,15 @@ static void s_proxy_add_ice(void *a) { rtc_ice_args_t *p = a; p->result = js_rtc
 static void s_proxy_get_ice(void *a) { rtc_offer_args_t *p = a; p->result = js_rtc_get_ice_candidates(p->peer_id, (int)(uintptr_t)&p->out); }
 static void s_proxy_dc_send(void *a) { rtc_send_args_t *p = a; p->result = js_rtc_dc_send(p->peer_id, p->data, p->len); }
 static void s_proxy_close(void *a) { rtc_close_args_t *p = a; js_rtc_close(p->peer_id); }
-
 static void s_proxy_init_callbacks(void *a) { (void)a; js_rtc_init_callbacks(); }
 
-#define RTC_PROXY_SYNC(fn, args) \
-    emscripten_proxy_sync(emscripten_proxy_get_system_queue(), \
-                          emscripten_main_runtime_thread_id(), \
-                          fn, args)
-
-/* ========================================================================
- * Recv thread
- * ======================================================================== */
+#define RTC_PROXY_SYNC(fn, args) do { \
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) \
+        fn(args); \
+    else \
+        emscripten_proxy_sync(emscripten_proxy_get_system_queue(), \
+                              emscripten_main_runtime_thread_id(), fn, args); \
+} while (0)
 
 static void *s_recv_thread_func(void *a_arg)
 {
@@ -398,10 +270,7 @@ static void *s_recv_thread_func(void *a_arg)
         for (;;) {
             pthread_mutex_lock(&l_conn->recv_mutex);
             size_t l_avail = dap_cbuf_get_size(l_conn->recv_buf);
-            if (l_avail == 0) {
-                pthread_mutex_unlock(&l_conn->recv_mutex);
-                break;
-            }
+            if (l_avail == 0) { pthread_mutex_unlock(&l_conn->recv_mutex); break; }
             size_t l_chunk = l_avail < sizeof(l_buf) ? l_avail : sizeof(l_buf);
             dap_cbuf_pop(l_conn->recv_buf, l_chunk, l_buf);
             pthread_mutex_unlock(&l_conn->recv_mutex);
@@ -412,14 +281,6 @@ static void *s_recv_thread_func(void *a_arg)
     }
     return NULL;
 }
-
-/* ========================================================================
- * Staged transport ops (async — each spawns a detached pthread)
- * ======================================================================== */
-
-/* ========================================================================
- * WebRTC signaling via HTTP REST
- * ======================================================================== */
 
 static int s_do_signaling(rtc_conn_t *a_conn)
 {
@@ -438,7 +299,8 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     if (l_offer_args.result < 0 || !l_offer_args.out) { log_it(L_ERROR, "SDP offer creation failed"); return -1; }
 
     char l_url[1024];
-    snprintf(l_url, sizeof(l_url), "https://%s:%u/rtc/offer", a_conn->host, a_conn->port);
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/offer",
+             a_conn->use_tls ? "https" : "http", a_conn->host, a_conn->port);
 
     void *l_resp = NULL;
     int l_resp_len = 0;
@@ -457,23 +319,14 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     rtc_offer_args_t l_ice_args = { .peer_id = a_conn->js_peer_id, .out = NULL, .result = -1 };
     RTC_PROXY_SYNC(s_proxy_get_ice, &l_ice_args);
     if (l_ice_args.result > 0 && l_ice_args.out) {
-        snprintf(l_url, sizeof(l_url), "https://%s:%u/rtc/ice?session_id=%u",
+        snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/ice?session_id=%u",
+                 a_conn->use_tls ? "https" : "http",
                  a_conn->host, a_conn->port, a_conn->session_id);
-
         void *l_ice_resp = NULL;
         int l_ice_resp_len = 0;
-        l_rc = js_http_post_sync(l_url, "application/json",
-                                  l_ice_args.out, (int)strlen(l_ice_args.out),
-                                  NULL, (int)(uintptr_t)&l_ice_resp,
-                                  (int)(uintptr_t)&l_ice_resp_len);
-
-        if (l_rc == 0 && l_ice_resp && l_ice_resp_len > 2) {
-            dap_json_t *l_arr = dap_json_parse_string((const char *)l_ice_resp);
-            if (l_arr) {
-                /* TODO: iterate JSON array and add remote ICE candidates via proxy */
-                dap_json_object_free(l_arr);
-            }
-        }
+        js_http_post_sync(l_url, "application/json",
+                          l_ice_args.out, (int)strlen(l_ice_args.out),
+                          NULL, (int)(uintptr_t)&l_ice_resp, (int)(uintptr_t)&l_ice_resp_len);
         if (l_ice_resp) free(l_ice_resp);
     }
     if (l_ice_args.out) free(l_ice_args.out);
@@ -482,9 +335,54 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     return 0;
 }
 
+#endif /* DAP_WASM_PTHREADS */
+
 /* ========================================================================
- * stage_prepare: allocate conn + stream, return esocket=NULL
+ * Transport ops
  * ======================================================================== */
+
+static int s_rtc_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
+{
+    (void)a_trans; (void)a_config;
+#ifdef DAP_WASM_PTHREADS
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
+        s_proxy_init_callbacks(NULL);
+    } else {
+        RTC_PROXY_SYNC(s_proxy_init_callbacks, NULL);
+    }
+    log_it(L_NOTICE, "WebRTC transport initialized (multi-threaded)");
+#else
+    js_rtc_init_callbacks();
+    log_it(L_NOTICE, "WebRTC transport initialized (single-threaded)");
+#endif
+    return 0;
+}
+
+static void s_rtc_deinit(dap_net_trans_t *a_trans)
+{
+    (void)a_trans;
+    for (int i = 0; i < RTC_MAX_CONNECTIONS; i++) {
+        rtc_conn_t *l_conn = s_connections[i];
+        if (!l_conn) continue;
+#ifdef DAP_WASM_PTHREADS
+        if (l_conn->recv_running) {
+            l_conn->recv_running = false;
+            sem_post(&l_conn->recv_sem);
+            pthread_join(l_conn->recv_thread, NULL);
+        }
+        rtc_close_args_t cl = { .peer_id = i };
+        RTC_PROXY_SYNC(s_proxy_close, &cl);
+        sem_destroy(&l_conn->recv_sem);
+        pthread_mutex_destroy(&l_conn->recv_mutex);
+#else
+        js_rtc_close(i);
+#endif
+        dap_cbuf_delete(l_conn->recv_buf);
+        DAP_DEL_Z(l_conn->host);
+        DAP_DELETE(l_conn);
+        s_connections[i] = NULL;
+    }
+}
 
 static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
                                const dap_net_stage_prepare_params_t *a_params,
@@ -498,20 +396,35 @@ static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
     l_conn->recv_buf = dap_cbuf_create(RTC_RECV_BUF_SIZE);
     if (!l_conn->recv_buf) { DAP_DELETE(l_conn); a_result->error_code = -1; return -1; }
 
+#ifdef DAP_WASM_PTHREADS
     pthread_mutex_init(&l_conn->recv_mutex, NULL);
     sem_init(&l_conn->recv_sem, 0, 0);
+#endif
     l_conn->js_peer_id = -1;
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
+#ifdef DAP_WASM_PTHREADS
+    if (s_rtc_main_document_https < 0) {
+        log_it(L_WARNING, "WebRTC: HTTPS detection not initialized, assuming secure context");
+        s_rtc_main_document_https = 1;
+    }
+    l_conn->use_tls = (a_params->port == 443) || (s_rtc_main_document_https > 0);
+    log_it(L_DEBUG, "RTC connect: port=%u, https_flag=%d, use_tls=%d",
+           a_params->port, s_rtc_main_document_https, l_conn->use_tls);
+#else
+    l_conn->use_tls = (a_params->port == 443) || js_rtc_page_is_secure();
+#endif
     l_conn->client_ctx = a_params->client_ctx;
 
     dap_stream_t *l_stream = DAP_NEW_Z(dap_stream_t);
     if (!l_stream) {
         DAP_DELETE(l_conn->host);
         dap_cbuf_delete(l_conn->recv_buf);
+#ifdef DAP_WASM_PTHREADS
         sem_destroy(&l_conn->recv_sem);
         pthread_mutex_destroy(&l_conn->recv_mutex);
+#endif
         DAP_DELETE(l_conn);
         a_result->error_code = -1;
         return -1;
@@ -524,14 +437,11 @@ static int s_rtc_stage_prepare(dap_net_trans_t *a_trans,
     a_result->esocket = NULL;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-
-    log_it(L_DEBUG, "RTC stage_prepare: conn=%p, stream=%p, host=%s:%u",
-           (void *)l_conn, (void *)l_stream, a_params->host, a_params->port);
     return 0;
 }
 
 /* ========================================================================
- * handshake_init: enc_init XHR via dap_http_client_simple
+ * Handshake + session_create: use dap_http_client_simple (works in both modes)
  * ======================================================================== */
 
 typedef struct {
@@ -542,8 +452,7 @@ typedef struct {
 static void s_rtc_handshake_response(void *a_resp, size_t a_resp_size, int a_error, void *a_user_data)
 {
     rtc_handshake_ctx_t *l_ctx = (rtc_handshake_ctx_t *)a_user_data;
-    if (l_ctx->callback)
-        l_ctx->callback(l_ctx->stream, a_resp, a_resp_size, a_error);
+    if (l_ctx->callback) l_ctx->callback(l_ctx->stream, a_resp, a_resp_size, a_error);
     DAP_DELETE(l_ctx);
 }
 
@@ -560,12 +469,13 @@ static int s_rtc_handshake_init(dap_stream_t *a_stream,
                                               a_params->alice_pub_key_size,
                                               l_b64_body, DAP_ENC_DATA_TYPE_B64);
 
+    const char *l_scheme = l_conn->use_tls ? "https" : "http";
     char l_url[1024];
     snprintf(l_url, sizeof(l_url),
-             "https://%s:%u/enc_init/gd4y5yh78w42aaagh"
+             "%s://%s:%u/enc_init/gd4y5yh78w42aaagh"
              "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu"
              ",block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-             l_conn->host, l_conn->port,
+             l_scheme, l_conn->host, l_conn->port,
              a_params->enc_type, a_params->pkey_exchange_type,
              a_params->pkey_exchange_size, a_params->block_key_size,
              a_params->protocol_version, a_params->sign_count);
@@ -580,14 +490,9 @@ static int s_rtc_handshake_init(dap_stream_t *a_stream,
                                                 s_rtc_handshake_response, l_ctx);
     DAP_DELETE(l_b64_body);
     DAP_DELETE(a_params->alice_pub_key);
-
     if (l_ret != 0) { DAP_DELETE(l_ctx); return -1; }
     return 0;
 }
-
-/* ========================================================================
- * session_create: stream_ctl XHR via dap_http_client_simple
- * ======================================================================== */
 
 typedef struct {
     dap_stream_t                 *stream;
@@ -599,7 +504,6 @@ typedef struct {
 static void s_rtc_session_create_response(void *a_resp, size_t a_resp_size, int a_error, void *a_user_data)
 {
     rtc_session_create_ctx_t *l_ctx = (rtc_session_create_ctx_t *)a_user_data;
-
     if (a_error != 0 || !a_resp || a_resp_size == 0) {
         log_it(L_ERROR, "RTC stream_ctl XHR failed: %d", a_error);
         if (l_ctx->callback) l_ctx->callback(l_ctx->stream, 0, NULL, 0, -1);
@@ -612,7 +516,6 @@ static void s_rtc_session_create_response(void *a_resp, size_t a_resp_size, int 
     size_t l_dec_len = dap_enc_decode(l_ctx->session_key, a_resp, a_resp_size,
                                        l_dec, l_dec_max, DAP_ENC_DATA_TYPE_RAW);
     if (l_dec_len == 0) {
-        log_it(L_ERROR, "RTC stream_ctl decryption failed");
         DAP_DELETE(l_dec);
         if (l_ctx->callback) l_ctx->callback(l_ctx->stream, 0, NULL, 0, -1);
         DAP_DELETE(l_ctx);
@@ -639,7 +542,6 @@ static int s_rtc_session_create(dap_stream_t *a_stream,
     const char *l_key_id = a_params->session_key_id;
 
     if (!l_key || !l_key_id) {
-        log_it(L_ERROR, "RTC stream_ctl: no session key");
         if (a_callback) a_callback(a_stream, 0, NULL, 0, -1);
         return 0;
     }
@@ -657,37 +559,33 @@ static int s_rtc_session_create(dap_stream_t *a_stream,
 
     size_t l_sub_max = dap_enc_code_out_size(l_key, strlen(l_sub_plain), DAP_ENC_DATA_TYPE_B64_URLSAFE);
     char *l_sub_enc = DAP_NEW_Z_SIZE(char, l_sub_max + 1);
-    size_t l_sub_len = dap_enc_code(l_key, l_sub_plain, strlen(l_sub_plain),
-                                     l_sub_enc, l_sub_max, DAP_ENC_DATA_TYPE_B64_URLSAFE);
+    dap_enc_code(l_key, l_sub_plain, strlen(l_sub_plain), l_sub_enc, l_sub_max, DAP_ENC_DATA_TYPE_B64_URLSAFE);
 
     size_t l_q_max = dap_enc_code_out_size(l_key, strlen(l_query_plain), DAP_ENC_DATA_TYPE_B64_URLSAFE);
     char *l_q_enc = DAP_NEW_Z_SIZE(char, l_q_max + 1);
-    size_t l_q_len = dap_enc_code(l_key, l_query_plain, strlen(l_query_plain),
-                                   l_q_enc, l_q_max, DAP_ENC_DATA_TYPE_B64_URLSAFE);
+    dap_enc_code(l_key, l_query_plain, strlen(l_query_plain), l_q_enc, l_q_max, DAP_ENC_DATA_TYPE_B64_URLSAFE);
 
     size_t l_b_max = dap_enc_code_out_size(l_key, strlen(l_body_plain), DAP_ENC_DATA_TYPE_RAW);
     uint8_t *l_b_enc = DAP_NEW_Z_SIZE(uint8_t, l_b_max + 1);
     size_t l_b_len = dap_enc_code(l_key, l_body_plain, strlen(l_body_plain),
                                    l_b_enc, l_b_max, DAP_ENC_DATA_TYPE_RAW);
 
-    l_sub_enc[l_sub_len] = '\0';
-    l_q_enc[l_q_len] = '\0';
     char l_url[2048];
-    snprintf(l_url, sizeof(l_url), "https://%s:%u/stream_ctl/%s?%s",
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u/stream_ctl/%s?%s",
+             l_conn->use_tls ? "https" : "http",
              l_conn->host, l_conn->port, l_sub_enc, l_q_enc);
     DAP_DELETE(l_sub_enc);
     DAP_DELETE(l_q_enc);
 
     char l_headers[512];
-    snprintf(l_headers, sizeof(l_headers),
-             "KeyID: %s\r\nSessionCloseAfterRequest: true", l_key_id);
+    snprintf(l_headers, sizeof(l_headers), "KeyID: %s\r\nSessionCloseAfterRequest: true", l_key_id);
 
     rtc_session_create_ctx_t *l_ctx = DAP_NEW_Z(rtc_session_create_ctx_t);
     if (!l_ctx) { DAP_DELETE(l_b_enc); return -1; }
-    l_ctx->stream      = a_stream;
-    l_ctx->conn        = l_conn;
+    l_ctx->stream = a_stream;
+    l_ctx->conn = l_conn;
     l_ctx->session_key = l_key;
-    l_ctx->callback    = a_callback;
+    l_ctx->callback = a_callback;
 
     int l_ret = dap_http_client_simple_request(l_url, "application/octet-stream",
                                                 l_b_enc, l_b_len, l_headers,
@@ -698,14 +596,14 @@ static int s_rtc_session_create(dap_stream_t *a_stream,
 }
 
 /* ========================================================================
- * session_start: async pthread does signaling + waits for DC open
+ * session_start
  * ======================================================================== */
 
+#ifdef DAP_WASM_PTHREADS
+
 typedef struct {
-    dap_stream_t              *stream;
-    rtc_conn_t                *conn;
-    uint32_t                   session_id;
-    dap_net_trans_ready_cb_t   callback;
+    dap_stream_t *stream; rtc_conn_t *conn;
+    uint32_t session_id; dap_net_trans_ready_cb_t callback;
 } rtc_session_start_args_t;
 
 static void *s_rtc_session_start_thread(void *a_arg)
@@ -714,7 +612,6 @@ static void *s_rtc_session_start_thread(void *a_arg)
     rtc_conn_t *l_conn = l_a->conn;
 
     if (s_do_signaling(l_conn) != 0) {
-        log_it(L_ERROR, "WebRTC signaling failed");
         if (l_a->callback) l_a->callback(l_a->stream, -1);
         DAP_DELETE(l_a);
         return NULL;
@@ -724,7 +621,6 @@ static void *s_rtc_session_start_thread(void *a_arg)
     sem_wait(&l_conn->recv_sem);
 
     if (l_conn->state != DAP_WEBRTC_STATE_CONNECTED) {
-        log_it(L_ERROR, "WebRTC data channel didn't open (state=%d)", l_conn->state);
         s_unregister_conn(l_conn->js_peer_id);
         rtc_close_args_t cl = { .peer_id = l_conn->js_peer_id };
         RTC_PROXY_SYNC(s_proxy_close, &cl);
@@ -736,8 +632,7 @@ static void *s_rtc_session_start_thread(void *a_arg)
     l_conn->recv_running = true;
     pthread_create(&l_conn->recv_thread, NULL, s_recv_thread_func, l_conn);
 
-    log_it(L_NOTICE, "WebRTC streaming started (session_id=%u, peer_id=%d)",
-           l_a->session_id, l_conn->js_peer_id);
+    log_it(L_NOTICE, "WebRTC streaming started (peer_id=%d)", l_conn->js_peer_id);
     if (l_a->callback) l_a->callback(l_a->stream, 0);
     DAP_DELETE(l_a);
     return NULL;
@@ -750,10 +645,10 @@ static int s_rtc_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
 
     rtc_session_start_args_t *l_args = DAP_NEW_Z(rtc_session_start_args_t);
     if (!l_args) return -1;
-    l_args->stream     = a_stream;
-    l_args->conn       = (rtc_conn_t *)a_stream->_server_session;
+    l_args->stream = a_stream;
+    l_args->conn = (rtc_conn_t *)a_stream->_server_session;
     l_args->session_id = a_session_id;
-    l_args->callback   = a_callback;
+    l_args->callback = a_callback;
 
     pthread_t l_thread;
     pthread_attr_t l_attr;
@@ -761,53 +656,102 @@ static int s_rtc_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     pthread_attr_setdetachstate(&l_attr, PTHREAD_CREATE_DETACHED);
     int l_ret = pthread_create(&l_thread, &l_attr, s_rtc_session_start_thread, l_args);
     pthread_attr_destroy(&l_attr);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "RTC session_start: pthread_create failed: %d", l_ret);
-        DAP_DELETE(l_args);
-        return -1;
-    }
+    if (l_ret != 0) { DAP_DELETE(l_args); return -1; }
     return 0;
 }
+
+#else /* ST mode: signaling via async JS + async HTTP, fully event-driven */
+
+extern void js_rtc_create_offer_async(int a_peer_id);
+extern void js_rtc_set_answer_async(int a_peer_id, const char *a_sdp_ptr);
+
+static void s_st_signaling_offer_response(void *a_resp, size_t a_resp_size, int a_error, void *a_user_data);
+
+static int s_rtc_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
+                               dap_net_trans_ready_cb_t a_callback)
+{
+    if (!a_stream || !a_stream->_server_session) return -1;
+    rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
+
+    int l_peer = js_rtc_create_peer(NULL);
+    if (l_peer < 0) { if (a_callback) a_callback(a_stream, -1); return 0; }
+    l_conn->js_peer_id = l_peer;
+    s_register_conn(l_peer, l_conn);
+
+    if (js_rtc_create_dc(l_peer, "dap-stream") < 0) {
+        if (a_callback) a_callback(a_stream, -1); return 0;
+    }
+
+    l_conn->ready_callback = a_callback;
+    l_conn->state = DAP_WEBRTC_STATE_CONNECTING;
+
+    js_rtc_create_offer_async(l_peer);
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void _rtc_offer_async_callback(int a_peer_id, char *a_sdp_ptr, int a_status)
+{
+    rtc_conn_t *l_conn = s_find_conn(a_peer_id);
+    if (!l_conn) { if (a_sdp_ptr) free(a_sdp_ptr); return; }
+
+    if (a_status != 0 || !a_sdp_ptr) {
+        log_it(L_ERROR, "RTC async createOffer failed (peer_id=%d)", a_peer_id);
+        if (l_conn->ready_callback) { l_conn->ready_callback(l_conn->stream, -1); l_conn->ready_callback = NULL; }
+        return;
+    }
+
+    char l_url[1024];
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/offer",
+             l_conn->use_tls ? "https" : "http", l_conn->host, l_conn->port);
+
+    int l_ret = dap_http_client_simple_request(l_url, "application/sdp",
+                                                a_sdp_ptr, (int)strlen(a_sdp_ptr), NULL,
+                                                s_st_signaling_offer_response, l_conn);
+    free(a_sdp_ptr);
+    if (l_ret != 0) {
+        if (l_conn->ready_callback) { l_conn->ready_callback(l_conn->stream, -1); l_conn->ready_callback = NULL; }
+    }
+}
+
+static void s_st_signaling_offer_response(void *a_resp, size_t a_resp_size, int a_error, void *a_user_data)
+{
+    rtc_conn_t *l_conn = (rtc_conn_t *)a_user_data;
+    if (a_error != 0 || !a_resp) {
+        log_it(L_ERROR, "RTC signaling offer POST failed: %d", a_error);
+        if (l_conn->ready_callback) { l_conn->ready_callback(l_conn->stream, -1); l_conn->ready_callback = NULL; }
+        return;
+    }
+
+    js_rtc_set_answer_async(l_conn->js_peer_id, (const char *)a_resp);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void _rtc_answer_async_callback(int a_peer_id, int a_status)
+{
+    rtc_conn_t *l_conn = s_find_conn(a_peer_id);
+    if (!l_conn) return;
+
+    if (a_status != 0) {
+        log_it(L_ERROR, "setRemoteDescription failed (peer_id=%d)", a_peer_id);
+        if (l_conn->ready_callback) { l_conn->ready_callback(l_conn->stream, -1); l_conn->ready_callback = NULL; }
+        return;
+    }
+
+    log_it(L_NOTICE, "WebRTC signaling completed (ST, peer_id=%d), waiting for DC open...",
+           l_conn->js_peer_id);
+}
+
+#endif /* DAP_WASM_PTHREADS */
+
+/* ========================================================================
+ * read / write / close
+ * ======================================================================== */
 
 static void *s_rtc_get_client_context(dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->_server_session) return NULL;
-    rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
-    return l_conn->client_ctx;
-}
-
-/* ========================================================================
- * Transport ops
- * ======================================================================== */
-
-static int s_rtc_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
-{
-    (void)a_trans; (void)a_config;
-    RTC_PROXY_SYNC(s_proxy_init_callbacks, NULL);
-    log_it(L_NOTICE, "WebRTC transport initialized (WASM)");
-    return 0;
-}
-
-static void s_rtc_deinit(dap_net_trans_t *a_trans)
-{
-    (void)a_trans;
-    for (int i = 0; i < RTC_MAX_CONNECTIONS; i++) {
-        rtc_conn_t *l_conn = s_connections[i];
-        if (!l_conn) continue;
-        if (l_conn->recv_running) {
-            l_conn->recv_running = false;
-            sem_post(&l_conn->recv_sem);
-            pthread_join(l_conn->recv_thread, NULL);
-        }
-        rtc_close_args_t cl = { .peer_id = i };
-        RTC_PROXY_SYNC(s_proxy_close, &cl);
-        dap_cbuf_delete(l_conn->recv_buf);
-        DAP_DEL_Z(l_conn->host);
-        sem_destroy(&l_conn->recv_sem);
-        pthread_mutex_destroy(&l_conn->recv_mutex);
-        DAP_DELETE(l_conn);
-        s_connections[i] = NULL;
-    }
+    return ((rtc_conn_t *)a_stream->_server_session)->client_ctx;
 }
 
 static ssize_t s_rtc_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
@@ -816,12 +760,21 @@ static ssize_t s_rtc_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
     rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
     if (!l_conn->recv_buf) return -1;
 
+#ifdef DAP_WASM_PTHREADS
     pthread_mutex_lock(&l_conn->recv_mutex);
+#endif
     size_t l_avail = dap_cbuf_get_size(l_conn->recv_buf);
-    if (l_avail == 0) { pthread_mutex_unlock(&l_conn->recv_mutex); return 0; }
+    if (l_avail == 0) {
+#ifdef DAP_WASM_PTHREADS
+        pthread_mutex_unlock(&l_conn->recv_mutex);
+#endif
+        return 0;
+    }
     size_t l_r = a_size < l_avail ? a_size : l_avail;
     size_t l_read = dap_cbuf_pop(l_conn->recv_buf, l_r, a_buffer);
+#ifdef DAP_WASM_PTHREADS
     pthread_mutex_unlock(&l_conn->recv_mutex);
+#endif
     return (ssize_t)l_read;
 }
 
@@ -831,11 +784,15 @@ static ssize_t s_rtc_write(dap_stream_t *a_stream, const void *a_data, size_t a_
     rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
     if (l_conn->state != DAP_WEBRTC_STATE_CONNECTED) return -1;
 
+#ifdef DAP_WASM_PTHREADS
     rtc_send_args_t l_args = { .peer_id = l_conn->js_peer_id, .data = a_data, .len = (int)a_size, .result = -1 };
     RTC_PROXY_SYNC(s_proxy_dc_send, &l_args);
-    if (l_args.result > 0)
-        l_conn->bytes_sent += (uint64_t)l_args.result;
-    return (ssize_t)l_args.result;
+    int l_sent = l_args.result;
+#else
+    int l_sent = js_rtc_dc_send(l_conn->js_peer_id, a_data, (int)a_size);
+#endif
+    if (l_sent > 0) l_conn->bytes_sent += (uint64_t)l_sent;
+    return (ssize_t)l_sent;
 }
 
 static void s_rtc_close(dap_stream_t *a_stream)
@@ -843,24 +800,27 @@ static void s_rtc_close(dap_stream_t *a_stream)
     if (!a_stream || !a_stream->_server_session) return;
     rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
 
+#ifdef DAP_WASM_PTHREADS
     if (l_conn->recv_running) {
         l_conn->recv_running = false;
         sem_post(&l_conn->recv_sem);
         pthread_join(l_conn->recv_thread, NULL);
     }
-
-    s_unregister_conn(l_conn->js_peer_id);
     rtc_close_args_t cl = { .peer_id = l_conn->js_peer_id };
     RTC_PROXY_SYNC(s_proxy_close, &cl);
+    sem_destroy(&l_conn->recv_sem);
+    pthread_mutex_destroy(&l_conn->recv_mutex);
+#else
+    js_rtc_close(l_conn->js_peer_id);
+#endif
 
+    s_unregister_conn(l_conn->js_peer_id);
     dap_cbuf_delete(l_conn->recv_buf);
 
     log_it(L_INFO, "WebRTC closed (peer_id=%d, sent=%" PRIu64 ", recv=%" PRIu64 ")",
            l_conn->js_peer_id, l_conn->bytes_sent, l_conn->bytes_received);
 
     DAP_DEL_Z(l_conn->host);
-    sem_destroy(&l_conn->recv_sem);
-    pthread_mutex_destroy(&l_conn->recv_mutex);
     DAP_DELETE(l_conn);
     a_stream->_server_session = NULL;
 }
@@ -868,50 +828,39 @@ static void s_rtc_close(dap_stream_t *a_stream)
 static uint32_t s_rtc_get_caps(dap_net_trans_t *a_trans)
 {
     (void)a_trans;
-    return DAP_NET_TRANS_CAP_RELIABLE
-         | DAP_NET_TRANS_CAP_ORDERED
-         | DAP_NET_TRANS_CAP_BIDIRECTIONAL
-         | DAP_NET_TRANS_CAP_LOW_LATENCY;
+    return DAP_NET_TRANS_CAP_RELIABLE | DAP_NET_TRANS_CAP_ORDERED
+         | DAP_NET_TRANS_CAP_BIDIRECTIONAL | DAP_NET_TRANS_CAP_LOW_LATENCY;
 }
 
 static dap_net_trans_ops_t s_rtc_ops = {
     .init               = s_rtc_init,
     .deinit             = s_rtc_deinit,
-    .connect            = NULL,
-    .listen             = NULL,
-    .accept             = NULL,
     .handshake_init     = s_rtc_handshake_init,
-    .handshake_process  = NULL,
     .session_create     = s_rtc_session_create,
     .session_start      = s_rtc_session_start,
     .read               = s_rtc_read,
     .write              = s_rtc_write,
     .close              = s_rtc_close,
     .get_capabilities   = s_rtc_get_caps,
-    .register_server_handlers = NULL,
     .stage_prepare      = s_rtc_stage_prepare,
     .get_client_context = s_rtc_get_client_context,
-    .get_max_packet_size = NULL,
 };
-
-/* ========================================================================
- * Public API
- * ======================================================================== */
 
 dap_net_trans_webrtc_config_t dap_net_trans_webrtc_config_default(void)
 {
     return (dap_net_trans_webrtc_config_t) {
-        .stun_server     = "stun:stun.l.google.com:19302",
-        .turn_server     = NULL,
-        .turn_username   = NULL,
-        .turn_credential = NULL,
-        .ordered         = true,
-        .max_retransmits = -1
+        .stun_server = "stun:stun.l.google.com:19302",
+        .turn_server = NULL, .turn_username = NULL, .turn_credential = NULL,
+        .ordered = true, .max_retransmits = -1
     };
 }
 
 int dap_net_trans_webrtc_register(void)
 {
+#ifdef DAP_WASM_PTHREADS
+    if (s_rtc_main_document_https < 0)
+        s_rtc_main_document_https = js_rtc_page_is_secure();
+#endif
     return dap_net_trans_register("webrtc", DAP_NET_TRANS_WEBRTC,
                                   &s_rtc_ops, DAP_NET_TRANS_SOCKET_OTHER, NULL);
 }

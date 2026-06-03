@@ -58,7 +58,13 @@ typedef struct dap_timerfd {
 #elif defined(DAP_OS_LINUX)
     int tfd;
 #elif defined(DAP_OS_WASM)
+#ifdef DAP_WASM_PTHREADS
+    int pipe_fd[2];
+    volatile bool active;
+    uint64_t next_fire_ms;
+#else
     long interval_id;
+#endif
 #endif
     dap_worker_t *worker;
     dap_proc_thread_t *proc_thread;

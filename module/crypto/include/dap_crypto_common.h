@@ -75,6 +75,8 @@ extern "C" {
     #define _X86_
 #elif DAP_PLATFORM_ARM
     #define _ARM_
+#elif defined(__EMSCRIPTEN__) || defined(__wasm__)
+    #define _X86_
 #endif
 
 #if defined(_AMD64_)

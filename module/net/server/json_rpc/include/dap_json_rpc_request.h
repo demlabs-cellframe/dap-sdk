@@ -25,10 +25,11 @@
 #pragma once
 #include "dap_json_rpc_response_handler.h"
 #include "dap_json_rpc_params.h"
+#include "dap_serialize.h"
+#include "dap_client_trans_ctx.h"
 
 // Forward declarations to break circular dependencies
 typedef struct dap_client_http dap_client_http_t;
-typedef struct dap_client_pvt dap_client_pvt_t;
 
 #ifdef __cplusplus
 extern "C"{
@@ -41,6 +42,38 @@ typedef struct dap_json_rpc_request
     dap_json_rpc_params_t *params;
     uint64_t id;
 } dap_json_rpc_request_t;
+
+/**
+ * Wire header of dap_json_rpc_http_request_t (FAM payload follows): two little-endian u32.
+ */
+typedef struct dap_json_rpc_http_hdr_mem {
+    uint32_t data_size;
+    uint32_t signs_size;
+} dap_json_rpc_http_hdr_mem_t;
+
+#define DAP_JSON_RPC_HTTP_HDR_WIRE_SIZE (sizeof(uint32_t) * 2)
+
+extern const dap_serialize_field_t g_dap_json_rpc_http_hdr_fields[];
+extern const dap_serialize_schema_t g_dap_json_rpc_http_hdr_schema;
+#define DAP_JSON_RPC_HTTP_HDR_MAGIC 0xDA5FEEDFU
+
+DAP_STATIC_INLINE int dap_json_rpc_http_hdr_pack(const dap_json_rpc_http_hdr_mem_t *a_mem,
+                                                 uint8_t *a_wire, size_t a_wire_size)
+{
+    if (a_wire_size < DAP_JSON_RPC_HTTP_HDR_WIRE_SIZE) return -1;
+    dap_serialize_result_t r = dap_serialize_to_buffer_raw(
+        &g_dap_json_rpc_http_hdr_schema, a_mem, a_wire, a_wire_size, NULL);
+    return r.error_code;
+}
+
+DAP_STATIC_INLINE int dap_json_rpc_http_hdr_unpack(const uint8_t *a_wire, size_t a_wire_size,
+                                                   dap_json_rpc_http_hdr_mem_t *a_mem)
+{
+    if (a_wire_size < DAP_JSON_RPC_HTTP_HDR_WIRE_SIZE) return -1;
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+        &g_dap_json_rpc_http_hdr_schema, a_wire, a_wire_size, a_mem, NULL);
+    return r.error_code;
+}
 
 typedef struct dap_json_rpc_http_request
 {
