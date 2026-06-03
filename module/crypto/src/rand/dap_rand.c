@@ -47,3 +47,16 @@ uint256_t dap_pseudo_random_get(uint256_t a_rand_max, uint256_t *a_raw_result)
     divmod_impl_256(l_out_raw, l_rand_ceil, &l_tmp, &l_ret);
     return l_ret;
 }
+
+extern int dap_random_bytes(void *a_buf, unsigned int a_nbytes);
+extern uint32_t dap_random_uint32(uint32_t a_max);
+
+int randombytes(void *a_buf, unsigned int a_nbytes)
+{
+    return dap_random_bytes(a_buf, a_nbytes);
+}
+
+uint32_t random_uint32_t(const uint32_t a_max)
+{
+    return a_max ? dap_random_uint32(a_max) : 0;
+}
