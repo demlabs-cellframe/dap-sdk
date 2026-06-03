@@ -22,8 +22,14 @@
  */
 
 #include <string.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
+#endif
 #include <stdio.h>
 #include <errno.h>
 #include "dap_common.h"
@@ -630,44 +636,76 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             log_it(L_ERROR, "Failed to create socket for worker %u", i);
             return -3;
         }
-        
+
+        // CRITICAL: reactor sockets MUST be non-blocking. The worker drains a UDP
+        // listener in a tight recvfrom() loop until EAGAIN; on a blocking socket
+        // that loop stalls the entire worker thread forever once the kernel buffer
+        // empties (no more datagrams), which also deadlocks any synchronous
+        // cross-worker teardown waiting on that worker. dap_server sets this on its
+        // own listeners, but io_flow creates the socket itself, so set it here too.
+#ifdef _WIN32
+        u_long l_nonblock = 1;
+        if (ioctlsocket(l_socket, (long)FIONBIO, &l_nonblock) == SOCKET_ERROR) {
+            log_it(L_ERROR, "Failed to set socket non-blocking for worker %u, error %d", i, WSAGetLastError());
+            closesocket(l_socket);
+            return -3;
+        }
+#else
+        int l_sock_flags = fcntl(l_socket, F_GETFL, 0);
+        if (l_sock_flags == -1 || fcntl(l_socket, F_SETFL, l_sock_flags | O_NONBLOCK) == -1) {
+            log_it(L_ERROR, "Failed to set socket non-blocking for worker %u: %s", i, strerror(errno));
+            close(l_socket);
+            return -3;
+        }
+#endif
+
         // CRITICAL: Set LARGE socket buffers (64 MB) for high-throughput UDP with many clients
-        // MUST be set BEFORE bind() for maximum effectiveness
+        // MUST be set BEFORE bind() for maximum effectiveness.
+        //
+        // Plain SO_RCVBUF is silently capped at net.core.rmem_max (often ~208 KB,
+        // which holds only ~200-450 datagrams) — so under a burst the kernel drops
+        // the overflow (Udp: RcvbufErrors). SO_RCVBUFFORCE bypasses rmem_max but
+        // needs CAP_NET_ADMIN/root; fall back to SO_RCVBUF for unprivileged runs.
         if (a_socket_type == SOCK_DGRAM) {
             int l_buffer_size = 64 * 1024 * 1024;  // 64 MB
-            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+            bool l_rcv_ok = false;
+#if defined(__linux__) && defined(SO_RCVBUFFORCE)
+            l_rcv_ok = (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUFFORCE,
+                                   (const char *)&l_buffer_size, sizeof(l_buffer_size)) == 0);
+#endif
+            if (!l_rcv_ok &&
+                setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
                 log_it(L_WARNING, "Failed to set SO_RCVBUF to %d bytes for listener %u: %s",
                        l_buffer_size, i, strerror(errno));
             } else {
                 // Check actual size set by kernel (may be limited by rmem_max)
                 int l_actual_size = 0;
                 socklen_t l_optlen = sizeof(l_actual_size);
-                if (getsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_actual_size, &l_optlen) == 0) {
-                    debug_if(s_debug_more, L_DEBUG, "Set SO_RCVBUF for UDP listener %u: requested=%d, actual=%d",
-                           i, l_buffer_size, l_actual_size);
-                } else {
-                    log_it(L_INFO, "Set SO_RCVBUF to %d bytes (64 MB) for UDP listener %u", l_buffer_size, i);
+                if (getsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, (char *)&l_actual_size, &l_optlen) == 0) {
+                    debug_if(s_debug_more, L_DEBUG, "Set SO_RCVBUF for UDP listener %u: requested=%d, actual=%d%s",
+                           i, l_buffer_size, l_actual_size, l_rcv_ok ? " (forced)" : "");
+                    if (!l_rcv_ok && l_actual_size < l_buffer_size)
+                        log_it(L_WARNING, "UDP listener %u SO_RCVBUF capped to %d bytes by net.core.rmem_max "
+                               "(no CAP_NET_ADMIN for SO_RCVBUFFORCE) — packet loss possible under burst",
+                               i, l_actual_size);
                 }
             }
-            
-            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_buffer_size, sizeof(l_buffer_size)) < 0) {
+
+            bool l_snd_ok = false;
+#if defined(__linux__) && defined(SO_SNDBUFFORCE)
+            l_snd_ok = (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUFFORCE,
+                                   (const char *)&l_buffer_size, sizeof(l_buffer_size)) == 0);
+#endif
+            if (!l_snd_ok &&
+                setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buffer_size, sizeof(l_buffer_size)) < 0) {
                 log_it(L_WARNING, "Failed to set SO_SNDBUF to %d bytes for listener %u: %s",
                        l_buffer_size, i, strerror(errno));
-            } else {
-                int l_actual_size = 0;
-                socklen_t l_optlen = sizeof(l_actual_size);
-                if (getsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_actual_size, &l_optlen) == 0) {
-                    debug_if(s_debug_more, L_DEBUG, "Set SO_SNDBUF for UDP listener %u: requested=%d, actual=%d",
-                           i, l_buffer_size, l_actual_size);
-                } else {
-                    log_it(L_INFO, "Set SO_SNDBUF to %d bytes (64 MB) for UDP listener %u", l_buffer_size, i);
-                }
             }
         }
         
         // Set SO_REUSEADDR
         int l_opt = 1;
-        if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEADDR, &l_opt, sizeof(l_opt)) < 0) {
+        if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&l_opt, sizeof(l_opt)) < 0) {
             log_it(L_WARNING, "Failed to set SO_REUSEADDR");
         }
         
@@ -675,7 +713,7 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
         if (l_enable_reuseport) {
 #ifdef SO_REUSEPORT
             l_opt = 1;
-            if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, &l_opt, sizeof(l_opt)) < 0) {
+            if (setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, (const char *)&l_opt, sizeof(l_opt)) < 0) {
                 log_it(L_ERROR, "SO_REUSEPORT failed: %s", strerror(errno));
                 close(l_socket);
                 return -6;
@@ -761,7 +799,29 @@ int dap_io_flow_socket_create_sharded_listeners(dap_server_t *a_server,
             close(l_socket);
             return -4;
         }
-        
+
+        // For UDP sockets: set large receive/send buffers to handle high-throughput bursts.
+        // DNS/UDP transports may receive 1000+ datagrams in rapid succession; the default
+        // kernel receive buffer (~208 KB) holds only ~200 packets and silently drops the rest.
+        // We request 16 MB (SO_RCVBUFFORCE bypasses rmem_max and requires CAP_NET_ADMIN/root).
+        if (a_socket_type == SOCK_DGRAM) {
+            int l_udp_buf = 16 * 1024 * 1024; // 16 MB
+#if defined(__linux__) && defined(SO_RCVBUFFORCE)
+            if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUFFORCE, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+#endif
+            {
+                if (setsockopt(l_socket, SOL_SOCKET, SO_RCVBUF, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+                    log_it(L_WARNING, "UDP recv buffer setsockopt failed: %s", strerror(errno));
+            }
+#if defined(__linux__) && defined(SO_SNDBUFFORCE)
+            if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUFFORCE, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+#endif
+            {
+                if (setsockopt(l_socket, SOL_SOCKET, SO_SNDBUF, &l_udp_buf, sizeof(l_udp_buf)) < 0)
+                    log_it(L_WARNING, "UDP send buffer setsockopt failed: %s", strerror(errno));
+            }
+        }
+
         // Get actual bound port (if port was 0, kernel assigns ephemeral port)
         // CRITICAL: Update l_shared_port so subsequent sockets bind to SAME port!
         uint16_t l_actual_port = l_shared_port;

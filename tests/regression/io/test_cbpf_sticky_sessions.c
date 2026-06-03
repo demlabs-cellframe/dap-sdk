@@ -36,7 +36,6 @@
 
 #define LOG_TAG "test_cbpf_sticky"
 
-#define NUM_WORKERS         10      // Match integration test workers
 #define NUM_CLIENTS         100     // 100 clients like integration test
 #define PACKETS_PER_CLIENT  100     // More packets per client
 #define PACKET_SIZE         1024    // Larger packets
@@ -66,6 +65,8 @@ typedef struct {
 #define PKT_TYPE_ACK  1
 
 // Per-worker statistics
+#define MAX_WORKER_STATS    64
+
 typedef struct {
     _Atomic uint32_t packets_received;
     _Atomic uint32_t clients_seen[NUM_CLIENTS];
@@ -88,7 +89,8 @@ typedef struct {
 typedef struct {
     dap_io_flow_server_t *server;
     uint16_t server_port;
-    worker_stats_t worker_stats[NUM_WORKERS];
+    worker_stats_t worker_stats[MAX_WORKER_STATS];
+    uint32_t num_workers;
     _Atomic uint32_t total_received;
     _Atomic uint32_t total_sent;
     _Atomic uint32_t flows_created;
@@ -124,7 +126,7 @@ static void s_packet_received(dap_io_flow_server_t *a_server,
     if (l_pkt->client_id >= NUM_CLIENTS) return;
     
     dap_worker_t *l_worker = dap_worker_get_current();
-    if (!l_worker || l_worker->id >= (uint32_t)NUM_WORKERS) return;
+    if (!l_worker || l_worker->id >= s_ctx.num_workers) return;
     
     int32_t l_worker_id = (int32_t)l_worker->id;
     uint32_t l_client_id = l_pkt->client_id;
@@ -304,8 +306,12 @@ static int s_setup_test(void)
     return 1;
 #endif
     
-    if (dap_events_init(NUM_WORKERS, 0) != 0) return -1;
+    if (dap_events_init(0, 0) != 0) return -1;
     if (dap_events_start() != 0) return -1;
+
+    s_ctx.num_workers = dap_events_thread_get_count();
+    if (s_ctx.num_workers == 0 || s_ctx.num_workers > MAX_WORKER_STATS)
+        return -1;
     
     // Create server
     s_ctx.server = dap_io_flow_server_new("cbpf_test", &s_flow_ops, 
@@ -331,33 +337,51 @@ static int s_setup_test(void)
         .sin_addr.s_addr = htonl(INADDR_LOOPBACK)
     };
     
-    dap_events_socket_callbacks_t l_callbacks = {0};
-    
+    static dap_events_socket_callbacks_t s_client_cbs = {0};
+
     for (int i = 0; i < NUM_CLIENTS; i++) {
+        int l_fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (l_fd < 0)
+            return -1;
+
+        struct sockaddr_in l_bind = {
+            .sin_family = AF_INET,
+            .sin_port = 0,
+            .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
+        };
+        if (bind(l_fd, (struct sockaddr *)&l_bind, sizeof(l_bind)) < 0) {
+            close(l_fd);
+            return -1;
+        }
+
         s_ctx.client_ctx[i].client_id = i;
         s_ctx.client_ctx[i].packets_sent = 0;
-        s_ctx.client_ctx[i].session_id = 0x1000000000000000ULL + i;  // Unique session ID
-        s_ctx.client_ctx[i].assigned_worker = -1;  // Not assigned yet (will be set by first packet's response)
+        s_ctx.client_ctx[i].session_id = 0x1000000000000000ULL + i;
+        s_ctx.client_ctx[i].assigned_worker = -1;
         s_ctx.client_ctx[i].seq_num = 1;
         s_ctx.client_ctx[i].ack_received = 0;
         atomic_store(&s_ctx.client_ctx[i].packets_acked, 0);
         memcpy(&s_ctx.client_ctx[i].server_addr, &l_server_addr, sizeof(l_server_addr));
         s_ctx.client_ctx[i].server_addr_len = sizeof(l_server_addr);
-        
-        s_ctx.client_es[i] = dap_events_socket_create_platform(AF_INET, SOCK_DGRAM, 0, &l_callbacks);
-        if (!s_ctx.client_es[i]) return -1;
-        
+
+        dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_fd, &s_client_cbs);
+        if (!l_es) {
+            close(l_fd);
+            return -1;
+        }
+
         int l_sndbuf = 4 * 1024 * 1024;
-        setsockopt(s_ctx.client_es[i]->socket, SOL_SOCKET, SO_SNDBUF, &l_sndbuf, sizeof(l_sndbuf));
-        
-        s_ctx.client_es[i]->type = DESCRIPTOR_TYPE_SOCKET_UDP;
-        s_ctx.client_es[i]->_inheritor = &s_ctx.client_ctx[i];
-        
-        // Assign to worker (spread across workers)
-        dap_worker_t *l_worker = dap_events_worker_get(i % NUM_WORKERS);
-        if (!l_worker) return -1;
-        
-        dap_events_socket_assign_on_worker_mt(s_ctx.client_es[i], l_worker);
+        setsockopt(l_fd, SOL_SOCKET, SO_SNDBUF, &l_sndbuf, sizeof(l_sndbuf));
+
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+        l_es->_inheritor = &s_ctx.client_ctx[i];
+
+        dap_worker_t *l_worker = dap_events_worker_get((uint8_t)(i % s_ctx.num_workers));
+        if (!l_worker)
+            return -1;
+
+        dap_events_socket_assign_on_worker_mt(l_es, l_worker);
+        s_ctx.client_es[i] = l_es;
     }
     
     dap_test_msg("Created %d clients", NUM_CLIENTS);
@@ -417,7 +441,7 @@ static int s_verify_results(void)
     
     for (int c = 0; c < NUM_CLIENTS; c++) {
         int l_workers_with_packets = 0;
-        for (int w = 0; w < NUM_WORKERS; w++) {
+        for (uint32_t w = 0; w < s_ctx.num_workers; w++) {
             if (atomic_load(&s_ctx.worker_stats[w].clients_seen[c]) > 0) {
                 l_workers_with_packets++;
             }
@@ -438,7 +462,7 @@ static int s_verify_results(void)
     dap_test_msg("Worker distribution:");
     int l_workers_with_traffic = 0;
     uint32_t l_max_on_single_worker = 0;
-    for (int w = 0; w < NUM_WORKERS; w++) {
+    for (uint32_t w = 0; w < s_ctx.num_workers; w++) {
         uint32_t l_count = atomic_load(&s_ctx.worker_stats[w].packets_received);
         dap_test_msg("  Worker %d: %u packets (%.1f%%)", w, l_count, 
                      100.0 * l_count / (l_received > 0 ? l_received : 1));

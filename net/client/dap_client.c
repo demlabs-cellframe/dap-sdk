@@ -37,6 +37,17 @@
 #define LOG_TAG "dap_client"
 
 static bool s_debug_more = false;
+static bool s_legacy_enc_handshake = false;
+
+void dap_client_set_legacy_enc_handshake(bool a_enable)
+{
+    s_legacy_enc_handshake = a_enable;
+}
+
+bool dap_client_get_legacy_enc_handshake(void)
+{
+    return s_legacy_enc_handshake;
+}
 
 /**
  * @brief dap_client_init
@@ -235,6 +246,12 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
 {
     dap_return_if_fail(a_client);
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    // Detach client from streaming esocket so keepalive timers see NULL
+    if(l_fsm && l_fsm->trans_ctx && l_fsm->trans_ctx->stream &&
+       l_fsm->trans_ctx->stream->esocket)
+    {
+        l_fsm->trans_ctx->stream->esocket->_inheritor = NULL;
+    }
     if (l_fsm)
         dap_client_fsm_delete_unsafe(l_fsm);
     a_client->_internal = NULL;

@@ -982,7 +982,7 @@ char * exec_with_ret_multistring(const char * a_cmd)
     }
     pclose(fp);
     buf_len=strlen(retbuf);
-    if(retbuf[buf_len-1] =='\n')retbuf[buf_len-1] ='\0';
+    if(buf_len > 0 && retbuf[buf_len-1] =='\n')retbuf[buf_len-1] ='\0';
 FIN:
     return strdup(retbuf);
 }

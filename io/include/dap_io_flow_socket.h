@@ -37,7 +37,12 @@
 
 #pragma once
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
+#endif
 #include <stdint.h>
 #include <stdbool.h>
 #include "dap_events_socket.h"

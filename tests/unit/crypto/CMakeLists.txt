@@ -10,5 +10,6 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework/mocks/DAPMockAutoWra
 add_subdirectory(enc)
 add_subdirectory(cert)
 add_subdirectory(falcon)
+add_subdirectory(kdf)
 
 

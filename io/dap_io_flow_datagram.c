@@ -9,9 +9,15 @@
 
 #include <string.h>
 #include <errno.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#else
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#endif
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_worker.h"
