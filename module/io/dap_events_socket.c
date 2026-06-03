@@ -907,7 +907,7 @@ static void *s_dap_events_socket_buf_thread(void *arg)
         pthread_exit(0);
     }
     SOCKET l_sock = INVALID_SOCKET;
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
         l_sock = l_es->fd2;
 #elif defined(DAP_EVENTS_CAPS_QUEUE_MQUEUE)
         l_sock = l_es->mqd;

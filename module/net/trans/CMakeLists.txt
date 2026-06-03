@@ -3,9 +3,10 @@ project(dap_net_trans C)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/LibraryHelpers.cmake)
 
+add_subdirectory(websocket_system)
+add_subdirectory(webrtc)
 add_subdirectory(http)
 add_subdirectory(websocket)
-add_subdirectory(websocket_system)
 if(NOT DAP_WASM)
     add_subdirectory(udp)
     add_subdirectory(dns)
@@ -27,6 +28,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     http/include
     websocket/include
     websocket_system/include
+    webrtc/include
 )
 if(NOT DAP_WASM)
     target_include_directories(${PROJECT_NAME} PRIVATE
@@ -38,7 +40,8 @@ endif()
 
 dap_link_libraries(${PROJECT_NAME} INTERFACE
     dap_core dap_crypto dap_io dap_hash_table dap_net_common
-    dap_stream dap_trans_http dap_trans_websocket dap_trans_websocket_system)
+    dap_stream dap_trans_http dap_trans_websocket dap_trans_websocket_system
+    dap_trans_webrtc)
 
 if(NOT DAP_WASM)
     dap_link_libraries(${PROJECT_NAME} INTERFACE

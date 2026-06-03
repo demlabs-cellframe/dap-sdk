@@ -301,7 +301,7 @@ typedef struct dap_events_socket {
         buf_out_size,   buf_out_size_max;
 
     dap_events_socket_t * pipe_out; // Pipe socket with data for output
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     pthread_rwlock_t buf_out_lock;
 #endif
     struct sockaddr_storage addr_storage;

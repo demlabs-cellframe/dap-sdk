@@ -874,7 +874,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 
     l_es->callbacks.queue_ptr_callback = a_callback; // Arm event callback
 
-#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     pthread_rwlock_init(&l_es->buf_out_lock, NULL);
 #endif
 
