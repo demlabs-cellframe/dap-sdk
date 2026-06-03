@@ -154,6 +154,9 @@ static void test_btree_cursor(void)
             break;
         
         count++;
+        DAP_DELETE(text_key);
+        DAP_DELETE(value_data);
+        DAP_DELETE(sign_data);
         
         if (dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_NEXT, NULL) != 0)
             break;
@@ -194,6 +197,9 @@ static void test_btree_lookup(void)
         dap_assert(value_len > 0, "Value data should be present");
         if (text_key)
             dap_test_msg("Found: key=%s, value=%s", text_key, (char*)value_data);
+        DAP_DELETE(text_key);
+        DAP_DELETE(value_data);
+        DAP_DELETE(sign_data);
     }
     
     dap_global_db_close(btree);
@@ -253,6 +259,9 @@ static void test_btree_persistence(void)
             if (dap_global_db_cursor_get(cursor, &k, &tk, &vd, &vl, &sd, &sl, &f) != 0)
                 break;
             count++;
+            DAP_DELETE(tk);
+            DAP_DELETE(vd);
+            DAP_DELETE(sd);
             if (dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_NEXT, NULL) != 0)
                 break;
         }
@@ -2014,6 +2023,9 @@ static void test_btree_cross_parent_cursor(void)
             dap_assert_PIF(memcmp(&prev_key, &key, sizeof(key)) < 0, "Keys must be strictly ascending");
         prev_key = key;
         fwd_count++;
+        DAP_DELETE(text_key);
+        DAP_DELETE(vdata);
+        DAP_DELETE(sdata);
     } while (dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_NEXT, NULL) == 0);
 
     dap_assert(fwd_count == (size_t)N, "Forward scan must visit all N records");
@@ -2035,6 +2047,9 @@ static void test_btree_cross_parent_cursor(void)
             dap_assert_PIF(memcmp(&prev_key, &key, sizeof(key)) > 0, "Keys must be strictly descending in reverse");
         prev_key = key;
         rev_count++;
+        DAP_DELETE(text_key);
+        DAP_DELETE(vdata);
+        DAP_DELETE(sdata);
     } while (dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_PREV, NULL) == 0);
 
     dap_assert(rev_count == (size_t)N, "Reverse scan must visit all N records");
@@ -2087,6 +2102,9 @@ static void test_btree_cross_parent_cursor(void)
             dap_assert_PIF(memcmp(&prev_key, &key, sizeof(key)) < 0, "Final scan keys must be ascending");
         prev_key = key;
         fwd_count++;
+        DAP_DELETE(text_key);
+        DAP_DELETE(vdata);
+        DAP_DELETE(sdata);
     } while (dap_global_db_cursor_move(cursor, DAP_GLOBAL_DB_NEXT, NULL) == 0);
 
     dap_assert(fwd_count == (size_t)N, "Final forward scan must visit all N records");

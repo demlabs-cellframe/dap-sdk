@@ -75,12 +75,15 @@ static bool s_test_whitespace_between_structural(void) {
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse JSON with whitespace between tokens");
     
     // Verify structure
-    size_t arr_len = dap_json_array_length(dap_json_object_get_array(l_json, "a"));
+    dap_json_t *a_arr = dap_json_object_get_array(l_json, "a");
+    size_t arr_len = dap_json_array_length(a_arr);
+    dap_json_object_free(a_arr);
     DAP_TEST_FAIL_IF(arr_len != 3, "Array length correct");
     
     dap_json_t *b_obj = dap_json_object_get_object(l_json, "b");
     DAP_TEST_FAIL_IF_NULL(b_obj, "Get nested object 'b'");
     bool b_c = dap_json_object_get_bool(b_obj, "c");
+    dap_json_object_free(b_obj);
     DAP_TEST_FAIL_IF(!b_c, "Nested value correct");
     
     result = true;
@@ -140,12 +143,15 @@ static bool s_test_zero_whitespace(void) {
     l_json = dap_json_parse_string(json_str);
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse compact JSON (no whitespace)");
     
-    size_t arr_len = dap_json_array_length(dap_json_object_get_array(l_json, "a"));
+    dap_json_t *a_arr = dap_json_object_get_array(l_json, "a");
+    size_t arr_len = dap_json_array_length(a_arr);
+    dap_json_object_free(a_arr);
     DAP_TEST_FAIL_IF(arr_len != 3, "Array correct in compact JSON");
     
     dap_json_t *b_obj = dap_json_object_get_object(l_json, "b");
     DAP_TEST_FAIL_IF_NULL(b_obj, "Get nested object 'b'");
     bool b_c = dap_json_object_get_bool(b_obj, "c");
+    dap_json_object_free(b_obj);
     DAP_TEST_FAIL_IF(!b_c, "Nested value correct in compact JSON");
     
     result = true;

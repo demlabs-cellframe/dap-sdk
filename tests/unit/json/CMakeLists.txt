@@ -30,7 +30,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 60
+    TIMEOUT ${DAP_T60}
     LABELS "unit;json;unicode;critical"
 )
 
@@ -57,7 +57,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 60
+    TIMEOUT ${DAP_T60}
     LABELS "unit;json;numeric;critical"
 )
 
@@ -81,7 +81,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 60
+    TIMEOUT ${DAP_T60}
     LABELS "unit;json;invalid;critical"
 )
 
@@ -105,7 +105,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 300  # Longer timeout for large data tests
+    TIMEOUT ${DAP_T300}  # Longer timeout for large data tests
     LABELS "unit;json;boundary;critical"
 )
 
@@ -130,7 +130,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 60
+    TIMEOUT ${DAP_T60}
     LABELS "unit;json;unicode;boundary;edge_case;critical"
 )
 
@@ -142,7 +142,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 project(test_json_benchmark)
 
 add_executable(${PROJECT_NAME}
-    benchmark_baseline.c
+    test_json_benchmark.c
 )
 
 dap_test_add_includes(${PROJECT_NAME})
@@ -154,7 +154,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 600  # Longer timeout for benchmarks
+    TIMEOUT ${DAP_T600}  # Longer timeout for benchmarks
     LABELS "unit;json;benchmark;performance"
 )
 
@@ -178,7 +178,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 60
+    TIMEOUT ${DAP_T60}
     LABELS "unit;json;arch;selection;api;critical"
 )
 
@@ -202,7 +202,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 60
+    TIMEOUT ${DAP_T60}
     LABELS "unit;json;stage1;reference;critical"
 )
 
@@ -231,7 +231,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 120
+    TIMEOUT ${DAP_T120}
     LABELS "unit;json;stage1;simd;correctness;critical"
 )
 
@@ -241,7 +241,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 # Coverage: Детальная отладка SSE2 tokenization
 # Tests: 3 focused debug tests with detailed token comparison
 # NOTE: x86-only test (requires SSE2)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64|i686")
     project(test_json_stage1_sse2_debug)
 
     add_executable(${PROJECT_NAME}
@@ -257,7 +257,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
     )
 
     set_tests_properties(${PROJECT_NAME} PROPERTIES
-        TIMEOUT 60
+        TIMEOUT ${DAP_T60}
         LABELS "unit;json;stage1;sse2;debug"
     )
 endif()
@@ -283,7 +283,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 120
+    TIMEOUT ${DAP_T120}
     LABELS "unit;json;stage1;simd;regression;critical;universal"
 )
 
@@ -324,7 +324,7 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES
 # Tests: Correctness tests + Performance benchmarks
 # Target: 4-5 GB/s throughput (AVX2), 6-8 GB/s (AVX-512)
 # NOTE: x86-only test (requires AVX2)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64|i686")
     project(test_simdjson_stage1)
 
     add_executable(${PROJECT_NAME}
@@ -347,7 +347,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i686")
     )
 
     set_tests_properties(${PROJECT_NAME} PROPERTIES
-        TIMEOUT 300
+        TIMEOUT ${DAP_T300}
         LABELS "unit;json;stage1;simdjson;phase2;performance;critical"
     )
 endif()
@@ -373,7 +373,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 300  # DoS tests may take time
+    TIMEOUT ${DAP_T300}  # DoS tests may take time
     LABELS "unit;json;security;dos;critical;phase1.8"
 )
 
@@ -397,7 +397,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 120
+    TIMEOUT ${DAP_T120}
     LABELS "unit;json;simd;boundaries;critical;phase1.8"
 )
 
@@ -430,7 +430,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;json;concurrency;thread-safety;critical;phase1.8"
 )
 
@@ -442,7 +442,7 @@ add_executable(${PROJECT_NAME} test_numeric_edge_cases_refined.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;numeric;refined;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;numeric;refined;phase1.8")
 
 # =========================================
 # Test 21: String Edge Cases (Phase 1.8.2)
@@ -452,7 +452,7 @@ add_executable(${PROJECT_NAME} test_string_edge_cases.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;string;edges;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;string;edges;phase1.8")
 
 # =========================================
 # Test 22: Whitespace Edge Cases (Phase 1.8.2)
@@ -462,7 +462,7 @@ add_executable(${PROJECT_NAME} test_whitespace_edge_cases.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;whitespace;edges;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T120} LABELS "unit;json;whitespace;edges;phase1.8")
 
 # =========================================
 # Test 23: Array Edge Cases (Phase 1.8.2)
@@ -472,7 +472,7 @@ add_executable(${PROJECT_NAME} test_array_edge_cases.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;array;edges;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T120} LABELS "unit;json;array;edges;phase1.8")
 
 # =========================================
 # Test 24: Object Edge Cases (Phase 1.8.2)
@@ -482,7 +482,7 @@ add_executable(${PROJECT_NAME} test_object_edge_cases.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;object;edges;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T120} LABELS "unit;json;object;edges;phase1.8")
 
 # =========================================
 # Test 25: Literal Edge Cases (Phase 1.8.2)
@@ -492,7 +492,7 @@ add_executable(${PROJECT_NAME} test_literal_edge_cases.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;literal;edges;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;literal;edges;phase1.8")
 
 # =========================================
 # Test 26: Serialization Round-Trip (Phase 1.8.2)
@@ -502,7 +502,7 @@ add_executable(${PROJECT_NAME} test_serialization_round_trip.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;serialization;roundtrip;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T120} LABELS "unit;json;serialization;roundtrip;phase1.8")
 
 # =========================================
 # Test 27: Platform-Specific (Phase 1.8.2)
@@ -512,7 +512,7 @@ add_executable(${PROJECT_NAME} test_platform_specific.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;platform;specific;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;platform;specific;phase1.8")
 
 # =========================================
 # Test 28-31: Phase 1.8.3 - Features
@@ -522,28 +522,28 @@ add_executable(${PROJECT_NAME} test_json5_features.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;json5;features;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;json5;features;phase1.8")
 
 project(test_jsonc_comments)
 add_executable(${PROJECT_NAME} test_jsonc_comments.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;jsonc;comments;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;jsonc;comments;phase1.8")
 
 project(test_streaming_api)
 add_executable(${PROJECT_NAME} test_streaming_api.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;streaming;api;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;streaming;api;phase1.8")
 
 project(test_api_mutations)
 add_executable(${PROJECT_NAME} test_api_mutations.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;api;mutations;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;api;mutations;phase1.8")
 
 # =========================================
 # Test 32-35: Phase 1.8.4 - Production
@@ -555,35 +555,35 @@ set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;api
 #dap_test_add_includes(${PROJECT_NAME})
 #dap_test_link_libraries(${PROJECT_NAME})
 #add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-#set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;error;reporting;phase1.8")
+#set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;error;reporting;phase1.8")
 
 project(test_real_world_data)
 add_executable(${PROJECT_NAME} test_real_world_data.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;real;world;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T120} LABELS "unit;json;real;world;phase1.8")
 
 project(test_perf_edge_cases)
 add_executable(${PROJECT_NAME} test_performance_edge_cases.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;performance;edge;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T120} LABELS "unit;json;performance;edge;phase1.8")
 
 project(test_jsonpath_queries)
 add_executable(${PROJECT_NAME} test_jsonpath_queries.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;jsonpath;queries;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;jsonpath;queries;phase1.8")
 
 project(test_json_schema)
 add_executable(${PROJECT_NAME} test_json_schema.c)
 dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 60 LABELS "unit;json;schema;validation;phase1.8")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T60} LABELS "unit;json;schema;validation;phase1.8")
 
 # Phase 2 Profiling Tool
 project(profile_stage2)
@@ -603,7 +603,7 @@ add_executable(${PROJECT_NAME} benchmark_deep_nesting.c)
 target_link_libraries(${PROJECT_NAME} dap_json dap_core dap_math)
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/unit/json")
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT 120 LABELS "unit;json;benchmark;phase2.4")
+set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T120} LABELS "unit;json;benchmark;phase2.4")
 
 # Reference scanner 64-byte boundary test
 project(test_reference_scanner_64)
@@ -612,7 +612,7 @@ dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 10 
+    TIMEOUT ${DAP_T10} 
     LABELS "unit;json;debug;reference"
 )
 
@@ -625,7 +625,7 @@ dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 30 
+    TIMEOUT ${DAP_T30} 
     LABELS "unit;json;simd;boundary;escape;critical"
 )
 
@@ -636,7 +636,7 @@ dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 10 
+    TIMEOUT ${DAP_T10} 
     LABELS "unit;json;debug;64byte"
 )
 
@@ -647,7 +647,7 @@ dap_test_add_includes(${PROJECT_NAME})
 dap_test_link_libraries(${PROJECT_NAME})
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 10 
+    TIMEOUT ${DAP_T10} 
     LABELS "unit;json;debug;verification"
 )
 

@@ -2,7 +2,7 @@
 #include "dap_sign.h"
 #include "dap_test.h"
 #include "dap_enc_test.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_enc_sphincsplus.h"
 
 #define LOG_TAG "dap_crypto_multithread_tests"
@@ -36,12 +36,12 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
     size_t l_source_size[a_times];
 
     for (int i = 0; i < a_times; ++i) {
-        randombytes(seed, seed_size);
+        dap_random_bytes(seed, seed_size);
 
          // ----------
-        l_source_size[i] = 1 + random_uint32_t(20);
+        l_source_size[i] = 1 + dap_random_uint32(20);
         l_source[i] = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_source_size[i], 1, NULL);
-        randombytes(l_source[i], l_source_size[i]);
+        dap_random_bytes(l_source[i], l_source_size[i]);
         
         dap_enc_key_t *key = s_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)

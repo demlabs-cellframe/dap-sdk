@@ -40,6 +40,7 @@ static bool s_test_empty_array(void) {
     log_it(L_DEBUG, "Testing empty array");
     bool result = false;
     dap_json_t *l_json = NULL;
+    dap_json_t *arr = NULL;
     
     // Test 1: Simple empty array
     l_json = dap_json_parse_string("[]");
@@ -54,12 +55,14 @@ static bool s_test_empty_array(void) {
     l_json = dap_json_parse_string("{\"arr\":[]}");
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse object with empty array");
     
-    dap_json_t *arr = dap_json_object_get_array(l_json, "arr");
+    arr = dap_json_object_get_array(l_json, "arr");
     DAP_TEST_FAIL_IF_NULL(arr, "Get empty array");
     
     len = dap_json_array_length(arr);
     DAP_TEST_FAIL_IF(len != 0, "Empty array from object has zero length");
     
+    dap_json_object_free(arr);
+    arr = NULL;
     dap_json_object_free(l_json);
     
     // Test 3: Multiple empty arrays
@@ -70,6 +73,7 @@ static bool s_test_empty_array(void) {
     log_it(L_DEBUG, "Empty array test passed");
     
 cleanup:
+    dap_json_object_free(arr);
     dap_json_object_free(l_json);
     return result;
 }
@@ -82,6 +86,8 @@ static bool s_test_single_element_array(void) {
     log_it(L_DEBUG, "Testing single element array");
     bool result = false;
     dap_json_t *l_json = NULL;
+    dap_json_t *w = NULL;
+    dap_json_t *obj = NULL;
     
     // Test various single-element arrays
     l_json = dap_json_parse_string("[42]");
@@ -90,7 +96,11 @@ static bool s_test_single_element_array(void) {
     size_t len = dap_json_array_length(l_json);
     DAP_TEST_FAIL_IF(len != 1, "Single element array has length 1");
     
-    int val = dap_json_array_get_int(l_json, 0);
+    w = dap_json_array_get_idx(l_json, 0);
+    DAP_TEST_FAIL_IF_NULL(w, "Get single int element");
+    int val = dap_json_get_int(w);
+    dap_json_object_free(w);
+    w = NULL;
     DAP_TEST_FAIL_IF(val != 42, "Single int value correct");
     
     dap_json_object_free(l_json);
@@ -99,8 +109,13 @@ static bool s_test_single_element_array(void) {
     l_json = dap_json_parse_string("[\"text\"]");
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse single string");
     
-    const char *str = dap_json_array_get_string(l_json, 0);
-    DAP_TEST_FAIL_IF(strcmp(str, "text") != 0, "Single string correct");
+    w = dap_json_array_get_idx(l_json, 0);
+    DAP_TEST_FAIL_IF_NULL(w, "Get single string element");
+    const char *str = dap_json_get_string(w);
+    int str_cmp = strcmp(str, "text");
+    dap_json_object_free(w);
+    w = NULL;
+    DAP_TEST_FAIL_IF(str_cmp != 0, "Single string correct");
     
     dap_json_object_free(l_json);
     
@@ -108,13 +123,17 @@ static bool s_test_single_element_array(void) {
     l_json = dap_json_parse_string("[{\"key\":\"value\"}]");
     DAP_TEST_FAIL_IF_NULL(l_json, "Parse single object");
     
-    dap_json_t *obj = dap_json_array_get_object(l_json, 0);
+    obj = dap_json_array_get_object(l_json, 0);
     DAP_TEST_FAIL_IF_NULL(obj, "Get single object");
+    dap_json_object_free(obj);
+    obj = NULL;
     
     result = true;
     log_it(L_DEBUG, "Single element array test passed");
     
 cleanup:
+    dap_json_object_free(w);
+    dap_json_object_free(obj);
     dap_json_object_free(l_json);
     return result;
 }
@@ -127,6 +146,14 @@ static bool s_test_nested_empty_arrays(void) {
     log_it(L_DEBUG, "Testing nested empty arrays (depth 5)");
     bool result = false;
     dap_json_t *l_json = NULL;
+    dap_json_t *depth1 = NULL;
+    dap_json_t *depth2 = NULL;
+    dap_json_t *depth2_inner = NULL;
+    dap_json_t *depth5 = NULL;
+    dap_json_t *d5_1 = NULL;
+    dap_json_t *d5_2 = NULL;
+    dap_json_t *d5_3 = NULL;
+    dap_json_t *d5_4 = NULL;
     
     // Test: [[],[[]],[[[]]]]]
     const char *json_str = "[[],[[]],[[[]]],[[[[]]]],[[[[[]]]]]]";
@@ -138,34 +165,34 @@ static bool s_test_nested_empty_arrays(void) {
     DAP_TEST_FAIL_IF(len != 5, "Top-level array has 5 elements");
     
     // Check depth 1: []
-    dap_json_t *depth1 = dap_json_array_get_array(l_json, 0);
+    depth1 = dap_json_array_get_array(l_json, 0);
     DAP_TEST_FAIL_IF_NULL(depth1, "Get depth 1");
     DAP_TEST_FAIL_IF(dap_json_array_length(depth1) != 0UL, "Depth 1 is empty");
     
     // Check depth 2: [[]]
-    dap_json_t *depth2 = dap_json_array_get_array(l_json, 1);
+    depth2 = dap_json_array_get_array(l_json, 1);
     DAP_TEST_FAIL_IF_NULL(depth2, "Get depth 2");
     DAP_TEST_FAIL_IF(dap_json_array_length(depth2) != 1UL, "Depth 2 has 1 element");
     
-    dap_json_t *depth2_inner = dap_json_array_get_array(depth2, 0);
+    depth2_inner = dap_json_array_get_array(depth2, 0);
     DAP_TEST_FAIL_IF_NULL(depth2_inner, "Get depth 2 inner");
     DAP_TEST_FAIL_IF(dap_json_array_length(depth2_inner) != 0UL, "Depth 2 inner is empty");
     
     // Check depth 5: [[[[[]]]]]
-    dap_json_t *depth5 = dap_json_array_get_array(l_json, 4);
+    depth5 = dap_json_array_get_array(l_json, 4);
     DAP_TEST_FAIL_IF_NULL(depth5, "Get depth 5");
     
     // Navigate down
-    dap_json_t *d5_1 = dap_json_array_get_array(depth5, 0);
+    d5_1 = dap_json_array_get_array(depth5, 0);
     DAP_TEST_FAIL_IF_NULL(d5_1, "Depth 5 level 1");
     
-    dap_json_t *d5_2 = dap_json_array_get_array(d5_1, 0);
+    d5_2 = dap_json_array_get_array(d5_1, 0);
     DAP_TEST_FAIL_IF_NULL(d5_2, "Depth 5 level 2");
     
-    dap_json_t *d5_3 = dap_json_array_get_array(d5_2, 0);
+    d5_3 = dap_json_array_get_array(d5_2, 0);
     DAP_TEST_FAIL_IF_NULL(d5_3, "Depth 5 level 3");
     
-    dap_json_t *d5_4 = dap_json_array_get_array(d5_3, 0);
+    d5_4 = dap_json_array_get_array(d5_3, 0);
     DAP_TEST_FAIL_IF_NULL(d5_4, "Depth 5 level 4");
     
     DAP_TEST_FAIL_IF(dap_json_array_length(d5_4) != 0UL, "Depth 5 innermost is empty");
@@ -174,6 +201,14 @@ static bool s_test_nested_empty_arrays(void) {
     log_it(L_DEBUG, "Nested empty arrays test passed");
     
 cleanup:
+    dap_json_object_free(d5_4);
+    dap_json_object_free(d5_3);
+    dap_json_object_free(d5_2);
+    dap_json_object_free(d5_1);
+    dap_json_object_free(depth5);
+    dap_json_object_free(depth2_inner);
+    dap_json_object_free(depth2);
+    dap_json_object_free(depth1);
     dap_json_object_free(l_json);
     return result;
 }
@@ -186,6 +221,10 @@ static bool s_test_heterogeneous_arrays(void) {
     log_it(L_DEBUG, "Testing heterogeneous arrays");
     bool result = false;
     dap_json_t *l_json = NULL;
+    dap_json_t *w = NULL;
+    dap_json_t *obj = NULL;
+    dap_json_t *arr = NULL;
+    dap_json_t *elem6 = NULL;
     
     // Array with all JSON types
     const char *json_str = "[1, \"text\", true, null, {\"key\":\"value\"}, [1,2,3], 3.14]";
@@ -197,27 +236,44 @@ static bool s_test_heterogeneous_arrays(void) {
     DAP_TEST_FAIL_IF(len != 7, "Heterogeneous array has 7 elements");
     
     // Check each element
-    int int_val = dap_json_array_get_int(l_json, 0);
+    w = dap_json_array_get_idx(l_json, 0);
+    DAP_TEST_FAIL_IF_NULL(w, "Element 0 wrapper");
+    int int_val = dap_json_get_int(w);
+    dap_json_object_free(w);
+    w = NULL;
     DAP_TEST_FAIL_IF(int_val != 1, "Element 0 is int 1");
     
-    const char *str_val = dap_json_array_get_string(l_json, 1);
-    DAP_TEST_FAIL_IF(strcmp(str_val, "text") != 0, "Element 1 is string");
+    w = dap_json_array_get_idx(l_json, 1);
+    DAP_TEST_FAIL_IF_NULL(w, "Element 1 wrapper");
+    const char *str_val = dap_json_get_string(w);
+    int str_cmp = strcmp(str_val, "text");
+    dap_json_object_free(w);
+    w = NULL;
+    DAP_TEST_FAIL_IF(str_cmp != 0, "Element 1 is string");
     
-    bool bool_val = dap_json_array_get_bool(l_json, 2);
+    w = dap_json_array_get_idx(l_json, 2);
+    DAP_TEST_FAIL_IF_NULL(w, "Element 2 wrapper");
+    bool bool_val = dap_json_get_bool(w);
+    dap_json_object_free(w);
+    w = NULL;
     DAP_TEST_FAIL_IF(!bool_val, "Element 2 is true");
     
     // Element 3 is null - check with is_null
     // (Assuming API has dap_json_array_is_null)
     
-    dap_json_t *obj = dap_json_array_get_object(l_json, 4);
+    obj = dap_json_array_get_object(l_json, 4);
     DAP_TEST_FAIL_IF_NULL(obj, "Element 4 is object");
+    dap_json_object_free(obj);
+    obj = NULL;
     
-    dap_json_t *arr = dap_json_array_get_array(l_json, 5);
+    arr = dap_json_array_get_array(l_json, 5);
     DAP_TEST_FAIL_IF_NULL(arr, "Element 5 is array");
     DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3UL, "Nested array has 3 elements");
+    dap_json_object_free(arr);
+    arr = NULL;
     
     // DEBUG: Check element 6 type and value
-    dap_json_t *elem6 = dap_json_array_get_idx(l_json, 6);
+    elem6 = dap_json_array_get_idx(l_json, 6);
     log_it(L_DEBUG, "Element 6: ptr=%p", elem6);
     if (elem6) {
         dap_json_type_t type6 = dap_json_get_type(elem6);
@@ -229,11 +285,15 @@ static bool s_test_heterogeneous_arrays(void) {
             int val = dap_json_get_int(elem6);
             log_it(L_DEBUG, "Element 6 int value: %d", val);
         }
-        // ⚠️ DON'T free borrowed reference - it's cached in parent!
-        // dap_json_object_free(elem6);
+        dap_json_object_free(elem6);
+        elem6 = NULL;
     }
     
-    double dbl_val = dap_json_array_get_double(l_json, 6);
+    w = dap_json_array_get_idx(l_json, 6);
+    DAP_TEST_FAIL_IF_NULL(w, "Element 6 wrapper for double check");
+    double dbl_val = dap_json_get_double(w);
+    dap_json_object_free(w);
+    w = NULL;
     log_it(L_DEBUG, "dap_json_array_get_double(6) = %f", dbl_val);
     DAP_TEST_FAIL_IF(dbl_val < 3.13 || dbl_val > 3.15, "Element 6 is double 3.14");
     
@@ -241,6 +301,10 @@ static bool s_test_heterogeneous_arrays(void) {
     log_it(L_DEBUG, "Heterogeneous arrays test passed");
     
 cleanup:
+    dap_json_object_free(elem6);
+    dap_json_object_free(arr);
+    dap_json_object_free(obj);
+    dap_json_object_free(w);
     dap_json_object_free(l_json);
     return result;
 }
@@ -253,6 +317,7 @@ static bool s_test_large_arrays(void) {
     log_it(L_DEBUG, "Testing large arrays (10,000+ elements)");
     bool result = false;
     dap_json_t *l_json = NULL;
+    dap_json_t *w = NULL;
     char *json_buf = NULL;
     
     const int ELEMENT_COUNT = 10000;
@@ -281,13 +346,25 @@ static bool s_test_large_arrays(void) {
     DAP_TEST_FAIL_IF(len != (size_t)ELEMENT_COUNT, "Large array has correct length");
     
     // Spot check elements
-    int first = dap_json_array_get_int(l_json, 0);
+    w = dap_json_array_get_idx(l_json, 0);
+    DAP_TEST_FAIL_IF_NULL(w, "First element wrapper");
+    int first = dap_json_get_int(w);
+    dap_json_object_free(w);
+    w = NULL;
     DAP_TEST_FAIL_IF(first != 0, "First element is 0");
     
-    int middle = dap_json_array_get_int(l_json, ELEMENT_COUNT / 2);
+    w = dap_json_array_get_idx(l_json, (size_t)(ELEMENT_COUNT / 2));
+    DAP_TEST_FAIL_IF_NULL(w, "Middle element wrapper");
+    int middle = dap_json_get_int(w);
+    dap_json_object_free(w);
+    w = NULL;
     DAP_TEST_FAIL_IF(middle != (int)(ELEMENT_COUNT / 2), "Middle element correct");
     
-    int last = dap_json_array_get_int(l_json, ELEMENT_COUNT - 1);
+    w = dap_json_array_get_idx(l_json, (size_t)(ELEMENT_COUNT - 1));
+    DAP_TEST_FAIL_IF_NULL(w, "Last element wrapper");
+    int last = dap_json_get_int(w);
+    dap_json_object_free(w);
+    w = NULL;
     DAP_TEST_FAIL_IF(last != (int)(ELEMENT_COUNT - 1), "Last element correct");
     
     result = true;
@@ -295,6 +372,7 @@ static bool s_test_large_arrays(void) {
     
 cleanup:
     free(json_buf);
+    dap_json_object_free(w);
     dap_json_object_free(l_json);
     return result;
 }
@@ -385,6 +463,7 @@ static bool s_test_sparse_representation(void) {
     log_it(L_DEBUG, "Testing sparse representation");
     bool result = false;
     dap_json_t *l_json = NULL;
+    dap_json_t *w = NULL;
     
     // JSON doesn't support sparse arrays - [1,,3] is invalid
     // But [1,null,3] is valid and explicit
@@ -395,13 +474,21 @@ static bool s_test_sparse_representation(void) {
     size_t len = dap_json_array_length(l_json);
     DAP_TEST_FAIL_IF(len != 3, "Array with null has 3 elements");
     
-    int val0 = dap_json_array_get_int(l_json, 0);
+    w = dap_json_array_get_idx(l_json, 0);
+    DAP_TEST_FAIL_IF_NULL(w, "Element 0 wrapper");
+    int val0 = dap_json_get_int(w);
+    dap_json_object_free(w);
+    w = NULL;
     DAP_TEST_FAIL_IF(val0 != 1, "Element 0 is 1");
     
     // Element 1 should be null
     // (Assuming API has dap_json_array_is_null or similar)
     
-    int val2 = dap_json_array_get_int(l_json, 2);
+    w = dap_json_array_get_idx(l_json, 2);
+    DAP_TEST_FAIL_IF_NULL(w, "Element 2 wrapper");
+    int val2 = dap_json_get_int(w);
+    dap_json_object_free(w);
+    w = NULL;
     DAP_TEST_FAIL_IF(val2 != 3, "Element 2 is 3");
     
     dap_json_object_free(l_json);
@@ -414,6 +501,7 @@ static bool s_test_sparse_representation(void) {
     log_it(L_DEBUG, "Sparse representation test passed");
     
 cleanup:
+    dap_json_object_free(w);
     dap_json_object_free(l_json);
     return result;
 }
@@ -429,8 +517,12 @@ int dap_json_array_edge_tests_run(void) {
     log_it(L_INFO, "PRE-TEST: parsing [3.14]");
     dap_json_t *l_pre = dap_json_parse_string("[3.14]");
     if (l_pre) {
-        double pre_val = dap_json_array_get_double(l_pre, 0);
-        log_it(L_INFO, "PRE-TEST: [3.14][0] = %f (expected 3.14)", pre_val);
+        dap_json_t *pre_elem = dap_json_array_get_idx(l_pre, 0);
+        if (pre_elem) {
+            double pre_val = dap_json_get_double(pre_elem);
+            log_it(L_INFO, "PRE-TEST: [3.14][0] = %f (expected 3.14)", pre_val);
+            dap_json_object_free(pre_elem);
+        }
         dap_json_object_free(l_pre);
     }
     

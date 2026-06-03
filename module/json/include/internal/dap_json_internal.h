@@ -28,6 +28,8 @@ extern "C" {
 struct dap_json {
     int ref_count;                   /**< Reference counter */
     dap_json_mode_t mode;            /**< Current mode */
+    /** If non-NULL: MUTABLE wrapper created by s_wrap_value_borrowed(); value is owned by parent DOM */
+    dap_json_t *borrow_source;
     
     // Mode-specific data (union to save memory)
     union {
@@ -38,6 +40,7 @@ struct dap_json {
             dap_json_tape_entry_t *tape;     /**< Tape array */
             size_t tape_count;               /**< Number of tape entries */
             size_t tape_offset;              /**< Starting position in tape (for sub-wrappers, 0 for root) */
+            uint8_t *transcoded_buf;         /**< Transcoded buffer (owned, must be freed) or NULL */
         } immutable;
         
         // MUTABLE mode (created JSON → DOM)

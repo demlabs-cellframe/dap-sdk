@@ -45,7 +45,7 @@
 #include "dap_enc_iaes.h"
 #include "include/dap_enc_http.h"
 #include "dap_enc_base64.h"
-#include "dap_enc_msrln.h"
+#include "dap_kem.h"
 #include "dap_http_status_code.h"
 #include "dap_http_ban_list_client.h"
 #include "dap_json.h"
@@ -126,9 +126,9 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
     dap_http_status_code_t * return_code = (dap_http_status_code_t*)arg;
 
     if(!strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh")) {
-        dap_enc_key_type_t l_pkey_exchange_type =DAP_ENC_KEY_TYPE_MSRLN ;
+        dap_enc_key_type_t l_pkey_exchange_type = DAP_ENC_KEY_TYPE_ML_KEM;
         dap_enc_key_type_t l_enc_block_type = DAP_ENC_KEY_TYPE_IAES;
-        size_t l_pkey_exchange_size = MSRLN_PKA_BYTES;
+        size_t l_pkey_exchange_size = dap_kem_publickey_size(DAP_KEM_ALG_ML_KEM_512);
         size_t l_block_key_size=32;
         int l_protocol_version = 0;
         size_t l_sign_count = 0;

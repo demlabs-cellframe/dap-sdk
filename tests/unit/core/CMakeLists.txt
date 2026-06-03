@@ -28,7 +28,7 @@ add_test(
 
 # Set test properties
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;common;macros"
 )
 
@@ -50,7 +50,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;config"
 )
 
@@ -72,7 +72,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;strfuncs"
 )
 
@@ -95,7 +95,7 @@ if(UNIX)
     )
 
     set_tests_properties(${PROJECT_NAME} PROPERTIES 
-        TIMEOUT 300
+        TIMEOUT ${DAP_T300}
         LABELS "unit;core;circular"
     )
 endif()
@@ -119,7 +119,7 @@ if(UNIX)
     )
 
     set_tests_properties(${PROJECT_NAME} PROPERTIES 
-        TIMEOUT 300
+        TIMEOUT ${DAP_T300}
         LABELS "unit;core;cpu-monitor"
     )
 endif()
@@ -143,7 +143,7 @@ if(UNIX)
     )
 
     set_tests_properties(${PROJECT_NAME} PROPERTIES 
-        TIMEOUT 300
+        TIMEOUT ${DAP_T300}
         LABELS "unit;core;process-memory"
     )
 endif()
@@ -166,7 +166,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;arena;memory"
 )
 
@@ -188,7 +188,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;arena;refcount;memory"
 )
 
@@ -210,7 +210,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;string_pool;memory"
 )
 
@@ -234,7 +234,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;dap_dl;list"
 )
 
@@ -256,7 +256,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;dap_ht;hash_table"
 )
 
@@ -278,7 +278,7 @@ add_test(
 )
 
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
     LABELS "unit;core;dap_hash_fast;hash"
 )
 
@@ -301,7 +301,7 @@ if(UNIX)
     )
 
     set_tests_properties(${PROJECT_NAME} PROPERTIES 
-        TIMEOUT 300
+        TIMEOUT ${DAP_T300}
         LABELS "unit;core;dap_mmap;io"
     )
 endif()

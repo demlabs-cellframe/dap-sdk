@@ -77,7 +77,10 @@ int dap_thread_set_name(dap_thread_t a_thread, const char *a_name)
         return -1;
     }
     
-#if defined(__linux__) || defined(__ANDROID__)
+#if defined(DAP_OS_WASM)
+    UNUSED(a_thread);
+    UNUSED(a_name);
+#elif defined(__linux__) || defined(__ANDROID__)
     int l_ret = pthread_setname_np(a_thread, a_name);
     if (l_ret != 0) {
         log_it(L_WARNING, "Failed to set thread name: %s", strerror(l_ret));
@@ -127,8 +130,24 @@ int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id)
         return -1;
     }
     
-#if defined(__linux__) || defined(__ANDROID__)
-    // Linux: pthread_setaffinity_np
+#if defined(DAP_OS_WASM)
+    (void)a_cpu_id;
+    return 0;
+#elif defined(__ANDROID__)
+    cpu_set_t l_cpuset;
+    CPU_ZERO(&l_cpuset);
+    CPU_SET(a_cpu_id, &l_cpuset);
+    
+    int l_ret = sched_setaffinity(0, sizeof(cpu_set_t), &l_cpuset);
+    
+    if (l_ret != 0) {
+        log_it(L_WARNING, "Failed to set CPU affinity to core %u: %s", a_cpu_id, strerror(errno));
+        return -2;
+    }
+    
+    log_it(L_DEBUG, "Thread bound to CPU core %u via sched_setaffinity", a_cpu_id);
+
+#elif defined(__linux__)
     cpu_set_t l_cpuset;
     CPU_ZERO(&l_cpuset);
     CPU_SET(a_cpu_id, &l_cpuset);

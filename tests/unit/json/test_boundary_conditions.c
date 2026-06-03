@@ -132,6 +132,7 @@ static bool s_test_deep_nesting(void) {
     dap_json_t *l_json = NULL;
     dap_json_t *l_current = NULL;
     dap_json_t *l_root = NULL;
+    dap_json_t *l_trav = NULL; /* traversal wrappers from get_object only */
     
     const int l_depth = 200;
     
@@ -139,27 +140,53 @@ static bool s_test_deep_nesting(void) {
     l_root = dap_json_object_new();
     DAP_TEST_FAIL_IF_NULL(l_root, "Create root object");
     
+    // Build nested structure: after add_object, value transfers to parent
+    // We must use get_object to continue building deeper levels
     l_current = l_root;
     for (int i = 0; i < l_depth; i++) {
         dap_json_t *l_nested = dap_json_object_new();
         DAP_TEST_FAIL_IF_NULL(l_nested, "Create nested object");
         
         dap_json_object_add_object(l_current, "nested", l_nested);
-        l_current = l_nested;
+        dap_json_object_free(l_nested);  // Value transferred, wrapper freed
+        
+        // Get borrowed wrapper to continue building
+        dap_json_t *l_next = dap_json_object_get_object(l_current, "nested");
+        DAP_TEST_FAIL_IF_NULL(l_next, "Get nested object for building");
+        
+        // Free previous borrowed wrapper (except root)
+        if (l_current != l_root) {
+            dap_json_object_free(l_current);
+        }
+        l_current = l_next;
     }
     
     // Add a value at the deepest level
     dap_json_object_add_int(l_current, "deep_value", 42);
     
-    // Traverse back down and verify
-    l_current = l_root;
-    for (int i = 0; i < l_depth; i++) {
-        l_current = dap_json_object_get_object(l_current, "nested");
-        DAP_TEST_FAIL_IF_NULL(l_current, "Navigate to nested level");
+    // Free the last borrowed wrapper used for building
+    if (l_current != l_root) {
+        dap_json_object_free(l_current);
+        l_current = NULL;
     }
     
-    int l_value = dap_json_object_get_int(l_current, "deep_value");
+    // Traverse back down and verify (each get_object returns a new wrapper)
+    l_trav = l_root;
+    for (int i = 0; i < l_depth; i++) {
+        dap_json_t *l_next = dap_json_object_get_object(l_trav, "nested");
+        DAP_TEST_FAIL_IF_NULL(l_next, "Navigate to nested level");
+        if (l_trav != l_root)
+            dap_json_object_free(l_trav);
+        l_trav = l_next;
+    }
+    
+    int l_value = dap_json_object_get_int(l_trav, "deep_value");
     DAP_TEST_FAIL_IF(l_value != 42, "Get value from deep nesting");
+    
+    if (l_trav != l_root) {
+        dap_json_object_free(l_trav);
+        l_trav = NULL;
+    }
     
     // Test serialization and parsing
     char *l_json_str = dap_json_to_string(l_root);
@@ -174,6 +201,8 @@ static bool s_test_deep_nesting(void) {
     log_it(L_DEBUG, "Deep nesting test passed");
     
 cleanup:
+    if (l_trav && l_trav != l_root)
+        dap_json_object_free(l_trav);
     dap_json_object_free(l_root);
     dap_json_object_free(l_json);
     return result;
@@ -187,44 +216,84 @@ static bool s_test_extremely_deep_nesting(void) {
     bool result = false;
     dap_json_t *l_root = NULL;
     dap_json_t *l_current = NULL;
+    dap_json_t *l_trav = NULL; /* traversal wrappers from get_object only */
     
     const int l_depth = 1500;
     
     l_root = dap_json_object_new();
     DAP_TEST_FAIL_IF_NULL(l_root, "Create root object");
     
+    // Build nested structure: after add_object, value transfers to parent
     l_current = l_root;
+    int l_actual_depth = 0;
     for (int i = 0; i < l_depth; i++) {
         dap_json_t *l_nested = dap_json_object_new();
         if (!l_nested) {
             log_it(L_WARNING, "Failed to create nested object at depth %d", i);
-            // This may hit resource limits, which is acceptable
+            // Free current borrowed wrapper and exit successfully
+            if (l_current && l_current != l_root) {
+                dap_json_object_free(l_current);
+            }
             result = true;
             goto cleanup;
         }
         
         dap_json_object_add_object(l_current, "n", l_nested);
-        l_current = l_nested;
+        dap_json_object_free(l_nested);  // Value transferred
+        
+        // Get borrowed wrapper to continue building
+        dap_json_t *l_next = dap_json_object_get_object(l_current, "n");
+        if (!l_next) {
+            log_it(L_WARNING, "Failed to get nested object at depth %d", i);
+            if (l_current && l_current != l_root) {
+                dap_json_object_free(l_current);
+            }
+            result = true;
+            goto cleanup;
+        }
+        
+        // Free previous borrowed wrapper (except root)
+        if (l_current != l_root) {
+            dap_json_object_free(l_current);
+        }
+        l_current = l_next;
+        l_actual_depth = i + 1;
     }
     
     dap_json_object_add_string(l_current, "bottom", "reached");
     
-    // Verify traversal
-    l_current = l_root;
-    for (int i = 0; i < l_depth && l_current; i++) {
-        l_current = dap_json_object_get_object(l_current, "n");
+    // Free the last borrowed wrapper used for building
+    if (l_current != l_root) {
+        dap_json_object_free(l_current);
+        l_current = NULL;
     }
     
-    if (l_current) {
-        const char *l_value = dap_json_object_get_string(l_current, "bottom");
+    // Verify traversal (each get_object returns a new wrapper)
+    l_trav = l_root;
+    for (int i = 0; i < l_depth && l_trav; i++) {
+        dap_json_t *l_next = dap_json_object_get_object(l_trav, "n");
+        if (l_trav != l_root)
+            dap_json_object_free(l_trav);
+        l_trav = l_next;
+    }
+    
+    if (l_trav) {
+        const char *l_value = dap_json_object_get_string(l_trav, "bottom");
         DAP_TEST_FAIL_IF(!l_value || strcmp(l_value, "reached") != 0, 
                          "Reach bottom of extreme nesting");
+    }
+    
+    if (l_trav && l_trav != l_root) {
+        dap_json_object_free(l_trav);
+        l_trav = NULL;
     }
     
     result = true;
     log_it(L_DEBUG, "Extremely deep nesting test passed");
     
 cleanup:
+    if (l_trav && l_trav != l_root)
+        dap_json_object_free(l_trav);
     dap_json_object_free(l_root);
     return result;
 }
@@ -236,6 +305,8 @@ static bool s_test_huge_array(void) {
     log_it(L_DEBUG, "Testing huge array (>1M elements)");
     bool result = false;
     dap_json_t *l_array = NULL;
+    dap_json_t *l_first = NULL;
+    dap_json_t *l_last = NULL;
     
     const int l_count = 1000000;  // 1 million elements
     
@@ -254,6 +325,7 @@ static bool s_test_huge_array(void) {
             goto cleanup;
         }
         dap_json_array_add(l_array, l_num);
+        dap_json_object_free(l_num);  // Value transferred to array
         
         // Progress log every 100k
         if ((i + 1) % 100000 == 0) {
@@ -265,19 +337,26 @@ static bool s_test_huge_array(void) {
     size_t l_length = dap_json_array_length(l_array);
     DAP_TEST_FAIL_IF(l_length != (size_t)l_count, "Array length matches");
     
-    // Verify first and last elements
-    dap_json_t *l_first = dap_json_array_get_idx(l_array, 0);
+    // Verify first and last elements (get_idx returns new wrappers)
+    l_first = dap_json_array_get_idx(l_array, 0);
     DAP_TEST_FAIL_IF_NULL(l_first, "Get first element");
     DAP_TEST_FAIL_IF(dap_json_get_int(l_first) != 0, "First element value");
     
-    dap_json_t *l_last = dap_json_array_get_idx(l_array, l_count - 1);
+    l_last = dap_json_array_get_idx(l_array, l_count - 1);
     DAP_TEST_FAIL_IF_NULL(l_last, "Get last element");
     DAP_TEST_FAIL_IF(dap_json_get_int(l_last) != l_count - 1, "Last element value");
+    
+    dap_json_object_free(l_first);
+    l_first = NULL;
+    dap_json_object_free(l_last);
+    l_last = NULL;
     
     result = true;
     log_it(L_DEBUG, "Huge array test passed");
     
 cleanup:
+    dap_json_object_free(l_first);
+    dap_json_object_free(l_last);
     dap_json_object_free(l_array);
     return result;
 }
@@ -387,25 +466,34 @@ static bool s_test_mixed_large_content(void) {
     
     // Mix of content types with large elements
     for (int i = 0; i < 100; i++) {
+        dap_json_t *l_item = NULL;
         switch (i % 4) {
             case 0:
-                dap_json_array_add(l_array, dap_json_object_new_string(l_large_str));
+                l_item = dap_json_object_new_string(l_large_str);
+                dap_json_array_add(l_array, l_item);
+                dap_json_object_free(l_item);  // Value transferred
                 break;
             case 1:
-                dap_json_array_add(l_array, dap_json_object_new_int64(INT64_MAX));
+                l_item = dap_json_object_new_int64(INT64_MAX);
+                dap_json_array_add(l_array, l_item);
+                dap_json_object_free(l_item);
                 break;
             case 2: {
                 dap_json_t *l_nested_obj = dap_json_object_new();
                 dap_json_object_add_string(l_nested_obj, "large", l_large_str);
                 dap_json_array_add(l_array, l_nested_obj);
+                dap_json_object_free(l_nested_obj);
                 break;
             }
             case 3: {
                 dap_json_t *l_nested_arr = dap_json_array_new();
                 for (int j = 0; j < 10; j++) {
-                    dap_json_array_add(l_nested_arr, dap_json_object_new_int(j));
+                    dap_json_t *l_int = dap_json_object_new_int(j);
+                    dap_json_array_add(l_nested_arr, l_int);
+                    dap_json_object_free(l_int);
                 }
                 dap_json_array_add(l_array, l_nested_arr);
+                dap_json_object_free(l_nested_arr);
                 break;
             }
         }

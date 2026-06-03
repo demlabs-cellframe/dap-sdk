@@ -27,7 +27,7 @@
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_tls_mimicry.h"
 
 #define LOG_TAG "dap_tls_mimicry"
@@ -215,7 +215,7 @@ static size_t s_build_extension_key_share_ch(uint8_t *buf)
 {
     uint8_t *p = buf;
     uint8_t l_fake_pubkey[32];
-    randombytes(l_fake_pubkey, 32);
+    dap_random_bytes(l_fake_pubkey, 32);
 
     s_put_u16be(p, TLS_EXT_KEY_SHARE); p += 2;
     s_put_u16be(p, 2 + 2 + 2 + 32); p += 2; /* ext data len */
@@ -266,8 +266,8 @@ int dap_tls_mimicry_create_client_hello(dap_tls_mimicry_t *a_m,
     if (!a_m || !a_out || !a_out_size || a_m->is_server)
         return -1;
 
-    randombytes(a_m->client_random, 32);
-    randombytes(a_m->session_id, 32);
+    dap_random_bytes(a_m->client_random, 32);
+    dap_random_bytes(a_m->session_id, 32);
 
     /* Build ClientHello body into a temp buffer (max ~1KB is plenty) */
     uint8_t l_body[2048];
@@ -377,10 +377,10 @@ int dap_tls_mimicry_process_client_hello(dap_tls_mimicry_t *a_m,
     if (l_sid_len > 0)
         memcpy(a_m->session_id, body + 35, l_sid_len);
     else
-        randombytes(a_m->session_id, 32);
+        dap_random_bytes(a_m->session_id, 32);
 
     /* Generate server random */
-    randombytes(a_m->server_random, 32);
+    dap_random_bytes(a_m->server_random, 32);
 
     /* ---- Build ServerHello ---- */
     uint8_t l_sh_body[256];
@@ -417,7 +417,7 @@ int dap_tls_mimicry_process_client_hello(dap_tls_mimicry_t *a_m,
 
     /* key_share (server) */
     uint8_t l_fake_pubkey[32];
-    randombytes(l_fake_pubkey, 32);
+    dap_random_bytes(l_fake_pubkey, 32);
     s_put_u16be(l_sh_ext + l_sh_ext_len, TLS_EXT_KEY_SHARE);
     l_sh_ext_len += 2;
     s_put_u16be(l_sh_ext + l_sh_ext_len, 2 + 2 + 32);
@@ -467,7 +467,7 @@ int dap_tls_mimicry_process_client_hello(dap_tls_mimicry_t *a_m,
     /* Fake EncryptedExtensions (Application Data record with random payload) */
     s_write_record_header(w, TLS_CT_APPLICATION_DATA, l_fake_len);
     w += 5;
-    randombytes(w, l_fake_len);
+    dap_random_bytes(w, l_fake_len);
     w += l_fake_len;
 
     *a_response = l_out;
@@ -529,7 +529,7 @@ int dap_tls_mimicry_process_server_hello(dap_tls_mimicry_t *a_m,
     /* Fake Finished */
     s_write_record_header(w, TLS_CT_APPLICATION_DATA, l_fin_len);
     w += 5;
-    randombytes(w, l_fin_len);
+    dap_random_bytes(w, l_fin_len);
     w += l_fin_len;
 
     *a_response = l_out;

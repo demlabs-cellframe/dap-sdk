@@ -21,7 +21,7 @@ typedef dap_sig_ecdsa_context_t ecdsa_context_t;
 
 typedef struct {
     unsigned char data[DAP_SIG_ECDSA_PRIVKEY_SIZE];
-} DAP_ALIGN_PACKED ecdsa_private_key_t;
+} ecdsa_private_key_t;
 
 // Size constants
 #define ECDSA_PRIVATE_KEY_SIZE      DAP_SIG_ECDSA_PRIVKEY_SIZE

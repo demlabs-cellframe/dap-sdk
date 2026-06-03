@@ -91,7 +91,7 @@ typedef struct {
  * @param a_timer Timer structure
  */
 static inline void dap_test_timer_start(dap_test_timer_t* a_timer) {
-    a_timer->start_time = dap_time_now();
+    a_timer->start_time = dap_nanotime_now();
 }
 
 /**
@@ -100,8 +100,8 @@ static inline void dap_test_timer_start(dap_test_timer_t* a_timer) {
  * @return Elapsed time in microseconds
  */
 static inline uint64_t dap_test_timer_stop(dap_test_timer_t* a_timer) {
-    a_timer->end_time = dap_time_now();
-    return a_timer->end_time - a_timer->start_time;
+    a_timer->end_time = dap_nanotime_now();
+    return (a_timer->end_time - a_timer->start_time) / 1000;
 }
 
 // Memory testing utilities
@@ -135,10 +135,17 @@ char* dap_test_random_string(size_t a_length);
 
 // Test configuration helpers
 /**
- * @brief Setup minimal DAP SDK environment for testing
+ * @brief Setup full DAP SDK environment for testing (all modules)
  * @return 0 on success, negative error code on failure
  */
 int dap_test_sdk_init(void);
+
+/**
+ * @brief Setup DAP SDK environment with specific modules
+ * @param a_modules Bitmask of DAP_SDK_MODULE_* flags
+ * @return 0 on success, negative error code on failure
+ */
+int dap_test_sdk_init_modules(uint32_t a_modules);
 
 /**
  * @brief Cleanup DAP SDK test environment

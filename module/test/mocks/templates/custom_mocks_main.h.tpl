@@ -4,9 +4,8 @@
 
 #include "{{BASENAME}}_mock_macros.h"
 
-{{#if CUSTOM_MOCKS_LIST}}
-    {{#for line in CUSTOM_MOCKS_LIST}}
-        {{#set func_name={{line|split|pipe|part|1}}}}
+{{#if CUSTOM_MOCK_FUNC_NAMES}}
+    {{#for func_name in CUSTOM_MOCK_FUNC_NAMES|newline}}
         {{#if func_name != ""}}
 #include "custom_mocks/{{func_name}}_mock.h"
         {{/if}}

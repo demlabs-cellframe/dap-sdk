@@ -24,21 +24,20 @@
 #include <stdbool.h>
 
 #include "dap_common.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_sig_ecdsa.h"
 #include "dap_hash_sha2.h"
 
 // Internal headers for debugging
-#include "sig_ecdsa/ecdsa_field.h"
-#include "sig_ecdsa/ecdsa_group.h"
-#include "sig_ecdsa/ecdsa_scalar.h"
-#include "sig_ecdsa/ecdsa_impl.h"
-#include "sig_ecdsa/arch/ecdsa_field_arch.h"  // For dispatch control
+#include "ecdsa_field.h"
+#include "ecdsa_group.h"
+#include "ecdsa_scalar.h"
+#include "ecdsa_impl.h"
+#include "arch/ecdsa_field_arch.h"
 
-// Architecture-specific scalar implementations
 #ifdef BENCHMARK_SCALAR_ARCH
-#include "sig_ecdsa/arch/ecdsa_scalar_mul_arch.h"
-#include "sig_ecdsa/arch/ecdsa_field_arch.h"
+#include "arch/ecdsa_scalar_mul_arch.h"
+#include "arch/ecdsa_field_arch.h"
 #endif
 
 // Competitor: bitcoin-core/secp256k1 (downloaded via download_competitors.sh)
@@ -98,18 +97,18 @@ static void generate_test_data(void) {
     // Generate valid private keys using DAP native
     for (int i = 0; i < NUM_TEST_KEYS; i++) {
         do {
-            randombytes(g_privkeys[i], 32);
+            dap_random_bytes(g_privkeys[i], 32);
         } while (!dap_sig_ecdsa_seckey_verify(NULL, g_privkeys[i]));
         
         // Generate random message hashes
-        randombytes(g_messages[i], 32);
+        dap_random_bytes(g_messages[i], 32);
     }
     
 #ifdef HAVE_SECP256K1_COMPETITOR
     g_secp_ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
     if (g_secp_ctx) {
         uint8_t seed[32];
-        randombytes(seed, sizeof(seed));
+        dap_random_bytes(seed, sizeof(seed));
         (void)secp256k1_context_randomize(g_secp_ctx, seed);
     }
 #endif
@@ -499,8 +498,8 @@ static void benchmark_scalar_arch(void) {
     // Create test scalars for DAP
     ecdsa_scalar_t a, b, r;
     uint8_t a_bytes[32], b_bytes[32];
-    randombytes(a_bytes, 32);
-    randombytes(b_bytes, 32);
+    dap_random_bytes(a_bytes, 32);
+    dap_random_bytes(b_bytes, 32);
     
     extern void ecdsa_scalar_set_b32(ecdsa_scalar_t *r, const uint8_t *b32, int *overflow);
     ecdsa_scalar_set_b32(&a, a_bytes, NULL);

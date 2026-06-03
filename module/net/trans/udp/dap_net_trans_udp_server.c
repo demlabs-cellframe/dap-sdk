@@ -10,15 +10,20 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#ifdef DAP_OS_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_kdf.h"
-#include "dap_enc_kyber.h"
+#include "dap_enc_key.h"
 #include "dap_rand.h"  // For randombytes
 #include "dap_transport_obfuscation.h"  // For handshake obfuscation
 #include "dap_string.h"
@@ -152,11 +157,11 @@ typedef struct stream_udp_session {
     // This ensures FC lifecycle is tied to flow, not session
     
     // Handshake state protection
-    _Atomic bool kem_task_pending;       // KEM task in progress (prevent duplicate HANDSHAKE)
+    _Atomic int kem_task_pending;        // KEM task in progress (int for WASM atomic alignment)
     
     // Packet type tracking (for FC callbacks)
-    _Atomic uint8_t last_send_type;     // Last packet type sent (for packet_prepare_cb)
-    _Atomic uint8_t last_recv_type;     // Last packet type received (for payload_deliver_cb)
+    _Atomic int last_send_type;          // Last packet type sent (int for WASM atomic alignment)
+    _Atomic int last_recv_type;          // Last packet type received (int for WASM atomic alignment)
 } stream_udp_session_t;
 
 /**
@@ -295,7 +300,7 @@ static ssize_t s_udp_server_trans_write(dap_stream_t *a_stream, const void *a_da
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Server trans write: sent %zu bytes for session 0x%lx",
+             "Server trans write: sent %zu bytes for session 0x%" DAP_UINT64_FORMAT_x "",
              a_size, l_session->session_id);
     
     return (ssize_t)a_size;
@@ -310,24 +315,32 @@ static size_t s_udp_server_get_max_packet_size(dap_net_trans_t *a_trans)
     return DAP_STREAM_UDP_MAX_PAYLOAD_SIZE;
 }
 
+static void s_udp_server_check_session(dap_net_trans_t *a_trans, uint32_t a_session_id,
+                                       dap_events_socket_t *a_esocket)
+{
+    UNUSED(a_trans);
+    dap_net_trans_udp_stream_check_session(a_session_id, a_esocket);
+}
+
 // Server-side trans operations
 static const dap_net_trans_ops_t s_udp_server_trans_ops = {
-    .init = NULL,  // Not used on server (already initialized)
+    .init = NULL,
     .deinit = NULL,
-    .connect = NULL,  // Server doesn't connect
-    .listen = NULL,   // Handled by dap_io_flow_server
-    .accept = NULL,   // Handled by dap_io_flow_server
+    .connect = NULL,
+    .listen = NULL,
+    .accept = NULL,
     .handshake_init = NULL,
     .handshake_process = NULL,
     .session_create = NULL,
     .session_start = NULL,
-    .read = NULL,     // Handled by dap_io_flow callbacks
-    .write = s_udp_server_trans_write,  // THE KEY CALLBACK!
-    .close = NULL,    // Handled by dap_io_flow
+    .read = NULL,
+    .write = s_udp_server_trans_write,
+    .close = NULL,
     .get_capabilities = NULL,
     .register_server_handlers = NULL,
     .stage_prepare = NULL,
     .get_client_context = NULL,
+    .check_session = s_udp_server_check_session,
     .get_max_packet_size = s_udp_server_get_max_packet_size
 };
 
@@ -641,7 +654,7 @@ void dap_net_trans_udp_server_delete(dap_net_trans_udp_server_t *a_server)
         for (size_t i = 0; i < a_server->flow_servers_count; i++) {
             dap_io_flow_server_t *l_fs = a_server->flow_servers[i];
             if (l_fs) {
-                atomic_store(&l_fs->is_deleting, true);
+                atomic_store(&l_fs->is_deleting, 1);
                 debug_if(s_debug_more, L_DEBUG, "Marked flow_server[%zu] as deleting", i);
             }
         }
@@ -760,9 +773,9 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
                      a_size, l_handshake_size);
             
             // Initialize session_id
-            randombytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
+            dap_random_bytes((uint8_t*)&l_session->session_id, sizeof(l_session->session_id));
             debug_if(s_debug_more, L_DEBUG,
-                     "HANDSHAKE: generated session_id=0x%lx for session %p",
+                     "HANDSHAKE: generated session_id=0x%" DAP_UINT64_FORMAT_x " for session %p",
                      l_session->session_id, l_session);
             
             // Process deobfuscated handshake
@@ -776,7 +789,7 @@ static int s_udp_packet_received_cb(dap_io_flow_datagram_t *a_flow,
         // Continue to try decryption with session key
     } else {
         debug_if(s_debug_more, L_DEBUG,
-                 "SERVER: Packet size %zu not in obfuscated range OR session already established (session_id=0x%lx)",
+                 "SERVER: Packet size %zu not in obfuscated range OR session already established (session_id=0x%" DAP_UINT64_FORMAT_x ")",
                  a_size, l_session->session_id);
     }
     
@@ -903,7 +916,7 @@ static dap_io_flow_datagram_t* s_udp_protocol_create_cb(dap_io_flow_server_t *a_
     l_session->session_id = 0;
     
     // Initialize handshake state protection
-    atomic_store(&l_session->kem_task_pending, false);
+    atomic_store(&l_session->kem_task_pending, 0);
     
     debug_if(s_debug_more, L_DEBUG,
              "Allocated stream_udp_session_t at %p (stream=%p)",
@@ -1153,7 +1166,7 @@ static ssize_t s_stream_udp_stream_packet_send_cb(dap_io_flow_t *a_flow, void *a
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Sent stream packet: %zu bytes for session 0x%lx",
+             "Sent stream packet: %zu bytes for session 0x%" DAP_UINT64_FORMAT_x "",
              a_packet_size, l_session->session_id);
     
     return (ssize_t)a_packet_size;
@@ -1186,7 +1199,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
                  inet_ntoa(l_sin->sin_addr), ntohs(l_sin->sin_port));
     }
     
-    debug_if(s_debug_more,L_DEBUG, "s_send_udp_packet: type=%u, size=%zu, session=0x%lx, dest=%s, flow=%p",
+    debug_if(s_debug_more,L_DEBUG, "s_send_udp_packet: type=%u, size=%zu, session=0x%" DAP_UINT64_FORMAT_x ", dest=%s, flow=%p",
            a_type, a_payload_size, a_session->session_id, l_dest_addr, (void*)&a_session->base);
     
     // Get sequence number from UDP flow
@@ -1261,7 +1274,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         }
         
         debug_if(s_debug_more, L_DEBUG,
-                 "Payload sent via FC: type=%u, seq=%u, session=0x%lx",
+                 "Payload sent via FC: type=%u, seq=%u, session=0x%" DAP_UINT64_FORMAT_x "",
                  a_type, l_seq_num, a_session->session_id);
         return 0;
     }
@@ -1282,16 +1295,11 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
         .session_id = a_session->session_id,
     };
     
-    // Serialize using dap_serialize
-    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
-    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
+    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
+    uint8_t l_hdr_buffer[DAP_STREAM_UDP_FULL_HEADER_SIZE];
     
-    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
-        &g_udp_full_header_schema, &l_full_hdr, l_hdr_buffer, l_hdr_size, NULL);
-    
-    if (l_ser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to serialize full header: %s",
-               l_ser_result.error_message ? l_ser_result.error_message : "unknown");
+    if (dap_stream_trans_udp_full_header_wire_pack(&l_full_hdr, l_hdr_buffer, sizeof(l_hdr_buffer)) != 0) {
+        log_it(L_ERROR, "Failed to serialize full header (FC base schema + UDP tail)");
         return -6;
     }
     
@@ -1343,7 +1351,7 @@ static int s_send_udp_packet(stream_udp_session_t *a_session,
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Encrypted packet sent: type=%u, seq=%u, session=0x%lx, encrypted_size=%zu",
+             "Encrypted packet sent: type=%u, seq=%u, session=0x%" DAP_UINT64_FORMAT_x ", encrypted_size=%zu",
              a_type, l_seq_num, a_session->session_id, l_encrypted_size);
     
     return 0;
@@ -1404,26 +1412,15 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
         return -5;
     }
     
-    // Parse NEW full header using dap_serialize
-    if (l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
+    if (l_decrypted_size < DAP_STREAM_UDP_FULL_HEADER_SIZE) {
         log_it(L_ERROR, "Decrypted packet too small for full header (%zu bytes)", l_decrypted_size);
         DAP_DELETE(l_decrypted);
         return -6;
     }
     
-    // Deserialize full header
     dap_stream_trans_udp_full_header_t l_hdr;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
-        &g_udp_full_header_schema,
-        l_decrypted,
-        sizeof(dap_stream_trans_udp_full_header_t),
-        &l_hdr,
-        NULL
-    );
-    
-    if (l_deser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to deserialize full header: %s",
-               l_deser_result.error_message ? l_deser_result.error_message : "unknown");
+    if (dap_stream_trans_udp_full_header_wire_unpack(l_decrypted, l_decrypted_size, &l_hdr) != 0) {
+        log_it(L_ERROR, "Failed to deserialize full header (FC base schema + UDP tail)");
         DAP_DELETE(l_decrypted);
         return -6;
     }
@@ -1442,7 +1439,7 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     
     // Validate session_id
     if (a_session->session_id != 0 && a_session->session_id != l_session_id) {
-        log_it(L_ERROR, "Session ID mismatch: packet=0x%lx, session=0x%lx",
+        log_it(L_ERROR, "Session ID mismatch: packet=0x%" DAP_UINT64_FORMAT_x ", session=0x%" DAP_UINT64_FORMAT_x "",
                l_session_id, a_session->session_id);
         DAP_DELETE(l_decrypted);
         return -8;
@@ -1460,7 +1457,7 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
         
         if (l_seq_diff <= 0 && l_last_seq != 0) {
             // seq_num is less than or equal to last seen seq_num (possible replay)
-            log_it(L_WARNING, "Replay attack detected: seq_num=%lu, last_seq=%lu (session=0x%lx)",
+            log_it(L_WARNING, "Replay attack detected: seq_num=%" DAP_UINT64_FORMAT_U ", last_seq=%" DAP_UINT64_FORMAT_U " (session=0x%" DAP_UINT64_FORMAT_x ")",
                    l_seq_num, l_last_seq, l_session_id);
             DAP_DELETE(l_decrypted);
             return -9;
@@ -1471,7 +1468,7 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "Decrypted packet: type=%u, seq=%lu, session=0x%lx",
+             "Decrypted packet: type=%u, seq=%" DAP_UINT64_FORMAT_U ", session=0x%" DAP_UINT64_FORMAT_x "",
              l_type, l_seq_num, l_session_id);
     
     // Extract payload (after full header)
@@ -1537,8 +1534,7 @@ static void* s_kem_task_func(void *a_arg)
     l_result->session_id = l_ctx->session->session_id;
     l_result->error_code = 0;
     
-    // Generate ephemeral Bob key (Kyber512)
-    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, 0);
     
     if (!l_bob_key) {
         log_it(L_ERROR, "[KEM Task] Failed to generate Bob KEM key");
@@ -1651,7 +1647,7 @@ static void s_kem_reactor_callback(void *a_arg)
     l_session->encryption_key = l_result->handshake_key;
     
     debug_if(s_debug_more, L_DEBUG,
-             "[KEM Reactor] Stored encryption_key=%p for session %p (session_id=0x%lx)",
+             "[KEM Reactor] Stored encryption_key=%p for session %p (session_id=0x%" DAP_UINT64_FORMAT_x ")",
              l_session->encryption_key, l_session, l_session->session_id);
     
     // Build handshake response: Bob's ciphertext + session_id
@@ -1667,7 +1663,7 @@ static void s_kem_reactor_callback(void *a_arg)
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "[KEM Reactor] HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%lx)",
+             "[KEM Reactor] HANDSHAKE response: Bob ciphertext (%zu bytes) + session_id (0x%" DAP_UINT64_FORMAT_x ")",
              l_result->bob_ciphertext_size, l_result->session_id);
     
     // Send handshake response (NOW SAFE - in reactor thread!)
@@ -1683,7 +1679,7 @@ cleanup_reactor:
     // Reset kem_task_pending flag (allow retries on error)
     // NOTE: On success, encryption_key is set so duplicate check will catch retransmits
     if (l_session) {
-        atomic_store(&l_session->kem_task_pending, false);
+        atomic_store(&l_session->kem_task_pending, 0);
     }
     
     // Free result
@@ -1821,8 +1817,8 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     }
     
     // Use atomic CAS to prevent concurrent KEM task creation
-    bool l_expected = false;
-    if (!atomic_compare_exchange_strong(&a_session->kem_task_pending, &l_expected, true)) {
+    int l_expected = 0;
+    if (!atomic_compare_exchange_strong(&a_session->kem_task_pending, &l_expected, 1)) {
         debug_if(s_debug_more, L_DEBUG,
                  "SERVER: Ignoring duplicate HANDSHAKE - KEM task already pending for session %p",
                  a_session);
@@ -1834,7 +1830,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     // QoS probe detection: payload starts with DAP_QOS_PROBE_MAGIC → echo, skip KEM
     if (dap_qos_is_probe(a_payload, a_payload_size)) {
         log_it(L_DEBUG, "QoS probe detected (%zu bytes), building echo", a_payload_size);
-        atomic_store(&a_session->kem_task_pending, false);
+        atomic_store(&a_session->kem_task_pending, 0);
 
         void  *l_echo = NULL;
         size_t l_echo_size = 0;
@@ -1856,7 +1852,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     // Check if thread pool is available
     if (!s_kem_thread_pool) {
         log_it(L_WARNING, "KEM thread pool not available, falling back to synchronous processing");
-        atomic_store(&a_session->kem_task_pending, false);  // Reset flag
+        atomic_store(&a_session->kem_task_pending, 0);  // Reset flag
         // TODO: Implement synchronous fallback (same code as s_kem_task_func)
         return -10;
     }
@@ -1865,7 +1861,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     kem_task_ctx_t *l_ctx = DAP_NEW_Z(kem_task_ctx_t);
     if (!l_ctx) {
         log_it(L_ERROR, "Failed to allocate KEM task context");
-        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
+        atomic_store(&a_session->kem_task_pending, 0);  // Reset flag on failure
         return -2;
     }
     
@@ -1876,7 +1872,7 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     
     if (!l_ctx->alice_pub_key) {
         log_it(L_ERROR, "Failed to allocate Alice public key buffer");
-        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
+        atomic_store(&a_session->kem_task_pending, 0);  // Reset flag on failure
         DAP_DELETE(l_ctx);
         return -3;
     }
@@ -1892,14 +1888,14 @@ static int s_handle_handshake(stream_udp_session_t *a_session, const uint8_t *a_
     
     if (l_ret != 0) {
         log_it(L_ERROR, "Failed to submit KEM task to thread pool: %d", l_ret);
-        atomic_store(&a_session->kem_task_pending, false);  // Reset flag on failure
+        atomic_store(&a_session->kem_task_pending, 0);  // Reset flag on failure
         DAP_DELETE(l_ctx->alice_pub_key);
         DAP_DELETE(l_ctx);
         return -4;
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "HANDSHAKE: KEM task submitted to thread pool for session %p (session_id=0x%lx)",
+             "HANDSHAKE: KEM task submitted to thread pool for session %p (session_id=0x%" DAP_UINT64_FORMAT_x ")",
              a_session, a_session->session_id);
     
     // Return immediately - response will be sent from callback
@@ -1938,14 +1934,13 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     
     // Parse JSON directly from payload
     dap_json_t *l_json = dap_json_parse_string(l_json_str);
-    DAP_DELETE(l_json_str);
     
     if (!l_json) {
+        DAP_DELETE(l_json_str);
         log_it(L_ERROR, "Failed to parse SESSION_CREATE JSON (size=%zu)", a_payload_size);
         return -4;
     }
 
-    
     // Extract session ID
     if (dap_json_object_has_key(l_json, "session_id")) {
         a_session->session_id = dap_json_object_get_int64(l_json, "session_id");
@@ -1965,11 +1960,12 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
     }
     
     dap_json_object_free(l_json);
+    DAP_DELETE(l_json_str);
     
     // Derive session key from handshake key using KDF ratcheting
     uint64_t l_kdf_counter = 1;  // Counter = 1 for first session
     
-    debug_if(s_debug_more, L_DEBUG, "SERVER: Deriving session key with KDF counter=%lu", l_kdf_counter);
+    debug_if(s_debug_more, L_DEBUG, "SERVER: Deriving session key with KDF counter=%" DAP_UINT64_FORMAT_U "", l_kdf_counter);
     
     dap_enc_key_t *l_session_key = dap_enc_kdf_create_cipher_key(
         a_session->encryption_key,
@@ -1999,7 +1995,7 @@ static int s_handle_session_create(stream_udp_session_t *a_session, const uint8_
                a_session->stream, a_session->stream ? a_session->stream->session : NULL);
     }
     
-    log_it(L_INFO, "SESSION_CREATE completed: session_id=0x%lx", a_session->session_id);
+    log_it(L_INFO, "SESSION_CREATE completed: session_id=0x%" DAP_UINT64_FORMAT_x "", a_session->session_id);
     
     // CRITICAL: Send SESSION_CREATE response using HANDSHAKE key (still in a_session->encryption_key)!
     // Client will derive session key after receiving this counter, so response must use handshake key
@@ -2069,7 +2065,7 @@ static int s_handle_keepalive(stream_udp_session_t *a_session)
         return -1;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Processing KEEPALIVE for session 0x%lx", a_session->session_id);
+    debug_if(s_debug_more, L_DEBUG, "Processing KEEPALIVE for session 0x%" DAP_UINT64_FORMAT_x "", a_session->session_id);
     
     // Update session activity time (done automatically by UDP flow layer)
     
@@ -2134,7 +2130,7 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
     UNUSED(a_arg);
     
     debug_if(s_debug_more, L_DEBUG,
-             "FC prepare_cb ENTRY: a_metadata=%p, seq=%lu, ack=%lu, ts=%u, keepalive=%d, retrans=%d",
+             "FC prepare_cb ENTRY: a_metadata=%p, seq=%" DAP_UINT64_FORMAT_U ", ack=%" DAP_UINT64_FORMAT_U ", ts=%u, keepalive=%d, retrans=%d",
              a_metadata, a_metadata ? a_metadata->seq_num : 0,
              a_metadata ? a_metadata->ack_seq : 0,
              a_metadata ? a_metadata->timestamp_ms : 0,
@@ -2176,21 +2172,11 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
         l_full_hdr.fc_flags |= DAP_IO_FLOW_CTRL_HDR_FLAG_RETRANSMIT;
     }
     
-    // Serialize full header to network byte order using dap_serialize
-    size_t l_hdr_size = sizeof(dap_stream_trans_udp_full_header_t);
-    uint8_t l_hdr_buffer[sizeof(dap_stream_trans_udp_full_header_t)];
+    size_t l_hdr_size = DAP_STREAM_UDP_FULL_HEADER_SIZE;
+    uint8_t l_hdr_buffer[DAP_STREAM_UDP_FULL_HEADER_SIZE];
     
-    dap_serialize_result_t l_ser_result = dap_serialize_to_buffer_raw(
-        &g_udp_full_header_schema,
-        &l_full_hdr,
-        l_hdr_buffer,
-        l_hdr_size,
-        NULL  // no context
-    );
-    
-    if (l_ser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to serialize UDP full header: %s", 
-               l_ser_result.error_message ? l_ser_result.error_message : "unknown error");
+    if (dap_stream_trans_udp_full_header_wire_pack(&l_full_hdr, l_hdr_buffer, sizeof(l_hdr_buffer)) != 0) {
+        log_it(L_ERROR, "Failed to serialize UDP full header (FC base schema + UDP tail)");
         return -2;
     }
     
@@ -2238,7 +2224,7 @@ static int s_flow_ctrl_packet_prepare_cb(dap_io_flow_t *a_flow,
     *a_packet_size_out = l_encrypted_size;
     
     debug_if(s_debug_more, L_DEBUG, 
-             "Prepared ENCRYPTED FC packet: seq=%lu, ack=%lu, type=%u, encrypted_size=%zu",
+             "Prepared ENCRYPTED FC packet: seq=%" DAP_UINT64_FORMAT_U ", ack=%" DAP_UINT64_FORMAT_U ", type=%u, encrypted_size=%zu",
              l_full_hdr.seq_num, l_full_hdr.ack_seq, l_full_hdr.type, l_encrypted_size);
     
     return 0;
@@ -2305,27 +2291,16 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
         return -4;
     }
     
-    // Check size
-    if (l_decrypted_size < sizeof(dap_stream_trans_udp_full_header_t)) {
+    if (l_decrypted_size < DAP_STREAM_UDP_FULL_HEADER_SIZE) {
         log_it(L_WARNING, "Decrypted packet too small for full header: %zu < %zu",
-               l_decrypted_size, sizeof(dap_stream_trans_udp_full_header_t));
+               l_decrypted_size, (size_t)DAP_STREAM_UDP_FULL_HEADER_SIZE);
         DAP_DELETE(l_decrypted);
         return -5;
     }
     
-    // Parse full header using dap_serialize (network byte order → host)
     dap_stream_trans_udp_full_header_t l_hdr;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
-        &g_udp_full_header_schema,
-        l_decrypted,
-        sizeof(dap_stream_trans_udp_full_header_t),
-        &l_hdr,
-        NULL  // no context
-    );
-    
-    if (l_deser_result.error_code != 0) {
-        log_it(L_ERROR, "Failed to deserialize UDP full header: %s",
-               l_deser_result.error_message ? l_deser_result.error_message : "unknown error");
+    if (dap_stream_trans_udp_full_header_wire_unpack(l_decrypted, l_decrypted_size, &l_hdr) != 0) {
+        log_it(L_ERROR, "Failed to deserialize UDP full header (FC base schema + UDP tail)");
         DAP_DELETE(l_decrypted);
         return -6;
     }
@@ -2350,7 +2325,7 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
     // NOTE: l_decrypted will be freed by FC after delivery via metadata->private_ctx
     
     debug_if(s_debug_more, L_DEBUG,
-             "Parsed DECRYPTED FC packet: seq=%lu, ack=%lu, type=%u, session=0x%lx, payload_size=%zu",
+             "Parsed DECRYPTED FC packet: seq=%" DAP_UINT64_FORMAT_U ", ack=%" DAP_UINT64_FORMAT_U ", type=%u, session=0x%" DAP_UINT64_FORMAT_x ", payload_size=%zu",
              l_hdr.seq_num, l_hdr.ack_seq, l_hdr.type, l_hdr.session_id, *a_payload_size_out);
     
     return 0;
@@ -2441,10 +2416,10 @@ static int s_flow_ctrl_payload_deliver_cb(dap_io_flow_t *a_flow,
     debug_if(s_debug_more, L_DEBUG, "Delivering DECRYPTED reordered payload: size=%zu", a_payload_size);
     
     // Get type from session (stored by parse_cb)
-    uint8_t l_type = atomic_load(&l_session->last_recv_type);
+    uint8_t l_type = (uint8_t)atomic_load(&l_session->last_recv_type);
     
     debug_if(s_debug_more, L_DEBUG,
-             "Delivering payload: type=%u, session=0x%lx, size=%zu",
+             "Delivering payload: type=%u, session=0x%" DAP_UINT64_FORMAT_x ", size=%zu",
              l_type, l_session->session_id, a_payload_size);
     
     // Dispatch to protocol handlers (payload is PURE DATA, no headers!)
@@ -2491,7 +2466,7 @@ static void s_flow_ctrl_keepalive_timeout_cb(dap_io_flow_t *a_flow, void *a_arg)
         return;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Flow Control keep-alive timeout for session 0x%lx",
+    debug_if(s_debug_more, L_DEBUG, "Flow Control keep-alive timeout for session 0x%" DAP_UINT64_FORMAT_x "",
              l_session->session_id);
     
     // For DAP Stream: do nothing, stream handles its own keep-alive

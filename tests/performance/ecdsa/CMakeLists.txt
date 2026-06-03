@@ -54,7 +54,7 @@ target_link_libraries(benchmark_ecdsa PRIVATE
 target_include_directories(benchmark_ecdsa PRIVATE
     ${CMAKE_SOURCE_DIR}/module/crypto/include
     ${CMAKE_SOURCE_DIR}/module/core/include
-    ${CMAKE_SOURCE_DIR}/module/crypto/src  # For internal ecdsa headers
+    ${CMAKE_SOURCE_DIR}/module/crypto/src/sig/classic/ecdsa
 )
 
 # Architecture-specific scalar benchmarks
@@ -63,7 +63,7 @@ if(BUILD_BENCHMARKS)
     
     # Include internal ECDSA headers
     target_include_directories(benchmark_ecdsa PRIVATE
-        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig_ecdsa
+        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig/classic/ecdsa
     )
 endif()
 
@@ -88,13 +88,22 @@ if(HAVE_OPENSSL_COMPETITOR)
     target_compile_definitions(benchmark_ecdsa PRIVATE HAVE_OPENSSL_COMPETITOR)
     target_include_directories(benchmark_ecdsa PRIVATE ${OPENSSL_INCLUDE_DIR})
     target_link_libraries(benchmark_ecdsa PRIVATE OpenSSL::Crypto)
+    if(WIN32 OR MINGW)
+        find_package(ZLIB QUIET)
+        if(ZLIB_FOUND)
+            target_link_libraries(benchmark_ecdsa PRIVATE ZLIB::ZLIB)
+        else()
+            target_link_libraries(benchmark_ecdsa PRIVATE z)
+        endif()
+        target_link_libraries(benchmark_ecdsa PRIVATE crypt32)
+    endif()
 endif()
 
 # Add to CTest
 add_test(NAME ecdsa_benchmark COMMAND benchmark_ecdsa)
 set_tests_properties(ecdsa_benchmark PROPERTIES
     LABELS "performance;crypto"
-    TIMEOUT 300
+    TIMEOUT ${DAP_T300}
 )
 
 # Custom target to run benchmark

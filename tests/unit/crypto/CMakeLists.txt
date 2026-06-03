@@ -11,6 +11,8 @@ add_subdirectory(enc)
 add_subdirectory(cert)
 add_subdirectory(falcon)
 
-# Note: ECDSA tests (test_field_mul, test_ecdsa_debug) are added in tests/CMakeLists.txt
+if(TARGET dap_gpu)
+    add_subdirectory(gpu)
+endif()
 
 

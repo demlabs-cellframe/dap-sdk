@@ -52,10 +52,10 @@ typedef struct dap_proc_queue_item {
 } dap_proc_queue_item_t;
 
 typedef struct dap_proc_thread {
-    pthread_mutex_t queue_lock;                                             /* To coordinate access to the queuee's entries */
-    pthread_cond_t queue_event;                                             /* Conditional variable for waiting thread event queue */
-    dap_proc_queue_item_t *queue[DAP_QUEUE_MSG_PRIORITY_COUNT];             /* List of the queue' entries in array of list according of priority numbers */
-    uint64_t proc_queue_size;                                               /* Thread's load factor */
+    pthread_mutex_t queue_lock;
+    pthread_cond_t queue_event;
+    dap_proc_queue_item_t *queue[DAP_QUEUE_MSG_PRIORITY_COUNT];
+    uint64_t proc_queue_size;
     dap_context_t *context;
 } dap_proc_thread_t;
 
@@ -65,6 +65,11 @@ int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id);
 int dap_proc_thread_init(uint32_t a_threads_count);
 void dap_proc_thread_deinit();
 int dap_proc_thread_loop(dap_context_t *a_context);
+
+#if defined(DAP_OS_WASM_ST)
+int dap_proc_thread_init_wasm_st(uint32_t a_threads_count);
+void dap_proc_thread_poll_step(void);
+#endif
 
 dap_proc_thread_t *dap_proc_thread_get(uint32_t a_thread_number);
 dap_proc_thread_t *dap_proc_thread_get_auto();

@@ -21,6 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <errno.h>
@@ -36,6 +37,10 @@
 #include <sys/event.h>
 #elif defined DAP_OS_WINDOWS
 #define _MSEC -10000
+#endif
+
+#if defined(DAP_OS_WASM_MT)
+#include <stdatomic.h>
 #endif
 
 #include "dap_events_socket.h"
@@ -55,7 +60,16 @@ typedef struct dap_timerfd {
     HANDLE th;
 #endif
 #elif defined(DAP_OS_LINUX)
-    int tfd; //timer file descriptor
+    int tfd;
+#elif defined(DAP_OS_WASM)
+#ifdef DAP_OS_WASM_MT
+    /* WASM MT timer — hub thread pushes events via SAB channel to
+     * events_socket->sab_channel; callback fires in the owning worker. */
+    _Atomic uint64_t next_fire_ms;
+    _Atomic bool     active;
+#else
+    long interval_id;
+#endif
 #endif
     dap_worker_t *worker;
     dap_proc_thread_t *proc_thread;
@@ -75,6 +89,15 @@ void dap_timerfd_reset(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid);
 void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd);
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd);
 
+#ifdef DAP_OS_WASM_MT
+/* Diagnostic accessor: number of timers currently registered in the MT
+ * timer hub. Intended for E2E tests to verify hub lifecycle (add / remove
+ * / deinit) without leaking internal types. Thread-safe; takes the hub
+ * mutex briefly. Returns 0 when the hub hasn't been initialized. */
+size_t dap_timerfd_active_count(void);
+#endif
+
 #ifdef DAP_EVENTS_CAPS_IOCP
 DWORD dap_del_queuetimer(HANDLE h);
 #endif
+

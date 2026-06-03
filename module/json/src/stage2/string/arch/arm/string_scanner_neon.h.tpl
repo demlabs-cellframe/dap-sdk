@@ -5,46 +5,14 @@
  * TEMPLATE FRAGMENT - included by parent template
  */
 
-// ARM NEON intrinsics
-#include <arm_neon.h>
+{{#include PRIM_LIB}}
 
 #define SIMD_VEC_TYPE uint8x16_t
-#define SIMD_CHUNK_SIZE 16
-#define SIMD_MASK_TYPE uint16_t  // NEON: 16 bytes → 16-bit mask
+#define SIMD_CHUNK_SIZE VEC_LANES_8
+#define SIMD_MASK_TYPE uint16_t
 
-// Load unaligned chunk
-#define SIMD_LOAD(ptr) vld1q_u8((const uint8_t*)(ptr))
-
-// Set all bytes to same value
-#define SIMD_SET1(val) vmovq_n_u8(val)
-
-// Compare bytes for equality
-#define SIMD_CMP_EQ(a, b) vceqq_u8((a), (b))
-
-// Bitwise OR
-#define SIMD_OR(a, b) vorrq_u8((a), (b))
-
-// ARM NEON movemask emulation (optimized)
-static inline uint16_t neon_movemask_u8(uint8x16_t a_vec) {
-    // Shift MSB to position
-    uint8x16_t l_shifted = vshrq_n_u8(a_vec, 7);
-    
-    // Horizontal reduction using pairwise operations
-    static const uint8_t l_weights[16] = {
-        1, 2, 4, 8, 16, 32, 64, 128,
-        1, 2, 4, 8, 16, 32, 64, 128
-    };
-    uint8x16_t l_weight_vec = vld1q_u8(l_weights);
-    uint8x16_t l_weighted = vmulq_u8(l_shifted, l_weight_vec);
-    
-    // Sum each 8-byte lane
-    uint8x8_t l_low = vget_low_u8(l_weighted);
-    uint8x8_t l_high = vget_high_u8(l_weighted);
-    
-    uint8_t l_mask_low = vaddv_u8(l_low);
-    uint8_t l_mask_high = vaddv_u8(l_high);
-    
-    return (uint16_t)l_mask_low | ((uint16_t)l_mask_high << 8);
-}
-
-#define SIMD_MOVEMASK(vec) neon_movemask_u8(vec)
+#define SIMD_LOAD(ptr)      VEC_LOAD_U8(ptr)
+#define SIMD_SET1(val)      VEC_SET1_U8(val)
+#define SIMD_CMP_EQ(a, b)   VEC_CMPEQ_U8(a, b)
+#define SIMD_OR(a, b)        VEC_OR_U8(a, b)
+#define SIMD_MOVEMASK(vec)   VEC_MOVEMASK_U8(vec)

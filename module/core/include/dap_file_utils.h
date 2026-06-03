@@ -111,6 +111,15 @@ bool dap_dir_test(const char * a_dir_path);
  */
 int dap_mkdir_with_parents(const char *a_dir_path);
 
+/**
+ * @brief Create a uniquely-named temporary directory
+ *
+ * @param a_prefix prefix for the directory name (e.g. "dap_test"), may be NULL
+ * @return heap-allocated path to the created directory, or NULL on failure.
+ *         Caller must free with DAP_DELETE().
+ */
+char *dap_mkdir_tmp(const char *a_prefix);
+
 
 char* dap_path_get_basename(const char *a_file_name);
 bool  dap_path_is_absolute(const char *a_file_name);

@@ -1,7 +1,7 @@
 #ifndef _DAP_ENC_DILITHIUM_H_
 #define _DAP_ENC_DILITHIUM_H_
 
-#include "sig_dilithium/dilithium_params.h"
+#include "dilithium_params.h"
 #include "dap_enc_key.h"
 
 

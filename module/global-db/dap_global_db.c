@@ -1937,7 +1937,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         .value_len  = a_value_length
     };
     l_store_data.sign = dap_global_db_store_obj_sign(&l_store_data, a_dbi->signing_key, &l_store_data.crc);
-    if (!l_store_data.sign) {
+    if (a_dbi->signing_key && !l_store_data.sign) {
         log_it(L_ERROR, "Can't sign new global DB object group %s key %s", a_group, a_key);
         return DAP_GLOBAL_DB_RC_ERROR;
     }

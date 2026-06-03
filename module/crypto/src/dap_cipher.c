@@ -25,7 +25,6 @@
 
 #include "dap_enc_iaes.h"
 #include "dap_enc_oaes.h"
-#include "dap_enc_bf.h"
 #include "dap_enc_GOST.h"
 
 //#include "dap_cipher.h"

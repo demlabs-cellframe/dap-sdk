@@ -102,8 +102,7 @@ bool dap_json_string_scan_ref(
     uint32_t *a_out_end_offset
 );
 
-/* Forward declarations for SIMD implementations (generated) */
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if DAP_PLATFORM_X86
 
 #ifdef __SSE2__
 bool dap_json_string_scan_sse2(
@@ -132,7 +131,7 @@ bool dap_json_string_scan_avx512(
 );
 #endif
 
-#elif defined(__arm__) || defined(__aarch64__)
+#elif DAP_PLATFORM_ARM
 
 #if defined(__ARM_NEON) || defined(__aarch64__)
 bool dap_json_string_scan_neon(
@@ -175,12 +174,12 @@ static inline bool dap_json_string_scan(
     
     // Dispatch with branch prediction hints (usually AVX2/NEON on modern CPUs)
     switch (arch) {
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if DAP_PLATFORM_X86
         case DAP_CPU_ARCH_AVX512:
 #ifdef __AVX512F__
             return dap_json_string_scan_avx512(a_input, a_input_len, a_out_string, a_out_end_offset);
 #else
-            break; // Fall through to reference
+            break;
 #endif
         case DAP_CPU_ARCH_AVX2:
 #ifdef __AVX2__
@@ -194,7 +193,7 @@ static inline bool dap_json_string_scan(
 #else
             break;
 #endif
-#elif defined(__arm__) || defined(__aarch64__)
+#elif DAP_PLATFORM_ARM
         case DAP_CPU_ARCH_NEON:
 #if defined(__ARM_NEON) || defined(__aarch64__)
             return dap_json_string_scan_neon(a_input, a_input_len, a_out_string, a_out_end_offset);

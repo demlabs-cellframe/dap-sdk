@@ -3,7 +3,7 @@
 #include "dap_enc_test.h"
 #include "dap_enc_benchmark_test.h"
 #include "dap_enc_multithread_test.h"
-#include "rand/dap_rand.h"
+#include "dap_rand.h"
 #include "dap_common.h"
 
 int main(void) {
@@ -22,10 +22,6 @@ int main(void) {
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_GOST_OFB, 32);
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_KUZN_OFB, 32);
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_KUZN_OFB, 32);
-    test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_BF_CBC, 0);
-    test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_BF_CBC, 0);
-    test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_BF_OFB, 0);
-    test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_BF_OFB, 0);
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_IAES, 32);
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_IAES, 32);
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_OAES, 32);

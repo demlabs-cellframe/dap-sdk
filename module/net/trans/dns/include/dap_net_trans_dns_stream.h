@@ -202,6 +202,13 @@ bool dap_stream_trans_is_dns(const dap_stream_t *a_stream);
  */
 dap_stream_trans_dns_private_t* dap_stream_trans_dns_get_private(dap_stream_t *a_stream);
 
+/**
+ * @brief Add processor callbacks for DNS streaming
+ * @param a_dns_server DNS server instance
+ * @note DNS uses the same callbacks as UDP since both are connectionless protocols
+ */
+void dap_net_trans_dns_stream_add_proc(dap_server_t *a_dns_server);
+
 #ifdef __cplusplus
 }
 #endif

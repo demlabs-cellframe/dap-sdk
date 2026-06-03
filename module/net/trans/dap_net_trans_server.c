@@ -33,6 +33,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_stream_ctl.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_qos.h"
+#include "dap_net_trans_http_stream.h"
 #include "dap_enc_http.h"
 #include "dap_ht.h"
 

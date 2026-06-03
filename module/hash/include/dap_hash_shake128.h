@@ -61,10 +61,20 @@ extern "C" {
 DAP_STATIC_INLINE void dap_hash_shake128(uint8_t *a_output, size_t a_outlen,
                                      const uint8_t *a_input, size_t a_inlen)
 {
-    dap_hash_keccak_ctx_t l_ctx;
-    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHAKE128_RATE, DAP_KECCAK_SHAKE_SUFFIX);
-    dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
-    dap_hash_keccak_sponge_squeeze(&l_ctx, a_output, a_outlen);
+    const dap_keccak_sponge_ops_t *ops = dap_keccak_sponge_get_ops();
+    uint64_t l_st[25];
+    ops->absorb_168(l_st, a_input, a_inlen, DAP_KECCAK_SHAKE_SUFFIX);
+    size_t l_nblocks = a_outlen / DAP_SHAKE128_RATE;
+    if (l_nblocks) {
+        ops->squeeze_168(l_st, a_output, l_nblocks);
+        a_output += l_nblocks * DAP_SHAKE128_RATE;
+        a_outlen -= l_nblocks * DAP_SHAKE128_RATE;
+    }
+    if (a_outlen) {
+        uint8_t l_tmp[DAP_SHAKE128_RATE];
+        ops->squeeze_168(l_st, l_tmp, 1);
+        memcpy(a_output, l_tmp, a_outlen);
+    }
 }
 
 // =============================================================================
@@ -79,11 +89,7 @@ DAP_STATIC_INLINE void dap_hash_shake128(uint8_t *a_output, size_t a_outlen,
  */
 DAP_STATIC_INLINE void dap_hash_shake128_absorb(uint64_t *a_state, const uint8_t *a_input, size_t a_inlen)
 {
-    dap_hash_keccak_ctx_t l_ctx;
-    dap_hash_keccak_sponge_init(&l_ctx, DAP_KECCAK_SHAKE128_RATE, DAP_KECCAK_SHAKE_SUFFIX);
-    dap_hash_keccak_sponge_absorb(&l_ctx, a_input, a_inlen);
-    dap_hash_keccak_sponge_finalize(&l_ctx);
-    memcpy(a_state, l_ctx.state.lanes, DAP_KECCAK_STATE_BYTES);
+    dap_keccak_sponge_get_ops()->absorb_168(a_state, a_input, a_inlen, DAP_KECCAK_SHAKE_SUFFIX);
 }
 
 /**
@@ -94,12 +100,7 @@ DAP_STATIC_INLINE void dap_hash_shake128_absorb(uint64_t *a_state, const uint8_t
  */
 DAP_STATIC_INLINE void dap_hash_shake128_squeezeblocks(uint8_t *a_output, size_t a_nblocks, uint64_t *a_state)
 {
-    dap_hash_keccak_state_t *l_state = (dap_hash_keccak_state_t *)a_state;
-    for (size_t i = 0; i < a_nblocks; i++) {
-        dap_hash_keccak_permute(l_state);
-        dap_hash_keccak_extract_bytes(l_state, a_output, DAP_KECCAK_SHAKE128_RATE);
-        a_output += DAP_KECCAK_SHAKE128_RATE;
-    }
+    dap_keccak_sponge_get_ops()->squeeze_168(a_state, a_output, a_nblocks);
 }
 
 // =============================================================================

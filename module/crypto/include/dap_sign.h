@@ -1,9 +1,8 @@
 /*
  * Authors:
  * Dmitriy A. Gearasimov <gerasimov.dmitriy@demlabs.net>
- * DeM Labs Inc.   https://demlabs.net    https:/gitlab.com/demlabs
- * Kelvin Project https://github.com/kelvinblockchain
- * Copyright  (c) 2017-2018
+ * DeM Labs Inc.   https://demlabs.net   
+ * Copyright  (c) 2018
  * All rights reserved.
 
  This file is part of DAP (Distributed Applications Platform) the open source project
@@ -31,6 +30,7 @@
 #include "dap_hash.h"
 #include "dap_string.h"
 #include "dap_json.h"
+#include "dap_serialize.h"
 
 enum dap_sign_type_enum {
     SIG_TYPE_NULL = 0x0000,
@@ -43,6 +43,8 @@ enum dap_sign_type_enum {
     SIG_TYPE_ECDSA = 0x105,
     SIG_TYPE_SHIPOVNIK = 0x0106,
     SIG_TYPE_CHIPMUNK = 0x0107, /// @brief Chipmunk signature
+    SIG_TYPE_NTRU_PRIME = 0x0113,
+    SIG_TYPE_ML_DSA = 0x0201,
 #ifdef DAP_PQLR
     SIG_TYPE_PQLR_DILITHIUM = 0x1102,
     SIG_TYPE_PQLR_FALCON = 0x1103,
@@ -69,14 +71,69 @@ typedef union dap_sign_type {
     dap_sign_type_enum_t type;
     uint32_t raw;
 } DAP_ALIGN_PACKED dap_sign_type_t;
+_Static_assert(sizeof(dap_sign_type_t) == 4, "dap_sign_type_t wire size");
 
+/**
+ * @brief NIST security category for parameterized algorithms (ML-DSA, ML-KEM, etc.)
+ * Stored in dap_sign_hdr_t.sign_params. Zero means NIST-recommended default.
+ */
+#define DAP_SIGN_PARAMS_DEFAULT      0x00
+#define DAP_SIGN_PARAMS_SECURITY_2   0x01  ///< Category 2 — ML-DSA-44, ML-KEM-512
+#define DAP_SIGN_PARAMS_SECURITY_3   0x02  ///< Category 3 — ML-DSA-65, ML-KEM-768 (NIST recommended)
+#define DAP_SIGN_PARAMS_SECURITY_5   0x03  ///< Category 5 — ML-DSA-87, ML-KEM-1024
+
+#define DAP_SIGN_PARAMS_SECURITY_MASK  0x03
+#define DAP_SIGN_PARAMS_SECURITY_DEFAULT  DAP_SIGN_PARAMS_SECURITY_3
+
+/**
+ * Wire-format signature header (packed, 14 bytes).
+ */
 typedef struct dap_sign_hdr {
-        dap_sign_type_t type; /// Signature type
+        dap_sign_type_t type;
         uint8_t hash_type;
-        uint8_t padding;
-        uint32_t sign_size; /// Signature size
-        uint32_t sign_pkey_size; /// Signature serialized public key size
+        uint8_t sign_params;
+        uint32_t sign_size;
+        uint32_t sign_pkey_size;
 } DAP_ALIGN_PACKED dap_sign_hdr_t;
+
+#define DAP_SIGN_HDR_WIRE_SIZE 14
+_Static_assert(sizeof(dap_sign_hdr_t) == DAP_SIGN_HDR_WIRE_SIZE,
+               "dap_sign_hdr_t wire size");
+
+/**
+ * Naturally aligned in-memory version of the signature header.
+ * Uses uint32_t for type to avoid packed union embedding.
+ */
+typedef struct dap_sign_hdr_mem {
+    uint32_t type_raw;
+    uint8_t hash_type;
+    uint8_t sign_params;
+    uint32_t sign_size;
+    uint32_t sign_pkey_size;
+} dap_sign_hdr_mem_t;
+
+extern const dap_serialize_field_t g_dap_sign_hdr_fields[];
+extern const dap_serialize_schema_t g_dap_sign_hdr_schema;
+#define DAP_SIGN_HDR_MAGIC 0xDA5FEED5U
+#define DAP_SIGN_HDR_FIELD_COUNT 5U
+
+static inline int dap_sign_hdr_pack(const dap_sign_hdr_mem_t *a_mem,
+                                     uint8_t *a_wire, size_t a_wire_size)
+{
+    if (a_wire_size < DAP_SIGN_HDR_WIRE_SIZE) return -1;
+    dap_serialize_result_t r = dap_serialize_to_buffer_raw(
+        &g_dap_sign_hdr_schema, a_mem, a_wire, a_wire_size, NULL);
+    return r.error_code;
+}
+
+static inline int dap_sign_hdr_unpack(const uint8_t *a_wire, size_t a_wire_size,
+                                       dap_sign_hdr_mem_t *a_mem)
+{
+    if (a_wire_size < DAP_SIGN_HDR_WIRE_SIZE) return -1;
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+        &g_dap_sign_hdr_schema, a_wire, a_wire_size, a_mem, NULL);
+    return r.error_code;
+}
 
 /**
   * @struct dap_sign
@@ -84,8 +141,8 @@ typedef struct dap_sign_hdr {
   */
 typedef struct dap_sign
 {
-    dap_sign_hdr_t header; /// Only header's hash is used for verification
-    uint8_t pkey_n_sign[]; /// @param sig @brief raw signature data
+    dap_sign_hdr_t header;
+    uint8_t pkey_n_sign[];
 } DAP_ALIGN_PACKED dap_sign_t;
 typedef struct dap_pkey dap_pkey_t;
 typedef dap_pkey_t *(*dap_sign_callback_t)(const uint8_t *);

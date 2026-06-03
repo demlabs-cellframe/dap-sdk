@@ -25,14 +25,19 @@
 #include "test_helpers.h"
 #include "dap_config.h"
 #include "dap_common.h"
+#include "dap_file_utils.h"
+#include "dap_strfuncs.h"
 #include "dap_sdk.h"
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #define LOG_TAG "dap_test_helpers"
 
-// Memory tracking for leak detection
+static char *s_test_root = NULL;
+
 static size_t s_allocated_memory = 0;
 static size_t s_allocation_count = 0;
 
@@ -105,40 +110,84 @@ char* dap_test_random_string(size_t a_length) {
     return l_str;
 }
 
+static int s_create_test_env(void)
+{
+    s_test_root = dap_mkdir_tmp("dap_test");
+    if (!s_test_root)
+        return -1;
+
+    char *l_config_dir = dap_strdup_printf("%s/config", s_test_root);
+    char *l_ca_dir     = dap_strdup_printf("%s/ca", s_test_root);
+    char *l_gdb_dir    = dap_strdup_printf("%s/var/lib/global_db", s_test_root);
+
+    dap_mkdir_with_parents(l_config_dir);
+    dap_mkdir_with_parents(l_ca_dir);
+    dap_mkdir_with_parents(l_gdb_dir);
+
+    char *l_cfg_path = dap_strdup_printf("%s/dap-test.cfg", l_config_dir);
+    FILE *f = fopen(l_cfg_path, "w");
+    if (!f) {
+        log_it(L_ERROR, "Can't create test config: %s", l_cfg_path);
+        DAP_DELETE(l_config_dir);
+        DAP_DELETE(l_ca_dir);
+        DAP_DELETE(l_gdb_dir);
+        DAP_DELETE(l_cfg_path);
+        return -1;
+    }
+    fprintf(f,
+        "[resources]\n"
+        "ca_folders=[%s]\n\n"
+        "[global_db]\n"
+        "path=%s\n",
+        l_ca_dir, l_gdb_dir);
+    fclose(f);
+
+    DAP_DELETE(l_config_dir);
+    DAP_DELETE(l_ca_dir);
+    DAP_DELETE(l_gdb_dir);
+    DAP_DELETE(l_cfg_path);
+    return 0;
+}
+
 /**
- * @brief Setup minimal DAP SDK environment for testing
+ * @brief Setup DAP SDK environment with specific modules
  */
-int dap_test_sdk_init(void) {
-    printf("=== PRINTF: Inside dap_test_sdk_init() ===\n");
-    fflush(stdout);
-    
-    log_it(L_INFO, "Initializing DAP SDK test environment");
-    
-    // Reset memory tracking
+int dap_test_sdk_init_modules(uint32_t a_modules) {
+    log_it(L_INFO, "Initializing DAP SDK test environment (modules 0x%08X)", a_modules);
+
     s_allocated_memory = 0;
     s_allocation_count = 0;
-    
-    printf("=== PRINTF: About to call dap_sdk_init_with_app_name() ===\n");
-    fflush(stdout);
-    
-    // Initialize DAP SDK with all modules (needed for complex tests)
-    int ret = dap_sdk_init_with_app_name("DAP SDK Tests", DAP_SDK_MODULE_ALL);
-    
-    printf("=== PRINTF: dap_sdk_init_with_app_name() returned: %d ===\n", ret);
-    fflush(stdout);
+
+    if (s_create_test_env() != 0)
+        return -1;
+
+    char *l_config_dir = dap_strdup_printf("%s/config", s_test_root);
+
+    dap_sdk_config_t l_cfg = {
+        .modules     = a_modules,
+        .app_name    = "DAP SDK Tests",
+        .sys_dir     = s_test_root,
+        .config_dir  = l_config_dir,
+        .config_name = "dap-test",
+    };
+
+    int ret = dap_sdk_init(&l_cfg);
+    DAP_DELETE(l_config_dir);
+
     if (ret != 0) {
         log_it(L_ERROR, "Failed to initialize DAP SDK: %d", ret);
         return ret;
     }
-    
-    printf("=== PRINTF: About to return 0 from dap_test_sdk_init() ===\n");
-    fflush(stdout);
-    
+
     log_it(L_INFO, "DAP SDK test environment initialized successfully");
-    
-    printf("=== PRINTF: Returning 0 from dap_test_sdk_init() ===\n");
-    fflush(stdout);
     return 0;
+}
+
+/**
+ * @brief Setup full DAP SDK environment for testing (all modules)
+ */
+int dap_test_sdk_init(void) {
+    return dap_test_sdk_init_modules(DAP_SDK_MODULE_ALL);
 }
 
 /**
@@ -146,17 +195,20 @@ int dap_test_sdk_init(void) {
  */
 void dap_test_sdk_cleanup(void) {
     log_it(L_INFO, "Cleaning up DAP SDK test environment");
-    
-    // Deinitialize DAP SDK
+
     dap_sdk_deinit();
-    
-    // Report memory leaks if any
+
+    if (s_test_root) {
+        dap_rm_rf(s_test_root);
+        DAP_DEL_Z(s_test_root);
+    }
+
     if (s_allocation_count > 0) {
         log_it(L_WARNING, "Memory leak detected: %zu allocations not freed", s_allocation_count);
     } else {
         log_it(L_INFO, "No memory leaks detected");
     }
-    
+
     log_it(L_INFO, "DAP SDK test environment cleanup completed");
 }
 

@@ -5,6 +5,7 @@
  * - Linux/Android: mmap() / mremap() / msync() / madvise()
  * - macOS/BSD:     mmap() / munmap()+mmap() / msync() / madvise()
  * - Windows:       CreateFileMapping() / MapViewOfFile() / FlushViewOfFile()
+ * - WASM:          heap buffer (malloc/realloc) + file I/O via WASMFS/OPFS
  *
  * Designed for high-performance database engines (B-tree, etc.).
  *

@@ -1,5 +1,6 @@
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_params.h"
+#include "dap_serialize.h"
 #include "dap_time.h"
 #include "dap_cert.h"
 #include "dap_enc.h"
@@ -8,6 +9,36 @@
 #include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_json_rpc_request"
+
+_Static_assert(sizeof(((dap_json_rpc_http_request_t *)0)->header) == DAP_JSON_RPC_HTTP_HDR_WIRE_SIZE,
+               "dap_json_rpc_http_request.header wire size");
+
+const dap_serialize_field_t g_dap_json_rpc_http_hdr_fields[] = {
+    {
+        .name = "data_size",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_json_rpc_http_hdr_mem_t, data_size),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "signs_size",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_json_rpc_http_hdr_mem_t, signs_size),
+        .size = sizeof(uint32_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_json_rpc_http_hdr_schema = {
+    .name = "json_rpc_http_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_json_rpc_http_hdr_mem_t),
+    .field_count = sizeof(g_dap_json_rpc_http_hdr_fields) / sizeof(g_dap_json_rpc_http_hdr_fields[0]),
+    .fields = g_dap_json_rpc_http_hdr_fields,
+    .magic = DAP_JSON_RPC_HTTP_HDR_MAGIC,
+    .validate_func = NULL,
+};
 
 // Simple structure for tracking HTTP request/response - no dap_client_pvt dependency
 struct exec_cmd_request {

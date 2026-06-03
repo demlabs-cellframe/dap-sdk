@@ -156,6 +156,8 @@ typedef struct dap_client_http {
     dap_events_socket_uuid_t timer_uuid; // Cached UUID for MT-safe deletion
     dap_events_socket_t *es;
 
+    void *h2;                               /* dap_h2_connection_t* when HTTP/2, NULL for HTTP/1.x */
+    uint32_t h2_stream_id;                  /* Active h2 stream id for current request */
 } dap_client_http_t;
 
 #define DAP_CLIENT_HTTP(a) (a ? (dap_client_http_t *) (a)->_inheritor : NULL)

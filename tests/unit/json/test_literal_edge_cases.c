@@ -28,6 +28,18 @@
 #include "../../fixtures/utilities/test_helpers.h"
 #include <string.h>
 
+/** dap_json_array_get_idx() allocates a sub-wrapper for tape-backed JSON; must free after use. */
+static bool s_array_get_bool_free(dap_json_t *a_arr, size_t a_idx)
+{
+    dap_json_t *l_elem = dap_json_array_get_idx(a_arr, a_idx);
+    if (!l_elem) {
+        return false;
+    }
+    bool l_val = dap_json_get_bool(l_elem);
+    dap_json_object_free(l_elem);
+    return l_val;
+}
+
 // =============================================================================
 // TEST 1: Mixed Case Literals (Invalid)
 // =============================================================================
@@ -161,19 +173,19 @@ static bool s_test_multiple_literals_in_array(void) {
     size_t len = dap_json_array_length(l_json);
     DAP_TEST_FAIL_IF(len != 6, "Array has 6 elements");
     
-    // Check each element
-    bool val0 = dap_json_array_get_bool(l_json, 0);
+    // Check each element (free sub-wrappers from dap_json_array_get_idx)
+    bool val0 = s_array_get_bool_free(l_json, 0);
     DAP_TEST_FAIL_IF(!val0, "Element 0 is true");
     
-    bool val1 = dap_json_array_get_bool(l_json, 1);
+    bool val1 = s_array_get_bool_free(l_json, 1);
     DAP_TEST_FAIL_IF(val1, "Element 1 is false");
     
     // Element 2 is null - check with appropriate API
     
-    bool val3 = dap_json_array_get_bool(l_json, 3);
+    bool val3 = s_array_get_bool_free(l_json, 3);
     DAP_TEST_FAIL_IF(!val3, "Element 3 is true");
     
-    bool val4 = dap_json_array_get_bool(l_json, 4);
+    bool val4 = s_array_get_bool_free(l_json, 4);
     DAP_TEST_FAIL_IF(val4, "Element 4 is false");
     
     // Element 5 is null

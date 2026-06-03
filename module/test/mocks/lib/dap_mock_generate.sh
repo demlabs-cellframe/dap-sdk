@@ -623,16 +623,16 @@ generate_custom_mock_headers() {
     # Create main include file that includes all custom mock headers
     local main_custom_mocks_file="${output_dir}/${basename}_custom_mocks.h"
     
-    # Read custom mocks list for template
-    local CUSTOM_MOCKS_LIST=""
-    CUSTOM_MOCKS_LIST=$(cat "$custom_mocks_file" 2>/dev/null | grep -v '^$' || true)
+    # Extract just function names (field 2, pipe-delimited) for the template
+    local CUSTOM_MOCK_FUNC_NAMES=""
+    CUSTOM_MOCK_FUNC_NAMES=$(awk -F'|' '{if ($2 != "") print $2}' "$custom_mocks_file" 2>/dev/null || true)
     
     # Generate main include file from template
     replace_template_placeholders_with_mocking \
         "${TEMPLATES_DIR}/custom_mocks_main.h.tpl" \
         "$main_custom_mocks_file" \
         "BASENAME=$basename" \
-        "CUSTOM_MOCKS_LIST=$CUSTOM_MOCKS_LIST" \
+        "CUSTOM_MOCK_FUNC_NAMES=$CUSTOM_MOCK_FUNC_NAMES" \
         "WRAPPER_FUNCTIONS=$wrapper_functions"
     
     print_success "Generated main custom mocks include: $main_custom_mocks_file"

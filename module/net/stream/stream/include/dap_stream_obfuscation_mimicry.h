@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include "dap_math_ops.h"
 
 /**
  * @file dap_stream_obfuscation_mimicry.h
@@ -114,6 +115,9 @@ typedef struct dap_stream_tls_record_header {
     uint16_t version;         ///< TLS version (0x0303 = TLS 1.2)
     uint16_t length;          ///< Payload length (network byte order)
 } DAP_ALIGN_PACKED dap_stream_tls_record_header_t;
+DAP_STATIC_ASSERT(sizeof(dap_stream_tls_record_header_t) ==
+                      sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t),
+                  "dap_stream_tls_record_header_t TLS record header is 5 bytes");
 
 /**
  * @brief Protocol mimicry configuration

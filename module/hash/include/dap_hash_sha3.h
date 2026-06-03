@@ -77,7 +77,8 @@ extern "C" {
  */
 typedef union dap_hash_sha3_256 {
     uint8_t raw[DAP_HASH_SHA3_256_SIZE];
-} DAP_ALIGN_PACKED dap_hash_sha3_256_t;
+} dap_hash_sha3_256_t;
+_Static_assert(sizeof(dap_hash_sha3_256_t) == DAP_HASH_SHA3_256_SIZE, "hash must be 32 bytes");
 
 /**
  * @brief SHA3 hash as hex string

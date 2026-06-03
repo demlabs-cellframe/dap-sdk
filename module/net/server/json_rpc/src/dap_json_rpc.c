@@ -10,7 +10,7 @@
 #include "dap_pkey.h"
 #include "dap_config.h"
 #include "dap_enc_http.h"
-#include "dap_enc_msrln.h"
+#include "dap_kem.h"
 #include "dap_enc_ks.h"
 #include "dap_enc_key.h"
 #include "dap_ht.h"

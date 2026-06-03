@@ -281,54 +281,6 @@ function(register_module_headers)
 endfunction()
 
 # =========================================
-# 3RD PARTY HEADER REGISTRATION
-# =========================================
-# Register 3rd party headers that are part of public API
-# Usage:
-#   register_3rdparty_headers(
-#       FILES "3rdparty/uthash/src/uthash.h"
-#       DESTINATION "uthash"
-#   )
-function(register_3rdparty_headers)
-    cmake_parse_arguments(
-        TPH
-        ""
-        "DESTINATION"
-        "FILES;DIRECTORIES"
-        ${ARGN}
-    )
-    
-    set(ITEMS "")
-    if(DEFINED TPH_FILES)
-        list(APPEND ITEMS ${TPH_FILES})
-    endif()
-    if(DEFINED TPH_DIRECTORIES)
-        list(APPEND ITEMS ${TPH_DIRECTORIES})
-    endif()
-    
-    if(NOT ITEMS)
-        return()
-    endif()
-    
-    # Convert to absolute paths and store
-    foreach(ITEM ${ITEMS})
-        if(NOT IS_ABSOLUTE ${ITEM})
-            set(ITEM ${CMAKE_CURRENT_SOURCE_DIR}/${ITEM})
-        endif()
-        
-        list(APPEND SDK_REGISTERED_3RDPARTY_HEADERS ${ITEM})
-        
-        if(DEFINED TPH_DESTINATION)
-            set(SDK_3RDPARTY_DEST_${ITEM} "${TPH_DESTINATION}" 
-                CACHE INTERNAL "Destination for ${ITEM}")
-        endif()
-    endforeach()
-    
-    set(SDK_REGISTERED_3RDPARTY_HEADERS "${SDK_REGISTERED_3RDPARTY_HEADERS}" 
-        CACHE INTERNAL "List of 3rd party headers")
-endfunction()
-
-# =========================================
 # FINALIZE AND INSTALL
 # =========================================
 # Call this at the end of main CMakeLists.txt to install all registered components

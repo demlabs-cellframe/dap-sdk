@@ -25,6 +25,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdatomic.h>
+#include <stddef.h>
 
 #include "dap_arena.h"
 #include "dap_common.h"
@@ -64,7 +65,12 @@ typedef struct dap_arena_page {
     atomic_int refcount;          // Atomic reference count (thread-safe)
     bool is_refcounted;           // Flag to check if this page uses refcount
     
-    uint8_t data[];               // Flexible array member for data
+    /* Padding to ensure data[] starts at DAP_ARENA_ALIGNMENT boundary.
+     * 64-bit: 8+8+8+4+1 = 29, need 3 bytes → 32
+     * 32-bit: 4+4+4+4+1 = 17, need 7 bytes → 24  */
+    uint8_t _pad_align_data[DAP_ARENA_ALIGNMENT - 1];
+
+    _Alignas(DAP_ARENA_ALIGNMENT) uint8_t data[];
 } dap_arena_page_t;
 
 /**

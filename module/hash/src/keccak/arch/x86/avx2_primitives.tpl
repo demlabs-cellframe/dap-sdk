@@ -2,19 +2,16 @@
 // AVX2 SIMD Primitives for Keccak (Lane Layout)
 // ============================================================================
 
-typedef __m256i VTYPE;
+{{#include PRIM_LIB}}
 
-// 64-bit rotation (no native AVX2 instruction, emulate via shift+or)
-// 64-bit rotation (safe for n=0..63)
+#define VTYPE VEC_T
+
 static inline uint64_t rol64(uint64_t x, unsigned n) {
     return (n == 0) ? x : ((x << n) | (x >> (64 - n)));
 }
 #define ROL64(x, n) rol64((x), (n))
 
-// XOR operations
-#define XOR256(a, b)     _mm256_xor_si256(a, b)
-
-// Chi: a ^ (~b & c) using andnot (2 instructions)
+#define XOR256(a, b)     VEC_XOR(a, b)
 #define CHI_SCALAR(a, b, c) ((a) ^ (~(b) & (c)))
 
 // ============================================================================
@@ -23,12 +20,11 @@ static inline uint64_t rol64(uint64_t x, unsigned n) {
 
 #define THETA_COMPUTE_PARITY() \
     uint64_t C[5]; \
-    VTYPE col01 = XOR256(_mm256_loadu_si256((const VTYPE*)(A + 0)), \
-                         _mm256_loadu_si256((const VTYPE*)(A + 5))); \
-    col01 = XOR256(col01, _mm256_loadu_si256((const VTYPE*)(A + 10))); \
-    col01 = XOR256(col01, _mm256_loadu_si256((const VTYPE*)(A + 15))); \
-    col01 = XOR256(col01, _mm256_loadu_si256((const VTYPE*)(A + 20))); \
-    _mm256_storeu_si256((VTYPE*)C, col01); \
+    VTYPE col01 = XOR256(VEC_LOAD(A + 0), VEC_LOAD(A + 5)); \
+    col01 = XOR256(col01, VEC_LOAD(A + 10)); \
+    col01 = XOR256(col01, VEC_LOAD(A + 15)); \
+    col01 = XOR256(col01, VEC_LOAD(A + 20)); \
+    VEC_STORE(C, col01); \
     C[4] = A[4] ^ A[9] ^ A[14] ^ A[19] ^ A[24]; \
     \
     uint64_t D[5]; \
@@ -40,11 +36,11 @@ static inline uint64_t rol64(uint64_t x, unsigned n) {
 
 #define THETA_APPLY_D() \
     do { \
-        VTYPE vD01 = _mm256_set_epi64x(D[3], D[2], D[1], D[0]); \
+        VTYPE vD01 = VEC_SET_64(D[3], D[2], D[1], D[0]); \
         for (int y = 0; y < 5; y++) { \
-            VTYPE row = _mm256_loadu_si256((const VTYPE*)(A + y * 5)); \
+            VTYPE row = VEC_LOAD(A + y * 5); \
             row = XOR256(row, vD01); \
-            _mm256_storeu_si256((VTYPE*)(A + y * 5), row); \
+            VEC_STORE(A + y * 5, row); \
             A[y * 5 + 4] ^= D[4]; \
         } \
     } while(0)

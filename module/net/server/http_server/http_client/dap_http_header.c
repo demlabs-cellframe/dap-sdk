@@ -130,7 +130,7 @@ dap_http_header_t *l_new_header;
     for ( l_ht = ht_fields; l_ht->namelen; l_ht++)
         {
             if ( l_namelen == l_ht->namelen )
-                if ( !memcmp(l_pname, l_ht->name, l_namelen) )
+                if ( !strncasecmp(l_pname, l_ht->name, l_namelen) )
                     break;
             }
 
@@ -203,10 +203,14 @@ inline dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const c
 {
     dap_http_header_t *l_new_header = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_header_t, NULL);
 
-    l_new_header->namesz = strnlen(a_name, DAP_HTTP$SZ_FIELD_NAME);
+    l_new_header->namesz = strlen(a_name);
+    if (l_new_header->namesz > DAP_HTTP$SZ_FIELD_NAME)
+        l_new_header->namesz = DAP_HTTP$SZ_FIELD_NAME;
     memcpy(l_new_header->name, a_name, l_new_header->namesz);
 
-    l_new_header->valuesz = strnlen(a_value, DAP_HTTP$SZ_FIELD_VALUE);
+    l_new_header->valuesz = strlen(a_value);
+    if (l_new_header->valuesz > DAP_HTTP$SZ_FIELD_VALUE)
+        l_new_header->valuesz = DAP_HTTP$SZ_FIELD_VALUE;
     memcpy(l_new_header->value, a_value, l_new_header->valuesz);
 
     dap_dl_append(*a_top, l_new_header);
@@ -265,8 +269,9 @@ void print_dap_http_headers(dap_http_header_t * a_ht)
  */
 dap_http_header_t *dap_http_header_find( dap_http_header_t *ht, const char *name )
 {
+    size_t l_name_len = strlen(name);
     for(; ht; ht = ht->next)
-        if( strncmp(ht->name, name, ht->namesz) == 0 )
+        if( ht->namesz == l_name_len && strncasecmp(ht->name, name, ht->namesz) == 0 )
             return ht;
 
     return  NULL;

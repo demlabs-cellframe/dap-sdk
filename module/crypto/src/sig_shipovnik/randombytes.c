@@ -34,8 +34,14 @@
 
 void randombytes(uint8_t *out, size_t outlen) {
   EM_ASM({
-      var buf = new Uint8Array(Module.HEAPU8.buffer, $0, $1);
-      crypto.getRandomValues(buf);
+      var heapBuf = Module.HEAPU8.buffer;
+      if (typeof SharedArrayBuffer !== 'undefined' && heapBuf instanceof SharedArrayBuffer) {
+          var tmp = new Uint8Array($1);
+          crypto.getRandomValues(tmp);
+          Module.HEAPU8.set(tmp, $0);
+      } else {
+          crypto.getRandomValues(new Uint8Array(heapBuf, $0, $1));
+      }
   }, out, (int)outlen);
 }
 

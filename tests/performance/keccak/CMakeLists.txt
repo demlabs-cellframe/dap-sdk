@@ -227,3 +227,44 @@ add_test(NAME keccak_correctness
 )
 
 message(STATUS "[benchmark_keccak] Keccak/SHA3 performance benchmark configured")
+
+# --- Keccak micro-benchmarks ---
+set(KECCAK_BENCH_INCLUDES
+    ${CMAKE_SOURCE_DIR}/module/hash/include
+    ${CMAKE_SOURCE_DIR}/module/hash/src/keccak
+    ${CMAKE_SOURCE_DIR}/module/core/include
+    ${CMAKE_SOURCE_DIR}/module/optimization/include
+)
+
+macro(add_keccak_bench NAME)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${NAME}.c")
+        add_executable(${NAME} ${NAME}.c)
+        target_link_libraries(${NAME} dap_sdk)
+        target_include_directories(${NAME} PRIVATE ${KECCAK_BENCH_INCLUDES})
+        set_target_properties(${NAME} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
+        )
+    endif()
+endmacro()
+
+# BMI2 / AVX-512VL asm + RDTSC — meaningful only on x86-64 hosts. On AArch64
+# the same sources fail to compile (invalid '=a' / missing symbols).
+set(DAP_KECCAK_BENCH_X86 FALSE)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64|i386|i686")
+    set(DAP_KECCAK_BENCH_X86 TRUE)
+endif()
+
+if(DAP_KECCAK_BENCH_X86)
+    add_keccak_bench(bench_keccak_scalar)
+    if(BUILD_BENCHMARKS AND HAVE_XKCP)
+        target_compile_definitions(bench_keccak_scalar PRIVATE HAVE_XKCP)
+        target_link_libraries(bench_keccak_scalar xkcp_competitor)
+    endif()
+    add_keccak_bench(bench_keccak_x4)
+    add_keccak_bench(bench_sha3_micro)
+    add_keccak_bench(test_keccak_compare)
+else()
+    message(STATUS "[benchmark_keccak] Skipping x86-only Keccak benches (host ${CMAKE_SYSTEM_PROCESSOR})")
+endif()
+
+add_keccak_bench(bench_keccak_micro)

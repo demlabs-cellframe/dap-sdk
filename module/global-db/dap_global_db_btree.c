@@ -493,7 +493,7 @@ static int s_page_write(dap_global_db_t *a_tree, dap_global_db_page_t *a_page)
     // mmap fast path
     if (a_tree->mmap) {
         if (l_offset + DAP_GLOBAL_DB_PAGE_SIZE > dap_mmap_get_size(a_tree->mmap)) {
-            log_it(L_ERROR, "Page %lu offset beyond mmap size", (unsigned long)a_page->header.page_id);
+            log_it(L_ERROR, "Page %" DAP_UINT64_FORMAT_U " offset beyond mmap size", a_page->header.page_id);
             return -1;
         }
         uint8_t *l_dst = (uint8_t *)dap_mmap_get_ptr(a_tree->mmap) + l_offset;
@@ -2047,8 +2047,21 @@ dap_global_db_t *dap_global_db_create(const char *a_filepath)
     // levels of recursion: each level uses ~1 page + overhead.
     l_tree->arena = dap_arena_new(DAP_GLOBAL_DB_PAGE_SIZE * 32);
 
-    // Initialize reader-writer lock for thread safety (Phase 3 compat)
-    pthread_rwlock_init(&l_tree->lock, NULL);
+    // Initialize reader-writer lock for thread safety (Phase 3 compat).
+    // CRITICAL: default glibc rwlock prefers readers, which starves writers
+    // when high-frequency readers (e.g., the network balancer scanning
+    // nodes.list every second) coexist with low-frequency writers
+    // (e.g., `node add`). Use writer-preference to guarantee writer progress.
+    {
+        pthread_rwlockattr_t l_attr;
+        pthread_rwlockattr_init(&l_attr);
+#ifdef __GLIBC__
+        pthread_rwlockattr_setkind_np(&l_attr,
+            PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+#endif
+        pthread_rwlock_init(&l_tree->lock, &l_attr);
+        pthread_rwlockattr_destroy(&l_attr);
+    }
 
     // Initialize MVCC state
     atomic_store(&l_tree->mvcc_root, l_tree->header.root_page);
@@ -2146,8 +2159,18 @@ dap_global_db_t *dap_global_db_open(const char *a_filepath, bool a_read_only)
     // Arena for temporary allocations during write path
     l_tree->arena = dap_arena_new(DAP_GLOBAL_DB_PAGE_SIZE * 32);
 
-    // Initialize reader-writer lock for thread safety (Phase 3 compat)
-    pthread_rwlock_init(&l_tree->lock, NULL);
+    // Initialize reader-writer lock for thread safety (Phase 3 compat).
+    // See companion init site in dap_global_db_create for rationale.
+    {
+        pthread_rwlockattr_t l_attr;
+        pthread_rwlockattr_init(&l_attr);
+#ifdef __GLIBC__
+        pthread_rwlockattr_setkind_np(&l_attr,
+            PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
+#endif
+        pthread_rwlock_init(&l_tree->lock, &l_attr);
+        pthread_rwlockattr_destroy(&l_attr);
+    }
 
     // Initialize MVCC state from on-disk header
     atomic_store(&l_tree->mvcc_root, l_tree->header.root_page);
@@ -2159,17 +2182,17 @@ dap_global_db_t *dap_global_db_open(const char *a_filepath, bool a_read_only)
     for (int i = 0; i < DAP_BTREE_MAX_SNAPSHOTS; i++)
         atomic_store(&l_tree->snapshot_txns[i], 0);
 
-    log_it(L_INFO, "Opened B-tree file: %s (items: %lu, pages: %lu, mmap: %s)",
-           a_filepath, (unsigned long)l_tree->header.items_count,
-           (unsigned long)l_tree->header.total_pages,
+    log_it(L_INFO, "Opened B-tree file: %s (items: %" DAP_UINT64_FORMAT_U ", pages: %" DAP_UINT64_FORMAT_U ", mmap: %s)",
+           a_filepath, l_tree->header.items_count,
+           l_tree->header.total_pages,
            l_tree->mmap ? "yes" : "no");
 
     if (!a_read_only && l_tree->header.root_page > 0) {
         if (s_validate_subtree(l_tree, l_tree->header.root_page, 0) != 0) {
             log_it(L_WARNING, "B-tree file '%s' is structurally corrupted "
-                   "(items=%lu, pages=%lu). Deleting for automatic recreation.",
-                   a_filepath, (unsigned long)l_tree->header.items_count,
-                   (unsigned long)l_tree->header.total_pages);
+                   "(items=%" DAP_UINT64_FORMAT_U ", pages=%" DAP_UINT64_FORMAT_U "). Deleting for automatic recreation.",
+                   a_filepath, l_tree->header.items_count,
+                   l_tree->header.total_pages);
             l_tree->read_only = true;
             dap_global_db_close(l_tree);
             unlink(a_filepath);
@@ -2472,8 +2495,9 @@ static int s_btree_insert_impl(dap_global_db_t *a_tree,
                     l_ent->sign_len = a_sign_len;
                     l_ent->flags = a_flags | DAP_GLOBAL_DB_LEAF_ENTRY_OVERFLOW_VALUE;
                     uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_leaf_entry_t);
-                    memcpy(l_dst, a_text_key, a_text_key_len);
-                *(uint64_t *)(l_dst + a_text_key_len) = l_ov_id;
+                    if (a_text_key && a_text_key_len > 0)
+                        memcpy(l_dst, a_text_key, a_text_key_len);
+                    *(uint64_t *)(l_dst + a_text_key_len) = l_ov_id;
                     hl->header.entries_count = l_count + 1;
                     hl->header.free_space -= (l_entry_size + LEAF_OFFSET_SIZE);
                     LEAF_LOWEST_OFFSET(hl->data) = l_new_offset;
@@ -2495,7 +2519,8 @@ static int s_btree_insert_impl(dap_global_db_t *a_tree,
                 l_ent->sign_len = a_sign_len;
                 l_ent->flags = a_flags;
                 uint8_t *l_dst = (uint8_t *)l_ent + sizeof(dap_global_db_leaf_entry_t);
-                memcpy(l_dst, a_text_key, a_text_key_len);
+                if (a_text_key && a_text_key_len > 0)
+                    memcpy(l_dst, a_text_key, a_text_key_len);
                 if (a_value_len > 0)
                     memmove(l_dst + a_text_key_len, a_value, a_value_len);
                 if (a_sign_len > 0)
@@ -3245,6 +3270,28 @@ static void s_mvcc_commit(dap_global_db_t *a_tree)
 
     // Seqlock: even seq signals "publish complete"
     atomic_fetch_add_explicit(&a_tree->mvcc_seq, 1, memory_order_release);
+
+    // Persist the header into the on-disk (mmap) page so the new
+    // root_page / items_count / tree_height become visible to any future
+    // dap_global_db_open() — including a fresh process after an abrupt
+    // shutdown (SIGTERM/SIGKILL without a clean s_btree_sync_impl call).
+    //
+    // Without this, every normal insert that does NOT split the root only
+    // bumps the in-memory header; the on-disk header keeps pointing at the
+    // pre-insert root_page and reports the pre-insert items_count, so all
+    // entries added since the last sync vanish on reopen even though their
+    // leaf pages are physically present in the file (a typical case is the
+    // genesis flow where stage-env immediately restarts the node after a
+    // batch of `node add` commands — only entries that happened to split
+    // the root survive).
+    //
+    // The header is a single 4 KiB page mapped MAP_SHARED, so this is a
+    // 64-byte memcpy into the kernel page cache — durable across process
+    // restarts on the same host. We deliberately do not msync() here:
+    // crash-consistency vs. power loss is provided by dap_global_db_sync()
+    // / close(), and a per-commit fsync would dominate write latency.
+    if (a_tree->mmap && !a_tree->read_only)
+        s_header_write(a_tree);
 
     if (++a_tree->mvcc_commit_counter >= 64 || a_tree->deferred_batch_count > 128) {
         s_deferred_free_reclaim(a_tree);
@@ -5653,7 +5700,15 @@ static uint64_t s_count_at_root_impl(dap_global_db_t *a_tree, uint64_t a_root, i
 
 uint64_t dap_global_db_count_at_root(dap_global_db_t *a_tree, uint64_t a_root)
 {
-    int l_max_depth = (int)a_tree->header.tree_height + 2;
+    // Read height via the lock-free MVCC mirror (atomically updated in
+    // s_mvcc_commit). This serves both lock-holding callers
+    // (s_mvcc_commit, dap_global_db_verify — both wrlocked) and lock-free
+    // ones (snapshot-cursor readers in tests/global-db). A nested rdlock
+    // here would deadlock with PREFER_WRITER_NONRECURSIVE when any caller
+    // already holds wrlock, and a raw read of header.tree_height would
+    // race with writers in the lock-free path. mvcc_height fixes both.
+    uint32_t l_height = atomic_load_explicit(&a_tree->mvcc_height, memory_order_acquire);
+    int l_max_depth = (int)l_height + 2;
     if (l_max_depth < 4) l_max_depth = 4;
     return s_count_at_root_impl(a_tree, a_root, l_max_depth);
 }

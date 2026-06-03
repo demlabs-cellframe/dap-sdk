@@ -5,24 +5,14 @@
  * TEMPLATE FRAGMENT - included by parent template
  */
 
-// SSE2 intrinsics
-#include <emmintrin.h>
+{{#include PRIM_LIB}}
 
-#define SIMD_VEC_TYPE __m128i
-#define SIMD_CHUNK_SIZE 16
-#define SIMD_MASK_TYPE uint16_t  // SSE2: 16 bytes → 16-bit mask
+#define SIMD_VEC_TYPE  VEC_T
+#define SIMD_CHUNK_SIZE VEC_LANES_8
+#define SIMD_MASK_TYPE uint16_t
 
-// Load unaligned chunk
-#define SIMD_LOAD(ptr) _mm_loadu_si128((__m128i*)(ptr))
-
-// Set all bytes to same value
-#define SIMD_SET1(val) _mm_set1_epi8(val)
-
-// Compare bytes for equality
-#define SIMD_CMP_EQ(a, b) _mm_cmpeq_epi8((a), (b))
-
-// Bitwise OR
-#define SIMD_OR(a, b) _mm_or_si128((a), (b))
-
-// Convert comparison result to bitmask
-#define SIMD_MOVEMASK(vec) ((SIMD_MASK_TYPE)_mm_movemask_epi8(vec))
+#define SIMD_LOAD(ptr)      VEC_LOAD(ptr)
+#define SIMD_SET1(val)      VEC_SET1_8(val)
+#define SIMD_CMP_EQ(a, b)   VEC_CMPEQ_8(a, b)
+#define SIMD_OR(a, b)        VEC_OR(a, b)
+#define SIMD_MOVEMASK(vec)   ((SIMD_MASK_TYPE)VEC_MOVEMASK_8(vec))

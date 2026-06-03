@@ -1,0 +1,72 @@
+#version 450
+
+/*
+ * Batch pointwise Montgomery multiplication.
+ *
+ * Computes c[i] = (a[i] * b[i]) * R^{-1} mod q for each coefficient,
+ * across batch_count independent polynomial pairs.
+ *
+ * Each workgroup handles one polynomial pair (N coefficients).
+ * Used to keep data on GPU between forward NTT and inverse NTT,
+ * avoiding a CPU roundtrip.
+ */
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) buffer BufA { int a_data[]; };
+layout(set = 0, binding = 1) buffer BufB { int b_data[]; };
+layout(set = 0, binding = 2) buffer BufC { int c_data[]; };
+
+layout(push_constant) uniform PushConstants {
+    int  q;
+    uint qinv;
+    uint n;
+    uint batch_size;
+};
+
+#ifdef GL_EXT_shader_explicit_arithmetic_types_int64
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+
+int mont_mul(int a, int b, uint a_qinv, int a_q)
+{
+    int64_t prod = int64_t(a) * int64_t(b);
+    uint u_low = uint(prod) * a_qinv;
+    return int((prod + int64_t(uint64_t(u_low)) * int64_t(a_q)) >> 32);
+}
+
+#else
+
+int mont_mul(int a, int b, uint a_qinv, int a_q)
+{
+    uint a_u = uint(a);
+    uint b_u = uint(b);
+    uint ab_hi_u, ab_lo;
+    umulExtended(a_u, b_u, ab_hi_u, ab_lo);
+    int ab_hi_s = int(ab_hi_u);
+    if (a < 0) ab_hi_s -= b;
+    if (b < 0) ab_hi_s -= a;
+
+    uint u = ab_lo * a_qinv;
+    uint uq_hi, uq_lo;
+    umulExtended(u, uint(a_q), uq_hi, uq_lo);
+
+    uint sum_lo = ab_lo + uq_lo;
+    uint carry = (sum_lo < ab_lo) ? 1u : 0u;
+    return int(ab_hi_s + int(uq_hi) + int(carry));
+}
+
+#endif
+
+void main()
+{
+    uint poly_idx = gl_WorkGroupID.x;
+    if (poly_idx >= batch_size)
+        return;
+
+    uint tid = gl_LocalInvocationID.x;
+    uint threads = gl_WorkGroupSize.x;
+    uint base = poly_idx * n;
+
+    for (uint i = tid; i < n; i += threads)
+        c_data[base + i] = mont_mul(a_data[base + i], b_data[base + i], qinv, q);
+}

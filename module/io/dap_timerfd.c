@@ -47,6 +47,16 @@
 #include "dap_timerfd.h"
 #include "dap_context.h"
 
+#ifdef DAP_OS_WASM
+#include <emscripten.h>
+#include <emscripten/eventloop.h>
+#ifdef DAP_OS_WASM_MT
+#include <emscripten/threading.h>
+#include <stdatomic.h>
+#include "dap_wasm_sab_ipc.h"
+#endif
+#endif
+
 #ifdef DAP_OS_ANDROID
 // Android-compatible timerfd replacement using POSIX timers
 #include <time.h>
@@ -171,6 +181,170 @@ static int android_timerfd_settime(int a_fd, int a_flags, const struct itimerspe
 static void s_es_callback_timer(struct dap_events_socket *a_es);
 
 static bool l_debug_timer = false;
+
+#if defined(DAP_OS_WASM_MT)
+#include <pthread.h>
+
+/* Timer hub for WASM multi-threaded build.
+ *
+ * Responsibilities:
+ *   - Maintain a dynamic list of active dap_timerfd_t.
+ *   - In a dedicated pthread, sleep until the nearest next_fire_ms via
+ *     dap_wasm_sab_wait() on a private wake counter. Any add/reset/delete
+ *     bumps that counter so the hub immediately re-evaluates its schedule.
+ *   - When a timer's deadline is reached, push_event() onto the timer's
+ *     events_socket SAB channel. That wakes the owning worker's context
+ *     wake_counter, and the worker's main loop dispatches
+ *     s_es_callback_timer() in its own thread — so the user callback always
+ *     runs in the worker the timer was attached to.
+ *
+ * Per-timer state (next_fire_ms, active) is kept atomic so add/reset paths
+ * on the worker thread don't race with the hub's scan. */
+static struct {
+    pthread_mutex_t   lock;
+    pthread_t         thread;
+    _Atomic bool      running;
+    _Atomic uint32_t  wake;           /* futex target for hub thread */
+    dap_timerfd_t   **items;
+    size_t            count;
+    size_t            capacity;
+} s_timer_hub = { .lock = PTHREAD_MUTEX_INITIALIZER };
+
+static double s_get_time_ms(void)
+{
+    return emscripten_performance_now();
+}
+
+static void *s_timer_hub_thread(void *a_unused)
+{
+    (void)a_unused;
+    while (atomic_load_explicit(&s_timer_hub.running, memory_order_acquire)) {
+        /* Snapshot the wake counter before scanning so that any add/reset
+         * that happens after the scan still reliably wakes us up. */
+        uint32_t l_expected = atomic_load_explicit(&s_timer_hub.wake,
+                                                   memory_order_acquire);
+
+        double l_now = s_get_time_ms();
+        double l_next = l_now + 250.0; /* hard upper bound on sleep */
+
+        pthread_mutex_lock(&s_timer_hub.lock);
+        for (size_t i = 0; i < s_timer_hub.count; i++) {
+            dap_timerfd_t *l_t = s_timer_hub.items[i];
+            if (!l_t)
+                continue;
+            if (!atomic_load_explicit(&l_t->active, memory_order_acquire))
+                continue;
+            uint64_t l_fire = atomic_load_explicit(&l_t->next_fire_ms,
+                                                   memory_order_acquire);
+            if ((double)l_fire <= l_now) {
+                /* Deliver the tick to the owning worker. The worker will
+                 * run the user callback (and may call reset_unsafe to
+                 * re-arm next_fire_ms).  We also advance next_fire_ms
+                 * ourselves to avoid tick storms if the worker is busy. */
+                if (l_t->events_socket && l_t->events_socket->sab_channel)
+                    dap_wasm_sab_channel_push_event(
+                        l_t->events_socket->sab_channel, 1);
+                uint64_t l_new_fire = (uint64_t)(l_now + (double)l_t->timeout_ms);
+                atomic_store_explicit(&l_t->next_fire_ms, l_new_fire,
+                                      memory_order_release);
+                l_fire = l_new_fire;
+            }
+            if ((double)l_fire < l_next)
+                l_next = (double)l_fire;
+        }
+        pthread_mutex_unlock(&s_timer_hub.lock);
+
+        double l_sleep_ms = l_next - s_get_time_ms();
+        if (l_sleep_ms < 1.0)
+            l_sleep_ms = 1.0;
+        if (l_sleep_ms > 250.0)
+            l_sleep_ms = 250.0;
+        dap_wasm_sab_wait(&s_timer_hub.wake, l_expected, (int)l_sleep_ms);
+    }
+    return NULL;
+}
+
+static bool s_timer_hub_ensure_started_unsafe(void)
+{
+    if (atomic_load_explicit(&s_timer_hub.running, memory_order_acquire))
+        return true;
+    atomic_store_explicit(&s_timer_hub.running, true, memory_order_release);
+    if (pthread_create(&s_timer_hub.thread, NULL, s_timer_hub_thread, NULL)) {
+        atomic_store_explicit(&s_timer_hub.running, false, memory_order_release);
+        log_it(L_CRITICAL, "Can't start WASM timer hub thread");
+        return false;
+    }
+    pthread_detach(s_timer_hub.thread);
+    return true;
+}
+
+static bool s_timer_hub_add(dap_timerfd_t *a_timer)
+{
+    pthread_mutex_lock(&s_timer_hub.lock);
+    if (s_timer_hub.count == s_timer_hub.capacity) {
+        size_t l_new_cap = s_timer_hub.capacity ? s_timer_hub.capacity * 2 : 16;
+        dap_timerfd_t **l_arr = DAP_REALLOC(s_timer_hub.items,
+                                            l_new_cap * sizeof(*l_arr));
+        if (!l_arr) {
+            pthread_mutex_unlock(&s_timer_hub.lock);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            return false;
+        }
+        s_timer_hub.items = l_arr;
+        s_timer_hub.capacity = l_new_cap;
+    }
+    s_timer_hub.items[s_timer_hub.count++] = a_timer;
+    bool l_ok = s_timer_hub_ensure_started_unsafe();
+    pthread_mutex_unlock(&s_timer_hub.lock);
+    dap_wasm_sab_wake(&s_timer_hub.wake);
+    return l_ok;
+}
+
+static void s_timer_hub_remove(dap_timerfd_t *a_timer)
+{
+    pthread_mutex_lock(&s_timer_hub.lock);
+    for (size_t i = 0; i < s_timer_hub.count; i++) {
+        if (s_timer_hub.items[i] == a_timer) {
+            s_timer_hub.items[i] = s_timer_hub.items[--s_timer_hub.count];
+            s_timer_hub.items[s_timer_hub.count] = NULL;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_timer_hub.lock);
+    dap_wasm_sab_wake(&s_timer_hub.wake);
+}
+
+static void s_timer_hub_reschedule(dap_timerfd_t *a_timer, uint64_t a_next_fire_ms)
+{
+    atomic_store_explicit(&a_timer->next_fire_ms, a_next_fire_ms,
+                          memory_order_release);
+    /* Wake the hub so it picks up the new (possibly earlier) deadline. */
+    dap_wasm_sab_wake(&s_timer_hub.wake);
+}
+
+size_t dap_timerfd_active_count(void)
+{
+    /* Diagnostic accessor — see header. Takes the same lock the hub scan
+     * uses so the returned count is a consistent snapshot (no races with
+     * concurrent add/remove on worker threads). */
+    pthread_mutex_lock(&s_timer_hub.lock);
+    size_t l_count = s_timer_hub.count;
+    pthread_mutex_unlock(&s_timer_hub.lock);
+    return l_count;
+}
+
+#elif defined(DAP_OS_WASM)
+static void s_wasm_timer_callback(void *a_arg)
+{
+    dap_timerfd_t *l_timerfd = (dap_timerfd_t *)a_arg;
+    if (!l_timerfd || !l_timerfd->callback)
+        return;
+    if (!l_timerfd->callback(l_timerfd->callback_arg)) {
+        emscripten_clear_interval(l_timerfd->interval_id);
+        l_timerfd->interval_id = 0;
+    }
+}
+#endif
 
 #ifdef DAP_OS_WINDOWS
     static HANDLE hTimerQueue = NULL;
@@ -342,6 +516,34 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     }
     l_events_socket->socket = INVALID_SOCKET;
 #endif
+#elif defined(DAP_OS_WASM_MT)
+    /* WASM MT: no pipe or real fd. Ticks are delivered via the SAB event
+     * channel bound to the owning worker's context wake counter (bound in
+     * dap_context_add). The user callback runs in the worker thread. */
+    l_events_socket->sab_channel = dap_wasm_sab_channel_new(8, NULL);
+    if (!l_events_socket->sab_channel) {
+        DAP_DELETE(l_timerfd);
+        DAP_DELETE(l_events_socket);
+        log_it(L_ERROR, "Failed to create timer SAB channel");
+        return NULL;
+    }
+    l_events_socket->socket = dap_wasm_sab_channel_vfd(l_events_socket->sab_channel);
+    l_events_socket->fd2 = l_events_socket->socket;
+    atomic_store_explicit(&l_timerfd->active, true, memory_order_release);
+    atomic_store_explicit(&l_timerfd->next_fire_ms,
+                          (uint64_t)(s_get_time_ms() + (double)a_timeout_ms),
+                          memory_order_release);
+    if (!s_timer_hub_add(l_timerfd)) {
+        dap_wasm_sab_channel_free(l_events_socket->sab_channel);
+        l_events_socket->sab_channel = NULL;
+        DAP_DELETE(l_timerfd);
+        DAP_DELETE(l_events_socket);
+        return NULL;
+    }
+#elif defined(DAP_OS_WASM)
+    l_events_socket->socket = INVALID_SOCKET;
+    l_timerfd->interval_id = emscripten_set_interval(s_wasm_timer_callback,
+                                                     (double)a_timeout_ms, l_timerfd);
 #endif
     debug_if(g_debug_reactor, L_DEBUG, "Create timer on socket "DAP_FORMAT_ESOCKET_UUID, l_timerfd->events_socket->uuid);
 #if defined (DAP_OS_LINUX)    
@@ -376,11 +578,18 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
     if ( !CreateTimerQueueTimer(&a_timerfd->th, hTimerQueue, (WAITORTIMERCALLBACK)TimerCallback,
                                 a_timerfd, (DWORD)a_timerfd->timeout_ms, 0, WT_EXECUTEONLYONCE) )
         log_it(L_CRITICAL, "Timer not reset, error %lu", GetLastError());
+#elif defined(DAP_OS_WASM_MT)
+    s_timer_hub_reschedule(a_timerfd,
+        (uint64_t)(s_get_time_ms() + (double)a_timerfd->timeout_ms));
+#elif defined(DAP_OS_WASM)
+    emscripten_clear_interval(a_timerfd->interval_id);
+    a_timerfd->interval_id = emscripten_set_interval(s_wasm_timer_callback,
+                                                     (double)a_timerfd->timeout_ms, a_timerfd);
 #else
 #error "No timer reset realization for your platform"
 #endif
 
-#if !defined(DAP_OS_BSD) && !defined (DAP_OS_WINDOWS)
+#if !defined(DAP_OS_BSD) && !defined(DAP_OS_WINDOWS) && !defined(DAP_OS_WASM)
     dap_events_socket_set_readable_unsafe(a_timerfd->events_socket, true);
 #endif
 }
@@ -400,6 +609,10 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
         debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
+#if defined(DAP_OS_WASM_MT)
+        atomic_store_explicit(&l_timer_fd->active, false, memory_order_release);
+        s_timer_hub_remove(l_timer_fd);
+#endif
 #if defined DAP_EVENTS_CAPS_KQUEUE
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
@@ -454,6 +667,15 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
     if (!a_timerfd || !a_timerfd->events_socket)
         return; 
     debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
+#if defined(DAP_OS_WASM_MT)
+    atomic_store_explicit(&a_timerfd->active, false, memory_order_release);
+    s_timer_hub_remove(a_timerfd);
+#elif defined(DAP_OS_WASM)
+    if (a_timerfd->interval_id) {
+        emscripten_clear_interval(a_timerfd->interval_id);
+        a_timerfd->interval_id = 0;
+    }
+#endif
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else

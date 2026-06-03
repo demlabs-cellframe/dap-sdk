@@ -138,37 +138,54 @@ static bool s_test_hash_consistency_regression(void) {
  */
 static bool s_test_memory_management_regression(void) {
     log_it(L_INFO, "Testing memory management regression");
-    
-    // This test simulates the scenario that previously caused memory leaks
+
     const size_t l_iterations = 50;
-    
+    int l_direct_failures = 0;
+    int l_dapsign_failures = 0;
+
     for (size_t i = 0; i < l_iterations; i++) {
-        // Generate key
         dap_enc_key_t* l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
         if (!l_key) {
             log_it(L_WARNING, "Key generation failed at iteration %zu", i);
             continue;
         }
-        
-        // Create signature
+
         const char* l_data = "Memory management test data";
-        dap_sign_t* l_signature = dap_sign_create(l_key, l_data, strlen(l_data));
-        
+        size_t l_data_len = strlen(l_data);
+
+        /* Direct sign + verify through enc_key (no serialization) */
+        size_t l_sig_size = 8192;
+        uint8_t *l_sig_buf = DAP_NEW_Z_SIZE(uint8_t, l_sig_size);
+        int l_sign_ret = l_key->sign_get(l_key, l_data, l_data_len, l_sig_buf, l_sig_size);
+        if (l_sign_ret == 0) {
+            int l_verify_ret = l_key->sign_verify(l_key, l_data, l_data_len, l_sig_buf, l_sig_size);
+            if (l_verify_ret != 0) {
+                log_it(L_ERROR, "DIRECT verify failed at iter %zu ret=%d", i, l_verify_ret);
+                l_direct_failures++;
+            }
+        }
+        DAP_DELETE(l_sig_buf);
+
+        /* Serialized sign + verify through dap_sign (full pipeline) */
+        dap_sign_t* l_signature = dap_sign_create(l_key, l_data, l_data_len);
         if (l_signature) {
-            // Verify signature
-            int l_verify = dap_sign_verify(l_signature, l_data, strlen(l_data));
-            
-            // This verification step previously caused issues if not cleaned up properly
-            DAP_TEST_ASSERT(l_verify == 0, "Signature verification in memory test");
-            
-            // Clean up signature
+            int l_verify = dap_sign_verify(l_signature, l_data, l_data_len);
+            if (l_verify != 0) {
+                log_it(L_ERROR, "DAP_SIGN verify failed at iter %zu ret=%d", i, l_verify);
+                l_dapsign_failures++;
+            }
             DAP_DELETE(l_signature);
         }
-        
-        // Clean up key - this step previously had memory leaks
+
         dap_enc_key_delete(l_key);
     }
-    
+
+    log_it(L_INFO, "Memory test: direct_failures=%d dapsign_failures=%d (of %zu)",
+           l_direct_failures, l_dapsign_failures, l_iterations);
+
+    DAP_TEST_ASSERT(l_direct_failures == 0, "Direct sign/verify (no serialization)");
+    DAP_TEST_ASSERT(l_dapsign_failures == 0, "Serialized sign/verify (dap_sign)");
+
     log_it(L_INFO, "Memory management regression test completed (%zu iterations)", l_iterations);
     return true;
 }

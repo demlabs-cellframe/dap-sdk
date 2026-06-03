@@ -18,19 +18,29 @@
  You should have received a copy of the GNU General Public License
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <string.h>
+#include <strings.h>
+#include <stdio.h>
+#include "dap_common.h"
+#include "dap_strfuncs.h"
+#include "dap_client_http.h"
+#include "dap_http_h2.h"
+
+#define LOG_TAG "dap_client_http"
+
+#ifdef __EMSCRIPTEN__
+#include "dap_http_client_simple.h"
+#else /* !__EMSCRIPTEN__ */
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
 
 #include <unistd.h>
-#include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <strings.h>
 
 #include "dap_net.h"
-#include "dap_common.h"
-#include "dap_strfuncs.h"
 #include "dap_string.h"
 #include "dap_events_socket.h"
 #include "dap_timerfd.h"
@@ -38,8 +48,8 @@
 #include "dap_context.h"
 #include "dap_server.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
-#include "dap_client_http.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_enc_base64.h"
 #include "dap_http_header.h"
 
@@ -48,11 +58,23 @@
 #include "wolfssl/ssl.h"
 #endif
 
-#define LOG_TAG "dap_client_http"
+#endif /* __EMSCRIPTEN__ */
 
-/* 5.8 compatibility: dap_memmem_n (memmem is POSIX/GNU) */
-#define dap_memmem_n(haystack, haystack_len, needle, needle_len) \
-    memmem((haystack), (haystack_len), (needle), (needle_len))
+/* Portable memmem: POSIX/GNU only, missing on Windows/MinGW */
+static inline void *dap_memmem_n(const void *a_haystack, size_t a_hlen,
+                                 const void *a_needle, size_t a_nlen)
+{
+    if (a_nlen == 0) return (void *)a_haystack;
+    if (a_hlen < a_nlen) return NULL;
+    const uint8_t *h = (const uint8_t *)a_haystack;
+    const uint8_t *n = (const uint8_t *)a_needle;
+    const uint8_t *end = h + a_hlen - a_nlen + 1;
+    for (; h < end; ++h) {
+        if (*h == *n && memcmp(h, n, a_nlen) == 0)
+            return (void *)h;
+    }
+    return NULL;
+}
 
 #define DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT (10 * 1024 * 1024) // 10MB maximum response size
 
@@ -89,6 +111,294 @@ dap_http_method_t dap_http_method_from_str(const char *a_method)
         return DAP_HTTP_METHOD_PATCH;
     return DAP_HTTP_METHOD_GET; /* default */
 }
+
+#ifdef __EMSCRIPTEN__
+/*
+ * =========================================================================
+ *  WASM implementation: delegates to dap_http_client_simple_request()
+ * =========================================================================
+ */
+
+static uint64_t s_wasm_timeout_ms = 30000;
+static uint64_t s_wasm_timeout_read_ms = 10000;
+
+int dap_client_http_set_params(uint64_t a_timeout_ms, uint64_t a_timeout_read_after_connect_ms,
+                                size_t a_streaming_threshold_bytes)
+{
+    (void)a_streaming_threshold_bytes;
+    s_wasm_timeout_ms = a_timeout_ms;
+    s_wasm_timeout_read_ms = a_timeout_read_after_connect_ms;
+    return 0;
+}
+
+int dap_client_http_init(void)
+{
+    log_it(L_NOTICE, "HTTP client initialized (WASM via dap_http_client_simple)");
+    return 0;
+}
+
+void dap_client_http_deinit(void)
+{
+    log_it(L_NOTICE, "HTTP client deinitialized (WASM)");
+}
+
+uint64_t dap_client_http_get_connect_timeout_ms(void)
+{
+    return s_wasm_timeout_ms;
+}
+
+uint64_t dap_client_http_get_read_after_connect_timeout_ms(void)
+{
+    return s_wasm_timeout_read_ms;
+}
+
+static void s_wasm_client_http_delete(dap_client_http_t *a_ch)
+{
+    if (!a_ch) return;
+    DAP_DEL_Z(a_ch->request_content_type);
+    DAP_DEL_Z(a_ch->path);
+    DAP_DEL_Z(a_ch->cookie);
+    DAP_DEL_Z(a_ch->request_custom_headers);
+    DAP_DEL_Z(a_ch->request);
+    DAP_DEL_Z(a_ch->response);
+    DAP_DELETE(a_ch);
+}
+
+typedef struct {
+    dap_client_http_t *client_http;
+} s_wasm_http_ctx_t;
+
+static void s_wasm_response_callback(void *a_response, size_t a_response_size,
+                                      int a_error_code, void *a_user_data)
+{
+    s_wasm_http_ctx_t *l_ctx = (s_wasm_http_ctx_t *)a_user_data;
+    dap_client_http_t *l_ch = l_ctx->client_http;
+
+    if (a_error_code != 0 || !a_response) {
+        log_it(L_WARNING, "WASM HTTP request failed: error=%d, path=%s",
+               a_error_code, l_ch->path ? l_ch->path : "(null)");
+        if (l_ch->error_callback && !l_ch->were_callbacks_called) {
+            l_ch->were_callbacks_called = true;
+            l_ch->error_callback(a_error_code, l_ch->callbacks_arg);
+        }
+    } else {
+        http_status_code_t l_status = Http_Status_OK;
+        if (l_ch->response_callback && !l_ch->were_callbacks_called) {
+            l_ch->were_callbacks_called = true;
+            l_ch->response_callback(a_response, a_response_size, l_ch->callbacks_arg, l_status);
+        } else if (l_ch->response_callback_full && !l_ch->were_callbacks_called) {
+            l_ch->were_callbacks_called = true;
+            l_ch->response_callback_full(a_response, a_response_size, NULL, l_ch->callbacks_arg, l_status);
+        }
+    }
+
+    s_wasm_client_http_delete(l_ch);
+    DAP_DELETE(l_ctx);
+}
+
+dap_client_http_t * dap_client_http_request_custom (
+                            dap_worker_t * a_worker,
+                            const char *a_uplink_addr,
+                            uint16_t a_uplink_port,
+                            const char *a_method,
+                            const char *a_request_content_type,
+                            const char * a_path,
+                            const void *a_request,
+                            size_t a_request_size,
+                            char *a_cookie,
+                            dap_client_http_callback_data_t a_response_callback,
+                            dap_client_http_callback_error_t a_error_callback,
+                            void *a_callbacks_arg,
+                            char *a_custom_headers,
+                            bool a_over_ssl)
+{
+    (void)a_worker;
+
+    if (!a_uplink_addr || !a_path) {
+        if (a_error_callback) a_error_callback(-1, a_callbacks_arg);
+        return NULL;
+    }
+
+    dap_client_http_t *l_ch = DAP_NEW_Z(dap_client_http_t);
+    if (!l_ch) {
+        if (a_error_callback) a_error_callback(-1, a_callbacks_arg);
+        return NULL;
+    }
+
+    l_ch->response_callback = a_response_callback;
+    l_ch->error_callback = a_error_callback;
+    l_ch->callbacks_arg = a_callbacks_arg;
+    l_ch->method = dap_http_method_from_str(a_method);
+    l_ch->is_over_ssl = a_over_ssl;
+    dap_strncpy(l_ch->uplink_addr, a_uplink_addr, sizeof(l_ch->uplink_addr) - 1);
+    l_ch->uplink_port = a_uplink_port;
+    l_ch->path = dap_strdup(a_path);
+    l_ch->request_content_type = a_request_content_type ? dap_strdup(a_request_content_type) : NULL;
+    l_ch->cookie = a_cookie ? dap_strdup(a_cookie) : NULL;
+    l_ch->request_custom_headers = a_custom_headers ? dap_strdup(a_custom_headers) : NULL;
+
+    const char *l_scheme = (a_over_ssl || a_uplink_port == 443 || a_uplink_port == 4443) ? "https" : "http";
+    char l_url[2048];
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u%s%s",
+             l_scheme, a_uplink_addr, a_uplink_port,
+             a_path[0] == '/' ? "" : "/", a_path);
+
+    char l_headers[4096] = {0};
+    size_t l_hdr_len = 0;
+    if (a_cookie)
+        l_hdr_len += (size_t)snprintf(l_headers + l_hdr_len, sizeof(l_headers) - l_hdr_len,
+                                       "Cookie: %s\r\n", a_cookie);
+    if (a_custom_headers)
+        l_hdr_len += (size_t)snprintf(l_headers + l_hdr_len, sizeof(l_headers) - l_hdr_len,
+                                       "%s", a_custom_headers);
+
+    s_wasm_http_ctx_t *l_ctx = DAP_NEW_Z(s_wasm_http_ctx_t);
+    if (!l_ctx) {
+        s_wasm_client_http_delete(l_ch);
+        if (a_error_callback) a_error_callback(-1, a_callbacks_arg);
+        return NULL;
+    }
+    l_ctx->client_http = l_ch;
+
+    int l_ret = dap_http_client_simple_request(l_url, a_request_content_type,
+                                                a_request, a_request_size,
+                                                l_hdr_len > 0 ? l_headers : NULL,
+                                                s_wasm_response_callback, l_ctx);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to dispatch WASM HTTP request to %s", l_url);
+        DAP_DELETE(l_ctx);
+        s_wasm_client_http_delete(l_ch);
+        if (a_error_callback) a_error_callback(-1, a_callbacks_arg);
+        return NULL;
+    }
+
+    log_it(L_DEBUG, "WASM HTTP %s %s dispatched", a_method ? a_method : "POST", l_url);
+    return l_ch;
+}
+
+dap_client_http_t *dap_client_http_request(dap_worker_t * a_worker, const char *a_uplink_addr,
+        uint16_t a_uplink_port, const char * a_method,
+        const char* a_request_content_type, const char * a_path, const void *a_request, size_t a_request_size,
+        char * a_cookie, dap_client_http_callback_data_t a_response_callback,
+        dap_client_http_callback_error_t a_error_callback, void *a_callbacks_arg, char *a_custom_headers)
+{
+    return dap_client_http_request_custom(a_worker, a_uplink_addr, a_uplink_port, a_method,
+            a_request_content_type, a_path, a_request, a_request_size, a_cookie,
+            a_response_callback, a_error_callback, a_callbacks_arg, a_custom_headers, false);
+}
+
+dap_client_http_t *dap_client_http_request_full(
+        dap_worker_t * a_worker, const char *a_uplink_addr, uint16_t a_uplink_port,
+        const char * a_method, const char* a_request_content_type, const char * a_path,
+        const void *a_request, size_t a_request_size, char * a_cookie,
+        dap_client_http_callback_full_t a_response_callback,
+        dap_client_http_callback_error_t a_error_callback, void *a_callbacks_arg,
+        char *a_custom_headers, bool a_follow_redirects)
+{
+    (void)a_follow_redirects;
+
+    if (!a_uplink_addr || !a_path) {
+        if (a_error_callback) a_error_callback(-1, a_callbacks_arg);
+        return NULL;
+    }
+
+    dap_client_http_t *l_ch = DAP_NEW_Z(dap_client_http_t);
+    if (!l_ch) {
+        if (a_error_callback) a_error_callback(-1, a_callbacks_arg);
+        return NULL;
+    }
+
+    l_ch->response_callback_full = a_response_callback;
+    l_ch->error_callback = a_error_callback;
+    l_ch->callbacks_arg = a_callbacks_arg;
+    l_ch->method = dap_http_method_from_str(a_method);
+    dap_strncpy(l_ch->uplink_addr, a_uplink_addr, sizeof(l_ch->uplink_addr) - 1);
+    l_ch->uplink_port = a_uplink_port;
+    l_ch->path = dap_strdup(a_path);
+    l_ch->request_content_type = a_request_content_type ? dap_strdup(a_request_content_type) : NULL;
+    l_ch->cookie = a_cookie ? dap_strdup(a_cookie) : NULL;
+    l_ch->request_custom_headers = a_custom_headers ? dap_strdup(a_custom_headers) : NULL;
+
+    const char *l_scheme = (a_uplink_port == 443) ? "https" : "http";
+    char l_url[2048];
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u%s%s",
+             l_scheme, a_uplink_addr, a_uplink_port,
+             a_path[0] == '/' ? "" : "/", a_path);
+
+    char l_headers[4096] = {0};
+    size_t l_hdr_len = 0;
+    if (a_cookie)
+        l_hdr_len += (size_t)snprintf(l_headers + l_hdr_len, sizeof(l_headers) - l_hdr_len,
+                                       "Cookie: %s\r\n", a_cookie);
+    if (a_custom_headers)
+        l_hdr_len += (size_t)snprintf(l_headers + l_hdr_len, sizeof(l_headers) - l_hdr_len,
+                                       "%s", a_custom_headers);
+
+    s_wasm_http_ctx_t *l_ctx = DAP_NEW_Z(s_wasm_http_ctx_t);
+    if (!l_ctx) {
+        s_wasm_client_http_delete(l_ch);
+        if (a_error_callback) a_error_callback(-1, a_callbacks_arg);
+        return NULL;
+    }
+    l_ctx->client_http = l_ch;
+
+    int l_ret = dap_http_client_simple_request(l_url, a_request_content_type,
+                                                a_request, a_request_size,
+                                                l_hdr_len > 0 ? l_headers : NULL,
+                                                s_wasm_response_callback, l_ctx);
+    if (l_ret != 0) {
+        DAP_DELETE(l_ctx);
+        s_wasm_client_http_delete(l_ch);
+        if (a_error_callback) a_error_callback(-1, a_callbacks_arg);
+        return NULL;
+    }
+
+    return l_ch;
+}
+
+void dap_client_http_request_async(
+        dap_worker_t * a_worker, const char *a_uplink_addr, uint16_t a_uplink_port,
+        const char * a_method, const char* a_request_content_type, const char * a_path,
+        const void *a_request, size_t a_request_size, char * a_cookie,
+        dap_client_http_callback_full_t a_response_callback,
+        dap_client_http_callback_error_t a_error_callback,
+        dap_client_http_callback_started_t a_started_callback,
+        dap_client_http_callback_progress_t a_progress_callback,
+        void *a_callbacks_arg, char *a_custom_headers, bool a_follow_redirects)
+{
+    (void)a_started_callback; (void)a_progress_callback;
+    dap_client_http_request_full(a_worker, a_uplink_addr, a_uplink_port, a_method,
+            a_request_content_type, a_path, a_request, a_request_size, a_cookie,
+            a_response_callback, a_error_callback, a_callbacks_arg,
+            a_custom_headers, a_follow_redirects);
+}
+
+void dap_client_http_request_simple_async(
+        dap_worker_t * a_worker, const char *a_uplink_addr, uint16_t a_uplink_port,
+        const char * a_method, const char* a_request_content_type, const char * a_path,
+        const void *a_request, size_t a_request_size, char * a_cookie,
+        dap_client_http_callback_full_t a_response_callback,
+        dap_client_http_callback_error_t a_error_callback,
+        void *a_callbacks_arg, char *a_custom_headers, bool a_follow_redirects)
+{
+    dap_client_http_request_full(a_worker, a_uplink_addr, a_uplink_port, a_method,
+            a_request_content_type, a_path, a_request, a_request_size, a_cookie,
+            a_response_callback, a_error_callback, a_callbacks_arg,
+            a_custom_headers, a_follow_redirects);
+}
+
+void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
+{
+    s_wasm_client_http_delete(a_client_http);
+}
+
+#else /* !__EMSCRIPTEN__ */
+
+/*
+ * =========================================================================
+ *  Native implementation: full esocket-based HTTP client
+ * =========================================================================
+ */
 
 #define MAX_CHUNKED_PARSE_ERRORS                     3
 #define MAX_HTTP_REDIRECTS                           5  // Maximum allowed redirects to prevent cycles
@@ -999,7 +1309,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     }
     
     // Ensure is_initalized is false so new_callback will be called
-    l_ev_socket->is_initalized = false;
+    l_ev_socket->is_initalized = 0;
 
     log_it(L_DEBUG,"Created client request socket %"DAP_FORMAT_SOCKET, l_ev_socket->socket);
     
@@ -1063,7 +1373,8 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_client_http->chunked_error_count = 0;
 
     // Resolve host
-    if (0 > dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL)) {
+    int l_addr_len = dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL);
+    if (l_addr_len < 0) {
         *a_error_code = EHOSTUNREACH;
         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
         s_client_http_delete(l_client_http);
@@ -1071,6 +1382,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
         dap_events_socket_delete_unsafe(l_ev_socket, true);
         return NULL;
     }
+    l_ev_socket->addr_size = (socklen_t)l_addr_len;
 
     dap_strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN - 1);
     l_ev_socket->remote_port = a_uplink_port;
@@ -1236,6 +1548,102 @@ static void s_http_new(dap_events_socket_t * a_esocket, void * a_arg)
 }
 
 /**
+ * @brief s_h2_response_cb  Client-side HTTP/2 response callback.
+ *        Invoked when the server finishes sending the response (END_STREAM).
+ *        Maps h2 stream data back into the dap_client_http callback chain.
+ */
+static void s_h2_response_cb(dap_h2_stream_t *a_stream, uint16_t a_status, void *a_arg)
+{
+    dap_events_socket_t *l_es = (dap_events_socket_t *)a_arg;
+    if (!l_es)
+        return;
+    dap_client_http_t *l_client_http = DAP_CLIENT_HTTP(l_es);
+    if (!l_client_http)
+        return;
+
+    l_client_http->status_code = a_status;
+
+    if (l_client_http->response_callback) {
+        l_client_http->response_callback(a_stream->body, a_stream->body_len,
+                                         l_client_http->callbacks_arg, a_status);
+        l_client_http->were_callbacks_called = true;
+    } else if (l_client_http->response_callback_full) {
+        l_client_http->response_callback_full(a_stream->body, a_stream->body_len,
+                                              a_stream->headers, l_client_http->callbacks_arg, a_status);
+        l_client_http->were_callbacks_called = true;
+    }
+
+    l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+}
+
+/**
+ * @brief s_send_h2_request  Initializes an HTTP/2 client connection and sends
+ *        the request as h2 frames (preface + SETTINGS + HEADERS + DATA).
+ */
+static int s_send_h2_request(dap_events_socket_t *a_es, dap_client_http_t *a_client_http)
+{
+    if (!a_es || !a_client_http)
+        return -1;
+
+    dap_h2_connection_t *l_h2 = DAP_NEW_Z(dap_h2_connection_t);
+    if (!l_h2)
+        return -1;
+
+    if (dap_h2_connection_client_init(l_h2, a_es) != 0) {
+        DAP_DELETE(l_h2);
+        return -1;
+    }
+
+    l_h2->response_cb = s_h2_response_cb;
+    l_h2->response_cb_arg = a_es;
+    a_client_http->h2 = l_h2;
+
+    /* Build path with leading slash */
+    char l_path[2048];
+    snprintf(l_path, sizeof(l_path), "/%s", a_client_http->path ? a_client_http->path : "");
+
+    /* Build authority (host:port) */
+    char l_authority[512];
+    snprintf(l_authority, sizeof(l_authority), "%s:%u", a_client_http->uplink_addr, a_client_http->uplink_port);
+
+    /* Build extra headers from the request */
+    dap_hpack_header_t l_extra_hdrs[8];
+    size_t l_extra_count = 0;
+
+    if (a_client_http->request_content_type && a_client_http->method == HTTP_POST) {
+        l_extra_hdrs[l_extra_count].name = "content-type";
+        l_extra_hdrs[l_extra_count].name_len = 12;
+        l_extra_hdrs[l_extra_count].value = a_client_http->request_content_type;
+        l_extra_hdrs[l_extra_count].value_len = strlen(a_client_http->request_content_type);
+        l_extra_count++;
+    }
+    if (a_client_http->cookie) {
+        l_extra_hdrs[l_extra_count].name = "cookie";
+        l_extra_hdrs[l_extra_count].name_len = 6;
+        l_extra_hdrs[l_extra_count].value = a_client_http->cookie;
+        l_extra_hdrs[l_extra_count].value_len = strlen(a_client_http->cookie);
+        l_extra_count++;
+    }
+
+    uint32_t l_sid = dap_h2_connection_send_request(l_h2,
+        dap_http_method_to_str(a_client_http->method), l_path, l_authority,
+        l_extra_hdrs, l_extra_count,
+        a_client_http->request, a_client_http->request_size);
+
+    if (!l_sid) {
+        log_it(L_ERROR, "Failed to send HTTP/2 request");
+        dap_h2_connection_deinit(l_h2);
+        DAP_DELETE(l_h2);
+        a_client_http->h2 = NULL;
+        return -1;
+    }
+
+    a_client_http->h2_stream_id = l_sid;
+    log_it(L_INFO, "HTTP/2 request sent: %s %s (stream %u)", dap_http_method_to_str(a_client_http->method), l_path, l_sid);
+    return 0;
+}
+
+/**
  * @brief s_http_connected
  * @param a_esocket
  */
@@ -1281,7 +1689,24 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 
     l_client_http->ts_last_read = time(NULL);
 
-    // Send HTTP request with properly formatted headers
+#ifndef DAP_NET_CLIENT_NO_SSL
+    /* Check ALPN negotiation result after TLS handshake */
+    if (a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && a_esocket->_pvt) {
+        WOLFSSL *l_ssl = (WOLFSSL *)a_esocket->_pvt;
+        char *l_proto = NULL;
+        unsigned short l_proto_len = 0;
+        if (wolfSSL_ALPN_GetProtocol(l_ssl, &l_proto, &l_proto_len) == SSL_SUCCESS
+            && l_proto_len == 2 && memcmp(l_proto, "h2", 2) == 0)
+        {
+            log_it(L_INFO, "ALPN negotiated h2, using HTTP/2 for %s:%u",
+                   l_client_http->uplink_addr, l_client_http->uplink_port);
+            s_send_h2_request(a_esocket, l_client_http);
+            return;
+        }
+    }
+#endif
+
+    /* Default: HTTP/1.1 */
     s_send_http_request(a_esocket, l_client_http);
 }
 
@@ -1406,7 +1831,24 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         log_it(L_ERROR, "s_http_read: l_client_http is NULL!");
         return;
     }
-    
+
+    /* HTTP/2 fast path: feed data to h2 connection handler */
+    if (l_client_http->h2) {
+        dap_h2_connection_t *l_h2 = (dap_h2_connection_t *)l_client_http->h2;
+        size_t l_consumed = 0;
+        int l_rc = dap_h2_connection_input(l_h2, a_es->buf_in, a_es->buf_in_size, &l_consumed);
+        if (l_consumed > 0)
+            dap_events_socket_shrink_buf_in(a_es, l_consumed);
+        if (l_rc < 0) {
+            log_it(L_ERROR, "HTTP/2 client: connection error");
+            if (l_client_http->error_callback)
+                l_client_http->error_callback(EIO, l_client_http->callbacks_arg);
+            l_client_http->were_callbacks_called = true;
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        }
+        return;
+    }
+
 #define m_http_error_exit(error_code, format, ...) do { \
     log_it(L_ERROR, "s_http_read: " format, ##__VA_ARGS__); \
     if(l_client_http->error_callback) { \
@@ -1470,7 +1912,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         {
             // Check if we already have all the data (body came with headers)
             log_it(L_DEBUG, "DAP_HTTP_PARSE_BODY: is_chunked=%d, content_length=%zu, response_size=%zu, buf_in_size=%zu", 
-                   l_client_http->is_chunked, l_client_http->content_length, l_client_http->response_size, a_es->buf_in_size);
+                   l_client_http->is_chunked, l_client_http->content_length, l_client_http->response_size, (size_t)a_es->buf_in_size);
             
             if (!l_client_http->is_chunked &&
                 l_client_http->content_length > 0 &&
@@ -1526,7 +1968,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     l_ctx->streamed_body_size >= l_client_http->content_length) {
                     log_it(L_DEBUG, "Zero-copy streaming complete: %zu bytes total", l_ctx->streamed_body_size);
                     if (a_es->buf_in_size > 0) {
-                        log_it(L_DEBUG, "Discarding %zu excess bytes beyond Content-Length", a_es->buf_in_size);
+                        log_it(L_DEBUG, "Discarding %zu excess bytes beyond Content-Length", (size_t)a_es->buf_in_size);
                         a_es->buf_in_size = 0;
                     }
                     l_client_http->parse_state = DAP_HTTP_PARSE_COMPLETE;
@@ -1585,12 +2027,12 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     // Complete if: content received OR HTTP error without data
                     log_it(L_DEBUG, "HTTP response complete: content_length=%zu, response_size=%zu, status_code=%d, buf_in_size=%zu", 
                            l_client_http->content_length, l_client_http->response_size, 
-                           l_client_http->status_code, a_es->buf_in_size);
+                           l_client_http->status_code, (size_t)a_es->buf_in_size);
                     s_http_finalize_response(l_client_http, l_ctx);
                 } else {
                     log_it(L_DEBUG, "HTTP response not complete yet: content_length=%zu, response_size=%zu, status_code=%d, buf_in_size=%zu", 
                            l_client_http->content_length, l_client_http->response_size, 
-                           l_client_http->status_code, a_es->buf_in_size);
+                           l_client_http->status_code, (size_t)a_es->buf_in_size);
                 }
             }
             
@@ -1608,7 +2050,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
     
     if (s_debug_more) {
         log_it(L_DEBUG, "s_http_read exit: state=%d, buf_in_size=%zu, response_size=%zu", 
-               l_client_http->parse_state, a_es->buf_in_size, 
+               l_client_http->parse_state, (size_t)a_es->buf_in_size, 
                l_client_http->response ? l_client_http->response_size : 0);
     }
     
@@ -1868,7 +2310,13 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
     while(a_client_http->response_headers) {
         dap_http_header_remove(&a_client_http->response_headers, a_client_http->response_headers);
     }
-    
+
+    if (a_client_http->h2) {
+        dap_h2_connection_deinit((dap_h2_connection_t *)a_client_http->h2);
+        DAP_DELETE(a_client_http->h2);
+        a_client_http->h2 = NULL;
+    }
+
     DAP_DEL_MULTY(a_client_http->path, a_client_http->request_content_type, a_client_http->cookie,
         a_client_http->request, a_client_http->request_custom_headers, a_client_http->response, a_client_http);
 }
@@ -1947,6 +2395,10 @@ static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
     if (!l_ssl) {
         log_it(L_ERROR, "wolfSSL_new error");
         return;
+    }
+    /* ALPN: prefer h2, fall back to http/1.1 (RFC 7301) */
+    if (wolfSSL_UseALPN(l_ssl, "h2,http/1.1", 11, WOLFSSL_ALPN_CONTINUE_ON_MISMATCH) != SSL_SUCCESS) {
+        log_it(L_WARNING, "WolfSSL ALPN setup failed, will negotiate HTTP/1.1 only");
     }
     wolfSSL_set_fd(l_ssl, a_esocket->socket);
     a_esocket->_pvt = (void *)l_ssl;
@@ -2665,4 +3117,4 @@ static bool s_http_allocate_body_buffer(dap_client_http_t *a_client_http, dap_cl
     return true;
 }
 
-
+#endif /* !__EMSCRIPTEN__ */

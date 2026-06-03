@@ -27,6 +27,16 @@ function(dap_test_add_includes TARGET_NAME)
         ${DAP_SDK_ROOT}/module/core/include
         ${DAP_SDK_ROOT}/module/crypto/include
         ${DAP_SDK_ROOT}/module/io/include
+        
+        # Hash module (functions + hash table)
+        ${DAP_SDK_ROOT}/module/hash/include
+        ${DAP_SDK_ROOT}/module/hash/table/include
+        
+        # Math module (uint256_t, etc.)
+        ${DAP_SDK_ROOT}/module/math/include
+        
+        # Config module
+        ${DAP_SDK_ROOT}/module/config/include
     )
     
     # Platform-specific core includes
@@ -98,6 +108,12 @@ function(dap_test_link_libraries TARGET_NAME)
     # This is REQUIRED for --wrap to work correctly with mocking
     # Object files added via target_sources or target_link_libraries do NOT work with --wrap
     # Use ${MODULE}_static which are created from object libraries in main CMakeLists.txt
+    #
+    # Wrap in --start-group/--end-group so the linker resolves cross-module
+    # references (e.g. dap_json → dap_math) regardless of library order.
+    if(UNIX AND NOT APPLE)
+        target_link_options(${TARGET_NAME} PRIVATE "LINKER:--start-group")
+    endif()
     foreach(MODULE ${SDK_MODULES})
         # ONLY use static version - fail if it doesn't exist
         if(TARGET ${MODULE}_static)
@@ -106,6 +122,9 @@ function(dap_test_link_libraries TARGET_NAME)
             message(WARNING "dap_test_link_libraries: Static library ${MODULE}_static not found, skipping ${MODULE}")
         endif()
     endforeach()
+    if(UNIX AND NOT APPLE)
+        target_link_options(${TARGET_NAME} PRIVATE "LINKER:--end-group")
+    endif()
     
     # Link test framework if it exists
     if(TARGET dap_test)

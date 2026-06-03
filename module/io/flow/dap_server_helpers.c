@@ -35,9 +35,9 @@
  */
 typedef struct {
     dap_server_t *server;
-    bool is_ready;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    bool is_ready;
 } server_ready_ctx_t;
 
 /**
@@ -57,7 +57,7 @@ static void s_check_server_ready_callback(void *a_arg)
         dap_list_t *l_iter = l_ctx->server->es_listeners;
         while (l_iter) {
             dap_events_socket_t *l_listener = (dap_events_socket_t *)l_iter->data;
-            if (l_listener && l_listener->worker && l_listener->socket >= 0) {
+            if (l_listener && l_listener->worker && l_listener->socket != INVALID_SOCKET) {
                 l_ctx->is_ready = true;
                 break;
             }
@@ -81,7 +81,7 @@ bool dap_server_is_ready(dap_server_t *a_server)
     dap_list_t *l_iter = a_server->es_listeners;
     while (l_iter) {
         dap_events_socket_t *l_listener = (dap_events_socket_t *)l_iter->data;
-        if (l_listener && l_listener->worker && l_listener->socket >= 0) {
+        if (l_listener && l_listener->worker && l_listener->socket != INVALID_SOCKET) {
             return true;
         }
         l_iter = l_iter->next;

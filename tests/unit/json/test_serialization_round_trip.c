@@ -289,10 +289,21 @@ static bool s_test_large_data_round_trip(void) {
     DAP_TEST_FAIL_IF(len1 != len2, "Array lengths match");
     DAP_TEST_FAIL_IF(len1 != (size_t)ELEMENT_COUNT, "Array length correct");
     
-    // Spot check
-    int val_first = dap_json_array_get_int(l_json2, 0);
-    int val_mid = dap_json_array_get_int(l_json2, ELEMENT_COUNT / 2);
-    int val_last = dap_json_array_get_int(l_json2, ELEMENT_COUNT - 1);
+    // Spot check (dap_json_array_get_idx returns a sub-wrapper; must free)
+    dap_json_t *elem_first = dap_json_array_get_idx(l_json2, 0);
+    DAP_TEST_FAIL_IF_NULL(elem_first, "Get first array element");
+    int val_first = dap_json_get_int(elem_first);
+    dap_json_object_free(elem_first);
+    
+    dap_json_t *elem_mid = dap_json_array_get_idx(l_json2, (size_t)(ELEMENT_COUNT / 2));
+    DAP_TEST_FAIL_IF_NULL(elem_mid, "Get middle array element");
+    int val_mid = dap_json_get_int(elem_mid);
+    dap_json_object_free(elem_mid);
+    
+    dap_json_t *elem_last = dap_json_array_get_idx(l_json2, (size_t)(ELEMENT_COUNT - 1));
+    DAP_TEST_FAIL_IF_NULL(elem_last, "Get last array element");
+    int val_last = dap_json_get_int(elem_last);
+    dap_json_object_free(elem_last);
     
     DAP_TEST_FAIL_IF(val_first != 0, "First element preserved");
     DAP_TEST_FAIL_IF(val_mid != (int)(ELEMENT_COUNT / 2), "Middle element preserved");
@@ -318,6 +329,7 @@ static bool s_test_deeply_nested_round_trip(void) {
     bool result = false;
     dap_json_t *l_json1 = NULL;
     dap_json_t *l_json2 = NULL;
+    dap_json_t *nested_nav_owned = NULL;
     char *json_buf = NULL;
     char *serialized = NULL;
     
@@ -352,20 +364,32 @@ static bool s_test_deeply_nested_round_trip(void) {
     l_json2 = dap_json_parse_string(serialized);
     DAP_TEST_FAIL_IF_NULL(l_json2, "Re-parse deeply nested");
     
-    // Navigate to deepest value
-    dap_json_t *current = l_json2;
+    // Navigate to deepest value (each get_object returns a sub-wrapper to free)
+    dap_json_t *nav = l_json2;
     for (int i = 0; i < DEPTH - 1; i++) {
-        current = dap_json_object_get_object(current, "a");
-        DAP_TEST_FAIL_IF_NULL(current, "Navigate depth level");
+        dap_json_t *next = dap_json_object_get_object(nav, "a");
+        if (!next) {
+            if (nav != l_json2) {
+                dap_json_object_free(nav);
+            }
+            log_it(L_ERROR, "TEST FAILED: Navigate depth level at %s:%d", __FILE__, __LINE__);
+            goto cleanup;
+        }
+        if (nav != l_json2) {
+            dap_json_object_free(nav);
+        }
+        nav = next;
     }
     
-    int final_val = dap_json_object_get_int(current, "a");
+    nested_nav_owned = (nav != l_json2) ? nav : NULL;
+    int final_val = dap_json_object_get_int(nav, "a");
     DAP_TEST_FAIL_IF(final_val != 42, "Deepest value preserved");
     
     result = true;
     log_it(L_DEBUG, "Deeply nested round-trip test passed");
     
 cleanup:
+    dap_json_object_free(nested_nav_owned);
     free(json_buf);
     DAP_DELETE(serialized);
     dap_json_object_free(l_json1);
@@ -382,6 +406,8 @@ static bool s_test_mixed_types_round_trip(void) {
     bool result = false;
     dap_json_t *l_json1 = NULL;
     dap_json_t *l_json2 = NULL;
+    dap_json_t *arr = NULL;
+    dap_json_t *obj = NULL;
     char *serialized = NULL;
     
     const char *input = 
@@ -417,11 +443,11 @@ static bool s_test_mixed_types_round_trip(void) {
     bool bool_val = dap_json_object_get_bool(l_json2, "bool");
     DAP_TEST_FAIL_IF(!bool_val, "Bool preserved");
     
-    dap_json_t *arr = dap_json_object_get_array(l_json2, "array");
+    arr = dap_json_object_get_array(l_json2, "array");
     DAP_TEST_FAIL_IF_NULL(arr, "Array preserved");
     DAP_TEST_FAIL_IF(dap_json_array_length(arr) != 3UL, "Array length preserved");
     
-    dap_json_t *obj = dap_json_object_get_object(l_json2, "object");
+    obj = dap_json_object_get_object(l_json2, "object");
     DAP_TEST_FAIL_IF_NULL(obj, "Object preserved");
     
     const char *nested_val = dap_json_object_get_string(obj, "nested");
@@ -431,6 +457,8 @@ static bool s_test_mixed_types_round_trip(void) {
     log_it(L_DEBUG, "Mixed types round-trip test passed");
     
 cleanup:
+    dap_json_object_free(arr);
+    dap_json_object_free(obj);
     DAP_DELETE(serialized);
     dap_json_object_free(l_json1);
     dap_json_object_free(l_json2);

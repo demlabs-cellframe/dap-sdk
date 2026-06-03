@@ -221,36 +221,18 @@ function(dap_link_libraries TARGET_NAME)
     # This establishes link dependencies and propagates INTERFACE properties
     target_link_libraries(${TARGET_NAME} ${ARGN})
     
-    # Process transitive dependencies AFTER target_link_libraries
-    # This ensures INTERFACE_LINK_LIBRARIES is properly set
-    # IMPORTANT: For OBJECT libraries, CMake doesn't automatically propagate transitive dependencies
-    # in INTERFACE_LINK_LIBRARIES, so we need to process them recursively starting from direct dependencies
+    # Transitive include propagation is handled by post_process_object_libraries()
+    # which runs after all targets are created and is more efficient (single-pass DFS).
+    # Build dependencies (DAP_BUILD_DEPENDENCIES) for transitive deps are still
+    # propagated eagerly above (lines 154-172) for direct dependencies.
     if(TGT_TYPE STREQUAL "OBJECT_LIBRARY" AND LIBS_TO_PROCESS AND (CURRENT_SCOPE STREQUAL "INTERFACE" OR CURRENT_SCOPE STREQUAL "PUBLIC"))
-        # Create unique visited sets for transitive processing
-        _dap_create_visited_set(${TARGET_NAME} VISITED_SET_INCLUDES_TRANS)
         _dap_create_visited_set(${TARGET_NAME} VISITED_SET_BUILD)
-        
-        # Process transitive dependencies recursively starting from direct dependencies
-        # IMPORTANT: We need to process transitive dependencies of direct dependencies.
-        # The direct dependencies' includes were already added in lines 174-187,
-        # but we need to recursively process their INTERFACE_LINK_LIBRARIES to get
-        # transitive includes (like dap_http_common from dap_http_server).
-        # We mark direct dependencies as visited first to skip their own includes,
-        # but still process their transitive dependencies.
         foreach(DEP ${LIBS_TO_PROCESS})
             if(TARGET ${DEP})
-                _dap_mark_visited(${DEP} ${VISITED_SET_INCLUDES_TRANS})
-                _dap_add_to_visited_list(${DEP} ${VISITED_SET_INCLUDES_TRANS})
                 _dap_mark_visited(${DEP} ${VISITED_SET_BUILD})
                 _dap_add_to_visited_list(${DEP} ${VISITED_SET_BUILD})
-                
-                # Get transitive dependencies of this direct dependency
                 get_target_property(DEP_INTERFACE_DEPS ${DEP} INTERFACE_LINK_LIBRARIES)
                 if(DEP_INTERFACE_DEPS)
-                    # Process transitive includes from this dependency's dependencies
-                    propagate_includes_for_target(${TARGET_NAME} "${DEP_INTERFACE_DEPS}" ${VISITED_SET_INCLUDES_TRANS})
-                    
-                    # Process transitive build dependencies
                     propagate_build_dependencies(${TARGET_NAME} "${DEP_INTERFACE_DEPS}" ${VISITED_SET_BUILD})
                 endif()
             endif()
@@ -722,17 +704,15 @@ function(create_final_shared_library)
     # Link system libraries
     target_link_libraries(${TARGET_NAME} PUBLIC ${CMAKE_DL_LIBS})
     
-    if(UNIX AND NOT APPLE AND NOT ANDROID)
+    if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT DAP_WASM)
         # Linux: link pthread, math, and realtime libraries
         target_link_libraries(${TARGET_NAME} PUBLIC pthread m rt)
     elseif(ANDROID)
         # Android: pthread is built into libc, only link math and log
         target_link_libraries(${TARGET_NAME} PUBLIC m log)
     elseif(APPLE)
-        # macOS: link pthread and required frameworks
-        target_link_libraries(${TARGET_NAME} PUBLIC pthread)
-        # Link macOS system frameworks (required for network monitoring and system APIs)
-        target_link_libraries(${TARGET_NAME} PUBLIC 
+        # macOS: pthread and m are part of libSystem, no explicit -l flags needed
+        target_link_libraries(${TARGET_NAME} PUBLIC
             "-framework CoreFoundation"
             "-framework SystemConfiguration"
         )
@@ -848,7 +828,7 @@ function(create_final_shared_library)
         if(UNIX AND NOT APPLE AND NOT ANDROID)
             target_link_libraries(${STATIC_TARGET} PUBLIC pthread m rt)
         elseif(APPLE)
-            target_link_libraries(${STATIC_TARGET} PUBLIC pthread
+            target_link_libraries(${STATIC_TARGET} PUBLIC
                 "-framework CoreFoundation" "-framework SystemConfiguration")
         elseif(WIN32)
             target_link_libraries(${STATIC_TARGET} PUBLIC ws2_32 mswsock psapi pthread)
@@ -1036,7 +1016,6 @@ endfunction()
 #            LIBRARY_NAME "dap-sdk"
 #            HEADER_DIRECTORIES "core/include" "crypto/include" ...
 #            PKGCONFIG_TEMPLATE "dap-sdk.pc.in"
-#            [INSTALL_3RDPARTY_HEADERS "3rdparty/uthash/src"]
 #        )
 function(install_sdk_library)
     cmake_parse_arguments(

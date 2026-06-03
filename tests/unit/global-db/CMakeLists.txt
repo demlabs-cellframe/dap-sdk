@@ -26,7 +26,10 @@ target_include_directories(test_globaldb_migrate PRIVATE
 
 # Register tests with CTest
 add_test(NAME test_globaldb_btree COMMAND test_globaldb_btree)
-set_tests_properties(test_globaldb_btree PROPERTIES LABELS "unit;global-db;btree")
+set_tests_properties(test_globaldb_btree PROPERTIES 
+    LABELS "unit;global-db;btree"
+    TIMEOUT ${DAP_T300}
+)
 
 add_test(NAME test_globaldb_storage COMMAND test_globaldb_storage)
 set_tests_properties(test_globaldb_storage PROPERTIES LABELS "unit;global-db;storage")

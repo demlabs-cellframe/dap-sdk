@@ -2,18 +2,16 @@
 // SSE2 SIMD Primitives for Keccak (Lane Layout)
 // ============================================================================
 
-typedef __m128i VTYPE;
+{{#include PRIM_LIB}}
 
-// 64-bit rotation (emulated, safe for n=0..63)
+#define VTYPE VEC_T
+
 static inline uint64_t rol64(uint64_t x, unsigned n) {
     return (n == 0) ? x : ((x << n) | (x >> (64 - n)));
 }
 #define ROL64(x, n) rol64((x), (n))
 
-// XOR operations
-#define XOR128(a, b)     _mm_xor_si128(a, b)
-
-// Chi: a ^ (~b & c)
+#define XOR128(a, b)     VEC_XOR(a, b)
 #define CHI_SCALAR(a, b, c) ((a) ^ (~(b) & (c)))
 
 // ============================================================================
@@ -22,20 +20,18 @@ static inline uint64_t rol64(uint64_t x, unsigned n) {
 
 #define THETA_COMPUTE_PARITY() \
     uint64_t C[5]; \
-    VTYPE c01 = XOR128(_mm_loadu_si128((const VTYPE*)(A + 0)), \
-                       _mm_loadu_si128((const VTYPE*)(A + 5))); \
-    c01 = XOR128(c01, _mm_loadu_si128((const VTYPE*)(A + 10))); \
-    c01 = XOR128(c01, _mm_loadu_si128((const VTYPE*)(A + 15))); \
-    c01 = XOR128(c01, _mm_loadu_si128((const VTYPE*)(A + 20))); \
+    VTYPE c01 = XOR128(VEC_LOAD(A + 0), VEC_LOAD(A + 5)); \
+    c01 = XOR128(c01, VEC_LOAD(A + 10)); \
+    c01 = XOR128(c01, VEC_LOAD(A + 15)); \
+    c01 = XOR128(c01, VEC_LOAD(A + 20)); \
     \
-    VTYPE c23 = XOR128(_mm_loadu_si128((const VTYPE*)(A + 2)), \
-                       _mm_loadu_si128((const VTYPE*)(A + 7))); \
-    c23 = XOR128(c23, _mm_loadu_si128((const VTYPE*)(A + 12))); \
-    c23 = XOR128(c23, _mm_loadu_si128((const VTYPE*)(A + 17))); \
-    c23 = XOR128(c23, _mm_loadu_si128((const VTYPE*)(A + 22))); \
+    VTYPE c23 = XOR128(VEC_LOAD(A + 2), VEC_LOAD(A + 7)); \
+    c23 = XOR128(c23, VEC_LOAD(A + 12)); \
+    c23 = XOR128(c23, VEC_LOAD(A + 17)); \
+    c23 = XOR128(c23, VEC_LOAD(A + 22)); \
     \
-    _mm_storeu_si128((VTYPE*)(C + 0), c01); \
-    _mm_storeu_si128((VTYPE*)(C + 2), c23); \
+    VEC_STORE(C + 0, c01); \
+    VEC_STORE(C + 2, c23); \
     C[4] = A[4] ^ A[9] ^ A[14] ^ A[19] ^ A[24]; \
     \
     uint64_t D[5]; \
@@ -47,13 +43,13 @@ static inline uint64_t rol64(uint64_t x, unsigned n) {
 
 #define THETA_APPLY_D() \
     do { \
-        VTYPE vD01 = _mm_set_epi64x(D[1], D[0]); \
-        VTYPE vD23 = _mm_set_epi64x(D[3], D[2]); \
+        VTYPE vD01 = VEC_SET_64(D[1], D[0]); \
+        VTYPE vD23 = VEC_SET_64(D[3], D[2]); \
         for (int y = 0; y < 5; y++) { \
             VTYPE *row01 = (VTYPE*)(A + y * 5); \
             VTYPE *row23 = (VTYPE*)(A + y * 5 + 2); \
-            _mm_storeu_si128(row01, XOR128(_mm_loadu_si128(row01), vD01)); \
-            _mm_storeu_si128(row23, XOR128(_mm_loadu_si128(row23), vD23)); \
+            VEC_STORE(row01, XOR128(VEC_LOAD(row01), vD01)); \
+            VEC_STORE(row23, XOR128(VEC_LOAD(row23), vD23)); \
             A[y * 5 + 4] ^= D[4]; \
         } \
     } while(0)
