@@ -456,6 +456,10 @@ struct dap_net_trans {
     UT_hash_handle hh;                     ///< Hash table handle (keyed by type)
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Initialize trans abstraction system (internal - called by dap_module)
  * @return 0 on success, -1 on failure
@@ -658,4 +662,8 @@ int dap_net_trans_measure_rtt(dap_net_trans_t *a_trans, const char *a_host, uint
 int dap_net_trans_measure_throughput(dap_net_trans_t *a_trans, const char *a_host, uint16_t a_port,
                                      uint32_t a_timeout_ms,
                                      float *a_out_down_mbps, float *a_out_up_mbps);
+
+#ifdef __cplusplus
+}
+#endif
 

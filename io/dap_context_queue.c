@@ -46,7 +46,14 @@ static void s_event_read_callback(dap_events_socket_t *a_es, uint64_t a_value) {
         return;
     }
     
-    size_t l_processed = dap_context_queue_process(l_queue);
+    size_t l_processed = 0;
+    int l_batch;
+    /* Items may be pushed while callbacks run — drain until empty. */
+    do {
+        l_batch = dap_context_queue_process(l_queue);
+        if (l_batch > 0)
+            l_processed += (size_t)l_batch;
+    } while (l_batch > 0 && !dap_ring_buffer_is_empty(l_queue->ring_buffer));
     
     if (l_processed > 0) {
         debug_if(s_debug_more, L_DEBUG, "Context queue fd=%d: processed %zu items (eventfd_value=%"PRIu64")",
@@ -171,14 +178,12 @@ bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
     return true;
 }
 
-#define DAP_CONTEXT_QUEUE_BATCH_SIZE 5
-
 /**
- * @brief Process a batch of items from queue (called by reactor)
+ * @brief Process items from queue (called by reactor)
  *
- * Processes up to DAP_CONTEXT_QUEUE_BATCH_SIZE items per call to avoid
- * starving other reactor events under heavy load. Re-signals the eventfd
- * if items remain, so the reactor picks them up on the next iteration.
+ * Drains up to DAP_CONTEXT_QUEUE_BATCH_SIZE items per epoll wakeup to avoid
+ * re-signalling eventfd after every 5 items (which caused worker busy-spins).
+ * Re-signals only when the batch limit is hit but the queue still has items.
  *
  * @return Number of items processed, or -1 on error
  */
@@ -189,15 +194,12 @@ int dap_context_queue_process(dap_context_queue_t *a_queue) {
     
     int l_count = 0;
     void *l_item;
-    while (l_count < DAP_CONTEXT_QUEUE_BATCH_SIZE
-           && (l_item = dap_ring_buffer_pop(a_queue->ring_buffer)) != NULL) {
+    /* Drain the whole queue per eventfd wakeup.  Partial drain + re-signal
+     * caused epoll to return immediately on every iteration (busy-spin) and
+     * starved keepalive / VPN stream I/O on the same worker thread. */
+    while ((l_item = dap_ring_buffer_pop(a_queue->ring_buffer)) != NULL) {
         a_queue->callback(l_item);
         l_count++;
-    }
-    
-    bool l_has_more = !dap_ring_buffer_is_empty(a_queue->ring_buffer);
-    if (l_has_more) {
-        dap_events_socket_event_signal(a_queue->event_socket, 1);
     }
     
     if (l_count == 0) {

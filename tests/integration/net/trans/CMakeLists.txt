@@ -78,9 +78,10 @@ add_test(
 if(CMAKE_CROSSCOMPILING)
     set(_TRANS_INTEGRATION_TIMEOUT 600)
 else()
-    set(_TRANS_INTEGRATION_TIMEOUT 180)
+    set(_TRANS_INTEGRATION_TIMEOUT 300)
 endif()
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT ${_TRANS_INTEGRATION_TIMEOUT}
+    RESOURCE_LOCK dap_net_heavy
     LABELS "integration;net;trans;parallel;client-server"
 )

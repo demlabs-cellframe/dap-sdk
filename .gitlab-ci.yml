@@ -28,14 +28,14 @@ tests:amd64.debian:
       - pwd
       - env
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
+      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DDAP_MANAGE_CFLAGS=ON -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
 
 tests:arm32.debian:
     extends: .tests
     image: demlabs/debian/amd64:cross
     script:
       - mkdir build
-      - cd build && cmake-arm32 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - cd build && cmake-arm32 .. -DCMAKE_BUILD_TYPE=Release -DDAP_MANAGE_CFLAGS=ON -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
       - ctest --verbose
 
 tests:arm64.debian:
@@ -43,7 +43,7 @@ tests:arm64.debian:
     image: demlabs/debian/amd64:cross
     script:
       - mkdir build
-      - cd build && cmake-arm64 .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
+      - cd build && cmake-arm64 .. -DCMAKE_BUILD_TYPE=Release -DDAP_MANAGE_CFLAGS=ON -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc)
       - ctest --verbose
 
 tests:amd64.windows:
@@ -52,7 +52,7 @@ tests:amd64.windows:
     before_script: /opt/buildtools/prepare_environment.sh amd64-windows
     script:
       - mkdir build
-      - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release  -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON  -DBUILD_WITH_GDB_DRIVER_PGSQL=0 -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/wine && make -j$(nproc)
+      - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release -DDAP_MANAGE_CFLAGS=ON -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_PGSQL=0 -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/wine && make -j$(nproc)
       - ctest --verbose
 
 tests:arm64.macos:
@@ -61,7 +61,7 @@ tests:arm64.macos:
       - macos-native
     script:
       - mkdir build
-      - cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_DAP_SDK_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_PGSQL=0 .. && make -j$(nproc)
+      - cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DDAP_MANAGE_CFLAGS=ON -DBUILD_DAP_SDK_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_PGSQL=0 .. && make -j$(nproc)
       - ctest --verbose
 
 build:any.android:

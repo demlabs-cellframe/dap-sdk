@@ -70,6 +70,10 @@ struct dap_stream_session {
 };
 typedef struct dap_stream_session dap_stream_session_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void dap_stream_session_init();
 void dap_stream_session_deinit();
 dap_list_t* dap_stream_session_get_list_sessions(void);
@@ -84,4 +88,8 @@ void dap_stream_session_unlock();
 
 int dap_stream_session_open(dap_stream_session_t * a_session); /*Lock for opening for single client , return 0 if ok*/
 int dap_stream_session_close_mt(uint32_t id);
+
+#ifdef __cplusplus
+}
+#endif
 

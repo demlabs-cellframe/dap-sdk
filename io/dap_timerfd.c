@@ -80,10 +80,14 @@ dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a
 
 #ifdef DAP_OS_WINDOWS
 void CALLBACK TimerCallback(void* arg, BOOLEAN flag) {
+    (void)flag;
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
-    if ( l_timerfd->events_socket ) {
-        l_timerfd->events_socket->pending_read = 1;
-        PostQueuedCompletionStatus(l_timerfd->events_socket->worker->context->iocp, 0, (ULONG_PTR)l_timerfd->events_socket, NULL);
+    if(!l_timerfd)
+        return;
+    dap_events_socket_t *l_es = l_timerfd->events_socket;
+    if(l_es && l_es->worker && l_es->worker->context && l_es->worker->context->iocp) {
+        l_es->pending_read = 1;
+        PostQueuedCompletionStatus(l_es->worker->context->iocp, 0, (ULONG_PTR)l_es, NULL);
     }
 }
 #endif
@@ -226,9 +230,14 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
-    assert(a_timerfd);
+    if (!a_timerfd || !a_timerfd->events_socket)
+        return;
     debug_if(g_debug_reactor, L_DEBUG, "Reset timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
 #if defined DAP_OS_LINUX
+    /* Guard against a stale epoll event firing after the timerfd was already
+     * deleted (tfd closed and zeroed by dap_timerfd_delete_unsafe). */
+    if (a_timerfd->tfd < 0)
+        return;
     struct itimerspec l_ts;
     // repeat never
     l_ts.it_interval.tv_sec = 0;
@@ -270,10 +279,18 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
         return;
     // run user's callback
     debug_if(g_debug_reactor, L_DEBUG, "Call timer cb on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
-    if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
+    /* Read callback_arg atomically: another thread may concurrently nullify it
+     * (e.g. s_ws_close) to signal that the timer owner is being torn down.
+     * Using acquire/release ordering establishes the necessary happens-before. */
+    void *l_cb_arg = __atomic_load_n(&l_timer_fd->callback_arg, __ATOMIC_ACQUIRE);
+    if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_cb_arg)) {
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
         debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
+        /* Callback returned false (timer done). Atomically clear callback_arg to signal
+         * that the UUID ownership was transferred to (and freed by) the callback.
+         * This prevents concurrent cleanup paths from accessing a freed UUID. */
+        __atomic_store_n(&l_timer_fd->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
 #if defined DAP_EVENTS_CAPS_KQUEUE
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
@@ -292,7 +309,7 @@ static void s_timerfd_reset_worker_callback(void *a_arg)
     dap_events_socket_uuid_t *l_uuid = a_arg;
     dap_worker_t *l_worker = dap_worker_get_current();
     dap_events_socket_t *l_sock = dap_context_find(l_worker->context, *l_uuid);
-    if (l_sock)
+    if (l_sock && l_sock->_inheritor)
         dap_timerfd_reset_unsafe(l_sock->_inheritor);
     DAP_DELETE(l_uuid);
 }
@@ -319,6 +336,17 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
     if (!a_timerfd || !a_timerfd->events_socket)
         return; 
     debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
+#ifdef DAP_EVENTS_CAPS_IOCP
+    if(a_timerfd->th) {
+        DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, INVALID_HANDLE_VALUE);
+        a_timerfd->th = NULL;
+    }
+#endif
+#if defined DAP_OS_LINUX
+    /* Zero the tfd BEFORE closing so that any stale epoll callback firing
+     * after deletion sees tfd < 0 and bails out instead of getting EBADF. */
+    a_timerfd->tfd = -1;
+#endif
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else
@@ -334,6 +362,11 @@ void dap_timerfd_delete_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uu
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 DWORD dap_del_queuetimer(HANDLE h) {
-    return h ? DeleteTimerQueueTimer(hTimerQueue, h, NULL) ? 0 : GetLastError() : 0;
+    if(!h)
+        return 0;
+    if(DeleteTimerQueueTimer(hTimerQueue, h, INVALID_HANDLE_VALUE))
+        return 0;
+    DWORD l_err = GetLastError();
+    return l_err == ERROR_IO_PENDING ? 0 : l_err;
 }
 #endif

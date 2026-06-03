@@ -369,6 +369,11 @@ typedef struct dap_events_socket {
     void *_inheritor; // Inheritor data to specific client type, usualy states for state machine
     void *_pvt; //Private section, different for different types
     UT_hash_handle hh, hh2; // Handle for local CPU storage on worker or proc_thread AND for total amount
+
+    /* Legacy compatibility: stream_es was a separate esocket for the stream upgrade;
+     * in the current architecture the same socket is used for HTTP and stream,
+     * so stream_es is an alias for self. Kept for cellframe-sdk compatibility. */
+    struct dap_events_socket *stream_es;
 } dap_events_socket_t; // Node of bidirectional list of clients
 typedef dap_events_socket_t dap_esocket_t;
 
@@ -414,7 +419,7 @@ dap_events_socket_t * dap_events_socket_create_platform(int a_domain, int a_type
 int dap_events_socket_resolve_and_set_addr(dap_events_socket_t *a_es, const char *a_host, uint16_t a_port);
 int dap_events_socket_connect(dap_events_socket_t *a_es, int *a_error_code);
 
-#ifdef DAP_OS_ANDROID
+#if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
 typedef void (*dap_events_socket_pre_connect_callback_t)(int a_fd, void *a_ctx);
 void dap_events_socket_set_pre_connect_callback(dap_events_socket_pre_connect_callback_t a_cb, void *a_ctx);
 #endif

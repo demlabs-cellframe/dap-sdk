@@ -25,7 +25,14 @@
 typedef struct dap_http_server dap_http_server_t;
 #define KEX_KEY_STR_SIZE 128
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int dap_stream_ctl_init();
 void dap_stream_ctl_deinit();
 void dap_stream_ctl_add_proc(struct dap_http_server* sh, const char * url);
+
+#ifdef __cplusplus
+}
+#endif
