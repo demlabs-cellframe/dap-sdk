@@ -304,6 +304,8 @@ static void *s_context_thread(void *a_arg)
 #else
     if(l_msg->cpu_id!=-1)
         dap_cpu_assign_thread_on(l_msg->cpu_id );
+#if !defined(DAP_OS_WASM_ST)
+    /* ST WASM: no real-time sched; avoid linking fake sched_* symbols. */
     if (l_msg->sched_policy != DAP_CONTEXT_POLICY_DEFAULT) {
         struct sched_param l_sched_params = {0};
         int l_sched_policy;
@@ -337,6 +339,7 @@ static void *s_context_thread(void *a_arg)
         l_sched_params.sched_priority = l_priority;
         pthread_setschedparam(pthread_self(), l_sched_policy, &l_sched_params);;
     }
+#endif /* !DAP_OS_WASM_ST */
 #endif // DAP_OS_WINDOWS
     // Now we're running and initalized for sure, so we can assign flags to the current context
     l_context->running_flags = l_msg->flags;

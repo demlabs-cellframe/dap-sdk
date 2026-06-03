@@ -86,8 +86,9 @@ typedef int SOCKET;
         #define DAP_EVENTS_CAPS_EVENT_WASM_SAB
         #define DAP_EVENTS_CAPS_PIPE_POSIX   /* create_pipe() rarely used in WASM */
     #else
+        /* ST: Emscripten has pipe()+fcntl, not pipe2() — no linker stubs. */
         #define DAP_EVENTS_CAPS_PIPE_POSIX
-        #define DAP_EVENTS_CAPS_QUEUE_PIPE2
+        #define DAP_EVENTS_CAPS_QUEUE_PIPE
         #define DAP_EVENTS_CAPS_EVENT_PIPE
     #endif
     #include <sys/types.h>
