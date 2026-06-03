@@ -31,6 +31,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 60
     LABELS "integration;net;http;client-server"
+    RESOURCE_LOCK dap_events_reactor
 )
 
 # Test 2: HTTP Simple Server Integration
@@ -68,5 +69,6 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 120
     LABELS "integration;net;http;simple"
+    RESOURCE_LOCK dap_events_reactor
 )
 

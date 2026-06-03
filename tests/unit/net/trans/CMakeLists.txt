@@ -58,6 +58,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 30
     LABELS "unit;net;trans;common"
+    RESOURCE_LOCK dap_events_reactor
 )
 dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
@@ -99,6 +100,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 30
     LABELS "unit;net;trans;http"
+    RESOURCE_LOCK dap_events_reactor
 )
 dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
@@ -175,6 +177,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 30
     LABELS "unit;net;trans;websocket"
+    RESOURCE_LOCK dap_events_reactor
 )
 dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
@@ -215,6 +218,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 30
     LABELS "unit;net;trans;udp"
+    RESOURCE_LOCK dap_events_reactor
 )
 dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
@@ -252,6 +256,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 30
     LABELS "unit;net;trans;dns"
+    RESOURCE_LOCK dap_events_reactor
 )
 dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 
@@ -295,6 +300,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 120
     LABELS "unit;net;trans;udp;multiclient;regression"
+    RESOURCE_LOCK dap_events_reactor
 )
 dap_mock_setup_test_env(${PROJECT_NAME} ${PROJECT_NAME})
 

@@ -158,3 +158,7 @@ function(dap_test_setup)
     message(STATUS "[TEST] Configured: ${DAP_TEST_TARGET_NAME}")
 endfunction()
 
+# Tests that call dap_events_init()/deinit() share a global reactor — must not run in parallel.
+function(dap_test_events_reactor_lock TEST_NAME)
+    set_tests_properties(${TEST_NAME} PROPERTIES RESOURCE_LOCK dap_events_reactor)
+endfunction()

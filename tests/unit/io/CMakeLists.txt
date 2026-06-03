@@ -278,6 +278,7 @@ add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 120
     LABELS "unit;io;flow;ctrl;regression"
+    RESOURCE_LOCK dap_events_reactor
 )
 
 message("[+] IO Flow Control test - regression test for retransmission bug")
@@ -310,6 +311,7 @@ add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 120
     LABELS "unit;io;flow;multiclient;regression"
+    RESOURCE_LOCK dap_events_reactor
 )
 
 message("[+] IO Flow Multi-Client test - packet routing and ordering regression")
@@ -343,6 +345,7 @@ add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 300
     LABELS "unit;io;flow;ctrl;multiclient;regression"
+    RESOURCE_LOCK dap_events_reactor
 )
 
 message("[+] IO Flow Control Multi-Client test - integration bug regression")

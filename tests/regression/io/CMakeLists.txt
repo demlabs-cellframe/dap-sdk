@@ -19,7 +19,8 @@ if(LINUX)
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     set_tests_properties(${TEST_NAME} PROPERTIES
         LABELS "regression;io;cbpf;linux"
-        TIMEOUT 120
+        TIMEOUT 300
+        RESOURCE_LOCK dap_events_reactor
     )
     
     message(STATUS "Added regression test: ${TEST_NAME}")
@@ -44,6 +45,7 @@ add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 set_tests_properties(${TEST_NAME} PROPERTIES
     LABELS "regression;io;routing;multiclient"
     TIMEOUT 120
+    RESOURCE_LOCK dap_events_reactor
 )
 
 message(STATUS "Added regression test: ${TEST_NAME}")
