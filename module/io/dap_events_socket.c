@@ -683,6 +683,23 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             }
             else if ((l_read_errno != EAGAIN) && (l_read_errno != EWOULDBLOCK))
                 log_it(L_ERROR, "Can't read message from pipe");
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
+            int l_read_errno = 0;
+            char l_body[PIPE_BUF] = { '\0' };
+            ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
+            l_read_errno = errno;
+            if(l_read_ret > 0) {
+                if (l_read_ret % sizeof(void*)) {
+                    log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
+                    return -3;
+                }
+                for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
+                    void *l_queue_ptr = *(void**)(l_body + shift);
+                    a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
+                }
+            }
+            else if ((l_read_errno != EAGAIN) && (l_read_errno != EWOULDBLOCK))
+                log_it(L_ERROR, "Can't read message from pipe");
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
             char l_body[DAP_QUEUE_MAX_BUFLEN * DAP_QUEUE_MAX_MSGS] = { '\0' };
             ssize_t l_ret, l_shift;
@@ -835,7 +852,7 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
         log_it(L_ERROR, "Event socket %"DAP_FORMAT_SOCKET" accepted data but callback is NULL ", a_esocket->socket);
 }
 
-#ifdef DAP_EVENTS_CAPS_QUEUE_PIPE2
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
 
 /**
  *  Waits on the socket
@@ -1547,7 +1564,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         return ENOSPC;
     }
     return l_rc;
-#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     s_add_ptr_to_buf(a_es, a_arg);
     return 0;
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
