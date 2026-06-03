@@ -21,7 +21,8 @@ file(GLOB TRANS_CORE_SRCS
 )
 if(EMSCRIPTEN)
     list(APPEND TRANS_CORE_SRCS
-        "${CMAKE_CURRENT_SOURCE_DIR}/dap_http_client_simple_wasm.c")
+        "${CMAKE_CURRENT_SOURCE_DIR}/dap_http_client_simple_wasm.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans_wasm_uplink.c")
 endif()
 file(GLOB TRANS_CORE_HDRS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
 

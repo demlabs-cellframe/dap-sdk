@@ -48,6 +48,7 @@
 #include "dap_net_trans_ctx.h"
 #include "dap_net_trans_types.h"
 #include "dap_net_trans_websocket_system.h"
+#include "dap_net_trans_wasm_uplink.h"
 #include "dap_http_client_simple.h"
 #include "dap_stream.h"
 #include "dap_stream_session.h"
@@ -494,15 +495,18 @@ static int s_ws_handshake_init(dap_stream_t *a_stream,
                                               l_b64_body, DAP_ENC_DATA_TYPE_B64);
 
     const char *l_scheme = l_conn->use_tls ? "https" : "http";
+    char l_suffix[768];
     char l_url[1024];
-    snprintf(l_url, sizeof(l_url),
-             "%s://%s:%u/enc_init/gd4y5yh78w42aaagh"
+    snprintf(l_suffix, sizeof(l_suffix),
+             "enc_init/gd4y5yh78w42aaagh"
              "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu"
              ",block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-             l_scheme, l_conn->host, l_conn->port,
              a_params->enc_type, a_params->pkey_exchange_type,
              a_params->pkey_exchange_size, a_params->block_key_size,
              a_params->protocol_version, a_params->sign_count);
+    if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url), l_scheme, l_conn->host,
+                                             l_conn->port, l_suffix) < 0)
+        return -1;
 
     ws_handshake_ctx_t *l_ctx = DAP_NEW_Z(ws_handshake_ctx_t);
     if (!l_ctx) { DAP_DELETE(l_b64_body); DAP_DELETE(a_params->alice_pub_key); return -1; }
@@ -606,10 +610,17 @@ static int s_ws_session_create(dap_stream_t *a_stream,
 
     l_sub_enc[l_sub_len] = '\0';
     l_q_enc[l_q_len] = '\0';
+    char l_suffix[1536];
     char l_url[2048];
-    snprintf(l_url, sizeof(l_url), "%s://%s:%u/stream_ctl/%s?%s",
+    snprintf(l_suffix, sizeof(l_suffix), "stream_ctl/%s?%s", l_sub_enc, l_q_enc);
+    if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url),
              l_conn->use_tls ? "https" : "http",
-             l_conn->host, l_conn->port, l_sub_enc, l_q_enc);
+             l_conn->host, l_conn->port, l_suffix) < 0) {
+        DAP_DELETE(l_sub_enc);
+        DAP_DELETE(l_q_enc);
+        DAP_DELETE(l_b_enc);
+        return -1;
+    }
     DAP_DELETE(l_sub_enc);
     DAP_DELETE(l_q_enc);
 
@@ -650,11 +661,16 @@ static void *s_session_start_thread(void *a_arg)
     ws_session_start_args_t *l_a = (ws_session_start_args_t *)a_arg;
     ws_system_conn_t *l_conn = l_a->conn;
 
+    char l_suffix[128];
     char l_ws_url[1024];
-    snprintf(l_ws_url, sizeof(l_ws_url),
-             "%s://%s:%u/stream/globaldb?session_id=%u",
+    snprintf(l_suffix, sizeof(l_suffix), "stream/globaldb?session_id=%u", l_a->session_id);
+    if (dap_net_trans_wasm_format_uplink_url(l_ws_url, sizeof(l_ws_url),
              l_conn->use_tls ? "wss" : "ws",
-             l_conn->host, l_conn->port, l_a->session_id);
+             l_conn->host, l_conn->port, l_suffix) < 0) {
+        if (l_a->callback) l_a->callback(l_a->stream, -1);
+        DAP_DELETE(l_a);
+        return NULL;
+    }
 
     int l_handle = s_ws_create_on_main(l_ws_url);
     if (l_handle < 0) {
@@ -723,11 +739,15 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     if (!a_stream || !a_stream->_server_session) return -1;
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
 
+    char l_suffix[128];
     char l_ws_url[1024];
-    snprintf(l_ws_url, sizeof(l_ws_url),
-             "%s://%s:%u/stream/globaldb?session_id=%u",
+    snprintf(l_suffix, sizeof(l_suffix), "stream/globaldb?session_id=%u", a_session_id);
+    if (dap_net_trans_wasm_format_uplink_url(l_ws_url, sizeof(l_ws_url),
              l_conn->use_tls ? "wss" : "ws",
-             l_conn->host, l_conn->port, a_session_id);
+             l_conn->host, l_conn->port, l_suffix) < 0) {
+        if (a_callback) a_callback(a_stream, -1);
+        return 0;
+    }
 
     int l_handle = js_ws_create(l_ws_url);
     if (l_handle < 0) {
