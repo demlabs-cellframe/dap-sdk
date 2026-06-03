@@ -48,34 +48,44 @@ const dap_serialize_field_t g_dap_io_flow_ctrl_base_fields[] = {
         .name = "seq_num",
         .type = DAP_SERIALIZE_TYPE_UINT64,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, seq_num),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, seq_num),
         .size = sizeof(uint64_t),
     },
     {
         .name = "ack_seq",
         .type = DAP_SERIALIZE_TYPE_UINT64,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, ack_seq),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, ack_seq),
         .size = sizeof(uint64_t),
     },
     {
         .name = "timestamp_ms",
         .type = DAP_SERIALIZE_TYPE_UINT32,
         .flags = DAP_SERIALIZE_FLAG_BIG_ENDIAN,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, timestamp_ms),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, timestamp_ms),
         .size = sizeof(uint32_t),
     },
     {
         .name = "flags",
         .type = DAP_SERIALIZE_TYPE_UINT8,
         .flags = DAP_SERIALIZE_FLAG_NONE,
-        .offset = offsetof(dap_io_flow_ctrl_base_header_t, flags),
+        .offset = offsetof(dap_io_flow_ctrl_base_header_mem_t, flags),
         .size = sizeof(uint8_t),
     },
 };
 
 const size_t g_dap_io_flow_ctrl_base_field_count = 
     sizeof(g_dap_io_flow_ctrl_base_fields) / sizeof(g_dap_io_flow_ctrl_base_fields[0]);
+
+const dap_serialize_schema_t g_dap_io_flow_ctrl_base_schema = {
+    .name = "io_flow_ctrl_base_header",
+    .version = 1,
+    .struct_size = sizeof(dap_io_flow_ctrl_base_header_mem_t),
+    .field_count = g_dap_io_flow_ctrl_base_field_count,
+    .fields = g_dap_io_flow_ctrl_base_fields,
+    .magic = DAP_IO_FLOW_CTRL_BASE_MAGIC,
+    .validate_func = NULL,
+};
 
 //===================================================================
 // INTERNAL STRUCTURES
@@ -109,7 +119,7 @@ struct dap_io_flow_ctrl {
     
     // Lifecycle management (prevents use-after-free in multithreaded scenarios)
     _Atomic(int32_t) active_ops;        // Count of active operations (send/recv)
-    _Atomic(bool) deleting;             // Flag: deletion in progress
+    _Atomic(int32_t) deleting;          // Flag: deletion in progress (int for WASM atomic alignment)
     pthread_mutex_t lifecycle_mutex;    // Mutex for lifecycle synchronization
     pthread_cond_t lifecycle_cond;      // Condition: wait for operations to complete
     
@@ -273,7 +283,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
     
     // Initialize lifecycle management
     atomic_init(&l_ctrl->active_ops, 0);
-    atomic_init(&l_ctrl->deleting, false);
+    atomic_init(&l_ctrl->deleting, 0);
     pthread_mutex_init(&l_ctrl->lifecycle_mutex, NULL);
     pthread_cond_init(&l_ctrl->lifecycle_cond, NULL);
     
@@ -392,7 +402,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     
     // STEP 1: Signal that deletion is in progress
     // This will cause new operations to fail fast via s_op_begin()
-    atomic_store_explicit(&a_ctrl->deleting, true, memory_order_release);
+    atomic_store_explicit(&a_ctrl->deleting, 1, memory_order_release);
     
     // STEP 2: Wait for all active operations to complete
     // Any thread currently inside send/recv will finish and call s_op_end()
@@ -460,7 +470,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     pthread_cond_destroy(&a_ctrl->lifecycle_cond);
     pthread_mutex_destroy(&a_ctrl->lifecycle_mutex);
     
-    log_it(L_DEBUG, "Flow Control deleted: sent=%lu, retrans=%lu, recv=%lu, lost=%lu",
+    log_it(L_DEBUG, "Flow Control deleted: sent=%" DAP_UINT64_FORMAT_U ", retrans=%" DAP_UINT64_FORMAT_U ", recv=%" DAP_UINT64_FORMAT_U ", lost=%" DAP_UINT64_FORMAT_U "",
            atomic_load(&a_ctrl->stats_sent), atomic_load(&a_ctrl->stats_retransmitted),
            atomic_load(&a_ctrl->stats_recv), atomic_load(&a_ctrl->stats_lost));
     
@@ -579,7 +589,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         
         
         debug_if(s_debug_more, L_DEBUG,
-                 "FC send: assigned seq=%lu (flags=0x%02x, send_seq_next=%lu)",
+                 "FC send: assigned seq=%" DAP_UINT64_FORMAT_U " (flags=0x%02x, send_seq_next=%" DAP_UINT64_FORMAT_U ")",
                  l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next);
     } else {
         
@@ -598,7 +608,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
     };
     
     debug_if(s_debug_more, L_DEBUG,
-             "FC send: metadata prepared: seq=%lu, ack=%lu, ts=%u, &l_metadata=%p",
+             "FC send: metadata prepared: seq=%" DAP_UINT64_FORMAT_U ", ack=%" DAP_UINT64_FORMAT_U ", ts=%u, &l_metadata=%p",
              l_metadata.seq_num, l_metadata.ack_seq, l_metadata.timestamp_ms, &l_metadata);
     
     // Prepare packet (add header)
@@ -695,7 +705,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                                                 &l_metadata, &l_payload, &l_payload_size,
                                                 a_ctrl->callbacks.arg);
     
-    debug_if(s_debug_more, L_DEBUG, "packet_parse returned: ret=%d, seq=%lu, payload_size=%zu", 
+    debug_if(s_debug_more, L_DEBUG, "packet_parse returned: ret=%d, seq=%" DAP_UINT64_FORMAT_U ", payload_size=%zu", 
              l_ret, l_metadata.seq_num, l_payload_size);
     
     if (l_ret != 0) {
@@ -705,7 +715,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     }
     
     debug_if(s_debug_more, L_DEBUG,
-             "FC recv: seq=%lu, ack_seq=%lu, is_keepalive=%d, payload_size=%zu, reorder_enabled=%d",
+             "FC recv: seq=%" DAP_UINT64_FORMAT_U ", ack_seq=%" DAP_UINT64_FORMAT_U ", is_keepalive=%d, payload_size=%zu, reorder_enabled=%d",
              l_metadata.seq_num, l_metadata.ack_seq, l_metadata.is_keepalive, l_payload_size,
              (a_ctrl->flags & DAP_IO_FLOW_CTRL_REORDER) ? 1 : 0);
     
@@ -730,7 +740,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
         }
         
         if (l_metadata.ack_seq > a_ctrl->send_seq_acked) {
-            debug_if(s_debug_more, L_DEBUG, "FC recv: UPDATING send_seq_acked: %lu → %lu",
+            debug_if(s_debug_more, L_DEBUG, "FC recv: UPDATING send_seq_acked: %" DAP_UINT64_FORMAT_U " → %" DAP_UINT64_FORMAT_U "",
                    a_ctrl->send_seq_acked, l_metadata.ack_seq);
             a_ctrl->send_seq_acked = l_metadata.ack_seq;
         }
@@ -753,7 +763,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             
             uint64_t l_seq = l_metadata.seq_num;
             
-            debug_if(s_debug_more, L_DEBUG, "FC recv: REORDER CHECK: seq=%lu, recv_seq_expected=%lu", 
+            debug_if(s_debug_more, L_DEBUG, "FC recv: REORDER CHECK: seq=%" DAP_UINT64_FORMAT_U ", recv_seq_expected=%" DAP_UINT64_FORMAT_U "", 
                    l_seq, a_ctrl->recv_seq_expected);
             
             // Check if this is the expected sequence
@@ -803,14 +813,14 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 }
             } else if (l_seq > a_ctrl->recv_seq_expected) {
                 // OUT-OF-ORDER: Buffer for later delivery
-                debug_if(s_debug_more, L_INFO, "FC recv: BUFFERING OUT-OF-ORDER seq=%lu (expected=%lu)", 
+                debug_if(s_debug_more, L_INFO, "FC recv: BUFFERING OUT-OF-ORDER seq=%" DAP_UINT64_FORMAT_U " (expected=%" DAP_UINT64_FORMAT_U ")", 
                        l_seq, a_ctrl->recv_seq_expected);
                 size_t l_idx = (l_seq - 1) % a_ctrl->recv_window_size;
                 
                 // Check if already received (duplicate)
                 if (a_ctrl->recv_window[l_idx].received && 
                     a_ctrl->recv_window[l_idx].seq_num == l_seq) {
-                    log_it(L_WARNING, "Duplicate packet: seq=%lu", l_seq);
+                    log_it(L_WARNING, "Duplicate packet: seq=%" DAP_UINT64_FORMAT_U "", l_seq);
                     atomic_fetch_add(&a_ctrl->stats_duplicate, 1);
                 } else {
                     // Buffer packet
@@ -833,7 +843,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                             a_ctrl->recv_seq_highest = l_seq;
                         }
                         
-                        log_it(L_DEBUG, "Buffered out-of-order packet: seq=%lu, expected=%lu", 
+                        log_it(L_DEBUG, "Buffered out-of-order packet: seq=%" DAP_UINT64_FORMAT_U ", expected=%" DAP_UINT64_FORMAT_U "", 
                                l_seq, a_ctrl->recv_seq_expected);
                         atomic_fetch_add(&a_ctrl->stats_out_of_order, 1);
                     } else {
@@ -846,7 +856,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 }
             } else {
                 // DUPLICATE or REPLAY: seq < expected
-                debug_if(s_debug_more, L_NOTICE, "Old/duplicate packet: seq=%lu, expected=%lu", 
+                debug_if(s_debug_more, L_NOTICE, "Old/duplicate packet: seq=%" DAP_UINT64_FORMAT_U ", expected=%" DAP_UINT64_FORMAT_U "", 
                        l_seq, a_ctrl->recv_seq_expected);
                 atomic_fetch_add(&a_ctrl->stats_duplicate, 1);
             }
@@ -875,7 +885,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             // REORDERING enabled: Send ACK ONLY if we delivered in-order packets
             // (recv_seq_expected increased beyond initial state)
             pthread_mutex_lock(&a_ctrl->recv_mutex);
-            debug_if(s_debug_more, L_DEBUG, "FC recv: ACK decision: recv_seq_expected=%lu, should_send=%s",
+            debug_if(s_debug_more, L_DEBUG, "FC recv: ACK decision: recv_seq_expected=%" DAP_UINT64_FORMAT_U ", should_send=%s",
                    a_ctrl->recv_seq_expected, (a_ctrl->recv_seq_expected > 1) ? "YES" : "NO");
             if (a_ctrl->recv_seq_expected > 1) {
                 l_should_send_ack = true;
@@ -886,7 +896,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
             // Don't send ACK for OUT-OF-ORDER packets - wait until missing packets arrive
             if (!l_should_send_ack) {
                 debug_if(s_debug_more, L_DEBUG,
-                         "FC recv: NOT sending ACK for out-of-order seq=%lu (expected=1, will ACK after delivery)",
+                         "FC recv: NOT sending ACK for out-of-order seq=%" DAP_UINT64_FORMAT_U " (expected=1, will ACK after delivery)",
                          l_metadata.seq_num);
             }
         } else {
@@ -905,7 +915,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 .is_retransmit = false,
             };
             
-            debug_if(s_debug_more, L_DEBUG, "FC recv: Preparing ACK for seq_num up to %lu", l_ack_seq_to_send);
+            debug_if(s_debug_more, L_DEBUG, "FC recv: Preparing ACK for seq_num up to %" DAP_UINT64_FORMAT_U "", l_ack_seq_to_send);
             
             void *l_ack_packet = NULL;
             size_t l_ack_packet_size = 0;
@@ -922,7 +932,7 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                 a_ctrl->callbacks.packet_free(l_ack_packet, a_ctrl->callbacks.arg);
                 
                 if (l_ack_ret == 0) {
-                    debug_if(s_debug_more, L_DEBUG, "Sent ACK: ack_seq=%lu", l_ack_seq_to_send);
+                    debug_if(s_debug_more, L_DEBUG, "Sent ACK: ack_seq=%" DAP_UINT64_FORMAT_U "", l_ack_seq_to_send);
                 } else {
                     log_it(L_WARNING, "Failed to send ACK packet: ret=%d", l_ack_ret);
                 }
@@ -1005,7 +1015,7 @@ static bool s_retransmit_timer_callback(void *a_arg)
         if (l_now - l_entry->timestamp_ns > l_timeout_ns) {
             // Check max retries
             if (l_entry->retransmit_count >= l_ctrl->config.max_retransmit_count) {
-                log_it(L_WARNING, "Packet lost after %u retries: seq=%lu",
+                log_it(L_WARNING, "Packet lost after %u retries: seq=%" DAP_UINT64_FORMAT_U "",
                        l_entry->retransmit_count, seq);
                 atomic_fetch_add(&l_ctrl->stats_lost, 1);
                 
@@ -1024,10 +1034,10 @@ static bool s_retransmit_timer_callback(void *a_arg)
                 l_entry->retransmit_count++;
                 atomic_fetch_add(&l_ctrl->stats_retransmitted, 1);
                 
-                log_it(L_DEBUG, "Retransmitted packet: seq=%lu, retry=%u",
+                log_it(L_DEBUG, "Retransmitted packet: seq=%" DAP_UINT64_FORMAT_U ", retry=%u",
                        seq, l_entry->retransmit_count);
             } else {
-                log_it(L_WARNING, "Failed to retransmit packet: seq=%lu, ret=%d", seq, l_ret);
+                log_it(L_WARNING, "Failed to retransmit packet: seq=%" DAP_UINT64_FORMAT_U ", ret=%d", seq, l_ret);
             }
         }
     }
@@ -1057,7 +1067,7 @@ static bool s_keepalive_timer_callback(void *a_arg)
     
     // Check if connection timed out
     if (l_silence_ns > l_timeout_ns) {
-        log_it(L_WARNING, "Keep-alive timeout: %lu ms silence",
+        log_it(L_WARNING, "Keep-alive timeout: %" DAP_UINT64_FORMAT_U " ms silence",
                l_silence_ns / 1000000);
         
         // Call timeout callback

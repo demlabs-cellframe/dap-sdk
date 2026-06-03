@@ -75,6 +75,20 @@ typedef struct dap_io_flow_ctrl_base_header {
     uint8_t  flags;           ///< Flow control flags
 } DAP_ALIGN_PACKED dap_io_flow_ctrl_base_header_t;
 
+#define DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE 21
+_Static_assert(sizeof(dap_io_flow_ctrl_base_header_t) == DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE,
+               "dap_io_flow_ctrl_base_header_t wire size");
+
+/**
+ * @brief Naturally aligned in-memory view of @ref dap_io_flow_ctrl_base_header_t (wire is packed, 21 bytes).
+ */
+typedef struct dap_io_flow_ctrl_base_header_mem {
+    uint64_t seq_num;
+    uint64_t ack_seq;
+    uint32_t timestamp_ms;
+    uint8_t  flags;
+} dap_io_flow_ctrl_base_header_mem_t;
+
 /**
  * @brief Flow Control header flags
  */
@@ -87,8 +101,29 @@ typedef struct dap_io_flow_ctrl_base_header {
  */
 extern const dap_serialize_field_t g_dap_io_flow_ctrl_base_fields[];
 extern const size_t g_dap_io_flow_ctrl_base_field_count;
+extern const dap_serialize_schema_t g_dap_io_flow_ctrl_base_schema;
 
 #define DAP_IO_FLOW_CTRL_BASE_MAGIC   0xFC000000U
+
+static inline int dap_io_flow_ctrl_base_header_pack(const dap_io_flow_ctrl_base_header_mem_t *a_mem,
+                                                     uint8_t *a_wire, size_t a_wire_size)
+{
+    if (!a_mem || !a_wire || a_wire_size < DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE)
+        return -1;
+    dap_serialize_result_t l_r = dap_serialize_to_buffer_raw(
+        &g_dap_io_flow_ctrl_base_schema, a_mem, a_wire, a_wire_size, NULL);
+    return l_r.error_code;
+}
+
+static inline int dap_io_flow_ctrl_base_header_unpack(const uint8_t *a_wire, size_t a_wire_size,
+                                                      dap_io_flow_ctrl_base_header_mem_t *a_mem)
+{
+    if (!a_wire || !a_mem || a_wire_size < DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE)
+        return -1;
+    dap_deserialize_result_t l_r = dap_deserialize_from_buffer_raw(
+        &g_dap_io_flow_ctrl_base_schema, a_wire, a_wire_size, a_mem, NULL);
+    return l_r.error_code;
+}
 
 //===================================================================
 // FLOW CONTROL RUNTIME (flags, config, etc)

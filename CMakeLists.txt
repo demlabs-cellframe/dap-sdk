@@ -75,11 +75,22 @@ endif()
 # Core is always required - UPDATED PATH
 add_subdirectory(module/core)
 
+# Optimization module - arch dispatch macros (header-only, depends on core)
+add_subdirectory(module/optimization)
+message("[+] Module 'optimization'")
+
 # Set DAP_TPL_DIR for dap_json SIMD code generation (if not already set by parent)
 if(NOT DEFINED DAP_TPL_DIR)
     set(DAP_TPL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/module/test/dap_tpl" CACHE PATH "Path to dap_tpl template engine")
     message("[+] DAP SDK: DAP_TPL_DIR set to ${DAP_TPL_DIR}")
 endif()
+
+# Arch-optimized code generation infrastructure (used by hash, json, crypto, math modules)
+if(NOT DEFINED DAP_ARCH_DIR)
+    set(DAP_ARCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake/arch" CACHE PATH "Path to arch codegen infrastructure")
+endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapTplGenerate.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapArchCodegen.cmake)
 
 # Math module - uint128_t/uint256_t operations (must be before json)
 add_subdirectory(module/math)
