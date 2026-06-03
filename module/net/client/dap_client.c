@@ -85,7 +85,11 @@ static dap_net_trans_type_t s_get_default_transport_from_config(void)
         log_it(L_INFO, "Default transport from config: %s (%d)", l_transport_str, l_trans_type);
         return l_trans_type;
     }
+#ifdef DAP_OS_WASM
+    return DAP_NET_TRANS_WEBSOCKET_SYSTEM;
+#else
     return DAP_NET_TRANS_HTTP;
+#endif
 }
 
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg)
