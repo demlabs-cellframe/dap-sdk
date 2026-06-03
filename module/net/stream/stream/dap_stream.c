@@ -112,11 +112,15 @@ static dap_stream_t * s_stream_new(dap_http_client_t * a_http_client, dap_cluste
 static void s_http_client_delete(dap_http_client_t * a_esocket, void * a_arg);
 void s_stream_delete_from_list(dap_stream_t *a_stream);
 
-static bool s_callback_server_keepalive(void *a_arg);
-static bool s_callback_client_keepalive(void *a_arg);
+static bool s_callback_keepalive(void *a_arg, bool a_is_server);
 
 static bool s_dump_packet_headers = false;
 static bool s_debug = false;
+
+bool dap_stream_get_debug(void)
+{
+    return s_debug;
+}
 #define LOG_TAG "dap_stream"
 
 bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
@@ -586,7 +590,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_cluster_node_ad
         debug_if(s_debug, L_DEBUG, "s_stream_new: starting keepalive timer");
         l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->trans_ctx->esocket->worker,
                                                               STREAM_KEEPALIVE_TIMEOUT * 1000,
-                                                              (dap_timerfd_callback_t)s_callback_server_keepalive,
+                                                              (dap_timerfd_callback_t)dap_stream_callback_server_keepalive,
                                                               l_es_uuid);
         
         if (!l_ret->keepalive_timer) {
@@ -923,7 +927,7 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
             return;
         }
         *l_es_uuid = a_esocket->uuid;
-        dap_timerfd_callback_t l_callback = a_esocket->server ? s_callback_server_keepalive : s_callback_client_keepalive;
+        dap_timerfd_callback_t l_callback = a_esocket->server ? dap_stream_callback_server_keepalive : dap_stream_callback_client_keepalive;
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
                                                                 l_callback,
@@ -1403,12 +1407,12 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     }
 }
 
-static bool s_callback_client_keepalive(void *a_arg)
+bool dap_stream_callback_client_keepalive(void *a_arg)
 {
     return s_callback_keepalive(a_arg, false);
 }
 
-static bool s_callback_server_keepalive(void *a_arg)
+bool dap_stream_callback_server_keepalive(void *a_arg)
 {
     return s_callback_keepalive(a_arg, true);
 }

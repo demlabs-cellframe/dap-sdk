@@ -33,7 +33,7 @@
 #include "dap_net_trans.h"
 #include "dap_ht.h"
 
-// Forward declarations (dap_client_esocket_t from dap_net_trans.h)
+typedef struct dap_client_pvt dap_client_esocket_t;
 typedef struct dap_worker dap_worker_t;
 
 /**

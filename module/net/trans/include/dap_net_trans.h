@@ -77,7 +77,8 @@ typedef struct dap_worker dap_worker_t;
 
 // Forward declarations for client types (to avoid circular dependencies)
 typedef struct dap_client dap_client_t;
-typedef struct dap_client_trans_ctx dap_client_trans_ctx_t;
+// struct dap_client_pvt is defined in dap_client_esocket.h; type alias for API clarity
+typedef struct dap_client_pvt dap_client_esocket_t;
 
 // Forward declarations for client callback types (defined in dap_client.h)
 typedef void (*dap_client_callback_t)(dap_client_t *, void *);
@@ -192,7 +193,7 @@ typedef struct dap_net_stage_prepare_params {
     const dap_cluster_node_addr_t *node_addr; ///< Node address for stream creation (NULL if not needed)
     bool authorized;                       ///< Stream authorization flag (for STAGE_STREAM_SESSION)
     dap_events_socket_callbacks_t *callbacks; ///< Socket callbacks to use
-    void *client_ctx;                  ///< Client ctx (dap_client_trans_ctx_t*)
+    void *client_ctx;                  ///< Client ctx (dap_client_esocket_t*)
     dap_worker_t *worker;                  ///< Worker thread to add esocket to (required for connection)
 } dap_net_stage_prepare_params_t;
 
@@ -237,8 +238,6 @@ typedef struct dap_net_session_params {
     size_t enc_key_size;                   ///< Encryption key size
     bool enc_headers;                      ///< Encrypt packet headers flag
     uint32_t protocol_version;             ///< Protocol version
-    dap_enc_key_t *session_key;           ///< Session key for encrypting this request (from handshake)
-    const char *session_key_id;           ///< Session key identifier (from handshake)
 } dap_net_session_params_t;
 
 /**
@@ -425,17 +424,6 @@ typedef struct dap_net_trans_ops {
      *       while providing clean access to client context when needed
      */
     void* (*get_client_context)(dap_stream_t *a_stream);
-
-    /**
-     * @brief Check/open session for SERVICE_PACKET handling (optional)
-     * @param a_trans Trans instance
-     * @param a_session_id Session ID from service packet
-     * @param a_esocket Stream event socket
-     * @note Only used by transports with session control (e.g. UDP).
-     *       If NULL, service packet session check is skipped.
-     */
-    void (*check_session)(dap_net_trans_t *a_trans, uint32_t a_session_id,
-                          dap_events_socket_t *a_esocket);
 
     /**
      * @brief Get maximum packet size for this trans (optional)

@@ -127,6 +127,7 @@ typedef struct dap_stream_info {
 int dap_stream_init(dap_config_t * g_config);
 
 bool dap_stream_get_dump_packet_headers();
+bool dap_stream_get_debug(void);
 
 void dap_stream_deinit();
 
@@ -174,6 +175,9 @@ void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
+
+bool dap_stream_callback_server_keepalive(void *a_arg);
+bool dap_stream_callback_client_keepalive(void *a_arg);
 
 // autorization stream block
 int dap_stream_add_addr(dap_cluster_node_addr_t a_addr, void *a_id);

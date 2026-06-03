@@ -46,12 +46,6 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #endif
 
-#ifdef DAP_OS_WINDOWS
-#ifndef MSG_DONTWAIT
-#define MSG_DONTWAIT 0
-#endif
-#endif
-
 #define LOG_TAG "dap_net_trans_dns_server"
 
 static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg);
@@ -266,7 +260,7 @@ static void s_dns_listener_read_cb(dap_events_socket_t *a_es, void *a_arg)
     struct sockaddr_storage l_addr;
     for (int i = 0; i < 256; i++) {
         socklen_t l_addr_len = sizeof(l_addr);
-        ssize_t l_read = recvfrom(a_es->fd, (char *)l_buf, sizeof(l_buf), MSG_DONTWAIT,
+        ssize_t l_read = recvfrom(a_es->fd, l_buf, sizeof(l_buf), MSG_DONTWAIT,
                                   (struct sockaddr *)&l_addr, &l_addr_len);
         if (l_read <= 0)
             break;
@@ -303,7 +297,7 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
 
     /* KEM encapsulation: generate bob key, derive shared secret */
     dap_enc_key_t *l_bob_key = dap_enc_key_new_generate(
-        DAP_ENC_KEY_TYPE_ML_KEM, NULL, 0, NULL, 0, 0);
+        DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, NULL, 0, 0);
     if (!l_bob_key) {
         log_it(L_ERROR, "DNS server: failed to generate Bob KEM key");
         return;
