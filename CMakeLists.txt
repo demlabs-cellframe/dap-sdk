@@ -132,14 +132,11 @@ if (DAPSDK_MODULES MATCHES "plugin" AND NOT DAP_WASM)
     message("[+] Module 'plugin'")
 endif()
 
-if(DAP_WASM)
-    add_subdirectory(module/io/wasm)
-    message("[+] Module 'io' (WASM stub)")
-elseif(DAPSDK_MODULES MATCHES "io")
+if(DAPSDK_MODULES MATCHES "io" OR DAP_WASM)
     add_subdirectory(module/io)
     message("[+] Module 'io'")
-    # io_flow: 5.8 datagram reactor, context_queue, thread_pool
     add_subdirectory(module/io/flow)
+    message("[+] Module 'io/flow' (context_queue, datagram reactor)")
 endif()
 
 # Cluster node types — must be before net/common (net_common depends on cluster_node types)
