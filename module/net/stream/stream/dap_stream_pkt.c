@@ -232,3 +232,10 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
 #endif
 }
 
+void dap_stream_send_keepalive(dap_stream_t *a_stream)
+{
+    if (!a_stream)
+        return;
+    dap_stream_pkt_write_unsafe(a_stream, STREAM_PKT_TYPE_KEEPALIVE, NULL, 0);
+}
+
