@@ -237,7 +237,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_ch->cookie = a_cookie ? dap_strdup(a_cookie) : NULL;
     l_ch->request_custom_headers = a_custom_headers ? dap_strdup(a_custom_headers) : NULL;
 
-    const char *l_scheme = (a_over_ssl || a_uplink_port == 443) ? "https" : "http";
+    const char *l_scheme = (a_over_ssl || a_uplink_port == 443 || a_uplink_port == 4443) ? "https" : "http";
     char l_url[2048];
     snprintf(l_url, sizeof(l_url), "%s://%s:%u%s%s",
              l_scheme, a_uplink_addr, a_uplink_port,

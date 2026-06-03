@@ -582,8 +582,8 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
     size_t l_verify_data_size;
     dap_hash_sha3_256_t l_verify_data_hash;
     uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
-    if(l_hash_type == DAP_SIGN_HASH_TYPE_DEFAULT)
-        log_it(L_WARNING, "Detected DAP_SIGN_HASH_TYPE_DEFAULT (0x%02x) hash type in sign ", DAP_SIGN_HASH_TYPE_DEFAULT);
+    if (l_hash_type == DAP_SIGN_HASH_TYPE_DEFAULT)
+        l_hash_type = s_sign_hash_type_default;
 
     if(l_hash_type == DAP_SIGN_HASH_TYPE_NONE || l_hash_type == DAP_SIGN_HASH_TYPE_SIGN){
         l_verify_data = a_data;
@@ -668,8 +668,9 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
         l_sign_size = (uint64_t)sizeof(dap_sign_t) + l_hdr_mem.sign_size + l_hdr_mem.sign_pkey_size;
         if (l_offset + l_sign_size <= l_offset || l_offset + l_sign_size > a_data_size)
             break;
-        if (dap_sign_hdr_pack(&l_hdr_mem, l_base, DAP_SIGN_HDR_WIRE_SIZE) != 0)
-            break;
+        // Do NOT call dap_sign_hdr_pack here: l_base may point into a read-only mmap region
+        // (PROT_READ via s_cell_map_new_volume). The pack is a no-op on LE platforms because
+        // the wire format is already little-endian — removing it prevents SIGSEGV on mapped files.
         dap_sign_t *l_sign = (dap_sign_t *)l_base;
         bool l_dup = false;
         if (ret) {

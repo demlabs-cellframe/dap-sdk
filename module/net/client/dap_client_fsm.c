@@ -299,10 +299,28 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
             dap_enc_key_delete(a_fsm->trans_ctx->session_key_open);
         if (a_fsm->trans_ctx->session_key)
             dap_enc_key_delete(a_fsm->trans_ctx->session_key);
-        if (a_fsm->trans_ctx->stream_key)
+        if (a_fsm->trans_ctx->stream_key) {
+            // If session->key was assigned from stream_key (see STAGE_STREAM_SESSION handler),
+            // they point to the same object. Null out session->key first to prevent double-free
+            // when dap_stream_delete_unsafe -> dap_stream_session_close_mt tries to delete it again.
+            if (a_fsm->trans_ctx->stream && a_fsm->trans_ctx->stream->session
+                    && a_fsm->trans_ctx->stream->session->key == a_fsm->trans_ctx->stream_key)
+                a_fsm->trans_ctx->stream->session->key = NULL;
             dap_enc_key_delete(a_fsm->trans_ctx->stream_key);
-        if (a_fsm->trans_ctx->stream)
+            a_fsm->trans_ctx->stream_key = NULL;
+        }
+        if (a_fsm->trans_ctx->stream) {
+            // Null out the esocket's _inheritor before deleting the stream/client.
+            // This prevents use-after-free in s_stream_from_client_esocket when the
+            // esocket is removed asynchronously (dap_events_socket_remove_and_delete_mt)
+            // and a queued s_ch_send_callback fires before the async removal completes.
+            dap_events_socket_t *l_es = a_fsm->trans_ctx->stream->trans_ctx
+                                         ? a_fsm->trans_ctx->stream->trans_ctx->esocket
+                                         : a_fsm->trans_ctx->stream->esocket;
+            if (l_es)
+                __atomic_store_n(&l_es->_inheritor, (void *)NULL, __ATOMIC_RELEASE);
             dap_stream_delete_unsafe(a_fsm->trans_ctx->stream);
+        }
         DAP_DEL_Z(a_fsm->trans_ctx);
     }
     if (a_fsm->pkt_queue) {
@@ -662,6 +680,9 @@ static void s_worker_execute_stage(void *a_arg)
                 break;
             }
             l_tc->stream->session->key = l_tc->stream_key;
+            // Transfer ownership: session now owns the key; prevent double-free
+            // when cleanup code later calls dap_enc_key_delete(trans_ctx->stream_key).
+            l_tc->stream_key = NULL;
         }
 
         if (l_worker->_inheritor) {
@@ -721,22 +742,37 @@ static void s_worker_execute_stage(void *a_arg)
         for (size_t i = 0; i < l_count_channels; i++)
             dap_stream_ch_new(l_tc->stream, (uint8_t)l_client->active_channels[i]);
 
-        // Install stream callbacks on the esocket BEFORE session_start sends data
-        // This ensures read/write/error/delete are handled when server responds
+        // Install stream callbacks on the esocket BEFORE session_start sends data.
+        // This ensures read/write/error/delete are handled when server responds.
+        // Use trans_ctx->esocket preferentially: the refactored HTTP transport stores
+        // the actual TCP socket there (stream->esocket is only populated by legacy paths).
         // CRITICAL: For datagram transports (UDP/DNS), the transport layer has already
         // installed its own read_callback that handles decryption, Flow Control, etc.
         // Overwriting it would break the transport's read path!
-        if (l_tc->stream->esocket) {
-            dap_events_socket_t *l_stream_es = l_tc->stream->esocket;
-            dap_events_socket_callbacks_t l_stream_cbs;
-            dap_client_trans_ctx_get_stream_callbacks(&l_stream_cbs);
-            bool l_is_datagram = (l_stream_es->type == DESCRIPTOR_TYPE_SOCKET_UDP);
-            if (!l_is_datagram) {
-                l_stream_es->callbacks.read_callback = l_stream_cbs.read_callback;
+        {
+            dap_events_socket_t *l_stream_es =
+                (l_tc->stream->trans_ctx && l_tc->stream->trans_ctx->esocket)
+                    ? l_tc->stream->trans_ctx->esocket
+                    : l_tc->stream->esocket;
+            if (l_stream_es) {
+                dap_events_socket_callbacks_t l_stream_cbs;
+                dap_client_trans_ctx_get_stream_callbacks(&l_stream_cbs);
+                bool l_is_datagram = (l_stream_es->type == DESCRIPTOR_TYPE_SOCKET_UDP);
+                if (!l_is_datagram) {
+                    l_stream_es->callbacks.read_callback = l_stream_cbs.read_callback;
+                }
+                l_stream_es->callbacks.write_callback = l_stream_cbs.write_callback;
+                l_stream_es->callbacks.error_callback = l_stream_cbs.error_callback;
+                l_stream_es->callbacks.delete_callback = l_stream_cbs.delete_callback;
+                log_it(L_INFO, "STREAM_CONNECTED: installed stream callbacks on es uuid 0x%016"
+                       DAP_UINT64_FORMAT_x " (via %s)",
+                       l_stream_es->uuid,
+                       (l_tc->stream->trans_ctx && l_tc->stream->trans_ctx->esocket)
+                           ? "trans_ctx" : "stream->esocket");
+            } else {
+                log_it(L_WARNING, "STREAM_CONNECTED: no esocket for stream %p, callbacks NOT installed",
+                       (void *)l_tc->stream);
             }
-            l_stream_es->callbacks.write_callback = l_stream_cbs.write_callback;
-            l_stream_es->callbacks.error_callback = l_stream_cbs.error_callback;
-            l_stream_es->callbacks.delete_callback = l_stream_cbs.delete_callback;
         }
 
         dap_net_trans_t *l_transport = l_tc->stream->trans;
@@ -1176,6 +1212,18 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     l_tc->stream = l_prepare_result.stream;
     l_tc->transport_priv = l_prepare_result.esocket;
 
+    // Stream's per-stream trans_ctx->_inheritor MUST point to our FSM's
+    // dap_client_trans_ctx_t: every s_*_callback_wrapper in dap_client_esocket.c
+    // casts it to that exact type to recover the owning dap_client_t for
+    // transports without ops->get_client_context() (HTTP). This is the only
+    // layer that owns client_trans_ctx, so the wiring belongs here and
+    // nowhere else (the transport doesn't and must not know about FSM types).
+    // Note: must be unconditional — stage_prepare may run more than once per
+    // lifetime (reconnect, transport fallback) and would otherwise leave a
+    // stale pointer from a previous attempt.
+    if (l_tc->stream->trans_ctx)
+        l_tc->stream->trans_ctx->_inheritor = l_fsm->client_trans_ctx;
+
     // Handshake init: async IO, transport callback will notify FSM
     int l_handshake_ret = l_transport->ops->handshake_init(l_tc->stream, &l_ctx->handshake_params,
                                                             s_handshake_callback_wrapper);
@@ -1371,7 +1419,14 @@ void dap_client_fsm_advance(dap_client_t *a_client, void *a_arg)
             return;
         }
     } else {
-        assert(a_client->stage_target > l_fsm->stage);
+        if (a_client->stage_target <= l_fsm->stage) {
+            log_it(L_ERROR, "FSM advance: stage_target %s <= current stage %s, aborting",
+                   dap_client_stage_str(a_client->stage_target), dap_client_stage_str(l_fsm->stage));
+            s_set_stage_status(l_fsm, STAGE_STATUS_ERROR);
+            l_fsm->last_error = ERROR_WRONG_STAGE;
+            s_fsm_process(l_fsm);
+            return;
+        }
         l_next = l_fsm->stage + 1;
     }
     log_it(L_NOTICE, "FSM advance: %s -> %s (target %s)",
@@ -1413,8 +1468,9 @@ static void *s_fsm_go_stage_on_fsm_thread(void *a_arg)
         return NULL;
     }
 
-    // If COMPLETE and below target, advance from current
-    if (l_fsm->stage_status == STAGE_STATUS_COMPLETE && l_fsm->stage != l_ctx->stage_target) {
+    // If COMPLETE and strictly below target, advance one step at a time.
+    // If stage > stage_target (rollback requested), fall through to "start from BEGIN".
+    if (l_fsm->stage_status == STAGE_STATUS_COMPLETE && l_fsm->stage < l_ctx->stage_target) {
         debug_if(s_debug_more, L_DEBUG, "FSM at %s COMPLETE, advancing to %s",
                dap_client_stage_str(l_fsm->stage), dap_client_stage_str(l_ctx->stage_target));
         dap_client_stage_t l_next;

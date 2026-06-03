@@ -48,7 +48,7 @@ static void s_request_free(s_request_t *a_req)
     DAP_DELETE(a_req);
 }
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
 /* ========================================================================
  * MT path: spawn detached pthread that calls js_http_post_sync
  * ======================================================================== */
@@ -123,7 +123,7 @@ int dap_http_client_simple_request(const char *a_url,
     return 0;
 }
 
-#else /* !DAP_WASM_PTHREADS — single-threaded event-driven path */
+#else /* !DAP_OS_WASM_MT — single-threaded event-driven path */
 /* ========================================================================
  * ST path: async XHR via JS, callback dispatched from browser event loop
  * ======================================================================== */
@@ -206,6 +206,6 @@ int dap_http_client_simple_request(const char *a_url,
     return 0;
 }
 
-#endif /* DAP_WASM_PTHREADS */
+#endif /* DAP_OS_WASM_MT */
 
 #endif /* __EMSCRIPTEN__ */

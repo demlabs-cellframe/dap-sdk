@@ -324,7 +324,7 @@ void dap_events_deinit( )
 /* ─── WASM: event loop ───────────────────────────────────────────────── */
 #if defined(DAP_OS_WASM)
 
-#ifdef DAP_WASM_PTHREADS
+#ifdef DAP_OS_WASM_MT
 /*
  * WASM MT: use the standard native dap_context_run / dap_proc_thread_init
  * path — each worker and proc thread gets its own pthread with poll()-based
@@ -500,7 +500,7 @@ lb_err:
     return l_ret;
 }
 
-#endif /* DAP_OS_WASM && !DAP_WASM_PTHREADS */
+#endif /* DAP_OS_WASM_ST */
 
 
 

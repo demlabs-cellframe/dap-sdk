@@ -74,37 +74,62 @@ void dap_stream_esocket_error_cb(dap_events_socket_t *a_esocket, int a_error)
     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
 
+/**
+ * @brief dap_stream_keepalive_arm
+ * Arm the keepalive timer for @a_stream on @a_worker.
+ * Safe to call multiple times: a no-op when the timer is already running.
+ * Must be called from the worker thread that owns the esocket.
+ */
+void dap_stream_keepalive_arm(dap_stream_t *a_stream, dap_worker_t *a_worker)
+{
+    if (!a_stream || a_stream->keepalive_timer)
+        return;
+    dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
+    if (!l_es_uuid) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
+    *l_es_uuid = a_stream->trans_ctx->esocket->uuid;
+    dap_timerfd_callback_t l_callback = a_stream->trans_ctx->esocket->server
+        ? dap_stream_callback_server_keepalive
+        : dap_stream_callback_client_keepalive;
+    a_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
+                                                            STREAM_KEEPALIVE_TIMEOUT * 1000,
+                                                            l_callback,
+                                                            l_es_uuid);
+}
+
 void dap_stream_esocket_worker_assign_cb(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
+    // On the very first worker-add (is_initalized == 0) the FSM hasn't wired
+    // trans_ctx yet, so dap_stream_get_from_es() returns NULL for client
+    // sockets.  Keepalive for fresh client streams is armed explicitly by
+    // dap_stream_keepalive_arm() right after dap_worker_add_events_socket().
     if (!a_esocket->is_initalized)
         return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
-    dap_stream_add_to_list(l_stream);
-    if (!l_stream->keepalive_timer) {
-        dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (!l_es_uuid) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return;
-        }
-        *l_es_uuid = a_esocket->uuid;
-        dap_timerfd_callback_t l_callback = a_esocket->server ? dap_stream_callback_server_keepalive : dap_stream_callback_client_keepalive;
-        l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
-                                                                STREAM_KEEPALIVE_TIMEOUT * 1000,
-                                                                l_callback,
-                                                                l_es_uuid);
+    if (!l_stream) {
+        log_it(L_WARNING, "worker_assign_cb: stream not found for esocket uuid 0x%016"DAP_UINT64_FORMAT_x, a_esocket->uuid);
+        return;
     }
+    dap_stream_add_to_list(l_stream);
+    dap_stream_keepalive_arm(l_stream, a_worker);
 }
 
 void dap_stream_esocket_worker_unassign_cb(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
     UNUSED(a_worker);
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream) {
+        log_it(L_WARNING, "worker_unassign_cb: stream not found for esocket uuid 0x%016"DAP_UINT64_FORMAT_x, a_esocket->uuid);
+        return;
+    }
     dap_stream_delete_from_list(l_stream);
-    DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
-    dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
-    l_stream->keepalive_timer = NULL;
+    if (l_stream->keepalive_timer) {
+        DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
+        dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
+        l_stream->keepalive_timer = NULL;
+    }
 }
 
 /**
