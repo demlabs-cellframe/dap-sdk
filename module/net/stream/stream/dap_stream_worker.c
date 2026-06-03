@@ -138,7 +138,9 @@ static void s_ch_send_callback(void *a_msg)
     // Check if it was removed from the list
     dap_events_socket_t *l_es = dap_context_find(l_context, l_msg->uuid);
     if (!l_es) {
-        log_it(L_DEBUG, "We got i/o message for client thats now not in list");
+        log_it(L_WARNING, "ch_send: es uuid 0x%016" DAP_UINT64_FORMAT_x " not in ctx #%u (worker %u), ch='%c' data_sz=%zu",
+               l_msg->uuid, l_context ? l_context->id : 0xffffu, l_worker ? l_worker->id : 0xffffu,
+               l_msg->ch_id, l_msg->data_size);
         goto ret_n_clear;
     }
     dap_stream_t *l_stream = dap_stream_get_from_es(l_es);

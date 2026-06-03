@@ -27,6 +27,18 @@
 #define __STDC_WANT_LIB_EXT1__ 1
 #endif
 
+/* WASM build-flavor shortcuts: MT = pthreads, ST = single-threaded.
+ * Primary definition comes from CMake (OS_Detection.cmake); these guards
+ * are a safety net in case a TU is compiled without the CMake flags. */
+#if defined(DAP_OS_WASM)
+#  if defined(DAP_WASM_PTHREADS) && !defined(DAP_OS_WASM_MT)
+#    define DAP_OS_WASM_MT
+#  endif
+#  if !defined(DAP_WASM_PTHREADS) && !defined(DAP_OS_WASM_ST)
+#    define DAP_OS_WASM_ST
+#  endif
+#endif
+
 #ifdef DAP_OS_WINDOWS
 #ifndef _WINSOCKAPI_
 #include <winsock2.h>

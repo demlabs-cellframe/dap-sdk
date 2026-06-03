@@ -1401,10 +1401,13 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
         return -1;
     }
     
-    // Add socket to worker - connection will complete asynchronously
-    dap_worker_add_events_socket(a_params->worker, l_es);
-    
-    // Create stream for this connection
+    // Create stream before handing the socket off to the worker so that
+    // worker_assign_callback is in place, then arm the keepalive timer
+    // explicitly.  worker_assign_callback skips keepalive setup when
+    // is_initalized==0 because the FSM hasn't wired trans_ctx->stream yet;
+    // we call dap_stream_keepalive_arm() here directly with the known worker.
+    // The keepalive callback tolerates a NULL stream (retry next tick) so
+    // there is no race even if the first tick fires before FSM completes.
     dap_stream_t *l_stream = dap_stream_new_es_client(l_es, (dap_cluster_node_addr_t *)a_params->node_addr, a_params->authorized);
     if (!l_stream) {
         log_it(L_CRITICAL, "Failed to create stream for HTTP trans");
@@ -1412,10 +1415,13 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
-    
-    // Set transport reference
     l_stream->trans = a_trans;
-    
+
+    // Add to worker — assign callback fires but returns early (is_initalized==0).
+    dap_worker_add_events_socket(a_params->worker, l_es);
+    // Arm keepalive now that we know the target worker.
+    dap_stream_keepalive_arm(l_stream, a_params->worker);
+
     a_result->esocket = l_es;
     a_result->stream = l_stream;
     a_result->error_code = 0;

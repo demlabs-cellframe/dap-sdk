@@ -74,7 +74,12 @@ dap_tsd_t  *dap_tsd_find    (byte_t *a_data, size_t a_data_size, uint16_t a_type
 dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type, size_t a_type_size);
 
 #define dap_tsd_create_scalar(type,value) dap_tsd_create(type, &value, sizeof(value))
-#define dap_tsd_get_scalar(a,typeconv) ( a->size >= sizeof(typeconv) ? *((typeconv*) a->data) : (typeconv) {0})
+#define dap_tsd_get_scalar(a,typeconv) ({ \
+    typeconv _val = {0}; \
+    if ((a)->size >= sizeof(typeconv)) \
+        memcpy(&_val, (a)->data, sizeof(typeconv)); \
+    _val; \
+})
 #define dap_tsd_get_object(a,typeconv) ( a->size >= sizeof(typeconv) ? ((typeconv*) a->data) : (typeconv *) {0})
 
 #define _dap_tsd_get_scalar(tsd,dest) ({ tsd->size >= sizeof(*dest) ? memcpy(dest, tsd->data, sizeof(*dest)) : NULL; *dest; })

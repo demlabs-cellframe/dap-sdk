@@ -262,6 +262,11 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_clust
         l_ret->trans_ctx->esocket_uuid = a_esocket->uuid;
         l_ret->trans_ctx->esocket_worker = a_esocket->worker;
         l_ret->trans_ctx->stream = l_ret;  // Back-reference
+        // _inheritor is left NULL on purpose: only the FSM layer knows the
+        // FSM-internal dap_client_trans_ctx_t* that the various
+        // s_*_callback_wrapper functions cast _inheritor to. The wiring is
+        // done in s_worker_execute_enc_init_io() right after stage_prepare
+        // returns the stream.
         // Cache remote address for cross-thread access (safe snapshot)
         dap_strncpy(l_ret->trans_ctx->remote_addr_str, a_esocket->remote_addr_str, sizeof(l_ret->trans_ctx->remote_addr_str) - 1);
         l_ret->trans_ctx->remote_port = a_esocket->remote_port;
@@ -650,9 +655,18 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     }
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es) {
-        assert(a_server_side == !!l_es->server);
+        if (a_server_side != !!l_es->server) {
+            log_it(L_WARNING, "Keepalive side mismatch for uuid 0x%016"DAP_UINT64_FORMAT_x
+                   ": expected %s, got %s — skipping", *l_es_uuid,
+                   a_server_side ? "server" : "client", l_es->server ? "server" : "client");
+            DAP_DELETE(l_es_uuid);
+            return false;
+        }
         dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
-        assert(l_stream);
+        if (!l_stream) {
+            // FSM hasn't wired trans_ctx->stream yet (client stream early tick) - retry
+            return true;
+        }
         if (l_stream->is_active) {
             l_stream->is_active = false;
             return true;
@@ -667,7 +681,18 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             log_it(L_ERROR, "keepalive: stream header pack failed");
             return false;
         }
-        dap_stream_send_unsafe(l_stream, l_pkt_wire, sizeof(l_pkt_wire));
+        ssize_t l_sent = dap_stream_send_unsafe(l_stream, l_pkt_wire, sizeof(l_pkt_wire));
+        // dap_worker closes DESCRIPTOR_TYPE_SOCKET_CLIENT esockets whose
+        // last_time_active is older than s_connection_timeout (default 60 s).
+        // Only read_callback bumps that timestamp today; a long-lived HTTP
+        // stream session can sit idle for minutes while the stream-layer
+        // keepalive timer fires every ~6 s and queues data into buf_out.
+        // Without this touch the worker tears the TCP session down with
+        // ETIMEDOUT/ECONNRESET (errno 104 on the peer) even though the stream
+        // is healthy — ANNOUNCE / GDB sync packets then vanish and the net
+        // never reaches ONLINE.
+        if (l_sent > 0)
+            l_es->last_time_active = dap_time_now();
         return true;
     }else{
         if(s_debug)
@@ -694,10 +719,26 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: searching for duplicate");
     dap_ht_find(s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
-        log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
-        return -1;
+        // A duplicate is almost always a reconnect: peer's previous stream
+        // hasn't been torn down yet (esocket may already be closed but the
+        // close-event hasn't been processed) and a new one already landed.
+        // The original code simply refused to add the new stream, so
+        // dap_stream_find_by_addr() kept returning the dead esocket uuid
+        // forever — ANNOUNCE / pkt_send_by_addr packets vanished and
+        // active link count stayed at 0 even though peers were happily
+        // re-connecting every ~6s. Replace the stale entry with the fresh
+        // one so subsequent lookups hit a live esocket; the old stream is
+        // still tracked in s_streams and will be cleaned up by its own
+        // delete path (dap_stream_delete_from_list already tolerates a
+        // primary=false old entry).
+        log_it(L_INFO, "Stream duplicate for node "NODE_ADDR_FP_STR
+                       " - replacing stale primary %p with fresh %p",
+                       NODE_ADDR_FP_ARGS_S(a_stream->node),
+                       (void*)l_double, (void*)a_stream);
+        l_double->primary = false;
+        dap_ht_del(s_authorized_streams, l_double);
     }
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: no duplicate found, setting primary=true");
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: setting primary=true");
     a_stream->primary = true;
     debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: adding to hash table");
     dap_ht_add_keyptr(s_authorized_streams, &a_stream->node, sizeof(a_stream->node), a_stream);
@@ -791,9 +832,19 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_cluster_node_addr_t *a_addr
     dap_ht_find(s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
     if (l_auth_stream) {
         if (a_worker)
-            *a_worker = l_auth_stream->stream_worker->worker;
-        if (l_auth_stream->trans_ctx && l_auth_stream->trans_ctx->esocket)
+            *a_worker = l_auth_stream->stream_worker ? l_auth_stream->stream_worker->worker : NULL;
+        if (l_auth_stream->trans_ctx && l_auth_stream->trans_ctx->esocket) {
             l_ret = l_auth_stream->trans_ctx->esocket->uuid;
+            dap_worker_t *l_w = l_auth_stream->stream_worker ? l_auth_stream->stream_worker->worker : NULL;
+            log_it(L_INFO, "find_by_addr " NODE_ADDR_FP_STR ": uuid=0x%016" DAP_UINT64_FORMAT_x
+                   " worker=%u ctx=%u client_uplink=%d",
+                   NODE_ADDR_FP_ARGS_S(*a_addr), l_ret,
+                   l_w ? l_w->id : 0xffffu,
+                   l_w ? l_w->context->id : 0xffffu,
+                   (int)l_auth_stream->is_client_to_uplink);
+        } else
+            log_it(L_WARNING, "find_by_addr " NODE_ADDR_FP_STR ": stream %p has no esocket",
+                   NODE_ADDR_FP_ARGS_S(*a_addr), (void *)l_auth_stream);
     } else if (a_worker)
         *a_worker = NULL;
     pthread_rwlock_unlock(&s_streams_lock);
