@@ -1563,7 +1563,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 l_bytes_sent = -1;
                                 l_errno = (l_rc == -ENOSPC) ? EAGAIN : -l_rc;
                             }
-#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
                             l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
                             l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
                             debug_if(l_errno, L_ERROR, "Writing to pipe %zu bytes failed, sent %zd only...", l_cur->buf_out_size, l_bytes_sent);
