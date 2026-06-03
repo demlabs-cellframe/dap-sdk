@@ -170,6 +170,7 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
 ssize_t dap_stream_trans_write_unsafe(dap_stream_t *a_stream, const void *a_data, size_t a_size);
 
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
+void dap_stream_delete_from_list(dap_stream_t *a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();

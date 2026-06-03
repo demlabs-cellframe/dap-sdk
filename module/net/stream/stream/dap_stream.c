@@ -1644,3 +1644,8 @@ void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
     }
     DAP_DELETE(a_info);
 }
+
+void dap_stream_delete_from_list(dap_stream_t *a_stream)
+{
+    s_stream_delete_from_list(a_stream);
+}
