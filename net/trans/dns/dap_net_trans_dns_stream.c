@@ -23,6 +23,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <time.h>
+#include <arpa/inet.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans_dns_stream.h"
@@ -796,6 +797,7 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
 
     if (!a_es || a_es->buf_in_size == 0)
         return;
+    log_it(L_INFO, "DNS client read: size=%zu", a_es->buf_in_size);
 
     dap_client_t *l_client = (dap_client_t *)a_es->_inheritor;
     if (!l_client) {

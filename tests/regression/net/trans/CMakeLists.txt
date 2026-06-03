@@ -37,7 +37,8 @@ add_test(
 
 # Test properties: 100 clients x 64KB data exchange on CBPF (10 workers) needs ~3 min
 set_tests_properties(${PROJECT_NAME} PROPERTIES
-    TIMEOUT 300
+    TIMEOUT 900
+    RESOURCE_LOCK dap_net_heavy
     LABELS "regression;net;trans;udp"
 )
 

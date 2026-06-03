@@ -105,7 +105,8 @@ static void s_ch_io_callback(void * a_msg)
     pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
     if (l_msg_ch == NULL) {
         if (l_msg->data_size) {
-            debug_if(s_debug_more, L_DEBUG, "We got i/o message for client thats now not in list. Lost %zu data", l_msg->data_size);
+            log_it(L_WARNING, "Stream ch UUID %016lx not found in worker, dropping %zu bytes",
+                   (unsigned long)l_msg->ch_uuid, l_msg->data_size);
             DAP_DELETE(l_msg->data);
         }
         DAP_DELETE(l_msg);
