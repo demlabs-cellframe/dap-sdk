@@ -1128,6 +1128,12 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
 
         // Generate session_key_open (HEAVY CRYPTO - runs on FSM thread, not worker!)
         debug_if(s_debug_more, L_INFO, "FSM thread: generating session key for client %p", l_client);
+        if (l_es->session_key_open_type <= DAP_ENC_KEY_TYPE_IAES)
+            l_es->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
+        if (l_es->session_key_type <= DAP_ENC_KEY_TYPE_IAES)
+            l_es->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
+        if (!l_es->session_key_block_size)
+            l_es->session_key_block_size = 32;
         if (l_es->session_key_open)
             dap_enc_key_delete(l_es->session_key_open);
         l_es->session_key_open = dap_enc_key_new_generate(l_es->session_key_open_type, NULL, 0, NULL, 0,

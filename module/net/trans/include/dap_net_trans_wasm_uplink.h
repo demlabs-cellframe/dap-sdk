@@ -7,9 +7,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "dap_net_trans.h"
+
 #ifdef __EMSCRIPTEN__
 
 void dap_net_trans_wasm_set_uplink_prefix(const char *a_prefix);
+/** Fix unset enc_init query fields (WASM clients may send enc_type=0). Skips QOS_PROBE. */
+void dap_net_trans_wasm_normalize_handshake_params(dap_net_handshake_params_t *a_params);
 const char *dap_net_trans_wasm_uplink_prefix(void);
 
 /** @a_path_suffix is e.g. "enc_init/gd4y5yh78w42aaagh?enc_type=0,..." */

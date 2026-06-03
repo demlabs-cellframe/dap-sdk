@@ -469,6 +469,8 @@ static int s_rtc_handshake_init(dap_stream_t *a_stream,
     if (!a_stream || !a_params || !a_stream->_server_session) return -1;
     rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
 
+    dap_net_trans_wasm_normalize_handshake_params(a_params);
+
     size_t l_b64_size = DAP_BASE64_ENCODE_SIZE(a_params->alice_pub_key_size) + 1;
     char *l_b64_body = DAP_NEW_Z_SIZE(char, l_b64_size);
     size_t l_b64_len = dap_enc_base64_encode(a_params->alice_pub_key,

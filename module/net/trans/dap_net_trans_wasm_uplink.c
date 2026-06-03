@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "dap_net_trans_wasm_uplink.h"
+#include "dap_enc_key.h"
+#include "dap_common.h"
+#include "dap_net_trans_qos.h"
 
 static char s_uplink_prefix[128] = "";
 
@@ -33,6 +36,22 @@ void dap_net_trans_wasm_set_uplink_prefix(const char *a_prefix)
 const char *dap_net_trans_wasm_uplink_prefix(void)
 {
     return s_uplink_prefix;
+}
+
+void dap_net_trans_wasm_normalize_handshake_params(dap_net_handshake_params_t *a_params)
+{
+    if (!a_params || a_params->pkey_exchange_type == DAP_ENC_KEY_TYPE_QOS_PROBE)
+        return;
+    if (a_params->enc_type <= DAP_ENC_KEY_TYPE_IAES)
+        a_params->enc_type = DAP_ENC_KEY_TYPE_SALSA2012;
+    if (a_params->pkey_exchange_type <= DAP_ENC_KEY_TYPE_IAES)
+        a_params->pkey_exchange_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
+    if (!a_params->block_key_size)
+        a_params->block_key_size = 32;
+    if (!a_params->protocol_version)
+        a_params->protocol_version = DAP_CLIENT_PROTOCOL_VERSION;
+    if (!a_params->pkey_exchange_size && a_params->alice_pub_key_size)
+        a_params->pkey_exchange_size = a_params->alice_pub_key_size;
 }
 
 int dap_net_trans_wasm_format_uplink_url(char *a_buf, size_t a_size,
