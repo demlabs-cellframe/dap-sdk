@@ -1567,6 +1567,13 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
                             l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
                             debug_if(l_errno, L_ERROR, "Writing to pipe %zu bytes failed, sent %zd only...", l_cur->buf_out_size, l_bytes_sent);
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
+                            // ST WASM: flush backlog into the pipe write end (fd2). Non-blocking;
+                            // EAGAIN keeps the buffer for the next writable cycle.
+                            l_bytes_sent = write(l_cur->fd2, l_cur->buf_out, l_cur->buf_out_size);
+                            l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
+                            debug_if(l_errno && l_errno != EAGAIN && l_errno != EWOULDBLOCK, L_ERROR,
+                                     "Writing to queue pipe %zu bytes failed, sent %zd only...", l_cur->buf_out_size, l_bytes_sent);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
                             l_bytes_sent = mq_send(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)

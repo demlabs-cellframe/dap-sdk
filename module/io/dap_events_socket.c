@@ -665,7 +665,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 if ((size_t)l_got < sizeof(l_batch) / sizeof(l_batch[0]))
                     break;
             }
-#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
             int l_read_errno = 0;
             char l_body[PIPE_BUF] = { '\0' };
             ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
@@ -984,6 +984,61 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
     *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
     a_es->buf_out_size += sizeof(a_arg);
     pthread_rwlock_unlock(&a_es->buf_out_lock);
+}
+#endif
+
+#ifdef DAP_EVENTS_CAPS_QUEUE_PIPE
+/**
+ * @brief s_queue_ptr_send_pipe_st
+ * Single-threaded (no-pthread) enqueue used by WASM ST builds. The write end
+ * (fd2) is non-blocking; there is no helper thread to drain it, so under
+ * backpressure pointers are appended to the in-memory backlog (buf_out) and
+ * flushed FIFO on the next send. The reactor drains the read end on every loop
+ * iteration, so the pipe regains capacity between sends.
+ */
+static int s_queue_ptr_send_pipe_st(dap_events_socket_t *a_es, void *a_arg)
+{
+    // Preserve FIFO order: flush whatever was buffered earlier before the new ptr.
+    while (a_es->buf_out_size >= sizeof(void*)) {
+        ssize_t l_w = write(a_es->fd2, a_es->buf_out, a_es->buf_out_size);
+        if (l_w > 0) {
+            if (l_w % sizeof(void*))
+                return log_it(L_CRITICAL, "[!] Wrote unaligned chunk [%zd bytes] to queue pipe", l_w), -3;
+            a_es->buf_out_size -= (size_t)l_w;
+            if (a_es->buf_out_size)
+                memmove(a_es->buf_out, a_es->buf_out + l_w, a_es->buf_out_size);
+        } else if (l_w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            break; // pipe full — keep the remainder buffered
+        } else if (l_w < 0) {
+            return log_it(L_ERROR, "Can't flush queue pipe, error %d: \"%s\"", errno, dap_strerror(errno)), errno;
+        } else {
+            break;
+        }
+    }
+
+    // Backlog drained — try writing the new pointer straight to the pipe.
+    if (!a_es->buf_out_size) {
+        ssize_t l_w = write(a_es->fd2, &a_arg, sizeof(a_arg));
+        if (l_w == (ssize_t)sizeof(a_arg))
+            return 0;
+        if (l_w >= 0)
+            return log_it(L_CRITICAL, "[!] Partial pointer write [%zd bytes] to queue pipe", l_w), -3;
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+            return log_it(L_ERROR, "Can't send ptr to queue pipe, error %d: \"%s\"", errno, dap_strerror(errno)), errno;
+    }
+
+    // Backpressure path: append the pointer to the backlog, growing it on demand.
+    if (a_es->buf_out_size + sizeof(void*) > a_es->buf_out_size_max) {
+        size_t l_new_max = a_es->buf_out_size_max + DAP_QUEUE_MAX_MSGS * sizeof(void*);
+        byte_t *l_new = DAP_REALLOC(a_es->buf_out, l_new_max);
+        if (!l_new)
+            return log_it(L_ERROR, "Out of memory growing queue pipe backlog"), -666;
+        a_es->buf_out = l_new;
+        a_es->buf_out_size_max = l_new_max;
+    }
+    *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
+    a_es->buf_out_size += sizeof(void*);
+    return 0;
 }
 #endif
 
@@ -1550,6 +1605,8 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 #elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     s_add_ptr_to_buf(a_es, a_arg);
     return 0;
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
+    return s_queue_ptr_send_pipe_st(a_es, a_arg);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
     assert(a_es);
     assert(a_es->mqd);

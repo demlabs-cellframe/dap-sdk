@@ -939,13 +939,13 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     if (l_es->fd > 0 && l_es->fd2 > 0 ) {
     int l_flags = fcntl(l_es->fd, F_GETFL, 0);
     if (l_flags != -1){
-        l_flags |= O_NONBLOCK);
-        fcntl(l_es->fd, F_SETFL, l_flags) == 0);
+        l_flags |= O_NONBLOCK;
+        fcntl(l_es->fd, F_SETFL, l_flags);
     }
     l_flags = fcntl(l_es->fd2, F_GETFL, 0);
     if (l_flags != -1){
-        l_flags |= O_NONBLOCK);
-        fcntl(l_es->fd2, F_SETFL, l_flags) == 0);
+        l_flags |= O_NONBLOCK;
+        fcntl(l_es->fd2, F_SETFL, l_flags);
     }
     }
 #endif
