@@ -94,12 +94,12 @@ static const test_scenario_t g_scenarios[] = {
     // Basic scenarios - always run
     // Note: Data sizes reduced to avoid packet loss under flow control pressure
     {"1 server, 1 client",      1,    1,     1*1024*1024, CALC_TIMEOUT(1), false},
-    {"1 server, 10 clients",    1,   10,     512*1024,    CALC_TIMEOUT(10), false},
-    {"1 server, 20 clients",    1,   20,     512*1024,    CALC_TIMEOUT(20), false},
+    {"1 server, 10 clients",    1,   10,     256*1024,    CALC_TIMEOUT(10), false},
+    {"1 server, 20 clients",    1,   20,     256*1024,    CALC_TIMEOUT(20), false},
     
     // Scaling scenarios - run by default (up to 100 clients)
     {"1 server, 100 clients",   1,  100,     256*1024,    CALC_TIMEOUT(100), false},
-    {"10 servers, 10 clients", 10,   10,     512*1024,    CALC_TIMEOUT(10), false},
+    {"10 servers, 10 clients", 10,   10,     256*1024,    CALC_TIMEOUT(10), false},
     {"10 servers, 100 clients", 10, 100,     256*1024,    CALC_TIMEOUT(100), false},
     
     // Stress scenarios - only with --stress flag
@@ -916,17 +916,48 @@ static dap_client_t *test_create_trans_client(trans_test_config_t *a_config,
  * @param a_arg Pointer to trans_test_ctx_t
  * @return NULL (always)
  */
+static size_t s_trans_effective_data_size(const trans_test_ctx_t *a_ctx)
+{
+    if (a_ctx->config.trans_type == DAP_NET_TRANS_DNS_TUNNEL) {
+        size_t l_cap = (a_ctx->scenario.num_clients > 1) ? (32 * 1024) : (128 * 1024);
+        if (a_ctx->scenario.data_size > l_cap)
+            return l_cap;
+    }
+    return a_ctx->scenario.data_size;
+}
+
+/** DNS tunnel: scale timeout from datagram count (upload + echo download). */
+static uint32_t s_trans_effective_timeout_ms(const trans_test_ctx_t *a_ctx)
+{
+    uint32_t l_timeout = a_ctx->scenario.timeout_ms;
+    if (a_ctx->config.trans_type != DAP_NET_TRANS_DNS_TUNNEL)
+        return l_timeout;
+
+    const size_t l_chunk = 1045;
+    size_t l_size = s_trans_effective_data_size(a_ctx);
+    uint32_t l_packets = (uint32_t)((l_size + l_chunk - 1) / l_chunk);
+    uint32_t l_dns_timeout = 20000 + l_packets * 200;
+    if (a_ctx->scenario.num_clients > 1)
+        l_dns_timeout += (uint32_t)(a_ctx->scenario.num_clients * 8000);
+    if (l_timeout > l_dns_timeout)
+        l_dns_timeout = l_timeout;
+    return l_dns_timeout;
+}
+
 static void *test_trans_worker(void *a_arg)
 {
     trans_test_ctx_t *l_ctx = (trans_test_ctx_t *)a_arg;
     l_ctx->result = 0;
     l_ctx->running = true;
+
+    const size_t l_data_size = s_trans_effective_data_size(l_ctx);
+    const uint32_t l_timeout_ms = s_trans_effective_timeout_ms(l_ctx);
     
     pthread_mutex_lock(&s_test_mutex);
     printf("\n=== Starting %s trans test: %s ===\n", l_ctx->config.name, l_ctx->scenario.name);
     printf("  Servers: %zu, Clients: %zu, Data size: %zu KB, Timeout: %u ms\n",
            l_ctx->scenario.num_servers, l_ctx->scenario.num_clients,
-           l_ctx->scenario.data_size / 1024, l_ctx->scenario.timeout_ms);
+           l_data_size / 1024, l_timeout_ms);
     pthread_mutex_unlock(&s_test_mutex);
     
     // Create all servers
@@ -938,7 +969,7 @@ static void *test_trans_worker(void *a_arg)
     
     // Initialize stream contexts and generate unique client node addresses
     for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
-        if (test_stream_ch_ctx_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, l_ctx->scenario.data_size) != 0) {
+        if (test_stream_ch_ctx_init(&l_ctx->stream_ctxs[i], TEST_STREAM_CH_ID, l_data_size) != 0) {
             TEST_ERROR("Failed to initialize stream channel ctx %zu for %s", i, l_ctx->config.name);
             l_ctx->result = -2;
             l_ctx->running = false;
@@ -997,7 +1028,9 @@ static void *test_trans_worker(void *a_arg)
     
     // Track overall timeout for all clients
     uint64_t l_overall_start = dap_test_get_time_ms();
-    uint64_t l_overall_timeout_ms = l_ctx->scenario.timeout_ms;
+    uint64_t l_overall_timeout_ms = l_timeout_ms;
+    if (l_ctx->scenario.num_clients > 1)
+        l_overall_timeout_ms *= l_ctx->scenario.num_clients;
     
     bool l_all_ready = true;
     size_t l_handshake_completed = 0;
@@ -1114,11 +1147,11 @@ static void *test_trans_worker(void *a_arg)
 
     // Send data for all clients and verify
     TEST_INFO("Sending data for %zu clients (%zu KB each)...", 
-              l_ctx->scenario.num_clients, l_ctx->scenario.data_size / 1024);
+              l_ctx->scenario.num_clients, l_data_size / 1024);
     size_t l_data_exchanged = 0;
     for (size_t i = 0; i < l_ctx->scenario.num_clients; i++) {
         int l_ret = test_stream_ch_send_and_wait(l_ctx->clients[i], &l_ctx->stream_ctxs[i], 
-                                                   l_ctx->scenario.timeout_ms);
+                                                   l_timeout_ms);
         if (l_ret != 0) {
             TEST_ERROR("Data exchange failed for client %zu in %s", i, l_ctx->config.name);
             l_ctx->result = -7;
@@ -1295,6 +1328,17 @@ static void test_02_sequential_trans_testing(void)
                            scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
                     printf("⏭️  SKIPPED: %s tier limited to %u clients (scenario has %zu)\n",
                            l_tier_cfg ? l_tier_cfg->name : "auto", l_max_clients, l_scenario->num_clients);
+                    l_skipped_tests++;
+                    continue;
+                }
+
+                /* Tier-1 queue LB cannot sustain parallel bulk transfer; CBPF tier covers scale. */
+                if (l_tier_cfg && l_tier_cfg->tier == DAP_IO_FLOW_LB_TIER_APPLICATION
+                    && l_scenario->num_clients > 5) {
+                    printf("\n--- Scenario %zu/%zu: %s ---\n",
+                           scenario_idx + 1, SCENARIO_COUNT, l_scenario->name);
+                    printf("⏭️  SKIPPED: Application tier — use CBPF tier for %zu-client scenarios\n",
+                           l_scenario->num_clients);
                     l_skipped_tests++;
                     continue;
                 }

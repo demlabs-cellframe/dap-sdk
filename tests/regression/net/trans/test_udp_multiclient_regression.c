@@ -79,7 +79,7 @@ static dap_stream_node_addr_t s_server_node_addr = {0};
 static const trans_test_config_t s_udp_config = {
     .trans_type = DAP_NET_TRANS_UDP_BASIC,
     .name = "UDP",
-    .base_port = 18102,
+    .base_port = 18112,
     .address = TEST_TRANS_SERVER_ADDR
 };
 

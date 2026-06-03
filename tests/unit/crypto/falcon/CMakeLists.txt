@@ -16,6 +16,8 @@ target_link_libraries(${PROJECT_NAME}
 
 if(UNIX)
     target_link_libraries(${PROJECT_NAME} m pthread)
+    # Release build uses -ffast-math globally; Falcon FP self-tests need strict IEEE semantics.
+    target_compile_options(${PROJECT_NAME} PRIVATE -fno-fast-math)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
