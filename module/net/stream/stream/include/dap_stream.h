@@ -174,6 +174,7 @@ void dap_stream_delete_from_list(dap_stream_t *a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
+void dap_stream_load_preferred_encryption_config(dap_config_t *a_config);
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
 
 bool dap_stream_callback_server_keepalive(void *a_arg);

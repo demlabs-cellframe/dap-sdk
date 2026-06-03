@@ -348,6 +348,38 @@ void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_cod
 
 // ===== ENC response processing (runs on worker) =====
 
+/** Fallback when tape-based dap_json_object_get_string fails on enc_init replies. */
+static char *s_enc_init_json_pick_string(const char *a_json, size_t a_json_size, const char *a_key)
+{
+    if (!a_json || !a_key || !a_json_size)
+        return NULL;
+    char l_mark[80];
+    int l_mark_len = snprintf(l_mark, sizeof(l_mark), "\"%s\":\"", a_key);
+    if (l_mark_len <= 0 || (size_t)l_mark_len >= sizeof(l_mark))
+        return NULL;
+    const char *l_end = a_json + a_json_size;
+    for (const char *l_p = a_json; l_p + (size_t)l_mark_len <= l_end; l_p++) {
+        if (memcmp(l_p, l_mark, (size_t)l_mark_len) != 0)
+            continue;
+        l_p += l_mark_len;
+        if (l_p >= l_end || *l_p != '"')
+            continue;
+        l_p++;
+        const char *l_val_end = l_p;
+        while (l_val_end < l_end && *l_val_end != '"')
+            l_val_end++;
+        if (l_val_end >= l_end)
+            return NULL;
+        size_t l_val_len = (size_t)(l_val_end - l_p);
+        char *l_out = DAP_NEW_Z_SIZE(char, l_val_len + 1);
+        if (!l_out)
+            return NULL;
+        memcpy(l_out, l_p, l_val_len);
+        return l_out;
+    }
+    return NULL;
+}
+
 static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size_t a_data_size)
 {
     dap_client_esocket_t *l_es = DAP_CLIENT_ESOCKET(a_client);
@@ -401,6 +433,33 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
                 if (!l_es->remote_protocol_version)
                     l_es->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
             }
+        }
+
+        if (l_json_parse_count < 2) {
+            const char *l_json = (const char *)a_data;
+            DAP_DEL_Z(l_session_id_b64);
+            DAP_DEL_Z(l_bob_message_b64);
+            DAP_DEL_Z(l_node_sign_b64);
+            l_session_id_b64 = s_enc_init_json_pick_string(l_json, a_data_size, "encrypt_id");
+            l_bob_message_b64 = s_enc_init_json_pick_string(l_json, a_data_size, "encrypt_msg");
+            l_node_sign_b64 = s_enc_init_json_pick_string(l_json, a_data_size, "node_sign");
+            l_json_parse_count = 0;
+            if (l_session_id_b64)
+                l_json_parse_count++;
+            if (l_bob_message_b64)
+                l_json_parse_count++;
+            if (l_node_sign_b64)
+                l_json_parse_count++;
+            if (!l_es->remote_protocol_version) {
+                const char *l_ver = strstr(l_json, "\"dap_protocol_version\":");
+                if (l_ver) {
+                    unsigned l_v = 0;
+                    if (sscanf(l_ver, "\"dap_protocol_version\":%u", &l_v) == 1 && l_v)
+                        l_es->remote_protocol_version = l_v;
+                }
+            }
+            if (!l_es->remote_protocol_version)
+                l_es->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
         }
 
         if (l_json_parse_count < 2 || l_json_parse_count > 4) {

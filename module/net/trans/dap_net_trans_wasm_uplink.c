@@ -43,7 +43,7 @@ void dap_net_trans_wasm_normalize_handshake_params(dap_net_handshake_params_t *a
     if (!a_params || a_params->pkey_exchange_type == DAP_ENC_KEY_TYPE_QOS_PROBE)
         return;
     if (a_params->enc_type <= DAP_ENC_KEY_TYPE_IAES)
-        a_params->enc_type = DAP_ENC_KEY_TYPE_SALSA2012;
+        a_params->enc_type = DAP_ENC_KEY_TYPE_CHACHA20_POLY1305;
     if (a_params->pkey_exchange_type <= DAP_ENC_KEY_TYPE_IAES)
         a_params->pkey_exchange_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
     if (!a_params->block_key_size)

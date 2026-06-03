@@ -85,7 +85,7 @@ static dap_stream_member_callback_t s_member_del_callback = NULL;
 static pthread_rwlock_t     s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;    // Lock for all tables and list under
 static dap_stream_t         *s_authorized_streams = NULL;                   // Authorized streams hashtable by addr
 static dap_stream_t         *s_streams = NULL;                              // Double-linked list
-static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
+static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_CHACHA20_POLY1305;
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
 
@@ -244,7 +244,7 @@ dap_enc_key_type_t dap_stream_get_preferred_encryption_type()
     return s_stream_get_preferred_encryption_type;
 }
 
-void s_stream_load_preferred_encryption_type(dap_config_t * a_config)
+void dap_stream_load_preferred_encryption_config(dap_config_t *a_config)
 {
     const char * l_preferred_encryption_name = dap_config_get_item_str(a_config, "stream", "preferred_encryption");
     if(l_preferred_encryption_name){
@@ -290,7 +290,7 @@ int dap_stream_init(dap_config_t * a_config)
     // Transport layer is initialized automatically via dap_module system
     // No need to call dap_net_transport_init() manually
     
-    s_stream_load_preferred_encryption_type(a_config);
+    dap_stream_load_preferred_encryption_config(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config, "stream", "debug_dump_stream_headers", false);
     s_debug = dap_config_get_item_bool_default(g_config, "stream", "debug_more", false);
     debug_if(s_debug, L_DEBUG, "dap_stream_init: g_config=%p, s_debug=%d, s_dump_packet_headers=%d",

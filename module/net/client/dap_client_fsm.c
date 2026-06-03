@@ -210,7 +210,7 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     l_fsm->worker = dap_events_worker_get_auto();
 
     // Crypto defaults
-    l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
+    l_fsm->session_key_type = DAP_ENC_KEY_TYPE_CHACHA20_POLY1305;
     l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
     l_fsm->session_key_block_size = 32;
 
@@ -1131,7 +1131,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         if (l_es->session_key_open_type <= DAP_ENC_KEY_TYPE_IAES)
             l_es->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
         if (l_es->session_key_type <= DAP_ENC_KEY_TYPE_IAES)
-            l_es->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
+            l_es->session_key_type = DAP_ENC_KEY_TYPE_CHACHA20_POLY1305;
         if (!l_es->session_key_block_size)
             l_es->session_key_block_size = 32;
         if (l_es->session_key_open)
