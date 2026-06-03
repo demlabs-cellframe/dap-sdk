@@ -120,7 +120,7 @@ if(UNIX)
         set(BSD ON)
     endif()
 
-    if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" )
+    if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT DAP_WASM)
         add_definitions ("-DDAP_OS_LINUX")
     endif()
 
