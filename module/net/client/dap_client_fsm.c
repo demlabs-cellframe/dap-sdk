@@ -72,8 +72,10 @@ static void s_fsm_thread_callback_add(uint32_t a_thread_idx,
                                        dap_thread_pool_task_func_t a_callback, void *a_arg)
 {
     if (!s_fsm_pool) {
-        log_it(L_ERROR, "FSM thread pool not initialized");
-        DAP_DELETE(a_arg);
+        /* Single-threaded environment (e.g. WASM ST): no thread pool available.
+         * Execute the callback inline on the current thread. All FSM callbacks
+         * are non-blocking by design, so this is safe. */
+        a_callback(a_arg);
         return;
     }
     int l_ret = dap_thread_pool_submit_to(s_fsm_pool, a_thread_idx,
@@ -162,14 +164,17 @@ int dap_client_fsm_init(void)
     s_client_timeout_active_after_connect_seconds = (time_t)dap_config_get_item_uint32_default(
         g_config, "dap_client", "timeout_active_after_connect", s_client_timeout_active_after_connect_seconds);
 
-    // Create FSM thread pool (one thread per CPU, sticky binding via submit_to)
+    // Create FSM thread pool (one thread per CPU, sticky binding via submit_to).
+    // In single-threaded environments (WASM ST) thread creation may fail; that is
+    // non-fatal — s_fsm_thread_callback_add will run callbacks inline instead.
     s_fsm_thread_count = dap_config_get_item_uint32_default(g_config, "dap_client", "fsm_threads", 0);
     s_fsm_pool = dap_thread_pool_create(s_fsm_thread_count, 0);
     if (!s_fsm_pool) {
-        log_it(L_CRITICAL, "Failed to create FSM thread pool");
-        return -1;
+        log_it(L_WARNING, "FSM thread pool unavailable, using inline dispatch (single-threaded mode)");
+        s_fsm_thread_count = 1;
+    } else {
+        s_fsm_thread_count = dap_thread_pool_get_thread_count(s_fsm_pool);
     }
-    s_fsm_thread_count = dap_thread_pool_get_thread_count(s_fsm_pool);
 
     log_it(L_INFO, "Client FSM module initialized (max_attempts=%d, timeout=%d, fsm_threads=%u)",
            s_max_attempts, s_timeout, s_fsm_thread_count);
