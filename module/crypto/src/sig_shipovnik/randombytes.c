@@ -25,12 +25,11 @@
 */
 
 #include "randombytes.h"
-#include "dap_cpu_arch.h"
 
 #include <errno.h>
 #include <stdlib.h>
 
-#if DAP_OS_WASM
+#if defined(DAP_OS_WASM) || defined(__EMSCRIPTEN__)
 #include <emscripten.h>
 
 void randombytes(uint8_t *out, size_t outlen) {

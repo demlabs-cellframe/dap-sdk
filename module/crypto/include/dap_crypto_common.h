@@ -65,6 +65,7 @@ extern "C" {
 #define TARGET_x86          2
 #define TARGET_ARM          3
 #define TARGET_ARM64        4
+#define TARGET_WASM         5
 
 #include "dap_cpu_arch.h"
 #if DAP_PLATFORM_X86_64
@@ -75,8 +76,8 @@ extern "C" {
     #define _X86_
 #elif DAP_PLATFORM_ARM
     #define _ARM_
-#elif DAP_OS_WASM
-    /* WASM has no native SIMD ISA; use the plain-C path everywhere */
+#elif defined(DAP_OS_WASM)
+    /* WASM is a 32-bit virtual machine with no native SIMD ISA */
     #define _WASM_
 #endif
 
@@ -116,6 +117,15 @@ extern "C" {
     typedef uint32_t        hdigit_t;
     #define NWORDS_FIELD    12
     #define p751_ZERO_WORDS 5
+#elif defined(_WASM_)
+    #define TARGET TARGET_WASM
+    #define RADIX           32
+    #define LOG2RADIX       5
+    typedef uint32_t        digit_t;        // Unsigned 32-bit digit (wasm32)
+    typedef int32_t         sdigit_t;       // Signed 32-bit digit
+    typedef uint16_t        hdigit_t;
+    #define NWORDS_FIELD    24
+    #define p751_ZERO_WORDS 11
 #else
     #error -- "Unsupported ARCHITECTURE"
 #endif

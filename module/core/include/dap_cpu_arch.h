@@ -41,58 +41,66 @@
 /*                        OS / RUNTIME DETECTION                              */
 /* ========================================================================== */
 
-/** Emscripten/WebAssembly target.  Always defined first so platform macros
- *  below can guard against it — WASM is never a native x86/ARM runtime even
- *  when the host compiler lives on x86 hardware. */
-#if defined(__EMSCRIPTEN__)
-#  define DAP_OS_WASM 1
-#else
-#  define DAP_OS_WASM 0
+/**
+ * OS/runtime detection macros — each is defined ONLY when active (undefined
+ * otherwise).  Compatible with both #ifdef / #ifndef and #if defined() guards.
+ *
+ * DAP_OS_WASM may also be set by the build system (-DDAP_OS_WASM via CMake).
+ * The #ifndef guard below prevents a redefinition clash in that case.
+ */
+
+/** Emscripten/WebAssembly target.  Defined first — platform macros depend on
+ *  its absence to prevent native SIMD selection for wasm32 targets. */
+#ifndef DAP_OS_WASM
+#  ifdef __EMSCRIPTEN__
+#    define DAP_OS_WASM 1
+#  endif
 #endif
 
 #if defined(_WIN32) || defined(_WIN64)
-#  define DAP_OS_WINDOWS 1
-#else
-#  define DAP_OS_WINDOWS 0
+#  ifndef DAP_OS_WINDOWS
+#    define DAP_OS_WINDOWS 1
+#  endif
 #endif
 
 #if defined(__linux__)
-#  define DAP_OS_LINUX 1
-#else
-#  define DAP_OS_LINUX 0
+#  ifndef DAP_OS_LINUX
+#    define DAP_OS_LINUX 1
+#  endif
 #endif
 
 #if defined(__APPLE__)
-#  define DAP_OS_DARWIN 1
-#else
-#  define DAP_OS_DARWIN 0
+#  ifndef DAP_OS_DARWIN
+#    define DAP_OS_DARWIN 1
+#  endif
 #endif
 
 /* ========================================================================== */
-/*                     PLATFORM DETECTION MACROS                              */
+/*                     PLATFORM / ARCHITECTURE MACROS                         */
 /* ========================================================================== */
+/* Always 0 or 1, safe in #if / #elif.  WASM excludes all native SIMD ISAs.  */
 
-#if !DAP_OS_WASM && \
+#if !defined(DAP_OS_WASM) && \
     (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
 #  define DAP_PLATFORM_X86 1
 #else
 #  define DAP_PLATFORM_X86 0
 #endif
 
-#if !DAP_OS_WASM && (defined(__x86_64__) || defined(_M_X64))
+#if !defined(DAP_OS_WASM) && (defined(__x86_64__) || defined(_M_X64))
 #  define DAP_PLATFORM_X86_64 1
 #else
 #  define DAP_PLATFORM_X86_64 0
 #endif
 
-#if !DAP_OS_WASM && \
+#if !defined(DAP_OS_WASM) && \
     (defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64))
 #  define DAP_PLATFORM_ARM 1
 #else
 #  define DAP_PLATFORM_ARM 0
 #endif
 
-#if !DAP_OS_WASM && (defined(__aarch64__) || defined(_M_ARM64))
+#if !defined(DAP_OS_WASM) && (defined(__aarch64__) || defined(_M_ARM64))
 #  define DAP_PLATFORM_ARM64 1
 #else
 #  define DAP_PLATFORM_ARM64 0
