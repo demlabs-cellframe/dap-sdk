@@ -38,28 +38,61 @@
 #include <stddef.h>
 
 /* ========================================================================== */
+/*                        OS / RUNTIME DETECTION                              */
+/* ========================================================================== */
+
+/** Emscripten/WebAssembly target.  Always defined first so platform macros
+ *  below can guard against it — WASM is never a native x86/ARM runtime even
+ *  when the host compiler lives on x86 hardware. */
+#if defined(__EMSCRIPTEN__)
+#  define DAP_OS_WASM 1
+#else
+#  define DAP_OS_WASM 0
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+#  define DAP_OS_WINDOWS 1
+#else
+#  define DAP_OS_WINDOWS 0
+#endif
+
+#if defined(__linux__)
+#  define DAP_OS_LINUX 1
+#else
+#  define DAP_OS_LINUX 0
+#endif
+
+#if defined(__APPLE__)
+#  define DAP_OS_DARWIN 1
+#else
+#  define DAP_OS_DARWIN 0
+#endif
+
+/* ========================================================================== */
 /*                     PLATFORM DETECTION MACROS                              */
 /* ========================================================================== */
 
-#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+#if !DAP_OS_WASM && \
+    (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
 #  define DAP_PLATFORM_X86 1
 #else
 #  define DAP_PLATFORM_X86 0
 #endif
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if !DAP_OS_WASM && (defined(__x86_64__) || defined(_M_X64))
 #  define DAP_PLATFORM_X86_64 1
 #else
 #  define DAP_PLATFORM_X86_64 0
 #endif
 
-#if defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64)
+#if !DAP_OS_WASM && \
+    (defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64))
 #  define DAP_PLATFORM_ARM 1
 #else
 #  define DAP_PLATFORM_ARM 0
 #endif
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if !DAP_OS_WASM && (defined(__aarch64__) || defined(_M_ARM64))
 #  define DAP_PLATFORM_ARM64 1
 #else
 #  define DAP_PLATFORM_ARM64 0

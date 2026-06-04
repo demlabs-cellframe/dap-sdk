@@ -29,7 +29,7 @@ extern "C" {
 
 #if defined(_WIN32)        // Microsoft Windows OS
     #define OS_TARGET OS_WIN
-#elif defined(__EMSCRIPTEN__)   // WebAssembly (Emscripten)
+#elif defined(__EMSCRIPTEN__)   // WebAssembly (Emscripten) — treated as POSIX/Linux-like
     #define OS_TARGET OS_LINUX
 #elif defined(__linux__)        // Linux OS
     #define OS_TARGET OS_LINUX
@@ -75,8 +75,9 @@ extern "C" {
     #define _X86_
 #elif DAP_PLATFORM_ARM
     #define _ARM_
-#elif defined(__EMSCRIPTEN__) || defined(__wasm__)
-    #define _X86_
+#elif DAP_OS_WASM
+    /* WASM has no native SIMD ISA; use the plain-C path everywhere */
+    #define _WASM_
 #endif
 
 #if defined(_AMD64_)
