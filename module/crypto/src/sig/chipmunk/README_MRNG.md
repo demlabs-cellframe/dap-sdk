@@ -20,6 +20,8 @@
   (pins constants for M4: FOLD_SEED_BYTES=32, FS_OUT_BITS=384,
   LEAF_MASK_BOUND=w^D, LEAF_MASK_PACK_BITS=49; resolves C1
   per-round VCom overhead via seed-based opening derivation)
+* M4 fold design lock + in-memory prove/verify: `MRNG_M4_FOLD.md`,
+  `chipmunk_mring_fold.{h,c}` (G3.1 §4 halving fold over R_q^{(e)})
 * M4.0a CRITICAL ring-splitting finding: `MRNG_M4_INVERTIBILITY.md`
   (empirically proves R_q FULLY splits ⇒ naive fold soundness ≈2⁻¹⁷,
   NOT 128-bit; G2 v2 §A3 λ_inv≈980 retired as wrong-ring model)

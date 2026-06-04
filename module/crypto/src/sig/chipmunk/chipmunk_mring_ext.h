@@ -42,7 +42,7 @@
 extern "C" {
 #endif
 
-#define CHIPMUNK_MRING_EXT_DEG 6   /* e — extension degree (= deg Φ₉) */
+/* Extension degree e is pinned in chipmunk_mring_params.h (CHIPMUNK_MRING_EXT_DEG). */
 
 /* Element of R_q^{(e)}: coefficients of a degree-<e polynomial in Y. */
 typedef struct chipmunk_mring_ext {

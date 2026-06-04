@@ -276,6 +276,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mr
                       "unit;crypto;ring;mring;subtractive")
 endif()
 
+# CR-11.G Phase 7.7 / M4 (task_ac273cea): MRNG halving fold over R_q^(e).
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_fold.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_fold
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_fold.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_fold
+                      "unit;crypto;ring;mring;fold")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")

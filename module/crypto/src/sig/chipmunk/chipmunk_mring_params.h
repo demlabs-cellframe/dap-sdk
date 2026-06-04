@@ -77,6 +77,19 @@
  */
 #define CHIPMUNK_MRING_FOLD_DEPTH_MAX 9u
 
+/* G3 §7 / M4 — Fiat-Shamir and seed-compression pins (wire in M4.1+). */
+#define CHIPMUNK_MRING_FOLD_SEED_BYTES   32u
+#define CHIPMUNK_MRING_FS_OUT_BITS       384u
+
+/* Ring extension degree e = deg Φ₉ (G3.1 §3); kept here to avoid params↔ext cycle. */
+#define CHIPMUNK_MRING_EXT_DEG           6
+
+/*
+ * G3.1 §8 — one R_q^{(e)} element serialises as e R_q polys (qpacked).
+ */
+#define CHIPMUNK_MRING_EXT_QPACK_BYTES \
+        (CHIPMUNK_MRING_EXT_DEG * (uint32_t)CHIPMUNK_MRING_POLY_QPACK)
+
 /* -------------------------------------------------------------------------
  * Fixed-size wire constants.
  * ---------------------------------------------------------------------- */
@@ -103,11 +116,14 @@
 /* C_b block: 1 qpacked poly (vector commitment). */
 #define CHIPMUNK_MRING_CB_BYTES          ((uint32_t)CHIPMUNK_MRING_POLY_QPACK)
 
-/* Single fold round contributes (L, R) — 2 qpacked polys. */
-#define CHIPMUNK_MRING_FOLD_ROUND_BYTES  (2u * (uint32_t)CHIPMUNK_MRING_POLY_QPACK)
+/*
+ * Single fold round: (L_r, R_r) ∈ (R_q^{(e)})² — G3.1 §8.
+ * M4.1 will wire-pack; M4.0 uses the same byte budget for layout pins.
+ */
+#define CHIPMUNK_MRING_FOLD_ROUND_BYTES  (2u * CHIPMUNK_MRING_EXT_QPACK_BYTES)
 
-/* Final folded scalars (a*, b*) — 2 qpacked polys. */
-#define CHIPMUNK_MRING_FINAL_SCALARS_BYTES (2u * (uint32_t)CHIPMUNK_MRING_POLY_QPACK)
+/* Final folded scalars (a*, b*) — two R_q^{(e)} elements. */
+#define CHIPMUNK_MRING_FINAL_SCALARS_BYTES (2u * CHIPMUNK_MRING_EXT_QPACK_BYTES)
 
 /* Y_pk block: aggregated-pk claim (1 qpacked poly, G2 v2.1 §1, §4). */
 #define CHIPMUNK_MRING_YPK_BYTES         ((uint32_t)CHIPMUNK_MRING_POLY_QPACK)
