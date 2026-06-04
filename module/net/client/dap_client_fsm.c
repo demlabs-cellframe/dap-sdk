@@ -528,7 +528,9 @@ static void s_worker_execute_stage(void *a_arg)
             .enc_type = l_es->session_key_type,
             .enc_key_size = l_es->session_key_block_size,
             .enc_headers = false,
-            .protocol_version = DAP_CLIENT_PROTOCOL_VERSION
+            .protocol_version = DAP_CLIENT_PROTOCOL_VERSION,
+            .session_key = l_es->session_key,
+            .session_key_id = l_es->session_key_id
         };
 
         int l_ret = l_transport->ops->session_create(l_es->stream, &l_session_params,
