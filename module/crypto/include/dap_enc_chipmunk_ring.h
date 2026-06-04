@@ -25,18 +25,18 @@
 
 /**
  * @file dap_enc_chipmunk_ring.h
- * @brief Public DAP-key surface for the Chipmunk linkable ring signature.
+ * @brief Public DAP-key surface for Chipmunk Ring threshold signatures.
  *
- * Backed by `chipmunk_lrs` — native, quantum-resistant, CLSAG-style
- * linkable ring signature on the Chipmunk lattice substrate.  Single
- * parameter profile, single canonical wire family.  Ring sign / verify
- * are exposed through `dap_sign_create_ring` / `dap_sign_verify_ring`
- * because they require ring context that does not fit the standard
- * single-key sign_get / sign_verify contract.
+ * Key lifecycle (keygen / serialization) is fully operational.
+ * `dap_enc_key_t` private/public buffers carry, byte-for-byte,
+ * `chipmunk_lrs_secret_key_t` / `chipmunk_lrs_public_key_t`.
  *
- * The `dap_enc_key_t` private/public buffers carry, byte-for-byte,
- * `chipmunk_lrs_secret_key_t` / `chipmunk_lrs_public_key_t`.  Serialization
- * callbacks store/restore those structures verbatim.
+ * **Ring signing / verification (CR-11.G):** production wire is **CRNG/v1**
+ * (`chipmunk_ring_crng`) via `dap_sign_create_ring` / `dap_sign_verify_ring`.
+ * Legacy **CLTP** scaffold bytes are rejected at verify (fail-close).
+ *
+ * Run `chipmunk_ring_production_signoff_selfcheck()` or ctest label `signoff`
+ * before release.  See `module/crypto/src/sig/chipmunk/README.md`.
  */
 
 #include "dap_enc_key.h"
@@ -46,14 +46,15 @@ extern "C" {
 #endif
 
 /* Per-key public/private buffer sizes — pinned to chipmunk_lrs CLPK/CLSK. */
-#define DAP_ENC_CHIPMUNK_RING_PUB_KEY_SIZE   1456u
-#define DAP_ENC_CHIPMUNK_RING_PRIV_KEY_SIZE  1488u
+#define DAP_ENC_CHIPMUNK_RING_PUB_KEY_SIZE   1424u
+#define DAP_ENC_CHIPMUNK_RING_PRIV_KEY_SIZE  1456u
 
 /**
  * @brief Module-wide initialiser. Idempotent.
  * @return 0 on success.
  */
 int dap_enc_chipmunk_ring_init(void);
+int dap_sign_chipmunk_ring_register_callbacks(void);
 
 /**
  * @brief Allocate an empty dap_enc_key_t of type

@@ -104,12 +104,33 @@ typedef struct dap_sign
 typedef struct dap_pkey dap_pkey_t;
 typedef dap_pkey_t *(*dap_sign_callback_t)(const uint8_t *);
 
+typedef dap_sign_t *(*dap_sign_ring_create_callback_t)(
+    dap_enc_key_t **a_signer_keys,
+    size_t a_signers_count,
+    uint32_t a_required_signers,
+    const void *a_data,
+    size_t a_data_size,
+    dap_enc_key_t **a_ring_keys,
+    size_t a_ring_size);
+
+typedef int (*dap_sign_ring_verify_callback_t)(
+    dap_sign_t *a_sign,
+    const void *a_data,
+    size_t a_data_size,
+    dap_enc_key_t **a_ring_keys,
+    size_t a_ring_size);
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 
 int dap_sign_init(uint8_t a_sign_hash_type_default);
+
+int dap_sign_register_ring_callbacks(
+    dap_sign_type_t a_type,
+    dap_sign_ring_create_callback_t a_create,
+    dap_sign_ring_verify_callback_t a_verify);
 
 uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign);
 int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size, dap_pkey_t *a_pkey);
@@ -167,20 +188,25 @@ DAP_STATIC_INLINE dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void *
 }
 
 /**
- * @brief Create an anonymous linkable ring signature (Chipmunk LRS).
+ * @brief Create an anonymous linkable threshold ring signature (Chipmunk Ring).
  *
- * The signer's public key MUST already be present in @p a_ring_keys.
- * The ring may be supplied in any order; the underlying LRS canonicalises
- * it.  Verifiers cannot learn which ring member produced the signature,
- * but two signatures by the same signer share a key image (linkability).
+ * Each signer key MUST already be present in @p a_ring_keys.  The ring may be
+ * supplied in any order; the underlying LRS layer canonicalises it.  The
+ * signature proves that exactly @p a_required_signers distinct ring members
+ * signed, without revealing which subset signed.  A 1-of-N ring signature is
+ * the special case @p a_required_signers == 1.
  *
- * @param a_signer_key       Signer's CHIPMUNK_RING dap_enc_key_t.
+ * @param a_signer_keys       CHIPMUNK_RING signer keys participating locally.
+ * @param a_signers_count     Number of keys in @p a_signer_keys.
+ * @param a_required_signers  Threshold t; must equal @p a_signers_count.
  * @param a_data, a_data_size Message buffer (may be empty).
  * @param a_ring_keys, a_ring_size  Ring members (size in [2, 64]).
  * @return Newly allocated dap_sign_t (SIG_TYPE_CHIPMUNK_RING) or NULL.
  */
 dap_sign_t *dap_sign_create_ring(
-    dap_enc_key_t *a_signer_key,
+    dap_enc_key_t **a_signer_keys,
+    size_t a_signers_count,
+    uint32_t a_required_signers,
     const void *a_data,
     size_t a_data_size,
     dap_enc_key_t **a_ring_keys,
@@ -382,6 +408,13 @@ bool dap_sign_type_supports_aggregation(dap_sign_type_t a_signature_type);
  * @return true if batch verification is supported
  */
 bool dap_sign_type_supports_batch_verification(dap_sign_type_t a_signature_type);
+
+/**
+ * @brief Check if a signature type has registered ring create/verify callbacks.
+ * @param a_signature_type Signature type to check
+ * @return true when dap_sign_create_ring / dap_sign_verify_ring are available
+ */
+bool dap_sign_type_supports_ring(dap_sign_type_t a_signature_type);
 
 /**
  * @brief Get supported aggregation types for a signature algorithm

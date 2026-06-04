@@ -202,6 +202,80 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_lr
     register_dap_test(test_unit_crypto_chipmunk_lrs_kat "unit;crypto;ring;kat")
 endif()
 
+# CR-11.G Phase 7.7 / G1 gate (task_ac273cea): MRNG MSIS hardness estimator
+# must meet CHIPMUNK_MRING_MSIS_BITS_MIN (= 128 bits) before M2 unblocks the
+# cryptographic core.  Remaining MRNG tests (KAT/security/bench/signoff)
+# come back in M7 with file names test_chipmunk_mring_*.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_hardness.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_hardness
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_hardness.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_hardness
+                      "unit;crypto;ring;mring;hardness")
+endif()
+
+# CR-11.G Phase 7.7 / M3.1 (task_ac273cea): MRNG vector-commitment layer.
+# Determinism + slot independence of generators, pack_b validation,
+# homomorphism of vcom, bit-flip sensitivity, chknorm bounds.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_statement_vcom.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_statement_vcom
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_statement_vcom.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_statement_vcom
+                      "unit;crypto;ring;mring;statement")
+endif()
+
+# CR-11.G Phase 7.7 / M3.2 (task_ac273cea): MRNG unified-statement
+# Claim 1 v2.1 — augmented-dim formula, augment_witness layout,
+# aggregate_X linearity, honest Claim 1 across multiple challenges, and
+# two soundness sanity checks (tampered Y_pk, tampered b̃[N]).
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_statement_eval.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_statement_eval
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_statement_eval.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_statement_eval
+                      "unit;crypto;ring;mring;statement;claim1")
+endif()
+
+# CR-11.G Phase 7.7 / M3.3 (task_ac273cea): MRNG bind-block helpers —
+# derive_A_T determinism, mask sampling bound, same-witness reconstruction
+# identity, tamper-detection soundness, norm gates, EAGAIN abort.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_statement_bind.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_statement_bind
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_statement_bind.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_statement_bind
+                      "unit;crypto;ring;mring;statement;bind")
+endif()
+
+# CR-11.G Phase 7.7 / M4.0a (task_ac273cea): MRNG R_q inversion +
+# empirical invertibility rate (resolves the full-vs-partial ring-
+# splitting question that the fold's challenge-retry design depends on).
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_invert.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_invert
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_invert.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_invert
+                      "unit;crypto;ring;mring;invert")
+endif()
+
+# CR-11.G Phase 7.7 / G3.1 §9.2 (task_ac273cea): MRNG ring-extension
+# arithmetic R_q^(e)=R_q[Y]/Φ₉ (e=6).  Ring axioms, x·x⁻¹=1 in F_{q⁶}
+# (scalar) and per-slot (general), embed∘project=id, is_in_base, and a
+# CI Rabin re-check that Φ₉ is irreducible over F_q.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_ext.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_ext
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_ext.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_ext
+                      "unit;crypto;ring;mring;ext")
+endif()
+
+# CR-11.G Phase 7.7 / G3.1 §9.3 (task_ac273cea): MRNG fold challenge set.
+# Deterministic Fiat-Shamir sampler over the subtractive set S = F_{q⁶}\{0};
+# every pairwise difference is invertible in R_q^(e) (single-shot 128-bit
+# fold soundness, no parallel repetition).
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_subtractive.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_subtractive
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_subtractive.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_subtractive
+                      "unit;crypto;ring;mring;subtractive")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
@@ -367,10 +441,10 @@ endif()
 # Build Integration Tests
 message("[+] Configuring Integration Tests")
 
-#if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_crypto_network.c)
-#    add_dap_test(test_integration_crypto_network integration/test_crypto_network.c)
-#    register_dap_test(test_integration_crypto_network "integration;crypto;network")
-#endif()
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_crypto_network.c)
+    add_dap_test(test_integration_crypto_network integration/test_crypto_network.c)
+    register_dap_test(test_integration_crypto_network "integration;crypto;network")
+endif()
 
 # PQC & new symmetric algorithm unit tests (ML-DSA, ML-KEM, ChaCha20, NTRU Prime, AES)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/pqc/CMakeLists.txt)

@@ -35,12 +35,38 @@ extern "C" {
 #define CHIPMUNK_LRS_MASK_BOUND (CHIPMUNK_LRS_RESPONSE_BOUND + CHIPMUNK_LRS_BETA)
 #define CHIPMUNK_LRS_MAX_ATTEMPTS 2048u
 
+/*
+ * Response-polynomial packing (z-pack).
+ *
+ * After rejection sampling every coefficient z_i of a response polynomial
+ * satisfies  -(RESPONSE_BOUND) <= z_i <= (RESPONSE_BOUND-1).
+ * That gives exactly 2*RESPONSE_BOUND = 2^20 = 1 048 576 distinct values,
+ * which fit in exactly 20 bits.  The biased representation is:
+ *
+ *   stored = z_i + RESPONSE_BOUND   ∈ [0, 2*RESPONSE_BOUND - 1]
+ *
+ * This is 2 bits tighter than the 22-bit full q-range pack (POLY_QPACK_BYTES)
+ * and should only be used for response (z_pk / z_T) sections — never for
+ * ring elements like link tags or public keys that span the full [0, q-1]
+ * range.
+ *
+ * Note: the rejection check in sign loops must be changed to the
+ * HALF-OPEN interval [-RESPONSE_BOUND, RESPONSE_BOUND) so that the biased
+ * value never exceeds 2*RESPONSE_BOUND - 1.
+ */
+#define CHIPMUNK_LRS_Z_BITS         20u
+#define CHIPMUNK_LRS_Z_BIAS         ((int32_t)CHIPMUNK_LRS_RESPONSE_BOUND)
+#define CHIPMUNK_LRS_POLY_ZPACK_BYTES \
+        ((CHIPMUNK_N * CHIPMUNK_LRS_Z_BITS) / 8u)
+
+_Static_assert(CHIPMUNK_LRS_POLY_ZPACK_BYTES == 1280u,
+               "z-packed polynomial size must be 1280 bytes (20 bits × 512 / 8)");
+
 typedef struct chipmunk_lrs_public_key {
     uint32_t magic;
     uint32_t params_id;
     uint32_t reserved0;
     uint32_t reserved1;
-    uint8_t pk_seed[CHIPMUNK_LRS_SEED_BYTES];
     uint8_t P[CHIPMUNK_LRS_POLY_QPACK_BYTES];
 } chipmunk_lrs_public_key_t;
 
@@ -50,15 +76,14 @@ typedef struct chipmunk_lrs_secret_key {
     uint32_t reserved0;
     uint32_t reserved1;
     uint8_t x_seed[CHIPMUNK_LRS_SEED_BYTES];
-    uint8_t pk_seed[CHIPMUNK_LRS_SEED_BYTES];
     uint8_t P[CHIPMUNK_LRS_POLY_QPACK_BYTES];
 } chipmunk_lrs_secret_key_t;
 
 _Static_assert(CHIPMUNK_LRS_POLY_QPACK_BYTES == 1408u,
                "q-packed polynomial size must stay pinned");
-_Static_assert(sizeof(chipmunk_lrs_public_key_t) == 1456u,
+_Static_assert(sizeof(chipmunk_lrs_public_key_t) == 1424u,
                "CLPK size drift");
-_Static_assert(sizeof(chipmunk_lrs_secret_key_t) == 1488u,
+_Static_assert(sizeof(chipmunk_lrs_secret_key_t) == 1456u,
                "CLSK size drift");
 
 #define CHIPMUNK_LRS_POP_HEADER_BYTES 96u
@@ -91,6 +116,23 @@ int chipmunk_lrs_poly_qpack(uint8_t a_out[CHIPMUNK_LRS_POLY_QPACK_BYTES],
 int chipmunk_lrs_poly_qunpack(chipmunk_poly_t *a_poly,
                               const uint8_t a_in[CHIPMUNK_LRS_POLY_QPACK_BYTES]);
 
+/*
+ * z-pack / z-unpack: 20-bit biased encoding for response polynomials.
+ *
+ * zpack: accepts coefficients in [-RESPONSE_BOUND, RESPONSE_BOUND-1] (half-
+ *        open, so that biased = coeff + RESPONSE_BOUND fits in 20 bits).
+ *        Returns -EINVAL if any coefficient is out of range.
+ *
+ * zunpack: decodes 20-bit biased values back to signed coefficients in
+ *          [-RESPONSE_BOUND, RESPONSE_BOUND-1].  Returns -EINVAL if a stored
+ *          value exceeds 2*RESPONSE_BOUND-1.
+ */
+int chipmunk_lrs_poly_zpack(uint8_t a_out[CHIPMUNK_LRS_POLY_ZPACK_BYTES],
+                             const chipmunk_poly_t *a_poly);
+
+int chipmunk_lrs_poly_zunpack(chipmunk_poly_t *a_poly,
+                               const uint8_t a_in[CHIPMUNK_LRS_POLY_ZPACK_BYTES]);
+
 int chipmunk_lrs_poly_chknorm_centered(const chipmunk_poly_t *a_poly,
                                        int32_t a_bound);
 
@@ -108,6 +150,20 @@ int chipmunk_lrs_h_to_short_poly(chipmunk_poly_t *a_poly,
                                  uint32_t a_index,
                                  int32_t a_bound);
 
+/*
+ * General-purpose bounded polynomial sampler: produces coefficients in
+ * [-a_bound, +a_bound] via rejection sampling over SHAKE256.  Unlike
+ * chipmunk_lrs_h_to_short_poly, a_bound may be as large as q/2 - 1 (covers
+ * MASK_BOUND = 524769).  Used by CLTS for pk and tag mask sampling.
+ */
+int chipmunk_lrs_h_to_bounded_poly(chipmunk_poly_t *a_poly,
+                                   const char *a_domain,
+                                   uint32_t a_params_id,
+                                   const uint8_t *a_seed_material,
+                                   size_t a_seed_material_size,
+                                   uint32_t a_index,
+                                   int32_t a_bound);
+
 int chipmunk_lrs_h_to_sparse_ternary(chipmunk_poly_t *a_challenge,
                                      const char *a_domain,
                                      uint32_t a_params_id,
@@ -116,11 +172,15 @@ int chipmunk_lrs_h_to_sparse_ternary(chipmunk_poly_t *a_challenge,
 int chipmunk_lrs_derive_witness(chipmunk_poly_t a_x[CHIPMUNK_LRS_K],
                                 const uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES]);
 
+/*
+ * System-wide public-key matrix A_pk (CR-11.G Phase 7.1).
+ * Derived from params_id only — identical for every ring member.
+ */
 int chipmunk_lrs_derive_A_pk(chipmunk_poly_t a_A_pk[CHIPMUNK_LRS_K],
-                             const uint8_t a_pk_seed[CHIPMUNK_LRS_SEED_BYTES]);
+                             uint32_t a_params_id);
 
 int chipmunk_lrs_derive_A_I(chipmunk_poly_t a_A_I[CHIPMUNK_LRS_K],
-                            const uint8_t a_pk_seed[CHIPMUNK_LRS_SEED_BYTES],
+                            uint32_t a_params_id,
                             const uint8_t a_P[CHIPMUNK_LRS_POLY_QPACK_BYTES]);
 
 int chipmunk_lrs_relation_eval(chipmunk_poly_t *a_out,
@@ -129,8 +189,7 @@ int chipmunk_lrs_relation_eval(chipmunk_poly_t *a_out,
 
 int chipmunk_lrs_keypair_from_seeds(chipmunk_lrs_public_key_t *a_pk,
                                     chipmunk_lrs_secret_key_t *a_sk,
-                                    const uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES],
-                                    const uint8_t a_pk_seed[CHIPMUNK_LRS_SEED_BYTES]);
+                                    const uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES]);
 
 int chipmunk_lrs_key_image(uint8_t a_key_image[CHIPMUNK_LRS_POLY_QPACK_BYTES],
                            const chipmunk_lrs_secret_key_t *a_sk);

@@ -5,12 +5,12 @@
  * Copyright  (c) 2025-2026
  * All rights reserved.
  *
- * Thin DAP-key adapter over the native Chipmunk linkable ring signature
- * (chipmunk_lrs).  Stores chipmunk_lrs_secret_key_t / public_key_t
- * byte-for-byte in dap_enc_key_t buffers.  Ring sign/verify go through
- * the dedicated dap_sign_create_ring / dap_sign_verify_ring entry
- * points because the standard sign_get/sign_verify callbacks cannot
- * carry the ring argument.
+ * Thin DAP-key adapter over the native Chipmunk Ring key material.
+ * Stores chipmunk_lrs_secret_key_t / public_key_t byte-for-byte in
+ * dap_enc_key_t buffers.  Ring sign/verify go through the generic
+ * dap_sign_create_ring / dap_sign_verify_ring dispatcher because the
+ * standard sign_get/sign_verify callbacks cannot carry ring and signer
+ * subset context.
  */
 
 #include <errno.h>
@@ -34,16 +34,15 @@ _Static_assert(sizeof(chipmunk_lrs_secret_key_t) == DAP_ENC_CHIPMUNK_RING_PRIV_K
 
 int dap_enc_chipmunk_ring_init(void)
 {
-    /* No global state to initialise — chipmunk_lrs is stateless and
-     * chipmunk_hash is initialised by the crypto module's own init path. */
-    return 0;
+    /* chipmunk_lrs is stateless; the DAP signature layer only needs the
+     * algorithm-specific ring callbacks registered at crypto init time. */
+    return dap_sign_chipmunk_ring_register_callbacks();
 }
 
-static int s_expand_two_seeds(uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES],
-                              uint8_t a_pk_seed[CHIPMUNK_LRS_SEED_BYTES],
-                              const void *a_material, size_t a_material_size)
+static int s_expand_x_seed(uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES],
+                           const void *a_material, size_t a_material_size)
 {
-    static const uint8_t k_domain[] = "chipmunk/lrs/keygen/v2";
+    static const uint8_t k_domain[] = "chipmunk/lrs/keygen/v3";
     uint8_t l_concat[sizeof(k_domain) + 4096];
     if (a_material_size > sizeof(l_concat) - sizeof(k_domain)) {
         return -EINVAL;
@@ -56,23 +55,16 @@ static int s_expand_two_seeds(uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES],
         l_off += a_material_size;
     }
 
-    uint8_t l_okm[2u * CHIPMUNK_LRS_SEED_BYTES];
-    dap_hash_shake256(l_okm, sizeof(l_okm), l_concat, l_off);
-    memcpy(a_x_seed,  l_okm,                          CHIPMUNK_LRS_SEED_BYTES);
-    memcpy(a_pk_seed, l_okm + CHIPMUNK_LRS_SEED_BYTES, CHIPMUNK_LRS_SEED_BYTES);
-    dap_memwipe(l_okm, sizeof(l_okm));
+    dap_hash_shake256(a_x_seed, CHIPMUNK_LRS_SEED_BYTES, l_concat, l_off);
     dap_memwipe(l_concat, sizeof(l_concat));
     return 0;
 }
 
-static int s_derive_seeds_from_anything(uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES],
-                                        uint8_t a_pk_seed[CHIPMUNK_LRS_SEED_BYTES],
-                                        const void *a_kex_buf, size_t a_kex_size,
-                                        const void *a_seed,    size_t a_seed_size,
-                                        const void *a_personalisation, size_t a_personalisation_size)
+static int s_derive_x_seed_from_anything(uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES],
+                                         const void *a_kex_buf, size_t a_kex_size,
+                                         const void *a_seed,    size_t a_seed_size,
+                                         const void *a_personalisation, size_t a_personalisation_size)
 {
-    /* Concatenate every contribution the caller offered and feed it to
-     * SHAKE256.  If nothing was provided, pull a fresh CSPRNG seed. */
     uint8_t l_buf[4096];
     size_t  l_off = 0;
     const struct { const void *p; size_t n; } l_chunks[] = {
@@ -96,12 +88,12 @@ static int s_derive_seeds_from_anything(uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTES
             log_it(L_ERROR, "dap_random_bytes failed for CHIPMUNK_RING key seed");
             return -EIO;
         }
-        int l_rc = s_expand_two_seeds(a_x_seed, a_pk_seed, l_rng, sizeof(l_rng));
+        int l_rc = s_expand_x_seed(a_x_seed, l_rng, sizeof(l_rng));
         dap_memwipe(l_rng, sizeof(l_rng));
         return l_rc;
     }
 
-    int l_rc = s_expand_two_seeds(a_x_seed, a_pk_seed, l_buf, l_off);
+    int l_rc = s_expand_x_seed(a_x_seed, l_buf, l_off);
     dap_memwipe(l_buf, sizeof(l_buf));
     return l_rc;
 }
@@ -117,11 +109,10 @@ dap_enc_key_t *dap_enc_chipmunk_ring_key_generate(const void *a_kex_buf, size_t 
                                                   const void *a_personalisation, size_t a_personalisation_size)
 {
     uint8_t l_x_seed[CHIPMUNK_LRS_SEED_BYTES];
-    uint8_t l_pk_seed[CHIPMUNK_LRS_SEED_BYTES];
-    if (s_derive_seeds_from_anything(l_x_seed, l_pk_seed,
-                                     a_kex_buf, a_kex_size,
-                                     a_seed, a_seed_size,
-                                     a_personalisation, a_personalisation_size) != 0) {
+    if (s_derive_x_seed_from_anything(l_x_seed,
+                                      a_kex_buf, a_kex_size,
+                                      a_seed, a_seed_size,
+                                      a_personalisation, a_personalisation_size) != 0) {
         return NULL;
     }
 
@@ -131,13 +122,11 @@ dap_enc_key_t *dap_enc_chipmunk_ring_key_generate(const void *a_kex_buf, size_t 
         DAP_DEL_Z(l_pk);
         DAP_DEL_Z(l_sk);
         dap_memwipe(l_x_seed, sizeof(l_x_seed));
-        dap_memwipe(l_pk_seed, sizeof(l_pk_seed));
         return NULL;
     }
 
-    int l_rc = chipmunk_lrs_keypair_from_seeds(l_pk, l_sk, l_x_seed, l_pk_seed);
+    int l_rc = chipmunk_lrs_keypair_from_seeds(l_pk, l_sk, l_x_seed);
     dap_memwipe(l_x_seed, sizeof(l_x_seed));
-    dap_memwipe(l_pk_seed, sizeof(l_pk_seed));
     if (l_rc != 0) {
         DAP_DEL_Z(l_pk);
         dap_memwipe(l_sk, sizeof(*l_sk));
