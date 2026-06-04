@@ -424,16 +424,6 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         if (!l_es->remote_protocol_version)
             l_es->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
 
-        int l_json_parse_count = 0;
-        if (l_session_id_b64)
-            l_json_parse_count++;
-        if (l_bob_message_b64)
-            l_json_parse_count++;
-
-        if (l_json_parse_count < 2 || l_json_parse_count > 4) {
-            l_error = ERROR_ENC_NO_KEY;
-            break;
-        }
         if (!l_session_id_b64 || !l_bob_message_b64) {
             l_error = ERROR_ENC_NO_KEY;
             break;
