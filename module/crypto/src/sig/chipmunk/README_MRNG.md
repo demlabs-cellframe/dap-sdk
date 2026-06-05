@@ -213,7 +213,21 @@ Two **R_q^{(e)}** elements — the folded `a*, b*`:
 |   0           | 8 448    | `a*`  |
 |   8 448       | 8 448    | `b*`  |
 
-Verifier checks `⟨a*, b*⟩ == ρ_final` via `chipmunk_mring_fold_verify`.
+Verifier checks `⟨a*, b* − ω⟩ == ρ_final` via `chipmunk_mring_fold_verify`
+(β = b* on wire includes ω; ω at `section_off_leaf_mask`).
+
+---
+
+## 9b. Leaf mask (`LEAF_MASK_BYTES = 3 136`) [G3 §6.1 C2 / M4.3]
+
+Single R_q polynomial ω (MatRiCT+ leaf blinding, G3 §3.3):
+
+| offset (rel.) | size (B) | field |
+|--------------:|---------:|-------|
+|   0           | 3 136    | `ω`   |
+
+49-bit biased encoding with pack bound `WC^9 = 37^9`; honest sampling
+uses `WC^fold_depth`.  Pack/unpack: `chipmunk_mring_leaf_mask_pack/unpack`.
 
 ---
 
@@ -268,19 +282,20 @@ fixed(N) = 28          // header
          = 12 060 B    // structural lower bound, any N ≥ 2
 ```
 
-Exact wire sizes (M4.2, seed-compressed openings — G3 §6.1 C1):
+Exact wire sizes (M4.3, seed-compressed openings + leaf-mask):
 
 ```
-total(D) = 12 060 + 32 + D · 16 896 + 16 896 = 28 988 + D · 16 896
+total(D) = 12 060 + 32 + D · 16 896 + 16 896 + 3 136
+         = 32 124 + D · 16 896
 ```
 
 | N    | D | total (B) | ~KB   |
 |-----:|--:|----------:|------:|
-|    2 | 2 |    62 780 |  61.3 |
-|    4 | 3 |    79 676 |  77.8 |
-|   16 | 5 |   113 468 | 110.8 |
-|   64 | 7 |   147 260 | 143.8 |
-|  256 | 9 |   181 052 | 176.8 |
+|    2 | 2 |    65 916 |  64.4 |
+|    4 | 3 |    82 812 |  80.9 |
+|   16 | 5 |   116 604 | 113.9 |
+|   64 | 7 |   150 396 | 146.9 |
+|  256 | 9 |   184 188 | 179.9 |
 
 Per-round opening randomness is **not** on the wire (32 B seed only).
 Amendment v2 §5.1 byte targets assumed R_q fold elements; with G3.1

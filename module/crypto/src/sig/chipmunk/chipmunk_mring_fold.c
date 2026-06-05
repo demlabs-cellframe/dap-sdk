@@ -17,6 +17,222 @@
 
 #define MRING_FOLD_ROUND_FS_DOMAIN   "MRNG-M4-fold-round-fs-v1"
 #define MRING_FOLD_OPENING_DOMAIN    "MRNG-M4-fold-opening-v1"
+#define MRING_LEAF_MASK_DOMAIN       "MRNG-M4-leaf-mask-v1"
+
+typedef struct leaf_xof_reader {
+    uint64_t st[25];
+    uint8_t  block[DAP_SHAKE256_RATE];
+    size_t   pos;
+    size_t   avail;
+} leaf_xof_reader_t;
+
+static void s_leaf_xof_init(leaf_xof_reader_t *a_r,
+                            const char *a_domain,
+                            const uint8_t *a_seed, size_t a_seed_len)
+{
+    memset(a_r, 0, sizeof(*a_r));
+    dap_hash_shake256_absorb(a_r->st,
+                             (const uint8_t *)a_domain,
+                             strlen(a_domain));
+    dap_hash_shake256_absorb(a_r->st, a_seed, a_seed_len);
+}
+
+static uint8_t s_leaf_xof_u8(leaf_xof_reader_t *a_r)
+{
+    if (a_r->pos == a_r->avail) {
+        dap_hash_shake256_squeezeblocks(a_r->block, 1u, a_r->st);
+        a_r->pos = 0;
+        a_r->avail = sizeof(a_r->block);
+    }
+    return a_r->block[a_r->pos++];
+}
+
+static uint64_t s_leaf_xof_u64(leaf_xof_reader_t *a_r)
+{
+    uint8_t l_b[8];
+    for (size_t i = 0u; i < sizeof(l_b); ++i) {
+        l_b[i] = s_leaf_xof_u8(a_r);
+    }
+    return ((uint64_t)l_b[0])
+           | ((uint64_t)l_b[1] << 8)
+           | ((uint64_t)l_b[2] << 16)
+           | ((uint64_t)l_b[3] << 24)
+           | ((uint64_t)l_b[4] << 32)
+           | ((uint64_t)l_b[5] << 40)
+           | ((uint64_t)l_b[6] << 48)
+           | ((uint64_t)l_b[7] << 56);
+}
+
+static int64_t s_center_coeff_i64(int32_t a_c)
+{
+    int64_t l_v = a_c;
+    const int64_t l_half = (int64_t)CHIPMUNK_Q / 2;
+    if (l_v > l_half) {
+        l_v -= (int64_t)CHIPMUNK_Q;
+    } else if (l_v < -l_half) {
+        l_v += (int64_t)CHIPMUNK_Q;
+    }
+    return l_v;
+}
+
+static int32_t s_reduce_coeff_i64(int64_t a_v)
+{
+    const int64_t l_q = (int64_t)CHIPMUNK_Q;
+    int64_t l_r = a_v % l_q;
+    if (l_r < 0) {
+        l_r += l_q;
+    }
+    const int64_t l_half = l_q / 2;
+    if (l_r > l_half) {
+        l_r -= l_q;
+    }
+    return (int32_t)l_r;
+}
+
+static int s_leaf_mask_inf_norm(const int64_t a_coeffs[CHIPMUNK_MRING_N],
+                                int64_t *a_max_out)
+{
+    int64_t l_max = 0;
+    for (size_t i = 0u; i < CHIPMUNK_MRING_N; ++i) {
+        int64_t l_a = a_coeffs[i];
+        if (l_a < 0) {
+            l_a = -l_a;
+        }
+        if (l_a > l_max) {
+            l_max = l_a;
+        }
+    }
+    if (a_max_out) {
+        *a_max_out = l_max;
+    }
+    return 0;
+}
+
+static void s_ext_apply_leaf_mask(chipmunk_mring_ext_t *a_b,
+                                  const int64_t a_omega[CHIPMUNK_MRING_N],
+                                  int32_t a_sign)
+{
+    for (size_t i = 0u; i < CHIPMUNK_MRING_N; ++i) {
+        int64_t l_v = s_center_coeff_i64(a_b->c[0].coeffs[i]);
+        l_v += (int64_t)a_sign * a_omega[i];
+        a_b->c[0].coeffs[i] = s_reduce_coeff_i64(l_v);
+    }
+    chipmunk_mring_ext_canonicalize(a_b);
+}
+
+int64_t chipmunk_mring_leaf_bound_for_depth(uint32_t a_fold_depth)
+{
+    if (a_fold_depth == 0u
+        || a_fold_depth > CHIPMUNK_MRING_FOLD_DEPTH_MAX) {
+        return 0;
+    }
+    int64_t l_w = 1;
+    for (uint32_t i = 0u; i < a_fold_depth; ++i) {
+        l_w *= (int64_t)CHIPMUNK_MRING_WC;
+    }
+    return l_w;
+}
+
+int chipmunk_mring_leaf_mask_sample(int64_t a_out[CHIPMUNK_MRING_N],
+                                    const uint8_t
+                                        a_leaf_mask_seed[CHIPMUNK_MRING_HASH_BYTES],
+                                    int64_t a_bound)
+{
+    if (!a_out || !a_leaf_mask_seed || a_bound <= 0
+        || a_bound > CHIPMUNK_MRING_LEAF_BOUND_MAX) {
+        return -EINVAL;
+    }
+
+    leaf_xof_reader_t l_reader;
+    s_leaf_xof_init(&l_reader, MRING_LEAF_MASK_DOMAIN,
+                    a_leaf_mask_seed, CHIPMUNK_MRING_HASH_BYTES);
+
+    const uint64_t l_range = (uint64_t)(2 * a_bound + 1);
+    const uint64_t l_threshold = UINT64_MAX - (UINT64_MAX % l_range);
+
+    for (size_t i = 0u; i < CHIPMUNK_MRING_N; ++i) {
+        uint64_t l_v;
+        do {
+            l_v = s_leaf_xof_u64(&l_reader);
+        } while (l_v >= l_threshold);
+        a_out[i] = (int64_t)(l_v % l_range) - a_bound;
+    }
+    return 0;
+}
+
+int chipmunk_mring_leaf_mask_pack(uint8_t *a_out, size_t a_out_size,
+                                  const int64_t a_coeffs[CHIPMUNK_MRING_N],
+                                  int64_t a_pack_bound)
+{
+    if (!a_out || !a_coeffs || a_pack_bound <= 0
+        || a_pack_bound > CHIPMUNK_MRING_LEAF_BOUND_MAX
+        || a_out_size < (size_t)CHIPMUNK_MRING_LEAF_MASK_BYTES) {
+        return -EINVAL;
+    }
+
+    memset(a_out, 0, CHIPMUNK_MRING_LEAF_MASK_BYTES);
+    uint64_t l_acc = 0;
+    uint32_t l_bits = 0;
+    size_t l_pos = 0;
+
+    for (size_t i = 0u; i < CHIPMUNK_MRING_N; ++i) {
+        const int64_t l_c = a_coeffs[i];
+        if (l_c < -a_pack_bound || l_c > a_pack_bound) {
+            return -EINVAL;
+        }
+        const uint64_t l_v = (uint64_t)(l_c + a_pack_bound);
+        l_acc |= l_v << l_bits;
+        l_bits += CHIPMUNK_MRING_LEAF_BITS;
+        while (l_bits >= 8u) {
+            if (l_pos >= CHIPMUNK_MRING_LEAF_MASK_BYTES) {
+                return -EOVERFLOW;
+            }
+            a_out[l_pos++] = (uint8_t)(l_acc & 0xffu);
+            l_acc >>= 8u;
+            l_bits -= 8u;
+        }
+    }
+
+    return (l_pos == CHIPMUNK_MRING_LEAF_MASK_BYTES && l_bits == 0) ? 0
+                                                                     : -EOVERFLOW;
+}
+
+int chipmunk_mring_leaf_mask_unpack(int64_t a_out[CHIPMUNK_MRING_N],
+                                    const uint8_t *a_in, size_t a_in_size,
+                                    int64_t a_pack_bound)
+{
+    if (!a_out || !a_in || a_pack_bound <= 0
+        || a_pack_bound > CHIPMUNK_MRING_LEAF_BOUND_MAX
+        || a_in_size < (size_t)CHIPMUNK_MRING_LEAF_MASK_BYTES) {
+        return -EINVAL;
+    }
+
+    uint64_t l_acc = 0;
+    uint32_t l_bits = 0;
+    size_t l_pos = 0;
+    const uint64_t l_mask = (1ull << CHIPMUNK_MRING_LEAF_BITS) - 1ull;
+    const uint64_t l_max = (uint64_t)(2 * a_pack_bound);
+
+    for (size_t i = 0u; i < CHIPMUNK_MRING_N; ++i) {
+        while (l_bits < CHIPMUNK_MRING_LEAF_BITS) {
+            if (l_pos >= CHIPMUNK_MRING_LEAF_MASK_BYTES) {
+                return -EINVAL;
+            }
+            l_acc |= ((uint64_t)a_in[l_pos++]) << l_bits;
+            l_bits += 8u;
+        }
+        const uint64_t l_v = l_acc & l_mask;
+        l_acc >>= CHIPMUNK_MRING_LEAF_BITS;
+        l_bits -= CHIPMUNK_MRING_LEAF_BITS;
+        if (l_v > l_max) {
+            return -EINVAL;
+        }
+        a_out[i] = (int64_t)l_v - a_pack_bound;
+    }
+
+    return (l_pos == CHIPMUNK_MRING_LEAF_MASK_BYTES && l_bits == 0) ? 0
+                                                                     : -EINVAL;
+}
 
 /* ------------------------------------------------------------------ */
 /*  ext vector helpers                                                 */
@@ -466,6 +682,12 @@ int chipmunk_mring_fold_proof_alloc(chipmunk_mring_fold_proof_t *a_proof,
     if (!a_proof->rounds) {
         return -ENOMEM;
     }
+    a_proof->leaf_mask = DAP_NEW_Z_COUNT(int64_t, CHIPMUNK_MRING_N);
+    if (!a_proof->leaf_mask) {
+        DAP_DELETE(a_proof->rounds);
+        a_proof->rounds = NULL;
+        return -ENOMEM;
+    }
     a_proof->fold_depth = a_fold_depth;
     for (uint32_t i = 0u; i < a_fold_depth; ++i) {
         chipmunk_mring_ext_zero(&a_proof->rounds[i].C_L);
@@ -482,7 +704,9 @@ void chipmunk_mring_fold_proof_free(chipmunk_mring_fold_proof_t *a_proof)
         return;
     }
     DAP_DELETE(a_proof->rounds);
+    DAP_DELETE(a_proof->leaf_mask);
     a_proof->rounds = NULL;
+    a_proof->leaf_mask = NULL;
     a_proof->fold_depth = 0u;
 }
 
@@ -498,7 +722,7 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
                               const uint8_t a_fold_opening_seed
                                   [CHIPMUNK_MRING_FOLD_OPENING_BYTES])
 {
-    if (!a_proof || !a_proof->rounds || !a_b_indicator || !a_pks
+    if (!a_proof || !a_proof->rounds || !a_proof->leaf_mask || !a_b_indicator || !a_pks
         || !a_c || !a_Y_pk || !a_ring_hash || !a_fs_seed
         || !a_fold_opening_seed) {
         return -EINVAL;
@@ -567,6 +791,20 @@ int chipmunk_mring_fold_prove(chipmunk_mring_fold_proof_t *a_proof,
     chipmunk_mring_ext_canonicalize(&a_proof->b_star);
     chipmunk_mring_ext_canonicalize(&a_proof->a_star);
 
+    const int64_t l_leaf_bound =
+        chipmunk_mring_leaf_bound_for_depth(l_depth);
+    rc = chipmunk_mring_leaf_mask_sample(a_proof->leaf_mask,
+                                         a_fold_opening_seed,
+                                         l_leaf_bound);
+    if (rc != 0) {
+        log_it(L_ERROR, "MRNG fold_prove: leaf_mask sample failed (rc=%d)",
+               rc);
+        s_extvec_free(&l_P);
+        s_extvec_free(&l_b);
+        return rc;
+    }
+    s_ext_apply_leaf_mask(&a_proof->b_star, a_proof->leaf_mask, +1);
+
     s_extvec_free(&l_P);
     s_extvec_free(&l_b);
     return 0;
@@ -581,7 +819,7 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
                                const uint8_t a_ring_hash[CHIPMUNK_MRING_HASH_BYTES],
                                const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES])
 {
-    if (!a_proof || !a_proof->rounds || !a_pks || !a_c || !a_Y_pk
+    if (!a_proof || !a_proof->rounds || !a_proof->leaf_mask || !a_pks || !a_c || !a_Y_pk
         || !a_ring_hash || !a_fs_seed) {
         return -EINVAL;
     }
@@ -758,8 +996,20 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
         return -EBADMSG;
     }
 
+    const int64_t l_leaf_bound =
+        chipmunk_mring_leaf_bound_for_depth(l_depth);
+    int64_t l_leaf_max = 0;
+    if (s_leaf_mask_inf_norm(a_proof->leaf_mask, &l_leaf_max) != 0
+        || l_leaf_max > l_leaf_bound) {
+        s_extvec_free(&l_P);
+        return -EBADMSG;
+    }
+
+    chipmunk_mring_ext_t l_b_unmask = a_proof->b_star;
+    s_ext_apply_leaf_mask(&l_b_unmask, a_proof->leaf_mask, -1);
+
     chipmunk_mring_ext_t l_prod;
-    rc = chipmunk_mring_ext_mul(&l_prod, &a_proof->b_star, &a_proof->a_star);
+    rc = chipmunk_mring_ext_mul(&l_prod, &l_b_unmask, &a_proof->a_star);
     if (rc != 0) {
         s_extvec_free(&l_P);
         return rc;
@@ -893,6 +1143,16 @@ int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
         log_it(L_ERROR, "MRNG fold_write: b* pack failed (rc=%d)", rc);
         return rc;
     }
+
+    const uint32_t l_off_leaf =
+        chipmunk_mring_section_off_leaf_mask(a_fold_depth);
+    rc = chipmunk_mring_leaf_mask_pack(
+        a_buf + l_off_leaf, a_buf_size - l_off_leaf,
+        a_proof->leaf_mask, CHIPMUNK_MRING_LEAF_BOUND_MAX);
+    if (rc != 0) {
+        log_it(L_ERROR, "MRNG fold_write: leaf_mask pack failed (rc=%d)", rc);
+        return rc;
+    }
     return 0;
 }
 
@@ -950,6 +1210,17 @@ int chipmunk_mring_fold_read(chipmunk_mring_fold_proof_t *a_proof,
                          a_buf + l_off_final + l_ext_bytes, l_ext_bytes);
     if (rc != 0) {
         log_it(L_ERROR, "MRNG fold_read: b* unpack failed (rc=%d)", rc);
+        return rc;
+    }
+
+    const uint32_t l_off_leaf =
+        chipmunk_mring_section_off_leaf_mask(a_fold_depth);
+    rc = chipmunk_mring_leaf_mask_unpack(
+        a_proof->leaf_mask, a_buf + l_off_leaf,
+        a_buf_size - l_off_leaf, CHIPMUNK_MRING_LEAF_BOUND_MAX);
+    if (rc != 0) {
+        log_it(L_ERROR, "MRNG fold_read: leaf_mask unpack failed (rc=%d)",
+               rc);
         return rc;
     }
     return 0;

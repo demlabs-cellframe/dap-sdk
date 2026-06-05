@@ -28,6 +28,8 @@
  *   │  for r in [0, fold_depth):  C_L, C_R   (ext VCom qpack)       │
  *   ├─ final scalars (FINAL_SCALARS_BYTES) ─────────────────────────┤
  *   │  a*, b*  (final folded R_q^{(e)} scalars, 6 qpack each)       │
+ *   ├─ leaf mask (LEAF_MASK_BYTES = 3136 B) [G3 §6.1 C2 / M4.3] ────┤
+ *   │  ω ∈ R_q, 49-bit pack, ‖ω‖∞ ≤ WC^fold_depth                  │
  *   ├─ bind block (K_PK·zpack = 7680 B) [G2 v2.1 §4] ───────────────┤
  *   │  z_x = ρ_x + c*·X ∈ R_q^{K_pk}   (K_pk zpacks);               │
  *   │  Π_norm not on wire — verifier recomputes (G2 v2 §A6)         │
@@ -152,10 +154,16 @@ static inline uint32_t chipmunk_mring_section_off_final(uint32_t a_fold_depth)
            + a_fold_depth * CHIPMUNK_MRING_FOLD_ROUND_BYTES;
 }
 
-static inline uint32_t chipmunk_mring_section_off_bind(uint32_t a_fold_depth)
+static inline uint32_t chipmunk_mring_section_off_leaf_mask(uint32_t a_fold_depth)
 {
     return chipmunk_mring_section_off_final(a_fold_depth)
            + CHIPMUNK_MRING_FINAL_SCALARS_BYTES;
+}
+
+static inline uint32_t chipmunk_mring_section_off_bind(uint32_t a_fold_depth)
+{
+    return chipmunk_mring_section_off_leaf_mask(a_fold_depth)
+           + CHIPMUNK_MRING_LEAF_MASK_BYTES;
 }
 
 /* Total signature size in bytes for the given (validated) fold_depth. */

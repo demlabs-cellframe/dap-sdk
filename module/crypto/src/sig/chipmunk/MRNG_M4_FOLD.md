@@ -32,7 +32,11 @@ with:
 `fold_opening_seed` (32 B) + per-round `(C_L, C_R)` commitments; FS hashes
 commitments, verifier opens via `chipmunk_mring_fold_derive_opening`.
 
-**Deferred to M4.3+:** leaf-mask ω, integration into `chipmunk_mring_sign`.
+**M4.3 (this sprint):** leaf-mask ω (G3 §6.1 C2):
+49-bit pack (`LEAF_MASK_BYTES = 3136`), `chipmunk_mring_leaf_mask_*`;
+prover sends β = b̃^{(D)} + ω, verifier unmasks for INV check.
+
+**Deferred to M4.4+:** integration into `chipmunk_mring_sign`.
 
 ---
 
@@ -117,6 +121,9 @@ Exact totals: `28 956 + D · 16 896` bytes (see README_MRNG.md §11).
 `chipmunk_mring_section_off_fold_opening_seed()`; fold rounds carry
 `(C_L, C_R)` VCom commitments (same EXT_QPACK_BYTES as M4.1 raw slots).
 Total: `28 988 + D · 16 896` bytes (+32 B vs M4.1).
+
+**M4.3 additions:** leaf-mask ω at `chipmunk_mring_section_off_leaf_mask()`;
+49-bit pack, `LEAF_MASK_BYTES = 3136`.  Total: `32 124 + D · 16 896` bytes.
 
 ---
 

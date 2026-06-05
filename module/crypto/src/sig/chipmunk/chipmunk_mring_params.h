@@ -82,6 +82,15 @@
 #define CHIPMUNK_MRING_FOLD_OPENING_BYTES CHIPMUNK_MRING_FOLD_SEED_BYTES
 #define CHIPMUNK_MRING_FS_OUT_BITS       384u
 
+/*
+ * G3 §6.1 C2 / M4.3 — final-round leaf-mask ω ∈ R_q (MatRiCT+ Lemma 4.2).
+ * Wire: 49-bit biased encoding per coefficient, bound WC^{D_MAX} = 37^9.
+ */
+#define CHIPMUNK_MRING_LEAF_BITS         49u
+#define CHIPMUNK_MRING_LEAF_MASK_BYTES \
+        ((uint32_t)(CHIPMUNK_MRING_N * CHIPMUNK_MRING_LEAF_BITS / 8u))
+#define CHIPMUNK_MRING_LEAF_BOUND_MAX    ((int64_t)129961749712937LL) /* 37^9 */
+
 /* Ring extension degree e = deg Φ₉ (G3.1 §3); kept here to avoid params↔ext cycle. */
 #define CHIPMUNK_MRING_EXT_DEG           6
 
@@ -150,6 +159,8 @@ _Static_assert(CHIPMUNK_MRING_EXT_QPACK_BYTES ==
 _Static_assert(CHIPMUNK_MRING_FOLD_ROUND_BYTES ==
                2u * CHIPMUNK_MRING_EXT_QPACK_BYTES,
                "MRNG: fold round = (L,R) ext elements");
+_Static_assert(CHIPMUNK_MRING_LEAF_MASK_BYTES == 3136u,
+               "MRNG: leaf-mask = 49 bits × 512 coeffs");
 /* G2 v2 §A2: ensure REL-2 (\sum b_i = t) lifts losslessly Z -> R_q. */
 _Static_assert((uint32_t)CHIPMUNK_MRING_N_MAX < (uint32_t)CHIPMUNK_MRING_Q,
                "MRNG: N_MAX must be < q for the Z->R_q lift of REL-2 to be loss-free");
