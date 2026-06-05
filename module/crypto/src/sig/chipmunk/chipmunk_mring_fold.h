@@ -66,6 +66,38 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
                                const chipmunk_poly_t *a_Y_pk,
                                const uint8_t a_fs_seed[CHIPMUNK_MRING_HASH_BYTES]);
 
+/* ------------------------------------------------------------------------ *
+ *  M4.1 wire pack/unpack (G3.1 §8).
+ *
+ *  One R_q^{(e)} element = e consecutive qpacks (Y^0 .. Y^{e-1}).
+ *  Fold section layout (relative to chipmunk_mring_section_off_fold()):
+ *    round r: L_r ‖ R_r   (each EXT_QPACK_BYTES)
+ *  Final scalars (chipmunk_mring_section_off_final()):
+ *    a* ‖ b*              (each EXT_QPACK_BYTES)
+ * ------------------------------------------------------------------------ */
+
+int chipmunk_mring_ext_qpack(uint8_t *a_out, size_t a_out_size,
+                             const chipmunk_mring_ext_t *a_x);
+
+int chipmunk_mring_ext_qunpack(chipmunk_mring_ext_t *a_out,
+                               const uint8_t *a_in, size_t a_in_size);
+
+/*
+ *  Serialise a_proof into the fold + final-scalar wire slots of a_buf.
+ *  a_buf must be at least chipmunk_mring_wire_size(a_fold_depth).
+ */
+int chipmunk_mring_fold_write(uint8_t *a_buf, size_t a_buf_size,
+                              uint32_t a_fold_depth,
+                              const chipmunk_mring_fold_proof_t *a_proof);
+
+/*
+ *  Parse fold + final-scalar slots into a_proof (caller must alloc proof
+ *  with matching fold_depth first).
+ */
+int chipmunk_mring_fold_read(chipmunk_mring_fold_proof_t *a_proof,
+                             uint32_t a_fold_depth,
+                             const uint8_t *a_buf, size_t a_buf_size);
+
 #ifdef __cplusplus
 }
 #endif

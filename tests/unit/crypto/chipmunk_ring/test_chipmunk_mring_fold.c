@@ -8,6 +8,9 @@
  *   T2. Honest prove → verify PASS for N=4, t=2, multiple fs_seeds.
  *   T3. Tampered L_0 → verify FAIL.
  *   T4. Tampered b* → verify FAIL.
+ *   T5. Wire write → read roundtrip preserves verify acceptance (M4.1).
+ *   T6. chipmunk_mring_wire_size matches pinned formula for N=4.
+ *   T7. ext qpack → qunpack roundtrip on fold cross-term.
  */
 
 #include <dap_common.h>
@@ -19,6 +22,7 @@
 #include <string.h>
 
 #include "chipmunk/chipmunk_mring_fold.h"
+#include "chipmunk/chipmunk_mring_params.h"
 #include "sig/chipmunk/chipmunk_mring.h"
 #include "chipmunk/chipmunk_mring_statement.h"
 #include "chipmunk/chipmunk_lrs.h"
@@ -172,6 +176,112 @@ static void test_tampered_L_rejected(void)
     chipmunk_mring_fold_proof_free(&proof);
 }
 
+static void s_prove_fixture(chipmunk_mring_fold_proof_t *a_proof,
+                            chipmunk_poly_t *a_pks,
+                            chipmunk_poly_t *a_c,
+                            chipmunk_poly_t *a_Y_pk,
+                            uint8_t *a_fs_seed,
+                            uint8_t a_salt)
+{
+    chipmunk_poly_t x_flat[N_RING * CHIPMUNK_LRS_K];
+    uint8_t b_ind[N_RING];
+    s_build_fixture(a_pks, x_flat, b_ind);
+    s_sample_c(a_c, a_salt);
+
+    chipmunk_poly_t A_pk[CHIPMUNK_LRS_K];
+    dap_assert(chipmunk_lrs_derive_A_pk(A_pk, CHIPMUNK_LRS_PARAMS_C0) == 0,
+               "A_pk");
+    chipmunk_poly_t X[CHIPMUNK_LRS_K];
+    dap_assert(chipmunk_mring_aggregate_X(X, b_ind, x_flat, N_RING) == 0,
+               "X");
+    dap_assert(chipmunk_lrs_relation_eval(a_Y_pk, A_pk, X) == 0, "Y_pk");
+
+    for (size_t i = 0u; i < sizeof(*a_fs_seed); ++i) {
+        a_fs_seed[i] = (uint8_t)(0xA7u ^ (uint8_t)i ^ a_salt);
+    }
+
+    const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
+    dap_assert(chipmunk_mring_fold_prove(a_proof, b_ind, N_RING,
+                                         a_pks, a_c, T_THRESH, a_Y_pk,
+                                         a_fs_seed) == 0,
+               "prove");
+}
+
+static void test_wire_roundtrip_verify(void)
+{
+    chipmunk_poly_t pks[N_RING];
+    chipmunk_poly_t c, Y_pk;
+    uint8_t fs_seed[32];
+
+    const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
+    chipmunk_mring_fold_proof_t proof;
+    dap_assert(chipmunk_mring_fold_proof_alloc(&proof, l_depth) == 0,
+               "alloc proof");
+    s_prove_fixture(&proof, pks, &c, &Y_pk, fs_seed, 0x33u);
+
+    const uint32_t l_wire = chipmunk_mring_wire_size(l_depth);
+    uint8_t *l_buf = DAP_NEW_Z_COUNT(uint8_t, l_wire);
+    dap_assert(l_buf != NULL, "wire buffer alloc");
+
+    dap_assert(chipmunk_mring_fold_write(l_buf, l_wire, l_depth, &proof) == 0,
+               "fold_write");
+
+    chipmunk_mring_fold_proof_t parsed;
+    dap_assert(chipmunk_mring_fold_proof_alloc(&parsed, l_depth) == 0,
+               "alloc parsed");
+    dap_assert(chipmunk_mring_fold_read(&parsed, l_depth, l_buf, l_wire) == 0,
+               "fold_read");
+
+    dap_assert(chipmunk_mring_fold_verify(&parsed, N_RING, pks, &c, T_THRESH,
+                                          &Y_pk, fs_seed) == 0,
+               "verify after wire roundtrip");
+
+    chipmunk_mring_fold_proof_free(&parsed);
+    chipmunk_mring_fold_proof_free(&proof);
+    DAP_DELETE(l_buf);
+}
+
+static void test_wire_size_formula(void)
+{
+    const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
+    const uint32_t l_wire = chipmunk_mring_wire_size(l_depth);
+    const uint32_t l_expected = 28956u + l_depth * 16896u;
+    dap_assert(l_wire == l_expected,
+               "wire_size matches M4.1 formula for N=4");
+}
+
+static void test_ext_qpack_roundtrip(void)
+{
+    chipmunk_poly_t pks[N_RING];
+    chipmunk_poly_t c, Y_pk;
+    uint8_t fs_seed[32];
+
+    const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
+    chipmunk_mring_fold_proof_t proof;
+    dap_assert(chipmunk_mring_fold_proof_alloc(&proof, l_depth) == 0,
+               "alloc");
+    s_prove_fixture(&proof, pks, &c, &Y_pk, fs_seed, 0x44u);
+
+    uint8_t l_packed[CHIPMUNK_MRING_EXT_QPACK_BYTES];
+    chipmunk_mring_ext_t l_restored;
+    dap_assert(chipmunk_mring_ext_qpack(l_packed, sizeof(l_packed),
+                                        &proof.rounds[0].L) == 0,
+               "ext_qpack");
+    dap_assert(chipmunk_mring_ext_qunpack(&l_restored, l_packed,
+                                          sizeof(l_packed)) == 0,
+               "ext_qunpack");
+
+    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
+        for (size_t k = 0u; k < CHIPMUNK_N; ++k) {
+            dap_assert(proof.rounds[0].L.c[j].coeffs[k]
+                       == l_restored.c[j].coeffs[k],
+                       "qpack roundtrip coeff match");
+        }
+    }
+
+    chipmunk_mring_fold_proof_free(&proof);
+}
+
 static void test_tampered_bstar_rejected(void)
 {
     chipmunk_poly_t pks[N_RING];
@@ -224,6 +334,9 @@ int main(void)
     test_honest_fold_roundtrip(42u);
     test_tampered_L_rejected();
     test_tampered_bstar_rejected();
+    test_wire_roundtrip_verify();
+    test_wire_size_formula();
+    test_ext_qpack_roundtrip();
 
     log_it(L_INFO, "=== ALL MRNG M4 fold tests PASSED ===");
     return 0;

@@ -25,8 +25,11 @@ with:
   (`chipmunk_mring_ext_frobenius`, NOGAP §4.1).
 * INV invariant checked at verify time for every round.
 
-**Deferred to M4.1+:** wire pack/unpack of ext fold tree, seed-compressed VCom
-openings (G3 §6.1 C1), leaf-mask ω, integration into `chipmunk_mring_sign`.
+**M4.1 (this sprint):** wire pack/unpack of ext fold tree via
+`chipmunk_mring_ext_qpack`, `chipmunk_mring_fold_write/read`.
+
+**Deferred to M4.2+:** seed-compressed VCom openings (G3 §6.1 C1), leaf-mask ω,
+integration into `chipmunk_mring_sign`.
 
 ---
 
@@ -98,11 +101,14 @@ Honest prover additionally has is_in_base(b*) by construction.
 
 ---
 
-## 6. Wire format note (M4.1 target)
+## 6. Wire format (M4.1 — DONE)
 
-G3.1 §8: each committed L_r, R_r is an R_q^{(e)} element (e = 6 R_q polys).
-M4.0 stores them in-memory; M4.1 will pack each as 6 consecutive qpacks and
-update `CHIPMUNK_MRING_FOLD_ROUND_BYTES` in `chipmunk_mring_params.h`.
+G3.1 §8: each committed L_r, R_r is an R_q^{(e)} element (e = 6 R_q polys),
+packed as 6 consecutive qpacks (Y^0 .. Y^5) via `chipmunk_mring_ext_qpack`.
+
+`CHIPMUNK_MRING_FOLD_ROUND_BYTES = 2 · EXT_QPACK_BYTES = 16 896`.
+
+Exact totals: `28 956 + D · 16 896` bytes (see README_MRNG.md §11).
 
 Seed-compressed opening derivation (G3 §7, 32 B FOLD_SEED) lands in M4.2.
 

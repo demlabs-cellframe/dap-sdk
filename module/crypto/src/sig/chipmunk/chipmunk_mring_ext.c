@@ -168,6 +168,18 @@ void chipmunk_mring_ext_one(chipmunk_mring_ext_t *a_out)
     a_out->c[0].coeffs[0] = 1;
 }
 
+void chipmunk_mring_ext_canonicalize(chipmunk_mring_ext_t *a)
+{
+    if (!a) {
+        return;
+    }
+    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
+        for (size_t k = 0u; k < CHIPMUNK_N; ++k) {
+            a->c[j].coeffs[k] = s_fq_norm(a->c[j].coeffs[k]);
+        }
+    }
+}
+
 void chipmunk_mring_ext_embed(chipmunk_mring_ext_t *a_out,
                               const chipmunk_poly_t *a_base)
 {

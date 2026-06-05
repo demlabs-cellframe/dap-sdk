@@ -65,6 +65,10 @@ void chipmunk_mring_ext_embed(chipmunk_mring_ext_t *a_out,
 void chipmunk_mring_ext_project(chipmunk_poly_t *a_out,
                                 const chipmunk_mring_ext_t *a);
 
+/*  Normalise every R_q coefficient into canonical [0, q).  Wire qpack and
+ *  FS transcript absorption both require this representation. */
+void chipmunk_mring_ext_canonicalize(chipmunk_mring_ext_t *a);
+
 /*  True iff a lies in the base ring R_q (Y-components 1..e-1 all zero).
  *  Used by the verifier-side consistency lane (G3.1 §7). */
 bool chipmunk_mring_ext_is_in_base(const chipmunk_mring_ext_t *a);

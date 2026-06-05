@@ -143,6 +143,12 @@ _Static_assert(CHIPMUNK_MRING_POLY_ZPACK == 1280u,
                "MRNG: zpacked Chipmunk poly must be 1280 bytes");
 _Static_assert(CHIPMUNK_MRING_K_PK == 6u && CHIPMUNK_MRING_K_T == 6u,
                "MRNG: K_PK and K_T are fixed at 6 to match chipmunk_lrs_K");
+_Static_assert(CHIPMUNK_MRING_EXT_QPACK_BYTES ==
+               CHIPMUNK_MRING_EXT_DEG * CHIPMUNK_MRING_POLY_QPACK,
+               "MRNG: ext qpack = e R_q polys");
+_Static_assert(CHIPMUNK_MRING_FOLD_ROUND_BYTES ==
+               2u * CHIPMUNK_MRING_EXT_QPACK_BYTES,
+               "MRNG: fold round = (L,R) ext elements");
 /* G2 v2 §A2: ensure REL-2 (\sum b_i = t) lifts losslessly Z -> R_q. */
 _Static_assert((uint32_t)CHIPMUNK_MRING_N_MAX < (uint32_t)CHIPMUNK_MRING_Q,
                "MRNG: N_MAX must be < q for the Z->R_q lift of REL-2 to be loss-free");

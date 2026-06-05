@@ -169,37 +169,35 @@ the `c³` coefficient of the unified statement (G2 v2.1 §3).
 
 ---
 
-## 8. Fold tree (`fold_depth · 2 816 bytes`)
+## 8. Fold tree (`fold_depth · FOLD_ROUND_BYTES`, G3.1 / M4.1)
 
 Bulletproof-style halving fold over the unified inner-product statement
-
-  ⟨b, P(c)⟩  =  rhs(c)
-
-where `P(c)` is the public vector-polynomial encoding (binary check,
-Hamming weight `t`, aggregated-pk identity, tag binding) — see
-amendment v2 §5.2 for the exact construction.
+in **R_q^{(e)}** (degree e = 6 extension, see `MRNG_G3_1_EXTENSION_SOUNDNESS.md`).
 
 Per round `r ∈ [0, fold_depth)`:
 
-| offset (rel.)            | size  | field      |
-|-------------------------:|------:|------------|
-|  `r · 2 816 + 0`         | 1 408 | `L_r` qpack |
-|  `r · 2 816 + 1 408`     | 1 408 | `R_r` qpack |
+| offset (rel.)                         | size (B) | field                    |
+|--------------------------------------:|---------:|--------------------------|
+|  `r · FOLD_ROUND_BYTES + 0`           | 8 448    | `L_r` (6 qpack, Y^0..Y^5) |
+|  `r · FOLD_ROUND_BYTES + 8 448`       | 8 448    | `R_r` (6 qpack)           |
 
-After `fold_depth` rounds the vector is folded to length 2.
+`FOLD_ROUND_BYTES = 2 · EXT_QPACK_BYTES = 16 896`.
+
+Pack/unpack: `chipmunk_mring_fold_write` / `chipmunk_mring_fold_read`
+(`chipmunk_mring_fold.c`).
 
 ---
 
-## 9. Final scalars (2 816 bytes)
+## 9. Final scalars (`FINAL_SCALARS_BYTES = 16 896`)
 
-Two qpacked polys — the final folded `a*, b* ∈ R_q`:
+Two **R_q^{(e)}** elements — the folded `a*, b*`:
 
-| offset (rel.) | size  | field |
-|--------------:|------:|-------|
-|   0           | 1 408 | `a*`  |
-|   1 408       | 1 408 | `b*`  |
+| offset (rel.) | size (B) | field |
+|--------------:|---------:|-------|
+|   0           | 8 448    | `a*`  |
+|   8 448       | 8 448    | `b*`  |
 
-Verifier checks `⟨a*, b*⟩ == rhs(c_final)`.
+Verifier checks `⟨a*, b*⟩ == ρ_final` via `chipmunk_mring_fold_verify`.
 
 ---
 
@@ -254,22 +252,23 @@ fixed(N) = 28          // header
          = 12 060 B    // structural lower bound, any N ≥ 2
 ```
 
-The fold transcript is log-N in the number of rounds (D = 1 + ⌈log₂ N⌉ ≤ 9)
-but each committed fold element is now an R_q^{(e)} element (≈ 6×1 408 B
-before seed-compression), so the honest size estimate (G3.1 §8) is:
+Exact wire sizes (M4.1, **no** seed-compression yet — G3 §6.1 C1 is M4.2):
 
-| N    | fold_depth D | honest total (est.) |
-|-----:|-------------:|--------------------:|
-|   16 | 5            | **≈ 45–60 KB**      |
-|  256 | 9            | **≈ 70–95 KB**      |
+```
+total(D) = 12 060 + D · 16 896 + 16 896 = 28 956 + D · 16 896
+```
 
-This **misses** the Amendment v2 §5.1 targets (≤ 36 KB @ N=16,
-≤ 48 KB @ N=256) — the targets are NOT met, a direct cost of the
-fully-splitting ring requiring a degree-6 extension for true 128-bit
-single-shot soundness.  It remains **far** below CRNG/v1 (786 KB @ N=16,
-~12 MB @ N=256) and below the ≈175 KB naive 7× parallel-repetition
-alternative, while growing logarithmically in N.  The exact bytes are
-deferred to M4.0 (see the §8 honesty note in the G3.1 design doc).
+| N    | D | total (B) | ~KB   |
+|-----:|--:|----------:|------:|
+|    2 | 2 |    62 748 |  61.3 |
+|    4 | 3 |    79 644 |  77.8 |
+|   16 | 5 |   113 436 | 110.8 |
+|   64 | 7 |   147 228 | 143.8 |
+|  256 | 9 |   181 020 | 176.8 |
+
+Amendment v2 §5.1 targets (≤ 36 KB @ N=16, ≤ 48 KB @ N=256) are **not**
+met without seed-compressed openings (planned M4.2).  Sizes remain far
+below CRNG/v1 (786 KB @ N=16) and grow as O(log N) in D.
 
 ---
 

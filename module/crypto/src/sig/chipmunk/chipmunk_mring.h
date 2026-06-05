@@ -22,10 +22,10 @@
  *   │  vector commitment to b ∈ {0,1}^N                             │
  *   ├─ Y_pk block (qpack = 1408 B) [G2 v2.1 §1, §4] ────────────────┤
  *   │  prover-claimed Y_pk = A_pk · X ∈ R_q   (single poly)         │
- *   ├─ fold tree (fold_depth · 2·qpack) ────────────────────────────┤
- *   │  for r in [0, fold_depth):  L_r, R_r   (qpacked)              │
- *   ├─ final scalars (2·qpack = 2816 B) ────────────────────────────┤
- *   │  a*, b*  (final folded R_q scalars, qpacked)                  │
+ *   ├─ fold tree (fold_depth · FOLD_ROUND_BYTES) ───────────────────┤
+ *   │  for r in [0, fold_depth):  L_r, R_r   (R_q^{(e)} ext qpack)  │
+ *   ├─ final scalars (FINAL_SCALARS_BYTES) ─────────────────────────┤
+ *   │  a*, b*  (final folded R_q^{(e)} scalars, 6 qpack each)       │
  *   ├─ bind block (K_PK·zpack = 7680 B) [G2 v2.1 §4] ───────────────┤
  *   │  z_x = ρ_x + c*·X ∈ R_q^{K_pk}   (K_pk zpacks);               │
  *   │  Π_norm not on wire — verifier recomputes (G2 v2 §A6)         │
