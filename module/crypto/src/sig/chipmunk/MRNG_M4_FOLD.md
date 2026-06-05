@@ -28,8 +28,11 @@ with:
 **M4.1 (this sprint):** wire pack/unpack of ext fold tree via
 `chipmunk_mring_ext_qpack`, `chipmunk_mring_fold_write/read`.
 
-**Deferred to M4.2+:** seed-compressed VCom openings (G3 §6.1 C1), leaf-mask ω,
-integration into `chipmunk_mring_sign`.
+**M4.2 (this sprint):** seed-compressed VCom openings (G3 §6.1 C1):
+`fold_opening_seed` (32 B) + per-round `(C_L, C_R)` commitments; FS hashes
+commitments, verifier opens via `chipmunk_mring_fold_derive_opening`.
+
+**Deferred to M4.3+:** leaf-mask ω, integration into `chipmunk_mring_sign`.
 
 ---
 
@@ -110,7 +113,10 @@ packed as 6 consecutive qpacks (Y^0 .. Y^5) via `chipmunk_mring_ext_qpack`.
 
 Exact totals: `28 956 + D · 16 896` bytes (see README_MRNG.md §11).
 
-Seed-compressed opening derivation (G3 §7, 32 B FOLD_SEED) lands in M4.2.
+**M4.2 additions:** `fold_opening_seed` at
+`chipmunk_mring_section_off_fold_opening_seed()`; fold rounds carry
+`(C_L, C_R)` VCom commitments (same EXT_QPACK_BYTES as M4.1 raw slots).
+Total: `28 988 + D · 16 896` bytes (+32 B vs M4.1).
 
 ---
 

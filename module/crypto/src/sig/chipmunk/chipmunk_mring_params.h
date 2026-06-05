@@ -77,8 +77,9 @@
  */
 #define CHIPMUNK_MRING_FOLD_DEPTH_MAX 9u
 
-/* G3 §7 / M4 — Fiat-Shamir and seed-compression pins (wire in M4.1+). */
+/* G3 §7 / M4 — Fiat-Shamir and seed-compression pins (wire in M4.2+). */
 #define CHIPMUNK_MRING_FOLD_SEED_BYTES   32u
+#define CHIPMUNK_MRING_FOLD_OPENING_BYTES CHIPMUNK_MRING_FOLD_SEED_BYTES
 #define CHIPMUNK_MRING_FS_OUT_BITS       384u
 
 /* Ring extension degree e = deg Φ₉ (G3.1 §3); kept here to avoid params↔ext cycle. */

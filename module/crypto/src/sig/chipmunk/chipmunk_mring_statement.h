@@ -91,6 +91,13 @@ int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
                                const chipmunk_poly_t *a_b_poly,
                                const chipmunk_poly_t a_r_b[CHIPMUNK_MRING_K_PK]);
 
+/*  Open a single-poly commitment:  v = a⁻¹ · (C − ⟨H′, r⟩).  Returns 0
+ *  on success, -EDOM if the projection generator a is non-invertible. */
+int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
+                             const chipmunk_poly_t *a_C,
+                             const chipmunk_mring_vcom_gens_t *a_gens,
+                             const chipmunk_poly_t a_r[CHIPMUNK_MRING_K_PK]);
+
 /* ------------------------------------------------------------------------ *
  *  Norm check helper.  Returns 0 if every coefficient of `a_poly` is in
  *  the centered interval [-a_bound, +a_bound]; returns -ERANGE otherwise.

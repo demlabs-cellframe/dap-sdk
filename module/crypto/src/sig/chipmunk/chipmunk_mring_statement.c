@@ -171,6 +171,69 @@ int chipmunk_mring_vcom_commit(chipmunk_poly_t *a_Cb,
     return 0;
 }
 
+int chipmunk_mring_vcom_open(chipmunk_poly_t *a_v_out,
+                             const chipmunk_poly_t *a_C,
+                             const chipmunk_mring_vcom_gens_t *a_gens,
+                             const chipmunk_poly_t a_r[CHIPMUNK_MRING_K_PK])
+{
+    if (!a_v_out || !a_C || !a_gens || !a_r) {
+        return -EINVAL;
+    }
+
+    chipmunk_poly_t h_part;
+    memset(&h_part, 0, sizeof(h_part));
+
+    for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
+        chipmunk_poly_t hp_ntt = a_gens->H_prime[j];
+        chipmunk_poly_t rb_ntt = a_r[j];
+        chipmunk_poly_t prod_ntt;
+
+        int rc = chipmunk_poly_ntt(&hp_ntt);
+        if (rc != 0) {
+            return rc;
+        }
+        rc = chipmunk_poly_ntt(&rb_ntt);
+        if (rc != 0) {
+            return rc;
+        }
+        chipmunk_poly_mul_ntt(&prod_ntt, &hp_ntt, &rb_ntt);
+        if (j == 0u) {
+            h_part = prod_ntt;
+        } else {
+            chipmunk_poly_add_ntt(&h_part, &h_part, &prod_ntt);
+        }
+    }
+
+    int rc = chipmunk_poly_invntt(&h_part);
+    if (rc != 0) {
+        return rc;
+    }
+
+    chipmunk_poly_t residual;
+    rc = chipmunk_poly_sub(&residual, a_C, &h_part);
+    if (rc != 0) {
+        return rc;
+    }
+
+    chipmunk_poly_t a_inv;
+    rc = chipmunk_mring_poly_invert(&a_inv, &a_gens->a);
+    if (rc != 0) {
+        return rc;
+    }
+
+    chipmunk_poly_t res_ntt = residual;
+    rc = chipmunk_poly_ntt(&res_ntt);
+    if (rc != 0) {
+        return rc;
+    }
+    rc = chipmunk_poly_ntt(&a_inv);
+    if (rc != 0) {
+        return rc;
+    }
+    chipmunk_poly_mul_ntt(a_v_out, &a_inv, &res_ntt);
+    return chipmunk_poly_invntt(a_v_out);
+}
+
 int chipmunk_mring_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound)
 {
     if (!a_poly || a_bound < 0) {

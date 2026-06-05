@@ -22,8 +22,10 @@
  *   │  vector commitment to b ∈ {0,1}^N                             │
  *   ├─ Y_pk block (qpack = 1408 B) [G2 v2.1 §1, §4] ────────────────┤
  *   │  prover-claimed Y_pk = A_pk · X ∈ R_q   (single poly)         │
+ *   ├─ fold opening seed (32 B) [G3 §6.1 C1] ───────────────────────┤
+ *   │  SHAKE256-derived VCom openings for all fold rounds            │
  *   ├─ fold tree (fold_depth · FOLD_ROUND_BYTES) ───────────────────┤
- *   │  for r in [0, fold_depth):  L_r, R_r   (R_q^{(e)} ext qpack)  │
+ *   │  for r in [0, fold_depth):  C_L, C_R   (ext VCom qpack)       │
  *   ├─ final scalars (FINAL_SCALARS_BYTES) ─────────────────────────┤
  *   │  a*, b*  (final folded R_q^{(e)} scalars, 6 qpack each)       │
  *   ├─ bind block (K_PK·zpack = 7680 B) [G2 v2.1 §4] ───────────────┤
@@ -133,9 +135,15 @@ static inline uint32_t chipmunk_mring_section_off_ypk(void)
     return chipmunk_mring_section_off_cb() + CHIPMUNK_MRING_CB_BYTES;
 }
 
-static inline uint32_t chipmunk_mring_section_off_fold(void)
+static inline uint32_t chipmunk_mring_section_off_fold_opening_seed(void)
 {
     return chipmunk_mring_section_off_ypk() + CHIPMUNK_MRING_YPK_BYTES;
+}
+
+static inline uint32_t chipmunk_mring_section_off_fold(void)
+{
+    return chipmunk_mring_section_off_fold_opening_seed()
+           + CHIPMUNK_MRING_FOLD_OPENING_BYTES;
 }
 
 static inline uint32_t chipmunk_mring_section_off_final(uint32_t a_fold_depth)

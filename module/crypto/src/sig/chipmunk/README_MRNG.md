@@ -169,22 +169,38 @@ the `c³` coefficient of the unified statement (G2 v2.1 §3).
 
 ---
 
-## 8. Fold tree (`fold_depth · FOLD_ROUND_BYTES`, G3.1 / M4.1)
+## 7b. Fold opening seed (32 bytes) [G3 §6.1 C1 / M4.2]
+
+Single SHAKE256-anchored seed from which all per-round VCom opening
+randomness `(r_{L,r,j}, r_{R,r,j})` is re-derived deterministically.
+Verifier cost: O(D · e · K_pk) short-poly expansions instead of
+O(D · e · K_pk · zpack) on the wire.
+
+| offset | size | field                |
+|-------:|-----:|----------------------|
+|  4 380 |   32 | `fold_opening_seed`  |
+
+Derivation: `chipmunk_mring_fold_derive_opening()` in `chipmunk_mring_fold.c`.
+
+---
+
+## 8. Fold tree (`fold_depth · FOLD_ROUND_BYTES`, G3.1 / M4.2)
 
 Bulletproof-style halving fold over the unified inner-product statement
 in **R_q^{(e)}** (degree e = 6 extension, see `MRNG_G3_1_EXTENSION_SOUNDNESS.md`).
 
 Per round `r ∈ [0, fold_depth)`:
 
-| offset (rel.)                         | size (B) | field                    |
-|--------------------------------------:|---------:|--------------------------|
-|  `r · FOLD_ROUND_BYTES + 0`           | 8 448    | `L_r` (6 qpack, Y^0..Y^5) |
-|  `r · FOLD_ROUND_BYTES + 8 448`       | 8 448    | `R_r` (6 qpack)           |
+| offset (rel.)                         | size (B) | field                         |
+|--------------------------------------:|---------:|-------------------------------|
+|  `r · FOLD_ROUND_BYTES + 0`           | 8 448    | `C_L` VCom (6 qpack, Y^0..Y^5)|
+|  `r · FOLD_ROUND_BYTES + 8 448`       | 8 448    | `C_R` VCom (6 qpack)          |
 
 `FOLD_ROUND_BYTES = 2 · EXT_QPACK_BYTES = 16 896`.
 
-Pack/unpack: `chipmunk_mring_fold_write` / `chipmunk_mring_fold_read`
-(`chipmunk_mring_fold.c`).
+Fiat–Shamir per round absorbs `(C_L, C_R)`; verifier opens via seed-derived
+`r` and `chipmunk_mring_vcom_open`.  Pack/unpack:
+`chipmunk_mring_fold_write` / `chipmunk_mring_fold_read`.
 
 ---
 
@@ -252,23 +268,24 @@ fixed(N) = 28          // header
          = 12 060 B    // structural lower bound, any N ≥ 2
 ```
 
-Exact wire sizes (M4.1, **no** seed-compression yet — G3 §6.1 C1 is M4.2):
+Exact wire sizes (M4.2, seed-compressed openings — G3 §6.1 C1):
 
 ```
-total(D) = 12 060 + D · 16 896 + 16 896 = 28 956 + D · 16 896
+total(D) = 12 060 + 32 + D · 16 896 + 16 896 = 28 988 + D · 16 896
 ```
 
 | N    | D | total (B) | ~KB   |
 |-----:|--:|----------:|------:|
-|    2 | 2 |    62 748 |  61.3 |
-|    4 | 3 |    79 644 |  77.8 |
-|   16 | 5 |   113 436 | 110.8 |
-|   64 | 7 |   147 228 | 143.8 |
-|  256 | 9 |   181 020 | 176.8 |
+|    2 | 2 |    62 780 |  61.3 |
+|    4 | 3 |    79 676 |  77.8 |
+|   16 | 5 |   113 468 | 110.8 |
+|   64 | 7 |   147 260 | 143.8 |
+|  256 | 9 |   181 052 | 176.8 |
 
-Amendment v2 §5.1 targets (≤ 36 KB @ N=16, ≤ 48 KB @ N=256) are **not**
-met without seed-compressed openings (planned M4.2).  Sizes remain far
-below CRNG/v1 (786 KB @ N=16) and grow as O(log N) in D.
+Per-round opening randomness is **not** on the wire (32 B seed only).
+Amendment v2 §5.1 byte targets assumed R_q fold elements; with G3.1
+R_q^{(e)} commitments the dominant term is the ext qpack budget, not
+opening zpacks.  Sizes remain far below CRNG/v1 and grow as O(log N).
 
 ---
 

@@ -10,7 +10,9 @@
  *   T4. Tampered b* → verify FAIL.
  *   T5. Wire write → read roundtrip preserves verify acceptance (M4.1).
  *   T6. chipmunk_mring_wire_size matches pinned formula for N=4.
- *   T7. ext qpack → qunpack roundtrip on fold cross-term.
+ *   T7. ext qpack → qunpack roundtrip on fold C_L commitment.
+ *   T8. fold_opening_seed derivation is deterministic.
+ *   T9. vcom commit → open roundtrip on one Y-component of C_L.
  */
 
 #include <dap_common.h>
@@ -31,6 +33,20 @@
 
 #define N_RING 4u
 #define T_THRESH 2u
+
+static void s_fill_ring_hash(uint8_t a_out[32], uint8_t a_byte)
+{
+    for (size_t i = 0u; i < 32u; ++i) {
+        a_out[i] = (uint8_t)(a_byte ^ (uint8_t)i);
+    }
+}
+
+static void s_fill_opening_seed(uint8_t a_out[32], uint8_t a_salt)
+{
+    for (size_t i = 0u; i < 32u; ++i) {
+        a_out[i] = (uint8_t)(0x2Du ^ (uint8_t)i ^ a_salt);
+    }
+}
 
 static void s_derive_x_for_member(chipmunk_poly_t a_x[CHIPMUNK_LRS_K],
                                   uint32_t a_member_idx)
@@ -112,9 +128,13 @@ static void test_honest_fold_roundtrip(uint8_t a_fs_salt)
     dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
 
     uint8_t fs_seed[32];
+    uint8_t ring_hash[32];
+    uint8_t opening_seed[32];
     for (size_t i = 0u; i < sizeof(fs_seed); ++i) {
         fs_seed[i] = (uint8_t)(0xF0u ^ (uint8_t)i ^ a_fs_salt);
     }
+    s_fill_ring_hash(ring_hash, (uint8_t)(0xA0u ^ a_fs_salt));
+    s_fill_opening_seed(opening_seed, a_fs_salt);
 
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     chipmunk_mring_fold_proof_t proof;
@@ -123,12 +143,13 @@ static void test_honest_fold_roundtrip(uint8_t a_fs_salt)
 
     const int rc_prove = chipmunk_mring_fold_prove(&proof, b_ind, N_RING,
                                                    pks, &c, T_THRESH, &Y_pk,
-                                                   fs_seed);
+                                                   ring_hash, fs_seed,
+                                                   opening_seed);
     dap_assert(rc_prove == 0, "fold_prove must succeed");
 
     const int rc_verify = chipmunk_mring_fold_verify(&proof, N_RING,
                                                     pks, &c, T_THRESH, &Y_pk,
-                                                    fs_seed);
+                                                    ring_hash, fs_seed);
     dap_assert(rc_verify == 0, "fold_verify must accept honest proof");
 
     chipmunk_mring_fold_proof_free(&proof);
@@ -154,7 +175,11 @@ static void test_tampered_L_rejected(void)
     dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
 
     uint8_t fs_seed[32];
+    uint8_t ring_hash[32];
+    uint8_t opening_seed[32];
     memset(fs_seed, 0xAB, sizeof(fs_seed));
+    s_fill_ring_hash(ring_hash, 0x11u);
+    s_fill_opening_seed(opening_seed, 0x11u);
 
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     chipmunk_mring_fold_proof_t proof;
@@ -162,15 +187,16 @@ static void test_tampered_L_rejected(void)
                "alloc");
     dap_assert(chipmunk_mring_fold_prove(&proof, b_ind, N_RING,
                                          pks, &c, T_THRESH, &Y_pk,
-                                         fs_seed) == 0,
+                                         ring_hash, fs_seed,
+                                         opening_seed) == 0,
                "prove");
 
-    proof.rounds[0].L.c[0].coeffs[0] =
-        (proof.rounds[0].L.c[0].coeffs[0] + 1u) % CHIPMUNK_Q;
+    proof.rounds[0].C_L.c[0].coeffs[0] =
+        (proof.rounds[0].C_L.c[0].coeffs[0] + 1u) % CHIPMUNK_Q;
 
     const int rc = chipmunk_mring_fold_verify(&proof, N_RING,
                                               pks, &c, T_THRESH, &Y_pk,
-                                              fs_seed);
+                                              ring_hash, fs_seed);
     dap_assert(rc == -EBADMSG, "tampered L must fail verify");
 
     chipmunk_mring_fold_proof_free(&proof);
@@ -180,7 +206,9 @@ static void s_prove_fixture(chipmunk_mring_fold_proof_t *a_proof,
                             chipmunk_poly_t *a_pks,
                             chipmunk_poly_t *a_c,
                             chipmunk_poly_t *a_Y_pk,
+                            uint8_t *a_ring_hash,
                             uint8_t *a_fs_seed,
+                            uint8_t *a_opening_seed,
                             uint8_t a_salt)
 {
     chipmunk_poly_t x_flat[N_RING * CHIPMUNK_LRS_K];
@@ -199,11 +227,14 @@ static void s_prove_fixture(chipmunk_mring_fold_proof_t *a_proof,
     for (size_t i = 0u; i < sizeof(*a_fs_seed); ++i) {
         a_fs_seed[i] = (uint8_t)(0xA7u ^ (uint8_t)i ^ a_salt);
     }
+    s_fill_ring_hash(a_ring_hash, (uint8_t)(0xB1u ^ a_salt));
+    s_fill_opening_seed(a_opening_seed, a_salt);
 
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     dap_assert(chipmunk_mring_fold_prove(a_proof, b_ind, N_RING,
                                          a_pks, a_c, T_THRESH, a_Y_pk,
-                                         a_fs_seed) == 0,
+                                         a_ring_hash, a_fs_seed,
+                                         a_opening_seed) == 0,
                "prove");
 }
 
@@ -211,13 +242,16 @@ static void test_wire_roundtrip_verify(void)
 {
     chipmunk_poly_t pks[N_RING];
     chipmunk_poly_t c, Y_pk;
+    uint8_t ring_hash[32];
     uint8_t fs_seed[32];
+    uint8_t opening_seed[32];
 
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     chipmunk_mring_fold_proof_t proof;
     dap_assert(chipmunk_mring_fold_proof_alloc(&proof, l_depth) == 0,
                "alloc proof");
-    s_prove_fixture(&proof, pks, &c, &Y_pk, fs_seed, 0x33u);
+    s_prove_fixture(&proof, pks, &c, &Y_pk, ring_hash, fs_seed,
+                    opening_seed, 0x33u);
 
     const uint32_t l_wire = chipmunk_mring_wire_size(l_depth);
     uint8_t *l_buf = DAP_NEW_Z_COUNT(uint8_t, l_wire);
@@ -233,7 +267,7 @@ static void test_wire_roundtrip_verify(void)
                "fold_read");
 
     dap_assert(chipmunk_mring_fold_verify(&parsed, N_RING, pks, &c, T_THRESH,
-                                          &Y_pk, fs_seed) == 0,
+                                          &Y_pk, ring_hash, fs_seed) == 0,
                "verify after wire roundtrip");
 
     chipmunk_mring_fold_proof_free(&parsed);
@@ -245,7 +279,7 @@ static void test_wire_size_formula(void)
 {
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     const uint32_t l_wire = chipmunk_mring_wire_size(l_depth);
-    const uint32_t l_expected = 28956u + l_depth * 16896u;
+    const uint32_t l_expected = 28988u + l_depth * 16896u;
     dap_assert(l_wire == l_expected,
                "wire_size matches M4.1 formula for N=4");
 }
@@ -254,18 +288,21 @@ static void test_ext_qpack_roundtrip(void)
 {
     chipmunk_poly_t pks[N_RING];
     chipmunk_poly_t c, Y_pk;
+    uint8_t ring_hash[32];
     uint8_t fs_seed[32];
+    uint8_t opening_seed[32];
 
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     chipmunk_mring_fold_proof_t proof;
     dap_assert(chipmunk_mring_fold_proof_alloc(&proof, l_depth) == 0,
                "alloc");
-    s_prove_fixture(&proof, pks, &c, &Y_pk, fs_seed, 0x44u);
+    s_prove_fixture(&proof, pks, &c, &Y_pk, ring_hash, fs_seed,
+                    opening_seed, 0x44u);
 
     uint8_t l_packed[CHIPMUNK_MRING_EXT_QPACK_BYTES];
     chipmunk_mring_ext_t l_restored;
     dap_assert(chipmunk_mring_ext_qpack(l_packed, sizeof(l_packed),
-                                        &proof.rounds[0].L) == 0,
+                                        &proof.rounds[0].C_L) == 0,
                "ext_qpack");
     dap_assert(chipmunk_mring_ext_qunpack(&l_restored, l_packed,
                                           sizeof(l_packed)) == 0,
@@ -273,13 +310,74 @@ static void test_ext_qpack_roundtrip(void)
 
     for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
         for (size_t k = 0u; k < CHIPMUNK_N; ++k) {
-            dap_assert(proof.rounds[0].L.c[j].coeffs[k]
+            dap_assert(proof.rounds[0].C_L.c[j].coeffs[k]
                        == l_restored.c[j].coeffs[k],
                        "qpack roundtrip coeff match");
         }
     }
 
     chipmunk_mring_fold_proof_free(&proof);
+}
+
+static void test_opening_derivation_deterministic(void)
+{
+    uint8_t seed[32];
+    s_fill_opening_seed(seed, 0x55u);
+
+    chipmunk_poly_t r1[CHIPMUNK_MRING_K_PK];
+    chipmunk_poly_t r2[CHIPMUNK_MRING_K_PK];
+    dap_assert(chipmunk_mring_fold_derive_opening(r1, seed, 1u, 0u, 2u) == 0,
+               "derive opening");
+    dap_assert(chipmunk_mring_fold_derive_opening(r2, seed, 1u, 0u, 2u) == 0,
+               "derive opening again");
+    for (uint32_t k = 0u; k < CHIPMUNK_MRING_K_PK; ++k) {
+        for (size_t i = 0u; i < CHIPMUNK_N; ++i) {
+            dap_assert(r1[k].coeffs[i] == r2[k].coeffs[i],
+                       "opening derivation deterministic");
+        }
+    }
+}
+
+static void test_vcom_commit_open_roundtrip(void)
+{
+    uint8_t ring_hash[32];
+    uint8_t opening_seed[32];
+    s_fill_ring_hash(ring_hash, 0x77u);
+    s_fill_opening_seed(opening_seed, 0x88u);
+
+    chipmunk_mring_vcom_gens_t gens;
+    dap_assert(chipmunk_mring_derive_vcom_generators(&gens, ring_hash) == 0,
+               "vcom gens");
+
+    chipmunk_poly_t l_r[CHIPMUNK_MRING_K_PK];
+    dap_assert(chipmunk_mring_fold_derive_opening(l_r, opening_seed,
+                                                  0u, 1u, 0u) == 0,
+               "derive r");
+
+    chipmunk_poly_t l_msg;
+    memset(&l_msg, 0, sizeof(l_msg));
+    l_msg.coeffs[3] = 5;
+    l_msg.coeffs[7] = -2;
+
+    chipmunk_poly_t l_C;
+    dap_assert(chipmunk_mring_vcom_commit(&l_C, &gens, &l_msg, l_r) == 0,
+               "vcom commit");
+
+    chipmunk_poly_t l_opened;
+    dap_assert(chipmunk_mring_vcom_open(&l_opened, &l_C, &gens, l_r) == 0,
+               "vcom open");
+
+    for (size_t i = 0u; i < CHIPMUNK_N; ++i) {
+        int32_t l_a = l_msg.coeffs[i];
+        int32_t l_b = l_opened.coeffs[i];
+        if (l_a < 0) {
+            l_a += (int32_t)CHIPMUNK_Q;
+        }
+        if (l_b < 0) {
+            l_b += (int32_t)CHIPMUNK_Q;
+        }
+        dap_assert(l_a == l_b, "vcom open recovers message mod q");
+    }
 }
 
 static void test_tampered_bstar_rejected(void)
@@ -302,7 +400,11 @@ static void test_tampered_bstar_rejected(void)
     dap_assert(chipmunk_lrs_relation_eval(&Y_pk, A_pk, X) == 0, "Y_pk");
 
     uint8_t fs_seed[32];
+    uint8_t ring_hash[32];
+    uint8_t opening_seed[32];
     memset(fs_seed, 0xCD, sizeof(fs_seed));
+    s_fill_ring_hash(ring_hash, 0x22u);
+    s_fill_opening_seed(opening_seed, 0x22u);
 
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     chipmunk_mring_fold_proof_t proof;
@@ -310,7 +412,8 @@ static void test_tampered_bstar_rejected(void)
                "alloc");
     dap_assert(chipmunk_mring_fold_prove(&proof, b_ind, N_RING,
                                          pks, &c, T_THRESH, &Y_pk,
-                                         fs_seed) == 0,
+                                         ring_hash, fs_seed,
+                                         opening_seed) == 0,
                "prove");
 
     proof.b_star.c[0].coeffs[1] =
@@ -318,7 +421,7 @@ static void test_tampered_bstar_rejected(void)
 
     const int rc = chipmunk_mring_fold_verify(&proof, N_RING,
                                               pks, &c, T_THRESH, &Y_pk,
-                                              fs_seed);
+                                              ring_hash, fs_seed);
     dap_assert(rc == -EBADMSG, "tampered b* must fail verify");
 
     chipmunk_mring_fold_proof_free(&proof);
@@ -337,6 +440,8 @@ int main(void)
     test_wire_roundtrip_verify();
     test_wire_size_formula();
     test_ext_qpack_roundtrip();
+    test_opening_derivation_deterministic();
+    test_vcom_commit_open_roundtrip();
 
     log_it(L_INFO, "=== ALL MRNG M4 fold tests PASSED ===");
     return 0;
