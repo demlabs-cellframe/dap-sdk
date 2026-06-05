@@ -333,7 +333,7 @@ opening zpacks.  Sizes remain far below CRNG/v1 and grow as O(log N).
 * **G3** — Simulator skeleton for the fold ZK proof (statistical
   distance `≤ 2^{−90}`).
 * **G4** — Joint simulator for the bind block; byte-exact FS transcript
-  pinned.
+  pinned in `MRNG_G4_TRANSCRIPT.md` + `chipmunk_mring_transcript.{h,c}`.
 * **G5** — Grep-guard: no occurrences of `ntt`, `sample`, `expand` in
   `chipmunk_mring_*.c` outside of calls into `chipmunk_lrs_*` or
   `chipmunk_poly_*`.

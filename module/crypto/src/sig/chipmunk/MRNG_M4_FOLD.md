@@ -147,6 +147,7 @@ Total: `28 988 + D · 16 896` bytes (+32 B vs M4.1).
 
 ## 9. Open obligations (unchanged)
 
-* **G4:** QROM Fiat–Shamir accounting (still open).
+* **G4:** QROM Fiat–Shamir accounting — transcript pinned in
+  `MRNG_G4_TRANSCRIPT.md`; implementation in `chipmunk_mring_transcript.c`.
 * **M4.1:** wire pack/unpack + README size table pin.
 * **M6/M7:** sign/verify integration.

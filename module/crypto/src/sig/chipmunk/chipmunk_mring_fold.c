@@ -11,11 +11,11 @@
 #include "chipmunk_lrs.h"
 #include "chipmunk_mring_fold.h"
 #include "chipmunk_mring_statement.h"
+#include "chipmunk_mring_transcript.h"
 #include "chipmunk_mring.h"
 
 #define LOG_TAG "chipmunk_mring_fold"
 
-#define MRING_FOLD_ROUND_FS_DOMAIN   "MRNG-M4-fold-round-fs-v1"
 #define MRING_FOLD_OPENING_DOMAIN    "MRNG-M4-fold-opening-v1"
 #define MRING_LEAF_MASK_DOMAIN       "MRNG-M4-leaf-mask-v1"
 
@@ -381,38 +381,6 @@ static int s_build_padded_witness(extvec_t *a_b,
     return 0;
 }
 
-static void s_absorb_ext(uint64_t a_st[25], const chipmunk_mring_ext_t *a_x)
-{
-    for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
-        dap_hash_shake256_absorb(a_st,
-                                 (const uint8_t *)a_x->c[j].coeffs,
-                                 sizeof(a_x->c[j].coeffs));
-    }
-}
-
-static void s_round_fs_hash(uint8_t a_out[32],
-                            const uint8_t a_fs_seed[32],
-                            uint32_t a_round,
-                            const chipmunk_mring_ext_t *a_CL,
-                            const chipmunk_mring_ext_t *a_CR)
-{
-    uint64_t l_st[25];
-    memset(l_st, 0, sizeof(l_st));
-    dap_hash_shake256_absorb(l_st,
-                             (const uint8_t *)MRING_FOLD_ROUND_FS_DOMAIN,
-                             sizeof(MRING_FOLD_ROUND_FS_DOMAIN) - 1u);
-    dap_hash_shake256_absorb(l_st, a_fs_seed, 32u);
-    uint8_t l_rbuf[4];
-    l_rbuf[0] = (uint8_t)(a_round & 0xFFu);
-    l_rbuf[1] = (uint8_t)((a_round >> 8) & 0xFFu);
-    l_rbuf[2] = (uint8_t)((a_round >> 16) & 0xFFu);
-    l_rbuf[3] = (uint8_t)((a_round >> 24) & 0xFFu);
-    dap_hash_shake256_absorb(l_st, l_rbuf, sizeof(l_rbuf));
-    s_absorb_ext(l_st, a_CL);
-    s_absorb_ext(l_st, a_CR);
-    dap_hash_shake256_squeezeblocks(a_out, 1u, l_st);
-}
-
 static uint32_t s_fold_opening_index(uint32_t a_round, uint32_t a_side,
                                      uint32_t a_y_deg, uint32_t a_lane)
 {
@@ -576,7 +544,8 @@ static int s_one_fold_round(extvec_t *a_b,
     }
 
     uint8_t l_fs[32];
-    s_round_fs_hash(l_fs, a_fs_seed, a_round_idx, a_CL_out, a_CR_out);
+    chipmunk_mring_transcript_fold_round_fs(l_fs, a_fs_seed, a_round_idx,
+                                            a_CL_out, a_CR_out);
 
     chipmunk_mring_ext_t l_x, l_x_inv;
     rc = chipmunk_mring_ext_sample_challenge(&l_x, l_fs, 0u);
@@ -858,7 +827,7 @@ int chipmunk_mring_fold_verify(const chipmunk_mring_fold_proof_t *a_proof,
         const chipmunk_mring_ext_t *l_CR = &a_proof->rounds[r].C_R;
 
         uint8_t l_fs[32];
-        s_round_fs_hash(l_fs, a_fs_seed, r, l_CL, l_CR);
+        chipmunk_mring_transcript_fold_round_fs(l_fs, a_fs_seed, r, l_CL, l_CR);
 
         chipmunk_mring_ext_t l_L, l_R;
         rc = s_ext_vcom_open(&l_L, l_CL, &l_gens,
