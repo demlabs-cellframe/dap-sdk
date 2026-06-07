@@ -23,7 +23,6 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <time.h>
-#include <arpa/inet.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans_dns_stream.h"
@@ -39,6 +38,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
