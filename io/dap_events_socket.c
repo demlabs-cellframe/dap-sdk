@@ -335,6 +335,7 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
     if ( !(l_es = DAP_NEW_Z( dap_events_socket_t )) )                   /* Allocate memory for new dap_events_socket context and the record */
         return  log_it(L_CRITICAL, "Cannot allocate memory for <dap_events_socket> context, errno=%d", errno), NULL;                                                /* Fill new track record */
     l_es->uuid = dap_new_es_id();
+    l_es->stream_es = l_es;   /* legacy self-reference for cellframe-sdk compat */
 #ifdef DAP_SYS_DEBUG
     pthread_rwlock_wrlock(&s_evsocks_lock);                             /* Add new record into the hash table */
     HASH_ADD(hh2, s_esockets, uuid, sizeof(l_es->uuid), l_es);
@@ -496,6 +497,9 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
         return NULL;
 
     l_es->socket = a_sock;
+#if defined(DAP_OS_UNIX)
+    l_es->fd = (int)a_sock;
+#endif
     if (a_callbacks)
         l_es->callbacks = *a_callbacks;
 
@@ -966,13 +970,20 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
 {
     if (a_esocket->callbacks.event_callback ){
 #if defined(DAP_EVENTS_CAPS_EVENT_EVENTFD )
+        /* The eventfd is level-triggered and opened with EFD_NONBLOCK.  On EAGAIN
+         * (counter == 0) the fd is simply "not readable", so epoll stays silent
+         * until the next write — there is no busy-spin to defend against.  Do NOT
+         * disarm EPOLLIN here: eventfd_write() (the queue push signal) does not
+         * re-arm epoll, so a disarm would permanently deafen the queue and stall
+         * cross-worker packet delivery. */
         eventfd_t l_value;
-        if(eventfd_read( a_esocket->fd, &l_value)==0 ){ // would block if not ready
+        if (eventfd_read(a_esocket->fd, &l_value) == 0) { // would block if not ready
             a_esocket->callbacks.event_callback(a_esocket, l_value);
-        }else if ( (errno != EAGAIN) && (errno != EWOULDBLOCK) )
+        } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
             log_it(L_WARNING, "Can't read packet from event fd, error %d: \"%s\"", errno, dap_strerror(errno));
-        else
-            return; // do nothing
+        } else {
+            return; // counter empty — nothing to do, keep EPOLLIN armed
+        }
 #elif defined DAP_EVENTS_CAPS_WEPOLL
         u_short l_value;
         int l_ret;

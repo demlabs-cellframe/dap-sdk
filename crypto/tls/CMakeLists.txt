@@ -51,5 +51,9 @@ endif()
 dap_link_libraries(dap_crypto_tls INTERFACE dap_core)
 
 if(DAP_TLS_LINK_LIBS)
-    target_link_libraries(dap_crypto_tls INTERFACE ${DAP_TLS_LINK_LIBS})
+    if(DAP_LINUX_OPENSSL_STATIC_LIBS AND DAP_TLS_BACKEND_DETECTED STREQUAL "openssl")
+        # Same as dap_trans_websocket: headers only, no static libcrypto.a on .so plugins.
+    else()
+        target_link_libraries(dap_crypto_tls INTERFACE ${DAP_TLS_LINK_LIBS})
+    endif()
 endif()

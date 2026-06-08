@@ -898,19 +898,21 @@ void dap_stream_trans_udp_read_callback(dap_events_socket_t *a_es, void *a_arg) 
         return;
     }
     
-    // Validate stream->trans before accessing it
-    // Check if stream has been deleted (trans would be NULL or invalid)
-    if (!l_stream->trans) {
-        log_it(L_WARNING, "UDP client stream has NULL trans (use-after-free?), dropping %zu bytes", a_es->buf_in_size);
-        // Clear the dangling pointer to prevent future issues
+    /* Snapshot l_stream->trans to a local to avoid TOCTOU race:
+     * dap_stream_delete_unsafe sets stream->trans = NULL from the FSM/client worker
+     * concurrently while the esocket worker runs this callback.  Reading the
+     * field once and using the local copy eliminates the window between the
+     * NULL check and the actual dereference. */
+    dap_net_trans_t *l_trans = l_stream->trans;
+    if (!l_trans) {
+        log_it(L_WARNING, "UDP client stream has NULL trans (stream being torn down), dropping %zu bytes", a_es->buf_in_size);
         l_trans_ctx->stream = NULL;
         a_es->buf_in_size = 0;
         return;
     }
-    
-    // Validate trans operations
-    if (!l_stream->trans->ops || !l_stream->trans->ops->read) {
-        log_it(L_ERROR, "UDP client stream has invalid trans, dropping %zu bytes", a_es->buf_in_size);
+
+    if (!l_trans->ops || !l_trans->ops->read) {
+        log_it(L_ERROR, "UDP client stream has invalid trans ops, dropping %zu bytes", a_es->buf_in_size);
         a_es->buf_in_size = 0;
         return;
     }
@@ -2673,33 +2675,36 @@ static void s_udp_close(dap_stream_t *a_stream)
         l_udp_ctx->seq_num = 0;
     }
     
-    // CORRECT ARCHITECTURE - 100% THREAD SAFE:
-    //
-    // ALWAYS use _mt method for esocket deletion - works from ANY thread context
-    // No need to check worker - _mt handles it correctly
-    
     dap_net_trans_ctx_t *l_ctx = (dap_net_trans_ctx_t*)a_stream->trans_ctx;
-    // Esocket fields live on the stream being closed; use a_stream (not trans_ctx->stream,
-    // which may already be NULL during partial teardown).
+
+    /* ALWAYS clear esocket callbacks when the esocket is still reachable via a_stream.
+     * This MUST happen unconditionally — regardless of esocket_uuid / esocket_worker state —
+     * because those fields can be zeroed by delete-callbacks (s_stream_es_callback_delete,
+     * s_handshake_es_delete_callback) BEFORE s_udp_close runs.  If we skip the clear the
+     * fd stays in epoll with read_callback still set, and a later epoll event fires the
+     * callback against an already-freed trans_ctx (use-after-free / crash at line 903). */
+    if (a_stream->esocket) {
+        a_stream->esocket->callbacks.read_callback  = NULL;
+        a_stream->esocket->callbacks.write_callback = NULL;
+        a_stream->esocket->callbacks.error_callback = NULL;
+        /* Also null callbacks.arg: defence-in-depth guard so that even a stale epoll event
+         * that slips past the read_callback==NULL check (shouldn't happen, but be safe)
+         * will see NULL trans_ctx and return immediately. */
+        a_stream->esocket->callbacks.arg = NULL;
+    }
+
     if (l_ctx && a_stream->esocket_uuid && a_stream->esocket_worker) {
-        debug_if(s_debug_more, L_DEBUG, 
+        debug_if(s_debug_more, L_DEBUG,
                "UDP close: queueing esocket deletion (UUID 0x%016" PRIx64 ") on its worker",
                a_stream->esocket_uuid);
-        
-        // CRITICAL: Clear callbacks BEFORE async delete to prevent use-after-free!
-        // Esocket may still receive events between now and actual deletion
-        // Setting callbacks to NULL prevents them from accessing freed trans_ctx/stream
-        if (a_stream->esocket) {
-            a_stream->esocket->callbacks.read_callback = NULL;
-            a_stream->esocket->callbacks.write_callback = NULL;
-            a_stream->esocket->callbacks.error_callback = NULL;
-            a_stream->esocket->callbacks.arg = NULL;  // Critical: prevents use-after-free in callbacks
-        }
-        
-        // ALWAYS use _mt method - 100% safe from any thread
+
+        /* Save the UDP worker before clearing it.
+         * dap_client_fsm_delete_unsafe() will delay DAP_DELETE(trans_ctx) until this
+         * worker processes it, ensuring no in-flight read callbacks access freed memory. */
+        l_ctx->esocket_worker = a_stream->esocket_worker;
+
         dap_events_socket_remove_and_delete_mt(a_stream->esocket_worker, a_stream->esocket_uuid);
-        
-        // Clear pointers (esocket will be deleted asynchronously on its worker)
+
         a_stream->esocket = NULL;
         a_stream->esocket_uuid = 0;
         a_stream->esocket_worker = NULL;

@@ -283,8 +283,8 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
 #define DAP_DEL_ARRAY(p, c)   do { intmax_t _c = (intmax_t)(c); if ((void*)(p) != NULL) { while (_c > 0) { DAP_DELETE(p[--_c]); } } } while(0);
-#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); void *_p = NULL; if ((uintptr_t)(p) && _s >= DAP_TYPE_SIZE(p)) { _p = calloc(1, _s); if (_p && (uintptr_t)(p)) { const void *_src_p = (const void*)(p); if (_src_p) memcpy((void*)_p, _src_p, _s); } } DAP_CAST(__typeof__(p), _p); })
-#define DAP_DUP(p)            ({ __typeof__(p) _p = p; _p = (uintptr_t)_p ? calloc(1, sizeof(*(p))) : NULL; if (_p) *_p = *(p); _p; })
+#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); void *_p = NULL; uintptr_t _pv = (uintptr_t)(p); if (_pv && _s >= DAP_TYPE_SIZE(p)) { _p = calloc(1, (size_t)_s); if (_p) memcpy((void*)_p, (const void*)_pv, (size_t)_s); } DAP_CAST(__typeof__(p), _p); })
+#define DAP_DUP(p)            ({ __typeof__(p) _p = (p); __typeof__(p) _res = NULL; if ((uintptr_t)_p) { _res = calloc(1, sizeof(*_p)); if (_res) *_res = *_p; } _res; })
 
 #endif
 

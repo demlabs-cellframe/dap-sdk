@@ -130,6 +130,19 @@ bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
 static int s_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 
+static void s_stream_reset_keepalive_timer_unsafe(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->keepalive_timer_uuid)
+        return;
+    dap_worker_t *l_cur = dap_worker_get_current();
+    if (!l_cur || !l_cur->context)
+        return;
+    dap_events_socket_t *l_timer_es = dap_context_find(l_cur->context, a_stream->keepalive_timer_uuid);
+    if (!l_timer_es || !l_timer_es->_inheritor)
+        return;
+    dap_timerfd_reset_unsafe((dap_timerfd_t *)l_timer_es->_inheritor);
+}
+
 /**
  * @brief Write data via transport layer (wrapper for trans->ops->write)
  * 
@@ -219,6 +232,15 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
     if (!a_stream->esocket) {
         log_it(L_ERROR, "Stream has no esocket");
         return 0;
+    }
+
+    /* Prefer the transport's own write handler (e.g. DNS, WebSocket) over the generic
+     * datagram/stream paths.  Without this check, a DNS stream whose underlying socket
+     * is SOCK_DGRAM would incorrectly fall into s_stream_send_datagram_unsafe which
+     * requires a_stream->flow to be set. */
+    if (a_stream->trans_ctx && a_stream->trans_ctx->trans &&
+        a_stream->trans_ctx->trans->ops && a_stream->trans_ctx->trans->ops->write) {
+        return a_stream->trans_ctx->trans->ops->write(a_stream, a_data, a_size);
     }
 
     dap_events_socket_t *l_es = a_stream->esocket;
@@ -540,6 +562,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     l_ret->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
     if (l_ret->trans_ctx) {
         l_ret->trans_ctx->stream = l_ret;  // Back-reference
+        l_ret->trans_ctx->esocket = a_http_client->esocket;  // Convenience accessor
         dap_strncpy(l_ret->trans_ctx->remote_addr_str, a_http_client->esocket->remote_addr_str, sizeof(l_ret->trans_ctx->remote_addr_str) - 1);
         l_ret->trans_ctx->remote_port = a_http_client->esocket->remote_port;
         l_ret->trans_ctx->http_client = a_http_client;
@@ -596,6 +619,9 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         if (!l_ret->keepalive_timer) {
             log_it(L_ERROR, "Failed to start keepalive timer");
             DAP_DELETE(l_es_uuid);
+        } else {
+            l_ret->keepalive_timer_uuid   = l_ret->keepalive_timer->esocket_uuid;
+            l_ret->keepalive_timer_worker = l_ret->keepalive_timer->worker;
         }
 
         debug_if(s_debug, L_DEBUG, "s_stream_new: keepalive timer started=%p", (void*)l_ret->keepalive_timer);
@@ -615,6 +641,11 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         l_ret->esocket->callbacks.error_callback = s_esocket_callback_error;
         l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
         l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
+        /* Stream connections have their own keepalive/timeout mechanism; suppress
+         * the generic dap_worker inactivity-based closure so the two mechanisms
+         * do not fight each other.  The stream is only closed explicitly through
+         * the VPN state machine or on a real transport error. */
+        l_ret->esocket->no_close = true;
     }
     debug_if(s_debug, L_DEBUG, "s_stream_new: callbacks set");
     if (a_addr && !dap_stream_node_addr_is_blank(a_addr)) {
@@ -674,10 +705,13 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
                     l_es_uuid);
                 if (!l_ret->keepalive_timer)
                     DAP_DELETE(l_es_uuid);
-                else
+                else {
+                    l_ret->keepalive_timer_uuid   = l_ret->keepalive_timer->esocket_uuid;
+                    l_ret->keepalive_timer_worker = l_ret->keepalive_timer->worker;
                     log_it(L_INFO, "%s stream %p: keepalive timer started on worker #%u, es_uuid=0x%"DAP_UINT64_FORMAT_x" sock=%"DAP_FORMAT_SOCKET,
                            l_is_server ? "Server" : "Client",
                            l_ret, a_esocket->worker->id, a_esocket->uuid, a_esocket->socket);
+                }
             }
         } else {
             log_it(L_WARNING, "Client stream %p: esocket %"DAP_FORMAT_SOCKET" has no worker, keepalive NOT started",
@@ -722,6 +756,8 @@ int dap_stream_start_keepalive(dap_stream_t *a_stream)
         DAP_DELETE(l_es_uuid);
         return -1;
     }
+    a_stream->keepalive_timer_uuid   = a_stream->keepalive_timer->esocket_uuid;
+    a_stream->keepalive_timer_worker = a_stream->keepalive_timer->worker;
     log_it(L_INFO, "Stream %p: deferred keepalive started on worker #%u, es_uuid=0x%"DAP_UINT64_FORMAT_x,
            a_stream, a_stream->esocket->worker->id, a_stream->esocket->uuid);
     return 0;
@@ -747,12 +783,34 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
                a_stream, (void*)a_stream->esocket,
                a_stream->esocket ? a_stream->esocket->socket : -1);
     if (a_stream->keepalive_timer) {
-        dap_timerfd_t *l_timer = a_stream->keepalive_timer;
-        a_stream->keepalive_timer = NULL;
-        void *l_arg = l_timer->callback_arg;
-        l_timer->callback_arg = NULL; // neutralize in-flight callback
-        dap_timerfd_delete_mt(l_timer->worker, l_timer->esocket_uuid);
-        DAP_DELETE(l_arg);
+        /* Do NOT dereference keepalive_timer: the dap_timerfd_t struct may have already
+         * been freed if the timer fired, returned false, and SIGNAL_CLOSE was processed
+         * before this deletion path.  Use the UUID copies (stored at timer-start) to
+         * locate the timer in the worker context and clean up safely. */
+        dap_events_socket_uuid_t l_uuid   = a_stream->keepalive_timer_uuid;
+        dap_worker_t            *l_worker = a_stream->keepalive_timer_worker;
+        a_stream->keepalive_timer        = NULL;
+        a_stream->keepalive_timer_uuid   = 0;
+        a_stream->keepalive_timer_worker = NULL;
+
+        /* Check if the timer's esocket is still alive in the context. */
+        dap_worker_t *l_cur = dap_worker_get_current();
+        if (l_cur && l_cur == l_worker && l_cur->context) {
+            dap_events_socket_t *l_timer_es = dap_context_find(l_cur->context, l_uuid);
+            if (l_timer_es) {
+                /* Timer is still alive — safely zero callback_arg and delete. */
+                dap_timerfd_t *l_timer = (dap_timerfd_t*)l_timer_es->_inheritor;
+                if (l_timer) {
+                    void *l_arg = __atomic_exchange_n(&l_timer->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
+                    dap_timerfd_delete_unsafe(l_timer);
+                    DAP_DELETE(l_arg);  /* NULL-safe: callback may have freed UUID already */
+                }
+            }
+            /* else: timer already freed (SIGNAL_CLOSE processed), UUID freed by callback */
+        } else {
+            /* Different worker: send async delete (no-op if already gone) */
+            dap_timerfd_delete_mt(l_worker, l_uuid);
+        }
     }
     s_stream_delete_from_list(a_stream);
     // a_stream->esocket_uuid = 0;
@@ -843,6 +901,9 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
         l_stm->esocket_uuid = 0;
         l_stm->esocket_worker = NULL;
     }
+
+    if (l_trans_ctx)
+        l_trans_ctx->esocket = NULL;
 
     // Clean up HTTP client resources if this was an HTTP-based stream
     if (l_http_client) {
@@ -1023,6 +1084,12 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
                                                                 l_callback,
                                                                 l_es_uuid);
+        if (l_stream->keepalive_timer) {
+            l_stream->keepalive_timer_uuid   = l_stream->keepalive_timer->esocket_uuid;
+            l_stream->keepalive_timer_worker = l_stream->keepalive_timer->worker;
+        } else {
+            DAP_DELETE(l_es_uuid);
+        }
     }
 }
 
@@ -1035,15 +1102,40 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 {
     UNUSED(a_worker);
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
-    assert(l_stream);
+    if (!l_stream)
+        return;  /* _inheritor already NULL — stream was cleaned up in dap_stream_delete_unsafe */
     s_stream_delete_from_list(l_stream);
+
+    /* Stop transport-specific timers (e.g. WebSocket ping timer) before the stream
+     * is freed.  dap_stream_delete_unsafe / s_esocket_callback_delete will call
+     * trans->ops->close again, but the guard "a_stream->trans = NULL" ensures it
+     * is a no-op on the second invocation. */
+    dap_net_trans_t *l_trans = l_stream->trans;
+    if (l_trans) {
+        l_stream->trans = NULL;   /* prevent double-close */
+        if (l_trans->ops && l_trans->ops->close)
+            l_trans->ops->close(l_stream);
+    }
+
     if (l_stream->keepalive_timer) {
-        dap_timerfd_t *l_timer = l_stream->keepalive_timer;
-        l_stream->keepalive_timer = NULL;
-        void *l_arg = l_timer->callback_arg;
-        l_timer->callback_arg = NULL;
-        dap_timerfd_delete_unsafe(l_timer);
-        DAP_DELETE(l_arg);
+        /* Use UUID copies (same reason as in dap_stream_delete_unsafe). */
+        dap_events_socket_uuid_t l_uuid   = l_stream->keepalive_timer_uuid;
+        l_stream->keepalive_timer        = NULL;
+        l_stream->keepalive_timer_uuid   = 0;
+        l_stream->keepalive_timer_worker = NULL;
+
+        dap_worker_t *l_cur = dap_worker_get_current();
+        if (l_cur && l_cur->context) {
+            dap_events_socket_t *l_timer_es = dap_context_find(l_cur->context, l_uuid);
+            if (l_timer_es) {
+                dap_timerfd_t *l_timer = (dap_timerfd_t*)l_timer_es->_inheritor;
+                if (l_timer) {
+                    void *l_arg = __atomic_exchange_n(&l_timer->callback_arg, (void*)NULL, __ATOMIC_RELEASE);
+                    dap_timerfd_delete_unsafe(l_timer);
+                    DAP_DELETE(l_arg);
+                }
+            }
+        }
     }
 }
 
@@ -1174,8 +1266,8 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     while (l_pos < l_end && (l_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos)))) {
         l_found_sig0 = true;
         if ((size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t)) {
-            log_it(L_INFO, "proc_read_ext: partial header, remain=%zu need=%zu",
-                   (size_t)(l_end - l_pos), sizeof(dap_stream_pkt_hdr_t));
+            debug_if(s_debug_more, L_DEBUG, "proc_read_ext: partial header, remain=%zu need=%zu",
+                     (size_t)(l_end - l_pos), sizeof(dap_stream_pkt_hdr_t));
             break;
         }
         
@@ -1419,10 +1511,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         if (a_stream->trans_ctx) {
             dap_stream_send_unsafe(a_stream, &l_ret_pkt, sizeof(l_ret_pkt));
         }
-        // Reset client keepalive timer
-        if (a_stream->keepalive_timer) {
-            dap_timerfd_reset_unsafe(a_stream->keepalive_timer);
-        }
+        // Reset client keepalive timer (UUID lookup — never dereference keepalive_timer)
+        s_stream_reset_keepalive_timer_unsafe(a_stream);
     } break;
     case STREAM_PKT_TYPE_ALIVE:
         a_stream->is_active = false; // To prevent keep-alive concurrency
@@ -1539,6 +1629,10 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         }
         if (l_stream->is_active) {
             l_stream->is_active = false;
+            /* Stream had activity since last keepalive — reset the worker idle
+             * clock so the socket isn't closed by the generic inactivity timeout
+             * while the VPN keepalive mechanism is still alive. */
+            l_es->last_time_active = time(NULL);
             return true;
         }
         if (!l_stream->trans_ctx || !l_stream->trans_ctx->trans ||
@@ -1560,6 +1654,9 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
         memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
         dap_stream_send_unsafe(l_stream, &l_pkt, sizeof(l_pkt));
+        /* Sending a keepalive packet is proof the stream is alive; update the
+         * worker idle clock to prevent spurious inactivity-based socket closure. */
+        l_es->last_time_active = time(NULL);
         return true;
     }else{
         debug_if(s_debug_more, L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);

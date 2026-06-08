@@ -55,7 +55,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # Find OpenSSL for SHA-1
 find_package(OpenSSL REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
-target_link_libraries(${PROJECT_NAME} INTERFACE ${OPENSSL_LIBRARIES})
+if(DAP_LINUX_OPENSSL_STATIC_LIBS)
+    # CI /opt/openssl static .a lacks -fPIC; do not propagate into .so node plugins.
+    # SHA1 etc. resolve from cellframe-node libcrypto.so at dlopen time.
+else()
+    target_link_libraries(${PROJECT_NAME} INTERFACE ${OPENSSL_LIBRARIES})
+endif()
 
 if(DARWIN AND NOT IOS)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)

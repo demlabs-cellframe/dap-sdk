@@ -23,28 +23,23 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-#ifndef _WIN32
-#include <strings.h>
-#endif
 #include <openssl/sha.h>
 #include <ctype.h>
 
-#ifdef _WIN32
-static char *strcasestr(const char *a_haystack, const char *a_needle)
+/** Case-insensitive substring search (portable; avoids implicit-decl warnings on Linux without _GNU_SOURCE). */
+static char *s_strcasestr(const char *a_haystack, const char *a_needle)
 {
-    if(!a_needle[0])
+    if (!a_needle[0])
         return (char *)a_haystack;
-    for(; *a_haystack; a_haystack++)
-    {
+    for (; *a_haystack; a_haystack++) {
         const char *h = a_haystack, *n = a_needle;
-        for(; *h && *n && tolower((unsigned char)*h) == tolower((unsigned char)*n); h++, n++)
+        for (; *h && *n && tolower((unsigned char)*h) == tolower((unsigned char)*n); h++, n++)
             ;
-        if(!*n)
+        if (!*n)
             return (char *)a_haystack;
     }
     return NULL;
 }
-#endif
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans.h"
@@ -375,8 +370,8 @@ int dap_net_trans_websocket_try_upgrade(dap_http_client_t *a_http_client)
     if (!l_upgrade || !l_connection || !l_ws_key || !l_ws_version)
         return -1;
 
-    if (!strcasestr(l_upgrade->value, "websocket") ||
-        !strcasestr(l_connection->value, "Upgrade"))
+    if (!s_strcasestr(l_upgrade->value, "websocket") ||
+        !s_strcasestr(l_connection->value, "Upgrade"))
         return -1;
 
     dap_net_trans_t *l_ws_trans = dap_net_trans_find(DAP_NET_TRANS_WEBSOCKET);
@@ -455,7 +450,7 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
     }
 
     // Validate upgrade headers
-    if (strcasestr(l_upgrade->value, "websocket") == NULL) {
+    if (s_strcasestr(l_upgrade->value, "websocket") == NULL) {
         log_it(L_WARNING, "Invalid Upgrade header: %s", l_upgrade->value);
         a_http_client->reply_status_code = 400; // Bad Request
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);
@@ -463,7 +458,7 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
         return;
     }
 
-    if (strcasestr(l_connection->value, "Upgrade") == NULL) {
+    if (s_strcasestr(l_connection->value, "Upgrade") == NULL) {
         log_it(L_WARNING, "Invalid Connection header: %s", l_connection->value);
         a_http_client->reply_status_code = 400; // Bad Request
         dap_events_socket_set_writable_unsafe(a_http_client->esocket, true);

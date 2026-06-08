@@ -307,3 +307,10 @@ if ( CELLFRAME_NO_OPTIMIZATION)
     set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
 
+# Apply -Werror to compilation targets, not to CMake try_compile probes
+# (which use CMAKE_C_FLAGS but not COMPILE_OPTIONS). Enabled in CI via
+# -DDAP_MANAGE_CFLAGS=ON; see .gitlab-ci.yml.
+if(DAP_MANAGE_CFLAGS)
+    add_compile_options(-Werror)
+endif()
+
