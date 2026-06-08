@@ -450,7 +450,7 @@ static void s_queue_es_io_callback(void *a_arg)
     if (l_msg->flags_unset & DAP_SOCK_READY_TO_WRITE)
         dap_events_socket_set_writable_unsafe(l_msg_es, false);
     if (l_msg->data_size && l_msg->data) {
-        debug_if(l_msg_es->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_INFO,
+        debug_if(s_debug_more && l_msg_es->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT, L_DEBUG,
                  "CLI IO: writing %zu bytes to es_uid 0x%"DAP_UINT64_FORMAT_x" buf_out was %zu flags 0x%x",
                  l_msg->data_size, l_msg->esocket_uuid, l_msg_es->buf_out_size, l_msg_es->flags);
         dap_events_socket_write_unsafe(l_msg_es, l_msg->data, l_msg->data_size);

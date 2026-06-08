@@ -71,7 +71,7 @@ bool test_trans_verify_data(const void *a_sent, const void *a_received, size_t a
 #define TEST_WEBSOCKET_SERVER_PORT 18100
 #define TEST_HTTP_SERVER_PORT      18101
 #define TEST_UDP_SERVER_PORT       18102
-#define TEST_DNS_SERVER_PORT       18103
+#define TEST_DNS_SERVER_PORT       18120
 
 /**
  * @brief Default test timeout in seconds

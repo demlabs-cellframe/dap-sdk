@@ -90,6 +90,11 @@ char * dap_json_rpc_enc_request(dap_client_trans_ctx_t* a_client_ctx, char * a_r
 
 int dap_json_rpc_request_send(dap_client_trans_ctx_t*  a_client_ctx, dap_json_rpc_request_t *a_request, json_object** a_response, const char *a_cert_path);
 
+/* Legacy compatibility: cellframe-sdk callers may pass dap_events_socket_t*
+ * instead of dap_client_trans_ctx_t*. The cast is safe because those callers
+ * pass NULL or a socket whose _inheritor is the trans_ctx; the implementation
+ * handles NULL gracefully. */
+
 #ifdef __cplusplus
 }
 #endif

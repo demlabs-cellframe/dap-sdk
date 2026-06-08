@@ -8,7 +8,12 @@
 
 #include <string.h>
 #include <stdint.h>
-#include <arpa/inet.h>  // For htobe64 (network byte order)
+#ifdef _WIN32
+#include <winsock2.h>
+#define htobe64(x) htonll(x)
+#else
+#include <arpa/inet.h>
+#endif
 
 #include "dap_enc_kdf.h"
 #include "dap_common.h"
@@ -229,8 +234,12 @@ int dap_enc_kdf_hkdf(const void *a_salt, size_t a_salt_size,
     }
     
     // EXTRACT: PRK = SHAKE256(salt || IKM)
-    // If no salt, use zero-filled salt of length equal to hash output
-    size_t l_extract_input_size = a_salt_size + a_ikm_size;
+    // If no salt is provided, substitute a 32-byte zero salt (RFC 5869 §2.2).
+    // IMPORTANT: compute effective_salt_size BEFORE allocating the buffer so the
+    // allocation is large enough to hold (salt || IKM).
+    const size_t l_zero_salt_size = 32;
+    size_t l_effective_salt_size = (a_salt_size > 0 && a_salt) ? a_salt_size : l_zero_salt_size;
+    size_t l_extract_input_size = l_effective_salt_size + a_ikm_size;
     uint8_t *l_extract_input = DAP_NEW_SIZE(uint8_t, l_extract_input_size);
     if (!l_extract_input) {
         log_it(L_ERROR, "HKDF: failed to allocate extract input buffer");
@@ -240,11 +249,9 @@ int dap_enc_kdf_hkdf(const void *a_salt, size_t a_salt_size,
     if (a_salt_size > 0 && a_salt) {
         memcpy(l_extract_input, a_salt, a_salt_size);
     } else {
-        // No salt: use zeros
-        memset(l_extract_input, 0, 32);  // 32-byte zero salt
-        a_salt_size = 32;
+        memset(l_extract_input, 0, l_zero_salt_size);
     }
-    memcpy(l_extract_input + a_salt_size, a_ikm, a_ikm_size);
+    memcpy(l_extract_input + l_effective_salt_size, a_ikm, a_ikm_size);
     
     // PRK should be at least 32 bytes (SHAKE256 standard strength)
     uint8_t l_prk[64];  // Use 64 bytes for extra strength

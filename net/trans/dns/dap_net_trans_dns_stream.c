@@ -23,6 +23,9 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <time.h>
+#ifndef DAP_OS_WINDOWS
+#include <arpa/inet.h>
+#endif
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans_dns_stream.h"
@@ -615,9 +618,21 @@ static ssize_t s_dns_write(dap_stream_t *a_stream, const void *a_data, size_t a_
     dap_worker_t *l_current = dap_worker_get_current();
     dap_worker_t *l_target = l_es->worker;
 
+    char l_dst_str[64] = {0};
+    if (l_es->addr_storage.ss_family == AF_INET) {
+        struct sockaddr_in *s = (struct sockaddr_in*)&l_es->addr_storage;
+        inet_ntop(AF_INET, &s->sin_addr, l_dst_str, sizeof(l_dst_str));
+        log_it(L_INFO, "DNS write: size=%zu fd=%d to %s:%u cur_worker=%p target_worker=%p",
+               a_size, l_es->fd, l_dst_str, ntohs(s->sin_port), (void*)l_current, (void*)l_target);
+    } else {
+        log_it(L_INFO, "DNS write: size=%zu fd=%d (non-IPv4) cur=%p target=%p",
+               a_size, l_es->fd, (void*)l_current, (void*)l_target);
+    }
+
     if(l_current == l_target) {
         size_t l_sent = dap_events_socket_sendto_unsafe(l_es, a_data, a_size,
                                                         &l_es->addr_storage, l_es->addr_size);
+        log_it(L_INFO, "DNS write: sent %zu of %zu bytes (direct)", l_sent, a_size);
         if(l_sent != a_size)
             log_it(L_WARNING, "DNS write incomplete: %zu of %zu bytes (flags=0x%x)", l_sent, a_size, l_es->flags);
         return (ssize_t)l_sent;
@@ -703,8 +718,8 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
     l_es->_inheritor = a_params->client_ctx;
     
     int l_buf_size = 4 * 1024 * 1024;
-    setsockopt(l_es->fd, SOL_SOCKET, SO_RCVBUF, &l_buf_size, sizeof(l_buf_size));
-    setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, &l_buf_size, sizeof(l_buf_size));
+    setsockopt(l_es->fd, SOL_SOCKET, SO_RCVBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
+    setsockopt(l_es->fd, SOL_SOCKET, SO_SNDBUF, (const char *)&l_buf_size, sizeof(l_buf_size));
     
     // Resolve host and set address using centralized function
     if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
@@ -713,6 +728,19 @@ static int s_dns_stage_prepare(dap_net_trans_t *a_trans,
         a_result->error_code = -1;
         return -1;
     }
+
+#ifdef DAP_OS_WINDOWS
+    {
+        struct sockaddr_in l_bind_addr = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY, .sin_port = 0 };
+        if(bind(l_es->socket, (struct sockaddr *)&l_bind_addr, sizeof(l_bind_addr)) < 0) {
+            log_it(L_ERROR, "Failed to bind UDP socket for DNS trans: %d", WSAGetLastError());
+            dap_events_socket_delete_unsafe(l_es, true);
+            a_result->error_code = -1;
+            return -1;
+        }
+        l_es->addr_size = sizeof(struct sockaddr_in);
+    }
+#endif
     
     // DNS tunneling uses UDP (connectionless) - just add to worker
     dap_worker_add_events_socket(a_params->worker, l_es);
@@ -783,6 +811,7 @@ static void s_dns_client_read_cb(dap_events_socket_t *a_es, void *a_arg)
 
     if (!a_es || a_es->buf_in_size == 0)
         return;
+    log_it(L_INFO, "DNS client read: size=%zu", a_es->buf_in_size);
 
     dap_client_t *l_client = (dap_client_t *)a_es->_inheritor;
     if (!l_client) {

@@ -148,6 +148,37 @@ static bool s_inited = false;
 static bool s_retransmit_timer_callback(void *a_arg);
 static bool s_keepalive_timer_callback(void *a_arg);
 
+/**
+ * @brief Delete a timerfd on its own worker thread.
+ *
+ * Timer esockets live on a specific worker context and must only be removed
+ * from that worker's reactor. Used via dap_worker_exec_callback_on_sync() so
+ * that timer deletion is serialized with timer callbacks (same thread) and the
+ * caller can safely free the owning structure once this returns.
+ */
+static void s_timer_delete_on_worker_cb(void *a_arg)
+{
+    dap_timerfd_delete_unsafe((dap_timerfd_t *)a_arg);
+}
+
+/**
+ * @brief Stop and delete a flow-control timer, on the timer's worker thread.
+ *
+ * Performs the deletion synchronously on the worker that owns the timer to
+ * avoid the cross-thread double-free that happens when the worker self-closes
+ * the timer (callback returns false) while the teardown path also deletes it.
+ * After this returns the timer is fully removed and no further callback fires.
+ */
+static void s_flow_ctrl_timer_stop(dap_timerfd_t *a_timer)
+{
+    if (!a_timer)
+        return;
+    if (a_timer->worker)
+        dap_worker_exec_callback_on_sync(a_timer->worker, s_timer_delete_on_worker_cb, a_timer);
+    else
+        dap_timerfd_delete_unsafe(a_timer);
+}
+
 //===================================================================
 // LIFECYCLE MANAGEMENT (prevents use-after-free in multithreaded code)
 //===================================================================
@@ -423,13 +454,17 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         a_ctrl->magic = 0;
     }
     
-    // STEP 4: Stop timers (any running callbacks will exit due to magic=0)
+    // STEP 4: Stop timers on their own worker thread (synchronously).
+    // The FC timer callbacks never self-delete (they return true even when
+    // magic==0), so this teardown path is the single owner of the timers.
+    // Deleting them on the worker serializes with any in-flight callback and
+    // guarantees no callback can fire after we proceed to free the FC below.
     if (a_ctrl->retransmit_timer) {
-        dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
+        s_flow_ctrl_timer_stop(a_ctrl->retransmit_timer);
         a_ctrl->retransmit_timer = NULL;
     }
     if (a_ctrl->keepalive_timer) {
-        dap_timerfd_delete_unsafe(a_ctrl->keepalive_timer);
+        s_flow_ctrl_timer_stop(a_ctrl->keepalive_timer);
         a_ctrl->keepalive_timer = NULL;
     }
     
@@ -971,9 +1006,14 @@ static bool s_retransmit_timer_callback(void *a_arg)
 {
     dap_io_flow_ctrl_t *l_ctrl = (dap_io_flow_ctrl_t *)a_arg;
     
-    // CRITICAL: Check magic WITHOUT mutex first (fast path for deleted FC)
+    // CRITICAL: Check magic WITHOUT mutex first (fast path for deleted FC).
+    // Do NOT self-delete the timer here: ownership of the timer's lifetime
+    // belongs solely to dap_io_flow_ctrl_delete(), which stops it on the
+    // worker thread. Returning true (keep timer armed) avoids a double-free
+    // race where the worker frees the timerfd via SIGNAL_CLOSE while the
+    // teardown path frees it too.
     if (!l_ctrl || l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
-        return false;  // Stop timer - FC deleted
+        return true;  // FC is being torn down; owner will delete the timer
     }
     
     // Lock mutex BEFORE accessing any FC data to prevent race with dap_io_flow_ctrl_delete()
@@ -982,7 +1022,7 @@ static bool s_retransmit_timer_callback(void *a_arg)
     // Double-check magic AFTER acquiring lock (detect deletion during lock wait)
     if (l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
         pthread_mutex_unlock(&l_ctrl->send_mutex);
-        return false;  // Stop timer - FC deleted while waiting for lock
+        return true;  // FC is being torn down; owner will delete the timer
     }
     
     uint64_t l_now = dap_nanotime_now();
@@ -1046,9 +1086,11 @@ static bool s_keepalive_timer_callback(void *a_arg)
 {
     dap_io_flow_ctrl_t *l_ctrl = (dap_io_flow_ctrl_t *)a_arg;
     
-    // Check magic (no mutex needed for keepalive - it doesn't modify send window)
+    // Check magic (no mutex needed for keepalive - it doesn't modify send window).
+    // Never self-delete: lifetime is owned by dap_io_flow_ctrl_delete(). See
+    // s_retransmit_timer_callback() for the double-free rationale.
     if (!l_ctrl || l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
-        return false;  // Stop timer - FC deleted
+        return true;  // FC is being torn down; owner will delete the timer
     }
     
     uint64_t l_now = dap_nanotime_now();

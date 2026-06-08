@@ -23,6 +23,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include <pthread.h>
 #include "dap_server.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_ctx.h"
@@ -56,6 +57,10 @@ typedef struct dap_net_trans_dns_server {
     char server_name[256];
     dap_net_trans_t *trans;
     dns_server_client_session_t *sessions;
+    /* Protects the sessions hash table.
+     * The table is shared across all sharded listener sockets (one per worker).
+     * Without this lock concurrent HASH_ADD/FIND from different workers corrupt it. */
+    pthread_mutex_t sessions_lock;
 } dap_net_trans_dns_server_t;
 
 #define DAP_NET_TRANS_DNS_SERVER(a) ((dap_net_trans_dns_server_t *) (a)->_inheritor)

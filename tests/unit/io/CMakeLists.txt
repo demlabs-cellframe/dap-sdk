@@ -8,11 +8,16 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/dap_test_helpers.cmake)
 set(IO_TEST_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/io/include
     ${CMAKE_SOURCE_DIR}/core/include
-    ${CMAKE_SOURCE_DIR}/core/include/unix
     ${CMAKE_SOURCE_DIR}/test-framework
     ${CMAKE_SOURCE_DIR}/3rdparty/uthash/src
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
 )
+
+if(WIN32)
+    list(APPEND IO_TEST_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/core/include/win32)
+else()
+    list(APPEND IO_TEST_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/core/include/unix)
+endif()
 
 # Linux-specific include directories
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

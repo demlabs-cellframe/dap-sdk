@@ -23,9 +23,15 @@
 
 #include <string.h>
 #include <inttypes.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#else
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"

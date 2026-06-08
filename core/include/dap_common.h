@@ -64,7 +64,7 @@
 #include <atomic>
 #define _Atomic(X) std::atomic< X >
 #define atomic_bool _Atomic(bool)
-#define atomic_uint _Atomic(uint)
+#define atomic_uint _Atomic(unsigned int)
 #define atomic_int _Atomic(int)
 #endif
 
@@ -282,13 +282,10 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_REALLOC_COUNT(p, c) ({ __typeof__(p) _rp = (p); intmax_t _rc = (intmax_t)(c), _ts = DAP_TYPE_SIZE(_rp); \
     (__typeof__(_rp))(_rc > 0 && _rc <= INTMAX_MAX / _ts ? DAP_REALLOC(_rp, _rc * _ts) : NULL); })
 #define DAP_DELETE(p)         free((void*)(p))
-#define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0)
-#define DAP_DEL_ARRAY(p, c)   do { __typeof__(p) _da = (p); \
-    for (intmax_t _c = _da ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(_da[--_c])); } while (0)
-#define DAP_DUP_SIZE(p, s)    ({ __typeof__(p) _src = (p); intmax_t _s = (intmax_t)(s); \
-    __typeof__(p) _dup = ( (uintptr_t)_src && _s >= DAP_TYPE_SIZE(_src) ) ? DAP_CAST(__typeof__(_src), calloc(1, _s)) : NULL; \
-    _dup ? DAP_CAST(__typeof__(_src), memcpy(_dup, _src, _s)) : NULL; })
-#define DAP_DUP(p)            ({ __typeof__(p) _src = (p), _dup = (uintptr_t)_src ? calloc(1, sizeof(*_src)) : NULL; if (_dup) *_dup = *_src; _dup; })
+#define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
+#define DAP_DEL_ARRAY(p, c)   do { intmax_t _c = (intmax_t)(c); if ((void*)(p) != NULL) { while (_c > 0) { DAP_DELETE(p[--_c]); } } } while(0);
+#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); void *_p = NULL; uintptr_t _pv = (uintptr_t)(p); if (_pv && _s >= DAP_TYPE_SIZE(p)) { _p = calloc(1, (size_t)_s); if (_p) memcpy((void*)_p, (const void*)_pv, (size_t)_s); } DAP_CAST(__typeof__(p), _p); })
+#define DAP_DUP(p)            ({ __typeof__(p) _p = (p); __typeof__(p) _res = NULL; if ((uintptr_t)_p) { _res = calloc(1, sizeof(*_p)); if (_res) *_res = *_p; } _res; })
 
 #endif
 
@@ -1389,3 +1386,21 @@ dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a
 #define dap_stream_node_addr_to_str_static(a) dap_stream_node_addr_to_str_static_(a).s
 
 void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);
+
+#ifdef DAP_OS_WINDOWS
+// Check if a pointer refers to committed, writable (heap) memory.
+// Returns false for freed, code-segment or otherwise invalid pointers.
+DAP_STATIC_INLINE bool dap_is_valid_heap_ptr(const void *a_ptr)
+{
+    uintptr_t l_val = (uintptr_t)a_ptr;
+    if(l_val < 0x10000 || l_val > 0x00007FFFFFFFFFFFULL)
+        return false;
+    MEMORY_BASIC_INFORMATION l_mbi;
+    if(VirtualQuery(a_ptr, &l_mbi, sizeof(l_mbi)) != sizeof(l_mbi))
+        return false;
+    if(l_mbi.State != MEM_COMMIT)
+        return false;
+    DWORD l_prot = l_mbi.Protect & ~(PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE);
+    return l_prot == PAGE_READWRITE || l_prot == PAGE_EXECUTE_READWRITE;
+}
+#endif

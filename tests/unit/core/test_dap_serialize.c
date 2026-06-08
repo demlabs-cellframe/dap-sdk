@@ -446,8 +446,9 @@ static void test_buffer_validation(void) {
 }
 
 /**
- * @brief Performance test for serialization
+ * @brief Performance test for serialization (POSIX only — uses clock_gettime)
  */
+#ifndef DAP_OS_WINDOWS
 static void test_performance(void) {
     log_it(L_INFO, "Testing serialization performance...");
     
@@ -462,7 +463,7 @@ static void test_performance(void) {
     };
     
     // Fill data with pattern
-    for (size_t i = 0; i < test_obj.data_size; i++) {
+    for(size_t i = 0; i < test_obj.data_size; i++) {
         test_obj.data[i] = (uint8_t)(i & 0xFF);
     }
     
@@ -473,7 +474,7 @@ static void test_performance(void) {
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
     
-    for (int i = 0; i < iterations; i++) {
+    for(int i = 0; i < iterations; i++) {
         dap_serialize_result_t result = dap_serialize_to_buffer(
             &test_dynamic_schema, &test_obj, buffer, required_size, NULL);
         assert(result.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
@@ -487,7 +488,7 @@ static void test_performance(void) {
     // Time deserialization
     clock_gettime(CLOCK_MONOTONIC, &start);
     
-    for (int i = 0; i < iterations; i++) {
+    for(int i = 0; i < iterations; i++) {
         test_dynamic_struct_t deser_obj = {0};
         dap_deserialize_result_t result = dap_deserialize_from_buffer(
             &test_dynamic_schema, buffer, required_size, &deser_obj, NULL);
@@ -517,6 +518,7 @@ static void test_performance(void) {
     
     log_it(L_INFO, "Performance test completed");
 }
+#endif
 
 /**
  * @brief Test serializer robustness against corrupted/garbage input data
@@ -691,7 +693,9 @@ int main(int argc, char *argv[]) {
     test_conditional_serialization();
     test_error_conditions();
     test_buffer_validation();
+#ifndef DAP_OS_WINDOWS
     test_performance();
+#endif
     // test_complex_nested_with_nulls();  // DISABLED: creates infinite recursion in test_acorn_schema - needs separate fix
     test_robustness_with_corrupted_data();  // Test serializer robustness against garbage input
     

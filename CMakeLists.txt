@@ -3,7 +3,7 @@ project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(CheckFunctionExists)
-option(DAP_MANAGE_CFLAGS "Let dap-sdk manage compiler and linker flags internally" ON)
+option(DAP_MANAGE_CFLAGS "Treat compiler warnings as errors (-Werror) via add_compile_options" OFF)
 include(cmake/OS_Detection.cmake)
 # Include LibraryHelpers for object library creation
 # This must be included early to override target_link_libraries

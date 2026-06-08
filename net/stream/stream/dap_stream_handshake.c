@@ -30,7 +30,11 @@
  */
 
 #include <string.h>
-#include <arpa/inet.h>  // for htons/ntohs (network byte order)
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>
+#endif
 #include "dap_stream_handshake.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
