@@ -471,6 +471,7 @@ typedef struct {
     dap_client_t *client;
     dap_net_handshake_params_t handshake_params;
     dap_net_trans_type_t trans_type;
+    bool skip_handshake;
 } fsm_enc_init_io_ctx_t;
 
 // ===== Reconnect timer =====
@@ -1291,6 +1292,17 @@ static void s_worker_execute_enc_init_io(void *a_arg)
     }
     l_prepare_result.stream->client_stream_ref = &l_tc->stream;
 
+    if (l_ctx->skip_handshake && l_tc->session_key) {
+        log_it(L_NOTICE, "Session resume: transport up, skipping enc_init handshake (reusing session_key)");
+        if (l_ctx->handshake_params.alice_pub_key)
+            DAP_DELETE(l_ctx->handshake_params.alice_pub_key);
+        l_client->session_resume_mode = false;
+        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                              STAGE_STATUS_DONE, ERROR_NO_ERROR);
+        DAP_DELETE(l_ctx);
+        return;
+    }
+
     // Handshake init: async IO, transport callback will notify FSM
     int l_handshake_ret = l_transport->ops->handshake_init(l_tc->stream, &l_ctx->handshake_params,
                                                             s_handshake_callback_wrapper);
@@ -1347,6 +1359,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
     if (a_fsm->stage == STAGE_ENC_INIT) {
         dap_net_trans_ctx_t *l_tc = a_fsm->trans_ctx;
         dap_client_t *l_client = a_fsm->client;
+        const bool l_resume = l_client->session_resume_mode && l_tc && l_tc->session_key;
 
         // Validate address
         if (!*l_client->link_info.uplink_addr || !l_client->link_info.uplink_port) {
@@ -1365,53 +1378,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             return;
         }
 
-        // Generate session_key_open (HEAVY CRYPTO - runs on FSM thread, not worker!)
-        debug_if(s_debug_more, L_INFO, "FSM thread: generating session key for client %p", l_client);
-        if (l_tc->session_key_open)
-            dap_enc_key_delete(l_tc->session_key_open);
-        l_tc->session_key_open = dap_enc_key_new_generate(a_fsm->session_key_open_type, NULL, 0, NULL, 0,
-                                                           a_fsm->session_key_block_size);
-        if (!l_tc->session_key_open) {
-            log_it(L_ERROR, "Insufficient memory for session_key_open");
-            s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
-            a_fsm->last_error = ERROR_OUT_OF_MEMORY;
-            s_fsm_process(a_fsm);
-            return;
-        }
-
-        // Prepare alice_pub_key with signatures (crypto - on FSM thread)
-        size_t l_data_size = l_tc->session_key_open->pub_key_data_size;
-        uint8_t *l_alice_pub_key = DAP_DUP_SIZE((uint8_t *)l_tc->session_key_open->pub_key_data, l_data_size);
-        if (!l_alice_pub_key) {
-            s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
-            a_fsm->last_error = ERROR_OUT_OF_MEMORY;
-            s_fsm_process(a_fsm);
-            return;
-        }
-
-        size_t l_sign_count = 0;
-        uint32_t l_protocol_version = DAP_CLIENT_PROTOCOL_VERSION;
-
-        if (dap_client_get_legacy_enc_handshake()) {
-            /* Old cellframe-node master: pubkey only, no cert signature in enc_init */
-            l_protocol_version = 0;
-            log_it(L_INFO, "Legacy enc_init handshake (no signature, protocol_version=0)");
-        } else {
-            dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-            if (l_client->auth_cert)
-                l_sign_count += dap_cert_add_sign_to_data(l_client->auth_cert, &l_alice_pub_key, &l_data_size,
-                                                           l_tc->session_key_open->pub_key_data,
-                                                           l_tc->session_key_open->pub_key_data_size);
-            if (l_node_cert)
-                l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_alice_pub_key, &l_data_size,
-                                                          l_tc->session_key_open->pub_key_data,
-                                                          l_tc->session_key_open->pub_key_data_size);
-        }
-
-        // Build dispatch context with prepared handshake params for worker
         fsm_enc_init_io_ctx_t *l_dispatch = DAP_NEW_Z(fsm_enc_init_io_ctx_t);
         if (!l_dispatch) {
-            DAP_DELETE(l_alice_pub_key);
             s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
             a_fsm->last_error = ERROR_OUT_OF_MEMORY;
             s_fsm_process(a_fsm);
@@ -1422,19 +1390,70 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
         l_dispatch->fsm_thread_idx = a_fsm->fsm_thread_idx;
         l_dispatch->client = l_client;
         l_dispatch->trans_type = l_client->trans_type;
-        l_dispatch->handshake_params = (dap_net_handshake_params_t){
-            .enc_type = a_fsm->session_key_type,
-            .pkey_exchange_type = a_fsm->session_key_open_type,
-            .pkey_exchange_size = l_tc->session_key_open->pub_key_data_size,
-            .block_key_size = a_fsm->session_key_block_size,
-            .protocol_version = l_protocol_version,
-            .auth_cert = l_client->auth_cert,
-            .alice_pub_key = l_alice_pub_key,
-            .alice_pub_key_size = l_data_size,
-            .sign_count = l_sign_count
-        };
+        l_dispatch->skip_handshake = l_resume;
 
-        debug_if(s_debug_more, L_INFO, "FSM thread: ENC_INIT crypto done, dispatching IO to worker");
+        if (l_resume) {
+            log_it(L_NOTICE, "Session resume: open transport, then STREAM_CTL with existing session_key");
+            l_dispatch->handshake_params.protocol_version = l_tc->uplink_protocol_version
+                ? l_tc->uplink_protocol_version : DAP_CLIENT_PROTOCOL_VERSION;
+        } else {
+            debug_if(s_debug_more, L_INFO, "FSM thread: generating session key for client %p", l_client);
+            if (l_tc->session_key_open)
+                dap_enc_key_delete(l_tc->session_key_open);
+            l_tc->session_key_open = dap_enc_key_new_generate(a_fsm->session_key_open_type, NULL, 0, NULL, 0,
+                                                               a_fsm->session_key_block_size);
+            if (!l_tc->session_key_open) {
+                log_it(L_ERROR, "Insufficient memory for session_key_open");
+                DAP_DELETE(l_dispatch);
+                s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
+                a_fsm->last_error = ERROR_OUT_OF_MEMORY;
+                s_fsm_process(a_fsm);
+                return;
+            }
+
+            size_t l_data_size = l_tc->session_key_open->pub_key_data_size;
+            uint8_t *l_alice_pub_key = DAP_DUP_SIZE((uint8_t *)l_tc->session_key_open->pub_key_data, l_data_size);
+            if (!l_alice_pub_key) {
+                DAP_DELETE(l_dispatch);
+                s_set_stage_status(a_fsm, STAGE_STATUS_ERROR);
+                a_fsm->last_error = ERROR_OUT_OF_MEMORY;
+                s_fsm_process(a_fsm);
+                return;
+            }
+
+            size_t l_sign_count = 0;
+            uint32_t l_protocol_version = DAP_CLIENT_PROTOCOL_VERSION;
+
+            if (dap_client_get_legacy_enc_handshake()) {
+                l_protocol_version = 0;
+                log_it(L_INFO, "Legacy enc_init handshake (no signature, protocol_version=0)");
+            } else {
+                dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+                if (l_client->auth_cert)
+                    l_sign_count += dap_cert_add_sign_to_data(l_client->auth_cert, &l_alice_pub_key, &l_data_size,
+                                                               l_tc->session_key_open->pub_key_data,
+                                                               l_tc->session_key_open->pub_key_data_size);
+                if (l_node_cert)
+                    l_sign_count += dap_cert_add_sign_to_data(l_node_cert, &l_alice_pub_key, &l_data_size,
+                                                              l_tc->session_key_open->pub_key_data,
+                                                              l_tc->session_key_open->pub_key_data_size);
+            }
+
+            l_dispatch->handshake_params = (dap_net_handshake_params_t){
+                .enc_type = a_fsm->session_key_type,
+                .pkey_exchange_type = a_fsm->session_key_open_type,
+                .pkey_exchange_size = l_tc->session_key_open->pub_key_data_size,
+                .block_key_size = a_fsm->session_key_block_size,
+                .protocol_version = l_protocol_version,
+                .auth_cert = l_client->auth_cert,
+                .alice_pub_key = l_alice_pub_key,
+                .alice_pub_key_size = l_data_size,
+                .sign_count = l_sign_count
+            };
+        }
+
+        debug_if(s_debug_more, L_INFO, "FSM thread: ENC_INIT %s, dispatching IO to worker",
+                 l_resume ? "resume (skip enc handshake)" : "crypto done");
         dap_worker_exec_callback_on(l_worker, s_worker_execute_enc_init_io, l_dispatch);
         return;
     }

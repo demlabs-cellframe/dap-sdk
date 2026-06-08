@@ -888,12 +888,11 @@ static int s_http_trans_session_create(dap_stream_t *a_stream,
     char l_request[16];
     size_t l_request_size = snprintf(l_request, sizeof(l_request), "%d", DAP_CLIENT_PROTOCOL_VERSION);
 
-    // Prepare sub_url based on protocol version
-    uint32_t l_least_common_dap_protocol = dap_min(l_tc->remote_protocol_version,
-                                                   l_tc->uplink_protocol_version);
-    
+    /* Use remote_protocol_version to decide stream_ctl URL format.
+     * uplink_protocol_version is not yet set at this point (it is assigned from
+     * the stream_ctl *response*), so we cannot use dap_min() with it. */
     char *l_suburl;
-    if (l_least_common_dap_protocol < 23) {
+    if (l_tc->remote_protocol_version < 23) {
         l_suburl = dap_strdup_printf("stream_ctl,channels=%s", a_params->channels);
     } else {
         l_suburl = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",

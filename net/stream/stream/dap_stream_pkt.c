@@ -39,12 +39,12 @@ static bool s_debug_more = false;
 
 /**
  * @brief Send data to datagram stream using flow callback
- * 
+ *
  * Helper function to send data via datagram stream (UDP, etc), properly resolving
  * the destination address through the datagram flow's get_remote_addr callback.
- * 
+ *
  * Works for both CLIENT and SERVER streams via stream->flow.
- * 
+ *
  * @param a_stream Stream instance
  * @param a_data Data to send
  * @param a_size Data size
@@ -55,29 +55,29 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
     if (!a_stream || !a_data || a_size == 0) {
         return 0;
     }
-    
+
     if (!a_stream->esocket) {
         log_it(L_ERROR, "Stream has no esocket");
         return 0;
     }
-    
+
     if (!a_stream->flow) {
         log_it(L_ERROR, "Datagram stream has no flow set");
         return 0;
     }
-    
+
     dap_events_socket_t *l_es = a_stream->esocket;
     dap_io_flow_datagram_t *l_flow = (dap_io_flow_datagram_t*)a_stream->flow;
-    
+
     // Get destination address from datagram flow callback
     struct sockaddr_storage l_dest_addr;
     socklen_t l_dest_addr_len;
-    
+
     if (!dap_io_flow_datagram_get_remote_addr(l_flow, &l_dest_addr, &l_dest_addr_len)) {
         log_it(L_ERROR, "Failed to get datagram destination address from flow callback");
         return 0;
     }
-    
+
     return dap_events_socket_sendto_unsafe(l_es, a_data, a_size, &l_dest_addr, l_dest_addr_len);
 }
 
@@ -97,10 +97,10 @@ size_t dap_stream_pkt_read_unsafe( dap_stream_t * a_stream, dap_stream_pkt_t * a
         s_init_once = true;
         s_debug_more = dap_config_get_item_bool_default(g_config, "stream_pkt", "debug_more", false);
     }
-    
+
     debug_if(s_debug_more, L_DEBUG, "dap_stream_pkt_read_unsafe: ENTRY stream=%p, session=%p, key=%p, pkt_size=%u, buf_out_size=%zu",
              a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL, a_pkt->hdr.size, a_buf_out_size);
-    
+
     // Handle unencrypted packet or missing session key
     if (!a_stream->session || !a_stream->session->key) {
         log_it(L_WARNING, "dap_stream_pkt_read_unsafe: NO SESSION or NO KEY! stream=%p", a_stream);
@@ -108,12 +108,12 @@ size_t dap_stream_pkt_read_unsafe( dap_stream_t * a_stream, dap_stream_pkt_t * a
         memcpy(a_buf_out, a_pkt->data, l_copy_size);
         return l_copy_size;
     }
-    
+
     size_t l_result = a_stream->session->key->dec_na(a_stream->session->key,a_pkt->data,a_pkt->hdr.size,a_buf_out, a_buf_out_size);
-    
+
     debug_if(s_debug_more, L_DEBUG, "dap_stream_pkt_read_unsafe: RETURNED dec_na result=%zu (stream=%p, session=%p, key=%p)",
              l_result, a_stream, a_stream->session, a_stream->session->key);
-    
+
     return l_result;
 }
 
@@ -133,27 +133,27 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
         s_init_once = true;
         s_debug_more = dap_config_get_item_bool_default(g_config, "stream_pkt", "debug_more", false);
     }
-    
+
     if (a_data_size > DAP_STREAM_PKT_FRAGMENT_SIZE)
         return log_it(L_ERROR, "Too big fragment size %zu", a_data_size), 0;
     static _Thread_local char s_pkt_buf[DAP_STREAM_PKT_FRAGMENT_SIZE + sizeof(dap_stream_pkt_hdr_t) + 0x40] = { 0 };
     a_stream->is_active = true;
-    
+
     dap_enc_key_t *l_key = (a_stream->session) ? a_stream->session->key : NULL;
-    
-    debug_if(s_debug_more, L_DEBUG, "dap_stream_pkt_write_unsafe: stream=%p, session=%p, key=%p, type=0x%02x, data_size=%zu", 
+
+    debug_if(s_debug_more, L_DEBUG, "dap_stream_pkt_write_unsafe: stream=%p, session=%p, key=%p, type=0x%02x, data_size=%zu",
              a_stream, a_stream->session, l_key, a_type, a_data_size);
-    
+
     size_t l_full_size;
-    
+
     if (l_key) {
         l_full_size = dap_enc_key_get_enc_size(l_key->type, a_data_size) + sizeof(dap_stream_pkt_hdr_t);
     } else {
         l_full_size = a_data_size + sizeof(dap_stream_pkt_hdr_t);
     }
-    
+
     dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)s_pkt_buf;
-    
+
     if (l_key) {
     *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( l_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
                                                                 l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ),
@@ -166,9 +166,9 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
                                               .timestamp = dap_time_now(), .type = a_type,
                                               .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
     }
-    
+
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
-    
+
     // Try trans_ctx->trans first (SERVER), then fall back to stream->trans (CLIENT)
     dap_net_trans_t *l_trans = NULL;
     if (a_stream->trans_ctx && a_stream->trans_ctx->trans) {
@@ -187,11 +187,10 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
 
     if (l_trans && l_trans->ops && l_trans->ops->write) {
         ssize_t l_ret = l_trans->ops->write(a_stream, s_pkt_buf, l_full_size);
-        debug_if(s_debug_more, L_DEBUG, "stream_pkt_write: trans->ops->write returned %zd", l_ret);
         return (size_t)l_ret;
     } else if (a_stream->esocket) {
         dap_events_socket_t *l_es = a_stream->esocket;
-        
+
         if (dap_events_socket_is_datagram(l_es)) {
             if (!l_trans || !l_trans->ops || !l_trans->ops->write) {
                 debug_if(s_debug_more, L_DEBUG,
@@ -200,7 +199,7 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
             }
             return s_stream_send_datagram_unsafe(a_stream, s_pkt_buf, l_full_size);
         }
-        
+
         size_t l_ret = dap_events_socket_write_unsafe(l_es, s_pkt_buf, l_full_size);
         debug_if(s_debug_more, L_DEBUG, "stream_pkt_write: direct esocket write returned %zu", l_ret);
         return l_ret;
@@ -245,4 +244,3 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     return a_data_size;
 #endif
 }
-

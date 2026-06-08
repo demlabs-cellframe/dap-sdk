@@ -98,6 +98,8 @@ typedef struct dap_client {
     bool always_reconnect; // Always reconnect ever number of tries are over
     bool connect_on_demand; // Automatically connect with writing request
     bool no_transport_fallback; // Disable automatic transport fallback on failure
+    /** Hot reconnect: try STREAM_CTL with copied session_key before full ENC handshake. */
+    bool session_resume_mode;
     bool del_arg;
 
     dap_client_stage_t stage_target;
