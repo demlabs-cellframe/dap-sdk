@@ -9,6 +9,12 @@ if(LINUX)
         test_cbpf_sticky_sessions.c
     )
     
+    # Fix for AArch64 relocation truncation with large static arrays
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|AARCH64|ARM64")
+        target_compile_options(${TEST_NAME} PRIVATE -mcmodel=large)
+        target_link_options(${TEST_NAME} PRIVATE -mcmodel=large)
+    endif()
+    
     target_link_libraries(${TEST_NAME} PRIVATE
         dap_test
         dap_io
