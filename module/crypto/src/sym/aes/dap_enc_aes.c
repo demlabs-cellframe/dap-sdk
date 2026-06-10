@@ -38,8 +38,10 @@ static void s_aes_dispatch_init(void)
     dap_cpu_features_t l_cpu = dap_cpu_detect_features();
     DAP_DISPATCH_FEATURE(l_cpu.has_aes_ni, aes_cbc_encrypt, dap_aes_ni_cbc_encrypt_fast);
     DAP_DISPATCH_FEATURE(l_cpu.has_aes_ni, aes_cbc_decrypt, dap_aes_ni_cbc_decrypt_fast);
+#if DAP_PLATFORM_ARM64
     DAP_DISPATCH_FEATURE(l_cpu.has_arm_ce, aes_cbc_encrypt, dap_aes_armce_cbc_encrypt_fast);
     DAP_DISPATCH_FEATURE(l_cpu.has_arm_ce, aes_cbc_decrypt, dap_aes_armce_cbc_decrypt_fast);
+#endif
     (void)l_cpu;
 }
 
