@@ -228,7 +228,7 @@ extern "C" {
 #endif
 
 /**
- * Conditionally upgrade dispatch pointer for an ARM arch level.
+ * Conditionally upgrade dispatch pointer for an x86 arch level.
  * Same ordering rule: NEON first, then SVE, then SVE2.
  * Compiles to nothing on non-ARM platforms.
  */
@@ -237,6 +237,38 @@ extern "C" {
     if (l_best_arch >= (arch_enum)) { name##_ptr = (impl); }
 #else
 #  define DAP_DISPATCH_ARM(arch_enum, name, impl)
+#endif
+
+/**
+ * Conditionally upgrade dispatch pointer based on a CPU feature flag.
+ * Use for features that don't map to a DAP_CPU_ARCH_* level
+ * (e.g. AES-NI, ARM CE, ADX).
+ *
+ * Usage:
+ *   dap_cpu_features_t l_feat = dap_cpu_detect_features();
+ *   DAP_DISPATCH_FEATURE(l_feat.has_aes_ni, aes_cbc_encrypt, my_aesni_impl);
+ */
+#if DAP_PLATFORM_X86 || DAP_PLATFORM_ARM
+#  define DAP_DISPATCH_FEATURE(feature_flag, name, impl)         \
+    if (feature_flag) { name##_ptr = (impl); }
+#else
+#  define DAP_DISPATCH_FEATURE(feature_flag, name, impl)
+#endif
+
+/**
+ * Conditionally upgrade dispatch pointer based on arch level AND a sub-feature.
+ * Use for implementations that require both a minimum arch level and
+ * an additional CPU feature (e.g. AVX-512 IFMA, AVX-512 VBMI2).
+ *
+ * Usage:
+ *   DAP_DISPATCH_SUB_FEATURE(DAP_CPU_ARCH_AVX512, l_feat.has_avx512_ifma,
+ *                            chacha20_encrypt, my_avx512_ifma_impl);
+ */
+#if DAP_PLATFORM_X86 || DAP_PLATFORM_ARM
+#  define DAP_DISPATCH_SUB_FEATURE(arch_enum, feature_flag, name, impl)   \
+    if (l_best_arch >= (arch_enum) && (feature_flag)) { name##_ptr = (impl); }
+#else
+#  define DAP_DISPATCH_SUB_FEATURE(arch_enum, feature_flag, name, impl)
 #endif
 
 #ifdef __cplusplus

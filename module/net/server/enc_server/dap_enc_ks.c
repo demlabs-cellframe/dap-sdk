@@ -136,9 +136,10 @@ dap_enc_ks_key_t * dap_enc_ks_new()
 
 bool dap_enc_ks_save_in_storage(dap_enc_ks_key_t* key)
 {
-    if(dap_enc_ks_find(key->id) != NULL) {
-        log_it(L_WARNING, "key is already saved in storage");
-        return false;
+    dap_enc_ks_key_t *l_existing = dap_enc_ks_find(key->id);
+    if (l_existing) {
+        log_it(L_WARNING, "key is already saved in storage, replacing session key");
+        dap_enc_ks_delete(key->id);
     }
     s_save_key_in_storge(key);
     return true;

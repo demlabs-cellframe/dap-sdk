@@ -145,7 +145,7 @@ size_t dap_enc_decode(dap_enc_key_t *a_key,
                             void *a_buf_out, const size_t a_buf_out_size_max,
                       dap_enc_data_type_t a_data_type_in)
 {
-    dap_return_val_if_fail_err(a_key && a_key->enc_na && a_buf_in && a_buf_out, 0, "Invalid params");
+    dap_return_val_if_fail_err(a_key && a_key->dec_na && a_buf_in && a_buf_out, 0, "Invalid params");
     size_t l_ret = dap_enc_decode_out_size(a_key, a_buf_in_size, a_data_type_in);
     if ( !l_ret || l_ret > a_buf_out_size_max )
         return log_it(L_ERROR, "Insufficient out buffer size: %zu < %zu", a_buf_out_size_max, l_ret), 0;

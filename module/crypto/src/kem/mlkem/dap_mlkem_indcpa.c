@@ -85,10 +85,10 @@ static void s_rej_uniform_dispatch_init(void)
     DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, s_rej_uniform, dap_mlkem_rej_uniform_avx2);
 
 #if DAP_PLATFORM_X86
-    if (l_best_arch >= DAP_CPU_ARCH_AVX512) {
+    {
         dap_cpu_features_t l_feat = dap_cpu_detect_features();
-        if (l_feat.has_avx512_vbmi2)
-            s_rej_uniform_ptr = dap_mlkem_rej_uniform_avx512_vbmi2;
+        DAP_DISPATCH_SUB_FEATURE(DAP_CPU_ARCH_AVX512, l_feat.has_avx512_vbmi2,
+                                 s_rej_uniform, dap_mlkem_rej_uniform_avx512_vbmi2);
     }
 #endif
 }

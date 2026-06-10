@@ -7,6 +7,7 @@
 
 #include "ecdsa_scalar_mul_arch.h"
 #include "dap_cpu_arch.h"
+#include "dap_arch_dispatch.h"
 #include <string.h>
 #include <stdio.h>
 #include <pthread.h>
@@ -110,76 +111,70 @@ ecdsa_scalar_mul_fn ecdsa_scalar_mul_arch_ptr = NULL;
 // Dispatcher Implementation
 // ============================================================================
 
-static void s_update_function_pointers(void) {
-    const ecdsa_scalar_impl_info_t *impl = ecdsa_scalar_get_impl_info(s_current_impl);
-    if (impl) {
-        ecdsa_scalar_mul_512_ptr = impl->mul_512;
-        ecdsa_scalar_mul_shift_384_ptr = impl->mul_shift_384;
-        ecdsa_scalar_reduce_512_ptr = impl->reduce_512;
-        ecdsa_scalar_mul_arch_ptr = impl->mul;
-    } else {
-        // Fallback to generic
-        ecdsa_scalar_mul_512_ptr = ecdsa_scalar_mul_512_generic;
-        ecdsa_scalar_mul_shift_384_ptr = ecdsa_scalar_mul_shift_384_generic;
-        ecdsa_scalar_reduce_512_ptr = ecdsa_scalar_reduce_512_generic;
-        ecdsa_scalar_mul_arch_ptr = ecdsa_scalar_mul_generic;
-    }
-}
-
 static void s_scalar_dispatch_impl(void) {
-    dap_cpu_arch_t best = dap_cpu_arch_get_best();
-    
-    // Update availability and select implementation based on dap_cpu_arch
-    for (size_t i = 0; i < s_num_implementations; i++) {
-        switch (s_implementations[i].id) {
+    // Update availability
 #if DAP_PLATFORM_X86_64
-            case ECDSA_SCALAR_IMPL_AVX2_BMI2:
-                s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX2);
-                break;
-            case ECDSA_SCALAR_IMPL_AVX512:
-                s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX512);
-                break;
+    s_implementations[ECDSA_SCALAR_IMPL_AVX2_BMI2].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX2);
+    s_implementations[ECDSA_SCALAR_IMPL_AVX512].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_AVX512);
 #endif
 #if DAP_PLATFORM_ARM64 && !defined(__APPLE__)
-            case ECDSA_SCALAR_IMPL_ARM64_SVE:
-                s_implementations[i].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_SVE);
-                break;
+    s_implementations[ECDSA_SCALAR_IMPL_ARM64_SVE].available = dap_cpu_arch_is_available(DAP_CPU_ARCH_SVE);
 #endif
-            default:
-                break;  // Keep compile-time availability
-        }
-    }
-    
-    // Select best implementation based on detected architecture
-    switch (best) {
+
+    // Dispatch via macros
+    DAP_DISPATCH_DEFAULT(ecdsa_scalar_mul_512, ecdsa_scalar_mul_512_generic);
+    DAP_DISPATCH_DEFAULT(ecdsa_scalar_mul_shift_384, ecdsa_scalar_mul_shift_384_generic);
+    DAP_DISPATCH_DEFAULT(ecdsa_scalar_reduce_512, ecdsa_scalar_reduce_512_generic);
+    DAP_DISPATCH_DEFAULT(ecdsa_scalar_mul_arch, ecdsa_scalar_mul_generic);
+    DAP_DISPATCH_ARCH_SELECT;
+
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, ecdsa_scalar_mul_512, ecdsa_scalar_mul_512_avx2_bmi2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, ecdsa_scalar_mul_shift_384, ecdsa_scalar_mul_shift_384_avx2_bmi2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, ecdsa_scalar_reduce_512, ecdsa_scalar_reduce_512_avx2_bmi2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, ecdsa_scalar_mul_arch, ecdsa_scalar_mul_avx2_bmi2);
+
 #if DAP_PLATFORM_X86_64
-        case DAP_CPU_ARCH_AVX512:
-            s_current_impl = ECDSA_SCALAR_IMPL_AVX512;
-            break;
-        case DAP_CPU_ARCH_AVX2:
-            s_current_impl = ECDSA_SCALAR_IMPL_AVX2_BMI2;
-            break;
-        case DAP_CPU_ARCH_SSE2:
-            s_current_impl = ECDSA_SCALAR_IMPL_X86_64_ASM;
-            break;
+    if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_generic) {
+        ecdsa_scalar_mul_512_ptr = ecdsa_scalar_mul_512_x86_64_asm;
+        ecdsa_scalar_mul_shift_384_ptr = ecdsa_scalar_mul_shift_384_x86_64_asm;
+        ecdsa_scalar_reduce_512_ptr = ecdsa_scalar_reduce_512_x86_64_asm;
+        ecdsa_scalar_mul_arch_ptr = ecdsa_scalar_mul_x86_64_asm;
+    }
+#endif
+
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, ecdsa_scalar_mul_512, ecdsa_scalar_mul_512_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, ecdsa_scalar_mul_shift_384, ecdsa_scalar_mul_shift_384_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, ecdsa_scalar_reduce_512, ecdsa_scalar_reduce_512_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, ecdsa_scalar_mul_arch, ecdsa_scalar_mul_neon);
+
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, ecdsa_scalar_mul_512, ecdsa_scalar_mul_512_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, ecdsa_scalar_mul_shift_384, ecdsa_scalar_mul_shift_384_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, ecdsa_scalar_reduce_512, ecdsa_scalar_reduce_512_avx512);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX512, ecdsa_scalar_mul_arch, ecdsa_scalar_mul_avx512);
+
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_SVE, ecdsa_scalar_mul_512, ecdsa_scalar_mul_512_sve);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_SVE, ecdsa_scalar_mul_shift_384, ecdsa_scalar_mul_shift_384_sve);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_SVE, ecdsa_scalar_reduce_512, ecdsa_scalar_reduce_512_sve);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_SVE, ecdsa_scalar_mul_arch, ecdsa_scalar_mul_sve);
+
+    s_current_impl = ECDSA_SCALAR_IMPL_GENERIC;
+    if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_avx512)
+        s_current_impl = ECDSA_SCALAR_IMPL_AVX512;
+    else if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_avx2_bmi2)
+        s_current_impl = ECDSA_SCALAR_IMPL_AVX2_BMI2;
+#if DAP_PLATFORM_X86_64
+    else if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_x86_64_asm)
+        s_current_impl = ECDSA_SCALAR_IMPL_X86_64_ASM;
 #endif
 #if DAP_PLATFORM_ARM64
-    #if !defined(__APPLE__)
-        case DAP_CPU_ARCH_SVE2:
-        case DAP_CPU_ARCH_SVE:
-            s_current_impl = ECDSA_SCALAR_IMPL_ARM64_SVE;
-            break;
-    #endif
-        case DAP_CPU_ARCH_NEON:
-            s_current_impl = ECDSA_SCALAR_IMPL_ARM64_NEON;
-            break;
+    else if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_neon)
+        s_current_impl = ECDSA_SCALAR_IMPL_ARM64_NEON;
+#if !defined(__APPLE__)
+    else if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_sve)
+        s_current_impl = ECDSA_SCALAR_IMPL_ARM64_SVE;
 #endif
-        default:
-            s_current_impl = ECDSA_SCALAR_IMPL_GENERIC;
-            break;
-    }
-    
-    s_update_function_pointers();
+#endif
+
     s_initialized = true;
 }
 
@@ -213,7 +208,10 @@ bool ecdsa_scalar_set_impl(ecdsa_scalar_impl_t impl) {
     for (size_t i = 0; i < s_num_implementations; i++) {
         if (s_implementations[i].id == impl && s_implementations[i].available) {
             s_current_impl = impl;
-            s_update_function_pointers();
+            ecdsa_scalar_mul_512_ptr = s_implementations[i].mul_512;
+            ecdsa_scalar_mul_shift_384_ptr = s_implementations[i].mul_shift_384;
+            ecdsa_scalar_reduce_512_ptr = s_implementations[i].reduce_512;
+            ecdsa_scalar_mul_arch_ptr = s_implementations[i].mul;
             return true;
         }
     }

@@ -104,31 +104,46 @@ function(dap_test_link_libraries TARGET_NAME)
         message(FATAL_ERROR "dap_test_link_libraries: No modules found in DAP_INTERNAL_MODULES")
     endif()
     
-    # Link all SDK modules as STATIC libraries ONLY
-    # This is REQUIRED for --wrap to work correctly with mocking
-    # Object files added via target_sources or target_link_libraries do NOT work with --wrap
-    # Use ${MODULE}_static which are created from object libraries in main CMakeLists.txt
+    # Link all SDK modules as STATIC libraries ONLY.
+    # REQUIRED for --wrap mocking to work (object libs don't support --wrap).
     #
-    # Wrap in --start-group/--end-group so the linker resolves cross-module
-    # references (e.g. dap_json → dap_math) regardless of library order.
-    if(UNIX AND NOT APPLE)
-        target_link_options(${TARGET_NAME} PRIVATE "LINKER:--start-group")
-    endif()
+    # Collect the list first, then wrap in --start-group/--end-group so the
+    # linker resolves cross-module circular references (e.g. dap_json → dap_math).
+    #
+    # NOTE: target_link_options() places flags at the START of the link command
+    # (before -o and before the library list), so --start-group/--end-group must
+    # be passed via target_link_libraries() as string tokens to land in the
+    # correct position among the archive files.
+    set(_dap_static_libs "")
     foreach(MODULE ${SDK_MODULES})
-        # ONLY use static version - fail if it doesn't exist
         if(TARGET ${MODULE}_static)
-            target_link_libraries(${TARGET_NAME} PRIVATE ${MODULE}_static)
+            list(APPEND _dap_static_libs ${MODULE}_static)
         else()
-            message(WARNING "dap_test_link_libraries: Static library ${MODULE}_static not found, skipping ${MODULE}")
+            message(WARNING "dap_test_link_libraries: ${MODULE}_static not found, skipping")
         endif()
     endforeach()
-    if(UNIX AND NOT APPLE)
-        target_link_options(${TARGET_NAME} PRIVATE "LINKER:--end-group")
+
+    if(UNIX AND NOT APPLE AND _dap_static_libs)
+        target_link_libraries(${TARGET_NAME} PRIVATE
+            "-Wl,--start-group"
+            ${_dap_static_libs}
+            "-Wl,--end-group"
+        )
+    else()
+        foreach(_lib ${_dap_static_libs})
+            target_link_libraries(${TARGET_NAME} PRIVATE ${_lib})
+        endforeach()
     endif()
-    
+    unset(_dap_static_libs)
+
     # Link test framework if it exists
     if(TARGET dap_test)
         target_link_libraries(${TARGET_NAME} PRIVATE dap_test)
+    endif()
+
+    # Math library: required by any test that calls sqrt(), log(), etc.
+    if(UNIX)
+        target_link_libraries(${TARGET_NAME} PRIVATE m)
     endif()
     
     # Windows: Remove intl/iconv from all linked modules

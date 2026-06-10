@@ -552,7 +552,14 @@ static void s_ws_session_create_response(void *a_resp, size_t a_resp_size, int a
     size_t l_dec_len = dap_enc_decode(l_ctx->session_key, a_resp, a_resp_size,
                                        l_dec, l_dec_max, DAP_ENC_DATA_TYPE_RAW);
     if (l_dec_len == 0) {
-        log_it(L_ERROR, "stream_ctl decryption failed");
+        const uint8_t *l_kb = l_ctx->session_key && l_ctx->session_key->priv_key_data
+            ? (const uint8_t *)l_ctx->session_key->priv_key_data : NULL;
+        if (l_kb)
+            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x)",
+                   a_resp_size, l_kb[0], l_kb[1], l_kb[2], l_kb[3],
+                   l_kb[4], l_kb[5], l_kb[6], l_kb[7]);
+        else
+            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu, no session key)", a_resp_size);
         DAP_DELETE(l_dec);
         if (l_ctx->callback) l_ctx->callback(l_ctx->stream, 0, NULL, 0, -1);
         DAP_DELETE(l_ctx);
