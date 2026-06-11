@@ -6,7 +6,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/LibraryHelpers.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/DapModule.cmake)
 
 # Trans implementations
-add_subdirectory(websocket)
+if(NOT DAP_DISABLE_WEBSOCKET)
+    add_subdirectory(websocket)
+endif()
 add_subdirectory(http)
 add_subdirectory(udp)
 add_subdirectory(dns)
@@ -38,27 +40,33 @@ target_include_directories(dap_net_trans INTERFACE
 )
 target_include_directories(dap_net_trans PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Include trans-specific headers
-target_include_directories(dap_net_trans PRIVATE 
+set(DAP_NET_TRANS_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/http/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/websocket/include
     ${CMAKE_CURRENT_SOURCE_DIR}/udp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/dns/include
     ${CMAKE_CURRENT_SOURCE_DIR}/tls/include
 )
+if(NOT DAP_DISABLE_WEBSOCKET)
+    list(APPEND DAP_NET_TRANS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/websocket/include)
+endif()
+target_include_directories(dap_net_trans PRIVATE ${DAP_NET_TRANS_INCLUDE_DIRS})
 
 # Link dependencies
-dap_link_libraries(dap_net_trans INTERFACE
+set(DAP_NET_TRANS_LINK_LIBS
     dap_core
     dap_crypto
     dap_stream
     dap_client
     dap_http_server
     dap_trans_http
-    dap_trans_websocket
     dap_trans_udp
     dap_trans_dns
     dap_trans_tls
 )
+if(NOT DAP_DISABLE_WEBSOCKET)
+    list(APPEND DAP_NET_TRANS_LINK_LIBS dap_trans_websocket)
+endif()
+dap_link_libraries(dap_net_trans INTERFACE ${DAP_NET_TRANS_LINK_LIBS})
 
 # Register dap_net_trans module with dap_module system
 dap_register_module(

@@ -4,6 +4,11 @@ set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(CheckFunctionExists)
 option(DAP_MANAGE_CFLAGS "Treat compiler warnings as errors (-Werror) via add_compile_options" OFF)
+option(DAP_DISABLE_WEBSOCKET "Disable WebSocket transport to avoid OpenSSL dependency" OFF)
+if(DAP_DISABLE_WEBSOCKET)
+    add_definitions(-DDAP_DISABLE_WEBSOCKET)
+    message(STATUS "WebSocket transport disabled (DAP_DISABLE_WEBSOCKET=ON)")
+endif()
 include(cmake/OS_Detection.cmake)
 # Include LibraryHelpers for object library creation
 # This must be included early to override target_link_libraries

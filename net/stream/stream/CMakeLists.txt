@@ -19,10 +19,15 @@ create_object_library(${PROJECT_NAME} DAP_INTERNAL_MODULES ${STREAM_SRCS} HEADER
 # Note: transport modules depend on dap_stream, but dap_stream needs transport headers
 # for transport registration functions. This creates a circular dependency at link time,
 # but it's resolved through INTERFACE linking - dap_stream only needs headers, not implementation.
-dap_link_libraries(${PROJECT_NAME} INTERFACE 
+set(DAP_STREAM_LINK_LIBS
     dap_core dap_io dap_crypto
     dap_http_server dap_http_common dap_enc_server dap_session dap_stream_ch dap_client dap_global_db dap_link_manager
-    dap_trans_websocket dap_trans_http dap_trans_udp)
+    dap_trans_http dap_trans_udp
+)
+if(NOT DAP_DISABLE_WEBSOCKET)
+    list(APPEND DAP_STREAM_LINK_LIBS dap_trans_websocket)
+endif()
+dap_link_libraries(${PROJECT_NAME} INTERFACE ${DAP_STREAM_LINK_LIBS})
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
