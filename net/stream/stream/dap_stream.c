@@ -67,7 +67,9 @@
 #include "dap_link_manager.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_ctx.h"
+#ifndef DAP_DISABLE_WEBSOCKET
 #include "dap_net_trans_websocket_server.h"
+#endif
 
 #define LOG_TAG "dap_stream"
 
@@ -938,8 +940,10 @@ static void s_esocket_callback_error(dap_events_socket_t *a_esocket, int a_error
  */
 void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_ARG *a_arg)
 {
+#ifndef DAP_DISABLE_WEBSOCKET
     if (dap_net_trans_websocket_try_upgrade(a_http_client) == 0)
         return;
+#endif
 
     unsigned int l_id=0;
     //debug_if(s_debug_more, L_DEBUG,"Prepare data stream");
