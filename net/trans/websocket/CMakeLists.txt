@@ -53,9 +53,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Find OpenSSL for SHA-1
-find_package(OpenSSL REQUIRED)
-target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
-target_link_libraries(${PROJECT_NAME} INTERFACE ${OPENSSL_LIBRARIES})
+# find_package(OpenSSL REQUIRED)
+# target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
+# target_link_libraries(${PROJECT_NAME} INTERFACE ${OPENSSL_LIBRARIES})
 
 if(DARWIN)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)
