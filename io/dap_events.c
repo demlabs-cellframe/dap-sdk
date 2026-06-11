@@ -588,14 +588,17 @@ void dap_events_stop_all( )
             debug_if(s_debug_more, L_DEBUG, "Worker %u event_exit socket is NULL, skipping stop signal", i);
             continue;
         }
-        
-        // Check if socket is still valid before signaling
-        // After deinitialization, socket may be freed but pointer may still be non-NULL
-        if (s_workers[i]->context->event_exit->fd2 < 0) {
-            debug_if(s_debug_more, L_DEBUG, "Worker %u event_exit socket fd2 is invalid, skipping stop signal", i);
+
+        /* Guard against corrupted event_exit pointer (e.g. 0x180d0, 0x301a0 from heap corruption).
+         * Valid heap pointers are typically > 0x500000000 on x86_64. Values below 0x100000
+         * are almost certainly corrupted integers, not pointers. */
+        uintptr_t l_ee_addr = (uintptr_t)s_workers[i]->context->event_exit;
+        if (l_ee_addr < 0x100000) {
+            log_it(L_ERROR, "Worker %u event_exit pointer corrupted: %p (looks like integer %lu), skipping",
+                   i, s_workers[i]->context->event_exit, (unsigned long)l_ee_addr);
             continue;
         }
-        
+
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
 }

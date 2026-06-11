@@ -29,6 +29,7 @@
 #include "dap_strfuncs.h"
 #include "rand/dap_rand.h"
 #include "dap_tls_mimicry.h"
+#include "dap_tls_fingerprint.h"
 
 #define LOG_TAG "dap_tls_mimicry"
 
@@ -82,6 +83,7 @@ struct dap_tls_mimicry {
     bool is_server;
     dap_tls_mimicry_state_t state;
     char *sni_hostname;
+    const dap_tls_fp_profile_t *profile;
     uint8_t session_id[32];
     uint8_t client_random[32];
     uint8_t server_random[32];
@@ -149,6 +151,15 @@ void dap_tls_mimicry_set_sni(dap_tls_mimicry_t *a_m, const char *a_hostname)
     DAP_DEL_Z(a_m->sni_hostname);
     if (a_hostname)
         a_m->sni_hostname = dap_strdup(a_hostname);
+}
+
+int dap_tls_mimicry_set_profile(dap_tls_mimicry_t *a_m,
+                                const dap_tls_fp_profile_t *a_profile)
+{
+    if (!a_m)
+        return -1;
+    a_m->profile = a_profile;
+    return 0;
 }
 
 dap_tls_mimicry_state_t dap_tls_mimicry_get_state(const dap_tls_mimicry_t *a_m)
@@ -268,6 +279,57 @@ int dap_tls_mimicry_create_client_hello(dap_tls_mimicry_t *a_m,
 
     randombytes(a_m->client_random, 32);
     randombytes(a_m->session_id, 32);
+
+    /* If a fingerprint profile is set, use template-based generation */
+    if (a_m->profile) {
+        void *l_body = NULL;
+        size_t l_body_size = 0;
+
+        if (dap_tls_fp_build_clienthello(a_m->profile, a_m->sni_hostname,
+                                         &l_body, &l_body_size) != 0)
+            return -1;
+
+        /*
+         * Template includes 4-byte handshake header prefix:
+         *   [0]    handshake type (0x01 = ClientHello)
+         *   [1..3] 3-byte length (placeholder 0x000000)
+         * Body starts at offset 4:
+         *   [4..5]   legacy_version
+         *   [6..37]  random (32 bytes)
+         *   [38]     session_id_length (0 = empty, template default)
+         */
+        uint8_t *l_tpl = (uint8_t *)l_body;
+        if (l_body_size >= 4 + 2 + 32) {
+            /* Patch random at template offset 6 */
+            memcpy(l_tpl + 6, a_m->client_random, 32);
+            /* Leave session_id as-is (empty, per template) */
+        }
+
+        /* Output: TLS record header + full template (handshake header + body) */
+        size_t l_total = 5 + l_body_size;
+        uint8_t *l_out = DAP_NEW_SIZE(uint8_t, l_total);
+        if (!l_out) {
+            DAP_DELETE(l_body);
+            return -1;
+        }
+
+        /* TLS record header */
+        l_out[0] = TLS_CT_HANDSHAKE;
+        l_out[1] = TLS_VER_1_0_HI;
+        l_out[2] = TLS_VER_1_0_LO;
+        s_put_u16be(l_out + 3, (uint16_t)l_body_size);
+
+        /* Copy template (includes 4-byte handshake header + body) */
+        memcpy(l_out + 5, l_body, l_body_size);
+        DAP_DELETE(l_body);
+
+        *a_out = l_out;
+        *a_out_size = l_total;
+        a_m->state = DAP_TLS_MIMICRY_STATE_CLIENT_HELLO_SENT;
+        return 0;
+    }
+
+    /* Fallback: inline build (original path) */
 
     /* Build ClientHello body into a temp buffer (max ~1KB is plenty) */
     uint8_t l_body[2048];

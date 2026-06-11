@@ -280,7 +280,15 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
 
     // calculate max signature size
     size_t l_sign_unserialized_size = dap_sign_create_output_unserialized_calc_size(a_key);
-    if(l_sign_unserialized_size > 0) {
+    if(l_sign_unserialized_size == 0) {
+        log_it(L_ERROR, "Signature size is 0 for key type %s", dap_enc_get_type_name(a_key->type));
+        return NULL;
+    }
+    if(!a_key->sign_get) {
+        log_it(L_ERROR, "Key type %s has no sign_get function", dap_enc_get_type_name(a_key->type));
+        return NULL;
+    }
+    {
         size_t l_pub_key_size = 0;
         uint8_t *l_sign_unserialized = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sign_unserialized_size, NULL),
                 *l_pub_key = NULL;   

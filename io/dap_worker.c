@@ -234,6 +234,7 @@ int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
     
     dap_context_remove(a_context->event_exit);
     dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
+    a_context->event_exit = NULL;
 
     log_it(L_NOTICE,"Exiting thread #%u", l_worker->id);
     return 0;
