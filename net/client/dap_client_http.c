@@ -1320,6 +1320,15 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         return;
     }
     
+    /* Snapshot buf_in — another thread may free it via dap_client_http_close_unsafe */
+    byte_t *l_buf_in = a_es->buf_in;
+    size_t l_buf_in_size = a_es->buf_in_size;
+    if (!l_buf_in || !l_buf_in_size) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_read: buf_in=%p buf_in_size=%zu — esocket closing, skipping",
+                 (void*)l_buf_in, l_buf_in_size);
+        return;
+    }
+
 #define m_http_error_exit(error_code, format, ...) do { \
     log_it(L_ERROR, "s_http_read: " format, ##__VA_ARGS__); \
     if(l_client_http->error_callback) { \
@@ -1330,11 +1339,6 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
     return; \
 } while(0)
     
-    // Safety checks
-    if (!a_es->buf_in) {
-        m_http_error_exit(EINVAL, "event socket buf_in is NULL for esocket "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
-    }
-
     // NOTE: response buffer validation moved after buffer allocation
     
     l_client_http->ts_last_read = time(NULL);
