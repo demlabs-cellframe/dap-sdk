@@ -497,8 +497,7 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             break;
         }
 
-        // Generate session key: some KEM implementations (MSRLN, Kyber) store the shared
-        // secret in ->shared_key after gen_alice_shared_key; others use ->priv_key_data.
+        // Generate session key
         const void *l_kex_buf = l_tc->session_key_open->shared_key
                                     ? l_tc->session_key_open->shared_key
                                     : l_tc->session_key_open->priv_key_data;
@@ -512,10 +511,15 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         // Verify node sign
         if (l_node_sign_b64) {
             l_len = strlen(l_node_sign_b64);
-            dap_sign_t *l_sign = DAP_NEW_Z_SIZE_RET_IF_FAIL(dap_sign_t, DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1,
+            size_t l_sign_alloc_size = DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1;
+            dap_sign_t *l_sign = DAP_NEW_Z_SIZE_RET_IF_FAIL(dap_sign_t, l_sign_alloc_size,
                 l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_bob_message, l_tc->session_key_id);
             l_decoded_len = dap_enc_base64_decode(l_node_sign_b64, l_len, l_sign, DAP_ENC_DATA_TYPE_B64);
-            if (!dap_sign_verify_all(l_sign, l_decoded_len, l_bob_message, l_bob_message_size)) {
+            if (l_decoded_len > l_sign_alloc_size) {
+                log_it(L_ERROR, "Signature decode overflow: decoded %zu > allocated %zu", l_decoded_len, l_sign_alloc_size);
+                DAP_DELETE(l_sign);
+                l_tc->authorized = false;
+            } else if (!dap_sign_verify_all(l_sign, l_decoded_len, l_bob_message, l_bob_message_size)) {
                 dap_stream_node_addr_t l_sign_addr = dap_stream_node_addr_from_sign(l_sign);
                 l_tc->authorized = (l_sign_addr.uint64 == a_client->link_info.node_addr.uint64);
             } else {
