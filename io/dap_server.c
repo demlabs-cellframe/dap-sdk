@@ -394,6 +394,7 @@ int dap_server_callbacks_set(dap_server_t* a_server, dap_events_socket_callbacks
 dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callbacks_t *a_server_callbacks, dap_events_socket_callbacks_t *a_client_callbacks)
 {
     dap_server_t *l_server = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_server_t, NULL);
+    atomic_init(&l_server->ref_count, 1);
     dap_events_socket_callbacks_t l_callbacks = {
         .accept_callback = s_es_server_accept,
         .new_callback    = s_es_server_new,
@@ -477,7 +478,12 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
 static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr)
 {
     dap_server_t *l_server = a_es_listener->server;
-    assert(l_server);
+    if (!l_server) {
+        debug_if(s_debug_more, L_DEBUG, "Listener socket has NULL server, ignoring accept");
+        if (a_remote_socket >= 0)
+            close(a_remote_socket);
+        return;
+    }
 
     dap_events_socket_t *l_es_new = NULL;
     debug_if(l_server->ext_log, L_DEBUG, "Listening socket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" binded on %s:%u "
@@ -550,6 +556,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
+    dap_server_ref(l_server);
     l_es_new->type = l_es_type;
     l_es_new->addr_storage = *a_remote_addr;
     l_es_new->remote_port = strtol(l_port_str, NULL, 10);
@@ -566,6 +573,8 @@ void dap_server_delete(dap_server_t *a_server)
     dap_return_if_pass(!a_server);
     while (a_server->es_listeners) {
         dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
+        if (l_es)
+            l_es->server = NULL;  /* Prevent dangling pointer before async delete */
         dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid); // TODO unsafe moment. Replace storage to uuids
         dap_list_t *l_tmp = a_server->es_listeners;
         a_server->es_listeners = l_tmp->next;
@@ -575,7 +584,7 @@ void dap_server_delete(dap_server_t *a_server)
         a_server->delete_callback(a_server,NULL);
 
     //DAP_DELETE(a_server->_inheritor);
-    DAP_DELETE(a_server);
+    dap_server_unref(a_server);  /* Release initial ref; freed when last esocket unrefs */
 }
 
 /**
@@ -627,6 +636,7 @@ void dap_server_delete_sync(dap_server_t *a_server)
         dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
         
         if (l_es && l_es->worker) {
+            l_es->server = NULL;  /* Prevent dangling pointer before delete */
             // Check if we're on the same worker thread
             dap_worker_t *l_current = dap_worker_get_current();
             if (l_current == l_es->worker) {
@@ -677,5 +687,5 @@ void dap_server_delete_sync(dap_server_t *a_server)
     if (a_server->delete_callback)
         a_server->delete_callback(a_server, NULL);
 
-    DAP_DELETE(a_server);
+    dap_server_unref(a_server);  /* Release initial ref; freed when last esocket unrefs */
 }
