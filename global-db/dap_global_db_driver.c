@@ -53,10 +53,6 @@
 #include "dap_global_db_driver_mdbx.h"
 #endif
 
-#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
-#include "dap_global_db_driver_pgsql.h"
-#endif
-
 #include "dap_global_db_driver.h"
 
 #define LOG_TAG "db_driver"
@@ -107,36 +103,6 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     else if(!dap_strcmp(s_used_driver, "mdbx"))
         l_ret = dap_global_db_driver_mdbx_init(l_db_path_ext, &s_drv_callback);
-#endif
-
-#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
-    else if(!dap_strcmp(s_used_driver, "pgsql"))
-    #ifdef DAP_SDK_TESTS
-    {
-        char *l_pg_conninfo = getenv("PG_CONNINFO");
-        if (!l_pg_conninfo) {
-            log_it(L_WARNING, "PG_CONNINFO not defined, using to tests second conn info:\"%s\"", a_filename_db);
-            l_ret = dap_global_db_driver_pgsql_init(a_filename_db, &s_drv_callback);
-        } else {
-            l_ret = dap_global_db_driver_pgsql_init(l_pg_conninfo, &s_drv_callback);
-        }
-    }
-    #else
-    {
-        uint16_t l_arr_len = 0;
-        const char **l_conn_info_arr = dap_config_get_array_str(g_config, "global_db", "pg_conninfo", &l_arr_len);
-        dap_string_t *l_conn_info = NULL;
-        if (l_arr_len) {
-            l_conn_info = dap_string_new_len(NULL, l_arr_len * 16);
-            while (l_arr_len--)
-                dap_string_append_printf(l_conn_info, "%s ", l_conn_info_arr[l_arr_len]);
-        } else {
-            l_conn_info = dap_string_new("dbname=postgres");
-        }
-        l_ret = dap_global_db_driver_pgsql_init(l_conn_info->str, &s_drv_callback);
-        dap_string_free(l_conn_info, true);
-    }
-    #endif
 #endif
     else
         log_it(L_ERROR, "Unknown global_db driver \"%s\"", a_driver_name);

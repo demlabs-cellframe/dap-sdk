@@ -19,14 +19,7 @@ if(BUILD_WITH_GDB_DRIVER_MDBX)
     add_definitions("-DDAP_CHAIN_GDB_ENGINE_MDBX")
 endif()
 
-if(BUILD_WITH_GDB_DRIVER_PGSQL)
-    list(APPEND dap_global_db_SRC dap_global_db_driver_pgsql.c)
-    set(dap_global_db_LIBS ${dap_global_db_LIBS} pq)
-    add_definitions("-DDAP_CHAIN_GDB_ENGINE_PGSQL")
-    if(WIN32)
-        set(dap_global_db_LIBS ${dap_global_db_LIBS} ssl crypto z pgcommon pgport )
-    endif()
-endif()
+# PostgreSQL driver removed — unused, pulled in libpq dependency
 
 if(BUILD_WITH_GDB_DRIVER_SQLITE)
     list(APPEND dap_global_db_SRC dap_global_db_driver_sqlite.c)

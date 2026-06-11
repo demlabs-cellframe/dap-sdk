@@ -33,6 +33,8 @@
 #define DAP_CHAIN_HASH_FAST_STR_SIZE (DAP_CHAIN_HASH_FAST_STR_LEN + 1 /*trailing zero*/)
 #define DAP_HASH_FAST_STR_SIZE DAP_CHAIN_HASH_FAST_STR_SIZE
 
+#define DAP_SHA1_DIGEST_SIZE        20
+
 typedef enum dap_hash_type {
     DAP_HASH_TYPE_KECCAK = 0,
     DAP_HASH_TYPE_SLOW_0 = 1,
@@ -219,6 +221,15 @@ DAP_STATIC_INLINE dap_hash_str_t dap_get_data_hash_str(const void *a_data, size_
  * @return Returns 0 on success, negative error code on failure
  */
 int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen);
+
+/**
+ * @brief Compute SHA-1 hash
+ * @param[out] a_output Output buffer (must be 20 bytes)
+ * @param[in] a_input Input data
+ * @param[in] a_inlen Input length
+ * @return Returns 0 on success, negative error code on failure
+ */
+int dap_hash_sha1(uint8_t a_output[20], const uint8_t *a_input, size_t a_inlen);
 
 /**
  * @brief Compute FNV-1a 32-bit hash (fast, non-cryptographic)

@@ -211,28 +211,11 @@ bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type){
 int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size,
                            void * a_output, size_t *a_output_size)
 {
-    if(!a_key){
+    if(!a_key || !a_key->sign_get){
         log_it (L_ERROR, "Can't find the private key to create signature");
         return -1;
     }
-    switch (a_key->type) {
-        case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        case DAP_ENC_KEY_TYPE_SIG_FALCON:
-#ifdef DAP_ECDSA
-        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-#endif
-#ifdef DAP_SHIPOVNIK
-        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
-#endif
-        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
-            return a_key->sign_get(a_key, a_data, a_data_size, a_output, *a_output_size);
-        default:
-            return -1;
-    }
+    return a_key->sign_get(a_key, a_data, a_data_size, a_output, *a_output_size);
 }
 
 /**

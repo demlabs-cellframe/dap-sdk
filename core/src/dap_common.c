@@ -1220,7 +1220,8 @@ int exec_silent(const char * a_cmd) {
         return -1;
     }
 #else
-    return execl(".","%s",a_cmd,NULL);
+    int l_rc = system(a_cmd);
+    return WIFEXITED(l_rc) ? WEXITSTATUS(l_rc) : -1;
 #endif
 }
 
