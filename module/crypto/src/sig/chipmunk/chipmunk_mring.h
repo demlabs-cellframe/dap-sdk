@@ -30,8 +30,9 @@
  *   │  a*, b*  (final folded R_q^{(e)} scalars, 6 qpack each)       │
  *   ├─ leaf mask (LEAF_MASK_BYTES = 3136 B) [G3 §6.1 C2 / M4.3] ────┤
  *   │  ω ∈ R_q, 49-bit pack, ‖ω‖∞ ≤ WC^fold_depth                  │
- *   ├─ bind block (K_PK·zpack = 7680 B) [G2 v2.1 §4] ───────────────┤
+ *   ├─ bind block (K_PK·zpack + c* qpack) [G2 v2.1 §4 / M6] ────────┤
  *   │  z_x = ρ_x + c*·X ∈ R_q^{K_pk}   (K_pk zpacks);               │
+ *   │  c*  bind-block FS challenge (qpack);                          │
  *   │  Π_norm not on wire — verifier recomputes (G2 v2 §A6)         │
  *   └───────────────────────────────────────────────────────────────┘
  *

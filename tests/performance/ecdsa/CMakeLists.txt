@@ -40,31 +40,12 @@ add_executable(benchmark_ecdsa ${ECDSA_BENCHMARK_SOURCES})
 # Suppress warn_unused_result for benchmark (we intentionally ignore some returns)
 target_compile_options(benchmark_ecdsa PRIVATE -Wno-unused-result)
 
-# Link with DAP SDK
-# dap_crypto depends on dap_json, dap_config, dap_math — OBJECT lib deps don't propagate
-target_link_libraries(benchmark_ecdsa PRIVATE
-    dap_crypto
-    dap_core
-    dap_json
-    dap_math
-    dap_config
-)
-
-# Include DAP SDK headers
-target_include_directories(benchmark_ecdsa PRIVATE
-    ${CMAKE_SOURCE_DIR}/module/crypto/include
-    ${CMAKE_SOURCE_DIR}/module/core/include
-    ${CMAKE_SOURCE_DIR}/module/crypto/src/sig/classic/ecdsa
-)
+# Link with dap_sdk — all public include dirs propagate automatically
+target_link_libraries(benchmark_ecdsa PRIVATE dap_sdk)
 
 # Architecture-specific scalar benchmarks
 if(BUILD_BENCHMARKS)
     target_compile_definitions(benchmark_ecdsa PRIVATE BENCHMARK_SCALAR_ARCH)
-    
-    # Include internal ECDSA headers
-    target_include_directories(benchmark_ecdsa PRIVATE
-        ${CMAKE_SOURCE_DIR}/module/crypto/src/sig/classic/ecdsa
-    )
 endif()
 
 # Add competitor implementations

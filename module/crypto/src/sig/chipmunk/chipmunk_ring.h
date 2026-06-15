@@ -6,10 +6,8 @@
  * Chipmunk-native") ring signature.  All prior CRNG/v1 (CLTS-Plus) code has
  * been removed in M0 along with its scaffolds (CLTP/CLTS).
  *
- * IMPLEMENTATION STATUS: stub.  sign_to_bytes / verify_from_bytes return
- * CHIPMUNK_RING_ERR_NOT_IMPLEMENTED so that the dap_sign shim compiles and
- * the integration test gracefully skips CHIPMUNK_RING while the cryptographic
- * core is being landed (M1..M8 in task_ac273cea).
+ * IMPLEMENTATION STATUS: M6 sign/verify wired (task_ac273cea).
+ * Bind block carries z_x and c* qpack for verifier FS closure (M6).
  *
  * Design references:
  *   MRNG design lock v1                : documentation_c36c57f25e91f318

@@ -7,16 +7,6 @@ target_link_libraries(${PROJECT_NAME}
     dap_sdk dap_test
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/sig/dilithium
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/sym/chacha20
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/kem/ntru_prime
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/sig/ntru_prime
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/test
-)
-
 add_test(NAME test_pqc_algorithms COMMAND ${PROJECT_NAME})
 set_tests_properties(test_pqc_algorithms PROPERTIES
     LABELS "unit;crypto;pqc"
@@ -30,13 +20,6 @@ set_tests_properties(test_pqc_algorithms PROPERTIES
 #   * vanilla Dilithium-2 deterministic pk/sk  — master compat
 add_executable(test_shake_legacy_kat test_shake_legacy_kat.c)
 target_link_libraries(test_shake_legacy_kat dap_sdk dap_test)
-target_include_directories(test_shake_legacy_kat PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/sig/dilithium
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/hash/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/test
-)
 add_test(NAME test_shake_legacy_kat COMMAND test_shake_legacy_kat)
 set_tests_properties(test_shake_legacy_kat PROPERTIES
     LABELS "unit;crypto;pqc;kat;regression"

@@ -292,7 +292,7 @@ static void test_wire_size_formula(void)
 {
     const uint32_t l_depth = chipmunk_mring_fold_depth_for(N_RING);
     const uint32_t l_wire = chipmunk_mring_wire_size(l_depth);
-    const uint32_t l_expected = 32124u + l_depth * 16896u;
+    const uint32_t l_expected = 33532u + l_depth * 16896u;
     dap_assert(l_wire == l_expected,
                "wire_size matches M4.3 formula for N=4");
 }

@@ -31,12 +31,11 @@
  * `dap_enc_key_t` private/public buffers carry, byte-for-byte,
  * `chipmunk_lrs_secret_key_t` / `chipmunk_lrs_public_key_t`.
  *
- * **Ring signing / verification (CR-11.G):** production wire is **CRNG/v1**
- * (`chipmunk_ring_crng`) via `dap_sign_create_ring` / `dap_sign_verify_ring`.
- * Legacy **CLTP** scaffold bytes are rejected at verify (fail-close).
+ * **Ring signing / verification (CR-11.G):** production wire is **MRNG/v1**
+ * (`chipmunk_mring`) via `dap_sign_create_ring` / `dap_sign_verify_ring`.
  *
- * Run `chipmunk_ring_production_signoff_selfcheck()` or ctest label `signoff`
- * before release.  See `module/crypto/src/sig/chipmunk/README.md`.
+ * Run `test_unit_crypto_chipmunk_mring_signoff` or ctest label `signoff`
+ * before release.
  */
 
 #include "dap_enc_key.h"

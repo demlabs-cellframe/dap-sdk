@@ -138,10 +138,10 @@
 /* Y_pk block: aggregated-pk claim (1 qpacked poly, G2 v2.1 §1, §4). */
 #define CHIPMUNK_MRING_YPK_BYTES         ((uint32_t)CHIPMUNK_MRING_POLY_QPACK)
 
-/* Bind block (G2 v2.1 §4): aggregated witness response z_x — K_pk zpacks.
- * Π_norm is recomputed by the verifier from unpacked z_x (G2 v2 §A6). */
+/* Bind block (G2 v2.1 §4): z_x (K_pk zpacks) + c* (qpack) for verify glue. */
 #define CHIPMUNK_MRING_BIND_BYTES \
-        ((uint32_t)CHIPMUNK_MRING_K_PK * (uint32_t)CHIPMUNK_MRING_POLY_ZPACK)
+        ((uint32_t)CHIPMUNK_MRING_K_PK * (uint32_t)CHIPMUNK_MRING_POLY_ZPACK \
+         + (uint32_t)CHIPMUNK_MRING_POLY_QPACK)
 
 /* -------------------------------------------------------------------------
  * Static asserts: catch accidental drift of the substrate.

@@ -446,6 +446,14 @@ int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
         memset(&a_X_out[j], 0, sizeof(chipmunk_poly_t));
     }
 
+    /*
+     * CT-safe aggregation: always iterate over all ring members and always
+     * perform the polynomial addition.  The contribution is zeroed when
+     * b_i == 0 via a constant-time mask (no secret-dependent branch).
+     *
+     * m = (uint32_t)(-b_i)  →  0x00000000 when b_i=0, 0xFFFFFFFF when b_i=1.
+     * We apply m coefficient-wise: tmp.coeffs[k] = x_flat.coeffs[k] & m.
+     */
     for (uint32_t i = 0u; i < a_n_ring; ++i) {
         const uint8_t b_i = a_b_indicator[i];
         if (b_i > 1u) {
@@ -454,14 +462,15 @@ int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
                    (unsigned)i, (unsigned)b_i);
             return -EINVAL;
         }
-        if (b_i == 0u) {
-            continue;
-        }
+        const uint32_t l_mask = (uint32_t)(-(int32_t)b_i);
         for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
-            const int rc =
-                chipmunk_poly_add(&a_X_out[j],
-                                  &a_X_out[j],
-                                  &a_x_flat[i * CHIPMUNK_MRING_K_PK + j]);
+            chipmunk_poly_t l_tmp;
+            const chipmunk_poly_t *l_src =
+                &a_x_flat[i * CHIPMUNK_MRING_K_PK + j];
+            for (size_t k = 0u; k < CHIPMUNK_N; ++k) {
+                l_tmp.coeffs[k] = l_src->coeffs[k] & (int32_t)l_mask;
+            }
+            const int rc = chipmunk_poly_add(&a_X_out[j], &a_X_out[j], &l_tmp);
             if (rc != 0) {
                 log_it(L_ERROR,
                        "MRNG aggregate_X: poly_add (i=%u, j=%u) failed (rc=%d)",

@@ -1,7 +1,6 @@
 # MRNG/v1 — Chipmunk-native log-N Threshold Ring Signature (wire spec)
 
-**Status:** M1 + G2 v2 locked layout, cryptographic core stubbed (returns
-`CHIPMUNK_RING_ERR_NOT_IMPLEMENTED` until M3+).
+**Status:** M6 sign/verify wired, M7 (KAT/security/bench/signoff/CT-audit) complete.
 
 **Owning task:** `task_ac273cea` (CR-11.G Phase 7.7).
 

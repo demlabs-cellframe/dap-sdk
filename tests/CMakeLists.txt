@@ -86,20 +86,13 @@ endif()
 function(add_dap_test TEST_NAME TEST_SOURCE)
     add_executable(${TEST_NAME} ${TEST_SOURCE})
     
-    # Link with DAP SDK libraries
+    # Link with DAP SDK libraries — all public include dirs propagate automatically
     target_link_libraries(${TEST_NAME} 
         dap_sdk dap_test
     )
     
-    # Include DAP SDK headers
+    # Only non-propagated paths
     target_include_directories(${TEST_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/module/core/include
-        ${CMAKE_SOURCE_DIR}/module/crypto/include
-        ${CMAKE_SOURCE_DIR}/module/crypto/src
-        ${CMAKE_SOURCE_DIR}/module/io/include
-        ${CMAKE_SOURCE_DIR}/module/global-db/include
-        ${CMAKE_SOURCE_DIR}/3rdparty/uthash/src
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
     )
     
@@ -292,6 +285,38 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mr
                       "unit;crypto;ring;mring;transcript")
 endif()
 
+# CR-11.G Phase 7.7 / M6 (task_ac273cea): MRNG end-to-end sign/verify.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_sign.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_sign
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_sign.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_sign
+                      "unit;crypto;ring;mring;sign")
+endif()
+
+# CR-11.G Phase 7.7 / M7.1 (task_ac273cea): MRNG KAT (Known-Answer Tests).
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_kat.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_kat
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_kat.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_kat
+                      "unit;crypto;ring;mring;kat")
+endif()
+
+# CR-11.G Phase 7.7 / M7.2 (task_ac273cea): MRNG security / adversarial tests.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_security.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_security
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_security.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_security
+                      "unit;crypto;ring;mring;security")
+endif()
+
+# CR-11.G Phase 7.7 / M7.4 (task_ac273cea): MRNG production signoff.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_signoff.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_signoff
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_signoff.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_signoff
+                      "unit;crypto;ring;mring;signoff")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
@@ -417,21 +442,11 @@ endif()
 # ECDSA Field Operations Tests
 if(BUILD_WITH_ECDSA AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_field_mul.c)
     add_dap_test(test_field_mul unit/crypto/test_field_mul.c)
-    target_include_directories(test_field_mul PRIVATE 
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig/classic/ecdsa
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig/classic/ecdsa/arch
-    )
     register_dap_test(test_field_mul "unit;crypto;ecdsa")
 endif()
 
 if(BUILD_WITH_ECDSA AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/test_ecdsa_debug.c)
     add_dap_test(test_ecdsa_debug unit/crypto/test_ecdsa_debug.c)
-    target_include_directories(test_ecdsa_debug PRIVATE 
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig/classic/ecdsa
-        ${CMAKE_CURRENT_SOURCE_DIR}/../module/crypto/src/sig/classic/ecdsa/arch
-    )
     register_dap_test(test_ecdsa_debug "unit;crypto;ecdsa")
 endif()
 

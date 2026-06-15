@@ -9,14 +9,14 @@ arithmetic):
 | Algorithm                | Source files                              | Purpose                                                                |
 |--------------------------|-------------------------------------------|------------------------------------------------------------------------|
 | **Chipmunk (aggregated)**| `chipmunk*.c/.h`, `chipmunk_hypertree.c`  | Stateful many-time signatures with hypertree aggregation (CR-D10).     |
-| **Chipmunk Ring**        | `chipmunk_lrs.{c,h}`, `chipmunk_ring_crng.c`, `dap_sign_chipmunk_ring.c` | PQ k-of-N linkable threshold ring; production wire **CRNG/v1** (CR-11.G). |
+| **Chipmunk Ring**        | `chipmunk_lrs.{c,h}`, `chipmunk_mring*.c`, `dap_sign_chipmunk_ring.c` | PQ k-of-N linkable threshold ring; production wire **MRNG/v1** (CR-11.G). |
 
 ## DAP integration
 
 | DAP slot                                | Backed by                  | Public API                          |
 |-----------------------------------------|----------------------------|-------------------------------------|
 | `DAP_ENC_KEY_TYPE_SIG_CHIPMUNK`         | aggregated hypertree path  | `dap_enc_chipmunk.{h,c}`            |
-| `DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING`    | **CRNG/v1** (`chipmunk_ring_crng`) + Π_bw | `dap_enc_chipmunk_ring.{h,c}` + `dap_sign_create_ring` / `dap_sign_verify_ring` |
+| `DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING`    | **MRNG/v1** (`chipmunk_mring`) + fold/bind | `dap_enc_chipmunk_ring.{h,c}` + `dap_sign_create_ring` / `dap_sign_verify_ring` |
 
 `dap_enc_chipmunk_ring` owns key-material (CLPK / CLSK byte-for-byte) and
 registers the `SIG_TYPE_CHIPMUNK_RING` callbacks in the generic `dap_sign`
@@ -24,39 +24,40 @@ ring registry. Ring sign / verify need ring context and signer-subset context,
 so they live outside the single-key `sign_get` / `sign_verify` callback
 contract.
 
-## Current status — CR-11.G production wire (CRNG/v1)
+## Current status — CR-11.G production wire (MRNG/v1)
 
-Production path: **R_CRNG** object (`CHIPMUNK_RING_MAGIC_CRNG`), single transcript,
-Π_bw Hamming-weight proof (Phase 7.7, fold0 B-link + log-N weight chain),
-single shared response `z_x` (the redundant `z_tr` mirror was retired in
-Phase 7.2 cleanup; `z_x` already binds both A_pk membership and A_T tag).
-**CLTP** slot scaffold is not accepted
-on `chipmunk_ring_verify_from_bytes` (fail-close).
+Production path: **MRNG/v1** object (`CHIPMUNK_MRING_MAGIC`), log-N halving fold over R_q^{(e)},
+bind-block (z_x + c*), Fiat-Shamir transcript.
 
-| CR-11.G Phase | Status | Artifact |
+| Milestone | Status | Artifact |
 |---|---|---|
-| 7.4 hardness | ✅ | `chipmunk_ring_hardness.c` |
-| 7.5 / 7.12 security | ✅ | `test_chipmunk_ring_security.c` |
-| 7.7 Π_bw | ✅ locked | `chipmunk_ring_bitweight.c`, `CHIPMUNK_RING_BITWEIGHT_PRODUCTION_LOCKED` |
-| 7.10 CRNG wire | ✅ | `chipmunk_ring_crng.c`, `dap_sign_chipmunk_ring.c` |
-| 7.11 KAT | ✅ | `test_chipmunk_ring_crng_kat.c` |
-| 7.13 bench | ✅ | `bench_chipmunk_ring_crng.c` |
-| 7.14 signoff | ✅ | `chipmunk_ring_production_signoff_selfcheck()` |
+| M0 | ✅ | stub sign/verify, public bridge header |
+| M1 | ✅ | 28-byte header parser/serialiser |
+| M3.1 | ✅ | VCom layer |
+| M3.2 | ✅ | unified inner-product statement |
+| M3.3 | ✅ | bind-block helpers |
+| M4 | ✅ | halving fold over R_q^{(e)} |
+| M4.1–4.3 | ✅ | wire pack/unpack, seed-compressed openings, leaf-mask ω |
+| M6 | ✅ | end-to-end sign/verify wire glue |
+| M7.1 | ✅ | KAT (Known-Answer Tests) |
+| M7.2 | ✅ | Security/adversarial tests |
+| M7.3 | ✅ | Benchmarks |
+| M7.4 | ✅ | Production signoff selfcheck |
+| M7.5 | ✅ | CT audit of fold arithmetic |
 
 Release gate:
 
 ```bash
-ctest -R 'chipmunk_ring|chipmunk_lrs' --output-on-failure
-./build/tests/bin/test_unit_crypto_chipmunk_ring_signoff   # includes 2-of-4 CRNG
-./build/tests/bin/test_unit_crypto_chipmunk_ring_threshold_api  # dap_sign 1-of-4 / 2-of-4
+ctest -R 'chipmunk_mring' --output-on-failure
+./build.debug/tests/bin/test_unit_crypto_chipmunk_mring_signoff
 ```
 
-## Properties of Chipmunk Ring — CRNG/v1 (CR-11.G)
+## Properties of Chipmunk Ring — MRNG/v1 (CR-11.G)
 
 * **Quantum-resistant:** lattice-native (MLWE/MSIS), no classical-only assumptions.
+* **Log-N compressed:** halving fold over degree-6 ring extension; signature size ~67–118 KB for N=2..16.
 * **Threshold:** proves exactly `t` distinct ring members signed; `t=1` is the 1-of-N special case.
 * **Subset-hiding (SUB-IND):** verifier cannot distinguish which `t` of `N` members signed.
-* **Linkable (per-scope):** within the same `(ring, ctx)` scope, reused signer tags collide and are detectable via `Link`.
 * **Non-interactive:** no DKG or inter-signer rounds; each signer produces a local share, a combiner assembles the final signature.
 * **Single public signature type:** all ring modes use `SIG_TYPE_CHIPMUNK_RING` / `DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING`.
 
@@ -91,9 +92,14 @@ int rc = dap_sign_verify_ring(sig, msg, msg_size, ring, 8);
 | `chipmunk_hypertree.{c,h}`                 | Stateful many-time signature (aggregated)         |
 | `chipmunk_multi_signature_codec.{c,h}`     | Aggregated-signature wire codec (CR-D10)          |
 | `chipmunk_lrs.{c,h}`                       | Native linkable ring proof primitive (CLRS, 1-of-N) |
-| `chipmunk_ring_crng.c`                     | Production CRNG/v1 sign/verify                     |
-| `chipmunk_ring_bitweight.c`                | Π_bw Hamming-weight proof (Phase 7.7)              |
-| `dap_sign_chipmunk_ring.c`                 | DAP ring bridge over CRNG wire                     |
+| `chipmunk_mring.{c,h}`                     | MRNG/v1 sign/verify + header (de)serialisation    |
+| `chipmunk_mring_params.h`                  | MRV1 parameter profile                            |
+| `chipmunk_mring_statement.{c,h}`           | Statement layer (aggregate_X, bind helpers)       |
+| `chipmunk_mring_fold.{c,h}`                | Halving fold prove/verify over R_q^{(e)}          |
+| `chipmunk_mring_transcript.{c,h}`          | Fiat-Shamir transcript                            |
+| `chipmunk_mring_ext.{c,h}`                 | Ring extension R_q^{(e)} arithmetic               |
+| `chipmunk_mring_hardness.{c,h}`            | MSIS/MLWE hardness estimator                      |
+| `dap_sign_chipmunk_ring.c`                 | DAP ring bridge over MRNG wire                    |
 
 See SLC `task_1a411fa5` (CR-11.E) for the security analysis, phase plan, and
 design documents.
