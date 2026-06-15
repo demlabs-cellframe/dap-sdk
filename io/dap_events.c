@@ -589,6 +589,15 @@ void dap_events_stop_all( )
             continue;
         }
 
+        /* Validate event_exit pointer — catch heap corruption early.
+         * A corrupted event_exit (e.g., 0x180d0) indicates heap corruption
+         * that overwrote the dap_context_t struct. */
+        void *l_ee = s_workers[i]->context->event_exit;
+        if ((uintptr_t)l_ee < 0x1000) {
+            log_it(L_ERROR, "Worker %u event_exit corrupted: %p (heap corruption detected)", i, l_ee);
+            continue;
+        }
+
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
 }

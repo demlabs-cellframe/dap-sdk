@@ -254,7 +254,10 @@ void dap_context_stop_n_kill(dap_context_t * a_context)
     pthread_t l_thread_id = a_context->thread_id;
     switch (a_context->type) {
     case DAP_CONTEXT_TYPE_WORKER:
-        dap_events_socket_event_signal(a_context->event_exit, 1);
+        if (a_context->event_exit && (uintptr_t)a_context->event_exit >= 0x1000)
+            dap_events_socket_event_signal(a_context->event_exit, 1);
+        else
+            log_it(L_ERROR, "event_exit corrupted: %p, cannot signal worker stop", a_context->event_exit);
         break;
     case DAP_CONTEXT_TYPE_PROC_THREAD: {
         dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
