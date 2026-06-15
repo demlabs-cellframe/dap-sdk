@@ -102,7 +102,7 @@ typedef struct chipmunk_mring_header {
     uint32_t params_id;   /* 'MRV1' = CHIPMUNK_MRING_PARAMS_ID */
     uint32_t n_ring;      /* N ∈ [2, 256] */
     uint32_t threshold;   /* t ∈ [1, N] */
-    uint32_t fold_depth;  /* ceil(log2(N)), 1..8 */
+    uint32_t fold_depth;  /* 1 + ceil(log2(N)), 2..9 */
     uint32_t flags;       /* CHIPMUNK_MRING_FLAGS_* */
 } chipmunk_mring_header_t;
 

@@ -468,7 +468,7 @@ int chipmunk_mring_aggregate_X(chipmunk_poly_t a_X_out[CHIPMUNK_MRING_K_PK],
             const chipmunk_poly_t *l_src =
                 &a_x_flat[i * CHIPMUNK_MRING_K_PK + j];
             for (size_t k = 0u; k < CHIPMUNK_N; ++k) {
-                l_tmp.coeffs[k] = l_src->coeffs[k] & (int32_t)l_mask;
+                l_tmp.coeffs[k] = (int32_t)((uint32_t)l_src->coeffs[k] & l_mask);
             }
             const int rc = chipmunk_poly_add(&a_X_out[j], &a_X_out[j], &l_tmp);
             if (rc != 0) {

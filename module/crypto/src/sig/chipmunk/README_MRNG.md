@@ -278,23 +278,24 @@ fixed(N) = 28          // header
          + 1 408       // C_b
          + 1 408       // Y_pk  (single R_q poly)
          + 7 680       // bind block z_x = K_pk·zpack
-         = 12 060 B    // structural lower bound, any N ≥ 2
+         + 1 408       // bind block c* (FS challenge, qpack)
+         = 13 468 B    // structural lower bound, any N ≥ 2
 ```
 
 Exact wire sizes (M4.3, seed-compressed openings + leaf-mask):
 
 ```
-total(D) = 12 060 + 32 + D · 16 896 + 16 896 + 3 136
-         = 32 124 + D · 16 896
+total(D) = 13 468 + 32 + D · 16 896 + 16 896 + 3 136
+         = 33 532 + D · 16 896
 ```
 
 | N    | D | total (B) | ~KB   |
 |-----:|--:|----------:|------:|
-|    2 | 2 |    65 916 |  64.4 |
-|    4 | 3 |    82 812 |  80.9 |
-|   16 | 5 |   116 604 | 113.9 |
-|   64 | 7 |   150 396 | 146.9 |
-|  256 | 9 |   184 188 | 179.9 |
+|    2 | 2 |    67 324 |  65.7 |
+|    4 | 3 |    84 220 |  82.2 |
+|   16 | 5 |   118 012 | 115.2 |
+|   64 | 7 |   151 804 | 148.2 |
+|  256 | 9 |   185 596 | 181.2 |
 
 Per-round opening randomness is **not** on the wire (32 B seed only).
 Amendment v2 §5.1 byte targets assumed R_q fold elements; with G3.1

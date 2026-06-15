@@ -189,6 +189,8 @@ static chipmunk_ring_error_t s_map_int_err(int a_rc)
     case -EAGAIN:     return CHIPMUNK_RING_ERR_NORM_BOUND;
     case -ERANGE:     return CHIPMUNK_RING_ERR_NORM_BOUND;
     case -EDOM:       return CHIPMUNK_RING_ERR_PROOF_FAIL;
+    case -EBADMSG:    return CHIPMUNK_RING_ERR_FIAT_SHAMIR_MISMATCH;
+    case -EIO:        return CHIPMUNK_RING_ERR_INTERNAL;
     default:          return CHIPMUNK_RING_ERR_PROOF_FAIL;
     }
 }
@@ -747,7 +749,15 @@ out:
     dap_memwipe(l_rb_seed, sizeof(l_rb_seed));
     dap_memwipe(l_fold_seed, sizeof(l_fold_seed));
     dap_memwipe(l_mask_seed, sizeof(l_mask_seed));
+    if (l_b) {
+        dap_memwipe(l_b, a_n_ring);
+    }
     DAP_DELETE(l_b);
+    if (l_x_flat) {
+        dap_memwipe(l_x_flat,
+                    (size_t)a_n_ring * CHIPMUNK_MRING_K_PK
+                    * sizeof(chipmunk_poly_t));
+    }
     DAP_DELETE(l_x_flat);
     DAP_DELETE(l_pks);
     DAP_DELETE(l_sorted);
