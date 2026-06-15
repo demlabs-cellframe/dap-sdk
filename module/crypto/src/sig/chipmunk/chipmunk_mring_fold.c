@@ -67,25 +67,23 @@ static int64_t s_center_coeff_i64(int32_t a_c)
 {
     int64_t l_v = a_c;
     const int64_t l_half = (int64_t)CHIPMUNK_Q / 2;
-    if (l_v > l_half) {
-        l_v -= (int64_t)CHIPMUNK_Q;
-    } else if (l_v < -l_half) {
-        l_v += (int64_t)CHIPMUNK_Q;
-    }
-    return l_v;
+    const int64_t l_q = (int64_t)CHIPMUNK_Q;
+    /* Branchless: mask is -1 (all ones) when condition holds, 0 otherwise. */
+    const int64_t l_hi = -(int64_t)(l_v > l_half);
+    const int64_t l_lo = -(int64_t)(l_v < -l_half);
+    return l_v - (l_q & l_hi) + (l_q & l_lo);
 }
 
 static int32_t s_reduce_coeff_i64(int64_t a_v)
 {
     const int64_t l_q = (int64_t)CHIPMUNK_Q;
     int64_t l_r = a_v % l_q;
-    if (l_r < 0) {
-        l_r += l_q;
-    }
     const int64_t l_half = l_q / 2;
-    if (l_r > l_half) {
-        l_r -= l_q;
-    }
+    /* Branchless: normalize into [-half, half). */
+    const int64_t l_neg = -(int64_t)(l_r < 0);
+    const int64_t l_hi  = -(int64_t)(l_r > l_half);
+    l_r += l_q & l_neg;
+    l_r -= l_q & l_hi;
     return (int32_t)l_r;
 }
 

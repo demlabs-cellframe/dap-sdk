@@ -263,6 +263,21 @@ static bool s_poly_equal(const chipmunk_poly_t *a, const chipmunk_poly_t *b)
     return true;
 }
 
+/*
+ * CT-safe memcmp: returns 0 when a==b, non-zero otherwise.
+ * Iterates over all bytes regardless of mismatch position.
+ */
+static int s_memcmp_ct(const void *a, const void *b, size_t a_len)
+{
+    const uint8_t *l_a = (const uint8_t *)a;
+    const uint8_t *l_b = (const uint8_t *)b;
+    uint8_t l_diff = 0u;
+    for (size_t i = 0u; i < a_len; ++i) {
+        l_diff |= l_a[i] ^ l_b[i];
+    }
+    return (int)l_diff;
+}
+
 static int s_build_b_indicator(uint8_t *a_b,
                                uint32_t a_n_ring,
                                const chipmunk_lrs_public_key_t *a_sorted,
@@ -282,22 +297,27 @@ static int s_build_b_indicator(uint8_t *a_b,
             return rc;
         }
 
-        bool l_found = false;
+        /*
+         * CT-safe: always iterate the full ring, no early break.
+         * match = (memcmp == 0) ? 1 : 0, applied via mask.
+         * b[i] |= match (but only if b[i] was 0 — duplicate check).
+         */
+        uint32_t l_signer_matches = 0u;
         for (uint32_t i = 0u; i < a_n_ring; ++i) {
-            if (memcmp(a_sks[s]->P, a_sorted[i].P,
-                       CHIPMUNK_LRS_POLY_QPACK_BYTES) == 0) {
-                if (a_b[i] != 0u) {
-                    return -EEXIST;
-                }
-                a_b[i] = 1u;
-                ++l_count;
-                l_found = true;
-                break;
+            const int l_cmp = s_memcmp_ct(a_sks[s]->P, a_sorted[i].P,
+                                          CHIPMUNK_LRS_POLY_QPACK_BYTES);
+            const uint32_t l_match = (l_cmp == 0) ? 1u : 0u;
+            l_signer_matches += l_match;
+            /* Duplicate: b[i] already set by a previous signer. */
+            if (l_match != 0u && a_b[i] != 0u) {
+                return -EEXIST;
             }
+            a_b[i] |= (uint8_t)l_match;
         }
-        if (!l_found) {
+        if (l_signer_matches != 1u) {
             return -ENOENT;
         }
+        ++l_count;
     }
 
     if (l_count != a_threshold) {

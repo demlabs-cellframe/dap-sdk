@@ -580,6 +580,118 @@ static bool s_test_strerror_coverage(void)
 }
 
 /* -------------------------------------------------------------------------
+ * Empty message + empty ctx sign/verify.
+ * ---------------------------------------------------------------------- */
+
+static bool s_test_empty_msg_ctx(void)
+{
+    enum { N = 4, T = 2 };
+    chipmunk_lrs_public_key_t ring[N];
+    chipmunk_lrs_secret_key_t sks[T];
+
+    for (uint32_t i = 0u; i < N; ++i) {
+        chipmunk_lrs_secret_key_t tmp;
+        s_make_keypair(&ring[i], &tmp, (uint8_t)(0x30u + i));
+    }
+    s_make_keypair(&ring[0], &sks[0], 0xD1u);
+    s_make_keypair(&ring[2], &sks[1], 0xD2u);
+
+    const chipmunk_lrs_secret_key_t *ptrs[T] = { &sks[0], &sks[1] };
+    uint8_t seeds[T * CHIPMUNK_LRS_SEED_BYTES];
+    s_fill_seed(seeds, sizeof(seeds), 0xDDu);
+
+    /* Empty message, NULL ctx. */
+    uint8_t *sig = NULL;
+    size_t sig_sz = 0u;
+    chipmunk_ring_error_t rc = chipmunk_ring_sign_to_bytes(
+        &sig, &sig_sz, ptrs, T, ring, N, T,
+        NULL, 0u, NULL, 0u, seeds);
+    dap_assert(rc == CHIPMUNK_RING_OK, "empty msg sign OK");
+
+    rc = chipmunk_ring_verify_from_bytes(
+        sig, sig_sz, ring, N, NULL, 0u, NULL, 0u);
+    dap_assert(rc == CHIPMUNK_RING_OK, "empty msg verify OK");
+
+    /* Non-empty message must fail against empty-msg signature. */
+    const uint8_t nonempty[] = "not-empty";
+    rc = chipmunk_ring_verify_from_bytes(
+        sig, sig_sz, ring, N, nonempty, sizeof(nonempty) - 1u, NULL, 0u);
+    dap_assert(rc != CHIPMUNK_RING_OK, "non-empty msg against empty sig fails");
+
+    DAP_DELETE(sig);
+
+    /* Empty message, non-empty ctx. */
+    const uint8_t ctx[] = "some-context";
+    sig = NULL;
+    rc = chipmunk_ring_sign_to_bytes(
+        &sig, &sig_sz, ptrs, T, ring, N, T,
+        NULL, 0u, ctx, sizeof(ctx) - 1u, seeds);
+    dap_assert(rc == CHIPMUNK_RING_OK, "empty msg + ctx sign OK");
+
+    rc = chipmunk_ring_verify_from_bytes(
+        sig, sig_sz, ring, N, NULL, 0u, ctx, sizeof(ctx) - 1u);
+    dap_assert(rc == CHIPMUNK_RING_OK, "empty msg + ctx verify OK");
+
+    DAP_DELETE(sig);
+    return true;
+}
+
+/* -------------------------------------------------------------------------
+ * Tamper fs_seed and fold_opening_seed on wire.
+ * ---------------------------------------------------------------------- */
+
+static bool s_test_wire_tamper_seeds(void)
+{
+    enum { N = 4, T = 2 };
+    chipmunk_lrs_public_key_t ring[N];
+    chipmunk_lrs_secret_key_t sks[T];
+
+    for (uint32_t i = 0u; i < N; ++i) {
+        chipmunk_lrs_secret_key_t tmp;
+        s_make_keypair(&ring[i], &tmp, (uint8_t)(0x40u + i));
+    }
+    s_make_keypair(&ring[0], &sks[0], 0xE1u);
+    s_make_keypair(&ring[2], &sks[1], 0xE2u);
+
+    const chipmunk_lrs_secret_key_t *ptrs[T] = { &sks[0], &sks[1] };
+    uint8_t seeds[T * CHIPMUNK_LRS_SEED_BYTES];
+    s_fill_seed(seeds, sizeof(seeds), 0xEEu);
+
+    const uint8_t msg[] = "tamper-seed-test";
+    uint8_t *sig = NULL;
+    size_t sig_sz = 0u;
+
+    chipmunk_ring_error_t rc = chipmunk_ring_sign_to_bytes(
+        &sig, &sig_sz, ptrs, T, ring, N, T,
+        msg, sizeof(msg) - 1u, NULL, 0u, seeds);
+    dap_assert(rc == CHIPMUNK_RING_OK, "tamper-seed sign OK");
+
+    /* Tamper fs_seed (offset 96..127 in fixed hashes section). */
+    const uint32_t off_hash = chipmunk_mring_section_off_fixed_hashes();
+    sig[off_hash + 96u] ^= 0x01u;
+    rc = chipmunk_ring_verify_from_bytes(
+        sig, sig_sz, ring, N, msg, sizeof(msg) - 1u, NULL, 0u);
+    dap_assert(rc != CHIPMUNK_RING_OK, "tampered fs_seed fails");
+    sig[off_hash + 96u] ^= 0x01u;
+
+    /* Tamper fold_opening_seed (section_off_fold_opening_seed). */
+    const uint32_t off_fos = chipmunk_mring_section_off_fold_opening_seed();
+    sig[off_fos] ^= 0x01u;
+    rc = chipmunk_ring_verify_from_bytes(
+        sig, sig_sz, ring, N, msg, sizeof(msg) - 1u, NULL, 0u);
+    dap_assert(rc != CHIPMUNK_RING_OK, "tampered fold_opening_seed fails");
+    sig[off_fos] ^= 0x01u;
+
+    /* Untampered must still verify. */
+    rc = chipmunk_ring_verify_from_bytes(
+        sig, sig_sz, ring, N, msg, sizeof(msg) - 1u, NULL, 0u);
+    dap_assert(rc == CHIPMUNK_RING_OK, "untampered recovers");
+
+    DAP_DELETE(sig);
+    return true;
+}
+
+/* -------------------------------------------------------------------------
  * main.
  * ---------------------------------------------------------------------- */
 
@@ -597,6 +709,8 @@ int main(void)
     if (!s_test_threshold_gates())        rc = 1;
     if (!s_test_null_param_gates())       rc = 1;
     if (!s_test_strerror_coverage())      rc = 1;
+    if (!s_test_empty_msg_ctx())          rc = 1;
+    if (!s_test_wire_tamper_seeds())      rc = 1;
 
     if (s_dump_mode()) {
         log_it(L_WARNING, "CHIPMUNK_MRING_KAT_DUMP active: dump is not a pass");
