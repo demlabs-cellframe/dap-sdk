@@ -1089,6 +1089,14 @@ static dap_client_http_t* s_client_http_create_and_connect(
                 l_ev_socket->callbacks.connected_callback(l_ev_socket);
             }
             dap_context_poll_update(l_ev_socket);
+            
+            /* connected_callback may have freed l_client_http (via full
+             * request/response cycle on localhost).  Check if the esocket
+             * still references us — if not, the client is gone. */
+            if (l_ev_socket->_inheritor != l_client_http) {
+                *a_error_code = 0;
+                return NULL;
+            }
         }
     }
         *a_error_code = 0;
