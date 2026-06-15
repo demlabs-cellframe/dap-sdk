@@ -385,6 +385,75 @@ static void test_large_ring_smoke(void)
 }
 
 /* -------------------------------------------------------------------------
+ * Signer SK not matching any ring PK must fail.
+ * ---------------------------------------------------------------------- */
+
+static void test_signer_not_in_ring(void)
+{
+    enum { N = 4, T = 2 };
+    chipmunk_lrs_public_key_t ring[N];
+    chipmunk_lrs_secret_key_t sks[T];
+
+    for (uint32_t i = 0u; i < N; ++i) {
+        chipmunk_lrs_secret_key_t tmp;
+        s_make_keypair(&ring[i], &tmp, (uint8_t)(0x50u + i));
+    }
+    /* Signers with salts that DON'T match ring members. */
+    s_make_keypair(&ring[0], &sks[0], 0xF1u);
+    s_make_keypair(&ring[1], &sks[1], 0xF2u);
+
+    /* But use a signer SK whose PK doesn't match any ring entry. */
+    chipmunk_lrs_secret_key_t rogue_sk;
+    chipmunk_lrs_public_key_t rogue_pk;
+    s_make_keypair(&rogue_pk, &rogue_sk, 0xFFu);
+
+    const chipmunk_lrs_secret_key_t *ptrs[T] = { &sks[0], &rogue_sk };
+    uint8_t seeds[T * CHIPMUNK_LRS_SEED_BYTES];
+    s_fill_seed(seeds, sizeof(seeds), 0x91u);
+
+    const uint8_t msg[] = "signer-not-in-ring";
+    uint8_t *sig = NULL;
+    size_t sig_sz = 0u;
+
+    chipmunk_ring_error_t rc = chipmunk_ring_sign_to_bytes(
+        &sig, &sig_sz, ptrs, T, ring, N, T,
+        msg, sizeof(msg) - 1u, NULL, 0u, seeds);
+    dap_assert(rc != CHIPMUNK_RING_OK, "signer not in ring must fail");
+}
+
+/* -------------------------------------------------------------------------
+ * Duplicate ring members must fail.
+ * ---------------------------------------------------------------------- */
+
+static void test_duplicate_ring_members(void)
+{
+    enum { N = 4, T = 1 };
+    chipmunk_lrs_public_key_t ring[N];
+    chipmunk_lrs_secret_key_t sk;
+
+    s_make_keypair(&ring[0], &sk, 0xD0u);
+    /* Duplicate ring[0] into ring[1]. */
+    ring[1] = ring[0];
+    for (uint32_t i = 2u; i < N; ++i) {
+        chipmunk_lrs_secret_key_t tmp;
+        s_make_keypair(&ring[i], &tmp, (uint8_t)(0xD2u + i));
+    }
+
+    const chipmunk_lrs_secret_key_t *ptrs[T] = { &sk };
+    uint8_t seeds[T * CHIPMUNK_LRS_SEED_BYTES];
+    s_fill_seed(seeds, sizeof(seeds), 0x92u);
+
+    const uint8_t msg[] = "duplicate-ring-members";
+    uint8_t *sig = NULL;
+    size_t sig_sz = 0u;
+
+    chipmunk_ring_error_t rc = chipmunk_ring_sign_to_bytes(
+        &sig, &sig_sz, ptrs, T, ring, N, T,
+        msg, sizeof(msg) - 1u, NULL, 0u, seeds);
+    dap_assert(rc != CHIPMUNK_RING_OK, "duplicate ring members must fail");
+}
+
+/* -------------------------------------------------------------------------
  * main.
  * ---------------------------------------------------------------------- */
 
@@ -400,6 +469,8 @@ int main(void)
     test_cross_message_rejection();
     test_ctx_binding();
     test_large_ring_smoke();
+    test_signer_not_in_ring();
+    test_duplicate_ring_members();
 
     log_it(L_INFO, "=== ALL MRNG M7.2 security tests PASSED ===");
     dap_common_deinit();

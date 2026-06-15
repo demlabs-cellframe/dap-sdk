@@ -447,23 +447,6 @@ static int s_mring_sign_core(uint8_t **a_out_buf, size_t *a_out_size,
                              const uint8_t *a_message, size_t a_message_size,
                              const void *a_ctx, size_t a_ctx_size,
                              const uint8_t *a_randomness_seeds,
-                             uint32_t a_outer_attempt);
-
-static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
-                               const chipmunk_lrs_public_key_t *a_ring,
-                               uint32_t a_n_ring,
-                               const uint8_t *a_message, size_t a_message_size,
-                               const void *a_ctx, size_t a_ctx_size);
-
-static int s_mring_sign_core(uint8_t **a_out_buf, size_t *a_out_size,
-                             const chipmunk_lrs_secret_key_t *const *a_signer_sk,
-                             size_t a_signer_count,
-                             const chipmunk_lrs_public_key_t *a_ring,
-                             uint32_t a_n_ring,
-                             uint32_t a_threshold,
-                             const uint8_t *a_message, size_t a_message_size,
-                             const void *a_ctx, size_t a_ctx_size,
-                             const uint8_t *a_randomness_seeds,
                              uint32_t a_outer_attempt)
 {
     chipmunk_lrs_public_key_t *l_sorted =
@@ -498,9 +481,14 @@ static int s_mring_sign_core(uint8_t **a_out_buf, size_t *a_out_size,
     }
 
     for (size_t s = 0u; s < a_signer_count; ++s) {
+        /*
+         * CT-safe: always scan full ring, derive witness at matching
+         * position via CT conditional (no early break).
+         */
         for (uint32_t i = 0u; i < a_n_ring; ++i) {
-            if (memcmp(a_signer_sk[s]->P, l_sorted[i].P,
-                       CHIPMUNK_LRS_POLY_QPACK_BYTES) != 0) {
+            const int l_cmp = s_memcmp_ct(a_signer_sk[s]->P, l_sorted[i].P,
+                                          CHIPMUNK_LRS_POLY_QPACK_BYTES);
+            if (l_cmp != 0) {
                 continue;
             }
             rc = chipmunk_lrs_derive_witness(
@@ -509,12 +497,11 @@ static int s_mring_sign_core(uint8_t **a_out_buf, size_t *a_out_size,
             if (rc != 0) {
                 goto out;
             }
-            break;
         }
     }
 
     uint8_t l_ring_hash[32], l_ctx_hash[32], l_msg_hash[32];
-    rc = chipmunk_mring_hash_ring(l_ring_hash, l_sorted, a_n_ring);
+    rc = chipmunk_mring_hash_sorted_ring(l_ring_hash, l_sorted, a_n_ring);
     if (rc != 0) {
         goto out;
     }
@@ -816,7 +803,7 @@ static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
     }
 
     uint8_t l_ring_hash[32], l_ctx_hash[32], l_msg_hash[32];
-    rc = chipmunk_mring_hash_ring(l_ring_hash, l_sorted, a_n_ring);
+    rc = chipmunk_mring_hash_sorted_ring(l_ring_hash, l_sorted, a_n_ring);
     if (rc != 0) {
         goto out;
     }
@@ -987,6 +974,9 @@ chipmunk_ring_error_t chipmunk_ring_sign_to_bytes(
         || a_message_size > UINT32_MAX) {
         return CHIPMUNK_RING_ERR_NULL_PARAM;
     }
+    if (!a_ctx && a_ctx_size != 0u) {
+        return CHIPMUNK_RING_ERR_NULL_PARAM;
+    }
     if (a_ring_size < CHIPMUNK_MRING_N_MIN
         || a_ring_size > CHIPMUNK_MRING_N_MAX) {
         return CHIPMUNK_RING_ERR_N_RING_OUT_OF_RANGE;
@@ -1033,6 +1023,9 @@ chipmunk_ring_error_t chipmunk_ring_verify_from_bytes(
     }
     if ((!a_message && a_message_size != 0u)
         || a_message_size > UINT32_MAX) {
+        return CHIPMUNK_RING_ERR_NULL_PARAM;
+    }
+    if (!a_ctx && a_ctx_size != 0u) {
         return CHIPMUNK_RING_ERR_NULL_PARAM;
     }
 

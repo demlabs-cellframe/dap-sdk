@@ -161,6 +161,9 @@ _Static_assert(CHIPMUNK_MRING_FOLD_ROUND_BYTES ==
                "MRNG: fold round = (L,R) ext elements");
 _Static_assert(CHIPMUNK_MRING_LEAF_MASK_BYTES == 3136u,
                "MRNG: leaf-mask = 49 bits × 512 coeffs");
+/* 1 + ceil(log2(256)) = 1 + 8 = 9. */
+_Static_assert(CHIPMUNK_MRING_FOLD_DEPTH_MAX == 9u,
+               "MRNG: FOLD_DEPTH_MAX must be 1 + ceil(log2(N_MAX))");
 /* G2 v2 §A2: ensure REL-2 (\sum b_i = t) lifts losslessly Z -> R_q. */
 _Static_assert((uint32_t)CHIPMUNK_MRING_N_MAX < (uint32_t)CHIPMUNK_MRING_Q,
                "MRNG: N_MAX must be < q for the Z->R_q lift of REL-2 to be loss-free");

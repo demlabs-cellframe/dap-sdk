@@ -33,6 +33,11 @@ int chipmunk_mring_hash_ring(uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
                              const chipmunk_lrs_public_key_t *a_ring,
                              uint32_t a_n_ring);
 
+/* Same as hash_ring but assumes a_ring is already canonical-sorted. */
+int chipmunk_mring_hash_sorted_ring(uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
+                                    const chipmunk_lrs_public_key_t *a_sorted,
+                                    uint32_t a_n_ring);
+
 int chipmunk_mring_hash_ctx(uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
                             uint32_t a_params_id,
                             const void *a_ctx, size_t a_ctx_len);

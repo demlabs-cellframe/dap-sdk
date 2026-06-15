@@ -140,6 +140,33 @@ int chipmunk_mring_canonicalise_ring(chipmunk_lrs_public_key_t *a_sorted_out,
     return 0;
 }
 
+static int s_hash_sorted_ring(uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
+                              const chipmunk_lrs_public_key_t *a_sorted,
+                              uint32_t a_n_ring)
+{
+    const size_t l_payload_size =
+        4u + 4u + (size_t)a_n_ring * CHIPMUNK_LRS_POLY_QPACK_BYTES;
+    uint8_t *l_payload = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
+    if (!l_payload) {
+        return -ENOMEM;
+    }
+
+    uint8_t *p = l_payload;
+    s_le32_store(p, CHIPMUNK_MRING_PARAMS_ID);
+    p += 4u;
+    s_le32_store(p, a_n_ring);
+    p += 4u;
+    for (uint32_t i = 0u; i < a_n_ring; ++i) {
+        memcpy(p, a_sorted[i].P, CHIPMUNK_LRS_POLY_QPACK_BYTES);
+        p += CHIPMUNK_LRS_POLY_QPACK_BYTES;
+    }
+
+    const int rc = s_hash_len_prefixed(a_out, MRING_RING_DOMAIN,
+                                       l_payload, l_payload_size);
+    DAP_DELETE(l_payload);
+    return rc;
+}
+
 int chipmunk_mring_hash_ring(uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
                              const chipmunk_lrs_public_key_t *a_ring,
                              uint32_t a_n_ring)
@@ -161,29 +188,19 @@ int chipmunk_mring_hash_ring(uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
         return rc_canon;
     }
 
-    const size_t l_payload_size =
-        4u + 4u + (size_t)a_n_ring * CHIPMUNK_LRS_POLY_QPACK_BYTES;
-    uint8_t *l_payload = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
-    if (!l_payload) {
-        DAP_DELETE(l_sorted);
-        return -ENOMEM;
-    }
-
-    uint8_t *p = l_payload;
-    s_le32_store(p, CHIPMUNK_MRING_PARAMS_ID);
-    p += 4u;
-    s_le32_store(p, a_n_ring);
-    p += 4u;
-    for (uint32_t i = 0u; i < a_n_ring; ++i) {
-        memcpy(p, l_sorted[i].P, CHIPMUNK_LRS_POLY_QPACK_BYTES);
-        p += CHIPMUNK_LRS_POLY_QPACK_BYTES;
-    }
-
-    const int rc = s_hash_len_prefixed(a_out, MRING_RING_DOMAIN,
-                                       l_payload, l_payload_size);
-    DAP_DELETE(l_payload);
+    const int rc = s_hash_sorted_ring(a_out, l_sorted, a_n_ring);
     DAP_DELETE(l_sorted);
     return rc;
+}
+
+int chipmunk_mring_hash_sorted_ring(uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],
+                                    const chipmunk_lrs_public_key_t *a_sorted,
+                                    uint32_t a_n_ring)
+{
+    if (!a_out || !a_sorted) {
+        return -EINVAL;
+    }
+    return s_hash_sorted_ring(a_out, a_sorted, a_n_ring);
 }
 
 int chipmunk_mring_hash_ctx(uint8_t a_out[CHIPMUNK_MRING_HASH_BYTES],

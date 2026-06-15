@@ -27,6 +27,8 @@
  */
 
 #pragma once
+#ifndef _CHIPMUNK_MRING_STATEMENT_H_
+#define _CHIPMUNK_MRING_STATEMENT_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -322,3 +324,4 @@ int chipmunk_mring_bind_verify_reconstruct(chipmunk_poly_t *a_M_pk_out,
 #ifdef __cplusplus
 }
 #endif
+#endif /* _CHIPMUNK_MRING_STATEMENT_H_ */
