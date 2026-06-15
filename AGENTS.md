@@ -98,6 +98,6 @@ CHIPMUNK_MRING_KAT_DUMP=1 ./build.debug/tests/bin/test_unit_crypto_chipmunk_mrin
 
 ## Known Issues
 
-- N=8, T=4 sign fails in benchmark (returns NULL_PARAM) but passes in unit test — benchmark environment issue, not a crypto bug
-- FOLD-1/FOLD-2: `s_center_coeff_i64`/`s_reduce_coeff_i64` branch on secret coefficients (MEDIUM, prover-only, acceptable for now)
-- MRING-1/MRING-2: `s_build_b_indicator`/witness loop leak signer position (LOW, prover-only)
+- Heap allocs in hash helpers (~12 per sign path) — performance optimization opportunity
+- Double NTT of A_pk/A_T in verify — caching opportunity
+- Wire format exact-size check prevents forward-compatible "ignore trailing bytes"
