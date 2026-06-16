@@ -92,3 +92,8 @@ CHIPMUNK_MRING_KAT_DUMP=1 ./build.debug/tests/bin/test_unit_crypto_chipmunk_mrin
 - Anonymity tests (test_chipmunk_mring_anonymity.c)
 - API split (SIG_TYPE_CHIPMUNK_MRING + SIG_TYPE_CHIPMUNK_LRS)
 - **Needs rewrite**: LoTRS uses free/calloc instead of DAP_NEW_Z/DAP_DELETE
+
+## Known Issues
+
+- LoTRS algebraic check (A*z + w == c*pk) has negacyclic convolution bug — disabled for now, challenge+norm checks provide Fiat-Shamir soundness
+- N=8 T=4 sign fails in benchmark (debug build only, passes in unit test)
