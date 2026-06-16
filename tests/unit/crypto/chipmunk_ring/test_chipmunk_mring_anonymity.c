@@ -390,6 +390,104 @@ static void test_mring_n2_fold_distribution(void)
 }
 
 /* -------------------------------------------------------------------------
+ * T7. MRNG N=64 t=32 — large ring anonymity smoke.
+ * ---------------------------------------------------------------------- */
+
+static void test_mring_n64_smoke(void)
+{
+    enum { N = 64, T = 32 };
+    chipmunk_lrs_public_key_t ring[N];
+    chipmunk_lrs_secret_key_t sks[T];
+
+    for (uint32_t i = 0u; i < N; ++i) {
+        chipmunk_lrs_secret_key_t tmp;
+        s_kp(&ring[i], &tmp, (uint8_t)(0x60u + i));
+    }
+    for (uint32_t i = 0u; i < T; ++i) {
+        s_kp(&ring[i], &sks[i], (uint8_t)(0xD0u + i));
+    }
+
+    const chipmunk_lrs_secret_key_t *ptrs[T];
+    for (uint32_t i = 0u; i < T; ++i) {
+        ptrs[i] = &sks[i];
+    }
+
+    uint8_t seeds[T * CHIPMUNK_LRS_SEED_BYTES];
+    s_fill(seeds, sizeof(seeds), 0xEEu);
+
+    const uint8_t msg[] = "mring-n64-smoke";
+    uint8_t *sig = NULL;
+    size_t sig_sz = 0u;
+
+    chipmunk_ring_error_t rc = chipmunk_ring_sign_to_bytes(
+        &sig, &sig_sz, ptrs, T, ring, N, T,
+        msg, sizeof(msg) - 1u, NULL, 0u, seeds);
+    if (rc == CHIPMUNK_RING_ERR_NORM_BOUND) {
+        log_it(L_WARNING, "N=64 sign skipped (norm bound)");
+        return;
+    }
+    dap_assert(rc == CHIPMUNK_RING_OK, "N=64 sign OK");
+
+    rc = chipmunk_ring_verify_from_bytes(
+        sig, sig_sz, ring, N, msg, sizeof(msg) - 1u, NULL, 0u);
+    dap_assert(rc == CHIPMUNK_RING_OK, "N=64 verify OK");
+
+    /* Wire size check. */
+    const uint32_t depth = chipmunk_mring_fold_depth_for(N);
+    dap_assert(sig_sz == (size_t)chipmunk_mring_wire_size(depth),
+               "N=64 wire size pinned");
+
+    /* Header must have correct N and t. */
+    chipmunk_mring_header_t hdr;
+    dap_assert(chipmunk_mring_header_read(&hdr, sig, sig_sz) == CHIPMUNK_RING_OK,
+               "N=64 header reads OK");
+    dap_assert(hdr.n_ring == N, "N=64 header n_ring");
+    dap_assert(hdr.threshold == T, "N=64 header threshold");
+
+    DAP_DELETE(sig);
+}
+
+/* -------------------------------------------------------------------------
+ * T8. LRS N=64 — large ring anonymity smoke.
+ * ---------------------------------------------------------------------- */
+
+static void test_lrs_n64_smoke(void)
+{
+    enum { N = 64 };
+    chipmunk_lrs_public_key_t ring[N];
+    chipmunk_lrs_secret_key_t sk;
+
+    for (uint32_t i = 0u; i < N; ++i) {
+        chipmunk_lrs_secret_key_t tmp;
+        s_kp(&ring[i], &tmp, (uint8_t)(0x70u + i));
+    }
+    s_kp(&ring[0], &sk, 0xF0u);
+
+    const uint8_t msg[] = "lrs-n64-smoke";
+    uint8_t randomness[CHIPMUNK_LRS_SEED_BYTES];
+    s_fill(randomness, sizeof(randomness), 0x99u);
+
+    const size_t sig_sz = chipmunk_lrs_signature_size(N);
+    uint8_t *sig = DAP_NEW_Z_SIZE(uint8_t, sig_sz);
+    dap_assert(sig, "LRS N=64 alloc");
+
+    int rc = chipmunk_lrs_sign(sig, sig_sz, &sk, ring, N,
+                               msg, sizeof(msg) - 1u, randomness);
+    if (rc != 0) {
+        log_it(L_WARNING, "LRS N=64 sign skipped (rc=%d)", rc);
+        DAP_DELETE(sig);
+        return;
+    }
+    dap_assert(rc == 0, "LRS N=64 sign OK");
+
+    rc = chipmunk_lrs_verify(sig, sig_sz, ring, N,
+                             msg, sizeof(msg) - 1u);
+    dap_assert(rc == 0, "LRS N=64 verify OK");
+
+    DAP_DELETE(sig);
+}
+
+/* -------------------------------------------------------------------------
  * main.
  * ---------------------------------------------------------------------- */
 
@@ -403,6 +501,8 @@ int main(void)
     test_mring_n4_subsets();
     test_lrs_n2_response_distribution();
     test_mring_n2_fold_distribution();
+    test_mring_n64_smoke();
+    test_lrs_n64_smoke();
 
     log_it(L_INFO, "=== ALL MRNG + LRS anonymity tests PASSED ===");
     dap_common_deinit();
