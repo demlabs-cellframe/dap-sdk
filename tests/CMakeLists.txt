@@ -317,6 +317,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mr
                       "unit;crypto;ring;mring;signoff")
 endif()
 
+# CR-11.G Phase 7.7 / M8 (task_ac273cea): MRNG + LRS anonymity tests.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_anonymity.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_anonymity
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_anonymity.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_anonymity
+                      "unit;crypto;ring;mring;anonymity")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
