@@ -64,6 +64,14 @@ add_crypto_bench(bench_ntt_micro)
 add_crypto_bench(bench_rng_overhead)
 add_crypto_bench(bench_chipmunk_mring)
 
+# bench_chipmunk_mring: optional liboqs for ML-DSA comparison
+if(EXISTS "${COMP_INSTALL}/lib/liboqs.a" AND EXISTS "${COMP_INSTALL}/include/oqs/oqs.h")
+    message(STATUS "[bench_chipmunk_mring] liboqs found — ML-DSA comparison enabled")
+    target_compile_definitions(bench_chipmunk_mring PRIVATE HAVE_LIBOQS=1)
+    target_include_directories(bench_chipmunk_mring PRIVATE "${COMP_INSTALL}/include")
+    target_link_libraries(bench_chipmunk_mring "${COMP_INSTALL}/lib/liboqs.a")
+endif()
+
 # bench_mlkem_breakdown needs hash wrapper TU for inline function access
 add_executable(bench_mlkem_breakdown bench_mlkem_breakdown.c bench_mlkem_hash_wrappers.c)
 target_link_libraries(bench_mlkem_breakdown dap_sdk)
