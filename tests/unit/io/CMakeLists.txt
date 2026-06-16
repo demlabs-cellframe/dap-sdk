@@ -193,7 +193,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     
     # Enable automatic mock wrapping
     dap_mock_autowrap(${PROJECT_NAME})
-    
+
     if(NOT ANDROID)
         target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
     endif()

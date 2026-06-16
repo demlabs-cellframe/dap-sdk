@@ -232,6 +232,28 @@ int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inl
 int dap_hash_sha1(uint8_t a_output[20], const uint8_t *a_input, size_t a_inlen);
 
 /**
+ * @brief Compute MD5 hash (RFC 1321)
+ * @details MD5 produces a 128-bit (16-byte) digest.
+ *          Used for JA3 fingerprinting and legacy compatibility.
+ *          NOT recommended for new cryptographic applications.
+ *
+ * @param[in] a_data Input data
+ * @param[in] a_data_len Input data length
+ * @param[out] a_digest Output digest (16 bytes)
+ */
+void dap_hash_md5(const void *a_data, size_t a_data_len, uint8_t a_digest[16]);
+
+/**
+ * @brief Compute MD5 hash and return as hex string
+ * @param[in] a_data Input data
+ * @param[in] a_data_len Input data length
+ * @param[out] a_hash_hex Output hex string (33 bytes including null)
+ * @param[in] a_hash_hex_size Size of output buffer
+ * @return 0 on success, -1 on error
+ */
+int dap_hash_md5_hex(const void *a_data, size_t a_data_len, char *a_hash_hex, size_t a_hash_hex_size);
+
+/**
  * @brief Compute FNV-1a 32-bit hash (fast, non-cryptographic)
  * @details Fast hash for hash tables, load balancing, and checksums.
  *          NOT suitable for cryptographic purposes!
