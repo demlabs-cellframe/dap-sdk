@@ -3,55 +3,86 @@
 ## Current Task
 
 **Branch:** `feature/chipmunk-ring`
-**Task:** `task_ac273cea` — MRNG (MatRiCT+-inspired Ring signature, Next Generation)
-**Phase:** CR-11.G Phase 7.7
+**Task:** `task_ac273cea` — Chipmunk Ring Signatures (MRNG + LRS + LoTRS)
+**Phase:** CR-11.G Phase 7.7 → Phase 8
 
 ## Milestone Status
 
 | Milestone | Status |
 |-----------|--------|
-| M0 | DONE — stub sign/verify, public bridge header |
-| M1 | DONE — 28-byte header parser/serialiser |
-| M1.4 | DONE — header validation helpers |
-| M2 | Gate satisfied — MSIS >= 128 bits |
-| M3.1 | DONE — VCom layer |
-| M3.2 | DONE — unified inner-product statement |
-| M3.3 | DONE — bind-block helpers |
-| M4.0a | DONE — R_q invertibility |
-| M4.0b | DONE — relaxed MSIS estimator |
-| M4 | DONE — halving fold over R_q^{(e)} |
-| M4.1 | DONE — wire pack/unpack for ext fold tree |
-| M4.2 | DONE — seed-compressed VCom openings |
-| M4.3 | DONE — leaf-mask ω |
+| M0–M4 | DONE — MRNG cryptographic core |
 | M6 | DONE — end-to-end sign/verify wire glue |
 | M7.1 | DONE — KAT (Known-Answer Tests) |
 | M7.2 | DONE — Security/adversarial tests |
-| M7.3 | DONE — Benchmarks (N=2,4,16) |
+| M7.3 | DONE — Benchmarks (N=2,4,8,16) + competitors (LoTRS, RingTAIL, Raptor) |
 | M7.4 | DONE — Production signoff selfcheck |
 | M7.5 | DONE — CT audit of fold arithmetic |
+| M8 | IN PROGRESS — anonymity audit, API split, expanded tests |
+| M9 | PLANNED — LoTRS implementation in C |
 
-## Uncommitted Changes
+## API Split (M8)
 
-### M6 sign/verify implementation
-- `chipmunk_mring.c`: +767 lines — `s_mring_sign_core`, `s_mring_verify_core`, public `chipmunk_ring_sign_to_bytes`/`chipmunk_ring_verify_from_bytes`
-- Bind block: `z_x` (K_PK zpacks) + `c*` (qpack) for FS closure
-- `chipmunk_mring_params.h`: `BIND_BYTES` updated
-- Wire size: `33532 + depth * 16896`
+`SIG_TYPE_CHIPMUNK_RING` split into:
+- `SIG_TYPE_CHIPMUNK_MRING` (0x0108) — log-N threshold ring (MRNG)
+- `SIG_TYPE_CHIPMUNK_LRS` (0x010A) — 1-of-N linkable ring (LRS)
+- `SIG_TYPE_CHIPMUNK_RING` — alias for MRING (backward compat)
 
-### M7 tests
-- `test_chipmunk_mring_kat.c` — deterministic sign/verify vectors (N=2, N=4)
-- `test_chipmunk_mring_security.c` — obliviousness, threshold subsets, forgery resistance, cross-ring/message rejection, ctx binding, N=16 smoke
-- `test_chipmunk_mring_signoff.c` — production signoff selfcheck
-- `test_chipmunk_mring_sign.c` — N=8 regression test added
-- `bench_chipmunk_mring.c` — sign/verify benchmarks
+## Anonymity Audit Findings (M8)
 
-### CT fix
-- `chipmunk_mring_statement.c`: `aggregate_X` — constant-time mask instead of secret-dependent branch
+### LRS
+- Wire format: no position leakage (all per-member blocks fixed-size)
+- Key image: deterministic per-signer (intentional linkability)
+- Timing: rejection sampling leaks global attempt count, not per-position
+- Missing: N=2 anonymity test, wire-level byte comparison across signers
 
-### CMakeLists.txt propagation cleanup
-- Removed ~75 redundant `target_include_directories` across 16 files
-- All test/benchmark targets now rely on `dap_sdk` propagation
-- Fixed broken pre-restructure paths in enc/, cert/, falcon/
+### MRNG
+- Wire format: no subset leakage (all sections fixed-size for given N)
+- T block: deterministic per-subset (linkability tag)
+- Timing: bind-mask rejection leaks aggregated witness norm, not subset
+- CT fix applied: `aggregate_X` uses constant-time mask
+- Missing: N=2 T=1 anonymity test, b-indicator recovery test, fold proof distribution test
+
+### Gaps to close
+1. N=2 anonymity set tests (LRS + MRNG)
+2. Wire-level indistinguishability tests (byte comparison across signers)
+3. Timing analysis tests (rejection attempt count independence)
+4. b-indicator recovery from wire test (MRNG)
+5. Fold proof distribution test (MRNG)
+6. N=64/256 anonymity smoke tests
+
+## LoTRS Implementation Plan (M9)
+
+### Overview
+Implement LoTRS (Practical Post-Quantum Structured Threshold Ring Signatures from Lattices) in C, following the Rust reference implementation at `lotrs-sig/lotrs/lotrs-rs`.
+
+### Architecture
+- **DualMS**: Multi-signature component (T signers produce aggregated signature)
+- **RS**: Binary ring proof (proves signer subset without revealing which)
+- **Threshold**: Shamir secret sharing over R_q
+- **Parameters**: Compatible with Chipmunk substrate (q=3168257, N=512)
+
+### Key Differences from MRNG
+| | MRNG | LoTRS |
+|---|---|---|
+| Rounds | 1 (non-interactive) | 2+ (interactive) |
+| Signers | 1 | T cooperatively |
+| Sig size N=4 t=2 | 84 KB | 877 B |
+| Verify | 21 ms | 0.7 ms |
+| Model | Ring (1 hides in N) | Threshold (T of N cooperate) |
+
+### Implementation Steps
+1. Port DualMS multi-signature (commitments, aggregated response)
+2. Port RS binary ring proof (challenge sampling, response computation)
+3. Port Shamir secret sharing over R_q
+4. Wire format (header + DualMS + RS sections)
+5. Integration with dap_sign API under `SIG_TYPE_CHIPMUNK_LRS`
+6. KAT tests, security tests, benchmarks
+7. Comparison with Rust reference (byte-for-byte interop)
+
+### Source Reference
+- Paper: IACR ePrint 2026/974
+- Rust: `lotrs-sig/lotrs/lotrs-rs/`
+- Python: `lotrs-sig/lotrs/lotrs-py/`
 
 ## Code Conventions
 
@@ -65,6 +96,7 @@
 - Naming: `s_` prefix for static functions, `l_` for locals, `a_` for parameters, `k_` for constants
 - Headers: `#pragma once` + `#ifndef` guard
 - No comments unless asked
+- Use propagation for include paths (dap_sdk exports all PUBLIC dirs)
 
 ## Test Commands
 
@@ -72,30 +104,36 @@
 # Build all
 cmake --build build.debug
 
-# Run specific test
-./build.debug/tests/bin/test_unit_crypto_chipmunk_mring_sign
-./build.debug/tests/bin/test_unit_crypto_chipmunk_mring_kat
-./build.debug/tests/bin/test_unit_crypto_chipmunk_mring_security
-./build.debug/tests/bin/test_unit_crypto_chipmunk_mring_signoff
-./build.debug/tests/bin/test_unit_crypto_chipmunk_mring_fold
+# Run all MRNG tests
+for t in test_unit_crypto_chipmunk_mring_sign test_unit_crypto_chipmunk_mring_kat test_unit_crypto_chipmunk_mring_security test_unit_crypto_chipmunk_mring_signoff test_unit_crypto_chipmunk_mring_fold; do ./build.debug/tests/bin/$t; done
 
 # Regenerate KAT vectors
 CHIPMUNK_MRING_KAT_DUMP=1 ./build.debug/tests/bin/test_unit_crypto_chipmunk_mring_kat
+
+# Run competitors
+cd tests/performance/crypto && ./run_competitors.sh
 ```
 
 ## Key Source Files
 
 | File | Purpose |
 |------|---------|
-| `module/crypto/src/sig/chipmunk/chipmunk_mring.c` | Sign/verify core + header (de)serialisation |
-| `module/crypto/src/sig/chipmunk/chipmunk_mring.h` | Internal protocol header, wire layout, section offsets |
-| `module/crypto/src/sig/chipmunk/chipmunk_ring.h` | Public bridge header (dap_sign integration) |
+| `module/crypto/src/sig/chipmunk/chipmunk_mring.c` | MRNG sign/verify core |
+| `module/crypto/src/sig/chipmunk/chipmunk_mring.h` | Wire layout, section offsets |
+| `module/crypto/src/sig/chipmunk/chipmunk_ring.h` | Public bridge header |
 | `module/crypto/src/sig/chipmunk/chipmunk_mring_params.h` | MRV1 parameter profile |
-| `module/crypto/src/sig/chipmunk/chipmunk_mring_statement.c` | Statement layer (aggregate_X, bind helpers) |
+| `module/crypto/src/sig/chipmunk/chipmunk_mring_statement.c` | Statement layer |
 | `module/crypto/src/sig/chipmunk/chipmunk_mring_fold.c` | Halving fold prove/verify |
 | `module/crypto/src/sig/chipmunk/chipmunk_mring_transcript.c` | Fiat-Shamir transcript |
-| `module/crypto/src/sig/chipmunk/README_MRNG.md` | Wire spec |
+| `module/crypto/src/sig/chipmunk/chipmunk_lrs.c` | LRS 1-of-N ring signature |
+| `module/crypto/src/dap_sign.c` | Signature dispatch |
+| `module/crypto/src/sig/chipmunk/dap_sign_chipmunk_ring.c` | dap_sign bridge |
+
+## Uncommitted Changes
+
+None — all committed and pushed.
 
 ## Known Issues
 
-- None remaining — all review findings resolved
+- N=8 T=4 sign fails in benchmark (debug build only, passes in unit test)
+- Raptor (Falcon-based) cannot be adapted to Chipmunk without full rewrite (different algebraic structure)
