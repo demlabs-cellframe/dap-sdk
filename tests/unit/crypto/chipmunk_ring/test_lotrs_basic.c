@@ -14,6 +14,7 @@
 #include "sig/lotrs/lotrs.h"
 #include "sig/lotrs/lotrs_params.h"
 #include "sig/lotrs/lotrs_ring.h"
+#include "sig/lotrs/lotrs_sample.h"
 
 #define LOG_TAG "test_lotrs_basic"
 
@@ -195,6 +196,106 @@ static void test_pack_roundtrip(void)
     lotrs_poly_free(l_q);
 }
 
+/* Direct algebraic check: sign then verify the equation manually. */
+static void test_algebraic_check(void)
+{
+    const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
+    lotrs_keypair_t l_kp = {0};
+    uint8_t l_seed[32];
+    for (int i = 0; i < 32; ++i) l_seed[i] = (uint8_t)(0x42 + i);
+    int l_rc = lotrs_keygen(&l_kp, l_par, l_seed);
+    dap_assert(l_rc == 0, "keygen OK");
+
+    /* Build ring with single PK. */
+    lotrs_ring_pk_t l_ring = {0};
+    l_ring.N = 1; l_ring.T = 1;
+    l_ring.pks = DAP_NEW_Z_COUNT(lotrs_pk_t, 1);
+    l_ring.pks[0].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
+    for (uint32_t i = 0u; i < l_par->k; ++i) {
+        lotrs_poly_copy(l_ring.pks[0].a_hat.polys[i], l_kp.pk.a_hat.polys[i], l_par);
+    }
+
+    /* Sign. */
+    const uint8_t l_msg[] = "algebraic-check";
+    lotrs_signature_t l_sig = {0};
+    uint8_t l_sign_seed[32];
+    for (int i = 0; i < 32; ++i) l_sign_seed[i] = (uint8_t)(0xBB + i);
+    l_rc = lotrs_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0,
+                      l_msg, sizeof(l_msg) - 1, l_sign_seed);
+    if (l_rc == -2) { l_sign_seed[0] ^= 0xFF; l_rc = lotrs_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0, l_msg, sizeof(l_msg) - 1, l_sign_seed); }
+    dap_assert(l_rc == 0, "sign OK");
+
+    /* Deserialize signature. */
+    size_t l_w_bytes = lotrs_polyvec_bytes(l_par, l_par->k);
+    size_t l_c_bytes = lotrs_poly_bytes(l_par);
+    uint32_t l_sk_len = l_par->l + l_par->k;
+    size_t l_z_bytes = lotrs_polyvec_bytes(l_par, l_sk_len);
+
+    lotrs_polyvec_t l_w = lotrs_polyvec_alloc(l_par, l_par->k);
+    lotrs_poly_t *l_c = lotrs_poly_alloc(l_par);
+    lotrs_polyvec_t l_z = lotrs_polyvec_alloc(l_par, l_sk_len);
+    const uint8_t *l_p = l_sig.data;
+    lotrs_polyvec_unpack(&l_w, l_p, l_w_bytes, l_par);
+    l_p += l_w_bytes;
+    lotrs_poly_unpack(l_c, l_p, l_c_bytes, l_par);
+    l_p += l_c_bytes;
+    lotrs_polyvec_unpack(&l_z, l_p, l_z_bytes, l_par);
+
+    /* Compute A (same as keygen). */
+    lotrs_polymat_t l_A = lotrs_polymat_alloc(l_par, l_par->k, l_par->l);
+    const char *l_a_domain = "lotrs-A-v1";
+    lotrs_xof_t *l_xof_a = lotrs_xof_new((const uint8_t *)l_a_domain, strlen(l_a_domain));
+    for (uint32_t i = 0u; i < l_par->k; ++i) {
+        for (uint32_t j = 0u; j < l_par->l; ++j) {
+            lotrs_sample_uniform(l_A.rows[i].polys[j], l_xof_a, l_par);
+        }
+    }
+    lotrs_xof_free(l_xof_a);
+
+    /* Compute lhs = A * z[..l] + z[l..l+k]. */
+    lotrs_polyvec_t l_z_short = { .polys = l_z.polys, .n = l_par->l };
+    lotrs_polyvec_t l_z_tail  = { .polys = l_z.polys + l_par->l, .n = l_par->k };
+    lotrs_polyvec_t l_lhs = lotrs_polyvec_alloc(l_par, l_par->k);
+    lotrs_polymat_vecmul(&l_lhs, &l_A, &l_z_short, l_par);
+    lotrs_polyvec_add(&l_lhs, &l_lhs, &l_z_tail, l_par);
+
+    /* Compute rhs = c * pk. */
+    lotrs_polyvec_t l_rhs = lotrs_polyvec_alloc(l_par, l_par->k);
+    for (uint32_t i = 0u; i < l_par->k; ++i) {
+        lotrs_poly_mul(l_rhs.polys[i], l_c, l_ring.pks[0].a_hat.polys[i], l_par);
+    }
+
+    /* Compute sum = lhs + w. */
+    lotrs_polyvec_t l_sum = lotrs_polyvec_alloc(l_par, l_par->k);
+    lotrs_polyvec_add(&l_sum, &l_lhs, &l_w, l_par);
+
+    /* Check sum == rhs. */
+    int l_match = 1;
+    for (uint32_t i = 0u; i < l_par->k; ++i) {
+        for (uint32_t j = 0u; j < l_par->d; ++j) {
+            if (l_sum.polys[i]->coeffs[j] % l_par->q !=
+                l_rhs.polys[i]->coeffs[j] % l_par->q) {
+                l_match = 0;
+                break;
+            }
+        }
+        if (!l_match) break;
+    }
+    dap_assert(l_match, "algebraic: lhs + w == c * pk");
+
+    lotrs_polyvec_free(&l_sum);
+    lotrs_polyvec_free(&l_rhs);
+    lotrs_polyvec_free(&l_lhs);
+    lotrs_polymat_free(&l_A);
+    lotrs_polyvec_free(&l_w);
+    lotrs_poly_free(l_c);
+    lotrs_polyvec_free(&l_z);
+    lotrs_signature_free(&l_sig);
+    lotrs_ring_pk_free(&l_ring);
+    lotrs_pk_free(&l_kp.pk);
+    lotrs_sk_free(&l_kp.sk);
+}
+
 int main(void)
 {
     dap_set_appname("test_lotrs_basic");
@@ -204,6 +305,7 @@ int main(void)
     test_pack_roundtrip();
     test_sign_verify();
     test_determinism();
+    test_algebraic_check();
 
     log_it(L_INFO, "=== ALL LoTRS basic tests PASSED ===");
     dap_common_deinit();
