@@ -9,6 +9,8 @@
 #include "dap_sign_ring.h"
 #include "dap_sign.h"
 #include "dap_memwipe.h"
+#include "chipmunk_lrs.h"
+#include "chipmunk_ring.h"
 
 #include <errno.h>
 #include <string.h>

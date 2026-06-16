@@ -32,6 +32,7 @@
 #include "dap_enc_key.h"
 #include "dap_common.h"
 #include "dap_time.h"
+#include "sig/lotrs/lotrs_wire.h"
 #include "dap_config.h"
 #include "dap_cert.h"
 #include "dap_crc64.h"
@@ -59,6 +60,8 @@ int dap_enc_init()
     
     // Initialize ChipmunkRing
     dap_enc_chipmunk_ring_init();
+    // Initialize LoTRS
+    dap_sign_lotrs_register_callbacks();
     return 0;
 }
 

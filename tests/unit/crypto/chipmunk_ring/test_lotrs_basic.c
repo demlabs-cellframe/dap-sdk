@@ -15,6 +15,7 @@
 #include "sig/lotrs/lotrs_params.h"
 #include "sig/lotrs/lotrs_ring.h"
 #include "sig/lotrs/lotrs_sample.h"
+#include "sig/lotrs/lotrs_wire.h"
 
 #define LOG_TAG "test_lotrs_basic"
 
@@ -135,6 +136,46 @@ static void test_determinism(void)
     lotrs_sk_free(&l_kp.sk);
     lotrs_pk_free(&l_kp2.pk);
     lotrs_sk_free(&l_kp2.sk);
+}
+
+static void test_wire_format(void)
+{
+    const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
+
+    /* Wire size check. */
+    uint32_t l_wire = lotrs_wire_size(l_par);
+    uint32_t l_expected = LOTRS_WIRE_HEADER_BYTES
+        + l_par->k * l_par->d * 8u
+        + l_par->d * 8u
+        + (l_par->l + l_par->k) * l_par->d * 8u;
+    dap_assert(l_wire == l_expected, "wire size formula");
+
+    /* Header pack/unpack roundtrip. */
+    lotrs_wire_header_t l_hdr = {
+        .magic = LOTRS_WIRE_MAGIC,
+        .version = LOTRS_WIRE_VERSION,
+        .params_id = LOTRS_WIRE_PARAMS_ID,
+        .d = l_par->d,
+        .N = l_par->beta,
+        .T = l_par->T,
+        .flags = LOTRS_WIRE_FLAG_NONE,
+    };
+    uint8_t l_buf[LOTRS_WIRE_HEADER_BYTES];
+    int l_rc = lotrs_wire_header_pack(l_buf, sizeof(l_buf), &l_hdr);
+    dap_assert(l_rc == 0, "header pack OK");
+
+    /* Verify magic bytes (LE: 'SRTL' = 0x53,0x52,0x54,0x4C). */
+    dap_assert(l_buf[0] == 0x53 && l_buf[1] == 0x52 &&
+               l_buf[2] == 0x54 && l_buf[3] == 0x4C,
+               "header magic 'LTRS' LE");
+
+    lotrs_wire_header_t l_hdr2 = {0};
+    l_rc = lotrs_wire_header_unpack(&l_hdr2, l_buf, sizeof(l_buf));
+    dap_assert(l_rc == 0, "header unpack OK");
+    dap_assert(l_hdr2.magic == l_hdr.magic, "roundtrip magic");
+    dap_assert(l_hdr2.d == l_hdr.d, "roundtrip d");
+    dap_assert(l_hdr2.N == l_hdr.N, "roundtrip N");
+    dap_assert(l_hdr2.T == l_hdr.T, "roundtrip T");
 }
 
 static void test_pack_roundtrip(void)
@@ -305,6 +346,7 @@ int main(void)
     dap_common_init("test_lotrs_basic", NULL);
 
     test_keygen();
+    test_wire_format();
     test_pack_roundtrip();
     test_sign_verify();
     test_determinism();
