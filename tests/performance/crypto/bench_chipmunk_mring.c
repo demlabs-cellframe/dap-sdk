@@ -22,6 +22,10 @@
 #include "chipmunk/chipmunk_ring.h"
 #include "sig/chipmunk/chipmunk_mring.h"
 #include "chipmunk/chipmunk_lrs.h"
+#include "sig/lotrs/lotrs.h"
+#include "sig/lotrs/lotrs_params.h"
+#include "sig/lotrs/lotrs_ring.h"
+#include "sig/lotrs/lotrs_wire.h"
 
 #ifdef HAVE_LIBOQS
 #include <oqs/oqs.h>
@@ -228,6 +232,103 @@ static void s_bench_lrs(uint32_t a_N)
 }
 
 /* =========================================================================
+ * LoTRS benchmark (threshold ring signature, TEST params)
+ * ======================================================================= */
+
+static void s_bench_lotrs(void)
+{
+    const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
+
+    lotrs_keypair_t l_kp = {0};
+    uint8_t l_seed[32];
+    s_fill_seed(l_seed, 32, 0xA0);
+    lotrs_keygen(&l_kp, l_par, l_seed);
+
+    /* Build ring with single PK. */
+    lotrs_ring_pk_t l_ring = {0};
+    l_ring.N = 1; l_ring.T = 1;
+    l_ring.pks = calloc(1, sizeof(lotrs_pk_t));
+    l_ring.pks[0].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
+    for (uint32_t i = 0u; i < l_par->k; ++i) {
+        lotrs_poly_copy(l_ring.pks[0].a_hat.polys[i], l_kp.pk.a_hat.polys[i], l_par);
+    }
+
+    const uint8_t msg[] = "bench-lotrs";
+    uint32_t l_wire = lotrs_wire_size(l_par);
+
+    printf("  LoTRS d=%u N=%u t=%u  wire=%u B  ",
+           l_par->d, l_ring.N, l_ring.T, l_wire);
+
+    /* Sign gate. */
+    lotrs_signature_t l_sig = {0};
+    uint8_t l_sign_seed[32];
+    s_fill_seed(l_sign_seed, 32, 0xBB);
+    int l_rc = lotrs_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0u,
+                          msg, sizeof(msg) - 1, l_sign_seed);
+    if (l_rc == -2) {
+        l_sign_seed[0] ^= 0xFF;
+        l_rc = lotrs_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0u,
+                          msg, sizeof(msg) - 1, l_sign_seed);
+    }
+    if (l_rc != 0) {
+        printf("SKIP (sign rc=%d)\n", l_rc);
+        lotrs_ring_pk_free(&l_ring); lotrs_pk_free(&l_kp.pk); lotrs_sk_free(&l_kp.sk);
+        return;
+    }
+    lotrs_signature_free(&l_sig);
+
+    /* Warmup. */
+    for (int w = 0; w < WARMUP_SIGN; w++) {
+        l_sign_seed[0] ^= (uint8_t)w;
+        lotrs_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0u,
+                   msg, sizeof(msg) - 1, l_sign_seed);
+        lotrs_signature_free(&l_sig);
+    }
+
+    /* Timed sign. */
+    uint64_t t0 = now_ns();
+    for (int i = 0; i < ITERS_SIGN; i++) {
+        BARRIER();
+        l_sign_seed[0] ^= (uint8_t)i;
+        lotrs_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0u,
+                   msg, sizeof(msg) - 1, l_sign_seed);
+        BARRIER();
+        lotrs_signature_free(&l_sig);
+    }
+    uint64_t dt_sign = now_ns() - t0;
+
+    /* Sign one for verify. */
+    l_sign_seed[0] = 0xCC;
+    lotrs_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0u,
+               msg, sizeof(msg) - 1, l_sign_seed);
+
+    /* Warmup verify. */
+    for (int w = 0; w < WARMUP_VER; w++) {
+        lotrs_verify(&l_sig, l_par, &l_ring, msg, sizeof(msg) - 1);
+    }
+
+    /* Timed verify. */
+    t0 = now_ns();
+    for (int i = 0; i < ITERS_VER; i++) {
+        BARRIER();
+        lotrs_verify(&l_sig, l_par, &l_ring, msg, sizeof(msg) - 1);
+        BARRIER();
+    }
+    uint64_t dt_ver = now_ns() - t0;
+
+    int v_rc = lotrs_verify(&l_sig, l_par, &l_ring, msg, sizeof(msg) - 1);
+    printf("sign=%7.3f ms  verify=%6.3f ms  %s\n",
+           (double)dt_sign / (ITERS_SIGN * 1000000.0),
+           (double)dt_ver / (ITERS_VER * 1000000.0),
+           v_rc == 0 ? "OK" : "FAIL");
+
+    lotrs_signature_free(&l_sig);
+    lotrs_ring_pk_free(&l_ring);
+    lotrs_pk_free(&l_kp.pk);
+    lotrs_sk_free(&l_kp.sk);
+}
+
+/* =========================================================================
  * ML-DSA-65 (Dilithium3) benchmark via liboqs
  * ======================================================================= */
 
@@ -356,6 +457,14 @@ static void s_print_size_table(void)
     printf("%-24s  %8s  %8s  %10u  %10s\n",
            "LoTRS N=32 t=16 (ref)", "?", "?", 25580u, "ring");
 
+    /* LoTRS TEST (our implementation). */
+    {
+        const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
+        uint32_t l_wire = lotrs_wire_size(l_par);
+        printf("%-24s  %8u  %8u  %8u  %10s\n",
+               "LoTRS d=32 N=4 t=2", 0u, 0u, l_wire, "ring");
+    }
+
     /* RingTAIL (LWE threshold ring, Go). */
     printf("%-24s  %8s  %8s  %8s  %10s\n",
            "RingTAIL N=4 (ref)", "?", "?", "~8KB", "ring");
@@ -393,6 +502,9 @@ int main(void)
     s_bench_lrs(4u);
     s_bench_lrs(8u);
     s_bench_lrs(16u);
+
+    printf("\n--- LoTRS (lattice threshold ring, TEST params) ---\n");
+    s_bench_lotrs();
 
 #ifdef HAVE_LIBOQS
     printf("\n--- ML-DSA (NIST standard, no anonymity) ---\n");
