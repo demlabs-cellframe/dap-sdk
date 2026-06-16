@@ -198,6 +198,7 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK: l_sign_type.type = SIG_TYPE_CHIPMUNK; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING: l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LRS: l_sign_type.type = SIG_TYPE_CHIPMUNK_LRS; break;
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LOTRS: l_sign_type.type = SIG_TYPE_CHIPMUNK_LOTRS; break;
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: l_sign_type.type = SIG_TYPE_MULTI_ECDSA_DILITHIUM; break;
@@ -230,6 +231,7 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_CHIPMUNK: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
         case SIG_TYPE_CHIPMUNK_MRING: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING;
         case SIG_TYPE_CHIPMUNK_LRS: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LRS;
+        case SIG_TYPE_CHIPMUNK_LOTRS: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LOTRS;
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
         case SIG_TYPE_MULTI_ECDSA_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM;
@@ -264,6 +266,7 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_CHIPMUNK: return "sig_chipmunk";
         case SIG_TYPE_CHIPMUNK_MRING: return "sig_chipmunk_mring";
         case SIG_TYPE_CHIPMUNK_LRS: return "sig_chipmunk_lrs";
+        case SIG_TYPE_CHIPMUNK_LOTRS: return "sig_chipmunk_lotrs";
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return "sig_ecdsa";
         case SIG_TYPE_MULTI_ECDSA_DILITHIUM: return "sig_multi_ecdsa_dil";
@@ -311,6 +314,8 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
          l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_lrs") ) {
          l_sign_type.type = SIG_TYPE_CHIPMUNK_LRS;
+    } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_lotrs") ) {
+         l_sign_type.type = SIG_TYPE_CHIPMUNK_LOTRS;
 #ifdef DAP_ECDSA
     } else if ( !dap_strcmp (a_type_str, "sig_ecdsa") ) {
          l_sign_type.type = SIG_TYPE_ECDSA;
@@ -559,7 +564,8 @@ dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t 
 
     // Special handling for ring signatures that don't include individual public keys
     if (a_chain_sign->header.type.type == SIG_TYPE_CHIPMUNK_MRING
-        || a_chain_sign->header.type.type == SIG_TYPE_CHIPMUNK_LRS) {
+        || a_chain_sign->header.type.type == SIG_TYPE_CHIPMUNK_LRS
+        || a_chain_sign->header.type.type == SIG_TYPE_CHIPMUNK_LOTRS) {
         if (a_pkey) {
             // Use provided public key for ring signature verification
             dap_enc_key_t *l_ret = dap_enc_key_new(l_type);
@@ -793,6 +799,7 @@ bool dap_sign_type_supports_aggregation(dap_sign_type_t a_signature_type)
         case SIG_TYPE_CHIPMUNK:
         case SIG_TYPE_CHIPMUNK_MRING:
         case SIG_TYPE_CHIPMUNK_LRS:
+        case SIG_TYPE_CHIPMUNK_LOTRS:
             return true;
         // Add other aggregation-capable signature types here
         default:
@@ -807,6 +814,7 @@ bool dap_sign_type_supports_batch_verification(dap_sign_type_t a_signature_type)
         case SIG_TYPE_CHIPMUNK:
         case SIG_TYPE_CHIPMUNK_MRING:
         case SIG_TYPE_CHIPMUNK_LRS:
+        case SIG_TYPE_CHIPMUNK_LOTRS:
         case SIG_TYPE_DILITHIUM:
         case SIG_TYPE_ML_DSA:
             return true;
@@ -838,7 +846,7 @@ uint32_t dap_sign_get_supported_aggregation_types(
             break;
         case SIG_TYPE_CHIPMUNK_MRING:
         case SIG_TYPE_CHIPMUNK_LRS:
-            // Ring signatures support ring aggregation
+        case SIG_TYPE_CHIPMUNK_LOTRS:
             if (count < a_max_types) a_aggregation_types[count++] = DAP_SIGN_AGGREGATION_TYPE_RING;
             break;
         // Add other signature types here
