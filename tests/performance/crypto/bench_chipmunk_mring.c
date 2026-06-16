@@ -301,10 +301,10 @@ static void s_bench_mldsa(void)
 static void s_print_size_table(void)
 {
     printf("\n=== Signature Size Comparison ===\n\n");
-    printf("%-20s  %8s  %8s  %8s  %10s\n",
+    printf("%-24s  %8s  %8s  %8s  %10s\n",
            "Scheme", "PK (B)", "SK (B)", "Sig (B)", "Anonymity");
-    printf("%-20s  %8s  %8s  %8s  %10s\n",
-           "--------------------", "--------", "--------",
+    printf("%-24s  %8s  %8s  %8s  %10s\n",
+           "------------------------", "--------", "--------",
            "--------", "----------");
 
     /* MRNG sizes at various N. */
@@ -318,7 +318,7 @@ static void s_print_size_table(void)
         const uint32_t wire = chipmunk_mring_wire_size(depth);
         char label[32];
         snprintf(label, sizeof(label), "MRNG N=%u t=%u", N, T);
-        printf("%-20s  %8u  %8u  %8u  %10s\n",
+        printf("%-24s  %8u  %8u  %8u  %10s\n",
                label, 1424u, 1456u, wire, "ring");
     }
 
@@ -330,34 +330,40 @@ static void s_print_size_table(void)
         const size_t sig = chipmunk_lrs_signature_size(N);
         char label[32];
         snprintf(label, sizeof(label), "LRS N=%u", N);
-        printf("%-20s  %8u  %8u  %8zu  %10s\n",
+        printf("%-24s  %8u  %8u  %8zu  %10s\n",
                label, 1424u, 1456u, sig, "ring");
     }
 
-#ifdef HAVE_LIBOQS
-    /* ML-DSA reference sizes. */
+    /* Competitor reference sizes. */
     printf("\n");
-    printf("%-20s  %8u  %8u  %8u  %10s\n",
+#ifdef HAVE_LIBOQS
+    printf("%-24s  %8u  %8u  %8u  %10s\n",
            "ML-DSA-44 (Dil2)", 1312u, 2528u, 2420u, "none");
-    printf("%-20s  %8u  %8u  %8u  %10s\n",
+    printf("%-24s  %8u  %8u  %8u  %10s\n",
            "ML-DSA-65 (Dil3)", 1952u, 4000u, 3293u, "none");
-    printf("%-20s  %8u  %8u  %8u  %10s\n",
+    printf("%-24s  %8u  %8u  %8u  %10s\n",
            "ML-DSA-87 (Dil5)", 2592u, 4864u, 4595u, "none");
 #else
-    printf("\n");
-    printf("%-20s  %8u  %8u  %8u  %10s\n",
+    printf("%-24s  %8u  %8u  %8u  %10s\n",
            "ML-DSA-65 (ref)", 1952u, 4000u, 3293u, "none");
-    printf("  (liboqs not available — run ./download_competitors.sh for live timings)\n");
 #endif
 
-    /* Raptor (Falcon-based ring, N=50, Zhang 2018) reference data.
-     * Per-member: c(4096) + d(512) + h(4096) + r0(4096) + r1(4096) = 20480 B
-     * Total: N * 20480 + Falcon_sig(690) */
-    printf("\n");
-    printf("%-20s  %8u  %8u  %10u  %10s\n",
+    /* LoTRS (lattice threshold ring, Rust). */
+    printf("%-24s  %8s  %8s  %8u  %10s\n",
+           "LoTRS N=4 t=2 (ref)", "?", "?", 877u, "ring");
+    printf("%-24s  %8s  %8s  %10u  %10s\n",
+           "LoTRS N=32 t=4 (ref)", "?", "?", 24464u, "ring");
+    printf("%-24s  %8s  %8s  %10u  %10s\n",
+           "LoTRS N=32 t=16 (ref)", "?", "?", 25580u, "ring");
+
+    /* RingTAIL (LWE threshold ring, Go). */
+    printf("%-24s  %8s  %8s  %8s  %10s\n",
+           "RingTAIL N=4 (ref)", "?", "?", "~8KB", "ring");
+
+    /* Raptor (Falcon-based, N=50). */
+    printf("%-24s  %8u  %8u  %10u  %10s\n",
            "Raptor N=50 (ref)", 897u, 4097u,
            50u * 20480u + 690u, "ring");
-    printf("  (Falcon-based, linear growth — for comparison only)\n");
 
     printf("\n");
 }
