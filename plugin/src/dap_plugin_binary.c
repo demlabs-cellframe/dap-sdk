@@ -38,16 +38,20 @@
 
 #define LOG_TAG "dap_plugin_binary"
 
+typedef int (*plugin_preinit_callback_t)(dap_config_t * a_plugin_config, char ** a_error_str);
 typedef int (*plugin_init_callback_t)(dap_config_t * a_plugin_config, char ** a_error_str);
 typedef void (*plugin_deinit_callback_t)(void);
 
 static dap_plugin_manifest_t * s_manifest = NULL; // Own manifest
 
 static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pvt_data, char ** a_error_str );
+static int s_type_callback_preinit(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
+static int s_type_callback_init(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
 static int s_type_callback_unload(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str );
 
 struct binary_pvt_data{
     void *handle;
+    plugin_preinit_callback_t callback_preinit;
     plugin_init_callback_t callback_init;
     plugin_deinit_callback_t callback_deinit;
 };
@@ -60,6 +64,8 @@ int dap_plugin_binary_init()
 {
     dap_plugin_type_callbacks_t l_callbacks={};
     l_callbacks.load = s_type_callback_load;
+    l_callbacks.preinit = s_type_callback_preinit;
+    l_callbacks.init = s_type_callback_init;
     l_callbacks.unload = s_type_callback_unload;
     dap_plugin_type_create("binary",&l_callbacks);
     s_manifest = dap_plugin_manifest_add_builtin("binary", "binary", "Demlabs Inc", "1.0","Binary shared library loader",NULL,0,NULL,0);
@@ -76,61 +82,93 @@ void dap_plugin_binary_deinit()
 
 /**
  * @brief s_type_callback_load
- * @param a_manifest
- * @param a_pvt_data
- * @param a_error_str
- * @return
+ * Load binary plugin: dlopen and resolve symbols. Does NOT call preinit or init.
  */
 static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pvt_data, char ** a_error_str )
 {
     assert(a_pvt_data);
-    if(a_manifest == s_manifest) // Its our own manifest, do nothing we're already loaded
+    if (a_manifest == s_manifest) // Its our own manifest, do nothing we're already loaded
         return 0;
-    struct binary_pvt_data * l_pvt_data= DAP_NEW_Z(struct binary_pvt_data);
+    struct binary_pvt_data * l_pvt_data = DAP_NEW_Z(struct binary_pvt_data);
     if (!l_pvt_data) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return 0;
+        return -1;
     }
     *a_pvt_data = l_pvt_data;
 #if defined (DAP_OS_UNIX) && !defined (__ANDROID__)
 
 #if defined (DAP_OS_DARWIN)
-    char * l_path = dap_strdup_printf("%s/%s.darwin.%s.dylib",a_manifest->path,a_manifest->name,dap_get_arch());
+    char * l_path = dap_strdup_printf("%s/%s.darwin.%s.dylib", a_manifest->path, a_manifest->name, dap_get_arch());
 #elif defined (DAP_OS_LINUX)
-    char * l_path = dap_strdup_printf("%s/%s.linux-common.%s.so",a_manifest->path,a_manifest->name,dap_get_arch());
+    char * l_path = dap_strdup_printf("%s/%s.linux-common.%s.so", a_manifest->path, a_manifest->name, dap_get_arch());
 #endif
-    l_pvt_data->handle = dlopen(l_path, RTLD_NOW | RTLD_LOCAL); // Try with specified architecture first
-    if(l_pvt_data->handle){
+    l_pvt_data->handle = dlopen(l_path, RTLD_NOW | RTLD_LOCAL);
+    if (l_pvt_data->handle) {
+        l_pvt_data->callback_preinit = dlsym(l_pvt_data->handle, "plugin_preinit");
         l_pvt_data->callback_init = dlsym(l_pvt_data->handle, "plugin_init");
         l_pvt_data->callback_deinit = dlsym(l_pvt_data->handle, "plugin_deinit");
-    }else{
-        log_it(L_ERROR,"Can't load %s module: %s (expected path %s)", a_manifest->name, l_path, dlerror());
-        *a_error_str = dap_strdup_printf("Can't load %s module: %s (expected path %s)", a_manifest->name, l_path, dlerror());
+    } else {
+        log_it(L_ERROR, "Can't load %s module: %s (expected path %s)", a_manifest->name, dlerror(), l_path);
+        *a_error_str = dap_strdup_printf("Can't load %s module: %s (expected path %s)", a_manifest->name, dlerror(), l_path);
+        DAP_DELETE(l_pvt_data);
+        DAP_DELETE(l_path);
         return -5;
     }
+    DAP_DELETE(l_path);
 #endif
 
 #if defined (DAP_OS_WINDOWS)
-    char * l_path = dap_strdup_printf("%s/%s.windows.%s.dll",a_manifest->path,a_manifest->name,dap_get_arch());
+    char * l_path = dap_strdup_printf("%s/%s.windows.%s.dll", a_manifest->path, a_manifest->name, dap_get_arch());
     l_pvt_data->handle = LoadLibraryA(l_path);
-    if(l_pvt_data->handle){
+    if (l_pvt_data->handle) {
+        l_pvt_data->callback_preinit = (plugin_preinit_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_preinit");
         l_pvt_data->callback_init = (plugin_init_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_init");
         l_pvt_data->callback_deinit = (plugin_deinit_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_deinit");
-    }else{
-        log_it(L_ERROR,"Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
+    } else {
+        log_it(L_ERROR, "Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
         *a_error_str = dap_strdup_printf("Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
+        DAP_DELETE(l_pvt_data);
+        DAP_DELETE(l_path);
         return -5;
     }
+    DAP_DELETE(l_path);
 #endif
 
-    if( l_pvt_data->callback_init){
-        return l_pvt_data->callback_init(a_manifest->config,a_error_str);
-    }else{
-        log_it(L_ERROR,"No \"plugin_init\" entry point in binary plugin") ;
-        *a_error_str = dap_strdup("No \"plugin_init\" entry point in binary plugin");
+    if (!l_pvt_data->callback_preinit && !l_pvt_data->callback_init) {
+        log_it(L_ERROR, "No \"plugin_preinit\" or \"plugin_init\" entry point in binary plugin \"%s\"", a_manifest->name);
+        *a_error_str = dap_strdup_printf("No entry points in binary plugin \"%s\"", a_manifest->name);
         DAP_DELETE(l_pvt_data);
         return -5;
     }
+    return 0;
+}
+
+/**
+ * @brief s_type_callback_preinit
+ * Call plugin_preinit() if resolved, skip silently otherwise
+ */
+static int s_type_callback_preinit(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str)
+{
+    if (a_manifest == s_manifest)
+        return 0;
+    struct binary_pvt_data * l_pvt_data = (struct binary_pvt_data *) a_pvt_data;
+    if (!l_pvt_data || !l_pvt_data->callback_preinit)
+        return 0;
+    return l_pvt_data->callback_preinit(a_manifest->config, a_error_str);
+}
+
+/**
+ * @brief s_type_callback_init
+ * Call plugin_init() if resolved, skip silently otherwise
+ */
+static int s_type_callback_init(dap_plugin_manifest_t * a_manifest, void * a_pvt_data, char ** a_error_str)
+{
+    if (a_manifest == s_manifest)
+        return 0;
+    struct binary_pvt_data * l_pvt_data = (struct binary_pvt_data *) a_pvt_data;
+    if (!l_pvt_data || !l_pvt_data->callback_init)
+        return 0;
+    return l_pvt_data->callback_init(a_manifest->config, a_error_str);
 }
 
 /**

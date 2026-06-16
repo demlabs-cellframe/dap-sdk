@@ -50,7 +50,11 @@ pid_t get_pid_from_file(const char* file_path) {
     }
 
     pid_t f_pid = 0;
-    fscanf(fpid, "%d", &f_pid);
+    if (fscanf(fpid, "%d", &f_pid) != 1) {
+        log_it(L_ERROR, "Can't read PID from file %s", file_path);
+        fclose(fpid);
+        return 0;
+    }
     fclose(fpid);
 
     return f_pid;

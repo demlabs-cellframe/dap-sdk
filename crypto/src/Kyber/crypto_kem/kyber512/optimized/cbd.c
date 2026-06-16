@@ -118,7 +118,7 @@ void cbd_eta1(poly *r, const uint8_t buf[KYBER_ETA1*KYBER_N/4])
 #endif
 }
 
-void cbd_eta2(poly *r, const uint8_t buf[KYBER_ETA1*KYBER_N/4])
+void cbd_eta2(poly *r, const uint8_t buf[KYBER_ETA2*KYBER_N/4])
 {
 #if KYBER_ETA2 != 2
 #error "This implementation requires eta2 = 2"
