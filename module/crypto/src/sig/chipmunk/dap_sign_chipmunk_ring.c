@@ -199,8 +199,18 @@ static int s_chipmunk_ring_verify(dap_sign_t *a_sign,
 
 int dap_sign_chipmunk_ring_register_callbacks(void)
 {
-    dap_sign_type_t l_type = { .type = SIG_TYPE_CHIPMUNK_RING };
-    return dap_sign_register_ring_callbacks(l_type,
+    /* Register MRNG (log-N threshold ring) under both old and new type. */
+    dap_sign_type_t l_mring_type = { .type = SIG_TYPE_CHIPMUNK_MRING };
+    int rc = dap_sign_register_ring_callbacks(l_mring_type,
+                                              s_chipmunk_ring_create,
+                                              s_chipmunk_ring_verify);
+    if (rc != 0) {
+        return rc;
+    }
+
+    /* Register LRS (1-of-N linkable ring) under separate type. */
+    dap_sign_type_t l_lrs_type = { .type = SIG_TYPE_CHIPMUNK_LRS };
+    return dap_sign_register_ring_callbacks(l_lrs_type,
                                             s_chipmunk_ring_create,
                                             s_chipmunk_ring_verify);
 }

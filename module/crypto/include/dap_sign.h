@@ -42,7 +42,9 @@ enum dap_sign_type_enum {
     SIG_TYPE_ECDSA = 0x105,
     SIG_TYPE_SHIPOVNIK = 0x0106,
     SIG_TYPE_CHIPMUNK = 0x0107, /// @brief Chipmunk signature
-    SIG_TYPE_CHIPMUNK_RING = 0x0108, /// @brief Chipmunk ring signature
+    SIG_TYPE_CHIPMUNK_RING = 0x0108, /// @brief Chipmunk ring signature (legacy alias for MRING)
+    SIG_TYPE_CHIPMUNK_MRING = 0x0108, /// @brief Chipmunk MRNG log-N threshold ring signature
+    SIG_TYPE_CHIPMUNK_LRS = 0x010A, /// @brief Chipmunk LRS 1-of-N linkable ring signature
     SIG_TYPE_NTRU_PRIME = 0x0113,
     SIG_TYPE_ML_DSA = 0x0201,
 #ifdef DAP_PQLR
@@ -446,8 +448,9 @@ DAP_STATIC_INLINE bool dap_sign_is_ring(dap_sign_t *a_sign) {
         return false;
     }
 
-    // Only signatures with SIG_TYPE_CHIPMUNK_RING are ring signatures
-    return (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_RING);
+    // MRNG and LRS are both ring signatures
+    return (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_MRING
+            || a_sign->header.type.type == SIG_TYPE_CHIPMUNK_LRS);
 }
 
 /**
