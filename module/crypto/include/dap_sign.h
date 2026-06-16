@@ -42,7 +42,6 @@ enum dap_sign_type_enum {
     SIG_TYPE_ECDSA = 0x105,
     SIG_TYPE_SHIPOVNIK = 0x0106,
     SIG_TYPE_CHIPMUNK = 0x0107, /// @brief Chipmunk signature
-    SIG_TYPE_CHIPMUNK_RING = 0x0108, /// @brief Chipmunk ring signature (legacy alias for MRING)
     SIG_TYPE_CHIPMUNK_MRING = 0x0108, /// @brief Chipmunk MRNG log-N threshold ring signature
     SIG_TYPE_CHIPMUNK_LRS = 0x010A, /// @brief Chipmunk LRS 1-of-N linkable ring signature
     SIG_TYPE_CHIPMUNK_LOTRS = 0x010B, /// @brief Chipmunk LoTRS threshold ring signature
@@ -204,7 +203,7 @@ DAP_STATIC_INLINE dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void *
  * @param a_required_signers  Threshold t; must equal @p a_signers_count.
  * @param a_data, a_data_size Message buffer (may be empty).
  * @param a_ring_keys, a_ring_size  Ring members (size in [2, 64]).
- * @return Newly allocated dap_sign_t (SIG_TYPE_CHIPMUNK_RING) or NULL.
+ * @return Newly allocated dap_sign_t (SIG_TYPE_CHIPMUNK_MRING) or NULL.
  */
 dap_sign_t *dap_sign_create_ring(
     dap_enc_key_t **a_signer_keys,
@@ -466,7 +465,7 @@ DAP_STATIC_INLINE bool dap_sign_is_zk(dap_sign_t *a_sign) {
     }
 
     // Direct check for known ZKP-enabled signature types
-    if (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_RING ||
+    if (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_MRING ||
         a_sign->header.type.type == SIG_TYPE_CHIPMUNK) {
         return true;
     }

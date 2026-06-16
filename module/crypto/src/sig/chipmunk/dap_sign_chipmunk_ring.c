@@ -138,7 +138,7 @@ static dap_sign_t *s_chipmunk_ring_create(
     dap_memwipe(l_blob, l_blob_sz);
     DAP_DELETE(l_blob);
 
-    l_sign->header.type.type      = SIG_TYPE_CHIPMUNK_RING;
+    l_sign->header.type.type      = SIG_TYPE_CHIPMUNK_MRING;
     l_sign->header.sign_pkey_size = 0u;
     l_sign->header.sign_size      = (uint32_t)l_blob_sz;
     return l_sign;

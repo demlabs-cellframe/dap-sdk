@@ -52,7 +52,7 @@ static bool s_test_aggregation_support(void) {
     DAP_TEST_ASSERT(l_supports_batch == true, "Chipmunk should support batch verification");
 
     // Test Chipmunk Ring signature type support
-    dap_sign_type_t l_chipmunk_ring_type = {.type = SIG_TYPE_CHIPMUNK_RING};
+    dap_sign_type_t l_chipmunk_ring_type = {.type = SIG_TYPE_CHIPMUNK_MRING};
     bool l_ring_supports_agg = dap_sign_type_supports_aggregation(l_chipmunk_ring_type);
     DAP_TEST_ASSERT(l_ring_supports_agg == true, "Chipmunk Ring should support aggregation");
 
@@ -83,7 +83,7 @@ static bool s_test_aggregation_types_query(void) {
                    "First aggregation type should be tree-based");
 
     // Test Chipmunk Ring
-    dap_sign_type_t l_chipmunk_ring_type = {.type = SIG_TYPE_CHIPMUNK_RING};
+    dap_sign_type_t l_chipmunk_ring_type = {.type = SIG_TYPE_CHIPMUNK_MRING};
     uint32_t l_ring_count = dap_sign_get_supported_aggregation_types(l_chipmunk_ring_type, l_agg_types, 5);
     DAP_TEST_ASSERT(l_ring_count > 0, "Chipmunk Ring should support at least one aggregation type");
 
@@ -104,7 +104,7 @@ static bool s_test_signature_info_functions(void) {
     DAP_TEST_ASSERT(l_chipmunk_str != NULL, "Chipmunk type string should not be NULL");
     DAP_TEST_ASSERT(strlen(l_chipmunk_str) > 0, "Chipmunk type string should not be empty");
 
-    const char* l_chipmunk_ring_str = dap_sign_type_to_str((dap_sign_type_t){.type = SIG_TYPE_CHIPMUNK_RING});
+    const char* l_chipmunk_ring_str = dap_sign_type_to_str((dap_sign_type_t){.type = SIG_TYPE_CHIPMUNK_MRING});
     DAP_TEST_ASSERT(l_chipmunk_ring_str != NULL, "Chipmunk Ring type string should not be NULL");
     DAP_TEST_ASSERT(strlen(l_chipmunk_ring_str) > 0, "Chipmunk Ring type string should not be empty");
 
@@ -113,7 +113,7 @@ static bool s_test_signature_info_functions(void) {
     DAP_TEST_ASSERT(l_chipmunk_back.type == SIG_TYPE_CHIPMUNK, "Reverse conversion should work for Chipmunk");
 
     dap_sign_type_t l_chipmunk_ring_back = dap_sign_type_from_str(l_chipmunk_ring_str);
-    DAP_TEST_ASSERT(l_chipmunk_ring_back.type == SIG_TYPE_CHIPMUNK_RING, "Reverse conversion should work for Chipmunk Ring");
+    DAP_TEST_ASSERT(l_chipmunk_ring_back.type == SIG_TYPE_CHIPMUNK_MRING, "Reverse conversion should work for Chipmunk Ring");
 
     log_it(L_INFO, "✓ Signature info functions tests passed");
     return true;

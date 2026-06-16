@@ -265,7 +265,7 @@ static bool s_test_distributed_consensus_workflow(void) {
     log_it(L_INFO, "Testing Chipmunk Ring signature properties with %u participants", l_signatures_count);
 
     // Verify ring signature type
-    DAP_TEST_ASSERT(l_ring_signature->header.type.type == SIG_TYPE_CHIPMUNK_RING,
+    DAP_TEST_ASSERT(l_ring_signature->header.type.type == SIG_TYPE_CHIPMUNK_MRING,
                    "Signature should be CHIPMUNK_RING type");
 
     // Test ring signature detection
