@@ -12,13 +12,21 @@
 #include <stddef.h>
 
 #include "lotrs_params.h"
+#include "dap_serialize.h"
 
-/* Polynomial: d coefficients in [0, q). */
+/* Maximum ring dimension across all parameter sets. */
+#define LOTRS_D_MAX 128u
+
+/* Polynomial: d coefficients in [0, q).
+ * Wire-serializable wrapper with fixed-size array. */
 typedef struct lotrs_poly {
-    uint64_t *coeffs;  /* allocated separately */
+    uint64_t coeffs[LOTRS_D_MAX];
 } lotrs_poly_t;
 
-/* Polynomial vector: n polynomials (array of pointers). */
+/* Polynomial wire schema (dap_serialize). */
+extern const dap_serialize_schema_t lotrs_poly_schema;
+
+/* Polynomial vector: n polynomials. */
 typedef struct lotrs_polyvec {
     lotrs_poly_t **polys;
     uint32_t       n;
@@ -52,8 +60,6 @@ void lotrs_poly_neg(lotrs_poly_t *out, const lotrs_poly_t *a,
                     const lotrs_params_t *par);
 void lotrs_poly_mul(lotrs_poly_t *out, const lotrs_poly_t *a,
                     const lotrs_poly_t *b, const lotrs_params_t *par);
-
-/* Scalar multiplication: out = scalar * a (mod q). */
 void lotrs_poly_scalar_mul(lotrs_poly_t *out, uint64_t scalar,
                            const lotrs_poly_t *a, const lotrs_params_t *par);
 
@@ -63,16 +69,13 @@ void lotrs_polyvec_add(lotrs_polyvec_t *out, const lotrs_polyvec_t *a,
                        const lotrs_polyvec_t *b, const lotrs_params_t *par);
 void lotrs_polyvec_sub(lotrs_polyvec_t *out, const lotrs_polyvec_t *a,
                        const lotrs_polyvec_t *b, const lotrs_params_t *par);
-
-/* out = A * x (matrix-vector product, mod q). */
 void lotrs_polymat_vecmul(lotrs_polyvec_t *out, const lotrs_polymat_t *A,
                           const lotrs_polyvec_t *x, const lotrs_params_t *par);
 
 /* --- Centered representation --- */
-/* Convert [0, q) to centered [-(q-1)/2, (q-1)/2]. */
 int64_t lotrs_center(uint64_t a, uint64_t q);
 
-/* --- Serialization --- */
+/* --- Serialization (dap_serialize) --- */
 size_t lotrs_poly_bytes(const lotrs_params_t *par);
 int lotrs_poly_pack(uint8_t *out, size_t out_len,
                     const lotrs_poly_t *p, const lotrs_params_t *par);

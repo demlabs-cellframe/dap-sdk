@@ -14,18 +14,37 @@
 #include "dap_memwipe.h"
 #include "dap_serialize.h"
 
+/* --- Polynomial schema (dap_serialize) --- */
+
+static const dap_serialize_field_t s_lotrs_poly_fields[] = {
+    {
+        .name = "coeffs",
+        .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(lotrs_poly_t, coeffs),
+        .size = sizeof(uint64_t),
+        .fixed_count = LOTRS_D_MAX,
+        .element_type = DAP_SERIALIZE_TYPE_UINT64,
+    },
+};
+
+DAP_SERIALIZE_SCHEMA_DEFINE(lotrs_poly_schema,
+                            lotrs_poly_t,
+                            s_lotrs_poly_fields);
+
 /* --- Allocation --- */
 
 lotrs_poly_t *lotrs_poly_alloc(const lotrs_params_t *a_par)
 {
-    lotrs_poly_t *l_p = DAP_NEW_Z(lotrs_poly_t);
-    if (!l_p) return NULL;
-    l_p->coeffs = DAP_NEW_Z_SIZE(uint64_t, a_par->d * sizeof(uint64_t));
-    if (!l_p->coeffs) {
-        DAP_DELETE(l_p);
-        return NULL;
+    (void)a_par;
+    return DAP_NEW_Z(lotrs_poly_t);
+}
+
+void lotrs_poly_free(lotrs_poly_t *a_p)
+{
+    if (a_p) {
+        DAP_DELETE(a_p);
     }
-    return l_p;
 }
 
 lotrs_polyvec_t lotrs_polyvec_alloc(const lotrs_params_t *a_par, uint32_t a_n)
@@ -69,17 +88,6 @@ lotrs_polymat_t lotrs_polymat_alloc(const lotrs_params_t *a_par,
         }
     }
     return l_m;
-}
-
-void lotrs_poly_free(lotrs_poly_t *a_p)
-{
-    if (a_p) {
-        if (a_p->coeffs) {
-            /* Wipe before freeing — coefficients may be secret. */
-            DAP_DELETE(a_p->coeffs);
-        }
-        DAP_DELETE(a_p);
-    }
 }
 
 void lotrs_polyvec_free(lotrs_polyvec_t *a_v)
@@ -154,10 +162,6 @@ void lotrs_poly_neg(lotrs_poly_t *a_out, const lotrs_poly_t *a_a,
     }
 }
 
-/*
- * Negacyclic schoolbook multiplication: out = a * b mod (X^d + 1, q).
- * O(d^2) — fine for d=32.
- */
 void lotrs_poly_mul(lotrs_poly_t *a_out, const lotrs_poly_t *a_a,
                     const lotrs_poly_t *a_b, const lotrs_params_t *a_par)
 {
@@ -232,7 +236,6 @@ void lotrs_polyvec_sub(lotrs_polyvec_t *a_out, const lotrs_polyvec_t *a_a,
     }
 }
 
-/* out = A * x (matrix-vector). */
 void lotrs_polymat_vecmul(lotrs_polyvec_t *a_out, const lotrs_polymat_t *a_A,
                           const lotrs_polyvec_t *a_x, const lotrs_params_t *a_par)
 {
@@ -262,7 +265,7 @@ int64_t lotrs_center(uint64_t a_a, uint64_t a_q)
     return l_v;
 }
 
-/* --- Serialization --- */
+/* --- Serialization (dap_serialize) --- */
 
 size_t lotrs_poly_bytes(const lotrs_params_t *a_par)
 {
@@ -273,6 +276,8 @@ int lotrs_poly_pack(uint8_t *a_out, size_t a_out_len,
                     const lotrs_poly_t *a_p, const lotrs_params_t *a_par)
 {
     const size_t l_total = lotrs_poly_bytes(a_par);
+    if (a_out_len < l_total) return -EINVAL;
+    /* Use dap_serialize_ptr_to_buffer for raw coefficient copy (LE uint64). */
     return dap_serialize_ptr_to_buffer(a_p->coeffs, l_total, a_out, a_out_len);
 }
 
