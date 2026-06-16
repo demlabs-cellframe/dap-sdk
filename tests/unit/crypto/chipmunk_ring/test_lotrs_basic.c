@@ -463,6 +463,101 @@ static void test_algebraic_check(void)
     lotrs_sk_free(&l_kp.sk);
 }
 
+static void test_multi_signer(void)
+{
+    const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
+    const uint32_t l_N = 4, l_T = 2;
+
+    /* Generate keypairs for all signers. */
+    lotrs_keypair_t l_kps[l_N];
+    for (uint32_t i = 0u; i < l_N; ++i) {
+        uint8_t l_seed[32];
+        for (int j = 0; j < 32; ++j) l_seed[j] = (uint8_t)(0x50 + i);
+        int l_rc = lotrs_keygen(&l_kps[i], l_par, l_seed);
+        dap_assert(l_rc == 0, "multi keygen");
+    }
+
+    /* Build ring with all PKs. */
+    lotrs_ring_pk_t l_ring = {0};
+    l_ring.N = l_N; l_ring.T = l_T;
+    l_ring.pks = DAP_NEW_Z_COUNT(lotrs_pk_t, l_N * l_T);
+    for (uint32_t i = 0u; i < l_N; ++i) {
+        for (uint32_t t = 0u; t < l_T; ++t) {
+            l_ring.pks[i * l_T + t].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
+            for (uint32_t k = 0u; k < l_par->k; ++k) {
+                lotrs_poly_copy(l_ring.pks[i * l_T + t].a_hat.polys[k],
+                                l_kps[i].pk.a_hat.polys[k], l_par);
+            }
+        }
+    }
+
+    /* Round 1: T signers generate commitments. */
+    lotrs_round1_state_t l_r1_states[l_T];
+    lotrs_round1_output_t l_r1_outs[l_T];
+    for (uint32_t u = 0u; u < l_T; ++u) {
+        uint8_t l_seed[32];
+        for (int j = 0; j < 32; ++j) l_seed[j] = (uint8_t)(0xC0 + u);
+        int l_rc = lotrs_sign_round1(&l_r1_states[u], &l_r1_outs[u],
+                                     l_par, &l_kps[u].sk, u, l_seed);
+        dap_assert(l_rc == 0, "round1");
+    }
+
+    /* Aggregate w = Σ w_u. */
+    lotrs_polyvec_t l_w_agg = lotrs_polyvec_alloc(l_par, l_par->k);
+    lotrs_polyvec_zero(&l_w_agg, l_par);
+    for (uint32_t u = 0u; u < l_T; ++u) {
+        lotrs_polyvec_add(&l_w_agg, &l_w_agg, l_r1_outs[u].w, l_par);
+    }
+
+    /* Round 2: T signers compute response shares. */
+    const uint8_t l_msg[] = "multi-signer-test";
+    lotrs_round2_output_t l_r2_outs[l_T];
+    for (uint32_t u = 0u; u < l_T; ++u) {
+        int l_rc = lotrs_sign_round2(&l_r2_outs[u], &l_r1_states[u],
+                                     l_par, &l_kps[u].sk, &l_w_agg,
+                                     l_msg, sizeof(l_msg) - 1);
+        if (l_rc == -2) {
+            /* Rejection — retry round 1. */
+            uint8_t l_seed2[32];
+            for (int j = 0; j < 32; ++j) l_seed2[j] = (uint8_t)(0xD0 + u);
+            lotrs_round1_state_free(&l_r1_states[u]);
+            lotrs_round1_output_free(&l_r1_outs[u]);
+            l_rc = lotrs_sign_round1(&l_r1_states[u], &l_r1_outs[u],
+                                     l_par, &l_kps[u].sk, u, l_seed2);
+            dap_assert(l_rc == 0, "round1 retry");
+            /* Re-aggregate w. */
+            lotrs_polyvec_zero(&l_w_agg, l_par);
+            for (uint32_t v = 0u; v < l_T; ++v) {
+                lotrs_polyvec_add(&l_w_agg, &l_w_agg, l_r1_outs[v].w, l_par);
+            }
+            l_rc = lotrs_sign_round2(&l_r2_outs[u], &l_r1_states[u],
+                                     l_par, &l_kps[u].sk, &l_w_agg,
+                                     l_msg, sizeof(l_msg) - 1);
+        }
+        dap_assert(l_rc == 0, "round2");
+    }
+
+    /* Aggregate. */
+    lotrs_signature_t l_sig = {0};
+    int l_rc = lotrs_sign_aggregate(&l_sig, l_par, l_r1_outs, l_r2_outs, l_T);
+    dap_assert(l_rc == 0, "aggregate");
+    dap_assert(l_sig.data != NULL && l_sig.len > 0, "aggregate non-empty");
+
+    /* Cleanup. */
+    for (uint32_t u = 0u; u < l_T; ++u) {
+        lotrs_round1_state_free(&l_r1_states[u]);
+        lotrs_round1_output_free(&l_r1_outs[u]);
+        lotrs_round2_output_free(&l_r2_outs[u]);
+    }
+    lotrs_signature_free(&l_sig);
+    lotrs_polyvec_free(&l_w_agg);
+    lotrs_ring_pk_free(&l_ring);
+    for (uint32_t i = 0u; i < l_N; ++i) {
+        lotrs_pk_free(&l_kps[i].pk);
+        lotrs_sk_free(&l_kps[i].sk);
+    }
+}
+
 int main(void)
 {
     dap_set_appname("test_lotrs_basic");
@@ -473,6 +568,7 @@ int main(void)
     test_pack_roundtrip();
     test_rice_codec();
     test_shamir_split_reconstruct();
+    test_multi_signer();
     test_sign_verify();
     test_determinism();
     test_algebraic_check();
