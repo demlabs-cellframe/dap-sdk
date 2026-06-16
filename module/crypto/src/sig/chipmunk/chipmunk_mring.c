@@ -19,6 +19,7 @@
 #include "dap_common.h"
 #include "dap_hash_sha3.h"
 #include "dap_memwipe.h"
+#include "dap_serialize.h"
 #include "chipmunk_ring.h"
 #include "chipmunk_mring.h"
 #include "chipmunk_mring_params.h"
@@ -29,6 +30,22 @@
 #include "chipmunk_poly.h"
 
 #define LOG_TAG "chipmunk_mring"
+
+/* --- Header serialization schema (dap_serialize) --- */
+
+static const dap_serialize_field_t s_mring_header_fields[] = {
+    DAP_SERIALIZE_FIELD_SIMPLE(chipmunk_mring_header_t, magic,      DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(chipmunk_mring_header_t, version,    DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(chipmunk_mring_header_t, params_id,  DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(chipmunk_mring_header_t, n_ring,     DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(chipmunk_mring_header_t, threshold,  DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(chipmunk_mring_header_t, fold_depth, DAP_SERIALIZE_TYPE_UINT32),
+    DAP_SERIALIZE_FIELD_SIMPLE(chipmunk_mring_header_t, flags,      DAP_SERIALIZE_TYPE_UINT32),
+};
+
+DAP_SERIALIZE_SCHEMA_DEFINE(s_mring_header_schema,
+                            chipmunk_mring_header_t,
+                            s_mring_header_fields);
 
 #define MRING_SIGN_MASTER_DOMAIN "chipmunk-mring-sign-master-v1"
 #define MRING_SIGN_RB_DOMAIN     "chipmunk-mring-sign-rb-v1"
@@ -77,13 +94,12 @@ uint32_t chipmunk_mring_fold_depth_for(uint32_t a_n_ring)
 void chipmunk_mring_header_write(uint8_t a_buf[CHIPMUNK_MRING_HEADER_BYTES],
                                  const chipmunk_mring_header_t *a_hdr)
 {
-    s_store_u32_le(a_buf +  0, a_hdr->magic);
-    s_store_u32_le(a_buf +  4, a_hdr->version);
-    s_store_u32_le(a_buf +  8, a_hdr->params_id);
-    s_store_u32_le(a_buf + 12, a_hdr->n_ring);
-    s_store_u32_le(a_buf + 16, a_hdr->threshold);
-    s_store_u32_le(a_buf + 20, a_hdr->fold_depth);
-    s_store_u32_le(a_buf + 24, a_hdr->flags);
+    dap_serialize_result_t l_res = dap_serialize_to_buffer_raw(
+        &s_mring_header_schema, a_hdr, a_buf,
+        CHIPMUNK_MRING_HEADER_BYTES, NULL);
+    if (l_res.error_code != 0) {
+        log_it(L_ERROR, "MRNG header_write failed: %s", l_res.error_message);
+    }
 }
 
 chipmunk_ring_error_t chipmunk_mring_header_read(
@@ -97,51 +113,47 @@ chipmunk_ring_error_t chipmunk_mring_header_read(
         return CHIPMUNK_RING_ERR_BUFFER_TOO_SMALL;
     }
 
-    chipmunk_mring_header_t l_h = {
-        .magic      = s_load_u32_le(a_buf +  0),
-        .version    = s_load_u32_le(a_buf +  4),
-        .params_id  = s_load_u32_le(a_buf +  8),
-        .n_ring     = s_load_u32_le(a_buf + 12),
-        .threshold  = s_load_u32_le(a_buf + 16),
-        .fold_depth = s_load_u32_le(a_buf + 20),
-        .flags      = s_load_u32_le(a_buf + 24),
-    };
+    memset(a_hdr_out, 0, sizeof(*a_hdr_out));
+    dap_serialize_result_t l_res = dap_serialize_from_buffer_raw(
+        &s_mring_header_schema, a_buf, a_buf_size, a_hdr_out, NULL);
+    if (l_res.error_code != 0) {
+        return CHIPMUNK_RING_ERR_BUFFER_TOO_SMALL;
+    }
 
-    if (l_h.magic != CHIPMUNK_MRING_MAGIC) {
+    if (a_hdr_out->magic != CHIPMUNK_MRING_MAGIC) {
         return CHIPMUNK_RING_ERR_MAGIC_MISMATCH;
     }
-    if (l_h.version != CHIPMUNK_MRING_VERSION) {
+    if (a_hdr_out->version != CHIPMUNK_MRING_VERSION) {
         return CHIPMUNK_RING_ERR_VERSION_MISMATCH;
     }
-    if (l_h.params_id != CHIPMUNK_MRING_PARAMS_ID) {
+    if (a_hdr_out->params_id != CHIPMUNK_MRING_PARAMS_ID) {
         return CHIPMUNK_RING_ERR_PARAMS_MISMATCH;
     }
-    if (l_h.n_ring < CHIPMUNK_MRING_N_MIN ||
-        l_h.n_ring > CHIPMUNK_MRING_N_MAX) {
+    if (a_hdr_out->n_ring < CHIPMUNK_MRING_N_MIN ||
+        a_hdr_out->n_ring > CHIPMUNK_MRING_N_MAX) {
         return CHIPMUNK_RING_ERR_N_RING_OUT_OF_RANGE;
     }
-    if (l_h.threshold < CHIPMUNK_MRING_T_MIN ||
-        l_h.threshold > l_h.n_ring) {
+    if (a_hdr_out->threshold < CHIPMUNK_MRING_T_MIN ||
+        a_hdr_out->threshold > a_hdr_out->n_ring) {
         return CHIPMUNK_RING_ERR_T_OUT_OF_RANGE;
     }
-    const uint32_t l_expected_depth = chipmunk_mring_fold_depth_for(l_h.n_ring);
-    if (l_h.fold_depth != l_expected_depth) {
+    const uint32_t l_expected_depth = chipmunk_mring_fold_depth_for(a_hdr_out->n_ring);
+    if (a_hdr_out->fold_depth != l_expected_depth) {
         return CHIPMUNK_RING_ERR_PARAMS_MISMATCH;
     }
-    if ((l_h.flags & CHIPMUNK_MRING_FLAG_LINKABLE) == 0u) {
+    if ((a_hdr_out->flags & CHIPMUNK_MRING_FLAG_LINKABLE) == 0u) {
         return CHIPMUNK_RING_ERR_PARAMS_MISMATCH;
     }
-    if ((l_h.flags & CHIPMUNK_MRING_FLAGS_RESERVED) != 0u) {
+    if ((a_hdr_out->flags & CHIPMUNK_MRING_FLAGS_RESERVED) != 0u) {
         return CHIPMUNK_RING_ERR_PARAMS_MISMATCH;
     }
 
     const uint32_t l_expected_size =
-        chipmunk_mring_wire_size(l_h.fold_depth);
+        chipmunk_mring_wire_size(a_hdr_out->fold_depth);
     if (a_buf_size < (size_t)l_expected_size) {
         return CHIPMUNK_RING_ERR_BUFFER_TOO_SMALL;
     }
 
-    *a_hdr_out = l_h;
     return CHIPMUNK_RING_OK;
 }
 

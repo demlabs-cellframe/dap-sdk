@@ -24,6 +24,7 @@ This file is part of DAP SDK the open source project
 #include "dap_serialize.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include <errno.h>
 #include <string.h>
 #ifdef DAP_OS_WINDOWS
 #include <winsock2.h>
@@ -2038,4 +2039,24 @@ static void s_read_bigint_le(const uint8_t *a_buffer, uint8_t *a_value, size_t a
     for (size_t i = 0; i < a_size; i++) {
         a_value[i] = a_buffer[i];
     }
+}
+
+/* --- Direct pointer serialization (no schema needed) --- */
+
+int dap_serialize_ptr_to_buffer(const void *a_data, size_t a_size,
+                                uint8_t *a_buffer, size_t a_buffer_size)
+{
+    if (!a_data || !a_buffer) return -EINVAL;
+    if (a_buffer_size < a_size) return -ENOMEM;
+    memcpy(a_buffer, a_data, a_size);
+    return 0;
+}
+
+int dap_serialize_ptr_from_buffer(const uint8_t *a_buffer, size_t a_buffer_size,
+                                  void *a_data, size_t a_size)
+{
+    if (!a_buffer || !a_data) return -EINVAL;
+    if (a_buffer_size < a_size) return -EINVAL;
+    memcpy(a_data, a_buffer, a_size);
+    return 0;
 }

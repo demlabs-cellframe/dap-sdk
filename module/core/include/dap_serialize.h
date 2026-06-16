@@ -633,6 +633,35 @@ dap_serialize_result_t dap_serialize_copy_object(const dap_serialize_schema_t *a
 #define DAP_SERIALIZE_MAGIC_NUMBER              0xDAC5E412  ///< DAP Serialize magic number
 
 /**
+ * @brief Serialize raw bytes from a pointer to a buffer.
+ *
+ * No schema needed — just copies a_size bytes from a_data to a_buffer.
+ * Useful for serializing polynomial coefficients, raw byte arrays, etc.
+ *
+ * @param a_data   Source pointer.
+ * @param a_size   Number of bytes to serialize.
+ * @param a_buffer Destination buffer.
+ * @param a_buffer_size  Destination buffer size.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int dap_serialize_ptr_to_buffer(const void *a_data, size_t a_size,
+                                uint8_t *a_buffer, size_t a_buffer_size);
+
+/**
+ * @brief Deserialize raw bytes from a buffer to a pointer.
+ *
+ * @param a_buffer Source buffer.
+ * @param a_buffer_size  Source buffer size.
+ * @param a_data   Destination pointer.
+ * @param a_size   Number of bytes to deserialize.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int dap_serialize_ptr_from_buffer(const uint8_t *a_buffer, size_t a_buffer_size,
+                                  void *a_data, size_t a_size);
+
+/**
  * @brief Maximum element count allowed for ARRAY_FIXED and ARRAY_DYNAMIC.
  *
  * Hard-coded sanity limit to prevent resource-exhaustion attacks via maliciously

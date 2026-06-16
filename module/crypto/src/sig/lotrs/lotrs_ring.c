@@ -12,6 +12,7 @@
 #define LOG_TAG "lotrs_ring"
 #include "dap_common.h"
 #include "dap_memwipe.h"
+#include "dap_serialize.h"
 
 /* --- Allocation --- */
 
@@ -271,32 +272,20 @@ size_t lotrs_poly_bytes(const lotrs_params_t *a_par)
 int lotrs_poly_pack(uint8_t *a_out, size_t a_out_len,
                     const lotrs_poly_t *a_p, const lotrs_params_t *a_par)
 {
-    const size_t l_per = 8u;
-    const size_t l_total = (size_t)a_par->d * l_per;
-    if (a_out_len < l_total) return -EINVAL;
-
-    for (uint32_t i = 0u; i < a_par->d; ++i) {
-        uint64_t l_v = a_p->coeffs[i];
-        for (uint32_t b = 0u; b < l_per; ++b) {
-            a_out[i * l_per + b] = (uint8_t)(l_v >> (8u * b));
-        }
-    }
-    return 0;
+    const size_t l_total = lotrs_poly_bytes(a_par);
+    return dap_serialize_ptr_to_buffer(a_p->coeffs, l_total, a_out, a_out_len);
 }
 
 int lotrs_poly_unpack(lotrs_poly_t *a_p, const uint8_t *a_in, size_t a_in_len,
                       const lotrs_params_t *a_par)
 {
-    const size_t l_per = 8u;
-    const size_t l_total = (size_t)a_par->d * l_per;
+    const size_t l_total = lotrs_poly_bytes(a_par);
     if (a_in_len < l_total) return -EINVAL;
-
+    int l_rc = dap_serialize_ptr_from_buffer(a_in, a_in_len, a_p->coeffs, l_total);
+    if (l_rc != 0) return l_rc;
+    /* Reduce mod q. */
     for (uint32_t i = 0u; i < a_par->d; ++i) {
-        uint64_t l_v = 0;
-        for (uint32_t b = 0u; b < l_per; ++b) {
-            l_v |= (uint64_t)a_in[i * l_per + b] << (8u * b);
-        }
-        a_p->coeffs[i] = l_v % a_par->q;
+        a_p->coeffs[i] %= a_par->q;
     }
     return 0;
 }
