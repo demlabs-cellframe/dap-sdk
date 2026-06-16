@@ -539,8 +539,12 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
     l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
     l_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
 
-    l_es->buf_in     = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
-    l_es->buf_out    = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
+    /* Allocate buffers for all socket types.  Timer and event esockets use
+     * their fd for signaling only and don't need data buffers — but they
+     * still get allocated to avoid NULL-pointer crashes in the event loop
+     * when a socket is reused or its type changes. */
+    l_es->buf_in     = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
+    l_es->buf_out    = DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
 
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);

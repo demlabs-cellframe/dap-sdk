@@ -29,6 +29,7 @@
 #include "dap_worker.h"
 #include "dap_context_queue.h"
 #include "dap_timerfd.h"
+#include "dap_timerfd.h"
 #include "dap_events.h"
 #include "dap_enc_base64.h"
 #include "dap_common.h"
@@ -230,6 +231,12 @@ int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
     if (l_worker->queue_callback) {
         dap_context_queue_delete(l_worker->queue_callback);
         l_worker->queue_callback = NULL;
+    }
+    
+    /* Clean up the activity-check timer created in callback_started */
+    if (l_worker->timer_check_activity) {
+        dap_timerfd_delete_unsafe(l_worker->timer_check_activity);
+        l_worker->timer_check_activity = NULL;
     }
     
     dap_context_remove(a_context->event_exit);

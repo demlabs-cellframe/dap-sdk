@@ -79,12 +79,12 @@ void dap_http_client_new( dap_events_socket_t *a_esocket, void *a_arg )
 {
     (void) a_arg;
 
-
     a_esocket->_inheritor = DAP_NEW_Z( dap_http_client_t );
 
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
     l_http_client->esocket = a_esocket;
     l_http_client->http = a_esocket->server ? DAP_HTTP_SERVER( a_esocket->server ) : NULL;
+    l_http_client->keep_alive = true;  /* HTTP/1.1 default — overridden by Connection header */
     debug_if(s_debug_more, L_DEBUG, "dap_http_client_new: created HTTP client, server=%p, http_server=%p (name='%s')", 
            (void*)a_esocket->server, (void*)l_http_client->http,
            l_http_client->http ? l_http_client->http->server_name : "NULL");

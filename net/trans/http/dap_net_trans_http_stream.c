@@ -795,6 +795,11 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     l_ctx->client = l_client;
     l_ctx->old_callback_arg = l_fsm->callback_arg;
 
+    /* Auto-invalidate l_ctx->stream when the stream is deleted.
+     * dap_stream_delete_unsafe checks client_stream_ref and NULLs *client_stream_ref. */
+    if (a_stream)
+        a_stream->client_stream_ref = &l_ctx->stream;
+
     // Set ctx as callback arg
     l_fsm->callback_arg = l_ctx;
 
