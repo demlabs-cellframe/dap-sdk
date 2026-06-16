@@ -98,6 +98,4 @@ CHIPMUNK_MRING_KAT_DUMP=1 ./build.debug/tests/bin/test_unit_crypto_chipmunk_mrin
 
 ## Known Issues
 
-- Heap allocs in hash helpers (~12 per sign path) — performance optimization opportunity
-- Double NTT of A_pk/A_T in verify — caching opportunity
-- Wire format exact-size check prevents forward-compatible "ignore trailing bytes"
+- None remaining — all review findings resolved
