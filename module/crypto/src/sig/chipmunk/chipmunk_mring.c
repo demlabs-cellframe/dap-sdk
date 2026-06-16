@@ -26,6 +26,7 @@
 #include "chipmunk_mring_fold.h"
 #include "chipmunk_mring_statement.h"
 #include "chipmunk_lrs.h"
+#include "chipmunk_poly.h"
 
 #define LOG_TAG "chipmunk_mring"
 
@@ -195,6 +196,9 @@ static chipmunk_ring_error_t s_map_int_err(int a_rc)
     }
 }
 
+/* Stack buffer threshold — covers domain seed derivation (typical ~80 B). */
+#define MRING_HASH_STACK_BUF 256u
+
 static int s_hash_domain_seed(uint8_t a_out[32],
                               const char *a_domain,
                               const uint8_t *a_payload,
@@ -202,7 +206,11 @@ static int s_hash_domain_seed(uint8_t a_out[32],
 {
     const size_t l_dom_len = strlen(a_domain);
     const size_t l_total = 4u + l_dom_len + 4u + a_payload_len;
-    uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_total);
+
+    uint8_t l_stack[MRING_HASH_STACK_BUF];
+    uint8_t *l_buf = (l_total <= MRING_HASH_STACK_BUF)
+                         ? l_stack
+                         : DAP_NEW_Z_SIZE(uint8_t, l_total);
     if (!l_buf) {
         return -ENOMEM;
     }
@@ -221,7 +229,9 @@ static int s_hash_domain_seed(uint8_t a_out[32],
     if (rc == 0) {
         memcpy(a_out, l_h.raw, 32u);
     }
-    DAP_DELETE(l_buf);
+    if (l_total > MRING_HASH_STACK_BUF) {
+        DAP_DELETE(l_buf);
+    }
     return rc;
 }
 
@@ -401,6 +411,31 @@ static int s_unpack_bind_block(chipmunk_poly_t a_z_x[CHIPMUNK_MRING_K_PK],
         }
     }
     return chipmunk_lrs_poly_qunpack(a_c_star_out, a_buf + l_c_off);
+}
+
+/*
+ * Like chipmunk_lrs_relation_eval but assumes a_A is already in NTT domain.
+ * Saves K_PK NTTs per call when A is reused across multiple evals.
+ */
+static int s_relation_eval_ntt(chipmunk_poly_t *a_out,
+                                const chipmunk_poly_t a_A_ntt[CHIPMUNK_MRING_K_PK],
+                                const chipmunk_poly_t a_x[CHIPMUNK_MRING_K_PK])
+{
+    memset(a_out, 0, sizeof(*a_out));
+    for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
+        chipmunk_poly_t l_x = a_x[j];
+        chipmunk_poly_t l_prod;
+        int rc = chipmunk_poly_ntt(&l_x);
+        if (rc != 0) return rc;
+        chipmunk_poly_mul_ntt(&l_prod, &a_A_ntt[j], &l_x);
+        rc = chipmunk_poly_invntt(&l_prod);
+        if (rc != 0) return rc;
+        for (size_t i = 0u; i < CHIPMUNK_N; ++i) {
+            a_out->coeffs[i] =
+                s_canon_mod_q((int64_t)a_out->coeffs[i] + l_prod.coeffs[i]);
+        }
+    }
+    return 0;
 }
 
 static int s_verify_bind_block(const chipmunk_poly_t a_A_pk[CHIPMUNK_MRING_K_PK],
@@ -917,6 +952,8 @@ static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
 
     chipmunk_poly_t l_A_pk[CHIPMUNK_MRING_K_PK];
     chipmunk_poly_t l_A_T[CHIPMUNK_MRING_K_PK];
+    chipmunk_poly_t l_A_pk_ntt[CHIPMUNK_MRING_K_PK];
+    chipmunk_poly_t l_A_T_ntt[CHIPMUNK_MRING_K_PK];
     rc = chipmunk_lrs_derive_A_pk(l_A_pk, CHIPMUNK_LRS_PARAMS_C0);
     if (rc != 0) {
         chipmunk_mring_fold_proof_free(l_proof);
@@ -929,12 +966,137 @@ static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
         DAP_DELETE(l_proof);
         goto out;
     }
-
-    rc = s_verify_bind_block(l_A_pk, l_A_T, l_z_x, &l_c_star, &l_Y_pk, &l_T_tag,
-                             &l_c, l_fs_seed, l_proof, l_hdr.fold_depth);
-    if (rc != 0) {
-        log_it(L_ERROR, "MRNG verify: bind block failed (rc=%d)", rc);
+    /* Pre-NTT A_pk and A_T once for the bind-verify reconstruct. */
+    for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
+        l_A_pk_ntt[j] = l_A_pk[j];
+        l_A_T_ntt[j] = l_A_T[j];
+        rc = chipmunk_poly_ntt(&l_A_pk_ntt[j]);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+        rc = chipmunk_poly_ntt(&l_A_T_ntt[j]);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
     }
+
+    /* Inline bind-verify-reconstruct with cached NTT. */
+    for (uint32_t j = 0u; j < CHIPMUNK_MRING_K_PK; ++j) {
+        if (chipmunk_lrs_poly_chknorm_centered(
+                &l_z_x[j], CHIPMUNK_MRING_RESPONSE_BOUND) != 0) {
+            log_it(L_ERROR, "MRNG verify: ‖z_x[%u]‖∞ exceeds RESPONSE_BOUND", j);
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            rc = -ERANGE;
+            goto out;
+        }
+    }
+
+    chipmunk_poly_t l_M_pk, l_M_T;
+    rc = s_relation_eval_ntt(&l_M_pk, l_A_pk_ntt, l_z_x);
+    if (rc != 0) {
+        chipmunk_mring_fold_proof_free(l_proof);
+        DAP_DELETE(l_proof);
+        goto out;
+    }
+    /* M_pk = A_pk·z_x − c*·Y_pk. */
+    {
+        chipmunk_poly_t l_cstar_ntt = l_c_star;
+        chipmunk_poly_t l_Ypk_ntt = l_Y_pk;
+        rc = chipmunk_poly_ntt(&l_cstar_ntt);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+        rc = chipmunk_poly_ntt(&l_Ypk_ntt);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+        chipmunk_poly_t l_cY;
+        chipmunk_poly_mul_ntt(&l_cY, &l_cstar_ntt, &l_Ypk_ntt);
+        rc = chipmunk_poly_invntt(&l_cY);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+        rc = chipmunk_poly_sub(&l_M_pk, &l_M_pk, &l_cY);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+    }
+
+    rc = s_relation_eval_ntt(&l_M_T, l_A_T_ntt, l_z_x);
+    if (rc != 0) {
+        chipmunk_mring_fold_proof_free(l_proof);
+        DAP_DELETE(l_proof);
+        goto out;
+    }
+    {
+        chipmunk_poly_t l_cstar_ntt = l_c_star;
+        chipmunk_poly_t l_T_ntt = l_T_tag;
+        rc = chipmunk_poly_ntt(&l_cstar_ntt);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+        rc = chipmunk_poly_ntt(&l_T_ntt);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+        chipmunk_poly_t l_cT;
+        chipmunk_poly_mul_ntt(&l_cT, &l_cstar_ntt, &l_T_ntt);
+        rc = chipmunk_poly_invntt(&l_cT);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+        rc = chipmunk_poly_sub(&l_M_T, &l_M_T, &l_cT);
+        if (rc != 0) {
+            chipmunk_mring_fold_proof_free(l_proof);
+            DAP_DELETE(l_proof);
+            goto out;
+        }
+    }
+
+    /* Bind FS and c* check. */
+    uint8_t l_bind_fs[32];
+    chipmunk_poly_t l_c_chk;
+    rc = chipmunk_mring_transcript_bind_fs(
+        l_bind_fs, l_fs_seed, &l_c, &l_M_pk, &l_M_T,
+        l_proof, l_hdr.fold_depth);
+    if (rc != 0) {
+        chipmunk_mring_fold_proof_free(l_proof);
+        DAP_DELETE(l_proof);
+        goto out;
+    }
+    rc = chipmunk_mring_transcript_sample_c_star(&l_c_chk, l_bind_fs);
+    if (rc != 0) {
+        chipmunk_mring_fold_proof_free(l_proof);
+        DAP_DELETE(l_proof);
+        goto out;
+    }
+    if (!s_poly_equal(&l_c_star, &l_c_chk)) {
+        log_it(L_ERROR, "MRNG verify: bind block c* mismatch");
+        chipmunk_mring_fold_proof_free(l_proof);
+        DAP_DELETE(l_proof);
+        rc = -EINVAL;
+        goto out;
+    }
+
     chipmunk_mring_fold_proof_free(l_proof);
     DAP_DELETE(l_proof);
 

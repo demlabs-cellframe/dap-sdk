@@ -37,6 +37,8 @@ static void s_hash_update_bytes(uint8_t **a_pos, const void *a_data, size_t a_si
     *a_pos += a_size;
 }
 
+#define MRING_HASH_STACK_BUF 4096u
+
 static int s_hash_len_prefixed(uint8_t a_out[32],
                                const char *a_domain,
                                const void *a_data,
@@ -51,7 +53,11 @@ static int s_hash_len_prefixed(uint8_t a_out[32],
     }
 
     const size_t l_total = 4u + l_domain_len + 4u + a_data_size;
-    uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_total);
+
+    uint8_t l_stack[MRING_HASH_STACK_BUF];
+    uint8_t *l_buf = (l_total <= MRING_HASH_STACK_BUF)
+                         ? l_stack
+                         : DAP_NEW_Z_SIZE(uint8_t, l_total);
     if (!l_buf) {
         return -ENOMEM;
     }
@@ -69,11 +75,15 @@ static int s_hash_len_prefixed(uint8_t a_out[32],
 
     dap_hash_sha3_256_t l_h;
     if (!dap_hash_sha3_256(l_buf, l_total, &l_h)) {
-        DAP_DELETE(l_buf);
+        if (l_total > MRING_HASH_STACK_BUF) {
+            DAP_DELETE(l_buf);
+        }
         return -EIO;
     }
     memcpy(a_out, &l_h, 32u);
-    DAP_DELETE(l_buf);
+    if (l_total > MRING_HASH_STACK_BUF) {
+        DAP_DELETE(l_buf);
+    }
     return 0;
 }
 
@@ -347,7 +357,8 @@ int chipmunk_mring_transcript_bind_fs(
         CHIPMUNK_MRING_HASH_BYTES
         + 3u * (size_t)CHIPMUNK_MRING_POLY_QPACK
         + l_round_bytes
-        + 2u * (size_t)CHIPMUNK_MRING_EXT_QPACK_BYTES;
+        + 2u * (size_t)CHIPMUNK_MRING_EXT_QPACK_BYTES
+        + (size_t)CHIPMUNK_MRING_LEAF_MASK_BYTES;
 
     uint8_t *l_payload = DAP_NEW_Z_SIZE(uint8_t, l_payload_size);
     if (!l_payload) {
@@ -390,6 +401,22 @@ int chipmunk_mring_transcript_bind_fs(
     p += CHIPMUNK_MRING_EXT_QPACK_BYTES;
     rc = chipmunk_mring_ext_qpack(p, CHIPMUNK_MRING_EXT_QPACK_BYTES,
                                   &a_proof->b_star);
+    if (rc != 0) {
+        DAP_DELETE(l_payload);
+        return rc;
+    }
+    p += CHIPMUNK_MRING_EXT_QPACK_BYTES;
+
+    /* Absorb leaf_mask ω (49-bit packed, LEAF_MASK_BYTES). */
+    if (!a_proof->leaf_mask) {
+        DAP_DELETE(l_payload);
+        return -EINVAL;
+    }
+    const int64_t l_leaf_bound =
+        chipmunk_mring_leaf_bound_for_depth(a_fold_depth);
+    rc = chipmunk_mring_leaf_mask_pack(
+        p, (size_t)CHIPMUNK_MRING_LEAF_MASK_BYTES,
+        a_proof->leaf_mask, l_leaf_bound);
     if (rc != 0) {
         DAP_DELETE(l_payload);
         return rc;
