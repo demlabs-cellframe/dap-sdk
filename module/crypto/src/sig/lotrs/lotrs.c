@@ -58,6 +58,8 @@ void lotrs_signature_free(lotrs_signature_t *a_sig)
 int lotrs_keygen(lotrs_keypair_t *a_kp, const lotrs_params_t *a_par,
                  const uint8_t a_seed[32])
 {
+    if (!a_kp || !a_par || !a_seed) return -EINVAL;
+
     lotrs_xof_t *l_xof = lotrs_xof_new(a_seed, 32u);
     if (!l_xof) return -ENOMEM;
 
@@ -119,8 +121,9 @@ int lotrs_sign(lotrs_signature_t *a_sig,
                const lotrs_sk_t *a_sk,
                uint32_t a_signer_idx,
                const uint8_t *a_msg, size_t a_msg_len,
-               const uint8_t a_seed[32])
+                const uint8_t a_seed[32])
 {
+    if (!a_sig || !a_par || !a_sk || !a_msg || !a_seed) return -EINVAL;
     (void)a_ring;
     (void)a_signer_idx;
 
@@ -280,6 +283,8 @@ int lotrs_verify(const lotrs_signature_t *a_sig,
                  const lotrs_ring_pk_t *a_ring,
                  const uint8_t *a_msg, size_t a_msg_len)
 {
+    if (!a_sig || !a_par || !a_ring || !a_msg) return -EINVAL;
+
     size_t l_w_bytes = lotrs_polyvec_bytes(a_par, a_par->k);
     size_t l_c_bytes = lotrs_poly_bytes(a_par);
     const uint32_t l_sk_len = a_par->l + a_par->k;
