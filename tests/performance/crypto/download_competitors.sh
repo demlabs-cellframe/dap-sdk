@@ -1,11 +1,14 @@
 #!/bin/bash
 #
-# Download and build competitor implementations for MRNG benchmarking.
+# Download and build competitor crypto libraries for benchmarking.
 #
 # Competitors:
-#   liboqs — NIST ML-DSA (Dilithium) reference sizes/timings
+#   liboqs  — NIST ML-DSA (Dilithium) reference sizes/timings
+#   raptor  — Lattice-based ring signature (Falcon-based, Zhang 2018)
 #
-# Usage: ./download_competitors.sh
+# Usage: ./download_competitors.sh [--all | --liboqs | --raptor]
+#        Default: --all
+#
 # Results go to competitors/ directory.
 
 set -e
@@ -17,38 +20,65 @@ NPROC=$(nproc 2>/dev/null || echo 4)
 
 mkdir -p "${COMP_DIR}" "${INSTALL_DIR}"
 
-# =============================================================================
-# liboqs — Open Quantum Safe (ML-DSA / Dilithium)
-# =============================================================================
-echo "=== Building liboqs ==="
-LIBOQS_SRC="${COMP_DIR}/liboqs"
+build_liboqs() {
+    echo "=== Building liboqs ==="
+    local SRC="${COMP_DIR}/liboqs"
+    if [ ! -d "${SRC}" ]; then
+        git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git "${SRC}"
+    fi
+    local BUILD="${SRC}/build"
+    mkdir -p "${BUILD}"
+    cmake -S "${SRC}" -B "${BUILD}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DOQS_BUILD_ONLY_LIB=ON \
+        -DOQS_USE_OPENSSL=OFF \
+        -DOQS_MINIMAL_BUILD="SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87"
+    cmake --build "${BUILD}" -j "${NPROC}"
+    cmake --install "${BUILD}"
+    echo "=== liboqs installed ==="
+}
 
-if [ ! -d "${LIBOQS_SRC}" ]; then
-    echo "  -> Cloning liboqs..."
-    git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git "${LIBOQS_SRC}"
-else
-    echo "  -> liboqs already exists"
+build_raptor() {
+    echo "=== Building Raptor ==="
+    local SRC="${COMP_DIR}/raptor"
+    if [ ! -d "${SRC}" ]; then
+        git clone --depth 1 https://github.com/zhenfeizhang/raptor.git "${SRC}"
+    fi
+    cd "${SRC}"
+    gcc -O3 -std=c11 -I. -Ifalcon -Irng \
+        test.c raptor.c linkable_raptor.c poly.c print.c \
+        falcon/falcon-*.c falcon/frng.c falcon/crypto_stream.c falcon/shake.c falcon/nist.c \
+        rng/*.c \
+        -lm -lcrypto -o bench_raptor 2>/dev/null && echo "=== Raptor built ===" || echo "=== Raptor build failed (needs OpenSSL) ==="
+    cd "${SCRIPT_DIR}"
+}
+
+show_help() {
+    echo "Usage: $0 [--all | --liboqs | --raptor]"
+    echo "  --all       Build all competitors (default)"
+    echo "  --liboqs    Build liboqs only"
+    echo "  --raptor    Build Raptor only"
+    echo "  --help      Show this help"
+}
+
+if [ $# -eq 0 ]; then
+    set -- --all
 fi
 
-LIBOQS_BUILD="${LIBOQS_SRC}/build"
-mkdir -p "${LIBOQS_BUILD}"
-
-cmake -S "${LIBOQS_SRC}" -B "${LIBOQS_BUILD}" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DOQS_BUILD_ONLY_LIB=ON \
-    -DOQS_USE_OPENSSL=OFF \
-    -DOQS_MINIMAL_BUILD="SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87"
-
-cmake --build "${LIBOQS_BUILD}" -j "${NPROC}"
-cmake --install "${LIBOQS_BUILD}"
+for arg in "$@"; do
+    case "$arg" in
+        --all)
+            build_liboqs
+            build_raptor
+            ;;
+        --liboqs)   build_liboqs ;;
+        --raptor)   build_raptor ;;
+        --help|-h)  show_help; exit 0 ;;
+        *)          echo "Unknown option: $arg"; show_help; exit 1 ;;
+    esac
+done
 
 echo ""
-echo "=== liboqs installed to ${INSTALL_DIR} ==="
-echo "  Headers: ${INSTALL_DIR}/include/oqs/"
-echo "  Library: ${INSTALL_DIR}/lib/liboqs.a"
-echo ""
-echo "=== Competitors ready. Build with: ==="
-echo "  cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=ON -DBUILD_DAP_SDK_TESTS=ON .."
-echo "  cmake --build . --target bench_chipmunk_mring"
+echo "=== Competitors ready. Run cmake with -DBUILD_BENCHMARKS=ON ==="

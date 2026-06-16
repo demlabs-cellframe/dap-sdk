@@ -350,6 +350,15 @@ static void s_print_size_table(void)
     printf("  (liboqs not available — run ./download_competitors.sh for live timings)\n");
 #endif
 
+    /* Raptor (Falcon-based ring, N=50, Zhang 2018) reference data.
+     * Per-member: c(4096) + d(512) + h(4096) + r0(4096) + r1(4096) = 20480 B
+     * Total: N * 20480 + Falcon_sig(690) */
+    printf("\n");
+    printf("%-20s  %8u  %8u  %10u  %10s\n",
+           "Raptor N=50 (ref)", 897u, 4097u,
+           50u * 20480u + 690u, "ring");
+    printf("  (Falcon-based, linear growth — for comparison only)\n");
+
     printf("\n");
 }
 
