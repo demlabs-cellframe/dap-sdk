@@ -17,6 +17,7 @@
 #include "sig/lotrs/lotrs_sample.h"
 #include "sig/lotrs/lotrs_wire.h"
 #include "sig/lotrs/lotrs_codec.h"
+#include "sig/lotrs/lotrs_shamir.h"
 
 #define LOG_TAG "test_lotrs_basic"
 
@@ -295,6 +296,70 @@ static void test_rice_codec(void)
     lotrs_poly_free(l_q);
 }
 
+static void test_shamir_split_reconstruct(void)
+{
+    const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
+    const uint32_t l_N = 4, l_T = 2;
+
+    /* Create a secret polynomial. */
+    lotrs_poly_t *l_secret = lotrs_poly_alloc(l_par);
+    dap_assert(l_secret != NULL, "secret alloc");
+    for (uint32_t i = 0u; i < l_par->d; ++i) {
+        l_secret->coeffs[i] = (uint64_t)(i * 100u + 42u) % l_par->q;
+    }
+
+    /* Split into N shares. */
+    lotrs_poly_t *l_shares[l_N];
+    uint8_t l_seed[32];
+    for (int i = 0; i < 32; ++i) l_seed[i] = (uint8_t)(0xAA + i);
+    lotrs_xof_t *l_xof = lotrs_xof_new(l_seed, 32u);
+    int l_rc = lotrs_shamir_split(l_shares, l_secret, l_N, l_T, l_par, l_xof);
+    lotrs_xof_free(l_xof);
+    dap_assert(l_rc == 0, "shamir split OK");
+
+    /* Reconstruct from first T shares. */
+    lotrs_poly_t *l_recon = lotrs_poly_alloc(l_par);
+    dap_assert(l_recon != NULL, "recon alloc");
+    uint32_t l_indices[2] = {1u, 2u};
+    l_rc = lotrs_shamir_reconstruct(l_recon, (const lotrs_poly_t *const *)l_shares, l_indices, l_T, l_par);
+    dap_assert(l_rc == 0, "shamir reconstruct OK");
+
+    /* Verify reconstruction matches secret. */
+    int l_match = 1;
+    for (uint32_t i = 0u; i < l_par->d; ++i) {
+        if (l_secret->coeffs[i] != l_recon->coeffs[i]) {
+            l_match = 0;
+            break;
+        }
+    }
+    dap_assert(l_match, "shamir reconstruct matches secret");
+
+    /* Reconstruct from different T shares (indices 0,3). */
+    lotrs_poly_t *l_recon2 = lotrs_poly_alloc(l_par);
+    uint32_t l_indices2[2] = {1u, 4u};
+    l_rc = lotrs_shamir_reconstruct(l_recon2, (const lotrs_poly_t *const *)l_shares, l_indices2, l_T, l_par);
+    dap_assert(l_rc == 0, "shamir reconstruct alt OK");
+
+    l_match = 1;
+    for (uint32_t i = 0u; i < l_par->d; ++i) {
+        if (l_secret->coeffs[i] != l_recon2->coeffs[i]) {
+            l_match = 0;
+            break;
+        }
+    }
+    dap_assert(l_match, "shamir reconstruct alt matches secret");
+
+    /* Shares must be distinct from each other and from secret. */
+    dap_assert(memcmp(l_shares[0]->coeffs, l_shares[1]->coeffs,
+                       l_par->d * sizeof(uint64_t)) != 0,
+               "shares distinct");
+
+    for (uint32_t i = 0u; i < l_N; ++i) lotrs_poly_free(l_shares[i]);
+    lotrs_poly_free(l_recon);
+    lotrs_poly_free(l_recon2);
+    lotrs_poly_free(l_secret);
+}
+
 /* Direct algebraic check: sign then verify the equation manually. */
 static void test_algebraic_check(void)
 {
@@ -407,6 +472,7 @@ int main(void)
     test_wire_format();
     test_pack_roundtrip();
     test_rice_codec();
+    test_shamir_split_reconstruct();
     test_sign_verify();
     test_determinism();
     test_algebraic_check();
