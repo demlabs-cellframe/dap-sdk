@@ -16,6 +16,7 @@
 #include "sig/lotrs/lotrs_ring.h"
 #include "sig/lotrs/lotrs_sample.h"
 #include "sig/lotrs/lotrs_wire.h"
+#include "sig/lotrs/lotrs_codec.h"
 
 #define LOG_TAG "test_lotrs_basic"
 
@@ -237,6 +238,63 @@ static void test_pack_roundtrip(void)
     lotrs_poly_free(l_q);
 }
 
+static void test_rice_codec(void)
+{
+    const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
+
+    /* Create a polynomial with small centered coefficients. */
+    lotrs_poly_t *l_p = lotrs_poly_alloc(l_par);
+    dap_assert(l_p != NULL, "poly alloc");
+    for (uint32_t i = 0u; i < l_par->d; ++i) {
+        /* Centered values in [-1, 1] → ternary-like distribution. */
+        int64_t v = (int64_t)(i % 3u) - 1;
+        int64_t mod = v % (int64_t)l_par->q;
+        if (mod < 0) mod += (int64_t)l_par->q;
+        l_p->coeffs[i] = (uint64_t)mod;
+    }
+
+    /* Pack with Golomb-Rice. */
+    uint32_t l_rice_k = lotrs_optimal_rice_k(1.0);
+    uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_par->d * 8u);
+    size_t l_written = 0u;
+    int l_rc = lotrs_poly_pack_rice(l_buf, l_par->d * 8u, l_p, l_par,
+                                    l_rice_k, 1, &l_written);
+    dap_assert(l_rc == 0, "rice pack OK");
+
+    /* Pack with fixed-width for comparison. */
+    uint8_t *l_fw_buf = DAP_NEW_Z_SIZE(uint8_t, lotrs_poly_bytes(l_par));
+    lotrs_poly_pack(l_fw_buf, lotrs_poly_bytes(l_par), l_p, l_par);
+    size_t l_fw_size = lotrs_poly_bytes(l_par);
+
+    /* Rice should be smaller for small coefficients. */
+    dap_assert(l_written < l_fw_size, "rice smaller than fixed-width");
+
+    /* Unpack and verify roundtrip. */
+    lotrs_poly_t *l_q = lotrs_poly_alloc(l_par);
+    size_t l_consumed = 0u;
+    l_rc = lotrs_poly_unpack_rice(l_q, l_buf, l_written, l_par,
+                                  l_rice_k, 1, &l_consumed);
+    dap_assert(l_rc == 0, "rice unpack OK");
+
+    int l_match = 1;
+    for (uint32_t i = 0u; i < l_par->d; ++i) {
+        if (l_p->coeffs[i] != l_q->coeffs[i]) {
+            l_match = 0;
+            break;
+        }
+    }
+    dap_assert(l_match, "rice roundtrip match");
+
+    log_it(L_INFO, "Rice codec: fixed=%zu B, rice=%zu B (k=%u), ratio=%.1f%%",
+           l_fw_size, l_written, l_rice_k,
+           100.0 * (double)l_written / (double)l_fw_size);
+
+    DAP_DELETE(l_fw_buf);
+    DAP_DELETE(l_buf);
+    lotrs_poly_free(l_p);
+    lotrs_poly_free(l_q);
+}
+
 /* Direct algebraic check: sign then verify the equation manually. */
 static void test_algebraic_check(void)
 {
@@ -348,6 +406,7 @@ int main(void)
     test_keygen();
     test_wire_format();
     test_pack_roundtrip();
+    test_rice_codec();
     test_sign_verify();
     test_determinism();
     test_algebraic_check();

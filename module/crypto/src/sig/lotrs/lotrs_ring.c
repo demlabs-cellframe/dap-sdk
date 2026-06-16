@@ -13,6 +13,7 @@
 #include "dap_common.h"
 #include "dap_memwipe.h"
 #include "dap_serialize.h"
+#include "lotrs_codec.h"
 
 /* --- Polynomial schema (dap_serialize) --- */
 
@@ -292,6 +293,49 @@ int lotrs_poly_unpack(lotrs_poly_t *a_p, const uint8_t *a_in, size_t a_in_len,
     for (uint32_t i = 0u; i < a_par->d; ++i) {
         a_p->coeffs[i] %= a_par->q;
     }
+    return 0;
+}
+
+/* --- Golomb-Rice compact serialization --- */
+
+int lotrs_poly_pack_rice(uint8_t *a_out, size_t a_out_cap,
+                         const lotrs_poly_t *a_p, const lotrs_params_t *a_par,
+                         uint32_t a_rice_k, int64_t a_bound,
+                         size_t *a_bytes_written)
+{
+    /* Convert uint64 coefficients to signed centered form for encoding. */
+    int64_t *l_centered = DAP_NEW_Z_SIZE(int64_t, a_par->d * sizeof(int64_t));
+    if (!l_centered) return -ENOMEM;
+    for (uint32_t i = 0u; i < a_par->d; ++i) {
+        l_centered[i] = lotrs_center(a_p->coeffs[i], a_par->q);
+    }
+    int l_rc = lotrs_rice_pack(a_out, a_out_cap, l_centered, a_par->d,
+                               a_rice_k, a_bound, a_bytes_written);
+    DAP_DELETE(l_centered);
+    return l_rc;
+}
+
+int lotrs_poly_unpack_rice(lotrs_poly_t *a_p,
+                           const uint8_t *a_in, size_t a_in_len,
+                           const lotrs_params_t *a_par,
+                           uint32_t a_rice_k, int64_t a_bound,
+                           size_t *a_bytes_consumed)
+{
+    int64_t *l_centered = DAP_NEW_Z_SIZE(int64_t, a_par->d * sizeof(int64_t));
+    if (!l_centered) return -ENOMEM;
+    int l_rc = lotrs_rice_unpack(l_centered, a_par->d, a_in, a_in_len,
+                                 a_rice_k, a_bound, a_bytes_consumed);
+    if (l_rc != 0) {
+        DAP_DELETE(l_centered);
+        return l_rc;
+    }
+    /* Convert signed centered to [0, q). */
+    for (uint32_t i = 0u; i < a_par->d; ++i) {
+        int64_t v = l_centered[i] % (int64_t)a_par->q;
+        if (v < 0) v += (int64_t)a_par->q;
+        a_p->coeffs[i] = (uint64_t)v;
+    }
+    DAP_DELETE(l_centered);
     return 0;
 }
 

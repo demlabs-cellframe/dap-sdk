@@ -82,6 +82,17 @@ int lotrs_poly_pack(uint8_t *out, size_t out_len,
 int lotrs_poly_unpack(lotrs_poly_t *p, const uint8_t *in, size_t in_len,
                       const lotrs_params_t *par);
 
+/* Golomb-Rice compact serialization (smaller wire size). */
+int lotrs_poly_pack_rice(uint8_t *out, size_t out_cap,
+                         const lotrs_poly_t *p, const lotrs_params_t *par,
+                         uint32_t rice_k, int64_t bound,
+                         size_t *bytes_written);
+int lotrs_poly_unpack_rice(lotrs_poly_t *p,
+                           const uint8_t *in, size_t in_len,
+                           const lotrs_params_t *par,
+                           uint32_t rice_k, int64_t bound,
+                           size_t *bytes_consumed);
+
 size_t lotrs_polyvec_bytes(const lotrs_params_t *par, uint32_t n);
 int lotrs_polyvec_pack(uint8_t *out, size_t out_len,
                        const lotrs_polyvec_t *v, const lotrs_params_t *par);
