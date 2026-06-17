@@ -23,7 +23,7 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-#include <openssl/sha.h>
+// #include <openssl/sha.h>
 #include <ctype.h>
 
 /** Case-insensitive substring search (portable; avoids implicit-decl warnings on Linux without _GNU_SOURCE). */
