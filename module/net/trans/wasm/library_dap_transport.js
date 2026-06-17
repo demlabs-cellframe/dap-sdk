@@ -157,69 +157,37 @@ addToLibrary({
         var contentType = a_content_type_ptr ? UTF8ToString(a_content_type_ptr) : null;
         var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
 
-        // Node.js path: synchronous HTTP via Atomics
-        if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-            try {
-                var parsed = new URL(url);
-                var httpModule = parsed.protocol === 'https:' ? require('https') : require('http');
-                var done = false;
-                var result = -1;
-                var responseData = null;
-
-                var options = {
-                    hostname: parsed.hostname,
-                    port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-                    path: parsed.pathname + parsed.search,
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': contentType || 'application/json',
-                        'Content-Length': (a_body && a_body_len > 0) ? a_body_len : 0,
-                    },
-                };
-
-                var req = httpModule.request(options, function(res) {
-                    var chunks = [];
-                    res.on('data', function(chunk) { chunks.push(chunk); });
-                    res.on('end', function() {
-                        responseData = Buffer.concat(chunks);
-                        result = (res.statusCode >= 200 && res.statusCode < 300) ? 0 : (-res.statusCode || -1);
-                        done = true;
+                // Node.js: Atomics.wait blocks event loop — HTTP callbacks can't fire.
+                // Use Node.js https via execSync subprocess.
+                // subprocess has own event loop — HTTP works without blocking.
+                var execSync = require('child_process').execSync;
+                var b64 = (a_body && a_body_len > 0)
+                    ? Buffer.from(HEAPU8.slice(a_body, a_body + a_body_len)).toString('base64')
+                    : '';
+                var proto = parsed.protocol === 'https:' ? 'https' : 'http';
+                var port = parsed.port || (proto === 'https' ? 443 : 80);
+                var script = [
+                    'const h=require(' + JSON.stringify(proto) + ');',
+                    'const b=Buffer.from(' + JSON.stringify(b64) + ',"base64");',
+                    'const r=h.request({hostname:' + JSON.stringify(parsed.hostname) + ',port:' + port + ',path:"/",method:"POST",',
+                    'headers:{"Content-Type":' + JSON.stringify(contentType || 'application/json') + ',"Content-Length":b.length}},',
+                    'function(res){const d=[];res.on("data",c=>d.push(c));',
+                    'res.on("end",()=>{process.stdout.write(Buffer.concat(d).toString("base64"));process.exit(0)});});',
+                    'r.on("error",()=>process.exit(1));r.setTimeout(15000,()=>{r.destroy();process.exit(1)});',
+                    'if(b.length>0)r.write(b);r.end();',
+                ].join('');
+                try {
+                    var result_b64 = execSync('node -e ' + JSON.stringify(script), {
+                        encoding: 'utf-8',
+                        timeout: 20000,
                     });
-                });
-                req.on('error', function() { done = true; });
-                req.setTimeout(15000, function() { req.destroy(); done = true; });
-                if (a_body && a_body_len > 0) req.write(Buffer.from(HEAPU8.slice(a_body, a_body + a_body_len)));
-                req.end();
-
-                // Synchronous wait via Atomics
-                var sab = new SharedArrayBuffer(4);
-                var i32 = new Int32Array(sab);
-                var interval = setInterval(function() {
-                    if (done) {
-                        Atomics.store(i32, 0, 1);
-                        Atomics.notify(i32, 0);
+                    if (result_b64) {
+                        responseData = Buffer.from(result_b64, 'base64');
+                        result = 0;
                     }
-                }, 5);
-                Atomics.wait(i32, 0, 0, 16000);
-                clearInterval(interval);
-
-                if (result === 0 && responseData && responseData.length > 0) {
-                    var ptr = _malloc(responseData.length + 1);
-                    HEAPU8.set(responseData, ptr);
-                    HEAPU8[ptr + responseData.length] = 0;
-                    setValue(a_out_ptr_addr, ptr, '*');
-                    setValue(a_out_len_addr, responseData.length, 'i32');
-                } else {
-                    setValue(a_out_ptr_addr, 0, '*');
-                    setValue(a_out_len_addr, 0, 'i32');
+                } catch (e) {
+                    result = -1;
                 }
-                return result;
-            } catch (e) {
-                setValue(a_out_ptr_addr, 0, '*');
-                setValue(a_out_len_addr, 0, 'i32');
-                return -1;
-            }
-        }
 
         // Browser path: synchronous XHR
         var xhr = new XMLHttpRequest();
