@@ -34,6 +34,17 @@ static uint32_t s_le32_load(const uint8_t a_in[4])
          | ((uint32_t)a_in[3] << 24);
 }
 
+static int s_memcmp_ct(const void *a, const void *b, size_t a_len)
+{
+    const uint8_t *l_a = (const uint8_t *)a;
+    const uint8_t *l_b = (const uint8_t *)b;
+    uint8_t l_diff = 0u;
+    for (size_t i = 0u; i < a_len; ++i) {
+        l_diff |= l_a[i] ^ l_b[i];
+    }
+    return (int)l_diff;
+}
+
 static void s_hash_update_bytes(uint8_t **a_pos, const void *a_data, size_t a_size)
 {
     memcpy(*a_pos, a_data, a_size);
@@ -1870,7 +1881,7 @@ int chipmunk_lrs_verify(const uint8_t *a_sig,
     if (l_rc != 0) {
         goto vfail;
     }
-    if (memcmp(p, l_ring_hash, 32u) != 0) {
+    if (s_memcmp_ct(p, l_ring_hash, 32u) != 0) {
         l_rc = -EINVAL;
         goto vfail;
     }
@@ -1963,7 +1974,7 @@ int chipmunk_lrs_verify(const uint8_t *a_sig,
         }
     }
 
-    l_rc = (memcmp(l_seed, l_c0_seed, 32u) == 0) ? 0 : -EINVAL;
+    l_rc = (s_memcmp_ct(l_seed, l_c0_seed, 32u) == 0) ? 0 : -EINVAL;
 
     dap_memwipe(&l_c_poly, sizeof(l_c_poly));
     dap_memwipe(&l_I_poly, sizeof(l_I_poly));

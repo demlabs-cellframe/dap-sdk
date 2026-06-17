@@ -94,30 +94,30 @@ void chipmunk_multi_signature_deep_free(chipmunk_multi_signature_t *a_multi_sig)
     if (a_multi_sig->proofs) {
         for (size_t i = 0; i < a_multi_sig->signer_count; ++i) {
             if (a_multi_sig->proofs[i].nodes) {
-                free(a_multi_sig->proofs[i].nodes);
+                DAP_DELETE(a_multi_sig->proofs[i].nodes);
                 a_multi_sig->proofs[i].nodes = NULL;
             }
             a_multi_sig->proofs[i].path_length = 0;
             a_multi_sig->proofs[i].index       = 0;
         }
-        free(a_multi_sig->proofs);
+        DAP_DELETE(a_multi_sig->proofs);
         a_multi_sig->proofs = NULL;
     }
 
     if (a_multi_sig->public_key_roots) {
-        free(a_multi_sig->public_key_roots);
+        DAP_DELETE(a_multi_sig->public_key_roots);
         a_multi_sig->public_key_roots = NULL;
     }
     if (a_multi_sig->hots_pks) {
-        free(a_multi_sig->hots_pks);
+        DAP_DELETE(a_multi_sig->hots_pks);
         a_multi_sig->hots_pks = NULL;
     }
     if (a_multi_sig->rho_seeds) {
-        free(a_multi_sig->rho_seeds);
+        DAP_DELETE(a_multi_sig->rho_seeds);
         a_multi_sig->rho_seeds = NULL;
     }
     if (a_multi_sig->leaf_indices) {
-        free(a_multi_sig->leaf_indices);
+        DAP_DELETE(a_multi_sig->leaf_indices);
         a_multi_sig->leaf_indices = NULL;
     }
 

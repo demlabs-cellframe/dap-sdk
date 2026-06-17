@@ -417,14 +417,14 @@ int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash
     memset(l_state, 0, sizeof(l_state));
 
     const size_t l_in_len = sizeof(k_domain) + hash_len;
-    uint8_t *l_in = (uint8_t *)malloc(l_in_len);
+    uint8_t *l_in = DAP_NEW_Z_SIZE(uint8_t, l_in_len);
     if (!l_in) {
         return CHIPMUNK_ERROR_MEMORY;
     }
     memcpy(l_in, k_domain, sizeof(k_domain));
     memcpy(l_in + sizeof(k_domain), hash, hash_len);
     dap_hash_shake256_absorb(l_state, l_in, l_in_len);
-    free(l_in);
+    DAP_DELETE(l_in);
 
     uint8_t l_squeeze[DAP_SHAKE256_RATE];
     size_t l_sq_pos = DAP_SHAKE256_RATE;
@@ -527,7 +527,7 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
     // already large enough to swallow the domain tag and the message in
     // one shot.
     const size_t l_in_len = sizeof(k_domain) + a_message_len;
-    uint8_t *l_in = (uint8_t *)malloc(l_in_len);
+    uint8_t *l_in = DAP_NEW_Z_SIZE(uint8_t, l_in_len);
     if (!l_in) {
         log_it(L_ERROR, "chipmunk_poly_from_hash: allocation failed (len=%zu)", l_in_len);
         return CHIPMUNK_ERROR_MEMORY;
@@ -537,7 +537,7 @@ int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, s
         memcpy(l_in + sizeof(k_domain), a_message, a_message_len);
     }
     dap_hash_shake256_absorb(l_state, l_in, l_in_len);
-    free(l_in);
+    DAP_DELETE(l_in);
 
     uint8_t l_squeeze[DAP_SHAKE256_RATE];
     size_t l_sq_pos = DAP_SHAKE256_RATE;

@@ -120,7 +120,7 @@ int chipmunk_randomizers_from_pks(const chipmunk_hvc_poly_t *roots,
     }
 
     // Allocate randomizers
-    randomizers->randomizers = calloc(count, sizeof(chipmunk_randomizer_t));
+    randomizers->randomizers = DAP_NEW_Z_COUNT(chipmunk_randomizer_t, count);
     if (!randomizers->randomizers) {
         return -1;
     }
@@ -128,9 +128,9 @@ int chipmunk_randomizers_from_pks(const chipmunk_hvc_poly_t *roots,
     
     // Concatenate all roots into single buffer
     size_t input_size = count * sizeof(chipmunk_hvc_poly_t);
-    uint8_t *hash_input = malloc(input_size + sizeof(uint32_t));
+    uint8_t *hash_input = DAP_NEW_Z_SIZE(uint8_t, input_size + sizeof(uint32_t));
     if (!hash_input) {
-        free(randomizers->randomizers);
+        DAP_DELETE(randomizers->randomizers);
         randomizers->randomizers = NULL;
         return -1;
     }
@@ -164,7 +164,7 @@ int chipmunk_randomizers_from_pks(const chipmunk_hvc_poly_t *roots,
         }
     }
 
-    free(hash_input);
+    DAP_DELETE(hash_input);
     return 0;
 }
 
@@ -177,7 +177,7 @@ int chipmunk_randomizers_generate_random(size_t count,
         return -1;
     }
 
-    randomizers->randomizers = calloc(count, sizeof(chipmunk_randomizer_t));
+    randomizers->randomizers = DAP_NEW_Z_COUNT(chipmunk_randomizer_t, count);
     if (!randomizers->randomizers) {
         return -2;
     }
@@ -193,7 +193,7 @@ int chipmunk_randomizers_generate_random(size_t count,
         while (filled < (size_t)CHIPMUNK_N) {
             uint8_t buf[64];
             if (dap_random_bytes(buf, sizeof(buf)) != 0) {
-                free(randomizers->randomizers);
+                DAP_DELETE(randomizers->randomizers);
                 randomizers->randomizers = NULL;
                 randomizers->count = 0;
                 return -3;
@@ -218,7 +218,7 @@ int chipmunk_randomizers_generate_random(size_t count,
  */
 void chipmunk_randomizers_free(chipmunk_randomizers_t *randomizers) {
     if (randomizers && randomizers->randomizers) {
-        free(randomizers->randomizers);
+        DAP_DELETE(randomizers->randomizers);
         randomizers->randomizers = NULL;
         randomizers->count = 0;
     }
@@ -398,11 +398,11 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
     // CR-D6/D7 fix (Round-4): allocate the full HOTS pk array alongside the
     // lossy HVC-leaf projection.  Without hots_pks the verifier cannot
     // reconstruct the aggregate RHS and must accept near-arbitrary blobs.
-    multi_sig->public_key_roots = calloc(count, sizeof(chipmunk_hvc_poly_t));
-    multi_sig->hots_pks         = calloc(count, sizeof(chipmunk_hots_public_key_t));
-    multi_sig->rho_seeds        = calloc(count, 32);
-    multi_sig->proofs           = calloc(count, sizeof(chipmunk_path_t));
-    multi_sig->leaf_indices     = calloc(count, sizeof(uint32_t));
+    multi_sig->public_key_roots = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, count);
+    multi_sig->hots_pks         = DAP_NEW_Z_COUNT(chipmunk_hots_public_key_t, count);
+    multi_sig->rho_seeds        = DAP_NEW_Z_COUNT(uint8_t, (size_t)count * 32u);
+    multi_sig->proofs           = DAP_NEW_Z_COUNT(chipmunk_path_t, count);
+    multi_sig->leaf_indices     = DAP_NEW_Z_COUNT(uint32_t, count);
 
     if (!multi_sig->public_key_roots || !multi_sig->hots_pks ||
         !multi_sig->rho_seeds || !multi_sig->proofs || !multi_sig->leaf_indices) {
@@ -418,7 +418,7 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
     memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_SHA3_256_SIZE);
 
     // Extract HOTS signatures and create randomizers
-    chipmunk_hots_signature_t *hots_sigs = calloc(count, sizeof(chipmunk_hots_signature_t));
+    chipmunk_hots_signature_t *hots_sigs = DAP_NEW_Z_COUNT(chipmunk_hots_signature_t, count);
     if (!hots_sigs) {
         chipmunk_multi_signature_free(multi_sig);
         return -2;
@@ -445,7 +445,7 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
         int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly(&l_full_pk,
                                                      &multi_sig->public_key_roots[i]);
         if (l_rc_leaf != CHIPMUNK_ERROR_SUCCESS) {
-            free(hots_sigs);
+            DAP_DELETE(hots_sigs);
             chipmunk_multi_signature_free(multi_sig);
             return l_rc_leaf;
         }
@@ -455,7 +455,7 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
     chipmunk_randomizers_t randomizers;
     int ret = chipmunk_randomizers_from_pks(multi_sig->public_key_roots, count, &randomizers);
     if (ret != 0) {
-        free(hots_sigs);
+        DAP_DELETE(hots_sigs);
         chipmunk_multi_signature_free(multi_sig);
         return ret;
     }
@@ -464,7 +464,7 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
     ret = chipmunk_hots_aggregate_with_randomizers(hots_sigs, randomizers.randomizers,
                                                    count, &multi_sig->aggregated_hots);
 
-    free(hots_sigs);
+    DAP_DELETE(hots_sigs);
     chipmunk_randomizers_free(&randomizers);
 
     if (ret != 0) {
@@ -488,11 +488,11 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
         return -1;
     }
 
-    multi_sig->public_key_roots = calloc(count, sizeof(chipmunk_hvc_poly_t));
-    multi_sig->hots_pks         = calloc(count, sizeof(chipmunk_hots_public_key_t));
-    multi_sig->rho_seeds        = calloc(count, 32);
-    multi_sig->proofs           = calloc(count, sizeof(chipmunk_path_t));
-    multi_sig->leaf_indices     = calloc(count, sizeof(uint32_t));
+    multi_sig->public_key_roots = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, count);
+    multi_sig->hots_pks         = DAP_NEW_Z_COUNT(chipmunk_hots_public_key_t, count);
+    multi_sig->rho_seeds        = DAP_NEW_Z_COUNT(uint8_t, (size_t)count * 32u);
+    multi_sig->proofs           = DAP_NEW_Z_COUNT(chipmunk_path_t, count);
+    multi_sig->leaf_indices     = DAP_NEW_Z_COUNT(uint32_t, count);
 
     if (!multi_sig->public_key_roots || !multi_sig->hots_pks ||
         !multi_sig->rho_seeds || !multi_sig->proofs || !multi_sig->leaf_indices) {
@@ -517,7 +517,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
     dap_hash_sha3_256(message, message_len, &message_hash);
     memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_SHA3_256_SIZE);
 
-    chipmunk_hots_signature_t *hots_sigs = calloc(count, sizeof(chipmunk_hots_signature_t));
+    chipmunk_hots_signature_t *hots_sigs = DAP_NEW_Z_COUNT(chipmunk_hots_signature_t, count);
     if (!hots_sigs) {
         chipmunk_multi_signature_free(multi_sig);
         return -2;
@@ -539,7 +539,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
         int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly(&l_full_pk,
                                                      &multi_sig->public_key_roots[i]);
         if (l_rc_leaf != CHIPMUNK_ERROR_SUCCESS) {
-            free(hots_sigs);
+            DAP_DELETE(hots_sigs);
             chipmunk_multi_signature_free(multi_sig);
             return l_rc_leaf;
         }
@@ -548,7 +548,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
     chipmunk_randomizers_t randomizers;
     int ret = chipmunk_randomizers_from_pks(multi_sig->public_key_roots, count, &randomizers);
     if (ret != 0) {
-        free(hots_sigs);
+        DAP_DELETE(hots_sigs);
         chipmunk_multi_signature_free(multi_sig);
         return ret;
     }
@@ -556,7 +556,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
     ret = chipmunk_hots_aggregate_with_randomizers(hots_sigs, randomizers.randomizers,
                                                    count, &multi_sig->aggregated_hots);
 
-    free(hots_sigs);
+    DAP_DELETE(hots_sigs);
     chipmunk_randomizers_free(&randomizers);
 
     if (ret != 0) {
@@ -791,23 +791,23 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
 void chipmunk_multi_signature_free(chipmunk_multi_signature_t *multi_sig) {
     if (multi_sig) {
         if (multi_sig->public_key_roots) {
-            free(multi_sig->public_key_roots);
+            DAP_DELETE(multi_sig->public_key_roots);
             multi_sig->public_key_roots = NULL;
         }
         if (multi_sig->hots_pks) {
-            free(multi_sig->hots_pks);
+            DAP_DELETE(multi_sig->hots_pks);
             multi_sig->hots_pks = NULL;
         }
         if (multi_sig->rho_seeds) {
-            free(multi_sig->rho_seeds);
+            DAP_DELETE(multi_sig->rho_seeds);
             multi_sig->rho_seeds = NULL;
         }
         if (multi_sig->proofs) {
-            free(multi_sig->proofs);
+            DAP_DELETE(multi_sig->proofs);
             multi_sig->proofs = NULL;
         }
         if (multi_sig->leaf_indices) {
-            free(multi_sig->leaf_indices);
+            DAP_DELETE(multi_sig->leaf_indices);
             multi_sig->leaf_indices = NULL;
         }
         multi_sig->signer_count = 0;
@@ -844,9 +844,9 @@ int chipmunk_batch_context_init(chipmunk_batch_context_t *context,
     }
 
     memset(context, 0, sizeof(*context));
-    context->signatures = calloc(max_signatures, sizeof(chipmunk_multi_signature_t));
-    context->messages = calloc(max_signatures, sizeof(const uint8_t*));
-    context->message_lengths = calloc(max_signatures, sizeof(size_t));
+    context->signatures = DAP_NEW_Z_COUNT(chipmunk_multi_signature_t, max_signatures);
+    context->messages = DAP_NEW_Z_COUNT(const uint8_t *, max_signatures);
+    context->message_lengths = DAP_NEW_Z_COUNT(size_t, max_signatures);
 
     if (!context->signatures || !context->messages || !context->message_lengths) {
         chipmunk_batch_context_free(context);
@@ -955,15 +955,15 @@ int chipmunk_batch_verify(const chipmunk_batch_context_t *context) {
 void chipmunk_batch_context_free(chipmunk_batch_context_t *context) {
     if (context) {
         if (context->signatures) {
-            free(context->signatures);
+            DAP_DELETE(context->signatures);
             context->signatures = NULL;
         }
         if (context->messages) {
-            free(context->messages);
+            DAP_DELETE(context->messages);
             context->messages = NULL;
         }
         if (context->message_lengths) {
-            free(context->message_lengths);
+            DAP_DELETE(context->message_lengths);
             context->message_lengths = NULL;
         }
         context->capacity = 0;

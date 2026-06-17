@@ -866,17 +866,17 @@ static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
     }
 
     const uint32_t l_off_hash = chipmunk_mring_section_off_fixed_hashes();
-    if (memcmp(l_ring_hash, a_buf + l_off_hash, 32u) != 0) {
+    if (s_memcmp_ct(l_ring_hash, a_buf + l_off_hash, 32u) != 0) {
         log_it(L_ERROR, "MRNG verify: ring_hash mismatch");
         rc = -EINVAL;
         goto out;
     }
-    if (memcmp(l_ctx_hash, a_buf + l_off_hash + 32u, 32u) != 0) {
+    if (s_memcmp_ct(l_ctx_hash, a_buf + l_off_hash + 32u, 32u) != 0) {
         log_it(L_ERROR, "MRNG verify: ctx_hash mismatch");
         rc = -EINVAL;
         goto out;
     }
-    if (memcmp(l_msg_hash, a_buf + l_off_hash + 64u, 32u) != 0) {
+    if (s_memcmp_ct(l_msg_hash, a_buf + l_off_hash + 64u, 32u) != 0) {
         log_it(L_ERROR, "MRNG verify: msg_hash mismatch");
         rc = -EINVAL;
         goto out;
@@ -891,7 +891,7 @@ static int s_mring_verify_core(const uint8_t *a_buf, size_t a_buf_size,
     if (rc != 0) {
         goto out;
     }
-    if (memcmp(l_fs_seed, l_fs_wire, 32u) != 0) {
+    if (s_memcmp_ct(l_fs_seed, l_fs_wire, 32u) != 0) {
         log_it(L_ERROR, "MRNG verify: fs_seed mismatch");
         rc = -EINVAL;
         goto out;
