@@ -187,7 +187,12 @@ dap_cpu_stats_t dap_cpu_get_stats()
 
     /** get summary cpu stat **/
     size_t mem_size;
-    getline(&line, &mem_size, _proc_stat);
+    if (getline(&line, &mem_size, _proc_stat) == -1) {
+        log_it(L_ERROR, "Failed to read summary line from /proc/stat");
+        fclose(_proc_stat);
+        free(line);
+        return (dap_cpu_stats_t){0};
+    }
     _deserialize_proc_stat(line, &stat);
 
     _cpu_stats.cpu_summary.idle_time = stat.idle;
@@ -195,7 +200,10 @@ dap_cpu_stats_t dap_cpu_get_stats()
     /*********************************************/
 
     for(unsigned i = 0; i < _cpu_stats.cpu_cores_count; i++) {
-        getline(&line, &mem_size, _proc_stat);
+        if (getline(&line, &mem_size, _proc_stat) == -1) {
+            log_it(L_WARNING, "Failed to read cpu%u line from /proc/stat", i);
+            break;
+        }
         _deserialize_proc_stat(line, &stat);
         _cpu_stats.cpus[i].idle_time = stat.idle;
         _cpu_stats.cpus[i].total_time = stat.total;
@@ -217,6 +225,7 @@ dap_cpu_stats_t dap_cpu_get_stats()
     memcpy(_cpu_old_stats, _cpu_stats.cpus,
            sizeof (dap_cpu_t) * _cpu_stats.cpu_cores_count);
 
+    free(line);
     fclose(_proc_stat);
 
     return _cpu_stats;

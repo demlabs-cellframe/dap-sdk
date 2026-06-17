@@ -588,14 +588,16 @@ void dap_events_stop_all( )
             debug_if(s_debug_more, L_DEBUG, "Worker %u event_exit socket is NULL, skipping stop signal", i);
             continue;
         }
-        
-        // Check if socket is still valid before signaling
-        // After deinitialization, socket may be freed but pointer may still be non-NULL
-        if (s_workers[i]->context->event_exit->fd2 < 0) {
-            debug_if(s_debug_more, L_DEBUG, "Worker %u event_exit socket fd2 is invalid, skipping stop signal", i);
+
+        /* Validate event_exit pointer — catch heap corruption early.
+         * A corrupted event_exit (e.g., 0x180d0) indicates heap corruption
+         * that overwrote the dap_context_t struct. */
+        void *l_ee = s_workers[i]->context->event_exit;
+        if ((uintptr_t)l_ee < 0x1000) {
+            log_it(L_ERROR, "Worker %u event_exit corrupted: %p (heap corruption detected)", i, l_ee);
             continue;
         }
-        
+
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
 }

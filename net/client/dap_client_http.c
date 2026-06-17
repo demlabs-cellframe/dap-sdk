@@ -1045,28 +1045,10 @@ static dap_client_http_t* s_client_http_create_and_connect(
                 dap_events_socket_delete_unsafe(l_ev_socket, true);
                 return NULL;
             }
-            
-    // Add socket to worker - s_http_new will be called to set CONNECTING flag
-    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-    
-    // Check if connection completed immediately (connect() returned 0, l_connect_err == 0)
-    // In this case, EPOLLOUT won't fire, so we need to handle connection immediately
-    if (l_connect_ret == 0 && l_connect_err == 0 && l_ev_socket->context) {
-        // Connection was established immediately - verify and handle
-        int l_errno_check = 0;
-        socklen_t l_errno_len = sizeof(l_errno_check);
-        if (getsockopt(l_ev_socket->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno_check, &l_errno_len) == 0 && l_errno_check == 0) {
-            // Connection is ready - clear CONNECTING flag and call connected callback
-            l_ev_socket->flags &= ~DAP_SOCK_CONNECTING;
-            if (l_ev_socket->callbacks.connected_callback) {
-                debug_if(s_debug_more, L_DEBUG, "[HANDSHAKE DEBUG] Connection completed immediately, calling connected_callback for socket %"DAP_FORMAT_SOCKET, 
-                         l_ev_socket->socket);
-                l_ev_socket->callbacks.connected_callback(l_ev_socket);
-            }
-            dap_context_poll_update(l_ev_socket);
-        }
-    }
-        
+
+    /* Create connection timeout timer BEFORE adding socket to worker.
+       Once the socket is on the worker, the worker thread may call
+       connected_callback and free l_client_http at any moment. */
     if (!l_client_http->timer) {
         dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
@@ -1086,6 +1068,35 @@ static dap_client_http_t* s_client_http_create_and_connect(
             DAP_DEL_Z(l_ev_uuid_ptr);
         } else {
             l_client_http->timer_uuid = l_client_http->timer->events_socket->uuid;
+        }
+    }
+
+    // Add socket to worker - s_http_new will be called to set CONNECTING flag
+    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
+    
+    // Check if connection completed immediately (connect() returned 0, l_connect_err == 0)
+    // In this case, EPOLLOUT won't fire, so we need to handle connection immediately
+    if (l_connect_ret == 0 && l_connect_err == 0 && l_ev_socket->context) {
+        // Connection was established immediately - verify and handle
+        int l_errno_check = 0;
+        socklen_t l_errno_len = sizeof(l_errno_check);
+        if (getsockopt(l_ev_socket->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno_check, &l_errno_len) == 0 && l_errno_check == 0) {
+            // Connection is ready - clear CONNECTING flag and call connected callback
+            l_ev_socket->flags &= ~DAP_SOCK_CONNECTING;
+            if (l_ev_socket->callbacks.connected_callback) {
+                debug_if(s_debug_more, L_DEBUG, "[HANDSHAKE DEBUG] Connection completed immediately, calling connected_callback for socket %"DAP_FORMAT_SOCKET, 
+                         l_ev_socket->socket);
+                l_ev_socket->callbacks.connected_callback(l_ev_socket);
+            }
+            dap_context_poll_update(l_ev_socket);
+            
+            /* connected_callback may have freed l_client_http (via full
+             * request/response cycle on localhost).  Check if the esocket
+             * still references us — if not, the client is gone. */
+            if (l_ev_socket->_inheritor != l_client_http) {
+                *a_error_code = 0;
+                return NULL;
+            }
         }
     }
         *a_error_code = 0;
@@ -1320,6 +1331,15 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         return;
     }
     
+    /* Snapshot buf_in — another thread may free it via dap_client_http_close_unsafe */
+    byte_t *l_buf_in = a_es->buf_in;
+    size_t l_buf_in_size = a_es->buf_in_size;
+    if (!l_buf_in || !l_buf_in_size) {
+        debug_if(s_debug_more, L_DEBUG, "s_http_read: buf_in=%p buf_in_size=%zu — esocket closing, skipping",
+                 (void*)l_buf_in, l_buf_in_size);
+        return;
+    }
+
 #define m_http_error_exit(error_code, format, ...) do { \
     log_it(L_ERROR, "s_http_read: " format, ##__VA_ARGS__); \
     if(l_client_http->error_callback) { \
@@ -1330,11 +1350,6 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
     return; \
 } while(0)
     
-    // Safety checks
-    if (!a_es->buf_in) {
-        m_http_error_exit(EINVAL, "event socket buf_in is NULL for esocket "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
-    }
-
     // NOTE: response buffer validation moved after buffer allocation
     
     l_client_http->ts_last_read = time(NULL);

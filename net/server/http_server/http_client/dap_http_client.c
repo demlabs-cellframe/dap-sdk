@@ -79,12 +79,12 @@ void dap_http_client_new( dap_events_socket_t *a_esocket, void *a_arg )
 {
     (void) a_arg;
 
-
     a_esocket->_inheritor = DAP_NEW_Z( dap_http_client_t );
 
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
     l_http_client->esocket = a_esocket;
-    l_http_client->http = DAP_HTTP_SERVER( a_esocket->server );
+    l_http_client->http = a_esocket->server ? DAP_HTTP_SERVER( a_esocket->server ) : NULL;
+    l_http_client->keep_alive = true;  /* HTTP/1.1 default — overridden by Connection header */
     debug_if(s_debug_more, L_DEBUG, "dap_http_client_new: created HTTP client, server=%p, http_server=%p (name='%s')", 
            (void*)a_esocket->server, (void*)l_http_client->http,
            l_http_client->http ? l_http_client->http->server_name : "NULL");
@@ -313,6 +313,11 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
     size_t l_len = 0;
 
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
+    if (!l_http_client) {
+        log_it(L_WARNING, "dap_http_client_read: _inheritor is NULL for es=%p fd=%d, ignoring read event",
+               (void*)a_esocket, a_esocket->socket);
+        return;
+    }
     dap_http_url_proc_t *url_proc = NULL;
     dap_http_cache_t * l_http_cache;
 
@@ -326,7 +331,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 //  log_it( L_DEBUG, "dap_http_client_read..." );
     unsigned l_iter_count = 0;
     do{
-        debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %zu", 
+        debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %zu",
                                         l_http_client->state_read, a_esocket->buf_in_size );
 
         switch( l_http_client->state_read )

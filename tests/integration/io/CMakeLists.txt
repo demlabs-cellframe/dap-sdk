@@ -60,6 +60,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         TIMEOUT 300
         LABELS "integration;io;flow;bpf;linux;requires_bpf"
         SKIP_RETURN_CODE 77
+        RESOURCE_LOCK dap_events_reactor
     )
     
     message(STATUS "[INTEGRATION TEST] Configured: ${PROJECT_NAME} (Linux, BPF sticky sessions)")

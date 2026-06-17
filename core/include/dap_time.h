@@ -84,6 +84,20 @@ static inline dap_nanotime_t dap_nanotime_now(void) {
     return (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
 }
 
+/**
+ * @brief Get monotonic time in milliseconds (CLOCK_MONOTONIC)
+ *
+ * Useful for timing intervals, stall detection, and any measurement
+ * that should not be affected by wall-clock adjustments (NTP, manual).
+ *
+ * @return Monotonic time in milliseconds since an arbitrary epoch.
+ */
+static inline int64_t dap_get_monotime_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
 // crossplatform usleep
 void dap_usleep(uint64_t a_microseconds);
 

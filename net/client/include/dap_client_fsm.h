@@ -184,3 +184,14 @@ void dap_client_fsm_notify(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx,
  */
 void dap_client_fsm_notify_timer_fired(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx);
 
+/**
+ * @brief Dispatch an arbitrary callback to the FSM thread (called from any thread)
+ *
+ * The callback executes on the bound FSM thread and receives the looked-up FSM.
+ * If the FSM is not found or is being removed, the callback is not called, but
+ * the caller is still responsible for freeing a_arg.
+ */
+typedef void (*dap_client_fsm_dispatch_func_t)(dap_client_fsm_t *a_fsm, void *a_arg);
+void dap_client_fsm_dispatch(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx,
+                             dap_client_fsm_dispatch_func_t a_func, void *a_arg);
+

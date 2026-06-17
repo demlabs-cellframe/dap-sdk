@@ -38,7 +38,7 @@ add_test(
 # Test properties: 100 clients x 64KB data exchange on CBPF (10 workers) needs ~3 min
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 900
-    RESOURCE_LOCK dap_net_heavy
+    RESOURCE_LOCK dap_events_reactor
     LABELS "regression;net;trans;udp"
 )
 
@@ -83,6 +83,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES 
     TIMEOUT 30
     LABELS "regression;net;trans;udp;handshake"
+    RESOURCE_LOCK dap_events_reactor
 )
 
 message("[+] UDP Handshake Retransmission Test - verifies handshake retransmission works")

@@ -44,6 +44,17 @@ void               dap_tls_mimicry_free(dap_tls_mimicry_t *a_m);
 void dap_tls_mimicry_set_sni(dap_tls_mimicry_t *a_m, const char *a_hostname);
 
 /**
+ * Set TLS fingerprint profile for ClientHello generation.
+ * When set, create_client_hello() uses the profile template instead of
+ * building ClientHello from inline constants.
+ * @param a_profile_name  Profile name (e.g. "chrome_120"), or NULL to disable
+ * @return 0 on success, -1 if profile not found
+ */
+struct dap_tls_fp_profile;
+int dap_tls_mimicry_set_profile(dap_tls_mimicry_t *a_m,
+                                const struct dap_tls_fp_profile *a_profile);
+
+/**
  * Client: generate a TLS 1.3 ClientHello.
  * Caller must free(*a_out) with DAP_DELETE.
  */

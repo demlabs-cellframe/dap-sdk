@@ -42,15 +42,57 @@
 
 #define LOG_TAG "dap_client_trans_ctx"
 
-/* Deferred stream deletion: posted to the esocket's own worker so that
- * any in-flight read callbacks on that worker finish BEFORE the stream
- * memory is freed, eliminating the TOCTOU race between dap_stream_delete_unsafe
- * (called from the FSM worker) and dap_stream_trans_udp_read_callback. */
-static void s_deferred_stream_delete(void *a_arg)
+/* Context-safe cleanup of a stream and its FSM-owned trans_ctx.
+ * Executed on the worker that owns the stream so that all in-flight
+ * callbacks on that worker finish before the stream memory is freed.
+ * The trans_ctx is detached from the FSM before this callback is posted,
+ * so it can be freed here without racing the FSM thread. */
+typedef struct {
+    dap_net_trans_ctx_t *tc;
+    dap_stream_t *stream;
+} s_stream_tc_cleanup_t;
+
+static void s_stream_tc_cleanup_on_worker(void *a_arg)
 {
-    dap_stream_t *l_stream = (dap_stream_t *)a_arg;
-    if (l_stream)
+    s_stream_tc_cleanup_t *l_cleanup = (s_stream_tc_cleanup_t *)a_arg;
+    log_it(L_INFO, "[CLEAN_DBG] cleanup_on_worker arg=%p", a_arg);
+    if (!l_cleanup)
+        return;
+
+    dap_net_trans_ctx_t *l_tc = l_cleanup->tc;
+    dap_stream_t *l_stream = l_cleanup->stream;
+    log_it(L_INFO, "[CLEAN_DBG] cleanup_on_worker: tc=%p stream=%p esocket=%p",
+           (void*)l_tc, (void*)l_stream, l_stream ? (void*)l_stream->esocket : NULL);
+
+    if (l_stream) {
+        /* Worker context: safe to touch stream fields.  Detach the trans_ctx
+         * before deleting the stream so dap_stream_delete_unsafe() does not
+         * write into the trans_ctx we are about to free. */
+        if (l_stream->trans_ctx == l_tc) {
+            l_stream->trans_ctx = NULL;
+            if (l_stream->client_stream_ref == &l_tc->stream)
+                l_stream->client_stream_ref = NULL;
+        }
+        log_it(L_INFO, "[CLEAN_DBG] calling dap_stream_delete_unsafe for stream %p esocket %p",
+               (void*)l_stream, l_stream ? (void*)l_stream->esocket : NULL);
         dap_stream_delete_unsafe(l_stream);
+        log_it(L_INFO, "[CLEAN_DBG] dap_stream_delete_unsafe done");
+    }
+
+    if (l_tc) {
+        DAP_DEL_Z(l_tc->session_key_id);
+        if (l_tc->session_key_open) {
+            dap_enc_key_delete(l_tc->session_key_open);
+            l_tc->session_key_open = NULL;
+        }
+        if (l_tc->session_key) {
+            dap_enc_key_delete(l_tc->session_key);
+            l_tc->session_key = NULL;
+        }
+        DAP_DELETE(l_tc);
+    }
+
+    DAP_DELETE(l_cleanup);
 }
 
 // Global hash table for UUID-based lookup of client trans contexts
@@ -162,37 +204,53 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_ctx->client);
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
 
-    if (l_tc && l_tc->stream) {
+    if (l_tc) {
         dap_stream_t *l_stream = l_tc->stream;
+        log_it(L_INFO, "[CLEAN_DBG] clean_unsafe: l_tc=%p l_stream=%p esocket_worker=%p current_worker=%p",
+               (void*)l_tc, (void*)l_stream, l_stream ? (void*)l_stream->esocket_worker : NULL,
+               (void*)dap_worker_get_current());
         /* Sentinel: callbacks that check l_tc->stream will see NULL immediately,
          * even before the stream memory is freed. */
         l_tc->stream = NULL;
         l_tc->stream_key = NULL;
         l_tc->stream_id = 0;
 
-        /* If the stream has an esocket on a different worker, post the actual
-         * dap_stream_delete_unsafe call to that worker.  This serialises the
-         * free after any in-flight read callbacks on the esocket worker complete,
-         * preventing the TOCTOU race where dap_stream_delete_unsafe sets
-         * stream->trans = NULL (line 777) while the UDP read callback still
-         * holds a local l_stream pointer and is about to access l_stream->trans. */
-        dap_worker_t *l_es_worker = l_stream->esocket_worker;
-        if (l_es_worker && l_es_worker != dap_worker_get_current()) {
-            dap_worker_exec_callback_on(l_es_worker, s_deferred_stream_delete, l_stream);
-        } else {
-            dap_stream_delete_unsafe(l_stream);
-        }
-    }
+        if (l_stream) {
+            /* Stream and trans_ctx belong to different contexts.  Detach the
+             * trans_ctx from the FSM and hand ownership to the stream's worker,
+             * which will clear stream-side back-pointers and free both objects
+             * after any in-flight callbacks complete. */
+            if (l_fsm)
+                l_fsm->trans_ctx = NULL;
 
-    if (l_tc) {
-        DAP_DEL_Z(l_tc->session_key_id);
-        if (l_tc->session_key_open) {
-            dap_enc_key_delete(l_tc->session_key_open);
-            l_tc->session_key_open = NULL;
-        }
-        if (l_tc->session_key) {
-            dap_enc_key_delete(l_tc->session_key);
-            l_tc->session_key = NULL;
+            s_stream_tc_cleanup_t *l_cleanup = DAP_NEW_Z(s_stream_tc_cleanup_t);
+            if (!l_cleanup) {
+                log_it(L_ERROR, "Failed to allocate stream cleanup ctx, leaking stream %p", (void*)l_stream);
+            } else {
+                l_cleanup->tc = l_tc;
+                l_cleanup->stream = l_stream;
+                dap_worker_t *l_es_worker = l_stream->esocket_worker;
+                log_it(L_INFO, "[CLEAN_DBG] dispatching cleanup to worker %p", (void*)l_es_worker);
+                if (l_es_worker && l_es_worker != dap_worker_get_current()) {
+                    dap_worker_exec_callback_on(l_es_worker, s_stream_tc_cleanup_on_worker, l_cleanup);
+                } else {
+                    s_stream_tc_cleanup_on_worker(l_cleanup);
+                }
+            }
+        } else {
+            /* No stream attached — free trans_ctx in the current (FSM) context. */
+            DAP_DEL_Z(l_tc->session_key_id);
+            if (l_tc->session_key_open) {
+                dap_enc_key_delete(l_tc->session_key_open);
+                l_tc->session_key_open = NULL;
+            }
+            if (l_tc->session_key) {
+                dap_enc_key_delete(l_tc->session_key);
+                l_tc->session_key = NULL;
+            }
+            DAP_DELETE(l_tc);
+            if (l_fsm)
+                l_fsm->trans_ctx = NULL;
         }
     }
 
@@ -202,8 +260,6 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
         l_fsm->is_encrypted_headers = false;
         l_fsm->is_close_session = false;
     }
-    if (l_tc)
-        l_tc->remote_protocol_version = 0;
     a_ctx->ts_last_active = 0;
 }
 
@@ -497,8 +553,7 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             break;
         }
 
-        // Generate session key: some KEM implementations (MSRLN, Kyber) store the shared
-        // secret in ->shared_key after gen_alice_shared_key; others use ->priv_key_data.
+        // Generate session key
         const void *l_kex_buf = l_tc->session_key_open->shared_key
                                     ? l_tc->session_key_open->shared_key
                                     : l_tc->session_key_open->priv_key_data;
@@ -512,10 +567,15 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         // Verify node sign
         if (l_node_sign_b64) {
             l_len = strlen(l_node_sign_b64);
-            dap_sign_t *l_sign = DAP_NEW_Z_SIZE_RET_IF_FAIL(dap_sign_t, DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1,
+            size_t l_sign_alloc_size = DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1;
+            dap_sign_t *l_sign = DAP_NEW_Z_SIZE_RET_IF_FAIL(dap_sign_t, l_sign_alloc_size,
                 l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_bob_message, l_tc->session_key_id);
             l_decoded_len = dap_enc_base64_decode(l_node_sign_b64, l_len, l_sign, DAP_ENC_DATA_TYPE_B64);
-            if (!dap_sign_verify_all(l_sign, l_decoded_len, l_bob_message, l_bob_message_size)) {
+            if (l_decoded_len > l_sign_alloc_size) {
+                log_it(L_ERROR, "Signature decode overflow: decoded %zu > allocated %zu", l_decoded_len, l_sign_alloc_size);
+                DAP_DELETE(l_sign);
+                l_tc->authorized = false;
+            } else if (!dap_sign_verify_all(l_sign, l_decoded_len, l_bob_message, l_bob_message_size)) {
                 dap_stream_node_addr_t l_sign_addr = dap_stream_node_addr_from_sign(l_sign);
                 l_tc->authorized = (l_sign_addr.uint64 == a_client->link_info.node_addr.uint64);
             } else {

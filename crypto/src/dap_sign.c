@@ -211,28 +211,11 @@ bool dap_sign_type_is_deprecated(dap_sign_type_t a_sign_type){
 int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size,
                            void * a_output, size_t *a_output_size)
 {
-    if(!a_key){
+    if(!a_key || !a_key->sign_get){
         log_it (L_ERROR, "Can't find the private key to create signature");
         return -1;
     }
-    switch (a_key->type) {
-        case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        case DAP_ENC_KEY_TYPE_SIG_FALCON:
-#ifdef DAP_ECDSA
-        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-#endif
-#ifdef DAP_SHIPOVNIK
-        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
-#endif
-        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
-            return a_key->sign_get(a_key, a_data, a_data_size, a_output, *a_output_size);
-        default:
-            return -1;
-    }
+    return a_key->sign_get(a_key, a_data, a_data_size, a_output, *a_output_size);
 }
 
 /**
@@ -280,7 +263,15 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
 
     // calculate max signature size
     size_t l_sign_unserialized_size = dap_sign_create_output_unserialized_calc_size(a_key);
-    if(l_sign_unserialized_size > 0) {
+    if(l_sign_unserialized_size == 0) {
+        log_it(L_ERROR, "Signature size is 0 for key type %s", dap_enc_get_type_name(a_key->type));
+        return NULL;
+    }
+    if(!a_key->sign_get) {
+        log_it(L_ERROR, "Key type %s has no sign_get function", dap_enc_get_type_name(a_key->type));
+        return NULL;
+    }
+    {
         size_t l_pub_key_size = 0;
         uint8_t *l_sign_unserialized = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sign_unserialized_size, NULL),
                 *l_pub_key = NULL;   
@@ -580,10 +571,9 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
     dap_string_append_printf(a_str_out, "\tType: %s\n",
                              dap_sign_type_to_str(a_sign->header.type));
     if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
-        const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
-             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-             : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
-             dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_str);
+             dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", !dap_strcmp(a_hash_out_type, "hex")
+                ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
+                : dap_chain_hash_fast_to_str_static(&l_hash_pkey));
     }
     dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
                                         "\tSignature size: %u\n",
@@ -605,10 +595,9 @@ void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_
     dap_chain_hash_fast_t l_hash_pkey;
     json_object_object_add(a_json_out, a_version == 1 ? "Type" : "sig_type", json_object_new_string(dap_sign_type_to_str(a_sign->header.type)));
     if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
-        const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
-             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
-             : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
-             json_object_object_add(a_json_out, a_version == 1 ? "Public key hash" : "pkey_hash", json_object_new_string(l_hash_str));             
+            json_object_object_add(a_json_out, a_version == 1 ? "Public key hash" : "pkey_hash", json_object_new_string(dap_strcmp(a_hash_out_type, "hex")
+                ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
+                : dap_chain_hash_fast_to_str_static(&l_hash_pkey)));
     }
     json_object_object_add(a_json_out, a_version == 1 ? "Public key size" : "pkey_size", json_object_new_uint64(a_sign->header.sign_pkey_size));
     json_object_object_add(a_json_out, a_version == 1 ? "Signature size" : "sig_size", json_object_new_uint64(a_sign->header.sign_size));

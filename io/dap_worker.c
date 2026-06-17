@@ -29,6 +29,7 @@
 #include "dap_worker.h"
 #include "dap_context_queue.h"
 #include "dap_timerfd.h"
+#include "dap_timerfd.h"
 #include "dap_events.h"
 #include "dap_enc_base64.h"
 #include "dap_common.h"
@@ -109,7 +110,7 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
     assert(l_worker);
     if (s_worker)
         return log_it(L_ERROR, "Worker %d is already assigned to current thread %p",
-                               s_worker->id, (void *)s_worker->context->thread_id),
+                               s_worker->id, (void*)(uintptr_t)s_worker->context->thread_id),
             -1;
     s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
@@ -232,8 +233,15 @@ int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
         l_worker->queue_callback = NULL;
     }
     
+    /* Clean up the activity-check timer created in callback_started */
+    if (l_worker->timer_check_activity) {
+        dap_timerfd_delete_unsafe(l_worker->timer_check_activity);
+        l_worker->timer_check_activity = NULL;
+    }
+    
     dap_context_remove(a_context->event_exit);
     dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
+    a_context->event_exit = NULL;
 
     log_it(L_NOTICE,"Exiting thread #%u", l_worker->id);
     return 0;
@@ -338,8 +346,11 @@ static void s_queue_add_es_callback(void *a_arg) {
         debug_if(s_debug_more, L_INFO, "Worker #%u: dequeued new esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" type %d",
                l_es->worker->id, l_es->socket, l_es->uuid, l_es->type);
         s_queue_es_add(l_es->worker, l_es);
-    } else {
-        log_it(L_WARNING, "s_queue_add_es_callback: NULL es=%p or NULL worker", a_arg);
+    } else if (l_es) {
+        /* Worker was cleared during teardown — esocket is orphaned, just delete it */
+        debug_if(s_debug_more, L_WARNING, "s_queue_add_es_callback: esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" has no worker (teardown race), deleting",
+               l_es->socket, l_es->uuid);
+        dap_events_socket_delete_unsafe(l_es, false);
     }
 }
 
@@ -390,14 +401,17 @@ static void s_queue_es_reassign_callback(void *a_arg)
     dap_context_t *l_context = l_worker->context;
     dap_events_socket_t *l_es_reassign;
     if ((l_es_reassign = dap_context_find(l_context, l_msg->esocket_uuid)) != NULL) {
-        if (l_es_reassign->was_reassigned && l_es_reassign->flags & DAP_SOCK_REASSIGN_ONCE) {
+        dap_worker_t *l_worker_new = dap_events_worker_get(l_msg->worker_new_id);
+        if (!l_worker_new) {
+            log_it(L_ERROR, "Reassign callback: worker #%u not found", l_msg->worker_new_id);
+        } else if (l_es_reassign->was_reassigned && l_es_reassign->flags & DAP_SOCK_REASSIGN_ONCE) {
             log_it(L_INFO, "Reassgment request with DAP_SOCK_REASSIGN_ONCE allowed only once, declined reassigment from %u to %u",
-                   l_es_reassign->worker->id, l_msg->worker_new->id);
+                   l_es_reassign->worker->id, l_msg->worker_new_id);
         } else {
-            dap_events_socket_reassign_between_workers_unsafe(l_es_reassign, l_msg->worker_new);
+            dap_events_socket_reassign_between_workers_unsafe(l_es_reassign, l_worker_new);
         }
     } else {
-        log_it(L_INFO, "While we were sending the reassign message, esocket %p has been disconnected", l_msg->esocket);
+        log_it(L_INFO, "While we were sending the reassign message, esocket "DAP_FORMAT_ESOCKET_UUID" has been disconnected", l_msg->esocket_uuid);
     }
     DAP_DELETE(l_msg);
 }
@@ -550,8 +564,8 @@ static bool s_socket_all_check_activity(void * a_arg)
     }
     DL_FOREACH_SAFE(l_del_list, l_cur, l_tmp_list) {
         l_es = (dap_events_socket_t*)l_cur->data;
-        log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%ld seconds since last activity), closing...",
-                    l_es->socket, (long)(l_curtime - (time_t)l_es->last_time_active - s_connection_timeout));
+        log_it(L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (%"DAP_UINT64_FORMAT_U" seconds since last activity), closing...",
+                    l_es->socket, (uint64_t)(l_curtime - (time_t)l_es->last_time_active - s_connection_timeout));
             
         // Call error callback if set
         if (l_es->callbacks.error_callback)

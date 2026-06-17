@@ -57,6 +57,27 @@
 
 #define LOG_TAG "file_utils"
 
+/**
+ * @brief dap_path_to_native_inplace
+ * @param path
+ */
+void dap_path_to_native_inplace(char *path)
+{
+    if (!path)
+        return;
+#ifdef DAP_OS_WINDOWS
+    for (; *path; path++) {
+        if (*path == '/')
+            *path = DAP_DIR_SEPARATOR;
+    }
+#else
+    for (; *path; path++) {
+        if (*path == '\\')
+            *path = DAP_DIR_SEPARATOR;
+    }
+#endif
+}
+
 static bool s_debug_more = false;
 /**
  * Check the directory path for unsupported symbols

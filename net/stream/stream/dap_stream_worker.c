@@ -94,10 +94,10 @@ static void s_ch_io_callback(void * a_msg)
 {
     dap_stream_worker_msg_io_t * l_msg = (dap_stream_worker_msg_io_t*) a_msg;
     assert(l_msg);
-    
+
     dap_worker_t *l_worker = dap_worker_get_current();
     dap_stream_worker_t * l_stream_worker = DAP_STREAM_WORKER(l_worker);
-    
+
     // Check if it was removed from the list
     dap_stream_ch_t *l_msg_ch = NULL;
     pthread_rwlock_rdlock(&l_stream_worker->channels_rwlock);
@@ -122,7 +122,7 @@ static void s_ch_io_callback(void * a_msg)
     if (l_msg->flags_unset & DAP_SOCK_READY_TO_WRITE)
         dap_stream_ch_set_ready_to_write_unsafe(l_msg_ch, false);
     if (l_msg->data_size && l_msg->data) {
-        dap_stream_ch_pkt_write_unsafe(l_msg_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
+        size_t l_ret = dap_stream_ch_pkt_write_unsafe(l_msg_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);
@@ -132,10 +132,10 @@ static void s_ch_send_callback(void *a_msg)
 {
     dap_stream_worker_msg_send_t *l_msg = (dap_stream_worker_msg_send_t *)a_msg;
     assert(l_msg);
-    
+
     dap_worker_t *l_worker = dap_worker_get_current();
     dap_context_t *l_context = l_worker->context;
-    
+
     // Check if it was removed from the list
     dap_events_socket_t *l_es = dap_context_find(l_context, l_msg->uuid);
     if (!l_es) {
@@ -144,7 +144,7 @@ static void s_ch_send_callback(void *a_msg)
     }
     dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
     if (!l_stream) {
-        log_it(L_ERROR, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID, l_es->uuid);
+        log_it(L_DEBUG, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID" (stream teardown in progress)", l_es->uuid);
         goto ret_n_clear;
     }
     dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, l_msg->ch_id);

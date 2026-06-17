@@ -113,11 +113,7 @@ DAP_STATIC_INLINE bool dap_store_obj_driver_obj_compare(dap_store_obj_t *a_obj1,
         strcmp(a_obj1->key, a_obj2->key) || strcmp(a_obj1->group, a_obj2->group);
 }
 
-
-DAP_STATIC_INLINE const char *dap_global_db_driver_hash_print(dap_global_db_driver_hash_t a_hash)
-{
-    return dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc));
-}
+#define dap_global_db_driver_hash_print(a_hash) dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc))
 
 extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank;
 
@@ -170,6 +166,7 @@ typedef struct dap_global_db_driver_callbacks {
 } dap_global_db_driver_callbacks_t;
 
 int     dap_global_db_driver_init(const char *driver_name, const char *a_filename_db);
+const char *dap_global_db_driver_get_name(void);
 void    dap_global_db_driver_deinit(void);
 
 dap_store_obj_t *dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);

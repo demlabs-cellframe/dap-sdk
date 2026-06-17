@@ -5,8 +5,7 @@ project(test_global_db)
 
 # Skip when no DB driver is configured
 if(NOT BUILD_WITH_GDB_DRIVER_MDBX
-   AND NOT BUILD_WITH_GDB_DRIVER_SQLITE
-   AND NOT BUILD_WITH_GDB_DRIVER_PGSQL)
+   AND NOT BUILD_WITH_GDB_DRIVER_SQLITE)
     message(STATUS "Skipping ${PROJECT_NAME}: no DB driver configured")
     return()
 endif()
@@ -38,14 +37,6 @@ endif()
 if(BUILD_WITH_GDB_DRIVER_SQLITE)
     target_link_libraries(${PROJECT_NAME} PRIVATE sqlite3)
     target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_CHAIN_GDB_ENGINE_SQLITE)
-endif()
-
-if(BUILD_WITH_GDB_DRIVER_PGSQL)
-    target_link_libraries(${PROJECT_NAME} PRIVATE pq)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE DAP_CHAIN_GDB_ENGINE_PGSQL)
-    if(WIN32)
-        target_link_libraries(${PROJECT_NAME} PRIVATE ssl crypto z pgcommon pgport)
-    endif()
 endif()
 
 add_test(

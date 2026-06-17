@@ -238,6 +238,18 @@ static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
     if (l_http_simple && l_http_simple->close_after_write) {
         log_it(L_INFO, "All HTTP data transmitted, closing connection");
         a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+    } else {
+        /* Reset HTTP client state for next request (keep-alive) */
+        dap_http_client_t *l_http_client = l_http_simple ? l_http_simple->http_client : NULL;
+        if (l_http_client) {
+            l_http_client->state_read = DAP_HTTP_CLIENT_STATE_START;
+            l_http_simple->request_size = 0;
+            l_http_simple->reply_size = 0;
+            l_http_simple->reply_sent = 0;
+            l_http_simple->close_after_write = false;
+            a_es->_inheritor = l_http_client;
+            dap_events_socket_set_readable_unsafe(a_es, true);
+        }
     }
 }
 
@@ -304,8 +316,9 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
 
     if (l_http_simple->reply_sent >= a_http_client->out_content_length) {
         if (!l_http_simple->close_after_write) {
-          log_it(L_INFO, "All reply data (%zu) queued for sending", a_http_client->out_content_length);
-          l_http_simple->close_after_write = true;
+          log_it(L_INFO, "All reply data (%zu) queued for sending, keep_alive=%d, close_after_write=%d",
+                 a_http_client->out_content_length, a_http_client->keep_alive, !a_http_client->keep_alive);
+          l_http_simple->close_after_write = !a_http_client->keep_alive;
         }
         return false;
     }

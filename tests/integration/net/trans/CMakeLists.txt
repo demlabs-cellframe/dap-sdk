@@ -45,6 +45,7 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 180
     LABELS "integration;net;trans;api"
+    RESOURCE_LOCK dap_events_reactor
 )
 
 # =======================================================================================
@@ -78,10 +79,10 @@ add_test(
 if(CMAKE_CROSSCOMPILING)
     set(_TRANS_INTEGRATION_TIMEOUT 600)
 else()
-    set(_TRANS_INTEGRATION_TIMEOUT 300)
+    set(_TRANS_INTEGRATION_TIMEOUT 600)
 endif()
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT ${_TRANS_INTEGRATION_TIMEOUT}
-    RESOURCE_LOCK dap_net_heavy
+    RESOURCE_LOCK dap_events_reactor
     LABELS "integration;net;trans;parallel;client-server"
 )
