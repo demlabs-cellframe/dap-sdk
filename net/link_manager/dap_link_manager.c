@@ -58,6 +58,7 @@ static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
 static dap_proc_thread_t *s_query_thread = NULL;
 static char s_active_channels[256] = {0};
+static bool s_link_manager_stopping = false;
 
 static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
@@ -282,6 +283,22 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
     return 0;
 }
 
+typedef struct {
+    pthread_mutex_t *mutex;
+    pthread_cond_t *cond;
+    bool *completed;
+} s_link_manager_flush_ctx_t;
+
+static bool s_link_manager_flush_callback(void *a_arg)
+{
+    s_link_manager_flush_ctx_t *l_ctx = (s_link_manager_flush_ctx_t *)a_arg;
+    pthread_mutex_lock(l_ctx->mutex);
+    *l_ctx->completed = true;
+    pthread_cond_signal(l_ctx->cond);
+    pthread_mutex_unlock(l_ctx->mutex);
+    return false;
+}
+
 /**
  * @brief close connections and memory free
  */
@@ -290,6 +307,7 @@ void dap_link_manager_deinit()
 // sanity check
     dap_return_if_pass_err(!s_link_manager, s_init_error);
 // func work
+    s_link_manager_stopping = true;
     dap_link_manager_set_condition(false);
     dap_link_t *l_link = NULL, *l_link_tmp;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
@@ -299,9 +317,38 @@ void dap_link_manager_deinit()
     dap_list_t *it = NULL, *tmp;
     DL_FOREACH_SAFE(s_link_manager->nets, it, tmp)
         dap_link_manager_remove_net(((dap_managed_net_t *)it->data)->id);
+
+    /* Flush pending proc-thread callbacks before freeing s_link_manager,
+     * otherwise s_stream_delete_callback may access freed memory. */
+    if (s_query_thread) {
+        pthread_mutex_t l_mutex = PTHREAD_MUTEX_INITIALIZER;
+        pthread_cond_t l_cond = PTHREAD_COND_INITIALIZER;
+        bool l_completed = false;
+        s_link_manager_flush_ctx_t l_flush_ctx = {
+            .mutex = &l_mutex,
+            .cond = &l_cond,
+            .completed = &l_completed
+        };
+        if (dap_proc_thread_callback_add_pri(s_query_thread, s_link_manager_flush_callback,
+                                             &l_flush_ctx, DAP_QUEUE_MSG_PRIORITY_HIGH) == 0) {
+            pthread_mutex_lock(&l_mutex);
+            struct timespec l_timeout;
+            clock_gettime(CLOCK_REALTIME, &l_timeout);
+            l_timeout.tv_sec += 5;
+            while (!l_completed)
+                if (pthread_cond_timedwait(&l_cond, &l_mutex, &l_timeout) == ETIMEDOUT)
+                    break;
+            pthread_mutex_unlock(&l_mutex);
+        }
+        pthread_mutex_destroy(&l_mutex);
+        pthread_cond_destroy(&l_cond);
+    }
+
     pthread_rwlock_destroy(&s_link_manager->links_lock);
     pthread_rwlock_destroy(&s_link_manager->nets_lock);
     DAP_DELETE(s_link_manager);
+    s_link_manager = NULL;
+    s_link_manager_stopping = false;
 }
 
 /**
@@ -1135,6 +1182,10 @@ void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_
 static bool s_stream_delete_callback(void *a_arg)
 {
     assert(a_arg);
+    if (s_link_manager_stopping) {
+        DAP_DELETE(a_arg);
+        return false;
+    }
     dap_stream_node_addr_t *l_node_addr = a_arg;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link = s_link_manager_link_find(l_node_addr);
@@ -1163,6 +1214,8 @@ static bool s_stream_delete_callback(void *a_arg)
 void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr)
 {
     dap_return_if_fail(a_node_addr);
+    if (s_link_manager_stopping)
+        return;
     dap_stream_node_addr_t *l_args = DAP_DUP(a_node_addr);
     if (!l_args) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);

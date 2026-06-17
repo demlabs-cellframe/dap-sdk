@@ -281,8 +281,6 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     return l_fsm;
 }
 
-static void s_deferred_trans_ctx_free(void *a_arg) { DAP_DELETE(a_arg); }
-
 void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
 {
     if (!a_fsm)
@@ -305,29 +303,20 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
     }
 
     /* Detach FSM from client only AFTER trans_ctx cleanup so that DAP_CLIENT_FSM() on
-     * stale esocket references returns NULL from this point forward. */
+     * stale esocket references returns NULL from this point forward.  The trans_ctx
+     * (if any) was detached from the FSM and handed to the stream's worker by
+     * dap_client_trans_ctx_clean_unsafe(); it must not be freed here. */
     if (a_fsm->client)
         a_fsm->client->_internal = NULL;
 
     if (a_fsm->trans_ctx) {
         a_fsm->trans_ctx->_inheritor = NULL;
-        dap_worker_t *l_udp_worker = a_fsm->trans_ctx->esocket_worker;
-        if (l_udp_worker) {
-            /* s_udp_close already cleared callbacks.read_callback = NULL on the esocket,
-             * so no new read callbacks can fire after this point.  We still defer the free
-             * to avoid freeing trans_ctx before any read callback already in-flight (already
-             * dispatched by epoll but not yet executed) on the worker finishes: those
-             * callbacks check l_trans_ctx->stream == NULL and return early, but only if the
-             * trans_ctx struct itself is still valid memory.  Deferring to the same worker
-             * serialises the free after all pending events on that worker complete. */
-            a_fsm->trans_ctx->esocket_worker = NULL;
-            dap_worker_exec_callback_on(l_udp_worker, s_deferred_trans_ctx_free, a_fsm->trans_ctx);
-        } else {
-            DAP_DELETE(a_fsm->trans_ctx);
-        }
+        /* No stream was attached at cleanup time, so trans_ctx is still pending.
+         * Free it now in the FSM context. */
+        DAP_DELETE(a_fsm->trans_ctx);
         a_fsm->trans_ctx = NULL;
-        a_fsm->esocket   = NULL;
     }
+    a_fsm->esocket = NULL;
 
     DAP_DEL_Z(a_fsm->tried_transports);
     DAP_DELETE(a_fsm);
@@ -1676,4 +1665,39 @@ void dap_client_fsm_notify_timer_fired(uint64_t a_fsm_uuid, uint32_t a_fsm_threa
     l_ctx->fsm_uuid = a_fsm_uuid;
 
     s_fsm_thread_callback_add(a_fsm_thread_idx, s_fsm_timer_fired_on_fsm_thread, l_ctx);
+}
+
+// ===== Generic dispatch to FSM thread =====
+
+typedef struct {
+    uint64_t fsm_uuid;
+    dap_client_fsm_dispatch_func_t func;
+    void *arg;
+} fsm_dispatch_ctx_t;
+
+static void *s_fsm_dispatch_on_fsm_thread(void *a_arg)
+{
+    fsm_dispatch_ctx_t *l_ctx = (fsm_dispatch_ctx_t *)a_arg;
+    if (!l_ctx) return NULL;
+
+    dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
+    if (l_fsm && !l_fsm->is_removing) {
+        l_ctx->func(l_fsm, l_ctx->arg);
+    }
+
+    DAP_DELETE(l_ctx);
+    return NULL;
+}
+
+void dap_client_fsm_dispatch(uint64_t a_fsm_uuid, uint32_t a_fsm_thread_idx,
+                             dap_client_fsm_dispatch_func_t a_func, void *a_arg)
+{
+    if (!a_func) return;
+    fsm_dispatch_ctx_t *l_ctx = DAP_NEW_Z(fsm_dispatch_ctx_t);
+    if (!l_ctx) return;
+    l_ctx->fsm_uuid = a_fsm_uuid;
+    l_ctx->func = a_func;
+    l_ctx->arg = a_arg;
+
+    s_fsm_thread_callback_add(a_fsm_thread_idx, s_fsm_dispatch_on_fsm_thread, l_ctx);
 }

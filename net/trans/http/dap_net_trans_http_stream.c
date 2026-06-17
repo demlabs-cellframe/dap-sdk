@@ -121,9 +121,71 @@ typedef struct {
     dap_net_trans_handshake_cb_t callback;
     dap_client_t *client;  // Store client to verify ctx matches
     void *old_callback_arg;  // Store old callback_arg to restore after use
+    uint64_t fsm_uuid;       // For dispatching response to the FSM thread
+    uint32_t fsm_thread_idx; // For dispatching response to the FSM thread
 } s_http_handshake_ctx_t;
 
 // static s_http_handshake_ctx_t s_http_handshake_ctx = {NULL, NULL}; // REMOVED GLOBAL CTX
+
+static void s_http_handshake_ctx_delete(s_http_handshake_ctx_t *a_ctx)
+{
+    if (!a_ctx)
+        return;
+    DAP_DELETE(a_ctx);
+}
+
+/* Handshake response/error forwarded to the FSM thread instead of being
+ * processed directly on the worker thread.  This keeps all access to the
+ * FSM-owned trans_ctx inside the FSM context. */
+typedef struct {
+    s_http_handshake_ctx_t *ctx;
+    void *data;
+    size_t data_size;
+    int error;
+} s_http_handshake_dispatch_t;
+
+static void s_http_handshake_on_fsm_thread(dap_client_fsm_t *a_fsm, void *a_arg)
+{
+    log_it(L_INFO, "[HS_DBG] on_fsm_thread fsm=%p arg=%p", (void*)a_fsm, a_arg);
+    s_http_handshake_dispatch_t *l_d = (s_http_handshake_dispatch_t *)a_arg;
+    if (!l_d || !l_d->ctx)
+        goto cleanup;
+
+    s_http_handshake_ctx_t *l_ctx = l_d->ctx;
+
+    /* Restore the original callback_arg unconditionally — the ctx is consumed. */
+    a_fsm->callback_arg = l_ctx->old_callback_arg;
+
+    if (!l_ctx->stream || !l_ctx->callback) {
+        log_it(L_WARNING, "[HS_DBG] on_fsm_thread: stream=%p callback=%p — aborting",
+               (void*)l_ctx->stream, (void*)(uintptr_t)l_ctx->callback);
+        goto cleanup;
+    }
+
+    /* Validate that the stream is still the one owned by this FSM.
+     * dap_stream_delete_unsafe updates l_tc->stream through client_stream_ref
+     * when the stream goes away, so a mismatch means the stream is gone. */
+    dap_net_trans_ctx_t *l_tc = a_fsm->trans_ctx;
+    log_it(L_INFO, "[HS_DBG] on_fsm_thread: tc=%p tc->stream=%p ctx->stream=%p",
+           (void*)l_tc, l_tc ? (void*)l_tc->stream : NULL, (void*)l_ctx->stream);
+    if (!l_tc || l_tc->stream != l_ctx->stream) {
+        l_ctx->callback(l_ctx->stream, NULL, 0, ERROR_STREAM_ABORTED);
+        goto cleanup;
+    }
+
+    if (l_d->error) {
+        l_ctx->callback(l_ctx->stream, NULL, 0, l_d->error);
+    } else {
+        l_ctx->callback(l_ctx->stream, l_d->data, l_d->data_size, 0);
+    }
+
+cleanup:
+    if (l_d) {
+        DAP_DELETE(l_d->data);
+        s_http_handshake_ctx_delete(l_d->ctx);
+        DAP_DELETE(l_d);
+    }
+}
 
 // Ctx for session create callbacks (per-request, allocated dynamically)
 typedef struct {
@@ -140,10 +202,11 @@ static s_http_session_ctx_t s_http_session_ctx = {NULL, NULL, NULL, NULL};
 static dap_net_trans_t *s_http_trans = NULL;
 
 /**
- * @brief Handshake error callback wrapper
+ * @brief Handshake error callback wrapper (runs on worker thread)
  */
 static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, int a_error)
 {
+    (void)a_arg;
     if (!a_client) {
         log_it(L_WARNING, "s_http_handshake_error_wrapper: client is NULL, error=%d", a_error);
         return;
@@ -157,66 +220,76 @@ static void s_http_handshake_error_wrapper(dap_client_t *a_client, void *a_arg, 
     }
 
     s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_fsm->callback_arg;
-    
+
     // Verify that the ctx matches this client
     if (l_ctx->client != a_client || !l_ctx->stream) {
         log_it(L_WARNING, "s_http_handshake_error_wrapper: ctx invalid or mismatch");
         return;
     }
-    
-    // Call trans callback with error
-    if (l_ctx->callback) {
-        l_ctx->callback(l_ctx->stream, NULL, 0, a_error);
+
+    s_http_handshake_dispatch_t *l_d = DAP_NEW_Z(s_http_handshake_dispatch_t);
+    if (!l_d) {
+        log_it(L_ERROR, "s_http_handshake_error_wrapper: failed to allocate dispatch ctx");
+        return;
     }
-    
-    // Free ctx and restore old callback_arg
-    void *l_old_arg = l_ctx->old_callback_arg;
-    DAP_DELETE(l_ctx);
-    l_fsm->callback_arg = l_old_arg;
+    l_d->ctx = l_ctx;
+    l_d->error = a_error;
+
+    dap_client_fsm_dispatch(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                            s_http_handshake_on_fsm_thread, l_d);
 }
 
 /**
- * @brief Handshake response callback wrapper
+ * @brief Handshake response callback wrapper (runs on worker thread)
  */
 static void s_http_handshake_response_wrapper(dap_client_t *a_client, void *a_data, size_t a_data_size)
 {
-    // log_it(L_INFO, "s_http_handshake_response_wrapper: CALLED! client=%p, data=%p, size=%zu", a_client, a_data, a_data_size);
-    
+    log_it(L_INFO, "[HS_DBG] response_wrapper client=%p data=%p size=%zu", (void*)a_client, a_data, a_data_size);
     if (!a_client) {
         log_it(L_ERROR, "s_http_handshake_response_wrapper: client is NULL");
         return;
     }
-    
+
     dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
     if (!l_fsm || !l_fsm->callback_arg) {
-        log_it(L_ERROR, "s_http_handshake_response_wrapper: no ctx in callback_arg");
+        log_it(L_ERROR, "s_http_handshake_response_wrapper: no ctx in callback_arg (fsm=%p arg=%p)",
+               (void*)l_fsm, l_fsm ? l_fsm->callback_arg : NULL);
         return;
     }
 
     s_http_handshake_ctx_t *l_ctx = (s_http_handshake_ctx_t *)l_fsm->callback_arg;
-    
+
     if (l_ctx->client != a_client) {
         log_it(L_WARNING, "s_http_handshake_response_wrapper: client mismatch");
         return;
     }
-    
+
     if (!l_ctx->stream) {
         log_it(L_WARNING, "s_http_handshake_response_wrapper: missing stream ctx");
         return;
     }
-    
-    // Call trans callback with response data
-    if (l_ctx->callback) {
-        // log_it(L_INFO, "s_http_handshake_response_wrapper: calling trans callback");
-        l_ctx->callback(l_ctx->stream, a_data, a_data_size, 0);
-    } else {
-        log_it(L_WARNING, "s_http_handshake_response_wrapper: callback is NULL");
+
+    s_http_handshake_dispatch_t *l_d = DAP_NEW_Z(s_http_handshake_dispatch_t);
+    if (!l_d) {
+        log_it(L_ERROR, "s_http_handshake_response_wrapper: failed to allocate dispatch ctx");
+        return;
     }
-    
-    // Free ctx and restore old callback_arg
-    void *l_old_arg = l_ctx->old_callback_arg;
-    DAP_DELETE(l_ctx);
-    l_fsm->callback_arg = l_old_arg;
+    l_d->ctx = l_ctx;
+    if (a_data && a_data_size) {
+        l_d->data = DAP_NEW_SIZE(void, a_data_size);
+        if (!l_d->data) {
+            log_it(L_ERROR, "s_http_handshake_response_wrapper: failed to copy response data");
+            DAP_DELETE(l_d);
+            return;
+        }
+        memcpy(l_d->data, a_data, a_data_size);
+        l_d->data_size = a_data_size;
+    }
+
+    log_it(L_INFO, "[HS_DBG] dispatching response to FSM uuid=0x%016" PRIx64 " thread=%u",
+           l_ctx->fsm_uuid, l_ctx->fsm_thread_idx);
+    dap_client_fsm_dispatch(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                            s_http_handshake_on_fsm_thread, l_d);
 }
 
 /**
@@ -794,11 +867,8 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     l_ctx->callback = a_callback;
     l_ctx->client = l_client;
     l_ctx->old_callback_arg = l_fsm->callback_arg;
-
-    /* Auto-invalidate l_ctx->stream when the stream is deleted.
-     * dap_stream_delete_unsafe checks client_stream_ref and NULLs *client_stream_ref. */
-    if (a_stream)
-        a_stream->client_stream_ref = &l_ctx->stream;
+    l_ctx->fsm_uuid = l_fsm->uuid;
+    l_ctx->fsm_thread_idx = l_fsm->fsm_thread_idx;
 
     // Set ctx as callback arg
     l_fsm->callback_arg = l_ctx;
@@ -809,7 +879,7 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
         log_it(L_ERROR, "HTTP trans not initialized");
         DAP_DELETE(l_data_str);
         l_fsm->callback_arg = l_ctx->old_callback_arg;
-        DAP_DELETE(l_ctx);
+        s_http_handshake_ctx_delete(l_ctx);
         return -6;
     }
 
@@ -824,7 +894,7 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     if (l_res < 0) {
         log_it(L_ERROR, "Failed to create HTTP request for enc_init (return code: %d)", l_res);
         l_fsm->callback_arg = l_ctx->old_callback_arg;
-        DAP_DELETE(l_ctx);
+        s_http_handshake_ctx_delete(l_ctx);
         return -6;
     }
     

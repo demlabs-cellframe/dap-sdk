@@ -78,6 +78,12 @@
 
 static bool s_debug_more = false;
 static void s_es_server_new     (dap_events_socket_t *a_es, void *a_arg);
+static void s_remove_listener_from_polling_callback(void *a_arg)
+{
+    dap_events_socket_t *l_es = (dap_events_socket_t *)a_arg;
+    if (l_es)
+        dap_context_remove_from_polling(l_es);
+}
 static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
 static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
 
@@ -573,9 +579,20 @@ void dap_server_delete(dap_server_t *a_server)
     dap_return_if_pass(!a_server);
     while (a_server->es_listeners) {
         dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
-        if (l_es)
-            l_es->server = NULL;  /* Prevent dangling pointer before async delete */
-        dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid); // TODO unsafe moment. Replace storage to uuids
+        if (l_es) {
+            l_es->server = NULL;  /* Always clear server pointer — prevents use-after-free
+                                   * in accept callback on the worker thread */
+            if (l_es->no_close) {
+                /* Listen sockets: remove from epoll so no new accept events fire,
+                 * but don't delete — the socket stays alive for in-flight callbacks.
+                 * Will be fully cleaned up when event loop deinits.
+                 * Must schedule removal on the owning worker thread: the context's
+                 * current epoll selection is not safe to modify from this thread. */
+                dap_worker_exec_callback_on(l_es->worker, s_remove_listener_from_polling_callback, l_es);
+            } else {
+                dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid);
+            }
+        }
         dap_list_t *l_tmp = a_server->es_listeners;
         a_server->es_listeners = l_tmp->next;
         DAP_DELETE(l_tmp);

@@ -755,22 +755,50 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         if (l_selected_sockets > 0) {
             s_busy_count++;
             if (s_busy_count > 10000) {
-                dap_events_socket_t *l_es0 = (dap_events_socket_t *)l_epoll_events[0].data.ptr;
-                log_it(L_WARNING, "Worker ctx #%u busy loop: %"PRIu64" iters, fd=%d type=%u epoll_ev=0x%x n_events=%d sock_flags=0x%x buf_out=%zu has_write_cb=%d",
-                       a_context->id, s_busy_count,
-                       l_es0 ? s_es_io_fd(l_es0) : -1,
-                       l_es0 ? (unsigned)l_es0->type : 0,
-                       l_epoll_events[0].events, l_selected_sockets,
-                       l_es0 ? l_es0->flags : 0,
-                       l_es0 ? l_es0->buf_out_size : 0,
-                       l_es0 ? (l_es0->callbacks.write_callback != NULL) : 0);
-                /* Break the spin: drop armed edge until explicitly re-enabled. */
-                if (l_es0) {
-                    uint32_t l_ev0 = l_epoll_events[0].events;
-                    if ((l_ev0 & EPOLLIN) && l_es0->type != DESCRIPTOR_TYPE_EVENT)
-                        dap_events_socket_set_readable_unsafe(l_es0, false);
-                    if (l_ev0 & EPOLLOUT)
-                        dap_events_socket_set_writable_unsafe(l_es0, false);
+                /* Scan ALL ready events for persistent HUP sockets that cause
+                 * the busy loop.  Only events[0] was checked before, missing
+                 * HUP sockets at other indices. */
+                bool l_forced_close = false;
+                for (ssize_t bi = 0; bi < l_sockets_max && bi < l_selected_sockets; bi++) {
+                    dap_events_socket_t *l_bes = (dap_events_socket_t *)l_epoll_events[bi].data.ptr;
+                    if (!l_bes)
+                        continue;
+                    uint32_t l_bev = l_epoll_events[bi].events;
+                    if ((l_bev & (EPOLLHUP | EPOLLRDHUP))
+                        && !(l_bes->flags & DAP_SOCK_SIGNAL_CLOSE)) {
+                        log_it(L_WARNING, "Worker ctx #%u: force-removing fd %d (idx %zd) from polling due to persistent HUP (ev=0x%x, flags=0x%x, no_close=%d)",
+                               a_context->id, s_es_io_fd(l_bes), bi, l_bev, l_bes->flags, l_bes->no_close);
+                        /* Remove from epoll immediately to break the loop */
+                        dap_context_remove_from_polling(l_bes);
+                        l_bes->flags &= ~(DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE);
+                        if (l_bes->no_close) {
+                            /* Listener socket — just remove from polling, don't delete */
+                        } else {
+                            /* Client socket — mark for deletion */
+                            l_bes->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                        }
+                        l_forced_close = true;
+                    }
+                }
+                if (!l_forced_close) {
+                    /* No HUP sockets found — log the first event for diagnosis */
+                    dap_events_socket_t *l_es0 = (dap_events_socket_t *)l_epoll_events[0].data.ptr;
+                    log_it(L_WARNING, "Worker ctx #%u busy loop: %"PRIu64" iters, fd=%d type=%u epoll_ev=0x%x n_events=%d sock_flags=0x%x buf_out=%zu has_write_cb=%d",
+                           a_context->id, s_busy_count,
+                           l_es0 ? s_es_io_fd(l_es0) : -1,
+                           l_es0 ? (unsigned)l_es0->type : 0,
+                           l_epoll_events[0].events, l_selected_sockets,
+                           l_es0 ? l_es0->flags : 0,
+                           l_es0 ? l_es0->buf_out_size : 0,
+                           l_es0 ? (l_es0->callbacks.write_callback != NULL) : 0);
+                    /* Break the spin: drop armed edge until explicitly re-enabled. */
+                    if (l_es0) {
+                        uint32_t l_ev0 = l_epoll_events[0].events;
+                        if ((l_ev0 & EPOLLIN) && l_es0->type != DESCRIPTOR_TYPE_EVENT)
+                            dap_events_socket_set_readable_unsafe(l_es0, false);
+                        if (l_ev0 & EPOLLOUT)
+                            dap_events_socket_set_writable_unsafe(l_es0, false);
+                    }
                 }
                 s_busy_count = 0;
             }
@@ -1621,7 +1649,15 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)
             {
-                if (l_cur->buf_out_size == 0 || !l_flag_write) {
+                if (l_cur->no_close) {
+                    /* Listener sockets have no_close=true — they must not be
+                     * deleted by the event loop.  Remove from epoll to stop
+                     * re-reporting HUP/RDHUP. */
+                    dap_context_remove_from_polling(l_cur);
+                    l_cur->flags &= ~(DAP_SOCK_SIGNAL_CLOSE |
+                                       DAP_SOCK_READY_TO_READ |
+                                       DAP_SOCK_READY_TO_WRITE);
+                } else if (l_cur->buf_out_size == 0 || !l_flag_write) {
                     if(g_debug_reactor)
                         log_it(L_INFO, "Process signal to close %s sock %"DAP_FORMAT_SOCKET" (ptr %p uuid 0x%016"DAP_UINT64_FORMAT_x") type %d [context #%u]",
                            l_cur->remote_addr_str, l_cur->socket, l_cur, l_cur->uuid,

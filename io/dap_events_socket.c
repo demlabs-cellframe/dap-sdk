@@ -625,9 +625,8 @@ void dap_events_socket_reassign_between_workers_mt(dap_worker_t * a_worker_old, 
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
-    l_msg->esocket = a_es;
     l_msg->esocket_uuid = a_es->uuid;
-    l_msg->worker_new = a_worker_new;
+    l_msg->worker_new_id = a_worker_new->id;
     if( !dap_context_queue_push(a_worker_old->queue_es_reassign, l_msg) ){
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR,"Haven't sent reassign message with esocket %"DAP_UINT64_FORMAT_U, a_es ? a_es->socket : (SOCKET)-1);

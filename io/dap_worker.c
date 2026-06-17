@@ -346,8 +346,11 @@ static void s_queue_add_es_callback(void *a_arg) {
         debug_if(s_debug_more, L_INFO, "Worker #%u: dequeued new esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" type %d",
                l_es->worker->id, l_es->socket, l_es->uuid, l_es->type);
         s_queue_es_add(l_es->worker, l_es);
-    } else {
-        log_it(L_WARNING, "s_queue_add_es_callback: NULL es=%p or NULL worker", a_arg);
+    } else if (l_es) {
+        /* Worker was cleared during teardown — esocket is orphaned, just delete it */
+        debug_if(s_debug_more, L_WARNING, "s_queue_add_es_callback: esocket %"DAP_FORMAT_SOCKET" uuid 0x%"DAP_UINT64_FORMAT_x" has no worker (teardown race), deleting",
+               l_es->socket, l_es->uuid);
+        dap_events_socket_delete_unsafe(l_es, false);
     }
 }
 
@@ -398,14 +401,17 @@ static void s_queue_es_reassign_callback(void *a_arg)
     dap_context_t *l_context = l_worker->context;
     dap_events_socket_t *l_es_reassign;
     if ((l_es_reassign = dap_context_find(l_context, l_msg->esocket_uuid)) != NULL) {
-        if (l_es_reassign->was_reassigned && l_es_reassign->flags & DAP_SOCK_REASSIGN_ONCE) {
+        dap_worker_t *l_worker_new = dap_events_worker_get(l_msg->worker_new_id);
+        if (!l_worker_new) {
+            log_it(L_ERROR, "Reassign callback: worker #%u not found", l_msg->worker_new_id);
+        } else if (l_es_reassign->was_reassigned && l_es_reassign->flags & DAP_SOCK_REASSIGN_ONCE) {
             log_it(L_INFO, "Reassgment request with DAP_SOCK_REASSIGN_ONCE allowed only once, declined reassigment from %u to %u",
-                   l_es_reassign->worker->id, l_msg->worker_new->id);
+                   l_es_reassign->worker->id, l_msg->worker_new_id);
         } else {
-            dap_events_socket_reassign_between_workers_unsafe(l_es_reassign, l_msg->worker_new);
+            dap_events_socket_reassign_between_workers_unsafe(l_es_reassign, l_worker_new);
         }
     } else {
-        log_it(L_INFO, "While we were sending the reassign message, esocket %p has been disconnected", l_msg->esocket);
+        log_it(L_INFO, "While we were sending the reassign message, esocket "DAP_FORMAT_ESOCKET_UUID" has been disconnected", l_msg->esocket_uuid);
     }
     DAP_DELETE(l_msg);
 }

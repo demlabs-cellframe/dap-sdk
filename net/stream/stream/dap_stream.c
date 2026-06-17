@@ -1186,9 +1186,16 @@ static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
     //debug_if(s_debug_more, L_DEBUG,"Process channels data output (%u channels)", l_stream->channel_count );
     for (size_t i = 0; i < l_stream->channel_count; i++) {
         dap_stream_ch_t *l_ch = l_stream->channel[i];
-        if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
-            l_ret |= l_ch->proc->packet_out_callback(l_ch, a_arg);
+        if (l_ch->ready_to_write && l_ch->proc->packet_out_callback) {
+            bool l_ch_ret = l_ch->proc->packet_out_callback(l_ch, a_arg);
+            if (l_ch_ret)
+                log_it(L_INFO, "[WRITE_DBG] s_esocket_write: channel '%c' (%p) packet_out returned true",
+                       (char)l_ch->proc->id, (void*)l_ch);
+            l_ret |= l_ch_ret;
+        }
     }
+    if (l_ret)
+        log_it(L_INFO, "[WRITE_DBG] s_esocket_write: stream=%p returning true", (void*)l_stream);
     return l_ret;
 }
 

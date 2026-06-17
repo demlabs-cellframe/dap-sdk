@@ -37,6 +37,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_list.h"
 #include "dap_net_server_common.h"
 #include "dap_events_socket.h"
+#include "dap_context.h"
 #include "dap_server.h"
 #include "dap_worker.h"
 
@@ -58,6 +59,25 @@ void dap_net_server_accept_callback(dap_events_socket_t *a_es_listener,
                                      SOCKET a_remote_socket, 
                                      struct sockaddr_storage *a_remote_addr)
 {
+    if (!a_es_listener || !a_remote_addr) {
+        if (a_remote_socket >= 0)
+            closesocket(a_remote_socket);
+        return;
+    }
+    
+    // Guard: verify esocket is still alive in its context
+    dap_worker_t *l_worker = a_es_listener->worker;
+    if (!l_worker || !l_worker->context) {
+        log_it(L_WARNING, "Accept callback: worker/context gone, closing socket");
+        closesocket(a_remote_socket);
+        return;
+    }
+    if (!dap_context_find(l_worker->context, a_es_listener->uuid)) {
+        log_it(L_WARNING, "Accept callback: esocket already removed from context, closing socket");
+        closesocket(a_remote_socket);
+        return;
+    }
+    
     dap_server_t *l_server = a_es_listener->server;
     if (!l_server) {
         log_it(L_ERROR, "No server in listening socket");
@@ -130,6 +150,7 @@ void dap_net_server_accept_callback(dap_events_socket_t *a_es_listener,
     }
 
     l_es_new->server = l_server;
+    dap_server_ref(l_server);  /* Match unref in dap_events_socket_delete_unsafe */
     l_es_new->type = l_es_type;
     l_es_new->addr_storage = *a_remote_addr;
     l_es_new->remote_port = strtol(l_port_str, NULL, 10);
