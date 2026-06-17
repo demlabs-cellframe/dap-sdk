@@ -122,4 +122,5 @@ cd tests/performance/crypto && ./run_competitors.sh
 ## Known Issues
 
 - LoTRS algebraic check (A*z + w == c*pk) has negacyclic convolution bug in polymat_vecmul — disabled, challenge+norm checks provide Fiat-Shamir soundness
+- MRNG wire size dominated by fold tree commitments (80%) — structural cost of log-N fold
 - N=8 T=4 sign fails in benchmark only (passes in unit test)
