@@ -38,6 +38,7 @@
 #include "dap_list.h"
 #include "dap_io_flow_socket.h"
 #include "dap_worker.h"
+#include "dap_context.h"
 
 // Platform-specific load balancing implementations
 #if defined(__linux__) || defined(ANDROID)
@@ -115,7 +116,8 @@ static __thread char s_addr_str_buf[INET6_ADDRSTRLEN + 8];
  */
 typedef struct flow_sendto_args {
     dap_io_flow_server_t *server;  ///< Server (for is_deleting check)
-    dap_events_socket_t *esocket;
+    dap_events_socket_uuid_t esocket_uuid;
+    dap_context_t *context;
     uint8_t *data;
     size_t size;
     struct sockaddr_storage addr;
@@ -128,7 +130,7 @@ typedef struct flow_sendto_args {
 static void s_flow_sendto_callback(void *a_arg)
 {
     flow_sendto_args_t *l_args = (flow_sendto_args_t*)a_arg;
-    if (!l_args || !l_args->esocket || !l_args->server) {
+    if (!l_args || !l_args->server) {
         if (l_args) {
             DAP_DELETE(l_args->data);
         }
@@ -147,7 +149,13 @@ static void s_flow_sendto_callback(void *a_arg)
         return;
     }
     
-    dap_events_socket_t *l_es = l_args->esocket;
+    dap_events_socket_t *l_es = dap_context_find(l_args->context, l_args->esocket_uuid);
+    if (!l_es) {
+        debug_if(s_debug_more, L_DEBUG, "s_flow_sendto_callback: esocket gone, dropping response");
+        DAP_DELETE(l_args->data);
+        DAP_DELETE(l_args);
+        return;
+    }
     
     debug_if(s_debug_more, L_DEBUG, "s_flow_sendto_callback: ENTRY esocket=%p, fd=%d, size=%zu", 
            l_es, l_es->fd, l_args->size);
@@ -430,7 +438,8 @@ int dap_io_flow_socket_send_to(dap_io_flow_server_t *a_server,
         }
         
         l_args->server = a_server;
-        l_args->esocket = a_es;
+        l_args->esocket_uuid = a_es->uuid;
+        l_args->context = l_target_worker->context;
         l_args->data = DAP_NEW_SIZE(uint8_t, a_size);
         if (!l_args->data) {
             log_it(L_ERROR, "Failed to allocate data buffer");

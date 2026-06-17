@@ -93,6 +93,21 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 static bool s_debug_more = false;
 
+/* Thread-ownership assert for _unsafe functions.
+ * Validates that the caller is the esocket's owner worker thread. */
+#ifdef NDEBUG
+#define DAP_ASSERT_ES_OWNER(es) ((void)0)
+#else
+#define DAP_ASSERT_ES_OWNER(es) do { \
+    if ((es)->worker && dap_worker_get_current() != (es)->worker) { \
+        log_it(L_CRITICAL, "THREAD VIOLATION: %s called from thread %p but esocket "DAP_FORMAT_ESOCKET_UUID" owned by worker #%u (thread %p)", \
+               __func__, (void*)pthread_self(), (es)->uuid, (es)->worker->id, \
+               (es)->worker->context ? (void*)(uintptr_t)(es)->worker->context->thread_id : NULL); \
+        assert(!"_unsafe function called from wrong thread"); \
+    } \
+} while(0)
+#endif
+
 #if defined(DAP_OS_ANDROID) || defined(DAP_OS_IOS)
 static dap_events_socket_pre_connect_callback_t s_pre_connect_cb = NULL;
 static void *s_pre_connect_ctx = NULL;
@@ -1387,6 +1402,7 @@ uint16_t dap_events_socket_get_local_port(dap_events_socket_t *a_es)
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor )
 {
     assert(a_es);
+    DAP_ASSERT_ES_OWNER(a_es);
     debug_if(g_debug_reactor, L_DEBUG, "Remove es %p [%s] \"%s\" uuid "DAP_FORMAT_ESOCKET_UUID"",
              a_es, a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
              dap_events_socket_get_type_str(a_es), a_es->uuid);
@@ -1662,6 +1678,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
 {
     if( a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_READ))
         return;
+    DAP_ASSERT_ES_OWNER(a_esocket);
     if ( a_is_ready ){
         a_esocket->flags |= DAP_SOCK_READY_TO_READ;
     }else{
@@ -1707,7 +1724,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
 {
     if (!a_esocket || a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_WRITE))
         return;
-
+    DAP_ASSERT_ES_OWNER(a_esocket);
     if ( a_is_ready )
         a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
     else
@@ -2078,6 +2095,7 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         log_it(L_ERROR, "Attempt to write into NULL esocket!");
         return 0;
     }
+    DAP_ASSERT_ES_OWNER(a_es);
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
         debug_if(g_debug_reactor, L_NOTICE, "Trying to write into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
         return 0;
@@ -2127,7 +2145,7 @@ size_t dap_events_socket_sendto_unsafe(dap_events_socket_t *a_es,
         log_it(L_ERROR, "Invalid arguments for sendto_unsafe");
         return 0;
     }
-    
+    DAP_ASSERT_ES_OWNER(a_es);
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
         debug_if(g_debug_reactor, L_NOTICE, "Trying to sendto into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
         return 0;
