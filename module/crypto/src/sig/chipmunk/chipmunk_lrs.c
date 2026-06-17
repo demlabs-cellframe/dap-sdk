@@ -666,7 +666,7 @@ int chipmunk_lrs_secret_key_validate(const chipmunk_lrs_secret_key_t *a_sk)
     if (l_rc != 0) {
         return l_rc;
     }
-    l_rc = memcmp(l_sk.P, a_sk->P, CHIPMUNK_LRS_POLY_QPACK_BYTES) == 0 ? 0 : -EINVAL;
+    l_rc = s_memcmp_ct(l_sk.P, a_sk->P, CHIPMUNK_LRS_POLY_QPACK_BYTES) == 0 ? 0 : -EINVAL;
     dap_memwipe(&l_pk, sizeof(l_pk));
     dap_memwipe(&l_sk, sizeof(l_sk));
     return l_rc;
@@ -1129,7 +1129,7 @@ int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
     if (l_rc != 0) {
         return l_rc;
     }
-    if (memcmp(p, l_pk_hash, 32u) != 0) {
+    if (s_memcmp_ct(p, l_pk_hash, 32u) != 0) {
         dap_memwipe(l_pk_hash, sizeof(l_pk_hash));
         return -EINVAL;
     }
@@ -1224,7 +1224,7 @@ int chipmunk_lrs_pop_verify(const uint8_t *a_pop,
         goto vfail;
     }
 
-    l_rc = (memcmp(l_recovered_seed, l_challenge_seed, 32u) == 0) ? 0 : -EINVAL;
+    l_rc = (s_memcmp_ct(l_recovered_seed, l_challenge_seed, 32u) == 0) ? 0 : -EINVAL;
 
     dap_memwipe(&l_T_prime, sizeof(l_T_prime));
     dap_memwipe(&l_sum_Az, sizeof(l_sum_Az));
@@ -1314,10 +1314,11 @@ static int s_canonicalise_ring(chipmunk_lrs_public_key_t *a_sorted,
     }
     if (a_signer_pk_or_null) {
         size_t l_idx = SIZE_MAX;
-        for (size_t i = 0; i < a_ring_size; ++i) {
-            if (memcmp(&a_sorted[i], a_signer_pk_or_null, sizeof(*a_sorted)) == 0) {
+        for (size_t i = 0u; i < a_ring_size; ++i) {
+            /* CT-safe: always scan full ring, no early break. */
+            if (s_memcmp_ct(&a_sorted[i], a_signer_pk_or_null,
+                            sizeof(*a_sorted)) == 0) {
                 l_idx = i;
-                break;
             }
         }
         if (l_idx == SIZE_MAX) {
@@ -1638,12 +1639,9 @@ int chipmunk_lrs_sign(uint8_t *a_sig,
             }
         }
 
-        /* Sample simulator z for every i != s. */
-        for (size_t i = 0; i < a_ring_size; ++i) {
-            if (i == l_signer_idx) {
-                continue;
-            }
-            for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        /* Sample simulator z for ALL positions (CT-safe: no branch on signer_idx). */
+        for (size_t i = 0u; i < a_ring_size; ++i) {
+            for (uint32_t j = 0u; j < CHIPMUNK_LRS_K; ++j) {
                 l_rc = s_h_to_wide_poly(
                     &l_z_branches[i * CHIPMUNK_LRS_K + j],
                     "chipmunk-lrs-sig-sim-z",
