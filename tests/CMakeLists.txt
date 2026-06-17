@@ -325,6 +325,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mr
                       "unit;crypto;ring;mring;anonymity")
 endif()
 
+# MRNG malformed wire input tests.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mring_wire.c)
+    add_dap_test(test_unit_crypto_chipmunk_mring_wire
+                 unit/crypto/chipmunk_ring/test_chipmunk_mring_wire.c)
+    register_dap_test(test_unit_crypto_chipmunk_mring_wire
+                      "unit;crypto;ring;mring;wire")
+endif()
+
 # LoTRS basic keygen/sign/verify test.
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_lotrs_basic.c)
     add_dap_test(test_unit_lotrs_basic
