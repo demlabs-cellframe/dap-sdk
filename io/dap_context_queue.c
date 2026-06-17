@@ -134,6 +134,18 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue) {
             log_it(L_WARNING, "Context queue was full %"PRIu64" times - consider increasing capacity", l_full);
         }
         
+        /* Drain remaining items to avoid dangling pointers in freed ring buffer memory */
+        size_t l_drained = 0;
+        void *l_item;
+        while ((l_item = dap_ring_buffer_pop(a_queue->ring_buffer)) != NULL) {
+            if (a_queue->callback)
+                a_queue->callback(l_item);
+            l_drained++;
+        }
+        if (l_drained > 0) {
+            log_it(L_DEBUG, "Drained %zu remaining items from context queue %p on deletion", l_drained, (void *)a_queue);
+        }
+        
         // Delete ring buffer
         dap_ring_buffer_delete(a_queue->ring_buffer);
         a_queue->ring_buffer = NULL;

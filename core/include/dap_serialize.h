@@ -442,6 +442,28 @@ dap_serialize_result_t dap_serialize_copy_object(const dap_serialize_schema_t *a
         .condition = condition_func \
     }
 
+/**
+ * @brief Union field — serializes as fixed-size raw bytes at the union's offset.
+ * @param struct_type  The containing struct type
+ * @param union_path  Path to any union member (used to compute offset)
+ * @param union_size  Size of the union in bytes (typically sizeof the largest member)
+ *
+ * All union members share the same offset, so pick any one for @p union_path.
+ * The serializer reads/writes @p union_size raw bytes — no per-member dispatch.
+ * The caller interprets the bytes based on the op_code (or other discriminator).
+ *
+ * Example:
+ *   DAP_SERIALIZE_FIELD_UNION(cf_vpn_pkt_t, header.raw.op_data_raw, 8)
+ */
+#define DAP_SERIALIZE_FIELD_UNION(struct_type, union_path, union_size) \
+    { \
+        .name = #union_path, \
+        .type = DAP_SERIALIZE_TYPE_BYTES_FIXED, \
+        .flags = DAP_SERIALIZE_FLAG_NONE, \
+        .offset = offsetof(struct_type, union_path), \
+        .size = union_size \
+    }
+
 #define DAP_SERIALIZE_SCHEMA_DEFINE(schema_name, struct_type, fields_array) \
     const dap_serialize_schema_t schema_name = { \
         .name = #schema_name, \

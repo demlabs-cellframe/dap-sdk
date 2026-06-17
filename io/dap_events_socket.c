@@ -383,6 +383,37 @@ static void s_es_reassign(dap_context_t *a_c, OVERLAPPED *a_ol) {
         dap_events_socket_reassign_between_workers_unsafe(a_es, l_new_worker);
 }
 
+// int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size) {
+//     queue_entry_t *l_entry = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(queue_entry_t));
+//     *l_entry = (queue_entry_t) {
+//         .size = a_size,
+//         .data = a_size ? DAP_DUP_SIZE((char*)a_data, a_size) : (void*)a_data
+//     };
+//     if (g_debug_reactor) {
+//         if (a_size)
+//             log_it(L_DEBUG, "Enqueue %zu bytes into "DAP_FORMAT_ESOCKET_UUID, a_size, a_es->uuid);
+//         else
+//             log_it(L_DEBUG, "Enqueue ptr %p into "DAP_FORMAT_ESOCKET_UUID, a_data, a_es->uuid);
+//     }
+//     return InterlockedPushEntrySList((PSLIST_HEADER)a_es->buf_out, &(l_entry->entry))
+//         ? a_size : PostQueuedCompletionStatus(a_es->context->iocp, a_size, (ULONG_PTR)a_es, NULL)
+//             ? a_size : ( DAP_ALFREE(l_entry), log_it(L_ERROR, "Enqueue into es "DAP_FORMAT_ESOCKET_UUID" failed, errno %d",
+//                                                               a_es->uuid, GetLastError()), 0 );
+// }
+#elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+
+int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_data, size_t a_size)
+{
+    if (!a_es)
+        return -1;
+    if (a_size != 0) {
+        log_it(L_ERROR, "pipe2 queue supports pointer-only sends (a_size must be 0)");
+        return -1;
+    }
+    ssize_t ret = write(a_es->fd2, &a_data, sizeof(void *));
+    return ret == (ssize_t)sizeof(void *) ? 0 : -1;
+}
+
 #endif
 
 /*
@@ -508,8 +539,12 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
     l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
     l_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
 
-    l_es->buf_in     = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
-    l_es->buf_out    = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
+    /* Allocate buffers for all socket types.  Timer and event esockets use
+     * their fd for signaling only and don't need data buffers — but they
+     * still get allocated to avoid NULL-pointer crashes in the event loop
+     * when a socket is reused or its type changes. */
+    l_es->buf_in     = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
+    l_es->buf_out    = DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
 
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
@@ -590,9 +625,8 @@ void dap_events_socket_reassign_between_workers_mt(dap_worker_t * a_worker_old, 
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
-    l_msg->esocket = a_es;
     l_msg->esocket_uuid = a_es->uuid;
-    l_msg->worker_new = a_worker_new;
+    l_msg->worker_new_id = a_worker_new->id;
     if( !dap_context_queue_push(a_worker_old->queue_es_reassign, l_msg) ){
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR,"Haven't sent reassign message with esocket %"DAP_UINT64_FORMAT_U, a_es ? a_es->socket : (SOCKET)-1);
@@ -1743,6 +1777,7 @@ void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_pres
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].free_nr, 1);
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].free_nr, 1);
 #endif
+    dap_server_unref(a_esocket->server);
     s_dap_evsock_free( a_esocket );
 }
 

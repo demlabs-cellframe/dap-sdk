@@ -58,11 +58,10 @@ typedef struct dap_worker {
     void * _inheritor;
 } dap_worker_t;
 
-// Message for reassigment
+// Message for reassigment (UUID-only, no raw pointers for thread safety)
 typedef struct dap_worker_msg_reassign{
-    dap_events_socket_t * esocket;
     dap_events_socket_uuid_t esocket_uuid;
-    dap_worker_t * worker_new;
+    uint32_t worker_new_id;
 } dap_worker_msg_reassign_t;
 
 // Message for input/output queue

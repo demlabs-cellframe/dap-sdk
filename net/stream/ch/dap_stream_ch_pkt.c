@@ -50,6 +50,7 @@
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_pkt.h"
 #include "dap_stream_worker.h"
+#include "dap_events.h"
 
 #define LOG_TAG "dap_stream_ch_pkt"
 
@@ -188,6 +189,32 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
         log_it(L_ERROR, "Arguments is NULL for dap_stream_ch_pkt_write_mt");
         return 0;
     }
+
+    /* Cross-worker / foreign-thread: deliver to the worker that owns the channel
+     * hash (queue_ch_io_input[src][dst] or dst queue directly).  A bare push to
+     * queue_ch_io from the wrong thread/context drops packets. */
+#ifndef DAP_EVENTS_CAPS_IOCP
+    {
+        dap_worker_t *l_tgt = a_worker->worker;
+        dap_worker_t *l_cur = dap_worker_get_current();
+        if (l_tgt && (!l_cur || l_cur->id != l_tgt->id)) {
+            uint32_t l_n = dap_events_thread_get_count();
+            dap_context_queue_t *l_q = NULL;
+            if (l_tgt->id < l_n) {
+                if (l_cur) {
+                    dap_stream_worker_t *l_sw_cur = DAP_STREAM_WORKER(l_cur);
+                    if (l_sw_cur && l_sw_cur->queue_ch_io_input)
+                        l_q = l_sw_cur->queue_ch_io_input[l_tgt->id];
+                }
+                if (!l_q && a_worker->queue_ch_io)
+                    l_q = a_worker->queue_ch_io;
+            }
+            if (l_q)
+                return dap_stream_ch_pkt_write_inter(l_q, a_ch_uuid, a_type, a_data, a_data_size);
+        }
+    }
+#endif
+
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);

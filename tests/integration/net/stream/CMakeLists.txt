@@ -32,5 +32,6 @@ add_test(
 set_tests_properties(${PROJECT_NAME} PROPERTIES
     TIMEOUT 120
     LABELS "integration;net;stream"
+    RESOURCE_LOCK dap_events_reactor
 )
 

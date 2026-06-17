@@ -33,6 +33,7 @@
 #include "KeccakHash.h"
 #include "SimpleFIPS202.h"
 #include "hash/sha2-256/dap_sha2_256.h"
+#include "hash/sha1/dap_sha1.h"
 
 #define LOG_TAG "dap_hash"
 
@@ -95,6 +96,17 @@ int dap_chain_hash_fast_from_str( const char *a_hash_str, dap_chain_hash_fast_t 
  */
 int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen) {
     return dap_sha2_256(a_output, a_input, a_inlen);
+}
+
+/**
+ * @brief Compute SHA-1 hash
+ * @param[out] a_output Output buffer (must be 20 bytes)
+ * @param[in] a_input Input data
+ * @param[in] a_inlen Input length
+ * @return Returns 0 on success, negative error code on failure
+ */
+int dap_hash_sha1(uint8_t a_output[20], const uint8_t *a_input, size_t a_inlen) {
+    return dap_sha1(a_output, a_input, a_inlen);
 }
 
 /**

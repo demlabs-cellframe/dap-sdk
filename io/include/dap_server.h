@@ -23,6 +23,7 @@
 #pragma once
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include "uthash.h"
 #include "utlist.h"
 #include "dap_events_socket.h"
@@ -56,6 +57,7 @@ typedef struct dap_server {
     const char **whitelist, **blacklist;
     void *_inheritor;
     bool ext_log;
+    atomic_int ref_count;
 } dap_server_t;
 
 int dap_server_init( ); // Init server module
@@ -72,3 +74,12 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
 int dap_server_callbacks_set(dap_server_t*, dap_events_socket_callbacks_t*, dap_events_socket_callbacks_t*);
 void dap_server_delete(dap_server_t *a_server);
 void dap_server_delete_sync(dap_server_t *a_server);  // Synchronous delete - waits for all listeners to be removed
+
+static inline void dap_server_ref(dap_server_t *a_server) {
+    if (a_server) atomic_fetch_add(&a_server->ref_count, 1);
+}
+
+static inline void dap_server_unref(dap_server_t *a_server) {
+    if (a_server && atomic_fetch_sub(&a_server->ref_count, 1) == 1)
+        DAP_DELETE(a_server);
+}

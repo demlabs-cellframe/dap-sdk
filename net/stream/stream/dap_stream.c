@@ -145,10 +145,10 @@ static void s_stream_reset_keepalive_timer_unsafe(dap_stream_t *a_stream)
 
 /**
  * @brief Write data via transport layer (wrapper for trans->ops->write)
- * 
+ *
  * Calls transport-specific write callback. For UDP this goes through Flow Control.
  * FAIL-FAST: Returns error if trans->ops->write is not set (no fallback).
- * 
+ *
  * @param a_stream Stream instance
  * @param a_data Data to write
  * @param a_size Data size
@@ -159,44 +159,44 @@ ssize_t dap_stream_trans_write_unsafe(dap_stream_t *a_stream, const void *a_data
     if (!a_stream || !a_data || a_size == 0) {
         return 0;
     }
-    
+
     if (!a_stream->trans_ctx) {
         log_it(L_ERROR, "Stream has no trans_ctx");
         return 0;
     }
-    
-    if (!a_stream->trans_ctx->trans || 
-        !a_stream->trans_ctx->trans->ops || 
+
+    if (!a_stream->trans_ctx->trans ||
+        !a_stream->trans_ctx->trans->ops ||
         !a_stream->trans_ctx->trans->ops->write) {
         log_it(L_WARNING, "Stream trans has no write callback (trans_ctx->trans may not be set yet)");
         return 0;
     }
-    
-    debug_if(s_debug, L_DEBUG, 
+
+    debug_if(s_debug, L_DEBUG,
              "dap_stream_trans_write_unsafe: writing %zu bytes via trans->ops->write", a_size);
-    
+
     ssize_t l_ret = a_stream->trans_ctx->trans->ops->write(
         a_stream,  // stream
         a_data,    // data
         a_size     // size
     );
-    
+
     if (l_ret < 0) {
         log_it(L_WARNING, "trans->ops->write failed: ret=%zd", l_ret);
         return 0;
     }
-    
+
     return l_ret;
 }
 
 /**
  * @brief Send data to datagram stream using flow callback
- * 
+ *
  * Helper function to send data via datagram stream (UDP, etc), properly resolving
  * the destination address through the datagram flow's get_remote_addr callback.
- * 
+ *
  * Works for both CLIENT and SERVER streams via stream->flow.
- * 
+ *
  * @param a_stream Stream instance
  * @param a_data Data to send
  * @param a_size Data size
@@ -207,18 +207,18 @@ static inline ssize_t s_stream_send_datagram_unsafe(dap_stream_t *a_stream, cons
     if (!a_stream || !a_data || a_size == 0) {
         return 0;
     }
-    
+
     if (!a_stream->flow) {
         log_it(L_ERROR, "Datagram stream %p has no flow set", a_stream);
         return 0;
     }
-    
+
     return dap_stream_trans_write_unsafe(a_stream, a_data, a_size);
 }
 
 /**
  * @brief Send raw data to stream (datagram-aware, public API)
- * 
+ *
  * Sends raw data to the stream, handling datagram (UDP, etc) destination resolution automatically.
  * For datagram streams (_server_session is datagram flow), uses callback to get destination.
  * For stream-oriented (TCP), uses direct esocket write.
@@ -228,7 +228,7 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
     if (!a_stream || !a_data || a_size == 0) {
         return 0;
     }
-    
+
     if (!a_stream->esocket) {
         log_it(L_ERROR, "Stream has no esocket");
         return 0;
@@ -244,13 +244,13 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
     }
 
     dap_events_socket_t *l_es = a_stream->esocket;
-    
+
     // Check if this is a datagram transport (UDP, SCTP, etc)
     if (dap_events_socket_is_datagram(l_es)) {
         debug_if(s_debug, L_DEBUG, "dap_stream_send_unsafe: stream %p using datagram path, flow=%p", a_stream, a_stream->flow);
         return s_stream_send_datagram_unsafe(a_stream, a_data, a_size);
     }
-    
+
     // Stream-oriented transport (TCP, etc) - use direct write
     return dap_events_socket_write_unsafe(l_es, a_data, a_size);
 }
@@ -316,10 +316,10 @@ int dap_stream_init(dap_config_t * a_config)
         log_it(L_ERROR, "Can't initiazlize certificate containing secure node address");
         return -3;
     }
-    
+
     // Transport layer is initialized automatically via dap_module system
     // No need to call dap_net_transport_init() manually
-    
+
     s_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config, "stream", "debug_dump_stream_headers", false);
     s_debug = dap_config_get_item_bool_default(g_config, "stream", "debug_more", false);
@@ -349,7 +349,7 @@ void dap_stream_deinit()
 {
     // Transport layer is deinitialized automatically via dap_module system
     // No need to call dap_net_transport_deinit() manually
-    
+
     dap_stream_ch_deinit( );
 }
 
@@ -422,14 +422,14 @@ static void s_stream_states_update(dap_stream_t *a_stream)
     bool ready_to_write=false;
     for(i=0;i<a_stream->channel_count; i++) {
         if (!a_stream->channel || !a_stream->channel[i]) {
-            log_it(L_ERROR, "s_stream_states_update: channel[%zu] is NULL (channel_count=%zu, channel=%p)", 
+            log_it(L_ERROR, "s_stream_states_update: channel[%zu] is NULL (channel_count=%zu, channel=%p)",
                    i, a_stream->channel_count, (void*)a_stream->channel);
             continue;
         }
         ready_to_write|=a_stream->channel[i]->ready_to_write;
     }
     dap_events_socket_set_writable_unsafe(a_stream->esocket, ready_to_write);
-    
+
     // Transport-specific state updates should be handled by transport callbacks
     // No direct transport-specific logic here - all through dap_stream_transport API
 }
@@ -569,19 +569,19 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         a_http_client->esocket->_inheritor = l_ret->trans_ctx;
     }
     debug_if(s_debug, L_DEBUG, "s_stream_new: getting stream_worker");
-    debug_if(s_debug, L_DEBUG, "s_stream_new: worker=%p, worker->_inheritor=%p", 
+    debug_if(s_debug, L_DEBUG, "s_stream_new: worker=%p, worker->_inheritor=%p",
            (void*)a_http_client->esocket->worker,
            a_http_client->esocket->worker ? (void*)a_http_client->esocket->worker->_inheritor : NULL);
     l_ret->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
     debug_if(s_debug, L_DEBUG, "s_stream_new: stream_worker=%p", (void*)l_ret->stream_worker);
     if (!l_ret->stream_worker) {
-        log_it(L_ERROR, "stream_worker is NULL for worker %p (worker->_inheritor=%p)", 
+        log_it(L_ERROR, "stream_worker is NULL for worker %p (worker->_inheritor=%p)",
                (void*)a_http_client->esocket->worker,
                a_http_client->esocket->worker ? (void*)a_http_client->esocket->worker->_inheritor : NULL);
         DAP_DELETE(l_ret);
         return NULL;
     }
-    
+
     debug_if(s_debug, L_DEBUG, "s_stream_new: assigning HTTP transport");
     // Assign HTTP transport for this stream
     dap_net_trans_t *l_transport = dap_net_trans_find(DAP_NET_TRANS_HTTP);
@@ -593,11 +593,11 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         // Note: HTTP client binding is managed by the transport layer
         // This will be properly implemented when HTTP transport is fully integrated
     }
-    
+
     debug_if(s_debug, L_DEBUG, "s_stream_new: initializing seq_id");
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
-    
+
     debug_if(s_debug, L_DEBUG, "s_stream_new: allocating es_uuid");
     // Start server keep-alive timer
     dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
@@ -647,7 +647,6 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
          * the VPN state machine or on a real transport error. */
         l_ret->esocket->no_close = true;
     }
-    debug_if(s_debug, L_DEBUG, "s_stream_new: callbacks set");
     if (a_addr && !dap_stream_node_addr_is_blank(a_addr)) {
         debug_if(s_debug, L_DEBUG, "s_stream_new: setting node address");
         l_ret->node = *a_addr;
@@ -657,10 +656,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         log_it(L_WARNING, "s_stream_new: stream %p NOT authorized (a_addr=%p, blank=%d)",
                (void*)l_ret, (void*)a_addr, a_addr ? dap_stream_node_addr_is_blank(a_addr) : -1);
     }
-    debug_if(s_debug, L_DEBUG, "s_stream_new: adding stream to list");
     dap_stream_add_to_list(l_ret);
-    debug_if(s_debug, L_DEBUG, "s_stream_new: stream added to list");
-    log_it(L_NOTICE,"New stream instance");
     debug_if(s_debug, L_DEBUG, "s_stream_new: returning stream %p", (void*)l_ret);
     return l_ret;
 }
@@ -768,7 +764,7 @@ int dap_stream_start_keepalive(dap_stream_t *a_stream)
  * @param a_stream
  */
 void dap_stream_delete_unsafe(dap_stream_t *a_stream)
-{  
+{
     if(!a_stream) {
         log_it(L_ERROR,"stream delete NULL instance");
         return;
@@ -883,19 +879,19 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
 {
     UNUSED(a_arg);
     assert(a_esocket);
-    log_it(L_WARNING, "STREAM_SOCKET_DELETE: esocket=%p fd=%d uuid=0x%"DAP_UINT64_FORMAT_x" flags=0x%x",
+    debug_if(s_debug_more, L_WARNING, "STREAM_SOCKET_DELETE: esocket=%p fd=%d uuid=0x%"DAP_UINT64_FORMAT_x" flags=0x%x",
            (void*)a_esocket, a_esocket->fd, a_esocket->uuid, a_esocket->flags);
 
     // Unified: _inheritor is always trans_ctx
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
     a_esocket->_inheritor = NULL;  // Clear FIRST to prevent use-after-free
-    
+
     if (!l_trans_ctx)
         return;
-    
+
     dap_stream_t *l_stm = l_trans_ctx->stream;
     dap_http_client_t *l_http_client = l_trans_ctx->http_client;
-    
+
     if (l_stm) {
         l_stm->esocket = NULL;
         l_stm->esocket_uuid = 0;
@@ -914,7 +910,7 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
             dap_http_header_remove(&l_http_client->out_headers, l_http_client->out_headers);
         DAP_DEL_Z(l_http_client->_inheritor);
     }
-    
+
     // Delete the stream (removes from global list) — for ALL transport types
     if (l_stm)
         dap_stream_delete_unsafe(l_stm);
@@ -943,7 +939,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
     unsigned int l_id=0;
     //debug_if(s_debug_more, L_DEBUG,"Prepare data stream");
     if(a_http_client->in_query_string[0]){
-        log_it(L_INFO,"Query string [%s]",a_http_client->in_query_string);
+        debug_if(s_debug_more, L_INFO,"Query string [%s]",a_http_client->in_query_string);
         if(sscanf(a_http_client->in_query_string,"session_id=%u",&l_id) == 1 ||
                 sscanf(a_http_client->in_query_string,"fj913htmdgaq-d9hf=%u",&l_id) == 1) {
             dap_stream_session_t *l_ss = dap_stream_session_id_mt(l_id);
@@ -952,21 +948,15 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                 a_http_client->reply_status_code = Http_Status_NotFound;
                 strcpy(a_http_client->reply_reason_phrase,"Not found");
             } else {
-                log_it(L_INFO,"Session id %u was found with channels = %s", l_id, l_ss->active_channels);
-                debug_if(s_debug, L_DEBUG, "Session pointer: %p, mutex: %p, active_channels: %p", 
+                debug_if(s_debug, L_DEBUG, "Session pointer: %p, mutex: %p, active_channels: %p",
                        (void*)l_ss, (void*)&l_ss->mutex, (void*)l_ss->active_channels);
-                debug_if(s_debug, L_DEBUG, "Calling dap_stream_session_open for session %u", l_id);
                 int l_open_ret = dap_stream_session_open(l_ss);
-                debug_if(s_debug, L_DEBUG, "dap_stream_session_open returned %d for session %u", l_open_ret, l_id);
                 if(!l_open_ret){ // Create new stream
-                    debug_if(s_debug, L_DEBUG, "Opening session %u, creating stream", l_id);
-                    debug_if(s_debug, L_DEBUG, "Before s_stream_new: a_http_client=%p, l_ss=%p, l_ss->node offset=%zu", 
-                           (void*)a_http_client, (void*)l_ss, 
+                    debug_if(s_debug, L_DEBUG, "Before s_stream_new: a_http_client=%p, l_ss=%p, l_ss->node offset=%zu",
+                           (void*)a_http_client, (void*)l_ss,
                            (size_t)((char*)&l_ss->node - (char*)l_ss));
                     dap_stream_node_addr_t *l_node_addr = &l_ss->node;
-                    debug_if(s_debug, L_DEBUG, "l_node_addr=%p", (void*)l_node_addr);
                     dap_stream_t *l_stream = s_stream_new(a_http_client, l_node_addr);
-                    debug_if(s_debug, L_DEBUG, "After s_stream_new: l_stream=%p", (void*)l_stream);
                     if (!l_stream) {
                         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                         a_http_client->reply_status_code = Http_Status_NotFound;
@@ -975,7 +965,6 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     debug_if(s_debug, L_DEBUG, "Stream created successfully: %p (esocket=%p, stream_worker=%p)",
                            (void*)l_stream, (void*)l_stream->esocket, (void*)l_stream->stream_worker);
                     l_stream->session = l_ss;
-                    debug_if(s_debug, L_DEBUG, "Session assigned to stream");
                     dap_http_header_t *header = dap_http_header_find(a_http_client->in_headers, "Service-Key");
                     if (header)
                         l_ss->service_key = strdup(header->value);
@@ -1147,12 +1136,10 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 {
     int *l_ret = (int *)a_arg;
-    
+
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
     dap_stream_t *l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
 
-    log_it(L_INFO, "s_esocket_data_read: stream=%p buf_in_size=%zu sock=%"DAP_FORMAT_SOCKET,
-           (void*)l_stream, a_esocket->buf_in_size, a_esocket->socket);
     if (!l_stream) {
         log_it(L_ERROR, "s_esocket_data_read: no stream! trans_ctx=%p", (void*)l_trans_ctx);
         if (l_ret) *l_ret = 0;
@@ -1164,10 +1151,8 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
         for (size_t i = 0; i < l_dump; i++)
             snprintf(l_hex + i * 3, 4, "%02x ", a_esocket->buf_in[i]);
         l_hex[l_dump * 3] = '\0';
-        log_it(L_INFO, "s_esocket_data_read: first %zu bytes: %s", l_dump, l_hex);
     }
     size_t l_processed = dap_stream_data_proc_read(l_stream);
-    log_it(L_INFO, "s_esocket_data_read: processed=%zu / %zu", l_processed, a_esocket->buf_in_size);
     if (l_ret)
         *l_ret = (int)l_processed;
     if (l_processed > 0)
@@ -1184,15 +1169,15 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
 static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
 {
     bool l_ret = false;
-    
+
     // Unified: get stream from trans_ctx
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t *)a_esocket->_inheritor;
     dap_stream_t *l_stream = l_trans_ctx ? l_trans_ctx->stream : NULL;
-    
+
     if (!l_stream) {
         return false;
     }
-    
+
     // Channel identification: iterate all channels and let each one process pending data
     // Each channel maintains its own write queue and will only write if it has pending data
     // This approach works for current use cases but could be optimized in future by:
@@ -1201,9 +1186,16 @@ static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
     //debug_if(s_debug_more, L_DEBUG,"Process channels data output (%u channels)", l_stream->channel_count );
     for (size_t i = 0; i < l_stream->channel_count; i++) {
         dap_stream_ch_t *l_ch = l_stream->channel[i];
-        if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
-            l_ret |= l_ch->proc->packet_out_callback(l_ch, a_arg);
+        if (l_ch->ready_to_write && l_ch->proc->packet_out_callback) {
+            bool l_ch_ret = l_ch->proc->packet_out_callback(l_ch, a_arg);
+            if (l_ch_ret)
+                log_it(L_INFO, "[WRITE_DBG] s_esocket_write: channel '%c' (%p) packet_out returned true",
+                       (char)l_ch->proc->id, (void*)l_ch);
+            l_ret |= l_ch_ret;
+        }
     }
+    if (l_ret)
+        log_it(L_INFO, "[WRITE_DBG] s_esocket_write: stream=%p returning true", (void*)l_stream);
     return l_ret;
 }
 
@@ -1257,12 +1249,12 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
                (void*)a_stream, a_data, a_data_size);
         return 0;
     }
-    
+
     byte_t *l_pos = (byte_t*)a_data;
     byte_t *l_end = l_pos + a_data_size;
     size_t l_shift = 0, l_processed_size = 0;
     bool l_found_sig0 = false;
-    
+
     while (l_pos < l_end && (l_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos)))) {
         l_found_sig0 = true;
         if ((size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t)) {
@@ -1270,7 +1262,7 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
                      (size_t)(l_end - l_pos), sizeof(dap_stream_pkt_hdr_t));
             break;
         }
-        
+
         if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
             debug_if(s_debug_more, L_DEBUG, "proc_read_ext: SIG FOUND type=0x%02x size=%u at offset=%zu",
@@ -1295,10 +1287,10 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     if (a_data_size > 0 && !l_found_sig0 && l_processed_size == 0)
         log_it(L_WARNING, "proc_read_ext: no sig[0]=0x%02x found in %zu bytes (first byte=0x%02x)",
                c_dap_stream_sig[0], a_data_size, ((byte_t*)a_data)[0]);
-    
-    debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG, 
+
+    debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG,
              "Processed %lu / %lu bytes", l_processed_size, a_data_size);
-    
+
     return l_processed_size;
 }
 
@@ -1313,10 +1305,10 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
         return 0;
 
     dap_events_socket_t *l_es = a_stream->esocket;
-    
+
     if (!l_es->buf_in)
         return 0;
-    
+
     return dap_stream_data_proc_read_ext(a_stream, l_es->buf_in, l_es->buf_in_size);
 }
 
@@ -1330,7 +1322,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
-    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u", 
+    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u",
            a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
 
     switch (a_pkt->hdr.type) {
@@ -1341,13 +1333,13 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         size_t l_fragm_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: stream=%p, session=%p, key=%p, fragm_dec_size=%zu",
                  a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL, l_fragm_dec_size);
-        
+
         a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_fragm_dec_size);
         dap_stream_fragment_pkt_t *l_fragm_pkt = (dap_stream_fragment_pkt_t*)a_stream->pkt_cache;
-        
+
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: CALLING dap_stream_pkt_read_unsafe (stream=%p, pkt=%p, out=%p, out_size=%zu)",
                  a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
-        
+
         size_t l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
 
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: dap_stream_pkt_read_unsafe returned l_dec_pkt_size=%zu (expected_min=%zu)",
@@ -1365,7 +1357,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             break;
         }
 
-        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu", 
+        debug_if(s_dump_packet_headers, L_INFO, "Fragment decoded: size=%u mem_shift=%u filled=%zu",
                l_fragm_pkt->size, l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
 
         if(a_stream->buf_fragments_size_filled != l_fragm_pkt->mem_shift) {
@@ -1385,7 +1377,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         // Not last fragment, otherwise go to parsing STREAM_PKT_TYPE_DATA_PACKET
         if(a_stream->buf_fragments_size_filled < l_fragm_pkt->full_size) {
-            debug_if(s_debug, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u", 
+            debug_if(s_debug, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u",
                    a_stream->buf_fragments_size_filled, l_fragm_pkt->full_size);
             break;
         }
@@ -1396,7 +1388,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         dap_stream_ch_pkt_t *l_ch_pkt;
         size_t l_dec_pkt_size;
 
-        debug_if(s_debug, L_INFO, "Processing DATA_PACKET: from_fragment=%s", 
+        debug_if(s_debug, L_INFO, "Processing DATA_PACKET: from_fragment=%s",
                (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) ? "yes" : "no");
 
         if (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
@@ -1407,19 +1399,19 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
-            
-            debug_if(s_dump_packet_headers, L_INFO, 
+
+            debug_if(s_dump_packet_headers, L_INFO,
                      "DATA_PACKET decryption: key=%p, encrypted_size=%u, expected_dec=%zu, actual_dec=%zu",
                      a_stream->session->key, a_pkt->hdr.size, l_pkt_dec_size, l_dec_pkt_size);
         }
 
         if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
-            log_it(L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
+            debug_if(s_debug_more, L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
             l_is_clean_fragments = true;
             break;
         }
         if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
-            log_it(L_WARNING, "Input: decoded packet BAD SIZE: expected_dec=%zu (hdr.data_size=%u + hdr_size=%zu), actual_dec=%zu",
+            debug_if(s_debug_more, L_WARNING, "Input: decoded packet BAD SIZE: expected_dec=%zu (hdr.data_size=%u + hdr_size=%zu), actual_dec=%zu",
                    l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_ch_pkt->hdr.data_size, sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
@@ -1428,25 +1420,25 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         // If seq_id is less than previous - doomp eet
         if (!s_detect_loose_packet(a_stream)) {
             dap_stream_ch_t * l_ch = NULL;
-            
-            debug_if(s_dump_packet_headers, L_INFO, "Looking for channel '%c' (0x%02x) in stream (channel_count=%zu)", 
+
+            debug_if(s_dump_packet_headers, L_INFO, "Looking for channel '%c' (0x%02x) in stream (channel_count=%zu)",
                    (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.id, a_stream->channel_count);
-            
+
             // DEBUG: Check for duplicate channels
             size_t l_duplicates = 0;
             for(size_t j=0;j<a_stream->channel_count;j++){
                 if(a_stream->channel[j]->proc && a_stream->channel[j]->proc->id == l_ch_pkt->hdr.id) {
                     debug_if(s_dump_packet_headers, L_DEBUG, "s_stream_proc_pkt_in: channel '%c' at index %zu: %p (notifiers=%"PRIu64")",
-                           (char)l_ch_pkt->hdr.id, j, a_stream->channel[j], 
+                           (char)l_ch_pkt->hdr.id, j, a_stream->channel[j],
                            dap_list_length(a_stream->channel[j]->packet_in_notifiers));
                     l_duplicates++;
                 }
             }
             if (l_duplicates > 1) {
-                log_it(L_ERROR, "s_stream_proc_pkt_in: Found %zu DUPLICATE channels for ID '%c'!", 
+                log_it(L_ERROR, "s_stream_proc_pkt_in: Found %zu DUPLICATE channels for ID '%c'!",
                        l_duplicates, (char)l_ch_pkt->hdr.id);
             }
-            
+
             for(size_t i=0;i<a_stream->channel_count;i++){
                 if(a_stream->channel[i]->proc){
                     if(a_stream->channel[i]->proc->id == l_ch_pkt->hdr.id ){
@@ -1460,21 +1452,21 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
                     debug_if(s_dump_packet_headers, L_INFO, "Calling channel '%c' packet_in_callback: data_size=%u type=0x%02X",
                            (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type);
-                    
+
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type,
                                                             a_stream);
-                    
+
                     // DEBUG: Check notifiers status
                     size_t l_notifier_count = dap_list_length(l_ch->packet_in_notifiers);
-                    debug_if(s_dump_packet_headers, L_INFO, 
+                    debug_if(s_dump_packet_headers, L_INFO,
                              "Channel '%c' (%p) notifiers: count=%zu, security_passed=%s, closing=%s",
                              (char)l_ch->proc->id, l_ch, l_notifier_count,
                              l_security_check_passed ? "YES" : "NO",
                              l_ch->closing ? "YES" : "NO");
-                    
+
                     for (dap_list_t *it = l_ch->packet_in_notifiers; !l_ch->closing && it && l_security_check_passed; it = it->next) {
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
@@ -1616,7 +1608,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             ioctl(l_es->fd, FIONREAD, &l_pending);
 #endif
             getsockopt(l_es->fd, SOL_SOCKET, SO_ERROR, (char *)&l_sockerr, &l_sockerr_len);
-            log_it(L_WARNING, "KEEPALIVE_CHECK: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
+            debug_if(s_debug_more, L_DEBUG, "KEEPALIVE_CHECK: fd=%d uuid=0x%"DAP_UINT64_FORMAT_x
                    " flags=0x%x pending_in=%d so_err=%d buf_in=%zu buf_out=%zu"
                    " READY_READ=%d read_cb=%p active=%d trans=%p session=%p",
                    l_es->fd, l_es->uuid, l_es->flags,
@@ -1669,23 +1661,16 @@ static bool s_callback_server_keepalive(void *a_arg)
 
 int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 {
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: entering, stream=%p", (void*)a_stream);
     dap_stream_t *l_double = NULL;
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: searching for duplicate");
     HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
         debug_if(s_debug_more, L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
         return -1;
     }
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: no duplicate found, setting primary=true");
     a_stream->primary = true;
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: adding to hash table");
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: added to hash, calling dap_cluster_member_add");
     dap_cluster_member_add(s_global_links_cluster, &a_stream->node, 0, NULL); // Used own rwlock for this cluster members
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: dap_cluster_member_add completed, calling dap_link_manager_stream_add");
     dap_link_manager_stream_add(&a_stream->node, a_stream->is_client_to_uplink);
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: completed successfully");
     return 0;
 }
 

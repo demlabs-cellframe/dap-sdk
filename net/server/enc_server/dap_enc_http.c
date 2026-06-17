@@ -236,6 +236,8 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         }
         dg->request_size = dap_enc_decode(l_key, a_http_simple->request, a_http_simple->request_size,
                                           dg->request, l_dg_request_size_max, DAP_ENC_DATA_TYPE_RAW);
+        if (dg->request_size > l_dg_request_size_max)
+            dg->request_size = l_dg_request_size_max;
         dg->request_str[dg->request_size] = 0;
     }
     
@@ -256,6 +258,8 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         }
         dg->url_path_size = dap_enc_decode(l_key, a_http_simple->http_client->url_path, l_url_path_size_max,
                                            dg->url_path, l_url_path_size_max, l_enc_type);
+        if (dg->url_path_size > l_url_path_size_max)
+            dg->url_path_size = l_url_path_size_max;
         dg->url_path[dg->url_path_size] = '\0';
     }
     
@@ -272,6 +276,8 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         }
         dg->in_query_size = dap_enc_decode(l_key, a_http_simple->http_client->in_query_string, l_in_query_size_max,
                                            dg->in_query, l_in_query_size_max, l_enc_type);
+        if (dg->in_query_size > l_in_query_size_max)
+            dg->in_query_size = l_in_query_size_max;
         dg->in_query[dg->in_query_size] = '\0';
     }
     

@@ -411,6 +411,8 @@ int dap_json_rpc_request_send(dap_client_trans_ctx_t*  a_client_ctx, dap_json_rp
         DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path);
         return -1;
     }
+    log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %zu",
+        a_client_ctx->client->link_info.uplink_addr, a_client_ctx->client->link_info.uplink_port, l_path, l_enc_request_size);
 
     debug_if(s_debug_more, L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
                      a_client_ctx->client->link_info.uplink_addr, a_client_ctx->client->link_info.uplink_port, l_path, l_enc_request_size);

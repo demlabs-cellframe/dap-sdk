@@ -415,24 +415,31 @@ void KeccakP1600_ExtractLanes(const KeccakP1600_plain64_state *state, unsigned c
         fromWordToBytes(data+(i*8), ((const uint64_t*)state)[i]);
 #endif
 #ifdef KeccakP1600_useLaneComplementing
+#define LC_NEGATE_LANE(buf, idx) do { \
+    uint64_t _tmp; \
+    memcpy(&_tmp, (buf) + (idx)*8, 8); \
+    _tmp = ~_tmp; \
+    memcpy((buf) + (idx)*8, &_tmp, 8); \
+} while(0)
     if (laneCount > 1) {
-        ((uint64_t*)data)[ 1] = ~((uint64_t*)data)[ 1];
+        LC_NEGATE_LANE(data,  1);
         if (laneCount > 2) {
-            ((uint64_t*)data)[ 2] = ~((uint64_t*)data)[ 2];
+            LC_NEGATE_LANE(data,  2);
             if (laneCount > 8) {
-                ((uint64_t*)data)[ 8] = ~((uint64_t*)data)[ 8];
+                LC_NEGATE_LANE(data,  8);
                 if (laneCount > 12) {
-                    ((uint64_t*)data)[12] = ~((uint64_t*)data)[12];
+                    LC_NEGATE_LANE(data, 12);
                     if (laneCount > 17) {
-                        ((uint64_t*)data)[17] = ~((uint64_t*)data)[17];
+                        LC_NEGATE_LANE(data, 17);
                         if (laneCount > 20) {
-                            ((uint64_t*)data)[20] = ~((uint64_t*)data)[20];
+                            LC_NEGATE_LANE(data, 20);
                         }
                     }
                 }
             }
         }
     }
+#undef LC_NEGATE_LANE
 #endif
 }
 

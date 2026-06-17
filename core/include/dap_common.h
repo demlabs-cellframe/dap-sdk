@@ -1326,9 +1326,9 @@ static inline const char *dap_get_arch()
     #endif
 }
 
-#ifdef __MINGW32__
 int exec_silent(const char *a_cmd);
-#endif
+char *exec_with_ret_multistring(const char *a_cmd);
+int exec_with_ret(char **a_repl, const char *a_cmd);
 
 #ifdef __cplusplus
 }

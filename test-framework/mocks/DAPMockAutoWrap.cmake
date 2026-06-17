@@ -568,6 +568,9 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
         endforeach()
         
         list(APPEND NEW_LIBS "-Wl,--end-group")
+        if(NOT ANDROID)
+            list(APPEND NEW_LIBS "pthread")
+        endif()
     else()
         # No libraries to wrap - just add all libraries normally
         foreach(LIB ${CURRENT_LIBS})
@@ -599,38 +602,34 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
         endforeach()
     endif()
     
-    # Clear and reset link libraries
-    # Note: We always use PRIVATE keyword to match dap_test_link_libraries pattern
-    # which uses PRIVATE in dap_link_all_sdk_modules
-    set_target_properties(${TARGET_NAME} PROPERTIES LINK_LIBRARIES "")
-    target_link_libraries(${TARGET_NAME} PRIVATE ${NEW_LIBS})
-    
-    # Link object libraries explicitly to enable --wrap for internal calls
-    # Object libraries must be linked via target_link_libraries (not target_sources)
-    # for --wrap to work correctly
-    # IMPORTANT: When dap_sdk_object is removed, we need to link ALL modules from DAP_INTERNAL_MODULES
-    # to maintain functionality, but wrap only the requested ones
+    # Merge ALL libraries into ONE target_link_libraries call with proper grouping.
+    # This ensures a single --start-group/--end-group pair in the linker command.
+    get_target_property(_EXISTING_LIBS ${TARGET_NAME} LINK_LIBRARIES)
+    set(ALL_LIBS "")
+    if(_EXISTING_LIBS)
+        list(APPEND ALL_LIBS ${_EXISTING_LIBS})
+    endif()
+    list(APPEND ALL_LIBS ${NEW_LIBS})
     if(OBJECT_LIBS_TO_LINK OR HAD_DAP_SDK_OBJECT)
-        # If we had dap_sdk_object and removed it, link all modules from DAP_INTERNAL_MODULES
-        # Otherwise, just link the requested object libraries
         if(HAD_DAP_SDK_OBJECT)
             get_property(DAP_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
             if(DAP_MODULES)
                 foreach(MODULE ${DAP_MODULES})
                     if(TARGET ${MODULE})
-                        target_link_libraries(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${MODULE}>)
+                        list(APPEND ALL_LIBS $<TARGET_OBJECTS:${MODULE}>)
                     endif()
                 endforeach()
             endif()
         else()
-            # Link only requested object libraries
             foreach(OBJ_LIB ${OBJECT_LIBS_TO_LINK})
                 if(TARGET ${OBJ_LIB})
-                    target_link_libraries(${TARGET_NAME} PRIVATE $<TARGET_OBJECTS:${OBJ_LIB}>)
+                    list(APPEND ALL_LIBS $<TARGET_OBJECTS:${OBJ_LIB}>)
                 endif()
             endforeach()
         endif()
     endif()
+
+    target_link_libraries(${TARGET_NAME} PRIVATE ${ALL_LIBS})
     
     # Linux: Add --allow-multiple-definition to handle duplicate symbols from --whole-archive
     # macOS: Not needed - Apple linker handles this differently

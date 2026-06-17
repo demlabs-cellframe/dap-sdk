@@ -23,8 +23,8 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-#include <openssl/sha.h>
 #include <ctype.h>
+#include "dap_hash.h"
 
 /** Case-insensitive substring search (portable; avoids implicit-decl warnings on Linux without _GNU_SOURCE). */
 static char *s_strcasestr(const char *a_haystack, const char *a_needle)
@@ -877,12 +877,12 @@ static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, 
     memcpy(l_concat, a_client_key, l_key_len);
     strcat(l_concat, WEBSOCKET_GUID);
 
-    // Calculate SHA-1 hash using OpenSSL
-    unsigned char l_hash[SHA_DIGEST_LENGTH];  // SHA-1 = 20 bytes
-    SHA1((const unsigned char *)l_concat, strlen(l_concat), l_hash);
+    // Calculate SHA-1 hash
+    unsigned char l_hash[20];  // SHA-1 = 20 bytes
+    dap_hash_sha1(l_hash, (const unsigned char *)l_concat, strlen(l_concat));
 
     // Base64 encode the hash
-    size_t l_encoded_size = dap_enc_base64_encode(l_hash, SHA_DIGEST_LENGTH,
+    size_t l_encoded_size = dap_enc_base64_encode(l_hash, 20,
                                                     a_accept_key, DAP_ENC_DATA_TYPE_B64);
     if (l_encoded_size == 0) {
         log_it(L_ERROR, "Failed to base64 encode WebSocket accept key");

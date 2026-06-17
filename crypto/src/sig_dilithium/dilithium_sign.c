@@ -131,16 +131,12 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
         dilithium_kind_t kind, const void * seed, size_t seed_size)
 {
 
-    dilithium_param_t *p = malloc(sizeof(dilithium_param_t));
-
-    if (!p) return -1;
-
-    if (! dilithium_params_init( p, kind)) return -1;
+    dilithium_param_t p;
+    if (! dilithium_params_init( &p, kind)) return -1;
 
     assert(private_key != NULL);
 
-    if(dilithium_private_and_public_keys_init( private_key, public_key, p) != 0) {
-        free(p);
+    if(dilithium_private_and_public_keys_init( private_key, public_key, &p) != 0) {
         return -1;
     }
 
@@ -149,7 +145,7 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
     unsigned char tr[CRHBYTES];
     unsigned char *rho, *rhoprime, *key;
     uint16_t nonce = 0;
-    polyvecl mat[p->PARAM_K];
+    polyvecl mat[p.PARAM_K];
     polyvecl s1, s1hat;
     polyveck s2, t, t1, t0;
 
@@ -167,33 +163,31 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
     rhoprime = rho + SEEDBYTES;
     key = rho + 2*SEEDBYTES;
 
-    expand_mat(mat, rho, p);
+    expand_mat(mat, rho, &p);
 
-    for(i = 0; i < p->PARAM_L; ++i)
-        poly_uniform_eta(s1.vec + i, rhoprime, nonce++, p);
-    for(i = 0; i < p->PARAM_K; ++i)
-        poly_uniform_eta(s2.vec + i, rhoprime, nonce++, p);
+    for(i = 0; i < p.PARAM_L; ++i)
+        poly_uniform_eta(s1.vec + i, rhoprime, nonce++, &p);
+    for(i = 0; i < p.PARAM_K; ++i)
+        poly_uniform_eta(s2.vec + i, rhoprime, nonce++, &p);
 
     s1hat = s1;
-    polyvecl_ntt(&s1hat, p);
-    for(i = 0; i < p->PARAM_K; ++i) {
-        polyvecl_pointwise_acc_invmontgomery(t.vec+i, mat+i, &s1hat, p);
+    polyvecl_ntt(&s1hat, &p);
+    for(i = 0; i < p.PARAM_K; ++i) {
+        polyvecl_pointwise_acc_invmontgomery(t.vec+i, mat+i, &s1hat, &p);
         poly_reduce(t.vec+i);
         poly_invntt_montgomery(t.vec+i);
     }
 
-    polyveck_add(&t, &t, &s2, p);
+    polyveck_add(&t, &t, &s2, &p);
 
-    polyveck_freeze(&t, p);
-    polyveck_power2round(&t1, &t0, &t, p);
-    dilithium_pack_pk(public_key->data, rho, &t1, p);
+    polyveck_freeze(&t, &p);
+    polyveck_power2round(&t1, &t0, &t, &p);
+    dilithium_pack_pk(public_key->data, rho, &t1, &p);
 
-    //SHAKE256(tr, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
-    shake256(tr, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
-    dilithium_pack_sk(private_key->data, rho, key, tr, &s1, &s2, &t0, p);
+    //SHAKE256(tr, CRHBYTES, public_key->data, p.CRYPTO_PUBLICKEYBYTES);
+    shake256(tr, CRHBYTES, public_key->data, p.CRYPTO_PUBLICKEYBYTES);
+    dilithium_pack_sk(private_key->data, rho, key, tr, &s1, &s2, &t0, &p);
 
-    free(p);
-    p = NULL;
 
     return 0;
 }
@@ -201,12 +195,8 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
 /*************************************************/
 int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, unsigned long long mlen, const dilithium_private_key_t *private_key)
 {
-    dilithium_param_t *p = DAP_NEW_Z(dilithium_param_t);
-    if (!p) {
-        return -1;
-    }
-    if (! dilithium_params_init( p, private_key->kind)) {
-        free(p);
+    dilithium_param_t p;
+    if (! dilithium_params_init( &p, private_key->kind)) {
         return 1;
     }
 
@@ -217,88 +207,88 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
     unsigned char *rho, *key, *mu;
     uint16_t nonce = 0;
     poly c, chat;
-    polyvecl mat[p->PARAM_K], s1, y, yhat, z;
+    polyvecl mat[p.PARAM_K], s1, y, yhat, z;
     polyveck s2, t0, w, w1;
     polyveck h, wcs2, wcs20, ct0, tmp;
 
     rho = seedbuf;
     key = seedbuf + SEEDBYTES;
     mu = seedbuf + 2*SEEDBYTES;
-    dilithium_unpack_sk(rho, key, tr, &s1, &s2, &t0, private_key->data, p);
+    dilithium_unpack_sk(rho, key, tr, &s1, &s2, &t0, private_key->data, &p);
 
-    sig->sig_len = mlen + p->CRYPTO_BYTES;
+    sig->sig_len = mlen + p.CRYPTO_BYTES;
     sig->sig_data = DAP_NEW_Z_SIZE(unsigned char, sig->sig_len);
 
-    memcpy(sig->sig_data + p->CRYPTO_BYTES, m, mlen);
-    memcpy(sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, tr, CRHBYTES);
+    memcpy(sig->sig_data + p.CRYPTO_BYTES, m, mlen);
+    memcpy(sig->sig_data + p.CRYPTO_BYTES - CRHBYTES, tr, CRHBYTES);
 
-    //SHAKE256(mu, CRHBYTES, sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, CRHBYTES + mlen);
-    shake256(mu, CRHBYTES, sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, CRHBYTES + mlen);
+    //SHAKE256(mu, CRHBYTES, sig->sig_data + p.CRYPTO_BYTES - CRHBYTES, CRHBYTES + mlen);
+    shake256(mu, CRHBYTES, sig->sig_data + p.CRYPTO_BYTES - CRHBYTES, CRHBYTES + mlen);
 
-    expand_mat(mat, rho, p);
-    polyvecl_ntt(&s1, p);
-    polyveck_ntt(&s2, p);
-    polyveck_ntt(&t0, p);
+    expand_mat(mat, rho, &p);
+    polyvecl_ntt(&s1, &p);
+    polyveck_ntt(&s2, &p);
+    polyveck_ntt(&t0, &p);
 
     while(1){        
-        for(i = 0; i < p->PARAM_L; ++i)
+        for(i = 0; i < p.PARAM_L; ++i)
             poly_uniform_gamma1m1(y.vec+i, key, nonce++);
 
         yhat = y;
-        polyvecl_ntt(&yhat, p);
-        for(i = 0; i < p->PARAM_K; ++i) {
-            polyvecl_pointwise_acc_invmontgomery(w.vec+i, mat + i, &yhat, p);
+        polyvecl_ntt(&yhat, &p);
+        for(i = 0; i < p.PARAM_K; ++i) {
+            polyvecl_pointwise_acc_invmontgomery(w.vec+i, mat + i, &yhat, &p);
             poly_reduce(w.vec + i);
             poly_invntt_montgomery(w.vec + i);
         }
 
-        polyveck_csubq(&w, p);
-        polyveck_decompose(&w1, &tmp, &w, p);
-        challenge(&c, mu, &w1, p);
+        polyveck_csubq(&w, &p);
+        polyveck_decompose(&w1, &tmp, &w, &p);
+        challenge(&c, mu, &w1, &p);
 
         chat = c;
         dilithium_poly_ntt(&chat);
-        for(i = 0; i < p->PARAM_L; ++i) {
+        for(i = 0; i < p.PARAM_L; ++i) {
             poly_pointwise_invmontgomery(z.vec + i, &chat, s1.vec + i);
             poly_invntt_montgomery(z.vec + i);
         }
-        polyvecl_add(&z, &z, &y, p);
-        polyvecl_freeze(&z, p);
-        if(!polyvecl_chknorm(&z, GAMMA1 - p->PARAM_BETA, p)){
+        polyvecl_add(&z, &z, &y, &p);
+        polyvecl_freeze(&z, &p);
+        if(!polyvecl_chknorm(&z, GAMMA1 - p.PARAM_BETA, &p)){
 
-            for(i = 0; i < p->PARAM_K; ++i) {
+            for(i = 0; i < p.PARAM_K; ++i) {
                 poly_pointwise_invmontgomery(wcs2.vec + i, &chat, s2.vec + i);
                 poly_invntt_montgomery(wcs2.vec + i);
             }
-            polyveck_sub(&wcs2, &w, &wcs2, p);
-            polyveck_freeze(&wcs2, p);
-            polyveck_decompose(&tmp, &wcs20, &wcs2, p);
-            polyveck_csubq(&wcs20, p);
-            if(!polyveck_chknorm(&wcs20, GAMMA2 - p->PARAM_BETA, p)){
+            polyveck_sub(&wcs2, &w, &wcs2, &p);
+            polyveck_freeze(&wcs2, &p);
+            polyveck_decompose(&tmp, &wcs20, &wcs2, &p);
+            polyveck_csubq(&wcs20, &p);
+            if(!polyveck_chknorm(&wcs20, GAMMA2 - p.PARAM_BETA, &p)){
 
                 unsigned int S = 0;
-                for(i = 0; i < p->PARAM_K; ++i)
+                for(i = 0; i < p.PARAM_K; ++i)
                     for(j = 0; j < NN; ++j)
                         if(tmp.vec[i].coeffs[j] == w1.vec[i].coeffs[j])
                             S++;
-                if(S == p->PARAM_K * NN){
+                if(S == p.PARAM_K * NN){
 
-                    for(i = 0; i < p->PARAM_K; ++i) {
+                    for(i = 0; i < p.PARAM_K; ++i) {
                         poly_pointwise_invmontgomery(ct0.vec + i, &chat, t0.vec + i);
                         poly_invntt_montgomery(ct0.vec + i);
                     }
 
-                    polyveck_csubq(&ct0, p);
-                    if(!polyveck_chknorm(&ct0, GAMMA2, p)){
+                    polyveck_csubq(&ct0, &p);
+                    if(!polyveck_chknorm(&ct0, GAMMA2, &p)){
 
-                        polyveck_add(&tmp, &wcs2, &ct0, p);
-                        polyveck_csubq(&tmp, p);
-                        n = polyveck_make_hint(&h, &wcs2, &tmp, p);
-                        if(n <= p->PARAM_OMEGA){
+                        polyveck_add(&tmp, &wcs2, &ct0, &p);
+                        polyveck_csubq(&tmp, &p);
+                        n = polyveck_make_hint(&h, &wcs2, &tmp, &p);
+                        if(n <= p.PARAM_OMEGA){
 
-                            dilithium_pack_sig(sig->sig_data, &z, &h, &c, p);
+                            dilithium_pack_sig(sig->sig_data, &z, &h, &c, &p);
 
-                            sig->kind = p->kind;
+                            sig->kind = p.kind;
 
                             break;
                         }
@@ -308,8 +298,6 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
         }
     }
 
-    free(p);
-    p = NULL;
 
     return 0;
 }
@@ -320,17 +308,12 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     if(public_key->kind != sig->kind)
         return -1;
 
-    dilithium_param_t *p = malloc(sizeof(dilithium_param_t));
-    if (!p) {
-        return -7;
-    }
-    if (! dilithium_params_init( p, public_key->kind)) {
-        free(p);
+    dilithium_param_t p;
+    if (! dilithium_params_init( &p, public_key->kind)) {
         return -2;
     }
 
-    if (sig->sig_len < p->CRYPTO_BYTES ) {
-        free(p);
+    if (sig->sig_len < p.CRYPTO_BYTES ) {
         return -3;
     }
 
@@ -338,67 +321,61 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     unsigned char rho[SEEDBYTES];
     unsigned char mu[CRHBYTES];    
     poly c, chat, cp;
-    polyvecl mat[p->PARAM_K], z;
+    polyvecl mat[p.PARAM_K], z;
     polyveck t1, w1, h, tmp1, tmp2;
 
-    if((sig->sig_len - p->CRYPTO_BYTES) != mlen) {
-        free(p);
+    if((sig->sig_len - p.CRYPTO_BYTES) != mlen) {
         return -4;
     }
 
-    dilithium_unpack_pk(rho, &t1, public_key->data, p);
-    if(dilithium_unpack_sig(&z, &h, &c, sig->sig_data, p)) {
-        free(p);
+    dilithium_unpack_pk(rho, &t1, public_key->data, &p);
+    if(dilithium_unpack_sig(&z, &h, &c, sig->sig_data, &p)) {
         return -5;
     }
 
-    if(polyvecl_chknorm(&z, GAMMA1 - p->PARAM_BETA, p)) {
-        free(p);
+    if(polyvecl_chknorm(&z, GAMMA1 - p.PARAM_BETA, &p)) {
         return -6;
     }
 
     unsigned char *tmp_m = malloc(CRHBYTES + mlen);
     if (!tmp_m) {
-        free(p);
         return -8;
     }
     if(sig->sig_data != m)
         for(i = 0; i < mlen; ++i)
             tmp_m[CRHBYTES + i] = m[i];
 
-    //SHAKE256(tmp_m, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
+    //SHAKE256(tmp_m, CRHBYTES, public_key->data, p.CRYPTO_PUBLICKEYBYTES);
     //SHAKE256(mu, CRHBYTES, tmp_m, CRHBYTES + mlen);
-    shake256(tmp_m, CRHBYTES, public_key->data, p->CRYPTO_PUBLICKEYBYTES);
+    shake256(tmp_m, CRHBYTES, public_key->data, p.CRYPTO_PUBLICKEYBYTES);
     shake256(mu, CRHBYTES, tmp_m, CRHBYTES + mlen);
     free(tmp_m);
 
-    expand_mat(mat, rho, p);
-    polyvecl_ntt(&z, p);
-    for(i = 0; i < p->PARAM_K ; ++i)
-        polyvecl_pointwise_acc_invmontgomery(tmp1.vec + i, mat+i, &z, p);
+    expand_mat(mat, rho, &p);
+    polyvecl_ntt(&z, &p);
+    for(i = 0; i < p.PARAM_K ; ++i)
+        polyvecl_pointwise_acc_invmontgomery(tmp1.vec + i, mat+i, &z, &p);
 
     chat = c;
     dilithium_poly_ntt(&chat);
-    polyveck_shiftl(&t1, D, p);
-    polyveck_ntt(&t1, p);
-    for(i = 0; i < p->PARAM_K; ++i)
+    polyveck_shiftl(&t1, D, &p);
+    polyveck_ntt(&t1, &p);
+    for(i = 0; i < p.PARAM_K; ++i)
         poly_pointwise_invmontgomery(tmp2.vec + i, &chat, t1.vec + i);
 
-    polyveck_sub(&tmp1, &tmp1, &tmp2, p);
-    polyveck_reduce(&tmp1, p);
-    polyveck_invntt_montgomery(&tmp1, p);
+    polyveck_sub(&tmp1, &tmp1, &tmp2, &p);
+    polyveck_reduce(&tmp1, &p);
+    polyveck_invntt_montgomery(&tmp1, &p);
 
-    polyveck_csubq(&tmp1, p);
-    polyveck_use_hint(&w1, &tmp1, &h, p);
+    polyveck_csubq(&tmp1, &p);
+    polyveck_use_hint(&w1, &tmp1, &h, &p);
 
-    challenge(&cp, mu, &w1, p);
+    challenge(&cp, mu, &w1, &p);
     for(i = 0; i < NN; ++i)
         if(c.coeffs[i] != cp.coeffs[i]) {
-            free(p);
             return -7;
         }
 
-    free(p);
     return 0;
 }
 
