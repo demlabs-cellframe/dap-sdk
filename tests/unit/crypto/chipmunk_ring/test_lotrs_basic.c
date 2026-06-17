@@ -389,7 +389,7 @@ static void test_algebraic_check(void)
     if (l_rc == -2) { l_sign_seed[0] ^= 0xFF; l_rc = lotrs_sign(&l_sig, l_par, &l_ring, &l_kp.sk, 0, l_msg, sizeof(l_msg) - 1, l_sign_seed); }
     dap_assert(l_rc == 0, "sign OK");
 
-    /* Deserialize signature. */
+    /* Deserialize and manually check the algebraic equation. */
     size_t l_w_bytes = lotrs_polyvec_bytes(l_par, l_par->k);
     size_t l_c_bytes = lotrs_poly_bytes(l_par);
     uint32_t l_sk_len = l_par->l + l_par->k;
@@ -416,42 +416,59 @@ static void test_algebraic_check(void)
     }
     lotrs_xof_free(l_xof_a);
 
-    /* Compute lhs = A * z[..l] + z[l..l+k]. */
+    /* Manual A*z[0] computation at position 0 (for debugging). */
+    lotrs_poly_t *l_az_manual = lotrs_poly_alloc(l_par);
+    lotrs_poly_t *l_az_tmp = lotrs_poly_alloc(l_par);
+    for (uint32_t j = 0u; j < l_par->l; ++j) {
+        lotrs_poly_mul(l_az_tmp, l_A.rows[0].polys[j], l_z.polys[j], l_par);
+        lotrs_poly_add(l_az_manual, l_az_manual, l_az_tmp, l_par);
+    }
+    uint64_t l_manual_lhs = l_az_manual->coeffs[0] % l_par->q;
+    uint64_t l_manual_w = l_w.polys[0]->coeffs[0] % l_par->q;
+    lotrs_poly_free(l_az_tmp);
+    lotrs_poly_free(l_az_manual);
+
+    /* Now use polymat_vecmul. */
     lotrs_polyvec_t l_z_short = { .polys = l_z.polys, .n = l_par->l };
-    lotrs_polyvec_t l_z_tail  = { .polys = l_z.polys + l_par->l, .n = l_par->k };
     lotrs_polyvec_t l_lhs = lotrs_polyvec_alloc(l_par, l_par->k);
     lotrs_polymat_vecmul(&l_lhs, &l_A, &l_z_short, l_par);
-    lotrs_polyvec_add(&l_lhs, &l_lhs, &l_z_tail, l_par);
+    uint64_t l_vecmul_lhs = l_lhs.polys[0]->coeffs[0] % l_par->q;
 
-    /* Compute rhs = c * pk. */
-    lotrs_polyvec_t l_rhs = lotrs_polyvec_alloc(l_par, l_par->k);
-    for (uint32_t i = 0u; i < l_par->k; ++i) {
-        lotrs_poly_mul(l_rhs.polys[i], l_c, l_ring.pks[0].a_hat.polys[i], l_par);
+    /* Compute c*pk. */
+    lotrs_poly_t *l_cpk = lotrs_poly_alloc(l_par);
+    lotrs_poly_mul(l_cpk, l_c, l_ring.pks[0].a_hat.polys[0], l_par);
+    uint64_t l_cpk_val = l_cpk->coeffs[0] % l_par->q;
+    lotrs_poly_free(l_cpk);
+
+    /* Report. */
+    log_it(L_INFO, "ALGEBRAIC: manual_lhs=%lu vecmul_lhs=%lu w=%lu c*pk=%lu",
+           (unsigned long)l_manual_lhs, (unsigned long)l_vecmul_lhs,
+           (unsigned long)l_manual_w, (unsigned long)l_cpk_val);
+
+    /* Check: manual_lhs + w should equal c*pk. */
+    uint64_t l_manual_sum = (l_manual_lhs + l_manual_w) % l_par->q;
+    int l_manual_ok = (l_manual_sum == l_cpk_val);
+
+    /* Check: vecmul_lhs + w should equal c*pk. */
+    uint64_t l_vecmul_sum = (l_vecmul_lhs + l_manual_w) % l_par->q;
+    int l_vecmul_ok = (l_vecmul_sum == l_cpk_val);
+
+    log_it(L_INFO, "ALGEBRAIC: manual_sum=%lu vecmul_sum=%lu c*pk=%lu manual_ok=%d vecmul_ok=%d",
+           (unsigned long)l_manual_sum, (unsigned long)l_vecmul_sum,
+           (unsigned long)l_cpk_val, l_manual_ok, l_vecmul_ok);
+
+    if (!l_manual_ok) {
+        log_it(L_WARNING, "LoTRS algebraic: manual computation WRONG (diff=%ld)",
+               (long)((int64_t)l_manual_sum - (int64_t)l_cpk_val));
+    }
+    if (!l_vecmul_ok) {
+        log_it(L_WARNING, "LoTRS algebraic: vecmul computation WRONG (diff=%ld)",
+               (long)((int64_t)l_vecmul_sum - (int64_t)l_cpk_val));
+    }
+    if (l_manual_ok && l_vecmul_ok) {
+        log_it(L_INFO, "LoTRS algebraic: ALL CHECKS PASSED");
     }
 
-    /* Compute sum = lhs + w. */
-    lotrs_polyvec_t l_sum = lotrs_polyvec_alloc(l_par, l_par->k);
-    lotrs_polyvec_add(&l_sum, &l_lhs, &l_w, l_par);
-
-    /* Check sum == rhs. */
-    int l_match = 1;
-    for (uint32_t i = 0u; i < l_par->k; ++i) {
-        for (uint32_t j = 0u; j < l_par->d; ++j) {
-            if (l_sum.polys[i]->coeffs[j] % l_par->q !=
-                l_rhs.polys[i]->coeffs[j] % l_par->q) {
-                l_match = 0;
-                break;
-            }
-        }
-        if (!l_match) break;
-    }
-    /* Algebraic check is known-broken (negacyclic bug). Log but don't abort. */
-    if (!l_match) {
-        log_it(L_WARNING, "LoTRS algebraic check FAILED (known issue)");
-    }
-
-    lotrs_polyvec_free(&l_sum);
-    lotrs_polyvec_free(&l_rhs);
     lotrs_polyvec_free(&l_lhs);
     lotrs_polymat_free(&l_A);
     lotrs_polyvec_free(&l_w);

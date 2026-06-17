@@ -167,35 +167,29 @@ void lotrs_poly_mul(lotrs_poly_t *a_out, const lotrs_poly_t *a_a,
                     const lotrs_poly_t *a_b, const lotrs_params_t *a_par)
 {
     const uint32_t l_d = a_par->d;
-    const uint64_t l_q = a_par->q;
+    const int64_t l_q = (int64_t)a_par->q;
 
-    uint64_t *l_tmp = DAP_NEW_Z_SIZE(uint64_t, l_d * sizeof(uint64_t));
+    /* Use __int128 accumulator to avoid precision loss. */
+    __int128_t *l_tmp = DAP_NEW_Z_SIZE(__int128_t, l_d * sizeof(__int128_t));
     if (!l_tmp) return;
 
     for (uint32_t i = 0u; i < l_d; ++i) {
         for (uint32_t j = 0u; j < l_d; ++j) {
             uint32_t k = i + j;
-            __uint128_t l_prod = (__uint128_t)a_a->coeffs[i] * a_b->coeffs[j];
-            uint64_t l_lo = (uint64_t)l_prod;
-            uint64_t l_hi = (uint64_t)(l_prod >> 64);
+            __int128_t l_prod = (__int128_t)(int64_t)a_a->coeffs[i]
+                              * (__int128_t)(int64_t)a_b->coeffs[j];
 
             if (k < l_d) {
-                l_tmp[k] += l_lo;
-                if (l_tmp[k] < l_lo) l_hi++;
-                if (k + 1 < l_d) l_tmp[k + 1] += l_hi;
+                l_tmp[k] += l_prod;
             } else {
-                uint32_t l_kk = k - l_d;
-                l_tmp[l_kk] -= l_lo;
-                if (l_tmp[l_kk] > UINT64_MAX - l_lo) l_hi++;
-                if (l_kk > 0) l_tmp[l_kk - 1] -= l_hi;
+                l_tmp[k - l_d] -= l_prod;
             }
         }
     }
 
     for (uint32_t i = 0u; i < l_d; ++i) {
-        int64_t l_v = (int64_t)l_tmp[i];
-        int64_t l_r = l_v % (int64_t)l_q;
-        if (l_r < 0) l_r += (int64_t)l_q;
+        int64_t l_r = (int64_t)(l_tmp[i] % l_q);
+        if (l_r < 0) l_r += l_q;
         a_out->coeffs[i] = (uint64_t)l_r;
     }
 
@@ -240,19 +234,31 @@ void lotrs_polyvec_sub(lotrs_polyvec_t *a_out, const lotrs_polyvec_t *a_a,
 void lotrs_polymat_vecmul(lotrs_polyvec_t *a_out, const lotrs_polymat_t *a_A,
                           const lotrs_polyvec_t *a_x, const lotrs_params_t *a_par)
 {
+    const uint32_t l_d = a_par->d;
+    const int64_t l_q = (int64_t)a_par->q;
+
     for (uint32_t i = 0u; i < a_A->nrows; ++i) {
-        lotrs_poly_zero(a_out->polys[i], a_par);
+        /* Use __int128 accumulator for exact computation. */
+        __int128_t *l_acc = DAP_NEW_Z_SIZE(__int128_t, l_d * sizeof(__int128_t));
+        if (!l_acc) return;
+
         for (uint32_t j = 0u; j < a_A->ncols; ++j) {
             lotrs_poly_t *l_tmp = lotrs_poly_alloc(a_par);
-            if (!l_tmp) return;
+            if (!l_tmp) { DAP_DELETE(l_acc); return; }
             lotrs_poly_mul(l_tmp, a_A->rows[i].polys[j], a_x->polys[j], a_par);
-            for (uint32_t k = 0u; k < a_par->d; ++k) {
-                a_out->polys[i]->coeffs[k] =
-                    s_mod_add(a_out->polys[i]->coeffs[k],
-                              l_tmp->coeffs[k], a_par->q);
+            for (uint32_t k = 0u; k < l_d; ++k) {
+                l_acc[k] += (int64_t)l_tmp->coeffs[k];
             }
             lotrs_poly_free(l_tmp);
         }
+
+        /* Reduce mod q. */
+        for (uint32_t k = 0u; k < l_d; ++k) {
+            int64_t l_r = (int64_t)(l_acc[k] % l_q);
+            if (l_r < 0) l_r += l_q;
+            a_out->polys[i]->coeffs[k] = (uint64_t)l_r;
+        }
+        DAP_DELETE(l_acc);
     }
 }
 

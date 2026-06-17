@@ -362,19 +362,97 @@ int lotrs_verify(const lotrs_signature_t *a_sig,
     /*
      * Algebraic check: lhs + w == c * pk.
      *
-     * DISABLED: negacyclic convolution bug in polymat_vecmul produces
-     * incorrect lhs values (off by ~671K for TEST params).  The challenge
-     * + norm checks already provide Fiat-Shamir soundness; this check is
-     * a consistency verification, not a security requirement.
-     *
-     * Known: diff = c*pk - (lhs + w) is constant for same key/msg,
-     * suggesting a systematic accumulation error in the mul path.
+     * Uses __int128 poly_mul for exact negacyclic convolution.
      */
-    debug_if(1, L_DEBUG, "LoTRS verify: algebraic check SKIPPED (known bug)");
+    if (!a_ring || !a_ring->pks) {
+        lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
+        return -EINVAL;
+    }
+
+    lotrs_polymat_t l_A = lotrs_polymat_alloc(a_par, a_par->k, a_par->l);
+    if (!l_A.rows) {
+        lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
+        return -ENOMEM;
+    }
+    const char *l_a_domain = "lotrs-A-v1";
+    lotrs_xof_t *l_xof_a = lotrs_xof_new((const uint8_t *)l_a_domain, strlen(l_a_domain));
+    if (!l_xof_a) {
+        lotrs_polymat_free(&l_A);
+        lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
+        return -ENOMEM;
+    }
+    for (uint32_t i = 0u; i < a_par->k; ++i) {
+        for (uint32_t j = 0u; j < a_par->l; ++j) {
+            l_rc = lotrs_sample_uniform(l_A.rows[i].polys[j], l_xof_a, a_par);
+            if (l_rc != 0) {
+                lotrs_xof_free(l_xof_a); lotrs_polymat_free(&l_A);
+                lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
+                return l_rc;
+            }
+        }
+    }
+    lotrs_xof_free(l_xof_a);
+
+    /* lhs = A * z[..l] + z[l..l+k] + w. */
+    lotrs_polyvec_t l_z_short = { .polys = l_z.polys, .n = a_par->l };
+    lotrs_polyvec_t l_z_tail  = { .polys = l_z.polys + a_par->l, .n = a_par->k };
+
+    lotrs_polyvec_t l_lhs = lotrs_polyvec_alloc(a_par, a_par->k);
+    if (!l_lhs.polys) {
+        lotrs_polymat_free(&l_A);
+        lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
+        return -ENOMEM;
+    }
+    lotrs_polymat_vecmul(&l_lhs, &l_A, &l_z_short, a_par);
+    lotrs_polyvec_add(&l_lhs, &l_lhs, &l_z_tail, a_par);
+    lotrs_polyvec_add(&l_lhs, &l_lhs, &l_w, a_par);
+
+    /* Canonicalize lhs to [0, q). */
+    for (uint32_t i = 0u; i < a_par->k; ++i) {
+        for (uint32_t j = 0u; j < a_par->d; ++j) {
+            l_lhs.polys[i]->coeffs[j] %= a_par->q;
+        }
+    }
+
+    /* rhs = c * pk. */
+    lotrs_polyvec_t l_rhs = lotrs_polyvec_alloc(a_par, a_par->k);
+    if (!l_rhs.polys) {
+        lotrs_polyvec_free(&l_lhs); lotrs_polymat_free(&l_A);
+        lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
+        return -ENOMEM;
+    }
+    for (uint32_t i = 0u; i < a_par->k; ++i) {
+        lotrs_poly_mul(l_rhs.polys[i], l_c, a_ring->pks[0].a_hat.polys[i], a_par);
+    }
+
+    /* Check lhs == rhs. */
+    int l_match = 1;
+    for (uint32_t i = 0u; i < a_par->k; ++i) {
+        for (uint32_t j = 0u; j < a_par->d; ++j) {
+            if (l_lhs.polys[i]->coeffs[j] % a_par->q !=
+                l_rhs.polys[i]->coeffs[j] % a_par->q) {
+                debug_if(1, L_DEBUG, "LoTRS verify: algebraic FAILED at [%u][%u]: "
+                         "lhs=%lu rhs=%lu diff=%ld",
+                         i, j,
+                         (unsigned long)(l_lhs.polys[i]->coeffs[j] % a_par->q),
+                         (unsigned long)(l_rhs.polys[i]->coeffs[j] % a_par->q),
+                         (long)((int64_t)(l_lhs.polys[i]->coeffs[j] % a_par->q) -
+                                (int64_t)(l_rhs.polys[i]->coeffs[j] % a_par->q)));
+                l_match = 0;
+                break;
+            }
+        }
+        if (!l_match) break;
+    }
+
+    lotrs_polyvec_free(&l_lhs);
+    lotrs_polyvec_free(&l_rhs);
+    lotrs_polymat_free(&l_A);
     lotrs_polyvec_free(&l_w);
     lotrs_poly_free(l_c);
     lotrs_polyvec_free(&l_z);
-    return 0;
+
+    return l_match ? 0 : -EINVAL;
 }
 
 /* --- Multi-round threshold signing (M9.4) --- */
