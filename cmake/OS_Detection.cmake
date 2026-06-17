@@ -1,14 +1,5 @@
 include_guard(GLOBAL)
 
-<<<<<<< HEAD
-=======
-# This is only for safety if the flag was not set for some odd reason
-# and therefore would not be compatible with the earlier build configuration.
-# if(NOT DEFINED DAP_MANAGE_CFLAGS)
-#     set(DAP_MANAGE_CFLAGS ON)
-# endif()
-
->>>>>>> 846dc128e5fb970874a30ea3345f23c2a84f84ad
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(OS_TYPE_DESKTOP ON)
     set(LINUX ON)

@@ -23,10 +23,6 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdio.h>
-<<<<<<< HEAD
-=======
-// #include <openssl/sha.h>
->>>>>>> 846dc128e5fb970874a30ea3345f23c2a84f84ad
 #include <ctype.h>
 #include "dap_hash.h"
 
@@ -882,21 +878,12 @@ static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, 
     memcpy(l_concat, a_client_key, l_key_len);
     strcat(l_concat, WEBSOCKET_GUID);
 
-<<<<<<< HEAD
-    // Calculate SHA-1 hash
+    // Calculate SHA-1 hash (RFC 6455 requires SHA-1 for Sec-WebSocket-Accept)
     unsigned char l_hash[20];  // SHA-1 = 20 bytes
     dap_hash_sha1(l_hash, (const unsigned char *)l_concat, strlen(l_concat));
 
     // Base64 encode the hash
     size_t l_encoded_size = dap_enc_base64_encode(l_hash, 20,
-=======
-    // Calculate SHA3-256 hash
-    unsigned char l_hash[32];  // SHA3-256 = 32 bytes
-    sha3_256(l_hash, (const unsigned char *)l_concat, strlen(l_concat));
-
-    // Base64 encode the hash
-    size_t l_encoded_size = dap_enc_base64_encode(l_hash, 32,
->>>>>>> 846dc128e5fb970874a30ea3345f23c2a84f84ad
                                                     a_accept_key, DAP_ENC_DATA_TYPE_B64);
     if (l_encoded_size == 0) {
         log_it(L_ERROR, "Failed to base64 encode WebSocket accept key");
