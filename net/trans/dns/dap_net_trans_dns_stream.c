@@ -23,7 +23,9 @@ See more details here <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <time.h>
+#ifndef DAP_OS_WINDOWS
 #include <arpa/inet.h>
+#endif
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_net_trans_dns_stream.h"
