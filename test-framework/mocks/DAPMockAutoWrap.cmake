@@ -307,6 +307,13 @@ function(dap_mock_autowrap TARGET_NAME)
     # with --whole-archive to ensure --wrap works correctly
     # This eliminates the need for manual dap_mock_autowrap_with_static() calls
     
+    # Skip for STATIC/OBJECT libraries — group flags would propagate transitively
+    # and cause duplicates when the consumer also wraps
+    get_target_property(_TARGET_TYPE ${TARGET_NAME} TYPE)
+    if(_TARGET_TYPE MATCHES "STATIC_LIBRARY|OBJECT_LIBRARY|MODULE_LIBRARY")
+        return()
+    endif()
+    
     # Get list of linked libraries
     get_target_property(LINKED_LIBS ${TARGET_NAME} LINK_LIBRARIES)
     if(LINKED_LIBS)
@@ -572,10 +579,12 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
             list(APPEND NEW_LIBS "pthread")
         endif()
     else()
-        # No libraries to wrap - just add all libraries normally
+        # No libraries to wrap - add all libraries normally but still wrap in group for circular deps
+        list(APPEND NEW_LIBS "-Wl,--start-group")
         foreach(LIB ${CURRENT_LIBS})
             list(APPEND NEW_LIBS ${LIB})
         endforeach()
+        list(APPEND NEW_LIBS "-Wl,--end-group")
     endif()
     
     # Check if we're removing dap_sdk_object before removing sources
@@ -604,12 +613,10 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
     
     # Merge ALL libraries into ONE target_link_libraries call with proper grouping.
     # This ensures a single --start-group/--end-group pair in the linker command.
-    get_target_property(_EXISTING_LIBS ${TARGET_NAME} LINK_LIBRARIES)
-    set(ALL_LIBS "")
-    if(_EXISTING_LIBS)
-        list(APPEND ALL_LIBS ${_EXISTING_LIBS})
-    endif()
-    list(APPEND ALL_LIBS ${NEW_LIBS})
+    # IMPORTANT: Do NOT re-read LINK_LIBRARIES here — CURRENT_LIBS already has them,
+    # and NEW_LIBS already wraps them in --start-group/--end-group.
+    # We must CLEAR existing libs to avoid duplicates.
+    set(ALL_LIBS ${NEW_LIBS})
     if(OBJECT_LIBS_TO_LINK OR HAD_DAP_SDK_OBJECT)
         if(HAD_DAP_SDK_OBJECT)
             get_property(DAP_MODULES CACHE DAP_INTERNAL_MODULES PROPERTY VALUE)
@@ -629,6 +636,8 @@ function(dap_mock_autowrap_with_static TARGET_NAME)
         endif()
     endif()
 
+    # Clear and reset link libraries to avoid duplicates
+    set_target_properties(${TARGET_NAME} PROPERTIES LINK_LIBRARIES "")
     target_link_libraries(${TARGET_NAME} PRIVATE ${ALL_LIBS})
     
     # Linux: Add --allow-multiple-definition to handle duplicate symbols from --whole-archive

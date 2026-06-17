@@ -60,6 +60,7 @@ static char *s_strcasestr(const char *a_haystack, const char *a_needle)
 #include "dap_stream_worker.h"
 
 #include "dap_net_trans_ctx.h"
+#include "fips202.h"
 
 #define LOG_TAG "dap_net_trans_websocket_server"
 
@@ -854,12 +855,12 @@ static void s_ws_server_esocket_error(dap_events_socket_t *a_es, int a_arg)
  * @brief Generate Sec-WebSocket-Accept key from client key (RFC 6455)
  * 
  * The server takes the value of Sec-WebSocket-Key header, concatenates
- * it with the GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", takes SHA-1
+ * it with the GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", takes SHA3-256
  * hash of the result, and base64-encodes it.
  */
 static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, size_t a_accept_key_size)
 {
-    if (!a_client_key || !a_accept_key || a_accept_key_size < 29) {  // Base64(20 bytes) = 28 chars + null
+    if (!a_client_key || !a_accept_key || a_accept_key_size < 45) {  // Base64(32 bytes) = 44 chars + null
         return false;
     }
 
@@ -877,7 +878,7 @@ static bool s_generate_accept_key(const char *a_client_key, char *a_accept_key, 
     memcpy(l_concat, a_client_key, l_key_len);
     strcat(l_concat, WEBSOCKET_GUID);
 
-    // Calculate SHA-1 hash
+    // Calculate SHA-1 hash (RFC 6455 requires SHA-1 for Sec-WebSocket-Accept)
     unsigned char l_hash[20];  // SHA-1 = 20 bytes
     dap_hash_sha1(l_hash, (const unsigned char *)l_concat, strlen(l_concat));
 

@@ -37,6 +37,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_net_trans_server.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
+#include "dap_context.h"
 #include "dap_enc_key.h"
 #include "dap_net_trans_qos.h"
 #include "dap_enc_kdf.h"
@@ -544,7 +545,8 @@ static void s_dns_process_datagram(dap_events_socket_t *a_es, dap_net_trans_dns_
 }
 
 typedef struct dns_sendto_args {
-    dap_events_socket_t *esocket;
+    dap_events_socket_uuid_t esocket_uuid;
+    dap_context_t *context;
     void *data;
     size_t size;
     struct sockaddr_storage addr;
@@ -554,8 +556,9 @@ typedef struct dns_sendto_args {
 static void s_dns_sendto_callback(void *a_arg)
 {
     dns_sendto_args_t *l_args = (dns_sendto_args_t *)a_arg;
-    if(l_args->esocket)
-        dap_events_socket_sendto_unsafe(l_args->esocket,
+    dap_events_socket_t *l_es = dap_context_find(l_args->context, l_args->esocket_uuid);
+    if(l_es)
+        dap_events_socket_sendto_unsafe(l_es,
             l_args->data, l_args->size,
             &l_args->addr, l_args->addr_len);
     DAP_DELETE(l_args->data);
@@ -595,7 +598,8 @@ static ssize_t s_dns_server_trans_write(dap_stream_t *a_stream, const void *a_da
     dns_sendto_args_t *l_args = DAP_NEW_Z(dns_sendto_args_t);
     if(!l_args)
         return -1;
-    l_args->esocket = l_es;
+    l_args->esocket_uuid = l_es->uuid;
+    l_args->context = l_target->context;
     l_args->data = DAP_DUP_SIZE(a_data, a_size);
     if(!l_args->data) {
         DAP_DELETE(l_args);
