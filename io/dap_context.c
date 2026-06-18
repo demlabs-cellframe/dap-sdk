@@ -261,10 +261,11 @@ void dap_context_stop_n_kill(dap_context_t * a_context)
         break;
     case DAP_CONTEXT_TYPE_PROC_THREAD: {
         dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
-        pthread_mutex_lock(&l_thread->queue_lock);
         a_context->signal_exit = true;
-        pthread_cond_signal(&l_thread->queue_event);
-        pthread_mutex_unlock(&l_thread->queue_lock);
+        // Wake up proc thread via eventfd (replaces mutex+condvar)
+        uint64_t l_one = 1;
+        if (l_thread->wakeup_fd >= 0)
+            write(l_thread->wakeup_fd, &l_one, sizeof(l_one));
     }
     default:
         break;

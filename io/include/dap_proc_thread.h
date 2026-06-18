@@ -24,6 +24,7 @@
 #pragma once
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include "dap_common.h"
 
 typedef struct dap_proc_thread dap_proc_thread_t;
@@ -47,15 +48,16 @@ typedef enum dap_queue_msg_priority {
 typedef struct dap_proc_queue_item {
      dap_proc_queue_callback_t  callback;                                   /* An address of the action routine */
                           void *callback_arg;                               /* Address of the action routine argument */
-    struct dap_proc_queue_item *prev;
-    struct dap_proc_queue_item *next;
+    struct dap_proc_queue_item *next;                                       /* Lock-free MPSC queue link (no prev needed) */
 } dap_proc_queue_item_t;
 
 typedef struct dap_proc_thread {
-    pthread_mutex_t queue_lock;                                             /* To coordinate access to the queuee's entries */
-    pthread_cond_t queue_event;                                             /* Conditional variable for waiting thread event queue */
-    dap_proc_queue_item_t *queue[DAP_QUEUE_MSG_PRIORITY_COUNT];             /* List of the queue' entries in array of list according of priority numbers */
+    /* Lock-free MPSC queue: multiple producers (any thread), single consumer (proc thread).
+     * Push: atomic_exchange on head (prepend). Pull: atomic_exchange(NULL) + reverse.
+     * eventfd for cross-thread wakeup (replaces mutex+condvar). */
+    _Atomic(dap_proc_queue_item_t *) queue_head[DAP_QUEUE_MSG_PRIORITY_COUNT];
     atomic_uint proc_queue_size;                                   /* Thread's load factor (atomic for thread-safe reads) */
+    int wakeup_fd;                                                          /* eventfd for cross-thread wakeup */
     dap_context_t *context;
 } dap_proc_thread_t;
 
