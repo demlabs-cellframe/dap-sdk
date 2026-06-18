@@ -113,12 +113,11 @@ struct dap_io_flow_ctrl {
     pthread_mutex_t lifecycle_mutex;    // Mutex for lifecycle synchronization
     pthread_cond_t lifecycle_cond;      // Condition: wait for operations to complete
     
-    // Send window (retransmission)
+    // Send window (retransmission) — single-writer on worker thread
     send_window_entry_t *send_window;
     size_t send_window_size;
-    _Atomic uint64_t send_seq_next;         // Next sequence to send (atomic for lock-free increment)
+    uint64_t send_seq_next;         // Next sequence to send
     uint64_t send_seq_acked;        // Highest acked sequence
-    pthread_mutex_t send_mutex;
     
     // Receive window (reordering)
     recv_window_entry_t *recv_window;
@@ -331,9 +330,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
             DAP_DELETE(l_ctrl);
             return NULL;
         }
-        pthread_mutex_init(&l_ctrl->send_mutex, NULL);
         l_ctrl->send_seq_next = 1;  // Start from 1 (0 = invalid)
-        l_ctrl->send_seq_acked = 0;
     }
     
     // Initialize receive window if reordering enabled
@@ -343,7 +340,6 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
         if (!l_ctrl->recv_window) {
             log_it(L_ERROR, "Failed to allocate receive window");
             if (l_ctrl->send_window) {
-                pthread_mutex_destroy(&l_ctrl->send_mutex);
                 DAP_DELETE(l_ctrl->send_window);
             }
             DAP_DELETE(l_ctrl);
@@ -445,7 +441,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     pthread_mutex_unlock(&a_ctrl->lifecycle_mutex);
     
     // STEP 3: Stop timers FIRST (before clearing magic).
-    // Timer callbacks check magic under send_mutex. By stopping timers first,
+    // Timer callbacks check magic. By stopping timers first,
     // we guarantee no new callback can start. Any in-flight callback will
     // complete before the sync stop returns.
     if (a_ctrl->retransmit_timer) {
@@ -457,14 +453,8 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         a_ctrl->keepalive_timer = NULL;
     }
     
-    // STEP 4: Clear magic under send_mutex (now safe — no timers can fire)
-    if (a_ctrl->send_window) {
-        pthread_mutex_lock(&a_ctrl->send_mutex);
-        a_ctrl->magic = 0;
-        pthread_mutex_unlock(&a_ctrl->send_mutex);
-    } else {
-        a_ctrl->magic = 0;
-    }
+    // STEP 4: Clear magic (now safe — no timers can fire)
+    a_ctrl->magic = 0;
     
     // STEP 5: Clean send window
     if (a_ctrl->send_window) {
@@ -473,7 +463,6 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
                 a_ctrl->callbacks.packet_free(a_ctrl->send_window[i].packet, a_ctrl->callbacks.arg);
             }
         }
-        pthread_mutex_destroy(&a_ctrl->send_mutex);
         DAP_DEL_Z(a_ctrl->send_window);
     }
     
@@ -603,15 +592,14 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         return -10;  // Distinct error code for "deleted"
     }
     
-    // Assign sequence number (lock-free atomic increment)
+    // Assign sequence number (lock-free: single-writer on worker thread)
     uint64_t l_seq_num = 0;
     if (a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) {
-        l_seq_num = atomic_fetch_add(&a_ctrl->send_seq_next, 1);
-        // atomic_fetch_add returns old value (before increment) — that's our seq num
+        l_seq_num = a_ctrl->send_seq_next++;
         
         debug_if(s_debug_more, L_DEBUG,
                  "FC send: assigned seq=%"PRIu64" (flags=0x%02x, send_seq_next=%"PRIu64")",
-                 l_seq_num, a_ctrl->flags, atomic_load(&a_ctrl->send_seq_next));
+                 l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next);
     } else {
         
         debug_if(s_debug_more, L_DEBUG,
@@ -671,7 +659,7 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
             return -4;
         }
         
-        pthread_mutex_lock(&a_ctrl->send_mutex);
+        // Write to send window (single-writer on worker thread, no mutex needed)
         size_t l_idx = (l_seq_num - 1) % a_ctrl->send_window_size;
         
         // Free old packet if slot occupied
@@ -685,8 +673,6 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         a_ctrl->send_window[l_idx].timestamp_ns = dap_nanotime_now();
         a_ctrl->send_window[l_idx].retransmit_count = 0;
         a_ctrl->send_window[l_idx].acked = false;
-        
-        pthread_mutex_unlock(&a_ctrl->send_mutex);
     } else {
         // No retransmission tracking - free immediately
         a_ctrl->callbacks.packet_free(l_packet, a_ctrl->callbacks.arg);
@@ -743,10 +729,8 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
     a_ctrl->last_activity_ns = dap_nanotime_now();
     
     
-    // Process ACK if retransmission enabled
+    // Process ACK if retransmission enabled (single-writer on worker thread)
     if ((a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && l_metadata.ack_seq > 0) {
-        pthread_mutex_lock(&a_ctrl->send_mutex);
-        
         // Mark all packets up to ack_seq as acknowledged
         for (uint64_t seq = a_ctrl->send_seq_acked + 1; seq <= l_metadata.ack_seq; seq++) {
             size_t l_idx = (seq - 1) % a_ctrl->send_window_size;
@@ -765,8 +749,6 @@ int dap_io_flow_ctrl_recv(dap_io_flow_ctrl_t *a_ctrl, const void *a_packet, size
                    a_ctrl->send_seq_acked, l_metadata.ack_seq);
             a_ctrl->send_seq_acked = l_metadata.ack_seq;
         }
-        
-        pthread_mutex_unlock(&a_ctrl->send_mutex);
     }
     
     // Handle keep-alive packet
@@ -1012,20 +994,11 @@ static bool s_retransmit_timer_callback(void *a_arg)
         return true;  // FC is being torn down; owner will delete the timer
     }
     
-    // Lock mutex BEFORE accessing any FC data to prevent race with dap_io_flow_ctrl_delete()
-    pthread_mutex_lock(&l_ctrl->send_mutex);
-    
-    // Double-check magic AFTER acquiring lock (detect deletion during lock wait)
-    if (l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
-        pthread_mutex_unlock(&l_ctrl->send_mutex);
-        return true;  // FC is being torn down; owner will delete the timer
-    }
-    
     uint64_t l_now = dap_nanotime_now();
     uint64_t l_timeout_ns = l_ctrl->config.retransmit_timeout_ms * 1000000ULL;
     
     // Scan send window for packets needing retransmission
-    for (uint64_t seq = l_ctrl->send_seq_acked + 1; seq < atomic_load(&l_ctrl->send_seq_next); seq++) {
+    for (uint64_t seq = l_ctrl->send_seq_acked + 1; seq < l_ctrl->send_seq_next; seq++) {
         size_t l_idx = (seq - 1) % l_ctrl->send_window_size;
         send_window_entry_t *l_entry = &l_ctrl->send_window[l_idx];
         
@@ -1068,7 +1041,6 @@ static bool s_retransmit_timer_callback(void *a_arg)
         }
     }
     
-    pthread_mutex_unlock(&l_ctrl->send_mutex);
     
     return true;  // Continue timer
 }
