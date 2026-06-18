@@ -116,7 +116,7 @@ struct dap_io_flow_ctrl {
     // Send window (retransmission)
     send_window_entry_t *send_window;
     size_t send_window_size;
-    uint64_t send_seq_next;         // Next sequence to send
+    _Atomic uint64_t send_seq_next;         // Next sequence to send (atomic for lock-free increment)
     uint64_t send_seq_acked;        // Highest acked sequence
     pthread_mutex_t send_mutex;
     
@@ -603,17 +603,15 @@ int dap_io_flow_ctrl_send(dap_io_flow_ctrl_t *a_ctrl, const void *a_payload, siz
         return -10;  // Distinct error code for "deleted"
     }
     
-    // Assign sequence number
+    // Assign sequence number (lock-free atomic increment)
     uint64_t l_seq_num = 0;
     if (a_ctrl->flags & DAP_IO_FLOW_CTRL_RETRANSMIT) {
-        pthread_mutex_lock(&a_ctrl->send_mutex);
-        l_seq_num = a_ctrl->send_seq_next++;
-        pthread_mutex_unlock(&a_ctrl->send_mutex);
-        
+        l_seq_num = atomic_fetch_add(&a_ctrl->send_seq_next, 1);
+        // atomic_fetch_add returns old value (before increment) — that's our seq num
         
         debug_if(s_debug_more, L_DEBUG,
                  "FC send: assigned seq=%"PRIu64" (flags=0x%02x, send_seq_next=%"PRIu64")",
-                 l_seq_num, a_ctrl->flags, a_ctrl->send_seq_next);
+                 l_seq_num, a_ctrl->flags, atomic_load(&a_ctrl->send_seq_next));
     } else {
         
         debug_if(s_debug_more, L_DEBUG,
@@ -1027,7 +1025,7 @@ static bool s_retransmit_timer_callback(void *a_arg)
     uint64_t l_timeout_ns = l_ctrl->config.retransmit_timeout_ms * 1000000ULL;
     
     // Scan send window for packets needing retransmission
-    for (uint64_t seq = l_ctrl->send_seq_acked + 1; seq < l_ctrl->send_seq_next; seq++) {
+    for (uint64_t seq = l_ctrl->send_seq_acked + 1; seq < atomic_load(&l_ctrl->send_seq_next); seq++) {
         size_t l_idx = (seq - 1) % l_ctrl->send_window_size;
         send_window_entry_t *l_entry = &l_ctrl->send_window[l_idx];
         
