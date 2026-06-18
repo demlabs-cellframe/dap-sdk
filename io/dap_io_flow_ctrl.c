@@ -444,21 +444,10 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     }
     pthread_mutex_unlock(&a_ctrl->lifecycle_mutex);
     
-    // STEP 3: Clear magic under send_mutex to synchronize with timer callbacks
-    // Timer callbacks check magic before accessing FC data
-    if (a_ctrl->send_window) {
-        pthread_mutex_lock(&a_ctrl->send_mutex);
-        a_ctrl->magic = 0;
-        pthread_mutex_unlock(&a_ctrl->send_mutex);
-    } else {
-        a_ctrl->magic = 0;
-    }
-    
-    // STEP 4: Stop timers on their own worker thread (synchronously).
-    // The FC timer callbacks never self-delete (they return true even when
-    // magic==0), so this teardown path is the single owner of the timers.
-    // Deleting them on the worker serializes with any in-flight callback and
-    // guarantees no callback can fire after we proceed to free the FC below.
+    // STEP 3: Stop timers FIRST (before clearing magic).
+    // Timer callbacks check magic under send_mutex. By stopping timers first,
+    // we guarantee no new callback can start. Any in-flight callback will
+    // complete before the sync stop returns.
     if (a_ctrl->retransmit_timer) {
         s_flow_ctrl_timer_stop(a_ctrl->retransmit_timer);
         a_ctrl->retransmit_timer = NULL;
@@ -466,6 +455,15 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     if (a_ctrl->keepalive_timer) {
         s_flow_ctrl_timer_stop(a_ctrl->keepalive_timer);
         a_ctrl->keepalive_timer = NULL;
+    }
+    
+    // STEP 4: Clear magic under send_mutex (now safe — no timers can fire)
+    if (a_ctrl->send_window) {
+        pthread_mutex_lock(&a_ctrl->send_mutex);
+        a_ctrl->magic = 0;
+        pthread_mutex_unlock(&a_ctrl->send_mutex);
+    } else {
+        a_ctrl->magic = 0;
     }
     
     // STEP 5: Clean send window
