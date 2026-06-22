@@ -37,6 +37,12 @@
 #include "dap_crc64.h"
 #include "dap_sign.h"
 
+/* SIMD dispatch init headers */
+#include "sig/dilithium/dilithium_poly.h"
+#include "sig/dilithium/dilithium_polyvec.h"
+#include "kem/mlkem/dap_mlkem_ntt.h"
+#include "math/bignum/include/dap_ntt.h"
+
 #define LOG_TAG "dap_enc"
 
 /**
@@ -55,6 +61,16 @@ int dap_enc_init()
     dap_crc64_init();
     s_debug_more = g_config ? dap_config_get_item_bool_default(g_config, "crypto", "debug_more", false) : false;
     dap_sign_init(DAP_SIGN_HASH_TYPE_SHA3);
+
+    /* SIMD dispatch init — one-time, before any crypto hot path */
+    dap_ntt_dispatch_init();
+    dilithium_poly_dispatch_init();
+    dilithium_polyvec_dispatch_init();
+    mlkem_ntt_dispatch_init();
+    mlkem_poly_dispatch_init();
+    mlkem_polyvec_dispatch_init();
+    mlkem_rej_uniform_dispatch_init();
+
     return 0;
 }
 

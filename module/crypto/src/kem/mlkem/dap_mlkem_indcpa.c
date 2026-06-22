@@ -70,7 +70,7 @@ extern unsigned dap_mlkem_rej_uniform_avx512_vbmi2(int16_t *, unsigned, const ui
 
 DAP_DISPATCH_LOCAL(s_rej_uniform, unsigned, int16_t *, unsigned, const uint8_t *, unsigned);
 
-static void s_rej_uniform_dispatch_init(void)
+void mlkem_rej_uniform_dispatch_init(void)
 {
     dap_algo_class_t l_class = dap_algo_class_register("MLKEM_REJ");
 
@@ -93,7 +93,6 @@ static void s_rej_uniform_dispatch_init(void)
 #endif
 }
 
-#define REJ_ENSURE() DAP_DISPATCH_ENSURE(s_rej_uniform, s_rej_uniform_dispatch_init)
 
 /* ---- matrix generation ---- */
 
@@ -103,7 +102,6 @@ static void s_rej_uniform_dispatch_init(void)
 static void s_gen_matrix(dap_mlkem_polyvec *a_mat, const uint8_t a_seed[MLKEM_SYMBYTES],
                           int a_transposed)
 {
-    REJ_ENSURE();
     unsigned l_total = MLKEM_K * MLKEM_K;
     uint8_t l_buf[4][GEN_MATRIX_NBLOCKS * MLKEM_XOF_BLOCKBYTES + 2];
 

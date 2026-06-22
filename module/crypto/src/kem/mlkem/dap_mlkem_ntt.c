@@ -139,7 +139,7 @@ static void s_ntt_inverse_neon_packed(int16_t *a_coeffs)
 }
 #endif
 
-static void s_mlkem_ntt_dispatch_init(void)
+void mlkem_ntt_dispatch_init(void)
 {
     s_ntt_params.n         = MLKEM_N;
     s_ntt_params.q         = MLKEM_Q;
@@ -175,25 +175,21 @@ static void s_mlkem_ntt_dispatch_init(void)
 
 void MLKEM_NAMESPACE(_ntt)(int16_t a_coeffs[MLKEM_N])
 {
-    DAP_DISPATCH_ENSURE(s_mlkem_ntt_fwd, s_mlkem_ntt_dispatch_init);
     s_mlkem_ntt_fwd_ptr(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_invntt)(int16_t a_coeffs[MLKEM_N])
 {
-    DAP_DISPATCH_ENSURE(s_mlkem_ntt_inv, s_mlkem_ntt_dispatch_init);
     s_mlkem_ntt_inv_ptr(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_nttpack)(int16_t a_coeffs[MLKEM_N])
 {
-    DAP_DISPATCH_ENSURE(s_mlkem_ntt_pack, s_mlkem_ntt_dispatch_init);
     s_mlkem_ntt_pack_ptr(a_coeffs);
 }
 
 void MLKEM_NAMESPACE(_nttunpack)(int16_t a_coeffs[MLKEM_N])
 {
-    DAP_DISPATCH_ENSURE(s_mlkem_ntt_unpack, s_mlkem_ntt_dispatch_init);
     s_mlkem_ntt_unpack_ptr(a_coeffs);
 }
 
