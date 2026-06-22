@@ -139,7 +139,7 @@ static void s_ntt_inverse_neon_packed(int16_t *a_coeffs)
 }
 #endif
 
-void mlkem_ntt_dispatch_init(void)
+void MLKEM_NAMESPACE(_ntt_dispatch_init)(void)
 {
     s_ntt_params.n         = MLKEM_N;
     s_ntt_params.q         = MLKEM_Q;

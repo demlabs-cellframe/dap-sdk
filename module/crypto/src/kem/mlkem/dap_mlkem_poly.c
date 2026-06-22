@@ -187,7 +187,7 @@ static void s_poly_basemul_ref(int16_t *a_r, const int16_t *a_a, const int16_t *
  * Dispatch init — resolved once, cached thereafter
  * ============================================================================ */
 
-void mlkem_poly_dispatch_init(void)
+void MLKEM_NAMESPACE(_poly_dispatch_init)(void)
 {
     dap_algo_class_t l_class = dap_algo_class_register("MLKEM_POLY");
 

@@ -126,7 +126,7 @@ static void s_pv_basemul_acc_ref(
  * Dispatch init
  * ============================================================================ */
 
-void mlkem_polyvec_dispatch_init(void)
+void MLKEM_NAMESPACE(_polyvec_dispatch_init)(void)
 {
     dap_algo_class_t l_class = dap_algo_class_register("MLKEM_POLYVEC");
 

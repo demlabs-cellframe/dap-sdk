@@ -70,7 +70,7 @@ extern unsigned dap_mlkem_rej_uniform_avx512_vbmi2(int16_t *, unsigned, const ui
 
 DAP_DISPATCH_LOCAL(s_rej_uniform, unsigned, int16_t *, unsigned, const uint8_t *, unsigned);
 
-void mlkem_rej_uniform_dispatch_init(void)
+void MLKEM_NAMESPACE(_rej_uniform_dispatch_init)(void)
 {
     dap_algo_class_t l_class = dap_algo_class_register("MLKEM_REJ");
 
