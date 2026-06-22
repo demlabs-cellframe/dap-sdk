@@ -41,7 +41,7 @@
 #include "sig/dilithium/dilithium_poly.h"
 #include "sig/dilithium/dilithium_polyvec.h"
 #include "kem/mlkem/dap_mlkem_ntt.h"
-#include "math/bignum/include/dap_ntt.h"
+#include "dap_ntt.h"
 
 #define LOG_TAG "dap_enc"
 
