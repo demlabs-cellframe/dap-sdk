@@ -38,23 +38,9 @@
 #include "dap_sign.h"
 
 /* SIMD dispatch init headers */
-#include "sig/dilithium/dilithium_poly.h"
-#include "sig/dilithium/dilithium_polyvec.h"
+#include "sig/dilithium/dilithium_dispatch.h"
+#include "kem/mlkem/dap_mlkem_dispatch.h"
 #include "dap_ntt.h"
-
-/* MLKEM dispatch init — declared explicitly since header uses MLKEM_NAMESPACE */
-extern void dap_mlkem512_ntt_dispatch_init(void);
-extern void dap_mlkem512_poly_dispatch_init(void);
-extern void dap_mlkem512_polyvec_dispatch_init(void);
-extern void dap_mlkem512_rej_uniform_dispatch_init(void);
-extern void dap_mlkem768_ntt_dispatch_init(void);
-extern void dap_mlkem768_poly_dispatch_init(void);
-extern void dap_mlkem768_polyvec_dispatch_init(void);
-extern void dap_mlkem768_rej_uniform_dispatch_init(void);
-extern void dap_mlkem1024_ntt_dispatch_init(void);
-extern void dap_mlkem1024_poly_dispatch_init(void);
-extern void dap_mlkem1024_polyvec_dispatch_init(void);
-extern void dap_mlkem1024_rej_uniform_dispatch_init(void);
 
 #define LOG_TAG "dap_enc"
 
@@ -77,21 +63,8 @@ int dap_enc_init()
 
     /* SIMD dispatch init — one-time, before any crypto hot path */
     dap_ntt_dispatch_init();
-    dilithium_poly_dispatch_init();
-    dilithium_polyvec_dispatch_init();
-    /* MLKEM has 3 variants (512/768/1024), each needs its own dispatch init */
-    dap_mlkem512_ntt_dispatch_init();
-    dap_mlkem512_poly_dispatch_init();
-    dap_mlkem512_polyvec_dispatch_init();
-    dap_mlkem512_rej_uniform_dispatch_init();
-    dap_mlkem768_ntt_dispatch_init();
-    dap_mlkem768_poly_dispatch_init();
-    dap_mlkem768_polyvec_dispatch_init();
-    dap_mlkem768_rej_uniform_dispatch_init();
-    dap_mlkem1024_ntt_dispatch_init();
-    dap_mlkem1024_poly_dispatch_init();
-    dap_mlkem1024_polyvec_dispatch_init();
-    dap_mlkem1024_rej_uniform_dispatch_init();
+    dilithium_dispatch_init();
+    dap_mlkem_dispatch_init();
 
     return 0;
 }
