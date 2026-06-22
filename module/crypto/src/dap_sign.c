@@ -196,9 +196,10 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_type.type = SIG_TYPE_SPHINCSPLUS; break;
         case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME: l_sign_type.type = SIG_TYPE_NTRU_PRIME; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK: l_sign_type.type = SIG_TYPE_CHIPMUNK; break;
-        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING: l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING; break;
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING: l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LRS: l_sign_type.type = SIG_TYPE_CHIPMUNK_LRS; break;
         case DAP_ENC_KEY_TYPE_SIG_LOTRS: l_sign_type.type = SIG_TYPE_LOTRS; break;
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING: l_sign_type.type = SIG_TYPE_CHIPMUNK_RING; break;
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: l_sign_type.type = SIG_TYPE_MULTI_ECDSA_DILITHIUM; break;
@@ -373,6 +374,7 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING:
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:

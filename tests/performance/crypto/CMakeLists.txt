@@ -63,6 +63,7 @@ add_crypto_bench(bench_mlkem_components)
 add_crypto_bench(bench_ntt_micro)
 add_crypto_bench(bench_rng_overhead)
 add_crypto_bench(bench_chipmunk_mring)
+add_crypto_bench(bench_chipmunk_ring)
 
 # bench_chipmunk_mring: optional liboqs for ML-DSA comparison
 if(EXISTS "${COMP_INSTALL}/lib/liboqs.a" AND EXISTS "${COMP_INSTALL}/include/oqs/oqs.h")

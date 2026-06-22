@@ -10,7 +10,7 @@
 #include "dap_sign.h"
 #include "dap_memwipe.h"
 #include "chipmunk_lrs.h"
-#include "chipmunk_ring.h"
+#include "chipmunk_mring.h"
 
 #include <errno.h>
 #include <string.h>

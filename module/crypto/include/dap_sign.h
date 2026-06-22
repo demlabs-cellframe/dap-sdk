@@ -45,6 +45,7 @@ enum dap_sign_type_enum {
     SIG_TYPE_CHIPMUNK_MRING = 0x0108, /// @brief Chipmunk MRNG log-N threshold ring signature
     SIG_TYPE_CHIPMUNK_LRS = 0x010A, /// @brief Chipmunk LRS 1-of-N linkable ring signature
     SIG_TYPE_LOTRS = 0x010B, /// @brief LoTRS lattice-based threshold ring signature
+    SIG_TYPE_CHIPMUNK_RING = 0x010C, /// @brief Chipmunk Ring V2 non-interactive lattice ring signature
     SIG_TYPE_NTRU_PRIME = 0x0113,
     SIG_TYPE_ML_DSA = 0x0201,
 #ifdef DAP_PQLR

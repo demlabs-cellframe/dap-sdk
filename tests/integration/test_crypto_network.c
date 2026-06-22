@@ -169,7 +169,7 @@ static bool s_test_distributed_consensus_workflow(void) {
     for (uint32_t i = 0; i < NETWORK_NODE_COUNT; i++) {
         l_nodes[i].node_id = i + 1;
         // Use Chipmunk Ring (кольцевая подпись) for anonymous transactions
-        l_nodes[i].signing_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING, NULL, 0, NULL, 0, 0);
+        l_nodes[i].signing_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING, NULL, 0, NULL, 0, 0);
         snprintf(l_nodes[i].node_address, sizeof(l_nodes[i].node_address), "10.0.0.%u", i + 1);
         l_nodes[i].is_online = true;
 

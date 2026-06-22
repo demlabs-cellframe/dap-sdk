@@ -54,6 +54,8 @@ extern "C" {
  */
 int dap_enc_chipmunk_ring_init(void);
 int dap_sign_chipmunk_ring_register_callbacks(void);
+int dap_sign_chipmunk_mring_register_callbacks(void);
+int dap_sign_chipmunk_lrs_register_callbacks(void);
 
 /**
  * @brief Allocate an empty dap_enc_key_t of type

@@ -128,10 +128,10 @@ typedef enum dap_enc_key_type {
      *   * Do NOT use this key type for legally / financially significant
      *     anonymity claims until CR-11.D lands.
      */
-    DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING=0x0109,
-    DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING=0x0109,  /* alias for CHIPMUNK_RING */
+    DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING=0x0109,
     DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LRS=0x010A,
     DAP_ENC_KEY_TYPE_SIG_LOTRS=0x010B,
+    DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING=0x010C,
 
     DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM = 99,
     DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED = 100,

@@ -20,7 +20,6 @@
 #include "dap_hash_sha3.h"
 #include "dap_memwipe.h"
 #include "dap_serialize.h"
-#include "chipmunk_ring.h"
 #include "chipmunk_mring.h"
 #include "chipmunk_mring_params.h"
 #include "chipmunk_mring_transcript.h"

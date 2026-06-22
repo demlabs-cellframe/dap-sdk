@@ -341,12 +341,20 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_lotrs_basic
                       "unit;crypto;lotrs")
 endif()
 
-# Chipmunk Ring V2 — non-interactive lattice ring signature.
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_v2.c)
-    add_dap_test(test_unit_chipmunk_ring_v2
-                 unit/crypto/chipmunk_ring/test_chipmunk_ring_v2.c)
-    register_dap_test(test_unit_chipmunk_ring_v2
-                      "unit;crypto;ring;v2")
+# Chipmunk Ring — non-interactive lattice ring signature.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring.c)
+    add_dap_test(test_unit_chipmunk_ring
+                 unit/crypto/chipmunk_ring/test_chipmunk_ring.c)
+    register_dap_test(test_unit_chipmunk_ring
+                      "unit;crypto;ring")
+endif()
+
+# Chipmunk Ring KAT + security + wire tests.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_ring_kat.c)
+    add_dap_test(test_unit_chipmunk_ring_kat
+                 unit/crypto/chipmunk_ring/test_chipmunk_ring_kat.c)
+    register_dap_test(test_unit_chipmunk_ring_kat
+                      "unit;crypto;ring;kat")
 endif()
 
 # LoTRS KAT (Known-Answer Tests).

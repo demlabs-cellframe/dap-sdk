@@ -68,12 +68,73 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "chipmunk_ring.h"
 #include "chipmunk_mring_params.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* -------------------------------------------------------------------------
+ * MRNG ring size / threshold envelope.
+ * ---------------------------------------------------------------------- */
+
+#define CHIPMUNK_RING_NRING_MIN          2u
+#define CHIPMUNK_RING_NRING_MAX          256u
+#define CHIPMUNK_RING_THRESHOLD_MIN      1u
+#define CHIPMUNK_RING_THRESHOLD_MAX      CHIPMUNK_RING_NRING_MAX
+
+#define CHIPMUNK_RING_RING_MIN           CHIPMUNK_RING_NRING_MIN
+#define CHIPMUNK_RING_RING_MAX           CHIPMUNK_RING_NRING_MAX
+#define CHIPMUNK_RING_RING_MINIMUM_ANON  4u
+
+/* -------------------------------------------------------------------------
+ * MRNG error codes.
+ * ---------------------------------------------------------------------- */
+
+typedef enum chipmunk_ring_error {
+    CHIPMUNK_RING_OK                       =    0,
+    CHIPMUNK_RING_ERR_NULL_PARAM           =   -1,
+    CHIPMUNK_RING_ERR_BUFFER_TOO_SMALL     =   -2,
+    CHIPMUNK_RING_ERR_MAGIC_MISMATCH       =   -3,
+    CHIPMUNK_RING_ERR_VERSION_MISMATCH     =   -4,
+    CHIPMUNK_RING_ERR_N_RING_OUT_OF_RANGE  =   -5,
+    CHIPMUNK_RING_ERR_T_OUT_OF_RANGE       =   -6,
+    CHIPMUNK_RING_ERR_RING_HASH_MISMATCH   =   -7,
+    CHIPMUNK_RING_ERR_CTX_HASH_MISMATCH    =   -8,
+    CHIPMUNK_RING_ERR_TAG_ORDER            =   -9,
+    CHIPMUNK_RING_ERR_TAG_DUPLICATE        =  -10,
+    CHIPMUNK_RING_ERR_NORM_BOUND           =  -11,
+    CHIPMUNK_RING_ERR_PROOF_FAIL           =  -12,
+    CHIPMUNK_RING_ERR_FIAT_SHAMIR_MISMATCH =  -13,
+    CHIPMUNK_RING_ERR_PARAMS_MISMATCH      =  -14,
+    CHIPMUNK_RING_ERR_RING_PK_DUPLICATE    =  -15,
+    CHIPMUNK_RING_ERR_RING_NOT_CANONICAL   =  -16,
+    CHIPMUNK_RING_ERR_NOT_IMPLEMENTED      =  -99,
+    CHIPMUNK_RING_ERR_INTERNAL             = -100
+} chipmunk_ring_error_t;
+
+const char *chipmunk_ring_strerror(chipmunk_ring_error_t a_err);
+
+struct chipmunk_lrs_secret_key;
+struct chipmunk_lrs_public_key;
+
+chipmunk_ring_error_t chipmunk_ring_sign_to_bytes(
+    uint8_t **a_out_buf, size_t *a_out_size,
+    const struct chipmunk_lrs_secret_key *const *a_signer_sk,
+    size_t a_signer_count,
+    const struct chipmunk_lrs_public_key *a_ring,
+    size_t a_ring_size,
+    uint32_t a_threshold,
+    const uint8_t *a_message, size_t a_message_size,
+    const void *a_ctx, size_t a_ctx_size,
+    const uint8_t *a_randomness_seeds);
+
+chipmunk_ring_error_t chipmunk_ring_verify_from_bytes(
+    const uint8_t *a_buf, size_t a_buf_size,
+    const struct chipmunk_lrs_public_key *a_ring,
+    size_t a_ring_size,
+    const uint8_t *a_message, size_t a_message_size,
+    const void *a_ctx, size_t a_ctx_size);
 
 /* -------------------------------------------------------------------------
  * Wire flags (header bit field).

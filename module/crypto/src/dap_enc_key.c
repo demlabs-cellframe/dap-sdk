@@ -813,7 +813,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .del_priv_key = dap_enc_chipmunk_private_key_delete
     },
 
-    [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING]={
+    [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING]={
         .name = "CHIPMUNK_RING",
         .enc = NULL,
         .dec = NULL,
@@ -851,6 +851,27 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .deser_pub_key_size = dap_enc_chipmunk_ring_deser_public_key_size,
         .deser_priv_key_size = dap_enc_chipmunk_ring_deser_private_key_size,
 
+        .del_sign = NULL,
+        .del_pub_key = dap_enc_chipmunk_ring_public_key_delete,
+        .del_priv_key = dap_enc_chipmunk_ring_private_key_delete
+    },
+
+    [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING]={
+        .name = "CHIPMUNK_RING_NONINT",
+        .enc = NULL, .dec = NULL, .enc_na = NULL, .dec_na = NULL, .dec_na_ext = NULL,
+        .sign_get = NULL, .sign_verify = NULL, .gen_key_public = NULL,
+        .enc_out_size = NULL, .dec_out_size = NULL,
+        .new_callback = dap_enc_chipmunk_ring_key_new_callback,
+        .new_generate_callback = dap_enc_chipmunk_ring_key_generate_callback,
+        .delete_callback = dap_enc_chipmunk_ring_key_delete,
+        .ser_sign = NULL,
+        .ser_priv_key = dap_enc_chipmunk_ring_write_private_key,
+        .ser_pub_key = dap_enc_chipmunk_ring_write_public_key,
+        .ser_priv_key_size = dap_enc_chipmunk_ring_ser_private_key_size,
+        .ser_pub_key_size = dap_enc_chipmunk_ring_ser_public_key_size,
+        .deser_sign = NULL, .deser_sign_size = NULL,
+        .deser_pub_key_size = dap_enc_chipmunk_ring_deser_public_key_size,
+        .deser_priv_key_size = dap_enc_chipmunk_ring_deser_private_key_size,
         .del_sign = NULL,
         .del_pub_key = dap_enc_chipmunk_ring_public_key_delete,
         .del_priv_key = dap_enc_chipmunk_ring_private_key_delete

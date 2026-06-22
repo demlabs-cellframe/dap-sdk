@@ -173,23 +173,35 @@ int lotrs_sample_short_vec(lotrs_polyvec_t *a_out, lotrs_xof_t *a_xof,
 int lotrs_reject_infinity_norm(const lotrs_poly_t *a_z, int64_t a_bound,
                                const lotrs_params_t *a_par)
 {
+    /* Constant-time: accumulate mask, no early exit.
+     * Reject if |coeff| > bound (strict inequality matching original). */
+    int64_t l_ok = -1; /* all bits set = accept */
     for (uint32_t i = 0u; i < a_par->d; ++i) {
         int64_t l_c = lotrs_center(a_z->coeffs[i], a_par->q);
-        if (l_c < -a_bound || l_c > a_bound) return 0;
+        int64_t l_abs = (l_c < 0) ? -l_c : l_c;
+        /* Reject if l_abs > a_bound, i.e., a_bound - l_abs < 0. */
+        int64_t l_diff = a_bound - l_abs;
+        /* l_diff < 0 → sign bit = 1 → mask = 0 (reject).
+         * l_diff >= 0 → sign bit = 0 → mask = -1 (accept). */
+        int64_t l_mask = (l_diff >> 63) | (l_diff >> 63 << 63); /* wrong, simpler: */
+        /* sign bit is 1 if l_diff < 0. We want mask = 0 in that case.
+         * mask = ~(l_diff >> 63) would be ~(-1) = 0 for reject, ~(0) = -1 for accept.
+         * But we also want accept when l_diff == 0 (sign bit 0). */
+        l_ok &= ~(l_diff >> 63);
     }
-    return 1;
+    return (l_ok == -1) ? 1 : 0;
 }
 
 int lotrs_reject_l2_norm_sq(const lotrs_polyvec_t *a_z, int64_t a_bound_sq,
                             const lotrs_params_t *a_par)
 {
+    /* Constant-time: accumulate squared norm, compare at end. */
     __int128_t l_sum = 0;
     for (uint32_t i = 0u; i < a_z->n; ++i) {
         for (uint32_t j = 0u; j < a_par->d; ++j) {
             int64_t l_c = lotrs_center(a_z->polys[i]->coeffs[j], a_par->q);
             l_sum += (__int128_t)l_c * l_c;
-            if (l_sum > (__int128_t)a_bound_sq) return 0;
         }
     }
-    return 1;
+    return (l_sum <= (__int128_t)a_bound_sq) ? 1 : 0;
 }

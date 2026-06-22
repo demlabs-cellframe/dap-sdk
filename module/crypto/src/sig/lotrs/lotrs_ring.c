@@ -266,35 +266,80 @@ void lotrs_polymat_vecmul(lotrs_polyvec_t *a_out, const lotrs_polymat_t *a_A,
 
 int64_t lotrs_center(uint64_t a_a, uint64_t a_q)
 {
+    /* Branchless: subtract q if a > q/2. */
     int64_t l_v = (int64_t)a_a;
     int64_t l_half = (int64_t)(a_q / 2u);
-    if (l_v > l_half) l_v -= (int64_t)a_q;
+    /* mask = all-ones if l_v > l_half, 0 otherwise. */
+    int64_t l_diff = l_half - l_v;
+    int64_t l_mask = l_diff >> 63; /* -1 if l_diff < 0 (i.e., l_v > l_half) */
+    l_v -= l_mask & (int64_t)a_q;
     return l_v;
 }
 
 /* --- Serialization (dap_serialize) --- */
 
+/* Bytes per coefficient: ceil(ceil(log2(q)) / 8). */
+static inline uint32_t s_coeff_bytes(uint64_t a_q)
+{
+    if (a_q <= (1ULL << 8))  return 1u;
+    if (a_q <= (1ULL << 16)) return 2u;
+    if (a_q <= (1ULL << 24)) return 3u;
+    if (a_q <= (1ULL << 32)) return 4u;
+    if (a_q <= (1ULL << 40)) return 5u;
+    if (a_q <= (1ULL << 48)) return 6u;
+    if (a_q <= (1ULL << 56)) return 7u;
+    return 8u;
+}
+
 size_t lotrs_poly_bytes(const lotrs_params_t *a_par)
 {
-    return (size_t)a_par->d * 8u;
+    return (size_t)a_par->d * s_coeff_bytes(a_par->q);
 }
 
 int lotrs_poly_pack(uint8_t *a_out, size_t a_out_len,
                     const lotrs_poly_t *a_p, const lotrs_params_t *a_par)
 {
-    const size_t l_total = lotrs_poly_bytes(a_par);
+    const uint32_t l_cb = s_coeff_bytes(a_par->q);
+    const size_t l_total = (size_t)a_par->d * l_cb;
     if (a_out_len < l_total) return -EINVAL;
-    /* Use dap_serialize_ptr_to_buffer for raw coefficient copy (LE uint64). */
-    return dap_serialize_ptr_to_buffer(a_p->coeffs, l_total, a_out, a_out_len);
+
+    if (l_cb == 8u) {
+        /* Fast path: raw 8-byte LE copy. */
+        return dap_serialize_ptr_to_buffer(a_p->coeffs, l_total, a_out, a_out_len);
+    }
+
+    /* Compact path: encode each coefficient as l_cb bytes LE. */
+    for (uint32_t i = 0u; i < a_par->d; ++i) {
+        uint64_t v = a_p->coeffs[i];
+        for (uint32_t b = 0u; b < l_cb; ++b) {
+            a_out[i * l_cb + b] = (uint8_t)(v >> (8u * b));
+        }
+    }
+    return 0;
 }
 
 int lotrs_poly_unpack(lotrs_poly_t *a_p, const uint8_t *a_in, size_t a_in_len,
                       const lotrs_params_t *a_par)
 {
-    const size_t l_total = lotrs_poly_bytes(a_par);
+    const uint32_t l_cb = s_coeff_bytes(a_par->q);
+    const size_t l_total = (size_t)a_par->d * l_cb;
     if (a_in_len < l_total) return -EINVAL;
-    int l_rc = dap_serialize_ptr_from_buffer(a_in, a_in_len, a_p->coeffs, l_total);
-    if (l_rc != 0) return l_rc;
+
+    if (l_cb == 8u) {
+        /* Fast path: raw 8-byte LE copy. */
+        int l_rc = dap_serialize_ptr_from_buffer(a_in, a_in_len, a_p->coeffs, l_total);
+        if (l_rc != 0) return l_rc;
+    } else {
+        /* Compact path: decode l_cb bytes LE per coefficient. */
+        for (uint32_t i = 0u; i < a_par->d; ++i) {
+            uint64_t v = 0u;
+            for (uint32_t b = 0u; b < l_cb; ++b) {
+                v |= (uint64_t)a_in[i * l_cb + b] << (8u * b);
+            }
+            a_p->coeffs[i] = v;
+        }
+    }
+
     /* Reduce mod q. */
     for (uint32_t i = 0u; i < a_par->d; ++i) {
         a_p->coeffs[i] %= a_par->q;

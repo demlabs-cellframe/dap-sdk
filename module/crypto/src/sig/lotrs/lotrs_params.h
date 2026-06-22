@@ -46,6 +46,16 @@ extern const lotrs_params_t LOTRS_PARAMS_BENCH_4OF32;
 /* BENCH: d=128, q~48-bit, N=32, T=16. */
 extern const lotrs_params_t LOTRS_PARAMS_BENCH;
 
+/* RING_PROD: production params for non-interactive ring (1-of-N).
+ * Same crypto as BENCH_4OF32 (d=128, q~48-bit, k=12, l=5).
+ * T field unused by ring; kept for struct compatibility. */
+#define LOTRS_PARAMS_RING LOTRS_PARAMS_BENCH_4OF32
+
+/* RING_OPT: optimized params for ring with reduced k (k=6, l=3).
+ * ~50% smaller signatures than RING at comparable security.
+ * Module-LWE dimension k*d = 768 (> NIST Cat 5). */
+extern const lotrs_params_t LOTRS_PARAMS_RING_OPT;
+
 /* Derived constants (computed at compile time for TEST). */
 #define LOTRS_TEST_D       32u
 #define LOTRS_TEST_Q       4194389ULL

@@ -72,3 +72,26 @@ const lotrs_params_t LOTRS_PARAMS_BENCH = {
     .K_w        = 5,
     .x_seed_len = 16,
 };
+
+const lotrs_params_t LOTRS_PARAMS_RING_OPT = {
+    .d          = 128,
+    .q          = 274877906837ULL,   /* ~2^48 */
+    .q_hat      = 274877906837ULL,
+    .beta       = 32,
+    .kappa      = 1,
+    .T          = 1,                 /* 1-of-N ring (unused) */
+    .k          = 6,                 /* reduced from 12 */
+    .l          = 3,                 /* reduced from 5 */
+    .l_prime    = 4,
+    .n_hat      = 6,                 /* reduced from 11 */
+    .k_hat      = 4,                 /* reduced from 8 */
+    .w          = 31,
+    .eta        = 1,
+    .phi        = 352.0,
+    .phi_a      = 24.0,
+    .phi_b      = 4.0,
+    .K_A        = 28,
+    .K_B        = 5,
+    .K_w        = 5,
+    .x_seed_len = 16,
+};

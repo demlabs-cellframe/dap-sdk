@@ -34,8 +34,10 @@ _Static_assert(sizeof(chipmunk_lrs_secret_key_t) == DAP_ENC_CHIPMUNK_RING_PRIV_K
 
 int dap_enc_chipmunk_ring_init(void)
 {
-    /* chipmunk_lrs is stateless; the DAP signature layer only needs the
-     * algorithm-specific ring callbacks registered at crypto init time. */
+    int rc = dap_sign_chipmunk_mring_register_callbacks();
+    if (rc != 0) return rc;
+    rc = dap_sign_chipmunk_lrs_register_callbacks();
+    if (rc != 0) return rc;
     return dap_sign_chipmunk_ring_register_callbacks();
 }
 
@@ -100,7 +102,7 @@ static int s_derive_x_seed_from_anything(uint8_t a_x_seed[CHIPMUNK_LRS_SEED_BYTE
 
 dap_enc_key_t *dap_enc_chipmunk_ring_key_new(void)
 {
-    dap_enc_key_t *l_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING);
+    dap_enc_key_t *l_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING);
     return l_key;
 }
 
@@ -151,7 +153,7 @@ dap_enc_key_t *dap_enc_chipmunk_ring_key_generate(const void *a_kex_buf, size_t 
 void dap_enc_chipmunk_ring_key_new_callback(dap_enc_key_t *a_key)
 {
     if (!a_key) return;
-    a_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING;
+    a_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING;
     a_key->pub_key_data = NULL;
     a_key->pub_key_data_size = 0;
     a_key->priv_key_data = NULL;
