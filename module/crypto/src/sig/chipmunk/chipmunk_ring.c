@@ -58,8 +58,7 @@ DAP_SERIALIZE_SCHEMA_DEFINE(s_chipmunk_ring_header_schema,
 static inline void s_poly_wipe_free(lotrs_poly_t *a_p)
 {
     if (a_p) {
-        dap_memwipe(a_p->coeffs, sizeof(a_p->coeffs));
-        lotrs_poly_free(a_p);
+        lotrs_poly_free(a_p);  /* lotrs_poly_free already wipes coeffs */
     }
 }
 

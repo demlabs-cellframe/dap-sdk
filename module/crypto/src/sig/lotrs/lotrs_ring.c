@@ -113,6 +113,7 @@ void lotrs_polymat_free(lotrs_polymat_t *a_m)
         for (uint32_t i = 0u; i < a_m->nrows; ++i) {
             lotrs_polyvec_free(&a_m->rows[i]);
         }
+        dap_memwipe(a_m->rows, a_m->nrows * sizeof(lotrs_polyvec_t));
         DAP_DELETE(a_m->rows);
         a_m->rows = NULL;
         a_m->nrows = 0;
