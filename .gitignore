@@ -103,3 +103,4 @@ tests/performance/keccak/competitors/
 tests/performance/ecdsa/competitors/
 tests/performance/global_db/competitors/build.debug/
 build.release/
+build*/
