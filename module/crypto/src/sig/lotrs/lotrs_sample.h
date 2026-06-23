@@ -19,7 +19,7 @@ typedef struct lotrs_xof lotrs_xof_t;
 
 lotrs_xof_t *lotrs_xof_new(const uint8_t *seed, size_t seed_len);
 void         lotrs_xof_free(lotrs_xof_t *xof);
-void         lotrs_xof_absorb(lotrs_xof_t *xof, const uint8_t *data, size_t len);
+int          lotrs_xof_absorb(lotrs_xof_t *xof, const uint8_t *data, size_t len);
 void         lotrs_xof_squeeze(lotrs_xof_t *xof, uint8_t *out, size_t out_len);
 
 /* Sample uniform polynomial in [0, q). */

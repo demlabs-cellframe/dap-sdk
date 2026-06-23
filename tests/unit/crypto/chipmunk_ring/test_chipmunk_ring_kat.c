@@ -258,7 +258,7 @@ static void test_tamper_t(void)
                  k_msg, sizeof(k_msg) - 1, k_sign_seed);
 
     /* Tamper first byte after header (part of T_0). */
-    l_sig.data[CHIPMUNK_RING_HEADER_BYTES] ^= 0x01;
+    l_sig.data[chipmunk_ring_header_bytes()] ^= 0x01;
 
     int rc = chipmunk_ring_verify(&l_sig, l_par, &l_ring, k_msg, sizeof(k_msg) - 1);
     dap_assert(rc != 0, "tampered T fails");
@@ -283,7 +283,7 @@ static void test_tamper_c(void)
 
     /* Tamper c_0 region: after header + T_0. */
     size_t l_T_size = lotrs_polyvec_bytes(l_par, l_par->k);
-    size_t l_offset = CHIPMUNK_RING_HEADER_BYTES + l_T_size;
+    size_t l_offset = chipmunk_ring_header_bytes() + l_T_size;
     l_sig.data[l_offset] ^= 0x01;
 
     int rc = chipmunk_ring_verify(&l_sig, l_par, &l_ring, k_msg, sizeof(k_msg) - 1);
@@ -332,7 +332,7 @@ static void test_truncated_sig(void)
                  k_msg, sizeof(k_msg) - 1, k_sign_seed);
 
     /* Truncate to less than header size. */
-    chipmunk_ring_sig_t l_trunc = { .data = l_sig.data, .len = CHIPMUNK_RING_HEADER_BYTES - 1 };
+    chipmunk_ring_sig_t l_trunc = { .data = l_sig.data, .len = chipmunk_ring_header_bytes() - 1 };
     int rc = chipmunk_ring_verify(&l_trunc, l_par, &l_ring, k_msg, sizeof(k_msg) - 1);
     dap_assert(rc != 0, "truncated sig fails");
 

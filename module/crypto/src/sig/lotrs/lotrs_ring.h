@@ -75,6 +75,9 @@ void lotrs_polymat_vecmul(lotrs_polyvec_t *out, const lotrs_polymat_t *A,
 /* --- Centered representation --- */
 int64_t lotrs_center(uint64_t a, uint64_t q);
 
+/* Constant-time modular reduction: x mod q for __int128_t. */
+int64_t lotrs_mod_reduce(__int128_t x, uint64_t q);
+
 /* --- Serialization (dap_serialize) --- */
 size_t lotrs_poly_bytes(const lotrs_params_t *par);
 int lotrs_poly_pack(uint8_t *out, size_t out_len,

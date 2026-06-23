@@ -15,6 +15,43 @@
 #include "dap_common.h"
 #include "dap_hash_sha3.h"
 #include "dap_memwipe.h"
+#include "dap_serialize.h"
+
+/* Compute truncated parameter hash (16 bytes). Returns 0 on success. */
+static int s_param_hash(uint8_t a_out[16], const lotrs_params_t *a_par)
+{
+    lotrs_xof_t *l_xof = lotrs_xof_new((const uint8_t *)"crv2-params-v1", 14u);
+    if (!l_xof) { memset(a_out, 0, 16u); return -ENOMEM; }
+    int l_rc;
+    uint8_t l_buf[8];
+    memcpy(l_buf, &a_par->d, 4u); l_rc = lotrs_xof_absorb(l_xof, l_buf, 4u); if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
+    memcpy(l_buf, &a_par->q, 8u); l_rc = lotrs_xof_absorb(l_xof, l_buf, 8u); if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
+    memcpy(l_buf, &a_par->k, 4u); l_rc = lotrs_xof_absorb(l_xof, l_buf, 4u); if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
+    memcpy(l_buf, &a_par->l, 4u); l_rc = lotrs_xof_absorb(l_xof, l_buf, 4u); if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
+    memcpy(l_buf, &a_par->w, 4u); l_rc = lotrs_xof_absorb(l_xof, l_buf, 4u); if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
+    memcpy(l_buf, &a_par->eta, 4u); l_rc = lotrs_xof_absorb(l_xof, l_buf, 4u); if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
+    lotrs_xof_squeeze(l_xof, a_out, 16u);
+    lotrs_xof_free(l_xof);
+    return 0;
+}
+
+/* --- Header schema (dap_serialize) --- */
+
+static const dap_serialize_field_t s_chipmunk_ring_header_fields[] = {
+    { .name = "magic",        .type = DAP_SERIALIZE_TYPE_UINT32, .offset = offsetof(chipmunk_ring_header_t, magic),        .size = sizeof(uint32_t) },
+    { .name = "version",      .type = DAP_SERIALIZE_TYPE_UINT32, .offset = offsetof(chipmunk_ring_header_t, version),      .size = sizeof(uint32_t) },
+    { .name = "d",            .type = DAP_SERIALIZE_TYPE_UINT32, .offset = offsetof(chipmunk_ring_header_t, d),            .size = sizeof(uint32_t) },
+    { .name = "N",            .type = DAP_SERIALIZE_TYPE_UINT32, .offset = offsetof(chipmunk_ring_header_t, N),            .size = sizeof(uint32_t) },
+    { .name = "rice_k_z",     .type = DAP_SERIALIZE_TYPE_UINT32, .offset = offsetof(chipmunk_ring_header_t, rice_k_z),     .size = sizeof(uint32_t) },
+    { .name = "rice_bound_z", .type = DAP_SERIALIZE_TYPE_INT64,  .offset = offsetof(chipmunk_ring_header_t, rice_bound_z), .size = sizeof(int64_t)  },
+    { .name = "flags",        .type = DAP_SERIALIZE_TYPE_UINT32, .offset = offsetof(chipmunk_ring_header_t, flags),        .size = sizeof(uint32_t) },
+    { .name = "param_hash",   .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED, .offset = offsetof(chipmunk_ring_header_t, param_hash),
+      .size = 1u, .fixed_count = 16u, .element_type = DAP_SERIALIZE_TYPE_UINT8 },
+};
+
+DAP_SERIALIZE_SCHEMA_DEFINE(s_chipmunk_ring_header_schema,
+                            chipmunk_ring_header_t,
+                            s_chipmunk_ring_header_fields);
 
 /* Wipe polynomial coefficients before freeing (secret material). */
 static inline void s_poly_wipe_free(lotrs_poly_t *a_p)
@@ -32,7 +69,7 @@ void chipmunk_ring_keypair_free(chipmunk_ring_keypair_t *a_kp)
     if (a_kp) {
         lotrs_polyvec_free(&a_kp->pk.a_hat);
         lotrs_polyvec_free(&a_kp->sk.s);
-        memset(a_kp, 0, sizeof(*a_kp));
+        dap_memwipe(a_kp, sizeof(*a_kp));
     }
 }
 
@@ -62,7 +99,8 @@ size_t chipmunk_ring_sig_bytes_max(const lotrs_params_t *a_par, uint32_t a_N)
 {
     /* Header + N * T (k polys each) + N * c (1 poly each) + N * z (l+k polys each). */
     size_t l_poly = lotrs_poly_bytes(a_par);
-    return CHIPMUNK_RING_HEADER_BYTES
+    size_t l_hdr = dap_serialize_calc_size_raw(&s_chipmunk_ring_header_schema, NULL, NULL, NULL);
+    return l_hdr
          + (size_t)a_N * (size_t)a_par->k * l_poly   /* T_i */
          + (size_t)a_N * l_poly                       /* c_i */
          + (size_t)a_N * ((size_t)a_par->l + a_par->k) * l_poly; /* z_i */
@@ -76,18 +114,20 @@ int chipmunk_ring_keygen(chipmunk_ring_keypair_t *a_kp,
 {
     if (!a_kp || !a_par || !a_seed) return -EINVAL;
 
+    int l_rc;
     lotrs_xof_t *l_xof = lotrs_xof_new(a_seed, 32u);
     if (!l_xof) return -ENOMEM;
 
     const char *l_domain = "crv2-keygen-v1";
-    lotrs_xof_absorb(l_xof, (const uint8_t *)l_domain, strlen(l_domain));
+    l_rc = lotrs_xof_absorb(l_xof, (const uint8_t *)l_domain, strlen(l_domain));
+    if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
 
     const uint32_t l_len = a_par->l + a_par->k;
     a_kp->sk.s = lotrs_polyvec_alloc(a_par, l_len);
     if (!a_kp->sk.s.polys) { lotrs_xof_free(l_xof); return -ENOMEM; }
 
-    int l_rc = lotrs_sample_short_vec(&a_kp->sk.s, l_xof, a_par, a_par->eta);
-    if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
+    l_rc = lotrs_sample_short_vec(&a_kp->sk.s, l_xof, a_par, a_par->eta);
+    if (l_rc != 0) { lotrs_polyvec_free(&a_kp->sk.s); lotrs_xof_free(l_xof); return l_rc; }
 
     /* Generate A matrix. */
     lotrs_polymat_t l_A = lotrs_polymat_alloc(a_par, a_par->k, a_par->l);
@@ -122,7 +162,8 @@ int chipmunk_ring_keygen(chipmunk_ring_keypair_t *a_kp,
 
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         for (uint32_t j = 0u; j < a_par->d; ++j) {
-            a_kp->pk.a_hat.polys[i]->coeffs[j] %= a_par->q;
+            a_kp->pk.a_hat.polys[i]->coeffs[j] = (uint64_t)lotrs_mod_reduce(
+                (__int128_t)(int64_t)a_kp->pk.a_hat.polys[i]->coeffs[j], a_par->q);
         }
     }
 
@@ -136,6 +177,36 @@ int chipmunk_ring_keygen(chipmunk_ring_keypair_t *a_kp,
 /* Max rejection sampling retries before giving up. */
 #define CHIPMUNK_RING_NONINT_MAX_RETRIES 64
 
+/* Validate a public key table. */
+static int s_validate_table(const chipmunk_ring_table_t *a_ring, const lotrs_params_t *a_par)
+{
+    if (!a_ring || !a_ring->pks || a_ring->N == 0u) return -EINVAL;
+    for (uint32_t i = 0u; i < a_ring->N; ++i) {
+        if (!a_ring->pks[i].a_hat.polys) return -EINVAL;
+    }
+    return 0;
+}
+
+/* Cleanup helper for sign function resources. */
+static void s_sign_cleanup(lotrs_polymat_t *a_A,
+                           lotrs_polyvec_t *a_T, lotrs_poly_t **a_c_arr,
+                           lotrs_polyvec_t *a_z, uint32_t a_N,
+                           uint8_t *a_retry_seed)
+{
+    if (a_T && a_c_arr && a_z) {
+        for (uint32_t i = 0u; i < a_N; ++i) {
+            lotrs_polyvec_free(&a_T[i]);
+            lotrs_poly_free(a_c_arr[i]);
+            lotrs_polyvec_free(&a_z[i]);
+        }
+    }
+    DAP_DELETE(a_T);
+    DAP_DELETE(a_c_arr);
+    DAP_DELETE(a_z);
+    lotrs_polymat_free(a_A);
+    if (a_retry_seed) dap_memwipe(a_retry_seed, 32u);
+}
+
 int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
                           const lotrs_params_t *a_par,
                           const chipmunk_ring_table_t *a_ring,
@@ -146,6 +217,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
 {
     if (!a_sig || !a_par || !a_ring || !a_sk || !a_msg || !a_seed) return -EINVAL;
     if (a_signer_idx >= a_ring->N) return -EINVAL;
+    if (s_validate_table(a_ring, a_par) != 0) return -EINVAL;
 
     int l_rc;
     const uint32_t l_d = a_par->d;
@@ -196,16 +268,21 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
     for (uint32_t i = 0u; i < l_N; ++i) {
         if (i == a_signer_idx) continue;
         lotrs_xof_t *l_xof_sim = lotrs_xof_new(a_seed, 32u);
-        lotrs_xof_absorb(l_xof_sim, (const uint8_t *)"crv2-sim", 8u);
+        if (!l_xof_sim) { s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, NULL); return -ENOMEM; }
+        l_rc = lotrs_xof_absorb(l_xof_sim, (const uint8_t *)"crv2-sim", 8u);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_sim); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, NULL); return l_rc; }
         uint8_t l_idx_buf[4];
         l_idx_buf[0] = (uint8_t)i; l_idx_buf[1] = 0; l_idx_buf[2] = 0; l_idx_buf[3] = 0;
-        lotrs_xof_absorb(l_xof_sim, l_idx_buf, 4u);
+        l_rc = lotrs_xof_absorb(l_xof_sim, l_idx_buf, 4u);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_sim); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, NULL); return l_rc; }
 
-        lotrs_sample_ternary(l_c_arr[i], l_xof_sim, a_par, a_par->w);
+        l_rc = lotrs_sample_ternary(l_c_arr[i], l_xof_sim, a_par, a_par->w);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_sim); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, NULL); return l_rc; }
 
         lotrs_polyvec_t l_z_short_i = { .polys = l_z[i].polys, .n = a_par->l };
         lotrs_polyvec_t l_z_tail_i  = { .polys = l_z[i].polys + a_par->l, .n = a_par->k };
-        lotrs_sample_short_vec(&l_z[i], l_xof_sim, a_par, a_par->eta);
+        l_rc = lotrs_sample_short_vec(&l_z[i], l_xof_sim, a_par, a_par->eta);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_sim); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, NULL); return l_rc; }
 
         lotrs_polymat_vecmul(&l_T[i], &l_A, &l_z_short_i, a_par);
         lotrs_polyvec_add(&l_T[i], &l_T[i], &l_z_tail_i, a_par);
@@ -218,7 +295,8 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
         }
         for (uint32_t j = 0u; j < a_par->k; ++j) {
             for (uint32_t kk = 0u; kk < l_d; ++kk) {
-                l_T[i].polys[j]->coeffs[kk] %= l_q;
+                l_T[i].polys[j]->coeffs[kk] = (uint64_t)lotrs_mod_reduce(
+                    (__int128_t)(int64_t)l_T[i].polys[j]->coeffs[kk], l_q);
             }
         }
         lotrs_xof_free(l_xof_sim);
@@ -234,28 +312,32 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
     for (uint32_t l_attempt = 0u; l_attempt < CHIPMUNK_RING_NONINT_MAX_RETRIES; ++l_attempt) {
         /* Derive hedged seed. */
         lotrs_xof_t *l_xof_hedge = lotrs_xof_new((const uint8_t *)"crv2-hedge-v1", 13u);
-        if (!l_xof_hedge) { /* cleanup */ return -ENOMEM; }
-        lotrs_xof_absorb(l_xof_hedge, a_msg, a_msg_len);
-        lotrs_xof_absorb(l_xof_hedge, a_seed, 32u);
+        if (!l_xof_hedge) { s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
+        l_rc = lotrs_xof_absorb(l_xof_hedge, a_msg, a_msg_len);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_hedge); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
+        l_rc = lotrs_xof_absorb(l_xof_hedge, a_seed, 32u);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_hedge); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
         uint8_t l_attempt_buf[4] = {
             (uint8_t)(l_attempt & 0xFF),
             (uint8_t)((l_attempt >> 8) & 0xFF),
             (uint8_t)((l_attempt >> 16) & 0xFF),
             (uint8_t)((l_attempt >> 24) & 0xFF)
         };
-        lotrs_xof_absorb(l_xof_hedge, l_attempt_buf, 4u);
+        l_rc = lotrs_xof_absorb(l_xof_hedge, l_attempt_buf, 4u);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_hedge); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
         lotrs_xof_squeeze(l_xof_hedge, l_retry_seed, 32u);
         lotrs_xof_free(l_xof_hedge);
 
         /* Sample y from hedged seed. */
         lotrs_xof_t *l_xof = lotrs_xof_new(l_retry_seed, 32u);
-        if (!l_xof) { /* cleanup */ return -ENOMEM; }
-        lotrs_xof_absorb(l_xof, (const uint8_t *)"crv2-sign-v1", 12u);
+        if (!l_xof) { s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
+        l_rc = lotrs_xof_absorb(l_xof, (const uint8_t *)"crv2-sign-v1", 12u);
+        if (l_rc != 0) { lotrs_xof_free(l_xof); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
 
         lotrs_polyvec_t l_y = lotrs_polyvec_alloc(a_par, l_len);
-        if (!l_y.polys) { lotrs_xof_free(l_xof); /* cleanup */ return -ENOMEM; }
+        if (!l_y.polys) { lotrs_xof_free(l_xof); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
         l_rc = lotrs_sample_short_vec(&l_y, l_xof, a_par, a_par->eta);
-        if (l_rc != 0) { lotrs_polyvec_free(&l_y); lotrs_xof_free(l_xof); /* cleanup */ return l_rc; }
+        if (l_rc != 0) { lotrs_polyvec_free(&l_y); lotrs_xof_free(l_xof); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
         lotrs_xof_free(l_xof);
 
         /* T_ell = A * y_short + y_tail. */
@@ -265,27 +347,32 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
         lotrs_polyvec_add(&l_T[a_signer_idx], &l_T[a_signer_idx], &l_y_tail, a_par);
         for (uint32_t j = 0u; j < a_par->k; ++j) {
             for (uint32_t kk = 0u; kk < l_d; ++kk) {
-                l_T[a_signer_idx].polys[j]->coeffs[kk] %= l_q;
+                l_T[a_signer_idx].polys[j]->coeffs[kk] = (uint64_t)lotrs_mod_reduce(
+                    (__int128_t)(int64_t)l_T[a_signer_idx].polys[j]->coeffs[kk], l_q);
             }
         }
 
         /* FS challenge: c = H(T_0, ..., T_{N-1}, msg). */
         lotrs_xof_t *l_xof_c = lotrs_xof_new((const uint8_t *)"crv2-challenge-v1", 17u);
-        if (!l_xof_c) { lotrs_polyvec_free(&l_y); /* cleanup */ return -ENOMEM; }
-        lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+        if (!l_xof_c) { lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
+        l_rc = lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
         for (uint32_t i = 0u; i < l_N; ++i) {
             for (uint32_t j = 0u; j < a_par->k; ++j) {
-                uint8_t l_buf[8 * 128];
+                uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, lotrs_poly_bytes(a_par));
+                if (!l_buf) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
                 lotrs_poly_pack(l_buf, lotrs_poly_bytes(a_par), l_T[i].polys[j], a_par);
-                lotrs_xof_absorb(l_xof_c, l_buf, lotrs_poly_bytes(a_par));
+                l_rc = lotrs_xof_absorb(l_xof_c, l_buf, lotrs_poly_bytes(a_par));
+                DAP_DELETE(l_buf);
+                if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
             }
         }
 
         lotrs_poly_t *l_c_total = lotrs_poly_alloc(a_par);
-        if (!l_c_total) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); /* cleanup */ return -ENOMEM; }
+        if (!l_c_total) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
         l_rc = lotrs_sample_ternary(l_c_total, l_xof_c, a_par, a_par->w);
         lotrs_xof_free(l_xof_c);
-        if (l_rc != 0) { lotrs_poly_free(l_c_total); lotrs_polyvec_free(&l_y); /* cleanup */ return l_rc; }
+        if (l_rc != 0) { lotrs_poly_free(l_c_total); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
 
         /* c_ell = c_total - Σ_{i!=ell} c_i. */
         lotrs_poly_copy(l_c_arr[a_signer_idx], l_c_total, a_par);
@@ -296,37 +383,46 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
         lotrs_poly_free(l_c_total);
 
         /* z_ell = y + c_ell * s.
-         * Blinding: generate random mask r, compute c*(s+r) - c*r = c*s.
+         * Blinding: per-component random mask r_i, compute c*(s[i]+r_i) - c*r_i = c*s[i].
          * Both multiplications have randomized inputs, protecting s from side-channel. */
-        lotrs_poly_t *l_r = lotrs_poly_alloc(a_par);
-        if (!l_r) { lotrs_polyvec_free(&l_y); /* cleanup */ return -ENOMEM; }
-        lotrs_xof_t *l_xof_r = lotrs_xof_new(a_seed, 32u);
-        if (!l_xof_r) { s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); return -ENOMEM; }
-        lotrs_xof_absorb(l_xof_r, (const uint8_t *)"crv2-blind-v1", 13u);
-        lotrs_xof_absorb(l_xof_r, l_attempt_buf, 4u); /* unique mask per attempt */
-        lotrs_sample_short(l_r, l_xof_r, a_par, a_par->eta);
-        lotrs_xof_free(l_xof_r);
-
         for (uint32_t i = 0u; i < l_len; ++i) {
-            /* s_masked = s[i] + r. */
+            lotrs_poly_t *l_r = lotrs_poly_alloc(a_par);
+            if (!l_r) { lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
+            lotrs_xof_t *l_xof_r = lotrs_xof_new(a_seed, 32u);
+            if (!l_xof_r) { s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
+            l_rc = lotrs_xof_absorb(l_xof_r, (const uint8_t *)"crv2-blind-v1", 13u);
+            if (l_rc != 0) { lotrs_xof_free(l_xof_r); s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
+            l_rc = lotrs_xof_absorb(l_xof_r, l_attempt_buf, 4u);
+            if (l_rc != 0) { lotrs_xof_free(l_xof_r); s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
+            uint8_t l_comp_buf[4] = {
+                (uint8_t)(i & 0xFF), (uint8_t)((i >> 8) & 0xFF),
+                (uint8_t)((i >> 16) & 0xFF), (uint8_t)((i >> 24) & 0xFF)
+            };
+            l_rc = lotrs_xof_absorb(l_xof_r, l_comp_buf, 4u); /* unique mask per component */
+            if (l_rc != 0) { lotrs_xof_free(l_xof_r); s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
+            l_rc = lotrs_sample_short(l_r, l_xof_r, a_par, a_par->eta);
+            if (l_rc != 0) { lotrs_xof_free(l_xof_r); s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
+            lotrs_xof_free(l_xof_r);
+
+            /* s_masked = s[i] + r_i. */
             lotrs_poly_t *l_s_masked = lotrs_poly_alloc(a_par);
             lotrs_poly_t *l_cr = lotrs_poly_alloc(a_par);
             lotrs_poly_t *l_cs_masked = lotrs_poly_alloc(a_par);
             if (!l_s_masked || !l_cr || !l_cs_masked) {
                 s_poly_wipe_free(l_s_masked); s_poly_wipe_free(l_cr); lotrs_poly_free(l_cs_masked);
-                s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); return -ENOMEM;
+                s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM;
             }
             lotrs_poly_add(l_s_masked, a_sk->s.polys[i], l_r, a_par);
             /* cs_masked = c * s_masked (randomized input). */
             lotrs_poly_mul(l_cs_masked, l_c_arr[a_signer_idx], l_s_masked, a_par);
-            /* cr = c * r (randomized input). */
+            /* cr = c * r_i (randomized input). */
             lotrs_poly_mul(l_cr, l_c_arr[a_signer_idx], l_r, a_par);
             /* z[i] = y[i] + cs_masked - cr = y[i] + c*s[i]. */
             lotrs_poly_add(l_z[a_signer_idx].polys[i], l_y.polys[i], l_cs_masked, a_par);
             lotrs_poly_sub(l_z[a_signer_idx].polys[i], l_z[a_signer_idx].polys[i], l_cr, a_par);
             s_poly_wipe_free(l_s_masked); s_poly_wipe_free(l_cr); lotrs_poly_free(l_cs_masked);
+            s_poly_wipe_free(l_r);
         }
-        s_poly_wipe_free(l_r);
 
         lotrs_polyvec_free(&l_y);
 
@@ -351,7 +447,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
             uint8_t **l_z_bufs = DAP_NEW_Z_COUNT(uint8_t *, l_z_count);
             if (!l_z_sizes || !l_z_bufs) {
                 DAP_DELETE(l_z_sizes); DAP_DELETE(l_z_bufs);
-                /* cleanup */ return -ENOMEM;
+                s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM;
             }
 
             size_t l_z_rice_total = 0u;
@@ -374,17 +470,18 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
             if (!l_rice_ok) {
                 for (size_t k = 0u; k < l_z_count; ++k) DAP_DELETE(l_z_bufs[k]);
                 DAP_DELETE(l_z_bufs); DAP_DELETE(l_z_sizes);
-                /* cleanup */ return -ENOMEM;
+                s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM;
             }
 
             size_t l_z_wire = l_z_count * 4u + l_z_rice_total;
-            size_t l_total = CHIPMUNK_RING_HEADER_BYTES + l_T_bytes + l_c_bytes + l_z_wire;
+            size_t l_hdr_bytes = dap_serialize_calc_size_raw(&s_chipmunk_ring_header_schema, NULL, NULL, NULL);
+            size_t l_total = l_hdr_bytes + l_T_bytes + l_c_bytes + l_z_wire;
 
             a_sig->data = DAP_NEW_Z_SIZE(uint8_t, l_total);
             if (!a_sig->data) {
                 for (size_t k = 0u; k < l_z_count; ++k) DAP_DELETE(l_z_bufs[k]);
                 DAP_DELETE(l_z_bufs); DAP_DELETE(l_z_sizes);
-                return -ENOMEM;
+                s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM;
             }
             a_sig->len = l_total;
 
@@ -397,9 +494,21 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
                 .rice_bound_z = l_rice_bound_z,
                 .flags = 0u,
             };
+            l_rc = s_param_hash(l_hdr.param_hash, a_par);
+            if (l_rc != 0) {
+                for (size_t k = 0u; k < l_z_count; ++k) DAP_DELETE(l_z_bufs[k]);
+                DAP_DELETE(l_z_bufs); DAP_DELETE(l_z_sizes);
+                s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc;
+            }
             uint8_t *l_p = a_sig->data;
-            memcpy(l_p, &l_hdr, CHIPMUNK_RING_HEADER_BYTES);
-            l_p += CHIPMUNK_RING_HEADER_BYTES;
+            dap_serialize_result_t l_ser = dap_serialize_to_buffer_raw(&s_chipmunk_ring_header_schema,
+                                                                       &l_hdr, l_p, l_hdr_bytes, NULL);
+            if (l_ser.error_code != 0) {
+                for (size_t k = 0u; k < l_z_count; ++k) DAP_DELETE(l_z_bufs[k]);
+                DAP_DELETE(l_z_bufs); DAP_DELETE(l_z_sizes);
+                s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -EFAULT;
+            }
+            l_p += l_hdr_bytes;
 
             /* Write raw T. */
             for (uint32_t i = 0u; i < l_N; ++i) {
@@ -426,12 +535,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
             DAP_DELETE(l_z_bufs); DAP_DELETE(l_z_sizes);
 
             /* Cleanup. */
-            for (uint32_t i = 0u; i < l_N; ++i) {
-                lotrs_polyvec_free(&l_T[i]); lotrs_poly_free(l_c_arr[i]); lotrs_polyvec_free(&l_z[i]);
-            }
-            DAP_DELETE(l_T); DAP_DELETE(l_c_arr); DAP_DELETE(l_z);
-            lotrs_polymat_free(&l_A);
-            dap_memwipe(l_retry_seed, sizeof(l_retry_seed));
+            s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed);
             return 0;
         }
         /* Retry: norm exceeded. */
@@ -439,16 +543,36 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
 
     /* All retries exhausted. */
     debug_if(1, L_DEBUG, "CRV2 sign: rejection sampling failed after %u retries", CHIPMUNK_RING_NONINT_MAX_RETRIES);
-    for (uint32_t i = 0u; i < l_N; ++i) {
-        lotrs_polyvec_free(&l_T[i]); lotrs_poly_free(l_c_arr[i]); lotrs_polyvec_free(&l_z[i]);
-    }
-    DAP_DELETE(l_T); DAP_DELETE(l_c_arr); DAP_DELETE(l_z);
-    lotrs_polymat_free(&l_A);
-    dap_memwipe(l_retry_seed, sizeof(l_retry_seed));
+    s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed);
     return -EAGAIN;
 }
 
 /* --- Verify --- */
+
+/* Cleanup helper for verify function resources. */
+static void s_verify_cleanup(lotrs_polymat_t *a_A,
+                             lotrs_polyvec_t *a_T, lotrs_poly_t **a_c_arr,
+                             lotrs_polyvec_t *a_z, uint32_t a_N)
+{
+    if (a_T && a_c_arr && a_z) {
+        for (uint32_t i = 0u; i < a_N; ++i) {
+            lotrs_polyvec_free(&a_T[i]);
+            lotrs_poly_free(a_c_arr[i]);
+            lotrs_polyvec_free(&a_z[i]);
+        }
+    }
+    DAP_DELETE(a_T);
+    DAP_DELETE(a_c_arr);
+    DAP_DELETE(a_z);
+    if (a_A) lotrs_polymat_free(a_A);
+}
+
+/* Cleanup for deserialization phase (no A matrix yet). */
+static void s_verify_cleanup_arrays(lotrs_polyvec_t *a_T, lotrs_poly_t **a_c_arr,
+                                    lotrs_polyvec_t *a_z, uint32_t a_N)
+{
+    s_verify_cleanup(NULL, a_T, a_c_arr, a_z, a_N);
+}
 
 int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
                             const lotrs_params_t *a_par,
@@ -456,16 +580,28 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
                             const uint8_t *a_msg, size_t a_msg_len)
 {
     if (!a_sig || !a_sig->data || !a_par || !a_ring || !a_msg) return -EINVAL;
-    if (a_sig->len < CHIPMUNK_RING_HEADER_BYTES) return -EINVAL;
+    if (s_validate_table(a_ring, a_par) != 0) return -EINVAL;
+    size_t l_hdr_bytes = dap_serialize_calc_size_raw(&s_chipmunk_ring_header_schema, NULL, NULL, NULL);
+    if (a_sig->len < l_hdr_bytes) return -EINVAL;
 
     int l_rc;
 
     /* Read header. */
     chipmunk_ring_header_t l_hdr = {0};
-    memcpy(&l_hdr, a_sig->data, CHIPMUNK_RING_HEADER_BYTES);
+    dap_deserialize_result_t l_deser = dap_serialize_from_buffer_raw(&s_chipmunk_ring_header_schema,
+                                                                     a_sig->data, l_hdr_bytes,
+                                                                     &l_hdr, NULL);
+    if (l_deser.error_code != 0) return -EINVAL;
     if (l_hdr.magic != CHIPMUNK_RING_MAGIC) return -EINVAL;
     if (l_hdr.version != CHIPMUNK_RING_VERSION) return -EINVAL;
+    if (l_hdr.d != a_par->d) return -EINVAL;
     if (l_hdr.N != a_ring->N) return -EINVAL;
+
+    /* Verify parameter hash. */
+    uint8_t l_expected_hash[16];
+    l_rc = s_param_hash(l_expected_hash, a_par);
+    if (l_rc != 0) return l_rc;
+    if (memcmp(l_hdr.param_hash, l_expected_hash, 16u) != 0) return -EINVAL;
 
     const uint32_t l_N = a_ring->N;
     const uint32_t l_d = a_par->d;
@@ -473,7 +609,7 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
     const uint32_t l_len = a_par->l + a_par->k;
 
     /* Deserialize T_i (raw), c_i (raw), z_i (Rice-coded). */
-    const uint8_t *l_p = a_sig->data + CHIPMUNK_RING_HEADER_BYTES;
+    const uint8_t *l_p = a_sig->data + l_hdr_bytes;
     size_t l_T_bytes = lotrs_polyvec_bytes(a_par, a_par->k);
     size_t l_c_bytes = lotrs_poly_bytes(a_par);
 
@@ -512,19 +648,19 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
     for (uint32_t i = 0u; i < l_N; ++i) {
         for (uint32_t j = 0u; j < l_len; ++j) {
             if (l_p + 4u > a_sig->data + a_sig->len) {
-                /* cleanup */ return -EINVAL;
+                s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -EINVAL;
             }
             uint32_t l_sz32 = 0u;
             memcpy(&l_sz32, l_p, 4u);
             l_p += 4u;
             if (l_p + l_sz32 > a_sig->data + a_sig->len) {
-                /* cleanup */ return -EINVAL;
+                s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -EINVAL;
             }
             size_t l_consumed = 0u;
             l_rc = lotrs_poly_unpack_rice(l_z[i].polys[j], l_p, l_sz32,
                                           a_par, l_rice_k_z, l_rice_bound_z, &l_consumed);
             if (l_rc != 0) {
-                /* cleanup */ return l_rc;
+                s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return l_rc;
             }
             l_p += l_sz32;
         }
@@ -532,25 +668,29 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
 
     /* Recompute FS challenge: c_total = H(T_0..T_{N-1}, msg). */
     lotrs_xof_t *l_xof_c = lotrs_xof_new((const uint8_t *)"crv2-challenge-v1", 17u);
-    if (!l_xof_c) { /* cleanup */ return -ENOMEM; }
-    lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+    if (!l_xof_c) { s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -ENOMEM; }
+    l_rc = lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+    if (l_rc != 0) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return l_rc; }
     for (uint32_t i = 0u; i < l_N; ++i) {
         for (uint32_t j = 0u; j < a_par->k; ++j) {
-            uint8_t l_buf[8 * 128];
+            uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, lotrs_poly_bytes(a_par));
+            if (!l_buf) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -ENOMEM; }
             lotrs_poly_pack(l_buf, lotrs_poly_bytes(a_par), l_T[i].polys[j], a_par);
-            lotrs_xof_absorb(l_xof_c, l_buf, lotrs_poly_bytes(a_par));
+            l_rc = lotrs_xof_absorb(l_xof_c, l_buf, lotrs_poly_bytes(a_par));
+            DAP_DELETE(l_buf);
+            if (l_rc != 0) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return l_rc; }
         }
     }
 
     lotrs_poly_t *l_c_total = lotrs_poly_alloc(a_par);
-    if (!l_c_total) { lotrs_xof_free(l_xof_c); /* cleanup */ return -ENOMEM; }
+    if (!l_c_total) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -ENOMEM; }
     l_rc = lotrs_sample_ternary(l_c_total, l_xof_c, a_par, a_par->w);
     lotrs_xof_free(l_xof_c);
-    if (l_rc != 0) { lotrs_poly_free(l_c_total); /* cleanup */ return l_rc; }
+    if (l_rc != 0) { lotrs_poly_free(l_c_total); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return l_rc; }
 
     /* Check c_total == Σ c_i. */
     lotrs_poly_t *l_c_sum = lotrs_poly_alloc(a_par);
-    if (!l_c_sum) { lotrs_poly_free(l_c_total); /* cleanup */ return -ENOMEM; }
+    if (!l_c_sum) { lotrs_poly_free(l_c_total); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -ENOMEM; }
     lotrs_poly_zero(l_c_sum, a_par);
     for (uint32_t i = 0u; i < l_N; ++i) {
         lotrs_poly_add(l_c_sum, l_c_sum, l_c_arr[i], a_par);
@@ -559,7 +699,7 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
         if (l_c_total->coeffs[i] % l_q != l_c_sum->coeffs[i] % l_q) {
             debug_if(1, L_DEBUG, "CRV2 verify: challenge sum mismatch at [%u]", i);
             lotrs_poly_free(l_c_total); lotrs_poly_free(l_c_sum);
-            /* cleanup */ return -EINVAL;
+            s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -EINVAL;
         }
     }
     lotrs_poly_free(l_c_total);
@@ -567,15 +707,15 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
 
     /* Generate A matrix. */
     lotrs_polymat_t l_A = lotrs_polymat_alloc(a_par, a_par->k, a_par->l);
-    if (!l_A.rows) { /* cleanup */ return -ENOMEM; }
+    if (!l_A.rows) { s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -ENOMEM; }
     const char *l_a_domain = "crv2-A-v1";
     lotrs_xof_t *l_xof_a = lotrs_xof_new((const uint8_t *)l_a_domain, strlen(l_a_domain));
-    if (!l_xof_a) { lotrs_polymat_free(&l_A); /* cleanup */ return -ENOMEM; }
+    if (!l_xof_a) { lotrs_polymat_free(&l_A); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -ENOMEM; }
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         for (uint32_t j = 0u; j < a_par->l; ++j) {
             l_rc = lotrs_sample_uniform(l_A.rows[i].polys[j], l_xof_a, a_par);
             if (l_rc != 0) {
-                lotrs_xof_free(l_xof_a); lotrs_polymat_free(&l_A); /* cleanup */ return l_rc;
+                lotrs_xof_free(l_xof_a); lotrs_polymat_free(&l_A); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return l_rc;
             }
         }
     }
@@ -600,14 +740,14 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
 
         /* lhs = A * z_short + z_tail. */
         lotrs_polyvec_t l_lhs = lotrs_polyvec_alloc(a_par, a_par->k);
-        if (!l_lhs.polys) { lotrs_polymat_free(&l_A); /* cleanup */ return -ENOMEM; }
+        if (!l_lhs.polys) { s_verify_cleanup(&l_A, l_T, l_c_arr, l_z, l_N); return -ENOMEM; }
         lotrs_polymat_vecmul(&l_lhs, &l_A, &l_z_short, a_par);
         lotrs_polyvec_add(&l_lhs, &l_lhs, &l_z_tail, a_par);
 
         /* rhs = T_i + c_i * pk[i]. */
         lotrs_polyvec_t l_rhs = lotrs_polyvec_alloc(a_par, a_par->k);
         if (!l_rhs.polys) {
-            lotrs_polyvec_free(&l_lhs); lotrs_polymat_free(&l_A); /* cleanup */ return -ENOMEM;
+            lotrs_polyvec_free(&l_lhs); s_verify_cleanup(&l_A, l_T, l_c_arr, l_z, l_N); return -ENOMEM;
         }
         for (uint32_t j = 0u; j < a_par->k; ++j) {
             lotrs_poly_t *l_cp = lotrs_poly_alloc(a_par);
@@ -619,8 +759,10 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
         /* Canonicalize. */
         for (uint32_t j = 0u; j < a_par->k; ++j) {
             for (uint32_t kk = 0u; kk < l_d; ++kk) {
-                l_lhs.polys[j]->coeffs[kk] %= l_q;
-                l_rhs.polys[j]->coeffs[kk] %= l_q;
+                l_lhs.polys[j]->coeffs[kk] = (uint64_t)lotrs_mod_reduce(
+                    (__int128_t)(int64_t)l_lhs.polys[j]->coeffs[kk], l_q);
+                l_rhs.polys[j]->coeffs[kk] = (uint64_t)lotrs_mod_reduce(
+                    (__int128_t)(int64_t)l_rhs.polys[j]->coeffs[kk], l_q);
             }
         }
 

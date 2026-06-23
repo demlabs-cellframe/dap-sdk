@@ -19,6 +19,7 @@
 #include "lotrs_params.h"
 #include "lotrs_ring.h"
 #include "lotrs_codec.h"
+#include "dap_serialize.h"
 
 /* --- Key pair --- */
 typedef struct chipmunk_ring_pk {
@@ -55,11 +56,20 @@ typedef struct chipmunk_ring_header {
     uint32_t rice_k_z;     /* Rice parameter for z coefficient coding */
     int64_t  rice_bound_z; /* Centered bound for z coefficients (φ·η) */
     uint32_t flags;
+    uint8_t  param_hash[16]; /* Truncated hash of parameter set */
 } chipmunk_ring_header_t;
 
 #define CHIPMUNK_RING_MAGIC    0x43525632u  /* 'CRV2' LE */
 #define CHIPMUNK_RING_VERSION  2u
-#define CHIPMUNK_RING_HEADER_BYTES 32u
+
+/* Header schema for dap_serialize. */
+extern const dap_serialize_schema_t s_chipmunk_ring_header_schema;
+
+/* Header wire size (calculated from schema). */
+static inline size_t chipmunk_ring_header_bytes(void)
+{
+    return dap_serialize_calc_size_raw(&s_chipmunk_ring_header_schema, NULL, NULL, NULL);
+}
 
 /* --- API --- */
 

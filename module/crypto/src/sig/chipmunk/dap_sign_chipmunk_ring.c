@@ -68,11 +68,20 @@ static dap_sign_t *s_chipmunk_ring_create(
     lotrs_polyvec_unpack(&l_sk.s, a_signer_keys[0]->priv_key_data,
                          a_signer_keys[0]->priv_key_data_size, l_par);
 
+    /* Find signer index in ring by matching public key. */
+    uint32_t l_signer_idx = 0u;
+    for (uint32_t i = 0u; i < l_N; ++i) {
+        if (a_ring_keys[i] == a_signer_keys[0]) {
+            l_signer_idx = i;
+            break;
+        }
+    }
+
     chipmunk_ring_sig_t l_sig = {0};
     uint8_t l_seed[32];
     dap_random_bytes(l_seed, sizeof(l_seed));
 
-    int l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_sk, 0u,
+    int l_rc = chipmunk_ring_sign(&l_sig, l_par, &l_ring, &l_sk, l_signer_idx,
                                   (const uint8_t *)a_data, a_data_size,
                                   l_seed);
     lotrs_polyvec_free(&l_sk.s);
@@ -83,18 +92,19 @@ static dap_sign_t *s_chipmunk_ring_create(
         return NULL;
     }
 
+    size_t l_sig_len = l_sig.len;  /* save before free */
     dap_sign_t *l_sign = DAP_NEW_Z_SIZE(dap_sign_t,
-                                        sizeof(dap_sign_hdr_t) + l_sig.len);
+                                        sizeof(dap_sign_hdr_t) + l_sig_len);
     if (!l_sign) {
         chipmunk_ring_sig_free(&l_sig);
         return NULL;
     }
-    memcpy(l_sign->pkey_n_sign, l_sig.data, l_sig.len);
+    memcpy(l_sign->pkey_n_sign, l_sig.data, l_sig_len);
     chipmunk_ring_sig_free(&l_sig);
 
     l_sign->header.type.type = SIG_TYPE_CHIPMUNK_RING;
     l_sign->header.sign_pkey_size = 0u;
-    l_sign->header.sign_size = (uint32_t)l_sig.len;
+    l_sign->header.sign_size = (uint32_t)l_sig_len;
     return l_sign;
 }
 

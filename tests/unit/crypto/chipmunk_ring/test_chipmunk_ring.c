@@ -162,7 +162,7 @@ static void test_wire_size(void)
     for (uint32_t N = 1u; N <= 4u; ++N) {
         size_t l_sz = chipmunk_ring_sig_bytes_max(l_par, N);
         dap_assert(l_sz > 0, "wire size > 0");
-        size_t l_expected = CHIPMUNK_RING_HEADER_BYTES
+        size_t l_expected = chipmunk_ring_header_bytes()
                           + (size_t)N * lotrs_polyvec_bytes(l_par, l_par->k)
                           + (size_t)N * lotrs_poly_bytes(l_par)
                           + (size_t)N * lotrs_polyvec_bytes(l_par, l_par->l + l_par->k);

@@ -60,18 +60,20 @@ int lotrs_keygen(lotrs_keypair_t *a_kp, const lotrs_params_t *a_par,
 {
     if (!a_kp || !a_par || !a_seed) return -EINVAL;
 
+    int l_rc;
     lotrs_xof_t *l_xof = lotrs_xof_new(a_seed, 32u);
     if (!l_xof) return -ENOMEM;
 
     const char *l_domain = "lotrs-keygen-v1";
-    lotrs_xof_absorb(l_xof, (const uint8_t *)l_domain, strlen(l_domain));
+    l_rc = lotrs_xof_absorb(l_xof, (const uint8_t *)l_domain, strlen(l_domain));
+    if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
 
     const uint32_t l_sk_len = a_par->l + a_par->k;
     a_kp->sk.s = lotrs_polyvec_alloc(a_par, l_sk_len);
     if (!a_kp->sk.s.polys) { lotrs_xof_free(l_xof); return -ENOMEM; }
 
-    int l_rc = lotrs_sample_short_vec(&a_kp->sk.s, l_xof, a_par, a_par->eta);
-    if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
+    l_rc = lotrs_sample_short_vec(&a_kp->sk.s, l_xof, a_par, a_par->eta);
+    if (l_rc != 0) { lotrs_polyvec_free(&a_kp->sk.s); lotrs_xof_free(l_xof); return l_rc; }
 
     lotrs_polymat_t l_A = lotrs_polymat_alloc(a_par, a_par->k, a_par->l);
     if (!l_A.rows) { lotrs_xof_free(l_xof); return -ENOMEM; }
@@ -127,17 +129,19 @@ int lotrs_sign(lotrs_signature_t *a_sig,
     (void)a_ring;
     (void)a_signer_idx;
 
+    int l_rc;
     lotrs_xof_t *l_xof = lotrs_xof_new(a_seed, 32u);
     if (!l_xof) return -ENOMEM;
 
     const char *l_domain = "lotrs-sign-v1";
-    lotrs_xof_absorb(l_xof, (const uint8_t *)l_domain, strlen(l_domain));
+    l_rc = lotrs_xof_absorb(l_xof, (const uint8_t *)l_domain, strlen(l_domain));
+    if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
 
     const uint32_t l_sk_len = a_par->l + a_par->k;
     lotrs_polyvec_t l_y = lotrs_polyvec_alloc(a_par, l_sk_len);
     if (!l_y.polys) { lotrs_xof_free(l_xof); return -ENOMEM; }
 
-    int l_rc = lotrs_sample_short_vec(&l_y, l_xof, a_par, a_par->eta);
+    l_rc = lotrs_sample_short_vec(&l_y, l_xof, a_par, a_par->eta);
     if (l_rc != 0) { lotrs_polyvec_free(&l_y); lotrs_xof_free(l_xof); return l_rc; }
 
     lotrs_polymat_t l_A = lotrs_polymat_alloc(a_par, a_par->k, a_par->l);
@@ -186,13 +190,15 @@ int lotrs_sign(lotrs_signature_t *a_sig,
         lotrs_polyvec_free(&l_y); lotrs_xof_free(l_xof); return -ENOMEM;
     }
 
-    lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+    l_rc = lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+    if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_w); lotrs_polymat_free(&l_A); lotrs_polyvec_free(&l_y); lotrs_xof_free(l_xof); return l_rc; }
 
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         uint8_t l_w_buf[8 * 128];
         size_t l_w_buf_len = a_par->d * 8u;
         lotrs_poly_pack(l_w_buf, l_w_buf_len, l_w.polys[i], a_par);
-        lotrs_xof_absorb(l_xof_c, l_w_buf, l_w_buf_len);
+        l_rc = lotrs_xof_absorb(l_xof_c, l_w_buf, l_w_buf_len);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_w); lotrs_polymat_free(&l_A); lotrs_polyvec_free(&l_y); lotrs_xof_free(l_xof); return l_rc; }
     }
 
     lotrs_poly_t *l_c = lotrs_poly_alloc(a_par);
@@ -285,6 +291,7 @@ int lotrs_verify(const lotrs_signature_t *a_sig,
 {
     if (!a_sig || !a_par || !a_ring || !a_msg) return -EINVAL;
 
+    int l_rc;
     size_t l_w_bytes = lotrs_polyvec_bytes(a_par, a_par->k);
     size_t l_c_bytes = lotrs_poly_bytes(a_par);
     const uint32_t l_sk_len = a_par->l + a_par->k;
@@ -319,12 +326,14 @@ int lotrs_verify(const lotrs_signature_t *a_sig,
         lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
         return -ENOMEM;
     }
-    lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+    l_rc = lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+    if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z); return l_rc; }
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         uint8_t l_w_buf[8 * 128];
         size_t l_w_buf_len = a_par->d * 8u;
         lotrs_poly_pack(l_w_buf, l_w_buf_len, l_w.polys[i], a_par);
-        lotrs_xof_absorb(l_xof_c, l_w_buf, l_w_buf_len);
+        l_rc = lotrs_xof_absorb(l_xof_c, l_w_buf, l_w_buf_len);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z); return l_rc; }
     }
 
     lotrs_poly_t *l_c_prime = lotrs_poly_alloc(a_par);
@@ -332,7 +341,7 @@ int lotrs_verify(const lotrs_signature_t *a_sig,
         lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
         return -ENOMEM;
     }
-    int l_rc = lotrs_sample_ternary(l_c_prime, l_xof_c, a_par, a_par->w);
+    l_rc = lotrs_sample_ternary(l_c_prime, l_xof_c, a_par, a_par->w);
     lotrs_xof_free(l_xof_c);
     if (l_rc != 0) {
         lotrs_poly_free(l_c_prime); lotrs_polyvec_free(&l_w); lotrs_poly_free(l_c); lotrs_polyvec_free(&l_z);
@@ -466,6 +475,7 @@ int lotrs_sign_round1(lotrs_round1_state_t *a_state,
 {
     if (!a_state || !a_out || !a_par || !a_sk || !a_seed) return -EINVAL;
 
+    int l_rc;
     a_state->signer_idx = a_idx;
     memcpy(a_state->rho, a_seed, 32u);
 
@@ -479,9 +489,10 @@ int lotrs_sign_round1(lotrs_round1_state_t *a_state,
     if (!l_xof) { lotrs_polyvec_free(a_state->y); DAP_DELETE(a_state->y); a_state->y = NULL; return -ENOMEM; }
 
     const char *l_domain = "lotrs-round1-v1";
-    lotrs_xof_absorb(l_xof, (const uint8_t *)l_domain, strlen(l_domain));
+    l_rc = lotrs_xof_absorb(l_xof, (const uint8_t *)l_domain, strlen(l_domain));
+    if (l_rc != 0) { lotrs_xof_free(l_xof); lotrs_polyvec_free(a_state->y); DAP_DELETE(a_state->y); a_state->y = NULL; return l_rc; }
 
-    int l_rc = lotrs_sample_short_vec(a_state->y, l_xof, a_par, a_par->eta);
+    l_rc = lotrs_sample_short_vec(a_state->y, l_xof, a_par, a_par->eta);
     lotrs_xof_free(l_xof);
     if (l_rc != 0) {
         lotrs_polyvec_free(a_state->y); DAP_DELETE(a_state->y); a_state->y = NULL;
@@ -567,16 +578,20 @@ int lotrs_sign_round2(lotrs_round2_output_t *a_out,
     lotrs_xof_t *l_xof_c = lotrs_xof_new((const uint8_t *)l_c_domain, strlen(l_c_domain));
     if (!l_xof_c) return -ENOMEM;
 
-    lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+    int l_rc;
+    l_rc = lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
+    if (l_rc != 0) { lotrs_xof_free(l_xof_c); return l_rc; }
     for (uint32_t i = 0u; i < a_par->k; ++i) {
         uint8_t l_w_buf[8 * 128];
-        lotrs_poly_pack(l_w_buf, a_par->d * 8u, a_w_agg->polys[i], a_par);
-        lotrs_xof_absorb(l_xof_c, l_w_buf, a_par->d * 8u);
+        size_t l_w_buf_len = a_par->d * 8u;
+        lotrs_poly_pack(l_w_buf, l_w_buf_len, a_w_agg->polys[i], a_par);
+        l_rc = lotrs_xof_absorb(l_xof_c, l_w_buf, l_w_buf_len);
+        if (l_rc != 0) { lotrs_xof_free(l_xof_c); return l_rc; }
     }
 
     lotrs_poly_t *l_c = lotrs_poly_alloc(a_par);
     if (!l_c) { lotrs_xof_free(l_xof_c); return -ENOMEM; }
-    int l_rc = lotrs_sample_ternary(l_c, l_xof_c, a_par, a_par->w);
+    l_rc = lotrs_sample_ternary(l_c, l_xof_c, a_par, a_par->w);
     lotrs_xof_free(l_xof_c);
     if (l_rc != 0) { lotrs_poly_free(l_c); return l_rc; }
 
