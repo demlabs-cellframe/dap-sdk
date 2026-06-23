@@ -61,6 +61,7 @@ lotrs_polyvec_t lotrs_polyvec_alloc(const lotrs_params_t *a_par, uint32_t a_n)
         l_v.polys[i] = lotrs_poly_alloc(a_par);
         if (!l_v.polys[i]) {
             for (uint32_t j = 0u; j < i; ++j) lotrs_poly_free(l_v.polys[j]);
+            dap_memwipe(l_v.polys, a_n * sizeof(lotrs_poly_t *));
             DAP_DELETE(l_v.polys);
             l_v.polys = NULL;
             l_v.n = 0;
@@ -83,6 +84,7 @@ lotrs_polymat_t lotrs_polymat_alloc(const lotrs_params_t *a_par,
         l_m.rows[i] = lotrs_polyvec_alloc(a_par, a_ncols);
         if (!l_m.rows[i].polys) {
             for (uint32_t j = 0u; j < i; ++j) lotrs_polyvec_free(&l_m.rows[j]);
+            dap_memwipe(l_m.rows, a_nrows * sizeof(lotrs_polyvec_t));
             DAP_DELETE(l_m.rows);
             l_m.rows = NULL;
             l_m.nrows = 0;

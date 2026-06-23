@@ -32,6 +32,7 @@ static int s_param_hash(uint8_t a_out[16], const lotrs_params_t *a_par)
     memcpy(l_buf, &a_par->eta, 4u); l_rc = lotrs_xof_absorb(l_xof, l_buf, 4u); if (l_rc != 0) { lotrs_xof_free(l_xof); return l_rc; }
     lotrs_xof_squeeze(l_xof, a_out, 16u);
     lotrs_xof_free(l_xof);
+    dap_memwipe(l_buf, sizeof(l_buf));
     return 0;
 }
 
@@ -359,11 +360,9 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
         if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
         for (uint32_t i = 0u; i < l_N; ++i) {
             for (uint32_t j = 0u; j < a_par->k; ++j) {
-                uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, lotrs_poly_bytes(a_par));
-                if (!l_buf) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return -ENOMEM; }
-                lotrs_poly_pack(l_buf, lotrs_poly_bytes(a_par), l_T[i].polys[j], a_par);
+                uint8_t l_buf[LOTRS_D_MAX * 8]; /* max poly bytes */
+                lotrs_poly_pack(l_buf, sizeof(l_buf), l_T[i].polys[j], a_par);
                 l_rc = lotrs_xof_absorb(l_xof_c, l_buf, lotrs_poly_bytes(a_par));
-                DAP_DELETE(l_buf);
                 if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed); return l_rc; }
             }
         }
@@ -673,11 +672,9 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
     if (l_rc != 0) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return l_rc; }
     for (uint32_t i = 0u; i < l_N; ++i) {
         for (uint32_t j = 0u; j < a_par->k; ++j) {
-            uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, lotrs_poly_bytes(a_par));
-            if (!l_buf) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return -ENOMEM; }
-            lotrs_poly_pack(l_buf, lotrs_poly_bytes(a_par), l_T[i].polys[j], a_par);
+            uint8_t l_buf[LOTRS_D_MAX * 8]; /* max poly bytes */
+            lotrs_poly_pack(l_buf, sizeof(l_buf), l_T[i].polys[j], a_par);
             l_rc = lotrs_xof_absorb(l_xof_c, l_buf, lotrs_poly_bytes(a_par));
-            DAP_DELETE(l_buf);
             if (l_rc != 0) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N); return l_rc; }
         }
     }
