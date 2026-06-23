@@ -24,6 +24,7 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_client_http.h"
+#include "dap_http_h2.h"
 
 #define LOG_TAG "dap_client_http"
 
@@ -47,7 +48,8 @@
 #include "dap_context.h"
 #include "dap_server.h"
 #include "dap_client.h"
-#include "dap_client_pvt.h"
+#include "dap_client_fsm.h"
+#include "dap_client_trans_ctx.h"
 #include "dap_enc_base64.h"
 #include "dap_http_header.h"
 
@@ -235,7 +237,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_ch->cookie = a_cookie ? dap_strdup(a_cookie) : NULL;
     l_ch->request_custom_headers = a_custom_headers ? dap_strdup(a_custom_headers) : NULL;
 
-    const char *l_scheme = (a_over_ssl || a_uplink_port == 443) ? "https" : "http";
+    const char *l_scheme = (a_over_ssl || a_uplink_port == 443 || a_uplink_port == 4443) ? "https" : "http";
     char l_url[2048];
     snprintf(l_url, sizeof(l_url), "%s://%s:%u%s%s",
              l_scheme, a_uplink_addr, a_uplink_port,
@@ -1307,7 +1309,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     }
     
     // Ensure is_initalized is false so new_callback will be called
-    l_ev_socket->is_initalized = false;
+    l_ev_socket->is_initalized = 0;
 
     log_it(L_DEBUG,"Created client request socket %"DAP_FORMAT_SOCKET, l_ev_socket->socket);
     
@@ -1371,7 +1373,8 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_client_http->chunked_error_count = 0;
 
     // Resolve host
-    if (0 > dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL)) {
+    int l_addr_len = dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL);
+    if (l_addr_len < 0) {
         *a_error_code = EHOSTUNREACH;
         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
         s_client_http_delete(l_client_http);
@@ -1379,6 +1382,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
         dap_events_socket_delete_unsafe(l_ev_socket, true);
         return NULL;
     }
+    l_ev_socket->addr_size = (socklen_t)l_addr_len;
 
     dap_strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN - 1);
     l_ev_socket->remote_port = a_uplink_port;
@@ -1544,6 +1548,102 @@ static void s_http_new(dap_events_socket_t * a_esocket, void * a_arg)
 }
 
 /**
+ * @brief s_h2_response_cb  Client-side HTTP/2 response callback.
+ *        Invoked when the server finishes sending the response (END_STREAM).
+ *        Maps h2 stream data back into the dap_client_http callback chain.
+ */
+static void s_h2_response_cb(dap_h2_stream_t *a_stream, uint16_t a_status, void *a_arg)
+{
+    dap_events_socket_t *l_es = (dap_events_socket_t *)a_arg;
+    if (!l_es)
+        return;
+    dap_client_http_t *l_client_http = DAP_CLIENT_HTTP(l_es);
+    if (!l_client_http)
+        return;
+
+    l_client_http->status_code = a_status;
+
+    if (l_client_http->response_callback) {
+        l_client_http->response_callback(a_stream->body, a_stream->body_len,
+                                         l_client_http->callbacks_arg, a_status);
+        l_client_http->were_callbacks_called = true;
+    } else if (l_client_http->response_callback_full) {
+        l_client_http->response_callback_full(a_stream->body, a_stream->body_len,
+                                              a_stream->headers, l_client_http->callbacks_arg, a_status);
+        l_client_http->were_callbacks_called = true;
+    }
+
+    l_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+}
+
+/**
+ * @brief s_send_h2_request  Initializes an HTTP/2 client connection and sends
+ *        the request as h2 frames (preface + SETTINGS + HEADERS + DATA).
+ */
+static int s_send_h2_request(dap_events_socket_t *a_es, dap_client_http_t *a_client_http)
+{
+    if (!a_es || !a_client_http)
+        return -1;
+
+    dap_h2_connection_t *l_h2 = DAP_NEW_Z(dap_h2_connection_t);
+    if (!l_h2)
+        return -1;
+
+    if (dap_h2_connection_client_init(l_h2, a_es) != 0) {
+        DAP_DELETE(l_h2);
+        return -1;
+    }
+
+    l_h2->response_cb = s_h2_response_cb;
+    l_h2->response_cb_arg = a_es;
+    a_client_http->h2 = l_h2;
+
+    /* Build path with leading slash */
+    char l_path[2048];
+    snprintf(l_path, sizeof(l_path), "/%s", a_client_http->path ? a_client_http->path : "");
+
+    /* Build authority (host:port) */
+    char l_authority[512];
+    snprintf(l_authority, sizeof(l_authority), "%s:%u", a_client_http->uplink_addr, a_client_http->uplink_port);
+
+    /* Build extra headers from the request */
+    dap_hpack_header_t l_extra_hdrs[8];
+    size_t l_extra_count = 0;
+
+    if (a_client_http->request_content_type && a_client_http->method == HTTP_POST) {
+        l_extra_hdrs[l_extra_count].name = "content-type";
+        l_extra_hdrs[l_extra_count].name_len = 12;
+        l_extra_hdrs[l_extra_count].value = a_client_http->request_content_type;
+        l_extra_hdrs[l_extra_count].value_len = strlen(a_client_http->request_content_type);
+        l_extra_count++;
+    }
+    if (a_client_http->cookie) {
+        l_extra_hdrs[l_extra_count].name = "cookie";
+        l_extra_hdrs[l_extra_count].name_len = 6;
+        l_extra_hdrs[l_extra_count].value = a_client_http->cookie;
+        l_extra_hdrs[l_extra_count].value_len = strlen(a_client_http->cookie);
+        l_extra_count++;
+    }
+
+    uint32_t l_sid = dap_h2_connection_send_request(l_h2,
+        dap_http_method_to_str(a_client_http->method), l_path, l_authority,
+        l_extra_hdrs, l_extra_count,
+        a_client_http->request, a_client_http->request_size);
+
+    if (!l_sid) {
+        log_it(L_ERROR, "Failed to send HTTP/2 request");
+        dap_h2_connection_deinit(l_h2);
+        DAP_DELETE(l_h2);
+        a_client_http->h2 = NULL;
+        return -1;
+    }
+
+    a_client_http->h2_stream_id = l_sid;
+    log_it(L_INFO, "HTTP/2 request sent: %s %s (stream %u)", dap_http_method_to_str(a_client_http->method), l_path, l_sid);
+    return 0;
+}
+
+/**
  * @brief s_http_connected
  * @param a_esocket
  */
@@ -1589,7 +1689,24 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 
     l_client_http->ts_last_read = time(NULL);
 
-    // Send HTTP request with properly formatted headers
+#ifndef DAP_NET_CLIENT_NO_SSL
+    /* Check ALPN negotiation result after TLS handshake */
+    if (a_esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && a_esocket->_pvt) {
+        WOLFSSL *l_ssl = (WOLFSSL *)a_esocket->_pvt;
+        char *l_proto = NULL;
+        unsigned short l_proto_len = 0;
+        if (wolfSSL_ALPN_GetProtocol(l_ssl, &l_proto, &l_proto_len) == SSL_SUCCESS
+            && l_proto_len == 2 && memcmp(l_proto, "h2", 2) == 0)
+        {
+            log_it(L_INFO, "ALPN negotiated h2, using HTTP/2 for %s:%u",
+                   l_client_http->uplink_addr, l_client_http->uplink_port);
+            s_send_h2_request(a_esocket, l_client_http);
+            return;
+        }
+    }
+#endif
+
+    /* Default: HTTP/1.1 */
     s_send_http_request(a_esocket, l_client_http);
 }
 
@@ -1714,7 +1831,24 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         log_it(L_ERROR, "s_http_read: l_client_http is NULL!");
         return;
     }
-    
+
+    /* HTTP/2 fast path: feed data to h2 connection handler */
+    if (l_client_http->h2) {
+        dap_h2_connection_t *l_h2 = (dap_h2_connection_t *)l_client_http->h2;
+        size_t l_consumed = 0;
+        int l_rc = dap_h2_connection_input(l_h2, a_es->buf_in, a_es->buf_in_size, &l_consumed);
+        if (l_consumed > 0)
+            dap_events_socket_shrink_buf_in(a_es, l_consumed);
+        if (l_rc < 0) {
+            log_it(L_ERROR, "HTTP/2 client: connection error");
+            if (l_client_http->error_callback)
+                l_client_http->error_callback(EIO, l_client_http->callbacks_arg);
+            l_client_http->were_callbacks_called = true;
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        }
+        return;
+    }
+
 #define m_http_error_exit(error_code, format, ...) do { \
     log_it(L_ERROR, "s_http_read: " format, ##__VA_ARGS__); \
     if(l_client_http->error_callback) { \
@@ -2176,7 +2310,13 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
     while(a_client_http->response_headers) {
         dap_http_header_remove(&a_client_http->response_headers, a_client_http->response_headers);
     }
-    
+
+    if (a_client_http->h2) {
+        dap_h2_connection_deinit((dap_h2_connection_t *)a_client_http->h2);
+        DAP_DELETE(a_client_http->h2);
+        a_client_http->h2 = NULL;
+    }
+
     DAP_DEL_MULTY(a_client_http->path, a_client_http->request_content_type, a_client_http->cookie,
         a_client_http->request, a_client_http->request_custom_headers, a_client_http->response, a_client_http);
 }
@@ -2255,6 +2395,10 @@ static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
     if (!l_ssl) {
         log_it(L_ERROR, "wolfSSL_new error");
         return;
+    }
+    /* ALPN: prefer h2, fall back to http/1.1 (RFC 7301) */
+    if (wolfSSL_UseALPN(l_ssl, "h2,http/1.1", 11, WOLFSSL_ALPN_CONTINUE_ON_MISMATCH) != SSL_SUCCESS) {
+        log_it(L_WARNING, "WolfSSL ALPN setup failed, will negotiate HTTP/1.1 only");
     }
     wolfSSL_set_fd(l_ssl, a_esocket->socket);
     a_esocket->_pvt = (void *)l_ssl;

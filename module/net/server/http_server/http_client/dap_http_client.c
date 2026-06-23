@@ -46,6 +46,7 @@
 #include "dap_http_header.h"
 #include "dap_http_client.h"
 #include "dap_http_ban_list_client.h"
+#include "dap_http_h2.h"
 
 #define LOG_TAG "dap_http_client"
 
@@ -117,6 +118,12 @@ void dap_http_client_delete( dap_events_socket_t * a_esocket, void *a_arg )
 
     while( l_http_client->out_headers )
         dap_http_header_remove( &l_http_client->out_headers, l_http_client->out_headers );
+
+    if (l_http_client->h2) {
+        dap_h2_connection_deinit((dap_h2_connection_t *)l_http_client->h2);
+        DAP_DELETE(l_http_client->h2);
+        l_http_client->h2 = NULL;
+    }
 
     if( l_http_client->proc ) {
         if( l_http_client->proc->delete_callback ) {
@@ -311,12 +318,26 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 {
     UNUSED(a_arg);
 
+    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
+
+    /* ── HTTP/2 fast path: if already upgraded, feed data to h2 handler ─── */
+    if (l_http_client->h2) {
+        dap_h2_connection_t *l_h2 = (dap_h2_connection_t *)l_http_client->h2;
+        size_t l_consumed = 0;
+        int l_rc = dap_h2_connection_input(l_h2, a_esocket->buf_in, a_esocket->buf_in_size, &l_consumed);
+        if (l_consumed > 0)
+            dap_events_socket_shrink_buf_in(a_esocket, l_consumed);
+        if (l_rc < 0) {
+            a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        }
+        return;
+    }
+
     byte_t *l_peol;
     char *l_cp;
     int l_ret;
     size_t l_len = 0;
 
-    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
     dap_http_url_proc_t *url_proc = NULL;
     dap_http_cache_t * l_http_cache;
 
@@ -343,6 +364,26 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         s_report_error_and_restart( a_esocket, l_http_client, DAP_HTTP_STATUS_FORBIDDEN);
                         break;
                     }
+                }
+
+                /* ── HTTP/2 connection preface detection ─────────────────── */
+                if ( a_esocket->buf_in_size >= DAP_H2_CONNECTION_PREFACE_LEN
+                     && dap_h2_detect_preface(a_esocket->buf_in, a_esocket->buf_in_size) )
+                {
+                    log_it(L_NOTICE, "HTTP/2 connection preface detected, upgrading");
+                    dap_h2_connection_t *l_h2 = DAP_NEW_Z(dap_h2_connection_t);
+                    if ( l_h2 && dap_h2_connection_init(l_h2, l_http_client->http, a_esocket) == 0 ) {
+                        l_http_client->h2 = l_h2;
+                        size_t l_consumed = 0;
+                        dap_h2_connection_input(l_h2, a_esocket->buf_in, a_esocket->buf_in_size, &l_consumed);
+                        if (l_consumed > 0)
+                            dap_events_socket_shrink_buf_in(a_esocket, l_consumed);
+                    } else {
+                        log_it(L_ERROR, "Failed to init HTTP/2 connection");
+                        DAP_DELETE(l_h2);
+                        s_report_error_and_restart(a_esocket, l_http_client, DAP_HTTP_STATUS_BAD_REQUEST);
+                    }
+                    return;
                 }
 
                 if ( a_esocket->buf_in_size < HTTP$SZ_MINSTARTLINE )         /* Is the length of the start-line looks to be enough ? */

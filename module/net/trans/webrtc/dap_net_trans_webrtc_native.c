@@ -70,10 +70,9 @@ typedef struct rtc_native_conn {
     dap_net_trans_connect_cb_t connect_cb;
 
     char                   *host;
-    uint16_t                port;
-
     pthread_mutex_t         recv_mutex;
     pthread_t               recv_thread;
+    uint16_t                port;
     bool                    recv_running;
     int                     notify_pipe[2];
 

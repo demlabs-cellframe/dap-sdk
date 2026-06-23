@@ -30,10 +30,47 @@
 #include "dap_hash.h"
 #include "dap_enc_multisign.h"
 #include "dap_enc_base58.h"
+#include "dap_serialize.h"
 
 #include "dap_list.h"
 
 #define LOG_TAG "dap_enc_multisign"
+
+_Static_assert(sizeof(dap_multi_sign_meta_t) == DAP_SIGN_HDR_WIRE_SIZE,
+               "dap_multi_sign_meta_t matches sign header wire size");
+
+const dap_serialize_schema_t g_dap_multi_sign_meta_schema = {
+    .name = "multi_sign_meta",
+    .version = 1,
+    .struct_size = sizeof(dap_multi_sign_meta_mem_t),
+    .field_count = DAP_SIGN_HDR_FIELD_COUNT,
+    .fields = g_dap_sign_hdr_fields,
+    .magic = DAP_MULTI_SIGN_META_MAGIC,
+    .validate_func = NULL,
+};
+
+const dap_serialize_field_t g_dap_multisign_pub_key_hdr_fields[] = {
+    {
+        .name = "len",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_multisign_pub_key_hdr_mem_t, len),
+        .size = sizeof(uint64_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_multisign_pub_key_hdr_schema = {
+    .name = "multisign_pub_key_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_multisign_pub_key_hdr_mem_t),
+    .field_count = sizeof(g_dap_multisign_pub_key_hdr_fields) / sizeof(g_dap_multisign_pub_key_hdr_fields[0]),
+    .fields = g_dap_multisign_pub_key_hdr_fields,
+    .magic = DAP_MULTISIGN_PUB_KEY_HDR_MAGIC,
+    .validate_func = NULL,
+};
+
+_Static_assert(offsetof(dap_multisign_public_key_t, len) == 0,
+               "multisign public key len is first field");
 
 
 void dap_enc_sig_multisign_key_new(dap_enc_key_t *a_key)
@@ -167,6 +204,17 @@ uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out
     uint64_t  l_signes_size, l_pkeys_hashes_size;
     uint64_t l_out_len = s_multi_sign_calc_size(l_sign, &l_signes_size, &l_pkeys_hashes_size) + sizeof(uint64_t) * 3;
     *a_out_len = l_out_len;
+    for (uint8_t i = 0; i < l_sign->sign_count; i++) {
+        dap_multi_sign_meta_mem_t l_mm = {
+            .type_raw = l_sign->meta[i].sign_header.type.raw,
+            .hash_type = l_sign->meta[i].sign_header.hash_type,
+            .sign_params = l_sign->meta[i].sign_header.sign_params,
+            .sign_size = l_sign->meta[i].sign_header.sign_size,
+            .sign_pkey_size = l_sign->meta[i].sign_header.sign_pkey_size,
+        };
+        if (dap_multi_sign_meta_pack(&l_mm, (uint8_t *)&l_sign->meta[i].sign_header, DAP_SIGN_HDR_WIRE_SIZE) != 0)
+            return NULL;
+    }
     uint8_t *l_ret = DAP_VA_SERIALIZE_NEW(l_out_len,
         &l_out_len, (uint64_t)sizeof(uint64_t),
         &l_pkeys_hashes_size, (uint64_t)sizeof(uint64_t),
@@ -223,6 +271,17 @@ void *dap_enc_sig_multisign_read_signature(const uint8_t *a_sign, size_t a_sign_
         log_it(L_ERROR, "Multisign deserialisation error");
         DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->meta, l_sign->key_seq, l_sign);
         return NULL;
+    }
+    for (uint8_t i = 0; i < l_sign->sign_count; i++) {
+        dap_multi_sign_meta_mem_t l_mm;
+        if (dap_multi_sign_meta_unpack((uint8_t *)&l_sign->meta[i].sign_header, DAP_SIGN_HDR_WIRE_SIZE, &l_mm) != 0) {
+            DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->meta, l_sign->key_seq, l_sign);
+            return NULL;
+        }
+        if (dap_multi_sign_meta_pack(&l_mm, (uint8_t *)&l_sign->meta[i].sign_header, DAP_SIGN_HDR_WIRE_SIZE) != 0) {
+            DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->meta, l_sign->key_seq, l_sign);
+            return NULL;
+        }
     }
     return l_sign;
 }
@@ -360,7 +419,21 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
             return -5;
         }
         uint8_t *l_sign_step = dap_sign_get_sign(l_dap_sign_step, &l_sign_size);
-        l_sign->meta[i].sign_header = l_dap_sign_step->header;
+        {
+            dap_sign_hdr_mem_t l_sm = {
+                .type_raw = l_dap_sign_step->header.type.raw,
+                .hash_type = l_dap_sign_step->header.hash_type,
+                .sign_params = l_dap_sign_step->header.sign_params,
+                .sign_size = l_dap_sign_step->header.sign_size,
+                .sign_pkey_size = l_dap_sign_step->header.sign_pkey_size,
+            };
+            if (dap_multi_sign_meta_pack((dap_multi_sign_meta_mem_t *)&l_sm, (uint8_t *)&l_sign->meta[i].sign_header,
+                                         DAP_SIGN_HDR_WIRE_SIZE) != 0) {
+                log_it(L_ERROR, "Can't pack multi-sign meta header");
+                DAP_DEL_MULTY(l_sign->key_hashes, l_sign->key_seq, l_sign->meta, l_sign->sign_data);
+                return -5;
+            }
+        }
         if (l_signs_mem_shift == 0) {
             l_sign->sign_data = DAP_NEW_Z_SIZE(uint8_t, l_sign_size);
         } else {
@@ -409,14 +482,24 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
                    i, l_pkeys_mem_shift, l_pkey_size, (unsigned long long)l_pkeys->len);
             return -6;
         }
-        dap_sign_t *l_step_sign = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_sign_t, sizeof(dap_sign_hdr_t) + l_pkey_size + l_sign_size, -1);
+        dap_sign_t *        l_step_sign = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_sign_t, sizeof(dap_sign_hdr_t) + l_pkey_size + l_sign_size, -1);
         int l_verified = 0;
         // get multisign hash data
         if (!i && !dap_multi_sign_hash_data(l_sign, a_msg, a_msg_size, &l_data_hash)) {
             log_it (L_ERROR, "Can't create multi-signature hash");
             return DAP_DELETE(l_step_sign), -3;
         }
-        l_step_sign->header = l_sign->meta[i].sign_header;
+        {
+            dap_multi_sign_meta_mem_t l_mm;
+            if (dap_multi_sign_meta_unpack((uint8_t *)&l_sign->meta[i].sign_header, DAP_SIGN_HDR_WIRE_SIZE, &l_mm) != 0) {
+                log_it(L_ERROR, "Invalid multi-sign meta header");
+                return DAP_DELETE(l_step_sign), -7;
+            }
+            if (dap_multi_sign_meta_pack(&l_mm, (uint8_t *)&l_step_sign->header, DAP_SIGN_HDR_WIRE_SIZE) != 0) {
+                log_it(L_ERROR, "Can't pack step sign header from multi-sign meta");
+                return DAP_DELETE(l_step_sign), -7;
+            }
+        }
         memcpy(l_step_sign->pkey_n_sign, l_pkeys->data + l_pkeys_mem_shift, l_pkey_size);
         memcpy(l_step_sign->pkey_n_sign + l_pkey_size, l_sign->sign_data + l_signs_mem_shift, l_sign_size);
         l_verified = dap_sign_verify(l_step_sign, &l_data_hash, sizeof(dap_hash_sha3_256_t));

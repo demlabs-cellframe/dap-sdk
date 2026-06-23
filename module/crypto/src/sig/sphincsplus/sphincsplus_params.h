@@ -58,6 +58,10 @@ typedef struct sphincsplus_base_params {
     sphincsplus_offsets_t offsets;
     sphincsplus_difficulty_t difficulty;
 } DAP_ALIGN_PACKED sphincsplus_base_params_t;
+_Static_assert(sizeof(sphincsplus_base_params_t) ==
+                   sizeof(sphincsplus_config_t) + sizeof(uint32_t) * 7 + sizeof(uint8_t) +
+                       sizeof(sphincsplus_offsets_t) + sizeof(sphincsplus_difficulty_t),
+               "sphincsplus_base_params_t packed wire size");
 
 typedef struct sphincsplus_params {
     sphincsplus_base_params_t base_params;

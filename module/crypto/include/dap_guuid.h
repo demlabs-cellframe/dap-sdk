@@ -29,9 +29,10 @@ typedef union dap_guuid {
     struct {
         uint64_t net_id;
         uint64_t srv_id;
-    } DAP_ALIGN_PACKED;
+    };
     uint128_t raw;
-} DAP_ALIGN_PACKED dap_guuid_t;
+} dap_guuid_t;
+_Static_assert(sizeof(dap_guuid_t) == 16, "guuid must be 16 bytes");
 
 typedef union dap_guuid_str {
     const char s[ 2 * sizeof(uint128_t) + 3 ];

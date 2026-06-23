@@ -222,6 +222,12 @@ static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const vo
     dap_global_db_cluster_t *l_cluster = a_arg;
     switch (a_type) {
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
+        if (a_data_size < DAP_GLOBAL_DB_HASH_PKT_HDR_WIRE_SIZE)
+            break;
+        dap_global_db_hash_pkt_hdr_mem_t l_hmem;
+        if (dap_global_db_hash_pkt_hdr_unpack((const uint8_t *)a_data, a_data_size, &l_hmem) != 0 ||
+                a_data_size != dap_global_db_hash_pkt_get_size_hdr(&l_hmem))
+            break;
         dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)a_data;
         dap_global_db_cluster_t *l_msg_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(),
                                                                                 (char *)l_pkt->group_n_hashses);
@@ -246,6 +252,20 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         if (dap_cluster_node_addr_is_blank(&l_current_link))
             break;
         dap_list_t *l_groups = dap_global_db_get_groups_by_mask(l_cluster->groups_mask);
+        // For an explicit (non-wildcard) cluster mask, initiate sync even when
+        // the local group does not exist yet. Without this, a fresh node that
+        // has never written into the group (e.g. MASTER for
+        // confcall-stagenet.nodes.list) never sends START, the peer never
+        // replies with HASHES, and the group stays empty forever
+        // (chicken-and-egg: GDB sync wants a local group, but the local group
+        // is only created on first write — which itself only comes through
+        // sync). Sending START with last_hash=blank makes the peer dump
+        // everything it has for that exact group, which is what we need on
+        // bootstrap. The "bootstrap" entry is flagged so the loop below skips
+        // the empty-group filter for it only.
+        bool l_bootstrap_literal = !l_groups && !strpbrk(l_cluster->groups_mask, "*?[");
+        if (l_bootstrap_literal)
+            l_groups = dap_list_append(NULL, dap_strdup(l_cluster->groups_mask));
         if (!l_groups) {
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
             l_cluster->sync_context.stage_last_activity = dap_time_now();
@@ -254,16 +274,21 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         l_cluster->sync_context.current_link = l_current_link;
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
-            if (!dap_global_db_group_count(it->data, true))
+            if (!l_bootstrap_literal && !dap_global_db_group_count(it->data, true))
                 continue;
             size_t l_group_len = dap_strlen(it->data) + 1;
-            dap_global_db_start_pkt_t *l_msg = DAP_NEW_STACK_SIZE(dap_global_db_start_pkt_t, sizeof(dap_global_db_start_pkt_t) + l_group_len);
-            l_msg->last_hash = c_dap_global_db_hash_blank;
-            l_msg->group_len = l_group_len;
-            memcpy(l_msg->group, it->data, l_group_len);
-            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_SYNC_START packet for group %s from first record", l_msg->group);
+            size_t l_pkt_total = DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE + l_group_len;
+            byte_t *l_msg_buf = DAP_NEW_STACK_SIZE(byte_t, l_pkt_total);
+            dap_global_db_start_pkt_hdr_mem_t l_st_hdr = { .group_len = (uint16_t)l_group_len };
+            memcpy(l_st_hdr.last_hash, &c_dap_global_db_hash_blank, sizeof(l_st_hdr.last_hash));
+            if (dap_global_db_start_pkt_hdr_pack(&l_st_hdr, l_msg_buf, DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE) != 0) {
+                log_it(L_ERROR, "GLOBAL_DB start header pack failed");
+                continue;
+            }
+            memcpy(l_msg_buf + DAP_GLOBAL_DB_START_PKT_HDR_WIRE_SIZE, it->data, l_group_len);
+            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_SYNC_START packet for group %s from first record", (const char *)it->data);
             dap_stream_ch_pkt_send_by_addr(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START,
-                                           l_msg, dap_global_db_start_pkt_get_size(l_msg));
+                                           l_msg_buf, l_pkt_total);
         }
 
         dap_list_free_full(l_groups, NULL);

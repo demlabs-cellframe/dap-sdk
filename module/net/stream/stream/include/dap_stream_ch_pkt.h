@@ -29,17 +29,60 @@
 #include "dap_stream.h"
 #include "dap_enc_key.h"
 #include "dap_context_queue.h"
+#include "dap_serialize.h"
 
 typedef unsigned int dap_stream_ch_uuid_t;
 
+/**
+ * Wire-format channel packet header (packed, 16 bytes).
+ */
 typedef struct dap_stream_ch_pkt_hdr {
-    uint8_t id;   // Channel id
-    uint8_t enc_type; // Zero if not encrypted
-    uint8_t type; // general, command, info, signal and etc
+    uint8_t id;
+    uint8_t enc_type;
+    uint8_t type;
     uint8_t padding;
-    uint64_t seq_id; // Sequence id or position id
+    uint64_t seq_id;
     uint32_t data_size;
 } DAP_ALIGN_PACKED dap_stream_ch_pkt_hdr_t;
+
+#define DAP_STREAM_CH_PKT_HDR_WIRE_SIZE 16
+_Static_assert(sizeof(dap_stream_ch_pkt_hdr_t) == DAP_STREAM_CH_PKT_HDR_WIRE_SIZE,
+               "dap_stream_ch_pkt_hdr_t wire size");
+
+/**
+ * Naturally aligned in-memory version. Identical field order,
+ * compiler inserts alignment padding automatically.
+ */
+typedef struct dap_stream_ch_pkt_hdr_mem {
+    uint8_t id;
+    uint8_t enc_type;
+    uint8_t type;
+    uint8_t padding;
+    uint64_t seq_id;
+    uint32_t data_size;
+} dap_stream_ch_pkt_hdr_mem_t;
+
+extern const dap_serialize_field_t g_dap_stream_ch_pkt_hdr_fields[];
+extern const dap_serialize_schema_t g_dap_stream_ch_pkt_hdr_schema;
+#define DAP_STREAM_CH_PKT_HDR_MAGIC 0xDA5FEED3U
+
+static inline int dap_stream_ch_pkt_hdr_pack(const dap_stream_ch_pkt_hdr_mem_t *a_mem,
+                                              uint8_t *a_wire, size_t a_wire_size)
+{
+    if (a_wire_size < DAP_STREAM_CH_PKT_HDR_WIRE_SIZE) return -1;
+    dap_serialize_result_t r = dap_serialize_to_buffer_raw(
+        &g_dap_stream_ch_pkt_hdr_schema, a_mem, a_wire, a_wire_size, NULL);
+    return r.error_code;
+}
+
+static inline int dap_stream_ch_pkt_hdr_unpack(const uint8_t *a_wire, size_t a_wire_size,
+                                                dap_stream_ch_pkt_hdr_mem_t *a_mem)
+{
+    if (a_wire_size < DAP_STREAM_CH_PKT_HDR_WIRE_SIZE) return -1;
+    dap_deserialize_result_t r = dap_deserialize_from_buffer_raw(
+        &g_dap_stream_ch_pkt_hdr_schema, a_wire, a_wire_size, a_mem, NULL);
+    return r.error_code;
+}
 
 typedef struct dap_stream_ch_pkt{
     dap_stream_ch_pkt_hdr_t hdr;

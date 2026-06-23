@@ -130,7 +130,7 @@ set(MLKEM_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../hash/include
 )
 
-set(MLKEM_LINK_LIBS dap_core dap_hash dap_math_bignum)
+set(MLKEM_LINK_LIBS dap_core dap_math dap_hash dap_math_bignum)
 
 # Helper: configure one ML-KEM variant library
 macro(mlkem_add_variant target_name k_value)

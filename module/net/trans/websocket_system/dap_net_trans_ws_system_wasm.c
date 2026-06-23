@@ -23,15 +23,9 @@
 
 /**
  * @file dap_net_trans_ws_system_wasm.c
- * @brief Multi-threaded WASM WebSocket transport with full DAP handshake
- *
- * Architecture:
- *   - WebSocket lives on browser main thread (browser API requirement)
- *   - Each staged op (handshake_init, session_create, session_start) spawns a
- *     detached pthread so the DAP worker event loop is never blocked
- *   - XHR (enc_init + stream_ctl) runs synchronously inside those pthreads
- *   - Recv pthread: sem_wait() -> read from cbuf -> dap_stream_data_proc_read_ext()
- *   - Write: proxied js WebSocket.send() to main thread
+ * @brief WASM WebSocket transport — dual mode:
+ *   MT (DAP_OS_WASM_MT): recv pthread + sem + proxy to main thread
+ *   ST (DAP_OS_WASM_ST): direct event-driven callbacks on main thread
  */
 
 #ifdef __EMSCRIPTEN__
@@ -39,12 +33,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#include <pthread.h>
-#include <semaphore.h>
 
 #include <emscripten.h>
-#include <emscripten/em_js.h>
-#include <emscripten/threading.h>
+#include <emscripten/html5.h>
 
 #include "dap_common.h"
 #include "dap_cbuf.h"
@@ -54,21 +45,51 @@
 #include "dap_json.h"
 #include "dap_cert.h"
 #include "dap_net_trans.h"
+#include "dap_net_trans_ctx.h"
 #include "dap_net_trans_types.h"
 #include "dap_net_trans_websocket_system.h"
 #include "dap_http_client_simple.h"
 #include "dap_stream.h"
 #include "dap_stream_session.h"
+#include "dap_stream_pkt.h"
 
 #define LOG_TAG "ws_system_wasm"
 
 #define WS_RECV_BUF_SIZE    (256 * 1024)
 #define WS_READ_CHUNK       (64 * 1024)
 #define WS_MAX_CONNECTIONS  256
+#define WS_KEEPALIVE_INTERVAL_MS  25000
+
+#ifdef DAP_OS_WASM_MT
+#include <pthread.h>
+#include <semaphore.h>
+#include <emscripten/threading.h>
+#include <emscripten/proxying.h>
+#endif
 
 /* ========================================================================
  * Connection context
  * ======================================================================== */
+
+/* Document URL is only reliable on the main browser thread. Emscripten pthread workers
+ * expose a blob: location (e.g. blob:https://example.com/...), so we need to parse
+ * the actual origin from the blob URL to detect HTTPS properly. */
+EM_JS(int, js_page_is_secure, (void), {
+    if (typeof location === 'undefined') return 0;
+    // Main thread: check protocol directly
+    if (location.protocol === 'https:') return 1;
+    // Worker with blob: URL — parse the origin from blob:https://...
+    if (location.protocol === 'blob:' && location.href) {
+        // blob:https://example.com/uuid -> extract https://example.com
+        var blobUrl = location.href;
+        if (blobUrl.startsWith('blob:https://')) return 1;
+    }
+    return 0;
+});
+
+#ifdef DAP_OS_WASM_MT
+static int s_wasm_main_document_https = -1;
+#endif
 
 typedef struct ws_system_conn {
     int                     js_handle;
@@ -80,12 +101,20 @@ typedef struct ws_system_conn {
 
     char                   *host;
     uint16_t                port;
+    bool                    use_tls;
     uint32_t                session_id;
+    
+    long                    keepalive_timer_id;
 
-    pthread_t               recv_thread;
-    bool                    recv_running;
+#ifdef DAP_OS_WASM_MT
     pthread_mutex_t         recv_mutex;
     sem_t                   recv_sem;
+    pthread_t               recv_thread;
+    bool                    recv_running;
+#endif
+
+    /* ST mode: deferred callback for session_start */
+    dap_net_trans_ready_cb_t  ready_callback;
 
     uint64_t                bytes_sent;
     uint64_t                bytes_received;
@@ -112,149 +141,95 @@ static void s_unregister_conn(int a_handle)
 }
 
 /* ========================================================================
- * WebSocket JS bridge: EM_JS functions (must be called from main thread)
- * + proxy wrappers to call them from any thread
+ * WebSocket JS bridge: extern declarations (impl in library_dap_transport.js)
  * ======================================================================== */
 
-#include <emscripten/proxying.h>
+extern int js_ws_create(const char *a_url_ptr);
+extern int js_ws_send(int a_handle, const void *a_data, int a_len);
+extern void js_ws_close(int a_handle, int a_code);
+extern void js_ws_destroy(int a_handle);
+extern void js_ws_init_callbacks(void);
 
-EM_JS(int, js_ws_create, (const char *a_url_ptr), {
-    var url = UTF8ToString(a_url_ptr);
-    if (!Module._ws_pool) {
-        Module._ws_pool = {};
-        Module._ws_next_id = 1;
-    }
-    var id = Module._ws_next_id++;
-    var ws;
-    try { ws = new WebSocket(url, "dap-stream"); }
-    catch (e) { return -1; }
-    ws.binaryType = "arraybuffer";
-    var entry = {};
-    entry.ws = ws;
-    entry.state = 0;
-    Module._ws_pool[id] = entry;
+#ifdef DAP_OS_WASM_MT
+/* ── MT: proxy wrappers to call JS from worker threads ───────────────── */
 
-    ws.onopen = function() {
-        var e = Module._ws_pool[id];
-        if (e) e.state = 1;
-        if (Module.__ws_on_open) Module.__ws_on_open(id);
-    };
-    ws.onclose = function(ev) {
-        var e = Module._ws_pool[id];
-        if (e) e.state = 3;
-        if (Module.__ws_on_close) Module.__ws_on_close(id, ev.code);
-    };
-    ws.onerror = function() {
-        if (Module.__ws_on_error) Module.__ws_on_error(id);
-    };
-    ws.onmessage = function(ev) {
-        var data = ev.data;
-        var arr = (typeof data === "string")
-            ? new TextEncoder().encode(data)
-            : new Uint8Array(data);
-        var buf = _malloc(arr.length);
-        HEAPU8.set(arr, buf);
-        if (Module.__ws_on_message) Module.__ws_on_message(id, buf, arr.length);
-        _free(buf);
-    };
-    return id;
-});
-
-EM_JS(int, js_ws_send, (int a_handle, const void *a_data, int a_len), {
-    var entry = Module._ws_pool ? Module._ws_pool[a_handle] : null;
-    if (!entry || entry.state !== 1) return -1;
-    try {
-        entry.ws.send(HEAPU8.slice(a_data, a_data + a_len).buffer);
-        return a_len;
-    } catch (e) { return -1; }
-});
-
-EM_JS(void, js_ws_close, (int a_handle, int a_code), {
-    var entry = Module._ws_pool ? Module._ws_pool[a_handle] : null;
-    if (entry) {
-        try { entry.ws.close(a_code); } catch(e) {}
-        entry.state = 2;
-    }
-});
-
-EM_JS(void, js_ws_destroy, (int a_handle), {
-    if (!Module._ws_pool) return;
-    var entry = Module._ws_pool[a_handle];
-    if (entry) {
-        try { entry.ws.close(); } catch(e) {}
-        delete Module._ws_pool[a_handle];
-    }
-});
-
-/* Proxy arg structures */
 typedef struct { const char *url; int result; } ws_create_args_t;
 typedef struct { int handle; const void *data; int len; int result; } ws_send_args_t;
 typedef struct { int handle; int code; } ws_close_args_t;
 
-static void s_proxy_ws_create(void *a_arg)
-{
-    ws_create_args_t *l = (ws_create_args_t *)a_arg;
-    l->result = js_ws_create(l->url);
+static void s_proxy_ws_create(void *a_arg)  { ws_create_args_t *l = a_arg; l->result = js_ws_create(l->url); }
+static void s_proxy_ws_send(void *a_arg)    { ws_send_args_t *l = a_arg; l->result = js_ws_send(l->handle, l->data, l->len); }
+static void s_proxy_ws_close(void *a_arg)   { ws_close_args_t *l = a_arg; js_ws_close(l->handle, l->code); }
+static void s_proxy_ws_destroy(void *a_arg) { ws_close_args_t *l = a_arg; js_ws_destroy(l->handle); }
+
+static int s_ws_create_on_main(const char *a_url) {
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
+        return js_ws_create(a_url);
+    ws_create_args_t l = { .url = a_url, .result = -1 };
+    emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_create, &l);
+    return l.result;
+}
+static int s_ws_send_on_main(int a_h, const void *d, int n) {
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
+        return js_ws_send(a_h, d, n);
+    ws_send_args_t l = { .handle = a_h, .data = d, .len = n, .result = -1 };
+    emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_send, &l);
+    return l.result;
+}
+static void s_ws_close_on_main(int a_h, int c) {
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
+        js_ws_close(a_h, c); return;
+    }
+    ws_close_args_t l = { .handle = a_h, .code = c };
+    emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_close, &l);
+}
+static void s_ws_destroy_on_main(int a_h) {
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
+        js_ws_destroy(a_h); return;
+    }
+    ws_close_args_t l = { .handle = a_h, .code = 0 };
+    emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_destroy, &l);
 }
 
-static void s_proxy_ws_send(void *a_arg)
+#else /* ST: direct calls — already on main thread */
+
+#define s_ws_create_on_main(url)      js_ws_create(url)
+#define s_ws_send_on_main(h, d, n)    js_ws_send(h, d, n)
+#define s_ws_close_on_main(h, c)      js_ws_close(h, c)
+#define s_ws_destroy_on_main(h)       js_ws_destroy(h)
+
+#endif /* DAP_OS_WASM_MT */
+
+/* ========================================================================
+ * Keepalive mechanism for WASM WebSocket
+ * ======================================================================== */
+
+static void s_keepalive_callback(void *a_arg)
 {
-    ws_send_args_t *l = (ws_send_args_t *)a_arg;
-    l->result = js_ws_send(l->handle, l->data, l->len);
+    ws_system_conn_t *l_conn = (ws_system_conn_t *)a_arg;
+    if (!l_conn || l_conn->state != DAP_WS_SYSTEM_STATE_OPEN || !l_conn->stream) {
+        return;
+    }
+    dap_stream_send_keepalive(l_conn->stream);
 }
 
-static void s_proxy_ws_close(void *a_arg)
+static void s_start_keepalive_timer(ws_system_conn_t *a_conn)
 {
-    ws_close_args_t *l = (ws_close_args_t *)a_arg;
-    js_ws_close(l->handle, l->code);
+    if (a_conn->keepalive_timer_id > 0) return;
+    a_conn->keepalive_timer_id = emscripten_set_interval(s_keepalive_callback, WS_KEEPALIVE_INTERVAL_MS, a_conn);
+    log_it(L_DEBUG, "Keepalive timer started (interval=%dms)", WS_KEEPALIVE_INTERVAL_MS);
 }
 
-static void s_proxy_ws_destroy(void *a_arg)
+static void s_stop_keepalive_timer(ws_system_conn_t *a_conn)
 {
-    ws_close_args_t *l = (ws_close_args_t *)a_arg;
-    js_ws_destroy(l->handle);
-}
-
-static int s_ws_create_on_main(const char *a_url)
-{
-    ws_create_args_t l_args = { .url = a_url, .result = -1 };
-    emscripten_proxy_sync(
-        emscripten_proxy_get_system_queue(),
-        emscripten_main_runtime_thread_id(),
-        s_proxy_ws_create, &l_args);
-    return l_args.result;
-}
-
-static int s_ws_send_on_main(int a_handle, const void *a_data, int a_len)
-{
-    ws_send_args_t l_args = { .handle = a_handle, .data = a_data, .len = a_len, .result = -1 };
-    emscripten_proxy_sync(
-        emscripten_proxy_get_system_queue(),
-        emscripten_main_runtime_thread_id(),
-        s_proxy_ws_send, &l_args);
-    return l_args.result;
-}
-
-static void s_ws_close_on_main(int a_handle, int a_code)
-{
-    ws_close_args_t l_args = { .handle = a_handle, .code = a_code };
-    emscripten_proxy_sync(
-        emscripten_proxy_get_system_queue(),
-        emscripten_main_runtime_thread_id(),
-        s_proxy_ws_close, &l_args);
-}
-
-static void s_ws_destroy_on_main(int a_handle)
-{
-    ws_close_args_t l_args = { .handle = a_handle, .code = 0 };
-    emscripten_proxy_sync(
-        emscripten_proxy_get_system_queue(),
-        emscripten_main_runtime_thread_id(),
-        s_proxy_ws_destroy, &l_args);
+    if (a_conn->keepalive_timer_id > 0) {
+        emscripten_clear_interval(a_conn->keepalive_timer_id);
+        a_conn->keepalive_timer_id = 0;
+    }
 }
 
 /* ========================================================================
- * C callbacks from JavaScript (run on main thread)
+ * C callbacks from JavaScript (always run on main thread)
  * ======================================================================== */
 
 EMSCRIPTEN_KEEPALIVE
@@ -264,7 +239,16 @@ void _ws_on_open(int a_handle)
     if (!l_conn) return;
     l_conn->state = DAP_WS_SYSTEM_STATE_OPEN;
     log_it(L_NOTICE, "WebSocket connected (handle=%d)", a_handle);
+
+#ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
+#else
+    s_start_keepalive_timer(l_conn);
+    if (l_conn->ready_callback) {
+        l_conn->ready_callback(l_conn->stream, 0);
+        l_conn->ready_callback = NULL;
+    }
+#endif
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -272,9 +256,18 @@ void _ws_on_close(int a_handle, int a_code)
 {
     ws_system_conn_t *l_conn = s_find_conn(a_handle);
     if (!l_conn) return;
+    s_stop_keepalive_timer(l_conn);
     l_conn->state = DAP_WS_SYSTEM_STATE_CLOSED;
     log_it(L_INFO, "WebSocket closed (handle=%d, code=%d)", a_handle, a_code);
+
+#ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
+#else
+    if (l_conn->ready_callback) {
+        l_conn->ready_callback(l_conn->stream, -2);
+        l_conn->ready_callback = NULL;
+    }
+#endif
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -284,24 +277,42 @@ void _ws_on_error(int a_handle)
     if (!l_conn) return;
     log_it(L_ERROR, "WebSocket error (handle=%d)", a_handle);
     l_conn->state = DAP_WS_SYSTEM_STATE_CLOSED;
+
+#ifdef DAP_OS_WASM_MT
     sem_post(&l_conn->recv_sem);
+#else
+    if (l_conn->ready_callback) {
+        l_conn->ready_callback(l_conn->stream, -3);
+        l_conn->ready_callback = NULL;
+    }
+#endif
 }
 
 EMSCRIPTEN_KEEPALIVE
 void _ws_on_message(int a_handle, const uint8_t *a_data, int a_len)
 {
     ws_system_conn_t *l_conn = s_find_conn(a_handle);
-    if (!l_conn || !l_conn->recv_buf || a_len <= 0) return;
+    if (!l_conn || a_len <= 0) return;
+
+    l_conn->bytes_received += (uint64_t)a_len;
+
+#ifdef DAP_OS_WASM_MT
+    if (!l_conn->recv_buf) return;
     pthread_mutex_lock(&l_conn->recv_mutex);
     dap_cbuf_push(l_conn->recv_buf, a_data, (size_t)a_len);
-    l_conn->bytes_received += (uint64_t)a_len;
     pthread_mutex_unlock(&l_conn->recv_mutex);
     sem_post(&l_conn->recv_sem);
+#else
+    if (l_conn->stream)
+        dap_stream_data_proc_read_ext(l_conn->stream, a_data, (size_t)a_len);
+#endif
 }
 
 /* ========================================================================
- * Recv thread: waits on semaphore, reads from cbuf, feeds dap_stream
+ * MT: recv thread
  * ======================================================================== */
+
+#ifdef DAP_OS_WASM_MT
 
 static void *s_recv_thread_func(void *a_arg)
 {
@@ -331,35 +342,32 @@ static void *s_recv_thread_func(void *a_arg)
     return NULL;
 }
 
-/* ========================================================================
- * Staged transport ops
- * ======================================================================== */
+#endif /* DAP_OS_WASM_MT */
 
 /* ========================================================================
- * Transport ops
+ * Transport ops: init / deinit
  * ======================================================================== */
 
-EM_JS(void, js_ws_init_callbacks, (void), {
-    Module.__ws_on_open    = Module.cwrap('_ws_on_open', null, ['number']);
-    Module.__ws_on_close   = Module.cwrap('_ws_on_close', null, ['number', 'number']);
-    Module.__ws_on_error   = Module.cwrap('_ws_on_error', null, ['number']);
-    Module.__ws_on_message = Module.cwrap('_ws_on_message', null, ['number', 'number', 'number']);
-});
-
-static void s_proxy_init_callbacks(void *a_arg)
-{
-    (void)a_arg;
-    js_ws_init_callbacks();
-}
+#ifdef DAP_OS_WASM_MT
+static void s_proxy_init_callbacks(void *a_arg) { (void)a_arg; js_ws_init_callbacks(); }
+#endif
 
 static int s_ws_system_init(dap_net_trans_t *a_trans, dap_config_t *a_config)
 {
     (void)a_config; (void)a_trans;
-    emscripten_proxy_sync(
-        emscripten_proxy_get_system_queue(),
-        emscripten_main_runtime_thread_id(),
-        s_proxy_init_callbacks, NULL);
-    log_it(L_NOTICE, "WebSocket System transport initialized (multi-threaded WASM)");
+#ifdef DAP_OS_WASM_MT
+    if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
+        s_proxy_init_callbacks(NULL);
+    } else {
+        emscripten_proxy_sync(emscripten_proxy_get_system_queue(),
+                              emscripten_main_runtime_thread_id(),
+                              s_proxy_init_callbacks, NULL);
+    }
+    log_it(L_NOTICE, "WebSocket System transport initialized (multi-threaded)");
+#else
+    js_ws_init_callbacks();
+    log_it(L_NOTICE, "WebSocket System transport initialized (single-threaded)");
+#endif
     return 0;
 }
 
@@ -367,24 +375,29 @@ static void s_ws_system_deinit(dap_net_trans_t *a_trans)
 {
     (void)a_trans;
     for (int i = 0; i < WS_MAX_CONNECTIONS; i++) {
-        if (s_connections[i]) {
-            s_ws_destroy_on_main(i);
-            ws_system_conn_t *l_conn = s_connections[i];
-            if (l_conn->recv_running) {
-                l_conn->recv_running = false;
-                sem_post(&l_conn->recv_sem);
-                pthread_join(l_conn->recv_thread, NULL);
-            }
-            dap_cbuf_delete(l_conn->recv_buf);
-            DAP_DEL_Z(l_conn->host);
-            sem_destroy(&l_conn->recv_sem);
-            pthread_mutex_destroy(&l_conn->recv_mutex);
-            DAP_DELETE(l_conn);
-            s_connections[i] = NULL;
+        if (!s_connections[i]) continue;
+        s_ws_destroy_on_main(i);
+        ws_system_conn_t *l_conn = s_connections[i];
+#ifdef DAP_OS_WASM_MT
+        if (l_conn->recv_running) {
+            l_conn->recv_running = false;
+            sem_post(&l_conn->recv_sem);
+            pthread_join(l_conn->recv_thread, NULL);
         }
+        sem_destroy(&l_conn->recv_sem);
+        pthread_mutex_destroy(&l_conn->recv_mutex);
+#endif
+        dap_cbuf_delete(l_conn->recv_buf);
+        DAP_DEL_Z(l_conn->host);
+        DAP_DELETE(l_conn);
+        s_connections[i] = NULL;
     }
     log_it(L_NOTICE, "WebSocket System transport deinitialized");
 }
+
+/* ========================================================================
+ * stage_prepare: allocate connection context
+ * ======================================================================== */
 
 static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
                               const dap_net_stage_prepare_params_t *a_params,
@@ -398,26 +411,46 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
     l_conn->recv_buf = dap_cbuf_create(WS_RECV_BUF_SIZE);
     if (!l_conn->recv_buf) { DAP_DELETE(l_conn); a_result->error_code = -1; return -1; }
 
+#ifdef DAP_OS_WASM_MT
     pthread_mutex_init(&l_conn->recv_mutex, NULL);
     sem_init(&l_conn->recv_sem, 0, 0);
+#endif
     l_conn->js_handle = -1;
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
+#ifdef DAP_OS_WASM_MT
+    if (s_wasm_main_document_https < 0) {
+        log_it(L_WARNING, "HTTPS detection not initialized, assuming secure context");
+        s_wasm_main_document_https = 1;
+    }
+    l_conn->use_tls = (a_params->port == 443) || (s_wasm_main_document_https > 0);
+    log_it(L_DEBUG, "WS connect: port=%u, https_flag=%d, use_tls=%d",
+           a_params->port, s_wasm_main_document_https, l_conn->use_tls);
+#else
+    l_conn->use_tls = (a_params->port == 443) || js_page_is_secure();
+#endif
     l_conn->client_ctx = a_params->client_ctx;
 
     dap_stream_t *l_stream = DAP_NEW_Z(dap_stream_t);
     if (!l_stream) {
         DAP_DELETE(l_conn->host);
         dap_cbuf_delete(l_conn->recv_buf);
+#ifdef DAP_OS_WASM_MT
         sem_destroy(&l_conn->recv_sem);
         pthread_mutex_destroy(&l_conn->recv_mutex);
+#endif
         DAP_DELETE(l_conn);
         a_result->error_code = -1;
         return -1;
     }
 
     l_stream->trans = a_trans;
+    l_stream->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (l_stream->trans_ctx) {
+        l_stream->trans_ctx->trans = a_trans;
+        l_stream->trans_ctx->stream = l_stream;
+    }
     l_stream->_server_session = l_conn;
     l_conn->stream = l_stream;
 
@@ -429,6 +462,10 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
            (void *)l_conn, (void *)l_stream, a_params->host, a_params->port);
     return 0;
 }
+
+/* ========================================================================
+ * Handshake (enc_init) — uses async HTTP, same for both modes
+ * ======================================================================== */
 
 typedef struct {
     dap_stream_t                  *stream;
@@ -456,12 +493,13 @@ static int s_ws_handshake_init(dap_stream_t *a_stream,
                                               a_params->alice_pub_key_size,
                                               l_b64_body, DAP_ENC_DATA_TYPE_B64);
 
+    const char *l_scheme = l_conn->use_tls ? "https" : "http";
     char l_url[1024];
     snprintf(l_url, sizeof(l_url),
-             "https://%s:%u/enc_init/gd4y5yh78w42aaagh"
+             "%s://%s:%u/enc_init/gd4y5yh78w42aaagh"
              "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu"
              ",block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-             l_conn->host, l_conn->port,
+             l_scheme, l_conn->host, l_conn->port,
              a_params->enc_type, a_params->pkey_exchange_type,
              a_params->pkey_exchange_size, a_params->block_key_size,
              a_params->protocol_version, a_params->sign_count);
@@ -477,12 +515,13 @@ static int s_ws_handshake_init(dap_stream_t *a_stream,
     DAP_DELETE(l_b64_body);
     DAP_DELETE(a_params->alice_pub_key);
 
-    if (l_ret != 0) {
-        DAP_DELETE(l_ctx);
-        return -1;
-    }
+    if (l_ret != 0) { DAP_DELETE(l_ctx); return -1; }
     return 0;
 }
+
+/* ========================================================================
+ * Session create (stream_ctl) — uses async HTTP, same for both modes
+ * ======================================================================== */
 
 typedef struct {
     dap_stream_t                 *stream;
@@ -568,7 +607,8 @@ static int s_ws_session_create(dap_stream_t *a_stream,
     l_sub_enc[l_sub_len] = '\0';
     l_q_enc[l_q_len] = '\0';
     char l_url[2048];
-    snprintf(l_url, sizeof(l_url), "https://%s:%u/stream_ctl/%s?%s",
+    snprintf(l_url, sizeof(l_url), "%s://%s:%u/stream_ctl/%s?%s",
+             l_conn->use_tls ? "https" : "http",
              l_conn->host, l_conn->port, l_sub_enc, l_q_enc);
     DAP_DELETE(l_sub_enc);
     DAP_DELETE(l_q_enc);
@@ -592,6 +632,12 @@ static int s_ws_session_create(dap_stream_t *a_stream,
     return 0;
 }
 
+/* ========================================================================
+ * Session start: open WebSocket, start streaming
+ * ======================================================================== */
+
+#ifdef DAP_OS_WASM_MT
+
 typedef struct {
     dap_stream_t              *stream;
     ws_system_conn_t          *conn;
@@ -606,7 +652,8 @@ static void *s_session_start_thread(void *a_arg)
 
     char l_ws_url[1024];
     snprintf(l_ws_url, sizeof(l_ws_url),
-             "wss://%s:%u/stream/globaldb?session_id=%u",
+             "%s://%s:%u/stream/globaldb?session_id=%u",
+             l_conn->use_tls ? "wss" : "ws",
              l_conn->host, l_conn->port, l_a->session_id);
 
     int l_handle = s_ws_create_on_main(l_ws_url);
@@ -633,6 +680,8 @@ static void *s_session_start_thread(void *a_arg)
 
     l_conn->recv_running = true;
     pthread_create(&l_conn->recv_thread, NULL, s_recv_thread_func, l_conn);
+
+    s_start_keepalive_timer(l_conn);
 
     log_it(L_NOTICE, "WebSocket streaming started (session_id=%u)", l_a->session_id);
     if (l_a->callback) l_a->callback(l_a->stream, 0);
@@ -666,11 +715,46 @@ static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
     return 0;
 }
 
+#else /* ST mode */
+
+static int s_ws_session_start(dap_stream_t *a_stream, uint32_t a_session_id,
+                              dap_net_trans_ready_cb_t a_callback)
+{
+    if (!a_stream || !a_stream->_server_session) return -1;
+    ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
+
+    char l_ws_url[1024];
+    snprintf(l_ws_url, sizeof(l_ws_url),
+             "%s://%s:%u/stream/globaldb?session_id=%u",
+             l_conn->use_tls ? "wss" : "ws",
+             l_conn->host, l_conn->port, a_session_id);
+
+    int l_handle = js_ws_create(l_ws_url);
+    if (l_handle < 0) {
+        log_it(L_ERROR, "WebSocket creation failed");
+        if (a_callback) a_callback(a_stream, -1);
+        return 0;
+    }
+
+    l_conn->js_handle = l_handle;
+    l_conn->state = DAP_WS_SYSTEM_STATE_CONNECTING;
+    l_conn->ready_callback = a_callback;
+    s_register_conn(l_handle, l_conn);
+
+    /* _ws_on_open will fire callback when WS is connected */
+    return 0;
+}
+
+#endif /* DAP_OS_WASM_MT */
+
+/* ========================================================================
+ * read / write / close / getters
+ * ======================================================================== */
+
 static void *s_ws_get_client_context(dap_stream_t *a_stream)
 {
     if (!a_stream || !a_stream->_server_session) return NULL;
-    ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
-    return l_conn->client_ctx;
+    return ((ws_system_conn_t *)a_stream->_server_session)->client_ctx;
 }
 
 static ssize_t s_ws_system_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
@@ -679,15 +763,21 @@ static ssize_t s_ws_system_read(dap_stream_t *a_stream, void *a_buffer, size_t a
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
     if (!l_conn->recv_buf) return -1;
 
+#ifdef DAP_OS_WASM_MT
     pthread_mutex_lock(&l_conn->recv_mutex);
+#endif
     size_t l_avail = dap_cbuf_get_size(l_conn->recv_buf);
     if (l_avail == 0) {
+#ifdef DAP_OS_WASM_MT
         pthread_mutex_unlock(&l_conn->recv_mutex);
+#endif
         return 0;
     }
     size_t l_to_read = a_size < l_avail ? a_size : l_avail;
     size_t l_read = dap_cbuf_pop(l_conn->recv_buf, l_to_read, a_buffer);
+#ifdef DAP_OS_WASM_MT
     pthread_mutex_unlock(&l_conn->recv_mutex);
+#endif
     return (ssize_t)l_read;
 }
 
@@ -698,9 +788,7 @@ static ssize_t s_ws_system_write(dap_stream_t *a_stream, const void *a_data, siz
     if (l_conn->state != DAP_WS_SYSTEM_STATE_OPEN) return -1;
 
     int l_sent = s_ws_send_on_main(l_conn->js_handle, a_data, (int)a_size);
-    if (l_sent > 0) {
-        l_conn->bytes_sent += (uint64_t)l_sent;
-    }
+    if (l_sent > 0) l_conn->bytes_sent += (uint64_t)l_sent;
     return (ssize_t)l_sent;
 }
 
@@ -709,11 +797,15 @@ static void s_ws_system_close(dap_stream_t *a_stream)
     if (!a_stream || !a_stream->_server_session) return;
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
 
+    s_stop_keepalive_timer(l_conn);
+
+#ifdef DAP_OS_WASM_MT
     if (l_conn->recv_running) {
         l_conn->recv_running = false;
         sem_post(&l_conn->recv_sem);
         pthread_join(l_conn->recv_thread, NULL);
     }
+#endif
 
     if (l_conn->state == DAP_WS_SYSTEM_STATE_OPEN ||
         l_conn->state == DAP_WS_SYSTEM_STATE_CONNECTING) {
@@ -728,8 +820,10 @@ static void s_ws_system_close(dap_stream_t *a_stream)
            l_conn->js_handle, l_conn->bytes_sent, l_conn->bytes_received);
 
     DAP_DEL_Z(l_conn->host);
+#ifdef DAP_OS_WASM_MT
     sem_destroy(&l_conn->recv_sem);
     pthread_mutex_destroy(&l_conn->recv_mutex);
+#endif
     DAP_DELETE(l_conn);
     a_stream->_server_session = NULL;
 }
@@ -741,6 +835,10 @@ static uint32_t s_ws_system_get_caps(dap_net_trans_t *a_trans)
          | DAP_NET_TRANS_CAP_ORDERED
          | DAP_NET_TRANS_CAP_BIDIRECTIONAL;
 }
+
+/* ========================================================================
+ * Ops table + public API
+ * ======================================================================== */
 
 static dap_net_trans_ops_t s_ws_system_ops = {
     .init               = s_ws_system_init,
@@ -762,15 +860,11 @@ static dap_net_trans_ops_t s_ws_system_ops = {
     .get_max_packet_size = NULL,
 };
 
-/* ========================================================================
- * Public API
- * ======================================================================== */
-
 dap_net_trans_ws_system_config_t dap_net_trans_ws_system_config_default(void)
 {
     return (dap_net_trans_ws_system_config_t) {
         .max_message_size   = 1024 * 1024,
-        .ping_interval_ms   = 0,
+        .ping_interval_ms   = 25000,  // 25 seconds (below server's 60s timeout)
         .connect_timeout_ms = 10000,
         .subprotocol        = "dap-stream"
     };
@@ -778,6 +872,12 @@ dap_net_trans_ws_system_config_t dap_net_trans_ws_system_config_default(void)
 
 int dap_net_trans_websocket_system_register(void)
 {
+#ifdef DAP_OS_WASM_MT
+    if (s_wasm_main_document_https < 0)
+        s_wasm_main_document_https = js_page_is_secure();
+    log_it(L_NOTICE, "WS transport register: https_detection=%d (thread=%p)",
+           s_wasm_main_document_https, (void *)pthread_self());
+#endif
     return dap_net_trans_register(
         "websocket-system",
         DAP_NET_TRANS_WEBSOCKET_SYSTEM,

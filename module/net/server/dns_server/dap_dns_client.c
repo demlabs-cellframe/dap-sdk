@@ -86,7 +86,17 @@ static void s_dns_client_esocket_read_callback(dap_events_socket_t * a_esocket, 
 
     dap_net_links_t *l_link_full_node_list = DAP_NEW_Z_SIZE(dap_net_links_t,sizeof(dap_net_links_t) + sizeof(dap_link_info_t));
     l_cur = l_buf + l_addr_point;
-    *(dap_link_info_t *)l_link_full_node_list->nodes_info = *(dap_link_info_t *)l_cur;
+    dap_link_info_mem_t l_link_mem;
+    if (dap_link_info_unpack(l_cur, sizeof(dap_link_info_t), &l_link_mem) != 0) {
+        log_it(L_WARNING, "DNS answer link_info deserialize failed");
+        l_dns_client->callback_error(a_esocket->worker, l_dns_client->callbacks_arg, EINVAL);
+        l_dns_client->is_callbacks_called = true;
+        a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        a_esocket->buf_in_size = a_esocket->buf_out_size = 0;
+        DAP_DELETE(l_link_full_node_list);
+        return;
+    }
+    memcpy(l_link_full_node_list->nodes_info, &l_link_mem, sizeof(l_link_mem));
     l_link_full_node_list->count_node = 1;
 
     l_dns_client->callback_success(a_esocket->worker, l_link_full_node_list, l_dns_client->callbacks_arg);

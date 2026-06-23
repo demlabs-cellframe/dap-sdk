@@ -44,7 +44,69 @@
 #include "dap_enc_dilithium.h"
 #include "dilithium_params.h"
 
+#include "dap_serialize.h"
+
 #define LOG_TAG "dap_sign"
+
+const dap_serialize_field_t g_dap_sign_hdr_fields[] = {
+    {
+        .name = "type_raw",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_sign_hdr_mem_t, type_raw),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "hash_type",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_sign_hdr_mem_t, hash_type),
+        .size = sizeof(uint8_t),
+    },
+    {
+        .name = "sign_params",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_sign_hdr_mem_t, sign_params),
+        .size = sizeof(uint8_t),
+    },
+    {
+        .name = "sign_size",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_sign_hdr_mem_t, sign_size),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "sign_pkey_size",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_sign_hdr_mem_t, sign_pkey_size),
+        .size = sizeof(uint32_t),
+    },
+};
+
+_Static_assert(sizeof(g_dap_sign_hdr_fields) / sizeof(g_dap_sign_hdr_fields[0]) == DAP_SIGN_HDR_FIELD_COUNT,
+               "DAP_SIGN_HDR_FIELD_COUNT");
+
+const dap_serialize_schema_t g_dap_sign_hdr_schema = {
+    .name = "sign_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_sign_hdr_mem_t),
+    .field_count = DAP_SIGN_HDR_FIELD_COUNT,
+    .fields = g_dap_sign_hdr_fields,
+    .magic = DAP_SIGN_HDR_MAGIC,
+    .validate_func = NULL,
+};
+
+/** Normalize wire-format header via unpack/pack (endian-safe). */
+static void s_dap_sign_hdr_sync_wire(dap_sign_t *a_sign)
+{
+    dap_sign_hdr_mem_t l_mem;
+    if (dap_sign_hdr_unpack((const uint8_t *)&a_sign->header, DAP_SIGN_HDR_WIRE_SIZE, &l_mem) != 0)
+        return;
+    dap_sign_hdr_pack(&l_mem, (uint8_t *)&a_sign->header, DAP_SIGN_HDR_WIRE_SIZE);
+}
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 static bool s_debug_more = true;
@@ -459,12 +521,21 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
                 dap_sign_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_sign_t, sizeof(dap_sign_hdr_t) + l_sign_ser_size + l_pub_key_size, NULL, l_sign_unserialized, l_pub_key, l_sign_ser);
                 // write serialized public key to dap_sign_t
                 memcpy(l_ret->pkey_n_sign, l_pub_key, l_pub_key_size);
-                l_ret->header.type = dap_sign_type_from_key_type(a_key->type);
                 // write serialized signature to dap_sign_t
                 memcpy(l_ret->pkey_n_sign + l_pub_key_size, l_sign_ser, l_sign_ser_size);
-                l_ret->header.sign_pkey_size =(uint32_t) l_pub_key_size;
-                l_ret->header.sign_size = (uint32_t) l_sign_ser_size;
-                l_ret->header.hash_type = l_use_pkey_hash ? DAP_SIGN_ADD_PKEY_HASHING_FLAG(l_hash_type) : l_hash_type;
+                {
+                    dap_sign_hdr_mem_t l_hdr_mem = {
+                        .type_raw = dap_sign_type_from_key_type(a_key->type).raw,
+                        .hash_type = l_use_pkey_hash ? DAP_SIGN_ADD_PKEY_HASHING_FLAG(l_hash_type) : (uint8_t)l_hash_type,
+                        .sign_params = DAP_SIGN_PARAMS_DEFAULT,
+                        .sign_size = (uint32_t)l_sign_ser_size,
+                        .sign_pkey_size = (uint32_t)l_pub_key_size,
+                    };
+                    if (dap_sign_hdr_pack(&l_hdr_mem, (uint8_t *)&l_ret->header, DAP_SIGN_HDR_WIRE_SIZE) != 0) {
+                        DAP_DEL_MULTY(l_ret, l_sign_unserialized, l_pub_key, l_sign_ser);
+                        return NULL;
+                    }
+                }
 
                 dap_enc_key_signature_delete(a_key->type, l_sign_unserialized);
                 DAP_DEL_MULTY(l_sign_ser, l_pub_key);
@@ -519,7 +590,9 @@ uint8_t *dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
  */
 bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_hash_sha3_256_t *a_sign_hash)
 {
-    dap_return_val_if_fail(a_sign && a_sign->header.sign_pkey_size, false);
+    dap_return_val_if_fail(a_sign, false);
+    s_dap_sign_hdr_sync_wire(a_sign);
+    dap_return_val_if_fail(a_sign->header.sign_pkey_size, false);
     if (DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type)) {
         if (a_sign->header.sign_pkey_size > DAP_HASH_SHA3_256_SIZE) {
             log_it(L_ERROR, "Error in pkey size check, expected <= %zu, in sign %u", sizeof(dap_hash_sha3_256_t), a_sign->header.sign_pkey_size);
@@ -540,6 +613,8 @@ bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_hash_sha3_256_t *a_sign_hash
 bool dap_sign_compare_pkeys(dap_sign_t *a_sign1, dap_sign_t *a_sign2)
 {
     dap_return_val_if_fail(a_sign1 && a_sign2, false);
+    s_dap_sign_hdr_sync_wire(a_sign1);
+    s_dap_sign_hdr_sync_wire(a_sign2);
     if (a_sign1->header.type.type != a_sign2->header.type.type)
         return false;
     size_t l_pkey_ser_size1 = 0, l_pkey_ser_size2 = 0;
@@ -559,6 +634,7 @@ bool dap_sign_compare_pkeys(dap_sign_t *a_sign1, dap_sign_t *a_sign2)
 dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t *a_pkey)
 {
     dap_return_val_if_pass(!a_chain_sign, NULL);
+    s_dap_sign_hdr_sync_wire(a_chain_sign);
     // Additional validation for signature structure
     dap_return_val_if_pass(a_chain_sign->header.sign_size == 0 && a_chain_sign->header.sign_pkey_size == 0, NULL);
     dap_enc_key_type_t l_type = dap_sign_type_to_key_type(a_chain_sign->header.type);
@@ -634,8 +710,8 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
     size_t l_verify_data_size;
     dap_hash_sha3_256_t l_verify_data_hash;
     uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
-    if(l_hash_type == DAP_SIGN_HASH_TYPE_DEFAULT)
-        log_it(L_WARNING, "Detected DAP_SIGN_HASH_TYPE_DEFAULT (0x%02x) hash type in sign ", DAP_SIGN_HASH_TYPE_DEFAULT);
+    if (l_hash_type == DAP_SIGN_HASH_TYPE_DEFAULT)
+        l_hash_type = s_sign_hash_type_default;
 
     if(l_hash_type == DAP_SIGN_HASH_TYPE_NONE || l_hash_type == DAP_SIGN_HASH_TYPE_SIGN){
         l_verify_data = a_data;
@@ -689,10 +765,19 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
 uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 {
     if (!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL) {
-        debug_if(s_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
-    return (uint64_t)sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size;
+    dap_sign_hdr_mem_t l_mem;
+    if (dap_sign_hdr_unpack((const uint8_t *)&a_chain_sign->header, DAP_SIGN_HDR_WIRE_SIZE, &l_mem) != 0) {
+        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        return 0;
+    }
+    if (l_mem.type_raw == (uint32_t)SIG_TYPE_NULL) {
+        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        return 0;
+    }
+    return (uint64_t)sizeof(dap_sign_t) + l_mem.sign_size + l_mem.sign_pkey_size;
 }
 
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count)
@@ -703,11 +788,18 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
     size_t l_signs_count = *a_signs_count ? *a_signs_count : l_realloc_count;
     dap_sign_t **ret = NULL;
     uint64_t i = 0, l_sign_size = 0;
-    for (uint64_t l_offset = 0; l_offset + sizeof(dap_sign_t) < a_data_size; l_offset += l_sign_size) {
-        dap_sign_t *l_sign = (dap_sign_t *)((byte_t *)a_data + l_offset);
-        l_sign_size = dap_sign_get_size(l_sign);
+    for (uint64_t l_offset = 0; l_offset + DAP_SIGN_HDR_WIRE_SIZE < a_data_size; l_offset += l_sign_size) {
+        byte_t *l_base = (byte_t *)a_data + l_offset;
+        dap_sign_hdr_mem_t l_hdr_mem;
+        if (dap_sign_hdr_unpack(l_base, a_data_size - l_offset, &l_hdr_mem) != 0)
+            break;
+        l_sign_size = (uint64_t)sizeof(dap_sign_t) + l_hdr_mem.sign_size + l_hdr_mem.sign_pkey_size;
         if (l_offset + l_sign_size <= l_offset || l_offset + l_sign_size > a_data_size)
             break;
+        // Do NOT call dap_sign_hdr_pack here: l_base may point into a read-only mmap region
+        // (PROT_READ via s_cell_map_new_volume). The pack is a no-op on LE platforms because
+        // the wire format is already little-endian — removing it prevents SIGSEGV on mapped files.
+        dap_sign_t *l_sign = (dap_sign_t *)l_base;
         bool l_dup = false;
         if (ret) {
             // Check duplicate signs
@@ -1057,6 +1149,7 @@ dap_sign_t *dap_sign_from_chipmunk_multi_signature(
         DAP_DELETE(l_sign);
         return NULL;
     }
+
     return l_sign;
 }
 

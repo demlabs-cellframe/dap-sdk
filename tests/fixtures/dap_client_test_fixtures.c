@@ -27,7 +27,7 @@
  */
 
 #include "dap_client_test_fixtures.h"
-#include "dap_client_pvt.h"
+#include "dap_net_trans_ctx.h"
 #include "dap_test_async.h"
 #include "dap_common.h"
 #include "dap_cert.h"
@@ -139,15 +139,15 @@ bool dap_test_client_check_initialized(void *a_user_data) {
         return false;
     }
     
-    dap_client_pvt_t *client_pvt = DAP_CLIENT_PVT(client);
-    if (!client_pvt) {
+    dap_client_fsm_t *fsm = DAP_CLIENT_FSM(client);
+    if (!fsm) {
         return false;
     }
     
     // Check that internal structure is initialized
-    return (client_pvt->worker != NULL && 
-            client_pvt->stage == STAGE_BEGIN &&
-            client_pvt->stage_status == STAGE_STATUS_COMPLETE);
+    return (fsm->worker != NULL && 
+            fsm->stage == STAGE_BEGIN &&
+            fsm->stage_status == STAGE_STATUS_COMPLETE);
 }
 
 bool dap_test_client_check_ready_for_deletion(void *a_user_data) {
@@ -156,15 +156,18 @@ bool dap_test_client_check_ready_for_deletion(void *a_user_data) {
         return true; // Already deleted
     }
     
-    dap_client_pvt_t *client_pvt = DAP_CLIENT_PVT(client);
-    if (!client_pvt) {
+    dap_client_fsm_t *fsm = DAP_CLIENT_FSM(client);
+    if (!fsm) {
         return true; // Internal structure already cleaned up
     }
     
+    dap_net_trans_ctx_t *tc = fsm->trans_ctx;
+    if (!tc) {
+        return true;
+    }
+    
     // Check that all resources are cleaned up
-    return (client_pvt->stream == NULL && 
-            client_pvt->stream_es == NULL &&
-            client_pvt->reconnect_timer == NULL);
+    return (tc->stream == NULL && tc->http_client == NULL && tc->esocket == NULL && !fsm->reconnect_pending);
 }
 
 // ============================================================================

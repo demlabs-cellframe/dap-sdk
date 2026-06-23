@@ -77,7 +77,10 @@ int dap_thread_set_name(dap_thread_t a_thread, const char *a_name)
         return -1;
     }
     
-#if defined(__linux__) || defined(__ANDROID__)
+#if defined(DAP_OS_WASM)
+    UNUSED(a_thread);
+    UNUSED(a_name);
+#elif defined(__linux__) || defined(__ANDROID__)
     int l_ret = pthread_setname_np(a_thread, a_name);
     if (l_ret != 0) {
         log_it(L_WARNING, "Failed to set thread name: %s", strerror(l_ret));
@@ -127,7 +130,10 @@ int dap_thread_set_affinity(dap_thread_t a_thread, uint32_t a_cpu_id)
         return -1;
     }
     
-#if defined(__ANDROID__)
+#if defined(DAP_OS_WASM)
+    (void)a_cpu_id;
+    return 0;
+#elif defined(__ANDROID__)
     cpu_set_t l_cpuset;
     CPU_ZERO(&l_cpuset);
     CPU_SET(a_cpu_id, &l_cpuset);

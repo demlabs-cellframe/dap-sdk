@@ -23,6 +23,7 @@
 #pragma once
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include "dap_common.h"
 #include "dap_events_socket.h"
 
@@ -91,6 +92,18 @@ struct {
     dap_events_socket_t *esockets; // Hashmap of event sockets
     pthread_rwlock_t esockets_lock; // Lock for esockets hash table (TSan-safe)
     dap_events_socket_t *event_exit;
+#if defined(DAP_EVENTS_CAPS_WASM_SAB)
+    /* Context-wide wake counter for SAB channels: any SAB push bumps this
+     * and emscripten_futex_wake()s it, so the worker thread can do a single
+     * futex_wait covering all queue/event sockets in this context. */
+    _Atomic uint32_t wasm_wake_counter;
+    /* Linked list of SAB-backed event sockets attached to this context,
+     * to avoid scanning the whole esocket hashtable on every wakeup. */
+    dap_events_socket_t **wasm_sab_esockets;
+    size_t               wasm_sab_esockets_count;
+    size_t               wasm_sab_esockets_capacity;
+    pthread_mutex_t      wasm_sab_esockets_lock;
+#endif
 };
 } dap_context_t;
 

@@ -75,13 +75,12 @@ static bool s_debug = false;
 _Atomic uint64_t dap_stream_created_count = 0;
 static _Atomic uint64_t s_streams_destroyed = 0;
 
-static void s_stream_proc_pkt_in(dap_stream_t *a_stream, dap_stream_pkt_t *l_pkt);
+static void s_stream_proc_pkt_in(dap_stream_t *a_stream, const uint8_t *a_pkt_wire, size_t a_pkt_wire_size);
+static bool s_detect_loose_packet(dap_stream_t *a_stream, const uint8_t *a_ch_pkt_wire, size_t a_ch_pkt_size);
 void dap_stream_delete_from_list(dap_stream_t *a_stream);
 
 bool dap_stream_get_dump_packet_headers(){ return s_dump_packet_headers; }
 bool dap_stream_get_debug(){ return s_debug; }
-
-static bool s_detect_loose_packet(dap_stream_t *a_stream);
 
 typedef struct authorized_stream {
     union {
@@ -263,6 +262,11 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_clust
         l_ret->trans_ctx->esocket_uuid = a_esocket->uuid;
         l_ret->trans_ctx->esocket_worker = a_esocket->worker;
         l_ret->trans_ctx->stream = l_ret;  // Back-reference
+        // _inheritor is left NULL on purpose: only the FSM layer knows the
+        // FSM-internal dap_client_trans_ctx_t* that the various
+        // s_*_callback_wrapper functions cast _inheritor to. The wiring is
+        // done in s_worker_execute_enc_init_io() right after stage_prepare
+        // returns the stream.
         // Cache remote address for cross-thread access (safe snapshot)
         dap_strncpy(l_ret->trans_ctx->remote_addr_str, a_esocket->remote_addr_str, sizeof(l_ret->trans_ctx->remote_addr_str) - 1);
         l_ret->trans_ctx->remote_port = a_esocket->remote_port;
@@ -288,6 +292,9 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         log_it(L_ERROR,"stream delete NULL instance");
         return;
     }
+    if (a_stream->stat_packets_lost || a_stream->stat_packets_replayed)
+        log_it(L_NOTICE, "Stream closed: %zu packets lost, %zu replayed",
+               a_stream->stat_packets_lost, a_stream->stat_packets_replayed);
     dap_stream_delete_from_list(a_stream);
     // a_stream->esocket_uuid = 0;
     while (a_stream->channel_count)
@@ -360,13 +367,18 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
         }
         
         if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
-            dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
-            if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
-                log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
-                l_shift = sizeof(dap_stream_pkt_hdr_t);
-            } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
+            dap_stream_pkt_hdr_mem_t l_hdr_mem;
+            size_t l_avail = (size_t)(l_end - l_pos);
+            if (dap_stream_pkt_hdr_unpack(l_pos, l_avail, &l_hdr_mem) != 0) {
+                ++l_pos;
+                continue;
+            }
+            if (l_hdr_mem.size > DAP_STREAM_PKT_SIZE_MAX) {
+                log_it(L_ERROR, "Invalid packet size %u, dump it", l_hdr_mem.size);
+                l_shift = DAP_STREAM_PKT_HDR_WIRE_SIZE;
+            } else if ((l_shift = DAP_STREAM_PKT_HDR_WIRE_SIZE + l_hdr_mem.size) <= l_avail) {
                 debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %zu", l_shift);
-                s_stream_proc_pkt_in(a_stream, l_pkt);
+                s_stream_proc_pkt_in(a_stream, l_pos, l_shift);
             } else {
                 break;
             }
@@ -402,21 +414,27 @@ size_t dap_stream_data_proc_read(dap_stream_t *a_stream)
  * @brief stream_proc_pkt_in
  * @param sid
  */
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pkt)
+static void s_stream_proc_pkt_in(dap_stream_t * a_stream, const uint8_t *a_pkt_wire, size_t a_pkt_wire_size)
 {
-    size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
+    dap_stream_pkt_hdr_mem_t l_sh;
+    if (dap_stream_pkt_hdr_unpack(a_pkt_wire, a_pkt_wire_size, &l_sh) != 0) {
+        log_it(L_WARNING, "Invalid stream packet header (unpack failed)");
+        return;
+    }
+    dap_stream_pkt_t *const l_pkt_view = (dap_stream_pkt_t *)(void *)a_pkt_wire;
+    size_t a_pkt_size = DAP_STREAM_PKT_HDR_WIRE_SIZE + l_sh.size;
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
     debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u", 
-           a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
+           a_stream, l_sh.type, l_sh.size);
 
-    switch (a_pkt->hdr.type) {
+    switch (l_sh.type) {
     case STREAM_PKT_TYPE_FRAGMENT_PACKET: {
 
-        debug_if(s_dump_packet_headers, L_INFO, "Processing FRAGMENT_PACKET, size=%u", a_pkt->hdr.size);
+        debug_if(s_dump_packet_headers, L_INFO, "Processing FRAGMENT_PACKET, size=%u", l_sh.size);
 
-        size_t l_fragm_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
+        size_t l_fragm_dec_size = dap_enc_decode_out_size(a_stream->session->key, l_sh.size, DAP_ENC_DATA_TYPE_RAW);
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: stream=%p, session=%p, key=%p, fragm_dec_size=%zu",
                  a_stream, a_stream->session, a_stream->session ? a_stream->session->key : NULL, l_fragm_dec_size);
         
@@ -424,9 +442,9 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         dap_stream_fragment_pkt_t *l_fragm_pkt = (dap_stream_fragment_pkt_t*)a_stream->pkt_cache;
         
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: CALLING dap_stream_pkt_read_unsafe (stream=%p, pkt=%p, out=%p, out_size=%zu)",
-                 a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
+                 a_stream, l_pkt_view, l_fragm_pkt, l_fragm_dec_size);
         
-        size_t l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_fragm_pkt, l_fragm_dec_size);
+        size_t l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, l_pkt_view, l_fragm_pkt, l_fragm_dec_size);
 
         debug_if(s_dump_packet_headers, L_DEBUG, "FRAG: dap_stream_pkt_read_unsafe returned l_dec_pkt_size=%zu (expected_min=%zu)",
                  l_dec_pkt_size, sizeof(dap_stream_fragment_pkt_t));
@@ -475,80 +493,90 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         size_t l_dec_pkt_size;
 
         debug_if(s_debug, L_INFO, "Processing DATA_PACKET: from_fragment=%s", 
-               (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) ? "yes" : "no");
+               (l_sh.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) ? "yes" : "no");
 
-        if (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
+        if (l_sh.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->buf_fragments;
             l_dec_pkt_size = a_stream->buf_fragments_size_total;
         } else {
-            size_t l_pkt_dec_size = dap_enc_decode_out_size(a_stream->session->key, a_pkt->hdr.size, DAP_ENC_DATA_TYPE_RAW);
+            size_t l_pkt_dec_size = dap_enc_decode_out_size(a_stream->session->key, l_sh.size, DAP_ENC_DATA_TYPE_RAW);
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
-            l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
+            l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, l_pkt_view, l_ch_pkt, l_pkt_dec_size);
             
             debug_if(s_dump_packet_headers, L_INFO, 
                      "DATA_PACKET decryption: key=%p, encrypted_size=%u, expected_dec=%zu, actual_dec=%zu",
-                     a_stream->session->key, a_pkt->hdr.size, l_pkt_dec_size, l_dec_pkt_size);
+                     a_stream->session->key, l_sh.size, l_pkt_dec_size, l_dec_pkt_size);
         }
 
-        if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
-            log_it(L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
+        dap_stream_ch_pkt_hdr_mem_t l_ch_hdr;
+        if (dap_stream_ch_pkt_hdr_unpack((const uint8_t *)l_ch_pkt, l_dec_pkt_size, &l_ch_hdr) != 0) {
+            log_it(L_WARNING, "Input: channel packet header unpack failed");
             l_is_clean_fragments = true;
             break;
         }
-        if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
+        if (l_dec_pkt_size < DAP_STREAM_CH_PKT_HDR_WIRE_SIZE) {
+            log_it(L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, (size_t)DAP_STREAM_CH_PKT_HDR_WIRE_SIZE);
+            l_is_clean_fragments = true;
+            break;
+        }
+        if (l_dec_pkt_size != l_ch_hdr.data_size + DAP_STREAM_CH_PKT_HDR_WIRE_SIZE) {
             log_it(L_WARNING, "Input: decoded packet BAD SIZE: expected_dec=%zu (hdr.data_size=%u + hdr_size=%zu), actual_dec=%zu",
-                   l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_ch_pkt->hdr.data_size, sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
+                   (size_t)l_ch_hdr.data_size + DAP_STREAM_CH_PKT_HDR_WIRE_SIZE, l_ch_hdr.data_size, (size_t)DAP_STREAM_CH_PKT_HDR_WIRE_SIZE, l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
         }
 
-        if (!s_detect_loose_packet(a_stream)) {
-            dap_stream_ch_t * l_ch = NULL;
+        if (!s_detect_loose_packet(a_stream, (const uint8_t *)l_ch_pkt, l_dec_pkt_size)) {
+            dap_stream_ch_t *l_ch = NULL;
 
             debug_if(s_dump_packet_headers, L_INFO, "Looking for channel '%c' (0x%02x) in stream (channel_count=%zu)",
-                   (char)l_ch_pkt->hdr.id, l_ch_pkt->hdr.id, a_stream->channel_count);
+                   (char)l_ch_hdr.id, l_ch_hdr.id, a_stream->channel_count);
 
             for(size_t i=0;i<a_stream->channel_count;i++){
                 if(a_stream->channel[i]->proc){
-                    if(a_stream->channel[i]->proc->id == l_ch_pkt->hdr.id ){
+                    if(a_stream->channel[i]->proc->id == l_ch_hdr.id ){
                         l_ch=a_stream->channel[i];
                         break;
                     }
                 }
             }
             if(l_ch) {
-                l_ch->stat.bytes_read += l_ch_pkt->hdr.data_size;
+                l_ch->stat.bytes_read += l_ch_hdr.data_size;
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
                     bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
-                                                            DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_pkt->hdr.id,
-                                                            l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type,
+                                                            DAP_UINT64_FORMAT_X" enc_type=0x%02X (stream=%p)", (char)l_ch_hdr.id,
+                                                            l_ch_hdr.data_size, l_ch_hdr.type, l_ch_hdr.seq_id, l_ch_hdr.enc_type,
                                                             a_stream);
                     for (dap_list_t *it = l_ch->packet_in_notifiers; !l_ch->closing && it && l_security_check_passed; it = it->next) {
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
-                        l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
+                        l_notifier->callback(l_ch, l_ch_hdr.type, l_ch_pkt->data, l_ch_hdr.data_size, l_notifier->arg);
                     }
                     if (l_ch->closing)
                         break;
                 }
             } else{
-                log_it(L_WARNING, "Input: unprocessed channel packet id '%c'",(char) l_ch_pkt->hdr.id );
+                log_it(L_WARNING, "Input: unprocessed channel packet id '%c'",(char) l_ch_hdr.id );
             }
         }
         // packet already defragmented
-        if(a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
+        if(l_sh.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
             l_is_clean_fragments = true;
         }
     } break;
     case STREAM_PKT_TYPE_SERVICE_PACKET: {
-        if (a_pkt_size != sizeof(dap_stream_pkt_t) + sizeof(dap_stream_srv_pkt_t)) {
-            log_it(L_WARNING, "Input: incorrect service packet size %zu, estimated %zu", a_pkt_size - sizeof(dap_stream_pkt_t), sizeof(dap_stream_srv_pkt_t));
+        if (a_pkt_size != DAP_STREAM_PKT_HDR_WIRE_SIZE + DAP_STREAM_SRV_PKT_WIRE_SIZE) {
+            log_it(L_WARNING, "Input: incorrect service packet size %zu, estimated %zu", a_pkt_size - DAP_STREAM_PKT_HDR_WIRE_SIZE, (size_t)DAP_STREAM_SRV_PKT_WIRE_SIZE);
             break;
         }
-        dap_stream_srv_pkt_t *l_srv_pkt = (dap_stream_srv_pkt_t *)a_pkt->data;
-        uint32_t l_session_id = l_srv_pkt->session_id;
+        dap_stream_srv_pkt_mem_t l_srv_mem;
+        if (dap_stream_srv_pkt_unpack(a_pkt_wire + DAP_STREAM_PKT_HDR_WIRE_SIZE, l_sh.size, &l_srv_mem) != 0) {
+            log_it(L_WARNING, "Input: service packet unpack failed");
+            break;
+        }
+        uint32_t l_session_id = l_srv_mem.session_id;
         if (a_stream->trans_ctx && a_stream->trans_ctx->trans
                 && a_stream->trans_ctx->trans->ops && a_stream->trans_ctx->trans->ops->check_session)
             a_stream->trans_ctx->trans->ops->check_session(
@@ -575,26 +603,23 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     }
 }
 
-static bool s_detect_loose_packet(dap_stream_t * a_stream) {
-    dap_stream_ch_pkt_t *l_ch_pkt = a_stream->buf_fragments_size_filled
-            ? (dap_stream_ch_pkt_t*)a_stream->buf_fragments
-            : (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
+static bool s_detect_loose_packet(dap_stream_t * a_stream, const uint8_t *a_ch_pkt_wire, size_t a_ch_pkt_size) {
+    dap_stream_ch_pkt_hdr_mem_t l_ch_hdr;
+    if (dap_stream_ch_pkt_hdr_unpack(a_ch_pkt_wire, a_ch_pkt_size, &l_ch_hdr) != 0)
+        return false;
 
     long long l_count_lost_packets =
-            l_ch_pkt->hdr.seq_id || a_stream->client_last_seq_id_packet
-            ? (long long) l_ch_pkt->hdr.seq_id - (long long) (a_stream->client_last_seq_id_packet + 1)
+            l_ch_hdr.seq_id || a_stream->client_last_seq_id_packet
+            ? (long long) l_ch_hdr.seq_id - (long long) (a_stream->client_last_seq_id_packet + 1)
             : 0;
 
-    if (l_count_lost_packets) {
-        if (l_count_lost_packets > 0)
-            log_it(L_WARNING, "Packet loss detected. Current seq_id: %" DAP_UINT64_FORMAT_U ", last seq_id: %zu",
-                l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);
-        else
-            log_it(L_WARNING, "Packet replay detected, seq_id: %" DAP_UINT64_FORMAT_U, l_ch_pkt->hdr.seq_id);
-    }
+    if (l_count_lost_packets > 0)
+        a_stream->stat_packets_lost += (size_t)l_count_lost_packets;
+    else if (l_count_lost_packets < 0)
+        a_stream->stat_packets_replayed++;
     debug_if(s_debug, L_DEBUG, "Current seq_id: %" DAP_UINT64_FORMAT_U ", last: %zu",
-                                l_ch_pkt->hdr.seq_id, a_stream->client_last_seq_id_packet);
-    a_stream->client_last_seq_id_packet = l_ch_pkt->hdr.seq_id;
+                                l_ch_hdr.seq_id, a_stream->client_last_seq_id_packet);
+    a_stream->client_last_seq_id_packet = l_ch_hdr.seq_id;
     return l_count_lost_packets < 0;
 }
 
@@ -630,19 +655,44 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     }
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es) {
-        assert(a_server_side == !!l_es->server);
+        if (a_server_side != !!l_es->server) {
+            log_it(L_WARNING, "Keepalive side mismatch for uuid 0x%016"DAP_UINT64_FORMAT_x
+                   ": expected %s, got %s — skipping", *l_es_uuid,
+                   a_server_side ? "server" : "client", l_es->server ? "server" : "client");
+            DAP_DELETE(l_es_uuid);
+            return false;
+        }
         dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
-        assert(l_stream);
+        if (!l_stream) {
+            // FSM hasn't wired trans_ctx->stream yet (client stream early tick) - retry
+            return true;
+        }
         if (l_stream->is_active) {
             l_stream->is_active = false;
             return true;
         }
         if(s_debug)
             log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
-        dap_stream_pkt_hdr_t l_pkt = {};
-        l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
-        memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
-        dap_stream_send_unsafe(l_stream, &l_pkt, sizeof(l_pkt));
+        dap_stream_pkt_hdr_mem_t l_pkt_mem = {0};
+        l_pkt_mem.type = STREAM_PKT_TYPE_KEEPALIVE;
+        memcpy(l_pkt_mem.sig, c_dap_stream_sig, sizeof(l_pkt_mem.sig));
+        uint8_t l_pkt_wire[DAP_STREAM_PKT_HDR_WIRE_SIZE];
+        if (dap_stream_pkt_hdr_pack(&l_pkt_mem, l_pkt_wire, sizeof(l_pkt_wire)) != 0) {
+            log_it(L_ERROR, "keepalive: stream header pack failed");
+            return false;
+        }
+        ssize_t l_sent = dap_stream_send_unsafe(l_stream, l_pkt_wire, sizeof(l_pkt_wire));
+        // dap_worker closes DESCRIPTOR_TYPE_SOCKET_CLIENT esockets whose
+        // last_time_active is older than s_connection_timeout (default 60 s).
+        // Only read_callback bumps that timestamp today; a long-lived HTTP
+        // stream session can sit idle for minutes while the stream-layer
+        // keepalive timer fires every ~6 s and queues data into buf_out.
+        // Without this touch the worker tears the TCP session down with
+        // ETIMEDOUT/ECONNRESET (errno 104 on the peer) even though the stream
+        // is healthy — ANNOUNCE / GDB sync packets then vanish and the net
+        // never reaches ONLINE.
+        if (l_sent > 0)
+            l_es->last_time_active = dap_time_now();
         return true;
     }else{
         if(s_debug)
@@ -669,10 +719,26 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: searching for duplicate");
     dap_ht_find(s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
-        log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
-        return -1;
+        // A duplicate is almost always a reconnect: peer's previous stream
+        // hasn't been torn down yet (esocket may already be closed but the
+        // close-event hasn't been processed) and a new one already landed.
+        // The original code simply refused to add the new stream, so
+        // dap_stream_find_by_addr() kept returning the dead esocket uuid
+        // forever — ANNOUNCE / pkt_send_by_addr packets vanished and
+        // active link count stayed at 0 even though peers were happily
+        // re-connecting every ~6s. Replace the stale entry with the fresh
+        // one so subsequent lookups hit a live esocket; the old stream is
+        // still tracked in s_streams and will be cleaned up by its own
+        // delete path (dap_stream_delete_from_list already tolerates a
+        // primary=false old entry).
+        log_it(L_INFO, "Stream duplicate for node "NODE_ADDR_FP_STR
+                       " - replacing stale primary %p with fresh %p",
+                       NODE_ADDR_FP_ARGS_S(a_stream->node),
+                       (void*)l_double, (void*)a_stream);
+        l_double->primary = false;
+        dap_ht_del(s_authorized_streams, l_double);
     }
-    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: no duplicate found, setting primary=true");
+    debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: setting primary=true");
     a_stream->primary = true;
     debug_if(s_debug, L_DEBUG, "s_stream_add_to_hashtable: adding to hash table");
     dap_ht_add_keyptr(s_authorized_streams, &a_stream->node, sizeof(a_stream->node), a_stream);
@@ -766,9 +832,19 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_cluster_node_addr_t *a_addr
     dap_ht_find(s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
     if (l_auth_stream) {
         if (a_worker)
-            *a_worker = l_auth_stream->stream_worker->worker;
-        if (l_auth_stream->trans_ctx && l_auth_stream->trans_ctx->esocket)
+            *a_worker = l_auth_stream->stream_worker ? l_auth_stream->stream_worker->worker : NULL;
+        if (l_auth_stream->trans_ctx && l_auth_stream->trans_ctx->esocket) {
             l_ret = l_auth_stream->trans_ctx->esocket->uuid;
+            dap_worker_t *l_w = l_auth_stream->stream_worker ? l_auth_stream->stream_worker->worker : NULL;
+            log_it(L_INFO, "find_by_addr " NODE_ADDR_FP_STR ": uuid=0x%016" DAP_UINT64_FORMAT_x
+                   " worker=%u ctx=%u client_uplink=%d",
+                   NODE_ADDR_FP_ARGS_S(*a_addr), l_ret,
+                   l_w ? l_w->id : 0xffffu,
+                   l_w ? l_w->context->id : 0xffffu,
+                   (int)l_auth_stream->is_client_to_uplink);
+        } else
+            log_it(L_WARNING, "find_by_addr " NODE_ADDR_FP_STR ": stream %p has no esocket",
+                   NODE_ADDR_FP_ARGS_S(*a_addr), (void *)l_auth_stream);
     } else if (a_worker)
         *a_worker = NULL;
     pthread_rwlock_unlock(&s_streams_lock);

@@ -30,6 +30,149 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_pkt"
 
+const dap_serialize_field_t g_dap_global_db_pkt_hdr_fields[] = {
+    {
+        .name = "crc",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_hdr_mem_t, crc),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "timestamp",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_hdr_mem_t, timestamp),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "group_len",
+        .type = DAP_SERIALIZE_TYPE_UINT16,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_hdr_mem_t, group_len),
+        .size = sizeof(uint16_t),
+    },
+    {
+        .name = "key_len",
+        .type = DAP_SERIALIZE_TYPE_UINT16,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_hdr_mem_t, key_len),
+        .size = sizeof(uint16_t),
+    },
+    {
+        .name = "value_len",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_hdr_mem_t, value_len),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "data_len",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_hdr_mem_t, data_len),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "flags",
+        .type = DAP_SERIALIZE_TYPE_UINT8,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_hdr_mem_t, flags),
+        .size = sizeof(uint8_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_global_db_pkt_hdr_schema = {
+    .name = "global_db_pkt_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_global_db_pkt_hdr_mem_t),
+    .field_count = sizeof(g_dap_global_db_pkt_hdr_fields) / sizeof(g_dap_global_db_pkt_hdr_fields[0]),
+    .fields = g_dap_global_db_pkt_hdr_fields,
+    .magic = DAP_GLOBAL_DB_PKT_HDR_MAGIC,
+    .validate_func = NULL,
+};
+
+const dap_serialize_field_t g_dap_global_db_pkt_pack_hdr_fields[] = {
+    {
+        .name = "data_size",
+        .type = DAP_SERIALIZE_TYPE_UINT64,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_pack_hdr_mem_t, data_size),
+        .size = sizeof(uint64_t),
+    },
+    {
+        .name = "obj_count",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_pkt_pack_hdr_mem_t, obj_count),
+        .size = sizeof(uint32_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_global_db_pkt_pack_hdr_schema = {
+    .name = "global_db_pkt_pack_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_global_db_pkt_pack_hdr_mem_t),
+    .field_count = sizeof(g_dap_global_db_pkt_pack_hdr_fields) / sizeof(g_dap_global_db_pkt_pack_hdr_fields[0]),
+    .fields = g_dap_global_db_pkt_pack_hdr_fields,
+    .magic = DAP_GLOBAL_DB_PKT_PACK_HDR_MAGIC,
+    .validate_func = NULL,
+};
+
+const dap_serialize_field_t g_dap_global_db_hash_pkt_hdr_fields[] = {
+    {
+        .name = "hashes_count",
+        .type = DAP_SERIALIZE_TYPE_UINT32,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_hash_pkt_hdr_mem_t, hashes_count),
+        .size = sizeof(uint32_t),
+    },
+    {
+        .name = "group_name_len",
+        .type = DAP_SERIALIZE_TYPE_UINT16,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_hash_pkt_hdr_mem_t, group_name_len),
+        .size = sizeof(uint16_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_global_db_hash_pkt_hdr_schema = {
+    .name = "global_db_hash_pkt_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_global_db_hash_pkt_hdr_mem_t),
+    .field_count = sizeof(g_dap_global_db_hash_pkt_hdr_fields) / sizeof(g_dap_global_db_hash_pkt_hdr_fields[0]),
+    .fields = g_dap_global_db_hash_pkt_hdr_fields,
+    .magic = DAP_GLOBAL_DB_HASH_PKT_HDR_MAGIC,
+    .validate_func = NULL,
+};
+
+const dap_serialize_field_t g_dap_global_db_start_pkt_hdr_fields[] = {
+    {
+        .name = "last_hash",
+        .type = DAP_SERIALIZE_TYPE_BYTES_FIXED,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_start_pkt_hdr_mem_t, last_hash),
+        .size = 16,
+    },
+    {
+        .name = "group_len",
+        .type = DAP_SERIALIZE_TYPE_UINT16,
+        .flags = DAP_SERIALIZE_FLAG_NONE,
+        .offset = offsetof(dap_global_db_start_pkt_hdr_mem_t, group_len),
+        .size = sizeof(uint16_t),
+    },
+};
+
+const dap_serialize_schema_t g_dap_global_db_start_pkt_hdr_schema = {
+    .name = "global_db_start_pkt_hdr",
+    .version = 1,
+    .struct_size = sizeof(dap_global_db_start_pkt_hdr_mem_t),
+    .field_count = sizeof(g_dap_global_db_start_pkt_hdr_fields) / sizeof(g_dap_global_db_start_pkt_hdr_fields[0]),
+    .fields = g_dap_global_db_start_pkt_hdr_fields,
+    .magic = DAP_GLOBAL_DB_START_PKT_HDR_MAGIC,
+    .validate_func = NULL,
+};
+
 /**
  * @brief Multiples data into a_old_pkt structure from a_new_pkt structure.
  * @param a_old_pkt a pointer to the old object
@@ -47,6 +190,11 @@ dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old
     memcpy(l_old_pkt->data + l_old_pkt->data_size, a_new_pkt, l_add_size);
     l_old_pkt->data_size += l_add_size;
     ++l_old_pkt->obj_count;
+    {
+        dap_global_db_pkt_pack_hdr_mem_t l_ph = { .data_size = l_old_pkt->data_size, .obj_count = l_old_pkt->obj_count };
+        if (dap_global_db_pkt_pack_hdr_pack(&l_ph, (uint8_t *)l_old_pkt, DAP_GLOBAL_DB_PKT_PACK_HDR_WIRE_SIZE) != 0)
+            log_it(L_ERROR, "Can't pack GlobalDB pack header");
+    }
     return l_old_pkt;
 }
 
@@ -64,14 +212,19 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_global_db_store_obj_t *a_st
     size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
     dap_global_db_pkt_t *l_pkt = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t), NULL);
 
-    /* Fill packet header */
-    l_pkt->timestamp = a_store_obj->timestamp;
-    l_pkt->group_len = l_group_len;
-    l_pkt->key_len = l_key_len;
-    l_pkt->value_len = a_store_obj->value_len;
-    l_pkt->crc = a_store_obj->crc;
-    l_pkt->flags = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_DEL;
-    l_pkt->data_len = l_data_size_out;
+    dap_global_db_pkt_hdr_mem_t l_hdr = {
+        .crc = a_store_obj->crc,
+        .timestamp = (uint64_t)a_store_obj->timestamp,
+        .group_len = (uint16_t)l_group_len,
+        .key_len = (uint16_t)l_key_len,
+        .value_len = a_store_obj->value_len,
+        .data_len = (uint32_t)l_data_size_out,
+        .flags = (uint8_t)(a_store_obj->flags & DAP_GLOBAL_DB_RECORD_DEL),
+    };
+    if (dap_global_db_pkt_hdr_pack(&l_hdr, (uint8_t *)l_pkt, DAP_GLOBAL_DB_PKT_HDR_WIRE_SIZE) != 0) {
+        DAP_DELETE(l_pkt);
+        return NULL;
+    }
 
     /* Put serialized data into the payload part of the packet */
     char *l_data_ptr = (char *)l_pkt->data;
@@ -147,48 +300,53 @@ bool dap_global_db_pkt_check_sign_crc(dap_global_db_store_obj_t *a_obj)
 
 static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_global_db_store_obj_t *a_obj, size_t a_bound_size, dap_cluster_node_addr_t *a_addr)
 {
-    if (sizeof(dap_global_db_pkt_t) > a_bound_size ||            /* Check for buffer boundaries */
-            dap_global_db_pkt_get_size(a_pkt) > a_bound_size ||
-            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len < a_pkt->value_len ||
-            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len > a_pkt->data_len) {
+    dap_global_db_pkt_hdr_mem_t l_hdr;
+    if (a_bound_size < DAP_GLOBAL_DB_PKT_HDR_WIRE_SIZE ||
+            dap_global_db_pkt_hdr_unpack((const uint8_t *)a_pkt, a_bound_size, &l_hdr) != 0) {
+        log_it(L_ERROR, "Broken GDB element: invalid header");
+        return NULL;
+    }
+    if (DAP_GLOBAL_DB_PKT_HDR_WIRE_SIZE + l_hdr.data_len > a_bound_size ||
+            l_hdr.group_len + l_hdr.key_len + l_hdr.value_len < l_hdr.value_len ||
+            l_hdr.group_len + l_hdr.key_len + l_hdr.value_len > l_hdr.data_len) {
         log_it(L_ERROR, "Broken GDB element: size is incorrect");
         return NULL;
     }
-    if (!a_pkt->group_len || a_pkt->group_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {
+    if (!l_hdr.group_len || l_hdr.group_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {
         log_it(L_ERROR, "Broken GDB element: 'group_len' field is incorrect");
         return NULL;
     }
-    if (!a_pkt->key_len || a_pkt->key_len > DAP_GLOBAL_DB_KEY_SIZE_MAX) {
+    if (!l_hdr.key_len || l_hdr.key_len > DAP_GLOBAL_DB_KEY_SIZE_MAX) {
         log_it(L_ERROR, "Broken GDB element: 'key_len' field is incorrect");
         return NULL;
     }
-    a_obj->flags = a_pkt->flags & DAP_GLOBAL_DB_RECORD_DEL;
-    a_obj->timestamp = a_pkt->timestamp;
-    a_obj->value_len = a_pkt->value_len;
-    a_obj->crc = a_pkt->crc;
-    byte_t *l_data_ptr = a_pkt->data;
+    a_obj->flags = l_hdr.flags & DAP_GLOBAL_DB_RECORD_DEL;
+    a_obj->timestamp = (dap_nanotime_t)l_hdr.timestamp;
+    a_obj->value_len = l_hdr.value_len;
+    a_obj->crc = l_hdr.crc;
+    byte_t *l_data_ptr = (byte_t *)a_pkt + DAP_GLOBAL_DB_PKT_HDR_WIRE_SIZE;
 
-    a_obj->group = strndup((char*)l_data_ptr, a_pkt->group_len);
+    a_obj->group = strndup((char*)l_data_ptr, l_hdr.group_len);
     if (!a_obj->group) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
-    l_data_ptr += a_pkt->group_len;
+    l_data_ptr += l_hdr.group_len;
 
-    a_obj->key = strndup((char*)l_data_ptr, a_pkt->key_len);
+    a_obj->key = strndup((char*)l_data_ptr, l_hdr.key_len);
     if (!a_obj->key) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(a_obj->group);
         return NULL;
     }
-    l_data_ptr += a_pkt->key_len;
+    l_data_ptr += l_hdr.key_len;
 
-    if (a_pkt->value_len) {
-        a_obj->value = DAP_DUP_SIZE_RET_VAL_IF_FAIL(l_data_ptr, a_pkt->value_len, NULL, a_obj->group, a_obj->key);
-        l_data_ptr += a_pkt->value_len;
+    if (l_hdr.value_len) {
+        a_obj->value = DAP_DUP_SIZE_RET_VAL_IF_FAIL(l_data_ptr, l_hdr.value_len, NULL, a_obj->group, a_obj->key);
+        l_data_ptr += l_hdr.value_len;
     }
 
-    size_t l_sign_size_expected = a_pkt->data_len - a_pkt->group_len - a_pkt->key_len - a_pkt->value_len;
+    size_t l_sign_size_expected = l_hdr.data_len - l_hdr.group_len - l_hdr.key_len - l_hdr.value_len;
     if (l_sign_size_expected) {
         dap_sign_t *l_sign = (dap_sign_t *)l_data_ptr;
         size_t l_sign_size = dap_sign_get_size(l_sign);
@@ -234,9 +392,15 @@ dap_global_db_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_
 dap_global_db_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_cluster_node_addr_t *a_addr)
 #endif
 {
-    dap_return_val_if_fail(a_pkt && a_pkt->data_size >= sizeof(dap_global_db_pkt_t), NULL);
+    dap_return_val_if_fail(a_pkt, NULL);
+    dap_global_db_pkt_pack_hdr_mem_t l_pack_hdr;
+    if (dap_global_db_pkt_pack_hdr_unpack((const uint8_t *)a_pkt, DAP_GLOBAL_DB_PKT_PACK_HDR_WIRE_SIZE, &l_pack_hdr) != 0) {
+        log_it(L_ERROR, "Invalid GlobalDB pack header");
+        return NULL;
+    }
+    dap_return_val_if_fail(l_pack_hdr.data_size >= sizeof(dap_global_db_pkt_t), NULL);
 
-    uint32_t l_count = a_pkt->obj_count;
+    uint32_t l_count = l_pack_hdr.obj_count;
     size_t l_size = l_count <= DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT
             ? l_count *
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
@@ -261,7 +425,7 @@ dap_global_db_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt
     }
 
     byte_t *l_data_ptr = (byte_t *)a_pkt->data;                                 /* Set <l_data_ptr> to begin of payload */
-    byte_t *l_data_end = l_data_ptr + a_pkt->data_size;                         /* Set <l_data_end> to end of payload area
+    byte_t *l_data_end = l_data_ptr + l_pack_hdr.data_size;                     /* Set <l_data_end> to end of payload area
                                                                                 will be used to prevent out-of-buffer case */
     uint32_t i = 0;
     for ( ; i < l_count; i++) {

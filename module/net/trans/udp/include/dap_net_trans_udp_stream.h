@@ -28,6 +28,8 @@
 #include "dap_events_socket.h"
 #include "dap_serialize.h"
 #include "dap_io_flow_ctrl.h"  // For base Flow Control header
+#include "dap_bit_ops.h"
+#include <string.h>
 #include "dap_timerfd.h"       // For handshake retransmission timer
 
 /**
@@ -168,8 +170,54 @@ typedef struct dap_stream_trans_udp_full_header {
     uint8_t  type;            ///< UDP: Packet type (HANDSHAKE, SESSION_CREATE, DATA, KEEPALIVE, CLOSE)
     uint64_t session_id;      ///< UDP: Session ID (unique per connection)
 } DAP_ALIGN_PACKED dap_stream_trans_udp_full_header_t;
+DAP_STATIC_ASSERT(sizeof(dap_stream_trans_udp_full_header_t) ==
+                      sizeof(uint64_t) + sizeof(uint64_t) + sizeof(uint32_t) + sizeof(uint8_t) +
+                          sizeof(uint8_t) + sizeof(uint64_t),
+                  "dap_stream_trans_udp_full_header_t packed wire size");
 
 #define DAP_STREAM_UDP_FULL_HEADER_SIZE sizeof(dap_stream_trans_udp_full_header_t)
+
+/**
+ * @brief Pack/unpack full UDP header using @ref g_dap_io_flow_ctrl_base_schema for the first
+ *        @ref DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE bytes (FC base) and fixed tail (type + session_id BE).
+ */
+static inline int dap_stream_trans_udp_full_header_wire_pack(const dap_stream_trans_udp_full_header_t *a_hdr,
+                                                               uint8_t *a_wire, size_t a_wire_size)
+{
+    if (!a_hdr || !a_wire || a_wire_size < DAP_STREAM_UDP_FULL_HEADER_SIZE)
+        return -1;
+    dap_io_flow_ctrl_base_header_mem_t l_base = {
+        .seq_num = a_hdr->seq_num,
+        .ack_seq = a_hdr->ack_seq,
+        .timestamp_ms = a_hdr->timestamp_ms,
+        .flags = a_hdr->fc_flags,
+    };
+    if (dap_io_flow_ctrl_base_header_pack(&l_base, a_wire, a_wire_size) != 0)
+        return -2;
+    a_wire[DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE] = a_hdr->type;
+    uint64_t l_sid_be = htobe64(a_hdr->session_id);
+    memcpy(a_wire + DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE + 1, &l_sid_be, sizeof(l_sid_be));
+    return 0;
+}
+
+static inline int dap_stream_trans_udp_full_header_wire_unpack(const uint8_t *a_wire, size_t a_wire_size,
+                                                               dap_stream_trans_udp_full_header_t *a_hdr)
+{
+    if (!a_wire || !a_hdr || a_wire_size < DAP_STREAM_UDP_FULL_HEADER_SIZE)
+        return -1;
+    dap_io_flow_ctrl_base_header_mem_t l_base;
+    if (dap_io_flow_ctrl_base_header_unpack(a_wire, a_wire_size, &l_base) != 0)
+        return -2;
+    a_hdr->seq_num = l_base.seq_num;
+    a_hdr->ack_seq = l_base.ack_seq;
+    a_hdr->timestamp_ms = l_base.timestamp_ms;
+    a_hdr->fc_flags = l_base.flags;
+    a_hdr->type = a_wire[DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE];
+    uint64_t l_sid_be;
+    memcpy(&l_sid_be, a_wire + DAP_IO_FLOW_CTRL_BASE_HDR_WIRE_SIZE + 1, sizeof(l_sid_be));
+    a_hdr->session_id = be64toh(l_sid_be);
+    return 0;
+}
 
 /**
  * @brief Serialization schemas (объявление, определение в .c файле)
@@ -191,6 +239,9 @@ typedef struct dap_stream_trans_udp_encrypted_header {
     uint32_t seq_num;       ///< Sequence number (network byte order) - LEGACY
     uint64_t session_id;    ///< Session ID (network byte order)
 } DAP_ALIGN_PACKED dap_stream_trans_udp_encrypted_header_t;
+DAP_STATIC_ASSERT(sizeof(dap_stream_trans_udp_encrypted_header_t) ==
+                      sizeof(uint8_t) + sizeof(uint32_t) + sizeof(uint64_t),
+                  "dap_stream_trans_udp_encrypted_header_t packed wire size");
 
 // HANDSHAKE packet size (Kyber512 public key)
 #define DAP_STREAM_UDP_HANDSHAKE_SIZE 800

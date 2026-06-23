@@ -39,10 +39,6 @@
 #include "dap_plugin.h"
 #endif
 
-#ifdef DAP_OS_WASM
-#include <emscripten/wasmfs.h>
-#include <errno.h>
-#endif
 
 #define LOG_TAG "dap_sdk"
 
@@ -69,6 +65,7 @@ static int  s_init_net_dns     (const dap_sdk_config_t *);
 static int  s_init_cli_server  (const dap_sdk_config_t *);
 static int  s_init_plugin      (const dap_sdk_config_t *);
 static int  s_init_test        (const dap_sdk_config_t *);
+static int  s_ensure_node_addr_cert(void);
 
 static void s_deinit_core(void);
 static void s_deinit_crypto(void);
@@ -90,21 +87,64 @@ static void s_deinit_plugin(void);
 /* ========================================================================= */
 
 #ifdef DAP_OS_WASM
-#define DAP_WASM_SYS_DIR "/dap"
+#ifdef DAP_OS_WASM_MT
+#include <emscripten/wasmfs.h>
+#include <pthread.h>
 
-static int s_init_wasmfs(void)
+static void *s_opfs_mount_thread(void *a_arg)
 {
+    const char *l_mount = (const char *)a_arg;
     backend_t l_opfs = wasmfs_create_opfs_backend();
-    const char *l_mount = g_sys_dir_path ? g_sys_dir_path : DAP_WASM_SYS_DIR;
-    if (wasmfs_create_directory(l_mount, 0777, l_opfs) != 0 && errno != EEXIST) {
-        log_it(L_ERROR, "Failed to mount OPFS at %s: %s", l_mount, strerror(errno));
-        return -1;
+    if (!l_opfs) {
+        log_it(L_WARNING, "wasmfs_create_opfs_backend() returned NULL");
+        return (void *)(intptr_t)-1;
     }
+    rmdir(l_mount);
+    int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
+    if (l_rc != 0) {
+        log_it(L_WARNING, "wasmfs_create_directory('%s') failed: rc=%d errno=%d (%s)",
+               l_mount, l_rc, errno, strerror(errno));
+        return (void *)(intptr_t)-1;
+    }
+    return (void *)(intptr_t)0;
+}
+
+static bool s_wasmfs_done = false;
+
+int dap_sdk_wasmfs_init(const char *a_mount)
+{
+    if (s_wasmfs_done)
+        return 0;
+    s_wasmfs_done = true;
+
+    const char *l_mount = a_mount ? a_mount : (g_sys_dir_path ? g_sys_dir_path : "/dap");
     if (!g_sys_dir_path)
         g_sys_dir_path = dap_strdup(l_mount);
-    log_it(L_NOTICE, "WASMFS/OPFS persistent storage mounted at %s", g_sys_dir_path);
+
+    pthread_t l_tid;
+    void *l_retval = (void *)(intptr_t)-1;
+    if (pthread_create(&l_tid, NULL, s_opfs_mount_thread, (void *)l_mount) == 0) {
+        pthread_join(l_tid, &l_retval);
+    }
+
+    if ((intptr_t)l_retval == 0) {
+        log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
+    } else {
+        log_it(L_WARNING, "OPFS unavailable, using WASMFS in-memory at %s", g_sys_dir_path);
+        dap_mkdir_with_parents(g_sys_dir_path);
+    }
     return 0;
 }
+#else
+static void s_init_memfs(void)
+{
+    if (!g_sys_dir_path) {
+        g_sys_dir_path = dap_strdup("/dap");
+        dap_mkdir_with_parents(g_sys_dir_path);
+    }
+    log_it(L_NOTICE, "Filesystem: Emscripten MEMFS at %s (in-memory, non-persistent)", g_sys_dir_path);
+}
+#endif
 #endif
 
 /* ========================================================================= */
@@ -207,8 +247,12 @@ static int s_init_core(const dap_sdk_config_t *a_config)
     dap_log_level_set(a_config->log_level);
 
 #ifdef DAP_OS_WASM
-    if ((l_rc = s_init_wasmfs()) != 0)
-        return l_rc;
+#ifdef DAP_OS_WASM_MT
+    if (dap_sdk_wasmfs_init(a_config->sys_dir) != 0)
+        return -1;
+#else
+    s_init_memfs();
+#endif
 #endif
 
     if (a_config->sys_dir && !g_sys_dir_path)
@@ -293,6 +337,10 @@ static int s_init_net_stream(const dap_sdk_config_t *a_config)
 {
     (void)a_config;
     int l_rc;
+#ifdef DAP_OS_WASM
+    if ((l_rc = s_ensure_node_addr_cert()) != 0)
+        return l_rc;
+#endif
     if ((l_rc = dap_stream_init(g_config)) != 0) return l_rc;
 #ifndef DAP_OS_WASM
     if ((l_rc = dap_stream_ctl_init()) != 0) return l_rc;
