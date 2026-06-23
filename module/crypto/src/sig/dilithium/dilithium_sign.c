@@ -452,14 +452,14 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
 int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilithium_signature_t *sig, const dilithium_public_key_t * public_key)
 {
     if(public_key->kind != sig->kind) {
-        log_it(L_ERROR, "Verify failed: kind mismatch pk=%d sig=%d", public_key->kind, sig->kind);
+        log_it(L_DEBUG, "Verify failed: kind mismatch pk=%d sig=%d", public_key->kind, sig->kind);
         return -1;
     }
 
     dilithium_param_t l_p_buf;
     dilithium_param_t *p = &l_p_buf;
     if (!dilithium_params_init(p, public_key->kind)) {
-        log_it(L_ERROR, "Verify failed: params_init failed kind=%d", public_key->kind);
+        log_it(L_DEBUG, "Verify failed: params_init failed kind=%d", public_key->kind);
         return -2;
     }
 
@@ -469,7 +469,7 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     const uint32_t d_val = dil_d(p);
 
     if (sig->sig_len < p->CRYPTO_BYTES) {
-        log_it(L_ERROR, "Verify failed: sig_len=%" DAP_UINT64_FORMAT_U " < CRYPTO_BYTES=%u",
+        log_it(L_DEBUG, "Verify failed: sig_len=%" DAP_UINT64_FORMAT_U " < CRYPTO_BYTES=%u",
                sig->sig_len, p->CRYPTO_BYTES);
         return -3;
     }
@@ -483,7 +483,7 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     unsigned char c_tilde[64];
 
     if((sig->sig_len - p->CRYPTO_BYTES) != mlen) {
-        log_it(L_ERROR, "Verify failed: length mismatch sig_len=%" DAP_UINT64_FORMAT_U " CRYPTO_BYTES=%u mlen=%llu",
+        log_it(L_DEBUG, "Verify failed: length mismatch sig_len=%" DAP_UINT64_FORMAT_U " CRYPTO_BYTES=%u mlen=%llu",
                sig->sig_len, p->CRYPTO_BYTES, mlen);
         return -4;
     }
@@ -498,19 +498,19 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
 
     if (fips) {
         if (mldsa_unpack_sig(c_tilde, &z, &h, sig->sig_data, p)) {
-            log_it(L_ERROR, "Verify failed: mldsa_unpack_sig failed");
+            log_it(L_DEBUG, "Verify failed: mldsa_unpack_sig failed");
             return -5;
         }
         mldsa_sample_in_ball(&c, c_tilde, p);
     } else {
         if (dilithium_unpack_sig(&z, &h, &c, sig->sig_data, p)) {
-            log_it(L_ERROR, "Verify failed: unpack_sig failed");
+            log_it(L_DEBUG, "Verify failed: unpack_sig failed");
             return -5;
         }
     }
 
     if(polyvecl_chknorm(&z, gamma1 - p->PARAM_BETA, p)) {
-        log_it(L_ERROR, "Verify failed: z norm check failed");
+        log_it(L_DEBUG, "Verify failed: z norm check failed");
         return -6;
     }
 
@@ -580,14 +580,14 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
         dap_hash_shake256(c_tilde_check, ctilde_bytes, inbuf, sizeof(inbuf));
 
         if (memcmp(c_tilde, c_tilde_check, ctilde_bytes) != 0) {
-            log_it(L_ERROR, "Verify failed: c_tilde mismatch (K=%u L=%u)", p->PARAM_K, p->PARAM_L);
+            log_it(L_DEBUG, "Verify failed: c_tilde mismatch (K=%u L=%u)", p->PARAM_K, p->PARAM_L);
                 return -7;
             }
     } else {
         challenge(&cp, mu, &w1, p);
         for(i = 0; i < NN; ++i)
             if(c.coeffs[i] != cp.coeffs[i]) {
-                log_it(L_ERROR, "Verify failed: challenge mismatch at i=%llu c=%d cp=%d (K=%u L=%u)",
+                log_it(L_DEBUG, "Verify failed: challenge mismatch at i=%llu c=%d cp=%d (K=%u L=%u)",
                        i, c.coeffs[i], cp.coeffs[i], p->PARAM_K, p->PARAM_L);
                 return -7;
             }
