@@ -5,7 +5,7 @@
  * Single-signer, non-interactive, O(N) signature size.
  *
  * Wire format:
- *   Header (24B) + N×T (k polys each) + N×c (1 poly each) + N×z (l+k polys each)
+ *   Header (32B) + N×T (k polys each) + N×c (1 poly each) + N×z (l+k polys each)
  */
 
 #pragma once
@@ -84,7 +84,7 @@ void chipmunk_ring_keypair_free(chipmunk_ring_keypair_t *a_kp);
 void chipmunk_ring_table_free(chipmunk_ring_table_t *a_ring);
 void chipmunk_ring_sig_free(chipmunk_ring_sig_t *a_sig);
 
-/* Wire size for given parameters. */
-size_t chipmunk_ring_sig_bytes(const lotrs_params_t *a_par, uint32_t a_N);
+/* Upper bound on wire size for given parameters (raw packing, before Rice coding). */
+size_t chipmunk_ring_sig_bytes_max(const lotrs_params_t *a_par, uint32_t a_N);
 
 #endif /* _CHIPMUNK_RING_H_ */

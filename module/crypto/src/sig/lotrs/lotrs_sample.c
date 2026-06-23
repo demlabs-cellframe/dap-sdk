@@ -181,12 +181,8 @@ int lotrs_reject_infinity_norm(const lotrs_poly_t *a_z, int64_t a_bound,
         int64_t l_abs = (l_c < 0) ? -l_c : l_c;
         /* Reject if l_abs > a_bound, i.e., a_bound - l_abs < 0. */
         int64_t l_diff = a_bound - l_abs;
-        /* l_diff < 0 → sign bit = 1 → mask = 0 (reject).
-         * l_diff >= 0 → sign bit = 0 → mask = -1 (accept). */
-        int64_t l_mask = (l_diff >> 63) | (l_diff >> 63 << 63); /* wrong, simpler: */
-        /* sign bit is 1 if l_diff < 0. We want mask = 0 in that case.
-         * mask = ~(l_diff >> 63) would be ~(-1) = 0 for reject, ~(0) = -1 for accept.
-         * But we also want accept when l_diff == 0 (sign bit 0). */
+        /* l_diff < 0 → sign bit = 1 → reject.
+         * l_diff >= 0 → sign bit = 0 → accept. */
         l_ok &= ~(l_diff >> 63);
     }
     return (l_ok == -1) ? 1 : 0;

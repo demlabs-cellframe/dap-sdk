@@ -417,8 +417,8 @@ static void test_wire_size_formula(void)
 {
     const lotrs_params_t *l_par = &LOTRS_PARAMS_TEST;
     for (uint32_t N = 1u; N <= 4u; ++N) {
-        /* chipmunk_ring_sig_bytes returns upper bound (raw packing). */
-        size_t l_ub = chipmunk_ring_sig_bytes(l_par, N);
+        /* chipmunk_ring_sig_bytes_max returns upper bound (raw packing). */
+        size_t l_ub = chipmunk_ring_sig_bytes_max(l_par, N);
         dap_assert(l_ub > 0, "wire size > 0");
 
         /* Actual signature should be <= upper bound. */
@@ -444,6 +444,37 @@ static void test_wire_size_formula(void)
     }
 }
 
+static void test_sign_verify_prod(void)
+{
+    const lotrs_params_t *l_par = &LOTRS_PARAMS_RING_OPT;
+    chipmunk_ring_keypair_t l_kp = {0};
+    int rc = chipmunk_ring_keygen(&l_kp, l_par, k_seed0);
+    dap_assert(rc == 0, "keygen prod");
+
+    chipmunk_ring_table_t l_ring = {0};
+    l_ring.N = 1;
+    l_ring.pks = DAP_NEW_Z_COUNT(chipmunk_ring_pk_t, 1);
+    l_ring.pks[0].a_hat = lotrs_polyvec_alloc(l_par, l_par->k);
+    for (uint32_t j = 0u; j < l_par->k; ++j)
+        lotrs_poly_copy(l_ring.pks[0].a_hat.polys[j], l_kp.pk.a_hat.polys[j], l_par);
+
+    chipmunk_ring_sig_t l_sig = {0};
+    uint8_t l_ss[32]; memset(l_ss, 0xBB, 32);
+    rc = s_sign_retry(&l_sig, l_par, &l_ring, &l_kp.sk, 0, k_msg, sizeof(k_msg) - 1, l_ss);
+    dap_assert(rc == 0, "sign prod N=1");
+
+    rc = chipmunk_ring_verify(&l_sig, l_par, &l_ring, k_msg, sizeof(k_msg) - 1);
+    dap_assert(rc == 0, "verify prod N=1");
+
+    const uint8_t l_bad[] = "wrong";
+    rc = chipmunk_ring_verify(&l_sig, l_par, &l_ring, l_bad, sizeof(l_bad) - 1);
+    dap_assert(rc != 0, "wrong msg prod");
+
+    chipmunk_ring_sig_free(&l_sig);
+    chipmunk_ring_table_free(&l_ring);
+    chipmunk_ring_keypair_free(&l_kp);
+}
+
 int main(void)
 {
     dap_set_appname("test_chipmunk_ring_kat");
@@ -454,6 +485,7 @@ int main(void)
     test_sign_verify_n1();
     test_sign_verify_n2();
     test_sign_verify_n4();
+    test_sign_verify_prod();
     test_wrong_message();
     test_wrong_ring();
     test_tamper_t();

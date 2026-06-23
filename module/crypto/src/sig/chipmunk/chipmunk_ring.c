@@ -16,6 +16,15 @@
 #include "dap_hash_sha3.h"
 #include "dap_memwipe.h"
 
+/* Wipe polynomial coefficients before freeing (secret material). */
+static inline void s_poly_wipe_free(lotrs_poly_t *a_p)
+{
+    if (a_p) {
+        dap_memwipe(a_p->coeffs, sizeof(a_p->coeffs));
+        lotrs_poly_free(a_p);
+    }
+}
+
 /* --- Cleanup --- */
 
 void chipmunk_ring_keypair_free(chipmunk_ring_keypair_t *a_kp)
@@ -49,7 +58,7 @@ void chipmunk_ring_sig_free(chipmunk_ring_sig_t *a_sig)
     }
 }
 
-size_t chipmunk_ring_sig_bytes(const lotrs_params_t *a_par, uint32_t a_N)
+size_t chipmunk_ring_sig_bytes_max(const lotrs_params_t *a_par, uint32_t a_N)
 {
     /* Header + N * T (k polys each) + N * c (1 poly each) + N * z (l+k polys each). */
     size_t l_poly = lotrs_poly_bytes(a_par);
@@ -220,10 +229,10 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
      * This ensures different messages get different randomness even with the same seed,
      * and mitigates fault injection that replays seeds. */
     int64_t l_bound = (int64_t)(a_par->phi * a_par->eta);
+    uint8_t l_retry_seed[32];
 
     for (uint32_t l_attempt = 0u; l_attempt < CHIPMUNK_RING_NONINT_MAX_RETRIES; ++l_attempt) {
         /* Derive hedged seed. */
-        uint8_t l_retry_seed[32];
         lotrs_xof_t *l_xof_hedge = lotrs_xof_new((const uint8_t *)"crv2-hedge-v1", 13u);
         if (!l_xof_hedge) { /* cleanup */ return -ENOMEM; }
         lotrs_xof_absorb(l_xof_hedge, a_msg, a_msg_len);
@@ -292,8 +301,9 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
         lotrs_poly_t *l_r = lotrs_poly_alloc(a_par);
         if (!l_r) { lotrs_polyvec_free(&l_y); /* cleanup */ return -ENOMEM; }
         lotrs_xof_t *l_xof_r = lotrs_xof_new(a_seed, 32u);
-        if (!l_xof_r) { lotrs_poly_free(l_r); lotrs_polyvec_free(&l_y); return -ENOMEM; }
+        if (!l_xof_r) { s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); return -ENOMEM; }
         lotrs_xof_absorb(l_xof_r, (const uint8_t *)"crv2-blind-v1", 13u);
+        lotrs_xof_absorb(l_xof_r, l_attempt_buf, 4u); /* unique mask per attempt */
         lotrs_sample_short(l_r, l_xof_r, a_par, a_par->eta);
         lotrs_xof_free(l_xof_r);
 
@@ -303,8 +313,8 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
             lotrs_poly_t *l_cr = lotrs_poly_alloc(a_par);
             lotrs_poly_t *l_cs_masked = lotrs_poly_alloc(a_par);
             if (!l_s_masked || !l_cr || !l_cs_masked) {
-                lotrs_poly_free(l_s_masked); lotrs_poly_free(l_cr); lotrs_poly_free(l_cs_masked);
-                lotrs_poly_free(l_r); lotrs_polyvec_free(&l_y); return -ENOMEM;
+                s_poly_wipe_free(l_s_masked); s_poly_wipe_free(l_cr); lotrs_poly_free(l_cs_masked);
+                s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); return -ENOMEM;
             }
             lotrs_poly_add(l_s_masked, a_sk->s.polys[i], l_r, a_par);
             /* cs_masked = c * s_masked (randomized input). */
@@ -314,9 +324,9 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
             /* z[i] = y[i] + cs_masked - cr = y[i] + c*s[i]. */
             lotrs_poly_add(l_z[a_signer_idx].polys[i], l_y.polys[i], l_cs_masked, a_par);
             lotrs_poly_sub(l_z[a_signer_idx].polys[i], l_z[a_signer_idx].polys[i], l_cr, a_par);
-            lotrs_poly_free(l_s_masked); lotrs_poly_free(l_cr); lotrs_poly_free(l_cs_masked);
+            s_poly_wipe_free(l_s_masked); s_poly_wipe_free(l_cr); lotrs_poly_free(l_cs_masked);
         }
-        lotrs_poly_free(l_r);
+        s_poly_wipe_free(l_r);
 
         lotrs_polyvec_free(&l_y);
 
@@ -421,6 +431,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
             }
             DAP_DELETE(l_T); DAP_DELETE(l_c_arr); DAP_DELETE(l_z);
             lotrs_polymat_free(&l_A);
+            dap_memwipe(l_retry_seed, sizeof(l_retry_seed));
             return 0;
         }
         /* Retry: norm exceeded. */
@@ -433,6 +444,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
     }
     DAP_DELETE(l_T); DAP_DELETE(l_c_arr); DAP_DELETE(l_z);
     lotrs_polymat_free(&l_A);
+    dap_memwipe(l_retry_seed, sizeof(l_retry_seed));
     return -EAGAIN;
 }
 
