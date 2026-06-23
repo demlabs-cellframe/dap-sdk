@@ -38,48 +38,79 @@
 #include <stddef.h>
 
 /* ========================================================================== */
+/*                        OS / RUNTIME DETECTION                              */
+/* ========================================================================== */
+
+/* OS / RUNTIME MACROS
+ *
+ * Each macro is defined ONLY when its condition is met and left
+ * UNDEFINED otherwise.  This is critical: the codebase uses
+ * "#ifdef DAP_OS_WINDOWS", "#ifndef DAP_OS_WINDOWS", etc., which
+ * test *presence* of the macro, not its numeric value.  Defining
+ * a macro as 0 still makes "#ifdef" true and "#ifndef" false, which
+ * would wrongly include Windows headers on Linux.
+ *
+ * Use "#if defined(DAP_OS_WASM)" or "#ifdef DAP_OS_WASM" to test.
+ * Do NOT use "#if DAP_OS_WASM" (undefined macro → 0, but it is
+ * relied upon in PLATFORM macros below via "!defined(DAP_OS_WASM)").
+ */
+
+/** Emscripten/WebAssembly.  Defined first so PLATFORM macros can
+ *  guard against it — WASM is never a native x86/ARM runtime. */
+#ifndef DAP_OS_WASM
+#  ifdef __EMSCRIPTEN__
+#    define DAP_OS_WASM 1
+#  endif
+#endif
+
+#ifndef DAP_OS_WINDOWS
+#  if defined(_WIN32) || defined(_WIN64)
+#    define DAP_OS_WINDOWS 1
+#  endif
+#endif
+
+#ifndef DAP_OS_LINUX
+#  ifdef __linux__
+#    define DAP_OS_LINUX 1
+#  endif
+#endif
+
+#ifndef DAP_OS_DARWIN
+#  ifdef __APPLE__
+#    define DAP_OS_DARWIN 1
+#  endif
+#endif
+
+/* ========================================================================== */
 /*                     PLATFORM DETECTION MACROS                              */
 /* ========================================================================== */
 
-#if defined(DAP_OS_WASM)
-#  define DAP_PLATFORM_X86 0
-#  define DAP_PLATFORM_X86_64 0
-#  define DAP_PLATFORM_ARM 0
-#  define DAP_PLATFORM_ARM64 0
-#elif defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
+/* PLATFORM macros are always defined (1 or 0) for convenient "#if" use.     */
+
+#if !defined(DAP_OS_WASM) && \
+    (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
 #  define DAP_PLATFORM_X86 1
 #else
 #  define DAP_PLATFORM_X86 0
 #endif
 
-#if !defined(DAP_PLATFORM_X86_64)
-#  if defined(DAP_OS_WASM)
-#    define DAP_PLATFORM_X86_64 0
-#  elif defined(__x86_64__) || defined(_M_X64)
-#    define DAP_PLATFORM_X86_64 1
-#  else
-#    define DAP_PLATFORM_X86_64 0
-#  endif
+#if !defined(DAP_OS_WASM) && (defined(__x86_64__) || defined(_M_X64))
+#  define DAP_PLATFORM_X86_64 1
+#else
+#  define DAP_PLATFORM_X86_64 0
 #endif
 
-#if !defined(DAP_PLATFORM_ARM)
-#  if defined(DAP_OS_WASM)
-#    define DAP_PLATFORM_ARM 0
-#  elif defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64)
-#    define DAP_PLATFORM_ARM 1
-#  else
-#    define DAP_PLATFORM_ARM 0
-#  endif
+#if !defined(DAP_OS_WASM) && \
+    (defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64))
+#  define DAP_PLATFORM_ARM 1
+#else
+#  define DAP_PLATFORM_ARM 0
 #endif
 
-#if !defined(DAP_PLATFORM_ARM64)
-#  if defined(DAP_OS_WASM)
-#    define DAP_PLATFORM_ARM64 0
-#  elif defined(__aarch64__) || defined(_M_ARM64)
-#    define DAP_PLATFORM_ARM64 1
-#  else
-#    define DAP_PLATFORM_ARM64 0
-#  endif
+#if !defined(DAP_OS_WASM) && (defined(__aarch64__) || defined(_M_ARM64))
+#  define DAP_PLATFORM_ARM64 1
+#else
+#  define DAP_PLATFORM_ARM64 0
 #endif
 
 #ifdef __cplusplus

@@ -37,6 +37,11 @@
 #include "dap_crc64.h"
 #include "dap_sign.h"
 
+/* SIMD dispatch init headers */
+#include "sig/dilithium/dilithium_dispatch.h"
+#include "kem/mlkem/dap_mlkem_dispatch.h"
+#include "dap_ntt.h"
+
 #define LOG_TAG "dap_enc"
 
 /**
@@ -55,6 +60,12 @@ int dap_enc_init()
     dap_crc64_init();
     s_debug_more = g_config ? dap_config_get_item_bool_default(g_config, "crypto", "debug_more", false) : false;
     dap_sign_init(DAP_SIGN_HASH_TYPE_SHA3);
+
+    /* SIMD dispatch init — one-time, before any crypto hot path */
+    dap_ntt_dispatch_init();
+    dilithium_dispatch_init();
+    dap_mlkem_dispatch_init();
+
     return 0;
 }
 
@@ -145,7 +156,7 @@ size_t dap_enc_decode(dap_enc_key_t *a_key,
                             void *a_buf_out, const size_t a_buf_out_size_max,
                       dap_enc_data_type_t a_data_type_in)
 {
-    dap_return_val_if_fail_err(a_key && a_key->enc_na && a_buf_in && a_buf_out, 0, "Invalid params");
+    dap_return_val_if_fail_err(a_key && a_key->dec_na && a_buf_in && a_buf_out, 0, "Invalid params");
     size_t l_ret = dap_enc_decode_out_size(a_key, a_buf_in_size, a_data_type_in);
     if ( !l_ret || l_ret > a_buf_out_size_max )
         return log_it(L_ERROR, "Insufficient out buffer size: %zu < %zu", a_buf_out_size_max, l_ret), 0;

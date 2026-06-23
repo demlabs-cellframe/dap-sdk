@@ -157,7 +157,7 @@ static void s_polyvecl_pw_acc_ref(
     }
 }
 
-static void s_pw_acc_dispatch_init(void)
+void dilithium_polyvec_dispatch_init(void)
 {
     dap_algo_class_t l_pw_acc32 = dap_algo_class_register("PW_ACC32");
 
@@ -171,7 +171,6 @@ static void s_pw_acc_dispatch_init(void)
 
 void polyvecl_pointwise_acc_invmontgomery(poly *w, const polyvecl *u, const polyvecl *v, dilithium_param_t *p)
 {
-    DAP_DISPATCH_ENSURE(s_pw_acc, s_pw_acc_dispatch_init);
     s_pw_acc_ptr((int32_t *)w->coeffs, u, v, p->PARAM_L);
 }
 

@@ -44,6 +44,7 @@
 #include "dap_net_trans.h"
 #include "dap_net_trans_types.h"
 #include "dap_net_trans_webrtc.h"
+#include "dap_net_trans_wasm_uplink.h"
 #include "dap_http_client_simple.h"
 #include "dap_stream.h"
 #include "dap_stream_session.h"
@@ -299,8 +300,10 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     if (l_offer_args.result < 0 || !l_offer_args.out) { log_it(L_ERROR, "SDP offer creation failed"); return -1; }
 
     char l_url[1024];
-    snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/offer",
-             a_conn->use_tls ? "https" : "http", a_conn->host, a_conn->port);
+    if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url),
+             a_conn->use_tls ? "https" : "http", a_conn->host, a_conn->port,
+             "rtc/offer") < 0)
+        return -1;
 
     void *l_resp = NULL;
     int l_resp_len = 0;
@@ -319,15 +322,18 @@ static int s_do_signaling(rtc_conn_t *a_conn)
     rtc_offer_args_t l_ice_args = { .peer_id = a_conn->js_peer_id, .out = NULL, .result = -1 };
     RTC_PROXY_SYNC(s_proxy_get_ice, &l_ice_args);
     if (l_ice_args.result > 0 && l_ice_args.out) {
-        snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/ice?session_id=%u",
+        char l_ice_suffix[64];
+        snprintf(l_ice_suffix, sizeof(l_ice_suffix), "rtc/ice?session_id=%u", a_conn->session_id);
+        if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url),
                  a_conn->use_tls ? "https" : "http",
-                 a_conn->host, a_conn->port, a_conn->session_id);
+                 a_conn->host, a_conn->port, l_ice_suffix) >= 0) {
         void *l_ice_resp = NULL;
         int l_ice_resp_len = 0;
         js_http_post_sync(l_url, "application/json",
                           l_ice_args.out, (int)strlen(l_ice_args.out),
                           NULL, (int)(uintptr_t)&l_ice_resp, (int)(uintptr_t)&l_ice_resp_len);
         if (l_ice_resp) free(l_ice_resp);
+        }
     }
     if (l_ice_args.out) free(l_ice_args.out);
 
@@ -463,6 +469,8 @@ static int s_rtc_handshake_init(dap_stream_t *a_stream,
     if (!a_stream || !a_params || !a_stream->_server_session) return -1;
     rtc_conn_t *l_conn = (rtc_conn_t *)a_stream->_server_session;
 
+    dap_net_trans_wasm_normalize_handshake_params(a_params);
+
     size_t l_b64_size = DAP_BASE64_ENCODE_SIZE(a_params->alice_pub_key_size) + 1;
     char *l_b64_body = DAP_NEW_Z_SIZE(char, l_b64_size);
     size_t l_b64_len = dap_enc_base64_encode(a_params->alice_pub_key,
@@ -470,15 +478,18 @@ static int s_rtc_handshake_init(dap_stream_t *a_stream,
                                               l_b64_body, DAP_ENC_DATA_TYPE_B64);
 
     const char *l_scheme = l_conn->use_tls ? "https" : "http";
+    char l_suffix[768];
     char l_url[1024];
-    snprintf(l_url, sizeof(l_url),
-             "%s://%s:%u/enc_init/gd4y5yh78w42aaagh"
+    snprintf(l_suffix, sizeof(l_suffix),
+             "enc_init/gd4y5yh78w42aaagh"
              "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu"
              ",block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-             l_scheme, l_conn->host, l_conn->port,
              a_params->enc_type, a_params->pkey_exchange_type,
              a_params->pkey_exchange_size, a_params->block_key_size,
              a_params->protocol_version, a_params->sign_count);
+    if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url), l_scheme, l_conn->host,
+                                             l_conn->port, l_suffix) < 0)
+        return -1;
 
     rtc_handshake_ctx_t *l_ctx = DAP_NEW_Z(rtc_handshake_ctx_t);
     if (!l_ctx) { DAP_DELETE(l_b64_body); DAP_DELETE(a_params->alice_pub_key); return -1; }
@@ -570,10 +581,17 @@ static int s_rtc_session_create(dap_stream_t *a_stream,
     size_t l_b_len = dap_enc_code(l_key, l_body_plain, strlen(l_body_plain),
                                    l_b_enc, l_b_max, DAP_ENC_DATA_TYPE_RAW);
 
+    char l_suffix[1536];
     char l_url[2048];
-    snprintf(l_url, sizeof(l_url), "%s://%s:%u/stream_ctl/%s?%s",
+    snprintf(l_suffix, sizeof(l_suffix), "stream_ctl/%s?%s", l_sub_enc, l_q_enc);
+    if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url),
              l_conn->use_tls ? "https" : "http",
-             l_conn->host, l_conn->port, l_sub_enc, l_q_enc);
+             l_conn->host, l_conn->port, l_suffix) < 0) {
+        DAP_DELETE(l_sub_enc);
+        DAP_DELETE(l_q_enc);
+        DAP_DELETE(l_b_enc);
+        return -1;
+    }
     DAP_DELETE(l_sub_enc);
     DAP_DELETE(l_q_enc);
 
@@ -702,8 +720,12 @@ void _rtc_offer_async_callback(int a_peer_id, char *a_sdp_ptr, int a_status)
     }
 
     char l_url[1024];
-    snprintf(l_url, sizeof(l_url), "%s://%s:%u/rtc/offer",
-             l_conn->use_tls ? "https" : "http", l_conn->host, l_conn->port);
+    if (dap_net_trans_wasm_format_uplink_url(l_url, sizeof(l_url),
+             l_conn->use_tls ? "https" : "http", l_conn->host, l_conn->port,
+             "rtc/offer") < 0) {
+        if (l_conn->ready_callback) { l_conn->ready_callback(l_conn->stream, -1); l_conn->ready_callback = NULL; }
+        return;
+    }
 
     int l_ret = dap_http_client_simple_request(l_url, "application/sdp",
                                                 a_sdp_ptr, (int)strlen(a_sdp_ptr), NULL,

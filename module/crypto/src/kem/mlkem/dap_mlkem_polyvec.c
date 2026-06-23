@@ -126,7 +126,7 @@ static void s_pv_basemul_acc_ref(
  * Dispatch init
  * ============================================================================ */
 
-static void s_mlkem_polyvec_dispatch_init(void)
+void MLKEM_NAMESPACE(_polyvec_dispatch_init)(void)
 {
     dap_algo_class_t l_class = dap_algo_class_register("MLKEM_POLYVEC");
 
@@ -151,7 +151,6 @@ static void s_mlkem_polyvec_dispatch_init(void)
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, s_pv_basemul_acc,    dap_mlkem_polyvec_basemul_acc_cached_neon);
 }
 
-#define PV_ENSURE() DAP_DISPATCH_ENSURE(s_pv_compress_d10, s_mlkem_polyvec_dispatch_init)
 
 /* ============================================================================
  * Public API
@@ -159,7 +158,6 @@ static void s_mlkem_polyvec_dispatch_init(void)
 
 void MLKEM_NAMESPACE(_polyvec_compress)(uint8_t *a_r, dap_mlkem_polyvec *a_a)
 {
-    PV_ENSURE();
     for (unsigned i = 0; i < MLKEM_K; i++) {
 #if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
         s_pv_compress_d11_ptr(a_r, a_a->vec[i].coeffs);
@@ -173,7 +171,6 @@ void MLKEM_NAMESPACE(_polyvec_compress)(uint8_t *a_r, dap_mlkem_polyvec *a_a)
 
 MLKEM_HOTFN void MLKEM_NAMESPACE(_polyvec_decompress)(dap_mlkem_polyvec *a_r, const uint8_t *a_a)
 {
-    PV_ENSURE();
     for (unsigned i = 0; i < MLKEM_K; i++) {
 #if MLKEM_POLYVECCOMPRESSEDBYTES == (MLKEM_K * 352)
         s_pv_decompress_d11_ptr(a_r->vec[i].coeffs, a_a);
@@ -215,7 +212,6 @@ MLKEM_HOTFN void MLKEM_NAMESPACE(_polyvec_basemul_acc_montgomery_cached)(
     const dap_mlkem_polyvec *a_b,
     const dap_mlkem_polyvec_mulcache *a_b_cache)
 {
-    PV_ENSURE();
     const int16_t *l_pa[MLKEM_K], *l_pb[MLKEM_K], *l_pc[MLKEM_K];
     for (unsigned i = 0; i < MLKEM_K; i++) {
         l_pa[i] = a_a->vec[i].coeffs;

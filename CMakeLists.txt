@@ -27,8 +27,6 @@ endif()
 
 # Build type (Debug / Release / Asan) and DAP_* build variables
 include(cmake/DapBuild.cmake)
-# Compiler sanitizers (ASan, UBSan, TSan, MSan)
-include(cmake/Sanitizers.cmake)
 # Common includes and definitions (uses DAP_DEBUG, DAP_RELEASE, DAP_ASAN_BUILD from DapBuild)
 include(cmake/OS_Detection.cmake)
 include(cmake/PackageDetection.cmake)
@@ -51,7 +49,6 @@ option(BUILD_STATIC "Also build static version of DAP SDK library" OFF)
 option(BUILD_DAP_SDK_TESTS "Build with DAP SDK tests" OFF)
 
 option(INSTALL_DAP_SDK "Install DAP SDK library and headers (disable when used as subproject)" ON)
-option(BUILD_WITH_GPU  "Build GPU compute acceleration module (Vulkan/Metal/CUDA/OpenCL)" OFF)
 
 # Internal modules are ALWAYS static, final can be SHARED or STATIC
 if(BUILD_SHARED)
@@ -99,6 +96,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DapArchCodegen.cmake)
 add_subdirectory(module/math)
 message("[+] Module 'math'")
 
+add_subdirectory(module/math/bignum)
+message("[+] Module 'math/bignum' (NTT, poly, multi-precision)")
+
 # Hash module - hash functions (SHA3, SHA2, Keccak, etc.) and hash tables
 add_subdirectory(module/hash)
 message("[+] Module 'hash'")
@@ -121,18 +121,7 @@ endif()
 add_subdirectory(module/config)
 message("[+] Module 'config'")
 
-# Bignum library — independent of dap_math, used only by crypto algorithms
-if (DAPSDK_MODULES MATCHES "crypto")
-    add_subdirectory(module/math/bignum)
-    message("[+] Module 'math/bignum' (NTT, poly, multi-precision)")
-endif()
-
-# GPU compute module (Vulkan, Metal, CUDA, OpenCL backends) — before crypto for DAP_HAS_GPU
-if (BUILD_WITH_GPU AND DAPSDK_MODULES MATCHES "crypto" AND NOT DAP_WASM)
-    add_subdirectory(module/gpu)
-    message("[+] Module 'gpu' (GPU compute acceleration)")
-endif()
-
+# Optional modules with UPDATED PATHS
 if (DAPSDK_MODULES MATCHES "crypto")
     add_subdirectory(module/crypto)
     message("[+] Module 'crypto'")
@@ -147,6 +136,7 @@ if(DAPSDK_MODULES MATCHES "io" OR DAP_WASM)
     add_subdirectory(module/io)
     message("[+] Module 'io'")
     add_subdirectory(module/io/flow)
+    message("[+] Module 'io/flow' (context_queue, datagram reactor)")
 endif()
 
 # Cluster node types — must be before net/common (net_common depends on cluster_node types)
@@ -177,7 +167,7 @@ if (DAPSDK_MODULES MATCHES "network-link_manager")
     message("[+] Module 'link manager'")
 endif()
 
-# Transport abstraction layer (after server, client, link_manager — depends on their includes)
+# Transport abstraction layer (after server, client, link_manager)
 add_subdirectory(module/net/trans)
 message("[+] Module 'trans' (transport abstraction)")
 
@@ -192,11 +182,10 @@ create_object_library(dap_cluster DAP_INTERNAL_MODULES
     HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include/dap_cluster.h)
 dap_link_libraries(dap_cluster INTERFACE
     dap_cluster_node dap_hash_table dap_json
-    dap_stream)
+    dap_stream dap_stream_ch)
 target_include_directories(dap_cluster PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/module/cluster/include)
 message("[+] Module 'cluster'")
 
-# App CLI module
 add_subdirectory(module/net/app-cli)
 message("[+] Module 'app-cli'")
 
@@ -227,13 +216,7 @@ if(BUILD_DAP_SDK_TESTS)
             if(MODULE_INCLUDES)
                 target_include_directories(${MODULE}_static PUBLIC ${MODULE_INCLUDES})
             endif()
-            # OBJECT libraries use INTERFACE_LINK_LIBRARIES (via dap_link_libraries),
-            # not LINK_LIBRARIES. Check both to propagate transitive deps correctly.
-            get_target_property(MODULE_IFACE_LINK_LIBS ${MODULE} INTERFACE_LINK_LIBRARIES)
             get_target_property(MODULE_LINK_LIBS ${MODULE} LINK_LIBRARIES)
-            if(MODULE_IFACE_LINK_LIBS)
-                target_link_libraries(${MODULE}_static PUBLIC ${MODULE_IFACE_LINK_LIBS})
-            endif()
             if(MODULE_LINK_LIBS)
                 target_link_libraries(${MODULE}_static PUBLIC ${MODULE_LINK_LIBS})
             endif()
@@ -270,12 +253,6 @@ post_process_object_libraries()
 
 # Create final combined DAP SDK library
 dap_create_final_library()
-
-if(DAP_WASM)
-    set(DAP_SDK_JS_LIBRARIES
-        "${CMAKE_CURRENT_SOURCE_DIR}/module/net/trans/wasm/library_dap_transport.js"
-        CACHE STRING "DAP SDK JS library files for emscripten" FORCE)
-endif()
 
 message("[+] =========================================")
 message("[+] DAP SDK with module/ structure configured")

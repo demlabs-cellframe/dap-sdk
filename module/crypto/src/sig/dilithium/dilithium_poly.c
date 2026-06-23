@@ -389,7 +389,7 @@ static void s_dil_zunpack_g19_ref(int32_t *r, const uint8_t *a)
 
 /* ===== Unified dispatch init ===== */
 
-static void s_dil_dispatch_init(void)
+void dilithium_poly_dispatch_init(void)
 {
     dap_algo_class_t l_dil = dap_algo_class_register("DIL_POLY");
 
@@ -1124,7 +1124,6 @@ void invntt_frominvmont(uint32_t pp[NN])
 /*************************************************/
 void dilithium_poly_nttunpack(int32_t coeffs[NN])
 {
-    DAP_DISPATCH_ENSURE(s_dil_nttunpack, s_dil_dispatch_init);
     if (s_dil_nttunpack_ptr)
         s_dil_nttunpack_ptr(coeffs);
 }

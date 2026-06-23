@@ -8,10 +8,8 @@
 #include <pthread.h>
 #include "ecdsa_field_arch.h"
 #include "dap_cpu_arch.h"
-
-#if DAP_PLATFORM_X86_64
-#include <cpuid.h>
-#endif
+#include "dap_cpu_detect.h"
+#include "dap_arch_dispatch.h"
 
 // ============================================================================
 // Global Function Pointers
@@ -78,41 +76,14 @@ static bool s_initialized = false;
 static pthread_once_t s_field_once = PTHREAD_ONCE_INIT;
 
 // ============================================================================
-// CPU Feature Detection
-// ============================================================================
-
-#if DAP_PLATFORM_X86_64
-static void detect_x86_features(void) {
-    unsigned int eax, ebx, ecx, edx;
-    
-    // Basic CPUID info
-    if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
-        // Check for SSE2 (always present on x86-64)
-        s_impls[ECDSA_FIELD_IMPL_X86_64_ASM].available = true;
-    }
-    
-    // Extended features (leaf 7)
-    if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
-        // AVX2: bit 5 of EBX
-        // BMI2: bit 8 of EBX  
-        // ADX:  bit 19 of EBX
-        bool has_avx2 = (ebx >> 5) & 1;
-        bool has_bmi2 = (ebx >> 8) & 1;
-        
-        // AVX2+BMI2 version uses MULX with __uint128_t accumulation
-        // ADX not required since we don't use ADCX/ADOX anymore
-        s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available = has_avx2 && has_bmi2;
-    }
-}
-#endif
-
-// ============================================================================
 // Dispatcher Implementation
 // ============================================================================
 
 static void s_field_dispatch_impl(void) {
 #if DAP_PLATFORM_X86_64
-    detect_x86_features();
+    dap_cpu_features_t l_feat = dap_cpu_detect_features();
+    s_impls[ECDSA_FIELD_IMPL_X86_64_ASM].available = true;
+    s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available = l_feat.has_avx2 && l_feat.has_bmi2;
 #endif
 
 #if DAP_PLATFORM_ARM64
@@ -122,47 +93,40 @@ static void s_field_dispatch_impl(void) {
     #endif
 #endif
 
-    s_current_impl = ECDSA_FIELD_IMPL_GENERIC;
+    DAP_DISPATCH_DEFAULT(ecdsa_field_mul, ecdsa_field_mul_generic);
+    DAP_DISPATCH_DEFAULT(ecdsa_field_sqr, ecdsa_field_sqr_generic);
+    DAP_DISPATCH_ARCH_SELECT;
 
-    dap_cpu_arch_t best = dap_cpu_arch_get_best();
-    switch (best) {
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, ecdsa_field_mul, ecdsa_field_mul_avx2_bmi2);
+    DAP_DISPATCH_X86(DAP_CPU_ARCH_AVX2, ecdsa_field_sqr, ecdsa_field_sqr_avx2_bmi2);
 #if DAP_PLATFORM_X86_64
-        case DAP_CPU_ARCH_AVX512:
-            /* no dedicated AVX-512 field impl yet, fall through to AVX2 */
-        case DAP_CPU_ARCH_AVX2:
-            if (s_impls[ECDSA_FIELD_IMPL_AVX2_BMI2].available)
-                s_current_impl = ECDSA_FIELD_IMPL_AVX2_BMI2;
-            break;
+    if (ecdsa_field_mul_ptr == ecdsa_field_mul_generic) {
+        ecdsa_field_mul_ptr = ecdsa_field_mul_x86_64_asm;
+        ecdsa_field_sqr_ptr = ecdsa_field_sqr_x86_64_asm;
+    }
+#endif
+
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, ecdsa_field_mul, ecdsa_field_mul_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_NEON, ecdsa_field_sqr, ecdsa_field_sqr_neon);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_SVE, ecdsa_field_mul, ecdsa_field_mul_sve);
+    DAP_DISPATCH_ARM(DAP_CPU_ARCH_SVE, ecdsa_field_sqr, ecdsa_field_sqr_sve);
+
+    s_current_impl = ECDSA_FIELD_IMPL_GENERIC;
+    if (ecdsa_field_mul_ptr == ecdsa_field_mul_avx2_bmi2)
+        s_current_impl = ECDSA_FIELD_IMPL_AVX2_BMI2;
+#if DAP_PLATFORM_X86_64
+    else if (ecdsa_field_mul_ptr == ecdsa_field_mul_x86_64_asm)
+        s_current_impl = ECDSA_FIELD_IMPL_X86_64_ASM;
 #endif
 #if DAP_PLATFORM_ARM64
-    #if !defined(__APPLE__)
-        case DAP_CPU_ARCH_SVE2:
-        case DAP_CPU_ARCH_SVE:
-            if (s_impls[ECDSA_FIELD_IMPL_ARM64_SVE].available) {
-                s_current_impl = ECDSA_FIELD_IMPL_ARM64_SVE;
-                break;
-            }
-            /* fallthrough */
-    #endif
-        case DAP_CPU_ARCH_NEON:
-            if (s_impls[ECDSA_FIELD_IMPL_ARM64_NEON].available)
-                s_current_impl = ECDSA_FIELD_IMPL_ARM64_NEON;
-            break;
+    else if (ecdsa_field_mul_ptr == ecdsa_field_mul_neon)
+        s_current_impl = ECDSA_FIELD_IMPL_ARM64_NEON;
+#if !defined(__APPLE__)
+    else if (ecdsa_field_mul_ptr == ecdsa_field_mul_sve)
+        s_current_impl = ECDSA_FIELD_IMPL_ARM64_SVE;
 #endif
-        default:
-            break;
-    }
+#endif
 
-#if DAP_PLATFORM_X86_64
-    if (s_current_impl == ECDSA_FIELD_IMPL_GENERIC &&
-        s_impls[ECDSA_FIELD_IMPL_X86_64_ASM].available) {
-        s_current_impl = ECDSA_FIELD_IMPL_X86_64_ASM;
-    }
-#endif
-    
-    ecdsa_field_mul_ptr = s_impls[s_current_impl].mul;
-    ecdsa_field_sqr_ptr = s_impls[s_current_impl].sqr;
-    
     s_initialized = true;
 }
 

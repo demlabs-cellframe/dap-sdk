@@ -14,6 +14,9 @@ if(EMSCRIPTEN)
     else()
         add_definitions(-DDAP_OS_WASM_ST)
     endif()
+    # wasm32: uint64_t is unsigned long long; avoid -Werror=format on legacy %lu/%zu logs
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=format")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=format")
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(OS_TYPE_DESKTOP ON)
     set(LINUX ON)
@@ -117,7 +120,7 @@ if(UNIX)
         set(BSD ON)
     endif()
 
-    if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" )
+    if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT DAP_WASM)
         add_definitions ("-DDAP_OS_LINUX")
     endif()
 

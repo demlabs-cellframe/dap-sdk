@@ -72,4 +72,6 @@ void dilithium_ntt(uint32_t pp[NN]);
 void invntt_frominvmont(uint32_t pp[NN]);
 void dilithium_poly_nttunpack(int32_t coeffs[NN]);
 
+void dilithium_poly_dispatch_init(void);
+
 #endif
