@@ -322,7 +322,11 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
             }
             dg->url_path_size=dap_enc_decode(l_key, a_http_simple->http_client->url_path,l_url_path_size_max,dg->url_path, l_url_path_size_max, l_enc_type);
             dg->url_path[dg->url_path_size] = 0;
-            log_it(L_DEBUG,"URL path after decode '%s'",dg->url_path );
+            if(!dg->url_path_size)
+                log_it(L_WARNING, "URL path decryption failed (key_type=%d enc_type=%d url='%s' url_size=%zu)",
+                       l_key->type, l_enc_type, a_http_simple->http_client->url_path, l_url_path_size_max);
+            else
+                log_it(L_DEBUG,"URL path after decode '%s'",dg->url_path );
             // log_it(L_DEBUG,"URL path before decode: '%s' after decode '%s'",cl_st->http->url_path,dg->url_path );
         }
 
