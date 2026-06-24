@@ -153,14 +153,23 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
             l_tok = strtok_r(NULL, ",", &l_tok_tmp);
         }
         l_new_session = true;
+        dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
         if(l_is_legacy){
-            log_it(L_INFO, "legacy encryption mode used (OAES)");
-            l_enc_type = DAP_ENC_KEY_TYPE_OAES;
+            if(l_hdr_key_id){
+                /* Modern client (WASM, etc.) sent KeyID but URL path decryption
+                   failed or didn't contain enc_type= — use preferred enc, not OAES */
+                l_enc_type = dap_stream_get_preferred_encryption_type();
+                log_it(L_WARNING, "stream_ctl: KeyID present but enc_type not parsed, using preferred %s",
+                       dap_enc_get_type_name(l_enc_type));
+            }else{
+                log_it(L_INFO, "legacy encryption mode used (OAES)");
+                l_enc_type = DAP_ENC_KEY_TYPE_OAES;
+            }
             l_new_session = true;
         }else
             log_it(L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
 
-        dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
+        l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
         dap_enc_ks_key_t *l_ks_key = NULL;
         if (l_hdr_key_id) {
             l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
