@@ -84,11 +84,23 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
 {
     if (a_array_list == NULL)
         return NULL;
+    if (json_object_get_type(a_array_list) != json_type_array) {
+        log_it(L_ERROR, "JSON-RPC params must be an array, got %s",
+               json_type_to_name(json_object_get_type(a_array_list)));
+        return NULL;
+    }
     dap_json_rpc_params_t *params = dap_json_rpc_params_create();
+    if (!params)
+        return NULL;
     int length = json_object_array_length(a_array_list);
 
     for (int i = 0; i < length; i++){
         json_object *jobj = json_object_array_get_idx(a_array_list, i);
+        if (!jobj) {
+            log_it(L_ERROR, "JSON-RPC params array: null element at index %d", i);
+            dap_json_rpc_params_remove_all(params);
+            return NULL;
+        }
         json_type jobj_type = json_object_get_type(jobj);
 
         switch (jobj_type) {
