@@ -155,7 +155,7 @@ int dap_plugin_type_create(const char* a_name, dap_plugin_type_callbacks_t* a_ca
         log_it(L_CRITICAL, "OOM on new type create");
         return -3;
     }
-    strncpy(l_type->name,a_name, sizeof(l_type->name)-1);
+    dap_strncpy(l_type->name, a_name, sizeof(l_type->name) - 1);
     memcpy(&l_type->callbacks,a_callbacks,sizeof(l_type->callbacks));
     HASH_ADD_STR(s_types,name,l_type);
     log_it(L_NOTICE, "Plugin type \"%s\" added", a_name);
@@ -316,7 +316,7 @@ static int s_load(dap_plugin_manifest_t * a_manifest)
             return -1;
         }
         l_module->pvt_data = l_pvt_data;
-        strncpy(l_module->name, a_manifest->name, sizeof(l_module->name) - 1);
+        dap_strncpy(l_module->name, a_manifest->name, sizeof(l_module->name) - 1);
         l_module->name[sizeof(l_module->name) - 1] = '\0';
         l_module->type = l_type;
         l_module->manifest = a_manifest;

@@ -61,6 +61,7 @@ static char s_active_channels[256] = {0};
 static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_error_callback(dap_client_t *a_client, void *a_arg);
+static dap_stream_node_addr_t s_link_client_node_addr(const dap_client_t *a_client);
 static void s_accounting_uplink_in_net(dap_link_t *a_link, dap_managed_net_t *a_net);
 static void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve);
 static void s_link_delete_all(bool a_force);
@@ -534,15 +535,22 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void 
 /**
  * @brief s_client_connected_callback
  * @param a_client - client to connect
- * @param a_arg - callback args, pointer dap_managed_net_t
+ * @param a_arg - dap_client callbacks_arg (heap copy of node addr)
  */
 void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
 {
-    dap_return_if_pass( !a_client || !DAP_LINK(a_client) );
-    dap_stream_node_addr_t *l_addr = (dap_stream_node_addr_t*)a_arg;
+    dap_stream_node_addr_t l_addr = {};
+
+    dap_return_if_pass(!a_client);
+    if (a_arg)
+        l_addr = *(dap_stream_node_addr_t *)a_arg;
+    else
+        l_addr = s_link_client_node_addr(a_client);
+    dap_return_if_pass(!l_addr.uint64);
+
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
-    dap_link_t *l_link = s_link_manager_link_find(l_addr);
-    if ( l_link && l_link == DAP_LINK(a_client) ) {
+    dap_link_t *l_link = s_link_manager_link_find(&l_addr);
+    if (l_link && l_link->uplink.client == a_client) {
         log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
                 NODE_ADDR_FP_ARGS_S(l_link->uplink.client->link_info.node_addr),
                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
@@ -550,7 +558,7 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
         l_link->uplink.state = LINK_STATE_ESTABLISHED;
         l_link->uplink.es_uuid = DAP_CLIENT_PVT(a_client)->stream_es->uuid;
     } else
-        log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS(l_addr));
+        log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS_S(l_addr));
     pthread_rwlock_unlock(&s_link_manager->links_lock);
 }
 
@@ -620,18 +628,33 @@ bool s_link_drop_callback(void *a_arg)
     return false;
 }
 
+static dap_stream_node_addr_t s_link_client_node_addr(const dap_client_t *a_client)
+{
+    if (!a_client)
+        return (dap_stream_node_addr_t) { };
+    if (a_client->link_info.node_addr.uint64)
+        return a_client->link_info.node_addr;
+    if (a_client->del_arg && a_client->callbacks_arg)
+        return *(dap_stream_node_addr_t *)a_client->callbacks_arg;
+    return (dap_stream_node_addr_t) { };
+}
+
 /**
  * @brief s_client_error_callback
  * @param a_client
- * @param a_arg
+ * @param a_arg - (void *)(intptr_t)is_last_attempt from dap_client_pvt, not node addr
  */
 void s_client_error_callback(dap_client_t *a_client, void *a_arg)
 {
-    dap_return_if_pass(!a_client || !DAP_LINK(a_client));       
-    dap_link_t *l_link = DAP_LINK(a_client);
-    assert(l_link->uplink.client == a_client);
+    const dap_stream_node_addr_t l_addr = s_link_client_node_addr(a_client);
+
+    dap_return_if_pass(!a_client || !l_addr.uint64);
+
     struct link_drop_args *l_args = DAP_NEW_Z_RET_IF_FAIL(struct link_drop_args);
-    *l_args = (struct link_drop_args) { .addr = l_link->addr, .disconnected = a_arg };
+    *l_args = (struct link_drop_args) {
+        .addr = l_addr,
+        .disconnected = a_arg != NULL
+    };
     dap_proc_thread_callback_add_pri(s_query_thread, s_link_drop_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
@@ -676,8 +699,10 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
                     dap_client_go_stage(l_link->uplink.client, STAGE_BEGIN, NULL);
                     l_link->uplink.state = LINK_STATE_DISCONNECTED;
                 }
-            } else
+            } else {
+                l_link->uplink.client->_inheritor = NULL;
                 dap_client_delete_mt(l_link->uplink.client);
+            }
         }
         // Drop downlinks if any
         dap_list_t *l_connections_for_addr = dap_stream_find_all_by_addr(&l_link->addr);
