@@ -254,12 +254,35 @@ static inline dap_json_t* s_wrap_value_borrowed(dap_json_value_t *a_value, dap_j
     return l_json;
 }
 
+/* Forward declaration */
+dap_json_t* dap_json_parse_string_mutable(const char *a_json_string);
+
 /**
  * @brief Unwrap dap_json_t to get dap_json_value_t
+ * @details For IMMUTABLE mode, converts to MUTABLE in-place (lazy promotion).
  */
 static inline dap_json_value_t* s_unwrap_value(dap_json_t *a_json)
 {
-    return a_json && a_json->mode == DAP_JSON_MODE_MUTABLE ? a_json->mode_data.mutable.value : NULL;
+    if (!a_json) return NULL;
+    if (a_json->mode == DAP_JSON_MODE_MUTABLE)
+        return a_json->mode_data.mutable.value;
+
+    /* Lazy promotion: serialize immutable tape → parse as mutable DOM */
+    char *l_str = dap_json_to_string(a_json);
+    if (!l_str) return NULL;
+
+    dap_json_t *l_mut = dap_json_parse_string_mutable(l_str);
+    DAP_DELETE(l_str);
+    if (!l_mut) return NULL;
+
+    /* Steal the mutable DOM value into the original wrapper */
+    a_json->mode = DAP_JSON_MODE_MUTABLE;
+    a_json->mode_data.mutable.value = l_mut->mode_data.mutable.value;
+    a_json->mode_data.mutable.stage2 = l_mut->mode_data.mutable.stage2;
+    l_mut->mode_data.mutable.value = NULL; /* prevent double-free */
+    dap_json_object_free(l_mut);
+
+    return a_json->mode_data.mutable.value;
 }
 
 /**
@@ -583,6 +606,54 @@ dap_json_t* dap_json_parse_string(const char *a_json_string)
     }
     
     return dap_json_parse_buffer(a_json_string, l_len);
+}
+
+/**
+ * @brief Parse JSON string into a MUTABLE value (stage1 + stage2 DOM)
+ * @details Unlike dap_json_parse_string() which returns an IMMUTABLE tape,
+ *          this returns a fully mutable DOM that can be used with add/get/set APIs.
+ */
+dap_json_t* dap_json_parse_string_mutable(const char *a_json_string)
+{
+    if (!a_json_string || !*a_json_string) return NULL;
+
+    size_t l_len = strlen(a_json_string);
+    dap_json_stage1_t *l_stage1 = dap_json_stage1_create(
+        (const uint8_t *)a_json_string, l_len);
+    if (!l_stage1) return NULL;
+
+    if (dap_json_stage1_run(l_stage1) != STAGE1_SUCCESS) {
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+
+    dap_json_stage2_t *l_stage2 = dap_json_stage2_new(l_stage1);
+    if (!l_stage2) {
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+
+    if (dap_json_stage2_run(l_stage2) != STAGE2_SUCCESS) {
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+
+    dap_json_value_t *l_root = dap_json_stage2_get_root(l_stage2);
+    if (!l_root) {
+        dap_json_stage2_free(l_stage2);
+        dap_json_stage1_free(l_stage1);
+        return NULL;
+    }
+
+    dap_json_t *l_result = s_wrap_value(l_root);
+    if (l_result) {
+        l_result->mode_data.mutable.stage2 = l_stage2; /* owns cleanup */
+    } else {
+        dap_json_stage2_free(l_stage2);
+    }
+    dap_json_stage1_free(l_stage1);
+    return l_result;
 }
 
 /* ========================================================================== */

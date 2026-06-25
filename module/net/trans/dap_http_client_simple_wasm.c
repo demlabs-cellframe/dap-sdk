@@ -37,6 +37,7 @@ typedef struct {
     char                              *extra_headers;
     dap_http_client_simple_callback_t  callback;
     void                              *user_data;
+    int                                _mt_req_id;
 } s_request_t;
 
 static void s_request_free(s_request_t *a_req)
@@ -50,7 +51,11 @@ static void s_request_free(s_request_t *a_req)
 
 #ifdef DAP_OS_WASM_MT
 /* ========================================================================
- * MT path: spawn detached pthread that calls js_http_post_sync
+ * MT path: single persistent HTTP worker thread + sync XHR
+ *
+ * On Web Workers, synchronous XHR with responseType="arraybuffer" works
+ * fine (the restriction only applies to the main document thread).
+ * One worker thread processes requests sequentially via sync XHR.
  * ======================================================================== */
 
 #include <pthread.h>
@@ -61,27 +66,66 @@ extern int js_http_post_sync(const char *a_url_ptr,
                               const char *a_extra_headers_ptr,
                               int a_out_ptr_addr, int a_out_len_addr);
 
-static void *s_request_thread(void *a_arg)
-{
-    s_request_t *l_req = (s_request_t *)a_arg;
+typedef struct s_mt_queue_item {
+    s_request_t                *request;
+    struct s_mt_queue_item     *next;
+} s_mt_queue_item_t;
 
-    void *l_resp = NULL;
-    int l_resp_len = 0;
-    int l_rc = js_http_post_sync(l_req->url, l_req->content_type,
-                                  l_req->body, (int)l_req->body_size,
-                                  l_req->extra_headers,
-                                  (int)(uintptr_t)&l_resp,
-                                  (int)(uintptr_t)&l_resp_len);
-    if (l_req->callback) {
-        if (l_rc == 0 && l_resp)
+static pthread_t        s_http_worker;
+static pthread_mutex_t  s_queue_mutex  = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t   s_queue_cond   = PTHREAD_COND_INITIALIZER;
+static s_mt_queue_item_t *s_queue_head = NULL;
+static s_mt_queue_item_t *s_queue_tail = NULL;
+static bool             s_worker_started = false;
+
+static void *s_http_worker_thread(void *a_arg)
+{
+    (void)a_arg;
+    for (;;) {
+        pthread_mutex_lock(&s_queue_mutex);
+        while (!s_queue_head)
+            pthread_cond_wait(&s_queue_cond, &s_queue_mutex);
+
+        s_mt_queue_item_t *l_item = s_queue_head;
+        s_queue_head = l_item->next;
+        if (!s_queue_head) s_queue_tail = NULL;
+        pthread_mutex_unlock(&s_queue_mutex);
+
+        s_request_t *l_req = l_item->request;
+
+        void *l_resp = NULL;
+        int l_resp_len = 0;
+        int l_rc = js_http_post_sync(l_req->url, l_req->content_type,
+                                      l_req->body, (int)l_req->body_size,
+                                      l_req->extra_headers,
+                                      (int)(uintptr_t)&l_resp,
+                                      (int)(uintptr_t)&l_resp_len);
+
+        if (l_rc == 0 && l_resp && l_resp_len > 0)
             l_req->callback(l_resp, (size_t)l_resp_len, 0, l_req->user_data);
         else
             l_req->callback(NULL, 0, l_rc ? l_rc : -1, l_req->user_data);
-    }
 
-    free(l_resp);
-    s_request_free(l_req);
+        free(l_resp);
+        s_request_free(l_req);
+        DAP_DELETE(l_item);
+    }
     return NULL;
+}
+
+static void s_ensure_worker(void)
+{
+    if (s_worker_started) return;
+    pthread_mutex_lock(&s_queue_mutex);
+    if (!s_worker_started) {
+        pthread_attr_t l_attr;
+        pthread_attr_init(&l_attr);
+        pthread_attr_setdetachstate(&l_attr, PTHREAD_CREATE_DETACHED);
+        pthread_create(&s_http_worker, &l_attr, s_http_worker_thread, NULL);
+        pthread_attr_destroy(&l_attr);
+        s_worker_started = true;
+    }
+    pthread_mutex_unlock(&s_queue_mutex);
 }
 
 int dap_http_client_simple_request(const char *a_url,
@@ -92,6 +136,8 @@ int dap_http_client_simple_request(const char *a_url,
                                     void *a_user_data)
 {
     if (!a_url || !a_callback) return -1;
+
+    s_ensure_worker();
 
     s_request_t *l_req = DAP_NEW_Z(s_request_t);
     if (!l_req) return -1;
@@ -107,18 +153,17 @@ int dap_http_client_simple_request(const char *a_url,
         l_req->body_size = a_body_size;
     }
 
-    pthread_t l_thread;
-    pthread_attr_t l_attr;
-    pthread_attr_init(&l_attr);
-    pthread_attr_setdetachstate(&l_attr, PTHREAD_CREATE_DETACHED);
-    int l_ret = pthread_create(&l_thread, &l_attr, s_request_thread, l_req);
-    pthread_attr_destroy(&l_attr);
+    s_mt_queue_item_t *l_item = DAP_NEW_Z(s_mt_queue_item_t);
+    if (!l_item) { s_request_free(l_req); return -1; }
+    l_item->request = l_req;
+    l_item->next    = NULL;
 
-    if (l_ret != 0) {
-        log_it(L_ERROR, "dap_http_client_simple_request: pthread_create failed: %d", l_ret);
-        s_request_free(l_req);
-        return -1;
-    }
+    pthread_mutex_lock(&s_queue_mutex);
+    if (s_queue_tail) s_queue_tail->next = l_item;
+    else s_queue_head = l_item;
+    s_queue_tail = l_item;
+    pthread_cond_signal(&s_queue_cond);
+    pthread_mutex_unlock(&s_queue_mutex);
 
     return 0;
 }

@@ -157,42 +157,57 @@ addToLibrary({
         var contentType = a_content_type_ptr ? UTF8ToString(a_content_type_ptr) : null;
         var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
 
-                // Node.js: Atomics.wait blocks event loop — HTTP callbacks can't fire.
-                // Use Node.js https via execSync subprocess.
-                // subprocess has own event loop — HTTP works without blocking.
-                var execSync = require('child_process').execSync;
-                var b64 = (a_body && a_body_len > 0)
-                    ? Buffer.from(HEAPU8.slice(a_body, a_body + a_body_len)).toString('base64')
-                    : '';
-                var proto = parsed.protocol === 'https:' ? 'https' : 'http';
-                var port = parsed.port || (proto === 'https' ? 443 : 80);
-                var script = [
-                    'const h=require(' + JSON.stringify(proto) + ');',
-                    'const b=Buffer.from(' + JSON.stringify(b64) + ',"base64");',
-                    'const r=h.request({hostname:' + JSON.stringify(parsed.hostname) + ',port:' + port + ',path:"/",method:"POST",',
-                    'headers:{"Content-Type":' + JSON.stringify(contentType || 'application/json') + ',"Content-Length":b.length}},',
-                    'function(res){const d=[];res.on("data",c=>d.push(c));',
-                    'res.on("end",()=>{process.stdout.write(Buffer.concat(d).toString("base64"));process.exit(0)});});',
-                    'r.on("error",()=>process.exit(1));r.setTimeout(15000,()=>{r.destroy();process.exit(1)});',
-                    'if(b.length>0)r.write(b);r.end();',
-                ].join('');
-                try {
-                    var result_b64 = execSync('node -e ' + JSON.stringify(script), {
-                        encoding: 'utf-8',
-                        timeout: 20000,
-                    });
-                    if (result_b64) {
-                        responseData = Buffer.from(result_b64, 'base64');
-                        result = 0;
-                    }
-                } catch (e) {
-                    result = -1;
+        // Node.js path: synchronous HTTP via execSync subprocess
+        if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+            var parsed = new URL(url);
+            var execSync = require('child_process').execSync;
+            var b64 = (a_body && a_body_len > 0)
+                ? Buffer.from(HEAPU8.slice(a_body, a_body + a_body_len)).toString('base64')
+                : '';
+            var proto = parsed.protocol === 'https:' ? 'https' : 'http';
+            var port = parsed.port || (proto === 'https' ? 443 : 80);
+            var script = [
+                'const h=require(' + JSON.stringify(proto) + ');',
+                'const b=Buffer.from(' + JSON.stringify(b64) + ',"base64");',
+                'const r=h.request({hostname:' + JSON.stringify(parsed.hostname) + ',port:' + port + ',path:"/",method:"POST",',
+                'headers:{"Content-Type":' + JSON.stringify(contentType || 'application/json') + ',"Content-Length":b.length}},',
+                'function(res){const d=[];res.on("data",c=>d.push(c));',
+                'res.on("end",()=>{process.stdout.write(Buffer.concat(d).toString("base64"));process.exit(0)});});',
+                'r.on("error",()=>process.exit(1));r.setTimeout(15000,()=>{r.destroy();process.exit(1)});',
+                'if(b.length>0)r.write(b);r.end();',
+            ].join('');
+            var responseData = null;
+            var result = -1;
+            try {
+                var result_b64 = execSync('node -e ' + JSON.stringify(script), {
+                    encoding: 'utf-8',
+                    timeout: 20000,
+                });
+                if (result_b64) {
+                    responseData = Buffer.from(result_b64, 'base64');
+                    result = 0;
                 }
+            } catch (e) {
+                result = -1;
+            }
+            if (result === 0 && responseData && responseData.length > 0) {
+                var ptr = _malloc(responseData.length + 1);
+                HEAPU8.set(responseData, ptr);
+                HEAPU8[ptr + responseData.length] = 0;
+                setValue(a_out_ptr_addr, ptr, '*');
+                setValue(a_out_len_addr, responseData.length, 'i32');
+            } else {
+                setValue(a_out_ptr_addr, 0, '*');
+                setValue(a_out_len_addr, 0, 'i32');
+            }
+            return result;
+        }
 
         // Browser path: synchronous XHR
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, false);
-        xhr.responseType = "arraybuffer";
+        // Note: responseType cannot be set on sync XHR in Chrome offscreen documents.
+        // Read as text and convert to bytes via TextEncoder.
         if (contentType) xhr.setRequestHeader("Content-Type", contentType);
 
         if (extraHeaders) {
@@ -213,13 +228,13 @@ addToLibrary({
         }
 
         if (xhr.status >= 200 && xhr.status < 300) {
-            var response = new Uint8Array(xhr.response);
-            if (response.length > 0) {
-                var ptr = _malloc(response.length + 1);
-                HEAPU8.set(response, ptr);
-                HEAPU8[ptr + response.length] = 0;
+            var responseBytes = new TextEncoder().encode(xhr.responseText || '');
+            if (responseBytes.length > 0) {
+                var ptr = _malloc(responseBytes.length + 1);
+                HEAPU8.set(responseBytes, ptr);
+                HEAPU8[ptr + responseBytes.length] = 0;
                 setValue(a_out_ptr_addr, ptr, '*');
-                setValue(a_out_len_addr, response.length, 'i32');
+                setValue(a_out_len_addr, responseBytes.length, 'i32');
             } else {
                 setValue(a_out_ptr_addr, 0, '*');
                 setValue(a_out_len_addr, 0, 'i32');
