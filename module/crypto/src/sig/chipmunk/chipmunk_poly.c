@@ -645,6 +645,22 @@ void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_p
     }
 }
 
+void chipmunk_poly_sub_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
+    if (!a_result || !a_poly1 || !a_poly2) {
+        log_it(L_ERROR, "NULL parameters in chipmunk_poly_sub_ntt");
+        return;
+    }
+
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int64_t l_diff = (int64_t)a_poly1->coeffs[i] - (int64_t)a_poly2->coeffs[i];
+        int32_t l_result = (int32_t)(l_diff % CHIPMUNK_Q);
+        if (l_result < 0) {
+            l_result += CHIPMUNK_Q;
+        }
+        a_result->coeffs[i] = l_result;
+    }
+}
+
 /**
  * @brief Lift coefficient to positive representation [0, q)
  * Based on original Rust implementation: (a % modulus + modulus) % modulus

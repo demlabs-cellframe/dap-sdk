@@ -64,6 +64,15 @@ add_crypto_bench(bench_ntt_micro)
 add_crypto_bench(bench_rng_overhead)
 add_crypto_bench(bench_chipmunk_mring)
 add_crypto_bench(bench_chipmunk_ring)
+add_crypto_bench(bench_anon_crypto)
+
+# Anonymous TX end-to-end integration test
+add_executable(test_anon_tx_e2e
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../unit/crypto/chipmunk_ring/test_anon_tx_e2e.c)
+target_link_libraries(test_anon_tx_e2e dap_sdk)
+set_target_properties(test_anon_tx_e2e PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
 
 # bench_chipmunk_mring: optional liboqs for ML-DSA comparison
 if(EXISTS "${COMP_INSTALL}/lib/liboqs.a" AND EXISTS "${COMP_INSTALL}/include/oqs/oqs.h")

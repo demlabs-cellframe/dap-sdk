@@ -9,6 +9,7 @@
 #include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_hash_sha3.h"
+#include "dap_hash_shake256.h"
 #include "dap_rand.h"
 
 #define LOG_TAG "chipmunk_aggregation"
@@ -20,14 +21,14 @@
 
 static bool s_debug_more = false;
 
-// Вспомогательная функция для редукции коэффициента по модулю q
+// Вспомогательная функция для редукции коэффициента по модулю q — branchless
 static inline int32_t chipmunk_poly_reduce_coeff(int32_t coeff) {
     int32_t t = coeff % CHIPMUNK_Q;
-    if (t > CHIPMUNK_Q_OVER_TWO) {
-        t -= CHIPMUNK_Q;
-    } else if (t < -CHIPMUNK_Q_OVER_TWO) {
-        t += CHIPMUNK_Q;
-    }
+    /* Branchless: shift t into [-Q/2, Q/2] range */
+    int32_t mask_gt = (int32_t)(((uint32_t)t - (uint32_t)CHIPMUNK_Q_OVER_TWO) >> 31) - 1;
+    t -= mask_gt & CHIPMUNK_Q;
+    int32_t mask_lt = (int32_t)(((uint32_t)(-CHIPMUNK_Q_OVER_TWO) - (uint32_t)t) >> 31) - 1;
+    t += mask_lt & CHIPMUNK_Q;
     return t;
 }
 
@@ -40,12 +41,14 @@ static inline int32_t chipmunk_poly_reduce_coeff(int32_t coeff) {
  * reduced with this helper first.  Relying on implicit truncation of a signed
  * modulo is what produced the ±Q/2 sign flips earlier audits tagged as
  * CR-D16.
+ *
+ * Branchless: uses sign-bit extraction instead of conditional branch.
  */
 static inline int32_t s_canonicalize_mod_q(int32_t a_coeff) {
     int32_t l_t = a_coeff % CHIPMUNK_Q;
-    if (l_t < 0) {
-        l_t += CHIPMUNK_Q;
-    }
+    /* Branchless: mask_lt = (l_t < 0) ? 0xFFFFFFFF : 0 */
+    int32_t mask_lt = l_t >> 31;
+    l_t += mask_lt & CHIPMUNK_Q;
     return l_t;
 }
 
@@ -109,8 +112,15 @@ static bool s_verify_pk_leaf_binding(const chipmunk_hots_public_key_t *a_hots_pk
 // === Randomizer Functions ===
 
 /**
- * Generate randomizers from public key roots
- * Based on SHA256 hash of concatenated roots
+ * Generate randomizers from public key roots using SHAKE256 XOF.
+ *
+ * CR-D6/D7 fix: the original implementation used SHA3-256 (32 bytes) which
+ * only produced 128 coefficients (CHIPMUNK_N=512 needed).  The remaining
+ * 384 coefficients were zero, making randomizers predictable and biased.
+ * Also, the 4-to-3 mapping gave P(0)=50% instead of uniform.
+ *
+ * Now uses SHAKE256 XOF to squeeze enough bytes for all 512 coefficients,
+ * with unbiased rejection sampling (accept v < 252, map v%3 - 1).
  */
 int chipmunk_randomizers_from_pks(const chipmunk_hvc_poly_t *roots, 
                                   size_t count,
@@ -119,14 +129,12 @@ int chipmunk_randomizers_from_pks(const chipmunk_hvc_poly_t *roots,
         return -1;
     }
 
-    // Allocate randomizers
     randomizers->randomizers = DAP_NEW_Z_COUNT(chipmunk_randomizer_t, count);
     if (!randomizers->randomizers) {
         return -1;
     }
     randomizers->count = count;
-    
-    // Concatenate all roots into single buffer
+
     size_t input_size = count * sizeof(chipmunk_hvc_poly_t);
     uint8_t *hash_input = DAP_NEW_Z_SIZE(uint8_t, input_size + sizeof(uint32_t));
     if (!hash_input) {
@@ -134,36 +142,42 @@ int chipmunk_randomizers_from_pks(const chipmunk_hvc_poly_t *roots,
         randomizers->randomizers = NULL;
         return -1;
     }
-    
+
     memcpy(hash_input, roots, input_size);
-    
-    // Generate randomizers using dap_hash_sha3_256 expansion
+
+    /* SHAKE256 output size: need CHIPMUNK_N bytes for rejection sampling.
+     * With accept probability 252/256 ≈ 0.984, expected ~521 bytes.
+     * Squeeze 544 bytes (3.4 blocks of 136 bytes) for safety margin. */
+    static const size_t k_shake_out = (CHIPMUNK_N * 27 / 26 + 31) & ~(size_t)31;  // ~544, aligned
+    uint8_t *expanded = DAP_NEW_Z_SIZE(uint8_t, k_shake_out);
+    if (!expanded) {
+        DAP_DELETE(hash_input);
+        DAP_DELETE(randomizers->randomizers);
+        randomizers->randomizers = NULL;
+        return -1;
+    }
+
     for (size_t i = 0; i < count; i++) {
-        // Add counter to input for domain separation
         uint32_t counter = (uint32_t)i;
         memcpy(hash_input + input_size, &counter, sizeof(counter));
-        
-        // Hash to get random bits
-        dap_hash_sha3_256_t hash;
-        dap_hash_sha3_256(hash_input, input_size + sizeof(uint32_t), &hash);
-        
-        // Convert hash bits to ternary coefficients
-        for (size_t j = 0; j < CHIPMUNK_N && j < DAP_HASH_SHA3_256_SIZE * 4; j++) {
-            uint8_t byte_idx = (j * 2) % DAP_HASH_SHA3_256_SIZE;
-            uint8_t bit_idx = (j * 2) / DAP_HASH_SHA3_256_SIZE;
-            
-            // Use 2 bits per coefficient to get 4 values, map to {-1, 0, 1}
-            uint8_t bits = (hash.raw[byte_idx] >> (bit_idx * 2)) & 0x03;
-            
-            switch (bits) {
-                case 0: randomizers->randomizers[i].coeffs[j] = 0; break;
-                case 1: randomizers->randomizers[i].coeffs[j] = 1; break;
-                case 2: randomizers->randomizers[i].coeffs[j] = -1; break;
-                case 3: randomizers->randomizers[i].coeffs[j] = 0; break; // Map 3 to 0 for balance
+
+        /* SHAKE256 XOF: squeeze enough bytes for all coefficients */
+        dap_hash_shake256(expanded, k_shake_out, hash_input, input_size + sizeof(counter));
+
+        /* Unbiased rejection sampling: accept only values < 252 (84*3).
+         * Map (v % 3) - 1 → {-1, 0, 1} with equal probability. */
+        size_t k = 0;
+        for (size_t j = 0; j < (size_t)CHIPMUNK_N && k < k_shake_out; k++) {
+            uint8_t v = expanded[k];
+            if (v >= 252) {
+                continue;  /* reject — eliminates modulo bias */
             }
+            randomizers->randomizers[i].coeffs[j] = (int8_t)((int)(v % 3u) - 1);
+            j++;
         }
     }
 
+    DAP_DELETE(expanded);
     DAP_DELETE(hash_input);
     return 0;
 }
@@ -384,7 +398,13 @@ int chipmunk_create_individual_signature(const uint8_t *message,
 }
 
 /**
- * Aggregate multiple individual signatures into multi-signature
+ * Aggregate multiple individual signatures into multi-signature.
+ *
+ * CR-2.4 fix: per-signer validation before aggregation. Each individual
+ * HOTS signature is verified before being added to the aggregate. Invalid
+ * signatures are skipped (logged as warning) rather than failing the whole
+ * aggregation. This provides fault isolation — a single malicious or buggy
+ * signer cannot stall the consensus.
  */
 int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_sigs,
                                   size_t count,
@@ -395,14 +415,42 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
         return -1;
     }
 
-    // CR-D6/D7 fix (Round-4): allocate the full HOTS pk array alongside the
-    // lossy HVC-leaf projection.  Without hots_pks the verifier cannot
-    // reconstruct the aggregate RHS and must accept near-arbitrary blobs.
-    multi_sig->public_key_roots = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, count);
-    multi_sig->hots_pks         = DAP_NEW_Z_COUNT(chipmunk_hots_public_key_t, count);
-    multi_sig->rho_seeds        = DAP_NEW_Z_COUNT(uint8_t, (size_t)count * 32u);
-    multi_sig->proofs           = DAP_NEW_Z_COUNT(chipmunk_path_t, count);
-    multi_sig->leaf_indices     = DAP_NEW_Z_COUNT(uint32_t, count);
+    // First pass: validate each individual signature and count valid ones.
+    // Also compute message hash once.
+    dap_hash_sha3_256_t message_hash;
+    dap_hash_sha3_256(message, message_len, &message_hash);
+
+    chipmunk_hots_params_t l_params;
+    if (chipmunk_hots_setup(&l_params) != 0) {
+        log_it(L_ERROR, "Failed to setup HOTS params for per-signer validation");
+        return -1;
+    }
+
+    size_t valid_count = 0;
+    for (size_t i = 0; i < count; i++) {
+        int l_verify = chipmunk_hots_verify(&individual_sigs[i].hots_pk,
+                                            message, message_len,
+                                            &individual_sigs[i].hots_sig,
+                                            &l_params);
+        if (l_verify != 0) {
+            log_it(L_WARNING, "Per-signer validation FAILED for signer %zu (leaf %u), skipping",
+                   i, individual_sigs[i].leaf_index);
+            continue;
+        }
+        valid_count++;
+    }
+
+    if (valid_count == 0) {
+        log_it(L_ERROR, "No valid signatures in aggregation batch");
+        return -1;
+    }
+
+    // Allocate arrays for valid signers only.
+    multi_sig->public_key_roots = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, valid_count);
+    multi_sig->hots_pks         = DAP_NEW_Z_COUNT(chipmunk_hots_public_key_t, valid_count);
+    multi_sig->rho_seeds        = DAP_NEW_Z_COUNT(uint8_t, valid_count * 32u);
+    multi_sig->proofs           = DAP_NEW_Z_COUNT(chipmunk_path_t, valid_count);
+    multi_sig->leaf_indices     = DAP_NEW_Z_COUNT(uint32_t, valid_count);
 
     if (!multi_sig->public_key_roots || !multi_sig->hots_pks ||
         !multi_sig->rho_seeds || !multi_sig->proofs || !multi_sig->leaf_indices) {
@@ -410,50 +458,47 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
         return -2;
     }
 
-    multi_sig->signer_count = count;
-
-    // Hash the message
-    dap_hash_sha3_256_t message_hash;
-    dap_hash_sha3_256(message, message_len, &message_hash);
+    multi_sig->signer_count = valid_count;
     memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_SHA3_256_SIZE);
 
-    // Extract HOTS signatures and create randomizers
-    chipmunk_hots_signature_t *hots_sigs = DAP_NEW_Z_COUNT(chipmunk_hots_signature_t, count);
+    chipmunk_hots_signature_t *hots_sigs = DAP_NEW_Z_COUNT(chipmunk_hots_signature_t, valid_count);
     if (!hots_sigs) {
         chipmunk_multi_signature_free(multi_sig);
         return -2;
     }
 
-    // Collect per-signer material.
-    for (size_t i = 0; i < count; i++) {
-        memcpy(&hots_sigs[i], &individual_sigs[i].hots_sig, sizeof(chipmunk_hots_signature_t));
+    // Second pass: collect valid signatures.
+    size_t valid_idx = 0;
+    for (size_t i = 0; i < count && valid_idx < valid_count; i++) {
+        int l_verify = chipmunk_hots_verify(&individual_sigs[i].hots_pk,
+                                            message, message_len,
+                                            &individual_sigs[i].hots_sig,
+                                            &l_params);
+        if (l_verify != 0) continue;  // skip invalid (already warned above)
 
-        memcpy(&multi_sig->proofs[i], &individual_sigs[i].proof, sizeof(chipmunk_path_t));
-        multi_sig->leaf_indices[i] = individual_sigs[i].leaf_index;
+        memcpy(&hots_sigs[valid_idx], &individual_sigs[i].hots_sig, sizeof(chipmunk_hots_signature_t));
+        memcpy(&multi_sig->proofs[valid_idx], &individual_sigs[i].proof, sizeof(chipmunk_path_t));
+        multi_sig->leaf_indices[valid_idx] = individual_sigs[i].leaf_index;
 
-        // Full HOTS pk — required by the aggregate verify equation.
-        memcpy(&multi_sig->hots_pks[i], &individual_sigs[i].hots_pk,
+        memcpy(&multi_sig->hots_pks[valid_idx], &individual_sigs[i].hots_pk,
                sizeof(chipmunk_hots_public_key_t));
+        memcpy(multi_sig->rho_seeds[valid_idx], individual_sigs[i].rho_seed, 32);
 
-        // rho_seed — per-signer public matrix seed; verifier re-derives A from it.
-        memcpy(multi_sig->rho_seeds[i], individual_sigs[i].rho_seed, 32);
-
-        // Tree-leaf digest (HVC-projected).  Pinned against hots_pks[i] at
-        // verify time via s_verify_pk_leaf_binding().
         chipmunk_public_key_t l_full_pk;
         s_hots_pk_to_full_pk(&individual_sigs[i].hots_pk, &l_full_pk);
         int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly(&l_full_pk,
-                                                     &multi_sig->public_key_roots[i]);
+                                                     &multi_sig->public_key_roots[valid_idx]);
         if (l_rc_leaf != CHIPMUNK_ERROR_SUCCESS) {
             DAP_DELETE(hots_sigs);
             chipmunk_multi_signature_free(multi_sig);
             return l_rc_leaf;
         }
+        valid_idx++;
     }
 
     // Generate randomizers from public key roots
     chipmunk_randomizers_t randomizers;
-    int ret = chipmunk_randomizers_from_pks(multi_sig->public_key_roots, count, &randomizers);
+    int ret = chipmunk_randomizers_from_pks(multi_sig->public_key_roots, valid_count, &randomizers);
     if (ret != 0) {
         DAP_DELETE(hots_sigs);
         chipmunk_multi_signature_free(multi_sig);
@@ -462,7 +507,7 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
 
     // Aggregate HOTS signatures with randomizers
     ret = chipmunk_hots_aggregate_with_randomizers(hots_sigs, randomizers.randomizers,
-                                                   count, &multi_sig->aggregated_hots);
+                                                   valid_count, &multi_sig->aggregated_hots);
 
     DAP_DELETE(hots_sigs);
     chipmunk_randomizers_free(&randomizers);
@@ -488,11 +533,40 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
         return -1;
     }
 
-    multi_sig->public_key_roots = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, count);
-    multi_sig->hots_pks         = DAP_NEW_Z_COUNT(chipmunk_hots_public_key_t, count);
-    multi_sig->rho_seeds        = DAP_NEW_Z_COUNT(uint8_t, (size_t)count * 32u);
-    multi_sig->proofs           = DAP_NEW_Z_COUNT(chipmunk_path_t, count);
-    multi_sig->leaf_indices     = DAP_NEW_Z_COUNT(uint32_t, count);
+    // Per-signer validation: verify each HOTS signature before aggregation.
+    dap_hash_sha3_256_t message_hash;
+    dap_hash_sha3_256(message, message_len, &message_hash);
+
+    chipmunk_hots_params_t l_params;
+    if (chipmunk_hots_setup(&l_params) != 0) {
+        log_it(L_ERROR, "Failed to setup HOTS params for per-signer validation");
+        return -1;
+    }
+
+    size_t valid_count = 0;
+    for (size_t i = 0; i < count; i++) {
+        int l_verify = chipmunk_hots_verify(&individual_sigs[i].hots_pk,
+                                            message, message_len,
+                                            &individual_sigs[i].hots_sig,
+                                            &l_params);
+        if (l_verify != 0) {
+            log_it(L_WARNING, "Per-signer validation FAILED for signer %zu (leaf %u), skipping",
+                   i, individual_sigs[i].leaf_index);
+            continue;
+        }
+        valid_count++;
+    }
+
+    if (valid_count == 0) {
+        log_it(L_ERROR, "No valid signatures in aggregation batch (with tree)");
+        return -1;
+    }
+
+    multi_sig->public_key_roots = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, valid_count);
+    multi_sig->hots_pks         = DAP_NEW_Z_COUNT(chipmunk_hots_public_key_t, valid_count);
+    multi_sig->rho_seeds        = DAP_NEW_Z_COUNT(uint8_t, valid_count * 32u);
+    multi_sig->proofs           = DAP_NEW_Z_COUNT(chipmunk_path_t, valid_count);
+    multi_sig->leaf_indices     = DAP_NEW_Z_COUNT(uint32_t, valid_count);
 
     if (!multi_sig->public_key_roots || !multi_sig->hots_pks ||
         !multi_sig->rho_seeds || !multi_sig->proofs || !multi_sig->leaf_indices) {
@@ -500,7 +574,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
         return -2;
     }
 
-    multi_sig->signer_count = count;
+    multi_sig->signer_count = valid_count;
 
     const chipmunk_hvc_poly_t *tree_root = chipmunk_tree_root(tree);
     if (!tree_root) {
@@ -508,45 +582,45 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
         return -3;
     }
     memcpy(&multi_sig->tree_root, tree_root, sizeof(chipmunk_hvc_poly_t));
-    // CR-D15.A: propagate the hasher seed so the verifier can rebuild the
-    // same Ajtai hasher and run a full path check (no more hard-coded
-    // {1..32} placeholder seed on the verify side).
     memcpy(multi_sig->hvc_hasher_seed, tree->hasher_seed, sizeof(multi_sig->hvc_hasher_seed));
-
-    dap_hash_sha3_256_t message_hash;
-    dap_hash_sha3_256(message, message_len, &message_hash);
     memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_SHA3_256_SIZE);
 
-    chipmunk_hots_signature_t *hots_sigs = DAP_NEW_Z_COUNT(chipmunk_hots_signature_t, count);
+    chipmunk_hots_signature_t *hots_sigs = DAP_NEW_Z_COUNT(chipmunk_hots_signature_t, valid_count);
     if (!hots_sigs) {
         chipmunk_multi_signature_free(multi_sig);
         return -2;
     }
 
-    for (size_t i = 0; i < count; i++) {
-        memcpy(&hots_sigs[i], &individual_sigs[i].hots_sig, sizeof(chipmunk_hots_signature_t));
+    size_t valid_idx = 0;
+    for (size_t i = 0; i < count && valid_idx < valid_count; i++) {
+        int l_verify = chipmunk_hots_verify(&individual_sigs[i].hots_pk,
+                                            message, message_len,
+                                            &individual_sigs[i].hots_sig,
+                                            &l_params);
+        if (l_verify != 0) continue;
 
-        memcpy(&multi_sig->proofs[i], &individual_sigs[i].proof, sizeof(chipmunk_path_t));
-        multi_sig->leaf_indices[i] = individual_sigs[i].leaf_index;
+        memcpy(&hots_sigs[valid_idx], &individual_sigs[i].hots_sig, sizeof(chipmunk_hots_signature_t));
+        memcpy(&multi_sig->proofs[valid_idx], &individual_sigs[i].proof, sizeof(chipmunk_path_t));
+        multi_sig->leaf_indices[valid_idx] = individual_sigs[i].leaf_index;
 
-        // CR-D6/D7: full HOTS pk is required by the aggregate verify equation.
-        memcpy(&multi_sig->hots_pks[i], &individual_sigs[i].hots_pk,
+        memcpy(&multi_sig->hots_pks[valid_idx], &individual_sigs[i].hots_pk,
                sizeof(chipmunk_hots_public_key_t));
-        memcpy(multi_sig->rho_seeds[i], individual_sigs[i].rho_seed, 32);
+        memcpy(multi_sig->rho_seeds[valid_idx], individual_sigs[i].rho_seed, 32);
 
         chipmunk_public_key_t l_full_pk;
         s_hots_pk_to_full_pk(&individual_sigs[i].hots_pk, &l_full_pk);
         int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly(&l_full_pk,
-                                                     &multi_sig->public_key_roots[i]);
+                                                     &multi_sig->public_key_roots[valid_idx]);
         if (l_rc_leaf != CHIPMUNK_ERROR_SUCCESS) {
             DAP_DELETE(hots_sigs);
             chipmunk_multi_signature_free(multi_sig);
             return l_rc_leaf;
         }
+        valid_idx++;
     }
 
     chipmunk_randomizers_t randomizers;
-    int ret = chipmunk_randomizers_from_pks(multi_sig->public_key_roots, count, &randomizers);
+    int ret = chipmunk_randomizers_from_pks(multi_sig->public_key_roots, valid_count, &randomizers);
     if (ret != 0) {
         DAP_DELETE(hots_sigs);
         chipmunk_multi_signature_free(multi_sig);
@@ -554,7 +628,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
     }
 
     ret = chipmunk_hots_aggregate_with_randomizers(hots_sigs, randomizers.randomizers,
-                                                   count, &multi_sig->aggregated_hots);
+                                                   valid_count, &multi_sig->aggregated_hots);
 
     DAP_DELETE(hots_sigs);
     chipmunk_randomizers_free(&randomizers);

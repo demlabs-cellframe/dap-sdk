@@ -1,5 +1,5 @@
 /*
- * test_chipmunk_ring.c — Chipmunk Ring V2 basic tests.
+ * test_chipmunk_ring.c — Chipmunk Ring basic tests.
  *
  * Non-interactive lattice ring signature based on LoTRS RS proof.
  */

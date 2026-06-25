@@ -303,19 +303,60 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         debug_if(s_debug_more, L_DEBUG, "  s1[%d] first coeffs: %d %d %d %d", i,
                a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
         
-        // s0[i] * H(m) - ALL in NTT domain (s0[i] is already in NTT, H(m) in NTT)
+        /* CR-7.2 Blinding: protect s0*H(m) and s1 addition from timing side-channel.
+         *
+         * Instead of computing σ = s0*H(m) + s1 directly (which exposes s0 and s1
+         * to power/timing analysis through NTT coefficient reduction), we:
+         *
+         *   1. Generate random mask r
+         *   2. Compute s0_blinded = s0 + r  (randomized input to multiplication)
+         *   3. Compute term1 = s0_blinded * H(m)  (randomized input)
+         *   4. Compute term2 = r * H(m)  (randomized input)
+         *   5. s0*H(m) = term1 - term2  (blinded result)
+         *   6. Similarly blind s1 addition: s1_blinded = s1 + r2, subtract r2
+         *
+         * Both multiplications now have randomized inputs, protecting the secret
+         * key from side-channel analysis. */
+        chipmunk_poly_t l_r, l_s0_blinded, l_term1, l_term2;
+        chipmunk_poly_t l_r2, l_s1_blinded;
+
+        /* Generate random mask r for s0*H(m) blinding */
+        uint8_t l_r_seed[32];
+        dap_random_bytes(l_r_seed, 32);
+        chipmunk_poly_from_hash(&l_r, l_r_seed, 32);
+        chipmunk_ntt(l_r.coeffs);
+
+        /* s0_blinded = s0 + r */
+        chipmunk_poly_add_ntt(&l_s0_blinded, &a_sk->s0[i], &l_r);
+
+        /* term1 = s0_blinded * H(m) (randomized input) */
+        chipmunk_poly_mul_ntt(&l_term1, &l_s0_blinded, &l_hm);
+
+        /* term2 = r * H(m) (randomized input) */
+        chipmunk_poly_mul_ntt(&l_term2, &l_r, &l_hm);
+
+        /* s0*H(m) = term1 - term2 */
+        chipmunk_poly_t l_s0_hm;
+        chipmunk_poly_sub_ntt(&l_s0_hm, &l_term1, &l_term2);
+
+        /* Generate random mask r2 for s1 blinding */
+        uint8_t l_r2_seed[32];
+        dap_random_bytes(l_r2_seed, 32);
+        chipmunk_poly_from_hash(&l_r2, l_r2_seed, 32);
+        chipmunk_ntt(l_r2.coeffs);
+
+        /* s1_blinded = s1 + r2 */
+        chipmunk_poly_add_ntt(&l_s1_blinded, &a_sk->s1[i], &l_r2);
+
+        /* σ[i] = s0*H(m) + s1 = (s0*H(m) + s1_blinded) - r2 */
         chipmunk_poly_t l_temp;
-        chipmunk_poly_mul_ntt(&l_temp, &a_sk->s0[i], &l_hm);
-        debug_if(s_debug_more, L_DEBUG, "  s0[%d] * H(m) first coeffs: %d %d %d %d", i,
-               l_temp.coeffs[0], l_temp.coeffs[1], l_temp.coeffs[2], l_temp.coeffs[3]);
-        
-        // σ[i] = s0[i] * H(m) + s1[i] - ALL in NTT domain (s1[i] is already in NTT)
-        chipmunk_poly_add_ntt(&l_temp, &l_temp, &a_sk->s1[i]);
-        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT) first coeffs: %d %d %d %d", i,
+        chipmunk_poly_add_ntt(&l_temp, &l_s0_hm, &l_s1_blinded);
+        chipmunk_poly_sub_ntt(&l_temp, &l_temp, &l_r2);
+
+        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT, blinded) first coeffs: %d %d %d %d", i,
                l_temp.coeffs[0], l_temp.coeffs[1], l_temp.coeffs[2], l_temp.coeffs[3]);
         
         // Convert result to time domain for storage
-        // Original Rust: *s = (&(s0 * hm + s1)).into(); - .into() means converting to time domain!
         a_signature->sigma[i] = l_temp;
         chipmunk_invntt(a_signature->sigma[i].coeffs);
         

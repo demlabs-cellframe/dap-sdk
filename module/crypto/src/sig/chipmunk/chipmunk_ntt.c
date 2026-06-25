@@ -259,6 +259,9 @@ const dap_ntt_params_t g_chipmunk_ntt_params = {
 
 /**
  * @brief Barrett reduction implementation for HOTS q=3168257
+ *
+ * Branchless: uses sign-bit extraction and conditional masks instead of
+ * data-dependent branches, preventing timing leaks in secret-dependent contexts.
  */
 int32_t chipmunk_ntt_barrett_reduce(int32_t a_value) {
     // Barrett reduction constants for q = 3168257
@@ -266,21 +269,28 @@ int32_t chipmunk_ntt_barrett_reduce(int32_t a_value) {
     int32_t l_v = ((int64_t)a_value * 21) >> 26;
     int32_t l_t = l_v * CHIPMUNK_Q;
     l_t = a_value - l_t;
-    
-    // Ensure result is in range [0, q)
-    if (l_t >= CHIPMUNK_Q) l_t -= CHIPMUNK_Q;
-    if (l_t < 0) l_t += CHIPMUNK_Q;
-    
+
+    /* Branchless: mask_ge = (l_t >= Q) ? 0xFFFFFFFF : 0 */
+    int32_t mask_ge = (int32_t)(((uint32_t)l_t - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
+    l_t -= mask_ge & CHIPMUNK_Q;
+
+    /* Branchless: mask_lt = (l_t < 0) ? 0xFFFFFFFF : 0 */
+    int32_t mask_lt = l_t >> 31;  /* arithmetic right shift: -1 if negative, 0 otherwise */
+    l_t += mask_lt & CHIPMUNK_Q;
+
     return l_t;
 }
 
 /**
  * @brief Modulo q reduction for HOTS q=3168257
+ *
+ * Branchless: uses sign-bit extraction instead of conditional branch.
  */
 int32_t chipmunk_ntt_mod_reduce(int32_t a_value) {
     int32_t l_t = a_value % CHIPMUNK_Q;
-    if (l_t < 0) 
-        l_t += CHIPMUNK_Q;
+    /* Branchless: mask_lt = (l_t < 0) ? 0xFFFFFFFF : 0 */
+    int32_t mask_lt = l_t >> 31;
+    l_t += mask_lt & CHIPMUNK_Q;
     return l_t;
 }
 
@@ -297,9 +307,11 @@ void chipmunk_ntt_montgomery_reduce(int32_t *a_r) {
     l_a += (int64_t)l_u * CHIPMUNK_Q;
     *a_r = (int32_t)(l_a >> 22); // Shift by 22 for R = 2^22
     
-    // Final reduction if needed
-    if (*a_r >= CHIPMUNK_Q) *a_r -= CHIPMUNK_Q;
-    if (*a_r < 0) *a_r += CHIPMUNK_Q;
+    // Final reduction — branchless
+    int32_t mask_ge = (int32_t)(((uint32_t)*a_r - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
+    *a_r -= mask_ge & CHIPMUNK_Q;
+    int32_t mask_lt = *a_r >> 31;
+    *a_r += mask_lt & CHIPMUNK_Q;
 }
 
 /**
@@ -315,9 +327,11 @@ int32_t chipmunk_ntt_montgomery_multiply(int32_t a_a, int32_t a_b) {
     l_t += (int64_t)l_u * CHIPMUNK_Q;
     int32_t result = (int32_t)(l_t >> 22); // Shift by 22 for R = 2^22
     
-    // Final reduction if needed
-    if (result >= CHIPMUNK_Q) result -= CHIPMUNK_Q;
-    if (result < 0) result += CHIPMUNK_Q;
+    // Final reduction — branchless
+    int32_t mask_ge = (int32_t)(((uint32_t)result - (uint32_t)CHIPMUNK_Q) >> 31) - 1;
+    result -= mask_ge & CHIPMUNK_Q;
+    int32_t mask_lt = result >> 31;
+    result += mask_lt & CHIPMUNK_Q;
     
     return result;
 }

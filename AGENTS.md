@@ -4,7 +4,7 @@
 
 **Branch:** `feature/chipmunk-ring`
 **Task:** `task_ac273cea` — Chipmunk Ring Signatures
-**Phase:** Phase 10 — Chipmunk Ring V2
+**Phase:** Phase 10 — Chipmunk Ring
 
 ## DAP SDK Code Conventions
 
@@ -40,9 +40,9 @@
 | 7: MRNG M0-M7 | DONE |
 | 8: Audit + API split + CMake cleanup | DONE |
 | 9: LoTRS (keygen, sign, verify, wire, KAT, threshold) | DONE |
-| 10: Chipmunk Ring V2 | IN PROGRESS |
+| 10: Chipmunk Ring | IN PROGRESS |
 
-## Phase 10 — Chipmunk Ring V2
+## Phase 10 — Chipmunk Ring
 
 Non-interactive lattice ring signature based on LoTRS RS proof.
 
@@ -62,7 +62,7 @@ Non-interactive lattice ring signature based on LoTRS RS proof.
 | SIG_TYPE_CHIPMUNK_MRING | 0x0108 | Log-N threshold ring |
 | SIG_TYPE_CHIPMUNK_LRS | 0x010A | 1-of-N linkable ring |
 | SIG_TYPE_LOTRS | 0x010B | Lattice threshold ring (interactive) |
-| SIG_TYPE_CHIPMUNK_RING | TBD | Non-interactive lattice ring (V2) |
+| SIG_TYPE_CHIPMUNK_RING | 0x010C | Non-interactive lattice ring |
 
 ## Key Source Files
 
@@ -71,7 +71,7 @@ Non-interactive lattice ring signature based on LoTRS RS proof.
 | `chipmunk_mring.c` | MRNG sign/verify |
 | `chipmunk_lrs.c` | LRS 1-of-N |
 | `lotrs/lotrs.c` | LoTRS threshold |
-| `chipmunk_ring_v2.c` | Ring V2 (non-interactive) |
+| `chipmunk_ring.c` | Chipmunk Ring (non-interactive) |
 | `dap_sign_ring.c` | Unified ring API |
 | `dap_serialize.c` | Schema-based serialization |
 

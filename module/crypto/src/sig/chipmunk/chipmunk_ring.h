@@ -57,10 +57,12 @@ typedef struct chipmunk_ring_header {
     int64_t  rice_bound_z; /* Centered bound for z coefficients (φ·η) */
     uint32_t flags;
     uint8_t  param_hash[16]; /* Truncated hash of parameter set */
+    uint8_t  key_image[1408]; /* Linkability key image (1 q-packed polynomial) */
 } chipmunk_ring_header_t;
 
-#define CHIPMUNK_RING_MAGIC    0x43525632u  /* 'CRV2' LE */
+#define CHIPMUNK_RING_MAGIC    0x4352494Eu  /* 'CRIN' LE */
 #define CHIPMUNK_RING_VERSION  2u
+#define CHIPMUNK_RING_N_MIN    8u           /* Hard minimum ring size for anonymity */
 
 /* Header schema for dap_serialize. */
 extern const dap_serialize_schema_t s_chipmunk_ring_header_schema;
@@ -93,6 +95,41 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
 void chipmunk_ring_keypair_free(chipmunk_ring_keypair_t *a_kp);
 void chipmunk_ring_table_free(chipmunk_ring_table_t *a_ring);
 void chipmunk_ring_sig_free(chipmunk_ring_sig_t *a_sig);
+
+/* Linkability: compare key images of two signatures.
+ * Returns 1 if same signer (key images match), 0 if different, negative on error. */
+int chipmunk_ring_link(const chipmunk_ring_sig_t *a_sig1, const chipmunk_ring_sig_t *a_sig2);
+
+/* =========================================================================
+ * Anonymous Ring Signatures via MRNG (threshold=1, O(log N) size)
+ *
+ * Uses MRNG's algebraic aggregation + halving fold for logarithmic-size
+ * single-signer anonymous ring signatures.
+ * ========================================================================= */
+
+#include "chipmunk_lrs.h"
+#include "chipmunk_mring.h"
+
+/* Generate anonymous ring signature (threshold=1, O(log N) size). */
+chipmunk_ring_error_t chipmunk_ring_sign_anonymous(
+    uint8_t **a_out_buf, size_t *a_out_size,
+    const chipmunk_lrs_secret_key_t *a_signer_sk,
+    const chipmunk_lrs_public_key_t *a_ring,
+    size_t a_ring_size,
+    const uint8_t *a_message, size_t a_message_size,
+    const uint8_t a_randomness_seed[32]);
+
+/* Verify anonymous ring signature. */
+chipmunk_ring_error_t chipmunk_ring_verify_anonymous(
+    const uint8_t *a_buf, size_t a_buf_size,
+    const chipmunk_lrs_public_key_t *a_ring,
+    size_t a_ring_size,
+    const uint8_t *a_message, size_t a_message_size);
+
+/* Linkability for anonymous ring signatures (compare link tags). */
+int chipmunk_ring_link_anonymous(
+    const uint8_t *a_buf1, size_t a_buf_size1,
+    const uint8_t *a_buf2, size_t a_buf_size2);
 
 /* Upper bound on wire size for given parameters (raw packing, before Rice coding). */
 size_t chipmunk_ring_sig_bytes_max(const lotrs_params_t *a_par, uint32_t a_N);

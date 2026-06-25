@@ -373,6 +373,50 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_lotrs_secur
                       "unit;crypto;lotrs;security")
 endif()
 
+# ============================================================
+# New anonymous crypto tests (task_4fcb8959)
+# ============================================================
+
+# SNARK: lattice-based Ligero-style proof
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_snark.c)
+    add_dap_test(test_unit_chipmunk_snark
+                 unit/crypto/chipmunk_ring/test_chipmunk_snark.c)
+    register_dap_test(test_unit_chipmunk_snark
+                      "unit;crypto;snark;lattice")
+endif()
+
+# Pedersen: lattice-based commitments
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_pedersen.c)
+    add_dap_test(test_unit_chipmunk_pedersen
+                 unit/crypto/chipmunk_ring/test_chipmunk_pedersen.c)
+    register_dap_test(test_unit_chipmunk_pedersen
+                      "unit;crypto;pedersen;lattice")
+endif()
+
+# Range proof: Stern-like 128-challenge
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_range_proof.c)
+    add_dap_test(test_unit_chipmunk_range_proof
+                 unit/crypto/chipmunk_ring/test_chipmunk_range_proof.c)
+    register_dap_test(test_unit_chipmunk_range_proof
+                      "unit;crypto;range-proof;stern")
+endif()
+
+# Mixnet: batching + DC-net
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_chipmunk_mixnet.c)
+    add_dap_test(test_unit_chipmunk_mixnet
+                 unit/crypto/chipmunk_ring/test_chipmunk_mixnet.c)
+    register_dap_test(test_unit_chipmunk_mixnet
+                      "unit;crypto;mixnet;dcnet")
+endif()
+
+# Ledger anonymous integration
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/chipmunk_ring/test_ledger_anon.c)
+    add_dap_test(test_unit_ledger_anon
+                 unit/crypto/chipmunk_ring/test_ledger_anon.c)
+    register_dap_test(test_unit_ledger_anon
+                      "unit;ledger;anonymous;integration")
+endif()
+
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/unit/crypto/base58/test_base58_encoding.c)
     add_dap_test(test_unit_crypto_base58 unit/crypto/base58/test_base58_encoding.c)
     register_dap_test(test_unit_crypto_base58 "unit;crypto;encoding;base58")
