@@ -116,6 +116,15 @@ extern "C" {
     typedef uint32_t        hdigit_t;
     #define NWORDS_FIELD    12
     #define p751_ZERO_WORDS 5
+#elif defined(_WASM_)
+    #define TARGET TARGET_AMD64
+    #define RADIX           32
+    #define LOG2RADIX       5
+    typedef uint32_t        digit_t;
+    typedef int32_t         sdigit_t;
+    typedef uint16_t        hdigit_t;
+    #define NWORDS_FIELD    24
+    #define p751_ZERO_WORDS 11
 #else
     #error -- "Unsupported ARCHITECTURE"
 #endif

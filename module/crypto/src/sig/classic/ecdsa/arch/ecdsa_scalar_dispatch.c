@@ -158,16 +158,16 @@ static void s_scalar_dispatch_impl(void) {
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_SVE, ecdsa_scalar_mul_arch, ecdsa_scalar_mul_sve);
 
     s_current_impl = ECDSA_SCALAR_IMPL_GENERIC;
+#if DAP_PLATFORM_X86_64
     if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_avx512)
         s_current_impl = ECDSA_SCALAR_IMPL_AVX512;
     else if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_avx2_bmi2)
         s_current_impl = ECDSA_SCALAR_IMPL_AVX2_BMI2;
-#if DAP_PLATFORM_X86_64
     else if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_x86_64_asm)
         s_current_impl = ECDSA_SCALAR_IMPL_X86_64_ASM;
 #endif
 #if DAP_PLATFORM_ARM64
-    else if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_neon)
+    if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_neon)
         s_current_impl = ECDSA_SCALAR_IMPL_ARM64_NEON;
 #if !defined(__APPLE__)
     else if (ecdsa_scalar_mul_512_ptr == ecdsa_scalar_mul_512_sve)

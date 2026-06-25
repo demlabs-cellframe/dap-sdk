@@ -112,14 +112,14 @@ static void s_field_dispatch_impl(void) {
     DAP_DISPATCH_ARM(DAP_CPU_ARCH_SVE, ecdsa_field_sqr, ecdsa_field_sqr_sve);
 
     s_current_impl = ECDSA_FIELD_IMPL_GENERIC;
+#if DAP_PLATFORM_X86_64
     if (ecdsa_field_mul_ptr == ecdsa_field_mul_avx2_bmi2)
         s_current_impl = ECDSA_FIELD_IMPL_AVX2_BMI2;
-#if DAP_PLATFORM_X86_64
     else if (ecdsa_field_mul_ptr == ecdsa_field_mul_x86_64_asm)
         s_current_impl = ECDSA_FIELD_IMPL_X86_64_ASM;
 #endif
 #if DAP_PLATFORM_ARM64
-    else if (ecdsa_field_mul_ptr == ecdsa_field_mul_neon)
+    if (ecdsa_field_mul_ptr == ecdsa_field_mul_neon)
         s_current_impl = ECDSA_FIELD_IMPL_ARM64_NEON;
 #if !defined(__APPLE__)
     else if (ecdsa_field_mul_ptr == ecdsa_field_mul_sve)
