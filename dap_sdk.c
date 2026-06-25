@@ -91,12 +91,17 @@ static void s_deinit_plugin(void);
 #include <emscripten/wasmfs.h>
 #include <pthread.h>
 
+static volatile int s_opfs_mount_done = 0;
+static volatile int s_opfs_mount_ok = 0;
+
 static void *s_opfs_mount_thread(void *a_arg)
 {
     const char *l_mount = (const char *)a_arg;
     backend_t l_opfs = wasmfs_create_opfs_backend();
     if (!l_opfs) {
         log_it(L_WARNING, "wasmfs_create_opfs_backend() returned NULL");
+        s_opfs_mount_done = 1;
+        s_opfs_mount_ok = 0;
         return (void *)(intptr_t)-1;
     }
     rmdir(l_mount);
@@ -104,8 +109,12 @@ static void *s_opfs_mount_thread(void *a_arg)
     if (l_rc != 0) {
         log_it(L_WARNING, "wasmfs_create_directory('%s') failed: rc=%d errno=%d (%s)",
                l_mount, l_rc, errno, strerror(errno));
+        s_opfs_mount_done = 1;
+        s_opfs_mount_ok = 0;
         return (void *)(intptr_t)-1;
     }
+    s_opfs_mount_done = 1;
+    s_opfs_mount_ok = 1;
     return (void *)(intptr_t)0;
 }
 
@@ -121,16 +130,31 @@ int dap_sdk_wasmfs_init(const char *a_mount)
     if (!g_sys_dir_path)
         g_sys_dir_path = dap_strdup(l_mount);
 
+    s_opfs_mount_done = 0;
+    s_opfs_mount_ok = 0;
+
     pthread_t l_tid;
-    void *l_retval = (void *)(intptr_t)-1;
-    if (pthread_create(&l_tid, NULL, s_opfs_mount_thread, (void *)l_mount) == 0) {
-        pthread_join(l_tid, &l_retval);
+    pthread_attr_t l_attr;
+    pthread_attr_init(&l_attr);
+    pthread_attr_setdetachstate(&l_attr, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&l_tid, &l_attr, s_opfs_mount_thread, (void *)l_mount) != 0) {
+        log_it(L_WARNING, "OPFS mount thread failed, using in-memory at %s", g_sys_dir_path);
+        dap_mkdir_with_parents(g_sys_dir_path);
+        pthread_attr_destroy(&l_attr);
+        return 0;
+    }
+    pthread_attr_destroy(&l_attr);
+
+    // Wait for OPFS mount with 5-second timeout
+    for (int i = 0; i < 500 && !s_opfs_mount_done; i++) {
+        struct timespec ts = { .tv_nsec = 10000000 }; // 10ms
+        nanosleep(&ts, NULL);
     }
 
-    if ((intptr_t)l_retval == 0) {
+    if (s_opfs_mount_ok) {
         log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
     } else {
-        log_it(L_WARNING, "OPFS unavailable, using WASMFS in-memory at %s", g_sys_dir_path);
+        log_it(L_WARNING, "OPFS mount failed/timed out, using in-memory at %s", g_sys_dir_path);
         dap_mkdir_with_parents(g_sys_dir_path);
     }
     return 0;
