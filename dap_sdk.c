@@ -89,34 +89,6 @@ static void s_deinit_plugin(void);
 #ifdef DAP_OS_WASM
 #ifdef DAP_OS_WASM_MT
 #include <emscripten/wasmfs.h>
-#include <pthread.h>
-
-static volatile int s_opfs_mount_done = 0;
-static volatile int s_opfs_mount_ok = 0;
-
-static void *s_opfs_mount_thread(void *a_arg)
-{
-    const char *l_mount = (const char *)a_arg;
-    backend_t l_opfs = wasmfs_create_opfs_backend();
-    if (!l_opfs) {
-        log_it(L_WARNING, "wasmfs_create_opfs_backend() returned NULL");
-        s_opfs_mount_done = 1;
-        s_opfs_mount_ok = 0;
-        return (void *)(intptr_t)-1;
-    }
-    rmdir(l_mount);
-    int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
-    if (l_rc != 0) {
-        log_it(L_WARNING, "wasmfs_create_directory('%s') failed: rc=%d errno=%d (%s)",
-               l_mount, l_rc, errno, strerror(errno));
-        s_opfs_mount_done = 1;
-        s_opfs_mount_ok = 0;
-        return (void *)(intptr_t)-1;
-    }
-    s_opfs_mount_done = 1;
-    s_opfs_mount_ok = 1;
-    return (void *)(intptr_t)0;
-}
 
 static bool s_wasmfs_done = false;
 
@@ -130,33 +102,20 @@ int dap_sdk_wasmfs_init(const char *a_mount)
     if (!g_sys_dir_path)
         g_sys_dir_path = dap_strdup(l_mount);
 
-    s_opfs_mount_done = 0;
-    s_opfs_mount_ok = 0;
-
-    pthread_t l_tid;
-    pthread_attr_t l_attr;
-    pthread_attr_init(&l_attr);
-    pthread_attr_setdetachstate(&l_attr, PTHREAD_CREATE_DETACHED);
-    if (pthread_create(&l_tid, &l_attr, s_opfs_mount_thread, (void *)l_mount) != 0) {
-        log_it(L_ERROR, "OPFS mount thread failed");
-        pthread_attr_destroy(&l_attr);
+    // Synchronous OPFS mount — no threads, no races, no timeouts
+    backend_t l_opfs = wasmfs_create_opfs_backend();
+    if (!l_opfs) {
+        log_it(L_ERROR, "wasmfs_create_opfs_backend() failed — OPFS not available");
         return -1;
     }
-    pthread_attr_destroy(&l_attr);
-
-    // Wait for OPFS mount with 5-second timeout
-    for (int i = 0; i < 500 && !s_opfs_mount_done; i++) {
-        struct timespec ts = { .tv_nsec = 10000000 }; // 10ms
-        nanosleep(&ts, NULL);
+    rmdir(l_mount);
+    int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
+    if (l_rc != 0) {
+        log_it(L_ERROR, "wasmfs_create_directory('%s') failed: rc=%d errno=%d", l_mount, l_rc, errno);
+        return -1;
     }
-
-    if (s_opfs_mount_ok) {
-        log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
-        return 0;
-    }
-
-    log_it(L_ERROR, "OPFS mount failed — persistent storage required");
-    return -1;
+    log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
+    return 0;
 }
 #else
 static void s_init_memfs(void)
