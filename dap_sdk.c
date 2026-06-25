@@ -138,10 +138,9 @@ int dap_sdk_wasmfs_init(const char *a_mount)
     pthread_attr_init(&l_attr);
     pthread_attr_setdetachstate(&l_attr, PTHREAD_CREATE_DETACHED);
     if (pthread_create(&l_tid, &l_attr, s_opfs_mount_thread, (void *)l_mount) != 0) {
-        log_it(L_WARNING, "OPFS mount thread failed, using in-memory at %s", g_sys_dir_path);
-        dap_mkdir_with_parents(g_sys_dir_path);
+        log_it(L_ERROR, "OPFS mount thread failed");
         pthread_attr_destroy(&l_attr);
-        return 0;
+        return -1;
     }
     pthread_attr_destroy(&l_attr);
 
@@ -153,11 +152,11 @@ int dap_sdk_wasmfs_init(const char *a_mount)
 
     if (s_opfs_mount_ok) {
         log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
-    } else {
-        log_it(L_WARNING, "OPFS mount failed/timed out, using in-memory at %s", g_sys_dir_path);
-        dap_mkdir_with_parents(g_sys_dir_path);
+        return 0;
     }
-    return 0;
+
+    log_it(L_ERROR, "OPFS mount failed — persistent storage required");
+    return -1;
 }
 #else
 static void s_init_memfs(void)
