@@ -147,7 +147,8 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 
 ## Known Issues
 
-- None remaining (all CRITICAL + HIGH resolved across 5 audit iterations)
+- None remaining (all CRITICAL + HIGH + MEDIUM + LOW resolved across 11 audit iterations)
+- SLC MCP server (`0.mcp.slc.demlabs.net`) returning 421 — server-side issue
 
 ## Audit History
 
