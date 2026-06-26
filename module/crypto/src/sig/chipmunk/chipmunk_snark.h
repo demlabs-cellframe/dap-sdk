@@ -112,6 +112,9 @@ typedef struct chipmunk_snark_proof {
     chipmunk_mring_ext_t z_eval;                /* z(alpha) in R_q^{(e)} */
     chipmunk_mring_ext_t q_eval;                /* q(alpha) in R_q^{(e)} */
 
+    /* Challenge point (derived from transcript) */
+    chipmunk_mring_ext_t alpha;                 /* Challenge from subtractive set */
+
     /* Opening proofs */
     uint8_t opening_proof[512];
     size_t opening_proof_size;
@@ -123,7 +126,6 @@ typedef struct chipmunk_snark_proof {
 /* SNARK context (public parameters) */
 typedef struct chipmunk_snark_ctx {
     lotrs_params_t params;
-    chipmunk_mring_ext_t alpha;                 /* Challenge point in R_q^{(e)} */
     uint8_t domain_separator[32];               /* QROM domain separator */
     bool initialized;
 } chipmunk_snark_ctx_t;
