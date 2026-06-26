@@ -102,7 +102,7 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
 #elif defined (DAP_OS_LINUX)
     char * l_path = dap_strdup_printf("%s/%s.linux-common.%s.so", a_manifest->path, a_manifest->name, dap_get_arch());
 #endif
-    l_pvt_data->handle = dlopen(l_path, RTLD_NOW | RTLD_LOCAL);
+    l_pvt_data->handle = dlopen(l_path, RTLD_NOW | RTLD_GLOBAL);
     if (l_pvt_data->handle) {
         l_pvt_data->callback_preinit = dlsym(l_pvt_data->handle, "plugin_preinit");
         l_pvt_data->callback_init = dlsym(l_pvt_data->handle, "plugin_init");

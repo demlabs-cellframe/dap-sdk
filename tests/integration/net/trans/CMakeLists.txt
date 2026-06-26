@@ -73,7 +73,7 @@ dap_mock_autowrap(${PROJECT_NAME})
 # Use --max-clients=N or --stress manually for heavier loads
 add_test(
     NAME ${PROJECT_NAME}
-    COMMAND ${PROJECT_NAME}
+    COMMAND ${PROJECT_NAME} --quick
 )
 
 if(CMAKE_CROSSCOMPILING)

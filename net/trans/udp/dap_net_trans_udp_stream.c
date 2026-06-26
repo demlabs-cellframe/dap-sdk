@@ -36,6 +36,7 @@
 #include "dap_net_trans.h"
 #include "dap_events_socket.h"
 #include "dap_worker.h"
+#include "dap_context.h"
 #include "dap_timerfd.h"  // For handshake retransmission timer
 #include "dap_net.h"
 #include "dap_enc_kyber.h"  // For Kyber512 KEM functions
@@ -421,6 +422,26 @@ static int s_client_flow_ctrl_packet_send_cb(
     dap_net_trans_ctx_t *l_trans_ctx = (dap_net_trans_ctx_t*)l_udp_ctx->stream->trans_ctx;
     if (!l_trans_ctx || !l_udp_ctx->stream->esocket) {
         log_it(L_ERROR, "CLIENT FC send: no trans_ctx or esocket");
+        return -1;
+    }
+    
+    // Validate esocket is still alive via UUID lookup (prevents use-after-free)
+    dap_events_socket_t *l_es = l_udp_ctx->stream->esocket;
+    if (!l_es) {
+        return -1;
+    }
+    if (!l_udp_ctx->stream->esocket_uuid || !l_udp_ctx->stream->esocket_worker) {
+        // No UUID/worker — cannot validate, skip send
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: no esocket_uuid or esocket_worker, skipping");
+        return -1;
+    }
+    dap_context_t *l_ctx = l_udp_ctx->stream->esocket_worker->context;
+    if (!l_ctx) {
+        return -1;
+    }
+    dap_events_socket_t *l_found = dap_context_find(l_ctx, l_udp_ctx->stream->esocket_uuid);
+    if (!l_found || l_found != l_es) {
+        debug_if(s_debug_more, L_DEBUG, "CLIENT FC send: esocket gone (uuid lookup failed)");
         return -1;
     }
     

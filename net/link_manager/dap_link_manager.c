@@ -1182,7 +1182,7 @@ void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_
 static bool s_stream_delete_callback(void *a_arg)
 {
     assert(a_arg);
-    if (s_link_manager_stopping) {
+    if (s_link_manager_stopping || !s_link_manager) {
         DAP_DELETE(a_arg);
         return false;
     }
@@ -1214,7 +1214,7 @@ static bool s_stream_delete_callback(void *a_arg)
 void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr)
 {
     dap_return_if_fail(a_node_addr);
-    if (s_link_manager_stopping)
+    if (s_link_manager_stopping || !s_link_manager)
         return;
     dap_stream_node_addr_t *l_args = DAP_DUP(a_node_addr);
     if (!l_args) {

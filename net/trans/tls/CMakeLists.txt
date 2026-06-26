@@ -6,6 +6,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/DapModule.cmake)
 
 set(TLS_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_stream_trans_tls.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans_tls_server.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_mimicry.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_ja3.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_fingerprint.c"

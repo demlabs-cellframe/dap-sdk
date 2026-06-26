@@ -243,6 +243,35 @@ dap_net_trans_server_ctx_t *dap_net_trans_server_ctx_from_http(dap_http_server_t
  */
 void dap_net_trans_server_ctx_delete(dap_net_trans_server_ctx_t *a_ctx);
 
+/**
+ * @brief Get all active transport servers
+ *
+ * @param a_out Output array (caller-allocated)
+ * @param a_max Maximum entries to return
+ * @return Number of servers written to a_out
+ */
+size_t dap_net_trans_server_get_all(dap_net_trans_server_t **a_out, size_t a_max);
+
+/**
+ * @brief Register HTTP server for a transport type
+ *
+ * Called by transport implementations after starting their HTTP server.
+ * Used by VPN plugin to find HTTP servers for all transports.
+ *
+ * @param a_trans_type Transport type
+ * @param a_http_server HTTP server instance
+ */
+void dap_net_trans_server_set_http_server(dap_net_trans_type_t a_trans_type,
+                                           dap_http_server_t *a_http_server);
+
+/**
+ * @brief Get HTTP server for a transport type
+ *
+ * @param a_trans_type Transport type
+ * @return HTTP server or NULL if not registered
+ */
+dap_http_server_t *dap_net_trans_server_get_http_server(dap_net_trans_type_t a_trans_type);
+
 #ifdef __cplusplus
 }
 #endif

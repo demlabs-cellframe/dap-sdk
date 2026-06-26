@@ -222,6 +222,9 @@ int dap_net_trans_websocket_server_start(dap_net_trans_websocket_server_t *a_ws_
     dap_strncpy(a_ws_server->http_server->server_name, a_ws_server->server_name,
                 sizeof(a_ws_server->http_server->server_name) - 1);
 
+    // Register in global HTTP server registry for VPN plugin access
+    dap_net_trans_server_set_http_server(DAP_NET_TRANS_WEBSOCKET, a_ws_server->http_server);
+
     // Register WebSocket upgrade handler on root path
     // This will handle HTTP requests with "Upgrade: websocket" header
     dap_http_add_proc(a_ws_server->http_server, "/",

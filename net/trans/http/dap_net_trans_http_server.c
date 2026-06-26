@@ -199,6 +199,9 @@ int dap_net_trans_http_server_start(dap_net_trans_http_server_t *a_http_server,
     a_http_server->server = l_server;
     a_http_server->http_server = l_http_server;
 
+    // Register in global HTTP server registry for VPN plugin access
+    dap_net_trans_server_set_http_server(DAP_NET_TRANS_HTTP, l_http_server);
+
     // DO NOT overwrite _inheritor - it must remain as dap_http_server_t
     // for DAP_HTTP_SERVER macro to work correctly
     // a_http_server->server->_inheritor = a_http_server;  // WRONG - overwrites dap_http_server_t!

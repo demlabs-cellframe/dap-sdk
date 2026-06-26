@@ -26,6 +26,7 @@
 #include "dap_events_socket.h"
 #include "dap_context.h"
 #include "dap_events.h"
+#include "dap_worker.h"
 #include <sys/time.h>
 
 #define LOG_TAG "dap_context_queue"
@@ -155,7 +156,20 @@ void dap_context_queue_delete(dap_context_queue_t *a_queue) {
     // IMPORTANT: preserve_inheritor = true because _inheritor points to this queue itself!
     // We will free the queue at the end of this function with DAP_DELETE(a_queue)
     if (a_queue->event_socket) {
-        dap_events_socket_remove_and_delete_unsafe(a_queue->event_socket, true);
+        dap_worker_t *l_owner = a_queue->event_socket->worker;
+        if (l_owner && dap_worker_get_current() == l_owner) {
+            /* Called from the owning worker thread — safe to delete directly */
+            dap_events_socket_remove_and_delete_unsafe(a_queue->event_socket, true);
+        } else if (l_owner) {
+            /* Called from a different thread — schedule deletion on the owner worker.
+             * Clear _inheritor first: the _mt path deletes with preserve_inheritor=false,
+             * but _inheritor points to this queue which we are about to free. */
+            a_queue->event_socket->_inheritor = NULL;
+            dap_events_socket_remove_and_delete_mt(l_owner, a_queue->event_socket->uuid);
+        } else {
+            /* No worker assigned — orphaned esocket, just delete the socket */
+            dap_events_socket_delete_unsafe(a_queue->event_socket, true);
+        }
         a_queue->event_socket = NULL;
     }
     
