@@ -907,6 +907,12 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
     if (l_rc != 0) return l_rc;
     if (memcmp(l_hdr.param_hash, l_expected_hash, 16u) != 0) return -EINVAL;
 
+    /* Verify key_image_len matches expected size (k * poly_bytes).
+     * Prevents a malicious signer from setting a shorter key_image_len
+     * to bypass linkability. */
+    size_t l_expected_ki_len = (size_t)a_par->k * lotrs_poly_bytes(a_par);
+    if (l_hdr.key_image_len != l_expected_ki_len) return -EINVAL;
+
     const uint32_t l_N = l_sorted_ring.N;
     const uint32_t l_d = a_par->d;
     const uint64_t l_q = a_par->q;

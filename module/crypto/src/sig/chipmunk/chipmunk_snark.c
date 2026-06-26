@@ -255,6 +255,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                           sizeof(chipmunk_lrs_public_key_t), &l_pk_hash);
         int64_t l_pk_coeff = 0;
         memcpy(&l_pk_coeff, l_pk_hash.raw, 6);
+        if (l_pk_coeff & (1LL << 47)) l_pk_coeff -= (1LL << 48);
         l_pk_coeff = s_mod_q(l_pk_coeff);
         l_c3_sum = s_mod_q(l_c3_sum + (int64_t)a_b->coeffs[i] * l_pk_coeff);
     }
@@ -264,6 +265,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                           sizeof(chipmunk_lrs_public_key_t), &l_signer_hash);
         int64_t l_signer_coeff = 0;
         memcpy(&l_signer_coeff, l_signer_hash.raw, 6);
+        if (l_signer_coeff & (1LL << 47)) l_signer_coeff -= (1LL << 48);
         l_c3_sum = s_mod_q(l_c3_sum - s_mod_q(l_signer_coeff));
     }
     l_c3.coeffs[0] = (int32_t)l_c3_sum;
@@ -277,6 +279,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                           sizeof(chipmunk_lrs_public_key_t), &l_trace_hash);
         int64_t l_trace_coeff = 0;
         memcpy(&l_trace_coeff, l_trace_hash.raw + 8, 6);
+        if (l_trace_coeff & (1LL << 47)) l_trace_coeff -= (1LL << 48);
         l_trace_coeff = s_mod_q(l_trace_coeff);
         l_c4_sum = s_mod_q(l_c4_sum + (int64_t)a_b->coeffs[i] * l_trace_coeff);
     }
@@ -286,6 +289,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                           sizeof(chipmunk_lrs_public_key_t), &l_signer_hash);
         int64_t l_signer_trace = 0;
         memcpy(&l_signer_trace, l_signer_hash.raw + 8, 6);
+        if (l_signer_trace & (1LL << 47)) l_signer_trace -= (1LL << 48);
         l_c4_sum = s_mod_q(l_c4_sum - s_mod_q(l_signer_trace));
     }
     l_c4.coeffs[0] = (int32_t)l_c4_sum;
