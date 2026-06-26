@@ -50,12 +50,8 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
     /* Use heap allocation. Size must be multiple of SHAKE256 rate (136 bytes)
      * to avoid overflow from squeezeblocks writing beyond buffer. */
     size_t l_needed = CHIPMUNK_N * 4;  /* 2048 bytes for 512 coefficients * 4 bytes */
-    size_t l_nblocks = (l_needed + 135) / 136;  /* ceil(2048/136) = 15 blocks */
-    size_t l_buf_size = l_nblocks * 136;  /* 15 * 136 = 2040 bytes (enough for 510 coeffs) */
-    /* We need 512 coefficients = 2048 bytes. 15 blocks = 2040 bytes = 510 coeffs.
-     * Squeeze one extra block to get all 512 coefficients. */
-    l_nblocks = (l_needed + 135) / 136;  /* 16 blocks */
-    l_buf_size = l_nblocks * 136;  /* 2176 bytes */
+    size_t l_nblocks = (l_needed + 135) / 136;  /* ceil(2048/136) = 16 blocks */
+    size_t l_buf_size = l_nblocks * 136;  /* 16 * 136 = 2176 bytes */
     uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buf_size);
     if (!l_buf) return -ENOMEM;
 

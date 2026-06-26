@@ -38,6 +38,7 @@
 #include "dap_hash_shake256.h"
 #include "dap_common.h"
 #include "dap_rand.h"
+#include "dap_memwipe.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -362,6 +363,12 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         debug_if(s_debug_more, L_DEBUG, "  σ[%d] (time) first coeffs: %d %d %d %d", i,
                a_signature->sigma[i].coeffs[0], a_signature->sigma[i].coeffs[1], 
                a_signature->sigma[i].coeffs[2], a_signature->sigma[i].coeffs[3]);
+
+        /* Wipe local copies that held blinded secret key material */
+        dap_memwipe(&l_s0_blinded, sizeof(l_s0_blinded));
+        dap_memwipe(&l_s1_blinded, sizeof(l_s1_blinded));
+        dap_memwipe(l_r_seed, sizeof(l_r_seed));
+        dap_memwipe(l_r2_seed, sizeof(l_r2_seed));
     }
     
     debug_if(s_debug_more, L_DEBUG, "✓ HOTS signature generation completed");

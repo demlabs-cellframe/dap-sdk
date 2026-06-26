@@ -76,8 +76,6 @@ typedef struct chipmunk_snark_eval_proof {
 /* FRI layer commitment */
 typedef struct chipmunk_snark_fri_layer {
     chipmunk_snark_commit_t commit;
-    chipmunk_mring_ext_t *evaluations;  /* Evaluation domain points in R_q^{(e)} */
-    size_t eval_count;
 } chipmunk_snark_fri_layer_t;
 
 /* Ring membership statement */
@@ -149,30 +147,6 @@ int chipmunk_snark_init(chipmunk_snark_ctx_t *ctx);
  */
 int chipmunk_snark_commit(chipmunk_snark_commit_t *commit,
                           const chipmunk_poly_t *poly);
-
-/**
- * Open a polynomial commitment: prove that C commits to f and f(alpha) = v.
- * @param proof Output evaluation proof.
- * @param ctx SNARK context.
- * @param poly The polynomial.
- * @param alpha Evaluation point.
- * @return 0 on success.
- */
-int chipmunk_snark_open(chipmunk_snark_eval_proof_t *proof,
-                        const chipmunk_snark_ctx_t *ctx,
-                        const chipmunk_poly_t *poly,
-                        const chipmunk_poly_t *alpha);
-
-/**
- * Verify a polynomial commitment opening.
- * @param commit The commitment.
- * @param proof The evaluation proof.
- * @param alpha Evaluation point.
- * @return 1 if valid, 0 if invalid, negative on error.
- */
-int chipmunk_snark_verify_open(const chipmunk_snark_commit_t *commit,
-                               const chipmunk_snark_eval_proof_t *proof,
-                               const chipmunk_poly_t *alpha);
 
 /**
  * Generate a ring membership SNARK proof.

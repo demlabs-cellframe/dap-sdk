@@ -366,41 +366,6 @@ static int s_pk_cmp(const void *a_a, const void *a_b)
     return 0;
 }
 
-/*
- * Canonicalize ring: sort, reject duplicates, find signer index.
- * Returns 0 on success, -EINVAL on invalid input or duplicate keys.
- * a_signer_idx is updated to the new index of the signer in the sorted ring.
- */
-static int s_canonicalize_ring(chipmunk_ring_table_t *a_ring,
-                               uint32_t *a_signer_idx,
-                               const lotrs_params_t *a_par)
-{
-    if (!a_ring || !a_ring->pks || !a_signer_idx || a_ring->N < 2u)
-        return -EINVAL;
-
-    /* Sort ring by pk comparison */
-    qsort(a_ring->pks, a_ring->N, sizeof(chipmunk_ring_pk_t), s_pk_cmp);
-
-    /* Reject duplicates */
-    for (uint32_t i = 1u; i < a_ring->N; ++i) {
-        if (s_pk_cmp(&a_ring->pks[i - 1u], &a_ring->pks[i]) == 0) {
-            log_it(L_ERROR, "CRIN: duplicate public keys in ring at positions %u and %u", i - 1u, i);
-            return -EINVAL;
-        }
-    }
-
-    /* Find signer's new position — CT-safe full scan, no early break */
-    uint32_t l_signer_idx = *a_signer_idx;
-    chipmunk_ring_pk_t l_signer_pk;
-    /* We need to find which pk was at the original signer_idx before sort.
-     * Since we already sorted, we can't use the old index. Instead, the caller
-     * must pass the signer's pk separately. For now, we store the original
-     * pk before sorting and search for it after. */
-    /* NOTE: This function should be called BEFORE the ring is modified.
-     * The caller passes the original signer_idx, and we find the new position. */
-    return 0;  /* Placeholder — actual search done in sign/verify after sort */
-}
-
 /* Cleanup helper for sign function resources. */
 static void s_sign_cleanup(lotrs_polymat_t *a_A,
                            lotrs_polyvec_t *a_T, lotrs_poly_t **a_c_arr,
@@ -1077,16 +1042,17 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
             }
         }
 
-        /* Compare lhs == rhs. */
+        /* Compare lhs == rhs — constant-time: check ALL coefficients,
+         * accumulate difference to prevent timing leak on early exit. */
+        uint64_t l_diff = 0u;
         for (uint32_t j = 0u; j < a_par->k; ++j) {
             for (uint32_t kk = 0u; kk < l_d; ++kk) {
-                if (l_lhs.polys[j]->coeffs[kk] != l_rhs.polys[j]->coeffs[kk]) {
-                    debug_if(1, L_DEBUG, "CRIN verify: algebraic FAILED at member[%u][%u][%u]", i, j, kk);
-                    l_match = 0;
-                    break;
-                }
+                l_diff |= l_lhs.polys[j]->coeffs[kk] ^ l_rhs.polys[j]->coeffs[kk];
             }
-            if (!l_match) break;
+        }
+        if (l_diff != 0u) {
+            debug_if(1, L_DEBUG, "CRIN verify: algebraic FAILED at member[%u]", i);
+            l_match = 0;
         }
 
         lotrs_polyvec_free(&l_lhs);
