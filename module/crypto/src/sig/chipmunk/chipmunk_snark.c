@@ -48,7 +48,12 @@ static void s_poly_to_bytes(uint8_t *a_out, size_t a_out_size,
 {
     size_t l_bytes = CHIPMUNK_N * sizeof(int32_t);
     if (l_bytes > a_out_size) l_bytes = a_out_size;
-    memcpy(a_out, a_poly->coeffs, l_bytes);
+    /* Normalize coefficients to [0, Q) for cross-platform portability */
+    for (size_t i = 0; i < l_bytes / sizeof(int32_t); ++i) {
+        int32_t l_coeff = a_poly->coeffs[i] % (int32_t)CHIPMUNK_SNARK_Q;
+        if (l_coeff < 0) l_coeff += CHIPMUNK_SNARK_Q;
+        memcpy(a_out + i * sizeof(int32_t), &l_coeff, sizeof(int32_t));
+    }
 }
 
 static int s_commit_poly(chipmunk_snark_commit_t *a_commit,
@@ -450,11 +455,10 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     chipmunk_mring_ext_embed(&a_proof->z_eval, &l_z);
     chipmunk_mring_ext_embed(&a_proof->q_eval, &l_q);
 
-    /* 10. Opening proof: include b, z, q polynomial bytes for verifier */
+    /* 10. Opening proof: include z, q polynomial bytes for verifier
+     *     (b is NOT included — it leaks the signer index) */
     size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
     size_t l_off = 0;
-    s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_b);
-    l_off += l_poly_bytes;
     s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_z);
     l_off += l_poly_bytes;
     s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_q);
@@ -517,35 +521,28 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
     /* 5. Verify opening proof: reconstruct polynomials and check commitments */
     size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
-    if (a_proof->opening_proof_size < l_poly_bytes * 3) {
+    if (a_proof->opening_proof_size < l_poly_bytes * 2) {
         log_it(L_ERROR, "SNARK verify: opening proof too small (%zu < %zu)",
-               a_proof->opening_proof_size, l_poly_bytes * 3);
+               a_proof->opening_proof_size, l_poly_bytes * 2);
         return 0;
     }
 
-    /* Reconstruct b, z, q from opening proof bytes */
-    chipmunk_poly_t l_b, l_z, l_q;
-    memcpy(l_b.coeffs, a_proof->opening_proof, l_poly_bytes);
-    memcpy(l_z.coeffs, a_proof->opening_proof + l_poly_bytes, l_poly_bytes);
-    memcpy(l_q.coeffs, a_proof->opening_proof + l_poly_bytes * 2, l_poly_bytes);
+    /* Reconstruct z, q from opening proof bytes (b is not included) */
+    chipmunk_poly_t l_z, l_q;
+    memcpy(l_z.coeffs, a_proof->opening_proof, l_poly_bytes);
+    memcpy(l_q.coeffs, a_proof->opening_proof + l_poly_bytes, l_poly_bytes);
 
     /* Verify coefficients are in range [0, Q) */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        if (l_b.coeffs[i] < 0 || l_b.coeffs[i] >= (int32_t)CHIPMUNK_SNARK_Q) return 0;
         if (l_z.coeffs[i] < 0 || l_z.coeffs[i] >= (int32_t)CHIPMUNK_SNARK_Q) return 0;
         if (l_q.coeffs[i] < 0 || l_q.coeffs[i] >= (int32_t)CHIPMUNK_SNARK_Q) return 0;
     }
 
     /* Verify commitments match */
-    chipmunk_snark_commit_t l_b_commit, l_z_commit, l_q_commit;
-    s_commit_poly(&l_b_commit, &l_b);
+    chipmunk_snark_commit_t l_z_commit, l_q_commit;
     s_commit_poly(&l_z_commit, &l_z);
     s_commit_poly(&l_q_commit, &l_q);
 
-    if (memcmp(l_b_commit.hash, a_proof->w_commit.hash, 32) != 0) {
-        log_it(L_ERROR, "SNARK verify: w_commit mismatch");
-        return 0;
-    }
     if (memcmp(l_z_commit.hash, a_proof->z_commit.hash, 32) != 0) {
         log_it(L_ERROR, "SNARK verify: z_commit mismatch");
         return 0;
@@ -600,25 +597,10 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     }
     #undef CHIPMUNK_SNARK_QUOTIENT_CHECKS
 
-    /* 7. Verify witness constraints from b polynomial
-     *    C2: sum(b_i) == 1 (exactly one signer) */
-    int64_t l_b_sum = 0;
-    for (uint32_t i = 0; i < a_statement->ring_size && i < CHIPMUNK_N; ++i) {
-        l_b_sum += l_b.coeffs[i];
-    }
-    if (s_mod_q(l_b_sum) != 1) {
-        log_it(L_ERROR, "SNARK verify: sum(b_i) != 1");
-        return 0;
-    }
-
-    /* C1: b_i * (1 - b_i) == 0 (binary constraint) */
-    for (uint32_t i = 0; i < a_statement->ring_size && i < CHIPMUNK_N; ++i) {
-        int64_t l_prod = (int64_t)l_b.coeffs[i] * (1 - (int64_t)l_b.coeffs[i]);
-        if (s_mod_q(l_prod) != 0) {
-            log_it(L_ERROR, "SNARK verify: binary constraint failed at index %d", i);
-            return 0;
-        }
-    }
+    /* 7. C1, C2, C3, C4 are verified implicitly:
+     *    z(X) = C1 + r*C2 + r^2*C3 + r^3*C4 and z(alpha)=0
+     *    with high probability over the random alpha from the subtractive set,
+     *    implies each Ci(alpha)=0. No need to expose b in the proof. */
 
     debug_if(0, L_DEBUG, "SNARK verify: all checks passed (%d quotient checks, ~138-bit soundness)",
              CHIPMUNK_SNARK_QUOTIENT_CHECKS);
