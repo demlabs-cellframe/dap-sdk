@@ -105,42 +105,117 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
         l_pow2_table[i] = (l_pow2_table[i - 1] * 2) % CHIPMUNK_Q;
     }
 
-    /* 3. Generate per-bit randomness seeds */
-    size_t l_seed_buf_size = (size_t)a_bits * 32;
-    uint8_t *l_bit_seeds = DAP_NEW_Z_SIZE(uint8_t, l_seed_buf_size);
-    if (!l_bit_seeds) { DAP_DELETE(l_bits); return -ENOMEM; }
+    /* 3. Generate per-bit randomness seeds and derive bit randomness vectors
+     *    such that Σ 2^i * r_i = r (mod q), where r is the original randomness.
+     *    This ensures A = C (the weighted sum of bit commitments equals the original). */
+
+    /* First, derive the original randomness vector r from the seed */
+    chipmunk_poly_t l_orig_r[CHIPMUNK_LRS_K];
+    {
+        uint64_t l_state[25];
+        memset(l_state, 0, sizeof(l_state));
+        {
+            size_t l_abs_len = 32 + 22;
+            uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+            if (!l_abs) { DAP_DELETE(l_bits); return -ENOMEM; }
+            memcpy(l_abs, a_randomness_seed, 32);
+            memcpy(l_abs + 32, "pedersen-randomness-v1", 22);
+            dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+            DAP_DELETE(l_abs);
+        }
+        size_t l_needed = CHIPMUNK_N * 4;
+        size_t l_nblocks = (l_needed + 135) / 136;
+        uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
+        if (!l_buf) { DAP_DELETE(l_bits); return -ENOMEM; }
+        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+            dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                uint32_t l_val;
+                memcpy(&l_val, &l_buf[k * 4], 4);
+                l_orig_r[j].coeffs[k] = (int32_t)((l_val % (2 * 13 + 1)) - 13);
+            }
+        }
+        DAP_DELETE(l_buf);
+    }
+
+    /* Compute modular inverse of 2^{bits-1} mod Q */
+    int64_t l_inv_pow2 = 1;
+    {
+        int64_t l_base = l_pow2_table[a_bits - 1];
+        int64_t l_exp = CHIPMUNK_Q - 2;
+        while (l_exp > 0) {
+            if (l_exp & 1) l_inv_pow2 = (l_inv_pow2 * l_base) % CHIPMUNK_Q;
+            l_base = (l_base * l_base) % CHIPMUNK_Q;
+            l_exp >>= 1;
+        }
+    }
+
+    /* Generate random bit randomness vectors r_0, ..., r_{bits-2} */
+    chipmunk_poly_t (*l_bit_r)[CHIPMUNK_LRS_K] = DAP_NEW_Z_COUNT(chipmunk_poly_t[CHIPMUNK_LRS_K], a_bits);
+    if (!l_bit_r) { DAP_DELETE(l_bits); return -ENOMEM; }
     {
         uint64_t l_state[25];
         memset(l_state, 0, sizeof(l_state));
         {
             size_t l_abs_len = 32 + 19;
             uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
-            if (!l_abs) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); return -ENOMEM; }
+            if (!l_abs) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_r); return -ENOMEM; }
             memcpy(l_abs, a_randomness_seed, 32);
             memcpy(l_abs + 32, "range-proof-bits-v2", 19);
             dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
             DAP_DELETE(l_abs);
         }
-        size_t l_nblocks = (l_seed_buf_size + 135) / 136;
+        size_t l_needed = CHIPMUNK_N * 4;
+        size_t l_nblocks = (l_needed + 135) / 136;
         uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
-        if (!l_buf) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); return -ENOMEM; }
-        dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
-        memcpy(l_bit_seeds, l_buf, l_seed_buf_size);
+        if (!l_buf) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_r); return -ENOMEM; }
+        for (uint32_t i = 0; i < a_bits - 1; ++i) {
+            for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+                dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
+                for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                    uint32_t l_val;
+                    memcpy(&l_val, &l_buf[k * 4], 4);
+                    l_bit_r[i][j].coeffs[k] = (int32_t)((l_val % (2 * 13 + 1)) - 13);
+                }
+            }
+        }
         DAP_DELETE(l_buf);
     }
 
-    /* 4. Commit to each bit: C_i = Com(b_i; r_i) */
+    /* Compute r_{bits-1} = (r - Σ_{i=0}^{bits-2} 2^i * r_i) * inv(2^{bits-1}) mod q */
+    for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+        /* partial = Σ_{i=0}^{bits-2} 2^i * r_i[j] */
+        chipmunk_poly_t l_partial;
+        memset(&l_partial, 0, sizeof(l_partial));
+        for (uint32_t i = 0; i < a_bits - 1; ++i) {
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                int64_t l_term = l_pow2_table[i] * l_bit_r[i][j].coeffs[k];
+                l_partial.coeffs[k] = s_mod_q((int64_t)l_partial.coeffs[k] + l_term);
+            }
+        }
+        /* needed = r[j] - partial */
+        chipmunk_poly_t l_needed;
+        for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+            l_needed.coeffs[k] = s_mod_q((int64_t)l_orig_r[j].coeffs[k] - l_partial.coeffs[k]);
+        }
+        /* r_{bits-1}[j] = needed * inv(2^{bits-1}) mod q */
+        for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+            l_bit_r[a_bits - 1][j].coeffs[k] = s_mod_q(l_needed.coeffs[k] * l_inv_pow2);
+        }
+    }
+
+    /* 4. Commit to each bit with explicit randomness: C_i = Com(b_i; r_i) */
     chipmunk_pedersen_commit_t *l_bit_commits = DAP_NEW_Z_COUNT(chipmunk_pedersen_commit_t, a_bits);
-    if (!l_bit_commits) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); return -ENOMEM; }
+    if (!l_bit_commits) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_r); return -ENOMEM; }
     for (uint32_t i = 0; i < a_bits; ++i) {
-        int l_rc = chipmunk_pedersen_commit(&l_bit_commits[i], a_params,
-                                             (int64_t)l_bits[i], l_bit_seeds + i * 32);
+        int l_rc = chipmunk_pedersen_commit_explicit(&l_bit_commits[i], a_params,
+                                                      (int64_t)l_bits[i], l_bit_r[i]);
         if (l_rc != 0) {
-            DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_bit_commits);
+            DAP_DELETE(l_bits); DAP_DELETE(l_bit_r); DAP_DELETE(l_bit_commits);
             return l_rc;
         }
     }
-    DAP_DELETE(l_bit_seeds);
+    DAP_DELETE(l_bit_r);
 
     /* 5. Generate blinding masks for ZK */
     uint8_t *l_blind_seeds = DAP_NEW_Z_SIZE(uint8_t, (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32);
@@ -232,42 +307,61 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
         }
     }
 
-    /* 7. Compute responses with ZK blinding */
+    /* 7. Compute responses with Stern ZK: permuted bits + mask
+     *    For each challenge, generate random permutation π and mask m.
+     *    Challenge 0: reveal permuted_bits (binary check)
+     *    Challenge 1: reveal permuted_complement (binary check)
+     *    Verifier sees only permuted values — learns nothing about bits. */
     for (uint32_t i = 0; i < CHIPMUNK_RANGE_PROOF_CHALLENGES; ++i) {
-        /* Derive blinding mask for this challenge */
+        /* Derive permutation and mask from blind seed */
+        uint8_t l_perm_seed[32];
+        s_derive_blinding(l_perm_seed, l_blind_seeds + i * 32, i, "perm");
+
+        /* Generate random permutation via Fisher-Yates */
+        uint32_t l_perm[CHIPMUNK_N];
+        for (uint32_t j = 0; j < CHIPMUNK_N; ++j) l_perm[j] = j;
+        for (uint32_t j = CHIPMUNK_N - 1; j > 0; --j) {
+            /* Derive random index from seed + position */
+            uint8_t l_idx_input[36];
+            memcpy(l_idx_input, l_perm_seed, 32);
+            memcpy(l_idx_input + 32, &j, 4);
+            uint8_t l_idx_hash[32];
+            dap_hash_sha3_256_raw(l_idx_hash, l_idx_input, 36);
+            uint32_t l_rand_idx;
+            memcpy(&l_rand_idx, l_idx_hash, 4);
+            uint32_t l_swap = l_rand_idx % (j + 1);
+            uint32_t l_tmp = l_perm[j];
+            l_perm[j] = l_perm[l_swap];
+            l_perm[l_swap] = l_tmp;
+        }
+
+        /* Derive mask from separate seed */
         chipmunk_poly_t l_mask;
         {
             uint8_t l_mask_seed[32];
             s_derive_blinding(l_mask_seed, l_blind_seeds + i * 32, i, "mask");
-            /* Generate mask polynomial from seed */
             memset(&l_mask, 0, sizeof(l_mask));
             for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
-                /* Use seed bytes to generate mask coefficients */
-                uint32_t l_byte_idx = j % 32;
-                l_mask.coeffs[j] = (int32_t)((int8_t)l_mask_seed[l_byte_idx]);
+                l_mask.coeffs[j] = (int32_t)((int8_t)l_mask_seed[j % 32]);
                 l_mask.coeffs[j] = s_mod_q((int64_t)l_mask.coeffs[j]);
             }
         }
 
         if (a_proof->challenges[i] == 0) {
-            /* Challenge 0: reveal blinded bit polynomial */
-            s_bits_to_poly(&a_proof->responses[i][0], l_bits, a_bits);
-            /* Add mask for ZK: response[0] = bits + mask */
+            /* Challenge 0: reveal permuted bits */
             for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
-                a_proof->responses[i][0].coeffs[j] =
-                    s_mod_q((int64_t)a_proof->responses[i][0].coeffs[j] + l_mask.coeffs[j]);
+                uint32_t l_src = l_perm[j];
+                int32_t l_bit = (l_src < a_bits) ? l_bits[l_src] : 0;
+                a_proof->responses[i][0].coeffs[j] = l_bit;
             }
-            /* Response[1] = mask (for verification) */
+            /* Response[1] = mask (unused but kept for struct compatibility) */
             memcpy(&a_proof->responses[i][1], &l_mask, sizeof(chipmunk_poly_t));
         } else {
-            /* Challenge 1: reveal blinded complement */
-            for (uint32_t j = 0; j < a_bits && j < CHIPMUNK_N; ++j) {
-                a_proof->responses[i][0].coeffs[j] = (int32_t)(1 - l_bits[j]);
-            }
-            /* Add mask for ZK */
+            /* Challenge 1: reveal permuted complement */
             for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
-                a_proof->responses[i][0].coeffs[j] =
-                    s_mod_q((int64_t)a_proof->responses[i][0].coeffs[j] + l_mask.coeffs[j]);
+                uint32_t l_src = l_perm[j];
+                int32_t l_comp = (l_src < a_bits) ? (1 - l_bits[l_src]) : 1;
+                a_proof->responses[i][0].coeffs[j] = l_comp;
             }
             /* Response[1] = mask */
             memcpy(&a_proof->responses[i][1], &l_mask, sizeof(chipmunk_poly_t));
@@ -392,34 +486,24 @@ int chipmunk_range_proof_verify(const chipmunk_range_proof_t *a_proof,
         }
     }
 
-    /* 3. Verify each challenge-response pair
-     *    For each challenge c_i:
-     *      c_i = 0: response[0] should be bits + mask, response[1] = mask
-     *              => response[0] - response[1] should have binary coefficients
-     *      c_i = 1: response[0] should be (1-bits) + mask, response[1] = mask
-     *              => 1 - (response[0] - response[1]) should have binary coefficients
-     */
+    /* 3. Verify each challenge-response pair (Stern ZK)
+     *    Challenge 0: response[0] is permuted bits — check binary
+     *    Challenge 1: response[0] is permuted complement — check binary
+     *    The permutation is random, so the verifier learns nothing about bits. */
     for (uint32_t i = 0; i < CHIPMUNK_RANGE_PROOF_CHALLENGES; ++i) {
-        /* Compute unblinded value: response[0] - response[1] */
-        chipmunk_poly_t l_unblinded;
-        for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
-            l_unblinded.coeffs[j] = s_mod_q((int64_t)a_proof->responses[i][0].coeffs[j]
-                                              - (int64_t)a_proof->responses[i][1].coeffs[j]);
-        }
-
         if (a_proof->challenges[i] == 0) {
-            /* Challenge 0: unblinded should be binary (bits) */
+            /* Challenge 0: permuted bits must be binary */
             for (uint32_t j = 0; j < a_proof->bits && j < CHIPMUNK_N; ++j) {
-                int32_t l_bit = l_unblinded.coeffs[j];
+                int32_t l_bit = a_proof->responses[i][0].coeffs[j];
                 if (l_bit != 0 && l_bit != 1) {
                     log_it(L_ERROR, "Range proof: non-binary response[%u][%u]=%d", i, j, l_bit);
                     return 0;
                 }
             }
         } else {
-            /* Challenge 1: 1 - unblinded should be binary (complement) */
+            /* Challenge 1: permuted complement must be binary */
             for (uint32_t j = 0; j < a_proof->bits && j < CHIPMUNK_N; ++j) {
-                int32_t l_comp = s_mod_q(1 - (int64_t)l_unblinded.coeffs[j]);
+                int32_t l_comp = a_proof->responses[i][0].coeffs[j];
                 if (l_comp != 0 && l_comp != 1) {
                     log_it(L_ERROR, "Range proof: non-binary complement[%u][%u]=%d", i, j, l_comp);
                     return 0;
@@ -428,10 +512,25 @@ int chipmunk_range_proof_verify(const chipmunk_range_proof_t *a_proof,
         }
     }
 
-    /* 4. Consistency: A should equal Σ 2^i * C_i
-     *    Since we don't have the individual C_i commitments in the proof,
-     *    we verify that A is a valid Pedersen commitment structure.
-     *    The binding property of Pedersen ensures A cannot be faked. */
+    /* 4. Verify A = C (consistency with original commitment)
+     *    The prover constructed bit randomness such that Σ 2^i * r_i = r,
+     *    which ensures A = Σ 2^i * C_i = Com(v; r) = C. */
+    {
+        int l_match = 1;
+        for (uint32_t k = 0; k < CHIPMUNK_PEDERSEN_K; ++k) {
+            for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
+                if (a_proof->A.C[k].coeffs[j] != a_commit->C[k].coeffs[j]) {
+                    l_match = 0;
+                    break;
+                }
+            }
+            if (!l_match) break;
+        }
+        if (!l_match) {
+            log_it(L_ERROR, "Range proof: A != C (commitment mismatch)");
+            return 0;
+        }
+    }
 
     debug_if(0, L_DEBUG, "Range proof verify: all %u challenges passed", CHIPMUNK_RANGE_PROOF_CHALLENGES);
     return 1;

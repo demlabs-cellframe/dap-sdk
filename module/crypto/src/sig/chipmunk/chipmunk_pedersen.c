@@ -169,6 +169,51 @@ int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
     return 0;
 }
 
+int chipmunk_pedersen_commit_explicit(chipmunk_pedersen_commit_t *a_commit,
+                                       const chipmunk_pedersen_params_t *a_params,
+                                       int64_t a_message,
+                                       const chipmunk_poly_t a_randomness[CHIPMUNK_LRS_K])
+{
+    if (!a_commit || !a_params || !a_randomness) return -EINVAL;
+    if (!a_params->initialized) return -EINVAL;
+
+    chipmunk_poly_t l_m;
+    s_encode_message(&l_m, a_message);
+
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
+        chipmunk_poly_t l_sum;
+        memset(&l_sum, 0, sizeof(l_sum));
+
+        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+            chipmunk_poly_t l_a_ntt = a_params->A[i][j];
+            chipmunk_poly_t l_r_ntt = a_randomness[j];
+            chipmunk_ntt(l_a_ntt.coeffs);
+            chipmunk_ntt(l_r_ntt.coeffs);
+
+            chipmunk_poly_t l_prod;
+            chipmunk_poly_mul_ntt(&l_prod, &l_a_ntt, &l_r_ntt);
+            chipmunk_invntt(l_prod.coeffs);
+
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_prod.coeffs[k])
+                                             % CHIPMUNK_Q);
+                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
+            }
+        }
+
+        if (i == 0) {
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_m.coeffs[k])
+                                             % CHIPMUNK_Q);
+                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
+            }
+        }
+
+        a_commit->C[i] = l_sum;
+    }
+    return 0;
+}
+
 int chipmunk_pedersen_verify_opening(const chipmunk_pedersen_commit_t *a_commit,
                                      const chipmunk_pedersen_params_t *a_params,
                                      const chipmunk_pedersen_opening_t *a_opening)

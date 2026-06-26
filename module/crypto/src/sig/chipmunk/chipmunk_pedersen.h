@@ -90,6 +90,21 @@ int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *commit,
                              const uint8_t randomness_seed[32]);
 
 /**
+ * Create a Pedersen commitment with explicit randomness vector.
+ * C = A * r + encode(m) mod q
+ *
+ * @param commit Output commitment.
+ * @param params Public parameters.
+ * @param message Value to commit.
+ * @param randomness Explicit blinding vector r (K polynomials).
+ * @return 0 on success.
+ */
+int chipmunk_pedersen_commit_explicit(chipmunk_pedersen_commit_t *commit,
+                                       const chipmunk_pedersen_params_t *params,
+                                       int64_t message,
+                                       const chipmunk_poly_t randomness[CHIPMUNK_LRS_K]);
+
+/**
  * Verify a Pedersen commitment opening.
  * Check that C = A * r + encode(m) mod q.
  *
