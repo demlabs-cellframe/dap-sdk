@@ -1097,7 +1097,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
             if (a_with_holes || !s_is_hole(l_data.iov_base)) {
                 if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
                     rc = MDBX_PROBLEM;
-                    break;
+                    continue;
                 }
                 ++l_count_current;
             }
