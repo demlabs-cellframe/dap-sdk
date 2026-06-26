@@ -335,16 +335,22 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
             l_perm[l_swap] = l_tmp;
         }
 
-        /* Derive mask from separate seed */
+        /* Derive mask from separate seed via SHAKE256 XOF, ternary {-1,0,1} */
         chipmunk_poly_t l_mask;
         {
             uint8_t l_mask_seed[32];
             s_derive_blinding(l_mask_seed, l_blind_seeds + i * 32, i, "mask");
-            memset(&l_mask, 0, sizeof(l_mask));
+            uint64_t l_shake_st[25];
+            memset(l_shake_st, 0, sizeof(l_shake_st));
+            dap_hash_shake256_absorb(l_shake_st, l_mask_seed, 32);
+            size_t l_nblocks = (CHIPMUNK_N + 135) / 136;
+            uint8_t *l_xof = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
+            if (!l_xof) return -ENOMEM;
+            dap_hash_shake256_squeezeblocks(l_xof, l_nblocks, l_shake_st);
             for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
-                l_mask.coeffs[j] = (int32_t)((int8_t)l_mask_seed[j % 32]);
-                l_mask.coeffs[j] = s_mod_q((int64_t)l_mask.coeffs[j]);
+                l_mask.coeffs[j] = (int32_t)(l_xof[j] % 3) - 1;
             }
+            DAP_DELETE(l_xof);
         }
 
         if (a_proof->challenges[i] == 0) {
