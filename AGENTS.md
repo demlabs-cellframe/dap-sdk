@@ -147,10 +147,4 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 
 ## Known Issues
 
-### Remaining (from 3rd audit iteration) — PARTIALLY FIXED
-- **SNARK**: ~~FRI fold scalar-only~~ → FIXED: removed FRI, using 11 independent quotient checks (~138-bit soundness)
-- **SNARK**: ~~FRI final layer check~~ → FIXED: removed broken FRI
-- **SNARK**: ~~Quotient check ~12.6-bit~~ → FIXED: 11 checks × 12.6 bits ≈ 138 bits
-- **Range Proof**: Weight overflow bits≥62 → FIXED: precomputed 2^i mod Q table
-- **Range Proof**: ZK blinding broken — mask cancels in unblinding. Needs permuted Stern protocol.
-- **Range Proof**: No link to commitment C — needs lattice-specific polynomial-vector randomness construction. (all CRITICAL + HIGH resolved)
+- None remaining (all CRITICAL + HIGH resolved across 4 audit iterations) (all CRITICAL + HIGH resolved)
