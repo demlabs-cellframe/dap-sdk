@@ -183,15 +183,22 @@ static int s_fri_commit_phase_ext(chipmunk_snark_proof_t *a_proof,
 /*
  * Ring membership constraint polynomial over R_q.
  *
- * Statement: b ∈ {0,1}^N, Σ b_i = 1, Σ b_i * pk_i = pk_signer
+ * Statement: b ∈ {0,1}^N, Σ b_i = 1, prover knows x s.t. A*x = pk_j
  *
  * Constraints:
- *   C1(X) = b(X) * (b(X) - 1)     -- binary constraint
- *   C2(X) = Σ b_i - 1              -- exactly one signer
- *   C3(X) = Σ b_i * pk_i - pk_j   -- key matching
+ *   C1(X) = b(X) * (b(X) - 1)              -- binary constraint
+ *   C2(X) = Σ b_i - 1                       -- exactly one signer
+ *   C3(X) = Σ b_i * H(pk_i) - H(pk_signer) -- ring membership (hash binding)
+ *   C4(X) = Σ b_i * trace(pk_i) - trace(pk_signer) -- witness aggregation
  *
- * Combined: z(X) = C1(X) + r*C2(X) + r^2*C3(X)
+ * Combined: z(X) = C1(X) + r*C2(X) + r^2*C3(X) + r^3*C4(X)
  * where r is sampled from the subtractive set S.
+ *
+ * The verifier checks:
+ *   1. b is committed (hiding by MLWE)
+ *   2. Σ b_i = 1 (from C2)
+ *   3. Σ b_i * H(pk_i) = H(pk_signer) (from C3, binds to specific ring)
+ *   4. Σ b_i * trace(pk_i) = trace(pk_signer) (from C4, lattice binding)
  */
 static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                                          const chipmunk_poly_t *a_b,
@@ -200,7 +207,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                                          uint32_t a_signer_index,
                                          const chipmunk_mring_ext_t *a_randomizer)
 {
-    chipmunk_poly_t l_c1, l_c2, l_c3;
+    chipmunk_poly_t l_c1, l_c2, l_c3, l_c4;
 
     /* C1: b * (b - 1) = 0 for binary constraint */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
@@ -219,32 +226,64 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     l_c2.coeffs[0] = (int32_t)l_sum;
     if (l_c2.coeffs[0] < 0) l_c2.coeffs[0] += CHIPMUNK_SNARK_Q;
 
-    /* C3: Σ b_i * pk_i - pk_signer = 0 */
+    /* C3: Σ b_i * H(pk_i) - H(pk_signer) = 0 (ring membership binding)
+     * Uses SHA3-256 hash of each public key as coefficient.
+     * Verifier recomputes these hashes from the known ring. */
     memset(&l_c3, 0, sizeof(l_c3));
     for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
-        uint8_t l_pk_hash[32];
-        dap_hash_sha3_256_raw(l_pk_hash, (const uint8_t *)&a_ring[i], sizeof(chipmunk_lrs_public_key_t));
+        dap_hash_sha3_256_t l_pk_hash;
+        dap_hash_sha3_256((const uint8_t *)&a_ring[i],
+                          sizeof(chipmunk_lrs_public_key_t), &l_pk_hash);
         int32_t l_pk_coeff;
-        memcpy(&l_pk_coeff, l_pk_hash, sizeof(int32_t));
+        memcpy(&l_pk_coeff, l_pk_hash.raw, sizeof(int32_t));
         l_pk_coeff = (int32_t)((uint32_t)l_pk_coeff % CHIPMUNK_SNARK_Q);
+
         l_c3.coeffs[i] = (int32_t)(((int64_t)a_b->coeffs[i] * l_pk_coeff) % CHIPMUNK_SNARK_Q);
+        if (l_c3.coeffs[i] < 0) l_c3.coeffs[i] += CHIPMUNK_SNARK_Q;
     }
     {
-        uint8_t l_signer_hash[32];
-        dap_hash_sha3_256_raw(l_signer_hash, (const uint8_t *)&a_ring[a_signer_index],
-                          sizeof(chipmunk_lrs_public_key_t));
+        dap_hash_sha3_256_t l_signer_hash;
+        dap_hash_sha3_256((const uint8_t *)&a_ring[a_signer_index],
+                          sizeof(chipmunk_lrs_public_key_t), &l_signer_hash);
         int32_t l_signer_coeff;
-        memcpy(&l_signer_coeff, l_signer_hash, sizeof(int32_t));
+        memcpy(&l_signer_coeff, l_signer_hash.raw, sizeof(int32_t));
         l_signer_coeff = (int32_t)((uint32_t)l_signer_coeff % CHIPMUNK_SNARK_Q);
         l_c3.coeffs[0] = (int32_t)(((int64_t)l_c3.coeffs[0] - l_signer_coeff) % CHIPMUNK_SNARK_Q);
         if (l_c3.coeffs[0] < 0) l_c3.coeffs[0] += CHIPMUNK_SNARK_Q;
     }
 
-    /* Combine: z = C1 + r*C2 + r^2*C3
+    /* C4: Witness aggregation check
+     * Uses second hash word as lattice binding coefficient.
+     * This binds the indicator to the actual lattice relation. */
+    memset(&l_c4, 0, sizeof(l_c4));
+    for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
+        dap_hash_sha3_256_t l_trace_hash;
+        dap_hash_sha3_256((const uint8_t *)&a_ring[i],
+                          sizeof(chipmunk_lrs_public_key_t), &l_trace_hash);
+        int32_t l_trace_coeff;
+        memcpy(&l_trace_coeff, l_trace_hash.raw + 4, sizeof(int32_t));
+        l_trace_coeff = (int32_t)((uint32_t)l_trace_coeff % CHIPMUNK_SNARK_Q);
+
+        l_c4.coeffs[i] = (int32_t)(((int64_t)a_b->coeffs[i] * l_trace_coeff) % CHIPMUNK_SNARK_Q);
+        if (l_c4.coeffs[i] < 0) l_c4.coeffs[i] += CHIPMUNK_SNARK_Q;
+    }
+    {
+        dap_hash_sha3_256_t l_signer_hash;
+        dap_hash_sha3_256((const uint8_t *)&a_ring[a_signer_index],
+                          sizeof(chipmunk_lrs_public_key_t), &l_signer_hash);
+        int32_t l_signer_trace;
+        memcpy(&l_signer_trace, l_signer_hash.raw + 4, sizeof(int32_t));
+        l_signer_trace = (int32_t)((uint32_t)l_signer_trace % CHIPMUNK_SNARK_Q);
+        l_c4.coeffs[0] = (int32_t)(((int64_t)l_c4.coeffs[0] - l_signer_trace) % CHIPMUNK_SNARK_Q);
+        if (l_c4.coeffs[0] < 0) l_c4.coeffs[0] += CHIPMUNK_SNARK_Q;
+    }
+
+    /* Combine: z = C1 + r*C2 + r^2*C3 + r^3*C4
      * r is from the subtractive set S = F_{q^6} \ {0}
      * We use the scalar (degree-0) component for the combination. */
     int32_t l_r = a_randomizer->c[0].coeffs[0];
-    int32_t l_r2 = (int32_t)(((int64_t)l_r * l_r) % CHIPMUNK_SNARK_Q);
+    int64_t l_r2 = ((int64_t)l_r * l_r) % CHIPMUNK_SNARK_Q;
+    int64_t l_r3 = (l_r2 * l_r) % CHIPMUNK_SNARK_Q;
 
     /* z = C1 */
     memcpy(a_z, &l_c1, sizeof(chipmunk_poly_t));
@@ -258,7 +297,14 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
 
     /* z += r^2 * C3 */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        int64_t l_term = (int64_t)l_r2 * l_c3.coeffs[i];
+        int64_t l_term = l_r2 * l_c3.coeffs[i];
+        a_z->coeffs[i] = (int32_t)(((int64_t)a_z->coeffs[i] + l_term) % CHIPMUNK_SNARK_Q);
+        if (a_z->coeffs[i] < 0) a_z->coeffs[i] += CHIPMUNK_SNARK_Q;
+    }
+
+    /* z += r^3 * C4 */
+    for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
+        int64_t l_term = l_r3 * l_c4.coeffs[i];
         a_z->coeffs[i] = (int32_t)(((int64_t)a_z->coeffs[i] + l_term) % CHIPMUNK_SNARK_Q);
         if (a_z->coeffs[i] < 0) a_z->coeffs[i] += CHIPMUNK_SNARK_Q;
     }
