@@ -157,4 +157,5 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 | 2nd | Fix verification | 4 | 6 | - | - |
 | 3rd | SHAKE256 + deep audit | 1 | 5 | - | - |
 | 4th | SNARK soundness + Range Proof ZK | 3 | 3 | - | - |
-| 5th | Protocol correctness | 5 | 6 | 4 | 8 | (all CRITICAL + HIGH resolved)
+| 5th | Protocol correctness | 5 | 6 | 4 | 8 |
+| 6th | Message binding + TOCTOU + sign ext | 3 | 2 | 2 | - | (all CRITICAL + HIGH resolved)
