@@ -33,6 +33,7 @@
 #include "dap_stream_pkt.h"
 #include "dap_tls_mimicry.h"
 #include "dap_stream_trans_tls.h"
+#include "dap_net_trans_tls_server.h"
 
 #define LOG_TAG "dap_stream_trans_tls"
 
@@ -75,6 +76,13 @@ int dap_stream_trans_tls_register(void)
 {
     s_config = dap_stream_trans_tls_config_default();
 
+    /* Initialize TLS server module first (registers server operations) */
+    int l_srv_rc = dap_net_trans_tls_server_init();
+    if (l_srv_rc != 0) {
+        log_it(L_WARNING, "TLS server module init failed (rc=%d), server-side TLS unavailable", l_srv_rc);
+        /* Continue — client-side TLS still works */
+    }
+
     int l_rc = dap_net_trans_register(
         "tls_mimicry",
         DAP_NET_TRANS_TLS_DIRECT,
@@ -88,6 +96,7 @@ int dap_stream_trans_tls_register(void)
 
 int dap_stream_trans_tls_unregister(void)
 {
+    dap_net_trans_tls_server_deinit();
     DAP_DEL_Z(s_config.sni_hostname);
     return dap_net_trans_unregister(DAP_NET_TRANS_TLS_DIRECT);
 }

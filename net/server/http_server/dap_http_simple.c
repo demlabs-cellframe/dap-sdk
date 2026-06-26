@@ -239,7 +239,6 @@ static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
         log_it(L_INFO, "All HTTP data transmitted, closing connection");
         a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     } else {
-        /* Reset HTTP client state for next request (keep-alive) */
         dap_http_client_t *l_http_client = l_http_simple ? l_http_simple->http_client : NULL;
         if (l_http_client) {
             l_http_client->state_read = DAP_HTTP_CLIENT_STATE_START;
@@ -247,7 +246,6 @@ static void s_http_client_write_finished(dap_events_socket_t *a_es, void *a_arg)
             l_http_simple->reply_size = 0;
             l_http_simple->reply_sent = 0;
             l_http_simple->close_after_write = false;
-            a_es->_inheritor = l_http_client;
             dap_events_socket_set_readable_unsafe(a_es, true);
         }
     }
@@ -498,11 +496,9 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
     } else {
         log_it( L_DEBUG, "No data section, execution proc callback" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        a_http_client->esocket->_inheritor = NULL;
         int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
         if (l_submit_rc != 0) {
             log_it(L_ERROR, "HTTP proc pool submit failed (rc=%d), sending 503", l_submit_rc);
-            a_http_client->esocket->_inheritor = a_http_client;
             s_write_response_busy(l_http_simple);
             s_write_data_to_socket(l_http_simple);
         }
@@ -552,11 +548,9 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
         // bool isOK=true;
         log_it( L_INFO,"Data for http_simple_request collected" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
-        a_http_client->esocket->_inheritor = NULL;
         int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
         if (l_submit_rc != 0) {
             log_it(L_ERROR, "HTTP proc pool submit failed (rc=%d), sending 503", l_submit_rc);
-            a_http_client->esocket->_inheritor = a_http_client;
             s_write_response_busy(l_http_simple);
             s_write_data_to_socket(l_http_simple);
         }

@@ -992,7 +992,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 }
                 case DESCRIPTOR_TYPE_PIPE:
                 case DESCRIPTOR_TYPE_EVENT:
-                    // Internal pipes/queues with HUP - CRITICAL: Remove from polling!
+                case DESCRIPTOR_TYPE_FILE:
+                    // Internal pipes/queues/files with HUP - CRITICAL: Remove from polling!
                     // OUTPUT end was closed, INPUT end receives HUP
                     // We MUST remove from epoll immediately to prevent INFINITE HUP events
                     // The esocket will be deleted later via worker callback

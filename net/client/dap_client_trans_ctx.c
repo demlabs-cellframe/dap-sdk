@@ -216,18 +216,15 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
         l_tc->stream_id = 0;
 
         if (l_stream) {
-            /* Stream and trans_ctx belong to different contexts.  Detach the
-             * trans_ctx from the FSM and hand ownership to the stream's worker,
-             * which will clear stream-side back-pointers and free both objects
-             * after any in-flight callbacks complete. */
-            if (l_fsm)
-                l_fsm->trans_ctx = NULL;
-
+            /* Stream exists — hand off cleanup to the stream's worker.
+             * Do NOT null l_fsm->trans_ctx here: the FSM will reuse it for
+             * the next connection attempt.  The stream's worker only needs
+             * the stream pointer, not ownership of trans_ctx. */
             s_stream_tc_cleanup_t *l_cleanup = DAP_NEW_Z(s_stream_tc_cleanup_t);
             if (!l_cleanup) {
                 log_it(L_ERROR, "Failed to allocate stream cleanup ctx, leaking stream %p", (void*)l_stream);
             } else {
-                l_cleanup->tc = l_tc;
+                l_cleanup->tc = NULL; /* trans_ctx stays with FSM */
                 l_cleanup->stream = l_stream;
                 dap_worker_t *l_es_worker = l_stream->esocket_worker;
                 log_it(L_INFO, "[CLEAN_DBG] dispatching cleanup to worker %p", (void*)l_es_worker);
@@ -237,20 +234,17 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
                     s_stream_tc_cleanup_on_worker(l_cleanup);
                 }
             }
-        } else {
-            /* No stream attached — free trans_ctx in the current (FSM) context. */
-            DAP_DEL_Z(l_tc->session_key_id);
-            if (l_tc->session_key_open) {
-                dap_enc_key_delete(l_tc->session_key_open);
-                l_tc->session_key_open = NULL;
-            }
-            if (l_tc->session_key) {
-                dap_enc_key_delete(l_tc->session_key);
-                l_tc->session_key = NULL;
-            }
-            DAP_DELETE(l_tc);
-            if (l_fsm)
-                l_fsm->trans_ctx = NULL;
+        }
+
+        /* Reset trans_ctx session state for next connection attempt */
+        DAP_DEL_Z(l_tc->session_key_id);
+        if (l_tc->session_key_open) {
+            dap_enc_key_delete(l_tc->session_key_open);
+            l_tc->session_key_open = NULL;
+        }
+        if (l_tc->session_key) {
+            dap_enc_key_delete(l_tc->session_key);
+            l_tc->session_key = NULL;
         }
     }
 
