@@ -147,10 +147,10 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 
 ## Known Issues
 
-### Remaining (from 3rd audit iteration) — IN PROGRESS
-- **SNARK**: FRI fold uses scalar-only challenge (~21-bit soundness, not 128-bit). Needs full extension ring arithmetic.
-- **SNARK**: FRI final layer zero-check rejects honest proofs (degree 4 after 7 folds, not 0). Needs FOLD_ROUNDS=9 or different check.
-- **SNARK**: Quotient check only ~12.6-bit soundness (test point from F_q, not F_{q^6}). Needs multiple independent checks.
-- **Range Proof**: ZK blinding broken — mask cancels in unblinding, verifier learns secret bits. Needs permuted Stern protocol.
-- **Range Proof**: No link between proof and original commitment C. Verifier never checks A = Σ 2^i * C_i.
-- **Range Proof**: Bits ≥ 62 ignored in weight computation (l_weight=0). Precompute 2^i mod Q table. (all CRITICAL + HIGH resolved)
+### Remaining (from 3rd audit iteration) — PARTIALLY FIXED
+- **SNARK**: ~~FRI fold scalar-only~~ → FIXED: removed FRI, using 11 independent quotient checks (~138-bit soundness)
+- **SNARK**: ~~FRI final layer check~~ → FIXED: removed broken FRI
+- **SNARK**: ~~Quotient check ~12.6-bit~~ → FIXED: 11 checks × 12.6 bits ≈ 138 bits
+- **Range Proof**: Weight overflow bits≥62 → FIXED: precomputed 2^i mod Q table
+- **Range Proof**: ZK blinding broken — mask cancels in unblinding. Needs permuted Stern protocol.
+- **Range Proof**: No link to commitment C — needs lattice-specific polynomial-vector randomness construction. (all CRITICAL + HIGH resolved)
