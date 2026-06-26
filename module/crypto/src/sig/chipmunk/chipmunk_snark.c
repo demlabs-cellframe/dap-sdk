@@ -67,13 +67,18 @@ static int s_commit_ext(chipmunk_snark_commit_t *a_commit,
     /* Hash all 6 R_q components sequentially */
     uint64_t l_state[25];
     memset(l_state, 0, sizeof(l_state));
-    dap_hash_shake256_absorb(l_state, (const uint8_t *)s_domain_commit,
-                              strlen(s_domain_commit));
+    size_t l_domain_len = strlen(s_domain_commit);
+    size_t l_comp_size = CHIPMUNK_N * sizeof(int32_t);
+    size_t l_abs_len = l_domain_len + (size_t)CHIPMUNK_SNARK_EXT_DEG * l_comp_size;
+    uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+    if (!l_abs) return -ENOMEM;
+    memcpy(l_abs, s_domain_commit, l_domain_len);
     for (int i = 0; i < CHIPMUNK_SNARK_EXT_DEG; ++i) {
-        uint8_t l_buf[CHIPMUNK_N * sizeof(int32_t)];
-        s_poly_to_bytes(l_buf, sizeof(l_buf), &a_ext->c[i]);
-        dap_hash_shake256_absorb(l_state, l_buf, sizeof(l_buf));
+        s_poly_to_bytes(l_abs + l_domain_len + i * l_comp_size,
+                        l_comp_size, &a_ext->c[i]);
     }
+    dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+    DAP_DELETE(l_abs);
     uint8_t l_hash[32];
     dap_hash_shake256_squeezeblocks(l_hash, 1, l_state);
     memcpy(a_commit->hash, l_hash, 32);

@@ -31,10 +31,14 @@ static void s_leaf_xof_init(leaf_xof_reader_t *a_r,
                             const uint8_t *a_seed, size_t a_seed_len)
 {
     memset(a_r, 0, sizeof(*a_r));
-    dap_hash_shake256_absorb(a_r->st,
-                             (const uint8_t *)a_domain,
-                             strlen(a_domain));
-    dap_hash_shake256_absorb(a_r->st, a_seed, a_seed_len);
+    size_t l_domain_len = strlen(a_domain);
+    size_t l_abs_len = l_domain_len + a_seed_len;
+    uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+    if (!l_abs) return;
+    memcpy(l_abs, a_domain, l_domain_len);
+    memcpy(l_abs + l_domain_len, a_seed, a_seed_len);
+    dap_hash_shake256_absorb(a_r->st, l_abs, l_abs_len);
+    DAP_DELETE(l_abs);
 }
 
 static uint8_t s_leaf_xof_u8(leaf_xof_reader_t *a_r)

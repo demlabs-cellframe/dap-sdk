@@ -92,7 +92,7 @@ typedef struct chipmunk_snark_statement {
 /* Ring membership witness (private) */
 typedef struct chipmunk_snark_witness {
     uint32_t signer_index;                      /* Which key signed */
-    chipmunk_poly_t secret_key[CHIPMUNK_LRS_K]; /* Secret witness */
+    chipmunk_poly_t secret_key[CHIPMUNK_LRS_K * 2]; /* Secret witness (s0[GAMMA]+s1[GAMMA]) */
     chipmunk_poly_t indicator;                  /* b ∈ {0,1}^N */
 } chipmunk_snark_witness_t;
 

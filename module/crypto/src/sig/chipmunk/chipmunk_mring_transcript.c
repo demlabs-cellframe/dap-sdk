@@ -96,11 +96,16 @@ static int s_pk_qpack_cmp(const void *a, const void *b)
 
 static void s_absorb_ext(uint64_t a_st[25], const chipmunk_mring_ext_t *a_x)
 {
+    size_t l_comp_size = sizeof(a_x->c[0].coeffs);
+    size_t l_abs_len = (size_t)CHIPMUNK_MRING_EXT_DEG * l_comp_size;
+    uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+    if (!l_abs) return;
     for (uint32_t j = 0u; j < (uint32_t)CHIPMUNK_MRING_EXT_DEG; ++j) {
-        dap_hash_shake256_absorb(a_st,
-                                 (const uint8_t *)a_x->c[j].coeffs,
-                                 sizeof(a_x->c[j].coeffs));
+        memcpy(l_abs + j * l_comp_size,
+               (const uint8_t *)a_x->c[j].coeffs, l_comp_size);
     }
+    dap_hash_shake256_absorb(a_st, l_abs, l_abs_len);
+    DAP_DELETE(l_abs);
 }
 
 static int s_hash_with_params(uint8_t a_out[32],
@@ -305,13 +310,19 @@ int chipmunk_mring_transcript_fold_round_fs(
 
     uint64_t l_st[25];
     memset(l_st, 0, sizeof(l_st));
-    dap_hash_shake256_absorb(l_st,
-                             (const uint8_t *)MRING_FOLD_ROUND_FS_DOMAIN,
-                             sizeof(MRING_FOLD_ROUND_FS_DOMAIN) - 1u);
-    dap_hash_shake256_absorb(l_st, a_fs_seed, 32u);
-    uint8_t l_rbuf[4];
-    s_le32_store(l_rbuf, a_round);
-    dap_hash_shake256_absorb(l_st, l_rbuf, sizeof(l_rbuf));
+    {
+        size_t l_domain_len = sizeof(MRING_FOLD_ROUND_FS_DOMAIN) - 1u;
+        uint8_t l_rbuf[4];
+        s_le32_store(l_rbuf, a_round);
+        size_t l_abs_len = l_domain_len + 32u + sizeof(l_rbuf);
+        uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+        if (!l_abs) return -ENOMEM;
+        memcpy(l_abs, MRING_FOLD_ROUND_FS_DOMAIN, l_domain_len);
+        memcpy(l_abs + l_domain_len, a_fs_seed, 32u);
+        memcpy(l_abs + l_domain_len + 32u, l_rbuf, sizeof(l_rbuf));
+        dap_hash_shake256_absorb(l_st, l_abs, l_abs_len);
+        DAP_DELETE(l_abs);
+    }
     s_absorb_ext(l_st, a_CL);
     s_absorb_ext(l_st, a_CR);
     dap_hash_shake256_squeezeblocks(a_out, 1u, l_st);

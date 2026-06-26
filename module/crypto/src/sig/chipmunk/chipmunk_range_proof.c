@@ -105,8 +105,15 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
     {
         uint64_t l_state[25];
         memset(l_state, 0, sizeof(l_state));
-        dap_hash_shake256_absorb(l_state, a_randomness_seed, 32);
-        dap_hash_shake256_absorb(l_state, (const uint8_t *)"range-proof-bits-v2", 19);
+        {
+            size_t l_abs_len = 32 + 19;
+            uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+            if (!l_abs) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); return -ENOMEM; }
+            memcpy(l_abs, a_randomness_seed, 32);
+            memcpy(l_abs + 32, "range-proof-bits-v2", 19);
+            dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+            DAP_DELETE(l_abs);
+        }
         size_t l_nblocks = (l_seed_buf_size + 135) / 136;
         uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
         if (!l_buf) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); return -ENOMEM; }
@@ -121,8 +128,15 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
     {
         uint64_t l_state[25];
         memset(l_state, 0, sizeof(l_state));
-        dap_hash_shake256_absorb(l_state, a_randomness_seed, 32);
-        dap_hash_shake256_absorb(l_state, (const uint8_t *)"range-proof-blind-v2", 20);
+        {
+            size_t l_abs_len = 32 + 20;
+            uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+            if (!l_abs) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds); return -ENOMEM; }
+            memcpy(l_abs, a_randomness_seed, 32);
+            memcpy(l_abs + 32, "range-proof-blind-v2", 20);
+            dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+            DAP_DELETE(l_abs);
+        }
         size_t l_nblocks = ((size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32 + 135) / 136;
         uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
         if (!l_buf) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds); return -ENOMEM; }
@@ -187,13 +201,24 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
         chipmunk_pedersen_commit_serialize(l_a_buf, l_ser_size, &a_proof->A);
         chipmunk_pedersen_commit_serialize(l_b_buf, l_ser_size, &a_proof->B);
 
-        dap_hash_shake256_absorb(l_state, l_c_buf, l_ser_size); /* Bind to C */
-        dap_hash_shake256_absorb(l_state, l_a_buf, l_ser_size);
-        dap_hash_shake256_absorb(l_state, l_b_buf, l_ser_size);
-        /* Bind to range */
-        uint8_t l_range_buf[4];
-        memcpy(l_range_buf, &a_bits, 4);
-        dap_hash_shake256_absorb(l_state, l_range_buf, 4);
+        {
+            uint8_t l_range_buf[4];
+            memcpy(l_range_buf, &a_bits, 4);
+            size_t l_abs_len = 3 * l_ser_size + 4;
+            uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+            if (!l_abs) {
+                DAP_DELETE(l_c_buf); DAP_DELETE(l_a_buf); DAP_DELETE(l_b_buf);
+                DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds);
+                DAP_DELETE(l_bit_commits);
+                return -ENOMEM;
+            }
+            memcpy(l_abs, l_c_buf, l_ser_size);
+            memcpy(l_abs + l_ser_size, l_a_buf, l_ser_size);
+            memcpy(l_abs + 2 * l_ser_size, l_b_buf, l_ser_size);
+            memcpy(l_abs + 3 * l_ser_size, l_range_buf, 4);
+            dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+            DAP_DELETE(l_abs);
+        }
 
         DAP_DELETE(l_c_buf); DAP_DELETE(l_a_buf); DAP_DELETE(l_b_buf);
 
@@ -253,32 +278,37 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
         /* Hash all proof components */
         uint64_t l_state[25];
         memset(l_state, 0, sizeof(l_state));
-        dap_hash_shake256_absorb(l_state, (const uint8_t *)"range-proof-transcript-v2", 25);
 
-        /* Absorb commitments */
         size_t l_ser_size = CHIPMUNK_PEDERSEN_K * CHIPMUNK_N * sizeof(int32_t);
-        uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_ser_size);
-        if (l_buf) {
-            chipmunk_pedersen_commit_serialize(l_buf, l_ser_size, &a_proof->A);
-            dap_hash_shake256_absorb(l_state, l_buf, l_ser_size);
-            chipmunk_pedersen_commit_serialize(l_buf, l_ser_size, &a_proof->B);
-            dap_hash_shake256_absorb(l_state, l_buf, l_ser_size);
-            DAP_DELETE(l_buf);
+        size_t l_resp_elem = sizeof(chipmunk_poly_t) * 2;
+        size_t l_abs_len = 25 + 2 * l_ser_size
+                         + CHIPMUNK_RANGE_PROOF_CHALLENGES
+                         + (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * l_resp_elem
+                         + 4;
+        uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+        if (!l_abs) {
+            dap_memwipe(l_bits, a_bits); DAP_DELETE(l_bits);
+            dap_memwipe(l_bit_seeds, l_seed_buf_size); DAP_DELETE(l_bit_seeds);
+            dap_memwipe(l_blind_seeds, (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32);
+            DAP_DELETE(l_blind_seeds); DAP_DELETE(l_bit_commits);
+            return -ENOMEM;
         }
-
-        /* Absorb challenges */
-        dap_hash_shake256_absorb(l_state, a_proof->challenges, CHIPMUNK_RANGE_PROOF_CHALLENGES);
-
-        /* Absorb responses */
+        size_t l_off = 0;
+        memcpy(l_abs + l_off, "range-proof-transcript-v2", 25);
+        l_off += 25;
+        chipmunk_pedersen_commit_serialize(l_abs + l_off, l_ser_size, &a_proof->A);
+        l_off += l_ser_size;
+        chipmunk_pedersen_commit_serialize(l_abs + l_off, l_ser_size, &a_proof->B);
+        l_off += l_ser_size;
+        memcpy(l_abs + l_off, a_proof->challenges, CHIPMUNK_RANGE_PROOF_CHALLENGES);
+        l_off += CHIPMUNK_RANGE_PROOF_CHALLENGES;
         for (uint32_t i = 0; i < CHIPMUNK_RANGE_PROOF_CHALLENGES; ++i) {
-            dap_hash_shake256_absorb(l_state, (const uint8_t *)&a_proof->responses[i],
-                                      sizeof(chipmunk_poly_t) * 2);
+            memcpy(l_abs + l_off, (const uint8_t *)&a_proof->responses[i], l_resp_elem);
+            l_off += l_resp_elem;
         }
-
-        /* Absorb range */
-        uint8_t l_range[4];
-        memcpy(l_range, &a_bits, 4);
-        dap_hash_shake256_absorb(l_state, l_range, 4);
+        memcpy(l_abs + l_off, &a_bits, 4);
+        dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+        DAP_DELETE(l_abs);
 
         /* Squeeze hash */
         uint8_t l_hash[32];
@@ -309,28 +339,31 @@ int chipmunk_range_proof_verify(const chipmunk_range_proof_t *a_proof,
     {
         uint64_t l_state[25];
         memset(l_state, 0, sizeof(l_state));
-        dap_hash_shake256_absorb(l_state, (const uint8_t *)"range-proof-transcript-v2", 25);
 
         size_t l_ser_size = CHIPMUNK_PEDERSEN_K * CHIPMUNK_N * sizeof(int32_t);
-        uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_ser_size);
-        if (!l_buf) return -ENOMEM;
-
-        chipmunk_pedersen_commit_serialize(l_buf, l_ser_size, &a_proof->A);
-        dap_hash_shake256_absorb(l_state, l_buf, l_ser_size);
-        chipmunk_pedersen_commit_serialize(l_buf, l_ser_size, &a_proof->B);
-        dap_hash_shake256_absorb(l_state, l_buf, l_ser_size);
-        DAP_DELETE(l_buf);
-
-        dap_hash_shake256_absorb(l_state, a_proof->challenges, CHIPMUNK_RANGE_PROOF_CHALLENGES);
-
+        size_t l_resp_elem = sizeof(chipmunk_poly_t) * 2;
+        size_t l_abs_len = 25 + 2 * l_ser_size
+                         + CHIPMUNK_RANGE_PROOF_CHALLENGES
+                         + (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * l_resp_elem
+                         + 4;
+        uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+        if (!l_abs) return -ENOMEM;
+        size_t l_off = 0;
+        memcpy(l_abs + l_off, "range-proof-transcript-v2", 25);
+        l_off += 25;
+        chipmunk_pedersen_commit_serialize(l_abs + l_off, l_ser_size, &a_proof->A);
+        l_off += l_ser_size;
+        chipmunk_pedersen_commit_serialize(l_abs + l_off, l_ser_size, &a_proof->B);
+        l_off += l_ser_size;
+        memcpy(l_abs + l_off, a_proof->challenges, CHIPMUNK_RANGE_PROOF_CHALLENGES);
+        l_off += CHIPMUNK_RANGE_PROOF_CHALLENGES;
         for (uint32_t i = 0; i < CHIPMUNK_RANGE_PROOF_CHALLENGES; ++i) {
-            dap_hash_shake256_absorb(l_state, (const uint8_t *)&a_proof->responses[i],
-                                      sizeof(chipmunk_poly_t) * 2);
+            memcpy(l_abs + l_off, (const uint8_t *)&a_proof->responses[i], l_resp_elem);
+            l_off += l_resp_elem;
         }
-
-        uint8_t l_range[4];
-        memcpy(l_range, &a_proof->bits, 4);
-        dap_hash_shake256_absorb(l_state, l_range, 4);
+        memcpy(l_abs + l_off, &a_proof->bits, 4);
+        dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+        DAP_DELETE(l_abs);
 
         uint8_t l_hash[32];
         dap_hash_shake256_squeezeblocks(l_hash, 1, l_state);

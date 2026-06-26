@@ -1029,16 +1029,16 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
     /* For each i: norm check + algebraic check A*z_short + z_tail == T_i + c_i*pk[i]. */
     int l_match = 1;
     int64_t l_bound = l_rice_bound_z;
-    for (uint32_t i = 0u; i < l_N && l_match; ++i) {
+    for (uint32_t i = 0u; i < l_N; ++i) {
         /* Norm check: ‖z_i‖∞ < φ·η. */
+        int l_member_ok = 1;
         for (uint32_t j = 0u; j < l_len; ++j) {
             if (!lotrs_reject_infinity_norm(l_z[i].polys[j], l_bound, a_par)) {
                 debug_if(1, L_DEBUG, "CRIN verify: norm check FAILED at member[%u][%u]", i, j);
-                l_match = 0;
-                break;
+                l_member_ok = 0;
             }
         }
-        if (!l_match) break;
+        if (!l_member_ok) { l_match = 0; continue; }
 
         lotrs_polyvec_t l_z_short = { .polys = l_z[i].polys, .n = a_par->l };
         lotrs_polyvec_t l_z_tail  = { .polys = l_z[i].polys + a_par->l, .n = a_par->k };

@@ -158,8 +158,15 @@ int chipmunk_dcnet_generate_shares(chipmunk_dcnet_round_t *a_round,
         /* Use SHAKE256 to generate deterministic share */
         uint64_t l_state[25];
         memset(l_state, 0, sizeof(l_state));
-        dap_hash_shake256_absorb(l_state, l_seed, 12);
-        dap_hash_shake256_absorb(l_state, (const uint8_t *)"dcnet-shared-pad-v1", 19);
+        {
+            size_t l_abs_len = 12 + 19;
+            uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+            if (!l_abs) { DAP_DELETE(l_share); return -ENOMEM; }
+            memcpy(l_abs, l_seed, 12);
+            memcpy(l_abs + 12, "dcnet-shared-pad-v1", 19);
+            dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+            DAP_DELETE(l_abs);
+        }
         size_t l_nblocks = (l_share_size + 135) / 136;
         uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
         if (!l_buf) { DAP_DELETE(l_share); return -ENOMEM; }

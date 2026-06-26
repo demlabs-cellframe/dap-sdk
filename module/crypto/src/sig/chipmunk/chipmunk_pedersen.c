@@ -37,8 +37,15 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
     /* Derive matrix A from seed using SHAKE256 */
     uint64_t l_state[25];
     memset(l_state, 0, sizeof(l_state));
-    dap_hash_shake256_absorb(l_state, a_seed, 32);
-    dap_hash_shake256_absorb(l_state, (const uint8_t *)"pedersen-matrix-v1", 18);
+    {
+        size_t l_abs_len = 32 + 18;
+        uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+        if (!l_abs) return -ENOMEM;
+        memcpy(l_abs, a_seed, 32);
+        memcpy(l_abs + 32, "pedersen-matrix-v1", 18);
+        dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+        DAP_DELETE(l_abs);
+    }
 
     /* Use heap allocation. Size must be multiple of SHAKE256 rate (136 bytes)
      * to avoid overflow from squeezeblocks writing beyond buffer. */
@@ -85,8 +92,15 @@ int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
     if (!l_r) return -ENOMEM;
     uint64_t l_state[25];
     memset(l_state, 0, sizeof(l_state));
-    dap_hash_shake256_absorb(l_state, a_randomness_seed, 32);
-    dap_hash_shake256_absorb(l_state, (const uint8_t *)"pedersen-randomness-v1", 22);
+    {
+        size_t l_abs_len = 32 + 22;
+        uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
+        if (!l_abs) { DAP_DELETE(l_r); return -ENOMEM; }
+        memcpy(l_abs, a_randomness_seed, 32);
+        memcpy(l_abs + 32, "pedersen-randomness-v1", 22);
+        dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
+        DAP_DELETE(l_abs);
+    }
 
     /* Heap allocation — must be multiple of SHAKE256 rate (136 bytes) */
     size_t l_needed = CHIPMUNK_N * 4;
@@ -254,6 +268,13 @@ int chipmunk_pedersen_commit_deserialize(chipmunk_pedersen_commit_t *a_commit,
     for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
         memcpy(a_commit->C[i].coeffs, a_in + l_off, CHIPMUNK_N * sizeof(int32_t));
         l_off += CHIPMUNK_N * sizeof(int32_t);
+    }
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
+        for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
+            if (a_commit->C[i].coeffs[j] < 0 || a_commit->C[i].coeffs[j] >= CHIPMUNK_Q) {
+                return -EINVAL;
+            }
+        }
     }
     return 0;
 }
