@@ -65,31 +65,6 @@ static int s_commit_poly(chipmunk_snark_commit_t *a_commit,
     return 0;
 }
 
-/* Commit to an R_q^{(e)} element: hash all 6 component polynomials */
-static int s_commit_ext(chipmunk_snark_commit_t *a_commit,
-                        const chipmunk_mring_ext_t *a_ext)
-{
-    /* Hash all 6 R_q components sequentially */
-    uint64_t l_state[25];
-    memset(l_state, 0, sizeof(l_state));
-    size_t l_domain_len = strlen(s_domain_commit);
-    size_t l_comp_size = CHIPMUNK_N * sizeof(int32_t);
-    size_t l_abs_len = l_domain_len + (size_t)CHIPMUNK_SNARK_EXT_DEG * l_comp_size;
-    uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
-    if (!l_abs) return -ENOMEM;
-    memcpy(l_abs, s_domain_commit, l_domain_len);
-    for (int i = 0; i < CHIPMUNK_SNARK_EXT_DEG; ++i) {
-        s_poly_to_bytes(l_abs + l_domain_len + i * l_comp_size,
-                        l_comp_size, &a_ext->c[i]);
-    }
-    dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
-    DAP_DELETE(l_abs);
-    uint8_t l_hash[32];
-    dap_hash_shake256_squeezeblocks(l_hash, 1, l_state);
-    memcpy(a_commit->hash, l_hash, 32);
-    return 0;
-}
-
 /* -------------------------------------------------------------------------
  * Internal: QROM Fiat-Shamir transcript
  * ---------------------------------------------------------------------- */
@@ -613,7 +588,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      *    with high probability over the random alpha from the subtractive set,
      *    implies each Ci(alpha)=0. No need to expose b in the proof. */
 
-    debug_if(0, L_DEBUG, "SNARK verify: all checks passed (%d quotient checks, ~138-bit soundness)",
+    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (%d quotient checks, ~138-bit soundness)",
              CHIPMUNK_SNARK_QUOTIENT_CHECKS);
     return 1;
 }

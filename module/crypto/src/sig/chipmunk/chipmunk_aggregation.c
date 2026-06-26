@@ -3,9 +3,7 @@
 #include "chipmunk_ntt.h"
 #include "chipmunk_hash.h"
 #include "chipmunk_hots.h"
-#include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_hash_sha3.h"

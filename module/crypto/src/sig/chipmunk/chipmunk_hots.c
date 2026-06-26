@@ -66,7 +66,7 @@ void chipmunk_hots_set_debug(bool a_enable) {
 int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
     if (!a_params) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_setup");
-        return -1;
+        return -EINVAL;
     }
     
     debug_if(s_debug_more, L_INFO, "🔧 HOTS setup: Generating public parameters...");
@@ -143,7 +143,7 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
                         chipmunk_hots_pk_t *a_pk, chipmunk_hots_sk_t *a_sk) {
     if (!a_seed || !a_params || !a_pk || !a_sk) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_keygen");
-        return -1;
+        return -EINVAL;
     }
     
     debug_if(s_debug_more, L_DEBUG, "🔍 HOTS keygen: Starting key generation");
@@ -276,7 +276,7 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
                       size_t a_message_len, chipmunk_hots_signature_t *a_signature) {
     if (!a_sk || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_sign");
-        return -1;
+        return -EINVAL;
     }
     
     debug_if(s_debug_more, L_DEBUG, "🔍 HOTS sign: Starting signature generation...");
@@ -285,7 +285,7 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
     chipmunk_poly_t l_hm;
     if (chipmunk_poly_from_hash(&l_hm, a_message, a_message_len) != 0) {
         log_it(L_ERROR, "Failed to hash message in chipmunk_hots_sign");
-        return -1;
+        return -ENOMEM;
     }
     
     // Convert to NTT domain for operations
@@ -390,7 +390,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
                         const chipmunk_hots_params_t *a_params) {
     if (!a_pk || !a_message || !a_signature || !a_params) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_verify");
-        return -1;
+        return -EINVAL;
     }
     
     debug_if(s_debug_more, L_DEBUG, "🔍 HOTS verify: Starting detailed verification...");
@@ -399,7 +399,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     chipmunk_poly_t l_hm;
     if (chipmunk_poly_from_hash(&l_hm, a_message, a_message_len) != 0) {
         log_it(L_ERROR, "Failed to hash message to polynomial");
-        return -1;
+        return -ENOMEM;
     }
     
     debug_if(s_debug_more, L_DEBUG, "✓ Message hashed to polynomial");
@@ -537,6 +537,6 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
         }
         debug_if(s_debug_more, L_DEBUG, "  Total differing coefficients: %d/%d", l_diff_count, CHIPMUNK_N);
         
-        return -1;  // Standard C convention: negative for failure/invalid signature
+        return -EINVAL;  // Standard C convention: negative for failure/invalid signature
     }
 } 

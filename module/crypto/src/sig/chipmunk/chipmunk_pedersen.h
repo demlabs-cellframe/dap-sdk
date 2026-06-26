@@ -23,11 +23,6 @@
 #include "chipmunk.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_lrs.h"
-#include <stdbool.h>
-
-#include "chipmunk.h"
-#include "chipmunk_poly.h"
-#include "chipmunk_lrs.h"
 
 #ifdef __cplusplus
 extern "C" {
