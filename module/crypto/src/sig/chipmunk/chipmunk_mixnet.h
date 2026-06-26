@@ -45,6 +45,7 @@ typedef struct chipmunk_mixnet_batch {
 
 /* DC-net round: dining cryptographers for full anonymity */
 typedef struct chipmunk_dcnet_round {
+    uint32_t round_id;                                                          /* Unique round identifier for deterministic pad derivation */
     uint8_t *shares[CHIPMUNK_MIXNET_MAX_PARTICIPANTS][CHIPMUNK_MIXNET_MAX_PARTICIPANTS];
     size_t   share_sizes[CHIPMUNK_MIXNET_MAX_PARTICIPANTS][CHIPMUNK_MIXNET_MAX_PARTICIPANTS];
     uint32_t participant_count;

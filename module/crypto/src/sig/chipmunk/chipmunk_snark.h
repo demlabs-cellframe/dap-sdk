@@ -115,8 +115,8 @@ typedef struct chipmunk_snark_proof {
     /* Challenge point (derived from transcript) */
     chipmunk_mring_ext_t alpha;                 /* Challenge from subtractive set */
 
-    /* Opening proofs */
-    uint8_t opening_proof[512];
+    /* Opening proofs: raw polynomial bytes for verifier */
+    uint8_t opening_proof[CHIPMUNK_N * sizeof(int32_t) * 3]; /* b + z + q */
     size_t opening_proof_size;
 
     /* QROM transcript hash */

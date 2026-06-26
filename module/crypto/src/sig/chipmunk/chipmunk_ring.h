@@ -57,7 +57,8 @@ typedef struct chipmunk_ring_header {
     int64_t  rice_bound_z; /* Centered bound for z coefficients (φ·η) */
     uint32_t flags;
     uint8_t  param_hash[16]; /* Truncated hash of parameter set */
-    uint8_t  key_image[1408]; /* Linkability key image (1 q-packed polynomial) */
+    uint32_t key_image_len;                /* Actual key image byte count (k * poly_bytes) */
+    uint8_t  key_image[9216];              /* Linkability key image (k q-packed polynomials) */
 } chipmunk_ring_header_t;
 
 #define CHIPMUNK_RING_MAGIC    0x4352494Eu  /* 'CRIN' LE */

@@ -35,11 +35,13 @@
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
 #include "dap_hash.h"
+#include "dap_hash_shake256.h"
 #include "dap_common.h"
 #include "dap_rand.h"
 
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 
 #define LOG_TAG "chipmunk_hots"
 
@@ -76,51 +78,48 @@ int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
     // identity cannot hold when distinct signers use different public matrices
     // A, so every multi-signature verification would fail.  Use a fixed, fully
     // initialised domain-separation seed.
-    // Use a fixed seed for reproducible, deterministic output across processes.
-    uint32_t l_base_seed = 0x12345678;
 
-    // Generate GAMMA random polynomials for public parameters
+    // Generate GAMMA random polynomials for public parameters using SHAKE256 XOF
+    // (replaces non-cryptographic LCG for proper security)
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         debug_if(s_debug_more, L_INFO, "  Generating parameter a[%d]...", i);
 
-        uint8_t l_param_seed[36];
-        memset(l_param_seed, 0, sizeof(l_param_seed)); // no uninitialised bytes feeding SHA3
+        /* Derive deterministic seed from fixed base + parameter index */
+        uint8_t l_param_seed[40];
+        memset(l_param_seed, 0, sizeof(l_param_seed));
+        uint32_t l_base_seed = 0x12345678;
         memcpy(l_param_seed, &l_base_seed, 4);
-        uint32_t l_param_nonce = 0x10000000 + i;  // Unique nonce for each parameter
-        memcpy(l_param_seed + 32, &l_param_nonce, 4);
-        
-        // Generate random polynomial in time domain
-        dap_hash_sha3_256_t l_hash_out;
-        dap_hash_sha3_256(l_param_seed, 36, &l_hash_out);
-        
-        uint8_t l_hash[32];
-        memcpy(l_hash, &l_hash_out, 32);
-        
-        // Use hash as seed for ChaCha20-like generator
-        uint32_t l_state[8];
-        for (int j = 0; j < 8; j++) {
-            l_state[j] = ((uint32_t)l_hash[j*4]) | 
-                         ((uint32_t)l_hash[j*4+1] << 8) |
-                         ((uint32_t)l_hash[j*4+2] << 16) |
-                         ((uint32_t)l_hash[j*4+3] << 24);
-        }
-        
-        // Generate polynomial coefficients in time domain
+        memcpy(l_param_seed + 4, &i, 4);
+        memcpy(l_param_seed + 8, "hots-matrix-a-v2", 16);
+
+        /* Use SHAKE256 XOF to generate polynomial coefficients */
+        uint64_t l_state[25];
+        memset(l_state, 0, sizeof(l_state));
+        dap_hash_shake256_absorb(l_state, l_param_seed, 24);
+        size_t l_needed = CHIPMUNK_N * sizeof(int32_t);
+        size_t l_nblocks = (l_needed + 135) / 136;
+        uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
+        if (!l_buf) return -ENOMEM;
+        dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
+
+        /* Copy bytes as coefficients */
         for (int j = 0; j < CHIPMUNK_N; j++) {
-            // Simple linear congruential generator for determinism
-            l_state[j % 8] = l_state[j % 8] * 1664525 + 1013904223;
-            a_params->a[i].coeffs[j] = l_state[j % 8] % CHIPMUNK_Q;
+            int32_t l_coeff;
+            memcpy(&l_coeff, l_buf + j * sizeof(int32_t), sizeof(int32_t));
+            a_params->a[i].coeffs[j] = l_coeff % (int32_t)CHIPMUNK_Q;
+            if (a_params->a[i].coeffs[j] < 0) a_params->a[i].coeffs[j] += CHIPMUNK_Q;
         }
-        
+        DAP_DELETE(l_buf);
+
         debug_if(s_debug_more, L_INFO, "    a[%d] time domain first coeffs: %d %d %d %d", i,
-                 a_params->a[i].coeffs[0], a_params->a[i].coeffs[1], 
+                 a_params->a[i].coeffs[0], a_params->a[i].coeffs[1],
                  a_params->a[i].coeffs[2], a_params->a[i].coeffs[3]);
-        
-        // Convert to NTT domain as in original Rust code
+
+        // Convert to NTT domain
         chipmunk_ntt(a_params->a[i].coeffs);
-        
+
         debug_if(s_debug_more, L_INFO, "    a[%d] NTT domain first coeffs: %d %d %d %d", i,
-                 a_params->a[i].coeffs[0], a_params->a[i].coeffs[1], 
+                 a_params->a[i].coeffs[0], a_params->a[i].coeffs[1],
                  a_params->a[i].coeffs[2], a_params->a[i].coeffs[3]);
     }
     
@@ -323,7 +322,7 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         /* Generate random mask r for s0*H(m) blinding */
         uint8_t l_r_seed[32];
         dap_random_bytes(l_r_seed, 32);
-        chipmunk_poly_from_hash(&l_r, l_r_seed, 32);
+        if (chipmunk_poly_from_hash(&l_r, l_r_seed, 32) != 0) return -EINVAL;
         chipmunk_ntt(l_r.coeffs);
 
         /* s0_blinded = s0 + r */
@@ -342,7 +341,7 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         /* Generate random mask r2 for s1 blinding */
         uint8_t l_r2_seed[32];
         dap_random_bytes(l_r2_seed, 32);
-        chipmunk_poly_from_hash(&l_r2, l_r2_seed, 32);
+        if (chipmunk_poly_from_hash(&l_r2, l_r2_seed, 32) != 0) return -EINVAL;
         chipmunk_ntt(l_r2.coeffs);
 
         /* s1_blinded = s1 + r2 */

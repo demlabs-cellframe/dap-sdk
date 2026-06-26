@@ -9,6 +9,7 @@
 #include "dap_rand.h"
 #include "dap_memwipe.h"
 #include "dap_common.h"
+#include "dap_hash_shake256.h"
 
 #include <string.h>
 #include <errno.h>
@@ -110,6 +111,8 @@ int chipmunk_dcnet_init(chipmunk_dcnet_round_t *a_round, uint32_t a_participant_
 
     memset(a_round, 0, sizeof(*a_round));
     a_round->participant_count = a_participant_count;
+    /* Generate unique round_id for deterministic pad derivation */
+    dap_random_bytes(&a_round->round_id, sizeof(a_round->round_id));
     return 0;
 }
 
@@ -123,26 +126,58 @@ int chipmunk_dcnet_generate_shares(chipmunk_dcnet_round_t *a_round,
 
     uint32_t l_n = a_round->participant_count;
 
-    /* Generate N-1 random shares for other participants */
+    /* Free existing shares if any */
+    for (uint32_t j = 0; j < l_n; ++j) {
+        if (a_round->shares[a_participant_index][j]) {
+            dap_memwipe(a_round->shares[a_participant_index][j],
+                        a_round->share_sizes[a_participant_index][j]);
+            DAP_DELETE(a_round->shares[a_participant_index][j]);
+            a_round->shares[a_participant_index][j] = NULL;
+        }
+    }
+
+    /* Generate shared pairwise pads using deterministic PRF.
+     * For each pair (i,j) with i < j, derive s_{i,j} = PRF(round_id, min(i,j), max(i,j)).
+     * This ensures s_{i,j} = s_{j,i} so they cancel during XOR. */
     for (uint32_t j = 0; j < l_n; ++j) {
         if (j == a_participant_index) continue;
 
-        /* Generate random share */
         size_t l_share_size = a_own_message_size > 0 ? a_own_message_size : 64;
         uint8_t *l_share = DAP_NEW_Z_SIZE(uint8_t, l_share_size);
         if (!l_share) return -ENOMEM;
-        dap_random_bytes(l_share, l_share_size);
+
+        /* Derive shared pad deterministically from pair indices */
+        uint32_t l_min = a_participant_index < j ? a_participant_index : j;
+        uint32_t l_max = a_participant_index < j ? j : a_participant_index;
+        uint8_t l_seed[64];
+        memcpy(l_seed, &a_round->round_id, 4);
+        memcpy(l_seed + 4, &l_min, 4);
+        memcpy(l_seed + 8, &l_max, 4);
+        memset(l_seed + 12, 0, 52);
+
+        /* Use SHAKE256 to generate deterministic share */
+        uint64_t l_state[25];
+        memset(l_state, 0, sizeof(l_state));
+        dap_hash_shake256_absorb(l_state, l_seed, 12);
+        dap_hash_shake256_absorb(l_state, (const uint8_t *)"dcnet-shared-pad-v1", 19);
+        size_t l_nblocks = (l_share_size + 135) / 136;
+        uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
+        if (!l_buf) { DAP_DELETE(l_share); return -ENOMEM; }
+        dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
+        memcpy(l_share, l_buf, l_share_size);
+        DAP_DELETE(l_buf);
 
         a_round->shares[a_participant_index][j] = l_share;
         a_round->share_sizes[a_participant_index][j] = l_share_size;
     }
 
-    /* Store own message (will be XORed with shares during combine) */
+    /* Store own message */
     if (a_own_message && a_own_message_size > 0) {
-        /* The own message is implicitly XORed into the output */
-        /* We store it separately for the combine step */
+        /* Free existing own message */
+        if (a_round->shares[a_participant_index][a_participant_index]) {
+            DAP_DELETE(a_round->shares[a_participant_index][a_participant_index]);
+        }
         a_round->share_sizes[a_participant_index][a_participant_index] = a_own_message_size;
-        /* Allocate and store own message as a "share to self" */
         uint8_t *l_own = DAP_NEW_Z_SIZE(uint8_t, a_own_message_size);
         if (!l_own) return -ENOMEM;
         memcpy(l_own, a_own_message, a_own_message_size);
@@ -173,18 +208,11 @@ int chipmunk_dcnet_combine(chipmunk_dcnet_round_t *a_round)
     a_round->output_size = l_max_size;
 
     /*
-     * DC-net combine: output = ⊕_i m_i ⊕ ⊕_{i<j} (s_{i,j} ⊕ s_{j,i})
+     * DC-net combine: output = ⊕_i m_i
      *
-     * Each participant i generates random shares s_{i,j} for all j≠i.
-     * The pairwise shares s_{i,j} and s_{j,i} cancel when XORed:
-     *   s_{i,j} ⊕ s_{j,i} = 0  (if both participants are honest)
-     *
-     * The own messages m_i survive because they are only contributed once.
-     *
-     * In a real DC-net, each pair (i,j) agrees on a shared random pad.
-     * For simplicity, we assume each participant generates their own
-     * random shares and distributes them. The combine step XORs all
-     * received shares with all sent shares.
+     * Each pair (i,j) shares a deterministic pad: s_{i,j} = s_{j,i} = PRF(round_id, min(i,j), max(i,j)).
+     * When XORing all pairwise shares, each pair (i,j) contributes s_{i,j} ⊕ s_{j,i} = 0.
+     * Only the own messages m_i survive.
      */
     memset(a_round->output, 0, l_max_size);
 

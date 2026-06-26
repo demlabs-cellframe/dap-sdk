@@ -63,8 +63,9 @@ static const dap_serialize_field_t s_chipmunk_ring_header_fields[] = {
     { .name = "flags",        .type = DAP_SERIALIZE_TYPE_UINT32, .offset = offsetof(chipmunk_ring_header_t, flags),        .size = sizeof(uint32_t) },
     { .name = "param_hash",   .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED, .offset = offsetof(chipmunk_ring_header_t, param_hash),
       .size = 1u, .fixed_count = 16u, .element_type = DAP_SERIALIZE_TYPE_UINT8 },
+    { .name = "key_image_len", .type = DAP_SERIALIZE_TYPE_UINT32, .offset = offsetof(chipmunk_ring_header_t, key_image_len), .size = sizeof(uint32_t) },
     { .name = "key_image",    .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED, .offset = offsetof(chipmunk_ring_header_t, key_image),
-      .size = 1u, .fixed_count = 1408u, .element_type = DAP_SERIALIZE_TYPE_UINT8 },
+      .size = 1u, .fixed_count = 9216u, .element_type = DAP_SERIALIZE_TYPE_UINT8 },
 };
 
 DAP_SERIALIZE_SCHEMA_DEFINE(s_chipmunk_ring_header_schema,
@@ -162,7 +163,7 @@ size_t chipmunk_ring_sig_bytes_max(const lotrs_params_t *a_par, uint32_t a_N)
  * For verification, only the key image bytes are needed (not the secret key).
  * Two signatures with the same key image → same signer (double-vote detected).
  */
-static int s_generate_key_image(uint8_t a_out[1408],
+static int s_generate_key_image(uint8_t *a_out, size_t a_out_len,
                                 const chipmunk_ring_pk_t *a_pk,
                                 const chipmunk_ring_sk_t *a_sk,
                                 const lotrs_params_t *a_par)
@@ -216,8 +217,17 @@ static int s_generate_key_image(uint8_t a_out[1408],
         }
     }
 
-    /* Pack first polynomial as key image (1408 bytes for d=512, q~22bits) */
-    lotrs_poly_pack(a_out, 1408, l_I.polys[0], a_par);
+    /* Pack all k polynomials as key image */
+    size_t l_poly_bytes = lotrs_poly_bytes(a_par);
+    size_t l_ki_bytes = (size_t)a_par->k * l_poly_bytes;
+    if (a_out_len < l_ki_bytes) {
+        lotrs_polymat_free(&l_A_I);
+        lotrs_polyvec_free(&l_I);
+        return -EINVAL;
+    }
+    for (uint32_t i = 0u; i < a_par->k; ++i) {
+        lotrs_poly_pack(a_out + i * l_poly_bytes, l_poly_bytes, l_I.polys[i], a_par);
+    }
 
     lotrs_polymat_free(&l_A_I);
     lotrs_polyvec_free(&l_I);
@@ -242,8 +252,8 @@ int chipmunk_ring_link(const chipmunk_ring_sig_t *a_sig1, const chipmunk_ring_si
                                                                    a_sig2->data, l_hdr_bytes, &l_hdr2, NULL);
     if (l_d1.error_code != 0 || l_d2.error_code != 0) return -EINVAL;
 
-    /* Constant-time comparison of key images */
-    return s_memcmp_ct(l_hdr1.key_image, l_hdr2.key_image, 1408) == 0 ? 1 : 0;
+    if (l_hdr1.key_image_len != l_hdr2.key_image_len) return 0;
+    return s_memcmp_ct(l_hdr1.key_image, l_hdr2.key_image, l_hdr1.key_image_len) == 0 ? 1 : 0;
 }
 
 /* --- Keygen --- */
@@ -473,8 +483,9 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
 
     /* Generate key image for linkability (deterministic for same key).
      * Computed once before the retry loop since it doesn't depend on randomness. */
-    uint8_t l_key_image[1408];
-    l_rc = s_generate_key_image(l_key_image, &l_sorted_ring.pks[l_signer_idx_new], a_sk, a_par);
+    uint8_t l_key_image[9216];
+    size_t l_key_image_len = (size_t)a_par->k * lotrs_poly_bytes(a_par);
+    l_rc = s_generate_key_image(l_key_image, sizeof(l_key_image), &l_sorted_ring.pks[l_signer_idx_new], a_sk, a_par);
     if (l_rc != 0) {
         log_it(L_ERROR, "CRIN sign: key image generation failed: %d", l_rc);
         DAP_DELETE(l_sorted_ring.pks);
@@ -614,7 +625,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
         l_rc = lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
         if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed, l_sorted_ring.pks); return l_rc; }
         /* Absorb key image for linkability binding */
-        l_rc = lotrs_xof_absorb(l_xof_c, l_key_image, 1408);
+        l_rc = lotrs_xof_absorb(l_xof_c, l_key_image, l_key_image_len);
         if (l_rc != 0) { lotrs_xof_free(l_xof_c); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed, l_sorted_ring.pks); return l_rc; }
         for (uint32_t i = 0u; i < l_N; ++i) {
             for (uint32_t j = 0u; j < a_par->k; ++j) {
@@ -645,7 +656,7 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
         for (uint32_t i = 0u; i < l_len; ++i) {
             lotrs_poly_t *l_r = lotrs_poly_alloc(a_par);
             if (!l_r) { lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed, l_sorted_ring.pks); return -ENOMEM; }
-            lotrs_xof_t *l_xof_r = lotrs_xof_new(a_seed, 32u);
+            lotrs_xof_t *l_xof_r = lotrs_xof_new(l_retry_seed, 32u);
             if (!l_xof_r) { s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed, l_sorted_ring.pks); return -ENOMEM; }
             l_rc = lotrs_xof_absorb(l_xof_r, (const uint8_t *)"crin-blind-v1", 13u);
             if (l_rc != 0) { lotrs_xof_free(l_xof_r); s_poly_wipe_free(l_r); lotrs_polyvec_free(&l_y); s_sign_cleanup(&l_A, l_T, l_c_arr, l_z, l_N, l_retry_seed, l_sorted_ring.pks); return l_rc; }
@@ -760,7 +771,8 @@ int chipmunk_ring_sign(chipmunk_ring_sig_t *a_sig,
                 .flags = 0u,
             };
             /* Copy pre-computed key image into header */
-            memcpy(l_hdr.key_image, l_key_image, 1408);
+            l_hdr.key_image_len = (uint32_t)l_key_image_len;
+            memcpy(l_hdr.key_image, l_key_image, l_key_image_len);
             l_rc = s_param_hash(l_hdr.param_hash, a_par);
             if (l_rc != 0) {
                 for (size_t k = 0u; k < l_z_count; ++k) DAP_DELETE(l_z_bufs[k]);
@@ -964,7 +976,7 @@ int chipmunk_ring_verify(const chipmunk_ring_sig_t *a_sig,
     l_rc = lotrs_xof_absorb(l_xof_c, a_msg, a_msg_len);
     if (l_rc != 0) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N, l_sorted_ring.pks); return l_rc; }
     /* Absorb key image for linkability binding */
-    l_rc = lotrs_xof_absorb(l_xof_c, l_hdr.key_image, 1408);
+    l_rc = lotrs_xof_absorb(l_xof_c, l_hdr.key_image, l_hdr.key_image_len);
     if (l_rc != 0) { lotrs_xof_free(l_xof_c); s_verify_cleanup_arrays(l_T, l_c_arr, l_z, l_N, l_sorted_ring.pks); return l_rc; }
     for (uint32_t i = 0u; i < l_N; ++i) {
         for (uint32_t j = 0u; j < a_par->k; ++j) {

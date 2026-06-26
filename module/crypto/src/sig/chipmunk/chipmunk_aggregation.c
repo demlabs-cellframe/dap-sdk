@@ -167,13 +167,22 @@ int chipmunk_randomizers_from_pks(const chipmunk_hvc_poly_t *roots,
         /* Unbiased rejection sampling: accept only values < 252 (84*3).
          * Map (v % 3) - 1 → {-1, 0, 1} with equal probability. */
         size_t k = 0;
-        for (size_t j = 0; j < (size_t)CHIPMUNK_N && k < k_shake_out; k++) {
+        size_t j = 0;
+        for (; j < (size_t)CHIPMUNK_N && k < k_shake_out; k++) {
             uint8_t v = expanded[k];
             if (v >= 252) {
                 continue;  /* reject — eliminates modulo bias */
             }
             randomizers->randomizers[i].coeffs[j] = (int8_t)((int)(v % 3u) - 1);
             j++;
+        }
+        if (j < (size_t)CHIPMUNK_N) {
+            log_it(L_ERROR, "SHAKE256 output exhausted before filling all %d randomizer coefficients (%zu filled)",
+                   CHIPMUNK_N, j);
+            DAP_DELETE(expanded);
+            DAP_DELETE(hash_input);
+            chipmunk_randomizers_free(randomizers);
+            return -1;
         }
     }
 
@@ -426,6 +435,11 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
         return -1;
     }
 
+    bool *is_valid = DAP_NEW_Z_COUNT(bool, count);
+    if (!is_valid) {
+        return -2;
+    }
+
     size_t valid_count = 0;
     for (size_t i = 0; i < count; i++) {
         int l_verify = chipmunk_hots_verify(&individual_sigs[i].hots_pk,
@@ -435,13 +449,16 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
         if (l_verify != 0) {
             log_it(L_WARNING, "Per-signer validation FAILED for signer %zu (leaf %u), skipping",
                    i, individual_sigs[i].leaf_index);
+            is_valid[i] = false;
             continue;
         }
+        is_valid[i] = true;
         valid_count++;
     }
 
     if (valid_count == 0) {
         log_it(L_ERROR, "No valid signatures in aggregation batch");
+        DAP_DELETE(is_valid);
         return -1;
     }
 
@@ -454,6 +471,7 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
 
     if (!multi_sig->public_key_roots || !multi_sig->hots_pks ||
         !multi_sig->rho_seeds || !multi_sig->proofs || !multi_sig->leaf_indices) {
+        DAP_DELETE(is_valid);
         chipmunk_multi_signature_free(multi_sig);
         return -2;
     }
@@ -463,18 +481,15 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
 
     chipmunk_hots_signature_t *hots_sigs = DAP_NEW_Z_COUNT(chipmunk_hots_signature_t, valid_count);
     if (!hots_sigs) {
+        DAP_DELETE(is_valid);
         chipmunk_multi_signature_free(multi_sig);
         return -2;
     }
 
-    // Second pass: collect valid signatures.
+    // Second pass: collect valid signatures (reuse first-pass results).
     size_t valid_idx = 0;
     for (size_t i = 0; i < count && valid_idx < valid_count; i++) {
-        int l_verify = chipmunk_hots_verify(&individual_sigs[i].hots_pk,
-                                            message, message_len,
-                                            &individual_sigs[i].hots_sig,
-                                            &l_params);
-        if (l_verify != 0) continue;  // skip invalid (already warned above)
+        if (!is_valid[i]) continue;
 
         memcpy(&hots_sigs[valid_idx], &individual_sigs[i].hots_sig, sizeof(chipmunk_hots_signature_t));
         memcpy(&multi_sig->proofs[valid_idx], &individual_sigs[i].proof, sizeof(chipmunk_path_t));
@@ -489,12 +504,15 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
         int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly(&l_full_pk,
                                                      &multi_sig->public_key_roots[valid_idx]);
         if (l_rc_leaf != CHIPMUNK_ERROR_SUCCESS) {
+            DAP_DELETE(is_valid);
             DAP_DELETE(hots_sigs);
             chipmunk_multi_signature_free(multi_sig);
             return l_rc_leaf;
         }
         valid_idx++;
     }
+
+    DAP_DELETE(is_valid);
 
     // Generate randomizers from public key roots
     chipmunk_randomizers_t randomizers;
@@ -543,6 +561,11 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
         return -1;
     }
 
+    bool *is_valid = DAP_NEW_Z_COUNT(bool, count);
+    if (!is_valid) {
+        return -2;
+    }
+
     size_t valid_count = 0;
     for (size_t i = 0; i < count; i++) {
         int l_verify = chipmunk_hots_verify(&individual_sigs[i].hots_pk,
@@ -552,13 +575,16 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
         if (l_verify != 0) {
             log_it(L_WARNING, "Per-signer validation FAILED for signer %zu (leaf %u), skipping",
                    i, individual_sigs[i].leaf_index);
+            is_valid[i] = false;
             continue;
         }
+        is_valid[i] = true;
         valid_count++;
     }
 
     if (valid_count == 0) {
         log_it(L_ERROR, "No valid signatures in aggregation batch (with tree)");
+        DAP_DELETE(is_valid);
         return -1;
     }
 
@@ -570,6 +596,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
 
     if (!multi_sig->public_key_roots || !multi_sig->hots_pks ||
         !multi_sig->rho_seeds || !multi_sig->proofs || !multi_sig->leaf_indices) {
+        DAP_DELETE(is_valid);
         chipmunk_multi_signature_free(multi_sig);
         return -2;
     }
@@ -578,6 +605,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
 
     const chipmunk_hvc_poly_t *tree_root = chipmunk_tree_root(tree);
     if (!tree_root) {
+        DAP_DELETE(is_valid);
         chipmunk_multi_signature_free(multi_sig);
         return -3;
     }
@@ -587,17 +615,14 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
 
     chipmunk_hots_signature_t *hots_sigs = DAP_NEW_Z_COUNT(chipmunk_hots_signature_t, valid_count);
     if (!hots_sigs) {
+        DAP_DELETE(is_valid);
         chipmunk_multi_signature_free(multi_sig);
         return -2;
     }
 
     size_t valid_idx = 0;
     for (size_t i = 0; i < count && valid_idx < valid_count; i++) {
-        int l_verify = chipmunk_hots_verify(&individual_sigs[i].hots_pk,
-                                            message, message_len,
-                                            &individual_sigs[i].hots_sig,
-                                            &l_params);
-        if (l_verify != 0) continue;
+        if (!is_valid[i]) continue;
 
         memcpy(&hots_sigs[valid_idx], &individual_sigs[i].hots_sig, sizeof(chipmunk_hots_signature_t));
         memcpy(&multi_sig->proofs[valid_idx], &individual_sigs[i].proof, sizeof(chipmunk_path_t));
@@ -612,6 +637,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
         int l_rc_leaf = chipmunk_hots_pk_to_hvc_poly(&l_full_pk,
                                                      &multi_sig->public_key_roots[valid_idx]);
         if (l_rc_leaf != CHIPMUNK_ERROR_SUCCESS) {
+            DAP_DELETE(is_valid);
             DAP_DELETE(hots_sigs);
             chipmunk_multi_signature_free(multi_sig);
             return l_rc_leaf;
@@ -622,6 +648,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
     chipmunk_randomizers_t randomizers;
     int ret = chipmunk_randomizers_from_pks(multi_sig->public_key_roots, valid_count, &randomizers);
     if (ret != 0) {
+        DAP_DELETE(is_valid);
         DAP_DELETE(hots_sigs);
         chipmunk_multi_signature_free(multi_sig);
         return ret;
@@ -630,6 +657,7 @@ int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *ind
     ret = chipmunk_hots_aggregate_with_randomizers(hots_sigs, randomizers.randomizers,
                                                    valid_count, &multi_sig->aggregated_hots);
 
+    DAP_DELETE(is_valid);
     DAP_DELETE(hots_sigs);
     chipmunk_randomizers_free(&randomizers);
 

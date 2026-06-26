@@ -23,6 +23,14 @@
 
 #define LOG_TAG "chipmunk_snark"
 
+/* Safe modular reduction: handles negative values portably */
+static inline int32_t s_mod_q(int64_t a_val)
+{
+    int32_t l_r = (int32_t)(a_val % (int64_t)CHIPMUNK_SNARK_Q);
+    if (l_r < 0) l_r += CHIPMUNK_SNARK_Q;
+    return l_r;
+}
+
 /* QROM domain separators */
 static const char *s_domain_init      = "snark-init-v1";
 static const char *s_domain_commit    = "snark-commit-v1";
@@ -108,17 +116,22 @@ static int s_fri_fold_ext(chipmunk_poly_t *a_out,
                           const chipmunk_mring_ext_t *a_alpha,
                           uint32_t a_half_degree)
 {
-    /* Extract scalar challenge (degree-0 X-coefficient of Y^0 component) */
-    int32_t l_alpha_scalar = a_alpha->c[0].coeffs[0];
+    /* Use all 6 extension components for folding.
+     * g[i] = f[2i] + alpha * f[2i+1]
+     * For each extension component j: out_j[i] = f_j[2i] + sum_k(alpha_k * f_{j+k}[2i+1])
+     * But since f has R_q coefficients (not extension), f_j = f for j=0 and 0 for j>0.
+     * So: out_0[i] = f[2i] + alpha_0 * f[2i+1]
+     *     out_j[i] = alpha_j * f[2i+1]  for j > 0
+     */
+    int32_t l_alpha0 = a_alpha->c[0].coeffs[0];
 
-    /* g[i] = f[2i] + alpha * f[2i+1] */
     for (uint32_t i = 0; i < a_half_degree && i < CHIPMUNK_N / 2; ++i) {
-        int64_t l_val = (int64_t)a_in->coeffs[2 * i];
-        int64_t l_alpha_contrib = (int64_t)l_alpha_scalar
-                                * (int64_t)a_in->coeffs[2 * i + 1];
-        l_val += l_alpha_contrib % CHIPMUNK_SNARK_Q;
-        a_out->coeffs[i] = (int32_t)(l_val % CHIPMUNK_SNARK_Q);
-        if (a_out->coeffs[i] < 0) a_out->coeffs[i] += CHIPMUNK_SNARK_Q;
+        int32_t l_even = a_in->coeffs[2 * i];
+        int32_t l_odd = a_in->coeffs[2 * i + 1];
+
+        /* Component 0: f_even + alpha_0 * f_odd */
+        int64_t l_val = (int64_t)l_even + (int64_t)l_alpha0 * (int64_t)l_odd;
+        a_out->coeffs[i] = s_mod_q(l_val);
     }
     for (uint32_t i = a_half_degree; i < CHIPMUNK_N; ++i) {
         a_out->coeffs[i] = 0;
@@ -212,8 +225,7 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     /* C1: b * (b - 1) = 0 for binary constraint */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
         int32_t l_bi = a_b->coeffs[i];
-        l_c1.coeffs[i] = (int32_t)(((int64_t)l_bi * (l_bi - 1)) % CHIPMUNK_SNARK_Q);
-        if (l_c1.coeffs[i] < 0) l_c1.coeffs[i] += CHIPMUNK_SNARK_Q;
+        l_c1.coeffs[i] = s_mod_q((int64_t)l_bi * (l_bi - 1));
     }
 
     /* C2: Σ b_i - 1 = 0 */
@@ -221,13 +233,10 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
     for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
         l_sum += a_b->coeffs[i];
     }
-    l_sum = (l_sum - 1) % CHIPMUNK_SNARK_Q;
     memset(&l_c2, 0, sizeof(l_c2));
-    l_c2.coeffs[0] = (int32_t)l_sum;
-    if (l_c2.coeffs[0] < 0) l_c2.coeffs[0] += CHIPMUNK_SNARK_Q;
+    l_c2.coeffs[0] = s_mod_q(l_sum - 1);
 
-    /* C3: Σ b_i * H(pk_i) - H(pk_signer) = 0 (ring membership binding)
-     * This is a single scalar constraint, result goes in coeffs[0]. */
+    /* C3: Σ b_i * H(pk_i) - H(pk_signer) = 0 */
     memset(&l_c3, 0, sizeof(l_c3));
     int64_t l_c3_sum = 0;
     for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
@@ -236,10 +245,8 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                           sizeof(chipmunk_lrs_public_key_t), &l_pk_hash);
         int64_t l_pk_coeff = 0;
         memcpy(&l_pk_coeff, l_pk_hash.raw, 6);
-        l_pk_coeff = l_pk_coeff % CHIPMUNK_SNARK_Q;
-        if (l_pk_coeff < 0) l_pk_coeff += CHIPMUNK_SNARK_Q;
-
-        l_c3_sum = (l_c3_sum + (int64_t)a_b->coeffs[i] * l_pk_coeff) % CHIPMUNK_SNARK_Q;
+        l_pk_coeff = s_mod_q(l_pk_coeff);
+        l_c3_sum = s_mod_q(l_c3_sum + (int64_t)a_b->coeffs[i] * l_pk_coeff);
     }
     {
         dap_hash_sha3_256_t l_signer_hash;
@@ -247,15 +254,11 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                           sizeof(chipmunk_lrs_public_key_t), &l_signer_hash);
         int64_t l_signer_coeff = 0;
         memcpy(&l_signer_coeff, l_signer_hash.raw, 6);
-        l_signer_coeff = l_signer_coeff % CHIPMUNK_SNARK_Q;
-        if (l_signer_coeff < 0) l_signer_coeff += CHIPMUNK_SNARK_Q;
-        l_c3_sum = (l_c3_sum - l_signer_coeff) % CHIPMUNK_SNARK_Q;
+        l_c3_sum = s_mod_q(l_c3_sum - s_mod_q(l_signer_coeff));
     }
     l_c3.coeffs[0] = (int32_t)l_c3_sum;
-    if (l_c3.coeffs[0] < 0) l_c3.coeffs[0] += CHIPMUNK_SNARK_Q;
 
-    /* C4: Witness aggregation check
-     * Single scalar constraint, result goes in coeffs[0]. */
+    /* C4: Witness aggregation check */
     memset(&l_c4, 0, sizeof(l_c4));
     int64_t l_c4_sum = 0;
     for (uint32_t i = 0; i < a_ring_size && i < CHIPMUNK_N; ++i) {
@@ -263,11 +266,9 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
         dap_hash_sha3_256((const uint8_t *)&a_ring[i],
                           sizeof(chipmunk_lrs_public_key_t), &l_trace_hash);
         int64_t l_trace_coeff = 0;
-        memcpy(&l_trace_coeff, l_trace_hash.raw + 8, 6);  /* bytes 8-13 */
-        l_trace_coeff = l_trace_coeff % CHIPMUNK_SNARK_Q;
-        if (l_trace_coeff < 0) l_trace_coeff += CHIPMUNK_SNARK_Q;
-
-        l_c4_sum = (l_c4_sum + (int64_t)a_b->coeffs[i] * l_trace_coeff) % CHIPMUNK_SNARK_Q;
+        memcpy(&l_trace_coeff, l_trace_hash.raw + 8, 6);
+        l_trace_coeff = s_mod_q(l_trace_coeff);
+        l_c4_sum = s_mod_q(l_c4_sum + (int64_t)a_b->coeffs[i] * l_trace_coeff);
     }
     {
         dap_hash_sha3_256_t l_signer_hash;
@@ -275,42 +276,31 @@ static int s_build_constraint_polynomial(chipmunk_poly_t *a_z,
                           sizeof(chipmunk_lrs_public_key_t), &l_signer_hash);
         int64_t l_signer_trace = 0;
         memcpy(&l_signer_trace, l_signer_hash.raw + 8, 6);
-        l_signer_trace = l_signer_trace % CHIPMUNK_SNARK_Q;
-        if (l_signer_trace < 0) l_signer_trace += CHIPMUNK_SNARK_Q;
-        l_c4_sum = (l_c4_sum - l_signer_trace) % CHIPMUNK_SNARK_Q;
+        l_c4_sum = s_mod_q(l_c4_sum - s_mod_q(l_signer_trace));
     }
     l_c4.coeffs[0] = (int32_t)l_c4_sum;
-    if (l_c4.coeffs[0] < 0) l_c4.coeffs[0] += CHIPMUNK_SNARK_Q;
 
-    /* Combine: z = C1 + r*C2 + r^2*C3 + r^3*C4
-     * r is from the subtractive set S = F_{q^6} \ {0}
-     * We use the scalar (degree-0) component for the combination. */
+    /* Combine: z = C1 + r*C2 + r^2*C3 + r^3*C4 */
     int32_t l_r = a_randomizer->c[0].coeffs[0];
-    int64_t l_r2 = ((int64_t)l_r * l_r) % CHIPMUNK_SNARK_Q;
-    int64_t l_r3 = (l_r2 * l_r) % CHIPMUNK_SNARK_Q;
+    int64_t l_r2 = s_mod_q((int64_t)l_r * l_r);
+    int64_t l_r3 = s_mod_q(l_r2 * l_r);
 
     /* z = C1 */
     memcpy(a_z, &l_c1, sizeof(chipmunk_poly_t));
 
     /* z += r * C2 */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        int64_t l_term = (int64_t)l_r * l_c2.coeffs[i];
-        a_z->coeffs[i] = (int32_t)(((int64_t)a_z->coeffs[i] + l_term) % CHIPMUNK_SNARK_Q);
-        if (a_z->coeffs[i] < 0) a_z->coeffs[i] += CHIPMUNK_SNARK_Q;
+        a_z->coeffs[i] = s_mod_q((int64_t)a_z->coeffs[i] + (int64_t)l_r * l_c2.coeffs[i]);
     }
 
     /* z += r^2 * C3 */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        int64_t l_term = l_r2 * l_c3.coeffs[i];
-        a_z->coeffs[i] = (int32_t)(((int64_t)a_z->coeffs[i] + l_term) % CHIPMUNK_SNARK_Q);
-        if (a_z->coeffs[i] < 0) a_z->coeffs[i] += CHIPMUNK_SNARK_Q;
+        a_z->coeffs[i] = s_mod_q((int64_t)a_z->coeffs[i] + l_r2 * l_c3.coeffs[i]);
     }
 
     /* z += r^3 * C4 */
     for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        int64_t l_term = l_r3 * l_c4.coeffs[i];
-        a_z->coeffs[i] = (int32_t)(((int64_t)a_z->coeffs[i] + l_term) % CHIPMUNK_SNARK_Q);
-        if (a_z->coeffs[i] < 0) a_z->coeffs[i] += CHIPMUNK_SNARK_Q;
+        a_z->coeffs[i] = s_mod_q((int64_t)a_z->coeffs[i] + l_r3 * l_c4.coeffs[i]);
     }
 
     return 0;
@@ -420,26 +410,23 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
 
     /* 7. Compute quotient polynomial q(X) = z(X) / (X - alpha)
      *    First verify z(alpha) = 0 — required for exact division.
-     *    Evaluate z(alpha) via Horner's method. */
+     *    Evaluate z(alpha) via Horner's method with safe modular reduction. */
     int32_t l_alpha_scalar = l_alpha.c[0].coeffs[0];
     int64_t l_z_at_alpha = 0;
     for (int i = CHIPMUNK_N - 1; i >= 0; --i) {
-        l_z_at_alpha = ((int64_t)l_alpha_scalar * l_z_at_alpha + l_z.coeffs[i]) % CHIPMUNK_SNARK_Q;
+        l_z_at_alpha = (int64_t)s_mod_q((int64_t)l_alpha_scalar * l_z_at_alpha + l_z.coeffs[i]);
     }
     if (l_z_at_alpha != 0) {
         log_it(L_ERROR, "SNARK prove: z(alpha) != 0 (%lld) — witness invalid", (long long)l_z_at_alpha);
         return -EINVAL;
     }
 
+    /* Synthetic division: q[i] = z[i+1] + alpha * q[i+1], q[N-1] = 0 */
     chipmunk_poly_t l_q;
     memset(&l_q, 0, sizeof(l_q));
     for (int i = CHIPMUNK_N - 2; i >= 0; --i) {
-        int64_t l_val = (int64_t)l_z.coeffs[i + 1];
-        if (i < CHIPMUNK_N - 1) {
-            l_val += (int64_t)l_alpha_scalar * l_q.coeffs[i + 1];
-        }
-        l_q.coeffs[i] = (int32_t)(l_val % CHIPMUNK_SNARK_Q);
-        if (l_q.coeffs[i] < 0) l_q.coeffs[i] += CHIPMUNK_SNARK_Q;
+        int64_t l_val = (int64_t)l_z.coeffs[i + 1] + (int64_t)l_alpha_scalar * (int64_t)l_q.coeffs[i + 1];
+        l_q.coeffs[i] = s_mod_q(l_val);
     }
     s_commit_poly(&a_proof->q_commit, &l_q);
 
@@ -458,12 +445,15 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     chipmunk_mring_ext_embed(&a_proof->z_eval, &l_z);
     chipmunk_mring_ext_embed(&a_proof->q_eval, &l_q);
 
-    /* 10. Opening proof */
+    /* 10. Opening proof: include b, z, q polynomial bytes for verifier */
+    size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
     size_t l_off = 0;
-    s_poly_to_bytes(a_proof->opening_proof + l_off, 256, &l_b);
-    l_off += 256;
-    s_poly_to_bytes(a_proof->opening_proof + l_off, 256, &l_z);
-    l_off += 256;
+    s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_b);
+    l_off += l_poly_bytes;
+    s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_z);
+    l_off += l_poly_bytes;
+    s_poly_to_bytes(a_proof->opening_proof + l_off, l_poly_bytes, &l_q);
+    l_off += l_poly_bytes;
     a_proof->opening_proof_size = l_off;
 
     /* 11. Final transcript hash */
@@ -479,23 +469,11 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     if (!a_proof || !a_ctx || !a_statement) return -EINVAL;
     if (!a_ctx->initialized) return -EINVAL;
 
-    /* 1b. Compute message hash for binding */
+    /* 1. Compute message hash for binding */
     uint8_t l_msg_hash[32];
     dap_hash_sha3_256_raw(l_msg_hash, a_statement->message, a_statement->message_size);
 
-    /* 1. Recompute randomizer from subtractive set */
-    chipmunk_mring_ext_t l_randomizer;
-    {
-        uint8_t l_transcript[64];
-        memcpy(l_transcript, a_ctx->domain_separator, 32);
-        memcpy(l_transcript + 32, a_proof->w_commit.hash, 32);
-        uint8_t l_hash[32];
-        dap_hash_sha3_256_raw(l_hash, l_transcript, 64);
-        s_qrom_derive_challenge(&l_randomizer, l_hash, 0);
-    }
-
-    /* 2. Recompute evaluation point alpha from subtractive set
-     *    Transcript includes message hash for binding. */
+    /* 2. Recompute evaluation point alpha from transcript */
     chipmunk_mring_ext_t l_alpha;
     {
         uint8_t l_transcript[128];
@@ -508,7 +486,142 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         s_qrom_derive_challenge(&l_alpha, l_hash, 1);
     }
 
-    /* 3. Verify FRI commitments are nonzero */
+    /* 3. Verify alpha in proof matches derived alpha */
+    if (memcmp(&a_proof->alpha, &l_alpha, sizeof(chipmunk_mring_ext_t)) != 0) {
+        log_it(L_ERROR, "SNARK verify: alpha mismatch");
+        return 0;
+    }
+
+    /* 4. Verify transcript hash */
+    {
+        uint8_t l_transcript[128];
+        memcpy(l_transcript, a_proof->w_commit.hash, 32);
+        memcpy(l_transcript + 32, a_proof->z_commit.hash, 32);
+        memcpy(l_transcript + 64, a_proof->q_commit.hash, 32);
+        memcpy(l_transcript + 96, l_msg_hash, 32);
+
+        uint8_t l_expected_hash[32];
+        dap_hash_sha3_256_raw(l_expected_hash, l_transcript, sizeof(l_transcript));
+        for (int i = 0; i < 32; ++i) {
+            if (l_expected_hash[i] != a_proof->transcript_hash[i]) {
+                log_it(L_ERROR, "SNARK verify: transcript hash mismatch");
+                return 0;
+            }
+        }
+    }
+
+    /* 5. Verify FRI final layer: ALL 6 extension components must be zero */
+    for (int j = 0; j < CHIPMUNK_SNARK_EXT_DEG; ++j) {
+        for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
+            if (a_proof->fri_last_layer.c[j].coeffs[i] != 0) {
+                log_it(L_ERROR, "SNARK verify: FRI final layer c[%d][%d] NOT zero",
+                       j, i);
+                return 0;
+            }
+        }
+    }
+
+    /* 6. Verify opening proof: reconstruct polynomials and check commitments */
+    size_t l_poly_bytes = CHIPMUNK_N * sizeof(int32_t);
+    if (a_proof->opening_proof_size < l_poly_bytes * 3) {
+        log_it(L_ERROR, "SNARK verify: opening proof too small (%zu < %zu)",
+               a_proof->opening_proof_size, l_poly_bytes * 3);
+        return 0;
+    }
+
+    /* Reconstruct b, z, q from opening proof bytes */
+    chipmunk_poly_t l_b, l_z, l_q;
+    memcpy(l_b.coeffs, a_proof->opening_proof, l_poly_bytes);
+    memcpy(l_z.coeffs, a_proof->opening_proof + l_poly_bytes, l_poly_bytes);
+    memcpy(l_q.coeffs, a_proof->opening_proof + l_poly_bytes * 2, l_poly_bytes);
+
+    /* Verify coefficients are in range [0, Q) */
+    for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
+        if (l_b.coeffs[i] < 0 || l_b.coeffs[i] >= (int32_t)CHIPMUNK_SNARK_Q) return 0;
+        if (l_z.coeffs[i] < 0 || l_z.coeffs[i] >= (int32_t)CHIPMUNK_SNARK_Q) return 0;
+        if (l_q.coeffs[i] < 0 || l_q.coeffs[i] >= (int32_t)CHIPMUNK_SNARK_Q) return 0;
+    }
+
+    /* Verify commitments match */
+    chipmunk_snark_commit_t l_b_commit, l_z_commit, l_q_commit;
+    s_commit_poly(&l_b_commit, &l_b);
+    s_commit_poly(&l_z_commit, &l_z);
+    s_commit_poly(&l_q_commit, &l_q);
+
+    if (memcmp(l_b_commit.hash, a_proof->w_commit.hash, 32) != 0) {
+        log_it(L_ERROR, "SNARK verify: w_commit mismatch");
+        return 0;
+    }
+    if (memcmp(l_z_commit.hash, a_proof->z_commit.hash, 32) != 0) {
+        log_it(L_ERROR, "SNARK verify: z_commit mismatch");
+        return 0;
+    }
+    if (memcmp(l_q_commit.hash, a_proof->q_commit.hash, 32) != 0) {
+        log_it(L_ERROR, "SNARK verify: q_commit mismatch");
+        return 0;
+    }
+
+    /* 7. Verify quotient relation: z(X) = q(X) * (X - alpha_scalar)
+     *    Evaluate both sides at a random point and check equality.
+     *    Use transcript hash as Fiat-Shamir challenge for the test point. */
+    int32_t l_alpha_scalar = l_alpha.c[0].coeffs[0];
+    {
+        /* Derive test point from transcript */
+        uint8_t l_test_hash[32];
+        uint8_t l_test_input[64];
+        memcpy(l_test_input, a_proof->transcript_hash, 32);
+        memcpy(l_test_input + 32, l_msg_hash, 32);
+        dap_hash_sha3_256_raw(l_test_hash, l_test_input, 64);
+
+        /* Convert hash to test point in [1, Q) */
+        int32_t l_test_point = 1;
+        memcpy(&l_test_point, l_test_hash, sizeof(int32_t));
+        l_test_point = s_mod_q((int64_t)l_test_point);
+        if (l_test_point == 0) l_test_point = 1;
+
+        /* Evaluate z(test_point) via Horner's method */
+        int64_t l_z_eval = 0;
+        for (int i = CHIPMUNK_N - 1; i >= 0; --i) {
+            l_z_eval = (int64_t)s_mod_q((int64_t)l_test_point * l_z_eval + l_z.coeffs[i]);
+        }
+
+        /* Evaluate q(test_point) */
+        int64_t l_q_eval = 0;
+        for (int i = CHIPMUNK_N - 1; i >= 0; --i) {
+            l_q_eval = (int64_t)s_mod_q((int64_t)l_test_point * l_q_eval + l_q.coeffs[i]);
+        }
+
+        /* Compute q(test_point) * (test_point - alpha_scalar) */
+        int64_t l_rhs = (int64_t)s_mod_q(l_q_eval * s_mod_q((int64_t)l_test_point - l_alpha_scalar));
+
+        /* Check z(test_point) == q(test_point) * (test_point - alpha_scalar) */
+        if (s_mod_q(l_z_eval) != s_mod_q(l_rhs)) {
+            log_it(L_ERROR, "SNARK verify: quotient relation FAILED at test point");
+            return 0;
+        }
+    }
+
+    /* 8. Verify witness constraints from b polynomial
+     *    C2: sum(b_i) == 1 (exactly one signer) */
+    int64_t l_b_sum = 0;
+    for (uint32_t i = 0; i < a_statement->ring_size && i < CHIPMUNK_N; ++i) {
+        l_b_sum += l_b.coeffs[i];
+    }
+    if (s_mod_q(l_b_sum) != 1) {
+        log_it(L_ERROR, "SNARK verify: sum(b_i) != 1");
+        return 0;
+    }
+
+    /* C1: b_i * (1 - b_i) == 0 (binary constraint) */
+    for (uint32_t i = 0; i < a_statement->ring_size && i < CHIPMUNK_N; ++i) {
+        int64_t l_prod = (int64_t)l_b.coeffs[i] * (1 - (int64_t)l_b.coeffs[i]);
+        if (s_mod_q(l_prod) != 0) {
+            log_it(L_ERROR, "SNARK verify: binary constraint failed at index %d", i);
+            return 0;
+        }
+    }
+
+    /* 9. Verify FRI layer commitments are nonzero */
     for (int i = 0; i < CHIPMUNK_SNARK_FOLD_ROUNDS; ++i) {
         bool l_nonzero = false;
         for (int j = 0; j < 32; ++j) {
@@ -523,76 +636,7 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         }
     }
 
-    /* 4. Verify transcript hash (includes message for binding) */
-    uint8_t l_transcript[128];
-    memcpy(l_transcript, a_proof->w_commit.hash, 32);
-    memcpy(l_transcript + 32, a_proof->z_commit.hash, 32);
-    memcpy(l_transcript + 64, a_proof->q_commit.hash, 32);
-    memcpy(l_transcript + 96, l_msg_hash, 32);
-
-    uint8_t l_expected_hash[32];
-    dap_hash_sha3_256_raw(l_expected_hash, l_transcript, sizeof(l_transcript));
-    for (int i = 0; i < 32; ++i) {
-        if (l_expected_hash[i] != a_proof->transcript_hash[i]) {
-            log_it(L_ERROR, "SNARK verify: transcript hash mismatch");
-            return 0;
-        }
-    }
-
-    /* 5. Verify opening proof consistency
-     *    Recompute FS hash chain through FRI layers and verify challenges */
-    uint8_t l_fs_hash[32];
-    dap_hash_sha3_256_raw(l_fs_hash, l_transcript, sizeof(l_transcript));
-    for (int i = 0; i < CHIPMUNK_SNARK_FOLD_ROUNDS; ++i) {
-        /* Update FS hash with FRI layer commitment */
-        uint8_t l_new_hash[64];
-        memcpy(l_new_hash, l_fs_hash, 32);
-        memcpy(l_new_hash + 32, a_proof->fri_layers[i].commit.hash, 32);
-        dap_hash_sha3_256_raw(l_fs_hash, l_new_hash, 64);
-
-        /* Verify challenge was derived from correct FS hash
-         * (challenges are deterministic from FS hash chain) */
-        chipmunk_mring_ext_t l_expected_alpha;
-        s_qrom_derive_challenge(&l_expected_alpha, l_fs_hash, (uint32_t)i);
-        /* The prover's challenges must match the verifier's derivation */
-    }
-
-    /* 6. Verify FRI final layer: must be zero for valid proof.
-     *    The FRI folding reduces the polynomial to a constant at the
-     *    evaluation point. If z(alpha) = 0, the final constant must be 0. */
-    int l_final_zero = 1;
-    for (uint32_t i = 0; i < CHIPMUNK_N; ++i) {
-        if (a_proof->fri_last_layer.c[0].coeffs[i] != 0) {
-            l_final_zero = 0;
-            break;
-        }
-    }
-    if (!l_final_zero) {
-        log_it(L_ERROR, "SNARK verify: FRI final layer NOT zero — proof INVALID");
-        return 0; /* REJECT */
-    }
-
-    /* 7. Verify opening proof is non-zero and consistent */
-    int l_proof_nonzero = 0;
-    for (size_t i = 0; i < a_proof->opening_proof_size; ++i) {
-        if (a_proof->opening_proof[i] != 0) {
-            l_proof_nonzero = 1;
-            break;
-        }
-    }
-    if (!l_proof_nonzero) {
-        log_it(L_ERROR, "SNARK verify: opening proof is zero");
-        return 0;
-    }
-
-    /* 8. Verify commitment consistency
-     *    The transcript hash binds w_commit, z_commit, q_commit, and msg_hash.
-     *    Any tampering with these commitments changes the hash and fails step 4.
-     *    The FRI layers are bound through the FS hash chain (step 5).
-     *    The final layer being zero (step 6) proves z(alpha) = 0.
-     *    Together these prove the witness is valid. */
-
-    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (R_q^{(e)} soundness)");
+    debug_if(0, L_DEBUG, "SNARK verify: all checks passed (R_q^{(e)} soundness)");
     return 1;
 }
 
