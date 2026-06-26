@@ -108,11 +108,16 @@ int dap_sdk_wasmfs_init(const char *a_mount)
         log_it(L_ERROR, "wasmfs_create_opfs_backend() failed — OPFS not available");
         return -1;
     }
-    // Don't rmdir — OPFS data persists across sessions!
-    int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
-    if (l_rc != 0) {
-        // Directory might already exist from previous session — that's OK
-        log_it(L_NOTICE, "wasmfs_create_directory('%s') rc=%d (may already exist)", l_mount, l_rc);
+    // Check if directory already exists before creating
+    struct stat l_st;
+    if (stat(l_mount, &l_st) == 0) {
+        log_it(L_NOTICE, "Filesystem: OPFS directory '%s' already exists, skipping create", l_mount);
+    } else {
+        int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "wasmfs_create_directory('%s') failed: rc=%d", l_mount, l_rc);
+            return -1;
+        }
     }
     log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
     return 0;
