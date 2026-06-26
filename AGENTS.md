@@ -115,6 +115,11 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 - 0 warnings, 0 errors
 - 6/6 test suites pass (SNARK, Pedersen, Range Proof, Mixnet, Ledger Anon, E2E)
 
+### SHAKE256 API Warning
+- `dap_hash_shake256_absorb` is NOT incremental — it zeroes state on every call (keccak_ref.c:311)
+- Always concatenate inputs into a single buffer before calling absorb
+- Never call absorb twice on the same state
+
 ## Ring Signature Types
 
 | Type | ID | Description |
@@ -142,4 +147,10 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 
 ## Known Issues
 
-- None remaining (all CRITICAL + HIGH resolved)
+### Remaining (from 3rd audit iteration)
+- **SNARK**: FRI fold uses scalar-only challenge (~21-bit soundness, not 128-bit). Needs full extension ring arithmetic.
+- **SNARK**: FRI final layer zero-check rejects honest proofs (degree 4 after 7 folds, not 0). Needs FOLD_ROUNDS=9 or different check.
+- **SNARK**: Quotient check only ~12.6-bit soundness (test point from F_q, not F_{q^6}). Needs multiple independent checks.
+- **Range Proof**: ZK blinding broken — mask cancels in unblinding, verifier learns secret bits. Needs permuted Stern protocol.
+- **Range Proof**: No link between proof and original commitment C. Verifier never checks A = Σ 2^i * C_i.
+- **Range Proof**: Bits ≥ 62 ignored in weight computation (l_weight=0). Precompute 2^i mod Q table. (all CRITICAL + HIGH resolved)
