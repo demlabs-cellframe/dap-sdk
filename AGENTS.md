@@ -147,4 +147,14 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 
 ## Known Issues
 
-- None remaining (all CRITICAL + HIGH resolved across 4 audit iterations) (all CRITICAL + HIGH resolved)
+- None remaining (all CRITICAL + HIGH resolved across 5 audit iterations)
+
+## Audit History
+
+| Iteration | Focus | CRITICAL | HIGH | MEDIUM | LOW |
+|-----------|-------|----------|------|--------|-----|
+| 1st | Initial crypto audit | 7 | 11 | - | - |
+| 2nd | Fix verification | 4 | 6 | - | - |
+| 3rd | SHAKE256 + deep audit | 1 | 5 | - | - |
+| 4th | SNARK soundness + Range Proof ZK | 3 | 3 | - | - |
+| 5th | Protocol correctness | 5 | 6 | 4 | 8 | (all CRITICAL + HIGH resolved)
