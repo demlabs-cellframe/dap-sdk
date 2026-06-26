@@ -159,4 +159,5 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 | 4th | SNARK soundness + Range Proof ZK | 3 | 3 | - | - |
 | 5th | Protocol correctness | 5 | 6 | 4 | 8 |
 | 6th | Message binding + TOCTOU + sign ext | 3 | 2 | 2 | - |
-| 7th | All remaining MEDIUM+LOW cleanup | 0 | 0 | 4 | 6 | (all CRITICAL + HIGH resolved)
+| 7th | All remaining MEDIUM+LOW cleanup | 0 | 0 | 4 | 6 |
+| 8th | Final verification — 3 LOW fixed | 0 | 0 | 0 | 3 | (all CRITICAL + HIGH resolved)
