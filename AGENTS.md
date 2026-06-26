@@ -147,7 +147,7 @@ Two full security audit iterations completed. All CRITICAL and HIGH issues resol
 
 ## Known Issues
 
-### Remaining (from 3rd audit iteration)
+### Remaining (from 3rd audit iteration) — IN PROGRESS
 - **SNARK**: FRI fold uses scalar-only challenge (~21-bit soundness, not 128-bit). Needs full extension ring arithmetic.
 - **SNARK**: FRI final layer zero-check rejects honest proofs (degree 4 after 7 folds, not 0). Needs FOLD_ROUNDS=9 or different check.
 - **SNARK**: Quotient check only ~12.6-bit soundness (test point from F_q, not F_{q^6}). Needs multiple independent checks.

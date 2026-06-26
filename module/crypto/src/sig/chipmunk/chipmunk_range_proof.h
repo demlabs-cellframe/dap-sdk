@@ -58,6 +58,10 @@ typedef struct chipmunk_range_proof {
  * Generate a range proof for a committed value.
  * Proves: value ∈ [0, 2^bits) without revealing value.
  *
+ * NOTE: The proof does NOT currently link A to the original commitment C.
+ * The prover must be trusted to use the correct value. A full lattice-based
+ * link (A = C) requires polynomial-vector randomness construction.
+ *
  * @param proof Output proof.
  * @param params Pedersen public parameters.
  * @param commit The Pedersen commitment to the value.

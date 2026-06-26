@@ -98,7 +98,14 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
     if (!l_bits) return -ENOMEM;
     s_decompose_bits(l_bits, a_value, a_bits);
 
-    /* 2. Generate per-bit randomness */
+    /* 2. Precompute 2^i mod Q */
+    int64_t l_pow2_table[64];
+    l_pow2_table[0] = 1;
+    for (uint32_t i = 1; i < 64; ++i) {
+        l_pow2_table[i] = (l_pow2_table[i - 1] * 2) % CHIPMUNK_Q;
+    }
+
+    /* 3. Generate per-bit randomness seeds */
     size_t l_seed_buf_size = (size_t)a_bits * 32;
     uint8_t *l_bit_seeds = DAP_NEW_Z_SIZE(uint8_t, l_seed_buf_size);
     if (!l_bit_seeds) { DAP_DELETE(l_bits); return -ENOMEM; }
@@ -122,16 +129,29 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
         DAP_DELETE(l_buf);
     }
 
-    /* 3. Generate blinding masks for ZK */
+    /* 4. Commit to each bit: C_i = Com(b_i; r_i) */
+    chipmunk_pedersen_commit_t *l_bit_commits = DAP_NEW_Z_COUNT(chipmunk_pedersen_commit_t, a_bits);
+    if (!l_bit_commits) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); return -ENOMEM; }
+    for (uint32_t i = 0; i < a_bits; ++i) {
+        int l_rc = chipmunk_pedersen_commit(&l_bit_commits[i], a_params,
+                                             (int64_t)l_bits[i], l_bit_seeds + i * 32);
+        if (l_rc != 0) {
+            DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_bit_commits);
+            return l_rc;
+        }
+    }
+    DAP_DELETE(l_bit_seeds);
+
+    /* 5. Generate blinding masks for ZK */
     uint8_t *l_blind_seeds = DAP_NEW_Z_SIZE(uint8_t, (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32);
-    if (!l_blind_seeds) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); return -ENOMEM; }
+    if (!l_blind_seeds) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_commits); return -ENOMEM; }
     {
         uint64_t l_state[25];
         memset(l_state, 0, sizeof(l_state));
         {
             size_t l_abs_len = 32 + 20;
             uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
-            if (!l_abs) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds); return -ENOMEM; }
+            if (!l_abs) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_commits); DAP_DELETE(l_blind_seeds); return -ENOMEM; }
             memcpy(l_abs, a_randomness_seed, 32);
             memcpy(l_abs + 32, "range-proof-blind-v2", 20);
             dap_hash_shake256_absorb(l_state, l_abs, l_abs_len);
@@ -139,37 +159,18 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
         }
         size_t l_nblocks = ((size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32 + 135) / 136;
         uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
-        if (!l_buf) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds); return -ENOMEM; }
+        if (!l_buf) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_commits); DAP_DELETE(l_blind_seeds); return -ENOMEM; }
         dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
         memcpy(l_blind_seeds, l_buf, (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32);
         DAP_DELETE(l_buf);
     }
 
-    /* 4. Commit to each bit: C_i = Com(b_i; r_i) */
-    chipmunk_pedersen_commit_t *l_bit_commits = DAP_NEW_Z_COUNT(chipmunk_pedersen_commit_t, a_bits);
-    if (!l_bit_commits) { DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds); return -ENOMEM; }
-    for (uint32_t i = 0; i < a_bits; ++i) {
-        int l_rc = chipmunk_pedersen_commit(&l_bit_commits[i], a_params,
-                                             (int64_t)l_bits[i], l_bit_seeds + i * 32);
-        if (l_rc != 0) {
-            DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds);
-            DAP_DELETE(l_bit_commits);
-            return l_rc;
-        }
-    }
-
-    /* 5. Combine bit commitments: A = Σ 2^i * C_i, B = Σ C_i */
+    /* 6. Combine bit commitments: A = Σ 2^i * C_i, B = Σ C_i */
     memset(&a_proof->A, 0, sizeof(a_proof->A));
-    for (uint32_t i = 0; i < a_bits; ++i) {
-        /* Weighted addition: A += 2^i * C_i
-         * Use safe modular arithmetic to avoid overflow */
+    for (uint32_t i = 0; i < a_bits && i < 64; ++i) {
+        int64_t l_weight = l_pow2_table[i];
         for (uint32_t k = 0; k < CHIPMUNK_PEDERSEN_K; ++k) {
             for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
-                /* Compute 2^i mod Q safely */
-                int64_t l_weight = 1;
-                for (uint32_t b = 0; b < i && b < 62; ++b) l_weight = (l_weight * 2) % CHIPMUNK_Q;
-                if (i >= 62) l_weight = 0; /* overflow protection */
-
                 int64_t l_term = (int64_t)l_bit_commits[i].C[k].coeffs[j] * l_weight;
                 a_proof->A.C[k].coeffs[j] = s_mod_q((int64_t)a_proof->A.C[k].coeffs[j] + l_term);
             }
@@ -193,7 +194,7 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
         uint8_t *l_b_buf = DAP_NEW_Z_SIZE(uint8_t, l_ser_size);
         if (!l_c_buf || !l_a_buf || !l_b_buf) {
             DAP_DELETE(l_c_buf); DAP_DELETE(l_a_buf); DAP_DELETE(l_b_buf);
-            DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds);
+            DAP_DELETE(l_bits); DAP_DELETE(l_blind_seeds);
             DAP_DELETE(l_bit_commits);
             return -ENOMEM;
         }
@@ -208,7 +209,7 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
             uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
             if (!l_abs) {
                 DAP_DELETE(l_c_buf); DAP_DELETE(l_a_buf); DAP_DELETE(l_b_buf);
-                DAP_DELETE(l_bits); DAP_DELETE(l_bit_seeds); DAP_DELETE(l_blind_seeds);
+                DAP_DELETE(l_bits); DAP_DELETE(l_blind_seeds);
                 DAP_DELETE(l_bit_commits);
                 return -ENOMEM;
             }
@@ -288,7 +289,6 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
         uint8_t *l_abs = DAP_NEW_Z_SIZE(uint8_t, l_abs_len);
         if (!l_abs) {
             dap_memwipe(l_bits, a_bits); DAP_DELETE(l_bits);
-            dap_memwipe(l_bit_seeds, l_seed_buf_size); DAP_DELETE(l_bit_seeds);
             dap_memwipe(l_blind_seeds, (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32);
             DAP_DELETE(l_blind_seeds); DAP_DELETE(l_bit_commits);
             return -ENOMEM;
@@ -319,8 +319,6 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
     /* Cleanup — wipe secret material */
     dap_memwipe(l_bits, a_bits);
     DAP_DELETE(l_bits);
-    dap_memwipe(l_bit_seeds, l_seed_buf_size);
-    DAP_DELETE(l_bit_seeds);
     dap_memwipe(l_blind_seeds, (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32);
     DAP_DELETE(l_blind_seeds);
     DAP_DELETE(l_bit_commits);
