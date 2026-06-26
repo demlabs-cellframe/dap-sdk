@@ -172,21 +172,45 @@ int chipmunk_dcnet_combine(chipmunk_dcnet_round_t *a_round)
     if (!a_round->output) return -ENOMEM;
     a_round->output_size = l_max_size;
 
-    /* XOR all messages: output = m_0 ⊕ m_1 ⊕ ... ⊕ m_{N-1} */
+    /*
+     * DC-net combine: output = ⊕_i m_i ⊕ ⊕_{i<j} (s_{i,j} ⊕ s_{j,i})
+     *
+     * Each participant i generates random shares s_{i,j} for all j≠i.
+     * The pairwise shares s_{i,j} and s_{j,i} cancel when XORed:
+     *   s_{i,j} ⊕ s_{j,i} = 0  (if both participants are honest)
+     *
+     * The own messages m_i survive because they are only contributed once.
+     *
+     * In a real DC-net, each pair (i,j) agrees on a shared random pad.
+     * For simplicity, we assume each participant generates their own
+     * random shares and distributes them. The combine step XORs all
+     * received shares with all sent shares.
+     */
     memset(a_round->output, 0, l_max_size);
+
+    /* XOR all own messages: output ⊕= m_i for each i */
     for (uint32_t i = 0; i < l_n; ++i) {
         size_t l_msg_size = a_round->share_sizes[i][i];
         if (l_msg_size == 0 || !a_round->shares[i][i]) continue;
-
         for (size_t k = 0; k < l_msg_size && k < l_max_size; ++k) {
             a_round->output[k] ^= a_round->shares[i][i][k];
         }
     }
 
-    /* XOR all pairwise shares: output ⊕= s_{i,j} for all i≠j */
-    /* In a proper DC-net, each pair (i,j) generates a shared random pad
-     * that cancels out when both parties participate. For simplicity,
-     * we use the direct XOR of all own messages. */
+    /* XOR all pairwise shares: output ⊕= s_{i,j} for all i≠j
+     * In a proper DC-net, each pair (i,j) would have a shared pad.
+     * Here we XOR all generated random shares. The cancellation happens
+     * because each pair generates complementary shares. */
+    for (uint32_t i = 0; i < l_n; ++i) {
+        for (uint32_t j = 0; j < l_n; ++j) {
+            if (i == j) continue;
+            size_t l_share_size = a_round->share_sizes[i][j];
+            if (l_share_size == 0 || !a_round->shares[i][j]) continue;
+            for (size_t k = 0; k < l_share_size && k < l_max_size; ++k) {
+                a_round->output[k] ^= a_round->shares[i][j][k];
+            }
+        }
+    }
 
     return 0;
 }
