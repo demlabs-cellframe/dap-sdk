@@ -345,7 +345,12 @@ int chipmunk_range_proof_prove(chipmunk_range_proof_t *a_proof,
             dap_hash_shake256_absorb(l_shake_st, l_mask_seed, 32);
             size_t l_nblocks = (CHIPMUNK_N + 135) / 136;
             uint8_t *l_xof = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
-            if (!l_xof) return -ENOMEM;
+            if (!l_xof) {
+                dap_memwipe(l_bits, a_bits); DAP_DELETE(l_bits);
+                dap_memwipe(l_blind_seeds, (size_t)CHIPMUNK_RANGE_PROOF_CHALLENGES * 32);
+                DAP_DELETE(l_blind_seeds); DAP_DELETE(l_bit_commits);
+                return -ENOMEM;
+            }
             dap_hash_shake256_squeezeblocks(l_xof, l_nblocks, l_shake_st);
             for (uint32_t j = 0; j < CHIPMUNK_N; ++j) {
                 l_mask.coeffs[j] = (int32_t)(l_xof[j] % 3) - 1;

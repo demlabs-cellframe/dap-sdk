@@ -472,6 +472,11 @@ int chipmunk_snark_prove(chipmunk_snark_proof_t *a_proof,
     /* 11. Final transcript hash */
     dap_hash_sha3_256_raw(a_proof->transcript_hash, l_transcript, sizeof(l_transcript));
 
+    /* Wipe secret material from stack */
+    dap_memwipe(&l_b, sizeof(l_b));
+    dap_memwipe(&l_z, sizeof(l_z));
+    dap_memwipe(&l_q, sizeof(l_q));
+
     return 0;
 }
 
@@ -515,11 +520,13 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
 
         uint8_t l_expected_hash[32];
         dap_hash_sha3_256_raw(l_expected_hash, l_transcript, sizeof(l_transcript));
+        uint8_t l_diff = 0;
         for (int i = 0; i < 32; ++i) {
-            if (l_expected_hash[i] != a_proof->transcript_hash[i]) {
-                log_it(L_ERROR, "SNARK verify: transcript hash mismatch");
-                return 0;
-            }
+            l_diff |= l_expected_hash[i] ^ a_proof->transcript_hash[i];
+        }
+        if (l_diff != 0) {
+            log_it(L_ERROR, "SNARK verify: transcript hash mismatch");
+            return 0;
         }
     }
 
