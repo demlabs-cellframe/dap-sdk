@@ -38,6 +38,89 @@ See more details here <http://www.gnu.org/licenses/>.
 #define LOG_TAG "dap_net_trans_server"
 
 static bool s_debug_more = false;
+
+/**
+ * @brief Global registry of active transport servers
+ */
+#define MAX_TRANS_SERVERS 16
+static dap_net_trans_server_t *s_server_registry[MAX_TRANS_SERVERS];
+static size_t s_server_registry_count = 0;
+
+/**
+ * @brief Global registry of HTTP servers per transport type
+ * Used by VPN plugin to register handlers on all transports.
+ */
+typedef struct {
+    dap_net_trans_type_t trans_type;
+    dap_http_server_t   *http_server;
+} dap_trans_http_entry_t;
+
+static dap_trans_http_entry_t s_http_registry[MAX_TRANS_SERVERS];
+static size_t s_http_registry_count = 0;
+
+int dap_net_trans_server_add_to_registry(dap_net_trans_server_t *a_server)
+{
+    if (!a_server || s_server_registry_count >= MAX_TRANS_SERVERS) {
+        log_it(L_ERROR, "Cannot add trans server to registry: server=%p count=%zu",
+               (void*)a_server, s_server_registry_count);
+        return -1;
+    }
+    s_server_registry[s_server_registry_count++] = a_server;
+    debug_if(s_debug_more, L_DEBUG, "Trans server added to registry: %s (total: %zu)",
+             a_server->server_name, s_server_registry_count);
+    return 0;
+}
+
+void dap_net_trans_server_remove_from_registry(dap_net_trans_server_t *a_server)
+{
+    if (!a_server) return;
+    for (size_t i = 0; i < s_server_registry_count; i++) {
+        if (s_server_registry[i] == a_server) {
+            s_server_registry[i] = s_server_registry[--s_server_registry_count];
+            debug_if(s_debug_more, L_DEBUG, "Trans server removed from registry: %s (total: %zu)",
+                     a_server->server_name, s_server_registry_count);
+            return;
+        }
+    }
+}
+
+size_t dap_net_trans_server_get_all(dap_net_trans_server_t **a_out, size_t a_max)
+{
+    size_t l_count = s_server_registry_count < a_max ? s_server_registry_count : a_max;
+    for (size_t i = 0; i < l_count; i++)
+        a_out[i] = s_server_registry[i];
+    return l_count;
+}
+
+void dap_net_trans_server_set_http_server(dap_net_trans_type_t a_trans_type,
+                                           dap_http_server_t *a_http_server)
+{
+    if (!a_http_server) return;
+
+    /* Update existing or add new */
+    for (size_t i = 0; i < s_http_registry_count; i++) {
+        if (s_http_registry[i].trans_type == a_trans_type) {
+            s_http_registry[i].http_server = a_http_server;
+            return;
+        }
+    }
+    if (s_http_registry_count < MAX_TRANS_SERVERS) {
+        s_http_registry[s_http_registry_count++] = (dap_trans_http_entry_t){
+            .trans_type = a_trans_type,
+            .http_server = a_http_server,
+        };
+    }
+}
+
+dap_http_server_t *dap_net_trans_server_get_http_server(dap_net_trans_type_t a_trans_type)
+{
+    for (size_t i = 0; i < s_http_registry_count; i++) {
+        if (s_http_registry[i].trans_type == a_trans_type)
+            return s_http_registry[i].http_server;
+    }
+    return NULL;
+}
+
 /**
  * @brief Registry entry for trans server operations
  */
@@ -154,6 +237,8 @@ dap_net_trans_server_t *dap_net_trans_server_new(dap_net_trans_type_t a_trans_ty
         return NULL;
     }
 
+    dap_net_trans_server_add_to_registry(l_server);
+
     log_it(L_INFO, "Created trans server: %s (type: %d)", a_server_name, a_trans_type);
     return l_server;
 }
@@ -233,6 +318,8 @@ void dap_net_trans_server_delete(dap_net_trans_server_t *a_server)
     } else {
         log_it(L_WARNING, "Trans server operations not registered for type %d, cannot delete", a_server->trans_type);
     }
+
+    dap_net_trans_server_remove_from_registry(a_server);
 
     log_it(L_INFO, "Deleted trans server: %s", a_server->server_name);
     DAP_DELETE(a_server);

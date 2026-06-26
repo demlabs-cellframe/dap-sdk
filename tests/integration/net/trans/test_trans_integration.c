@@ -312,11 +312,6 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     // ============================================================================
     // PHASE 0: IMMEDIATELY delete all server flows to prevent address reuse conflicts
     // ============================================================================
-    // CRITICAL: This must be done FIRST, before any client cleanup!
-    // Old flows with recv_seq_expected from previous test can intercept packets
-    // from new clients with same addresses (e.g., 127.0.0.1:33537).
-    // By deleting flows immediately, we ensure hash tables are cleared before
-    // the next test starts.
     if (a_ctx->servers && a_ctx->config.trans_type == DAP_NET_TRANS_UDP_BASIC) {
         log_it(L_DEBUG, "Phase 0: Marking all server flows as deleting...");
         for (size_t i = 0; i < a_ctx->scenario.num_servers; i++) {
@@ -338,9 +333,6 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     // ============================================================================
     // PHASE 1: Stop servers FIRST for connection-oriented transports (HTTP/WS)
     // ============================================================================
-    // For HTTP/WebSocket: server-side write callbacks can fire on client esockets
-    // after client deletion, causing double-free. Stopping servers first ensures
-    // no new server-side callbacks are scheduled.
     if (a_ctx->servers && a_ctx->config.trans_type != DAP_NET_TRANS_UDP_BASIC) {
         log_it(L_DEBUG, "Phase 1: Stopping %zu servers (connection-oriented transport)...",
                a_ctx->scenario.num_servers);
@@ -349,15 +341,26 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
                 dap_net_trans_server_stop(a_ctx->servers[i]);
             }
         }
-        uint32_t l_drain_ms = 500 + (uint32_t)a_ctx->scenario.num_clients * 50;
-        if (l_drain_ms > 5000) l_drain_ms = 5000;
-        dap_test_sleep_ms(l_drain_ms);
-        test_wait_for_all_streams_closed(l_drain_ms);
-        log_it(L_DEBUG, "Phase 1 complete: servers stopped, pending callbacks drained");
+        // Poll: wait for pending callbacks to drain (max 5s)
+        uint64_t l_drain_deadline = dap_test_get_time_ms() + 5000;
+        while (dap_test_get_time_ms() < l_drain_deadline) {
+            size_t l_stream_count = 0;
+            dap_stream_info_t *l_info = dap_stream_get_links_info(NULL, &l_stream_count);
+            if (l_info) dap_stream_delete_links_info(l_info, l_stream_count);
+            if (l_stream_count == 0) break;
+            usleep(50000); // 50ms poll
+        }
+        log_it(L_DEBUG, "Phase 1 complete: servers stopped");
     } else {
-        uint32_t l_udp_drain_ms = 300 + (uint32_t)a_ctx->scenario.num_clients * 20;
-        if (l_udp_drain_ms > 2000) l_udp_drain_ms = 2000;
-        dap_test_sleep_ms(l_udp_drain_ms);
+        // UDP: poll for pending packets to drain (max 2s)
+        uint64_t l_udp_deadline = dap_test_get_time_ms() + 2000;
+        while (dap_test_get_time_ms() < l_udp_deadline) {
+            size_t l_sc = 0;
+            dap_stream_info_t *l_si = dap_stream_get_links_info(NULL, &l_sc);
+            if (l_si) dap_stream_delete_links_info(l_si, l_sc);
+            if (l_sc == 0) break;
+            usleep(50000); // 50ms poll
+        }
     }
     
     // ============================================================================
@@ -388,7 +391,7 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
                 a_ctx->clients[i] = NULL;
                 l_deleted_count++;
                 if (l_deleted_count % 10 == 0)
-                    dap_test_sleep_ms(50);
+                    usleep(10000); // 10ms yield every 10 deletions
             }
         }
         
@@ -397,9 +400,15 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
                l_deleted_count, a_ctx->scenario.num_clients, 
                dap_test_get_time_ms() - l_phase3_start);
         
-        uint32_t l_settle_ms = 200 + (uint32_t)l_deleted_count * 20;
-        if (l_settle_ms > 3000) l_settle_ms = 3000;
-        dap_test_sleep_ms(l_settle_ms);
+        // Poll: wait for streams to settle after client deletion
+        uint64_t l_settle_deadline = dap_test_get_time_ms() + 3000;
+        while (dap_test_get_time_ms() < l_settle_deadline) {
+            size_t l_stream_count = 0;
+            dap_stream_info_t *l_info = dap_stream_get_links_info(NULL, &l_stream_count);
+            if (l_info) dap_stream_delete_links_info(l_info, l_stream_count);
+            if (l_stream_count == 0) break;
+            usleep(100000); // 100ms poll
+        }
     }
     
     // ============================================================================
@@ -515,14 +524,17 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
     }
     
     // ============================================================================
-    // PHASE 8: Final stabilization (let event loops settle)
+    // PHASE 8: Final stabilization (poll until no active streams, max 3s)
     // ============================================================================
     {
-        uint32_t l_stabilize_ms = 500 + (uint32_t)a_ctx->scenario.num_clients * 30
-                                      + (uint32_t)a_ctx->scenario.num_servers * 30;
-        if (l_stabilize_ms > 3000) l_stabilize_ms = 3000;
-        log_it(L_DEBUG, "Phase 8: Final stabilization (%u ms)...", l_stabilize_ms);
-        dap_test_sleep_ms(l_stabilize_ms);
+        uint64_t l_stabilize_deadline = dap_test_get_time_ms() + 3000;
+        while (dap_test_get_time_ms() < l_stabilize_deadline) {
+            size_t l_stream_count = 0;
+            dap_stream_info_t *l_info = dap_stream_get_links_info(NULL, &l_stream_count);
+            if (l_info) dap_stream_delete_links_info(l_info, l_stream_count);
+            if (l_stream_count == 0) break;
+            usleep(100000); // 100ms poll
+        }
         log_it(L_DEBUG, "Phase 8 complete: system stabilized");
     }
     
@@ -554,38 +566,24 @@ static void test_trans_ctx_free(trans_test_ctx_t *a_ctx)
  */
 static bool test_wait_for_cleanup_complete(uint32_t a_timeout_ms)
 {
-    uint64_t l_start_time = dap_test_get_time_ms();
-    uint64_t l_deadline = l_start_time + (uint64_t)a_timeout_ms;
+    // Poll: wait for no active streams, yielding between checks
+    uint64_t l_start = dap_test_get_time_ms();
+    uint64_t l_deadline = l_start + (uint64_t)a_timeout_ms;
+    size_t l_stable_count = 0;
     
-    // Wait for streams to close
-    if (!test_wait_for_all_streams_closed(a_timeout_ms / 2)) {
-        log_it(L_WARNING, "Streams did not close within timeout");
-        return false;
-    }
-    
-    // Additional stabilization time - let event loops settle
-    const uint32_t STABILIZATION_POLLS = 5;
-    const uint32_t POLL_INTERVAL_MS = 50;
-    
-    for (uint32_t i = 0; i < STABILIZATION_POLLS; i++) {
-        if (dap_test_get_time_ms() >= l_deadline) {
-            log_it(L_WARNING, "Cleanup stabilization timeout");
-            return false;
-        }
+    while (dap_test_get_time_ms() < l_deadline) {
+        size_t l_stream_count = 0;
+        dap_stream_info_t *l_info = dap_stream_get_links_info(NULL, &l_stream_count);
+        if (l_info) dap_stream_delete_links_info(l_info, l_stream_count);
         
-        dap_test_sleep_ms(POLL_INTERVAL_MS);
-        
-        // Check if we're past deadline
-        uint64_t l_elapsed = dap_test_get_time_ms() - l_start_time;
-        if (l_elapsed >= (uint64_t)a_timeout_ms) {
-            break;
+        if (l_stream_count == 0) {
+            if (++l_stable_count >= 2) return true; // 2 consecutive zero counts
+        } else {
+            l_stable_count = 0;
         }
+        usleep(100000); // 100ms poll
     }
-    
-    uint64_t l_total_elapsed = dap_test_get_time_ms() - l_start_time;
-    log_it(L_DEBUG, "Cleanup stabilization complete (%"PRIu64" ms)", l_total_elapsed);
-    
-    return true;
+    return false;
 }
 
 /**
@@ -1409,15 +1407,22 @@ static void test_02_sequential_trans_testing(void)
                 // Cleanup after each scenario
                 test_trans_ctx_free(l_ctx);
 
-                // Wait for cleanup
+                // Poll: wait for cleanup to complete
                 uint32_t l_cleanup_timeout = (l_scenario->num_clients > 100) ? 30000 : 20000;
                 if (!test_wait_for_cleanup_complete(l_cleanup_timeout)) {
                     log_it(L_ERROR, "Cleanup did not complete for scenario '%s'", l_scenario->name);
                 }
-#ifdef __APPLE__
-                // macOS: extra delay for port release after SO_REUSEPORT socket close
-                dap_test_sleep_ms(1000);
-#endif
+                // Poll: wait for port release (max 2s)
+                {
+                    uint64_t l_port_deadline = dap_test_get_time_ms() + 2000;
+                    while (dap_test_get_time_ms() < l_port_deadline) {
+                        size_t l_sc = 0;
+                        dap_stream_info_t *l_si = dap_stream_get_links_info(NULL, &l_sc);
+                        if (l_si) dap_stream_delete_links_info(l_si, l_sc);
+                        if (l_sc == 0) break;
+                        usleep(100000);
+                    }
+                }
                 
                 printf("\n");
             }
@@ -1457,8 +1462,17 @@ static void test_03_cleanup_all_resources(void)
     TEST_INFO("Test 3: Cleaning up all resources");
     
     // Trans ctxs are already cleaned up in test_02
-    // Just ensure everything is closed
-    test_wait_for_all_streams_closed(1000);
+    // Poll: wait for streams to close (max 2s)
+    {
+        uint64_t l_deadline = dap_test_get_time_ms() + 2000;
+        while (dap_test_get_time_ms() < l_deadline) {
+            size_t l_sc = 0;
+            dap_stream_info_t *l_si = dap_stream_get_links_info(NULL, &l_sc);
+            if (l_si) dap_stream_delete_links_info(l_si, l_sc);
+            if (l_sc == 0) break;
+            usleep(100000);
+        }
+    }
     
     // Cleanup client system
     dap_client_deinit();

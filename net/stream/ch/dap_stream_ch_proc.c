@@ -42,7 +42,10 @@
 
 #define LOG_TAG "dap_stream_ch_proc"
 
-static dap_stream_ch_proc_t s_proc[256]={{0}};
+/* Non-static so that plugins loaded via dlopen resolve to the binary's copy
+ * instead of getting their own private copy (which would be invisible to
+ * the stream layer running inside the main binary). */
+dap_stream_ch_proc_t s_proc[256]={{0}};
 
 /**
  * @brief stream_ch_type_init Initialize stream channels type module
