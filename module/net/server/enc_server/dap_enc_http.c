@@ -212,6 +212,19 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_block_key_size);
         
         dap_enc_ks_save_in_storage(l_enc_key_ks);
+
+        // Diagnostic: log the key created during enc_init
+        {
+            const uint8_t *l_kb = l_enc_key_ks->key->priv_key_data
+                ? (const uint8_t *)l_enc_key_ks->key->priv_key_data : NULL;
+            log_it(L_NOTICE, "enc_init: stored key id='%s' type=%d priv_size=%zu",
+                   l_enc_key_ks->id, l_enc_key_ks->key->type, l_enc_key_ks->key->priv_key_data_size);
+            if (l_kb && l_enc_key_ks->key->priv_key_data_size >= 8)
+                log_it(L_NOTICE, "enc_init: stored key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
+                       l_kb[0], l_kb[1], l_kb[2], l_kb[3],
+                       l_kb[4], l_kb[5], l_kb[6], l_kb[7]);
+        }
+
         int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
                                                       encrypt_id, DAP_ENC_DATA_TYPE_B64),
             l_node_msg_len = 0;
@@ -279,6 +292,16 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
 
     dap_enc_key_t * l_key= dap_enc_ks_find_http(a_http_simple->http_client);
     if(l_key){
+        // Diagnostic: log the key found by KeyID lookup
+        const uint8_t *l_kb = l_key->priv_key_data ? (const uint8_t *)l_key->priv_key_data : NULL;
+        log_it(L_NOTICE, "enc_http_request_decode: KeyID found key type=%d priv_size=%zu %s",
+               l_key->type, l_key->priv_key_data_size,
+               l_kb ? "" : "(NO priv_key_data!)");
+        if (l_kb && l_key->priv_key_data_size >= 8)
+            log_it(L_NOTICE, "enc_http_request_decode: key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
+                   l_kb[0], l_kb[1], l_kb[2], l_kb[3],
+                   l_kb[4], l_kb[5], l_kb[6], l_kb[7]);
+
         enc_http_delegate_t * dg = DAP_NEW_Z_RET_VAL_IF_FAIL(enc_http_delegate_t, NULL);
         dg->key=l_key;
         dg->http=a_http_simple->http_client;
