@@ -36,7 +36,7 @@ addToLibrary({
             : null;
 
         // Node.js path: synchronous HTTP via child_process (no event loop blocking)
-        if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+        if (typeof require === 'function' && typeof process !== 'undefined' && process.versions && process.versions.node) {
             try {
                 var parsed = new URL(url);
                 var httpModule = parsed.protocol === 'https:' ? require('https') : require('http');
@@ -158,7 +158,9 @@ addToLibrary({
         var extraHeaders = a_extra_headers_ptr ? UTF8ToString(a_extra_headers_ptr) : null;
 
         // Node.js path: synchronous HTTP via execSync subprocess
-        if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+        // Note: Emscripten pthread workers define process.versions.node,
+        // so we also check typeof require === 'function' to detect actual Node.js.
+        if (typeof require === 'function' && typeof process !== 'undefined' && process.versions && process.versions.node) {
             var parsed = new URL(url);
             var execSync = require('child_process').execSync;
             var b64 = (a_body && a_body_len > 0)
