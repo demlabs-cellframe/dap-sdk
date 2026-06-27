@@ -423,6 +423,24 @@ void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delega
                                               DAP_ENC_DATA_TYPE_RAW);
 
     log_it(L_NOTICE, "enc_http_reply_encode: encrypted %zu -> %zu bytes", a_http_delegate->response_size, a_http_simple->reply_size);
+
+    // Server-side self-test: encrypt then decrypt with the same key
+    {
+        const char *l_test = "SERVER_SELF_TEST_1234567890";
+        size_t l_test_len = strlen(l_test);
+        size_t l_enc_max = dap_enc_code_out_size(a_http_delegate->key, l_test_len, DAP_ENC_DATA_TYPE_RAW);
+        uint8_t *l_enc = DAP_NEW_Z_SIZE(uint8_t, l_enc_max);
+        size_t l_enc_len = dap_enc_code(a_http_delegate->key, l_test, l_test_len,
+                                         l_enc, l_enc_max, DAP_ENC_DATA_TYPE_RAW);
+        char l_dec[64] = {0};
+        size_t l_dec_len = dap_enc_decode(a_http_delegate->key, l_enc, l_enc_len,
+                                            l_dec, sizeof(l_dec), DAP_ENC_DATA_TYPE_RAW);
+        log_it(L_NOTICE, "Server self-test: enc=%zu dec=%zu match=%d %s",
+               l_enc_len, l_dec_len,
+               l_dec_len == l_test_len && memcmp(l_test, l_dec, l_test_len) == 0,
+               (l_dec_len == l_test_len && memcmp(l_test, l_dec, l_test_len) == 0) ? "OK" : "FAIL");
+        DAP_DELETE(l_enc);
+    }
 }
 
 void enc_http_delegate_delete(enc_http_delegate_t * dg)
