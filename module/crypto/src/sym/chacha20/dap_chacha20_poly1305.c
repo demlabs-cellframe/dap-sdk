@@ -171,10 +171,20 @@ static inline dap_poly1305_blocks_fn_t dap_poly1305_blocks_resolve(void)
     dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
     (void)l_class;
 
-    /* Poly1305 SIMD (AVX2/AVX512 IFMA/NEON) produces wrong MAC for multi-block
-     * inputs — the Horner combine has an extra s_donna_mul_r, and the radix
-     * conversion between 44-limb scalar and 26-limb SIMD is buggy.
-     * Force scalar until SIMD implementations are fixed and verified. */
+#if DAP_PLATFORM_X86
+    if (__builtin_expect(arch >= DAP_CPU_ARCH_AVX512, 1)) {
+        dap_cpu_features_t l_feat = dap_cpu_detect_features();
+        if (l_feat.has_avx512_ifma && l_feat.has_avx512vl)
+            return dap_poly1305_blocks_avx512_ifma;
+    }
+    if (arch >= DAP_CPU_ARCH_AVX2)
+        return dap_poly1305_blocks_avx2;
+#elif DAP_PLATFORM_ARM
+#if !defined(__aarch64__)
+    if (arch >= DAP_CPU_ARCH_NEON)
+        return dap_poly1305_blocks_neon;
+#endif
+#endif
 
     return s_poly1305_blocks_ref;
 }

@@ -102,6 +102,7 @@ void MLKEM_NAMESPACE(_rej_uniform_dispatch_init)(void)
 static void s_gen_matrix(dap_mlkem_polyvec *a_mat, const uint8_t a_seed[MLKEM_SYMBYTES],
                           int a_transposed)
 {
+    DAP_DISPATCH_ENSURE(s_rej_uniform, MLKEM_NAMESPACE(_rej_uniform_dispatch_init));
     unsigned l_total = MLKEM_K * MLKEM_K;
     uint8_t l_buf[4][GEN_MATRIX_NBLOCKS * MLKEM_XOF_BLOCKBYTES + 2];
 
