@@ -380,11 +380,26 @@ void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delega
                                                       a_http_delegate->response_size,
                                                       DAP_ENC_DATA_TYPE_RAW);
 
+    // Diagnostic: log key and response info
+    const uint8_t *l_kb = a_http_delegate->key && a_http_delegate->key->priv_key_data
+        ? (const uint8_t *)a_http_delegate->key->priv_key_data : NULL;
+    log_it(L_NOTICE, "enc_http_reply_encode: resp_size=%zu key_type=%d enc_out_max=%zu %s",
+           a_http_delegate->response_size, a_http_delegate->key->type, l_reply_size_max,
+           l_kb ? "" : "(NO key!)");
+    if (l_kb && a_http_delegate->key->priv_key_data_size >= 8)
+        log_it(L_NOTICE, "enc_http_reply_encode: key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x resp='%.*s'",
+               l_kb[0], l_kb[1], l_kb[2], l_kb[3],
+               l_kb[4], l_kb[5], l_kb[6], l_kb[7],
+               (int)(a_http_delegate->response_size < 80 ? a_http_delegate->response_size : 80),
+               (const char *)a_http_delegate->response);
+
     a_http_simple->reply = DAP_NEW_SIZE(void,l_reply_size_max);
     a_http_simple->reply_size = dap_enc_code( a_http_delegate->key,
                                               a_http_delegate->response, a_http_delegate->response_size,
                                               a_http_simple->reply, l_reply_size_max,
                                               DAP_ENC_DATA_TYPE_RAW);
+
+    log_it(L_NOTICE, "enc_http_reply_encode: encrypted %zu -> %zu bytes", a_http_delegate->response_size, a_http_simple->reply_size);
 }
 
 void enc_http_delegate_delete(enc_http_delegate_t * dg)

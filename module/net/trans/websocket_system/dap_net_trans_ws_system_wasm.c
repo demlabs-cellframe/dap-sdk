@@ -549,17 +549,43 @@ static void s_ws_session_create_response(void *a_resp, size_t a_resp_size, int a
 
     size_t l_dec_max = a_resp_size + 256;
     char *l_dec = DAP_NEW_Z_SIZE(char, l_dec_max);
+
+    // Self-test: encrypt then decrypt with the same key on WASM side
+    {
+        const char *l_test_pt = "ROUND_TRIP_TEST_1234567890";
+        size_t l_test_pt_len = strlen(l_test_pt);
+        size_t l_test_enc_max = dap_enc_code_out_size(l_ctx->session_key, l_test_pt_len, DAP_ENC_DATA_TYPE_RAW);
+        uint8_t *l_test_enc = DAP_NEW_Z_SIZE(uint8_t, l_test_enc_max);
+        size_t l_test_enc_len = dap_enc_code(l_ctx->session_key, l_test_pt, l_test_pt_len,
+                                              l_test_enc, l_test_enc_max, DAP_ENC_DATA_TYPE_RAW);
+        char l_test_dec[64] = {0};
+        size_t l_test_dec_len = dap_enc_decode(l_ctx->session_key, l_test_enc, l_test_enc_len,
+                                                l_test_dec, sizeof(l_test_dec), DAP_ENC_DATA_TYPE_RAW);
+        log_it(L_NOTICE, "WASM self-test: pt='%s' enc=%zu dec=%zu match=%d",
+               l_test_pt, l_test_enc_len, l_test_dec_len,
+               l_test_dec_len == l_test_pt_len && memcmp(l_test_pt, l_test_dec, l_test_pt_len) == 0);
+        DAP_DELETE(l_test_enc);
+    }
+
     size_t l_dec_len = dap_enc_decode(l_ctx->session_key, a_resp, a_resp_size,
                                        l_dec, l_dec_max, DAP_ENC_DATA_TYPE_RAW);
     if (l_dec_len == 0) {
         const uint8_t *l_kb = l_ctx->session_key && l_ctx->session_key->priv_key_data
             ? (const uint8_t *)l_ctx->session_key->priv_key_data : NULL;
         if (l_kb)
-            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x)",
-                   a_resp_size, l_kb[0], l_kb[1], l_kb[2], l_kb[3],
-                   l_kb[4], l_kb[5], l_kb[6], l_kb[7]);
+            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu key_type=%d key_size=%zu key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x resp[0..3]=%02x%02x%02x%02x)",
+                   a_resp_size,
+                   l_ctx->session_key->type,
+                   l_ctx->session_key->priv_key_data_size,
+                   l_kb[0], l_kb[1], l_kb[2], l_kb[3],
+                   l_kb[4], l_kb[5], l_kb[6], l_kb[7],
+                   ((const uint8_t *)a_resp)[0], ((const uint8_t *)a_resp)[1],
+                   ((const uint8_t *)a_resp)[2], ((const uint8_t *)a_resp)[3]);
         else
-            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu, no session key)", a_resp_size);
+            log_it(L_ERROR, "stream_ctl decryption failed (resp=%zu, no session key priv_data=%p dec_na=%p)",
+                   a_resp_size,
+                   l_ctx->session_key ? (void*)l_ctx->session_key->priv_key_data : NULL,
+                   l_ctx->session_key ? (void*)l_ctx->session_key->dec_na : NULL);
         DAP_DELETE(l_dec);
         if (l_ctx->callback) l_ctx->callback(l_ctx->stream, 0, NULL, 0, -1);
         DAP_DELETE(l_ctx);
