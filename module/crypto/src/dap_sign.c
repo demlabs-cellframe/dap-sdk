@@ -24,18 +24,23 @@
 
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
 #include "dap_sign.h"
+#include "dap_sign_chipmunk.h"  // CR-D10 Chipmunk multi-sig bridge
 #include "dap_enc_base58.h"
 
 #include "dap_config.h"
 #include "dap_pkey.h"
-#include "dap_enc_chipmunk.h"  // For Chipmunk implementation
-#include "chipmunk/chipmunk_aggregation.h"  // For aggregation functions
+#include "dap_enc_chipmunk.h"  // For Chipmunk (aggregated) implementation
+#include "dap_rand.h"
+#include "dap_memwipe.h"
+#include "chipmunk/chipmunk_multi_signature_codec.h"  // CR-D10 schema-driven wire codec
+#include "dap_hash_sha3.h"
 #include "dap_enc_dilithium.h"
 #include "dilithium_params.h"
 
@@ -104,8 +109,18 @@ static void s_dap_sign_hdr_sync_wire(dap_sign_t *a_sign)
 }
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
-static bool s_dap_sign_debug_more = false;
+static bool s_debug_more = true;
 static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
+
+#define DAP_SIGN_RING_CALLBACKS_MAX 16u
+typedef struct dap_sign_ring_callbacks {
+    dap_sign_type_t type;
+    dap_sign_ring_create_callback_t create;
+    dap_sign_ring_verify_callback_t verify;
+} dap_sign_ring_callbacks_t;
+
+static dap_sign_ring_callbacks_t s_ring_callbacks[DAP_SIGN_RING_CALLBACKS_MAX];
+static size_t s_ring_callbacks_count = 0;
 
 // Static function declarations for internal implementations
 static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
@@ -125,6 +140,16 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
 static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify_ctx_t *a_ctx);
 static int dap_sign_dilithium_batch_verify_execute_internal(dap_sign_batch_verify_ctx_t *a_ctx);
 
+static dap_sign_ring_callbacks_t *s_find_ring_callbacks(dap_sign_type_t a_type)
+{
+    for (size_t i = 0; i < s_ring_callbacks_count; ++i) {
+        if (s_ring_callbacks[i].type.raw == a_type.raw) {
+            return &s_ring_callbacks[i];
+        }
+    }
+    return NULL;
+}
+
 /**
  * @brief dap_sign_init
  * @param a_sign_hash_type_default Wich hash type will be used for new created signatures
@@ -133,7 +158,35 @@ static int dap_sign_dilithium_batch_verify_execute_internal(dap_sign_batch_verif
 int dap_sign_init(uint8_t a_sign_hash_type_default)
 {
     s_sign_hash_type_default = a_sign_hash_type_default;
-    s_dap_sign_debug_more = dap_config_get_item_bool_default(g_config, "sign", "debug_more", false);
+    s_debug_more = dap_config_get_item_bool_default(g_config, "sign", "debug_more", false);
+    return 0;
+}
+
+int dap_sign_register_ring_callbacks(
+    dap_sign_type_t a_type,
+    dap_sign_ring_create_callback_t a_create,
+    dap_sign_ring_verify_callback_t a_verify)
+{
+    if (!a_type.raw || !a_create || !a_verify) {
+        return -EINVAL;
+    }
+
+    dap_sign_ring_callbacks_t *l_existing = s_find_ring_callbacks(a_type);
+    if (l_existing) {
+        l_existing->create = a_create;
+        l_existing->verify = a_verify;
+        return 0;
+    }
+
+    if (s_ring_callbacks_count >= DAP_SIGN_RING_CALLBACKS_MAX) {
+        return -ENOMEM;
+    }
+
+    s_ring_callbacks[s_ring_callbacks_count++] = (dap_sign_ring_callbacks_t) {
+        .type = a_type,
+        .create = a_create,
+        .verify = a_verify,
+    };
     return 0;
 }
 
@@ -147,6 +200,42 @@ int dap_sign_init(uint8_t a_sign_hash_type_default)
 DAP_INLINE size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t *a_key)
 { 
     return dap_enc_calc_signature_unserialized_size(a_key);
+}
+
+dap_sign_t *dap_sign_create_ring(
+    dap_enc_key_t **a_signer_keys,
+    size_t a_signers_count,
+    uint32_t a_required_signers,
+    const void *a_data,
+    size_t a_data_size,
+    dap_enc_key_t **a_ring_keys,
+    size_t a_ring_size)
+{
+    dap_return_val_if_fail(a_signer_keys && a_signers_count > 0, NULL);
+    dap_return_val_if_fail(a_signer_keys[0], NULL);
+
+    dap_sign_type_t l_type = dap_sign_type_from_key_type(a_signer_keys[0]->type);
+    dap_sign_ring_callbacks_t *l_callbacks = s_find_ring_callbacks(l_type);
+    if (!l_callbacks || !l_callbacks->create) {
+        log_it(L_ERROR, "Ring signature callbacks are not registered for %s",
+               dap_sign_type_to_str(l_type));
+        return NULL;
+    }
+    return l_callbacks->create(a_signer_keys, a_signers_count, a_required_signers,
+                               a_data, a_data_size, a_ring_keys, a_ring_size);
+}
+
+int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_size,
+                         dap_enc_key_t **a_ring_keys, size_t a_ring_size)
+{
+    dap_return_val_if_fail(a_sign, -EINVAL);
+    dap_sign_ring_callbacks_t *l_callbacks = s_find_ring_callbacks(a_sign->header.type);
+    if (!l_callbacks || !l_callbacks->verify) {
+        log_it(L_ERROR, "Ring signature callbacks are not registered for %s",
+               dap_sign_type_to_str(a_sign->header.type));
+        return -ENOTSUP;
+    }
+    return l_callbacks->verify(a_sign, a_data, a_data_size, a_ring_keys, a_ring_size);
 }
 
 
@@ -169,6 +258,10 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_type.type = SIG_TYPE_SPHINCSPLUS; break;
         case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME: l_sign_type.type = SIG_TYPE_NTRU_PRIME; break;
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK: l_sign_type.type = SIG_TYPE_CHIPMUNK; break;
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING: l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING; break;
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LRS: l_sign_type.type = SIG_TYPE_CHIPMUNK_LRS; break;
+        case DAP_ENC_KEY_TYPE_SIG_LOTRS: l_sign_type.type = SIG_TYPE_LOTRS; break;
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING: l_sign_type.type = SIG_TYPE_CHIPMUNK_RING; break;
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: l_sign_type.type = SIG_TYPE_MULTI_ECDSA_DILITHIUM; break;
@@ -199,6 +292,9 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_SPHINCSPLUS: return DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
         case SIG_TYPE_NTRU_PRIME: return DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME;
         case SIG_TYPE_CHIPMUNK: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
+        case SIG_TYPE_CHIPMUNK_MRING: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING;
+        case SIG_TYPE_CHIPMUNK_LRS: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LRS;
+        case SIG_TYPE_LOTRS: return DAP_ENC_KEY_TYPE_SIG_LOTRS;
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
         case SIG_TYPE_MULTI_ECDSA_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM;
@@ -231,6 +327,9 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_SPHINCSPLUS: return "sig_sphincs";
         case SIG_TYPE_NTRU_PRIME: return "sig_ntru_prime";
         case SIG_TYPE_CHIPMUNK: return "sig_chipmunk";
+        case SIG_TYPE_CHIPMUNK_MRING: return "sig_chipmunk_mring";
+        case SIG_TYPE_CHIPMUNK_LRS: return "sig_chipmunk_lrs";
+        case SIG_TYPE_LOTRS: return "sig_lotrs";
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return "sig_ecdsa";
         case SIG_TYPE_MULTI_ECDSA_DILITHIUM: return "sig_multi_ecdsa_dil";
@@ -272,6 +371,14 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
          l_sign_type.type = SIG_TYPE_NTRU_PRIME;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk") ) {
          l_sign_type.type = SIG_TYPE_CHIPMUNK;
+    } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_ring") ) {
+         l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING;
+    } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_mring") ) {
+         l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING;
+    } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_lrs") ) {
+         l_sign_type.type = SIG_TYPE_CHIPMUNK_LRS;
+    } else if ( !dap_strcmp (a_type_str, "sig_lotrs") ) {
+         l_sign_type.type = SIG_TYPE_LOTRS;
 #ifdef DAP_ECDSA
     } else if ( !dap_strcmp (a_type_str, "sig_ecdsa") ) {
          l_sign_type.type = SIG_TYPE_ECDSA;
@@ -329,6 +436,8 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_NTRU_PRIME:
         case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK:
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING:
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING:
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
@@ -441,11 +550,11 @@ dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_
 }
 
 /**
- * @brief 
+ * @brief
  * get a_sign->pkey_n_sign + a_sign->header.sign_pkey_size
  * @param a_sign dap_sign_t object (header + raw signature data)
  * @param a_sign_out  a_sign->header.sign_size
- * @return uint8_t* 
+ * @return uint8_t*
  */
 uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
 {
@@ -465,8 +574,9 @@ uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
 uint8_t *dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
 {
     dap_return_val_if_pass(!a_sign, NULL);
-    if (a_pub_key_out)
+    if (a_pub_key_out) {
         *a_pub_key_out = a_sign->header.sign_pkey_size;
+    }
     return a_sign->pkey_n_sign;
 }
 
@@ -529,6 +639,24 @@ dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t 
     dap_return_val_if_pass(a_chain_sign->header.sign_size == 0 && a_chain_sign->header.sign_pkey_size == 0, NULL);
     dap_enc_key_type_t l_type = dap_sign_type_to_key_type(a_chain_sign->header.type);
     dap_return_val_if_pass(l_type == DAP_ENC_KEY_TYPE_INVALID, NULL);
+
+    // Special handling for ring signatures that don't include individual public keys
+    if (a_chain_sign->header.type.type == SIG_TYPE_CHIPMUNK_MRING
+        || a_chain_sign->header.type.type == SIG_TYPE_CHIPMUNK_LRS
+        || a_chain_sign->header.type.type == SIG_TYPE_LOTRS) {
+        if (a_pkey) {
+            // Use provided public key for ring signature verification
+            dap_enc_key_t *l_ret = dap_enc_key_new(l_type);
+            if (dap_enc_key_deserialize_pub_key(l_ret, a_pkey->pkey, a_pkey->header.size)) {
+                log_it(L_ERROR, "Error in enc pub key deserialize for ring signature");
+                DAP_DEL_Z(l_ret);
+            }
+            return l_ret;
+        } else {
+            log_it(L_ERROR, "Ring signatures require external public key for verification");
+            return NULL;
+        }
+    }
 
     size_t l_pkey_size = a_pkey ? a_pkey->header.size : 0;
     uint8_t *l_pkey = a_pkey ? a_pkey->pkey : dap_sign_get_pkey(a_chain_sign, &l_pkey_size);
@@ -635,7 +763,7 @@ int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const 
  */
 uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 {
-    if (!a_chain_sign) {
+    if (!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL) {
         debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
@@ -762,6 +890,9 @@ bool dap_sign_type_supports_aggregation(dap_sign_type_t a_signature_type)
 {
     switch (a_signature_type.type) {
         case SIG_TYPE_CHIPMUNK:
+        case SIG_TYPE_CHIPMUNK_MRING:
+        case SIG_TYPE_CHIPMUNK_LRS:
+        case SIG_TYPE_LOTRS:
             return true;
         // Add other aggregation-capable signature types here
         default:
@@ -774,12 +905,21 @@ bool dap_sign_type_supports_batch_verification(dap_sign_type_t a_signature_type)
 {
     switch (a_signature_type.type) {
         case SIG_TYPE_CHIPMUNK:
+        case SIG_TYPE_CHIPMUNK_MRING:
+        case SIG_TYPE_CHIPMUNK_LRS:
+        case SIG_TYPE_LOTRS:
         case SIG_TYPE_DILITHIUM:
         case SIG_TYPE_ML_DSA:
             return true;
         default:
             return false;
     }
+}
+
+bool dap_sign_type_supports_ring(dap_sign_type_t a_signature_type)
+{
+    dap_sign_ring_callbacks_t *l_callbacks = s_find_ring_callbacks(a_signature_type);
+    return l_callbacks != NULL && l_callbacks->create != NULL && l_callbacks->verify != NULL;
 }
 
 // Get supported aggregation types for a signature algorithm
@@ -796,6 +936,11 @@ uint32_t dap_sign_get_supported_aggregation_types(
     switch (a_signature_type.type) {
         case SIG_TYPE_CHIPMUNK:
             if (count < a_max_types) a_aggregation_types[count++] = DAP_SIGN_AGGREGATION_TYPE_TREE_BASED;
+            break;
+        case SIG_TYPE_CHIPMUNK_MRING:
+        case SIG_TYPE_CHIPMUNK_LRS:
+        case SIG_TYPE_LOTRS:
+            if (count < a_max_types) a_aggregation_types[count++] = DAP_SIGN_AGGREGATION_TYPE_RING;
             break;
         // Add other signature types here
         default:
@@ -873,7 +1018,44 @@ uint32_t dap_sign_get_signers_count(dap_sign_t *a_sign)
     }
 }
 
-// Internal Chipmunk aggregation implementation
+/*
+ * Internal Chipmunk aggregation implementation.
+ *
+ * CR-D10 (Round-6) landed the schema-driven wire codec used by the
+ * verifier below, but the producer path that takes a vector of
+ * independent dap_sign_t Chipmunk signatures and aggregates them into
+ * a single multi-signature is NOT enabled here — the two schemes
+ * target fundamentally different trust anchors:
+ *
+ *   - each dap_sign_t Chipmunk signature is a CR-D15.B hypertree
+ *     signature.  Its leaf_pk is authorised by the signer's canonical
+ *     hypertree root.  Each signer owns a private 64-slot HOTS tree.
+ *   - chipmunk_verify_multi_signature authorises leaf_pks through a
+ *     SHARED Merkle tree that every participating signer must sign
+ *     against (see chipmunk_aggregate_signatures_with_tree).  There
+ *     is no notion of an attested hypertree inside the multi_sig.
+ *
+ * Bridging the two needs an orchestration layer (each signer must
+ * commit to the shared tree and re-sign HOTS leaves there, or the
+ * verifier must additionally check each signer's hypertree path to
+ * its canonical root).  Both options are non-trivial and intentionally
+ * out of scope for CR-D10.
+ *
+ * Callers that need aggregate signatures TODAY have a clean path:
+ *
+ *   1. Build a chipmunk_multi_signature_t via
+ *      chipmunk_aggregate_signatures_with_tree().
+ *   2. Wrap it into a dap_sign_t via
+ *      dap_sign_from_chipmunk_multi_signature() (added below).  The
+ *      resulting blob is canonically serialised by the codec and
+ *      verifies through dap_sign_verify_aggregated().
+ *
+ * We keep the producer function as a dispatch entry-point so the
+ * universal switch-case in dap_sign_aggregate_signatures() keeps
+ * compiling and so benchmark drivers that used to hit this path keep
+ * returning a clean NULL instead of silently producing an
+ * undefined-behaviour blob.
+ */
 static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     dap_sign_t **a_signatures,
     uint32_t a_signatures_count,
@@ -881,118 +1063,93 @@ static dap_sign_t *dap_sign_chipmunk_aggregate_signatures_internal(
     size_t a_message_size,
     const dap_sign_aggregation_params_t *a_params)
 {
-    if (!a_signatures || a_signatures_count == 0 || !a_message || a_message_size == 0) {
-        log_it(L_ERROR, "Invalid input parameters for Chipmunk aggregation");
+    (void)a_signatures;
+    (void)a_signatures_count;
+    (void)a_message;
+    (void)a_message_size;
+    (void)a_params;
+
+    log_it(L_ERROR,
+           "dap_sign_aggregate_signatures() cannot combine independent "
+           "Chipmunk hypertree signatures — they each live under a "
+           "different per-signer Merkle root.  Build a "
+           "chipmunk_multi_signature_t via "
+           "chipmunk_aggregate_signatures_with_tree() under a shared tree "
+           "and wrap it with dap_sign_from_chipmunk_multi_signature().");
+    return NULL;
+}
+
+/*
+ * CR-D10 public producer bridge: wrap an in-memory
+ * chipmunk_multi_signature_t into a canonically serialised dap_sign_t.
+ *
+ * Ownership / lifetime:
+ *   - The caller retains ownership of `a_multi_sig` and its backing
+ *     heap buffers.  The bridge makes a wire-byte copy, so the caller
+ *     may free the source immediately after this function returns.
+ *   - The returned dap_sign_t is heap-allocated via DAP_NEW_Z_SIZE and
+ *     must be released with DAP_DELETE by the caller.
+ *
+ * Wire layout:
+ *     header:        SIG_TYPE_CHIPMUNK, default hash_type, no pkey
+ *                    (sign_pkey_size = 0), sign_size = codec blob size
+ *     pkey_n_sign[]: serialised "CHMA" wire blob (see codec header)
+ *
+ * Dropping the pkey section is deliberate: a multi-signature embeds
+ * one HOTS public key per signer inside its own payload, and the
+ * verifier consumes them from there.  Attaching a single pkey at the
+ * dap_sign_t level would be both ambiguous (whose?) and redundant.
+ */
+dap_sign_t *dap_sign_from_chipmunk_multi_signature(
+    const chipmunk_multi_signature_t *a_multi_sig)
+{
+    if (!a_multi_sig) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: NULL multi_sig");
         return NULL;
     }
-    
-    // Allocate array for individual signatures
-    chipmunk_individual_sig_t *individual_sigs = DAP_NEW_Z_SIZE(chipmunk_individual_sig_t, 
-                                                               sizeof(chipmunk_individual_sig_t) * a_signatures_count);
-    if (!individual_sigs) {
-        log_it(L_ERROR, "Memory allocation failed for individual signatures");
+    size_t l_blob_size = 0;
+    int l_rc = chipmunk_multi_signature_serialized_size(a_multi_sig, &l_blob_size);
+    if (l_rc != CHIPMUNK_MULTI_SIG_CODEC_OK) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: codec size "
+               "preflight failed (rc=%d)", l_rc);
         return NULL;
     }
-    
-    // Convert DAP signatures to Chipmunk individual signatures
-    for (uint32_t i = 0; i < a_signatures_count; i++) {
-        size_t l_sign_size;
-        uint8_t *l_signature = dap_sign_get_sign(a_signatures[i], &l_sign_size);
-        if (!l_signature || l_sign_size == 0) {
-            log_it(L_ERROR, "Failed to extract signature %u", i);
-            DAP_DELETE(individual_sigs);
-            return NULL;
-        }
-        
-        // Parse Chipmunk signature data from DAP signature
-        // Note: This is a simplified conversion - in production we would need proper parsing
-        memcpy(&individual_sigs[i].hots_sig, l_signature, 
-               sizeof(chipmunk_hots_signature_t) < l_sign_size ? sizeof(chipmunk_hots_signature_t) : l_sign_size);
-        
-        // Set leaf index based on parameters or sequential order
-        if (a_params->aggregation_type == DAP_SIGN_AGGREGATION_TYPE_TREE_BASED && 
-            a_params->tree_params.signer_indices) {
-            individual_sigs[i].leaf_index = a_params->tree_params.signer_indices[i];
-        } else {
-            individual_sigs[i].leaf_index = i;
-        }
-    }
-    
-    // Allocate Chipmunk multi-signature
-    chipmunk_multi_signature_t *multi_sig = DAP_NEW_Z(chipmunk_multi_signature_t);
-    if (!multi_sig) {
-        log_it(L_ERROR, "Memory allocation failed for multi-signature");
-        DAP_DELETE(individual_sigs);
+    if (l_blob_size == 0 || l_blob_size > UINT32_MAX) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: blob size %zu "
+               "out of range", l_blob_size);
         return NULL;
     }
-    
-    // Use the actual message for aggregation
-    // Perform Chipmunk aggregation
-    int result = chipmunk_aggregate_signatures(individual_sigs, a_signatures_count,
-                                              a_message, a_message_size,
-                                              multi_sig);
-    
-    if (result != 0) {
-        log_it(L_ERROR, "Chipmunk aggregation failed with error %d", result);
-        chipmunk_multi_signature_free(multi_sig);
-        DAP_DELETE(individual_sigs);
+
+    dap_sign_t *l_sign = DAP_NEW_Z_SIZE(dap_sign_t, sizeof(dap_sign_t) + l_blob_size);
+    if (!l_sign) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: OOM for dap_sign_t");
         return NULL;
     }
-    
-    // Calculate size for serialized aggregated signature
-    size_t serialized_size = sizeof(chipmunk_multi_signature_t) + 
-                           sizeof(uint32_t) + // metadata: signer count
-                           multi_sig->signer_count * sizeof(uint32_t); // leaf indices
-    
-    // Allocate DAP signature structure
-    dap_sign_t *l_aggregated = DAP_NEW_Z_SIZE(dap_sign_t, sizeof(dap_sign_t) + serialized_size);
-    if (!l_aggregated) {
-        log_it(L_ERROR, "Memory allocation failed for aggregated signature");
-        chipmunk_multi_signature_free(multi_sig);
-        DAP_DELETE(individual_sigs);
+    l_sign->header.type.type      = SIG_TYPE_CHIPMUNK;
+    l_sign->header.hash_type      = s_sign_hash_type_default;
+    l_sign->header.sign_params    = 0;
+    l_sign->header.sign_size      = (uint32_t)l_blob_size;
+    l_sign->header.sign_pkey_size = 0;
+
+    size_t l_written = 0;
+    l_rc = chipmunk_multi_signature_serialize(a_multi_sig,
+                                              l_sign->pkey_n_sign,
+                                              l_blob_size,
+                                              &l_written);
+    if (l_rc != CHIPMUNK_MULTI_SIG_CODEC_OK || l_written != l_blob_size) {
+        log_it(L_ERROR,
+               "dap_sign_from_chipmunk_multi_signature: serialize failed "
+               "(rc=%d, written=%zu, expected=%zu)",
+               l_rc, l_written, l_blob_size);
+        DAP_DELETE(l_sign);
         return NULL;
     }
-    
-    // Set up signature header (wire-normalized)
-    {
-        dap_sign_hdr_mem_t l_ah;
-        if (dap_sign_hdr_unpack((const uint8_t *)&a_signatures[0]->header, DAP_SIGN_HDR_WIRE_SIZE, &l_ah) != 0) {
-            log_it(L_ERROR, "Invalid signature header for aggregation");
-            chipmunk_multi_signature_free(multi_sig);
-            DAP_DELETE(individual_sigs);
-            return NULL;
-        }
-        l_ah.sign_size = (uint32_t)serialized_size;
-        l_ah.sign_pkey_size = 0;
-        if (dap_sign_hdr_pack(&l_ah, (uint8_t *)&l_aggregated->header, DAP_SIGN_HDR_WIRE_SIZE) != 0) {
-            log_it(L_ERROR, "Can't pack aggregated signature header");
-            chipmunk_multi_signature_free(multi_sig);
-            DAP_DELETE(individual_sigs);
-            return NULL;
-        }
-    }
-    
-    // Serialize multi-signature into DAP signature
-    uint8_t *sig_data = l_aggregated->pkey_n_sign;
-    
-    // Store signer count
-    *(uint32_t*)sig_data = multi_sig->signer_count;
-    sig_data += sizeof(uint32_t);
-    
-    // Store leaf indices
-    memcpy(sig_data, multi_sig->leaf_indices, multi_sig->signer_count * sizeof(uint32_t));
-    sig_data += multi_sig->signer_count * sizeof(uint32_t);
-    
-    // Store multi-signature data
-    memcpy(sig_data, multi_sig, sizeof(chipmunk_multi_signature_t));
-    
-    log_it(L_INFO, "Successfully aggregated %u Chipmunk signatures", a_signatures_count);
-    
-    // Cleanup
-    chipmunk_multi_signature_free(multi_sig);
-    DAP_DELETE(individual_sigs);
-    
-    return l_aggregated;
+
+    return l_sign;
 }
 
 // Universal signature aggregation function
@@ -1071,7 +1228,43 @@ int dap_sign_verify_aggregated(
     }
 }
 
-// Internal Chipmunk aggregated verification
+/*
+ * Internal Chipmunk aggregated verification (CR-D10 Round-6).
+ *
+ * Steps executed on every call:
+ *
+ *   1. Extract the aggregate payload from dap_sign_t using the public
+ *      header accessors — no more struct-cast-and-pray.
+ *   2. Deserialise the payload through chipmunk_multi_signature_deserialize.
+ *      The codec rejects wrong magic / version / reserved-bits, wrong
+ *      payload length, out-of-range signer_count or path_length, and
+ *      per-signer proof length mismatches before a single byte of
+ *      polynomial data is touched.  Any negative return short-circuits
+ *      to `-2` (malformed blob).
+ *   3. Cross-check the wire-declared signer_count against the caller's
+ *      a_signers_count parameter so a mismatch between what the verifier
+ *      expects and what the multi-signature actually covers is detected
+ *      up front (returns `-3`).
+ *   4. Re-hash a_messages[0] with SHA3-256 and compare against
+ *      multi_sig.message_hash.  Every signer in a Chipmunk
+ *      multi-signature binds the same message, so we enforce that every
+ *      entry in the a_messages/a_message_sizes arrays is byte-identical
+ *      to the first (pointer identity is NOT required — an orchestration
+ *      layer may pass independent buffers that happen to hold the same
+ *      payload).  Diverging messages fail with `-4`.
+ *   5. Dispatch to chipmunk_verify_multi_signature for the actual
+ *      cryptographic check.  Returns `0` on success, `-5` on a verify
+ *      failure (including Merkle mismatches, pk-leaf binding, and
+ *      aggregate HOTS identity), or the verifier's own negative error
+ *      code (re-mapped to `-6`).
+ *
+ * The `a_public_keys` parameter is intentionally ignored here: a
+ * Chipmunk multi-signature already ships one HOTS public key per signer
+ * inside the serialised blob, and those keys are authority-pinned
+ * against the tree root.  A future revision can cross-check the wire
+ * pks against caller-supplied dap_pkey_t entries if and when the
+ * surrounding layer provides a well-defined mapping.
+ */
 static int dap_sign_chipmunk_verify_aggregated_internal(
     dap_sign_t *a_aggregated_sign,
     const void **a_messages,
@@ -1079,73 +1272,87 @@ static int dap_sign_chipmunk_verify_aggregated_internal(
     dap_pkey_t **a_public_keys,
     uint32_t a_signers_count)
 {
-    if (!a_aggregated_sign || !a_messages || !a_message_sizes) {
-        log_it(L_ERROR, "Invalid parameters for Chipmunk aggregated verification");
+    (void)a_public_keys;  /* see rationale above */
+
+    if (!a_aggregated_sign || !a_messages || !a_message_sizes || a_signers_count == 0) {
+        log_it(L_ERROR,
+               "chipmunk aggregate verify: invalid input parameters");
         return -1;
     }
-    
-    // Extract metadata from aggregated signature
-    uint8_t *sig_data = a_aggregated_sign->pkey_n_sign;
-    uint32_t stored_signers_count = *(uint32_t*)sig_data;
-    
-    if (stored_signers_count != a_signers_count) {
-        log_it(L_ERROR, "Signer count mismatch: %u vs %u", stored_signers_count, a_signers_count);
-        return -1;
-    }
-    
-    sig_data += sizeof(uint32_t);
-    
-    // Extract leaf indices
-    uint32_t *leaf_indices = (uint32_t*)sig_data;
-    sig_data += stored_signers_count * sizeof(uint32_t);
-    
-    // Extract multi-signature data
-    chipmunk_multi_signature_t *multi_sig = (chipmunk_multi_signature_t*)sig_data;
-    
-    log_it(L_INFO, "Verifying aggregated Chipmunk signature with %u signers", a_signers_count);
-    
-    // For now, verify each message separately as we would need to reconstruct 
-    // the original aggregated message. In a full implementation, we would:
-    // 1. Combine all messages according to the aggregation scheme
-    // 2. Use chipmunk_verify_multi_signature() function
-    
-    // Simplified verification - check if multi-signature structure is valid
-    if (!multi_sig || multi_sig->signer_count != stored_signers_count) {
-        log_it(L_ERROR, "Invalid multi-signature structure");
+
+    size_t l_blob_size = 0;
+    uint8_t *l_blob = dap_sign_get_sign(a_aggregated_sign, &l_blob_size);
+    if (!l_blob || l_blob_size == 0) {
+        log_it(L_ERROR,
+               "chipmunk aggregate verify: empty signature payload");
         return -2;
     }
-    
-    // Verify that aggregated HOTS signature has non-zero components
-    bool has_nonzero = false;
-    for (int i = 0; i < CHIPMUNK_W && !has_nonzero; i++) {
-        for (int j = 0; j < CHIPMUNK_N && !has_nonzero; j++) {
-            if (multi_sig->aggregated_hots.sigma[i].coeffs[j] != 0) {
-                has_nonzero = true;
-            }
-        }
+
+    chipmunk_multi_signature_t l_multi_sig;
+    memset(&l_multi_sig, 0, sizeof(l_multi_sig));
+
+    int l_codec_rc = chipmunk_multi_signature_deserialize(l_blob, l_blob_size, &l_multi_sig);
+    if (l_codec_rc != CHIPMUNK_MULTI_SIG_CODEC_OK) {
+        log_it(L_WARNING,
+               "chipmunk aggregate verify: codec rejected blob (rc=%d, size=%zu)",
+               l_codec_rc, l_blob_size);
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
+        return -2;
     }
-    
-    if (!has_nonzero) {
-        log_it(L_ERROR, "Aggregated signature appears to be zero - invalid");
+
+    if ((uint32_t)l_multi_sig.signer_count != a_signers_count) {
+        log_it(L_WARNING,
+               "chipmunk aggregate verify: signer count mismatch "
+               "(wire=%zu, expected=%u)",
+               l_multi_sig.signer_count, a_signers_count);
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
         return -3;
     }
-    
-    // Use Chipmunk's multi-signature verification
-    // Note: We use the first message as a representative for the aggregated verification
-    // In production, this would be the properly combined message hash
-    int verification_result = chipmunk_verify_multi_signature(
-        multi_sig,
-        (const uint8_t*)a_messages[0],
-        a_message_sizes[0]
-    );
-    
-    if (verification_result <= 0) {
-        log_it(L_ERROR, "Chipmunk multi-signature verification failed with code %d", verification_result);
+
+    /* Every signer committed to the same message — enforce that the */
+    /* caller passes consistent copies for every index.              */
+    const uint8_t *l_msg0 = (const uint8_t *)a_messages[0];
+    const size_t  l_len0 = a_message_sizes[0];
+    if (!l_msg0 || l_len0 == 0) {
+        log_it(L_WARNING,
+               "chipmunk aggregate verify: empty message[0]");
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
         return -4;
     }
-    
-    log_it(L_INFO, "Aggregated Chipmunk signature verification completed successfully");
-    return 0;
+    for (uint32_t i = 1; i < a_signers_count; ++i) {
+        const uint8_t *l_msg_i = (const uint8_t *)a_messages[i];
+        const size_t  l_len_i = a_message_sizes[i];
+        if (!l_msg_i || l_len_i != l_len0 || memcmp(l_msg_i, l_msg0, l_len0) != 0) {
+            log_it(L_WARNING,
+                   "chipmunk aggregate verify: message[%u] diverges from message[0]",
+                   i);
+            chipmunk_multi_signature_deep_free(&l_multi_sig);
+            return -4;
+        }
+    }
+
+    dap_hash_sha3_256_t l_hash = {0};
+    dap_hash_sha3_256(l_msg0, l_len0, &l_hash);
+    if (memcmp(l_multi_sig.message_hash, l_hash.raw, DAP_HASH_SHA3_256_SIZE) != 0) {
+        log_it(L_WARNING,
+               "chipmunk aggregate verify: message hash does not match wire commitment");
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
+        return -4;
+    }
+
+    int l_verify_rc = chipmunk_verify_multi_signature(&l_multi_sig, l_msg0, l_len0);
+    if (l_verify_rc == 1) {
+        chipmunk_multi_signature_deep_free(&l_multi_sig);
+        return 0;
+    }
+
+    const int l_ret = (l_verify_rc == 0) ? -5 : -6;
+    log_it(L_WARNING,
+           "chipmunk aggregate verify: chipmunk_verify_multi_signature "
+           "returned %d (mapped to %d)",
+           l_verify_rc, l_ret);
+    chipmunk_multi_signature_deep_free(&l_multi_sig);
+    return l_ret;
 }
 
 // Universal batch verification context creation
@@ -1188,7 +1395,7 @@ dap_sign_batch_verify_ctx_t *dap_sign_batch_verify_ctx_new(
         return NULL;
     }
 
-    log_it(L_DEBUG, "Created batch verification context for max %u signatures", a_max_signatures);
+    debug_if(s_debug_more, L_DEBUG, "Created batch verification context for max %u signatures", a_max_signatures);
     return l_ctx;
 }
 
@@ -1237,7 +1444,7 @@ int dap_sign_batch_verify_add_signature(
     
     a_ctx->signatures_count++;
     
-    log_it(L_DEBUG, "Added signature %u to batch verification context", index);
+    debug_if(s_debug_more, L_DEBUG, "Added signature %u to batch verification context", index);
     return 0;
 }
 
@@ -1251,7 +1458,7 @@ int dap_sign_batch_verify_execute(dap_sign_batch_verify_ctx_t *a_ctx)
         return -1;
     }
 
-    log_it(L_INFO, "Starting batch verification of %u signatures", a_ctx->signatures_count);
+    debug_if(s_debug_more, L_INFO, "Starting batch verification of %u signatures", a_ctx->signatures_count);
     
     // Dispatch to algorithm-specific batch verification
     switch (a_ctx->signature_type.type) {
@@ -1267,7 +1474,18 @@ int dap_sign_batch_verify_execute(dap_sign_batch_verify_ctx_t *a_ctx)
     }
 }
 
-// Internal Chipmunk batch verification
+// Internal Chipmunk batch verification.
+//
+// CR-D6/D7 rewrite (Round-4): the previous implementation forced each single
+// Chipmunk signature through the multi-signer aggregation framework with
+// zeroed public_key_roots / hots_pks / rho_seeds.  Under the corrected
+// aggregate identity such inputs are rejected outright (and rightly so — an
+// aggregate with a blank public key cannot be verified).  We now short-
+// circuit to the dedicated single-signer batch verifier
+// `chipmunk_batch_verify_hots`, which is the appropriate primitive for a
+// list of independent Chipmunk signatures — it parses the public-key bytes
+// (including rho_seed), performs the full HOTS identity check in the NTT
+// domain and leverages the shared forward-NTT pass for amortised cost.
 static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify_ctx_t *a_ctx)
 {
     if (!a_ctx || a_ctx->signatures_count == 0) {
@@ -1275,120 +1493,68 @@ static int dap_sign_chipmunk_batch_verify_execute_internal(dap_sign_batch_verify
         return -1;
     }
 
-    log_it(L_INFO, "Starting Chipmunk batch verification of %u signatures", a_ctx->signatures_count);
+    debug_if(s_debug_more, L_INFO, "Starting Chipmunk batch verification of %u signatures",
+             a_ctx->signatures_count);
 
-    // **PRODUCTION-READY**: Реализуем настоящую batch verification вместо fallback
-    // Initialize Chipmunk batch context
-    chipmunk_batch_context_t chipmunk_batch;
-    int result = chipmunk_batch_context_init(&chipmunk_batch, a_ctx->signatures_count);
-    if (result != 0) {
-        log_it(L_ERROR, "Failed to initialize Chipmunk batch context: %d", result);
+    const uint32_t l_count = a_ctx->signatures_count;
+
+    const uint8_t **l_pks   = DAP_NEW_Z_COUNT(const uint8_t *, l_count);
+    const uint8_t **l_msgs  = DAP_NEW_Z_COUNT(const uint8_t *, l_count);
+    size_t         *l_mlens = DAP_NEW_Z_COUNT(size_t,          l_count);
+    const uint8_t **l_sigs  = DAP_NEW_Z_COUNT(const uint8_t *, l_count);
+    int            *l_res   = DAP_NEW_Z_COUNT(int,             l_count);
+
+    if (!l_pks || !l_msgs || !l_mlens || !l_sigs || !l_res) {
+        log_it(L_ERROR, "Failed to allocate batch verification working buffers");
+        DAP_DEL_MULTY(l_pks, l_msgs, l_mlens, l_sigs, l_res);
         return -2;
     }
 
-    // **ПРОИЗВОДСТВЕННАЯ ВЕРСИЯ**: Создаем multi-signatures для batch verification
-    uint32_t added_count = 0;
-    chipmunk_multi_signature_t *multi_sigs = DAP_NEW_Z_SIZE(chipmunk_multi_signature_t, a_ctx->signatures_count);
-    uint8_t **converted_messages = DAP_NEW_Z_SIZE(uint8_t *, a_ctx->signatures_count);
-    
-    if (!multi_sigs || !converted_messages) {
-        log_it(L_ERROR, "Failed to allocate memory for batch verification");
-        chipmunk_batch_context_free(&chipmunk_batch);
-        if (multi_sigs) DAP_DELETE(multi_sigs);
-        if (converted_messages) DAP_DELETE(converted_messages);
-        return -2;
-    }
-
-    // Преобразуем DAP signatures в Chipmunk multi-signatures
-    for (uint32_t i = 0; i < a_ctx->signatures_count; i++) {
-        dap_sign_t *dap_sig = a_ctx->signatures[i];
-        
-        // Создаем single-signer multi-signature из individual signature
-        multi_sigs[i].signer_count = 1;
-        
-        // Выделяем память для single signer
-        multi_sigs[i].public_key_roots = DAP_NEW_Z(chipmunk_hvc_poly_t);
-        multi_sigs[i].proofs = DAP_NEW_Z(chipmunk_path_t);
-        multi_sigs[i].leaf_indices = DAP_NEW_Z(uint32_t);
-        
-        if (!multi_sigs[i].public_key_roots || !multi_sigs[i].proofs || !multi_sigs[i].leaf_indices) {
-            log_it(L_ERROR, "Failed to allocate memory for multi-signature %u", i);
-            // Cleanup
-            for (uint32_t j = 0; j <= i; j++) {
-                if (multi_sigs[j].public_key_roots) DAP_DELETE(multi_sigs[j].public_key_roots);
-                if (multi_sigs[j].proofs) DAP_DELETE(multi_sigs[j].proofs);
-                if (multi_sigs[j].leaf_indices) DAP_DELETE(multi_sigs[j].leaf_indices);
-            }
-            DAP_DELETE(multi_sigs);
-            DAP_DELETE(converted_messages);
-            chipmunk_batch_context_free(&chipmunk_batch);
-            return -2;
-        }
-        
-        // Инициализируем tree_root как нулевой (для single signature не нужен)
-        memset(&multi_sigs[i].tree_root, 0, sizeof(chipmunk_hvc_poly_t));
-        
-        // Преобразуем signature data в HOTS signature
-        if (dap_sig->header.sign_size >= sizeof(chipmunk_signature_t)) {
-            chipmunk_signature_t *chipmunk_sig = (chipmunk_signature_t*)(dap_sig->pkey_n_sign + dap_sig->header.sign_pkey_size);
-            memcpy(&multi_sigs[i].aggregated_hots.sigma, &chipmunk_sig->sigma, sizeof(chipmunk_sig->sigma));
-            multi_sigs[i].aggregated_hots.is_randomized = false; // Individual signatures are not randomized
-        } else {
-            log_it(L_ERROR, "Invalid signature size for signature %u", i);
-            // Cleanup и возврат ошибки
-            for (uint32_t j = 0; j <= i; j++) {
-                DAP_DELETE(multi_sigs[j].public_key_roots);
-                DAP_DELETE(multi_sigs[j].proofs);
-                DAP_DELETE(multi_sigs[j].leaf_indices);
-            }
-            DAP_DELETE(multi_sigs);
-            DAP_DELETE(converted_messages);
-            chipmunk_batch_context_free(&chipmunk_batch);
+    for (uint32_t i = 0; i < l_count; i++) {
+        dap_sign_t *l_dap_sig = a_ctx->signatures[i];
+        if (!l_dap_sig || !a_ctx->public_keys[i] ||
+            !a_ctx->messages[i] || a_ctx->message_sizes[i] == 0) {
+            log_it(L_ERROR, "Missing required inputs for signature %u", i);
+            DAP_DEL_MULTY(l_pks, l_msgs, l_mlens, l_sigs, l_res);
             return -3;
         }
-        
-        // Копируем message hash
-        if (a_ctx->message_sizes[i] >= 32) {
-            memcpy(multi_sigs[i].message_hash, a_ctx->messages[i], 32);
-        } else {
-            // Хешируем короткое сообщение
-            dap_hash_sha3_256_t msg_hash;
-            dap_hash_sha3_256(a_ctx->messages[i], a_ctx->message_sizes[i], &msg_hash);
-            memcpy(multi_sigs[i].message_hash, &msg_hash, 32);
-        }
-        
-        // Конвертируем message в uint8_t*
-        converted_messages[i] = (uint8_t*)a_ctx->messages[i];
-        
-        // Добавляем в batch context
-        result = chipmunk_batch_add_signature(&chipmunk_batch, &multi_sigs[i], 
-                                             converted_messages[i], a_ctx->message_sizes[i]);
-        if (result != 0) {
-            log_it(L_WARNING, "Failed to add signature %u to batch", i);
-        } else {
-            added_count++;
+
+        // Public key bytes (serialized chipmunk_public_key_t: rho_seed + v0 + v1).
+        l_pks[i] = a_ctx->public_keys[i]->pkey;
+
+        // Signature bytes live after the inline pkey copy in dap_sign_t.
+        l_sigs[i] = l_dap_sig->pkey_n_sign + l_dap_sig->header.sign_pkey_size;
+
+        l_msgs[i]  = (const uint8_t *)a_ctx->messages[i];
+        l_mlens[i] = a_ctx->message_sizes[i];
+    }
+
+    int l_rc = chipmunk_batch_verify_hots(l_pks, l_msgs, l_mlens, l_sigs, l_count, l_res);
+    if (l_rc < 0) {
+        log_it(L_ERROR, "chipmunk_batch_verify_hots failed with %d", l_rc);
+        DAP_DEL_MULTY(l_pks, l_msgs, l_mlens, l_sigs, l_res);
+        return -4;
+    }
+
+    int l_first_bad = -1;
+    for (uint32_t i = 0; i < l_count; i++) {
+        if (l_res[i] != 0) {
+            l_first_bad = (int)i;
+            break;
         }
     }
 
-    // **ПРОИЗВОДСТВЕННАЯ ВЕРСИЯ**: Выполняем настоящую batch verification
-    int batch_result = chipmunk_batch_verify(&chipmunk_batch);
-    
-    // Cleanup allocated memory
-    for (uint32_t i = 0; i < a_ctx->signatures_count; i++) {
-        DAP_DELETE(multi_sigs[i].public_key_roots);
-        DAP_DELETE(multi_sigs[i].proofs);
-        DAP_DELETE(multi_sigs[i].leaf_indices);
+    DAP_DEL_MULTY(l_pks, l_msgs, l_mlens, l_sigs, l_res);
+
+    if (l_first_bad >= 0) {
+        log_it(L_ERROR, "Chipmunk batch verification failed: signature %d rejected",
+               l_first_bad);
+        return -5;
     }
-    DAP_DELETE(multi_sigs);
-    DAP_DELETE(converted_messages);
-    chipmunk_batch_context_free(&chipmunk_batch);
-    
-    if (batch_result != 1) {
-        log_it(L_ERROR, "Chipmunk batch verification failed: %d", batch_result);
-        return -3;
-    }
-    
-    log_it(L_INFO, "Chipmunk batch verification completed successfully: %u signatures verified", added_count);
+
+    debug_if(s_debug_more, L_INFO,
+             "Chipmunk batch verification: %u/%u signatures verified",
+             l_count, l_count);
     return 0;
 }
 
@@ -1527,7 +1693,7 @@ int dap_sign_benchmark_aggregation(
     memset(a_stats, 0, sizeof(dap_sign_performance_stats_t));
     a_stats->signatures_processed = a_signatures_count;
 
-    log_it(L_INFO, "Starting aggregation benchmark with %u signatures", a_signatures_count);
+    debug_if(s_debug_more, L_INFO, "Starting aggregation benchmark with %u signatures", a_signatures_count);
 
     clock_t start = clock();
     
@@ -1620,7 +1786,7 @@ int dap_sign_benchmark_aggregation(
     a_stats->aggregation_time_ms = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
     a_stats->throughput_sigs_per_sec = a_signatures_count / (a_stats->aggregation_time_ms / 1000.0);
 
-    log_it(L_INFO, "Aggregation benchmark completed: %.2f ms, %.2f sigs/sec", 
+    debug_if(s_debug_more, L_INFO, "Aggregation benchmark completed: %.2f ms, %.2f sigs/sec", 
            a_stats->aggregation_time_ms, a_stats->throughput_sigs_per_sec);
 
     return 0;
@@ -1720,7 +1886,7 @@ int dap_sign_benchmark_batch_verification(
     a_stats->batch_verification_time_ms = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
     a_stats->throughput_sigs_per_sec = a_signatures_count / (a_stats->batch_verification_time_ms / 1000.0);
 
-    log_it(L_INFO, "Batch verification benchmark completed: %.2f ms, %.2f sigs/sec", 
+    debug_if(s_debug_more, L_INFO, "Batch verification benchmark completed: %.2f ms, %.2f sigs/sec",
            a_stats->batch_verification_time_ms, a_stats->throughput_sigs_per_sec);
 
     return 0;

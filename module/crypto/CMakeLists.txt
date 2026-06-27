@@ -117,7 +117,8 @@ file( GLOB CRYPTO_SRCS
       src/sig/falcon/shake.c
       src/sig/falcon/sign.c
       src/sig/falcon/vrfy.c
-      src/sig/chipmunk/*.c
+       src/sig/chipmunk/*.c
+       src/sig/lotrs/*.c
       src/sig/ntru_prime/*.c
       # --- sym (active) ---
       src/sym/aes/*.c
@@ -276,7 +277,7 @@ enable_language(ASM)
 
 
 set( CRYPTO_INCLUDE_PRIVATE
-    src/sig src/sig/dilithium src/sig/falcon src/sig/chipmunk src/sig/ntru_prime src/sig/sphincsplus
+    src/sig src/sig/dilithium src/sig/falcon src/sig/chipmunk src/sig/lotrs src/sig/ntru_prime src/sig/sphincsplus
     src/sig/classic/ecdsa src/sig/classic/ecdsa/arch
     src/sym src/sym/aes src/sym/seed src/sym/chacha20
     src/kem src/kem/mlkem src/kem/ntru_prime
@@ -648,11 +649,6 @@ set(DAP_CRYPTO_DEPS "${CRYPTO_LIBS}" CACHE INTERNAL "dap_crypto external depende
 target_include_directories(dap_crypto PUBLIC src/kem/mlkem)
 # Native ECDSA implementation in sig_ecdsa/ - no external includes needed
 
-if(BUILD_CRYPTO_TESTS)
-    enable_testing()
-    add_subdirectory(test)
-    add_definitions("-DDAP_CRYPTO_TESTS")
-endif()
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${CRYPTO_HEADERS}")

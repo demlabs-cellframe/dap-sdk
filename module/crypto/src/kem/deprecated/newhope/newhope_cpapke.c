@@ -108,7 +108,7 @@ void cpapke_keypair(unsigned char *pk,
 
   z[0] = 0x01;
   dap_random_bytes(z+1, NEWHOPE_SYMBYTES);
-  dap_hash_shake256(z, 2*NEWHOPE_SYMBYTES, z, NEWHOPE_SYMBYTES + 1);
+  dap_hash_shake256_legacy(z, 2*NEWHOPE_SYMBYTES, z, NEWHOPE_SYMBYTES + 1);
 
   gen_a(&ahat, publicseed);
 

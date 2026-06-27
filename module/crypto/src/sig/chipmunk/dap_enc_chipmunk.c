@@ -219,84 +219,201 @@ void dap_enc_chipmunk_key_delete(dap_enc_key_t *a_key)
     a_key->priv_key_data_size = 0;
 }
 
+/*
+ * CR-D20 fix (Round-3): framed wire format for private/public keys.
+ *
+ *  Offset  Size  Field
+ *  ------  ----  -----
+ *    0      4    magic    = "CHMP" (0x43, 0x48, 0x4D, 0x50)
+ *    4      2    version  = little-endian uint16, 0x0001
+ *    6      2    reserved = 0x0000 (future flags / parameter set id)
+ *    8      4    payload_len = little-endian uint32
+ *   12      N    payload bytes (canonical Chipmunk encoding)
+ *
+ * Rationale:
+ *  * Previous implementation copied the raw in-memory struct via memcpy.
+ *    That format was endian-sensitive, had no version/length prefix, and
+ *    was indistinguishable from attacker-controlled buffers of the same
+ *    size — a deliberately malformed blob could survive deserialization
+ *    without any integrity check.
+ *  * `priv_key_data` / `pub_key_data` already hold the canonical
+ *    byte-serialised form produced by chipmunk_{private,public}_key_to_bytes,
+ *    so this framing layer is purely a wire-level wrapper and introduces
+ *    no new in-memory representation.
+ */
+#define DAP_ENC_CHIPMUNK_WIRE_MAGIC_0 0x43u /* 'C' */
+#define DAP_ENC_CHIPMUNK_WIRE_MAGIC_1 0x48u /* 'H' */
+#define DAP_ENC_CHIPMUNK_WIRE_MAGIC_2 0x4Du /* 'M' */
+#define DAP_ENC_CHIPMUNK_WIRE_MAGIC_3 0x50u /* 'P' */
+#define DAP_ENC_CHIPMUNK_WIRE_VERSION_V1 0x0001u
+#define DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE 12u
+
+static inline void s_chipmunk_wire_put_u16_le(uint8_t *a_out, uint16_t a_value)
+{
+    a_out[0] = (uint8_t)(a_value & 0xFFu);
+    a_out[1] = (uint8_t)((a_value >> 8) & 0xFFu);
+}
+
+static inline void s_chipmunk_wire_put_u32_le(uint8_t *a_out, uint32_t a_value)
+{
+    a_out[0] = (uint8_t)(a_value & 0xFFu);
+    a_out[1] = (uint8_t)((a_value >> 8) & 0xFFu);
+    a_out[2] = (uint8_t)((a_value >> 16) & 0xFFu);
+    a_out[3] = (uint8_t)((a_value >> 24) & 0xFFu);
+}
+
+static inline uint16_t s_chipmunk_wire_get_u16_le(const uint8_t *a_in)
+{
+    return (uint16_t)((uint16_t)a_in[0] | ((uint16_t)a_in[1] << 8));
+}
+
+static inline uint32_t s_chipmunk_wire_get_u32_le(const uint8_t *a_in)
+{
+    return (uint32_t)a_in[0] |
+           ((uint32_t)a_in[1] << 8) |
+           ((uint32_t)a_in[2] << 16) |
+           ((uint32_t)a_in[3] << 24);
+}
+
+static uint8_t *s_chipmunk_wire_pack(const uint8_t *a_payload, size_t a_payload_size, size_t *a_buflen_out,
+                                     bool a_wipe_payload_on_error)
+{
+    if (!a_payload || !a_buflen_out || a_payload_size == 0 || a_payload_size > UINT32_MAX) {
+        if (a_buflen_out) *a_buflen_out = 0;
+        return NULL;
+    }
+    size_t l_total = DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE + a_payload_size;
+    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
+    if (!l_buf) {
+        log_it(L_ERROR, "Failed to allocate %zu bytes for Chipmunk wire frame", l_total);
+        *a_buflen_out = 0;
+        return NULL;
+    }
+
+    l_buf[0] = DAP_ENC_CHIPMUNK_WIRE_MAGIC_0;
+    l_buf[1] = DAP_ENC_CHIPMUNK_WIRE_MAGIC_1;
+    l_buf[2] = DAP_ENC_CHIPMUNK_WIRE_MAGIC_2;
+    l_buf[3] = DAP_ENC_CHIPMUNK_WIRE_MAGIC_3;
+    s_chipmunk_wire_put_u16_le(l_buf + 4, DAP_ENC_CHIPMUNK_WIRE_VERSION_V1);
+    s_chipmunk_wire_put_u16_le(l_buf + 6, 0x0000u);
+    s_chipmunk_wire_put_u32_le(l_buf + 8, (uint32_t)a_payload_size);
+    memcpy(l_buf + DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE, a_payload, a_payload_size);
+
+    (void)a_wipe_payload_on_error; /* retained for future expansion */
+    *a_buflen_out = l_total;
+    return l_buf;
+}
+
+static int s_chipmunk_wire_parse(const uint8_t *a_buf, size_t a_buflen,
+                                 size_t a_expected_payload_size,
+                                 const uint8_t **a_payload_out)
+{
+    if (!a_buf || !a_payload_out) {
+        return -1;
+    }
+    if (a_buflen < DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE) {
+        log_it(L_ERROR, "Chipmunk wire frame truncated: got %zu bytes, need at least %u",
+               a_buflen, DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE);
+        return -1;
+    }
+    if (a_buf[0] != DAP_ENC_CHIPMUNK_WIRE_MAGIC_0 ||
+        a_buf[1] != DAP_ENC_CHIPMUNK_WIRE_MAGIC_1 ||
+        a_buf[2] != DAP_ENC_CHIPMUNK_WIRE_MAGIC_2 ||
+        a_buf[3] != DAP_ENC_CHIPMUNK_WIRE_MAGIC_3) {
+        log_it(L_ERROR, "Chipmunk wire frame: bad magic (expected 'CHMP'); legacy or corrupted key format");
+        return -1;
+    }
+    uint16_t l_version = s_chipmunk_wire_get_u16_le(a_buf + 4);
+    if (l_version != DAP_ENC_CHIPMUNK_WIRE_VERSION_V1) {
+        log_it(L_ERROR, "Chipmunk wire frame: unsupported version 0x%04x (expected 0x%04x)",
+               l_version, DAP_ENC_CHIPMUNK_WIRE_VERSION_V1);
+        return -1;
+    }
+    uint16_t l_reserved = s_chipmunk_wire_get_u16_le(a_buf + 6);
+    if (l_reserved != 0x0000u) {
+        log_it(L_ERROR, "Chipmunk wire frame: reserved field must be zero (got 0x%04x)", l_reserved);
+        return -1;
+    }
+    uint32_t l_payload_len = s_chipmunk_wire_get_u32_le(a_buf + 8);
+    if (l_payload_len != a_expected_payload_size) {
+        log_it(L_ERROR, "Chipmunk wire frame: payload length mismatch (got %u, expected %zu)",
+               l_payload_len, a_expected_payload_size);
+        return -1;
+    }
+    if (a_buflen != (size_t)DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE + (size_t)l_payload_len) {
+        log_it(L_ERROR, "Chipmunk wire frame: total length mismatch (got %zu, expected %zu)",
+               a_buflen, (size_t)DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE + (size_t)l_payload_len);
+        return -1;
+    }
+
+    *a_payload_out = a_buf + DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE;
+    return 0;
+}
+
 // Serialization functions for private and public keys
 uint8_t *dap_enc_chipmunk_write_private_key(const void *a_key, size_t *a_buflen_out)
 {
-    if (!a_key || !a_buflen_out)
-        return NULL;
-
-    const chipmunk_private_key_t *l_private_key = (const chipmunk_private_key_t *)a_key;
-    *a_buflen_out = sizeof(chipmunk_private_key_t);
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, *a_buflen_out);
-    if (!l_buf) {
-        log_it(L_ERROR, "Failed to allocate memory for private key serialization");
+    if (!a_key || !a_buflen_out) {
+        if (a_buflen_out) *a_buflen_out = 0;
         return NULL;
     }
-    memcpy(l_buf, l_private_key, *a_buflen_out);
-    return l_buf;
+    return s_chipmunk_wire_pack((const uint8_t *)a_key, CHIPMUNK_PRIVATE_KEY_SIZE, a_buflen_out, true);
 }
 
 uint8_t *dap_enc_chipmunk_write_public_key(const void *a_key, size_t *a_buflen_out)
 {
-    if (!a_key || !a_buflen_out)
-        return NULL;
-
-    const chipmunk_public_key_t *l_public_key = (const chipmunk_public_key_t *)a_key;
-    *a_buflen_out = sizeof(chipmunk_public_key_t);
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, *a_buflen_out);
-    if (!l_buf) {
-        log_it(L_ERROR, "Failed to allocate memory for public key serialization");
+    if (!a_key || !a_buflen_out) {
+        if (a_buflen_out) *a_buflen_out = 0;
         return NULL;
     }
-    memcpy(l_buf, l_public_key, *a_buflen_out);
-    return l_buf;
+    return s_chipmunk_wire_pack((const uint8_t *)a_key, CHIPMUNK_PUBLIC_KEY_SIZE, a_buflen_out, false);
 }
 
 uint64_t dap_enc_chipmunk_ser_private_key_size(const void *a_key)
 {
-    // a_key is actually the private key data, not dap_enc_key_t structure
-    (void)a_key; // Suppress unused parameter warning
-    return CHIPMUNK_PRIVATE_KEY_SIZE;
+    (void)a_key;
+    return (uint64_t)DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE + (uint64_t)CHIPMUNK_PRIVATE_KEY_SIZE;
 }
 
 uint64_t dap_enc_chipmunk_ser_public_key_size(const void *a_key)
 {
-    // a_key is actually the public key data, not dap_enc_key_t structure
-    (void)a_key; // Suppress unused parameter warning
-    return CHIPMUNK_PUBLIC_KEY_SIZE;
+    (void)a_key;
+    return (uint64_t)DAP_ENC_CHIPMUNK_WIRE_HEADER_SIZE + (uint64_t)CHIPMUNK_PUBLIC_KEY_SIZE;
 }
 
 void* dap_enc_chipmunk_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
-    if (!a_buf || a_buflen != CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_ERROR, "Invalid buffer for private key deserialization");
+    const uint8_t *l_payload = NULL;
+    if (s_chipmunk_wire_parse(a_buf, a_buflen, CHIPMUNK_PRIVATE_KEY_SIZE, &l_payload) != 0) {
+        log_it(L_ERROR, "Invalid framed buffer for Chipmunk private key deserialization");
         return NULL;
     }
-    
-    uint8_t *l_key = DAP_NEW_SIZE(uint8_t, a_buflen);
+
+    uint8_t *l_key = DAP_NEW_SIZE(uint8_t, CHIPMUNK_PRIVATE_KEY_SIZE);
     if (!l_key) {
         log_it(L_ERROR, "Memory allocation failed for private key deserialization");
         return NULL;
     }
-    
-    memcpy(l_key, a_buf, a_buflen);
+
+    memcpy(l_key, l_payload, CHIPMUNK_PRIVATE_KEY_SIZE);
     return l_key;
 }
 
 void* dap_enc_chipmunk_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
-    if (!a_buf || a_buflen != CHIPMUNK_PUBLIC_KEY_SIZE) {
-        log_it(L_ERROR, "Invalid buffer for public key deserialization");
+    const uint8_t *l_payload = NULL;
+    if (s_chipmunk_wire_parse(a_buf, a_buflen, CHIPMUNK_PUBLIC_KEY_SIZE, &l_payload) != 0) {
+        log_it(L_ERROR, "Invalid framed buffer for Chipmunk public key deserialization");
         return NULL;
     }
-    
-    uint8_t *l_key = DAP_NEW_SIZE(uint8_t, a_buflen);
+
+    uint8_t *l_key = DAP_NEW_SIZE(uint8_t, CHIPMUNK_PUBLIC_KEY_SIZE);
     if (!l_key) {
         log_it(L_ERROR, "Memory allocation failed for public key deserialization");
         return NULL;
     }
-    
-    memcpy(l_key, a_buf, a_buflen);
+
+    memcpy(l_key, l_payload, CHIPMUNK_PUBLIC_KEY_SIZE);
     return l_key;
 }
 

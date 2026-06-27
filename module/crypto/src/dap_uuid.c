@@ -60,7 +60,9 @@ uint128_t dap_uuid_generate_uint128()
         [3] = dap_random_uint32(UINT32_MAX)
     };
     uint128_t l_output;
-    dap_hash_shake128((unsigned char *) &l_output, sizeof(l_output), (unsigned char*) &l_input, sizeof(l_input));
+    /* UUID derivation must stay byte-for-byte with master to keep referential
+     * integrity in deployed globaldb / chains; use legacy SHAKE squeeze. */
+    dap_hash_shake128_legacy((unsigned char *) &l_output, sizeof(l_output), (unsigned char*) &l_input, sizeof(l_input));
  //   uint64_t *l_output_u64 =(uint64_t*) &l_output;
    // log_it(L_DEBUG,"UUID generated 0x%016X%016X (0x%08X%08X%08X%08X",l_output_u64[0],l_output_u64[1],
    //         l_input[0],l_input[1],l_input[2],l_input[3]);
@@ -80,7 +82,9 @@ uint64_t dap_uuid_generate_uint64()
         [3] = dap_random_uint16()
     };
     uint64_t l_output;
-    dap_hash_shake128((unsigned char *) &l_output, sizeof(l_output), (unsigned char*) &l_input, sizeof(l_input));
+    /* UUID derivation must stay byte-for-byte with master to keep referential
+     * integrity in deployed globaldb / chains; use legacy SHAKE squeeze. */
+    dap_hash_shake128_legacy((unsigned char *) &l_output, sizeof(l_output), (unsigned char*) &l_input, sizeof(l_input));
    // log_it(L_DEBUG,"UUID generated 0x%016X%016X (0x%08X%08X%08X%08X",l_output_u64[0],l_output_u64[1],
    //         l_input[0],l_input[1],l_input[2],l_input[3]);
     return l_output;
@@ -96,7 +100,8 @@ void dap_uuid_generate_nonce(void *a_nonce, size_t a_nonce_size)
         [2] = atomic_fetch_add(&s_global_counter, 1),
         [3] = dap_random_uint32(UINT32_MAX)
     };
-    dap_hash_shake128((unsigned char *)a_nonce, a_nonce_size, (unsigned char *)l_input, sizeof(l_input));
+    /* nonce derivation: legacy SHAKE squeeze for master-compat */
+    dap_hash_shake128_legacy((unsigned char *)a_nonce, a_nonce_size, (unsigned char *)l_input, sizeof(l_input));
 }
 
 dap_guuid_str_t dap_guuid_to_hex_str_(dap_guuid_t a_guuid)

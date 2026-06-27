@@ -398,18 +398,19 @@ int picnic_keys_gen(picnic_privatekey_t *sk, picnic_publickey_t *pk, picnic_para
         pk->params = param;
         switch (paramset.stateSizeBytes) {
         case 16:
-            dap_hash_shake128((unsigned char *) sk->data, 16, (const unsigned char *) seed, seed_size);
+            /* Deprecated picnic: legacy SHAKE squeeze for master compat */
+            dap_hash_shake128_legacy((unsigned char *) sk->data, 16, (const unsigned char *) seed, seed_size);
             //Generate a random plaintext block
-            dap_hash_shake128((unsigned char *) pk->plaintext, 16, (const unsigned char *) seed, seed_size);
+            dap_hash_shake128_legacy((unsigned char *) pk->plaintext, 16, (const unsigned char *) seed, seed_size);
             break;
         case 24:
 //            SHA3_192((unsigned char *) sk->data, (const unsigned char *) seed, seed_size);
 //            //Generate a random plaintext block
 //            SHA3_192((unsigned char *) pk->plaintext, (const unsigned char *) seed, seed_size);
 //            break;
-            dap_hash_shake128((unsigned char *) sk->data, 24, (const unsigned char *) seed, seed_size);
+            dap_hash_shake128_legacy((unsigned char *) sk->data, 24, (const unsigned char *) seed, seed_size);
             //Generate a random plaintext block
-            dap_hash_shake128((unsigned char *) pk->plaintext, 24, (const unsigned char *) seed, seed_size);
+            dap_hash_shake128_legacy((unsigned char *) pk->plaintext, 24, (const unsigned char *) seed, seed_size);
             break;
         case 32:
             dap_hash_sha3_256_raw((unsigned char *) sk->data, (const unsigned char *) seed, seed_size);

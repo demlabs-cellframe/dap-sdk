@@ -1,8 +1,6 @@
 # Prerequisites
-.context/
-slc
-.cursorrules
-build*/*
+build/*
+build_*/*
 debug/*
 crypto/XKCP/Makefile
 .devcontainer/*
@@ -18,6 +16,13 @@ test/build
 *.obj
 *.elf
 
+.context
+slc
+.cursorrules
+
+# CTest runtime artefacts
+Testing/
+tests/Testing/
 # Linker output
 *.ilk
 *.map
@@ -96,4 +101,6 @@ slc
 tests/performance/hashtable/competitors/
 tests/performance/keccak/competitors/
 tests/performance/ecdsa/competitors/
-tests/performance/global_db/competitors/
+tests/performance/global_db/competitors/build.debug/
+build.release/
+build*/

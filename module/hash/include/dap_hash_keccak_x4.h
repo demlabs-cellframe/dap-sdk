@@ -43,8 +43,8 @@
 
 #include "dap_common.h"
 #include "dap_hash_keccak.h"
+#include "dap_arch_dispatch.h"
 #include "dap_cpu_arch.h"
-#include "dap_cpu_detect.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -135,7 +135,7 @@ static inline void dap_keccak_x4_extract_bytes(const dap_keccak_x4_state_t *a_st
 // AVX2 SIMD: 4×4 uint64 transpose for interleave/deinterleave
 // ============================================================================
 
-#if DAP_CPU_DETECT_X86
+#if DAP_PLATFORM_X86
 void dap_keccak_x4_xor_bytes_all_avx2(dap_keccak_x4_state_t *a_state,
                                        const uint8_t *a_in0, const uint8_t *a_in1,
                                        const uint8_t *a_in2, const uint8_t *a_in3,
@@ -146,7 +146,7 @@ void dap_keccak_x4_extract_bytes_all_avx2(const dap_keccak_x4_state_t *a_state,
                                            size_t a_len);
 #endif
 
-#if DAP_CPU_DETECT_ARM && defined(__aarch64__)
+#if DAP_PLATFORM_ARM && defined(__aarch64__)
 void dap_keccak_x4_xor_bytes_all_neon(dap_keccak_x4_state_t *a_state,
                                        const uint8_t *a_in0, const uint8_t *a_in1,
                                        const uint8_t *a_in2, const uint8_t *a_in3,
@@ -160,27 +160,13 @@ void dap_keccak_x4_extract_bytes_all_neon(const dap_keccak_x4_state_t *a_state,
 /**
  * @brief XOR data into all 4 instances at once (same-length inputs)
  */
-static inline void dap_keccak_x4_xor_bytes_all(dap_keccak_x4_state_t *a_state,
-                                                const uint8_t *a_in0,
-                                                const uint8_t *a_in1,
-                                                const uint8_t *a_in2,
-                                                const uint8_t *a_in3,
-                                                size_t a_len)
+static inline void dap_keccak_x4_xor_bytes_all_ref(dap_keccak_x4_state_t *a_state,
+                                                  const uint8_t *a_in0,
+                                                  const uint8_t *a_in1,
+                                                  const uint8_t *a_in2,
+                                                  const uint8_t *a_in3,
+                                                  size_t a_len)
 {
-#if DAP_CPU_DETECT_X86
-    static int s_tier = -1;
-    if (__builtin_expect(s_tier < 0, 0)) {
-        dap_algo_class_t l_c = dap_algo_class_register("KECCAK_X4");
-        s_tier = (dap_cpu_arch_get_best_for(l_c) >= DAP_CPU_ARCH_AVX2) ? 1 : 0;
-    }
-    if (__builtin_expect(s_tier, 1)) {
-        dap_keccak_x4_xor_bytes_all_avx2(a_state, a_in0, a_in1, a_in2, a_in3, a_len);
-        return;
-    }
-#elif DAP_CPU_DETECT_ARM && defined(__aarch64__)
-    dap_keccak_x4_xor_bytes_all_neon(a_state, a_in0, a_in1, a_in2, a_in3, a_len);
-    return;
-#endif
     const size_t l_full_lanes = a_len / 8;
     const size_t l_tail       = a_len & 7;
     /* Inputs may be unaligned; avoid uint64_t* indexed loads (UBSan). */
@@ -215,27 +201,13 @@ static inline void dap_keccak_x4_xor_bytes_all(dap_keccak_x4_state_t *a_state,
 /**
  * @brief Extract bytes from all 4 instances at once (same-length outputs)
  */
-static inline void dap_keccak_x4_extract_bytes_all(const dap_keccak_x4_state_t *a_state,
-                                                    uint8_t *a_out0,
-                                                    uint8_t *a_out1,
-                                                    uint8_t *a_out2,
-                                                    uint8_t *a_out3,
-                                                    size_t a_len)
+static inline void dap_keccak_x4_extract_bytes_all_ref(const dap_keccak_x4_state_t *a_state,
+                                                     uint8_t *a_out0,
+                                                     uint8_t *a_out1,
+                                                     uint8_t *a_out2,
+                                                     uint8_t *a_out3,
+                                                     size_t a_len)
 {
-#if DAP_CPU_DETECT_X86
-    static int s_tier = -1;
-    if (__builtin_expect(s_tier < 0, 0)) {
-        dap_algo_class_t l_c = dap_algo_class_register("KECCAK_X4");
-        s_tier = (dap_cpu_arch_get_best_for(l_c) >= DAP_CPU_ARCH_AVX2) ? 1 : 0;
-    }
-    if (__builtin_expect(s_tier, 1)) {
-        dap_keccak_x4_extract_bytes_all_avx2(a_state, a_out0, a_out1, a_out2, a_out3, a_len);
-        return;
-    }
-#elif DAP_CPU_DETECT_ARM && defined(__aarch64__)
-    dap_keccak_x4_extract_bytes_all_neon(a_state, a_out0, a_out1, a_out2, a_out3, a_len);
-    return;
-#endif
     const size_t l_full_lanes = a_len / 8;
     const size_t l_tail       = a_len & 7;
     /* a_out* may be unaligned; avoid uint64_t* indexed writes (UBSan). */
@@ -263,6 +235,65 @@ static inline void dap_keccak_x4_extract_bytes_all(const dap_keccak_x4_state_t *
         memcpy(a_out2 + l_off, &t2, l_tail);
         memcpy(a_out3 + l_off, &t3, l_tail);
     }
+}
+
+/**
+ * @brief Resolve best SIMD backend for x4 parallel absorb/extract.
+ */
+DAP_DISPATCH_DECLARE_RESOLVE(dap_keccak_x4_xor_bytes_all, void, dap_keccak_x4_state_t *,
+    const uint8_t *, const uint8_t *, const uint8_t *, const uint8_t *, size_t);
+DAP_DISPATCH_DECLARE_RESOLVE(dap_keccak_x4_extract_bytes_all, void, const dap_keccak_x4_state_t *,
+    uint8_t *, uint8_t *, uint8_t *, uint8_t *, size_t);
+
+static inline dap_keccak_x4_xor_bytes_all_fn_t dap_keccak_x4_xor_bytes_all_resolve(void)
+{
+    dap_algo_class_t l_class = dap_algo_class_register("KECCAK_X4");
+    dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
+    (void)arch;
+
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX2, dap_keccak_x4_xor_bytes_all_avx2);
+#if DAP_PLATFORM_ARM && defined(__aarch64__)
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON, dap_keccak_x4_xor_bytes_all_neon);
+#endif
+
+    return dap_keccak_x4_xor_bytes_all_ref;
+}
+
+static inline dap_keccak_x4_extract_bytes_all_fn_t
+dap_keccak_x4_extract_bytes_all_resolve(void)
+{
+    dap_algo_class_t l_class = dap_algo_class_register("KECCAK_X4");
+    dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
+    (void)arch;
+
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX2, dap_keccak_x4_extract_bytes_all_avx2);
+#if DAP_PLATFORM_ARM && defined(__aarch64__)
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON, dap_keccak_x4_extract_bytes_all_neon);
+#endif
+
+    return dap_keccak_x4_extract_bytes_all_ref;
+}
+
+static inline void dap_keccak_x4_xor_bytes_all(dap_keccak_x4_state_t *a_state,
+                                              const uint8_t *a_in0,
+                                              const uint8_t *a_in1,
+                                              const uint8_t *a_in2,
+                                              const uint8_t *a_in3,
+                                              size_t a_len)
+{
+    DAP_DISPATCH_INLINE_CALL(dap_keccak_x4_xor_bytes_all,
+                             a_state, a_in0, a_in1, a_in2, a_in3, a_len);
+}
+
+static inline void dap_keccak_x4_extract_bytes_all(const dap_keccak_x4_state_t *a_state,
+                                                 uint8_t *a_out0,
+                                                 uint8_t *a_out1,
+                                                 uint8_t *a_out2,
+                                                 uint8_t *a_out3,
+                                                 size_t a_len)
+{
+    DAP_DISPATCH_INLINE_CALL(dap_keccak_x4_extract_bytes_all,
+                             a_state, a_out0, a_out1, a_out2, a_out3, a_len);
 }
 
 // ============================================================================
@@ -328,13 +359,13 @@ static inline void dap_keccak_x4_permute_opt(dap_keccak_x4_state_t *a_state)
 }
 
 /** Native SIMD x4 — generated from dap_keccak_x4.c.tpl */
-#if DAP_CPU_DETECT_X86
+#if DAP_PLATFORM_X86
 void dap_keccak_x4_permute_avx512(dap_keccak_x4_state_t *a_state);
 void dap_keccak_x4_permute_avx512vl_asm(dap_keccak_x4_state_t *a_state);
 void dap_keccak_x4_permute_avx2(dap_keccak_x4_state_t *a_state);
 #endif
 
-#if DAP_CPU_DETECT_ARM
+#if DAP_PLATFORM_ARM
 void dap_keccak_x4_permute_neon(dap_keccak_x4_state_t *a_state);
 #endif
 
@@ -347,33 +378,28 @@ void dap_keccak_x4_permute_neon(dap_keccak_x4_state_t *a_state);
 //   Other:                → _opt (reference single-state)
 // ============================================================================
 
-typedef void (*dap_keccak_x4_permute_fn_t)(dap_keccak_x4_state_t *);
+DAP_DISPATCH_DECLARE_RESOLVE(dap_keccak_x4_permute, void, dap_keccak_x4_state_t *);
 
-static inline dap_keccak_x4_permute_fn_t dap_keccak_x4_resolve_permute(void)
+static inline dap_keccak_x4_permute_fn_t dap_keccak_x4_permute_resolve(void)
 {
     dap_algo_class_t l_class = dap_algo_class_register("KECCAK_X4");
-    dap_cpu_arch_t l_arch = dap_cpu_arch_get_best_for(l_class);
-    (void)l_arch;
-#if DAP_CPU_DETECT_X86
-    if (l_arch >= DAP_CPU_ARCH_AVX512)
-        return dap_keccak_x4_permute_avx512vl_asm;
-    if (l_arch >= DAP_CPU_ARCH_AVX2)
-        return dap_keccak_x4_permute_avx2;
+    dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
+    (void)arch;
+
+#if DAP_PLATFORM_X86
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX512, dap_keccak_x4_permute_avx512vl_asm);
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX2,   dap_keccak_x4_permute_avx2);
 #endif
-#if DAP_CPU_DETECT_ARM
-    if (l_arch >= DAP_CPU_ARCH_NEON)
-        return dap_keccak_x4_permute_neon;
+#if DAP_PLATFORM_ARM
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON,   dap_keccak_x4_permute_neon);
 #endif
+
     return dap_keccak_x4_permute_opt;
 }
 
-static dap_keccak_x4_permute_fn_t s_keccak_x4_permute_fn = NULL;
-
 static inline void dap_keccak_x4_permute(dap_keccak_x4_state_t *a_state)
 {
-    if (__builtin_expect(!s_keccak_x4_permute_fn, 0))
-        s_keccak_x4_permute_fn = dap_keccak_x4_resolve_permute();
-    s_keccak_x4_permute_fn(a_state);
+    DAP_DISPATCH_INLINE_CALL(dap_keccak_x4_permute, a_state);
 }
 
 #ifdef __cplusplus

@@ -331,14 +331,27 @@ KECCAK_ABSORB_REF_IMPL(136, 17)
 KECCAK_ABSORB_REF_IMPL(168, 21)
 KECCAK_ABSORB_REF_IMPL(72, 9)
 
+/* FIPS 202 sponge contract: after absorb_*_ref the state already contains
+ * the *first* rate-sized output block (the absorb body issues the final
+ * permute on padded data).  squeeze must therefore extract first and permute
+ * for the next block, NOT permute first.  The previous "permute → extract"
+ * loop produced a double permutation (one in absorb + one before the first
+ * extract) and hence emitted block N+1 instead of block N — a deviation
+ * from FIPS 202 SP 800-185 confirmed by the SHAKE128("") KAT
+ * (state-after-absorb = 7f9c2ba4… while the previous squeeze returned
+ * 767be1fd…). */
 #define KECCAK_SQUEEZE_REF_IMPL(RATE)                                          \
 void dap_keccak_squeeze_##RATE##_ref(uint64_t *a_state,                        \
     uint8_t *a_out, size_t a_nblocks)                                          \
 {                                                                              \
     for (size_t i = 0; i < a_nblocks; i++) {                                   \
-        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);           \
         memcpy(a_out, a_state, RATE);                                          \
         a_out += RATE;                                                         \
+        /* Always permute after extracting so the state is positioned at the   \
+         * next output block.  This keeps streaming callers correct (they may  \
+         * invoke squeeze repeatedly with n_blocks=1).  The trailing permute   \
+         * after the last block is a harmless no-op for one-shot users. */    \
+        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);           \
     }                                                                          \
 }
 

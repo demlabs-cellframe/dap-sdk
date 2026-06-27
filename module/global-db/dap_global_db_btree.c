@@ -5700,15 +5700,21 @@ static uint64_t s_count_at_root_impl(dap_global_db_t *a_tree, uint64_t a_root, i
 
 uint64_t dap_global_db_count_at_root(dap_global_db_t *a_tree, uint64_t a_root)
 {
-    // Read height via the lock-free MVCC mirror (atomically updated in
-    // s_mvcc_commit). This serves both lock-holding callers
-    // (s_mvcc_commit, dap_global_db_verify — both wrlocked) and lock-free
-    // ones (snapshot-cursor readers in tests/global-db). A nested rdlock
-    // here would deadlock with PREFER_WRITER_NONRECURSIVE when any caller
-    // already holds wrlock, and a raw read of header.tree_height would
-    // race with writers in the lock-free path. mvcc_height fixes both.
-    uint32_t l_height = atomic_load_explicit(&a_tree->mvcc_height, memory_order_acquire);
-    int l_max_depth = (int)l_height + 2;
+    // mvcc_height is atomic and lags header.tree_height by at most one commit
+    // (writer updates header.tree_height first, then mvcc_height).  We use it
+    // here instead of taking a_tree->lock because this function is also called
+    // from inside s_mvcc_commit (debug self-check) while the write lock is
+    // already held by the caller; recursive lock acquisition on a non-recursive
+    // pthread_rwlock_t corrupts the lock state and causes deadlock on the next
+    // wrlock attempt (see regression: B-tree split + decreasing keys).
+    //
+    // Worst-case staleness: mvcc_height = old_height while header.tree_height
+    // = old_height + 1 after a root split. The +2 margin and the floor of 4
+    // guarantee enough recursion depth in all observable cases. If the bound
+    // is ever exceeded, s_count_at_root_impl returns 0 and logs an error
+    // rather than reading invalid data.
+    int l_max_depth = (int)atomic_load_explicit(&a_tree->mvcc_height,
+                                                memory_order_acquire) + 2;
     if (l_max_depth < 4) l_max_depth = 4;
     return s_count_at_root_impl(a_tree, a_root, l_max_depth);
 }

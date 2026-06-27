@@ -108,7 +108,7 @@ int chipmunk_batch_verify_hots(
 
     const dap_ntt_params_t *l_ntt = &g_chipmunk_ntt_params;
 
-    s_chipmunk_ctx_t *l_ctx = calloc(a_count, sizeof(s_chipmunk_ctx_t));
+    s_chipmunk_ctx_t *l_ctx = DAP_NEW_Z_COUNT(s_chipmunk_ctx_t, a_count);
     if (!l_ctx) return -1;
 
     unsigned int l_valid = 0;
@@ -135,12 +135,12 @@ int chipmunk_batch_verify_hots(
     }
 
     if (l_valid == 0) {
-        free(l_ctx);
+        DAP_DELETE(l_ctx);
         return 0;
     }
 
-    uint32_t *l_vidx = malloc(l_valid * sizeof(uint32_t));
-    if (!l_vidx) { free(l_ctx); return -1; }
+    uint32_t *l_vidx = DAP_NEW_Z_SIZE(uint32_t, l_valid * sizeof(uint32_t));
+    if (!l_vidx) { DAP_DELETE(l_ctx); return -1; }
     {
         uint32_t vi = 0;
         for (unsigned int i = 0; i < a_count; i++)
@@ -155,8 +155,8 @@ int chipmunk_batch_verify_hots(
      */
     const uint32_t l_fwd_per = CHIPMUNK_GAMMA + 1 + 2 + CHIPMUNK_GAMMA;
     uint32_t l_fwd_total = l_valid * l_fwd_per;
-    int32_t *l_fwd_buf = malloc((size_t)l_fwd_total * CHIPMUNK_N * sizeof(int32_t));
-    if (!l_fwd_buf) { free(l_vidx); free(l_ctx); return -1; }
+    int32_t *l_fwd_buf = DAP_NEW_Z_SIZE(int32_t, (size_t)l_fwd_total * CHIPMUNK_N * sizeof(int32_t));
+    if (!l_fwd_buf) { DAP_DELETE(l_vidx); DAP_DELETE(l_ctx); return -1; }
 
     for (uint32_t vi = 0; vi < l_valid; vi++) {
         uint32_t i = l_vidx[vi];
@@ -224,7 +224,7 @@ int chipmunk_batch_verify_hots(
         a_results[i] = chipmunk_poly_equal(&l_left_ntt, &l_right_ntt) ? 0 : -1;
     }
 
-    free(l_fwd_buf);
+    DAP_DELETE(l_fwd_buf);
 
     int l_passed = 0;
     for (unsigned int i = 0; i < a_count; i++)
@@ -233,7 +233,7 @@ int chipmunk_batch_verify_hots(
     log_it(L_INFO, "Chipmunk batch HOTS verify: %d/%u passed (%u fwd NTTs batched)",
            l_passed, a_count, l_fwd_total);
 
-    free(l_vidx);
-    free(l_ctx);
+    DAP_DELETE(l_vidx);
+    DAP_DELETE(l_ctx);
     return l_passed;
 }
