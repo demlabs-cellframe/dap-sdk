@@ -230,8 +230,8 @@ addToLibrary({
         }
 
         if (xhr.status >= 200 && xhr.status < 300) {
-            var responseBytes = new TextEncoder().encode(xhr.responseText || '');
-            if (responseBytes.length > 0) {
+            if (xhr.response && xhr.response.byteLength > 0) {
+                var responseBytes = new Uint8Array(xhr.response);
                 var ptr = _malloc(responseBytes.length + 1);
                 HEAPU8.set(responseBytes, ptr);
                 HEAPU8[ptr + responseBytes.length] = 0;
