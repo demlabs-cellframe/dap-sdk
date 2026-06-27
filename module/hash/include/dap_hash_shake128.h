@@ -104,6 +104,50 @@ DAP_STATIC_INLINE void dap_hash_shake128_squeezeblocks(uint8_t *a_output, size_t
 }
 
 // =============================================================================
+// Legacy SHAKE128 (BACKWARD-COMPAT — DO NOT USE FOR NEW CODE)
+// =============================================================================
+//
+// Reproduces the pre-FIPS-202 squeeze convention (permute → extract per
+// block) that shipped before the keccak fast-path was made FIPS 202
+// conformant.  Required by legacy production PQC schemes (Dilithium,
+// SPHINCS+, deprecated bliss/picnic/tesla/newhope/msrln) whose on-wire
+// keys / signatures / KEM ciphertexts must remain reproducible by older
+// SDK versions.  New code MUST call the FIPS-202-conformant
+// dap_hash_shake128 / dap_hash_shake128_squeezeblocks above.
+//
+// The implementation deliberately calls the generic dap_hash_keccak_permute
+// (which routes through the dispatched best backend) plus a memcpy from the
+// state, so it does not depend on the squeeze_168 fast-path semantics —
+// any future tightening of the FIPS path will not affect this surface.
+
+DAP_STATIC_INLINE void dap_hash_shake128_legacy_squeezeblocks(uint8_t *a_output, size_t a_nblocks, uint64_t *a_state)
+{
+    for (size_t i = 0; i < a_nblocks; i++) {
+        dap_hash_keccak_permute((dap_hash_keccak_state_t *)a_state);
+        memcpy(a_output, a_state, DAP_SHAKE128_RATE);
+        a_output += DAP_SHAKE128_RATE;
+    }
+}
+
+DAP_STATIC_INLINE void dap_hash_shake128_legacy(uint8_t *a_output, size_t a_outlen,
+                                                const uint8_t *a_input, size_t a_inlen)
+{
+    uint64_t l_st[25];
+    dap_keccak_sponge_get_ops()->absorb_168(l_st, a_input, a_inlen, DAP_KECCAK_SHAKE_SUFFIX);
+    size_t l_nblocks = a_outlen / DAP_SHAKE128_RATE;
+    if (l_nblocks) {
+        dap_hash_shake128_legacy_squeezeblocks(a_output, l_nblocks, l_st);
+        a_output += l_nblocks * DAP_SHAKE128_RATE;
+        a_outlen -= l_nblocks * DAP_SHAKE128_RATE;
+    }
+    if (a_outlen) {
+        uint8_t l_tmp[DAP_SHAKE128_RATE];
+        dap_hash_shake128_legacy_squeezeblocks(l_tmp, 1, l_st);
+        memcpy(a_output, l_tmp, a_outlen);
+    }
+}
+
+// =============================================================================
 // cSHAKE128 (Customizable SHAKE - NIST SP 800-185)
 // =============================================================================
 
@@ -117,6 +161,15 @@ DAP_STATIC_INLINE void dap_hash_shake128_squeezeblocks(uint8_t *a_output, size_t
  */
 void dap_hash_cshake128_simple(uint8_t *a_output, size_t a_outlen, uint16_t a_cstm,
                           const uint8_t *a_input, size_t a_inlen);
+
+/**
+ * @brief cSHAKE128 simple — LEGACY squeeze (permute → extract per block)
+ *
+ * Reproduces the pre-FIPS-202 byte stream emitted by master.  Use only
+ * for backward-compatible code paths (e.g. deprecated tesla).
+ */
+void dap_hash_cshake128_simple_legacy(uint8_t *a_output, size_t a_outlen, uint16_t a_cstm,
+                                       const uint8_t *a_input, size_t a_inlen);
 
 /**
  * @brief cSHAKE128 absorb with simple customization

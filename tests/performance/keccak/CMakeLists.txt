@@ -201,15 +201,8 @@ if(BUILD_BENCHMARKS AND HAVE_XKCP AND HAVE_TINY_SHA3)
     target_include_directories(benchmark_keccak PRIVATE ${TINY_SHA3_DIR})
 endif()
 
-# Link with dap_crypto and its dependencies
-# dap_crypto uses dap_json, dap_config, dap_math — OBJECT library deps don't propagate automatically
-target_link_libraries(benchmark_keccak
-    dap_crypto
-    dap_core
-    dap_json
-    dap_math
-    dap_config
-)
+# Link with dap_sdk — all public include dirs propagate automatically
+target_link_libraries(benchmark_keccak dap_sdk)
 
 # System libraries
 if(UNIX AND NOT ANDROID)
@@ -229,18 +222,10 @@ add_test(NAME keccak_correctness
 message(STATUS "[benchmark_keccak] Keccak/SHA3 performance benchmark configured")
 
 # --- Keccak micro-benchmarks ---
-set(KECCAK_BENCH_INCLUDES
-    ${CMAKE_SOURCE_DIR}/module/hash/include
-    ${CMAKE_SOURCE_DIR}/module/hash/src/keccak
-    ${CMAKE_SOURCE_DIR}/module/core/include
-    ${CMAKE_SOURCE_DIR}/module/optimization/include
-)
-
 macro(add_keccak_bench NAME)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${NAME}.c")
         add_executable(${NAME} ${NAME}.c)
         target_link_libraries(${NAME} dap_sdk)
-        target_include_directories(${NAME} PRIVATE ${KECCAK_BENCH_INCLUDES})
         set_target_properties(${NAME} PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/benchmarks"
         )

@@ -10,8 +10,7 @@ file(GLOB HEADERS *.h)
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
 target_link_libraries(${PROJECT_NAME}
-    dap_crypto
-    dap_core
+    dap_sdk
     dap_test
 )
 
@@ -20,10 +19,7 @@ if(UNIX AND NOT ANDROID)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../test-framework
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../crypto/include
 )
 
 dap_mock_autowrap(${PROJECT_NAME})

@@ -99,9 +99,13 @@ static int test_multi_signature_aggregation(void)
     chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
     memset(leaf_nodes, 0, sizeof(leaf_nodes));
     
-    // Добавляем публичные ключи всех участников в дерево
+    // CR-D15.A: tree leaves must match the HOTS pk that signs.
     for (size_t i = 0; i < num_signers; i++) {
-        ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &leaf_nodes[i]);
+        chipmunk_public_key_t l_wrap_pk;
+        memset(&l_wrap_pk, 0, sizeof(l_wrap_pk));
+        memcpy(&l_wrap_pk.v0, &hots_public_keys[i].v0, sizeof(chipmunk_poly_t));
+        memcpy(&l_wrap_pk.v1, &hots_public_keys[i].v1, sizeof(chipmunk_poly_t));
+        ret = chipmunk_hots_pk_to_hvc_poly(&l_wrap_pk, &leaf_nodes[i]);
         if (ret != 0) {
             log_it(L_ERROR, "ERROR: Failed to convert HOTS pk to HVC poly for signer %zu", i);
             return -3;
@@ -126,6 +130,7 @@ static int test_multi_signature_aggregation(void)
         ret = chipmunk_create_individual_signature(
             (uint8_t*)test_message, message_len,
             &hots_secret_keys[i], &hots_public_keys[i],
+            public_keys[i].rho_seed,
             &tree, i,  // leaf_index = i (позиция в общем дереве)
             &individual_sigs[i]
         );
@@ -278,9 +283,13 @@ static int test_large_multi_signature_aggregation(void)
     chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
     memset(leaf_nodes, 0, sizeof(leaf_nodes));
     
-    // Добавляем публичные ключи всех участников в дерево
+    // CR-D15.A: tree leaves must match the HOTS pk that signs.
     for (size_t i = 0; i < num_signers; i++) {
-        ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &leaf_nodes[i]);
+        chipmunk_public_key_t l_wrap_pk;
+        memset(&l_wrap_pk, 0, sizeof(l_wrap_pk));
+        memcpy(&l_wrap_pk.v0, &hots_public_keys[i].v0, sizeof(chipmunk_poly_t));
+        memcpy(&l_wrap_pk.v1, &hots_public_keys[i].v1, sizeof(chipmunk_poly_t));
+        ret = chipmunk_hots_pk_to_hvc_poly(&l_wrap_pk, &leaf_nodes[i]);
         if (ret != 0) {
             log_it(L_ERROR, "ERROR: Failed to convert HOTS pk to HVC poly for signer %zu", i);
             return -3;
@@ -305,6 +314,7 @@ static int test_large_multi_signature_aggregation(void)
         ret = chipmunk_create_individual_signature(
             (uint8_t*)test_message, message_len,
             &hots_secret_keys[i], &hots_public_keys[i],
+            public_keys[i].rho_seed,
             &tree, i,  // leaf_index = i (позиция в общем дереве)
             &individual_sigs[i]
         );
@@ -457,7 +467,11 @@ static int test_batch_verification(void)
         memset(leaf_nodes, 0, sizeof(leaf_nodes));
         
         for (size_t i = 0; i < signers_per_batch; i++) {
-            ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &leaf_nodes[i]);
+            chipmunk_public_key_t l_wrap_pk;
+            memset(&l_wrap_pk, 0, sizeof(l_wrap_pk));
+            memcpy(&l_wrap_pk.v0, &hots_public_keys[i].v0, sizeof(chipmunk_poly_t));
+            memcpy(&l_wrap_pk.v1, &hots_public_keys[i].v1, sizeof(chipmunk_poly_t));
+            ret = chipmunk_hots_pk_to_hvc_poly(&l_wrap_pk, &leaf_nodes[i]);
             if (ret != 0) {
                 return -3;
             }
@@ -475,6 +489,7 @@ static int test_batch_verification(void)
             ret = chipmunk_create_individual_signature(
                 (uint8_t*)batch_messages[batch], message_len,
                 &hots_secret_keys[i], &hots_public_keys[i],
+                public_keys[i].rho_seed,
                 &tree, i,
                 &individual_sigs[i]
             );

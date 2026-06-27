@@ -2,7 +2,11 @@
 #
 # Download and build competitor crypto libraries for benchmarking.
 #
-# Usage: ./download_competitors.sh [--all | --liboqs | --openssl | --libsodium]
+# Competitors:
+#   liboqs  — NIST ML-DSA (Dilithium) reference sizes/timings
+#   raptor  — Lattice-based ring signature (Falcon-based, Zhang 2018)
+#
+# Usage: ./download_competitors.sh [--all | --liboqs | --raptor]
 #        Default: --all
 #
 # Results go to competitors/ directory.
@@ -12,7 +16,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMP_DIR="${SCRIPT_DIR}/competitors"
 INSTALL_DIR="${COMP_DIR}/install"
-
 NPROC=$(nproc 2>/dev/null || echo 4)
 
 mkdir -p "${COMP_DIR}" "${INSTALL_DIR}"
@@ -31,57 +34,33 @@ build_liboqs() {
         -DBUILD_SHARED_LIBS=OFF \
         -DOQS_BUILD_ONLY_LIB=ON \
         -DOQS_USE_OPENSSL=OFF \
-        -DOQS_MINIMAL_BUILD="KEM_kyber_512;KEM_kyber_768;KEM_kyber_1024;SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87"
+        -DOQS_MINIMAL_BUILD="SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87"
     cmake --build "${BUILD}" -j "${NPROC}"
     cmake --install "${BUILD}"
-    echo "=== liboqs installed to ${INSTALL_DIR} ==="
+    echo "=== liboqs installed ==="
 }
 
-check_openssl() {
-    echo "=== Checking OpenSSL ==="
-    if pkg-config --exists openssl 2>/dev/null; then
-        local VER=$(pkg-config --modversion openssl)
-        local CFLAGS=$(pkg-config --cflags openssl)
-        local LIBS=$(pkg-config --libs openssl)
-        echo "Found OpenSSL ${VER}"
-        cat > "${COMP_DIR}/openssl_config.cmake" <<EOF
-set(OPENSSL_FOUND TRUE)
-set(OPENSSL_VERSION "${VER}")
-set(OPENSSL_CFLAGS "${CFLAGS}")
-set(OPENSSL_LIBS "${LIBS}")
-EOF
-        echo "=== OpenSSL config written ==="
-    else
-        echo "OpenSSL not found via pkg-config, trying find_package..."
-        cat > "${COMP_DIR}/openssl_config.cmake" <<EOF
-set(OPENSSL_FOUND FALSE)
-EOF
-    fi
-}
-
-build_libsodium() {
-    echo "=== Building libsodium ==="
-    local SRC="${COMP_DIR}/libsodium"
+build_raptor() {
+    echo "=== Building Raptor ==="
+    local SRC="${COMP_DIR}/raptor"
     if [ ! -d "${SRC}" ]; then
-        git clone --depth 1 https://github.com/jedisct1/libsodium.git "${SRC}"
+        git clone --depth 1 https://github.com/zhenfeizhang/raptor.git "${SRC}"
     fi
     cd "${SRC}"
-    if [ ! -f configure ]; then
-        ./autogen.sh
-    fi
-    ./configure --prefix="${INSTALL_DIR}" --disable-shared --enable-static --with-pic
-    make -j "${NPROC}"
-    make install
+    gcc -O3 -std=c11 -I. -Ifalcon -Irng \
+        test.c raptor.c linkable_raptor.c poly.c print.c \
+        falcon/falcon-*.c falcon/frng.c falcon/crypto_stream.c falcon/shake.c falcon/nist.c \
+        rng/*.c \
+        -lm -lcrypto -o bench_raptor 2>/dev/null && echo "=== Raptor built ===" || echo "=== Raptor build failed (needs OpenSSL) ==="
     cd "${SCRIPT_DIR}"
-    echo "=== libsodium installed to ${INSTALL_DIR} ==="
 }
 
 show_help() {
-    echo "Usage: $0 [--all | --liboqs | --openssl | --libsodium]"
-    echo "  --all        Build all competitors (default)"
-    echo "  --liboqs     Build liboqs only"
-    echo "  --openssl    Check/configure OpenSSL only"
-    echo "  --libsodium  Build libsodium only"
+    echo "Usage: $0 [--all | --liboqs | --raptor]"
+    echo "  --all       Build all competitors (default)"
+    echo "  --liboqs    Build liboqs only"
+    echo "  --raptor    Build Raptor only"
+    echo "  --help      Show this help"
 }
 
 if [ $# -eq 0 ]; then
@@ -92,14 +71,12 @@ for arg in "$@"; do
     case "$arg" in
         --all)
             build_liboqs
-            check_openssl
-            build_libsodium
+            build_raptor
             ;;
-        --liboqs)     build_liboqs ;;
-        --openssl)    check_openssl ;;
-        --libsodium)  build_libsodium ;;
-        --help|-h)    show_help; exit 0 ;;
-        *)            echo "Unknown option: $arg"; show_help; exit 1 ;;
+        --liboqs)   build_liboqs ;;
+        --raptor)   build_raptor ;;
+        --help|-h)  show_help; exit 0 ;;
+        *)          echo "Unknown option: $arg"; show_help; exit 1 ;;
     esac
 done
 

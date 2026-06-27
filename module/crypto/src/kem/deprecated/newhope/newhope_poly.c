@@ -242,7 +242,7 @@ void poly_newhope_uniform(poly_newhope *a, const unsigned char *seed)
     dap_hash_shake128_absorb(state, extseed, NEWHOPE_SYMBYTES+1);
     while(ctr < 64) /* Very unlikely to run more than once */
     {
-      dap_hash_shake128_squeezeblocks(buf,1,state);
+      dap_hash_shake128_legacy_squeezeblocks(buf,1,state);
       for(j=0;j<DAP_SHAKE128_RATE && ctr < 64;j+=2)
       {
         val = (buf[j] | ((uint16_t) buf[j+1] << 8));
@@ -300,7 +300,7 @@ void poly_newhope_sample(poly_newhope *r, const unsigned char *seed, unsigned ch
   for(i=0;i<NEWHOPE_N/64;i++) /* Generate noise in blocks of 64 coefficients */
   {
     extseed[NEWHOPE_SYMBYTES+1] = i;
-    dap_hash_shake256(buf,128,extseed,NEWHOPE_SYMBYTES+2);
+    dap_hash_shake256_legacy(buf,128,extseed,NEWHOPE_SYMBYTES+2);
     for(j=0;j<64;j++)
     {
       a = buf[2*j];

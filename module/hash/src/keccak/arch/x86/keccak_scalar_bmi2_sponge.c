@@ -43,15 +43,19 @@ KECCAK_ABSORB_IMPL(136, 17)
 KECCAK_ABSORB_IMPL(168, 21)
 KECCAK_ABSORB_IMPL(72, 9)
 
+/* See dap_keccak_ref.c (KECCAK_SQUEEZE_REF_IMPL) for the FIPS 202 sponge
+ * convention this implements: extract first, then permute, so the state is
+ * positioned at the next output block ready for streaming callers. */
 #define KECCAK_SQUEEZE_IMPL(RATE, NWORDS)                                      \
 void dap_keccak_squeeze_##RATE##_scalar_bmi2(uint64_t *a_state,                \
     uint8_t *a_out, size_t a_nblocks)                                          \
 {                                                                              \
+    (void)NWORDS;                                                              \
     for (size_t i = 0; i < a_nblocks; i++) {                                   \
-        dap_hash_keccak_permute_scalar_bmi2(                                   \
-            (dap_hash_keccak_state_t *)a_state);                               \
         memcpy(a_out, a_state, RATE);                                          \
         a_out += RATE;                                                         \
+        dap_hash_keccak_permute_scalar_bmi2(                                   \
+            (dap_hash_keccak_state_t *)a_state);                               \
     }                                                                          \
 }
 

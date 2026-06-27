@@ -23,6 +23,7 @@
 #include "dap_ntt.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake256.h"
+#include "dilithium_shake_compat.h"
 #include "dilithium_params.h"
 #include "dilithium_poly.h"
 #include "dilithium_polyvec.h"
@@ -165,10 +166,10 @@ int dilithium_crypto_sign_open_batch(
         uint32_t l_crh = dil_crhbytes(&l_params);
         unsigned char *l_tmp = malloc(l_crh + a_msg_lens[i]);
         if (!l_tmp) { free(l_ctx); return -1; }
-        dap_hash_shake256(l_tmp, l_crh,
-                          a_pub_keys[i]->data, l_params.CRYPTO_PUBLICKEYBYTES);
+        dil_shake256(&l_params, l_tmp, l_crh,
+                     a_pub_keys[i]->data, l_params.CRYPTO_PUBLICKEYBYTES);
         memcpy(l_tmp + l_crh, a_msgs[i], a_msg_lens[i]);
-        dap_hash_shake256(l_ctx[i].mu, l_crh, l_tmp, l_crh + a_msg_lens[i]);
+        dil_shake256(&l_params, l_ctx[i].mu, l_crh, l_tmp, l_crh + a_msg_lens[i]);
         free(l_tmp);
 
         l_ctx[i].chat = l_ctx[i].c;

@@ -5,7 +5,6 @@
  */
 
 #include <string.h>
-#include <pthread.h>
 #include "dap_chacha20_poly1305.h"
 #include "dap_chacha20_internal.h"
 #include "dap_poly1305_internal.h"
@@ -99,56 +98,49 @@ static void s_chacha20_encrypt_ref(uint8_t *a_out, const uint8_t *a_in, size_t a
     }
 }
 
-typedef void (*chacha20_encrypt_fn)(uint8_t *, const uint8_t *, size_t,
+/*
+ * Runtime selection for ChaCha20 SIMD: one cached function pointer per TU
+ * via the archive-wide dispatch framework.
+ */
+DAP_DISPATCH_DECLARE_RESOLVE(dap_chacha20_encrypt, void, uint8_t *, const uint8_t *, size_t,
         const uint8_t[32], const uint8_t[12], uint32_t);
 
-static chacha20_encrypt_fn s_chacha20_simd_fn = NULL;
-static pthread_once_t s_chacha20_once = PTHREAD_ONCE_INIT;
-
-static int s_has_avx512_ifma = 0;
-
-/* x86 ASM function - System V ABI only, not available on Windows */
-#if DAP_PLATFORM_X86 && !defined(_WIN32)
-extern void dap_chacha20_encrypt_asm(uint8_t *, const uint8_t *, size_t,
-        const uint8_t[32], const uint8_t[12], uint32_t);
-#endif
-
-static void s_chacha20_dispatch_init(void)
+static inline dap_chacha20_encrypt_fn_t dap_chacha20_encrypt_resolve(void)
 {
-    s_chacha20_simd_fn = NULL;
-    s_has_avx512_ifma = 0;
     dap_algo_class_t l_class = dap_algo_class_register("CHACHA20");
-    dap_cpu_arch_t l_arch = dap_cpu_arch_get_best_for(l_class);
-    (void)l_class; (void)l_arch;
+    dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
+    (void)l_class;
+
 #if DAP_PLATFORM_X86
 #if !defined(_WIN32)
-    if (l_arch >= DAP_CPU_ARCH_AVX512) {
-        s_chacha20_simd_fn = dap_chacha20_encrypt_asm;
-        dap_cpu_features_t l_feat = dap_cpu_detect_features();
-        s_has_avx512_ifma = l_feat.has_avx512_ifma && l_feat.has_avx512vl;
-    } else
+    if (__builtin_expect(arch >= DAP_CPU_ARCH_AVX512, 1))
+        return dap_chacha20_encrypt_asm;
 #endif
-    if (l_arch >= DAP_CPU_ARCH_AVX2)
-        s_chacha20_simd_fn = dap_chacha20_encrypt_avx2;
-    else if (l_arch >= DAP_CPU_ARCH_SSE2)
-        s_chacha20_simd_fn = dap_chacha20_encrypt_sse2;
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX2, dap_chacha20_encrypt_avx2);
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_SSE2, dap_chacha20_encrypt_sse2);
 #elif DAP_PLATFORM_ARM
-    if (l_arch >= DAP_CPU_ARCH_NEON)
-        s_chacha20_simd_fn = dap_chacha20_encrypt_neon;
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON, dap_chacha20_encrypt_neon);
 #endif
+
+    return s_chacha20_encrypt_ref;
+}
+
+static inline void s_chacha20_encrypt_dispatch(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
+        const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
+        const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE], uint32_t a_counter)
+{
+    if (a_len >= 256) {
+        DAP_DISPATCH_INLINE_CALL(dap_chacha20_encrypt, a_out, a_in, a_len, a_key, a_nonce, a_counter);
+        return;
+    }
+    s_chacha20_encrypt_ref(a_out, a_in, a_len, a_key, a_nonce, a_counter);
 }
 
 void dap_chacha20_encrypt(uint8_t *a_out, const uint8_t *a_in, size_t a_len,
         const uint8_t a_key[DAP_CHACHA20_KEY_SIZE],
         const uint8_t a_nonce[DAP_CHACHA20_NONCE_SIZE], uint32_t a_counter)
 {
-    pthread_once(&s_chacha20_once, s_chacha20_dispatch_init);
-
-    if (s_chacha20_simd_fn && a_len >= 256) {
-        s_chacha20_simd_fn(a_out, a_in, a_len, a_key, a_nonce, a_counter);
-        return;
-    }
-    s_chacha20_encrypt_ref(a_out, a_in, a_len, a_key, a_nonce, a_counter);
+    s_chacha20_encrypt_dispatch(a_out, a_in, a_len, a_key, a_nonce, a_counter);
 }
 
 /* ─── Poly1305 (RFC 8439 §2.5) — streaming ──────────────────────── */
@@ -161,6 +153,41 @@ extern void dap_poly1305_blocks_avx512_ifma(s_poly1305_state_t *, const uint8_t 
 #elif DAP_PLATFORM_ARM
 extern void dap_poly1305_blocks_neon(s_poly1305_state_t *, const uint8_t *, size_t);
 #endif
+
+DAP_DISPATCH_DECLARE_RESOLVE(dap_poly1305_blocks, void, s_poly1305_state_t *, const uint8_t *,
+                             size_t);
+
+static inline void s_poly1305_blocks_ref(s_poly1305_state_t *st, const uint8_t *msg, size_t nblocks)
+{
+    while (nblocks--) {
+        s_poly1305_block(st, msg, 1);
+        msg += 16;
+    }
+}
+
+static inline dap_poly1305_blocks_fn_t dap_poly1305_blocks_resolve(void)
+{
+    dap_algo_class_t l_class = dap_algo_class_register("CHACHA20");
+    dap_cpu_arch_t arch = dap_cpu_arch_get_best_for(l_class);
+    (void)l_class;
+
+#if DAP_PLATFORM_X86
+    if (__builtin_expect(arch >= DAP_CPU_ARCH_AVX512, 1)) {
+        dap_cpu_features_t l_feat = dap_cpu_detect_features();
+        if (l_feat.has_avx512_ifma && l_feat.has_avx512vl)
+            return dap_poly1305_blocks_avx512_ifma;
+    }
+    DAP_DISPATCH_RESOLVE_X86(DAP_CPU_ARCH_AVX2, dap_poly1305_blocks_avx2);
+#elif DAP_PLATFORM_ARM
+/* NEON multi-block kernel is intentionally disabled on AArch64 due known test-mismatch
+ * on existing upstream NEON implementation for this revision. */
+#if !defined(__aarch64__)
+    DAP_DISPATCH_RESOLVE_ARM(DAP_CPU_ARCH_NEON, dap_poly1305_blocks_neon);
+#endif
+#endif
+
+    return s_poly1305_blocks_ref;
+}
 
 static void s_poly1305_init(s_poly1305_state_t *st, const uint8_t a_key[32])
 {
@@ -196,16 +223,10 @@ static void s_poly1305_update(s_poly1305_state_t *st, const uint8_t *data, size_
         len  -= want;
         st->buf_used = 0;
     }
-#if DAP_PLATFORM_X86
-    pthread_once(&s_chacha20_once, s_chacha20_dispatch_init);
-    {
+    if (len >= 16) {
         size_t nblocks = len >> 4;
-        if (nblocks >= 16 && s_has_avx512_ifma) {
-            dap_poly1305_blocks_avx512_ifma(st, data, nblocks);
-            data += nblocks << 4;
-            len  &= 15;
-        } else if (nblocks >= 8) {
-            dap_poly1305_blocks_avx2(st, data, nblocks);
+        if (nblocks >= 8) {
+            DAP_DISPATCH_INLINE_CALL(dap_poly1305_blocks, st, data, nblocks);
             data += nblocks << 4;
             len  &= 15;
         } else {
@@ -216,38 +237,6 @@ static void s_poly1305_update(s_poly1305_state_t *st, const uint8_t *data, size_
             }
         }
     }
-#elif DAP_PLATFORM_ARM
-    {
-        size_t nblocks = len >> 4;
-#if defined(__aarch64__)
-        /* Multi-block NEON Poly1305 is wrong vs RFC 8439 KAT on AArch64 (Apple Clang, Linux+QEMU, …). */
-        (void)nblocks;
-        while (len >= 16) {
-            s_poly1305_block(st, data, 1);
-            data += 16;
-            len  -= 16;
-        }
-#else
-        if (nblocks >= 4) {
-            dap_poly1305_blocks_neon(st, data, nblocks);
-            data += nblocks << 4;
-            len  &= 15;
-        } else {
-            while (len >= 16) {
-                s_poly1305_block(st, data, 1);
-                data += 16;
-                len  -= 16;
-            }
-        }
-#endif
-    }
-#else
-    while (len >= 16) {
-        s_poly1305_block(st, data, 1);
-        data += 16;
-        len  -= 16;
-    }
-#endif
     if (len) {
         memcpy(st->buf, data, len);
         st->buf_used = len;

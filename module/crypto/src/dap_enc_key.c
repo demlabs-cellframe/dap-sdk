@@ -42,6 +42,7 @@
 #include "dap_enc_multisign_prepared.h"
 // #include "dap_enc_ringct20.h" // REMOVED: ringct20 module deleted
 #include "dap_enc_chipmunk.h"
+#include "dap_enc_chipmunk_ring.h"
 #include "dap_enc_mldsa.h"
 #include "dap_enc_mlkem.h"
 #include "dap_enc_chacha20_poly1305.h"
@@ -812,6 +813,70 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .del_priv_key = dap_enc_chipmunk_private_key_delete
     },
 
+    [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING]={
+        .name = "CHIPMUNK_RING",
+        .enc = NULL,
+        .dec = NULL,
+        .enc_na = NULL,
+        .dec_na = NULL,
+        .dec_na_ext = NULL,
+
+        /*
+         * Ring sign/verify need an extra ring argument and live outside
+         * the single-key sign_get/sign_verify callback contract.  Use
+         * dap_sign_create_ring / dap_sign_verify_ring instead.
+         */
+        .sign_get = NULL,
+        .sign_verify = NULL,
+
+        .gen_key_public = NULL,
+
+        .enc_out_size = NULL,
+        .dec_out_size = NULL,
+
+        .new_callback = dap_enc_chipmunk_ring_key_new_callback,
+        .new_generate_callback = dap_enc_chipmunk_ring_key_generate_callback,
+        .delete_callback = dap_enc_chipmunk_ring_key_delete,
+
+        .ser_sign = NULL,
+        .ser_priv_key = dap_enc_chipmunk_ring_write_private_key,
+        .ser_pub_key = dap_enc_chipmunk_ring_write_public_key,
+        .ser_priv_key_size = dap_enc_chipmunk_ring_ser_private_key_size,
+        .ser_pub_key_size = dap_enc_chipmunk_ring_ser_public_key_size,
+
+        .deser_sign = NULL,
+        .deser_priv_key = dap_enc_chipmunk_ring_read_private_key,
+        .deser_pub_key = dap_enc_chipmunk_ring_read_public_key,
+        .deser_sign_size = NULL,
+        .deser_pub_key_size = dap_enc_chipmunk_ring_deser_public_key_size,
+        .deser_priv_key_size = dap_enc_chipmunk_ring_deser_private_key_size,
+
+        .del_sign = NULL,
+        .del_pub_key = dap_enc_chipmunk_ring_public_key_delete,
+        .del_priv_key = dap_enc_chipmunk_ring_private_key_delete
+    },
+
+    [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING]={
+        .name = "CHIPMUNK_RING_NONINT",
+        .enc = NULL, .dec = NULL, .enc_na = NULL, .dec_na = NULL, .dec_na_ext = NULL,
+        .sign_get = NULL, .sign_verify = NULL, .gen_key_public = NULL,
+        .enc_out_size = NULL, .dec_out_size = NULL,
+        .new_callback = dap_enc_chipmunk_ring_key_new_callback,
+        .new_generate_callback = dap_enc_chipmunk_ring_key_generate_callback,
+        .delete_callback = dap_enc_chipmunk_ring_key_delete,
+        .ser_sign = NULL,
+        .ser_priv_key = dap_enc_chipmunk_ring_write_private_key,
+        .ser_pub_key = dap_enc_chipmunk_ring_write_public_key,
+        .ser_priv_key_size = dap_enc_chipmunk_ring_ser_private_key_size,
+        .ser_pub_key_size = dap_enc_chipmunk_ring_ser_public_key_size,
+        .deser_sign = NULL, .deser_sign_size = NULL,
+        .deser_pub_key_size = dap_enc_chipmunk_ring_deser_public_key_size,
+        .deser_priv_key_size = dap_enc_chipmunk_ring_deser_private_key_size,
+        .del_sign = NULL,
+        .del_pub_key = dap_enc_chipmunk_ring_public_key_delete,
+        .del_priv_key = dap_enc_chipmunk_ring_private_key_delete
+    },
+
 };
 
 /**
@@ -1096,7 +1161,11 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             break;
         default:
             if (!a_key->pub_key_data || a_key->pub_key_data_size != a_buflen) {
+                printf("DEBUG: About to realloc pub_key_data from %zu to %zu bytes\n", a_key->pub_key_data_size, a_buflen);
+                fflush(stdout);
                 void *l_new_pkey = DAP_REALLOC((byte_t*)a_key->pub_key_data, a_buflen);
+                printf("DEBUG: Realloc result: %p\n", l_new_pkey);
+                fflush(stdout);
                 if ( !l_new_pkey )
                     return log_it(L_CRITICAL, "%s", c_error_memory_alloc), -1;
                 a_key->pub_key_data = l_new_pkey;

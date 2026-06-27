@@ -15,6 +15,8 @@
 #include "dap_common.h"
 #include "dap_hash_sha3.h"
 #include "dap_hash_keccak.h"
+#include "dap_hash_shake128.h"
+#include "dap_hash_shake256.h"
 
 // ============================================================================
 // Test framework
@@ -156,6 +158,149 @@ static void test_sha3_256_is_blank(void)
 }
 
 // ============================================================================
+// SHA3-384 (FIPS 202) — exercises rate=104, output through sponge_squeeze
+// ============================================================================
+
+static void test_sha3_384_empty(void)
+{
+    /* FIPS 202 SHA3-384("") */
+    const char *expected =
+        "0c63a75b845e4f7d01107d852e4c2485c51a50aaaa94fc61995e71bbee983a2a"
+        "c3713831264adb47fb6bd1e058d5f004";
+    uint8_t out[DAP_HASH_SHA3_384_SIZE];
+    dap_hash_sha3_384(out, (const uint8_t *)"", 0);
+    TEST_ASSERT(compare_hash(out, expected, DAP_HASH_SHA3_384_SIZE) == 0,
+                "SHA3-384(empty)");
+    TEST_PASS("SHA3-384(empty)");
+}
+
+static void test_sha3_384_abc(void)
+{
+    /* FIPS 202 SHA3-384("abc") */
+    const char *expected =
+        "ec01498288516fc926459f58e2c6ad8df9b473cb0fc08c2596da7cf0e49be4b2"
+        "98d88cea927ac7f539f1edf228376d25";
+    uint8_t out[DAP_HASH_SHA3_384_SIZE];
+    dap_hash_sha3_384(out, (const uint8_t *)"abc", 3);
+    TEST_ASSERT(compare_hash(out, expected, DAP_HASH_SHA3_384_SIZE) == 0,
+                "SHA3-384(abc)");
+    TEST_PASS("SHA3-384(\"abc\")");
+}
+
+// ============================================================================
+// SHAKE128 / SHAKE256 — FIPS 202 KAT vectors
+// ============================================================================
+
+static void test_shake128_empty_oneshot(void)
+{
+    /* FIPS 202 SHAKE128(empty), first 32 output bytes:
+     *   7f 9c 2b a4 e8 8f 82 7d 61 60 45 50 76 05 85 3e
+     *   d7 3b 80 93 f6 ef bc 88 eb 1a 6e ac fa 66 ef 26
+     */
+    const char *expected =
+        "7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26";
+    uint8_t out[32];
+    dap_hash_shake128(out, sizeof(out), (const uint8_t *)"", 0);
+    TEST_ASSERT(compare_hash(out, expected, 32) == 0,
+                "SHAKE128(empty)[0..32]");
+    TEST_PASS("SHAKE128(empty) one-shot 32B");
+}
+
+static void test_shake128_abc_long_oneshot(void)
+{
+    /* FIPS 202 SHAKE128("abc"), first 32 output bytes:
+     *   58 81 09 2d d8 18 bf 5c f8 a3 dd b7 93 fb cb a7
+     *   40 97 d5 c5 26 a6 d3 5f 97 b8 33 51 94 0f 2c c8
+     */
+    const char *expected =
+        "5881092dd818bf5cf8a3ddb793fbcba74097d5c526a6d35f97b83351940f2cc8";
+    uint8_t out[32];
+    dap_hash_shake128(out, sizeof(out), (const uint8_t *)"abc", 3);
+    TEST_ASSERT(compare_hash(out, expected, 32) == 0,
+                "SHAKE128(abc)[0..32]");
+    TEST_PASS("SHAKE128(\"abc\") one-shot 32B");
+}
+
+static void test_shake128_streaming_blocks(void)
+{
+    /* Verify that streaming squeezeblocks(N=1) repeatedly is equivalent to a
+     * single squeezeblocks(N=k).  Both must also match the one-shot API.
+     * This is the streaming-correctness property of the FIPS 202 sponge.
+     */
+    uint8_t st_seq[25 * 8] __attribute__((aligned(8)));
+    uint8_t st_par[25 * 8] __attribute__((aligned(8)));
+    uint64_t *l_seq = (uint64_t *)st_seq;
+    uint64_t *l_par = (uint64_t *)st_par;
+    enum { K = 4 };
+    uint8_t out_seq[K * DAP_SHAKE128_RATE];
+    uint8_t out_par[K * DAP_SHAKE128_RATE];
+
+    dap_hash_shake128_absorb(l_seq, (const uint8_t *)"abc", 3);
+    dap_hash_shake128_absorb(l_par, (const uint8_t *)"abc", 3);
+
+    for (int i = 0; i < K; i++)
+        dap_hash_shake128_squeezeblocks(out_seq + i * DAP_SHAKE128_RATE,
+                                         1, l_seq);
+    dap_hash_shake128_squeezeblocks(out_par, K, l_par);
+
+    TEST_ASSERT(memcmp(out_seq, out_par, sizeof(out_seq)) == 0,
+                "streaming N=1*K must equal N=K");
+
+    /* Also matches one-shot. */
+    uint8_t one[K * DAP_SHAKE128_RATE];
+    dap_hash_shake128(one, sizeof(one), (const uint8_t *)"abc", 3);
+    TEST_ASSERT(memcmp(one, out_par, sizeof(one)) == 0,
+                "one-shot must equal streaming");
+    TEST_PASS("SHAKE128 streaming = one-shot");
+}
+
+static void test_shake128_partial_tail(void)
+{
+    /* Output length not a multiple of the rate must use the partial-tail
+     * branch of dap_hash_shake128 and still match a longer one-shot output
+     * for the common prefix.
+     */
+    const size_t L = DAP_SHAKE128_RATE + 7;
+    uint8_t out[L];
+    uint8_t ref[L + DAP_SHAKE128_RATE];
+    dap_hash_shake128(out, L,    (const uint8_t *)"abc", 3);
+    dap_hash_shake128(ref, sizeof(ref), (const uint8_t *)"abc", 3);
+    TEST_ASSERT(memcmp(out, ref, L) == 0,
+                "SHAKE128 partial-tail consistency");
+    TEST_PASS("SHAKE128 partial-tail length");
+}
+
+static void test_shake256_empty_oneshot(void)
+{
+    /* FIPS 202 SHAKE256(empty), first 32 output bytes:
+     *   46 b9 dd 2b 0b a8 8d 13 23 3b 3f eb 74 3e eb 24
+     *   3f cd 52 ea 62 b8 1b 82 b5 0c 27 64 6e d5 76 2f
+     */
+    const char *expected =
+        "46b9dd2b0ba88d13233b3feb743eeb243fcd52ea62b81b82b50c27646ed5762f";
+    uint8_t out[32];
+    dap_hash_shake256(out, sizeof(out), (const uint8_t *)"", 0);
+    TEST_ASSERT(compare_hash(out, expected, 32) == 0,
+                "SHAKE256(empty)[0..32]");
+    TEST_PASS("SHAKE256(empty) one-shot 32B");
+}
+
+static void test_shake256_abc_oneshot(void)
+{
+    /* FIPS 202 SHAKE256("abc"), first 32 output bytes:
+     *   48 33 66 60 13 60 a8 77 1c 68 63 08 0c c4 11 4d
+     *   8d b4 45 30 f8 f1 e1 ee 4f 94 ea 37 e7 8b 57 39
+     */
+    const char *expected =
+        "483366601360a8771c6863080cc4114d8db44530f8f1e1ee4f94ea37e78b5739";
+    uint8_t out[32];
+    dap_hash_shake256(out, sizeof(out), (const uint8_t *)"abc", 3);
+    TEST_ASSERT(compare_hash(out, expected, 32) == 0,
+                "SHAKE256(abc)[0..32]");
+    TEST_PASS("SHAKE256(\"abc\") one-shot 32B");
+}
+
+// ============================================================================
 // Edge Cases
 // ============================================================================
 
@@ -200,7 +345,21 @@ int main(int argc, char **argv)
     test_sha3_256_abc();
     test_sha3_256_448bit();
     test_sha3_256_896bit();
-    
+
+    printf("\n--- SHA3-384 Core Tests (FIPS 202) ---\n");
+    test_sha3_384_empty();
+    test_sha3_384_abc();
+
+    printf("\n--- SHAKE128 Core Tests (FIPS 202) ---\n");
+    test_shake128_empty_oneshot();
+    test_shake128_abc_long_oneshot();
+    test_shake128_streaming_blocks();
+    test_shake128_partial_tail();
+
+    printf("\n--- SHAKE256 Core Tests (FIPS 202) ---\n");
+    test_shake256_empty_oneshot();
+    test_shake256_abc_oneshot();
+
     printf("\n--- SHA3-256 Utility Tests ---\n");
     test_sha3_256_to_str();
     test_sha3_256_from_str();

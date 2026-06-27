@@ -39,11 +39,14 @@ static bool test_hvc_hasher_init() {
         return false;
     }
 
-    // Check that matrix was generated (non-zero)
+    // Check that matrix was generated (non-zero).  CR-D15.A keeps the public
+    // matrices in NTT form; zero-only output would indicate that
+    // s_hvc_sample_poly_uniform failed to produce data.
     bool l_has_nonzero = false;
     for (int i = 0; i < CHIPMUNK_HVC_WIDTH && !l_has_nonzero; i++) {
         for (int j = 0; j < CHIPMUNK_N && !l_has_nonzero; j++) {
-            if (l_hasher.matrix_a[i].coeffs[j] != 0) {
+            if (l_hasher.matrix_a_left_ntt[i][j] != 0 ||
+                l_hasher.matrix_a_right_ntt[i][j] != 0) {
                 l_has_nonzero = true;
             }
         }
@@ -215,12 +218,16 @@ static bool test_proof_generation() {
             return false;
         }
 
-        // Verify proof
-        bool l_verify_result = chipmunk_path_verify(&l_path, l_root, &l_hasher);
+        // Verify proof (CR-D15.A: path_verify now requires the leaf to pin
+        // the parity-correct side of path[0])
+        bool l_verify_result = chipmunk_path_verify(&l_path, &l_leaf_nodes[test_idx],
+                                                    l_root, &l_hasher);
         if (!l_verify_result) {
             log_it(L_ERROR, "   ❌ Proof verification failed for index %zu", test_idx);
+            chipmunk_path_free(&l_path);
             return false;
         }
+        chipmunk_path_free(&l_path);
 
         log_it(L_NOTICE, "   ✅ Proof for index %zu verified successfully", test_idx);
     }
@@ -250,14 +257,14 @@ static bool test_hots_pk_conversion() {
         return false;
     }
 
-    // Check that conversion produces valid HVC polynomial with symmetric range coefficients
-    // The conversion function uses cryptographic hashing, so we expect symmetric range [-CHIPMUNK_HVC_Q/2, CHIPMUNK_HVC_Q/2)
+    // CR-D15.A: conversion now returns coefficients in the canonical
+    // non-negative window [0, CHIPMUNK_HVC_Q) rather than the balanced
+    // window [-q/2, q/2) the old LCG-based code happened to produce.
     bool l_valid_conversion = true;
-    int32_t half_q = CHIPMUNK_HVC_Q / 2;
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        if (l_hvc_poly.coeffs[i] < -half_q || l_hvc_poly.coeffs[i] >= half_q) {
-            log_it(L_ERROR, "   ❌ Invalid HVC coefficient at index %d: %d (must be -%d <= coeff < %d)", 
-                   i, l_hvc_poly.coeffs[i], half_q, half_q);
+        if (l_hvc_poly.coeffs[i] < 0 || l_hvc_poly.coeffs[i] >= CHIPMUNK_HVC_Q) {
+            log_it(L_ERROR, "   ❌ Invalid HVC coefficient at index %d: %d (must be in [0, %d))",
+                   i, l_hvc_poly.coeffs[i], CHIPMUNK_HVC_Q);
             l_valid_conversion = false;
             break;
         }
@@ -377,12 +384,17 @@ static bool test_integration_with_hots() {
         return false;
     }
 
-    // Verify proof
-    bool l_verify_result = chipmunk_path_verify(&l_path, l_root, &l_hasher);
+    // Verify proof (CR-D15.A leaf pinning)
+    bool l_verify_result = chipmunk_path_verify(&l_path, &l_leaf_nodes[l_test_index],
+                                                l_root, &l_hasher);
     if (!l_verify_result) {
         log_it(L_ERROR, "   ❌ Failed to verify proof for HOTS key at index %zu", l_test_index);
+        chipmunk_path_free(&l_path);
+        chipmunk_tree_free(&l_tree);
         return false;
     }
+    chipmunk_path_free(&l_path);
+    chipmunk_tree_free(&l_tree);
 
     log_it(L_NOTICE, "   ✅ Successfully verified membership proof for HOTS key at index %zu", l_test_index);
     return true;
