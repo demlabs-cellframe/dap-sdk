@@ -3,7 +3,7 @@
  * Dmitry A. Gerasimov <ceo@cellframe.net>
  * DeM Labs Inc.   https://demlabs.net
  * DeM Labs Open source community https://gitlab.demlabs.net/cellframe
- * Copyright  (c) 2017-2024
+ * Copyright  (c) 2017-2026
  * All rights reserved.
 
  This file is part of DAP (Distributed Applications Platform) the open source project
@@ -22,626 +22,888 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+ * =============================================================================
+ * CR-D15.A (Round-5) rewrite of the HVC layer used by the Chipmunk Merkle
+ * tree.  The historical implementation shipped three stacked breaks:
+ *
+ *   1.  `chipmunk_hvc_hasher_init` generated the public matrix A via
+ *       `((seed[0] + i*1000 + j) * 1664525 + 1013904223) % q_hvc` — a
+ *       mundane LCG whose state depends only on the first seed byte,
+ *       making A predictable and the matrix rank trivial.
+ *
+ *   2.  `chipmunk_hvc_hash_decom_then_hash` implemented the Merkle
+ *       combiner as `h(x, y) := x + y mod q_hvc` — a *linear* function
+ *       where collisions are handed out for free (h(x, y) = h(x + t,
+ *       y − t) for every t in Rq).  Every tree built on top of this was
+ *       essentially a one-element hash chain.
+ *
+ *   3.  `chipmunk_hots_pk_to_hvc_poly` folded (v0, v1) into a SHA3-256
+ *       block and then expanded the block with a textbook LCG — again
+ *       giving an attacker sub-linear control over the leaf digest and
+ *       no domain separation against the hasher.
+ *
+ * In addition `chipmunk_path_verify` only checked the first level
+ * (the rest was labelled `TODO`), so any interior forgery passed.  The
+ * honest rewrite below replaces all four pieces with:
+ *
+ *   -  A proper Ajtai lattice hash
+ *         h(x, y) = Σ_{i=0}^{W-1} A_left[i]·D(x)[i] + A_right[i]·D(y)[i]
+ *      where D is a signed-digit base-(2·ZETA+1) = 59 decomposition that
+ *      keeps every piece in [−ZETA, +ZETA] and A_{left,right} ∈ Rq^W
+ *      are rejection-sampled from SHAKE128(seed || domain || i).
+ *   -  Polynomial arithmetic in R_q = Z_q[X]/(X^N + 1) via an explicit
+ *      schoolbook convolution with the negacyclic reduction x^N = −1
+ *      folded in.  The HVC prime 202753 is 2N-friendly (202753 mod 1024
+ *      = 1), so a future NTT swap-in is possible without touching this
+ *      file — see CR-D15.A performance follow-up.
+ *   -  A domain-separated SHAKE128 digest of the full HOTS public key
+ *      (ρ_seed ‖ v0 ‖ v1) that materialises an HVC polynomial whose
+ *      coefficients are uniform in Z_q^HVC.  This is the leaf that will
+ *      be Merkle-hashed, so its collision resistance is what ultimately
+ *      pins signer identities.
+ *   -  A full path verifier that walks every level top-to-bottom, pins
+ *      the leaf to the parity-correct side of the lowest level, and
+ *      requires strict equality with the stored root.
+ * =============================================================================
+ */
+
 #include "chipmunk_tree.h"
 #include "chipmunk.h"
-#include "dap_hash.h"
+#include "chipmunk_hash.h"
 #include "dap_common.h"
+#include "dap_hash_shake128.h"
 #include <string.h>
 #include <stdint.h>
+#include <stdatomic.h>
+#include <pthread.h>
+#include <assert.h>
 
 #define LOG_TAG "chipmunk_tree"
 
-// =================HVC POLYNOMIAL OPERATIONS=================
+// ============================================================================
+// HVC NTT (q = 202753, N = 512)
+//
+// q is NTT-friendly: q - 1 = 2^11 * 3^2 * 11, so a primitive 2N = 1024-th root
+// of unity exists in F_q.  We run a full radix-2 Cooley–Tukey NTT down to
+// butterfly length 1 and use the Dilithium-style evaluation convention
+//    â[i] = a(ω^{2·BRV(i)+1})
+// so that pointwise multiplication implements negacyclic convolution in
+// R_q = F_q[X]/(X^N + 1) without any post-mul correction.  No Montgomery
+// domain is needed — q fits comfortably in int32 and (int64_t)a·b % q costs
+// around one CPU cycle per mul on current x86 cores, which is plenty for the
+// tree depths we use (CR-D15.A tests exercise tens to hundreds of non-leaf
+// hashes, not millions).
+// ============================================================================
 
-/**
- * @brief Apply modular reduction for HVC ring
- * @param a_coeff Coefficient to reduce
- * @return Reduced coefficient in range [0, HVC_MODULUS)
- */
-static int32_t s_hvc_mod_reduce(int64_t a_coeff) {
-    int32_t l_result = (int32_t)(a_coeff % CHIPMUNK_HVC_Q);
-    if (l_result < 0) {
-        l_result += CHIPMUNK_HVC_Q;
+#define S_HVC_LOG_N           9u                // log2(N) = 9
+#define S_HVC_Q32             ((int32_t)CHIPMUNK_HVC_Q)
+
+static int32_t s_hvc_zetas[CHIPMUNK_N];         // zetas[k] = ω^{BRV_logN(k)} mod q
+static int32_t s_hvc_zetas_inv[CHIPMUNK_N];     // inverse-NTT twiddles (same BRV layout, ω^{-1})
+static int32_t s_hvc_ninv;                      // N^{-1} mod q (applied after invNTT)
+static atomic_int s_hvc_ntt_state = 0;          // 0 = uninitialised, 1 = initialising, 2 = ready
+static pthread_mutex_t s_hvc_ntt_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static inline uint32_t s_hvc_modpow_u(uint32_t a_base, uint32_t a_exp)
+{
+    uint64_t l_result = 1;
+    uint64_t l_b = a_base % (uint32_t)CHIPMUNK_HVC_Q;
+    while (a_exp) {
+        if (a_exp & 1u) {
+            l_result = (l_result * l_b) % (uint32_t)CHIPMUNK_HVC_Q;
+        }
+        l_b = (l_b * l_b) % (uint32_t)CHIPMUNK_HVC_Q;
+        a_exp >>= 1;
     }
-    return l_result;
+    return (uint32_t)l_result;
 }
 
-/**
- * @brief Add two HVC polynomials
- * @param[out] a_result Result polynomial
- * @param[in] a_left Left polynomial
- * @param[in] a_right Right polynomial
- */
-static void s_hvc_poly_add(chipmunk_hvc_poly_t *a_result, 
-                           const chipmunk_hvc_poly_t *a_left,
-                           const chipmunk_hvc_poly_t *a_right) {
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_sum = (int64_t)a_left->coeffs[i] + (int64_t)a_right->coeffs[i];
-        a_result->coeffs[i] = s_hvc_mod_reduce(l_sum);
+static inline uint32_t s_hvc_brv9(uint32_t a_x)
+{
+    uint32_t l_r = 0;
+    for (unsigned i = 0; i < S_HVC_LOG_N; ++i) {
+        l_r = (l_r << 1) | (a_x & 1u);
+        a_x >>= 1;
+    }
+    return l_r;
+}
+
+// Modular multiplication returning a value in [0, q).  Hot path — kept inline.
+static inline int32_t s_hvc_fqmul(int32_t a_a, int32_t a_b)
+{
+    int64_t l_t = (int64_t)a_a * (int64_t)a_b;
+    int32_t l_r = (int32_t)(l_t % S_HVC_Q32);
+    if (l_r < 0) l_r += S_HVC_Q32;
+    return l_r;
+}
+
+// Canonicalise a signed value into [0, q).  Only used outside the hot NTT loop.
+static inline int32_t s_hvc_freduce(int32_t a_x)
+{
+    int32_t l_r = a_x % S_HVC_Q32;
+    if (l_r < 0) l_r += S_HVC_Q32;
+    return l_r;
+}
+
+// Locate a primitive 2N-th root of unity by probing small candidates.
+// The multiplicative group has order q - 1 = 2^11 · 3^2 · 11, so the first
+// generator we try (2) already has a 2N-th-root shadow; if it happens not to
+// work for some exotic q change in the future, we gracefully fall through to
+// larger bases up to 100.
+static int s_hvc_find_omega_2n(uint32_t *a_out_omega)
+{
+    uint32_t l_exp = ((uint32_t)CHIPMUNK_HVC_Q - 1u) / (2u * (uint32_t)CHIPMUNK_N);
+    for (uint32_t l_g = 2; l_g < 100; ++l_g) {
+        uint32_t l_o = s_hvc_modpow_u(l_g, l_exp);
+        if (l_o <= 1) {
+            continue;
+        }
+        // Need omega^N == q - 1 (i.e. -1 mod q).  If so omega^{2N} = 1 and the
+        // order divides 2N; combined with omega != 1 and omega^N = -1, the
+        // order is exactly 2N.
+        if (s_hvc_modpow_u(l_o, (uint32_t)CHIPMUNK_N) == (uint32_t)CHIPMUNK_HVC_Q - 1u) {
+            *a_out_omega = l_o;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int s_hvc_ntt_init(void)
+{
+    int l_state = atomic_load_explicit(&s_hvc_ntt_state, memory_order_acquire);
+    if (l_state == 2) {
+        return 0;
+    }
+
+    pthread_mutex_lock(&s_hvc_ntt_init_mutex);
+    l_state = atomic_load_explicit(&s_hvc_ntt_state, memory_order_acquire);
+    if (l_state == 2) {
+        pthread_mutex_unlock(&s_hvc_ntt_init_mutex);
+        return 0;
+    }
+
+    uint32_t l_omega = 0;
+    if (s_hvc_find_omega_2n(&l_omega) != 0) {
+        pthread_mutex_unlock(&s_hvc_ntt_init_mutex);
+        log_it(L_CRITICAL, "HVC NTT: no primitive 2N-th root of unity found in F_q (q=%d)",
+               CHIPMUNK_HVC_Q);
+        return CHIPMUNK_ERROR_INTERNAL;
+    }
+
+    // omega^{-1} = omega^{2N - 1}
+    uint32_t l_omega_inv = s_hvc_modpow_u(l_omega, 2u * (uint32_t)CHIPMUNK_N - 1u);
+
+    for (int k = 0; k < CHIPMUNK_N; ++k) {
+        uint32_t l_idx = s_hvc_brv9((uint32_t)k);
+        s_hvc_zetas[k]     = (int32_t)s_hvc_modpow_u(l_omega,     l_idx);
+        s_hvc_zetas_inv[k] = (int32_t)s_hvc_modpow_u(l_omega_inv, l_idx);
+    }
+
+    s_hvc_ninv = (int32_t)s_hvc_modpow_u((uint32_t)CHIPMUNK_N,
+                                         (uint32_t)CHIPMUNK_HVC_Q - 2u);
+
+    atomic_store_explicit(&s_hvc_ntt_state, 2, memory_order_release);
+    pthread_mutex_unlock(&s_hvc_ntt_init_mutex);
+
+    log_it(L_DEBUG, "HVC NTT initialised: omega=%u, omega_inv=%u, N_inv=%d",
+           l_omega, l_omega_inv, s_hvc_ninv);
+    return 0;
+}
+
+// Forward NTT, in-place.  Dilithium-style layout: zetas are used with k = 1..N-1
+// (zetas[0] is the identity and unused).  Inputs must be reduced into [0, q).
+static void s_hvc_ntt(int32_t a_x[CHIPMUNK_N])
+{
+    unsigned int l_k = 0;
+    for (unsigned int l_len = CHIPMUNK_N / 2; l_len > 0; l_len >>= 1) {
+        for (unsigned int l_start = 0; l_start < (unsigned)CHIPMUNK_N; l_start += 2 * l_len) {
+            int32_t l_zeta = s_hvc_zetas[++l_k];
+            for (unsigned int j = l_start; j < l_start + l_len; ++j) {
+                int32_t l_t = s_hvc_fqmul(l_zeta, a_x[j + l_len]);
+                int32_t l_u = a_x[j];
+                int32_t l_sum = l_u + l_t;
+                int32_t l_dif = l_u - l_t;
+                if (l_sum >= S_HVC_Q32) l_sum -= S_HVC_Q32;
+                if (l_dif < 0)          l_dif += S_HVC_Q32;
+                a_x[j]         = l_sum;
+                a_x[j + l_len] = l_dif;
+            }
+        }
     }
 }
 
-/**
- * @brief Multiply two HVC polynomials (pointwise)
- * @param[out] a_result Result polynomial  
- * @param[in] a_left Left polynomial
- * @param[in] a_right Right polynomial
- */
-static void s_hvc_poly_mul(chipmunk_hvc_poly_t *a_result,
-                           const chipmunk_hvc_poly_t *a_left,
-                           const chipmunk_hvc_poly_t *a_right) {
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_product = (int64_t)a_left->coeffs[i] * (int64_t)a_right->coeffs[i];
-        a_result->coeffs[i] = s_hvc_mod_reduce(l_product);
+// Inverse NTT, in-place.  Walks the Cooley–Tukey schedule in reverse and
+// applies the N^{-1} factor at the end.  Uses s_hvc_zetas_inv[] which follows
+// the same BRV layout as s_hvc_zetas[].
+static void s_hvc_invntt(int32_t a_x[CHIPMUNK_N])
+{
+    unsigned int l_k = CHIPMUNK_N;
+    for (unsigned int l_len = 1; l_len < (unsigned)CHIPMUNK_N; l_len <<= 1) {
+        for (unsigned int l_start = 0; l_start < (unsigned)CHIPMUNK_N; l_start += 2 * l_len) {
+            int32_t l_zeta = s_hvc_zetas_inv[--l_k];
+            for (unsigned int j = l_start; j < l_start + l_len; ++j) {
+                int32_t l_u = a_x[j];
+                int32_t l_v = a_x[j + l_len];
+                int32_t l_sum = l_u + l_v;
+                int32_t l_dif = l_u - l_v;
+                if (l_sum >= S_HVC_Q32) l_sum -= S_HVC_Q32;
+                if (l_dif < 0)          l_dif += S_HVC_Q32;
+                a_x[j]         = l_sum;
+                a_x[j + l_len] = s_hvc_fqmul(l_zeta, l_dif);
+            }
+        }
+    }
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        a_x[i] = s_hvc_fqmul(a_x[i], s_hvc_ninv);
     }
 }
 
-/**
- * @brief Clear HVC polynomial (set to zero)
- * @param[in,out] a_poly Polynomial to clear
- */
-static void s_hvc_poly_clear(chipmunk_hvc_poly_t *a_poly) {
-    memset(a_poly, 0, sizeof(*a_poly));
+// ============================================================================
+// HVC polynomial helpers (R_q = Z_q[X]/(X^N+1), q = CHIPMUNK_HVC_Q = 202753)
+// ============================================================================
+
+// After CR-D15.A NTT rewrite the only remaining polynomial "multiplication"
+// happens inline in chipmunk_hvc_hash_decom_then_hash() (pointwise product in
+// the frequency domain, accumulating straight into an NTT-form accumulator).
+// Keeping a standalone wrapper around (+ the legacy schoolbook helpers) would
+// just be dead code; scalar arithmetic in the coefficient domain has no
+// callers outside that hot path and can be resurrected from git history if
+// ever needed.
+
+// Signed-digit base-(2·ZETA+1) = 59 decomposition.
+//
+// Each HVC coefficient c ∈ [0, q) is written as
+//     c ≡ Σ_{i=0}^{W-1} d_i · B^i   (mod q)
+// where B = 59 and d_i ∈ [−ZETA, +ZETA] = [−29, +29].
+//
+// The algorithm: repeatedly take d = c mod B with c := c/B; if d > ZETA set
+// d ← d − B and carry +1 into c.  With W = HVC_WIDTH = 3 pieces this covers
+// the range |c| ≤ Σ_i ZETA·B^i < B^W/2 = 59^3/2 ≈ 1.03e5; since
+// CHIPMUNK_HVC_Q/2 ≈ 1.01e5 the signed representation is injective when
+// we interpret c in the balanced representative window (|c| ≤ q/2).
+static void s_hvc_poly_decompose(const chipmunk_hvc_poly_t *a_poly,
+                                 chipmunk_hvc_poly_t a_comps[CHIPMUNK_HVC_WIDTH])
+{
+    const int32_t k_base = CHIPMUNK_TWO_ZETA_PLUS_ONE;  // 59
+    const int32_t k_half = CHIPMUNK_ZETA;               // 29
+
+    for (int j = 0; j < CHIPMUNK_N; ++j) {
+        // Balanced representative: lift c into (−q/2, +q/2].
+        int32_t l_c = a_poly->coeffs[j] % CHIPMUNK_HVC_Q;
+        if (l_c < 0) {
+            l_c += CHIPMUNK_HVC_Q;
+        }
+        if (l_c > CHIPMUNK_HVC_Q / 2) {
+            l_c -= CHIPMUNK_HVC_Q;
+        }
+
+        for (int i = 0; i < CHIPMUNK_HVC_WIDTH; ++i) {
+            int32_t l_d;
+            if (l_c >= 0) {
+                l_d = l_c % k_base;
+                l_c /= k_base;
+                if (l_d > k_half) {
+                    l_d -= k_base;
+                    l_c += 1;
+                }
+            } else {
+                int32_t l_neg = -l_c;
+                l_d = l_neg % k_base;
+                l_c = -(l_neg / k_base);
+                if (l_d > k_half) {
+                    l_d -= k_base;
+                    l_c -= 1;
+                }
+                l_d = -l_d;
+            }
+            a_comps[i].coeffs[j] = l_d;
+        }
+    }
 }
 
-/**
- * @brief Copy HVC polynomial
- * @param[out] a_dest Destination polynomial
- * @param[in] a_src Source polynomial
- */
-static void s_hvc_poly_copy(chipmunk_hvc_poly_t *a_dest, const chipmunk_hvc_poly_t *a_src) {
-    memcpy(a_dest, a_src, sizeof(*a_dest));
+// Sample a single HVC polynomial uniformly in Z_q^HVC from a SHAKE128 stream.
+// Uses rejection sampling on 23-bit words with the bias-free acceptance window
+// [0, floor(2^23 / q) · q), exactly like dap_chipmunk_hash_sample_matrix().
+static int s_hvc_sample_poly_uniform(chipmunk_hvc_poly_t *a_poly,
+                                     const uint8_t *a_seed,
+                                     size_t a_seed_len,
+                                     uint16_t a_nonce)
+{
+    if (!a_poly || !a_seed) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+
+    static const uint8_t k_domain[] = "CHIPMUNK/HVC/sample_poly/v1";
+    uint8_t l_input[sizeof(k_domain) + 64 + 2];
+    if (a_seed_len > 64) {
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
+    size_t l_input_len = 0;
+    memcpy(l_input, k_domain, sizeof(k_domain));
+    l_input_len += sizeof(k_domain);
+    memcpy(l_input + l_input_len, a_seed, a_seed_len);
+    l_input_len += a_seed_len;
+    l_input[l_input_len++] = (uint8_t)(a_nonce & 0xff);
+    l_input[l_input_len++] = (uint8_t)((a_nonce >> 8) & 0xff);
+
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
+    dap_hash_shake128_absorb(l_state, l_input, l_input_len);
+
+    uint8_t l_block[DAP_SHAKE128_RATE];
+    size_t  l_pos = DAP_SHAKE128_RATE;
+
+    const uint32_t k_mul = (0x800000u / (uint32_t)CHIPMUNK_HVC_Q) * (uint32_t)CHIPMUNK_HVC_Q;
+    const size_t   k_max_blocks = 1u << 20;
+    size_t         l_blocks = 0;
+
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        uint32_t l_val;
+        for (;;) {
+            if (l_pos + 3 > DAP_SHAKE128_RATE) {
+                if (l_blocks++ >= k_max_blocks) {
+                    log_it(L_ERROR, "HVC sample budget exhausted (nonce=%u)", a_nonce);
+                    memset(a_poly, 0, sizeof(*a_poly));
+                    return CHIPMUNK_ERROR_INTERNAL;
+                }
+                dap_hash_shake128_squeezeblocks(l_block, 1, l_state);
+                l_pos = 0;
+            }
+            l_val = (uint32_t)l_block[l_pos]
+                  | ((uint32_t)l_block[l_pos + 1] << 8)
+                  | ((uint32_t)l_block[l_pos + 2] << 16);
+            l_val &= 0x7FFFFFu;
+            l_pos += 3;
+            if (l_val < k_mul) {
+                break;
+            }
+        }
+        a_poly->coeffs[i] = (int32_t)(l_val % (uint32_t)CHIPMUNK_HVC_Q);
+    }
+
+    // Zeroise the Keccak state to avoid leaking it via stack residue.
+    memset(l_state, 0, sizeof(l_state));
+    memset(l_block, 0, sizeof(l_block));
+
+    return CHIPMUNK_ERROR_SUCCESS;
 }
 
-/**
- * @brief Check if two HVC polynomials are equal
- * @param[in] a_left Left polynomial
- * @param[in] a_right Right polynomial
- * @return true if equal, false otherwise
- */
-static bool s_hvc_poly_equal(const chipmunk_hvc_poly_t *a_left, const chipmunk_hvc_poly_t *a_right) {
-    return memcmp(a_left, a_right, sizeof(*a_left)) == 0;
-}
+// ============================================================================
+// Honest HVC hasher API
+// ============================================================================
 
-// =================HVC HASHER IMPLEMENTATION=================
-
-/**
- * @brief Initialize HVC hasher with random matrix
- */
-int chipmunk_hvc_hasher_init(chipmunk_hvc_hasher_t *a_hasher, const uint8_t a_seed[32]) {
+int chipmunk_hvc_hasher_init(chipmunk_hvc_hasher_t *a_hasher, const uint8_t a_seed[32])
+{
     if (!a_hasher || !a_seed) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hvc_hasher_init");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
 
-    // Store seed
-    memcpy(a_hasher->seed, a_seed, 32);
-
-    // Generate matrix A using seed - simplified version
-    for (int i = 0; i < CHIPMUNK_HVC_WIDTH; i++) {
-        for (int j = 0; j < CHIPMUNK_N; j++) {
-            // Simple deterministic generation
-            uint32_t l_value = ((uint32_t)a_seed[0] + i * 1000 + j) * 1664525 + 1013904223;
-            a_hasher->matrix_a[i].coeffs[j] = l_value % CHIPMUNK_HVC_Q;
-        }
+    // Lazily derive the HVC NTT twiddle tables on first use.  Idempotent,
+    // thread-safe, and cheap (a few millisecond one-shot cost).
+    int l_ntt_rc = s_hvc_ntt_init();
+    if (l_ntt_rc != 0) {
+        return l_ntt_rc;
     }
 
-    log_it(L_DEBUG, "HVC hasher initialized");
+    memset(a_hasher, 0, sizeof(*a_hasher));
+    memcpy(a_hasher->seed, a_seed, 32);
+
+    // Sample the public matrices A_left, A_right ∈ Rq^W in coefficient form
+    // and then immediately fold them through the forward NTT so the hot path
+    // skips the W forward transforms per hash call.
+    for (int i = 0; i < CHIPMUNK_HVC_WIDTH; ++i) {
+        chipmunk_hvc_poly_t l_tmp_left;
+        chipmunk_hvc_poly_t l_tmp_right;
+
+        int l_rc = s_hvc_sample_poly_uniform(&l_tmp_left, a_hasher->seed, 32,
+                                             (uint16_t)(2 * i + 0));
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            memset(a_hasher, 0, sizeof(*a_hasher));
+            return l_rc;
+        }
+        l_rc = s_hvc_sample_poly_uniform(&l_tmp_right, a_hasher->seed, 32,
+                                         (uint16_t)(2 * i + 1));
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            memset(a_hasher, 0, sizeof(*a_hasher));
+            return l_rc;
+        }
+
+        for (int j = 0; j < CHIPMUNK_N; ++j) {
+            a_hasher->matrix_a_left_ntt[i][j]  = s_hvc_freduce(l_tmp_left.coeffs[j]);
+            a_hasher->matrix_a_right_ntt[i][j] = s_hvc_freduce(l_tmp_right.coeffs[j]);
+        }
+        s_hvc_ntt(a_hasher->matrix_a_left_ntt[i]);
+        s_hvc_ntt(a_hasher->matrix_a_right_ntt[i]);
+    }
+
+    debug_if(true, L_DEBUG, "HVC hasher initialised (seed[0..4]=%02x%02x%02x%02x)",
+             a_hasher->seed[0], a_hasher->seed[1], a_hasher->seed[2], a_hasher->seed[3]);
+
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
-/**
- * @brief Decompose and hash two polynomials - simplified version
- */
 int chipmunk_hvc_hash_decom_then_hash(const chipmunk_hvc_hasher_t *a_hasher,
                                        const chipmunk_hvc_poly_t *a_left,
                                        const chipmunk_hvc_poly_t *a_right,
-                                       chipmunk_hvc_poly_t *a_result) {
+                                       chipmunk_hvc_poly_t *a_result)
+{
     if (!a_hasher || !a_left || !a_right || !a_result) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hvc_hash_decom_then_hash");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
 
-    // Simplified hash: result = left + right (coefficient-wise)
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int64_t l_sum = (int64_t)a_left->coeffs[i] + (int64_t)a_right->coeffs[i];
-        a_result->coeffs[i] = (int32_t)(l_sum % CHIPMUNK_HVC_Q);
-        if (a_result->coeffs[i] < 0) {
-            a_result->coeffs[i] += CHIPMUNK_HVC_Q;
+    // 1. Signed-digit base-(2ZETA+1) decomposition of the two inputs.
+    chipmunk_hvc_poly_t l_left_comps[CHIPMUNK_HVC_WIDTH];
+    chipmunk_hvc_poly_t l_right_comps[CHIPMUNK_HVC_WIDTH];
+    s_hvc_poly_decompose(a_left,  l_left_comps);
+    s_hvc_poly_decompose(a_right, l_right_comps);
+
+    // 2. Forward-NTT each component and accumulate the pointwise products
+    //    Σ A_left[i]·D(x)[i] + A_right[i]·D(y)[i] directly in the frequency
+    //    domain — this turns (W forward + W pointwise + W add + W forward
+    //    + W pointwise + W add + 1 invNTT) into (2W forward + 2W pointwise
+    //    + 2W add + 1 invNTT), i.e. no extra work per addend while skipping
+    //    W forward NTTs on the cached matrix.
+    int32_t l_acc_ntt[CHIPMUNK_N];
+    memset(l_acc_ntt, 0, sizeof(l_acc_ntt));
+
+    int32_t l_scratch[CHIPMUNK_N];
+
+    for (int i = 0; i < CHIPMUNK_HVC_WIDTH; ++i) {
+        // Left branch: D(x)[i] → NTT → × A_left_ntt[i] → accumulate.
+        for (int k = 0; k < CHIPMUNK_N; ++k) {
+            l_scratch[k] = s_hvc_freduce(l_left_comps[i].coeffs[k]);
         }
+        s_hvc_ntt(l_scratch);
+        for (int k = 0; k < CHIPMUNK_N; ++k) {
+            int32_t l_prod = s_hvc_fqmul(l_scratch[k], a_hasher->matrix_a_left_ntt[i][k]);
+            int32_t l_sum  = l_acc_ntt[k] + l_prod;
+            if (l_sum >= S_HVC_Q32) l_sum -= S_HVC_Q32;
+            l_acc_ntt[k] = l_sum;
+        }
+
+        // Right branch: D(y)[i] → NTT → × A_right_ntt[i] → accumulate.
+        for (int k = 0; k < CHIPMUNK_N; ++k) {
+            l_scratch[k] = s_hvc_freduce(l_right_comps[i].coeffs[k]);
+        }
+        s_hvc_ntt(l_scratch);
+        for (int k = 0; k < CHIPMUNK_N; ++k) {
+            int32_t l_prod = s_hvc_fqmul(l_scratch[k], a_hasher->matrix_a_right_ntt[i][k]);
+            int32_t l_sum  = l_acc_ntt[k] + l_prod;
+            if (l_sum >= S_HVC_Q32) l_sum -= S_HVC_Q32;
+            l_acc_ntt[k] = l_sum;
+        }
+    }
+
+    // 3. Single inverse NTT to land back in the canonical coefficient form.
+    s_hvc_invntt(l_acc_ntt);
+    for (int k = 0; k < CHIPMUNK_N; ++k) {
+        a_result->coeffs[k] = l_acc_ntt[k];
     }
 
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
-// =================TREE IMPLEMENTATION=================
+// ============================================================================
+// Merkle tree construction
+// ============================================================================
 
-/**
- * @brief Create tree with given leaf nodes
- */
-int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree, 
+int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree,
                                        const chipmunk_hvc_poly_t *a_leaf_nodes,
                                        size_t a_leaf_count,
-                                       const chipmunk_hvc_hasher_t *a_hasher) {
+                                       const chipmunk_hvc_hasher_t *a_hasher)
+{
     if (!a_tree || !a_leaf_nodes || !a_hasher) {
         log_it(L_ERROR, "NULL parameters in chipmunk_tree_new_with_leaf_nodes");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
 
-    log_it(L_DEBUG, "Creating Merkle tree with %zu leaves", a_leaf_count);
+    memset(a_tree, 0, sizeof(*a_tree));
+    // Capture the hasher seed so aggregators / verifiers can reconstruct the
+    // same hasher from the multi-signature container (chipmunk_multi_signature_t
+    // ::hvc_hasher_seed) without passing it out-of-band.
+    memcpy(a_tree->hasher_seed, a_hasher->seed, sizeof(a_tree->hasher_seed));
 
-    // Initialize tree structure fields - ВАЖНО: обнуляем указатели сначала
-    memset(a_tree, 0, sizeof(chipmunk_tree_t));
-    
-    // Calculate dynamic tree dimensions based on actual leaf count
     a_tree->height = chipmunk_tree_calculate_height(a_leaf_count);
-    
-    // Валидация высоты дерева перед вычислениями
     if (a_tree->height < CHIPMUNK_TREE_HEIGHT_MIN || a_tree->height > CHIPMUNK_TREE_HEIGHT_MAX) {
-        log_it(L_ERROR, "Invalid tree height: %u (min: %d, max: %d)", 
+        log_it(L_ERROR, "Invalid tree height %u (min %d, max %d)",
                a_tree->height, CHIPMUNK_TREE_HEIGHT_MIN, CHIPMUNK_TREE_HEIGHT_MAX);
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
-    
-    // Используем безопасные макросы вместо ручного вычисления
-    a_tree->leaf_count = CHIPMUNK_TREE_LEAF_COUNT(a_tree->height);
+
+    a_tree->leaf_count     = CHIPMUNK_TREE_LEAF_COUNT(a_tree->height);
     a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT(a_tree->height);
 
-    // Allocate memory for tree nodes - теперь указатели точно NULL
     a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
     if (!a_tree->leaf_nodes) {
-        log_it(L_ERROR, "Failed to allocate memory for leaf nodes");
         return CHIPMUNK_ERROR_MEMORY;
     }
-    
     a_tree->non_leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->non_leaf_count);
     if (!a_tree->non_leaf_nodes) {
-        log_it(L_ERROR, "Failed to allocate memory for non-leaf nodes");
         DAP_DEL_MULTY(a_tree->leaf_nodes);
         a_tree->leaf_nodes = NULL;
         return CHIPMUNK_ERROR_MEMORY;
     }
 
-    // Copy actual leaf nodes and pad with zeros for unused slots
-    size_t copy_size = a_leaf_count * sizeof(chipmunk_hvc_poly_t);
-    if (copy_size > a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t)) {
-        copy_size = a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t);
+    // Copy the supplied leaves; pad the tail with zero polynomials so the
+    // tree is always complete.
+    size_t l_copy = a_leaf_count;
+    if (l_copy > a_tree->leaf_count) {
+        l_copy = a_tree->leaf_count;
     }
-    memcpy(a_tree->leaf_nodes, a_leaf_nodes, copy_size);
-    
-    // Zero out unused leaf slots for complete binary tree
-    if (a_leaf_count < a_tree->leaf_count) {
-        size_t unused_start = a_leaf_count;
-        size_t unused_count = a_tree->leaf_count - a_leaf_count;
-        memset(&a_tree->leaf_nodes[unused_start], 0, unused_count * sizeof(chipmunk_hvc_poly_t));
-    }
+    memcpy(a_tree->leaf_nodes, a_leaf_nodes, l_copy * sizeof(chipmunk_hvc_poly_t));
 
-    // Build tree bottom-up using dynamic algorithm
-    // This is a complete binary tree construction for any leaf count
-    
-    // Create a working array combining leaf and non-leaf nodes for easier indexing
-    // In a complete binary tree with n leaves, we have (n-1) internal nodes
-    // Total nodes = leaves + internal = n + (n-1) = 2n-1
-    
-    size_t total_nodes = a_tree->leaf_count * 2 - 1;
-    chipmunk_hvc_poly_t *all_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, total_nodes);
-    if (!all_nodes) {
-        log_it(L_ERROR, "Failed to allocate working array for tree construction");
+    // Build internal layers bottom-up using a heap-indexed working array of
+    // size 2·leaf_count − 1 (leaves placed in [leaf_start_index … end)).
+    size_t l_total = a_tree->leaf_count * 2 - 1;
+    chipmunk_hvc_poly_t *l_all = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, l_total);
+    if (!l_all) {
+        DAP_DEL_MULTY(a_tree->leaf_nodes);
+        DAP_DEL_MULTY(a_tree->non_leaf_nodes);
+        a_tree->leaf_nodes = NULL;
+        a_tree->non_leaf_nodes = NULL;
         return CHIPMUNK_ERROR_MEMORY;
     }
-    
-    // Copy leaf nodes to the end of working array (heap indexing style)
-    size_t leaf_start_index = a_tree->leaf_count - 1;
-    for (size_t i = 0; i < a_tree->leaf_count; i++) {
-        memcpy(&all_nodes[leaf_start_index + i], &a_tree->leaf_nodes[i], sizeof(chipmunk_hvc_poly_t));
-    }
-    
-    // Build internal nodes bottom-up
-    for (int i = (int)leaf_start_index - 1; i >= 0; i--) {
-        size_t left_child = 2 * i + 1;
-        size_t right_child = 2 * i + 2;
-        
-        if (left_child < total_nodes && right_child < total_nodes) {
-            int l_ret = chipmunk_hvc_hash_decom_then_hash(a_hasher,
-                                                           &all_nodes[left_child],
-                                                           &all_nodes[right_child],
-                                                           &all_nodes[i]);
-            if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-                DAP_DEL_MULTY(all_nodes);
-                return l_ret;
-            }
+
+    size_t l_leaf_start = a_tree->leaf_count - 1;
+    memcpy(&l_all[l_leaf_start], a_tree->leaf_nodes,
+           a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t));
+
+    for (ssize_t i = (ssize_t)l_leaf_start - 1; i >= 0; --i) {
+        size_t l_lc = 2 * (size_t)i + 1;
+        size_t l_rc = 2 * (size_t)i + 2;
+        int l_rc_hash = chipmunk_hvc_hash_decom_then_hash(a_hasher, &l_all[l_lc],
+                                                          &l_all[l_rc], &l_all[i]);
+        if (l_rc_hash != CHIPMUNK_ERROR_SUCCESS) {
+            DAP_DEL_MULTY(l_all);
+            chipmunk_tree_free(a_tree);
+            return l_rc_hash;
         }
     }
-    
-    // Copy internal nodes to non_leaf_nodes array
-    for (size_t i = 0; i < a_tree->non_leaf_count; i++) {
-        memcpy(&a_tree->non_leaf_nodes[i], &all_nodes[i], sizeof(chipmunk_hvc_poly_t));
-    }
-    
-    DAP_DEL_MULTY(all_nodes);
 
-    log_it(L_DEBUG, "Merkle tree created successfully");
+    memcpy(a_tree->non_leaf_nodes, l_all,
+           a_tree->non_leaf_count * sizeof(chipmunk_hvc_poly_t));
+    DAP_DEL_MULTY(l_all);
+
+    log_it(L_DEBUG, "Merkle tree built: height=%u, leaves=%zu, non_leaf=%zu",
+           a_tree->height, a_tree->leaf_count, a_tree->non_leaf_count);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
-/**
- * @brief Initialize empty tree
- */
-int chipmunk_tree_init(chipmunk_tree_t *a_tree, const chipmunk_hvc_hasher_t *a_hasher) {
+int chipmunk_tree_init(chipmunk_tree_t *a_tree, const chipmunk_hvc_hasher_t *a_hasher)
+{
     if (!a_tree || !a_hasher) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_tree_init");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-
-    // Initialize tree structure with default parameters
-    a_tree->height = CHIPMUNK_TREE_HEIGHT_DEFAULT;
-    a_tree->leaf_count = CHIPMUNK_TREE_LEAF_COUNT_DEFAULT;
-    a_tree->non_leaf_count = CHIPMUNK_TREE_NON_LEAF_COUNT_DEFAULT;
-    
-    // Allocate memory for tree nodes
-    a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
-    a_tree->non_leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->non_leaf_count);
-    
-    if (!a_tree->leaf_nodes || !a_tree->non_leaf_nodes) {
-        log_it(L_ERROR, "Failed to allocate memory for tree nodes");
-        if (a_tree->leaf_nodes) DAP_DEL_MULTY(a_tree->leaf_nodes);
-        if (a_tree->non_leaf_nodes) DAP_DEL_MULTY(a_tree->non_leaf_nodes);
+    chipmunk_hvc_poly_t *l_zero = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t,
+                                                  CHIPMUNK_TREE_LEAF_COUNT_DEFAULT);
+    if (!l_zero) {
         return CHIPMUNK_ERROR_MEMORY;
     }
-
-    return chipmunk_tree_new_with_leaf_nodes(a_tree, a_tree->leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, a_hasher);
+    int l_rc = chipmunk_tree_new_with_leaf_nodes(a_tree, l_zero,
+                                                 CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, a_hasher);
+    DAP_DEL_MULTY(l_zero);
+    return l_rc;
 }
 
-/**
- * @brief Get root of the tree
- */
-const chipmunk_hvc_poly_t* chipmunk_tree_root(const chipmunk_tree_t *a_tree) {
-    if (!a_tree) {
-        log_it(L_ERROR, "NULL tree in chipmunk_tree_root");
+int chipmunk_tree_init_with_size(chipmunk_tree_t *a_tree,
+                                  size_t a_participant_count,
+                                  const chipmunk_hvc_hasher_t *a_hasher)
+{
+    if (!a_tree || !a_hasher || !chipmunk_tree_validate_participant_count(a_participant_count)) {
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
+    uint32_t l_height = chipmunk_tree_calculate_height(a_participant_count);
+    size_t l_leaf_count = CHIPMUNK_TREE_LEAF_COUNT(l_height);
+    chipmunk_hvc_poly_t *l_zero = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, l_leaf_count);
+    if (!l_zero) {
+        return CHIPMUNK_ERROR_MEMORY;
+    }
+    int l_rc = chipmunk_tree_new_with_leaf_nodes(a_tree, l_zero, l_leaf_count, a_hasher);
+    DAP_DEL_MULTY(l_zero);
+    return l_rc;
+}
+
+const chipmunk_hvc_poly_t* chipmunk_tree_root(const chipmunk_tree_t *a_tree)
+{
+    if (!a_tree || !a_tree->non_leaf_nodes) {
         return NULL;
     }
     return &a_tree->non_leaf_nodes[0];
 }
 
-/**
- * @brief Generate membership proof - ПОЛНЫЙ ПЕРЕПИСАТЬ по оригинальному Rust алгоритму
- */
-int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipmunk_path_t *a_path) {
+// ============================================================================
+// Proof generation and verification
+// ============================================================================
+
+int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index,
+                            chipmunk_path_t *a_path)
+{
     if (!a_tree || !a_path || a_index >= a_tree->leaf_count) {
-        log_it(L_ERROR, "Invalid parameters in chipmunk_tree_gen_proof: tree=%p, path=%p, index=%zu, leaf_count=%zu", 
-               a_tree, a_path, a_index, a_tree ? a_tree->leaf_count : 0);
+        log_it(L_ERROR, "Invalid parameters in chipmunk_tree_gen_proof (index=%zu)", a_index);
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
 
-    log_it(L_DEBUG, "Generating proof for index %zu in tree with %zu leaves", a_index, a_tree->leaf_count);
-
-    // Original Rust: path.len() = `tree height - 1`, the missing elements being the root
-    size_t path_length = a_tree->height - 1;
-    a_path->nodes = DAP_NEW_Z_COUNT(chipmunk_path_node_t, path_length);
+    size_t l_path_length = a_tree->height - 1;
+    a_path->nodes = DAP_NEW_Z_COUNT(chipmunk_path_node_t, l_path_length);
     if (!a_path->nodes) {
-        log_it(L_ERROR, "Failed to allocate memory for path nodes");
         return CHIPMUNK_ERROR_MEMORY;
     }
-    
-    a_path->path_length = path_length;
-    a_path->index = a_index;
+    a_path->path_length = l_path_length;
+    a_path->index       = a_index;
 
-    // Temporary array to store nodes from bottom to top (будем реверсировать в конце)
-    chipmunk_path_node_t temp_nodes[CHIPMUNK_TREE_HEIGHT_MAX - 1]; // используем максимум для статического размера
-    size_t temp_count = 0;
+    // Level 0: the (leaf_index, sibling_leaf) pair.
+    size_t l_pair_base = (a_index % 2 == 0) ? a_index : (a_index - 1);
+    memcpy(&a_path->nodes[0].left,  &a_tree->leaf_nodes[l_pair_base],
+           sizeof(chipmunk_hvc_poly_t));
+    memcpy(&a_path->nodes[0].right, &a_tree->leaf_nodes[l_pair_base + 1],
+           sizeof(chipmunk_hvc_poly_t));
 
-    // Original Rust: Step 1 - Add leaf level
-    // if index % 2 == 0 { nodes.push((leaf_nodes[index], leaf_nodes[index + 1])) }
-    // else { nodes.push((leaf_nodes[index - 1], leaf_nodes[index])) }
-    if (a_index % 2 == 0) {
-        // Четный индекс: (leaf[index], leaf[index+1])
-        memcpy(&temp_nodes[temp_count].left, &a_tree->leaf_nodes[a_index], sizeof(chipmunk_hvc_poly_t));
-        memcpy(&temp_nodes[temp_count].right, &a_tree->leaf_nodes[a_index + 1], sizeof(chipmunk_hvc_poly_t));
-    } else {
-        // Нечетный индекс: (leaf[index-1], leaf[index])
-        memcpy(&temp_nodes[temp_count].left, &a_tree->leaf_nodes[a_index - 1], sizeof(chipmunk_hvc_poly_t));
-        memcpy(&temp_nodes[temp_count].right, &a_tree->leaf_nodes[a_index], sizeof(chipmunk_hvc_poly_t));
-    }
-    temp_count++;
-    
-    log_it(L_DEBUG, "Added leaf level: index %zu, using leaves %zu,%zu", 
-           a_index, a_index % 2 == 0 ? a_index : a_index - 1, a_index % 2 == 0 ? a_index + 1 : a_index);
+    // Levels 1..H-2: sibling pairs among non-leaf nodes.
+    // We walk up by halving heap indices; `l_node` is the current node at the
+    // previous level (starts at the parent of the leaf pair).
+    size_t l_leaf_heap_idx = (1UL << (a_tree->height - 1)) - 1 + a_index;
+    size_t l_node = (l_leaf_heap_idx - 1) >> 1;
 
-    // Original Rust: convert_index_to_last_level(index, HEIGHT)
-    // index + (1 << (tree_height - 1)) - 1
-    size_t leaf_index_in_tree = a_index + ((1 << (a_tree->height - 1)) - 1);
-    
-    // Original Rust: let mut current_node = parent_index(leaf_index_in_tree).unwrap();
-    // parent_index(index) = (index - 1) >> 1
-    size_t current_node = (leaf_index_in_tree - 1) >> 1;
-    
-    log_it(L_DEBUG, "Starting from non-leaf node %zu (parent of leaf_in_tree %zu)", current_node, leaf_index_in_tree);
-
-    // Original Rust: Iterate from the bottom layer after the leaves, to the top
-    // while current_node != 0
-    int loop_counter = 0; // ЗАЩИТА ОТ ЗАЦИКЛИВАНИЯ
-    int max_iterations = a_tree->height + 5; // динамическая высота + запас
-    while (current_node != 0 && loop_counter < max_iterations) {
-        loop_counter++;
-        
-        log_it(L_DEBUG, "Loop iteration %d, current_node=%zu", loop_counter, current_node);
-        
-        // Original Rust: sibling_index(current_node)
-        size_t sibling_node;
-        if (current_node % 2 == 1) { // is_left_child: index % 2 == 1
-            sibling_node = current_node + 1;
+    for (size_t level = 1; level < l_path_length; ++level) {
+        size_t l_sibling = (l_node % 2 == 1) ? (l_node + 1) : (l_node - 1);
+        if (l_sibling >= a_tree->non_leaf_count) {
+            log_it(L_ERROR, "Sibling heap index %zu OOB in gen_proof", l_sibling);
+            DAP_DEL_MULTY(a_path->nodes);
+            a_path->nodes = NULL;
+            return CHIPMUNK_ERROR_INTERNAL;
+        }
+        if (l_node % 2 == 1) {
+            memcpy(&a_path->nodes[level].left,  &a_tree->non_leaf_nodes[l_node],
+                   sizeof(chipmunk_hvc_poly_t));
+            memcpy(&a_path->nodes[level].right, &a_tree->non_leaf_nodes[l_sibling],
+                   sizeof(chipmunk_hvc_poly_t));
         } else {
-            sibling_node = current_node - 1;
+            memcpy(&a_path->nodes[level].left,  &a_tree->non_leaf_nodes[l_sibling],
+                   sizeof(chipmunk_hvc_poly_t));
+            memcpy(&a_path->nodes[level].right, &a_tree->non_leaf_nodes[l_node],
+                   sizeof(chipmunk_hvc_poly_t));
         }
-        
-        // Проверяем bounds
-        if (sibling_node >= a_tree->non_leaf_count) {
-            log_it(L_ERROR, "Sibling node index %zu out of bounds (max %zu)", sibling_node, a_tree->non_leaf_count);
-            break;
-        }
-        
-        // Original Rust: Add nodes in correct order
-        if (current_node % 2 == 1) { // left child
-            memcpy(&temp_nodes[temp_count].left, &a_tree->non_leaf_nodes[current_node], sizeof(chipmunk_hvc_poly_t));
-            memcpy(&temp_nodes[temp_count].right, &a_tree->non_leaf_nodes[sibling_node], sizeof(chipmunk_hvc_poly_t));
-        } else { // right child
-            memcpy(&temp_nodes[temp_count].left, &a_tree->non_leaf_nodes[sibling_node], sizeof(chipmunk_hvc_poly_t));
-            memcpy(&temp_nodes[temp_count].right, &a_tree->non_leaf_nodes[current_node], sizeof(chipmunk_hvc_poly_t));
-        }
-        temp_count++;
-        
-        log_it(L_DEBUG, "Level %zu: current_node=%zu, sibling=%zu, is_left=%s", 
-               temp_count - 1, current_node, sibling_node, (current_node % 2 == 1) ? "true" : "false");
-        
-        // Original Rust: current_node = parent_index(current_node).unwrap();
-        current_node = (current_node - 1) >> 1;
-        
-        if (temp_count >= path_length) break;
+        l_node = (l_node - 1) >> 1;
     }
 
-    // Original Rust: nodes.reverse(); // we want to make path from root to bottom
-    for (size_t i = 0; i < temp_count; i++) {
-        size_t reverse_index = temp_count - 1 - i;
-        memcpy(&a_path->nodes[i], &temp_nodes[reverse_index], sizeof(chipmunk_path_node_t));
-    }
-
-    log_it(L_DEBUG, "Generated proof with %zu levels (reversed from bottom-to-top to top-to-bottom)", temp_count);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
-/**
- * @brief Verify membership proof - fixed version based on Rust original
- */
-bool chipmunk_path_verify(const chipmunk_path_t *a_path, 
+static inline bool s_poly_eq(const chipmunk_hvc_poly_t *a, const chipmunk_hvc_poly_t *b)
+{
+    return memcmp(a, b, sizeof(*a)) == 0;
+}
+
+bool chipmunk_path_verify(const chipmunk_path_t *a_path,
+                          const chipmunk_hvc_poly_t *a_leaf,
                           const chipmunk_hvc_poly_t *a_root,
-                          const chipmunk_hvc_hasher_t *a_hasher) {
-    if (!a_path || !a_root || !a_hasher) {
-        log_it(L_ERROR, "NULL parameters in chipmunk_path_verify");
+                          const chipmunk_hvc_hasher_t *a_hasher)
+{
+    if (!a_path || !a_leaf || !a_root || !a_hasher || !a_path->nodes ||
+        a_path->path_length == 0) {
+        log_it(L_ERROR, "NULL / empty parameters in chipmunk_path_verify");
         return false;
     }
 
-    log_it(L_DEBUG, "Verifying path for index %zu with path_length %zu", a_path->index, a_path->path_length);
-
-    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: Используем логику из оригинального Rust кода
-    // Original Rust: check that the first two elements hashes to root
-    // if hasher.decom_then_hash(&self.nodes[0].0, &self.nodes[0].1) != *root
-    
-    chipmunk_hvc_poly_t l_computed_root;
-    int l_ret = chipmunk_hvc_hash_decom_then_hash(a_hasher,
-                                                   &a_path->nodes[0].left,
-                                                   &a_path->nodes[0].right,
-                                                   &l_computed_root);
-    if (l_ret != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to compute root hash, error: %d", l_ret);
+    // 1. Pin the leaf: it must occupy the parity-correct side of path[0].
+    //    If the leaf index is even the leaf sits on the left; if odd, on the
+    //    right.  Without this check an attacker could swap the claimed leaf
+    //    for any other polynomial, because the upper levels of the path are
+    //    only a function of path[0]'s *hash*, not of the individual sides.
+    const chipmunk_hvc_poly_t *l_claimed_leaf_side =
+        (a_path->index % 2 == 0) ? &a_path->nodes[0].left : &a_path->nodes[0].right;
+    if (!s_poly_eq(a_leaf, l_claimed_leaf_side)) {
+        log_it(L_ERROR, "chipmunk_path_verify: leaf does not occupy parity-correct side of path[0]");
         return false;
     }
 
-    // Debug: Compare first few coefficients
-    log_it(L_DEBUG, "Expected root first 4 coeffs: %d %d %d %d", 
-           a_root->coeffs[0], a_root->coeffs[1], a_root->coeffs[2], a_root->coeffs[3]);
-    log_it(L_DEBUG, "Computed root first 4 coeffs: %d %d %d %d", 
-           l_computed_root.coeffs[0], l_computed_root.coeffs[1], l_computed_root.coeffs[2], l_computed_root.coeffs[3]);
+    // 2. Walk bottom-up, recomputing the hash at every level.
+    chipmunk_hvc_poly_t l_cur;
+    int l_rc = chipmunk_hvc_hash_decom_then_hash(a_hasher, &a_path->nodes[0].left,
+                                                  &a_path->nodes[0].right, &l_cur);
+    if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "chipmunk_path_verify: level-0 hash failed (%d)", l_rc);
+        return false;
+    }
 
-    // Проверяем, что хеш первых двух элементов равен root
-    if (memcmp(&l_computed_root, a_root, sizeof(chipmunk_hvc_poly_t)) != 0) {
-        log_it(L_ERROR, "Root hash mismatch - first two elements don't hash to root");
-        
-        // Additional debug: check if any coefficients match
-        int matching_coeffs = 0;
-        for (int i = 0; i < CHIPMUNK_N; i++) {
-            if (l_computed_root.coeffs[i] == a_root->coeffs[i]) {
-                matching_coeffs++;
-            }
+    // 3. For every higher level, the freshly-computed hash must sit on the
+    //    parity-correct side of the next pair.
+    for (size_t level = 1; level < a_path->path_length; ++level) {
+        // The bit at position `level` of `index` tells us whether `l_cur`
+        // belongs on the left or right of path[level]: bit = 0 → left.
+        bool l_right = ((a_path->index >> level) & 1UL) != 0;
+        const chipmunk_hvc_poly_t *l_expected_slot =
+            l_right ? &a_path->nodes[level].right : &a_path->nodes[level].left;
+        if (!s_poly_eq(&l_cur, l_expected_slot)) {
+            log_it(L_ERROR, "chipmunk_path_verify: level-%zu inner hash mismatch", level);
+            return false;
         }
-        log_it(L_DEBUG, "Matching coefficients: %d/%d", matching_coeffs, CHIPMUNK_N);
-        
+        l_rc = chipmunk_hvc_hash_decom_then_hash(a_hasher, &a_path->nodes[level].left,
+                                                  &a_path->nodes[level].right, &l_cur);
+        if (l_rc != CHIPMUNK_ERROR_SUCCESS) {
+            log_it(L_ERROR, "chipmunk_path_verify: level-%zu hash failed (%d)", level, l_rc);
+            return false;
+        }
+    }
+
+    // 4. The top-level hash must equal the stored root.
+    if (!s_poly_eq(&l_cur, a_root)) {
+        log_it(L_ERROR, "chipmunk_path_verify: root mismatch");
         return false;
     }
 
-    // TODO: Добавить полную верификацию цепочки path как в оригинальном Rust коде
-    // Original Rust проверяет всю цепочку:
-    // for i in 1..nodes.len(): hasher.decom_then_hash(&left, &right) == parent_node
-    // Для сейчас принимаем, если первый уровень корректен
-    
-    log_it(L_DEBUG, "Path verification successful - root hash matches");
     return true;
 }
 
-// =================UTILITY FUNCTIONS=================
-
-/**
- * @brief Convert HOTS public key to HVC polynomial - КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ
- * @details В оригинальном Rust коде используется pk.digest(&pp.hots_hasher), 
- * что означает ХЕШИРОВАНИЕ public key, а не простую конвертацию!
- */
-int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk, 
-                                  chipmunk_hvc_poly_t *a_hvc_poly) {
+// ============================================================================
+// HOTS pk → HVC leaf digest (honest SHAKE-based projection)
+// ============================================================================
+//
+// The leaf that enters the Merkle tree must be a *collision-resistant*
+// function of the signer's public HOTS pair (v0, v1).  We use SHAKE128 with
+// a dedicated domain tag to absorb the canonical (ρ-seed, v0, v1) encoding
+// and then squeeze a uniform HVC polynomial via the same rejection-sampling
+// routine used to derive A.  This gives the "digest" semantics the aggregate
+// verifier relies on in s_verify_pk_leaf_binding().
+//
+// Binary encoding used for the HOTS pk:
+//   • 32-byte rho_seed (little-endian as-is; HOTS public matrix A is derived
+//     from it; even though the current primitive bakes in a global A, the
+//     rho_seed is still part of the signer identity, so we commit to it);
+//   • 2 × CHIPMUNK_N 32-bit little-endian canonical residues of v0 then v1.
+//
+// This encoding is schema-compatible with chipmunk_public_key_to_bytes() up
+// to endianness of the coefficient field; we pin the endianness explicitly
+// here to avoid relying on host-byte-order assumptions in the rest of the
+// codebase.
+int chipmunk_hots_pk_to_hvc_poly(const chipmunk_public_key_t *a_hots_pk,
+                                  chipmunk_hvc_poly_t *a_hvc_poly)
+{
     if (!a_hots_pk || !a_hvc_poly) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_pk_to_hvc_poly");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
 
-    // **КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ**: В оригинальном Rust коде используется:
-    // hasher.hash_separate_inputs(&self.v0.decompose_r(), &self.v1.decompose_r())
-    // Это означает, что HOTS public key должен быть ХЕШИРОВАН!
-    
-    // Создаем временный HOTS hasher для digest
-    // TODO: В идеале нужно передавать hasher как параметр, но пока используем стандартный seed
-    uint8_t hots_hasher_seed[32] = {0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
-                                    0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
-                                    0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42,
-                                    0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42};
-    
-    // Комбинируем v0 и v1 для хеширования
-    uint8_t combined_input[CHIPMUNK_N * 2 * sizeof(int32_t)];
-    size_t offset = 0;
-    
-    // Копируем v0
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int32_t normalized_coeff = a_hots_pk->v0.coeffs[i] % CHIPMUNK_HVC_Q;
-        if (normalized_coeff < 0) normalized_coeff += CHIPMUNK_HVC_Q;
-        memcpy(&combined_input[offset], &normalized_coeff, sizeof(int32_t));
-        offset += sizeof(int32_t);
+    // Serialise (rho_seed || v0 || v1) in a canonical little-endian form.
+    const size_t k_coeff_bytes = 4;
+    const size_t k_body_len = 32 + 2 * CHIPMUNK_N * k_coeff_bytes;
+    uint8_t *l_body = DAP_NEW_Z_COUNT(uint8_t, k_body_len);
+    if (!l_body) {
+        return CHIPMUNK_ERROR_MEMORY;
     }
-    
-    // Копируем v1
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        int32_t normalized_coeff = a_hots_pk->v1.coeffs[i] % CHIPMUNK_HVC_Q;
-        if (normalized_coeff < 0) normalized_coeff += CHIPMUNK_HVC_Q;
-        memcpy(&combined_input[offset], &normalized_coeff, sizeof(int32_t));
-        offset += sizeof(int32_t);
-    }
-    
-    // Хешируем комбинированные данные в HVC полином
-    dap_hash_sha3_256_t hash_result;
-    dap_hash_sha3_256(combined_input, offset, &hash_result);
-    
-    // Используем hash для генерации HVC polynomial коэффициентов
-    uint32_t seed = *((uint32_t*)hash_result.raw);
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Генерируем псевдослучайные коэффициенты из hash
-        seed = seed * 1103515245U + 12345U; // LCG
-        a_hvc_poly->coeffs[i] = (int32_t)(seed % CHIPMUNK_HVC_Q);
-        if (a_hvc_poly->coeffs[i] > CHIPMUNK_HVC_Q/2) {
-            a_hvc_poly->coeffs[i] -= CHIPMUNK_HVC_Q;
-        }
-    }
-    
-    log_it(L_DEBUG, "Converted HOTS pk to HVC poly via digest (first 4 coeffs: %d %d %d %d)", 
-           a_hvc_poly->coeffs[0], a_hvc_poly->coeffs[1], a_hvc_poly->coeffs[2], a_hvc_poly->coeffs[3]);
 
+    memcpy(l_body, a_hots_pk->rho_seed, 32);
+    uint8_t *l_p = l_body + 32;
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        int32_t l_c = a_hots_pk->v0.coeffs[i];
+        int32_t l_r = l_c % CHIPMUNK_Q;
+        if (l_r < 0) l_r += CHIPMUNK_Q;
+        l_p[0] = (uint8_t)(l_r      );
+        l_p[1] = (uint8_t)(l_r >>  8);
+        l_p[2] = (uint8_t)(l_r >> 16);
+        l_p[3] = (uint8_t)(l_r >> 24);
+        l_p += 4;
+    }
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        int32_t l_c = a_hots_pk->v1.coeffs[i];
+        int32_t l_r = l_c % CHIPMUNK_Q;
+        if (l_r < 0) l_r += CHIPMUNK_Q;
+        l_p[0] = (uint8_t)(l_r      );
+        l_p[1] = (uint8_t)(l_r >>  8);
+        l_p[2] = (uint8_t)(l_r >> 16);
+        l_p[3] = (uint8_t)(l_r >> 24);
+        l_p += 4;
+    }
+
+    // Absorb (domain ‖ body) and squeeze a uniform HVC polynomial.
+    static const uint8_t k_domain[] = "CHIPMUNK/HOTS-pk-to-HVC-leaf/v1";
+    const size_t k_input_len = sizeof(k_domain) + k_body_len;
+    uint8_t *l_input = DAP_NEW_Z_COUNT(uint8_t, k_input_len);
+    if (!l_input) {
+        DAP_DEL_MULTY(l_body);
+        return CHIPMUNK_ERROR_MEMORY;
+    }
+    memcpy(l_input, k_domain, sizeof(k_domain));
+    memcpy(l_input + sizeof(k_domain), l_body, k_body_len);
+
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
+    dap_hash_shake128_absorb(l_state, l_input, k_input_len);
+
+    DAP_DEL_MULTY(l_body);
+    DAP_DEL_MULTY(l_input);
+
+    uint8_t l_block[DAP_SHAKE128_RATE];
+    size_t  l_pos = DAP_SHAKE128_RATE;
+
+    const uint32_t k_mul = (0x800000u / (uint32_t)CHIPMUNK_HVC_Q) * (uint32_t)CHIPMUNK_HVC_Q;
+    const size_t   k_max_blocks = 1u << 20;
+    size_t         l_blocks = 0;
+
+    for (int i = 0; i < CHIPMUNK_N; ++i) {
+        uint32_t l_val;
+        for (;;) {
+            if (l_pos + 3 > DAP_SHAKE128_RATE) {
+                if (l_blocks++ >= k_max_blocks) {
+                    log_it(L_ERROR, "HVC leaf digest squeeze budget exhausted");
+                    memset(a_hvc_poly, 0, sizeof(*a_hvc_poly));
+                    memset(l_state, 0, sizeof(l_state));
+                    return CHIPMUNK_ERROR_INTERNAL;
+                }
+                dap_hash_shake128_squeezeblocks(l_block, 1, l_state);
+                l_pos = 0;
+            }
+            l_val = (uint32_t)l_block[l_pos]
+                  | ((uint32_t)l_block[l_pos + 1] << 8)
+                  | ((uint32_t)l_block[l_pos + 2] << 16);
+            l_val &= 0x7FFFFFu;
+            l_pos += 3;
+            if (l_val < k_mul) {
+                break;
+            }
+        }
+        a_hvc_poly->coeffs[i] = (int32_t)(l_val % (uint32_t)CHIPMUNK_HVC_Q);
+    }
+
+    memset(l_state, 0, sizeof(l_state));
+    memset(l_block, 0, sizeof(l_block));
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
-/**
- * @brief Clear tree structure
- */
-void chipmunk_tree_clear(chipmunk_tree_t *a_tree) {
+// ============================================================================
+// Tree lifecycle / statistics
+// ============================================================================
+
+void chipmunk_tree_clear(chipmunk_tree_t *a_tree)
+{
     if (a_tree) {
-        memset(a_tree, 0, sizeof(*a_tree));
-    }
-}
-
-/**
- * @brief Clear path structure
- */
-void chipmunk_path_clear(chipmunk_path_t *a_path) {
-    if (a_path) {
-        memset(a_path, 0, sizeof(*a_path));
-    }
-}
-
-// =================LARGE-SCALE SUPPORT FUNCTIONS=================
-
-/**
- * @brief Calculate required tree height for given participant count
- */
-uint32_t chipmunk_tree_calculate_height(size_t a_participant_count) {
-    // Дополнительная валидация входных данных
-    if (a_participant_count == 0) {
-        log_it(L_WARNING, "Zero participant count, using minimum height");
-        return CHIPMUNK_TREE_HEIGHT_MIN;
-    }
-    
-    if (a_participant_count <= 1) {
-        return CHIPMUNK_TREE_HEIGHT_MIN;
-    }
-    
-    if (a_participant_count > CHIPMUNK_TREE_MAX_PARTICIPANTS) {
-        log_it(L_ERROR, "Participant count %zu exceeds maximum %d", 
-               a_participant_count, CHIPMUNK_TREE_MAX_PARTICIPANTS);
-        return CHIPMUNK_TREE_HEIGHT_MAX;  // Возвращаем максимум вместо ошибки
-    }
-    
-    // Безопасное вычисление высоты
-    uint32_t height = CHIPMUNK_TREE_HEIGHT_MIN;
-    size_t capacity = 1UL << (height - 1);
-    
-    // Дополнительная проверка переполнения в цикле
-    while (capacity < a_participant_count && height < CHIPMUNK_TREE_HEIGHT_MAX) {
-        height++;
-        if (height - 1 >= 63) {  // Защита от переполнения битового сдвига
-            log_it(L_ERROR, "Height calculation would cause overflow, using maximum height");
-            return CHIPMUNK_TREE_HEIGHT_MAX;
+        if (a_tree->leaf_nodes) {
+            memset(a_tree->leaf_nodes, 0,
+                   a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t));
         }
-        capacity = 1UL << (height - 1);
+        if (a_tree->non_leaf_nodes) {
+            memset(a_tree->non_leaf_nodes, 0,
+                   a_tree->non_leaf_count * sizeof(chipmunk_hvc_poly_t));
+        }
     }
-    
-    return height;
 }
 
-/**
- * @brief Validate participant count
- */
-bool chipmunk_tree_validate_participant_count(size_t a_participant_count) {
-    if (a_participant_count == 0 || a_participant_count > CHIPMUNK_TREE_MAX_PARTICIPANTS) {
-        return false;
+void chipmunk_path_clear(chipmunk_path_t *a_path)
+{
+    if (a_path && a_path->nodes) {
+        memset(a_path->nodes, 0, a_path->path_length * sizeof(chipmunk_path_node_t));
     }
-    
-    // Check if we can calculate a valid height
-    uint32_t required_height = chipmunk_tree_calculate_height(a_participant_count);
-    return required_height <= CHIPMUNK_TREE_HEIGHT_MAX;
 }
 
-/**
- * @brief Get tree statistics for monitoring large-scale operations
- */
-int chipmunk_tree_get_stats(const chipmunk_tree_t *a_tree,
-                             uint32_t *a_height,
-                             size_t *a_leaf_count, 
-                             size_t *a_memory_usage) {
-    if (!a_tree) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    if (a_height) {
-        *a_height = a_tree->height;
-    }
-    
-    if (a_leaf_count) {
-        *a_leaf_count = a_tree->leaf_count;
-    }
-    
-    if (a_memory_usage) {
-        size_t tree_memory = 0;
-        tree_memory += a_tree->leaf_count * sizeof(chipmunk_hvc_poly_t);
-        tree_memory += a_tree->non_leaf_count * sizeof(chipmunk_hvc_poly_t);
-        tree_memory += sizeof(chipmunk_tree_t);
-        *a_memory_usage = tree_memory;
-    }
-    
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Free tree resources (dynamic allocation support)
- */
-void chipmunk_tree_free(chipmunk_tree_t *a_tree) {
+void chipmunk_tree_free(chipmunk_tree_t *a_tree)
+{
     if (!a_tree) {
         return;
     }
-    
-    // Free dynamically allocated memory
     if (a_tree->leaf_nodes) {
         DAP_DEL_MULTY(a_tree->leaf_nodes);
         a_tree->leaf_nodes = NULL;
@@ -650,75 +912,64 @@ void chipmunk_tree_free(chipmunk_tree_t *a_tree) {
         DAP_DEL_MULTY(a_tree->non_leaf_nodes);
         a_tree->non_leaf_nodes = NULL;
     }
-    
-    // Clear structure
-    chipmunk_tree_clear(a_tree);
+    memset(a_tree, 0, sizeof(*a_tree));
 }
 
-/**
- * @brief Initialize tree with specific participant count
- */
-int chipmunk_tree_init_with_size(chipmunk_tree_t *a_tree, 
-                                  size_t a_participant_count,
-                                  const chipmunk_hvc_hasher_t *a_hasher) {
-    if (!a_tree || !a_hasher) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    if (!chipmunk_tree_validate_participant_count(a_participant_count)) {
-        log_it(L_ERROR, "Invalid participant count: %zu", a_participant_count);
-        return CHIPMUNK_ERROR_INVALID_PARAM;
-    }
-    
-    // Calculate required tree dimensions
-    uint32_t height = chipmunk_tree_calculate_height(a_participant_count);
-    size_t leaf_count = 1UL << (height - 1);
-    size_t non_leaf_count = leaf_count - 1;
-    
-    // Initialize tree structure
-    a_tree->height = height;
-    a_tree->leaf_count = leaf_count;
-    a_tree->non_leaf_count = non_leaf_count;
-    
-    // Check for reasonable allocation size limits
-    if (a_tree->leaf_count > (SIZE_MAX / sizeof(chipmunk_hvc_poly_t)) ||
-        a_tree->non_leaf_count > (SIZE_MAX / sizeof(chipmunk_hvc_poly_t))) {
-        log_it(L_ERROR, "Tree size too large for allocation: leaf_count=%zu, non_leaf_count=%zu", 
-               a_tree->leaf_count, a_tree->non_leaf_count);
-        return -1;
-    }
-    
-    // Allocate memory for tree nodes
-    a_tree->leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->leaf_count);
-    a_tree->non_leaf_nodes = DAP_NEW_Z_COUNT(chipmunk_hvc_poly_t, a_tree->non_leaf_count);
-    
-    if (!a_tree->leaf_nodes || !a_tree->non_leaf_nodes) {
-        log_it(L_ERROR, "Failed to allocate memory for tree nodes");
-        if (a_tree->leaf_nodes) DAP_DEL_MULTY(a_tree->leaf_nodes);
-        if (a_tree->non_leaf_nodes) DAP_DEL_MULTY(a_tree->non_leaf_nodes);
-        return CHIPMUNK_ERROR_MEMORY;
-    }
-    
-    log_it(L_INFO, "Initialized tree for %zu participants (height=%u, capacity=%zu)", 
-           a_participant_count, a_tree->height, a_tree->leaf_count);
-    
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Free path resources
- */
-void chipmunk_path_free(chipmunk_path_t *a_path) {
+void chipmunk_path_free(chipmunk_path_t *a_path)
+{
     if (!a_path) {
         return;
     }
-    
-    // Free dynamically allocated memory
     if (a_path->nodes) {
         DAP_DEL_MULTY(a_path->nodes);
         a_path->nodes = NULL;
     }
-    
-    // Clear structure
-    chipmunk_path_clear(a_path);
-} 
+    a_path->path_length = 0;
+    a_path->index       = 0;
+}
+
+uint32_t chipmunk_tree_calculate_height(size_t a_participant_count)
+{
+    if (a_participant_count == 0) {
+        return CHIPMUNK_TREE_HEIGHT_MIN;
+    }
+    if (a_participant_count <= 1) {
+        return CHIPMUNK_TREE_HEIGHT_MIN;
+    }
+    if (a_participant_count > CHIPMUNK_TREE_MAX_PARTICIPANTS) {
+        return CHIPMUNK_TREE_HEIGHT_MAX;
+    }
+
+    uint32_t l_h = CHIPMUNK_TREE_HEIGHT_MIN;
+    size_t   l_cap = 1UL << (l_h - 1);
+    while (l_cap < a_participant_count && l_h < CHIPMUNK_TREE_HEIGHT_MAX) {
+        ++l_h;
+        l_cap = 1UL << (l_h - 1);
+    }
+    return l_h;
+}
+
+bool chipmunk_tree_validate_participant_count(size_t a_participant_count)
+{
+    if (a_participant_count == 0 || a_participant_count > CHIPMUNK_TREE_MAX_PARTICIPANTS) {
+        return false;
+    }
+    return chipmunk_tree_calculate_height(a_participant_count) <= CHIPMUNK_TREE_HEIGHT_MAX;
+}
+
+int chipmunk_tree_get_stats(const chipmunk_tree_t *a_tree,
+                             uint32_t *a_height,
+                             size_t *a_leaf_count,
+                             size_t *a_memory_usage)
+{
+    if (!a_tree) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    if (a_height)       *a_height       = a_tree->height;
+    if (a_leaf_count)   *a_leaf_count   = a_tree->leaf_count;
+    if (a_memory_usage) *a_memory_usage = sizeof(*a_tree)
+                                        + a_tree->leaf_count     * sizeof(chipmunk_hvc_poly_t)
+                                        + a_tree->non_leaf_count * sizeof(chipmunk_hvc_poly_t);
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+

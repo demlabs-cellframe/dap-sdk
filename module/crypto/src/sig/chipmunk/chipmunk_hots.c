@@ -35,16 +35,20 @@
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
 #include "dap_hash.h"
+#include "dap_hash_shake256.h"
 #include "dap_common.h"
 #include "dap_rand.h"
+#include "dap_memwipe.h"
 
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 
 #define LOG_TAG "chipmunk_hots"
 
-// Debug control flag
+// Детальное логирование для Chipmunk HOTS модуля
 static bool s_debug_more = false;
+
 
 /**
  * @brief Enable/disable debug output for HOTS module
@@ -62,56 +66,61 @@ void chipmunk_hots_set_debug(bool a_enable) {
 int chipmunk_hots_setup(chipmunk_hots_params_t *a_params) {
     if (!a_params) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_setup");
-        return -1;
+        return -EINVAL;
     }
     
     debug_if(s_debug_more, L_INFO, "🔧 HOTS setup: Generating public parameters...");
-    
-    // Use a fixed seed for reproducible test results
-    uint32_t l_base_seed = 0x12345678;
-    
-    // Generate GAMMA random polynomials for public parameters
+
+    // CR-D5 fix: the previous implementation zero-initialised only 4 of the 36
+    // seed bytes and left the middle 28 bytes as whatever was on the stack —
+    // a textbook reading-uninitialised-memory bug that made `chipmunk_hots_setup`
+    // silently non-deterministic across invocations (and, critically, across
+    // signers inside chipmunk_aggregate_signatures).  The aggregate HOTS
+    // identity cannot hold when distinct signers use different public matrices
+    // A, so every multi-signature verification would fail.  Use a fixed, fully
+    // initialised domain-separation seed.
+
+    // Generate GAMMA random polynomials for public parameters using SHAKE256 XOF
+    // (replaces non-cryptographic LCG for proper security)
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         debug_if(s_debug_more, L_INFO, "  Generating parameter a[%d]...", i);
-        
-        // Generate random polynomial in time domain
-        uint8_t l_param_seed[36];
+
+        /* Derive deterministic seed from fixed base + parameter index */
+        uint8_t l_param_seed[40];
+        memset(l_param_seed, 0, sizeof(l_param_seed));
+        uint32_t l_base_seed = 0x12345678;
         memcpy(l_param_seed, &l_base_seed, 4);
-        uint32_t l_param_nonce = 0x10000000 + i;  // Unique nonce for each parameter
-        memcpy(l_param_seed + 32, &l_param_nonce, 4);
-        
-        // Generate random polynomial in time domain
-        dap_hash_sha3_256_t l_hash_out;
-        dap_hash_sha3_256(l_param_seed, 36, &l_hash_out);
-        
-        uint8_t l_hash[32];
-        memcpy(l_hash, &l_hash_out, 32);
-        
-        // Use hash as seed for ChaCha20-like generator
-        uint32_t l_state[8];
-        for (int j = 0; j < 8; j++) {
-            l_state[j] = ((uint32_t)l_hash[j*4]) | 
-                         ((uint32_t)l_hash[j*4+1] << 8) |
-                         ((uint32_t)l_hash[j*4+2] << 16) |
-                         ((uint32_t)l_hash[j*4+3] << 24);
-        }
-        
-        // Generate polynomial coefficients in time domain
+        memcpy(l_param_seed + 4, &i, 4);
+        memcpy(l_param_seed + 8, "hots-matrix-a-v2", 16);
+
+        /* Use SHAKE256 XOF to generate polynomial coefficients */
+        uint64_t l_state[25];
+        memset(l_state, 0, sizeof(l_state));
+        dap_hash_shake256_absorb(l_state, l_param_seed, 24);
+        size_t l_needed = CHIPMUNK_N * sizeof(int32_t);
+        size_t l_nblocks = (l_needed + 135) / 136;
+        uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_nblocks * 136);
+        if (!l_buf) return -ENOMEM;
+        dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
+
+        /* Copy bytes as coefficients */
         for (int j = 0; j < CHIPMUNK_N; j++) {
-            // Simple linear congruential generator for determinism
-            l_state[j % 8] = l_state[j % 8] * 1664525 + 1013904223;
-            a_params->a[i].coeffs[j] = l_state[j % 8] % CHIPMUNK_Q;
+            int32_t l_coeff;
+            memcpy(&l_coeff, l_buf + j * sizeof(int32_t), sizeof(int32_t));
+            a_params->a[i].coeffs[j] = l_coeff % (int32_t)CHIPMUNK_Q;
+            if (a_params->a[i].coeffs[j] < 0) a_params->a[i].coeffs[j] += CHIPMUNK_Q;
         }
-        
+        DAP_DELETE(l_buf);
+
         debug_if(s_debug_more, L_INFO, "    a[%d] time domain first coeffs: %d %d %d %d", i,
-                 a_params->a[i].coeffs[0], a_params->a[i].coeffs[1], 
+                 a_params->a[i].coeffs[0], a_params->a[i].coeffs[1],
                  a_params->a[i].coeffs[2], a_params->a[i].coeffs[3]);
-        
-        // Convert to NTT domain as in original Rust code
+
+        // Convert to NTT domain
         chipmunk_ntt(a_params->a[i].coeffs);
-        
+
         debug_if(s_debug_more, L_INFO, "    a[%d] NTT domain first coeffs: %d %d %d %d", i,
-                 a_params->a[i].coeffs[0], a_params->a[i].coeffs[1], 
+                 a_params->a[i].coeffs[0], a_params->a[i].coeffs[1],
                  a_params->a[i].coeffs[2], a_params->a[i].coeffs[3]);
     }
     
@@ -134,7 +143,7 @@ int chipmunk_hots_keygen(const uint8_t a_seed[32], uint32_t a_counter,
                         chipmunk_hots_pk_t *a_pk, chipmunk_hots_sk_t *a_sk) {
     if (!a_seed || !a_params || !a_pk || !a_sk) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_keygen");
-        return -1;
+        return -EINVAL;
     }
     
     debug_if(s_debug_more, L_DEBUG, "🔍 HOTS keygen: Starting key generation");
@@ -267,7 +276,7 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
                       size_t a_message_len, chipmunk_hots_signature_t *a_signature) {
     if (!a_sk || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_sign");
-        return -1;
+        return -EINVAL;
     }
     
     debug_if(s_debug_more, L_DEBUG, "🔍 HOTS sign: Starting signature generation...");
@@ -276,7 +285,7 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
     chipmunk_poly_t l_hm;
     if (chipmunk_poly_from_hash(&l_hm, a_message, a_message_len) != 0) {
         log_it(L_ERROR, "Failed to hash message in chipmunk_hots_sign");
-        return -1;
+        return -ENOMEM;
     }
     
     // Convert to NTT domain for operations
@@ -294,25 +303,72 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
         debug_if(s_debug_more, L_DEBUG, "  s1[%d] first coeffs: %d %d %d %d", i,
                a_sk->s1[i].coeffs[0], a_sk->s1[i].coeffs[1], a_sk->s1[i].coeffs[2], a_sk->s1[i].coeffs[3]);
         
-        // s0[i] * H(m) - ALL in NTT domain (s0[i] is already in NTT, H(m) in NTT)
+        /* CR-7.2 Blinding: protect s0*H(m) and s1 addition from timing side-channel.
+         *
+         * Instead of computing σ = s0*H(m) + s1 directly (which exposes s0 and s1
+         * to power/timing analysis through NTT coefficient reduction), we:
+         *
+         *   1. Generate random mask r
+         *   2. Compute s0_blinded = s0 + r  (randomized input to multiplication)
+         *   3. Compute term1 = s0_blinded * H(m)  (randomized input)
+         *   4. Compute term2 = r * H(m)  (randomized input)
+         *   5. s0*H(m) = term1 - term2  (blinded result)
+         *   6. Similarly blind s1 addition: s1_blinded = s1 + r2, subtract r2
+         *
+         * Both multiplications now have randomized inputs, protecting the secret
+         * key from side-channel analysis. */
+        chipmunk_poly_t l_r, l_s0_blinded, l_term1, l_term2;
+        chipmunk_poly_t l_r2, l_s1_blinded;
+
+        /* Generate random mask r for s0*H(m) blinding */
+        uint8_t l_r_seed[32];
+        dap_random_bytes(l_r_seed, 32);
+        if (chipmunk_poly_from_hash(&l_r, l_r_seed, 32) != 0) return -EINVAL;
+        chipmunk_ntt(l_r.coeffs);
+
+        /* s0_blinded = s0 + r */
+        chipmunk_poly_add_ntt(&l_s0_blinded, &a_sk->s0[i], &l_r);
+
+        /* term1 = s0_blinded * H(m) (randomized input) */
+        chipmunk_poly_mul_ntt(&l_term1, &l_s0_blinded, &l_hm);
+
+        /* term2 = r * H(m) (randomized input) */
+        chipmunk_poly_mul_ntt(&l_term2, &l_r, &l_hm);
+
+        /* s0*H(m) = term1 - term2 */
+        chipmunk_poly_t l_s0_hm;
+        chipmunk_poly_sub_ntt(&l_s0_hm, &l_term1, &l_term2);
+
+        /* Generate random mask r2 for s1 blinding */
+        uint8_t l_r2_seed[32];
+        dap_random_bytes(l_r2_seed, 32);
+        if (chipmunk_poly_from_hash(&l_r2, l_r2_seed, 32) != 0) return -EINVAL;
+        chipmunk_ntt(l_r2.coeffs);
+
+        /* s1_blinded = s1 + r2 */
+        chipmunk_poly_add_ntt(&l_s1_blinded, &a_sk->s1[i], &l_r2);
+
+        /* σ[i] = s0*H(m) + s1 = (s0*H(m) + s1_blinded) - r2 */
         chipmunk_poly_t l_temp;
-        chipmunk_poly_mul_ntt(&l_temp, &a_sk->s0[i], &l_hm);
-        debug_if(s_debug_more, L_DEBUG, "  s0[%d] * H(m) first coeffs: %d %d %d %d", i,
-               l_temp.coeffs[0], l_temp.coeffs[1], l_temp.coeffs[2], l_temp.coeffs[3]);
-        
-        // σ[i] = s0[i] * H(m) + s1[i] - ALL in NTT domain (s1[i] is already in NTT)
-        chipmunk_poly_add_ntt(&l_temp, &l_temp, &a_sk->s1[i]);
-        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT) first coeffs: %d %d %d %d", i,
+        chipmunk_poly_add_ntt(&l_temp, &l_s0_hm, &l_s1_blinded);
+        chipmunk_poly_sub_ntt(&l_temp, &l_temp, &l_r2);
+
+        debug_if(s_debug_more, L_DEBUG, "  σ[%d] (NTT, blinded) first coeffs: %d %d %d %d", i,
                l_temp.coeffs[0], l_temp.coeffs[1], l_temp.coeffs[2], l_temp.coeffs[3]);
         
         // Convert result to time domain for storage
-        // Original Rust: *s = (&(s0 * hm + s1)).into(); - .into() means converting to time domain!
         a_signature->sigma[i] = l_temp;
         chipmunk_invntt(a_signature->sigma[i].coeffs);
         
         debug_if(s_debug_more, L_DEBUG, "  σ[%d] (time) first coeffs: %d %d %d %d", i,
                a_signature->sigma[i].coeffs[0], a_signature->sigma[i].coeffs[1], 
                a_signature->sigma[i].coeffs[2], a_signature->sigma[i].coeffs[3]);
+
+        /* Wipe local copies that held blinded secret key material */
+        dap_memwipe(&l_s0_blinded, sizeof(l_s0_blinded));
+        dap_memwipe(&l_s1_blinded, sizeof(l_s1_blinded));
+        dap_memwipe(l_r_seed, sizeof(l_r_seed));
+        dap_memwipe(l_r2_seed, sizeof(l_r2_seed));
     }
     
     debug_if(s_debug_more, L_DEBUG, "✓ HOTS signature generation completed");
@@ -334,7 +390,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
                         const chipmunk_hots_params_t *a_params) {
     if (!a_pk || !a_message || !a_signature || !a_params) {
         log_it(L_ERROR, "NULL parameters in chipmunk_hots_verify");
-        return -1;
+        return -EINVAL;
     }
     
     debug_if(s_debug_more, L_DEBUG, "🔍 HOTS verify: Starting detailed verification...");
@@ -343,7 +399,7 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     chipmunk_poly_t l_hm;
     if (chipmunk_poly_from_hash(&l_hm, a_message, a_message_len) != 0) {
         log_it(L_ERROR, "Failed to hash message to polynomial");
-        return -1;
+        return -ENOMEM;
     }
     
     debug_if(s_debug_more, L_DEBUG, "✓ Message hashed to polynomial");
@@ -481,6 +537,6 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
         }
         debug_if(s_debug_more, L_DEBUG, "  Total differing coefficients: %d/%d", l_diff_count, CHIPMUNK_N);
         
-        return -1;  // Standard C convention: negative for failure/invalid signature
+        return -EINVAL;  // Standard C convention: negative for failure/invalid signature
     }
 } 

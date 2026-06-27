@@ -473,14 +473,22 @@ dap_keccak_squeeze_{{SRATE}}_{{FUNC_SUFFIX}}:
 {{#for i in LANES}}
     {{INSN_LOAD_1X}}   ({{STRIDE_1X}}*{{i}})(%rbp), {{REG_1X_PREFIX}}{{i}}
 {{/for}}
+/*
+ * FIPS 202 sponge contract: extract first, then permute, so the state is
+ * positioned at the next output block ready for streaming callers.  See
+ * dap_keccak_ref.c::KECCAK_SQUEEZE_REF_IMPL for the full rationale.  The
+ * previous "permute → extract" loop double-permuted the state (one in
+ * absorb + one before the first extract) and emitted block N+1 instead of
+ * block N — provably wrong against the SHAKE128("") FIPS 202 KAT.
+ */
 .Lsqueeze_loop_{{SRATE}}:
     testq   %rbx, %rbx
     jz      .Lsqueeze_done_{{SRATE}}
-    call    .Lpermute_f1600
 {{#for w in SWORDS}}
     {{INSN_STORE_1X}}   {{REG_1X_PREFIX}}{{w}}, {{w|math|$*8}}(%r12)
 {{/for}}
     addq    ${{SRATE}}, %r12
+    call    .Lpermute_f1600
     decq    %rbx
     jmp     .Lsqueeze_loop_{{SRATE}}
 .Lsqueeze_done_{{SRATE}}:

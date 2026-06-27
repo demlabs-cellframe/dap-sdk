@@ -1,6 +1,22 @@
 /**
  * @file spx_fips202.h
- * @brief SPHINCS+ FIPS202 compatibility - redirects to native DAP Keccak
+ * @brief Vanilla SPHINCS+ FIPS202 shim — LEGACY (master byte-for-byte compat).
+ *
+ * Vanilla SPHINCS+ artefacts shipped on master were derived with the
+ * pre-FIPS-202 keccak squeeze convention (permute → extract per block).
+ * To keep on-wire compatibility with deployed signatures we route the
+ * non-incremental SHAKE primitives through *_legacy* wrappers that
+ * reproduce that exact byte stream on top of the now-FIPS-conformant
+ * shared keccak permutation.
+ *
+ * The incremental API in spx_fips202.c is kept as-is: it manipulates the
+ * sponge state byte-by-byte (extract_bytes + permute on rate exhaustion),
+ * which matches FIPS 202 and was already produced by the same code path
+ * in master.
+ *
+ * NOTE for SLH-DSA (FIPS 205): when NIST SPHINCS+ is added, route it via a
+ * parallel canonical shim (e.g. spx_fips202_nist.h) so the two parameter
+ * families stay isolated.  Do NOT extend this header for SLH-DSA.
  */
 
 #ifndef SPX_FIPS202_H
@@ -34,7 +50,8 @@ static inline void shake128_absorb(uint64_t *s, const uint8_t *input, size_t inl
 #define shake128_squeezeblocks SPX_NAMESPACE(shake128_squeezeblocks)
 static inline void shake128_squeezeblocks(uint8_t *output, size_t nblocks, uint64_t *s)
 {
-    dap_hash_shake128_squeezeblocks(output, nblocks, s);
+    /* legacy permute → extract — see header banner */
+    dap_hash_shake128_legacy_squeezeblocks(output, nblocks, s);
 }
 
 #define shake128_inc_init SPX_NAMESPACE(shake128_inc_init)
@@ -55,7 +72,8 @@ void shake128_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc);
 #define shake128 SPX_NAMESPACE(shake128)
 static inline void shake128(uint8_t *output, size_t outlen, const uint8_t *input, size_t inlen)
 {
-    dap_hash_shake128(output, outlen, input, inlen);
+    /* legacy permute → extract — see header banner */
+    dap_hash_shake128_legacy(output, outlen, input, inlen);
 }
 
 // =============================================================================
@@ -71,7 +89,8 @@ static inline void shake256_absorb(uint64_t *s, const uint8_t *input, size_t inl
 #define shake256_squeezeblocks SPX_NAMESPACE(shake256_squeezeblocks)
 static inline void shake256_squeezeblocks(uint8_t *output, size_t nblocks, uint64_t *s)
 {
-    dap_hash_shake256_squeezeblocks(output, nblocks, s);
+    /* legacy permute → extract — see header banner */
+    dap_hash_shake256_legacy_squeezeblocks(output, nblocks, s);
 }
 
 #define shake256_inc_init SPX_NAMESPACE(shake256_inc_init)
@@ -92,7 +111,8 @@ void shake256_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc);
 #define shake256 SPX_NAMESPACE(shake256)
 static inline void shake256(uint8_t *output, size_t outlen, const uint8_t *input, size_t inlen)
 {
-    dap_hash_shake256(output, outlen, input, inlen);
+    /* legacy permute → extract — see header banner */
+    dap_hash_shake256_legacy(output, outlen, input, inlen);
 }
 
 // =============================================================================

@@ -33,7 +33,9 @@ void dap_enc_sig_shipovnik_key_new_generate(dap_enc_key_t * key, UNUSED_ARG cons
         shipovnik_generate_keys(key->priv_key_data, key->pub_key_data);
     } else {
         uint32_t l_seed_buf[N_shipovnik] = { 0 };
-        dap_hash_shake256((uint8_t *)l_seed_buf, sizeof(l_seed_buf), (const uint8_t *)seed, seed_size);
+        /* Vanilla shipovnik keypair seed derivation: legacy SHAKE squeeze
+         * preserves master byte-for-byte compatibility. */
+        dap_hash_shake256_legacy((uint8_t *)l_seed_buf, sizeof(l_seed_buf), (const uint8_t *)seed, seed_size);
         shipovnik_generate_keys_with_seed(key->priv_key_data, key->pub_key_data, l_seed_buf);
     }
 }

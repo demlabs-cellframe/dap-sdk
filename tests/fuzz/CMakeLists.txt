@@ -24,12 +24,6 @@ foreach(FUZZ_SRC ${FUZZ_TARGETS})
     target_link_libraries(${FUZZ_NAME} PRIVATE dap_sdk)
     target_link_options(${FUZZ_NAME} PRIVATE -fsanitize=fuzzer,address)
 
-    target_include_directories(${FUZZ_NAME} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../module/core/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../module/crypto/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../module/crypto/src/sym/chacha20
-    )
-
     set_target_properties(${FUZZ_NAME} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
     )

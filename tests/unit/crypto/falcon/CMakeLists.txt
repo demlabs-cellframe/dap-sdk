@@ -9,8 +9,7 @@ add_executable(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
-    dap_crypto
-    dap_core
+    dap_sdk
     dap_test
 )
 
@@ -19,19 +18,14 @@ if(UNIX AND NOT ANDROID)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/test
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../fixtures
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/falcon
 )
 
 dap_mock_autowrap(${PROJECT_NAME})
 
-add_test(
-    NAME ${PROJECT_NAME}
-    COMMAND ${PROJECT_NAME}
+add_test(NAME ${PROJECT_NAME}
+         COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    LABELS "unit;crypto;falcon"
+    TIMEOUT ${DAP_T120}
 )
-
-set_tests_properties(${PROJECT_NAME} PROPERTIES TIMEOUT ${DAP_T300})
-

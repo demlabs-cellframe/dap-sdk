@@ -92,16 +92,6 @@ int chipmunk_poly_pointwise(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_
 int chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
 
 /**
- * @brief Decompose polynomial into power-of-2 base representation
- * 
- * @param r1 Output polynomial for higher bits  
- * @param r0 Output polynomial for lower bits
- * @param a Input polynomial to decompose
- * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
- */
-int chipmunk_poly_decompose(chipmunk_poly_t *r1, chipmunk_poly_t *r0, const chipmunk_poly_t *a);
-
-/**
  * @brief Generate challenge polynomial from hash
  * 
  * @param c Output challenge polynomial
@@ -175,6 +165,8 @@ void chipmunk_poly_mul_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_p
  */
 void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
 
+void chipmunk_poly_sub_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
+
 /**
  * @brief Check if two polynomials are equal
  * 
@@ -183,16 +175,6 @@ void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_p
  * @return true if equal, false otherwise
  */
 bool chipmunk_poly_equal(const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
-
-/**
- * @brief Generate random polynomial in time domain
- * @param a_poly Output polynomial
- * @param a_seed Seed for generation
- * @param a_seed_len Seed length
- * @param a_modulus Modulus for coefficients
- * @return 0 on success, negative on error
- */
-int dap_random_poly_time_domain(chipmunk_poly_t *a_poly, const uint8_t *a_seed, size_t a_seed_len, int a_modulus);
 
 /**
  * @brief Generate uniform polynomial with coefficients in range [-bound, bound]

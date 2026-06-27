@@ -43,6 +43,10 @@ enum dap_sign_type_enum {
     SIG_TYPE_ECDSA = 0x105,
     SIG_TYPE_SHIPOVNIK = 0x0106,
     SIG_TYPE_CHIPMUNK = 0x0107, /// @brief Chipmunk signature
+    SIG_TYPE_CHIPMUNK_MRING = 0x0108, /// @brief Chipmunk MRNG log-N threshold ring signature
+    SIG_TYPE_CHIPMUNK_LRS = 0x010A, /// @brief Chipmunk LRS 1-of-N linkable ring signature
+    SIG_TYPE_LOTRS = 0x010B, /// @brief LoTRS lattice-based threshold ring signature
+    SIG_TYPE_CHIPMUNK_RING = 0x010C, /// @brief Chipmunk Ring non-interactive lattice ring signature
     SIG_TYPE_NTRU_PRIME = 0x0113,
     SIG_TYPE_ML_DSA = 0x0201,
 #ifdef DAP_PQLR
@@ -147,12 +151,33 @@ typedef struct dap_sign
 typedef struct dap_pkey dap_pkey_t;
 typedef dap_pkey_t *(*dap_sign_callback_t)(const uint8_t *);
 
+typedef dap_sign_t *(*dap_sign_ring_create_callback_t)(
+    dap_enc_key_t **a_signer_keys,
+    size_t a_signers_count,
+    uint32_t a_required_signers,
+    const void *a_data,
+    size_t a_data_size,
+    dap_enc_key_t **a_ring_keys,
+    size_t a_ring_size);
+
+typedef int (*dap_sign_ring_verify_callback_t)(
+    dap_sign_t *a_sign,
+    const void *a_data,
+    size_t a_data_size,
+    dap_enc_key_t **a_ring_keys,
+    size_t a_ring_size);
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 
 int dap_sign_init(uint8_t a_sign_hash_type_default);
+
+int dap_sign_register_ring_callbacks(
+    dap_sign_type_t a_type,
+    dap_sign_ring_create_callback_t a_create,
+    dap_sign_ring_verify_callback_t a_verify);
 
 uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign);
 int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size, dap_pkey_t *a_pkey);
@@ -187,6 +212,18 @@ DAP_STATIC_INLINE int dap_sign_verify_all(dap_sign_t *a_sign, const size_t a_sig
     return dap_sign_verify_size(a_sign, a_sign_size_max) ? -2 : dap_sign_verify(a_sign, a_data, a_data_size) ? -1 : 0;
 }
 
+/**
+ * @brief Verify ring signature with provided ring public keys
+ * @param a_sign Ring signature to verify
+ * @param a_data Data that was signed
+ * @param a_data_size Size of data
+ * @param a_ring_keys Array of public keys forming the ring
+ * @param a_ring_size Number of keys in the ring
+ * @return 0 if signature is valid, negative value otherwise
+ */
+int dap_sign_verify_ring(dap_sign_t *a_sign, const void *a_data, size_t a_data_size,
+                        dap_enc_key_t **a_ring_keys, size_t a_ring_size);
+
 const char *dap_sign_get_str_recommended_types();
 
 // Create sign of data hash with key provided algorythm of signing and hashing (independently)
@@ -196,6 +233,33 @@ DAP_STATIC_INLINE dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void *
 {
     return dap_sign_create_with_hash_type(a_key, a_data, a_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
 }
+
+/**
+ * @brief Create an anonymous linkable threshold ring signature (Chipmunk Ring).
+ *
+ * Each signer key MUST already be present in @p a_ring_keys.  The ring may be
+ * supplied in any order; the underlying LRS layer canonicalises it.  The
+ * signature proves that exactly @p a_required_signers distinct ring members
+ * signed, without revealing which subset signed.  A 1-of-N ring signature is
+ * the special case @p a_required_signers == 1.
+ *
+ * @param a_signer_keys       CHIPMUNK_RING signer keys participating locally.
+ * @param a_signers_count     Number of keys in @p a_signer_keys.
+ * @param a_required_signers  Threshold t; must equal @p a_signers_count.
+ * @param a_data, a_data_size Message buffer (may be empty).
+ * @param a_ring_keys, a_ring_size  Ring members (size in [2, 64]).
+ * @return Newly allocated dap_sign_t (SIG_TYPE_CHIPMUNK_MRING) or NULL.
+ */
+dap_sign_t *dap_sign_create_ring(
+    dap_enc_key_t **a_signer_keys,
+    size_t a_signers_count,
+    uint32_t a_required_signers,
+    const void *a_data,
+    size_t a_data_size,
+    dap_enc_key_t **a_ring_keys,
+    size_t a_ring_size
+);
+
 //Create sign on raw data without hashing. Singing algorythm is key provided
 int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, void * a_output, size_t *a_output_size);
 
@@ -393,6 +457,13 @@ bool dap_sign_type_supports_aggregation(dap_sign_type_t a_signature_type);
 bool dap_sign_type_supports_batch_verification(dap_sign_type_t a_signature_type);
 
 /**
+ * @brief Check if a signature type has registered ring create/verify callbacks.
+ * @param a_signature_type Signature type to check
+ * @return true when dap_sign_create_ring / dap_sign_verify_ring are available
+ */
+bool dap_sign_type_supports_ring(dap_sign_type_t a_signature_type);
+
+/**
  * @brief Get supported aggregation types for a signature algorithm
  * @param a_signature_type Signature type
  * @param a_aggregation_types Output array of supported aggregation types
@@ -411,6 +482,55 @@ uint32_t dap_sign_get_supported_aggregation_types(
  * @return true if signature is aggregated
  */
 bool dap_sign_is_aggregated(dap_sign_t *a_sign);
+
+/**
+ * @brief Check if a signature is a ring signature
+ * @param a_sign Signature to check
+ * @return true if signature is a ring signature
+ */
+DAP_STATIC_INLINE bool dap_sign_is_ring(dap_sign_t *a_sign) {
+    if (!a_sign) {
+        return false;
+    }
+
+    // MRNG and LRS are both ring signatures
+    return (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_MRING
+            || a_sign->header.type.type == SIG_TYPE_CHIPMUNK_LRS
+            || a_sign->header.type.type == SIG_TYPE_LOTRS);
+}
+
+/**
+ * @brief Check if a signature uses zero-knowledge proofs
+ * @param a_sign Signature to check
+ * @return true if signature uses ZKP
+ */
+DAP_STATIC_INLINE bool dap_sign_is_zk(dap_sign_t *a_sign) {
+    if (!a_sign) {
+        return false;
+    }
+
+    // Direct check for known ZKP-enabled signature types
+    if (a_sign->header.type.type == SIG_TYPE_CHIPMUNK_MRING ||
+        a_sign->header.type.type == SIG_TYPE_CHIPMUNK) {
+        return true;
+    }
+
+    // Check for signatures with aggregation properties that typically use ZKP
+    // Ring signatures (large size) and aggregated signatures often use ZKP
+    if (dap_sign_is_ring(a_sign) || dap_sign_is_aggregated(a_sign)) {
+        return true;
+    }
+
+    // Additional heuristic: signatures with unusual sizes might be ZKP-based
+    // Many ZKP constructions result in signatures of non-standard sizes
+    size_t l_sign_size = a_sign->header.sign_size;
+    if (l_sign_size > 500 && l_sign_size < 10000) {
+        // Size range typical for ZKP-based signatures
+        return true;
+    }
+
+    return false;
+}
 
 /**
  * @brief Get the number of signatures in an aggregated signature

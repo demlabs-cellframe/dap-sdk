@@ -608,8 +608,8 @@ static void s_benchmark_chacha20(void)
         uint8_t key[crypto_aead_chacha20poly1305_ietf_KEYBYTES];
         uint8_t nonce[crypto_aead_chacha20poly1305_ietf_NPUBBYTES];
         unsigned long long clen;
-        randombytes_buf(key, sizeof(key));
-        randombytes_buf(nonce, sizeof(nonce));
+        dap_random_bytes(key, sizeof(key));
+        dap_random_bytes(nonce, sizeof(nonce));
         l_total = 0;
         for (int i = 0; i < iters; i++) {
             uint64_t t0 = s_rdtsc_or_clock();

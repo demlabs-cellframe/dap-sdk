@@ -81,7 +81,22 @@ typedef enum dap_serialize_field_flags {
     DAP_SERIALIZE_FLAG_NULL_TERMINATED = (1 << 6), ///< Add null terminator for strings
     DAP_SERIALIZE_FLAG_ZERO_FILL = (1 << 7), ///< Zero-fill unused space
     DAP_SERIALIZE_FLAG_SECURE_CLEAR = (1 << 8), ///< Securely clear sensitive data
-    DAP_SERIALIZE_FLAG_CONDITIONAL = (1 << 9) ///< Field included only if condition function returns true
+    DAP_SERIALIZE_FLAG_CONDITIONAL = (1 << 9), ///< Field included only if condition function returns true
+    /**
+     * @brief ARRAY_DYNAMIC: omit the on-wire 4-byte count prefix.
+     *
+     * The element count is taken from the structure field referenced by
+     * @c count_offset on both the encode AND decode paths.  Use this when
+     * the count is already framed externally (e.g. carried in an
+     * application-level header) so that the schema does not duplicate
+     * it on the wire.
+     *
+     * Decoder contract: the destination object MUST be pre-initialised
+     * with the count value before the call.  Use
+     * dap_serialize_from_buffer_raw_preserve() to skip the implicit
+     * zero-init that the standard entry points perform.
+     */
+    DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX = (1 << 10)
 } dap_serialize_field_flags_t;
 
 /**
@@ -136,7 +151,7 @@ typedef struct dap_serialize_field {
     dap_serialize_field_type_t type;        ///< Field type
     dap_serialize_field_flags_t flags;      ///< Field flags
     size_t offset;                          ///< Offset in structure
-    size_t size;                            ///< Size for fixed-size fields
+    size_t size;                            ///< Size for fixed-size fields (for ARRAY_FIXED: size of one element in bytes)
     size_t size_offset;                     ///< Offset to size field for dynamic fields
     size_t count_offset;                    ///< Offset to count field for arrays
     dap_serialize_condition_func_t condition; ///< Condition function (optional)
@@ -144,9 +159,11 @@ typedef struct dap_serialize_field {
     dap_serialize_size_func_t size_func;    ///< Size calculation function (optional)
     dap_serialize_param_size_func_t param_size_func; ///< Parametric size calculation function (optional)
     dap_serialize_param_count_func_t param_count_func; ///< Parametric count calculation function (optional)
-    const struct dap_serialize_schema *nested_schema; ///< Schema for nested structures
+    const struct dap_serialize_schema *nested_schema; ///< Schema for nested structures (used by ARRAY_DYNAMIC, ARRAY_FIXED, NESTED_STRUCT)
     uint32_t version_min;                   ///< Minimum version supporting this field
     uint32_t version_max;                   ///< Maximum version supporting this field
+    size_t fixed_count;                     ///< Element count for ARRAY_FIXED (elements, not bytes)
+    dap_serialize_field_type_t element_type;///< Scalar element type for ARRAY_FIXED/ARRAY_DYNAMIC when no nested_schema; enables endian-aware encoding for int16/int32/int64 arrays. Leave as UINT8 (default 0) for raw byte arrays preserving legacy memcpy path.
 } dap_serialize_field_t;
 
 /**
@@ -164,6 +181,14 @@ typedef struct dap_serialize_schema {
 
 /**
  * @brief Serialization context
+ *
+ * @note `current_schema` tracks the schema that owns the field currently
+ *       being processed.  It is updated by the framework whenever it
+ *       descends into a nested struct / array element so that internal
+ *       helpers (e.g. count_offset boundary checks) can use the right
+ *       struct_size instead of a hard-coded heuristic.  Callers do not
+ *       need to set it manually — the public to_buffer / from_buffer
+ *       entry points populate it automatically.
  */
 typedef struct dap_serialize_context {
     uint8_t *buffer;                        ///< Output/input buffer
@@ -174,6 +199,7 @@ typedef struct dap_serialize_context {
     bool is_deserializing;                  ///< Direction flag
     size_t objects_serialized;              ///< Statistics
     size_t bytes_processed;                 ///< Statistics
+    const struct dap_serialize_schema *current_schema; ///< Schema currently being walked (auto-managed)
 } dap_serialize_context_t;
 
 /**
@@ -333,6 +359,21 @@ dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_
                                                      void *a_context);
 
 /**
+ * @brief Same as dap_serialize_from_buffer_raw but does NOT zero @p a_object.
+ *
+ * The object's memory is left in the state the caller provided.  This is
+ * required when a schema declares an ARRAY_DYNAMIC field with the
+ * DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX flag — the framework expects the
+ * @c count_offset slot to already hold the externally-framed length on
+ * the deserialise path, and an implicit memset would overwrite it.
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw_preserve(const dap_serialize_schema_t *a_schema,
+                                                              const uint8_t *a_buffer,
+                                                              size_t a_buffer_size,
+                                                              void *a_object,
+                                                              void *a_context);
+
+/**
  * @brief Semantic alias for dap_serialize_from_buffer
  * 
  * Deserialize object from buffer with metadata header.
@@ -376,6 +417,22 @@ static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw(
     void *a_context)
 {
     return dap_serialize_from_buffer_raw(a_schema, a_buffer, a_buffer_size, a_object, a_context);
+}
+
+/**
+ * @brief Semantic alias for dap_serialize_from_buffer_raw_preserve.
+ *
+ * Use when the caller has pre-populated count fields referenced by
+ * NO_COUNT_PREFIX ARRAY_DYNAMIC entries in the schema.
+ */
+static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw_preserve(
+    const dap_serialize_schema_t *a_schema,
+    const uint8_t *a_buffer,
+    size_t a_buffer_size,
+    void *a_object,
+    void *a_context)
+{
+    return dap_serialize_from_buffer_raw_preserve(a_schema, a_buffer, a_buffer_size, a_object, a_context);
 }
 
 /**
@@ -430,6 +487,64 @@ dap_serialize_result_t dap_serialize_copy_object(const dap_serialize_schema_t *a
         .offset = offsetof(struct_type, ptr_field), \
         .count_offset = offsetof(struct_type, count_field), \
         .nested_schema = element_schema \
+    }
+
+/**
+ * @brief Fixed-length array of scalar elements (no count prefix on wire).
+ *
+ * The wire format is exactly @p fixed_count_v elements encoded contiguously.
+ * When @p elem_type_v is UINT16 / INT16 / UINT32 / INT32 / UINT64 / INT64 /
+ * FLOAT32 / FLOAT64 the encoder/decoder uses little-endian byte order.
+ * Leaving @p elem_type_v as DAP_SERIALIZE_TYPE_UINT8 keeps legacy byte-level
+ * memcpy semantics (useful for raw byte blobs embedded in a struct).
+ *
+ * Example:
+ * @code
+ * typedef struct my_struct { int32_t coeffs[512]; } my_struct_t;
+ *
+ * static const dap_serialize_field_t s_fields[] = {
+ *     DAP_SERIALIZE_FIELD_FIXED_ARRAY(my_struct_t, coeffs, 512,
+ *                                     DAP_SERIALIZE_TYPE_INT32),
+ * };
+ * @endcode
+ */
+#define DAP_SERIALIZE_FIELD_FIXED_ARRAY(struct_type, field_name, fixed_count_v, elem_type_v) \
+    { \
+        .name = #field_name, \
+        .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED, \
+        .flags = DAP_SERIALIZE_FLAG_NONE, \
+        .offset = offsetof(struct_type, field_name), \
+        .size = sizeof(((struct_type*)0)->field_name[0]), \
+        .fixed_count = (fixed_count_v), \
+        .element_type = (elem_type_v) \
+    }
+
+/**
+ * @brief Fixed-length array of nested structures (no count prefix on wire).
+ *
+ * Each element is serialized flat through the supplied @p schema_ptr (no header).
+ */
+#define DAP_SERIALIZE_FIELD_FIXED_ARRAY_NESTED(struct_type, field_name, fixed_count_v, schema_ptr) \
+    { \
+        .name = #field_name, \
+        .type = DAP_SERIALIZE_TYPE_ARRAY_FIXED, \
+        .flags = DAP_SERIALIZE_FLAG_NONE, \
+        .offset = offsetof(struct_type, field_name), \
+        .size = sizeof(((struct_type*)0)->field_name[0]), \
+        .fixed_count = (fixed_count_v), \
+        .nested_schema = (schema_ptr) \
+    }
+
+/**
+ * @brief Embedded by-value struct serialized through its own schema, no header.
+ */
+#define DAP_SERIALIZE_FIELD_NESTED(struct_type, field_name, schema_ptr) \
+    { \
+        .name = #field_name, \
+        .type = DAP_SERIALIZE_TYPE_NESTED_STRUCT, \
+        .flags = DAP_SERIALIZE_FLAG_NONE, \
+        .offset = offsetof(struct_type, field_name), \
+        .nested_schema = (schema_ptr) \
     }
 
 #define DAP_SERIALIZE_FIELD_CONDITIONAL(struct_type, field_name, field_type, condition_func) \
@@ -516,6 +631,65 @@ dap_serialize_result_t dap_serialize_copy_object(const dap_serialize_schema_t *a
 
 // Constants
 #define DAP_SERIALIZE_MAGIC_NUMBER              0xDAC5E412  ///< DAP Serialize magic number
+
+/**
+ * @brief Serialize raw bytes from a pointer to a buffer.
+ *
+ * No schema needed — just copies a_size bytes from a_data to a_buffer.
+ * Useful for serializing polynomial coefficients, raw byte arrays, etc.
+ *
+ * @param a_data   Source pointer.
+ * @param a_size   Number of bytes to serialize.
+ * @param a_buffer Destination buffer.
+ * @param a_buffer_size  Destination buffer size.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int dap_serialize_ptr_to_buffer(const void *a_data, size_t a_size,
+                                uint8_t *a_buffer, size_t a_buffer_size);
+
+/**
+ * @brief Deserialize raw bytes from a buffer to a pointer.
+ *
+ * @param a_buffer Source buffer.
+ * @param a_buffer_size  Source buffer size.
+ * @param a_data   Destination pointer.
+ * @param a_size   Number of bytes to deserialize.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int dap_serialize_ptr_from_buffer(const uint8_t *a_buffer, size_t a_buffer_size,
+                                  void *a_data, size_t a_size);
+
+/**
+ * @brief Maximum element count allowed for ARRAY_FIXED and ARRAY_DYNAMIC.
+ *
+ * Hard-coded sanity limit to prevent resource-exhaustion attacks via maliciously
+ * large count/size fields in untrusted wire data or misconfigured schemas.
+ * Matches the existing ARRAY_DYNAMIC validation ceiling.
+ */
+#define DAP_SERIALIZE_MAX_ARRAY_COUNT           1000000
+
+/**
+ * @brief Maximum per-field dynamic payload size (bytes).
+ *
+ * Applies to BYTES_DYNAMIC, STRING_DYNAMIC length prefixes and to the
+ * accumulated ARRAY_DYNAMIC element data during deserialization.  Attackers
+ * that craft a blob with a multi-GB length prefix must be rejected before
+ * we attempt to allocate memory.  Matches the 100 MiB cap that was already
+ * in place on the serialize path.
+ */
+#define DAP_SERIALIZE_MAX_DYNAMIC_PAYLOAD       (100u * 1024u * 1024u)
+
+/**
+ * @brief Maximum nesting depth for runtime serialize/deserialize paths.
+ *
+ * Guards ARRAY_FIXED, ARRAY_DYNAMIC with nested_schema and NESTED_STRUCT
+ * against pathological or self-referential schemas that would otherwise
+ * smash the stack.  Exposed as a public constant so external tests and
+ * tooling can reason about the upper bound.
+ */
+#define DAP_SERIALIZE_MAX_FIELD_NESTING         16
 
 // Error codes
 #define DAP_SERIALIZE_ERROR_SUCCESS             0

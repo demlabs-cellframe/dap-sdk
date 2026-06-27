@@ -23,32 +23,33 @@
 */
 
 #include "chipmunk_hash.h"
+#include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_crypto_common.h"
 #include "chipmunk.h"
-// SHA2-256 provided by native dap_hash module
 #include "dap_hash_sha3.h"
 #include "dap_hash_shake128.h"
 #include "dap_hash_shake256.h"
+#include <errno.h>
 #include <string.h>
 
 #define LOG_TAG "chipmunk_hash"
 
-/**
- * @brief Compute SHA2-256 hash using DAP wrapper
- * @param[out] a_output Output buffer (32 bytes)
- * @param[in] a_input Input data
- * @param[in] a_inlen Input length
- * @return Returns 0 on success, negative error code on failure
+/* CR-D11 (Round-3): the canonical hash surface of the Chipmunk module is
+ * SHA-3 / Keccak only.  See chipmunk_hash.h for the policy statement.
+ *
+ * The previous Round-3 audit caught five dead-code helpers that diluted
+ * this surface and acted as a foot-gun:
+ *
+ *   - dap_chipmunk_hash_sha2_256  (static SHA2-256 wrapper)
+ *   - dap_chipmunk_hash_to_seed   (SHA2-256, never called)
+ *   - dap_chipmunk_hash_challenge (SHA2-256, never called)
+ *   - dap_chipmunk_hash_to_point  (SHA3-256, never called)
+ *   - dap_chipmunk_hash_sha3_512  (SHA3-512, never called)
+ *
+ * They were removed wholesale in this patch.  Re-introducing any SHA2
+ * primitive here is forbidden — see the policy comment in the header.
  */
-static int dap_chipmunk_hash_sha2_256(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) {
-    if (!a_output || !a_input) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    dap_hash_sha2_256(a_output, a_input, a_inlen);
-    return CHIPMUNK_ERROR_SUCCESS;
-}
 
 /**
  * @brief Initialize hash functions for Chipmunk
@@ -86,125 +87,30 @@ int dap_chipmunk_hash_sha3_384(uint8_t *a_output, const uint8_t *a_input, size_t
 }
 
 /**
- * @brief SHA3-512 wrapper function implementation
+ * @brief SHAKE-128 XOF wrapper over the native DAP Keccak implementation.
+ *
+ * CR-D10 remediation: the previous body of this function was NOT SHAKE128
+ * at all. It built the XOF output from chained SHA2-256 calls
+ * (SHA256(input || counter_byte)) which
+ *   - is not indifferentiable from a random oracle (block-wise independent),
+ *   - silently truncated output at 4 KiB,
+ *   - wraps a uint8_t counter → can only emit 256×32 = 8 KiB distinct blocks,
+ *   - gives only the 256-bit preimage-resistance of SHA2, nowhere near
+ *     the SHAKE128 XOF contract expected by the Chipmunk paper.
+ *
+ * This wrapper now dispatches to dap_hash_shake128 (real Keccak-based XOF
+ * with rate 168 bytes) which is the primitive assumed by the reference
+ * Chipmunk code and by the poly/matrix sampling routines below.
  */
-int dap_chipmunk_hash_sha3_512(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) {
-    if (!a_output || !a_input) {
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    
-    // Perform SHA3-512 hash
-    dap_hash_sha3_512(a_output, a_input, a_inlen);
-    return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief SHAKE-128 implementation for extendable output
- * @param[out] a_output Output buffer
- * @param[in] a_outlen Desired output length
- * @param[in] a_input Input data
- * @param[in] a_inlen Length of input data
- * @return Returns 0 on success, negative error code on failure
- */
-int dap_chipmunk_hash_shake128(uint8_t *a_output, size_t a_outlen, const uint8_t *a_input, size_t a_inlen) 
+int dap_chipmunk_hash_shake128(uint8_t *a_output, size_t a_outlen, const uint8_t *a_input, size_t a_inlen)
 {
-    // Check input parameters
     if (!a_output || !a_input || !a_outlen) {
         log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_shake128");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
-    // Check for potential overflow
-    if (a_inlen > SIZE_MAX - 1) {
-        log_it(L_ERROR, "Input size too large in dap_chipmunk_hash_shake128");
-        return CHIPMUNK_ERROR_OVERFLOW;
-    }
-    
-    // Limit output size to avoid memory issues
-    const size_t l_max_out_size = 4096; // Безопасное ограничение на выходной размер
-    size_t l_outlen = a_outlen;
-    if (l_outlen > l_max_out_size) {
-        log_it(L_WARNING, "Output size limited in dap_chipmunk_hash_shake128 (requested %zu, limited to %zu)", 
-               l_outlen, l_max_out_size);
-        l_outlen = l_max_out_size;
-    }
-    
-    // Выделяем память для входных данных с добавлением счетчика
-    uint8_t *l_tmp_input = NULL;
-    
-    // Проверка на переполнение при выделении памяти
-    if (a_inlen + 1 < a_inlen) {
-        log_it(L_ERROR, "Integer overflow in memory allocation");
-        return CHIPMUNK_ERROR_OVERFLOW;
-    }
-    
-    // Выделение памяти со строгой проверкой
-    l_tmp_input = DAP_NEW_Z_SIZE(uint8_t, a_inlen + 1);
-    if (!l_tmp_input) {
-        log_it(L_ERROR, "Memory allocation failed in dap_chipmunk_hash_shake128");
-        return CHIPMUNK_ERROR_MEMORY;
-    }
-    
-    // Копируем входные данные и сохраняем место для счетчика
-    memcpy(l_tmp_input, a_input, a_inlen);
-    uint8_t l_counter = 0;
-    
-    // Очищаем выходной буфер для безопасности
-    memset(a_output, 0, l_outlen);
-    
-    // Generate output in chunks of 32 bytes using SHA2-256
-    for (size_t l_offset = 0; l_offset < l_outlen; l_offset += 32) {
-        // Обновляем счетчик для каждого блока
-        l_tmp_input[a_inlen] = l_counter++;
-        
-        // SHA2-256 буфер для одного блока
-        uint8_t l_buffer[32] = {0};
-        
-        // Вызываем SHA2-256 (ИСПРАВЛЕНО: теперь используем правильный SHA2)
-        int l_result = dap_chipmunk_hash_sha2_256(l_buffer, l_tmp_input, a_inlen + 1);
-        if (l_result != CHIPMUNK_ERROR_SUCCESS) {
-            // Безопасная очистка перед выходом
-            memset(l_tmp_input, 0, a_inlen + 1);
-            DAP_DELETE(l_tmp_input);
-            return l_result;
-        }
-        
-        // Определяем, сколько данных скопировать на этой итерации
-        size_t l_copy_len = (l_offset + 32 <= l_outlen) ? 32 : l_outlen - l_offset;
-        
-        // Копируем данные в выходной буфер
-        memcpy(a_output + l_offset, l_buffer, l_copy_len);
-    }
 
-    // Безопасная очистка временных данных
-    memset(l_tmp_input, 0, a_inlen + 1);
-    DAP_DELETE(l_tmp_input);
+    dap_hash_shake128(a_output, a_outlen, a_input, a_inlen);
     return CHIPMUNK_ERROR_SUCCESS;
-}
-
-/**
- * @brief Generate seed for polynomials from message
- */
-int dap_chipmunk_hash_to_seed(uint8_t a_output[32], const uint8_t *a_message, size_t a_msglen) 
-{
-    if (!a_output || !a_message) {
-        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_to_seed");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    // ИСПРАВЛЕНО: Используем SHA2-256 вместо SHA3-256
-    return dap_chipmunk_hash_sha2_256(a_output, a_message, a_msglen);
-}
-
-/**
- * @brief Generate hash for challenge function
- */
-int dap_chipmunk_hash_challenge(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen) {
-    if (!a_output || !a_input) {
-        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_challenge");
-        return CHIPMUNK_ERROR_NULL_PARAM;
-    }
-    // ИСПРАВЛЕНО: Используем SHA2-256 вместо SHA3-256
-    return dap_chipmunk_hash_sha2_256(a_output, a_input, a_inlen);
 }
 
 /**
@@ -215,92 +121,72 @@ int dap_chipmunk_hash_challenge(uint8_t a_output[32], const uint8_t *a_input, si
  *         CHIPMUNK_ERROR_OVERFLOW: Size overflow
  *         CHIPMUNK_ERROR_MEMORY: Memory allocation failure
  */
-int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce) 
+int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce)
 {
     if (!a_poly || !a_seed) {
         log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_sample_poly");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
-    // Инициализируем буфер для запроса (seed + nonce)
-    uint8_t l_buf[34] = {0}; // 32 bytes seed + 2 bytes nonce
-    
-    // Копируем seed
-    memcpy(l_buf, a_seed, 32);
-    
-    // Добавляем nonce в младшем порядке байтов (little-endian)
-    l_buf[32] = a_nonce & 0xff;
-    l_buf[33] = (a_nonce >> 8) & 0xff;
-    
-    // Проверяем переполнение при умножении для вычисления размера выходного буфера
-    if (CHIPMUNK_N > SIZE_MAX / 3) {
-        log_it(L_ERROR, "Size overflow in dap_chipmunk_hash_sample_poly");
-        // Очищаем полином, чтобы не оставлять неинициализированные данные
-        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
-        return CHIPMUNK_ERROR_OVERFLOW;
-    }
-    
-    // Вычисляем размер буфера для SHAKE128 (3 байта на коэффициент)
-    const size_t l_total_bytes = CHIPMUNK_N * 3;
-    
-    // Выделяем память под временный буфер
-    uint8_t *l_sample_bytes = DAP_NEW_Z_SIZE(uint8_t, l_total_bytes);
-    if (!l_sample_bytes) {
-        log_it(L_ERROR, "Memory allocation failed in dap_chipmunk_hash_sample_poly");
-        // Очищаем полином, чтобы не оставлять неинициализированные данные
-        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
-        return CHIPMUNK_ERROR_MEMORY;
-    }
-    
-    // Получаем расширенный выход через SHAKE128
-    int l_result = dap_chipmunk_hash_shake128(l_sample_bytes, l_total_bytes, l_buf, sizeof(l_buf));
-    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "SHAKE128 failed in dap_chipmunk_hash_sample_poly with error %d", l_result);
-        memset(l_sample_bytes, 0, l_total_bytes);
-        DAP_DELETE(l_sample_bytes);
-        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
-        return l_result;
-    }
-    
-    // Конвертируем байты в коэффициенты полинома
-    for (int i = 0, j = 0; i < CHIPMUNK_N; i++, j += 3) {
-        uint32_t l_t = ((uint32_t)l_sample_bytes[j]) | 
-                      (((uint32_t)l_sample_bytes[j + 1]) << 8) | 
-                      (((uint32_t)l_sample_bytes[j + 2]) << 16);
-        
-        // Маскируем до 23 бит
-        l_t &= 0x7FFFFF; 
-        
-        // Согласно алгоритму Chipmunk, полином y должен иметь коэффициенты
-        // в диапазоне [-gamma1, gamma1], где gamma1 = 2^17 = 131072
-        // Маппим l_t на диапазон [-gamma1, gamma1]
-        const int32_t l_gamma1 = 1 << 17; // 131072
-        const uint32_t l_range = 2 * l_gamma1 + 1; // 262145
-        
-        // Приводим к диапазону [0, range-1], затем сдвигаем к [-gamma1, gamma1]
-        uint32_t l_reduced = l_t % l_range;
-        int32_t l_coeff = (int32_t)l_reduced - l_gamma1;
-        
-        a_poly[i] = l_coeff;
-    }
-    
-    // Безопасно очищаем и освобождаем память
-    memset(l_sample_bytes, 0, l_total_bytes);
-    DAP_DELETE(l_sample_bytes);
-    
-    return CHIPMUNK_ERROR_SUCCESS;  // Успешное выполнение
-}
 
-/**
- * @brief Generate point from hash
- */
-int dap_chipmunk_hash_to_point(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) 
-{
-    if (!a_output || !a_input) {
-        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_to_point");
-        return CHIPMUNK_ERROR_NULL_PARAM;
+    /*
+     * CR-D11 remediation: sample CHIPMUNK_N coefficients of the HOTS
+     * y-polynomial uniformly in [-gamma1, gamma1] using a streaming
+     * SHAKE128 XOF seeded with domain-separated (seed || nonce_le16).
+     *
+     * The previous code read exactly 3 * CHIPMUNK_N bytes from the fake
+     * SHAKE128 (SHA2+counter) wrapper and reduced them with `% range`,
+     * which (a) sampled from a 256-bit/chunk hash rather than a true XOF
+     * and (b) introduced ~0.1% modulo bias because 2^23 is not a multiple
+     * of `range = 2*gamma1 + 1`. We replace this with true Keccak-based
+     * SHAKE128 streaming + unbiased rejection sampling.
+     */
+
+    static const uint8_t k_domain[] = "CHIPMUNK/sample_poly/v1";
+    uint8_t l_in[sizeof(k_domain) + 32 + 2];
+    memcpy(l_in, k_domain, sizeof(k_domain));
+    memcpy(l_in + sizeof(k_domain), a_seed, 32);
+    l_in[sizeof(k_domain) + 32 + 0] = (uint8_t)(a_nonce & 0xff);
+    l_in[sizeof(k_domain) + 32 + 1] = (uint8_t)((a_nonce >> 8) & 0xff);
+
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
+    dap_hash_shake128_absorb(l_state, l_in, sizeof(l_in));
+
+    uint8_t l_sq[DAP_SHAKE128_RATE];
+    size_t  l_sq_pos = DAP_SHAKE128_RATE;
+
+    const int32_t  l_gamma1 = 1 << 17;            // 131072
+    const uint32_t l_range  = (uint32_t)(2 * l_gamma1 + 1); // 262145
+    const uint32_t l_mul    = (0x800000u / l_range) * l_range; // 2^23 split on range boundary
+
+    const size_t k_max_blocks = 1u << 20;
+    size_t l_blocks = 0;
+
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        uint32_t l_val;
+        for (;;) {
+            if (l_sq_pos + 3 > DAP_SHAKE128_RATE) {
+                if (l_blocks++ >= k_max_blocks) {
+                    log_it(L_ERROR, "dap_chipmunk_hash_sample_poly: SHAKE128 squeeze budget exhausted");
+                    memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
+                    return CHIPMUNK_ERROR_INTERNAL;
+                }
+                dap_hash_shake128_squeezeblocks(l_sq, 1, l_state);
+                l_sq_pos = 0;
+            }
+            l_val = (uint32_t)l_sq[l_sq_pos]
+                  | ((uint32_t)l_sq[l_sq_pos + 1] << 8)
+                  | ((uint32_t)l_sq[l_sq_pos + 2] << 16);
+            l_val &= 0x7FFFFFu; // 23-bit word
+            l_sq_pos += 3;
+            if (l_val < l_mul) {
+                break;
+            }
+        }
+        a_poly[i] = (int32_t)(l_val % l_range) - l_gamma1;
     }
-    return dap_chipmunk_hash_sha3_256(a_output, a_input, a_inlen);
+
+    return CHIPMUNK_ERROR_SUCCESS;
 }
 
 /**
@@ -311,73 +197,180 @@ int dap_chipmunk_hash_to_point(uint8_t *a_output, const uint8_t *a_input, size_t
  * @param[in] a_nonce Nonce value
  * @return Returns 0 on success, negative values on error
  */
-int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce) 
+int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce)
 {
     if (!a_poly || !a_seed) {
         log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_sample_matrix");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    
-    // Инициализируем буфер для запроса (seed + nonce)
-    uint8_t l_buf[34] = {0}; // 32 bytes seed + 2 bytes nonce
-    
-    // Копируем seed
-    memcpy(l_buf, a_seed, 32);
-    
-    // Добавляем nonce в младшем порядке байтов (little-endian)
-    l_buf[32] = a_nonce & 0xff;
-    l_buf[33] = (a_nonce >> 8) & 0xff;
-    
-    // Проверяем переполнение при умножении для вычисления размера выходного буфера
-    if (CHIPMUNK_N > SIZE_MAX / 3) {
-        log_it(L_ERROR, "Size overflow in dap_chipmunk_hash_sample_matrix");
-        // Очищаем полином, чтобы не оставлять неинициализированные данные
-        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
-        return CHIPMUNK_ERROR_OVERFLOW;
+
+    /*
+     * CR-D11 remediation: sample matrix A coefficients uniformly in
+     * [0, q-1] using a streaming SHAKE128 XOF with rejection sampling.
+     *
+     * The original routine read exactly 3*N bytes from the fake SHAKE128
+     * and reduced them with `% CHIPMUNK_Q` — biased because 2^23 is not a
+     * multiple of q = 8380417. We now use real Keccak-SHAKE128, pull
+     * 23-bit words and accept only values in [0, floor(2^23/q)*q) before
+     * applying the modulo. Bias is eliminated by construction.
+     */
+
+    static const uint8_t k_domain[] = "CHIPMUNK/sample_matrix/v1";
+    uint8_t l_in[sizeof(k_domain) + 32 + 2];
+    memcpy(l_in, k_domain, sizeof(k_domain));
+    memcpy(l_in + sizeof(k_domain), a_seed, 32);
+    l_in[sizeof(k_domain) + 32 + 0] = (uint8_t)(a_nonce & 0xff);
+    l_in[sizeof(k_domain) + 32 + 1] = (uint8_t)((a_nonce >> 8) & 0xff);
+
+    uint64_t l_state[25];
+    memset(l_state, 0, sizeof(l_state));
+    dap_hash_shake128_absorb(l_state, l_in, sizeof(l_in));
+
+    uint8_t l_sq[DAP_SHAKE128_RATE];
+    size_t  l_sq_pos = DAP_SHAKE128_RATE;
+
+    const uint32_t l_mul = (0x800000u / (uint32_t)CHIPMUNK_Q) * (uint32_t)CHIPMUNK_Q;
+    const size_t   k_max_blocks = 1u << 20;
+    size_t         l_blocks = 0;
+
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        uint32_t l_val;
+        for (;;) {
+            if (l_sq_pos + 3 > DAP_SHAKE128_RATE) {
+                if (l_blocks++ >= k_max_blocks) {
+                    log_it(L_ERROR, "dap_chipmunk_hash_sample_matrix: SHAKE128 squeeze budget exhausted");
+                    memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
+                    return CHIPMUNK_ERROR_INTERNAL;
+                }
+                dap_hash_shake128_squeezeblocks(l_sq, 1, l_state);
+                l_sq_pos = 0;
+            }
+            l_val = (uint32_t)l_sq[l_sq_pos]
+                  | ((uint32_t)l_sq[l_sq_pos + 1] << 8)
+                  | ((uint32_t)l_sq[l_sq_pos + 2] << 16);
+            l_val &= 0x7FFFFFu;
+            l_sq_pos += 3;
+            if (l_val < l_mul) {
+                break;
+            }
+        }
+        a_poly[i] = (int32_t)(l_val % (uint32_t)CHIPMUNK_Q);
     }
-    
-    // Вычисляем размер буфера для SHAKE128 (3 байта на коэффициент)
-    const size_t l_total_bytes = CHIPMUNK_N * 3;
-    
-    // Выделяем память под временный буфер
-    uint8_t *l_sample_bytes = DAP_NEW_Z_SIZE(uint8_t, l_total_bytes);
-    if (!l_sample_bytes) {
-        log_it(L_ERROR, "Memory allocation failed in dap_chipmunk_hash_sample_matrix");
-        // Очищаем полином, чтобы не оставлять неинициализированные данные
-        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
-        return CHIPMUNK_ERROR_MEMORY;
+
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+static inline void s_le32_store(uint8_t *a_dst, uint32_t a_v)
+{
+    a_dst[0] = (uint8_t)(a_v);
+    a_dst[1] = (uint8_t)(a_v >> 8);
+    a_dst[2] = (uint8_t)(a_v >> 16);
+    a_dst[3] = (uint8_t)(a_v >> 24);
+}
+
+int dap_chipmunk_domain_hash(const char *a_domain,
+                             const void *a_salt, size_t a_salt_size,
+                             const void *a_input, size_t a_input_size,
+                             void *a_output, size_t a_output_size,
+                             uint32_t a_iterations)
+{
+    if (!a_domain || !a_input || !a_output || a_input_size == 0 || a_output_size == 0) {
+        return -1;
     }
-    
-    // Получаем расширенный выход через SHAKE128
-    int l_result = dap_chipmunk_hash_shake128(l_sample_bytes, l_total_bytes, l_buf, sizeof(l_buf));
-    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "SHAKE128 failed in dap_chipmunk_hash_sample_matrix with error %d", l_result);
-        memset(l_sample_bytes, 0, l_total_bytes);
-        DAP_DELETE(l_sample_bytes);
-        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
-        return l_result;
+
+    enum { S_DOMAIN_MAX = 1024 };
+    size_t l_domain_len = strnlen(a_domain, S_DOMAIN_MAX);
+    if (l_domain_len == S_DOMAIN_MAX || l_domain_len == 0) {
+        return -EINVAL;
     }
-    
-    // Конвертируем байты в коэффициенты полинома A
-    for (int i = 0, j = 0; i < CHIPMUNK_N; i++, j += 3) {
-        uint32_t l_t = ((uint32_t)l_sample_bytes[j]) | 
-                      (((uint32_t)l_sample_bytes[j + 1]) << 8) | 
-                      (((uint32_t)l_sample_bytes[j + 2]) << 16);
-        
-        // Маскируем до 23 бит
-        l_t &= 0x7FFFFF; 
-        
-        // Приводим к диапазону [0, q-1]
-        l_t = l_t % CHIPMUNK_Q;
-        
-        // Для полинома A коэффициенты должны быть в диапазоне [0, q-1]
-        // согласно алгоритму Chipmunk из статьи
-        a_poly[i] = (int32_t)l_t;
+    static const char l_required_suffix[] = "/v2";
+    const size_t l_required_suffix_len = sizeof(l_required_suffix) - 1u;
+    if (l_domain_len < l_required_suffix_len ||
+        memcmp(a_domain + l_domain_len - l_required_suffix_len,
+               l_required_suffix, l_required_suffix_len) != 0) {
+        log_it(L_ERROR, "Chipmunk domain hash rejected non-v2 domain: %s", a_domain);
+        return -EINVAL;
     }
-    
-    // Безопасно очищаем и освобождаем память
-    memset(l_sample_bytes, 0, l_total_bytes);
-    DAP_DELETE(l_sample_bytes);
-    
-    return CHIPMUNK_ERROR_SUCCESS;  // Успешное выполнение
-} 
+
+    if (a_salt_size > UINT32_MAX || a_input_size > UINT32_MAX ||
+        l_domain_len > UINT32_MAX) {
+        return -EINVAL;
+    }
+
+    const size_t l_prefix_bytes = 4u * 3u;
+    if (a_salt_size > SIZE_MAX - a_input_size ||
+        l_domain_len > SIZE_MAX - (a_salt_size + a_input_size) ||
+        l_prefix_bytes > SIZE_MAX - (l_domain_len + a_salt_size + a_input_size)) {
+        return -EINVAL;
+    }
+    size_t l_prk_input_size = l_prefix_bytes + l_domain_len + a_salt_size + a_input_size;
+    uint8_t *l_prk_input = DAP_NEW_SIZE(uint8_t, l_prk_input_size);
+    if (!l_prk_input) {
+        return -ENOMEM;
+    }
+
+    size_t l_off = 0;
+    s_le32_store(l_prk_input + l_off, (uint32_t)l_domain_len);
+    l_off += 4;
+    memcpy(l_prk_input + l_off, a_domain, l_domain_len);
+    l_off += l_domain_len;
+
+    s_le32_store(l_prk_input + l_off, (uint32_t)a_salt_size);
+    l_off += 4;
+    if (a_salt && a_salt_size > 0) {
+        memcpy(l_prk_input + l_off, a_salt, a_salt_size);
+        l_off += a_salt_size;
+    }
+
+    s_le32_store(l_prk_input + l_off, (uint32_t)a_input_size);
+    l_off += 4;
+    memcpy(l_prk_input + l_off, a_input, a_input_size);
+
+    uint8_t l_prk[32];
+    if (!dap_hash(DAP_HASH_TYPE_SHA3_256, l_prk_input, l_prk_input_size,
+                  l_prk, sizeof(l_prk))) {
+        DAP_DELETE(l_prk_input);
+        return -1;
+    }
+    DAP_DELETE(l_prk_input);
+
+    uint32_t l_iters = a_iterations > 0 ? a_iterations : 1u;
+    for (uint32_t i = 1; i < l_iters; i++) {
+        dap_hash(DAP_HASH_TYPE_SHA3_256, l_prk, sizeof(l_prk), l_prk, sizeof(l_prk));
+    }
+
+    uint8_t *l_out = (uint8_t *)a_output;
+    size_t l_remaining = a_output_size;
+    uint8_t l_counter = 1u;
+    uint8_t l_prev_block[32] = { 0 };
+
+    while (l_remaining > 0) {
+        uint8_t l_expand_input[32 + 32 + 1];
+        size_t l_expand_len = 0;
+        memcpy(l_expand_input + l_expand_len, l_prk, 32); l_expand_len += 32;
+        if (l_counter > 1) {
+            memcpy(l_expand_input + l_expand_len, l_prev_block, 32);
+            l_expand_len += 32;
+        }
+        l_expand_input[l_expand_len++] = l_counter;
+
+        uint8_t l_block[32];
+        if (!dap_hash(DAP_HASH_TYPE_SHA3_256, l_expand_input, l_expand_len,
+                      l_block, sizeof(l_block))) {
+            memset(l_prk, 0, sizeof(l_prk));
+            return -1;
+        }
+        size_t l_to_copy = l_remaining < 32 ? l_remaining : 32u;
+        memcpy(l_out, l_block, l_to_copy);
+        memcpy(l_prev_block, l_block, 32);
+        l_out += l_to_copy;
+        l_remaining -= l_to_copy;
+        if (++l_counter == 0u) {
+            memset(l_prk, 0, sizeof(l_prk));
+            return -1;
+        }
+    }
+
+    memset(l_prk, 0, sizeof(l_prk));
+    return 0;
+}

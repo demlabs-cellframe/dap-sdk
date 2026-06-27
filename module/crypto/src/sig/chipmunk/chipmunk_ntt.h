@@ -33,7 +33,7 @@
 // Montgomery parameters for q = 3168257
 #define CHIPMUNK_MONT_R          (1U << 22)    // Montgomery reduction parameter R = 2^22
 #define CHIPMUNK_MONT_R_INV      202470        // R^(-1) mod q
-#define CHIPMUNK_QINV            202470        // -q^(-1) mod 2^22
+#define CHIPMUNK_QINV            202470        // R^(-1) mod q
 
 /**
  * @brief Transform polynomial to NTT form
