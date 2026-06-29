@@ -78,6 +78,7 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *sh, cons
 
 int  dap_http_simple_module_init( void );
 void dap_http_simple_module_deinit(void);
+bool dap_http_simple_is_ready(void);
 
 // input string must match NameClient/MiminalVersion
 // For example DapClient/2.2

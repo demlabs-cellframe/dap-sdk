@@ -1000,13 +1000,10 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
             }
             s_set_stage_status(a_fsm, STAGE_STATUS_IN_PROGRESS);
         } else {
-            if (s_retry_handshake_with_fallback(a_fsm) == 0) {
-                log_it(L_NOTICE, "Switching to fallback transport %s after %d failed attempts",
-                       dap_net_trans_type_to_str(a_fsm->client->trans_type),
-                       a_fsm->reconnect_attempts);
-                a_fsm->reconnect_attempts = 0;
-                return;
-            }
+            /* NO FALLBACKS. Fail fast. */
+            log_it(L_ERROR, "Disconnect state(%s), transport %s failed — no fallback",
+                   dap_client_error_str(a_fsm->last_error),
+                   dap_net_trans_type_to_str(a_fsm->client->trans_type));
             log_it(L_ERROR, "Disconnect state(%s), all transports exhausted, doing callback",
                    dap_client_error_str(a_fsm->last_error));
             if (a_fsm->client->stage_status_error_callback)
@@ -1437,7 +1434,8 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
                 .auth_cert = l_client->auth_cert,
                 .alice_pub_key = l_alice_pub_key,
                 .alice_pub_key_size = l_data_size,
-                .sign_count = l_sign_count
+                .sign_count = l_sign_count,
+                .tls_fp_profile_index = l_client->tls_fp_profile_index
             };
         }
 

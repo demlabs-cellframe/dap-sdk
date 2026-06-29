@@ -104,6 +104,11 @@ int dap_http_simple_module_init( )
     return 0;
 }
 
+bool dap_http_simple_is_ready(void)
+{
+    return s_http_proc_pool != NULL;
+}
+
 void dap_http_simple_module_deinit( void )
 {
     if (s_http_proc_pool) {
@@ -495,6 +500,12 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
             log_it(L_ERROR, "Not defined content-length %zu in request", a_http_client->in_content_length);
     } else {
         log_it( L_DEBUG, "No data section, execution proc callback" );
+        if (!s_http_proc_pool) {
+            log_it(L_WARNING, "HTTP proc pool not initialized yet, rejecting request");
+            s_write_response_busy(l_http_simple);
+            s_write_data_to_socket(l_http_simple);
+            return;
+        }
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
         if (l_submit_rc != 0) {
@@ -509,8 +520,8 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
 {
     int *ret = (int *)a_arg;
 
-    //debug_if(s_debug_more, L_DEBUG,"dap_http_simple_data_read");
-    //  Sleep(300);
+    log_it(L_INFO, "HTTP data_read: buf_in_size=%zu, content_length=%zu",
+           a_http_client->esocket->buf_in_size, a_http_client->in_content_length);
 
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
     if(!l_http_simple){
@@ -545,8 +556,22 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
     *ret = (int) a_http_client->esocket->buf_in_size;
     if( l_http_simple->request_size >= a_http_client->in_content_length ) {
 
-        // bool isOK=true;
         log_it( L_INFO,"Data for http_simple_request collected" );
+        if (!s_http_proc_pool) {
+            log_it(L_WARNING, "HTTP proc pool not ready, processing request synchronously");
+            /* Process directly without thread pool — used during server startup */
+            http_status_code_t return_code = (http_status_code_t)0;
+            dap_http_simple_url_proc_t *l_url_proc = DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc);
+            if (l_url_proc && l_url_proc->proc_callback) {
+                l_url_proc->proc_callback(l_http_simple, &return_code);
+            }
+            if (return_code) {
+                l_http_simple->http_client->reply_status_code = (uint16_t)return_code;
+                s_copy_reply_and_mime_to_response(l_http_simple);
+            }
+            s_write_data_to_socket(l_http_simple);
+            return;
+        }
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         int l_submit_rc = dap_thread_pool_submit(s_http_proc_pool, s_proc_pool_task, l_http_simple, s_proc_pool_complete, l_http_simple);
         if (l_submit_rc != 0) {

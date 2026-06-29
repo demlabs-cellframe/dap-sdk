@@ -34,6 +34,7 @@
 #include "dap_stream.h"
 #include "dap_stream_pkt.h"
 #include "dap_tls_mimicry.h"
+#include "dap_tls_fingerprint.h"
 #include "dap_stream_trans_tls.h"
 #include "dap_net_trans_tls_server.h"
 
@@ -42,6 +43,8 @@
 typedef struct tls_mimicry_ctx {
     dap_tls_mimicry_t *mimicry;
     char              *sni_hostname;
+    dap_net_trans_handshake_cb_t handshake_cb;
+    dap_net_handshake_params_t  handshake_params;  /* saved for enc_init after TLS handshake */
 } tls_mimicry_ctx_t;
 
 
@@ -202,7 +205,21 @@ static int s_tls_stage_prepare(dap_net_trans_t *a_trans,
     if (a_params->worker)
         dap_worker_add_events_socket(a_params->worker, l_es);
 
+    /* Create stream from esocket — same as HTTP transport.
+     * The stream is needed for the FSM to proceed through
+     * enc_init → stream_ctl → stream stages. */
+    dap_stream_t *l_stream = dap_stream_new_es_client(l_es,
+                                (dap_stream_node_addr_t *)a_params->node_addr,
+                                a_params->authorized);
+    if (!l_stream) {
+        log_it(L_ERROR, "TLS Mimicry: failed to create stream");
+        a_result->error_code = -1;
+        return -1;
+    }
+    l_stream->trans = a_trans;
+
     a_result->esocket = l_es;
+    a_result->stream = l_stream;
     a_result->error_code = 0;
 
     const char *l_sni = s_config.sni_hostname ? s_config.sni_hostname : a_params->host;
@@ -273,6 +290,11 @@ static ssize_t s_tls_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
                     l_avail = 0;
                     l_state = dap_tls_mimicry_get_state(l_ctx->mimicry);
                     debug_if(s_debug_more, L_DEBUG, "TLS handshake: ServerHello processed, state=ESTABLISHED");
+                    /* TLS handshake complete — notify FSM to proceed with enc_init */
+                    if (l_ctx->handshake_cb) {
+                        l_ctx->handshake_cb(a_stream, NULL, 0, 0);
+                        l_ctx->handshake_cb = NULL; /* one-shot */
+                    }
                 } else {
                     /* Incomplete or error — wait for more data */
                     DAP_DELETE(l_response);
@@ -347,6 +369,115 @@ static uint32_t s_tls_get_caps(dap_net_trans_t *a_trans)
 /* ========================================================================== */
 
 /**
+ * @brief TLS handshake read callback — processes ServerHello from server
+ *
+ * This callback is set on the esocket during TLS handshake. When the
+ * server sends back ServerHello + CCS + fake extensions, this callback
+ * processes them, completes the TLS handshake, and notifies the FSM.
+ */
+static void s_tls_handshake_read(dap_events_socket_t *a_es, void *a_arg)
+{
+    if (!a_es || a_es->buf_in_size == 0)
+        return;
+
+    /* Find the TLS context from the stream's transport_priv */
+    /* We stored the stream pointer in the esocket's _inheritor during handshake_init */
+    dap_stream_t *l_stream = (dap_stream_t *)a_es->_inheritor;
+    if (!l_stream || !l_stream->trans_ctx) {
+        log_it(L_ERROR, "TLS handshake read: no stream or trans_ctx");
+        return;
+    }
+
+    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)l_stream->trans_ctx->transport_priv;
+    if (!l_ctx || !l_ctx->mimicry) {
+        log_it(L_ERROR, "TLS handshake read: no mimicry context");
+        return;
+    }
+
+    /* Process ServerHello from server */
+    void *l_response = NULL;
+    size_t l_response_size = 0;
+    int l_rc = dap_tls_mimicry_process_server_hello(l_ctx->mimicry,
+                                                      a_es->buf_in, a_es->buf_in_size,
+                                                      &l_response, &l_response_size);
+    if (l_rc == 0) {
+        /* ServerHello processed — send client CCS + fake Finished */
+        if (l_response && l_response_size > 0) {
+            dap_events_socket_write_unsafe(a_es, l_response, l_response_size);
+            DAP_DELETE(l_response);
+        }
+        a_es->buf_in_size = 0;
+
+        log_it(L_NOTICE, "TLS handshake completed — sending enc_init through TLS channel");
+
+        /* Build enc_init URL (same format as HTTP transport) */
+        char l_node_addr_b58[48] = "gd4y5yh78w42aaagh"; /* placeholder */
+        char l_enc_init_url[512];
+        snprintf(l_enc_init_url, sizeof(l_enc_init_url),
+                 "/%s/%s?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,"
+                 "block_key_size=%zu,protocol_version=%d,sign_count=%zu",
+                 DAP_UPLINK_PATH_ENC_INIT, l_node_addr_b58,
+                 l_ctx->handshake_params.enc_type,
+                 l_ctx->handshake_params.pkey_exchange_type,
+                 l_ctx->handshake_params.pkey_exchange_size,
+                 l_ctx->handshake_params.block_key_size,
+                 l_ctx->handshake_params.protocol_version,
+                 l_ctx->handshake_params.sign_count);
+
+        /* Build HTTP POST with alice_pub_key as body */
+        /* The body is base64-encoded alice_pub_key */
+        size_t l_body_b64_size = ((l_ctx->handshake_params.alice_pub_key_size + 2) / 3) * 4 + 1;
+        char *l_body_b64 = DAP_NEW_Z_SIZE(char, l_body_b64_size);
+        if (l_body_b64) {
+            /* Simple base64 encoding */
+            static const char s_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            size_t l_in_len = l_ctx->handshake_params.alice_pub_key_size;
+            const uint8_t *l_in = l_ctx->handshake_params.alice_pub_key;
+            size_t l_out_pos = 0;
+            for (size_t i = 0; i < l_in_len; i += 3) {
+                uint32_t n = (uint32_t)l_in[i] << 16;
+                if (i + 1 < l_in_len) n |= (uint32_t)l_in[i + 1] << 8;
+                if (i + 2 < l_in_len) n |= (uint32_t)l_in[i + 2];
+                l_body_b64[l_out_pos++] = s_b64[(n >> 18) & 0x3F];
+                l_body_b64[l_out_pos++] = s_b64[(n >> 12) & 0x3F];
+                l_body_b64[l_out_pos++] = (i + 1 < l_in_len) ? s_b64[(n >> 6) & 0x3F] : '=';
+                l_body_b64[l_out_pos++] = (i + 2 < l_in_len) ? s_b64[n & 0x3F] : '=';
+            }
+            l_body_b64[l_out_pos] = '\0';
+
+            char l_http_post[8192];
+            size_t l_post_size = snprintf(l_http_post, sizeof(l_http_post),
+                "POST %s HTTP/1.1\r\n"
+                "Host: localhost\r\n"
+                "Content-Type: text/text\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: keep-alive\r\n"
+                "\r\n"
+                "%s",
+                l_enc_init_url, l_out_pos, l_body_b64);
+
+            /* Send through TLS channel (s_tls_write wraps in TLS records) */
+            ssize_t l_sent = dap_stream_trans_write_unsafe(l_stream, l_http_post, l_post_size);
+            DAP_DELETE(l_body_b64);
+
+            if (l_sent > 0)
+                log_it(L_NOTICE, "TLS enc_init sent (%zd bytes) through TLS channel", l_sent);
+            else
+                log_it(L_ERROR, "TLS enc_init: failed to send through TLS channel");
+        }
+
+        /* Notify FSM: handshake + enc_init complete */
+        if (l_ctx->handshake_cb) {
+            l_ctx->handshake_cb(l_stream, NULL, 0, 0);
+            l_ctx->handshake_cb = NULL;
+        }
+    } else {
+        /* Incomplete or error — wait for more data */
+        DAP_DELETE(l_response);
+    }
+}
+
+/**
  * @brief Perform fake TLS handshake on client side
  *
  * Creates TLS mimicry context, generates ClientHello, sends it to server,
@@ -391,6 +522,21 @@ static int s_tls_handshake_init(dap_stream_t *a_stream,
         return -4;
     }
 
+    /* Set TLS fingerprint profile (TL.8 per-stream rotation) */
+    if (a_params->tls_fp_profile_index > 0) {
+        const dap_tls_fp_profile_t *l_fp = dap_tls_fp_get_by_index(a_params->tls_fp_profile_index);
+        if (l_fp) {
+            dap_tls_mimicry_set_profile(l_ctx->mimicry, l_fp);
+            debug_if(s_debug_more, L_DEBUG, "TLS handshake_init: using fingerprint profile '%s' (index %u)",
+                     l_fp->name, a_params->tls_fp_profile_index);
+        }
+    } else {
+        /* Default: use first profile (chrome_120) if available */
+        const dap_tls_fp_profile_t *l_fp = dap_tls_fp_get_by_index(0);
+        if (l_fp)
+            dap_tls_mimicry_set_profile(l_ctx->mimicry, l_fp);
+    }
+
     /* Set SNI hostname for mimicry */
     const char *l_sni = s_config.sni_hostname ? s_config.sni_hostname : "";
     if (l_sni && *l_sni)
@@ -420,18 +566,17 @@ static int s_tls_handshake_init(dap_stream_t *a_stream,
         return -6;
     }
 
-    /* Store mimicry context in transport_priv — s_tls_read will process ServerHello */
+    /* Store mimicry context, handshake callback, and params in transport_priv */
+    l_ctx->handshake_cb = a_callback;
+    l_ctx->handshake_params = *a_params;
     a_stream->trans_ctx->transport_priv = l_ctx;
+
+    /* Set handshake read callback on esocket so ServerHello gets processed */
+    a_stream->esocket->_inheritor = a_stream;
+    a_stream->esocket->callbacks.read_callback = s_tls_handshake_read;
 
     log_it(L_NOTICE, "TLS handshake_init: ClientHello sent (%zd bytes), awaiting ServerHello",
            l_written);
-
-    /* Signal handshake complete — FSM proceeds to enc_init.
-     * The fake ServerHello from server will be processed by s_tls_read
-     * on the next read cycle, transitioning mimicry to ESTABLISHED.
-     * enc_init data sent via s_tls_write will be wrapped in TLS records
-     * after the ServerHello is processed. */
-    a_callback(a_stream, NULL, 0, 0);
 
     return 0;
 }
@@ -473,7 +618,7 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
                                         a_params->enc_key_size, a_params->enc_headers ? 1 : 0);
 
     char l_stream_ctl_url[1024] = { '\0' };
-    snprintf(l_stream_ctl_url, sizeof(l_stream_ctl_url), "%s/%s",
+    snprintf(l_stream_ctl_url, sizeof(l_stream_ctl_url), "/%s/%s",
              DAP_UPLINK_PATH_STREAM_CTL, l_suburl);
 
     debug_if(s_debug_more, L_DEBUG, "TLS session_create: sending stream_ctl via TLS channel: %s",
