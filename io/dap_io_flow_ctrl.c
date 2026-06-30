@@ -440,10 +440,17 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
     }
     pthread_mutex_unlock(&a_ctrl->lifecycle_mutex);
     
-    // STEP 3: Stop timers FIRST (before clearing magic).
-    // Timer callbacks check magic. By stopping timers first,
-    // we guarantee no new callback can start. Any in-flight callback will
-    // complete before the sync stop returns.
+    // STEP 3: Clear magic under send_mutex to synchronize with timer callbacks
+    if (a_ctrl->send_window) {
+        pthread_mutex_lock(&a_ctrl->send_mutex);
+        a_ctrl->magic = 0;
+        pthread_mutex_unlock(&a_ctrl->send_mutex);
+    } else {
+        a_ctrl->magic = 0;
+    }
+
+    // STEP 4: Stop timers on their own worker thread (synchronously).
+    // Timer callbacks never self-delete; this path is the single owner of the timers.
     if (a_ctrl->retransmit_timer) {
         s_flow_ctrl_timer_stop(a_ctrl->retransmit_timer);
         a_ctrl->retransmit_timer = NULL;
@@ -452,10 +459,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
         s_flow_ctrl_timer_stop(a_ctrl->keepalive_timer);
         a_ctrl->keepalive_timer = NULL;
     }
-    
-    // STEP 4: Clear magic (now safe — no timers can fire)
-    a_ctrl->magic = 0;
-    
+
     // STEP 5: Clean send window
     if (a_ctrl->send_window) {
         for (size_t i = 0; i < a_ctrl->send_window_size; i++) {
@@ -463,6 +467,7 @@ void dap_io_flow_ctrl_delete(dap_io_flow_ctrl_t *a_ctrl)
                 a_ctrl->callbacks.packet_free(a_ctrl->send_window[i].packet, a_ctrl->callbacks.arg);
             }
         }
+        pthread_mutex_destroy(&a_ctrl->send_mutex);
         DAP_DEL_Z(a_ctrl->send_window);
     }
     
@@ -993,6 +998,15 @@ static bool s_retransmit_timer_callback(void *a_arg)
     if (!l_ctrl || l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
         return true;  // FC is being torn down; owner will delete the timer
     }
+
+    // Lock mutex BEFORE accessing any FC data to prevent race with dap_io_flow_ctrl_delete()
+    pthread_mutex_lock(&l_ctrl->send_mutex);
+
+    // Double-check magic AFTER acquiring lock (detect deletion during lock wait)
+    if (l_ctrl->magic != DAP_IO_FLOW_CTRL_MAGIC) {
+        pthread_mutex_unlock(&l_ctrl->send_mutex);
+        return true;  // FC is being torn down; owner will delete the timer
+    }
     
     uint64_t l_now = dap_nanotime_now();
     uint64_t l_timeout_ns = l_ctrl->config.retransmit_timeout_ms * 1000000ULL;
@@ -1040,8 +1054,9 @@ static bool s_retransmit_timer_callback(void *a_arg)
             }
         }
     }
-    
-    
+
+    pthread_mutex_unlock(&l_ctrl->send_mutex);
+
     return true;  // Continue timer
 }
 

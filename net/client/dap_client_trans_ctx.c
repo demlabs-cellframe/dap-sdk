@@ -55,14 +55,11 @@ typedef struct {
 static void s_stream_tc_cleanup_on_worker(void *a_arg)
 {
     s_stream_tc_cleanup_t *l_cleanup = (s_stream_tc_cleanup_t *)a_arg;
-    log_it(L_INFO, "[CLEAN_DBG] cleanup_on_worker arg=%p", a_arg);
     if (!l_cleanup)
         return;
 
     dap_net_trans_ctx_t *l_tc = l_cleanup->tc;
     dap_stream_t *l_stream = l_cleanup->stream;
-    log_it(L_INFO, "[CLEAN_DBG] cleanup_on_worker: tc=%p stream=%p esocket=%p",
-           (void*)l_tc, (void*)l_stream, l_stream ? (void*)l_stream->esocket : NULL);
 
     if (l_stream) {
         /* Worker context: safe to touch stream fields.  Detach the trans_ctx
@@ -73,10 +70,7 @@ static void s_stream_tc_cleanup_on_worker(void *a_arg)
             if (l_stream->client_stream_ref == &l_tc->stream)
                 l_stream->client_stream_ref = NULL;
         }
-        log_it(L_INFO, "[CLEAN_DBG] calling dap_stream_delete_unsafe for stream %p esocket %p",
-               (void*)l_stream, l_stream ? (void*)l_stream->esocket : NULL);
         dap_stream_delete_unsafe(l_stream);
-        log_it(L_INFO, "[CLEAN_DBG] dap_stream_delete_unsafe done");
     }
 
     if (l_tc) {
@@ -206,9 +200,6 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
 
     if (l_tc) {
         dap_stream_t *l_stream = l_tc->stream;
-        log_it(L_INFO, "[CLEAN_DBG] clean_unsafe: l_tc=%p l_stream=%p esocket_worker=%p current_worker=%p",
-               (void*)l_tc, (void*)l_stream, l_stream ? (void*)l_stream->esocket_worker : NULL,
-               (void*)dap_worker_get_current());
         /* Sentinel: callbacks that check l_tc->stream will see NULL immediately,
          * even before the stream memory is freed. */
         l_tc->stream = NULL;
@@ -227,7 +218,6 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
                 l_cleanup->tc = NULL; /* trans_ctx stays with FSM */
                 l_cleanup->stream = l_stream;
                 dap_worker_t *l_es_worker = l_stream->esocket_worker;
-                log_it(L_INFO, "[CLEAN_DBG] dispatching cleanup to worker %p", (void*)l_es_worker);
                 if (l_es_worker && l_es_worker != dap_worker_get_current()) {
                     dap_worker_exec_callback_on(l_es_worker, s_stream_tc_cleanup_on_worker, l_cleanup);
                 } else {
@@ -254,6 +244,8 @@ void dap_client_trans_ctx_clean_unsafe(dap_client_trans_ctx_t *a_ctx)
         l_fsm->is_encrypted_headers = false;
         l_fsm->is_close_session = false;
     }
+    if (l_tc)
+        l_tc->remote_protocol_version = 0;
     a_ctx->ts_last_active = 0;
 }
 
@@ -547,7 +539,8 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             break;
         }
 
-        // Generate session key
+        // Generate session key: some KEM implementations (MSRLN, Kyber) store the shared
+        // secret in ->shared_key after gen_alice_shared_key; others use ->priv_key_data.
         const void *l_kex_buf = l_tc->session_key_open->shared_key
                                     ? l_tc->session_key_open->shared_key
                                     : l_tc->session_key_open->priv_key_data;

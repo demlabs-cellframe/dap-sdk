@@ -281,6 +281,8 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     return l_fsm;
 }
 
+static void s_deferred_trans_ctx_free(void *a_arg) { DAP_DELETE(a_arg); }
+
 void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
 {
     if (!a_fsm)
@@ -311,10 +313,22 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
 
     if (a_fsm->trans_ctx) {
         a_fsm->trans_ctx->_inheritor = NULL;
-        /* No stream was attached at cleanup time, so trans_ctx is still pending.
-         * Free it now in the FSM context. */
-        DAP_DELETE(a_fsm->trans_ctx);
+        dap_worker_t *l_udp_worker = a_fsm->trans_ctx->esocket_worker;
+        if (l_udp_worker) {
+            /* s_udp_close already cleared callbacks.read_callback = NULL on the esocket,
+             * so no new read callbacks can fire after this point.  We still defer the free
+             * to avoid freeing trans_ctx before any read callback already in-flight (already
+             * dispatched by epoll but not yet executed) on the worker finishes: those
+             * callbacks check l_trans_ctx->stream == NULL and return early, but only if the
+             * trans_ctx struct itself is still valid memory.  Deferring to the same worker
+             * serialises the free after all pending events on that worker complete. */
+            a_fsm->trans_ctx->esocket_worker = NULL;
+            dap_worker_exec_callback_on(l_udp_worker, s_deferred_trans_ctx_free, a_fsm->trans_ctx);
+        } else {
+            DAP_DELETE(a_fsm->trans_ctx);
+        }
         a_fsm->trans_ctx = NULL;
+        a_fsm->esocket   = NULL;
     }
     a_fsm->esocket = NULL;
 

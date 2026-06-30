@@ -1656,6 +1656,14 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         if (!l_stream->trans_ctx || !l_stream->trans_ctx->trans ||
             !l_stream->trans_ctx->trans->ops || !l_stream->trans_ctx->trans->ops->write ||
             !l_stream->session || !l_stream->session->key) {
+            log_it(L_WARNING, "Keepalive %s sock %"DAP_FORMAT_SOCKET": skipped — trans_ctx=%p trans=%p ops=%p write=%p session=%p key=%p",
+                   a_server_side ? "srv" : "cli", l_es->socket,
+                   (void*)l_stream->trans_ctx,
+                   l_stream->trans_ctx ? (void*)l_stream->trans_ctx->trans : NULL,
+                   (l_stream->trans_ctx && l_stream->trans_ctx->trans) ? (void*)l_stream->trans_ctx->trans->ops : NULL,
+                   (l_stream->trans_ctx && l_stream->trans_ctx->trans && l_stream->trans_ctx->trans->ops) ? (void*)l_stream->trans_ctx->trans->ops->write : NULL,
+                   (void*)l_stream->session,
+                   l_stream->session ? (void*)l_stream->session->key : NULL);
             return true;
         }
         debug_if(s_debug_more, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,

@@ -756,9 +756,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         if (l_selected_sockets > 0) {
             s_busy_count++;
             if (s_busy_count > 10000) {
-                /* Scan ALL ready events for persistent HUP sockets that cause
-                 * the busy loop.  Only events[0] was checked before, missing
-                 * HUP sockets at other indices. */
                 bool l_forced_close = false;
                 for (ssize_t bi = 0; bi < l_sockets_max && bi < l_selected_sockets; bi++) {
                     dap_events_socket_t *l_bes = (dap_events_socket_t *)l_epoll_events[bi].data.ptr;
@@ -1504,7 +1501,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             }
                         } else {
                             l_errno = 0;
-                            debug_if(s_debug_more, L_DEBUG, "send OK: socket %"DAP_FORMAT_SOCKET" sent %zd/%zu bytes",
+                            debug_if(l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT && s_debug_more, L_DEBUG,
+                                     "CLI send OK: socket %"DAP_FORMAT_SOCKET" sent %zd/%zu bytes",
                                      l_cur->socket, l_bytes_sent, l_cur->buf_out_size);
                         }
                     }
