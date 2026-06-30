@@ -110,6 +110,21 @@ void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
         *return_code = Http_Status_BadRequest;
         return;
     }
+
+    if(cl_st->http_client)
+    {
+        log_it(L_INFO, "[enc_init] %s from %s url_path='%s' query='%s' body_size=%zu",
+               cl_st->http_client->action,
+               cl_st->es_hostaddr,
+               cl_st->http_client->url_path ? cl_st->http_client->url_path : "",
+               cl_st->http_client->in_query_string,
+               cl_st->request_size);
+    }
+    else
+    {
+        log_it(L_INFO, "[enc_init] request from %s body_size=%zu (no http_client)",
+               cl_st->es_hostaddr, cl_st->request_size);
+    }
     
     // HTTP server extracts basename before calling processor
     // So url_path should be basename (e.g., "gd4y5yh78w42aaagh"), not full path
@@ -180,6 +195,10 @@ void enc_http_proc(struct dap_http_simple *cl_st, void *arg)
     }
     
     // Write reply in JSON format
+    log_it(L_INFO, "[enc_init] handshake OK for %s, encrypt_id_len=%zu encrypt_msg_len=%zu",
+           cl_st->es_hostaddr,
+           l_response->encrypt_id_len,
+           l_response->encrypt_msg_len);
     _enc_http_write_reply(cl_st,
                          l_response->encrypt_id, (int)l_response->encrypt_id_len,
                          l_response->encrypt_msg, (int)l_response->encrypt_msg_len,
