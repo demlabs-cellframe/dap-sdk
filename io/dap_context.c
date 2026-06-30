@@ -264,8 +264,9 @@ void dap_context_stop_n_kill(dap_context_t * a_context)
         a_context->signal_exit = true;
         // Wake up proc thread via eventfd (replaces mutex+condvar)
         uint64_t l_one = 1;
-        if (l_thread->wakeup_fd >= 0)
-            write(l_thread->wakeup_fd, &l_one, sizeof(l_one));
+        if (l_thread->wakeup_fd >= 0
+                && write(l_thread->wakeup_fd, &l_one, sizeof(l_one)) != sizeof(l_one))
+            log_it(L_WARNING, "Failed to wakeup proc thread (errno=%d)", errno);
     }
     default:
         break;
@@ -1217,7 +1218,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_bytes_read = dap_recvfrom(l_cur->socket, NULL, 0);
 #elif defined(DAP_OS_LINUX)
                         uint64_t val;
-                        read(l_cur->socket, &val, sizeof(val));
+                        ssize_t l_rd = read(l_cur->socket, &val, sizeof(val));
+                        if (l_rd < 0 && errno != EAGAIN && errno != EINTR)
+                            log_it(L_WARNING, "Timer fd read failed: errno=%d", errno);
 #endif
                         if (l_cur->callbacks.timer_callback)
                             l_cur->callbacks.timer_callback(l_cur);

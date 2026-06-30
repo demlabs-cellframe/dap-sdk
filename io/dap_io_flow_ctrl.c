@@ -118,6 +118,7 @@ struct dap_io_flow_ctrl {
     size_t send_window_size;
     uint64_t send_seq_next;         // Next sequence to send
     uint64_t send_seq_acked;        // Highest acked sequence
+    pthread_mutex_t send_mutex;
     
     // Receive window (reordering)
     recv_window_entry_t *recv_window;
@@ -330,6 +331,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
             DAP_DELETE(l_ctrl);
             return NULL;
         }
+        pthread_mutex_init(&l_ctrl->send_mutex, NULL);
         l_ctrl->send_seq_next = 1;  // Start from 1 (0 = invalid)
     }
     
@@ -340,6 +342,7 @@ dap_io_flow_ctrl_t* dap_io_flow_ctrl_create(
         if (!l_ctrl->recv_window) {
             log_it(L_ERROR, "Failed to allocate receive window");
             if (l_ctrl->send_window) {
+                pthread_mutex_destroy(&l_ctrl->send_mutex);
                 DAP_DELETE(l_ctrl->send_window);
             }
             DAP_DELETE(l_ctrl);

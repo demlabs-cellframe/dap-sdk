@@ -36,7 +36,7 @@ int dap_stream_ctl_handler_process(dap_trans_request_t *a_req)
     }
 
     /* Parse URL params: channels=RS,enc_type=6,enc_key_size=32,enc_headers=0 */
-    char l_channels[64] = {0};
+    char l_channels[sizeof(((dap_stream_session_t *)0)->active_channels)] = {0};
     dap_enc_key_type_t l_enc_type = DEFAULT_ENC_TYPE;
     size_t l_enc_key_size = DEFAULT_ENC_KEY_SIZE;
     int l_enc_headers = 0;
@@ -55,7 +55,13 @@ int dap_stream_ctl_handler_process(dap_trans_request_t *a_req)
         if (l_value && l_value != l_name) {
             *l_value++ = '\0';
             if (strcmp(l_name, "channels") == 0) {
-                strncpy(l_channels, l_value, sizeof(l_channels) - 1);
+                if (strlen(l_value) >= sizeof(l_channels)) {
+                    log_it(L_WARNING, "stream_ctl: channels param too long");
+                    DAP_DELETE(l_url_copy);
+                    trans_set_status(a_req, 400);
+                    return -1;
+                }
+                dap_strncpy(l_channels, l_value, sizeof(l_channels));
             } else if (strcmp(l_name, "enc_type") == 0) {
                 l_enc_type = atoi(l_value);
                 l_is_legacy = false;
@@ -93,7 +99,7 @@ int dap_stream_ctl_handler_process(dap_trans_request_t *a_req)
         return -3;
     }
 
-    strncpy(l_session->active_channels, l_channels, sizeof(l_session->active_channels) - 1);
+    memcpy(l_session->active_channels, l_channels, sizeof(l_session->active_channels));
 
     /* Generate session key */
     char l_key_str[KEX_KEY_STR_SIZE + 1];

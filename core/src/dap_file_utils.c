@@ -79,25 +79,6 @@ void dap_path_to_native_inplace(char *path)
 }
 
 static bool s_debug_more = false;
-/**
- * Normalize path separators to the OS-native form in place.
- */
-void dap_path_to_native_inplace(char *path)
-{
-    if (!path)
-        return;
-#ifdef DAP_OS_WINDOWS
-    for (; *path; path++) {
-        if (*path == '/')
-            *path = DAP_DIR_SEPARATOR;
-    }
-#else
-    for (; *path; path++) {
-        if (*path == '\\')
-            *path = DAP_DIR_SEPARATOR;
-    }
-#endif
-}
 
 /**
  * Check the directory path for unsupported symbols
@@ -1816,6 +1797,12 @@ union tar_buffer {
     struct tar_header header;
 };
 
+static bool s_tar_write(int a_fd, const void *a_buf, size_t a_size)
+{
+    ssize_t l_n = write(a_fd, a_buf, a_size);
+    return l_n >= 0 && (size_t)l_n == a_size;
+}
+
 /*
  * Pack a directory with contents into a TAR archive
  *
@@ -1830,10 +1817,8 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
     union tar_buffer l_buffer;
     if(!a_outfile)
         return false;
-    char *l_filebuf = NULL;
-    size_t l_filelen = 0;
     struct stat l_stat_info;
-    int remaining = l_filelen; // how much is left to write
+    int remaining = 0;
     // fill header
     memset(&l_buffer, 0, BLOCKSIZE);
     // Trim a directory name if it's over 100 bytes
@@ -1861,7 +1846,8 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
     }
 
     // add header
-    (void)write(a_outfile, &l_buffer, BLOCKSIZE);
+    if (!s_tar_write(a_outfile, &l_buffer, BLOCKSIZE))
+        return false;
 
     return true;
 }
@@ -1910,18 +1896,27 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
         }
 
         // add header
-        (void)write(a_outfile, &l_buffer, BLOCKSIZE);
+        if (!s_tar_write(a_outfile, &l_buffer, BLOCKSIZE)) {
+            DAP_DELETE(l_filebuf);
+            return false;
+        }
         // add file body
         while(remaining)
         {
             unsigned int bytes = (remaining > BLOCKSIZE) ? BLOCKSIZE : remaining;
             memcpy(&l_buffer, l_filebuf + l_filelen - remaining, bytes);
-            (void)write(a_outfile, &l_buffer, bytes);
+            if (!s_tar_write(a_outfile, &l_buffer, bytes)) {
+                DAP_DELETE(l_filebuf);
+                return false;
+            }
             remaining -= bytes;
             // the file is already written, but not aligned to the BLOCKSIZE boundary
             if(bytes != BLOCKSIZE && !remaining) {
                 memset(&l_buffer, 0, BLOCKSIZE - bytes);
-                (void)write(a_outfile, &l_buffer, BLOCKSIZE - bytes);
+                if (!s_tar_write(a_outfile, &l_buffer, BLOCKSIZE - bytes)) {
+                    DAP_DELETE(l_filebuf);
+                    return false;
+                }
             }
         }
         DAP_DELETE(l_filebuf);
@@ -2028,8 +2023,8 @@ bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename
     // Write two empty blocks to the end
     union tar_buffer buffer;
     memset(&buffer, 0, BLOCKSIZE);
-    (void)write(l_outfile, &buffer, BLOCKSIZE);
-    (void)write(l_outfile, &buffer, BLOCKSIZE);
+    if (!s_tar_write(l_outfile, &buffer, BLOCKSIZE) || !s_tar_write(l_outfile, &buffer, BLOCKSIZE))
+        l_ret = false;
     close(l_outfile);
     return l_ret;
 }
