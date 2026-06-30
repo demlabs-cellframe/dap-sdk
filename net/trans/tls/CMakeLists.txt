@@ -6,12 +6,16 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/DapModule.cmake)
 
 set(TLS_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_stream_trans_tls.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/dap_net_trans_tls_server.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_mimicry.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_ja3.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/dap_tls_fingerprint.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/chrome_120.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/firefox_121.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/edge_120.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/safari_17.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/android_14.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/telegram_android.c"
 )
 
 file(GLOB TLS_HDRS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")

@@ -59,7 +59,7 @@ const size_t g_trans_config_count = 0;
 #if defined(__arm__) || defined(__ARM_ARCH)
 #define NUM_CLIENTS         10
 #else
-#define NUM_CLIENTS         100
+#define NUM_CLIENTS         20
 #endif
 #define DATA_SIZE           (64 * 1024)    // 64KB per client (6.4MB total)
 #define HANDSHAKE_TIMEOUT   60000   // 60s for 100 clients

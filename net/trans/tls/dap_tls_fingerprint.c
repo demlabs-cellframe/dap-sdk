@@ -16,9 +16,15 @@
 extern const dap_tls_fp_profile_t *dap_tls_fp_chrome_120(void);
 extern const dap_tls_fp_profile_t *dap_tls_fp_firefox_121(void);
 extern const dap_tls_fp_profile_t *dap_tls_fp_edge_120(void);
+extern const dap_tls_fp_profile_t *dap_tls_fp_safari_17(void);
+extern const dap_tls_fp_profile_t *dap_tls_fp_android_14(void);
+extern const dap_tls_fp_profile_t *dap_tls_fp_telegram_android(void);
 
 static const dap_tls_fp_profile_t *s_profiles[] = {
     NULL, /* filled at init */
+    NULL,
+    NULL,
+    NULL,
     NULL,
     NULL,
 };
@@ -30,7 +36,10 @@ static void s_registry_init(void)
     s_profiles[0] = dap_tls_fp_chrome_120();
     s_profiles[1] = dap_tls_fp_firefox_121();
     s_profiles[2] = dap_tls_fp_edge_120();
-    s_profile_count = 3;
+    s_profiles[3] = dap_tls_fp_safari_17();
+    s_profiles[4] = dap_tls_fp_android_14();
+    s_profiles[5] = dap_tls_fp_telegram_android();
+    s_profile_count = 6;
     log_it(L_NOTICE, "TLS fingerprint registry: %zu profiles loaded", s_profile_count);
 }
 
@@ -77,7 +86,6 @@ int dap_tls_fp_build_clienthello(const dap_tls_fp_profile_t *a_profile,
         return -2;
 
     size_t l_base_size = a_profile->clienthello_size;
-    /* Calculate total output size: base template + SNI hostname (if not already in template) */
     size_t l_total = l_base_size + l_sni_len;
 
     uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_total);
@@ -86,17 +94,48 @@ int dap_tls_fp_build_clienthello(const dap_tls_fp_profile_t *a_profile,
 
     memcpy(l_buf, a_profile->clienthello, l_base_size);
 
-    /* Patch SNI hostname length (2 bytes BE) at sni_length_offset */
-    if (a_profile->sni_length_offset + 2 <= l_base_size) {
-        l_buf[a_profile->sni_length_offset]     = (uint8_t)(l_sni_len >> 8);
-        l_buf[a_profile->sni_length_offset + 1] = (uint8_t)(l_sni_len & 0xFF);
+    /* Patch hostname_length (2 bytes BE) */
+    if (a_profile->sni_hostname_length_offset + 2 <= l_base_size) {
+        l_buf[a_profile->sni_hostname_length_offset]     = (uint8_t)(l_sni_len >> 8);
+        l_buf[a_profile->sni_hostname_length_offset + 1] = (uint8_t)(l_sni_len & 0xFF);
     }
 
-    /* Patch SNI hostname at sni_offset */
-    if (a_profile->sni_offset + l_sni_len <= l_total) {
-        if (l_sni_len > 0)
-            memcpy(l_buf + a_profile->sni_offset, a_sni, l_sni_len);
+    /* Patch SNI data_length = hostname_length + 5 (2 bytes BE) */
+    if (a_profile->sni_data_length_offset + 2 <= l_base_size) {
+        uint16_t l_sni_data_len = (uint16_t)(l_sni_len + 5);
+        l_buf[a_profile->sni_data_length_offset]     = (uint8_t)(l_sni_data_len >> 8);
+        l_buf[a_profile->sni_data_length_offset + 1] = (uint8_t)(l_sni_data_len & 0xFF);
     }
+
+    /* Patch server_name_list_length = hostname_length + 3 (2 bytes BE) */
+    /* server_name_list_length is at sni_data_length_offset + 2 */
+    size_t l_list_len_offset = a_profile->sni_data_length_offset + 2;
+    if (l_list_len_offset + 2 <= l_base_size) {
+        uint16_t l_list_len = (uint16_t)(l_sni_len + 3);
+        l_buf[l_list_len_offset]     = (uint8_t)(l_list_len >> 8);
+        l_buf[l_list_len_offset + 1] = (uint8_t)(l_list_len & 0xFF);
+    }
+
+    /* Patch extensions_length: add SNI hostname bytes to total extensions size */
+    if (a_profile->extensions_length_offset + 2 <= l_base_size) {
+        uint16_t l_cur_ext_len = ((uint16_t)l_buf[a_profile->extensions_length_offset] << 8)
+                               | l_buf[a_profile->extensions_length_offset + 1];
+        uint16_t l_new_ext_len = (uint16_t)(l_cur_ext_len + l_sni_len);
+        l_buf[a_profile->extensions_length_offset]     = (uint8_t)(l_new_ext_len >> 8);
+        l_buf[a_profile->extensions_length_offset + 1] = (uint8_t)(l_new_ext_len & 0xFF);
+    }
+
+    /* Copy hostname bytes */
+    if (a_profile->sni_hostname_offset + l_sni_len <= l_total) {
+        if (l_sni_len > 0)
+            memcpy(l_buf + a_profile->sni_hostname_offset, a_sni, l_sni_len);
+    }
+
+    /* Patch handshake length (first 4 bytes: type(1) + length(3)) */
+    uint32_t l_hs_body_len = (uint32_t)(l_total - 4);
+    l_buf[1] = (uint8_t)((l_hs_body_len >> 16) & 0xFF);
+    l_buf[2] = (uint8_t)((l_hs_body_len >> 8) & 0xFF);
+    l_buf[3] = (uint8_t)(l_hs_body_len & 0xFF);
 
     *a_out = l_buf;
     *a_out_size = l_total;

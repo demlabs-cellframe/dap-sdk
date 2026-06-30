@@ -109,6 +109,8 @@ typedef struct dap_client {
 
     dap_net_trans_type_t trans_type; // Transport layer to use for stream
 
+    uint8_t tls_fp_profile_index; // TLS fingerprint profile index (TL.8, 0=default)
+
     void *_internal;
     void *_inheritor;
 } dap_client_t;

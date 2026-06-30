@@ -33,6 +33,8 @@
 
 #define LOG_TAG "dap_tls_mimicry"
 
+static bool s_debug_more = false;
+
 /* TLS content types */
 #define TLS_CT_CHANGE_CIPHER_SPEC  0x14
 #define TLS_CT_HANDSHAKE           0x16
@@ -662,10 +664,19 @@ int dap_tls_mimicry_unwrap(dap_tls_mimicry_t *a_m,
     size_t l_pos = 0;
     size_t l_payload_total = 0;
 
-    /* First pass: count total payload */
+    /* First pass: count total payload, skip non-APPLICATION_DATA records (CCS, etc.) */
     while (l_pos + DAP_TLS_MIMICRY_RECORD_HDR_SIZE <= a_size) {
-        if (d[l_pos] != TLS_CT_APPLICATION_DATA)
-            break;
+        if (d[l_pos] != TLS_CT_APPLICATION_DATA) {
+            /* Skip non-APPLICATION_DATA record (e.g. CCS after handshake) */
+            uint16_t l_skip_len = s_get_u16be(d + l_pos + 3);
+            if (l_pos + DAP_TLS_MIMICRY_RECORD_HDR_SIZE + l_skip_len > a_size)
+                break; /* partial record — wait for more data */
+            debug_if(s_debug_more, L_DEBUG,
+                     "unwrap: skipping non-APP_DATA record type=0x%02X len=%u at pos=%zu",
+                     d[l_pos], l_skip_len, l_pos);
+            l_pos += DAP_TLS_MIMICRY_RECORD_HDR_SIZE + l_skip_len;
+            continue;
+        }
         uint16_t l_rec_len = s_get_u16be(d + l_pos + 3);
         if (l_pos + DAP_TLS_MIMICRY_RECORD_HDR_SIZE + l_rec_len > a_size)
             break; /* partial record */
@@ -684,13 +695,15 @@ int dap_tls_mimicry_unwrap(dap_tls_mimicry_t *a_m,
     if (!l_out)
         return -1;
 
-    /* Second pass: copy payloads */
+    /* Second pass: copy APPLICATION_DATA payloads, skip others */
     size_t l_pos2 = 0;
     size_t l_out_pos = 0;
     while (l_pos2 < l_pos) {
         uint16_t l_rec_len = s_get_u16be(d + l_pos2 + 3);
-        memcpy(l_out + l_out_pos, d + l_pos2 + DAP_TLS_MIMICRY_RECORD_HDR_SIZE, l_rec_len);
-        l_out_pos += l_rec_len;
+        if (d[l_pos2] == TLS_CT_APPLICATION_DATA) {
+            memcpy(l_out + l_out_pos, d + l_pos2 + DAP_TLS_MIMICRY_RECORD_HDR_SIZE, l_rec_len);
+            l_out_pos += l_rec_len;
+        }
         l_pos2 += DAP_TLS_MIMICRY_RECORD_HDR_SIZE + l_rec_len;
     }
 

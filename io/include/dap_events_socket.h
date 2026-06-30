@@ -319,7 +319,7 @@ typedef struct dap_events_socket {
     dap_events_socket_t *pipe_out; // Optional: target esocket for kqueue cross-context event delivery
 
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-    pthread_rwlock_t buf_out_lock;
+    // buf_out_lock removed — dead code, replaced by ring buffer queue
 #endif
     struct sockaddr_storage addr_storage;
     socklen_t addr_size;

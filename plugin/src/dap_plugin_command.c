@@ -14,6 +14,36 @@ static bool s_l_restart_plugins = false;
 
 static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int a_version);
 
+/**
+ * @brief Build CLI commands section for plugin show from manifest params field
+ * @param a_manifest Plugin manifest with optional params (CLI command names)
+ * @return Allocated text block or NULL if no params declared
+ */
+static char *s_plugin_manifest_cli_commands_text(dap_plugin_manifest_t *a_manifest)
+{
+    if(!a_manifest || !a_manifest->params_count || !a_manifest->params)
+        return NULL;
+    char *l_result = dap_strdup(" CLI commands:\n");
+    if(!l_result)
+        return NULL;
+    for(size_t i = 0; i < a_manifest->params_count; i++){
+        const char *l_name = a_manifest->params[i];
+        if(!l_name || !l_name[0])
+            continue;
+        dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(l_name);
+        if(l_cmd && l_cmd->doc)
+            l_result = dap_strjoin(NULL, l_result, "  ", l_name, "\t- ", l_cmd->doc, "\n", NULL);
+        else if(l_cmd)
+            l_result = dap_strjoin(NULL, l_result, "  ", l_name,
+                    "\t- (registered, use 'help ", l_name, "' for details)\n", NULL);
+        else
+            l_result = dap_strjoin(NULL, l_result, "  ", l_name,
+                    "\t- (declared in manifest, not registered in CLI)\n", NULL);
+        if(!l_result)
+            return NULL;
+    }
+    return l_result;
+}
 
 /**
  * @brief dap_chain_plugins_command_create
@@ -26,7 +56,7 @@ void dap_plugin_command_init(void)
                                            "plugin list\n"
                                            "\tShow plugins list\n"
                                            "plugin show <plugin name>\n"
-                                           "\tShow plugin details\n"
+                                           "\tShow plugin details (incl. CLI commands from manifest params)\n"
                                            "plugin restart\n"
                                            "\tRestart all plugins\n"
                                            "plugin reload <plugin name>\n"
@@ -88,12 +118,22 @@ static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply, int 
             HASH_FIND_STR(dap_plugin_manifest_all(), l_cmd_arg, l_manifest);
             if(l_manifest){
                 char *l_deps = dap_plugin_manifests_get_list_dependencies(l_manifest);
-                dap_cli_server_cmd_set_reply_text(a_str_reply, " Name: %s\n Version: %s\n Author: %s\n"
-                                                               " Description: %s\n Dependencies: %s \n\n",
-                                                  l_manifest->name, l_manifest->version, l_manifest->author,
-                                                  l_manifest->description, l_deps?l_deps:" ");
-                if(l_deps)
-                    DAP_DELETE(l_deps);
+                char *l_cmds = s_plugin_manifest_cli_commands_text(l_manifest);
+                if(l_cmds){
+                    dap_cli_server_cmd_set_reply_text(a_str_reply,
+                            " Name: %s\n Version: %s\n Author: %s\n"
+                            " Description: %s\n Dependencies: %s\n%s\n",
+                            l_manifest->name, l_manifest->version, l_manifest->author,
+                            l_manifest->description, l_deps ? l_deps : " ", l_cmds);
+                } else {
+                    dap_cli_server_cmd_set_reply_text(a_str_reply,
+                            " Name: %s\n Version: %s\n Author: %s\n"
+                            " Description: %s\n Dependencies: %s \n\n",
+                            l_manifest->name, l_manifest->version, l_manifest->author,
+                            l_manifest->description, l_deps ? l_deps : " ");
+                }
+                DAP_DEL_Z(l_deps);
+                DAP_DEL_Z(l_cmds);
             } else {
                 dap_cli_server_cmd_set_reply_text(a_str_reply, "Can't find a plugin named %s", l_cmd_arg);
             }
