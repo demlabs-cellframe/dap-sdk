@@ -571,6 +571,8 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_cluster_node_ad
     debug_if(s_debug, L_DEBUG, "s_stream_new: found transport=%p", (void*)l_transport);
     if (l_transport) {
         l_ret->trans = l_transport;
+        if (l_ret->trans_ctx)
+            l_ret->trans_ctx->trans = l_transport;
         debug_if(s_debug, L_DEBUG, "s_stream_new: assigned transport");
         // Store HTTP client in transport-specific data
         // Note: HTTP client binding is managed by the transport layer
@@ -1398,8 +1400,25 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             l_stream->is_active = false;
             return true;
         }
-        if(s_debug)
-            log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
+        dap_net_trans_t *l_trans = NULL;
+        if (l_stream->trans_ctx && l_stream->trans_ctx->trans)
+            l_trans = l_stream->trans_ctx->trans;
+        else if (l_stream->trans)
+            l_trans = l_stream->trans;
+        if (!l_trans || !l_trans->ops || !l_trans->ops->write ||
+            !l_stream->session || !l_stream->session->key) {
+            debug_if(s_debug, L_DEBUG, "Keepalive %s sock %"DAP_FORMAT_SOCKET": skipped — trans_ctx=%p trans=%p ops=%p write=%p session=%p key=%p",
+                      a_server_side ? "srv" : "cli", l_es->socket,
+                      (void*)l_stream->trans_ctx,
+                      (void*)l_trans,
+                      l_trans ? (void*)l_trans->ops : NULL,
+                      l_trans && l_trans->ops ? (void*)l_trans->ops->write : NULL,
+                      (void*)l_stream->session,
+                      l_stream->session ? (void*)l_stream->session->key : NULL);
+            return true;
+        }
+        debug_if(s_debug_more, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,
+                 a_server_side ? "srv" : "cli", l_es->socket, *l_es_uuid);
         dap_stream_pkt_hdr_t l_pkt = {};
         l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
         memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
