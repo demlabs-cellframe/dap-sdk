@@ -588,6 +588,8 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     debug_if(s_debug, L_DEBUG, "s_stream_new: found transport=%p", (void*)l_transport);
     if (l_transport) {
         l_ret->trans = l_transport;
+        if (l_ret->trans_ctx)
+            l_ret->trans_ctx->trans = l_transport;
         debug_if(s_debug, L_DEBUG, "s_stream_new: assigned transport");
         // Store HTTP client in transport-specific data
         // Note: HTTP client binding is managed by the transport layer
@@ -1653,17 +1655,21 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             l_es->last_time_active = time(NULL);
             return true;
         }
-        if (!l_stream->trans_ctx || !l_stream->trans_ctx->trans ||
-            !l_stream->trans_ctx->trans->ops || !l_stream->trans_ctx->trans->ops->write ||
+        dap_net_trans_t *l_trans = NULL;
+        if (l_stream->trans_ctx && l_stream->trans_ctx->trans)
+            l_trans = l_stream->trans_ctx->trans;
+        else if (l_stream->trans)
+            l_trans = l_stream->trans;
+        if (!l_trans || !l_trans->ops || !l_trans->ops->write ||
             !l_stream->session || !l_stream->session->key) {
-            log_it(L_WARNING, "Keepalive %s sock %"DAP_FORMAT_SOCKET": skipped — trans_ctx=%p trans=%p ops=%p write=%p session=%p key=%p",
-                   a_server_side ? "srv" : "cli", l_es->socket,
-                   (void*)l_stream->trans_ctx,
-                   l_stream->trans_ctx ? (void*)l_stream->trans_ctx->trans : NULL,
-                   (l_stream->trans_ctx && l_stream->trans_ctx->trans) ? (void*)l_stream->trans_ctx->trans->ops : NULL,
-                   (l_stream->trans_ctx && l_stream->trans_ctx->trans && l_stream->trans_ctx->trans->ops) ? (void*)l_stream->trans_ctx->trans->ops->write : NULL,
-                   (void*)l_stream->session,
-                   l_stream->session ? (void*)l_stream->session->key : NULL);
+            debug_if(s_debug, L_DEBUG, "Keepalive %s sock %"DAP_FORMAT_SOCKET": skipped — trans_ctx=%p trans=%p ops=%p write=%p session=%p key=%p",
+                      a_server_side ? "srv" : "cli", l_es->socket,
+                      (void*)l_stream->trans_ctx,
+                      (void*)l_trans,
+                      l_trans ? (void*)l_trans->ops : NULL,
+                      l_trans && l_trans->ops ? (void*)l_trans->ops->write : NULL,
+                      (void*)l_stream->session,
+                      l_stream->session ? (void*)l_stream->session->key : NULL);
             return true;
         }
         debug_if(s_debug_more, L_DEBUG,"Keepalive %s sock %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x,
