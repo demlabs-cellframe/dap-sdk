@@ -166,9 +166,19 @@ static int s_type_callback_init(dap_plugin_manifest_t * a_manifest, void * a_pvt
     if (a_manifest == s_manifest)
         return 0;
     struct binary_pvt_data * l_pvt_data = (struct binary_pvt_data *) a_pvt_data;
-    if (!l_pvt_data || !l_pvt_data->callback_init)
+    if (!l_pvt_data || !l_pvt_data->callback_init) {
+        log_it(L_WARNING, "Binary plugin \"%s\" has no plugin_init entry point", a_manifest->name);
         return 0;
-    return l_pvt_data->callback_init(a_manifest->config, a_error_str);
+    }
+    if (!a_manifest->config)
+        log_it(L_WARNING, "Binary plugin \"%s\" init: manifest config is NULL", a_manifest->name);
+    log_it(L_INFO, "Binary plugin \"%s\" calling plugin_init", a_manifest->name);
+    int l_ret = l_pvt_data->callback_init(a_manifest->config, a_error_str);
+    if (l_ret)
+        log_it(L_ERROR, "Binary plugin \"%s\" plugin_init returned %d", a_manifest->name, l_ret);
+    else
+        log_it(L_INFO, "Binary plugin \"%s\" plugin_init returned OK", a_manifest->name);
+    return l_ret;
 }
 
 /**
