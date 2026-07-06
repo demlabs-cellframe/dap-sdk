@@ -45,6 +45,7 @@
 #include "dap_net.h"
 #include "dap_client_trans_ctx.h"
 #include "dap_client_fsm.h"
+#include "dap_client.h"
 #include "dap_net_trans_ctx.h"
 #include "dap_cert.h"
 #include "dap_worker.h"
@@ -1391,6 +1392,17 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
         l_ctx->callback(l_client_esocket->client, a_response, a_response_size);
     } else {
         log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu)", a_response, a_response_size);
+        /* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
+        if (l_client_esocket->client)
+        {
+            dap_client_t *l_client = l_client_esocket->client;
+            log_it(L_WARNING, "[TEMP_DEBUG] HTTP empty response node=" NODE_ADDR_FP_STR " %s:%hu stage=%s/%s",
+                   NODE_ADDR_FP_ARGS_S(l_client->link_info.node_addr),
+                   l_client->link_info.uplink_addr[0] ? l_client->link_info.uplink_addr : "?",
+                   l_client->link_info.uplink_port,
+                   dap_client_get_stage_str(l_client), dap_client_get_stage_status_str(l_client));
+        }
+        /* === TEMP_DEBUG_LINKS_CONNECTING: END === */
     }
 
     l_fsm->callback_arg = l_old_callback_arg;
