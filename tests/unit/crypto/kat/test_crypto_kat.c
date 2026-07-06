@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "dap_common.h"
+#include "dap_enc.h"
 #include "dap_enc_key.h"
 #include "dap_enc_chacha20_poly1305.h"
 #include "dap_enc_aes.h"
@@ -271,6 +272,7 @@ static void s_test_ntru_prime_roundtrip(void)
 
 int main(void)
 {
+    dap_enc_init();
     dap_log_level_set(L_ERROR);
 
     printf("========================================\n");

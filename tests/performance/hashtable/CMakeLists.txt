@@ -8,12 +8,11 @@ add_executable(${PROJECT_NAME}
     benchmark_hashtable.c
 )
 
-# Link DAP SDK
+# Link DAP SDK — all public include dirs propagate automatically
 target_link_libraries(${PROJECT_NAME} PRIVATE dap_sdk)
 
-# Include directories
+# Only non-propagated paths
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../module/core/include
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 

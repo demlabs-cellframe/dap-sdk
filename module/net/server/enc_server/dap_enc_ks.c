@@ -108,12 +108,18 @@ dap_enc_key_t * dap_enc_ks_find_http(struct dap_http_client * a_http_client)
     dap_http_header_t * hdr_key_id=dap_http_header_find(a_http_client->in_headers,"KeyID");
 
     if(hdr_key_id){
-        
+        log_it(L_NOTICE, "dap_enc_ks_find_http: KeyID='%s' (len=%zu)", hdr_key_id->value, strlen(hdr_key_id->value));
         dap_enc_ks_key_t * ks_key=dap_enc_ks_find(hdr_key_id->value);
-        if(ks_key)
+        if(ks_key) {
+            const uint8_t *l_kb = ks_key->key && ks_key->key->priv_key_data
+                ? (const uint8_t *)ks_key->key->priv_key_data : NULL;
+            if (l_kb && ks_key->key->priv_key_data_size >= 8)
+                log_it(L_NOTICE, "dap_enc_ks_find_http: found key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
+                       l_kb[0], l_kb[1], l_kb[2], l_kb[3],
+                       l_kb[4], l_kb[5], l_kb[6], l_kb[7]);
             return ks_key->key;
-        else{
-            log_it(L_WARNING, "Not found keyID %s in storage", hdr_key_id->value);
+        } else {
+            log_it(L_WARNING, "Not found keyID '%s' in storage", hdr_key_id->value);
             return NULL;
         }
     }else{

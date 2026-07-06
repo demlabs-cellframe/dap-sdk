@@ -45,11 +45,13 @@ int crypto_kem_enc(unsigned char *ct, unsigned char *ss, const unsigned char *pk
   buf[0] = 0x02;
   dap_random_bytes(buf+1,NEWHOPE_SYMBYTES);
 
-  dap_hash_shake256(buf,2*NEWHOPE_SYMBYTES,buf,NEWHOPE_SYMBYTES + 1);                     /* Don't release system RNG output */
+  /* Deprecated NewHope keeps the legacy permute → extract SHAKE convention
+   * for byte-for-byte compatibility with master-deployed artefacts. */
+  dap_hash_shake256_legacy(buf,2*NEWHOPE_SYMBYTES,buf,NEWHOPE_SYMBYTES + 1);                     /* Don't release system RNG output */
 
   cpapke_enc(ct, buf, pk, buf+NEWHOPE_SYMBYTES);                                 /* coins are in buf+NEWHOPE_SYMBYTES */
 
-  dap_hash_shake256(ss, NEWHOPE_SYMBYTES, buf, NEWHOPE_SYMBYTES);                         /* hash pre-k to ss */
+  dap_hash_shake256_legacy(ss, NEWHOPE_SYMBYTES, buf, NEWHOPE_SYMBYTES);                         /* hash pre-k to ss */
   return 0;
 }
 
@@ -70,7 +72,7 @@ int crypto_kem_dec(unsigned char *ss, const unsigned char *ct, const unsigned ch
 {
   cpapke_dec(ss, ct, sk);
 
-  dap_hash_shake256(ss, NEWHOPE_SYMBYTES, ss, NEWHOPE_SYMBYTES);                          /* hash pre-k to ss */
+  dap_hash_shake256_legacy(ss, NEWHOPE_SYMBYTES, ss, NEWHOPE_SYMBYTES);                          /* hash pre-k to ss */
 
   return 0;
 }

@@ -65,9 +65,7 @@ add_executable(benchmark_competitive_full
 )
 
 target_link_libraries(benchmark_competitive_full PRIVATE
-    dap_core
-    dap_json
-    dap_math
+    dap_sdk
 )
 
 # Platform-specific system libraries
@@ -83,12 +81,6 @@ endif()
 if(UNIX AND NOT APPLE AND NOT ANDROID)
     target_link_libraries(benchmark_competitive_full PRIVATE rt)
 endif()
-
-target_include_directories(benchmark_competitive_full PRIVATE
-    ${CMAKE_SOURCE_DIR}/module/core/include
-    ${CMAKE_SOURCE_DIR}/module/json/include
-    ${CMAKE_SOURCE_DIR}/module/json/src
-)
 
 # Add competitor libraries if found
 if(SIMDJSON_INCLUDE_DIR AND SIMDJSON_LIBRARY)
@@ -139,15 +131,11 @@ add_executable(benchmark_stage1_multi_arch
 )
 
 target_link_libraries(benchmark_stage1_multi_arch PRIVATE
-    dap_core
-    dap_json
-    dap_math
+    dap_sdk
 )
 
+# stage1 is a PRIVATE subdirectory, not propagated
 target_include_directories(benchmark_stage1_multi_arch PRIVATE
-    ${CMAKE_SOURCE_DIR}/module/core/include
-    ${CMAKE_SOURCE_DIR}/module/json/include
-    ${CMAKE_SOURCE_DIR}/module/json/src
     ${CMAKE_SOURCE_DIR}/module/json/src/stage1
 )
 

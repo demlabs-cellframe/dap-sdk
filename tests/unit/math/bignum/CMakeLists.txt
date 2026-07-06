@@ -3,16 +3,13 @@ cmake_minimum_required(VERSION 3.12)
 add_executable(test_bignum test_bignum.c)
 
 target_link_libraries(test_bignum
-    dap_math_bignum
-    dap_core
+    dap_sdk
     dap_test
 )
 
+# bignum/src is PRIVATE in dap_math_bignum, not propagated
 target_include_directories(test_bignum PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/math/bignum/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/math/bignum/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/test
 )
 
 if(UNIX AND NOT ANDROID)
@@ -26,5 +23,5 @@ set_target_properties(test_bignum PROPERTIES
 add_test(NAME test_bignum COMMAND test_bignum)
 set_tests_properties(test_bignum PROPERTIES
     LABELS "unit;math;bignum"
-    TIMEOUT ${DAP_T120}
+    TIMEOUT ${DAP_T60}
 )

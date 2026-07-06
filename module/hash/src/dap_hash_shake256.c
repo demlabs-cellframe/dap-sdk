@@ -122,3 +122,26 @@ void dap_hash_cshake256_simple(uint8_t *a_output, size_t a_outlen, uint16_t a_cs
         memcpy(a_output, l_tmp, a_outlen);
     }
 }
+
+/* Legacy variant: pre-FIPS-202 squeeze convention (permute → extract per
+ * block).  Kept for byte-for-byte compatibility with master deployments
+ * (e.g. deprecated tesla).  See dap_hash_shake256.h banner. */
+void dap_hash_cshake256_simple_legacy(uint8_t *a_output, size_t a_outlen, uint16_t a_cstm,
+                                       const uint8_t *a_input, size_t a_inlen)
+{
+    uint64_t l_state[25];
+    dap_hash_cshake256_simple_absorb(l_state, a_cstm, a_input, a_inlen);
+
+    size_t l_nblocks = a_outlen / DAP_KECCAK_SHAKE256_RATE;
+    if (l_nblocks)
+        dap_hash_shake256_legacy_squeezeblocks(a_output, l_nblocks, l_state);
+
+    a_output += l_nblocks * DAP_KECCAK_SHAKE256_RATE;
+    a_outlen -= l_nblocks * DAP_KECCAK_SHAKE256_RATE;
+
+    if (a_outlen > 0) {
+        uint8_t l_tmp[DAP_KECCAK_SHAKE256_RATE];
+        dap_hash_shake256_legacy_squeezeblocks(l_tmp, 1, l_state);
+        memcpy(a_output, l_tmp, a_outlen);
+    }
+}

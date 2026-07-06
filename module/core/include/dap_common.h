@@ -58,6 +58,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <time.h>
+#include <malloc.h>
 #ifdef __USE_GNU
 # undef __USE_GNU
 # define NEED_GNU_REENABLE
@@ -242,14 +243,14 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_MALLOC(s)         ({ intmax_t _s = (intmax_t)(s); _s > 0 ? malloc(_s) : NULL; })
 #define DAP_FREE(p)           free((void*)(p))
 #define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); _s > 0 && _n > 0 ? calloc(_n, _s) : NULL; })
-#define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? realloc(p, _s) : NULL; })
+#define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s > 0 ? realloc(p, _s) : NULL; })
 #define DAP_ALMALLOC(a, s)    ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s > 0 && _a >= 0 ? _dap_aligned_alloc(_a, _s) : NULL; })
 #define DAP_ALREALLOC(a, p, s) ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s >= DAP_TYPE_SIZE(p) && _a > 0 ? _dap_aligned_realloc(_a, p, _s) : NULL; })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
 #define DAP_NEW(t)            DAP_CAST_PTR( t, malloc(sizeof(t)) )
-#define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); _s >= (intmax_t)(sizeof(t)) ? DAP_CAST_PTR(t, malloc(_s)) : NULL; })
+#define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); _s > 0 ? DAP_CAST_PTR(t, malloc(_s)) : NULL; })
 /* Auto memory! Do not inline! Do not modify the size in-call! */
 #define DAP_NEW_STACK(t)       &(t){ }
 #define DAP_NEW_STACK_SIZE(t, s) DAP_CAST_PTR( t, (intmax_t)(s) >= (intmax_t)(sizeof(t)) && (intmax_t)(s) < (1 << 15) ? alloca((intmax_t)(s)) : NULL )
@@ -983,13 +984,11 @@ int dap_log_clear_file(const char *filename);
 
 DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const char * log_tag, enum dap_log_level, const char * format, ... );
 #define log_it_fl(_log_level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__)
-#define log_it(_log_level, ...) _log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__)
+#define log_it(_log_level, ...) (_log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__))
 
 #ifdef DAP_DEBUG
-// Debug build: debug_if with branch prediction hint
 #define debug_if(flg, lvl, ...) (__builtin_expect(!!(flg), 0) ? _log_it(NULL, 0, LOG_TAG, lvl, ##__VA_ARGS__) : (void)0)
 #else
-// Release build: debug_if compiles to ((void)0) for comma expressions
 #define debug_if(flg, lvl, ...) ((void)0)
 #endif
 

@@ -7,18 +7,21 @@ target_link_libraries(${PROJECT_NAME}
     dap_sdk dap_test
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/sig/dilithium
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/sym/chacha20
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/kem/ntru_prime
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/crypto/src/sig/ntru_prime
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/core/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../module/test
-)
-
 add_test(NAME test_pqc_algorithms COMMAND ${PROJECT_NAME})
 set_tests_properties(test_pqc_algorithms PROPERTIES
     LABELS "unit;crypto;pqc"
     TIMEOUT ${DAP_T300}
+)
+
+# ----------------------------------------------------------------------
+# SHAKE / Dilithium MODE_2 byte-for-byte regression KAT.  Anchors:
+#   * canonical FIPS 202 SHAKE128/256("", 64)
+#   * legacy SHAKE128/256("", 64)              — master pre-FIPS bytes
+#   * vanilla Dilithium-2 deterministic pk/sk  — master compat
+add_executable(test_shake_legacy_kat test_shake_legacy_kat.c)
+target_link_libraries(test_shake_legacy_kat dap_sdk dap_test)
+add_test(NAME test_shake_legacy_kat COMMAND test_shake_legacy_kat)
+set_tests_properties(test_shake_legacy_kat PROPERTIES
+    LABELS "unit;crypto;pqc;kat;regression"
+    TIMEOUT 30
 )
