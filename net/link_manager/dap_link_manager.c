@@ -71,6 +71,22 @@ static void s_links_request(dap_link_manager_t *a_link_manager);
 static void s_update_states(void *a_arg);
 static void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager);
 
+// Drop client and related stream sockets without holding links_lock.
+// Must not be called while links_lock is held: worker sync and link lookups need rdlock.
+static void s_link_drop_io_without_lock(dap_client_t *a_client, dap_events_socket_uuid_t a_client_uuid,
+                                        const dap_stream_node_addr_t *a_addr)
+{
+    if (a_client)
+        dap_client_delete_mt(a_client);
+    dap_list_t *l_connections_for_addr = dap_stream_find_all_by_addr((dap_stream_node_addr_t *)a_addr);
+    for (dap_list_t *it = l_connections_for_addr; it; it = it->next) {
+        dap_events_socket_uuid_ctrl_t *l_uuid_ctrl = it->data;
+        if (l_uuid_ctrl->uuid != a_client_uuid)
+            dap_events_socket_remove_and_delete_mt(l_uuid_ctrl->worker, l_uuid_ctrl->uuid);
+    }
+    dap_list_free_full(l_connections_for_addr, NULL);
+}
+
 static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
 {
     dap_return_val_if_pass_err(!s_link_manager, NULL, s_init_error);
@@ -626,8 +642,14 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
                     DL_DELETE(a_link->uplink.associated_nets, it);
                     continue;
                 }
-                bool l_is_permanent_link = a_link->link_manager->callbacks.disconnected(
-                            a_link, l_net->id, dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
+                dap_link_manager_callbacks_t l_callbacks = a_link->link_manager->callbacks;
+                uint64_t l_net_id = l_net->id;
+                size_t l_members_count = dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data);
+                pthread_rwlock_unlock(&s_link_manager->links_lock);
+                bool l_is_permanent_link = l_callbacks.disconnected(a_link, l_net_id, l_members_count);
+                pthread_rwlock_wrlock(&s_link_manager->links_lock);
+                if (!s_link_manager_link_find(&a_link->addr))
+                    return;
                 if (l_is_permanent_link)
                     continue;
                 DL_DELETE(a_link->uplink.associated_nets, it);
@@ -715,9 +737,11 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
     assert(l_link->active_clusters == NULL);
 
     bool l_link_preserve = (a_client_preserve || l_link->static_clusters) && !a_force;
+    dap_client_t *l_client_del = NULL;
+    dap_events_socket_uuid_t l_client_uuid = 0;
+    dap_stream_node_addr_t l_link_addr = l_link->addr;
+    bool l_drop_io = false;
     if (!l_link->stream_is_destroyed || !l_link_preserve) {
-        // Drop uplink
-        dap_events_socket_uuid_t l_client_uuid = 0;
         if (l_link->uplink.client) {
             l_client_uuid = l_link->uplink.es_uuid;
             if (l_link->uplink.associated_nets) {
@@ -729,17 +753,23 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
                     dap_client_go_stage(l_link->uplink.client, STAGE_BEGIN, NULL);
                     l_link->uplink.state = LINK_STATE_DISCONNECTED;
                 }
-            } else
-                dap_client_delete_mt(l_link->uplink.client);
-        }
-        // Drop downlinks if any
-        dap_list_t *l_connections_for_addr = dap_stream_find_all_by_addr(&l_link->addr);
-        for (dap_list_t *it = l_connections_for_addr; it; it = it->next) {
-            dap_events_socket_uuid_ctrl_t *l_uuid_ctrl = it->data;
-            if (l_uuid_ctrl->uuid != l_client_uuid)
-                dap_events_socket_remove_and_delete_mt(l_uuid_ctrl->worker, l_uuid_ctrl->uuid);
-        }
-        dap_list_free_full(l_connections_for_addr, NULL);
+            }
+            else {
+                l_client_del = l_link->uplink.client;
+                l_link->uplink.client = NULL;
+                l_drop_io = true;
+            }
+        } else
+            l_drop_io = true;
+    }
+    if (l_drop_io) {
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
+        s_link_drop_io_without_lock(l_client_del, l_client_uuid, &l_link_addr);
+        pthread_rwlock_wrlock(&s_link_manager->links_lock);
+        dap_link_t *l_link_check = NULL;
+        HASH_FIND(hh, s_link_manager->links, &l_link_addr, sizeof(l_link_addr), l_link_check);
+        if (!l_link_check || l_link_check != l_link)
+            return;
     }
     
     if (l_link_preserve)
@@ -900,10 +930,13 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
                 if (l_link_created) {
                     // Clean up the newly created link if net not found
                     HASH_DEL(s_link_manager->links, l_link);
-                    if (l_link->uplink.client) {
-                        dap_client_delete_mt(l_link->uplink.client);
-                    }
+                    dap_client_t *l_client = l_link->uplink.client;
+                    l_link->uplink.client = NULL;
+                    dap_stream_node_addr_t l_addr = l_link->addr;
+                    pthread_rwlock_unlock(&s_link_manager->links_lock);
+                    s_link_drop_io_without_lock(l_client, 0, &l_addr);
                     DAP_DELETE(l_link);
+                    pthread_rwlock_wrlock(&s_link_manager->links_lock);
                 }
                 return NULL;
             }
@@ -914,10 +947,13 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
                     if (l_link_created) {
                         // Clean up the newly created link if net already associated
                         HASH_DEL(s_link_manager->links, l_link);
-                        if (l_link->uplink.client) {
-                            dap_client_delete_mt(l_link->uplink.client);
-                        }
+                        dap_client_t *l_client = l_link->uplink.client;
+                        l_link->uplink.client = NULL;
+                        dap_stream_node_addr_t l_addr = l_link->addr;
+                        pthread_rwlock_unlock(&s_link_manager->links_lock);
+                        s_link_drop_io_without_lock(l_client, 0, &l_addr);
                         DAP_DELETE(l_link);
+                        pthread_rwlock_wrlock(&s_link_manager->links_lock);
                     }
                     return NULL;
                 }
