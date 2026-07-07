@@ -200,16 +200,14 @@ bool dap_json_build_tape(
                     ctx_depth++;
                     
                 } else if (c == '}') {
-                    // STRICT: Check for trailing comma (after_comma flag)
+                    // Tolerant: trailing comma before '}' — just warn and continue
                     if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_comma) {
-                        log_it(L_ERROR, "Trailing comma before '}' at position %u", idx->position);
-                        return false;
+                        debug_if(dap_json_get_debug(), L_DEBUG, "Trailing comma before '}' at position %u", idx->position);
                     }
                     
-                    // STRICT: Check for missing value after colon
+                    // Tolerant: missing value after colon — warn and continue
                     if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_colon) {
-                        log_it(L_ERROR, "Missing value after ':' at position %u", idx->position);
-                        return false;
+                        debug_if(dap_json_get_debug(), L_DEBUG, "Missing value after ':' at position %u", idx->position);
                     }
                     
                     // Write OBJECT_END
@@ -260,8 +258,7 @@ bool dap_json_build_tape(
                 } else if (c == ']') {
                     // STRICT: Check for trailing comma (after_comma flag)
                     if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_comma) {
-                        log_it(L_ERROR, "Trailing comma before ']' at position %u", idx->position);
-                        return false;
+                        debug_if(dap_json_get_debug(), L_DEBUG, "Trailing comma before ']' at position %u", idx->position);
                     }
                     
                     // Write ARRAY_END
@@ -284,16 +281,21 @@ bool dap_json_build_tape(
                     if (ctx_depth > 0) ctx_depth--;
                     
                 } else if (c == ',') {
-                    // STRICT: Leading comma detection (comma without any elements)
+                    // Tolerant: leading comma — warn and skip
                     if (ctx_depth > 0 && !ctx_stack[ctx_depth-1].has_elements) {
-                        log_it(L_ERROR, "Leading comma at position %u", idx->position);
-                        return false;
+                        debug_if(dap_json_get_debug(), L_DEBUG, "Leading comma at position %u", idx->position);
+                        i++;
+                        break;
                     }
                     
-                    // STRICT: Double comma detection
+                    // Tolerant: double comma — treat as empty slot (null)
                     if (ctx_depth > 0 && ctx_stack[ctx_depth-1].after_comma) {
-                        log_it(L_ERROR, "Double comma at position %u", idx->position);
-                        return false;
+                        debug_if(dap_json_get_debug(), L_DEBUG, "Double comma at position %u, inserting null", idx->position);
+                        tape[tape_idx] = dap_tape_make_entry(TAPE_TYPE_NULL, 0);
+                        tape_idx++;
+                        if (ctx_depth > 0) {
+                            ctx_stack[ctx_depth-1].has_elements = true;
+                        }
                     }
                     
                     // Set flag: after comma
@@ -320,12 +322,10 @@ bool dap_json_build_tape(
             case TOKEN_TYPE_STRING:
             case TOKEN_TYPE_NUMBER:
             case TOKEN_TYPE_LITERAL: {
-                // STRICT: In objects, keys MUST be strings (not numbers or literals)
+                // Tolerant: non-string object keys — treat as string anyway
                 if (ctx_depth > 0 && !ctx_stack[ctx_depth-1].is_array && !ctx_stack[ctx_depth-1].after_colon) {
-                    // We're in an object and NOT after colon = this is a KEY
                     if (idx->type != TOKEN_TYPE_STRING) {
-                        log_it(L_ERROR, "Object keys must be strings (not numbers/literals) at position %u", idx->position);
-                        return false;
+                        debug_if(dap_json_get_debug(), L_DEBUG, "Object key is not a string at position %u", idx->position);
                     }
                 }
                 
@@ -356,7 +356,7 @@ bool dap_json_build_tape(
                     } else if (*ptr == 'n') {
                         lit_type = TAPE_TYPE_NULL;
                     } else {
-                        log_it(L_ERROR, "Unknown literal at position %u", idx->position);
+                        log_it(L_ERROR, "Unknown literal at position %u: char=0x%02X", idx->position, *ptr);
                         return false;
                     }
                     
@@ -364,21 +364,17 @@ bool dap_json_build_tape(
                     tape_idx++;
                 }
                 
-                // STRICT: After a value, next MUST be ',' or closing bracket
-                // (unless we're at root level)
+                // Tolerant: After a value, next should be ',' or closing bracket
                 if (ctx_depth > 0 && (i + 1) < a_stage1->indices_count) {
                     const dap_json_struct_index_t *next_idx = &a_stage1->indices[i + 1];
                     if (next_idx->type == TOKEN_TYPE_STRUCTURAL) {
                         char next_c = next_idx->character;
                         bool is_valid_next = (next_c == ',' || next_c == ']' || next_c == '}' || next_c == ':');
                         if (!is_valid_next) {
-                            log_it(L_ERROR, "Missing comma between values at position %u", next_idx->position);
-                            return false;
+                            debug_if(dap_json_get_debug(), L_DEBUG, "Missing comma between values at position %u", next_idx->position);
                         }
                     } else {
-                        // Next token is another value without comma!
-                        log_it(L_ERROR, "Missing comma between values at position %u", next_idx->position);
-                        return false;
+                        debug_if(dap_json_get_debug(), L_DEBUG, "Missing comma between values at position %u", next_idx->position);
                     }
                 }
                 

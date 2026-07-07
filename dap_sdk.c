@@ -89,25 +89,6 @@ static void s_deinit_plugin(void);
 #ifdef DAP_OS_WASM
 #ifdef DAP_OS_WASM_MT
 #include <emscripten/wasmfs.h>
-#include <pthread.h>
-
-static void *s_opfs_mount_thread(void *a_arg)
-{
-    const char *l_mount = (const char *)a_arg;
-    backend_t l_opfs = wasmfs_create_opfs_backend();
-    if (!l_opfs) {
-        log_it(L_WARNING, "wasmfs_create_opfs_backend() returned NULL");
-        return (void *)(intptr_t)-1;
-    }
-    rmdir(l_mount);
-    int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
-    if (l_rc != 0) {
-        log_it(L_WARNING, "wasmfs_create_directory('%s') failed: rc=%d errno=%d (%s)",
-               l_mount, l_rc, errno, strerror(errno));
-        return (void *)(intptr_t)-1;
-    }
-    return (void *)(intptr_t)0;
-}
 
 static bool s_wasmfs_done = false;
 
@@ -121,18 +102,24 @@ int dap_sdk_wasmfs_init(const char *a_mount)
     if (!g_sys_dir_path)
         g_sys_dir_path = dap_strdup(l_mount);
 
-    pthread_t l_tid;
-    void *l_retval = (void *)(intptr_t)-1;
-    if (pthread_create(&l_tid, NULL, s_opfs_mount_thread, (void *)l_mount) == 0) {
-        pthread_join(l_tid, &l_retval);
+    // Synchronous OPFS mount — no threads, no races, no timeouts
+    backend_t l_opfs = wasmfs_create_opfs_backend();
+    if (!l_opfs) {
+        log_it(L_ERROR, "wasmfs_create_opfs_backend() failed — OPFS not available");
+        return -1;
     }
-
-    if ((intptr_t)l_retval == 0) {
-        log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
+    // Check if directory already exists before creating
+    struct stat l_st;
+    if (stat(l_mount, &l_st) == 0) {
+        log_it(L_NOTICE, "Filesystem: OPFS directory '%s' already exists, skipping create", l_mount);
     } else {
-        log_it(L_WARNING, "OPFS unavailable, using WASMFS in-memory at %s", g_sys_dir_path);
-        dap_mkdir_with_parents(g_sys_dir_path);
+        int l_rc = wasmfs_create_directory(l_mount, 0777, l_opfs);
+        if (l_rc != 0) {
+            log_it(L_ERROR, "wasmfs_create_directory('%s') failed: rc=%d", l_mount, l_rc);
+            return -1;
+        }
     }
+    log_it(L_NOTICE, "Filesystem: WASMFS/OPFS persistent storage at %s", g_sys_dir_path);
     return 0;
 }
 #else
