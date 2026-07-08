@@ -33,6 +33,7 @@
 #include "dap_client_fsm.h"
 #include "dap_stream.h"
 #include "dap_stream_pkt.h"
+#include "dap_enc_base58.h"
 #include "dap_tls_mimicry.h"
 #include "dap_tls_fingerprint.h"
 #include "dap_stream_trans_tls.h"
@@ -432,23 +433,29 @@ static void s_tls_handshake_read(dap_events_socket_t *a_es, void *a_arg)
 
         log_it(L_NOTICE, "TLS handshake completed — sending enc_init through TLS channel");
 
-        /* Build enc_init URL (same format as HTTP transport) */
-        char l_node_addr_b58[48] = ""; /* TODO: Configure proper node address from config */
-        char l_enc_init_url[512];
-        if (l_node_addr_b58[0]) {
-            snprintf(l_enc_init_url, sizeof(l_enc_init_url),
-                     "/%s/%s?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,"
-                     "block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-                     DAP_UPLINK_PATH_ENC_INIT, l_node_addr_b58,
-                     l_ctx->handshake_params.enc_type,
-                     l_ctx->handshake_params.pkey_exchange_type,
-                     l_ctx->handshake_params.pkey_exchange_size,
-                     l_ctx->handshake_params.block_key_size,
-                     l_ctx->handshake_params.protocol_version,
-                     l_ctx->handshake_params.sign_count);
-        } else {
-            log_it(L_WARNING, "Node address not configured for enc_init URL, skipping");
+        /* Build enc_init URL (same format as HTTP transport).
+         * Node address: take from the stream's node addr (set at stream creation
+         * from a_params->node_addr in s_tls_stage_prepare). Fall back to the
+         * anonymous placeholder used by legacy servers — same logic as the HTTP
+         * transport (dap_net_trans_http_stream.c). */
+        char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
+        if (l_stream->node.uint64) {
+            uint64_t l_addr_le = l_stream->node.uint64;
+            size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
+            if (!l_b58_len)
+                dap_strncpy(l_node_addr_b58, "gd4y5yh78w42aaagh", sizeof(l_node_addr_b58) - 1);
         }
+        char l_enc_init_url[512];
+        snprintf(l_enc_init_url, sizeof(l_enc_init_url),
+                 "/%s/%s?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,"
+                 "block_key_size=%zu,protocol_version=%d,sign_count=%zu",
+                 DAP_UPLINK_PATH_ENC_INIT, l_node_addr_b58,
+                 l_ctx->handshake_params.enc_type,
+                 l_ctx->handshake_params.pkey_exchange_type,
+                 l_ctx->handshake_params.pkey_exchange_size,
+                 l_ctx->handshake_params.block_key_size,
+                 l_ctx->handshake_params.protocol_version,
+                 l_ctx->handshake_params.sign_count);
 
         /* Build HTTP POST with alice_pub_key as body */
         /* The body is base64-encoded alice_pub_key */
@@ -499,8 +506,17 @@ static void s_tls_handshake_read(dap_events_socket_t *a_es, void *a_arg)
         }
 
         /* Do NOT call handshake_cb here — wait for enc_init response from server.
-         * Switch to s_tls_enc_init_read which will call handshake_cb with the response data. */
+         * Switch to s_tls_enc_init_read which will call handshake_cb with the response data.
+         * The server's response may already be in buf_in (fast RTT or data that arrived
+         * between the write and the callback switch). If so, process it now — otherwise the
+         * event loop won't re-enter read_callback (no new data event) and we hang until
+         * the connection timeout. */
         a_es->callbacks.read_callback = s_tls_enc_init_read;
+        if (a_es->buf_in_size > 0) {
+            log_it(L_DEBUG, "TLS enc_init: response already buffered (%zu bytes), processing now",
+                   a_es->buf_in_size);
+            s_tls_enc_init_read(a_es, a_arg);
+        }
     } else {
         /* Incomplete or error — wait for more data */
         DAP_DELETE(l_response);
@@ -890,11 +906,17 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
         return -3;
     }
 
-    /* Store callback and switch read handler to wait for stream_ctl response */
+    /* Store callback and switch read handler to wait for stream_ctl response.
+     * Same race guard as enc_init: the server's response may already be buffered. */
     tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
     if (l_ctx) {
         l_ctx->session_create_cb = a_callback;
         a_stream->esocket->callbacks.read_callback = s_tls_stream_ctl_read;
+        if (a_stream->esocket->buf_in_size > 0) {
+            log_it(L_DEBUG, "TLS stream_ctl: response already buffered (%zu bytes), processing now",
+                   a_stream->esocket->buf_in_size);
+            s_tls_stream_ctl_read(a_stream->esocket, NULL);
+        }
     }
 
     log_it(L_NOTICE, "TLS session_create: stream_ctl sent (%zd bytes), awaiting response", l_sent);
