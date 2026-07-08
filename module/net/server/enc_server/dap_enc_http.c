@@ -210,20 +210,28 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_pkey_exchange_key->shared_key_size,
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE,
                                                l_block_key_size);
-        
-        dap_enc_ks_save_in_storage(l_enc_key_ks);
 
-        // Diagnostic: log the key created during enc_init
+        /* Cross-platform diagnostic: log the KEM shared secret and derived
+         * symmetric key. Compare these bytes with the client-side values
+         * (from s_enc_init_response in dap_client_esocket.c) to confirm or
+         * deny Kyber/ML-KEM shared secret divergence between WASM and native.
+         * Level DEBUG so production logs are not affected. */
         {
-            const uint8_t *l_kb = l_enc_key_ks->key->priv_key_data
+            const uint8_t *l_ss = (const uint8_t *)l_pkey_exchange_key->shared_key;
+            const uint8_t *l_dk = l_enc_key_ks->key && l_enc_key_ks->key->priv_key_data
                 ? (const uint8_t *)l_enc_key_ks->key->priv_key_data : NULL;
-            log_it(L_NOTICE, "enc_init: stored key id='%s' type=%d priv_size=%zu",
-                   l_enc_key_ks->id, l_enc_key_ks->key->type, l_enc_key_ks->key->priv_key_data_size);
-            if (l_kb && l_enc_key_ks->key->priv_key_data_size >= 8)
-                log_it(L_NOTICE, "enc_init: stored key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
-                       l_kb[0], l_kb[1], l_kb[2], l_kb[3],
-                       l_kb[4], l_kb[5], l_kb[6], l_kb[7]);
+            log_it(L_DEBUG, "enc_init: id='%s' enc_type=%d kex_type=%d kex_ss_size=%zu",
+                   l_enc_key_ks->id, l_enc_block_type, l_pkey_exchange_type,
+                   l_pkey_exchange_key->shared_key_size);
+            if (l_ss && l_pkey_exchange_key->shared_key_size >= 8)
+                log_it(L_DEBUG, "enc_init: kem_shared[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
+                       l_ss[0], l_ss[1], l_ss[2], l_ss[3], l_ss[4], l_ss[5], l_ss[6], l_ss[7]);
+            if (l_dk && l_enc_key_ks->key->priv_key_data_size >= 8)
+                log_it(L_DEBUG, "enc_init: derived_key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
+                       l_dk[0], l_dk[1], l_dk[2], l_dk[3], l_dk[4], l_dk[5], l_dk[6], l_dk[7]);
         }
+
+        dap_enc_ks_save_in_storage(l_enc_key_ks);
 
         int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
                                                       encrypt_id, DAP_ENC_DATA_TYPE_B64),
@@ -292,15 +300,13 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
 
     dap_enc_key_t * l_key= dap_enc_ks_find_http(a_http_simple->http_client);
     if(l_key){
-        // Diagnostic: log the key found by KeyID lookup
-        const uint8_t *l_kb = l_key->priv_key_data ? (const uint8_t *)l_key->priv_key_data : NULL;
-        log_it(L_NOTICE, "enc_http_request_decode: KeyID found key type=%d priv_size=%zu %s",
-               l_key->type, l_key->priv_key_data_size,
-               l_kb ? "" : "(NO priv_key_data!)");
-        if (l_kb && l_key->priv_key_data_size >= 8)
-            log_it(L_NOTICE, "enc_http_request_decode: key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x",
-                   l_kb[0], l_kb[1], l_kb[2], l_kb[3],
-                   l_kb[4], l_kb[5], l_kb[6], l_kb[7]);
+        /* Cross-platform diagnostic: log the key used for decryption. */
+        const uint8_t *l_dk = l_key->priv_key_data
+            ? (const uint8_t *)l_key->priv_key_data : NULL;
+        if (l_dk && l_key->priv_key_data_size >= 8)
+            log_it(L_DEBUG, "enc_decode: key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x type=%d",
+                   l_dk[0], l_dk[1], l_dk[2], l_dk[3],
+                   l_dk[4], l_dk[5], l_dk[6], l_dk[7], l_key->type);
 
         enc_http_delegate_t * dg = DAP_NEW_Z_RET_VAL_IF_FAIL(enc_http_delegate_t, NULL);
         dg->key=l_key;
@@ -403,44 +409,11 @@ void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delega
                                                       a_http_delegate->response_size,
                                                       DAP_ENC_DATA_TYPE_RAW);
 
-    // Diagnostic: log key and response info
-    const uint8_t *l_kb = a_http_delegate->key && a_http_delegate->key->priv_key_data
-        ? (const uint8_t *)a_http_delegate->key->priv_key_data : NULL;
-    log_it(L_NOTICE, "enc_http_reply_encode: resp_size=%zu key_type=%d enc_out_max=%zu %s",
-           a_http_delegate->response_size, a_http_delegate->key->type, l_reply_size_max,
-           l_kb ? "" : "(NO key!)");
-    if (l_kb && a_http_delegate->key->priv_key_data_size >= 8)
-        log_it(L_NOTICE, "enc_http_reply_encode: key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x resp='%.*s'",
-               l_kb[0], l_kb[1], l_kb[2], l_kb[3],
-               l_kb[4], l_kb[5], l_kb[6], l_kb[7],
-               (int)(a_http_delegate->response_size < 80 ? a_http_delegate->response_size : 80),
-               (const char *)a_http_delegate->response);
-
     a_http_simple->reply = DAP_NEW_SIZE(void,l_reply_size_max);
     a_http_simple->reply_size = dap_enc_code( a_http_delegate->key,
-                                              a_http_delegate->response, a_http_delegate->response_size,
-                                              a_http_simple->reply, l_reply_size_max,
-                                              DAP_ENC_DATA_TYPE_RAW);
-
-    log_it(L_NOTICE, "enc_http_reply_encode: encrypted %zu -> %zu bytes", a_http_delegate->response_size, a_http_simple->reply_size);
-
-    // Server-side self-test: encrypt then decrypt with the same key
-    {
-        const char *l_test = "SERVER_SELF_TEST_1234567890";
-        size_t l_test_len = strlen(l_test);
-        size_t l_enc_max = dap_enc_code_out_size(a_http_delegate->key, l_test_len, DAP_ENC_DATA_TYPE_RAW);
-        uint8_t *l_enc = DAP_NEW_Z_SIZE(uint8_t, l_enc_max);
-        size_t l_enc_len = dap_enc_code(a_http_delegate->key, l_test, l_test_len,
-                                         l_enc, l_enc_max, DAP_ENC_DATA_TYPE_RAW);
-        char l_dec[64] = {0};
-        size_t l_dec_len = dap_enc_decode(a_http_delegate->key, l_enc, l_enc_len,
-                                            l_dec, sizeof(l_dec), DAP_ENC_DATA_TYPE_RAW);
-        log_it(L_NOTICE, "Server self-test: enc=%zu dec=%zu match=%d %s",
-               l_enc_len, l_dec_len,
-               l_dec_len == l_test_len && memcmp(l_test, l_dec, l_test_len) == 0,
-               (l_dec_len == l_test_len && memcmp(l_test, l_dec, l_test_len) == 0) ? "OK" : "FAIL");
-        DAP_DELETE(l_enc);
-    }
+                                               a_http_delegate->response, a_http_delegate->response_size,
+                                               a_http_simple->reply, l_reply_size_max,
+                                               DAP_ENC_DATA_TYPE_RAW);
 }
 
 void enc_http_delegate_delete(enc_http_delegate_t * dg)
