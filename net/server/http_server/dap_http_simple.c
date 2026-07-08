@@ -525,7 +525,7 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
 
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
     if(!l_http_simple){
-        a_http_client->esocket->buf_in = 0;
+        a_http_client->esocket->buf_in_size = 0;
         a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
         log_it( L_WARNING, "No http_simple object in read callback, close connection" );
         return;

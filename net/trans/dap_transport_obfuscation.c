@@ -123,8 +123,9 @@ static dap_enc_key_t* s_get_cipher_key_for_size(size_t a_packet_size, dap_enc_ke
         }
     }
     
-    // Zero out KDF buffer
-    memset(l_kdf_key, 0, sizeof(l_kdf_key));
+    // Zero out KDF buffer - use volatile to prevent compiler optimization
+    volatile void *l_volatile_ptr = l_kdf_key;
+    memset((void*)l_volatile_ptr, 0, sizeof(l_kdf_key));
     
     return l_key;
 }
