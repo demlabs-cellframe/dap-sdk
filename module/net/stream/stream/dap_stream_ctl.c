@@ -157,10 +157,12 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
         if(l_is_legacy){
             if(l_hdr_key_id){
                 /* Modern client (WASM, etc.) sent KeyID but URL path decryption
-                   failed or didn't contain enc_type= — use preferred enc, not OAES */
-                l_enc_type = dap_stream_get_preferred_encryption_type();
-                log_it(L_WARNING, "stream_ctl: KeyID present but enc_type not parsed, using preferred %s",
-                       dap_enc_get_type_name(l_enc_type));
+                   failed or didn't contain enc_type=. This means the key
+                   handshake is broken — fail fast rather than guessing an
+                   enc_type that masks the real failure. */
+                log_it(L_ERROR, "stream_ctl: KeyID present but URL path decryption failed (enc_type not parsed) — rejecting");
+                *return_code = Http_Status_BadRequest;
+                return;
             }else{
                 log_it(L_INFO, "legacy encryption mode used (OAES)");
                 l_enc_type = DAP_ENC_KEY_TYPE_OAES;
