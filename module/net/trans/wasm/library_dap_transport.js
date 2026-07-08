@@ -205,11 +205,19 @@ addToLibrary({
             return result;
         }
 
-        // Browser path: synchronous XHR
+        // Browser path: synchronous XHR (runs on the calling pthread's Web Worker)
         var xhr = new XMLHttpRequest();
         xhr.open("POST", url, false);
-        // Note: responseType cannot be set on sync XHR in Chrome offscreen documents.
-        // Read as text and convert to bytes via TextEncoder.
+        // Request a binary response. Sync XHR with responseType is supported on
+        // Web Workers (where this MT path runs). Guard with try/catch for the
+        // legacy main-thread restriction, falling back to binary string decode.
+        var binaryAsString = false;
+        try {
+            xhr.responseType = "arraybuffer";
+        } catch (e) {
+            binaryAsString = true;
+            xhr.overrideMimeType("text/plain; charset=x-user-defined");
+        }
         if (contentType) xhr.setRequestHeader("Content-Type", contentType);
 
         if (extraHeaders) {
@@ -230,8 +238,17 @@ addToLibrary({
         }
 
         if (xhr.status >= 200 && xhr.status < 300) {
-            if (xhr.response && xhr.response.byteLength > 0) {
-                var responseBytes = new Uint8Array(xhr.response);
+            var responseBytes = null;
+            if (binaryAsString) {
+                // x-user-defined: each char is a raw byte 0x00-0xFF
+                var text = xhr.responseText || "";
+                responseBytes = new Uint8Array(text.length);
+                for (var j = 0; j < text.length; j++)
+                    responseBytes[j] = text.charCodeAt(j) & 0xff;
+            } else if (xhr.response && xhr.response.byteLength > 0) {
+                responseBytes = new Uint8Array(xhr.response);
+            }
+            if (responseBytes && responseBytes.length > 0) {
                 var ptr = _malloc(responseBytes.length + 1);
                 HEAPU8.set(responseBytes, ptr);
                 HEAPU8[ptr + responseBytes.length] = 0;
