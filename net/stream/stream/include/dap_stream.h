@@ -192,6 +192,7 @@ void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
 void dap_stream_add_proc_dns(dap_server_t *a_dns_server);
 
 dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_es, dap_stream_node_addr_t *a_addr, bool a_authorized);
+dap_stream_t* dap_stream_new_es_server(dap_events_socket_t *a_esocket, dap_stream_session_t *a_session);
 int dap_stream_start_keepalive(dap_stream_t *a_stream);
 size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_read_ext(dap_stream_t * a_stream, const void *a_data, size_t a_data_size);

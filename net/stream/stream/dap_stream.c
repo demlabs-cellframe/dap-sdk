@@ -724,6 +724,116 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
 }
 
 /**
+ * @brief dap_stream_new_es_server Create new stream instance for a server-side
+ *        esocket that bypasses the HTTP layer (e.g. TLS direct mode).
+ *
+ * Creates dap_stream_t + dap_net_trans_ctx_t and binds the esocket, following
+ * the same pattern as stream_new_udp().  After this call the esocket's
+ * _inheritor points to trans_ctx (not to any transport-specific context).
+ * The caller should store its transport-private data in trans_ctx->transport_priv.
+ *
+ * @param a_esocket  Accepted client esocket (must have worker assigned).
+ * @param a_session  Stream session created by dap_stream_ctl_handler_process().
+ * @return New stream, or NULL on error.
+ */
+dap_stream_t *dap_stream_new_es_server(dap_events_socket_t *a_esocket,
+                                         dap_stream_session_t *a_session)
+{
+    if (!a_esocket || !a_session) {
+        log_it(L_ERROR, "dap_stream_new_es_server: esocket=%p session=%p", (void*)a_esocket, (void*)a_session);
+        return NULL;
+    }
+
+    dap_stream_t *l_stm = DAP_NEW_Z(dap_stream_t);
+    if (!l_stm) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
+#ifdef  DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
+#endif
+
+    /* Esocket references */
+    l_stm->esocket          = a_esocket;
+    l_stm->esocket_uuid    = a_esocket->uuid;
+    l_stm->esocket_worker  = a_esocket->worker;
+
+    /* stream_worker: the per-worker stream context (holds channel hash table).
+     * Required by dap_stream_ch_new — without it channels can't be created. */
+    l_stm->stream_worker = DAP_STREAM_WORKER(a_esocket->worker);
+    if (!l_stm->stream_worker)
+        log_it(L_ERROR, "dap_stream_new_es_server: stream_worker is NULL for worker %p", (void*)a_esocket->worker);
+
+    /* Transport context — _inheritor always points to trans_ctx */
+    l_stm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
+    if (!l_stm->trans_ctx) {
+        DAP_DELETE(l_stm);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
+    l_stm->trans_ctx->stream  = l_stm;  /* back-reference */
+    l_stm->trans_ctx->esocket = a_esocket;
+    dap_strncpy(l_stm->trans_ctx->remote_addr_str,
+                a_esocket->remote_addr_str,
+                sizeof(l_stm->trans_ctx->remote_addr_str) - 1);
+    l_stm->trans_ctx->remote_port = a_esocket->remote_port;
+
+    a_esocket->_inheritor = l_stm->trans_ctx;
+
+    /* Bind session and create channels */
+    l_stm->session = a_session;
+
+    int l_open_rc = dap_stream_session_open(a_session);
+    if (l_open_rc != 0) {
+        log_it(L_ERROR, "dap_stream_new_es_server: failed to open session %u", a_session->id);
+        /* Don't free trans_ctx — keep it consistent; caller owns cleanup */
+        return l_stm;
+    }
+
+    for (size_t i = 0; i < sizeof(a_session->active_channels); i++) {
+        if (a_session->active_channels[i])
+            dap_stream_ch_new(l_stm, a_session->active_channels[i]);
+    }
+
+    s_stream_states_update(l_stm);
+
+    /* Start keepalive timer (server-side callback since this is a server esocket) */
+    if (a_esocket->worker) {
+        dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
+        if (l_es_uuid) {
+            *l_es_uuid = a_esocket->uuid;
+            l_stm->keepalive_timer = dap_timerfd_start_on_worker(
+                a_esocket->worker,
+                STREAM_KEEPALIVE_TIMEOUT * 1000,
+                (dap_timerfd_callback_t)s_callback_server_keepalive,
+                l_es_uuid);
+            if (!l_stm->keepalive_timer)
+                DAP_DELETE(l_es_uuid);
+            else {
+                l_stm->keepalive_timer_uuid   = l_stm->keepalive_timer->esocket_uuid;
+                l_stm->keepalive_timer_worker = l_stm->keepalive_timer->worker;
+                log_it(L_INFO, "Server direct stream %p: keepalive started on worker #%u, es_uuid=0x%"DAP_UINT64_FORMAT_x" sock=%"DAP_FORMAT_SOCKET,
+                       l_stm, a_esocket->worker->id, a_esocket->uuid, a_esocket->socket);
+            }
+        }
+    }
+
+    /* Prevent worker inactivity timeout */
+    a_esocket->no_close = true;
+
+    /* Authorize from session's node address */
+    if (!dap_stream_node_addr_is_blank(&a_session->node)) {
+        l_stm->node = a_session->node;
+        l_stm->authorized = true;
+    }
+
+    dap_stream_add_to_list(l_stm);
+    log_it(L_NOTICE, "Server direct stream created: stream=%p es=%p sock=%"DAP_FORMAT_SOCKET" session=%u channels='%s'",
+           l_stm, (void*)a_esocket, a_esocket->socket, a_session->id, a_session->active_channels);
+    return l_stm;
+}
+
+/**
  * @brief Start client keepalive timer for a stream that was created without an esocket.
  *        Called when the esocket is assigned to the stream after deferred connection (e.g. HTTP transport).
  * @param a_stream Stream with esocket and esocket->worker already set
@@ -1244,14 +1354,24 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  */
 size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data, size_t a_data_size)
 {
-    if (!a_stream || !a_data || a_data_size == 0) {
-        log_it(L_WARNING, "proc_read_ext: early return stream=%p data=%p size=%zu",
-               (void*)a_stream, a_data, a_data_size);
+    if (!a_stream || !a_data || a_data_size == 0)
+        return 0;
+
+    /* Copy data to a private buffer.  s_stream_proc_pkt_in() may close
+     * and delete the stream mid-loop (a channel's packet_in_callback can
+     * trigger SIGNAL_CLOSE → dap_stream_delete_unsafe, which frees the
+     * esocket and its buf_in).  The caller passes a_data pointing into
+     * buf_in, so without this copy the scan loop below would touch freed
+     * memory on the next iteration — a use-after-free. */
+    byte_t *l_buf = DAP_NEW_SIZE(byte_t, a_data_size);
+    if (!l_buf) {
+        log_it(L_ERROR, "proc_read_ext: can't allocate %zu bytes for copy", a_data_size);
         return 0;
     }
+    memcpy(l_buf, a_data, a_data_size);
 
-    byte_t *l_pos = (byte_t*)a_data;
-    byte_t *l_end = l_pos + a_data_size;
+    byte_t *l_pos = l_buf;
+    byte_t *l_end = l_buf + a_data_size;
     size_t l_shift = 0, l_processed_size = 0;
     bool l_found_sig0 = false;
 
@@ -1266,7 +1386,7 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
         if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
             debug_if(s_debug_more, L_DEBUG, "proc_read_ext: SIG FOUND type=0x%02x size=%u at offset=%zu",
-                   l_pkt->hdr.type, l_pkt->hdr.size, (size_t)(l_pos - (byte_t*)a_data));
+                   l_pkt->hdr.type, l_pkt->hdr.size, (size_t)(l_pos - l_buf));
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
@@ -1286,11 +1406,12 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     }
     if (a_data_size > 0 && !l_found_sig0 && l_processed_size == 0)
         log_it(L_WARNING, "proc_read_ext: no sig[0]=0x%02x found in %zu bytes (first byte=0x%02x)",
-               c_dap_stream_sig[0], a_data_size, ((byte_t*)a_data)[0]);
+               c_dap_stream_sig[0], a_data_size, l_buf[0]);
 
     debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG,
              "Processed %lu / %lu bytes", l_processed_size, a_data_size);
 
+    DAP_DELETE(l_buf);
     return l_processed_size;
 }
 
