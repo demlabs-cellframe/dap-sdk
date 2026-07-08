@@ -120,6 +120,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream);
 
 static bool s_callback_server_keepalive(void *a_arg);
 static bool s_callback_client_keepalive(void *a_arg);
+static bool s_callback_keepalive_direct(void *a_arg);
 
 static bool s_dump_packet_headers = false;
 static bool s_debug = false;
@@ -764,7 +765,10 @@ dap_stream_t *dap_stream_new_es_server(dap_events_socket_t *a_esocket,
     if (!l_stm->stream_worker)
         log_it(L_ERROR, "dap_stream_new_es_server: stream_worker is NULL for worker %p", (void*)a_esocket->worker);
 
-    /* Transport context — _inheritor always points to trans_ctx */
+    /* Transport context — back-reference from stream.  The caller owns the
+     * esocket's _inheritor; we do NOT overwrite it here.  For TLS direct
+     * mode the _inheritor stays as tls_conn_ctx_t and the stream pointer
+     * is stored inside that struct by the caller. */
     l_stm->trans_ctx = DAP_NEW_Z(dap_net_trans_ctx_t);
     if (!l_stm->trans_ctx) {
         DAP_DELETE(l_stm);
@@ -777,8 +781,6 @@ dap_stream_t *dap_stream_new_es_server(dap_events_socket_t *a_esocket,
                 a_esocket->remote_addr_str,
                 sizeof(l_stm->trans_ctx->remote_addr_str) - 1);
     l_stm->trans_ctx->remote_port = a_esocket->remote_port;
-
-    a_esocket->_inheritor = l_stm->trans_ctx;
 
     /* Bind session and create channels */
     l_stm->session = a_session;
@@ -797,24 +799,20 @@ dap_stream_t *dap_stream_new_es_server(dap_events_socket_t *a_esocket,
 
     s_stream_states_update(l_stm);
 
-    /* Start keepalive timer (server-side callback since this is a server esocket) */
+    /* Start keepalive timer — uses direct stream pointer (not esocket UUID
+     * lookup) because TLS server stores tls_conn_ctx_t in _inheritor, not
+     * trans_ctx, so dap_stream_get_from_es() can't find the stream. */
     if (a_esocket->worker) {
-        dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (l_es_uuid) {
-            *l_es_uuid = a_esocket->uuid;
-            l_stm->keepalive_timer = dap_timerfd_start_on_worker(
-                a_esocket->worker,
-                STREAM_KEEPALIVE_TIMEOUT * 1000,
-                (dap_timerfd_callback_t)s_callback_server_keepalive,
-                l_es_uuid);
-            if (!l_stm->keepalive_timer)
-                DAP_DELETE(l_es_uuid);
-            else {
-                l_stm->keepalive_timer_uuid   = l_stm->keepalive_timer->esocket_uuid;
-                l_stm->keepalive_timer_worker = l_stm->keepalive_timer->worker;
-                log_it(L_INFO, "Server direct stream %p: keepalive started on worker #%u, es_uuid=0x%"DAP_UINT64_FORMAT_x" sock=%"DAP_FORMAT_SOCKET,
-                       l_stm, a_esocket->worker->id, a_esocket->uuid, a_esocket->socket);
-            }
+        l_stm->keepalive_timer = dap_timerfd_start_on_worker(
+            a_esocket->worker,
+            STREAM_KEEPALIVE_TIMEOUT * 1000,
+            (dap_timerfd_callback_t)s_callback_keepalive_direct,
+            l_stm);
+        if (l_stm->keepalive_timer) {
+            l_stm->keepalive_timer_uuid   = l_stm->keepalive_timer->esocket_uuid;
+            l_stm->keepalive_timer_worker = l_stm->keepalive_timer->worker;
+            log_it(L_INFO, "Server direct stream %p: keepalive (direct) started on worker #%u, sock=%"DAP_FORMAT_SOCKET,
+                   l_stm, a_esocket->worker->id, a_esocket->socket);
         }
     }
 
@@ -1778,6 +1776,44 @@ static bool s_callback_client_keepalive(void *a_arg)
 static bool s_callback_server_keepalive(void *a_arg)
 {
     return s_callback_keepalive(a_arg, true);
+}
+
+/* Keepalive variant for direct-mode server streams (TLS/UDP/DNS) where the
+ * stream pointer is passed as the timer argument instead of an esocket UUID.
+ * This avoids dap_stream_get_from_es() which reads _inheritor as trans_ctx —
+ * invalid for TLS where _inheritor holds the TLS connection context. */
+static bool s_callback_keepalive_direct(void *a_arg)
+{
+    dap_stream_t *l_stream = (dap_stream_t *)a_arg;
+    if (!l_stream)
+        return false;
+    dap_events_socket_t *l_es = l_stream->esocket;
+    if (!l_es) {
+        /* Esocket detached — stream is shutting down, stop timer */
+        return false;
+    }
+    if (l_stream->is_active) {
+        l_stream->is_active = false;
+        l_es->last_time_active = time(NULL);
+        return true;
+    }
+    /* No recent activity — verify socket is still healthy before sending */
+    int l_sockerr = 0;
+    socklen_t l_sockerr_len = sizeof(l_sockerr);
+    getsockopt(l_es->fd, SOL_SOCKET, SO_ERROR, (char *)&l_sockerr, &l_sockerr_len);
+    if (l_sockerr != 0) {
+        log_it(L_INFO, "Keepalive direct: socket error %d on stream %p sock=%d — stopping timer",
+               l_sockerr, (void*)l_stream, l_es->socket);
+        return false;
+    }
+    if (!l_stream->session || !l_stream->session->key)
+        return true;
+    dap_stream_pkt_hdr_t l_pkt = {};
+    l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
+    memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
+    dap_stream_send_unsafe(l_stream, &l_pkt, sizeof(l_pkt));
+    l_es->last_time_active = time(NULL);
+    return true;
 }
 
 int s_stream_add_to_hashtable(dap_stream_t *a_stream)

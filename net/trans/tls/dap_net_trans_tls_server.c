@@ -4,14 +4,10 @@
  * TLS handshake → direct handler calls (enc_init, stream_ctl, stream).
  * No HTTP server needed — parses URL+body from raw HTTP POST.
  *
- * Architecture (two phases):
- *   Phase 1 (before stream_ctl):
- *     esocket->_inheritor → tls_conn_ctx_t (TLS state, mimicry engine)
- *
- *   Phase 2 (after stream_ctl):
- *     esocket->_inheritor → dap_net_trans_ctx_t (unified, like HTTP/UDP)
- *       trans_ctx->stream     → dap_stream_t (channels, session)
- *       trans_ctx->transport_priv → tls_conn_ctx_t (mimicry engine preserved)
+ * esocket->_inheritor always points to tls_conn_ctx_t for the entire
+ * connection lifetime.  After stream_ctl, the dap_stream_t is stored
+ * inside tls_conn_ctx_t.stream and reached from there — no _inheritor
+ * type swap, no magic sentinels.
  */
 
 #include <string.h>
@@ -38,51 +34,23 @@
 #define TLS_CT_APPLICATION_DATA    0x17
 
 /* ------------------------------------------------------------------ */
-/*  TLS context — stored in esocket->_inheritor                        */
+/*  TLS context — stored in esocket->_inheritor for the entire conn    */
 /* ------------------------------------------------------------------ */
 
 typedef struct tls_conn_ctx {
-    void *_magic;               /* must equal &s_tls_ctx_magic for type safety */
     dap_tls_mimicry_t *mimicry;
     bool handshake_done;
     bool client_finished_consumed;
     size_t prev_buf_in_size;  /* guard: buf_in_size at function exit */
-    bool stream_mode;         /* after stream_ctl: route DAP packets to stream layer */
+    bool stream_mode;         /* after stream_ctl: route DAP packets to stream */
+    dap_stream_t *stream;     /* set by dap_stream_new_es_server; NULL until then */
 } tls_conn_ctx_t;
-
-/* Sentinel address used to identify _inheritor as tls_conn_ctx_t*
- * (rather than dap_net_trans_ctx_t* after stream_ctl).  Both structs
- * have a pointer at offset 0 (tls_conn_ctx_t._magic vs trans_ctx.trans),
- * so we compare against this unique address to tell them apart. */
-static int s_tls_ctx_magic;
 
 static bool s_debug_more = false;
 
 static inline tls_conn_ctx_t *s_tls_ctx(dap_events_socket_t *a_es)
 {
     return a_es ? (tls_conn_ctx_t *)a_es->_inheritor : NULL;
-}
-
-/* After stream_ctl, _inheritor switches from tls_conn_ctx_t* to
- * dap_net_trans_ctx_t*.  The old TLS context is preserved in
- * trans_ctx->transport_priv.  This helper retrieves it. */
-static inline tls_conn_ctx_t *s_tls_ctx_from_trans(dap_net_trans_ctx_t *a_tc)
-{
-    return a_tc ? (tls_conn_ctx_t *)a_tc->transport_priv : NULL;
-}
-
-/* Unified TLS context lookup: works both before and after _inheritor
- * switches to trans_ctx (post stream_ctl).
- * Uses _magic sentinel to distinguish tls_conn_ctx_t* from dap_net_trans_ctx_t*
- * — both are pointers stored at _inheritor but occupy different struct types. */
-static inline tls_conn_ctx_t *s_tls_ctx_any(dap_events_socket_t *a_es)
-{
-    if (!a_es || !a_es->_inheritor) return NULL;
-    tls_conn_ctx_t *t = (tls_conn_ctx_t *)a_es->_inheritor;
-    if (t->_magic == &s_tls_ctx_magic)
-        return t;                               /* pre-stream_ctl */
-    /* Post-stream_ctl: _inheritor is trans_ctx, TLS ctx in transport_priv */
-    return s_tls_ctx_from_trans((dap_net_trans_ctx_t *)a_es->_inheritor);
 }
 
 /* ------------------------------------------------------------------ */
@@ -224,9 +192,7 @@ static void s_tls_error(dap_events_socket_t *a_es, int a_error);
 
 static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 {
-    /* TLS context may be in _inheritor directly (pre-stream_ctl) or
-     * in trans_ctx->transport_priv (post-stream_ctl). */
-    tls_conn_ctx_t *t = s_tls_ctx_any(a_es);
+    tls_conn_ctx_t *t = s_tls_ctx(a_es);
     if (!t) return;
 
     /* Guard: if buf_in hasn't changed since we last exited, skip.
@@ -341,13 +307,9 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     }
 
     if (t->stream_mode) {
-        /* DAP stream packets — deliver to stream layer via trans_ctx->stream.
-         * After dap_stream_new_es_server(), _inheritor is trans_ctx and
-         * trans_ctx->stream points to the stream object. */
-        dap_net_trans_ctx_t *l_tc = (dap_net_trans_ctx_t *)a_es->_inheritor;
-        dap_stream_t *l_stream = l_tc ? l_tc->stream : NULL;
-        if (l_stream) {
-            dap_stream_data_proc_read_ext(l_stream, l_raw, l_raw_sz);
+        /* DAP stream packets — deliver to the stream created at stream_ctl */
+        if (t->stream) {
+            dap_stream_data_proc_read_ext(t->stream, l_raw, l_raw_sz);
         } else {
             log_it(L_WARNING, "TLS server: stream mode but no stream (dropping %zu bytes)", l_raw_sz);
         }
@@ -386,12 +348,10 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
         dap_stream_session_t *l_session = dap_stream_session_id_mt(l_session_id);
         if (l_session) {
             dap_stream_t *l_stream = dap_stream_new_es_server(a_es, l_session);
-            if (l_stream && l_stream->trans_ctx) {
-                /* Move TLS context into transport_priv — it is no longer
-                 * reachable via s_tls_ctx() but via s_tls_ctx_any(). */
-                l_stream->trans_ctx->transport_priv = t;
-                log_it(L_NOTICE, "TLS server: stream created (session=%u, stream=%p, trans_ctx=%p)",
-                       l_session_id, (void*)l_stream, (void*)l_stream->trans_ctx);
+            if (l_stream) {
+                t->stream = l_stream;
+                log_it(L_NOTICE, "TLS server: stream created (session=%u, stream=%p)",
+                       l_session_id, (void*)l_stream);
             } else {
                 log_it(L_ERROR, "TLS server: failed to create stream for session %u", l_session_id);
             }
@@ -443,32 +403,20 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
 
 static void s_tls_delete(dap_events_socket_t *a_es, void *a_arg)
 {
+    tls_conn_ctx_t *t = s_tls_ctx(a_es);
     int l_fd = a_es ? a_es->socket : -1;
 
-    if (a_es->_inheritor) {
-        tls_conn_ctx_t *t = (tls_conn_ctx_t *)a_es->_inheritor;
-        if (t->_magic == &s_tls_ctx_magic) {
-            /* Pre-stream_ctl: _inheritor is tls_conn_ctx_t directly */
-            log_it(L_NOTICE, "TLS server: delete fd=%d, t=%p, mimicry=%p",
-                   l_fd, (void*)t, (void*)t->mimicry);
-            if (t->mimicry) dap_tls_mimicry_free(t->mimicry);
-            DAP_DELETE(a_es->_inheritor);
-        } else {
-            /* Post-stream_ctl: _inheritor is dap_net_trans_ctx_t*,
-             * TLS context is in transport_priv. */
-            dap_net_trans_ctx_t *l_tc = (dap_net_trans_ctx_t *)a_es->_inheritor;
-            tls_conn_ctx_t *t = (tls_conn_ctx_t *)l_tc->transport_priv;
-            log_it(L_NOTICE, "TLS server: delete fd=%d, stream=%p, tls_ctx=%p, mimicry=%p",
-                   l_fd, (void*)l_tc->stream, (void*)t, t ? (void*)t->mimicry : NULL);
-            if (t) {
-                if (t->mimicry) dap_tls_mimicry_free(t->mimicry);
-                DAP_DELETE(t);
-                l_tc->transport_priv = NULL;
-            }
-            /* trans_ctx and stream are freed by dap_stream layer */
-        }
+    log_it(L_NOTICE, "TLS server: delete fd=%d, t=%p, stream=%p, mimicry=%p",
+           l_fd, (void*)t, t ? (void*)t->stream : NULL,
+           t ? (void*)t->mimicry : NULL);
+
+    if (t) {
+        /* Stream + trans_ctx are freed by the dap_stream layer
+         * (dap_stream_delete_unsafe) — we must not touch them here. */
+        if (t->mimicry) dap_tls_mimicry_free(t->mimicry);
+        DAP_DELETE(t);
+        a_es->_inheritor = NULL;
     }
-    a_es->_inheritor = NULL;
 }
 
 static void s_tls_error(dap_events_socket_t *a_es, int a_error)
@@ -488,10 +436,10 @@ static void s_tls_client_new(dap_events_socket_t *a_es, void *a_arg)
     tls_conn_ctx_t *t = DAP_NEW_Z(tls_conn_ctx_t);
     if (!t) return;
 
-    t->_magic = &s_tls_ctx_magic;
     t->handshake_done = false;
     t->client_finished_consumed = false;
     t->mimicry = NULL;
+    t->stream = NULL;
 
     a_es->_inheritor = t;
     a_es->callbacks.read_callback = s_tls_read;
