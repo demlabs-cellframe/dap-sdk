@@ -454,11 +454,31 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
             break;
         }
 
+        /* Cross-platform diagnostic: log KEM shared secret and derived key.
+         * Compare with server-side enc_init logs to confirm/deny Kyber divergence. */
+        {
+            const uint8_t *l_ss = (const uint8_t *)l_es->session_key_open->shared_key;
+            if (l_ss && l_es->session_key_open->shared_key_size >= 8)
+                log_it(L_DEBUG, "enc_init[client]: kem_shared[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x size=%zu",
+                       l_ss[0], l_ss[1], l_ss[2], l_ss[3], l_ss[4], l_ss[5], l_ss[6], l_ss[7],
+                       l_es->session_key_open->shared_key_size);
+        }
+
         // Generate session key (KDF: Kyber shared secret + session id, same as enc_http server)
         l_es->session_key = dap_enc_key_new_generate(l_es->session_key_type,
                 l_es->session_key_open->shared_key,
                 l_es->session_key_open->shared_key_size,
                 l_es->session_key_id, l_decoded_len, l_es->session_key_block_size);
+
+        /* Log the derived symmetric key for cross-platform comparison. */
+        {
+            const uint8_t *l_dk = l_es->session_key && l_es->session_key->priv_key_data
+                ? (const uint8_t *)l_es->session_key->priv_key_data : NULL;
+            if (l_dk && l_es->session_key->priv_key_data_size >= 8)
+                log_it(L_DEBUG, "enc_init[client]: derived_key[0..7]=%02x%02x%02x%02x %02x%02x%02x%02x type=%d",
+                       l_dk[0], l_dk[1], l_dk[2], l_dk[3], l_dk[4], l_dk[5], l_dk[6], l_dk[7],
+                       l_es->session_key_type);
+        }
 
         // Verify node sign
         if (l_node_sign_b64) {
