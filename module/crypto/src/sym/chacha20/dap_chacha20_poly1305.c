@@ -180,10 +180,8 @@ static inline dap_poly1305_blocks_fn_t dap_poly1305_blocks_resolve(void)
     if (arch >= DAP_CPU_ARCH_AVX2)
         return dap_poly1305_blocks_avx2;
 #elif DAP_PLATFORM_ARM
-#if !defined(__aarch64__)
     if (arch >= DAP_CPU_ARCH_NEON)
         return dap_poly1305_blocks_neon;
-#endif
 #endif
 
     return s_poly1305_blocks_ref;
