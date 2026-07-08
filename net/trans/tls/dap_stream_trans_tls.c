@@ -41,12 +41,24 @@
 
 #define LOG_TAG "dap_stream_trans_tls"
 
+/* Client-side protocol phases, processed in order by the single read callback.
+ * The state machine is driven by this enum, NOT by swapping read_callback
+ * pointers — so there is no window where a server response can arrive with
+ * no callback able to receive it (the race the old swap-on-write design had). */
+typedef enum tls_client_phase {
+    TLS_PHASE_HANDSHAKE = 0,       /* waiting for ServerHello */
+    TLS_PHASE_ENC_INIT_WAIT,       /* sent enc_init, waiting for response */
+    TLS_PHASE_STREAM_CTL_WAIT,     /* sent stream_ctl, waiting for response */
+    TLS_PHASE_STREAMING,           /* established — DAP stream packets */
+} tls_client_phase_t;
+
 typedef struct tls_mimicry_ctx {
     dap_tls_mimicry_t *mimicry;
     char              *sni_hostname;
     dap_net_trans_handshake_cb_t handshake_cb;
     dap_net_handshake_params_t  handshake_params;  /* saved for enc_init after TLS handshake */
     dap_net_trans_session_cb_t  session_create_cb; /* callback for stream_ctl response */
+    tls_client_phase_t           phase;            /* current protocol phase */
 } tls_mimicry_ctx_t;
 
 
@@ -395,35 +407,138 @@ static uint32_t s_tls_get_caps(dap_net_trans_t *a_trans)
  * server sends back ServerHello + CCS + fake extensions, this callback
  * processes them, completes the TLS handshake, and notifies the FSM.
  */
-static void s_tls_post_handshake_read(dap_events_socket_t *a_es, void *a_arg);
-static void s_tls_enc_init_read(dap_events_socket_t *a_es, void *a_arg);
-static void s_tls_stream_ctl_read(dap_events_socket_t *a_es, void *a_arg);
+static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg);
 
-static void s_tls_handshake_read(dap_events_socket_t *a_es, void *a_arg)
+/**
+ * @brief Build and send the enc_init HTTP POST through the TLS channel.
+ *
+ * Called once, right after the fake TLS handshake completes. Advances
+ * l_ctx->phase to TLS_PHASE_ENC_INIT_WAIT so the next incoming TLS record
+ * (the server's enc_init reply) is routed to the FSM via handshake_cb.
+ *
+ * @return 0 on success, -1 on allocation/send failure.
+ */
+static int s_tls_send_enc_init(dap_stream_t *a_stream, tls_mimicry_ctx_t *a_ctx,
+                               dap_events_socket_t *a_es)
 {
+    /* Node address: base58-encode the stream's node addr (set at stream
+     * creation from a_params->node_addr). Fall back to the legacy anonymous
+     * placeholder — same logic as the HTTP transport. */
+    char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
+    if (a_stream->node.uint64) {
+        uint64_t l_addr_le = a_stream->node.uint64;
+        size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
+        if (!l_b58_len)
+            dap_strncpy(l_node_addr_b58, "gd4y5yh78w42aaagh", sizeof(l_node_addr_b58) - 1);
+    }
+
+    char l_enc_init_url[512];
+    snprintf(l_enc_init_url, sizeof(l_enc_init_url),
+             "/%s/%s?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,"
+             "block_key_size=%zu,protocol_version=%d,sign_count=%zu",
+             DAP_UPLINK_PATH_ENC_INIT, l_node_addr_b58,
+             a_ctx->handshake_params.enc_type,
+             a_ctx->handshake_params.pkey_exchange_type,
+             a_ctx->handshake_params.pkey_exchange_size,
+             a_ctx->handshake_params.block_key_size,
+             a_ctx->handshake_params.protocol_version,
+             a_ctx->handshake_params.sign_count);
+
+    /* Body = base64-encoded alice_pub_key */
+    size_t l_body_b64_size = ((a_ctx->handshake_params.alice_pub_key_size + 2) / 3) * 4 + 1;
+    char *l_body_b64 = DAP_NEW_Z_SIZE(char, l_body_b64_size);
+    if (!l_body_b64)
+        return -1;
+
+    static const char s_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t l_in_len = a_ctx->handshake_params.alice_pub_key_size;
+    const uint8_t *l_in = a_ctx->handshake_params.alice_pub_key;
+    size_t l_out_pos = 0;
+    for (size_t i = 0; i < l_in_len; i += 3) {
+        uint32_t n = (uint32_t)l_in[i] << 16;
+        if (i + 1 < l_in_len) n |= (uint32_t)l_in[i + 1] << 8;
+        if (i + 2 < l_in_len) n |= (uint32_t)l_in[i + 2];
+        l_body_b64[l_out_pos++] = s_b64[(n >> 18) & 0x3F];
+        l_body_b64[l_out_pos++] = s_b64[(n >> 12) & 0x3F];
+        l_body_b64[l_out_pos++] = (i + 1 < l_in_len) ? s_b64[(n >> 6) & 0x3F] : '=';
+        l_body_b64[l_out_pos++] = (i + 2 < l_in_len) ? s_b64[n & 0x3F] : '=';
+    }
+    l_body_b64[l_out_pos] = '\0';
+
+    char l_http_post[8192];
+    int l_post_size = snprintf(l_http_post, sizeof(l_http_post),
+        "POST %s HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Content-Type: text/text\r\n"
+        "Content-Length: %zu\r\n"
+        "Connection: keep-alive\r\n"
+        "\r\n"
+        "%s",
+        l_enc_init_url, l_out_pos, l_body_b64);
+
+    int l_ret = 0;
+    if (l_post_size < 0 || (size_t)l_post_size >= sizeof(l_http_post)) {
+        log_it(L_ERROR, "TLS enc_init: HTTP request too large (%d bytes)", l_post_size);
+        l_ret = -1;
+    } else {
+        ssize_t l_sent = dap_stream_trans_write_unsafe(a_stream, l_http_post, (size_t)l_post_size);
+        if (l_sent > 0)
+            log_it(L_NOTICE, "TLS enc_init sent (%zd bytes) through TLS channel", l_sent);
+        else {
+            log_it(L_ERROR, "TLS enc_init: failed to send through TLS channel");
+            l_ret = -1;
+        }
+    }
+    DAP_DELETE(l_body_b64);
+    return l_ret;
+}
+
+/**
+ * @brief Single esocket read callback for the whole TLS client lifecycle.
+ *
+ * The protocol phase is tracked explicitly in l_ctx->phase rather than by
+ * swapping read_callback pointers. This removes the race where a fast server
+ * reply arrived in buf_in after a write but before the callback was switched,
+ * leaving it unread until the connection timeout.
+ *
+ * Flow:
+ *   HANDSHAKE        → process ServerHello, send enc_init → ENC_INIT_WAIT
+ *   ENC_INIT_WAIT    → unwrap reply, fire handshake_cb        → STREAM_CTL_WAIT *
+ *   STREAM_CTL_WAIT  → unwrap reply, fire session_create_cb   → STREAMING *
+ *   STREAMING        → unwrap, feed to DAP stream layer
+ *
+ * (* next phase entered when the FSM calls s_tls_session_create, not here)
+ */
+static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
+{
+    (void)a_arg;
     if (!a_es || a_es->buf_in_size == 0)
         return;
 
-    /* Get stream from esocket via client→FSM→trans_ctx chain */
     dap_stream_t *l_stream = s_stream_from_es(a_es);
     if (!l_stream || !l_stream->trans_ctx) {
-        log_it(L_ERROR, "TLS handshake read: no stream or trans_ctx");
+        log_it(L_ERROR, "TLS read: no stream or trans_ctx");
         return;
     }
 
     tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)l_stream->trans_ctx->transport_priv;
     if (!l_ctx || !l_ctx->mimicry) {
-        log_it(L_ERROR, "TLS handshake read: no mimicry context");
+        log_it(L_ERROR, "TLS read: no mimicry context");
         return;
     }
 
-    /* Process ServerHello from server */
-    void *l_response = NULL;
-    size_t l_response_size = 0;
-    int l_rc = dap_tls_mimicry_process_server_hello(l_ctx->mimicry,
-                                                      a_es->buf_in, a_es->buf_in_size,
-                                                      &l_response, &l_response_size);
-    if (l_rc == 0) {
+    /* === HANDSHAKE phase: ServerHello uses its own parser (not TLS unwrap) === */
+    if (l_ctx->phase == TLS_PHASE_HANDSHAKE) {
+        void *l_response = NULL;
+        size_t l_response_size = 0;
+        int l_rc = dap_tls_mimicry_process_server_hello(l_ctx->mimicry,
+                                                          a_es->buf_in, a_es->buf_in_size,
+                                                          &l_response, &l_response_size);
+        if (l_rc != 0) {
+            /* Incomplete or error — wait for more data */
+            DAP_DELETE(l_response);
+            return;
+        }
         /* ServerHello processed — send client CCS + fake Finished */
         if (l_response && l_response_size > 0) {
             dap_events_socket_write_unsafe(a_es, l_response, l_response_size);
@@ -432,288 +547,85 @@ static void s_tls_handshake_read(dap_events_socket_t *a_es, void *a_arg)
         a_es->buf_in_size = 0;
 
         log_it(L_NOTICE, "TLS handshake completed — sending enc_init through TLS channel");
+        if (s_tls_send_enc_init(l_stream, l_ctx, a_es) == 0)
+            l_ctx->phase = TLS_PHASE_ENC_INIT_WAIT;
 
-        /* Build enc_init URL (same format as HTTP transport).
-         * Node address: take from the stream's node addr (set at stream creation
-         * from a_params->node_addr in s_tls_stage_prepare). Fall back to the
-         * anonymous placeholder used by legacy servers — same logic as the HTTP
-         * transport (dap_net_trans_http_stream.c). */
-        char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
-        if (l_stream->node.uint64) {
-            uint64_t l_addr_le = l_stream->node.uint64;
-            size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
-            if (!l_b58_len)
-                dap_strncpy(l_node_addr_b58, "gd4y5yh78w42aaagh", sizeof(l_node_addr_b58) - 1);
+        /* If the enc_init reply is already in buf_in (CCS+Finished piggybacked
+         * or fast RTT), the buf_in_size is 0 here because we cleared it above.
+         * The next read event drives ENC_INIT_WAIT processing. No callback
+         * swap means no race to close. */
+        return;
+    }
+
+    /* === All other phases: TLS-unwrap incoming records first === */
+    void *l_unwrapped = NULL;
+    size_t l_unwrapped_size = 0, l_consumed = 0;
+    int l_rc = dap_tls_mimicry_unwrap(l_ctx->mimicry,
+                                       a_es->buf_in, a_es->buf_in_size,
+                                       &l_unwrapped, &l_unwrapped_size, &l_consumed);
+
+    /* Remove consumed bytes from buf_in */
+    if (l_consumed > 0 && l_consumed < a_es->buf_in_size) {
+        memmove(a_es->buf_in, a_es->buf_in + l_consumed, a_es->buf_in_size - l_consumed);
+        a_es->buf_in_size -= l_consumed;
+    } else if (l_consumed >= a_es->buf_in_size) {
+        a_es->buf_in_size = 0;
+    }
+
+    if (l_rc < 0) {
+        log_it(L_ERROR, "TLS read (phase %d): unwrap failed", (int)l_ctx->phase);
+        DAP_DELETE(l_unwrapped);
+        return;
+    }
+    if (l_rc == 1 || !l_unwrapped || l_unwrapped_size == 0) {
+        /* Incomplete TLS record — wait for more data */
+        DAP_DELETE(l_unwrapped);
+        return;
+    }
+
+    /* === Dispatch the unwrapped payload by phase === */
+    switch (l_ctx->phase) {
+    case TLS_PHASE_ENC_INIT_WAIT:
+        log_it(L_NOTICE, "TLS enc_init response received (%zu bytes)", l_unwrapped_size);
+        if (l_ctx->handshake_cb) {
+            l_ctx->handshake_cb(l_stream, l_unwrapped, l_unwrapped_size, 0);
+            l_ctx->handshake_cb = NULL;
         }
-        char l_enc_init_url[512];
-        snprintf(l_enc_init_url, sizeof(l_enc_init_url),
-                 "/%s/%s?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,"
-                 "block_key_size=%zu,protocol_version=%d,sign_count=%zu",
-                 DAP_UPLINK_PATH_ENC_INIT, l_node_addr_b58,
-                 l_ctx->handshake_params.enc_type,
-                 l_ctx->handshake_params.pkey_exchange_type,
-                 l_ctx->handshake_params.pkey_exchange_size,
-                 l_ctx->handshake_params.block_key_size,
-                 l_ctx->handshake_params.protocol_version,
-                 l_ctx->handshake_params.sign_count);
+        /* Stay in ENC_INIT_WAIT until the FSM calls s_tls_session_create,
+         * which advances phase to STREAM_CTL_WAIT. Any data arriving before
+         * then would be an early/piggybacked stream_ctl reply — unwrap and
+         * let the next read iteration handle it once phase advances. */
+        break;
 
-        /* Build HTTP POST with alice_pub_key as body */
-        /* The body is base64-encoded alice_pub_key */
-        size_t l_body_b64_size = ((l_ctx->handshake_params.alice_pub_key_size + 2) / 3) * 4 + 1;
-        char *l_body_b64 = DAP_NEW_Z_SIZE(char, l_body_b64_size);
-        if (l_body_b64) {
-            /* Simple base64 encoding */
-            static const char s_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            size_t l_in_len = l_ctx->handshake_params.alice_pub_key_size;
-            const uint8_t *l_in = l_ctx->handshake_params.alice_pub_key;
-            size_t l_out_pos = 0;
-            for (size_t i = 0; i < l_in_len; i += 3) {
-                uint32_t n = (uint32_t)l_in[i] << 16;
-                if (i + 1 < l_in_len) n |= (uint32_t)l_in[i + 1] << 8;
-                if (i + 2 < l_in_len) n |= (uint32_t)l_in[i + 2];
-                l_body_b64[l_out_pos++] = s_b64[(n >> 18) & 0x3F];
-                l_body_b64[l_out_pos++] = s_b64[(n >> 12) & 0x3F];
-                l_body_b64[l_out_pos++] = (i + 1 < l_in_len) ? s_b64[(n >> 6) & 0x3F] : '=';
-                l_body_b64[l_out_pos++] = (i + 2 < l_in_len) ? s_b64[n & 0x3F] : '=';
-            }
-            l_body_b64[l_out_pos] = '\0';
-
-            char l_http_post[8192];
-            int l_post_size = snprintf(l_http_post, sizeof(l_http_post),
-                "POST %s HTTP/1.1\r\n"
-                "Host: localhost\r\n"
-                "Content-Type: text/text\r\n"
-                "Content-Length: %zu\r\n"
-                "Connection: keep-alive\r\n"
-                "\r\n"
-                "%s",
-                l_enc_init_url, l_out_pos, l_body_b64);
-
-            if (l_post_size < 0 || (size_t)l_post_size >= sizeof(l_http_post)) {
-                log_it(L_ERROR, "TLS enc_init: HTTP request too large (%d bytes)", l_post_size);
-                DAP_DELETE(l_body_b64);
-                return;
-            }
-
-            /* Send through TLS channel (s_tls_write wraps in TLS records) */
-            ssize_t l_sent = dap_stream_trans_write_unsafe(l_stream, l_http_post, (size_t)l_post_size);
-            DAP_DELETE(l_body_b64);
-
-            if (l_sent > 0)
-                log_it(L_NOTICE, "TLS enc_init sent (%zd bytes) through TLS channel", l_sent);
-            else
-                log_it(L_ERROR, "TLS enc_init: failed to send through TLS channel");
+    case TLS_PHASE_STREAM_CTL_WAIT:
+        log_it(L_NOTICE, "TLS stream_ctl response received (%zu bytes)", l_unwrapped_size);
+        if (l_ctx->session_create_cb) {
+            /* Callback takes ownership of l_unwrapped and will DAP_DELETE it. */
+            l_ctx->session_create_cb(l_stream, 0,
+                                      (const char *)l_unwrapped, l_unwrapped_size, 0);
+            l_ctx->session_create_cb = NULL;
+            l_ctx->phase = TLS_PHASE_STREAMING;
+            l_unwrapped = NULL;  /* ownership transferred */
         }
+        break;
 
-        /* Do NOT call handshake_cb here — wait for enc_init response from server.
-         * Switch to s_tls_enc_init_read which will call handshake_cb with the response data.
-         * The server's response may already be in buf_in (fast RTT or data that arrived
-         * between the write and the callback switch). If so, process it now — otherwise the
-         * event loop won't re-enter read_callback (no new data event) and we hang until
-         * the connection timeout. */
-        a_es->callbacks.read_callback = s_tls_enc_init_read;
+    case TLS_PHASE_STREAMING:
+        /* Established: feed unwrapped DAP stream packets to the stream layer.
+         * If buf_in still has bytes (multiple TLS records coalesced in one
+         * read), loop by re-entering so each record is processed in phase. */
+        dap_stream_data_proc_read_ext(l_stream, l_unwrapped, l_unwrapped_size);
         if (a_es->buf_in_size > 0) {
-            log_it(L_DEBUG, "TLS enc_init: response already buffered (%zu bytes), processing now",
-                   a_es->buf_in_size);
-            s_tls_enc_init_read(a_es, a_arg);
+            DAP_DELETE(l_unwrapped);
+            s_tls_read_cb(a_es, a_arg);  /* drain remaining records */
+            return;
         }
-    } else {
-        /* Incomplete or error — wait for more data */
-        DAP_DELETE(l_response);
+        break;
+
+    default:
+        log_it(L_WARNING, "TLS read: unexpected phase %d, dropping %zu bytes",
+               (int)l_ctx->phase, l_unwrapped_size);
+        break;
     }
-}
-
-/**
- * @brief Enc-init response read callback for TLS transport
- *
- * After sending enc_init, this callback waits for the server's response.
- * TLS-unwraps the response and calls handshake_cb with the raw JSON data.
- * The FSM's s_handshake_callback_wrapper processes it via s_enc_init_response.
- */
-static void s_tls_enc_init_read(dap_events_socket_t *a_es, void *a_arg)
-{
-    if (!a_es || a_es->buf_in_size == 0)
-        return;
-
-    dap_stream_t *l_stream = s_stream_from_es(a_es);
-    if (!l_stream || !l_stream->trans_ctx) {
-        log_it(L_ERROR, "TLS enc_init read: no stream or trans_ctx");
-        return;
-    }
-
-    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)l_stream->trans_ctx->transport_priv;
-    if (!l_ctx || !l_ctx->mimicry) {
-        log_it(L_ERROR, "TLS enc_init read: no mimicry context");
-        return;
-    }
-
-    /* TLS unwrap the enc_init response */
-    void *l_unwrapped = NULL;
-    size_t l_unwrapped_size = 0, l_consumed = 0;
-    int l_rc = dap_tls_mimicry_unwrap(l_ctx->mimicry,
-                                       a_es->buf_in, a_es->buf_in_size,
-                                       &l_unwrapped, &l_unwrapped_size, &l_consumed);
-
-    /* Remove consumed bytes from buf_in */
-    if (l_consumed > 0 && l_consumed < a_es->buf_in_size) {
-        memmove(a_es->buf_in, a_es->buf_in + l_consumed,
-                a_es->buf_in_size - l_consumed);
-        a_es->buf_in_size -= l_consumed;
-    } else if (l_consumed >= a_es->buf_in_size) {
-        a_es->buf_in_size = 0;
-    }
-
-    if (l_rc < 0) {
-        log_it(L_ERROR, "TLS enc_init read: unwrap failed");
-        DAP_DELETE(l_unwrapped);
-        return;
-    }
-
-    if (l_rc == 1 || !l_unwrapped || l_unwrapped_size == 0) {
-        /* Incomplete TLS record — wait for more data */
-        DAP_DELETE(l_unwrapped);
-        return;
-    }
-
-    log_it(L_NOTICE, "TLS enc_init response received (%zu bytes)", l_unwrapped_size);
-
-    /* Call handshake callback with the enc_init response data.
-     * s_handshake_callback_wrapper will process it via s_enc_init_response. */
-    if (l_ctx->handshake_cb) {
-        l_ctx->handshake_cb(l_stream, l_unwrapped, l_unwrapped_size, 0);
-        l_ctx->handshake_cb = NULL;
-    }
-    DAP_DELETE(l_unwrapped);
-
-    /* Next: FSM will dispatch to STREAM_CTL and call s_tls_session_create.
-     * For now, switch to post-handshake read to handle any further data. */
-    a_es->callbacks.read_callback = s_tls_post_handshake_read;
-}
-
-/**
- * @brief Stream-ctl response read callback for TLS transport
- *
- * After sending stream_ctl, this callback waits for the server's response.
- * TLS-unwraps the response and calls session_create_cb with the raw JSON data.
- */
-static void s_tls_stream_ctl_read(dap_events_socket_t *a_es, void *a_arg)
-{
-    if (!a_es || a_es->buf_in_size == 0)
-        return;
-
-    dap_stream_t *l_stream = s_stream_from_es(a_es);
-    if (!l_stream || !l_stream->trans_ctx) {
-        log_it(L_ERROR, "TLS stream_ctl read: no stream or trans_ctx");
-        return;
-    }
-
-    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)l_stream->trans_ctx->transport_priv;
-    if (!l_ctx || !l_ctx->mimicry) {
-        log_it(L_ERROR, "TLS stream_ctl read: no mimicry context");
-        return;
-    }
-
-    /* TLS unwrap the stream_ctl response */
-    void *l_unwrapped = NULL;
-    size_t l_unwrapped_size = 0, l_consumed = 0;
-    int l_rc = dap_tls_mimicry_unwrap(l_ctx->mimicry,
-                                       a_es->buf_in, a_es->buf_in_size,
-                                       &l_unwrapped, &l_unwrapped_size, &l_consumed);
-
-    /* Remove consumed bytes from buf_in */
-    if (l_consumed > 0 && l_consumed < a_es->buf_in_size) {
-        memmove(a_es->buf_in, a_es->buf_in + l_consumed,
-                a_es->buf_in_size - l_consumed);
-        a_es->buf_in_size -= l_consumed;
-    } else if (l_consumed >= a_es->buf_in_size) {
-        a_es->buf_in_size = 0;
-    }
-
-    if (l_rc < 0) {
-        log_it(L_ERROR, "TLS stream_ctl read: unwrap failed");
-        DAP_DELETE(l_unwrapped);
-        return;
-    }
-
-    if (l_rc == 1 || !l_unwrapped || l_unwrapped_size == 0) {
-        /* Incomplete TLS record — wait for more data */
-        DAP_DELETE(l_unwrapped);
-        return;
-    }
-
-    log_it(L_NOTICE, "TLS stream_ctl response received (%zu bytes)", l_unwrapped_size);
-
-    /* Call session_create callback with the stream_ctl response data.
-     * Callback signature: (stream, session_id, response_data, response_size, error).
-     * Callback takes ownership of response_data and will DAP_DELETE it. */
-    if (l_ctx->session_create_cb) {
-        l_ctx->session_create_cb(l_stream, 0,
-                                  (const char *)l_unwrapped, l_unwrapped_size, 0);
-        l_ctx->session_create_cb = NULL;
-    } else {
-        DAP_DELETE(l_unwrapped);
-    }
-
-    /* After stream_ctl, switch to s_esocket_data_read for DAP stream packets.
-     * Need to set _inheritor back to trans_ctx for s_esocket_data_read to work. */
-    a_es->callbacks.read_callback = s_tls_post_handshake_read;
-}
-
-/**
- * @brief Post-handshake esocket read callback for TLS transport
- *
- * After TLS handshake completes, this callback replaces s_tls_handshake_read.
- * It unwraps TLS records from buf_in, then feeds the unwrapped data to the
- * stream layer for DAP protocol processing.
- */
-static void s_tls_post_handshake_read(dap_events_socket_t *a_es, void *a_arg)
-{
-    if (!a_es || a_es->buf_in_size == 0)
-        return;
-
-    /* Get stream from esocket via client→FSM→trans_ctx chain */
-    dap_stream_t *l_stream = s_stream_from_es(a_es);
-    if (!l_stream || !l_stream->trans_ctx) {
-        log_it(L_ERROR, "TLS post-handshake read: no stream or trans_ctx");
-        return;
-    }
-
-    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)l_stream->trans_ctx->transport_priv;
-    if (!l_ctx || !l_ctx->mimicry) {
-        log_it(L_ERROR, "TLS post-handshake read: no mimicry context");
-        return;
-    }
-
-    /* Unwrap TLS APPLICATION_DATA records from buf_in */
-    void *l_unwrapped = NULL;
-    size_t l_unwrapped_size = 0, l_consumed = 0;
-    int l_rc = dap_tls_mimicry_unwrap(l_ctx->mimicry,
-                                       a_es->buf_in, a_es->buf_in_size,
-                                       &l_unwrapped, &l_unwrapped_size, &l_consumed);
-
-    /* Remove consumed bytes from buf_in */
-    if (l_consumed > 0 && l_consumed < a_es->buf_in_size) {
-        memmove(a_es->buf_in, a_es->buf_in + l_consumed,
-                a_es->buf_in_size - l_consumed);
-        a_es->buf_in_size -= l_consumed;
-    } else if (l_consumed >= a_es->buf_in_size) {
-        a_es->buf_in_size = 0;
-    }
-
-    if (l_rc < 0) {
-        log_it(L_ERROR, "TLS post-handshake: unwrap failed");
-        DAP_DELETE(l_unwrapped);
-        return;
-    }
-
-    if (l_rc == 1 || !l_unwrapped || l_unwrapped_size == 0) {
-        /* Incomplete TLS record — wait for more data */
-        DAP_DELETE(l_unwrapped);
-        return;
-    }
-
-    /* Feed unwrapped data to stream layer */
-    dap_stream_data_proc_read_ext(l_stream, l_unwrapped, l_unwrapped_size);
     DAP_DELETE(l_unwrapped);
 }
 
@@ -811,13 +723,14 @@ static int s_tls_handshake_init(dap_stream_t *a_stream,
     l_ctx->handshake_params = *a_params;
     a_stream->trans_ctx->transport_priv = l_ctx;
 
-    /* Set handshake read callback on esocket so ServerHello gets processed */
-    /* Do NOT overwrite _inheritor — it's used by s_stream_es_callback_write
-     * (expects dap_client_t*) and s_esocket_data_read (expects trans_ctx).
-     * Instead, store stream pointer in TLS context and use client→FSM→trans_ctx
-     * chain to find it in callbacks. */
+    /* Install the single read callback that drives the whole protocol via
+     * l_ctx->phase. Do NOT overwrite _inheritor — it's used by
+     * s_stream_es_callback_write (expects dap_client_t*) and
+     * s_esocket_data_read (expects trans_ctx). The stream is reached via
+     * the client→FSM→trans_ctx chain (see s_stream_from_es). */
     a_stream->trans_ctx->stream = a_stream;  /* ensure back-reference exists */
-    a_stream->esocket->callbacks.read_callback = s_tls_handshake_read;
+    l_ctx->phase = TLS_PHASE_HANDSHAKE;
+    a_stream->esocket->callbacks.read_callback = s_tls_read_cb;
 
     log_it(L_NOTICE, "TLS handshake_init: ClientHello sent (%zd bytes), awaiting ServerHello",
            l_written);
@@ -906,17 +819,14 @@ static int s_tls_session_create(dap_stream_t *a_stream, dap_net_session_params_t
         return -3;
     }
 
-    /* Store callback and switch read handler to wait for stream_ctl response.
-     * Same race guard as enc_init: the server's response may already be buffered. */
+    /* Store callback and advance the phase to STREAM_CTL_WAIT. The single
+     * read callback s_tls_read_cb already installed on the esocket will route
+     * the next unwrapped record to session_create_cb. No callback swap → no
+     * race even if the server reply is already in buf_in. */
     tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)a_stream->trans_ctx->transport_priv;
     if (l_ctx) {
         l_ctx->session_create_cb = a_callback;
-        a_stream->esocket->callbacks.read_callback = s_tls_stream_ctl_read;
-        if (a_stream->esocket->buf_in_size > 0) {
-            log_it(L_DEBUG, "TLS stream_ctl: response already buffered (%zu bytes), processing now",
-                   a_stream->esocket->buf_in_size);
-            s_tls_stream_ctl_read(a_stream->esocket, NULL);
-        }
+        l_ctx->phase = TLS_PHASE_STREAM_CTL_WAIT;
     }
 
     log_it(L_NOTICE, "TLS session_create: stream_ctl sent (%zd bytes), awaiting response", l_sent);
