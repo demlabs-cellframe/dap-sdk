@@ -90,6 +90,12 @@ static void s_fsm_thread_callback_add(uint32_t a_thread_idx,
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm);
 static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm);
+
+/* Client is alive only while client->_internal still points back to this FSM. */
+static bool s_fsm_client_bound(dap_client_fsm_t *a_fsm)
+{
+    return a_fsm && a_fsm->client && DAP_CLIENT_FSM(a_fsm->client) == a_fsm;
+}
 static void s_worker_execute_enc_init_io(void *a_arg);
 static void s_handshake_es_delete_callback(dap_events_socket_t *a_es, void *a_arg);
 static int s_add_tried_transport(dap_client_fsm_t *a_fsm, dap_net_trans_type_t a_trans_type);
@@ -277,6 +283,28 @@ void dap_client_fsm_delete_unsafe(dap_client_fsm_t *a_fsm)
         a_fsm->esocket = NULL;
     }
 
+    /* Detach FSM from client only AFTER trans_ctx cleanup so that DAP_CLIENT_FSM() on
+     * stale esocket references returns NULL from this point forward.  The trans_ctx
+     * (if any) was detached from the FSM and handed to the stream's worker by
+     * dap_client_trans_ctx_clean_unsafe(); it must not be freed here. */
+    if (a_fsm->client) {
+        a_fsm->client->_internal = NULL;
+        a_fsm->client = NULL;
+    }
+
+    if (a_fsm->trans_ctx) {
+        a_fsm->trans_ctx->_inheritor = NULL;
+        dap_worker_t *l_udp_worker = a_fsm->trans_ctx->esocket_worker;
+        if (l_udp_worker) {
+            a_fsm->trans_ctx->esocket_worker = NULL;
+            dap_worker_exec_callback_on(l_udp_worker, s_deferred_trans_ctx_free, a_fsm->trans_ctx);
+        } else {
+            DAP_DELETE(a_fsm->trans_ctx);
+        }
+        a_fsm->trans_ctx = NULL;
+        a_fsm->esocket   = NULL;
+    }
+    a_fsm->esocket = NULL;
     DAP_DEL_Z(a_fsm->tried_transports);
     DAP_DELETE(a_fsm);
 }
@@ -857,7 +885,7 @@ static bool s_stream_timer_timeout_after_connected_check(void *a_arg)
 
 static void s_fsm_process(dap_client_fsm_t *a_fsm)
 {
-    if (!a_fsm || !a_fsm->client)
+    if (!a_fsm || a_fsm->is_removing || !s_fsm_client_bound(a_fsm))
         return;
 
     dap_client_stage_status_t l_stage_status = a_fsm->stage_status;
@@ -890,6 +918,8 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
             }
             log_it(L_ERROR, "Disconnect state(%s), all transports exhausted, doing callback",
                    dap_client_error_str(a_fsm->last_error));
+            /* Block stale DONE/ERROR notifications queued before link_drop frees client. */
+            a_fsm->is_removing = true;
             if (a_fsm->client->stage_status_error_callback)
                 a_fsm->client->stage_status_error_callback(a_fsm->client, (void *)(intptr_t)l_is_last_attempt);
             if (a_fsm->client->always_reconnect) {
@@ -1378,7 +1408,7 @@ static void *s_fsm_notify_on_fsm_thread(void *a_arg)
     if (!l_ctx) return NULL;
 
     dap_client_fsm_t *l_fsm = dap_client_fsm_find(l_ctx->fsm_uuid);
-    if (!l_fsm || l_fsm->is_removing) {
+    if (!l_fsm || l_fsm->is_removing || !s_fsm_client_bound(l_fsm)) {
         DAP_DELETE(l_ctx);
         return NULL;
     }
