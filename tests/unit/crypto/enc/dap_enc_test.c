@@ -533,6 +533,8 @@ void dap_enc_tests_run() {
 
     dap_print_module_name("dap_enc serialize->deserialize IAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES, true);
+    dap_print_module_name("dap_enc serialize->deserialize IAES2");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES2, true);
     dap_print_module_name("dap_enc serialize->deserialize OAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES, true);
 

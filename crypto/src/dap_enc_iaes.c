@@ -64,6 +64,49 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     memcpy(id_concat_kex,seed, seed_size);
     memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
     shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
+    /* IAES: ivec derived from seed only — original behavior, preserved for
+     * wire compatibility with nodes that use DAP_ENC_KEY_TYPE_IAES. */
+    shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, seed, seed_size);
+
+    free(id_concat_kex);
+}
+
+/**
+ * @brief dap_enc_aes2_key_new
+ * IAES2 variant: same key layout as IAES, but self-reports type IAES2.
+ * Enc/dec callbacks are identical (they only read the pre-derived ivec).
+ */
+void dap_enc_aes2_key_new(struct dap_enc_key * a_key)
+{
+    dap_enc_aes_key_new(a_key);
+    a_key->type = DAP_ENC_KEY_TYPE_IAES2;
+}
+
+/**
+ * @brief dap_enc_aes2_key_generate
+ * IAES2 variant: derives the ivec from id_concat_kex (seed+kex) instead of
+ * seed alone, binding the IV to the full key-exchange context. The private
+ * key (shake256) derivation is unchanged from IAES. Use this type when both
+ * peers agree on enc_type=IAES2; existing IAES peers keep the original IV.
+ */
+void dap_enc_aes2_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
+                                                size_t kex_size, const void * seed, size_t seed_size,
+                                                size_t key_size)
+{
+    (void)key_size;
+    a_key->last_used_timestamp = time(NULL);
+
+    uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
+    if (!id_concat_kex) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return;
+    }
+
+    memcpy(id_concat_kex,seed, seed_size);
+    memcpy(id_concat_kex + seed_size, kex_buf, kex_size);
+    shake256(a_key->priv_key_data, IAES_KEYSIZE, id_concat_kex, (kex_size + seed_size));
+    /* IAES2: ivec derived from id_concat_kex (seed+kex) — strengthened
+     * derivation binding the IV to the full KEX context. */
     shake128(DAP_ENC_AES_KEY(a_key)->ivec, IAES_BLOCK_SIZE, id_concat_kex, (kex_size + seed_size));
 
     free(id_concat_kex);

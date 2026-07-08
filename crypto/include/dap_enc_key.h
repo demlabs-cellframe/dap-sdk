@@ -46,6 +46,7 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_INVALID = -1,
     DAP_ENC_KEY_TYPE_NULL = 0, // avoid using it: 0 is a DAP_ENC_KEY_TYPE_NULL and DAP_ENC_KEY_TYPE_IAES at the same time
     DAP_ENC_KEY_TYPE_IAES = 0, // Symmetric AES
+    DAP_ENC_KEY_TYPE_IAES2 = 9, // IAES variant with strengthened IV derivation (bound to full KEX context)
     DAP_ENC_KEY_TYPE_OAES = 1,// OAES (Open-source AES implementation)
 
     DAP_ENC_KEY_TYPE_BF_CBC = 2,// BlowFish CBCmode
