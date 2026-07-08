@@ -113,6 +113,22 @@ void dap_plugin_deinit(){
     dap_plugin_binary_deinit();
     dap_plugin_manifest_deinit();
     dap_plugin_command_deinit();
+
+    /* Free plugin types hash table */
+    struct plugin_type *l_type, *l_tmp;
+    HASH_ITER(hh, s_types, l_type, l_tmp){
+        HASH_DEL(s_types, l_type);
+        DAP_DELETE(l_type);
+    }
+    s_types = NULL;
+
+    /* Free plugin modules hash table */
+    struct plugin_module *l_module, *l_mtmp;
+    HASH_ITER(hh, s_modules, l_module, l_mtmp){
+        HASH_DEL(s_modules, l_module);
+        DAP_DELETE(l_module);
+    }
+    s_modules = NULL;
 }
 
 /**
