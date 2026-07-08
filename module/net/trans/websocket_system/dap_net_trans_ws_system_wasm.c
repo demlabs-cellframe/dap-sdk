@@ -420,16 +420,24 @@ static int s_ws_stage_prepare(dap_net_trans_t *a_trans,
 
     l_conn->host = dap_strdup(a_params->host);
     l_conn->port = a_params->port;
+    /* TLS detection: use HTTPS when the page is served over HTTPS, when the
+     * port is the standard HTTPS port (443), or when the port is a commonly
+     * used HTTPS port for self-hosted services (e.g. 8443, 4443).
+     * This allows the WASM client to connect via TLS even when the page
+     * itself is served over plain HTTP behind a reverse proxy on port 4000,
+     * while the DAP server is on a different HTTPS port (e.g. 4443). */
+    const bool l_port_is_https = (a_params->port == 443) || (a_params->port == 8443)
+                               || (a_params->port == 4443);
 #ifdef DAP_OS_WASM_MT
     if (s_wasm_main_document_https < 0) {
         log_it(L_WARNING, "HTTPS detection not initialized, assuming secure context");
         s_wasm_main_document_https = 1;
     }
-    l_conn->use_tls = (a_params->port == 443) || (s_wasm_main_document_https > 0);
+    l_conn->use_tls = l_port_is_https || (s_wasm_main_document_https > 0);
     log_it(L_DEBUG, "WS connect: port=%u, https_flag=%d, use_tls=%d",
            a_params->port, s_wasm_main_document_https, l_conn->use_tls);
 #else
-    l_conn->use_tls = (a_params->port == 443) || js_page_is_secure();
+    l_conn->use_tls = l_port_is_https || js_page_is_secure();
 #endif
     l_conn->client_ctx = a_params->client_ctx;
 
