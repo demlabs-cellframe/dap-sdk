@@ -24,6 +24,8 @@
 #include "dap_trans_request.h"
 #include "dap_enc_handler.h"
 #include "dap_stream_ctl_handler.h"
+#include "dap_stream.h"
+#include "dap_stream_pkt.h"
 
 #define LOG_TAG "dap_net_trans_tls_server"
 
@@ -38,6 +40,8 @@ typedef struct tls_conn_ctx {
     dap_tls_mimicry_t *mimicry;
     bool handshake_done;
     bool client_finished_consumed;
+    size_t prev_buf_in_size;  /* guard: buf_in_size at function exit */
+    bool stream_mode;         /* after stream_ctl: route DAP packets to stream layer */
 } tls_conn_ctx_t;
 
 static bool s_debug_more = false;
@@ -161,28 +165,11 @@ static int s_route_request(const char *a_url_path, const char *a_query,
     }
 
     if (l_req.reply && l_req.reply_size > 0) {
-        /* Build HTTP response */
-        size_t l_http_size = 512 + l_req.reply_size;
-        char *l_http = DAP_NEW_SIZE(char, l_http_size);
-        if (l_http) {
-            int l_len = snprintf(l_http, l_http_size,
-                "HTTP/1.1 %d %s\r\n"
-                "Content-Type: application/json\r\n"
-                "Content-Length: %zu\r\n"
-                "Connection: keep-alive\r\n"
-                "\r\n",
-                l_req.status_code,
-                l_req.status_code == 200 ? "OK" : "Error",
-                l_req.reply_size);
-            if (l_len > 0) {
-                memcpy(l_http + l_len, l_req.reply, l_req.reply_size);
-                *a_response = l_http;
-                *a_response_len = l_len + l_req.reply_size;
-            } else {
-                DAP_DELETE(l_http);
-            }
-        }
-        DAP_DELETE(l_req.reply);
+        /* TLS transport sends raw handler output — no HTTP framing needed.
+         * The client's stream layer parses the DAP protocol directly. */
+        *a_response = (char *)l_req.reply;
+        *a_response_len = l_req.reply_size;
+        l_req.reply = NULL; /* ownership transferred */
     }
 
     return l_rc;
@@ -204,9 +191,16 @@ static void s_tls_error(dap_events_socket_t *a_es, int a_error);
 static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 {
     tls_conn_ctx_t *t = s_tls_ctx(a_es);
+    if (!t) return;
+
+    /* Guard: if buf_in hasn't changed since we last exited, skip.
+     * Prevents tight loop when unwrap returns rc=1 (need more data)
+     * and event loop re-enters with same buffer. */
+    if (a_es->buf_in_size > 0 && a_es->buf_in_size == t->prev_buf_in_size)
+        return;
+
     log_it(L_NOTICE, "TLS server: s_tls_read fd=%d, buf_in_size=%zu, t=%p",
            a_es ? a_es->socket : -1, a_es ? a_es->buf_in_size : 0, (void*)t);
-    if (!t) return;
 
     /* === TLS handshake phase === */
     if (!t->handshake_done) {
@@ -295,6 +289,39 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 
     if (l_rc != 0 || !l_raw || l_raw_sz == 0) {
         DAP_DELETE(l_raw);
+        t->prev_buf_in_size = a_es->buf_in_size;  /* update guard at exit */
+        return;
+    }
+
+    /* After stream_ctl, data is DAP stream packets (not HTTP POST).
+     * Detect deterministically by the DAP stream packet signature
+     * ({0xa0,0x95,0x96,0xa9,...} — see c_dap_stream_sig), not by absence of "POST".
+     * HTTP POST starts with ASCII 'P' (0x50), which can never match the binary
+     * signature's first byte 0xa0, so the two cases are unambiguous. */
+    if (!t->stream_mode && l_raw_sz >= STREAM_PKT_SIG_SIZE
+            && memcmp(l_raw, c_dap_stream_sig, STREAM_PKT_SIG_SIZE) == 0) {
+        t->stream_mode = true;
+        log_it(L_NOTICE, "TLS server: switching to stream mode (DAP stream signature detected, %zu bytes)", l_raw_sz);
+    }
+
+    if (t->stream_mode) {
+        /* DAP stream packets — need stream layer to process.
+         * The stream is created by the HTTP server path (s_stream_new) when
+         * stream_ctl response is processed. But TLS direct mode bypasses HTTP,
+         * so we need to find the stream from the esocket's trans_ctx.
+         * If no stream available, log warning and drop the data. */
+        dap_net_trans_ctx_t *l_tc = (dap_net_trans_ctx_t *)a_es->_inheritor;
+        dap_stream_t *l_stream = l_tc ? l_tc->stream : NULL;
+        if (l_stream) {
+            dap_stream_data_proc_read_ext(l_stream, l_raw, l_raw_sz);
+        } else {
+            /* No stream — this is expected if stream wasn't created via HTTP path.
+             * The stream_ctl handler should have created the session, but the
+             * stream object itself is managed by the HTTP server layer. */
+            log_it(L_WARNING, "TLS server: stream mode but no stream (dropping %zu bytes)", l_raw_sz);
+        }
+        DAP_DELETE(l_raw);
+        t->prev_buf_in_size = a_es->buf_in_size;
         return;
     }
 
@@ -313,6 +340,13 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     size_t l_response_len = 0;
     s_route_request(l_url_path, l_query, l_body, l_body_len,
                     &l_response, &l_response_len);
+
+    /* After stream_ctl response, switch to stream mode for subsequent data */
+    if (l_url_path && strncmp(l_url_path, "/stream_ctl", 11) == 0) {
+        t->stream_mode = true;
+        log_it(L_NOTICE, "TLS server: stream_ctl processed, switching to stream mode");
+    }
+
     log_it(L_NOTICE, "TLS server: route result: response_len=%zu", l_response_len);
 
     DAP_DELETE(l_url_path);
@@ -336,6 +370,7 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
                (void*)l_response, l_response_len, t ? (void*)t->mimicry : NULL);
         DAP_DELETE(l_response);
     }
+    t->prev_buf_in_size = a_es->buf_in_size;  /* update guard at exit */
 }
 
 /* ------------------------------------------------------------------ */

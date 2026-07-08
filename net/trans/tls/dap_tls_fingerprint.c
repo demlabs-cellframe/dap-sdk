@@ -116,7 +116,7 @@ int dap_tls_fp_build_clienthello(const dap_tls_fp_profile_t *a_profile,
         l_buf[l_list_len_offset + 1] = (uint8_t)(l_list_len & 0xFF);
     }
 
-    /* Patch extensions_length: add SNI hostname bytes to total extensions size */
+    /* Patch extensions_length: add SNI extension size to total extensions size */
     if (a_profile->extensions_length_offset + 2 <= l_base_size) {
         uint16_t l_cur_ext_len = ((uint16_t)l_buf[a_profile->extensions_length_offset] << 8)
                                | l_buf[a_profile->extensions_length_offset + 1];
