@@ -230,8 +230,11 @@ addToLibrary({
         }
 
         if (xhr.status >= 200 && xhr.status < 300) {
-            if (xhr.response && xhr.response.byteLength > 0) {
-                var responseBytes = new Uint8Array(xhr.response);
+            // Sync XHR on main thread returns text (not ArrayBuffer).
+            // Convert text response to bytes via TextEncoder.
+            var responseText = xhr.responseText || '';
+            var responseBytes = new TextEncoder().encode(responseText);
+            if (responseBytes.length > 0) {
                 var ptr = _malloc(responseBytes.length + 1);
                 HEAPU8.set(responseBytes, ptr);
                 HEAPU8[ptr + responseBytes.length] = 0;
