@@ -205,45 +205,58 @@ addToLibrary({
             return result;
         }
 
-        // Browser path: synchronous XHR
-        var xhr = new XMLHttpRequest();
-        xhr.open("POST", url, false);
-        // Note: responseType cannot be set on sync XHR in Chrome offscreen documents.
-        // Read as text and convert to bytes via TextEncoder.
-        if (contentType) xhr.setRequestHeader("Content-Type", contentType);
-
+        // Browser path: async fetch via ASYNCIFY (works in offscreen documents)
+        var headers = {};
+        if (contentType) headers['Content-Type'] = contentType;
         if (extraHeaders) {
             var lines = extraHeaders.split("\r\n");
             for (var i = 0; i < lines.length; i++) {
                 var sep = lines[i].indexOf(":");
                 if (sep > 0) {
-                    xhr.setRequestHeader(lines[i].substring(0, sep).trim(),
-                                         lines[i].substring(sep + 1).trim());
+                    headers[lines[i].substring(0, sep).trim()] = lines[i].substring(sep + 1).trim();
                 }
             }
         }
 
-        if (a_body && a_body_len > 0) {
-            xhr.send(HEAPU8.slice(a_body, a_body + a_body_len));
-        } else {
-            xhr.send();
-        }
+        return Asyncify.handleSleep(function(wakeUp) {
+            var body = (a_body && a_body_len > 0) ? HEAPU8.slice(a_body, a_body + a_body_len) : undefined;
+            var controller = new AbortController();
+            var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
 
-        if (xhr.status >= 200 && xhr.status < 300) {
-            if (xhr.response && xhr.response.byteLength > 0) {
-                var responseBytes = new Uint8Array(xhr.response);
-                var ptr = _malloc(responseBytes.length + 1);
-                HEAPU8.set(responseBytes, ptr);
-                HEAPU8[ptr + responseBytes.length] = 0;
-                setValue(a_out_ptr_addr, ptr, '*');
-                setValue(a_out_len_addr, responseBytes.length, 'i32');
-            } else {
+            fetch(url, {
+                method: 'POST',
+                headers: headers,
+                body: body,
+                signal: controller.signal,
+            }).then(function(response) {
+                clearTimeout(timeoutId);
+                return response.text().then(function(text) {
+                    return { ok: response.ok, status: response.status, text: text };
+                });
+            }).then(function(result) {
+                if (result.ok && result.text && result.text.length > 0) {
+                    var responseBytes = new TextEncoder().encode(result.text);
+                    var ptr = _malloc(responseBytes.length + 1);
+                    HEAPU8.set(responseBytes, ptr);
+                    HEAPU8[ptr + responseBytes.length] = 0;
+                    setValue(a_out_ptr_addr, ptr, '*');
+                    setValue(a_out_len_addr, responseBytes.length, 'i32');
+                    wakeUp(0);
+                } else if (result.ok) {
+                    setValue(a_out_ptr_addr, 0, '*');
+                    setValue(a_out_len_addr, 0, 'i32');
+                    wakeUp(0);
+                } else {
+                    wakeUp(-result.status || -1);
+                }
+            }).catch(function(e) {
+                clearTimeout(timeoutId);
+                console.error('[dap_transport] fetch error:', url, e.message);
                 setValue(a_out_ptr_addr, 0, '*');
                 setValue(a_out_len_addr, 0, 'i32');
-            }
-            return 0;
-        }
-        return -xhr.status || -1;
+                wakeUp(-1);
+            });
+        });
     },
 
     /* ==================================================================
