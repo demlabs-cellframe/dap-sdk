@@ -233,7 +233,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
         dap_enc_ks_save_in_storage(l_enc_key_ks);
 
-        int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
+        int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE,
                                                       encrypt_id, DAP_ENC_DATA_TYPE_B64),
             l_node_msg_len = 0;
 

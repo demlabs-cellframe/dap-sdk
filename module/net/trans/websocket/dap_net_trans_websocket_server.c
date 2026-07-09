@@ -406,6 +406,25 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
            a_http_client->esocket->remote_addr_str);
     log_it(L_DEBUG, "Generated Sec-WebSocket-Accept: %s", l_accept_key);
 
+    /* RFC 6455 §4.2.2: if the client offered subprotocols, the server MUST
+     * either select one and echo it back in Sec-WebSocket-Protocol, or omit
+     * the header entirely (in which case browsers that requested a protocol
+     * abort the handshake). We select the first offered token so that
+     * clients created with `new WebSocket(url, "dap-stream")` succeed. */
+    char l_subproto[64] = {0};
+    dap_http_header_t *l_ws_proto = dap_http_header_find(a_http_client->in_headers,
+                                                         "Sec-WebSocket-Protocol");
+    if (l_ws_proto && *l_ws_proto->value) {
+        // Take the first comma-separated token, trimmed
+        const char *l_start = l_ws_proto->value;
+        while (*l_start == ' ' || *l_start == '\t')
+            l_start++;
+        size_t l_tok_len = strcspn(l_start, ", \t");
+        if (l_tok_len > 0 && l_tok_len < sizeof(l_subproto))
+            snprintf(l_subproto, sizeof(l_subproto), "Sec-WebSocket-Protocol: %.*s\r\n",
+                     (int)l_tok_len, l_start);
+    }
+
     // Write 101 Switching Protocols response directly to esocket buf_out.
     // We bypass the standard dap_http_client_write mechanism because:
     // 1. dap_http_client_write_callback expects data_write_callback (we have none)
@@ -416,8 +435,9 @@ static void s_websocket_upgrade_headers_read(dap_http_client_t *a_http_client, v
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
         "Sec-WebSocket-Accept: %s\r\n"
+        "%s"
         "\r\n",
-        l_accept_key);
+        l_accept_key, l_subproto);
 
     // Switch to WebSocket protocol immediately after writing 101 response
     if (s_switch_to_websocket_protocol(a_http_client) != 0) {

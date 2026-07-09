@@ -465,10 +465,15 @@ static void s_enc_init_response(dap_client_t *a_client, const void *a_data, size
         }
 
         // Generate session key (KDF: Kyber shared secret + session id, same as enc_http server)
+        /* Belt-and-suspenders: use strnlen to cap seed at DAP_ENC_KS_KEY_ID_SIZE (33)
+         * regardless of how many bytes the base64 blob contained. The server encodes
+         * exactly DAP_ENC_KS_KEY_ID_SIZE chars; a trailing NUL or extra byte must not
+         * change the KDF input. */
         l_es->session_key = dap_enc_key_new_generate(l_es->session_key_type,
                 l_es->session_key_open->shared_key,
                 l_es->session_key_open->shared_key_size,
-                l_es->session_key_id, l_decoded_len, l_es->session_key_block_size);
+                l_es->session_key_id, strnlen(l_es->session_key_id, DAP_ENC_KS_KEY_ID_SIZE),
+                l_es->session_key_block_size);
 
         /* Log the derived symmetric key for cross-platform comparison. */
         {

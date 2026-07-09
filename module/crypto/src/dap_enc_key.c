@@ -1505,9 +1505,11 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
  */
 size_t dap_enc_key_get_enc_size(dap_enc_key_type_t a_key_type, const size_t a_buf_in_size)
 {
-    return a_buf_in_size && s_callbacks[a_key_type].enc_out_size
-        ? s_callbacks[a_key_type].enc_out_size(a_buf_in_size)
-        : ( log_it(L_ERROR, "No enc_out_size() function for key %s", dap_enc_get_type_name(a_key_type)), 0 );
+    if (!s_callbacks[a_key_type].enc_out_size) {
+        log_it(L_ERROR, "No enc_out_size() function for key %s", dap_enc_get_type_name(a_key_type));
+        return 0;
+    }
+    return s_callbacks[a_key_type].enc_out_size(a_buf_in_size);
 }
 
 /**
@@ -1518,9 +1520,11 @@ size_t dap_enc_key_get_enc_size(dap_enc_key_type_t a_key_type, const size_t a_bu
  */
 size_t dap_enc_key_get_dec_size(dap_enc_key_type_t a_key_type, const size_t a_buf_in_size)
 {
-    return a_buf_in_size && s_callbacks[a_key_type].dec_out_size
-        ? s_callbacks[a_key_type].dec_out_size(a_buf_in_size)
-        : ( log_it(L_ERROR, "No dec_out_size() function for key %s", dap_enc_get_type_name(a_key_type)), 0 );
+    if (!s_callbacks[a_key_type].dec_out_size) {
+        log_it(L_ERROR, "No dec_out_size() function for key %s", dap_enc_get_type_name(a_key_type));
+        return 0;
+    }
+    return s_callbacks[a_key_type].dec_out_size(a_buf_in_size);
 }
 
 const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type)

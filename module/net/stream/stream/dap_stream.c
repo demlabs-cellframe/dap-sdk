@@ -218,7 +218,19 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
         log_it(L_ERROR, "Stream has no trans_ctx or esocket");
         return 0;
     }
-    
+
+    // Prefer trans->ops->write: transports like WebSocket require their own
+    // framing (RFC 6455) — writing raw bytes to the esocket would corrupt the
+    // protocol stream (browser aborts with "server must not mask frames").
+    // Same routing as dap_stream_pkt_write_unsafe.
+    dap_net_trans_t *l_trans = NULL;
+    if (a_stream->trans_ctx->trans)
+        l_trans = a_stream->trans_ctx->trans;
+    else if (a_stream->trans)
+        l_trans = a_stream->trans;
+    if (l_trans && l_trans->ops && l_trans->ops->write)
+        return l_trans->ops->write(a_stream, a_data, a_size);
+
     dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
     
     // Check if this is a datagram transport (UDP, SCTP, etc)
