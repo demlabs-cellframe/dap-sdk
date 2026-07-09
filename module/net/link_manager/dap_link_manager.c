@@ -949,7 +949,7 @@ static bool s_link_update_callback(void *a_arg)
     dap_client_t *l_client = l_link->uplink.client;
     dap_client_set_uplink_unsafe(l_client, &l_link->addr, l_args->host, l_args->port);
     dap_client_set_is_always_reconnect(l_client, false);
-    dap_client_set_active_channels_unsafe(l_client, "RCGEND");
+    dap_client_set_active_channels_unsafe(l_client, "RCGENDM");
     log_it(L_INFO, "Validate link to node " NODE_ADDR_FP_STR " with address %s : %d", NODE_ADDR_FP_ARGS_S(l_link->addr),
                                                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
     if (l_link->uplink.ready) {
