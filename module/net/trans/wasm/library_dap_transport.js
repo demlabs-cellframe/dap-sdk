@@ -223,35 +223,18 @@ addToLibrary({
             var controller = new AbortController();
             var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
 
-            fetch(url, {
-                method: 'POST',
-                headers: headers,
-                body: body,
-                signal: controller.signal,
-            }).then(function(response) {
-                clearTimeout(timeoutId);
-                return response.text().then(function(text) {
-                    return { ok: response.ok, status: response.status, text: text };
-                });
-            }).then(function(result) {
-                if (result.ok && result.text && result.text.length > 0) {
-                    var responseBytes = new TextEncoder().encode(result.text);
-                    var ptr = _malloc(responseBytes.length + 1);
-                    HEAPU8.set(responseBytes, ptr);
-                    HEAPU8[ptr + responseBytes.length] = 0;
-                    setValue(a_out_ptr_addr, ptr, '*');
-                    setValue(a_out_len_addr, responseBytes.length, 'i32');
-                    wakeUp(0);
-                } else if (result.ok) {
-                    setValue(a_out_ptr_addr, 0, '*');
-                    setValue(a_out_len_addr, 0, 'i32');
-                    wakeUp(0);
-                } else {
-                    wakeUp(-result.status || -1);
-                }
-            }).catch(function(e) {
-                clearTimeout(timeoutId);
-                console.error('[dap_transport] fetch error:', url, e.message);
+        if (xhr.status >= 200 && xhr.status < 300) {
+            // Sync XHR on main thread returns text (not ArrayBuffer).
+            // Convert text response to bytes via TextEncoder.
+            var responseText = xhr.responseText || '';
+            var responseBytes = new TextEncoder().encode(responseText);
+            if (responseBytes.length > 0) {
+                var ptr = _malloc(responseBytes.length + 1);
+                HEAPU8.set(responseBytes, ptr);
+                HEAPU8[ptr + responseBytes.length] = 0;
+                setValue(a_out_ptr_addr, ptr, '*');
+                setValue(a_out_len_addr, responseBytes.length, 'i32');
+            } else {
                 setValue(a_out_ptr_addr, 0, '*');
                 setValue(a_out_len_addr, 0, 'i32');
                 wakeUp(-1);

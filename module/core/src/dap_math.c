@@ -35,7 +35,7 @@ int64_t dap_mod_inverse_u64(int64_t a, int64_t b, int64_t mod) {
     // Returns (a * b^(-1)) mod mod, or 0 if b is not invertible
     
     if (mod <= 0) {
-        log_it(L_ERROR, "Invalid modulus: %ld", mod);
+        log_it(L_ERROR, "Invalid modulus: %lld", (long long)mod);
         return 0;
     }
     
@@ -72,7 +72,7 @@ int64_t dap_mod_inverse_u64(int64_t a, int64_t b, int64_t mod) {
     
     if (old_r > 1) {
         // b is not invertible modulo mod (gcd(b, mod) != 1)
-        log_it(L_WARNING, "Value %ld is not invertible modulo %ld (gcd = %ld)", b, mod, old_r);
+        log_it(L_WARNING, "Value %lld is not invertible modulo %lld (gcd = %lld)", (long long)b, (long long)mod, (long long)old_r);
         return 0;
     }
     
@@ -140,7 +140,7 @@ uint64_t dap_lcm_u64(uint64_t a, uint64_t b) {
     
     // Check for overflow in multiplication
     if (a / gcd_val > UINT64_MAX / b) {
-        log_it(L_ERROR, "Overflow in LCM calculation for %lu and %lu", a, b);
+        log_it(L_ERROR, "Overflow in LCM calculation for %llu and %llu", (unsigned long long)a, (unsigned long long)b);
         return 0;
     }
     
