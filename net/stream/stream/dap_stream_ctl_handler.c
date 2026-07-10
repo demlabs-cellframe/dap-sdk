@@ -98,6 +98,7 @@ int dap_stream_ctl_handler_process(dap_trans_request_t *a_req)
     /* Generate session key */
     char l_key_str[KEX_KEY_STR_SIZE + 1];
     dap_random_string_fill(l_key_str, KEX_KEY_STR_SIZE);
+    l_key_str[KEX_KEY_STR_SIZE] = '\0';  /* dap_random_string_fill does NOT NUL-terminate */
 
     l_session->key = dap_enc_key_new_generate(l_enc_type, l_key_str, KEX_KEY_STR_SIZE,
                                                NULL, 0, l_enc_key_size);

@@ -613,6 +613,7 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
         /* Established: feed unwrapped DAP stream packets to the stream layer.
          * If buf_in still has bytes (multiple TLS records coalesced in one
          * read), loop by re-entering so each record is processed in phase. */
+        log_it(L_NOTICE, "TLS read (STREAMING): unwrapped %zu bytes, feeding to stream", l_unwrapped_size);
         dap_stream_data_proc_read_ext(l_stream, l_unwrapped, l_unwrapped_size);
         if (a_es->buf_in_size > 0) {
             DAP_DELETE(l_unwrapped);

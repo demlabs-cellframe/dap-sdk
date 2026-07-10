@@ -620,14 +620,25 @@ static void s_stream_ctl_response(dap_client_t *a_client, void *a_data, size_t a
     dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
     if (!l_ctx || !l_fsm || !l_tc) return;
 
-    char *l_response_str = (char *)a_data;
-    if (!l_response_str || a_data_size < 4) {
+    if (!a_data || a_data_size < 4) {
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT);
         return;
     }
 
+    /* The response buffer from TLS direct mode is NOT NUL-terminated.
+     * sscanf below requires a proper C string, so make a NUL-terminated copy. */
+    char *l_response_str = DAP_NEW_SIZE(char, a_data_size + 1);
+    if (!l_response_str) {
+        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                              STAGE_STATUS_ERROR, ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT);
+        return;
+    }
+    memcpy(l_response_str, a_data, a_data_size);
+    l_response_str[a_data_size] = '\0';
+
     if (!strncmp(l_response_str, "ERROR", a_data_size)) {
+        DAP_DELETE(l_response_str);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_ERROR, ERROR_STREAM_CTL_ERROR_AUTH);
         return;
@@ -643,6 +654,8 @@ static void s_stream_ctl_response(dap_client_t *a_client, void *a_data, size_t a
                                              &l_stream_id_int, l_stream_key,
                                              &l_remote_protocol_version,
                                              &l_enc_type, &l_enc_headers);
+
+    DAP_DELETE(l_response_str);
 
     if (l_arg_count < 2) {
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,

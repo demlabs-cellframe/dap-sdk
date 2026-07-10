@@ -868,8 +868,19 @@ int dap_stream_start_keepalive(dap_stream_t *a_stream)
 }
 
 /**
- * @brief dap_stream_delete_unsafe
- * @param a_stream
+ * @brief Delete a stream and free all its resources.
+ *
+ * UNSAFE contract: the caller MUST be running on the stream's native
+ * worker (the worker pointed to by a_stream->esocket_worker).  This is
+ * guaranteed when called from event-loop callbacks (read, write, timer,
+ * delete) on that worker.  If the caller is on a different thread, use
+ * the dispatch-to-worker pattern:
+ *   dap_worker_exec_callback_on(stream->esocket_worker, callback, stream);
+ * then call this function inside the callback.
+ *
+ * SIGNAL_CLOSE is the deferred alternative: set a_es->flags |= DAP_SOCK_SIGNAL_CLOSE
+ * from any context; the event loop will call this function safely later.
+ * Do NOT call this from a packet_in_callback — use SIGNAL_CLOSE instead.
  */
 void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 {
@@ -1355,26 +1366,20 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
     if (!a_stream || !a_data || a_data_size == 0)
         return 0;
 
-    /* Copy data to a private buffer.  s_stream_proc_pkt_in() may close
-     * and delete the stream mid-loop (a channel's packet_in_callback can
-     * trigger SIGNAL_CLOSE → dap_stream_delete_unsafe, which frees the
-     * esocket and its buf_in).  The caller passes a_data pointing into
-     * buf_in, so without this copy the scan loop below would touch freed
-     * memory on the next iteration — a use-after-free. */
-    byte_t *l_buf = DAP_NEW_SIZE(byte_t, a_data_size);
-    if (!l_buf) {
-        log_it(L_ERROR, "proc_read_ext: can't allocate %zu bytes for copy", a_data_size);
-        return 0;
-    }
-    memcpy(l_buf, a_data, a_data_size);
-
-    byte_t *l_pos = l_buf;
-    byte_t *l_end = l_buf + a_data_size;
+    /* INVARIANT: this function runs in the stream's native worker context
+     * (read_callback chain from dap_context event loop).  It relies on the
+     * contract that _unsafe delete functions are NEVER called outside the
+     * owning worker — SIGNAL_CLOSE is deferred to the event loop, and
+     * dap_stream_delete_unsafe self-dispatches via _mt if called from the
+     * wrong thread.  Therefore a_data (which points into esocket->buf_in)
+     * and a_stream remain valid for the entire duration of this call.
+     * Do NOT add packet_in_callback handlers that call _unsafe deletion
+     * synchronously — use SIGNAL_CLOSE instead. */
+    const byte_t *l_pos = (const byte_t *)a_data;
+    const byte_t *l_end = l_pos + a_data_size;
     size_t l_shift = 0, l_processed_size = 0;
-    bool l_found_sig0 = false;
 
     while (l_pos < l_end && (l_pos = memchr(l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos)))) {
-        l_found_sig0 = true;
         if ((size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t)) {
             debug_if(s_debug_more, L_DEBUG, "proc_read_ext: partial header, remain=%zu need=%zu",
                      (size_t)(l_end - l_pos), sizeof(dap_stream_pkt_hdr_t));
@@ -1383,17 +1388,14 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
 
         if (!memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig))) {
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
-            debug_if(s_debug_more, L_DEBUG, "proc_read_ext: SIG FOUND type=0x%02x size=%u at offset=%zu",
-                   l_pkt->hdr.type, l_pkt->hdr.size, (size_t)(l_pos - l_buf));
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
                 log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ((l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos)) {
-                debug_if(s_debug_more, L_DEBUG, "proc_read_ext: full packet %zu bytes, dispatching", l_shift);
                 s_stream_proc_pkt_in(a_stream, l_pkt);
             } else {
                 debug_if(s_debug_more, L_DEBUG, "proc_read_ext: incomplete packet need=%zu have=%zu",
-                       l_shift, (size_t)(l_end - l_pos));
+                         l_shift, (size_t)(l_end - l_pos));
                 break;
             }
             l_pos += l_shift;
@@ -1402,14 +1404,10 @@ size_t dap_stream_data_proc_read_ext(dap_stream_t *a_stream, const void *a_data,
             ++l_pos;
         }
     }
-    if (a_data_size > 0 && !l_found_sig0 && l_processed_size == 0)
-        log_it(L_WARNING, "proc_read_ext: no sig[0]=0x%02x found in %zu bytes (first byte=0x%02x)",
-               c_dap_stream_sig[0], a_data_size, l_buf[0]);
 
     debug_if(s_dump_packet_headers && l_processed_size, L_DEBUG,
              "Processed %lu / %lu bytes", l_processed_size, a_data_size);
 
-    DAP_DELETE(l_buf);
     return l_processed_size;
 }
 
@@ -1441,8 +1439,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
-    debug_if(s_dump_packet_headers, L_INFO, "s_stream_proc_pkt_in: stream=%p, packet type=0x%02X size=%u",
-           a_stream, a_pkt->hdr.type, a_pkt->hdr.size);
+    log_it(L_NOTICE, "s_stream_proc_pkt_in: stream=%p pkt_type=0x%02X pkt_size=%u session=%p",
+           (void*)a_stream, a_pkt->hdr.type, a_pkt->hdr.size, (void*)a_stream->session);
 
     switch (a_pkt->hdr.type) {
     case STREAM_PKT_TYPE_FRAGMENT_PACKET: {
@@ -1496,18 +1494,18 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
 
         // Not last fragment, otherwise go to parsing STREAM_PKT_TYPE_DATA_PACKET
         if(a_stream->buf_fragments_size_filled < l_fragm_pkt->full_size) {
-            debug_if(s_debug, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u",
+            debug_if(s_dump_packet_headers, L_DEBUG, "Fragment not complete yet: filled=%zu full=%u",
                    a_stream->buf_fragments_size_filled, l_fragm_pkt->full_size);
             break;
         }
         // All fragments collected, move forward
-        debug_if(s_debug, L_INFO, "All fragments collected! Falling through to DATA_PACKET processing");
+        debug_if(s_dump_packet_headers, L_INFO, "All fragments collected! Falling through to DATA_PACKET processing");
     }
     case STREAM_PKT_TYPE_DATA_PACKET: {
         dap_stream_ch_pkt_t *l_ch_pkt;
         size_t l_dec_pkt_size;
 
-        debug_if(s_debug, L_INFO, "Processing DATA_PACKET: from_fragment=%s",
+        log_it(L_NOTICE, "DATA_PACKET: from_fragment=%s",
                (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) ? "yes" : "no");
 
         if (a_pkt->hdr.type == STREAM_PKT_TYPE_FRAGMENT_PACKET) {
@@ -1518,20 +1516,20 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             a_stream->pkt_cache = DAP_NEW_Z_SIZE(byte_t, l_pkt_dec_size);
             l_ch_pkt = (dap_stream_ch_pkt_t*)a_stream->pkt_cache;
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
-
-            debug_if(s_dump_packet_headers, L_INFO,
-                     "DATA_PACKET decryption: key=%p, encrypted_size=%u, expected_dec=%zu, actual_dec=%zu",
-                     a_stream->session->key, a_pkt->hdr.size, l_pkt_dec_size, l_dec_pkt_size);
         }
 
+        log_it(L_NOTICE, "DATA_PKT: dec=%zu hdr=%zu ch_id=0x%02x data_size=%u",
+               l_dec_pkt_size, sizeof(l_ch_pkt->hdr),
+               l_ch_pkt->hdr.id, l_ch_pkt->hdr.data_size);
+
         if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
-            debug_if(s_debug_more, L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
+            log_it(L_WARNING, "DATA_PKT: decoded %zu < hdr %zu — drop", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
             l_is_clean_fragments = true;
             break;
         }
         if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
-            debug_if(s_debug_more, L_WARNING, "Input: decoded packet BAD SIZE: expected_dec=%zu (hdr.data_size=%u + hdr_size=%zu), actual_dec=%zu",
-                   l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_ch_pkt->hdr.data_size, sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
+            log_it(L_WARNING, "DATA_PKT: size mismatch: got %zu, expected %zu — drop",
+                   l_dec_pkt_size, l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr));
             l_is_clean_fragments = true;
             break;
         }

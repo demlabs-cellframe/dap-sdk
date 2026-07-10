@@ -426,7 +426,14 @@ static int s_retry_handshake_with_fallback(dap_client_fsm_t *a_fsm)
     if (l_tc && l_tc->stream) {
         dap_stream_t *l_old_stream = l_tc->stream;
         l_tc->stream = NULL;
-        dap_stream_delete_unsafe(l_old_stream);
+        /* Stream may live on a different worker; dispatch if needed. */
+        dap_worker_t *l_es_worker = l_old_stream->esocket_worker;
+        if (l_es_worker && l_es_worker != dap_worker_get_current()) {
+            dap_worker_exec_callback_on(l_es_worker,
+                (void (*)(void *))dap_stream_delete_unsafe, l_old_stream);
+        } else {
+            dap_stream_delete_unsafe(l_old_stream);
+        }
     }
 
     a_fsm->client->trans_type = l_next_transport;
@@ -698,18 +705,25 @@ static void s_worker_execute_stage(void *a_arg)
             dap_stream_ch_new(l_tc->stream, (uint8_t)l_client->active_channels[i]);
 
         // Install stream callbacks on the esocket BEFORE session_start sends data
-        // This ensures read/write/error/delete are handled when server responds
-        // CRITICAL: For datagram transports (UDP/DNS), the transport layer has already
-        // installed its own read_callback that handles decryption, Flow Control, etc.
-        // Overwriting it would break the transport's read path!
+        // This ensures read/write/error/delete are handled when server responds.
+        //
+        // CRITICAL: do NOT overwrite read_callback when the transport already owns
+        // the read path:
+        //   - datagram (UDP/DNS): unwrap + Flow Control live in the transport cb
+        //   - TLS_DIRECT: s_tls_read_cb unwraps TLS records and feeds the stream;
+        //     the generic s_stream_es_callback_read calls ops->read(stream,NULL,0)
+        //     which returns -1, so every post-stream_ctl packet would be dropped
+        //     (root cause of VPN_ADDR_REPLY timeout).
         if (l_tc->stream->esocket) {
             l_tc->stream->esocket->no_close = false;
             l_tc->stream->esocket->last_time_active = time(NULL);
 
             dap_events_socket_callbacks_t l_stream_cbs;
             dap_client_trans_ctx_get_stream_callbacks(&l_stream_cbs);
-            bool l_is_datagram = (l_tc->stream->esocket->type == DESCRIPTOR_TYPE_SOCKET_UDP);
-            if (!l_is_datagram) {
+            bool l_keep_transport_read =
+                (l_tc->stream->esocket->type == DESCRIPTOR_TYPE_SOCKET_UDP) ||
+                (l_client->trans_type == DAP_NET_TRANS_TLS_DIRECT);
+            if (!l_keep_transport_read) {
                 l_tc->stream->esocket->callbacks.read_callback = l_stream_cbs.read_callback;
             }
             l_tc->stream->esocket->callbacks.write_callback = l_stream_cbs.write_callback;

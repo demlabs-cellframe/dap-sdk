@@ -54,6 +54,52 @@ static inline tls_conn_ctx_t *s_tls_ctx(dap_events_socket_t *a_es)
 }
 
 /* ------------------------------------------------------------------ */
+/*  trans_ctx->trans->ops->write — used by dap_stream_pkt_write_unsafe  */
+/*  for post-stream_ctl DAP packets.  Wraps once (here) and queues.     */
+/*  Wrapping must happen exactly once, at write time, never in the     */
+/*  epoll write_callback (that fires repeatedly on partial sends and    */
+/*  would double-wrap already-wrapped bytes, growing buf_out without    */
+/*  bound — an actual busy-loop was observed with that approach).      */
+/* ------------------------------------------------------------------ */
+
+static ssize_t s_tls_stream_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
+{
+    if (!a_stream || !a_stream->esocket || !a_data || a_size == 0)
+        return -1;
+
+    tls_conn_ctx_t *t = s_tls_ctx(a_stream->esocket);
+    if (!t || !t->mimicry) {
+        /* Should not happen post-stream_ctl, but don't drop silently. */
+        dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
+        return (ssize_t)a_size;
+    }
+
+    void *l_wrapped = NULL;
+    size_t l_wrapped_sz = 0;
+    if (dap_tls_mimicry_wrap(t->mimicry, a_data, a_size, &l_wrapped, &l_wrapped_sz) != 0
+            || !l_wrapped || l_wrapped_sz == 0) {
+        log_it(L_ERROR, "TLS server: s_tls_stream_write wrap failed");
+        DAP_DELETE(l_wrapped);
+        return -1;
+    }
+
+    size_t l_ret = dap_events_socket_write_unsafe(a_stream->esocket, l_wrapped, l_wrapped_sz);
+    log_it(L_NOTICE, "TLS server: s_tls_stream_write plain=%zu wrapped=%zu queued=%zu fd=%d",
+           a_size, l_wrapped_sz, l_ret, a_stream->esocket->socket);
+    DAP_DELETE(l_wrapped);
+    return l_ret > 0 ? (ssize_t)a_size : -1;
+}
+
+static const dap_net_trans_ops_t s_tls_server_stream_ops = {
+    .write = s_tls_stream_write,
+};
+
+static dap_net_trans_t s_tls_server_stream_trans = {
+    .type = DAP_NET_TRANS_TLS_DIRECT,
+    .ops  = &s_tls_server_stream_ops,
+};
+
+/* ------------------------------------------------------------------ */
 /*  HTTP POST parser — extracts URL path, query, body from raw HTTP    */
 /* ------------------------------------------------------------------ */
 
@@ -350,6 +396,12 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
             dap_stream_t *l_stream = dap_stream_new_es_server(a_es, l_session);
             if (l_stream) {
                 t->stream = l_stream;
+                /* Route dap_stream_pkt_write_unsafe() through the TLS-wrapping
+                 * ops->write instead of the raw esocket path — see
+                 * s_tls_stream_write for why wrapping must happen exactly
+                 * once, here, rather than in the epoll write_callback. */
+                if (l_stream->trans_ctx)
+                    l_stream->trans_ctx->trans = &s_tls_server_stream_trans;
                 log_it(L_NOTICE, "TLS server: stream created (session=%u, stream=%p)",
                        l_session_id, (void*)l_stream);
             } else {
@@ -368,7 +420,9 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     DAP_DELETE(l_query);
     DAP_DELETE(l_body);
 
-    /* Wrap response in TLS records and send */
+    /* Wrap response in TLS records and send (one-shot wrap at queue time —
+     * see the big comment on s_tls_stream_write for why wrapping must not
+     * happen in the epoll write_callback). */
     if (l_response && l_response_len > 0 && t->mimicry) {
         void *l_wrapped = NULL; size_t l_wrapped_sz = 0;
         int l_wrap_rc = dap_tls_mimicry_wrap(t->mimicry, l_response, l_response_len,
@@ -389,7 +443,21 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Write: passthrough (data already in buf_out from s_tls_read)       */
+/*  Write: passthrough — data already TLS-wrapped before being queued  */
+/*                                                                     */
+/*  Two producers write into esocket->buf_out:                         */
+/*   1. s_tls_read (handshake bytes, HTTP-style responses) — wraps      */
+/*      once itself right before dap_events_socket_write_unsafe().    */
+/*   2. dap_stream_pkt_write_unsafe (post-stream_ctl DAP packets) —     */
+/*      routed through trans_ctx->trans->ops->write (s_tls_stream_write */
+/*      below), which also wraps exactly once before queuing.          */
+/*                                                                     */
+/*  Wrapping here instead (in the epoll write_callback) is UNSAFE:     */
+/*  the callback can fire multiple times for the same buf_out if       */
+/*  send() only drains it partially, so a second call would wrap       */
+/*  already-wrapped bytes again — corrupting the stream and growing    */
+/*  buf_out without bound (an actual busy-loop was observed with this  */
+/*  bug: 100% CPU, buf_out never drained).  Keep this a no-op.         */
 /* ------------------------------------------------------------------ */
 
 static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
