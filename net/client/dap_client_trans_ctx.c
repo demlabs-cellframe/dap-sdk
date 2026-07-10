@@ -344,16 +344,18 @@ void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_data, si
     if (a_data && a_data_size > 0) {
         // HTTP-style response with JSON data
         s_enc_init_response(l_client, a_data, a_data_size);
-    } else {
-        // Transport-protocol handshake completed directly
+    } else if (a_stream->session && a_stream->session->key) {
+        // Transport-protocol handshake completed directly (UDP/TLS native path)
         debug_if(s_debug_more, L_DEBUG, "Handshake completed via transport protocol");
-        if (a_stream->session && a_stream->session->key) {
-            if (l_tc->stream_key)
-                dap_enc_key_delete(l_tc->stream_key);
-            l_tc->stream_key = dap_enc_key_dup(a_stream->session->key);
-        }
+        if (l_tc->stream_key)
+            dap_enc_key_delete(l_tc->stream_key);
+        l_tc->stream_key = dap_enc_key_dup(a_stream->session->key);
         dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
                               STAGE_STATUS_DONE, ERROR_NO_ERROR);
+    } else {
+        log_it(L_WARNING, "Handshake empty response without session key, notify FSM error");
+        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                              STAGE_STATUS_ERROR, ERROR_NETWORK_CONNECTION_REFUSE);
     }
 }
 

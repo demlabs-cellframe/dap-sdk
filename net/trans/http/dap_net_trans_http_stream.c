@@ -863,18 +863,17 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     DAP_DELETE(l_data);
     
     /* Build node address path segment.
-     * Legacy (protocol_version=0): old cellframe-node master only understands the
-     * anonymous placeholder "gd4y5yh78w42aaagh".  Passing a real b58 node address
-     * causes the server to do a blockchain lookup that never completes.
-     * Modern (protocol_version>0): use the real node address from link_info. */
-    char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
-    if (!a_params->protocol_version) {
-        /* legacy — always use the placeholder */
-    } else if (l_client->link_info.node_addr.uint64) {
-        uint64_t l_addr_le = l_client->link_info.node_addr.uint64;
-        size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
-        if (!l_b58_len)
-            dap_strncpy(l_node_addr_b58, "gd4y5yh78w42aaagh", sizeof(l_node_addr_b58) - 1);
+     * Default placeholder is compatible with legacy cellframe-node master and modern
+     * enc_server (basename is not validated). Real b58 path is opt-in via
+     * dap_client enc_init_named_path for peers that require it. */
+    char l_node_addr_b58[32] = { '\0' };
+    if (!dap_client_enc_init_url_path(l_node_addr_b58, sizeof(l_node_addr_b58),
+                                      &l_client->link_info.node_addr,
+                                      a_params->protocol_version))
+    {
+        log_it(L_ERROR, "Failed to build enc_init URL path");
+        DAP_DELETE(l_data_str);
+        return -5;
     }
 
     // Build URL with query parameters
@@ -1358,7 +1357,7 @@ static void s_http_request_error_unencrypted(int a_err_code, void * a_obj)
 /**
  * @brief Unencrypted HTTP request response callback
  */
-static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
+static void s_http_request_response_unencrypted(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code)
 {
     s_http_trans_request_ctx_t *l_ctx = (s_http_trans_request_ctx_t *)a_obj;
     assert(l_ctx);
@@ -1391,7 +1390,8 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
         log_it(L_INFO, "s_http_request_response_unencrypted: calling callback with response (size=%zu)", a_response_size);
         l_ctx->callback(l_client_esocket->client, a_response, a_response_size);
     } else {
-        log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu)", a_response, a_response_size);
+        log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu, http_code=%d)",
+               a_response, a_response_size, (int)a_http_code);
         /* === TEMP_DEBUG_LINKS_CONNECTING: START (temporary, remove after investigation) === */
         if (l_client_esocket->client)
         {
@@ -1403,6 +1403,11 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
                    dap_client_get_stage_str(l_client), dap_client_get_stage_status_str(l_client));
         }
         /* === TEMP_DEBUG_LINKS_CONNECTING: END === */
+        if (l_ctx->error_callback && l_client_esocket->client)
+        {
+            int l_err = (a_http_code >= Http_Status_BadRequest) ? (int)a_http_code : EINVAL;
+            l_ctx->error_callback(l_client_esocket->client, l_fsm->callback_arg, l_err);
+        }
     }
 
     l_fsm->callback_arg = l_old_callback_arg;
@@ -1534,7 +1539,7 @@ static void s_http_request_error(int a_err_code, void * a_obj)
 /**
  * @brief HTTP request response callback
  */
-static void s_http_request_response(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
+static void s_http_request_response(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code)
 {
     s_http_trans_request_ctx_t *l_ctx = (s_http_trans_request_ctx_t *)a_obj;
     assert(l_ctx);
@@ -1612,7 +1617,13 @@ static void s_http_request_response(void * a_response, size_t a_response_size, v
             l_ctx->callback(l_client_esocket->client, a_response, a_response_size);
         }
     } else {
-        log_it(L_WARNING, "s_http_request_response: empty response (response=%p, size=%zu)", a_response, a_response_size);
+        log_it(L_WARNING, "s_http_request_response: empty response (response=%p, size=%zu, http_code=%d)",
+               a_response, a_response_size, (int)a_http_code);
+        if (l_ctx->error_callback && l_client_esocket->client)
+        {
+            int l_err = (a_http_code >= Http_Status_BadRequest) ? (int)a_http_code : EINVAL;
+            l_ctx->error_callback(l_client_esocket->client, l_fsm->callback_arg, l_err);
+        }
     }
     
     l_fsm->callback_arg = l_old_callback_arg;

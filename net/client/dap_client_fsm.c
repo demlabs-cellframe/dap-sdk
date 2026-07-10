@@ -1012,6 +1012,28 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
     case STAGE_STATUS_ERROR: {
         bool l_is_last_attempt = a_fsm->reconnect_attempts >= s_max_attempts;
 
+        if (l_stage == STAGE_ENC_INIT
+                && dap_client_get_enc_legacy_auto_fallback()
+                && !dap_client_get_legacy_enc_handshake()
+                && !a_fsm->enc_legacy_fallback_tried
+                && !a_fsm->enc_legacy_fallback_active)
+        {
+            dap_net_trans_ctx_t *l_tc = a_fsm->trans_ctx;
+            a_fsm->enc_legacy_fallback_tried = true;
+            a_fsm->enc_legacy_fallback_active = true;
+            a_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN;
+            if (l_tc && l_tc->session_key_open)
+            {
+                dap_enc_key_delete(l_tc->session_key_open);
+                l_tc->session_key_open = NULL;
+            }
+            a_fsm->reconnect_attempts = 0;
+            s_set_stage_and_status(a_fsm, STAGE_ENC_INIT, STAGE_STATUS_IN_PROGRESS);
+            log_it(L_NOTICE, "Modern enc_init failed, retrying with legacy protocol (MSRLN, protocol_version=0)");
+            s_fsm_dispatch_stage_to_worker(a_fsm);
+            break;
+        }
+
         if (!l_is_last_attempt) {
             if (!a_fsm->reconnect_attempts) {
                 log_it(L_ERROR, "Error state(%s) at stage %s, doing callback",
@@ -1085,6 +1107,9 @@ static void s_fsm_process(dap_client_fsm_t *a_fsm)
     } break;
 
     case STAGE_STATUS_DONE: {
+        if (a_fsm->stage == STAGE_ENC_INIT)
+            a_fsm->enc_legacy_fallback_active = false;
+
         log_it(L_INFO, "FSM stage %s completed (target: %s, attempt: %d)",
                dap_client_stage_str(a_fsm->stage),
                dap_client_stage_str(a_fsm->client->stage_target),
@@ -1434,7 +1459,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             size_t l_sign_count = 0;
             uint32_t l_protocol_version = DAP_CLIENT_PROTOCOL_VERSION;
 
-            if (dap_client_get_legacy_enc_handshake()) {
+            if (dap_client_get_legacy_enc_handshake() || a_fsm->enc_legacy_fallback_active) {
                 l_protocol_version = 0;
                 log_it(L_INFO, "Legacy enc_init handshake (no signature, protocol_version=0)");
             } else {

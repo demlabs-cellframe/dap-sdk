@@ -28,6 +28,7 @@
 #include "dap_client_http.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_pkt.h"
+#include "dap_enc_base58.h"
 #include "dap_stream_worker.h"
 #include "dap_config.h"
 #include "dap_net_trans.h"
@@ -38,6 +39,8 @@
 
 static bool s_debug_more = false;
 static bool s_legacy_enc_handshake = false;
+static bool s_enc_init_named_path = false;
+static bool s_enc_legacy_auto_fallback = true;
 
 void dap_client_set_legacy_enc_handshake(bool a_enable)
 {
@@ -47,6 +50,52 @@ void dap_client_set_legacy_enc_handshake(bool a_enable)
 bool dap_client_get_legacy_enc_handshake(void)
 {
     return s_legacy_enc_handshake;
+}
+
+void dap_client_set_enc_init_named_path(bool a_enable)
+{
+    s_enc_init_named_path = a_enable;
+}
+
+bool dap_client_get_enc_init_named_path(void)
+{
+    return s_enc_init_named_path;
+}
+
+void dap_client_set_enc_legacy_auto_fallback(bool a_enable)
+{
+    s_enc_legacy_auto_fallback = a_enable;
+}
+
+bool dap_client_get_enc_legacy_auto_fallback(void)
+{
+    return s_enc_legacy_auto_fallback;
+}
+
+size_t dap_client_enc_init_url_path(char *a_out, size_t a_out_size,
+                                    const dap_stream_node_addr_t *a_node,
+                                    uint32_t a_protocol_version)
+{
+    if (!a_out || a_out_size < 2)
+        return 0;
+
+    if (!a_protocol_version || !dap_client_get_enc_init_named_path()
+            || !a_node || !a_node->uint64)
+    {
+        dap_strncpy(a_out, DAP_ENC_INIT_URL_PATH_PLACEHOLDER, a_out_size - 1);
+        a_out[a_out_size - 1] = '\0';
+        return strlen(a_out);
+    }
+
+    uint64_t l_addr_le = a_node->uint64;
+    size_t l_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), a_out);
+    if (!l_len)
+    {
+        dap_strncpy(a_out, DAP_ENC_INIT_URL_PATH_PLACEHOLDER, a_out_size - 1);
+        a_out[a_out_size - 1] = '\0';
+        return strlen(a_out);
+    }
+    return l_len;
 }
 
 /**
@@ -62,8 +111,17 @@ int dap_client_init()
 
         extern dap_config_t *g_config;
         if (g_config)
+        {
             s_debug_more = dap_config_get_item_bool_default(g_config, "dap_client", "debug_more", false);
-        log_it(L_INFO, "DAP client debug_more=%d (g_config=%p)", s_debug_more, (void*)g_config);
+            s_enc_init_named_path = dap_config_get_item_bool_default(g_config, "dap_client",
+                                                                     "enc_init_named_path", false);
+            s_enc_legacy_auto_fallback = dap_config_get_item_bool_default(g_config, "dap_client",
+                                                                          "enc_legacy_auto_fallback", true);
+            if (dap_config_get_item_bool_default(g_config, "dap_client", "legacy_enc_handshake", false))
+                s_legacy_enc_handshake = true;
+        }
+        log_it(L_INFO, "DAP client debug_more=%d named_path=%d legacy_auto_fallback=%d legacy_enc=%d (g_config=%p)",
+               s_debug_more, s_enc_init_named_path, s_enc_legacy_auto_fallback, s_legacy_enc_handshake, (void*)g_config);
 
         dap_http_client_init();
         err = dap_client_http_init();
