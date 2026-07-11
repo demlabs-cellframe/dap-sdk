@@ -680,6 +680,9 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
     l_ret->esocket = a_esocket;
     l_ret->is_client_to_uplink = true;
     if (a_esocket) {
+        /* Client streams use stream keepalive + FSM activity timers; suppress
+         * generic dap_worker inactivity closure during connect/ENC handshake. */
+        a_esocket->no_close = true;
         l_ret->esocket_uuid = a_esocket->uuid;
         l_ret->esocket_worker = a_esocket->worker;
         a_esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;

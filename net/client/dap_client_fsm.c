@@ -715,7 +715,9 @@ static void s_worker_execute_stage(void *a_arg)
         //     which returns -1, so every post-stream_ctl packet would be dropped
         //     (root cause of VPN_ADDR_REPLY timeout).
         if (l_tc->stream->esocket) {
-            l_tc->stream->esocket->no_close = false;
+            /* Keep no_close=true (set in dap_stream_new_es_client): stream has its
+             * own keepalive/activity timers; worker idle timeout must not kill ENC. */
+            l_tc->stream->esocket->no_close = true;
             l_tc->stream->esocket->last_time_active = time(NULL);
 
             dap_events_socket_callbacks_t l_stream_cbs;
