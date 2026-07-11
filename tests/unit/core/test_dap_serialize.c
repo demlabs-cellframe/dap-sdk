@@ -1482,13 +1482,13 @@ static void test_array_dynamic_no_count_prefix_zero_init_fails(void) {
     assert(l_sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
     assert(l_sr.bytes_written == 12u);
 
-    /* Use the standard (zero-initialising) entry point.  The count
-     * slot is wiped, so the array decodes as zero elements and the
-     * residual buffer bytes are *not* consumed.  The round-trip is
-     * lossy by design — this is the contract that motivates the
-     * dedicated _preserve variant. */
+    /* Use the zero-initialising entry point.  The count slot is wiped,
+     * so the array decodes as zero elements and the residual buffer
+     * bytes are *not* consumed.  The round-trip is lossy by design —
+     * this is why partial / NO_COUNT_PREFIX schemas must use the
+     * default raw path (no memset), not _zero. */
     test_no_prefix_obj_t l_dst = { .signer_count = 999, .payload = (uint8_t*)0xdeadbeef };
-    dap_serialize_result_t l_dr = dap_serialize_from_buffer_raw(
+    dap_serialize_result_t l_dr = dap_serialize_from_buffer_raw_zero(
             &s_no_prefix_schema, l_wire, l_sr.bytes_written, &l_dst, NULL);
     assert(l_dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
     assert(l_dst.signer_count == 0u);
@@ -1623,6 +1623,70 @@ static void test_array_dynamic_no_count_prefix_nested(void) {
 }
 
 /**
+ * DAP_SERIALIZE_FLAG_CONST: write/verify constant without storing into object.
+ */
+static void test_const_field_verify_only(void)
+{
+    typedef struct {
+        uint32_t version;
+        uint8_t type;
+    } test_const_obj_t;
+
+    static const dap_serialize_field_t s_fields[] = {
+        DAP_SERIALIZE_FIELD_CONST("magic", DAP_SERIALIZE_TYPE_UINT64, 0x1a167bef15feea18ULL),
+        DAP_SERIALIZE_FIELD_SIMPLE(test_const_obj_t, version, DAP_SERIALIZE_TYPE_UINT32),
+        DAP_SERIALIZE_FIELD_SIMPLE(test_const_obj_t, type, DAP_SERIALIZE_TYPE_UINT8),
+        DAP_SERIALIZE_FIELD_CONST("pad", DAP_SERIALIZE_TYPE_UINT64, 0),
+    };
+    static const dap_serialize_schema_t s_schema = {
+        .name = "test_const",
+        .version = 1,
+        .struct_size = sizeof(test_const_obj_t),
+        .field_count = 4,
+        .fields = s_fields,
+        .magic = 0,
+        .validate_func = NULL,
+    };
+
+    test_const_obj_t l_src = { .version = 3, .type = 1 };
+    uint8_t l_poison = 0xAB;
+    uint8_t l_wire[32];
+    memset(l_wire, l_poison, sizeof(l_wire));
+
+    dap_serialize_result_t l_sr = dap_serialize_to_buffer_raw(
+        &s_schema, &l_src, l_wire, sizeof(l_wire), NULL);
+    assert(l_sr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_sr.bytes_written == 21u); /* 8+4+1+8 */
+
+    /* magic LE */
+    assert(l_wire[0] == 0x18 && l_wire[1] == 0xea && l_wire[2] == 0xfe && l_wire[3] == 0x15);
+    assert(l_wire[4] == 0xef && l_wire[5] == 0x7b && l_wire[6] == 0x16 && l_wire[7] == 0x1a);
+    /* version=3 LE */
+    assert(l_wire[8] == 3 && l_wire[9] == 0 && l_wire[10] == 0 && l_wire[11] == 0);
+    assert(l_wire[12] == 1);
+    for (int i = 13; i < 21; i++)
+        assert(l_wire[i] == 0);
+
+    test_const_obj_t l_dst = { .version = 0xdeadbeefu, .type = 0xff };
+    dap_serialize_result_t l_dr = dap_serialize_from_buffer_raw_preserve(
+        &s_schema, l_wire, l_sr.bytes_written, &l_dst, NULL);
+    assert(l_dr.error_code == DAP_SERIALIZE_ERROR_SUCCESS);
+    assert(l_dst.version == 3);
+    assert(l_dst.type == 1);
+
+    /* Corrupt magic → validation error, object fields for CONST not written */
+    l_wire[0] ^= 0xff;
+    test_const_obj_t l_bad = { .version = 9, .type = 7 };
+    l_dr = dap_serialize_from_buffer_raw_preserve(
+        &s_schema, l_wire, l_sr.bytes_written, &l_bad, NULL);
+    assert(l_dr.error_code == DAP_SERIALIZE_ERROR_FIELD_VALIDATION);
+    assert(l_bad.version == 9); /* untouched after failed CONST at start */
+    assert(l_bad.type == 7);
+
+    log_it(L_INFO, "CONST field verify-only passed");
+}
+
+/**
  * @brief Main test function
  */
 int main(int argc, char *argv[]) {
@@ -1663,6 +1727,7 @@ int main(int argc, char *argv[]) {
     test_array_dynamic_no_count_prefix_zero_init_fails();
     test_array_dynamic_no_count_prefix_custom_magic();
     test_array_dynamic_no_count_prefix_nested();
+    test_const_field_verify_only();
 
     log_it(L_INFO, "All DAP Serialize tests passed successfully!");
     

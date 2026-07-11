@@ -585,10 +585,9 @@ static dap_serialize_result_t s_from_buffer_raw_core(const dap_serialize_schema_
         .current_schema = a_schema
     };
 
-    // Initialize object memory ONLY when caller did not pre-populate it.
-    // Skipping the memset is required for schemas that use
-    // DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX, where the count slot must already
-    // hold a valid externally-framed length before the loop runs.
+    // Initialize object memory ONLY when a_zero_init is true.
+    // Default raw path leaves the object intact so partial schemas can
+    // fill selected fields on a live structure (wallet, NO_COUNT_PREFIX, …).
     if (a_zero_init) {
         memset(a_object, 0, a_schema->struct_size);
     }
@@ -616,6 +615,8 @@ static dap_serialize_result_t s_from_buffer_raw_core(const dap_serialize_schema_
 
 /**
  * @brief Deserialize object from buffer WITHOUT metadata header (raw fields only)
+ *
+ * Does NOT zero @p a_object — only schema fields are written.
  */
 dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_t *a_schema,
                                                      const uint8_t *a_buffer,
@@ -623,11 +624,23 @@ dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_
                                                      void *a_object,
                                                      void *a_context)
 {
+    return s_from_buffer_raw_core(a_schema, a_buffer, a_buffer_size, a_object, a_context, false);
+}
+
+/**
+ * @brief Raw deserialize with memset of @p a_object before decoding.
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw_zero(const dap_serialize_schema_t *a_schema,
+                                                          const uint8_t *a_buffer,
+                                                          size_t a_buffer_size,
+                                                          void *a_object,
+                                                          void *a_context)
+{
     return s_from_buffer_raw_core(a_schema, a_buffer, a_buffer_size, a_object, a_context, true);
 }
 
 /**
- * @brief Same as @ref dap_serialize_from_buffer_raw but skips the zero-init.
+ * @brief Alias of dap_serialize_from_buffer_raw (no zero-init).
  */
 dap_serialize_result_t dap_serialize_from_buffer_raw_preserve(const dap_serialize_schema_t *a_schema,
                                                               const uint8_t *a_buffer,
@@ -1098,6 +1111,50 @@ static int s_serialize_field(const dap_serialize_field_t *a_field,
             return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
         }
     }
+
+    /* Constant fields: write const_value, ignore object storage */
+    if (a_field->flags & DAP_SERIALIZE_FLAG_CONST) {
+        switch (a_field->type) {
+            case DAP_SERIALIZE_TYPE_UINT8:
+            case DAP_SERIALIZE_TYPE_INT8:
+            case DAP_SERIALIZE_TYPE_BOOL: {
+                if (a_ctx->offset + 1 > a_ctx->buffer_size)
+                    return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
+                a_ctx->buffer[a_ctx->offset] = (uint8_t)a_field->const_value;
+                a_ctx->offset += 1;
+                return DAP_SERIALIZE_ERROR_SUCCESS;
+            }
+            case DAP_SERIALIZE_TYPE_UINT16:
+            case DAP_SERIALIZE_TYPE_INT16: {
+                if (a_ctx->offset + 2 > a_ctx->buffer_size)
+                    return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
+                s_write_uint16_le(a_ctx->buffer + a_ctx->offset, (uint16_t)a_field->const_value);
+                a_ctx->offset += 2;
+                return DAP_SERIALIZE_ERROR_SUCCESS;
+            }
+            case DAP_SERIALIZE_TYPE_UINT32:
+            case DAP_SERIALIZE_TYPE_INT32:
+            case DAP_SERIALIZE_TYPE_VERSION: {
+                if (a_ctx->offset + 4 > a_ctx->buffer_size)
+                    return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
+                s_write_uint32_le(a_ctx->buffer + a_ctx->offset, (uint32_t)a_field->const_value);
+                a_ctx->offset += 4;
+                return DAP_SERIALIZE_ERROR_SUCCESS;
+            }
+            case DAP_SERIALIZE_TYPE_UINT64:
+            case DAP_SERIALIZE_TYPE_INT64: {
+                if (a_ctx->offset + 8 > a_ctx->buffer_size)
+                    return DAP_SERIALIZE_ERROR_BUFFER_TOO_SMALL;
+                s_write_uint64_le(a_ctx->buffer + a_ctx->offset, a_field->const_value);
+                a_ctx->offset += 8;
+                return DAP_SERIALIZE_ERROR_SUCCESS;
+            }
+            default:
+                log_it(L_ERROR, "CONST flag unsupported for field '%s' type=%d",
+                       a_field->name, a_field->type);
+                return DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
+        }
+    }
     
     switch (a_field->type) {
         case DAP_SERIALIZE_TYPE_UINT8:
@@ -1545,6 +1602,71 @@ static int s_deserialize_field(const dap_serialize_field_t *a_field,
                               dap_serialize_context_t *a_ctx)
 {
     uint8_t *obj_ptr = (uint8_t*)a_object;
+
+    /* Constant fields: verify wire value against const_value, do not store */
+    if (a_field->flags & DAP_SERIALIZE_FLAG_CONST) {
+        switch (a_field->type) {
+            case DAP_SERIALIZE_TYPE_UINT8:
+            case DAP_SERIALIZE_TYPE_INT8:
+            case DAP_SERIALIZE_TYPE_BOOL: {
+                if (a_ctx->offset + 1 > a_ctx->buffer_size)
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                uint8_t value = a_ctx->buffer[a_ctx->offset];
+                a_ctx->offset += 1;
+                if (value != (uint8_t)a_field->const_value) {
+                    log_it(L_ERROR, "CONST field '%s' mismatch: got 0x%02x, expected 0x%02x",
+                           a_field->name, value, (uint8_t)a_field->const_value);
+                    return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
+                }
+                return DAP_SERIALIZE_ERROR_SUCCESS;
+            }
+            case DAP_SERIALIZE_TYPE_UINT16:
+            case DAP_SERIALIZE_TYPE_INT16: {
+                if (a_ctx->offset + 2 > a_ctx->buffer_size)
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                uint16_t value = s_read_uint16_le(a_ctx->buffer + a_ctx->offset);
+                a_ctx->offset += 2;
+                if (value != (uint16_t)a_field->const_value) {
+                    log_it(L_ERROR, "CONST field '%s' mismatch: got 0x%04x, expected 0x%04x",
+                           a_field->name, value, (uint16_t)a_field->const_value);
+                    return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
+                }
+                return DAP_SERIALIZE_ERROR_SUCCESS;
+            }
+            case DAP_SERIALIZE_TYPE_UINT32:
+            case DAP_SERIALIZE_TYPE_INT32:
+            case DAP_SERIALIZE_TYPE_VERSION: {
+                if (a_ctx->offset + 4 > a_ctx->buffer_size)
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                uint32_t value = s_read_uint32_le(a_ctx->buffer + a_ctx->offset);
+                a_ctx->offset += 4;
+                if (value != (uint32_t)a_field->const_value) {
+                    log_it(L_ERROR, "CONST field '%s' mismatch: got 0x%08x, expected 0x%08x",
+                           a_field->name, value, (uint32_t)a_field->const_value);
+                    return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
+                }
+                return DAP_SERIALIZE_ERROR_SUCCESS;
+            }
+            case DAP_SERIALIZE_TYPE_UINT64:
+            case DAP_SERIALIZE_TYPE_INT64: {
+                if (a_ctx->offset + 8 > a_ctx->buffer_size)
+                    return DAP_SERIALIZE_ERROR_INVALID_DATA;
+                uint64_t value = s_read_uint64_le(a_ctx->buffer + a_ctx->offset);
+                a_ctx->offset += 8;
+                if (value != a_field->const_value) {
+                    log_it(L_ERROR, "CONST field '%s' mismatch: got 0x%"DAP_UINT64_FORMAT_X
+                           ", expected 0x%"DAP_UINT64_FORMAT_X,
+                           a_field->name, value, a_field->const_value);
+                    return DAP_SERIALIZE_ERROR_FIELD_VALIDATION;
+                }
+                return DAP_SERIALIZE_ERROR_SUCCESS;
+            }
+            default:
+                log_it(L_ERROR, "CONST flag unsupported for field '%s' type=%d",
+                       a_field->name, a_field->type);
+                return DAP_SERIALIZE_ERROR_INVALID_SCHEMA;
+        }
+    }
     
     switch (a_field->type) {
         case DAP_SERIALIZE_TYPE_UINT8:
