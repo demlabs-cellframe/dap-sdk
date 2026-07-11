@@ -360,34 +360,11 @@ static int s_init_net_notify(const dap_sdk_config_t *a_config)
 
 static int s_ensure_node_addr_cert(void)
 {
-    dap_cert_t *l_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-    if (!l_cert) {
-        const char *l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
-        if (!l_folder) {
-            if (!g_sys_dir_path)
-                return log_it(L_CRITICAL, "No cert folder and no sys_dir — "
-                              "set [resources] ca_folders in config"), -1;
-            char *l_default = dap_strdup_printf("%s/certs", g_sys_dir_path);
-            dap_cert_add_folder(l_default);
-            DAP_DELETE(l_default);
-            l_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
-        }
-        dap_mkdir_with_parents(l_folder);
-
-        char *l_path = dap_strdup_printf("%s/%s.dcert", l_folder,
-                                         DAP_STREAM_NODE_ADDR_CERT_NAME);
-        l_cert = dap_cert_generate(DAP_STREAM_NODE_ADDR_CERT_NAME,
-                                   l_path,
-                                   DAP_STREAM_NODE_ADDR_CERT_TYPE);
-        DAP_DELETE(l_path);
-        if (!l_cert)
-            return log_it(L_CRITICAL, "Failed to generate %s certificate",
-                          DAP_STREAM_NODE_ADDR_CERT_NAME), -2;
-
-        log_it(L_NOTICE, "Generated %s certificate (%s)",
-               DAP_STREAM_NODE_ADDR_CERT_NAME,
-               dap_enc_get_type_name(DAP_STREAM_NODE_ADDR_CERT_TYPE));
-    }
+    dap_cert_t *l_cert = dap_cert_ensure_node_addr(DAP_STREAM_NODE_ADDR_CERT_NAME,
+                                                   DAP_STREAM_NODE_ADDR_CERT_TYPE);
+    if (!l_cert)
+        return log_it(L_CRITICAL, "Failed to ensure %s certificate",
+                      DAP_STREAM_NODE_ADDR_CERT_NAME), -2;
     g_node_addr = dap_cluster_node_addr_from_cert(l_cert);
     return 0;
 }

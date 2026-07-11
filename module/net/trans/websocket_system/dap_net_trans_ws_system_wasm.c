@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <stdatomic.h>
 
 #include <emscripten.h>
 #include <emscripten/html5.h>
@@ -152,14 +153,102 @@ extern void js_ws_destroy(int a_handle);
 extern void js_ws_init_callbacks(void);
 
 #ifdef DAP_OS_WASM_MT
-/* ── MT: proxy wrappers to call JS from worker threads ───────────────── */
+/* ── MT: outbound ring (worker enqueue) + main-thread drain ─────────── */
 
 typedef struct { const char *url; int result; } ws_create_args_t;
-typedef struct { int handle; const void *data; int len; int result; } ws_send_args_t;
 typedef struct { int handle; int code; } ws_close_args_t;
 
+#define WS_OUT_RING_CAP   256u
+#define WS_OUT_DATA_MAX   (20u * 1024u)
+#define WS_OUT_DRAIN_BATCH 64u
+
+typedef struct ws_out_slot {
+    int      handle;
+    uint32_t len;
+    uint8_t  data[WS_OUT_DATA_MAX];
+} ws_out_slot_t;
+
+static ws_out_slot_t   *s_ws_out_slots = NULL;
+static _Atomic uint32_t s_ws_out_wr;
+static _Atomic uint32_t s_ws_out_rd;
+
+static void s_ws_out_init_once(void)
+{
+    static bool s_done;
+    if (s_done)
+        return;
+    s_done = true;
+    s_ws_out_slots = DAP_NEW_Z_COUNT(ws_out_slot_t, WS_OUT_RING_CAP);
+    if (!s_ws_out_slots)
+        log_it(L_ERROR, "WS outbound ring alloc failed");
+}
+
+static bool s_ws_out_push(int a_handle, const void *a_data, int a_len)
+{
+    s_ws_out_init_once();
+    if (!s_ws_out_slots || a_len <= 0 || a_len > (int)WS_OUT_DATA_MAX)
+        return false;
+
+    uint32_t l_wr, l_next;
+    do {
+        l_wr = atomic_load_explicit(&s_ws_out_wr, memory_order_relaxed);
+        uint32_t l_rd = atomic_load_explicit(&s_ws_out_rd, memory_order_acquire);
+        if (l_wr - l_rd >= WS_OUT_RING_CAP) {
+            static _Atomic uint64_t s_drop_full;
+            uint64_t n = atomic_fetch_add(&s_drop_full, 1);
+            if (n < 3 || (n % 200) == 0)
+                log_it(L_WARNING, "WS outbound ring full (count=%" PRIu64 ")", n);
+            return false;
+        }
+        l_next = l_wr + 1;
+    } while (!atomic_compare_exchange_weak_explicit(
+        &s_ws_out_wr, &l_wr, l_next, memory_order_acq_rel, memory_order_relaxed));
+
+    ws_out_slot_t *l_slot = &s_ws_out_slots[l_wr % WS_OUT_RING_CAP];
+    l_slot->handle = a_handle;
+    l_slot->len = (uint32_t)a_len;
+    memcpy(l_slot->data, a_data, (size_t)a_len);
+    return true;
+}
+
+void dap_net_trans_ws_system_drain_outbound(void)
+{
+    if (!pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
+        return;
+
+    s_ws_out_init_once();
+    if (!s_ws_out_slots)
+        return;
+
+    uint32_t l_rd = atomic_load_explicit(&s_ws_out_rd, memory_order_relaxed);
+
+    for (unsigned l_round = 0; l_round < 8u; l_round++) {
+        uint32_t l_wr = atomic_load_explicit(&s_ws_out_wr, memory_order_acquire);
+        uint32_t l_batch = 0;
+
+        while (l_rd < l_wr && l_batch < WS_OUT_DRAIN_BATCH) {
+            ws_out_slot_t *l_slot = &s_ws_out_slots[l_rd % WS_OUT_RING_CAP];
+            int l_ret = js_ws_send(l_slot->handle, l_slot->data, (int)l_slot->len);
+            if (l_ret <= 0) {
+                static _Atomic uint64_t s_drain_fail;
+                uint64_t n = atomic_fetch_add(&s_drain_fail, 1);
+                if (n < 3 || (n % 200) == 0)
+                    log_it(L_ERROR, "WS drain send failed handle=%d size=%u ret=%d (count=%" PRIu64 ")",
+                           l_slot->handle, l_slot->len, l_ret, n);
+                atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
+                return;
+            }
+            l_rd++;
+            l_batch++;
+        }
+        atomic_store_explicit(&s_ws_out_rd, l_rd, memory_order_release);
+
+        if (l_rd >= atomic_load_explicit(&s_ws_out_wr, memory_order_acquire))
+            break;
+    }
+}
+
 static void s_proxy_ws_create(void *a_arg)  { ws_create_args_t *l = a_arg; l->result = js_ws_create(l->url); }
-static void s_proxy_ws_send(void *a_arg)    { ws_send_args_t *l = a_arg; l->result = js_ws_send(l->handle, l->data, l->len); }
 static void s_proxy_ws_close(void *a_arg)   { ws_close_args_t *l = a_arg; js_ws_close(l->handle, l->code); }
 static void s_proxy_ws_destroy(void *a_arg) { ws_close_args_t *l = a_arg; js_ws_destroy(l->handle); }
 
@@ -171,11 +260,16 @@ static int s_ws_create_on_main(const char *a_url) {
     return l.result;
 }
 static int s_ws_send_on_main(int a_h, const void *d, int n) {
+    if (n <= 0)
+        return -1;
     if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id()))
         return js_ws_send(a_h, d, n);
-    ws_send_args_t l = { .handle = a_h, .data = d, .len = n, .result = -1 };
-    emscripten_proxy_sync(emscripten_proxy_get_system_queue(), emscripten_main_runtime_thread_id(), s_proxy_ws_send, &l);
-    return l.result;
+    /* Worker thread: copy into outbound ring; main thread drains via
+     * dap_net_trans_ws_system_drain_outbound() from the JS event loop.
+     * emscripten_proxy_async stalls when main never yields (video capture). */
+    if (!s_ws_out_push(a_h, d, n))
+        return -1;
+    return n;
 }
 static void s_ws_close_on_main(int a_h, int c) {
     if (pthread_equal(pthread_self(), emscripten_main_runtime_thread_id())) {
@@ -840,10 +934,25 @@ static ssize_t s_ws_system_write(dap_stream_t *a_stream, const void *a_data, siz
 {
     if (!a_stream || !a_stream->_server_session) return -1;
     ws_system_conn_t *l_conn = (ws_system_conn_t *)a_stream->_server_session;
-    if (l_conn->state != DAP_WS_SYSTEM_STATE_OPEN) return -1;
+    if (l_conn->state != DAP_WS_SYSTEM_STATE_OPEN) {
+        static _Atomic uint64_t s_not_open_count;
+        uint64_t n = atomic_fetch_add(&s_not_open_count, 1);
+        if (n < 3 || (n % 200) == 0)
+            log_it(L_ERROR, "ws write: socket not open (handle=%d state=%d, count=%" PRIu64 ")",
+                   l_conn->js_handle, (int)l_conn->state, n);
+        return -1;
+    }
 
     int l_sent = s_ws_send_on_main(l_conn->js_handle, a_data, (int)a_size);
-    if (l_sent > 0) l_conn->bytes_sent += (uint64_t)l_sent;
+    if (l_sent <= 0) {
+        static _Atomic uint64_t s_send_fail_count;
+        uint64_t n = atomic_fetch_add(&s_send_fail_count, 1);
+        if (n < 3 || (n % 200) == 0)
+            log_it(L_ERROR, "ws write failed: handle=%d size=%zu ret=%d (count=%" PRIu64 ")",
+                   l_conn->js_handle, a_size, l_sent, n);
+        return -1;
+    }
+    l_conn->bytes_sent += (uint64_t)l_sent;
     return (ssize_t)l_sent;
 }
 
