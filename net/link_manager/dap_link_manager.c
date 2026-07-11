@@ -1088,11 +1088,10 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
                  l_net_item;
                  l_net_item = l_net_item->next) {
                 dap_managed_net_t *l_net = l_net_item->data;
-                if (!dap_cluster_member_find_unsafe((dap_cluster_t *)l_net->link_clusters->data,
-                                               &it->addr))
-                    a_link_manager->callbacks.connected(it, l_net->id);
-                else
-                    s_temp_debug_log_link("wake_up connected_cb skipped", it, "already in cluster");
+                if (dap_cluster_member_find_unsafe((dap_cluster_t *)l_net->link_clusters->data,
+                                                   &it->addr))
+                    s_temp_debug_log_link("wake_up connected_cb", it, "already in cluster");
+                a_link_manager->callbacks.connected(it, l_net->id);
             }
         }
         if (it->active_clusters) {
