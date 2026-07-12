@@ -205,57 +205,62 @@ addToLibrary({
             return result;
         }
 
-        // Browser path: async fetch via ASYNCIFY (works in offscreen documents)
-        var headers = {};
-        if (contentType) headers['Content-Type'] = contentType;
+        // Browser path: synchronous XHR (runs on the calling pthread's Web Worker)
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", url, false);
+        // Request a binary response. Sync XHR with responseType is supported on
+        // Web Workers (where this MT path runs). Guard with try/catch for the
+        // legacy main-thread restriction, falling back to binary string decode.
+        var binaryAsString = false;
+        try {
+            xhr.responseType = "arraybuffer";
+        } catch (e) {
+            binaryAsString = true;
+            xhr.overrideMimeType("text/plain; charset=x-user-defined");
+        }
+        if (contentType) xhr.setRequestHeader("Content-Type", contentType);
+
         if (extraHeaders) {
             var lines = extraHeaders.split("\r\n");
             for (var i = 0; i < lines.length; i++) {
                 var sep = lines[i].indexOf(":");
                 if (sep > 0) {
-                    headers[lines[i].substring(0, sep).trim()] = lines[i].substring(sep + 1).trim();
+                    xhr.setRequestHeader(lines[i].substring(0, sep).trim(),
+                                         lines[i].substring(sep + 1).trim());
                 }
             }
         }
 
-        return Asyncify.handleSleep(function(wakeUp) {
-            var body = (a_body && a_body_len > 0) ? HEAPU8.slice(a_body, a_body + a_body_len) : undefined;
-            var controller = new AbortController();
-            var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
+        if (a_body && a_body_len > 0) {
+            xhr.send(HEAPU8.slice(a_body, a_body + a_body_len));
+        } else {
+            xhr.send();
+        }
 
-            fetch(url, {
-                method: 'POST',
-                headers: headers,
-                body: body,
-                signal: controller.signal,
-            }).then(function(response) {
-                clearTimeout(timeoutId);
-                return response.arrayBuffer().then(function(buf) {
-                    return { ok: response.ok, status: response.status, data: new Uint8Array(buf) };
-                });
-            }).then(function(result) {
-                if (result.ok && result.data && result.data.length > 0) {
-                    var ptr = _malloc(result.data.length + 1);
-                    HEAPU8.set(result.data, ptr);
-                    HEAPU8[ptr + result.data.length] = 0;
-                    setValue(a_out_ptr_addr, ptr, '*');
-                    setValue(a_out_len_addr, result.data.length, 'i32');
-                    wakeUp(0);
-                } else if (result.ok) {
-                    setValue(a_out_ptr_addr, 0, '*');
-                    setValue(a_out_len_addr, 0, 'i32');
-                    wakeUp(0);
-                } else {
-                    wakeUp(-result.status || -1);
-                }
-            }).catch(function(e) {
-                clearTimeout(timeoutId);
-                console.error('[dap_transport] fetch error:', url, e.message);
+        if (xhr.status >= 200 && xhr.status < 300) {
+            var responseBytes = null;
+            if (binaryAsString) {
+                // x-user-defined: each char is a raw byte 0x00-0xFF
+                var text = xhr.responseText || "";
+                responseBytes = new Uint8Array(text.length);
+                for (var j = 0; j < text.length; j++)
+                    responseBytes[j] = text.charCodeAt(j) & 0xff;
+            } else if (xhr.response && xhr.response.byteLength > 0) {
+                responseBytes = new Uint8Array(xhr.response);
+            }
+            if (responseBytes && responseBytes.length > 0) {
+                var ptr = _malloc(responseBytes.length + 1);
+                HEAPU8.set(responseBytes, ptr);
+                HEAPU8[ptr + responseBytes.length] = 0;
+                setValue(a_out_ptr_addr, ptr, '*');
+                setValue(a_out_len_addr, responseBytes.length, 'i32');
+            } else {
                 setValue(a_out_ptr_addr, 0, '*');
                 setValue(a_out_len_addr, 0, 'i32');
-                wakeUp(-1);
-            });
-        });
+            }
+            return 0;
+        }
+        return -xhr.status || -1;
     },
 
     /* ==================================================================
