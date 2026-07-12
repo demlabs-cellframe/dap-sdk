@@ -834,7 +834,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size = NULL,
         .dec_out_size = NULL,
 
-        .new_callback = dap_enc_chipmunk_ring_key_new_callback,
+        .new_callback = dap_enc_chipmunk_mring_key_new_callback,
         .new_generate_callback = dap_enc_chipmunk_ring_key_generate_callback,
         .delete_callback = dap_enc_chipmunk_ring_key_delete,
 

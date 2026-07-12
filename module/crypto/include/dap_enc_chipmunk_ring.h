@@ -77,6 +77,7 @@ dap_enc_key_t *dap_enc_chipmunk_ring_key_generate(const void *a_kex_buf, size_t 
 
 /* dap_enc_key callback adapters. */
 void dap_enc_chipmunk_ring_key_new_callback(dap_enc_key_t *a_key);
+void dap_enc_chipmunk_mring_key_new_callback(dap_enc_key_t *a_key);
 void dap_enc_chipmunk_ring_key_generate_callback(dap_enc_key_t *a_key,
                                                  const void *a_kex_buf, size_t a_kex_size,
                                                  const void *a_seed,    size_t a_seed_size,

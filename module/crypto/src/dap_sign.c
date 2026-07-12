@@ -294,6 +294,7 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_CHIPMUNK: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
         case SIG_TYPE_CHIPMUNK_MRING: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_MRING;
         case SIG_TYPE_CHIPMUNK_LRS: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_LRS;
+        case SIG_TYPE_CHIPMUNK_RING: return DAP_ENC_KEY_TYPE_SIG_CHIPMUNK_RING;
         case SIG_TYPE_LOTRS: return DAP_ENC_KEY_TYPE_SIG_LOTRS;
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
@@ -328,6 +329,7 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_NTRU_PRIME: return "sig_ntru_prime";
         case SIG_TYPE_CHIPMUNK: return "sig_chipmunk";
         case SIG_TYPE_CHIPMUNK_MRING: return "sig_chipmunk_mring";
+        case SIG_TYPE_CHIPMUNK_RING: return "sig_chipmunk_ring";
         case SIG_TYPE_CHIPMUNK_LRS: return "sig_chipmunk_lrs";
         case SIG_TYPE_LOTRS: return "sig_lotrs";
 #ifdef DAP_ECDSA
@@ -372,7 +374,7 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk") ) {
          l_sign_type.type = SIG_TYPE_CHIPMUNK;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_ring") ) {
-         l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING;
+         l_sign_type.type = SIG_TYPE_CHIPMUNK_RING;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_mring") ) {
          l_sign_type.type = SIG_TYPE_CHIPMUNK_MRING;
     } else if ( !dap_strcmp (a_type_str, "sig_chipmunk_lrs") ) {
@@ -860,7 +862,7 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
  */
 DAP_INLINE const char *dap_sign_get_str_recommended_types()
 {
-    return "sig_dil\nsig_falcon\nsig_ntru_prime\n"
+    return "sig_dil\nsig_falcon\nsig_ntru_prime\nsig_chipmunk_ring\n"
 #ifdef DAP_ECDSA
     "sig_ecdsa\n"
     "sig_multi_ecdsa_dil\n"

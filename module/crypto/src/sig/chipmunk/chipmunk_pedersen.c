@@ -19,14 +19,67 @@
 
 #define LOG_TAG "chipmunk_pedersen"
 
-/* Encode integer message as constant polynomial */
-static void s_encode_message(chipmunk_poly_t *a_out, int64_t a_message)
+/* Encode uint256 (LE) as bit i at coefficient i */
+static void s_encode_message_bytes(chipmunk_poly_t *a_out,
+                                   const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES])
 {
     memset(a_out, 0, sizeof(chipmunk_poly_t));
-    /* Encode message in first coefficient, reduced mod q */
-    int64_t l_msg_mod = a_message % CHIPMUNK_Q;
-    if (l_msg_mod < 0) l_msg_mod += CHIPMUNK_Q;
-    a_out->coeffs[0] = (int32_t)l_msg_mod;
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_VALUE_BITS; ++i) {
+        uint32_t l_byte = i / 8;
+        uint32_t l_bit = i % 8;
+        a_out->coeffs[i] = (int32_t)((a_message[l_byte] >> l_bit) & 1u);
+    }
+}
+
+static void s_encode_bit_at(chipmunk_poly_t *a_out, uint8_t a_bit, uint32_t a_pos)
+{
+    memset(a_out, 0, sizeof(chipmunk_poly_t));
+    if (a_pos < CHIPMUNK_N)
+        a_out->coeffs[a_pos] = (int32_t)(a_bit & 1u);
+}
+
+static int s_pedersen_commit_with_message_poly(chipmunk_pedersen_commit_t *a_commit,
+                                               const chipmunk_pedersen_params_t *a_params,
+                                               const chipmunk_poly_t *a_message_poly,
+                                               const chipmunk_poly_t a_randomness[CHIPMUNK_LRS_K])
+{
+    if (!a_commit || !a_params || !a_message_poly || !a_randomness)
+        return -EINVAL;
+    if (!a_params->initialized)
+        return -EINVAL;
+
+    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
+        chipmunk_poly_t l_sum;
+        memset(&l_sum, 0, sizeof(l_sum));
+
+        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
+            chipmunk_poly_t l_a_ntt = a_params->A[i][j];
+            chipmunk_poly_t l_r_ntt = a_randomness[j];
+            chipmunk_ntt(l_a_ntt.coeffs);
+            chipmunk_ntt(l_r_ntt.coeffs);
+
+            chipmunk_poly_t l_prod;
+            chipmunk_poly_mul_ntt(&l_prod, &l_a_ntt, &l_r_ntt);
+            chipmunk_invntt(l_prod.coeffs);
+
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_prod.coeffs[k])
+                                             % CHIPMUNK_Q);
+                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
+            }
+        }
+
+        if (i == 0) {
+            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
+                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + a_message_poly->coeffs[k])
+                                             % CHIPMUNK_Q);
+                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
+            }
+        }
+
+        a_commit->C[i] = l_sum;
+    }
+    return 0;
 }
 
 int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
@@ -77,13 +130,12 @@ int chipmunk_pedersen_init(chipmunk_pedersen_params_t *a_params,
 
 int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
                              const chipmunk_pedersen_params_t *a_params,
-                             int64_t a_message,
+                             const uint8_t a_message[CHIPMUNK_PEDERSEN_VALUE_BYTES],
                              const uint8_t a_randomness_seed[32])
 {
-    if (!a_commit || !a_params || !a_randomness_seed) return -EINVAL;
+    if (!a_commit || !a_params || !a_message || !a_randomness_seed) return -EINVAL;
     if (!a_params->initialized) return -EINVAL;
 
-    /* Generate random blinding vector r from seed */
     chipmunk_poly_t *l_r = DAP_NEW_Z_COUNT(chipmunk_poly_t, CHIPMUNK_LRS_K);
     if (!l_r) return -ENOMEM;
     uint64_t l_state[25];
@@ -98,7 +150,6 @@ int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
         DAP_DELETE(l_abs);
     }
 
-    /* Heap allocation — must be multiple of SHAKE256 rate (136 bytes) */
     size_t l_needed = CHIPMUNK_N * 4;
     size_t l_nblocks = (l_needed + 135) / 136;
     size_t l_buf_size = l_nblocks * 136;
@@ -106,108 +157,37 @@ int chipmunk_pedersen_commit(chipmunk_pedersen_commit_t *a_commit,
     if (!l_buf) { DAP_DELETE(l_r); return -ENOMEM; }
 
     for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
-        dap_hash_shake256_squeezeblocks(l_buf,
-                                         (l_buf_size + 135) / 136,
-                                         l_state);
+        dap_hash_shake256_squeezeblocks(l_buf, l_nblocks, l_state);
         for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
             uint32_t l_val;
             memcpy(&l_val, &l_buf[k * 4], 4);
-            /* Short randomness: coefficients in [-eta, eta] */
             l_r[j].coeffs[k] = (int32_t)((l_val % (2 * 13 + 1)) - 13);
         }
     }
     DAP_DELETE(l_buf);
 
-    /* Encode message */
     chipmunk_poly_t l_m;
-    s_encode_message(&l_m, a_message);
+    s_encode_message_bytes(&l_m, a_message);
+    int l_rc = s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, l_r);
 
-    /* Compute C = A * r + encode(m) */
-    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
-        /* C[i] = Σ_j A[i][j] * r[j] + m (for i=0, else just A*r) */
-        chipmunk_poly_t l_sum;
-        memset(&l_sum, 0, sizeof(l_sum));
-
-        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
-            /* A[i][j] * r[j] in NTT domain */
-            chipmunk_poly_t l_a_ntt = a_params->A[i][j];
-            chipmunk_poly_t l_r_ntt = l_r[j];
-            chipmunk_ntt(l_a_ntt.coeffs);
-            chipmunk_ntt(l_r_ntt.coeffs);
-
-            chipmunk_poly_t l_prod;
-            chipmunk_poly_mul_ntt(&l_prod, &l_a_ntt, &l_r_ntt);
-            chipmunk_invntt(l_prod.coeffs);
-
-            /* Accumulate */
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_prod.coeffs[k])
-                                             % CHIPMUNK_Q);
-                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
-            }
-        }
-
-        /* Add encoded message to first component */
-        if (i == 0) {
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_m.coeffs[k])
-                                             % CHIPMUNK_Q);
-                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
-            }
-        }
-
-        a_commit->C[i] = l_sum;
-    }
-
-    /* Wipe secret randomness */
     dap_memwipe(l_r, CHIPMUNK_LRS_K * sizeof(chipmunk_poly_t));
     DAP_DELETE(l_r);
-    return 0;
+    return l_rc;
 }
 
-int chipmunk_pedersen_commit_explicit(chipmunk_pedersen_commit_t *a_commit,
-                                       const chipmunk_pedersen_params_t *a_params,
-                                       int64_t a_message,
-                                       const chipmunk_poly_t a_randomness[CHIPMUNK_LRS_K])
+int chipmunk_pedersen_commit_explicit_bit(chipmunk_pedersen_commit_t *a_commit,
+                                          const chipmunk_pedersen_params_t *a_params,
+                                          uint8_t a_bit,
+                                          uint32_t a_bit_pos,
+                                          const chipmunk_poly_t a_randomness[CHIPMUNK_LRS_K])
 {
     if (!a_commit || !a_params || !a_randomness) return -EINVAL;
     if (!a_params->initialized) return -EINVAL;
+    if (a_bit_pos >= CHIPMUNK_PEDERSEN_VALUE_BITS) return -EINVAL;
 
     chipmunk_poly_t l_m;
-    s_encode_message(&l_m, a_message);
-
-    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
-        chipmunk_poly_t l_sum;
-        memset(&l_sum, 0, sizeof(l_sum));
-
-        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
-            chipmunk_poly_t l_a_ntt = a_params->A[i][j];
-            chipmunk_poly_t l_r_ntt = a_randomness[j];
-            chipmunk_ntt(l_a_ntt.coeffs);
-            chipmunk_ntt(l_r_ntt.coeffs);
-
-            chipmunk_poly_t l_prod;
-            chipmunk_poly_mul_ntt(&l_prod, &l_a_ntt, &l_r_ntt);
-            chipmunk_invntt(l_prod.coeffs);
-
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_prod.coeffs[k])
-                                             % CHIPMUNK_Q);
-                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
-            }
-        }
-
-        if (i == 0) {
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_m.coeffs[k])
-                                             % CHIPMUNK_Q);
-                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
-            }
-        }
-
-        a_commit->C[i] = l_sum;
-    }
-    return 0;
+    s_encode_bit_at(&l_m, a_bit, a_bit_pos);
+    return s_pedersen_commit_with_message_poly(a_commit, a_params, &l_m, a_randomness);
 }
 
 int chipmunk_pedersen_verify_opening(const chipmunk_pedersen_commit_t *a_commit,
@@ -220,39 +200,11 @@ int chipmunk_pedersen_verify_opening(const chipmunk_pedersen_commit_t *a_commit,
     /* Recompute C' = A * r + encode(m) */
     chipmunk_pedersen_commit_t l_recomputed;
     chipmunk_poly_t l_m;
-    s_encode_message(&l_m, a_opening->message);
+    s_encode_message_bytes(&l_m, a_opening->message);
 
-    for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {
-        chipmunk_poly_t l_sum;
-        memset(&l_sum, 0, sizeof(l_sum));
-
-        for (uint32_t j = 0; j < CHIPMUNK_LRS_K; ++j) {
-            chipmunk_poly_t l_a_ntt = a_params->A[i][j];
-            chipmunk_poly_t l_r_ntt = a_opening->randomness[j];
-            chipmunk_ntt(l_a_ntt.coeffs);
-            chipmunk_ntt(l_r_ntt.coeffs);
-
-            chipmunk_poly_t l_prod;
-            chipmunk_poly_mul_ntt(&l_prod, &l_a_ntt, &l_r_ntt);
-            chipmunk_invntt(l_prod.coeffs);
-
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_prod.coeffs[k])
-                                             % CHIPMUNK_Q);
-                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
-            }
-        }
-
-        if (i == 0) {
-            for (uint32_t k = 0; k < CHIPMUNK_N; ++k) {
-                l_sum.coeffs[k] = (int32_t)(((int64_t)l_sum.coeffs[k] + l_m.coeffs[k])
-                                             % CHIPMUNK_Q);
-                if (l_sum.coeffs[k] < 0) l_sum.coeffs[k] += CHIPMUNK_Q;
-            }
-        }
-
-        l_recomputed.C[i] = l_sum;
-    }
+    int l_rc = s_pedersen_commit_with_message_poly(&l_recomputed, a_params, &l_m, a_opening->randomness);
+    if (l_rc != 0)
+        return l_rc;
 
     /* Compare C' == C */
     for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K; ++i) {

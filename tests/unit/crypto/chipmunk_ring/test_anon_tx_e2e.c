@@ -189,30 +189,32 @@ static void test_pedersen_range_proof_pipeline(void)
 
     /* Commit to amount */
     int64_t l_amount = 1000000;
-    uint8_t l_rand[32];
+    uint8_t l_rand[32], l_amount_bytes[CHIPMUNK_PEDERSEN_VALUE_BYTES];
     for (int i = 0; i < 32; ++i) l_rand[i] = 0xAA;
+    memset(l_amount_bytes, 0, sizeof(l_amount_bytes));
+    memcpy(l_amount_bytes, &l_amount, sizeof(l_amount));
 
     chipmunk_pedersen_commit_t l_commit;
-    int l_rc = chipmunk_pedersen_commit(&l_commit, &l_params, l_amount, l_rand);
+    int l_rc = chipmunk_pedersen_commit(&l_commit, &l_params, l_amount_bytes, l_rand);
     dap_assert(l_rc == 0, "Pedersen commit OK");
 
-    /* Generate range proof */
     chipmunk_range_proof_t l_proof;
     memset(&l_proof, 0, sizeof(l_proof));
-    l_rc = chipmunk_range_proof_prove(&l_proof, &l_params, &l_commit,
-                                       l_amount, l_rand, 64);
+    l_rc = chipmunk_range_proof_prove(&l_proof, &l_params, &l_commit, l_amount_bytes, l_rand);
     dap_assert(l_rc == 0, "range proof OK");
 
-    /* Verify range proof */
     l_rc = chipmunk_range_proof_verify(&l_proof, &l_params, &l_commit);
     dap_assert(l_rc == 1, "range proof verify OK");
 
-    /* Additive homomorphism: C(100) + C(200) = C(300) */
     chipmunk_pedersen_commit_t l_c1, l_c2, l_sum;
-    uint8_t l_r1[32], l_r2[32];
+    uint8_t l_r1[32], l_r2[32], l_v100[32], l_v200[32];
     for (int i = 0; i < 32; ++i) { l_r1[i] = 0x11; l_r2[i] = 0x22; }
-    chipmunk_pedersen_commit(&l_c1, &l_params, 100, l_r1);
-    chipmunk_pedersen_commit(&l_c2, &l_params, 200, l_r2);
+    memset(l_v100, 0, sizeof(l_v100));
+    memset(l_v200, 0, sizeof(l_v200));
+    { uint64_t v = 100; memcpy(l_v100, &v, sizeof(v)); }
+    { uint64_t v = 200; memcpy(l_v200, &v, sizeof(v)); }
+    chipmunk_pedersen_commit(&l_c1, &l_params, l_v100, l_r1);
+    chipmunk_pedersen_commit(&l_c2, &l_params, l_v200, l_r2);
     chipmunk_pedersen_add(&l_sum, &l_c1, &l_c2);
 
     /* Sum should differ from individual */

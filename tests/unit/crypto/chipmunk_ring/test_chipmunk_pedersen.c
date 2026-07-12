@@ -15,6 +15,12 @@
 
 #define LOG_TAG "test_chipmunk_pedersen"
 
+static void s_u64_to_amount_bytes(uint64_t a_val, uint8_t a_out[CHIPMUNK_PEDERSEN_VALUE_BYTES])
+{
+    memset(a_out, 0, CHIPMUNK_PEDERSEN_VALUE_BYTES);
+    memcpy(a_out, &a_val, sizeof(a_val));
+}
+
 static void test_init(void)
 {
     chipmunk_pedersen_params_t *l_params = DAP_NEW_Z(chipmunk_pedersen_params_t);
@@ -41,7 +47,9 @@ static void test_commit_verify(void)
     for (int i = 0; i < 32; ++i) l_rand[i] = 0xAA + i;
 
     int64_t l_value = 1000000;
-    int l_rc = chipmunk_pedersen_commit(&l_commit, l_params, l_value, l_rand);
+    uint8_t l_value_bytes[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes((uint64_t)l_value, l_value_bytes);
+    int l_rc = chipmunk_pedersen_commit(&l_commit, l_params, l_value_bytes, l_rand);
     dap_assert(l_rc == 0, "commit OK");
 
     int l_nonzero = 0;
@@ -66,8 +74,11 @@ static void test_different_values(void)
     uint8_t l_r1[32], l_r2[32];
     for (int i = 0; i < 32; ++i) { l_r1[i] = 0xAA; l_r2[i] = 0xBB; }
 
-    chipmunk_pedersen_commit(&l_c1, l_params, 100, l_r1);
-    chipmunk_pedersen_commit(&l_c2, l_params, 200, l_r2);
+    uint8_t l_v100[CHIPMUNK_PEDERSEN_VALUE_BYTES], l_v200[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(100, l_v100);
+    s_u64_to_amount_bytes(200, l_v200);
+    chipmunk_pedersen_commit(&l_c1, l_params, l_v100, l_r1);
+    chipmunk_pedersen_commit(&l_c2, l_params, l_v200, l_r2);
 
     int l_diff = 0;
     for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && !l_diff; ++i) {
@@ -90,8 +101,10 @@ static void test_same_value_same_randomness(void)
     uint8_t l_rand[32];
     for (int i = 0; i < 32; ++i) l_rand[i] = 0xAA;
 
-    chipmunk_pedersen_commit(&l_c1, l_params, 100, l_rand);
-    chipmunk_pedersen_commit(&l_c2, l_params, 100, l_rand);
+    uint8_t l_v100[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(100, l_v100);
+    chipmunk_pedersen_commit(&l_c1, l_params, l_v100, l_rand);
+    chipmunk_pedersen_commit(&l_c2, l_params, l_v100, l_rand);
 
     int l_same = 1;
     for (uint32_t i = 0; i < CHIPMUNK_PEDERSEN_K && l_same; ++i) {
@@ -114,8 +127,11 @@ static void test_additive_homomorphism(void)
     uint8_t l_r1[32], l_r2[32];
     for (int i = 0; i < 32; ++i) { l_r1[i] = 0xAA; l_r2[i] = 0xBB; }
 
-    chipmunk_pedersen_commit(&l_c1, l_params, 100, l_r1);
-    chipmunk_pedersen_commit(&l_c2, l_params, 200, l_r2);
+    uint8_t l_v100[CHIPMUNK_PEDERSEN_VALUE_BYTES], l_v200[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(100, l_v100);
+    s_u64_to_amount_bytes(200, l_v200);
+    chipmunk_pedersen_commit(&l_c1, l_params, l_v100, l_r1);
+    chipmunk_pedersen_commit(&l_c2, l_params, l_v200, l_r2);
     chipmunk_pedersen_add(&l_sum, &l_c1, &l_c2);
 
     int l_nonzero = 0;
@@ -146,7 +162,9 @@ static void test_serialize_deserialize(void)
     chipmunk_pedersen_commit_t l_commit;
     uint8_t l_rand[32];
     for (int i = 0; i < 32; ++i) l_rand[i] = 0xAA;
-    chipmunk_pedersen_commit(&l_commit, l_params, 42, l_rand);
+    uint8_t l_v42[CHIPMUNK_PEDERSEN_VALUE_BYTES];
+    s_u64_to_amount_bytes(42, l_v42);
+    chipmunk_pedersen_commit(&l_commit, l_params, l_v42, l_rand);
 
     /* Serialize — buffer must be K * N * 4 bytes */
     size_t l_ser_size = CHIPMUNK_PEDERSEN_K * CHIPMUNK_N * sizeof(int32_t);
