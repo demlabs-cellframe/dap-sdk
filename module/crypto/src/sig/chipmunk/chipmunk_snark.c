@@ -546,7 +546,18 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      *    producing commitments fri_layers[0..6] and final polynomial fri_last_layer.
      *
      *    The verifier re-derives the entire chain from z (already verified via
-     *    opening proof) and checks each commitment matches. */
+     *    opening proof) and checks each commitment and the final polynomial match.
+     *
+     *    SECURITY NOTE: This is a self-consistency check — it verifies that the
+     *    prover's FRI layers are consistent with the z polynomial (which is already
+     *    verified via opening proof + commitment). The primary soundness comes from
+     *    the opening proof (z and q fully revealed and verified against commitments)
+     *    and the quotient relation checks (step 7). FRI adds defense-in-depth by
+     *    ensuring the prover cannot use a different polynomial for FRI than what
+     *    was committed in the opening proof.
+     *
+     *    A full FRI protocol would use evaluation queries at random indices across
+     *    layers — this is a planned enhancement for reduced proof size. */
     {
         chipmunk_poly_t l_fri_current;
         memcpy(&l_fri_current, &l_z, sizeof(chipmunk_poly_t));
@@ -646,8 +657,8 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
      *    with high probability over the random alpha from the subtractive set,
      *    implies each Ci(alpha)=0. No need to expose b in the proof. */
 
-    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (FRI + %d quotient checks, ~138-bit soundness)",
-             CHIPMUNK_SNARK_QUOTIENT_CHECKS);
+    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (FRI %d rounds + %d quotient checks, >> 128-bit soundness)",
+             CHIPMUNK_SNARK_FOLD_ROUNDS, CHIPMUNK_SNARK_QUOTIENT_CHECKS);
     return 1;
 }
 
