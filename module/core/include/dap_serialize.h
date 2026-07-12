@@ -92,11 +92,24 @@ typedef enum dap_serialize_field_flags {
      * it on the wire.
      *
      * Decoder contract: the destination object MUST be pre-initialised
-     * with the count value before the call.  Use
-     * dap_serialize_from_buffer_raw_preserve() to skip the implicit
-     * zero-init that the standard entry points perform.
+     * with the count value before the call.  Do not use
+     * dap_serialize_from_buffer_raw_zero() — it would wipe the count.
+     * Prefer dap_serialize_from_buffer_raw() / _preserve().
      */
-    DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX = (1 << 10)
+    DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX = (1 << 10),
+    /**
+     * @brief Constant / verify-only scalar field.
+     *
+     * On encode: write @c const_value (truncated to the field type width) to the
+     * wire; the object field at @c offset is ignored (may be 0).
+     * On decode: read the wire value and compare it to @c const_value; on
+     * mismatch return DAP_SERIALIZE_ERROR_FIELD_VALIDATION.  The value is
+     * never stored into the object.
+     *
+     * Supported types: UINT8/INT8/BOOL, UINT16/INT16, UINT32/INT32/VERSION,
+     * UINT64/INT64.
+     */
+    DAP_SERIALIZE_FLAG_CONST = (1 << 11)
 } dap_serialize_field_flags_t;
 
 /**
@@ -164,6 +177,7 @@ typedef struct dap_serialize_field {
     uint32_t version_max;                   ///< Maximum version supporting this field
     size_t fixed_count;                     ///< Element count for ARRAY_FIXED (elements, not bytes)
     dap_serialize_field_type_t element_type;///< Scalar element type for ARRAY_FIXED/ARRAY_DYNAMIC when no nested_schema; enables endian-aware encoding for int16/int32/int64 arrays. Leave as UINT8 (default 0) for raw byte arrays preserving legacy memcpy path.
+    uint64_t const_value;                   ///< Expected/constant value for DAP_SERIALIZE_FLAG_CONST (host endian; truncated to type width on wire)
 } dap_serialize_field_t;
 
 /**
@@ -343,14 +357,14 @@ dap_serialize_result_t dap_serialize_from_buffer(const dap_serialize_schema_t *a
                                                  void *a_context);
 
 /**
- * @brief Deserialize object from buffer WITHOUT metadata header (raw fields only)
- * @details Deserializes only field data, assumes no magic/version/field_count header.
- * @param a_schema Serialization schema
- * @param a_buffer Input buffer
- * @param a_buffer_size Buffer size
- * @param a_object Output object (must be pre-allocated)
- * @param a_context User context (optional)
- * @return Deserialization result
+ * @brief Deserialize raw fields into @p a_object WITHOUT zeroing it first.
+ *
+ * Only schema fields are written (and CONST fields are verified).  Other
+ * members of @p a_object are left untouched — safe for partial schemas on
+ * live objects (e.g. filling version/type into dap_chain_wallet_t).
+ *
+ * Callers that need a wiped destination should use
+ * @ref dap_serialize_from_buffer_raw_zero instead.
  */
 dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_t *a_schema,
                                                      const uint8_t *a_buffer,
@@ -359,13 +373,23 @@ dap_serialize_result_t dap_serialize_from_buffer_raw(const dap_serialize_schema_
                                                      void *a_context);
 
 /**
- * @brief Same as dap_serialize_from_buffer_raw but does NOT zero @p a_object.
+ * @brief Like @ref dap_serialize_from_buffer_raw but memset(@p a_object, 0)
+ *        for @c schema->struct_size before decoding.
  *
- * The object's memory is left in the state the caller provided.  This is
- * required when a schema declares an ARRAY_DYNAMIC field with the
- * DAP_SERIALIZE_FLAG_NO_COUNT_PREFIX flag — the framework expects the
- * @c count_offset slot to already hold the externally-framed length on
- * the deserialise path, and an implicit memset would overwrite it.
+ * Use for fresh destinations.  Do NOT use on live objects or when a schema
+ * is a partial view of a larger struct (it would wipe unrelated fields).
+ */
+dap_serialize_result_t dap_serialize_from_buffer_raw_zero(const dap_serialize_schema_t *a_schema,
+                                                          const uint8_t *a_buffer,
+                                                          size_t a_buffer_size,
+                                                          void *a_object,
+                                                          void *a_context);
+
+/**
+ * @brief Alias of @ref dap_serialize_from_buffer_raw (no zero-init).
+ *
+ * Kept for call sites written when raw still wiped the object; prefer
+ * @ref dap_serialize_from_buffer_raw for new code.
  */
 dap_serialize_result_t dap_serialize_from_buffer_raw_preserve(const dap_serialize_schema_t *a_schema,
                                                               const uint8_t *a_buffer,
@@ -397,17 +421,9 @@ static inline dap_deserialize_result_t dap_deserialize_from_buffer(
 }
 
 /**
- * @brief Semantic alias for dap_serialize_from_buffer_raw
- * 
- * Deserialize object from buffer WITHOUT metadata header (raw fields only).
- * Improves code readability by using "deserialize" naming for clarity.
- * 
- * @param a_schema Serialization schema
- * @param a_buffer Input buffer
- * @param a_buffer_size Buffer size
- * @param a_object Output object (must be pre-allocated)
- * @param a_context User context (optional)
- * @return Deserialization result
+ * @brief Semantic alias for dap_serialize_from_buffer_raw (no zero-init).
+ *
+ * Fills schema fields into an existing object; does not wipe the rest.
  */
 static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw(
     const dap_serialize_schema_t *a_schema,
@@ -420,10 +436,20 @@ static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw(
 }
 
 /**
- * @brief Semantic alias for dap_serialize_from_buffer_raw_preserve.
- *
- * Use when the caller has pre-populated count fields referenced by
- * NO_COUNT_PREFIX ARRAY_DYNAMIC entries in the schema.
+ * @brief Semantic alias for dap_serialize_from_buffer_raw_zero.
+ */
+static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw_zero(
+    const dap_serialize_schema_t *a_schema,
+    const uint8_t *a_buffer,
+    size_t a_buffer_size,
+    void *a_object,
+    void *a_context)
+{
+    return dap_serialize_from_buffer_raw_zero(a_schema, a_buffer, a_buffer_size, a_object, a_context);
+}
+
+/**
+ * @brief Alias of dap_deserialize_from_buffer_raw (compat name).
  */
 static inline dap_deserialize_result_t dap_deserialize_from_buffer_raw_preserve(
     const dap_serialize_schema_t *a_schema,
@@ -468,6 +494,22 @@ dap_serialize_result_t dap_serialize_copy_object(const dap_serialize_schema_t *a
         .flags = DAP_SERIALIZE_FLAG_NONE, \
         .offset = offsetof(struct_type, field_name), \
         .size = sizeof(((struct_type*)0)->field_name) \
+    }
+
+/**
+ * @brief Constant scalar on the wire: written from @p const_val, verified on
+ *        decode, never stored into the object.
+ *
+ * @p field_name_str is a string literal used only for diagnostics.
+ */
+#define DAP_SERIALIZE_FIELD_CONST(field_name_str, field_type, const_val) \
+    { \
+        .name = (field_name_str), \
+        .type = (field_type), \
+        .flags = DAP_SERIALIZE_FLAG_CONST, \
+        .offset = 0, \
+        .size = 0, \
+        .const_value = (uint64_t)(const_val) \
     }
 
 #define DAP_SERIALIZE_FIELD_DYNAMIC_BYTES(struct_type, ptr_field, size_field) \

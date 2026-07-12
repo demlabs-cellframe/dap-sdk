@@ -333,7 +333,7 @@ static int s_client_flow_ctrl_packet_parse_cb(
     
     // Deserialize full header
     dap_stream_trans_udp_full_header_t l_hdr;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
+    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw_zero(
         &g_udp_full_header_schema,
         l_decrypted,
         sizeof(dap_stream_trans_udp_full_header_t),
@@ -2169,7 +2169,7 @@ static ssize_t s_udp_read(dap_stream_t *a_stream, void *a_buffer, size_t a_size)
         
         // Parse header
         dap_stream_trans_udp_full_header_t l_header;
-        dap_deserialize_result_t l_deser = dap_deserialize_from_buffer_raw(
+        dap_deserialize_result_t l_deser = dap_deserialize_from_buffer_raw_zero(
             &g_udp_full_header_schema,
             l_decrypted,
             sizeof(dap_stream_trans_udp_full_header_t),

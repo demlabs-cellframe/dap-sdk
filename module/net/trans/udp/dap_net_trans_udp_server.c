@@ -1413,7 +1413,7 @@ static int s_process_encrypted_udp_packet(stream_udp_session_t *a_session,
     
     // Deserialize full header
     dap_stream_trans_udp_full_header_t l_hdr;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
+    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw_zero(
         &g_udp_full_header_schema,
         l_decrypted,
         sizeof(dap_stream_trans_udp_full_header_t),
@@ -2315,7 +2315,7 @@ static int s_flow_ctrl_packet_parse_cb(dap_io_flow_t *a_flow,
     
     // Parse full header using dap_serialize (network byte order → host)
     dap_stream_trans_udp_full_header_t l_hdr;
-    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw(
+    dap_deserialize_result_t l_deser_result = dap_deserialize_from_buffer_raw_zero(
         &g_udp_full_header_schema,
         l_decrypted,
         sizeof(dap_stream_trans_udp_full_header_t),

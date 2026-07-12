@@ -44,7 +44,7 @@ int lotrs_wire_header_unpack(lotrs_wire_header_t *a_hdr,
     if (a_buf_len < LOTRS_WIRE_HEADER_BYTES) return -EINVAL;
 
     memset(a_hdr, 0, sizeof(*a_hdr));
-    dap_serialize_result_t l_res = dap_serialize_from_buffer_raw(
+    dap_serialize_result_t l_res = dap_serialize_from_buffer_raw_zero(
         &s_lotrs_header_schema, a_buf, a_buf_len, a_hdr, NULL);
     return l_res.error_code;
 }
