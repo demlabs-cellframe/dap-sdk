@@ -539,10 +539,7 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
     } else if (!(a_flags & DAP_IO_FLOW_CTRL_RETRANSMIT) && (l_old_flags & DAP_IO_FLOW_CTRL_RETRANSMIT)) {
         // Disable retransmit - stop timer
         if (a_ctrl->retransmit_timer) {
-            /* Timer was created on a worker recorded in timer->worker;
-             * the caller may be on a different thread.  Use _mt variant. */
-            dap_timerfd_delete_mt(a_ctrl->retransmit_timer->worker,
-                                  a_ctrl->retransmit_timer->esocket_uuid);
+            dap_timerfd_delete_unsafe(a_ctrl->retransmit_timer);
             a_ctrl->retransmit_timer = NULL;
         }
     }
@@ -561,8 +558,7 @@ int dap_io_flow_ctrl_set_flags(dap_io_flow_ctrl_t *a_ctrl, dap_io_flow_ctrl_flag
     } else if (!(a_flags & DAP_IO_FLOW_CTRL_KEEPALIVE) && (l_old_flags & DAP_IO_FLOW_CTRL_KEEPALIVE)) {
         // Disable keepalive - stop timer
         if (a_ctrl->keepalive_timer) {
-            dap_timerfd_delete_mt(a_ctrl->keepalive_timer->worker,
-                                  a_ctrl->keepalive_timer->esocket_uuid);
+            dap_timerfd_delete_unsafe(a_ctrl->keepalive_timer);
             a_ctrl->keepalive_timer = NULL;
         }
     }

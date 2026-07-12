@@ -550,16 +550,6 @@ DAP_STATIC_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t
     return a_es && a_es->type >= 0 && a_es->type < DESCRIPTOR_TYPE_MAX ? s_socket_type_to_str[a_es->type] : "UNKNOWN";
 }
 
-/** Listener sockets must survive SIGNAL_CLOSE (no_close/PERSISTENT).
- *  Stream sockets use no_close only to skip worker idle timeout — they must
- *  still be deleted on HUP/RDHUP/explicit teardown. */
-DAP_STATIC_INLINE bool dap_events_socket_is_listener(const dap_events_socket_t *a_es)
-{
-    return a_es
-        && (a_es->type == DESCRIPTOR_TYPE_SOCKET_LISTENING
-            || a_es->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING);
-}
-
 DAP_INLINE int dap_close_socket(SOCKET s) {
     return
 #ifdef DAP_OS_WINDOWS

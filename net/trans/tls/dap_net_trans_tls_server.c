@@ -4,10 +4,9 @@
  * TLS handshake → direct handler calls (enc_init, stream_ctl, stream).
  * No HTTP server needed — parses URL+body from raw HTTP POST.
  *
- * esocket->_inheritor always points to tls_conn_ctx_t for the entire
- * connection lifetime.  After stream_ctl, the dap_stream_t is stored
- * inside tls_conn_ctx_t.stream and reached from there — no _inheritor
- * type swap, no magic sentinels.
+ * Architecture:
+ *   _inheritor → tls_conn_ctx_t (TLS state, mimicry engine)
+ *   After handshake: parse HTTP POST → route by URL → call handler → TLS wrap response
  */
 
 #include <string.h>
@@ -26,6 +25,7 @@
 #include "dap_enc_handler.h"
 #include "dap_stream_ctl_handler.h"
 #include "dap_stream.h"
+#include "dap_stream_session.h"
 #include "dap_stream_pkt.h"
 
 #define LOG_TAG "dap_net_trans_tls_server"
@@ -34,7 +34,7 @@
 #define TLS_CT_APPLICATION_DATA    0x17
 
 /* ------------------------------------------------------------------ */
-/*  TLS context — stored in esocket->_inheritor for the entire conn    */
+/*  TLS context — stored in esocket->_inheritor                        */
 /* ------------------------------------------------------------------ */
 
 typedef struct tls_conn_ctx {
@@ -42,8 +42,8 @@ typedef struct tls_conn_ctx {
     bool handshake_done;
     bool client_finished_consumed;
     size_t prev_buf_in_size;  /* guard: buf_in_size at function exit */
-    bool stream_mode;         /* after stream_ctl: route DAP packets to stream */
-    dap_stream_t *stream;     /* set by dap_stream_new_es_server; NULL until then */
+    bool stream_mode;         /* after stream_ctl: route DAP packets to stream layer */
+    dap_stream_t *stream;     /* created after stream_ctl; NULL until then */
 } tls_conn_ctx_t;
 
 static bool s_debug_more = false;
@@ -52,52 +52,6 @@ static inline tls_conn_ctx_t *s_tls_ctx(dap_events_socket_t *a_es)
 {
     return a_es ? (tls_conn_ctx_t *)a_es->_inheritor : NULL;
 }
-
-/* ------------------------------------------------------------------ */
-/*  trans_ctx->trans->ops->write — used by dap_stream_pkt_write_unsafe  */
-/*  for post-stream_ctl DAP packets.  Wraps once (here) and queues.     */
-/*  Wrapping must happen exactly once, at write time, never in the     */
-/*  epoll write_callback (that fires repeatedly on partial sends and    */
-/*  would double-wrap already-wrapped bytes, growing buf_out without    */
-/*  bound — an actual busy-loop was observed with that approach).      */
-/* ------------------------------------------------------------------ */
-
-static ssize_t s_tls_stream_write(dap_stream_t *a_stream, const void *a_data, size_t a_size)
-{
-    if (!a_stream || !a_stream->esocket || !a_data || a_size == 0)
-        return -1;
-
-    tls_conn_ctx_t *t = s_tls_ctx(a_stream->esocket);
-    if (!t || !t->mimicry) {
-        /* Should not happen post-stream_ctl, but don't drop silently. */
-        dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
-        return (ssize_t)a_size;
-    }
-
-    void *l_wrapped = NULL;
-    size_t l_wrapped_sz = 0;
-    if (dap_tls_mimicry_wrap(t->mimicry, a_data, a_size, &l_wrapped, &l_wrapped_sz) != 0
-            || !l_wrapped || l_wrapped_sz == 0) {
-        log_it(L_ERROR, "TLS server: s_tls_stream_write wrap failed");
-        DAP_DELETE(l_wrapped);
-        return -1;
-    }
-
-    size_t l_ret = dap_events_socket_write_unsafe(a_stream->esocket, l_wrapped, l_wrapped_sz);
-    log_it(L_NOTICE, "TLS server: s_tls_stream_write plain=%zu wrapped=%zu queued=%zu fd=%d",
-           a_size, l_wrapped_sz, l_ret, a_stream->esocket->socket);
-    DAP_DELETE(l_wrapped);
-    return l_ret > 0 ? (ssize_t)a_size : -1;
-}
-
-static const dap_net_trans_ops_t s_tls_server_stream_ops = {
-    .write = s_tls_stream_write,
-};
-
-static dap_net_trans_t s_tls_server_stream_trans = {
-    .type = DAP_NET_TRANS_TLS_DIRECT,
-    .ops  = &s_tls_server_stream_ops,
-};
 
 /* ------------------------------------------------------------------ */
 /*  HTTP POST parser — extracts URL path, query, body from raw HTTP    */
@@ -353,10 +307,16 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     }
 
     if (t->stream_mode) {
-        /* DAP stream packets — deliver to the stream created at stream_ctl */
-        if (t->stream) {
-            dap_stream_data_proc_read_ext(t->stream, l_raw, l_raw_sz);
+        /* DAP stream packets — need stream layer to process.
+         * _inheritor is tls_conn_ctx_t, not trans_ctx.  The stream
+         * pointer lives in t->stream, set after stream_ctl. */
+        dap_stream_t *l_stream = t->stream;
+        if (l_stream) {
+            dap_stream_data_proc_read_ext(l_stream, l_raw, l_raw_sz);
         } else {
+            /* No stream — this is expected if stream wasn't created via HTTP path.
+             * The stream_ctl handler should have created the session, but the
+             * stream object itself is managed by the HTTP server layer. */
             log_it(L_WARNING, "TLS server: stream mode but no stream (dropping %zu bytes)", l_raw_sz);
         }
         DAP_DELETE(l_raw);
@@ -380,38 +340,25 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     s_route_request(l_url_path, l_query, l_body, l_body_len,
                     &l_response, &l_response_len);
 
-    /* After stream_ctl, switch to stream mode for subsequent data AND
-     * create the dap_stream_t object that TLS direct mode lacks.
-     * In HTTP path, GET /stream?session_id=<id> → s_stream_new() does this.
-     * In TLS direct mode, stream_ctl is the last HTTP-style request, so
-     * we must create the stream here using the session_id from the response. */
-    if (l_url_path && strncmp(l_url_path, "/stream_ctl", 11) == 0) {
+    /* After stream_ctl response, create stream and switch to stream mode */
+    if (l_url_path && strncmp(l_url_path, "/stream_ctl", 11) == 0 && l_response && l_response_len > 0) {
         /* Parse session_id from response: "<session_id> <key_str> ..." */
-        uint32_t l_session_id = 0;
-        if (l_response && l_response_len > 0)
-            sscanf(l_response, "%u", &l_session_id);
-
-        dap_stream_session_t *l_session = dap_stream_session_id_mt(l_session_id);
-        if (l_session) {
-            dap_stream_t *l_stream = dap_stream_new_es_server(a_es, l_session);
-            if (l_stream) {
-                t->stream = l_stream;
-                /* Route dap_stream_pkt_write_unsafe() through the TLS-wrapping
-                 * ops->write instead of the raw esocket path — see
-                 * s_tls_stream_write for why wrapping must happen exactly
-                 * once, here, rather than in the epoll write_callback. */
-                if (l_stream->trans_ctx)
-                    l_stream->trans_ctx->trans = &s_tls_server_stream_trans;
-                log_it(L_NOTICE, "TLS server: stream created (session=%u, stream=%p)",
-                       l_session_id, (void*)l_stream);
+        unsigned l_session_id = 0;
+        if (sscanf(l_response, "%u", &l_session_id) == 1 && l_session_id > 0) {
+            dap_stream_session_t *l_session = dap_stream_session_id_mt(l_session_id);
+            if (l_session) {
+                t->stream = dap_stream_new_es_server(a_es, l_session);
+                if (t->stream) {
+                    log_it(L_NOTICE, "TLS server: stream created (session=%u, stream=%p)", l_session_id, (void*)t->stream);
+                } else {
+                    log_it(L_ERROR, "TLS server: failed to create stream for session %u", l_session_id);
+                }
             } else {
-                log_it(L_ERROR, "TLS server: failed to create stream for session %u", l_session_id);
+                log_it(L_WARNING, "TLS server: session %u not found after stream_ctl", l_session_id);
             }
-        } else {
-            log_it(L_ERROR, "TLS server: stream_ctl session %u not found", l_session_id);
         }
         t->stream_mode = true;
-        log_it(L_NOTICE, "TLS server: stream_ctl processed, stream_mode=true");
+        log_it(L_NOTICE, "TLS server: stream_ctl processed, stream_mode=%s", t->stream ? "YES" : "NO");
     }
 
     log_it(L_NOTICE, "TLS server: route result: response_len=%zu", l_response_len);
@@ -420,9 +367,7 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     DAP_DELETE(l_query);
     DAP_DELETE(l_body);
 
-    /* Wrap response in TLS records and send (one-shot wrap at queue time —
-     * see the big comment on s_tls_stream_write for why wrapping must not
-     * happen in the epoll write_callback). */
+    /* Wrap response in TLS records and send */
     if (l_response && l_response_len > 0 && t->mimicry) {
         void *l_wrapped = NULL; size_t l_wrapped_sz = 0;
         int l_wrap_rc = dap_tls_mimicry_wrap(t->mimicry, l_response, l_response_len,
@@ -443,21 +388,7 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Write: passthrough — data already TLS-wrapped before being queued  */
-/*                                                                     */
-/*  Two producers write into esocket->buf_out:                         */
-/*   1. s_tls_read (handshake bytes, HTTP-style responses) — wraps      */
-/*      once itself right before dap_events_socket_write_unsafe().    */
-/*   2. dap_stream_pkt_write_unsafe (post-stream_ctl DAP packets) —     */
-/*      routed through trans_ctx->trans->ops->write (s_tls_stream_write */
-/*      below), which also wraps exactly once before queuing.          */
-/*                                                                     */
-/*  Wrapping here instead (in the epoll write_callback) is UNSAFE:     */
-/*  the callback can fire multiple times for the same buf_out if       */
-/*  send() only drains it partially, so a second call would wrap       */
-/*  already-wrapped bytes again — corrupting the stream and growing    */
-/*  buf_out without bound (an actual busy-loop was observed with this  */
-/*  bug: 100% CPU, buf_out never drained).  Keep this a no-op.         */
+/*  Write: passthrough (data already in buf_out from s_tls_read)       */
 /* ------------------------------------------------------------------ */
 
 static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
@@ -472,17 +403,15 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
 static void s_tls_delete(dap_events_socket_t *a_es, void *a_arg)
 {
     tls_conn_ctx_t *t = s_tls_ctx(a_es);
-    int l_fd = a_es ? a_es->socket : -1;
-
-    log_it(L_NOTICE, "TLS server: delete fd=%d, t=%p, stream=%p, mimicry=%p",
-           l_fd, (void*)t, t ? (void*)t->stream : NULL,
-           t ? (void*)t->mimicry : NULL);
-
+    log_it(L_NOTICE, "TLS server: delete fd=%d, t=%p, mimicry=%p, stream=%p",
+           a_es ? a_es->socket : -1, (void*)t, t ? (void*)t->mimicry : NULL, t ? (void*)t->stream : NULL);
     if (t) {
-        /* Stream + trans_ctx are freed by the dap_stream layer
-         * (dap_stream_delete_unsafe) — we must not touch them here. */
+        if (t->stream) {
+            dap_stream_delete_unsafe(t->stream);
+            t->stream = NULL;
+        }
         if (t->mimicry) dap_tls_mimicry_free(t->mimicry);
-        DAP_DELETE(t);
+        DAP_DELETE(a_es->_inheritor);
         a_es->_inheritor = NULL;
     }
 }
@@ -507,7 +436,6 @@ static void s_tls_client_new(dap_events_socket_t *a_es, void *a_arg)
     t->handshake_done = false;
     t->client_finished_consumed = false;
     t->mimicry = NULL;
-    t->stream = NULL;
 
     a_es->_inheritor = t;
     a_es->callbacks.read_callback = s_tls_read;

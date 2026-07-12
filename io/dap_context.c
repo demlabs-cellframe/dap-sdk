@@ -772,9 +772,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         /* Remove from epoll immediately to break the loop */
                         dap_context_remove_from_polling(l_bes);
                         l_bes->flags &= ~(DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE);
-                        if (dap_events_socket_is_listener(l_bes)) {
-                            /* Listener — unpoll only */
+                        if (l_bes->no_close) {
+                            /* Listener socket — just remove from polling, don't delete */
                         } else {
+                            /* Client socket — mark for deletion */
                             l_bes->flags |= DAP_SOCK_SIGNAL_CLOSE;
                         }
                         l_forced_close = true;
@@ -1310,20 +1311,17 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     }
                     else if (!l_flag_rdhup && !l_flag_error && !(l_cur->flags & DAP_SOCK_CONNECTING )) {
-                        /* recv()/read() returned 0 — peer closed write side (EOF). */
-                        debug_if(s_debug_more, L_DEBUG, "EPOLLIN EOF: buf_in_size=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d",
-                               l_cur->buf_in_size, l_cur->socket, l_cur->type);
+                        debug_if(s_debug_more, L_DEBUG, "EPOLLIN triggered but nothing to read: buf_in_size=%zu, max=%zu, socket=%"DAP_FORMAT_SOCKET", type=%d",
+                               l_cur->buf_in_size, l_cur->buf_in_size_max, l_cur->socket, l_cur->type);
                         if (l_must_read_smth) {
+                            /* DESCRIPTOR_TYPE_FILE (TUN) and DESCRIPTOR_TYPE_SOCKET_UDP
+                             * are excluded: TUN must stay armed for next packets;
+                             * UDP uses a drain loop and never sets l_must_read_smth. */
                             switch (l_cur->type) {
                             case DESCRIPTOR_TYPE_PIPE:
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                                 dap_events_socket_set_readable_unsafe(l_cur, false);
-                                if (!dap_events_socket_is_listener(l_cur)) {
-                                    dap_events_socket_set_writable_unsafe(l_cur, false);
-                                    l_cur->buf_out_size = 0;
-                                    l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                                }
                                 break;
                             default:
                                 break;
@@ -1653,8 +1651,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)
             {
-                if (dap_events_socket_is_listener(l_cur)) {
-                    /* Listener sockets must not be deleted by the event loop. */
+                if (l_cur->no_close) {
+                    /* Listener sockets have no_close=true — they must not be
+                     * deleted by the event loop.  Remove from epoll to stop
+                     * re-reporting HUP/RDHUP. */
                     dap_context_remove_from_polling(l_cur);
                     l_cur->flags &= ~(DAP_SOCK_SIGNAL_CLOSE |
                                        DAP_SOCK_READY_TO_READ |
