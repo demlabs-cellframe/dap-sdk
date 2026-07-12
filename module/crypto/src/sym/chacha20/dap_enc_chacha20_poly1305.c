@@ -76,7 +76,9 @@ size_t dap_enc_chacha20_poly1305_calc_decode_size(size_t a_size)
 size_t dap_enc_chacha20_poly1305_encrypt_fast(dap_enc_key_t *a_key, const void *a_in,
         size_t a_in_size, void *a_out, size_t a_out_size_max)
 {
-    dap_return_val_if_pass(!a_key || !a_key->priv_key_data || !a_in || !a_out, 0);
+    // Allow a_in == NULL when a_in_size == 0 (e.g. keepalive packets that carry
+    // only AEAD overhead: nonce + tag, no plaintext).
+    dap_return_val_if_pass(!a_key || !a_key->priv_key_data || (!a_in && a_in_size) || !a_out, 0);
 
     size_t l_out_size = dap_enc_chacha20_poly1305_calc_encode_size(a_in_size);
     if (l_out_size > a_out_size_max) {
@@ -92,8 +94,12 @@ size_t dap_enc_chacha20_poly1305_encrypt_fast(dap_enc_key_t *a_key, const void *
 
     dap_random_bytes(l_nonce, DAP_CHACHA20_NONCE_SIZE);
 
+    // a_in may be NULL when a_in_size == 0; pass a non-NULL placeholder to
+    // avoid technically-undefined NULL dereference in seal's poly1305 update.
+    uint8_t l_zero = 0;
+    const uint8_t *l_pt = a_in ? (const uint8_t *)a_in : &l_zero;
     if (dap_chacha20_poly1305_seal(l_ct, l_tag,
-            (const uint8_t *)a_in, a_in_size,
+            l_pt, a_in_size,
             NULL, 0,
             (const uint8_t *)a_key->priv_key_data, l_nonce) != 0)
         return 0;

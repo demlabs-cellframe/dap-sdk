@@ -248,6 +248,7 @@ addToLibrary({
             } else if (xhr.response && xhr.response.byteLength > 0) {
                 responseBytes = new Uint8Array(xhr.response);
             }
+            console.log("[xhr-debug] OK status=" + xhr.status + " url=" + url.substring(url.lastIndexOf("/") - 20, url.indexOf("?") > 0 ? url.indexOf("?") : url.length) + " bodyLen=" + (responseBytes ? responseBytes.length : 0));
             if (responseBytes && responseBytes.length > 0) {
                 var ptr = _malloc(responseBytes.length + 1);
                 HEAPU8.set(responseBytes, ptr);
@@ -255,11 +256,13 @@ addToLibrary({
                 setValue(a_out_ptr_addr, ptr, '*');
                 setValue(a_out_len_addr, responseBytes.length, 'i32');
             } else {
+                console.warn("[xhr-debug] EMPTY RESPONSE for url=" + url.substring(0, 120));
                 setValue(a_out_ptr_addr, 0, '*');
                 setValue(a_out_len_addr, 0, 'i32');
             }
             return 0;
         }
+        console.error("[xhr-debug] FAIL status=" + xhr.status + " readyState=" + xhr.readyState + " url=" + url.substring(0, 120));
         return -xhr.status || -1;
     },
 

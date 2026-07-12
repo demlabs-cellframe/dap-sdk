@@ -233,7 +233,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
         dap_enc_ks_save_in_storage(l_enc_key_ks);
 
-        int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
+        int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE,
                                                       encrypt_id, DAP_ENC_DATA_TYPE_B64),
             l_node_msg_len = 0;
 
@@ -242,7 +242,15 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         if (l_protocol_version && l_sign_count) {
             l_enc_key_ks->node_addr = dap_cluster_node_addr_from_sign(l_sign);
 
-            dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+            dap_cert_t *l_node_cert = dap_cert_ensure_node_addr(DAP_STREAM_NODE_ADDR_CERT_NAME,
+                                                                DAP_STREAM_NODE_ADDR_CERT_TYPE);
+            if (!l_node_cert || !l_node_cert->enc_key) {
+                log_it(L_ERROR, "enc_init: node-addr certificate unavailable");
+                dap_enc_key_delete(l_pkey_exchange_key);
+                DAP_DELETE(encrypt_msg);
+                *return_code = DAP_HTTP_STATUS_INTERNAL_SERVER_ERROR;
+                return;
+            }
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size);
             if (!l_node_sign) {
                 dap_enc_key_delete(l_pkey_exchange_key);

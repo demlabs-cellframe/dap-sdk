@@ -61,6 +61,7 @@
 #include "dap_dl.h"
 #include "dap_enc.h"
 #include "dap_enc_ks.h"
+#include "dap_cert.h"
 #include "dap_link_manager.h"
 #include "dap_net_trans.h"
 #include "dap_net_trans_ctx.h"
@@ -218,7 +219,19 @@ ssize_t dap_stream_send_unsafe(dap_stream_t *a_stream, const void *a_data, size_
         log_it(L_ERROR, "Stream has no trans_ctx or esocket");
         return 0;
     }
-    
+
+    // Prefer trans->ops->write: transports like WebSocket require their own
+    // framing (RFC 6455) — writing raw bytes to the esocket would corrupt the
+    // protocol stream (browser aborts with "server must not mask frames").
+    // Same routing as dap_stream_pkt_write_unsafe.
+    dap_net_trans_t *l_trans = NULL;
+    if (a_stream->trans_ctx->trans)
+        l_trans = a_stream->trans_ctx->trans;
+    else if (a_stream->trans)
+        l_trans = a_stream->trans;
+    if (l_trans && l_trans->ops && l_trans->ops->write)
+        return l_trans->ops->write(a_stream, a_data, a_size);
+
     dap_events_socket_t *l_es = a_stream->trans_ctx->esocket;
     
     // Check if this is a datagram transport (UDP, SCTP, etc)
@@ -258,17 +271,10 @@ void dap_stream_load_preferred_encryption_config(dap_config_t *a_config)
 
 int s_stream_init_node_addr_cert()
 {
-    dap_cert_t *l_addr_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-    if (!l_addr_cert) {
-        const char *l_cert_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
-        // create new cert
-        if(l_cert_folder) {
-            char *l_cert_path = dap_strdup_printf("%s/" DAP_STREAM_NODE_ADDR_CERT_NAME ".dcert", l_cert_folder);
-            l_addr_cert = dap_cert_generate(DAP_STREAM_NODE_ADDR_CERT_NAME, l_cert_path, DAP_STREAM_NODE_ADDR_CERT_TYPE);
-            DAP_DELETE(l_cert_path);
-        } else
-            return -1;
-    }
+    dap_cert_t *l_addr_cert = dap_cert_ensure_node_addr(DAP_STREAM_NODE_ADDR_CERT_NAME,
+                                                        DAP_STREAM_NODE_ADDR_CERT_TYPE);
+    if (!l_addr_cert)
+        return -1;
     g_node_addr = dap_cluster_node_addr_from_cert(l_addr_cert);
     return 0;
 }

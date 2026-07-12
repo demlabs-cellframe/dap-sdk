@@ -167,7 +167,12 @@ bool dap_context_queue_push(dap_context_queue_t *a_queue, void *a_item) {
     return true;
 }
 
+#if defined(DAP_OS_WASM_MT)
+/* Video/chat flood the ch_io queue; larger batches keep up with capture rate. */
+#define DAP_CONTEXT_QUEUE_BATCH_SIZE 64
+#else
 #define DAP_CONTEXT_QUEUE_BATCH_SIZE 5
+#endif
 
 /**
  * @brief Process a batch of items from queue (called by reactor)

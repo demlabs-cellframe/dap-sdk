@@ -126,7 +126,11 @@ size_t dap_enc_code(dap_enc_key_t *a_key,
                           void *a_buf_out, const size_t a_buf_out_size_max,
                     dap_enc_data_type_t a_data_type_out)
 {
-    dap_return_val_if_fail_err(a_key && a_key->enc_na && a_buf_in && a_buf_out, 0, "Invalid params");
+    dap_return_val_if_fail_err(a_key && a_key->enc_na && a_buf_out, 0, "Invalid params");
+    // a_buf_in may be NULL when a_buf_size == 0 (e.g. keepalive packets that
+    // carry only AEAD overhead: nonce + tag, no plaintext).
+    if (a_buf_size > 0 && !a_buf_in)
+        return log_it(L_ERROR, "Invalid params: non-zero size with NULL input"), 0;
     size_t l_ret = dap_enc_code_out_size(a_key, a_buf_size, a_data_type_out);
     if ( !l_ret || l_ret > a_buf_out_size_max )
         return log_it(L_ERROR, "Insufficient out buffer size: %zu < %zu", a_buf_out_size_max, l_ret), 0;

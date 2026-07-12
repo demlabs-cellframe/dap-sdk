@@ -99,6 +99,17 @@ dap_net_trans_ws_system_config_t dap_net_trans_ws_system_config_default(void);
  */
 bool dap_net_trans_is_websocket_system(const struct dap_stream *a_stream);
 
+#ifdef __EMSCRIPTEN__
+/**
+ * @brief Drain worker-queued WebSocket outbound packets on the main thread.
+ *
+ * Stream workers enqueue encrypted frames into a lockless ring; the browser
+ * WebSocket API must be called from the main runtime thread. Call this from
+ * the JS event loop (e.g. after each video frame send or on requestAnimationFrame).
+ */
+void dap_net_trans_ws_system_drain_outbound(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

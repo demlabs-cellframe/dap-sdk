@@ -424,6 +424,7 @@ extern void s_handshake_callback_wrapper(dap_stream_t *a_stream, const void *a_d
 extern void s_session_create_callback_wrapper(dap_stream_t *a_stream, uint32_t a_session_id,
                                                const char *a_response_data, size_t a_response_size, int a_error);
 extern void s_stream_transport_connect_callback(dap_stream_t *a_stream, int a_error_code);
+extern void s_session_start_ready_callback(dap_stream_t *a_stream, int a_error_code);
 
 // Timer callbacks (defined below)
 static bool s_stream_timer_timeout_check(void *a_arg);
@@ -646,17 +647,20 @@ static void s_worker_execute_stage(void *a_arg)
             l_es->stream_es->callbacks.delete_callback = l_stream_cbs.delete_callback;
         }
 
-        // Session start
+        // Session start — wait for transport ready callback before advancing FSM.
+        // WASM WebSocket opens asynchronously; native HTTP/WS/UDP call back synchronously.
         dap_net_trans_t *l_transport = l_es->stream->trans;
         int l_start_ret = 0;
-        if (l_transport && l_transport->ops && l_transport->ops->session_start) {
-            l_start_ret = l_transport->ops->session_start(l_es->stream, l_es->stream_id, NULL);
-        }
-        if (l_start_ret != 0) {
-            log_it(L_ERROR, "Session start failed: %d", l_start_ret);
-            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                                  STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
-            break;
+        bool l_has_session_start = l_transport && l_transport->ops && l_transport->ops->session_start;
+        if (l_has_session_start) {
+            l_start_ret = l_transport->ops->session_start(l_es->stream, l_es->stream_id,
+                                                            s_session_start_ready_callback);
+            if (l_start_ret != 0) {
+                log_it(L_ERROR, "Session start failed: %d", l_start_ret);
+                dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                      STAGE_STATUS_ERROR, ERROR_STREAM_ABORTED);
+                break;
+            }
         }
 
         // Start timeout timer for streaming
@@ -670,8 +674,10 @@ static void s_worker_execute_stage(void *a_arg)
             }
         }
 
-        dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
-                              STAGE_STATUS_DONE, ERROR_NO_ERROR);
+        if (!l_has_session_start) {
+            dap_client_fsm_notify(l_ctx->fsm_uuid, l_ctx->fsm_thread_idx,
+                                  STAGE_STATUS_DONE, ERROR_NO_ERROR);
+        }
     } break;
 
     case STAGE_STREAM_STREAMING: {
