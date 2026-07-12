@@ -225,7 +225,7 @@ dap_client_fsm_t *dap_client_fsm_new(dap_client_t *a_client)
     // Crypto defaults: legacy cellframe-node master uses MSRLN (type 11, pubkey 1824 B);
     // modern nodes use Kyber512 (type 23, pubkey 800 B).
     l_fsm->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012;
-    if (dap_client_get_legacy_enc_handshake()) {
+    if (dap_client_uses_legacy_enc_handshake(a_client)) {
         l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN;
     } else {
         l_fsm->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
@@ -1426,7 +1426,7 @@ static void s_fsm_dispatch_stage_to_worker(dap_client_fsm_t *a_fsm)
             size_t l_sign_count = 0;
             uint32_t l_protocol_version = DAP_CLIENT_PROTOCOL_VERSION;
 
-            if (dap_client_get_legacy_enc_handshake()) {
+            if (dap_client_uses_legacy_enc_handshake(l_client)) {
                 l_protocol_version = 0;
                 log_it(L_INFO, "Legacy enc_init handshake (no signature, protocol_version=0)");
             } else {

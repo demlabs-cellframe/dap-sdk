@@ -101,6 +101,8 @@ typedef struct dap_client {
     /** Hot reconnect: try STREAM_CTL with copied session_key before full ENC handshake. */
     bool session_resume_mode;
     bool del_arg;
+    /** Per-client legacy enc_init (protocol_version=0, MSRLN). Used for HTTP P2P links. */
+    bool legacy_enc_handshake;
 
     dap_client_stage_t stage_target;
     dap_client_callback_t stage_target_done_callback;
@@ -134,6 +136,9 @@ void dap_client_deinit();
 /** Legacy enc_init: pubkey only, no Dilithium sign (for old cellframe-node master VPN). */
 void dap_client_set_legacy_enc_handshake(bool a_enable);
 bool dap_client_get_legacy_enc_handshake(void);
+bool dap_client_uses_legacy_enc_handshake(dap_client_t *a_client);
+/** Per-client legacy HTTP enc_init for P2P links (protocol_version=0, MSRLN). */
+void dap_client_configure_p2p_handshake(dap_client_t *a_client, bool a_legacy);
 
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg);
 

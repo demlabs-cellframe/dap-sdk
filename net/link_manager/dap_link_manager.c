@@ -436,10 +436,16 @@ int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster, u
     DL_FOREACH(s_link_manager->nets, l_item) {
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
             log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " already managed", a_net_id);
+            pthread_rwlock_unlock(&s_link_manager->nets_lock);
             return -3;
         }
     }
-    dap_managed_net_t *l_net = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_managed_net_t, -3);
+    dap_managed_net_t *l_net = DAP_NEW_Z(dap_managed_net_t);
+    if (!l_net) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        pthread_rwlock_unlock(&s_link_manager->nets_lock);
+        return -3;
+    }
     l_net->id = a_net_id;
     l_net->min_links_num = a_min_links_number;
     l_net->link_clusters = dap_list_append(l_net->link_clusters, a_link_cluster);
@@ -595,12 +601,23 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
                 NODE_ADDR_FP_ARGS_S(l_link->uplink.client->link_info.node_addr),
                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
         l_link->uplink.attempts_count = 0;
+        l_link->uplink.start_after = 0;
         l_link->uplink.state = LINK_STATE_ESTABLISHED;
         {
             dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
             dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
             l_link->uplink.es_uuid = (l_tc && l_tc->stream && l_tc->stream->esocket)
                 ? l_tc->stream->esocket->uuid : 0;
+        }
+        if (l_link->link_manager->callbacks.connected) {
+            for (dap_list_t *l_net_item = l_link->uplink.associated_nets; l_net_item; l_net_item = l_net_item->next) {
+                dap_managed_net_t *l_net = l_net_item->data;
+                if (!l_net || !l_net->active)
+                    continue;
+                dap_cluster_t *l_cluster = (dap_cluster_t *)l_net->link_clusters->data;
+                if (!dap_cluster_member_find_unsafe(l_cluster, &l_link->addr))
+                    l_link->link_manager->callbacks.connected(l_link, l_net->id);
+            }
         }
     } else
         log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS(l_addr));
@@ -764,6 +781,16 @@ static bool s_link_have_clusters_enabled(dap_link_t *a_link)
 static void s_link_connect(dap_link_t *a_link)
 {
     a_link->uplink.state = LINK_STATE_CONNECTING;
+    if (a_link->link_manager->callbacks.configure_handshake) {
+        for (dap_list_t *it = a_link->uplink.associated_nets; it; it = it->next) {
+            dap_managed_net_t *l_net = it->data;
+            if (l_net && l_net->active) {
+                a_link->link_manager->callbacks.configure_handshake(
+                    a_link->uplink.client, &a_link->addr, l_net->id);
+                break;
+            }
+        }
+    }
     log_it(L_INFO, "Connecting to node " NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(a_link->uplink.client->link_info.node_addr),
                                     a_link->uplink.client->link_info.uplink_addr, a_link->uplink.client->link_info.uplink_port);
     dap_client_go_stage(a_link->uplink.client, STAGE_STREAM_STREAMING, s_client_connected_callback);
@@ -893,6 +920,7 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
         }
         else
             debug_if(s_debug_more, L_DEBUG, "Link " NODE_ADDR_FP_STR " already have a client", NODE_ADDR_FP_ARGS(a_node_addr));
+        l_link->is_uplink = true;
         l_link->uplink.client->_inheritor = l_link;
         if (a_associated_net_id != DAP_NET_ID_INVALID) {
             dap_managed_net_t *l_net = s_find_net_by_id(a_associated_net_id);

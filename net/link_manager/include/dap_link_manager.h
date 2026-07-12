@@ -42,6 +42,9 @@ typedef void (*dap_link_manager_callback_error_t)(dap_link_t *, uint64_t, int);
 typedef int (*dap_link_manager_callback_fill_net_info_t)(dap_link_t *);
 typedef int (*dap_link_manager_callback_link_request_t)(uint64_t);
 typedef int (*dap_link_manager_callback_link_count_changed_t)();
+typedef void (*dap_link_manager_callback_configure_handshake_t)(dap_client_t *a_client,
+                                                                dap_stream_node_addr_t *a_addr,
+                                                                uint64_t a_net_id);
 
 typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_connected_t connected;
@@ -50,6 +53,7 @@ typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_fill_net_info_t fill_net_info;
     dap_link_manager_callback_link_request_t link_request;
     dap_link_manager_callback_link_count_changed_t link_count_changed;
+    dap_link_manager_callback_configure_handshake_t configure_handshake;
 
 } dap_link_manager_callbacks_t;
 

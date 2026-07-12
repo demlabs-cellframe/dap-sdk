@@ -49,6 +49,24 @@ bool dap_client_get_legacy_enc_handshake(void)
     return s_legacy_enc_handshake;
 }
 
+bool dap_client_uses_legacy_enc_handshake(dap_client_t *a_client)
+{
+    return (a_client && a_client->legacy_enc_handshake) || s_legacy_enc_handshake;
+}
+
+void dap_client_configure_p2p_handshake(dap_client_t *a_client, bool a_legacy)
+{
+    if (!a_client)
+        return;
+    a_client->legacy_enc_handshake = a_legacy;
+    dap_client_fsm_t *l_fsm = DAP_CLIENT_FSM(a_client);
+    if (l_fsm) {
+        l_fsm->session_key_open_type = a_legacy
+            ? DAP_ENC_KEY_TYPE_MSRLN
+            : DAP_ENC_KEY_TYPE_KEM_KYBER512;
+    }
+}
+
 /**
  * @brief dap_client_init
  * @return

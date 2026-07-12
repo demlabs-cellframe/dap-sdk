@@ -4,10 +4,9 @@
  * TLS handshake → direct handler calls (enc_init, stream_ctl, stream).
  * No HTTP server needed — parses URL+body from raw HTTP POST.
  *
- * esocket->_inheritor always points to tls_conn_ctx_t for the entire
- * connection lifetime.  After stream_ctl, the dap_stream_t is stored
- * inside tls_conn_ctx_t.stream and reached from there — no _inheritor
- * type swap, no magic sentinels.
+ * Post-stream_ctl: esocket->_inheritor → trans_ctx (unified with HTTP/UDP).
+ * TLS mimicry state lives in trans_ctx->transport_priv (tls_conn_ctx_t).
+ * Pre-stream_ctl: _inheritor → tls_conn_ctx_t directly.
  */
 
 #include <string.h>
@@ -27,6 +26,7 @@
 #include "dap_stream_ctl_handler.h"
 #include "dap_stream.h"
 #include "dap_stream_pkt.h"
+#include "dap_net_trans_ctx.h"
 
 #define LOG_TAG "dap_net_trans_tls_server"
 
@@ -43,14 +43,47 @@ typedef struct tls_conn_ctx {
     bool client_finished_consumed;
     size_t prev_buf_in_size;  /* guard: buf_in_size at function exit */
     bool stream_mode;         /* after stream_ctl: route DAP packets to stream */
-    dap_stream_t *stream;     /* set by dap_stream_new_es_server; NULL until then */
+    dap_stream_t *stream;     /* pre-stream_ctl only; NULL after trans_ctx bind */
 } tls_conn_ctx_t;
 
 static bool s_debug_more = false;
 
-static inline tls_conn_ctx_t *s_tls_ctx(dap_events_socket_t *a_es)
+static bool s_tls_using_trans_ctx(const dap_events_socket_t *a_es)
 {
-    return a_es ? (tls_conn_ctx_t *)a_es->_inheritor : NULL;
+    if (!a_es || !a_es->_inheritor)
+        return false;
+    /* Pre-stream_ctl: _inheritor → tls_conn_ctx_t (mimicry* at offset 0 looks like
+     * trans_ctx->trans).  Require esocket back-pointer to distinguish layouts. */
+    const dap_net_trans_ctx_t *tc = (const dap_net_trans_ctx_t *)a_es->_inheritor;
+    return tc->esocket == a_es && tc->trans
+        && tc->trans->type == DAP_NET_TRANS_TLS_DIRECT;
+}
+
+static tls_conn_ctx_t *s_tls_priv(dap_events_socket_t *a_es)
+{
+    if (!a_es || !a_es->_inheritor)
+        return NULL;
+    if (s_tls_using_trans_ctx(a_es))
+        return (tls_conn_ctx_t *)((dap_net_trans_ctx_t *)a_es->_inheritor)->transport_priv;
+    return (tls_conn_ctx_t *)a_es->_inheritor;
+}
+
+static dap_stream_t *s_tls_stream(dap_events_socket_t *a_es)
+{
+    if (s_tls_using_trans_ctx(a_es))
+        return ((dap_net_trans_ctx_t *)a_es->_inheritor)->stream;
+    tls_conn_ctx_t *t = s_tls_priv(a_es);
+    return t ? t->stream : NULL;
+}
+
+static void s_tls_transport_priv_free(void *a_priv)
+{
+    tls_conn_ctx_t *t = (tls_conn_ctx_t *)a_priv;
+    if (!t)
+        return;
+    if (t->mimicry)
+        dap_tls_mimicry_free(t->mimicry);
+    DAP_DELETE(t);
 }
 
 /* ------------------------------------------------------------------ */
@@ -67,7 +100,9 @@ static ssize_t s_tls_stream_write(dap_stream_t *a_stream, const void *a_data, si
     if (!a_stream || !a_stream->esocket || !a_data || a_size == 0)
         return -1;
 
-    tls_conn_ctx_t *t = s_tls_ctx(a_stream->esocket);
+    tls_conn_ctx_t *t = a_stream->trans_ctx
+        ? (tls_conn_ctx_t *)a_stream->trans_ctx->transport_priv
+        : s_tls_priv(a_stream->esocket);
     if (!t || !t->mimicry) {
         /* Should not happen post-stream_ctl, but don't drop silently. */
         dap_events_socket_write_unsafe(a_stream->esocket, a_data, a_size);
@@ -84,20 +119,51 @@ static ssize_t s_tls_stream_write(dap_stream_t *a_stream, const void *a_data, si
     }
 
     size_t l_ret = dap_events_socket_write_unsafe(a_stream->esocket, l_wrapped, l_wrapped_sz);
-    log_it(L_NOTICE, "TLS server: s_tls_stream_write plain=%zu wrapped=%zu queued=%zu fd=%d",
-           a_size, l_wrapped_sz, l_ret, a_stream->esocket->socket);
+    debug_if(s_debug_more, L_DEBUG, "TLS server: s_tls_stream_write plain=%zu wrapped=%zu queued=%zu fd=%d",
+             a_size, l_wrapped_sz, l_ret, a_stream->esocket->socket);
     DAP_DELETE(l_wrapped);
     return l_ret > 0 ? (ssize_t)a_size : -1;
 }
 
+static void s_tls_server_stream_close(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->trans_ctx)
+        return;
+    if (a_stream->trans_ctx->transport_priv) {
+        s_tls_transport_priv_free(a_stream->trans_ctx->transport_priv);
+        a_stream->trans_ctx->transport_priv = NULL;
+    }
+}
+
 static const dap_net_trans_ops_t s_tls_server_stream_ops = {
     .write = s_tls_stream_write,
+    .close = s_tls_server_stream_close,
 };
 
 static dap_net_trans_t s_tls_server_stream_trans = {
     .type = DAP_NET_TRANS_TLS_DIRECT,
     .ops  = &s_tls_server_stream_ops,
 };
+
+static void s_tls_bind_post_stream(dap_events_socket_t *a_es, dap_stream_t *a_stream, tls_conn_ctx_t *t)
+{
+    dap_net_trans_ctx_t *tc = a_stream ? a_stream->trans_ctx : NULL;
+    if (!a_es || !tc || !t)
+        return;
+
+    t->stream = NULL;
+    tc->transport_priv = t;
+    tc->trans = &s_tls_server_stream_trans;
+    tc->esocket = a_es;
+    a_stream->trans = &s_tls_server_stream_trans;
+    a_es->_inheritor = tc;
+
+    dap_stream_bind_server_esocket_callbacks(a_es);
+    dap_stream_server_promote_uuid_keepalive(a_stream);
+
+    log_it(L_INFO, "TLS server: unified trans_ctx bound stream=%p fd=%d",
+           (void *)a_stream, a_es->socket);
+}
 
 /* ------------------------------------------------------------------ */
 /*  HTTP POST parser — extracts URL path, query, body from raw HTTP    */
@@ -238,7 +304,7 @@ static void s_tls_error(dap_events_socket_t *a_es, int a_error);
 
 static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 {
-    tls_conn_ctx_t *t = s_tls_ctx(a_es);
+    tls_conn_ctx_t *t = s_tls_priv(a_es);
     if (!t) return;
 
     /* Guard: if buf_in hasn't changed since we last exited, skip.
@@ -354,8 +420,9 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 
     if (t->stream_mode) {
         /* DAP stream packets — deliver to the stream created at stream_ctl */
-        if (t->stream) {
-            dap_stream_data_proc_read_ext(t->stream, l_raw, l_raw_sz);
+        dap_stream_t *l_stream = s_tls_stream(a_es);
+        if (l_stream) {
+            dap_stream_data_proc_read_ext(l_stream, l_raw, l_raw_sz);
         } else {
             log_it(L_WARNING, "TLS server: stream mode but no stream (dropping %zu bytes)", l_raw_sz);
         }
@@ -395,14 +462,10 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
         if (l_session) {
             dap_stream_t *l_stream = dap_stream_new_es_server(a_es, l_session);
             if (l_stream) {
-                t->stream = l_stream;
-                /* Route dap_stream_pkt_write_unsafe() through the TLS-wrapping
-                 * ops->write instead of the raw esocket path — see
-                 * s_tls_stream_write for why wrapping must happen exactly
-                 * once, here, rather than in the epoll write_callback. */
                 if (l_stream->trans_ctx)
                     l_stream->trans_ctx->trans = &s_tls_server_stream_trans;
-                log_it(L_NOTICE, "TLS server: stream created (session=%u, stream=%p)",
+                s_tls_bind_post_stream(a_es, l_stream, t);
+                log_it(L_INFO, "TLS server: stream created (session=%u, stream=%p)",
                        l_session_id, (void*)l_stream);
             } else {
                 log_it(L_ERROR, "TLS server: failed to create stream for session %u", l_session_id);
@@ -471,25 +534,41 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
 
 static void s_tls_delete(dap_events_socket_t *a_es, void *a_arg)
 {
-    tls_conn_ctx_t *t = s_tls_ctx(a_es);
-    int l_fd = a_es ? a_es->socket : -1;
+    UNUSED(a_arg);
+    if (!a_es)
+        return;
 
-    log_it(L_NOTICE, "TLS server: delete fd=%d, t=%p, stream=%p, mimicry=%p",
-           l_fd, (void*)t, t ? (void*)t->stream : NULL,
-           t ? (void*)t->mimicry : NULL);
+    if (s_tls_using_trans_ctx(a_es)) {
+        /* Unified path — s_esocket_callback_delete owns teardown */
+        return;
+    }
+
+    tls_conn_ctx_t *t = s_tls_priv(a_es);
+    debug_if(s_debug_more, L_DEBUG, "TLS server: delete pre-stream fd=%d t=%p",
+             a_es->socket, (void *)t);
 
     if (t) {
-        /* Stream + trans_ctx are freed by the dap_stream layer
-         * (dap_stream_delete_unsafe) — we must not touch them here. */
-        if (t->mimicry) dap_tls_mimicry_free(t->mimicry);
-        DAP_DELETE(t);
+        s_tls_transport_priv_free(t);
         a_es->_inheritor = NULL;
     }
 }
 
 static void s_tls_error(dap_events_socket_t *a_es, int a_error)
 {
-    log_it(L_NOTICE, "TLS server: error fd=%d, err=%d", a_es ? a_es->socket : -1, a_error);
+    log_it(L_WARNING, "TLS server: error fd=%d, err=%d", a_es ? a_es->socket : -1, a_error);
+    if (!a_es)
+        return;
+
+    dap_stream_t *l_stream = s_tls_stream(a_es);
+    if (l_stream) {
+        dap_stream_delete_unsafe(l_stream);
+        return;
+    }
+
+    if (s_tls_using_trans_ctx(a_es))
+        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+    else
+        dap_events_socket_remove_and_delete_unsafe(a_es, false);
 }
 
 /* ------------------------------------------------------------------ */

@@ -653,6 +653,7 @@ static void s_http_connect_es_connected(dap_events_socket_t *a_es)
     l_stream->esocket_uuid = a_es->uuid;
     l_stream->esocket_worker = a_es->worker;
 
+    dap_stream_authorize_stream(l_stream);
     dap_stream_start_keepalive(l_stream);
 
     debug_if(s_debug_more, L_INFO, "HTTP TCP connected, esocket fd=%d associated with stream", a_es->fd);
@@ -831,14 +832,12 @@ static int s_http_trans_handshake_init(dap_stream_t *a_stream,
     DAP_DELETE(l_data);
     
     /* Build node address path segment.
-     * Legacy (protocol_version=0): old cellframe-node master only understands the
-     * anonymous placeholder "gd4y5yh78w42aaagh".  Passing a real b58 node address
-     * causes the server to do a blockchain lookup that never completes.
-     * Modern (protocol_version>0): use the real node address from link_info. */
+     * Legacy (protocol_version=0): old cellframe-node uses gd4y5yh78w42aaagh for
+     * anonymous connections.  For P2P link_manager connections we must send the
+     * real address so the remote can authorize our stream.
+     * Modern (protocol_version>0): always use the real node address from link_info. */
     char l_node_addr_b58[32] = "gd4y5yh78w42aaagh";
-    if (!a_params->protocol_version) {
-        /* legacy — always use the placeholder */
-    } else if (l_client->link_info.node_addr.uint64) {
+    if (l_client->link_info.node_addr.uint64) {
         uint64_t l_addr_le = l_client->link_info.node_addr.uint64;
         size_t l_b58_len = dap_enc_base58_encode(&l_addr_le, sizeof(l_addr_le), l_node_addr_b58);
         if (!l_b58_len)
@@ -1345,7 +1344,12 @@ static void s_http_request_response_unencrypted(void * a_response, size_t a_resp
         log_it(L_INFO, "s_http_request_response_unencrypted: calling callback with response (size=%zu)", a_response_size);
         l_ctx->callback(l_client_esocket->client, a_response, a_response_size);
     } else {
-        log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu)", a_response, a_response_size);
+        log_it(L_WARNING, "s_http_request_response_unencrypted: empty response (response=%p, size=%zu, http_code=%d)",
+               a_response, a_response_size, (int)a_http_code);
+        if (l_ctx->error_callback && l_client_esocket->client) {
+            l_ctx->error_callback(l_client_esocket->client, l_ctx->callback_arg,
+                                  a_http_code ? (int)a_http_code : -1);
+        }
     }
 
     l_fsm->callback_arg = l_old_callback_arg;
@@ -1610,43 +1614,12 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
     a_result->stream = NULL;
     a_result->error_code = 0;
 
-    // Create TCP socket for streaming phase (GET /stream long-lived connection).
-    // ENC and STREAM_CTL stages use dap_client_http_request() with their own
-    // temporary sockets; this esocket is only used from session_start onwards.
-    dap_events_socket_t *l_es = dap_events_socket_create_platform(PF_INET, SOCK_STREAM, 0, a_params->callbacks);
-    if (!l_es) {
-        log_it(L_ERROR, "Failed to create HTTP streaming TCP socket");
-        a_result->error_code = -1;
-        return -1;
-    }
-
-    l_es->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-    l_es->_inheritor = a_params->client_ctx;
-
-    if (dap_events_socket_resolve_and_set_addr(l_es, a_params->host, a_params->port) < 0) {
-        log_it(L_ERROR, "Failed to resolve address for HTTP trans");
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-
-    l_es->flags |= DAP_SOCK_CONNECTING | DAP_SOCK_READY_TO_WRITE;
-#ifdef DAP_EVENTS_CAPS_IOCP
-    l_es->flags &= ~DAP_SOCK_READY_TO_READ;
-#else
-    int l_connect_err = 0;
-    if (dap_events_socket_connect(l_es, &l_connect_err) != 0) {
-        log_it(L_ERROR, "Failed to connect HTTP streaming socket: error %d", l_connect_err);
-        dap_events_socket_delete_unsafe(l_es, true);
-        a_result->error_code = -1;
-        return -1;
-    }
-#endif
-    l_es->is_initalized = false;
-
-    dap_worker_add_events_socket(a_params->worker, l_es);
-
-    dap_stream_t *l_stream = dap_stream_new_es_client(l_es,
+    /* No TCP socket here — /enc_init and /stream_ctl use transient HTTP clients.
+     * The persistent streaming socket is created in s_http_trans_connect() once
+     * the handshake is complete (STAGE_STREAM_SESSION).  Opening TCP early caused
+     * the peer to RST/EOF the idle connection; recv()==0 then tore down the
+     * handshake esocket while ENC was still in flight. */
+    dap_stream_t *l_stream = dap_stream_new_es_client(NULL,
                                 (dap_stream_node_addr_t *)a_params->node_addr,
                                 a_params->authorized);
     if (!l_stream) {
@@ -1657,10 +1630,10 @@ static int s_http_stage_prepare(dap_net_trans_t *a_trans,
 
     l_stream->trans = a_trans;
 
-    a_result->esocket = l_es;
+    a_result->esocket = NULL;
     a_result->stream = l_stream;
     a_result->error_code = 0;
-    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared with TCP socket (fd=%d) for streaming", l_es->fd);
+    debug_if(s_debug_more, L_DEBUG, "HTTP stream prepared (no TCP yet; connect deferred to handshake completion)");
     return 0;
 }
 

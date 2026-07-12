@@ -947,10 +947,14 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         dap_stream_session_close_mt(a_stream->session->id);
     }
 
-    // Call trans->ops->close() FIRST to let transport manage esocket
-    dap_net_trans_t *l_trans = a_stream->trans;
+    // Call trans->ops->close() FIRST to let transport manage esocket / transport_priv
+    dap_net_trans_t *l_trans = (a_stream->trans_ctx && a_stream->trans_ctx->trans)
+        ? a_stream->trans_ctx->trans
+        : a_stream->trans;
     if (l_trans) {
-        a_stream->trans = NULL;  // Prevent double close
+        a_stream->trans = NULL;
+        if (a_stream->trans_ctx)
+            a_stream->trans_ctx->trans = NULL;
         if (l_trans->ops && l_trans->ops->close) {
             l_trans->ops->close(a_stream);
         }
@@ -960,11 +964,14 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     if (a_stream->esocket && a_stream->esocket_worker) {
         dap_events_socket_t *l_es = a_stream->esocket;
         dap_worker_t *l_es_worker = a_stream->esocket_worker;
-        l_es->callbacks.delete_callback = NULL;
-        l_es->_inheritor = NULL;
         a_stream->esocket = NULL;
         a_stream->esocket_uuid = 0;
         a_stream->esocket_worker = NULL;
+        /* Clear callbacks before remove — delete_callback must not re-enter
+         * dap_stream_delete_unsafe (HUP path calls callback → delete_unsafe). */
+        l_es->callbacks.delete_callback = NULL;
+        l_es->callbacks.error_callback = NULL;
+        l_es->_inheritor = NULL;
         dap_worker_t *l_current = dap_worker_get_current();
         if (l_current == l_es_worker) {
             dap_events_socket_remove_and_delete_unsafe(l_es, false);
@@ -1046,6 +1053,63 @@ static void s_esocket_callback_error(dap_events_socket_t *a_esocket, int a_error
     log_it(L_WARNING, "Stream esocket error: %d", a_error);
     // Mark for close, the delete callback will clean up
     a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+}
+
+void dap_stream_bind_server_esocket_callbacks(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return;
+    a_es->callbacks.delete_callback = s_esocket_callback_delete;
+    a_es->callbacks.error_callback = s_esocket_callback_error;
+}
+
+void dap_stream_server_promote_uuid_keepalive(dap_stream_t *a_stream)
+{
+    if (!a_stream || !a_stream->esocket || !a_stream->esocket->worker)
+        return;
+
+    if (a_stream->keepalive_timer) {
+        dap_events_socket_uuid_t l_uuid   = a_stream->keepalive_timer_uuid;
+        dap_worker_t            *l_worker = a_stream->keepalive_timer_worker;
+        a_stream->keepalive_timer        = NULL;
+        a_stream->keepalive_timer_uuid   = 0;
+        a_stream->keepalive_timer_worker = NULL;
+
+        dap_worker_t *l_cur = dap_worker_get_current();
+        if (l_cur && l_cur == l_worker && l_cur->context) {
+            dap_events_socket_t *l_timer_es = dap_context_find(l_cur->context, l_uuid);
+            if (l_timer_es) {
+                dap_timerfd_t *l_timer = (dap_timerfd_t *)l_timer_es->_inheritor;
+                if (l_timer) {
+                    void *l_arg = __atomic_exchange_n(&l_timer->callback_arg, (void *)NULL, __ATOMIC_RELEASE);
+                    dap_timerfd_delete_unsafe(l_timer);
+                    /* keepalive_direct passes stream pointer — not heap-allocated */
+                    if (l_arg && l_arg != (void *)a_stream)
+                        DAP_DELETE(l_arg);
+                }
+            }
+        } else if (l_worker) {
+            dap_timerfd_delete_mt(l_worker, l_uuid);
+        }
+    }
+
+    dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
+    if (!l_es_uuid)
+        return;
+    *l_es_uuid = a_stream->esocket->uuid;
+    a_stream->keepalive_timer = dap_timerfd_start_on_worker(
+        a_stream->esocket->worker,
+        STREAM_KEEPALIVE_TIMEOUT * 1000,
+        (dap_timerfd_callback_t)s_callback_server_keepalive,
+        l_es_uuid);
+    if (!a_stream->keepalive_timer) {
+        DAP_DELETE(l_es_uuid);
+        return;
+    }
+    a_stream->keepalive_timer_uuid   = a_stream->keepalive_timer->esocket_uuid;
+    a_stream->keepalive_timer_worker = a_stream->keepalive_timer->worker;
+    log_it(L_INFO, "Server stream %p: promoted to UUID keepalive on worker #%u, sock=%"DAP_FORMAT_SOCKET,
+           (void *)a_stream, a_stream->esocket->worker->id, a_stream->esocket->socket);
 }
 
 /**
@@ -1221,9 +1285,13 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
      * is freed.  dap_stream_delete_unsafe / s_esocket_callback_delete will call
      * trans->ops->close again, but the guard "a_stream->trans = NULL" ensures it
      * is a no-op on the second invocation. */
-    dap_net_trans_t *l_trans = l_stream->trans;
+    dap_net_trans_t *l_trans = (l_stream->trans_ctx && l_stream->trans_ctx->trans)
+        ? l_stream->trans_ctx->trans
+        : l_stream->trans;
     if (l_trans) {
-        l_stream->trans = NULL;   /* prevent double-close */
+        l_stream->trans = NULL;
+        if (l_stream->trans_ctx)
+            l_stream->trans_ctx->trans = NULL;
         if (l_trans->ops && l_trans->ops->close)
             l_trans->ops->close(l_stream);
     }
@@ -1803,8 +1871,9 @@ static bool s_callback_keepalive_direct(void *a_arg)
     socklen_t l_sockerr_len = sizeof(l_sockerr);
     getsockopt(l_es->fd, SOL_SOCKET, SO_ERROR, (char *)&l_sockerr, &l_sockerr_len);
     if (l_sockerr != 0) {
-        log_it(L_INFO, "Keepalive direct: socket error %d on stream %p sock=%d — stopping timer",
+        log_it(L_INFO, "Keepalive direct: socket error %d on stream %p sock=%d — tearing down",
                l_sockerr, (void*)l_stream, l_es->socket);
+        dap_stream_delete_unsafe(l_stream);
         return false;
     }
     if (!l_stream->session || !l_stream->session->key)
@@ -1889,6 +1958,28 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
     DL_APPEND(s_streams, a_stream);
     if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
+    pthread_rwlock_unlock(&s_streams_lock);
+    return l_ret;
+}
+
+/**
+ * @brief dap_stream_authorize_stream — promote an existing stream to authorized
+ * and register it in the s_authorized_streams hashtable.
+ *
+ * Call this after the handshake completes and the persistent esocket is bound
+ * (e.g. in transport connected_callback).  Idempotent: if the stream is
+ * already in the hashtable, returns 0 without side-effects.
+ */
+int dap_stream_authorize_stream(dap_stream_t *a_stream)
+{
+    dap_return_val_if_fail(a_stream, -1);
+    int l_ret = 0;
+    int lock = pthread_rwlock_wrlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if (lock == EDEADLK)
+        return log_it(L_CRITICAL, "! Attempt to acquire streams lock recursively !"), -666;
+    a_stream->authorized = true;
+    l_ret = s_stream_add_to_hashtable(a_stream);
     pthread_rwlock_unlock(&s_streams_lock);
     return l_ret;
 }
