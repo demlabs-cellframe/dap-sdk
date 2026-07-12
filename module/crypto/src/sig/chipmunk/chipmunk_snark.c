@@ -538,7 +538,65 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
         return 0;
     }
 
-    /* 6. Verify quotient relation: z(X) = q(X) * (X - alpha_scalar)
+    /* 6. FRI verification: re-derive folding from z polynomial and verify
+     *    that fri_layers commitments and fri_last_layer are consistent.
+     *
+     *    The prover computes FRI folding of z(X) through 7 rounds:
+     *      g[i] = f[2i] + alpha_0 * f[2i+1]
+     *    producing commitments fri_layers[0..6] and final polynomial fri_last_layer.
+     *
+     *    The verifier re-derives the entire chain from z (already verified via
+     *    opening proof) and checks each commitment matches. */
+    {
+        chipmunk_poly_t l_fri_current;
+        memcpy(&l_fri_current, &l_z, sizeof(chipmunk_poly_t));
+        uint32_t l_fri_degree = CHIPMUNK_N;
+
+        /* Re-derive initial FRI FS hash from transcript */
+        uint8_t l_fri_transcript[128];
+        memcpy(l_fri_transcript, a_proof->w_commit.hash, 32);
+        memcpy(l_fri_transcript + 32, a_proof->z_commit.hash, 32);
+        memcpy(l_fri_transcript + 64, a_proof->q_commit.hash, 32);
+        memcpy(l_fri_transcript + 96, l_msg_hash, 32);
+        uint8_t l_fri_fs_hash[32];
+        dap_hash_sha3_256_raw(l_fri_fs_hash, l_fri_transcript, 128);
+
+        for (int l_round = 0; l_round < CHIPMUNK_SNARK_FOLD_ROUNDS; ++l_round) {
+            /* Verify commitment to current polynomial matches proof */
+            chipmunk_snark_commit_t l_expected_commit;
+            s_commit_poly(&l_expected_commit, &l_fri_current);
+            if (memcmp(l_expected_commit.hash, a_proof->fri_layers[l_round].commit.hash, 32) != 0) {
+                log_it(L_ERROR, "SNARK verify: FRI layer %d commitment mismatch", l_round);
+                return 0;
+            }
+
+            /* Re-derive challenge from FS hash */
+            chipmunk_mring_ext_t l_fri_alpha;
+            uint8_t l_new_hash[64];
+            memcpy(l_new_hash, l_fri_fs_hash, 32);
+            memcpy(l_new_hash + 32, a_proof->fri_layers[l_round].commit.hash, 32);
+            dap_hash_sha3_256_raw(l_fri_fs_hash, l_new_hash, 64);
+            s_qrom_derive_challenge(&l_fri_alpha, l_fri_fs_hash, (uint32_t)l_round);
+
+            /* Fold: g[i] = f[2i] + alpha_0 * f[2i+1] */
+            l_fri_degree /= 2;
+            chipmunk_poly_t l_fri_folded;
+            s_fri_fold_ext(&l_fri_folded, &l_fri_current, &l_fri_alpha, l_fri_degree);
+            memcpy(&l_fri_current, &l_fri_folded, sizeof(chipmunk_poly_t));
+        }
+
+        /* Verify final polynomial matches proof's fri_last_layer.
+         * After 7 rounds: 512 → 256 → 128 → 64 → 32 → 16 → 8 → 4 coefficients.
+         * fri_last_layer stores these 4 coefficients as an extension element. */
+        chipmunk_mring_ext_t l_expected_final;
+        chipmunk_mring_ext_embed(&l_expected_final, &l_fri_current);
+        if (memcmp(&l_expected_final, &a_proof->fri_last_layer, sizeof(chipmunk_mring_ext_t)) != 0) {
+            log_it(L_ERROR, "SNARK verify: FRI final polynomial mismatch");
+            return 0;
+        }
+    }
+
+    /* 7. Verify quotient relation: z(X) = q(X) * (X - alpha_scalar)
      *    Multiple independent checks for soundness.
      *    Each check has soundness ~deg/Q ≈ 512/3168257 ≈ 2^{-12.6}.
      *    With 11 independent checks: 11 * 12.6 ≈ 138 bits > 128 bits.
@@ -583,12 +641,12 @@ int chipmunk_snark_verify(const chipmunk_snark_proof_t *a_proof,
     }
     #undef CHIPMUNK_SNARK_QUOTIENT_CHECKS
 
-    /* 7. C1, C2, C3, C4 are verified implicitly:
+    /* 8. C1, C2, C3, C4 are verified implicitly:
      *    z(X) = C1 + r*C2 + r^2*C3 + r^3*C4 and z(alpha)=0
      *    with high probability over the random alpha from the subtractive set,
      *    implies each Ci(alpha)=0. No need to expose b in the proof. */
 
-    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (%d quotient checks, ~138-bit soundness)",
+    debug_if(1, L_DEBUG, "SNARK verify: all checks passed (FRI + %d quotient checks, ~138-bit soundness)",
              CHIPMUNK_SNARK_QUOTIENT_CHECKS);
     return 1;
 }
