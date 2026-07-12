@@ -349,7 +349,9 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
             if (l_session) {
                 t->stream = dap_stream_new_es_server(a_es, l_session);
                 if (t->stream) {
-                    log_it(L_NOTICE, "TLS server: stream created (session=%u, stream=%p)", l_session_id, (void*)t->stream);
+                    t->stream->trans = dap_net_trans_find(DAP_NET_TRANS_TLS_DIRECT);
+                    log_it(L_NOTICE, "TLS server: stream created (session=%u, stream=%p, trans=%p)",
+                           l_session_id, (void*)t->stream, (void*)t->stream->trans);
                 } else {
                     log_it(L_ERROR, "TLS server: failed to create stream for session %u", l_session_id);
                 }
@@ -388,12 +390,47 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Write: passthrough (data already in buf_out from s_tls_read)       */
+/*  Write: TLS-wrap buf_out data before event-loop send()              */
 /* ------------------------------------------------------------------ */
 
 static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
 {
-    return a_es->buf_out_size > 0;
+    if (!a_es || a_es->buf_out_size == 0)
+        return false;
+    tls_conn_ctx_t *t = s_tls_ctx(a_es);
+    if (!t || !t->mimicry)
+        return true;  /* no mimicry context — send raw (shouldn't happen) */
+
+    /* Don't re-wrap data that was already wrapped by s_tls_read (init responses).
+     * Detect by checking if the data starts with TLS record bytes.  In stream
+     * mode all outgoing data is raw DAP packets (start with stream signature
+     * 0xa0...) so they need wrapping. */
+    if (!t->stream_mode)
+        return true;  /* init path: data already TLS-wrapped in s_tls_read */
+
+    /* Stream mode: wrap raw buf_out in TLS records */
+    void *l_wrapped = NULL; size_t l_wrapped_sz = 0;
+    int l_rc = dap_tls_mimicry_wrap(t->mimicry,
+                                    a_es->buf_out, a_es->buf_out_size,
+                                    &l_wrapped, &l_wrapped_sz);
+    if (l_rc != 0 || !l_wrapped || l_wrapped_sz == 0) {
+        log_it(L_WARNING, "TLS server: s_tls_write wrap failed rc=%d", l_rc);
+        return true;  /* send raw as fallback */
+    }
+
+    /* Replace buf_out contents with TLS-wrapped data */
+    if (l_wrapped_sz > a_es->buf_out_size_max) {
+        /* Need more space — realloc buf_out */
+        byte_t *l_new = DAP_NEW_SIZE(byte_t, l_wrapped_sz);
+        if (!l_new) { DAP_DELETE(l_wrapped); return true; }
+        DAP_DELETE(a_es->buf_out);
+        a_es->buf_out = l_new;
+        a_es->buf_out_size_max = l_wrapped_sz;
+    }
+    memcpy(a_es->buf_out, l_wrapped, l_wrapped_sz);
+    a_es->buf_out_size = l_wrapped_sz;
+    DAP_DELETE(l_wrapped);
+    return false;  /* no more data to write after send */
 }
 
 /* ------------------------------------------------------------------ */
