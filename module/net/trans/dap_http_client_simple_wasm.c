@@ -101,6 +101,8 @@ static void *s_http_worker_thread(void *a_arg)
                                       (int)(uintptr_t)&l_resp,
                                       (int)(uintptr_t)&l_resp_len);
 
+        log_it(L_INFO, "http_post_sync: url=%.80s rc=%d resp=%p resp_len=%d",
+               l_req->url ? l_req->url : "(null)", l_rc, l_resp, l_resp_len);
         if (l_rc == 0 && l_resp && l_resp_len > 0)
             l_req->callback(l_resp, (size_t)l_resp_len, 0, l_req->user_data);
         else
