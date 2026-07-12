@@ -347,7 +347,7 @@ void dap_link_manager_log_uplinks_connecting_diag(uint64_t a_net_id)
             if (l_in_cluster)
             {
                 ++l_established_cluster_skip;
-                l_note = " connected_cb_skipped: already in cluster";
+                l_note = " in_cluster";
             }
             else if (l_wait)
             {
@@ -380,7 +380,7 @@ void dap_link_manager_log_uplinks_connecting_diag(uint64_t a_net_id)
 
     if (l_established >= l_required && l_established_cluster_skip)
         dap_string_append(l_report,
-                          "  likely cause: enough ESTABLISHED uplinks but LINK_CONNECTED not emitted"
+                          "  likely cause: enough ESTABLISHED uplinks but state machine not advanced to LINKS_ESTABLISHED"
                           " (nodes still in link cluster after reconnect)\n");
     else if (l_established < l_required && !l_connecting && l_disconnected)
         dap_string_append(l_report,
