@@ -23,8 +23,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
-#include <unistd.h>
-#include <sys/eventfd.h>
+#include <utlist.h>
 #include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
@@ -143,36 +142,6 @@ size_t dap_proc_thread_get_avg_queue_size()
     return l_ret / s_threads_count;
 }
 
-/**
- * @brief Lock-free MPSC push: prepend item to queue head via atomic_exchange
- */
-static inline void s_mpsc_push(_Atomic(dap_proc_queue_item_t *) *a_head, dap_proc_queue_item_t *a_item)
-{
-    dap_proc_queue_item_t *l_old_head = atomic_load(a_head);
-    do {
-        a_item->next = l_old_head;
-    } while (!atomic_compare_exchange_weak(a_head, &l_old_head, a_item));
-}
-
-/**
- * @brief Lock-free MPSC drain: atomically take entire list, reverse to FIFO order
- */
-static inline dap_proc_queue_item_t *s_mpsc_drain(_Atomic(dap_proc_queue_item_t *) *a_head)
-{
-    dap_proc_queue_item_t *l_list = atomic_exchange(a_head, (dap_proc_queue_item_t *)NULL);
-    if (!l_list)
-        return NULL;
-    // Reverse to FIFO order (MPSC push prepends, so list is LIFO)
-    dap_proc_queue_item_t *l_rev = NULL;
-    while (l_list) {
-        dap_proc_queue_item_t *l_next = l_list->next;
-        l_list->next = l_rev;
-        l_rev = l_list;
-        l_list = l_next;
-    }
-    return l_rev;
-}
-
 int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
                                      void *a_callback_arg, dap_queue_msg_priority_t a_priority)
 {
@@ -186,110 +155,57 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
     *l_item = (dap_proc_queue_item_t){ .callback = a_callback,
                                        .callback_arg = a_callback_arg };
     debug_if(g_debug_reactor, L_DEBUG, "Add callback %p with arg %p to thread %p", a_callback, a_callback_arg, l_thread);
-    // Lock-free push to priority queue
-    s_mpsc_push(&l_thread->queue_head[a_priority], l_item);
+    pthread_mutex_lock(&l_thread->queue_lock);
+    DL_APPEND(l_thread->queue[a_priority], l_item);
     atomic_fetch_add(&l_thread->proc_queue_size, 1);
-    // Wake up proc thread via eventfd
-    uint64_t l_one = 1;
-    if (write(l_thread->wakeup_fd, &l_one, sizeof(l_one)) != sizeof(l_one)) {
-        log_it(L_WARNING, "Failed to wakeup proc thread (errno=%d)", errno);
-    }
+    pthread_mutex_unlock(&l_thread->queue_lock);
+    pthread_cond_signal(&l_thread->queue_event);
     return 0;
 }
 
 /**
- * Block until another thread signals via eventfd (callback queued or shutdown).
- * wakeup_fd is blocking (no EFD_NONBLOCK): idle proc threads must sleep, not spin.
- */
-static void s_proc_thread_wait_wakeup(dap_proc_thread_t *a_thread)
-{
-    if (a_thread->wakeup_fd < 0)
-        return;
-
-    for (;;) {
-        uint64_t l_val = 0;
-        ssize_t l_rd = read(a_thread->wakeup_fd, &l_val, sizeof(l_val));
-        if (l_rd == (ssize_t)sizeof(l_val))
-            return;
-        if (l_rd < 0) {
-            if (errno == EINTR)
-                continue;
-            if (errno == EAGAIN)
-                return;
-            log_it(L_ERROR, "Proc thread wakeup read failed: errno=%d", errno);
-            return;
-        }
-        /* EOF: fd closed during shutdown */
-        return;
-    }
-}
-
-/**
- * @brief Pull one item from highest-priority non-empty queue
+ * @brief s_proc_queue_pull Extracts element from queue with highest priority
+ * @param a_thread Pointer to processor thread
+ * @param a_priority Returns priority of extracted element (can be NULL)
+ * @return Pointer to queue element or NULL if queue is empty
+ * @note MUST be called only under locked queue_lock mutex!
  */
 static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int *a_priority)
 {
-    for (int i = DAP_QUEUE_MSG_PRIORITY_MAX; i >= DAP_QUEUE_MSG_PRIORITY_MIN; i--) {
-        dap_proc_queue_item_t *l_item = s_mpsc_drain(&a_thread->queue_head[i]);
-        if (l_item) {
-            // Take first item, re-push the rest
-            dap_proc_queue_item_t *l_next = l_item->next;
-            l_item->next = NULL;
-            if (l_next) {
-                // Re-push remaining items (prepend to restore order)
-                // Actually we need to reverse l_next back to LIFO for s_mpsc_push
-                // But simpler: just set the head to l_next (already in FIFO order after drain)
-                // Wait, l_next is already in FIFO order. We need to set it back.
-                // But s_mpsc_push prepends. So we need to reverse l_next first.
-                dap_proc_queue_item_t *l_rev = NULL;
-                while (l_next) {
-                    dap_proc_queue_item_t *l_n = l_next->next;
-                    l_next->next = l_rev;
-                    l_rev = l_next;
-                    l_next = l_n;
-                }
-                // Now l_rev is in LIFO order (for s_mpsc_push prepend)
-                // But we want FIFO order in the queue. So we need to prepend l_rev.
-                // Actually, the remaining items are already in FIFO order from drain.
-                // We just need to put them back. The simplest is to atomic_store the head.
-                // But that's not safe with concurrent pushes. Let me think...
-                // Actually, we can just re-push each item via s_mpsc_push.
-                // But that reverses the order. For correctness, order within same priority doesn't matter much.
-                // Let's just push them back in the order we have.
-                while (l_rev) {
-                    dap_proc_queue_item_t *l_n = l_rev->next;
-                    s_mpsc_push(&a_thread->queue_head[i], l_rev);
-                    l_rev = l_n;
-                }
-            }
+    dap_proc_queue_item_t *l_item = NULL;
+    int i = DAP_QUEUE_MSG_PRIORITY_MAX;
+    
+    for (; i >= DAP_QUEUE_MSG_PRIORITY_MIN; i--) {
+        if ((l_item = a_thread->queue[i])) {
+            DL_DELETE(a_thread->queue[i], l_item);
             atomic_fetch_sub(&a_thread->proc_queue_size, 1);
             if (a_priority)
                 *a_priority = i;
-            return l_item;
+            break;
         }
     }
-    return NULL;
+    
+    return l_item;
 }
 
 int dap_proc_thread_loop(dap_context_t *a_context)
 {
     dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
     do {
+        pthread_mutex_lock(&l_thread->queue_lock);
         dap_proc_queue_item_t *l_item = NULL;
         int l_item_priority = 0;
-
-        // Try to pull an item (non-blocking)
-        l_item = s_proc_queue_pull(l_thread, &l_item_priority);
-
-        if (!l_item && !a_context->signal_exit) {
-            s_proc_thread_wait_wakeup(l_thread);
-            l_item = s_proc_queue_pull(l_thread, &l_item_priority);
+        
+        while (!a_context->signal_exit &&
+               !(l_item = s_proc_queue_pull(l_thread, &l_item_priority))) {
+            pthread_cond_wait(&l_thread->queue_event, &l_thread->queue_lock);
         }
-
+        pthread_mutex_unlock(&l_thread->queue_lock);
+        
         if (l_item) {
             debug_if(g_debug_reactor, L_DEBUG, "Call callback %p with arg %p on thread %p",
                                             l_item->callback, l_item->callback_arg, l_thread);
-
+            
             if (!a_context->signal_exit && l_item->callback(l_item->callback_arg)) {
                 dap_proc_thread_callback_add_pri(l_thread, l_item->callback, l_item->callback_arg, l_item_priority);
             }
@@ -308,12 +224,8 @@ static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void 
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
-    // Blocking eventfd: idle proc threads sleep in read() instead of busy-looping.
-    l_thread->wakeup_fd = eventfd(0, EFD_CLOEXEC);
-    if (l_thread->wakeup_fd < 0) {
-        log_it(L_CRITICAL, "Failed to create eventfd for proc thread: errno=%d", errno);
-        return -1;
-    }
+    pthread_mutex_init(&l_thread->queue_lock, NULL);
+    pthread_cond_init(&l_thread->queue_event, NULL);
     // Init proc_queue for related worker
     dap_worker_t * l_worker_related = dap_events_worker_get(l_thread->context->cpu_id);
     assert(l_worker_related);
@@ -331,20 +243,15 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
     log_it(L_ATT, "Stop processing thread #%u", l_thread->context->cpu_id);
-    // Drain all queues
-    for (int i = DAP_QUEUE_MSG_PRIORITY_MIN; i <= DAP_QUEUE_MSG_PRIORITY_MAX; i++) {
-        dap_proc_queue_item_t *l_item;
-        while ((l_item = s_mpsc_drain(&l_thread->queue_head[i]))) {
-            dap_proc_queue_item_t *l_next = l_item->next;
-            DAP_DELETE(l_item);
-            l_item = l_next;
-        }
+    // cleanup queue
+    pthread_mutex_lock(&l_thread->queue_lock);
+    dap_proc_queue_item_t *l_item;
+    while ((l_item = s_proc_queue_pull(l_thread, NULL))) {
+        DAP_DELETE(l_item);
     }
-    // Close eventfd
-    if (l_thread->wakeup_fd >= 0) {
-        close(l_thread->wakeup_fd);
-        l_thread->wakeup_fd = -1;
-    }
+    pthread_mutex_unlock(&l_thread->queue_lock);
+    pthread_cond_destroy(&l_thread->queue_event);
+    pthread_mutex_destroy(&l_thread->queue_lock);
     return 0;
 }
 
