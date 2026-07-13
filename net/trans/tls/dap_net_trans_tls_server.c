@@ -44,6 +44,7 @@ typedef struct tls_conn_ctx {
     size_t prev_buf_in_size;  /* guard: buf_in_size at function exit */
     bool stream_mode;         /* after stream_ctl: route DAP packets to stream layer */
     dap_stream_t *stream;     /* created after stream_ctl; NULL until then */
+    bool buf_out_wrapped;     /* true if buf_out already contains TLS-wrapped data */
 } tls_conn_ctx_t;
 
 static bool s_debug_more = false;
@@ -194,6 +195,10 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
 {
     tls_conn_ctx_t *t = s_tls_ctx(a_es);
     if (!t) return;
+
+    /* New data arrived — any previous TLS wrapping of buf_out is stale.
+     * Clear the flag so s_tls_write will re-wrap fresh stream data. */
+    t->buf_out_wrapped = false;
 
     /* Guard: if buf_in hasn't changed since we last exited, skip.
      * Prevents tight loop when unwrap returns rc=1 (need more data)
@@ -401,12 +406,14 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
     if (!t || !t->mimicry)
         return true;  /* no mimicry context — send raw (shouldn't happen) */
 
-    /* Don't re-wrap data that was already wrapped by s_tls_read (init responses).
-     * Detect by checking if the data starts with TLS record bytes.  In stream
-     * mode all outgoing data is raw DAP packets (start with stream signature
-     * 0xa0...) so they need wrapping. */
+    /* Don't re-wrap data that was already wrapped by s_tls_read (init responses). */
     if (!t->stream_mode)
         return true;  /* init path: data already TLS-wrapped in s_tls_read */
+
+    /* If buf_out already contains TLS-wrapped data from a previous partial
+     * send, don't wrap again — just let the event loop flush the remainder. */
+    if (t->buf_out_wrapped)
+        return false;
 
     /* Stream mode: wrap raw buf_out in TLS records */
     void *l_wrapped = NULL; size_t l_wrapped_sz = 0;
@@ -420,7 +427,6 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
 
     /* Replace buf_out contents with TLS-wrapped data */
     if (l_wrapped_sz > a_es->buf_out_size_max) {
-        /* Need more space — realloc buf_out */
         byte_t *l_new = DAP_NEW_SIZE(byte_t, l_wrapped_sz);
         if (!l_new) { DAP_DELETE(l_wrapped); return true; }
         DAP_DELETE(a_es->buf_out);
@@ -430,7 +436,8 @@ static bool s_tls_write(dap_events_socket_t *a_es, void *a_arg)
     memcpy(a_es->buf_out, l_wrapped, l_wrapped_sz);
     a_es->buf_out_size = l_wrapped_sz;
     DAP_DELETE(l_wrapped);
-    return false;  /* no more data to write after send */
+    t->buf_out_wrapped = true;  /* mark as wrapped to prevent double-wrap */
+    return false;  /* data ready to send */
 }
 
 /* ------------------------------------------------------------------ */
