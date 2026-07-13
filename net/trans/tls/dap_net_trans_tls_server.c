@@ -196,9 +196,11 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
     tls_conn_ctx_t *t = s_tls_ctx(a_es);
     if (!t) return;
 
-    /* New data arrived — any previous TLS wrapping of buf_out is stale.
-     * Clear the flag so s_tls_write will re-wrap fresh stream data. */
-    t->buf_out_wrapped = false;
+    /* New data arrived — clear the TLS wrapping flag only if buf_out was
+     * fully flushed.  If there's still pending wrapped data in buf_out
+     * (partial send), don't clear — s_tls_write will skip re-wrapping. */
+    if (a_es->buf_out_size == 0)
+        t->buf_out_wrapped = false;
 
     /* Guard: if buf_in hasn't changed since we last exited, skip.
      * Prevents tight loop when unwrap returns rc=1 (need more data)
