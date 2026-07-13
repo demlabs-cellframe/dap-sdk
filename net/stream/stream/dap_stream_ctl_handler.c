@@ -131,8 +131,8 @@ int dap_stream_ctl_handler_process(dap_trans_request_t *a_req)
                       DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
     }
 
-    log_it(L_INFO, "stream_ctl: session %u initialized (channels=%s, enc=%d)",
-           l_session->id, l_channels, l_enc_type);
+    log_it(L_INFO, "stream_ctl: session %u initialized (channels=%s, enc=%d), reply_size=%zu",
+           l_session->id, l_channels, l_enc_type, a_req->reply_size);
 
     trans_set_status(a_req, 200);
     return 0;

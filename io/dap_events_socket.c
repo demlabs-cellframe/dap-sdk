@@ -1371,7 +1371,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
         if ( a_es->callbacks.error_callback )
             a_es->callbacks.error_callback(a_es, l_err);
         if ( !a_es->no_close )
-            a_ol ? a_es->flags |= DAP_SOCK_SIGNAL_CLOSE : dap_events_socket_remove_and_delete_mt(a_es->worker, a_es->uuid);
+            a_ol ? a_es->flags = DAP_SOCK_SIGNAL_CLOSE : dap_events_socket_remove_and_delete_mt(a_es->worker, a_es->uuid);
     }
     return dap_overlapped_free(ol);
 }

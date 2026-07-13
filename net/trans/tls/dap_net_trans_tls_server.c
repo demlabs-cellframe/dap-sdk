@@ -370,22 +370,38 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
         log_it(L_NOTICE, "TLS server: stream_ctl processed, stream_mode=%s", t->stream ? "YES" : "NO");
     }
 
-    log_it(L_NOTICE, "TLS server: route result: response_len=%zu", l_response_len);
-
-    DAP_DELETE(l_url_path);
-    DAP_DELETE(l_query);
-    DAP_DELETE(l_body);
+    log_it(L_NOTICE, "TLS server: route result: response_len=%zu, response=%p", l_response_len, (void*)l_response);
+    if (l_response && l_response_len > 0)
+        log_it(L_NOTICE, "TLS server: response preview: [%zu bytes] '%.80s%s'",
+               l_response_len, l_response, l_response_len > 80 ? "..." : "");
 
     /* Wrap response in TLS records and send */
     if (l_response && l_response_len > 0 && t->mimicry) {
         void *l_wrapped = NULL; size_t l_wrapped_sz = 0;
         int l_wrap_rc = dap_tls_mimicry_wrap(t->mimicry, l_response, l_response_len,
                                   &l_wrapped, &l_wrapped_sz);
-        log_it(L_NOTICE, "TLS server: wrap rc=%d, wrapped_sz=%zu", l_wrap_rc, l_wrapped_sz);
+        log_it(L_NOTICE, "TLS server: wrap rc=%d, wrapped_sz=%zu, response_len=%zu", l_wrap_rc, l_wrapped_sz, l_response_len);
         if (l_wrap_rc == 0 && l_wrapped && l_wrapped_sz > 0) {
             dap_events_socket_write_unsafe(a_es, l_wrapped, l_wrapped_sz);
             DAP_DELETE(l_wrapped);
+            t->buf_out_wrapped = true;  /* prevent s_tls_write from double-wrapping */
             log_it(L_NOTICE, "TLS server: response sent (%zu bytes)", l_wrapped_sz);
+
+            /* Force-flush: send buf_out immediately so each HTTP response goes
+             * as a separate TLS record.  Without this, multiple responses
+             * (e.g. enc_init + stream_ctl) concatenate in buf_out and the
+             * client receives them as one blob → parse error. */
+            if (a_es->buf_out_size > 0 && a_es->socket != INVALID_SOCKET) {
+                ssize_t l_sent = send(a_es->socket, (const char *)a_es->buf_out,
+                                      a_es->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+                if (l_sent > 0) {
+                    a_es->buf_out_size -= l_sent;
+                    if (a_es->buf_out_size > 0)
+                        memmove(a_es->buf_out, a_es->buf_out + l_sent, a_es->buf_out_size);
+                    else
+                        t->buf_out_wrapped = false;  /* fully flushed */
+                }
+            }
         }
         DAP_DELETE(l_response);
     } else {
@@ -394,6 +410,9 @@ static void s_tls_read(dap_events_socket_t *a_es, void *a_arg)
         DAP_DELETE(l_response);
     }
     t->prev_buf_in_size = a_es->buf_in_size;  /* update guard at exit */
+    DAP_DELETE(l_url_path);
+    DAP_DELETE(l_query);
+    DAP_DELETE(l_body);
 }
 
 /* ------------------------------------------------------------------ */

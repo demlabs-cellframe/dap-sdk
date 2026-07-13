@@ -515,17 +515,23 @@ static void s_tls_read_cb(dap_events_socket_t *a_es, void *a_arg)
     if (!a_es || a_es->buf_in_size == 0)
         return;
 
-    dap_stream_t *l_stream = s_stream_from_es(a_es);
-    if (!l_stream || !l_stream->trans_ctx) {
-        log_it(L_ERROR, "TLS read: no stream or trans_ctx");
+    /* Get the mimicry context from the client's trans_ctx.
+     * During handshake phase, stream may be NULL — we need the mimicry
+     * context to process ServerHello even before the stream exists. */
+    if (!a_es->_inheritor) {
+        log_it(L_ERROR, "TLS read: no _inheritor on esocket");
+        return;
+    }
+    dap_client_t *l_client = (dap_client_t *)a_es->_inheritor;
+    dap_client_fsm_t *l_fsm = l_client ? DAP_CLIENT_FSM(l_client) : NULL;
+    dap_net_trans_ctx_t *l_tc = l_fsm ? l_fsm->trans_ctx : NULL;
+    tls_mimicry_ctx_t *l_ctx = l_tc ? (tls_mimicry_ctx_t *)l_tc->transport_priv : NULL;
+    if (!l_ctx || !l_ctx->mimicry) {
+        log_it(L_ERROR, "TLS read: no mimicry context (tc=%p ctx=%p)", (void*)l_tc, (void*)l_ctx);
         return;
     }
 
-    tls_mimicry_ctx_t *l_ctx = (tls_mimicry_ctx_t *)l_stream->trans_ctx->transport_priv;
-    if (!l_ctx || !l_ctx->mimicry) {
-        log_it(L_ERROR, "TLS read: no mimicry context");
-        return;
-    }
+    dap_stream_t *l_stream = l_tc ? l_tc->stream : NULL;
 
     /* === HANDSHAKE phase: ServerHello uses its own parser (not TLS unwrap) === */
     if (l_ctx->phase == TLS_PHASE_HANDSHAKE) {
